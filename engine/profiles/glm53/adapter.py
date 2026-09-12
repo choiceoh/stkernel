@@ -512,9 +512,10 @@ class Glm53Engine:
 
     # -- decode steps ahead of the host (pipeline.py, 45차 §23 B3) ------------------------------------------------
     def _plain_ahead(self, seq: int) -> bool:
-        """Greedy, or temperature / top_p only: the device can commit, observe and propose without the host."""
+        """Greedy, or a truncation the sampler takes as numbers: the device can commit, observe and
+        propose without the host. top-k joins top_p here -- the pipeline carries both per row now."""
         opts = self.options.get(seq, {})
-        if any(opts.get(k) is not None for k in ("top_k", "seed", "presence_penalty", "frequency_penalty", "repetition_penalty",
+        if any(opts.get(k) is not None for k in ("seed", "presence_penalty", "frequency_penalty", "repetition_penalty",
                                                   "logit_bias", "logprobs", "grammar", "min_p")):
             return False
         if seq in self.matchers or seq in self.gens or seq in self.lps:
@@ -553,17 +554,34 @@ class Glm53Engine:
     def _generated_count(self, seq: int) -> int:
         return len(self.tokens[seq]) - self.prompt_len[seq]
 
-    def _sample(self, logits: torch.Tensor, temps: "list[float]") -> torch.Tensor:
+    def _policy(self, segments) -> "tuple[list, list, list]":
+        """Each row's (temperature, top_k, top_p), one entry per position the step samples.
+
+        top-k and top-p ride along with the temperature now, so a request that asks for a nucleus
+        does not have to leave the captured sampler for it (base/sampler.needs_rich_sampler)."""
+        temps, ks, ps = [], [], []
+        for s in segments:
+            opts = self.options.get(s.seq, {})
+            for _ in range(s.length):
+                temps.append(self.limits[s.seq][1])
+                ks.append(int(opts.get("top_k") or 0))
+                ps.append(float(opts.get("top_p", self.top_p)))
+        return temps, ks, ps
+
+    def _sample(self, logits: torch.Tensor, temps: "list[float]", top_k=None, top_p=None) -> torch.Tensor:
         # Temperatures already live on the host: no device predicate or random
         # draw is needed for an entirely greedy step. Such steps leave the RNG
         # untouched; stochastic/mixed steps retain the base sampler's draws.
         if all(t <= 0 for t in temps):
             return logits[:, :self.decodable].argmax(dim=-1)
-        if self.decodable is not None and logits.shape[-1] > self.decodable:
-            logits = logits.clone(); logits[:, self.decodable:] = float("-inf")
-        t = torch.tensor(temps, dtype=torch.float32, device=logits.device)
-        p = torch.full((logits.shape[0],), self.top_p, device=logits.device)
-        return sample(logits, t, p, self.gen)
+        dev, n = logits.device, logits.shape[0]
+        t = torch.tensor(temps, dtype=torch.float32, device=dev)
+        k = torch.tensor(top_k if top_k is not None else [0] * n, dtype=torch.int32, device=dev)
+        p = torch.tensor(top_p, dtype=torch.float32, device=dev) if top_p is not None \
+            else torch.full((n,), self.top_p, device=dev)
+        # `valid` is the undecodable cut: the sampler stops there rather than the step first
+        # copying the whole gathered block to write minus infinity into its end.
+        return sample(logits, t, p, self.gen, top_k=k, valid=self.decodable)
 
     def _no_end_yet(self, seq: int, picks: "list[int]", hidden: torch.Tensor) -> "list[int]":
         """OpenAI min_tokens: while fewer than `min_new` tokens are generated, an end token cannot be
@@ -590,10 +608,10 @@ class Glm53Engine:
             return self.net.forward(step, self.caches, aux_layers=self.aux_layers)
         return self.net.forward(step, self.caches), None
 
-    def _sample_hidden(self, hidden, temps):
+    def _sample_hidden(self, hidden, temps, top_k=None, top_p=None):
         if all(t <= 0 for t in temps):
             return self.net.head_tokens(hidden, self.decodable)
-        return self._sample(self.net.head(hidden), temps)
+        return self._sample(self.net.head(hidden), temps, top_k, top_p)
 
     # -- picking tokens: the captured samplers for plain rows; rows with options (base/sampler.OPTION_KEYS) or a
     # -- stochastic row with drafts take the base sampler over their gathered logits, identically on every rank ------
@@ -609,7 +627,8 @@ class Glm53Engine:
         """
         return self.net.comm.all_gather(local, dim=-1)
 
-    def _row_logits(self, seq: int, raw: torch.Tensor, position: int, drafts_before: "list[int]") -> torch.Tensor:
+    def _row_logits(self, seq: int, raw: torch.Tensor, position: int, drafts_before: "list[int]",
+                    into: "torch.Tensor | None" = None) -> torch.Tensor:
         """`raw` [vocab] processed for `seq` at this step's position: bias, penalties over the row's tokens (with the drafts
         assumed accepted before it), the decodable cut, min_tokens and the grammar's mask."""
         from engine.base.sampler import History, process_logits
@@ -619,7 +638,7 @@ class Glm53Engine:
         seen, counts = self.history.of(seq, self.tokens[seq], self.prompt_len[seq])
         need = self.min_new.get(seq, 0) - self._generated_count(seq) - len(drafts_before)
         forbid = self._end_ids(seq, raw.device) if need > 0 and self.ends.get(seq) else None
-        return process_logits(raw, opts, seen, counts, drafts_before, self.decodable, forbid=forbid)
+        return process_logits(raw, opts, seen, counts, drafts_before, self.decodable, forbid=forbid, into=into)
 
     def _end_ids(self, seq: int, device) -> torch.Tensor:
         """This row's end tokens as a tensor, kept: min_tokens asks for them on every position it covers."""
@@ -629,37 +648,73 @@ class Glm53Engine:
             self._ends_tensor[seq] = held
         return held
 
-    def _pick_rich(self, seq: int, rows: torch.Tensor, drafts: "list[int]", draft_probs: "torch.Tensor | None"):
-        """One sequence's positions through the base sampler. rows: [len(drafts) + 1, vocab] fp32 raw logits.
-        Returns (accepted drafts, committed tokens, per-token (id, logprob, top) or None)."""
-        from engine.base.sampler import distribution, pick_each, speculative_pick, top_logprobs
-        opts = self.options.get(seq, {})
-        temperature = self.limits[seq][1]
-        gen = self.gens.get(seq, self.gen)
-        matcher = self.matchers.get(seq)
-        masks = matcher.masks(drafts, rows.device) if matcher is not None else [None] * (len(drafts) + 1)
-        processed, dists = [], []
-        for i in range(min(len(masks), rows.shape[0])):
-            logits = self._row_logits(seq, rows[i], i, drafts[:i])
-            if masks[i] is not None:
-                logits = logits.masked_fill(~masks[i], float("-inf"))
-            processed.append(logits)
-            dists.append(distribution(logits, temperature, opts.get("top_k"), opts.get("top_p")))
-        if temperature <= 0 or draft_probs is None or not drafts:
-            picks = pick_each(dists, temperature, gen)
-            accepted = 0
-            for d, got in zip(drafts, picks):
-                if d != got:
-                    break
-                accepted += 1
-            new = picks[: accepted + 1]
-        else:
-            accepted, new = speculative_pick(torch.stack(dists), drafts[: len(dists) - 1], draft_probs, gen)
-        want = opts.get("logprobs")
-        lps = None
-        if want is not None:
-            lps = [(tok, *top_logprobs(processed[i], tok, want)) for i, tok in enumerate(new)]
-        return accepted, new, lps
+    def _rich_block(self, n: int, vocab: int, device):
+        """The step's processed logits and their distributions, kept: two vocabulary-sized blocks,
+        not two per position. At 24 rows of 154,880 that is 30 MB the step stops reallocating."""
+        held = getattr(self, "_rich_stage", None)
+        if held is None or held[0].shape[0] < n or held[0].shape[1] != vocab or held[0].device != device:
+            pool = getattr(self.caches, "pool", None)
+            room = max(n, (pool.max_seqs if pool is not None else 1) * (self.drafter.k + 1))
+            held = self._rich_stage = (torch.empty(room, vocab, dtype=torch.float32, device=device),
+                                       torch.empty(room, vocab, dtype=torch.float32, device=device))
+        return held[0][:n], held[1][:n]
+
+    def _pick_rich(self, jobs):
+        """Every rich row of the step through the base sampler in ONE call.
+
+        `jobs` is [(seq, raw [positions, vocab], drafts, draft probabilities or None)]; the answer is
+        one (accepted drafts, committed tokens, per-token (id, logprob, top) or None) per job.
+
+        Each position still gets its own logits -- the penalties differ by which drafts precede it,
+        and a grammar's mask does too -- but they are written into one block and truncated, drawn
+        from and normalised together. Doing it a position at a time meant a 154,880-wide sort and a
+        `multinomial` per position: 11.8 ms for the 24 rows of one step.
+        """
+        from engine.base.sampler import process_logits, rows as sampler_rows, speculative_pick, top_logprobs
+        spans, ordered = [], []
+        for seq, raw, drafts, _ in jobs:
+            matcher = self.matchers.get(seq)
+            masks = matcher.masks(drafts, raw.device) if matcher is not None else [None] * (len(drafts) + 1)
+            spans.append(min(len(masks), raw.shape[0]))
+            ordered.append(masks)
+        block, dists = self._rich_block(sum(spans), jobs[0][1].shape[-1], jobs[0][1].device)
+        at, temps, ks, ps, draws = 0, [], [], [], []
+        for (seq, raw, drafts, _), count, masks in zip(jobs, spans, ordered):
+            opts = self.options.get(seq, {})
+            for i in range(count):
+                self._row_logits(seq, raw[i], i, drafts[:i], into=block[at + i])
+                if masks[i] is not None:
+                    block[at + i].masked_fill_(~masks[i], float("-inf"))
+            temps += [self.limits[seq][1]] * count
+            ks += [int(opts.get("top_k") or 0)] * count
+            ps += [float(opts.get("top_p", self.top_p))] * count
+            # the uniforms come off the row's OWN generator (a seeded request has one), in row order
+            draws.append(torch.rand(count, generator=self.gens.get(seq, self.gen), device=block.device))
+            at += count
+        dev = block.device
+        picks = sampler_rows(block, torch.tensor(temps, dtype=torch.float32, device=dev),
+                             torch.tensor(ks, dtype=torch.int32, device=dev),
+                             torch.tensor(ps, dtype=torch.float32, device=dev),
+                             torch.cat(draws), None, dists).tolist()
+        out, at = [], 0
+        for (seq, _, drafts, draft_probs), count in zip(jobs, spans):
+            opts = self.options.get(seq, {})
+            mine = picks[at: at + count]
+            if self.limits[seq][1] <= 0 or draft_probs is None or not drafts:
+                accepted = 0
+                for d, got in zip(drafts, mine):
+                    if d != got:
+                        break
+                    accepted += 1
+                new = mine[: accepted + 1]
+            else:
+                accepted, new = speculative_pick(dists[at: at + count], drafts[: count - 1], draft_probs,
+                                                 self.gens.get(seq, self.gen))
+            want = opts.get("logprobs")
+            lps = [(tok, *top_logprobs(block[at + i], tok, want)) for i, tok in enumerate(new)] if want is not None else None
+            out.append((accepted, new, lps))
+            at += count
+        return out
 
     def _commit(self, seq: int, accepted: int, new: "list[int]", lps, drafted: int) -> "tuple[list[int], bool]":
         """Clip to the limit and the row's end tokens, record, advance the grammar; returns (committed, done)."""
@@ -703,11 +758,13 @@ class Glm53Engine:
             self.drafter.observe(self.caches.draft_ring(slot), torch.arange(start, start + tokens, device=ids.device), aux)
         if self.ctx[seq] == self.prompt_len[seq]:                         # the prompt is in: the first token comes from its last position
             if self._rich(seq):
-                rows = self._gather(self.net.head_local(h[-1:]))
-                accepted, new, lps = self._pick_rich(seq, rows, [], None)
+                gathered = self._gather(self.net.head_local(h[-1:]))
+                (accepted, new, lps), = self._pick_rich([(seq, gathered, [], None)])
                 self._commit(seq, 0, new[:1], lps, 0)
             else:
-                first = self._sample_hidden(h[-1:], [self.limits[seq][1]])
+                opts = self.options.get(seq, {})
+                first = self._sample_hidden(h[-1:], [self.limits[seq][1]], [int(opts.get("top_k") or 0)],
+                                            [float(opts.get("top_p", self.top_p))])
                 self.tokens[seq].append(self._no_end_yet(seq, [int(first.item())], h[-1:])[0])
         self.steps += 1
         generated = self._generated_count(seq)
@@ -738,11 +795,11 @@ class Glm53Engine:
             ids_t = torch.tensor(flat, dtype=torch.int64, device=self.caches.device)
         step = Step(ids_t, tuple(segments))
         rich = {s.seq: self._rich(s.seq) for s in step.segments}
-        temps = [self.limits[s.seq][1] for s in step.segments for _ in range(s.length)]
+        temps, topk, topp = self._policy(step.segments)
         if self.decode_graphs is None:
             h, aux = self._forward(step)
             local = self.net.head_local(h)
-            sampled = self._sample_hidden(h, temps).tolist() if not all(rich.values()) else None
+            sampled = self._sample_hidden(h, temps, topk, topp).tolist() if not all(rich.values()) else None
         else:
             shape = self.decode_graphs.shape(step)                         # the sampler names itself from it too
             # Which captured graph this step ran: its sequence count is the batch the scheduler
@@ -751,13 +808,20 @@ class Glm53Engine:
             key = (shape[0], shape[2])
             self.decode_shape_counts[key] = self.decode_shape_counts.get(key, 0) + 1
             h, aux, local = self.decode_graphs.run(step, shape)
-            sampled = self.sampling_graphs.run(shape, temps).tolist() if not all(rich.values()) else None
+            sampled = self.sampling_graphs.run(shape, temps, topk, topp).tolist() if not all(rich.values()) else None
+        picked = {}
+        if any(rich.values()):
+            # one collective for the step: gathering a rich row at a time made the number of
+            # all-gathers a function of how many requests happened to carry options
+            full = self._gather(local)
+            wanted = [s for s in step.segments if rich[s.seq]]
+            jobs = [(s.seq, full[s.start: s.start + s.length], drafts[s.seq], draft_probs[s.seq]) for s in wanted]
+            picked = {s.seq: answer for s, answer in zip(wanted, self._pick_rich(jobs))}
         finished = []
         for s in step.segments:
             rows = slice(s.start, s.start + s.length)
             if rich[s.seq]:
-                full = self._gather(local[rows])
-                accepted, new, lps = self._pick_rich(s.seq, full, drafts[s.seq], draft_probs[s.seq])
+                accepted, new, lps = picked[s.seq]
             else:
                 picks = self._no_end_yet(s.seq, sampled[rows], h[rows])
                 accepted = 0

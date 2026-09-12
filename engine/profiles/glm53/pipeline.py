@@ -21,24 +21,23 @@ from __future__ import annotations
 
 import torch
 
-from engine.base.sampler import commit_batch, speculative_pick_batch
+from engine.base.sampler import commit_batch, rows as sampler_rows, speculative_pick_batch
 from engine.profiles.glm53.net import Segment, Step
 
 
-def distribution_batch(logits: torch.Tensor, temps: torch.Tensor, top_p: torch.Tensor, nucleus: bool) -> torch.Tensor:
-    """base/sampler.distribution for every row at once: [m, V] fp32 probabilities -- a one-hot argmax where the row's
-    temperature is 0, the nucleus-truncated softmax otherwise. `nucleus` is decided on the host (no device predicate)."""
-    greedy = temps <= 0
-    scaled = logits / temps.clamp_min(1e-5).unsqueeze(1)
-    probs = torch.softmax(scaled, dim=-1)
-    if nucleus:
-        srt, idx = probs.sort(dim=-1, descending=True)
-        cum = srt.cumsum(dim=-1)
-        keep = (cum - srt) < top_p.unsqueeze(1)
-        srt = srt * keep
-        probs = torch.zeros_like(probs).scatter_(1, idx, srt / srt.sum(dim=-1, keepdim=True).clamp_min(1e-30))
-    onehot = torch.zeros_like(probs).scatter_(1, logits.argmax(dim=-1, keepdim=True), 1.0)
-    return torch.where(greedy.unsqueeze(1), onehot, probs)
+def distribution_batch(logits: torch.Tensor, temps: torch.Tensor, top_k: torch.Tensor, top_p: torch.Tensor,
+                       valid: "int | None" = None, into: "torch.Tensor | None" = None) -> torch.Tensor:
+    """base/sampler.rows for every row at once, distributions only: [m, V] fp32 -- a one-hot argmax where the row's
+    temperature is 0, the truncated softmax otherwise.
+
+    No `nucleus` flag: the truncation is a per-row number the sampler reads on the device, so there is no host
+    predicate to decide and nothing to capture two versions of. No draw either -- the speculative pick works from
+    these distributions rather than from a token drawn out of them, so the cumulative walk is not run.
+    """
+    out = torch.empty(logits.shape[0], logits.shape[-1], dtype=torch.float32,
+                      device=logits.device) if into is None else into
+    sampler_rows(logits, temps, top_k, top_p, None, valid, out)
+    return out
 
 
 class Pending:
@@ -70,6 +69,14 @@ class AsyncDecode:
         self._slots = []
         self._zeros = {}                                 # n -> the host step's placeholder ids (prepare reads segments, never these)
         self._staged = []                                # pinned index tensors of recent shrinks, alive until their copies land
+        self._probs = None                               # the step's target distributions, kept: 15 MB the step stops reallocating
+
+    def _dists(self, rows: int, vocab: int):
+        """The block the sampler writes the step's distributions into."""
+        if self._probs is None or self._probs.shape[1] != vocab:
+            room = self.e.caches.pool.max_seqs * self.t
+            self._probs = torch.empty(room, vocab, dtype=torch.float32, device=self.e.caches.device)
+        return self._probs[:rows]
 
     # -- building the device view of a batch --------------------------------------------------------
     def _build(self, seqs, slots) -> None:
@@ -90,13 +97,13 @@ class AsyncDecode:
             limit=torch.tensor([e.limits[s][0] for s in seqs], dtype=torch.int64, device=dev),
             ends=torch.tensor([x + [-1] * (width - len(x)) for x in ends], dtype=torch.int64, device=dev),
             temps=torch.tensor(temps, dtype=torch.float32, device=dev),
+            top_k=torch.tensor([int(e.options.get(s, {}).get("top_k") or 0) for s in seqs], dtype=torch.int32, device=dev),
             top_p=torch.tensor(top_p, dtype=torch.float32, device=dev),
             alive=torch.ones(n, dtype=torch.bool, device=dev),
             anchor=torch.tensor([e.tokens[s][-1] for s in seqs], dtype=torch.int64, device=dev),
             ids=torch.zeros(n * t, dtype=torch.int64, device=dev),
             drafts=torch.zeros(n, K, dtype=torch.int64, device=dev),
             stochastic=any(x > 0 for x in temps),
-            nucleus=any(p < 1.0 for p in top_p),
         )
         b["slot"] = b["real_slot"].clone()
         b["dists"] = torch.zeros(n, K, e.F.vocab, dtype=torch.float32, device=dev) if b["stochastic"] else None
@@ -116,7 +123,8 @@ class AsyncDecode:
         else:
             idx = torch.tensor(keep, dtype=torch.int64, device=dev)
         b = self.buf
-        for name in ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "ends", "temps", "top_p", "alive", "anchor", "drafts"):
+        for name in ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "ends", "temps", "top_k", "top_p",
+                     "alive", "anchor", "drafts"):
             b[name] = b[name].index_select(0, idx)
         b["ids"] = b["ids"].view(-1, self.t).index_select(0, idx).reshape(-1)
         if b["dists"] is not None:
@@ -173,11 +181,12 @@ class AsyncDecode:
         ctx_before = b["ctx"].clone()
         h, aux, local = e.decode_graphs.run_device(shape, host_step, b["ids"], b["ctx"], b["seqs"], b["slot"])
         if b["stochastic"]:
-            full = e.net.comm.all_gather(local, dim=-1).float()
-            if e.decodable is not None and full.shape[-1] > e.decodable:
-                full[:, e.decodable:] = float("-inf")
-            probs = distribution_batch(full, b["temps"].repeat_interleave(t), b["top_p"].repeat_interleave(t), b["nucleus"]).view(n, t, -1)
-            accepted, picks, _ = speculative_pick_batch(probs, b["drafts"], b["dists"], e.gen)
+            # the model's dtype, not fp32: the sampler converts as it reads, and the undecodable tail
+            # is a width it stops at rather than a copy of the block with minus infinity in its end
+            full = e.net.comm.all_gather(local, dim=-1)
+            probs = distribution_batch(full, b["temps"].repeat_interleave(t), b["top_k"].repeat_interleave(t),
+                                       b["top_p"].repeat_interleave(t), e.decodable, self._dists(n * t, full.shape[-1]))
+            accepted, picks, _ = speculative_pick_batch(probs.view(n, t, -1), b["drafts"], b["dists"], e.gen)
         else:
             picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)
             accepted = None

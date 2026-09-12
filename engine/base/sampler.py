@@ -1,11 +1,29 @@
-"""Sampling over flat logits (base): greedy, temperature, top-p -- and a seed
-that makes a step replayable (D12).
+"""Sampling over flat logits (base): greedy, temperature, top-k, top-p -- and a
+seed that makes a step replayable (D12).
 
 Inputs are flat: logits [N, vocab] for the N sequences of a decode step, and
-per-row float arrays for temperature and top-p. No per-request objects
+per-row arrays for temperature, top-k and top-p. No per-request objects
 (CHARTER I2). The generator is explicit so a recorded step can be re-run
 with the same seed and produce the same tokens -- that is what makes the
 death dump a replay and not a log.
+
+**One sampler, one shape.** Every path -- the captured decode sampler, the
+device pipeline, and the rich rows with options -- hands its whole block of
+rows to `rows()` and gets ids (and, when the speculative path needs them, the
+truncated distributions) back from a single launch. There is no per-row loop
+and no per-position loop anywhere below this line, because at a 154,880-token
+vocabulary a decode step is 24 rows and doing them one at a time cost 11.8 ms.
+
+**A nucleus is a value threshold, not a prefix.** top-k keeps every token whose
+weight reaches the k-th largest; top-p keeps every token whose weight reaches
+the smallest one the cumulative mass needed. Ties are kept on both -- which is
+what top-k already did here, and what top-p only appeared to do differently
+because a sort had to break its ties somehow. torch does not specify that tie
+order (`modules/vocab.topk` says so); a threshold does not have to.
+
+`engine.kernels.sampler` searches for that threshold without a sort. The torch
+code below is the same definition written the obvious way, by sorting: it is
+what the CUDA kernel is judged against, not a fallback it drops to.
 """
 from __future__ import annotations
 
@@ -14,29 +32,81 @@ import torch
 from engine.base.constants import iota
 
 
+def rows(logits: torch.Tensor, temperature: torch.Tensor, top_k: torch.Tensor, top_p: torch.Tensor,
+         uniform: "torch.Tensor | None", valid: "int | None" = None,
+         probs: "torch.Tensor | None" = None) -> "torch.Tensor | None":
+    """[M] token ids for a whole block of rows, one launch, nothing read back.
+
+    `temperature` (0 = greedy), `top_k` (0 = off) and `top_p` (1 = off) are per row, so a mixed
+    batch is one call and no policy is decided by a host predicate. `uniform` is one draw a row,
+    made by the caller from the row's generator -- that is where seeds and rank agreement live; a
+    caller that wants only `probs` passes None and gets None. `probs`, when given, receives each
+    row's sampling distribution (the speculative path picks with those, not from them).
+    """
+    if logits.is_cuda:
+        from engine.kernels.sampler import sample_rows
+        return sample_rows(logits, temperature, top_k, top_p, uniform, valid, probs)
+    return _rows_by_sorting(logits, temperature, top_k, top_p, uniform, valid, probs)
+
+
+def threshold(weights: torch.Tensor, top_k: "int | None", top_p: "float | None") -> float:
+    """The smallest weight the truncations keep: every weight at or above it is in the nucleus.
+
+    `weights` is one row of exp((logit - max)/T), so its largest entry is 1 and the row's mass is
+    its sum. Written with a sort, which is the definition; the kernel searches for the same value.
+    """
+    thr = 0.0
+    if top_k is not None and 0 < top_k < weights.numel():
+        thr = float(weights.topk(top_k).values[-1])
+    if top_p is not None and top_p < 1:
+        srt = weights[weights >= thr].sort(descending=True).values
+        cum = srt.cumsum(0)
+        reached = cum >= float(srt.sum()) * top_p
+        # the first position whose cumulative mass reaches the target is the last one kept
+        thr = float(srt[int(reached.to(torch.uint8).argmax()) if bool(reached.any()) else srt.numel() - 1])
+    return thr
+
+
+def _rows_by_sorting(logits, temperature, top_k, top_p, uniform, valid, probs):
+    """`rows` written the obvious way: the reference the kernel is judged against."""
+    M, V = logits.shape
+    N = V if valid is None else min(V, valid)
+    out = torch.empty(M, dtype=torch.int64, device=logits.device)
+    if probs is not None:
+        probs.zero_()
+    for i in range(M):
+        raw = logits[i, :N].float()
+        if float(temperature[i]) <= 0:
+            out[i] = int(raw.argmax())
+            if probs is not None:
+                probs[i, int(out[i])] = 1.0
+            continue
+        w = (raw - raw.max()).div(float(temperature[i])).exp()
+        w = torch.where(raw > float("-inf"), w, torch.zeros((), device=w.device))
+        keep = w >= threshold(w, int(top_k[i]), float(top_p[i]))
+        w = torch.where(keep, w, torch.zeros((), device=w.device))
+        total = w.sum()
+        if uniform is not None:
+            out[i] = int(torch.searchsorted(w.cumsum(0).contiguous(), (float(uniform[i]) * total).reshape(1),
+                                            right=True).clamp_max(N - 1))
+        if probs is not None:
+            probs[i, :N] = w / total
+    return out if uniform is not None else None
+
+
 def sample(logits: torch.Tensor, temperature: torch.Tensor, top_p: torch.Tensor,
-           generator: "torch.Generator | None" = None, *, top_p_enabled=None) -> torch.Tensor:
+           generator: "torch.Generator | None" = None, *, top_k: "torch.Tensor | None" = None,
+           valid: "int | None" = None) -> torch.Tensor:
     """[N] token ids. temperature 0 means greedy for that row.
 
-    A graph caller may supply the known top-p policy without reading a
-    device predicate; ordinary callers retain the per-row tensor policy.
+    One uniform a row comes off `generator`, in row order, on every rank alike -- greedy rows draw
+    one too, so a row's stream does not shift when its neighbour's temperature does.
     """
-    greedy = temperature <= 0
-    scaled = logits.float() / temperature.clamp_min(1e-5).unsqueeze(-1)
-    probs = torch.softmax(scaled, dim=-1)
-    use_nucleus = bool((top_p < 1).any()) if top_p_enabled is None else top_p_enabled
-    if use_nucleus:
-        srt, idx = probs.sort(dim=-1, descending=True)
-        cum = srt.cumsum(dim=-1)
-        # keep the smallest prefix whose mass reaches top_p (always at least one)
-        keep = (cum - srt) < top_p.unsqueeze(-1)
-        srt = srt * keep
-        srt = srt / srt.sum(dim=-1, keepdim=True)
-        picked = torch.multinomial(srt, 1, generator=generator).squeeze(-1)
-        sampled = idx.gather(-1, picked.unsqueeze(-1)).squeeze(-1)
-    else:
-        sampled = torch.multinomial(probs, 1, generator=generator).squeeze(-1)
-    return torch.where(greedy, logits.argmax(dim=-1), sampled)
+    n = logits.shape[0]
+    if top_k is None:
+        top_k = torch.zeros(n, dtype=torch.int32, device=logits.device)
+    u = torch.rand(n, generator=generator, device=logits.device)
+    return rows(logits, temperature, top_k, top_p, u, valid)
 
 
 def _selfcheck() -> None:
@@ -57,12 +127,14 @@ def _selfcheck() -> None:
     nucleus = set(idx[0, :int(((srt.cumsum(-1) - srt) < 0.1).sum())].tolist())
     draws = {sample(row, tt, pp, torch.Generator(device=dev).manual_seed(s)).item() for s in range(64)}
     assert draws <= nucleus, (draws - nucleus)
-    # temperature 1, top-p 1 must match torch.multinomial on the softmax exactly for the same generator state
-    g3 = torch.Generator(device=dev).manual_seed(7); g4 = torch.Generator(device=dev).manual_seed(7)
-    ours = sample(logits[2:3], t[2:3], p[2:3], g3)
-    ref = torch.multinomial(torch.softmax(logits[2:3].float(), -1), 1, generator=g4).squeeze(-1)
-    assert torch.equal(ours, ref)
-    print("  sampler: replayable by seed, greedy at T=0, nucleus respected, == torch.multinomial OK")
+    # temperature 1, top-p 1 must reproduce the softmax itself: the draw's law, not one draw of it
+    row = logits[2:3].expand(20000, -1).contiguous()
+    g3 = torch.Generator(device=dev).manual_seed(7)
+    got = sample(row, t[2:3].expand(20000).contiguous(), p[2:3].expand(20000).contiguous(), g3)
+    seen = torch.bincount(got, minlength=1000).float() / 20000
+    want = torch.softmax(logits[2].float(), -1)
+    assert float((seen - want).abs().max()) < 0.01, float((seen - want).abs().max())
+    print("  sampler: replayable by seed, greedy at T=0, nucleus respected, draws the softmax OK")
 
 
 if __name__ == "__main__":
@@ -113,11 +185,18 @@ def validate_options(options: dict) -> None:
 
 
 def needs_rich_sampler(options: dict, temperature: float, drafts: bool) -> bool:
-    """Whether a row's logits must be processed here rather than by the captured greedy/top-p sampler:
-    any option beyond temperature/top_p, or a stochastic row with drafts (rejection sampling needs the probabilities)."""
-    if any(options.get(k) is not None for k in ("top_p", "top_k", "seed", "presence_penalty", "frequency_penalty",
+    """Whether a row's logits must be processed here rather than by the captured sampler.
+
+    top-k and top-p are NOT on this list: the captured sampler takes both as per-row tensors now,
+    so a plain `temperature + top_p` request -- the common one -- stays on the fast path and can
+    run ahead of the host. What is left needs something the captured sampler cannot be handed:
+    logits rewritten per row (penalties, bias, grammar), a draw from a generator that is not the
+    engine's (seed), the raw logits kept for logprobs, or the probabilities themselves (a
+    stochastic row with drafts, for the rejection sampling).
+    """
+    if any(options.get(k) is not None for k in ("seed", "presence_penalty", "frequency_penalty",
                                                  "repetition_penalty", "logit_bias", "logprobs", "grammar")):
-        return True                                  # (the captured sampler was recorded without a nucleus branch: top_p is rich)
+        return True
     return drafts and temperature > 0
 
 
@@ -178,7 +257,7 @@ class History:
 
 def process_logits(logits: torch.Tensor, options: dict, seen: torch.Tensor, counts: torch.Tensor,
                    extra=(), decodable: "int | None" = None, mask: "torch.Tensor | None" = None,
-                   forbid: "torch.Tensor | None" = None) -> torch.Tensor:
+                   forbid: "torch.Tensor | None" = None, into: "torch.Tensor | None" = None) -> torch.Tensor:
     """One row's raw logits [V] fp32 -> the logits the pick is made from: logit_bias, repetition/presence/frequency
     penalties over the row's tokens, the decodable cut and an optional grammar mask (True = allowed).
 
@@ -188,8 +267,11 @@ def process_logits(logits: torch.Tensor, options: dict, seen: torch.Tensor, coun
     `mask` and `forbid` are not the same thing. A grammar allows a set the size of the vocabulary and has to be
     given as one; min_tokens forbids a handful of end tokens, and writing those few is cheaper than building a
     vocabulary of True to say so.
+
+    `into` is a row of the step's block: with it the whole step's processed logits land in one
+    allocation that the sampler reads as a batch, instead of a vocabulary-sized tensor per position.
     """
-    out = logits.to(torch.float32, copy=True)     # one write, whatever the caller handed in
+    out = logits.to(torch.float32, copy=True) if into is None else into.copy_(logits)
     bias = options.get("logit_bias")
     if bias:
         ids = torch.tensor(list(bias.keys()), device=out.device, dtype=torch.int64)
@@ -201,7 +283,7 @@ def process_logits(logits: torch.Tensor, options: dict, seen: torch.Tensor, coun
         if drafted is not None:
             hit = seen.clone()
             hit[drafted] = True
-        out = torch.where(hit, torch.where(out > 0, out / rp, out * rp), out)
+        torch.where(hit, torch.where(out > 0, out / rp, out * rp), out, out=out)
     pres, freq = options.get("presence_penalty"), options.get("frequency_penalty")
     if pres or freq:
         counted = counts
@@ -213,44 +295,53 @@ def process_logits(logits: torch.Tensor, options: dict, seen: torch.Tensor, coun
     if forbid is not None:
         out[forbid] = float("-inf")
     if mask is not None:
-        out = out.masked_fill(~mask, float("-inf"))
+        out.masked_fill_(~mask, float("-inf"))
     return out
 
 
 def distribution(logits: torch.Tensor, temperature: float, top_k: "int | None", top_p: "float | None") -> torch.Tensor:
-    """The row's sampling distribution [V] at `temperature` under top-k / top-p (temperature 0 = one-hot argmax)."""
-    if temperature <= 0:
-        p = torch.zeros_like(logits)
-        p[logits.argmax()] = 1.0
-        return p
-    scaled = logits / temperature
-    if top_k is not None and 0 < top_k < scaled.shape[-1]:
-        kth = scaled.topk(top_k).values[-1]
-        scaled = scaled.masked_fill(scaled < kth, float("-inf"))
-    probs = torch.softmax(scaled, dim=-1)
-    if top_p is not None and top_p < 1:
-        srt, idx = probs.sort(descending=True)
-        cum = srt.cumsum(-1)
-        keep = (cum - srt) < top_p
-        srt = srt * keep
-        probs = torch.zeros_like(probs).scatter_(0, idx, srt / srt.sum())
-    return probs
+    """The row's sampling distribution [V] at `temperature` under top-k / top-p (temperature 0 = one-hot argmax).
+
+    One row through `rows`, so there is one definition of what top-k and top-p mean and this is
+    not a second one. Callers with a whole step's worth of rows should not come here row by row.
+    """
+    dev = logits.device
+    out = torch.empty(1, logits.shape[-1], dtype=torch.float32, device=dev)
+    rows(logits.reshape(1, -1),
+         torch.tensor([temperature], dtype=torch.float32, device=dev),
+         torch.tensor([top_k or 0], dtype=torch.int32, device=dev),
+         torch.tensor([1.0 if top_p is None else top_p], dtype=torch.float32, device=dev),
+         torch.zeros(1, dtype=torch.float32, device=dev), None, out)
+    return out[0]
+
+
+def _inverse_cdf(probs: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
+    """[n] picks from [n, V] weights and [n] uniforms: the cumulative walk, no multinomial.
+
+    `torch.multinomial` is a whole kernel to do this and arrives with two host-side sanity checks
+    bolted on; vLLM avoids it with V exponentials a row (Gumbel-max). The walk needs one uniform.
+    """
+    flat = probs.reshape(-1, probs.shape[-1])
+    aim = (u.reshape(-1) * flat.sum(-1)).unsqueeze(1)
+    return torch.searchsorted(flat.cumsum(-1).contiguous(), aim.contiguous(), right=True) \
+        .squeeze(1).clamp_max(flat.shape[-1] - 1)
 
 
 def draw(probs: torch.Tensor, generator: "torch.Generator | None") -> int:
-    return int(torch.multinomial(probs, 1, generator=generator).item())
+    u = torch.rand(1, generator=generator, device=probs.device)
+    return int(_inverse_cdf(probs.reshape(1, -1), u)[0])
 
 
 def pick_each(dists, temperature: float, generator: "torch.Generator | None") -> "list[int]":
     """One pick per row of `dists`: the argmax at temperature zero, a draw otherwise.
 
-    `draw` returns an int, so asking it row by row costs a device-to-host synchronization each
-    time -- one per draft position per sequence in a decode step. The picks are made in the same
-    order here, so a seeded request sees the same stream; only the crossing is deferred to one.
+    The uniforms are drawn together and the walk runs over the whole block, so the crossing to the
+    host is one for the step rather than one per draft position per sequence.
     """
     if temperature <= 0:
         return torch.stack([d.argmax() for d in dists]).tolist()
-    return torch.cat([torch.multinomial(d, 1, generator=generator) for d in dists]).tolist()
+    block = torch.stack(dists)
+    return _inverse_cdf(block, torch.rand(len(dists), generator=generator, device=block.device)).tolist()
 
 
 def speculative_pick(target_probs, draft_ids, draft_probs, generator) -> "tuple[int, list[int]]":
@@ -262,16 +353,16 @@ def speculative_pick(target_probs, draft_ids, draft_probs, generator) -> "tuple[
     (zero outside its candidates). u ~ U(0,1) per position from `generator`, identical on every rank."""
     k = len(draft_ids)
     accepted = 0
-    # The two probabilities every position compares are gathered in one crossing rather than two
-    # per position; the uniform stays drawn where it is, so the generator advances exactly as far
-    # as the acceptances take it.
+    # Everything the K comparisons need crosses to the host once: the two probabilities and the K
+    # uniforms, in one list. Drawing them all up front is what `speculative_pick_batch` does, so
+    # the scalar path and the batch path advance the generator the same way for the same row.
     chosen = torch.tensor(list(draft_ids), device=target_probs.device, dtype=torch.int64)
     at = iota(k, target_probs.device)
-    ps = target_probs[at, chosen].tolist()
-    qs = draft_probs[at, chosen].tolist()
+    gathered = torch.cat([target_probs[at, chosen], draft_probs[at, chosen],
+                          torch.rand(k, generator=generator, device=target_probs.device)]).tolist()
+    ps, qs, us = gathered[:k], gathered[k:2 * k], gathered[2 * k:]
     for i, d in enumerate(draft_ids):
-        p, q = ps[i], qs[i]
-        u = float(torch.rand((), generator=generator, device=target_probs.device))
+        p, q, u = ps[i], qs[i], us[i]
         if q > 0 and u < min(1.0, p / q):
             accepted += 1
             continue
@@ -288,7 +379,7 @@ def speculative_pick_batch(target_probs: torch.Tensor, drafts: torch.Tensor, dra
     """`speculative_pick` for a whole decode batch on the device, with no host round trip (45차 §23 B3): rows run
     ahead of the host, so their picks must be tensors. target_probs [n, K+1, V]; drafts [n, K]; draft_probs [n, K, V].
     Returns (accepted [n], tokens [n, K+1] with the committed ones first, count [n] = accepted + 1). Draws K uniforms
-    per row then one multinomial per row from `generator`, in that order, identically on every rank."""
+    per row then one more per row from `generator`, in that order, identically on every rank."""
     n, k1, V = target_probs.shape
     K = k1 - 1
     device = target_probs.device
@@ -304,7 +395,7 @@ def speculative_pick_batch(target_probs: torch.Tensor, drafts: torch.Tensor, dra
     recovered = (row_p - row_q).clamp_min(0)
     total = recovered.sum(1, keepdim=True)
     recovered = torch.where(total > 0, recovered / total.clamp_min(1e-30), row_p / row_p.sum(1, keepdim=True).clamp_min(1e-30))
-    fresh = torch.multinomial(recovered, 1, generator=generator).squeeze(1)
+    fresh = _inverse_cdf(recovered, torch.rand(n, generator=generator, device=device))
     tokens = torch.cat([drafts, torch.zeros(n, 1, dtype=drafts.dtype, device=device)], 1)
     tokens.scatter_(1, at.unsqueeze(1), fresh.unsqueeze(1))
     return accepted, tokens, accepted + 1

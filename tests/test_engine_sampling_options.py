@@ -28,8 +28,12 @@ class OptionTests(unittest.TestCase):
 
     def test_rich_rows_are_exactly_the_ones_the_captured_sampler_cannot_serve(self):
         self.assertFalse(needs_rich_sampler({}, 0.0, drafts=True))
-        self.assertTrue(needs_rich_sampler({"top_p": 0.9}, 0.0, drafts=True))    # the captured sampler has no nucleus branch
-        self.assertTrue(needs_rich_sampler({"top_k": 5}, 0.0, drafts=False))
+        # the captured sampler takes top-k and top-p as per-row arrays: a nucleus is not rich
+        self.assertFalse(needs_rich_sampler({"top_p": 0.9}, 0.0, drafts=True))
+        self.assertFalse(needs_rich_sampler({"top_k": 5}, 0.0, drafts=False))
+        self.assertTrue(needs_rich_sampler({"top_p": 0.9, "seed": 3}, 0.0, drafts=False))   # its own generator
+        self.assertTrue(needs_rich_sampler({"repetition_penalty": 1.1}, 0.0, drafts=False))
+        self.assertTrue(needs_rich_sampler({"logprobs": 3}, 0.0, drafts=False))
         self.assertTrue(needs_rich_sampler({}, 0.8, drafts=True))          # rejection sampling needs the probabilities
         self.assertFalse(needs_rich_sampler({}, 0.8, drafts=False))
 

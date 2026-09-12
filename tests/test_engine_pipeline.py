@@ -15,14 +15,23 @@ class DistributionBatchTests(unittest.TestCase):
     def test_greedy_rows_are_one_hot_and_nucleus_rows_keep_the_smallest_prefix(self):
         logits = torch.tensor([[1.0, 3.0, 2.0, 0.0], [1.0, 3.0, 2.0, 0.0], [1.0, 3.0, 2.0, 0.0]])
         temps = torch.tensor([0.0, 1.0, 1.0])
+        top_k = torch.zeros(3, dtype=torch.int32)
         top_p = torch.tensor([1.0, 1.0, 0.5])
-        probs = distribution_batch(logits, temps, top_p, nucleus=True)
+        # no `nucleus` argument: each row carries its own truncation, so there is no host predicate
+        probs = distribution_batch(logits, temps, top_k, top_p)
         self.assertEqual(probs[0].tolist(), [0.0, 1.0, 0.0, 0.0])
         torch.testing.assert_close(probs[1], torch.softmax(logits[1], -1))
         self.assertEqual(probs[2].tolist(), [0.0, 1.0, 0.0, 0.0])                     # the top token alone reaches 0.5
         torch.testing.assert_close(probs.sum(1), torch.ones(3))
-        plain = distribution_batch(logits, temps, torch.ones(3), nucleus=False)
+        plain = distribution_batch(logits, temps, top_k, torch.ones(3))
         torch.testing.assert_close(plain[2], torch.softmax(logits[2], -1))
+
+    def test_a_row_that_asks_for_top_k_gets_it_without_leaving_this_path(self):
+        logits = torch.tensor([[3.0, 2.0, 1.0, 0.0], [3.0, 2.0, 1.0, 0.0]])
+        probs = distribution_batch(logits, torch.ones(2), torch.tensor([0, 2], dtype=torch.int32), torch.ones(2))
+        torch.testing.assert_close(probs[0], torch.softmax(logits[0], -1))
+        self.assertEqual(probs[1][2:].tolist(), [0.0, 0.0])
+        torch.testing.assert_close(probs[1][:2], torch.softmax(logits[1][:2], -1))
 
 
 class ResolveTests(unittest.TestCase):

@@ -295,15 +295,30 @@ class Drafter:
         pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()
         succ = p["candidate_selector.successor_codebook"][cand].float()
         scores = unary[:, None, :] + torch.einsum("kpr,kcr->kpc", pred * proj[:, None, :], succ)
-        drafts, dists = [], torch.zeros(K, vocab, device=dev, dtype=torch.float32)
-        prev = 0
+        drafts, dists = self._walk(scores, cand, temperature, generator, vocab, K, dev)
+        return drafts.tolist(), dists                                   # one crossing for the walk, not two a step
+
+    def _walk(self, scores, cand, temperature: float, generator, vocab: int, K: int, dev):
+        """The K-step candidate walk drawn at `temperature`: (draft ids [K], distributions [K, vocab] fp32).
+
+        Each step picks from the sixteen candidates the last one opened, so the walk itself cannot be
+        batched -- but its uniforms can be drawn in one call, and over sixteen candidates the
+        cumulative walk is the whole of a draw. `multinomial` per step was five kernels and, when the
+        caller wanted host ints, ten crossings a row a step.
+        """
+        u = torch.rand(K, generator=generator, device=dev)
+        dists = torch.zeros(K, vocab, device=dev, dtype=torch.float32)
+        drafts = []
+        prev = torch.zeros(1, dtype=torch.int64, device=dev)
         for s in range(K):
-            probs = torch.softmax(scores[s][prev].float() / max(temperature, 1e-5), dim=-1)          # over the 16 candidates
-            pick = int(torch.multinomial(probs, 1, generator=generator).item())
-            dists[s].index_add_(0, cand[s], probs)                                                 # duplicates (if any) add up
-            drafts.append(int(cand[s][pick].item()))
+            probs = torch.softmax(scores[s].index_select(0, prev)[0].float() / max(temperature, 1e-5), dim=-1)
+            walk = probs.cumsum(0)
+            pick = torch.searchsorted(walk.contiguous(), (u[s] * walk[-1]).reshape(1), right=True) \
+                .clamp_max(probs.numel() - 1)
+            dists[s].index_add_(0, cand[s], probs)                      # duplicates (if any) add up
+            drafts.append(cand[s].index_select(0, pick))
             prev = pick
-        return drafts, dists
+        return torch.cat(drafts), dists
 
 
     def propose_sampled_tensor(self, anchor: torch.Tensor, position, ring: torch.Tensor, temperature: float, generator,
@@ -323,15 +338,7 @@ class Drafter:
         pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()
         succ = p["candidate_selector.successor_codebook"][cand].float()
         scores = unary[:, None, :] + torch.einsum("kpr,kcr->kpc", pred * proj[:, None, :], succ)
-        drafts, dists = [], torch.zeros(K, vocab, device=dev, dtype=torch.float32)
-        prev = torch.zeros(1, dtype=torch.int64, device=dev)
-        for s in range(K):
-            probs = torch.softmax(scores[s].index_select(0, prev)[0].float() / max(temperature, 1e-5), dim=-1)   # over the 16 candidates
-            pick = torch.multinomial(probs, 1, generator=generator)
-            dists[s].index_add_(0, cand[s], probs)
-            drafts.append(cand[s].index_select(0, pick))
-            prev = pick
-        return torch.cat(drafts), dists
+        return self._walk(scores, cand, temperature, generator, vocab, K, dev)
 
 
 def ring_bytes(F: DrafterFacts) -> int:
