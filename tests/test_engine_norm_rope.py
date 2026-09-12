@@ -93,6 +93,21 @@ class KernelTests(unittest.TestCase):
             total += gap.numel()
         self.assertLess(moved / total, 1e-3)
 
+    def test_the_heads_are_read_where_the_projection_left_them(self):
+        """The block hands over one third of a fused qkv, reshaped: rows wider than the heads read here, so
+        `stride(0) != heads * D`. Reading it in place is the whole point -- a copy first would put back the
+        launch the fusion took out -- and it has to be the same answer as the copy."""
+        gen = torch.Generator(device="cuda").manual_seed(21)
+        fused = torch.randn(6, (8 + 2 + 2) * 128, device="cuda", generator=gen).bfloat16()
+        w = torch.randn(128, device="cuda", generator=gen).abs().add(0.5).bfloat16()
+        pos = torch.randint(0, 900_000, (6,), device="cuda", generator=gen)
+        q, k, v = fused.split((8 * 128, 2 * 128, 2 * 128), -1)
+        for part, heads in ((q, 8), (k, 2), (v, 2)):
+            view = part.reshape(6, heads, 128)
+            self.assertNotEqual(view.stride(0), heads * 128)
+            self.assertTrue(torch.equal(K.norm_rope(view, w, 1e-5, pos, 1e4),
+                                        K.norm_rope(view.contiguous(), w, 1e-5, pos, 1e4)))
+
     def test_a_missing_table_during_capture_is_an_error_not_an_allocation(self):
         K._TABLES.pop(("cuda:0", 64, 12345.0), None)
         graph, stream = torch.cuda.CUDAGraph(), torch.cuda.Stream()

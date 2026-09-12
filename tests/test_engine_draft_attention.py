@@ -1,4 +1,9 @@
-"""Direct-ring DFlash attention: startup, wrap, GQA and dynamic graph inputs."""
+"""Direct-ring DFlash attention: startup, wrap, GQA, dynamic graph inputs, and the split it is computed in.
+
+The attention reads each KV head once for all of its queries and cuts the window into slices to fill the
+machine (45차 §84). Two things have to hold for that to be the same attention: the slices' partial softmaxes
+must combine into the whole one, and the answer must not depend on how many slices the window was cut into.
+"""
 import importlib.util
 import unittest
 
@@ -103,8 +108,60 @@ class DraftAttentionTests(unittest.TestCase):
                 graph.reset()
 
 
-if __name__ == "__main__":
-    unittest.main()
+    def oracle(self, q, k, v, ring, ctx, layer, slot):
+        """fp32 softmax attention over exactly the cells the kernel calls live."""
+        b, h, dim = q.shape
+        hk = k.shape[1]
+        cells = ring.shape[3]
+        band = ring[slot, layer]
+        out = torch.zeros(b, h, dim, device=q.device, dtype=torch.float32)
+        n = torch.arange(cells + b, device=q.device)
+        absolute = ctx - cells + n
+        live = (n >= cells) | (absolute >= 0)
+        for head in range(h):
+            kh = head // (h // hk)
+            keys = torch.where((n < cells)[:, None],
+                               band[0, (absolute + cells) % cells, kh].float(),
+                               torch.cat([torch.zeros(cells, dim, device=q.device), k[:, kh].float()]))
+            values = torch.where((n < cells)[:, None],
+                                 band[1, (absolute + cells) % cells, kh].float(),
+                                 torch.cat([torch.zeros(cells, dim, device=q.device), v[:, kh].float()]))
+            scores = (keys[live] @ q[:, head].float().T) * dim ** -0.5           # [live, b]
+            out[:, head] = (torch.softmax(scores, 0).T @ values[live])
+        return out
+
+    def test_the_slices_combine_into_the_attention_they_were_cut_from(self):
+        from engine.kernels.draft_attention import draft_attention
+        gen = torch.Generator(device="cuda").manual_seed(84)
+        kind = dict(device="cuda", generator=gen, dtype=torch.float32)
+        for b, h, hk, cells, ctx in ((6, 8, 2, 2056, 900), (6, 8, 2, 2056, 4), (1, 8, 2, 2056, 70_000),
+                                     (6, 32, 8, 520, 300), (32, 4, 1, 72, 40)):
+            with self.subTest(b=b, h=h, hk=hk, cells=cells, ctx=ctx):
+                q = torch.randn(b, h, 128, **kind).bfloat16()
+                k = torch.randn(b, hk, 128, **kind).bfloat16()
+                v = torch.randn(b, hk, 128, **kind).bfloat16()
+                ring = torch.randn(3, 2, 2, cells, hk, 128, **kind).bfloat16()
+                position = torch.tensor(ctx, device="cuda", dtype=torch.int64)
+                got = draft_attention(q, k, v, ring, position, slot=torch.tensor([1], device="cuda"), layer=1)
+                want = self.oracle(q, k, v, ring, ctx, 1, 1)
+                gap = (want - got.float()).norm(dim=-1) / want.norm(dim=-1).clamp_min(1e-6)
+                self.assertLess(gap.max().item(), 2 ** -8)   # the answer is stored bf16: a step is the floor
+
+    def test_a_whole_kv_head_of_queries_does_not_outgrow_a_cta(self):
+        """One KV head can serve every query head: b * (h // hk) is 24 at TP=4 but 128 here, and an
+        accumulator that wide will not fit. The tile is bounded and carried on the grid instead."""
+        from engine.kernels.draft_attention import draft_attention
+        gen = torch.Generator(device="cuda").manual_seed(85)
+        kind = dict(device="cuda", generator=gen, dtype=torch.float32)
+        q = torch.randn(32, 32, 128, **kind).bfloat16()
+        k = torch.randn(32, 1, 128, **kind).bfloat16()
+        v = torch.randn(32, 1, 128, **kind).bfloat16()
+        ring = torch.randn(2, 1, 2, 136, 1, 128, **kind).bfloat16()
+        got = draft_attention(q, k, v, ring, torch.tensor(90, device="cuda", dtype=torch.int64),
+                              slot=torch.tensor([0], device="cuda"), layer=0)
+        want = self.oracle(q, k, v, ring, 90, 0, 0)
+        gap = (want - got.float()).norm(dim=-1) / want.norm(dim=-1).clamp_min(1e-6)
+        self.assertLess(gap.max().item(), 2 ** -8)
 
 
 class BatchedRingWriteTests(unittest.TestCase):
@@ -153,3 +210,7 @@ class BatchedRingWriteTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 write_draft_kv_rows(args["field"], args["slots"], args["layer"], args["positions"],
                                     args["k"], args["v"], valid=args["valid"])
+
+
+if __name__ == "__main__":
+    unittest.main()

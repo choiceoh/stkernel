@@ -54,9 +54,9 @@ def _norm(X, W, OUT, sX, sO, EPS, D: tl.constexpr, BD: tl.constexpr):
 
 
 @triton.jit
-def _norm_rope(X, W, POS, INV, OUT, sX, sO, EPS, D: tl.constexpr, H: tl.constexpr, BH: tl.constexpr):
+def _norm_rope(X, W, POS, INV, OUT, sXr, sXh, sO, EPS, D: tl.constexpr, H: tl.constexpr, BH: tl.constexpr):
     r, h = tl.program_id(0), tl.program_id(1)
-    base, out = X + r * sX + h * D, OUT + r * sO + h * D
+    base, out = X + r * sXr + h * sXh, OUT + r * sO + h * D
     head = tl.load(base + tl.arange(0, D)).to(tl.float32)
     scale = tl.rsqrt(tl.sum(head * head) / D + EPS)
 
@@ -99,12 +99,14 @@ def norm_rope(x: torch.Tensor, w: torch.Tensor, eps: float, positions: torch.Ten
     if not x.is_cuda:
         return _norm_rope_by_torch(x, w, eps, positions, theta)
     rows, heads, D = x.shape
-    src = x.contiguous()
-    out = torch.empty_like(src)
+    # The heads arrive as a slice of a fused projection (`qkv.split(...)` reshaped), whose rows are wider than
+    # the heads read here. The kernel takes both strides, so the step does not copy them into place first.
+    src = x if x.stride(2) == 1 else x.contiguous()
+    out = torch.empty(rows, heads, D, device=x.device, dtype=x.dtype)
     inv = warm(x.device, D, theta)
     pos = positions.contiguous()
     if rows and heads:
-        _norm_rope[(rows, heads)](src, w, pos, inv, out, src.stride(0), out.stride(0), eps,
+        _norm_rope[(rows, heads)](src, w, pos, inv, out, src.stride(0), src.stride(1), out.stride(0), eps,
                                   D=D, H=D // 2, BH=triton.next_power_of_2(D // 2), num_warps=4)
     return out
 

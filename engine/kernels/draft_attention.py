@@ -1,7 +1,15 @@
 """DFlash block attention directly over its circular, grouped-query KV cache.
 
-One query/head per CTA keeps 6 x 32 independent CTAs on GB10. The kernel
-never expands KV heads, gathers the whole ring, or materializes scores.
+One query/head per CTA was the first form: it never expands KV heads, never gathers the ring and never
+materialises scores, and at TP=1 its 6 x 32 CTAs filled GB10. At TP=4 the rank keeps eight query heads over two
+KV heads, so the grid is 6 x 8 = 48 CTAs -- and twenty-four of them scan the SAME ring. A layer read 50.5 MiB
+of a 2.1 MiB cache and took 145 us for it (45차 §84).
+
+`_attend` reads each KV head once instead: one CTA per (KV head, slice of the window), holding every query of
+that head -- rows and the group together -- as one tile. The window is cut so that KV heads x slices fills the
+machine, and `_combine` folds the slices' partial softmaxes into the answer. The block's own keys, which are
+not in the ring yet, ride in the last slice exactly as they rode in the tail of the old loop.
+
 Position is a device scalar so the same graph handles ring wrap and startup.
 """
 import torch
@@ -10,49 +18,78 @@ import triton.language as tl
 
 
 @triton.jit
-def _attention(Q, K, V, R, P, O, Slot, SLOT_STRIDE: tl.constexpr, LAYER_OFFSET: tl.constexpr,
-               B: tl.constexpr, H: tl.constexpr,
-               HK: tl.constexpr, RHK: tl.constexpr, D: tl.constexpr, W: tl.constexpr,
-               RS: tl.constexpr, SCALE: tl.constexpr, BN: tl.constexpr):
-    query = tl.program_id(0)
+def _attend(Q, K, V, R, P, Slot, ACC, MAX, DEN, SLOT_STRIDE: tl.constexpr, LAYER_OFFSET: tl.constexpr,
+            B: tl.constexpr, H: tl.constexpr, HK: tl.constexpr, RHK: tl.constexpr, D: tl.constexpr,
+            W: tl.constexpr, RS: tl.constexpr, SCALE: tl.constexpr, BN: tl.constexpr,
+            SPAN: tl.constexpr, TILES: tl.constexpr, BQ: tl.constexpr):
+    """One KV head's slice of the window, every query of that head at once.
+
+    The mask is the same for every query -- the block attends over its own keys without a causal step -- so a
+    slice's keys are read once and hit a whole tile of dot products. The tile is bounded: B * (H // HK) is 24
+    at TP=4 but 1024 where one KV head serves them all, and an accumulator that wide does not fit in a CTA."""
+    kh = tl.program_id(0) // TILES
+    tile = tl.program_id(0) % TILES
+    part = tl.program_id(1)
     if SLOT_STRIDE:
-        R += tl.load(Slot).to(tl.int64)*SLOT_STRIDE + LAYER_OFFSET
-    head = tl.program_id(1)
-    kh = head // (H // HK)
+        R += tl.load(Slot).to(tl.int64) * SLOT_STRIDE + LAYER_OFFSET
+    group = H // HK
+    qi = tile * BQ + tl.arange(0, BQ)
     d = tl.arange(0, D)
-    q = tl.load(Q + (query * H + head) * D + d).to(tl.float32)
+    live = qi < B * group
+    q = tl.load(Q + ((qi // group) * H + kh * group + qi % group)[:, None] * D + d[None, :],
+                live[:, None], other=0.0)                                        # [BQ, D]
     position = tl.load(P)
-    maximum = tl.full((), -float("inf"), tl.float32)
-    denominator = tl.full((), 0., tl.float32)
-    accumulator = tl.full((D,), 0., tl.float32)
-    for start in range(tl.cdiv(W + B, BN)):
-        n = start * BN + tl.arange(0, BN)
+    maximum = tl.full((BQ,), -float("inf"), tl.float32)
+    denominator = tl.zeros((BQ,), tl.float32)
+    accumulator = tl.zeros((BQ, D), tl.float32)
+    for start in range(SPAN // BN):
+        n = part * SPAN + start * BN + tl.arange(0, BN)
         context = n < W
         absolute = position - W + n
         valid = (n < W + B) & (~context | (absolute >= 0))
         slot = (absolute + W) % W
-        kr = tl.load(R + (slot[:, None] * RHK + kh) * D + d[None, :],
-                     context[:, None] & valid[:, None], other=0)
-        kb = tl.load(K + ((n[:, None] - W) * HK + kh) * D + d[None, :],
-                     ~context[:, None] & valid[:, None], other=0)
-        key = tl.where(context[:, None], kr, kb).to(tl.float32)
-        score = tl.sum(key * q[None, :], 1) * SCALE
-        score = tl.where(valid, score, -float("inf"))
-        block_max = tl.max(score, 0)
-        new_max = tl.maximum(maximum, block_max)
-        # Empty initial blocks must not turn -inf - -inf into NaN.
-        safe_max = tl.where(new_max == -float("inf"), 0., new_max)
+        kr = tl.load(R + (slot[:, None] * RHK + kh) * D + d[None, :], context[:, None] & valid[:, None], other=0)
+        kb = tl.load(K + ((n[:, None] - W) * HK + kh) * D + d[None, :], ~context[:, None] & valid[:, None], other=0)
+        key = tl.where(context[:, None], kr, kb)
+        score = tl.dot(q, tl.trans(key), out_dtype=tl.float32) * SCALE           # [BQ, BN]
+        score = tl.where(valid[None, :], score, -float("inf"))
+        new_max = tl.maximum(maximum, tl.max(score, 1))
+        # A slice that is entirely past the end must not turn -inf - -inf into NaN.
+        safe_max = tl.where(new_max == -float("inf"), 0.0, new_max)
         correction = tl.exp(maximum - safe_max)
-        probability = tl.exp(score - safe_max)
-        vr = tl.load(R + RS + (slot[:, None] * RHK + kh) * D + d[None, :],
-                     context[:, None] & valid[:, None], other=0)
-        vb = tl.load(V + ((n[:, None] - W) * HK + kh) * D + d[None, :],
-                     ~context[:, None] & valid[:, None], other=0)
+        probability = tl.exp(score - safe_max[:, None])
+        vr = tl.load(R + RS + (slot[:, None] * RHK + kh) * D + d[None, :], context[:, None] & valid[:, None], other=0)
+        vb = tl.load(V + ((n[:, None] - W) * HK + kh) * D + d[None, :], ~context[:, None] & valid[:, None], other=0)
         value = tl.where(context[:, None], vr, vb).to(tl.float32)
-        accumulator = accumulator * correction + tl.sum(probability[:, None] * value, 0)
-        denominator = denominator * correction + tl.sum(probability, 0)
+        # the weights stay in fp32 through the value product, as they did when this was a per-query sum: the
+        # drafter's acceptance is read off these, and bf16 weights cost a percent of the output vector
+        accumulator = accumulator * correction[:, None] + tl.dot(probability, value, input_precision="ieee")
+        denominator = denominator * correction + tl.sum(probability, 1)
         maximum = new_max
-    tl.store(O + (query * H + head) * D + d, accumulator / denominator)
+    at = ((tl.program_id(0) * tl.num_programs(1)) + part) * BQ + tl.arange(0, BQ)
+    tl.store(ACC + at[:, None] * D + d[None, :], accumulator, live[:, None])
+    tl.store(MAX + at, maximum, live)
+    tl.store(DEN + at, denominator, live)
+
+
+@triton.jit
+def _combine(ACC, MAX, DEN, O, H: tl.constexpr, HK: tl.constexpr, D: tl.constexpr,
+             PARTS: tl.constexpr, BP: tl.constexpr, TILES: tl.constexpr, BQ: tl.constexpr):
+    """The slices' partial softmaxes into one answer, one program per (row, head)."""
+    row, head = tl.program_id(0), tl.program_id(1)
+    group = H // HK
+    kh = head // group
+    which = row * group + head % group
+    part = tl.arange(0, BP)
+    live = part < PARTS
+    at = (((kh * TILES + which // BQ) * PARTS) + part) * BQ + which % BQ
+    maxima = tl.load(MAX + at, live, other=-float("inf"))
+    whole = tl.max(maxima, 0)
+    whole = tl.where(whole == -float("inf"), 0.0, whole)
+    weight = tl.where(live, tl.exp(maxima - whole), 0.0)
+    d = tl.arange(0, D)
+    total = tl.sum(tl.load(ACC + at[:, None] * D + d[None, :], live[:, None], other=0.0) * weight[:, None], 0)
+    tl.store(O + (row * H + head) * D + d, total / tl.sum(tl.load(DEN + at, live, other=0.0) * weight, 0))
 
 
 def draft_attention(q, k, v, ring, position, *, slot=None, layer=0):
@@ -83,10 +120,24 @@ def draft_attention(q, k, v, ring, position, *, slot=None, layer=0):
         raise ValueError("DFlash position must be a CUDA int64 scalar")
     out = torch.empty_like(q)
     b, h, d = q.shape
-    _attention[(b, h)](q, k, v, ring, position, out, slot if slot is not None else position,
-                       stride, offset, b, h, k.shape[1], geometry[2], d,
-                       geometry[1], geometry[1]*geometry[2]*geometry[3], d**-.5, 32,
-                       num_warps=4, enable_fp_fusion=False)
+    hk, cells = k.shape[1], geometry[1]
+    BN, SMS = 32, 48
+    # Cut the window so that (KV heads x slices) fills the machine: below that the slices are wider, above it
+    # they are one block each and the combine grows for nothing.
+    parts = max(1, min(triton.cdiv(cells + b, BN), SMS // hk))
+    span = triton.cdiv(triton.cdiv(cells + b, BN), parts) * BN
+    parts = triton.cdiv(cells + b, span)
+    BQ = 32                                     # a CTA's query tile: wider spills the fp32 accumulator
+    tiles = triton.cdiv(b * (h // hk), BQ)
+    cells_of = hk * tiles * parts * BQ
+    acc = torch.empty(cells_of, d, device=q.device, dtype=torch.float32)
+    scale = torch.empty(2, cells_of, device=q.device, dtype=torch.float32)
+    _attend[(hk * tiles, parts)](q, k, v, ring, position, slot if slot is not None else position,
+                                 acc, scale[0], scale[1], stride, offset, b, h, hk, geometry[2], d,
+                                 cells, cells*geometry[2]*geometry[3], d**-.5, BN, span, tiles, BQ,
+                                 num_warps=4, enable_fp_fusion=False)
+    _combine[(b, h)](acc, scale[0], scale[1], out, h, hk, d,
+                     parts, triton.next_power_of_2(parts), tiles, BQ, num_warps=4, enable_fp_fusion=False)
     return out
 
 

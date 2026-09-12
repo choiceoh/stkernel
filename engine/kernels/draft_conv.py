@@ -31,7 +31,7 @@ import triton.language as tl
 
 
 @triton.jit
-def _taps(X, DELTA, BASE, OUT, sX, sD, sO, width, BLOCK: tl.constexpr,
+def _taps(X, DELTA, BASE, OUT, sX, sDr, sDt, sDg, sO, width, BLOCK: tl.constexpr,
           GROUP: tl.constexpr, T: tl.constexpr, BC: tl.constexpr):
     r = tl.program_id(0)
     within = r % BLOCK
@@ -42,7 +42,7 @@ def _taps(X, DELTA, BASE, OUT, sX, sD, sO, width, BLOCK: tl.constexpr,
         # the coefficient is rounded to the weights' dtype exactly as the torch form's add is, so the terms
         # of the sum are identical to it; the round trip is what forces that rounding in a fp32 register
         coeff = (tl.load(BASE + tap * width + c, mask=live, other=0.0).to(tl.float32) +
-                 tl.load(DELTA + r * sD + tap * (width // GROUP) + c // GROUP, mask=live, other=0.0).to(tl.float32)
+                 tl.load(DELTA + r * sDr + tap * sDt + (c // GROUP) * sDg, mask=live, other=0.0).to(tl.float32)
                  ).to(BASE.dtype.element_ty).to(tl.float32)
         # a row nearer the block's start than the tap reads nothing: this is the boundary the torch form pads for
         x = tl.load(X + (r - tap) * sX + c, mask=live & (within >= tap), other=0.0).to(tl.float32)
@@ -67,16 +67,17 @@ def tap_mix(x: torch.Tensor, delta: torch.Tensor, base: torch.Tensor, group: int
         raise ValueError("the rows must divide into whole blocks the taps stay inside of")
     if not x.is_cuda:
         return _by_torch(x, delta, base, group, block)
-    # the caller hands a slice of its projection's output (`coeff[:, 0]`), so bind the strides of what is
-    # actually launched, never of what was passed
-    src, taps_in = x.contiguous(), delta.contiguous()
-    flat = base.reshape(taps, width).contiguous()
+    # What the block hands over is `coeff[:, 0]` of its projection's [rows, 2, taps, groups] output -- a view.
+    # The kernel reads it where it lies, so the step does not copy a coefficient it is about to consume once.
+    src = x if x.stride(1) == 1 else x.contiguous()
+    flat = base.reshape(taps, width)
     out = torch.empty_like(src)
     span = 512 if width >= 512 else triton.next_power_of_2(width)
     if rows:
-        _taps[(rows, triton.cdiv(width, span))](src, taps_in, flat, out,
-                                                src.stride(0), taps_in.stride(0), out.stride(0), width,
-                                                BLOCK=block, GROUP=group, T=taps, BC=span, num_warps=4)
+        _taps[(rows, triton.cdiv(width, span))](
+            src, delta, flat.contiguous() if flat.stride(1) != 1 else flat, out,
+            src.stride(0), delta.stride(0), delta.stride(1), delta.stride(2), out.stride(0), width,
+            BLOCK=block, GROUP=group, T=taps, BC=span, num_warps=4)
     return out
 
 
