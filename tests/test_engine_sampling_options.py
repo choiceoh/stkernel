@@ -302,6 +302,111 @@ class ValidateTests(unittest.TestCase):
                 ok(bad)
 
 
+def _as_candidates(dense: torch.Tensor):
+    """[n, K, V] -> the candidates it puts mass on and that mass, which is all the verifier ever read of it."""
+    n, K, V = dense.shape
+    c = int((dense > 0).sum(-1).max())
+    q, cand = dense.topk(c, dim=-1)
+    return cand, q
+
+
+def _verify_densely(target_probs, drafts, draft_probs, generator):
+    """block_verify_batch as it was written before the draft became its candidates: the reference the sparse
+    form is judged against, kept here so the equality is a test and not a comment."""
+    from engine.base.constants import iota
+    from engine.base.sampler import _inverse_cdf
+    n, k1, _ = target_probs.shape
+    K = k1 - 1
+    device = target_probs.device
+    rows = iota(n, device)
+    on_draft = target_probs[:, :K].gather(2, drafts.unsqueeze(2)).squeeze(2)
+    by_draft = draft_probs.gather(2, drafts.unsqueeze(2)).squeeze(2)
+    step = torch.where(by_draft > 0, on_draft / by_draft.clamp_min(1e-30), torch.zeros_like(on_draft))
+    carried = torch.empty_like(step)
+    running = torch.ones(n, device=device, dtype=step.dtype)
+    for i in range(K):
+        running = (running * step[:, i]).clamp_max(1.0)
+        carried[:, i] = running
+    thresholds = carried.clone()
+    if K > 1:
+        ahead = carried[:, : K - 1].unsqueeze(-1)
+        mass = (ahead * target_probs[:, 1:K] - draft_probs[:, 1:K]).clamp_min(0).sum(-1)
+        denominator = mass + 1.0 - carried[:, : K - 1]
+        thresholds[:, : K - 1] = torch.where(denominator > 0, mass / denominator.clamp_min(1e-30),
+                                             torch.ones_like(mass))
+    u = torch.rand(n, K, generator=generator, device=device)
+    reach = iota(K, device).add(1).expand(n, K)
+    accepted = torch.where(u <= thresholds, reach, torch.zeros_like(reach)).max(1).values
+    at = accepted.clamp_max(K)
+    before = torch.where(accepted > 0, carried.gather(1, (accepted - 1).clamp_min(0).unsqueeze(1)).squeeze(1),
+                         torch.ones(n, device=device, dtype=carried.dtype))
+    row_p = target_probs[rows, at]
+    row_q = torch.where((at < K).unsqueeze(1), draft_probs[rows, at.clamp_max(K - 1)], torch.zeros_like(row_p))
+    rest = (before.unsqueeze(1) * row_p - row_q).clamp_min(0)
+    total = rest.sum(1, keepdim=True)
+    rest = torch.where(total > 0, rest / total.clamp_min(1e-30),
+                       row_p / row_p.sum(1, keepdim=True).clamp_min(1e-30))
+    fresh = _inverse_cdf(rest, torch.rand(n, generator=generator, device=device))
+    tokens = torch.cat([drafts, torch.zeros(n, 1, dtype=drafts.dtype, device=device)], 1)
+    tokens.scatter_(1, at.unsqueeze(1), fresh.unsqueeze(1))
+    return accepted, tokens, accepted + 1
+
+
+class SparseDraftDistributionTests(unittest.TestCase):
+    """The draft puts mass on `sel_top_k` candidates a position and zero everywhere else, so carrying it as
+    [n, K, vocab] was allocating and zeroing 12.4 MiB every decode step to hold 320 numbers (V=154,880, K=5,
+    C=16, n=4) and then reading it twice. These say the shorter form is not an approximation of the longer."""
+
+    def draft(self, n, K, V, C, seed):
+        torch.manual_seed(seed)
+        dense = torch.zeros(n, K, V)
+        for r in range(n):
+            for s in range(K):
+                where = torch.randperm(V)[:C]
+                dense[r, s, where] = torch.softmax(torch.randn(C), -1)
+        return dense
+
+    def test_the_candidates_verify_exactly_as_the_vocabulary_wide_row_did(self):
+        from engine.base.sampler import block_verify_batch
+        n, K, V, C = 4, 5, 61, 7
+        for trial in range(30):
+            dense = self.draft(n, K, V, C, trial)
+            target = torch.softmax(torch.randn(n, K + 1, V), -1)
+            ids = torch.stack([torch.multinomial(dense[r], 1).squeeze(1) for r in range(n)])
+            cand, q = _as_candidates(dense)
+            want = _verify_densely(target, ids, dense, torch.Generator().manual_seed(trial))
+            got = block_verify_batch(target, ids, cand, q, torch.Generator().manual_seed(trial))
+            self.assertTrue(torch.equal(want[0], got[0]), f"accepted differ at trial {trial}")
+            self.assertTrue(torch.equal(want[1], got[1]), f"tokens differ at trial {trial}")
+            self.assertTrue(torch.equal(want[2], got[2]))
+
+    def test_it_holds_when_the_draft_is_a_point_mass(self):
+        """A greedy row joining a sampled batch is one candidate carrying everything (pipeline._merge)."""
+        from engine.base.sampler import block_verify_batch
+        n, K, V, C = 3, 4, 23, 5
+        torch.manual_seed(1)
+        target = torch.softmax(torch.randn(n, K + 1, V), -1)
+        ids = torch.randint(0, V, (n, K))
+        dense = torch.zeros(n, K, V).scatter_(2, ids.unsqueeze(2), 1.0)
+        cand = ids.unsqueeze(2).expand(n, K, C).contiguous()
+        q = torch.zeros(n, K, C); q[..., 0] = 1.0
+        want = _verify_densely(target, ids, dense, torch.Generator().manual_seed(4))
+        got = block_verify_batch(target, ids, cand, q, torch.Generator().manual_seed(4))
+        self.assertTrue(torch.equal(want[0], got[0]))
+        self.assertTrue(torch.equal(want[1], got[1]))
+
+    def test_both_ceilings_are_the_same_two_numbers(self):
+        from engine.base.sampler import draft_ceilings, draft_ceilings_over
+        n, K, V, C = 3, 4, 41, 6
+        dense = self.draft(n, K, V, C, 11)
+        target = torch.softmax(torch.randn(n, K + 1, V), -1)
+        cand, q = _as_candidates(dense)
+        a, b = draft_ceilings(target, dense)
+        c, d = draft_ceilings_over(target, cand, q)
+        self.assertAlmostEqual(a, c, places=6)
+        self.assertAlmostEqual(b, d, places=6)
+
+
 class BlockVerificationTests(unittest.TestCase):
     """Sun et al. 2024: a longer accepted prefix for the same output distribution.
 
@@ -360,7 +465,8 @@ class BlockVerificationTests(unittest.TestCase):
         target = torch.softmax(torch.randn(n, K + 1, V), -1)
         draft = torch.softmax(torch.randn(n, K, V), -1)
         ids = torch.stack([torch.multinomial(draft[r], 1).squeeze(1) for r in range(n)])
-        accepted, tokens, count = block_verify_batch(target, ids, draft, torch.Generator().manual_seed(5))
+        cand, q = _as_candidates(draft)
+        accepted, tokens, count = block_verify_batch(target, ids, cand, q, torch.Generator().manual_seed(5))
         uniform = torch.rand(n, K, generator=torch.Generator().manual_seed(5))
         want = []
         for r in range(n):
@@ -552,6 +658,7 @@ class VerificationPathTests(unittest.TestCase):
             draft = torch.softmax(torch.randn(K, V), -1)
             ids = [int(torch.multinomial(draft[i], 1)) for i in range(K)]
             one, _ = block_verify(target, ids, draft, torch.Generator().manual_seed(trial))
-            many, _, _ = block_verify_batch(target.unsqueeze(0), torch.tensor([ids]), draft.unsqueeze(0),
+            cand, q = _as_candidates(draft.unsqueeze(0))
+            many, _, _ = block_verify_batch(target.unsqueeze(0), torch.tensor([ids]), cand, q,
                                             torch.Generator().manual_seed(trial))
             self.assertEqual(one, int(many[0]), f"trial {trial}")

@@ -165,15 +165,22 @@ class DrafterTests(unittest.TestCase):
         anchors = torch.tensor([2, 7, 11], device=dev)
         temps = torch.tensor([0.8, 0.0, 0.5], device=dev)
         greedy = d.propose_rows(field, slots, anchors, ctx)
-        drafts, dists = d.propose_rows(field, slots, anchors, ctx, temps=temps, generator=torch.Generator(device=dev).manual_seed(9), vocab=21)
-        self.assertEqual(tuple(dists.shape), (3, F.k, 21))
+        drafts, cand, q = d.propose_rows(field, slots, anchors, ctx, temps=temps, generator=torch.Generator(device=dev).manual_seed(9), vocab=21)
+        # the candidates and their mass, not a row per position: the walk puts nothing outside them, so the
+        # vocabulary-wide form was 21 (154,880 in production) numbers to carry sel_top_k of them
+        self.assertEqual(tuple(cand.shape), (3, F.k, F.sel_top_k))
+        self.assertEqual(tuple(q.shape), (3, F.k, F.sel_top_k))
         self.assertEqual(drafts[1].tolist(), greedy[1].tolist(), "a row at temperature 0 walks greedily")
         for r in range(3):
             for s in range(F.k):
-                self.assertGreater(float(dists[r, s, drafts[r, s]]), 0.0)
-                self.assertAlmostEqual(float(dists[r, s].sum()), 1.0, places=4)
-                self.assertLessEqual(int((dists[r, s] > 0).sum()), F.sel_top_k)
-        self.assertTrue(torch.equal(dists[1] > 0, torch.nn.functional.one_hot(greedy[1], 21).bool()), "one-hot on the greedy pick")
+                at = (cand[r, s] == drafts[r, s]).nonzero()
+                self.assertTrue(len(at), "the pick is one of the candidates it was drawn from")
+                self.assertGreater(float(q[r, s][at[0]]), 0.0)
+                self.assertAlmostEqual(float(q[r, s].sum()), 1.0, places=4)
+        # a greedy row is a point mass: all of its mass sits on the candidate that is the pick
+        self.assertTrue(torch.equal((q[1] > 0).sum(-1), torch.ones(F.k, dtype=torch.int64)), "one candidate carries it")
+        self.assertTrue(torch.equal(cand[1].gather(1, (q[1] > 0).to(torch.int64).argmax(-1, keepdim=True)).squeeze(1),
+                                    greedy[1]), "and it is the greedy pick")
 
     def test_native_rows_do_not_read_retired_weights_or_use_a_scratch_ring_tail(self):
         """Exercise the merged batched interface with packed readers and no BF16 sources.

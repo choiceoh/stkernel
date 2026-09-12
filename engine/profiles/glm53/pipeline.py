@@ -135,7 +135,9 @@ class AsyncDecode:
             stochastic=any(x > 0 for x in temps),
         )
         b["slot"] = b["real_slot"].clone()
-        b["dists"] = torch.zeros(n, K, e.F.vocab, dtype=torch.float32, device=dev) if b["stochastic"] else None
+        # the draft distribution is its candidates and their mass, not a vocabulary-wide row (base/sampler)
+        b["qcand"] = torch.zeros(n, K, e.F.sel_top_k, dtype=torch.int64, device=dev) if b["stochastic"] else None
+        b["qprob"] = torch.zeros(n, K, e.F.sel_top_k, dtype=torch.float32, device=dev) if b["stochastic"] else None
         self._propose_rows(b)
         return b
 
@@ -164,13 +166,16 @@ class AsyncDecode:
             stochastic = b["stochastic"] or fresh["stochastic"]
             if stochastic:
                 for rows in (b, fresh):
-                    if rows["dists"] is None:
+                    if rows["qprob"] is None:
                         # Greedy proposals are point masses when a sampled row
                         # joins; regenerating survivors would discard progress
-                        # and consume an extra set of random draws.
-                        rows["dists"] = torch.zeros((*rows["drafts"].shape, self.e.F.vocab),
-                                                    dtype=torch.float32, device=self.e.caches.device)
-                        rows["dists"].scatter_(2, rows["drafts"].unsqueeze(2), 1.0)
+                        # and consume an extra set of random draws. A point mass
+                        # is one candidate carrying all of it.
+                        c = self.e.F.sel_top_k
+                        rows["qcand"] = rows["drafts"].unsqueeze(2).expand(*rows["drafts"].shape, c).contiguous()
+                        rows["qprob"] = torch.zeros((*rows["drafts"].shape, c), dtype=torch.float32,
+                                                    device=self.e.caches.device)
+                        rows["qprob"][..., 0] = 1.0
             for name in b:
                 if name == "stochastic":
                     continue
@@ -200,12 +205,13 @@ class AsyncDecode:
                      "alive", "anchor", "drafts"):
             b[name] = b[name].index_select(0, idx)
         b["ids"] = b["ids"].view(-1, self.t).index_select(0, idx).reshape(-1)
-        if b["dists"] is not None:
-            b["dists"] = b["dists"].index_select(0, idx)
+        for name in ("qcand", "qprob"):
+            if b[name] is not None:
+                b[name] = b[name].index_select(0, idx)
         if "stochastic" in b:
             b["stochastic"] = any(self.e.limits[s][1] > 0 for s in seqs)
             if not b["stochastic"]:
-                b["dists"] = None
+                b["qcand"] = b["qprob"] = None
         # nothing else to re-index: the truncations ride in `top_k` and `top_p` above, and the list of
         # which rows to sort went away with the sort (45차 §32)
         self.batch = tuple(seqs)
@@ -218,11 +224,12 @@ class AsyncDecode:
         graphs = e.drafter.decode_graphs
         if b["stochastic"]:
             if graphs is not None:
-                drafts, dists = graphs.propose_rows_sampled(b["anchor"], b["ctx"], b["real_slot"], b["temps"], b["alive"])
+                drafts, qcand, qprob = graphs.propose_rows_sampled(b["anchor"], b["ctx"], b["real_slot"], b["temps"], b["alive"])
             else:
-                drafts, dists = e.drafter.propose_rows(e.caches.draft_field(), b["real_slot"], b["anchor"], b["ctx"],
-                                                       temps=b["temps"], generator=e.gen, vocab=e.F.vocab, alive=b["alive"])
-            b["dists"].copy_(dists)
+                drafts, qcand, qprob = e.drafter.propose_rows(e.caches.draft_field(), b["real_slot"], b["anchor"], b["ctx"],
+                                                              temps=b["temps"], generator=e.gen, vocab=e.F.vocab, alive=b["alive"])
+            b["qcand"].copy_(qcand)
+            b["qprob"].copy_(qprob)
         elif graphs is not None:
             drafts = graphs.propose_rows(b["anchor"], b["ctx"], b["real_slot"], b["alive"])
         else:
@@ -263,8 +270,8 @@ class AsyncDecode:
             probs = distribution_batch(full, b["temps"].repeat_interleave(t), b["top_k"].repeat_interleave(t),
                                        b["top_p"].repeat_interleave(t), e.decodable,
                                        self._dists(n * t, full.shape[-1])).view(n, t, -1)
-            e.note_ceilings(probs, b["dists"])
-            accepted, picks, _ = block_verify_batch(probs, b["drafts"], b["dists"], e.gen)
+            e.note_ceilings(probs, b["qprob"], b["qcand"])
+            accepted, picks, _ = block_verify_batch(probs, b["drafts"], b["qcand"], b["qprob"], e.gen)
         else:
             picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)
             accepted = None
