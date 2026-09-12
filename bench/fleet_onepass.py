@@ -46,6 +46,7 @@ SHA = re.compile(r'[0-9a-f]{7,40}')
 ST_ENTRIES = ('probes/run_engine_probe.sh', 'probes/run_engine_check.sh')
 ST_PROBES = ('probes/engine_kernel_check.py', 'probes/engine_decode_graph_check.py',
              'probes/engine_drafter_graph_check.py', 'probes/engine_full_check.py',
+             'probes/engine_drafter_storage_check.py',
              'probes/engine_graph_profile.py', 'probes/engine_kda_deferred_check.py',
              'probes/engine_prefill_fp8_consumer_check.py',
              'probes/engine_mhc_contract_check.py',
