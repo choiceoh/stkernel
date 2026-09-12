@@ -112,6 +112,16 @@ class AdmissionTests(unittest.TestCase):
         self.assertIn('  st-probe)', fleet)
         self.assertIn('run --gpu --probe ${detach[@]+"${detach[@]}"} "$s" "$est" "$note" -- bash "$REPO/bench/st_bracket.sh" probe', fleet)
 
+    def test_the_probe_measures_only_the_release_the_door_serves(self):
+        """A probe ticket queued before a deploy and run after it would label the next engine's
+        numbers with the old commit: the probe reads the door's ST_RELEASE and refuses a mismatch."""
+        text = (ROOT / 'bench/st_bracket.sh').read_text()
+        body = text[text.index('probe() {'):]
+        self.assertIn('docker exec st-glm53 printenv ST_RELEASE', body)
+        self.assertIn('ABORT: the door serves release $served, not ${ARM_SHA:0:12}', body)
+        self.assertLess(body.index('printenv ST_RELEASE'), body.index('for run in $(seq 1 "$RUNS")'), 'before any run')
+        self.assertIn('[ "$REHEARSE" != 1 ]', body[:body.index('printenv ST_RELEASE')], 'a rehearsal has no door to ask')
+
     def test_the_runner_snapshot_carries_what_the_bracket_needs(self):
         pinned = set(fleet_pin.source_files(ROOT))
         for relative in ('bench/st_bracket.sh', 'bench/st_judge.py', 'bench/onepass.py', 'launchers/st_release.py'):

@@ -4,11 +4,14 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/choiceoh/stkernel
+# The queue's own checkout, which st-deploy-watch keeps at the deployed commit (PR #778): the idle
+# controller restores by production's rules, not by whatever branch a session left in ~/stkernel.
+# Create it once:  git -C ~/stkernel worktree add --detach ~/fleet-controller <deployed sha>
+WorkingDirectory=/home/choiceoh/fleet-controller
 # Match the release-validation login environment. A user-manager PATH containing
 # duplicate entries otherwise invalidates the exact environment-bound receipt.
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
-ExecStart=/usr/bin/python3 /home/choiceoh/stkernel/bench/fleet_idle.py tick /home/choiceoh/glm53-logs/fleet
+ExecStart=/usr/bin/python3 /home/choiceoh/fleet-controller/bench/fleet_idle.py tick /home/choiceoh/glm53-logs/fleet
 TimeoutStartSec=3700
 TimeoutStopSec=30
 KillMode=control-group

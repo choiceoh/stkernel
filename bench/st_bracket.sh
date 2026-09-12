@@ -212,6 +212,15 @@ probe() {  # [sha]: two onepass runs on the LIVE production door -- no boot, no 
   ARM_SHA=$(sha_of "$sha"); ARM="d17-${ARM_SHA:0:12}"; PORT=${ST_PROBE_PORT:-8000}; RELEASE=""
   say "probe: $RUNS runs on the live door $(door) for ${ARM_SHA:0:12} (no boot, no lease; session $S, rehearse=$REHEARSE)"
   [ "$REHEARSE" = 1 ] || door_up || { say "ABORT: no engine answers on $(door)"; return 1; }
+  if [ "$REHEARSE" != 1 ]; then
+    # A probe's record says arm_sha=<what it was queued for>; the door must be serving exactly
+    # that, or the sample is mislabelled (a ticket queued before a deploy and run after it).
+    local served; served=$(docker exec st-glm53 printenv ST_RELEASE 2>/dev/null | tr -d '\r' || true)
+    if [[ "$served" =~ ^[0-9a-f]{7,40}$ ]] && [ "${served:0:12}" != "${ARM_SHA:0:12}" ]; then
+      say "ABORT: the door serves release $served, not ${ARM_SHA:0:12} -- queue the probe for what runs (fleet.sh st-probe s $served)"; return 2
+    fi
+    [ -n "$served" ] || say "the door does not name its release (a boot older than PR #775?): trusting ${ARM_SHA:0:12}"
+  fi
   for run in $(seq 1 "$RUNS"); do
     [ "$REHEARSE" = 1 ] || reset_prefix
     say "onepass run $run/$RUNS ($( [ "$run" = 1 ] && echo 'after a reset' || echo warm ))"

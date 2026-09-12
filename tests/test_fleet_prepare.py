@@ -57,6 +57,82 @@ class PrepareTests(unittest.TestCase):
         self.git('commit','--allow-empty','-qm','new revision')
         with self.assertRaisesRegex(ValueError, 'checkout revision changed'): prep.validate(value)
 
+    def queued_record(self, receipt, fleet):
+        """A queued reservation the way the waiter registers it: its row in the queue, its record, this process as owner."""
+        import socket
+        import fleet_handoff as handoff
+        import fleet_pending as pending
+        pid = os.getpid()
+        (self.directory / 'queue').write_text(f'1|fixture|100|10|note|boot|{pid}\n')
+        value = dict(session='fixture', ticket='1', enqueued_at='100', pid=pid, start=handoff.identity(pid),
+                     host=socket.gethostname(), protocol=handoff.PROTOCOL, state='queued', revision=1, pause_protocol=1,
+                     command=[sys.executable, 'input.py'], cwd=str(self.repo.resolve()), estimate_min=10, note='note',
+                     kind='boot', fleet=fleet, repo=str(self.repo.resolve()), validation_env={}, experiment=None,
+                     launch_id=None, prepare_manifest=str(receipt), prepare_receipt_required=True, history=[])
+        pending.save_record(self.directory, value)
+        return value
+
+    @unittest.skipUnless(Path('/proc/self/stat').exists(), 'a queued reservation proves its owner alive through /proc: Linux only')
+    def test_a_moved_checkout_is_prepared_again_and_the_ticket_keeps_its_place(self):
+        """45차 §95 stopped the ticket ("queued checkout revision changed") for a person to edit and
+        resume; the operator asked for that edit to be the queue's own (2026-09-13). The same
+        command is prepared again at the revision that is there now, the record's revision moves
+        and its history names both commits; nothing else about the ticket changes."""
+        import contextlib
+        import io
+        import fleet_pending as pending
+        controller = self.root / 'controller' / 'bench'
+        controller.mkdir(parents=True)
+        (controller / 'fleet.sh').write_text('#!/bin/sh\nexit 0\n')          # preflight passes; no fleet_onepass.py beside it
+        env = dict(REPO=str(self.repo.resolve()), FLEET_DIR=str(self.directory), FLEET_SESSION='fixture')
+        with mock.patch.dict(os.environ, env):
+            self.prepare()
+            receipt = next((self.directory / 'preparations').glob('*.json'))
+            before = json.loads(receipt.read_text())
+            record = self.queued_record(receipt, str(controller / 'fleet.sh'))
+            prep.check_pending(self.directory, 'fixture')                        # unchanged checkout: nothing to re-pin
+            self.assertEqual(pending.read_record(self.directory, 'fixture')['revision'], 1)
+            old = self.git('rev-parse', 'HEAD')
+            self.git('commit', '--allow-empty', '-qm', 'main moved on')
+            new = self.git('rev-parse', 'HEAD')
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                prep.check_pending(self.directory, 'fixture', withdraw_failed=True)   # no pause, no refusal
+            self.assertIn(f'RE-PIN fixture: checkout moved {old[:12]} -> {new[:12]}', err.getvalue())
+            after = pending.read_record(self.directory, 'fixture')
+            self.assertEqual(after['revision'], 2)
+            self.assertNotEqual(after['prepare_manifest'], str(receipt), 'a fresh receipt, of the new tree')
+            self.assertEqual(json.loads(Path(after['prepare_manifest']).read_text())['head'][1], new)
+            self.assertEqual(before['head'][1], old)
+            self.assertIn(f'{old[:12]} -> {new[:12]}', after['history'][-1]['repin'])
+            self.assertEqual((after['command'], after['cwd'], after['estimate_min'], after['note'], after['ticket']),
+                             (record['command'], record['cwd'], 10, 'note', '1'))
+            self.assertEqual((self.directory / 'queue').read_text().split('|')[1], 'fixture', 'and it is still in the queue')
+            prep.check_pending(self.directory, 'fixture')                        # settled: the next check re-pins nothing
+            self.assertEqual(pending.read_record(self.directory, 'fixture')['revision'], 2)
+
+    @unittest.skipUnless(Path('/proc/self/stat').exists(), 'a queued reservation proves its owner alive through /proc: Linux only')
+    def test_the_stop_of_95_is_one_switch_away_and_a_broken_tree_still_pauses(self):
+        import fleet_pending as pending
+        controller = self.root / 'controller' / 'bench'
+        controller.mkdir(parents=True)
+        (controller / 'fleet.sh').write_text('#!/bin/sh\nexit 0\n')
+        env = dict(REPO=str(self.repo.resolve()), FLEET_DIR=str(self.directory), FLEET_SESSION='fixture')
+        with mock.patch.dict(os.environ, env):
+            self.prepare()
+            receipt = next((self.directory / 'preparations').glob('*.json'))
+            self.queued_record(receipt, str(controller / 'fleet.sh'))
+            self.git('commit', '--allow-empty', '-qm', 'main moved on')
+            with mock.patch.dict(os.environ, {'FLEET_AUTO_REPIN': '0'}):
+                with self.assertRaisesRegex(ValueError, 'queued checkout revision changed'):
+                    prep.check_pending(self.directory, 'fixture')
+            self.assertEqual(pending.read_record(self.directory, 'fixture')['revision'], 1)
+            (self.repo / 'input.py').write_text('def :\n')                       # the tree that is there now does not compile
+            with self.assertRaisesRegex(ValueError, 're-pin at .* failed'):
+                prep.check_pending(self.directory, 'fixture')
+            after = pending.read_record(self.directory, 'fixture')
+            self.assertEqual((after['revision'], after['prepare_manifest']), (1, str(receipt)), 'the ticket is as it was')
+
     def test_missing_input_fresh_output_and_image_fail_early(self):
         spec = self.root/'spec.json'
         spec.write_text(json.dumps(dict(required_paths=['missing'])))

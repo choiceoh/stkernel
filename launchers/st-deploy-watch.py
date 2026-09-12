@@ -178,6 +178,7 @@ def cycle(a, log) -> int:
     why = wanted(head, held)
     if why is None:
         log(f"nothing to deploy (main {head[:12]}, deployed {str(held.get('deployed'))[:12]})")
+        ensure_probe(held.get("deployed") or "", held, a, log)      # the deployed commit keeps its warm sample
         return 0
     log(f"candidate: {why}")
 
@@ -316,6 +317,89 @@ def queue_probe(head: str, log, controller: Path = CONTROLLER) -> bool:
     return True
 
 
+FLEET = Path(os.environ.get("FLEET_DIR", HOME / "glm53-logs" / "fleet"))                 # the queue's own files (bench/fleet.sh)
+JSONL = Path(os.environ.get("ONEPASS_JSONL", HOME / "glm53-logs" / "bracket-onepass.jsonl"))
+
+
+def warm_samples(sha: str, log, controller: Path = CONTROLLER, jsonl: Path = JSONL) -> "int | None":
+    """How many warm, valid onepass samples the records hold for `sha` -- counted by the
+    controller's own judge (bench/st_judge.py), so what a sample is gets decided once. None
+    when it cannot be told, and None never queues anything."""
+    judge = controller / "bench" / "st_judge.py"
+    if not judge.exists():
+        log(f"  no {judge}: cannot tell whether {sha[:12]} has a warm sample")
+        return None
+    code, out, err = run([sys.executable, str(judge), "samples", "--sha", sha, "--jsonl", str(jsonl)], timeout=120)
+    if code or not out.strip().isdigit():
+        log(f"  st_judge could not count samples for {sha[:12]}: {(err or out).strip()[:120]}")
+        return None
+    return int(out.strip())
+
+
+def ticket_open(session: str, fleet_dir: Path = FLEET) -> bool:
+    """A ticket of this name is queued or holding, read off the queue's own files."""
+    try:
+        for line in (fleet_dir / "queue").read_text().splitlines():
+            if line.split("|")[1:2] == [session]:
+                return True
+    except OSError:
+        pass
+    for name in ("holder", "holder-single"):
+        try:
+            if (fleet_dir / name).read_text().split("|")[0].strip() == session:
+                return True
+        except OSError:
+            pass
+    return False
+
+
+def remember_probe(sha: str, queued: bool, state: Path = None, tally: dict = None) -> dict:
+    """The tally of probe tickets this watcher queued for the deployed sha, in the state file."""
+    state = state or STATE
+    held = state_of(state)
+    tally = tally if tally and tally.get("sha") == sha else held.get("probe") or {}
+    if tally.get("sha") != sha:
+        tally = {"sha": sha, "attempts": 0}
+    tally = {**tally, "attempts": tally["attempts"] + 1, "last_at": time.time(), "queued": queued}
+    state.write_text(json.dumps({**held, "probe": tally}, indent=1))
+    return tally
+
+
+def ensure_probe(sha: str, held: dict, a, log, *, controller: Path = None, fleet_dir: Path = None,
+                 jsonl: Path = None, state: Path = None) -> bool:
+    """A D17 probe ticket for the deployed commit whenever it has no warm sample and none is on
+    its way. The ticket after the deploy is the first; this is for the cycles after it, when
+    that ticket ran into traffic (onepass --require-exclusive gives up and leaves no record) or
+    was cancelled. Bounded: --probe-attempts tickets per deployed sha, --probe-gap apart."""
+    if getattr(a, "dry_run", False) or not getattr(a, "probe", True) or not sha:
+        return False
+    controller = Path(controller or getattr(a, "controller", CONTROLLER))
+    fleet_dir = Path(fleet_dir or FLEET)
+    jsonl = Path(jsonl or JSONL)
+    tally = held.get("probe") or {}
+    if tally.get("sha") != sha:
+        tally = {"sha": sha, "attempts": 0, "last_at": 0}
+    limit = getattr(a, "probe_attempts", 3)
+    if tally["attempts"] >= limit:
+        if not tally.get("gave_up"):
+            log(f"  {sha[:12]} has no warm sample after {tally['attempts']} probe tickets; queuing no more "
+                f"(fleet.sh st-probe by hand, or a new deploy)")
+            (state or STATE).write_text(json.dumps({**state_of(state or STATE), "probe": {**tally, "gave_up": True}}, indent=1))
+        return False
+    if time.time() - tally.get("last_at", 0) < getattr(a, "probe_gap", 1800):
+        return False
+    count = warm_samples(sha, log, controller, jsonl)
+    if count is None or count > 0:
+        return False
+    session = "d17-" + sha[:12]
+    if ticket_open(session, fleet_dir):
+        return False
+    log(f"  {sha[:12]} has no warm sample and no probe ticket on its way (attempt {tally['attempts'] + 1}/{limit})")
+    queued = queue_probe(sha, log, controller)
+    remember_probe(sha, queued, state, tally)
+    return queued
+
+
 def after_deploy(head: str, a, log) -> None:
     if getattr(a, "dry_run", False):
         return
@@ -323,7 +407,7 @@ def after_deploy(head: str, a, log) -> None:
     if getattr(a, "follow", True):
         follow_controller(head, log, controller)
     if getattr(a, "probe", True):
-        queue_probe(head, log, controller)
+        remember_probe(head, queue_probe(head, log, controller))
 
 
 def main(argv=None) -> int:
@@ -343,6 +427,8 @@ def main(argv=None) -> int:
     ap.add_argument("--controller", default=str(CONTROLLER), help="the queue's checkout: moved to the deployed commit after a deploy")
     ap.add_argument("--no-follow", dest="follow", action="store_false", help="leave the controller checkout where it is")
     ap.add_argument("--no-probe", dest="probe", action="store_false", help="queue no D17 probe ticket after a deploy")
+    ap.add_argument("--probe-attempts", type=int, default=3, help="probe tickets per deployed sha before giving up")
+    ap.add_argument("--probe-gap", type=int, default=1800, help="seconds between two probe tickets for the same sha")
     a = ap.parse_args(argv)
 
     def log(line):

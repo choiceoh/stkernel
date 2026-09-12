@@ -275,9 +275,22 @@ class AfterDeployTests(unittest.TestCase):
         self.assertFalse(watch.queue_probe("0" * 40, self.log, self.tmp / "absent"))
         self.assertIn("no D17 probe queued", "\n".join(self.lines))
 
+    def test_the_idle_controller_runs_from_the_checkout_the_hook_moves(self):
+        """fleet-idle-recovery restores production by the queue's rules: those must be the deployed
+        commit's, which is the checkout follow_controller keeps, not whatever ~/stkernel is on."""
+        unit = (Path(__file__).resolve().parents[1] / "launchers/fleet-idle-recovery.service").read_text()
+        self.assertIn("WorkingDirectory=/home/choiceoh/fleet-controller", unit)
+        self.assertIn("ExecStart=/usr/bin/python3 /home/choiceoh/fleet-controller/bench/fleet_idle.py tick", unit)
+        self.assertNotIn("stkernel/bench/fleet_idle.py", unit)
+        self.assertTrue(str(watch.CONTROLLER).endswith("fleet-controller") or "FLEET_CONTROLLER_REPO" in __import__("os").environ)
+
     def test_a_dry_run_and_the_two_flags_hold_it_back(self):
         from types import SimpleNamespace
+        from unittest import mock
         controller = self.stub_controller()
+        state = mock.patch.object(watch, "STATE", self.tmp / "deploy-state.json")
+        state.start()
+        self.addCleanup(state.stop)
         watch.after_deploy("0" * 40, SimpleNamespace(dry_run=True, controller=str(controller)), self.log)
         self.assertFalse((self.tmp / "argv").exists(), "a dry run queues nothing")
         watch.after_deploy("0" * 40, SimpleNamespace(dry_run=False, controller=str(controller), follow=False, probe=False), self.log)
@@ -285,6 +298,8 @@ class AfterDeployTests(unittest.TestCase):
         watch.after_deploy("0" * 40, SimpleNamespace(dry_run=False, controller=str(controller), follow=False, probe=True), self.log)
         self.assertTrue((self.tmp / "argv").exists())
         self.assertNotIn("controller", "\n".join(self.lines), "--no-follow: the checkout was not even looked at")
+        tally = watch.state_of(self.tmp / "deploy-state.json")["probe"]
+        self.assertEqual((tally["sha"], tally["attempts"], tally["queued"]), ("0" * 40, 1, True), "the ticket is tallied")
 
     def test_it_runs_only_after_a_deploy_that_is_recorded(self):
         """A failed launch is a rejection; nothing follows it, and no probe samples a fleet in recovery."""
@@ -296,6 +311,121 @@ class AfterDeployTests(unittest.TestCase):
         recorded = body[body.index('"launched_ok": True'):]
         self.assertIn("after_deploy(head, a, log)", recorded)
         for flag in ("--controller", "--no-follow", "--no-probe"):
+            self.assertIn(flag, source)
+
+
+class ProbeSelfHealTests(unittest.TestCase):
+    """The deployed commit keeps its warm sample. The ticket after the deploy is the first; when
+    it ran into traffic or was cancelled, later cycles queue another -- bounded, tallied, never
+    while one is already queued or holding, never when the judge cannot be asked."""
+
+    SHA = "0123abcdef" * 4
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        from types import SimpleNamespace
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.tmp = Path(self.temporary.name)
+        self.controller = self.tmp / "controller"
+        (self.controller / "bench").mkdir(parents=True)
+        (self.controller / "bench" / "fleet.sh").write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{self.tmp}/argv"\necho queued; exit 0\n')
+        shutil.copy(Path(__file__).resolve().parents[1] / "bench/st_judge.py", self.controller / "bench" / "st_judge.py")
+        self.fleet = self.tmp / "fleet"
+        self.fleet.mkdir()
+        (self.fleet / "queue").write_text("")
+        self.jsonl = self.tmp / "onepass.jsonl"
+        self.state = self.tmp / "deploy-state.json"
+        self.lines = []
+        self.a = SimpleNamespace(dry_run=False, probe=True, controller=str(self.controller), probe_attempts=3, probe_gap=0)
+
+    def log(self, line):
+        self.lines.append(line)
+
+    def ensure(self, held=None, sha=None, a=None):
+        return watch.ensure_probe(self.SHA if sha is None else sha, held or {}, a or self.a, self.log,
+                                  controller=self.controller, fleet_dir=self.fleet, jsonl=self.jsonl, state=self.state)
+
+    def sample(self, sha=None, run_index=2):
+        import json as _json
+        row = {"engine": "st", "arm_sha": sha or self.SHA, "run_index": run_index, "boot_id": "b|1", "quality": {"ok": 9, "total": 9},
+               "korean": {"dirty": 0, "n": 5}, "decode": {"windows_med": 12.0}, "traffic": {"issues": []}}
+        with self.jsonl.open("a") as fh:
+            fh.write(_json.dumps(row) + "\n")
+
+    def queued(self):
+        return (self.tmp / "argv").exists()
+
+    def test_no_sample_and_no_ticket_means_one_more_ticket(self):
+        self.assertTrue(self.ensure())
+        argv = (self.tmp / "argv").read_text().splitlines()
+        self.assertEqual(argv[:3], ["st-probe", "--detach", "d17-0123abcdef01"])
+        tally = watch.state_of(self.state)["probe"]
+        self.assertEqual((tally["sha"], tally["attempts"], tally["queued"]), (self.SHA, 1, True))
+        self.assertIn("no warm sample and no probe ticket on its way (attempt 1/3)", "\n".join(self.lines))
+
+    def test_a_warm_sample_is_enough(self):
+        self.sample()
+        self.assertFalse(self.ensure())
+        self.assertFalse(self.queued())
+        self.jsonl.unlink()
+        self.sample(run_index=1)                                     # a cold run is not the sample
+        self.assertTrue(self.ensure())
+
+    def test_a_sample_of_another_commit_is_not_this_one_s(self):
+        self.sample(sha="deadbeef00" * 4)
+        self.assertTrue(self.ensure())
+
+    def test_a_ticket_already_queued_or_holding_is_not_doubled(self):
+        (self.fleet / "queue").write_text("7|d17-0123abcdef01|100|10|D17|probe|4242\n")
+        self.assertFalse(self.ensure())
+        (self.fleet / "queue").write_text("")
+        (self.fleet / "holder").write_text("d17-0123abcdef01|4242|srv2|100|10|D17|probe\n")
+        self.assertFalse(self.ensure())
+        (self.fleet / "holder").unlink()
+        self.assertTrue(self.ensure())
+
+    def test_the_tally_bounds_it(self):
+        held = {"probe": {"sha": self.SHA, "attempts": 3, "last_at": 0}}
+        self.assertFalse(self.ensure(held))
+        self.assertFalse(self.queued())
+        self.assertIn("queuing no more", "\n".join(self.lines))
+        self.assertTrue(watch.state_of(self.state)["probe"]["gave_up"])
+        n = len(self.lines)
+        self.assertFalse(self.ensure(watch.state_of(self.state)))
+        self.assertEqual(len(self.lines), n, "said once")
+        self.assertTrue(self.ensure({"probe": {"sha": "f" * 40, "attempts": 3, "last_at": 0}}), "another sha starts afresh")
+
+    def test_the_gap_between_two_tickets_is_kept(self):
+        import time
+        from types import SimpleNamespace
+        held = {"probe": {"sha": self.SHA, "attempts": 1, "last_at": time.time()}}
+        slow = SimpleNamespace(dry_run=False, probe=True, controller=str(self.controller), probe_attempts=3, probe_gap=1800)
+        self.assertFalse(self.ensure(held, a=slow))
+        held["probe"]["last_at"] = time.time() - 3600
+        self.assertTrue(self.ensure(held, a=slow))
+        self.assertEqual(watch.state_of(self.state)["probe"]["attempts"], 2)
+
+    def test_off_switches_and_an_unknown_sha_queue_nothing(self):
+        from types import SimpleNamespace
+        for a in (SimpleNamespace(dry_run=True, probe=True, controller=str(self.controller)),
+                  SimpleNamespace(dry_run=False, probe=False, controller=str(self.controller))):
+            self.assertFalse(self.ensure(a=a))
+        self.assertFalse(self.ensure(sha=""))
+        self.assertFalse(self.queued())
+
+    def test_a_judge_that_cannot_be_asked_queues_nothing(self):
+        (self.controller / "bench" / "st_judge.py").unlink()
+        self.assertFalse(self.ensure())
+        self.assertFalse(self.queued())
+        self.assertIn("cannot tell whether", "\n".join(self.lines))
+
+    def test_the_cycle_asks_only_when_there_is_nothing_to_deploy(self):
+        source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
+        body = source[source.index("def cycle("):source.index("    log(f\"candidate: {why}\")")]
+        self.assertIn("ensure_probe(held.get(\"deployed\")", body)
+        for flag in ("--probe-attempts", "--probe-gap"):
             self.assertIn(flag, source)
 
 

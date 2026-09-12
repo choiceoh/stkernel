@@ -283,7 +283,7 @@ def validate(value, directory):
         raise ValueError('replacement preflight failed; original reservation retained\n' + result.stdout)
 
 
-def edit(directory, session, *, command=None, cwd=None, estimate=None, note=None, expected=None, prepared_manifest=None):
+def edit(directory, session, *, command=None, cwd=None, estimate=None, note=None, expected=None, prepared_manifest=None, repin=None):
     # Slow checks never hold the fleet lock. Admission and other editors can
     # proceed, so compare the original revision again before committing.
     with lock(directory):
@@ -306,9 +306,9 @@ def edit(directory, session, *, command=None, cwd=None, estimate=None, note=None
         if any(c in note for c in ('|', '\n', '\r', '\0')):
             raise ValueError('note cannot contain queue separators or newlines')
         updated['note'] = note
-    if updated == original and command is None and cwd is None and prepared_manifest is None:
+    if updated == original and command is None and cwd is None and prepared_manifest is None and repin is None:
         return dict(original, changed=False)
-    if command is not None or cwd is not None or prepared_manifest is not None:
+    if command is not None or cwd is not None or prepared_manifest is not None or repin is not None:
         with owner_environment(updated, directory):
             validate(updated, directory)
             if original.get('prepare_manifest') or prepared_manifest:
@@ -330,6 +330,10 @@ def edit(directory, session, *, command=None, cwd=None, estimate=None, note=None
                 if prepared_manifest:
                     path = fleet_prepare.prepare(directory,session,updated['command'],updated['cwd'],
                                                   prepared=prepared_manifest,**args)
+                elif repin is not None:
+                    # The checkout moved: the old receipt is of another tree, so nothing of it is
+                    # reused -- the same command is prepared afresh where the checkout stands now.
+                    path = fleet_prepare.prepare(directory,session,updated['command'],updated['cwd'],**args)
                 else:
                     try:
                         path = fleet_prepare.prepare(directory,session,updated['command'],updated['cwd'],
@@ -348,7 +352,8 @@ def edit(directory, session, *, command=None, cwd=None, estimate=None, note=None
             raise ValueError('reservation changed during preflight; inspect it before editing again')
         updated['revision'] += 1
         updated['history'].append(dict(revision=original['revision'], at=time.time(),
-                                       **{k:original[k] for k in ('command', 'cwd', 'estimate_min', 'note')}))
+                                       **{k:original[k] for k in ('command', 'cwd', 'estimate_min', 'note')},
+                                       **({'repin': repin} if repin is not None else {})))
         if index is None:
             updated['parked_row'][3:5] = [str(updated['estimate_min']), updated['note']]
             save_record(directory, updated)
