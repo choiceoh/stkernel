@@ -60,6 +60,40 @@ def pointwise(report):
                scope="single-GPU captured kernel; not consumer speed")
 
 
+def residency(report):
+    from engine.kernels.draft_observe import write_context
+    from engine.kernels.draft_attention import write_draft_kv_rows
+    from engine.kernels.norm_rope import norm_rope, warm
+    n, t, layers, heads, dim = 1, 7, 5, 2, 128
+    context = torch.randn(n, t, layers, 2, heads, dim, device='cuda', dtype=torch.bfloat16)
+    weights = torch.randn(layers, dim, device='cuda', dtype=torch.bfloat16)
+    field = torch.zeros(5, layers, 2, 256, heads, dim, device='cuda', dtype=torch.bfloat16)
+    positions = torch.arange(t, device='cuda', dtype=torch.int64).reshape(n, t) + 254
+    slots = torch.tensor([3], device='cuda', dtype=torch.int64)
+    valid = torch.tensor([t], device='cuda', dtype=torch.int64)
+    warm(context.device, dim, 10000.)
+    def original_write():
+        for layer in range(layers):
+            key = norm_rope(context[:, :, layer, 0].reshape(n * t, heads, dim), weights[layer], 1e-6,
+                            positions.reshape(-1), 10000.).reshape(n, t, heads, dim)
+            write_draft_kv_rows(field, slots, layer, positions, key, context[:, :, layer, 1], valid=valid)
+    x = torch.randn(7, 4096, device='cuda', dtype=torch.bfloat16)
+    gate = torch.randn(288, 4096, device='cuda', dtype=torch.bfloat16)
+    gate_fp32 = gate.float()
+    for name, base_fn, cand_fn in (
+        ('all_layer_context_write', original_write,
+         lambda: write_context(field, slots, positions, context, weights, valid, 1e-6, 10000.)),
+        ('router_projection_resident', lambda: x.float() @ gate.float().T, lambda: x.float() @ gate_fp32.T),
+    ):
+        base, base_out = _capture(base_fn)
+        cand, cand_out = _capture(cand_fn)
+        if base_out is not None:
+            torch.testing.assert_close(base_out, cand_out, rtol=0, atol=0)
+        measurements = [dict(arm=label, ms=_time(graph)) for label, graph in (('B', base), ('A', cand), ('A', cand), ('B', base))]
+        report('residency_timing', operation=name, rows=t, measurements=measurements,
+               scope='single-GPU captured component; not consumer speed')
+
+
 def calibration(report):
     from engine.kernels.dense.calibration import Calibration
     class Layer:

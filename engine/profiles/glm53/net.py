@@ -153,6 +153,7 @@ class Glm53Net:
         self.rec_ring = F.spec_k + 1                 # recurrent states kept per slot: one per draft position
         self.p = None
         self.dense = {}
+        self._router_weights = {}
         self.prefill_transport = None
         self.mhc = None
         from engine.profiles.glm53.weights import WEIGHT_LAYOUT, MODELOPT_WEIGHT_LAYOUT
@@ -196,6 +197,25 @@ class Glm53Net:
                         F.topk_experts if F.is_moe(L) else 1, F.swiglu_limit, **kw)
             self._experts[L] = partial(self.lanes.moe, w13=p[n+'w13'], w13_sf=p[n+'w13_sf'],
                 w2=p[n+'w2'], w2_sf=p[n+'w2_sf'], limit=F.swiglu_limit, **kw)
+
+    def router_nbytes(self):
+        """FP32 routing matrices, explicitly reserved apart from BF16 rank weights."""
+        return sum(self.F.experts * self.F.hidden * 4 for layer in self.layers if self.F.is_moe(layer))
+
+    def prepare_routers(self, arena):
+        """Convert immutable BF16 router weights once, into budgeted arena rows.
+
+        Rank files and their binding contract stay BF16. Every projection sees
+        exactly the same FP32 values as the former per-step conversion.
+        """
+        if self._router_weights:
+            raise RuntimeError('router weights were already prepared')
+        for layer in self.layers:
+            if self.F.is_moe(layer):
+                weight = self.p[f'L{layer}.moe.gate']
+                resident = arena.carve(weight.numel() * 4, f'router/{layer}').view(F32).view_as(weight)
+                resident.copy_(weight)
+                self._router_weights[layer] = resident
 
     @staticmethod
     def dense_weight_names(keys):
@@ -520,7 +540,8 @@ class Glm53Net:
         """noaux_tc: sigmoid scores fp32, select by score + bias, weight by the
         raw scores renormalised, times routed_scaling_factor."""
         F, p, n = self.F, self.p, f"L{L}.moe."
-        logits = x.float() @ p[n + "gate"].float().T
+        gate = self._router_weights.get(L, p[n + "gate"])
+        logits = x.float() @ gate.float().T
         if self.lanes.route_weights is not None:
             return self.lanes.route_weights(logits, p[n + "bias"], F.topk_experts, F.routed_scale)
         s = torch.sigmoid(logits)

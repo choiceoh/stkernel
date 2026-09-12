@@ -58,7 +58,16 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "mhc", "indexer", "kpool", "mla", "moe", "calibration", "pointwise"}, selected
+    assert selected <= {"conv", "kda", "mhc", "indexer", "kpool", "mla", "moe", "calibration", "pointwise", "residency"}, selected
+
+    if "residency" in selected:
+        import unittest
+        suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_engine_decode_residency")
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        assert result.wasSuccessful() and not result.skipped, "decode residency checks did not pass"
+        report("residency", passed=True, tests=result.testsRun)
+        from probes.engine_decode_fusions import residency
+        residency(report)
 
     if "calibration" in selected:
         import unittest

@@ -248,6 +248,7 @@ class Drafter:
         for name, w in weights.items():
             self.dense[name] = DenseLinear(w,store=store,name=store_name(name),smooth=smooth.get(name))
         self.context_kv = torch.cat(context)
+        self.context_norm = torch.stack([p[f"layers.{L}.self_attn.k_norm.weight"] for L in range(F.layers)])
         if consume_weights:
             for name, layer in self.dense.items():
                 source = (name.replace("self_attn.qkv","self_attn.q_proj.weight")
@@ -393,16 +394,9 @@ class Drafter:
         keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)
         c = norm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)
         if self.fast_attention:
-            from engine.kernels.draft_attention import write_draft_kv_rows
+            from engine.kernels.draft_observe import write_context
             context = Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)
-            for L in range(F.layers):
-                q = f"layers.{L}.self_attn."
-                k = norm_rope(context[:, :, L, 0].reshape(n*t, self.local_kv_heads, F.head_dim),
-                              p[q + "k_norm.weight"], F.rms_eps, positions.reshape(-1), F.rope_theta)
-                k = k.reshape(n, t, self.local_kv_heads, F.head_dim)
-                # one launch a layer, not one a (layer, row): the single-slot kernel required numel()==1 and
-                # the loop was the consequence
-                write_draft_kv_rows(field, slots, L, positions, k, context[:, :, L, 1], valid=valid)
+            write_context(field, slots, positions, context, self.context_norm, valid, F.rms_eps, F.rope_theta)
             return
         flat = positions.reshape(-1)
         idx = positions % F.window

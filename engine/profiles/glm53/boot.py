@@ -317,7 +317,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             if need <= budget:
                 budget -= need
                 calib_bytes += need
-    arena_bytes = (total_bytes(specs) + total_bytes(dspecs) + total_bytes(vspecs) + 256 * (len(specs) + len(dspecs) + len(vspecs) + 64)
+    router_bytes = net.router_nbytes() if execution == "native" else 0
+    arena_bytes = (total_bytes(specs) + total_bytes(dspecs) + total_bytes(vspecs) + router_bytes + 256 * (len(specs) + len(dspecs) + len(vspecs) + 64)
                    + cache_layout.nbytes(nb, max_seqs) + snapshots * snapshot_bytes + stage_bytes(F, net.layers, max_seqs) + calib_bytes)
     memory = None
     redeclare = None                    # the same table, re-runnable once a ledger exists (45차 §51)
@@ -362,7 +363,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                             ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None,
                             snapshots=snapshots,
                             draft_tp=comm.world_size if execution == "native" else 1,
-                            draft_native=execution == "native")
+                            draft_native=execution == "native", router_bytes=router_bytes)
         # With THIS boot's floor, not vLLM's 40th-boot constant. RuntimeMemory measured it
         # seconds ago in __init__, and this print is the moment anyone decides how much KV to
         # ask for: without it the first table said 42.77 GiB of KV remained on a box that had
@@ -392,6 +393,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         if execution == "native":
             from engine.kernels.prefill_collectives import PrefillCollectives
             with recorder.phase("prepare native execution"):
+                net.prepare_routers(arena)
+                recorder.gauge('router_resident_bytes', router_bytes)
                 net.prepare_dense(store, consume_weights=True)
                 net.prefill_transport = PrefillCollectives(comm)
                 if D:

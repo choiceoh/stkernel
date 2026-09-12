@@ -109,7 +109,8 @@ def ledger_measured(source) -> "dict | None":
 def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | None" = None,
            ckpt: "str | Path" = facts.CKPT, ranks_dir: "str | Path | None" = None, rank: int = 0,
            drafter_dir: "str | Path | None" = drafter_mod.DRAFTER, ledger: "str | Path | None" = None,
-           snapshots: "int | None" = None, draft_tp: int = 1, draft_native: "bool | None" = None) -> Budget:
+           snapshots: "int | None" = None, draft_tp: int = 1, draft_native: "bool | None" = None,
+           router_bytes: int = 0) -> Budget:
     """The box, one rank of TP=4. `kv_gib`/`max_seqs` are boot.py's declared values; the table says what they leave."""
     host_total, _ = host_box()
     if box_gib is None:
@@ -194,6 +195,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
         Line("runtime floor (CUDA ctx + NCCL 16ch)", floor_gib, floor_source, floor_evidence),
         *( (tenants_line,) if tenants_line is not None else () ),
         Line("weights (this rank, TP=4)", weights_gib, READ, weights_evidence),
+        Line("resident FP32 routers", router_bytes / GIB, READ, "net.router_nbytes: immutable BF16 gate values converted once into the arena"),
         Line("drafter weight reservation", drafter_gib, READ, f"drafter.specs: source reservation retained; compute/KV TP={draft_tp}"),
         Line("vision tower (BF16, replicated)", vision_gib, READ, vision_evidence),
         Line(f"state slots ({max_seqs} + null) x {lay.slot_bytes / 2**20:.0f} MiB", slots_gib, READ,
