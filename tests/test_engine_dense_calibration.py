@@ -33,6 +33,30 @@ class CalibrationTests(unittest.TestCase):
         self.assertEqual(c.progress(), 80)
         torch.testing.assert_close(c.H[layer.name], x.float().T @ x.float(), rtol=0, atol=0)
 
+    def test_observing_allocates_no_host_tensor_so_it_can_run_inside_a_graph_capture(self):
+        """The drafter captures a decode graph over a layer this observer is attached to, and
+        a host scalar copied to the device inside a capture is not allowed unless it is pinned:
+        `torch.tensor(float(rows), device=cuda)` killed every boot on 2026-09-12 (rank 3,
+        drafter.propose_tensor -> dense -> observe). Nothing on this path may build a tensor
+        from a Python number, so make that constructor fail and run the path anyway."""
+        for rows_ok in (None, torch.tensor([1, 1, 0, 1, 0, 0], dtype=torch.bool)):
+            with self.subTest(masked=rows_ok is not None):
+                c = Calibration("cpu", budget_bytes=1 << 20)
+                layer = FakeLayer(64, "Some/model.layers.0.self_attn.o_proj")
+                c.attach(layer.name, layer, PackStore.tiles(layer.name, 64), small_rows=True)
+                c.arm()
+                original = torch.tensor
+
+                def refuse(*a, **k):
+                    raise AssertionError("observe() built a host tensor: not capture-safe")
+
+                torch.tensor = refuse
+                try:
+                    layer(torch.randn(6, 64).bfloat16(), rows_ok)
+                finally:
+                    torch.tensor = original
+                self.assertEqual(c.progress(), 3 if rows_ok is not None else 6)
+
     def test_sums_the_real_rows_only_once_armed_and_files_the_stores_blobs(self):
         c = Calibration("cpu", budget_bytes=1 << 20)
         layer = FakeLayer(64, "Some/model.layers.0.self_attn.o_proj")
