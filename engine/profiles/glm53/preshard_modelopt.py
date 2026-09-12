@@ -23,6 +23,7 @@ from engine.base.preshard import RankWriter
 from engine.profiles.glm53 import modelopt_weights as layout
 from engine.profiles.glm53.preshard import parse_layers
 from engine.profiles.glm53 import vision
+from engine.profiles.glm53.modelopt_coverage import source_coverage
 
 
 def tensor_hash(tensor):
@@ -50,13 +51,16 @@ def plan(ckpt,layers):
     if wanted!=covered:raise ValueError('unhandled quantized projection')
     specs=[s for _,group in groups for s in group]
     if len({s.name for s in specs})!=len(specs):raise ValueError('duplicate output tensor')
-    vision_bytes=sum(s.nbytes() for s in vision.specs(vision.load(ckpt))) if layers==list(range(F.layers)) else 0
+    vision_specs=vision.specs(vision.load(ckpt)) if layers==list(range(F.layers)) else []
+    vision_bytes=sum(s.nbytes() for s in vision_specs)
+    coverage=source_coverage(ckpt,sources,{key for s in vision_specs for key in s.sources}) if vision_specs else None
     return F,groups,dict(weight_layout=layout.WEIGHT_LAYOUT,world=4,layers=layers,
         tensors_per_rank=len(specs),payload_bytes_per_rank=sum(s.nbytes() for s in specs),
         vision_payload_bytes=vision_bytes,
         source_tensors=len(sources),quantized_projections=len(covered),
         global_scales='FP32 multipliers preserved separately; no folding or inversion',
         dense_nvfp4_preserved=True,live_serving_compatible=False,
+        source_coverage=coverage,
         source_config_sha256=file_hash(Path(ckpt)/'config.json'),
         source_index_sha256=file_hash(Path(ckpt)/'model.safetensors.index.json'))
 
