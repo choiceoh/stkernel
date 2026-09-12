@@ -61,6 +61,7 @@ class Glm53Engine:
         self.options = {}                                   # seq -> the request's sampling options beyond temperature (base/sampler.OPTION_KEYS)
         self.gens = {}                                      # seq -> its own torch.Generator when the request carries a seed
         self.ends = {}                                      # seq -> end tokens: the model's plus the request's stop_token_ids
+        self.sampling_history = None                        # penalty tensors; history(seq) remains the token-list protocol
         self.lps = {}                                       # seq -> per committed token (id, logprob, [(id, logprob)...]) when asked
         self.matchers = {}                                  # seq -> base/grammar.Matcher when the request carries a grammar
         self.grammars = None                                # base/grammar.Grammars, bound at boot when structured output is served
@@ -381,6 +382,8 @@ class Glm53Engine:
         for rows in (self.tokens, self.prompt_len, self.limits, self.min_new, self.options, self.gens, self.ends, self.lps, self.matchers,
                      self.media, self.embeds, self.inflight, self.staged):
             rows.pop(seq, None)                             # a row leaving does not move the others: the pipeline shrinks its view
+        if self.sampling_history is not None:
+            self.sampling_history.forget(seq)
 
     # -- pictures (45차 §23 A7): the door hands canvases with the positions their rows take; every rank encodes them
     # -- itself (vision.Vision, replicated) at the first prefill chunk that reaches those positions -----------------
@@ -485,6 +488,10 @@ class Glm53Engine:
 
     def state_bytes(self, slot: int):
         return self.caches.slot_bytes(slot)
+
+    def snapshot_bytes(self, snap: int):
+        """A prefix snapshot's bytes (base/runner spills and restores them through the prefix tier)."""
+        return self.caches.snapshot_bytes(snap)
 
     def extend(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None,
                min_new: int = 0, options: "dict | None" = None, media=None, drop_unfed: bool = False) -> int:
@@ -606,16 +613,17 @@ class Glm53Engine:
     def _row_logits(self, seq: int, raw: torch.Tensor, position: int, drafts_before: "list[int]") -> torch.Tensor:
         """`raw` [vocab] processed for `seq` at this step's position: bias, penalties over the row's tokens (with the drafts
         assumed accepted before it), the decodable cut, min_tokens and the grammar's mask."""
-        from engine.base.sampler import process_logits
+        from engine.base.sampler import History, process_logits
         opts = self.options.get(seq, {})
-        prompt = self.tokens[seq][: self.prompt_len[seq]]
-        generated = self.tokens[seq][self.prompt_len[seq]:] + list(drafts_before)
+        if self.sampling_history is None:                   # the vocabulary is whatever the head just produced
+            self.sampling_history = History(int(raw.shape[-1]), raw.device)
+        seen, counts = self.sampling_history.of(seq, self.tokens[seq], self.prompt_len[seq])
         mask = None
         need = self.min_new.get(seq, 0) - self._generated_count(seq) - len(drafts_before)
         if need > 0 and self.ends.get(seq):
             mask = torch.ones(raw.shape[-1], dtype=torch.bool, device=raw.device)
             mask[list(self.ends[seq])] = False
-        return process_logits(raw, opts, prompt, generated, self.decodable, mask)
+        return process_logits(raw, opts, seen, counts, drafts_before, self.decodable, mask)
 
     def _pick_rich(self, seq: int, rows: torch.Tensor, drafts: "list[int]", draft_probs: "torch.Tensor | None"):
         """One sequence's positions through the base sampler. rows: [len(drafts) + 1, vocab] fp32 raw logits.

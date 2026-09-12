@@ -173,6 +173,26 @@ def fetch_media(kind: str, url: str) -> bytes:
     raise RequestError(f"{kind}: url must be a data: or http(s) URL")
 
 
+def stop_token_ids_for(stops, tok) -> "list[int]":
+    """The stop strings this model can emit as one token, for the engine to end on itself.
+
+    The text scan stays and is still the authority: the same string can arrive as several
+    tokens, or straddle a boundary, and only the scan sees that. This lets the common case
+    -- a marker that is its own token -- end the row one step earlier and without the door
+    having to cancel it afterwards. A token whose text is not exactly the stop string (a
+    special token renders as nothing here) is not eligible.
+    """
+    ids = []
+    for stop in stops:
+        try:
+            encoded = tok.encode(stop, add_special_tokens=False).ids
+        except TypeError:                                   # a tokenizer without the switch
+            encoded = tok.encode(stop).ids
+        if len(encoded) == 1 and tok.decode(encoded) == stop:
+            ids.append(encoded[0])
+    return ids
+
+
 def prompt_switches(req: dict) -> "tuple[bool, bool]":
     """`add_generation_prompt` and `continue_final_message`, as OpenAI names them.
 
@@ -241,10 +261,13 @@ class _Choice:
     reaches a stop string ends there; complete <tool_call> blocks become tool_calls (streamed as they complete)."""
 
     def __init__(self, index: int, request: int, event, q, *, tok, stop, reasoning: bool, tool_parser=None,
-                 want_logprobs: "int | None" = None):
+                 want_logprobs: "int | None" = None, min_new: int = 0):
         self.index, self.request, self.event, self.q = index, request, event, q
         self.tok, self.stop, self.reasoning, self.tool_parser = tok, list(stop), reasoning, tool_parser
         self.want_logprobs = want_logprobs
+        self.min_new = min_new
+        self._stop_from = 0          # a stop string may not START below the floor: min_tokens means at least
+                                     # that many, and a stop the model happens to write early cannot undo it
         self.held = {"reasoning_content": [], "content": []}
         self.shown = {"reasoning_content": 0, "content": 0}
         self.text = {"reasoning_content": "", "content": ""}
@@ -299,11 +322,14 @@ class _Choice:
             decoded = self._decoded(channel, final)
             if channel == "content":
                 if self.stop:
-                    cut = min((decoded.find(x) for x in self.stop if x in decoded), default=-1)
+                    if self.total <= self.min_new:
+                        self._stop_from = len(decoded)
+                    hits = [i for i in (decoded.find(x, self._stop_from) for x in self.stop) if i >= 0]
+                    cut = min(hits) if hits else -1
                     if cut >= 0:
                         decoded = decoded[:cut]
                         self.finish = "stop"
-                    elif not final:                                 # a tail that could still become one waits
+                    elif not final and self.total > self.min_new:    # a tail that could still become one waits
                         held_back = partial_suffix(decoded, self.stop)
                         decoded = decoded[:len(decoded) - held_back] if held_back else decoded
                 if self.tool_parser is not None:
@@ -339,10 +365,20 @@ class _Choice:
         if self.want_logprobs is None:
             return None
         rows = []
+        seen = {}
+
+        def text_of(tid):
+            """One decode per distinct id. The payload asks for each token's text and its bytes,
+            and the top-k of one position repeat across the next, so this was two calls per entry
+            over the whole answer at once -- a stall in front of the last chunk."""
+            if tid not in seen:
+                seen[tid] = self.tok.decode([tid])
+            return seen[tid]
+
         for tid, lp, top in self.logprobs[offset:]:
-            token = self.tok.decode([tid])
+            token = text_of(tid)
             rows.append({"token": token, "logprob": lp, "bytes": list(token.encode()),
-                         "top_logprobs": [{"token": self.tok.decode([i]), "logprob": v, "bytes": list(self.tok.decode([i]).encode())}
+                         "top_logprobs": [{"token": text_of(i), "logprob": v, "bytes": list(text_of(i).encode())}
                                           for i, v in top[: self.want_logprobs]]})
         return {"content": rows}
 
@@ -469,7 +505,13 @@ class Server:
         self.ttft = _Histogram(_TTFT_BOUNDS)
         self.step_seconds = {"prefill": _Histogram(_STEP_BOUNDS), "decode": _Histogram(_STEP_BOUNDS)}
         self._step_began = None                    # clock() at the top of the step being timed
-        self.itl = _Histogram(_ITL_BOUNDS)
+        self.itl = _Histogram(_ITL_BOUNDS)         # per output token: a step's seconds divided by what it produced
+        self.step_gap = _Histogram(_ITL_BOUNDS)    # per step: how bursty the stream is. Under speculation the two
+                                                   # differ by exactly the mean acceptance length, and one alone
+                                                   # cannot tell "steps got slower" from "tokens got cheaper"
+        self.queued = _Histogram(_E2E_BOUNDS)      # arrival to the first step that carried this request
+        self.inference = _Histogram(_E2E_BOUNDS)   # that step to the last token: the half queueing does not explain
+        self.by_reason = {}
         self.e2e = _Histogram(_E2E_BOUNDS)
         self._streams = {}                         # request id -> queue of ("tokens", ids) | ("end", finish) | ("error", text)
         self._wake = threading.Event()             # set whenever a stream queue gains an item, so a drain can wait
@@ -482,15 +524,22 @@ class Server:
         # conversation ids are request ids; parked conversations from an earlier boot keep theirs
         parked = sorted(runner.parked_keys())
         self._agree_on_parked(comm, parked)
+        if getattr(runner, "load_prefix_tier", None) is not None:
+            runner.load_prefix_tier()                                    # boundaries an earlier boot left on the prefix tier
+            self._agree_on_parked(comm, runner.prefix_tier_keys())        # ... which every rank must hold alike (45차 §23 A)
         self.next_seq, self.served = 1 + max(parked, default=-1), 0
         self.alive = True
         self._lock = threading.Lock()
         self._waiting = deque()                    # request id, tokens, limit, temperature, promised blocks
         self._active = {}                          # reusable row -> (request id, promised blocks)
+        self._admitted = {}                        # request id -> clock() when a row began stepping it
         self._conversations, self._conversation_of = {}, {}   # resident (idle or live) conversations <-> rows
         self._idle_order = {}                      # resident idle rows, least recently completed turn first (no tier)
         self._retiring = {}                        # row -> conversation: its park is on the tier's thread (D10: no step waits on it)
         self._resuming = {}                        # row -> (conversation, request, ids, limit, temperature, promised): its resume is in flight
+        self._restoring = {}                       # row -> the request whose prefix is being read back from the prefix tier (45차 §23 A)
+        self._deferred = set()                     # requests waiting for a running prefill to cache the prefix they share (B)
+        self.controls = queue.Queue()              # rank 0's cache controls (pin / unpin), broadcast with the arrivals (C)
         self._free_rows = list(range(min(runner.kv.max_seqs, runner.c.max_running, runner.slots.available)))
         if not self._free_rows:
             raise ValueError("the server needs at least one request row and state slot")
@@ -571,7 +620,14 @@ class Server:
             self.prompt_tokens_total += len(ids)
             if options.get("stop_token_ids"):
                 self._stop_ids[request] = set(options["stop_token_ids"])
-            self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation, min_new, options, hint, media))
+            tier = None
+            prefix = getattr(self.runner, "prefix", None)
+            if conversation is None and hint is None and prefix is not None and getattr(self.runner, "prefix_tier", None) is not None:
+                salts = [(m["positions"][0], bytes.fromhex(m["digest"])) for m in media]
+                found = prefix.tier_lookup(ids, salts, prefix.peek(ids, salts))     # rank 0's view; every rank votes at admission
+                if found is not None:
+                    tier = (found[0], found[1].hex())
+            self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation, min_new, options, hint, media, tier))
         return request, event
 
     def _continuation(self, ids, media=()) -> "tuple[int, int] | None":
@@ -655,6 +711,15 @@ class Server:
                     self._arrived.pop(request, None)
                     self._answer(request, RequestError(f"request cancelled: {reason}", 504 if reason == "timeout" else 499))
                     return
+                restoring = next((r for r, e in self._restoring.items() if e["request"] == request), None)
+                if restoring is not None and self._restoring[restoring]["cancelled"] is None:
+                    self._restoring[restoring]["cancelled"] = reason      # the read lands, the boundary stays cached, the row goes back
+                    self.cancelled += 1
+                    self.timed_out += reason == "timeout"
+                    self._deadline.pop(request, None)
+                    self._arrived.pop(request, None)
+                    self._answer(request, RequestError(f"request cancelled: {reason}", 504 if reason == "timeout" else 499))
+                    return
                 self._deadline.pop(request, None)
                 self._arrived.pop(request, None)
                 return                                     # finished already (or unknown): nothing to drop
@@ -723,6 +788,34 @@ class Server:
             except queue.Empty:
                 return out
 
+    def _drain_controls(self):
+        out = []
+        while True:
+            try:
+                out.append(self.controls.get_nowait())
+            except queue.Empty:
+                return out
+
+    def _control(self, control) -> None:
+        """A cache control, applied on every rank in the same iteration (the caches must stay identical)."""
+        prefix = getattr(self.runner, "prefix", None)
+        if prefix is None:
+            return
+        kind, payload = control
+        if kind == "pin":
+            prefix.pin(bytes.fromhex(h) for h in payload)
+        elif kind == "unpin":
+            prefix.unpin_all()
+    def _admit_clock(self, request) -> None:
+        """The moment a row began stepping this request: queue time ends here, inference time starts."""
+        if request in self._admitted:
+            return                                  # a continuation reuses its row; the first admission owns the clock
+        now = self.clock()
+        self._admitted[request] = now
+        arrived = self._arrived.get(request)
+        if arrived is not None:
+            self.queued.observe(now - arrived)
+
     def _evict_idle(self, exclude=None):
         """No tier: a resident idle conversation makes room by ending."""
         row = next((s for s in self._idle_order if s != exclude), None)
@@ -737,9 +830,26 @@ class Server:
         heapq.heappush(self._free_rows, row)
         return True
 
+    def _reorder_waiting(self) -> None:
+        """A request that yielded to a running prefill goes first once the boundary it waited for is cached (45차 §23 F):
+        it adopts what it waited for, and the ones behind it did not wait."""
+        if not self._deferred or len(self._waiting) < 2:
+            return
+        prefix = self.runner.prefix
+        for i, entry in enumerate(self._waiting):
+            if i and entry[0] in self._deferred:
+                ids, media = entry[1], entry[9]
+                salts = [(m["positions"][0], bytes.fromhex(m["digest"])) for m in media]
+                if self.runner.shared_ahead(ids, salts, prefix.peek(ids, salts)) is None:
+                    del self._waiting[i]
+                    self._waiting.appendleft(entry)
+                    return
+
     def _admit(self):
+        self._reorder_waiting()
+        spun = 0
         while self._waiting:
-            request, ids, limit, temperature, promised, conversation, min_new, options, hint, media = self._waiting[0]
+            request, ids, limit, temperature, promised, conversation, min_new, options, hint, media, tier = self._waiting[0]
             row = None
             resident = held = 0
             parked = False
@@ -749,14 +859,48 @@ class Server:
                 row_ = self._conversations.get(key)
                 rest = self._media_after(media, prefix)
                 if rest is None:
-                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media)   # a picture straddles the cut
+                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier)   # a picture straddles the cut
                     continue
                 if (row_ is not None and row_ in self.runner.idle) or (row_ is None and self.runner.is_parked(key)):
                     conversation, ids, media = key, ids[prefix:], rest     # continue the retained conversation with the new turn
                 elif row_ is not None or key in self._retiring.values() or any(e["conversation"] == key for e in self._resuming.values()):
                     break                                         # it is mid-park/resume or live: decide next step
                 else:
-                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media)   # gone: fresh prompt
+                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier)   # gone: fresh prompt
+                    continue
+            salts = [(m["positions"][0], bytes.fromhex(m["digest"])) for m in media] if media else []
+            if conversation is None and hint is None and getattr(self.runner, "prefix", None) is not None:
+                # the same prompt is being prefilled right now: wait for its boundary rather than compute it beside it (B)
+                above = self.runner.prefix.peek(ids, salts)
+                ahead = self.runner.shared_ahead(ids, salts, above)
+                if ahead is not None:
+                    if request not in self._deferred:
+                        self._deferred.add(request)
+                        self.runner.dedup_waits += 1
+                    if len(self._waiting) > 1 and spun < len(self._waiting):
+                        self._waiting.rotate(-1)                  # let the ones behind it go; it comes back around
+                        spun += 1
+                        continue
+                    break
+                self._deferred.discard(request)
+                # a longer boundary is on the prefix tier: read it into the row, admit when every rank has it (A)
+                if tier is not None and tier[0] > above and self._free_rows:
+                    tokens, h = int(tier[0]), bytes.fromhex(tier[1])
+                    have = h in self.runner.prefix.tier_keys and not self.runner.prefix.has(h)
+                    world = int(getattr(self.comm, "world_size", 1) or 1)
+                    if self._votes([have])[0] == world:
+                        row = heapq.heappop(self._free_rows)
+                        try:
+                            self.runner.restore_begin(row, h, tokens)
+                        except Exception:                         # noqa: BLE001 -- no snapshot / no blocks / no tier: prefill it instead
+                            heapq.heappush(self._free_rows, row)
+                            self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None)
+                            continue
+                        self._restoring[row] = dict(request=request, ids=ids, limit=limit, temperature=temperature, promised=promised,
+                                                    min_new=min_new, options=options, media=media, cancelled=None)
+                        self._waiting.popleft()
+                        continue
+                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None)
                     continue
             if conversation is not None:
                 row = self._conversations.get(conversation)
@@ -803,8 +947,7 @@ class Server:
                 try:
                     self.engine.add(row, ids, max_new=limit, temperature=temperature, **({"min_new": min_new} if min_new else {}),
                                     **({"options": options} if options else {}), **({"media": media} if media else {}))
-                    self.runner.submit(row, len(ids), ids=ids,
-                                       salts=[(m["positions"][0], bytes.fromhex(m["digest"])) for m in media] if media else ())
+                    self.runner.submit(row, len(ids), ids=ids, salts=salts)
                 except BaseException:
                     self.engine.forget(row)
                     heapq.heappush(self._free_rows, row)
@@ -832,6 +975,7 @@ class Server:
                 self.runner.extend(row, tokens)
             self._waiting.popleft()
             self._active[row] = (request, promised)
+            self._admit_clock(request)
 
     def _votes(self, flags) -> "list[int]":
         """How many ranks say yes to each flag. Every rank must call this with the same flags in the
@@ -856,6 +1000,7 @@ class Server:
         world = int(getattr(self.comm, "world_size", 1) or 1)
         done = self._votes([self.runner.transfer_done(r) for r in rows])
         outcomes = []                                         # (row, ok, full)
+        restored = {}                                         # row -> (tokens, snap) a prefix restore landed with
         for row, votes in zip(rows, done):
             if votes < world:
                 continue
@@ -863,6 +1008,8 @@ class Server:
             try:
                 if row in self._retiring:
                     self.runner.park_finish(row)
+                elif row in self._restoring:
+                    restored[row] = self.runner.restore_finish(row)
                 else:
                     self.runner.resume_finish(row)
             except TierFull:
@@ -888,6 +1035,35 @@ class Server:
                         self.runner.evict(row)
                         self.engine.forget(row)
                     heapq.heappush(self._free_rows, row)
+            elif row in self._restoring:
+                e = self._restoring.pop(row)
+                request = e["request"]
+                if all_ok == world and e["cancelled"] is None:   # the boundary is back in memory on every rank: the prompt starts after it
+                    tokens, snap = restored[row]
+                    try:
+                        self.engine.add(row, e["ids"], max_new=e["limit"], temperature=e["temperature"],
+                                        **({"min_new": e["min_new"]} if e["min_new"] else {}),
+                                        **({"options": e["options"]} if e.get("options") else {}),
+                                        **({"media": e["media"]} if e.get("media") else {}))
+                        self.runner.submit(row, len(e["ids"]), ids=e["ids"],
+                                           salts=[(m["positions"][0], bytes.fromhex(m["digest"])) for m in e["media"]] if e.get("media") else (),
+                                           prepared=(tokens, snap))
+                    except BaseException:
+                        self.engine.forget(row)
+                        self.runner.restore_undo(row)
+                        heapq.heappush(self._free_rows, row)
+                        raise
+                    if self.runner.keep_idle:
+                        self._conversations[request] = row
+                        self._conversation_of[row] = request
+                    self._active[row] = (request, e["promised"])
+                else:
+                    if ok:
+                        self.runner.restore_undo(row)             # landed here but not everywhere, or nobody wants it: the row goes back
+                    heapq.heappush(self._free_rows, row)
+                    if e["cancelled"] is None:                    # prefill it the plain way, ahead of the queue
+                        self._waiting.appendleft((request, e["ids"], e["limit"], e["temperature"], e["promised"], None, e["min_new"],
+                                                  e["options"], None, e["media"], None))
             else:
                 e = self._resuming.pop(row)
                 conversation, request = e["conversation"], e["request"]
@@ -901,6 +1077,7 @@ class Server:
                     self._conversations[conversation] = row
                     self._conversation_of[row] = conversation
                     self._active[row] = (request, e["promised"])
+                    self._admit_clock(request)
                 elif all_ok == world:                         # the client left while its conversation was coming back: park it again
                     self._conversations[conversation] = row
                     self._conversation_of[row] = conversation
@@ -1031,6 +1208,15 @@ class Server:
                 ("counter", "st:prefix_cache_evictions_total", "cached prefixes dropped", prefix.evictions),
                 ("gauge", "st:prefix_cache_reclaimable_blocks", "blocks only the prefix cache holds",
                  prefix.reclaimable()),
+                ("counter", "st:prefix_reused_tokens_total", "prompt tokens served from a cached boundary (memory or tier)",
+                 getattr(runner, "reused_tokens", 0)),
+                ("gauge", "st:prefix_entries", "boundaries in memory", len(prefix.entries)),
+                ("gauge", "st:prefix_pinned_entries", "boundaries an operator pinned", sum(1 for e in prefix.entries.values() if e.pinned)),
+                ("gauge", "st:prefix_tier_entries", "boundaries the prefix tier holds", len(prefix.tier_keys)),
+                ("counter", "st:prefix_tier_spills_total", "boundaries written to the prefix tier", getattr(runner, "prefix_spills", 0)),
+                ("counter", "st:prefix_tier_restores_total", "boundaries read back from the prefix tier", getattr(runner, "prefix_restores", 0)),
+                ("counter", "st:prefix_dedup_waits_total", "requests that waited for a running prefill's boundary instead of computing it",
+                 getattr(runner, "dedup_waits", 0)),
             ]
         tiered = getattr(runner, "tiered", None)
         if tiered is not None:
@@ -1062,6 +1248,10 @@ class Server:
             labelled.append(("st:decode_capacity_bucket_total", "counter",
                              "decode steps by the context-capacity bucket whose graph served them",
                              [(f'capacity="{c}"', v) for c, v in sorted(by_bucket.items())]))
+        if self.by_reason:
+            labelled.append(("vllm:request_success_by_reason_total", "counter",
+                             "requests answered, by why they stopped",
+                             [(f'finished_reason="{reason}"', count) for reason, count in sorted(self.by_reason.items())]))
         accepted = getattr(engine, "accepted_per_step", None)
         if accepted:
             # Acceptance as a shape, not a mean: a run that is bimodal at 0 and k wants a
@@ -1085,8 +1275,11 @@ class Server:
                        "# TYPE st:lane_info gauge\n")
             out.append(f'st:lane_info{{engine="st",{labels}}} 1\n')
         for name, help_text, histogram in (
-                ("vllm:time_to_first_token_seconds", "admission to first token", self.ttft),
-                ("vllm:time_per_output_token_seconds", "interval between consecutive tokens", self.itl),
+                ("vllm:time_to_first_token_seconds", "arrival to first token, queueing included", self.ttft),
+                ("vllm:time_per_output_token_seconds", "a step's seconds divided by the tokens it produced", self.itl),
+                ("vllm:inter_token_latency_seconds", "seconds between steps that carried tokens", self.step_gap),
+                ("vllm:request_queue_time_seconds", "arrival to the first step that carried it", self.queued),
+                ("vllm:request_inference_time_seconds", "that step to the last token", self.inference),
                 ("vllm:e2e_request_latency_seconds", "admission to the answer", self.e2e)):
             out.append(f"# HELP {name} {help_text}\n# TYPE {name} histogram\n")
             out.extend(f"{series} {value}\n" for series, value in histogram.rows(name))
@@ -1106,8 +1299,8 @@ class Server:
         try:
             if self.comm.rank == 0:
                 self._expire()
-            alive, arrivals, cancels = self.comm.broadcast_object(
-                (self.alive, self._drain(), self._drain_cancels()) if self.comm.rank == 0 else None)
+            alive, arrivals, cancels, controls = self.comm.broadcast_object(
+                (self.alive, self._drain(), self._drain_cancels(), self._drain_controls()) if self.comm.rank == 0 else None)
             if not alive:
                 self._abort()
                 self._fail_pending()
@@ -1115,6 +1308,8 @@ class Server:
             self._waiting.extend(arrivals)
             for request, reason in cancels:
                 self._cancel(request, reason)
+            for control in controls:
+                self._control(control)
             self._settle()
             self._admit()
             began = self.clock()
@@ -1144,6 +1339,7 @@ class Server:
                         fresh -= 1                                  # the first token is the TTFT, not an interval
                         last = now
                     if fresh > 0:
+                        self.step_gap.observe(now - last)     # one sample per step, however many tokens it carried
                         each = (now - last) / fresh
                         for _ in range(fresh):
                             self.itl.observe(each)
@@ -1165,8 +1361,13 @@ class Server:
                     if arrived is not None:
                         self.e2e.observe(now - arrived)
                     result = list(self.engine.generated(row))
+                    admitted = self._admitted.pop(request, None)
+                    if admitted is not None:
+                        self.inference.observe(now - admitted)
                     self._retire(row)
                     self.served += 1
+                    reason = self.finish_reason(result, request)
+                    self.by_reason[reason] = self.by_reason.get(reason, 0) + 1
                     self._deadline.pop(request, None)
                     self._answer(request, result)
             return step is not None
@@ -1256,7 +1457,8 @@ class Server:
                     request, event = server.submit(ids, max_new, temperature, stream=True, min_new=min_new,
                                                    options=opts, continue_history=continue_history, media=media)
                     choices.append(_Choice(len(choices), request, event, server._streams[request], tok=server.tok, stop=stop,
-                                           reasoning=reasoning, tool_parser=tool_parser, want_logprobs=want_logprobs))
+                                           reasoning=reasoning, tool_parser=tool_parser, want_logprobs=want_logprobs,
+                                           min_new=min_new))
                 return choices
 
             def run_choices(self, choices, on_delta) -> bool:
@@ -1374,6 +1576,9 @@ class Server:
                 include_usage = bool(options_stream and options_stream.get("include_usage"))
                 model = req.get("model") if isinstance(req.get("model"), str) and req.get("model") else server.model_name
                 temperature, options = sampling_options(req, server.generation)
+                derived = stop_token_ids_for(stop, server.tok) if (stop and server.tok is not None) else []
+                if derived:
+                    options["stop_token_ids"] = sorted(set(options.get("stop_token_ids") or []) | set(derived))
                 if want_logprobs is not None:
                     options["logprobs"] = want_logprobs
                 grammar = response_format_grammar(req)
@@ -1514,6 +1719,9 @@ class Server:
                 include_usage = bool(isinstance(options_stream, dict) and options_stream.get("include_usage"))
                 model = req.get("model") if isinstance(req.get("model"), str) and req.get("model") else server.model_name
                 temperature, options = sampling_options(req, server.generation)
+                derived = stop_token_ids_for(stop, server.tok) if (stop and server.tok is not None) else []
+                if derived:
+                    options["stop_token_ids"] = sorted(set(options.get("stop_token_ids") or []) | set(derived))
                 count = best_of or n
                 if want_logprobs is not None or best_of:
                     options["logprobs"] = want_logprobs if want_logprobs is not None else 0
@@ -1654,11 +1862,54 @@ class Server:
                 self.reply(200, {"seq": request, "conversation": conversation, "ids": out, "text": text, "prompt_tokens": len(ids),
                                  "completion_tokens": len(out), "seconds": round(time.perf_counter() - t0, 3)})
 
+            def prefix_warm(self, req):
+                """Compute a prompt's prefix so its boundaries are cached before anyone asks (45차 §23 C): `messages` (through
+                the chat template) or `prompt` / `ids`; one token is generated and discarded. `pin: true` keeps the
+                boundaries out of eviction until `/v1/prefix/unpin`."""
+                if getattr(server.runner, "prefix", None) is None:
+                    raise RequestError("this server has no prefix cache", 404)
+                if req.get("messages") is not None:
+                    if server.chat is None or server.tok is None:
+                        raise RequestError("this server has no chat template", 404)
+                    kwargs = req.get("chat_template_kwargs") or {}
+                    if not isinstance(kwargs, dict):
+                        raise RequestError("chat_template_kwargs must be an object")
+                    try:
+                        prompt = server.chat(req["messages"], dict(kwargs))
+                    except Exception as exc:                          # noqa: BLE001
+                        raise RequestError(f"chat template rejected the request: {exc}") from exc
+                    ids = server.tok.encode(prompt, add_special_tokens=False).ids
+                elif isinstance(req.get("prompt"), str):
+                    if server.tok is None:
+                        raise RequestError("this server has no tokenizer", 404)
+                    ids = server.tok.encode(req["prompt"], add_special_tokens=False).ids
+                elif isinstance(req.get("ids"), list):
+                    ids = req["ids"]
+                else:
+                    raise RequestError("warm needs messages, a prompt or ids")
+                request, event = server.submit(ids, 1, 0.0)
+                if not event.wait(server.request_timeout_s):
+                    server.cancel(request, "timeout")
+                    raise RequestError("warm timed out", 504)
+                server.take_result(request)
+                prefix = server.runner.prefix
+                chain = prefix.chain(ids)
+                cached = sorted(t for t, h in chain.items() if prefix.has(h))
+                if req.get("pin"):
+                    server.controls.put(("pin", [chain[t].hex() for t in cached]))
+                self.reply(200, {"tokens": len(ids), "boundaries": cached, "pinned": bool(req.get("pin"))})
+
+            def prefix_unpin(self, req):
+                if getattr(server.runner, "prefix", None) is None:
+                    raise RequestError("this server has no prefix cache", 404)
+                server.controls.put(("unpin", None))
+                self.reply(200, {"ok": True})
+
             def do_POST(self):
                 try:
                     routes = {"/v1/chat/completions": self.chat, "/v1/completions": self.completions,
                               "/v1/engine/completions": self.engine_completions, "/tokenize": self.tokenize,
-                              "/detokenize": self.detokenize}
+                              "/detokenize": self.detokenize, "/v1/prefix/warm": self.prefix_warm, "/v1/prefix/unpin": self.prefix_unpin}
                     handler = routes.get(self.path)
                     if handler is None:
                         raise RequestError("unknown endpoint", 404)

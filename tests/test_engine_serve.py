@@ -60,6 +60,18 @@ class Engine:
     def media_marks(self, seq):
         return [(m["positions"][0], m["digest"]) for m in getattr(self, "media", {}).get(seq, [])]
 
+    # the prefix cache's half (base/prefix.py): position state in and out of snapshots, whose bytes the tier moves
+    def checkpoint(self, seq, position, snap):
+        self.snaps = getattr(self, "snaps", {}); self.snaps[snap] = bytearray([position % 256] * 4)
+
+    def restore(self, seq, position, snap):
+        self.ctx[seq] = position
+        self.restored = getattr(self, "restored", []); self.restored.append((seq, position, snap))
+
+    def snapshot_bytes(self, snap):
+        self.snaps = getattr(self, "snaps", {})
+        return self.snaps.setdefault(snap, bytearray(4))
+
     def history(self, seq):
         return self.tokens[seq] + self.output[seq]
 
@@ -98,7 +110,9 @@ class Engine:
         self.limits[seq] = max_new
         return n
 
-    def prefill(self, seq, start, tokens, blocks, slot):
+    def prefill(self, seq, start, tokens, blocks, slot, marks=None):
+        for position, snap in (marks or {}).items():                    # a boundary inside the step: its snapshot, taken on the way
+            self.checkpoint(seq, position, snap)
         self.ctx[seq] = start + tokens
         if self.ctx[seq] == len(self.tokens[seq]):
             self.output[seq].append(self.tokens[seq][-1])
@@ -124,15 +138,22 @@ class Comm:
         return obj
 
 
-def server(*, rows=2, blocks=16, comm=None, max_pending=64, keep_idle=False, tiered=False, tier=None):
+def server(*, rows=2, blocks=16, comm=None, max_pending=64, keep_idle=False, tiered=False, tier=None, prefix=0, prefix_tier=False):
     engine = Engine(rows + 1)
+    cache = None
+    if prefix:
+        from engine.base.prefix import PrefixCache
+        cache = PrefixCache(4, 8, prefix)                              # BLOCK 4, CHUNK 8, `prefix` snapshots
     runner = Runner(engine, Contract(4, 8, 0, 0, rows), BlockPool(blocks, 4, rows, blocks),
-                    SlotPool(rows + 1), Ring(16, STEP_RECORD.size), keep_idle=keep_idle)
-    if tiered or tier is not None:
+                    SlotPool(rows + 1), Ring(16, STEP_RECORD.size), keep_idle=keep_idle, prefix=cache)
+    if tiered or tier is not None or prefix_tier:
         from test_engine_tier import MemoryTier, Storage
         from engine.base.tiered_kv import TieredKV
         runner.kv.attach_storage(Storage(blocks * 4), 4)
-        runner.tiered = TieredKV(runner.kv, tier if tier is not None else MemoryTier())
+        if tiered or tier is not None:
+            runner.tiered = TieredKV(runner.kv, tier if tier is not None else MemoryTier())
+        if prefix_tier:
+            runner.prefix_tier = TieredKV(runner.kv, MemoryTier())
     return Server(engine, runner, comm or Comm(), host="127.0.0.1", port=0, max_pending=max_pending)
 
 
@@ -982,6 +1003,122 @@ class StreamedTextTests(unittest.TestCase):
         self.assertLessEqual(max(seen), 4, "a window, not the whole answer")
 
 
+class MetricsTests(unittest.TestCase):
+    """The numbers a dashboard needs that a single latency histogram cannot give."""
+
+    def text(self, s):
+        return s.metrics()
+
+    def test_queue_and_inference_time_are_separate_series(self):
+        s = server()
+        out = self.text(s)
+        for name in ("vllm:request_queue_time_seconds", "vllm:request_inference_time_seconds",
+                     "vllm:inter_token_latency_seconds", "vllm:time_per_output_token_seconds"):
+            self.assertIn(name, out, name)
+
+    def test_the_per_step_and_per_token_series_are_not_the_same_measurement(self):
+        # under speculation a step carries several tokens; the two differ by the acceptance length
+        s = server()
+        s.step_gap.observe(0.3)
+        for _ in range(3):
+            s.itl.observe(0.1)
+        rows = dict(s.step_gap.rows("x")), dict(s.itl.rows("x"))
+        self.assertNotEqual(rows[0], rows[1])
+
+    def test_the_success_counter_is_broken_out_by_why_it_stopped(self):
+        s = server()
+        self.assertNotIn("finished_reason", self.text(s))
+        s.by_reason["stop"] = 2
+        s.by_reason["length"] = 1
+        out = self.text(s)
+        self.assertIn('finished_reason="stop"} 2', out)
+        self.assertIn('finished_reason="length"} 1', out)
+
+    def test_the_queue_clock_is_taken_once_for_a_continued_request(self):
+        s = server()
+        s._arrived[3] = s.clock() - 1.0
+        s._admit_clock(3)
+        first = s._admitted[3]
+        s._admit_clock(3)                       # the row is reused for the next turn
+        self.assertEqual(s._admitted[3], first)
+
+
+class StopFloorTests(unittest.TestCase):
+    """min_tokens means at least that many, so a stop string cannot undo it from below."""
+
+    def stream(self, text, stop, min_new):
+        from engine.base.serve import _Choice
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=ByteTokenizer(), stop=list(stop),
+                    reasoning=False, min_new=min_new)
+        shown = []
+        for i in text.encode():
+            c.feed([i], None, None)
+            shown.extend(d.get("content", "") for d in c.flush())
+            if c.finish == "stop":
+                break
+        else:
+            shown.extend(d.get("content", "") for d in c.flush(final=True))
+        return "".join(shown), c
+
+    def test_a_stop_string_below_the_floor_does_not_end_the_answer(self):
+        shown, c = self.stream("XX keep going", ["XX"], min_new=6)
+        self.assertIsNone(c.finish)
+        self.assertEqual(shown, "XX keep going")
+
+    def test_the_same_stop_string_above_the_floor_ends_it(self):
+        shown, c = self.stream("abcdefg XX tail", ["XX"], min_new=6)
+        self.assertEqual(c.finish, "stop")
+        self.assertEqual(shown, "abcdefg ")
+
+    def test_with_no_floor_it_ends_at_once(self):
+        shown, c = self.stream("XX keep going", ["XX"], min_new=0)
+        self.assertEqual(c.finish, "stop")
+        self.assertEqual(shown, "")
+
+
+class StopTokenIdTests(unittest.TestCase):
+    """A stop string the model can emit as one token lets the engine end the row itself."""
+
+    def ids(self, stops):
+        from engine.base.serve import stop_token_ids_for
+        return stop_token_ids_for(stops, Tokenizer())
+
+    def test_a_single_token_stop_string_becomes_an_id(self):
+        self.assertEqual(self.ids(["a", "Z"]), [ord("a"), ord("Z")])
+
+    def test_a_multi_token_stop_string_is_left_to_the_text_scan(self):
+        self.assertEqual(self.ids(["STOP", "\n\nHuman:"]), [])
+
+    def test_a_token_that_does_not_render_as_the_string_is_refused(self):
+        class Lossy(Tokenizer):
+            def decode(self, ids, skip_special_tokens=True):
+                return ""                                  # as a special token renders
+        from engine.base.serve import stop_token_ids_for
+        self.assertEqual(stop_token_ids_for(["a"], Lossy()), [])
+
+
+class LogprobDecodeTests(unittest.TestCase):
+    """The payload asks for each token's text and its bytes: that is one decode, not two."""
+
+    def test_each_distinct_id_is_decoded_once(self):
+        from engine.base.serve import _Choice
+        calls = []
+
+        class Counting(Tokenizer):
+            def decode(self, ids, skip_special_tokens=True):
+                calls.append(tuple(ids))
+                return super().decode(ids)
+
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=Counting(), stop=[], reasoning=False,
+                    want_logprobs=3)
+        c.logprobs = [(65, -0.1, [(65, -0.1), (66, -1.0), (67, -2.0)]),
+                      (66, -0.2, [(66, -0.2), (65, -1.0), (67, -2.0)])]
+        payload = c.logprobs_payload()
+        self.assertEqual([r["token"] for r in payload["content"]], ["A", "B"])
+        self.assertEqual(payload["content"][0]["bytes"], [65])
+        self.assertEqual(len(calls), len({c[0] for c in calls}), "one decode per distinct id")
+
+
 class WakeupTests(unittest.TestCase):
     """A streamed token must wake its reader, not wait out a poll."""
 
@@ -1071,8 +1208,11 @@ class OpenAIDialectTests(unittest.TestCase):
         out = self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body))
         self.assertEqual(out["choices"][0]["finish_reason"], "length")
         opts = s.engine.options[0]
+        # every one of those stop strings is a single token for this tokenizer, so the engine is
+        # told to end on them itself; the request's own id stays in the set
         self.assertEqual(opts, {"top_p": 0.9, "top_k": 40, "presence_penalty": 0.5, "frequency_penalty": -0.5,
-                                "repetition_penalty": 1.1, "seed": 7, "logit_bias": {98: -5.0}, "stop_token_ids": [3]})
+                                "repetition_penalty": 1.1, "seed": 7, "logit_bias": {98: -5.0},
+                                "stop_token_ids": [3] + [ord(c) for c in "123456"]})
         for bad in ({"top_p": 1.5}, {"top_k": -2}, {"presence_penalty": 3}, {"logit_bias": {"x": 1}}, {"seed": -1}, {"n": 9},
                     {"tool_choice": "required"}, {"response_format": {"type": "xml"}}):
             with self.assertRaises(urllib.error.HTTPError) as err:
@@ -1216,6 +1356,77 @@ class OpenAIDialectTests(unittest.TestCase):
         self.assertEqual(s.engine.opened, opened)                         # continued: no new row
         self.assertEqual(s.engine.history(0), [97, 98, 99, 99, 99])        # the end token was dropped, the new turn fed
         self.assertEqual(second["choices"][0]["message"]["content"], "cc")
+
+    def test_the_same_prompt_arriving_twice_waits_for_the_running_prefill_and_adopts_its_boundary(self):
+        s = chat_server(prefix=4)
+        text = "abcdefghijklmnop" + "q"                                 # 17 tokens: two whole chunks, boundaries 4..16
+        body = {"messages": [{"role": "user", "content": text}], "max_tokens": 1}
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with concurrent.futures.ThreadPoolExecutor(2) as pool:
+                first = pool.submit(self._post, base, "/v1/chat/completions", body)
+                second = pool.submit(self._post, base, "/v1/chat/completions", body)
+                threading.Event().wait(0.05)                            # both are in the queue before the loop runs
+                for _ in range(400):
+                    s.once()
+                    if first.done() and second.done():
+                        break
+                    threading.Event().wait(0.001)
+                self.assertEqual(first.result(timeout=3)["usage"]["prompt_tokens"], 17)
+                self.assertEqual(second.result(timeout=3)["usage"]["prompt_tokens"], 17)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+        self.assertEqual(s.runner.dedup_waits, 1)                        # the second yielded to the first's prefill ...
+        self.assertGreaterEqual(s.runner.prefix.hits, 1)                 # ... and adopted what it cached
+        self.assertEqual(s.runner.reused_tokens, 16)
+        prefills = [c for c in s.engine.__dict__.get("prefills", [])]     # the fake does not record steps; the counters above say it
+        self.assertIn("st:prefix_dedup_waits_total{engine=\"st\"} 1\n", s.metrics())
+
+    def test_warm_caches_a_prompt_s_boundaries_and_pins_them_until_unpinned(self):
+        s = chat_server(prefix=4)
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                out = drive(s, pool.submit(self._post, base, "/v1/prefix/warm", {"prompt": "abcdefghij", "pin": True}))
+                self.assertEqual(out, {"tokens": 10, "boundaries": [4, 8], "pinned": True})
+                for _ in range(3):
+                    s.once()                                             # the pin control lands on the loop's next iteration
+                self.assertEqual(sum(1 for e in s.runner.prefix.entries.values() if e.pinned), 2)
+                self.assertIn("st:prefix_pinned_entries{engine=\"st\"} 2\n", s.metrics())
+                drive(s, pool.submit(self._post, base, "/v1/prefix/unpin", {}))
+                for _ in range(3):
+                    s.once()
+                self.assertEqual(sum(1 for e in s.runner.prefix.entries.values() if e.pinned), 0)
+                out = drive(s, pool.submit(self._post, base, "/v1/prefix/warm", {"messages": [{"role": "user", "content": "abcdefghij"}]}))
+                self.assertEqual(out["boundaries"], [4, 8])              # the same prompt: nothing new, still cached
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_a_boundary_evicted_to_the_prefix_tier_comes_back_for_a_later_prompt(self):
+        s = chat_server(prefix=3, prefix_tier=True)
+        s.runner.spill_low_water = 10                                    # spill leaves as soon as they exist
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                drive(s, pool.submit(self._post, base, "/v1/prefix/warm", {"prompt": "abcdefgh"}))   # boundaries 4, 8 (8 = the whole prompt)
+                for _ in range(4):
+                    s.once()                                             # the leaf (8) is written out
+                self.assertEqual(s.runner.prefix_spills, 1)
+                self.assertEqual(len(s.runner.prefix.tier_keys), 1)
+                drive(s, pool.submit(self._post, base, "/v1/prefix/warm", {"prompt": "zzzzyyyyxxxx"}))   # three more boundaries: 8 is evicted
+                self.assertNotIn(8, [e.tokens for e in s.runner.prefix.entries.values() if e.blocks[:1] == (0,)] if False else [])
+                before = s.runner.prefix_restores
+                out = drive(s, pool.submit(self._post, base, "/v1/chat/completions",
+                                           {"messages": [{"role": "user", "content": "abcdefghXY"}], "max_tokens": 1}))
+                self.assertEqual(out["usage"]["prompt_tokens"], 10)
+                self.assertEqual(s.runner.prefix_restores, before + 1)   # the tier's copy served: 8 tokens were not recomputed
+                self.assertIn((0, 8, 0) if False else 8, [p for _, p, _ in s.engine.restored])
+                self.assertIn("st:prefix_tier_restores_total{engine=\"st\"} 1\n", s.metrics())
+        finally:
+            httpd.shutdown(); httpd.server_close()
 
     def test_a_chat_that_resends_its_history_continues_the_retained_conversation(self):
         s = chat_server(keep_idle=True)

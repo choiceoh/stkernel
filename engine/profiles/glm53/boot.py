@@ -54,6 +54,7 @@ KV_GIB = 24.0                       # production parity (vLLM's 24.02 GiB/rank, 
 TOKEN_BUDGET = 8192                 # MAX_BATCHED: the 6,912 chunk law follows (shapes.py)
 MAX_WAIT_S = 20.0                   # D10's one starvation valve
 MAX_SEQS = 4                        # launcher MAX_SEQS
+PREFIX_TIER_STAGE = 32 << 20        # the prefix tier's pinned staging + device scratch
 PREFIX_SNAPSHOTS = 96               # block-boundary checkpoints: ~45 MiB/rank with the native two-head drafter KV shard.
                                     # The unit is the 768 block (nine per 6,912 chunk); boundaries a request adopted
                                     # outlive the ones nobody asked for (prefix._victim), so churn cannot flush them.
@@ -290,13 +291,18 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         if memory is not None:
             memory.checkpoint("loaded")
         with recorder.phase("runner"):
-            tiered = None
+            tiered = prefix_tier = None
             if tier_dir:                                                                # D16: idle conversations park on NVMe, per rank
                 tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes)   # a block is one NVMe unit (block-major)
                 tiered = TieredKV(caches.pool, tier)
+                # the prefix tier (45차 §23 A): evicted leaf boundaries -- their blocks and snapshot -- live on beside the parked
+                # conversations, in their own directory and keyspace (a boundary's key is 56 bits of its hash)
+                prefix_tier = TieredKV(caches.pool, NvmeTier(Path(tier_dir) / f"rank{comm.rank}" / "prefix",
+                                                             block_bytes=cache_layout.block_bytes, stage_bytes=PREFIX_TIER_STAGE))
             prefix = PrefixCache(F.block, engine.prefill_chunk, PREFIX_SNAPSHOTS)      # boundaries = every 768 block (base/prefix.py)
             runner = Runner(engine, contract, caches.pool, caches.slots, Ring(4096, STEP_RECORD.size), recorder, tiered=tiered,
                             keep_idle=tiered is not None, prefix=prefix)                # with a tier, conversations live on and park
+            runner.prefix_tier = prefix_tier
         recorder.gauge("blocks", nb); recorder.gauge("slots", ns); recorder.gauge("arena_GiB", round(arena.used / GIB, 3))
         recorder.gauge("prefix_snapshots", PREFIX_SNAPSHOTS); recorder.gauge("snapshot_MiB", round(snapshot_bytes / 2**20, 1))
         return F, net, caches, engine, runner
