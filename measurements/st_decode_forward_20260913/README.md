@@ -44,10 +44,9 @@ Raw logs retain admission, execution and lease-release records.
 | `cpu-07f98a06.log` | 68 focused tests: 33 pass and 35 GPU skips. |
 | `decode7-07f98a06-plan-failure.log` | Synthetic router selection and graph tests pass. The W4 test stops at an incorrect dispatch assumption: M=7/N=6144 retains two K slices and cannot use the three-slice CTA. `c80c59cb` adds the matching two-slice implementation. |
 | `cpu-suite-c80c59cb.log` | 1046 engine tests, 201 GPU skips; one package-boundary check rejects the new bare relative symbol import. Replaced with the explicit native package import. |
-
 | `decode7-c80c59cb.log` | Two dense/router CUDA tests and seven KDA ring tests pass. Seven-row W4 same-pack captured time falls 1.87–2.58% across three shapes. The 42 complete router pipelines fall from 3.173 to 1.550 ms (51.16%). The then-default rank pack yields exactly matching expert IDs for 2352 rows. |
 | `cpu-import-3b40dddc.log` | 24 tests: 17 pass and seven GPU skips after the package import repair. |
-| `production-sampling-failure.json`, `cpu-sampling-04f6dba4.log` | Preserved four-rank production tracebacks identify `Facts.sel_top_k`. The focused CPU gate includes a real target Facts fixture and a first sampled request: 34 pass, seven GPU skips. Production was not stopped by this task. |
+| `production-sampling-failure.json`, `cpu-sampling-04f6dba4.log` | Preserved four-rank production tracebacks identify `Facts.sel_top_k`. The focused CPU gate includes a real target Facts fixture and a first sampled request: 34 pass, seven GPU skips. Fixed separately in PR #790 (`644fbbea6095`, CI passed), merged before the performance candidate. |
 | `router-weight-identity.json` | All 42 gate matrices match between the diagnostic and consumer rank files, but all 42 correction biases differ. Router selection must also pass with the exact consumer pack; the earlier result is not relabelled as that proof. |
 | `moe-compact-e6dc7ee0-scatter-failure.log` | The probe-only compact tile uses 44032 bytes of shared memory, 96 registers/thread, zero local bytes and supports two blocks/SM in the actual cubin. Its first execution fails with illegal memory access: four 64-column scatter warps retained the old N256 width after the tile became N128. No speed result and no production dispatch. |
 | `moe-scatter-layout-6369964e.log` | CPU layout audit passes after deriving scatter width from the tile and proving complete, unique, bounded output coverage. The GPU retry remains required. |
@@ -64,6 +63,13 @@ Consumer preparation uses private cache copies on all four nodes, excluding
 TP4, SPEC_K=6, C=1/C=4, KV=6 GiB, FP32 KDA state, the up/gate full rank pack,
 and the canonical harness 43 budgets. Candidate-only `st_bracket.sh chain` will
 run two complete onepasses and release its own boot through the official stop.
+
+The corrected compact probe is frozen at `f9a96262fae2046343f6e63e8a63c0bedd2a04bc`
+in ticket `st-moe-compact0913v5` (`17892392484116916`). The queue is waiting on
+production `production/srv2/4116044`, which repeats the sampled-request failure
+before the normal quiet handover completes. The prior stop authorization named
+a different boot, so stopping this production supervisor and restoring the fixed
+release was explicitly requested from the operator. No manual stop was performed.
 
 No component result establishes 22 step/s, answer quality, speculative
 acceptance or a same-build consumer speedup.

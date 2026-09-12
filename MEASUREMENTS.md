@@ -1749,6 +1749,6 @@ prepared again at 6d63b897eb17`, 영수증은 새 것(379e4c28 → 39575ebc), �
 범위를 벗어났다. 좌표와 CPU 범위 검사를 수정했으며 GPU 재검증 중이다. KDA BV16/M7 실험은 비트 일치 실패로 되돌렸다.
 
 샘플링 첫 요청에서 대상 Facts의 없는 `sel_top_k`를 읽어 네 랭크가 죽는 문제도 고쳤다. 이 값은 드래프터 Facts의
-것이다. 실제 대상 Facts를 쓰는 회귀 검사를 포함해 CPU 34 pass/7 GPU skip. 전체 CI는 직전 `e6dc7ee0`에서 통과했다.
+것이다. 실제 대상 Facts를 쓰는 회귀 검사를 포함해 CPU 34 pass/7 GPU skip. 크래시 수정은 별도 PR #790에서 CI를 통과해 `644fbbea6095`로 main에 병합했다.
 원시 로그·실패·정체성·정확한 실행 범위: `measurements/st_decode_forward_20260913/README.md`.
 추론 예산 4096/12288, KV 6 GiB, 독립 캐시로 **개선판 한 부팅에서 정식 onepass 두 판**을 이어 검증한다.
