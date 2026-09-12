@@ -589,7 +589,8 @@ def fleet(a) -> int:
         # scrape time instead of inferred from a boot log nobody kept (45차 §17 lesson).
         engine.lane_info = {"lanes": lanes.name, "moe_static": cfg["moe_static"],
                             "mla_prefill": cfg["mla_prefill"], "spec_k": str(engine.drafter.k),
-                            "context_ceiling": str(engine.max_context)}
+                            "context_ceiling": str(engine.max_context),
+                            "dense_w4a16_guard_rows": str(lane_tables.dense_w4a16_guard_rows())}
         # a stale tier under one rank diverges the ranks (45th 21): find it in seconds, not after the capture
         Server._agree_on_parked(comm, sorted(runner.parked_keys()))
         with rec.phase("capture decode"):

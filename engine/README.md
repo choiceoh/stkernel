@@ -7,7 +7,11 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 - **DGX Spark(GB10)** — 장치 하나, 통합 메모리, SM121. 부팅·검증 때 단언(`facts.check_box`).
 - **NVFP4 가 기본형** — packed 바이트 그대로 상주, packed 위에서 TP, 전역 스케일은 곱셈자, 서빙 커널이 레인. 유일형은
   아니다: 체크포인트가 bf16 으로 가진 것은 bf16 으로 쥔다.
-- **레거시 없음** — 폴백·옵션·플랫폼 디스패치·전방 컨텍스트·가중치 로더 추상이 없다. 사실과 만료 노브만(D11).
+- **ModelOpt dense 안전장치** — 엔비디아 체크포인트의 첫 3개 dense MLP는 긴 prefill(기본 4,096행)에서
+  b12x W4A16으로 내려 activation-side FP4 오차를 줄인다. decode와 짧은 prefill은 NVFP4를 유지하며,
+  `STK_GLM53_DENSE_W4A16_GUARD_ROWS=0`은 비교 실험에서만 guard를 끈다.
+- **레거시 없음** — 범용 레거시 폴백·플랫폼 디스패치·전방 컨텍스트·가중치 로더 추상은 없다. 수치 안전장치처럼
+  프로필 계약에 속한 명시적 guard만 둔다.
 
 설계 원칙은 `CHARTER.md`(D1~D16). 세 조합 계층(D15)과 실행 커널:
 
@@ -45,7 +49,7 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
     curl -s http://10.10.10.2:8000/v1/models; curl -s http://10.10.10.2:8000/metrics                                  # 모델 이름, 벤치 이름의 카운터
 
 `/metrics`(프로메테우스 텍스트, HELP·TYPE 포함): 벤치 방언(`vllm:request_success_total`·`num_requests_{running,waiting}`·`prompt/generation_tokens_total`·`spec_decode_*`·`iteration_tokens_total_count`)은 이름과 의미 그대로 유지하고, 그 위에 **지연 히스토그램 셋**(`vllm:time_to_first_token_seconds`·`time_per_output_token_seconds`·`e2e_request_latency_seconds`, 요청 도착 시각 기준), **포화도**(`vllm:gpu_cache_usage_perc`·`st:kv_blocks_{total,used,free}`·`st:state_slots_{total,free}`), **재사용**(`vllm:prefix_cache_{queries,hits}_total`·`st:prefix_cache_*`), **스텝 종류**(`st:steps_{prefill,decode}_total`, D9), **티어**(`st:conversations_parked`·`st:tier_bytes_*`), **취소·타임아웃**(`st:requests_{cancelled,timed_out}_total`)을 낸다.
-vLLM 이 낼 수 없는 것(이 엔진에만 있는 부품이라): **어느 캡처 그래프가 돌았나**(`st:decode_steps_by_sequences_total{sequences}` = 스케줄러가 실제로 채운 배치, `st:decode_capacity_bucket_total{capacity}` = `STK_context_ceiling` 을 자를 유일한 프로덕션 증거), **스텝 벽시계**(`st:step_seconds{kind}`, 호스트 관측 종단 — 두 종류 모두 샘플 읽기로 끝나므로 발사 시간이 아니라 스텝 전체다), **수용 분포**(`st:spec_accepted_per_step_total{accepted}` — 평균이 아니라 모양이 `spec_k` 를 정한다), **무엇이 실제로 묶였나**(`st:lane_info{lanes,moe_static,mla_prefill,spec_k,context_ceiling}` — "무장 ≠ 서빙"을 부팅 로그가 아니라 스크레이프로 판정).
+vLLM 이 낼 수 없는 것(이 엔진에만 있는 부품이라): **어느 캡처 그래프가 돌았나**(`st:decode_steps_by_sequences_total{sequences}` = 스케줄러가 실제로 채운 배치, `st:decode_capacity_bucket_total{capacity}` = `STK_context_ceiling` 을 자를 유일한 프로덕션 증거), **스텝 벽시계**(`st:step_seconds{kind}`, 호스트 관측 종단 — 두 종류 모두 샘플 읽기로 끝나므로 발사 시간이 아니라 스텝 전체다), **수용 분포**(`st:spec_accepted_per_step_total{accepted}` — 평균이 아니라 모양이 `spec_k` 를 정한다), **무엇이 실제로 묶였나**(`st:lane_info{lanes,moe_static,mla_prefill,spec_k,context_ceiling,dense_w4a16_guard_rows}` — "무장 ≠ 서빙"을 부팅 로그가 아니라 스크레이프로 판정).
 비용(실측): 렌더 0.096 ms·11 KB·190줄(스크레이프당 1회), 관측 0.96 µs(디코드 스텝 최악 24회 = 46 ms 스텝의 0.05%). 디바이스 읽기·동기화 없음.
 
 문(`base/serve.py`): 엔진 방언(`POST /v1/completions` ids|prompt, `conversation` 으로 이어가기)과 OpenAI chat 방언(`POST /v1/chat/completions`,

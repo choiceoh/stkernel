@@ -1,10 +1,11 @@
 """Encoding, scale direction and fixed dense routing for NVIDIA ST serving."""
 from dataclasses import replace
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import torch
 
@@ -39,6 +40,15 @@ def model(layer, table=None):
 
 
 class ModelOptServingTests(unittest.TestCase):
+    def test_dense_w4a16_guard_rows_are_safe_and_configurable(self):
+        self.assertEqual(lanes.dense_w4a16_guard_rows("4096"), 4096)
+        self.assertEqual(lanes.dense_w4a16_guard_rows("0"), 0)
+        with patch.dict(os.environ, {"STK_GLM53_DENSE_W4A16_GUARD_ROWS": "8192"}):
+            self.assertEqual(lanes.dense_w4a16_guard_rows(), 8192)
+        for raw in ("-1", "nope"):
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                lanes.dense_w4a16_guard_rows(raw)
+
     def test_replay_judge_distinguishes_one_bf16_step_from_scatter_drift(self):
         from probes.engine_modelopt_check import bf16_ulps, repeat_stable
         x=torch.tensor([-1.,-.5,-0.,0.,.5,1.],dtype=torch.bfloat16)

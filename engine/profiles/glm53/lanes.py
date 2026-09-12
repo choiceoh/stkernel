@@ -6,9 +6,10 @@
                   MLA 2.2e-3, indexer logits 2.4e-3, kpool byte-identical
     served()      ST's kernels in engine/kernels, with direct library
                   dependencies on Triton, TileLang, DeepGEMM and FlashInfer
-                  utilities. All or nothing: a lane that will not import
-                  raises, the boot dies (D3) -- there is no per-lane
-                  fallback to the reference.
+                  utilities. All or nothing for lane binding: a lane that will
+                  not import raises, the boot dies (D3). The ModelOpt dense
+                  MLPs have one explicit precision guard: long prefill can
+                  use b12x W4A16 while decode stays on NVFP4.
 
 The model (net.py) calls only these names; everything else it does is
 plain torch on views. One contract per lane, spelled in the docstrings.
@@ -16,8 +17,38 @@ plain torch on views. One contract per lane, spelled in the docstrings.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
+import os
 
 import torch
+
+
+_LOGGER = logging.getLogger(__name__)
+_DENSE_W4A16_GUARD_ROWS_ENV = "STK_GLM53_DENSE_W4A16_GUARD_ROWS"
+
+
+def dense_w4a16_guard_rows(raw: str | None = None) -> int:
+    """Rows at which ModelOpt dense prefill leaves W4A4 for W4A16.
+
+    The NVIDIA ModelOpt checkpoint has no higher precision copy of the first
+    three MLPs.  W4A16 therefore keeps the packed weights but removes the
+    activation-side FP4 round trip.  A zero value disables the guard; the
+    serving default is 4096 rows, which covers the long-prefill cells while
+    leaving decode and short prefill on NVFP4.
+    """
+    if raw is None:
+        raw = os.environ.get(_DENSE_W4A16_GUARD_ROWS_ENV, "4096")
+    try:
+        rows = int(str(raw).strip() or "4096")
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{_DENSE_W4A16_GUARD_ROWS_ENV} must be a non-negative integer"
+        ) from exc
+    if rows < 0:
+        raise ValueError(
+            f"{_DENSE_W4A16_GUARD_ROWS_ENV} must be a non-negative integer"
+        )
+    return rows
 
 
 @dataclass(frozen=True)
@@ -192,6 +223,40 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     from engine.kernels.indexer import pool_slots
     mk.configure_prefill(mla_prefill)
     ref = reference()
+    # ModelOpt keeps the first three dense MLPs in packed NVFP4.  Above the
+    # guard threshold, run those layers through b12x's W4A16 mode: weights
+    # stay FP4, while the activation side remains BF16.  Prepare this copy
+    # before the serving lane is allowed to tile the source tensors in place.
+    # The fallback is deliberately opt-out (4096 rows by default); setting
+    # the threshold to zero restores the all-NVFP4 experiment for profiling.
+    guard_rows = dense_w4a16_guard_rows()
+    w4a16_prepared = {}
+    w4a16_announced = set()
+
+    def _w4a16_key(w13, w13_sf, w2, w2_sf, scales):
+        return (w13.data_ptr(), w13_sf.data_ptr(), w2.data_ptr(), w2_sf.data_ptr(),
+                scales.weight13.data_ptr(), scales.weight2.data_ptr())
+
+    def _prepare_dense_w4a16(w13, w13_sf, w2, w2_sf, scales):
+        if scales is None:
+            raise RuntimeError("W4A16 dense guard requires ModelOpt scales")
+        key = _w4a16_key(w13, w13_sf, w2, w2_sf, scales)
+        prepared = w4a16_prepared.get(key)
+        if prepared is None:
+            from engine.kernels.b12x.moe_w4a16_prepare import (
+                prepare_w4a16_modelopt_nvfp4_weights,
+            )
+            # This routine copies/re-packs the source, so the later NVFP4
+            # tile-major relayout cannot invalidate the safety lane.
+            prepared = prepare_w4a16_modelopt_nvfp4_weights(
+                w13, w13_sf, scales.weight13,
+                w2, w2_sf, scales.weight2,
+                activation="swigluoai_uninterleave",
+                params_dtype=torch.bfloat16,
+                w13_layout="w13",
+            )
+            w4a16_prepared[key] = prepared
+        return prepared
 
     def kda_chunk(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound, states_at=None):
         t = q.shape[1]
@@ -304,13 +369,71 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
             return prepared[key]
 
         def moe_prepare(w13, w13_sf, w2, w2_sf, top_k, limit, *, scales=None):
+            # Dense MLPs are represented as one fixed expert (top_k=1).  Build
+            # the W4A16 copy before views_for() may mutate the packed source to
+            # tile-major storage.  Routed MoE remains NVFP4-only.
+            if guard_rows and top_k == 1 and scales is not None:
+                _prepare_dense_w4a16(w13, w13_sf, w2, w2_sf, scales)
             views_for(w13, w13_sf, w2, w2_sf, top_k, limit, in_place=True, scales=scales)
 
         def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit, *, scales=None):
-            """Packed W4A4 with prepared b12x quantizer/epilogue scales.
+            """Packed b12x MoE with prepared ModelOpt scales.
             Red Hat uses unit scales; ModelOpt passes a for quantization and
-            a*w for each GEMM. The clamped activation is common to both."""
+            a*w for each GEMM. The clamped activation is common to both. The
+            dense one-expert form can use the W4A16 guard for long prefill."""
             E = w13.shape[0]
+
+            # A dense layer is the fixed one-expert form used by
+            # Glm53Net._dense_nvfp4.  W4A16 is an accuracy guard for long
+            # prefill only; decode and short prefill retain NVFP4.  Do not
+            # enter this branch during CUDA graph capture: the serving boot
+            # executes long-prefill warmup eagerly, while decode graphs stay
+            # on the NVFP4 lane.
+            capturing = False
+            try:
+                capturing = bool(torch.cuda.is_current_stream_capturing())
+            except Exception:
+                pass
+            if (guard_rows and sel.shape[1] == 1 and scales is not None
+                    and x.shape[0] >= guard_rows and not capturing):
+                prepared = _prepare_dense_w4a16(w13, w13_sf, w2, w2_sf, scales)
+                output = torch.empty_like(x, memory_format=torch.contiguous_format)
+                key = _w4a16_key(w13, w13_sf, w2, w2_sf, scales)
+                if key not in w4a16_announced:
+                    w4a16_announced.add(key)
+                    _LOGGER.warning(
+                        "[glm53] dense prefill W4A16 guard engaged (rows=%d, threshold=%d); "
+                        "NVFP4 remains enabled for decode/short prefill",
+                        x.shape[0], guard_rows)
+                # Use the dispatcher directly so the prepared W4A16 weights
+                # survive the NVFP4 tile-major source relayout.  Its cached
+                # functional workspace is eager-only and is warmed by the
+                # long-prefill qualification before serving opens.
+                return md.launch_sm120_moe(
+                    a=x,
+                    topk_ids=sel.contiguous(),
+                    topk_weights=w.contiguous(),
+                    w1_weight=w13,
+                    w1_weight_sf=w13_sf,
+                    w1_alpha=scales.alpha13,
+                    fc2_input_scale=None,
+                    input_global_scale=None,
+                    w2_weight=w2,
+                    w2_weight_sf=w2_sf,
+                    w2_alpha=scales.alpha2,
+                    num_experts=E,
+                    top_k=1,
+                    num_local_experts=E,
+                    scatter_output=output,
+                    activation="swigluoai_uninterleave",
+                    swiglu_alpha=1.0,
+                    swiglu_beta=0.0,
+                    swiglu_limit=float(limit),
+                    activation_precision="bf16",
+                    quant_mode="w4a16",
+                    source_format="modelopt",
+                    _prepared_weights=prepared,
+                )
             views, sf13, sf2, a13, a2, q13, q2 = views_for(
                 w13, w13_sf, w2, w2_sf, sel.shape[1], limit, in_place=False, scales=scales)
             # The ST caller owns the output allocation, including the graph

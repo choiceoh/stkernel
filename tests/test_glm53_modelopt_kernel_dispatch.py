@@ -19,6 +19,19 @@ def functions(*names):
 
 
 class ModelOptKernelDispatchTests(unittest.TestCase):
+    def test_w4a16_dispatch_preserves_glm_swiglu_parameters(self):
+        tree = ast.parse(DISPATCH.read_text())
+        fn = next(node for node in tree.body
+                  if isinstance(node, ast.FunctionDef)
+                  and node.name == '_launch_sm120_w4a16_moe')
+        calls = [node for node in ast.walk(fn)
+                 if isinstance(node, ast.Call)
+                 and isinstance(node.func, ast.Name)
+                 and node.func.id == 'run_w4a16_moe']
+        self.assertEqual(len(calls), 1)
+        forwarded = {kw.arg for kw in calls[0].keywords}
+        self.assertTrue({'swiglu_limit', 'swiglu_alpha', 'swiglu_beta'} <= forwarded)
+
     def test_dense_and_routed_glm_partial_sums_have_fp32_storage(self):
         ns = functions('_glm_tp_scatter_shape', '_glm_tp_scatter_fp32')
         gate = ns['_glm_tp_scatter_fp32']
