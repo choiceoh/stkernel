@@ -11819,3 +11819,40 @@ The model `deepseek-v4-flash` does not exist.
 **남은 것.** §82 와 같은 읽기 규칙이 적용된다 — 이거 경로, 프로덕션과 공유한 GPU, 그래프 안에서는
 호스트 런치 몫이 이미 없다. 판정은 다음 부팅의 `stage="propose"` 다. 그리고 아직 접지 않은 것:
 `fc` W4 가 **5 개의 팩을 따로 부르고 fp32 로 더한다**(571 µs, 10 op). 그게 observe 의 다음 표적이다.
+
+### 45차 §81 — 대화 이어가기가 왜 한 번도 안 탔나: 추론을 켜는 쪽과 되돌려주는 쪽이 다른 계층이다 (2026-09-12, srv4, GPU 없음, 실물 템플릿·토크나이저)
+
+§75 의 스크레이프에 **대화 10개가 파킹돼 있는데 `st:reuse_path_total{continuation}` 은 0** 이었다. D16 의 절반이
+프로덕션에서 한 번도 안 탔다는 뜻이라 양쪽 레포를 다 열었다.
+
+**문의 조건은 맞다.** `continue_history`(채팅 경로가 True 로 넘긴다) · `keep_idle`(티어가 있으면 True) ·
+테넌트 솔트(데네브는 `prompt_cache_key` 를 안 보내므로 양쪽 다 None) — **셋 다 열려 있다.** 남은 것은
+`_continuation` 의 본질적 조건 하나뿐이다: **다음 프롬프트가 엔진이 들고 있는 히스토리의 진짜 접두사여야 한다.**
+
+실물 `chat_template_mm_v2.jinja` 와 실물 `tokenizer.json` 으로 두 턴을 렌더해 봤다(GPU 없음):
+
+| 렌더 | 턴1 생성 프롬프트 꼬리 | 히스토리 | 다음 프롬프트 | 공통 접두사 | 이어가기 |
+|---|---|---:|---:|---:|---|
+| **thinking 끔** | `<\|assistant\|><think></think>` | 22 | 29 | **22** | **탄다** |
+| **thinking 켬** | `<\|assistant\|><think>` | 21 | 28 | **19** | **못 탄다** |
+| thinking 켬 + `reasoning_content` 되돌려줌 | 〃 | 33 | 39 | **33** | **탄다** |
+
+**템플릿이 `<think>` 를 직접 연다.** 그래서 모델은 `<think>` 를 생성하지 않고 **추론 본문부터** 낸다. 다음 턴에
+그 어시스턴트 차례를 다시 그릴 때 **`reasoning_content` 가 없으면 추론 구간이 통째로 빠지고**, 히스토리는 그
+지점에서 접두사이기를 그만둔다 — 위 표의 19/21 이 그것이고, **첫 user 턴 이후가 매 턴 전부 재계산**된다.
+이어가기만 죽는 게 아니라 **접두사 캐시도 거기서 끊긴다.**
+
+**그런데 켜는 쪽과 되돌려주는 쪽이 다른 계층이다.** 데네브는 자기 thinking 설정으로 `preserveThinking`
+(`interleavedEnabled`: `Thinking.Type=="enabled" && Interleaved`)를 정해 놓고 요청을 보낸다. 그 뒤 **웜홀이**
+`effort.go` 에서 Ares 판정이나 caller 의 high/max 를 보고 **그 턴을 추론 턴으로 바꿀 수 있다**
+(`thinking:{"type":"enabled"}` + `reasoning_effort:"high"`). 즉 **모델이 추론을 내는 턴인지는 웜홀이 정하는데,
+그 추론을 다음 턴에 되돌려줄지는 이미 상류에서 정해져 버렸다.** 되돌려줄 쪽은 자기가 추론 턴이었다는 걸 모른다.
+
+라이브 설정은 `agents.defaults.thinking = {level:"low", interleaved:true}` 이고, 웜홀 주석이 적어 둔 대로
+**데네브의 "low" 는 thinking 끔**이다 — 그래서 `Type!="enabled"` → `preserveThinking` 은 `interleaved:true`
+에도 불구하고 **false**. 설정대로 가는 턴은 표의 첫 줄(이어가기 탄다)이고, **웜홀이 올린 턴은 둘째 줄**이다.
+
+**아직 못 밝힌 것**: 첫 줄 경로도 이어가기가 탔어야 하는데 스크레이프는 0 이었다. 그 창의 트래픽이 어느
+줄이었는지는 기록이 없고(요청별 effort 가 어디에도 안 남는다), **플릿이 내려가 있어 두 턴을 실제로 던져
+확인하지 못했다.** 다음 창의 첫 번째 할 일이다 — 그리고 그 김에 **문이 자기가 받은 `reasoning_effort` 를
+세어 두면**(끔/high/max) 이 질문은 다시는 추측이 되지 않는다.
