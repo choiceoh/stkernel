@@ -94,6 +94,19 @@ class RuntimeMemory:
             totals[key] = totals.get(key, 0.0) + row.get("seconds", 0.0)
         return sorted(totals.items(), key=lambda kv: -kv[1])[:top]
 
+    def weigh(self, top: int = 8) -> "list[tuple[str, int]]":
+        """Where a boot's memory went: what each phase prefix ADDED to the allocator's reservation, most first.
+        `spend()` answers this for time and has since the boot-time study; the bytes were in every row all along
+        and nobody summed them, so "which capture is worth its footprint" meant reading 351 rows by hand.
+        The reservation is what the box loses (GB10: reserved minus allocated is memory nobody gets back), so
+        that is the column, and a phase that gave memory back counts negative rather than being clipped to zero."""
+        totals, last = {}, self.baseline_reserved
+        for row in self.phases:
+            key = row["phase"].split("/")[0]
+            totals[key] = totals.get(key, 0) + (row["reserved_bytes"] - last)
+            last = row["reserved_bytes"]
+        return sorted(totals.items(), key=lambda kv: -kv[1])[:top]
+
     def report(self):
         return dict(ready=self.ready, arena_bytes=self.arena_bytes,
                     workspace_limit_bytes=self.workspace_bytes,
@@ -101,7 +114,7 @@ class RuntimeMemory:
                     baseline_reserved_bytes=self.baseline_reserved,
                     allocator_limit_bytes=self.allocator_limit_bytes,
                     seconds=round(self.last - self.started, 4),
-                    spend=dict(self.spend()),
+                    spend=dict(self.spend()), weigh=dict(self.weigh()),
                     phases=self.phases)
 
     def write(self, path):
