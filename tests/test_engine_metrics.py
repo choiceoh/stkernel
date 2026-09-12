@@ -166,6 +166,24 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(_series(text, "st:prefix_tier_bytes_read_total"), float(3 << 20))
         self.assertEqual(_series(text, "st:tier_bytes_written_total"), 4096.0, "the two tiers stay apart")
         self.assertEqual(_series(text, "st:tier_bytes_read_total"), 512.0)
+    def test_the_scrape_says_which_reasoning_shape_the_traffic_was_rendered_with(self):
+        """45차 §81: whether a conversation CAN be continued turns on this and nothing else. With thinking
+        off the template writes `<think></think>` and the next turn re-renders that assistant turn
+        identically, so the history stays a prefix; with thinking on the model writes a reasoning span the
+        next render only reproduces if the client echoes reasoning_content back. The fleet serves both and
+        nothing recorded which -- `reuse_path_total` said a prompt did not continue, never whether it could."""
+        import test_engine_serve as T
+        s = T.server()
+        self.assertIsNone(_series(s.metrics(), "st:reasoning_shape_total"))      # no chat, no series
+        for kwargs in ({"thinking": False}, {"thinking": False},
+                       {"reasoning_effort": "high"}, {"thinking": True, "reasoning_effort": "max"}, {}):
+            s.note_reasoning(kwargs)
+        text = s.metrics()
+        self.assertIn('st:reasoning_shape_total{engine="st",thinking="off",effort="absent"} 2', text)
+        self.assertIn('st:reasoning_shape_total{engine="st",thinking="on",effort="high"} 1', text)
+        self.assertIn('st:reasoning_shape_total{engine="st",thinking="on",effort="max"} 1', text)
+        # absent is its own label: nobody said, and the template turns that into max by itself
+        self.assertIn('st:reasoning_shape_total{engine="st",thinking="on",effort="absent"} 1', text)
         _exposition_is_wellformed(self, text)
 
     def test_the_exposition_is_wellformed(self):

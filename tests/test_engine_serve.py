@@ -1951,6 +1951,21 @@ class OpenAIDialectTests(unittest.TestCase):
                                                     "reasoning_effort": "high", "chat_template_kwargs": {"reasoning_effort": "low"}}))
         self.assertEqual(err.exception.code, 400)
 
+    def test_the_door_counts_the_reasoning_shape_it_was_handed(self):
+        """Whether a conversation CAN be continued turns on this shape and nothing else (45차 §81), and
+        the fleet serves both: wormhole raises a turn to thinking-on from an Ares decision or a caller's
+        high/max, long after Deneb decided whether to echo the reasoning back. `reuse_path_total` said a
+        prompt did not continue; this says whether it ever could."""
+        s = chat_server()
+        for body in ({"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
+                      "chat_template_kwargs": {"thinking": False}},
+                     {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
+                      "reasoning_effort": "high"}):
+            self._serve(s, lambda base, b=body: self._post(base, "/v1/chat/completions", b))
+        self.assertEqual(s.reasoning_shapes.get(("off", "absent")), 1)
+        self.assertEqual(s.reasoning_shapes.get(("on", "high")), 1)
+        self.assertIn('thinking="off",effort="absent"} 1', s.metrics())
+
     def test_medium_effort_is_served_and_lands_on_a_rung_the_template_has(self):
         """GLM's template reads `reasoning_effort in ['low','high']` and turns everything else
         into 'max', so a plain OpenAI "medium" would silently buy the DEEPEST setting. Refusing
