@@ -87,6 +87,23 @@ class RuntimeMemoryTests(unittest.TestCase):
         self.assertEqual(report["spend"]["target"], 7.1)
         memory.close()
 
+    def test_the_report_splits_the_memory_by_phase_the_way_it_splits_the_seconds(self):
+        """Every row carried the bytes all along; nothing summed them, so "is this capture worth its footprint"
+        meant reading every row by hand. `weigh()` is `spend()` for the reservation, which is what the box loses."""
+        memory = self.budget()
+        memory.clock = lambda: 0.0
+        base = memory.baseline_reserved
+        for phase, reserved in [("loaded", base + 100), ("target/(1, 6, 4096)/captured", base + 340),
+                                ("target/(4, 6, 4096)/captured", base + 500), ("sampling/greedy/captured", base + 520),
+                                ("freed", base + 440)]:
+            memory.cuda.reserved = reserved
+            memory.cuda.peak_reserved = max(memory.cuda.peak_reserved, reserved)
+            memory.checkpoint(phase)
+        self.assertEqual(memory.weigh(), [("target", 400), ("loaded", 100), ("sampling", 20), ("freed", -80)])
+        self.assertEqual(memory.report()["weigh"]["target"], 400)
+        self.assertEqual(sum(dict(memory.weigh()).values()), memory.cuda.reserved - base, "the parts are the whole")
+        memory.close()
+
     def test_report_preserves_declared_limits_and_measured_phases(self):
         memory = self.budget()
         memory.checkpoint("loaded")
