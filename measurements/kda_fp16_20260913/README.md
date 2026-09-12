@@ -56,12 +56,19 @@ mutation, with two CPUs and a 4 GiB memory cap. Task source and logs are under
   (`gpu-compiler.json`). FP32 sum differences at rounding ties can change a
   stored FP16 value by one representable step; bit-identical cross-dtype results
   are not a valid numerical oracle.
+  The expanded contract passed all 12 checks in 13.678 seconds at
+  `6403fd57413e70190edd74a17b18c67fff86160e` (`gpu-boundary-contract.log`).
+  It also compares CUDA graph boundary staging, snapshots and restored rings
+  against the CPU byte oracle for both precisions, four mutable slots, actual
+  768-token boundaries, non-crossing rows, NaN bit patterns and padding.
+  CUDA staging now derives its views, offsets and strides from the recurrent
+  field's actual dtype; the old four-byte assumption would corrupt FP16 snapshots.
 - End-to-end gate: a matched FP32/FP16 ST bracket, cold and warm onepass per arm,
   C=1/C=4 quality, Korean corruption, acceptance, actual output tok/s, TTFT and
   memory records. No performance or quality verdict is claimed without these results.
 
-The matched bracket's baseline is `a1a97420d141a27a0fd25aa84e4ec0f77fc3ee33`;
-its FP16 arm is `5763885def3ba544f28033636c0eeacea2d01056`. Their trees differ
+The matched bracket's baseline is `6403fd57413e70190edd74a17b18c67fff86160e`;
+its FP16 arm is `939d8c1900dc0d713c6d87b1f2cb664e34a954f1`. Their trees differ
 only in `facts.KDA_STATE_DTYPE`. The canonical controller at this revision adds
 lease environment variables after preparing its environment digest, which
 otherwise pauses a boot ticket. Declare the same identity at submission;
@@ -71,8 +78,8 @@ the queue still obtains and verifies the real lease before any boot:
 ST_LEASE_OWNER=queue/kda-fp16-pair0913c \
 ST_LEASE_PATH=/home/choiceoh/glm53-logs/st-fleet.lock \
 bash bench/fleet.sh st-pair kda-fp16-pair0913c \
-  5763885def3ba544f28033636c0eeacea2d01056 \
-  --base a1a97420d141a27a0fd25aa84e4ec0f77fc3ee33 60 \
+  939d8c1900dc0d713c6d87b1f2cb664e34a954f1 \
+  --base 6403fd57413e70190edd74a17b18c67fff86160e 60 \
   'Matched FP16/FP32 KDA state, fixed capacity, C1 C4 quality and output throughput'
 ```
 
