@@ -504,6 +504,7 @@ class Server:
         self.lease = dict(lease) if lease else None
         self.draining = None                       # the requester we are handing the fleet to
         self.drained = False                       # every conversation parked; the loop may end
+        self.handed_over = None                    # {'to':..., 'parked': n, 'lost': n} once it happens
         self._lease_seen = 0.0                     # last poll, so a step is not a file stat
         self.lease_poll_s = 2.0
         self.steps_prefill = self.steps_decode = 0   # D9: a step is one kind or the other, never both
@@ -1162,6 +1163,7 @@ class Server:
         conversation key, which is exactly what the next holder resumes by -- so the
         fleet changes hands without anyone losing their context.
         """
+        parked = lost = 0
         if self.runner.tiered is not None:
             for row, conversation in list(self._conversation_of.items()):
                 self._conversations.pop(conversation, None)
@@ -1169,11 +1171,18 @@ class Server:
                 self._idle_order.pop(row, None)
                 try:
                     self.runner.park(row, key=conversation)
+                    parked += 1
                 except Exception:                 # noqa: BLE001 -- one lost turn is not a lost handover
-                    pass
+                    lost += 1                     # ... but it is never a silent one
+        self.handed_over = {"to": self.draining, "parked": parked, "lost": lost}
+        if lost:
+            print(f"  handover to {self.draining}: {parked} conversations parked, {lost} LOST", flush=True)
         if self.lease and self.comm.rank == 0:
             from engine.base import fleet_lease
             try:
+                # Say what happened before letting go: the next holder reads this file.
+                fleet_lease.publish(self.lease["owner"], path=self.lease["path"],
+                                    phase="handed over", parked=parked, lost=lost)
                 fleet_lease.release(self.lease["owner"], path=self.lease["path"])
             except Exception:                     # noqa: BLE001
                 pass
@@ -1280,6 +1289,10 @@ class Server:
             ("counter", "st:requests_timed_out_total", "the subset the deadline scan took", self.timed_out),
             ("gauge", "st:handing_over", "1 while the fleet is being handed to another session",
              int(self.draining is not None)),
+            ("counter", "st:handover_conversations_parked", "turns parked for the next holder",
+             (self.handed_over or {}).get("parked", 0)),
+            ("counter", "st:handover_conversations_lost", "turns a handover could not park",
+             (self.handed_over or {}).get("lost", 0)),
             ("gauge", "st:kv_blocks_total", f"blocks of {kv.block_size} tokens in the pool", kv.num_blocks),
             ("gauge", "st:kv_blocks_used", "blocks held by a row or pinned by the cache", used_blocks),
             ("gauge", "st:kv_rows_in_use", "pool rows with tokens", kv.rows_in_use),
