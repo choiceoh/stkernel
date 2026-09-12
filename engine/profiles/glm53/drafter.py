@@ -124,6 +124,90 @@ def rope(x: torch.Tensor, positions: torch.Tensor, theta: float):
     return torch.cat([x1 * cos - x2 * sin, x1 * sin + x2 * cos], dim=-1).to(x.dtype)
 
 
+STORE_PREFIX = "DFlash2Qwen3ForCausalLM/model."      # the pack store's namespace for the drafter (kernels/dense/store)
+STORE_TILE = 4096                                      # a DenseLinear packs K in tiles of this width: one calibration blob each
+
+
+def store_name(name: str) -> str:
+    """The pack store's name of a prepared dense weight: what its packs and calibration blobs are filed under."""
+    module = name.removesuffix(".weight").replace("self_attn.qkv", "self_attn.qkv_proj").replace("mlp.gate_up", "mlp.gate_up_proj")
+    return STORE_PREFIX + module
+
+
+def store_tiles(name: str, cols: int) -> "list[tuple[str, int, int]]":
+    """(blob name, first column, width) of every K tile a dense weight of `cols` columns is packed and calibrated in."""
+    base = store_name(name)
+    if cols <= STORE_TILE:
+        return [(base, 0, cols)]
+    return [(f"{base}.k{i}", i * STORE_TILE, min(STORE_TILE, cols - i * STORE_TILE)) for i in range((cols + STORE_TILE - 1) // STORE_TILE)]
+
+
+class Calibration:
+    """Gram sums X^T X of every prepared dense weight's input, filed the way kernels/dense/store reads calibration
+    (`<root>/mkcalib/rank<r>/<store name>.pt` = {H, ntok, name}), so the next boot's PackStore builds GPTQ packs
+    from this engine's own traffic instead of the retired vLLM stack's dumps (45차 §23 GPU 판정 6차).
+
+    The sums live on the device, carved from the arena, and are added to inside the captured graphs: every
+    contribution is multiplied by a device scalar that is 0 until `arm()` (the boot's warm-ups and captures feed the
+    same paths with junk) and by the row mask the caller hands over (the pipeline's ghost rows, positions past a
+    row's committed count -- the 33차 lesson: padding rows poison a Hessian). Every rank sums its own inputs: the
+    sharded projections (o_proj, down_proj) see different columns on each rank. fp32 sums; the packer symmetrises,
+    promotes to fp64 and damps."""
+
+    def __init__(self, dense: dict, device, arena=None):
+        self.tiles = {name: store_tiles(name, layer.cols) for name, layer in dense.items()}
+        self.H, self.rows = {}, {}
+        for name, tiles in self.tiles.items():
+            for blob, _start, width in tiles:
+                if arena is not None:
+                    self.H[blob] = arena.carve(width * width * 4, f"calibration/{blob}").view(torch.float32).view(width, width)
+                    self.H[blob].zero_()
+                else:
+                    self.H[blob] = torch.zeros(width, width, dtype=torch.float32, device=device)
+                self.rows[blob] = torch.zeros((), dtype=torch.float32, device=device)
+        self.armed = torch.zeros((), dtype=torch.float32, device=device)
+
+    @staticmethod
+    def nbytes(F: DrafterFacts, world: int) -> int:
+        """What the sums take per rank, for the arena: the dense weights' K tiles squared, at this TP."""
+        H, I, D = F.hidden, F.inter, F.head_dim
+        cols = [H * len(F.target_layers)]                                                    # fc
+        for _ in range(F.layers):
+            cols += [H, F.heads // world * D, H, I // world, H, H]                            # qkv, o, gate_up, down, two kernel projections
+        total = 0
+        for c in cols:
+            for _blob, _start, width in store_tiles("x", c):
+                total += width * width * 4
+        return total + 4096 * (len(cols) * 5 + 1)
+
+    def arm(self) -> None:
+        self.armed.fill_(1.0)
+
+    def observe(self, name: str, x: torch.Tensor, mask=None) -> None:
+        tiles = self.tiles.get(name)
+        if tiles is None:
+            return
+        xf = x.reshape(-1, x.shape[-1]).float()
+        if mask is not None:
+            xf = xf * mask.to(xf.dtype).view(-1, 1)
+        xf = xf * self.armed
+        count = (mask.to(torch.float32).sum() if mask is not None else torch.tensor(float(xf.shape[0]), device=xf.device)) * self.armed
+        for blob, start, width in tiles:
+            part = xf[:, start:start + width]
+            self.H[blob].addmm_(part.t(), part)
+            self.rows[blob] += count
+
+    def save(self, root: "str | Path", rank: int) -> "list[Path]":
+        """One blob per tile under `<root>/mkcalib/rank<rank>/`, in the store's form. Overwrites what an older stack left."""
+        written = []
+        for blob, H in self.H.items():
+            path = Path(root) / "mkcalib" / f"rank{rank}" / (blob + ".pt")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            torch.save({"H": H.detach().cpu().contiguous(), "ntok": int(self.rows[blob]), "name": blob}, path)
+            written.append(path)
+        return written
+
+
 class Drafter:
     def __init__(self, F: DrafterFacts, target, decodable: int):
         """`target` is the Glm53Net (embed/head are borrowed); `decodable` masks ids the tokenizer cannot decode."""
@@ -135,6 +219,7 @@ class Drafter:
         self.fast_attention = False
         self.local_heads, self.local_kv_heads = F.heads, F.kv_heads
         self.context_kv = None
+        self.calibration = None                            # Calibration while a run sums the dense inputs' Gram matrices
 
     def capture_decode(self, caches, memory=None, generator=None, vocab=None):
         from engine.profiles.glm53.decode_graphs import DrafterDecodeGraphs
@@ -183,8 +268,7 @@ class Drafter:
             context.extend(shard(p[n+"self_attn."+s+"_proj.weight"],0) for s in ("k", "v"))
         self.dense = {}
         for name, w in weights.items():
-            module = name.removesuffix(".weight").replace("self_attn.qkv","self_attn.qkv_proj").replace("mlp.gate_up","mlp.gate_up_proj")
-            self.dense[name] = DenseLinear(w,nvfp4=False,store=store,name="DFlash2Qwen3ForCausalLM/model."+module)
+            self.dense[name] = DenseLinear(w,nvfp4=False,store=store,name=store_name(name))
         self.context_kv = torch.cat(context)
         if consume_weights:
             for name, layer in self.dense.items():
@@ -199,8 +283,12 @@ class Drafter:
                     p[f"layers.{L}."+suffix]=None
         self.fast_attention = True
 
-    def linear(self, x, name):
+    def linear(self, x, name, mask=None):
+        """x through the named weight: the prepared dense pack when there is one, else the bf16 source. A calibration
+        run sums the input first; `mask` [rows] leaves the rows that are not real out of the sum."""
         layer = self.dense.get(name)
+        if layer is not None and self.calibration is not None:
+            self.calibration.observe(name, x, mask)
         return layer(x) if layer is not None else Fn.linear(x, self.p[name])
 
     # -- context: verified tokens' target states -> K/V rings -------------------------------
@@ -220,7 +308,8 @@ class Drafter:
         # once, retaining the newest window; duplicate CUDA indices have no
         # defined last-writer order.
         positions, aux = positions[-F.window:], aux[-F.window:]
-        c = rmsnorm(self.linear(aux, "fc.weight"), p["hidden_norm.weight"], F.rms_eps)          # context states, normed once for every layer
+        keep = (torch.arange(len(positions), device=positions.device) < valid) if valid is not None else None
+        c = rmsnorm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)          # context states, normed once for every layer
         idx = positions % F.window
         context = (Fn.linear(c,self.context_kv).reshape(-1,F.layers,2,self.local_kv_heads,F.head_dim)
                    if self.context_kv is not None else None)
@@ -258,7 +347,7 @@ class Drafter:
         B = x.shape[0]
         heads, kv_heads = self.local_heads, self.local_kv_heads
         if self.fast_attention:
-            q0, k0, v0 = self.dense[q+"qkv"](x).split((heads*F.head_dim, kv_heads*F.head_dim, kv_heads*F.head_dim), -1)
+            q0, k0, v0 = self.linear(x, q+"qkv").split((heads*F.head_dim, kv_heads*F.head_dim, kv_heads*F.head_dim), -1)
         else:
             q0, k0, v0 = (Fn.linear(x, p[q+s+"_proj.weight"]) for s in ("q", "k", "v"))
         qh = rope(rmsnorm(q0.reshape(B, heads, F.head_dim), p[q + "q_norm.weight"], F.rms_eps), positions, F.rope_theta)
@@ -310,7 +399,7 @@ class Drafter:
             coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight").reshape(B, 2, F.conv_taps, -1)
             h = self._conv(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0], tap_valid)
             if self.fast_attention:
-                gate, up = self.dense[q+"mlp.gate_up"](h).chunk(2, -1)
+                gate, up = self.linear(h, q+"mlp.gate_up").chunk(2, -1)
             else:
                 gate, up = (Fn.linear(h, p[q+"mlp."+s+"_proj.weight"]) for s in ("gate", "up"))
             h = self.linear(Fn.silu(gate)*up, q + "mlp.down_proj.weight")
@@ -330,7 +419,8 @@ class Drafter:
         the whole draft field; slots [n]; positions [n, t]; aux [n*t, A] in row order; valid [n] (device counts)."""
         F, p = self.F, self.p
         n, t = positions.shape
-        c = rmsnorm(self.linear(aux, "fc.weight"), p["hidden_norm.weight"], F.rms_eps)
+        keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)
+        c = rmsnorm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)
         if self.fast_attention:
             from engine.kernels.draft_attention import write_draft_kv
             context = Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)
@@ -345,7 +435,7 @@ class Drafter:
         flat = positions.reshape(-1)
         idx = positions % F.window
         rows = slots.view(n, 1)
-        keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).view(n, t, 1, 1)
+        keep = keep.view(n, t, 1, 1)
         for L in range(F.layers):
             q = f"layers.{L}.self_attn."
             k = Fn.linear(c, p[q + "k_proj.weight"]).view(-1, F.kv_heads, F.head_dim)
@@ -367,7 +457,7 @@ class Drafter:
         return out.reshape(n * t, F.hidden)
 
     def _attn_rows(self, L: int, x: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor, ctx: torch.Tensor,
-                   field: torch.Tensor, n: int, t: int) -> torch.Tensor:
+                   field: torch.Tensor, n: int, t: int, rows_ok=None) -> torch.Tensor:
         """Each block against its own slot's ring, as one fused attention over the whole field. The rows' queries and
         block keys go to their slots (the block's keys into the ring's scratch tail, cells window..window+t); the ring
         is read in storage order -- its keys are rope'd at their positions, so the order of keys is immaterial -- and
@@ -378,7 +468,7 @@ class Drafter:
         if self.fast_attention:
             from engine.kernels.draft_attention import draft_attention
             heads, kv, D = self.local_heads, self.local_kv_heads, F.head_dim
-            q0, k0, v0 = self.dense[q + "qkv"](x).split((heads*D, kv*D, kv*D), -1)
+            q0, k0, v0 = self.linear(x, q + "qkv", rows_ok).split((heads*D, kv*D, kv*D), -1)
             qh = rope(rmsnorm(q0.reshape(n*t, heads, D), p[q + "q_norm.weight"], F.rms_eps), positions, F.rope_theta)
             kh = rope(rmsnorm(k0.reshape(n*t, kv, D), p[q + "k_norm.weight"], F.rms_eps), positions, F.rope_theta)
             vh = v0.reshape(n*t, kv, D)
@@ -387,7 +477,7 @@ class Drafter:
             out = [draft_attention(qh[r*t:(r+1)*t].contiguous(), kh[r*t:(r+1)*t].contiguous(),
                                    vh[r*t:(r+1)*t].contiguous(), field, ctx[r], slot=slots[r:r+1], layer=L)
                    for r in range(n)]
-            return self.target.comm.all_reduce(self.linear(torch.cat(out).reshape(n*t, heads*D), q + "o_proj.weight"))
+            return self.target.comm.all_reduce(self.linear(torch.cat(out).reshape(n*t, heads*D), q + "o_proj.weight", rows_ok))
         S, W, kv, D, rep = field.shape[0], F.window, F.kv_heads, F.head_dim, F.heads // F.kv_heads
         qh = rope(rmsnorm(Fn.linear(x, p[q + "q_proj.weight"]).view(n * t, F.heads, D), p[q + "q_norm.weight"], F.rms_eps),
                   positions, F.rope_theta)
@@ -409,9 +499,11 @@ class Drafter:
         return Fn.linear(o, p[q + "o_proj.weight"])
 
     def block_rows(self, ids: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor, ctx: torch.Tensor,
-                   field: torch.Tensor, n: int, t: int) -> torch.Tensor:
-        """`block` for n blocks of t rows at once: ids/positions [n*t] in row order, slots/ctx [n]."""
+                   field: torch.Tensor, n: int, t: int, alive=None) -> torch.Tensor:
+        """`block` for n blocks of t rows at once: ids/positions [n*t] in row order, slots/ctx [n]; `alive` [n] marks the
+        rows that are real (a calibration run leaves the others out of its sums)."""
         F, p = self.F, self.p
+        rows_ok = alive.repeat_interleave(t) if alive is not None else None
         tap_valid = torch.arange(t, device=ids.device)[:, None] >= torch.arange(F.conv_taps, device=ids.device)[None, :]
         x = self.target.embed(ids)
         res = None
@@ -422,26 +514,26 @@ class Drafter:
             else:
                 res = res + x
                 h = rmsnorm(res, p[q + "input_layernorm.weight"], F.rms_eps)
-            coeff = self.linear(h, q + "attention_conv.kernel_projection.weight").reshape(n * t, 2, F.conv_taps, -1)
+            coeff = self.linear(h, q + "attention_conv.kernel_projection.weight", rows_ok).reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0], tap_valid, n, t)
-            h = self._attn_rows(L, h, positions, slots, ctx, field, n, t)
+            h = self._attn_rows(L, h, positions, slots, ctx, field, n, t, rows_ok)
             h = self._conv_rows(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1], tap_valid, n, t)
             res = res + h
             h = rmsnorm(res, p[q + "post_attention_layernorm.weight"], F.rms_eps)
-            coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight").reshape(n * t, 2, F.conv_taps, -1)
+            coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight", rows_ok).reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0], tap_valid, n, t)
             if self.fast_attention:
-                gate, up = self.dense[q + "mlp.gate_up"](h).chunk(2, -1)
+                gate, up = self.linear(h, q + "mlp.gate_up", rows_ok).chunk(2, -1)
             else:
                 gate, up = (self.linear(h, q + "mlp." + name + "_proj.weight") for name in ("gate", "up"))
-            h = self.linear(Fn.silu(gate) * up, q + "mlp.down_proj.weight")
+            h = self.linear(Fn.silu(gate) * up, q + "mlp.down_proj.weight", rows_ok)
             if self.fast_attention:
                 h = self.target.comm.all_reduce(h)
             x = self._conv_rows(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], tap_valid, n, t)
         return rmsnorm(res + x, p["norm.weight"], F.rms_eps)
 
     def propose_rows(self, field: torch.Tensor, slots: torch.Tensor, anchors: torch.Tensor, positions: torch.Tensor,
-                     temps: "torch.Tensor | None" = None, generator=None, vocab: "int | None" = None):
+                     temps: "torch.Tensor | None" = None, generator=None, vocab: "int | None" = None, alive=None):
         """Every row's K drafts at once: anchors [n], positions [n] (each row's context: the anchor's position), slots [n],
         all on the device. Greedy walk, [n, K]; with `temps` [n] the sampled walk at each row's temperature (rows at 0
         stay greedy) and the [n, K, vocab] distributions the picks were drawn from, as `propose_sampled_tensor`."""
@@ -452,7 +544,7 @@ class Drafter:
         dev = anchors.device
         ids = torch.cat([anchors.view(n, 1), torch.full((n, K), F.mask_id, dtype=torch.int64, device=dev)], 1).reshape(-1)
         pos = (positions.view(n, 1) + torch.arange(t, device=dev)).reshape(-1)
-        h = self.block_rows(ids, pos, slots, positions, field, n, t).view(n, t, -1)[:, 1:].reshape(n * K, -1)
+        h = self.block_rows(ids, pos, slots, positions, field, n, t, alive).view(n, t, -1)[:, 1:].reshape(n * K, -1)
         from engine.modules.vocab import topk
         unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp, F.sel_top_k, self.decodable)
         unary, cand = unary.view(n, K, F.sel_top_k), cand.view(n, K, F.sel_top_k)

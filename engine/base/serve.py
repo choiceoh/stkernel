@@ -1403,10 +1403,16 @@ class Server:
 
     def _control(self, control) -> None:
         """A cache control, applied on every rank in the same iteration (the caches must stay identical)."""
+        kind, payload = control
+        if kind == "calibration":                          # every rank files its own sums (the sharded projections differ per rank)
+            drafter = getattr(self.engine, "drafter", None)
+            calibration = getattr(drafter, "calibration", None)
+            if calibration is not None:
+                calibration.save(payload or drafter.calibration_root, self.comm.rank)
+            return
         prefix = getattr(self.runner, "prefix", None)
         if prefix is None:
             return
-        kind, payload = control
         if kind == "pin":
             prefix.pin(bytes.fromhex(h) for h in payload)
         elif kind == "unpin":
@@ -2699,11 +2705,20 @@ class Server:
                 server.controls.put(("unpin", None))
                 self.reply(200, {"ok": True})
 
+            def calibration(self, req):
+                """File the drafter calibration sums now (STK_drafter_calib): between two steps, on every rank's loop thread."""
+                calibration = getattr(getattr(server.engine, "drafter", None), "calibration", None)
+                if calibration is None:
+                    raise RequestError("this server is not calibrating the drafter (STK_drafter_calib)", 404)
+                server.controls.put(("calibration", req.get("root") if isinstance(req.get("root"), str) else None))
+                self.reply(200, {"ok": True, "rows": {k: float(v) for k, v in calibration.rows.items()}})
+
             def do_POST(self):
                 try:
                     routes = {"/v1/chat/completions": self.chat, "/v1/completions": self.completions,
                               "/v1/engine/completions": self.engine_completions, "/tokenize": self.tokenize,
-                              "/detokenize": self.detokenize, "/v1/prefix/warm": self.prefix_warm, "/v1/prefix/unpin": self.prefix_unpin}
+                              "/detokenize": self.detokenize, "/v1/prefix/warm": self.prefix_warm, "/v1/prefix/unpin": self.prefix_unpin,
+                              "/v1/engine/calibration": self.calibration}
                     handler = routes.get(self.path)
                     if handler is None:
                         raise RequestError("unknown endpoint", 404)

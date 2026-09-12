@@ -38,7 +38,8 @@ class KnobDeclarationTests(unittest.TestCase):
 
     def test_only_unqualified_mla_and_context_experiments_remain(self):
         cfg = self._declared({"STK_mla_prefill":"pair", "STK_context_ceiling":"131072"})
-        self.assertEqual(set(cfg.knobs), {"mla_prefill", "context_ceiling"})
+        self.assertEqual(set(cfg.knobs), {"mla_prefill", "context_ceiling", "drafter_calib"})   # the third: a calibration run (45차 §23 GPU 판정 6차)
+        self.assertEqual(cfg["drafter_calib"], "")                                              # off unless a root is given
         self.assertEqual((cfg["mla_prefill"], cfg["context_ceiling"]), ("pair", 131072))
         self.assertEqual((cfg["execution"], cfg["moe_static"]), ("native", "t,r,sf6,q0"))
         from engine.base.config import ConfigError
