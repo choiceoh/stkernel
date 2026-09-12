@@ -2574,6 +2574,22 @@ class OpenAIDialectTests(unittest.TestCase):
         self.assertLessEqual(pt.chars, 8 + len("0aaaa|"))
         self.assertGreaterEqual(len(pt.entries), 1)
 
+    def test_the_reuse_path_census_separates_a_continuation_from_a_shared_prefix(self):
+        """A prompt finds its KV two ways and nobody has measured the split. Inside an agent run
+        each tool step extends the previous prompt exactly, so the conversation is continued and
+        nothing is prefilled; between runs Deneb reloads the clean transcript and the prompt
+        diverges at ~92%, where the prefix cache adopts everything that is still shared. Both
+        are right, and which one carries the traffic is a number, not an argument (45차 §70)."""
+        s = chat_server()
+        self.assertEqual(s.reuse_paths, {"continuation": 0, "prefix_or_cold": 0})
+        self.assertNotIn("st:reuse_path_total", s.metrics(), "no traffic, no series")
+
+        s.reuse_paths["prefix_or_cold"] = 7
+        s.reuse_paths["continuation"] = 2
+        page = s.metrics()
+        self.assertIn('st:reuse_path_total{engine="st",path="continuation"} 2\n', page)
+        self.assertIn('st:reuse_path_total{engine="st",path="prefix_or_cold"} 7\n', page)
+
     def test_the_grammar_cache_meters_reach_the_scrape(self):
         s = chat_server()
         self.assertNotIn("st:grammar_cache_entries", s.metrics(), "no structured output, no rows")
