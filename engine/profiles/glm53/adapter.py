@@ -180,6 +180,18 @@ class Glm53Engine:
                         self.decode(rows, [caches.pool.row(r) for r in rows], slots)
                         torch.cuda.synchronize()
                         paid[f"decode/{width}"] = round(time.perf_counter() - t0, 3)
+                        if self.async_ready(rows):
+                            t0 = time.perf_counter()
+                            pending = []
+                            for _ in range(self.pipeline.depth):
+                                caches.pool.reserve_to(rows, [self.horizon(r) for r in rows])
+                                pending.append(self.decode_async(rows, [caches.pool.row(r) for r in rows], slots))
+                            for step in pending:
+                                step.resolve()
+                            torch.cuda.synchronize()
+                            if self.pipeline.pending or any(self.inflight.get(r, 0) for r in rows):
+                                raise RuntimeError('decode warmup left a readback in flight')
+                            paid[f"decode-async/{width}"] = round(time.perf_counter() - t0, 3)
                     finally:
                         for r in rows:
                             self.close(r); self.forget(r)

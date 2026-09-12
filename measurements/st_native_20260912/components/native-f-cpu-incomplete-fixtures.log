@@ -1,0 +1,119 @@
+...................sssssssssssssssssss2026-09-12 02:47:45,226 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/p_17d60c678dec82c7
+2026-09-12 02:47:45,227 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmpv97sj7ut/st_b12x_direct_micro_sm121a_cute_dsl/p_17d60c678dec82c7.o
+..2026-09-12 02:47:45,231 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834
+2026-09-12 02:47:45,231 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmpqpwhcxxc/st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834.o
+2026-09-12 02:47:45,233 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834
+2026-09-12 02:47:45,234 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmpqpwhcxxc/st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834.o
+2026-09-12 02:47:45,235 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834
+2026-09-12 02:47:45,235 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmpqpwhcxxc/st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834.o
+...sss.............ssEEE..................sssssssssssssssssssssssssssssss.....[02:47:50] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+/usr/local/lib/python3.12/dist-packages/xgrammar/matcher.py:242: DeprecationWarning: max_rollback_tokens is deprecated. You don't need to set it and it's always unlimited (-1).
+  warnings.warn(
+.[02:47:50] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+...............................sss....ssss..ssss...ssssssssssssssssssssss...................Essss....s......Es......s.....ssss................................................s.........sss..................................................................Esss........................s...../repo/engine/profiles/glm53/vision.py:381: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/tensor_numpy.cpp:213.)
+  frames = torch.from_numpy(np.asarray(image, dtype=np.uint8)).permute(2, 0, 1).contiguous()[None]   # [1, 3, h, w]
+..........s..ss...
+======================================================================
+ERROR: test_the_launcher_takes_the_engine_lease (test_engine_fleet_lease.LauncherAndQueueTests.test_the_launcher_takes_the_engine_lease)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_fleet_lease.py", line 90, in setUp
+    self.fleet = (ROOT / "bench/fleet.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/repo/bench/fleet.sh'
+
+======================================================================
+ERROR: test_the_queue_refuses_to_answer_off_the_controller (test_engine_fleet_lease.LauncherAndQueueTests.test_the_queue_refuses_to_answer_off_the_controller)
+Homes are not shared: elsewhere it would create a second, empty queue.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_fleet_lease.py", line 90, in setUp
+    self.fleet = (ROOT / "bench/fleet.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/repo/bench/fleet.sh'
+
+======================================================================
+ERROR: test_the_runner_snapshot_pins_what_it_admits (test_engine_fleet_lease.LauncherAndQueueTests.test_the_runner_snapshot_pins_what_it_admits)
+An entry admitted at queue time but absent from the pinned runner passes
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_fleet_lease.py", line 90, in setUp
+    self.fleet = (ROOT / "bench/fleet.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/repo/bench/fleet.sh'
+
+======================================================================
+ERROR: test_probe_runner_and_launcher_forward_declared_knobs (test_engine_knobs.ProbeRunnerTests.test_probe_runner_and_launcher_forward_declared_knobs)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_knobs.py", line 175, in test_probe_runner_and_launcher_forward_declared_knobs
+    self.assertIn("compgen -v STK_", (ROOT / "probes/run_engine_probe.sh").read_text())
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/repo/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_engine_metrics (unittest.loader._FailedTest.test_engine_metrics)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_engine_metrics
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/unittest/loader.py", line 394, in _find_test_path
+    module = self._get_module_from_name(name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/unittest/loader.py", line 337, in _get_module_from_name
+    __import__(name)
+  File "/repo/tests/test_engine_metrics.py", line 16, in <module>
+    from bench.window_metrics import metric_sum, traffic_state          # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'bench'
+
+
+======================================================================
+ERROR: test_engine_sparse_nvfp4 (unittest.loader._FailedTest.test_engine_sparse_nvfp4)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_engine_sparse_nvfp4
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/unittest/loader.py", line 394, in _find_test_path
+    module = self._get_module_from_name(name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/unittest/loader.py", line 337, in _get_module_from_name
+    __import__(name)
+  File "/repo/tests/test_engine_sparse_nvfp4.py", line 5, in <module>
+    from probes.engine_sparse_nvfp4 import Library, Projection, synthetic, qualify, validate_sparse
+ModuleNotFoundError: No module named 'probes'
+
+
+----------------------------------------------------------------------
+Ran 424 tests in 37.879s
+
+FAILED (errors=6, skipped=110)
+  box: test
+<MagicMock name='declared().table()' id='246661907532448'>
+  box: test
+<MagicMock name='declared().table()' id='246661905522976'>
+  box: test
+<MagicMock name='declared().table()' id='246661908499728'>
+  expert_layout: tile-major bytes read back row-major per expert OK
