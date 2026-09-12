@@ -1,0 +1,26 @@
+[
+  {
+    "node": "10.10.10.2",
+    "running": true,
+    "image": "st-engine:prod-abceb6a0-grammar-9391",
+    "started_at": "2026-09-12T07:40:52.953739635Z"
+  },
+  {
+    "node": "10.10.10.1",
+    "running": true,
+    "image": "st-engine:prod-abceb6a0-grammar-9391",
+    "started_at": "2026-09-12T07:40:55.005718773Z"
+  },
+  {
+    "node": "10.10.10.3",
+    "running": true,
+    "image": "st-engine:prod-abceb6a0-grammar-9391",
+    "started_at": "2026-09-12T07:40:54.79281345Z"
+  },
+  {
+    "node": "10.10.10.4",
+    "running": true,
+    "image": "st-engine:prod-abceb6a0-grammar-9391",
+    "started_at": "2026-09-12T07:40:54.718185559Z"
+  }
+]

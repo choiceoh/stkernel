@@ -1,0 +1,9 @@
+{
+  "status": "not_run",
+  "reason": "Existing production requests remained active after the bounded 60-second drain.",
+  "benchmark_requests_sent": 0,
+  "serving_containers_restarted": false,
+  "existing_requests_interrupted": false,
+  "temporary_ingress_rule_removed": true,
+  "planned_cache_policy": "Identical prompt content, new namespace shared by all five requests; within-run prefix reuse retained."
+}

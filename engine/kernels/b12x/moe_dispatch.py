@@ -4919,6 +4919,9 @@ def _launch_sm120_w4a16_moe(
     scatter_output: torch.Tensor,
     fast_math: bool = True,
     activation: str = "silu",
+    swiglu_limit: float | None = None,
+    swiglu_alpha: float | None = None,
+    swiglu_beta: float | None = None,
     source_format: str = "modelopt",
     _workspace=None,
     _prepared_weights=None,
@@ -4991,6 +4994,9 @@ def _launch_sm120_w4a16_moe(
         expert_offsets=workspace.expert_offsets,
         expert_map=workspace.expert_map,
         fast_math=fast_math,
+        swiglu_limit=swiglu_limit,
+        swiglu_alpha=swiglu_alpha,
+        swiglu_beta=swiglu_beta,
     )
 
 
@@ -5462,6 +5468,9 @@ def launch_sm120_moe(
             scatter_output=scatter_output,
             fast_math=fast_math,
             activation=activation,
+            swiglu_limit=swiglu_limit,
+            swiglu_alpha=swiglu_alpha,
+            swiglu_beta=swiglu_beta,
             source_format=source_format,
             _workspace=_workspace,
             _prepared_weights=_prepared_weights,

@@ -1,0 +1,66 @@
+{
+  "base": "http://127.0.0.1:8001",
+  "model": "glm-5.3-flash",
+  "started": 1789195316.7122211,
+  "cases": [
+    {
+      "name": "korean",
+      "id": "chatcmpl-7",
+      "model": "glm-5.3-flash",
+      "seconds": 0.359,
+      "content": "서울",
+      "reasoning": "",
+      "tools": [],
+      "usage": {
+        "prompt_tokens": 30,
+        "completion_tokens": 3,
+        "total_tokens": 33,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish": "stop"
+    },
+    {
+      "name": "stream-content",
+      "id": "chatcmpl-8",
+      "model": "glm-5.3-flash",
+      "seconds": 0.362,
+      "ttft": 0.23671250700135715,
+      "content": "Paris",
+      "reasoning": "",
+      "usage": {
+        "prompt_tokens": 27,
+        "completion_tokens": 2,
+        "total_tokens": 29,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish": "stop",
+      "done": true
+    },
+    {
+      "name": "stream-thinking",
+      "id": "chatcmpl-9",
+      "model": "glm-5.3-flash",
+      "seconds": 8.339,
+      "ttft": 5.753983143004007,
+      "content": "**17 + 25 = 42**\n\nBrief explanation: Add the ones digits (7 + 5 = 12), write down 2 and carry the 1. Then add the tens digits (1 + 2 + 1 = 4). The result is **42**.",
+      "reasoning": "The user wants me to compute 17 + 25 and explain briefly.\n\n17 + 25:\n- 17 + 25 = 42\n- Brief explanation: 17 + 20 = 37, then 37 + 5 = 42. Or: 7 + 5 = 12, carry the 1, 1 + 2 = 3, so 42.\n\nSimple question, simple answer. Keep it brief as requested.",
+      "usage": {
+        "prompt_tokens": 26,
+        "completion_tokens": 155,
+        "total_tokens": 181,
+        "completion_tokens_details": {
+          "reasoning_tokens": 94
+        }
+      },
+      "finish": "stop",
+      "done": true
+    }
+  ],
+  "passed": false,
+  "error": "HTTPError: HTTP Error 503: Service Unavailable",
+  "finished": 1789195327.0400229
+}

@@ -4,7 +4,7 @@
 # Transfers use partial files and are SHA-256 checked before returning.
 #   RANKS_DIR=/path/to/completed bash launchers/fanout-st-ranks.sh [ranks...]
 set -euo pipefail
-SRC=${RANKS_DIR:-/home/choiceoh/models/st-glm53-9391-up-gate-full}
+SRC=${RANKS_DIR:-/home/choiceoh/models/st-glm53-nvidia-tp4-9391}
 NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
 SELF_IPS=" $(hostname -I 2>/dev/null) "
 if [ "$#" -eq 0 ]; then set -- 0 1 2 3; fi

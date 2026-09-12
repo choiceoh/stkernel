@@ -1,0 +1,22 @@
+{
+  "attempt": "same-code Red Hat/NVIDIA KV12",
+  "stage": "Red Hat before weight allocation",
+  "nvidia_started": false,
+  "model_output_comparison_available": false,
+  "failure": {
+    "rank": 3,
+    "arena_gib": 64.14,
+    "headroom_gib": 16,
+    "immediately_free_gib": 62.58,
+    "available_gib": 67.81
+  },
+  "restoration_incident": "The wrapper fixed the old 5734 launcher but copied the then-current abceb6a0 deployment env. That mixed source and target release paths and overwrote abceb6a0 engine/launchers with the old source. All four were repaired to git abceb6a0 after verifying they still matched our old-release copy, and images rebuilt. The deployment env was unchanged.",
+  "repaired_engine_sha256": "06b46c72e30577927c9d20f70a3d703f39e6dfc9e5b65ca852e34727aac11326",
+  "metadata_repair": "Added the missing processor_config.json to the configured Red Hat metadata directory from the Red Hat source; sha256 aae38374c94b08cc9b0547c6e64f05b951bd9735cea571c6988f5ed552bed3ed.",
+  "restored_api": {
+    "models_http": 200,
+    "korean_content": "서울",
+    "service_preserved": "inactive"
+  },
+  "retry": "Separate KV7.0 pair snapshots baseline source, destination, image and budget together, rejects configuration drift, and does not run the unrelated cache-return helper. Each checkpoint uses distinct tier/dump paths."
+}

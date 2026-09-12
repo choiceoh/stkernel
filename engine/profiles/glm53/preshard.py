@@ -1,8 +1,8 @@
-"""Cut the HF checkpoint into rank files in the engine's layout (profile tool).
+"""Cut a Red Hat HF checkpoint into rank files in the engine's layout (offline importer).
 
-    python3 engine/profiles/glm53/preshard.py                       # -> facts.RANKS/rank{0..3}of4.safetensors
+    python3 engine/profiles/glm53/preshard.py                       # -> st-glm53-9391-up-gate-full/rank{0..3}of4.safetensors
     python3 engine/profiles/glm53/preshard.py --layers 0-4 --out /some/dev/dir
-    python3 engine/profiles/glm53/preshard.py --vision               # -> facts.RANKS/vision.safetensors (the tower, whole; seconds)
+    python3 engine/profiles/glm53/preshard.py --vision               # -> st-glm53-9391-up-gate-full/vision.safetensors
 
 Runs once, offline. What the fleet boots from afterwards is `rank{r}of{W}.safetensors`
 read by base/loader.RankLoader with coalesced range reads into the arena --
@@ -38,8 +38,10 @@ def parse_layers(spec: str, n: int):
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--layers", default="all")
-    ap.add_argument("--out", default=str(facts.RANKS))
-    ap.add_argument("--ckpt", default=str(facts.CKPT))
+    # This importer reads the Red Hat source encoding. Serving's NVIDIA defaults
+    # must never redirect an offline Red Hat conversion into the NVIDIA rank files.
+    ap.add_argument("--out", default="/home/choiceoh/models/st-glm53-9391-up-gate-full")
+    ap.add_argument("--ckpt", default="/home/choiceoh/models/glm53-redhat-nvfp4")
     ap.add_argument("--vision", action="store_true", help="write only vision.safetensors: the vision tower, whole, for every rank (45차 §23 A7)")
     a = ap.parse_args(argv)
     if a.vision:

@@ -737,7 +737,8 @@ def fleet(a) -> int:
                             "packs": f"gptq {engine.pack_stats.get('gptq', 0)} rtn {engine.pack_stats.get('rtn', 0)}",   # what the store built or read
                             "fp8_gptq": str(engine.pack_stats.get("fp8_gptq", 0)),                             # FP8 lane weights GPTQ'd on their grid
                             "smoothed": str(engine.pack_stats.get("smoothed", 0)),                             # inputs' channel smoothing folded into their norms
-                            "calibration": engine.calibration.status() if engine.calibration is not None else "complete"}
+                            "calibration": engine.calibration.status() if engine.calibration is not None else "complete",
+                            "dense_w4a16_guard_rows": str(lane_tables.dense_w4a16_guard_rows())}
         # a stale tier under one rank diverges the ranks (45th 21): find it in seconds, not after the capture
         Server._agree_on_parked(comm, sorted(runner.parked_keys()))
         with rec.phase("capture decode"):

@@ -1,0 +1,15 @@
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128        2561        3553      0.83s      0.60s  o o o
+    MISS ctx~32K q='메리디안 배열의 보정 상수는 얼마인가?' (combined) -> 'The user is asking three questions and wants answers based only on the document provided. Let me che'
+  32000   32545       39924     (1 req)      0.82s          -  X o o
+ 128000  128559      125446     (1 req)      1.02s          -  o o o
+  warm 처리량: 3553 -> 125446 tok/s (over 2128 -> 128559 tokens)
+=> 8/9 correct
+decode: windows n=42 med 17.9 [17.9, 19.9] step/s (inside the answers only; per context: 2K: n=13 med 18.9  32K: n=19 med 17.9  128K: n=10 med 17.9), raw acc 46.7%, tokens/step 3.334 (k=5.0), generated 3206 tokens over 56s
+응답 5개 · 문자 8,475
+  깨진 응답: 0/5 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass ST-REDHAT-TILE32-CONTROL-b627103b: 56s total
