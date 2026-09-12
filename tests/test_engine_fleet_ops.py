@@ -11,7 +11,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class FleetOps(unittest.TestCase):
+class FleetHarness(unittest.TestCase):
+    """The isolated fake fleet: stubs for hostname, ssh, docker and curl, a copied launchers/ tree."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -65,6 +67,9 @@ elif a and a[0] == 'ps':
         return subprocess.run(["bash", str(self.repo / "launchers" / name), *args],
                               env=self.env, text=True, capture_output=True, timeout=15)
 
+
+
+class FleetOps(FleetHarness):
     def test_stop_preserves_foreign_owner_and_containers(self):
         self.lock.write_text("st-replay-other-session")
         result = self.run_script("start-st-glm53.sh", "stop")
@@ -116,9 +121,9 @@ elif a and a[0] == 'ps':
         log said "fleet taken" twice a minute. The loop now asks fleet_taken before it dumps."""
         text = (Path(__file__).resolve().parents[1] / 'launchers/st-glm53-supervisor.sh').read_text()
         loop = text[text.rindex('while :; do'):]
-        self.assertLess(loop.index('taken=$(fleet_taken)'), loop.index('\n  forensics\n'), 'asked before the dump')
+        self.assertLess(loop.index('reason=$(wait_reason)'), loop.index('\n  forensics\n'), 'asked before the dump')
         self.assertIn('no forensics, no launch attempt', loop)
-        self.assertIn('taken_logged=$taken_key', loop, 'said once per holder')
+        self.assertIn('wait_logged=$key', loop, 'said once per reason')
 
     def test_supervisor_waits_for_foreign_lock(self):
         self.lock.write_text("st-replay-other-session")
@@ -168,6 +173,121 @@ elif a and a[0] == 'ps':
         result = self.run_script("st-glm53-supervisor.sh")
         self.assertIn("head unreachable", result.stdout)
         self.assertFalse(self.events.exists())
+
+
+GNU_DATE = subprocess.run(['date', '-d', '@0', '+%s'], capture_output=True).returncode == 0
+
+
+@unittest.skipUnless(GNU_DATE, "the supervisor's container age needs GNU date: run this inside a Linux container")
+class SupervisorLoopTests(FleetHarness):
+    """The loop itself, two iterations with no sleep, against a stateful fake door and a fake launcher.
+    What srv2 taught on 2026-09-13 02:49-04:20: a waiting loop must dump nothing and say things once,
+    a boot in progress is adopted rather than restarted, a launch is done when a chat answers, and a
+    fleet the queue just let go is not restored under the next ticket's feet."""
+
+    def setUp(self):
+        super().setUp()
+        self.fleet_dir = self.home / "fleet"
+        self.fleet_dir.mkdir()
+        launcher = self.home / "launcher.sh"
+        launcher.write_text('#!/bin/sh\necho "launch $*" >> "$FAKE_HOME/events"\ntouch "$FAKE_HOME/containers-up"\nexit 0\n')
+        self.script("docker", '''#!/usr/bin/env python3
+import os, pathlib, sys
+a = sys.argv[1:]
+h = pathlib.Path(os.environ['FAKE_HOME'])
+up = os.environ.get('FAKE_CONTAINERS', '') or ((h / 'containers-up').exists() and 'st-glm53')
+if a[:1] == ['inspect']:
+    print(os.environ.get('FAKE_STARTED_AT', '2000-01-01T00:00:00Z')); sys.exit(0 if up else 1)
+if a and a[0] == 'ps':
+    if '-q' in a:
+        if up: print('container-id')
+    else:
+        print(up or '')
+''')
+        self.script("curl", '''#!/usr/bin/env python3
+import os, pathlib, sys
+h = pathlib.Path(os.environ['FAKE_HOME'])
+url = [a for a in sys.argv[1:] if a.startswith('http')][0]
+def count(name):
+    f = h / ('count-' + name); n = (int(f.read_text()) if f.exists() else 0) + 1; f.write_text(str(n)); return n
+if '/v1/models' in url:
+    if count('door') <= int(os.environ.get('FAKE_DOOR_DOWN_CALLS', '0')): sys.exit(22)
+    print('{"data":[{"id":"glm-5.3-flash"}]}'); sys.exit(0)
+if '/v1/chat/completions' in url:
+    if count('chat') <= int(os.environ.get('FAKE_CHAT_FAIL_CALLS', '0')): sys.exit(22)
+    print('{"choices":[{}]}'); sys.exit(0)
+print('{}')
+''')
+        self.env.update(ST_SUPERVISOR_ONCE="0", ST_SUPERVISOR_LOOPS="2", ST_SUPERVISOR_SLEEP="0", ST_BOOT_POLL="0",
+                        BOOT_GRACE="3", CHAT_TIMEOUT="1", FLEET_DIR=str(self.fleet_dir), ST_LAUNCHER=str(launcher))
+
+    def loop(self, **env):
+        self.env.update({k: str(v) for k, v in env.items()})
+        return self.run_script("st-glm53-supervisor.sh")
+
+    def activity(self, ago):
+        import time
+        (self.fleet_dir / "idle-recovery.json").write_text(json.dumps(dict(updated_at=time.time() - ago, reason="release")))
+
+    def launches(self):
+        return self.events.read_text().splitlines() if self.events.exists() else []
+
+    def test_a_taken_fleet_is_waited_for_once_with_nothing_dumped_and_no_crash(self):
+        self.lock.write_text("st-replay-other-session")
+        out = self.loop(FAKE_DOOR_DOWN_CALLS=99)                 # production is down: no door, no chat
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("loop bound reached", out.stdout, "the loop ran to its bound: no unbound variable killed it")
+        self.assertEqual(out.stdout.count("no forensics, no launch attempt"), 1, out.stdout)
+        self.assertNotIn("health check failed", out.stdout)
+        self.assertEqual(self.launches(), [])
+        self.assertFalse(any((self.home / "forensics").glob("2*")), "no dump while the fleet is someone else's")
+
+    def test_a_fleet_that_is_booting_is_adopted_not_relaunched(self):
+        import time
+        started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        out = self.loop(FAKE_CONTAINERS="st-glm53", FAKE_STARTED_AT=started, FAKE_DOOR_DOWN_CALLS=4)   # health, handover, booting, one adoption poll
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("adopting it, not relaunching it", out.stdout)
+        self.assertIn("adoption: door up after", out.stdout)
+        self.assertIn("adoption: healthy after", out.stdout)
+        self.assertEqual(self.launches(), [], "the launcher was never called")
+
+    def test_a_fleet_the_queue_just_let_go_is_not_restored_under_its_next_ticket(self):
+        self.activity(ago=5)
+        out = self.loop(FAKE_DOOR_DOWN_CALLS=99)                 # production is down: the queue just let the fleet go
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("the queue was active 5s ago", out.stdout)
+        self.assertEqual(out.stdout.count("no forensics, no launch attempt"), 1, "said once, not every 30 s")
+        self.assertEqual(self.launches(), [])
+
+    def test_a_node_whose_census_stalls_is_not_a_dead_ring_when_a_chat_answers(self):
+        """containers_up needs four ssh answers; a stalled one made the old loop count a failure
+        while the engine answered chats. A chat that answers is health; the census is reported."""
+        self.activity(ago=1000)
+        out = self.loop(FAKE_CONTAINERS="", FAKE_CHAT_FAIL_CALLS=0)      # no census at all, yet the door chats
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("existing ST fleet healthy -- adopting", out.stdout)
+        self.assertEqual(self.launches(), [])
+        self.assertNotIn("health check failed", out.stdout)
+
+    def test_a_failed_check_says_which_probe_failed(self):
+        self.activity(ago=1000)
+        self.env.update(FAKE_CONTAINERS="st-glm53", FAKE_STARTED_AT="2000-01-01T00:00:00Z")   # an old container, no boot in progress
+        out = self.loop(FAKE_CHAT_FAIL_CALLS=999, ST_BOOT_POLL=1, BOOT_GRACE=2)   # a launch whose chat never answers gives up in 2 s
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("launch: boot grace exceeded (2s)", out.stdout)
+        self.assertIn("health check failed (1/3): containers=yes door=yes chat=no", out.stdout)
+        self.assertIn("health check failed (2/3): containers=yes door=yes chat=no", out.stdout)
+
+    def test_a_launch_is_done_when_a_chat_answers_and_is_not_repeated(self):
+        self.activity(ago=1000)                                   # the grace has passed
+        out = self.loop(FAKE_CHAT_FAIL_CALLS=2)                  # the first two chats after the door fail: warmup
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual(self.launches(), ["launch stop", "launch "], "one launch, no relaunch while the chat warmed up")
+        self.assertIn("launch: door up after 0s", out.stdout)
+        self.assertIn("launch: healthy after", out.stdout)
+        self.assertNotIn("launch attempt", out.stdout)
+        self.assertNotIn("health check failed", out.stdout)
 
 
 if __name__ == "__main__":
