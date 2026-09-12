@@ -1,0 +1,54 @@
+{
+  "observed_at_utc": "2026-09-12T15:10:56Z",
+  "scope": "CPU compilation and fleet admission; no GPU numerical or performance result",
+  "source_commit": "25d2b73022a6ba02f6c7f66fcf010b3c16fbe63b",
+  "remote_checkout": "/home/choiceoh/st-worktrees/codex-prefill-fp8-consumer",
+  "runtime_image": "st-engine:main-ff728f43",
+  "runtime_image_id": "sha256:a13be2698a579983329b82a1fc2a98d6462346a323981ba17e97f27c3b7fbd7b",
+  "runtime_torch": "2.13.0+cu130",
+  "runtime_triton": "3.7.1",
+  "ci_run": "https://github.com/choiceoh/stkernel/actions/runs/34701264738",
+  "ci_status": "success",
+  "cpu_compile": "compile.json",
+  "cpu_package_audit": {"passed": 10, "gpu_skipped": 5},
+  "local_package_admission_step_tools": {"passed": 40},
+  "local_postmerge_audit_onepass_ledger": {"passed": 39},
+  "test_count_note": "The CPU suites overlap; these counts are not a unique total.",
+  "fleet": [
+    {
+      "session": "stfp8-consumer0913",
+      "ticket": "17892258232315496",
+      "launch_id": "7fbffa8a6a2d4d15b8a425e2ced44da6",
+      "supervisor_pid": 2315496,
+      "state_at_observation": "queued",
+      "queue_position_at_observation": 2,
+      "command": "bash probes/run_engine_probe.sh probes/engine_prefill_fp8_consumer_check.py --samples 20",
+      "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/6be2464bb050661bb4cdbefc8537b3f192a75db17aaadfc7c802da7c4e0b96d2.log",
+      "expected_output": "/home/choiceoh/.cache/st-architecture-consumers/prefill-fp8-consumer.json"
+    },
+    {
+      "session": "stmhc-contract0913",
+      "ticket": "17892258362318595",
+      "launch_id": "a63ba75c787f40508ac23ac598a527b9",
+      "supervisor_pid": 2318595,
+      "state_at_observation": "queued",
+      "command": "bash probes/run_engine_probe.sh probes/engine_mhc_contract_check.py --samples 20",
+      "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/b5c77dd03ceaf24599f0f4635fb3014f751730f243d2dd6a312c5648ba772114.log",
+      "expected_output": "/home/choiceoh/.cache/st-architecture-consumers/mhc-contract.json"
+    }
+  ],
+  "existing_kda": {
+    "session": "stkda-deferred0912v7",
+    "source_commit": "191139395e2664954b97fa010251e5bf37331601",
+    "remote_checkout": "/home/choiceoh/st-worktrees/codex-kda-deferred",
+    "state_at_observation": "queued",
+    "revision_at_observation": 11,
+    "queue_position_at_observation": 1
+  },
+  "peek": {
+    "tool": "PR 760 step_peek with the mixed-kind bucket filter fix",
+    "endpoint": "http://10.10.10.2:8000/metrics",
+    "result": "connection refused",
+    "samples": 0
+  }
+}
