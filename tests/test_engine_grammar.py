@@ -61,6 +61,29 @@ class GrammarTests(unittest.TestCase):
         self.assertEqual(masks.live("row", 4), 1)                         # 'a' cannot open an object: positions 1.. are dead
         self.assertIn(self.vocab.index("{"), self.allowed(m, [])[0])      # and the refusal did not move the matcher
 
+    def test_stop_draft_ends_the_walk_and_termination_rolls_back(self):
+        """DFlash may propose EOS with more drafts behind it; xgrammar rejects a mask after EOS."""
+        eos, a = (self.vocab.index(x) for x in ("<eos>", "a"))
+        for trailing in ([], [a, a]):
+            m = self.grammars.matcher({"type": "json_object"}, max_rollback=5)
+            m.advance([self.vocab.index("{"), self.vocab.index("}")])
+            self.assertEqual(self.allowed(m, [eos, *trailing]), [{eos}])
+            self.assertFalse(m.matcher.is_terminated())
+            self.assertEqual(self.allowed(m, []), [{eos}])
+            m.advance([eos])
+            self.assertTrue(m.matcher.is_terminated())
+
+    def test_dormant_draft_walk_across_answer_and_eos_rolls_back(self):
+        after, brace, close, eos = (self.vocab.index(x) for x in ("a", "{", "}", "<eos>"))
+        m = self.grammars.matcher({"type": "json_object"}, max_rollback=5, after=after)
+        masks = self.allowed(m, [after, brace, close, eos, brace])
+        self.assertEqual(len(masks), 4)
+        self.assertEqual(masks[-1], {eos})
+        self.assertFalse(m.armed)
+        self.assertFalse(m.matcher.is_terminated())
+        m.advance([after])
+        self.assertIn(brace, self.allowed(m, [])[0])
+
     def test_a_schema_the_compiler_refuses_is_a_value_error_not_the_compiler_s_own(self):
         """xgrammar's C++ layer raises for a regex it cannot convert and a `$ref` that goes nowhere. Raised
         where a row is admitted, that would abort every live request on every rank; the door answers 400."""

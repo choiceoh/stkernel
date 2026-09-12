@@ -226,8 +226,8 @@ class Matcher:
         positions: position i assumes drafts[:i] were accepted. Returns (live positions, whether any of them
         refuses anything).
 
-        A draft the grammar refuses ends the row there. A terminated grammar allows only its stop tokens (the
-        mask xgrammar fills there). The walk is taken back before returning: only committed tokens advance a
+        A draft the grammar refuses ends the row there. Accepting a stop token ends the walk after that token's
+        position: xgrammar cannot fill another mask after termination. The walk is taken back before returning: only committed tokens advance a
         matcher, and that is `advance`.
 
         While the row is dormant nothing is written and nothing is refused, so a step of pure reasoning costs
@@ -256,6 +256,8 @@ class Matcher:
                         if self.matcher.is_terminated() or not self.matcher.accept_token(drafts[i]):
                             break
                         walked += 1
+                        if self.matcher.is_terminated():
+                            break               # the stop token has a mask; positions after it are dead
                     elif drafts[i] == self.after:
                         self.armed = True        # the reasoning ends here: the answer's first token is the next one
         finally:
