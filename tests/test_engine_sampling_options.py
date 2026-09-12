@@ -287,3 +287,80 @@ class BlockVerificationTests(unittest.TestCase):
         self.assertEqual(count.tolist(), [a + 1 for a in want])
         for r, a in enumerate(want):
             self.assertEqual(tokens[r, :a].tolist(), ids[r, :a].tolist(), "accepted drafts are committed as they were")
+
+
+class DraftCeilingTests(unittest.TestCase):
+    """Acceptance has three ceilings; the split is what makes "raise it" answerable."""
+
+    def test_the_reachable_mass_is_the_overlap_and_the_covered_mass_is_the_support(self):
+        from engine.base.sampler import draft_ceilings
+        target = torch.tensor([[0.5, 0.3, 0.2], [0.1, 0.8, 0.1]])
+        draft = torch.tensor([[0.4, 0.6, 0.0]])                       # one position, two candidates
+        reachable, covered = draft_ceilings(target, draft)
+        self.assertAlmostEqual(reachable, 0.4 + 0.3, places=6)        # min(.5,.4) + min(.3,.6) + min(.2,0)
+        self.assertAlmostEqual(covered, 0.5 + 0.3, places=6)          # the target mass on the two candidates
+
+    def test_a_draft_that_covers_nothing_reaches_nothing(self):
+        from engine.base.sampler import draft_ceilings
+        target = torch.tensor([[0.0, 0.0, 1.0], [0.5, 0.5, 0.0]])
+        draft = torch.tensor([[0.5, 0.5, 0.0]])
+        reachable, covered = draft_ceilings(target, draft)
+        self.assertAlmostEqual(reachable, 0.0, places=6)
+        self.assertAlmostEqual(covered, 0.0, places=6)
+
+    def test_the_ceilings_bound_the_acceptance_they_explain(self):
+        from engine.base.sampler import block_verify, draft_ceilings, draw
+        torch.manual_seed(5)
+        K, V, rounds = 3, 6, 4000
+        target = torch.softmax(torch.randn(K + 1, V), -1)
+        draft = torch.softmax(torch.randn(K, V), -1)
+        gen = torch.Generator().manual_seed(7)
+        accepted = 0
+        for _ in range(rounds):
+            ids = [draw(draft[i], gen) for i in range(K)]
+            got, _ = block_verify(target, ids, draft, gen)
+            accepted += got
+        reachable, covered = draft_ceilings(target, draft)
+        self.assertLessEqual(reachable, covered + 1e-6, "what a rule can accept sits under what the candidates cover")
+        self.assertLessEqual(accepted / rounds, reachable + 0.05, "and acceptance sits under both")
+
+
+class HistoryLifetimeTests(unittest.TestCase):
+    """A kept history is only safe while the tokens it was built from are the row's own."""
+
+    def test_a_row_reused_with_the_same_shape_does_not_inherit_the_old_counts(self):
+        from engine.base.sampler import History
+        h = History(8, "cpu")
+        first = [1, 1, 2, 3]
+        h.of(0, first, 2)
+        self.assertEqual(float(h.of(0, first, 2)[1][1]), 0.0)     # token 1 is prompt here, not output
+        # the row is handed a different conversation of the same length and prompt length
+        h.forget(0)
+        second = [4, 5, 1, 1]
+        seen, counts = h.of(0, second, 2)
+        self.assertEqual(float(counts[1]), 2.0)
+        self.assertFalse(bool(seen[2]), "nothing of the old conversation survives")
+
+    def test_the_adapter_drops_it_wherever_it_reassigns_a_row_s_tokens(self):
+        source = (ROOT / "engine/profiles/glm53/adapter.py").read_text()
+        for site in ("self.tokens[seq] = list(ids)", 'self.tokens[seq] = list(record["tokens"])'):
+            after = source[source.index(site):]
+            self.assertIn("self.history.forget(seq)", after[:400], site)
+
+
+class VerificationPathTests(unittest.TestCase):
+    """A served row and a row with penalties must be verified by the same rule."""
+
+    def test_the_row_path_and_the_batch_path_accept_the_same_prefix(self):
+        from engine.base.sampler import block_verify, block_verify_batch
+        torch.manual_seed(11)
+        K, V = 4, 9
+        for trial in range(25):
+            target = torch.softmax(torch.randn(K + 1, V), -1)
+            draft = torch.softmax(torch.randn(K, V), -1)
+            ids = [int(torch.multinomial(draft[i], 1)) for i in range(K)]
+            one, _ = block_verify(target, ids, draft, torch.Generator().manual_seed(trial))
+            many, _, _ = block_verify_batch(target.unsqueeze(0), torch.tensor([ids]), draft.unsqueeze(0),
+                                            torch.Generator().manual_seed(trial))
+            self.assertEqual(one, int(many[0]), f"trial {trial}")
+

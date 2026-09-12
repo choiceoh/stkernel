@@ -911,6 +911,7 @@ class Server:
                     self.timed_out += reason == "timeout"
                     self._deadline.pop(request, None)
                     self._arrived.pop(request, None)
+                    self._admitted.pop(request, None)
                     self._answer(request, RequestError(f"request cancelled: {reason}", 504 if reason == "timeout" else 499))
                     return
                 restoring = next((r for r, e in self._restoring.items() if e["request"] == request), None)
@@ -920,10 +921,12 @@ class Server:
                     self.timed_out += reason == "timeout"
                     self._deadline.pop(request, None)
                     self._arrived.pop(request, None)
+                    self._admitted.pop(request, None)
                     self._answer(request, RequestError(f"request cancelled: {reason}", 504 if reason == "timeout" else 499))
                     return
                 self._deadline.pop(request, None)
                 self._arrived.pop(request, None)
+                self._admitted.pop(request, None)
                 return                                     # finished already (or unknown): nothing to drop
             self._active.pop(row)
             self._sent.pop(row, None)
@@ -940,6 +943,7 @@ class Server:
         self.timed_out += reason == "timeout"
         self._deadline.pop(request, None)
         self._arrived.pop(request, None)
+        self._admitted.pop(request, None)
         status = 504 if reason == "timeout" else 499
         self._answer(request, RequestError(f"request cancelled: {reason}", status))
 
@@ -1540,6 +1544,18 @@ class Server:
             labelled.append(("vllm:request_success_by_reason_total", "counter",
                              "requests answered, by why they stopped",
                              [(f'finished_reason="{reason}"', count) for reason, count in sorted(self.by_reason.items())]))
+        positions = getattr(engine, "ceiling_positions", 0)
+        if positions:
+            # Acceptance has three ceilings; these say which one to lift next (base/sampler.draft_ceilings).
+            rows.extend([
+                ("counter", "st:spec_draft_positions_sampled_total", "draft positions behind the two masses below", positions),
+                ("counter", "st:spec_reachable_mass_total",
+                 "sum over those of sum_x min(target, draft): the most any verification rule could accept",
+                 round(engine.reachable_mass, 6)),
+                ("counter", "st:spec_candidate_mass_total",
+                 "sum over those of the target mass the drafter's candidates cover at all",
+                 round(engine.covered_mass, 6)),
+            ])
         accepted = getattr(engine, "accepted_per_step", None)
         if accepted:
             # Acceptance as a shape, not a mean: a run that is bimodal at 0 and k wants a

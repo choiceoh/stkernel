@@ -97,7 +97,7 @@ class LauncherAndQueueTests(unittest.TestCase):
         # the lease never rsyncs over a live session's engine tree
         self.assertIn("launchers/lib/fleet-lease.sh", self.launcher)
         helper = (ROOT / "launchers/lib/fleet-lease.sh").read_text()
-        self.assertIn('python3 - $* --path $FLEET_LEASE_PATH" < "${FLEET_REPO', helper)
+        self.assertIn('ssh $FLEET_LEASE_SSH "choiceoh@$FLEET_HEAD" "python3 - $* --path $FLEET_LEASE_PATH" < "$module"', helper)
 
     def test_the_queue_refuses_to_answer_off_the_controller(self):
         """Homes are not shared: elsewhere it would create a second, empty queue."""
@@ -265,6 +265,82 @@ class SmoothnessTests(unittest.TestCase):
         self.assertIn("goes stale after the grace", self.probe)
         module = (ROOT / "engine/base/fleet_lease.py").read_text()
         self.assertIn('print("free (stale: " + describe(held) + ")")', module)
+
+    def test_an_opaque_lock_naming_a_dead_pid_is_not_a_dead_hand(self):
+        """Treating every unparseable record as permanently held made a departed session
+        block the fleet until a human ran `stop` -- three queued reservations died on it."""
+        import os
+        here = os.uname().nodename.split(".")[0]
+        path = Path(self.probe)                                  # any path; we write our own below
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "lease"
+            path.write_text(f"choiceoh@{here} st-glm53 2026-09-12 02:55:58 UTC pid=999999999\n")
+            record = read(path)
+            self.assertTrue(record["opaque"] and record["pid"] == 999999999)
+            self.assertEqual(record["host"], here)
+            # its pid is gone and nothing is running: reclaimable
+            self.assertFalse(alive(record, container_up=lambda name: False))
+            # but not while an ST container is up, and not if we cannot ask
+            self.assertTrue(alive(record, container_up=lambda name: True))
+            self.assertTrue(alive(record, container_up=None))
+            # a live pid, or another host, stays held
+            path.write_text(f"choiceoh@{here} st-glm53 pid={os.getpid()}\n")
+            self.assertTrue(alive(read(path), container_up=lambda name: False))
+            path.write_text("choiceoh@some-other-node st-glm53 pid=999999999\n")
+            self.assertTrue(alive(read(path), container_up=lambda name: False))
+            path.write_text("no pid here at all\n")
+            self.assertTrue(alive(read(path), container_up=lambda name: False))
+
+    def test_the_probe_waits_for_the_fleet_instead_of_losing_its_turn(self):
+        self.assertIn("ST_PROBE_WAIT_MINUTES", self.probe)
+        self.assertIn("waiting for the fleet", self.probe)
+        self.assertIn("the fleet stayed held for", self.probe)
+
+    def test_the_queue_reads_the_lease_not_only_containers(self):
+        """They disagreed once and the queue granted while the lease was still held."""
+        self.assertIn("fleet_lease read", self.fleet)
+        self.assertIn("st_engine_up() {", self.fleet)
+
+    def test_the_lease_lives_where_a_container_can_read_it(self):
+        """The engine must READ its lease to notice a yield request. ~/st-fleet.lock is not
+        mounted into any ST container, so the whole handover was inert on the fleet."""
+        from engine.base.fleet_lease import DEFAULT_PATH
+        self.assertEqual(str(DEFAULT_PATH), "/home/choiceoh/glm53-logs/st-fleet.lock")
+        mounted = "-v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs"
+        self.assertIn(mounted, self.launcher)                       # same path inside and out
+        self.assertIn("FLEET_LEASE_PATH:-/home/choiceoh/glm53-logs/st-fleet.lock", self.helper)
+        self.assertIn("LOCK=${FLEET_LEASE_PATH:-/home/choiceoh/glm53-logs/st-fleet.lock}", self.launcher)
+
+    def test_a_session_on_the_older_lock_path_still_blocks_us(self):
+        """Moving the path must not split the lock: an older launcher writes the old one."""
+        self.assertIn("LEGACY_LOCK=/home/choiceoh/st-fleet.lock", self.launcher)
+        self.assertIn("a session on the older lock path holds the fleet", self.launcher)
+        self.assertIn('node_sh "${NODES[0]}" "rm -f $LEGACY_LOCK"', self.launcher)   # stop clears both
+
+    def test_the_head_node_runs_the_lease_locally(self):
+        """A node cannot ssh to itself here, and the head is where the queue's controller
+        runs -- so the most important caller was the one that could not ask (exit 255)."""
+        self.assertIn("_fleet_lease_is_head()", self.helper)
+        self.assertIn('if _fleet_lease_is_head; then\n    python3 "$module"', self.helper)
+
+    def test_release_takes_the_same_lock_as_publish(self):
+        """Without it a holder's next heartbeat, landing between the read and the unlink,
+        rewrites the file and the released lease comes back."""
+        module = (ROOT / "engine/base/fleet_lease.py").read_text()
+        body = module[module.index("def release("):module.index("def _selfcheck(")]
+        self.assertIn("with _Mutation(path):", body)
+
+    def test_a_heartbeat_cannot_resurrect_a_released_lease(self):
+        import tempfile
+        from engine.base.fleet_lease import publish, release as rel
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "lease"
+            acquire("holder", path=path, container="st-glm53")
+            rel("holder", path=path)
+            with self.assertRaises(LeaseLost):
+                publish("holder", path=path, running=1)
+            self.assertIsNone(read(path))
 
     def test_yield_waits_for_the_handover(self):
         """Asking and leaving the caller to poll is not a handover."""

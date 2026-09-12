@@ -1225,6 +1225,28 @@ class StepCostTests(unittest.TestCase):
         self.assertEqual(s.engine.generated_since(0, 2), [9, 10])
 
 
+class RequestClockTests(unittest.TestCase):
+    """Two clocks per request. A request that does not finish must still clear both."""
+
+    def test_a_cancelled_request_leaves_no_clock_behind(self):
+        s = server()
+        request, event = s.submit([1, 2], 8, 0.0)
+        for _ in range(3):
+            s.once()
+        self.assertIn(request, s._admitted, "it was admitted, so the queue clock stopped")
+        s.cancel(request, "client closed")
+        for _ in range(3):
+            s.once()
+        self.assertNotIn(request, s._arrived)
+        self.assertNotIn(request, s._admitted)
+
+    def test_both_clocks_are_cleared_in_the_same_places(self):
+        source = (ROOT / "engine/base/serve.py").read_text()
+        self.assertEqual(source.count("self._arrived.pop(request, None)"),
+                         source.count("self._admitted.pop(request, None)"),
+                         "one of them is cleared somewhere the other is not")
+
+
 class MetricsTests(unittest.TestCase):
     """The numbers a dashboard needs that a single latency histogram cannot give."""
 
