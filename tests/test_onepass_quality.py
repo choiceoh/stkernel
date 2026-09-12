@@ -245,6 +245,19 @@ class IntegrationTests(unittest.TestCase):
         self.assertTrue(all(i['max_tokens'] - i['reasoning_budget'] >= i['reasoning_budget']
                             for i in items))
 
+    def test_diagnostic_copy_does_not_shorten_quality_or_prefill_workloads(self):
+        items = onepass.workload_requests(self.fixture(), SimpleNamespace(filler=lambda n, r: ''))
+        before = copy.deepcopy(items)
+        for spec in (0, 6, 8, 32):
+            for item in items:
+                diag = onepass.diagnostic_request(item, spec)
+                self.assertEqual(diag['content'], item['content'])
+                self.assertEqual(diag['quality_cases'], item['quality_cases'])
+                self.assertEqual(diag['max_tokens'], diag['min_tokens'])
+                self.assertGreaterEqual(diag['max_tokens'], 8 * (spec + 1))
+                self.assertLess(diag['reasoning_budget'], diag['max_tokens'])
+        self.assertEqual(items, before)
+
     def test_c1_grading_is_after_windows_and_latency_session(self):
         tree = ast.parse(Path(onepass.__file__).read_text())
         main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == '_main')
@@ -303,6 +316,15 @@ class IntegrationTests(unittest.TestCase):
                 f"measure-c4-{item['ctx']}-q{item['question']}" for item in items})
             self.assertEqual(record['recording']['status'], 'complete')
             self.assertFalse(record['steady_state']['valid'])
+            requests = [json.loads(s) for s in (Path(record['artifacts']) / 'requests.jsonl').read_text().splitlines()]
+            diagnostics = [r for r in requests if r['phase'].startswith('diagnostic-')]
+            self.assertEqual(len(diagnostics), 15)
+            self.assertEqual({(r['max_tokens'], r['min_tokens'], r['reasoning_budget']) for r in diagnostics},
+                             {(64, 64, 32)})
+            measured = [r for r in requests if not r['phase'].startswith('diagnostic-')]
+            self.assertEqual(len(measured), 50)
+            self.assertEqual({(r['max_tokens'], r['reasoning_budget']) for r in measured},
+                             {(8192, 4096), (24576, 12288)})
         onepass._RUN = None
 
     def test_changed_quality_protocol_cannot_reuse_a_baseline(self):
