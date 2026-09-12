@@ -99,8 +99,13 @@ def chat_renderer(ckpt=facts.CKPT):
     t = AutoTokenizer.from_pretrained(str(ckpt))
     t.chat_template = (Path(ckpt) / CHAT_TEMPLATE).read_text()
 
-    def render(messages, kwargs):
-        return t.apply_chat_template(messages, add_generation_prompt=True, tokenize=False, **kwargs)
+    def render(messages, kwargs, *, generation_prompt: bool = True, continue_final: bool = False):
+        """`continue_final` resumes inside the last assistant turn instead of opening a new
+        one, which is what a caller wants when it is handing back a partial answer to extend.
+        It is passed only when asked for, so a template engine without it keeps working."""
+        resume = {"continue_final_message": True} if continue_final else {}
+        return t.apply_chat_template(messages, add_generation_prompt=generation_prompt,
+                                     tokenize=False, **resume, **kwargs)
     return render
 
 
