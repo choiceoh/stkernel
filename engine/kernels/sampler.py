@@ -35,11 +35,17 @@ ROUNDS = tl.constexpr(15)      # a four-way split resolves two bits a round
 
 
 @triton.jit
-def _tails(lp, N, mx, temp, t1, t2, t3, BLOCK: tl.constexpr, COUNT: tl.constexpr):
+def _tails(lp, N, mx, temp, t1, t2, t3, BLOCK: tl.constexpr, COUNT: tl.constexpr,
+           CACHED: tl.constexpr = False):
     """The row's tail mass (or population) at three bit thresholds, in one streaming pass.
 
     Three accumulators ride the same load: the loads are what the pass costs, so asking three
     questions of each element instead of one is what turns thirty rounds into fifteen.
+
+    `CACHED` reads weights the caller already computed instead of computing them again. Each round
+    used to call exp on every token of a row whose weights do not change between rounds -- 154,880
+    exponentials, seventeen times over. It is worth 14% (45차 §71); the rest of the row's time is
+    one SM's bandwidth, which is a different problem.
     """
     cols = tl.arange(0, BLOCK)
     a1 = tl.zeros([BLOCK], tl.float32)
@@ -48,10 +54,13 @@ def _tails(lp, N, mx, temp, t1, t2, t3, BLOCK: tl.constexpr, COUNT: tl.constexpr
     for off in range(0, N, BLOCK):
         idx = off + cols
         m = idx < N
-        v = tl.load(lp + idx, mask=m, other=NEG_INF).to(tl.float32)
-        # divided, not scaled by a reciprocal: 1/T is inf for a temperature the door accepts but
-        # fp32 cannot invert (below ~1e-38), and then the row's own maximum is 0 * inf = NaN
-        w = tl.exp((v - mx) / temp)                   # (0, 1]; a masked lane is exp(-inf) = 0
+        if CACHED:
+            w = tl.load(lp + idx, mask=m, other=0.0)
+        else:
+            v = tl.load(lp + idx, mask=m, other=NEG_INF).to(tl.float32)
+            # divided, not scaled by a reciprocal: 1/T is inf for a temperature the door accepts
+            # but fp32 cannot invert (below ~1e-38), and the row's own maximum is 0 * inf = NaN
+            w = tl.exp((v - mx) / temp)               # (0, 1]; a masked lane is exp(-inf) = 0
         b = w.to(tl.int32, bitcast=True)
         if COUNT:
             val = tl.where(m, 1.0, 0.0)
@@ -64,21 +73,25 @@ def _tails(lp, N, mx, temp, t1, t2, t3, BLOCK: tl.constexpr, COUNT: tl.constexpr
 
 
 @triton.jit
-def _tail(lp, N, mx, temp, t, BLOCK: tl.constexpr):
+def _tail(lp, N, mx, temp, t, BLOCK: tl.constexpr, CACHED: tl.constexpr = False):
     """The row's tail mass at one bit threshold."""
     cols = tl.arange(0, BLOCK)
     acc = tl.zeros([BLOCK], tl.float32)
     for off in range(0, N, BLOCK):
         idx = off + cols
         m = idx < N
-        v = tl.load(lp + idx, mask=m, other=NEG_INF).to(tl.float32)
-        w = tl.exp((v - mx) / temp)
+        if CACHED:
+            w = tl.load(lp + idx, mask=m, other=0.0)
+        else:
+            v = tl.load(lp + idx, mask=m, other=NEG_INF).to(tl.float32)
+            w = tl.exp((v - mx) / temp)
         acc += tl.where(m & (w.to(tl.int32, bitcast=True) >= t), w, 0.0)
     return tl.sum(acc)
 
 
 @triton.jit
-def _search(lp, N, mx, temp, target, standing, BLOCK: tl.constexpr, COUNT: tl.constexpr):
+def _search(lp, N, mx, temp, target, standing, BLOCK: tl.constexpr, COUNT: tl.constexpr,
+            CACHED: tl.constexpr = False):
     """The largest bit threshold whose tail still reaches `target`, and that tail.
 
     The invariant is the ordinary one of a binary search over the integers: the answer is always
@@ -93,11 +106,27 @@ def _search(lp, N, mx, temp, target, standing, BLOCK: tl.constexpr, COUNT: tl.co
         t1 = lo + step
         t2 = lo + 2 * step
         t3 = lo + 3 * step
-        s1, s2, s3 = _tails(lp, N, mx, temp, t1, t2, t3, BLOCK, COUNT)
+        s1, s2, s3 = _tails(lp, N, mx, temp, t1, t2, t3, BLOCK, COUNT, CACHED)
         lo = tl.where(s3 >= target, t3, tl.where(s2 >= target, t2, tl.where(s1 >= target, t1, lo)))
         reached = tl.where(s3 >= target, s3, tl.where(s2 >= target, s2, tl.where(s1 >= target, s1, reached)))
         step = step >> 2
     return lo, reached
+
+
+@triton.jit
+def _truncate(src, N, mx, temp, total, k, p, BLOCK: tl.constexpr, CACHED: tl.constexpr):
+    """(tau, kept) for the row: top-k first, then top-p on top of it. `src` is either the logits or
+    the weights already made from them -- the searches ask the same questions of either."""
+    tau = 0
+    kept = total
+    if (k > 0) & (k < N):
+        tau, _ = _search(src, N, mx, temp, k.to(tl.float32), 0.0, BLOCK, True, CACHED)
+        kept = _tail(src, N, mx, temp, tau, BLOCK, CACHED)
+    if p < 1.0:
+        # top-p sits on top of top-k: below tau_k the tail already holds the whole kept mass,
+        # so searching the full range again can only land at or above it. No second bracket.
+        tau, kept = _search(src, N, mx, temp, p * kept, kept, BLOCK, False, CACHED)
+    return tau, kept
 
 
 @triton.jit
@@ -155,17 +184,19 @@ def _sampler(LOGITS, TEMP, TOPK, TOPP, UNIFORM, OUT, PROBS, TAU, KEPT,
             mx = nm
 
         # -- the two truncations, each a threshold search over the same bit range ----------------
-        tau = 0
-        kept = total
+        # A caller that wants the distributions has a row-wide buffer, so the weights go there once
+        # and the search rounds read them instead of calling exp on the row again (45차 §71).
         k = tl.load(TOPK + row)
-        if (k > 0) & (k < N):
-            tau, _ = _search(lp, N, mx, temp, k.to(tl.float32), 0.0, BLOCK, True)
-            kept = _tail(lp, N, mx, temp, tau, BLOCK)
         p = tl.load(TOPP + row)
-        if p < 1.0:
-            # top-p sits on top of top-k: below tau_k the tail already holds the whole kept mass,
-            # so searching the full range again can only land at or above it. No second bracket.
-            tau, kept = _search(lp, N, mx, temp, p * kept, kept, BLOCK, False)
+        if WRITE:
+            for off in range(0, N, BLOCK):
+                idx = off + cols
+                live = idx < N
+                v = tl.load(lp + idx, mask=live, other=NEG_INF).to(tl.float32)
+                tl.store(pout + idx, tl.exp((v - mx) / temp), mask=live)
+            tau, kept = _truncate(pout, N, mx, temp, total, k, p, BLOCK, True)
+        else:
+            tau, kept = _truncate(lp, N, mx, temp, total, k, p, BLOCK, False)
 
         # -- the draw: one uniform walked against the kept mass, in id order ----------------------
         # A caller that only wants the distributions (the speculative path picks with them, not
@@ -186,8 +217,11 @@ def _sampler(LOGITS, TEMP, TOPK, TOPP, UNIFORM, OUT, PROBS, TAU, KEPT,
         for off in range(0, stop, BLOCK):
             idx = off + cols
             live = idx < N
-            v = tl.load(lp + idx, mask=live, other=NEG_INF).to(tl.float32)
-            w = tl.exp((v - mx) / temp)
+            if WRITE:
+                w = tl.load(pout + idx, mask=live, other=0.0)
+            else:
+                v = tl.load(lp + idx, mask=live, other=NEG_INF).to(tl.float32)
+                w = tl.exp((v - mx) / temp)
             keep = live & (w.to(tl.int32, bitcast=True) >= tau)
             wk = tl.where(keep, w, 0.0)
             if DRAW:
