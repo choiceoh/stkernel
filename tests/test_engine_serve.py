@@ -1245,6 +1245,129 @@ def _byte_level_chars():
     return [table[b] for b in range(256)]
 
 
+class KoreanBudgetTests(unittest.TestCase):
+    """A token is not the same amount of answer in every language (45차 §38)."""
+
+    class ByteTok(Tokenizer):
+        """One token a byte, so a Korean syllable costs three and an ASCII letter one."""
+        def encode(self, text, add_special_tokens=True):
+            return Encoded(list(text.encode()))
+
+    def test_the_default_is_a_length_a_reader_would_recognise(self):
+        from engine.base.serve import DEFAULT_ANSWER_CHARS, DEFAULT_ANSWER_TOKENS, answer_budget
+        tok = self.ByteTok()
+        english = answer_budget(tok, "How should I reduce the latency of our inference server?")
+        korean = answer_budget(tok, "우리 서버의 지연 시간을 줄이려면 어떤 것부터 봐야 할까요?")
+        self.assertGreater(korean, english, "the same characters cost more tokens in Korean")
+        self.assertEqual(english, min(DEFAULT_ANSWER_TOKENS[1], DEFAULT_ANSWER_CHARS))  # one token a character
+        self.assertLessEqual(korean, DEFAULT_ANSWER_TOKENS[1])
+
+    def test_a_budget_never_fails_and_never_goes_below_the_old_one(self):
+        from engine.base.serve import DEFAULT_ANSWER_TOKENS, answer_budget
+        floor = DEFAULT_ANSWER_TOKENS[0]
+        self.assertEqual(answer_budget(None, "무엇이든"), floor)
+        self.assertEqual(answer_budget(self.ByteTok(), ""), floor)
+
+        class Broken(Tokenizer):
+            def encode(self, text, add_special_tokens=True):
+                raise RuntimeError("no")
+
+        self.assertEqual(answer_budget(Broken(), "안녕하세요"), floor)
+
+    def test_the_text_measured_is_what_the_person_last_wrote(self):
+        from engine.base.serve import written_text
+        self.assertEqual(written_text([{"role": "system", "content": "You are a helpful assistant."},
+                                       {"role": "user", "content": "안녕하세요"}]), "안녕하세요")
+        self.assertEqual(written_text([{"role": "user", "content": "first"},
+                                       {"role": "assistant", "content": "reply"},
+                                       {"role": "user", "content": "second"}]), "second")
+        self.assertEqual(written_text([{"role": "user", "content": [
+            {"type": "text", "text": "이 사진은"}, {"type": "image_url", "image_url": {"url": "x"}}]}]), "이 사진은")
+        self.assertEqual(written_text([{"role": "system", "content": "only a system turn"}]), "")
+        self.assertEqual(written_text("not a list"), "")
+
+    def test_a_default_that_does_not_fit_is_cut_down_to_the_old_one_and_no_further(self):
+        """Backing a default off to fit is the engine choosing; refusing a prompt the old
+        default could not fit is the contract, and that answer does not change."""
+        s = chat_server()
+        room = s.room_for(0)
+        self.assertGreaterEqual(room, 1)
+        self.assertLess(s.room_for(s.max_context), room)
+
+
+class TokenSpanTests(unittest.TestCase):
+    """`text_offset` has to index into the text it describes, in every language."""
+
+    def spans(self, text, start=0):
+        from engine.base.serve import token_spans
+        tok = ByteTokenizer()
+        ids = list(text.encode())
+        tokens, offsets = token_spans(tok, ids, start)
+        self.assertEqual(len(tokens), len(ids))
+        return tok.decode(ids), tokens, offsets
+
+    def test_the_tokens_join_into_the_text_and_every_offset_lands_on_its_token(self):
+        for text in ("안녕하세요 세계 여러분", "漢字テスト 🙂 ok", "plain ascii only", "혼합 mixed 텍스트"):
+            with self.subTest(text=text):
+                whole, tokens, offsets = self.spans(text)
+                self.assertEqual("".join(tokens), whole)
+                for token, offset in zip(tokens, offsets):
+                    self.assertEqual(whole[offset:offset + len(token)], token)
+
+    def test_the_halves_of_a_character_add_nothing_and_the_last_adds_it_whole(self):
+        _, tokens, _ = self.spans("가")                       # three bytes, three tokens
+        self.assertEqual(tokens, ["", "", "가"])
+
+    def test_an_echoed_prompt_shifts_every_offset(self):
+        _, _, plain = self.spans("가나다")
+        _, _, shifted = self.spans("가나다", start=7)
+        self.assertEqual(shifted, [o + 7 for o in plain])
+
+    def test_no_tokens_is_no_rows(self):
+        from engine.base.serve import token_spans
+        self.assertEqual(token_spans(ByteTokenizer(), []), ([], []))
+
+
+@unittest.skipUnless(importlib.util.find_spec("tokenizers") is not None, "requires the tokenizers library")
+class TokenBytesTests(unittest.TestCase):
+    """OpenAI's `bytes` exists so a client can rejoin a character split across tokens."""
+
+    def byte_level(self):
+        from tokenizers import Tokenizer as Rust, decoders, models, pre_tokenizers
+        alphabet = sorted(pre_tokenizers.ByteLevel.alphabet())
+        tok = Rust(models.BPE({c: i for i, c in enumerate(alphabet)}, [], unk_token=None))
+        tok.decoder = decoders.ByteLevel()
+        from engine.base.serve import _byte_level_chars
+        order = {c: i for i, c in enumerate(alphabet)}
+        return tok, [order[c] for c in _byte_level_chars()]
+
+    def test_the_bytes_rejoin_into_the_text(self):
+        from engine.base.serve import token_bytes
+        tok, id_of_byte = self.byte_level()
+        for text in ("안녕하세요 세계", "漢字と emoji 🙂", "plain ascii"):
+            with self.subTest(text=text):
+                ids = [id_of_byte[b] for b in text.encode()]
+                joined = b"".join(bytes(token_bytes(tok, i, tok.decode([i]))) for i in ids)
+                self.assertEqual(joined.decode(), text)
+
+    def test_a_whole_character_keeps_its_own_bytes(self):
+        from engine.base.serve import token_bytes
+        tok, id_of_byte = self.byte_level()
+        tid = id_of_byte[ord("A")]
+        self.assertEqual(token_bytes(tok, tid, tok.decode([tid])), [65])
+
+    def test_a_byte_fallback_vocabulary_is_read_too(self):
+        from engine.base.serve import token_bytes
+        from tokenizers import Tokenizer as Rust, decoders, models
+        tok = Rust(models.BPE({f"<0x{b:02X}>": b for b in range(256)}, [], byte_fallback=True, unk_token=None))
+        tok.decoder = decoders.Sequence([decoders.ByteFallback(), decoders.Fuse()])
+        self.assertEqual(token_bytes(tok, 0xEC, tok.decode([0xEC])), [0xEC])
+
+    def test_a_tokenizer_that_cannot_say_keeps_the_old_answer(self):
+        from engine.base.serve import token_bytes
+        self.assertEqual(token_bytes(Tokenizer(), 1, "\ufffd"), list("\ufffd".encode()))
+
+
 class StopScanCostTests(unittest.TestCase):
     """A streamed step must not cost more because the answer is longer."""
 
