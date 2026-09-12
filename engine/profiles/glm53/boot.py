@@ -306,8 +306,13 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                             snapshots=PREFIX_SNAPSHOTS,
                             draft_tp=comm.world_size if execution == "native" else 1,
                             draft_native=execution == "native")
-        b = redeclare()
+        # With THIS boot's floor, not vLLM's 40th-boot constant. RuntimeMemory measured it
+        # seconds ago in __init__, and this print is the moment anyone decides how much KV to
+        # ask for: without it the first table said 42.77 GiB of KV remained on a box that had
+        # 9.27, because the 33.50 GiB already on the node was nowhere in it (2026-09-12).
+        b = redeclare(ledger=memory.report())
         recorder.gauge("budget_unassigned_GiB", round(b.kv_gib - b.kv_declared_gib, 2))
+        recorder.gauge("budget_tenant_floor_GiB", round(memory.floor_bytes / GIB, 2))
         if comm.rank == 0:
             print(budget_mod.report(b))
     try:
