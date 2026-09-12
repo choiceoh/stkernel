@@ -21,7 +21,7 @@ def _quantize_gather(Packed, Scales, Q, S, LOCAL_N, PAYLOAD_BYTES,
     local_rows = LOCAL_N // K
     rank, local_row = row // local_rows, row % local_rows
     values = tl.load(Packed + rank*PAYLOAD_BYTES + local_row*K + col,
-                     col < K, other=0).to(tl.float32)
+                     col < K, other=0.0).to(tl.float32)
     scale = tl.load(Scales + rank*(PAYLOAD_BYTES//4) + LOCAL_N//4
                     + (local_row*K + group*128)//PACK_BLOCK, group < G, other=0)
     # Preserve the baseline unpack's BF16 store/reload, including rounding
