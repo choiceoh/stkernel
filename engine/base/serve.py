@@ -1812,6 +1812,12 @@ class Server:
             ("counter", "st:requests_timed_out_total", "the subset the deadline scan took", self.timed_out),
             ("gauge", "st:handing_over", "1 while the fleet is being handed to another session",
              int(self.draining is not None)),
+            # `_quiet` is the engine's own answer to "is there anything left to finish", and it is
+            # the one a handover waits for. It counts more than the two request gauges do -- a tier
+            # transfer on its own thread is not a request and stops nothing from reporting zero --
+            # so anything deciding it may take this engine down has to read this and not those.
+            ("gauge", "st:quiet", "1 when no request and no tier transfer is outstanding",
+             int(self._quiet())),
             ("counter", "st:handover_conversations_parked", "turns parked for the next holder",
              (self.handed_over or {}).get("parked", 0)),
             ("counter", "st:handover_conversations_lost", "turns a handover could not park",

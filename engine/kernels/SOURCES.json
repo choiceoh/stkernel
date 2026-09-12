@@ -280,21 +280,23 @@
       "source": "overlay/modules/glm53_kernels/tilelang_kernels.py",
       "sha256": "432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12",
       "origin": "repository",
-      "local_sha256": "d1a322e698cefd2389e90c454169b40505b80f4e3c8c1bf5b671e97658a6e214",
+      "local_sha256": "b5d8b89afe644d3e86e289d82070e6c170772b6df15604672461f3159d6f73e0",
       "local_modifications": [
-        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; TileLang pass hook read from engine.kernels.MHC_PASSES"
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; TileLang pass hook read from engine.kernels.MHC_PASSES",
+        "2026-09-12 GB10: fixed 512-column post CTAs and two explicit TMA loads sharing one transaction barrier; adopted before timing/GPU execution validation."
       ]
     },
     "mla/glm53_megakernel.cu": {
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
       "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
       "origin": "repository",
-      "local_sha256": "f72c35b05ea82115d70e0fb32bb3db8a60d22fb2848d8a124fa9cd4e1ab82fac",
+      "local_sha256": "c5eefd63874251408546d6b281120a2d23d6571c6bae4cb93de1fee81526dc52",
       "local_modifications": [
         "SM121 integer warp max reduction",
         "Cluster-local MLA split reduction with reused shared memory",
         "Correct GB10 shared memory, cluster and PDL documentation",
-        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults (PDL on, MK_INPUT_CTA 4, MK_INPUT_REUSE 1; probe mode = run_mla's 4th int)"
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults (PDL on, MK_INPUT_CTA 4, MK_INPUT_REUSE 1; probe mode = run_mla's 4th int)",
+        "2026-09-12 SM121: byte ldmatrix PV loads and BF16 ldmatrix Q/P loads in both ordinary and cluster MLA; split/MMA accumulation order unchanged; adopted before timing/GPU execution validation."
       ]
     },
     "mla/__init__.py": {

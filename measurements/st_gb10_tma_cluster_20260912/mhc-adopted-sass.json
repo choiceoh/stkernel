@@ -1,0 +1,50 @@
+{
+  "source_sha256": "b5d8b89afe644d3e86e289d82070e6c170772b6df15604672461f3159d6f73e0",
+  "target": "sm_121a",
+  "nvcc": "13.0.88",
+  "gpu_used": false,
+  "kernels": {
+    "mhc_post_tilelang_kernel": {
+      "static_instruction_sites": 240,
+      "opcode_sites": {
+        "LDC": 1,
+        "S2R": 1,
+        "ELECT": 3,
+        "S2UR": 6,
+        "LDCU": 7,
+        "UMOV": 12,
+        "UIMAD": 4,
+        "ISETP": 2,
+        "MOV": 3,
+        "LDG": 3,
+        "VOTEU": 3,
+        "UIADD3": 8,
+        "USHF": 4,
+        "ULEA": 7,
+        "UTMACCTL": 1,
+        "SYNCS": 5,
+        "NOP": 16,
+        "BAR": 2,
+        "LOP3": 3,
+        "BSSY": 1,
+        "SHF": 24,
+        "PLOP3": 1,
+        "BRA": 5,
+        "HFMA2": 2,
+        "UTMALDG": 2,
+        "UBLKCP": 1,
+        "BSYNC": 1,
+        "LDS": 5,
+        "IADD": 1,
+        "LEA": 2,
+        "PRMT": 10,
+        "FMUL": 16,
+        "FFMA": 64,
+        "F2FP": 8,
+        "STG": 4,
+        "EXIT": 1,
+        "NANOSLEEP": 1
+      }
+    }
+  }
+}

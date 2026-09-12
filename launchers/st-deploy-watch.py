@@ -73,20 +73,27 @@ def wanted(head: str, held: dict) -> "str | None":
 
 
 def busy(metrics: str) -> "int | None":
-    """Requests the engine is carrying, or None when it did not answer in a way we understand.
+    """What the engine still has outstanding, or None when it did not answer in a way we understand.
+
+    `st:quiet` is the engine's OWN answer (`serve._quiet`) and is the one that counts: a conversation
+    being retired to or restored from the NVMe tier runs on its own thread, is not a request, and
+    leaves both request gauges reading zero. Taking the fleet down on those two alone would cut
+    exactly the work a handover waits for. The request counts are still read, to say how busy.
 
     None is not zero. An engine that cannot be asked is not known to be quiet, and this refuses to
-    deploy on top of a question it could not get an answer to.
+    deploy on top of a question it could not get an answer to -- including one too old to publish
+    `st:quiet`, which is the shape of engine this must not assume anything about.
     """
     seen = {}
-    for name in ("vllm:num_requests_running", "vllm:num_requests_waiting", "st:handing_over"):
+    for name in ("vllm:num_requests_running", "vllm:num_requests_waiting", "st:handing_over", "st:quiet"):
         m = re.search(rf"^{re.escape(name)}(?:\{{[^}}]*\}})? +([0-9.eE+-]+)$", metrics, re.M)
         if m is None:
             return None
         seen[name] = float(m.group(1))
-    if seen["st:handing_over"]:
-        return max(1, int(seen["vllm:num_requests_running"] + seen["vllm:num_requests_waiting"]))
-    return int(seen["vllm:num_requests_running"] + seen["vllm:num_requests_waiting"])
+    requests = int(seen["vllm:num_requests_running"] + seen["vllm:num_requests_waiting"])
+    if seen["st:handing_over"] or not seen["st:quiet"]:
+        return max(1, requests)                     # something is outstanding, whatever the counts say
+    return requests
 
 
 def failures(tree: Path, timeout: int) -> "dict[str, str]":
@@ -121,8 +128,10 @@ def cut(sha: str, log) -> "Path | None":
     run(["rm", "-rf", str(staging)])
     staging.mkdir(parents=True)
     for part in CARRY:
-        code, _, err = run(["bash", "-c",
-                            f"git -C {SOURCE} archive {sha} {part} 2>/dev/null | tar -x -C {staging}"])
+        # pipefail: without it the exit code is tar's, and tar is happy to extract the prefix of a
+        # stream that died halfway -- a release that looks complete and is not
+        code, _, err = run(["bash", "-c", "set -o pipefail; "
+                            f"git -C {SOURCE} archive {sha} {part} | tar -x -C {staging}"])
         if code and part != "build":                      # `build` is the tokenizer meta: not in git on every tree
             log(f"  ABORT: {sha[:12]} has no {part} ({err.strip()[:80]})")
             run(["rm", "-rf", str(staging)])
@@ -232,10 +241,18 @@ def cycle(a, log) -> int:
 
     log(f"  deploying {head[:12]}")
     ok = deploy(release, log)
+    if not ok:
+        # Not recorded as deployed: what is serving now is whatever the supervisor recovered, which
+        # is not this release, and the next gate must not take it as the baseline. Recorded as
+        # rejected so the next cycle does not walk straight back into the same launch.
+        STATE.write_text(json.dumps({**held, "rejected": head, "rejected_at": time.time(),
+                                     "rejected_by": "launch"}, indent=1))
+        log(f"  {head[:12]} did not launch; left for a person, and not recorded as deployed")
+        return 1
     STATE.write_text(json.dumps({"deployed": head, "release": str(release), "deployed_at": time.time(),
-                                 "launched_ok": ok}, indent=1))
-    log(f"  deployed {head[:12]} from {release}" if ok else f"  {head[:12]} launched badly; recorded anyway")
-    return 0 if ok else 1
+                                 "launched_ok": True}, indent=1))
+    log(f"  deployed {head[:12]} from {release}")
+    return 0
 
 
 def main(argv=None) -> int:
