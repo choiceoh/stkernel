@@ -42,13 +42,43 @@ mutation, with two CPUs and a 4 GiB memory cap. Task source and logs are under
 
 - Focused capacity, snapshot/restore, tier and boot tests: 111 tests, 30 skips,
   zero failures. Skips require CUDA or model metadata unavailable to that container.
-- The full engine CPU gate and onepass contracts are also required before publication.
+- Integration and onepass recording checks: 39 tests, zero skips or failures.
+- Fleet audit/lease checks: 76 tests passed after refreshing the changed
+  single-host test's audited source hash (`cpu-audit.log`).
 - Bounded GPU contract: `probes/engine_kernel_check.py --lanes kda-storage`,
   through the canonical fleet queue. Checks FP32 baseline, FP16 writes, seven-token
   graph replay, rollback, and FP16 initial-state continuation into prefill/decode.
+  Passed all nine checks on srv4 in 16.485 seconds at
+  `a1a97420d141a27a0fd25aa84e4ec0f77fc3ee33` (`gpu-contract.log`).
+  State error is bounded by one FP16 rounding plus the existing FP32 arithmetic
+  tolerance; untouched slots and padding remain bit-exact. The compiled state
+  recurrence uses FP32 arithmetic and converts FP16 only at storage boundaries
+  (`gpu-compiler.json`). FP32 sum differences at rounding ties can change a
+  stored FP16 value by one representable step; bit-identical cross-dtype results
+  are not a valid numerical oracle.
 - End-to-end gate: a matched FP32/FP16 ST bracket, cold and warm onepass per arm,
   C=1/C=4 quality, Korean corruption, acceptance, actual output tok/s, TTFT and
   memory records. No performance or quality verdict is claimed without these results.
+
+The matched bracket's baseline is `a1a97420d141a27a0fd25aa84e4ec0f77fc3ee33`;
+its FP16 arm is `5763885def3ba544f28033636c0eeacea2d01056`. Their trees differ
+only in `facts.KDA_STATE_DTYPE`. The canonical controller at this revision adds
+lease environment variables after preparing its environment digest, which
+otherwise pauses a boot ticket. Declare the same identity at submission;
+the queue still obtains and verifies the real lease before any boot:
+
+```sh
+ST_LEASE_OWNER=queue/kda-fp16-pair0913c \
+ST_LEASE_PATH=/home/choiceoh/glm53-logs/st-fleet.lock \
+bash bench/fleet.sh st-pair kda-fp16-pair0913c \
+  5763885def3ba544f28033636c0eeacea2d01056 \
+  --base a1a97420d141a27a0fd25aa84e4ec0f77fc3ee33 60 \
+  'Matched FP16/FP32 KDA state, fixed capacity, C1 C4 quality and output throughput'
+```
+
+The bracket retains cold/warm JSONL and per-request artifacts under
+`/home/choiceoh/glm53-logs/`; session logs are available through
+`bash bench/fleet.sh logs kda-fp16-pair0913c`.
 
 The research motivation is [DAMP, Table 1](https://arxiv.org/html/2608.27513v1#S6.T1):
 FP16 state storage retained Kimi-Linear KDA reasoning quality better than BF16 at

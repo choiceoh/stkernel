@@ -1,0 +1,39 @@
+{
+  "host": "srv4",
+  "image": "st-engine:glm53",
+  "evidence": "compiled BF16 QKV and FP16 initial/final state kernels",
+  "kernels": [
+    {
+      "cache_key": "ZQLZZXBRAMYFGQC4B5U33OUSXUGN3CORVYISUKIBG3C74JKGQXSA",
+      "ptx_sha256": "8ddf1e16a549b927c2f84c78a4ced15e71d0ea9a581e6ab46740c03602f4b2d9",
+      "fp32_fma": 154,
+      "fp16_arithmetic": {},
+      "conversions": {
+        "cvt.f32.f16": 64,
+        "cvt.rn.f16x2.f32": 32
+      },
+      "recurrence_ir": [
+        "%b_h_77 = arith.addf %b_h_76, %cst_1 : tensor<16x128xf32> loc(#loc213)",
+        "%b_h_120 = arith.mulf %b_h_85, %b_h_119 : tensor<16x128xf32> loc(#loc245)",
+        "%b_h_135 = arith.mulf %b_h_134, %b_v_122 : tensor<16x128xf32> loc(#loc255)",
+        "%b_h_136 = arith.addf %b_h_120, %b_h_135 : tensor<16x128xf32> loc(#loc256)"
+      ]
+    },
+    {
+      "cache_key": "LE37PTUUPZX5KZRQDIL5ZDI6RRWS3P6VNC66XIKU3SSYP7MRJOQA",
+      "ptx_sha256": "5d55741de8ac387cd0a70faaf0c72ecd7786337555fd64bcdbd419e400f330db",
+      "fp32_fma": 74,
+      "fp16_arithmetic": {},
+      "conversions": {
+        "cvt.f32.f16": 32,
+        "cvt.rn.f16x2.f32": 16
+      },
+      "recurrence_ir": [
+        "%b_h_77 = arith.addf %b_h_76, %cst_1 : tensor<8x128xf32> loc(#loc213)",
+        "%b_h_120 = arith.mulf %b_h_85, %b_h_119 : tensor<8x128xf32> loc(#loc245)",
+        "%b_h_135 = arith.mulf %b_h_134, %b_v_122 : tensor<8x128xf32> loc(#loc255)",
+        "%b_h_136 = arith.addf %b_h_120, %b_h_135 : tensor<8x128xf32> loc(#loc256)"
+      ]
+    }
+  ]
+}
