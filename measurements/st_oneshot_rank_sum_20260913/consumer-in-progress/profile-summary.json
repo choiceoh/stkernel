@@ -1,0 +1,1190 @@
+{
+  "run_id": "20260912T213057-9725b41d901c",
+  "source": "8c8b031b94bb80175cfccd49cfb6329d18cdecae",
+  "boot_id": "8f055b03662995db50df27977fd51996737a1a4962c835838e39c38988d997e0|2026-09-12T21:25:52.266002699Z",
+  "scope": "diagnostic GPU activities; exact kernel names, no inferred operator attribution; durations include dependency waits and may overlap; not unprofiled step latency",
+  "phases": [
+    {
+      "ctx": 2000,
+      "file_sha256": "fc8e6cdf7b3a55bec080d660fc524792887c3e37cc1a69551e048d6f3edb6285",
+      "ranks": [
+        {
+          "rank": 0,
+          "steps": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "gpu_interval_union_ms_by_step": {
+            "2": 51.6238056640625,
+            "3": 54.3796982421875,
+            "4": 50.9566806640625,
+            "5": 49.058546875
+          },
+          "top_kernels": [
+            {
+              "kernel": "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o7409640961_tensorptri32gmemo561_tensorptrf32gmemo561_tensorptri8gmemalign1_0",
+              "calls": 168,
+              "average_ms_per_profiled_step": 24.104933250000006
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm2_kernel<1, false, false>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 741,
+              "average_ms_per_profiled_step": 8.960001249999985
+            },
+            {
+              "kernel": "k_oneshot_consumer(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+              "calls": 419,
+              "average_ms_per_profiled_step": 7.824409749999998
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096>((anonymous namespace)::MKMhcArgs)",
+              "calls": 356,
+              "average_ms_per_profiled_step": 5.441729249999995
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 136,
+              "average_ms_per_profiled_step": 3.9643834999999994
+            },
+            {
+              "kernel": "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)",
+              "calls": 237,
+              "average_ms_per_profiled_step": 2.0129094999999992
+            },
+            {
+              "kernel": "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)",
+              "calls": 26,
+              "average_ms_per_profiled_step": 1.4962587499999997
+            },
+            {
+              "kernel": "fused_recurrent_gated_delta_rule_fwd_kernel",
+              "calls": 136,
+              "average_ms_per_profiled_step": 1.1545232500000004
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 6u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 5,
+              "average_ms_per_profiled_step": 1.08563425
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 7u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 4,
+              "average_ms_per_profiled_step": 0.9195464999999999
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 2>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 37,
+              "average_ms_per_profiled_step": 0.8614339999999999
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 3>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 64,
+              "average_ms_per_profiled_step": 0.8140657500000001
+            },
+            {
+              "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+              "calls": 168,
+              "average_ms_per_profiled_step": 0.7774572500000005
+            },
+            {
+              "kernel": "void mk_mla_kernel<false>(MKMlaArgs)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.587209
+            },
+            {
+              "kernel": "void at::native::sbtopk::gatherTopK<float, unsigned int, 2, false>(at::cuda::detail::TensorInfo<float const, unsigned int>, unsigned int, unsigned int, bool, unsigned int, unsigned int, at::cuda::detail::TensorInfo<float, unsigned int>, unsigned int, at::cuda::detail::TensorInfo<long, unsigned int>, unsigned int, float*)",
+              "calls": 212,
+              "average_ms_per_profiled_step": 0.54615375
+            },
+            {
+              "kernel": "void gemmSN_TN_kernel<float, 128, 16, 2, 4, 8, 9, false, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float> >(cublasGemmSmallNParams<cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float>, float>)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.5345135
+            }
+          ]
+        },
+        {
+          "rank": 1,
+          "steps": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "gpu_interval_union_ms_by_step": {
+            "2": 50.583138671875,
+            "3": 70.6757021484375,
+            "4": 49.4910810546875,
+            "5": 47.844958984375
+          },
+          "top_kernels": [
+            {
+              "kernel": "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o7409640961_tensorptri32gmemo561_tensorptrf32gmemo561_tensorptri8gmemalign1_0",
+              "calls": 168,
+              "average_ms_per_profiled_step": 23.448038750000006
+            },
+            {
+              "kernel": "k_oneshot_consumer(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+              "calls": 419,
+              "average_ms_per_profiled_step": 12.063475500000008
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm2_kernel<1, false, false>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 741,
+              "average_ms_per_profiled_step": 9.428862749999997
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096>((anonymous namespace)::MKMhcArgs)",
+              "calls": 356,
+              "average_ms_per_profiled_step": 6.468367000000002
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 136,
+              "average_ms_per_profiled_step": 4.4746025
+            },
+            {
+              "kernel": "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)",
+              "calls": 237,
+              "average_ms_per_profiled_step": 2.603798000000002
+            },
+            {
+              "kernel": "fused_recurrent_gated_delta_rule_fwd_kernel",
+              "calls": 136,
+              "average_ms_per_profiled_step": 1.1613944999999994
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 6u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 5,
+              "average_ms_per_profiled_step": 1.05017875
+            },
+            {
+              "kernel": "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)",
+              "calls": 18,
+              "average_ms_per_profiled_step": 0.8776667500000002
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 2>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 37,
+              "average_ms_per_profiled_step": 0.8530602500000002
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 7u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 4,
+              "average_ms_per_profiled_step": 0.84218625
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 3>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 64,
+              "average_ms_per_profiled_step": 0.8096262500000002
+            },
+            {
+              "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+              "calls": 168,
+              "average_ms_per_profiled_step": 0.7442022500000002
+            },
+            {
+              "kernel": "void mk_mla_kernel<false>(MKMlaArgs)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.6118585
+            },
+            {
+              "kernel": "mhc_post_tilelang_kernel",
+              "calls": 24,
+              "average_ms_per_profiled_step": 0.6109937500000002
+            },
+            {
+              "kernel": "void at::native::sbtopk::gatherTopK<float, unsigned int, 2, false>(at::cuda::detail::TensorInfo<float const, unsigned int>, unsigned int, unsigned int, bool, unsigned int, unsigned int, at::cuda::detail::TensorInfo<float, unsigned int>, unsigned int, at::cuda::detail::TensorInfo<long, unsigned int>, unsigned int, float*)",
+              "calls": 212,
+              "average_ms_per_profiled_step": 0.5537375000000004
+            }
+          ]
+        },
+        {
+          "rank": 2,
+          "steps": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "gpu_interval_union_ms_by_step": {
+            "2": 49.61162109375,
+            "3": 59.708955078125,
+            "4": 51.2823544921875,
+            "5": 48.1804091796875
+          },
+          "top_kernels": [
+            {
+              "kernel": "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o7409640961_tensorptri32gmemo561_tensorptrf32gmemo561_tensorptri8gmemalign1_0",
+              "calls": 168,
+              "average_ms_per_profiled_step": 23.579652250000002
+            },
+            {
+              "kernel": "k_oneshot_consumer(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+              "calls": 419,
+              "average_ms_per_profiled_step": 9.403995750000014
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm2_kernel<1, false, false>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 741,
+              "average_ms_per_profiled_step": 8.896849000000003
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096>((anonymous namespace)::MKMhcArgs)",
+              "calls": 356,
+              "average_ms_per_profiled_step": 5.990345499999999
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 136,
+              "average_ms_per_profiled_step": 4.5138915000000015
+            },
+            {
+              "kernel": "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)",
+              "calls": 237,
+              "average_ms_per_profiled_step": 2.592422500000003
+            },
+            {
+              "kernel": "fused_recurrent_gated_delta_rule_fwd_kernel",
+              "calls": 136,
+              "average_ms_per_profiled_step": 1.144204
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 6u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 5,
+              "average_ms_per_profiled_step": 1.06652375
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 7u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 4,
+              "average_ms_per_profiled_step": 0.85275475
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 2>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 37,
+              "average_ms_per_profiled_step": 0.8517847500000001
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 3>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 64,
+              "average_ms_per_profiled_step": 0.811994
+            },
+            {
+              "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+              "calls": 168,
+              "average_ms_per_profiled_step": 0.7645624999999998
+            },
+            {
+              "kernel": "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)",
+              "calls": 16,
+              "average_ms_per_profiled_step": 0.6595457500000002
+            },
+            {
+              "kernel": "void mk_mla_kernel<false>(MKMlaArgs)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.5907932500000002
+            },
+            {
+              "kernel": "void at::native::sbtopk::gatherTopK<float, unsigned int, 2, false>(at::cuda::detail::TensorInfo<float const, unsigned int>, unsigned int, unsigned int, bool, unsigned int, unsigned int, at::cuda::detail::TensorInfo<float, unsigned int>, unsigned int, at::cuda::detail::TensorInfo<long, unsigned int>, unsigned int, float*)",
+              "calls": 212,
+              "average_ms_per_profiled_step": 0.5463449999999999
+            },
+            {
+              "kernel": "void gemmSN_TN_kernel<float, 128, 16, 2, 4, 8, 9, false, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float> >(cublasGemmSmallNParams<cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float>, float>)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.5309460000000001
+            }
+          ]
+        },
+        {
+          "rank": 3,
+          "steps": [
+            2,
+            3,
+            4,
+            5
+          ],
+          "gpu_interval_union_ms_by_step": {
+            "2": 50.0884677734375,
+            "3": 56.148865234375,
+            "4": 49.5612978515625,
+            "5": 49.6240869140625
+          },
+          "top_kernels": [
+            {
+              "kernel": "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o7409640961_tensorptri32gmemo561_tensorptrf32gmemo561_tensorptri8gmemalign1_0",
+              "calls": 168,
+              "average_ms_per_profiled_step": 23.285639999999997
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm2_kernel<1, false, false>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 741,
+              "average_ms_per_profiled_step": 9.394795999999998
+            },
+            {
+              "kernel": "k_oneshot_consumer(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+              "calls": 419,
+              "average_ms_per_profiled_step": 8.835843500000005
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096>((anonymous namespace)::MKMhcArgs)",
+              "calls": 356,
+              "average_ms_per_profiled_step": 6.709375
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 136,
+              "average_ms_per_profiled_step": 4.7827755000000005
+            },
+            {
+              "kernel": "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)",
+              "calls": 237,
+              "average_ms_per_profiled_step": 2.89909
+            },
+            {
+              "kernel": "fused_recurrent_gated_delta_rule_fwd_kernel",
+              "calls": 136,
+              "average_ms_per_profiled_step": 1.2435442500000005
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 6u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 5,
+              "average_ms_per_profiled_step": 1.04989075
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 7u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 4,
+              "average_ms_per_profiled_step": 0.87862775
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 2>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 37,
+              "average_ms_per_profiled_step": 0.8740990000000001
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 3>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 64,
+              "average_ms_per_profiled_step": 0.8206752499999997
+            },
+            {
+              "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+              "calls": 168,
+              "average_ms_per_profiled_step": 0.7597400000000003
+            },
+            {
+              "kernel": "void mk_mla_kernel<false>(MKMlaArgs)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.6149254999999998
+            },
+            {
+              "kernel": "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)",
+              "calls": 15,
+              "average_ms_per_profiled_step": 0.6079097500000001
+            },
+            {
+              "kernel": "mhc_post_tilelang_kernel",
+              "calls": 24,
+              "average_ms_per_profiled_step": 0.60426875
+            },
+            {
+              "kernel": "void at::native::sbtopk::gatherTopK<float, unsigned int, 2, false>(at::cuda::detail::TensorInfo<float const, unsigned int>, unsigned int, unsigned int, bool, unsigned int, unsigned int, at::cuda::detail::TensorInfo<float, unsigned int>, unsigned int, at::cuda::detail::TensorInfo<long, unsigned int>, unsigned int, float*)",
+              "calls": 212,
+              "average_ms_per_profiled_step": 0.5509102500000002
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ctx": 32000,
+      "file_sha256": "ba347d0a86d663ef3014cc75d68ab57a9482a5db6d6b563780e6242b7e1bdcec",
+      "ranks": [
+        {
+          "rank": 0,
+          "steps": [
+            5,
+            6,
+            7,
+            8
+          ],
+          "gpu_interval_union_ms_by_step": {
+            "5": 83.9307978515625,
+            "6": 54.5756240234375,
+            "7": 51.8947880859375,
+            "8": 51.705287109375
+          },
+          "top_kernels": [
+            {
+              "kernel": "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o7409640961_tensorptri32gmemo561_tensorptrf32gmemo561_tensorptri8gmemalign1_0",
+              "calls": 168,
+              "average_ms_per_profiled_step": 23.530998999999987
+            },
+            {
+              "kernel": "k_oneshot_consumer(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+              "calls": 419,
+              "average_ms_per_profiled_step": 16.318359500000007
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm2_kernel<1, false, false>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 741,
+              "average_ms_per_profiled_step": 9.654815499999993
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096>((anonymous namespace)::MKMhcArgs)",
+              "calls": 356,
+              "average_ms_per_profiled_step": 7.113172750000002
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 136,
+              "average_ms_per_profiled_step": 4.976418500000001
+            },
+            {
+              "kernel": "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)",
+              "calls": 237,
+              "average_ms_per_profiled_step": 3.0435740000000022
+            },
+            {
+              "kernel": "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)",
+              "calls": 26,
+              "average_ms_per_profiled_step": 1.5346115000000002
+            },
+            {
+              "kernel": "void at::native::sbtopk::gatherTopK<float, unsigned int, 2, false>(at::cuda::detail::TensorInfo<float const, unsigned int>, unsigned int, unsigned int, bool, unsigned int, unsigned int, at::cuda::detail::TensorInfo<float, unsigned int>, unsigned int, at::cuda::detail::TensorInfo<long, unsigned int>, unsigned int, float*)",
+              "calls": 212,
+              "average_ms_per_profiled_step": 1.1934277500000006
+            },
+            {
+              "kernel": "fused_recurrent_gated_delta_rule_fwd_kernel",
+              "calls": 136,
+              "average_ms_per_profiled_step": 1.14968075
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 6u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 5,
+              "average_ms_per_profiled_step": 1.1124494999999999
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 3>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 64,
+              "average_ms_per_profiled_step": 0.90959475
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 7u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 4,
+              "average_ms_per_profiled_step": 0.885394
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 2>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 37,
+              "average_ms_per_profiled_step": 0.8554414999999999
+            },
+            {
+              "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+              "calls": 168,
+              "average_ms_per_profiled_step": 0.7792972500000002
+            },
+            {
+              "kernel": "mhc_post_tilelang_kernel",
+              "calls": 24,
+              "average_ms_per_profiled_step": 0.68877775
+            },
+            {
+              "kernel": "void mk_mla_kernel<false>(MKMlaArgs)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.6130247499999999
+            }
+          ]
+        },
+        {
+          "rank": 1,
+          "steps": [
+            5,
+            6,
+            7,
+            8
+          ],
+          "gpu_interval_union_ms_by_step": {
+            "5": 83.8350693359375,
+            "6": 55.417759765625,
+            "7": 50.8265029296875,
+            "8": 51.000044921875
+          },
+          "top_kernels": [
+            {
+              "kernel": "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o7409640961_tensorptri32gmemo561_tensorptrf32gmemo561_tensorptri8gmemalign1_0",
+              "calls": 168,
+              "average_ms_per_profiled_step": 23.561583000000006
+            },
+            {
+              "kernel": "k_oneshot_consumer(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+              "calls": 419,
+              "average_ms_per_profiled_step": 16.15473499999998
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm2_kernel<1, false, false>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 741,
+              "average_ms_per_profiled_step": 9.855082499999982
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096>((anonymous namespace)::MKMhcArgs)",
+              "calls": 356,
+              "average_ms_per_profiled_step": 7.256658749999998
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 136,
+              "average_ms_per_profiled_step": 4.928041750000001
+            },
+            {
+              "kernel": "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)",
+              "calls": 237,
+              "average_ms_per_profiled_step": 3.0981707500000004
+            },
+            {
+              "kernel": "void at::native::sbtopk::gatherTopK<float, unsigned int, 2, false>(at::cuda::detail::TensorInfo<float const, unsigned int>, unsigned int, unsigned int, bool, unsigned int, unsigned int, at::cuda::detail::TensorInfo<float, unsigned int>, unsigned int, at::cuda::detail::TensorInfo<long, unsigned int>, unsigned int, float*)",
+              "calls": 212,
+              "average_ms_per_profiled_step": 1.2211714999999996
+            },
+            {
+              "kernel": "fused_recurrent_gated_delta_rule_fwd_kernel",
+              "calls": 136,
+              "average_ms_per_profiled_step": 1.2044592499999989
+            },
+            {
+              "kernel": "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)",
+              "calls": 19,
+              "average_ms_per_profiled_step": 1.15645875
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 6u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 5,
+              "average_ms_per_profiled_step": 1.05632325
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 2>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 37,
+              "average_ms_per_profiled_step": 0.9230177500000002
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 3>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 64,
+              "average_ms_per_profiled_step": 0.9225232500000001
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 7u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 4,
+              "average_ms_per_profiled_step": 0.843251
+            },
+            {
+              "kernel": "mhc_post_tilelang_kernel",
+              "calls": 24,
+              "average_ms_per_profiled_step": 0.7783302500000002
+            },
+            {
+              "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+              "calls": 168,
+              "average_ms_per_profiled_step": 0.7741219999999999
+            },
+            {
+              "kernel": "void mk_mla_kernel<false>(MKMlaArgs)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.6294180000000004
+            }
+          ]
+        },
+        {
+          "rank": 2,
+          "steps": [
+            5,
+            6,
+            7,
+            8
+          ],
+          "gpu_interval_union_ms_by_step": {
+            "5": 58.300388671875,
+            "6": 53.010177734375,
+            "7": 49.7520439453125,
+            "8": 54.9173935546875
+          },
+          "top_kernels": [
+            {
+              "kernel": "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o7409640961_tensorptri32gmemo561_tensorptrf32gmemo561_tensorptri8gmemalign1_0",
+              "calls": 168,
+              "average_ms_per_profiled_step": 23.923019750000005
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm2_kernel<1, false, false>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 741,
+              "average_ms_per_profiled_step": 9.65462125000001
+            },
+            {
+              "kernel": "k_oneshot_consumer(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+              "calls": 419,
+              "average_ms_per_profiled_step": 9.243895000000002
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096>((anonymous namespace)::MKMhcArgs)",
+              "calls": 356,
+              "average_ms_per_profiled_step": 6.565546249999999
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 136,
+              "average_ms_per_profiled_step": 4.376563249999999
+            },
+            {
+              "kernel": "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)",
+              "calls": 237,
+              "average_ms_per_profiled_step": 2.4885195
+            },
+            {
+              "kernel": "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)",
+              "calls": 23,
+              "average_ms_per_profiled_step": 1.414503
+            },
+            {
+              "kernel": "void at::native::sbtopk::gatherTopK<float, unsigned int, 2, false>(at::cuda::detail::TensorInfo<float const, unsigned int>, unsigned int, unsigned int, bool, unsigned int, unsigned int, at::cuda::detail::TensorInfo<float, unsigned int>, unsigned int, at::cuda::detail::TensorInfo<long, unsigned int>, unsigned int, float*)",
+              "calls": 212,
+              "average_ms_per_profiled_step": 1.1921647499999999
+            },
+            {
+              "kernel": "fused_recurrent_gated_delta_rule_fwd_kernel",
+              "calls": 136,
+              "average_ms_per_profiled_step": 1.1496525
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 6u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 5,
+              "average_ms_per_profiled_step": 1.1048545
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 2>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 37,
+              "average_ms_per_profiled_step": 0.9702294999999996
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 3>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 64,
+              "average_ms_per_profiled_step": 0.92882275
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 7u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 4,
+              "average_ms_per_profiled_step": 0.89160775
+            },
+            {
+              "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+              "calls": 168,
+              "average_ms_per_profiled_step": 0.7857087500000003
+            },
+            {
+              "kernel": "void mk_mla_kernel<false>(MKMlaArgs)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.6161004999999999
+            },
+            {
+              "kernel": "void gemmSN_TN_kernel<float, 128, 16, 2, 4, 8, 9, false, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float> >(cublasGemmSmallNParams<cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float>, float>)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.5336645
+            }
+          ]
+        },
+        {
+          "rank": 3,
+          "steps": [
+            5,
+            6,
+            7,
+            8
+          ],
+          "gpu_interval_union_ms_by_step": {
+            "5": 80.4210048828125,
+            "6": 54.5437646484375,
+            "7": 51.110013671875,
+            "8": 50.85219921875
+          },
+          "top_kernels": [
+            {
+              "kernel": "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o7409640961_tensorptri32gmemo561_tensorptrf32gmemo561_tensorptri8gmemalign1_0",
+              "calls": 168,
+              "average_ms_per_profiled_step": 23.72010375
+            },
+            {
+              "kernel": "k_oneshot_consumer(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+              "calls": 419,
+              "average_ms_per_profiled_step": 14.519283749999985
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm2_kernel<1, false, false>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 741,
+              "average_ms_per_profiled_step": 9.558766499999992
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096>((anonymous namespace)::MKMhcArgs)",
+              "calls": 356,
+              "average_ms_per_profiled_step": 6.9235635
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 136,
+              "average_ms_per_profiled_step": 4.850034249999998
+            },
+            {
+              "kernel": "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)",
+              "calls": 237,
+              "average_ms_per_profiled_step": 2.9758597500000015
+            },
+            {
+              "kernel": "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)",
+              "calls": 22,
+              "average_ms_per_profiled_step": 1.3072995
+            },
+            {
+              "kernel": "void at::native::sbtopk::gatherTopK<float, unsigned int, 2, false>(at::cuda::detail::TensorInfo<float const, unsigned int>, unsigned int, unsigned int, bool, unsigned int, unsigned int, at::cuda::detail::TensorInfo<float, unsigned int>, unsigned int, at::cuda::detail::TensorInfo<long, unsigned int>, unsigned int, float*)",
+              "calls": 212,
+              "average_ms_per_profiled_step": 1.195777750000001
+            },
+            {
+              "kernel": "fused_recurrent_gated_delta_rule_fwd_kernel",
+              "calls": 136,
+              "average_ms_per_profiled_step": 1.1890744999999996
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 6u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 5,
+              "average_ms_per_profiled_step": 1.08831525
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 2>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 37,
+              "average_ms_per_profiled_step": 0.9184592499999997
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 3>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 64,
+              "average_ms_per_profiled_step": 0.8955817499999998
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 7u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 4,
+              "average_ms_per_profiled_step": 0.85045225
+            },
+            {
+              "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+              "calls": 168,
+              "average_ms_per_profiled_step": 0.7759142500000002
+            },
+            {
+              "kernel": "void mk_mla_kernel<false>(MKMlaArgs)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.66083625
+            },
+            {
+              "kernel": "mhc_post_tilelang_kernel",
+              "calls": 24,
+              "average_ms_per_profiled_step": 0.5940782499999999
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ctx": 128000,
+      "file_sha256": "8ff649e0d8629aa5a21d9ad105b01e159ca8f5d2ce2bb6ab1d1c589a3393d2c2",
+      "ranks": [
+        {
+          "rank": 0,
+          "steps": [
+            16,
+            17,
+            18,
+            19
+          ],
+          "gpu_interval_union_ms_by_step": {
+            "16": 54.36204296875,
+            "17": 82.7917783203125,
+            "18": 53.7438662109375,
+            "19": 53.4749638671875
+          },
+          "top_kernels": [
+            {
+              "kernel": "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o7409640961_tensorptri32gmemo561_tensorptrf32gmemo561_tensorptri8gmemalign1_0",
+              "calls": 168,
+              "average_ms_per_profiled_step": 23.452890999999997
+            },
+            {
+              "kernel": "k_oneshot_consumer(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+              "calls": 419,
+              "average_ms_per_profiled_step": 16.1244375
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm2_kernel<1, false, false>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 741,
+              "average_ms_per_profiled_step": 8.154491499999992
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096>((anonymous namespace)::MKMhcArgs)",
+              "calls": 356,
+              "average_ms_per_profiled_step": 5.150807499999999
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 136,
+              "average_ms_per_profiled_step": 3.8212695
+            },
+            {
+              "kernel": "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)",
+              "calls": 237,
+              "average_ms_per_profiled_step": 1.8740272499999986
+            },
+            {
+              "kernel": "fused_recurrent_gated_delta_rule_fwd_kernel",
+              "calls": 136,
+              "average_ms_per_profiled_step": 1.15688125
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 6u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 5,
+              "average_ms_per_profiled_step": 1.0812092500000001
+            },
+            {
+              "kernel": "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)",
+              "calls": 21,
+              "average_ms_per_profiled_step": 1.061505
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 3>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 64,
+              "average_ms_per_profiled_step": 1.001322
+            },
+            {
+              "kernel": "void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<1> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<1> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1}>(long, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<1> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<1> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1})",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.9870492499999997
+            },
+            {
+              "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+              "calls": 168,
+              "average_ms_per_profiled_step": 0.9203457499999995
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 7u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 4,
+              "average_ms_per_profiled_step": 0.9039855
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 2>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 37,
+              "average_ms_per_profiled_step": 0.84903475
+            },
+            {
+              "kernel": "void mk_mla_kernel<false>(MKMlaArgs)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.684833
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_mqa_logits<32u, 128u, false, 4u, 128u, 2u, 3u, 48u, 128u, 256u, float>(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int*, unsigned int*, float*, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.5869369999999998
+            }
+          ]
+        },
+        {
+          "rank": 1,
+          "steps": [
+            16,
+            17,
+            18,
+            19
+          ],
+          "gpu_interval_union_ms_by_step": {
+            "16": 53.4899609375,
+            "17": 85.5923154296875,
+            "18": 79.5093095703125,
+            "19": 52.37385546875
+          },
+          "top_kernels": [
+            {
+              "kernel": "k_oneshot_consumer(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+              "calls": 419,
+              "average_ms_per_profiled_step": 23.842268250000004
+            },
+            {
+              "kernel": "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o7409640961_tensorptri32gmemo561_tensorptrf32gmemo561_tensorptri8gmemalign1_0",
+              "calls": 168,
+              "average_ms_per_profiled_step": 22.987148250000004
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm2_kernel<1, false, false>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 741,
+              "average_ms_per_profiled_step": 8.628899750000006
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096>((anonymous namespace)::MKMhcArgs)",
+              "calls": 356,
+              "average_ms_per_profiled_step": 6.761916249999993
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 136,
+              "average_ms_per_profiled_step": 4.347825750000001
+            },
+            {
+              "kernel": "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)",
+              "calls": 237,
+              "average_ms_per_profiled_step": 2.5146910000000005
+            },
+            {
+              "kernel": "fused_recurrent_gated_delta_rule_fwd_kernel",
+              "calls": 136,
+              "average_ms_per_profiled_step": 1.1678505000000003
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 6u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 5,
+              "average_ms_per_profiled_step": 1.04526975
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 3>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 64,
+              "average_ms_per_profiled_step": 0.9497085000000002
+            },
+            {
+              "kernel": "void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<1> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<1> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1}>(long, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<1> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<1> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1})",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.9426455000000001
+            },
+            {
+              "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+              "calls": 168,
+              "average_ms_per_profiled_step": 0.9242352500000004
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 2>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 37,
+              "average_ms_per_profiled_step": 0.8694514999999998
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 7u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 4,
+              "average_ms_per_profiled_step": 0.8389869999999999
+            },
+            {
+              "kernel": "void mk_mla_kernel<false>(MKMlaArgs)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.71209725
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_mqa_logits<32u, 128u, false, 4u, 128u, 2u, 3u, 48u, 128u, 256u, float>(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int*, unsigned int*, float*, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.5919035
+            },
+            {
+              "kernel": "void gemmSN_TN_kernel<float, 128, 16, 2, 4, 8, 9, false, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float> >(cublasGemmSmallNParams<cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float>, float>)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.54950375
+            }
+          ]
+        },
+        {
+          "rank": 2,
+          "steps": [
+            16,
+            17,
+            18,
+            19
+          ],
+          "gpu_interval_union_ms_by_step": {
+            "16": 54.71925,
+            "17": 86.4943662109375,
+            "18": 79.7144111328125,
+            "19": 55.135626953125
+          },
+          "top_kernels": [
+            {
+              "kernel": "k_oneshot_consumer(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+              "calls": 419,
+              "average_ms_per_profiled_step": 24.280307999999998
+            },
+            {
+              "kernel": "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o7409640961_tensorptri32gmemo561_tensorptrf32gmemo561_tensorptri8gmemalign1_0",
+              "calls": 168,
+              "average_ms_per_profiled_step": 23.350080000000013
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm2_kernel<1, false, false>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 741,
+              "average_ms_per_profiled_step": 8.068028250000006
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096>((anonymous namespace)::MKMhcArgs)",
+              "calls": 356,
+              "average_ms_per_profiled_step": 5.788548
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 136,
+              "average_ms_per_profiled_step": 4.179820500000001
+            },
+            {
+              "kernel": "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)",
+              "calls": 237,
+              "average_ms_per_profiled_step": 2.26347575
+            },
+            {
+              "kernel": "fused_recurrent_gated_delta_rule_fwd_kernel",
+              "calls": 136,
+              "average_ms_per_profiled_step": 1.159238250000001
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 6u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 5,
+              "average_ms_per_profiled_step": 1.0482014999999998
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 3>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 64,
+              "average_ms_per_profiled_step": 0.98164425
+            },
+            {
+              "kernel": "void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<1> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<1> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1}>(long, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<1> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<1> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1})",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.9407485
+            },
+            {
+              "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+              "calls": 168,
+              "average_ms_per_profiled_step": 0.9247882499999994
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 2>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 37,
+              "average_ms_per_profiled_step": 0.866326
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 7u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 4,
+              "average_ms_per_profiled_step": 0.8602552499999999
+            },
+            {
+              "kernel": "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)",
+              "calls": 16,
+              "average_ms_per_profiled_step": 0.7287554999999999
+            },
+            {
+              "kernel": "void mk_mla_kernel<false>(MKMlaArgs)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.6922664999999999
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_mqa_logits<32u, 128u, false, 4u, 128u, 2u, 3u, 48u, 128u, 256u, float>(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int*, unsigned int*, float*, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.58633525
+            }
+          ]
+        },
+        {
+          "rank": 3,
+          "steps": [
+            16,
+            17,
+            18,
+            19
+          ],
+          "gpu_interval_union_ms_by_step": {
+            "16": 52.7486171875,
+            "17": 49.44817578125,
+            "18": 57.7565087890625,
+            "19": 52.3692607421875
+          },
+          "top_kernels": [
+            {
+              "kernel": "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o7409640961_tensorptri32gmemo561_tensorptrf32gmemo561_tensorptri8gmemalign1_0",
+              "calls": 168,
+              "average_ms_per_profiled_step": 23.04952199999999
+            },
+            {
+              "kernel": "k_oneshot_consumer(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+              "calls": 419,
+              "average_ms_per_profiled_step": 8.59226075
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm2_kernel<1, false, false>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 741,
+              "average_ms_per_profiled_step": 8.368477749999995
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096>((anonymous namespace)::MKMhcArgs)",
+              "calls": 356,
+              "average_ms_per_profiled_step": 6.407268500000001
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta_kernel<1>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 136,
+              "average_ms_per_profiled_step": 4.361309250000001
+            },
+            {
+              "kernel": "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)",
+              "calls": 237,
+              "average_ms_per_profiled_step": 2.481085500000002
+            },
+            {
+              "kernel": "fused_recurrent_gated_delta_rule_fwd_kernel",
+              "calls": 136,
+              "average_ms_per_profiled_step": 1.1980904999999995
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 6u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 5,
+              "average_ms_per_profiled_step": 1.05756425
+            },
+            {
+              "kernel": "void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<1> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<1> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1}>(long, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<1> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<1> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1})",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.9781872499999998
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 3>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 64,
+              "average_ms_per_profiled_step": 0.9351332500000001
+            },
+            {
+              "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+              "calls": 168,
+              "average_ms_per_profiled_step": 0.8870037500000003
+            },
+            {
+              "kernel": "void (anonymous namespace)::mk_gemm_input_cta3_kernel<2, 2, 2>((anonymous namespace)::MKGemm2Ctx)",
+              "calls": 37,
+              "average_ms_per_profiled_step": 0.8828037499999999
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 7u, 4096u, 128u, 128u, 1u, 128u, 16u, 64u, 64u, 64u, 0u, 10u, 128u, 256u, 48u, (deep_gemm::GemmType)0, false, cutlass::bfloat16_t, deep_gemm::epilogue::transform::EpilogueIdentity, false, false, false, true, false, 128u, 1u>(cutlass::bfloat16_t*, cutlass::bfloat16_t const*, __nv_fp8_e4m3*, __nv_fp8_e4m3*, int*, CUtensorMap_st*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 4,
+              "average_ms_per_profiled_step": 0.8514919999999999
+            },
+            {
+              "kernel": "void mk_mla_kernel<false>(MKMlaArgs)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.7418509999999998
+            },
+            {
+              "kernel": "void deep_gemm::sm120_fp8_mqa_logits<32u, 128u, false, 4u, 128u, 2u, 3u, 48u, 128u, 256u, float>(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int*, unsigned int*, float*, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st, CUtensorMap_st)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.5980370000000002
+            },
+            {
+              "kernel": "void gemmSN_TN_kernel<float, 128, 16, 2, 4, 8, 9, false, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float> >(cublasGemmSmallNParams<cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float const>, cublasGemvTensorStridedBatched<float>, float>)",
+              "calls": 44,
+              "average_ms_per_profiled_step": 0.5769562500000002
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

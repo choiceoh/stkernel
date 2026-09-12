@@ -100,12 +100,32 @@ normally stopped. C=1 has 1/9 (28/57), with a raw window median of 19.896 step/s
 The first canonical pass is still in its separate diagnostic stage. Neither
 one complete pass nor 22 step/s is claimed at this checkpoint.
 
-`consumer-in-progress/answer-failures.json` separates final-answer errors from
-token exhaustion. All nine C=1 cases completed normally. For example, 2K ledger
+`consumer-in-progress/answer-failures.json` records the final-answer errors.
+All five C=1 requests (nine cases) have overall `finish_reason=stop`. For example, 2K ledger
 reversed the original/counterfactual decisions (296 versus the expected 287
 available units), and 32K portfolio chose the right best combination but scored
-it 40 instead of 56. The larger reasoning budgets have not established that
-truncation was the only cause. The canonical grader and failure verdicts stay intact.
+it 40 instead of 56. This overall stop does **not** establish that reasoning ended
+naturally: the engine forces the reasoning-end token at the thinking cap and can
+then stop normally after its final answer.
+
+`consumer-in-progress/reasoning-counts.json` re-tokenizes the complete retained
+SSE channels on the CPU with the served tokenizer, explicitly disabling its
+serialized 2048-token truncation. All five reasoning spans equal their configured
+caps (4096 for each 2K request, 12288 for 32K and 128K) and end mid-sentence.
+This is strong evidence of capped reasoning; it does not prove that more tokens
+alone would make the certificates correct. The harness discarded the original
+usage reasoning-token counter, so these are re-tokenized text counts rather than
+original generated IDs. `summarize_reasoning.py` reproduces the counts without
+engine traffic. The current two-pass workloads and failure verdicts stay intact.
+
+`consumer-in-progress/profile-summary.json` retains four profiled decode steps
+on each rank at each C=1 context. It groups exact kernel names from the actual
+CUDA activities, whose operator attribution is unmapped. At 2K, rank 0's mean
+per-step summed durations are 24.105 ms for MoEStaticKernelV5, 8.960 for mk_gemm2,
+7.824 for k_oneshot_consumer and 5.442 for packed mk_mhc_ar. These durations can
+overlap and include dependency waits; they are not additive unprofiled step
+latency. `summarize_profile.py` also reports per-step interval unions separately
+on every rank, without comparing timestamps across hosts.
 
 Two further default-off kernel probes are prepared on separate sources:
 packed mHC single-token grids (`4626491b`) and MoE resident-wave scheduling
