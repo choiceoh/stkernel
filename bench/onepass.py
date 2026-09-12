@@ -60,6 +60,28 @@ def _counter(text, name):
     return float(m.group(1)) if m else 0.0
 
 
+def _st_counter(text, name):
+    """The engine's own series. `_counter` above reads only vLLM's dialect."""
+    m = re.search(r"^st:%s\{[^}]*\}\s+([0-9.e+]+)" % re.escape(name), text, re.M)
+    return float(m.group(1)) if m else 0.0
+
+
+CACHE_HIT_FRACTION = 0.5
+"""Past this share of its prompt taken from the cache, a bracket did not prefill.
+
+`first tok/s` is prompt tokens over the first TTFT, and it only means prefill throughput when the
+prompt was actually computed. Three rows on 2026-09-12 were not, and nothing in the record said so:
+ST-GRAPH-45c's 128K reads 46,554 tok/s at 2.76 s, and an evening run read 32K in 5.13 s and 128K in
+5.22 s -- the same number for two prompts four times apart, which is the tell. They then sat in the
+ledger's column beside rows that had prefilled (45차 §82). CHARTER D17 says to drop them; this makes
+the record say which to drop.
+
+Half is not a knob, it is a gap: a bracket that shares only the system preamble reuses ~1% of a
+32,545-token prompt, and one that resumes a boundary reuses nearly all of it. Nothing lands in
+between, so the number is recorded either way and this only decides what gets called a hit.
+"""
+
+
 def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=None,
                channel_trace=None, reasoning_budget=None):
     """(text, ttft_s, prompt_tokens, completion_tokens, finish_reason) of one
@@ -521,13 +543,15 @@ def _main() -> int:
     if args.require_exclusive and (before_traffic["running"] != 0 or before_traffic["waiting"] != 0):
         raise RuntimeError("exclusive onepass requires an idle server before sending requests")
     m0 = bd._parse_spec_metrics(metrics_before)
-    print(f"{'ctx':>7} {'tok':>7} {'first tok/s':>11} {'median tok/s':>11} {'first TTFT':>10} {'median TTFT':>10}  quality", flush=True)
+    print(f"{'ctx':>7} {'tok':>7} {'first tok/s':>11} {'median tok/s':>11} {'first TTFT':>10} {'median TTFT':>10} {'reuse':>6} quality"
+          "   (* = the cache carried it: not a prefill, CHARTER D17)", flush=True)
     t_dec0 = time.time()
     # Keep the established 1 s window and 0.5 s edge margins; harder questions
     # change the workload, not the timing definition.
     with br._StepWindows(bd, period=1.0) as sw:
         for ctx in (int(c) for c in args.ctx.split(",")):
             ttfts, tok = [], 0
+            reused_before = _st_counter(_metrics_text(bd.METRICS), "prefix_reused_tokens_total")
             ctx_items = [item for item in items if item['ctx'] == ctx]
             combined = len(ctx_items) == 1
             for item in ctx_items:
@@ -544,15 +568,22 @@ def _main() -> int:
                 ttfts.append(ttft)
                 texts.append((f"ctx{ctx // 1000}K q{item['question']}", text, finish))
             cold, warm = ttfts[0], median(ttfts)
+            # What this bracket took from the prefix cache instead of computing. Without it the
+            # first column cannot be read: it is prompt tokens over the first TTFT either way.
+            reused = max(0.0, _st_counter(_metrics_text(bd.METRICS), "prefix_reused_tokens_total") - reused_before)
+            share = reused / tok if tok else 0.0
             rec["prefill"].append({"ctx": ctx, "tok": tok, "cold_s": cold, "warm_s": warm,
                                    "cold_tok_s": tok / cold if cold > 0 else 0.0,
                                    "warm_tok_s": tok / warm if warm > 0 else 0.0,
                                    "ttft_samples_s": ttfts, "first_s": cold, "median_s": warm,
                                    "state": "prepared fresh-prefix; see steady_state validity",
+                                   "reused_tok": int(reused), "reused_frac": round(share, 4),
+                                   "cache_hit": share >= CACHE_HIT_FRACTION,
                                    "combined": combined})
             warm_col = f"{tok / warm:>11.0f}" if not combined else f"{'(1 req)':>11}"
             warm_t = f"{warm:>9.2f}s" if not combined else f"{'-':>10}"
-            print(f"{ctx:>7} {tok:>7} {tok / cold:>11.0f} {warm_col} {cold:>9.2f}s {warm_t}  quality deferred", flush=True)
+            reuse_col = f"{share * 100:>5.0f}%" + ("*" if share >= CACHE_HIT_FRACTION else " ")
+            print(f"{ctx:>7} {tok:>7} {tok / cold:>11.0f} {warm_col} {cold:>9.2f}s {warm_t} {reuse_col} quality deferred", flush=True)
         if args.fixed_decode_tokens:
             for rep in range(args.fixed_decode_reps):
                 timing = {"ctx": 2000, "question": "fixed-all", "rep": rep, "fixed_decode": True}
