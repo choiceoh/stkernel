@@ -29,7 +29,7 @@ from __future__ import annotations
 import torch
 
 from engine.base.params import Spec
-from engine.modules.nvfp4_sf import swizzle_sf
+from engine.modules.nvfp4_sf import swizzle_sf_batch
 from engine.profiles.glm53.facts import TP, Facts
 
 CK = "model.language_model."
@@ -156,20 +156,25 @@ def layer_specs(F: Facts, L: int) -> "list[Spec]":
         def w2_packed(s, r, W):
             return torch.stack([_split(s[x + "down_proj.weight_packed"], 1, r, W) for x in ex]).contiguous()
 
-        def fold(scale, global_scale):                     # compressed-tensors: the global is a DIVISOR; the served layer bakes 1/w_gs in
-            return (scale.float() / global_scale.float().reshape(())).to(E4)
+        def stack_scales(s, key, dim, r, W):
+            """Every expert's scale block for one projection, and their global divisors.
+
+            compressed-tensors stores the global as a DIVISOR and the served layer bakes 1/w_gs in.
+            Folding and swizzling the stack in one go is the same arithmetic on every expert as
+            doing it one at a time, and presharding does this 288 times a layer a rank.
+            """
+            blocks = torch.stack([_split(s[x + key + ".weight_scale"], dim, r, W) for x in ex]).float()
+            divisor = torch.stack([s[x + key + ".weight_global_scale"].float().reshape(()) for x in ex])
+            return (blocks / divisor.view(-1, 1, 1)).to(E4)
 
         def w13_sf(s, r, W):
-            rows = []
-            for x in ex:
-                g = fold(_split(s[x + "gate_proj.weight_scale"], 0, r, W), s[x + "gate_proj.weight_global_scale"])
-                u = fold(_split(s[x + "up_proj.weight_scale"], 0, r, W), s[x + "up_proj.weight_global_scale"])
-                rows.append(swizzle_sf(torch.cat([u, g], 0).view(torch.uint8)).view(E4))
-            return torch.stack(rows).contiguous()
+            up = stack_scales(s, "up_proj", 0, r, W)
+            gate = stack_scales(s, "gate_proj", 0, r, W)
+            rows = torch.cat([up, gate], 1)                  # rows [up; gate], the kernel's order
+            return swizzle_sf_batch(rows.view(torch.uint8)).view(E4).contiguous()
 
         def w2_sf(s, r, W):
-            return torch.stack([swizzle_sf(fold(_split(s[x + "down_proj.weight_scale"], 1, r, W), s[x + "down_proj.weight_global_scale"]).view(torch.uint8)).view(E4)
-                                for x in ex]).contiguous()
+            return swizzle_sf_batch(stack_scales(s, "down_proj", 1, r, W).view(torch.uint8)).view(E4).contiguous()
 
         out += [
             Spec(n + "moe.gate", (E, H), BF, (m + "gate.weight",), _whole(m + "gate.weight")),
