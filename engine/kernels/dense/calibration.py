@@ -87,8 +87,15 @@ class Calibration:
         if rows_ok is not None:
             xf = xf * rows_ok.to(xf.dtype).view(-1, 1)
         xf = xf * self.armed
-        count = (rows_ok.to(torch.float32).sum() if rows_ok is not None
-                 else torch.tensor(float(flat.shape[0]), device=xf.device)) * self.armed
+        # Construct the no-mask row count from the already device-resident
+        # arming scalar. ``torch.tensor(float, device=...)`` performs a
+        # host-to-device scalar copy that CUDA Graph capture rejects, even
+        # though the requested device is CUDA. The scalar multiply emits a
+        # graph-safe device operation and remains zero until ``arm()``.
+        if rows_ok is None:
+            count = self.armed * float(flat.shape[0])
+        else:
+            count = rows_ok.to(torch.float32).sum() * self.armed
         for key, start, width, hessian in self.tiles[name]:
             part = xf[:, start:start + width]
             if hessian:
