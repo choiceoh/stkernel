@@ -535,6 +535,10 @@ class Glm53Engine:
         """Only what the caller has not seen, so the cost follows the step and not the answer."""
         return self.tokens[seq][self.prompt_len[seq] + sent:]
 
+    def history_from(self, seq: int, start: int) -> "list[int]":
+        """The row's tokens from `start` on (the runner extends a boundary chain from where it stopped)."""
+        return self.tokens[seq][start:]
+
     def _generated_count(self, seq: int) -> int:
         return len(self.tokens[seq]) - self.prompt_len[seq]
 

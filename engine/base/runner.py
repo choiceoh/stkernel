@@ -96,12 +96,13 @@ class Runner:
         self._spills = {}                                   # hash -> Future: leaf boundaries being written ahead of eviction
         self._restores = {}                                 # row -> (hash, tokens, snap, Future): a boundary being read into the row
         self.spill_low_water = 8                            # keep this many snapshots free by writing leaves out ahead
+        self._maintained = -1                               # prefix.version the last candidate scan saw
         self.reused_tokens = 0                              # prompt tokens served from the cache (memory or tier)
         self.prefix_spills = self.prefix_restores = self.dedup_waits = 0
         self.depth = 2                                      # steps the device may hold before the host reads the oldest back
         self.async_steps = 0
 
-    def submit(self, seq: int, prompt_len: int, now: float | None = None, ids=None, salts=(), prepared=None) -> None:
+    def submit(self, seq: int, prompt_len: int, now: float | None = None, ids=None, salts=(), prepared=None, chain=None) -> None:
         """Publish a request only after its blocks, slot and model state exist.
 
         Admission failures return everything acquired here; an existing live
@@ -116,17 +117,20 @@ class Runner:
         self.kv.row(seq)                                   # reject invalid row before indexing tokens
         if seq in self.slot_of or (self.kv.tokens[seq] and prepared is None):
             raise ValueError(f"seq {seq} already owns resident resources")
-        reused, snap, chain = 0, None, None
-        if self.prefix is not None and ids is not None:
+        reused, snap = 0, None
+        if self.prefix is None or ids is None:
+            chain = None
+        else:
             if len(ids) != prompt_len:
                 raise ValueError("the prompt ids must be the prompt")
-            chain = self.prefix.chain(ids, salts)
+            if chain is None:
+                chain = self.prefix.chain(ids, salts)              # the door hands its chain in; a bare caller computes one
         if prepared is not None:
             reused, snap = prepared
             if self.kv.tokens[seq] != reused or reused >= prompt_len:
                 raise ValueError("a prepared row holds exactly its restored boundary, shorter than the prompt")
         elif chain is not None:
-            reused, entry, _ = self.prefix.lookup(ids, salts)
+            reused, entry, _ = self.prefix.lookup_chain(chain, prompt_len)
             if reused:
                 snap = entry.snap
                 self.kv.adopt(seq, entry.blocks, reused)   # the shared, complete prefix; the row's own blocks follow
@@ -208,6 +212,10 @@ class Runner:
                 e.spilling, e.spilled = False, True
         if len(prefix.free_snaps) >= self.spill_low_water or self._spills:
             return
+        if self._maintained == prefix.version and not any(
+                s in self.state.prompt_len and self.state.computed.get(s, 0) >= self.state.prompt_len[s] for s in self._chain):
+            return                                          # nothing changed since the last scan and no prompt just finished
+        self._maintained = prefix.version
         # a prompt still being prefilled extends its own leaf every step: its boundaries wait until it is in
         growing = {h for s, chain in self._chain.items()
                    if s in self.state.prompt_len and self.state.computed.get(s, 0) < self.state.prompt_len[s]
@@ -301,13 +309,14 @@ class Runner:
         self.restore_undo(seq)
 
     # -- the same prompt, twice at once (45차 §23 B) ------------------------------------------------
-    def shared_ahead(self, ids, salts=(), above: int = 0) -> "bytes | None":
+    def shared_ahead(self, ids, salts=(), above: int = 0, chain=None) -> "bytes | None":
         """The hash of the longest boundary of `ids` (past `above`) that a prefill now running will cache when it gets
         there -- a request that waits for it adopts it instead of computing the same tokens beside it. None if no
-        live prefill shares that much."""
+        live prefill shares that much. `chain`: the prompt's, when the caller has it."""
         if self.prefix is None:
             return None
-        chain = self.prefix.chain(ids, salts)
+        if chain is None:
+            chain = self.prefix.chain(ids, salts)
         live = [s for s in self._chain if s in self.state.prompt_len and self.state.computed.get(s, 0) < self.state.prompt_len[s]]
         for tokens in sorted(chain, reverse=True):
             if tokens <= above or tokens >= len(ids) or chain[tokens] in self.prefix.entries:
@@ -508,7 +517,11 @@ class Runner:
         if not self.is_parked(key):
             return None
         record = self.parked.get(key)
-        return record if record is not None else self.tiered.record(key)
+        if record is None:
+            record = self.tiered.record(key)                    # a JSON file per conversation: read once, not per request
+            if record is not None:
+                self.parked[key] = record
+        return record
 
     def parked_blocks(self, key: int) -> int:
         return self.tiered.blocks(key)
@@ -576,8 +589,8 @@ class Runner:
         self._insert(seq, position, h, snap)
 
     def _rechain(self, seq: int) -> None:
-        """The boundary hashes over everything the row holds -- prompt, generated tokens, a new turn -- when the model
-        can tell its history (and the pictures standing in it); a prompt-only chain otherwise."""
+        """The boundary hashes continued over what the row holds past its last known boundary -- generated tokens, a
+        new turn -- when the model can tell its history (and the pictures standing in it). Only the new blocks are hashed."""
         if self.prefix is None or seq not in self._chain:
             return
         history = getattr(self.model, "history", None)
@@ -585,7 +598,11 @@ class Runner:
             return
         marks = getattr(self.model, "media_marks", None)
         salts = [(p, bytes.fromhex(d)) for p, d in marks(seq)] if marks is not None else list(self._salts.get(seq, ()))
-        self._chain[seq] = self.prefix.chain(list(history(seq)), salts)
+        chain = self._chain[seq]
+        last = max(chain) if chain else 0
+        tail = getattr(self.model, "history_from", None)
+        ids = tail(seq, last) if tail is not None else list(history(seq))[last:]
+        self._chain[seq] = self.prefix.extend_chain(chain, ids, salts, start=last)
 
     def _tracked(self, seqs) -> "list[int]":
         """Rows whose generated boundaries can enter the prefix cache: a chain exists and the model tells its history."""

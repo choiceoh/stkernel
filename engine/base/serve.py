@@ -620,14 +620,18 @@ class Server:
             self.prompt_tokens_total += len(ids)
             if options.get("stop_token_ids"):
                 self._stop_ids[request] = set(options["stop_token_ids"])
-            tier = None
+            tier = chain = None
             prefix = getattr(self.runner, "prefix", None)
-            if conversation is None and hint is None and prefix is not None and getattr(self.runner, "prefix_tier", None) is not None:
+            if conversation is None and prefix is not None:
+                # the prompt's boundary chain, hashed once here and carried to every rank with the request: admission's
+                # lookups, the dedup lookahead, the tier candidate and the runner's submit all read it, none recompute it
                 salts = [(m["positions"][0], bytes.fromhex(m["digest"])) for m in media]
-                found = prefix.tier_lookup(ids, salts, prefix.peek(ids, salts))     # rank 0's view; every rank votes at admission
-                if found is not None:
-                    tier = (found[0], found[1].hex())
-            self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation, min_new, options, hint, media, tier))
+                chain = prefix.chain(ids, salts)
+                if hint is None and getattr(self.runner, "prefix_tier", None) is not None:
+                    found = prefix.tier_lookup_chain(chain, len(ids), prefix.peek_chain(chain, len(ids)))   # rank 0's view; every rank votes
+                    if found is not None:
+                        tier = (found[0], found[1].hex())
+            self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation, min_new, options, hint, media, tier, chain))
         return request, event
 
     def _continuation(self, ids, media=()) -> "tuple[int, int] | None":
@@ -640,8 +644,10 @@ class Server:
         ends = set(getattr(self.engine, "eos", None) or ())
         def consider(key, history, history_marks):
             nonlocal best
-            history = list(history)
             m = len(history)
+            if m <= 1 or m - 1 >= n or (ids[m - 1] != history[m - 1] and ids[m - 2] != history[m - 2]):
+                return                                            # the cheap test first: no list compare for the many that cannot match
+            history = list(history)
             if (0 < m < n and (best is None or m > best[1]) and ids[:m] == history
                     and [(p, d) for p, d in marks if p < m] == sorted((int(p), str(d)) for p, d in history_marks)):
                 best = (key, m, False)
@@ -839,9 +845,8 @@ class Server:
         prefix = self.runner.prefix
         for i, entry in enumerate(self._waiting):
             if i and entry[0] in self._deferred:
-                ids, media = entry[1], entry[9]
-                salts = [(m["positions"][0], bytes.fromhex(m["digest"])) for m in media]
-                if self.runner.shared_ahead(ids, salts, prefix.peek(ids, salts)) is None:
+                ids, chain = entry[1], entry[11]
+                if chain is None or self.runner.shared_ahead(ids, (), prefix.peek_chain(chain, len(ids)), chain=chain) is None:
                     del self._waiting[i]
                     self._waiting.appendleft(entry)
                     return
@@ -850,7 +855,7 @@ class Server:
         self._reorder_waiting()
         spun = 0
         while self._waiting:
-            request, ids, limit, temperature, promised, conversation, min_new, options, hint, media, tier = self._waiting[0]
+            request, ids, limit, temperature, promised, conversation, min_new, options, hint, media, tier, chain = self._waiting[0]
             row = None
             resident = held = 0
             parked = False
@@ -860,20 +865,22 @@ class Server:
                 row_ = self._conversations.get(key)
                 rest = self._media_after(media, prefix)
                 if rest is None:
-                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier)   # a picture straddles the cut
+                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier, chain)   # a picture straddles the cut
                     continue
                 if (row_ is not None and row_ in self.runner.idle) or (row_ is None and self.runner.is_parked(key)):
                     conversation, ids, media = key, ids[prefix:], rest     # continue the retained conversation with the new turn
                 elif row_ is not None or key in self._retiring.values() or any(e["conversation"] == key for e in self._resuming.values()):
                     break                                         # it is mid-park/resume or live: decide next step
                 else:
-                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier)   # gone: fresh prompt
+                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier, chain)   # gone: fresh prompt
                     continue
             salts = [(m["positions"][0], bytes.fromhex(m["digest"])) for m in media] if media else []
             if conversation is None and hint is None and getattr(self.runner, "prefix", None) is not None:
+                if chain is None:
+                    chain = self.runner.prefix.chain(ids, salts)  # a request that arrived without one (a continuation that fell back)
                 # the same prompt is being prefilled right now: wait for its boundary rather than compute it beside it (B)
-                above = self.runner.prefix.peek(ids, salts)
-                ahead = self.runner.shared_ahead(ids, salts, above)
+                above = self.runner.prefix.peek_chain(chain, len(ids))
+                ahead = self.runner.shared_ahead(ids, salts, above, chain=chain)
                 if ahead is not None:
                     if request not in self._deferred:
                         self._deferred.add(request)
@@ -939,20 +946,20 @@ class Server:
                         self.runner.restore_begin(row, h, tokens)
                     except Exception:                             # noqa: BLE001 -- no snapshot / no blocks / no tier: prefill it instead
                         heapq.heappush(self._free_rows, row)
-                        self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None)
+                        self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None, chain)
                         continue
                     self._restoring[row] = dict(request=request, ids=ids, limit=limit, temperature=temperature, promised=promised,
-                                                min_new=min_new, options=options, media=media, cancelled=None)
+                                                min_new=min_new, options=options, media=media, chain=chain, cancelled=None)
                     self._waiting.popleft()
                     continue
-                self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None)
+                self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None, chain)
                 continue
             if conversation is None:
                 row = heapq.heappop(self._free_rows)
                 try:
                     self.engine.add(row, ids, max_new=limit, temperature=temperature, **({"min_new": min_new} if min_new else {}),
                                     **({"options": options} if options else {}), **({"media": media} if media else {}))
-                    self.runner.submit(row, len(ids), ids=ids, salts=salts)
+                    self.runner.submit(row, len(ids), ids=ids, salts=salts, chain=chain)
                 except BaseException:
                     self.engine.forget(row)
                     heapq.heappush(self._free_rows, row)
@@ -1052,7 +1059,7 @@ class Server:
                                         **({"media": e["media"]} if e.get("media") else {}))
                         self.runner.submit(row, len(e["ids"]), ids=e["ids"],
                                            salts=[(m["positions"][0], bytes.fromhex(m["digest"])) for m in e["media"]] if e.get("media") else (),
-                                           prepared=(tokens, snap))
+                                           prepared=(tokens, snap), chain=e.get("chain"))
                     except BaseException:
                         self.engine.forget(row)
                         self.runner.restore_undo(row)
@@ -1068,7 +1075,7 @@ class Server:
                     heapq.heappush(self._free_rows, row)
                     if e["cancelled"] is None:                    # prefill it the plain way, ahead of the queue
                         self._waiting.appendleft((request, e["ids"], e["limit"], e["temperature"], e["promised"], None, e["min_new"],
-                                                  e["options"], None, e["media"], None))
+                                                  e["options"], None, e["media"], None, e.get("chain")))
             else:
                 e = self._resuming.pop(row)
                 conversation, request = e["conversation"], e["request"]

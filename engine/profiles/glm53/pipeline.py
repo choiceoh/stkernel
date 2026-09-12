@@ -68,6 +68,8 @@ class AsyncDecode:
                           accepted=torch.empty(n_max, dtype=torch.int64, pin_memory=pin)) for _ in range(depth)]
         self.free = list(range(depth))
         self._slots = []
+        self._zeros = {}                                 # n -> the host step's placeholder ids (prepare reads segments, never these)
+        self._staged = []                                # pinned index tensors of recent shrinks, alive until their copies land
 
     # -- building the device view of a batch --------------------------------------------------------
     def _build(self, seqs, slots) -> None:
@@ -106,7 +108,13 @@ class AsyncDecode:
         """Rows left the batch (they finished, the host learned it a step late): keep the device view of the rest.
         Every tensor is re-indexed on the device, after the steps in flight, so nothing is read back."""
         keep = [self.batch.index(s) for s in seqs]
-        idx = torch.tensor(keep, dtype=torch.int64, device=self.e.caches.device)
+        dev = self.e.caches.device
+        if dev.type == "cuda":
+            host = torch.tensor(keep, dtype=torch.int64, pin_memory=True)     # a pageable copy would wait for the steps in flight
+            idx = host.to(dev, non_blocking=True)
+            self._staged = (self._staged + [host])[-8:]
+        else:
+            idx = torch.tensor(keep, dtype=torch.int64, device=dev)
         b = self.buf
         for name in ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "ends", "temps", "top_p", "alive", "anchor", "drafts"):
             b[name] = b[name].index_select(0, idx)
@@ -156,8 +164,10 @@ class AsyncDecode:
         n = len(seqs)
         # the host's step: its contexts may lag the device's by the steps in flight; the reservation covers that lag
         ahead = max(e.inflight.get(s, 0) for s in seqs) + 1
-        host_step = Step(torch.zeros(n * t, dtype=torch.int64, device=e.caches.device),
-                         tuple(Segment(s, slot, e.ctx[s], i * t, t) for i, (s, slot) in enumerate(zip(seqs, slots))))
+        zeros = self._zeros.get(n)
+        if zeros is None:
+            zeros = self._zeros[n] = torch.zeros(n * t, dtype=torch.int64, device=e.caches.device)
+        host_step = Step(zeros, tuple(Segment(s, slot, e.ctx[s], i * t, t) for i, (s, slot) in enumerate(zip(seqs, slots))))
         end = max(e.ctx[s] + t * ahead for s in seqs)
         shape = e.decode_graphs.shape_for(n, end)
         ctx_before = b["ctx"].clone()
