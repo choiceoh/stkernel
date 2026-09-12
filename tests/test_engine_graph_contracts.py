@@ -314,6 +314,78 @@ class AllocatorFlushTests(unittest.TestCase):
         self.assertEqual(len(ended), 1)
 
 
+class BatchedPoolTests(unittest.TestCase):
+    """One pass over [segments, pools] must produce what the per-segment loop produced."""
+
+    KP, D, TAIL, LENGTH = 4, 8, 8, 6
+
+    def graph_caches(self, n, capacity):
+        from engine.profiles.glm53.decode_graphs import GraphCaches
+        F = SimpleNamespace(kpool=self.KP, idx_dim=self.D, block=16)
+        layout = SimpleNamespace(block_bytes=4096, pool_offsets={0: 512})
+        real = SimpleNamespace(F=F, layout=layout,
+                               block_table=torch.arange(1, 1 + 5 * 6, dtype=torch.int32).view(5, 6))
+        caches = GraphCaches(real, torch.arange(n), torch.arange(n), capacity)
+        caches.gather()
+        return caches
+
+    def test_pool_rows_is_pool_slots_run_once_per_segment(self):
+        caches = self.graph_caches(n=3, capacity=256)
+        pool_ids = torch.stack([torch.arange(2) + 3 * i for i in range(3)])
+        rows = caches.pool_rows(0, pool_ids)
+        for i in range(3):
+            self.assertTrue(torch.equal(rows[i], caches.pool_slots(0, i, pool_ids[i])), i)
+
+    def windows(self, contexts, tails, k, gate):
+        """The window each segment pools: the tail ring's earlier tokens, then this step's."""
+        kp, length, width = self.KP, self.LENGTH, tails.shape[1]
+        pools = (kp - 1 + length) // kp
+        out = []
+        for i, ctx in enumerate(contexts.tolist()):
+            relative = torch.arange(pools * kp) - ctx % kp
+            earlier = (relative < 0)[:, None]
+            kw = torch.where(earlier, tails[i][(ctx + relative) % width, 0],
+                             k[i][relative.clamp(0, length - 1)])
+            gw = torch.where(earlier, tails[i][(ctx + relative) % width, 1],
+                             gate[i][relative.clamp(0, length - 1)])
+            out.append((kw.view(pools, kp, self.D), gw.view(pools, kp, self.D),
+                        (ctx % kp + length) // kp))
+        return out
+
+    def test_the_batched_pass_pools_the_same_windows_and_writes_the_same_rows(self):
+        from engine.profiles.glm53 import decode_graphs as module
+        n, capacity = 3, 256
+        torch.manual_seed(72)
+        contexts = torch.tensor([0, 7, 30])
+        tails = torch.randn(n, self.TAIL, 2, self.D)
+        k, gate = torch.randn(n, self.LENGTH, self.D), torch.randn(n, self.LENGTH, self.D)
+        caches = self.graph_caches(n, capacity)
+        pools = (self.KP - 1 + self.LENGTH) // self.KP
+        seen, written = {}, []
+        caches.pool_keys = lambda layer: torch.zeros(capacity, self.D, dtype=torch.uint8)
+        caches.pool_scales = lambda layer: torch.zeros(capacity)
+        caches.write_tail = lambda layer, i, ctx, keys, gates: written.append((i, int(ctx)))
+        net = SimpleNamespace(
+            F=SimpleNamespace(kpool=self.KP, idx_dim=self.D), p={"L0.idx.ape": None},
+            lanes=SimpleNamespace(kpool_compress=lambda kw, gw, ape: (
+                seen.update(kw=kw.clone(), gw=gw.clone()),
+                (torch.zeros(kw.shape[0], self.D, dtype=torch.uint8), torch.zeros(kw.shape[0], 1)))[1]))
+        calls = []
+        with unittest.mock.patch.object(module, "scatter_rows",
+                                        lambda src, dst, idx, valid: calls.append((idx.clone(), int(valid)))):
+            got = module.complete_pools(net, 0, contexts, self.LENGTH, tails, k, gate, caches)
+        self.assertEqual(got, caches.candidate_capacity)
+        want = self.windows(contexts, tails, k, gate)
+        self.assertTrue(torch.equal(seen["kw"], torch.cat([w[0] for w in want])), "pooled keys")
+        self.assertTrue(torch.equal(seen["gw"], torch.cat([w[1] for w in want])), "pooled scores")
+        # two scatters per segment, each with that segment's rows and its own count
+        self.assertEqual([c[1] for c in calls], [w[2] for w in want for _ in range(2)])
+        for i, ctx in enumerate(contexts.tolist()):
+            ids = (ctx // self.KP + torch.arange(pools)).clamp_max(caches.candidate_capacity - 1)
+            self.assertTrue(torch.equal(calls[2 * i][0], caches.pool_slots(0, i, ids).long()), i)
+        self.assertEqual(written, [(0, 0), (1, 7), (2, 30)])
+
+
 class KeptConstantTests(unittest.TestCase):
     """The decode path's index constants are built once, and never inside a capture."""
 
@@ -350,7 +422,7 @@ class KeptConstantTests(unittest.TestCase):
         source = DECODE_GRAPHS.read_text()
         body = source[source.index("def complete_pools"):source.index("@dataclass")]
         self.assertNotIn("torch.arange", body)
-        self.assertEqual(body.count("iota("), 2)
+        self.assertEqual(body.count("iota("), 3)      # the window, the pool ids, the segment rows
         net = (ROOT / "engine/profiles/glm53/net.py").read_text()
         for loop in ("_indexer", "_dsa"):
             chunk = net[net.index(f"def {loop}("):]
