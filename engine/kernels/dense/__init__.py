@@ -87,6 +87,8 @@ class DenseLinear:
             raise ValueError("dense weights must be CUDA BF16 with K aligned to 128")
         extension()
         self.rows, self.cols = weight.shape
+        self.name = name
+        self.observer = None  # calibration.Calibration sums this layer's inputs through it (X^T X for the GPTQ packs)
         self.executed = 0  # boot proof: W4=1, FP8=2, NVFP4=4
         packs = []
         for start in range(0, self.cols, 4096):
@@ -115,11 +117,15 @@ class DenseLinear:
         if self.fp8 is not None:
             self.fp8.weight=next(owned),next(owned)
 
-    def __call__(self, x):
+    def __call__(self, x, rows_ok=None):
+        """`rows_ok` [rows] bool: which rows are real -- only a calibration run reads it (the pipeline's ghost rows,
+        a masked observation's positions past the committed count); the product itself covers every row."""
         if x.shape[-1] != self.cols or x.dtype != torch.bfloat16:
             raise ValueError("dense input does not match its bound weight")
         shape = x.shape[:-1]
         flat = x.reshape(-1, self.cols)
+        if self.observer is not None:
+            self.observer(flat, rows_ok)
         if flat.shape[0] <= 32:
             self.executed |= 1
             if len(self.packs) == 1:

@@ -125,7 +125,6 @@ def rope(x: torch.Tensor, positions: torch.Tensor, theta: float):
 
 
 STORE_PREFIX = "DFlash2Qwen3ForCausalLM/model."      # the pack store's namespace for the drafter (kernels/dense/store)
-STORE_TILE = 4096                                      # a DenseLinear packs K in tiles of this width: one calibration blob each
 
 
 def store_name(name: str) -> str:
@@ -134,78 +133,20 @@ def store_name(name: str) -> str:
     return STORE_PREFIX + module
 
 
-def store_tiles(name: str, cols: int) -> "list[tuple[str, int, int]]":
-    """(blob name, first column, width) of every K tile a dense weight of `cols` columns is packed and calibrated in."""
-    base = store_name(name)
-    if cols <= STORE_TILE:
-        return [(base, 0, cols)]
-    return [(f"{base}.k{i}", i * STORE_TILE, min(STORE_TILE, cols - i * STORE_TILE)) for i in range((cols + STORE_TILE - 1) // STORE_TILE)]
-
-
-class Calibration:
-    """Gram sums X^T X of every prepared dense weight's input, filed the way kernels/dense/store reads calibration
-    (`<root>/mkcalib/rank<r>/<store name>.pt` = {H, ntok, name}), so the next boot's PackStore builds GPTQ packs
-    from this engine's own traffic instead of the retired vLLM stack's dumps (45차 §23 GPU 판정 6차).
-
-    The sums live on the device, carved from the arena, and are added to inside the captured graphs: every
-    contribution is multiplied by a device scalar that is 0 until `arm()` (the boot's warm-ups and captures feed the
-    same paths with junk) and by the row mask the caller hands over (the pipeline's ghost rows, positions past a
-    row's committed count -- the 33차 lesson: padding rows poison a Hessian). Every rank sums its own inputs: the
-    sharded projections (o_proj, down_proj) see different columns on each rank. fp32 sums; the packer symmetrises,
-    promotes to fp64 and damps."""
-
-    def __init__(self, dense: dict, device, arena=None):
-        self.tiles = {name: store_tiles(name, layer.cols) for name, layer in dense.items()}
-        self.H, self.rows = {}, {}
-        for name, tiles in self.tiles.items():
-            for blob, _start, width in tiles:
-                if arena is not None:
-                    self.H[blob] = arena.carve(width * width * 4, f"calibration/{blob}").view(torch.float32).view(width, width)
-                    self.H[blob].zero_()
-                else:
-                    self.H[blob] = torch.zeros(width, width, dtype=torch.float32, device=device)
-                self.rows[blob] = torch.zeros((), dtype=torch.float32, device=device)
-        self.armed = torch.zeros((), dtype=torch.float32, device=device)
-
-    @staticmethod
-    def nbytes(F: DrafterFacts, world: int) -> int:
-        """What the sums take per rank, for the arena: the dense weights' K tiles squared, at this TP."""
-        H, I, D = F.hidden, F.inter, F.head_dim
-        cols = [H * len(F.target_layers)]                                                    # fc
-        for _ in range(F.layers):
-            cols += [H, F.heads // world * D, H, I // world, H, H]                            # qkv, o, gate_up, down, two kernel projections
-        total = 0
-        for c in cols:
-            for _blob, _start, width in store_tiles("x", c):
-                total += width * width * 4
-        return total + 4096 * (len(cols) * 5 + 1)
-
-    def arm(self) -> None:
-        self.armed.fill_(1.0)
-
-    def observe(self, name: str, x: torch.Tensor, mask=None) -> None:
-        tiles = self.tiles.get(name)
-        if tiles is None:
-            return
-        xf = x.reshape(-1, x.shape[-1]).float()
-        if mask is not None:
-            xf = xf * mask.to(xf.dtype).view(-1, 1)
-        xf = xf * self.armed
-        count = (mask.to(torch.float32).sum() if mask is not None else torch.tensor(float(xf.shape[0]), device=xf.device)) * self.armed
-        for blob, start, width in tiles:
-            part = xf[:, start:start + width]
-            self.H[blob].addmm_(part.t(), part)
-            self.rows[blob] += count
-
-    def save(self, root: "str | Path", rank: int) -> "list[Path]":
-        """One blob per tile under `<root>/mkcalib/rank<rank>/`, in the store's form. Overwrites what an older stack left."""
-        written = []
-        for blob, H in self.H.items():
-            path = Path(root) / "mkcalib" / f"rank{rank}" / (blob + ".pt")
-            path.parent.mkdir(parents=True, exist_ok=True)
-            torch.save({"H": H.detach().cpu().contiguous(), "ntok": int(self.rows[blob]), "name": blob}, path)
-            written.append(path)
-        return written
+def dense_shapes(F: DrafterFacts, world: int) -> "dict[str, tuple[int, int]]":
+    """[rows, cols] of every dense weight `prepare_fast` packs at this TP, by its drafter name -- what a boot asks
+    the pack store about before anything is loaded."""
+    H, I, D = F.hidden, F.inter, F.head_dim
+    G = H // F.conv_group
+    heads, kv, inter = F.heads // world, F.kv_heads // world, I // world
+    out = {"fc.weight": (H, H * len(F.target_layers))}
+    for L in range(F.layers):
+        n = f"layers.{L}."
+        out.update({n + "self_attn.qkv": ((heads + 2 * kv) * D, H), n + "self_attn.o_proj.weight": (H, heads * D),
+                    n + "mlp.gate_up": (2 * inter, H), n + "mlp.down_proj.weight": (H, inter),
+                    n + "attention_conv.kernel_projection.weight": (2 * F.conv_taps * G, H),
+                    n + "mlp_conv.kernel_projection.weight": (2 * F.conv_taps * G, H)})
+    return out
 
 
 class Drafter:
@@ -219,7 +160,6 @@ class Drafter:
         self.fast_attention = False
         self.local_heads, self.local_kv_heads = F.heads, F.kv_heads
         self.context_kv = None
-        self.calibration = None                            # Calibration while a run sums the dense inputs' Gram matrices
 
     def capture_decode(self, caches, memory=None, generator=None, vocab=None):
         from engine.profiles.glm53.decode_graphs import DrafterDecodeGraphs
@@ -284,12 +224,14 @@ class Drafter:
         self.fast_attention = True
 
     def linear(self, x, name, mask=None):
-        """x through the named weight: the prepared dense pack when there is one, else the bf16 source. A calibration
-        run sums the input first; `mask` [rows] leaves the rows that are not real out of the sum."""
+        """x through the named weight: the prepared dense pack when there is one, else the bf16 source. `mask` [rows]
+        tells a calibrating pack which rows are real (kernels/dense/calibration); the product covers every row."""
         layer = self.dense.get(name)
-        if layer is not None and self.calibration is not None:
-            self.calibration.observe(name, x, mask)
-        return layer(x) if layer is not None else Fn.linear(x, self.p[name])
+        if layer is None:
+            return Fn.linear(x, self.p[name])
+        if mask is not None and getattr(layer, "observer", None) is not None:   # only a calibrating pack reads the mask
+            return layer(x, mask)
+        return layer(x)
 
     # -- context: verified tokens' target states -> K/V rings -------------------------------
     def observe(self, ring: torch.Tensor, positions: torch.Tensor, aux: torch.Tensor) -> None:

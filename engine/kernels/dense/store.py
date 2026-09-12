@@ -23,6 +23,37 @@ class PackStore:
             Path(__file__).with_name('packing.py').read_bytes()
             + inspect.getsource(pack_w4).encode()).hexdigest()
 
+    TILE = 4096                                  # DenseLinear packs K in tiles of this width, one calibration blob each
+
+    @staticmethod
+    def tiles(name, cols):
+        """(blob key, first column, width) of every K tile a dense weight of `cols` columns is packed and calibrated in."""
+        if cols <= PackStore.TILE:
+            return [(name, 0, cols)]
+        return [(f"{name}.k{i}", i * PackStore.TILE, min(PackStore.TILE, cols - i * PackStore.TILE))
+                for i in range((cols + PackStore.TILE - 1) // PackStore.TILE)]
+
+    def calibration_path(self, key, rank=None):
+        return self.root/'mkcalib'/f'rank{self.rank if rank is None else rank}'/(key+'.pt')
+
+    def missing_calibration(self, name, cols):
+        """The tiles of `name` this store has no calibration blob for: what a calibrating boot must sum. A blob that
+        exists but does not fit the tile is reported by name -- `pack` refuses it, so the boot says which file to remove."""
+        missing, foreign = [], []
+        for key, start, width in self.tiles(name, cols):
+            path = self.calibration_path(key)
+            if not path.is_file():
+                missing.append((key, start, width))
+                continue
+            blob = torch.load(path, map_location='cpu', mmap=True, weights_only=True)
+            hessian = blob.get('H')
+            if (hessian is None or tuple(hessian.shape) != (width, width) or int(blob.get('ntok', 0)) <= 0
+                    or blob.get('name', key) != key or not hessian.is_floating_point()):
+                foreign.append(str(path))
+        if foreign:
+            raise ValueError(f"calibration blobs that do not fit {name} [{cols} columns]: remove them and reboot -- {foreign}")
+        return missing
+
     def pack(self, weight, name, *, rank=None):
         from engine.kernels.dense import pack_w4
         rank = self.rank if rank is None else rank
