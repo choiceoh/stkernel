@@ -30,15 +30,18 @@ class Calibration:
         self.budget, self.used = budget_bytes, 0
         self.arena = arena
         self.H, self.rows, self.tiles = {}, {}, {}          # blob key -> sums, rows, (start, width); layer name -> tiles
+        self.amax, self.unsmooth = {}, {}                   # blob key -> channel peaks [width]; layer name -> the s its input was divided by
         self.deferred = []                                  # (layer name, key) that did not fit this boot's budget
         self.armed = torch.zeros((), dtype=torch.float32, device=self.device)
         self.filed = None                                   # the paths written, once
 
-    def attach(self, name: str, layer, missing: "list[tuple[str, int, int]]", small_rows: bool) -> bool:
+    def attach(self, name: str, layer, missing: "list[tuple[str, int, int]]", small_rows: bool, unsmooth=None) -> bool:
         """Sum `layer`'s input over the tiles in `missing` [(key, start, width)]; `small_rows`: its calls of <= 32
-        rows are real (with the caller's mask) -- False for a layer whose decode rows may be ghosts. Returns whether
-        the tiles fit the budget (all or nothing per layer)."""
-        need = sum(width * width * 4 + 4096 for _key, _start, width in missing)
+        rows are real (with the caller's mask) -- False for a layer whose decode rows may be ghosts. `unsmooth` [K]:
+        the factor this boot divided the input by (smoothing folded into its norm) -- the sums are filed in the
+        unsmoothed domain so every boot derives its own factors from scratch. Returns whether the tiles fit the
+        budget (all or nothing per layer)."""
+        need = sum(width * width * 4 + width * 4 + 4096 for _key, _start, width in missing)
         if self.used + need > self.budget:
             self.deferred.extend((name, key) for key, _start, _width in missing)
             return False
@@ -50,14 +53,17 @@ class Calibration:
                 H = torch.zeros(width, width, dtype=torch.float32, device=self.device)
             self.H[key] = H
             self.rows[key] = torch.zeros((), dtype=torch.float32, device=self.device)
+            self.amax[key] = torch.zeros(width, dtype=torch.float32, device=self.device)
         self.used += need
         self.tiles[name] = list(missing)
+        if unsmooth is not None:
+            self.unsmooth[name] = unsmooth.detach().float().to(self.device)
         layer.observer = lambda flat, rows_ok, name=name, small=small_rows: self.observe(name, flat, rows_ok, small)
         return True
 
     @staticmethod
     def nbytes(missing) -> int:
-        return sum(width * width * 4 + 4096 for _key, _start, width in missing)
+        return sum(width * width * 4 + width * 4 + 4096 for _key, _start, width in missing)
 
     def arm(self) -> None:
         self.armed.fill_(1.0)
@@ -75,6 +81,7 @@ class Calibration:
             part = xf[:, start:start + width]
             self.H[key].addmm_(part.t(), part)
             self.rows[key] += count
+            torch.maximum(self.amax[key], part.abs().amax(0), out=self.amax[key])
 
     def progress(self) -> int:
         """The fewest rows any blob has (a device read: ask rarely)."""
@@ -86,10 +93,21 @@ class Calibration:
     def save(self, root: "str | Path", rank: int) -> "list[Path]":
         """One blob per tile under `<root>/mkcalib/rank<rank>/`, in the store's form. Overwrites what an older stack left."""
         written = []
+        back = {}                                                          # blob key -> the s to undo (H -> s H s, amax -> amax * s)
+        for name, tiles in self.tiles.items():
+            s = self.unsmooth.get(name)
+            if s is not None:
+                for key, start, width in tiles:
+                    back[key] = s[start:start + width]
         for key, H in self.H.items():
             path = Path(root) / "mkcalib" / f"rank{rank}" / (key + ".pt")
             path.parent.mkdir(parents=True, exist_ok=True)
-            torch.save({"H": H.detach().cpu().contiguous(), "ntok": int(self.rows[key]), "name": key}, path)
+            H, amax = H.detach().float(), self.amax[key].detach().float()
+            s = back.get(key)
+            if s is not None:
+                H = (H * s[:, None]) * s[None, :]
+                amax = amax * s
+            torch.save({"H": H.cpu().contiguous(), "amax": amax.cpu().contiguous(), "ntok": int(self.rows[key]), "name": key}, path)
             written.append(path)
         self.filed = written
         return written

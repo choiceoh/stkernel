@@ -62,7 +62,7 @@ class CalibrationTests(unittest.TestCase):
         """A weight wider than the decode tile gets ONE Hessian over its whole K (pack_wide's error feedback crosses the
         tiles), so its blob is the full width; what does not fit the budget waits for a later boot."""
         wide_cols = 2 * PackStore.TILE
-        c = Calibration("cpu", budget_bytes=wide_cols * wide_cols * 4 + 4096)
+        c = Calibration("cpu", budget_bytes=Calibration.nbytes(PackStore.tiles("Target/model.fc", wide_cols)))
         wide = FakeLayer(wide_cols, "Target/model.fc")
         self.assertEqual(PackStore.tiles(wide.name, wide_cols), [(wide.name, 0, wide_cols)])
         self.assertTrue(c.attach(wide.name, wide, PackStore.tiles(wide.name, wide.cols), small_rows=True))
@@ -88,7 +88,7 @@ class CalibrationTests(unittest.TestCase):
             self.assertFalse(store.calibrated("A/model.x"))
             path = store.calibration_path("A/model.y")
             path.parent.mkdir(parents=True)
-            torch.save({"H": torch.eye(128), "ntok": 10, "name": "A/model.y"}, path)
+            torch.save({"H": torch.eye(128), "amax": torch.ones(128), "ntok": 10, "name": "A/model.y"}, path)
             self.assertEqual(store.missing_calibration("A/model.y", 128), [])
             self.assertTrue(store.calibrated("A/model.y"))
             with self.assertRaisesRegex(ValueError, "do not fit"):
