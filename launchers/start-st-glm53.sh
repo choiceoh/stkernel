@@ -7,6 +7,10 @@
 #
 #   bash launchers/start-st-glm53.sh            # start all four (rank 0=srv2, rank 1=srv1, then srv3/srv4)
 #   bash launchers/start-st-glm53.sh stop       # docker rm -f st-glm53 on every node
+#
+# `stop` is the only way to take these containers down, and the nodes enforce it: a running
+# rank carries its lease owner, and launchers/docker-fleet-guard.sh (installed in front of
+# docker) refuses `docker rm|kill|stop` on one unless you name the owner you are evicting.
 #   bash launchers/start-st-glm53.sh logs [r]   # tail rank r's container log
 #
 # Rank order is base/comm.NODES (srv2, srv1, srv3, srv4): rank 0 hosts the rendezvous store, so it is the head.
@@ -88,7 +92,12 @@ case "${1:-start}" in
     legacy_owner=$(LOCK=$LEGACY_LOCK lease owner --container "$NAME") || {
       echo "ABORT: refusing to stop another owner's legacy lease" >&2; exit 1;
     }
-    for ip in "${NODES[@]}"; do node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 && echo '$ip: stopped' || echo '$ip: none'"; done
+    # `stop` has already resolved the lease above -- owner_for RAISES when another workload
+    # holds it -- so this is the deliberate path, and it names the owner it is evicting for
+    # the node's docker guard (launchers/docker-fleet-guard.sh). Read the owner off the
+    # container rather than from $held_owner: a rank orphaned by a lost lease file must still
+    # be stoppable, and the lease check that guards this line already happened.
+    for ip in "${NODES[@]}"; do node_sh "$ip" "ST_FLEET_OK=\$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' $NAME 2>/dev/null | sed -n 's/^ST_LEASE_OWNER=//p' | head -1) docker rm -f $NAME >/dev/null 2>&1 && echo '$ip: stopped' || echo '$ip: none'"; done
     use_lease
     lease release --owner "$held_owner"
     node_sh "${NODES[0]}" "rm -f $LEGACY_LOCK" >/dev/null 2>&1 || true
