@@ -93,6 +93,17 @@ def release_model_cache(roots) -> int:
     return released
 
 
+TRANSIENT_MARGIN = 2 << 30
+"""How far above the box's SIGTERM line the momentary reclaim fault must stay.
+
+The same margin profiles/glm53/budget.os_reserve_gib keeps above the same line, and for the same
+reason: MemAvailable is an estimate and earlyoom samples rather than watches. What differs is which
+line applies. The engine's full `headroom` -- workspace ceiling plus OS reserve -- is a POST-BOOT
+requirement, and the check after the reclaim enforces it. During the fault nothing is allocated and
+nothing is serving, so the only line with a consequence is the box's.
+"""
+
+
 def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=touch_pages, *, cache_roots=()) -> dict:
     """Drop clean pages of the supplied weight files, reclaim the rest of the
     shortfall, then check physical headroom.
@@ -101,8 +112,9 @@ def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=t
     UMA can fail while that number still looks sufficient. This preflight
     counts immediately free pages: it drops the given files' cache, and when
     that is not enough but MemAvailable says the rest is reclaimable, it
-    faults the desired free extent (`reclaim`, bounded so MemAvailable never dips under
-    `headroom` -- earlyoom's floor is 5%, headroom is 16 GiB). It is a
+    faults the desired free extent (`reclaim`, bounded so the fault never takes MemAvailable under
+    the box's own SIGTERM line -- base/runtime_memory.oom_floor, not the engine's full headroom,
+    which is not allocated yet and has nothing serving behind it). It is a
     necessary admission check, not a guarantee against another process
     allocating after the check.
     """
@@ -119,9 +131,21 @@ def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=t
         memory = _meminfo()
         free = min(memory["MemFree"], device_free())
     if free < need and memory["MemFree"] < need:
-        if need > memory["MemAvailable"] - headroom:
+        # What the momentary fault must not cross is the BOX's kill line, not the engine's whole
+        # future headroom. The reclaim faults `need` for an instant -- MemFree first, so the cache
+        # beyond it is evicted -- and then gives it back; the workspace and the OS reserve inside
+        # `headroom` are not allocated yet and nothing is serving. Requiring `need + headroom` of
+        # MemAvailable asked the node for the headroom twice, and once #710 took the OS reserve
+        # from 4 GiB to the box's own floor + 2, that second copy grew past what the nodes have:
+        # on 2026-09-12 a boot was refused at MemAvailable 92.74 GiB for an allocation of 60.99
+        # that fits, because 60.99 + 20 + 20 does not. The post-reclaim check below is unchanged
+        # and still enforces the full headroom, which is where it belongs.
+        from engine.base.runtime_memory import oom_floor
+        floor = oom_floor()[0] + TRANSIENT_MARGIN
+        if need > memory["MemAvailable"] - floor:
             raise MemoryError(f"arena admission: allocation {nbytes/GIB:.2f} GiB plus headroom {headroom/GIB:.2f} GiB "
-                              f"exceeds immediately free memory {free/GIB:.2f} GiB and cannot be reclaimed: MemAvailable "
+                              f"exceeds immediately free memory {free/GIB:.2f} GiB and cannot be reclaimed without "
+                              f"crossing this box's SIGTERM line plus margin ({floor/GIB:.2f} GiB): MemAvailable "
                               f"{memory['MemAvailable']/GIB:.2f} GiB")
         reclaimed = reclaim(need) if reclaim is not None else 0
         memory = _meminfo()
