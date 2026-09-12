@@ -2,12 +2,14 @@
 import importlib.util
 import unittest
 
+from tests.image_kernels import PRESENT, REASON
+
 torch = None
 if importlib.util.find_spec("torch"):
     import torch
 
 
-@unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA")
+@unittest.skipUnless(torch is not None and torch.cuda.is_available() and PRESENT, "requires CUDA; " + REASON)
 class MHCTests(unittest.TestCase):
     def test_reference_and_replay(self):
         from engine.kernels.dense.mhc import MHC
@@ -22,7 +24,7 @@ class MHCTests(unittest.TestCase):
             scale = torch.tensor([.2,.3,.4],device='cuda')
             base = torch.randn(24,device='cuda')*.1
             norm = torch.randn(4096,device='cuda',dtype=torch.bfloat16)
-            for n in (1,6,12,24,32):
+            for n in (1,6,12,24,32,36,48,64):
                 x = torch.randn(n,4096,device='cuda',dtype=torch.bfloat16)
                 res = torch.randn(n,4,4096,device='cuda',dtype=torch.bfloat16)
                 post = torch.rand(n,4,1,device='cuda')

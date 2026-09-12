@@ -4,12 +4,17 @@ from types import SimpleNamespace
 import unittest
 from pathlib import Path
 
+from tests.image_kernels import fused_sdpa
+
+DRAFTER_HEAD_DIM = 4           # DrafterFacts(head_dim=...) below; the shape the pinned backends refuse here
+
 torch = None
 if importlib.util.find_spec("torch") is not None:
     import torch
 
 
-@unittest.skipUnless(torch is not None, "requires PyTorch")
+@unittest.skipUnless(torch is not None and fused_sdpa(DRAFTER_HEAD_DIM),
+                     "requires PyTorch with a fused SDPA backend at the drafter's head size")
 class DrafterTests(unittest.TestCase):
     def make_drafter(self):
         from engine.profiles.glm53.drafter import Drafter, DrafterFacts
@@ -160,15 +165,22 @@ class DrafterTests(unittest.TestCase):
         anchors = torch.tensor([2, 7, 11], device=dev)
         temps = torch.tensor([0.8, 0.0, 0.5], device=dev)
         greedy = d.propose_rows(field, slots, anchors, ctx)
-        drafts, dists = d.propose_rows(field, slots, anchors, ctx, temps=temps, generator=torch.Generator(device=dev).manual_seed(9), vocab=21)
-        self.assertEqual(tuple(dists.shape), (3, F.k, 21))
+        drafts, cand, q = d.propose_rows(field, slots, anchors, ctx, temps=temps, generator=torch.Generator(device=dev).manual_seed(9), vocab=21)
+        # the candidates and their mass, not a row per position: the walk puts nothing outside them, so the
+        # vocabulary-wide form was 21 (154,880 in production) numbers to carry sel_top_k of them
+        self.assertEqual(tuple(cand.shape), (3, F.k, F.sel_top_k))
+        self.assertEqual(tuple(q.shape), (3, F.k, F.sel_top_k))
         self.assertEqual(drafts[1].tolist(), greedy[1].tolist(), "a row at temperature 0 walks greedily")
         for r in range(3):
             for s in range(F.k):
-                self.assertGreater(float(dists[r, s, drafts[r, s]]), 0.0)
-                self.assertAlmostEqual(float(dists[r, s].sum()), 1.0, places=4)
-                self.assertLessEqual(int((dists[r, s] > 0).sum()), F.sel_top_k)
-        self.assertTrue(torch.equal(dists[1] > 0, torch.nn.functional.one_hot(greedy[1], 21).bool()), "one-hot on the greedy pick")
+                at = (cand[r, s] == drafts[r, s]).nonzero()
+                self.assertTrue(len(at), "the pick is one of the candidates it was drawn from")
+                self.assertGreater(float(q[r, s][at[0]]), 0.0)
+                self.assertAlmostEqual(float(q[r, s].sum()), 1.0, places=4)
+        # a greedy row is a point mass: all of its mass sits on the candidate that is the pick
+        self.assertTrue(torch.equal((q[1] > 0).sum(-1), torch.ones(F.k, dtype=torch.int64)), "one candidate carries it")
+        self.assertTrue(torch.equal(cand[1].gather(1, (q[1] > 0).to(torch.int64).argmax(-1, keepdim=True)).squeeze(1),
+                                    greedy[1]), "and it is the greedy pick")
 
     def test_native_rows_do_not_read_retired_weights_or_use_a_scratch_ring_tail(self):
         """Exercise the merged batched interface with packed readers and no BF16 sources.
@@ -241,6 +253,63 @@ class DrafterTests(unittest.TestCase):
                 sys.modules.pop(kernels.__name__, None)
             else:
                 sys.modules[kernels.__name__] = prior
+
+    def test_the_masks_of_the_batched_paths_reach_the_packs(self):
+        """A calibrating pack sums only the rows the drafter says are real: `observe_rows` passes the kept positions,
+        `propose_rows` the alive rows, `observe_masked` the valid count; a one-row path passes nothing (every row real)."""
+        d, field, dev = self.make_full_drafter(seed=8)
+        F, t = d.F, d.F.k + 1
+        linear = torch.nn.functional.linear
+        seen = {}
+
+        class Fake:                                                           # a calibrating pack recording the masks it was handed
+            def __init__(self, name, w):
+                self.name, self.w, self.cols = name, w, w.shape[1]
+                self.observer = object()                                      # what marks a pack as calibrating
+
+            def __call__(self, x, rows_ok=None):
+                seen.setdefault(self.name, []).append(None if rows_ok is None else rows_ok.clone())
+                return linear(x, self.w)
+        packed = {"fc.weight": d.p["fc.weight"]}
+        for L in range(F.layers):
+            q = f"layers.{L}."
+            packed[q + "self_attn.qkv"] = torch.cat([d.p[q + f"self_attn.{s}_proj.weight"] for s in ("q", "k", "v")])
+            packed[q + "mlp.gate_up"] = torch.cat([d.p[q + f"mlp.{s}_proj.weight"] for s in ("gate", "up")])
+            for key in ("self_attn.o_proj.weight", "mlp.down_proj.weight", "attention_conv.kernel_projection.weight", "mlp_conv.kernel_projection.weight"):
+                packed[q + key] = d.p[q + key]
+        d.dense = {name: Fake(name, w) for name, w in packed.items()}
+        d.context_kv = torch.cat([d.p[f"layers.{L}.self_attn.{s}_proj.weight"] for L in range(F.layers) for s in ("k", "v")])
+        slots = torch.tensor([1, 2, 3], device=dev); positions = torch.tensor([[5, 6, 7, 8], [13, 14, 15, 16], [2, 3, 4, 5]], device=dev)
+        valid = torch.tensor([3, 0, 4], device=dev)
+        aux = (torch.randn(3 * t, F.hidden * len(F.target_layers), device=dev) * 0.3).bfloat16()
+        d.observe_rows(field, slots, positions, aux, valid)
+        self.assertEqual(seen["fc.weight"][-1].tolist(), [1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1])
+        d.observe_masked(field[1], positions[0], aux[:t], valid[0])
+        self.assertEqual(seen["fc.weight"][-1].tolist(), [1, 1, 1, 0])
+        d.observe(field[1], positions[0], aux[:t])
+        self.assertIsNone(seen["fc.weight"][-1])
+        anchors = torch.tensor([7, 3, 9], device=dev); ctx = torch.tensor([5, 12, 3], device=dev)
+        alive = torch.tensor([True, False, True], device=dev)
+        d.propose_rows(field, slots, anchors, ctx, alive=alive)
+        for name in ("layers.0.attention_conv.kernel_projection.weight", "layers.0.mlp_conv.kernel_projection.weight",
+                     "layers.0.mlp.down_proj.weight"):                        # the stock attention path here; the native one adds qkv, o, gate_up
+            self.assertEqual(seen[name][-1].tolist(), [1] * t + [0] * t + [1] * t, name)
+        d.propose_rows(field, slots, anchors, ctx)
+        self.assertIsNone(seen["layers.0.mlp.down_proj.weight"][-1])
+        d.propose_tensor(anchors[:1], 5, field[1])
+        self.assertIsNone(seen["layers.0.mlp.down_proj.weight"][-1])
+
+    def test_dense_shapes_name_every_prepared_weight_at_this_tp(self):
+        from engine.profiles.glm53.drafter import dense_shapes, store_name
+        F = self.make_drafter().F
+        shapes = dense_shapes(F, 1)
+        self.assertEqual(len(shapes), 1 + 6 * F.layers)
+        self.assertEqual(shapes["fc.weight"], (F.hidden, F.hidden * len(F.target_layers)))
+        self.assertEqual(shapes["layers.0.self_attn.qkv"], ((F.heads + 2 * F.kv_heads) * F.head_dim, F.hidden))
+        self.assertEqual(store_name("layers.0.self_attn.qkv"), "DFlash2Qwen3ForCausalLM/model.layers.0.self_attn.qkv_proj")
+        self.assertEqual(store_name("fc.weight"), "DFlash2Qwen3ForCausalLM/model.fc")
+        half = dense_shapes(F, 2)
+        self.assertEqual(half["layers.0.self_attn.o_proj.weight"], (F.hidden, F.heads // 2 * F.head_dim))
 
     def test_the_host_walk_crosses_once_not_twice_a_position(self):
         source = (Path(__file__).resolve().parents[1] / "engine/profiles/glm53/drafter.py").read_text()

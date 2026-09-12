@@ -1,0 +1,77 @@
+{
+  "date": "2026-09-12",
+  "scope": "ST engine decode admission, ahead-of-host state, small GPU boundaries and TP4 transport",
+  "gpu_execution": false,
+  "tests": {
+    "core_selected": 73,
+    "core_skipped": 1,
+    "integration_selected": 266,
+    "integration_skipped": 30
+  },
+  "interpreter": {
+    "status": "PASS",
+    "commit_cases": 576,
+    "vocab_cases": 52,
+    "cuda_initialized": false,
+    "source_sha256": {
+      "engine/kernels/decode_commit.py": "1cd3c0baa43b662cf08823064c2703a7d74a9e9d37023445b3926a3cab01d2bc",
+      "engine/kernels/vocab_candidates.py": "6024ed5a5c8362f2762d2ce1d831a059ef57285a6724d11988cbb60c4c04cac3"
+    }
+  },
+  "sm121_device_compile": {
+    "status": "PASS",
+    "evidence": "device compilation only",
+    "triton": "3.6.0",
+    "cuda_toolkit": "13.0",
+    "variants": 12,
+    "variant_names": [
+      "commit-0-0", "commit-0-1", "commit-1-0", "commit-1-1",
+      "commit-5-0", "commit-5-1", "commit-8-0", "commit-8-1",
+      "argmax-bf16", "argmax-fp16", "argmax-fp32", "argmax-finish"
+    ],
+    "source_sha256": {
+      "engine/kernels/decode_commit.py": "1cd3c0baa43b662cf08823064c2703a7d74a9e9d37023445b3926a3cab01d2bc",
+      "engine/kernels/vocab_candidates.py": "6024ed5a5c8362f2762d2ce1d831a059ef57285a6724d11988cbb60c4c04cac3"
+    }
+  },
+  "oneshot_extension_compile": {
+    "status": "PASS",
+    "evidence": "full Torch extension compile/load only",
+    "gpu_used": false,
+    "torch": "2.13.0+cu130",
+    "cuda": "13.0",
+    "max_elements": 262144,
+    "extension_sha256": "b0467cb14bc6b1c40204e8c70ac7cc69caec202dd00bc1b8ea6f4cfb0a511742",
+    "source_sha256": {
+      "engine/kernels/oneshot/__init__.py": "53206b1f8e4170121440f3017116612d1c0349d2168d64009be0a7749d8206db",
+      "engine/kernels/oneshot/dsv4_oneshot_ar.cu": "e024885be5b50017747ee4d964296ec165e0675eef5efe37205f34c41ddd7c26",
+      "engine/kernels/oneshot/dsv4_oneshot_transport.h": "98af9423143e50dbdba51d3c473ca62c712332d33bf5881f4a03fbf509672cc6"
+    }
+  },
+  "budget": {
+    "box_gib": 121.6,
+    "kv_gib": 12.0,
+    "snapshots": 96,
+    "slot_bytes": 227782656,
+    "rows": {
+      "4": {
+        "state_slots_gib": 1.0606956481933594,
+        "prefix_snapshots_gib": 4.237060546875,
+        "generated_boundary_staging_gib": 0.17185211181640625,
+        "paged_kv_gib": 10.935630798339844
+      },
+      "8": {
+        "state_slots_gib": 1.9092521667480469,
+        "prefix_snapshots_gib": 4.237060546875,
+        "generated_boundary_staging_gib": 0.30933380126953125,
+        "paged_kv_gib": 10.089683532714844
+      }
+    }
+  },
+  "limitations": [
+    "No full-engine GPU execution or latency measurement was run in this evidence pass.",
+    "Prefill and decode remain homogeneous steps; the change bounds prefill interference instead of enabling a mixed forward.",
+    "CUDA Graph still contains separate mHC, KDA/MLA, MoE, state and sampling nodes; semantic row-parallel collectives remain.",
+    "The dense dispatch lane for a wider decode row is still selected by the existing FP8/NVFP4 policy."
+  ]
+}

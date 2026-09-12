@@ -3,6 +3,8 @@ import importlib.util
 from types import SimpleNamespace
 import unittest
 
+from tests.image_kernels import PRESENT, REASON
+
 torch = None
 if importlib.util.find_spec("torch"):
     import torch
@@ -29,7 +31,7 @@ def legacy_conv(x, w, state):
     return y.T, table[1]
 
 
-@unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA")
+@unittest.skipUnless(torch is not None and torch.cuda.is_available() and PRESENT, "requires CUDA; " + REASON)
 class SingleConvTests(unittest.TestCase):
     def setUp(self):
         from engine.kernels.causal_conv_single import causal_conv1d_single

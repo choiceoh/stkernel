@@ -3,8 +3,10 @@ import unittest
 from pathlib import Path
 import torch
 
+from tests.image_kernels import PRESENT, REASON
 
-@unittest.skipUnless(torch.cuda.is_available(), 'CUDA required')
+
+@unittest.skipUnless(torch.cuda.is_available() and PRESENT, 'CUDA required; ' + REASON)
 class FP4InstructionsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

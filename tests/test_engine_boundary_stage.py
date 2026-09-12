@@ -12,7 +12,7 @@ import torch  # noqa: E402
 
 from engine.base.arena import Arena  # noqa: E402
 from engine.profiles.glm53.caches import Glm53Caches, layout, snapshot_layout, stage_bytes  # noqa: E402
-from test_engine_glm53 import tiny_facts  # noqa: E402
+from tests.test_engine_glm53 import tiny_facts  # noqa: E402
 
 
 class BoundaryStageTests(unittest.TestCase):

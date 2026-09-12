@@ -4,12 +4,14 @@ import unittest
 from dataclasses import replace
 from types import SimpleNamespace
 
+from tests.image_kernels import PRESENT, REASON
+
 torch = None
 if importlib.util.find_spec("torch"):
     import torch
 
 
-@unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA")
+@unittest.skipUnless(torch is not None and torch.cuda.is_available() and PRESENT, "requires CUDA; " + REASON)
 class KdaOutputNormTests(unittest.TestCase):
     def setUp(self):
         from engine.kernels.kda.output import kda_output_norm
@@ -106,7 +108,7 @@ class KdaOutputNormContractTests(unittest.TestCase):
         from engine.kernels.kda.kda import FusedRMSNormGated
         from engine.profiles.glm53 import lanes
         from engine.profiles.glm53.net import Glm53Net, Step
-        from test_engine_glm53 import tiny_facts
+        from tests.test_engine_glm53 import tiny_facts
 
         F = tiny_facts()
         comm = SimpleNamespace(rank=0, world_size=4, all_reduce=lambda x: x)

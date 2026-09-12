@@ -132,6 +132,9 @@ def rmsnorm(x: torch.Tensor, w: torch.Tensor, eps: float) -> torch.Tensor:
     return (xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + eps)).to(x.dtype) * w
 
 
+HEAD_NAME = "Glm5NextForCausalLM/lm_head"     # the pack store's name of the head's calibration (its FP8 GPTQ)
+
+
 class Glm53Net:
     def __init__(self, F: Facts, comm, lanes: Lanes, layers=None):
         if comm.world_size != TP:
@@ -209,18 +212,62 @@ class Glm53Net:
                 result[key] = f"Glm5NextForCausalLM/model.layers.{layer[1:]}.{names[suffix]}"
         return result
 
+    def smoothing_groups(self):
+        """(norm key, dense consumer keys, bf16 consumer keys) of every norm output a dense weight reads: the channel
+        smoothing of kernels/dense/smoothing divides the norm's weight and multiplies EVERY reader's columns -- a
+        reader left out would see an input it was not prepared for. KDA: in_norm -> in_proj. MLA: in_norm -> qkv_a
+        and the indexer's wk / gate (bf16); q_a_norm -> q_b and the indexer's wq_b. Dense MLP: post_norm -> gate_up.
+        A MoE layer's post_norm feeds the routed experts and the router as well, which cannot take the factor: none."""
+        F = self.F
+        groups = []
+        for L in self.layers:
+            n = f"L{L}."
+            if F.is_dsa(L):
+                groups.append((n + "in_norm", [n + "mla.qkv_a"], [n + "idx.wk", n + "idx.gate"]))
+                groups.append((n + "mla.q_a_norm", [n + "mla.q_b", n + "idx.wq_b"], []))
+            else:
+                groups.append((n + "in_norm", [n + "kda.in_proj"], []))
+            if not F.is_moe(L):
+                groups.append((n + "post_norm", [n + "mlp.gate_up"], []))
+        return groups
+
+    def smooth_inputs(self, amax_of) -> dict:
+        """Fold the calibration's channel smoothing into the norms (kernels/dense/smoothing): `amax_of(store name)`
+        gives a norm output's channel peaks or None. Returns {dense key: (smoothed weight, s_eff)} for the packs;
+        the bf16 readers are rescaled in place, the norms divided in place."""
+        from engine.kernels.dense.smoothing import fold, scales, smooth_weight
+        names = self.dense_weight_names(self.p)
+        smoothed = {}
+        for norm_key, dense_keys, bf16_keys in self.smoothing_groups():
+            if any(self.p.get(k) is None for k in dense_keys + bf16_keys + [norm_key]) or dense_keys[0] not in names:
+                continue                                                    # a layer subset (a local boot), or a reader already retired
+            amax = amax_of(names[dense_keys[0]])
+            if amax is None:
+                continue
+            readers = [self.p[k] for k in dense_keys + bf16_keys]
+            s_eff = fold(self.p[norm_key], scales(amax, readers))
+            for k in dense_keys:
+                smoothed[k] = (smooth_weight(self.p[k], s_eff), s_eff)
+            for k in bf16_keys:
+                self.p[k].copy_(smooth_weight(self.p[k], s_eff))
+        return smoothed
+
     def prepare_dense(self, store=None, *, consume_weights=False):
         """Declare and prepare the same dense families as the fleet's MK path."""
         from engine.kernels.dense import DenseLinear
         self.dense = {}
+        smoothed = self.smooth_inputs(store.amax) if store is not None else {}
         for key, name in self.dense_weight_names(self.p).items():
             weight = self.p[key]
-            self.dense[key] = DenseLinear(weight, store=store, name=name)
+            packed, smooth = smoothed.get(key, (weight, None))
+            self.dense[key] = DenseLinear(packed, store=store, name=name, smooth=smooth)
             if consume_weights:
                 self.dense[key].consume_weight(weight)
                 self.p[key]=None
         from engine.kernels.dense import FP8Linear
-        self.dense["head"] = FP8Linear(self.p["head"])
+        # the vocabulary head stays FP8 (45차: W4 there was folded); its fp8 rounding is GPTQ'd from its own calibration
+        head_fp8 = store.pack_fp8(self.p["head"], HEAD_NAME) if (store is not None and store.calibrated(HEAD_NAME)) else None
+        self.dense["head"] = FP8Linear(self.p["head"], quantized=head_fp8, name=HEAD_NAME)
         if consume_weights:
             self.dense["head"].consume_weight(self.p["head"])
             self.p["head"]=None
@@ -258,7 +305,7 @@ class Glm53Net:
 
     # -- KDA ------------------------------------------------------------------------
     def _hc_post_pre(self, L, x, res, post, comb, side):
-        if self.mhc is None or x.shape[0] > 32:
+        if self.mhc is None or x.shape[0] > 64:
             res = self.lanes.mhc_post(x, res, post, comb)
             post, comb, x = self._hc_pre(L, res, side)
             return res, post, comb, x

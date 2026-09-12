@@ -9,8 +9,20 @@ import hashlib
 import inspect
 import os
 from pathlib import Path
+from typing import NamedTuple
 
 import torch
+
+
+class Need(NamedTuple):
+    """A calibration blob a boot has to sum, and how much of it. `hessian` False is a blob whose Gram sums already
+    fit the served weight but that predates the channel peaks the smoothing reads (kernels/dense/smoothing): the
+    peaks are [K] floats beside a [K, K] Hessian that stays on disk, so summing them costs kilobytes instead of the
+    gigabytes a whole Hessian would take from the boot's budget."""
+    key: str
+    start: int
+    width: int
+    hessian: bool = True
 
 
 class PackStore:
@@ -18,32 +30,154 @@ class PackStore:
         self.root, self.rank = Path(root), rank
         self.stats = Counter()
         self.read_files = set()
+        self._factor_entry = None                # (identity, factor) of the last weight: its two lanes share one factorisation
         from engine.kernels.dense import pack_w4
         self.algorithm = hashlib.sha256(
             Path(__file__).with_name('packing.py').read_bytes()
             + inspect.getsource(pack_w4).encode()).hexdigest()
 
-    def pack(self, weight, name, *, rank=None):
+    TILE = 4096                                  # DenseLinear packs K in tiles of this width, one calibration blob each
+    FACTOR_BYTES = 256 << 20                     # the largest inverse factor kept between a weight's two lanes (K <= 8192)
+
+    @staticmethod
+    def tiles(name, cols):
+        """(blob key, first column, width) a dense weight of `cols` columns is calibrated in: one blob over the whole K
+        -- a weight wider than the decode kernel's tile is packed by one GPTQ over its full Hessian (pack_wide), so
+        the calibration covers the columns' correlations across the tiles."""
+        return [Need(name, 0, cols)]
+
+    def calibration_path(self, key, rank=None):
+        return self.root/'mkcalib'/f'rank{self.rank if rank is None else rank}'/(key+'.pt')
+
+    def calibrated(self, name):
+        """Whether this store holds a calibration blob for `name` (any shape: `pack` checks the fit)."""
+        return self.calibration_path(name).is_file()
+
+    def missing_calibration(self, name, cols):
+        """The blobs of `name` this store lacks: what a calibrating boot must sum. A blob that exists but does not fit
+        the weight is reported by name -- `pack` refuses it, so the boot says which file to remove."""
+        missing, foreign = [], []
+        for tile in self.tiles(name, cols):
+            key, start, width = tile.key, tile.start, tile.width
+            path = self.calibration_path(key)
+            if not path.is_file():
+                missing.append(Need(key, start, width))
+                continue
+            blob = torch.load(path, map_location='cpu', mmap=True, weights_only=True)
+            hessian = blob.get('H')
+            if (hessian is None or tuple(hessian.shape) != (width, width) or int(blob.get('ntok', 0)) <= 0
+                    or blob.get('name', key) != key or not hessian.is_floating_point()):
+                foreign.append(str(path))
+            elif blob.get('amax') is None:                  # a blob from before the peaks: only they are summed, its Hessian packs GPTQ meanwhile
+                missing.append(Need(key, start, width, hessian=False))
+        if foreign:
+            raise ValueError(f"calibration blobs that do not fit {name} [{cols} columns]: remove them and reboot -- {foreign}")
+        return missing
+
+    def _hessian(self, name, k, smooth=None):
+        """The calibration blob of `name` as a finite [k, k] float Hessian, or None when the store has none; with
+        `smooth` [k] the Hessian of the input divided by it (the weight was multiplied by it: kernels/dense/smoothing)."""
+        path = self.calibration_path(name)
+        if not path.is_file():
+            return None
+        self.read_files.add(path)
+        blob = torch.load(path, map_location='cpu', mmap=True, weights_only=True)
+        hessian = blob['H']
+        if (tuple(hessian.shape) != (k,k) or int(blob['ntok']) <= 0
+                or blob.get('name', name) != name or not hessian.is_floating_point()
+                or not torch.isfinite(hessian).all()):
+            raise ValueError(f'incompatible calibration: {path} for a [.., {k}] weight')
+        if smooth is not None:
+            from engine.kernels.dense.smoothing import smooth_hessian
+            hessian = smooth_hessian(hessian.float(), smooth.cpu())
+        return hessian
+
+    def amax(self, name):
+        """The channel peaks [k] of `name`'s calibrated input (unsmoothed domain), or None when the blob has none."""
+        path = self.calibration_path(name)
+        if not path.is_file():
+            return None
+        blob = torch.load(path, map_location='cpu', mmap=True, weights_only=True)
+        amax = blob.get('amax')
+        return None if amax is None else amax.float()
+
+    @staticmethod
+    def _smooth_sha(smooth):
+        return 'none' if smooth is None else hashlib.sha256(smooth.detach().float().cpu().contiguous().numpy()).hexdigest()
+
+    def _factor(self, name, hessian, smooth_sha, device):
+        """The column order and inverse factor of `name`'s Hessian (packing.gptq_factor), computed once for the
+        weight and reused by its other lane: the W4 pack and the FP8 pack walk the same columns of the same H, and
+        the factorisation is a fifth of a tile-wide pack. One entry -- the next weight replaces it, and a factor
+        above FACTOR_BYTES (the drafter's fc is 1.6 GiB) is used and dropped, because a boot packs beside a full
+        arena. `device`: where the fp64 work runs -- the weight's device for a tile-wide K, the CPU above it."""
+        from engine.kernels.dense import GPTQ_ACT_ORDER
+        from engine.kernels.dense.packing import gptq_factor
+        identity = (name, smooth_sha, tuple(hessian.shape), str(device))
+        if self._factor_entry is not None and self._factor_entry[0] == identity:
+            self.stats['factor_reused'] += 1
+            return self._factor_entry[1]
+        self._factor_entry = None                                   # the previous weight's, freed before this one's
+        factor = gptq_factor(hessian, act_order=GPTQ_ACT_ORDER, factor_device=device)
+        self.stats['factor_built'] += 1
+        if factor[1].numel() * factor[1].element_size() <= self.FACTOR_BYTES:
+            self._factor_entry = (identity, factor)
+        return factor
+
+    def pack_wide(self, weight, name, *, rank=None, smooth=None):
+        """The tiles of a weight wider than the decode kernel's K, from one GPTQ over the whole weight and its full
+        calibration Hessian (kernels/dense.pack_w4_wide); cached as one blob under the wide identity."""
+        from engine.kernels.dense import W4Pack, pack_w4_wide
+        rank = self.rank if rank is None else rank
+        n, k = weight.shape
+        hessian = self._hessian(name, k, smooth)
+        if hessian is None:
+            raise ValueError(f"pack_wide needs the calibration of {name}")
+        raw = weight.detach().contiguous().view(torch.uint8).cpu().numpy()
+        identity = dict(version=2, weight=hashlib.sha256(raw).hexdigest(), shape=(n,k), name=name, wide=True,
+                        calibration=hashlib.sha256(hessian.contiguous().numpy()).hexdigest(),
+                        per_row=not name.startswith('DFlash2Qwen3ForCausalLM/'), algorithm=self.algorithm,
+                        smooth=self._smooth_sha(smooth))
+        key = hashlib.sha256(repr(identity).encode()).hexdigest()
+        cache = self.root/'st-dense-packs'/(key+'.pt')
+        if cache.is_file():
+            self.read_files.add(cache)
+            blob = torch.load(cache, map_location='cpu', mmap=True, weights_only=True)
+            if blob['identity'] != identity:
+                raise ValueError(f'dense pack identity mismatch: {cache}')
+            packs = []
+            for d, s in zip(blob['data'], blob['scale']):
+                tile = self.decode(dict(data=d, scale=s, rowscale=blob['rowscale']), weight.device, n, self.TILE)
+                packs.append(W4Pack(tile.data, tile.scale, tile.rowscale, n, self.TILE, True))
+            self.stats['cache'] += 1
+        else:
+            packs = pack_w4_wide(weight, hessian, per_row=identity['per_row'],
+                                 factor=self._factor(name, hessian, identity['smooth'], 'cpu'))
+            self.stats['built'] += 1
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            temporary = cache.with_suffix(f'.{os.getpid()}.tmp')
+            try:
+                torch.save(dict(identity=identity, data=[p.data.cpu() for p in packs], scale=[p.scale.cpu() for p in packs],
+                                rowscale=packs[0].rowscale.cpu()), temporary)
+                os.replace(temporary,cache)
+            finally:
+                temporary.unlink(missing_ok=True)
+        self.stats['gptq'] += 1
+        return packs
+
+    def pack(self, weight, name, *, rank=None, smooth=None):
         from engine.kernels.dense import pack_w4
         rank = self.rank if rank is None else rank
         per_row = not name.startswith('DFlash2Qwen3ForCausalLM/')
         n, k = weight.shape
-        path = self.root/'mkcalib'/f'rank{rank}'/(name+'.pt')
-        hessian = None
-        if path.is_file():
-            self.read_files.add(path)
-            blob = torch.load(path, map_location='cpu', mmap=True, weights_only=True)
-            hessian = blob['H']
-            if (tuple(hessian.shape) != (k,k) or int(blob['ntok']) <= 0
-                    or blob.get('name', name) != name or not hessian.is_floating_point()
-                    or not torch.isfinite(hessian).all()):
-                raise ValueError(f'incompatible calibration: {path} for {tuple(weight.shape)}')
+        hessian = self._hessian(name, k, smooth)
         raw = weight.detach().contiguous().view(torch.uint8).cpu().numpy()
         weight_sha = hashlib.sha256(raw).hexdigest()
         calibration_sha = (hashlib.sha256(hessian.contiguous().numpy()).hexdigest()
                            if hessian is not None else 'rtn')
         identity = dict(version=2, weight=weight_sha, shape=(n,k), name=name,
-                        calibration=calibration_sha, per_row=per_row, algorithm=self.algorithm)
+                        calibration=calibration_sha, per_row=per_row, algorithm=self.algorithm,
+                        smooth=self._smooth_sha(smooth))
         key = hashlib.sha256(repr(identity).encode()).hexdigest()
         cache = self.root/'st-dense-packs'/(key+'.pt')
         pack = None
@@ -53,6 +187,9 @@ class PackStore:
             if blob['identity'] != identity:
                 raise ValueError(f'dense pack identity mismatch: {cache}')
             pack = self.decode(blob, weight.device, n, k)
+            if hessian is not None:
+                from dataclasses import replace
+                pack = replace(pack, calibrated=True)
             self.stats['cache'] += 1
         else:
             kind = 'gptq' if hessian is not None else 'rtn'
@@ -76,8 +213,13 @@ class PackStore:
                 self.stats['legacy'] += 1
                 break
             if pack is None:
-                pack = pack_w4(weight, hessian=hessian, per_row=per_row)
+                factor = (None if hessian is None else
+                          self._factor(name, hessian, identity['smooth'], weight.device))
+                pack = pack_w4(weight, hessian=hessian, per_row=per_row, factor=factor)
                 self.stats['built'] += 1
+            elif hessian is not None:
+                from dataclasses import replace
+                pack = replace(pack, calibrated=True)
             cache.parent.mkdir(parents=True, exist_ok=True)
             temporary = cache.with_suffix(f'.{os.getpid()}.tmp')
             try:
@@ -88,6 +230,42 @@ class PackStore:
                 temporary.unlink(missing_ok=True)
         self.stats['gptq' if hessian is not None else 'rtn'] += 1
         return pack
+
+    def pack_fp8(self, weight, name, *, rank=None, smooth=None):
+        """The FP8 lane's (q e4m3, UE8M0 block scales) of a calibrated weight: GPTQ on the fp8 grid (packing.fp8_gptq),
+        cached under the weight's, the Hessian's and the packer's identity; None when the store has no calibration."""
+        from engine.kernels.dense.packing import fp8_gptq
+        n, k = weight.shape
+        hessian = self._hessian(name, k, smooth)
+        if hessian is None:
+            return None
+        raw = weight.detach().contiguous().view(torch.uint8).cpu().numpy()
+        identity = dict(version=2, weight=hashlib.sha256(raw).hexdigest(), shape=(n,k), name=name, kind='fp8',
+                        calibration=hashlib.sha256(hessian.contiguous().numpy()).hexdigest(), algorithm=self.algorithm,
+                        smooth=self._smooth_sha(smooth))
+        key = hashlib.sha256(repr(identity).encode()).hexdigest()
+        cache = self.root/'st-dense-packs'/(key+'.pt')
+        if cache.is_file():
+            self.read_files.add(cache)
+            blob = torch.load(cache, map_location='cpu', mmap=True, weights_only=True)
+            if blob['identity'] != identity:
+                raise ValueError(f'dense pack identity mismatch: {cache}')
+            q, scale = blob['q'].to(weight.device), blob['scale'].to(weight.device)
+            self.stats['fp8_cache'] += 1
+        else:
+            device = 'cpu' if k > self.TILE else weight.device
+            q, scale = fp8_gptq(weight, hessian.to(weight.device),
+                                factor=self._factor(name, hessian, identity['smooth'], device))
+            self.stats['fp8_built'] += 1
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            temporary = cache.with_suffix(f'.{os.getpid()}.tmp')
+            try:
+                torch.save(dict(identity=identity, q=q.cpu(), scale=scale.cpu()), temporary)
+                os.replace(temporary,cache)
+            finally:
+                temporary.unlink(missing_ok=True)
+        self.stats['fp8_gptq'] += 1
+        return q, scale
 
     def release_pages(self):
         """All mmap readers have returned; return their clean UMA file cache."""

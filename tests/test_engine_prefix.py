@@ -69,6 +69,72 @@ def run_to_end(r, seq):
         r.prefix.check()                                     # the two resources' invariants hold at every step
 
 
+class ResetTests(unittest.TestCase):
+    """An operator throwing the cache away, because the tokens cannot tell them it went stale."""
+
+    def test_reset_returns_every_boundary_s_blocks_and_snapshots(self):
+        r, cache = runner(blocks=16, snapshots=4)
+        r.submit(0, 9, now=0, ids=list(range(9)))            # boundaries at 4 and 8
+        run_to_end(r, 0)
+        self.assertEqual(len(cache.entries), 2)
+        self.assertEqual((r.kv.cached, r.kv.anonymous), (2, 14))
+        free_before = len(cache.free_snaps)
+
+        report = r.reset_prefix()
+
+        self.assertEqual((report["entries"], report["faded"], report["kept_spilling"]), (2, 0, 0))
+        self.assertEqual(cache.entries, {})
+        self.assertEqual((r.kv.cached, r.kv.anonymous), (0, 16), "the blocks are anonymous again, not lost")
+        self.assertEqual(len(cache.free_snaps), free_before + 2)
+        cache.check()
+
+    def test_a_prompt_after_a_reset_reuses_nothing(self):
+        r, cache = runner(blocks=16, snapshots=4)
+        ids = list(range(9))
+        r.submit(0, 9, now=0, ids=ids)
+        run_to_end(r, 0)
+        self.assertEqual(cache.lookup(ids)[0], 8, "before the reset it would adopt eight tokens")
+        r.reset_prefix()
+        self.assertEqual(cache.lookup(ids), (0, None, None))
+
+    def test_reset_is_harmless_on_an_empty_cache_and_says_so(self):
+        r, cache = runner()
+        self.assertEqual(r.reset_prefix(),
+                         {"entries": 0, "faded": 0, "kept_spilling": 0, "tier_keys": [], "tier_forgotten": 0})
+
+    def test_a_boundary_being_written_to_the_tier_is_kept_and_counted(self):
+        # Its blocks and its snapshot ARE the bytes in flight: taking them would hand the tier a
+        # slot whose KV already belongs to somebody else.
+        r, cache = runner(blocks=16, snapshots=4)
+        r.submit(0, 9, now=0, ids=list(range(9)))
+        run_to_end(r, 0)
+        h = next(iter(cache.entries))
+        cache.entries[h].spilling = True
+        cache.pool.pin(cache.entries[h].blocks)
+
+        report = r.reset_prefix()
+
+        self.assertEqual(report["kept_spilling"], 1)
+        self.assertEqual(list(cache.entries), [h])
+        cache.entries[h].spilling = False
+        cache.pool.unpin(cache.entries[h].blocks)
+        cache.check()
+
+    def test_the_tier_keys_come_back_so_the_disk_forgets_too(self):
+        # A reset that left the boundary on NVMe would not be a reset: the next prompt restores it.
+        r, cache = runner(blocks=16, snapshots=4)
+        r.submit(0, 9, now=0, ids=list(range(9)))
+        run_to_end(r, 0)
+        h = next(iter(cache.entries))
+        cache.hold_tier(h, 4242)
+
+        report = r.reset_prefix()
+
+        self.assertEqual(report["tier_keys"], [4242])
+        self.assertEqual(report["tier_forgotten"], 0, "this runner has no tier to delete from")
+        self.assertEqual(cache.tier_holder(4242), None)
+
+
 class PoolOwnershipTests(unittest.TestCase):
     def test_a_claim_keeps_blocks_in_the_free_list_under_the_boundary_s_name(self):
         pool = BlockPool(8, BLOCK, 2, 8)
@@ -346,6 +412,107 @@ class PrefixCacheTests(unittest.TestCase):
         run_to_end(r, 0)
         self.assertIsNone(r.shared_ahead(ids, (), above=8))             # cached now: nothing to wait for
 
+    def test_two_boundaries_cannot_share_a_tier_slot(self):
+        """The tier indexes by 56 bits of the hash. Two boundaries naming one slot must not be served from it --
+        the loser would get the winner's KV, quietly, across the tenant separation the salt exists to draw."""
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=32, snapshots=3)
+        r.kv.attach_storage(Storage(32 * 4), 4)
+        r.prefix_tier = TieredKV(r.kv, MemoryTier())
+        r.spill_low_water = 10
+        r.submit(0, 12, now=0, ids=list(range(12)))
+        run_to_end(r, 0)
+        r.step(now=0); r.step(now=0)
+        h12 = cache.chain(list(range(12)))[12]
+        key = r.tier_key(h12)
+        self.assertEqual(cache.tier_holder(key), h12, "the boundary that spilled owns its slot")
+
+        # a second boundary whose hash begins with the same seven bytes
+        twin = h12[:7] + bytes((h12[7] ^ 0xff,)) + h12[8:]
+        self.assertNotEqual(twin, h12)
+        self.assertEqual(r.tier_key(twin), key)
+        with self.assertRaises(ValueError):
+            cache.hold_tier(twin, key)                       # the slot is taken: it cannot be double-booked
+        self.assertNotIn(twin, cache.tier_keys)
+
+        # and a restore that somehow names the taken slot is refused rather than served the other one's bytes
+        cache.tier_keys[twin] = key                          # as a stale mapping would leave it
+        with self.assertRaisesRegex(ValueError, "another boundary"):
+            r.restore_begin(2, twin, 12)
+        self.assertNotIn(twin, cache.tier_keys, "and the stale mapping is dropped on the way out")
+        self.assertEqual(cache.tier_holder(key), h12, "the real owner is untouched")
+        self.assertIn(h12, cache.tier_keys)
+
+    def test_a_boundary_whose_slot_is_taken_is_not_written_at_all(self):
+        """Not even attempted: writing would put this boundary's bytes over the owner's on disk, and only then
+        would anything notice. The loser stays in memory, which is what it was."""
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=32, snapshots=3)
+        r.kv.attach_storage(Storage(32 * 4), 4)
+        tier = MemoryTier()
+        r.prefix_tier = TieredKV(r.kv, tier)
+        r.spill_low_water = 0                                # nothing spills while the boundary is being made
+        r.submit(0, 12, now=0, ids=list(range(12)))
+        run_to_end(r, 0)
+        h12 = cache.chain(list(range(12)))[12]
+        stranger = h12[:7] + bytes((h12[7] ^ 0xff,)) + h12[8:]
+        cache.hold_tier(stranger, r.tier_key(h12))           # the slot is somebody else's before the spill can run
+        r.spill_low_water = 10
+        r.step(now=0); r.step(now=0)
+        self.assertEqual(r.prefix_spills, 0, "it must not have written")
+        self.assertEqual(tier.keys(), [], "and must not have touched the tier at all")
+        self.assertNotIn(h12, cache.tier_keys)
+        self.assertIn(h12, cache.entries, "the loser is still a memory boundary")
+        self.assertEqual(cache.tier_holder(r.tier_key(h12)), stranger)
+
+    def test_a_slot_taken_while_the_write_was_in_flight_goes_to_whoever_landed(self):
+        """The write is issued on the tier's thread and lands a step or more later. If the slot changed hands in
+        between, the bytes on the tier are the LANDING one's -- so the earlier owner is what is gone, and saying
+        otherwise would leave a mapping that reads somebody else's KV."""
+        import threading
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=32, snapshots=3)
+        r.kv.attach_storage(Storage(32 * 4), 4)
+        gate = threading.Event()
+        tier = MemoryTier(gate=gate)
+        r.prefix_tier = TieredKV(r.kv, tier)
+        r.spill_low_water = 0
+        r.submit(0, 12, now=0, ids=list(range(12)))
+        run_to_end(r, 0)
+        h12 = cache.chain(list(range(12)))[12]
+        r.spill_low_water = 10
+        r.step(now=0)                                        # the write is issued and waits on the gate
+        future = r._spills[h12]
+        stranger = h12[:7] + bytes((h12[7] ^ 0xff,)) + h12[8:]
+        cache.hold_tier(stranger, r.tier_key(h12))           # the slot changes hands while the bytes are in flight
+        gate.set()
+        future.result(timeout=10)                            # the bytes are on the tier now
+        r.step(now=0)                                        # and this is the step that lands it
+        self.assertEqual(r.prefix_spills, 1)
+        self.assertEqual(cache.tier_holder(r.tier_key(h12)), h12, "the one whose bytes are there owns the slot")
+        self.assertNotIn(stranger, cache.tier_keys, "and the one that was displaced is not left pointing at them")
+
+    def test_a_tier_record_that_does_not_name_its_own_slot_is_not_adopted_at_boot(self):
+        """`load_prefix_tier` trusts the disk. A record whose hash does not hash to its own key is not this
+        cache's -- a different hash form, or a slot written by something else."""
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=32, snapshots=3)
+        r.kv.attach_storage(Storage(32 * 4), 4)
+        tier = MemoryTier()
+        r.prefix_tier = TieredKV(r.kv, tier)
+        good, stranger = bytes(range(20)), bytes(range(1, 21))
+        for key, h in ((r.tier_key(good), good), (12345, stranger)):
+            tier.index[str(key)] = True                      # as `keys()` reads them back at boot
+            tier.records[key] = {"hash": h.hex(), "tokens": 4}
+        self.assertNotEqual(r.tier_key(stranger), 12345, "the stranger's record does not name its own slot")
+        r.load_prefix_tier()
+        self.assertEqual(list(cache.tier_keys), [good])
+        self.assertEqual(cache.tier_holder(r.tier_key(good)), good)
+
     def test_a_leaf_spills_to_the_prefix_tier_and_a_later_prompt_restores_it_with_its_snapshot(self):
         from test_engine_tier import MemoryTier, Storage
         from engine.base.tiered_kv import TieredKV
@@ -449,6 +616,73 @@ class ChainTests(unittest.TestCase):
         self.assertEqual(cache.lookup_chain(chain, 14)[0], 12)
         self.assertEqual(cache.hits, hits + 1)
         self.assertIsNone(cache.tier_lookup_chain(chain, 14, 12))
+
+
+class SnapshotPressureTests(unittest.TestCase):
+    """The meters for a resource with no spacing policy: a prompt has one block boundary every BLOCK tokens and the
+    engine has `PREFIX_SNAPSHOTS` slots, so a long enough prompt evicts its own earlier checkpoints as it goes
+    (production: 170 boundaries in a 128K prompt against 96 slots). Nothing counted that before."""
+
+    def test_a_fresh_cache_has_displaced_nobody(self):
+        """`last_fade` exists from construction: a reader before the first `take_snapshot` gets None, not an
+        AttributeError. Found by tools/mutate.py -- dropping the initialiser killed no test."""
+        c = PrefixCache(BLOCK, CHUNK, 2)
+        self.assertIsNone(c.last_fade)
+        self.assertEqual(c.snapshot_denials, 0)
+
+    def test_a_free_slot_fades_nobody(self):
+        c = PrefixCache(BLOCK, CHUNK, 2)
+        c.bind(BlockPool(16, BLOCK, 4, 16))
+        self.assertIsNotNone(c.take_snapshot())
+        self.assertIsNone(c.last_fade)
+        self.assertEqual(c.snapshot_denials, 0)
+
+    def test_taking_the_last_slot_names_who_gave_it_up(self):
+        c = PrefixCache(BLOCK, CHUNK, 1)
+        c.bind(BlockPool(16, BLOCK, 4, 16))
+        h = c.chain(list(range(4)))[4]
+        c.insert(h, (0,), BLOCK, c.take_snapshot())
+        snap = c.take_snapshot()                              # nothing free: the boundary is faded for it
+        self.assertIsNotNone(snap)
+        self.assertEqual(c.last_fade, h)
+        self.assertEqual(c.snapshot_denials, 0)
+        c.give_snapshot(snap)
+        self.assertIsNotNone(c.take_snapshot())               # a free slot again: the name does not linger
+        self.assertIsNone(c.last_fade)
+
+    def test_a_denial_is_counted_when_nobody_can_give_a_slot_up(self):
+        c = PrefixCache(BLOCK, CHUNK, 1)
+        c.bind(BlockPool(16, BLOCK, 4, 16))
+        h = c.chain(list(range(4)))[4]
+        c.insert(h, (0,), BLOCK, c.take_snapshot())
+        c.spill_begin(h)                                      # its snapshot is being read: `_victim` will not take it
+        self.assertIsNone(c.take_snapshot())
+        self.assertEqual(c.snapshot_denials, 1)
+        self.assertIsNone(c.last_fade)
+
+    def test_a_prompt_longer_than_the_slots_evicts_its_own_boundaries(self):
+        r, cache = runner(blocks=32, snapshots=2)             # 24 tokens is six boundaries; there are two slots
+        r.submit(0, 24, now=0, ids=list(range(24)))
+        run_to_end(r, 0)
+        self.assertEqual(r.snapshot_self_evicts, 4)           # six boundaries, two slots: four checkpoints computed and dropped
+        self.assertEqual(len(cache.entries), 2)               # counted from both places a boundary is taken: `_marks` and `_checkpoint`
+        self.assertEqual(cache.snapshot_denials, 0)           # a slot was always freeable: this is waste, not refusal
+
+    def test_a_prompt_that_fits_evicts_nothing_of_its_own(self):
+        r, _ = runner(blocks=32, snapshots=8)
+        r.submit(0, 24, now=0, ids=list(range(24)))
+        run_to_end(r, 0)
+        self.assertEqual(r.snapshot_self_evicts, 0)
+
+    def test_displacing_another_row_s_boundary_is_not_a_self_evict(self):
+        r, cache = runner(blocks=32, snapshots=1)
+        r.submit(0, BLOCK, now=0, ids=list(range(BLOCK)))     # one boundary each: neither prompt can displace its own
+        run_to_end(r, 0)
+        self.assertEqual(len(cache.entries), 1)
+        r.submit(1, BLOCK, now=0, ids=list(range(100, 100 + BLOCK)))
+        run_to_end(r, 1)
+        self.assertEqual(list(cache.entries), [cache.chain(list(range(100, 100 + BLOCK)))[BLOCK]])   # the slot changed hands
+        self.assertEqual(r.snapshot_self_evicts, 0)
 
 
 if __name__ == "__main__":

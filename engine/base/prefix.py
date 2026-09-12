@@ -1,13 +1,17 @@
 """Prefix reuse: a prompt that begins the way an earlier one did is not prefilled again (base).
 
-The unit is a chunk -- the prefill chunk the contract already uses, a multiple of the block size --
-because a linear-attention model's state exists only where a prefill stopped: at every chunk boundary
-the runner asks the model for a checkpoint (its position rings at that boundary, a fixed-size snapshot
-in the arena) and claims the blocks before it. A later prompt is hashed chunk by chunk along the same
-chain; the longest cached boundary below its own length gives it those blocks (adopted, read-only:
-every position in them is already written, and nothing writes there again) and its state (restored
-into its own slot), and it prefills from there. Only whole chunks are shared: the boundary is never
-the prompt's end, so at least one token is always computed and the first token's logits are real.
+The unit is the pool's BLOCK (768 tokens here), the same unit production's APC uses -- not the
+prefill chunk. It was the chunk once, and 45차 §23 made it the block: a 5,000-token prompt shares
+its first 4,608 tokens instead of nothing, which is most prompts. A linear-attention model's state
+exists only where a prefill stopped, so a boundary INSIDE a step has to be asked for on the way
+(`runner._marks` names {position: snapshot} before the step and the model takes them as it passes);
+the boundary at a step's end is copied out of the rings afterwards. Either way a boundary owns a
+fixed-size snapshot in the arena and claims the blocks before it. A later prompt is hashed block by
+block along the same chain; the longest cached boundary below its own length gives it those blocks
+(adopted, read-only: every position in them is already written, and nothing writes there again) and
+its state (restored into its own slot), and it prefills from there. Only whole blocks are shared:
+the boundary is never the prompt's end, so at least one token is always computed and the first
+token's logits are real.
 
 Every rank runs the same admissions in the same order, so the cache's state is the same on every
 rank without a message (the hash is of token ids; the clock is a counter). Nothing is pinned: a
@@ -90,8 +94,11 @@ class PrefixCache:
         self.tick = 0
         self.hits = self.misses = self.evictions = 0
         self.fades = 0                            # boundaries that gave a snapshot away and kept their blocks
+        self.snapshot_denials = 0                 # times `take_snapshot` had nothing to give: every entry was spilling
+        self.last_fade: "bytes | None" = None     # the boundary the last `take_snapshot` displaced, for the caller to recognise
         self.pool = None
         self.tier_keys: "dict[bytes, int]" = {}   # boundaries whose blocks + snapshot the prefix tier holds (base/runner spills them)
+        self.tier_owner: "dict[int, bytes]" = {}  # and the inverse, which is what makes the tier's short key safe (below)
         self._by_blocks: "dict[tuple, bytes]" = {}   # block list -> hash: an entry's parent is the one a block shorter
         self._on_block: "dict[int, list]" = {}    # block -> the boundaries that hold it, in the order they took it: who stops
         # being one when it leaves. A LIST, not a set: `bytes` hash randomly per process, so a set would be walked in a
@@ -271,12 +278,23 @@ class PrefixCache:
 
     def take_snapshot(self) -> "int | None":
         """A free snapshot slot, taking one from a boundary if none is free (`_victim`). The boundary keeps its blocks
-        when the tier has its state (`_fade`) and is gone when it does not."""
+        when the tier has its state (`_fade`) and is gone when it does not.
+
+        `last_fade` names whoever was displaced, so the caller can tell whether it just evicted one of its own earlier
+        boundaries -- a long prompt has more block boundaries than there are slots (a 128K prompt: 170 against 96), and
+        `_victim` sends the unadopted ones first, which are exactly its own. That is the intended order (45차 §23: the
+        system prompt every conversation shares must survive one long prompt), but the checkpoints it throws away were
+        still computed, and until `snapshot_self_evicts` is read nobody knows how much of that work is being wasted."""
+        self.last_fade = None
         if not self.free_snaps and self.entries:
             victim = self._victim()
             if victim is not None:
                 self._fade(victim)
-        return self.free_snaps.pop() if self.free_snaps else None
+                self.last_fade = victim
+        if self.free_snaps:
+            return self.free_snaps.pop()
+        self.snapshot_denials += 1
+        return None
 
     def give_snapshot(self, snap: int) -> None:
         """A slot whose contents belong to nobody (an aborted checkpoint, a boundary that is gone)."""
@@ -377,6 +395,43 @@ class PrefixCache:
         self.pool.disclaim(entry.blocks, FADED)
         self.version += 1
 
+    def reset(self) -> dict:
+        """Forget every boundary -- entries, faded, and the tier slots they name.
+
+        vLLM has `/reset_prefix_cache` and this cache had nothing: `unpin_all` only releases an
+        operator's pin, and `drop` needs a name. An operator needs this when a prompt's MEANING
+        changed under an unchanged prefix -- a tool list, a retrieved document, an edited system
+        template -- because the token ids are identical, so every hash still matches and nothing
+        in the engine can notice. Saying so out loud is the only way to clear it.
+
+        A boundary being written to the tier right now keeps its blocks and its snapshot: those
+        bytes are in flight (`spilling`), and taking them would hand the tier a slot whose KV is
+        already somebody else's. It is counted, not hidden.
+
+        Returns what went, and the tier keys the caller must now delete -- the cache knows which
+        slots existed, the runner owns the disk.
+        """
+        report = {"entries": 0, "faded": 0, "kept_spilling": 0, "tier_keys": []}
+        for h in list(self.entries) + list(self.faded):
+            was_faded = h in self.faded
+            entry = self.entries.get(h) or self.faded.get(h)
+            if entry is None:                           # forget_tier already took it: a faded one whose copy was its all
+                continue
+            if entry.spilling:
+                report["kept_spilling"] += 1
+                continue
+            key = self.forget_tier(h)                   # NOTE: on a faded boundary this already calls `_forget`
+            if key is not None:
+                report["tier_keys"].append(key)
+            if h in self.entries:
+                self._drop(h)
+                report["entries"] += 1
+            elif was_faded:
+                if h in self.faded:
+                    self._forget(h)
+                report["faded"] += 1
+        return report
+
     def drop(self, h: bytes) -> None:
         """Drop a boundary by name: a tier read that failed, a copy the tier threw away."""
         if h in self.entries:
@@ -384,10 +439,32 @@ class PrefixCache:
         elif h in self.faded:
             self._forget(h)
 
+    def tier_holder(self, key: int) -> "bytes | None":
+        """Which boundary the tier's slot `key` belongs to, or None.
+
+        The tier indexes by an int -- the first seven bytes of a boundary's hash (base/runner.tier_key) -- so two
+        boundaries could name the same slot. 56 bits puts that past 2^28 entries and the tier holds thousands, but the
+        failure is handing one tenant the other's KV, quietly, which is exactly what the tenant salt exists to stop.
+        So the slot has ONE owner: a spill onto a taken slot does not happen (base/runner), and a restore asks here
+        first. Mooncake solves the same shape -- short physical keys for long logical ones -- with store-if-not-exists
+        and a byte comparison on conflict; at our size one owner is enough (engine/MOONCAKE_COMPARISON_20260912.md).
+        """
+        return self.tier_owner.get(key)
+
+    def hold_tier(self, h: bytes, key: int) -> None:
+        """Record that the tier's slot `key` now holds boundary `h`. The caller has checked the slot was free."""
+        held = self.tier_owner.get(key)
+        if held is not None and held != h:
+            raise ValueError(f"prefix tier slot {key} already holds {held.hex()[:8]}")
+        self.tier_keys[h] = key
+        self.tier_owner[key] = h
+
     def forget_tier(self, h: bytes) -> "int | None":
         """The tier no longer holds this boundary. Returns the key it had. A faded boundary whose slot is gone too
         has nothing left anywhere, so it stops holding its blocks."""
         key = self.tier_keys.pop(h, None)
+        if key is not None and self.tier_owner.get(key) == h:
+            del self.tier_owner[key]
         entry = self.entries.get(h)
         if entry is not None:
             entry.spilled = False                       # it is memory-only again, and leaves before one that is not

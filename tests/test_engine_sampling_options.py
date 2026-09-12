@@ -1,6 +1,7 @@
 """CPU checks for the OpenAI-dialect sampling options (45차 §23 A3/A4/B4): validation, penalties and bias on raw
 logits, top-k/top-p distributions, seeded determinism, rejection sampling's output law, raw logprobs."""
 import sys
+import types
 import unittest
 from pathlib import Path
 
@@ -213,6 +214,76 @@ class OptionTests(unittest.TestCase):
         self.assertEqual([i for i, _ in top], [1, 2])
 
 
+class ReasoningBudgetTests(unittest.TestCase):
+    """A thinking block that eats the whole limit leaves no answer (45차 §46)."""
+
+    END = 6
+
+    def engine(self, options):
+        from types import SimpleNamespace
+        from engine.profiles.glm53.adapter import Glm53Engine
+        e = Glm53Engine(None, SimpleNamespace(device=torch.device("cpu")), SimpleNamespace(spec_k=5))
+        e._bind_options(0, options)
+        return e
+
+    def allowed(self, e, generated, drafts=()):
+        e.tokens[0], e.prompt_len[0] = [1, 2] + list(generated), 2
+        out = e._row_logits(0, torch.ones(8), 0, list(drafts))
+        return [i for i, v in enumerate(out.tolist()) if v != float("-inf")]
+
+    def test_under_the_budget_nothing_is_forced(self):
+        e = self.engine({"reasoning_budget": 4, "reasoning_end": self.END})
+        self.assertEqual(self.allowed(e, [5, 5, 5]), list(range(8)))
+
+    def test_the_budget_spent_leaves_only_the_way_out(self):
+        e = self.engine({"reasoning_budget": 4, "reasoning_end": self.END})
+        self.assertEqual(self.allowed(e, [5, 5, 5, 5]), [self.END])
+        self.assertEqual(self.allowed(e, [5, 5, 5, 5, 5]), [self.END], "and it stays forced")
+
+    def test_this_step_s_drafts_count_towards_it(self):
+        e = self.engine({"reasoning_budget": 4, "reasoning_end": self.END})
+        self.assertEqual(self.allowed(e, [5, 5, 5], drafts=[5, 5]), [self.END])
+
+    def test_a_block_that_closed_itself_is_never_asked_again(self):
+        e = self.engine({"reasoning_budget": 4, "reasoning_end": self.END})
+        self.assertEqual(self.allowed(e, [5, 5, self.END, 5]), list(range(8)))
+        self.assertFalse(e.thinking[0])
+        self.assertEqual(self.allowed(e, [5, 5, self.END, 5, 5, 5, 5]), list(range(8)))
+
+    def test_no_budget_is_no_bound(self):
+        e = self.engine({})
+        self.assertEqual(self.allowed(e, [5] * 6), list(range(8)))
+        self.assertFalse(e.thinking[0])
+
+    def test_min_tokens_outranks_the_budget(self):
+        """`forbid` is a promise the caller made; a budget is the engine keeping room. If the two
+        ever name the same token, the promise wins and nothing is forced."""
+        from engine.base.sampler import process_logits
+        seen, counts = torch.zeros(8, dtype=torch.bool), torch.zeros(8)
+        out = process_logits(torch.ones(8), {}, seen, counts, forbid=torch.tensor([3]), force=3)
+        self.assertEqual(out.tolist(), [1.0, 1.0, 1.0, float("-inf")] + [1.0] * 4)
+
+    def test_the_option_pair_travels_together(self):
+        from engine.base.sampler import validate_options
+        validate_options({"reasoning_budget": 5, "reasoning_end": 3})
+        for bad in ({"reasoning_budget": 5}, {"reasoning_end": 3},
+                    {"reasoning_budget": -1, "reasoning_end": 3}, {"reasoning_budget": 5, "reasoning_end": -1}):
+            with self.assertRaises(ValueError, msg=bad):
+                validate_options(bad)
+
+    def test_the_default_leaves_the_answer_a_share_of_the_limit(self):
+        from engine.base.serve import ANSWER_FLOOR, RequestError, reasoning_budget
+        for limit in (256, 1192, 2048):
+            with self.subTest(limit=limit):
+                budget = reasoning_budget({}, limit)
+                self.assertGreaterEqual(limit - budget, min(ANSWER_FLOOR, limit - 1))
+                self.assertGreater(budget, 0)
+        self.assertIsNone(reasoning_budget({"reasoning_budget": -1}, 1000), "-1 asks for no bound")
+        self.assertEqual(reasoning_budget({"reasoning_budget": 0}, 1000), 0, "0 asks for no thinking")
+        with self.assertRaises(RequestError):
+            reasoning_budget({"reasoning_budget": -2}, 1000)
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -229,6 +300,149 @@ class ValidateTests(unittest.TestCase):
         for bad in ([], [1, 100], [-1], [1.5, 2], [1, "2"], [None]):
             with self.assertRaises((ValueError, TypeError)):
                 ok(bad)
+
+
+def _as_candidates(dense: torch.Tensor):
+    """[n, K, V] -> the candidates it puts mass on and that mass, which is all the verifier ever read of it."""
+    n, K, V = dense.shape
+    c = int((dense > 0).sum(-1).max())
+    q, cand = dense.topk(c, dim=-1)
+    return cand, q
+
+
+def _verify_densely(target_probs, drafts, draft_probs, generator):
+    """block_verify_batch as it was written before the draft became its candidates: the reference the sparse
+    form is judged against, kept here so the equality is a test and not a comment."""
+    from engine.base.constants import iota
+    from engine.base.sampler import _inverse_cdf
+    n, k1, _ = target_probs.shape
+    K = k1 - 1
+    device = target_probs.device
+    rows = iota(n, device)
+    on_draft = target_probs[:, :K].gather(2, drafts.unsqueeze(2)).squeeze(2)
+    by_draft = draft_probs.gather(2, drafts.unsqueeze(2)).squeeze(2)
+    step = torch.where(by_draft > 0, on_draft / by_draft.clamp_min(1e-30), torch.zeros_like(on_draft))
+    carried = torch.empty_like(step)
+    running = torch.ones(n, device=device, dtype=step.dtype)
+    for i in range(K):
+        running = (running * step[:, i]).clamp_max(1.0)
+        carried[:, i] = running
+    thresholds = carried.clone()
+    if K > 1:
+        ahead = carried[:, : K - 1].unsqueeze(-1)
+        mass = (ahead * target_probs[:, 1:K] - draft_probs[:, 1:K]).clamp_min(0).sum(-1)
+        denominator = mass + 1.0 - carried[:, : K - 1]
+        thresholds[:, : K - 1] = torch.where(denominator > 0, mass / denominator.clamp_min(1e-30),
+                                             torch.ones_like(mass))
+    u = torch.rand(n, K, generator=generator, device=device)
+    reach = iota(K, device).add(1).expand(n, K)
+    accepted = torch.where(u <= thresholds, reach, torch.zeros_like(reach)).max(1).values
+    at = accepted.clamp_max(K)
+    before = torch.where(accepted > 0, carried.gather(1, (accepted - 1).clamp_min(0).unsqueeze(1)).squeeze(1),
+                         torch.ones(n, device=device, dtype=carried.dtype))
+    row_p = target_probs[rows, at]
+    row_q = torch.where((at < K).unsqueeze(1), draft_probs[rows, at.clamp_max(K - 1)], torch.zeros_like(row_p))
+    rest = (before.unsqueeze(1) * row_p - row_q).clamp_min(0)
+    total = rest.sum(1, keepdim=True)
+    rest = torch.where(total > 0, rest / total.clamp_min(1e-30),
+                       row_p / row_p.sum(1, keepdim=True).clamp_min(1e-30))
+    fresh = _inverse_cdf(rest, torch.rand(n, generator=generator, device=device))
+    tokens = torch.cat([drafts, torch.zeros(n, 1, dtype=drafts.dtype, device=device)], 1)
+    tokens.scatter_(1, at.unsqueeze(1), fresh.unsqueeze(1))
+    return accepted, tokens, accepted + 1
+
+
+class BlockVerifyKernelTests(unittest.TestCase):
+    """The fused kernel must decide exactly what the torch reference decides.
+
+    Compared on ONE device from ONE generator: a CPU generator and a CUDA generator do not agree at the same
+    seed, and comparing across them reads as a kernel bug when it is two different streams of uniforms."""
+
+    @unittest.skipUnless(torch.cuda.is_available(), "the kernel path needs a device")
+    def test_the_kernel_accepts_and_picks_what_the_reference_does(self):
+        from engine.base.sampler import _block_verify_by_torch, block_verify_batch
+        for trial in range(12):
+            torch.manual_seed(trial)
+            n, K, V, C = (1 if trial % 3 else 4), 5, 2003, 16
+            target = torch.softmax(torch.randn(n, K + 1, V), -1).cuda()
+            cand = torch.stack([torch.stack([torch.randperm(V)[:C] for _ in range(K)]) for _ in range(n)]).cuda()
+            qp = torch.softmax(torch.randn(n, K, C), -1).cuda()
+            pick = torch.randint(0, C, (n, K))
+            drafts = cand.cpu().gather(2, pick.unsqueeze(2)).squeeze(2).cuda()
+            seed = lambda: torch.Generator(device="cuda").manual_seed(trial + 100)   # noqa: E731
+            want = _block_verify_by_torch(target, drafts, cand, qp, seed())
+            got = block_verify_batch(target, drafts, cand, qp, seed())
+            for i, name in ((0, "accepted"), (1, "tokens"), (2, "count")):
+                self.assertTrue(torch.equal(want[i], got[i]), f"{name} differ at trial {trial}")
+
+    def test_the_reference_is_reachable_on_any_device(self):
+        """It is the thing the kernel is judged against, so it must not be behind the `is_cuda` branch that
+        chooses the kernel -- otherwise there is no way to run both on one device and compare."""
+        from engine.base.sampler import _block_verify_by_torch
+        n, K, V, C = 2, 3, 41, 5
+        torch.manual_seed(4)
+        target = torch.softmax(torch.randn(n, K + 1, V), -1)
+        cand = torch.stack([torch.stack([torch.randperm(V)[:C] for _ in range(K)]) for _ in range(n)])
+        qp = torch.softmax(torch.randn(n, K, C), -1)
+        accepted, tokens, count = _block_verify_by_torch(target, cand[:, :, 0].contiguous(), cand, qp,
+                                                         torch.Generator().manual_seed(1))
+        self.assertEqual(tuple(tokens.shape), (n, K + 1))
+        self.assertTrue(torch.equal(count, accepted + 1))
+
+
+class SparseDraftDistributionTests(unittest.TestCase):
+    """The draft puts mass on `sel_top_k` candidates a position and zero everywhere else, so carrying it as
+    [n, K, vocab] was allocating and zeroing 12.4 MiB every decode step to hold 320 numbers (V=154,880, K=5,
+    C=16, n=4) and then reading it twice. These say the shorter form is not an approximation of the longer."""
+
+    def draft(self, n, K, V, C, seed):
+        torch.manual_seed(seed)
+        dense = torch.zeros(n, K, V)
+        for r in range(n):
+            for s in range(K):
+                where = torch.randperm(V)[:C]
+                dense[r, s, where] = torch.softmax(torch.randn(C), -1)
+        return dense
+
+    def test_the_candidates_verify_exactly_as_the_vocabulary_wide_row_did(self):
+        from engine.base.sampler import block_verify_batch
+        n, K, V, C = 4, 5, 61, 7
+        for trial in range(30):
+            dense = self.draft(n, K, V, C, trial)
+            target = torch.softmax(torch.randn(n, K + 1, V), -1)
+            ids = torch.stack([torch.multinomial(dense[r], 1).squeeze(1) for r in range(n)])
+            cand, q = _as_candidates(dense)
+            want = _verify_densely(target, ids, dense, torch.Generator().manual_seed(trial))
+            got = block_verify_batch(target, ids, cand, q, torch.Generator().manual_seed(trial))
+            self.assertTrue(torch.equal(want[0], got[0]), f"accepted differ at trial {trial}")
+            self.assertTrue(torch.equal(want[1], got[1]), f"tokens differ at trial {trial}")
+            self.assertTrue(torch.equal(want[2], got[2]))
+
+    def test_it_holds_when_the_draft_is_a_point_mass(self):
+        """A greedy row joining a sampled batch is one candidate carrying everything (pipeline._merge)."""
+        from engine.base.sampler import block_verify_batch
+        n, K, V, C = 3, 4, 23, 5
+        torch.manual_seed(1)
+        target = torch.softmax(torch.randn(n, K + 1, V), -1)
+        ids = torch.randint(0, V, (n, K))
+        dense = torch.zeros(n, K, V).scatter_(2, ids.unsqueeze(2), 1.0)
+        cand = ids.unsqueeze(2).expand(n, K, C).contiguous()
+        q = torch.zeros(n, K, C); q[..., 0] = 1.0
+        want = _verify_densely(target, ids, dense, torch.Generator().manual_seed(4))
+        got = block_verify_batch(target, ids, cand, q, torch.Generator().manual_seed(4))
+        self.assertTrue(torch.equal(want[0], got[0]))
+        self.assertTrue(torch.equal(want[1], got[1]))
+
+    def test_both_ceilings_are_the_same_two_numbers(self):
+        from engine.base.sampler import draft_ceilings, draft_ceilings_over
+        n, K, V, C = 3, 4, 41, 6
+        dense = self.draft(n, K, V, C, 11)
+        target = torch.softmax(torch.randn(n, K + 1, V), -1)
+        cand, q = _as_candidates(dense)
+        a, b = draft_ceilings(target, dense)
+        c, d = draft_ceilings_over(target, cand, q)
+        self.assertAlmostEqual(a, c, places=6)
+        self.assertAlmostEqual(b, d, places=6)
 
 
 class BlockVerificationTests(unittest.TestCase):
@@ -289,7 +503,8 @@ class BlockVerificationTests(unittest.TestCase):
         target = torch.softmax(torch.randn(n, K + 1, V), -1)
         draft = torch.softmax(torch.randn(n, K, V), -1)
         ids = torch.stack([torch.multinomial(draft[r], 1).squeeze(1) for r in range(n)])
-        accepted, tokens, count = block_verify_batch(target, ids, draft, torch.Generator().manual_seed(5))
+        cand, q = _as_candidates(draft)
+        accepted, tokens, count = block_verify_batch(target, ids, cand, q, torch.Generator().manual_seed(5))
         uniform = torch.rand(n, K, generator=torch.Generator().manual_seed(5))
         want = []
         for r in range(n):
@@ -392,6 +607,83 @@ class HistoryLifetimeTests(unittest.TestCase):
         self.assertNotIn(0, engine.sampling_history.rows, "the helper has to reach the history, not merely exist")
 
 
+class DecodeChainGateTests(unittest.TestCase):
+    """Why a decode step does or does not run ahead on the device, and whether anyone can find out.
+
+    A step that cannot run ahead makes the runner empty every step in flight before it, so this gate decides how
+    much of the time the engine is in the chain at all -- and that fraction is what any deeper fusion inside the
+    chain would be multiplied by. It went uncounted until now."""
+
+    def gate(self, **state):
+        from engine.profiles.glm53.adapter import Glm53Engine
+        e = Glm53Engine.__new__(Glm53Engine)                 # the gate, none of the boot
+        e.chain_exits = {}
+        e.options, e.matchers, e.gens, e.lps, e.min_new = {}, set(), {}, {}, {}
+        e.tokens, e.prompt_len = {0: [1, 2, 3]}, {0: 2}
+        e.pipeline = types.SimpleNamespace(ready_for=lambda seqs, slots=None: True)
+        e.decode_graphs = object()
+        e.drafter = types.SimpleNamespace(k=5)
+        for name, value in state.items():
+            setattr(e, name, value)
+        return e
+
+    def test_the_counters_exist_from_the_boot_and_not_from_this_fixture(self):
+        """`gate()` sets them, so dropping the real initialiser kills no test above -- and a real boot would then
+        die with AttributeError on the first decode step the chain refused. Found by tools/mutate.py."""
+        source = (ROOT / "engine/profiles/glm53/adapter.py").read_text()
+        init = source[source.index("    def __init__"):]
+        init = init[: init.index("\n    def ", 1)]
+        self.assertIn("self.chain_exits = {}", init)
+
+    def test_a_plain_row_runs_ahead_and_is_counted(self):
+        e = self.gate()
+        self.assertTrue(e.async_ready([0]))
+        self.assertEqual(e.chain_exits, {})
+
+    def test_every_blocker_names_itself(self):
+        for option in ("seed", "logprobs", "logit_bias", "min_p", "presence_penalty",
+                       "frequency_penalty", "repetition_penalty", "grammar"):
+            e = self.gate(options={0: {option: 1}})
+            self.assertFalse(e.async_ready([0]), option)
+            self.assertEqual(e.chain_exits, {option: 1}, option)
+
+    def test_state_the_options_do_not_carry_names_itself_too(self):
+        """A grammar, a seeded generator and a logprob request live in their own maps by then, not in `options`."""
+        for state, reason in (({"matchers": {0: 1}}, "grammar"), ({"gens": {0: 1}}, "seed"), ({"lps": {0: 1}}, "logprobs")):
+            e = self.gate(**state)
+            self.assertFalse(e.async_ready([0]))
+            self.assertEqual(e.chain_exits, {reason: 1})
+
+    def test_min_tokens_is_named_apart_from_the_rest_because_it_passes(self):
+        """min_tokens blocks only until the row has produced enough; the others never stop blocking. An operator
+        reading one number cannot act on it, and reading the two apart tells them which."""
+        e = self.gate(min_new={0: 9})
+        self.assertFalse(e.async_ready([0]))
+        self.assertEqual(e.chain_exits, {"min_tokens": 1})
+        e.min_new[0] = 1                                     # one generated token is already enough
+        self.assertTrue(e.async_ready([0]))
+
+    def test_one_row_takes_the_whole_batch_off_the_chain(self):
+        """The batch runs ahead together or not at all. At max_seqs 4 that is the cost of a single logprobs request,
+        and the counter has to show it as such rather than as one row's business."""
+        e = self.gate(options={0: {}, 1: {}, 2: {}, 3: {"logprobs": True}},
+                      tokens={s: [1, 2, 3] for s in range(4)}, prompt_len={s: 2 for s in range(4)})
+        self.assertFalse(e.async_ready([0, 1, 2, 3]))
+        self.assertEqual(e.chain_exits, {"logprobs": 1})
+
+    def test_rows_churning_mid_flight_is_its_own_reason(self):
+        """PR #671 made most of these go away (independent new rows may now join without draining survivors), so
+        telling them apart from a row's own options is what says whether any are left."""
+        e = self.gate(pipeline=types.SimpleNamespace(ready_for=lambda seqs, slots=None: False))
+        self.assertFalse(e.async_ready([0, 7]))
+        self.assertEqual(e.chain_exits, {"rows_churned": 1})
+
+    def test_no_drafter_is_not_a_row_s_fault(self):
+        e = self.gate(drafter=types.SimpleNamespace(k=0))
+        self.assertFalse(e.async_ready([0]))
+        self.assertEqual(e.chain_exits, {"no_pipeline": 1})
+
+
 class VerificationPathTests(unittest.TestCase):
     """A served row and a row with penalties must be verified by the same rule."""
 
@@ -404,6 +696,7 @@ class VerificationPathTests(unittest.TestCase):
             draft = torch.softmax(torch.randn(K, V), -1)
             ids = [int(torch.multinomial(draft[i], 1)) for i in range(K)]
             one, _ = block_verify(target, ids, draft, torch.Generator().manual_seed(trial))
-            many, _, _ = block_verify_batch(target.unsqueeze(0), torch.tensor([ids]), draft.unsqueeze(0),
+            cand, q = _as_candidates(draft.unsqueeze(0))
+            many, _, _ = block_verify_batch(target.unsqueeze(0), torch.tensor([ids]), cand, q,
                                             torch.Generator().manual_seed(trial))
             self.assertEqual(one, int(many[0]), f"trial {trial}")

@@ -59,6 +59,7 @@ class Glm53Engine:
         self.gen = torch.Generator(device=caches.device).manual_seed(seed)
         self.tokens, self.prompt_len, self.ctx, self.slot, self.limits = {}, {}, {}, {}, {}
         self.min_new = {}                                   # seq -> no end token before this many generated (OpenAI min_tokens)
+        self.thinking = {}                                  # seq -> still inside its reasoning block (a budget watches it)
         self.options = {}                                   # seq -> the request's sampling options beyond temperature (base/sampler.OPTION_KEYS)
         self.gens = {}                                      # seq -> its own torch.Generator when the request carries a seed
         self.ends = {}                                      # seq -> end tokens: the model's plus the request's stop_token_ids
@@ -75,6 +76,7 @@ class Glm53Engine:
         # Free observability for decisions this engine keeps having to make by probe.
         # All of it is host arithmetic on numbers already in hand: no device read, no sync.
         self.decode_shape_counts = {}              # (sequences, capacity bucket) -> decode steps replayed there
+        self.chain_exits = {}                      # what kept a decode step off the device chain -> how often
         self.accepted_per_step = [0] * (self.drafter.k + 2)   # how many drafts a step committed, 0..k+1
         self.reachable_mass = 0.0                            # sum_x min(p, q): the most any rule could accept
         self.covered_mass = 0.0                              # the target mass the drafter's candidates cover
@@ -82,6 +84,8 @@ class Glm53Engine:
         self.steps_verified = 0                              # verifications since the counters were last cleared
         self._ceiling_every = 64                             # two vocabulary passes, so sampled, not every step
         self.lane_info = {}                        # what is actually bound: set by the boot that built the lanes
+        self.calibration = None                    # kernels/dense/calibration.Calibration while this boot sums for GPTQ packs
+        self.calibration_root = None               # the pack store's root the blobs are filed under
         self.steps = 0
         self.decode_graphs = None
         self.sampling_graphs = None
@@ -91,6 +95,8 @@ class Glm53Engine:
         self.inflight = {}                                  # seq -> decode steps launched ahead whose tokens the host has not read
         self.staged = {}                                    # seq -> the block boundary a step ahead parked in the caches' stage
         self.memory = None
+        self.budget = None                                  # boot's declared table, re-runnable against this boot's own ledger
+        self.arena = None                                   # the one allocation every device tensor here is a view of; `release` frees it
         self.prefill_chunk = None
 
     def capture_decode(self, max_seqs: int) -> None:
@@ -153,11 +159,40 @@ class Glm53Engine:
             self.memory.checkpoint("ready")
             self.memory.ready = True
 
-    def warmup_shapes(self, lengths=(64, 256, 1024, 2048, 4096), widths=(1, 2, 3, 4)) -> dict:
+    def housekeeping(self, steps: int) -> None:
+        """Called by the step loop after every model step (base/serve). Every 256th step, a calibrating boot asks its
+        sums how far they are (one device read) and files them when complete: the next boot packs GPTQ from them."""
+        c = self.calibration
+        if c is None or c.filed is not None or steps % 256:
+            return
+        if c.complete():
+            written = c.save(self.calibration_root, self.net.comm.rank)
+            self.lane_info["calibration"] = "filed"
+            print(f"  calibration: rank {self.net.comm.rank} filed {len(written)} blobs under {self.calibration_root}/mkcalib/rank{self.net.comm.rank}/ "
+                  f"({c.status()}); the next boot packs GPTQ from them", flush=True)
+
+    def file_calibration(self, root=None) -> "list | None":
+        """File the sums now (shutdown, or the door's POST /v1/engine/calibration) if they are worth a pack."""
+        from engine.kernels.dense.calibration import ROWS_FLOOR
+        c = self.calibration
+        if c is None:
+            return None
+        if c.filed is not None and root is None:
+            return c.filed
+        if c.progress() < ROWS_FLOOR:
+            print(f"  calibration: rank {self.net.comm.rank} not filed -- {c.status()} (fewer than {ROWS_FLOOR} rows)", flush=True)
+            return None
+        written = c.save(root or self.calibration_root, self.net.comm.rank)
+        self.lane_info["calibration"] = "filed"
+        return written
+
+    def warmup_shapes(self, lengths=(64, 256, 1024, 2048, 2304, 4096), widths=None) -> dict:
         """Pay the first-use JIT at boot instead of on the first user (45차 §23 B2; production's prefill-warmup.py):
         one synthetic prefill per length (the served kernels specialise per M bucket) and one decode step per batch
         width through the captured graphs. Nothing is judged; the request rows are returned empty."""
         caches = self.caches
+        if widths is None:
+            widths = range(1, caches.pool.max_seqs + 1)
         if caches.pool.rows_in_use or any(owner >= 0 for owner in caches.slots.owner[1:]):
             raise ValueError("warmup requires empty request and state slots")
         paid = {}
@@ -317,6 +352,62 @@ class Glm53Engine:
         if self.memory is not None:
             self.memory.close()
 
+    def release(self) -> dict:
+        """Serving is over: give the box back everything this rank was holding.
+
+        Order matters in one place. A captured graph owns a memory pool and points at the
+        tensors it replayed over, so the graphs go first (`close_decode`); after that every
+        device tensor that is a view of the ONE arena (D1) -- weights, KV blocks, state slots,
+        resident scales -- goes with it, because the arena frees its storage outright rather
+        than waiting to become the last reference, which at shutdown it never is.
+
+        The arena is not everything, though, and what is not in it is what a release actually
+        has to reach: it is live, so `empty_cache` will not take it while this engine points
+        at it. Per request that is the grammar matcher, the picture rows and the end ids;
+        per engine it is the pinned upload staging, the rich sampler's two [rows, vocab]
+        planes, the penalty history, the compiled grammars, the vision tower's rope tables and
+        the caches' pinned id ring. Each is named below because each had to be found.
+
+        Worth doing even though the process is about to exit, because it is not about to:
+        filing calibration blobs, closing the death dump and tearing NCCL down take seconds,
+        and a handover has the next holder already asking for the same 55 GiB while earlyoom
+        watches an absolute 6 GiB floor and picks the engine first (OOM_STUDY 2).
+
+        Returns what `memory_reserved` said either side and -- the number that actually
+        decides it -- what is still ALLOCATED afterwards, with the largest survivors, since
+        anything left there is something this method failed to find.
+        """
+        import torch
+
+        from engine.base.runtime_memory import live_device_blocks
+
+        cuda = torch.cuda.is_available()
+        before = torch.cuda.memory_reserved() if cuda else 0
+        for seq in sorted(set(self.tokens) | set(self.slot)):   # matchers, picture rows, per-request end ids
+            self.close(seq)                                 # the slot first: `forget` refuses a row that still holds one
+            self.forget(seq)
+        self.close_decode()                                 # graphs and their pool, before what they point at
+        self._ids_stage = self._rich_stage = None           # pinned host ids; the rich sampler's two fp32 planes
+        self.sampling_history = None                        # penalty tensors
+        self.grammars = None                                # xgrammar's compiled grammars and bitmask buffers
+        self._ends_tensor, self.matchers, self.embeds, self.gens = {}, {}, {}, {}
+        self.staged, self.inflight, self.lps, self.media = {}, {}, {}, {}
+        if self.vision is not None:
+            self.vision._rope = {}                          # one rope table per distinct picture grid this boot saw
+        if getattr(self.caches, "_id_ring", None) is not None:
+            self.caches._id_ring = None                     # 16 pinned host buffers and their events
+        arena = getattr(self, "arena", None)
+        given = arena.release() if arena is not None else 0
+        self.arena = None
+        if cuda:
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()                        # expandable chunks go back to the driver here
+        after = torch.cuda.memory_reserved() if cuda else 0
+        return {"arena_bytes": given, "reserved_before": before, "reserved_after": after,
+                "returned": before - after,
+                "allocated_after": torch.cuda.memory_allocated() if cuda else 0,
+                "still_held": live_device_blocks()}
+
     # -- the runner's protocol -------------------------------------------------------
     def validate(self, ids, max_new, temperature) -> None:
         # every rank runs this inside the step loop when a request is admitted: the Python loop over a 120K prompt
@@ -367,6 +458,7 @@ class Glm53Engine:
         options = dict(options or {})
         self.options[seq] = options
         self.ends[seq] = self.eos | set(options.get("stop_token_ids") or ())
+        self.thinking[seq] = options.get("reasoning_budget") is not None
         if options.get("seed") is not None:
             self.gens[seq] = torch.Generator(device=self.caches.device).manual_seed(int(options["seed"]))
         else:
@@ -410,13 +502,17 @@ class Glm53Engine:
         if self.sampling_history is not None:
             self.sampling_history.forget(seq)
 
-    def note_ceilings(self, target_probs, draft_probs) -> None:
-        """Every 64th verification, record what the draft allowed. See base/sampler.draft_ceilings."""
+    def note_ceilings(self, target_probs, draft_probs, draft_cand=None) -> None:
+        """Every 64th verification, record what the draft allowed. See base/sampler.draft_ceilings.
+
+        `draft_cand` is the shape the draft came in, not a choice: the device chain carries its distribution as
+        the candidates and their mass, the rich rows still carry a row per position."""
         self.steps_verified += 1
         if self.steps_verified % self._ceiling_every:
             return
-        from engine.base.sampler import draft_ceilings
-        reachable, covered = draft_ceilings(target_probs, draft_probs)
+        from engine.base.sampler import draft_ceilings, draft_ceilings_over
+        reachable, covered = (draft_ceilings(target_probs, draft_probs) if draft_cand is None
+                              else draft_ceilings_over(target_probs, draft_cand, draft_probs))
         self.reachable_mass += reachable
         self.covered_mass += covered
         self.ceiling_positions += int(draft_probs.shape[-2]) * (1 if draft_probs.dim() == 2 else int(draft_probs.shape[0]))
@@ -424,7 +520,7 @@ class Glm53Engine:
     def forget(self, seq: int) -> None:
         if seq in self.slot:
             raise ValueError(f"seq {seq} is still live")
-        for rows in (self.tokens, self.prompt_len, self.limits, self.min_new, self.options, self.gens, self.ends, self.lps, self.matchers,
+        for rows in (self.tokens, self.prompt_len, self.limits, self.min_new, self.thinking, self.options, self.gens, self.ends, self.lps, self.matchers,
                      self.media, self.embeds, self.inflight, self.staged, self._ends_tensor):
             rows.pop(seq, None)                             # a row leaving does not move the others: the pipeline shrinks its view
         self._forget_history(seq)
@@ -479,10 +575,12 @@ class Glm53Engine:
         return tuple(out)
 
     def open(self, seq: int, slot: int) -> None:
+        self._moved((seq,))
         self.slot[seq] = slot; self.ctx[seq] = 0
         self.caches.reset_slot(slot)
 
     def close(self, seq: int) -> None:
+        self._moved((seq,))
         for d in (self.ctx, self.slot):
             d.pop(seq, None)
 
@@ -496,6 +594,7 @@ class Glm53Engine:
 
     def restore(self, seq: int, position: int, snap: int) -> None:
         """A new sequence adopts a cached prefix: its rings take the boundary's state, its context starts there."""
+        self._moved((seq,))
         self.caches.restore(self.slot[seq], position, snap)
         self.ctx[seq] = position
 
@@ -518,6 +617,7 @@ class Glm53Engine:
         """Reopen the row in `slot` from a record; the slot's bytes were restored by the tier, so no reset."""
         if seq in self.tokens or seq in self.slot:
             raise ValueError(f"seq {seq} is live or has an uncollected result")
+        self._moved((seq,))
         self.tokens[seq] = list(record["tokens"]); self.prompt_len[seq] = int(record["prompt_len"])
         self._forget_history(seq)                           # the row now holds another conversation's tokens
         self.limits[seq] = (int(record["limits"][0]), float(record["limits"][1]))
@@ -558,7 +658,7 @@ class Glm53Engine:
             del self.tokens[seq][-1]
         if media:
             self._bind_media(seq, list(ids), media, base=len(self.tokens[seq]))
-        self._moved()
+        self._moved((seq,))
         self.tokens[seq] += list(ids); self.prompt_len[seq] = len(self.tokens[seq])
         self.limits[seq] = (max_new, temperature)
         self.min_new[seq] = min_new
@@ -585,12 +685,45 @@ class Glm53Engine:
             return False
         return self.min_new.get(seq, 0) <= self._generated_count(seq)
 
+    # WHAT kept a decode step off the device-side chain. `st:async_decode_steps_total` and
+    # `st:sync_drain_steps_total` say how often it happened; neither says why, and the two answers call for
+    # opposite work. A drain because rows churned is the pipeline's problem (PR #671 took most of those away);
+    # a drain because one row asked for logprobs is a scheduling problem, and no amount of fusing inside the
+    # chain touches it. Reasons are named the way an operator would ask about them.
+    CHAIN_BLOCKERS = ("seed", "presence_penalty", "frequency_penalty", "repetition_penalty",
+                      "logit_bias", "logprobs", "grammar", "min_p")
+
+    def _chain_exit(self, reason: str) -> bool:
+        self.chain_exits[reason] = self.chain_exits.get(reason, 0) + 1
+        return False
+
+    def _blocked_by(self, seq: int) -> "str | None":
+        """The first reason this row may not run ahead. `_plain_ahead` asks the same question as a yes or no."""
+        opts = self.options.get(seq, {})
+        for name in self.CHAIN_BLOCKERS:
+            if opts.get(name) is not None:
+                return name
+        if seq in self.matchers:
+            return "grammar"
+        if seq in self.gens:
+            return "seed"
+        if seq in self.lps:
+            return "logprobs"
+        if self.min_new.get(seq, 0) > self._generated_count(seq):
+            return "min_tokens"
+        return None
+
     def async_ready(self, seqs) -> bool:
         if self.pipeline is None or self.decode_graphs is None or not self.drafter.k:
-            return False
-        if self.pipeline.pending and any(s not in self.pipeline.batch for s in seqs):
-            return False                                    # rows joined: the runner drains, then the view is rebuilt from the host
-        return all(self._plain_ahead(s) for s in seqs)
+            return self._chain_exit("no_pipeline")
+        if not self.pipeline.ready_for(seqs):
+            return self._chain_exit("rows_churned")
+        blocked = next((why for why in (self._blocked_by(s) for s in seqs) if why is not None), None)
+        if blocked is not None:
+            # One row is enough: the batch runs ahead together or not at all, so at max_seqs 4 a single
+            # request asking for logprobs takes the other three off the chain with it.
+            return self._chain_exit(blocked)
+        return True
 
     def decode_async(self, seqs, blocks, slots):
         return self.pipeline.launch(seqs, slots)
@@ -702,7 +835,32 @@ class Glm53Engine:
         seen, counts = self.sampling_history.of(seq, self.tokens[seq], self.prompt_len[seq])
         need = self.min_new.get(seq, 0) - self._generated_count(seq) - len(drafts_before)
         forbid = self._end_ids(seq, raw.device) if need > 0 and self.ends.get(seq) else None
-        return process_logits(raw, opts, seen, counts, drafts_before, self.decodable, forbid=forbid, out=out)
+        force = self._reasoning_over(seq, opts, drafts_before)
+        return process_logits(raw, opts, seen, counts, drafts_before, self.decodable, forbid=forbid, out=out,
+                              force=force)
+
+    def _reasoning_over(self, seq: int, opts: dict, drafts_before) -> "int | None":
+        """The reasoning-end token, when this row's thinking budget is spent and it is still thinking.
+
+        A thinking model can spend a whole answer inside the block -- writing a draft, counting its
+        characters, redrafting -- and hit the limit with nothing outside it, which is a real failure
+        in this stack's own record (29차: 상한에 걸려 답 0 자). llama.cpp bounds it with
+        `--reasoning-budget` and forces the closing tag when it runs out; this is that, and the door
+        sets the budget so the answer always keeps a share of the limit (45차 §46).
+
+        The scan only runs once the budget is spent, which is the couple of steps between that and
+        the token landing; before then this costs one comparison, and after it, nothing.
+        """
+        budget = opts.get("reasoning_budget")
+        if budget is None or not self.thinking.get(seq, False):
+            return None
+        end = opts["reasoning_end"]
+        if self._generated_count(seq) + len(drafts_before) < budget:
+            return None
+        if end in drafts_before or end in self.tokens[seq][self.prompt_len[seq]:]:
+            self.thinking[seq] = False               # it left the block on its own; never asked again
+            return None
+        return end
 
     def _end_ids(self, seq: int, device) -> torch.Tensor:
         """This row's end tokens as a tensor, kept: min_tokens asks for them on every position it covers."""
@@ -813,15 +971,15 @@ class Glm53Engine:
         done = any(t in self.ends.get(seq, self.eos) for t in new) or self._generated_count(seq) >= self.limits[seq][0]
         return new, done
 
-    def _moved(self) -> None:
+    def _moved(self, seqs=None) -> None:
         if self.pipeline is not None:
-            self.pipeline.stale = True
+            self.pipeline.invalidate(seqs)
 
     def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int, marks=None) -> bool:
         """`marks`: {absolute position: snapshot} for the block boundaries inside this step that the prefix cache keeps
         (base/runner): the KDA states are taken by the forward at those cuts; the drafter's context ring at a mark is the
         ring before this step plus the step's positions before the mark, observed into the snapshot here."""
-        self._moved()
+        self._moved((seq,))
         ids = torch.tensor(self.tokens[seq][start: start + tokens], dtype=torch.int64, device=self.caches.device)
         patches = self._patches(seq, start, start + tokens) if seq in self.media else ()
         cuts = tuple(sorted((int(p) - start, int(snap)) for p, snap in (marks or {}).items()))

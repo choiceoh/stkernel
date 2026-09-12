@@ -6,6 +6,7 @@ import importlib.util
 import json
 import queue
 import socket
+import sys
 import threading
 import unittest
 import urllib.error
@@ -17,6 +18,11 @@ from engine.base.kv import BlockPool, SlotPool
 from engine.base.record import Ring
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT / "tests") not in sys.path:
+    # `test_engine_tier` is a sibling, and whether it is importable by that name depends on how the
+    # suite was started: `python3 -m unittest tests.test_engine_serve` from the root does not put
+    # `tests/` on the path, and twelve tests here errored out on the import rather than running.
+    sys.path.insert(0, str(ROOT / "tests"))
 from engine.base.runner import Runner, STEP_RECORD
 from engine.base.scheduler import Contract
 from engine.base.serve import RequestError, Server
@@ -735,6 +741,7 @@ class ChatDoorTests(unittest.TestCase):
             self.assertEqual(out['choices'][0]['message'], {'role': 'assistant', 'content': 'bbb'})
             self.assertEqual(out['choices'][0]['finish_reason'], 'stop')
             self.assertEqual(out['usage'], {'prompt_tokens': 2, 'completion_tokens': 3, 'total_tokens': 5,
+                                            'prompt_tokens_details': {'cached_tokens': 0},
                                             'completion_tokens_details': {'reasoning_tokens': 0}})
             with concurrent.futures.ThreadPoolExecutor(1) as pool:
                 out = drive(s, pool.submit(post, {"messages": [{"role": "user", "content": "xy"}], "max_tokens": 3}))
@@ -780,6 +787,7 @@ class ChatDoorTests(unittest.TestCase):
             self.assertGreaterEqual(sum(1 for d in deltas if d.get('reasoning_content')), 2)
             self.assertEqual([c['choices'][0]['finish_reason'] for c in chunks if c['choices']][-1], 'length')
             self.assertEqual(chunks[-1]['usage'], {'prompt_tokens': 3, 'completion_tokens': 4, 'total_tokens': 7,
+                                                   'prompt_tokens_details': {'cached_tokens': 0},
                                                    'completion_tokens_details': {'reasoning_tokens': 4}})
             self.assertFalse(s._streams or s._sent or s.pending or s.results)
             # thinking off: the rendered prompt "xy" ENDS with 'y' = reasoning_end (the template closed the think block),
@@ -1754,6 +1762,25 @@ class MetricsTests(unittest.TestCase):
         self.assertIn('st:detokenizer_repairs_total{engine="st",reason="invalid_prefix"} 1', self.text(s))
         self.assertNotIn("st:detokenizer_repairs_total", self.text(other), "another door's repairs are not ours")
 
+    def test_the_box_s_own_memory_is_on_the_scrape(self):
+        """The OOM study's conclusion was that there is no eye on memory during serving, and
+        vLLM has none either -- its `gpu_cache_usage_perc` counts blocks, not bytes. The peak
+        rides beside the current value because a scrape cannot see a four-second cliff."""
+        out = self.text(server())
+        line = next(l for l in out.splitlines() if l.startswith("st:host_memory_available_bytes{"))
+        self.assertGreater(int(line.rsplit(" ", 1)[1]), 0)        # what earlyoom decides on
+        if "st:device_memory_reserved_bytes" in out:              # only where there is a device
+            self.assertIn("st:device_memory_reserved_peak_bytes", out)
+            self.assertIn("st:device_memory_free_bytes", out)
+
+    def test_a_scrape_answers_even_where_the_numbers_are_not_there(self):
+        """`/metrics` never raises: a box without CUDA, or a /proc that will not answer, drops
+        the row instead of the scrape."""
+        import engine.base.serve as serve
+        from unittest.mock import patch
+        with patch.object(serve, "device_memory_rows", lambda: []):
+            self.assertIn("vllm:request_success_total", self.text(server()))
+
     def test_the_queue_clock_is_taken_once_for_a_continued_request(self):
         s = server()
         s._arrived[3] = s.clock() - 1.0
@@ -1893,6 +1920,10 @@ class OpenAIDialectTests(unittest.TestCase):
         with urllib.request.urlopen(req, timeout=5) as r:
             return json.load(r)
 
+    def _get(self, base, path):
+        with urllib.request.urlopen(base + path, timeout=5) as r:
+            return json.load(r)
+
     def _serve(self, s, fn):
         httpd = s._serve_http()
         base = f'http://127.0.0.1:{httpd.server_port}'
@@ -1918,6 +1949,44 @@ class OpenAIDialectTests(unittest.TestCase):
             self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
                                                    {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
                                                     "reasoning_effort": "high", "chat_template_kwargs": {"reasoning_effort": "low"}}))
+        self.assertEqual(err.exception.code, 400)
+
+    def test_medium_effort_is_served_and_lands_on_a_rung_the_template_has(self):
+        """GLM's template reads `reasoning_effort in ['low','high']` and turns everything else
+        into 'max', so a plain OpenAI "medium" would silently buy the DEEPEST setting. Refusing
+        it was worse: the Deneb gateway sends medium whenever its thinking budget lands between
+        4K and 10K tokens, and wormhole does not fail over a request-shape 4xx (45차 §59)."""
+        s = chat_server()
+        seen = {}
+        def chat(messages, kwargs, *, generation_prompt=True, continue_final=False):
+            seen.update(kwargs)
+            return "".join(m.get("content") or "" for m in messages)
+        s.chat = chat
+        for asked, reaches in (("low", "low"), ("medium", "high"), ("high", "high"), ("max", "max")):
+            with self.subTest(reasoning_effort=asked):
+                seen.clear()
+                self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                       {"messages": [{"role": "user", "content": "ab"}],
+                                                        "max_tokens": 1, "reasoning_effort": asked}))
+                self.assertEqual(seen["reasoning_effort"], reaches)
+
+    def test_a_template_only_effort_is_checked_instead_of_falling_through_to_max(self):
+        # chat_template_kwargs used to bypass the check entirely, so junk -- or a medium the
+        # caller meant as "less than high" -- reached the template and became 'max'.
+        s = chat_server()
+        seen = {}
+        def chat(messages, kwargs, *, generation_prompt=True, continue_final=False):
+            seen.update(kwargs)
+            return "".join(m.get("content") or "" for m in messages)
+        s.chat = chat
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
+                                                "chat_template_kwargs": {"reasoning_effort": "medium"}}))
+        self.assertEqual(seen["reasoning_effort"], "high")
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                   {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
+                                                    "chat_template_kwargs": {"reasoning_effort": "enormous"}}))
         self.assertEqual(err.exception.code, 400)
 
     def test_a_grammar_waits_for_the_reasoning_to_end(self):
@@ -2097,13 +2166,51 @@ class OpenAIDialectTests(unittest.TestCase):
                                                 "tools": [{"type": "function", "function": {"name": "f"}}]}))
         self.assertNotIn("grammar", s.engine.options[0])
 
+    def test_an_answer_that_starts_inside_a_think_block_gets_a_budget(self):
+        """The block is bounded so an answer is always possible; the door names the token that
+        ends it, and the engine forces that token when the budget runs out (45차 §46)."""
+        from engine.base.serve import reasoning_budget
+        s = chat_server()
+        s.reasoning_end = 7
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 5}))
+        got = s.engine.options[0]
+        self.assertEqual(got["reasoning_end"], 7)
+        self.assertEqual(got["reasoning_budget"], reasoning_budget({}, 5))
+        self.assertLess(got["reasoning_budget"], 5, "the answer keeps a share of the limit")
+
+    def test_a_caller_may_ask_for_no_bound_or_no_thinking(self):
+        s = chat_server()
+        s.reasoning_end = 7
+        for asked, expect in ((-1, None), (0, 0), (3, 3)):
+            with self.subTest(asked=asked):
+                self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                       {"messages": [{"role": "user", "content": "ab"}],
+                                                        "max_tokens": 5, "reasoning_budget": asked}))
+                got = s.engine.options[max(s.engine.options)]
+                self.assertEqual(got.get("reasoning_budget"), expect)
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                   {"messages": [{"role": "user", "content": "ab"}],
+                                                    "max_tokens": 5, "reasoning_budget": -2}))
+        self.assertEqual(err.exception.code, 400)
+
+    def test_an_answer_that_is_already_past_the_block_gets_no_budget(self):
+        """The prompt ended on the reasoning-end token, so there is no block to bound."""
+        s = chat_server()
+        s.reasoning_end = ord("b")                       # the rendered prompt "ab" ends on it
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 5}))
+        self.assertNotIn("reasoning_budget", s.engine.options[0])
+
     def test_legacy_completions_tokenize_and_detokenize(self):
         s = chat_server()
         out = self._serve(s, lambda base: self._post(base, "/v1/completions", {"prompt": "xy", "max_tokens": 2, "echo": True, "n": 1}))
         self.assertEqual(out["object"], "text_completion")
         self.assertEqual(out["choices"][0]["text"], "xyyy")
         self.assertEqual(out["choices"][0]["finish_reason"], "length")
-        self.assertEqual(out["usage"], {"prompt_tokens": 2, "completion_tokens": 2, "total_tokens": 4})
+        self.assertEqual(out["usage"], {"prompt_tokens": 2, "completion_tokens": 2, "total_tokens": 4,
+                                        "prompt_tokens_details": {"cached_tokens": 0}})
         out = self._serve(s, lambda base: self._post(base, "/v1/completions", {"prompt": [[120, 121]], "max_tokens": 1}))
         self.assertEqual(out["choices"][0]["text"], "y")
         tk = self._serve(s, lambda base: self._post(base, "/tokenize", {"prompt": "abc"}))
@@ -2192,6 +2299,73 @@ class OpenAIDialectTests(unittest.TestCase):
         media = s.engine.media[0]
         self.assertEqual([(m["canvas"], m["positions"]) for m in media], [(b"cat", [1, 2, 3]), (b"dog", [7, 8, 9])])   # absolute positions
 
+    def test_cached_tokens_say_what_a_continued_turn_did_not_prefill(self):
+        """An agent resends its whole transcript every step. `usage.prompt_tokens_details.cached_tokens` is where its
+        SDK already looks to find out whether that is costing anything."""
+        s = chat_server(keep_idle=True)
+        first = self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                       {"messages": [{"role": "user", "content": "abcd"}], "max_tokens": 2}))
+        self.assertEqual(first["usage"]["prompt_tokens_details"]["cached_tokens"], 0)      # nothing to continue yet
+        self.assertEqual(s.engine.history(0), [97, 98, 99, 100, 100, 100])                # "abcd" and two 'd's of answer
+        second = self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                        {"messages": [{"role": "user", "content": "abcddddef"}], "max_tokens": 2}))
+        self.assertEqual(second["usage"]["prompt_tokens"], 9)
+        # five, not six: the token the row sampled last has never been through a forward pass, so it is not computed.
+        # This counts what the engine did not have to do, which is the question the number is asked to answer.
+        self.assertEqual(second["usage"]["prompt_tokens_details"]["cached_tokens"], 5)
+
+    def test_cached_tokens_say_what_a_reused_boundary_gave(self):
+        s = chat_server(prefix=4)                                  # BLOCK 4: "abcdefgh" is two whole blocks
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               {"messages": [{"role": "user", "content": "abcdefgh"}], "max_tokens": 2}))
+        out = self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                     {"messages": [{"role": "user", "content": "abcdefghij"}], "max_tokens": 2}))
+        self.assertEqual(out["usage"]["prompt_tokens_details"]["cached_tokens"], 8)
+        self.assertEqual(out["usage"]["prompt_tokens"], 10)
+
+    def test_prompt_cache_key_is_the_openai_name_for_cache_salt(self):
+        s = chat_server(prefix=4)
+        body = lambda key, text: {"messages": [{"role": "user", "content": text}], "max_tokens": 2,   # noqa: E731
+                                  "prompt_cache_key": key}
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body("red", "abcdefgh")))
+        other = self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body("blue", "abcdefghij")))
+        self.assertEqual(other["usage"]["prompt_tokens_details"]["cached_tokens"], 0)      # another key never reads red's
+        same = self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body("red", "abcdefghij")))
+        self.assertEqual(same["usage"]["prompt_tokens_details"]["cached_tokens"], 8)
+
+    def test_the_two_names_for_the_cache_key_may_not_disagree(self):
+        s = chat_server(prefix=4)
+        def ask(extra):
+            return self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                          {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1, **extra}))
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            ask({"cache_salt": "red", "prompt_cache_key": "blue"})
+        self.assertEqual(error.exception.code, 400)
+        ask({"cache_salt": "red", "prompt_cache_key": "red"})                              # one field under two names is fine
+
+    def test_cached_tokens_count_a_conversation_brought_back_from_the_tier(self):
+        """The third admission path: not a cached boundary and not a resident row, but a whole conversation read back
+        off NVMe. An agent whose step came minutes after the last one lands here."""
+        s = chat_server(keep_idle=True, tiered=True)
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               {"messages": [{"role": "user", "content": "abcd"}], "max_tokens": 2}))
+        for _ in range(200):                                   # the park runs on the tier's thread (D10)
+            s.once()
+            if s.runner.is_parked(0):
+                break
+        self.assertTrue(s.runner.is_parked(0))
+        self.assertFalse(s._conversations)                     # no row holds it: the next turn must read it back
+        second = self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                        {"messages": [{"role": "user", "content": "abcddddef"}], "max_tokens": 2}))
+        self.assertEqual(second["usage"]["prompt_tokens"], 9)
+        self.assertEqual(second["usage"]["prompt_tokens_details"]["cached_tokens"], 5)
+
+    def test_a_served_request_leaves_no_cached_token_record_behind(self):
+        s = chat_server(prefix=4)
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               {"messages": [{"role": "user", "content": "abcdefgh"}], "max_tokens": 2}))
+        self.assertFalse(s._cached)
+
     def test_a_history_resent_without_its_end_token_still_continues(self):
         s = chat_server(keep_idle=True)
         s.engine.eos = {ord('b')}; s.engine.stop_at_eos = True          # 'b' ends a generation and is never fed
@@ -2234,6 +2408,30 @@ class OpenAIDialectTests(unittest.TestCase):
         prefills = [c for c in s.engine.__dict__.get("prefills", [])]     # the fake does not record steps; the counters above say it
         self.assertIn("st:prefix_dedup_waits_total{engine=\"st\"} 1\n", s.metrics())
 
+    def test_the_decode_chain_meters_reach_the_metrics_page(self):
+        """How much of decode runs ahead on the device, how often that pipeline is emptied, and by what. The
+        engine's own `async_steps` existed and never left the process, so nobody could see the first of these."""
+        s = chat_server()
+        s.runner.async_steps, s.runner.sync_drain_steps = 12, 3
+        s.engine.chain_exits = {"logprobs": 7, "rows_churned": 2}
+        page = s.metrics()
+        self.assertIn('st:async_decode_steps_total{engine="st"} 12\n', page)       # how much ran ahead
+        self.assertIn('st:sync_drain_steps_total{engine="st"} 3\n', page)          # how often it was emptied
+        self.assertIn('st:decode_chain_exits_total{engine="st",reason="logprobs"} 7\n', page)     # ... and by what
+        self.assertIn('st:decode_chain_exits_total{engine="st",reason="rows_churned"} 2\n', page)
+
+    def test_the_snapshot_pressure_meters_reach_the_metrics_page(self):
+        """A prompt has a block boundary every BLOCK tokens and the engine has a fixed number of snapshot slots, so a
+        long enough prompt drops checkpoints it just computed. These three say whether that is happening."""
+        s = chat_server(prefix=4)
+        self.assertIn('st:prefix_snapshots_free{engine="st"} 4\n', s.metrics())
+        s.runner.prefix.take_snapshot()
+        self.assertIn('st:prefix_snapshots_free{engine="st"} 3\n', s.metrics())
+        s.runner.prefix.snapshot_denials, s.runner.snapshot_self_evicts = 3, 7      # distinct: a swapped wire shows
+        page = s.metrics()
+        self.assertIn('st:prefix_snapshot_denials_total{engine="st"} 3\n', page)
+        self.assertIn('st:prefix_snapshot_self_evicts_total{engine="st"} 7\n', page)
+
     def test_warm_caches_a_prompt_s_boundaries_and_pins_them_until_unpinned(self):
         s = chat_server(prefix=4)
         httpd = s._serve_http()
@@ -2255,6 +2453,297 @@ class OpenAIDialectTests(unittest.TestCase):
         finally:
             httpd.shutdown(); httpd.server_close()
 
+    def test_the_model_card_states_what_this_boot_actually_bound(self):
+        """SparkFleet probes `/v1/models` to decide a backend is routable and wormhole turns its
+        inventory into routes, so this is where the engine says what it can do (45차 §56)."""
+        s = chat_server(prefix=4)
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                out = drive(s, pool.submit(self._get, base, "/v1/models"))
+            card = out["data"][0]
+            self.assertEqual((out["object"], card["object"], card["owned_by"]), ("list", "model", "st"))
+            self.assertEqual(card["id"], s.model_name)
+            self.assertIsNone(card["max_model_len"], "a fake engine declares no ceiling: the card says None, not a guess")
+            s.engine.max_context = 262144
+            self.assertEqual(s.model_card()["max_model_len"], 262144)       # vLLM's field name, so vLLM readers get it free
+            caps = card["capabilities"]
+            self.assertEqual(caps["prefix_cache"], True)
+            self.assertEqual(caps["max_concurrent_requests"], s.runner.c.max_running)
+            self.assertEqual(caps["streaming"], True)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_the_card_never_claims_a_capability_this_boot_did_not_bind(self):
+        # A hand-written capability drifts; this one is read off the objects that exist.
+        s = chat_server()
+        self.assertEqual(s.vision, None)
+        caps = s.model_card()["capabilities"]
+        self.assertEqual((caps["vision"], caps["conversation_tier"]), (False, False))
+        s.vision = object()
+        self.assertEqual(s.model_card()["capabilities"]["vision"], True)
+
+    def test_the_continuation_scan_reads_a_digest_and_not_every_parked_conversation(self):
+        """A record carries the conversation's WHOLE token list -- 3.8 MiB of Python ints for a
+        100K-token turn -- and the scan used to pull one per parked conversation per request.
+        At this fleet's 280 parked that is 1.04 GiB resident, on a box whose OOM floor is an
+        absolute 6 GiB (45차 §62). The per-candidate question is three numbers."""
+        s = chat_server()
+        reads = []
+
+        class Runner:
+            def __init__(self, inner): self.inner = inner
+            def __getattr__(self, name): return getattr(self.inner, name)
+            def parked_keys(self): return [11, 22, 33]
+            def parked_digest(self, key):
+                return {11: {"tokens": 2, "last": ord("a"), "prev": ord("z"), "media": []},
+                        22: {"tokens": 3, "last": 999, "prev": 998, "media": []},
+                        33: {"tokens": 99, "last": 1, "prev": 2, "media": []}}[key]
+            def parked_record(self, key):
+                reads.append(key)
+                return {"tokens": [ord("z"), ord("a")], "media": []} if key == 11 else None
+
+        s.runner = Runner(s.runner)
+        ids = [ord("z"), ord("a"), ord("b")]
+        best = s._continuation(ids)
+        self.assertEqual(reads, [11], "only the candidate the digest could not reject was read")
+        self.assertEqual(best, (11, 2, False))
+
+    def test_a_continuing_turn_tokenizes_only_its_tail(self):
+        """An agent resends its whole conversation every turn. Measured on the real checkpoint:
+        239 ms to re-tokenize a 106K-token conversation for 29 new tokens (0.05 ms). Splicing is
+        sound only where no merge crosses the cut, so the base must end on an ADDED token --
+        which `tokenizers` matches before the BPE model, and which a rendered chat prompt ends
+        with by construction (45차 §61)."""
+        from engine.base.serve import PromptTokens
+
+        class Tok:
+            """Character-level, with two 'added' ids: 1 is a legal cut, 2 is not."""
+            def __init__(self): self.calls = []
+            def get_added_tokens_decoder(self): return {1: object()}
+            def encode(self, text, add_special_tokens=False):
+                self.calls.append(text)
+                return type("E", (), {"ids": [1 if c == "|" else ord(c) for c in text]})()
+
+        tok = Tok()
+        pt = PromptTokens(tok)
+        first = pt.encode("abc|")
+        self.assertEqual(tok.calls, ["abc|"])
+        self.assertEqual((pt.full, pt.spliced), (1, 0))
+
+        second = pt.encode("abc|def|")
+        self.assertEqual(tok.calls[-1], "def|", "only the tail reached the tokenizer")
+        self.assertEqual(second, first + [ord("d"), ord("e"), ord("f"), 1])
+        self.assertEqual((pt.full, pt.spliced, pt.chars_saved), (1, 1, 4))
+
+    def test_a_base_that_does_not_end_on_a_cut_is_tokenized_whole(self):
+        # Cut mid-word the splice is NOT identical (47 tokens against 45 on the real vocab),
+        # so a base whose last token is not an added token must not be spliced against.
+        from engine.base.serve import PromptTokens
+
+        class Tok:
+            def __init__(self): self.calls = []
+            def get_added_tokens_decoder(self): return {1: object()}
+            def encode(self, text, add_special_tokens=False):
+                self.calls.append(text)
+                return type("E", (), {"ids": [ord(c) for c in text]})()
+
+        tok = Tok()
+        pt = PromptTokens(tok)
+        pt.encode("abc")                                  # ends on 'c', not an added token
+        pt.encode("abcdef")
+        self.assertEqual(tok.calls, ["abc", "abcdef"], "the second pass saw the whole prompt")
+        self.assertEqual((pt.full, pt.spliced), (2, 0))
+
+    def test_the_prompt_cache_is_bounded_by_entries_and_by_characters(self):
+        from engine.base.serve import PromptTokens
+
+        class Tok:
+            def get_added_tokens_decoder(self): return {1: object()}
+            def encode(self, text, add_special_tokens=False):
+                return type("E", (), {"ids": [1 if c == "|" else ord(c) for c in text]})()
+
+        pt = PromptTokens(Tok(), keep=2, max_chars=1 << 20)
+        for i in range(5):
+            pt.encode(f"{i}|")
+        self.assertEqual(len(pt.entries), 2)
+        pt = PromptTokens(Tok(), keep=100, max_chars=8)
+        for i in range(5):
+            pt.encode(f"{i}aaaa|")
+        self.assertLessEqual(pt.chars, 8 + len("0aaaa|"))
+        self.assertGreaterEqual(len(pt.entries), 1)
+
+    def test_the_reuse_path_census_separates_a_continuation_from_a_shared_prefix(self):
+        """A prompt finds its KV two ways and nobody has measured the split. Inside an agent run
+        each tool step extends the previous prompt exactly, so the conversation is continued and
+        nothing is prefilled; between runs Deneb reloads the clean transcript and the prompt
+        diverges at ~92%, where the prefix cache adopts everything that is still shared. Both
+        are right, and which one carries the traffic is a number, not an argument (45차 §70)."""
+        s = chat_server()
+        self.assertEqual(s.reuse_paths, {"continuation": 0, "prefix_or_cold": 0})
+        self.assertNotIn("st:reuse_path_total", s.metrics(), "no traffic, no series")
+
+        s.reuse_paths["prefix_or_cold"] = 7
+        s.reuse_paths["continuation"] = 2
+        page = s.metrics()
+        self.assertIn('st:reuse_path_total{engine="st",path="continuation"} 2\n', page)
+        self.assertIn('st:reuse_path_total{engine="st",path="prefix_or_cold"} 7\n', page)
+
+    def test_the_grammar_cache_meters_reach_the_scrape(self):
+        s = chat_server()
+        self.assertNotIn("st:grammar_cache_entries", s.metrics(), "no structured output, no rows")
+
+        class Grammars:
+            KEPT = 256
+            compiles, cache_hits, cache_evictions = 9, 4, 2
+            _cache = {"a": 1, "b": 2}
+        s.engine.grammars = Grammars()
+        page = s.metrics()
+        self.assertIn('st:grammar_cache_entries{engine="st"} 2\n', page)
+        self.assertIn('st:grammar_cache_limit{engine="st"} 256\n', page)
+        self.assertIn('st:grammar_compiles_total{engine="st"} 9\n', page)
+        self.assertIn('st:grammar_cache_hits_total{engine="st"} 4\n', page)
+        self.assertIn('st:grammar_cache_evictions_total{engine="st"} 2\n', page)
+
+    def test_the_splice_meters_reach_the_scrape(self):
+        s = chat_server()
+        s.prompt_tokens.spliced, s.prompt_tokens.full, s.prompt_tokens.chars_saved = 7, 3, 4096
+        page = s.metrics()
+        self.assertIn('st:prompt_tokenize_spliced_total{engine="st"} 7\n', page)
+        self.assertIn('st:prompt_tokenize_full_total{engine="st"} 3\n', page)
+        self.assertIn('st:prompt_tokenize_chars_saved_total{engine="st"} 4096\n', page)
+
+    def test_the_status_door_publishes_the_fleet_lifecycle(self):
+        """Who holds the fleet, whether it was asked to let go, and how the handover went. The
+        engine writes all three into ~/st-fleet.lock and until now the only reader had to ssh
+        to rank 0 and cat it -- while everything that watches this engine already reaches the
+        door (45차 §60)."""
+        s = chat_server()
+        self.assertIsNone(s.fleet_status(), "no lease, no field: a bare run's status is unchanged")
+
+        s.lease = {"owner": "st-glm53", "path": "/home/choiceoh/st-fleet.lock"}
+        self.assertEqual(s.fleet_status(),
+                         {"owner": "st-glm53", "path": "/home/choiceoh/st-fleet.lock",
+                          "draining": None, "handed_over": None})
+
+        s.draining = "another-session"
+        self.assertEqual(s.fleet_status()["draining"], "another-session")
+        s.handed_over = {"to": "another-session", "parked": 3, "lost": 0}
+        self.assertEqual(s.fleet_status()["handed_over"], {"to": "another-session", "parked": 3, "lost": 0})
+
+    def test_the_status_body_carries_the_fleet_block_only_with_a_lease(self):
+        s = chat_server()
+        out = self._serve(s, lambda base: self._get(base, "/"))
+        self.assertNotIn("fleet", out)
+        s.lease = {"owner": "st-glm53", "path": "/tmp/lock"}
+        out = self._serve(s, lambda base: self._get(base, "/"))
+        self.assertEqual(out["fleet"]["owner"], "st-glm53")
+        self.assertEqual(out["engine"], "ST")
+
+    def test_the_catalog_stops_advertising_while_the_fleet_is_being_handed_over(self):
+        """`/v1/models` is the endpoint the control plane asks: wormhole re-probes it for
+        `max_model_len` and SparkFleet takes a service's model id from it, which is what makes a
+        backend routable. Nothing there reads `/health`, so a drain has to show up here."""
+        s = chat_server()
+        body, code = s.catalog()
+        self.assertEqual((code, len(body["data"])), (200, 1))
+
+        s.draining = "another-session"
+        body, code = s.catalog()
+        self.assertEqual(code, 503)
+        self.assertEqual(body["data"], [], "an empty catalog and a 503: both probes agree")
+        self.assertEqual((body["status"], body["handing_over_to"]), ("draining", "another-session"))
+
+        s.draining, s.alive = None, False
+        body, code = s.catalog()
+        self.assertEqual((code, body["status"], body["data"]), (503, "stopping", []))
+
+    def test_the_models_endpoint_carries_the_drain_verdict(self):
+        # No `drive`: a driven loop that is already quiet completes the handover.
+        s = chat_server()
+        s.draining = "another-session"
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self._get(base, "/v1/models")
+            self.assertEqual(caught.exception.code, 503)
+            self.assertEqual(json.loads(caught.exception.read())["data"], [])
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_health_says_draining_while_the_fleet_is_being_handed_over(self):
+        """`alive` stays true through a drain -- that is the point -- but every new request is
+        already refused with 503. A prober that only asks "alive?" keeps the engine in the
+        inventory and every caller pays a failed hop before the router fails over."""
+        s = chat_server()
+        self.assertEqual(s.readiness(), ({"status": "ok"}, 200))
+        s.draining = "another-session"
+        body, code = s.readiness()
+        self.assertEqual(code, 503)
+        self.assertEqual((body["status"], body["handing_over_to"]), ("draining", "another-session"))
+        s.draining, s.alive = None, False
+        self.assertEqual(s.readiness(), ({"status": "stopping"}, 503))
+
+    def test_the_health_endpoint_carries_the_draining_verdict(self):
+        # No `drive` here on purpose: a driven loop that is already quiet finishes the handover
+        # and the answer becomes "stopping". The door thread answers a GET without the loop.
+        s = chat_server()
+        s.draining = "another-session"
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                self._get(base, "/health")
+            self.assertEqual(caught.exception.code, 503)
+            body = json.loads(caught.exception.read())
+            self.assertEqual((body["status"], body["handing_over_to"]), ("draining", "another-session"))
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_reset_throws_the_whole_prefix_cache_away_on_the_loop_thread(self):
+        """The case nothing in the engine can see: the prompt's MEANING changed under an unchanged
+        prefix -- a tool list, a retrieved document, an edited template -- so the ids still hash
+        the same and every boundary still matches. `unpin` only releases a pin (45차 §55)."""
+        s = chat_server(prefix=4)
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                drive(s, pool.submit(self._post, base, "/v1/prefix/warm", {"prompt": "abcdefghij"}))
+                for _ in range(3):
+                    s.once()
+                self.assertEqual(len(s.runner.prefix.entries), 2)
+                self.assertEqual(s.runner.kv.cached, 2)
+
+                out = drive(s, pool.submit(self._post, base, "/v1/prefix/reset", {}))
+                self.assertEqual(out, {"ok": True})
+                for _ in range(3):
+                    s.once()                                 # the control lands on the loop, on every rank, between steps
+
+                self.assertEqual(s.runner.prefix.entries, {})
+                self.assertEqual(s.runner.kv.cached, 0, "the blocks are anonymous again, not lost")
+                self.assertIn('st:prefix_resets_total{engine="st"} 1\n', s.metrics())
+                # and the same prompt is a miss now
+                out = drive(s, pool.submit(self._post, base, "/v1/chat/completions",
+                                           {"messages": [{"role": "user", "content": "abcdefghij"}], "max_tokens": 1}))
+                self.assertEqual(out["usage"]["prompt_tokens_details"]["cached_tokens"], 0)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_reset_is_refused_where_there_is_no_prefix_cache(self):
+        s = chat_server()
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                with self.assertRaises(urllib.error.HTTPError) as caught:
+                    drive(s, pool.submit(self._post, base, "/v1/prefix/reset", {}))
+                self.assertEqual(caught.exception.code, 404)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
     def test_a_boundary_evicted_to_the_prefix_tier_comes_back_for_a_later_prompt(self):
         s = chat_server(prefix=3, prefix_tier=True)
         s.runner.spill_low_water = 10                                    # spill leaves as soon as they exist
@@ -2273,6 +2762,7 @@ class OpenAIDialectTests(unittest.TestCase):
                 out = drive(s, pool.submit(self._post, base, "/v1/chat/completions",
                                            {"messages": [{"role": "user", "content": "abcdefghXY"}], "max_tokens": 1}))
                 self.assertEqual(out["usage"]["prompt_tokens"], 10)
+                self.assertEqual(out["usage"]["prompt_tokens_details"]["cached_tokens"], 8)   # read from disk still counts as cached
                 self.assertEqual(s.runner.prefix_restores, before + 1)   # the tier's copy served: 8 tokens were not recomputed
                 self.assertIn((0, 8, 0) if False else 8, [p for _, p, _ in s.engine.restored])
                 self.assertIn("st:prefix_tier_restores_total{engine=\"st\"} 1\n", s.metrics())

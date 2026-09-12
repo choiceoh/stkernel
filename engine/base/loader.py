@@ -51,6 +51,17 @@ from pathlib import Path
 GIB = 1 << 30
 SECTOR = 4096                # O_DIRECT's alignment on this fleet (base/kv_tier uses the same)
 
+# How wide a coalesced run may grow, and so how much pinned host memory the two staging buffers
+# hold while a rank loads. A run can never be narrower than the widest single tensor -- 576 MiB
+# in GLM-5.3's rank file -- so the cap's only job is to stop COALESCING from making the buffer
+# larger than that. At 1 GiB it did: 54 runs, 1,017.5 MiB each, 1.99 GiB pinned. At 512 MiB the
+# widest run is the tensor itself and the pair costs 1.125 GiB -- 862 MiB of host headroom
+# handed back at exactly the moment the box has least of it, with the page cache still full of
+# the file just read and the arena about to be asked for. It also reads FASTER, three runs on
+# srv4 against the real rank file: 3.94/4.20/4.38 GiB/s at 1 GiB, 4.75/4.93/5.18 at 512 MiB --
+# the narrower buffer reaches the disk's O_DIRECT ceiling and the wider one does not (45차 §49).
+MAX_RUN = 512 << 20
+
 # safetensors dtype names -> torch. Only what this checkpoint actually holds;
 # an unknown name raises rather than guessing a width.
 _DTYPES = {
@@ -127,7 +138,7 @@ class RankLoader:
         return sum(self.header[k]["data_offsets"][1] - self.header[k]["data_offsets"][0]
                    for k in keys)
 
-    def runs(self, keys, max_gap: int = 1 << 20, max_run: int = 1 << 30) -> "list[Run]":
+    def runs(self, keys, max_gap: int = 1 << 20, max_run: int = MAX_RUN) -> "list[Run]":
         """Coalesce `keys` into contiguous ranges.
 
         `max_gap` tolerates a hole rather than splitting the read -- reading a
@@ -193,11 +204,13 @@ class RankLoader:
         runs = self.runs(keys, max_run=max_run)
         if not runs:
             return {}
-        owners, buffers = staging(self.staging_bytes(runs), 2, device)
+        # two buffers so a read overlaps the upload before it; one run has nothing to overlap
+        # with, and the second buffer would be half a gigabyte of pinned memory held for nothing.
+        owners, buffers = staging(self.staging_bytes(runs), 1 if len(runs) == 1 else 2, device)
         out, blocks, staged = {}, [], None
 
         def read(index):
-            return self._read_run(runs[index], buffers[index % 2])
+            return self._read_run(runs[index], buffers[index % len(buffers)])
 
         try:
             with ThreadPoolExecutor(max_workers=1) as pool:

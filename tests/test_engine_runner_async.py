@@ -77,6 +77,33 @@ def runner(model=None, blocks=64):
 
 
 class AsyncRunnerTests(unittest.TestCase):
+    def test_cancel_does_not_wait_for_later_batches_without_that_row(self):
+        r = runner()
+        r.keep_idle = True
+        r.submit(1, 16, now=0); r.submit(2, 16, now=0)
+        r.step(now=0); r.step(now=25)
+        r.model.left[1] = 1
+        r.step(now=25)
+        r.resolve_oldest()                                 # row 1 leaves before the next batch
+        r.step(now=25)
+        before = list(r.inflight)
+        r.cancel(1)
+        self.assertEqual(r.inflight, before)
+        self.assertEqual(r.inflight[0][0].seqs, (2,))
+        r.settle()
+
+    def test_reused_row_lands_its_old_ghost_before_the_new_request_is_opened(self):
+        r = runner()
+        r.submit(1, 16, now=0); r.step(now=0)
+        r.model.left[1] = 1
+        r.step(now=0); r.step(now=0)
+        r.resolve_oldest()                                 # first step completes, second is an inert ghost
+        self.assertTrue(r.inflight)
+        r.submit(1, 16, now=1)
+        self.assertFalse(r.inflight)
+        r.step(now=1); r.step(now=1); r.drain()
+        self.assertEqual(r.model.left[1], 2)
+
     def test_two_steps_run_ahead_and_the_third_launch_resolves_the_first(self):
         r = runner()
         r.submit(1, 20, now=0.0)

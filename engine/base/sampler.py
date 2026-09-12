@@ -146,7 +146,8 @@ if __name__ == "__main__":
 # rank identically (same generator seeds, same order), so the picks agree without a message.
 
 OPTION_KEYS = ("top_p", "top_k", "seed", "presence_penalty", "frequency_penalty", "repetition_penalty",
-               "logit_bias", "stop_token_ids", "logprobs", "grammar", "grammar_after")
+               "logit_bias", "stop_token_ids", "logprobs", "grammar", "grammar_after",
+               "reasoning_budget", "reasoning_end")
 
 
 def validate_options(options: dict) -> None:
@@ -184,6 +185,13 @@ def validate_options(options: dict) -> None:
         raise ValueError("grammar must be a json_object, json_schema or ebnf spec")
     if g is not None and g.get("type") == "ebnf" and not (isinstance(g.get("grammar"), str) and g["grammar"]):
         raise ValueError("an ebnf grammar spec needs its grammar text")
+    budget, end = options.get("reasoning_budget"), options.get("reasoning_end")
+    if budget is not None and (type(budget) is not int or budget < 0):
+        raise ValueError("reasoning_budget must be a nonnegative integer")
+    if end is not None and (type(end) is not int or end < 0):
+        raise ValueError("reasoning_end must be a token id")
+    if (budget is None) != (end is None):
+        raise ValueError("reasoning_budget is spent by writing reasoning_end: give both or neither")
     after = options.get("grammar_after")
     if after is not None and (type(after) is not int or after < 0):
         raise ValueError("grammar_after must be a token id")
@@ -202,7 +210,8 @@ def needs_rich_sampler(options: dict, temperature: float, drafts: bool) -> bool:
     stochastic row with drafts, for the rejection sampling).
     """
     if any(options.get(k) is not None for k in ("seed", "presence_penalty", "frequency_penalty",
-                                                 "repetition_penalty", "logit_bias", "logprobs", "grammar")):
+                                                 "repetition_penalty", "logit_bias", "logprobs", "grammar",
+                                                 "reasoning_budget")):
         return True
     return drafts and temperature > 0
 
@@ -264,7 +273,7 @@ class History:
 
 def process_logits(logits: torch.Tensor, options: dict, seen: torch.Tensor, counts: torch.Tensor,
                    extra=(), decodable: "int | None" = None, forbid: "torch.Tensor | None" = None,
-                   out: "torch.Tensor | None" = None) -> torch.Tensor:
+                   out: "torch.Tensor | None" = None, force: "int | None" = None) -> torch.Tensor:
     """One row's raw logits [V] -> the logits the pick is made from: logit_bias, repetition/presence/frequency
     penalties over the row's tokens, the decodable cut and min_tokens' forbidden ids.
 
@@ -274,6 +283,10 @@ def process_logits(logits: torch.Tensor, options: dict, seen: torch.Tensor, coun
     `forbid` is a handful of end tokens, written one by one: a vocabulary of True to say so would cost more than
     the writes. A grammar's mask is the size of the vocabulary and is not applied here at all -- it lands on the
     finished row as packed words, by xgrammar's kernel (base/grammar.StepMasks.apply).
+
+    `force` is a token the row must write here, and it is the mirror of `forbid`: everything else
+    goes to -inf. Only the reasoning budget uses it (45차 §46), and it is applied last, so a token
+    `forbid` rules out is not forced back in -- min_tokens is a promise and a budget is not.
 
     `out` [V] fp32 receives the result instead of a fresh tensor. A row's positions are written into consecutive
     rows of one buffer that way, which is what lets the grammar mask cross the whole row in a single launch.
@@ -301,6 +314,10 @@ def process_logits(logits: torch.Tensor, options: dict, seen: torch.Tensor, coun
         out[decodable:] = float("-inf")
     if forbid is not None:
         out[forbid] = float("-inf")
+    if force is not None and (forbid is None or not bool((forbid == force).any())):
+        kept = out[force].item()
+        out.fill_(float("-inf"))
+        out[force] = kept if kept > float("-inf") else 0.0
     return out
 
 
@@ -468,20 +485,60 @@ def speculative_pick_batch(target_probs: torch.Tensor, drafts: torch.Tensor, dra
     return accepted, tokens, accepted + 1
 
 
-def block_verify_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_probs: torch.Tensor, generator):
+def block_verify_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_cand: torch.Tensor,
+                       draft_probs: torch.Tensor, generator):
     """`block_verify` for a whole decode batch on the device, with no host round trip.
 
-    target_probs [n, K+1, V]; drafts [n, K]; draft_probs [n, K, V]. Returns (accepted [n],
-    tokens [n, K+1] with the committed ones first, count [n] = accepted + 1). Draws K uniforms per
-    row then one more per row, in that order, identically on every rank -- the same shape of
-    stream `speculative_pick_batch` drew, so the ranks stay in step.
+    target_probs [n, K+1, V]; drafts [n, K]; the draft distribution as the candidates it could have drawn
+    (`draft_cand` [n, K, C] int64, distinct within a position -- it is a top-k) and the mass it put on each
+    (`draft_probs` [n, K, C]). Returns (accepted [n], tokens [n, K+1] with the committed ones first,
+    count [n] = accepted + 1). Draws K uniforms per row then one more per row, in that order, identically on
+    every rank, so the ranks stay in step.
+
+    On CUDA the middle of this is one kernel (engine/kernels/block_verify): written as torch operations it issued
+    about 180 device ops per call and spent 2,425 us of wall on 397 us of work at the shape production runs,
+    because at one sequence and K=5 most of those tensors hold five numbers. The code below is what the kernel is
+    judged against, not a fallback it drops to.
+
+    The draft is ZERO outside those C candidates -- that is what `propose_rows` builds and what the accept
+    test is only unbiased against. Carrying it as [n, K, V] therefore cost a 12.4 MiB allocation, zeroed and
+    then read twice, every decode step to hold 320 numbers (V=154,880, K=5, C=16, n=4). Every place the dense
+    row was read below has an exactly equal form over the candidates, and the residual that funds the
+    correction draw is the target with C entries reduced rather than a second [n, V] tensor subtracted.
     """
+    n, k1, _ = target_probs.shape
+    K = k1 - 1
+    device = target_probs.device
+    if target_probs.is_cuda:
+        # One launch instead of about 180. The uniforms are still drawn here, in this order, so the stream every
+        # rank walks is unchanged; the correction draw stays in torch because `_inverse_cdf`'s cumsum is a
+        # parallel scan and a sequential one differs in the last bits (engine/kernels/block_verify).
+        from engine.kernels.block_verify import verify_rows
+        # Still two draws, K per row and then one per row. Folding them into rand(n, K+1) would save a launch
+        # and change every number: Philox does not hand out the same stream for one call of n*(K+1) as for a
+        # call of n*K followed by a call of n. The tokens are what a recorded step replays (D12).
+        u = torch.rand(n, K, generator=generator, device=device)
+        accepted, at, tokens, rest = verify_rows(target_probs, drafts, draft_cand, draft_probs, u)
+        fresh = _inverse_cdf(rest, torch.rand(n, generator=generator, device=device))
+        tokens.scatter_(1, at.unsqueeze(1), fresh.unsqueeze(1))
+        return accepted, tokens, accepted + 1
+    return _block_verify_by_torch(target_probs, drafts, draft_cand, draft_probs, generator)
+
+
+def _block_verify_by_torch(target_probs, drafts, draft_cand, draft_probs, generator):
+    """`block_verify_batch` written the obvious way: the reference the kernel is judged against.
+
+    It runs wherever it is given tensors, CUDA included, so the two can be compared on one device from one
+    generator -- a CPU generator and a CUDA generator do NOT agree at the same seed, and comparing across them
+    reads as a kernel bug when it is only two different streams of uniforms."""
     n, k1, _ = target_probs.shape
     K = k1 - 1
     device = target_probs.device
     rows = iota(n, device)
     on_draft = target_probs[:, :K].gather(2, drafts.unsqueeze(2)).squeeze(2)
-    by_draft = draft_probs.gather(2, drafts.unsqueeze(2)).squeeze(2)
+    # q at the drafted token: it is one of that position's own candidates, so a masked sum finds it without
+    # a [V]-wide row (and sums duplicates, exactly as the scatter_add that used to build the dense row did)
+    by_draft = (draft_probs * (draft_cand == drafts.unsqueeze(2))).sum(2)
     step = torch.where(by_draft > 0, on_draft / by_draft.clamp_min(1e-30), torch.zeros_like(on_draft))
     # The cap lands at every step, so this scan is not a cumprod. K is the draft width, five here.
     carried = torch.empty_like(step)
@@ -491,8 +548,12 @@ def block_verify_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_p
         carried[:, i] = running
     thresholds = carried.clone()                     # the last position's threshold is its own P_K
     if K > 1:
-        ahead = carried[:, : K - 1].unsqueeze(-1)
-        mass = (ahead * target_probs[:, 1:K] - draft_probs[:, 1:K]).clamp_min(0).sum(-1)
+        ahead = carried[:, : K - 1]
+        p = target_probs[:, 1:K]
+        # sum_v max(0, a*p_v - q_v) with q zero off the candidates: the whole scaled target, minus what the
+        # candidates take of it, plus what survives the draft at each of them
+        on_cand = ahead.unsqueeze(-1) * p.gather(2, draft_cand[:, 1:K])
+        mass = ahead * p.sum(-1) - on_cand.sum(-1) + (on_cand - draft_probs[:, 1:K]).clamp_min(0).sum(-1)
         denominator = mass + 1.0 - carried[:, : K - 1]
         thresholds[:, : K - 1] = torch.where(denominator > 0, mass / denominator.clamp_min(1e-30),
                                              torch.ones_like(mass))
@@ -503,8 +564,13 @@ def block_verify_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_p
     before = torch.where(accepted > 0, carried.gather(1, (accepted - 1).clamp_min(0).unsqueeze(1)).squeeze(1),
                          torch.ones(n, device=device, dtype=carried.dtype))
     row_p = target_probs[rows, at]
-    row_q = torch.where((at < K).unsqueeze(1), draft_probs[rows, at.clamp_max(K - 1)], torch.zeros_like(row_p))
-    rest = (before.unsqueeze(1) * row_p - row_q).clamp_min(0)
+    rest = before.unsqueeze(1) * row_p
+    # ... minus the draft, which is zero everywhere except its C candidates, and absent when the row ran the
+    # block out (`at == K`: there is no drafted position left to subtract)
+    held = at.clamp_max(K - 1)
+    where = draft_cand[rows, held]
+    took = torch.where((at < K).unsqueeze(1), draft_probs[rows, held], torch.zeros_like(draft_probs[rows, held]))
+    rest = rest.scatter(1, where, (rest.gather(1, where) - took).clamp_min(0))
     total = rest.sum(1, keepdim=True)
     rest = torch.where(total > 0, rest / total.clamp_min(1e-30),
                        row_p / row_p.sum(1, keepdim=True).clamp_min(1e-30))
@@ -532,6 +598,19 @@ def draft_ceilings(target_probs: torch.Tensor, draft_probs: torch.Tensor) -> "tu
     """
     k = draft_probs.shape[-2]
     p = target_probs[..., :k, :]
+    return float(torch.minimum(p, draft_probs).sum()), float((p * (draft_probs > 0)).sum())
+
+
+def draft_ceilings_over(target_probs: torch.Tensor, draft_cand: torch.Tensor,
+                        draft_probs: torch.Tensor) -> "tuple[float, float]":
+    """`draft_ceilings` from the candidates instead of a [.., V] row, for the batch the device chain verifies.
+
+    Both ceilings are already sums over the draft's support: `min(p, q)` is zero wherever q is, and `p * (q > 0)`
+    is p on exactly the candidates. So neither needs the vocabulary -- the dense row was never adding anything
+    but zeros to these two numbers.
+    """
+    k = draft_probs.shape[-2]
+    p = target_probs[..., :k, :].gather(-1, draft_cand)
     return float(torch.minimum(p, draft_probs).sum()), float((p * (draft_probs > 0)).sum())
 
 

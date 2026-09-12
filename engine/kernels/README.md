@@ -87,7 +87,7 @@ dispatch도 다른 레인과 같이 적용한다. 실제 가중치·반올림·�
   KDA strided Q/K norm on(`VLLM_GLM53_KDA_PREFILL_QK_NORM=1`, 2026-09-06), 정적 컴팩트 컷오버 640,
   micro 입력 공유 on, 경계 검사 on, FLA 라이브러리 기본값(ieee tril, 정확 exp/log, TMA·그래프 off, kernel2 norm).
 - **프로필이 선언하는 만료 노브** (`engine/profiles/glm53/boot.declared`, `STK_*`; 미선언·만료는 부팅 사망):
-  `STK_moe_static` — b12x 정적 레인 사양, 기본 `stock`(§15~18 판정 구성), 후보 `t,r,sf6[,q0]`(프로덕션 09-09 채택값과 TP 레시피).
+  `STK_moe_static` — b12x 정적 레인 사양, 프로덕션 `t,r,sf6,q0`(09-09 채택값과 TP 레시피), 비교용 `stock` 후보도 유지.
   `lanes.served()` 가 `moe_dispatch.configure_static_v2()`/`configure_tp_sf6_q0()` 로 한 번 적용하고, 바인딩 때
   `Lanes.moe_prepare` 가 층마다 뷰를 만든다(셀 `t` 는 아레나 바이트를 제자리 타일 우선으로, `sf6` 는 packed-only 스케일 소유자).
   참조 레인은 `engine/modules/expert_layout.py` 로 같은 바이트를 행 우선으로 읽는다.

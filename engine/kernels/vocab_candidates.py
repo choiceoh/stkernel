@@ -5,6 +5,48 @@ import triton.language as tl
 
 
 @triton.jit
+def _argmax_partials(X, OUT, ROW_STRIDE: tl.constexpr, COL_STRIDE: tl.constexpr,
+                     VALID: tl.constexpr, START: tl.constexpr, PARTS: tl.constexpr,
+                     BLOCK: tl.constexpr):
+    row, part = tl.program_id(0), tl.program_id(1)
+    col = part * BLOCK + tl.arange(0, BLOCK)
+    value = tl.load(X + row * ROW_STRIDE + col * COL_STRIDE, col < VALID, other=0).to(tl.float32)
+    # torch.argmax ties signed zeros and chooses the first NaN, independently
+    # of its sign/payload. Canonicalize before the int64 MAX tie breaker.
+    value = tl.where(value == 0, 0.0, value)
+    bits = value.to(tl.int32, bitcast=True).to(tl.int64)
+    ordered = tl.where(bits < 0, bits ^ 0x7fffffff, bits)
+    ordered = tl.where(value != value, 0x7fc00000, ordered)
+    key = (ordered << 32) | (0xffffffff - (START + col.to(tl.int64)))
+    key = tl.where(col < VALID, key, -9223372036854775808)
+    tl.store(OUT + row * PARTS + part, tl.max(key, 0))
+
+
+@triton.jit
+def _argmax_finish(PARTIALS, OUT, PARTS: tl.constexpr, BLOCK: tl.constexpr):
+    row = tl.program_id(0)
+    part = tl.arange(0, BLOCK)
+    key = tl.load(PARTIALS + row * PARTS + part, part < PARTS, other=-9223372036854775808)
+    tl.store(OUT + row, tl.max(key, 0))
+
+
+def argmax_key(local_logits, start, valid):
+    """One exact MAX packet per row, without a full FP32 vocabulary temporary."""
+    rows = local_logits.shape[0]
+    if not valid:
+        return torch.full((rows,), -(2**63), dtype=torch.int64, device=local_logits.device)
+    parts = triton.cdiv(valid, 1024)
+    partials = torch.empty((rows, parts), dtype=torch.int64, device=local_logits.device)
+    _argmax_partials[(rows, parts)](local_logits, partials, local_logits.stride(0),
+                                  local_logits.stride(1), valid, start, parts, 1024)
+    if parts == 1:
+        return partials.view(rows)
+    out = torch.empty(rows, dtype=torch.int64, device=local_logits.device)
+    _argmax_finish[(rows,)](partials, out, parts, triton.next_power_of_2(parts))
+    return out
+
+
+@triton.jit
 def _pack(X, OUT, ROW_STRIDE: tl.constexpr, COL_STRIDE: tl.constexpr,
           VALID: tl.constexpr, START: tl.constexpr, BLOCK: tl.constexpr):
     row = tl.program_id(0)

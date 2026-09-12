@@ -59,6 +59,110 @@ class RequestError(Exception):
 _TOOL_CALL = re.compile(r"<tool_call>(.*?)</tool_call>", re.S)
 _SAMPLING_RANGES = {"presence_penalty": (-2.0, 2.0), "frequency_penalty": (-2.0, 2.0)}
 
+def _grammar_rows(grammars):
+    """What the compiled-grammar cache is holding. Empty when this boot serves no structured output."""
+    cache = getattr(grammars, "_cache", None)
+    if grammars is None or cache is None:
+        return ()
+    return (("gauge", "st:grammar_cache_entries", "compiled grammars held", len(cache)),
+            ("gauge", "st:grammar_cache_limit", "the declared ceiling on that", grammars.KEPT),
+            ("counter", "st:grammar_compiles_total", "grammars compiled, cache misses included", grammars.compiles),
+            ("counter", "st:grammar_cache_hits_total", "requests that reused a compiled grammar", grammars.cache_hits),
+            ("counter", "st:grammar_cache_evictions_total", "compiled grammars dropped at the ceiling",
+             grammars.cache_evictions))
+
+
+class PromptTokens:
+    """Tokenize a continuing turn by its new tail instead of from the top.
+
+    An agent sends its whole conversation every turn, so the door tokenizes the same hundred
+    thousand characters again to add twenty. Measured on this checkpoint: **239 ms** to
+    re-tokenize a 106K-token conversation against **0.05 ms** for the 29 tokens that were
+    actually new. While a turn is dominated by prefill that hides; once the prefix cache is
+    doing its job -- which for agent traffic is the normal case -- the model barely works on
+    such a turn and that 239 ms becomes its floor (45차 §61).
+
+    Splicing two token streams is sound only where no merge can cross the cut. `tokenizers`
+    matches ADDED tokens before the BPE model, so an added token is exactly such a cut, and a
+    rendered chat prompt ends with one by construction (the generation prompt). The rule is
+    therefore read off the tokenizer's own added-token set rather than guessed from a template,
+    and a base that does not end on one is simply not spliced against. Verified both ways: at
+    `<|assistant|>` the splice is identical to a full pass; cut mid-word it is not (47 tokens
+    against 45), which is why the check is not optional.
+
+    Bounded by entries and by characters, because a door that remembers every prompt is a leak
+    wearing a cache's clothes.
+    """
+
+    def __init__(self, tok, keep: int = 8, max_chars: int = 8 << 20):
+        self.tok, self.keep, self.max_chars = tok, keep, max_chars
+        self.splice_ids = set()
+        try:                                            # tokenizers >= 0.20; without it, nothing splices
+            self.splice_ids = set(tok.get_added_tokens_decoder() or {})
+        except Exception:                               # noqa: BLE001 -- an absent API is not an error here
+            pass
+        self.entries: "list[tuple[str, list]]" = []     # (rendered text, its ids), most recent last
+        self.chars = 0
+        self.spliced = self.full = self.chars_saved = 0
+        self._lock = threading.Lock()
+
+    def _base_for(self, text: str):
+        with self._lock:
+            for base, ids in reversed(self.entries):
+                if len(base) < len(text) and ids and ids[-1] in self.splice_ids and text.startswith(base):
+                    return base, ids
+        return None, None
+
+    def _remember(self, text: str, ids) -> None:
+        with self._lock:
+            self.entries.append((text, ids))
+            self.chars += len(text)
+            while len(self.entries) > self.keep or (self.chars > self.max_chars and len(self.entries) > 1):
+                gone, _ = self.entries.pop(0)
+                self.chars -= len(gone)
+
+    def encode(self, text: str) -> list:
+        """This prompt's ids, spliced onto a remembered prefix when one is a legal cut."""
+        base, ids = self._base_for(text)
+        if base is not None:
+            out = list(ids) + self.tok.encode(text[len(base):], add_special_tokens=False).ids
+            self.spliced += 1
+            self.chars_saved += len(base)
+        else:
+            out = self.tok.encode(text, add_special_tokens=False).ids
+            self.full += 1
+        self._remember(text, out)
+        return out
+
+
+EFFORT_RUNGS = {"low": "low", "medium": "high", "high": "high", "max": "max"}
+"""OpenAI's rungs onto GLM-5.3's two, mapped on purpose instead of by falling through.
+
+The template reads `reasoning_effort in ['low', 'high']` and turns EVERYTHING ELSE into 'max'.
+So an ordinary OpenAI `"medium"` silently buys the deepest setting there is -- the opposite of
+what the caller asked for. Refusing it was wrong the other way: `medium` is a standard value of
+the API this door claims to speak, and the Deneb gateway sends it whenever its thinking budget
+lands between 4K and 10K tokens. That 400 does not fail over either, because wormhole
+deliberately does not treat a request-shape 4xx as transient -- it goes straight back to the
+caller as a dead turn (45차 §59).
+
+`medium` therefore maps to `high`: the order survives (low <= medium <= high <= max) and nothing
+buys `max` by accident. A caller who wants a real ceiling has `reasoning_budget`, which counts
+tokens instead of naming a rung.
+"""
+
+
+def cache_key(req: dict) -> "str | None":
+    """The caller's own string for the cache, under either name. `cache_salt` is vLLM's; `prompt_cache_key` is the
+    OpenAI field an agent's SDK already sends, so accepting it is the difference between an agent getting tenant
+    isolation for free and not knowing the engine has any. Ours is stronger than OpenAI's hint -- it is folded into
+    the boundary chain, so two keys can never read each other's prefixes -- and the cost is the same one OpenAI warns
+    about: a key that changes every call shares nothing. Both names at once is a contradiction, not a default (D3)."""
+    salt, key = req.get("cache_salt"), req.get("prompt_cache_key")
+    if salt is not None and key is not None and salt != key:
+        raise RequestError("cache_salt and prompt_cache_key are the same field under two names: send one")
+    return salt if salt is not None else key
+
 
 def sampling_options(req: dict, defaults: "dict | None" = None) -> "tuple[float, dict]":
     """(temperature, options) of an OpenAI-dialect request, validated the way the served model's door spells them.
@@ -242,6 +346,50 @@ def repair_patterns(node):
     return node
 
 
+def device_memory_rows() -> "list[tuple]":
+    """What the box has left, as a scrape can see it (45차 §50).
+
+    The OOM study says the thing to watch is `memory_reserved`, not what is live: on this
+    machine the caching allocator maps new pages on churn rather than reusing freed ones, so the
+    gap between reserved and allocated is memory lost, not memory cached. And it says the period
+    has to be a step, not a scrape -- a boot went from 26 GiB free to 5 in four seconds.
+
+    A scrape every fifteen seconds cannot see a four-second cliff, so the peak is reported
+    beside the current value: torch keeps `max_memory_reserved` for nothing, so the high-water
+    mark between two scrapes costs no per-step work at all.
+
+    And `MemAvailable`, because that is the number earlyoom actually acts on -- it took this
+    engine at 3.64% of the box today (45차 §48) -- and nothing the engine exported could have
+    shown anyone that it was coming. vLLM does not export any of these either; its
+    `gpu_cache_usage_perc` counts blocks, not bytes.
+    """
+    rows = []
+    try:
+        from engine.base.runtime_memory import host_available_bytes
+        rows.append(("gauge", "st:host_memory_available_bytes",
+                     "MemAvailable: what the box has left, and what earlyoom decides on",
+                     host_available_bytes()))
+    except Exception:                                   # noqa: BLE001 -- /metrics answers with what it has
+        pass
+    try:
+        import torch
+        if torch.cuda.is_available():
+            free, total = torch.cuda.mem_get_info()
+            rows += [("gauge", "st:device_memory_reserved_bytes",
+                      "what the allocator holds: on this machine the gap to allocated is lost, not cached",
+                      torch.cuda.memory_reserved()),
+                     ("gauge", "st:device_memory_reserved_peak_bytes",
+                      "the high-water mark of that, which is what a scrape between two cliffs would miss",
+                      torch.cuda.max_memory_reserved()),
+                     ("gauge", "st:device_memory_allocated_bytes", "the part of it that is live tensors",
+                      torch.cuda.memory_allocated()),
+                     ("gauge", "st:device_memory_free_bytes", "what the driver says is left", free),
+                     ("gauge", "st:device_memory_total_bytes", "what the driver says there is", total)]
+    except Exception:                                   # noqa: BLE001
+        pass
+    return rows
+
+
 def media_parts(messages) -> "list[tuple[str, str]]":
     """(kind, url) of every image_url / video_url part, in the order the chat template renders them. Text parts
     pass through; any other part type is refused here rather than silently dropped by the template."""
@@ -356,6 +504,29 @@ def stop_strings(req: dict) -> "list[str]":
     # The scan compares these against text the model wrote, which is composed. A stop string in
     # the decomposed form would never match the answer it names.
     return [nfc(x) for x in stop]
+
+
+# What an answer keeps for itself however long the model thinks. A thinking model can spend the
+# whole limit inside the block -- writing a draft, counting its characters, redrafting -- and come
+# back with nothing outside it, which is in this stack's own record (29차: 답 0 자). The block is
+# bounded so that an answer is always possible, and the bound is a share of the limit rather than
+# a number, because the limit is itself a share of a length now (45차 §38, §46).
+ANSWER_SHARE = 4                # the answer keeps at least a quarter of the limit ...
+ANSWER_FLOOR = 128              # ... and never fewer tokens than this
+
+
+def reasoning_budget(req: dict, max_tokens: int) -> "int | None":
+    """How many tokens this answer's reasoning may take, or None for as many as it likes.
+
+    `reasoning_budget` in the request overrides it; -1 asks for no bound at all, which is what
+    llama.cpp's flag of the same name means.
+    """
+    asked = req.get("reasoning_budget")
+    if asked is not None:
+        if type(asked) is not int or asked < -1:
+            raise RequestError("reasoning_budget must be -1 or a nonnegative integer")
+        return None if asked < 0 else asked
+    return max(1, max_tokens - max(ANSWER_FLOOR, max_tokens // ANSWER_SHARE))
 
 
 def response_format_grammar(req: dict) -> "dict | None":
@@ -986,6 +1157,7 @@ class Server:
         # D3 is about kernels, but its rule holds here too: a path that is taken silently is a
         # path nobody checks. /metrics says which detokenizer served, so a scrape settles it.
         self.rust_detok = tokenizer is not None and decode_stream(tokenizer) is not None
+        self._prompt_tokens = None                 # built from `tok` on first use (see the property)
         self.detok_repairs = new_repairs()         # this door's, so a scrape names who repaired
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
         self.tool_parser = tool_parser             # text -> [(name, arguments json)] or None (the profile knows the model's format)
@@ -1000,6 +1172,7 @@ class Server:
         self.max_context = int(getattr(engine, "max_context", 2**31 - 1))   # the model's trained positions; the door refuses beyond
         self.request_timeout_s = float(request_timeout_s)
         self.clock = time.monotonic                # injectable for tests
+        self.booted = int(time.time())             # wall clock, for the model card's `created` (OpenAI's field)
         self._cancels = set()                      # (request id, reason) asked by HTTP threads / the timeout scan; rank 0 broadcasts them
         self._deadline = {}                        # request id -> clock() by which it must have finished (rank 0)
         self.cancelled = 0
@@ -1053,6 +1226,10 @@ class Server:
         self._waiting = deque()                    # request id, tokens, limit, temperature, promised blocks
         self._active = {}                          # reusable row -> (request id, promised blocks)
         self._admitted = {}                        # request id -> clock() when a row began stepping it
+        self._cached = {}                          # request id -> prompt tokens the row already held when it was admitted:
+        # a cached boundary, a boundary read back from the tier, or a retained conversation's history. An agent resends its
+        # whole transcript every step, so this is the number that says whether the way it builds a prompt is working, and
+        # `usage.prompt_tokens_details.cached_tokens` is where every OpenAI client already looks for it.
         self._conversations, self._conversation_of = {}, {}   # resident (idle or live) conversations <-> rows
         self._tenant_of = {}                                  # conversation -> its tenant salt: only that tenant continues it.
         # Parked conversations outlive the process; after a restart theirs is unknown, and an unknown tenant matches
@@ -1062,7 +1239,15 @@ class Server:
         self._resuming = {}                        # row -> (conversation, request, ids, limit, temperature, promised): its resume is in flight
         self._restoring = {}                       # row -> the request whose prefix is being read back from the prefix tier (45차 §23 A)
         self._deferred = set()                     # requests waiting for a running prefill to cache the prefix they share (B)
-        self.controls = queue.Queue()              # rank 0's cache controls (pin / unpin), broadcast with the arrivals (C)
+        self.controls = queue.Queue()              # rank 0's cache controls (pin / unpin / reset), broadcast with the arrivals (C)
+        self.prefix_resets = 0                     # how many times an operator threw the prefix cache away
+        # Which way a prompt found its KV. D16's conversation tier can only serve a prompt that
+        # EXTENDS a retained history exactly; the prefix cache serves one that merely shares
+        # whole blocks. A client whose prompt diverges near its end -- which is what Deneb's
+        # wire-only tail injection produces on purpose, to keep the byte prefix stable -- takes
+        # the second path always and the first never. This census is how that stops being an
+        # argument (45차 §68).
+        self.reuse_paths = {"continuation": 0, "prefix_or_cold": 0}
         self._free_rows = list(range(min(runner.kv.max_seqs, runner.c.max_running, runner.slots.available)))
         if not self._free_rows:
             raise ValueError("the server needs at least one request row and state slot")
@@ -1113,7 +1298,7 @@ class Server:
             except ValueError as exc:
                 raise RequestError(str(exc)) from exc
         if cache_salt is not None and (not isinstance(cache_salt, str) or not 0 < len(cache_salt) <= 256):
-            raise RequestError("cache_salt must be a string of 1 to 256 characters")
+            raise RequestError("cache_salt / prompt_cache_key must be a string of 1 to 256 characters")
         salt = prefix_cache.tenant_salt(cache_salt) if cache_salt else None
         media = list(media or [])
         for m in media:
@@ -1126,6 +1311,7 @@ class Server:
         hint = None
         if continue_history and conversation is None and self.runner.keep_idle:
             hint = self._continuation(ids, media, salt)
+        self.reuse_paths["continuation" if (hint is not None or conversation is not None) else "prefix_or_cold"] += 1
         if conversation is not None:
             if type(conversation) is not int or conversation < 0:
                 raise RequestError("conversation must be a nonnegative integer")
@@ -1233,6 +1419,15 @@ class Server:
                 consider(key, view(row),                                  # read, compared, never mutated
                          self.engine.media_marks(row) if hasattr(self.engine, "media_marks") else [])
         for key in self.runner.parked_keys():
+            # The digest is three numbers; the token list behind it is 3.8 MiB of Python ints for
+            # a 100K-token conversation, and reading one per parked conversation per request kept
+            # 1.04 GiB resident at this fleet's 280 (45차 §62). Reject on the digest, read on a hit.
+            digest = self.runner.parked_digest(key)
+            if digest is None:
+                continue
+            m = digest["tokens"]
+            if m <= 1 or m - 1 >= n or (ids[m - 1] != digest["last"] and ids[m - 2] != digest["prev"]):
+                continue
             record = self.runner.parked_record(key)
             if record is not None and "tokens" in record:
                 consider(key, record["tokens"], [(r[2], r[1]) for r in record.get("media", [])])
@@ -1288,6 +1483,7 @@ class Server:
                     self._deadline.pop(request, None)
                     self._arrived.pop(request, None)
                     self._admitted.pop(request, None)
+                    self._cached.pop(request, None)
                     self._answer(request, RequestError(f"request cancelled: {reason}", 504 if reason == "timeout" else 499))
                     return
                 restoring = next((r for r, e in self._restoring.items() if e["request"] == request), None)
@@ -1298,11 +1494,13 @@ class Server:
                     self._deadline.pop(request, None)
                     self._arrived.pop(request, None)
                     self._admitted.pop(request, None)
+                    self._cached.pop(request, None)
                     self._answer(request, RequestError(f"request cancelled: {reason}", 504 if reason == "timeout" else 499))
                     return
                 self._deadline.pop(request, None)
                 self._arrived.pop(request, None)
                 self._admitted.pop(request, None)
+                self._cached.pop(request, None)
                 return                                     # finished already (or unknown): nothing to drop
             self._active.pop(row)
             self._sent.pop(row, None)
@@ -1320,6 +1518,7 @@ class Server:
         self._deadline.pop(request, None)
         self._arrived.pop(request, None)
         self._admitted.pop(request, None)
+        self._cached.pop(request, None)
         status = 504 if reason == "timeout" else 499
         self._answer(request, RequestError(f"request cancelled: {reason}", status))
 
@@ -1378,16 +1577,135 @@ class Server:
             except queue.Empty:
                 return out
 
+    def model_card(self) -> dict:
+        """What this engine serves, in the shape a router can read without being told.
+
+        `/v1/models` used to answer three fields, so everything downstream had to be configured
+        by hand -- and a hand-written capability drifts. SparkFleet probes exactly this endpoint
+        to decide a backend is a routable chat model, and wormhole turns its inventory into
+        routes (`gateway-go/cmd/wormhole/fleet.go`), so this is the one place the engine can
+        state what it can do and have it arrive.
+
+        `max_model_len` carries vLLM's field name on purpose: anything that already reads a vLLM
+        `/v1/models` gets the served ceiling for free. Everything under `capabilities` is read
+        off what this boot actually bound -- a vision tower that is present, a tool parser the
+        profile supplied, grammars that compiled, a drafter with a k -- never a constant, so it
+        cannot say yes to something this process cannot do (45차 §56).
+        """
+        engine = self.engine
+        drafter = getattr(engine, "drafter", None)
+        return {
+            "id": self.model_name, "object": "model", "owned_by": "st", "root": self.model_name,
+            "created": self.booted,
+            "max_model_len": int(getattr(engine, "max_context", 0)) or None,
+            "capabilities": {
+                "vision": self.vision is not None,
+                "tools": self.tool_parser is not None,
+                "tool_grammar": self.tool_grammar is not None,
+                "structured_output": bool(getattr(engine, "grammars", None)),
+                "reasoning": self.reasoning_end is not None,
+                "streaming": True,
+                "speculative_tokens": int(getattr(drafter, "k", 0) or 0),
+                "prefix_cache": getattr(self.runner, "prefix", None) is not None,
+                "conversation_tier": getattr(self.runner, "tiered", None) is not None,
+                "max_concurrent_requests": int(self.runner.c.max_running),
+            },
+        }
+
+    @property
+    def prompt_tokens(self) -> "PromptTokens | None":
+        """The splice cache for whatever tokenizer this server actually has.
+
+        A property and not a constructor field because the tokenizer can arrive afterwards --
+        a boot binds one, a test swaps one in -- and a cache built against a tokenizer the door
+        no longer uses would splice one vocabulary's ids onto another's.
+        """
+        if self.tok is None:
+            return None
+        cache = self._prompt_tokens
+        if cache is None or cache.tok is not self.tok:
+            cache = self._prompt_tokens = PromptTokens(self.tok)
+        return cache
+
+    def fleet_status(self) -> "dict | None":
+        """Who holds the fleet, whether it has been asked to let go, and how the handover went.
+
+        The engine knows all three -- it writes them into `~/st-fleet.lock` -- and until now the
+        only way to read them was to ssh to rank 0 and cat that file. Everything that watches
+        this engine already reaches the door: the supervisor, wormhole's probe, SparkFleet, an
+        operator with curl. So the lifecycle belongs on the door too (45차 §60).
+
+        None when this boot holds no lease, so a bare `--local` run's status is unchanged and
+        nobody has to special-case a field that means nothing there.
+        """
+        if not self.lease:
+            return None
+        return {"owner": self.lease.get("owner"), "path": self.lease.get("path"),
+                "draining": self.draining, "handed_over": self.handed_over}
+
+    def catalog(self) -> "tuple[dict, int]":
+        """`/v1/models`, and whether this engine is routable right now.
+
+        This is the endpoint the control plane actually asks. Wormhole re-probes it every 60 s
+        for `max_model_len` (`router_discovery.probeMaxModelLen`), and SparkFleet sets a
+        service's model id from it -- which is what makes a backend routable at all
+        (`wormhole/fleet.go`: `if !sv.OK || sv.Model == ""` skips it). Nothing in that chain
+        reads `/health`, so a handover has to be visible HERE or it is not visible.
+
+        While draining the catalog is empty and the status is 503: a prober that checks the code
+        and one that checks for a model id reach the same conclusion, and the route is dropped
+        before a caller pays a failed hop into an engine that is already refusing (45차 §56).
+        """
+        if not self.alive:
+            return {"object": "list", "data": [], "status": "stopping"}, 503
+        if self.draining is not None:
+            return {"object": "list", "data": [], "status": "draining",
+                    "handing_over_to": self.draining}, 503
+        return {"object": "list", "data": [self.model_card()]}, 200
+
+    def readiness(self) -> "tuple[dict, int]":
+        """(body, HTTP status) for `/health`: serving, handing over, or stopping.
+
+        A handover used to look healthy: `alive` stays true through the drain -- that is the
+        point, the rows already here finish and are parked -- while every NEW request is already
+        refused with 503. So this said `ok` about an engine that was accepting nothing.
+
+        Nothing in the Deneb chain reads this endpoint (wormhole probes `/v1/models`, the
+        supervisor generates a real chat), so this is honesty rather than a route change; the
+        one that moves a route is `catalog` above. It is here because an operator with `curl`
+        asks `/health` first, and a state nobody can name is a state nobody watches.
+        """
+        if not self.alive:
+            return {"status": "stopping"}, 503
+        if self.draining is not None:
+            return {"status": "draining", "handing_over_to": self.draining,
+                    "running": len(self.runner.state.running),
+                    "waiting": len(self.runner.state.waiting) + len(self._waiting)}, 503
+        return {"status": "ok"}, 200
+
     def _control(self, control) -> None:
         """A cache control, applied on every rank in the same iteration (the caches must stay identical)."""
+        kind, payload = control
+        if kind == "calibration":                          # every rank files its own sums (the sharded projections differ per rank)
+            file = getattr(self.engine, "file_calibration", None)
+            if file is not None:
+                file(payload)
+            return
         prefix = getattr(self.runner, "prefix", None)
         if prefix is None:
             return
-        kind, payload = control
         if kind == "pin":
             prefix.pin(bytes.fromhex(h) for h in payload)
         elif kind == "unpin":
             prefix.unpin_all()
+        elif kind == "reset":                              # every rank forgets the same boundaries in the same step
+            report = self.runner.reset_prefix()
+            self.prefix_resets += 1
+            if self.comm.rank == 0:
+                print(f"  prefix reset: {report['entries']} boundaries and {report['faded']} faded, "
+                      f"{report['tier_forgotten']} off the tier"
+                      + (f"; {report['kept_spilling']} kept (being written)" if report["kept_spilling"] else ""),
+                      flush=True)
     def _admit_clock(self, request) -> None:
         """The moment a row began stepping this request: queue time ends here, inference time starts."""
         if request in self._admitted:
@@ -1397,6 +1715,19 @@ class Server:
         arrived = self._arrived.get(request)
         if arrived is not None:
             self.queued.observe(now - arrived)
+
+    def _note_cached(self, request, row) -> None:
+        """Prompt tokens this row did not prefill, read where every admission path has already agreed on it: the
+        scheduler's `computed` is set to the adopted prefix by `runner.submit` (a cached or restored boundary) and to
+        the held history by `runner.extend` (a retained conversation). One number, three paths, no predicate."""
+        if len(self._cached) > 4 * self.max_pending:
+            live = set(self.pending)
+            self._cached = {k: v for k, v in self._cached.items() if k in live}
+        self._cached[request] = int(self.runner.state.computed.get(row, 0))
+
+    def cached_tokens(self, *requests) -> int:
+        """Prompt tokens these requests did not have to prefill. Taken, not read: one answer asks once."""
+        return sum(self._cached.pop(int(r), 0) for r in requests)
 
     def _evict_idle(self, exclude=None):
         """No tier: a resident idle conversation makes room by ending."""
@@ -1566,6 +1897,7 @@ class Server:
                 self.runner.extend(row, tokens)
             self._waiting.popleft()
             self._active[row] = (request, promised)
+            self._note_cached(request, row)
             self._admit_clock(request)
 
     def _votes(self, flags) -> "list[int]":
@@ -1648,6 +1980,7 @@ class Server:
                         self._conversations[request] = row
                         self._conversation_of[row] = request
                     self._active[row] = (request, e["promised"])
+                    self._note_cached(request, row)
                 else:
                     if ok:
                         self.runner.restore_undo(row)             # landed here but not everywhere, or nobody wants it: the row goes back
@@ -1668,6 +2001,7 @@ class Server:
                     self._conversations[conversation] = row
                     self._conversation_of[row] = conversation
                     self._active[row] = (request, e["promised"])
+                    self._note_cached(request, row)
                     self._admit_clock(request)
                 elif all_ok == world:                         # the client left while its conversation was coming back: park it again
                     self._conversations[conversation] = row
@@ -1851,6 +2185,11 @@ class Server:
              round(used_blocks / kv.num_blocks, 6) if kv.num_blocks else 0.0),
             ("counter", "st:steps_prefill_total", "steps that were a prefill chunk", self.steps_prefill),
             ("counter", "st:steps_decode_total", "steps that were a decode", self.steps_decode),
+            ("counter", "st:async_decode_steps_total", "decode steps launched ahead of host readback", runner.async_steps),
+            ("counter", "st:sync_drain_steps_total", "readbacks forced by prefill or synchronous decode", runner.sync_drain_steps),
+            ("counter", "st:decode_row_steps_total", "sum of submitted row counts across decode steps",
+             sum(n * count for n, count in enumerate(runner.decode_batches))),
+            ("gauge", "st:decode_batch_capacity", "maximum resident decode rows", runner.c.max_running),
             ("counter", "st:requests_cancelled_total", "requests cancelled, for any reason", self.cancelled),
             ("counter", "st:requests_timed_out_total", "the subset the deadline scan took", self.timed_out),
             ("gauge", "st:handing_over", "1 while the fleet is being handed to another session",
@@ -1876,6 +2215,15 @@ class Server:
              kv.cached),
             ("gauge", "st:kv_blocks_faded", "free blocks held by a boundary whose snapshot is gone", kv.faded),
             ("gauge", "st:state_slots_free", "state slots a new request could take", slots.available),
+            *device_memory_rows(),
+            *_grammar_rows(getattr(self.engine, "grammars", None)),
+            ("counter", "st:prompt_tokenize_spliced_total",
+             "chat prompts tokenized as a tail onto a remembered prefix", getattr(self.prompt_tokens, "spliced", 0)),
+            ("counter", "st:prompt_tokenize_full_total",
+             "chat prompts tokenized from the first character", getattr(self.prompt_tokens, "full", 0)),
+            ("counter", "st:prompt_tokenize_chars_saved_total",
+             "prompt characters a splice did not have to tokenize again",
+             getattr(self.prompt_tokens, "chars_saved", 0)),
             ("gauge", "st:detokenizer_rust_stream",
              "1 when streamed text is decoded through tokenizers' Rust DecodeStream", int(self.rust_detok)),
         ]
@@ -1886,6 +2234,7 @@ class Server:
                  prefix.hits + prefix.misses),
                 ("counter", "vllm:prefix_cache_hits_total", "lookups that reused a cached prefix", prefix.hits),
                 ("counter", "st:prefix_cache_evictions_total", "cached prefixes dropped", prefix.evictions),
+                ("counter", "st:prefix_resets_total", "times an operator threw the whole prefix cache away", self.prefix_resets),
                 ("gauge", "st:prefix_cache_reclaimable_blocks", "free blocks a boundary holds: reuse a reservation can spend",
                  prefix.reclaimable()),
                 ("counter", "st:prefix_reused_tokens_total", "prompt tokens served from a cached boundary (memory or tier)",
@@ -1901,6 +2250,13 @@ class Server:
                 ("counter", "st:prefix_tier_restores_total", "boundaries read back from the prefix tier", getattr(runner, "prefix_restores", 0)),
                 ("counter", "st:prefix_dedup_waits_total", "requests that waited for a running prefill's boundary instead of computing it",
                  getattr(runner, "dedup_waits", 0)),
+                ("gauge", "st:prefix_snapshots_free", "snapshot slots no boundary holds: what the next block boundary can take",
+                 len(prefix.free_snaps)),
+                ("counter", "st:prefix_snapshot_denials_total", "block boundaries left uncached because no snapshot could be freed",
+                 prefix.snapshot_denials),
+                ("counter", "st:prefix_snapshot_self_evicts_total",
+                 "checkpoints a prefill displaced to make room for its own later ones: state copies computed and thrown away",
+                 getattr(runner, "snapshot_self_evicts", 0)),
             ]
         tiered = getattr(runner, "tiered", None)
         if tiered is not None:
@@ -1937,6 +2293,10 @@ class Server:
             labelled.append(("st:detokenizer_repairs_total", "counter",
                              "streamed text the door had to repair, by what went wrong",
                              [(f'reason="{reason}"', count) for reason, count in sorted(self.detok_repairs.items()) if count]))
+        if any(self.reuse_paths.values()):
+            labelled.append(("st:reuse_path_total", "counter",
+                             "prompts by how they found their KV: a conversation they extend, or blocks they share",
+                             [(f'path="{path}"', count) for path, count in sorted(self.reuse_paths.items())]))
         if self.by_reason:
             labelled.append(("vllm:request_success_by_reason_total", "counter",
                              "requests answered, by why they stopped",
@@ -1953,6 +2313,14 @@ class Server:
                  "sum over those of the target mass the drafter's candidates cover at all",
                  round(engine.covered_mass, 6)),
             ])
+        exits = getattr(engine, "chain_exits", None)
+        if exits:
+            # st:sync_drain_steps_total says how often the pipeline was emptied. This says by what, which is the
+            # half an operator can act on: the batch runs ahead together or not at all, so at max_seqs 4 one
+            # request asking for logprobs appears here as the whole step's reason.
+            labelled.append(("st:decode_chain_exits_total", "counter",
+                             "decode steps the device-side chain refused, by what refused them",
+                             [(f'reason="{k}"', v) for k, v in sorted(exits.items())]))
         accepted = getattr(engine, "accepted_per_step", None)
         if accepted:
             # Acceptance as a shape, not a mean: a run that is bimodal at 0 and k wants a
@@ -2018,6 +2386,9 @@ class Server:
             self._admit()
             began = self.clock()
             step = self.runner.step()
+            housekeeping = getattr(self.engine, "housekeeping", None)      # a model's own after-step chores (rare device reads)
+            if housekeeping is not None and step is not None:
+                housekeeping(self.runner.steps)
             now = self.clock()
             if step is not None:                                    # D9: one kind or the other
                 kind = "prefill" if step.kind == "prefill" else "decode"   # base/scheduler.PREFILL
@@ -2107,7 +2478,8 @@ class Server:
 
             def do_GET(self):
                 if self.path == "/v1/models":
-                    self.reply(200, {"object": "list", "data": [{"id": server.model_name, "object": "model", "owned_by": "st"}]})
+                    catalog, code = server.catalog()
+                    self.reply(code, catalog)
                 elif self.path == "/metrics":
                     body = server.metrics().encode()
                     self.send_response(200)
@@ -2116,13 +2488,18 @@ class Server:
                     self.end_headers()
                     self.wfile.write(body)
                 elif self.path == "/health":
-                    self.reply(200 if server.alive else 503, {"status": "ok" if server.alive else "stopping"})
+                    status, code = server.readiness()
+                    self.reply(code, status)
                 else:
-                    self.reply(200, {"engine": "ST", "model": server.model_name, "running": list(server.runner.state.running),
-                                     "waiting": list(server.runner.state.waiting), "queued": len(server._waiting),
-                                     "parked": len(server.runner.parked_keys()),
-                                     "parking": len(server._retiring), "resuming": len(server._resuming),
-                                     "steps": server.runner.steps, "served": server.served})
+                    status = {"engine": "ST", "model": server.model_name, "running": list(server.runner.state.running),
+                              "waiting": list(server.runner.state.waiting), "queued": len(server._waiting),
+                              "parked": len(server.runner.parked_keys()),
+                              "parking": len(server._retiring), "resuming": len(server._resuming),
+                              "steps": server.runner.steps, "served": server.served}
+                    fleet = server.fleet_status()
+                    if fleet is not None:
+                        status["fleet"] = fleet
+                    self.reply(200, status)
 
             def body(self):
                 n = int(self.headers.get("Content-Length", "0"))
@@ -2259,12 +2636,14 @@ class Server:
                 if "enable_thinking" in kwargs and "thinking" not in kwargs:
                     kwargs["thinking"] = kwargs["enable_thinking"]
                 effort = req.get("reasoning_effort")
+                if effort is None and "reasoning_effort" in kwargs:
+                    effort = kwargs["reasoning_effort"]       # a caller that only spoke to the template
                 if effort is not None:
-                    if effort not in ("low", "high", "max"):
-                        raise RequestError("reasoning_effort must be low, high, or max")
+                    if effort not in EFFORT_RUNGS:
+                        raise RequestError("reasoning_effort must be low, medium, high, or max")
                     if kwargs.get("reasoning_effort", effort) != effort:
                         raise RequestError("top-level and template reasoning_effort must agree")
-                    kwargs["reasoning_effort"] = effort
+                    kwargs["reasoning_effort"] = EFFORT_RUNGS[effort]
                 options_stream = req.get("stream_options")
                 if options_stream is not None and not isinstance(options_stream, dict):
                     raise RequestError("stream_options must be an object")
@@ -2341,7 +2720,7 @@ class Server:
                                          generation_prompt=opening, continue_final=resuming)
                 except Exception as exc:                                  # noqa: BLE001 -- the template's verdict on these messages
                     raise RequestError(f"chat template rejected the request: {exc}") from exc
-                ids = server.tok.encode(nfc(prompt), add_special_tokens=False).ids
+                ids = server.prompt_tokens.encode(nfc(prompt))   # a continuing turn pays for its tail only
                 media = None
                 if items:
                     try:
@@ -2362,9 +2741,14 @@ class Server:
                     # default could not fit is still refused, in the same words, rather than
                     # quietly answered in one token.
                     max_tokens = min(max_tokens, max(DEFAULT_ANSWER_TOKENS[0], server.room_for(len(ids))))
+                if reasoning:
+                    budget = reasoning_budget(req, max_tokens)
+                    if budget is not None:
+                        options["reasoning_budget"] = budget
+                        options["reasoning_end"] = server.reasoning_end
                 choices = self.choices_for(ids, n, max_tokens, temperature, options, stop, reasoning=reasoning,
                                            tool_parser=server.tool_parser, want_logprobs=want_logprobs, min_new=min_tokens,
-                                           continue_history=True, media=media, cache_salt=req.get("cache_salt"))
+                                           continue_history=True, media=media, cache_salt=cache_key(req))
                 head = {"id": f"chatcmpl-{choices[0].request}", "created": int(time.time()), "model": model}
 
                 def chunk(index, delta=None, finish=None, usage=None, logprobs=None):
@@ -2401,6 +2785,7 @@ class Server:
                         return
                     usage = {"prompt_tokens": len(ids), "completion_tokens": sum(c.total for c in choices),
                              "total_tokens": len(ids) + sum(c.total for c in choices),
+                             "prompt_tokens_details": {"cached_tokens": server.cached_tokens(*(c.request for c in choices))},
                              "completion_tokens_details": {"reasoning_tokens": sum(len(c.streams["reasoning_content"].ids) for c in choices)}}
                     if stream:
                         for c in choices:
@@ -2475,7 +2860,7 @@ class Server:
                 choices, prompt_of = [], {}
                 for ids in prompts:
                     group = self.choices_for(ids, count, max_tokens, temperature, options, stop, reasoning=False,
-                                             want_logprobs=lp_want, cache_salt=req.get("cache_salt"))
+                                             want_logprobs=lp_want, cache_salt=cache_key(req))
                     for c in group:
                         c.index = len(choices)
                         prompt_of[c.request] = ids
@@ -2546,7 +2931,8 @@ class Server:
                         for i, c in enumerate(kept):
                             c.index = i
                     usage = {"prompt_tokens": sum(len(p) for p in prompts), "completion_tokens": sum(c.total for c in choices),
-                             "total_tokens": sum(len(p) for p in prompts) + sum(c.total for c in choices)}
+                             "total_tokens": sum(len(p) for p in prompts) + sum(c.total for c in choices),
+                             "prompt_tokens_details": {"cached_tokens": server.cached_tokens(*(c.request for c in choices))}}
                     if stream:
                         for c in kept:
                             chunk(c.index, None, finish=c.finish or "length")
@@ -2620,11 +3006,12 @@ class Server:
                 conversation = req.get("conversation")
                 temperature, options = sampling_options(req, {})
                 request, event = server.submit(ids, req.get("max_tokens", 64), temperature, conversation, options=options,
-                                               cache_salt=req.get("cache_salt"))
+                                               cache_salt=cache_key(req))
                 out = self.wait_result(request, event)
                 text = server.tok.decode(out) if server.tok is not None else None
                 conversation = (request if conversation is None else conversation) if server.runner.keep_idle else None
                 self.reply(200, {"seq": request, "conversation": conversation, "ids": out, "text": text, "prompt_tokens": len(ids),
+                                 "cached_tokens": server.cached_tokens(request),
                                  "completion_tokens": len(out), "seconds": round(time.perf_counter() - t0, 3)})
 
             def prefix_warm(self, req):
@@ -2652,13 +3039,13 @@ class Server:
                     ids = req["ids"]
                 else:
                     raise RequestError("warm needs messages, a prompt or ids")
-                request, event = server.submit(ids, 1, 0.0, cache_salt=req.get("cache_salt"))
+                request, event = server.submit(ids, 1, 0.0, cache_salt=cache_key(req))
                 if not event.wait(server.request_timeout_s):
                     server.cancel(request, "timeout")
                     raise RequestError("warm timed out", 504)
                 server.take_result(request)
                 prefix = server.runner.prefix
-                salt = req.get("cache_salt")
+                salt = cache_key(req)
                 chain = prefix.chain(ids, [prefix_cache.tenant_salt(salt)] if salt else ())
                 cached = sorted(t for t, h in chain.items() if prefix.has(h))
                 if req.get("pin"):
@@ -2671,11 +3058,36 @@ class Server:
                 server.controls.put(("unpin", None))
                 self.reply(200, {"ok": True})
 
+            def prefix_reset(self, req):
+                """Throw the whole prefix cache away (vLLM's `/reset_prefix_cache`).
+
+                For the case nothing in the engine can see: the prompt's MEANING changed under an
+                unchanged prefix -- a tool list, a retrieved document, an edited system template --
+                so the token ids still hash the same and every boundary still matches. `unpin` only
+                releases an operator's pin; this forgets the boundaries themselves, on every rank in
+                the same step, and deletes their copies off the prefix tier.
+                """
+                if getattr(server.runner, "prefix", None) is None:
+                    raise RequestError("this server has no prefix cache", 404)
+                server.controls.put(("reset", None))
+                self.reply(200, {"ok": True})
+
+            def calibration(self, req):
+                """File this boot's calibration sums now (kernels/dense/calibration): between two steps, on every rank's
+                loop thread. A boot whose packs were all calibrated has nothing to file."""
+                calibration = getattr(server.engine, "calibration", None)
+                if calibration is None:
+                    raise RequestError("this boot is not calibrating: every pack it serves was already calibrated", 404)
+                server.controls.put(("calibration", req.get("root") if isinstance(req.get("root"), str) else None))
+                self.reply(200, {"ok": True, "status": calibration.status(), "rows": {k: float(v) for k, v in calibration.rows.items()}})
+
             def do_POST(self):
                 try:
                     routes = {"/v1/chat/completions": self.chat, "/v1/completions": self.completions,
                               "/v1/engine/completions": self.engine_completions, "/tokenize": self.tokenize,
-                              "/detokenize": self.detokenize, "/v1/prefix/warm": self.prefix_warm, "/v1/prefix/unpin": self.prefix_unpin}
+                              "/detokenize": self.detokenize, "/v1/prefix/warm": self.prefix_warm, "/v1/prefix/unpin": self.prefix_unpin,
+                              "/v1/prefix/reset": self.prefix_reset,
+                              "/v1/engine/calibration": self.calibration}
                     handler = routes.get(self.path)
                     if handler is None:
                         raise RequestError("unknown endpoint", 404)

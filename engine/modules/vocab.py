@@ -16,7 +16,10 @@ def argmax(local_logits, comm, start: int, decodable: int | None = None):
     if start < 0 or start + width >= 2**31 or (decodable is not None and decodable <= 0):
         raise ValueError("vocabulary ids must fit nonnegative int32 and contain a valid token")
     valid = width if decodable is None else max(0, min(width, decodable - start))
-    if valid:
+    if local_logits.is_cuda and local_logits.ndim == 2:
+        from engine.kernels.vocab_candidates import argmax_key
+        key = argmax_key(local_logits, start, valid)
+    elif valid:
         value, index = local_logits[..., :valid].float().max(dim=-1)
         value = torch.where(value == 0, torch.zeros_like(value), value)
         value = torch.where(torch.isnan(value), torch.full_like(value, float("nan")), value)

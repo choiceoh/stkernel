@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from engine.base.kv import BlockPool
-from engine.base.kv_tier import NvmeTier, SECTOR
+from engine.base.kv_tier import NvmeTier, SECTOR, TierFull
 from engine.base.tiered_kv import TieredKV
 
 
@@ -319,6 +319,50 @@ class NvmeControlTests(unittest.TestCase):
             self.assertEqual(active.read_bytes(), b'active')
             self.assertEqual(retired.read_bytes(), b'retired')
 
+    def test_a_foreign_layout_is_forgotten_before_a_conversation_that_can_still_be_promoted(self):
+        # It occupies the disk and counts against the cap, and no boot of this layout can ever
+        # promote it. Until this order existed, a tier whose stale entries alone filled the cap
+        # had nothing it was willing to give up and refused every park forever.
+        with tempfile.TemporaryDirectory() as d:
+            tier = self.tier(d)
+            tier._save_manifest({
+                "5": {"file": "seq-5.kv", "at": 100.0, "bytes": 7, "block_bytes": SECTOR},        # oldest, promotable
+                "9": {"file": "seq-9.kv", "at": 300.0, "bytes": 11, "block_bytes": SECTOR},
+                "7": {"file": "seq-7.kv", "at": 200.0, "bytes": 13, "block_bytes": 2 * SECTOR},   # foreign, newer
+            })
+            self.assertEqual(tier.oldest(), 7, "the unpromotable entry goes first, old or not")
+            self.assertEqual(tier.stale_bytes(), 13)
+
+            tier.forget(7)
+            self.assertEqual(tier.oldest(), 5, "then the least recently parked one this layout can use")
+            self.assertEqual(tier.stale_bytes(), 0)
+
+    def test_a_tier_full_of_foreign_entries_can_still_make_room(self):
+        # The deadlock declaring a capacity would otherwise have created: 85 GiB of one
+        # checkpoint's parked conversations, a cap below that, and an LRU with nothing to give.
+        with tempfile.TemporaryDirectory() as d:
+            tier = self.tier(d)
+            tier.capacity_bytes, tier.reserve_bytes = 20, 0
+            tier._save_manifest({str(seq): {"file": f"seq-{seq}.kv", "at": float(seq), "bytes": 10,
+                                            "block_bytes": 2 * SECTOR} for seq in (1, 2)})
+            with self.assertRaises(TierFull):
+                tier._room(10, 0)
+            self.assertEqual(tier.keys(), [], "none of them is promotable")
+
+            while tier.used_bytes() + 10 > tier.capacity_bytes:
+                seq = tier.oldest()
+                self.assertIsNotNone(seq, "the cap must never be unservable")
+                tier.forget(seq)
+            tier._room(10, 0)                                  # room, without a single promotable entry lost
+
+    def test_a_deleting_entry_is_not_offered_twice(self):
+        with tempfile.TemporaryDirectory() as d:
+            tier = self.tier(d)
+            tier._save_manifest({"3": {"file": "seq-3.kv", "at": 1.0, "bytes": 5,
+                                       "block_bytes": 2 * SECTOR, "deleting": True}})
+            self.assertIsNone(tier.oldest())
+            self.assertEqual(tier.stale_bytes(), 0)
+
     def test_failed_unlink_keeps_a_restartable_cleanup_tombstone(self):
         with tempfile.TemporaryDirectory() as d:
             tier = self.tier(d)
@@ -405,6 +449,55 @@ class NvmeControlTests(unittest.TestCase):
         self.assertEqual(writer.result(timeout=2), 8)
         self.assertEqual(reader.result(timeout=2), 8)
 
+    def test_close_returns_the_staging_buffers_and_leaves_what_is_parked_on_disk(self):
+        # A tier's pinned host staging and device scratch live OUTSIDE the arena, so the
+        # engine's release cannot reach them: on a handover they are held for nothing.
+        import torch
+        tier = NvmeTier.__new__(NvmeTier)
+        tier.stage_t = torch.empty(64, dtype=torch.uint8)
+        tier.stage = memoryview(tier.stage_t.numpy())
+        tier.scratch = torch.empty(32, dtype=torch.uint8)
+        tier.stream = object()
+        tier.index = {"7": {"file": "seq-7.kv"}}
+
+        self.assertEqual(tier.close(), 96)
+        self.assertIsNone(tier.stage)
+        self.assertIsNone(tier.stage_t)
+        self.assertIsNone(tier.scratch)
+        self.assertIsNone(tier.stream)
+        self.assertEqual(tier.index, {"7": {"file": "seq-7.kv"}})   # D16: parked conversations outlive the process
+        self.assertEqual(tier.close(), 0)                           # idempotent
+
+    def test_closing_a_tier_that_has_no_staging_of_its_own_is_nothing_rather_than_an_error(self):
+        # Probes hand TieredKV a bare object; a shutdown must not care which kind it got.
+        self.assertEqual(make_tier().close(), 0)
+
+    def test_close_waits_for_a_transfer_still_holding_the_staging_it_is_about_to_free(self):
+        kv = make_tier()
+        started, release, done = threading.Event(), threading.Event(), []
+
+        def work():
+            started.set()
+            release.wait(2)
+            done.append("finished")
+            return 8
+
+        kv.inflight[0] = ("park", 11, 16, kv.tier.run_async(work))
+        self.assertTrue(started.wait(2))
+        threading.Timer(0.05, release.set).start()
+        kv.close()
+        self.assertEqual(done, ["finished"], "the staging went while a thread was still in it")
+        self.assertFalse(kv.inflight)
+
+    def test_a_failed_transfer_does_not_stop_the_shutdown(self):
+        from concurrent.futures import Future
+        kv = make_tier()
+        failed = Future()
+        failed.set_exception(OSError("the disk went away"))
+        kv.inflight[0] = ("park", 11, 16, failed)
+        self.assertEqual(kv.close(), 0)
+        self.assertFalse(kv.inflight)
+
     def test_invalid_staging_geometry_fails_before_cuda_allocation(self):
         for block, stage in [(0, SECTOR), (-SECTOR, SECTOR), (1, SECTOR),
                              (SECTOR, 0), (SECTOR, SECTOR - 1)]:
@@ -457,6 +550,45 @@ class NvmeControlTests(unittest.TestCase):
             self.assertTrue(tier.has(0))
             self.assertEqual(json.loads(tier.manifest.read_text()), tier.index)
             self.assertEqual(tier._path(0).read_bytes(), b"saved kv")
+
+
+class Index:
+    """Just enough tier for the line the boot prints."""
+
+    def __init__(self, index, block_bytes=SECTOR):
+        self.index, self.block_bytes = index, block_bytes
+
+    has = NvmeTier.has
+    keys = NvmeTier.keys
+    stale = NvmeTier.stale
+    stale_bytes = NvmeTier.stale_bytes
+    used_bytes = NvmeTier.used_bytes
+
+
+class TierBudgetTests(unittest.TestCase):
+    """The disk is a declared budget too (D1), and the boot says where it stands."""
+
+    def test_both_tiers_are_declared_and_the_conversations_get_the_larger_share(self):
+        from engine.profiles.glm53 import boot
+        # A boundary recomputes; a turn the user may come back to does not (D16).
+        self.assertGreater(boot.TIER_GIB, boot.PREFIX_TIER_GIB)
+        self.assertEqual((boot.TIER_GIB, boot.PREFIX_TIER_GIB, boot.TIER_RESERVE_GIB), (64.0, 16.0, 16.0))
+
+    def test_the_boot_line_says_gibibytes_because_a_count_was_never_the_question(self):
+        from engine.base.budget import GIB
+        from engine.profiles.glm53 import boot
+        tier = Index({"1": {"at": 1.0, "bytes": 3 * GIB, "block_bytes": SECTOR},
+                      "2": {"at": 2.0, "bytes": 5 * GIB, "block_bytes": 2 * SECTOR}})
+        line = boot.tier_line(tier, boot.TIER_GIB, "conversations")
+        self.assertIn("1 conversations parked from before, 8.0 GiB of 64 GiB", line)
+        self.assertIn("1 under another layout holding 5.0 GiB", line)
+        self.assertIn("first thing forgotten when the cap bites", line)
+
+    def test_a_tier_with_nothing_foreign_in_it_does_not_mention_foreign_layouts(self):
+        from engine.base.budget import GIB
+        from engine.profiles.glm53 import boot
+        tier = Index({"1": {"at": 1.0, "bytes": 2 * GIB, "block_bytes": SECTOR}})
+        self.assertNotIn("another layout", boot.tier_line(tier, boot.PREFIX_TIER_GIB, "prefix boundaries"))
 
 
 if __name__ == "__main__":

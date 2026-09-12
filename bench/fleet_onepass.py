@@ -104,6 +104,8 @@ def _onepass_args(arguments):
     parser.add_argument('--ctx', default='2000,32000,128000')
     parser.add_argument('--out')
     parser.add_argument('--max-tokens', type=int, default=400)
+    parser.add_argument('--combined-max-tokens', type=int, default=2400)
+    parser.add_argument('--combined-reasoning-budget', type=int, default=900)
     parser.add_argument('--num-spec', type=int, default=7)
     parser.add_argument('--combine-min-ctx', type=int, default=32000)
     parser.add_argument('--seed', type=int, default=7)
@@ -114,6 +116,10 @@ def _onepass_args(arguments):
     _name(value.name)
     from measurement_contract import from_args
     from_args(value)
+    if value.combined_max_tokens < value.max_tokens * 3:
+        raise ValueError('combined max tokens must be at least three individual budgets')
+    if not 0 <= value.combined_reasoning_budget < value.combined_max_tokens:
+        raise ValueError('combined reasoning budget must be nonnegative and below combined max tokens')
     if value.num_spec < 0:
         raise ValueError('onepass num-spec must be nonnegative')
 

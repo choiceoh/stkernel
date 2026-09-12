@@ -17,8 +17,9 @@ def main():
     cases = 0
     sampling_cases = 0
     try:
+        comm.prepare_oneshot()
         width = 38720
-        for rows in (1, 6, 24):
+        for rows in (1, 6, 24, 48, 64):
             local = torch.empty(rows, width, device="cuda", dtype=torch.bfloat16)
             generator = torch.Generator(device="cuda").manual_seed(31 + comm.rank)
             for decodable in (4*width - 1000, width - 1):
@@ -85,7 +86,7 @@ def main():
             finally:
                 graphs.close()
         print(json.dumps(dict(passed=True, rank=comm.rank, greedy_cases=cases,
-                              sampling_cases=sampling_cases, max_greedy_candidate_bytes=24*8,
+                              sampling_cases=sampling_cases, max_greedy_candidate_bytes=64*8,
                               peak_reserved_bytes=torch.cuda.max_memory_reserved())), flush=True)
     finally:
         comm.close()

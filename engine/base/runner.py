@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import struct
 import time
+from collections import OrderedDict
 from typing import Protocol
 
 from engine.base import prefix as prefix_mod
@@ -83,7 +84,8 @@ class Runner:
             prefix.bind(kv)
         self._chain = {}                                    # seq -> boundary tokens -> hash (live prompts with a cache)
         self.idle = {}                                      # seq -> True: finished, not released, parkable
-        self.parked = {}                                    # key -> record, for conversations this process parked (the tier has the rest)
+        self.parked = OrderedDict()                         # key -> record, MRU last and bounded (PARKED_RECORDS_KEPT)
+        self.digests = {}                                   # key -> the three numbers a continuation scan actually needs
         self.retiring = {}                                  # row -> (key, record, slot): its park is on the tier's thread
         self.resuming = {}                                  # row -> (key, record, slot): its resume is on the tier's thread
         self.state = sched.State()
@@ -100,8 +102,11 @@ class Runner:
         self._maintained = -1                               # prefix.version the last candidate scan saw
         self.reused_tokens = 0                              # prompt tokens served from the cache (memory or tier)
         self.prefix_spills = self.prefix_restores = self.dedup_waits = 0
+        self.snapshot_self_evicts = 0                        # checkpoints a prefill threw away to make room for its own later ones
         self.depth = 2                                      # steps the device may hold before the host reads the oldest back
         self.async_steps = 0
+        self.decode_batches = [0] * (contract.max_running + 1)
+        self.sync_drain_steps = 0
 
     def submit(self, seq: int, prompt_len: int, now: float | None = None, ids=None, salts=(), prepared=None, chain=None) -> None:
         """Publish a request only after its blocks, slot and model state exist.
@@ -118,6 +123,7 @@ class Runner:
         self.kv.row(seq)                                   # reject invalid row before indexing tokens
         if seq in self.slot_of or (self.kv.tokens[seq] and prepared is None):
             raise ValueError(f"seq {seq} already owns resident resources")
+        self._drain_row(seq)                              # a reused row may have an old, inert readback
         reused, snap = 0, None
         if self.prefix is None or ids is None:
             chain = None
@@ -177,8 +183,12 @@ class Runner:
             return
         for key in self.prefix_tier.keys():
             record = self.prefix_tier.record(key)
-            if record and isinstance(record.get("hash"), str):
-                self.prefix.tier_keys[bytes.fromhex(record["hash"])] = key
+            if not record or not isinstance(record.get("hash"), str):
+                continue
+            h = bytes.fromhex(record["hash"])
+            if self.tier_key(h) != key:                      # a record that does not name its own slot is not ours
+                continue
+            self.prefix.hold_tier(h, key)
 
     def prefix_tier_keys(self) -> "list[int]":
         return sorted(self.prefix.tier_keys.values()) if self.prefix is not None else []
@@ -207,8 +217,13 @@ class Runner:
             except Exception:                               # noqa: BLE001 -- a bad write: this boundary stays memory-only
                 prefix.spill_end(h, failed=True)
                 continue
+            key = self.tier_key(h)
+            if prefix.tier_holder(key) not in (None, h):
+                # somebody took the slot between the write being issued and it landing: the bytes on the
+                # tier are this boundary's now, so the OWNER's copy is the one that is gone, not ours
+                prefix.forget_tier(prefix.tier_holder(key))
             self.prefix_spills += 1
-            prefix.tier_keys[h] = self.tier_key(h)
+            prefix.hold_tier(h, key)
             prefix.spill_end(h, spilled=True)
         if len(prefix.free_snaps) >= self.spill_low_water or self._spills:
             return
@@ -224,6 +239,9 @@ class Runner:
             if h in growing:
                 continue
             e = prefix.entries[h]
+            held = prefix.tier_holder(self.tier_key(h))
+            if held is not None and held != h:
+                continue                                     # that slot is another boundary's: this one stays in memory
             record = {"hash": h.hex(), "tokens": e.tokens}
             prefix.spill_begin(h)                           # the blocks are held until the read lands: `available` says so
             try:
@@ -247,6 +265,10 @@ class Runner:
             raise ValueError("this runner has no prefix tier")
         if h not in self.prefix.tier_keys:
             raise ValueError("that boundary is not on the prefix tier")
+        if self.prefix.tier_holder(self.tier_key(h)) != h:
+            # its slot belongs to another boundary: reading it would hand this row the other one's KV
+            self.prefix.forget_tier(h)
+            raise ValueError("that boundary's tier slot is another boundary's")
         if self.prefix.has(h):
             raise ValueError("that boundary is already in memory")
         self.kv.row(seq)
@@ -355,7 +377,7 @@ class Runner:
         Parked conversations are not rows: see `forget_parked`."""
         if seq not in self.slot_of:
             return
-        self.drain()                                         # its steps ahead must land before the row's state goes
+        self._drain_row(seq)                                  # unrelated later steps may remain in flight
         self._settle_row(seq)
         if seq not in self.slot_of:                          # its park finished: the row is free already
             return
@@ -454,6 +476,7 @@ class Runner:
         self.model.resume(seq, slot, record)
         self.idle[seq] = True
         self.parked.pop(key, None)
+        self.digests.pop(key, None)
         return got
 
     def resume(self, seq: int, key: "int | None" = None) -> int:
@@ -514,6 +537,11 @@ class Runner:
         while self.inflight:
             self.resolve_oldest()
 
+    def _drain_row(self, seq: int) -> None:
+        """Settle only the prefix of the queue which still references this row."""
+        while any(seq in step.seqs for step, _, _ in self.inflight):
+            self.resolve_oldest()
+
     def _async_ok(self, step) -> bool:
         ready = getattr(self.model, "async_ready", None)
         return (step.kind == sched.DECODE and ready is not None and hasattr(self.model, "decode_async")
@@ -522,15 +550,58 @@ class Runner:
     def is_parked(self, key: int) -> bool:
         return self.tiered is not None and (key in self.parked or self.tiered.is_parked(key))
 
+    PARKED_RECORDS_KEPT = 8
+    """How many whole records stay in memory.
+
+    A record carries the conversation's ENTIRE token list -- 3.8 MiB of Python ints for a 100K
+    token turn -- and the door's continuation scan used to pull one for every parked
+    conversation on every request. With 280 parked, which is what this fleet actually holds,
+    that is **1.04 GiB** of host memory resident for a scan whose per-candidate question is
+    three numbers, on a box whose OOM floor is an absolute 6 GiB (45차 §62).
+
+    So the records are an LRU and the three numbers are `parked_digest`, kept for everybody.
+    Eight is the rows this engine can hold plus slack: a record is read when a candidate
+    actually passes the cheap test, or when a conversation resumes, and both are rare.
+    """
+
     def parked_record(self, key: int) -> "dict | None":
+        """The whole record, read from the tier when it is not one of the few held."""
         if not self.is_parked(key):
             return None
         record = self.parked.get(key)
-        if record is None:
-            record = self.tiered.record(key)                    # a JSON file per conversation: read once, not per request
-            if record is not None:
-                self.parked[key] = record
+        if record is not None:
+            self.parked.move_to_end(key)
+            return record
+        record = self.tiered.record(key)
+        if record is not None:
+            self._hold_record(key, record)
         return record
+
+    def _hold_record(self, key: int, record: dict) -> None:
+        self.parked[key] = record
+        self.parked.move_to_end(key)
+        while len(self.parked) > self.PARKED_RECORDS_KEPT:
+            self.parked.popitem(last=False)
+
+    def parked_digest(self, key: int) -> "dict | None":
+        """What a continuation scan needs to reject a candidate: its length, its last two ids, its pictures.
+
+        Kept for every parked conversation because it is a handful of bytes; the token list behind
+        it is read only when these three say the candidate could match.
+        """
+        digest = self.digests.get(key)
+        if digest is not None:
+            return digest
+        record = self.parked_record(key)
+        if record is None or "tokens" not in record:
+            return None
+        tokens = record["tokens"]
+        if len(tokens) < 2:
+            return None
+        digest = {"tokens": len(tokens), "last": tokens[-1], "prev": tokens[-2],
+                  "media": [(r[2], r[1]) for r in record.get("media", [])]}
+        self.digests[key] = digest
+        return digest
 
     def parked_blocks(self, key: int) -> int:
         return self.tiered.blocks(key)
@@ -543,6 +614,7 @@ class Runner:
         if self.tiered is not None:
             self.tiered.forget(key)
         self.parked.pop(key, None)
+        self.digests.pop(key, None)
 
     def forget_oldest_parked(self) -> "int | None":
         """Make room on the tier: forget the least recently parked conversation. Returns its key."""
@@ -559,6 +631,7 @@ class Runner:
         """An idle conversation decodes again (its next token is pending in the model)."""
         if seq not in self.idle:
             raise ValueError(f"seq {seq} is not idle")
+        self._drain_row(seq)
         if len(self.state.running) + int(self.state.in_prefill is not None) >= self.c.max_running:
             raise ValueError("decode width is full; wake it later")
         self.idle.pop(seq)
@@ -572,6 +645,7 @@ class Runner:
             raise ValueError(f"seq {seq} is not idle")
         if not isinstance(tokens, int) or tokens <= 0:
             raise ValueError("a turn adds at least one token to prefill")
+        self._drain_row(seq)
         held = self.model.context(seq)
         now = time.monotonic() if now is None else now
         sched.validate_arrival(self.state, seq, held + tokens, now)
@@ -584,10 +658,12 @@ class Runner:
     def _checkpoint(self, seq: int, position: int) -> None:
         """A prefill just reached `position`: if it is a block boundary nobody cached yet, keep the
         model's state there and pin the blocks before it."""
-        h = self._chain[seq].get(position)
+        chain = self._chain[seq]
+        h = chain.get(position)
         if h is None or self.prefix.has(h):
             return
         snap = self.prefix.take_snapshot()
+        self._note_fade(chain)
         if snap is None:
             return                                          # every snapshot is in use by a live boundary: this one goes uncached
         try:
@@ -616,6 +692,34 @@ class Runner:
         tail = getattr(self.model, "history_from", None)
         ids = tail(seq, last) if tail is not None else list(history(seq))[last:]
         self._chain[seq] = self.prefix.extend_chain(chain, ids, salts, start=last)
+
+    def reset_prefix(self) -> dict:
+        """Forget every cached boundary, on this rank, between two steps.
+
+        The cache's own bookkeeping is `PrefixCache.reset`; the tier's blobs are the runner's,
+        because the runner is what owns the disk. A boundary a row is restoring right now is left
+        alone -- its blocks are being written into as this runs -- and so is one being spilled.
+
+        Rows already running keep everything they adopted: a boundary that has been handed to a
+        row is that row's KV now, and forgetting the NAME does not take the blocks back. What the
+        reset buys is that nothing NEW adopts a stale prefix (45차 §55).
+        """
+        if self.prefix is None:
+            return {"entries": 0, "faded": 0, "kept_spilling": 0, "tier_keys": [], "tier_forgotten": 0}
+        restoring = self._restoring_keys()
+        report = self.prefix.reset()
+        forgotten = 0
+        tier = self.prefix_tier
+        for key in report["tier_keys"]:
+            if tier is None or key in restoring:
+                continue
+            try:
+                tier.forget(key)
+                forgotten += 1
+            except Exception as exc:                    # noqa: BLE001 -- a disk that refuses must not stop the reset
+                print(f"  prefix reset: tier slot {key} stayed: {type(exc).__name__}: {exc}", flush=True)
+        report["tier_forgotten"] = forgotten
+        return report
 
     def _tracked(self, seqs) -> "list[int]":
         """Rows whose generated boundaries can enter the prefix cache: a chain exists and the model tells its history."""
@@ -654,10 +758,20 @@ class Runner:
             if h is None or self.prefix.has(h):
                 continue
             snap = self.prefix.take_snapshot()
+            self._note_fade(chain)
             if snap is None:
                 break
             marks[position] = snap
         return marks
+
+    def _note_fade(self, chain: dict) -> None:
+        """A `take_snapshot` just displaced a boundary. Count it when the boundary was this row's own: with no minimum
+        spacing between checkpoints, a prompt longer than `PREFIX_SNAPSHOTS` blocks evicts its own earlier ones as it
+        goes, and the state copy that made each of them was device work spent for nothing. This is the meter that says
+        whether that is happening; it does not change who gets evicted (`prefix._victim`)."""
+        fade = self.prefix.last_fade
+        if fade is not None and fade in chain.values():
+            self.snapshot_self_evicts += 1
 
     def step(self, now: float | None = None) -> "sched.Step | None":
         now = time.monotonic() if now is None else now
@@ -674,6 +788,7 @@ class Runner:
             if self._async_ok(step):
                 return self._launch(step)
             if self.inflight:                                # a prefill or a synchronous decode needs every step ahead landed
+                self.sync_drain_steps += 1
                 self.resolve_oldest()
                 continue
             return self._run(step)
@@ -687,6 +802,7 @@ class Runner:
             sched.advance(self.state, step)
         self.steps += 1
         self.async_steps += 1
+        self.decode_batches[len(step.seqs)] += 1
         self.inflight.append((step, pending, time.perf_counter()))
         self.rec.count(f"{step.kind}_steps")
         self.rec.count(f"{step.kind}_tokens", step.tokens)
@@ -729,6 +845,8 @@ class Runner:
                     if finished:
                         self._finish(seq)
         self.steps += 1
+        if step.kind == sched.DECODE:
+            self.decode_batches[len(step.seqs)] += 1
         self.ring.push(STEP_RECORD.pack(self.steps, time.perf_counter() - t0, KIND[step.kind],
                                         len(step.seqs), step.tokens, step.seqs[0]))
         self.rec.count(f"{step.kind}_steps")

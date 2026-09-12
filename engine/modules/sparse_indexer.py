@@ -44,8 +44,13 @@ def topk_positions(logits: torch.Tensor, k: int, valid: "torch.Tensor | None" = 
         mask = torch.arange(n, device=logits.device)[None, :] >= valid[:, None]
         logits = logits.masked_fill_(mask, float("-inf")) if inplace else logits.masked_fill(mask, float("-inf"))
     kk = min(k, n)
-    vals, idx = logits.topk(kk, dim=-1)
-    idx = idx.masked_fill(torch.isinf(vals), -1).to(torch.int32)
+    # The caller wants the SET, not an order: pool_slots writes the winners in descending token position, so a
+    # sorted top-k is a sort paid for nothing. With `valid` the padding test is a position compare on the int32
+    # winners instead of isinf over the fp32 values the sort returned -- two fewer passes over [rows, k].
+    top = logits.topk(kk, dim=-1, sorted=False)
+    idx = top.indices.to(torch.int32)
+    idx = (idx.masked_fill(idx >= valid[:, None].to(torch.int32), -1) if valid is not None
+           else idx.masked_fill(torch.isinf(top.values), -1))
     if kk < k:
         idx = torch.cat([idx, torch.full((m, k - kk), -1, dtype=torch.int32, device=logits.device)], -1)
     return idx

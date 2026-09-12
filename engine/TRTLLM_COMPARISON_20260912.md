@@ -67,7 +67,7 @@ ST 에는 이 문이 없다. 그런데 **입력은 이미 있다** — `adapter.
 
 | 항목 | TRT-LLM | ST |
 |---|---|---|
-| **드래프트 길이** | `suggest_spec_config`: `max_draft_len = 5 if max_batch_size <= 4 else 3` | **`max_seqs=4`, `spec_k=5`.** NVIDIA 자신의 휴리스틱이 우리가 이미 쓰는 값을 그대로 말한다 — vLLM 대조가 "k=5 를 재 본 적 없다"고 열어 둔 항목의 **절반이 외부 확인으로 닫혔다** |
+| **드래프트 길이** | `suggest_spec_config`: `max_draft_len = 5 if max_batch_size <= 4 else 3` | **`max_seqs=4`, `spec_k=5`.** ~~NVIDIA 휴리스틱이 외부 확인~~ — **철회(원장 45차 §65)**. 그건 일반 기본값이고 우리 수용률은 일반이 아니다: 프로덕션 실측 **4.635/5, 세그먼트의 89.9%가 5개를 다 쓴다**. 같은 숫자에 도달한 것이 같은 이유를 뜻하지 않는다. **k 가 천장이다** |
 | 결정성이 계약 | 모든 flashinfer 호출에 `deterministic=True`. 주석이 이유를 적어 뒀다 — *"the default collect pass races"* | 우리는 네 랭크가 같은 토큰을 골라야 해서 결정성이 더 강한 계약이다. **flashinfer 로 갈아탈 때 이 플래그는 필수다** |
 | 수용 통계 | 위치별 + confidence 보정 히스토그램(`accept_stats.py`) | `st:spec_accepted_per_step_total` 이 수용 **개수의 분포**라 위치별 생존 곡선을 포함한다(vLLM 대조 §1-b 정정) |
 | 페널티·min_p·token ban 이 별도 모듈 | `penalties.py`(1,068줄), `token_ban.py`(708줄) | `process_logits` 하나. 규모가 다를 뿐 순서는 같다 |

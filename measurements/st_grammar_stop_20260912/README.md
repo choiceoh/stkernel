@@ -21,3 +21,11 @@ Both new tests fail on the original source with the production exception
 
 This is a shared speculative grammar bug. It does not establish a Red Hat
 versus NVIDIA checkpoint quality difference.
+
+Live recovery retained Red Hat, KV7, DFlash2 and the qualified tile32 prefill
+in a separate `prod-abceb6a0-grammar-9391` release. All four containers were
+running. The [HTTP receipt](live-recovery.json) records a successful
+`get_weather(city="Seoul")` tool response followed by a normal `서울` answer.
+The deployment environment was updated to this repaired release only after
+these requests passed. The engine source manifest is
+`b627103b8c8e546fd9cfefebf89a82c2a4b1f29705254e06f030ec21ad558785`.

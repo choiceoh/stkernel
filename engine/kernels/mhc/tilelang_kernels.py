@@ -29,7 +29,29 @@ import flashinfer.comm
 import tilelang
 import tilelang.language as T
 
-ENABLE_PDL = False  # Pinned GB10 image policy; SM12x lowering is unvalidated.
+# Programmatic Dependent Launch on the prefill mHC lane: each kernel starts on the SMs its predecessor frees
+# and prefetches during its tail. ON since 2026-09-12, and every part of that decision is a measurement.
+#
+#   lowers        all six kernels that lower at all lower for sm_121a and emit both
+#                 cudaGridDependencySynchronize and cudaTriggerProgrammaticLaunchCompletion; tilelang's wrapper
+#                 arms the programmatic serialization attribute (probes/mhc_pdl_lowering.py, 45차 §63)
+#   costs         nothing. It drops __restrict__, which reads like a traded no-alias guarantee and is not one:
+#                 same registers, same zero spills, same shared memory, same ld.global/st.global on all six
+#                 (probes/mhc_pdl_cost.py, 45차 §64)
+#   changes       no number. Outputs are identical at 65, 512, 2,304 and 6,912 tokens, down to a position-weighted
+#                 checksum (probes/mhc_pdl_same.py)
+#   is worth      -4.0% at p90 on a 2,304-token chunk and -4.7% at p90 on 6,912, the production chunk, and it
+#                 tightens the tail -- the off side threw a 10 ms outlier the on side never did
+#                 (probes/mhc_pdl_bench.py, 45차 §66)
+#
+# The one place it loses: at 512 tokens it is bimodal, usually equal and sometimes twice as slow, which the off
+# side never is. That is +117 us at the median of the bad rounds against -298 us on every full chunk, so it is
+# carried -- a prompt has one partial tail chunk and several full ones. If that ever stops being true this is one
+# line to put back.
+#
+# Still unmeasured: the real lane has an all_reduce between these kernels and overlapping THAT is what PDL is
+# for. Four ranks, so a fleet window. Everything above is the lower bound without it.
+ENABLE_PDL = True
 
 
 @triton.jit(do_not_specialize=["M"])
