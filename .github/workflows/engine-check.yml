@@ -18,11 +18,24 @@ jobs:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
       - uses: actions/setup-python@v5
-        with: {python-version: "3.12", cache: pip}
+        # `cache: pip` keys on a dependency manifest, and this repo has none -- it ships an
+        # image, not a package -- so setup-python does not skip the cache, it FAILS the job
+        # before a line of the verdict runs. Both runs the workflow has ever had died here.
+        # The dependency list is the two pip lines below, so key on the file they live in:
+        # the cache is the torch CPU wheel, ~200 MB, and it changes when this file does.
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/workflows/engine-check.yml
       - name: dependencies that exist on a CPU runner
+        # numpy and torch are the floor. `safetensors` and `triton` are here because without them
+        # eight tests do not skip, they ERROR: both are imported inside a test body rather than at
+        # module scope, so the CANNOT RUN rule above never sees them and a missing wheel reads as
+        # broken code. Both install on a CPU runner -- the tests only need the import.
         run: |
           python -m pip install --upgrade pip
-          pip install numpy
+          pip install numpy safetensors
           pip install torch --index-url https://download.pytorch.org/whl/cpu || echo "no torch here: those files will report CANNOT RUN"
+          pip install triton || echo "no triton here: the graph-contract tests will report FAILED, not CANNOT RUN"
       - name: the verdict
         run: python3 tools/check.py --list
