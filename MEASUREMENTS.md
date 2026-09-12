@@ -10280,6 +10280,63 @@ NFD 는 드문 입력이 아니다 — macOS 파일명, 일부 IME, PDF·OCR 추
 **검증**: 네 스위트 175 tests, 실패 목록이 main 과 동일(사전 존재 12). 새 테스트 5개.
 **못 한 것**: 좁힌 조건을 이미지 안 xgrammar 로 다시 돌려보지 못했다 — 그 사이 `st-glm53` 컨테이너가 내려갔다(다른 세션). 좁히기는 **이미 정상인 패턴의 재작성을 없앨 뿐**이고 `[가-힣]` 의 출력은 이미지에서 검증한 것과 바이트 동일이라 검증된 사례는 그대로지만, 다음 창에 `probes/st_grammar_korean.py` 를 한 번 더 돌릴 것.
 
+### 45차 §43 — llama.cpp·Ollama 에서 배워올 것 조사: 하나 있고, 이미 한 것이 넷, 못 하는 것이 둘 (2026-09-12, srv4, GPU 없음)
+
+운영자 "올라마나 라마에 배워올만한게 있나". vLLM(§30)·SGLang(§36)에 이어 셋째 대조. **급이 다른 엔진이라 대부분 해당 없지만, 진짜 빈 곳이 하나 나왔다 — 그리고 그건 llama.cpp 만의 것이 아니라 vLLM·SGLang 에도 있는 것이다.**
+
+#### 1. 가져올 것: `min_p` — 넷 다 있고 우리만 없다
+
+| | min_p | typical_p | DRY | XTC | mirostat |
+|---|---|---|---|---|---|
+| llama.cpp | `--min-p` | `--typical-p` | `--dry-*` | `--xtc-*` | `--mirostat` |
+| Ollama | `min_p` | `typical_p` | — | — | (구) |
+| vLLM | `min_p` (프로토콜 필드) | — | — | — | — |
+| SGLang | `min_p` | — | — | — | — |
+| **ST** | **없음** | 없음 | 없음 | 없음 | 없음 |
+
+`min_p` 는 "가장 가능성 높은 토큰 확률의 X배 미만은 버린다" 로, top_p 와 달리 **분포가 뾰족할 때 자동으로 좁아지고 평평할 때 넓어진다**. 커뮤니티가 top_p 대체로 쓰고, 우리 네 참조 구현이 전부 노출한다.
+**들어갈 자리는 정확히 보인다**: `sampler.OPTION_KEYS`+`validate_options`(범위 [0,1]), `needs_rich_sampler` 에 추가(캡처된 커널은 top_k/top_p 텐서만 받으므로 리치 경로로 보낸다), 그리고 `threshold()` 한 줄 — 그 함수의 `weights` 는 `exp((logit−max)/T)` 라 **최대가 1** 이므로 min_p 의 임계값이 곧 `min_p` 자신이다. 순서는 vLLM 과 같게 min_p → top_k → top_p.
+**안 넣었다**: `engine/base/sampler.py` 는 지금 다른 세션(`ostcode/st-engine-improvements-a5ab66`, 샘플러 커널 #613/#633)이 잡고 있다. 충돌 대신 자리를 적어 둔다. 나머지 넷(typical_p·DRY·XTC·mirostat)은 vLLM·SGLang 에도 없고 품질 논쟁이 있어 **안 가져온다**.
+
+#### 2. 이미 한 것 넷
+
+- **KV 캐시 양자화**(`--cache-type-k q8_0` 류, llama.cpp 의 대표 메모리 레버): 우리 MLA 잠재는 **이미 fp8**(`cache_spec`: `PagedSpec("mla latent fp8", ...)`). q8_0 과 같은 급이고 f16 보다 낫다.
+- **슬롯 디스크 저장/복원**(`/slots/{id}?action=save|restore`, `--slot-save-path`): 우리 D16 NVMe 티어가 **자동·LRU·다중 턴**이라 엄밀히 더 많다.
+- **프롬프트 캐시**(`--cache-prompt`): 우리 접두사 캐시(§32 등)와 같은 자리.
+- **부분 UTF-8 스트리밍**: llama.cpp 도 "마지막 토큰이 부분 멀티바이트면 한도를 살짝 넘을 수 있다"고 적어 둔 그 문제고, 우리는 §36·§38 에서 글자 경계로 해결했다.
+
+#### 3. 못 하는 것 둘 — 구조가 막는다
+
+- **`--cache-reuse N`(KV 시프팅으로 중간이 달라진 프롬프트도 재사용)**: 우리 프리필의 절반이 **KDA 선형 어텐션의 재귀 상태**다. 그건 위치로 색인된 캐시가 아니라 **달려온 상태**여서, 위치를 밀어 재해석할 방법이 없다(스냅샷도 청크 경계에만 있다). MLA 쪽만 RoPE 재회전으로 밀 수 있어도 반쪽은 못 민다.
+- **`--context-shift` / `--keep N`(문맥이 차면 가운데를 버리고 무한 생성)**: 우리는 **입장 때 지평선 전체를 예약하고 선점하지 않는다**(D3, `kv.py`). 문맥을 넘기면 버리는 대신 **숫자를 말하며 거절**한다(§40). 의도된 차이다.
+
+#### 4. 후보로 남기는 것 하나 (GPU 필요)
+
+**n-gram 드래프팅**(llama.cpp `--spec-ngram-*`, vLLM 의 `method: "ngram"`): 모델 없이 프롬프트에서 이어 붙일 조각을 찾아 드래프트한다. **긴 문맥을 인용·편집·요약하는 요청**에서 수락 길이가 길어지고, 우리 DFlash2 와 배타적이지 않다(둘 중 나은 쪽을 고르거나 섞을 수 있다). 한국어에서 특히 값이 클 수 있다 — 같은 글이 토큰 4.4배라 인용 구간이 그만큼 길다. 창이 열리면 `st:spec_accepted_per_step_total` 로 비교할 것.
+
+**Ollama 쪽**: `keep_alive`(유휴 시 언로드)·`num_gpu`(레이어 오프로드)·Modelfile 은 단일 노드 소비자용 운영 기능이라 우리 플릿 리스·파킹이 대신한다. API 파라미터는 위 표가 전부다.
+
+#### 5. 파라미터 말고 — 문의 **행동**에서 나온 셋 (운영자 "그런거 말고 다른건")
+
+위는 전부 API 표면이다. 같은 두 프로젝트를 **엔진이 하는 일** 쪽으로 다시 읽으니 셋이 나왔고, 셋 다 파라미터가 아니다.
+
+**5.1 도구 호출 인자가 스트리밍되지 않는다 — 셋 다 하는데 우리만 안 한다.**
+우리 `_Choice.flush` 는 `</tool_call>` 이 닫혀야 그 호출을 통째로 내보낸다(`_TOOL_CALL.findall` → 완성된 블록만). OpenAI 스트리밍 규격은 반대다 — 첫 델타가 `index`·`id`·`function.name`, 이후 델타가 `function.arguments` **조각**이다.
+SGLang 은 명시적으로 그렇게 한다(`base_format_detector`: *"Tool names sent first with empty parameters, then arguments stream incrementally"*, `partial_json_loads` 사용), vLLM 은 파서마다 `extract_tool_calls_streaming`, llama.cpp 은 `common/chat-parser.cpp` 의 부분 파싱.
+**우리 체감**: GLM 형식은 인자 값이 본문의 대부분이다. 한국어 1,000자 인자면 ~770 토큰 ≈ 128 스텝 ≈ **6초 동안 클라이언트가 아무것도 못 본다**(§38 의 4.4배가 여기서도 곱해진다).
+**고칠 자리**: 전부 우리 것이다 — `profiles/glm53/tools.py` 에 부분 파서(열린 `<tool_call>` 의 이름 + 완성된 `<arg_key>/<arg_value>` 쌍 + 열린 값), `base/serve` 는 보낸 만큼을 빼서 조각으로 흘린다. **단조성 규칙**: 값의 첫 글자가 `{[\"-0123456789tfn` 가 아니면 `_value` 가 평문으로 갈 것이 확정이므로 그 문자열만 글자 단위로 흘리고, 나머지 타입은 닫힐 때까지 기다린다(부분 조각이 JSON 일 필요는 없다 — 이어 붙인 것이 JSON 이면 된다).
+
+**5.2 사고 예산이 없다 — 그리고 그게 없어서 난 사고가 이미 원장에 있다.**
+llama.cpp 은 `--reasoning-budget N`(−1 무제한, 0 사고 금지, N 토큰)과 예산 소진 시 `--reasoning-budget-message` 를 끼운 뒤 **사고 종료 태그를 강제**한다. 살아 있는 요청에 `/v1/chat/completions/control` `{"action":"reasoning_end"}` 로 "지금 그만 생각해" 를 보내는 것도 있다(요청이 `reasoning_control: true` 였을 때).
+우리는 **둘 다 없다**. 그런데 29차 메모의 사고 예산 함정이 바로 이것이다 — GLM-5.3 이 분량 제약 있는 문제에서 **사고 안에 초안을 쓰고 글자 수를 세며 다듬다 상한(16K·40K)에 걸려 답 0 자**. 지금 우회는 프롬프트 쪽 `reasoning_effort=low` 뿐이다.
+**고칠 자리**: 문은 토큰을 강제할 수 없다(읽기만 한다). 예산이 다하면 **다음 스텝의 `reasoning_end` 를 강제**해야 하고 그건 리치 샘플러 경로(`_row_logits`)다 — `logit_bias` 의 조건부 판이다. 지금 그 파일은 다른 세션이 잡고 있다.
+
+**5.3 도구 인자에 문법이 안 걸린다 — 우리에겐 이미 `grammar_after` 가 있다.**
+llama.cpp 은 **지연 문법**(`grammar_lazy`, `grammar_triggers`)으로 `<tool_call>` 이 나온 **뒤부터만** 도구 스키마 문법을 건다 — 앞의 산문은 자유롭고 인자는 선언된 스키마를 지킨다. 우리는 `tools` 를 **챗 템플릿에만** 넘기고(`serve.py:2286`) 문법을 전혀 안 만든다. 그래서 모델이 잘못된 키·깨진 JSON 을 써도 막을 게 없다.
+**그런데 기구는 이미 있다**: `options["grammar_after"]`(다른 세션이 사고 블록 때문에 넣은, "이 토큰 뒤부터 문법을 건다")가 정확히 llama.cpp 의 지연 트리거다. 남은 것은 `tools` → JSON 스키마 변환과, GLM 의 `<arg_key>/<arg_value>` 형식을 문법으로 쓰는 일. **§41 의 한글 범위 수리가 여기서도 값을 한다** — 도구 인자 스키마에 `pattern` 이 있으면 같은 0xED 문제를 밟는다.
+
+**순위**: 5.1(우리 것만으로 가능, 체감 큼) → 5.3(기구가 이미 있음) → 5.2(샘플러 경로 필요, 다른 세션과 겹침).
+
 ### 45차 §44 — 도구 호출 인자를 조각으로 흘린다: 닫힐 때까지 기다리던 3.9 초가 0 이 됐다 (2026-09-12, srv4, GPU 없음)
 
 §43 §5 에서 "파라미터 말고" 로 찾아낸 셋 중 첫째. 우리 문은 `</tool_call>` 이 **닫혀야** 그 호출을 통째로 내보냈다. OpenAI 스트리밍 규격은 반대다 — **첫 델타가 `id`·`type`·`function.name`(인자는 빈 문자열), 그 뒤 델타마다 `function.arguments` 조각**. SGLang(`base_format_detector`: *"Tool names sent first with empty parameters, then arguments stream incrementally"*), vLLM(파서마다 `extract_tool_calls_streaming`), llama.cpp(`common/chat-parser.cpp`) 셋 다 그렇게 한다.
