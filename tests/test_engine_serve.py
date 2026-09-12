@@ -2484,6 +2484,33 @@ class OpenAIDialectTests(unittest.TestCase):
         s.vision = object()
         self.assertEqual(s.model_card()["capabilities"]["vision"], True)
 
+    def test_the_status_door_publishes_the_fleet_lifecycle(self):
+        """Who holds the fleet, whether it was asked to let go, and how the handover went. The
+        engine writes all three into ~/st-fleet.lock and until now the only reader had to ssh
+        to rank 0 and cat it -- while everything that watches this engine already reaches the
+        door (45차 §60)."""
+        s = chat_server()
+        self.assertIsNone(s.fleet_status(), "no lease, no field: a bare run's status is unchanged")
+
+        s.lease = {"owner": "st-glm53", "path": "/home/choiceoh/st-fleet.lock"}
+        self.assertEqual(s.fleet_status(),
+                         {"owner": "st-glm53", "path": "/home/choiceoh/st-fleet.lock",
+                          "draining": None, "handed_over": None})
+
+        s.draining = "another-session"
+        self.assertEqual(s.fleet_status()["draining"], "another-session")
+        s.handed_over = {"to": "another-session", "parked": 3, "lost": 0}
+        self.assertEqual(s.fleet_status()["handed_over"], {"to": "another-session", "parked": 3, "lost": 0})
+
+    def test_the_status_body_carries_the_fleet_block_only_with_a_lease(self):
+        s = chat_server()
+        out = self._serve(s, lambda base: self._get(base, "/"))
+        self.assertNotIn("fleet", out)
+        s.lease = {"owner": "st-glm53", "path": "/tmp/lock"}
+        out = self._serve(s, lambda base: self._get(base, "/"))
+        self.assertEqual(out["fleet"]["owner"], "st-glm53")
+        self.assertEqual(out["engine"], "ST")
+
     def test_the_catalog_stops_advertising_while_the_fleet_is_being_handed_over(self):
         """`/v1/models` is the endpoint the control plane asks: wormhole re-probes it for
         `max_model_len` and SparkFleet takes a service's model id from it, which is what makes a
