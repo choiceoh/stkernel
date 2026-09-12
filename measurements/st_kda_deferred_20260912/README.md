@@ -50,6 +50,10 @@ The other two architecture directions remain separate follow-ups:
 - CPU admission/probe tests: 26 passed in the ST image without GPU access.
   The local macOS interpreter lacks torch; two existing graph-profile tests
   could not import there. Their same-image rerun passed.
+- Source-provenance pin check passes after refreshing `SOURCES.json`. The
+  earlier full CI also reported two missing-checkpoint-config errors in
+  `glm53.net` and `glm53.drafter` self-checks. The same-image no-GPU run
+  reproduced both before merging main, which now supplies CPU fixtures.
 - GPU suite: acceptance lengths 0 through full width; changing device slot,
   context and count during graph replay; cyclic ring positions; prefix
   boundaries; untouched slots and padding; tail dimensions and stale NaNs.
@@ -69,15 +73,24 @@ ST_PROBE_NO_GPU=1 bash probes/run_engine_probe.sh \
 # GPU: submit from the isolated checkout on srv2.
 REPO=$PWD ST_IMAGE=st-engine:main-ff728f43 \
   ST_CACHE=/home/choiceoh/.cache/st-kda-deferred \
-  bash bench/fleet.sh run --gpu --detach stkda-deferred0912v3 10 \
+  bash bench/fleet.sh run --gpu --detach stkda-deferred0912v6 5 \
   "KDA deferred state correctness and paired verify commit timing" -- \
   bash probes/run_engine_probe.sh probes/engine_kda_deferred_check.py --samples 20
 ```
 
-The accepted reservation is ticket `17892205801518123`, revision 4, source
-`0e301990`. Its GPU output is `/home/choiceoh/.cache/st-kda-deferred/kda-deferred.json`.
-The kernel runner takes and releases the fleet lease; an existing holder is
-not stopped by this task. GPU results are pending.
+The v5 reservation (ticket `17892214701695707`, source `724042b7`) was
+admitted but never started a GPU container: `BEAT=$(fleet_lease_beat ...)`
+waited forever because the background loop retained the command substitution's
+output pipe. `launcher-blocked-v5.log` records the canceled run. Only this
+reservation's process group and exact-owner lease were stopped/released.
+
+The helper now detaches the background loop's standard streams. A real-shell
+regression test demonstrates that the original helper times out, while the
+fixed helper returns its PID promptly and continues renewing. This preserves
+both the lease and its heartbeat. A fresh GPU reservation is pending.
+
+The GPU output is `/home/choiceoh/.cache/st-kda-deferred/kda-deferred.json`.
+The kernel runner takes and releases the fleet lease.
 
 ## Serving integration gate
 
@@ -85,7 +98,12 @@ A kernel win alone is insufficient. Before making this a serving lane, commit
 must be connected after both synchronous and asynchronous sampling, before
 prefix staging, observation, parking, and the next target step. Captured
 factor buffers must remain owned until commit completes, including slot
-reuse, cancellation, and batch transitions. Rejected intermediate states must
+reuse, cancellation, and batch transitions. The commit count is the number of
+positions actually retained after EOS and output-limit clipping, including the
+anchor/correction position; it is not the raw number of accepted drafts. The
+asynchronous path needs the pre-advance context and the real physical slot,
+since `advance` changes the next context and can replace a finished slot with
+zero. Rejected intermediate states must
 not become visible to a consumer expecting the old complete ring.
 
 Only after those contracts pass would the candidate be compared with the

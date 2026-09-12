@@ -1,12 +1,15 @@
 {
   "recorded_at": "2026-09-12T13:55:35.647702+00:00",
-  "source_revision": "0e301990",
+  "source_revision": "724042b7ea5c31d56a46c1691c0f383b0875d687",
   "runtime_image": "st-engine:main-ff728f43",
   "runtime_image_id": "sha256:a13be2698a579983329b82a1fc2a98d6462346a323981ba17e97f27c3b7fbd7b",
   "reservation": {
-    "session": "stkda-deferred0912v3",
-    "ticket": "17892205801518123",
-    "revision": 4
+    "session": "stkda-deferred0912v5",
+    "ticket": "17892214701695707",
+    "revision": 1,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/63ec9cc5e26f674371f0852add5dad9ce76769e2d3ba2ceaea5947026e9e7e12.log",
+    "payload_returncode": 143,
+    "gpu_started": false
   },
   "source_sha256": {
     "engine/kernels/kda/deferred.py": "9651eb229830b22784725018262057d1cbead7f01d8788882bc2fbaf05aeaa14",
@@ -15,5 +18,6 @@
     "probes/engine_kda_deferred_check.py": "3dfd1fae3ea5dd7fd0a4ff7827bdb64ff20ee9274186ac77d596127038333220",
     "probes/engine_kda_deferred_compile.py": "8e52b6234b6784f0451866b338aed3b240f660e82e5297f3c9036f0dd9fdd289",
     "tests/test_engine_kda_deferred.py": "613c56ee3dfb4828c25a99aa44c15527b06943a1ab72a3da917c635a458404d6"
-  }
+  },
+  "status": "v5 canceled before GPU execution due to heartbeat PID capture deadlock; fixed source awaiting a fresh reservation"
 }
