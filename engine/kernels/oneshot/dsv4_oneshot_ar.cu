@@ -258,7 +258,7 @@ template <bool CONSUMER_PDL, bool COMPACT = false, bool WRAP_SAFE = false,
           bool MAX_INT64 = false>
 __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
                                               bf16 *dst, int n, int nbytes,
-                                              const HintArgs h) {
+                                              const HintArgs h, int rank) {
   // In a PDL chain this collective is also a consumer. Neither the input
   // nor the protocol's previous sequence may be read before its predecessor
   // has completed. No forward progress relies on concurrent residency.
@@ -425,8 +425,8 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
   // __ldcs -- each rx line is consumed exactly once per collective and
   // overwritten by the NIC four collectives later, so evict-first streaming
   // keeps 192KB/collective out of L2. Conversions pack bf16x2 -> float2
-  // (half the convert instructions); per-element op order and rn rounding
-  // are unchanged, so results are bitwise identical to the scalar original.
+  // (half the convert instructions). Vector lanes and the scalar tail fold
+  // ranks in the same canonical order before the final BF16 rounding.
   const uint4 *rx4[NPEER] = {
       reinterpret_cast<const uint4 *>(c->rx[slot][0]),
       reinterpret_cast<const uint4 *>(c->rx[slot][1]),
@@ -456,12 +456,8 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
         float2 f1 = __bfloat1622float2(r1.b2[p]);
         float2 f2 = __bfloat1622float2(r2.b2[p]);
         float2 acc;
-        acc.x = fa.x + f0.x;
-        acc.x += f1.x;
-        acc.x += f2.x;
-        acc.y = fa.y + f0.y;
-        acc.y += f1.y;
-        acc.y += f2.y;
+        acc.x = osar_sum_rank_order(fa.x, f0.x, f1.x, f2.x, rank);
+        acc.y = osar_sum_rank_order(fa.y, f0.y, f1.y, f2.y, rank);
         o.b2[p] = __float22bfloat162_rn(acc);
       }
     }
@@ -481,10 +477,10 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
   } else {
     for (int i = (nv << 3) + blockIdx.x * blockDim.x + threadIdx.x; i < n;
          i += gridDim.x * blockDim.x) {
-      float acc = __bfloat162float(src[i]) +
-                  __bfloat162float(c->rx[slot][0][i]) +
-                  __bfloat162float(c->rx[slot][1][i]) +
-                  __bfloat162float(c->rx[slot][2][i]);
+      float acc = osar_sum_rank_order(__bfloat162float(src[i]),
+                  __bfloat162float(c->rx[slot][0][i]),
+                  __bfloat162float(c->rx[slot][1][i]),
+                  __bfloat162float(c->rx[slot][2][i]), rank);
       dst[i] = __float2bfloat16(acc);
     }
   }
@@ -492,20 +488,20 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
 }
 
 // Distinct entry points compile away the mode test and retain the original
-// ordinary kernel ABI. Neither path pays a per-block runtime mode branch.
+// ordinary/consumer mode split. Rank selects only the FP32 summation order.
 __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
-                          int nbytes, const HintArgs h) {
-  k_oneshot_impl<false>(c, src, dst, n, nbytes, h);
+                          int nbytes, const HintArgs h, int rank) {
+  k_oneshot_impl<false>(c, src, dst, n, nbytes, h, rank);
 }
 
 __global__ void k_oneshot_consumer(Ctrl *c, const bf16 *src, bf16 *dst, int n,
-                                   int nbytes, const HintArgs h) {
-  k_oneshot_impl<true>(c, src, dst, n, nbytes, h);
+                                   int nbytes, const HintArgs h, int rank) {
+  k_oneshot_impl<true>(c, src, dst, n, nbytes, h, rank);
 }
 
 __global__ void k_oneshot_max_int64(Ctrl *c, const bf16 *src, bf16 *dst, int n,
-                                   int nbytes, const HintArgs h) {
-  k_oneshot_impl<false, false, OSAR_COMPACT_CTA != 0, true>(c, src, dst, n, nbytes, h);
+                                   int nbytes, const HintArgs h, int rank) {
+  k_oneshot_impl<false, false, OSAR_COMPACT_CTA != 0, true>(c, src, dst, n, nbytes, h, rank);
 }
 
 #if OSAR_COMPACT_CTA
@@ -514,8 +510,8 @@ __global__ void k_oneshot_max_int64(Ctrl *c, const bf16 *src, bf16 *dst, int n,
 // publication predicate as compact launches: all calls share done_ctr.
 template <bool CONSUMER_PDL, bool COMPACT>
 __global__ void k_oneshot_compact_mode(Ctrl *c, const bf16 *src, bf16 *dst,
-                                      int n, int nbytes, const HintArgs h) {
-  k_oneshot_impl<CONSUMER_PDL, COMPACT, true>(c, src, dst, n, nbytes, h);
+                                      int n, int nbytes, const HintArgs h, int rank) {
+  k_oneshot_impl<CONSUMER_PDL, COMPACT, true>(c, src, dst, n, nbytes, h, rank);
 }
 #endif
 
@@ -864,22 +860,22 @@ static torch::Tensor py_oneshot_impl(torch::Tensor input,
     if (compact) cfg.gridDim = dim3(OSAR_COMPACT_GRID);
     const auto err = compact
         ? cudaLaunchKernelEx(&cfg, k_oneshot_compact_mode<true, true>, g_ctrl,
-                              src, dst, (int)n, (int)(n * 2), h)
+                              src, dst, (int)n, (int)(n * 2), h, g_rank)
         : cudaLaunchKernelEx(&cfg, k_oneshot_compact_mode<true, false>, g_ctrl,
-                              src, dst, (int)n, (int)(n * 2), h);
+                              src, dst, (int)n, (int)(n * 2), h, g_rank);
 #else
     const auto err = cudaLaunchKernelEx(&cfg, k_oneshot_consumer, g_ctrl, src,
-                                         dst, (int)n, (int)(n * 2), h);
+                                         dst, (int)n, (int)(n * 2), h, g_rank);
 #endif
     TORCH_CHECK(err == cudaSuccess, "oneshot PDL launch: ",
                 cudaGetErrorString(err));
   } else {
 #if OSAR_COMPACT_CTA
     k_oneshot_compact_mode<false, false><<<ARGRID, ARTHREADS, 0, st>>>(
-        g_ctrl, src, dst, (int)n, (int)(n * 2), h);
+        g_ctrl, src, dst, (int)n, (int)(n * 2), h, g_rank);
 #else
     k_oneshot<<<ARGRID, ARTHREADS, 0, st>>>(g_ctrl, src, dst, (int)n,
-                                          (int)(n * 2), h);
+                                          (int)(n * 2), h, g_rank);
 #endif
   }
   return out;
@@ -905,7 +901,7 @@ static torch::Tensor py_oneshot_max_int64(torch::Tensor input) {
   auto *data = reinterpret_cast<bf16 *>(input.data_ptr());
   HintArgs hints{};
   k_oneshot_max_int64<<<1, ARTHREADS, 0, c10::cuda::getCurrentCUDAStream()>>>(
-      g_ctrl, data, data, (int)input.numel() * 4, (int)input.numel() * 8, hints);
+      g_ctrl, data, data, (int)input.numel() * 4, (int)input.numel() * 8, hints, g_rank);
   return input;
 }
 // The phase counters (SM cycles, monotonic) for a probe that wants the wait
