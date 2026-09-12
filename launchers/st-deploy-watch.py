@@ -125,6 +125,21 @@ def queue_active_within(seconds: float, fleet_dir: "Path | None" = None) -> "int
     return ago if ago < seconds else None
 
 
+def boot_ticket_waiting(fleet_dir: "Path | None" = None) -> "str | None":
+    """The first boot ticket queued (bench/fleet.sh's queue file, kind in field 6), or None. A deploy
+    is a production boot, and production comes back only when no boot ticket waits (the operator's
+    rule for the queue, 2026-09-12): a deploy that takes the fleet from a waiting ticket makes it
+    wait through a boot, the quiet gate and a drain -- 05:03-05:2x on 2026-09-13 would have."""
+    try:
+        for line in (Path(fleet_dir or FLEET) / "queue").read_text().splitlines():
+            fields = line.split("|")
+            if len(fields) > 5 and fields[5].strip() in ("boot", ""):
+                return fields[1].strip()
+    except OSError:
+        pass
+    return None
+
+
 def failures(tree: Path, timeout: int) -> "dict[str, str]":
     """{test file: its one-line verdict} for the files that do not pass, over `tree`."""
     out = {}
@@ -266,6 +281,10 @@ def cycle(a, log) -> int:
     ago = queue_active_within(a.queue_grace)
     if ago is not None:
         log(f"  the queue was active {ago}s ago: deferring the deploy until it has been quiet for {a.queue_grace}s")
+        return 0
+    waiting = boot_ticket_waiting()
+    if waiting:
+        log(f"  a boot ticket waits ({waiting}): the queue goes first, the deploy comes when none waits")
         return 0
     log(f"  deploying {head[:12]}")
     ok = deploy(release, log)
