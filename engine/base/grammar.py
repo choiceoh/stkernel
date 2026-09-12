@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import json
 import threading
+from collections import OrderedDict
 
 
 def available() -> bool:
@@ -64,7 +65,8 @@ class Grammars:
         self.vocab_size = vocab_size
         self.compiler = xgr.GrammarCompiler(info)
         self.words = int(xgr.allocate_token_bitmask(1, vocab_size).shape[-1])
-        self._cache = {}
+        self._cache = OrderedDict()              # spec key -> compiled grammar (or the future compiling it), MRU last
+        self.compiles = self.cache_hits = self.cache_evictions = 0
         self._lock = threading.Lock()
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="grammar")
         self.staging = None                      # pinned [step positions, words]: xgrammar fills on the host
@@ -87,6 +89,23 @@ class Grammars:
             raise ValueError(f"the grammar cannot be compiled: {exc}") from exc
         raise ValueError(f"unknown grammar spec {spec['type']!r}")
 
+    compiles = cache_hits = cache_evictions = 0
+    """Counters as CLASS defaults: probes and tests build a `Grammars` with `__new__` and set the
+    few fields they need, and a meter must not be the thing that breaks them."""
+
+    KEPT = 256
+    """How many compiled grammars this rank holds.
+
+    Declared, because a cache without a ceiling is not a decision (the same rule 45차 §53 applied
+    to the NVMe tier). Measured inside the served image on this vocabulary: a tool grammar costs
+    **14-17 KiB** compiled, and a `json_schema` of forty fields costs **173 KiB** -- and an agent
+    product sends a fresh schema per task, so the count is the caller's, not ours. 256 entries is
+    at most ~44 MiB at that larger size, on a box whose OOM floor is an absolute 6 GiB (45차 §63).
+
+    Evicting is safe while a row is using one: a `Matcher` holds the compiled grammar itself, so
+    dropping the name only means the next request compiles it again.
+    """
+
     def compile(self, spec: dict):
         """A handle for `spec`: the compiled grammar, or the thread compiling it. Shared by key, so a second
         row asking for the same schema waits on the same work instead of doing it again."""
@@ -94,9 +113,15 @@ class Grammars:
         with self._lock:
             hit = self._cache.get(key)
             if hit is not None:
+                self._cache.move_to_end(key)
+                self.cache_hits += 1
                 return hit
             started = self._pool.submit(self._build, spec)
             self._cache[key] = started
+            self.compiles += 1
+            while len(self._cache) > self.KEPT:
+                self._cache.popitem(last=False)
+                self.cache_evictions += 1
             return started
 
     def resolve(self, handle):

@@ -59,6 +59,19 @@ class RequestError(Exception):
 _TOOL_CALL = re.compile(r"<tool_call>(.*?)</tool_call>", re.S)
 _SAMPLING_RANGES = {"presence_penalty": (-2.0, 2.0), "frequency_penalty": (-2.0, 2.0)}
 
+def _grammar_rows(grammars):
+    """What the compiled-grammar cache is holding. Empty when this boot serves no structured output."""
+    cache = getattr(grammars, "_cache", None)
+    if grammars is None or cache is None:
+        return ()
+    return (("gauge", "st:grammar_cache_entries", "compiled grammars held", len(cache)),
+            ("gauge", "st:grammar_cache_limit", "the declared ceiling on that", grammars.KEPT),
+            ("counter", "st:grammar_compiles_total", "grammars compiled, cache misses included", grammars.compiles),
+            ("counter", "st:grammar_cache_hits_total", "requests that reused a compiled grammar", grammars.cache_hits),
+            ("counter", "st:grammar_cache_evictions_total", "compiled grammars dropped at the ceiling",
+             grammars.cache_evictions))
+
+
 class PromptTokens:
     """Tokenize a continuing turn by its new tail instead of from the top.
 
@@ -2195,6 +2208,7 @@ class Server:
             ("gauge", "st:kv_blocks_faded", "free blocks held by a boundary whose snapshot is gone", kv.faded),
             ("gauge", "st:state_slots_free", "state slots a new request could take", slots.available),
             *device_memory_rows(),
+            *_grammar_rows(getattr(self.engine, "grammars", None)),
             ("counter", "st:prompt_tokenize_spliced_total",
              "chat prompts tokenized as a tail onto a remembered prefix", getattr(self.prompt_tokens, "spliced", 0)),
             ("counter", "st:prompt_tokenize_full_total",

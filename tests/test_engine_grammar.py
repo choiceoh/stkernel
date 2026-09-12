@@ -3,6 +3,7 @@ and the step's one bitmask -- filled at each row's own offset, crossed once, app
 The first class runs where xgrammar and transformers are importable (the ST image); the rest run anywhere torch is."""
 import sys
 import threading
+import json
 import unittest
 from pathlib import Path
 
@@ -468,6 +469,50 @@ class PickRichTests(unittest.TestCase):
         self.assertEqual(new, [70])
         self.assertEqual(g.xgr.fills, [0])
 
+
+
+class CacheCeilingTests(unittest.TestCase):
+    """A cache without a ceiling is not a decision (45차 §53's rule, §63's numbers)."""
+
+    def cache(self, kept=3):
+        from engine.base.grammar import Grammars
+        from collections import OrderedDict
+        import threading
+        g = Grammars.__new__(Grammars)
+        g._cache, g._lock, g.KEPT = OrderedDict(), threading.Lock(), kept
+        g.compiles = g.cache_hits = g.cache_evictions = 0
+        built = []
+
+        class Pool:
+            def submit(self, fn, spec):
+                built.append(spec["schema"]["title"])
+                return spec["schema"]["title"]
+        g._pool = Pool()
+        return g, built
+
+    def spec(self, i):
+        return {"type": "json_schema", "schema": {"title": f"s{i}", "type": "object"}}
+
+    def test_the_oldest_compiled_grammar_leaves_at_the_ceiling(self):
+        g, built = self.cache(kept=3)
+        for i in range(5):
+            g.compile(self.spec(i))
+        self.assertEqual(len(g._cache), 3)
+        self.assertEqual((g.compiles, g.cache_evictions, g.cache_hits), (5, 2, 0))
+        self.assertEqual(built, ["s0", "s1", "s2", "s3", "s4"])
+
+    def test_a_hit_is_not_a_compile_and_refreshes_the_entry(self):
+        g, built = self.cache(kept=2)
+        g.compile(self.spec(0))
+        g.compile(self.spec(1))
+        self.assertEqual(g.compile(self.spec(0)), "s0", "the same handle came back")
+        g.compile(self.spec(2))                          # s1 is now the oldest, not s0
+        self.assertEqual(sorted(k for k in g._cache), sorted(json.dumps(self.spec(i), sort_keys=True) for i in (0, 2)))
+        self.assertEqual((g.compiles, g.cache_hits, g.cache_evictions), (3, 1, 1))
+
+    def test_the_declared_ceiling_is_a_number_somebody_chose(self):
+        from engine.base.grammar import Grammars
+        self.assertEqual(Grammars.KEPT, 256)             # ~44 MiB at the measured 173 KiB json_schema
 
 if __name__ == "__main__":
     unittest.main()
