@@ -1510,3 +1510,11 @@ sha 하나·프로덕션 형상) → 배포·큐 연결(D17 프로브 티켓, �
 빈 창이 남는다 — 그동안은 옛 런처의 `stop` 이 남의 리스(컨테이너 없는 큐 리스)를 거부하므로 슈퍼바이저가 티켓 부팅을
 죽이지는 않는다. `--probe` 레인은 아직 ST 를 모른다(PR 3). `ST_LEASE_KIND=session` 수동 부팅은 `st-hold` 전까지의
 다리이고, 그 `stop` 은 kind 만 맞으면 된다(세션끼리 서로 내릴 수 있음 — 지금과 같다).
+
+### ST decode22 consumer scope correction (2026-09-13 00:55 KST)
+
+The v3 baseline boot reached canonical preparation, not a completed measurement. Its PR #760 `step_peek` window was 11.93 median step/s. The candidate never ran. Preparation exposed a pre-existing pipeline bug: reasoning_budget=800 was ignored, so 2400-token requests returned only reasoning and no final answer. The owned driver was interrupted and the official launcher stopped its four ranks at 00:44:40, retaining logs and raw preparation requests.
+
+`21a4c816` adds a conservative in-flight-aware boundary drain, with the existing rich sampler enforcing the cap and async decoding resuming after committed reasoning end. It also keeps hypothetical rejected draft end tokens from disabling the cap. Focused CPU validation: 19 reasoning/gate tests plus 35 async runner/pipeline/sampling tests passed.
+
+The user explicitly requested **no corrected-baseline measurement** and to proceed directly with the corrected improved candidate. The next boot therefore runs two canonical onepass invocations on the candidate alone. Record absolute step/s against the 22 step/s target, actual output tok/s and quality, with `no baseline on this build`; do not claim a matched consumer speedup. Evidence: `measurements/st_decode_22step_20260912/`.

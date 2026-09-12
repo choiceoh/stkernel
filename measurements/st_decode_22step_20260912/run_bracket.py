@@ -1,7 +1,9 @@
-"""Run the frozen native ST B/A/B bracket on srv2 through the official lease.
+"""Run the frozen native ST candidate on srv2 through the official lease.
 
 No measurement is sent to a different owner's endpoint. Each boot gets two
 unchanged onepass invocations and a fresh copy of the same cache seed.
+The user requested candidate-only after the reasoning-budget repair. An
+explicit ST_DECODE22_RUN_BASELINE=1 retains the earlier B/A/B reproducer.
 """
 import json
 import os
@@ -18,15 +20,17 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 from engine.base import fleet_lease
 
-ROOT = Path(os.environ.get('ST_DECODE22_EVIDENCE_ROOT', '/home/choiceoh/glm53-logs/st-decode22-consumer-v3'))
+ROOT = Path(os.environ.get('ST_DECODE22_EVIDENCE_ROOT', '/home/choiceoh/glm53-logs/st-decode22-consumer-v4'))
 SOURCE = Path('/home/choiceoh/st-decode22')
 SEED = Path('/home/choiceoh/glm53-cache-decode22-seed-e12cb4b5')
 HOSTS = (None, 'choiceoh@10.10.10.1', 'choiceoh@10.10.10.3', 'choiceoh@10.10.10.4')
 PORT = 18122
 BASE_URL = f'http://127.0.0.1:{PORT}'
-BASELINE = 'baseline-' + os.environ['ST_DECODE22_BASELINE']
 CANDIDATE = 'candidate-' + os.environ['ST_DECODE22_CANDIDATE']
-ARMS = (('B1', BASELINE), ('A', CANDIDATE), ('B2', BASELINE))
+ARMS = (('A', CANDIDATE),)
+if os.environ.get('ST_DECODE22_RUN_BASELINE') == '1':
+    BASELINE = 'baseline-' + os.environ['ST_DECODE22_BASELINE']
+    ARMS = (('B1', BASELINE), *ARMS, ('B2', BASELINE))
 
 
 def node(host, argv, **kwargs):
@@ -51,7 +55,6 @@ def held_by(owner):
 
 def wait_free(owner):
     deadline, previous = time.monotonic() + 3 * 3600, None
-    asked = set()
     # The existing prefill campaign's user-authorized window was recorded in
     # its lease. Carry the deadline across the owner's intervening retries.
     not_before = float(os.environ.get('ST_DECODE22_NOT_BEFORE', '0'))
@@ -65,15 +68,8 @@ def wait_free(owner):
             previous = current
         if lease is None and not queued and time.time() >= not_before:
             return
-        if lease:
-            # Respect an already authorized measurement window and an earlier
-            # handoff request. Do not overwrite someone else's place in line.
-            priority = float((lease.get('state') or {}).get('priority_until') or 0)
-            key = (lease.get('owner'), lease.get('since'))
-            if time.time() >= max(priority, not_before) and key not in asked and not lease.get('yield_to'):
-                fleet_lease.request_yield(owner, reason='ST decode B/A/B canonical onepass; GPU numerical gates passed')
-                asked.add(key)
-                event(f'{owner}: requested normal yield from {key[0]}')
+        # Another session's boot is never asked to yield. The official launcher
+        # takes a session lease only after both the lease and queue are free.
         time.sleep(10)
     raise TimeoutError('fleet remained occupied for three hours')
 
@@ -82,7 +78,8 @@ def prepare_cache(arm):
     cache = Path(f'/home/choiceoh/glm53-cache-{ROOT.name}-{arm}')
     for host in HOSTS:
         script = 'import pathlib,subprocess,sys; src,dst=map(pathlib.Path,sys.argv[1:]); assert src.is_dir(); ' \
-                 'subprocess.run(["cp","-a","--reflink=auto",str(src),str(dst)],check=True) if not dst.exists() else None'
+                 'assert not dst.exists(), "cache already exists; choose a fresh evidence root"; ' \
+                 'subprocess.run(["cp","-a","--reflink=auto",str(src),str(dst)],check=True)'
         node(host, ['python3', '-c', script, str(SEED), str(cache)], timeout=180)
     return cache
 
@@ -112,7 +109,8 @@ def run_arm(arm, source_name):
                RANKS_DIR='/home/choiceoh/models/st-glm53-nvidia-tp4-9391', CKPT=str(source / 'st-glm53-meta'),
                DRAFTER='/home/choiceoh/models/GLM-5.3-Flash-DFlash2', ST_ENGINE_DIR='/home/choiceoh/st-releases/decode22-' + arm,
                CACHE_DIR=str(cache), ST_TIER_DIR=str(directory / 'tier'), ST_DUMP_DIR=str(directory / 'dumps'),
-               LEASE_OWNER=owner, LEASE_MINUTES='120', LEASE_NOTE='ST decode22 ' + arm + '; two canonical harness-42 onepass runs')
+               ST_LEASE_KIND='session', LEASE_OWNER=owner, LEASE_MINUTES='120',
+               LEASE_NOTE='ST decode22 ' + arm + '; two canonical harness-42 onepass runs; candidate-only by user request')
     launcher = ['bash', str(source / 'launchers/start-st-glm53.sh')]
     event(arm + ': launching four ranks')
     try:
@@ -169,7 +167,7 @@ def run_arm(arm, source_name):
             quality_ok = all(record[key]['ok'] == record[key]['total'] for key in ('quality', 'quality_c4'))
             if rc or record.get('evidence_issues') or not quality_ok or record['korean']['dirty']:
                 failures.append(number)
-                event(f'{arm} pass{number}: adoption gate closed; still retain the required second pass and matched arms')
+                event(f'{arm} pass{number}: adoption gate closed; retain the required second pass')
         (directory / 'complete.json').write_text(json.dumps({'arm': arm, 'owner': owner,
             'completed_at': time.time(), 'failed_passes': failures}) + '\n')
     finally:
@@ -188,4 +186,4 @@ if __name__ == '__main__':
     ROOT.mkdir(parents=True, exist_ok=True)
     for name, source_name in ARMS:
         run_arm(name, source_name)
-    event('B/A/B complete; retained identity, workload, quality, counters, and all-rank logs')
+    event('Requested arms complete; retained identity, workload, quality, counters, and all-rank logs')
