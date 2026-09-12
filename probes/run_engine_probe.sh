@@ -64,37 +64,41 @@ mounts=(--mount "type=bind,src=$repo,dst=/repo,readonly"
 if [ -d "$models" ]; then
   mounts+=(--mount "type=bind,src=$models,dst=$models,readonly")
 fi
-# A probe takes the same GPUs as a boot, so it takes the same lease -- a bare `docker run`
-# was the last way in that no launcher and no queue could see. The lease is the head
-# node's one file (launchers/lib/fleet-lease.sh), not this node's: a lease written here
-# would be one nobody else can read. Named container, heartbeat while it runs, released
-# however the probe ends.
-LEASE_OWNER=${ST_LEASE_OWNER:-probe/$(whoami)@$(hostname -s)/$$}
+# A probe takes the same GPUs as a boot, so it runs under the same lease -- the QUEUE's.
+# `fleet.sh run --gpu <s> -- bash probes/run_engine_probe.sh <probe>` takes the lease as
+# queue/<session> at GO and hands ST_LEASE_OWNER here; this runner only VERIFIES it (one
+# record, one owner), and the queue passes the lease on or lets it go when the ticket ends.
+# A bare run with no ticket is refused: that was the last way onto the GPUs that no launcher
+# and no queue could see, and beside production the OOM killer takes production first.
 NAME=st-probe-$$
 # A probe that asks for no GPU (ST_PROBE_NO_GPU=1: import and source checks) reserves
 # nothing -- taking four Sparks for a CPU check is the opposite of smooth.
-if [ "${ST_PROBE_NO_LEASE:-0}" != 1 ] && [ "${ST_PROBE_NO_GPU:-0}" != 1 ]; then
-  # Set, then source: an assignment prefix on `.` is temporary in bash, so the helper's
-  # own defaults would be discarded the moment the builtin returns.
-  FLEET_REPO=$repo
-  . "$repo/launchers/lib/fleet-lease.sh"
-  # Wait, do not abort: a probe the queue just sent in should not lose its turn because
-  # the previous holder is still tearing down (2026-09-12: three reservations died in two
-  # seconds each on a lock that was removed moments later).
-  until fleet_lease acquire --owner "$LEASE_OWNER" --container "$NAME" \
-          --est-minutes "${ST_PROBE_MINUTES:-20}" --note "$probe" >/dev/null 2>&1; do
-    [ "$(date +%s)" -lt "$(( ${LEASE_DEADLINE:=$(( $(date +%s) + 60 * ${ST_PROBE_WAIT_MINUTES:-10} ))} ))" ] \
-      || { echo "ABORT: the fleet stayed held for ${ST_PROBE_WAIT_MINUTES:-10} min: $(fleet_lease read 2>/dev/null || echo unreachable)" >&2; exit 1; }
-    echo "  waiting for the fleet: $(fleet_lease read 2>/dev/null || echo unreachable)" >&2
-    sleep "${ST_PROBE_POLL_S:-10}"
-  done
-  BEAT=$(fleet_lease_beat "$LEASE_OWNER")
-  # If this shell is killed outright (SIGKILL) the trap cannot run and the lease leaks.
-  # It is not lost: with its evidence on another node it goes stale after the grace and
-  # the next acquirer reclaims it, and `read` reports it as free (stale: ...) meanwhile.
-  trap 'kill $BEAT 2>/dev/null; fleet_lease release --owner "$LEASE_OWNER" >/dev/null 2>&1 || true' EXIT
-  trap 'exit 130' INT
-  trap 'exit 143' TERM
+if [ "${ST_PROBE_NO_GPU:-0}" != 1 ]; then
+  [ -n "${ST_LEASE_OWNER:-}" ] || { cat >&2 <<EOF
+ABORT: this probe holds no fleet reservation. Take a ticket -- the queue grants the lease and hands it here:
+  bash bench/fleet.sh run --gpu <session> [est] [note] -- bash probes/run_engine_probe.sh $probe
+(ST_PROBE_NO_GPU=1 for an import/source check that needs no GPU.)
+EOF
+    exit 1; }
+  # ST_PROBE_NO_LEASE=1: a nested run under the same ticket, already verified by its caller.
+  if [ "${ST_PROBE_NO_LEASE:-0}" != 1 ]; then
+    # Set, then source: an assignment prefix on `.` is temporary in bash, so the helper's
+    # own defaults would be discarded the moment the builtin returns.
+    FLEET_REPO=$repo
+    . "$repo/launchers/lib/fleet-lease.sh"
+    # Verify, do not take. Wait a little rather than abort: the previous holder's handover
+    # lands as a transfer to this ticket, and a probe the queue just sent in should not lose
+    # its turn to that last second (2026-09-12: three reservations died in two seconds each).
+    until fleet_lease verify --owner "$ST_LEASE_OWNER" >/dev/null 2>&1; do
+      [ "$(date +%s)" -lt "$(( ${LEASE_DEADLINE:=$(( $(date +%s) + 60 * ${ST_PROBE_WAIT_MINUTES:-10} ))} ))" ] \
+        || { echo "ABORT: the lease is not this ticket's after ${ST_PROBE_WAIT_MINUTES:-10} min: $(fleet_lease read 2>/dev/null || echo unreachable)" >&2; exit 1; }
+      echo "  waiting for the ticket's lease: $(fleet_lease read 2>/dev/null || echo unreachable)" >&2
+      sleep "${ST_PROBE_POLL_S:-10}"
+    done
+  fi
+  # No heartbeat and no release here: the ticket's supervisor on the head node is the lease's
+  # evidence (its pid), and the queue is who lets the lease go. A probe killed outright leaks
+  # nothing -- the supervisor notices the payload's end and releases or passes the lease on.
 fi
 docker run --rm --name "$NAME" "${gpu[@]}" "${mounts[@]}" "${envs[@]}" \
   --entrypoint python3 "$image" -u "/repo/$probe" "$@"

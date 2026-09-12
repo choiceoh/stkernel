@@ -2217,7 +2217,19 @@ class Server:
                 # Say what happened before letting go: the next holder reads this file.
                 fleet_lease.publish(self.lease["owner"], path=self.lease["path"],
                                     phase="handed over", parked=parked, lost=lost)
-                fleet_lease.release(self.lease["owner"], path=self.lease["path"])
+                # Hand it OVER, not back: the record becomes the requester's in one step, so
+                # there is no moment where the fleet reads as free and the production supervisor
+                # relaunches into the window this drain was for (its own comment names that
+                # race). What the request named -- kind, pid, host -- is what the requester is.
+                asked = fleet_lease.yield_requested(fleet_lease.read(self.lease["path"])) or {}
+                to = asked.get("requester") or self.draining
+                if to:
+                    fleet_lease.transfer(self.lease["owner"], to, path=self.lease["path"],
+                                         kind=asked.get("kind") or "session", pid=int(asked.get("pid") or 0),
+                                         host=asked.get("host") or "", note=asked.get("reason") or "",
+                                         est_minutes=int(asked.get("est_minutes") or 0))
+                else:
+                    fleet_lease.release(self.lease["owner"], path=self.lease["path"])
             except Exception:                     # noqa: BLE001
                 pass
         self.alive = False                        # `once` returns False and `loop` ends
