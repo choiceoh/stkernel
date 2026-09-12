@@ -5,6 +5,7 @@
 #   bash bench/st_bracket.sh pair  <sha> [--base <sha>]          fleet.sh st-pair  s <sha> [--base <sha>] [est] [note]
 #   bash bench/st_bracket.sh chain A=<sha> B=<sha> [A B ...]     fleet.sh st-chain s [est] [note] -- A=<sha> B=<sha> A B
 #   bash bench/st_bracket.sh hold  <sha> [minutes]               fleet.sh st-hold  s <sha> [est] [note]
+#   bash bench/st_bracket.sh probe [sha]                         fleet.sh st-probe [--detach] s [sha] [est] [note]
 #
 # An arm is a sha that origin has. The runner cuts it into $ST_RELEASES/<sha12> with
 # launchers/st_release.py (the same cut deploy-watch makes, so a winner is promoted by pointing
@@ -102,7 +103,8 @@ rec = dict(real[-1]) if real else {
     "korean": {"dirty": 0, "n": 5}, "traffic": {"issues": []}, "harness": 42,
     "prefill": [{"ctx": 2000, "cold_s": 6.7, "warm_tok_s": 3000.0}, {"ctx": 32000, "cold_s": 40.0, "warm_tok_s": 3200.0}]}
 rec.update({"name": name, "t": time.strftime("%F %T"), "rehearsal": True, "engine": "st", "arm_sha": sha,
-            "run_index": run, "session": os.environ.get("FLEET_SESSION", ""), "knobs": {}})
+            "run_index": run, "cold": os.environ.get("ST_BRACKET_COLD", "boot"),
+            "session": os.environ.get("FLEET_SESSION", ""), "knobs": {}})
 rec.pop("boot_id", None); rec.pop("run_id", None)
 os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 with open(path, "a", encoding="utf-8") as fh:
@@ -113,7 +115,7 @@ PY
 measure() {  # run-index -> one onepass on the candidate's door, exclusive
   local run=$1
   [ "$REHEARSE" != 1 ] || { rehearse_record "$run"; return; }
-  GLM53_API_PORT=$PORT BENCH_MODEL=$MODEL ONEPASS_RUN_INDEX=$run ST_BRACKET_SHA=$ARM_SHA \
+  GLM53_API_PORT=$PORT BENCH_MODEL=$MODEL ONEPASS_RUN_INDEX=$run ST_BRACKET_SHA=$ARM_SHA ST_BRACKET_COLD=${ST_BRACKET_COLD:-boot} \
     python3 "$REPO/bench/onepass.py" --name "$ARM" --require-exclusive 2>&1 | tail -40
   return "${PIPESTATUS[0]}"
 }
@@ -197,9 +199,30 @@ hold() {  # sha [minutes]: boot and keep, for a session's window; ended by the m
   rm -f "$OUT/stop"
   say "hold over after $(( ($(date +%s) - t0) / 60 ))m"; stop_arm
 }
+probe() {  # [sha]: two onepass runs on the LIVE production door -- no boot, no lease. The queue's
+  # probe lane runs it beside production when the door is idle (fleet.sh st-probe); deploy-watch
+  # queues one after every deploy, so the deployed commit always has a warm sample and st-pair
+  # never has to boot the base. Run 1 follows a prefix reset, not a boot: it is marked cold=reset
+  # and st_judge keeps it out of the cold column, which is a boot's.
+  local sha=${1:-} run rc=0
+  if [ -z "$sha" ]; then
+    sha=$(python3 "$REPO/launchers/st_release.py" deployed --state "$STATE") \
+      || { say "ABORT: no sha and nothing recorded as deployed in $STATE"; return 2; }
+  fi
+  ARM_SHA=$(sha_of "$sha"); ARM="d17-${ARM_SHA:0:12}"; PORT=${ST_PROBE_PORT:-8000}; RELEASE=""
+  say "probe: $RUNS runs on the live door $(door) for ${ARM_SHA:0:12} (no boot, no lease; session $S, rehearse=$REHEARSE)"
+  [ "$REHEARSE" = 1 ] || door_up || { say "ABORT: no engine answers on $(door)"; return 1; }
+  for run in $(seq 1 "$RUNS"); do
+    [ "$REHEARSE" = 1 ] || reset_prefix
+    say "onepass run $run/$RUNS ($( [ "$run" = 1 ] && echo 'after a reset' || echo warm ))"
+    ST_BRACKET_COLD=reset measure "$run" || { rc=$?; say "onepass run $run failed (rc=$rc)"; break; }
+  done
+  return $rc
+}
 case "${1:-}" in
   pair)  shift; pair "$@";;
   chain) shift; chain "$@";;
   hold)  shift; hold "$@";;
+  probe) shift; probe "$@";;
   *) sed -n 2,7p "$0" >&2; exit 2;;
 esac

@@ -548,6 +548,8 @@ def _main() -> int:
         rec["run_index"] = int(os.environ["ONEPASS_RUN_INDEX"])
     if os.environ.get("ST_BRACKET_SHA"):
         rec["arm_sha"] = os.environ["ST_BRACKET_SHA"]              # the commit the bracket named for this arm
+    if os.environ.get("ST_BRACKET_COLD"):
+        rec["cold"] = os.environ["ST_BRACKET_COLD"]                # what run 1 followed: a boot, or only a prefix reset
     run = _RUN = Run(rec, args.out, bd.URL)
     items = workload_requests(args, cq)
     fixed_item = None
