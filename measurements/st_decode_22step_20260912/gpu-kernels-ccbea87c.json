@@ -1,0 +1,247 @@
+{
+  "passed": true,
+  "vllm_loaded": false,
+  "checks": [
+    {
+      "lane": "imports",
+      "modules": 79,
+      "table": "served",
+      "vllm_loaded": false
+    },
+    {
+      "lane": "residency",
+      "passed": true,
+      "tests": 2
+    },
+    {
+      "lane": "residency_timing",
+      "operation": "all_layer_context_write",
+      "rows": 7,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 0.020583374425768852
+        },
+        {
+          "arm": "A",
+          "ms": 0.0051733748987317085
+        },
+        {
+          "arm": "A",
+          "ms": 0.0051437499932944775
+        },
+        {
+          "arm": "B",
+          "ms": 0.02050037495791912
+        }
+      ],
+      "scope": "single-GPU captured component; not consumer speed"
+    },
+    {
+      "lane": "residency_timing",
+      "operation": "router_projection_resident",
+      "rows": 7,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 0.04731562361121178
+        },
+        {
+          "arm": "A",
+          "ms": 0.03494437411427498
+        },
+        {
+          "arm": "A",
+          "ms": 0.03486362472176552
+        },
+        {
+          "arm": "B",
+          "ms": 0.04718312621116638
+        }
+      ],
+      "scope": "single-GPU captured component; not consumer speed"
+    },
+    {
+      "lane": "calibration",
+      "passed": true,
+      "tests": 6
+    },
+    {
+      "lane": "pointwise",
+      "passed": true,
+      "tests": 4
+    },
+    {
+      "lane": "pointwise_timing",
+      "operation": "shared_activation",
+      "rows": 7,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 0.018507499247789383
+        },
+        {
+          "arm": "A",
+          "ms": 0.0038811250124126673
+        },
+        {
+          "arm": "A",
+          "ms": 0.003749249968677759
+        },
+        {
+          "arm": "B",
+          "ms": 0.018466874957084656
+        }
+      ],
+      "scope": "single-GPU captured kernel; not consumer speed"
+    },
+    {
+      "lane": "pointwise_timing",
+      "operation": "router_post_projection",
+      "rows": 7,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 0.03075375035405159
+        },
+        {
+          "arm": "A",
+          "ms": 0.02048887498676777
+        },
+        {
+          "arm": "A",
+          "ms": 0.02044537477195263
+        },
+        {
+          "arm": "B",
+          "ms": 0.030745625495910645
+        }
+      ],
+      "scope": "single-GPU captured kernel; not consumer speed"
+    },
+    {
+      "lane": "pointwise_timing",
+      "operation": "rmsnorm",
+      "rows": 7,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 0.02058975026011467
+        },
+        {
+          "arm": "A",
+          "ms": 0.004147625062614679
+        },
+        {
+          "arm": "A",
+          "ms": 0.004123125225305557
+        },
+        {
+          "arm": "B",
+          "ms": 0.02049425058066845
+        }
+      ],
+      "scope": "single-GPU captured kernel; not consumer speed"
+    },
+    {
+      "lane": "pointwise_timing",
+      "operation": "indexer_norm",
+      "rows": 7,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 0.010327749885618687
+        },
+        {
+          "arm": "A",
+          "ms": 0.0041497498750686646
+        },
+        {
+          "arm": "A",
+          "ms": 0.0041211252100765705
+        },
+        {
+          "arm": "B",
+          "ms": 0.01027162466198206
+        }
+      ],
+      "scope": "single-GPU captured kernel; not consumer speed"
+    },
+    {
+      "lane": "pointwise_timing",
+      "operation": "expert_join",
+      "rows": 7,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 0.012374999932944775
+        },
+        {
+          "arm": "A",
+          "ms": 0.005029249936342239
+        },
+        {
+          "arm": "A",
+          "ms": 0.005030625034123659
+        },
+        {
+          "arm": "B",
+          "ms": 0.012327250093221664
+        }
+      ],
+      "scope": "single-GPU captured kernel; not consumer speed"
+    },
+    {
+      "lane": "calibration_timing",
+      "rows": 1,
+      "width": 20480,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 15.310206413269043
+        },
+        {
+          "arm": "A",
+          "ms": 0.10246425122022629
+        },
+        {
+          "arm": "A",
+          "ms": 0.10547937452793121
+        },
+        {
+          "arm": "B",
+          "ms": 15.302277565002441
+        }
+      ],
+      "includes_partial_flush": true,
+      "staging_dtype": "torch.bfloat16",
+      "scope": "single-GPU captured observer; not consumer speed"
+    },
+    {
+      "lane": "calibration_timing",
+      "rows": 7,
+      "width": 20480,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 15.453181266784668
+        },
+        {
+          "arm": "A",
+          "ms": 0.6692914962768555
+        },
+        {
+          "arm": "A",
+          "ms": 0.6704923510551453
+        },
+        {
+          "arm": "B",
+          "ms": 15.405643463134766
+        }
+      ],
+      "includes_partial_flush": true,
+      "staging_dtype": "torch.bfloat16",
+      "scope": "single-GPU captured observer; not consumer speed"
+    }
+  ]
+}

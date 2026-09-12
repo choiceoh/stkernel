@@ -46,6 +46,29 @@ TILE = 4096                 # one GPTQ tile of K: a wider weight is packed as a 
 KMAX = 20480                # the decode kernel's widest K (kernels.cu KBLK_LIMIT): the drafter's fc, whole
 
 
+def packed_nbytes(rows, cols, *, prefill=True):
+    """Aligned resident bound for W4 tiles (folded or not) plus optional FP8.
+
+    Calibration may fold tiles and share their row scale, so declare the larger
+    unmerged form. This does not reserve the BF16 source or packing scratch.
+    """
+    if rows <= 0 or cols <= 0 or cols % 128 or cols > KMAX:
+        raise ValueError('dense storage requires positive rows and supported 128-aligned columns')
+    padded, end = (rows + 127) // 128 * 128, 0
+    def add(size):
+        nonlocal end
+        end = (end + 255) // 256 * 256 + size
+    for start in range(0, cols, TILE):
+        width = min(TILE, cols - start)
+        add(padded * width // 2)  # two W4 values per byte
+        add(padded * width // 16)  # one E4M3 scale per group
+        add(padded * 4)  # FP32 row scales
+    if prefill:
+        add(padded * cols)
+        add((padded // 128) * (cols // 128) * 4)
+    return (end + 255) // 256 * 256
+
+
 def _tile_pack(codes, scales, shift, n, k0, k1):
     """One W4Pack of columns [k0, k1) out of row-major codes/scales of a wider weight."""
     padded = shift.shape[0]
@@ -154,6 +177,8 @@ class DenseLinear:
     The K>4096 drafter projection is a fixed sequence of K tiles with FP32
     accumulation, matching the existing MK lane. Padding is weight-owned.
     """
+    input_dtype = torch.bfloat16  # __call__ enforces this before invoking its calibration observer
+
     def __init__(self, weight, *, prefill=True, hessians=None, store=None, name=None, smooth=None):
         """`smooth` [K]: the factor `weight` was multiplied by, its input divided by (kernels/dense/smoothing) -- the
         store scales the calibration Hessian alike; the calibration files its sums in the unsmoothed domain."""
@@ -194,7 +219,7 @@ class DenseLinear:
         if self.fp8 is not None:
             tensors.extend(self.fp8.weight)
         owned=iter(consume(storage,tensors))
-        self.packs=tuple(W4Pack(next(owned),next(owned),next(owned),p.rows,p.cols) for p in self.packs)
+        self.packs=tuple(W4Pack(next(owned),next(owned),next(owned),p.rows,p.cols,p.calibrated) for p in self.packs)
         if self.fp8 is not None:
             self.fp8.weight=next(owned),next(owned)
 

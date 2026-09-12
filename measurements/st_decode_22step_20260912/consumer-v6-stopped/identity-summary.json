@@ -1,0 +1,7 @@
+{
+  "all_four_before_after_equal_after_mount_order_normalization": true,
+  "source_sha256": "0821e1b6b382a1317d441ac7603a753deddaed268a8c104453fa71147490d8fd",
+  "port": 18122,
+  "owner": "codex/st-decode22-A",
+  "note": "Docker changed only mount-list order; raw receipts retained; helper now sorts mount entries"
+}

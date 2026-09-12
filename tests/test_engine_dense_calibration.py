@@ -2,6 +2,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import torch
 
@@ -20,6 +21,30 @@ class FakeLayer:
 
 
 class CalibrationTests(unittest.TestCase):
+    def test_filing_stops_future_observation_and_a_failed_save_remains_live(self):
+        c = Calibration('cpu', budget_bytes=1 << 20)
+        layer = FakeLayer(32)
+        c.attach(layer.name, layer, PackStore.tiles(layer.name, 32), small_rows=True)
+        c.arm()
+        x = torch.ones(7, 32, dtype=torch.bfloat16)
+        layer(x)
+        with tempfile.TemporaryDirectory() as root:
+            with mock.patch.object(torch, 'save', side_effect=OSError('disk full')):
+                with self.assertRaisesRegex(OSError, 'disk full'):
+                    c.save(root, 0)
+            self.assertIsNone(c.filed)
+            self.assertEqual(float(c.armed), 1)
+            layer(x)
+            path, = c.save(root, 0)
+            self.assertEqual(torch.load(path, weights_only=True)['ntok'], 14)
+        before = c.H[layer.name].clone()
+        layer(torch.full((71, 32), float('nan')))
+        self.assertEqual(c.progress(), 14)
+        self.assertEqual(float(c.armed), 0)
+        torch.testing.assert_close(c.H[layer.name], before, rtol=0, atol=0)
+        with self.assertRaisesRegex(ValueError, 'complete'):
+            c.arm()
+
     def test_wider_decode_does_not_calibrate_on_unmasked_ghost_rows(self):
         c = Calibration('cpu', budget_bytes=1 << 20, max_decode_rows=48)
         layer = FakeLayer(32)

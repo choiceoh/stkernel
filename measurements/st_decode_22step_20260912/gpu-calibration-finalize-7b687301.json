@@ -1,0 +1,69 @@
+{
+  "passed": true,
+  "vllm_loaded": false,
+  "checks": [
+    {
+      "lane": "imports",
+      "modules": 79,
+      "table": "served",
+      "vllm_loaded": false
+    },
+    {
+      "lane": "calibration",
+      "passed": true,
+      "tests": 6
+    },
+    {
+      "lane": "calibration_timing",
+      "rows": 1,
+      "width": 20480,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 15.2413330078125
+        },
+        {
+          "arm": "A",
+          "ms": 0.09913724660873413
+        },
+        {
+          "arm": "A",
+          "ms": 0.10472087562084198
+        },
+        {
+          "arm": "B",
+          "ms": 15.231473922729492
+        }
+      ],
+      "includes_partial_flush": true,
+      "staging_dtype": "torch.bfloat16",
+      "scope": "single-GPU captured observer; not consumer speed"
+    },
+    {
+      "lane": "calibration_timing",
+      "rows": 7,
+      "width": 20480,
+      "measurements": [
+        {
+          "arm": "B",
+          "ms": 15.366395950317383
+        },
+        {
+          "arm": "A",
+          "ms": 0.6706075072288513
+        },
+        {
+          "arm": "A",
+          "ms": 0.6581881046295166
+        },
+        {
+          "arm": "B",
+          "ms": 15.355287551879883
+        }
+      ],
+      "includes_partial_flush": true,
+      "staging_dtype": "torch.bfloat16",
+      "scope": "single-GPU captured observer; not consumer speed"
+    }
+  ]
+}

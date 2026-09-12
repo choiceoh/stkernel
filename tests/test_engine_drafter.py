@@ -197,6 +197,7 @@ class DrafterTests(unittest.TestCase):
         linear = torch.nn.functional.linear
         d.context_kv = torch.cat([d.p[f"layers.{L}.self_attn.{s}_proj.weight"]
                                   for L in range(F.layers) for s in ("k", "v")])
+        d.context_norm = torch.stack([d.p[f"layers.{L}.self_attn.k_norm.weight"] for L in range(F.layers)])
         packed = {"fc.weight": d.p["fc.weight"]}
         for L in range(F.layers):
             q = f"layers.{L}."
@@ -246,6 +247,17 @@ class DrafterTests(unittest.TestCase):
                                 for r in range(len(slot))])
         kernels.draft_attention, kernels.write_draft_kv = attention, write
         kernels.write_draft_kv_rows, kernels.attend_rows = write_rows, attend
+        observe_kernel = ModuleType("engine.kernels.draft_observe")
+        def write_context(rings, slots, positions, context, weights, valid, eps, theta):
+            from engine.kernels.norm_rope import norm_rope
+            n, t, layers, _, heads, dim = context.shape
+            for layer in range(layers):
+                key = norm_rope(context[:, :, layer, 0].reshape(n*t, heads, dim), weights[layer], eps,
+                                positions.reshape(-1), theta).reshape(n, t, heads, dim)
+                write_rows(rings, slots, layer, positions, key, context[:, :, layer, 1], valid=valid)
+        observe_kernel.write_context = write_context
+        prior_observe = sys.modules.get(observe_kernel.__name__)
+        sys.modules[observe_kernel.__name__] = observe_kernel
         prior = sys.modules.get(kernels.__name__)
         sys.modules[kernels.__name__] = kernels
         try:
@@ -260,6 +272,10 @@ class DrafterTests(unittest.TestCase):
             torch.testing.assert_close(field.float(), expect_ring.float(), atol=.02, rtol=.02)
             self.assertTrue(torch.equal(field[1], expect_ring[1]))
         finally:
+            if prior_observe is None:
+                sys.modules.pop(observe_kernel.__name__, None)
+            else:
+                sys.modules[observe_kernel.__name__] = prior_observe
             if prior is None:
                 sys.modules.pop(kernels.__name__, None)
             else:

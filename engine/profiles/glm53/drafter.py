@@ -16,8 +16,8 @@ anchor. The walk at temperature 0 is what the served speculator's
 `_selector_walk_kernel` does; the Gumbel branch is not ported (the engine
 samples the TARGET; drafts only need to be good guesses).
 
-The loader reserves the whole 2.18 GiB drafter on every rank. Native
-preparation retires dense weights into calibrated packs and shards its
+The loader reads the whole 2.18 GiB drafter as temporary preparation inputs.
+Native preparation reserves only the live packed readers and shards its
 attention heads and MLP across TP4; row-parallel outputs are reduced.
 It also borrows the target's vocab-parallel embed and head (the drafter
 checkpoint ships neither).
@@ -167,6 +167,7 @@ class Drafter:
         self.fast_attention = False
         self.local_heads, self.local_kv_heads = F.heads, F.kv_heads
         self.context_kv = None
+        self.max_block_rows = None
 
     def capture_decode(self, caches, memory=None, generator=None, vocab=None):
         from engine.profiles.glm53.decode_graphs import DrafterDecodeGraphs
@@ -215,7 +216,7 @@ class Drafter:
                     weights[k] = smooth_weight(p[k], s_eff)
         return weights, factors
 
-    def prepare_fast(self, store=None, *, consume_weights=False):
+    def prepare_fast(self, store=None, *, consume_weights=False, max_seqs=None, compact_into=None):
         """TP-shard dense compute and bind calibrated packs before capture.
 
         Only this rank's heads/MLP shard are read by decode; row-parallel
@@ -223,7 +224,11 @@ class Drafter:
         source BF16 regions into packs after every source consumer is prepared.
         """
         from engine.kernels.dense import DenseLinear
+        from .drafter_storage import block_rows, needs_fp8, compact
+        if compact_into is not None and (consume_weights or max_seqs is None):
+            raise ValueError('compact drafter storage needs a sequence capacity and independent source weights')
         F, p, comm = self.F, self.p, self.target.comm
+        self.max_block_rows = block_rows(F, max_seqs) if max_seqs is not None else None
         if F.heads % comm.world_size or F.kv_heads % comm.world_size or F.inter % comm.world_size:
             raise ValueError("DFlash dimensions must split over the target communicator")
         self.local_heads, self.local_kv_heads = F.heads//comm.world_size, F.kv_heads//comm.world_size
@@ -246,8 +251,12 @@ class Drafter:
             context.extend(shard(p[n+"self_attn."+s+"_proj.weight"],0) for s in ("k", "v"))   # unsmoothed: its input is not divided
         self.dense = {}
         for name, w in weights.items():
-            self.dense[name] = DenseLinear(w,store=store,name=store_name(name),smooth=smooth.get(name))
+            self.dense[name] = DenseLinear(w,store=store,name=store_name(name),smooth=smooth.get(name),
+                                          prefill=needs_fp8(F, max_seqs, name))
         self.context_kv = torch.cat(context)
+        self.context_norm = torch.stack([p[f"layers.{L}.self_attn.k_norm.weight"] for L in range(F.layers)])
+        if compact_into is not None:
+            compact(self, compact_into, max_seqs)
         if consume_weights:
             for name, layer in self.dense.items():
                 source = (name.replace("self_attn.qkv","self_attn.q_proj.weight")
@@ -351,6 +360,7 @@ class Drafter:
 
     def block(self, ids: torch.Tensor, positions: torch.Tensor, ring: torch.Tensor, ctx_len: int) -> torch.Tensor:
         """One block through the five layers; returns the final hidden [B, hidden]."""
+        self._check_block_rows(ids.numel())
         F, p = self.F, self.p
         B = ids.shape[0]
         x = self.target.embed(ids)
@@ -384,6 +394,14 @@ class Drafter:
     # GEMM weights, replicated on every rank) and copied the row's 40 MiB ring three times. Batched over the rows the
     # weights are read once a step; the rings are never copied -- the observe writes its cells in place and the
     # attention reads every slot's ring where it lies, one fused call over the whole field per layer.
+    def _project_context(self, positions, aux, valid):
+        """The shared context projection; calibration sees only committed rows."""
+        F, p = self.F, self.p
+        n, t = positions.shape
+        keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)
+        c = norm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)
+        return Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)
+
     def observe_kv(self, positions: torch.Tensor, aux: torch.Tensor, valid: torch.Tensor):
         """observe's compute phase (fast path): every position's drafter K/V, per layer, from `aux` and
         `positions` alone. It does NOT read the slot or the accepted count -- `valid` only forms the mask a
@@ -392,9 +410,7 @@ class Drafter:
         positions survive. Returns [(k, v)] over the layers, each [n, t, kv, D]."""
         F, p = self.F, self.p
         n, t = positions.shape
-        keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)
-        c = norm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)
-        context = Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)
+        context = self._project_context(positions, aux, valid)
         out = []
         for L in range(F.layers):
             q = f"layers.{L}.self_attn."
@@ -417,12 +433,9 @@ class Drafter:
         the whole draft field; slots [n]; positions [n, t]; aux [n*t, A] in row order; valid [n] (device counts)."""
         F, p = self.F, self.p
         if self.fast_attention:
-            # observe in two phases so the compute can overlap the target's tail (45차 §96): the K/V transform
-            # reads only `aux` and `positions`, and `positions` is `ctx_before + arange`, known at the step's
-            # start (decode_commit.advance returns the ENTERING context). Only the ring write needs `valid`
-            # (= how many drafts commit accepted), so it alone waits for the commit. This split is byte-for-byte
-            # the single call; the overlap that uses it lives in the captured pipeline.
-            self.observe_write(field, slots, positions, self.observe_kv(positions, aux, valid), valid)
+            from engine.kernels.draft_observe import write_context
+            context = self._project_context(positions, aux, valid)
+            write_context(field, slots, positions, context, self.context_norm, valid, F.rms_eps, F.rope_theta)
             return
         n, t = positions.shape
         keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)
@@ -486,6 +499,7 @@ class Drafter:
                    field: torch.Tensor, n: int, t: int, alive=None) -> torch.Tensor:
         """`block` for n blocks of t rows at once: ids/positions [n*t] in row order, slots/ctx [n]; `alive` [n] marks the
         rows that are real (a calibration run leaves the others out of its sums)."""
+        self._check_block_rows(n * t)
         F, p = self.F, self.p
         rows_ok = alive.repeat_interleave(t) if alive is not None else None
         x = self.target.embed(ids)
@@ -513,6 +527,10 @@ class Drafter:
                 h = self.target.comm.all_reduce(h)
             x = self._conv_rows(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], t)
         return add_norm(res, x, p["norm.weight"], F.rms_eps)[1]
+
+    def _check_block_rows(self, rows):
+        if self.max_block_rows is not None and rows > self.max_block_rows:
+            raise ValueError(f'drafter block has {rows} rows, above prepared capacity {self.max_block_rows}')
 
     def propose_rows(self, field: torch.Tensor, slots: torch.Tensor, anchors: torch.Tensor, positions: torch.Tensor,
                      temps: "torch.Tensor | None" = None, generator=None, vocab: "int | None" = None, alive=None):

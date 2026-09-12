@@ -176,6 +176,70 @@ class OnepassIntegrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'pinned runner integrity'):
             fleet_pin.pin(self.repo, self.directory)
 
+    def test_pinned_controller_can_read_lease_without_the_source_checkout(self):
+        # The controller resolves both helpers from its frozen runner. Omitting
+        # them makes even an empty fleet report "lease unreadable" forever.
+        for relative in ('launchers/lib/fleet-lease.sh', 'engine/base/fleet_lease.py'):
+            destination = self.repo / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / relative, destination)
+        runner = fleet_pin.pin(self.repo, self.directory)
+        shutil.rmtree(self.repo / 'launchers')
+        shutil.rmtree(self.repo / 'engine')
+        result = subprocess.run([BASH, '-c',
+            '. "$FLEET_REPO/launchers/lib/fleet-lease.sh"; fleet_lease read'],
+            env={**os.environ, 'FLEET_REPO': str(runner),
+                 'FLEET_HEAD': subprocess.check_output(['hostname', '-s'], text=True).strip(),
+                 'FLEET_LEASE_PATH': str(self.root / 'missing-lease')},
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(result.stdout.strip(), 'free')
+
+    def test_lease_helper_preserves_arguments_locally_and_over_ssh(self):
+        # Run the real helper with inert Python/SSH transports. Shell metacharacters
+        # are data; the local path and the remote shell must deliver identical argv.
+        (self.bin / 'python3').write_text('#!' + sys.executable + '\n'
+            'import json, sys\nprint(json.dumps(sys.argv[1:]))\n')
+        ssh = self.bin / 'ssh'
+        ssh.write_text('#!' + sys.executable + '\n'
+            'import subprocess, sys\n'
+            'raise SystemExit(subprocess.call(["/bin/bash", "-c", sys.argv[-1]]))\n')
+        ssh.chmod(0o755)
+        owner = "codex/it's a task"
+        note = 'spaces and $(printf expanded) and `printf expanded` stay literal'
+        lease_path = str(self.root / 'lease path')
+        local = subprocess.check_output(['hostname', '-s'], text=True).strip()
+        for head in (local, 'remote-test-head'):
+            result = subprocess.run([BASH, '-c',
+                '. "$FLEET_REPO/launchers/lib/fleet-lease.sh"; '
+                'fleet_lease yield --requester "$TEST_OWNER" --note "$TEST_NOTE"'],
+                env={**os.environ, 'PATH': str(self.bin) + os.pathsep + os.environ['PATH'],
+                     'FLEET_REPO': str(ROOT), 'FLEET_HEAD': head, 'FLEET_LEASE_PATH': lease_path,
+                     'TEST_OWNER': owner, 'TEST_NOTE': note}, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            expected_module = str(ROOT / 'engine/base/fleet_lease.py') if head == local else '-'
+            self.assertEqual(json.loads(result.stdout),
+                [expected_module, 'yield', '--requester', owner, '--note', note, '--path', lease_path])
+
+    def test_lease_heartbeat_returns_its_pid_before_the_first_renewal(self):
+        import signal
+        process = subprocess.Popen([BASH, '-c',
+            '. "$FLEET_REPO/launchers/lib/fleet-lease.sh"; '
+            'beat=$(fleet_lease_beat fixture); echo "started:$beat"; kill "$beat"'],
+            env={**os.environ, 'FLEET_REPO': str(ROOT)}, start_new_session=True,
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            stdout, stderr = process.communicate(timeout=3)
+            self.assertEqual(process.returncode, 0, stderr)
+            self.assertRegex(stdout.strip(), r'^started:[0-9]+$')
+        finally:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait(timeout=3)
+
     def test_failed_real_preflight_edit_preserves_ticket_command_and_order(self):
         runner = fleet_pin.pin(self.repo, self.directory)
         pid = os.getpid()

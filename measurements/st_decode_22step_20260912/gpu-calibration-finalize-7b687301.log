@@ -1,0 +1,25 @@
+waiting: pos 1/1, held by prefill3000-candidate-direct [boot] (pid 2737558@srv2, since 01:14, est 20m, Repaired ST candidate: direct 32K and 128K onepass with fixed decode), lease: queue queue/prefill3000-candidate-direct on srv2 since 2026-09-13 01:14:25 (Repaired ST candidate: direct 32K and 128K o 2026-09-13_01:19:09
+waiting: pos 1/1, lease: queue queue/stdecode22finalize3 on srv2 since 2026-09-13 01:28:00 (handed from prefill3000-candidate-direct): phase=hand 2026-09-13_01:28:00
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "7cd2570d53234383b916bb866457bf28", "phase": "waiting", "reason": "dequeue", "since": 104622.060765093, "updated_at": 1789230482.1685712, "version": 1}
+GO stdecode22finalize3 2026-09-13_01:28:02
+  node 10.10.10.1: gpu=ok stray=3 ram=94G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=96G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=101G path=ok 
+{"lane": "imports", "modules": 79, "table": "served", "vllm_loaded": false}
+test_staging_is_charged_before_attaching_a_layer (tests.test_engine_calibration_gram.BudgetTests.test_staging_is_charged_before_attaching_a_layer) ... ok
+test_declared_bf16_inputs_preserve_all_rows_and_fp32_accumulation (tests.test_engine_calibration_gram.BufferedGramTests.test_declared_bf16_inputs_preserve_all_rows_and_fp32_accumulation) ... ok
+test_declared_bf16_staging_refuses_precision_loss (tests.test_engine_calibration_gram.BufferedGramTests.test_declared_bf16_staging_refuses_precision_loss) ... ok
+test_graph_replay_masks_wraps_shape_changes_and_partial_save (tests.test_engine_calibration_gram.BufferedGramTests.test_graph_replay_masks_wraps_shape_changes_and_partial_save) ... ok
+test_peak_only_masked_strided_rows_need_no_hessian_staging (tests.test_engine_calibration_gram.BufferedGramTests.test_peak_only_masked_strided_rows_need_no_hessian_staging) ... ok
+test_small_unmasked_target_rows_are_still_excluded (tests.test_engine_calibration_gram.BufferedGramTests.test_small_unmasked_target_rows_are_still_excluded) ... {"lane": "calibration", "passed": true, "tests": 6}
+ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 8.118s
+
+OK
+{"lane": "calibration_timing", "rows": 1, "width": 20480, "measurements": [{"arm": "B", "ms": 15.2413330078125}, {"arm": "A", "ms": 0.09913724660873413}, {"arm": "A", "ms": 0.10472087562084198}, {"arm": "B", "ms": 15.231473922729492}], "includes_partial_flush": true, "staging_dtype": "torch.bfloat16", "scope": "single-GPU captured observer; not consumer speed"}
+{"lane": "calibration_timing", "rows": 7, "width": 20480, "measurements": [{"arm": "B", "ms": 15.366395950317383}, {"arm": "A", "ms": 0.6706075072288513}, {"arm": "A", "ms": 0.6581881046295166}, {"arm": "B", "ms": 15.355287551879883}], "includes_partial_flush": true, "staging_dtype": "torch.bfloat16", "scope": "single-GPU captured observer; not consumer speed"}
+{"passed": true, "vllm_loaded": false, "checks": [{"lane": "imports", "modules": 79, "table": "served", "vllm_loaded": false}, {"lane": "calibration", "passed": true, "tests": 6}, {"lane": "calibration_timing", "rows": 1, "width": 20480, "measurements": [{"arm": "B", "ms": 15.2413330078125}, {"arm": "A", "ms": 0.09913724660873413}, {"arm": "A", "ms": 0.10472087562084198}, {"arm": "B", "ms": 15.231473922729492}], "includes_partial_flush": true, "staging_dtype": "torch.bfloat16", "scope": "single-GPU captured observer; not consumer speed"}, {"lane": "calibration_timing", "rows": 7, "width": 20480, "measurements": [{"arm": "B", "ms": 15.366395950317383}, {"arm": "A", "ms": 0.6706075072288513}, {"arm": "A", "ms": 0.6581881046295166}, {"arm": "B", "ms": 15.355287551879883}], "includes_partial_flush": true, "staging_dtype": "torch.bfloat16", "scope": "single-GPU captured observer; not consumer speed"}]}
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "b267f594d4634547a57bc7e96c8f6e36", "phase": "waiting", "reason": "release", "since": 104655.495457725, "updated_at": 1789230515.60327, "version": 1}

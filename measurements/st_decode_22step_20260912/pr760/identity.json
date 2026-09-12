@@ -1,0 +1,70 @@
+{
+  "tool_commit": "2f4d706328c43a656b2a0c558a570eb2806fe4f7",
+  "base": "93cdcaf9",
+  "candidate": "b0910bbe",
+  "runtime": "macOS arm64 python3, no GPU",
+  "commands": [
+    [
+      "python3",
+      "/tmp/st-decode22-pr760/base/bench/step_sim.py",
+      "--draft-slots",
+      "6",
+      "--max-running",
+      "4",
+      "--token-budget",
+      "10240",
+      "--chunk-align",
+      "2304",
+      "--meta",
+      "--json"
+    ],
+    [
+      "python3",
+      "/tmp/st-decode22-pr760/candidate/bench/step_sim.py",
+      "--draft-slots",
+      "6",
+      "--max-running",
+      "4",
+      "--token-budget",
+      "10240",
+      "--chunk-align",
+      "2304",
+      "--meta",
+      "--json"
+    ],
+    [
+      "python3",
+      "/tmp/st-decode22-pr760/candidate/bench/step_sim.py",
+      "--draft-slots",
+      "6",
+      "--max-running",
+      "4",
+      "--token-budget",
+      "10240",
+      "--chunk-align",
+      "2304",
+      "--meta",
+      "--json"
+    ],
+    [
+      "python3",
+      "/tmp/st-decode22-pr760/base/bench/step_sim.py",
+      "--draft-slots",
+      "6",
+      "--max-running",
+      "4",
+      "--token-budget",
+      "10240",
+      "--chunk-align",
+      "2304",
+      "--meta",
+      "--json"
+    ]
+  ],
+  "order": [
+    "base",
+    "candidate",
+    "candidate",
+    "base"
+  ]
+}

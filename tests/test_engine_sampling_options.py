@@ -250,6 +250,61 @@ class ReasoningBudgetTests(unittest.TestCase):
         self.assertFalse(e.thinking[0])
         self.assertEqual(self.allowed(e, [5, 5, self.END, 5, 5, 5, 5]), list(range(8)))
 
+    def test_unaccepted_reasoning_end_does_not_disable_the_committed_budget(self):
+        e = self.engine({"reasoning_budget": 4, "reasoning_end": self.END})
+        self.assertEqual(self.allowed(e, [5] * 4, drafts=[self.END]), list(range(8)))
+        self.assertTrue(e.thinking[0], "the draft prefix may be rejected")
+        self.assertEqual(self.allowed(e, [5] * 4), [self.END])
+
+    def test_ahead_gate_drains_only_at_the_budget_and_resumes_after_the_end(self):
+        e = self.engine({"reasoning_budget": 800, "reasoning_end": self.END})
+        e.drafter = types.SimpleNamespace(k=6)
+        e.tokens[0], e.prompt_len[0] = [1, 2] + [5] * 784, 2
+        e.pipeline = types.SimpleNamespace(ready_for=lambda seqs: True)
+        e.decode_graphs = object()
+        e.inflight[0] = 1
+        self.assertTrue(e._plain_ahead(0))  # 784 + two seven-token blocks < 800
+        self.assertTrue(e.async_ready([0]))
+        e.inflight[0] = 2
+        self.assertFalse(e._plain_ahead(0))
+        self.assertFalse(e.async_ready([0]))
+        self.assertEqual(e.chain_exits, {"reasoning_budget": 1})
+        # Land the pending work; the synchronous sampler forces the end at 800.
+        e.inflight[0] = 0
+        self.assertEqual(self.allowed(e, [5] * 800), [self.END])
+        self.allowed(e, [5] * 800 + [self.END])
+        self.assertTrue(e._plain_ahead(0))
+        self.assertTrue(e.async_ready([0]))
+
+    def test_variable_accepted_blocks_never_run_past_the_thinking_cap(self):
+        # Exercise the real adapter gate and logits constraint with two
+        # unresolved blocks, including short caps and uneven acceptance.
+        for budget in (0, 1, 6, 7, 8, 20, 800):
+            with self.subTest(budget=budget):
+                e = self.engine({"reasoning_budget": budget, "reasoning_end": self.END})
+                e.drafter = types.SimpleNamespace(k=6)
+                e.pipeline = types.SimpleNamespace(ready_for=lambda seqs: True)
+                e.decode_graphs = object()
+                e.tokens[0], e.prompt_len[0] = [1, 2], 2
+                pending, launches = [], 0
+                while self.END not in e.generated(0):
+                    if len(pending) == 2:
+                        e.tokens[0].extend([5] * pending.pop(0))
+                    e.inflight[0] = len(pending)
+                    if e.async_ready([0]):
+                        pending.append((1, 7, 3)[launches % 3])
+                        launches += 1
+                        self.assertLess(e.generated_count(0) + sum(pending), budget)
+                    else:
+                        for count in pending:
+                            e.tokens[0].extend([5] * count)
+                        pending.clear()
+                        e.inflight[0] = 0
+                        allowed = self.allowed(e, e.generated(0))
+                        e.tokens[0].append(self.END if allowed == [self.END] else 5)
+                self.assertEqual(e.generated(0), [5] * budget + [self.END])
+                self.assertTrue(e.async_ready([0]), "visible answer returns to the pipeline")
+
     def test_no_budget_is_no_bound(self):
         e = self.engine({})
         self.assertEqual(self.allowed(e, [5] * 6), list(range(8)))
