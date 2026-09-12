@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import os
 import re
+import math
 import subprocess
 from dataclasses import dataclass
 from datetime import timedelta
@@ -69,6 +70,7 @@ class Comm:
     group: object = None
     control: object = None            # a gloo group beside NCCL: the loop's arrivals and votes are host objects (45차 §23 B3)
     transport: object = None
+    preparation: object = None       # boot-only Gloo group, closed after weights are ready
 
     def prepare_oneshot(self):
         if self.transport is not None:
@@ -94,7 +96,10 @@ class Comm:
         # device collective, ordered behind every kernel of the step in flight and synchronised to read back -- which
         # is exactly the wait an asynchronous step loop exists to remove.
         control = dist.new_group(backend="gloo", timeout=timedelta(seconds=timeout_s))
-        return cls(world, rank, dist.group.WORLD, control)
+        # Establish connections before per-rank loading starts. Creating this at
+        # the end of loading would hide a dead peer behind a store rendezvous.
+        preparation = dist.new_group(backend="gloo", timeout=timedelta(seconds=1800))
+        return cls(world, rank, dist.group.WORLD, control, preparation=preparation)
 
     # A collective of this class is device work on the caller's stream (NCCL), or at
     # world 1 no work at all, so a CUDA graph may capture it. LocalTP's cannot --
@@ -148,6 +153,36 @@ class Comm:
         if self.world_size > 1:
             import torch.distributed as dist
             dist.barrier(group=self.group)
+
+    def wait_prepared(self, phase: str, *, timeout_s: float = 1800., final: bool = False):
+        """Boot-only rendezvous: slow packing must not enqueue a NCCL vote.
+
+        Keep both serving groups' 120 s timeout. A temporary Gloo group owns
+        the longer preparation timeout, including a follower waiting for rank 0.
+        monitored_barrier's override alone does not extend that follower's recv.
+        Never call this from a serving step or from CUDA graph capture.
+        """
+        if not phase or not math.isfinite(timeout_s) or timeout_s <= 0:
+            raise ValueError('preparation rendezvous requires a phase and finite positive timeout')
+        if self.world_size == 1:
+            return
+        if self.preparation is None:
+            raise RuntimeError('preparation rendezvous requires the boot Gloo group')
+        import torch.distributed as dist
+        print(f'boot rendezvous {phase}: rank {self.rank} prepared; waiting for {self.world_size} ranks '
+              f'(deadline {timeout_s:g}s)', flush=True)
+        try:
+            dist.monitored_barrier(group=self.preparation, timeout=timedelta(seconds=timeout_s), wait_all_ranks=True)
+            phases = [None] * self.world_size
+            dist.all_gather_object(phases, phase, group=self.preparation)
+            if phases != [phase] * self.world_size:
+                raise RuntimeError(f'ranks reached different preparation phases: {phases}')
+        except RuntimeError as exc:
+            raise RuntimeError(f'boot rendezvous {phase} failed on rank {self.rank}: {exc}') from exc
+        finally:
+            if final:
+                dist.destroy_process_group(self.preparation)
+                self.preparation = None
 
     def broadcast_object(self, obj):
         """rank 0's `obj` on every rank (the arrivals of a step): on the control group, so it neither waits for the
@@ -384,6 +419,14 @@ class _LocalRank:
 
     def barrier(self):
         self._state().meet()
+
+    def wait_prepared(self, phase: str, *, timeout_s: float = 1800., final: bool = False):
+        # LocalTP already uses its invocation's bounded, abortable host barrier.
+        if not phase or not math.isfinite(timeout_s) or timeout_s <= 0:
+            raise ValueError('preparation rendezvous requires a phase and finite positive timeout')
+        phases = self.gather_objects(phase)
+        if phases != [phase] * self.world_size:
+            raise RuntimeError(f'LocalTP ranks reached different preparation phases: {phases}')
 
     def broadcast_object(self, obj):
         run = self._state()

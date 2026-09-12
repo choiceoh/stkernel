@@ -61,6 +61,9 @@ class IsolatedRank:
     def all_gather(self, x, dim=-1):
         return x
 
+    def wait_prepared(self, phase, **kwargs):
+        pass  # This diagnostic deliberately has no peers; it is not a fleet boot.
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
