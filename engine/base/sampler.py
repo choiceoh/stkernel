@@ -189,7 +189,7 @@ def process_logits(logits: torch.Tensor, options: dict, seen: torch.Tensor, coun
     given as one; min_tokens forbids a handful of end tokens, and writing those few is cheaper than building a
     vocabulary of True to say so.
     """
-    out = logits.float().clone()
+    out = logits.to(torch.float32, copy=True)     # one write, whatever the caller handed in
     bias = options.get("logit_bias")
     if bias:
         ids = torch.tensor(list(bias.keys()), device=out.device, dtype=torch.int64)

@@ -591,8 +591,12 @@ class Glm53Engine:
         return needs_rich_sampler(self.options.get(seq, {}), self.limits[seq][1], bool(self.drafter.k))
 
     def _gather(self, local: torch.Tensor) -> torch.Tensor:
-        """This rank's logits shard [rows, vp] -> every rank's whole rows [rows, vocab] fp32 (a collective: same order everywhere)."""
-        return self.net.comm.all_gather(local, dim=-1).float()
+        """This rank's logits shard [rows, vp] -> every rank's whole rows [rows, vocab] (a collective: same order everywhere).
+
+        The model's dtype, not fp32: every row is copied to fp32 by `process_logits` anyway, so upcasting
+        the whole block here only to copy each row out of it again writes the vocabulary twice a step.
+        """
+        return self.net.comm.all_gather(local, dim=-1)
 
     def _row_logits(self, seq: int, raw: torch.Tensor, position: int, drafts_before: "list[int]") -> torch.Tensor:
         """`raw` [vocab] processed for `seq` at this step's position: bias, penalties over the row's tokens (with the drafts
