@@ -9362,3 +9362,25 @@ drafter 2.8 s, **capture decode 238.9 s**(콜드; 두 번째부터 63.7 s), 총 
 
 **A/B 전체 구현(09:05, PR #575)**: vLLM 대비 미구현 조사(A 계약·B 엔진)를 문(`base/serve.py`)·어댑터·샘플러에 다 넣었다 — A1 샘플링 옵션(top_k/top_p/min_p/반복·빈도·존재 페널티/logit_bias/seed/stop ids/min_tokens/n≤4/best_of/echo; 옵션 있는 행만 base/sampler 의 리치 경로, 드래프터는 `propose_sampled` + 기각 샘플링으로 유지), A2 `response_format`(xgrammar, 드래프트 K=5 를 롤백으로 걷는 마스크), A3 logprobs/top_logprobs, A4 tools/tool_choice + `<tool_call>` 스트리밍(부분 태그 보류), A5 reasoning_effort/enable_thinking, A6 레거시 `/v1/completions`·`/tokenize`·`/detokenize`(엔진 방언은 `/v1/engine/completions` 로), B1 이어가기(히스토리가 진접두면 `extend`), B2 generation_config 기본값·KV 24 GiB, B4 웜업 사다리(64…4096 × 폭 1…4), B6 `vllm:iteration_tokens_total_count`. B3(비동기 스케줄링)·B5(선점) 는 보류·설계대로. CPU 스위트 305 OK; 플릿 검증은 #570 슈퍼바이저가 수동 부팅을 죽여 창 대기.
 **A7 그림(09:25, 같은 PR)**: 운영자 정정 — 프로덕션 vLLM 은 이미지 4·영상 1 을 서빙한다(PR #431); "텍스트 전용" 은 틀린 옛 요약. 프로덕션 이미지에서 `glm5next/nvidia/multimodal.py`(타워)와 `transformers_utils/processors/glm5next.py`(프로세서)를 읽어 vLLM 없이 다시 썼다(`profiles/glm53/vision.py`, 700줄): 24블록 ViT(qkv 편향, q/k RMSNorm eps 1e-5, 2-D neox rope 32/64, 클램프 SwiGLU 10) → post norm → 2×2 conv 다운샘플 → 머저(proj·LayerNorm·GELU·SwiGLU 10240) 4096폭; 프로세서는 토큰 예산 → 픽셀 예산(이미지 16~8000 토큰, 영상 16~30000 = 프로덕션의 `_MAX_VIDEO_TOKENS` 캡), 28 정렬 위로 올림·예산 초과면 이진 탐색, pad 모드(비율 유지·우하 0 패딩·축소만), bicubic antialias, CLIP 평균/표준편차를 rescale 과 융합, 시간 패치 2(정지 이미지는 같은 프레임 둘), Qwen-VL 패치 순서; 영상은 프로덕션 로더처럼 32 프레임 균등 → 전부 실렸으면 GLM 샘플러(`fps_interval` 2, 2048 프레임 상한, 짝수화) → 프레임 쌍마다 `<|begin_of_image|>` + 토큰 + `<|end_of_image|>` + "N.N seconds"; EXIF 회전 정규화·투명은 흰 바탕 합성, 178,956,970 픽셀 초과 거부. **판정**: 합성 이미지(407×613)·합성 영상(8 프레임)의 `pixel_values` 가 프로덕션 프로세서와 sha256 비트 일치, 캔버스 크기 9종·영상 5종·프레임 인덱스 7종 일치(`tests/fixtures/glm53_vision_reference.json`, 프로덕션 이미지에서 뽑음). 배관: 문이 `image_url`/`video_url` 파트를 받아(data:·http(s), 이미지 5 s·영상 30 s, 64/512 MiB 상한) 캔버스(uint8)를 만들고 자리표시자를 늘려 `media` 로 넘긴다 → 도착 브로드캐스트에 실려 네 랭크 → 어댑터가 그 위치에 닿는 첫 프리필 청크에서 타워를 돌려(`net.Step.patches` 로 임베딩 행 교체) 청크 창으로 자르고 지난 뒤 버린다; 네 랭크의 행 합을 max-reduce 로 대조(D3). 가중치는 `vision.safetensors`(347 텐서 1.05 GiB, `preshard.py --vision`, 1.4 s; RankLoader 1.0 s) — 4노드 배포 완료(체크섬 609aaf3d…), 플릿 부팅은 없으면 죽는다; 부팅이 최대 이미지(32,000 패치)·최대 영상(16쌍)을 한 번 인코딩해 SDPA 백엔드·워크스페이스를 증명한다(수학 백엔드 배제: 최대 이미지에서 32 GiB). 같은 자리표시자에 다른 그림은 다른 프롬프트: 이어가기 판정과 prefix 캐시 체인에 그림 digest 를 섞었다. 실제 가중치로 CPU 인코딩 448×448 → 256×4096 유한(rms 0.019). CPU 스위트 326 OK; **vLLM 타워와의 수치 대조와 플릿 검증은 운영자 지시로 생략**(09:30).
+
+### 45차 §24 — ST 엔진 관측 메트릭: 세 질문에 답하도록 (2026-09-12, srv4, GPU 없음)
+
+운영자 "리베이스 후 st엔진 관측 메트릭 개선". 브랜치를 main(#575 까지)으로 패스트포워드한 뒤 `/metrics` 를 다시 썼다.
+**전**: 9줄, 전부 맨 카운터/게이지, HELP·TYPE 없음 — 지연 0, 용량 0, 캐시 0, 스텝 종류 0. 서빙 엔진인데 "요청이 얼마나 기다렸나 / 캐시가 얼마나 찼나 / 만든 재사용이 먹히나" 를 못 물었다.
+**후**: 벤치 방언 9줄은 이름·의미 그대로(게이트 불변, `bench/window_metrics.traffic_state` 재확인), 그 위에
+
+- **지연 히스토그램 셋**(vLLM 이름·vLLM 버킷 경계): `time_to_first_token_seconds`, `time_per_output_token_seconds`, `e2e_request_latency_seconds`.
+  **도착 시각 기준**이다(요청을 서빙한 스텝이 아니라 `submit` 의 `clock()`). 한 스텝이 토큰 여러 개를 내면(드래프터 수용 구간) 그 스텝의 경과를 토큰 수로 나눠 각각 관측 — vLLM 의 spec-decode 규약.
+  버킷은 이 엔진 범위를 가른다: 프리필 스텝 214.7 ms 는 TTFT 의 0.25 근처, 토큰 간격 46 ms 는 0.025~0.05 사이.
+- **포화도**: `vllm:gpu_cache_usage_perc`(원시 점유 — `kv.available()` 이 아니다; 그건 프리픽스 캐시가 내놓을 블록까지 세므로 별 계열로 뺐다), `st:kv_blocks_{total,used,free}`, `st:kv_rows_in_use`, `st:state_slots_{total,free}`.
+- **재사용**: `vllm:prefix_cache_{queries,hits}_total`, `st:prefix_cache_evictions_total`, `st:prefix_cache_reclaimable_blocks`.
+- **스텝 종류**(D9): `st:steps_{prefill,decode}_total` — 합이 `iteration_tokens_total_count` 와 같다(테스트가 강제).
+- **티어·실패**: `st:conversations_parked`, `st:tier_bytes_{written,read}_total`(NvmeTier 에만 있으므로 `getattr` 로 보호 — 계측이 문을 내리지 않는다), `st:requests_{cancelled,timed_out}_total`(타임아웃을 취소에서 분리).
+- 모든 계열에 **HELP·TYPE**.
+
+**구현 함정 둘(둘 다 테스트가 잡음)**: (1) 취소 경로에서 대기열 분기는 `row` 를 바인딩하지 않는데 거기에 `_token_at.pop(row)` 를 넣어 `NameError` — 문 테스트 44개가 전부 죽었다(행 아는 자리로 옮김).
+(2) `BlockPool.available` 은 메서드, `SlotPool.available` 은 프로퍼티 — 비대칭. 그리고 `available()` 은 "지금 빈 것 + 캐시가 내놓을 것"이라 점유율에 쓰면 과소평가다.
+
+**검증**(이미지 안, GPU 없음): 엔진 CPU 스위트 358 tests OK(104 skip), 새 `tests/test_engine_metrics.py` 10 tests(벤치 방언 유지·도착 기준 지연·스텝 합·원시 점유·타임아웃 분리·티어 조건부·노출 형식·히스토그램 누적/포함 경계/불량 표본/찢긴 읽기 단조성).
+한 요청 4토큰을 돌린 실측: TTFT 1회 0.05 s, 토큰 간격 3회 합 0.15 s, e2e 0.2 s, 프리필 1 + 디코드 3 = 스텝 4. **GPU·플릿 미검증**(프로덕션 서빙 중).
+
