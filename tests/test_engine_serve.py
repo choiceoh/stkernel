@@ -6,6 +6,7 @@ import importlib.util
 import json
 import queue
 import socket
+import sys
 import threading
 import unittest
 import urllib.error
@@ -17,6 +18,11 @@ from engine.base.kv import BlockPool, SlotPool
 from engine.base.record import Ring
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT / "tests") not in sys.path:
+    # `test_engine_tier` is a sibling, and whether it is importable by that name depends on how the
+    # suite was started: `python3 -m unittest tests.test_engine_serve` from the root does not put
+    # `tests/` on the path, and twelve tests here errored out on the import rather than running.
+    sys.path.insert(0, str(ROOT / "tests"))
 from engine.base.runner import Runner, STEP_RECORD
 from engine.base.scheduler import Contract
 from engine.base.serve import RequestError, Server

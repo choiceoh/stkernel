@@ -574,13 +574,20 @@ class CudaCacheTests(unittest.TestCase):
         class NextTokenNet:
             layers = (0, 1, 2)
             def __init__(self):
+                from engine.base.comm import Comm
                 self.F = F
+                self.comm = Comm()                      # one rank: every collective here is the identity
             def forward(self, step, caches, aux_layers=None):
                 h = step.ids[:, None].float()
                 return (h, None) if aux_layers is not None else h
             def head(self, hidden):
                 logits = torch.full((len(hidden), F.vocab), -100., device=hidden.device)
                 return logits.scatter_(1, (hidden.long() + 1) % F.vocab, 100.)
+            def head_local(self, hidden):
+                # `Net.head` is `all_gather(head_local)`, and this stands in for one rank, so the
+                # two are the same slice here. The adapter asks for the local half directly when
+                # it means to gather once itself.
+                return self.head(hidden)
             def head_tokens(self, hidden, decodable=None):
                 return self.head(hidden)[:, :decodable].argmax(-1)
 
@@ -709,12 +716,14 @@ class CudaCacheTests(unittest.TestCase):
         to be able to drop that row's history before then -- `add` is the first thing a boot does."""
         from engine.profiles.glm53.adapter import Glm53Engine
         engine = Glm53Engine(self.runtime().net, self.c, self.F)
-        self.assertIsNone(engine.history, "nothing has asked for penalties yet")
+        # `history` is a method that answers for a row; the lazily built one is `sampling_history`,
+        # and asserting on the method's name passed whatever the code did.
+        self.assertIsNone(engine.sampling_history, "nothing has asked for penalties yet")
         engine.add(0, [1, 2])                                       # a fresh boot's first request
         engine.resume(1, 1, {"context": 2, "pending": 1, "tokens": [1, 2, 3],            # a parked conversation back
                              "prompt_len": 2, "limits": [4, 0.0]})
         engine.forget(0)
-        self.assertIsNone(engine.history)
+        self.assertIsNone(engine.sampling_history)
 
     def test_generation_count_resets_on_a_new_turn_after_long_history(self):
         from engine.profiles.glm53.adapter import Glm53Engine
