@@ -8,7 +8,8 @@
 //   oneshot_ar(Tensor) -> Tensor  # graph-capturable AllReduce (out-of-place)
 //   healthy() -> bool             # proxy watchdog status
 //   shutdown()
-#include <torch/extension.h>
+#include <torch/types.h>
+#include <torch/csrc/utils/pybind.h>
 #include <c10/cuda/CUDAStream.h>
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
