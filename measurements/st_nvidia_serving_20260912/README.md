@@ -219,6 +219,117 @@ the current Red Hat checkpoint, KV7 and qualified tile32 prefill. The
 All four containers were running and the deployment environment was updated
 to that repaired release only after these checks passed.
 
-NVIDIA's full document run and the requested default checkpoint transition
-remain pending. The old pair runner's captured baseline predates this repair;
-it must not be rerun without refreshing and validating the restoration target.
+NVIDIA's full document run subsequently completed and **failed**. The
+requested default checkpoint transition has therefore not been promoted.
+The old pair runner's captured baseline predates the grammar repair; it must
+not be rerun without refreshing and validating the restoration target.
+
+## NVIDIA full-model qualification, 2026-09-12 07:33 UTC
+
+The immutable candidate is `st-engine:nvidia-4f393351`, source SHA-256
+`bfbfb6884846f760a825eeeedb39e854c9513b4e257ad7b54d49cd6078dbcdb7`.
+It combines the ModelOpt adapter with the qualified tile32 MLA default and
+grammar stop repair. All four nodes used their NVIDIA rank file, TP4, KV7,
+production `t,r,sf6,q0`, and the unchanged DFlash2 K=5 checkpoint. Native MTP
+remains excluded. The [recorded run](cutover-4f393351/result.jsonl) completed
+all five synthetic document requests, with no unrelated completed requests
+in its exclusive interval.
+
+Short Seoul/Paris smoke requests passed. The 2K document retrieved all
+three planted facts, but 32K and 128K retrieved none: **3/9** in the existing
+combined reasoning/content gate. The 32K output repeated unrelated historical
+text and contained one replacement character; 128K repeated punctuation and
+spaces. [Outputs](cutover-4f393351/outputs.json) preserve those failures.
+The subsequent quality assertion refused promotion before the final tool
+check and deployment-environment mutation. Red Hat was restarted at
+07:40:52 UTC, and its [HTTP status](cutover-4f393351/restored-status.json)
+was verified ready. The default environment remains
+`st-engine:prod-abceb6a0-grammar-9391` with Red Hat ranks. Neither an NVIDIA
+default PR nor a default deployment was published by this qualification.
+
+The earlier Red Hat result used stock MLA, so it is not a same-build A/B
+against this tile32 candidate. Its observations and the failed NVIDIA
+observations are retained separately; failure output cannot establish a
+throughput improvement. In particular, NVIDIA's 128K 87.85 output tokens/s
+comes from repetitive invalid output and must not be treated as useful
+decode throughput. Prefill `prompt_tokens / TTFT` also includes first-token
+work, shape JIT and prefix reuse; it is not isolated kernel throughput.
+
+## Bounded routing diagnosis without a serving restart
+
+The original component checks routed every token to the same eight expert
+IDs. `probes/engine_modelopt_check.py --routes dispersed` now assigns distinct
+top-8 routes per token across all 288 experts. Expected values are still read
+from original NVIDIA projection tensors. Positional samples plus the largest
+output row are checked, keeping the dequantized oracle's memory bounded.
+
+On srv3/rank 2, the [initial four cases](cutover-4f393351/dispersed-rank2.json)
+covered L3/L44 at 6912 and 129 tokens, including reuse of the large workspace
+for the smaller shape. An [outlier check](cutover-4f393351/dispersed-extreme-rank2.json)
+confirmed L44's largest output row against the original source. The other
+[40 routed layers](cutover-4f393351/dispersed-layers4-43-rank2.json) passed at
+the actual 6912-token prefill size, each routing across all 288 experts and
+checking five source-oracle rows plus repeated eager and graph execution.
+The largest normalized source error in that 40-layer run was 1.2122%.
+The existing repeat acceptance remains <=0.1% normalized spread **or** at
+most one BF16 step; some passing low-magnitude elements differ by more than
+one BF16 step while satisfying the normalized bound.
+
+These checks narrow the diagnosis; they do not reproduce real model
+activations, validate all ranks, or exonerate the full runtime. The full-model
+long-context failure remains unresolved and cannot yet be attributed to the
+checkpoint itself. Production containers were not restarted for these probes.
+
+## Decode, steps and prefill observations
+
+The running Red Hat tile32 release was measured again without a restart:
+[control receipt](cutover-4f393351/redhat-tile32-control/result.jsonl).
+It returned 8/9 retrieval matches and no corruption. Its saved prefix tier
+already contained the test documents: 32K and 128K TTFT were only 0.815 and
+1.025 seconds. Those cache-hit timings cannot measure actual full prefill or
+be compared to the cold NVIDIA run. A further identical-prompt control with
+a new `cache_salt` was prepared, but existing production requests did not
+drain within 60 seconds. It sent no benchmark requests, restored ingress,
+and did not restart or interrupt any serving request.
+
+| Observed decode metric | Running Red Hat tile32 | Failed NVIDIA tile32 |
+| --- | ---: | ---: |
+| 2K output tokens/s, time-weighted over three requests | 62.05 | 46.86 |
+| 32K output tokens/s | 58.33 | 37.65, invalid output |
+| 128K output tokens/s | 63.93 | 87.85, invalid repetition |
+| All-request output tokens/s, excluding first-token time | 61.04 | 56.97, includes invalid output |
+| Median interior step windows, steps/s | 17.95 | 15.95 |
+| Reciprocal of the median step rate, ms/step | 55.71 | 62.70 |
+| Committed tokens per speculative step | 3.3344 | 3.7178 |
+| Raw DFlash acceptance | 46.6875% | 54.3562% |
+
+Output throughput is `sum(completion_tokens - 1) / sum(decode_s)` over the
+specified requests. The first token belongs to TTFT; SSE chunk gaps are not
+individual token latencies. Step values are the harness's interior-window
+medians, and tokens/step comes from whole-run counters. Their product is not
+a replacement for measured output throughput. The failing repetitive output
+also distorts draft acceptance and tokens/step, so their larger NVIDIA values
+are not a quality-adjusted efficiency gain. This is one synthetic run per
+configuration, with different source builds and cache histories.
+
+For actual prefill observations the earlier stock-MLA Red Hat receipt remains
+the available reference. Both runs used TP4, KV7 and DFlash2 K=5, but their
+MLA implementation and compilation history differ:
+
+| Context | Earlier Red Hat TTFT / prompt tokens per second | NVIDIA TTFT / prompt tokens per second |
+| --- | ---: | ---: |
+| 2K, best within-run warm request | 0.637 s / 3341 | 0.730 s / 2915 |
+| 32K, single request | 14.954 s / 2176 | 21.408 s / 1520 |
+| 128K, single request | 58.223 s / 2208 | 76.384 s / 1683 |
+
+The 2K warm value uses normal prefix reuse within each run. NVIDIA also
+compiled dense E=1 kernels for new input shapes during these measurements:
+its first two 2K TTFTs were 6.652 and 5.694 seconds. Thus none of this table
+is a clean checkpoint-only speed delta or isolated kernel benchmark.
+
+The head-node serving-container history previously counted nine starts in
+the comparison/transition interval. The corrected NVIDIA qualification added
+the 07:33:13 UTC start, followed by Red Hat recovery at 07:40:52 UTC: **eleven
+serving starts** in that interval. The later component and HTTP controls
+added no serving-container restarts. The default NVIDIA source changes remain
+unpublished because full-model qualification failed.

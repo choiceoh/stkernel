@@ -94,6 +94,8 @@ def main():
     ap.add_argument('--moe-static', default=lanes.MOE_STATIC_PRODUCTION)
     ap.add_argument('--repeats', type=int, default=8)
     ap.add_argument('--oracle-rows', type=int, default=32)
+    ap.add_argument('--routes', choices=['fixed', 'dispersed'], default='fixed',
+                    help='Dispersed routing exercises all experts with different routes per token.')
     ap.add_argument('--out')
     a = ap.parse_args()
     torch.set_num_threads(2)
@@ -119,7 +121,8 @@ def main():
         scales = ModelOptScales.bind(*(got[prefix + s] for s in ('w13_alpha', 'a13_scale', 'w2_alpha', 'a2_scale')),
                                     experts=w13.shape[0], device=w13.device)
         experts = [0] if dense else [0, 1, 2, 31, 63, 127, 191, 287]
-        source = source_weights(checkpoint, layer, experts, a.rank, a.device, dense)
+        source = (source_weights(checkpoint, layer, experts, a.rank, a.device, dense)
+                  if dense or a.routes == 'fixed' else None)
         if dense:
             comm = SimpleNamespace(world_size=4, rank=a.rank, all_reduce=lambda x: x)
             net = Glm53Net(F, comm, lane, layers=[layer])
@@ -132,6 +135,8 @@ def main():
         for tokens in a.tokens:
             x = torch.randn(tokens, F.hidden, device=a.device, dtype=torch.bfloat16) * .5
             ids = torch.tensor(experts, device=a.device, dtype=torch.int32).repeat(tokens, 1)
+            if not dense and a.routes == 'dispersed':
+                ids = torch.rand(tokens, F.experts, device=a.device).topk(8, dim=-1).indices.int()
             route = torch.ones(tokens, len(experts), device=a.device)
             if not dense:
                 route = torch.rand_like(route)
@@ -144,8 +149,17 @@ def main():
                 call()
             actual = call().clone()
             sample = torch.linspace(0, tokens - 1, min(tokens, a.oracle_rows), device=a.device).long()
+            if a.routes == 'dispersed':
+                # Always judge the largest output row as well as positional
+                # samples; a rare routed expert must not hide an outlier.
+                extreme = actual.float().abs().amax(-1).argmax().reshape(1)
+                sample = torch.cat((sample, extreme)).unique()
+            if not dense and a.routes == 'dispersed':
+                source = source_weights(checkpoint, layer, ids[sample].unique().tolist(),
+                                        a.rank, a.device, dense)
             expected = oracle(x[sample], ids[sample], route[sample], source, quant, F.swiglu_limit, gpu_epilogue=gpu)
             row = dict(layer=layer, rank=a.rank, tokens=tokens, oracle_rows=len(sample), dense=dense,
+                       routes=a.routes, routed_experts=int(ids.unique().numel()),
                        relative=relative(actual[sample], expected), finite=bool(torch.isfinite(actual).all()),
                        output_absmax=float(actual.abs().max()), reference_absmax=float(expected.abs().max()))
             if gpu:
@@ -170,6 +184,8 @@ def main():
                                   and repeat_stable(row['graph_relative'], row['graph_bf16_ulps']))
             rows_out.append(row)
             print(json.dumps(row), flush=True)
+            if not dense and a.routes == 'dispersed':
+                source = None
         if dense:
             del net
         del source, got, w13, sf13, w2, sf2, scales, lane, call

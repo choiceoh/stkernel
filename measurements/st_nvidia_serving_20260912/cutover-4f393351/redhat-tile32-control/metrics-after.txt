@@ -1,0 +1,333 @@
+# HELP vllm:request_success_total requests answered
+# TYPE vllm:request_success_total counter
+vllm:request_success_total{engine="st"} 10
+# HELP vllm:num_requests_running requests in the model's step
+# TYPE vllm:num_requests_running gauge
+vllm:num_requests_running{engine="st"} 0
+# HELP vllm:num_requests_waiting admitted or queued, not yet stepping
+# TYPE vllm:num_requests_waiting gauge
+vllm:num_requests_waiting{engine="st"} 0
+# HELP vllm:prompt_tokens_total prompt tokens admitted
+# TYPE vllm:prompt_tokens_total counter
+vllm:prompt_tokens_total{engine="st"} 234908
+# HELP vllm:generation_tokens_total tokens generated
+# TYPE vllm:generation_tokens_total counter
+vllm:generation_tokens_total{engine="st"} 3934
+# HELP st:generation_characters_total characters those tokens spelled, as the client read them
+# TYPE st:generation_characters_total counter
+st:generation_characters_total{engine="st"} 10280
+# HELP vllm:spec_decode_num_accepted_tokens_total drafts the target confirmed
+# TYPE vllm:spec_decode_num_accepted_tokens_total counter
+vllm:spec_decode_num_accepted_tokens_total{engine="st"} 2569
+# HELP vllm:spec_decode_num_draft_tokens_total tokens the drafter proposed
+# TYPE vllm:spec_decode_num_draft_tokens_total counter
+vllm:spec_decode_num_draft_tokens_total{engine="st"} 6775
+# HELP vllm:iteration_tokens_total_count model steps
+# TYPE vllm:iteration_tokens_total_count counter
+vllm:iteration_tokens_total_count{engine="st"} 1379
+# HELP vllm:gpu_cache_usage_perc KV blocks held, as a fraction of the pool
+# TYPE vllm:gpu_cache_usage_perc gauge
+vllm:gpu_cache_usage_perc{engine="st"} 0
+# HELP st:steps_prefill_total steps that were a prefill chunk
+# TYPE st:steps_prefill_total counter
+st:steps_prefill_total{engine="st"} 16
+# HELP st:steps_decode_total steps that were a decode
+# TYPE st:steps_decode_total counter
+st:steps_decode_total{engine="st"} 1363
+# HELP st:requests_cancelled_total requests cancelled, for any reason
+# TYPE st:requests_cancelled_total counter
+st:requests_cancelled_total{engine="st"} 1
+# HELP st:requests_timed_out_total the subset the deadline scan took
+# TYPE st:requests_timed_out_total counter
+st:requests_timed_out_total{engine="st"} 0
+# HELP st:handing_over 1 while the fleet is being handed to another session
+# TYPE st:handing_over gauge
+st:handing_over{engine="st"} 0
+# HELP st:quiet 1 when no request and no tier transfer is outstanding
+# TYPE st:quiet gauge
+st:quiet{engine="st"} 1
+# HELP st:handover_conversations_parked turns parked for the next holder
+# TYPE st:handover_conversations_parked counter
+st:handover_conversations_parked{engine="st"} 0
+# HELP st:handover_conversations_lost turns a handover could not park
+# TYPE st:handover_conversations_lost counter
+st:handover_conversations_lost{engine="st"} 0
+# HELP st:kv_blocks_total blocks of 768 tokens in the pool
+# TYPE st:kv_blocks_total gauge
+st:kv_blocks_total{engine="st"} 1348
+# HELP st:kv_blocks_used blocks a row holds (or a tier transfer in flight)
+# TYPE st:kv_blocks_used gauge
+st:kv_blocks_used{engine="st"} 0
+# HELP st:kv_rows_in_use pool rows with tokens
+# TYPE st:kv_rows_in_use gauge
+st:kv_rows_in_use{engine="st"} 0
+# HELP st:state_slots_total recurrent/conv state slots (slot 0 is the null slot)
+# TYPE st:state_slots_total gauge
+st:state_slots_total{engine="st"} 4
+# HELP st:kv_blocks_free blocks no row holds: free now, whoever remembers them
+# TYPE st:kv_blocks_free gauge
+st:kv_blocks_free{engine="st"} 1348
+# HELP st:kv_blocks_anonymous free blocks no boundary remembers: spent before any reuse is
+# TYPE st:kv_blocks_anonymous gauge
+st:kv_blocks_anonymous{engine="st"} 1065
+# HELP st:kv_blocks_cached free blocks a cached boundary holds: the last thing a reservation spends
+# TYPE st:kv_blocks_cached gauge
+st:kv_blocks_cached{engine="st"} 283
+# HELP st:kv_blocks_faded free blocks held by a boundary whose snapshot is gone
+# TYPE st:kv_blocks_faded gauge
+st:kv_blocks_faded{engine="st"} 0
+# HELP st:state_slots_free state slots a new request could take
+# TYPE st:state_slots_free gauge
+st:state_slots_free{engine="st"} 4
+# HELP st:detokenizer_rust_stream 1 when streamed text is decoded through tokenizers' Rust DecodeStream
+# TYPE st:detokenizer_rust_stream gauge
+st:detokenizer_rust_stream{engine="st"} 1
+# HELP vllm:prefix_cache_queries_total prompts looked up in the prefix cache
+# TYPE vllm:prefix_cache_queries_total counter
+vllm:prefix_cache_queries_total{engine="st"} 11
+# HELP vllm:prefix_cache_hits_total lookups that reused a cached prefix
+# TYPE vllm:prefix_cache_hits_total counter
+vllm:prefix_cache_hits_total{engine="st"} 6
+# HELP st:prefix_cache_evictions_total cached prefixes dropped
+# TYPE st:prefix_cache_evictions_total counter
+st:prefix_cache_evictions_total{engine="st"} 0
+# HELP st:prefix_cache_reclaimable_blocks free blocks a boundary holds: reuse a reservation can spend
+# TYPE st:prefix_cache_reclaimable_blocks gauge
+st:prefix_cache_reclaimable_blocks{engine="st"} 283
+# HELP st:prefix_reused_tokens_total prompt tokens served from a cached boundary (memory or tier)
+# TYPE st:prefix_reused_tokens_total counter
+st:prefix_reused_tokens_total{engine="st"} 179712
+# HELP st:prefix_entries boundaries in memory
+# TYPE st:prefix_entries gauge
+st:prefix_entries{engine="st"} 75
+# HELP st:prefix_faded_entries boundaries that kept their blocks after giving up a snapshot
+# TYPE st:prefix_faded_entries gauge
+st:prefix_faded_entries{engine="st"} 0
+# HELP st:prefix_cache_fades_total boundaries that gave a snapshot away and kept their blocks
+# TYPE st:prefix_cache_fades_total counter
+st:prefix_cache_fades_total{engine="st"} 0
+# HELP st:prefix_pinned_entries boundaries an operator pinned
+# TYPE st:prefix_pinned_entries gauge
+st:prefix_pinned_entries{engine="st"} 0
+# HELP st:prefix_tier_entries boundaries the prefix tier holds
+# TYPE st:prefix_tier_entries gauge
+st:prefix_tier_entries{engine="st"} 20
+# HELP st:prefix_tier_spills_total boundaries written to the prefix tier
+# TYPE st:prefix_tier_spills_total counter
+st:prefix_tier_spills_total{engine="st"} 0
+# HELP st:prefix_tier_restores_total boundaries read back from the prefix tier
+# TYPE st:prefix_tier_restores_total counter
+st:prefix_tier_restores_total{engine="st"} 3
+# HELP st:prefix_dedup_waits_total requests that waited for a running prefill's boundary instead of computing it
+# TYPE st:prefix_dedup_waits_total counter
+st:prefix_dedup_waits_total{engine="st"} 0
+# HELP st:conversations_parked conversations resident on the NVMe tier
+# TYPE st:conversations_parked gauge
+st:conversations_parked{engine="st"} 0
+# HELP st:tier_bytes_written_total bytes parked to the tier
+# TYPE st:tier_bytes_written_total counter
+st:tier_bytes_written_total{engine="st"} 0
+# HELP st:tier_bytes_read_total bytes resumed from the tier
+# TYPE st:tier_bytes_read_total counter
+st:tier_bytes_read_total{engine="st"} 0
+# HELP st:spec_draft_positions_sampled_total draft positions behind the two masses below
+# TYPE st:spec_draft_positions_sampled_total counter
+st:spec_draft_positions_sampled_total{engine="st"} 30
+# HELP st:spec_reachable_mass_total sum over those of sum_x min(target, draft): the most any verification rule could accept
+# TYPE st:spec_reachable_mass_total counter
+st:spec_reachable_mass_total{engine="st"} 7.897062
+# HELP st:spec_candidate_mass_total sum over those of the target mass the drafter's candidates cover at all
+# TYPE st:spec_candidate_mass_total counter
+st:spec_candidate_mass_total{engine="st"} 12.105094
+# HELP st:decode_steps_by_sequences_total decode steps that carried this many sequences: the batch the scheduler filled
+# TYPE st:decode_steps_by_sequences_total counter
+st:decode_steps_by_sequences_total{engine="st",sequences="1"} 360
+# HELP st:decode_capacity_bucket_total decode steps by the context-capacity bucket whose graph served them
+# TYPE st:decode_capacity_bucket_total counter
+st:decode_capacity_bucket_total{engine="st",capacity="32768"} 126
+st:decode_capacity_bucket_total{engine="st",capacity="65536"} 234
+# HELP vllm:request_success_by_reason_total requests answered, by why they stopped
+# TYPE vllm:request_success_by_reason_total counter
+vllm:request_success_by_reason_total{engine="st",finished_reason="length"} 4
+vllm:request_success_by_reason_total{engine="st",finished_reason="stop"} 6
+# HELP st:spec_accepted_per_step_total decode segments that committed this many drafted tokens
+# TYPE st:spec_accepted_per_step_total counter
+st:spec_accepted_per_step_total{engine="st",accepted="0"} 209
+st:spec_accepted_per_step_total{engine="st",accepted="1"} 84
+st:spec_accepted_per_step_total{engine="st",accepted="2"} 33
+st:spec_accepted_per_step_total{engine="st",accepted="3"} 21
+st:spec_accepted_per_step_total{engine="st",accepted="4"} 11
+st:spec_accepted_per_step_total{engine="st",accepted="5"} 6
+# HELP st:lane_info the lanes and kernel cells this process actually bound
+# TYPE st:lane_info gauge
+st:lane_info{engine="st",context_ceiling="1048576",lanes="served",mla_prefill="tile32",moe_static="t,r,sf6,q0",spec_k="5"} 1
+# HELP vllm:time_to_first_token_seconds arrival to first token, queueing included
+# TYPE vllm:time_to_first_token_seconds histogram
+vllm:time_to_first_token_seconds_bucket{engine="st",le="0.001"} 0
+vllm:time_to_first_token_seconds_bucket{engine="st",le="0.005"} 0
+vllm:time_to_first_token_seconds_bucket{engine="st",le="0.01"} 0
+vllm:time_to_first_token_seconds_bucket{engine="st",le="0.02"} 0
+vllm:time_to_first_token_seconds_bucket{engine="st",le="0.04"} 0
+vllm:time_to_first_token_seconds_bucket{engine="st",le="0.06"} 0
+vllm:time_to_first_token_seconds_bucket{engine="st",le="0.08"} 0
+vllm:time_to_first_token_seconds_bucket{engine="st",le="0.1"} 0
+vllm:time_to_first_token_seconds_bucket{engine="st",le="0.25"} 0
+vllm:time_to_first_token_seconds_bucket{engine="st",le="0.5"} 1
+vllm:time_to_first_token_seconds_bucket{engine="st",le="0.75"} 3
+vllm:time_to_first_token_seconds_bucket{engine="st",le="1.0"} 6
+vllm:time_to_first_token_seconds_bucket{engine="st",le="2.5"} 7
+vllm:time_to_first_token_seconds_bucket{engine="st",le="5.0"} 7
+vllm:time_to_first_token_seconds_bucket{engine="st",le="7.5"} 8
+vllm:time_to_first_token_seconds_bucket{engine="st",le="10.0"} 9
+vllm:time_to_first_token_seconds_bucket{engine="st",le="+Inf"} 11
+vllm:time_to_first_token_seconds_sum{engine="st"} 57.455865
+vllm:time_to_first_token_seconds_count{engine="st"} 11
+# HELP vllm:time_per_output_token_seconds a step's seconds divided by the tokens it produced
+# TYPE vllm:time_per_output_token_seconds histogram
+vllm:time_per_output_token_seconds_bucket{engine="st",le="0.01"} 1436
+vllm:time_per_output_token_seconds_bucket{engine="st",le="0.025"} 2785
+vllm:time_per_output_token_seconds_bucket{engine="st",le="0.05"} 3461
+vllm:time_per_output_token_seconds_bucket{engine="st",le="0.075"} 3709
+vllm:time_per_output_token_seconds_bucket{engine="st",le="0.1"} 3898
+vllm:time_per_output_token_seconds_bucket{engine="st",le="0.15"} 3920
+vllm:time_per_output_token_seconds_bucket{engine="st",le="0.2"} 3921
+vllm:time_per_output_token_seconds_bucket{engine="st",le="0.3"} 3924
+vllm:time_per_output_token_seconds_bucket{engine="st",le="0.4"} 3924
+vllm:time_per_output_token_seconds_bucket{engine="st",le="0.5"} 3924
+vllm:time_per_output_token_seconds_bucket{engine="st",le="0.75"} 3924
+vllm:time_per_output_token_seconds_bucket{engine="st",le="1.0"} 3924
+vllm:time_per_output_token_seconds_bucket{engine="st",le="2.5"} 3924
+vllm:time_per_output_token_seconds_bucket{engine="st",le="+Inf"} 3924
+vllm:time_per_output_token_seconds_sum{engine="st"} 86.213511
+vllm:time_per_output_token_seconds_count{engine="st"} 3924
+# HELP vllm:inter_token_latency_seconds seconds between steps that carried tokens
+# TYPE vllm:inter_token_latency_seconds histogram
+vllm:inter_token_latency_seconds_bucket{engine="st",le="0.01"} 2
+vllm:inter_token_latency_seconds_bucket{engine="st",le="0.025"} 2
+vllm:inter_token_latency_seconds_bucket{engine="st",le="0.05"} 9
+vllm:inter_token_latency_seconds_bucket{engine="st",le="0.075"} 993
+vllm:inter_token_latency_seconds_bucket{engine="st",le="0.1"} 1311
+vllm:inter_token_latency_seconds_bucket{engine="st",le="0.15"} 1347
+vllm:inter_token_latency_seconds_bucket{engine="st",le="0.2"} 1354
+vllm:inter_token_latency_seconds_bucket{engine="st",le="0.3"} 1354
+vllm:inter_token_latency_seconds_bucket{engine="st",le="0.4"} 1354
+vllm:inter_token_latency_seconds_bucket{engine="st",le="0.5"} 1354
+vllm:inter_token_latency_seconds_bucket{engine="st",le="0.75"} 1355
+vllm:inter_token_latency_seconds_bucket{engine="st",le="1.0"} 1355
+vllm:inter_token_latency_seconds_bucket{engine="st",le="2.5"} 1355
+vllm:inter_token_latency_seconds_bucket{engine="st",le="+Inf"} 1355
+vllm:inter_token_latency_seconds_sum{engine="st"} 86.213511
+vllm:inter_token_latency_seconds_count{engine="st"} 1355
+# HELP vllm:request_queue_time_seconds arrival to the first step that carried it
+# TYPE vllm:request_queue_time_seconds histogram
+vllm:request_queue_time_seconds_bucket{engine="st",le="0.3"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="0.5"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="0.8"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="1.0"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="1.5"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="2.0"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="2.5"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="5.0"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="10.0"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="15.0"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="20.0"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="30.0"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="40.0"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="50.0"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="60.0"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="120.0"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="240.0"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="480.0"} 8
+vllm:request_queue_time_seconds_bucket{engine="st",le="+Inf"} 8
+vllm:request_queue_time_seconds_sum{engine="st"} 0.06322
+vllm:request_queue_time_seconds_count{engine="st"} 8
+# HELP vllm:request_inference_time_seconds that step to the last token
+# TYPE vllm:request_inference_time_seconds histogram
+vllm:request_inference_time_seconds_bucket{engine="st",le="0.3"} 0
+vllm:request_inference_time_seconds_bucket{engine="st",le="0.5"} 0
+vllm:request_inference_time_seconds_bucket{engine="st",le="0.8"} 1
+vllm:request_inference_time_seconds_bucket{engine="st",le="1.0"} 1
+vllm:request_inference_time_seconds_bucket{engine="st",le="1.5"} 1
+vllm:request_inference_time_seconds_bucket{engine="st",le="2.0"} 1
+vllm:request_inference_time_seconds_bucket{engine="st",le="2.5"} 1
+vllm:request_inference_time_seconds_bucket{engine="st",le="5.0"} 2
+vllm:request_inference_time_seconds_bucket{engine="st",le="10.0"} 5
+vllm:request_inference_time_seconds_bucket{engine="st",le="15.0"} 5
+vllm:request_inference_time_seconds_bucket{engine="st",le="20.0"} 5
+vllm:request_inference_time_seconds_bucket{engine="st",le="30.0"} 6
+vllm:request_inference_time_seconds_bucket{engine="st",le="40.0"} 7
+vllm:request_inference_time_seconds_bucket{engine="st",le="50.0"} 7
+vllm:request_inference_time_seconds_bucket{engine="st",le="60.0"} 7
+vllm:request_inference_time_seconds_bucket{engine="st",le="120.0"} 7
+vllm:request_inference_time_seconds_bucket{engine="st",le="240.0"} 7
+vllm:request_inference_time_seconds_bucket{engine="st",le="480.0"} 7
+vllm:request_inference_time_seconds_bucket{engine="st",le="+Inf"} 7
+vllm:request_inference_time_seconds_sum{engine="st"} 79.054841
+vllm:request_inference_time_seconds_count{engine="st"} 7
+# HELP vllm:e2e_request_latency_seconds admission to the answer
+# TYPE vllm:e2e_request_latency_seconds histogram
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="0.3"} 0
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="0.5"} 0
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="0.8"} 1
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="1.0"} 1
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="1.5"} 1
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="2.0"} 1
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="2.5"} 1
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="5.0"} 2
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="10.0"} 6
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="15.0"} 7
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="20.0"} 7
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="30.0"} 9
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="40.0"} 10
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="50.0"} 10
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="60.0"} 10
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="120.0"} 10
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="240.0"} 10
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="480.0"} 10
+vllm:e2e_request_latency_seconds_bucket{engine="st",le="+Inf"} 10
+vllm:e2e_request_latency_seconds_sum{engine="st"} 121.150909
+vllm:e2e_request_latency_seconds_count{engine="st"} 10
+# HELP st:step_seconds one model step, host-observed end to end
+# TYPE st:step_seconds histogram
+st:step_seconds_bucket{engine="st",kind="prefill",le="0.005"} 0
+st:step_seconds_bucket{engine="st",kind="prefill",le="0.01"} 0
+st:step_seconds_bucket{engine="st",kind="prefill",le="0.02"} 0
+st:step_seconds_bucket{engine="st",kind="prefill",le="0.03"} 0
+st:step_seconds_bucket{engine="st",kind="prefill",le="0.04"} 0
+st:step_seconds_bucket{engine="st",kind="prefill",le="0.05"} 0
+st:step_seconds_bucket{engine="st",kind="prefill",le="0.06"} 0
+st:step_seconds_bucket{engine="st",kind="prefill",le="0.08"} 0
+st:step_seconds_bucket{engine="st",kind="prefill",le="0.1"} 0
+st:step_seconds_bucket{engine="st",kind="prefill",le="0.15"} 0
+st:step_seconds_bucket{engine="st",kind="prefill",le="0.2"} 0
+st:step_seconds_bucket{engine="st",kind="prefill",le="0.25"} 0
+st:step_seconds_bucket{engine="st",kind="prefill",le="0.3"} 0
+st:step_seconds_bucket{engine="st",kind="prefill",le="0.4"} 0
+st:step_seconds_bucket{engine="st",kind="prefill",le="0.5"} 1
+st:step_seconds_bucket{engine="st",kind="prefill",le="0.75"} 5
+st:step_seconds_bucket{engine="st",kind="prefill",le="1.0"} 6
+st:step_seconds_bucket{engine="st",kind="prefill",le="2.0"} 7
+st:step_seconds_bucket{engine="st",kind="prefill",le="+Inf"} 16
+st:step_seconds_sum{engine="st",kind="prefill"} 56.90989
+st:step_seconds_count{engine="st",kind="prefill"} 16
+st:step_seconds_bucket{engine="st",kind="decode",le="0.005"} 14
+st:step_seconds_bucket{engine="st",kind="decode",le="0.01"} 17
+st:step_seconds_bucket{engine="st",kind="decode",le="0.02"} 17
+st:step_seconds_bucket{engine="st",kind="decode",le="0.03"} 18
+st:step_seconds_bucket{engine="st",kind="decode",le="0.04"} 19
+st:step_seconds_bucket{engine="st",kind="decode",le="0.05"} 355
+st:step_seconds_bucket{engine="st",kind="decode",le="0.06"} 996
+st:step_seconds_bucket{engine="st",kind="decode",le="0.08"} 1206
+st:step_seconds_bucket{engine="st",kind="decode",le="0.1"} 1339
+st:step_seconds_bucket{engine="st",kind="decode",le="0.15"} 1361
+st:step_seconds_bucket{engine="st",kind="decode",le="0.2"} 1362
+st:step_seconds_bucket{engine="st",kind="decode",le="0.25"} 1362
+st:step_seconds_bucket{engine="st",kind="decode",le="0.3"} 1362
+st:step_seconds_bucket{engine="st",kind="decode",le="0.4"} 1362
+st:step_seconds_bucket{engine="st",kind="decode",le="0.5"} 1362
+st:step_seconds_bucket{engine="st",kind="decode",le="0.75"} 1363
+st:step_seconds_bucket{engine="st",kind="decode",le="1.0"} 1363
+st:step_seconds_bucket{engine="st",kind="decode",le="2.0"} 1363
+st:step_seconds_bucket{engine="st",kind="decode",le="+Inf"} 1363
+st:step_seconds_sum{engine="st",kind="decode"} 80.405264
+st:step_seconds_count{engine="st",kind="decode"} 1363

@@ -1,0 +1,31 @@
+{
+  "passed": true,
+  "device": "cuda",
+  "layout": "st-glm53-modelopt-up-gate-v1",
+  "moe_static": "t,r,sf6,q0",
+  "limits": {
+    "source_relative": 0.02,
+    "repeat_relative": 0.001,
+    "repeat_bf16_ulps_alternative": 1
+  },
+  "checks": [
+    {
+      "layer": 44,
+      "rank": 2,
+      "tokens": 6912,
+      "oracle_rows": 5,
+      "dense": false,
+      "routes": "dispersed",
+      "routed_experts": 288,
+      "relative": 0.007425742689520121,
+      "finite": true,
+      "output_absmax": 6.28125,
+      "reference_absmax": 6.3125,
+      "repeat_relative": 0.0,
+      "repeat_bf16_ulps": 0,
+      "graph_relative": 0.0,
+      "graph_bf16_ulps": 0,
+      "passed": true
+    }
+  ]
+}

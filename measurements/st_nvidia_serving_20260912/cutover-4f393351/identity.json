@@ -1,0 +1,8 @@
+{
+  "engine": "st",
+  "boot_id": "1e1ac53c1df5ba13348ceffa565a6030c9dc0fa536740dd6085fad736a7c8831|2026-09-12T07:33:13.121470389Z",
+  "image": "st-engine:nvidia-4f393351",
+  "engine_source_sha256": "bfbfb6884846f760a825eeeedb39e854c9513b4e257ad7b54d49cd6078dbcdb7",
+  "step_counter_source": "GET / -> steps (ST Runner.step counter)",
+  "knobs": {}
+}
