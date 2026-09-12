@@ -1248,6 +1248,7 @@ class Server:
         # the second path always and the first never. This census is how that stops being an
         # argument (45차 §68).
         self.reuse_paths = {"continuation": 0, "prefix_or_cold": 0}
+        self.reasoning_shapes = {}                  # (thinking, effort) -> chat requests: see note_reasoning
         self._free_rows = list(range(min(runner.kv.max_seqs, runner.c.max_running, runner.slots.available)))
         if not self._free_rows:
             raise ValueError("the server needs at least one request row and state slot")
@@ -1386,6 +1387,25 @@ class Server:
             self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation, min_new, options, hint,
                                media, tier, chain, salt))
         return request, event
+
+    def note_reasoning(self, kwargs: dict) -> None:
+        """Count the reasoning shape this chat request will be RENDERED with, not the one it was sent with.
+
+        45차 §81 measured why a conversation is or is not continuable, and it turns on exactly this: with
+        thinking off the template writes `<think></think>` and the next turn re-renders that assistant turn
+        identically, so the history stays a prefix and D16 continues it. With thinking on the model writes a
+        reasoning span the next render only reproduces if the client echoes `reasoning_content` back -- and
+        the layer that turns reasoning on (wormhole's effort.go, from an Ares decision or a caller's
+        high/max) is not the layer that decided whether to echo it (Deneb, from its own config, already
+        sent). So the same fleet serves both shapes and nothing recorded which.
+
+        `effort` is what the TEMPLATE will read, which is why absent is its own label and not folded into
+        max: absent means nobody said, and the template turns that into max on its own.
+        """
+        thinking = kwargs.get("thinking")
+        shape = ("on" if thinking is None or thinking else "off",
+                 str(kwargs.get("reasoning_effort", "absent")))
+        self.reasoning_shapes[shape] = self.reasoning_shapes.get(shape, 0) + 1
 
     def _continuation(self, ids, media=(), salt=None) -> "tuple[int, int] | None":
         """(conversation, prefix length) of the retained conversation whose history is the longest proper prefix of
@@ -2329,6 +2349,13 @@ class Server:
             labelled.append(("st:detokenizer_repairs_total", "counter",
                              "streamed text the door had to repair, by what went wrong",
                              [(f'reason="{reason}"', count) for reason, count in sorted(self.detok_repairs.items()) if count]))
+        if self.reasoning_shapes:
+            # The other half of st:reuse_path_total: that series says whether a prompt continued a
+            # conversation, this one says whether it COULD (45차 §81).
+            labelled.append(("st:reasoning_shape_total", "counter",
+                             "chat requests by the reasoning shape the template rendered them with",
+                             [(f'thinking="{t}",effort="{e}"', count)
+                              for (t, e), count in sorted(self.reasoning_shapes.items())]))
         if any(self.reuse_paths.values()):
             labelled.append(("st:reuse_path_total", "counter",
                              "prompts by how they found their KV: a conversation they extend, or blocks they share",
@@ -2699,6 +2726,7 @@ class Server:
                     if kwargs.get("reasoning_effort", effort) != effort:
                         raise RequestError("top-level and template reasoning_effort must agree")
                     kwargs["reasoning_effort"] = EFFORT_RUNGS[effort]
+                server.note_reasoning(kwargs)             # the shape the template will render (45차 §81)
                 options_stream = req.get("stream_options")
                 if options_stream is not None and not isinstance(options_stream, dict):
                     raise RequestError("stream_options must be an object")
