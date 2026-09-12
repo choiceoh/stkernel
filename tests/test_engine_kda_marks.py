@@ -12,7 +12,7 @@ import torch  # noqa: E402
 from engine.base.comm import Comm, LocalTP  # noqa: E402
 from engine.profiles.glm53 import lanes, specs  # noqa: E402
 from engine.profiles.glm53.net import Glm53Net, Step  # noqa: E402
-from test_engine_glm53 import tiny_facts  # noqa: E402
+from tests.test_engine_glm53 import tiny_facts  # noqa: E402
 
 
 class Caches:

@@ -4,12 +4,17 @@ from types import SimpleNamespace
 import unittest
 from pathlib import Path
 
+from tests.image_kernels import fused_sdpa
+
+DRAFTER_HEAD_DIM = 4           # DrafterFacts(head_dim=...) below; the shape the pinned backends refuse here
+
 torch = None
 if importlib.util.find_spec("torch") is not None:
     import torch
 
 
-@unittest.skipUnless(torch is not None, "requires PyTorch")
+@unittest.skipUnless(torch is not None and fused_sdpa(DRAFTER_HEAD_DIM),
+                     "requires PyTorch with a fused SDPA backend at the drafter's head size")
 class DrafterTests(unittest.TestCase):
     def make_drafter(self):
         from engine.profiles.glm53.drafter import Drafter, DrafterFacts

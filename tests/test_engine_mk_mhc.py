@@ -2,12 +2,14 @@
 import importlib.util
 import unittest
 
+from tests.image_kernels import PRESENT, REASON
+
 torch = None
 if importlib.util.find_spec("torch"):
     import torch
 
 
-@unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA")
+@unittest.skipUnless(torch is not None and torch.cuda.is_available() and PRESENT, "requires CUDA; " + REASON)
 class MHCTests(unittest.TestCase):
     def test_reference_and_replay(self):
         from engine.kernels.dense.mhc import MHC

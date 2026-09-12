@@ -2,13 +2,15 @@
 import importlib.util
 import unittest
 
+from tests.image_kernels import PRESENT, REASON
+
 if importlib.util.find_spec('torch'):
     import torch
 else:
     torch = None
 
 
-@unittest.skipUnless(torch is not None and torch.cuda.is_available(), 'requires CUDA')
+@unittest.skipUnless(torch is not None and torch.cuda.is_available() and PRESENT, 'requires CUDA; ' + REASON)
 class ConvRingTests(unittest.TestCase):
     def setUp(self):
         from engine.kernels.causal_conv_ring import causal_conv1d_ring
