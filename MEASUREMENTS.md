@@ -11598,3 +11598,49 @@ nothing listening              {}
 브래킷은 커밋만 찍으면 비교 가능해지지 않는다 — **서빙 형상도 찍어야** 비교 가능해진다.
 
 **검증**: `tools/check.py` 59 files, **798 tests, 0 failed**; `tests/test_fleet_onepass.py` 22 OK(인자 표면 불변).
+
+### 45차 §73 — 데네브 레포 쪽에서 우리를 보니: 문이 모르는 모델 이름을 그대로 돌려주고 있었다 (2026-09-12, srv4, 코드 대조)
+
+운영자 "데네브 레포 입장에서 st엔진 개선할거 찾아봐". 우리가 뭘 더 주고 싶은지가 아니라 **데네브가 무엇을 우회하고
+무엇을 경고해 뒀는지**를 읽었다.
+
+**데네브의 단일 진실원이 우리를 이렇게 적어 뒀다** (`docs/agent-rules/sidecar-models.md`):
+
+> ⚠️ 웜홀의 `deepseek-v4-flash`·`dsv4-nothink` 엔트리는 여전히 이 주소를 가리키지만 `upstreamModel` 이
+> `deepseek-v4-flash` 라 **서버에 없는 모델을 요청해 fallback(z.ai)으로 샌다** — 이름은 dsv4 인데 실제로
+> 답하는 건 다른 모델이다.
+
+그리고 같은 문서가 **같은 종류의 낡은 엔트리가 2026-08 에 12일간 1,346 회 과금**시킨 사건을 적어 뒀다.
+
+**그런데 지금은 그 경고보다 나쁘다.** 그 문장은 srv2 가 **vLLM** 이던 때의 것이다. vLLM 은 모르는 모델에
+404 를 내므로 라우터가 페일오버했다. **ST 는 이름을 검사하지 않는다** — `serve.py` 는 요청의 `model` 을
+**응답에 그대로 되돌려 주고** GLM-5.3 으로 답한다. 즉:
+
+```
+요청 model=deepseek-v4-flash  →  200, 응답 model="deepseek-v4-flash", 내용은 GLM-5.3
+```
+
+**답은 맞는데 이름표가 틀린다.** 그리고 이름을 믿는 것이 전부 아래에 있다 — 데네브의 모델별 사용량,
+`metered` 게이트, `ProfileFor`(이름에 `deepseek` 가 있으면 *"reasoning_effort 는 high/max 만"* 규칙을 붙인다).
+페일오버로 새는 건 청구서에 보이기라도 하지, 이건 **아무 데도 안 보인다.**
+
+**고친 것**: `Server.check_model()` 이 **모든 OpenAI 호환 서버가 하는 그대로**(vLLM
+`entrypoints/openai/models/serving.check_model`) 답한다 — 이름이 없거나 비면 이 엔진 것이고,
+서빙하지 않는 이름이면 **404 에 그 문장 그대로**:
+
+```
+The model `deepseek-v4-flash` does not exist.
+```
+
+문장을 글자까지 맞춘 건 **메시지로 매칭하는 클라이언트가 그대로 돌게** 하기 위해서다.
+
+**부수 확인 — 데네브가 이미 고쳐도 되는 것 하나**: `agentlog.go:274` 가
+*"the engine does not report `cached_tokens` in per-request usage"* 라며 **엔진 전역 `/metrics` 를 긁어
+차분을 내는 우회**를 들고 있다(겹치는 런에서 "smear" 된다고 자기가 적어 뒀다). **ST 는 낸다** —
+스트림이든 아니든 `usage.prompt_tokens_details.cached_tokens` 에. 데네브도 `include_usage: true` 를 보내고
+`PromptTokensDetails.CachedTokens` 를 **파싱한다**. 즉 **배선은 이미 다 되어 있고 주석만 옛 vLLM 시절 것**이다.
+저쪽 레포의 한 줄이라 여기서는 안 고쳤다.
+
+**검증**: `tools/check.py` 59 files, **796 tests, 0 failed**. 새 테스트 2개 —
+없는 이름/빈 이름/서빙하는 이름/모르는 이름 넷 / 문이 404 를 내고 그 문장을 싣는다.
+기존 테스트 하나가 `model="m"` 으로 메아리에 기대고 있어 서빙하는 이름으로 고쳤다.
