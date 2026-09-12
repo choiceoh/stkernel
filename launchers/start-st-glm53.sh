@@ -25,7 +25,11 @@ CACHE_DIR=${CACHE_DIR:-/home/choiceoh/glm53-cache}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"
 NAME=st-glm53
 LEASE_OWNER=${LEASE_OWNER:-$(whoami)@$(hostname -s)/$$}   # who holds the fleet, for the lease record
-LOCK=/home/choiceoh/st-fleet.lock                          # the one lease file, on rank 0's node
+# Under glm53-logs, the one directory every ST container already mounts at this path --
+# the engine must READ its lease to notice a yield request, and ~/st-fleet.lock was not
+# mounted into any container, so the handover was inert on the fleet.
+LOCK=${FLEET_LEASE_PATH:-/home/choiceoh/glm53-logs/st-fleet.lock}
+LEGACY_LOCK=/home/choiceoh/st-fleet.lock                   # older launchers still write here
 
 # A node cannot ssh to itself (srv2 refuses its own key), and the head runs this script: run its own
 # commands in a local shell instead. Same for the tree push -- and if this checkout *is* the node's
@@ -56,6 +60,7 @@ case "${1:-start}" in
     for ip in "${NODES[@]}"; do node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 && echo '$ip: stopped' || echo '$ip: none'"; done
     use_lease
     fleet_lease release --owner x --force >/dev/null 2>&1 || true
+    node_sh "${NODES[0]}" "rm -f $LEGACY_LOCK" >/dev/null 2>&1 || true
     exit 0 ;;
   yield)
     # Ask whoever holds the fleet to finish, park its conversations and let go, then WAIT
@@ -102,6 +107,8 @@ lease() { fleet_lease "$@"; }
 # holder before taking the fleet, so the two mechanisms refuse each other in both directions
 # until they become one (bench/fleet.sh now refuses a grant while any st-* container is up).
 FLEET_HOLDER=${FLEET_HOLDER:-/home/choiceoh/glm53-logs/fleet/holder}
+legacy=$(node_sh "${NODES[0]}" "cat $LEGACY_LOCK 2>/dev/null || true")
+[ -z "$legacy" ] || { echo "ABORT: a session on the older lock path holds the fleet: $legacy ($LEGACY_LOCK on ${NODES[0]}); 'stop' from that side" >&2; exit 1; }
 queued=$(node_sh "${NODES[0]}" "cat $FLEET_HOLDER 2>/dev/null || true")
 [ -z "$queued" ] || { echo "ABORT: the bench queue holds the fleet: $queued (bench/fleet.sh status; release it there)" >&2; exit 1; }
 lease acquire --owner "'$LEASE_OWNER'" --container "$NAME" --est-minutes "${LEASE_MINUTES:-45}" \

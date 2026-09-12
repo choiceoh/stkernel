@@ -268,7 +268,11 @@ class NvmeTier:
 
     def promote(self, seq: int, storage, block_ids: "list[int]", extra=None) -> int:
         """Read the sequence back into blocks `block_ids` of `storage` and its
-        slot bytes into `extra` (required iff the file carries them). Returns bytes."""
+        slot bytes into `extra` (required iff the file carries them). Returns bytes.
+
+        `block_ids` None: the blocks are already in memory and only `extra` is
+        read -- a faded prefix boundary (base/prefix.py) whose KV was never
+        handed out needs its state back, not its bytes."""
         with self._transfer_lock:
             return self._promote(seq, storage, block_ids, extra)
 
@@ -280,34 +284,37 @@ class NvmeTier:
             raise ValueError(f"seq {seq} is pending file cleanup, not promotion")
         if meta.get("block_bytes", self.block_bytes) != self.block_bytes:
             raise ValueError(f"seq {seq} was parked with {meta['block_bytes']} B blocks; this layout has {self.block_bytes}")
-        if len(block_ids) != meta["blocks"]:
+        if block_ids is not None and len(block_ids) != meta["blocks"]:
             raise ValueError(f"seq {seq}: {meta['blocks']} blocks on disk, {len(block_ids)} given")
         extra_bytes = int(meta.get("extra", 0))
         given = int(extra.numel()) if extra is not None else 0
         if given != extra_bytes:
             raise ValueError(f"seq {seq}: {extra_bytes} slot bytes on disk, a view of {given} given")
+        if block_ids is None and not extra_bytes:
+            raise ValueError(f"seq {seq} carries no slot bytes: a snapshot-only read would read nothing")
         table = storage.view(-1, self.block_bytes) if block_ids else None
         ids = torch.as_tensor(block_ids, dtype=torch.long, device=table.device) if block_ids else None
         device = table.device if table is not None else extra.device
         self.stream.wait_stream(torch.cuda.current_stream(device))
         fd = os.open(self._path(seq), os.O_RDONLY | os.O_DIRECT)
+        at = 0 if block_ids is not None else int(meta["blocks"]) * self.block_bytes   # what memory already holds is not read again
         read = 0
         try:
-            for i in range(0, len(block_ids), self.per):
+            for i in range(0, len(block_ids or ()), self.per):
                 n_blk = min(self.per, len(block_ids) - i); n = n_blk * self.block_bytes
-                self._read_window(fd, n, read)
+                self._read_window(fd, n, at)
                 with torch.cuda.stream(self.stream):
                     self.scratch[:n].copy_(self.stage_t[:n], non_blocking=True)
                     table.index_copy_(0, ids[i:i + n_blk], self.scratch[:n].view(n_blk, self.block_bytes))
                 self.stream.synchronize()
-                read += n
+                at += n; read += n
             for off in range(0, extra_bytes, self.stage_bytes):
                 n = min(self.stage_bytes, extra_bytes - off)
-                self._read_window(fd, _sectors(n), read)
+                self._read_window(fd, _sectors(n), at)
                 with torch.cuda.stream(self.stream):
                     extra[off:off + n].copy_(self.stage_t[:n], non_blocking=True)
                 self.stream.synchronize()
-                read += _sectors(n)
+                at += _sectors(n); read += _sectors(n)
         finally:
             os.close(fd)
         self.bytes_read += read

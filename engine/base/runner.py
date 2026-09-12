@@ -189,7 +189,6 @@ class Runner:
             if not future.done():
                 continue
             self._spills.pop(h)
-            e = prefix.entries.get(h)
             try:
                 future.result()
             except TierFull:
@@ -198,18 +197,15 @@ class Runner:
                     tier.forget(oldest)                     # room for the next attempt: the least recently written boundary goes
                     for hh, key in list(prefix.tier_keys.items()):
                         if key == oldest:
-                            prefix.tier_keys.pop(hh)
-                if e is not None:
-                    e.spilling = False
+                            prefix.forget_tier(hh)          # a faded boundary loses its last copy with it
+                prefix.spill_end(h)
                 continue
             except Exception:                               # noqa: BLE001 -- a bad write: this boundary stays memory-only
-                if e is not None:
-                    e.spilling, e.spill_failed = False, True
+                prefix.spill_end(h, failed=True)
                 continue
             self.prefix_spills += 1
             prefix.tier_keys[h] = self.tier_key(h)
-            if e is not None:
-                e.spilling, e.spilled = False, True
+            prefix.spill_end(h, spilled=True)
         if len(prefix.free_snaps) >= self.spill_low_water or self._spills:
             return
         if self._maintained == prefix.version and not any(
@@ -225,13 +221,13 @@ class Runner:
                 continue
             e = prefix.entries[h]
             record = {"hash": h.hex(), "tokens": e.tokens}
+            prefix.spill_begin(h)                           # the blocks are held until the read lands: `available` says so
             try:
                 future = tier.tier.run_async(tier.tier.demote, self.tier_key(h), self.kv.storage, list(e.blocks), e.tokens,
                                              self.model.snapshot_bytes(e.snap), record)
             except Exception:                               # noqa: BLE001 -- could not even hand it over
-                e.spill_failed = True
+                prefix.spill_end(h, failed=True)
                 continue
-            e.spilling = True
             self._spills[h] = future
             break                                           # one write at a time: the tier has one staging buffer
 
@@ -239,12 +235,15 @@ class Runner:
         return {self.tier_key(h) for h, _, _, _ in self._restores.values()}
 
     def restore_begin(self, seq: int, h: bytes, tokens: int) -> None:
-        """Read the tier's copy of boundary `h` into the empty row `seq` and a free snapshot, on the tier's thread."""
+        """Read the tier's copy of boundary `h` into the empty row `seq` and a free snapshot, on the tier's thread.
+
+        A FADED boundary (base/prefix.py) still holds its blocks here: they were never handed out, so the row adopts
+        them where they lie and the read is the snapshot alone -- 77 MiB instead of the boundary's whole KV."""
         if self.prefix is None or self.prefix_tier is None:
             raise ValueError("this runner has no prefix tier")
         if h not in self.prefix.tier_keys:
             raise ValueError("that boundary is not on the prefix tier")
-        if h in self.prefix.entries:
+        if self.prefix.has(h):
             raise ValueError("that boundary is already in memory")
         self.kv.row(seq)
         if self.kv.tokens[seq] or seq in self.slot_of or seq in self._restores:
@@ -254,12 +253,18 @@ class Runner:
         snap = self.prefix.take_snapshot()
         if snap is None:
             raise MemoryError("no snapshot is free for the restored boundary")
+        held = self.prefix.blocks_of(h)                      # asked after the snapshot: taking one can drop a faded hope
+        if held is not None and len(held) != tokens // self.kv.block_size:
+            held = None
         try:
-            self.kv.reserve(seq, tokens)
+            if held is not None:
+                self.kv.adopt(seq, held, tokens)
+            else:
+                self.kv.reserve(seq, tokens)
         except BaseException:
             self.prefix.give_snapshot(snap)
             raise
-        blocks = [b for b in self.kv.row(seq)][: tokens // self.kv.block_size]
+        blocks = None if held is not None else [b for b in self.kv.row(seq)][: tokens // self.kv.block_size]
         try:
             future = self.prefix_tier.tier.run_async(self.prefix_tier.tier.promote, self.tier_key(h), self.kv.storage, blocks,
                                                      self.model.snapshot_bytes(snap))
@@ -278,7 +283,7 @@ class Runner:
         except BaseException:
             self.kv.release(seq)
             self.prefix.give_snapshot(snap)
-            key = self.prefix.tier_keys.pop(h, None)
+            key = self.prefix.forget_tier(h)
             if key is not None:
                 try:
                     self.prefix_tier.forget(key)

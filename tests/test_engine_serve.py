@@ -198,6 +198,26 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(s.engine.opened, [0])
         self.assertEqual(s._conversations, {first: 0})
 
+    def test_a_retained_conversation_belongs_to_the_tenant_that_started_it(self):
+        from engine.base.prefix import tenant_salt
+        s = server(keep_idle=True)
+        first, _ = s.submit([3, 4], 2, 0, cache_salt="red")
+        self.drain(s, retained=True)
+        history = s.engine.history(0)                              # what the next turn would resend
+        self.assertEqual(s._tenant_of[first], tenant_salt("red"))
+        self.assertIsNone(s._continuation(history + [5], (), tenant_salt("blue")), "another tenant cannot continue it")
+        self.assertIsNone(s._continuation(history + [5], ()), "and neither can an unsalted caller")
+        self.assertEqual(s._continuation(history + [5], (), tenant_salt("red")), (first, len(history), False))
+        with self.assertRaisesRegex(RequestError, "unknown"):      # naming the id is not proof: ids are small integers
+            s.submit([9], 1, 0, conversation=first, cache_salt="blue")
+        second, _ = s.submit([9], 1, 0, conversation=first, cache_salt="red")
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(second), [9])
+        with self.assertRaises(RequestError):
+            s.submit([3], 1, 0, cache_salt="")                     # a salt is a string with something in it
+        with self.assertRaises(RequestError):
+            s.submit([3], 1, 0, cache_salt=7)
+
     def test_new_requests_evict_old_idle_conversations_without_exhausting_rows(self):
         s = server(keep_idle=True)
         jobs = [s.submit([i], 1, 0) for i in range(12)]
@@ -1314,6 +1334,28 @@ class StepCostTests(unittest.TestCase):
         s.engine.output[0] = [7, 8, 9, 10]
         self.assertEqual(s.engine.generated_count(0), 4)
         self.assertEqual(s.engine.generated_since(0, 2), [9, 10])
+
+
+class RequestClockTests(unittest.TestCase):
+    """Two clocks per request. A request that does not finish must still clear both."""
+
+    def test_a_cancelled_request_leaves_no_clock_behind(self):
+        s = server()
+        request, event = s.submit([1, 2], 8, 0.0)
+        for _ in range(3):
+            s.once()
+        self.assertIn(request, s._admitted, "it was admitted, so the queue clock stopped")
+        s.cancel(request, "client closed")
+        for _ in range(3):
+            s.once()
+        self.assertNotIn(request, s._arrived)
+        self.assertNotIn(request, s._admitted)
+
+    def test_both_clocks_are_cleared_in_the_same_places(self):
+        source = (ROOT / "engine/base/serve.py").read_text()
+        self.assertEqual(source.count("self._arrived.pop(request, None)"),
+                         source.count("self._admitted.pop(request, None)"),
+                         "one of them is cleared somewhere the other is not")
 
 
 class MetricsTests(unittest.TestCase):
