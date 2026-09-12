@@ -52,6 +52,12 @@ BF16 Q/P를 `ldmatrix.x4`, FP8 PV 조각을 SM121의 byte `ldmatrix.trans`로 �
 반영했다. GPU 수치 검증과 성능 수치는 아직 남아 있으며, 서버 배포 완료를 뜻하지 않는다.
 [도입·컴파일 기록](../../measurements/st_gb10_tma_cluster_20260912/README.md)에 상태와 재현 절차를 기록한다.
 
+MLA의 Q 복사는 L1 캐시 힌트를 유지하는 `cp.async.ca`로 첫 KV 전송 그룹에 합친다.
+기존 wait가 Q와 첫 KV 타일을 함께 기다리므로 추가 배리어가 필요 없고, 빈 split은 Q를 읽지 않는다.
+3-CTA 클러스터의 병합 head 배분은 8/8/0에서 6/5/5로 바꾸며, 일반 경로의 전역 partial 병합도
+워프 내 연속 주소를 사용한다. split 합산 순서와 출력 정밀도는 유지한다.
+[추가 개선 기록](../../measurements/st_gb10_stream_20260912/README.md)에 GPU 실행 전 검증 범위를 기록한다.
+
 인덱서 query 양자화는 회전·BF16 반올림·FP8 scale 계산을 유지하면서 launch 크기를
 선택한다. 1,024행 이하는 1행·1 warp, 1,025~65,536행은 8행·1 warp를 사용하며,
 더 큰 입력은 기존 32행·2 warp를 사용한다. GLM의 인덱서 head는 32개이므로 행 수는
