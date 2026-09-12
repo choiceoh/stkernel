@@ -70,7 +70,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     draft_shape, drafter_gib = None, 0.0
     if drafter_dir and (Path(drafter_dir) / "config.json").exists():
         D = drafter_mod.load(drafter_dir)
-        draft_shape = (D.layers, D.window, D.kv_heads, D.head_dim)
+        draft_shape = (D.layers, drafter_mod.ring_cells(D), D.kv_heads, D.head_dim)
         drafter_gib = sum(s.nbytes() for s in drafter_mod.specs(D)) / GIB
     lay = layout(F, range(F.layers), draft_shape)
     slots_gib = (max_seqs + 1) * lay.slot_bytes / GIB

@@ -76,7 +76,6 @@ class AsyncDecode:
                           done=torch.empty(n_max, dtype=torch.bool, pin_memory=pin),
                           accepted=torch.empty(n_max, dtype=torch.int64, pin_memory=pin)) for _ in range(depth)]
         self.free = list(range(depth))
-        self._slots = []
         self._zeros = {}                                 # n -> the host step's placeholder ids (prepare reads segments, never these)
         self._staged = []                                # pinned index tensors of recent shrinks, alive until their copies land
 
@@ -111,8 +110,7 @@ class AsyncDecode:
         b["slot"] = b["real_slot"].clone()
         b["dists"] = torch.zeros(n, K, e.F.vocab, dtype=torch.float32, device=dev) if b["stochastic"] else None
         self.buf, self.batch, self.stale = b, tuple(seqs), False
-        for i in range(n):
-            self._propose(i, temps[i])
+        self._propose_rows()
 
     def _shrink(self, seqs) -> None:
         """Rows left the batch (they finished, the host learned it a step late): keep the device view of the rest.
@@ -143,28 +141,27 @@ class AsyncDecode:
             b["nucleus"] = torch.tensor(b["nucleus_rows"], dtype=torch.int64, device=dev)
         self.batch = tuple(seqs)
 
-    def _propose(self, i: int, temperature: float) -> None:
-        """Row i's next proposal from its device anchor at its device context, into the next step's ids."""
-        e, b, K, t = self.e, self.buf, self.e.drafter.k, self.t
-        ring = e.caches.draft_ring(self._slots[i])
-        anchor, position = b["anchor"][i:i + 1], b["ctx"][i]
+    def _propose_rows(self) -> None:
+        """Every row's next proposal at once, from its device anchor at its device context, into the next step's ids
+        (45차 §23 GPU 판정 4차: one drafter replay a step, not one a row)."""
+        e, b, t = self.e, self.buf, self.t
+        n = len(self.batch)
+        graphs = e.drafter.decode_graphs
         if b["stochastic"]:
-            drafts, dists = e.drafter.propose_sampled_tensor(anchor, position, ring, temperature, e.gen, e.F.vocab) if temperature > 0 \
-                else (self._greedy_drafts(anchor, position, ring, b["real_slot"][i:i + 1]), None)
-            if dists is None:                                             # a greedy row among stochastic ones: one-hot draft distributions
-                dists = torch.zeros(K, e.F.vocab, dtype=torch.float32, device=ring.device).scatter_(1, drafts.view(K, 1), 1.0)
-            b["dists"][i] = dists
+            if graphs is not None:
+                drafts, dists = graphs.propose_rows_sampled(b["anchor"], b["ctx"], b["real_slot"], b["temps"])
+            else:
+                drafts, dists = e.drafter.propose_rows(e.caches.draft_field(), b["real_slot"], b["anchor"], b["ctx"],
+                                                       temps=b["temps"], generator=e.gen, vocab=e.F.vocab)
+            b["dists"].copy_(dists)
+        elif graphs is not None:
+            drafts = graphs.propose_rows(b["anchor"], b["ctx"], b["real_slot"])
         else:
-            drafts = self._greedy_drafts(anchor, position, ring, b["real_slot"][i:i + 1])
-        b["drafts"][i] = drafts
-        b["ids"][i * t] = anchor[0]
-        b["ids"][i * t + 1:(i + 1) * t] = drafts
-
-    def _greedy_drafts(self, anchor, position, ring, slot):
-        e = self.e
-        if e.drafter.decode_graphs is not None:
-            return e.drafter.decode_graphs.propose_from(anchor, position, slot)
-        return e.drafter.propose_tensor(anchor, position, ring)
+            drafts = e.drafter.propose_rows(e.caches.draft_field(), b["real_slot"], b["anchor"], b["ctx"])
+        b["drafts"].copy_(drafts)
+        ids = b["ids"].view(n, t)
+        ids[:, 0] = b["anchor"]
+        ids[:, 1:] = b["drafts"]
 
     # -- one step ---------------------------------------------------------------------------------------
     def launch(self, seqs, slots) -> Pending:
@@ -172,7 +169,6 @@ class AsyncDecode:
         seqs, slots = list(seqs), list(slots)
         if len(self.pending) >= self.depth or not self.free:
             raise RuntimeError("the decode pipeline is full: resolve a step before launching another")
-        self._slots = slots
         if self.stale or tuple(seqs) != self.batch:
             if self.pending or (self.batch and set(seqs) - set(self.batch)):
                 if set(seqs) - set(self.batch) or self.stale:
@@ -211,16 +207,12 @@ class AsyncDecode:
         b["alive"] = b["alive"] & ~done
         b["slot"] = torch.where(b["alive"], b["real_slot"], torch.zeros_like(b["real_slot"]))
         if aux is not None:
-            for i, slot in enumerate(slots):
-                ring = e.caches.draft_ring(slot)
-                positions = ctx_before[i] + torch.arange(t, device=ring.device)
-                rows = aux[i * t:(i + 1) * t]
-                if e.drafter.decode_graphs is not None:
-                    e.drafter.decode_graphs.observe_masked(ring, positions, rows, count[i])
-                else:
-                    e.drafter.observe_masked(ring, positions, rows, count[i])
-        for i, s in enumerate(seqs):
-            self._propose(i, e.limits[s][1])
+            positions = ctx_before.view(n, 1) + torch.arange(t, device=aux.device)
+            if e.drafter.decode_graphs is not None:
+                e.drafter.decode_graphs.observe_rows(b["real_slot"], positions, aux, count)
+            else:
+                e.drafter.observe_rows(e.caches.draft_field(), b["real_slot"], positions, aux, count)
+        self._propose_rows()
         # the outcome crosses to the host behind an event; the next step is already queued when it is read
         lane = self.free.pop(0)
         host = self.host[lane]
