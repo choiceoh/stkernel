@@ -596,9 +596,14 @@ def draft_ceilings(target_probs: torch.Tensor, draft_probs: torch.Tensor) -> "tu
     Returns (reachable, covered), summed over the positions given. Two passes over the vocabulary,
     so the caller samples rather than asking every step.
     """
-    k = draft_probs.shape[-2]
+    # A request can hit its generation limit (or an end token) before the
+    # drafter's full block is verified.  In that case the target has fewer
+    # rows than the draft.  The extra draft rows have no corresponding target
+    # distribution and must not enter either ceiling calculation.
+    k = min(target_probs.shape[-2], draft_probs.shape[-2])
     p = target_probs[..., :k, :]
-    return float(torch.minimum(p, draft_probs).sum()), float((p * (draft_probs > 0)).sum())
+    q = draft_probs[..., :k, :]
+    return float(torch.minimum(p, q).sum()), float((p * (q > 0)).sum())
 
 
 def draft_ceilings_over(target_probs: torch.Tensor, draft_cand: torch.Tensor,
@@ -609,9 +614,10 @@ def draft_ceilings_over(target_probs: torch.Tensor, draft_cand: torch.Tensor,
     is p on exactly the candidates. So neither needs the vocabulary -- the dense row was never adding anything
     but zeros to these two numbers.
     """
-    k = draft_probs.shape[-2]
-    p = target_probs[..., :k, :].gather(-1, draft_cand)
-    return float(torch.minimum(p, draft_probs).sum()), float((p * (draft_probs > 0)).sum())
+    k = min(target_probs.shape[-2], draft_probs.shape[-2])
+    p = target_probs[..., :k, :].gather(-1, draft_cand[..., :k, :])
+    q = draft_probs[..., :k, :]
+    return float(torch.minimum(p, q).sum()), float((p * (q > 0)).sum())
 
 
 def commit_batch(picks: torch.Tensor, drafts: torch.Tensor, alive: torch.Tensor, generated: torch.Tensor, limit: torch.Tensor,
