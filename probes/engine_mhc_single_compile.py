@@ -16,13 +16,13 @@ def main():
     args = parser.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '':
         raise RuntimeError('this compile gate requires CUDA_VISIBLE_DEVICES=')
+    root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(root))
     import torch
     from torch.utils.cpp_extension import load
     from engine.kernels.native_cache import prepare_sources
     if torch.cuda.is_initialized():
         raise RuntimeError('a GPU was already initialized')
-    root = Path(__file__).resolve().parents[1]
-    sys.path.insert(0, str(root))
     directory = root / 'engine/kernels/dense'
     tree = ast.parse((directory / '__init__.py').read_text())
     function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'extension')
