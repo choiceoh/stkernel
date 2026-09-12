@@ -42,6 +42,17 @@ class AttributionTests(unittest.TestCase):
         clock._drain()
         self.assertEqual(rows, [('forward', .002, {'request': 'old'})])
 
+    def test_unfinished_stage_round_is_not_overwritten_by_a_new_request(self):
+        class Event:
+            def query(self): return False
+        clock = StageClock(every=1)
+        clock._torch = object()
+        clock._pending = [('forward', Event(), Event())]
+        clock._pending_context = {'request': 'old'}
+        clock.context = {'request': 'new'}
+        self.assertFalse(clock.step())
+        self.assertEqual(clock._pending_context, {'request': 'old'})
+
 
 class RecordingTests(unittest.TestCase):
     def test_immutable_run_and_token_ownership(self):

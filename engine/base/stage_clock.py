@@ -32,7 +32,7 @@ class StageClock:
         """Call once at the top of a step. True when this one is being measured."""
         self._steps += 1
         self._drain()
-        self._live = self._torch is not None and self._steps % self.every == 0
+        self._live = self._torch is not None and not self._pending and self._steps % self.every == 0
         if self._live:
             self._pending_sink, self._pending_context = self.sink, self.context
         return self._live
