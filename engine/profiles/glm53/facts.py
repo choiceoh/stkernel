@@ -31,7 +31,7 @@ BLOCK = 768                                                           # the page
                                                                       # whole indexer pools of 4, nine per 6,912 prefill chunk)
 SPEC_K = 6                                                            # DFlash2 draft slots per decode step
 KV_DTYPE = "fp8_e4m3"                                                 # launcher KV_DTYPE
-KDA_STATE_DTYPE = "fp16"                                              # resident state storage; arithmetic stays FP32
+KDA_STATE_DTYPE = "fp32"                                              # recurrent storage and arithmetic; FP16 remains experimental
 EXPERTS = "tp"                                                        # launcher ENABLE_EP=0
 
 

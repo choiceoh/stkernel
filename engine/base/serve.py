@@ -1282,6 +1282,13 @@ class Server:
         self._retiring = {}                        # row -> conversation: its park is on the tier's thread (D10: no step waits on it)
         self._resuming = {}                        # row -> (conversation, request, ids, limit, temperature, promised): its resume is in flight
         self._restoring = {}                       # row -> the request whose prefix is being read back from the prefix tier (45차 §23 A)
+        # Rows whose park / resume / restore could not even BEGIN on this rank. They stay in the dicts
+        # above, so this rank still votes on them in _settle and every rank settles them the same
+        # way (dropped, prefilled, refused). A rank that quietly fell back on its own left the others
+        # waiting in a host vote it never joined while its own next step ran the device collective:
+        # 2026-09-13 04:57 and 05:24, ranks 0/1 in _settle's vote, ranks 2/3 in the one-shot
+        # all-reduce until its stall trap (Xid 43, "unspecified launch failure").
+        self._failed_begins = set()
         self._deferred = set()                     # requests waiting for a running prefill to cache the prefix they share (B)
         self.controls = queue.Queue()              # rank 0's cache controls (pin / unpin / reset), broadcast with the arrivals (C)
         # A decode step runs inside a captured graph, so its stages cannot be timed with CUDA events from
@@ -2023,10 +2030,8 @@ class Server:
                     row = heapq.heappop(self._free_rows)
                     try:
                         self.runner.restore_begin(row, h, tokens)
-                    except Exception:                             # noqa: BLE001 -- no snapshot / no blocks / no tier: prefill it instead
-                        heapq.heappush(self._free_rows, row)
-                        self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None, chain, salt)
-                        continue
+                    except Exception:                             # noqa: BLE001 -- no snapshot / no blocks: _settle's vote turns EVERY rank to prefill
+                        self._failed_begins.add(row)              # (a rank that prefilled on its own here left the others in a vote it never joined)
                     self._restoring[row] = dict(request=request, ids=ids, limit=limit, temperature=temperature, promised=promised,
                                                 min_new=min_new, options=options, media=media, chain=chain, salt=salt,
                                                 cancelled=None)
@@ -2052,9 +2057,8 @@ class Server:
                     row = heapq.heappop(self._free_rows)
                     try:
                         self.runner.resume_begin(row, key=conversation)   # blocks + slot back from NVMe on the tier's thread
-                    except BaseException:
-                        heapq.heappush(self._free_rows, row)              # the disk copy survives
-                        raise
+                    except Exception:                                     # noqa: BLE001 -- the vote in _settle refuses it everywhere; the disk copy survives
+                        self._failed_begins.add(row)
                     self._resuming[row] = dict(conversation=conversation, request=request, ids=ids, limit=limit,
                                                temperature=temperature, promised=promised, min_new=min_new, options=options,
                                                media=media, drop=drop, cancelled=None)
@@ -2069,6 +2073,16 @@ class Server:
             self._active[row] = (request, promised)
             self._note_cached(request, row)
             self._admit_clock(request)
+
+    def _transfer_done(self, row) -> bool:
+        """Whether this rank has nothing left to wait for on `row`: a transfer that finished on the
+        tier's thread, or one that never began here (there is nothing to finish)."""
+        if row in self._failed_begins:
+            return True
+        try:
+            return bool(self.runner.transfer_done(row))
+        except (KeyError, IndexError, AttributeError):
+            return True
 
     def _votes(self, flags) -> "list[int]":
         """How many ranks say yes to each flag. Every rank must call this with the same flags in the
@@ -2087,39 +2101,49 @@ class Server:
         """Finish the transfers every rank agrees are done. Nothing here waits on the disk (D10):
         a park or resume that is still writing/reading is simply looked at again next step.
         Outcomes are agreed too, so the ranks keep the same set of conversations."""
-        rows = self.runner.transfers()
+        # The rows come from the server's own books, which every rank keeps alike (the decisions
+        # behind them travel with the step's broadcast), never from what this rank's tier thread
+        # happens to have in flight: a rank whose transfer never began must still be in the vote.
+        rows = sorted(set(self._retiring) | set(self._resuming) | set(self._restoring))
         if not rows:
             return
         world = int(getattr(self.comm, "world_size", 1) or 1)
-        done = self._votes([self.runner.transfer_done(r) for r in rows])
+        done = self._votes([self._transfer_done(r) for r in rows])
         outcomes = []                                         # (row, ok, full)
         restored = {}                                         # row -> (tokens, snap) a prefix restore landed with
         for row, votes in zip(rows, done):
             if votes < world:
                 continue
             ok, full = True, False
-            try:
-                if row in self._retiring:
-                    self.runner.park_finish(row)
-                elif row in self._restoring:
-                    restored[row] = self.runner.restore_finish(row)
-                else:
-                    self.runner.resume_finish(row)
-            except TierFull:
-                ok, full = False, True
-            except Exception:                                 # noqa: BLE001 -- a failed transfer is the conversation's loss, not the engine's
-                ok = False
+            if row in self._failed_begins:
+                ok = False                                    # it never began here: this rank says no, and the vote says the rest
+            else:
+                try:
+                    if row in self._retiring:
+                        self.runner.park_finish(row)
+                    elif row in self._restoring:
+                        restored[row] = self.runner.restore_finish(row)
+                    else:
+                        self.runner.resume_finish(row)
+                except TierFull:
+                    ok, full = False, True
+                except Exception:                             # noqa: BLE001 -- a failed transfer is the conversation's loss, not the engine's
+                    ok = False
             outcomes.append((row, ok, full))
         if not outcomes:
             return
         agreed = self._votes([ok for _, ok, _ in outcomes] + [full for _, _, full in outcomes])
         for (row, ok, full), all_ok, all_full in zip(outcomes, agreed[:len(outcomes)], agreed[len(outcomes):]):
+            self._failed_begins.discard(row)
             if row in self._retiring:
                 conversation = self._retiring.pop(row)
                 if all_ok == world:                           # parked everywhere: the row is free
                     heapq.heappush(self._free_rows, row)
                 elif all_full == world and self.runner.forget_oldest_parked() is not None:
-                    self.runner.park_begin(row, key=conversation)   # room was made on every rank: write again
+                    try:
+                        self.runner.park_begin(row, key=conversation)   # room was made on every rank: write again
+                    except Exception:                         # noqa: BLE001 -- and still not here: the next vote drops it everywhere
+                        self._failed_begins.add(row)
                     self._retiring[row] = conversation
                 else:                                         # dropped everywhere: forget where it landed, evict where it stayed
                     if ok:
@@ -2278,7 +2302,10 @@ class Server:
             return
         conversation = self._conversation_of.pop(row)
         self._conversations.pop(conversation)
-        self.runner.park_begin(row, key=conversation)         # the write runs on the tier's thread; the row frees in _settle
+        try:
+            self.runner.park_begin(row, key=conversation)     # the write runs on the tier's thread; the row frees in _settle
+        except Exception:                                     # noqa: BLE001 -- no room, no tier: the vote drops it everywhere
+            self._failed_begins.add(row)
         self._retiring[row] = conversation
 
     def _abort(self):
