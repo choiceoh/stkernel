@@ -839,8 +839,29 @@ class Glm53Engine:
 
         The model's dtype, not fp32: every row is copied to fp32 by `process_logits` anyway, so upcasting
         the whole block here only to copy each row out of it again writes the vocabulary twice a step.
+
+        The row count is AGREED first, because this is the one collective in the step whose size is data
+        dependent: the caller builds it from the rich rows and, when a grammar is live, from each row's
+        live span. `all_gather_into_tensor` requires the same shape everywhere and does not check -- it
+        waits. On 2026-09-12 it waited forever: ranks 0 and 1 offered seven rows and ranks 2 and 3 offered
+        six (NumelIn 271,040 against 232,320 at vp 38,720), all four sat in _ALLGATHER_BASE with the GPUs
+        at 0%, requests queued behind them, and the only evidence was an NCCL watchdog dump. A vote costs
+        one small host collective off the device and turns that into a step that says what diverged.
         """
-        return self.net.comm.all_gather(local, dim=-1)
+        comm = self.net.comm
+        rows = int(local.shape[0])
+        if comm.world_size > 1:
+            votes = [0] * comm.world_size
+            votes[comm.rank] = rows
+            counts = comm.all_reduce_host(votes)
+            if len(set(counts)) > 1:
+                raise RuntimeError(
+                    "the ranks disagree about how many rows this step gathers: "
+                    + ", ".join(f"rank{r}={n}" for r, n in enumerate(counts))
+                    + ". The count comes from the rich rows and their live grammar spans, so a matcher "
+                      "that stepped differently on one rank lands here. Refusing the collective: it "
+                      "cannot complete, and entering it hangs every rank with no cause recorded.")
+        return comm.all_gather(local, dim=-1)
 
     def _row_logits(self, seq: int, raw: torch.Tensor, position: int, drafts_before: "list[int]",
                     out: "torch.Tensor | None" = None) -> torch.Tensor:
