@@ -1,0 +1,336 @@
+{
+  "source": "8c8b031b94bb80175cfccd49cfb6329d18cdecae",
+  "boot_id": "8f055b03662995db50df27977fd51996737a1a4962c835838e39c38988d997e0|2026-09-12T21:25:52.266002699Z",
+  "run_id": "20260912T213057-9725b41d901c",
+  "generation_budget": {
+    "individual_max_tokens": 8192,
+    "individual_reasoning_budget": 4096,
+    "combined_max_tokens": 24576,
+    "combined_reasoning_budget": 12288
+  },
+  "scope": "visible final-answer differences; not full consumer completion",
+  "cases": [
+    {
+      "ctx": 2000,
+      "case": "ledger",
+      "passed": false,
+      "checks": {
+        "format": true,
+        "completion": true,
+        "result": false,
+        "derivation": false,
+        "evidence": false,
+        "counterfactual": false
+      },
+      "failures": [
+        {
+          "dimension": "result",
+          "expected": {
+            "available": 287,
+            "decision": "보류"
+          },
+          "actual": {
+            "available": 296,
+            "decision": "전량승인"
+          }
+        },
+        {
+          "dimension": "counterfactual",
+          "expected": {
+            "available": 296,
+            "shortfall": 0,
+            "decision": "전량승인"
+          },
+          "actual": {
+            "available": 287,
+            "shortfall": 3,
+            "decision": "보류"
+          }
+        }
+      ]
+    },
+    {
+      "ctx": 2000,
+      "case": "portfolio",
+      "passed": true,
+      "checks": {
+        "format": true,
+        "completion": true,
+        "result": true,
+        "derivation": true,
+        "evidence": true,
+        "counterfactual": true
+      },
+      "failures": []
+    },
+    {
+      "ctx": 2000,
+      "case": "logic",
+      "passed": false,
+      "checks": {
+        "format": true,
+        "completion": true,
+        "result": true,
+        "derivation": false,
+        "evidence": false,
+        "counterfactual": true,
+        "witnesses": false
+      },
+      "failures": []
+    },
+    {
+      "ctx": 32000,
+      "case": "ledger",
+      "passed": false,
+      "checks": {
+        "format": true,
+        "completion": true,
+        "result": true,
+        "derivation": false,
+        "evidence": false,
+        "counterfactual": true
+      },
+      "failures": []
+    },
+    {
+      "ctx": 32000,
+      "case": "portfolio",
+      "passed": false,
+      "checks": {
+        "format": true,
+        "completion": true,
+        "result": false,
+        "derivation": false,
+        "evidence": false,
+        "counterfactual": false
+      },
+      "failures": [
+        {
+          "dimension": "result",
+          "expected": {
+            "best": "ABD",
+            "score": 56,
+            "runner_up": "ABC",
+            "margin": 7
+          },
+          "actual": {
+            "best": "ABD",
+            "score": 40,
+            "runner_up": "ACD",
+            "margin": 2
+          }
+        },
+        {
+          "dimension": "counterfactual",
+          "expected": {
+            "best": "ACD",
+            "score": 34,
+            "feasible": [
+              "ACD"
+            ]
+          },
+          "actual": {
+            "best": "ACD",
+            "score": 38,
+            "feasible": [
+              "ACD",
+              "BCD",
+              "CDE"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "ctx": 32000,
+      "case": "logic",
+      "passed": false,
+      "checks": {
+        "format": true,
+        "completion": true,
+        "result": false,
+        "derivation": false,
+        "evidence": false,
+        "counterfactual": false,
+        "witnesses": false
+      },
+      "failures": [
+        {
+          "dimension": "result",
+          "expected": {
+            "statuses": [
+              "거짓",
+              "판단불가",
+              "참",
+              "판단불가"
+            ]
+          },
+          "actual": {
+            "statuses": [
+              "판단불가",
+              "판단불가",
+              "거짓",
+              "판단불가"
+            ]
+          }
+        },
+        {
+          "dimension": "counterfactual",
+          "expected": {
+            "consistent": false,
+            "minimal_cores": [
+              [
+                "U1",
+                "U2",
+                "U3",
+                "U4",
+                "U6"
+              ]
+            ]
+          },
+          "actual": {
+            "consistent": true,
+            "minimal_cores": [
+              [
+                "U1",
+                "U2",
+                "U3",
+                "U4",
+                "U6"
+              ],
+              [
+                "U1",
+                "U2",
+                "U5",
+                "U6"
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "ctx": 128000,
+      "case": "ledger",
+      "passed": false,
+      "checks": {
+        "format": true,
+        "completion": true,
+        "result": true,
+        "derivation": false,
+        "evidence": false,
+        "counterfactual": true
+      },
+      "failures": []
+    },
+    {
+      "ctx": 128000,
+      "case": "portfolio",
+      "passed": false,
+      "checks": {
+        "format": true,
+        "completion": true,
+        "result": false,
+        "derivation": false,
+        "evidence": false,
+        "counterfactual": false
+      },
+      "failures": [
+        {
+          "dimension": "result",
+          "expected": {
+            "best": "ABE",
+            "score": 79,
+            "runner_up": "ABD",
+            "margin": 3
+          },
+          "actual": {
+            "best": "ABE",
+            "score": 59,
+            "runner_up": "ABD",
+            "margin": 1
+          }
+        },
+        {
+          "dimension": "counterfactual",
+          "expected": {
+            "best": "ADE",
+            "score": 71,
+            "feasible": [
+              "ADE"
+            ]
+          },
+          "actual": {
+            "best": "ADE",
+            "score": 31,
+            "feasible": [
+              "ADE"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "ctx": 128000,
+      "case": "logic",
+      "passed": false,
+      "checks": {
+        "format": true,
+        "completion": true,
+        "result": false,
+        "derivation": false,
+        "evidence": false,
+        "counterfactual": false,
+        "witnesses": false
+      },
+      "failures": [
+        {
+          "dimension": "result",
+          "expected": {
+            "statuses": [
+              "거짓",
+              "참",
+              "판단불가",
+              "판단불가"
+            ]
+          },
+          "actual": {
+            "statuses": [
+              "거짓",
+              "판단불가",
+              "판단불가",
+              "판단불가"
+            ]
+          }
+        },
+        {
+          "dimension": "counterfactual",
+          "expected": {
+            "consistent": false,
+            "minimal_cores": [
+              [
+                "U1",
+                "U2",
+                "U3",
+                "U4",
+                "U6"
+              ]
+            ]
+          },
+          "actual": {
+            "consistent": true,
+            "minimal_cores": [
+              [
+                "U1",
+                "U2",
+                "U3",
+                "U4",
+                "U6"
+              ]
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

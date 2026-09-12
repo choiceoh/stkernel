@@ -1,0 +1,42 @@
+{
+  "source": "8c8b031b94bb80175cfccd49cfb6329d18cdecae",
+  "session": "st-decode-ranksum0913",
+  "status": "waiting for existing pass 1",
+  "passes": [],
+  "script_sha256": "1d08e46404cf6703a48772c2cdc109eff4562dfa21c04663c51cb0ced8adc4d1",
+  "reason": "a completed quality exit 2 must retain the boot for pass 2",
+  "old_controller": {
+    "pid": 984315,
+    "start": "12217484"
+  },
+  "existing_consumer": {
+    "pid": 1065892,
+    "start": "12279723"
+  },
+  "containers": [
+    {
+      "rank": 0,
+      "id": "8f055b03662995db50df27977fd51996737a1a4962c835838e39c38988d997e0",
+      "image": "sha256:2ea0408e66861158a1ca4eb84a6dc70f2fa04d31a6c34e32dfcaf57be2074235",
+      "started": "2026-09-12T21:25:52.266002699Z"
+    },
+    {
+      "rank": 1,
+      "id": "d8bf8ee5c327cfda038ea132ce5b1949367689601947089cf78437889cb10810",
+      "image": "sha256:b75832b051b763f90d6587c2cddd0a919f0175b86b0c97479dede14c483d3773",
+      "started": "2026-09-12T21:25:54.164056378Z"
+    },
+    {
+      "rank": 2,
+      "id": "9a8f9ed6bd2d89d68eb7b254d2be9c770ffc3d98d0fa313c600686068c21a732",
+      "image": "sha256:d2337d493eca638b8bcb7367dbc33dca60f036e81938b332d4f836e64de3c972",
+      "started": "2026-09-12T21:25:53.982623894Z"
+    },
+    {
+      "rank": 3,
+      "id": "f4664f4e3120ab6739dbe7860dcbd9b6b8dbd1340cbe3878f66e3cfc98886b61",
+      "image": "sha256:d2964b3f083902d7260e1a3f9177fff9de3fc5d67e277afe332f1ce267fe447c",
+      "started": "2026-09-12T21:25:54.049858536Z"
+    }
+  ]
+}

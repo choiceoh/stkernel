@@ -77,3 +77,40 @@ The separate production boot at 06:17:22 was refused because ranks 0/1 retain
 conversation 0 while ranks 2/3 retain none. `production-061722/` preserves the
 four startup refusals. This persisted disagreement explains why repeating that
 production boot does not recover it; no production tier was edited here.
+
+At 07:52 KST, `finish_bounded_same_boot.py` retained that first consumer and
+all four ranks while selecting harness `905d8fe6f2c5a971c1325fd2179af080892fbcd8`
+for pass 2. The engine still runs `8c8b031b`; its checkout and the 210-minute
+hold deadline are unchanged. The new client changes only diagnostic output:
+64 tokens with a 64-token floor and 32-token reasoning cap for spec-k=6.
+All preparation and measured requests retain 8192/4096 and 24576/12288 limits.
+The controller verifies the complete measured `_main` prefix and seven
+request/grading helper modules match the first harness before taking over.
+The two harness identities and their separate diagnostic envelopes are explicit
+in `bounded-controller-start.json`; no same-harness diagnostic timing claim is made.
+PR #797 (`9651be3a`) requires four distinct decode traces and a prefill trace with
+CUDA activities per rank; its 23 CPU tests exercise the actual canonical main.
+The earlier quality-exit continuation fix is merged in PR #795 (`71356aab`).
+
+All five measured C=4 groups on the frozen candidate have now completed:
+2K q0/q1/q2 aggregate output rates are 106.00/120.60/108.32 tok/s, 32K 106.03,
+and 128K 78.97. These include prefill and **are invalid quality measurements**:
+C=4 has 2/36 complete proof certificates (118/228 checks), with all requests
+normally stopped. C=1 has 1/9 (28/57), with a raw window median of 19.896 step/s.
+The first canonical pass is still in its separate diagnostic stage. Neither
+one complete pass nor 22 step/s is claimed at this checkpoint.
+
+`consumer-in-progress/answer-failures.json` separates final-answer errors from
+token exhaustion. All nine C=1 cases completed normally. For example, 2K ledger
+reversed the original/counterfactual decisions (296 versus the expected 287
+available units), and 32K portfolio chose the right best combination but scored
+it 40 instead of 56. The larger reasoning budgets have not established that
+truncation was the only cause. The canonical grader and failure verdicts stay intact.
+
+Two further default-off kernel probes are prepared on separate sources:
+packed mHC single-token grids (`4626491b`) and MoE resident-wave scheduling
+(`c13f2802`). `compile_during_preparation.py` waits for pass-2 preparation and
+compiles them only in private CPU containers (runc, no visible/requested GPU,
+cores 16–19, two CPU equivalents, 12 GiB memory, 180 seconds per job). It stops
+only its labelled CPU container if preparation ends. GPU tests/timings remain
+pending and neither probe is present in the running engine.
