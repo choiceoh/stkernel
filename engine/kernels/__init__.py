@@ -1,10 +1,9 @@
 """ST GPU kernels. Importing this package does not initialize a device."""
 
-# Probe hook for the TileLang lowering passes of every mHC kernel (TMA lowering, warp
-# specialisation; the image's stock dict disables both). Unmeasured on GLM (mHC is
-# 11.4% of a prefill step, 9/1 trace). The mhc package captures it when it is imported,
-# so a bracket calls configure_mhc_passes() BEFORE `from engine.kernels import mhc`;
-# never an environment read, never a serving switch.
+# Offline hook for the shared mHC pass configuration, captured at import.
+# The post kernel overrides this with its fixed TMA-on/warp-specialization-off
+# policy. Call before importing mhc; this is never an environment read or a
+# serving switch.
 MHC_PASSES: "tuple[bool, bool] | None" = None
 
 

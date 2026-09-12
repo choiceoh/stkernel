@@ -2158,7 +2158,7 @@ struct MKMlaArgs {
 //                         k-quarter (w >> 1) of D; 4 partials summed in smem
 //   softmax -- warp w owns heads 2w, 2w+1, lane = slot (10 shuffles/tile)
 //   output  O += P C   -- warp w owns 64 of the 512 columns, B fragments
-//                         assembled from 4 single-byte ring reads each
+//                         loaded by SM121 byte ldmatrix and converted in registers
 constexpr int MLA_KQ = 4;                       // k-quarters in the score mma
 constexpr int MLA_NG = MLA_WARPS / MLA_KQ;      // 2 n-groups of 8 slots -> TILE 16
 constexpr int MLA_CP = MLA_D + 8;               // q pitch (words), bank-skewed
@@ -2196,6 +2196,12 @@ __device__ __forceinline__ uint32_t mla_e4m3x2(const uint8_t* p) {
 __device__ __forceinline__ uint32_t mla_e4m3x2_strided(const uint8_t* p, int stride) {
   const __half2 h = __halves2half2(__nv_cvt_fp8_to_halfraw(p[0], __NV_E4M3),
                                    __nv_cvt_fp8_to_halfraw(p[stride], __NV_E4M3));
+  const __nv_bfloat162 b = __float22bfloat162_rn(__half22float2(h));
+  return *(const uint32_t*)&b;
+}
+// Convert a packed pair without scalar strided shared loads.
+__device__ __forceinline__ uint32_t mla_e4m3x2_value(uint32_t packed) {
+  const __half2 h = __nv_cvt_fp8x2_to_halfraw2(static_cast<__nv_fp8x2_storage_t>(packed), __NV_E4M3);
   const __nv_bfloat162 b = __float22bfloat162_rn(__half22float2(h));
   return *(const uint32_t*)&b;
 }
@@ -2272,16 +2278,16 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
       {  // ---- S = Q C^T, B fragments converted from the ring in registers
         const int n0 = (warp % MLA_NG) * 8, kq = warp / MLA_NG;
         float c0 = 0.f, c1 = 0.f, c2 = 0.f, c3 = 0.f;
-        const __nv_bfloat16* qa = sq + g * MLA_CP;
         const uint8_t* cb = tile8 + (size_t)(n0 + g) * MLA_RP;
 #pragma unroll
         for (int ks = 0; ks < (MLA_D / 16) / MLA_KQ; ++ks) {
           const int k0 = kq * (MLA_D / MLA_KQ) + ks * 16 + q4 * 2;
-          mla_mma_bf16(c0, c1, c2, c3,
-                       *(const uint32_t*)(qa + k0),
-                       *(const uint32_t*)(qa + 8 * MLA_CP + k0),
-                       *(const uint32_t*)(qa + k0 + 8),
-                       *(const uint32_t*)(qa + 8 * MLA_CP + k0 + 8),
+          uint32_t a0, a1, a2, a3;
+          const uint32_t qaddr = static_cast<uint32_t>(__cvta_generic_to_shared(
+              sq + (lane & 15) * MLA_CP + kq * (MLA_D / MLA_KQ) + ks * 16 + (lane >> 4) * 8));
+          asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];"
+                       : "=r"(a0), "=r"(a1), "=r"(a2), "=r"(a3) : "r"(qaddr));
+          mla_mma_bf16(c0, c1, c2, c3, a0, a1, a2, a3,
                        mla_e4m3x2(cb + k0), mla_e4m3x2(cb + k0 + 8));
         }
         float* sh = ss + (size_t)kq * MLA_H * MLA_TILE;
@@ -2326,19 +2332,27 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
         for (int nt = 0; nt < 8; ++nt) {
           acc[nt][0] *= crg; acc[nt][1] *= crg; acc[nt][2] *= crg8; acc[nt][3] *= crg8;
         }
-        const __nv_bfloat16* pa = sp + g * MLA_PP;
-        const uint32_t a0 = *(const uint32_t*)(pa + q4 * 2);
-        const uint32_t a1 = *(const uint32_t*)(pa + 8 * MLA_PP + q4 * 2);
-        const uint32_t a2 = *(const uint32_t*)(pa + q4 * 2 + 8);
-        const uint32_t a3 = *(const uint32_t*)(pa + 8 * MLA_PP + q4 * 2 + 8);
-        const int krow = q4 * 2;                     // this lane's two k (slot) rows
-        const uint8_t* cb = tile8 + (size_t)krow * MLA_RP + warp * 64;
+        uint32_t a0, a1, a2, a3;
+        const uint32_t paddr = static_cast<uint32_t>(__cvta_generic_to_shared(
+            sp + (lane & 15) * MLA_PP + (lane >> 4) * 8));
+        asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];"
+                     : "=r"(a0), "=r"(a1), "=r"(a2), "=r"(a3) : "r"(paddr));
+        // ldmatrix.trans produces four consecutive K bytes for column g
+        // and four for g+8. Permute its row addresses so each register contains
+        // the two MMA K pairs (2q,2q+1) and (8+2q,9+2q), in that order.
+        const int row = lane & 15;
+        const int krow = (row >> 2) * 2 + (row & 1) + ((row >> 1) & 1) * 8;
+        const uint32_t cb = static_cast<uint32_t>(__cvta_generic_to_shared(
+            tile8 + (size_t)krow * MLA_RP + warp * 64));
 #pragma unroll
-        for (int nt = 0; nt < 8; ++nt) {
-          const int n = nt * 8 + g;                  // this lane's output column
+        for (int nt = 0; nt < 8; nt += 2) {
+          uint32_t v0, v1;
+          asm volatile("ldmatrix.sync.aligned.m16n16.x1.trans.shared.b8 {%0, %1}, [%2];"
+                       : "=r"(v0), "=r"(v1) : "r"(cb + nt * 8));
           mla_mma_bf16(acc[nt][0], acc[nt][1], acc[nt][2], acc[nt][3], a0, a1, a2, a3,
-                       mla_e4m3x2_strided(cb + n, MLA_RP),
-                       mla_e4m3x2_strided(cb + 8 * MLA_RP + n, MLA_RP));
+                       mla_e4m3x2_value(v0), mla_e4m3x2_value(v0 >> 16));
+          mla_mma_bf16(acc[nt+1][0], acc[nt+1][1], acc[nt+1][2], acc[nt+1][3], a0, a1, a2, a3,
+                       mla_e4m3x2_value(v1), mla_e4m3x2_value(v1 >> 16));
         }
       }
       __syncthreads();
