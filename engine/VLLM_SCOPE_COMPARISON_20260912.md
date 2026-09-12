@@ -1,5 +1,7 @@
 # 구현 범위 안에서의 vLLM 대조 (2026-09-12)
 
+> 그날의 조사 — **2026-09-12 의 조사다.** 그날 참이었던 것이고 유지되지 않는다 — 이후 무엇이 바뀌었는지는 `MEASUREMENTS.md` 가 안다.
+
 운영자 "구현 범위 내에서 vllm과 st엔진 비교". 같은 상자의 프로덕션 vLLM
 (`glm53:v13-b12x-it`, `0.1.dev20051+g487ecf187`, GLM5Next 지원이 들어간 포크)의 **소스를 꺼내**
 ST 코드와 파일 단위로 맞대 봤다. `VLLM_COMPARISON_20260912.md` 가 *"가져올 것"* 이라면 이 문서는
@@ -94,14 +96,14 @@ ST 가 하겠다고 한 적이 없다. 범위 안에서 진짜 차이는 둘:
 `KpoolTailSpec`, `mamba_cache_mode`, *"mamba state is only checkpointed at block boundaries in align mode"*
 (`v1/core/kv_cache_utils.py:645-680`). 즉 **블록 경계마다 상태를 체크포인트**하고, align 이 아니면
 부분 히트를 포기한다. ST 는 **프리필 청크 경계**(블록의 배수)에서만 체크포인트하고, 스냅샷을 희소 자원으로
-명시해 96개를 예산에 세운다(`base/prefix.py`, `boot.PREFIX_SNAPSHOTS`).
+명시해 예산에 세운다(`base/prefix.py`, `boot.PREFIX_SNAPSHOT_GIB` = 4.25 GiB, 이 형상에서 96개).
 
 **입자는 우리가 더 곱다.** 저쪽은 **블록 1,152 토큰**(GLM5Next 기본), 우리는 **블록 768 토큰**이다.
 ST 도 청크 안쪽 경계를 전부 잡는다 — `runner._marks` 가 스텝 전에 `{위치: 스냅샷}` 을 지명하고 모델이 지나가며
 찍는다(`base/prefix.chain` 이 `self.block_size` 로 돈다; 5,000 토큰 프롬프트의 경계는 768·1536·2304·3072·3840·**4608**).
 
 - ST 쪽 장점: 입자가 더 곱고, 스냅샷이 **예산의 한 줄**이며, 바랜 경계가 티어에서 **스냅샷만** 읽어
-  되살아난다(1 GB → 77 MiB).
+  되살아난다(1 GB → 45 MiB).
 - 진짜 제약은 입자가 아니라 **스냅샷 개수**다: 96개. 96 블록(73,728 토큰)보다 긴 프롬프트는 진행하면서
   **자기 앞선 경계를 스스로 축출**하고, 그 상태 복사는 버린 일이 된다. 코드가 그걸 이름 붙여 두었고
   (`runner._note_fade`) 계량기도 있다(`st:prefix_snapshot_self_evicts_total`) — **프로덕션에서 아직 안 읽었다.**

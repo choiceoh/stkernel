@@ -39,6 +39,7 @@ import torch
 import torch.nn.functional as Fn
 
 from engine.base.constants import fresh, iota
+from engine.base.graph_labels import operation
 from engine.modules.sparse_indexer import topk_positions
 from engine.profiles.glm53 import specs
 from engine.profiles.glm53.facts import TP, Facts
@@ -296,11 +297,13 @@ class Glm53Net:
         from engine.kernels.dense.mhc import MHC
         self.mhc = MHC({key: weight for key, weight in self.p.items() if key.endswith(("hc.attn_fn","hc.ffn_fn"))})
 
+    @operation("linear", name_arg=2)
     def linear(self, x, name):
         layer = self.dense.get(name)
         return layer(x) if layer is not None else Fn.linear(x, self.p[name])
 
     # -- embed / head -------------------------------------------------------------
+    @operation("embed")
     def embed(self, ids: torch.Tensor) -> torch.Tensor:
         start = self.rank * self.vp
         local = ids - start
@@ -311,14 +314,17 @@ class Glm53Net:
     def head(self, h: torch.Tensor) -> torch.Tensor:
         return self.comm.all_gather(self.head_local(h), dim=-1)
 
+    @operation("head_local")
     def head_local(self, h: torch.Tensor) -> torch.Tensor:
         return self.linear(h, "head")
 
+    @operation("head_tokens")
     def head_tokens(self, h: torch.Tensor, decodable=None) -> torch.Tensor:
         from engine.modules.vocab import argmax
         return argmax(self.head_local(h), self.comm, self.rank * self.vp, decodable)
 
     # -- mHC -----------------------------------------------------------------------
+    @operation("hc_pre", layer_arg=1)
     def _hc_pre(self, L: int, res: torch.Tensor, side: str):
         F, p, n = self.F, self.p, f"L{L}."
         norm_w = p[n + ("in_norm" if side == "attn" else "post_norm")]
@@ -326,6 +332,7 @@ class Glm53Net:
                                   F.rms_eps, F.hc_eps, F.post_mult, F.sinkhorn, norm_w, F.rms_eps)
 
     # -- KDA ------------------------------------------------------------------------
+    @operation("hc_post_pre", layer_arg=1)
     def _hc_post_pre(self, L, x, res, post, comb, side):
         if self.mhc is None or x.shape[0] > 64:
             res = self.lanes.mhc_post(x, res, post, comb)
@@ -336,6 +343,7 @@ class Glm53Net:
                         p[n+f"hc.{side}_base"],p[n+("in_norm" if side=="attn" else "post_norm")],
                         F.rms_eps,F.hc_eps,F.post_mult,F.sinkhorn)
 
+    @operation("kda", layer_arg=1)
     def _kda(self, L: int, x: torch.Tensor, step: Step, caches: Caches, reduce=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.kda."
         N = x.shape[0]; Hl, D, K = self.Hk, F.kda_dim, F.conv
@@ -411,6 +419,7 @@ class Glm53Net:
         return (reduce or self.comm.all_reduce)(self.linear(out.reshape(N, Hl * D), n + "o_proj"))
 
     # -- sparse MLA + kpool indexer ------------------------------------------------------
+    @operation("indexer", layer_arg=1)
     def _indexer(self, L: int, x: torch.Tensor, qr: torch.Tensor, step: Step, caches: Caches):
         """kpool indexer: per segment, complete this step's pools (pooling the
         tail ring's earlier tokens with the new ones), keep the new tail, then
@@ -501,6 +510,7 @@ class Glm53Net:
             out[r0:r1] = topk_positions(logits[:, :n_cand].float(), k, valid=ke[r0:r1], inplace=True)
         return out
 
+    @operation("dsa", layer_arg=1)
     def _dsa(self, L: int, x: torch.Tensor, step: Step, caches: Caches, reduce=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.mla."
         N = x.shape[0]; Hl = self.Hl
@@ -524,11 +534,13 @@ class Glm53Net:
         return (reduce or self.comm.all_reduce)(self.linear(o.reshape(N, Hl * F.v_dim), n + "o_proj"))
 
     # -- MLPs -----------------------------------------------------------------------------
+    @operation("dense", layer_arg=1)
     def _dense(self, L: int, x: torch.Tensor, reduce=None) -> torch.Tensor:
         p, n = self.p, f"L{L}.mlp."
         g, u = self.linear(x, n + "gate_up").chunk(2, dim=-1)
         return (reduce or self.comm.all_reduce)(self.linear(self._activation(g, u, self.F.swiglu_limit), n + "down"))
 
+    @operation("dense_nvfp4", layer_arg=1)
     def _dense_nvfp4(self, L: int, x: torch.Tensor, reduce=None) -> torch.Tensor:
         # Fixed one-expert routing: no router/selection or shared expert. These
         # buffers are owned by the graph pool during capture, like the MoE out.
@@ -536,6 +548,7 @@ class Glm53Net:
         weights = torch.ones((x.shape[0], 1), device=x.device, dtype=torch.float32)
         return (reduce or self.comm.all_reduce)(self._experts[L](x, ids, weights))
 
+    @operation("route", layer_arg=1)
     def route(self, L: int, x: torch.Tensor):
         """noaux_tc: sigmoid scores fp32, select by score + bias, weight by the
         raw scores renormalised, times routed_scaling_factor."""
@@ -549,6 +562,7 @@ class Glm53Net:
         w = s.gather(-1, sel)
         return sel.to(torch.int32), w / w.sum(-1, keepdim=True) * F.routed_scale
 
+    @operation("moe", layer_arg=1)
     def _moe(self, L: int, x: torch.Tensor, reduce=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.moe."
         sel, w = self.route(L, x)

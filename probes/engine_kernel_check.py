@@ -58,7 +58,7 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "mhc", "indexer", "kpool", "mla", "moe", "calibration", "pointwise", "residency"}, selected
+    assert selected <= {"conv", "kda", "mhc", "indexer", "kpool", "mla", "moe", "calibration", "pointwise", "residency", "latency"}, selected
 
     if "residency" in selected:
         import unittest
@@ -91,6 +91,10 @@ def main():
             pointwise(report)
         if "calibration" in selected:
             calibration(report)
+
+    if 'latency' in selected:
+        from probes.engine_latency_check import check as latency_check
+        report('latency', **latency_check())
 
     def rand(*shape, scale=1.):
         return torch.randn(*shape, device="cuda", dtype=torch.bfloat16) * scale

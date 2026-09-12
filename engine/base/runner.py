@@ -36,6 +36,7 @@ from engine.base.instruments import Recorder
 from engine.base.kv import BlockPool, SlotPool
 from engine.base.kv_tier import TierFull
 from engine.base.record import Ring
+from engine.base.latency import record_step as _record_step
 
 STEP_RECORD = struct.Struct("<QdBIIi")     # count, wall, kind, n_seqs, tokens, first seq
 KIND = {sched.PREFILL: 1, sched.DECODE: 2}
@@ -522,7 +523,12 @@ class Runner:
         (finished by the step before, then run once more as ghosts) are ignored."""
         step, pending, launched = self.inflight.pop(0)
         before = {s: self.model.context(s) for s in self._tracked(step.seqs)}
+        latency = getattr(self, 'latency', None)
+        resolve_start = time.perf_counter() if latency is not None and latency.active else None
         done = pending.resolve()
+        if resolve_start is not None:
+            latency.row(kind='host_wait', operation='resolve', phase='decode', rows=list(step.seqs),
+                        duration_us=(time.perf_counter() - resolve_start) * 1e6)
         if len(done) != len(step.seqs):
             raise ValueError("decode must return one completion flag per sequence")
         for seq, finished in zip(step.seqs, done):
@@ -794,6 +800,8 @@ class Runner:
                 continue
             return self._run(step)
 
+
+    @_record_step
     def _launch(self, step) -> "sched.Step":
         """A decode step the device runs while the host goes on: its result is read back at `resolve_oldest`."""
         with self.rec.phase(step.kind, aggregate=True):
@@ -809,6 +817,7 @@ class Runner:
         self.rec.count(f"{step.kind}_tokens", step.tokens)
         return step
 
+    @_record_step
     def _run(self, step) -> "sched.Step":
         t0 = time.perf_counter()
         with self.rec.phase(step.kind, aggregate=True):

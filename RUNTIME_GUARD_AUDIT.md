@@ -1,5 +1,7 @@
 # Runtime ID bounds audit
 
+> 그대로 두는 기록 — **2026-08-09 감사.** 당시의 기록이라 고치지 않는다 — 고치면 기록이 거짓이 된다.
+
 Date: 2026-08-09  
 Scope: `aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6` as deployed by this repository
 

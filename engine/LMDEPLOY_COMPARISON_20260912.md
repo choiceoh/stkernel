@@ -1,5 +1,7 @@
 # LMDeploy / TurboMind 에서 배워올 것 — 조사 (2026-09-12)
 
+> 그날의 조사 — **2026-09-12 의 조사다.** 그날 참이었던 것이고 유지되지 않는다 — 이후 무엇이 바뀌었는지는 `MEASUREMENTS.md` 가 안다.
+
 `InternLM/lmdeploy` `309d2b5`(2026-09-11, 하루 전)를 읽고 ST 와 대조했다. 읽은 곳:
 `src/turbomind/engine/{README.md,scheduler.cc,engine.cc}`, `src/turbomind/{models,kernels}/`,
 `docs/en/inference/turbomind.md`, `docs/en/advance/pytorch_new_model.md`.
@@ -32,7 +34,7 @@
 
 | | |
 |---|---:|
-| 스냅샷 슬롯 (`boot.PREFIX_SNAPSHOTS`) | **96** (랭크당 ~45 MiB) |
+| 스냅샷 슬롯 (`boot.PREFIX_SNAPSHOT_GIB`) | **4.25 GiB = 96 × 45 MiB** (개수가 아니라 바이트가 선언이다: 같은 96 이 드래프터 링을 샤딩하지 않으면 75 MiB × 96 = 7.06 GiB 였다) |
 | 블록 경계 간격 (`facts.BLOCK`) | **768** |
 | 128K 프롬프트 하나의 경계 수 | **170** |
 

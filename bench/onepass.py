@@ -1,38 +1,23 @@
 #!/usr/bin/env python3
-"""THE test (operator, 39차: "원패스 한국어 본문판만 남기고 모든 테스트는 저거
-한 개로 통일"). One Korean workload gives every gate at once:
+"""Canonical Korean consumer test, harness 42: C=1 and C=4 at 2K/32K/128K.
 
-  for ctx in 2K / 32K / 128K: a KOREAN document (check-quality.py: Korean
-  Wikipedia paragraphs from bench/ko_filler.txt in seeded order, three facts
-  planted in Korean at 25/50/75% depth)
-     2K:        three streaming requests, one question each (the first is the
-                cold prefill sample, the other two the warm ones; prefix
-                caching is off on this fleet)
-     32K, 128K: ONE streaming request carrying the three questions (the
-                document is prefilled once; a 128K prefill is ~48 s), three
-                answers' worth of tokens (a separately recorded combined budget)
-       time to the first content chunk  -> prefill tok/s and TTFT
-       the answer text                  -> retrieval (any-of groups with the
-                                           Korean spellings) + corruption scan
-                                           (korean-corruption.py's scanner)
-       the engine's step counter,       -> decode windows (2 s, bracket.py's
-       sampled throughout                  _StepWindows; windows that span a
-                                           prefill read low and are dropped)
-       spec-decode counters before/after-> raw acceptance, tokens/step
+Every invocation prepares each workload with a full replay, measures with the
+profiler off and a unique prefix salt, then runs separate bounded GPU diagnostic
+replays. Preparation changes, prefix reuse, missing evidence and external traffic
+invalidate steady-state comparisons. First reasoning/content, SSE gaps, per-request
+rates, actual batch widths, host/device stages and raw traces are retained under
+onepass-runs/<run-id> beside the append-only output ledger, including partial runs.
 
-There is no other leg: no English document, no separate Korean prompt set,
-no decode-only bracket, no C>1 arm. ~2.5 min on a healthy boot. Prints the
-numbers and appends one JSON record (harness 39) to
-~/glm53-logs/bracket-onepass.jsonl. Records before 2026-09-06 15:30 (English
-word-salad documents, separate Korean set) compare only on decode windows,
-raw acc and tokens/step.
+C=4 sends four independent requests simultaneously for each canonical question;
+its aggregate output rate includes prefill and remains separate from C=1 decode.
+The legacy cold_s/warm_s fields are aliases for first/median prepared fresh-prefix
+TTFT, not claims about compiler or cache warmth. Harness 41 is incompatible:
+42 uses seeded reasoning dossiers and visible-answer proof certificates.
 
-    python3 bench/onepass.py --name PRODV3 [--ctx 2000,32000,128000]
+    python3 bench/onepass.py --name RUN [--ctx 2000,32000,128000]
 
-Optional C=1 follow-up: --fixed-decode-tokens 2048 --fixed-decode-reps 3
---require-exclusive adds fixed-length 2K responses to this same workload.
-Their interior windows are the primary decode metric; the normal context
-ladder and all quality checks remain. Counter mismatches invalidate the run.
+Optional --fixed-decode-tokens 2048 --fixed-decode-reps 3 retains the C=1 fixed
+response gate. Detailed GPU recording requires the ST latency endpoint.
 """
 import argparse
 import hashlib
@@ -43,32 +28,20 @@ import re
 import sys
 import time
 import urllib.request
+import uuid
+
+from onepass_recording import CURRENT, Run, group, steady_errors
+import onepass_quality as quality
+
+_RUN = None
 
 from statistics import median
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-# accepted answer forms: every group must match by at least one of its spellings
-FACT_EXPECT = [
-    [["8127"]],
-    [["halvorsen", "할보르센", "할버슨"], ["14 march 1997", "march 14, 1997", "1997년 3월 14일", "1997-03-14", "3월 14일"]],
-    [["k-42", "k42"], ["north", "북쪽", "북측", "북벽", "북면"]],
-]
-INSTRUCTION = ("문서의 내용만 근거로 한국어로 두 문단 정도로 답해줘. 이름·숫자·날짜·장비 번호 같은 고유 표기는 "
-               "문서에 적힌 그대로 인용해줘.\n질문: ")
-# 38차: the three questions of a context in ONE request (one prefill instead
-# of three): numbered answers of about two paragraphs each
-INSTRUCTION_COMBINED = ("문서의 내용만 근거로 아래 질문 세 개에 한국어로 번호를 붙여 각각 두 문단 정도로 답해줘. "
-                        "이름·숫자·날짜·장비 번호 같은 고유 표기는 문서에 적힌 그대로 인용해줘.\n질문:\n")
-
-# A combined request spends completion tokens on both the model's reasoning
-# block and the three visible answers. The old 400 * 3 limit could stop after
-# the facts had been found but before the final answer was emitted. Keep the
-# per-question 400-token workload unchanged and give combined requests their
-# own explicit, recorded budget.
-DEFAULT_COMBINED_MAX_TOKENS = 2400
-DEFAULT_COMBINED_REASONING_BUDGET = 900
+DEFAULT_COMBINED_MAX_TOKENS = quality.COMBINED_MAX_TOKENS
+DEFAULT_COMBINED_REASONING_BUDGET = quality.COMBINED_REASONING_BUDGET
 
 
 def _load(fname, modname):
@@ -87,6 +60,28 @@ def _counter(text, name):
     return float(m.group(1)) if m else 0.0
 
 
+def _st_counter(text, name):
+    """The engine's own series. `_counter` above reads only vLLM's dialect."""
+    m = re.search(r"^st:%s\{[^}]*\}\s+([0-9.e+]+)" % re.escape(name), text, re.M)
+    return float(m.group(1)) if m else 0.0
+
+
+CACHE_HIT_FRACTION = 0.5
+"""Past this share of its prompt taken from the cache, a bracket did not prefill.
+
+`first tok/s` is prompt tokens over the first TTFT, and it only means prefill throughput when the
+prompt was actually computed. Three rows on 2026-09-12 were not, and nothing in the record said so:
+ST-GRAPH-45c's 128K reads 46,554 tok/s at 2.76 s, and an evening run read 32K in 5.13 s and 128K in
+5.22 s -- the same number for two prompts four times apart, which is the tell. They then sat in the
+ledger's column beside rows that had prefilled (45차 §82). CHARTER D17 says to drop them; this makes
+the record say which to drop.
+
+Half is not a knob, it is a gap: a bracket that shares only the system preamble reuses ~1% of a
+32,545-token prompt, and one that resumes a boundary reuses nearly all of it. Nothing lands in
+between, so the number is recorded either way and this only decides what gets called a hit.
+"""
+
+
 def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=None,
                channel_trace=None, reasoning_budget=None):
     """(text, ttft_s, prompt_tokens, completion_tokens, finish_reason) of one
@@ -103,15 +98,24 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
                 "chat_template_kwargs": {"thinking": True}}
     if reasoning_budget is not None:
         body_obj["reasoning_budget"] = reasoning_budget
+    identity = hashlib.sha256(json.dumps(body_obj).encode()).hexdigest()
+    run = CURRENT.get()
+    headers = {"Content-Type": "application/json"}
+    if run is not None:
+        body_obj['cache_salt'] = uuid.uuid4().hex
+        headers['X-ST-Latency-Token'] = run.token
+        timing = timing if timing is not None else {}
     body = json.dumps(body_obj).encode()
-    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-    stream_channels = [] if channel_trace is not None else None
+    req = urllib.request.Request(url, data=body, headers=headers)
+    stream_channels = [] if channel_trace is not None or run is not None else None
     t0 = time.monotonic()
     ttft = None
     arrivals = []
     parts = []
     usage = {}
     finish = None
+    first_channels = {}
+    response_id = None
     with urllib.request.urlopen(req, timeout=1800) as r:
         for raw in r:
             line = raw.decode("utf-8", "replace").strip()
@@ -126,6 +130,7 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
                 continue
             if obj.get("usage"):
                 usage = obj["usage"]
+            response_id = obj.get('id', response_id)
             for ch in obj.get("choices") or []:
                 d = ch.get("delta") or {}
                 piece = d.get("content") or d.get("reasoning_content") or d.get("reasoning") or ""
@@ -135,6 +140,9 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
                     if ttft is None:
                         ttft = arrived - t0
                     parts.append(piece)
+                    for name in ('content', 'reasoning_content', 'reasoning'):
+                        if d.get(name):
+                            first_channels.setdefault(name, arrived - t0)
                 if ch.get("finish_reason"):
                     finish = ch["finish_reason"]
                 if stream_channels is not None:
@@ -144,7 +152,8 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
     if ttft is None:
         ttft = time.monotonic() - t0
     if timing is not None:
-        elapsed = time.monotonic() - t0
+        ended = time.monotonic()
+        elapsed = ended - t0
         ctok = int(usage.get("completion_tokens", 0) or 0)
         decode_s = elapsed - ttft
         # Standard request TPOT includes the final stream/usage tail. SSE
@@ -158,10 +167,18 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
                       tpot_ms=1000 * decode_s / (ctok - 1) if ctok > 1 else None,
                       decode_tok_s=(ctok - 1) / decode_s if ctok > 1 and decode_s > 0 else None,
                       chunk_gaps_ms=[1000 * (b - a) for a, b in zip(arrivals, arrivals[1:])])
+        timing.update(started_monotonic=t0, ended_monotonic=ended, response_id=response_id,
+                      workload_sha256=identity, first_channels_s=first_channels,
+                      cached_tokens=(usage.get('prompt_tokens_details') or {}).get('cached_tokens'),
+                      ttft_scope='first nonempty reasoning or content chunk',
+                      chunk_gap_scope='SSE event gaps, not token ITL',
+                      prefix_policy='unique salt' if run else 'server default')
         if reasoning_budget is not None:
             timing["reasoning_budget"] = reasoning_budget
     if channel_trace is not None:
         channel_trace.append(stream_channels)
+    if run is not None:
+        run.request(timing, ''.join(parts), stream_channels)
     return ("".join(parts), ttft, int(usage.get("prompt_tokens", 0) or 0),
             int(usage.get("completion_tokens", 0) or 0), finish)
 
@@ -390,11 +407,43 @@ def engine_shape(completion_url: str) -> dict:
     return out
 
 
+def workload_requests(args, cq):
+    items = []
+    for ctx in map(int, args.ctx.split(',')):
+        cases = quality.cases(args.seed + ctx)
+        combined = bool(args.combine_min_ctx) and ctx >= args.combine_min_ctx
+        if combined:
+            items.append(quality.request_item(ctx, args.seed + ctx, cases, cq.filler,
+                args.combined_max_tokens, args.combined_reasoning_budget, 'all'))
+        else:
+            items.extend(quality.request_item(ctx, args.seed + ctx, [case], cq.filler,
+                args.max_tokens, args.max_tokens // 3, i) for i, case in enumerate(cases))
+    return items
+
+
 def main() -> int:
+    global _RUN
+    try:
+        return _main()
+    except BaseException as exc:
+        if _RUN is not None and not _RUN.complete:
+            _RUN.finish(error=exc)
+            if _RUN.supported and _RUN.token:
+                try:
+                    _RUN.control(op='abort', token=_RUN.token)
+                except Exception:
+                    pass  # The partial manifest retains the token for manual recovery.
+        raise
+    finally:
+        CURRENT.set(None)
+
+
+def _main() -> int:
+    global _RUN
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", default="onepass")
     ap.add_argument("--ctx", default=os.environ.get("QUALITY_CTX", "2000,32000,128000"))
-    ap.add_argument("--max-tokens", type=int, default=400)
+    ap.add_argument("--max-tokens", type=int, default=quality.MAX_TOKENS)
     ap.add_argument("--combined-max-tokens", type=int,
                     default=int(os.environ.get("ONEPASS_COMBINED_MAX_TOKENS",
                                                str(DEFAULT_COMBINED_MAX_TOKENS))),
@@ -441,10 +490,19 @@ def main() -> int:
     rec["engine_shape"] = engine_shape(bd.URL)
     rec["generation_budget"] = {
         "individual_max_tokens": args.max_tokens,
+        "individual_reasoning_budget": args.max_tokens // 3,
         "combined_max_tokens": args.combined_max_tokens,
         "combined_reasoning_budget": args.combined_reasoning_budget,
     }
     rec.update(_served_build(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    run = _RUN = Run(rec, args.out, bd.URL)
+    items = workload_requests(args, cq)
+    fixed_item = None
+    if args.fixed_decode_tokens:
+        fixed_item = quality.request_item(2000, args.seed + 2000, quality.cases(args.seed + 2000),
+            cq.filler, args.fixed_decode_tokens, args.fixed_decode_tokens // 3, 'fixed-all')
+        fixed_item['min_tokens'] = args.fixed_decode_tokens
+    run.workloads(items + ([fixed_item] if fixed_item else []))
     prove_spec = 'VLLM_GLM53_SPEC_K' in (rec.get('knobs') or {})
     spec_before = _served_speculation(rec.get('boot_id')) if prove_spec else None
     prove_prep = os.environ.get('ONEPASS_REQUIRE_PREP_FUSED') == '1'
@@ -466,8 +524,18 @@ def main() -> int:
     phases = []         # (ctx, t_first_token, t_end): each answer's decode phase
     fixed_phases = []
     rec["requests"] = []
-    quality_ok = quality_total = 0
+    pending_quality = []
     gen_tokens = 0
+
+    print('prepare C=1: full context ladder; retained separately', flush=True)
+    run.begin('prepare-c1')
+    for item in items:
+        group(run, ask_stream, bd.URL, cq.MODEL, item, 1)
+    if args.fixed_decode_tokens:
+        for rep in range(args.fixed_decode_reps):
+            group(run, ask_stream, bd.URL, cq.MODEL, dict(fixed_item, seed=args.seed + rep), 1)
+    run.end()
+    run.begin('measure-c1')
 
     from window_metrics import traffic_state, exclusive_errors, decode_windows
     metrics_before = _metrics_text(bd.METRICS)
@@ -475,99 +543,70 @@ def main() -> int:
     if args.require_exclusive and (before_traffic["running"] != 0 or before_traffic["waiting"] != 0):
         raise RuntimeError("exclusive onepass requires an idle server before sending requests")
     m0 = bd._parse_spec_metrics(metrics_before)
-    print(f"{'ctx':>7} {'tok':>7} {'cold tok/s':>11} {'warm tok/s':>11} {'cold TTFT':>10} {'warm TTFT':>10}  quality", flush=True)
+    print(f"{'ctx':>7} {'tok':>7} {'first tok/s':>11} {'median tok/s':>11} {'first TTFT':>10} {'median TTFT':>10} {'reuse':>6} quality"
+          "   (* = the cache carried it: not a prefill, CHARTER D17)", flush=True)
     t_dec0 = time.time()
-    # 39차: 1 s windows (were 2 s) with 0.5 s margins -- the 2K answers decode
-    # for ~3-4 s and produced 0-3 windows per boot; medians of step/s are
-    # comparable across window sizes.
+    # Keep the established 1 s window and 0.5 s edge margins; harder questions
+    # change the workload, not the timing definition.
     with br._StepWindows(bd, period=1.0) as sw:
-        facts = cq.FACTS
         for ctx in (int(c) for c in args.ctx.split(",")):
-            doc = cq.build(ctx, args.seed + ctx)
-            ttfts, hits, tok = [], [], 0
-            combined = bool(args.combine_min_ctx) and ctx >= args.combine_min_ctx
-            if combined:
-                # 39차: one request carries the three questions, so the document
-                # is prefilled ONCE (the 128K document cost 3 x 48 s before);
-                # three answers' worth of decode keeps the window count. The
-                # cold / warm TTFT pair survives at the contexts below the cut.
-                qs = "\n".join(f"{qi + 1}. {q}" for qi, (_, q, _old) in enumerate(facts))
-                content = f"문서:\n{doc}\n\n{INSTRUCTION_COMBINED}{qs}"
+            ttfts, tok = [], 0
+            reused_before = _st_counter(_metrics_text(bd.METRICS), "prefix_reused_tokens_total")
+            ctx_items = [item for item in items if item['ctx'] == ctx]
+            combined = len(ctx_items) == 1
+            for item in ctx_items:
                 t_req = time.monotonic()
-                timing = {"ctx": ctx, "question": "all"}
+                timing = {"ctx": ctx, "question": item['question'], "concurrency": 1}
                 text, ttft, ptok, ctok, finish = ask_stream(
-                    bd.URL, cq.MODEL, content, args.combined_max_tokens, timing,
-                    channel_trace=channel_traces,
-                    reasoning_budget=args.combined_reasoning_budget)
-                rec["requests"].append(timing)
+                    bd.URL, cq.MODEL, item['content'], item['max_tokens'], timing,
+                    channel_trace=channel_traces, reasoning_budget=item['reasoning_budget'])
                 phases.append((ctx, t_req + ttft, time.monotonic()))
+                rec["requests"].append(timing)
+                pending_quality.append((item, timing, finish))
                 tok = ptok or tok
                 gen_tokens += ctok
                 ttfts.append(ttft)
-                low = text.lower()
-                for qi, (_, q, _old) in enumerate(facts):
-                    good = all(any(alt in low for alt in group) for group in FACT_EXPECT[qi])
-                    hits.append("o" if good else "X")
-                    quality_total += 1
-                    quality_ok += good
-                    if not good:
-                        print(f"    MISS ctx~{ctx // 1000}K q={q!r} (combined) -> {text[:100]!r}", flush=True)
-                texts.append((f"ctx{ctx // 1000}K q-all", text, finish))
-            for qi, (_, q, _old) in enumerate([] if combined else facts):
-                content = f"문서:\n{doc}\n\n{INSTRUCTION}{q}"
-                t_req = time.monotonic()
-                timing = {"ctx": ctx, "question": qi}
-                text, ttft, ptok, ctok, finish = ask_stream(bd.URL, cq.MODEL, content, args.max_tokens, timing,
-                                                        channel_trace=channel_traces)
-                rec["requests"].append(timing)
-                phases.append((ctx, t_req + ttft, time.monotonic()))
-                tok = ptok or tok
-                gen_tokens += ctok
-                ttfts.append(ttft)
-                low = text.lower()
-                good = all(any(alt in low for alt in group) for group in FACT_EXPECT[qi])
-                hits.append("o" if good else "X")
-                quality_total += 1
-                quality_ok += good
-                if not good:
-                    print(f"    MISS ctx~{ctx // 1000}K q={q!r} -> {text[:100]!r}", flush=True)
-                texts.append((f"ctx{ctx // 1000}K q{qi}", text, finish))
-            cold, warm = ttfts[0], min(ttfts[1:]) if len(ttfts) > 1 else ttfts[0]
+                texts.append((f"ctx{ctx // 1000}K q{item['question']}", text, finish))
+            cold, warm = ttfts[0], median(ttfts)
+            # What this bracket took from the prefix cache instead of computing. Without it the
+            # first column cannot be read: it is prompt tokens over the first TTFT either way.
+            reused = max(0.0, _st_counter(_metrics_text(bd.METRICS), "prefix_reused_tokens_total") - reused_before)
+            share = reused / tok if tok else 0.0
             rec["prefill"].append({"ctx": ctx, "tok": tok, "cold_s": cold, "warm_s": warm,
                                    "cold_tok_s": tok / cold if cold > 0 else 0.0,
                                    "warm_tok_s": tok / warm if warm > 0 else 0.0,
-                                   "ttft_samples_s": ttfts,
+                                   "ttft_samples_s": ttfts, "first_s": cold, "median_s": warm,
+                                   "state": "prepared fresh-prefix; see steady_state validity",
+                                   "reused_tok": int(reused), "reused_frac": round(share, 4),
+                                   "cache_hit": share >= CACHE_HIT_FRACTION,
                                    "combined": combined})
             warm_col = f"{tok / warm:>11.0f}" if not combined else f"{'(1 req)':>11}"
             warm_t = f"{warm:>9.2f}s" if not combined else f"{'-':>10}"
-            print(f"{ctx:>7} {tok:>7} {tok / cold:>11.0f} {warm_col} {cold:>9.2f}s {warm_t}  {' '.join(hits)}", flush=True)
+            reuse_col = f"{share * 100:>5.0f}%" + ("*" if share >= CACHE_HIT_FRACTION else " ")
+            print(f"{ctx:>7} {tok:>7} {tok / cold:>11.0f} {warm_col} {cold:>9.2f}s {warm_t} {reuse_col} quality deferred", flush=True)
         if args.fixed_decode_tokens:
-            doc = cq.build(2000, args.seed + 2000)
-            qs = "\n".join(f"{i + 1}. {q}" for i, (_, q, _) in enumerate(facts))
-            content = (f"문서:\n{doc}\n\n{INSTRUCTION_COMBINED}{qs}\n"
-                       "세 답의 근거를 먼저 제시한 뒤 문서의 주제, 주요 개념, 사례와 한계를 "
-                       "한국어로 길고 상세하게 설명해줘. 내용을 여러 절로 구성해줘.")
             for rep in range(args.fixed_decode_reps):
                 timing = {"ctx": 2000, "question": "fixed-all", "rep": rep, "fixed_decode": True}
                 t_req = time.monotonic()
                 text, ttft, ptok, ctok, finish = ask_stream(
-                    bd.URL, cq.MODEL, content, args.fixed_decode_tokens, timing,
+                    bd.URL, cq.MODEL, fixed_item['content'], args.fixed_decode_tokens, timing,
                     min_tokens=args.fixed_decode_tokens, seed=args.seed + rep,
-                    channel_trace=channel_traces)
+                    channel_trace=channel_traces, reasoning_budget=fixed_item['reasoning_budget'])
                 phase = (2000, t_req + ttft, time.monotonic())
                 phases.append(phase)
                 fixed_phases.append(phase)
                 rec["requests"].append(timing)
                 gen_tokens += ctok
-                for qi in range(len(facts)):
-                    good = all(any(alt in text.lower() for alt in group) for group in FACT_EXPECT[qi])
-                    quality_total += 1
-                    quality_ok += good
+                pending_quality.append((fixed_item, timing, finish))
                 texts.append((f"fixed2K rep{rep}", text, finish))
                 print(f"fixed2K rep={rep} tokens={ctok}/{args.fixed_decode_tokens} "
                       f"decode={timing['decode_tok_s']:.2f} tok/s", flush=True)
     wall = time.time() - t_dec0
     metrics_after = _metrics_text(bd.METRICS)
+    c1_report = run.end()
+    c1_issues = steady_errors(c1_report, rec['requests'], 1)
+    rec['steady_state'] = dict(valid=not c1_issues, issues=c1_issues, profile='off', prefix='fresh',
+                              preparation='no observed specialization or capture' if not c1_issues else 'unverified')
     spec_after = _served_speculation(rec.get('boot_id')) if prove_spec else None
     prep_after = _served_speculation(rec.get('boot_id'), preparation=True) if prove_prep else None
     m1 = bd._parse_spec_metrics(metrics_after)
@@ -577,10 +616,25 @@ def main() -> int:
                       "samples": sw.traffic_samples, "issues": traffic_issues}
     rows = rec["prefill"]
     if len(rows) >= 2:
-        print(f"  warm 처리량: {rows[0]['warm_tok_s']:.0f} -> {rows[-1]['warm_tok_s']:.0f} tok/s "
+        print(f"  준비 후 처리량: {rows[0]['warm_tok_s']:.0f} -> {rows[-1]['warm_tok_s']:.0f} tok/s "
               f"(over {rows[0]['tok']} -> {rows[-1]['tok']} tokens)")
-    rec["quality"] = {"ok": quality_ok, "total": quality_total}
-    print(f"=> {quality_ok}/{quality_total} correct", flush=True)
+    # Grade only after sampling, traffic counters and the server session end.
+    # Raw completions have already been fsynced; these proof checks cannot add
+    # gaps to the measured decode windows.
+    quality_rows = []
+    if len(pending_quality) != len(channel_traces):
+        raise RuntimeError('missing final-channel evidence for quality grading')
+    for (item, timing, finish), events in zip(pending_quality, channel_traces):
+        result = run.grade(item, timing, events, finish, phase='measure-c1')
+        quality_rows.extend(result)
+        failed = [r['case'] + ':' + ','.join(k for k, ok in r['checks'].items() if not ok)
+                  for r in result if not r['passed']]
+        if failed:
+            print(f"    QUALITY ctx={item['ctx']}: {'; '.join(failed)}", flush=True)
+    rec['quality'] = quality.summarize(quality_rows)
+    quality_ok, quality_total = rec['quality']['ok'], rec['quality']['total']
+    print(f"=> {quality_ok}/{quality_total} reasoning cases passed; "
+          f"rubric {rec['quality']['score']}/{rec['quality']['max_score']}", flush=True)
 
     # ---- decode: only windows that lie INSIDE an answer's decode phase (after
     # its first token, before its end) count, bucketed by the context length --
@@ -649,7 +703,9 @@ def main() -> int:
             print(f"\n  [{tag}] {ks}")
     rec["korean"] = {"dirty": len(dirty), "n": n, "kinds": kinds_tot,
                      "hits": [(tag, k) for tag, k, _ in dirty]}
-    issues = list(traffic_issues) if args.require_exclusive else []
+    issues = list(traffic_issues) + c1_issues
+    if quality_ok != quality_total or dirty:
+        issues.append('C=1 quality or Korean corruption gate failed')
     if args.fixed_decode_tokens:
         if any(sb < sa for (_, sa), (_, sb) in zip(samp, samp[1:])):
             issues.append("engine step counter reset during workload")
@@ -684,10 +740,50 @@ def main() -> int:
     except Exception:
         pass
 
-    print(f"== onepass {args.name}: {time.time() - t_all:.0f}s total", flush=True)
-    os.makedirs(os.path.dirname(args.out), exist_ok=True)
-    with open(args.out, "a", encoding="utf-8") as f:
-        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    # C=4 and profiler replays have their own counters, requests and artifacts.
+    c4_items = items
+    rec['c4'] = []
+    for item in c4_items:
+        ctx = item['ctx']
+        suffix = f"{ctx}-q{item['question']}"
+        print(f'prepare C=4 ctx={ctx}', flush=True)
+        run.begin(f'prepare-c4-{suffix}', 4)
+        group(run, ask_stream, bd.URL, cq.MODEL, item, 4)
+        run.end()
+        run.begin(f'measure-c4-{suffix}', 4)
+        before = traffic_state(_metrics_text(bd.METRICS))
+        result = group(run, ask_stream, bd.URL, cq.MODEL, item, 4, kq, grade=True)
+        after = traffic_state(_metrics_text(bd.METRICS))
+        report = run.end()
+        errors = steady_errors(report, result['requests'], 4) + exclusive_errors(before, after, [], 4)
+        if any(r.get('corruption') or not all(q['passed'] for q in r['quality']) for r in result['requests']):
+            errors.append('C=4 quality or Korean corruption gate failed')
+        result.update(valid=not errors, issues=errors, traffic=dict(before=before, after=after),
+                      latency_artifacts=f'measure-c4-{suffix}')
+        rec['c4'].append(result)
+        issues.extend(f'C=4 ctx={ctx}: {e}' for e in errors)
+        print(f"C=4 ctx={ctx}: {result['aggregate_output_tok_s']:.2f} total tok/s; valid={not errors}", flush=True)
+        run.checkpoint()
+    rec['quality_c4'] = quality.summarize([q for result in rec['c4'] for r in result['requests'] for q in r['quality']])
+    rec['diagnostics'] = []
+    diagnostic_items = [next(item for item in items if item['ctx'] == ctx) for ctx in map(int, args.ctx.split(','))]
+    for concurrency in (1, 4):
+        for item in diagnostic_items:
+            phase = f"diagnostic-c{concurrency}-{item['ctx']}"
+            print(phase, flush=True)
+            run.begin(phase, concurrency, diagnostic=True)
+            group(run, ask_stream, bd.URL, cq.MODEL, item, concurrency)
+            report = run.end()
+            complete = bool(report['ranks']) and all(r.get('complete') and r.get('traces') for r in report['ranks'])
+            rec['diagnostics'].append(dict(phase=phase, complete=complete))
+            if not complete:
+                issues.append(f'{phase}: detailed GPU evidence incomplete')
+    rec['evidence_issues'] = issues
+    if issues:
+        rec['decode'].setdefault('raw_windows_med', rec['decode']['windows_med'])
+        rec['decode']['windows_med'] = None
+    print(f"== onepass {args.name}: {time.time() - t_all:.0f}s total; artifacts {run.path}", flush=True)
+    run.finish()
     return 2 if issues else 0
 
 

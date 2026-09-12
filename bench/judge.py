@@ -61,12 +61,15 @@ def compatible(a, b):
     if b.get("overlay") and a.get("overlay") != b["overlay"]:
         return False
     return all(a.get(k) == b.get(k) for k in
-               ("harness", "doc_lang", "thinking", "workload", "generation_budget", "runtime"))
+               ("harness", "doc_lang", "thinking", "workload", "generation_budget", "runtime", "measurement_policy", "engine_shape", "quality_protocol"))
 
 
 def record_errors(rec):
     """Missing gates and unknown markers cannot become reusable evidence."""
     errors = []
+    errors.extend(rec.get('evidence_issues') or [])
+    if rec.get('harness', 0) >= 41 and (rec.get('steady_state') or {}).get('valid') is not True:
+        errors.append('steady preparation state not proven')
     q, k, d = (rec.get(key) or {} for key in ("quality", "korean", "decode"))
     if not isinstance(q.get("total"), int) or q["total"] <= 0 or q.get("ok") != q["total"]:
         errors.append(f"quality {q.get('ok')}/{q.get('total')}")
