@@ -2,6 +2,7 @@
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -16,8 +17,16 @@ outputs=[]
 container=json.loads(subprocess.check_output(['docker','inspect','st-glm53'],text=True))[0]
 assert container['State']['Running']
 env=dict(v.split('=',1) for v in container['Config']['Env'] if '=' in v)
-assert env.get('STK_execution')=='parity' and env.get('STK_moe_static')=='t,r,sf6,q0'
-assert container['Config']['Image']=='st-engine:perf-f4d7-a'
+assert not any(name in env for name in ('STK_execution', 'STK_moe_static'))
+expected_image = os.environ.get('BENCH_ST_IMAGE')
+if expected_image:
+ assert container['Config']['Image'] == expected_image, (container['Config']['Image'], expected_image)
+expected_prefill = os.environ.get('BENCH_ST_MLA_PREFILL')
+if expected_prefill:
+ api_port = os.environ.get('GLM53_API_PORT', '8000')
+ with urllib.request.urlopen(f'http://127.0.0.1:{api_port}/metrics', timeout=5) as r:
+  lane_metrics = r.read().decode()
+ assert f'mla_prefill="{expected_prefill}"' in lane_metrics, expected_prefill
 runtime=json.loads(subprocess.check_output(['docker','exec','st-glm53','cat','/opt/st/runtime-manifest.json'],text=True))
 identity=dict(engine='st',boot_id=container['Id']+'|'+container['State']['StartedAt'],
               image=container['Config']['Image'],engine_source_sha256=runtime['engine_source_sha256'],
