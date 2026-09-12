@@ -140,6 +140,8 @@ class Glm53Net:
         if comm.world_size != TP:
             raise ValueError(f"glm53 is written for TP={TP}; comm has world {comm.world_size}")
         self.F, self.comm, self.lanes = F, comm, lanes
+        self._norm = lanes.rmsnorm or rmsnorm
+        self._activation = lanes.swiglu or swiglu_clamped
         self.rank = comm.rank
         self.layers = list(range(F.layers)) if layers is None else list(layers)
         if not self.layers or len(set(self.layers)) != len(self.layers) or any(not 0 <= L < F.layers for L in self.layers):
@@ -398,7 +400,10 @@ class Glm53Net:
         N = x.shape[0]; kp, nh, d = F.kpool, F.idx_heads, F.idx_dim
         q = self.linear(qr, n + "wq_b").view(N, nh, d)
         k = self.linear(x, n + "wk")
-        k = Fn.layer_norm(k.float(), (d,), p[n + "k_norm_w"], p[n + "k_norm_b"], K_NORM_EPS).to(x.dtype)
+        if self.lanes.layernorm is None:
+            k = Fn.layer_norm(k.float(), (d,), p[n + "k_norm_w"], p[n + "k_norm_b"], K_NORM_EPS).to(x.dtype)
+        else:
+            k = self.lanes.layernorm(k, p[n + "k_norm_w"], p[n + "k_norm_b"], K_NORM_EPS)
         w = x.float() @ p[n + "w_heads"].T                                           # fp32 head gate, as served
         gate = self.linear(x, n + "gate")                                           # [N, 128] per-channel pool score
         q8, qs = self.lanes.indexer_quant(q.reshape(-1, d))
@@ -480,9 +485,9 @@ class Glm53Net:
         F, p, n = self.F, self.p, f"L{L}.mla."
         N = x.shape[0]; Hl = self.Hl
         q_a, kv_c = self.linear(x, n + "qkv_a").split([F.q_lora, F.kv_lora], dim=-1)
-        qr = rmsnorm(q_a, p[n + "q_a_norm"], F.rms_eps)
+        qr = self._norm(q_a, p[n + "q_a_norm"], F.rms_eps)
         q = self.linear(qr, n + "q_b").view(N, Hl, F.qk_nope)
-        kv_n = rmsnorm(kv_c, p[n + "kv_a_norm"], F.rms_eps)
+        kv_n = self._norm(kv_c, p[n + "kv_a_norm"], F.rms_eps)
         latent = caches.latent(L)
         # A captured step asks for the same few lengths forever, so they come from the kept
         # constants; an eager prefill's follow the request and would grow that cache unbounded.
@@ -502,7 +507,7 @@ class Glm53Net:
     def _dense(self, L: int, x: torch.Tensor, reduce=None) -> torch.Tensor:
         p, n = self.p, f"L{L}.mlp."
         g, u = self.linear(x, n + "gate_up").chunk(2, dim=-1)
-        return (reduce or self.comm.all_reduce)(self.linear(swiglu_clamped(g, u, self.F.swiglu_limit), n + "down"))
+        return (reduce or self.comm.all_reduce)(self.linear(self._activation(g, u, self.F.swiglu_limit), n + "down"))
 
     def _dense_nvfp4(self, L: int, x: torch.Tensor, reduce=None) -> torch.Tensor:
         # Fixed one-expert routing: no router/selection or shared expert. These
@@ -515,7 +520,10 @@ class Glm53Net:
         """noaux_tc: sigmoid scores fp32, select by score + bias, weight by the
         raw scores renormalised, times routed_scaling_factor."""
         F, p, n = self.F, self.p, f"L{L}.moe."
-        s = torch.sigmoid(x.float() @ p[n + "gate"].float().T)
+        logits = x.float() @ p[n + "gate"].float().T
+        if self.lanes.route_weights is not None:
+            return self.lanes.route_weights(logits, p[n + "bias"], F.topk_experts, F.routed_scale)
+        s = torch.sigmoid(logits)
         sel = (s + p[n + "bias"]).topk(F.topk_experts, dim=-1).indices
         w = s.gather(-1, sel)
         return sel.to(torch.int32), w / w.sum(-1, keepdim=True) * F.routed_scale
@@ -523,10 +531,12 @@ class Glm53Net:
     def _moe(self, L: int, x: torch.Tensor, reduce=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.moe."
         sel, w = self.route(L, x)
-        out = self._experts[L](x, sel, w).float()
+        out = self._experts[L](x, sel, w)
         g, u = self.linear(x, n + "sh_gate_up").chunk(2, dim=-1)
-        out += self.linear(swiglu_clamped(g, u, F.swiglu_limit), n + "sh_down").float()
-        return (reduce or self.comm.all_reduce)(out.to(x.dtype))
+        shared = self.linear(self._activation(g, u, F.swiglu_limit), n + "sh_down")
+        # Both lanes return BF16. Its add accumulates in FP32 and rounds once,
+        # just like the former float() + float() followed by to(BF16).
+        return (reduce or self.comm.all_reduce)(out + shared)
 
     # -- the step ---------------------------------------------------------------------------
     def forward(self, step: Step, caches: Caches, finish: bool = True, aux_layers=None):
@@ -572,7 +582,7 @@ class Glm53Net:
         if not finish:
             return res, post, comb, x
         res = self.lanes.mhc_post(x, res, post, comb)
-        h = rmsnorm(res.float().mean(1).to(x.dtype), self.p["norm"], F.rms_eps)      # hc_contract, final norm
+        h = self._norm(res.float().mean(1).to(x.dtype), self.p["norm"], F.rms_eps)      # hc_contract, final norm
         if sp:
             h = self.comm.all_gather(h, dim=0)
         if aux_layers:

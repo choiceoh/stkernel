@@ -85,6 +85,24 @@ class BufferedGramTests(unittest.TestCase):
         self.assertEqual(c.staging, {})
         self.assertEqual(c.progress(), 0)
 
+    def test_peak_only_masked_strided_rows_need_no_hessian_staging(self):
+        class Layer:
+            observer = None
+        layer = Layer()
+        c = Calibration("cuda", max_decode_rows=28)
+        c.attach("x", layer, [("peak", 3, 95, False)], small_rows=True)
+        x = torch.randn(7, 128, device="cuda", dtype=torch.bfloat16)
+        mask = torch.tensor([1, 0, 1, 0, 1, 1, 0], device="cuda", dtype=torch.bool)
+        layer.observer(x, mask)
+        self.assertEqual(c.progress(), 0)
+        c.arm()
+        layer.observer(x, mask)
+        layer.observer(x, None)
+        self.assertEqual(c.progress(), 11)
+        self.assertEqual(c.H, {})
+        self.assertEqual(c.staging, {})
+        torch.testing.assert_close(c.amax["peak"], x[:, 3:98].float().abs().amax(0), rtol=0, atol=0)
+
 
 if __name__ == "__main__":
     unittest.main()

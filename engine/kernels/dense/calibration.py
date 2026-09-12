@@ -94,6 +94,13 @@ class Calibration:
     def observe(self, name: str, flat: torch.Tensor, rows_ok, small_rows: bool) -> None:
         if flat.shape[0] <= self.max_decode_rows and not small_rows:
             return
+        if self.device.type == "cuda" and flat.shape[0] <= self.max_decode_rows:
+            from .calibration_gram import observe
+            for key, start, width, _hessian in self.tiles[name]:
+                buffer, cursor = self.staging.get(key, (None, None))
+                observe(flat[:, start:start + width], rows_ok, buffer, self.H.get(key), cursor,
+                        self.armed, self.rows[key], self.amax[key])
+            return
         xf = flat.float()
         if rows_ok is not None:
             xf = xf * rows_ok.to(xf.dtype).view(-1, 1)
@@ -106,13 +113,8 @@ class Calibration:
         for key, start, width, hessian in self.tiles[name]:
             part = xf[:, start:start + width]
             if hessian:
-                if key in self.staging and flat.shape[0] <= self.max_decode_rows:
-                    from .calibration_gram import update
-                    buffer, cursor = self.staging[key]
-                    update(part, buffer, self.H[key], cursor, self.armed)
-                else:
-                    self.flush(key)
-                    self.H[key].addmm_(part.t(), part)
+                self.flush(key)
+                self.H[key].addmm_(part.t(), part)
             self.rows[key] += count
             torch.maximum(self.amax[key], part.abs().amax(0), out=self.amax[key])
 
