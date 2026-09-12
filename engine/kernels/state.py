@@ -124,23 +124,25 @@ def stage_boundaries(caches, slots, ctx_before, counts):
     kda = [L for L in caches.layers if not F.is_dsa(L)]
     if not kda:
         return
-    state_f32, state_bf16 = caches.state.view(torch.float32), caches.state.view(torch.bfloat16)
-    stage_f32, stage_bf16 = caches.stage_store.view(torch.float32), caches.stage_store.view(torch.bfloat16)
+    recurrent = caches._fields["rec", kda[0]]
+    state_rec, state_bf16 = caches.state.view(recurrent.dtype), caches.state.view(torch.bfloat16)
+    stage_rec, stage_bf16 = caches.stage_store.view(recurrent.dtype), caches.stage_store.view(torch.bfloat16)
+    rec_size = recurrent.element_size()
     tables = getattr(caches, "_stage_tables", None)
     if tables is None:
         # the layout's offsets are constants: built once, not four host-to-device copies (each a stream wait) per step
         dev = slots.device
         tables = caches._stage_tables = (
-            torch.tensor([caches._fields["rec", L].storage_offset() - state_f32.storage_offset() for L in kda], device=dev),
-            torch.tensor([caches._stage["rec", L].storage_offset() - stage_f32.storage_offset() for L in kda], device=dev),
+            torch.tensor([caches._fields["rec", L].storage_offset() - state_rec.storage_offset() for L in kda], device=dev),
+            torch.tensor([caches._stage["rec", L].storage_offset() - stage_rec.storage_offset() for L in kda], device=dev),
             torch.tensor([caches._fields["conv", L].storage_offset() - state_bf16.storage_offset() for L in kda], device=dev),
             torch.tensor([caches._stage["conv", L].storage_offset() - stage_bf16.storage_offset() for L in kda], device=dev))
     rec_off, rec_stage_off, conv_off, conv_stage_off = tables
     n, cells = int(slots.numel()), F.spec_k + 1
     cell = F.kda_heads_local * F.kda_dim * F.kda_dim
     _stage_rec[(n, len(kda), triton.cdiv(cell, 1024))](
-        state_f32, stage_f32, rec_off, rec_stage_off, slots, ctx_before, counts, F.block, cells, cell,
-        caches.layout.slot_bytes // 4, caches.stage_bytes // 4, 1024)
+        state_rec, stage_rec, rec_off, rec_stage_off, slots, ctx_before, counts, F.block, cells, cell,
+        caches.layout.slot_bytes // rec_size, caches.stage_bytes // rec_size, 1024)
     channels, width, taps = 3 * F.kda_heads_local * F.kda_dim, F.conv - 1 + F.spec_k, F.conv - 1
     _stage_conv[(n, len(kda), triton.cdiv(channels, 256))](
         state_bf16, stage_bf16, conv_off, conv_stage_off, slots, ctx_before, counts, F.block, width, taps, channels,

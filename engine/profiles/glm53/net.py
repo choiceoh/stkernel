@@ -118,7 +118,7 @@ class Step:
 class Caches(Protocol):
     """What a sequence's state lives in. Flat per-layer regions (the arena's),
     addressed by slot ids the caller's block tables produce, plus per-slot rings."""
-    def kda(self, layer: int, slot: int) -> "tuple[torch.Tensor, torch.Tensor]": ...   # conv ring [C, conv-1+K] bf16 by pos % width; rec ring [K+1, Hl, D, D] f32 by pos % (K+1)
+    def kda(self, layer: int, slot: int) -> "tuple[torch.Tensor, torch.Tensor]": ...   # conv ring [C, conv-1+K] bf16 by pos % width; rec ring [K+1, Hl, D, D] f32/f16 by pos % (K+1)
     def latent(self, layer: int) -> torch.Tensor: ...            # [S, 512] e4m3, all slots of the box
     def pool_keys(self, layer: int) -> torch.Tensor: ...         # [P, 128] e4m3 (FWHT-rotated, per-row scaled)
     def pool_scales(self, layer: int) -> torch.Tensor: ...       # [P] f32
