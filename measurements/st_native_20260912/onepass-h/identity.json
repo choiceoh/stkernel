@@ -1,0 +1,8 @@
+{
+  "engine": "st",
+  "boot_id": "eef07ed391eb0ec18c55e9d1a549534edfdca5e6fffd4c7dd7e804f291eac773|2026-09-12T03:17:40.713268187Z",
+  "image": "st-engine:perf-f4d7-h",
+  "engine_source_sha256": "de14e0d8fc16cac0fff176cf743425baaf47e94cda29ca29f01c1a19be2e3245",
+  "step_counter_source": "GET / -> steps (ST Runner.step counter)",
+  "knobs": {}
+}
