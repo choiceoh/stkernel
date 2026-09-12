@@ -75,6 +75,19 @@ def wait_free(owner):
 
 
 def prepare_cache(arm):
+    recovery = os.environ.get('ST_DECODE22_RECOVERY_CACHE')
+    if recovery:
+        assert len(ARMS) == 1 and arm == 'A', 'recovery cache is only for a candidate-only retry'
+        cache = Path(recovery)
+        # A failed pre-request boot left usable RTN packs and compiler caches,
+        # but must not smuggle serving-derived calibration into this retry.
+        script = 'import pathlib,sys; p=pathlib.Path(sys.argv[1]); assert p.is_dir(); ' \
+                 'assert not any((p/"mkcalib").rglob("*.pt")), "recovery contains calibration"'
+        for host in HOSTS:
+            node(host, ['python3', '-c', script, str(cache)], timeout=30)
+        (ROOT / 'recovery-cache.json').write_text(json.dumps(dict(path=str(cache),
+            policy='reuse failed pre-request boot RTN packs and JIT cache; no calibration blobs; fresh request prefixes')) + '\n')
+        return cache
     cache = Path(f'/home/choiceoh/glm53-cache-{ROOT.name}-{arm}')
     for host in HOSTS:
         script = 'import pathlib,subprocess,sys; src,dst=map(pathlib.Path,sys.argv[1:]); assert src.is_dir(); ' \

@@ -957,6 +957,13 @@ def fleet(a) -> int:
             engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device, engine.eos)   # response_format (json_object / json_schema), every rank
         if engine.memory is None or not engine.memory.ready:
             raise RuntimeError("full-model serving requires runtime memory qualification")
+        # Vision/grammar qualification can leave several GiB of inactive
+        # allocator blocks behind (3.8 GiB on the decode22 boot). Return those
+        # once before admission; live tensors and graph pools remain owned.
+        with rec.phase("release warmup cache"):
+            reserved = torch.cuda.memory_reserved()
+            torch.cuda.empty_cache()
+            rec.gauge("production_warmup_cache_returned_bytes", reserved - torch.cuda.memory_reserved())
         engine.memory.checkpoint("production/ready")
         import json
         proof = native_execution_report(net, engine.drafter)
