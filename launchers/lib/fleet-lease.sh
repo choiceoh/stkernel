@@ -26,9 +26,11 @@ _fleet_lease_is_head() {
 fleet_lease() {
   local module="${FLEET_REPO:?FLEET_REPO must name this checkout}/engine/base/fleet_lease.py"
   if _fleet_lease_is_head; then
-    python3 "$module" $* --path "$FLEET_LEASE_PATH"
+    python3 "$module" "$@" --path "$FLEET_LEASE_PATH"
   else
-    ssh $FLEET_LEASE_SSH "choiceoh@$FLEET_HEAD" "python3 - $* --path $FLEET_LEASE_PATH" < "$module"
+    local quoted
+    printf -v quoted '%q ' "$@" --path "$FLEET_LEASE_PATH"
+    ssh $FLEET_LEASE_SSH "choiceoh@$FLEET_HEAD" "python3 - $quoted" < "$module"
   fi
 }
 
@@ -37,9 +39,8 @@ fleet_lease() {
 # lease would look stale after GRACE_S and another session could take the fleet underneath it.
 fleet_lease_beat() {
   local owner=$1
-  # Callers capture the PID with $(fleet_lease_beat ...). The background
-  # loop must not retain that capture pipe, or substitution waits forever
-  # before the caller can start the container which supplies lease evidence.
-  ( while sleep 120; do fleet_lease renew --owner "'$owner'" >/dev/null 2>&1 || exit 0; done ) </dev/null >/dev/null 2>&1 &
+  # Callers capture the PID with $(...). Inheriting that pipe keeps the shell
+  # waiting for this loop forever, before it can even start the probe container.
+  ( while sleep 120; do fleet_lease renew --owner "$owner" >/dev/null 2>&1 || exit 0; done ) </dev/null >/dev/null 2>&1 &
   echo $!
 }

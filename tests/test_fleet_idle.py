@@ -59,6 +59,16 @@ class IdleTests(unittest.TestCase):
         self.now = 1000.0 + seconds
         return idle.tick(self.directory)
 
+    def test_a_queued_single_gpu_check_is_not_fleet_work(self):
+        """It runs on another host's card (the 5050 on ost-97x): the controller must not
+        hold the fleet's recovery for it, while a queued boot still counts (2026-09-12)."""
+        self.queue(kind='single')
+        self.assertFalse(idle.runnable_queue(self.directory, False))
+        self.assertEqual(self.elapsed(300)['phase'], 'healthy')
+        self.restore.assert_called_once()
+        self.queue(kind='boot')
+        self.assertTrue(idle.runnable_queue(self.directory, False))
+
     def test_exact_five_minute_boundary_and_no_repeat_before_next_quiet_window(self):
         self.assertEqual(self.elapsed(299.99)['phase'], 'waiting')
         self.restore.assert_not_called()

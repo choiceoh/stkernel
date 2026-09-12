@@ -178,7 +178,7 @@ class Supervisor:
 
     def held(self):
         try:
-            return (self.directory / 'holder').read_text().split('|')[0] == self.session
+            return handoff.holder_path(self.directory, self.kind).read_text().split('|')[0] == self.session
         except FileNotFoundError:
             return False
 
@@ -293,6 +293,16 @@ class Supervisor:
             environment['FLEET_PREPARE_MANIFEST'] = accepted['prepare_manifest']
         else:
             environment.pop('FLEET_PREPARE_MANIFEST', None)
+        if getattr(self, 'kind', 'boot') == handoff.SINGLE:
+            # The lane's decision, applied after the payload's own env prefix so nothing in
+            # the command can move the check elsewhere: the ST runner takes ST_PROBE_HOST to
+            # mean "run the container on that host's GPU and take no fleet lease".
+            import fleet_single
+            host = fleet_single.host(self.env)
+            if not host:
+                raise ValueError('the single-GPU lane has no host (FLEET_SINGLE_GPU_HOST is empty); '
+                                 'resubmit with --fleet to take the four Sparks')
+            environment['ST_PROBE_HOST'] = host
         return payload, payload_environment(environment)
 
     def run(self):

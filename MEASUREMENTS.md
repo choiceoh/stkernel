@@ -225,7 +225,7 @@ vs 3.4e-2/1.4e-1 — **캐시 경로는 아무것도 더하지 않는다**. PASS
 
 ### 45차 — 절 색인 (§ 번호로 찾는다)
 
-이 캠페인은 절 92개다(§2~§95, 결번 §35 · §47). 파일 순서는 절 번호 순이 아니다 — 세 절이 뒤에 다시 번호를 받았고(§76~§78 은 옛 §30~§32, 그 사연은 그 절들이 적고 있다) 새 절은 앞에 끼워 넣기도 했다. **찾을 때는 `45차 §N` 으로 검색한다.** `·보관` 이 붙은 절은 본문이 [MEASUREMENTS_ARCHIVE.md](MEASUREMENTS_ARCHIVE.md) 에 있다 — 출하돼 더 바뀌지 않는 것들이고, 고치지 않고 옮겼다. 절을 새로 쓰면 이 표에 한 줄 더한다.
+이 캠페인은 절 94개다(§2~§97, 결번 §35 · §47). 파일 순서는 절 번호 순이 아니다 — 세 절이 뒤에 다시 번호를 받았고(§76~§78 은 옛 §30~§32, 그 사연은 그 절들이 적고 있다) 새 절은 앞에 끼워 넣기도 했다. **찾을 때는 `45차 §N` 으로 검색한다.** `·보관` 이 붙은 절은 본문이 [MEASUREMENTS_ARCHIVE.md](MEASUREMENTS_ARCHIVE.md) 에 있다 — 출하돼 더 바뀌지 않는 것들이고, 고치지 않고 옮겼다. 절을 새로 쓰면 이 표에 한 줄 더한다.
 
 - **§2** — 네 기본값을 형태로: TP=4·GB10·NVFP4 기본형·레거시 없음  ·보관
 - **§3** — 한 스텝 함수, 위치 링 상태: 디코드·검증 스텝과 롤백이 프리필과 같은 코드  ·보관
@@ -319,6 +319,9 @@ vs 3.4e-2/1.4e-1 — **캐시 경로는 아무것도 더하지 않는다**. PASS
 - **§93** — D17 을 처음 집행했다: 오늘 성능 PR 넷에서 잰 이득이 없고, 디코드는 낮게 나왔다
 - **§94** — 테스트 부팅은 **경로가 프로덕션과 같아야** 한다, 그리고 본체는 계측창이다
 - **§95** — 큐가 허용한 검사 여섯 중 셋은 **큐가 시작은 하되 돌릴 수 없었다**
+- **§96** — 관측 겹치기를 준비했다: observe 는 commit 전에 계산을 시작할 수 있다
+- **§97** — 서빙 중에 멎은 플릿: 같은 집합통신에 네 랭크가 서로 다른 형상으로 들어갔다
+- **PR #767** — GPU 하나면 되는 검사는 플릿이 아니라 **ost-97x 의 5050** 으로: 큐에 레인이 둘
 
 ### 45차 §23 — 프로덕션 전환 시도: 창·45층 4노드 부팅·문 사다리, 그리고 깨진 글의 원인 = KDA `o_norm` epsilon (2026-09-11 밤 ~ 09-12 새벽)
 
@@ -1254,3 +1257,78 @@ vp 38,720 으로 나누면 **일곱 행 대 여섯 행**이다. `all_gather_into
 **아직 없는 것**: peek 의 실물 관측값. 이 날 노트북에서 플릿 헤드(10.10.10.2)는 도달 불가였고,
 네트워크 루프는 로컬 가짜 `/metrics` 로만 검증했다(스크랩당 20스텝 증가 → 39.7 step/s).
 테스트 13 케이스(GPU·네트워크 없음) 통과, `tools/check.py` 1 ok.
+
+### 45차 — GPU 하나면 되는 검사는 플릿이 아니라 **ost-97x 의 5050** 으로: 큐에 레인이 둘 (2026-09-12~13, 맥→srv4/srv2, PR #767)
+
+운영자 "4gpu말고 1gpu만 필요한 작업은 ost-97x에서 5050으로 하게끔 하자 플릿예약에서".
+
+**왜 필요했나.** §26 이 ST 검사를 큐에 세운 이유는 "같은 네 노드를 쓴다" 였다. 그런데 큐가 허용한 ST 검사
+여섯(§95) 중 `--distributed` 가 아닌 것은 전부 **컨테이너 하나, GPU 하나**다 — 네 랭크가 한 카드 위의 스레드
+넷이다(`docker run --gpus all <probe>`; engine/README 의 "한 노드, TP=4 스레드"). 그 검사가 플릿 보유자 자리를
+차지하면 §90~§91 처럼 창을 기다리고, 돌 때는 스파크 넷을 잡고 하나만 쓴다. 한 장짜리 카드가 따로 있으면
+거기서 돌면 된다.
+
+**해결 — 큐에 레인을 둘로.**
+- **분류는 승인 계약이 한다**: `fleet_onepass.validate` 가 `gpus` 를 돌려준다. ST 엔트리(`run_engine_check.sh`,
+  `run_engine_probe.sh`)에 `--distributed` 가 없으면 1, 나머지(pair·chain·ab-lever·onepass·experiments·AR
+  캠페인·`--distributed`)는 4. `run --gpu` 는 gpus=1 이고 boot 종류이면 `single` 로 바꾼다("needs one GPU, not
+  four: single-GPU lane (5050 on ost-97x)"). `--fleet` 로 스파크를 고집할 수 있고, `FLEET_SINGLE_GPU_HOST=` 를
+  비우면 레인이 꺼진다(그러면 예전대로 플릿). 레인 이름으로 부팅을 한 장에 보낼 수는 없다 — `single` 은
+  gpus=1 이 아닌 명령을 거부한다.
+- **레인은 자기 holder 를 가진다**: `holder-single`. 파일을 따로 둔 이유 — `holder` 를 읽는 것들(ST 런처, 유휴
+  컨트롤러, restore debt, AR 캠페인)은 전부 그걸 **플릿**의 뜻으로 읽는다. 5050 의 검사가 그들에게 플릿 점유로
+  보이면 안 된다. `fleet_handoff.holder_path(kind)` 가 한 곳에서 정한다.
+- **서로 기다리지 않는다**: `_try_hold` 는 큐(하나, 우선순위로 정렬됨)에서 **자기 레인의 첫 줄**을 잡는다
+  (`lane_front`). 부팅 뒤에 선 검사는 지금 돌고, 검사 뒤에 선 부팅도 지금 돈다. 단일 레인은 ST 엔진·서빙·레거시
+  체인 검사를 건너뛴다 — 그건 스파크 얘기다.
+- **증거는 그 호스트 것**: 허가 직전에 `bench/fleet_single.py` 가 ssh 로 `nvidia-smi --query-compute-apps` 를
+  읽는다(20 초 캐시). 프로세스가 있으면 "busy outside this queue -- pid …", 못 닿거나 못 읽으면 "cannot say it is
+  free" — 둘 다 거부(D3). 거부 사유는 **바뀔 때만** 로그에 적는다(초당 한 줄이 아니라).
+- **실행은 러너가 그리로 간다**: 슈퍼바이저(`fleet_boot.py`)가 단일 레인의 페이로드에 `ST_PROBE_HOST` 를 준다 —
+  페이로드의 env 접두사 **뒤에**, 명령이 자기 호스트를 고를 수 없도록(`validate` 는 명령 쪽 `ST_PROBE_HOST` 를
+  거부한다). `probes/run_engine_probe.sh` 는 그 값이 있으면 `engine/`·`probes/` 를 rsync 하고, 컨테이너를 거기서
+  돌리고, **플릿 리스를 잡지 않는다**. 여기서 죽으면 원격 컨테이너도 지운다(trap).
+- 유휴 컨트롤러는 single 줄을 "돌 일" 로 세지 않고(`runnable_queue`), 단일 레인의 enqueue/acquire/release 는
+  플릿 시계를 건드리지 않는다. `status` 에 `single (5050 on ost-97x): …` 한 줄, `kick [--force] single`,
+  `show`/board 에 표시, 원장(ledger.tsv)에 kind `single`. `FLEET_RULES=2`.
+
+**정직한 한계.** (1) ost-97x 쪽 준비는 이 변경이 하지 않는다: srv2 에서 BatchMode ssh(사용자는 플릿과 같은
+`choiceoh` 를 가정; `FLEET_SINGLE_GPU_HOST=user@ost-97x` 로 바꿀 수 있다), docker + NVIDIA 런타임, 거기서 빌드한
+`st-engine:glm53`(seed 이미지 ID 고정은 build.sh 그대로), 가중치가 필요한 검사면 `/home/choiceoh/models`. 없으면
+러너가 ABORT 로 어느 것인지 말한다. (2) RTX 5050 은 sm_120 이고 스파크는 sm_121a, 메모리는 8 GiB — 거기서 나온
+판정은 **그 카드의 것**이다. 가중치 검사(`--layers 0-4` 의 served 레인)가 8 GiB 에 들어가는지는 재 봐야 안다;
+안 들어가면 `--fleet`. (3) ost-97x 는 2026-09-13 현재 srv2 에서 이름이 안 풀린다(DNS 도 `/etc/hosts` 도 없다). 호스트가 생기기
+전까지 단일 레인 티켓은 그 이유를 말하며 기다리고(`status`·`wait`), `run --gpu --fleet` 가 우회다. 실물 5050
+왕복은 아직 없다.
+
+**검증.** (1) 맥(GPU 없음): 플릿 스위트 409 tests 중 실패 29 — 깨끗한 main 복사본도 같은 29 → 회귀 0.
+(2) **srv4(Linux, aarch64)**: 같은 스위트를 임시 얕은 클론에서 브랜치와 origin/main 으로 각각 — 브랜치
+`409 tests, FAILED (failures=27, errors=2)`, main `393 tests, FAILED (failures=27, errors=2)`. **그 29 는 맥 탓이 아니다**: srv4 에서도 main 이 똑같이 실패한다
+(experiments·coalescing·feedback·retry — 이미 빨갛던 테스트들, 이 PR 밖). 새 12 케이스(`tests/test_fleet_single.py`)는
+진짜 `flock`·`timeout` 위에서 전부 통과. (3) **srv2(컨트롤러, 라이브 큐, 읽기만)**:
+이 브랜치의 `fleet.sh status` 가 `fleet: FREE` 옆에 `single (5050 on ost-97x): ost-97x: cannot read its GPU (rc 255:
+ssh: Could not resolve hostname ost-97x …) -- this queue cannot say it is free` 를 답했다 — 레인은 보이고, 이름이 안
+풀리는 호스트를 자유로 치지 않는다(D3). `classify` → gpu, `preflight --single` → PASS(`SKIP declared-knob check
+(single: no launcher in the path)`).
+
+**그때 본 것 하나(내 것 아님).** 큐의 `stkda-deferred0912v7` 이 매초 `hold refused: ST engine occupies the fleet
+(lease: unreadable from …/runners/40b69dc8…)` 로 거부되고 있었다 — 러너 스냅샷에 `launchers/` 가 없어 리스를 못
+읽는 기존 결함이고, "리스를 큐 아래로" 옮기는 다른 세션의 PR 이 닫는다. 단일 레인은 리스를 쓰지 않으므로 이
+결함과 무관하다.
+
+**부수 사고와 복구.** 브랜치에서 돌린 `preflight` 가 공유 진입점 `~/glm53-logs/fleet.sh` 를 rules 2 로 동기화해
+버렸다(preflight 의 설계된 동작 — 머지된 코드라면 옳다). 머지 전에는 main 체크아웃의 preflight 가 "refusing to
+move the shared entry back" 으로 FAIL 하는 창이 생기므로 즉시 main 의 사본으로 되돌렸다(md5 대조, rules 1).
+머지 뒤 첫 preflight 가 정상적으로 2 로 올린다. 머지 안 된 브랜치로 컨트롤러에서 preflight 를 돌리지 말 것.
+
+새 테스트 16: `tests/test_fleet_single.py` 12 — 증거 넷(자유·바쁨·불통·질의 실패, 사용자 지정, TTL 캐시, CLI),
+계약 넷(셸과 모듈의 기본값 일치, holder 분리와 런처는 플릿 holder 만 읽음, 러너의 원격 경로에 리스 없음, gpus
+셈), 그리고 **실제 `bench/fleet.sh` 의 `_try_hold`/`_release`/`_kick` 을 셸 심(ssh·docker·flock·timeout·date)으로
+돌린 레인 시나리오** — A(boot) 보유 중 B(single) 허가, C(boot) 거부, 5050 이 바쁘거나 불통이면 D 거부(사유별 로그
+한 줄), 풀리면 D 허가, A 반납 뒤 C 허가, `kick --force single`; 레인이 꺼지면 거부; `run --gpu` 가 준비 단계 전에
+레인을 고르는 것과 `--fleet`·빈 호스트·`--distributed`·pair 는 플릿에 남는 것; `preflight --single` 이 부팅을
+거부하는 것. 여기에 onepass 1(계약의 gpus 와 single 의 거부) + handoff 1(자기 holder, 플릿 시계·debt 불변) +
+inspect 1(두 holder 나란히, 대기 대상은 자기 레인) + idle 1(single 줄은 플릿 일이 아님).
+`test_fleet_experiments` 의 실제 승인 함수 추출 테스트는 새 한 줄 헬퍼 넷(`lane_of`·`holder_file`·`lane_front`·
+`kind_of`)을 같이 뽑도록 고쳤다. `FLEET_AUDIT` 갱신. 이름: 규칙 9 대로 PR 번호다 — §97 로 썼다가 main 의
+§97(PR #759)이 먼저 들어왔고, 그 사이 원장이 얇아졌다(PR #765).

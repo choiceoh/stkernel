@@ -38,6 +38,13 @@ def fleet_lines():
             out.append(f"holder: {s} since {since} est {est}m  {note}")
     except Exception:
         out.append("holder: none")
+    try:   # the single-GPU lane (a check on the 5050, not the four Sparks) has its own holder
+        with open(h + "-single") as fh:
+            s, pid, host, t0, est, note, *rest = fh.read().strip().split("|") + [""]
+            since = dt.datetime.fromtimestamp(int(t0)).strftime("%H:%M")
+            out.append(f"single: {s} since {since} est {est}m  {note}")
+    except Exception:
+        pass
     try:
         with open(q) as fh:
             for i, line in enumerate(l for l in fh if l.strip()):

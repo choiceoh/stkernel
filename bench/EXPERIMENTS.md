@@ -29,6 +29,19 @@ already-running older controllers retain their accepted payloads.
 Bare `request`/`wait` and unvalidated `adopt` cannot create new GPU holds; the
 registered supervisor owns admission for every new GPU command.
 
+The queue has two GPU lanes. A boot, a pair, a chain and a live onepass take the
+fleet: four Sparks, one holder. An ST check that needs **one** GPU
+(`probes/run_engine_check.sh`, or `run_engine_probe.sh` without `--distributed`)
+takes the single-GPU lane instead: the 5050 on ost-97x (`FLEET_SINGLE_GPU_HOST`;
+set it empty to turn the lane off), with its own holder (`holder-single`) and its
+own evidence (that host's GPU process list; unreachable is not free). The lanes
+never block each other -- a check behind a queued boot runs now, and a boot
+behind a queued check runs now. The supervisor passes `ST_PROBE_HOST` to the
+runner, which rsyncs `engine/` and `probes/` to that host, runs the container
+there and takes no fleet lease; a verdict from there is that card's (sm_120), not
+the fleet's. `run --gpu --fleet` keeps a one-GPU check on the Sparks, `status`
+shows the lane beside the fleet, and `kick [--force] single` clears its holder.
+
 Plans now batch their independent CPU stages, publish reusable evidence before
 creating another checkout on a cache hit, and keep core/fleet/startup results
 separate. A consumer's declared dependencies still decide when it can execute.
