@@ -9936,3 +9936,30 @@ causal_conv·conv_ring·execution·fp4·kda_* ·prefix·serve·state). **스텝 
 **검증**: `tests/test_engine_serve.py` 139 tests, 실패 목록이 main 과 동일(사전 존재 12). 새 테스트 4개(다국어 배치 회귀, 중간에 끊긴 스텝이 끝낸 글자를 보인다, 보인 것은 안 바뀐다 × 스텝당 1·2·4·7, 재기록 디코더는 조기 출력 없음).
 
 **덤 — 번호가 계속 밀렸다**: 이 조사를 §31 로 적어 `ostcode/rust-discord-stream-fast-path-4a70bd` 에 밀었는데 PR #606 이 **그 커밋 직전 상태로 머지**돼서 원장에 안 들어갔고, 그 뒤로 브랜치를 main 에 맞출 때마다 다른 세션이 다음 번호를 이미 쓰고 있었다(네 번). 그래서 §36 이다. 교훈 둘: 머지 대기 중인 브랜치에 늦게 미는 커밋은 PR 헤드가 이미 지나갔을 수 있으니 **푸시 뒤 PR 헤드를 확인할 것**, 그리고 여러 세션이 같은 날 원장을 쓰면 번호는 **머지 직전에** 정할 것(지금 main 에 §30·§31 이 둘씩 있다 — 내 것이 아니라 건드리지 않았다).
+
+### 45차 §37 — 부팅 뒤 첫 요청이 `add` 에서 죽었다: 지연 생성된 페널티 히스토리에 가드가 둘 빠져 있었다 (2026-09-12, srv4, GPU 없음)
+
+§32 의 스위트를 현재 main 과 대조하다 `tests/test_engine_glm53.py` 의 실패가 **6 → 9** 로 늘어난 것을 봤다. 내 브랜치
+탓인 줄 알고 `origin/main` 을 그대로 풀어 돌렸더니 **거기서도 같은 셋이 실패**했다. 즉 회귀는 main 에 있었다.
+
+```
+engine/profiles/glm53/adapter.py:375   self.history.forget(seq)
+  → AttributeError: 'NoneType' object has no attribute 'forget'
+```
+
+`self.history`(`base/sampler.History`)는 **지연 생성**이다 — *"built at the first row that needs penalties"*,
+실제로는 `_row_logits` 가 처음 페널티를 쓸 때 만들어진다. 행의 토큰을 **통째로 갈아치우는** 자리가 셋인데
+(`add`·`forget`·`resume`), 25cd3f06 이 히스토리 버리기를 더하면서 **`forget` 에만 `if self.history is not None:` 을
+달았다**. 나머지 둘은 맨손으로 갔다. `add` 는 **모든 새 요청이 지나는 자리**이고, 페널티를 아직 아무도 안 쓴 부팅은
+`self.history` 가 None 이다 — **부팅 뒤 `repetition_penalty` 없는 첫 요청이 거기서 죽는다.** 서빙 경로 한복판이다.
+
+**고침**: 가드를 세 자리에 복사하는 대신 `_forget_history(seq)` 하나로 모았다(네 번째 호출자가 생겨도 같은 실수를
+못 한다). 지연 생성이라는 사실을 아는 자리를 하나로 줄이는 것이 요점이다.
+
+**검증**: glm53 스위트 **10 → 7** 실패(사라진 셋이 정확히 그 셋; 남은 일곱은 이전부터의 CUDA·flashinfer 의존).
+겨냥한 회귀 테스트 하나 추가 — 아무도 페널티를 안 쓴 엔진에서 `add` → `resume` → `forget` 이 지나가고 `history` 는
+끝까지 None 이다. **가드를 도로 지우면 그 테스트가 `AttributeError` 로 잡는 것까지 확인**했다(단언이 일한다는 증명).
+serve·prefix·sampling_options·drafter·async_sampling 은 그대로 OK.
+
+**교훈**: 지연 생성 필드는 *만드는 자리*가 하나여도 *읽는 자리*가 여럿이면 그 여럿이 전부 같은 가드를 알아야 한다 —
+그게 싫으면 읽는 자리를 하나로 모으는 쪽이 맞다. `prefix.check()`(§32 보충)를 넣은 이유와 같은 종류의 일이다.

@@ -672,6 +672,18 @@ class CudaCacheTests(unittest.TestCase):
         result.append(99)
         self.assertEqual(engine.generated(2), [5, 6])  # result collection still returns an independent copy
 
+    def test_replacing_a_row_s_tokens_works_before_anyone_has_asked_for_penalties(self):
+        """The penalty history is built at the first row that needs it. Every caller that replaces a row's tokens has
+        to be able to drop that row's history before then -- `add` is the first thing a boot does."""
+        from engine.profiles.glm53.adapter import Glm53Engine
+        engine = Glm53Engine(self.runtime().net, self.c, self.F)
+        self.assertIsNone(engine.history, "nothing has asked for penalties yet")
+        engine.add(0, [1, 2])                                       # a fresh boot's first request
+        engine.resume(1, 1, {"context": 2, "pending": 1, "tokens": [1, 2, 3],            # a parked conversation back
+                             "prompt_len": 2, "limits": [4, 0.0]})
+        engine.forget(0)
+        self.assertIsNone(engine.history)
+
     def test_generation_count_resets_on_a_new_turn_after_long_history(self):
         from engine.profiles.glm53.adapter import Glm53Engine
         engine = Glm53Engine(self.runtime().net, self.c, self.F)
