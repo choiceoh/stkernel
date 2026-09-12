@@ -741,6 +741,7 @@ class ChatDoorTests(unittest.TestCase):
             self.assertEqual(out['choices'][0]['message'], {'role': 'assistant', 'content': 'bbb'})
             self.assertEqual(out['choices'][0]['finish_reason'], 'stop')
             self.assertEqual(out['usage'], {'prompt_tokens': 2, 'completion_tokens': 3, 'total_tokens': 5,
+                                            'prompt_tokens_details': {'cached_tokens': 0},
                                             'completion_tokens_details': {'reasoning_tokens': 0}})
             with concurrent.futures.ThreadPoolExecutor(1) as pool:
                 out = drive(s, pool.submit(post, {"messages": [{"role": "user", "content": "xy"}], "max_tokens": 3}))
@@ -786,6 +787,7 @@ class ChatDoorTests(unittest.TestCase):
             self.assertGreaterEqual(sum(1 for d in deltas if d.get('reasoning_content')), 2)
             self.assertEqual([c['choices'][0]['finish_reason'] for c in chunks if c['choices']][-1], 'length')
             self.assertEqual(chunks[-1]['usage'], {'prompt_tokens': 3, 'completion_tokens': 4, 'total_tokens': 7,
+                                                   'prompt_tokens_details': {'cached_tokens': 0},
                                                    'completion_tokens_details': {'reasoning_tokens': 4}})
             self.assertFalse(s._streams or s._sent or s.pending or s.results)
             # thinking off: the rendered prompt "xy" ENDS with 'y' = reasoning_end (the template closed the think block),
@@ -2146,7 +2148,8 @@ class OpenAIDialectTests(unittest.TestCase):
         self.assertEqual(out["object"], "text_completion")
         self.assertEqual(out["choices"][0]["text"], "xyyy")
         self.assertEqual(out["choices"][0]["finish_reason"], "length")
-        self.assertEqual(out["usage"], {"prompt_tokens": 2, "completion_tokens": 2, "total_tokens": 4})
+        self.assertEqual(out["usage"], {"prompt_tokens": 2, "completion_tokens": 2, "total_tokens": 4,
+                                        "prompt_tokens_details": {"cached_tokens": 0}})
         out = self._serve(s, lambda base: self._post(base, "/v1/completions", {"prompt": [[120, 121]], "max_tokens": 1}))
         self.assertEqual(out["choices"][0]["text"], "y")
         tk = self._serve(s, lambda base: self._post(base, "/tokenize", {"prompt": "abc"}))
@@ -2234,6 +2237,73 @@ class OpenAIDialectTests(unittest.TestCase):
         self.assertEqual(s.engine.opened, opened)
         media = s.engine.media[0]
         self.assertEqual([(m["canvas"], m["positions"]) for m in media], [(b"cat", [1, 2, 3]), (b"dog", [7, 8, 9])])   # absolute positions
+
+    def test_cached_tokens_say_what_a_continued_turn_did_not_prefill(self):
+        """An agent resends its whole transcript every step. `usage.prompt_tokens_details.cached_tokens` is where its
+        SDK already looks to find out whether that is costing anything."""
+        s = chat_server(keep_idle=True)
+        first = self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                       {"messages": [{"role": "user", "content": "abcd"}], "max_tokens": 2}))
+        self.assertEqual(first["usage"]["prompt_tokens_details"]["cached_tokens"], 0)      # nothing to continue yet
+        self.assertEqual(s.engine.history(0), [97, 98, 99, 100, 100, 100])                # "abcd" and two 'd's of answer
+        second = self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                        {"messages": [{"role": "user", "content": "abcddddef"}], "max_tokens": 2}))
+        self.assertEqual(second["usage"]["prompt_tokens"], 9)
+        # five, not six: the token the row sampled last has never been through a forward pass, so it is not computed.
+        # This counts what the engine did not have to do, which is the question the number is asked to answer.
+        self.assertEqual(second["usage"]["prompt_tokens_details"]["cached_tokens"], 5)
+
+    def test_cached_tokens_say_what_a_reused_boundary_gave(self):
+        s = chat_server(prefix=4)                                  # BLOCK 4: "abcdefgh" is two whole blocks
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               {"messages": [{"role": "user", "content": "abcdefgh"}], "max_tokens": 2}))
+        out = self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                     {"messages": [{"role": "user", "content": "abcdefghij"}], "max_tokens": 2}))
+        self.assertEqual(out["usage"]["prompt_tokens_details"]["cached_tokens"], 8)
+        self.assertEqual(out["usage"]["prompt_tokens"], 10)
+
+    def test_prompt_cache_key_is_the_openai_name_for_cache_salt(self):
+        s = chat_server(prefix=4)
+        body = lambda key, text: {"messages": [{"role": "user", "content": text}], "max_tokens": 2,   # noqa: E731
+                                  "prompt_cache_key": key}
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body("red", "abcdefgh")))
+        other = self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body("blue", "abcdefghij")))
+        self.assertEqual(other["usage"]["prompt_tokens_details"]["cached_tokens"], 0)      # another key never reads red's
+        same = self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body("red", "abcdefghij")))
+        self.assertEqual(same["usage"]["prompt_tokens_details"]["cached_tokens"], 8)
+
+    def test_the_two_names_for_the_cache_key_may_not_disagree(self):
+        s = chat_server(prefix=4)
+        def ask(extra):
+            return self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                          {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1, **extra}))
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            ask({"cache_salt": "red", "prompt_cache_key": "blue"})
+        self.assertEqual(error.exception.code, 400)
+        ask({"cache_salt": "red", "prompt_cache_key": "red"})                              # one field under two names is fine
+
+    def test_cached_tokens_count_a_conversation_brought_back_from_the_tier(self):
+        """The third admission path: not a cached boundary and not a resident row, but a whole conversation read back
+        off NVMe. An agent whose step came minutes after the last one lands here."""
+        s = chat_server(keep_idle=True, tiered=True)
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               {"messages": [{"role": "user", "content": "abcd"}], "max_tokens": 2}))
+        for _ in range(200):                                   # the park runs on the tier's thread (D10)
+            s.once()
+            if s.runner.is_parked(0):
+                break
+        self.assertTrue(s.runner.is_parked(0))
+        self.assertFalse(s._conversations)                     # no row holds it: the next turn must read it back
+        second = self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                        {"messages": [{"role": "user", "content": "abcddddef"}], "max_tokens": 2}))
+        self.assertEqual(second["usage"]["prompt_tokens"], 9)
+        self.assertEqual(second["usage"]["prompt_tokens_details"]["cached_tokens"], 5)
+
+    def test_a_served_request_leaves_no_cached_token_record_behind(self):
+        s = chat_server(prefix=4)
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               {"messages": [{"role": "user", "content": "abcdefgh"}], "max_tokens": 2}))
+        self.assertFalse(s._cached)
 
     def test_a_history_resent_without_its_end_token_still_continues(self):
         s = chat_server(keep_idle=True)
@@ -2328,6 +2398,7 @@ class OpenAIDialectTests(unittest.TestCase):
                 out = drive(s, pool.submit(self._post, base, "/v1/chat/completions",
                                            {"messages": [{"role": "user", "content": "abcdefghXY"}], "max_tokens": 1}))
                 self.assertEqual(out["usage"]["prompt_tokens"], 10)
+                self.assertEqual(out["usage"]["prompt_tokens_details"]["cached_tokens"], 8)   # read from disk still counts as cached
                 self.assertEqual(s.runner.prefix_restores, before + 1)   # the tier's copy served: 8 tokens were not recomputed
                 self.assertIn((0, 8, 0) if False else 8, [p for _, p, _ in s.engine.restored])
                 self.assertIn("st:prefix_tier_restores_total{engine=\"st\"} 1\n", s.metrics())

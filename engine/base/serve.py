@@ -60,6 +60,18 @@ _TOOL_CALL = re.compile(r"<tool_call>(.*?)</tool_call>", re.S)
 _SAMPLING_RANGES = {"presence_penalty": (-2.0, 2.0), "frequency_penalty": (-2.0, 2.0)}
 
 
+def cache_key(req: dict) -> "str | None":
+    """The caller's own string for the cache, under either name. `cache_salt` is vLLM's; `prompt_cache_key` is the
+    OpenAI field an agent's SDK already sends, so accepting it is the difference between an agent getting tenant
+    isolation for free and not knowing the engine has any. Ours is stronger than OpenAI's hint -- it is folded into
+    the boundary chain, so two keys can never read each other's prefixes -- and the cost is the same one OpenAI warns
+    about: a key that changes every call shares nothing. Both names at once is a contradiction, not a default (D3)."""
+    salt, key = req.get("cache_salt"), req.get("prompt_cache_key")
+    if salt is not None and key is not None and salt != key:
+        raise RequestError("cache_salt and prompt_cache_key are the same field under two names: send one")
+    return salt if salt is not None else key
+
+
 def sampling_options(req: dict, defaults: "dict | None" = None) -> "tuple[float, dict]":
     """(temperature, options) of an OpenAI-dialect request, validated the way the served model's door spells them.
 
@@ -1076,6 +1088,10 @@ class Server:
         self._waiting = deque()                    # request id, tokens, limit, temperature, promised blocks
         self._active = {}                          # reusable row -> (request id, promised blocks)
         self._admitted = {}                        # request id -> clock() when a row began stepping it
+        self._cached = {}                          # request id -> prompt tokens the row already held when it was admitted:
+        # a cached boundary, a boundary read back from the tier, or a retained conversation's history. An agent resends its
+        # whole transcript every step, so this is the number that says whether the way it builds a prompt is working, and
+        # `usage.prompt_tokens_details.cached_tokens` is where every OpenAI client already looks for it.
         self._conversations, self._conversation_of = {}, {}   # resident (idle or live) conversations <-> rows
         self._tenant_of = {}                                  # conversation -> its tenant salt: only that tenant continues it.
         # Parked conversations outlive the process; after a restart theirs is unknown, and an unknown tenant matches
@@ -1136,7 +1152,7 @@ class Server:
             except ValueError as exc:
                 raise RequestError(str(exc)) from exc
         if cache_salt is not None and (not isinstance(cache_salt, str) or not 0 < len(cache_salt) <= 256):
-            raise RequestError("cache_salt must be a string of 1 to 256 characters")
+            raise RequestError("cache_salt / prompt_cache_key must be a string of 1 to 256 characters")
         salt = prefix_cache.tenant_salt(cache_salt) if cache_salt else None
         media = list(media or [])
         for m in media:
@@ -1311,6 +1327,7 @@ class Server:
                     self._deadline.pop(request, None)
                     self._arrived.pop(request, None)
                     self._admitted.pop(request, None)
+                    self._cached.pop(request, None)
                     self._answer(request, RequestError(f"request cancelled: {reason}", 504 if reason == "timeout" else 499))
                     return
                 restoring = next((r for r, e in self._restoring.items() if e["request"] == request), None)
@@ -1321,11 +1338,13 @@ class Server:
                     self._deadline.pop(request, None)
                     self._arrived.pop(request, None)
                     self._admitted.pop(request, None)
+                    self._cached.pop(request, None)
                     self._answer(request, RequestError(f"request cancelled: {reason}", 504 if reason == "timeout" else 499))
                     return
                 self._deadline.pop(request, None)
                 self._arrived.pop(request, None)
                 self._admitted.pop(request, None)
+                self._cached.pop(request, None)
                 return                                     # finished already (or unknown): nothing to drop
             self._active.pop(row)
             self._sent.pop(row, None)
@@ -1343,6 +1362,7 @@ class Server:
         self._deadline.pop(request, None)
         self._arrived.pop(request, None)
         self._admitted.pop(request, None)
+        self._cached.pop(request, None)
         status = 504 if reason == "timeout" else 499
         self._answer(request, RequestError(f"request cancelled: {reason}", status))
 
@@ -1425,6 +1445,19 @@ class Server:
         arrived = self._arrived.get(request)
         if arrived is not None:
             self.queued.observe(now - arrived)
+
+    def _note_cached(self, request, row) -> None:
+        """Prompt tokens this row did not prefill, read where every admission path has already agreed on it: the
+        scheduler's `computed` is set to the adopted prefix by `runner.submit` (a cached or restored boundary) and to
+        the held history by `runner.extend` (a retained conversation). One number, three paths, no predicate."""
+        if len(self._cached) > 4 * self.max_pending:
+            live = set(self.pending)
+            self._cached = {k: v for k, v in self._cached.items() if k in live}
+        self._cached[request] = int(self.runner.state.computed.get(row, 0))
+
+    def cached_tokens(self, *requests) -> int:
+        """Prompt tokens these requests did not have to prefill. Taken, not read: one answer asks once."""
+        return sum(self._cached.pop(int(r), 0) for r in requests)
 
     def _evict_idle(self, exclude=None):
         """No tier: a resident idle conversation makes room by ending."""
@@ -1594,6 +1627,7 @@ class Server:
                 self.runner.extend(row, tokens)
             self._waiting.popleft()
             self._active[row] = (request, promised)
+            self._note_cached(request, row)
             self._admit_clock(request)
 
     def _votes(self, flags) -> "list[int]":
@@ -1676,6 +1710,7 @@ class Server:
                         self._conversations[request] = row
                         self._conversation_of[row] = request
                     self._active[row] = (request, e["promised"])
+                    self._note_cached(request, row)
                 else:
                     if ok:
                         self.runner.restore_undo(row)             # landed here but not everywhere, or nobody wants it: the row goes back
@@ -1696,6 +1731,7 @@ class Server:
                     self._conversations[conversation] = row
                     self._conversation_of[row] = conversation
                     self._active[row] = (request, e["promised"])
+                    self._note_cached(request, row)
                     self._admit_clock(request)
                 elif all_ok == world:                         # the client left while its conversation was coming back: park it again
                     self._conversations[conversation] = row
@@ -2407,7 +2443,7 @@ class Server:
                         options["reasoning_end"] = server.reasoning_end
                 choices = self.choices_for(ids, n, max_tokens, temperature, options, stop, reasoning=reasoning,
                                            tool_parser=server.tool_parser, want_logprobs=want_logprobs, min_new=min_tokens,
-                                           continue_history=True, media=media, cache_salt=req.get("cache_salt"))
+                                           continue_history=True, media=media, cache_salt=cache_key(req))
                 head = {"id": f"chatcmpl-{choices[0].request}", "created": int(time.time()), "model": model}
 
                 def chunk(index, delta=None, finish=None, usage=None, logprobs=None):
@@ -2444,6 +2480,7 @@ class Server:
                         return
                     usage = {"prompt_tokens": len(ids), "completion_tokens": sum(c.total for c in choices),
                              "total_tokens": len(ids) + sum(c.total for c in choices),
+                             "prompt_tokens_details": {"cached_tokens": server.cached_tokens(*(c.request for c in choices))},
                              "completion_tokens_details": {"reasoning_tokens": sum(len(c.streams["reasoning_content"].ids) for c in choices)}}
                     if stream:
                         for c in choices:
@@ -2518,7 +2555,7 @@ class Server:
                 choices, prompt_of = [], {}
                 for ids in prompts:
                     group = self.choices_for(ids, count, max_tokens, temperature, options, stop, reasoning=False,
-                                             want_logprobs=lp_want, cache_salt=req.get("cache_salt"))
+                                             want_logprobs=lp_want, cache_salt=cache_key(req))
                     for c in group:
                         c.index = len(choices)
                         prompt_of[c.request] = ids
@@ -2589,7 +2626,8 @@ class Server:
                         for i, c in enumerate(kept):
                             c.index = i
                     usage = {"prompt_tokens": sum(len(p) for p in prompts), "completion_tokens": sum(c.total for c in choices),
-                             "total_tokens": sum(len(p) for p in prompts) + sum(c.total for c in choices)}
+                             "total_tokens": sum(len(p) for p in prompts) + sum(c.total for c in choices),
+                             "prompt_tokens_details": {"cached_tokens": server.cached_tokens(*(c.request for c in choices))}}
                     if stream:
                         for c in kept:
                             chunk(c.index, None, finish=c.finish or "length")
@@ -2663,11 +2701,12 @@ class Server:
                 conversation = req.get("conversation")
                 temperature, options = sampling_options(req, {})
                 request, event = server.submit(ids, req.get("max_tokens", 64), temperature, conversation, options=options,
-                                               cache_salt=req.get("cache_salt"))
+                                               cache_salt=cache_key(req))
                 out = self.wait_result(request, event)
                 text = server.tok.decode(out) if server.tok is not None else None
                 conversation = (request if conversation is None else conversation) if server.runner.keep_idle else None
                 self.reply(200, {"seq": request, "conversation": conversation, "ids": out, "text": text, "prompt_tokens": len(ids),
+                                 "cached_tokens": server.cached_tokens(request),
                                  "completion_tokens": len(out), "seconds": round(time.perf_counter() - t0, 3)})
 
             def prefix_warm(self, req):
@@ -2695,13 +2734,13 @@ class Server:
                     ids = req["ids"]
                 else:
                     raise RequestError("warm needs messages, a prompt or ids")
-                request, event = server.submit(ids, 1, 0.0, cache_salt=req.get("cache_salt"))
+                request, event = server.submit(ids, 1, 0.0, cache_salt=cache_key(req))
                 if not event.wait(server.request_timeout_s):
                     server.cancel(request, "timeout")
                     raise RequestError("warm timed out", 504)
                 server.take_result(request)
                 prefix = server.runner.prefix
-                salt = req.get("cache_salt")
+                salt = cache_key(req)
                 chain = prefix.chain(ids, [prefix_cache.tenant_salt(salt)] if salt else ())
                 cached = sorted(t for t, h in chain.items() if prefix.has(h))
                 if req.get("pin"):
