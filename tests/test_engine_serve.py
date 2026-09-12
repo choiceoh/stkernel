@@ -2399,6 +2399,48 @@ class OpenAIDialectTests(unittest.TestCase):
         finally:
             httpd.shutdown(); httpd.server_close()
 
+    def test_reset_throws_the_whole_prefix_cache_away_on_the_loop_thread(self):
+        """The case nothing in the engine can see: the prompt's MEANING changed under an unchanged
+        prefix -- a tool list, a retrieved document, an edited template -- so the ids still hash
+        the same and every boundary still matches. `unpin` only releases a pin (45차 §55)."""
+        s = chat_server(prefix=4)
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                drive(s, pool.submit(self._post, base, "/v1/prefix/warm", {"prompt": "abcdefghij"}))
+                for _ in range(3):
+                    s.once()
+                self.assertEqual(len(s.runner.prefix.entries), 2)
+                self.assertEqual(s.runner.kv.cached, 2)
+
+                out = drive(s, pool.submit(self._post, base, "/v1/prefix/reset", {}))
+                self.assertEqual(out, {"ok": True})
+                for _ in range(3):
+                    s.once()                                 # the control lands on the loop, on every rank, between steps
+
+                self.assertEqual(s.runner.prefix.entries, {})
+                self.assertEqual(s.runner.kv.cached, 0, "the blocks are anonymous again, not lost")
+                self.assertIn('st:prefix_resets_total{engine="st"} 1\n', s.metrics())
+                # and the same prompt is a miss now
+                out = drive(s, pool.submit(self._post, base, "/v1/chat/completions",
+                                           {"messages": [{"role": "user", "content": "abcdefghij"}], "max_tokens": 1}))
+                self.assertEqual(out["usage"]["prompt_tokens_details"]["cached_tokens"], 0)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_reset_is_refused_where_there_is_no_prefix_cache(self):
+        s = chat_server()
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                with self.assertRaises(urllib.error.HTTPError) as caught:
+                    drive(s, pool.submit(self._post, base, "/v1/prefix/reset", {}))
+                self.assertEqual(caught.exception.code, 404)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
     def test_a_boundary_evicted_to_the_prefix_tier_comes_back_for_a_later_prompt(self):
         s = chat_server(prefix=3, prefix_tier=True)
         s.runner.spill_low_water = 10                                    # spill leaves as soon as they exist

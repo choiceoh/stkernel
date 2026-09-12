@@ -636,6 +636,34 @@ class Runner:
         ids = tail(seq, last) if tail is not None else list(history(seq))[last:]
         self._chain[seq] = self.prefix.extend_chain(chain, ids, salts, start=last)
 
+    def reset_prefix(self) -> dict:
+        """Forget every cached boundary, on this rank, between two steps.
+
+        The cache's own bookkeeping is `PrefixCache.reset`; the tier's blobs are the runner's,
+        because the runner is what owns the disk. A boundary a row is restoring right now is left
+        alone -- its blocks are being written into as this runs -- and so is one being spilled.
+
+        Rows already running keep everything they adopted: a boundary that has been handed to a
+        row is that row's KV now, and forgetting the NAME does not take the blocks back. What the
+        reset buys is that nothing NEW adopts a stale prefix (45차 §55).
+        """
+        if self.prefix is None:
+            return {"entries": 0, "faded": 0, "kept_spilling": 0, "tier_keys": [], "tier_forgotten": 0}
+        restoring = self._restoring_keys()
+        report = self.prefix.reset()
+        forgotten = 0
+        tier = self.prefix_tier
+        for key in report["tier_keys"]:
+            if tier is None or key in restoring:
+                continue
+            try:
+                tier.forget(key)
+                forgotten += 1
+            except Exception as exc:                    # noqa: BLE001 -- a disk that refuses must not stop the reset
+                print(f"  prefix reset: tier slot {key} stayed: {type(exc).__name__}: {exc}", flush=True)
+        report["tier_forgotten"] = forgotten
+        return report
+
     def _tracked(self, seqs) -> "list[int]":
         """Rows whose generated boundaries can enter the prefix cache: a chain exists and the model tells its history."""
         if self.prefix is None or getattr(self.model, "history", None) is None:

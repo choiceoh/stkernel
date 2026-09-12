@@ -1145,7 +1145,8 @@ class Server:
         self._resuming = {}                        # row -> (conversation, request, ids, limit, temperature, promised): its resume is in flight
         self._restoring = {}                       # row -> the request whose prefix is being read back from the prefix tier (45차 §23 A)
         self._deferred = set()                     # requests waiting for a running prefill to cache the prefix they share (B)
-        self.controls = queue.Queue()              # rank 0's cache controls (pin / unpin), broadcast with the arrivals (C)
+        self.controls = queue.Queue()              # rank 0's cache controls (pin / unpin / reset), broadcast with the arrivals (C)
+        self.prefix_resets = 0                     # how many times an operator threw the prefix cache away
         self._free_rows = list(range(min(runner.kv.max_seqs, runner.c.max_running, runner.slots.available)))
         if not self._free_rows:
             raise ValueError("the server needs at least one request row and state slot")
@@ -1480,6 +1481,14 @@ class Server:
             prefix.pin(bytes.fromhex(h) for h in payload)
         elif kind == "unpin":
             prefix.unpin_all()
+        elif kind == "reset":                              # every rank forgets the same boundaries in the same step
+            report = self.runner.reset_prefix()
+            self.prefix_resets += 1
+            if self.comm.rank == 0:
+                print(f"  prefix reset: {report['entries']} boundaries and {report['faded']} faded, "
+                      f"{report['tier_forgotten']} off the tier"
+                      + (f"; {report['kept_spilling']} kept (being written)" if report["kept_spilling"] else ""),
+                      flush=True)
     def _admit_clock(self, request) -> None:
         """The moment a row began stepping this request: queue time ends here, inference time starts."""
         if request in self._admitted:
@@ -1995,6 +2004,7 @@ class Server:
                  prefix.hits + prefix.misses),
                 ("counter", "vllm:prefix_cache_hits_total", "lookups that reused a cached prefix", prefix.hits),
                 ("counter", "st:prefix_cache_evictions_total", "cached prefixes dropped", prefix.evictions),
+                ("counter", "st:prefix_resets_total", "times an operator threw the whole prefix cache away", self.prefix_resets),
                 ("gauge", "st:prefix_cache_reclaimable_blocks", "free blocks a boundary holds: reuse a reservation can spend",
                  prefix.reclaimable()),
                 ("counter", "st:prefix_reused_tokens_total", "prompt tokens served from a cached boundary (memory or tier)",
@@ -2798,6 +2808,20 @@ class Server:
                 server.controls.put(("unpin", None))
                 self.reply(200, {"ok": True})
 
+            def prefix_reset(self, req):
+                """Throw the whole prefix cache away (vLLM's `/reset_prefix_cache`).
+
+                For the case nothing in the engine can see: the prompt's MEANING changed under an
+                unchanged prefix -- a tool list, a retrieved document, an edited system template --
+                so the token ids still hash the same and every boundary still matches. `unpin` only
+                releases an operator's pin; this forgets the boundaries themselves, on every rank in
+                the same step, and deletes their copies off the prefix tier.
+                """
+                if getattr(server.runner, "prefix", None) is None:
+                    raise RequestError("this server has no prefix cache", 404)
+                server.controls.put(("reset", None))
+                self.reply(200, {"ok": True})
+
             def calibration(self, req):
                 """File this boot's calibration sums now (kernels/dense/calibration): between two steps, on every rank's
                 loop thread. A boot whose packs were all calibrated has nothing to file."""
@@ -2812,6 +2836,7 @@ class Server:
                     routes = {"/v1/chat/completions": self.chat, "/v1/completions": self.completions,
                               "/v1/engine/completions": self.engine_completions, "/tokenize": self.tokenize,
                               "/detokenize": self.detokenize, "/v1/prefix/warm": self.prefix_warm, "/v1/prefix/unpin": self.prefix_unpin,
+                              "/v1/prefix/reset": self.prefix_reset,
                               "/v1/engine/calibration": self.calibration}
                     handler = routes.get(self.path)
                     if handler is None:

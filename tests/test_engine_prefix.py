@@ -69,6 +69,72 @@ def run_to_end(r, seq):
         r.prefix.check()                                     # the two resources' invariants hold at every step
 
 
+class ResetTests(unittest.TestCase):
+    """An operator throwing the cache away, because the tokens cannot tell them it went stale."""
+
+    def test_reset_returns_every_boundary_s_blocks_and_snapshots(self):
+        r, cache = runner(blocks=16, snapshots=4)
+        r.submit(0, 9, now=0, ids=list(range(9)))            # boundaries at 4 and 8
+        run_to_end(r, 0)
+        self.assertEqual(len(cache.entries), 2)
+        self.assertEqual((r.kv.cached, r.kv.anonymous), (2, 14))
+        free_before = len(cache.free_snaps)
+
+        report = r.reset_prefix()
+
+        self.assertEqual((report["entries"], report["faded"], report["kept_spilling"]), (2, 0, 0))
+        self.assertEqual(cache.entries, {})
+        self.assertEqual((r.kv.cached, r.kv.anonymous), (0, 16), "the blocks are anonymous again, not lost")
+        self.assertEqual(len(cache.free_snaps), free_before + 2)
+        cache.check()
+
+    def test_a_prompt_after_a_reset_reuses_nothing(self):
+        r, cache = runner(blocks=16, snapshots=4)
+        ids = list(range(9))
+        r.submit(0, 9, now=0, ids=ids)
+        run_to_end(r, 0)
+        self.assertEqual(cache.lookup(ids)[0], 8, "before the reset it would adopt eight tokens")
+        r.reset_prefix()
+        self.assertEqual(cache.lookup(ids), (0, None, None))
+
+    def test_reset_is_harmless_on_an_empty_cache_and_says_so(self):
+        r, cache = runner()
+        self.assertEqual(r.reset_prefix(),
+                         {"entries": 0, "faded": 0, "kept_spilling": 0, "tier_keys": [], "tier_forgotten": 0})
+
+    def test_a_boundary_being_written_to_the_tier_is_kept_and_counted(self):
+        # Its blocks and its snapshot ARE the bytes in flight: taking them would hand the tier a
+        # slot whose KV already belongs to somebody else.
+        r, cache = runner(blocks=16, snapshots=4)
+        r.submit(0, 9, now=0, ids=list(range(9)))
+        run_to_end(r, 0)
+        h = next(iter(cache.entries))
+        cache.entries[h].spilling = True
+        cache.pool.pin(cache.entries[h].blocks)
+
+        report = r.reset_prefix()
+
+        self.assertEqual(report["kept_spilling"], 1)
+        self.assertEqual(list(cache.entries), [h])
+        cache.entries[h].spilling = False
+        cache.pool.unpin(cache.entries[h].blocks)
+        cache.check()
+
+    def test_the_tier_keys_come_back_so_the_disk_forgets_too(self):
+        # A reset that left the boundary on NVMe would not be a reset: the next prompt restores it.
+        r, cache = runner(blocks=16, snapshots=4)
+        r.submit(0, 9, now=0, ids=list(range(9)))
+        run_to_end(r, 0)
+        h = next(iter(cache.entries))
+        cache.hold_tier(h, 4242)
+
+        report = r.reset_prefix()
+
+        self.assertEqual(report["tier_keys"], [4242])
+        self.assertEqual(report["tier_forgotten"], 0, "this runner has no tier to delete from")
+        self.assertEqual(cache.tier_holder(4242), None)
+
+
 class PoolOwnershipTests(unittest.TestCase):
     def test_a_claim_keeps_blocks_in_the_free_list_under_the_boundary_s_name(self):
         pool = BlockPool(8, BLOCK, 2, 8)
