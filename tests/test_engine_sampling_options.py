@@ -346,10 +346,12 @@ class HistoryLifetimeTests(unittest.TestCase):
         self.assertFalse(bool(seen[2]), "nothing of the old conversation survives")
 
     def test_the_adapter_drops_it_wherever_it_reassigns_a_row_s_tokens(self):
+        """Through `_forget_history`, which is the only caller that survives a history nobody has built yet."""
         source = (ROOT / "engine/profiles/glm53/adapter.py").read_text()
         for site in ("self.tokens[seq] = list(ids)", 'self.tokens[seq] = list(record["tokens"])'):
             after = source[source.index(site):]
-            self.assertIn("self.history.forget(seq)", after[:400], site)
+            self.assertIn("self._forget_history(seq)", after[:400], site)
+        self.assertIn("self.history.forget(seq)", source, "and the helper still reaches the History")
 
 
 class VerificationPathTests(unittest.TestCase):

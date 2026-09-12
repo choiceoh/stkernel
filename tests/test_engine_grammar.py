@@ -367,7 +367,7 @@ class PickRichTests(unittest.TestCase):
     """The adapter's rich pick over a grammar row: the mask decides what may be picked, and a draft the grammar
     refuses ends the row before the positions behind it cost anything."""
 
-    def engine(self, vocab=128, k=3, allow=(1, 5, 70), refuse=()):
+    def engine(self, vocab=128, k=3, allow=(1, 5, 70), refuse=(), rows=(0,)):
         try:
             import torch  # noqa: F401
         except ImportError as exc:
@@ -376,9 +376,9 @@ class PickRichTests(unittest.TestCase):
         from engine.profiles.glm53.adapter import Glm53Engine
         g, m = fake(allow=allow, vocab=vocab, refuse=refuse)
         e = Glm53Engine.__new__(Glm53Engine)                 # the methods, none of the boot
-        e.options, e.limits, e.gens, e.gen = {0: {}}, {0: (16, 0.0)}, {}, torch.Generator().manual_seed(0)
+        e.options, e.limits, e.gens, e.gen = {r: {} for r in rows}, {r: (16, 0.0) for r in rows}, {}, torch.Generator().manual_seed(0)
         e.matchers, e.grammars = {0: m}, g
-        e.tokens, e.prompt_len, e.min_new, e.ends, e._ends_tensor = {0: [9]}, {0: 1}, {}, {}, {}
+        e.tokens, e.prompt_len, e.min_new, e.ends, e._ends_tensor = {r: [9] for r in rows}, {r: 1 for r in rows}, {}, {}, {}
         e.history, e.decodable, e._rich_stage = None, None, None
         e.drafter, e.eos = SimpleNamespace(k=k), set()
         e.top_p, e.caches = 1.0, SimpleNamespace(pool=SimpleNamespace(max_seqs=1))
@@ -417,6 +417,26 @@ class PickRichTests(unittest.TestCase):
         self.assertEqual(tuple(kept[0].shape), (4, 128), "k + 1 positions, the widest step a row can take")
         e._pick_rich([(0, self.logits([5, 70, 1]), [5, 5], None)], masks)
         self.assertIs(e._rich_stage, kept)
+
+    def test_two_grammar_rows_in_one_call_keep_their_own_span_of_the_block(self):
+        """The premise the mask kernel rests on: a row's positions are CONSECUTIVE rows of the step's block,
+        so `apply(seq, block[at:at+live])` covers that row and cannot reach into its neighbour's. Batching the
+        pick did not change that -- the block is filled row by row, each at its own offset."""
+        import torch
+        from engine.base.grammar import Matcher
+        e, g, a = self.engine(allow=(1, 5), rows=(0, 1))
+        b = Matcher(g, None, 5)
+        b.m = _Xgr(g.words, allow=(70,), refuse=(), needed=True)          # a different grammar, a shorter row
+        e.matchers[1] = b
+        masks = g.prepare([(0, a, [5, 1]), (1, b, [70])], "cpu")
+        answers = e._pick_rich([(0, self.logits([5, 1, 1]), [5, 1], None),
+                                (1, self.logits([70, 70]), [70], None)], masks)
+        self.assertEqual([new for _, new, _ in answers], [[5, 1, 1], [70, 70]])
+        block = e._rich_stage[0]
+        self.assertEqual(sorted((~torch.isinf(block[0])).nonzero().flatten().tolist()), [1, 5])
+        self.assertEqual(sorted((~torch.isinf(block[3])).nonzero().flatten().tolist()), [70],
+                         "the second row's span starts where the first one ended")
+        self.assertEqual(block[:5].data_ptr(), block.data_ptr(), "the spans are views, not copies")
 
     def test_a_row_with_no_step_to_ride_along_with_fills_its_own(self):
         """The prompt's first token is picked outside any decode step: it still gets its mask."""
