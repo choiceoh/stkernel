@@ -299,14 +299,14 @@ def follow_controller(head: str, log, controller: Path = CONTROLLER) -> bool:
     return True
 
 
-def queue_probe(head: str, log, controller: Path = CONTROLLER) -> bool:
+def queue_probe(head: str, log, controller: Path = CONTROLLER, attempt: int = 1) -> bool:
     """One D17 probe ticket for the deployed commit: two onepass runs on the live door when it is
     idle, so the deployed commit always has a warm sample and st-pair never boots the base."""
     fleet = controller / "bench" / "fleet.sh"
     if not fleet.exists():
         log(f"  no {fleet}: no D17 probe queued")
         return False
-    session = "d17-" + head[:12]
+    session = probe_session(head, attempt)
     code, out, err = run(["bash", str(fleet), "st-probe", "--detach", session, head, "10", f"D17 after deploy {head[:12]}"],
                          cwd=str(controller), timeout=300)
     tail = (out + err).strip().splitlines()[-1:] or [""]
@@ -336,17 +336,30 @@ def warm_samples(sha: str, log, controller: Path = CONTROLLER, jsonl: Path = JSO
     return int(out.strip())
 
 
+def probe_session(sha: str, attempt: int = 1) -> str:
+    """d17-<sha12> for the first ticket, d17-<sha12>-2 for the next: the launch layer answers a
+    same-name, same-arguments detached launch with the OLD launch's record (disposition
+    "existing", its exit code replayed), so a ticket that died or was cancelled can never be
+    queued again under its own name -- the second armed cycle on srv2 got rc=143 back that way."""
+    return f"d17-{sha[:12]}" + (f"-{attempt}" if attempt > 1 else "")
+
+
 def ticket_open(session: str, fleet_dir: Path = FLEET) -> bool:
-    """A ticket of this name is queued or holding, read off the queue's own files."""
+    """A ticket of this name -- or of this name with an attempt suffix -- is queued or holding,
+    read off the queue's own files."""
+    def mine(name: str) -> bool:
+        name = name.strip()
+        return name == session or name.startswith(session + "-")
     try:
         for line in (fleet_dir / "queue").read_text().splitlines():
-            if line.split("|")[1:2] == [session]:
+            fields = line.split("|")
+            if len(fields) > 1 and mine(fields[1]):
                 return True
     except OSError:
         pass
     for name in ("holder", "holder-single"):
         try:
-            if (fleet_dir / name).read_text().split("|")[0].strip() == session:
+            if mine((fleet_dir / name).read_text().split("|")[0]):
                 return True
         except OSError:
             pass
@@ -391,11 +404,10 @@ def ensure_probe(sha: str, held: dict, a, log, *, controller: Path = None, fleet
     count = warm_samples(sha, log, controller, jsonl)
     if count is None or count > 0:
         return False
-    session = "d17-" + sha[:12]
-    if ticket_open(session, fleet_dir):
+    if ticket_open(probe_session(sha), fleet_dir):
         return False
     log(f"  {sha[:12]} has no warm sample and no probe ticket on its way (attempt {tally['attempts'] + 1}/{limit})")
-    queued = queue_probe(sha, log, controller)
+    queued = queue_probe(sha, log, controller, attempt=tally["attempts"] + 1)
     remember_probe(sha, queued, state, tally)
     return queued
 
