@@ -1,0 +1,12 @@
+test_nondefault_stream_graph_replay (test_engine_sparse_nvfp4.SparseKernelTests.test_nondefault_stream_graph_replay) ... ok
+test_signed_zero_pairs (test_engine_sparse_nvfp4.SparseKernelTests.test_signed_zero_pairs) ... ok
+test_six_masks_varied_scales_batches_and_tail (test_engine_sparse_nvfp4.SparseKernelTests.test_six_masks_varied_scales_batches_and_tail) ... ok
+test_zero_scales_and_zero_weights (test_engine_sparse_nvfp4.SparseKernelTests.test_zero_scales_and_zero_weights) ... ok
+test_all_six_pair_masks_and_signed_zero (test_engine_sparse_nvfp4.SparsePatternTests.test_all_six_pair_masks_and_signed_zero) ... ok
+test_pair_pruning_and_quantizer_midpoint_ties (test_engine_sparse_nvfp4.SparsePatternTests.test_pair_pruning_and_quantizer_midpoint_ties) ... ok
+test_scalar_two_of_four_is_insufficient (test_engine_sparse_nvfp4.SparsePatternTests.test_scalar_two_of_four_is_insufficient) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 1.451s
+
+OK
