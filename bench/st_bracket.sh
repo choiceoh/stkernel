@@ -112,12 +112,42 @@ with open(path, "a", encoding="utf-8") as fh:
 print(f"   rehearsal record {name} run {run} appended (shaped like {real[-1]['name'] if real else 'a stub'})")
 PY
 }
+MEASURE_RECORDED=0
 measure() {  # run-index -> one onepass on the candidate's door, exclusive
-  local run=$1
+  local run=$1 offset=0 rc
+  MEASURE_RECORDED=0
   [ "$REHEARSE" != 1 ] || { rehearse_record "$run"; return; }
+  [ ! -f "$JSONL" ] || offset=$(wc -c < "$JSONL")
   GLM53_API_PORT=$PORT BENCH_MODEL=$MODEL ONEPASS_RUN_INDEX=$run ST_BRACKET_SHA=$ARM_SHA ST_BRACKET_COLD=${ST_BRACKET_COLD:-boot} \
     python3 "$REPO/bench/onepass.py" --name "$ARM" --require-exclusive 2>&1 | tail -40
-  return "${PIPESTATUS[0]}"
+  rc=${PIPESTATUS[0]}
+  # onepass returns 2 after recording quality/evidence issues, but argparse
+  # also returns 2 before any request. Only a NEW complete record from this
+  # invocation allows the remaining run on the same boot. Failed checks
+  # stay failed: leg/probe retain rc=2 after collecting both passes.
+  if [ "$rc" = 2 ] && python3 - "$JSONL" "$offset" "$ARM_SHA" "$ARM" "$run" "${FLEET_SESSION:-}" <<'PY'
+import json, sys
+path, offset, sha, name, run, session = sys.argv[1:]
+try:
+    with open(path, 'rb') as stream:
+        stream.seek(int(offset))
+        rows = [json.loads(line) for line in stream if line.strip()]
+    if len(rows) != 1:
+        sys.exit(1)
+    record = rows[0]
+    complete = (record.get('engine') == 'st' and record.get('arm_sha') == sha
+                and record.get('name') == name and record.get('run_index') == int(run)
+                and record.get('session', '') == session
+                and record.get('run_id') and record.get('boot_id') and not record.get('rehearsal')
+                and record.get('recording', {}).get('status') == 'complete')
+    sys.exit(0 if complete else 1)
+except (OSError, ValueError, TypeError, AttributeError):
+    sys.exit(1)
+PY
+  then
+    MEASURE_RECORDED=1
+  fi
+  return "$rc"
 }
 reset_prefix() {  # between the runs: run 2 must not hit the cache run 1 filled (§93)
   curl -fsS -X POST --max-time 30 "$(door)/v1/prefix/reset" >/dev/null 2>&1 \
@@ -130,7 +160,14 @@ leg() {  # name sha -> the fixed leg; 0 when every run recorded
   for run in $(seq 1 "$RUNS"); do
     if [ "$run" != 1 ] && [ "$REHEARSE" != 1 ]; then reset_prefix; fi
     say "onepass run $run/$RUNS on $name ($( [ "$run" = 1 ] && echo cold || echo warm ) column)"
-    measure "$run" || { rc=$?; say "onepass run $run on $name failed (rc=$rc)"; break; }
+    measure "$run" || {
+      rc=$?
+      if [ "$rc" = 2 ] && [ "$MEASURE_RECORDED" = 1 ]; then
+        say "onepass run $run on $name recorded issues (rc=2); retaining this boot for the remaining runs"
+      else
+        say "onepass run $run on $name failed (rc=$rc)"; break
+      fi
+    }
   done
   stop_arm
   return $rc
@@ -224,7 +261,14 @@ probe() {  # [sha]: two onepass runs on the LIVE production door -- no boot, no 
   for run in $(seq 1 "$RUNS"); do
     [ "$REHEARSE" = 1 ] || reset_prefix
     say "onepass run $run/$RUNS ($( [ "$run" = 1 ] && echo 'after a reset' || echo warm ))"
-    ST_BRACKET_COLD=reset measure "$run" || { rc=$?; say "onepass run $run failed (rc=$rc)"; break; }
+    ST_BRACKET_COLD=reset measure "$run" || {
+      rc=$?
+      if [ "$rc" = 2 ] && [ "$MEASURE_RECORDED" = 1 ]; then
+        say "onepass run $run recorded issues (rc=2); retaining this boot for the remaining runs"
+      else
+        say "onepass run $run failed (rc=$rc)"; break
+      fi
+    }
   done
   return $rc
 }
