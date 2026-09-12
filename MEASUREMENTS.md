@@ -326,6 +326,7 @@ vs 3.4e-2/1.4e-1 — **캐시 경로는 아무것도 더하지 않는다**. PASS
 - **PR #771** — ost-97x 는 테일넷의 **Windows 박스**였다: 이름은 srv2 의 ssh 별칭이 풀고, 사용자·포트도 별칭이 정한다
 - **PR #774** — 단일 GPU 레인은 **srv4 한 대에서 프로덕션 옆에**: 증거는 여유 메모리, 첫 실측이 OOM 과 b12x m=8 을 가르쳐 줬다
 - **PR #775** — ST 브래킷을 큐에: 커밋 하나가 팔, 프로덕션 형상, 부팅당 두 판 — 큐가 드디어 **부팅할 것**을 얻었다
+- **PR #776** — 배포와 큐가 만난다: D17 프로브 티켓이 배포된 커밋의 웜 표본을 **공짜로** 남기고, 컨트롤러가 배포된 sha 를 따른다
 
 ### 45차 §23 — 프로덕션 전환 시도: 창·45층 4노드 부팅·문 사다리, 그리고 깨진 글의 원인 = KDA `o_norm` epsilon (2026-09-11 밤 ~ 09-12 새벽)
 
@@ -1583,3 +1584,48 @@ onepass 102 를 origin/main 사본과 대조해 새 실패 0. **실측 없음.**
 
 **남는 노출:** base 재사용은 base sha 의 웜 표본이 있을 때만이라 PR 3 전엔 `st-pair` 가 base 도 부팅한다(팔당 ~10분). 후보가
 도는 동안 프로덕션(:8000)은 내려가 있다(#770 의 설계 그대로: 정숙 게이트가 문이고 대기 부팅 티켓이 없을 때만 되돌린다).
+
+### 45차 — 배포와 큐가 만난다: D17 프로브 티켓, 라이브 레인의 ST 인식, 배포된 sha 를 따르는 컨트롤러 (2026-09-13, 맥 + 리눅스 컨테이너, GPU·플릿 미검증, PR #776)
+
+PR #775 뒤에 남은 자리 둘. `st-pair` 의 "base 재사용" 은 base sha 의 **웜 표본**이 있을 때만이라 배포된 커밋의 표본이 없으면
+팔당 ~10분을 base 부팅에 더 썼고, 큐의 라이브 레인(`run --gpu --probe`)은 vLLM 시대의 `glm53` 컨테이너와 `/health` 만 알아
+ST 엔진 옆에서는 쓸 수 없었다. 그리고 §91 — 컨트롤러 체크아웃이 main 보다 639 커밋 뒤라 네 노드가 서빙 중인 플릿을 FREE 라고
+답한 일 — 은 사람이 체크아웃을 옮기는 한 되풀이된다. 운영자 인터뷰(§97 의 문답 5)에서 정한 대로 셋을 한 PR 로 잇는다.
+
+**라이브 레인의 ST 인식** (`bench/fleet.sh`). `serving_up`·`booting`·`serving_idle` 이 `st-glm53` 을 프로덕션으로 읽고, 유휴 판정은
+문 자신의 `st:quiet`(정숙 게이트와 **같은 읽기** — `fleet_lease load`; `st:quiet` 를 못 내는 옛 엔진은 요청 게이지 0 + `/v1/models` 200,
+답 없는 문은 유휴가 아니다)로 한다. `_try_hold` 에서 **프로브 티켓은 `production` 리스 옆에서** GO 한다: 프로덕션의 리스는 프로브에게
+점유가 아니고, 유휴한 문이 조건이고, 리스는 잡지 않는다. `session` 이나 다른 티켓의 부팅 뒤에서는 남들처럼 기다리고, 세션 홀더에게는
+여전히 묻지 않는다(#770 의 규칙 그대로).
+
+**`fleet.sh st-probe [--detach] s [sha] [est] [note]`** → `bench/st_bracket.sh probe`: 라이브 문에서 onepass 두 판, 각 판 앞에
+`POST /v1/prefix/reset`, 부팅 없음·리스 없음, sha 를 안 주면 `deploy-state.json` 의 배포된 커밋. 첫 판은 부팅이 아니라 리셋 뒤라
+기록에 `cold=reset`(onepass 가 `ST_BRACKET_COLD` 를 배움)이고 `st_judge.colds` 가 콜드 열(부팅의 것)에서 뺀다. 승인
+(`bench/fleet_onepass.py`)은 라이브 레인에 `bench/onepass.py` 와 브래킷의 `probe` 만 두고, 부팅 레인에 온 `probe` 는 "라이브 레인의
+것" 이라고 거부한다.
+
+**deploy-watch 의 배포 후 훅** (`launchers/st-deploy-watch.py`). 배포를 **기록한 뒤에만** — 실패한 런치 뒤도, dry-run 도 아니다 —
+① 큐의 체크아웃 `~/fleet-controller`(`--controller` / `FLEET_CONTROLLER_REPO`; `--no-follow`)를 배포된 커밋으로 옮긴다(`fetch origin
+<sha>` → `checkout --detach`; sha 를 거부하는 원격이면 refs 전체 fetch 로 한 번 더). ② `d17-<sha12>` 프로브 티켓 하나를 건다
+(`st-probe --detach`, `--no-probe` 로 끔). 둘 다 배포를 실패시키지 못한다 — 로그 한 줄이 전부다. 이로써 배포된 커밋은 언제나 웜 표본을
+갖고 `st-pair` 는 base 를 부팅하지 않으며, 큐는 프로덕션의 규칙으로 답한다.
+
+**검증** (리눅스 컨테이너, GPU·플릿 없음): `tests/test_engine_fleet_queue.py` 의 샌드박스(진짜 `_try_hold`/`_release`)에 유휴 production
+리스 옆의 프로브 — 문이 바쁘면 거부, 정숙하면 GO, 리스는 잡지도 놓지도 않음, 세션 부팅 뒤에서는 묻지 않고 대기; 샌드박스의
+`serving_idle`/`booting` 은 이제 **진짜 함수**(가짜 docker/curl 이 먹인다). `tests/test_fleet_st_bracket.py` 에 레인별 `probe` 문법·거부,
+`cold=reset` 의 콜드 열 제외, 프로브 리허설(두 판, deployed 기본 sha). `tests/test_st_deploy_watch.py` 에 진짜 clone 을 배포 커밋으로
+옮기는 검사, 티켓 argv 고정, 거부 경로 셋(rc≠0·`fleet.sh` 없음·체크아웃 아님), dry-run 과 두 플래그, "기록된 배포 뒤에만" 소스 핀.
+플릿 스위트(414)·엔진 스위트: main(#774) 기준선과 **실패 집합 동일**(27F+2E / 1F+3E, 환경), 새 실패 0. `FLEET_AUDIT` 갱신.
+
+**병합에서 배운 것.** 이 사이 #770 은 main 에 **스쿼시**로 들어갔고 #774(단일 GPU 레인, srv4 옆)가 뒤따랐다. #775 는 main 위로 리베이스
+(충돌은 `FLEET_AUDIT` 한 줄과 원장 둘 — 둘 다 그대로 겹쳐 둠), #776 은 그 위로. `fleet.sh` 에서 #774 의 단일 레인 `elif` 가 이 PR 의
+`if` 조건(프로브·production 예외) 뒤에 붙으면서 **프로덕션 옆 프로브까지** 그 분기에 걸릴 수 있었다 — `[ "$kind" = single ]` 로
+못 박았다. 세 갈래 병합이 문법상 깨끗해도 조건의 **여집합**은 바뀐다는 것: 샌드박스 테스트가 아니라 읽어서 잡았다.
+
+**실측 없음.** 첫 실제 D17 프로브는 이 PR 을 담은 첫 배포 **다음** 배포부터 deploy-watch 가 건다(deploy-watch 자체가 `~/st-engine` 의
+rsync 본이라). 운영자: `~/fleet-controller` 가 git 체크아웃인지 확인(아니면 훅이 "not a checkout" 을 남기고 넘어간다), 유휴 복구
+타이머(`fleet-idle-recovery.service`)는 아직 `~/stkernel` 을 본다(이 PR 은 유닛을 안 건드렸다), 그리고 #770 의 `release.conf` 드롭인.
+
+**남는 노출:** 프로브의 onepass 는 `--require-exclusive` 라 GO 뒤에 사용자가 오면 판이 중단되고 기록은 안 남는다(정직한 실패 —
+큐가 다시 걸지는 않으니 `st-probe` 를 다시 건다). `serving_idle` 의 옛 엔진 분기는 NVMe 티어 이동 중을 유휴로 볼 수 있다(#770 뒤
+엔진은 모두 `st:quiet` 를 낸다).
