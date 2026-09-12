@@ -1760,6 +1760,25 @@ class MetricsTests(unittest.TestCase):
         self.assertIn('st:detokenizer_repairs_total{engine="st",reason="invalid_prefix"} 1', self.text(s))
         self.assertNotIn("st:detokenizer_repairs_total", self.text(other), "another door's repairs are not ours")
 
+    def test_the_box_s_own_memory_is_on_the_scrape(self):
+        """The OOM study's conclusion was that there is no eye on memory during serving, and
+        vLLM has none either -- its `gpu_cache_usage_perc` counts blocks, not bytes. The peak
+        rides beside the current value because a scrape cannot see a four-second cliff."""
+        out = self.text(server())
+        line = next(l for l in out.splitlines() if l.startswith("st:host_memory_available_bytes{"))
+        self.assertGreater(int(line.rsplit(" ", 1)[1]), 0)        # what earlyoom decides on
+        if "st:device_memory_reserved_bytes" in out:              # only where there is a device
+            self.assertIn("st:device_memory_reserved_peak_bytes", out)
+            self.assertIn("st:device_memory_free_bytes", out)
+
+    def test_a_scrape_answers_even_where_the_numbers_are_not_there(self):
+        """`/metrics` never raises: a box without CUDA, or a /proc that will not answer, drops
+        the row instead of the scrape."""
+        import engine.base.serve as serve
+        from unittest.mock import patch
+        with patch.object(serve, "device_memory_rows", lambda: []):
+            self.assertIn("vllm:request_success_total", self.text(server()))
+
     def test_the_queue_clock_is_taken_once_for_a_continued_request(self):
         s = server()
         s._arrived[3] = s.clock() - 1.0
