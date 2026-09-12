@@ -178,6 +178,7 @@ def answer_budget(tok, text: str) -> int:
 # 이 and 힣 and refuses 타 파 하 한 해 호 후 희 흥 -- a sixth of the Hangul block, and the sixth
 # Korean uses most (45차 §41). Hangul is the only common script that straddles it.
 _ED_BRANCH = 0xD000
+_ED_BRANCH_END = 0xD7FF          # a range that reaches past this ends on a whole branch and compiles
 
 
 def _class_item(pattern: str, i: int) -> "tuple[int | None, int]":
@@ -199,8 +200,9 @@ def split_surrogate_branch(pattern: str) -> str:
     """A class range that ends inside the 0xED branch, written as two that do not.
 
     `[가-힣]` becomes `[가-\uCFFF\uD000-힣]`, the same set of characters -- U+CFFF and U+D000 are
-    neighbours -- and one xgrammar compiles correctly. Only that one shape is touched; anything
-    this cannot read confidently is handed on unchanged, because a pattern is the caller's.
+    neighbours -- and one xgrammar compiles correctly. Only that one shape is touched: a range
+    reaching past U+D7FF ends on a whole branch and already compiles, so it is left alone, as is
+    anything this cannot read confidently. A pattern is the caller's.
     """
     if "-" not in pattern or "[" not in pattern:
         return pattern
@@ -222,7 +224,7 @@ def split_surrogate_branch(pattern: str) -> str:
         after = i + width
         if low is not None and after + 1 < n and pattern[after] == "-" and pattern[after + 1] != "]":
             high, hwidth = _class_item(pattern, after + 1)
-            if high is not None and low < _ED_BRANCH <= high:
+            if high is not None and low < _ED_BRANCH <= high <= _ED_BRANCH_END:
                 out.append(pattern[i:after] + "-\uCFFF\uD000-" + pattern[after + 1:after + 1 + hwidth])
                 i = after + 1 + hwidth
                 continue
@@ -403,7 +405,13 @@ def partial_suffix(text: str, needles) -> int:
 
 # Streamed text the door had to repair, by what went wrong: `/metrics` reports it, because a
 # repair is the one thing here that changes what a client reads and leaves no other trace.
+# Each Server keeps its own (`Server.detok_repairs`) so a scrape names the door that did it;
+# this one belongs to whatever has no door -- `token_spans`, and the tests' bare streams.
 DETOK_REPAIRS = {"invalid_token_id": 0, "invalid_prefix": 0, "stalled": 0}
+
+
+def new_repairs() -> dict:
+    return dict.fromkeys(DETOK_REPAIRS, 0)
 
 # tokenizers raises this one untyped, so the message is the only way to tell it from a real bug.
 # https://github.com/huggingface/tokenizers `DecodeStreamError::InvalidPrefix`
@@ -447,7 +455,7 @@ def decode_stream(tok, skip_special_tokens: bool = True, ids=None):
     return DecodeStream(skip_special_tokens=skip_special_tokens)
 
 
-def _decode(tok, ids) -> str:
+def _decode(tok, ids, repairs=DETOK_REPAIRS) -> str:
     """`tok.decode(ids)`, with an id that is not a token id dropped instead of raised.
 
     `Tokenizer.decode` raises OverflowError on a negative or oversized id and TypeError on one
@@ -457,7 +465,7 @@ def _decode(tok, ids) -> str:
     try:
         return tok.decode(ids)
     except (OverflowError, TypeError):
-        DETOK_REPAIRS["invalid_token_id"] += 1
+        repairs["invalid_token_id"] += 1
         keep = []
         for tid in ids:
             try:
@@ -573,11 +581,12 @@ class _Stream:
     comment says Hangul is not covered) where this cuts at the character.
     """
 
-    __slots__ = ("tok", "ids", "text", "_ahead", "_rust", "_stream", "_fed", "_holding",
-                 "_prefix", "_read")
+    __slots__ = ("tok", "ids", "text", "_ahead", "_repairs", "_rust", "_stream", "_fed",
+                 "_holding", "_prefix", "_read")
 
-    def __init__(self, tok):
+    def __init__(self, tok, repairs=None):
         self.tok = tok
+        self._repairs = DETOK_REPAIRS if repairs is None else repairs
         self.ids = []                       # this channel's tokens, in order
         self.text = ""                      # what they say, settled
         self._ahead = ""                    # whole characters shown in front of it, not settled
@@ -608,34 +617,39 @@ class _Stream:
         # client nothing while the decode that repeats grows with the run. Both end the same
         # way: say what the tail says, replacement characters and all.
         if self._holding:
+            shown, settle = self._in_place(len(self.ids) - self._holding)
             if final or self._holding > _STALL_TOKENS:
                 if not final:
-                    DETOK_REPAIRS["stalled"] += 1
-                self.text += _decode(self.tok, self.ids[len(self.ids) - self._holding:])
+                    self._repairs["stalled"] += 1
+                self.text += settle                      # which begins with `shown`, by construction
                 self._ahead = ""
                 self._holding = 0
                 self._stream = decode_stream(self.tok)   # its prefix names text already shown
             else:
-                self._ahead = self._ahead_text()
+                self._ahead = shown
         return self.text + self._ahead
 
-    def _ahead_text(self) -> str:
-        """The whole characters inside the tail the stream is still holding.
+    def _in_place(self, cut: int) -> "tuple[str, str]":
+        """What `self.ids[cut:]` says where it sits: (the whole characters of it, all of it).
 
-        It says "not yet" about the whole tail, but a step can end mid-character and have
-        finished several characters before that. So decode the tail where it sits -- a few
-        settled tokens in front of it, subtracted off again, because a piece carries its
-        leading space only when something precedes it -- and keep what is whole.
+        The stream says "not yet" about its whole tail, but a step can end mid-character and
+        have finished several characters before that. So decode the tail where it sits -- a few
+        settled tokens in front of it, subtracted off again, because a piece carries its leading
+        space only when something precedes it.
 
-        A decoder that rewrites the settled part when an incomplete byte follows (byte
-        fallback turns the whole run into U+FFFD) fails the prefix test and gets nothing,
-        which is the old behaviour and is the safe one: nothing shown is ever taken back.
+        Both halves come from the same decode, and that is the invariant every caller needs:
+        what is settled always begins with what was shown, so nothing shown is taken back. A
+        decoder that rewrites its settled part when an incomplete byte follows it (byte fallback
+        turns the whole run into U+FFFD) fails the prefix test; then nothing is shown early and
+        the tail is settled on its own, which is what this did before there was anything early.
         """
-        cut = len(self.ids) - self._holding
         context = self.ids[max(0, cut - _CONTEXT_TOKENS):cut]
-        before = _decode(self.tok, context) if context else ""
-        grown = _decode(self.tok, context + self.ids[cut:])
-        return _whole(grown[len(before):]) if grown.startswith(before) else ""
+        before = _decode(self.tok, context, self._repairs) if context else ""
+        grown = _decode(self.tok, context + self.ids[cut:], self._repairs)
+        if not grown.startswith(before):
+            return "", _decode(self.tok, self.ids[cut:], self._repairs)
+        settle = grown[len(before):]
+        return _whole(settle), settle
 
     def _step(self, ids) -> "tuple[str, int]":
         """One `step`, and the two ways it is known to fail where people are watching.
@@ -654,7 +668,7 @@ class _Stream:
             # Not a token id at all: out of the range the Rust side takes, or not an integer.
             # The argument conversion fails before any of the batch is taken, so the rest of
             # the step is still good -- replay it one at a time and lose only the bad one.
-            DETOK_REPAIRS["invalid_token_id"] += 1
+            self._repairs["invalid_token_id"] += 1
             text, holding = "", self._holding
             for tid in ids:
                 try:
@@ -672,18 +686,20 @@ class _Stream:
             # gone; the text is not, and neither are the ids: say what everything the old stream
             # had not accounted for says, and prime a new stream with exactly those so it carries
             # on with the right prefix. vLLM drops that token's text here; we do not.
-            DETOK_REPAIRS["invalid_prefix"] += 1
-            unaccounted = self.ids[len(self.ids) - self._holding - len(ids):]
-            self._stream = decode_stream(self.tok, ids=unaccounted)
-            return _decode(self.tok, unaccounted), 0
+            self._repairs["invalid_prefix"] += 1
+            cut = len(self.ids) - self._holding - len(ids)
+            _, settle = self._in_place(cut)
+            self._ahead = ""                             # `settle` accounts for it, empty or not
+            self._stream = decode_stream(self.tok, ids=self.ids[cut:])
+            return settle, 0
 
     def _window(self, final: bool) -> None:
         """The same window in Python, for a tokenizer that is not the Rust one."""
         ids = self.ids
         if self._read >= len(ids):
             return
-        before = _decode(self.tok, ids[self._prefix:self._read]) if self._read > self._prefix else ""
-        grown = _decode(self.tok, ids[self._prefix:])
+        before = _decode(self.tok, ids[self._prefix:self._read], self._repairs) if self._read > self._prefix else ""
+        grown = _decode(self.tok, ids[self._prefix:], self._repairs)
         new = grown[len(before):]
         if not new:
             return
@@ -692,7 +708,7 @@ class _Stream:
         stalled = len(ids) - self._read > _STALL_TOKENS
         if final or stalled or not new.endswith("\ufffd"):
             if stalled and not final and new.endswith("\ufffd"):
-                DETOK_REPAIRS["stalled"] += 1
+                self._repairs["stalled"] += 1
             self.text += new
             self._ahead = ""
             self._prefix, self._read = self._read, len(ids)
@@ -706,7 +722,7 @@ class _Choice:
     reaches a stop string ends there; complete <tool_call> blocks become tool_calls (streamed as they complete)."""
 
     def __init__(self, index: int, request: int, event, q, *, tok, stop, reasoning: bool, tool_parser=None,
-                 want_logprobs: "int | None" = None, min_new: int = 0):
+                 want_logprobs: "int | None" = None, min_new: int = 0, repairs=None):
         self.index, self.request, self.event, self.q = index, request, event, q
         self.tok, self.stop, self.reasoning, self.tool_parser = tok, list(stop), reasoning, tool_parser
         self.want_logprobs = want_logprobs
@@ -715,7 +731,7 @@ class _Choice:
                                      # that many, and a stop the model happens to write early cannot undo it
         self._scanned = 0            # how much of the content channel the stop scan has already read
         self._stop_span = max((len(s) for s in self.stop), default=1) - 1   # how far back a new one can reach
-        self.streams = {"reasoning_content": _Stream(tok), "content": _Stream(tok)}
+        self.streams = {"reasoning_content": _Stream(tok, repairs), "content": _Stream(tok, repairs)}
         self.shown = {"reasoning_content": 0, "content": 0}
         self.text = {"reasoning_content": "", "content": ""}
         self.logprobs = []                           # per generated token: (id, logprob, [(id, logprob), ...])
@@ -930,6 +946,7 @@ class Server:
         # D3 is about kernels, but its rule holds here too: a path that is taken silently is a
         # path nobody checks. /metrics says which detokenizer served, so a scrape settles it.
         self.rust_detok = tokenizer is not None and decode_stream(tokenizer) is not None
+        self.detok_repairs = new_repairs()         # this door's, so a scrape names who repaired
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
         self.tool_parser = tool_parser             # text -> [(name, arguments json)] or None (the profile knows the model's format)
         self.vision = vision                       # the profile's door half for pictures (prepare / expand / limits), or None: text only
@@ -1866,11 +1883,11 @@ class Server:
             labelled.append(("st:decode_capacity_bucket_total", "counter",
                              "decode steps by the context-capacity bucket whose graph served them",
                              [(f'capacity="{c}"', v) for c, v in sorted(by_bucket.items())]))
-        if any(DETOK_REPAIRS.values()):
+        if any(self.detok_repairs.values()):
             # Zero in every healthy run, so the series only exists once something went wrong.
             labelled.append(("st:detokenizer_repairs_total", "counter",
                              "streamed text the door had to repair, by what went wrong",
-                             [(f'reason="{reason}"', count) for reason, count in sorted(DETOK_REPAIRS.items()) if count]))
+                             [(f'reason="{reason}"', count) for reason, count in sorted(self.detok_repairs.items()) if count]))
         if self.by_reason:
             labelled.append(("vllm:request_success_by_reason_total", "counter",
                              "requests answered, by why they stopped",
@@ -2103,13 +2120,22 @@ class Server:
                                                    cache_salt=cache_salt)
                     choices.append(_Choice(len(choices), request, event, server._streams[request], tok=server.tok, stop=stop,
                                            reasoning=reasoning, tool_parser=tool_parser, want_logprobs=want_logprobs,
-                                           min_new=min_new))
+                                           min_new=min_new, repairs=server.detok_repairs))
                 return choices
 
             def run_choices(self, choices, on_delta) -> bool:
                 """Drive every choice's queue until all have ended; `on_delta(choice, deltas)` receives each flush.
                 False when the client left (every live generation is cancelled)."""
                 live = {c.request: c for c in choices}
+
+                def retire(c):
+                    """A choice leaves the loop, however it leaves. The characters it showed are
+                    counted here and only here, so an answer the client hung up on is counted the
+                    same as one that finished -- that traffic is exactly what a ratio against
+                    `vllm:generation_tokens_total` is read for."""
+                    server.generation_characters_total += sum(len(t) for t in c.text.values())
+                    live.pop(c.request, None)
+
                 while live:
                     # Cleared before the queues are read, so an item that arrives during the
                     # read leaves the flag set and the wait below returns at once.
@@ -2130,24 +2156,23 @@ class Server:
                             if c.finish == "stop":
                                 server.cancel(c.request, "stop")            # the loop drops the row; the answer is complete here
                                 c.done = True
-                                server.generation_characters_total += sum(len(t) for t in c.text.values())
-                                live.pop(c.request)
+                                retire(c)
                         elif kind == "end":
                             deltas = c.flush(final=True)
                             if deltas:
                                 on_delta(c, deltas)
                             c.finish = c.finish or payload
                             c.done = True
-                            server.generation_characters_total += sum(len(t) for t in c.text.values())
-                            live.pop(c.request)
+                            retire(c)
                         else:
                             c.error = payload
                             c.done = True
-                            live.pop(c.request)
+                            retire(c)
                     if not progressed:
                         if self.gone():
-                            for c in live.values():
+                            for c in list(live.values()):
                                 server.cancel(c.request, "client closed")
+                                retire(c)
                             return False
                         server._wake.wait(0.02)      # the timeout is the disconnect check's period
                 return True
@@ -2501,8 +2526,16 @@ class Server:
                     if not isinstance(prompt, str):
                         raise RequestError("prompt must be text")
                     add_special = bool(req.get("add_special_tokens", True))
-                ids = server.tok.encode(nfc(prompt), add_special_tokens=add_special).ids
-                self.reply(200, {"count": len(ids), "max_model_len": server.max_context, "tokens": ids})
+                # Composed, because that is what generation will tokenise -- but this endpoint is
+                # asked "how many tokens is THIS string", so when the answer is about a different
+                # one it says so and hands back the string the ids belong to.
+                composed = nfc(prompt)
+                ids = server.tok.encode(composed, add_special_tokens=add_special).ids
+                out = {"count": len(ids), "max_model_len": server.max_context, "tokens": ids}
+                if composed != prompt:
+                    out["normalized"] = "NFC"
+                    out["prompt"] = composed
+                self.reply(200, out)
 
             def detokenize(self, req):
                 if server.tok is None:
