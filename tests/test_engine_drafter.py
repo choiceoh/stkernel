@@ -247,14 +247,22 @@ class DrafterTests(unittest.TestCase):
             else:
                 sys.modules[kernels.__name__] = prior
 
-    def test_calibration_files_the_stores_blobs_from_the_real_rows_only(self):
-        """The observer under the native batched paths: `fc` sees exactly the kept observe rows, the block's dense inputs
-        only the alive rows, nothing before `arm()`, one blob per K tile in the pack store's namespace and form."""
-        import tempfile
-        from engine.profiles.glm53.drafter import Calibration, store_name, store_tiles
+    def test_the_masks_of_the_batched_paths_reach_the_packs(self):
+        """A calibrating pack sums only the rows the drafter says are real: `observe_rows` passes the kept positions,
+        `propose_rows` the alive rows, `observe_masked` the valid count; a one-row path passes nothing (every row real)."""
         d, field, dev = self.make_full_drafter(seed=8)
         F, t = d.F, d.F.k + 1
         linear = torch.nn.functional.linear
+        seen = {}
+
+        class Fake:                                                           # a calibrating pack recording the masks it was handed
+            def __init__(self, name, w):
+                self.name, self.w, self.cols = name, w, w.shape[1]
+                self.observer = object()                                      # what marks a pack as calibrating
+
+            def __call__(self, x, rows_ok=None):
+                seen.setdefault(self.name, []).append(None if rows_ok is None else rows_ok.clone())
+                return linear(x, self.w)
         packed = {"fc.weight": d.p["fc.weight"]}
         for L in range(F.layers):
             q = f"layers.{L}."
@@ -262,58 +270,39 @@ class DrafterTests(unittest.TestCase):
             packed[q + "mlp.gate_up"] = torch.cat([d.p[q + f"mlp.{s}_proj.weight"] for s in ("gate", "up")])
             for key in ("self_attn.o_proj.weight", "mlp.down_proj.weight", "attention_conv.kernel_projection.weight", "mlp_conv.kernel_projection.weight"):
                 packed[q + key] = d.p[q + key]
-        class Fake:                                                           # a prepared dense weight: its width and its product
-            def __init__(self, w):
-                self.w, self.cols = w, w.shape[1]
-
-            def __call__(self, x):
-                return linear(x, self.w)
-        d.dense = {name: Fake(w) for name, w in packed.items()}
+        d.dense = {name: Fake(name, w) for name, w in packed.items()}
         d.context_kv = torch.cat([d.p[f"layers.{L}.self_attn.{s}_proj.weight"] for L in range(F.layers) for s in ("k", "v")])
-        d.calibration = Calibration(d.dense, torch.device(dev))
-        self.assertEqual(set(d.calibration.H), {store_name(n) for n in packed})                # K <= 4096: one tile each
-        self.assertEqual(store_tiles("fc.weight", 4096 * 5), [(store_name("fc.weight") + f".k{i}", i * 4096, 4096) for i in range(5)])
         slots = torch.tensor([1, 2, 3], device=dev); positions = torch.tensor([[5, 6, 7, 8], [13, 14, 15, 16], [2, 3, 4, 5]], device=dev)
         valid = torch.tensor([3, 0, 4], device=dev)
         aux = (torch.randn(3 * t, F.hidden * len(F.target_layers), device=dev) * 0.3).bfloat16()
-        fc = store_name("fc.weight")
-        d.observe_rows(field, slots, positions, aux, valid)                   # before arm(): nothing is summed
-        self.assertEqual(float(d.calibration.rows[fc]), 0.0)
-        self.assertEqual(float(d.calibration.H[fc].abs().sum()), 0.0)
-        d.calibration.arm()
         d.observe_rows(field, slots, positions, aux, valid)
-        keep = torch.tensor([1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1], device=dev, dtype=torch.bool)
-        kept = aux[keep].float()
-        self.assertEqual(float(d.calibration.rows[fc]), 7.0)
-        torch.testing.assert_close(d.calibration.H[fc], kept.T @ kept, atol=1e-3, rtol=1e-3)
+        self.assertEqual(seen["fc.weight"][-1].tolist(), [1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1])
+        d.observe_masked(field[1], positions[0], aux[:t], valid[0])
+        self.assertEqual(seen["fc.weight"][-1].tolist(), [1, 1, 1, 0])
+        d.observe(field[1], positions[0], aux[:t])
+        self.assertIsNone(seen["fc.weight"][-1])
         anchors = torch.tensor([7, 3, 9], device=dev); ctx = torch.tensor([5, 12, 3], device=dev)
         alive = torch.tensor([True, False, True], device=dev)
-        d.fast_attention = False                                              # the CPU attention path; the dense inputs are what is summed
         d.propose_rows(field, slots, anchors, ctx, alive=alive)
-        for name in ("layers.0.attention_conv.kernel_projection.weight", "layers.0.mlp_conv.kernel_projection.weight", "layers.0.mlp.down_proj.weight"):
-            self.assertEqual(float(d.calibration.rows[store_name(name)]), 2 * t, name)   # two alive rows of t positions
-        for blob, H in d.calibration.H.items():
-            self.assertTrue(torch.allclose(H, H.T), blob)
-        with tempfile.TemporaryDirectory() as tmp:
-            written = d.calibration.save(tmp, rank=2)
-            self.assertEqual(len(written), len(packed))
-            blob = torch.load(Path(tmp) / "mkcalib" / "rank2" / (fc + ".pt"))
-            self.assertEqual((blob["name"], blob["ntok"], tuple(blob["H"].shape), blob["H"].dtype), (fc, 7, (F.hidden, F.hidden), torch.float32))
-            self.assertTrue(torch.isfinite(blob["H"]).all() and str(blob["H"].device) == "cpu")
+        for name in ("layers.0.attention_conv.kernel_projection.weight", "layers.0.mlp_conv.kernel_projection.weight",
+                     "layers.0.mlp.down_proj.weight"):                        # the stock attention path here; the native one adds qkv, o, gate_up
+            self.assertEqual(seen[name][-1].tolist(), [1] * t + [0] * t + [1] * t, name)
+        d.propose_rows(field, slots, anchors, ctx)
+        self.assertIsNone(seen["layers.0.mlp.down_proj.weight"][-1])
+        d.propose_tensor(anchors[:1], 5, field[1])
+        self.assertIsNone(seen["layers.0.mlp.down_proj.weight"][-1])
 
-    def test_calibration_sums_a_wide_input_per_store_tile(self):
-        from engine.profiles.glm53.drafter import Calibration, STORE_TILE, store_name
-        dense = {"fc.weight": SimpleNamespace(cols=2 * STORE_TILE)}
-        c = Calibration(dense, torch.device("cpu"))
-        c.arm()
-        x = torch.randn(3, 2 * STORE_TILE).bfloat16()
-        c.observe("fc.weight", x, torch.tensor([True, False, True]))
-        kept = x[[0, 2]].float()
-        base = store_name("fc.weight")
-        torch.testing.assert_close(c.H[base + ".k1"], kept[:, STORE_TILE:].T @ kept[:, STORE_TILE:], atol=1e-3, rtol=1e-3)
-        self.assertEqual(float(c.rows[base + ".k0"]), 2.0)
-        c.observe("not.prepared", x)                                          # a weight without a pack is not summed
-        self.assertNotIn(store_name("not.prepared"), c.H)
+    def test_dense_shapes_name_every_prepared_weight_at_this_tp(self):
+        from engine.profiles.glm53.drafter import dense_shapes, store_name
+        F = self.make_drafter().F
+        shapes = dense_shapes(F, 1)
+        self.assertEqual(len(shapes), 1 + 6 * F.layers)
+        self.assertEqual(shapes["fc.weight"], (F.hidden, F.hidden * len(F.target_layers)))
+        self.assertEqual(shapes["layers.0.self_attn.qkv"], ((F.heads + 2 * F.kv_heads) * F.head_dim, F.hidden))
+        self.assertEqual(store_name("layers.0.self_attn.qkv"), "DFlash2Qwen3ForCausalLM/model.layers.0.self_attn.qkv_proj")
+        self.assertEqual(store_name("fc.weight"), "DFlash2Qwen3ForCausalLM/model.fc")
+        half = dense_shapes(F, 2)
+        self.assertEqual(half["layers.0.self_attn.o_proj.weight"], (F.hidden, F.heads // 2 * F.head_dim))
 
     def test_the_host_walk_crosses_once_not_twice_a_position(self):
         source = (Path(__file__).resolve().parents[1] / "engine/profiles/glm53/drafter.py").read_text()

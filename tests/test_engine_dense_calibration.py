@@ -1,0 +1,93 @@
+"""kernels/dense/calibration: the sums a boot keeps for the GPTQ packs the store lacks, and the store's part of it."""
+import tempfile
+import unittest
+from pathlib import Path
+
+import torch
+
+from engine.kernels.dense.calibration import BUDGET_BYTES, ROWS_TARGET, Calibration
+from engine.kernels.dense.store import PackStore
+
+
+class FakeLayer:
+    def __init__(self, cols, name="x"):
+        self.cols, self.name, self.observer = cols, name, None
+
+    def __call__(self, x, rows_ok=None):
+        if self.observer is not None:
+            self.observer(x.reshape(-1, self.cols), rows_ok)
+        return x
+
+
+class CalibrationTests(unittest.TestCase):
+    def test_sums_the_real_rows_only_once_armed_and_files_the_stores_blobs(self):
+        c = Calibration("cpu", budget_bytes=1 << 20)
+        layer = FakeLayer(64, "Some/model.layers.0.self_attn.o_proj")
+        self.assertTrue(c.attach(layer.name, layer, PackStore.tiles(layer.name, 64), small_rows=True))
+        x = torch.randn(6, 64).bfloat16()
+        layer(x, torch.tensor([1, 1, 0, 1, 0, 0], dtype=torch.bool))
+        self.assertEqual(c.progress(), 0, "nothing before arm(): warm-ups feed junk")
+        self.assertEqual(float(c.H[layer.name].abs().sum()), 0.0)
+        c.arm()
+        layer(x, torch.tensor([1, 1, 0, 1, 0, 0], dtype=torch.bool))
+        kept = x[[0, 1, 3]].float()
+        torch.testing.assert_close(c.H[layer.name], kept.T @ kept, atol=1e-3, rtol=1e-3)
+        self.assertEqual(c.progress(), 3)
+        layer(x)                                                              # no mask: every row real
+        self.assertEqual(c.progress(), 9)
+        self.assertFalse(c.complete())
+        c.rows[layer.name].fill_(ROWS_TARGET)
+        self.assertTrue(c.complete())
+        with tempfile.TemporaryDirectory() as tmp:
+            written = c.save(tmp, rank=3)
+            self.assertEqual(written, [Path(tmp) / "mkcalib" / "rank3" / (layer.name + ".pt")])
+            blob = torch.load(written[0])
+            self.assertEqual((blob["name"], blob["ntok"], tuple(blob["H"].shape), blob["H"].dtype, str(blob["H"].device)),
+                             (layer.name, ROWS_TARGET, (64, 64), torch.float32, "cpu"))
+            store = PackStore(tmp, 3)
+            self.assertEqual(store.missing_calibration(layer.name, 64), [])   # the store now has it
+            self.assertIn("filed", c.status())
+
+    def test_a_layer_whose_small_calls_may_be_ghosts_sums_only_its_large_calls(self):
+        c = Calibration("cpu", budget_bytes=1 << 20)
+        layer = FakeLayer(32, "Target/model.layers.1.mlp.down_proj")
+        c.attach(layer.name, layer, PackStore.tiles(layer.name, 32), small_rows=False)
+        c.arm()
+        layer(torch.randn(8, 32).bfloat16())                                  # a decode step: rows may be ghosts, no mask -> skipped
+        self.assertEqual(c.progress(), 0)
+        layer(torch.randn(40, 32).bfloat16())                                 # a prefill chunk: every row real
+        self.assertEqual(c.progress(), 40)
+
+    def test_wide_inputs_are_summed_per_tile_and_the_budget_defers_whole_layers(self):
+        c = Calibration("cpu", budget_bytes=PackStore.TILE * PackStore.TILE * 4 * 2 + 2 * 4096)
+        wide = FakeLayer(2 * PackStore.TILE, "Target/model.fc")
+        self.assertTrue(c.attach(wide.name, wide, PackStore.tiles(wide.name, wide.cols), small_rows=True))
+        self.assertEqual(sorted(c.H), [wide.name + ".k0", wide.name + ".k1"])
+        c.arm()
+        x = torch.randn(3, 2 * PackStore.TILE).bfloat16()
+        wide(x, torch.tensor([True, False, True]))
+        kept = x[[0, 2]].float()
+        torch.testing.assert_close(c.H[wide.name + ".k1"], kept[:, PackStore.TILE:].T @ kept[:, PackStore.TILE:], atol=1e-2, rtol=1e-3)
+        self.assertEqual(c.progress(), 2)
+        late = FakeLayer(64, "Target/model.late")
+        self.assertFalse(c.attach(late.name, late, PackStore.tiles(late.name, 64), small_rows=True), "over budget: waits for a later boot")
+        self.assertEqual(c.deferred, [(late.name, late.name)])
+        self.assertIsNone(late.observer)
+        self.assertIn("1 tiles deferred", c.status())
+        self.assertLessEqual(Calibration.nbytes(PackStore.tiles("y", 20480)), BUDGET_BYTES)
+
+    def test_the_store_reports_missing_tiles_and_refuses_foreign_blobs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = PackStore(tmp, 0)
+            self.assertEqual(store.missing_calibration("A/model.x", 5 * PackStore.TILE),
+                             [(f"A/model.x.k{i}", i * PackStore.TILE, PackStore.TILE) for i in range(5)])
+            path = store.calibration_path("A/model.y")
+            path.parent.mkdir(parents=True)
+            torch.save({"H": torch.eye(128), "ntok": 10, "name": "A/model.y"}, path)
+            self.assertEqual(store.missing_calibration("A/model.y", 128), [])
+            with self.assertRaisesRegex(ValueError, "do not fit"):
+                store.missing_calibration("A/model.y", 256)                  # a TP-sharded width the old dump does not match
+
+
+if __name__ == "__main__":
+    unittest.main()

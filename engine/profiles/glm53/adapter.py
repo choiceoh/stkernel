@@ -30,7 +30,6 @@ class NullDrafter:
     """No drafts (K=0): a decode step is one token per sequence."""
     k = 0
     aux_layers = ()
-    calibration = None
 
     def observe(self, ring, positions, aux) -> None:
         pass
@@ -84,6 +83,8 @@ class Glm53Engine:
         self.steps_verified = 0                              # verifications since the counters were last cleared
         self._ceiling_every = 64                             # two vocabulary passes, so sampled, not every step
         self.lane_info = {}                        # what is actually bound: set by the boot that built the lanes
+        self.calibration = None                    # kernels/dense/calibration.Calibration while this boot sums for GPTQ packs
+        self.calibration_root = None               # the pack store's root the blobs are filed under
         self.steps = 0
         self.decode_graphs = None
         self.sampling_graphs = None
@@ -154,6 +155,33 @@ class Glm53Engine:
                 self._warmup_prefill_memory()
             self.memory.checkpoint("ready")
             self.memory.ready = True
+
+    def housekeeping(self, steps: int) -> None:
+        """Called by the step loop after every model step (base/serve). Every 256th step, a calibrating boot asks its
+        sums how far they are (one device read) and files them when complete: the next boot packs GPTQ from them."""
+        c = self.calibration
+        if c is None or c.filed is not None or steps % 256:
+            return
+        if c.complete():
+            written = c.save(self.calibration_root, self.net.comm.rank)
+            self.lane_info["calibration"] = "filed"
+            print(f"  calibration: rank {self.net.comm.rank} filed {len(written)} blobs under {self.calibration_root}/mkcalib/rank{self.net.comm.rank}/ "
+                  f"({c.status()}); the next boot packs GPTQ from them", flush=True)
+
+    def file_calibration(self, root=None) -> "list | None":
+        """File the sums now (shutdown, or the door's POST /v1/engine/calibration) if they are worth a pack."""
+        from engine.kernels.dense.calibration import ROWS_FLOOR
+        c = self.calibration
+        if c is None:
+            return None
+        if c.filed is not None and root is None:
+            return c.filed
+        if c.progress() < ROWS_FLOOR:
+            print(f"  calibration: rank {self.net.comm.rank} not filed -- {c.status()} (fewer than {ROWS_FLOOR} rows)", flush=True)
+            return None
+        written = c.save(root or self.calibration_root, self.net.comm.rank)
+        self.lane_info["calibration"] = "filed"
+        return written
 
     def warmup_shapes(self, lengths=(64, 256, 1024, 2048, 4096), widths=(1, 2, 3, 4)) -> dict:
         """Pay the first-use JIT at boot instead of on the first user (45차 §23 B2; production's prefill-warmup.py):
