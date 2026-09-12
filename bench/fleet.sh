@@ -124,7 +124,16 @@ serving_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^glm53$'; 
 # entering this queue -- it has its own launcher lock. Until both are one mechanism the
 # queue must at least SEE it: holder-empty is not the same as free (2026-09-12, four
 # nodes running st-glm53 while status said FREE).
-st_engine_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qE '^st-'; }
+# Containers AND the lease: the two disagreed once and the queue granted while the lease
+# was still held, so three reservations died on it in two seconds each (2026-09-12).
+st_engine_up() {
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -qE '^st-' && return 0
+  local repo=${FLEET_RUNNER_REPO:-$REPO}
+  [ -f "$repo/launchers/lib/fleet-lease.sh" ] || return 1
+  ( FLEET_REPO=$repo; . "$repo/launchers/lib/fleet-lease.sh"
+    held=$(fleet_lease read 2>/dev/null) || exit 1
+    case "$held" in free|free\ *) exit 1 ;; *) exit 0 ;; esac )
+}
 st_engine_line() { docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -E '^st-' | head -1; }
 # Refusing is not enough: a queued session would then wait for a human to go and ask.
 # The ST engine can be ASKED to finish, park its conversations and let go, so the queue

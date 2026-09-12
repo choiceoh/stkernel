@@ -37,9 +37,16 @@ if [ "${ST_PROBE_NO_LEASE:-0}" != 1 ] && [ "${ST_PROBE_NO_GPU:-0}" != 1 ]; then
   # own defaults would be discarded the moment the builtin returns.
   FLEET_REPO=$repo
   . "$repo/launchers/lib/fleet-lease.sh"
-  fleet_lease acquire --owner "'$LEASE_OWNER'" --container "$NAME" \
-    --est-minutes "${ST_PROBE_MINUTES:-20}" --note "'$probe'" >/dev/null \
-    || { echo "ABORT: the fleet is $(fleet_lease read 2>/dev/null || echo unreachable)" >&2; exit 1; }
+  # Wait, do not abort: a probe the queue just sent in should not lose its turn because
+  # the previous holder is still tearing down (2026-09-12: three reservations died in two
+  # seconds each on a lock that was removed moments later).
+  until fleet_lease acquire --owner "'$LEASE_OWNER'" --container "$NAME" \
+          --est-minutes "${ST_PROBE_MINUTES:-20}" --note "'$probe'" >/dev/null 2>&1; do
+    [ "$(date +%s)" -lt "$(( ${LEASE_DEADLINE:=$(( $(date +%s) + 60 * ${ST_PROBE_WAIT_MINUTES:-10} ))} ))" ] \
+      || { echo "ABORT: the fleet stayed held for ${ST_PROBE_WAIT_MINUTES:-10} min: $(fleet_lease read 2>/dev/null || echo unreachable)" >&2; exit 1; }
+    echo "  waiting for the fleet: $(fleet_lease read 2>/dev/null || echo unreachable)" >&2
+    sleep "${ST_PROBE_POLL_S:-10}"
+  done
   BEAT=$(fleet_lease_beat "$LEASE_OWNER")
   # If this shell is killed outright (SIGKILL) the trap cannot run and the lease leaks.
   # It is not lost: with its evidence on another node it goes stale after the grace and

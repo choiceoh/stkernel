@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -105,7 +106,15 @@ def read(path=DEFAULT_PATH) -> "dict | None":
     except ValueError:
         # Not ours to interpret and not ours to delete: an older launcher's
         # plain-text lock reads exactly like this, and it means the same thing.
-        return {"owner": raw.strip()[:200] or "unknown", "host": "", "pid": 0, "container": "",
+        # An older launcher's plain-text lock. We cannot parse it, but it usually NAMES a
+        # pid and a host, and that is enough to judge: treating every such record as
+        # permanently held made a dead session a dead hand -- 2026-09-12, a lock whose pid
+        # had exited blocked three queued reservations until a human ran `stop`.
+        text = raw.strip()[:200]
+        named = re.search(r"pid=(\d+)", text)
+        host = re.search(r"@([A-Za-z0-9_.-]+)", text)
+        return {"owner": text or "unknown", "host": host.group(1).split(".")[0] if host else "",
+                "pid": int(named.group(1)) if named else 0, "container": "",
                 "since": 0.0, "beat": 0.0, "est_minutes": 0, "note": "opaque lease record",
                 "opaque": True}
     return record
@@ -120,10 +129,20 @@ def alive(record, *, container_up=None, grace: float = GRACE_S, now=None) -> boo
     if not record:
         return False
     if record.get("opaque"):
-        # An older launcher's plain-text lock, or a record we cannot parse. It carries no
-        # evidence and no heartbeat, so nothing here can ever call it stale -- and a lease
-        # we cannot judge is held, never free (D3). A human clears it with `stop`.
-        return True
+        # A record we cannot parse is held, never free (D3) -- unless it names a pid on a
+        # host we can ask, and that pid is gone, and no ST container is running. Then it
+        # is not a judgement call: its session left without clearing its lock.
+        pid, host = int(record.get("pid") or 0), record.get("host") or ""
+        if not pid or host != os.uname().nodename.split(".")[0]:
+            return True
+        try:
+            os.kill(pid, 0)
+            return True
+        except PermissionError:
+            return True
+        except ProcessLookupError:
+            pass
+        return container_up("st-") if container_up is not None else True
     now = _now() if now is None else now
     container = record.get("container")
     if container and container_up is not None:
@@ -331,7 +350,10 @@ def docker_evidence(name: str) -> "bool | None":
         return None
     if done.returncode:
         return None
-    return name in done.stdout.split()
+    names = done.stdout.split()
+    if name.endswith("-"):                       # a prefix: "is ANY of these running?"
+        return any(n.startswith(name) for n in names)
+    return name in names
 
 
 if __name__ == "__main__":

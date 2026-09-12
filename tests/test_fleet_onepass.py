@@ -229,8 +229,9 @@ class FleetOccupancyTests(unittest.TestCase):
         self.launcher = (root / 'launchers/start-st-glm53.sh').read_text()
 
     def test_the_queue_sees_st_containers(self):
-        self.assertIn("st_engine_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qE '^st-'; }",
-                      self.fleet)
+        self.assertIn("st_engine_up() {", self.fleet)
+        self.assertIn("grep -qE '^st-' && return 0", self.fleet)
+        self.assertIn("fleet_lease read", self.fleet)      # containers AND the lease: they disagreed once
         # a grant is refused on both paths that hand out the fleet
         self.assertIn('logit "hold refused: ST engine occupies the fleet', self.fleet)
         # refusing alone would leave a queued session waiting for a human to go and ask
