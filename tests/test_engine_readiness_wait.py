@@ -28,3 +28,7 @@ class ReadinessTests(unittest.TestCase):
     def test_a_live_but_unready_container_times_out(self):
         with self.assertRaises(TimeoutError):
             self.run_clock(100, timeout=10)
+
+    def test_another_ready_container_cannot_satisfy_the_wait(self):
+        with self.assertRaisesRegex(RuntimeError, 'identity changed'):
+            self.run_clock(0, alive=False)

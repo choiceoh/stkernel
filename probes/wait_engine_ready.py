@@ -10,13 +10,13 @@ def wait_ready(probe, running, *, timeout=1800, interval=5,
                clock=time.monotonic, sleep=time.sleep):
     deadline = clock() + timeout
     while True:
+        if not running():
+            raise RuntimeError('candidate stopped or its container identity changed during boot')
         # Check readiness before the deadline, including after the final sleep.
         # An already healthy engine must not be rolled back because startup
         # finished at the end of a polling interval.
         if probe():
             return
-        if not running():
-            raise RuntimeError('candidate stopped or its container identity changed during boot')
         remaining = deadline - clock()
         if remaining <= 0:
             raise TimeoutError(f'engine was not ready within {timeout} seconds')
