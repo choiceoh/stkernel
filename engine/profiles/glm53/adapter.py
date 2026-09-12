@@ -79,6 +79,7 @@ class Glm53Engine:
         self.reachable_mass = 0.0                            # sum_x min(p, q): the most any rule could accept
         self.covered_mass = 0.0                              # the target mass the drafter's candidates cover
         self.ceiling_positions = 0                           # draft positions behind those two sums
+        self.steps_verified = 0                              # verifications since the counters were last cleared
         self._ceiling_every = 64                             # two vocabulary passes, so sampled, not every step
         self.lane_info = {}                        # what is actually bound: set by the boot that built the lanes
         self.steps = 0
@@ -197,6 +198,9 @@ class Glm53Engine:
             self.accepted_total = self.drafted_total = 0
             self.decode_shape_counts = {}
             self.accepted_per_step = [0] * len(self.accepted_per_step)
+            # the ceilings are read as ratios against the acceptance above, so they clear together
+            self.reachable_mass = self.covered_mass = 0.0
+            self.ceiling_positions = self.steps_verified = 0
             self.steps = 0
         return paid
 
@@ -359,13 +363,14 @@ class Glm53Engine:
         if media:
             self._bind_media(seq, list(ids), media, base=0)
         self.tokens[seq] = list(ids); self.prompt_len[seq] = len(ids)
+        self.history.forget(seq)                            # a row's history may not outlive the tokens it was built from
         self.limits[seq] = (max_new, temperature)
         self.min_new[seq] = min_new
         self._bind_options(seq, options)
 
     def note_ceilings(self, target_probs, draft_probs) -> None:
         """Every 64th verification, record what the draft allowed. See base/sampler.draft_ceilings."""
-        self.steps_verified = getattr(self, "steps_verified", 0) + 1
+        self.steps_verified += 1
         if self.steps_verified % self._ceiling_every:
             return
         from engine.base.sampler import draft_ceilings
@@ -473,6 +478,7 @@ class Glm53Engine:
         if seq in self.tokens or seq in self.slot:
             raise ValueError(f"seq {seq} is live or has an uncollected result")
         self.tokens[seq] = list(record["tokens"]); self.prompt_len[seq] = int(record["prompt_len"])
+        self.history.forget(seq)                            # the row now holds another conversation's tokens
         self.limits[seq] = (int(record["limits"][0]), float(record["limits"][1]))
         self.min_new[seq] = int(record.get("min_new", 0))
         options = dict(record.get("options") or {})
