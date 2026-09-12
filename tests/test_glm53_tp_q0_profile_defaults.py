@@ -43,16 +43,16 @@ done
 class EpTiledProfileDefaultsTests(unittest.TestCase):
     def test_real_loader_selects_ep_sf6_and_preserves_other_defaults(self):
         self.assertEqual(load_profile(), {**dict.fromkeys(PROMOTED, "1"),
-            **dict.fromkeys(RETAINED_OFF, "0"), STATIC: "t,r,sf6", "SPEC_K":"5", "VLLM_GLM53_PREP_FUSED":"1"})
+            **dict.fromkeys(RETAINED_OFF, "0"), STATIC: "t,r,sf6", "SPEC_K":"6", "VLLM_GLM53_PREP_FUSED":"1"})
 
     def test_explicit_tp_rollback_and_startup_overrides_survive_loader(self):
-        rollback = {"ENABLE_EP":"0", "VLLM_GLM53_EP_TILED":"0", "VLLM_GLM53_TP_SF6_Q0":"1", "SPEC_K":"5"}
+        rollback = {"ENABLE_EP":"0", "VLLM_GLM53_EP_TILED":"0", "VLLM_GLM53_TP_SF6_Q0":"1", "SPEC_K":"6"}
         for overrides in (rollback, {**rollback, "VLLM_GLM53_STARTUP_TRIM":"0",
                                       "VLLM_GLM53_SKIP_UNUSED_GRAPH_PROFILE":"0"},
                           {**rollback, "VLLM_GLM53_PREP_FUSED":"0"}):
             with self.subTest(overrides=overrides):
                 self.assertEqual(load_profile(overrides), {**dict.fromkeys(PROMOTED,"1"),
-                    **dict.fromkeys(RETAINED_OFF,"0"), STATIC:"t,r,sf6", "SPEC_K":"5", "VLLM_GLM53_PREP_FUSED":"1", **overrides})
+                    **dict.fromkeys(RETAINED_OFF,"0"), STATIC:"t,r,sf6", "SPEC_K":"6", "VLLM_GLM53_PREP_FUSED":"1", **overrides})
 
 
 if __name__ == "__main__":

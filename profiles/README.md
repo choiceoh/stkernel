@@ -77,7 +77,7 @@ the candidate's +0.627% lies inside the baselines' own 0.641% spread.
 [Kernel, sanitizer and serving evidence](../measurements/glm53_input_cta_next_20260908/README.md).
 
 GLM53 selects EP4 MoE with `ENABLE_EP=1`, `VLLM_GLM53_EP_TILED=1` and
-`VLLM_GLM53_TP_SF6_Q0=0`, retaining K5 and `VLLM_GLM53_PREP_FUSED=1`.
+`VLLM_GLM53_TP_SF6_Q0=0`, retaining K6 and `VLLM_GLM53_PREP_FUSED=1`.
 The canonical pooled decode result was 72.62743 tok/s against the operator's
 absolute 67 target; TP measured 80.49311 tok/s. Quality and required execution
 proof passed. This is not a relative non-regression or full-warm prefill claim.

@@ -364,7 +364,7 @@ def main() -> int:
                     default=int(os.environ.get("ONEPASS_COMBINED_REASONING_BUDGET",
                                                str(DEFAULT_COMBINED_REASONING_BUDGET))),
                     help="reasoning token cap inside the combined completion")
-    ap.add_argument("--num-spec", type=int, default=int(os.environ.get("SPEC_K", "7")))
+    ap.add_argument("--num-spec", type=int, default=int(os.environ.get("SPEC_K", "6")))
     ap.add_argument("--combine-min-ctx", type=int, default=int(os.environ.get("ONEPASS_COMBINE_MIN_CTX", "32000")),
                     help="contexts at or above this size ask the three questions in ONE request (one prefill "
                          "instead of three; the fleet has no prefix cache). 0 = never combine")

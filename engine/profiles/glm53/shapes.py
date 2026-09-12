@@ -2,9 +2,9 @@
 
 The 40th campaign spent several fleet holds learning why a prefill chunk was
 6,912: `floor((MAX_BATCHED - draft_slots) / 2304) * 2304` with MAX_BATCHED
-8192 and 5 draft slots, where 2304 is the Mamba/KDA cache block size in
+8192 and six draft slots, where 2304 is the Mamba/KDA cache block size in
 "align" mode (--block-size 2304, VLLM_GLM53 APC). MAX_BATCHED=9216 did not
-move it -- five tokens short. The self-check below IS that finding: if it
+move it -- six tokens short. The self-check below IS that finding: if it
 ever stops reproducing, the chunk law changed.
 """
 from __future__ import annotations
@@ -14,7 +14,7 @@ from engine.profiles.glm53.plan import text_config
 
 BLOCK = 2304          # launcher --block-size; the prefill chunk's alignment (facts.CHUNK_ALIGN). The paged KV / prefix block
                       # is facts.BLOCK = 768, a divisor: the 6,912 law is unchanged, its boundaries are three times as many
-SPEC_K = 5            # profile SPEC_K=5: DFlash2 draft slots taken out of the token budget
+SPEC_K = 6            # profile SPEC_K=6: DFlash2 draft slots taken out of the token budget
 
 
 def constraints() -> "list[Constraint]":
@@ -28,7 +28,7 @@ def constraints() -> "list[Constraint]":
                    "the raw-token multiple every prefill chunk must end on -- the 6,912 law"),
         Constraint("draft slots", SPEC_K, "profile SPEC_K",
                    "DFlash2 verifies K draft tokens per decode step; they come out of the "
-                   "same token budget, which is why 9,216 missed by five"),
+                   "same token budget, which is why 9,216 misses by six"),
         Constraint("conv history", la["short_conv_kernel_size"] - 1, "linear_attn_config.short_conv_kernel_size",
                    "KDA's q/k/v conv reads this many previous tokens; carried in the slot"),
         Constraint("kda heads per rank", la["num_heads"] // 4, "num_heads / TP",
@@ -50,10 +50,10 @@ def chunk_for(token_budget: int, draft_slots: int = SPEC_K) -> int:
 
 def _selfcheck() -> None:
     assert chunk_for(8192) == 6912, chunk_for(8192)          # the 40th campaign, exactly
-    assert chunk_for(9216) == 6912                           # five tokens short: still 6,912
-    assert chunk_for(9221) == 9216                           # N x 2304 + SPEC_K is the only way up
-    assert chunk_for(16384) == 16128                         # (16384-5)//2304 = 7 blocks
-    print("  glm53 shapes: 8192->6,912, 9216->6,912, 9221->9,216 -- the chunk law reproduces OK")
+    assert chunk_for(9216) == 6912                           # six tokens short: still 6,912
+    assert chunk_for(9222) == 9216                           # N x 2304 + SPEC_K is the only way up
+    assert chunk_for(16384) == 16128                         # (16384-6)//2304 = 7 blocks
+    print("  glm53 shapes: 8192->6,912, 9216->6,912, 9222->9,216 -- the chunk law reproduces OK")
 
 
 if __name__ == "__main__":

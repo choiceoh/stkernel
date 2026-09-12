@@ -138,7 +138,7 @@ and will be reworked anyhow"* 라고 적어 뒀다(`v1/sample/ops/penalties.py:2
 `ngram_proposer.py`(+GPU 판), `suffix_decoding.py`, `draft_model.py`, `step3p5.py`, `gemma4.py`,
 그리고 **배치 크기 → k 의 동적 표**(`v1/spec_decode/dynamic/`).
 
-**ST**: DFlash2 하나, **고정 k=5**. `max_seqs=4` 라 "배치가 커지면 드래프팅이 순수 오버헤드" 위험은 작지만
+**ST**: DFlash2 하나, **고정 k=6**. `max_seqs=4` 라 "배치가 커지면 드래프팅이 순수 오버헤드" 위험은 작지만
 **재 본 적이 없다.** 다만 계측은 우리가 더 낸다 — `st:spec_accepted_per_step_total` 은 수락 개수의
 **전체 분포**로, vLLM 의 위치별 생존 카운트보다 정보가 많다.
 

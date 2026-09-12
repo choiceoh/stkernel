@@ -48,7 +48,7 @@ import torch  # noqa: E402
 
 DEV = "cuda"
 E, TOPK, HID, INTER = 288, 8, 4096, 512   # per-rank intermediate 2048 / 4
-T = 8                                     # C=1 verify batch (k=7 + 1)
+T = 7                                     # C=1 verify batch (k=6 + 1)
 BYTES_PER_EXPERT = 1024 * 2048 + 1024 * 256 + 4096 * 256 + 4096 * 32
 
 
@@ -438,7 +438,7 @@ def main() -> int:
     ids40, w40 = routings[40 if 40 in routings else us_list[-1]][0]
     # numerics cases: the served shape, a C=4-like shape, and the static
     # backend's largest shape (640 pairs), where an expert spans 3 m-tiles
-    cases = [("T=8 U=40", ids40, w40, x, out)]
+    cases = [("T=7 U=40", ids40, w40, x, out)]
     for t, u in ((32, 16), (80, 8)):
         ids_u, w_u = _routings(u, t)[0]
         xx, oo = make_io(t)

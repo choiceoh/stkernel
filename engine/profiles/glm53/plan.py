@@ -11,7 +11,7 @@ are wrong, that comparison says so before anything is built on them.
 
 Placement sources are this repo's own overlay (overlay/modules/glm53_model/,
 which is the served model file) and the launcher (TP=4, ENABLE_EP=0,
---block-size 2304, kv fp8_e4m3, SPEC_K=5 with the DFlash2 drafter).
+--block-size 2304, kv fp8_e4m3, SPEC_K=6 with the DFlash2 drafter).
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ import struct
 from pathlib import Path
 
 GIB = 1 << 30
-CKPT = Path("/home/choiceoh/models/glm53-redhat-nvfp4")
+CKPT = Path("/home/choiceoh/models/st-glm53-nvidia-tp4-9391")
 TP = 4
 
 def _comp(n: str) -> str:
@@ -92,10 +92,10 @@ def text_config(ckpt=CKPT) -> dict:
     c = json.loads((Path(ckpt) / "config.json").read_text()); return c.get("text_config", c)
 
 
-def state_bytes(cfg: dict, tp: int = TP, kv_bytes: int = 1, spec_k: int = 5):
+def state_bytes(cfg: dict, tp: int = TP, kv_bytes: int = 1, spec_k: int = 6):
     """(KDA state per sequence, MLA KV per token [fp8 -> 1 B], indexer cache per token).
 
-    With DFlash2 verifying K=5 drafts a step, a sequence keeps K+1 recurrent
+    With DFlash2 verifying K=6 drafts a step, a sequence keeps K+1 recurrent
     states (one per draft position, so a rejection rolls back by index) and a
     conv window of K + kernel-1 inputs -- the served kda_state_shape(num_spec)
     and the engine's position rings alike. 34.8 MiB/seq was the K=0 number."""

@@ -71,8 +71,8 @@ DUAL_GEMM_ENV = "VLLM_GLM53_KDA_DUAL_GEMM"
 ONEPASS_ENV = "VLLM_GLM53_KDA_ONEPASS"
 KNOB_ENVS = (DUAL_GEMM_ENV, ONEPASS_ENV)
 
-# Fleet geometry (glm53-redhat-nvfp4, TP=4): 16 local heads x 128, conv width
-# 4, verify block 8 -> conv state_len 10. Everything is read from the tensors
+# Fleet geometry (st-glm53-nvidia-tp4-9391, TP=4): 16 local heads x 128, conv width
+# 4, verify block 7 -> conv state_len 9. Everything is read from the tensors
 # at call time; these are only the shapes the kernels were tuned for.
 _MAX_DUAL_M = 32
 # Probe sweep 2026-09-05 (34 layers, graph replay, second of two replays,

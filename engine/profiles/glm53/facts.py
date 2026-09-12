@@ -11,7 +11,7 @@ here against the raw config so the two cannot drift apart silently.
 Launcher facts (start-glm53-nvfp4-tp4.sh, fleet public defaults): TP=4,
 routed experts TP-sharded (ENABLE_EP=0: "the TP-sharded path is the measured
 one"; EP is EXP-1, an experiment), block 2304, KV fp8_e4m3, DFlash2 drafter
-with SPEC_K=5 -- so the checkpoint's MTP block (layer 45, fp8 experts) is
+with SPEC_K=6 -- so the checkpoint's MTP block (layer 45, fp8 experts) is
 NOT served and is not part of this profile.
 """
 from __future__ import annotations
@@ -29,7 +29,7 @@ BLOCK = 768                                                           # the page
                                                                       # production reuses whole 2,304 blocks; three per chunk alignment lets a shared
                                                                       # prefix's tail be reused in 768s -- 64-aligned for the KDA kernel's chunks,
                                                                       # whole indexer pools of 4, nine per 6,912 prefill chunk)
-SPEC_K = 5                                                            # DFlash2 draft slots per decode step
+SPEC_K = 6                                                            # DFlash2 draft slots per decode step
 KV_DTYPE = "fp8_e4m3"                                                 # launcher KV_DTYPE
 EXPERTS = "tp"                                                        # launcher ENABLE_EP=0
 

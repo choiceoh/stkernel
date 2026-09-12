@@ -27,7 +27,7 @@ import cpu_evidence
 
 VERSION = 1
 TIMEOUT = 600
-LOGIC_CHECKPOINT_CONFIG = Path('/home/choiceoh/models/glm53-redhat-nvfp4/config.json')
+LOGIC_CHECKPOINT_CONFIG = Path('/home/choiceoh/models/st-glm53-nvidia-tp4-9391/config.json')
 TOKENIZER_FILES = ('tokenizer_config.json', 'config.json', 'tokenizer.json',
                    'special_tokens_map.json', 'added_tokens.json', 'vocab.json',
                    'merges.txt', 'vocab.txt', 'tokenizer.model', 'spiece.model',
