@@ -95,5 +95,42 @@ class CalibrationTests(unittest.TestCase):
                 store.missing_calibration("A/model.y", 256)                  # a TP-sharded width the old dump does not match
 
 
+class Fp8GptqTests(unittest.TestCase):
+    def test_fp8_gptq_keeps_the_lanes_block_scales_and_lowers_the_output_error(self):
+        from engine.kernels.dense.packing import FP8_BLOCK, fp8_block_scales, fp8_gptq, fp8_rtn
+        g = torch.Generator().manual_seed(5)
+        N, K, M = 200, 256, 2048
+        w = (torch.randn(N, K, generator=g) * 0.05).bfloat16()
+        mix = torch.randn(K, K, generator=g) * 0.4 + torch.eye(K)
+        x = torch.randn(M, K, generator=g) @ mix
+        H = x.T @ x
+        q_rtn, s_rtn = fp8_rtn(w)
+        q_gptq, s_gptq = fp8_gptq(w, H)
+        self.assertEqual((q_rtn.dtype, tuple(q_rtn.shape), tuple(s_rtn.shape)), (torch.float8_e4m3fn, (256, K), (2, K // FP8_BLOCK)))
+        self.assertTrue(torch.equal(s_rtn, s_gptq), "the served UE8M0 block scales are static")
+        self.assertTrue(torch.equal(s_rtn, torch.exp2(torch.log2(s_rtn))) and bool((torch.log2(s_rtn) == torch.log2(s_rtn).round()).all()), "powers of two")
+        per = s_rtn.repeat_interleave(FP8_BLOCK, dim=0).repeat_interleave(FP8_BLOCK, dim=1)
+        deq = lambda q: (q.float() * per)[:N]
+        err = lambda d: float(((w.float() - d).double() @ H.double() * (w.float() - d).double()).sum())
+        self.assertLess(err(deq(q_gptq)), 0.5 * err(deq(q_rtn)))
+        self.assertTrue(bool((q_gptq[N:] == 0).all()), "padded rows stay zero")
+        self.assertTrue(torch.isfinite(deq(q_gptq)).all())
+
+    def test_the_store_packs_fp8_only_from_calibration_and_caches_it(self):
+        from engine.kernels.dense.packing import fp8_rtn
+        with tempfile.TemporaryDirectory() as tmp:
+            store = PackStore(tmp, 0)
+            w = (torch.randn(128, 256) * 0.05).bfloat16()
+            self.assertIsNone(store.pack_fp8(w, "A/model.h"))
+            x = torch.randn(1024, 256) @ (torch.randn(256, 256) * 0.3 + torch.eye(256))
+            path = store.calibration_path("A/model.h"); path.parent.mkdir(parents=True)
+            torch.save({"H": x.T @ x, "ntok": 1024, "name": "A/model.h"}, path)
+            q, s = store.pack_fp8(w, "A/model.h")
+            self.assertEqual(dict(store.stats), {"fp8_built": 1, "fp8_gptq": 1})
+            self.assertTrue(torch.equal(s, fp8_rtn(w)[1]))
+            q2, _ = PackStore(tmp, 0).pack_fp8(w, "A/model.h")
+            self.assertTrue(torch.equal(q.view(torch.uint8), q2.view(torch.uint8)))
+
+
 if __name__ == "__main__":
     unittest.main()

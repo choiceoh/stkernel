@@ -231,6 +231,10 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             missing = store.missing_calibration(name, shapes[key][1])
             if missing:
                 calib_plan.append(("target", key, missing, False))
+        from engine.profiles.glm53.net import HEAD_NAME
+        missing = store.missing_calibration(HEAD_NAME, shapes["head"][1])
+        if missing:
+            calib_plan.append(("target", "head", missing, True))      # its rows are the batch's own, prefill and decode alike
         budget = BUDGET_BYTES
         for _module, _key, missing, _small in calib_plan:
             need = Calibration.nbytes(missing)
@@ -315,6 +319,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             recorder.gauge("dense_calibrated", sum(1 for layer in layers if getattr(layer, "calibrated", False)))
             recorder.gauge("dense_nvfp4_from_packs", sum(1 for layer in layers if getattr(layer, "calibrated", False) and getattr(layer, "nvfp4", None) is not None))
             recorder.gauge("dense_nvfp4_inexact_groups", sum(getattr(layer, "nvfp4_inexact", 0) for layer in layers))
+            recorder.gauge("dense_fp8_calibrated", sum(1 for layer in layers if getattr(getattr(layer, "fp8", layer), "calibrated", False)))
             recorder.gauge("target_native_linears", len(net.dense)-1)
             recorder.gauge("drafter_native_linears", len(drafter.dense) if D else 0)
             # Scratch from one-time quantization must not consume the workspace
@@ -347,6 +352,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 dense_layers = list(net.dense.values()) + (list(drafter.dense.values()) if D else [])
                 engine.pack_stats["nvfp4_from_packs"] = sum(1 for layer in dense_layers
                                                             if getattr(layer, "calibrated", False) and getattr(layer, "nvfp4", None) is not None)
+                engine.pack_stats["fp8_gptq"] = sum(1 for layer in dense_layers if getattr(getattr(layer, "fp8", layer), "calibrated", False))
             engine.prefill_chunk = sched.chunk_for(contract.chunk_align, contract.token_budget, contract.draft_slots)
         if memory is not None:
             memory.checkpoint("loaded")
@@ -633,6 +639,7 @@ def fleet(a) -> int:
                             "context_ceiling": str(engine.max_context),
                             "packs": f"gptq {engine.pack_stats.get('gptq', 0)} rtn {engine.pack_stats.get('rtn', 0)}",   # what the store built or read
                             "nvfp4_from_packs": str(engine.pack_stats.get("nvfp4_from_packs", 0)),           # prefill lane on the GPTQ solution
+                            "fp8_gptq": str(engine.pack_stats.get("fp8_gptq", 0)),                             # FP8 lane weights GPTQ'd on their grid
                             "calibration": engine.calibration.status() if engine.calibration is not None else "complete"}
         # a stale tier under one rank diverges the ranks (45th 21): find it in seconds, not after the capture
         Server._agree_on_parked(comm, sorted(runner.parked_keys()))

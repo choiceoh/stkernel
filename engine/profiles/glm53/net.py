@@ -132,6 +132,9 @@ def rmsnorm(x: torch.Tensor, w: torch.Tensor, eps: float) -> torch.Tensor:
     return (xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + eps)).to(x.dtype) * w
 
 
+HEAD_NAME = "Glm5NextForCausalLM/lm_head"     # the pack store's name of the head's calibration (its FP8 GPTQ)
+
+
 class Glm53Net:
     def __init__(self, F: Facts, comm, lanes: Lanes, layers=None):
         if comm.world_size != TP:
@@ -220,7 +223,9 @@ class Glm53Net:
                 self.dense[key].consume_weight(weight)
                 self.p[key]=None
         from engine.kernels.dense import FP8Linear
-        self.dense["head"] = FP8Linear(self.p["head"])
+        # the vocabulary head stays FP8 (45차: W4 there was folded); its fp8 rounding is GPTQ'd from its own calibration
+        head_fp8 = store.pack_fp8(self.p["head"], HEAD_NAME) if (store is not None and store.calibrated(HEAD_NAME)) else None
+        self.dense["head"] = FP8Linear(self.p["head"], quantized=head_fp8, name=HEAD_NAME)
         if consume_weights:
             self.dense["head"].consume_weight(self.p["head"])
             self.p["head"]=None

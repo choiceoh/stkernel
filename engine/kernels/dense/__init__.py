@@ -143,7 +143,12 @@ class DenseLinear:
                              pack_w4(w, hessian=None if hessians is None else hessians[start//TILE]))
         self.packs = tuple(packs)
         self.calibrated = all(p.calibrated for p in self.packs)
-        self.fp8 = FP8Linear(weight) if prefill else None
+        if prefill:
+            # the FP8 lane's weights: GPTQ on the fp8 grid from the same calibration, else round-to-nearest
+            fp8 = store.pack_fp8(weight, name) if (store is not None and store.calibrated(name)) else None
+            self.fp8 = FP8Linear(weight, quantized=fp8, name=name)
+        else:
+            self.fp8 = None
         self.nvfp4 = None
         self.nvfp4_inexact = 0
         if prefill and nvfp4:
@@ -211,12 +216,22 @@ class DenseLinear:
 
 
 class FP8Linear:
-    """Block-scaled FP8 for prefill and the accuracy-sensitive vocabulary head."""
-    def __init__(self, weight):
-        from deep_gemm import per_block_cast_to_fp8
+    """Block-scaled FP8 for prefill and the accuracy-sensitive vocabulary head. `quantized`: (q, scale) prepared by
+    the store -- GPTQ on the fp8 grid from the weight's calibration (packing.fp8_gptq) -- instead of round-to-nearest."""
+    def __init__(self, weight, *, quantized=None, name=None):
         self.rows, self.cols = weight.shape
+        self.name = name
+        self.observer = None  # calibration sums this layer's inputs through it when it stands alone (the head)
         self.executed = False
+        self.calibrated = quantized is not None
         padded_rows = (self.rows+127)//128*128
+        if quantized is not None:
+            q, scale = quantized
+            if tuple(q.shape) != (padded_rows, self.cols) or tuple(scale.shape) != (padded_rows//128, self.cols//128):
+                raise ValueError("prepared FP8 weights do not match the bound weight")
+            self.weight = q.to(weight.device), scale.to(weight.device)
+            return
+        from deep_gemm import per_block_cast_to_fp8
         w = torch.nn.functional.pad(weight, (0, 0, 0, padded_rows-self.rows))
         qs, scales = [], []
         # Bound pack-time FP32 temporaries even for the vocabulary head.
@@ -229,8 +244,10 @@ class FP8Linear:
         from engine.modules.packed_storage import consume
         self.weight=consume(storage,self.weight)
 
-    def __call__(self, x):
+    def __call__(self, x, rows_ok=None):
         from deep_gemm import fp8_gemm_nt
+        if self.observer is not None:
+            self.observer(x.reshape(-1, self.cols), rows_ok)
         from .fp8 import quantize
         from engine.kernels.deep_gemm import _initialize
         _initialize()
