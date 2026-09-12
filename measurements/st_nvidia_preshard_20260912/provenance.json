@@ -1,0 +1,28 @@
+{
+  "source_model": "nvidia/GLM-5.3-Flash-NVFP4",
+  "source_revision": "09b04e5e74bca08ca8549fc736d4cdd8624bfde3",
+  "conversion_host": "srv3",
+  "source_sha256": {
+    "engine/profiles/glm53/facts.py": "2e2fda050bbc618256044e0114108b880019fe6886c16609c13284657122089e",
+    "engine/profiles/glm53/modelopt_weights.py": "e4daa505362c79d6c91512bd9ccbb5ef3112d595a8fab14c7cdd71b03cebdc97",
+    "engine/profiles/glm53/preshard_modelopt.py": "4e7ebbdd453b5b3597dafda6f15e08e89e57a090cccb0ffa162def4f992979cb",
+    "tests/test_glm53_modelopt_preshard.py": "778d43d9714c72820728da1d21ca057b1fbf496112711355e24332ee3f6ae95d"
+  },
+  "memory_limit_bytes": 17179869184,
+  "cpu_limit": 4,
+  "gpu_required": false,
+  "production_adopted": false,
+  "status": "paused after layer 27; rank readback and completion pending",
+  "container_id": "d528ddea7ab75b50916d60caac78e8f0876f4da1e24c4586330573651746b672",
+  "container_name": "paused-offline-nvidia-preshard-9391",
+  "image_id": "sha256:9c9282e14e4d9fea97847f7933a7f5471accf7749c868ed56554a70e514fb270",
+  "pause_reason": "ST fleet recovery/adoption takes priority; coordinated pause preserves the process and partial output",
+  "completed": false,
+  "artifact_sha256": {
+    "build-paused.log": "c22cdc22a9c813f7012f9df1a207c67a32287f0046ff62843e3d5adec15060cf",
+    "plan.json": "00032a125a29ea8c51448d21a9a522e06597b3314a8c4966315ee7893a1aaa8c",
+    "st-nvidia-loader-real-tests-9391.log": "24bc964cd05bcbee473cfc2c65966dda2dbe02884e4c010bde13b369356f5ae7",
+    "st-nvidia-loader-tests-9391.log": "4d391a845f7dcf38449bc2be04750fcbae0d14e171f5e934404fadacc13e11f9",
+    "st-nvidia-tests-9391.log": "accef358c533a667889c668acb23df067d79c6c717e5dc00451329cad325f8df"
+  }
+}
