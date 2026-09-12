@@ -698,6 +698,7 @@ class Server:
         for i, entry in enumerate(self._waiting):
             if entry[0] == request:
                 del self._waiting[i]
+                self._deferred.discard(request)
                 break
         else:
             row = next((row for row, (req, _) in self._active.items() if req == request), None)
@@ -883,25 +884,8 @@ class Server:
                         continue
                     break
                 self._deferred.discard(request)
-                # a longer boundary is on the prefix tier: read it into the row, admit when every rank has it (A)
-                if tier is not None and tier[0] > above and self._free_rows:
-                    tokens, h = int(tier[0]), bytes.fromhex(tier[1])
-                    have = h in self.runner.prefix.tier_keys and not self.runner.prefix.has(h)
-                    world = int(getattr(self.comm, "world_size", 1) or 1)
-                    if self._votes([have])[0] == world:
-                        row = heapq.heappop(self._free_rows)
-                        try:
-                            self.runner.restore_begin(row, h, tokens)
-                        except Exception:                         # noqa: BLE001 -- no snapshot / no blocks / no tier: prefill it instead
-                            heapq.heappush(self._free_rows, row)
-                            self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None)
-                            continue
-                        self._restoring[row] = dict(request=request, ids=ids, limit=limit, temperature=temperature, promised=promised,
-                                                    min_new=min_new, options=options, media=media, cancelled=None)
-                        self._waiting.popleft()
-                        continue
-                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None)
-                    continue
+                if tier is not None and tier[0] <= above:
+                    tier = None                                   # memory already gives as much: nothing to read
             if conversation is not None:
                 row = self._conversations.get(conversation)
                 if row is None and (conversation in self._retiring.values()
@@ -937,11 +921,32 @@ class Server:
             # Future decode growth already belongs to admitted requests even
             # though the block pool acquires those blocks only when written.
             future = (sum(b - self.runner.kv.blocks_for(self.runner.kv.tokens[r]) for r, (_, b) in self._active.items())
-                      + sum(e["promised"] - self.runner.kv.blocks_for(self.runner.kv.tokens[r]) for r, e in self._resuming.items()))
+                      + sum(e["promised"] - self.runner.kv.blocks_for(self.runner.kv.tokens[r]) for r, e in self._resuming.items())
+                      + sum(e["promised"] - self.runner.kv.blocks_for(self.runner.kv.tokens[r]) for r, e in self._restoring.items()))
             if promised > self.runner.kv.available - future + resident:
                 if self._evict_idle(exclude=row):
                     continue
                 break
+            if conversation is None and tier is not None:
+                # a longer boundary is on the prefix tier: read it into the row, admit when every rank has it (A). The budget
+                # above already holds this request's blocks; the restore takes the first of them now.
+                tokens, h = int(tier[0]), bytes.fromhex(tier[1])
+                have = h in self.runner.prefix.tier_keys and not self.runner.prefix.has(h)
+                world = int(getattr(self.comm, "world_size", 1) or 1)
+                if self._votes([have])[0] == world:
+                    row = heapq.heappop(self._free_rows)
+                    try:
+                        self.runner.restore_begin(row, h, tokens)
+                    except Exception:                             # noqa: BLE001 -- no snapshot / no blocks / no tier: prefill it instead
+                        heapq.heappush(self._free_rows, row)
+                        self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None)
+                        continue
+                    self._restoring[row] = dict(request=request, ids=ids, limit=limit, temperature=temperature, promised=promised,
+                                                min_new=min_new, options=options, media=media, cancelled=None)
+                    self._waiting.popleft()
+                    continue
+                self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None)
+                continue
             if conversation is None:
                 row = heapq.heappop(self._free_rows)
                 try:
