@@ -291,6 +291,54 @@ class _Choice:
 
 
 
+class _Histogram:
+    """A Prometheus histogram over fixed bounds: cumulative buckets, sum, count.
+
+    Observations come from the step loop and the exposition from the HTTP thread.
+    Under the GIL each increment and each read is atomic, so a scrape can land between
+    two of them and see a bucket and the sum one observation apart -- the ordinary
+    error of any scrape, not a corrupt series. `rows` keeps the buckets monotone even
+    then, which is the one property a histogram may not break.
+    """
+
+    __slots__ = ("bounds", "counts", "total", "sum")
+
+    def __init__(self, bounds):
+        self.bounds = tuple(bounds)
+        self.counts = [0] * len(self.bounds)
+        self.total = 0
+        self.sum = 0.0
+
+    def observe(self, seconds: float) -> None:
+        if not seconds >= 0:                                     # never a negative or NaN sample
+            return
+        for i, bound in enumerate(self.bounds):
+            if seconds <= bound:
+                self.counts[i] += 1
+        self.total += 1
+        self.sum += seconds
+
+    def rows(self, name: str):
+        running = 0
+        for bound, count in zip(self.bounds, self.counts):
+            running = max(running, count)
+            yield f'{name}_bucket{{engine="st",le="{bound}"}}', running
+        yield f'{name}_bucket{{engine="st",le="+Inf"}}', max(running, self.total)
+        yield f'{name}_sum{{engine="st"}}', round(self.sum, 6)
+        yield f'{name}_count{{engine="st"}}', self.total
+
+
+# vLLM's own bucket bounds, so a scraper or dashboard built for the engine this one
+# replaces keeps reading the same series. They also resolve this engine's measured
+# range: a 214.7 ms prefill step lands among the TTFT bounds around 0.25, and a 46 ms
+# inter-token interval between 0.025 and 0.05.
+_TTFT_BOUNDS = (0.001, 0.005, 0.01, 0.02, 0.04, 0.06, 0.08, 0.1, 0.25, 0.5, 0.75,
+                1.0, 2.5, 5.0, 7.5, 10.0)
+_ITL_BOUNDS = (0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.5)
+_E2E_BOUNDS = (0.3, 0.5, 0.8, 1.0, 1.5, 2.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0,
+               50.0, 60.0, 120.0, 240.0, 480.0)
+
+
 class Server:
     @staticmethod
     def _agree_on_parked(comm, parked) -> None:
@@ -349,6 +397,15 @@ class Server:
         self._cancels = set()                      # (request id, reason) asked by HTTP threads / the timeout scan; rank 0 broadcasts them
         self._deadline = {}                        # request id -> clock() by which it must have finished (rank 0)
         self.cancelled = 0
+        self.timed_out = 0                         # the subset of `cancelled` the deadline scan took
+        self.steps_prefill = self.steps_decode = 0   # D9: a step is one kind or the other, never both
+        # Latency is owed from the request's arrival, not from the step that served it.
+        # Rank 0 admits, answers and serves /metrics, so only rank 0 keeps these.
+        self._arrived = {}                         # request id -> clock() at admission
+        self._token_at = {}                        # row -> clock() of its last delivered token
+        self.ttft = _Histogram(_TTFT_BOUNDS)
+        self.itl = _Histogram(_ITL_BOUNDS)
+        self.e2e = _Histogram(_E2E_BOUNDS)
         self._streams = {}                         # request id -> queue of ("tokens", ids) | ("end", finish) | ("error", text)
         self._sent = {}                            # row -> generated tokens already handed to its stream
         self.prompt_tokens_total = self.generation_tokens_total = 0
@@ -440,7 +497,9 @@ class Server:
             self.pending[request] = event
             if stream:
                 self._streams[request] = queue.Queue()
-            self._deadline[request] = self.clock() + self.request_timeout_s
+            now = self.clock()
+            self._deadline[request] = now + self.request_timeout_s
+            self._arrived[request] = now                       # latency is owed from here, not from the step that serves it
             self.prompt_tokens_total += len(ids)
             if options.get("stop_token_ids"):
                 self._stop_ids[request] = set(options["stop_token_ids"])
@@ -516,13 +575,17 @@ class Server:
                 if resuming is not None and self._resuming[resuming]["cancelled"] is None:
                     self._resuming[resuming]["cancelled"] = reason        # its conversation parks again once the read lands
                     self.cancelled += 1
+                    self.timed_out += reason == "timeout"
                     self._deadline.pop(request, None)
+                    self._arrived.pop(request, None)
                     self._answer(request, RequestError(f"request cancelled: {reason}", 504 if reason == "timeout" else 499))
                     return
                 self._deadline.pop(request, None)
+                self._arrived.pop(request, None)
                 return                                     # finished already (or unknown): nothing to drop
             self._active.pop(row)
             self._sent.pop(row, None)
+            self._token_at.pop(row, None)
             try:
                 self.runner.cancel(row)
             finally:
@@ -532,7 +595,9 @@ class Server:
                     self._idle_order.pop(row, None)
                 heapq.heappush(self._free_rows, row)
         self.cancelled += 1
+        self.timed_out += reason == "timeout"
         self._deadline.pop(request, None)
+        self._arrived.pop(request, None)
         status = 504 if reason == "timeout" else 499
         self._answer(request, RequestError(f"request cancelled: {reason}", status))
 
@@ -826,23 +891,87 @@ class Server:
         self._deadline.clear()
 
     def metrics(self) -> str:
-        """Prometheus text in the names bench/window_metrics.py and bench/bracket.py read (the bench's
-        dialect, kept so the same onepass gate judges this engine and the one it replaces)."""
-        engine = self.engine
-        rows = [("vllm:request_success_total", self.served),
-                ("vllm:num_requests_running", len(self.runner.state.running)),
-                ("vllm:num_requests_waiting", len(self.runner.state.waiting) + len(self._waiting) + len(self.pending) - len(self._active)),
-                ("vllm:prompt_tokens_total", self.prompt_tokens_total),
-                ("vllm:generation_tokens_total", self.generation_tokens_total),
-                ("vllm:spec_decode_num_accepted_tokens_total", getattr(engine, "accepted_total", 0)),
-                ("vllm:spec_decode_num_draft_tokens_total", getattr(engine, "drafted_total", 0))]
+        """Prometheus text: the bench's vLLM dialect, plus what an operator needs to see.
+
+        The first block is the contract with bench/window_metrics.py and bench/bracket.py --
+        those names and their meanings do not move, so the same onepass gate judges this
+        engine and the one it replaces. The rest answers the three questions the counters
+        alone could not: how long a request waits (latency histograms, from admission, not
+        from the step that served it), how close the caches are to full, and whether the
+        reuse that was built is being hit.
+        """
+        engine, runner = self.engine, self.runner
+        kv, slots = runner.kv, runner.slots
+        # Raw occupancy, not kv.available(): that one adds the blocks the prefix cache would
+        # give back on demand, which is a separate series below. A block pinned by the cache
+        # is held, and the saturation signal has to say so.
+        free_blocks = len(kv.free)
+        used_blocks = kv.num_blocks - free_blocks
+        rows = [
+            ("counter", "vllm:request_success_total", "requests answered", self.served),
+            ("gauge", "vllm:num_requests_running", "requests in the model's step", len(runner.state.running)),
+            ("gauge", "vllm:num_requests_waiting", "admitted or queued, not yet stepping",
+             len(runner.state.waiting) + len(self._waiting) + len(self.pending) - len(self._active)),
+            ("counter", "vllm:prompt_tokens_total", "prompt tokens admitted", self.prompt_tokens_total),
+            ("counter", "vllm:generation_tokens_total", "tokens generated", self.generation_tokens_total),
+            ("counter", "vllm:spec_decode_num_accepted_tokens_total", "drafts the target confirmed",
+             getattr(engine, "accepted_total", 0)),
+            ("counter", "vllm:spec_decode_num_draft_tokens_total", "tokens the drafter proposed",
+             getattr(engine, "drafted_total", 0)),
+        ]
         if hasattr(engine, "drafts_total"):
-            rows.append(("vllm:spec_decode_num_drafts_total", engine.drafts_total))
-        # bench/bracket._StepWindows samples this vLLM histogram count as "engine steps" for its decode windows (steps/s):
-        # the runner's step counter is the same quantity here (a prefill chunk or a decode step each)
-        rows.append(("vllm:iteration_tokens_total_count", self.runner.steps))
-        rows.append(("st:requests_cancelled_total", self.cancelled))
-        return "".join(f'{name}{{engine="st"}} {max(0, value)}\n' for name, value in rows)
+            rows.append(("counter", "vllm:spec_decode_num_drafts_total", "proposal rounds", engine.drafts_total))
+        # bench/bracket._StepWindows samples this vLLM histogram count as "engine steps" for its decode
+        # windows (steps/s): the runner's step counter is the same quantity here (a prefill chunk or a
+        # decode step each). The split below is the same total, by kind (D9).
+        rows += [
+            ("counter", "vllm:iteration_tokens_total_count", "model steps", runner.steps),
+            ("gauge", "vllm:gpu_cache_usage_perc", "KV blocks held, as a fraction of the pool",
+             round(used_blocks / kv.num_blocks, 6) if kv.num_blocks else 0.0),
+            ("counter", "st:steps_prefill_total", "steps that were a prefill chunk", self.steps_prefill),
+            ("counter", "st:steps_decode_total", "steps that were a decode", self.steps_decode),
+            ("counter", "st:requests_cancelled_total", "requests cancelled, for any reason", self.cancelled),
+            ("counter", "st:requests_timed_out_total", "the subset the deadline scan took", self.timed_out),
+            ("gauge", "st:kv_blocks_total", f"blocks of {kv.block_size} tokens in the pool", kv.num_blocks),
+            ("gauge", "st:kv_blocks_used", "blocks held by a row or pinned by the cache", used_blocks),
+            ("gauge", "st:kv_rows_in_use", "pool rows with tokens", kv.rows_in_use),
+            ("gauge", "st:state_slots_total", "recurrent/conv state slots (slot 0 is the null slot)",
+             slots.num_slots - 1),
+            ("gauge", "st:kv_blocks_free", "blocks no row or pin holds", free_blocks),
+            ("gauge", "st:state_slots_free", "state slots a new request could take", slots.available),
+        ]
+        prefix = getattr(runner, "prefix", None)
+        if prefix is not None:
+            rows += [
+                ("counter", "vllm:prefix_cache_queries_total", "prompts looked up in the prefix cache",
+                 prefix.hits + prefix.misses),
+                ("counter", "vllm:prefix_cache_hits_total", "lookups that reused a cached prefix", prefix.hits),
+                ("counter", "st:prefix_cache_evictions_total", "cached prefixes dropped", prefix.evictions),
+                ("gauge", "st:prefix_cache_reclaimable_blocks", "blocks only the prefix cache holds",
+                 prefix.reclaimable()),
+            ]
+        tiered = getattr(runner, "tiered", None)
+        if tiered is not None:
+            tier = getattr(tiered, "tier", None)
+            rows.append(("gauge", "st:conversations_parked", "conversations resident on the NVMe tier",
+                         len(tiered.parked)))
+            # The byte counters are NvmeTier's, not the tier contract's: a tier without them
+            # simply has no series here. /metrics answers with what it has; it never raises.
+            written, read = getattr(tier, "bytes_written", None), getattr(tier, "bytes_read", None)
+            if written is not None and read is not None:
+                rows += [("counter", "st:tier_bytes_written_total", "bytes parked to the tier", written),
+                         ("counter", "st:tier_bytes_read_total", "bytes resumed from the tier", read)]
+        out = []
+        for kind, name, help_text, value in rows:
+            out.append(f"# HELP {name} {help_text}\n# TYPE {name} {kind}\n")
+            out.append(f'{name}{{engine="st"}} {max(0, value)}\n')
+        for name, help_text, histogram in (
+                ("vllm:time_to_first_token_seconds", "admission to first token", self.ttft),
+                ("vllm:time_per_output_token_seconds", "interval between consecutive tokens", self.itl),
+                ("vllm:e2e_request_latency_seconds", "admission to the answer", self.e2e)):
+            out.append(f"# HELP {name} {help_text}\n# TYPE {name} histogram\n")
+            out.extend(f"{series} {value}\n" for series, value in histogram.rows(name))
+        return "".join(out)
 
     def once(self) -> bool:
         """One ordered broadcast, bounded admission and homogeneous model step."""
@@ -861,23 +990,48 @@ class Server:
             self._settle()
             self._admit()
             step = self.runner.step()
-            if self._streams:                                       # rank 0: hand each streaming request its new tokens
-                for row, (request, _) in self._active.items():
+            if step is not None:                                    # D9: one kind or the other
+                if step.kind == "prefill":        # base/scheduler.PREFILL; a step is prefill or decode
+                    self.steps_prefill += 1
+                else:
+                    self.steps_decode += 1
+            now = self.clock()
+            # Every live row's new tokens, whether or not it streams: the first one is this
+            # request's time to first token, each later one an inter-token interval. A step
+            # that lands several (the drafter's accepted run) shares its elapsed time across
+            # them, which is how the vLLM counters these names belong to define it.
+            for row, (request, _) in self._active.items():
+                generated = self.engine.generated(row)
+                sent = self._sent.get(row, 0)
+                fresh = len(generated) - sent
+                if fresh > 0:
+                    last = self._token_at.get(row)
+                    if last is None:
+                        arrived = self._arrived.get(request)
+                        if arrived is not None:
+                            self.ttft.observe(now - arrived)
+                        fresh -= 1                                  # the first token is the TTFT, not an interval
+                        last = now
+                    if fresh > 0:
+                        each = (now - last) / fresh
+                        for _ in range(fresh):
+                            self.itl.observe(each)
+                    self._token_at[row] = now
                     stream = self._streams.get(request)
-                    if stream is None:
-                        continue
-                    generated = self.engine.generated(row)
-                    sent = self._sent.get(row, 0)
-                    if len(generated) > sent:
+                    if stream is not None:                          # rank 0: hand it the new tokens
                         lp = getattr(self.engine, "logprobs", None)
                         entries = lp(row) if lp is not None else None
                         stream.put(("tokens", (list(generated[sent:]), list(entries[sent:]) if entries else None)))
-                        self._sent[row] = len(generated)
+                    self._sent[row] = len(generated)
             live = set(self.runner.state.running) | set(self.runner.state.waiting)
             for row in list(self._active):
                 if row not in live:
                     request, _ = self._active.pop(row)
                     self._sent.pop(row, None)
+                    self._token_at.pop(row, None)
+                    arrived = self._arrived.pop(request, None)
+                    if arrived is not None:
+                        self.e2e.observe(now - arrived)
                     result = list(self.engine.generated(row))
                     self._retire(row)
                     self.served += 1
