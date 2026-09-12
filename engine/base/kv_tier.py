@@ -19,7 +19,10 @@ first version did per-block Python `copy_` calls on the default stream and
 slowed a decode-shaped loop by 1.50x (42nd ledger) -- thousands of launches
 competing for the GIL and the stream a decoder was using. The tier holds no
 memory the budget did not declare: the staging buffer and the device scratch
-are both fixed at construction.
+are both fixed at construction. The prefix tier also has a byte-capped,
+lossless RAM cache of its snapshot payloads. It compresses existing staging
+windows on this worker and retains no raw host copy. The disk format stays
+unchanged; a RAM eviction loses only an I/O shortcut.
 
 A parked conversation is more than its paged blocks: the state slot (KDA
 rings, indexer tails, the drafter ring -- 247 MiB on GLM-5.3) and a small
@@ -64,7 +67,8 @@ class TierFull(MemoryError):
 
 class NvmeTier:
     def __init__(self, directory: "str | Path", block_bytes: int, stage_bytes: int = 64 << 20,
-                 capacity_bytes: "int | None" = None, reserve_bytes: int = 1 << 30):
+                 capacity_bytes: "int | None" = None, reserve_bytes: int = 1 << 30,
+                 snapshot_cache_bytes: int = 0):
         if not isinstance(block_bytes, int) or block_bytes <= 0 or block_bytes % SECTOR:
             raise ValueError(f"block_bytes {block_bytes} must be a positive multiple of {SECTOR} for O_DIRECT")
         if not isinstance(stage_bytes, int) or stage_bytes < block_bytes:
@@ -73,6 +77,10 @@ class NvmeTier:
             stage_bytes = (stage_bytes // block_bytes) * block_bytes
         if capacity_bytes is not None and (not isinstance(capacity_bytes, int) or capacity_bytes <= 0):
             raise ValueError("capacity_bytes must be a positive integer or None (the filesystem decides)")
+        if type(snapshot_cache_bytes) is not int or snapshot_cache_bytes < 0:
+            raise ValueError("snapshot cache must be nonnegative bytes")
+        from engine.base.compressed_snapshots import CompressedSnapshots
+        self.snapshot_cache = CompressedSnapshots(snapshot_cache_bytes) if snapshot_cache_bytes else None
         import torch
 
         self.dir = Path(directory); self.dir.mkdir(parents=True, exist_ok=True)
@@ -210,6 +218,9 @@ class NvmeTier:
         import torch
 
         extra_bytes = int(extra.numel()) if extra is not None else 0
+        cache = getattr(self, "snapshot_cache", None)
+        builder = cache.begin(extra_bytes) if cache is not None and extra_bytes else None
+        old_file = self._path(seq).name
         total = len(block_ids) * self.block_bytes + _sectors(extra_bytes)
         self._room(total, int(self.index.get(str(seq), {}).get("bytes", 0)))
         table = storage.view(-1, self.block_bytes) if block_ids else None
@@ -238,6 +249,9 @@ class NvmeTier:
                     self.stage_t[:n].copy_(extra[off:off + n], non_blocking=True)
                 self.stream.synchronize()
                 written += self._write_window(fd, _sectors(n), written)     # the sector tail is stale staging bytes, never read back
+                if builder is not None:
+                    builder.add(self.stage[:n])
+            compressed = builder.finish() if builder is not None else None
             os.fsync(fd)
             os.close(fd)
             fd = None
@@ -263,6 +277,9 @@ class NvmeTier:
         finally:
             if fd is not None:
                 os.close(fd)
+        if cache is not None:
+            cache.discard(old_file)
+            cache.publish(path.name, compressed)   # only a committed generation may enter the RAM cache
         try:
             with self.lock:
                 self._prune_retired(seq)
@@ -290,7 +307,8 @@ class NvmeTier:
 
     def promote(self, seq: int, storage, block_ids: "list[int]", extra=None) -> int:
         """Read the sequence back into blocks `block_ids` of `storage` and its
-        slot bytes into `extra` (required iff the file carries them). Returns bytes.
+        slot bytes into `extra` (required iff the file carries them). Returns
+        disk bytes read; a compressed snapshot-only hit returns zero.
 
         `block_ids` None: the blocks are already in memory and only `extra` is
         read -- a faded prefix boundary (base/prefix.py) whose KV was never
@@ -318,7 +336,13 @@ class NvmeTier:
         ids = torch.as_tensor(block_ids, dtype=torch.long, device=table.device) if block_ids else None
         device = table.device if table is not None else extra.device
         self.stream.wait_stream(torch.cuda.current_stream(device))
-        fd = os.open(self._path(seq), os.O_RDONLY | os.O_DIRECT)
+        cache = getattr(self, "snapshot_cache", None)
+        compressed = cache.get(self._path(seq).name) if cache is not None and extra_bytes else None
+        if compressed is not None and compressed.raw_bytes != extra_bytes:
+            raise ValueError("compressed snapshot does not match its committed generation")
+        # A faded boundary with a RAM copy needs no file I/O at all. Full
+        # restores still read their paged KV, then reuse the compressed state.
+        fd = os.open(self._path(seq), os.O_RDONLY | os.O_DIRECT) if block_ids or compressed is None else None
         at = 0 if block_ids is not None else int(meta["blocks"]) * self.block_bytes   # what memory already holds is not read again
         read = 0
         try:
@@ -330,15 +354,25 @@ class NvmeTier:
                     table.index_copy_(0, ids[i:i + n_blk], self.scratch[:n].view(n_blk, self.block_bytes))
                 self.stream.synchronize()
                 at += n; read += n
-            for off in range(0, extra_bytes, self.stage_bytes):
-                n = min(self.stage_bytes, extra_bytes - off)
-                self._read_window(fd, _sectors(n), at)
+            def upload(off, n):
                 with torch.cuda.stream(self.stream):
                     extra[off:off + n].copy_(self.stage_t[:n], non_blocking=True)
                 self.stream.synchronize()
-                at += _sectors(n); read += _sectors(n)
+            if compressed is not None:
+                started = time.perf_counter()
+                try:
+                    compressed.restore(self.stage, upload)
+                finally:
+                    cache.restore_seconds += time.perf_counter() - started
+            else:
+                for off in range(0, extra_bytes, self.stage_bytes):
+                    n = min(self.stage_bytes, extra_bytes - off)
+                    self._read_window(fd, _sectors(n), at)
+                    upload(off, n)
+                    at += _sectors(n); read += _sectors(n)
         finally:
-            os.close(fd)
+            if fd is not None:
+                os.close(fd)
         self.bytes_read += read
         return read
 
@@ -353,6 +387,9 @@ class NvmeTier:
                 return
             if not meta.get("deleting"):
                 self._save_manifest({**self.index, str(seq): {**meta, "deleting": True}})
+            cache = getattr(self, "snapshot_cache", None)
+            if cache is not None:
+                cache.discard(self._path(seq).name)
             # The tombstone survives partial unlink and final manifest
             # failures. A retry (including after restart) finishes it.
             self._path(seq).unlink(missing_ok=True)
@@ -389,7 +426,7 @@ class NvmeTier:
                 self._sync_directory()
 
     def close(self) -> int:
-        """Give the staging buffers back when nothing will be parked or promoted again.
+        """Give the staging buffers and compressed copies back after transfers stop.
 
         A tier is pinned host DRAM plus device scratch that live OUTSIDE the arena, so the
         engine's release cannot reach them and `empty_cache` will not take them while this
@@ -412,6 +449,9 @@ class NvmeTier:
                 given += buf.numel() * buf.element_size()
                 setattr(self, name, None)
         self.stream = None
+        cache = getattr(self, "snapshot_cache", None)
+        if cache is not None:
+            given += cache.clear()
         return given
 
     def run_async(self, fn, *args) -> Future:

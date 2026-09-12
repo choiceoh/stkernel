@@ -121,9 +121,21 @@ class BudgetTests(unittest.TestCase):
             sizes[native] = line.gib
         self.assertLess(abs(sizes[True] - sizes[False]), 0.1, "the line is the budget, whatever the shape")
         self.assertLessEqual(max(sizes.values()), boot.PREFIX_SNAPSHOT_GIB)
-        # production keeps exactly what it had: 96 of the native shape
+        # The hot pool shrinks; cold copies have their own bounded host budget.
         native = budget.budget(7.0, 4, box_gib=121.63, draft_tp=4, draft_native=True)
-        self.assertIn("(96 x ", next(l for l in native.lines if l.name.startswith("prefix snapshots")).name)
+        self.assertIn("(48 x ", next(l for l in native.lines if l.name.startswith("prefix snapshots")).name)
+
+    def test_compressed_cache_reduces_total_budget_without_spending_it_on_kv(self):
+        from engine.profiles.glm53 import boot, budget
+        args = dict(kv_gib=7.0, max_seqs=4, box_gib=121.63, draft_tp=4, draft_native=True)
+        cold, original = budget.budget(**args), budget.budget(**args, tier_enabled=False)
+        raw = lambda b: next(l.gib for l in b.lines if l.name.startswith('prefix snapshots'))
+        extra = next(l.gib for l in cold.lines if l.name == 'compressed prefix cache and codec')
+        self.assertEqual(extra, boot.prefix_host_bytes() / (1 << 30))
+        self.assertEqual(boot.prefix_host_bytes(False), 0)
+        self.assertGreater(raw(original) - raw(cold) - extra, 1.1)
+        self.assertEqual(cold.paged_gib, original.paged_gib)
+        self.assertIn('(96 x ', next(l.name for l in original.lines if l.name.startswith('prefix snapshots')))
 
     def test_a_snapshot_budget_always_leaves_a_chunk_worth_of_boundaries(self):
         """Nine blocks is one prefill chunk: below that a chunk cannot checkpoint itself at all."""

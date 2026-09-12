@@ -694,6 +694,51 @@ def validate_targets(directory, manifest, *, verify_only=False, _validated_value
     return results
 
 
+def checkout_moved(value):
+    """(repo, pinned, current) when the checkout this ticket runs from is no longer at the revision it was prepared at."""
+    if not value.get('head'):
+        return None
+    repo, expected = value['head']
+    try:
+        current = run(['git', 'rev-parse', 'HEAD'], repo, 3)
+    except (ValueError, OSError, subprocess.SubprocessError):
+        return None                      # validate() will say what is wrong with the checkout
+    return None if current == expected else (repo, expected, current)
+
+
+def repin(directory, session, record, value):
+    """The checkout moved while the ticket waited: prepare the same command again at the revision
+    that is there now and hand the ticket the new receipt, keeping its place and its age.
+
+    45차 §95 stopped such a ticket ("queued checkout revision changed") and a person re-submitted
+    the same command with `edit` and `resume`d it. This is that edit, done by the queue, with the
+    same checks: the new tree's inputs, syntax, CPU preparation and deployment approval are
+    prepared afresh, and a tree that fails them still pauses the ticket with the reason. The
+    record's revision moves and its history names the two commits, so `show` tells what happened.
+    FLEET_AUTO_REPIN=0 restores the stop.
+    """
+    import fleet_pending
+    moved = checkout_moved(value)
+    if moved is None:
+        return value
+    repo, pinned, current = moved
+    if os.environ.get('FLEET_AUTO_REPIN', '1') == '0':
+        raise ValueError('queued checkout revision changed; edit or submit the intended revision: ' + repo)
+    note = f'checkout moved {pinned[:12]} -> {current[:12]}: prepared again at {current[:12]}'
+    print(f'RE-PIN {session}: {note}', file=sys.stderr)
+    try:
+        updated = fleet_pending.edit(Path(directory), session, prepared_manifest=None, expected=record.get('revision'),
+                                     repin=note)
+    except SyntaxError as exc:            # the new tree does not even compile: pause with the reason, like any failed check
+        raise ValueError(f're-pin at {current[:12]} failed: {exc}') from exc
+    fresh = fleet_pending.read_record(Path(directory), session)
+    if not fresh or fresh.get('revision') != updated.get('revision') or not fresh.get('prepare_manifest'):
+        raise ValueError('re-pin did not land; inspect the reservation')
+    record.clear()
+    record.update(fresh)
+    return fleet_prepared.read(directory, fresh['prepare_manifest'])
+
+
 def check_pending(directory, session, *, refresh=False, external=True, withdraw_failed=False):
     import fleet_pending
     record = fleet_pending.read_record(Path(directory), session)
@@ -713,6 +758,8 @@ def check_pending(directory, session, *, refresh=False, external=True, withdraw_
             value = fleet_prepared.read(directory, record['prepare_manifest'])
         if value['command'] != record['command'] or value['cwd'] != record['cwd']:
             raise ValueError('preparation does not match the accepted command revision')
+        if external and value.get('version', 1) >= 2:
+            value = repin(directory, session, record, value)
         validate(value, refresh=refresh, external=external, directory=directory)
         if (external and record.get('kind') == 'boot'
                 and record.get('validation_env', {}).get('FLEET_VALIDATION_REQUIRED') == '1'):

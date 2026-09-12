@@ -43,6 +43,16 @@ class OomFloorTests(unittest.TestCase):
         path.write_text(text)
         return path
 
+    def test_compressed_host_budget_counts_at_admission_but_does_not_expand_cuda(self):
+        kwargs = dict(arena_bytes=400, workspace_bytes=200, os_reserve_bytes=100,
+                      cuda=Cuda(), host_free=lambda: 750, host_available=lambda: 750, floor=(60, 45))
+        with self.assertRaisesRegex(MemoryError, 'immediately free'):
+            RuntimeMemory(**kwargs, host_budget_bytes=51)
+        memory = RuntimeMemory(**kwargs, host_budget_bytes=50)
+        self.assertEqual(memory.allocator_limit_bytes, 610)
+        self.assertEqual(memory.report()['host_budget_bytes'], 50)
+        memory.close()
+
     def read(self, path, default=(1, 2)):
         from engine.base.runtime_memory import oom_floor
         return oom_floor(default, sources=(path,))
