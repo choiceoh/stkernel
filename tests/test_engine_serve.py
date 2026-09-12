@@ -131,6 +131,12 @@ class Engine:
     def generated(self, seq):
         return self.output[seq]
 
+    def generated_count(self, seq):
+        return len(self.output[seq])
+
+    def generated_since(self, seq, sent):
+        return list(self.output[seq][sent:])
+
 
 class Comm:
     rank = 0
@@ -1001,6 +1007,36 @@ class StreamedTextTests(unittest.TestCase):
 
         self.stream(list(b"x" * 200), Counting())
         self.assertLessEqual(max(seen), 4, "a window, not the whole answer")
+
+
+class StepCostTests(unittest.TestCase):
+    """What the step loop asks each row must not grow with what that row has already said."""
+
+    def test_the_loop_counts_the_output_instead_of_copying_it(self):
+        s = server()
+        asked = []
+        whole = s.engine.generated
+
+        def watched(seq):
+            asked.append(seq)
+            return whole(seq)
+
+        s.engine.generated = watched
+        request, event = s.submit([1, 2], 4, 0.0)
+        steps = 0
+        for _ in range(40):
+            if not s.once():
+                break
+            steps += 1
+        self.assertGreaterEqual(steps, 4, "the request actually ran")
+        # once, when the answer is handed over -- not once per step, and not once per row per step
+        self.assertLessEqual(len(asked), 1)
+
+    def test_only_the_unsent_tail_reaches_the_stream(self):
+        s = server()
+        s.engine.output[0] = [7, 8, 9, 10]
+        self.assertEqual(s.engine.generated_count(0), 4)
+        self.assertEqual(s.engine.generated_since(0, 2), [9, 10])
 
 
 class MetricsTests(unittest.TestCase):

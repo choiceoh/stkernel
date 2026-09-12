@@ -1332,9 +1332,9 @@ class Server:
             # that lands several (the drafter's accepted run) shares its elapsed time across
             # them, which is how the vLLM counters these names belong to define it.
             for row, (request, _) in self._active.items():
-                generated = self.engine.generated(row)
                 sent = self._sent.get(row, 0)
-                fresh = len(generated) - sent
+                count = self.engine.generated_count(row)     # the row's whole output is never copied to count it
+                fresh = count - sent
                 if fresh > 0:
                     last = self._token_at.get(row)
                     if last is None:
@@ -1353,9 +1353,9 @@ class Server:
                     if stream is not None:                          # rank 0: hand it the new tokens
                         lp = getattr(self.engine, "logprobs", None)
                         entries = lp(row) if lp is not None else None
-                        stream.put(("tokens", (list(generated[sent:]), list(entries[sent:]) if entries else None)))
+                        stream.put(("tokens", (self.engine.generated_since(row, sent), list(entries[sent:]) if entries else None)))
                         self._wake.set()
-                    self._sent[row] = len(generated)
+                    self._sent[row] = count
             live = set(self.runner.state.running) | set(self.runner.state.waiting)
             for row in list(self._active):
                 if row not in live:
