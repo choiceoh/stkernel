@@ -115,15 +115,22 @@ def w4_gemm(x, pack):
 
 
 class DenseLinear:
-    """Immutable dispatch: <=32 rows W4A8, 33..1023 FP8, >=1024 NVFP4.
+    """Immutable dispatch: <=32 rows W4A8, above that FP8.
+
+    There was a third lane: NVFP4 (W4A4) above 1023 rows, adopted in 39차 on
+    the vLLM stack's throughput alone. Measured against THIS engine's FP8
+    lane on the shapes this rank serves, it is not faster -- +3.7% at 1K
+    rows, -2.3% at 8K, a wash -- while its fp4 activations cost 3.65x the
+    output error on every prefill row (45차 §23 GPU 판정 12차). A lane that
+    buys nothing and spends the accuracy the GPTQ rounds bought is not a
+    lane, so prefill is FP8 and there is one prefill form (D3).
 
     The K>4096 drafter projection is a fixed sequence of K tiles with FP32
     accumulation, matching the existing MK lane. Padding is weight-owned.
     """
-    def __init__(self, weight, *, prefill=True, nvfp4=True, hessians=None, store=None, name=None, smooth=None):
+    def __init__(self, weight, *, prefill=True, hessians=None, store=None, name=None, smooth=None):
         """`smooth` [K]: the factor `weight` was multiplied by, its input divided by (kernels/dense/smoothing) -- the
         store scales the calibration Hessian alike; the calibration files its sums in the unsmoothed domain."""
-        from flashinfer import nvfp4_quantize
         if (weight.ndim != 2 or not weight.is_cuda or weight.dtype != torch.bfloat16
                 or weight.shape[1] % 128):
             raise ValueError("dense weights must be CUDA BF16 with K aligned to 128")
@@ -132,7 +139,7 @@ class DenseLinear:
         self.name = name
         self.smooth = smooth
         self.observer = None  # calibration.Calibration sums this layer's inputs through it (X^T X for the GPTQ packs)
-        self.executed = 0  # boot proof: W4=1, FP8=2, NVFP4=4
+        self.executed = 0  # boot proof: W4=1, FP8=2
         packs = []
         if self.cols > TILE and store is not None and store.calibrated(name):
             packs = list(store.pack_wide(weight, name, smooth=smooth))   # one GPTQ over the whole K, from the full Hessian
@@ -152,19 +159,6 @@ class DenseLinear:
             self.fp8 = FP8Linear(weight, quantized=fp8, name=name)
         else:
             self.fp8 = None
-        self.nvfp4 = None
-        self.nvfp4_inexact = 0
-        if prefill and nvfp4:
-            padded_rows = (self.rows+127)//128*128
-            if self.calibrated:
-                # the prefill lane multiplies by the same GPTQ solution as the decode lane (packing.nvfp4_from_w4)
-                from .packing import nvfp4_from_w4
-                data, sf, scale, self.nvfp4_inexact = nvfp4_from_w4(self.packs, self.rows, self.cols)
-            else:
-                w = torch.nn.functional.pad(weight, (0, 0, 0, padded_rows-self.rows)).contiguous()
-                scale = (2688./w.abs().amax().float().clamp_min(1e-12)).reshape(1)
-                data, sf = nvfp4_quantize(w, scale, enable_pdl=False)
-            self.nvfp4 = data, sf, scale, padded_rows
 
     def consume_weight(self, storage):
         """Retire the source arena region into W4/FP8 views before capture."""
@@ -196,25 +190,11 @@ class DenseLinear:
                     partial = w4_gemm(flat[:, i*4096:i*4096+pack.cols], pack).float()
                     acc = partial if acc is None else acc+partial
                 out = acc.bfloat16()
-        elif flat.shape[0] < 1024 or self.nvfp4 is None:
+        else:
             if self.fp8 is None:
                 raise ValueError("large-M dense call without a prepared prefill lane")
             out = self.fp8(flat)
             self.executed |= 2
-        else:
-            from flashinfer import mm_fp4, nvfp4_quantize
-            weight, ws, weight_scale, padded_rows = self.nvfp4
-            scale = (2688./flat.abs().amax().float().clamp_min(1e-12)).reshape(1)
-            # The pinned quantizer reads its global scale before its PDL
-            # dependency wait. This scale was just computed on the stream;
-            # an early launch can read recycled allocation contents. Require
-            # ordinary stream ordering here. MK GEMM/MHC and AR retain PDL.
-            data, sf = nvfp4_quantize(flat.contiguous(), scale, enable_pdl=False)
-            alpha = (1./(scale*weight_scale)).float()
-            out = torch.empty(flat.shape[0], padded_rows, device=x.device, dtype=x.dtype)
-            mm_fp4(data, weight.T, sf, ws.T, alpha, torch.bfloat16, out, 16, False, "cutlass")
-            out = out[:, :self.rows]
-            self.executed |= 4
         return out.reshape(*shape, self.rows)
 
 

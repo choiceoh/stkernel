@@ -12,13 +12,13 @@ from engine.profiles.glm53.boot import native_execution_report
 
 class NativeQualificationTests(unittest.TestCase):
     def test_missing_native_implementation_cannot_pass_coverage(self):
-        net = NS(layers=[0, 1], dense={'a': NS(executed=7), 'head': NS(executed=True)},
+        net = NS(layers=[0, 1], dense={'a': NS(executed=3), 'head': NS(executed=True)},
                  mhc=NS(executed={'a', 'b', 'c'}),
                  prefill_transport=NS(executed={'fp8_all_gather', 'fp8_reduce_scatter'}))
         drafter = NS(dense={'fc.weight': NS(executed=3), 'q': NS(executed=1)})
-        self.assertEqual(native_execution_report(net, drafter)['target_nvfp4'], 1)
-        for obj, field, value in ((net.dense['a'], 'executed', 1),
-                                   (net.dense['a'], 'executed', 5),
+        self.assertEqual(native_execution_report(net, drafter)['target_fp8'], 1)
+        for obj, field, value in ((net.dense['a'], 'executed', 1),      # the decode lane alone: no prefill row ran
+                                   (net.dense['a'], 'executed', 2),      # the prefill lane alone: no decode row ran
                                    (drafter.dense['q'], 'executed', 0),
                                    (net.mhc, 'executed', set())):
             before = getattr(obj, field)

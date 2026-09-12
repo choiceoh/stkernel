@@ -340,8 +340,6 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 recorder.gauge("dense_pack_"+name, count)
             layers = list(net.dense.values()) + (list(drafter.dense.values()) if D else [])
             recorder.gauge("dense_calibrated", sum(1 for layer in layers if getattr(layer, "calibrated", False)))
-            recorder.gauge("dense_nvfp4_from_packs", sum(1 for layer in layers if getattr(layer, "calibrated", False) and getattr(layer, "nvfp4", None) is not None))
-            recorder.gauge("dense_nvfp4_inexact_groups", sum(getattr(layer, "nvfp4_inexact", 0) for layer in layers))
             recorder.gauge("dense_fp8_calibrated", sum(1 for layer in layers if getattr(getattr(layer, "fp8", layer), "calibrated", False)))
             recorder.gauge("dense_smoothed", sum(1 for layer in layers if getattr(layer, "smooth", None) is not None))
             recorder.gauge("target_native_linears", len(net.dense)-1)
@@ -377,8 +375,6 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             engine.pack_stats = dict(store.stats) if store is not None else {}
             if store is not None:
                 dense_layers = list(net.dense.values()) + (list(drafter.dense.values()) if D else [])
-                engine.pack_stats["nvfp4_from_packs"] = sum(1 for layer in dense_layers
-                                                            if getattr(layer, "calibrated", False) and getattr(layer, "nvfp4", None) is not None)
                 engine.pack_stats["fp8_gptq"] = sum(1 for layer in dense_layers if getattr(getattr(layer, "fp8", layer), "calibrated", False))
                 engine.pack_stats["smoothed"] = sum(1 for layer in dense_layers if getattr(layer, "smooth", None) is not None)
             engine.prefill_chunk = sched.chunk_for(contract.chunk_align, contract.token_budget, contract.draft_slots)
@@ -480,15 +476,13 @@ def native_execution_report(net, drafter):
     draft = list(drafter.dense.values())
     expected_mhc = 2*len(net.layers)-1  # first attn pre has no preceding post
     proof = dict(target_w4=sum(bool(p.executed & 1) for p in target),
-                 target_nvfp4=sum(bool(p.executed & 4) for p in target),
                  target_fp8=sum(bool(p.executed & 2) for p in target),
                  head_fp8=net.dense['head'].executed,
                  drafter_w4=sum(bool(p.executed & 1) for p in draft),
                  drafter_context_fp8=bool(drafter.dense['fc.weight'].executed & 2),
                  mhc=len(net.mhc.executed),
                  prefill_collectives=sorted(net.prefill_transport.executed))
-    if (proof['target_w4'] != len(target) or proof['target_nvfp4'] != len(target)
-            or proof['target_fp8'] != len(target)
+    if (proof['target_w4'] != len(target) or proof['target_fp8'] != len(target)
             or proof['drafter_w4'] != len(draft) or not proof['head_fp8']
             or not proof['drafter_context_fp8'] or proof['mhc'] != expected_mhc
             or len(proof['prefill_collectives']) != 2):
@@ -740,7 +734,6 @@ def fleet(a) -> int:
                             "mla_prefill": cfg["mla_prefill"], "spec_k": str(engine.drafter.k),
                             "context_ceiling": str(engine.max_context),
                             "packs": f"gptq {engine.pack_stats.get('gptq', 0)} rtn {engine.pack_stats.get('rtn', 0)}",   # what the store built or read
-                            "nvfp4_from_packs": str(engine.pack_stats.get("nvfp4_from_packs", 0)),           # prefill lane on the GPTQ solution
                             "fp8_gptq": str(engine.pack_stats.get("fp8_gptq", 0)),                             # FP8 lane weights GPTQ'd on their grid
                             "smoothed": str(engine.pack_stats.get("smoothed", 0)),                             # inputs' channel smoothing folded into their norms
                             "calibration": engine.calibration.status() if engine.calibration is not None else "complete"}
