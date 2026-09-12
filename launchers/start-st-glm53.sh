@@ -28,8 +28,8 @@ case "${ST_PRODUCTION:-0}" in
   1) PRODUCTION_ARG="--production" ;;
   *) echo "ST_PRODUCTION must be 0 or 1" >&2; exit 2 ;;
 esac
-RANKS_DIR=${RANKS_DIR:-/home/choiceoh/models/st-glm53-9391-up-gate-full}
-CKPT=${CKPT:-/home/choiceoh/models/glm53-redhat-nvfp4}
+RANKS_DIR=${RANKS_DIR:-/home/choiceoh/models/st-glm53-nvidia-tp4-9391}
+CKPT=${CKPT:-/home/choiceoh/models/st-glm53-nvidia-tp4-9391}
 DRAFTER=${DRAFTER:-/home/choiceoh/models/GLM-5.3-Flash-DFlash2}
 ENGINE_DIR=${ST_ENGINE_DIR:-/home/choiceoh/st-engine}    # production can pin a release directory on every node
 CACHE_DIR=${CACHE_DIR:-/home/choiceoh/glm53-cache}

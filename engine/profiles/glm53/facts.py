@@ -20,8 +20,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-CKPT = Path("/home/choiceoh/models/glm53-redhat-nvfp4")
-RANKS = Path("/home/choiceoh/models/st-glm53-9391-up-gate-full")          # preshard output, one file per rank
+CKPT = Path("/home/choiceoh/models/st-glm53-nvidia-tp4-9391")
+RANKS = CKPT                                                         # preshard output and metadata, one file per rank
 TP = 4                                                                # four Sparks: the only world this profile has
 BOX = {"name": "GB10 (DGX Spark)", "capability": (12, 1), "devices": 1, "unified": True}
 CHUNK_ALIGN = 2304                                                    # the prefill chunk's alignment: launcher --block-size (shapes.py's 6,912 law)
