@@ -514,10 +514,12 @@ def block_verify_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_c
         # rank walks is unchanged; the correction draw stays in torch because `_inverse_cdf`'s cumsum is a
         # parallel scan and a sequential one differs in the last bits (engine/kernels/block_verify).
         from engine.kernels.block_verify import verify_rows
+        # Still two draws, K per row and then one per row. Folding them into rand(n, K+1) would save a launch
+        # and change every number: Philox does not hand out the same stream for one call of n*(K+1) as for a
+        # call of n*K followed by a call of n. The tokens are what a recorded step replays (D12).
         u = torch.rand(n, K, generator=generator, device=device)
-        accepted, at, rest = verify_rows(target_probs, drafts, draft_cand, draft_probs, u)
+        accepted, at, tokens, rest = verify_rows(target_probs, drafts, draft_cand, draft_probs, u)
         fresh = _inverse_cdf(rest, torch.rand(n, generator=generator, device=device))
-        tokens = torch.cat([drafts, torch.zeros(n, 1, dtype=drafts.dtype, device=device)], 1)
         tokens.scatter_(1, at.unsqueeze(1), fresh.unsqueeze(1))
         return accepted, tokens, accepted + 1
     return _block_verify_by_torch(target_probs, drafts, draft_cand, draft_probs, generator)
