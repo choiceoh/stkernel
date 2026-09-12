@@ -1,0 +1,15 @@
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+{"fc1": 2, "fc2": 2, "compact": false, "smem_bytes": 98304, "threads": 160, "scope": "CPU layout only; no GPU residency or speed proof"}
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+{"fc1": 1, "fc2": 2, "compact": false, "smem_bytes": 75776, "threads": 160, "scope": "CPU layout only; no GPU residency or speed proof"}
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+{"fc1": 2, "fc2": 1, "compact": false, "smem_bytes": 79872, "threads": 160, "scope": "CPU layout only; no GPU residency or speed proof"}
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+{"fc1": 1, "fc2": 1, "compact": false, "smem_bytes": 57344, "threads": 160, "scope": "CPU layout only; no GPU residency or speed proof"}
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=1024
+{"fc1": 1, "fc2": 1, "compact": true, "smem_bytes": 44032, "threads": 160, "scope": "CPU layout only; no GPU residency or speed proof"}

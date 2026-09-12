@@ -29,6 +29,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--imports-only", action="store_true")
     parser.add_argument("--lanes", default="conv,kda,mhc,indexer,kpool,mla,moe")
+    parser.add_argument("--ranks", help="exact consumer rank directory for real router validation")
     parser.add_argument("--moe-experts", type=int, choices=(8, 288), default=8,
                         help="8 for bounded smoke; 288 for GLM's full TP4 expert geometry")
     parser.add_argument("--moe-static", default="stock", help="served b12x static-lane spec (STK_moe_static): stock | t,r,sf6[,q0]")
@@ -36,6 +37,13 @@ def main():
     args = parser.parse_args()
     sys.meta_path.insert(0, ForbidVllm())
     assert not any(n == "vllm" or n.startswith("vllm.") for n in sys.modules)
+
+    if args.lanes == "moe_compact" and not args.imports_only:
+        # Configure CuTe artifact emission before importing its compiler: the
+        # residency gate needs the actual cubin before a cooperative launch.
+        from probes.engine_moe_compact_check import main as compact_check
+        compact_check(router_ranks=args.ranks)
+        return
 
     import torch
     import engine.kernels
@@ -58,7 +66,34 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "calibration", "pointwise", "residency", "latency"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7"}, selected
+
+    if "decode7" in selected:
+        import unittest
+        suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_engine_decode_seven")
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        assert result.wasSuccessful() and not result.skipped, "seven-row dense/router numerical gates did not pass"
+        report("decode7", passed=True, tests=result.testsRun)
+        from probes.engine_decode_fusions import seven_row_dense, tensorcore_router
+        seven_row_dense(report)
+        tensorcore_router(report, ranks=args.ranks)
+
+    if "kda_ring" in selected:
+        import unittest
+        suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_engine_kda_ring")
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        assert result.wasSuccessful() and not result.skipped, "KDA ring numerical/replay checks did not pass"
+        report("kda_ring", passed=True, tests=result.testsRun)
+
+    if "shared_mlp" in selected:
+        import unittest
+        suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_engine_shared_mlp")
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        assert result.wasSuccessful() and not result.skipped, "shared MLP numerical/replay checks did not pass"
+        report("shared_mlp", passed=True, tests=result.testsRun)
+        from probes.engine_decode_fusions import shared_mlp
+        shared_mlp(report, native)
+
 
     if "kda-storage" in selected:
         import unittest

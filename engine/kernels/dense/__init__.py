@@ -157,7 +157,9 @@ def w4_gemm(x, pack):
             or x.dtype != torch.bfloat16 or x.device != pack.data.device):
         raise ValueError("W4 decode requires 1..32 BF16 rows matching the bound pack, K at most 20480")
     out = torch.empty(x.shape[0], pack.rows, dtype=x.dtype, device=x.device)
-    extension().run_gemm(x.contiguous(), pack.data, pack.scale, out, pack.rows,
+    # f_a/g_a are columns of the fused KDA projection: preserve their wider
+    # row stride instead of launching a copy for each of the 68 products.
+    extension().run_gemm(x, pack.data, pack.scale, out, pack.rows,
                          1., 0, pack.rowscale.data_ptr(), 0, 0, 0)
     return out
 

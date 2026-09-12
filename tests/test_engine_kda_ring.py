@@ -52,17 +52,17 @@ class KdaRingTests(unittest.TestCase):
         return out,expected,states
 
     def test_every_snapshot_and_padding_with_wrapping_initial_row(self):
-        for t in range(1,7):
-            args,backing,ring = self.inputs(t)
-            for slot,ctx in ((0,0),(1,1),(2,5),(1,6),(2,32768)):
+        for t in range(1,8):
+            args,backing,ring = self.inputs(t, cells=max(6,t))
+            for slot,ctx in ((0,0),(1,1),(2,ring.shape[1]-1),(1,ring.shape[1]),(2,32768)):
                 with self.subTest(tokens=t,slot=slot,context=ctx):
                     out,expected,_ = self.expected(args,backing,ring,slot,ctx)
                     actual = self.run(*args,ring,slot,ctx,-5.)
                     self.equal(actual,out); self.equal(backing,expected)
 
     def test_graph_mutable_slot_context_and_rejected_drafts(self):
-        for t in (1,6):
-            args,backing,ring = self.inputs(t)
+        for t in (1,6,7):
+            args,backing,ring = self.inputs(t, cells=max(6,t))
             slot,ctx = (torch.tensor(x,device='cuda',dtype=torch.int64) for x in (1,0))
             self.run(*args,ring,slot,ctx,-5.)
             graph = torch.cuda.CUDAGraph()

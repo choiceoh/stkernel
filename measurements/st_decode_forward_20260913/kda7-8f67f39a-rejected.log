@@ -1,0 +1,104 @@
+waiting: pos 2/2, held by prefill3000-kv2b [boot] (pid 3379351@srv2, since 02:45, est 20m, ST prefill: user-requested 2 GiB KV, verified 128K plus output capacity), legacy busy (0 procs, 0 reqs, booting), lease: queue queue/prefill3000-kv2b on srv2 since 2026-09-13 02:45:31 (ST prefill: user-requested 2 GiB KV, verified 128K plus  2026-09-13_02:51:59
+waiting: pos 2/2, held by prefill3000-kv2b [boot] (pid 3379351@srv2, since 02:45, est 20m, ST prefill: user-requested 2 GiB KV, verified 128K plus output capacity), lease: queue queue/prefill3000-kv2b on srv2 since 2026-09-13 02:45:31 (ST prefill: user-requested 2 GiB KV, verified 128K plus  2026-09-13_02:53:38
+waiting: pos 2/3, held by prefill3000-kv2b [boot] (pid 3379351@srv2, since 02:45, est 20m, ST prefill: user-requested 2 GiB KV, verified 128K plus output capacity), lease: queue queue/prefill3000-kv2b on srv2 since 2026-09-13 02:45:31 (ST prefill: user-requested 2 GiB KV, verified 128K plus  2026-09-13_02:53:41
+waiting: pos 2/3, lease: queue queue/st-forward-profile0913v6 on srv2 since 2026-09-13 02:53:43 (handed from prefill3000-kv2b): phase=handed over 2026-09-13_02:53:44
+waiting: pos 1/2, held by st-forward-profile0913v6 [boot] (pid 3397633@srv2, since 02:53, est 15m, Native candidate target graph kernel attribution), lease: queue queue/st-forward-profile0913v6 on srv2 since 2026-09-13 02:53:43 (handed from prefill3000-kv2b): phase=handed over 2026-09-13_02:53:51
+waiting: pos 1/3, held by st-forward-profile0913v6 [boot] (pid 3397633@srv2, since 02:53, est 15m, Native candidate target graph kernel attribution), lease: queue queue/st-forward-profile0913v6 on srv2 since 2026-09-13 02:53:43 (handed from prefill3000-kv2b): phase=handed over 2026-09-13_02:54:39
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "154ade3e3db7421aa6c74142b9599cce", "phase": "waiting", "reason": "dequeue", "since": 109963.800487298, "updated_at": 1789235823.9082978, "version": 1}
+GO st-kda7-gate0913 2026-09-13_02:57:03
+  node 10.10.10.1: gpu=ok stray=3 ram=92G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=96G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=101G path=ok 
+{"lane": "imports", "modules": 81, "table": "served", "vllm_loaded": false}
+test_disjoint_slots_on_two_cuda_streams (tests.test_engine_kda_ring.KdaRingTests.test_disjoint_slots_on_two_cuda_streams) ... ok
+test_every_snapshot_and_padding_with_wrapping_initial_row (tests.test_engine_kda_ring.KdaRingTests.test_every_snapshot_and_padding_with_wrapping_initial_row) ... 
+  test_every_snapshot_and_padding_with_wrapping_initial_row (tests.test_engine_kda_ring.KdaRingTests.test_every_snapshot_and_padding_with_wrapping_initial_row) (tokens=7, slot=0, context=0) ... FAIL
+  test_every_snapshot_and_padding_with_wrapping_initial_row (tests.test_engine_kda_ring.KdaRingTests.test_every_snapshot_and_padding_with_wrapping_initial_row) (tokens=7, slot=1, context=1) ... FAIL
+  test_every_snapshot_and_padding_with_wrapping_initial_row (tests.test_engine_kda_ring.KdaRingTests.test_every_snapshot_and_padding_with_wrapping_initial_row) (tokens=7, slot=2, context=6) ... FAIL
+  test_every_snapshot_and_padding_with_wrapping_initial_row (tests.test_engine_kda_ring.KdaRingTests.test_every_snapshot_and_padding_with_wrapping_initial_row) (tokens=7, slot=1, context=7) ... FAIL
+  test_every_snapshot_and_padding_with_wrapping_initial_row (tests.test_engine_kda_ring.KdaRingTests.test_every_snapshot_and_padding_with_wrapping_initial_row) (tokens=7, slot=2, context=32768) ... FAIL
+test_graph_mutable_slot_context_and_rejected_drafts (tests.test_engine_kda_ring.KdaRingTests.test_graph_mutable_slot_context_and_rejected_drafts) ... FAIL
+test_invalid_layout_indices_and_overlapping_inputs (tests.test_engine_kda_ring.KdaRingTests.test_invalid_layout_indices_and_overlapping_inputs) ... ok
+test_reference_bisect_disables_direct_ring_lane (tests.test_engine_kda_ring.KdaRingTests.test_reference_bisect_disables_direct_ring_lane) ... ok
+test_tail_dimensions_grouped_heads_and_float_types (tests.test_engine_kda_ring.KdaRingTests.test_tail_dimensions_grouped_heads_and_float_types) ... ok
+test_zero_context_masks_nan_and_device_int32 (tests.test_engine_kda_ring.KdaRingTests.test_zero_context_masks_nan_and_device_int32) ... ok
+
+======================================================================
+FAIL: test_every_snapshot_and_padding_with_wrapping_initial_row (tests.test_engine_kda_ring.KdaRingTests.test_every_snapshot_and_padding_with_wrapping_initial_row) (tokens=7, slot=0, context=0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_kda_ring.py", line 58, in test_every_snapshot_and_padding_with_wrapping_initial_row
+    self.equal(actual,out); self.equal(backing,expected)
+    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/tests/test_engine_kda_ring.py", line 40, in equal
+    self.assertTrue(torch.equal(x.contiguous().view(torch.uint8),y.contiguous().view(torch.uint8)))
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_every_snapshot_and_padding_with_wrapping_initial_row (tests.test_engine_kda_ring.KdaRingTests.test_every_snapshot_and_padding_with_wrapping_initial_row) (tokens=7, slot=1, context=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_kda_ring.py", line 58, in test_every_snapshot_and_padding_with_wrapping_initial_row
+    self.equal(actual,out); self.equal(backing,expected)
+    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/tests/test_engine_kda_ring.py", line 40, in equal
+    self.assertTrue(torch.equal(x.contiguous().view(torch.uint8),y.contiguous().view(torch.uint8)))
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_every_snapshot_and_padding_with_wrapping_initial_row (tests.test_engine_kda_ring.KdaRingTests.test_every_snapshot_and_padding_with_wrapping_initial_row) (tokens=7, slot=2, context=6)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_kda_ring.py", line 58, in test_every_snapshot_and_padding_with_wrapping_initial_row
+    self.equal(actual,out); self.equal(backing,expected)
+    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/tests/test_engine_kda_ring.py", line 40, in equal
+    self.assertTrue(torch.equal(x.contiguous().view(torch.uint8),y.contiguous().view(torch.uint8)))
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_every_snapshot_and_padding_with_wrapping_initial_row (tests.test_engine_kda_ring.KdaRingTests.test_every_snapshot_and_padding_with_wrapping_initial_row) (tokens=7, slot=1, context=7)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_kda_ring.py", line 58, in test_every_snapshot_and_padding_with_wrapping_initial_row
+    self.equal(actual,out); self.equal(backing,expected)
+    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/tests/test_engine_kda_ring.py", line 40, in equal
+    self.assertTrue(torch.equal(x.contiguous().view(torch.uint8),y.contiguous().view(torch.uint8)))
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_every_snapshot_and_padding_with_wrapping_initial_row (tests.test_engine_kda_ring.KdaRingTests.test_every_snapshot_and_padding_with_wrapping_initial_row) (tokens=7, slot=2, context=32768)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_kda_ring.py", line 58, in test_every_snapshot_and_padding_with_wrapping_initial_row
+    self.equal(actual,out); self.equal(backing,expected)
+    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/tests/test_engine_kda_ring.py", line 40, in equal
+    self.assertTrue(torch.equal(x.contiguous().view(torch.uint8),y.contiguous().view(torch.uint8)))
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_graph_mutable_slot_context_and_rejected_drafts (tests.test_engine_kda_ring.KdaRingTests.test_graph_mutable_slot_context_and_rejected_drafts)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_kda_ring.py", line 75, in test_graph_mutable_slot_context_and_rejected_drafts
+    self.equal(actual,out);self.equal(backing,expected)
+    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/tests/test_engine_kda_ring.py", line 40, in equal
+    self.assertTrue(torch.equal(x.contiguous().view(torch.uint8),y.contiguous().view(torch.uint8)))
+AssertionError: False is not true
+
+----------------------------------------------------------------------
+Ran 7 tests in 5.434s
+
+FAILED (failures=6)
+Traceback (most recent call last):
+  File "/repo/probes/engine_kernel_check.py", line 235, in <module>
+    main()
+  File "/repo/probes/engine_kernel_check.py", line 67, in main
+    assert result.wasSuccessful() and not result.skipped, "KDA ring numerical/replay checks did not pass"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: KDA ring numerical/replay checks did not pass
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "d4dc89751572403d80921d78522f6db3", "phase": "waiting", "reason": "release", "since": 109977.065193877, "updated_at": 1789235837.173005, "version": 1}

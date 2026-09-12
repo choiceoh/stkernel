@@ -1,0 +1,57 @@
+waiting: pos 2/2, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:09:04 (production st-glm53 on four Sparks) 2026-09-13_03:15:25
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:09:04 (production st-glm53 on four Sparks), a single check holds srv4 2026-09-13_03:15:59
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:09:04 (production st-glm53 on four Sparks) 2026-09-13_03:16:25
+waiting: pos 1/3, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:09:04 (production st-glm53 on four Sparks) 2026-09-13_03:16:46
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:09:04 (production st-glm53 on four Sparks) 2026-09-13_03:17:06
+waiting: pos 1/3, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:09:04 (production st-glm53 on four Sparks) 2026-09-13_03:17:20
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:09:04 (production st-glm53 on four Sparks) 2026-09-13_03:17:51
+waiting: pos 1/3, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:09:04 (production st-glm53 on four Sparks) 2026-09-13_03:19:45
+waiting: pos 1/3, lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:09:04 (production st-glm53 on four Sparks) 2026-09-13_03:21:07
+waiting: pos 1/3, lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:09:04 (production st-glm53 on four Sparks): running=0, se 2026-09-13_03:21:56
+waiting: pos 1/3, legacy busy (0 procs, 1 reqs), lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:09:04 (production st-glm53 on four Sparks): running=0, se 2026-09-13_03:22:32
+waiting: pos 1/3, lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:09:04 (production st-glm53 on four Sparks): running=1, se 2026-09-13_03:22:33
+waiting: pos 1/3, lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:23:10 (production st-glm53 on four Sparks) 2026-09-13_03:23:10
+waiting: pos 1/3, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:23:10 (production st-glm53 on four Sparks) 2026-09-13_03:23:13
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:23:10 (production st-glm53 on four Sparks) 2026-09-13_03:24:07
+waiting: pos 1/2, lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:23:10 (production st-glm53 on four Sparks) 2026-09-13_03:24:11
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:23:10 (production st-glm53 on four Sparks) 2026-09-13_03:25:11
+waiting: pos 1/2, lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:23:10 (production st-glm53 on four Sparks): running=0, se 2026-09-13_03:26:22
+waiting: pos 1/2, lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:23:10 (production st-glm53 on four Sparks): running=0, se, a single check holds srv4 2026-09-13_03:26:49
+waiting: pos 1/2, legacy busy (0 procs, 0 reqs, booting), lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:23:10 (production st-glm53 on four Sparks): running=0, se, a single check holds srv4 2026-09-13_03:26:57
+waiting: pos 1/2, lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:23:10 (production st-glm53 on four Sparks): running=0, se, a single check holds srv4 2026-09-13_03:27:01
+waiting: pos 1/2, lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:23:10 (production st-glm53 on four Sparks): running=0, se 2026-09-13_03:27:11
+waiting: pos 1/3, lease: production production/srv2/3602594 on srv2 since 2026-09-13 03:23:10 (production st-glm53 on four Sparks): running=0, se 2026-09-13_03:28:29
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "1c21fa62aa0f41b180c1857a35ee4a79", "phase": "waiting", "reason": "dequeue", "since": 111853.727407918, "updated_at": 1789237713.8352194, "version": 1}
+GO st-decode7-gate0913v2 2026-09-13_03:28:33
+  node 10.10.10.1: gpu=ok stray=3 ram=91G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=95G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=101G path=ok 
+{"lane": "imports", "modules": 81, "table": "served", "vllm_loaded": false}
+test_fp32_logits_and_selection_on_random_repeated_and_tied_experts (tests.test_engine_decode_seven.RouterTensorCoreTests.test_fp32_logits_and_selection_on_random_repeated_and_tied_experts) ... ok
+test_input_reuse_matches_same_packs_every_row_and_changed_graph_inputs (tests.test_engine_decode_seven.SevenRowDenseTests.test_input_reuse_matches_same_packs_every_row_and_changed_graph_inputs) ... {"lane": "decode7", "passed": true, "tests": 2}
+ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 56.030s
+
+OK
+{"lane": "seven_row_dense_timing", "rows": 7, "n": 6416, "k": 4096, "distinct_packs": 8, "exact": true, "plan": [4, 8, 3, 23552], "measurements": [{"arm": "B", "ms": 0.0700715035200119}, {"arm": "A", "ms": 0.06872687488794327}, {"arm": "A", "ms": 0.06643731147050858}, {"arm": "B", "ms": 0.06866756081581116}], "scope": "same packs, captured projection; not consumer speed"}
+{"lane": "seven_row_dense_timing", "rows": 7, "n": 4096, "k": 4096, "distinct_packs": 8, "exact": true, "plan": [4, 3, 4, 17920], "measurements": [{"arm": "B", "ms": 0.041975125670433044}, {"arm": "A", "ms": 0.0412408746778965}, {"arm": "A", "ms": 0.041331250220537186}, {"arm": "B", "ms": 0.04216712340712547}], "scope": "same packs, captured projection; not consumer speed"}
+{"lane": "seven_row_dense_timing", "rows": 7, "n": 6144, "k": 4096, "distinct_packs": 8, "exact": true, "plan": [4, 2, 6, 12288], "measurements": [{"arm": "B", "ms": 0.0648069977760315}, {"arm": "A", "ms": 0.06347531080245972}, {"arm": "A", "ms": 0.06414106488227844}, {"arm": "B", "ms": 0.06536974757909775}], "scope": "same packs, captured projection; not consumer speed"}
+{"lane": "tensorcore_router_timing", "rows": 7, "layers": 42, "checked_rows": 2352, "selected_ids_exact": true, "max_logit_error": 6.103515625e-05, "measurements": [{"arm": "B", "ms": 3.1733555793762207}, {"arm": "A", "ms": 1.5493855476379395}, {"arm": "A", "ms": 1.5498825311660767}, {"arm": "B", "ms": 3.172846555709839}], "scope": "real router weights, synthetic hidden states, captured; not consumer speed"}
+test_disjoint_slots_on_two_cuda_streams (tests.test_engine_kda_ring.KdaRingTests.test_disjoint_slots_on_two_cuda_streams) ... ok
+test_every_snapshot_and_padding_with_wrapping_initial_row (tests.test_engine_kda_ring.KdaRingTests.test_every_snapshot_and_padding_with_wrapping_initial_row) ... ok
+test_graph_mutable_slot_context_and_rejected_drafts (tests.test_engine_kda_ring.KdaRingTests.test_graph_mutable_slot_context_and_rejected_drafts) ... ok
+test_invalid_layout_indices_and_overlapping_inputs (tests.test_engine_kda_ring.KdaRingTests.test_invalid_layout_indices_and_overlapping_inputs) ... ok
+test_reference_bisect_disables_direct_ring_lane (tests.test_engine_kda_ring.KdaRingTests.test_reference_bisect_disables_direct_ring_lane) ... ok
+test_tail_dimensions_grouped_heads_and_float_types (tests.test_engine_kda_ring.KdaRingTests.test_tail_dimensions_grouped_heads_and_float_types) ... ok
+test_zero_context_masks_nan_and_device_int32 (tests.test_engine_kda_ring.KdaRingTests.test_zero_context_masks_nan_and_device_int32) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.820s
+
+OK
+{"lane": "kda_ring", "passed": true, "tests": 7}
+{"passed": true, "vllm_loaded": false, "checks": [{"lane": "imports", "modules": 81, "table": "served", "vllm_loaded": false}, {"lane": "decode7", "passed": true, "tests": 2}, {"lane": "seven_row_dense_timing", "rows": 7, "n": 6416, "k": 4096, "distinct_packs": 8, "exact": true, "plan": [4, 8, 3, 23552], "measurements": [{"arm": "B", "ms": 0.0700715035200119}, {"arm": "A", "ms": 0.06872687488794327}, {"arm": "A", "ms": 0.06643731147050858}, {"arm": "B", "ms": 0.06866756081581116}], "scope": "same packs, captured projection; not consumer speed"}, {"lane": "seven_row_dense_timing", "rows": 7, "n": 4096, "k": 4096, "distinct_packs": 8, "exact": true, "plan": [4, 3, 4, 17920], "measurements": [{"arm": "B", "ms": 0.041975125670433044}, {"arm": "A", "ms": 0.0412408746778965}, {"arm": "A", "ms": 0.041331250220537186}, {"arm": "B", "ms": 0.04216712340712547}], "scope": "same packs, captured projection; not consumer speed"}, {"lane": "seven_row_dense_timing", "rows": 7, "n": 6144, "k": 4096, "distinct_packs": 8, "exact": true, "plan": [4, 2, 6, 12288], "measurements": [{"arm": "B", "ms": 0.0648069977760315}, {"arm": "A", "ms": 0.06347531080245972}, {"arm": "A", "ms": 0.06414106488227844}, {"arm": "B", "ms": 0.06536974757909775}], "scope": "same packs, captured projection; not consumer speed"}, {"lane": "tensorcore_router_timing", "rows": 7, "layers": 42, "checked_rows": 2352, "selected_ids_exact": true, "max_logit_error": 6.103515625e-05, "measurements": [{"arm": "B", "ms": 3.1733555793762207}, {"arm": "A", "ms": 1.5493855476379395}, {"arm": "A", "ms": 1.5498825311660767}, {"arm": "B", "ms": 3.172846555709839}], "scope": "real router weights, synthetic hidden states, captured; not consumer speed"}, {"lane": "kda_ring", "passed": true, "tests": 7}]}
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "8939d72b73274dbeb54308b6972fdc42", "phase": "waiting", "reason": "release", "since": 111921.506434631, "updated_at": 1789237781.6142411, "version": 1}

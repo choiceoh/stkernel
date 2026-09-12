@@ -154,7 +154,10 @@ class Glm53Net:
         self.rec_ring = F.spec_k + 1                 # recurrent states kept per slot: one per draft position
         self.p = None
         self.dense = {}
+        self.shared_mlp = {}
+        self.shared_overlap = None
         self._router_weights = {}
+        self._router_tensorcore = set()
         self.prefill_transport = None
         self.mhc = None
         from engine.profiles.glm53.weights import WEIGHT_LAYOUT, MODELOPT_WEIGHT_LAYOUT
@@ -296,6 +299,12 @@ class Glm53Net:
             self.p["head"]=None
         from engine.kernels.dense.mhc import MHC
         self.mhc = MHC({key: weight for key, weight in self.p.items() if key.endswith(("hc.attn_fn","hc.ffn_fn"))})
+        from engine.kernels.dense.shared_mlp import SharedMLP, SharedOverlap
+        self.shared_mlp = {L: SharedMLP(self.dense[f"L{L}.moe.sh_gate_up"],
+                                        self.dense[f"L{L}.moe.sh_down"], self.F.swiglu_limit)
+                           for L in self.layers if self.F.is_moe(L)}
+        if self.shared_mlp:
+            self.shared_overlap = SharedOverlap(self.p["norm"].device)
 
     @operation("linear", name_arg=2)
     def linear(self, x, name):
@@ -553,8 +562,13 @@ class Glm53Net:
         """noaux_tc: sigmoid scores fp32, select by score + bias, weight by the
         raw scores renormalised, times routed_scaling_factor."""
         F, p, n = self.F, self.p, f"L{L}.moe."
-        gate = self._router_weights.get(L, p[n + "gate"])
-        logits = x.float() @ gate.float().T
+        if self._router_weights and x.shape[0] <= F.spec_k + 1:
+            from engine.kernels.glm_pointwise import router_logits
+            logits = router_logits(x, p[n + "gate"])
+            self._router_tensorcore.add(L)
+        else:
+            gate = self._router_weights.get(L, p[n + "gate"])
+            logits = x.float() @ gate.float().T
         if self.lanes.route_weights is not None:
             return self.lanes.route_weights(logits, p[n + "bias"], F.topk_experts, F.routed_scale)
         s = torch.sigmoid(logits)
@@ -565,6 +579,14 @@ class Glm53Net:
     @operation("moe", layer_arg=1)
     def _moe(self, L: int, x: torch.Tensor, reduce=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.moe."
+        # GPU component gate: C=1 wins; C=4 with reused routes regresses.
+        # Keep the established shared chain for wider captured batches.
+        if self.shared_overlap is not None and x.shape[0] <= F.spec_k + 1:
+            def routed():
+                sel, w = self.route(L, x)
+                return self._experts[L](x, sel, w)
+            joined = self.shared_overlap(self.shared_mlp[L], x, routed)
+            return (reduce or self.comm.all_reduce)(joined)
         sel, w = self.route(L, x)
         out = self._experts[L](x, sel, w)
         g, u = self.linear(x, n + "sh_gate_up").chunk(2, dim=-1)

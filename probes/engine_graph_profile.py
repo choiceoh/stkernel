@@ -12,9 +12,9 @@ not the fabric's. The layer range is the whole model by default -- a slice measu
     bash probes/run_engine_probe.sh probes/engine_graph_profile.py
     bash probes/run_engine_probe.sh probes/engine_graph_profile.py --layers 0-4
 
-The KV this replays over holds whatever the arena had -- no prefill precedes it. That is deliberate: the
-kernels read the same number of bytes from the same places either way, and this asks what they cost, not what
-they compute. `probes/engine_decode_graph_check.py` is the one that asks whether the answer is right.
+The KV is zeroed and no prefill precedes this isolated-rank diagnostic. Shapes and bytes match, but expert
+routing is synthetic and collectives are identities. This attributes kernel cost; it is not consumer
+throughput. `probes/engine_decode_graph_check.py` is the one that asks whether the answer is right.
 
 Read the per-step column. `calls` is over the whole run, so `calls / steps` says how many launches a step
 spends on that kernel -- which is the other half of the question: bytes or launches.
@@ -33,7 +33,7 @@ from engine.profiles.glm53.net import Step
 
 # A kernel's name says which lane it came from; anything unclaimed is listed under its own name so a
 # surprise cannot hide inside a bucket.
-LANES = (("mHC", r"mhc"), ("MLA / DSA", r"mla|sparse|logits|kpool|indexer"), ("KDA", r"kda|conv"),
+LANES = (("mHC", r"mhc"), ("MLA / DSA", r"mla|sparse|logits|kpool|indexer"), ("KDA", r"kda|conv|fused_recurrent"),
          ("MoE", r"moe|b12x|expert"), ("dense GEMM", r"gemm|cutlass|nvjet|sm90|sm100|sm121"),
          ("norm / elementwise", r"norm|elementwise|vectorized|copy|cat|fill"),
          ("collective", r"nccl|all_reduce|allgather|reduce_scatter"))
@@ -83,12 +83,27 @@ def main():
     else:
         layers = list(range(F.layers))
     torch.manual_seed(13)
-    _, net, caches, _, _ = build(IsolatedRank(), layers, served(), a.ranks, .25, max(2, a.seqs), False,
-                                 Recorder("profile"), ckpt_meta=a.ckpt_meta)
+    # Full-model recurrent rollback slots alone exceed .25 GiB. Budget them
+    # from the same layout as serving, plus room for these 4352-token rows.
+    from engine.profiles.glm53.caches import layout
+    shape = layout(F, layers)
+    blocks = a.seqs * ((4352 + F.block - 1) // F.block)
+    kv_gib = ((a.seqs + 1) * shape.slot_bytes + blocks * (shape.block_bytes + a.seqs * 4) + (64 << 20)) / 2**30
+    _, net, caches, _, _ = build(IsolatedRank(), layers, served(), a.ranks, kv_gib, a.seqs, False,
+                                 Recorder("profile"), ckpt_meta=a.ckpt_meta, execution="native")
+    # This asks about the target kernels after calibration has filed. With
+    # no drafter, build otherwise sizes the observer for single-token steps.
+    # Do not attribute synthetic seven-row Gram collection to target math.
+    for layer in net.dense.values():
+        layer.observer = None
+    caches.paged.zero_()
+    caches.state.zero_()
     t = F.spec_k + 1
     print(f"weights loaded: {len(layers)} layers, {a.seqs} row(s) of {t} tokens", flush=True)
 
-    graphs = Glm53DecodeGraphs(net, caches, max(2, a.seqs), t)
+    aux_layers = tuple(L for L in (5, 14, 24, 33, 42) if L in layers)
+    graphs = Glm53DecodeGraphs(net, caches, a.seqs, t, aux_layers=aux_layers,
+                              ceiling=8192)
     slots = [caches.slots.take(i) for i in range(a.seqs)]
     for i in range(a.seqs):
         caches.pool.reserve(i, 4352)
@@ -99,6 +114,16 @@ def main():
         graphs.run(step)
     torch.cuda.synchronize()
     print("captured and warm", flush=True)
+    print(f"execution=native, calibration=disabled, W4 layers={sum(bool(p.executed & 1) for p in net.dense.values() if hasattr(p, 'packs'))}, "
+          f"mHC layers={len(net.mhc.executed)}, auxiliary layers={aux_layers}", flush=True)
+
+    start, end = (torch.cuda.Event(enable_timing=True) for _ in range(2))
+    start.record()
+    for _ in range(a.steps):
+        graphs.run(step)
+    end.record()
+    end.synchronize()
+    print(f"isolated-rank replay elapsed: {start.elapsed_time(end) / a.steps:.3f} ms/step", flush=True)
 
     with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
         for _ in range(a.steps):
@@ -112,7 +137,8 @@ def main():
             rows.append((event.key, event.count, total))
     rows.sort(key=lambda r: -r[2])
     device = sum(r[2] for r in rows)
-    print(f"\n  a decode step's device time: {device / a.steps:.1f} us over {a.steps} replays\n")
+    print(f"\n  summed kernel activity: {device / a.steps:.1f} us/step over {a.steps} replays "
+          "(overlapping streams are counted separately)\n")
 
     lanes = {}
     for name, calls, total in rows:

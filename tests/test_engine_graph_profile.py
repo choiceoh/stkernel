@@ -31,6 +31,16 @@ class AdmittedProbeTests(unittest.TestCase):
     def test_the_graph_profile_is_one_of_them(self):
         self.assertIn("probes/engine_graph_profile.py", admitted())
 
+    def test_forward_profile_explicitly_selects_native_execution(self):
+        # build's default is the stock composition. A captured graph alone
+        # never proves that the probe used production's W4/FP8 linears.
+        import ast
+        tree = ast.parse((ROOT / "probes/engine_graph_profile.py").read_text())
+        calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and getattr(n.func, 'id', '') == 'build']
+        self.assertEqual(len(calls), 1)
+        args = {k.arg: k.value for k in calls[0].keywords}
+        self.assertEqual(ast.literal_eval(args['execution']), 'native')
+
     def test_none_of_them_requires_an_argument(self):
         """The queue invokes an admitted check with NO arguments, and `ST_FLAGS` admits only a handful --
         `--drafter-dir` and `--tier-dir` are not among them, so a check that requires either can be started
@@ -53,6 +63,7 @@ class LaneTests(unittest.TestCase):
         from probes.engine_graph_profile import lane_of
         for name, lane in (("mk_mhc_kernel", "mHC"), ("mk_mla_pair_kernel", "MLA / DSA"),
                            ("fused_recurrent_kda_fwd", "KDA"), ("causal_conv1d_ring", "KDA"),
+                           ("fused_recurrent_gated_delta_rule_fwd_kernel", "KDA"),
                            ("b12x_moe_dynamic_gated", "MoE"), ("nvjet_tst_128x_64", "dense GEMM"),
                            ("ncclDevKernel_AllReduce_Sum", "collective")):
             with self.subTest(kernel=name):

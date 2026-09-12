@@ -608,10 +608,16 @@ def native_execution_report(net, drafter):
                  drafter_w4=sum(bool(p.executed & 1) for p in draft),
                  drafter_context_fp8=bool(drafter.dense['fc.weight'].executed & 2),
                  mhc=len(net.mhc.executed),
+                 shared_mlp=sum(p.executed for p in net.shared_mlp.values()),
+                 shared_overlap=bool(net.shared_overlap and net.shared_overlap.executed),
+                 router_tensorcore=len(net._router_tensorcore),
                  prefill_collectives=sorted(net.prefill_transport.executed))
     if (proof['target_w4'] != len(target) or proof['target_fp8'] != len(target)
             or proof['drafter_w4'] != len(draft) or not proof['head_fp8']
             or not proof['drafter_context_fp8'] or proof['mhc'] != expected_mhc
+            or proof['shared_mlp'] != len(net.shared_mlp)
+            or (net.shared_mlp and not proof['shared_overlap'])
+            or net._router_tensorcore != set(net._router_weights)
             or len(proof['prefill_collectives']) != 2):
         raise RuntimeError(f'native execution proof is incomplete: {proof}')
     return proof

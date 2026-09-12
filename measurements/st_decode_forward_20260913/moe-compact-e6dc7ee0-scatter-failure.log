@@ -1,0 +1,77 @@
+waiting: pos 1/1, held by kda-fp16-pair0913c [boot] (pid 3730812@srv2, since 03:43, est 60m, Matched FP16/FP32 KDA state, fixed capacity, C1 C4 quality and output throughput; declared controller lease identity), lease: queue queue/kda-fp16-pair0913c on srv2 since 2026-09-13 03:43:44 (handed from prefill3000-tail1): phase=handed over 2026-09-13_03:44:55
+waiting: pos 1/1, held by kda-fp16-pair0913c [boot] (pid 3730812@srv2, since 03:43, est 60m, Matched FP16/FP32 KDA state, fixed capacity, C1 C4 quality and output throughput; declared controller lease identity), legacy busy (0 procs, 0 reqs, booting), lease: queue queue/kda-fp16-pair0913c on srv2 since 2026-09-13 03:43:44 (handed from prefill3000-tail1): phase=handed over 2026-09-13_03:45:54
+waiting: pos 1/1, held by kda-fp16-pair0913c [boot] (pid 3730812@srv2, since 03:43, est 60m, Matched FP16/FP32 KDA state, fixed capacity, C1 C4 quality and output throughput; declared controller lease identity), lease: queue queue/kda-fp16-pair0913c on srv2 since 2026-09-13 03:43:44 (handed from prefill3000-tail1): phase=handed over, run 2026-09-13_03:47:41
+waiting: pos 1/1, held by kda-fp16-pair0913c [boot] (pid 3730812@srv2, since 03:43, est 60m, Matched FP16/FP32 KDA state, fixed capacity, C1 C4 quality and output throughput; declared controller lease identity), legacy busy (0 procs, 1 reqs), lease: queue queue/kda-fp16-pair0913c on srv2 since 2026-09-13 03:43:44 (handed from prefill3000-tail1): phase=handed over, run 2026-09-13_03:47:48
+waiting: pos 1/1, held by kda-fp16-pair0913c [boot] (pid 3730812@srv2, since 03:43, est 60m, Matched FP16/FP32 KDA state, fixed capacity, C1 C4 quality and output throughput; declared controller lease identity), legacy busy (0 procs, 0 reqs, booting), lease: queue queue/kda-fp16-pair0913c on srv2 since 2026-09-13 03:43:44 (handed from prefill3000-tail1): phase=handed over, run 2026-09-13_03:47:49
+waiting: pos 1/1, held by kda-fp16-pair0913c [boot] (pid 3730812@srv2, since 03:43, est 60m, Matched FP16/FP32 KDA state, fixed capacity, C1 C4 quality and output throughput; declared controller lease identity), lease: queue queue/kda-fp16-pair0913c on srv2 since 2026-09-13 03:43:44 (handed from prefill3000-tail1): phase=handed over, run 2026-09-13_03:47:53
+waiting: pos 1/1, lease: queue queue/st-moe-compact0913v2 on srv2 since 2026-09-13 03:47:57 (handed from kda-fp16-pair0913c): phase=handed over 2026-09-13_03:47:58
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "3f2c8383968e4074be62383d25c2850d", "phase": "waiting", "reason": "dequeue", "since": 113027.312268082, "updated_at": 1789238887.4200797, "version": 1}
+GO st-moe-compact0913v2 2026-09-13_03:48:07
+  node 10.10.10.1: gpu=ok stray=3 ram=92G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=96G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=100G path=ok 
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12 18:48:13,406 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12 18:48:13,406 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256sf6v1_compact_1789238889227206929_9c5414e38b03ccf8
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-12 18:48:15,742 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256sf6v1_compact_1789238889227206929_9c5414e38b03ccf8.o
+[b12x static v2] lane serving: static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=7, routed=56, smem=98304 B)
+2026-09-12 18:48:15,803 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r56_tm32f1g1a32wutr16n128k256d256sf6v1_compact_1789238889227206929_7d7363a377440c75
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=1024
+2026-09-12 18:48:19,900 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r56_tm32f1g1a32wutr16n128k256d256sf6v1_compact_1789238889227206929_7d7363a377440c75.o
+[b12x static v2] lane serving: static2_m7_k4096_n512_t8_r56_tm32f1g1a32wutr16n128k256d256sf6v1 (mac=48, m=7, routed=56, smem=44032 B)
+{"lane": "moe_compact_residency", "cubin": "/cache/st-moe-compact-proof/1789238889227206929/cutlass___call___enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__FakeTensorBFloat167409640961_FakeTensorInt32561_FakeTensorFloat32561_FakeTensorFloat4E2M1FN564096.sm_121a.cubin", "sha256": "a0fbf79b9e40098ddea4c277285d6273c8ccea02476c58991f9d505a3b5b87cd", "dynamic_smem": 44032, "registers": 96, "local_bytes": 0, "blocks_per_sm": 2, "sms": 48, "requested_ctas": 48}
+Traceback (most recent call last):
+  File "/repo/probes/engine_kernel_check.py", line 259, in <module>
+    main()
+  File "/repo/probes/engine_kernel_check.py", line 44, in main
+    compact_check()
+  File "/repo/probes/engine_moe_compact_check.py", line 109, in main
+    graph, output = _capture(lambda: [native.moe(x, route, weights, w13, s13, w2, s2, 10.)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/probes/engine_decode_fusions.py", line 12, in _capture
+    with torch.cuda.graph(graph):
+  File "/usr/local/lib/python3.12/dist-packages/torch/cuda/graphs.py", line 439, in __enter__
+    torch.cuda.synchronize()
+  File "/usr/local/lib/python3.12/dist-packages/torch/cuda/__init__.py", line 1219, in synchronize
+    return torch._C._cuda_synchronize()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+torch.AcceleratorError: CUDA error: an illegal memory access was encountered
+Search for `cudaErrorIllegalAddress' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+
+terminate called after throwing an instance of 'c10::AcceleratorError'
+  what():  CUDA error: an illegal memory access was encountered
+Search for `cudaErrorIllegalAddress' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+
+Exception raised from get at /__w/pytorch/pytorch/c10/cuda/CUDACachingAllocator.cpp:1190 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xc8 (0xf9dcee0ee158 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+frame #1: c10::cuda::c10_cuda_check_implementation(int, char const*, char const*, unsigned int, bool) + 0x834 (0xf9dcee229b54 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10_cuda.so)
+frame #2: <unknown function> + 0x425d48 (0xf9dcee205d48 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10_cuda.so)
+frame #3: <unknown function> + 0x43527c (0xf9dcee21527c in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10_cuda.so)
+frame #4: <unknown function> + 0x437030 (0xf9dcee217030 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10_cuda.so)
+frame #5: <unknown function> + 0x489870 (0xf9dcee0c9870 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+frame #6: c10::TensorImpl::~TensorImpl() + 0x14 (0xf9dcee086164 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+frame #7: <unknown function> + 0x5e47e8 (0xf9dd101c47e8 in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_python.so)
+frame #8: <unknown function> + 0xb43c7c (0xf9dd10723c7c in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_python.so)
+frame #9: python3() [0x523834]
+frame #10: python3() [0x4f5478]
+frame #11: python3() [0x4f51f0]
+frame #12: python3() [0x5238e0]
+frame #13: python3() [0x4f555c]
+frame #14: python3() [0x4f51f0]
+frame #15: python3() [0x4f9ffc]
+frame #16: python3() [0x5b2d4c]
+frame #17: python3() [0x68b908]
+<omitting python frames>
+frame #21: <unknown function> + 0x284c4 (0xf9dd9fef84c4 in /usr/lib/aarch64-linux-gnu/libc.so.6)
+frame #22: __libc_start_main + 0x98 (0xf9dd9fef8598 in /usr/lib/aarch64-linux-gnu/libc.so.6)
+
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "7d9b9cf7c59440a9a4eb7e60cd1f41aa", "phase": "waiting", "reason": "release", "since": 113040.981978153, "updated_at": 1789238901.089785, "version": 1}
+

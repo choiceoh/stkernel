@@ -26,6 +26,159 @@ def _time(graph, iterations=256, flush=None):
     return start.elapsed_time(end) / iterations
 
 
+def seven_row_dense(report):
+    from engine.kernels.dense import DenseLinear, W4Pack, w4_gemm, extension
+    ext = extension()
+    before, mode, state = ext.gemm_input_mode(), ext.gemm_input_cta_mode(), ext.probe_state()
+    try:
+        ext.set_gemm2(0)
+        ext.set_input_cta(4)
+        for n in (6416, 4096, 6144):
+            layer = DenseLinear((torch.randn(n, 4096, device='cuda') * .02).bfloat16(), prefill=False)
+            p = layer.packs[0]
+            # More than L2: an isolated warm weight is not a model's stream.
+            packs = [W4Pack(p.data.clone(), p.scale.clone(), p.rowscale.clone(), p.rows, p.cols)
+                     for _ in range(8)]
+            x = torch.randn(7, 4096, device='cuda', dtype=torch.bfloat16)
+            graphs, outputs = [], []
+            try:
+                for enabled in (0, 1):
+                    ext.set_gemm_input(enabled)
+                    graph, out = _capture(lambda: [w4_gemm(x, weight) for weight in packs])
+                    graphs.append(graph); outputs.append(out)
+                for _ in range(3):
+                    x.normal_()
+                    for graph in graphs:
+                        graph.replay()
+                    for got, want in zip(outputs[1], outputs[0]):
+                        torch.testing.assert_close(got, want, rtol=0, atol=0)
+                measurements = [dict(arm=label, ms=_time(graphs[i], iterations=64)/len(packs)) for label, i in
+                                (('B', 0), ('A', 1), ('A', 1), ('B', 0))]
+                report('seven_row_dense_timing', rows=7, n=n, k=4096, distinct_packs=len(packs),
+                       exact=True, plan=ext.gemm_input_cta_plan(7, n, 4096, False, False),
+                       measurements=measurements, scope='same packs, captured projection; not consumer speed')
+            finally:
+                for graph in graphs:
+                    graph.reset()
+    finally:
+        ext.set_gemm_input(before)
+        ext.set_input_cta(mode)
+        ext.restore_probe_state(state)
+
+
+def tensorcore_router(report, ranks=None):
+    from pathlib import Path
+    from safetensors import safe_open
+    from engine.kernels.glm_pointwise import router_logits, route_weights
+    from engine.profiles.glm53 import facts
+    root = Path(ranks or facts.RANKS)
+    if not root.is_absolute():
+        root = facts.RANKS.parent / root
+    rank_file = root / 'rank0of4.safetensors'
+    weights = []
+    with safe_open(str(rank_file), framework='pt', device='cpu') as source:
+        for key in sorted(k for k in source.keys() if k.endswith('.moe.gate')):
+            gate = source.get_tensor(key).cuda()
+            bias = source.get_tensor(key.removesuffix('gate')+'bias').cuda()
+            weights.append((gate, gate.float(), bias))
+    assert len(weights) == 42, 'real GLM router gate must cover every MoE layer'
+    x = torch.randn(7, 4096, device='cuda', dtype=torch.bfloat16)
+    max_logit_error = 0.
+    checked_rows = 0
+    for magnitude in (.01, .1, 1., 10.):
+        for correlated in (False, True):
+            x.normal_().mul_(magnitude)
+            if correlated:
+                x[1:].mul_(.02).add_(x[:1])
+            for gate, fp32, bias in weights:
+                base = x.float() @ fp32.T
+                cand = router_logits(x, gate)
+                torch.testing.assert_close(cand, base, rtol=5e-5, atol=3e-4)
+                max_logit_error = max(max_logit_error, (cand-base).abs().max().item())
+                ids, values = route_weights(cand, bias, 8, 2.5)
+                ref_ids, ref_values = route_weights(base, bias, 8, 2.5)
+                torch.testing.assert_close(ids, ref_ids, rtol=0, atol=0)
+                torch.testing.assert_close(values, ref_values, rtol=5e-5, atol=3e-6)
+                checked_rows += x.shape[0]
+    graphs = []
+    try:
+        for tensorcore in (False, True):
+            def run():
+                return [route_weights(router_logits(x, gate) if tensorcore else x.float() @ fp32.T,
+                                      bias, 8, 2.5) for gate, fp32, bias in weights]
+            graph, _ = _capture(run)
+            graphs.append(graph)
+        measurements = [dict(arm=label, ms=_time(graphs[i], iterations=64)) for label, i in
+                        (('B', 0), ('A', 1), ('A', 1), ('B', 0))]
+        report('tensorcore_router_timing', rows=7, layers=len(weights), checked_rows=checked_rows,
+               rank_file=str(rank_file),
+               selected_ids_exact=True, max_logit_error=max_logit_error, measurements=measurements,
+               scope='real router weights, synthetic hidden states, captured; not consumer speed')
+    finally:
+        for graph in graphs:
+            graph.reset()
+
+
+def shared_mlp(report, native):
+    from tests.test_engine_shared_mlp import SharedMLPTests
+    gu, down, fused = SharedMLPTests.layers()
+    for rows in (7, 28):
+        x = torch.randn(rows, 4096, device="cuda", dtype=torch.bfloat16)
+        base, _ = _capture(lambda: SharedMLPTests.reference(x, gu, down))
+        cand, _ = _capture(lambda: fused(x))
+        try:
+            measurements = [dict(arm=label, ms=_time(graph)) for label, graph in
+                            (("B", base), ("A", cand), ("A", cand), ("B", base))]
+            report("shared_mlp_timing", rows=rows, intermediate=512, measurements=measurements,
+                   scope="same-pack captured component; not consumer speed")
+        finally:
+            base.reset(); cand.reset()
+    # The independent routed branch is the real serving CuTe lane, so this
+    # also catches races between its workspace and native W4 graph scratch.
+    from engine.kernels.dense.shared_mlp import SharedOverlap
+    from engine.modules.nvfp4_sf import swizzle_sf
+    experts, hidden, width = 288, 4096, 512
+    w13 = torch.randint(0, 256, (experts, 2 * width, hidden // 2), device="cuda", dtype=torch.uint8)
+    w2 = torch.randint(0, 256, (experts, hidden, width // 2), device="cuda", dtype=torch.uint8)
+    s13 = torch.stack([swizzle_sf(torch.full((2 * width, hidden // 16), .015625, device="cuda").to(torch.float8_e4m3fn))
+                       for _ in range(experts)])
+    s2 = torch.stack([swizzle_sf(torch.full((hidden, width // 16), .015625, device="cuda").to(torch.float8_e4m3fn))
+                      for _ in range(experts)])
+    overlap = SharedOverlap("cuda")
+    for rows in (7, 28):
+        x = torch.randn(rows, hidden, device="cuda", dtype=torch.bfloat16) * .3
+        selected = (torch.arange(rows * 8, device="cuda").reshape(rows, 8) % experts).int()
+        weights = torch.full((rows, 8), 1 / 8, device="cuda")
+        def routed():
+            return native.moe(x, selected, weights, w13, s13, w2, s2, 10.)
+        graphs = []
+        outputs = []
+        try:
+            for fn in (lambda: routed() + SharedMLPTests.reference(x, gu, down),
+                       lambda: routed() + fused(x),
+                       lambda: overlap(fused, x, routed)):
+                graph, output = _capture(fn)
+                graphs.append(graph); outputs.append(output)
+            for regime in ("distinct_routes", "reused_routes"):
+                if regime == "reused_routes":
+                    selected.copy_(torch.arange(8, device="cuda", dtype=torch.int32).expand(rows, 8))
+                for _ in range(3):
+                    x.normal_()
+                    for graph in graphs:
+                        graph.replay()
+                    torch.cuda.synchronize()
+                    torch.testing.assert_close(outputs[1], outputs[2], rtol=0, atol=0)
+                    SharedMLPTests().close(outputs[1], outputs[0])
+                measurements = [dict(arm=label, ms=_time(graphs[i], iterations=64)) for label, i in
+                                (("B", 0), ("F", 1), ("O", 2), ("O", 2), ("F", 1), ("B", 0))]
+                report("shared_moe_overlap_timing", rows=rows, experts=experts, topk=8,
+                       regime=regime, replay_exact=True, measurements=measurements,
+                       scope="captured routed plus shared components; no model or communication")
+        finally:
+            for graph in graphs:
+                graph.reset()
+
+
 def pointwise(report):
     from engine.kernels.glm_pointwise import swiglu_clamped, route_weights, layernorm
     from engine.kernels.norm_rope import norm

@@ -1,0 +1,11 @@
+From https://github.com/choiceoh/stkernel
+ * branch              codex/st-decode-forward-22 -> FETCH_HEAD
+   c80c59cb..3b40dddc  codex/st-decode-forward-22 -> origin/codex/st-decode-forward-22
+Preparing worktree (detached HEAD 3b40dddc)
+HEAD is now at 3b40dddc fix(engine): use explicit native package import for shared MLP
+.........sssss..ss......
+----------------------------------------------------------------------
+Ran 24 tests in 2.320s
+
+OK (skipped=7)
+  expert_layout: tile-major bytes read back row-major per expert OK
