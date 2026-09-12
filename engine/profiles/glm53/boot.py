@@ -79,14 +79,20 @@ def generation_defaults(ckpt=facts.CKPT) -> dict:
     return {k: g[k] for k in ("temperature", "top_p", "top_k", "repetition_penalty") if k in g}
 
 
-def grammars(ckpt, vocab: int):
+def grammars(ckpt, vocab: int, device=None):
     """base/grammar.Grammars over the checkpoint's tokenizer, on every rank (each row's matcher runs everywhere), or None
-    where xgrammar is not installed -- then response_format is refused at the door (D3), never silently unenforced."""
+    where xgrammar is not installed -- then response_format is refused at the door (D3), never silently unenforced.
+
+    `device`: warm the mask kernel here. It is a Triton kernel, so its JIT is a second, and the first structured
+    request is not the place to pay it (45차 §23 B2, the same rule as every other first-use cost)."""
     from engine.base import grammar
     if not grammar.available():
         return None
     from transformers import AutoTokenizer
-    return grammar.Grammars(AutoTokenizer.from_pretrained(str(ckpt)), vocab)
+    g = grammar.Grammars(AutoTokenizer.from_pretrained(str(ckpt)), vocab)
+    if device is not None:
+        g.warm(device)
+    return g
 
 
 CHAT_TEMPLATE = "chat_template_mm_v2.jinja"     # what production serves with (launchers/lib/glm53-chat.sh); honours the `thinking` kwarg
@@ -408,7 +414,7 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
         tok = tokenizer(a.ckpt_meta)
         from engine.profiles.glm53.tools import parse_tool_calls
-        engine.grammars = grammars(a.ckpt_meta, F.vocab)
+        engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device)
         server = Server(engine, runner, comm, port=port, tokenizer=tok, chat=chat_renderer(a.ckpt_meta) if comm.rank == 0 else None,
                         model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
                         tool_parser=parse_tool_calls, generation=generation_defaults(a.ckpt_meta),
@@ -487,6 +493,18 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
     return 0 if ok else 1
 
 
+def fleet_lease_of() -> "dict | None":
+    """The reservation the launcher took for this boot, if it took one.
+
+    With it the engine publishes what it is doing and can be ASKED to hand the fleet
+    over -- it finishes, parks its conversations where they survive (D16), and lets go.
+    Without it the engine serves exactly as before; a lease is a reservation, not a
+    dependency.
+    """
+    owner, path = os.environ.get("ST_LEASE_OWNER"), os.environ.get("ST_LEASE_PATH")
+    return {"owner": owner, "path": path} if owner and path else None
+
+
 def fleet(a) -> int:
     """One rank per node, inside the glm53 image: served lanes (D3: all or nothing), every layer, then serve."""
     print(f"  box: {facts.check_box()}")
@@ -532,7 +550,8 @@ def fleet(a) -> int:
                                f"`python3 engine/profiles/glm53/preshard.py --vision --out {a.ranks}` (45차 §23 A7)")
         with rec.phase("qualify vision"):
             paid.update(engine.vision.qualify())            # the largest image and video, before the door opens (D3)
-        engine.grammars = grammars(a.ckpt_meta, F.vocab)    # response_format (json_object / json_schema), every rank
+        with rec.phase("warm grammar"):
+            engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device)   # response_format (json_object / json_schema), every rank
         if engine.memory is None or not engine.memory.ready:
             raise RuntimeError("full-model serving requires runtime memory qualification")
         engine.memory.write(Path(a.dump_dir) / f"memory-rank{comm.rank}.json")
@@ -552,7 +571,8 @@ def fleet(a) -> int:
         Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=renderer,
                model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
                tool_parser=parse_tool_calls, generation=generation_defaults(a.ckpt_meta),
-               vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 else None).loop()
+               vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 else None,
+               lease=fleet_lease_of()).loop()
     finally:
         try:
             if dump is not None:

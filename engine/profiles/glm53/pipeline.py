@@ -13,7 +13,7 @@ inert -- its state-slot input is redirected to the null slot so nothing it write
 sees it finish one step late and drops that ghost's result).
 
 Which rows may run ahead: greedy rows and rows with only a temperature / top_p (the batch's device rejection
-sampling, base/sampler.speculative_pick_batch); rows with penalties, logit_bias, seeds, logprobs, grammars or a
+sampling, base/sampler.block_verify_batch); rows with penalties, logit_bias, seeds, logprobs, grammars or a
 pending min_tokens keep the synchronous path, and the runner drains this one before them (adapter.async_ready).
 Every device-side draw comes from the engine's generator in the same order on every rank.
 """
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import torch
 
-from engine.base.sampler import commit_batch, rows as sampler_rows, speculative_pick_batch
+from engine.base.sampler import block_verify_batch, commit_batch, rows as sampler_rows
 from engine.profiles.glm53.net import Segment, Step
 
 
@@ -186,7 +186,7 @@ class AsyncDecode:
             full = e.net.comm.all_gather(local, dim=-1)
             probs = distribution_batch(full, b["temps"].repeat_interleave(t), b["top_k"].repeat_interleave(t),
                                        b["top_p"].repeat_interleave(t), e.decodable, self._dists(n * t, full.shape[-1]))
-            accepted, picks, _ = speculative_pick_batch(probs.view(n, t, -1), b["drafts"], b["dists"], e.gen)
+            accepted, picks, _ = block_verify_batch(probs.view(n, t, -1), b["drafts"], b["dists"], e.gen)
         else:
             picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)
             accepted = None
