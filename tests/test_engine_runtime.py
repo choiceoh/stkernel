@@ -56,7 +56,7 @@ def runner(*, blocks=16, slots=5, contract=CONTRACT):
 
 
 def pool_state(pool):
-    return (list(pool.tokens), list(pool.table), sorted(pool.free), pool.rows_in_use)
+    return (list(pool.tokens), list(pool.table), sorted(pool.free_order()), pool.rows_in_use)
 
 
 class SchedulingTests(unittest.TestCase):

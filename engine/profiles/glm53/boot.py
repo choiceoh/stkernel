@@ -79,7 +79,7 @@ def generation_defaults(ckpt=facts.CKPT) -> dict:
     return {k: g[k] for k in ("temperature", "top_p", "top_k", "repetition_penalty") if k in g}
 
 
-def grammars(ckpt, vocab: int, device=None):
+def grammars(ckpt, vocab: int, device=None, stop_token_ids=None):
     """base/grammar.Grammars over the checkpoint's tokenizer, on every rank (each row's matcher runs everywhere), or None
     where xgrammar is not installed -- then response_format is refused at the door (D3), never silently unenforced.
 
@@ -89,7 +89,7 @@ def grammars(ckpt, vocab: int, device=None):
     if not grammar.available():
         return None
     from transformers import AutoTokenizer
-    g = grammar.Grammars(AutoTokenizer.from_pretrained(str(ckpt)), vocab)
+    g = grammar.Grammars(AutoTokenizer.from_pretrained(str(ckpt)), vocab, stop_token_ids=stop_token_ids)
     if device is not None:
         g.warm(device)
     return g
@@ -414,7 +414,7 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
         tok = tokenizer(a.ckpt_meta)
         from engine.profiles.glm53.tools import parse_tool_calls
-        engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device)
+        engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device, engine.eos)
         server = Server(engine, runner, comm, port=port, tokenizer=tok, chat=chat_renderer(a.ckpt_meta) if comm.rank == 0 else None,
                         model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
                         tool_parser=parse_tool_calls, generation=generation_defaults(a.ckpt_meta),
@@ -551,7 +551,7 @@ def fleet(a) -> int:
         with rec.phase("qualify vision"):
             paid.update(engine.vision.qualify())            # the largest image and video, before the door opens (D3)
         with rec.phase("warm grammar"):
-            engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device)   # response_format (json_object / json_schema), every rank
+            engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device, engine.eos)   # response_format (json_object / json_schema), every rank
         if engine.memory is None or not engine.memory.ready:
             raise RuntimeError("full-model serving requires runtime memory qualification")
         engine.memory.write(Path(a.dump_dir) / f"memory-rank{comm.rank}.json")

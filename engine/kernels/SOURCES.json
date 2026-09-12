@@ -6,17 +6,22 @@
       "source": "overlay/modules/glm53_kernels/kda.py",
       "sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
       "origin": "repository",
-      "local_sha256": "b125f61cf10f2d6c9b576b82e628998fb81bbe5d337ebc490936e5a317211a74",
+      "local_sha256": "58bf696f4768e53c8a4d81314fe7a8c776e354d3de738c46e3380868eb98faa7",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults (strided Q/K norm on: production VLLM_GLM53_KDA_PREFILL_QK_NORM=1)",
         "2026-09-11 GB10 recurrent: explicit dense kv state layout, optional zero initial state, BV16/one-warp TP4 decode geometry",
-        "2026-09-12 GB10 recurrent: read kv input views directly, allocate dense outputs, validate tensor shapes and reject output/input aliases."
+        "2026-09-12 GB10 recurrent: read kv input views directly, allocate dense outputs, validate tensor shapes and reject output/input aliases.",
+        "2026-09-12 prefix marks: chunk_kda_with_fused_gate(states_at=[...]) returns (o, final_state, states[n,H,V,K] fp32) for one sequence; threads states_at/states_out through the cumulative-g forward"
       ]
     },
     "kda/chunk_delta_h.py": {
       "source": "overlay/modules/glm53_kernels/chunk_delta_h.py",
       "sha256": "fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739",
-      "origin": "repository"
+      "origin": "repository",
+      "local_sha256": "df13adb86865ef8f2a6871b07e99c7db5bcba57dd8c70209d0540dbdfe169c81",
+      "local_modifications": [
+        "2026-09-12 prefix marks: optional fp32 side output of the per-chunk state before requested 64-token chunks (states_at / N_AT); the main computation is untouched and bit-identical with or without it"
+      ]
     },
     "kda/cumsum.py": {
       "source": "vllm/third_party/flash_linear_attention/ops/cumsum.py",
