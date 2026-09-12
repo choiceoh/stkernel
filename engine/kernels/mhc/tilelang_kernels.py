@@ -29,7 +29,22 @@ import flashinfer.comm
 import tilelang
 import tilelang.language as T
 
-ENABLE_PDL = False  # Pinned GB10 image policy; SM12x lowering is unvalidated.
+# Pinned GB10 image policy. The lowering half of "unvalidated" is answered (ledger 45차 §63,
+# probes/mhc_pdl_lowering.py): with this True, every kernel below that lowers at all lowers for sm_121a and
+# emits both cudaGridDependencySynchronize() and cudaTriggerProgrammaticLaunchCompletion(); tilelang's own
+# launch wrapper arms cudaLaunchAttributeProgrammaticStreamSerialization, and kernels/oneshot already launches
+# that way -- so the chain from the all-reduce to mHC is complete on paper.
+# Turning it on drops `__restrict__` from every kernel's pointer parameters, which read as a no-alias guarantee
+# traded away. It is not: probes/mhc_pdl_cost.py compiles both ways for sm_121a and all six kernels come out with
+# the SAME registers, the same zero spills, the same shared memory and the same ld.global/st.global counts
+# (ledger 45차 §64). The cost side of this flag is empty.
+# What is still unanswered, and is the only reason this stays False: whether the overlap it buys is worth having
+# on the prefill lane. That is a device question and nothing here can answer it.
+#
+# And it is the PREFILL lane's question, not decode's. net._hc_post_pre sends every step of <= 64 tokens to
+# kernels/dense/mhc.MHC, whose launches already arm cudaLaunchAttributeProgrammaticStreamSerialization
+# (kernels/dense/kernels.cu, mk_pdl_enabled pinned to 1). These kernels run when the token count is above 64.
+ENABLE_PDL = False
 
 
 @triton.jit(do_not_specialize=["M"])

@@ -11099,3 +11099,75 @@ NFC 0.55 ms(281 KiB), 접두사 체인 1.1 ms(26K), 도구 문법 EBNF 빌드 0.
 **검증**: `tools/check.py` 60 files, **791 tests, 0 failed**. 새 테스트 4개 —
 다이제스트가 거르고 통과한 하나만 읽힌다 / 통째 레코드는 몇 개만 남는다 / 다이제스트는 한 번만 만든다 /
 대화를 잊으면 다이제스트도 간다.
+
+### 45차 §63 — 남은 셋을 코드에 대조했더니 둘은 이미 있고 꺼져 있었다, 그리고 그 이유를 GPU 없이 지웠다 (2026-09-12, srv4, 컴파일만, 다운타임 0)
+
+지시받은 셋: **persistent transformer 커널 · mHC/KDA/MoE/state 경계 · row-parallel 이 요구하는 TP4 collective.**
+코드에 대조한 결과는 "아직 안 했다" 가 아니었다.
+
+**① TP4 collective 는 의미상 최소다.** `net.py` 는 레이어마다 정확히 둘을 낸다 — `_dsa/_kda` 의 `all_reduce(o_proj)`,
+`_moe/_dense` 의 `all_reduce(down)`. row-parallel 이 요구하는 그 둘이다. 남는 대안은 sequence-parallel 인데
+`prefill_transport` 로 **이미 있고**, 디코드에는 안 걸린다(게이트가 `N >= 128`, 디코드 N 은 6).
+
+**② 리덕션↔mHC PDL 은 디코드에선 이미 켜져 있고, 내가 본 플래그는 프리필 것이었다.** 생산자 쪽 `kernels/oneshot/dsv4_oneshot_ar.cu`(949줄, RDMA,
+SM121)는 **이미** `cudaLaunchAttributeProgrammaticStreamSerialization` 으로 띄운다. 소비자 쪽
+`kernels/mhc/tilelang_kernels.py` 에는 `T.pdl_sync()`/`T.pdl_trigger()` 가 여덟 커널에 박혀 있는데
+`ENABLE_PDL = False`, 사유 *"Pinned GB10 image policy; SM12x lowering is unvalidated."*
+
+**그 사유는 컴파일러의 질문이지 GPU 의 질문이 아니다.** `probes/mhc_pdl_lowering.py` 로 이미지 안에서
+`get_tir` → `tilelang.compile(target={"kind":"cuda","arch":"sm_121a"})` 를 돌렸다:
+
+| ENABLE_PDL | 내려간 커널 | PDL 인트린식 | `__restrict__` |
+|---|---:|---|---|
+| False | 6 / 8 | 없음 | **있음** |
+| True | 6 / 8 | **여섯 전부 두 개 다** | **없음** |
+
+- 내려간 여섯 전부 `cudaGridDependencySynchronize()` + `cudaTriggerProgrammaticLaunchCompletion()` 을 낸다.
+- **안 내려가는 둘은 PDL 을 꺼도 똑같이 실패한다** — PDL 탓이 아니다. **그리고 그 실패는 커널에 대해 아무 말도 안 한다**:
+  `served` 레인은 그중 하나(`mhc_pre_big_fuse_with_norm_tilelang`)를 **매 레이어 매 스텝** 부르고, 인자도 여기서 쓴 것과
+  같으며(`n_splits=1`, `norm_w` 전달, `h_blk` 기본 1024), **프로덕션은 지금 서빙 중이다.** 디바이스가 없으면
+  `determine_target` 에 물을 수 없고, 손으로 쓴 타깃 딕셔너리는 같은 타깃이 아니다(레지스터 속성을 채워 넣어도 같았다).
+  **그 두 줄은 "이 하니스가 못 물었다" 이지 결과가 아니다.**
+- tilelang 자체 launch 래퍼가 `cudaLaunchAttributeProgrammaticStreamSerialization` 을 건다 —
+  **사슬이 종이 위에서는 완결이다.**
+
+**대신 값이 붙는다: 켜면 여섯 전부에서 포인터 인자의 `__restrict__` 가 사라진다.** no-alias 보장을
+런치 겹침과 맞바꾸는 것이고, **어느 쪽이 이기는지는 논증이 아니라 숫자다. 그래서 안 켰다.**
+
+**③ persistent transformer 커널**은 34차에 일몰된 메가커널 캠페인의 다음 층이다 — 되살리는 것은
+새 캠페인이지 플래그가 아니다.
+
+**정정 — 여기까지 쓰고 나서 경로를 잘못 짚은 걸 찾았다.** `net._hc_post_pre` 는 **토큰 64개 이하인 스텝을
+전부 `kernels/dense/mhc.MHC` 로 보낸다**(디코드는 6). 그쪽 런치는 `kernels/dense/kernels.cu` 의 `mk_launch` 이고,
+`mk_pdl_enabled()` 는 **`"1"` 로 박혀 있다** — D11 노브 일몰이 `getenv` 를 리터럴로 바꾼 결과다.
+**즉 디코드의 리덕션↔mHC 겹침은 이미 무장돼 있다.** 위에서 검증한 `ENABLE_PDL` 은 **프리필(>64 토큰) 레인**의 것이다.
+그 파일의 주석은 그동안 `"default off"` 라고 적혀 있었다 — 컴파일되는 것과 반대였다. 둘 다 고쳤다.
+
+**창에 남긴 질문**(이제 둘): (a) 프리필 레인 `ENABLE_PDL=True` 의 스텝 시간 대 `__restrict__` 손실,
+(b) `spec_k` 5→8 (§60). 둘 다 같은 부팅에서 잰다.
+
+
+### 45차 §64 — `__restrict__` 손실의 값을 재 보니 0 이었다 (2026-09-12, srv4, 컴파일만, 다운타임 0)
+
+§63 이 `ENABLE_PDL` 을 켜는 값으로 *"포인터 인자의 `__restrict__` 가 사라진다"* 를 적고 **"어느 쪽이 이기는지는
+숫자다"** 로 닫았다. 그 숫자의 **절반은 GPU 없이 나온다** — no-alias 보장을 잃으면 컴파일러가 무엇을 못 하는지는
+ptxas 가 말한다. `probes/mhc_pdl_cost.py` 가 생성 CUDA 를 양쪽으로 뽑아 `nvcc -arch=sm_121a` 로 컴파일했다:
+
+| 커널 | 레지스터 | 스필 | smem | `ld.global` | `st.global` |
+|---|---:|---:|---:|---:|---:|
+| `hc_head_fuse` | 168 → 168 | 0 | = | 7 → 7 | 4 → 4 |
+| `hc_prenorm_gemm_block_m` | 56 → 56 | 0 | = | 14 → 14 | 4 → 4 |
+| `hc_prenorm_gemm` | 51 → 51 | 0 | = | 26 → 26 | 2 → 2 |
+| `mhc_fused` | 48 → 48 | 0 | = | 11 → 11 | 6 → 6 |
+| `mhc_post` | 48 → 48 | 0 | 1024 → 1024 | 3 → 3 | 4 → 4 |
+| `mhc_pre_big_fuse` | 78 → 78 | 0 | = | 62 → 62 | 8 → 8 |
+
+**여섯 전부 완전히 동일하다.** no-alias 보장은 여기서 아무것도 사고 있지 않았다 — tilelang 생성 코드가 이미
+명시적 TMA 디스크립터와 스레드별 인덱스로 주소를 만들어서, 컴파일러가 굳이 말해 주지 않아도 구분한다.
+
+**남길 단서**: 레지스터·스필·smem 은 **ptxas** 출력이라 할당은 정말 같다. `ld/st` 수는 **PTX** 라서 ptxas 아래의
+스케줄링 차이는 여기 안 잡힌다. 레지스터가 같고 스필이 0 이면 좁은 통로지만 **0 은 아니고**, 이미지에 `nvdisasm` 이
+없어 지금은 못 닫는다.
+
+**그래서 (a) 가 반으로 줄었다**: 비용 쪽은 비었고, **"프리필 레인에서 겹침이 값을 하느냐" 하나만 남았다.**
+그건 디바이스의 질문이다.
