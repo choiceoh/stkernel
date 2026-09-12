@@ -627,7 +627,8 @@ def ring_bytes(F: DrafterFacts) -> int:
 
 def _selfcheck() -> None:
     F = load()
-    assert (F.layers, F.heads, F.kv_heads, F.head_dim, F.window, F.block, F.k) == (5, 32, 8, 128, 2048, 8, 5)
+    assert (F.layers, F.heads, F.kv_heads, F.head_dim, F.window, F.block) == (5, 32, 8, 128, 2048, 8)
+    assert F.k == SPEC_K and F.k <= F.block - 1, "the draft width is the profile's, and a block holds it"
     assert F.aux_layers == [4, 13, 23, 32, 41] and F.sel_top_k == 16 and F.mask_id == 154856
     sp = specs(F)
     from engine.base.params import total_bytes

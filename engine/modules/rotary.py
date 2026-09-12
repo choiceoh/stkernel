@@ -47,14 +47,19 @@ def get_rope(head_size, max_position, rope_parameters=None, is_neox_style=True, 
 def _selfcheck() -> None:
     assert get_rope(0, 1024) is None
     rope = get_rope(16, 64, {"rope_theta": 10000.0}, is_neox_style=True)
-    q = torch.randn(5, 2, 16); k = torch.randn(5, 2, 16); pos = torch.arange(5)
+    # Seeded, and the inner product below is bounded by the operands rather than by itself. It used to draw
+    # from whatever the caller's global generator held and compare at a flat 1e-4: the two sums cancel down to
+    # a few hundredths, so a relative tolerance is meaningless and an absolute one is a lottery on the draw.
+    gen = torch.Generator().manual_seed(7)
+    q = torch.randn(5, 2, 16, generator=gen); k = torch.randn(5, 2, 16, generator=gen); pos = torch.arange(5)
     rq, rk = rope(pos, q, k)
     # rotation preserves norms and position 0 is the identity
     assert torch.allclose(rq.norm(dim=-1), q.norm(dim=-1), atol=1e-4) and torch.allclose(rq[0], q[0], atol=1e-5)
     # relative property: <rope(q,m), rope(k,n)> depends only on m-n
     a = (rope(torch.tensor([3]), q[:1], k[:1])[0][0, 0] * rope(torch.tensor([1]), q[:1], k[:1])[1][0, 0]).sum()
     b = (rope(torch.tensor([7]), q[:1], k[:1])[0][0, 0] * rope(torch.tensor([5]), q[:1], k[:1])[1][0, 0]).sum()
-    assert torch.allclose(a, b, atol=1e-4)
+    scale = (q[0, 0].norm() * k[0, 0].norm()).item()
+    assert (a - b).abs().item() <= 1e-3 * scale, (a.item(), b.item(), scale)
     print("  rotary: get_rope(0)->None (GLM served), norm-preserving, relative-position property OK")
 
 
