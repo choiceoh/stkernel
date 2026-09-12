@@ -722,9 +722,10 @@ class _Choice:
     reaches a stop string ends there; complete <tool_call> blocks become tool_calls (streamed as they complete)."""
 
     def __init__(self, index: int, request: int, event, q, *, tok, stop, reasoning: bool, tool_parser=None,
-                 want_logprobs: "int | None" = None, min_new: int = 0, repairs=None):
+                 want_logprobs: "int | None" = None, min_new: int = 0, repairs=None, tool_stream=None):
         self.index, self.request, self.event, self.q = index, request, event, q
         self.tok, self.stop, self.reasoning, self.tool_parser = tok, list(stop), reasoning, tool_parser
+        self.tool_stream = tool_stream               # text -> [(name, arguments so far, closed)] or None
         self.want_logprobs = want_logprobs
         self.min_new = min_new
         self._stop_from = 0          # a stop string may not START below the floor: min_tokens means at least
@@ -741,6 +742,7 @@ class _Choice:
         self.error = None
         self.tool_calls = []
         self._tool_seen = 0
+        self._tool_done = []                         # per call: has `</tool_call>` arrived
 
     def feed(self, tokens, logprobs, reasoning_end) -> None:
         """The step's new tokens, into the channel they belong to -- as one batch, not one at a
@@ -791,15 +793,7 @@ class _Choice:
                         decoded = decoded[:len(decoded) - held_back] if held_back else decoded
                     start = decoded.find("<tool_call>")
                     if start >= 0:
-                        blocks = _TOOL_CALL.findall(decoded)
-                        for body in blocks[self._tool_seen:]:
-                            for name, args in (self.tool_parser(f"<tool_call>{body}</tool_call>") or []):
-                                i = len(self.tool_calls)
-                                call = {"index": i, "id": f"call_{self.request}_{i}", "type": "function",
-                                        "function": {"name": name, "arguments": args}}
-                                self.tool_calls.append(call)
-                                deltas.append({"tool_calls": [call]})
-                        self._tool_seen = len(blocks)
+                        deltas.extend(self._tool_deltas(decoded))
                         decoded = decoded[:start]
             delta = decoded[self.shown[channel]:]
             if delta:
@@ -808,8 +802,53 @@ class _Choice:
             self.text[channel] = decoded[:self.shown[channel]]
         return deltas
 
+    def tool_calls_done(self) -> "list[dict]":
+        """The calls that closed. One the answer was cut off inside is not a call the caller can
+        make, so it is not in the body and it does not name the finish -- its fragments went out,
+        because they had already been read, and the reason stays `length`."""
+        return [call for call, done in zip(self.tool_calls, self._tool_done) if done]
+
+    def _tool_deltas(self, decoded: str) -> "list[dict]":
+        """OpenAI tool-call deltas for whatever of the calls has arrived.
+
+        The first delta of a call carries its id, type and name with empty arguments; every one
+        after carries the next fragment of `arguments`. That is the shape the OpenAI streaming
+        API defines, and the reason it exists is this format: the arguments are most of a call,
+        so waiting for `</tool_call>` was waiting for nearly the whole answer -- six seconds on a
+        thousand Korean characters (45차 §44). vLLM, SGLang and llama.cpp all stream them.
+
+        `partial` returns each call's arguments cut off at the last thing the model has actually
+        written, and that text only grows, so a fragment is what is new since the last flush.
+        Without a partial parser this falls back to what it always did: the whole call, once.
+        """
+        out = []
+        if self.tool_stream is None:
+            blocks = _TOOL_CALL.findall(decoded)
+            for body in blocks[self._tool_seen:]:
+                for name, args in (self.tool_parser(f"<tool_call>{body}</tool_call>") or []):
+                    call = {"index": len(self.tool_calls), "id": f"call_{self.request}_{len(self.tool_calls)}",
+                            "type": "function", "function": {"name": name, "arguments": args}}
+                    self.tool_calls.append(call)
+                    self._tool_done.append(True)
+                    out.append({"tool_calls": [call]})
+            self._tool_seen = len(blocks)
+            return out
+        for i, (name, args, done) in enumerate(self.tool_stream(decoded)):
+            if i == len(self.tool_calls):
+                self.tool_calls.append({"index": i, "id": f"call_{self.request}_{i}", "type": "function",
+                                        "function": {"name": name, "arguments": ""}})
+                self._tool_done.append(False)
+                out.append({"tool_calls": [{"index": i, "id": self.tool_calls[i]["id"], "type": "function",
+                                            "function": {"name": name, "arguments": ""}}]})
+            sent = len(self.tool_calls[i]["function"]["arguments"])
+            if len(args) > sent:
+                out.append({"tool_calls": [{"index": i, "function": {"arguments": args[sent:]}}]})
+                self.tool_calls[i]["function"]["arguments"] = args
+            self._tool_done[i] = done
+        return out
+
     def finish_reason(self) -> str:
-        if self.tool_calls:
+        if any(self._tool_done):
             return "tool_calls"
         return self.finish or "length"
 
@@ -931,7 +970,7 @@ class Server:
     def __init__(self, engine, runner, comm, port: int = 8000, tokenizer=None,
                  host: str = "0.0.0.0", max_pending: int = 64, chat=None, model_name: str = "st",
                  reasoning_end: "int | None" = None, request_timeout_s: float = 3600.0, tool_parser=None,
-                 generation: "dict | None" = None, max_choices: int = 4, vision=None,
+                 generation: "dict | None" = None, max_choices: int = 4, vision=None, tool_stream=None,
                  lease: "dict | None" = None):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
@@ -949,6 +988,7 @@ class Server:
         self.detok_repairs = new_repairs()         # this door's, so a scrape names who repaired
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
         self.tool_parser = tool_parser             # text -> [(name, arguments json)] or None (the profile knows the model's format)
+        self.tool_stream = tool_stream             # the same format, read while it is still arriving (streamed deltas)
         self.vision = vision                       # the profile's door half for pictures (prepare / expand / limits), or None: text only
         self.generation = dict(generation or {})   # the checkpoint's generation_config defaults (temperature ...) a request may omit
         self.max_choices = int(max_choices)        # n / best_of ceiling: one row each, never more than the decode width
@@ -2126,7 +2166,8 @@ class Server:
                                                    cache_salt=cache_salt)
                     choices.append(_Choice(len(choices), request, event, server._streams[request], tok=server.tok, stop=stop,
                                            reasoning=reasoning, tool_parser=tool_parser, want_logprobs=want_logprobs,
-                                           min_new=min_new, repairs=server.detok_repairs))
+                                           min_new=min_new, repairs=server.detok_repairs,
+                                           tool_stream=server.tool_stream))
                 return choices
 
             def run_choices(self, choices, on_delta) -> bool:
@@ -2361,8 +2402,9 @@ class Server:
                             message = {"role": "assistant", "content": c.text["content"] or None}
                             if c.streams["reasoning_content"].ids:
                                 message["reasoning_content"] = c.text["reasoning_content"]
-                            if c.tool_calls:
-                                message["tool_calls"] = c.tool_calls
+                            calls = c.tool_calls_done()
+                            if calls:
+                                message["tool_calls"] = calls
                             entry = {"index": c.index, "message": message, "finish_reason": c.finish_reason()}
                             if c.want_logprobs is not None:
                                 entry["logprobs"] = c.logprobs_payload()

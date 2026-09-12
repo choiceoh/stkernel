@@ -2006,6 +2006,59 @@ class OpenAIDialectTests(unittest.TestCase):
         self.assertEqual(c.text["content"], "hi ")
         self.assertEqual(c.finish_reason(), "tool_calls")
 
+    def test_tool_arguments_stream_in_fragments_the_way_openai_defines(self):
+        """The first delta of a call carries its name with empty arguments; every one after
+        carries the next fragment. On this format the arguments are most of the call, so the
+        old shape -- the whole call at `</tool_call>` -- was the whole answer's wait (§43 §5.1)."""
+        from engine.base.serve import _Choice
+        from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=ByteTokenizer(), stop=[], reasoning=False,
+                    tool_parser=parse_tool_calls, tool_stream=partial_tool_calls)
+        text = 'hi <tool_call>search<arg_key>q</arg_key><arg_value>서울 날씨</arg_value></tool_call>'
+        ids, deltas = list(text.encode()), []
+        for i in range(0, len(ids), 3):
+            c.feed(ids[i:i + 3], None, None)
+            deltas.extend(c.flush())
+        deltas.extend(c.flush(final=True))
+
+        heads = [d["tool_calls"][0] for d in deltas if "tool_calls" in d and "id" in d["tool_calls"][0]]
+        self.assertEqual(len(heads), 1)
+        self.assertEqual(heads[0], {"index": 0, "id": "call_1_0", "type": "function",
+                                    "function": {"name": "search", "arguments": ""}})
+        pieces = [d["tool_calls"][0]["function"]["arguments"] for d in deltas
+                  if "tool_calls" in d and "id" not in d["tool_calls"][0]]
+        self.assertGreater(len(pieces), 1, "the arguments arrived in one piece, which is the old shape")
+        self.assertEqual(json.loads("".join(pieces)), {"q": "서울 날씨"})
+        self.assertEqual(c.text["content"], "hi ")
+        self.assertEqual(c.finish_reason(), "tool_calls")
+        self.assertEqual(c.tool_calls_done()[0]["function"]["arguments"], parse_tool_calls(text)[0][1])
+
+    def test_a_call_the_answer_was_cut_off_inside_is_not_a_call(self):
+        """Its fragments went out, because the client had already read them, but a caller cannot
+        make a call whose arguments never closed -- so it is not in the body and the answer ended
+        for the reason it really ended."""
+        from engine.base.serve import _Choice
+        from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=ByteTokenizer(), stop=[], reasoning=False,
+                    tool_parser=parse_tool_calls, tool_stream=partial_tool_calls)
+        c.feed(list('<tool_call>search<arg_key>q</arg_key><arg_value>서울'.encode()), None, None)
+        deltas = c.flush() + c.flush(final=True)
+        self.assertTrue(any("tool_calls" in d for d in deltas), "what was read was still sent")
+        self.assertEqual(c.tool_calls_done(), [])
+        self.assertEqual(c.finish_reason(), "length")
+
+    def test_without_a_partial_parser_a_call_still_arrives_whole(self):
+        from engine.base.serve import _Choice
+        parser = lambda text: [("f", '{"a": 1}')] if "<tool_call>" in text else None
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=Tokenizer(), stop=[], reasoning=False,
+                    tool_parser=parser)
+        c.feed([ord(ch) for ch in "hi <tool_call>f<arg_key>a</arg_key><arg_value>1</arg_value></tool_call>"], None, None)
+        deltas = c.flush(final=True)
+        self.assertEqual([d for d in deltas if "tool_calls" in d],
+                         [{"tool_calls": [{"index": 0, "id": "call_1_0", "type": "function",
+                                           "function": {"name": "f", "arguments": '{"a": 1}'}}]}])
+        self.assertEqual(c.finish_reason(), "tool_calls")
+
     def test_legacy_completions_tokenize_and_detokenize(self):
         s = chat_server()
         out = self._serve(s, lambda base: self._post(base, "/v1/completions", {"prompt": "xy", "max_tokens": 2, "echo": True, "n": 1}))
