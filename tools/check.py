@@ -35,6 +35,9 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 RAN = re.compile(r"^Ran (\d+) tests? in ", re.M)
 DONE = re.compile(r"^(OK|FAILED)(?: \((.*)\))?$", re.M)
+CASE = re.compile(r"^(?:ERROR|FAIL): (\S+)")
+RULE = re.compile(r"^[=-]{3,}\s*$").match                   # unittest's banners, whatever width it chose
+EXC = re.compile(r"^(?:\w+\.)*\w*(?:Error|Exception|Failure|Exit)\b.*$")
 
 
 class Verdict:
@@ -48,6 +51,31 @@ class Verdict:
         note = f"  {self.detail}" if self.detail else ""
         skip = f", {self.skipped} skipped" if self.skipped else ""
         return f"  {self.state:<11} {self.module:<44} {self.tests} tests{skip}{note}"
+
+
+def first_failure(out: str) -> str:
+    """The first failing test and the line that explains it.
+
+    A verdict that reads `FAILED  6 errors` and nothing else sends the reader back to a terminal
+    -- and on CI there is no terminal to go back to. The first run of this tool on GitHub said
+    exactly that about two files, and finding out that the answer was a missing `triton` wheel
+    took a local harness that faked the runner. One line would have done it.
+    """
+    lines = out.splitlines()
+    for i, line in enumerate(lines):
+        case = CASE.match(line)
+        if not case:
+            continue
+        block = lines[i + 1:i + 80]
+        while block and RULE(block[0]):
+            block = block[1:]                               # the rule under the case's own heading
+        for stop, text in enumerate(block):                 # ends at the next banner or the next case
+            if RULE(text) or CASE.match(text):
+                block = block[:stop]
+                break
+        why = next((t.strip() for t in reversed(block) if EXC.match(t.strip())), "")
+        return f" -- {case.group(1)}: {why[:90]}" if why else f" -- {case.group(1)}"
+    return ""
 
 
 def judge(module: str, out: str, code: int) -> Verdict:
@@ -64,7 +92,7 @@ def judge(module: str, out: str, code: int) -> Verdict:
         return Verdict(module, "CANNOT RUN", tests, skipped, tail[0][:90])
     if done.group(1) == "FAILED":
         what = ", ".join(f"{v} {k}" for k, v in counts.items() if k != "skipped")
-        return Verdict(module, "FAILED", tests, skipped, what)
+        return Verdict(module, "FAILED", tests, skipped, what + first_failure(out))
     return Verdict(module, "ok", tests, skipped)
 
 

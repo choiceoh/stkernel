@@ -50,6 +50,40 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(v.state, "CANNOT RUN")
         self.assertIn("ImportError", v.detail)
 
+    def test_a_failure_says_which_test_and_why_because_ci_has_no_terminal_to_go_back_to(self):
+        # The tool's first run on GitHub reported `FAILED  6 errors` and nothing else about two
+        # files, and the answer -- a missing triton wheel -- took a harness that faked the runner.
+        out = ("E\n"
+               "======================================================================\n"
+               "ERROR: test_a_cached_segment (tests.test_engine_graph_contracts.DeviceStepTests)\n"
+               "----------------------------------------------------------------------\n"
+               "Traceback (most recent call last):\n"
+               '  File "x.py", line 3, in test_a_cached_segment\n'
+               "    from engine.profiles.glm53.decode_graphs import DeviceStep\n"
+               "ModuleNotFoundError: No module named 'triton'\n"
+               "\n----\nRan 33 tests in 0.1s\n\nFAILED (errors=6, skipped=3)\n")
+        v = check.judge("m", out, 1)
+        self.assertEqual(v.state, "FAILED")
+        self.assertIn("6 errors", v.detail)
+        self.assertIn("test_a_cached_segment", v.detail)
+        self.assertIn("No module named 'triton'", v.detail)
+
+    def test_a_failure_with_no_exception_line_still_names_the_test(self):
+        out = ("F\n====\nFAIL: test_budget (tests.x.Y)\n----\n"
+               "AssertionError\n----\nRan 1 test in 0.0s\n\nFAILED (failures=1)\n")
+        self.assertIn("test_budget", check.judge("m", out, 1).detail)
+
+    def test_the_reason_comes_from_the_first_case_not_a_later_one(self):
+        out = ("EE\n====\nERROR: test_first (tests.x.Y)\n----\nValueError: the first one\n"
+               "\n====\nERROR: test_second (tests.x.Y)\n----\nKeyError: a later one\n"
+               "\n----\nRan 2 tests in 0.0s\n\nFAILED (errors=2)\n")
+        detail = check.judge("m", out, 1).detail
+        self.assertIn("test_first: ValueError: the first one", detail)
+        self.assertNotIn("KeyError", detail)
+
+    def test_a_pass_carries_no_failure_note(self):
+        self.assertEqual(check.judge("m", PASSED, 0).detail, "")
+
     def test_output_with_no_result_line_at_all_cannot_be_read_as_a_pass(self):
         self.assertEqual(check.judge("m", "Segmentation fault\n", -11).state, "CANNOT RUN")
 
