@@ -18,6 +18,18 @@ from onepass_recording import CURRENT, Run, group, steady_errors
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_diagnostic_needs_four_distinct_decode_traces_on_every_rank(self):
+        traces = [dict(phase='prefill', step=1, activities=1)] + [
+            dict(phase='decode', step=i, activities=1) for i in range(2, 6)]
+        rank = dict(complete=True, traces=traces)
+        self.assertTrue(onepass.diagnostic_complete(dict(ranks=[rank] * 4)))
+        self.assertFalse(onepass.diagnostic_complete(dict(ranks=[])))
+        for bad in (dict(rank, complete=False), dict(rank, traces=traces[:-1]),
+                    dict(rank, traces=traces[1:]),
+                    dict(rank, traces=[traces[0]] + [traces[1]] * 4),
+                    dict(rank, traces=[dict(t, activities=0) for t in traces])):
+            self.assertFalse(onepass.diagnostic_complete(dict(ranks=[rank, rank, rank, bad])))
+
     def test_kda_state_precision_is_read_from_the_bound_lane(self):
         for dtype in ("fp32", "fp16"):
             self.assertEqual(onepass.kda_state_storage(
