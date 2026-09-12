@@ -185,8 +185,10 @@ class AsyncDecode:
             # is a width it stops at rather than a copy of the block with minus infinity in its end
             full = e.net.comm.all_gather(local, dim=-1)
             probs = distribution_batch(full, b["temps"].repeat_interleave(t), b["top_k"].repeat_interleave(t),
-                                       b["top_p"].repeat_interleave(t), e.decodable, self._dists(n * t, full.shape[-1]))
-            accepted, picks, _ = block_verify_batch(probs.view(n, t, -1), b["drafts"], b["dists"], e.gen)
+                                       b["top_p"].repeat_interleave(t), e.decodable,
+                                       self._dists(n * t, full.shape[-1])).view(n, t, -1)
+            e.note_ceilings(probs, b["dists"])
+            accepted, picks, _ = block_verify_batch(probs, b["drafts"], b["dists"], e.gen)
         else:
             picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)
             accepted = None

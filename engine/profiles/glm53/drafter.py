@@ -279,47 +279,20 @@ class Drafter:
     def propose_sampled(self, anchor: int, position: int, ring: torch.Tensor, temperature: float, generator,
                         vocab: int) -> "tuple[list[int], torch.Tensor]":
         """The same walk drawn at `temperature` instead of argmax (production's DRAFT_SAMPLE=probabilistic): returns the K
-        draft ids and the distribution each was drawn from, [K, vocab] fp32 (zero outside the 16 candidates) -- what
-        rejection sampling divides by (base/sampler.speculative_pick). Eager, for stochastic rows only."""
-        F, p = self.F, self.p
-        K = self.k
-        dev = ring.device
-        anchor_t = torch.full((1,), anchor, dtype=torch.int64, device=dev)
-        ids = torch.cat([anchor_t, torch.full((K,), F.mask_id, dtype=torch.int64, device=dev)])
-        positions = position + torch.arange(K + 1, device=dev)
-        h = self.block(ids, positions, ring, position)[1:]
-        from engine.modules.vocab import topk
-        unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp, F.sel_top_k, self.decodable)
-        proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float()
-        pred_ids = torch.cat([anchor_t.reshape(1, 1).expand(1, F.sel_top_k), cand[:-1]])
-        pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()
-        succ = p["candidate_selector.successor_codebook"][cand].float()
-        scores = unary[:, None, :] + torch.einsum("kpr,kcr->kpc", pred * proj[:, None, :], succ)
-        drafts, dists = self._walk(scores, cand, temperature, generator, vocab, K, dev)
-        return drafts.tolist(), dists                                   # one crossing for the walk, not two a step
+        draft ids and the distribution each was drawn from, [K, vocab] fp32 (zero outside the 16 candidates).
 
-    def _walk(self, scores, cand, temperature: float, generator, vocab: int, K: int, dev):
-        """The K-step candidate walk drawn at `temperature`: (draft ids [K], distributions [K, vocab] fp32).
+        The distribution handed back is the one the pick was actually drawn from, not one recomputed later: the accept
+        test divides by it (base/sampler.block_verify) and is only unbiased if the two are the same. Zero outside the
+        candidates is not an approximation either -- the residual keeps every token the candidates left out, so the
+        truncation costs acceptance and nothing else.
 
-        Each step picks from the sixteen candidates the last one opened, so the walk itself cannot be
-        batched -- but its uniforms can be drawn in one call, and over sixteen candidates the
-        cumulative walk is the whole of a draw. `multinomial` per step was five kernels and, when the
-        caller wanted host ints, ten crossings a row a step.
+        The walk itself is `propose_sampled_tensor`, and the ids cross to the host once at the end rather than twice a
+        position, which on a five-wide draft was ten synchronizations a row a step.
         """
-        u = torch.rand(K, generator=generator, device=dev)
-        dists = torch.zeros(K, vocab, device=dev, dtype=torch.float32)
-        drafts = []
-        prev = torch.zeros(1, dtype=torch.int64, device=dev)
-        for s in range(K):
-            probs = torch.softmax(scores[s].index_select(0, prev)[0].float() / max(temperature, 1e-5), dim=-1)
-            walk = probs.cumsum(0)
-            pick = torch.searchsorted(walk.contiguous(), (u[s] * walk[-1]).reshape(1), right=True) \
-                .clamp_max(probs.numel() - 1)
-            dists[s].index_add_(0, cand[s], probs)                      # duplicates (if any) add up
-            drafts.append(cand[s].index_select(0, pick))
-            prev = pick
-        return torch.cat(drafts), dists
-
+        drafts, dists = self.propose_sampled_tensor(
+            torch.full((1,), anchor, dtype=torch.int64, device=ring.device),
+            position, ring, temperature, generator, vocab)
+        return drafts.tolist(), dists
 
     def propose_sampled_tensor(self, anchor: torch.Tensor, position, ring: torch.Tensor, temperature: float, generator,
                                vocab: int) -> "tuple[torch.Tensor, torch.Tensor]":
@@ -338,7 +311,21 @@ class Drafter:
         pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()
         succ = p["candidate_selector.successor_codebook"][cand].float()
         scores = unary[:, None, :] + torch.einsum("kpr,kcr->kpc", pred * proj[:, None, :], succ)
-        return self._walk(scores, cand, temperature, generator, vocab, K, dev)
+        # Each step picks from the sixteen candidates the last one opened, so the walk cannot be batched --
+        # but its uniforms can be drawn in one call, and over sixteen candidates the cumulative walk is the
+        # whole of a draw. `multinomial` was a kernel a position to do that.
+        u = torch.rand(K, generator=generator, device=dev)
+        drafts, dists = [], torch.zeros(K, vocab, device=dev, dtype=torch.float32)
+        prev = torch.zeros(1, dtype=torch.int64, device=dev)
+        for s in range(K):
+            probs = torch.softmax(scores[s].index_select(0, prev)[0].float() / max(temperature, 1e-5), dim=-1)   # over the 16 candidates
+            walk = probs.cumsum(0)
+            pick = torch.searchsorted(walk.contiguous(), (u[s] * walk[-1]).reshape(1), right=True) \
+                .clamp_max(probs.numel() - 1)
+            dists[s].index_add_(0, cand[s], probs)
+            drafts.append(cand[s].index_select(0, pick))
+            prev = pick
+        return torch.cat(drafts), dists
 
 
 def ring_bytes(F: DrafterFacts) -> int:

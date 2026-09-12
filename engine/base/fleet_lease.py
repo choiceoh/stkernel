@@ -36,7 +36,9 @@ import re
 import time
 from pathlib import Path
 
-DEFAULT_PATH = Path.home() / "st-fleet.lock"
+# Every ST container bind-mounts this directory at the same path, so the engine inside one
+# can read the lease -- which is what lets it notice a yield request at all.
+DEFAULT_PATH = Path("/home/choiceoh/glm53-logs/st-fleet.lock")
 GRACE_S = 900.0            # 15 min without evidence or heartbeat before a lease is stale
 LOCK_STALE_S = 30.0        # a mutation lock older than this was left by a killed writer
 FIELDS = ("owner", "host", "pid", "container", "since", "beat", "est_minutes", "note")
@@ -270,17 +272,22 @@ def clear_yield(owner: str, *, path=DEFAULT_PATH) -> None:
 
 
 def release(owner: str, *, path=DEFAULT_PATH, force: bool = False) -> "dict | None":
-    """Give the fleet back. Only its owner may, unless `force` says a human decided."""
-    record = read(path)
-    if record is None:
-        return None
-    if not force and record.get("owner") != owner:
-        raise LeaseLost(f"the lease is {describe(record)}, not {owner}")
-    try:
-        Path(path).unlink()
-    except FileNotFoundError:
-        pass
-    return record
+    """Give the fleet back. Only its owner may, unless `force` says a human decided.
+
+    Under the same lock as `publish`: without it a holder's next heartbeat, landing between
+    this read and this unlink, rewrites the file and the released lease comes back.
+    """
+    with _Mutation(path):
+        record = read(path)
+        if record is None:
+            return None
+        if not force and record.get("owner") != owner:
+            raise LeaseLost(f"the lease is {describe(record)}, not {owner}")
+        try:
+            Path(path).unlink()
+        except FileNotFoundError:
+            pass
+        return record
 
 
 def _selfcheck() -> None:

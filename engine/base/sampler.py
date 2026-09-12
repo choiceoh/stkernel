@@ -507,6 +507,27 @@ def block_verify_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_p
     return accepted, tokens, accepted + 1
 
 
+def draft_ceilings(target_probs: torch.Tensor, draft_probs: torch.Tensor) -> "tuple[float, float]":
+    """What this draft could have reached, and what its candidate set allowed.
+
+    Acceptance has three ceilings and only the first is closed. The verification rule is now the
+    optimal block coupling (Sun et al.), so it cannot leave anything on the table. Above it sits
+    `sum_x min(p, q)` -- the most ANY rule can accept from this draft distribution -- and above
+    that the target mass the drafter's candidates cover at all, which is what `sel_top_k` fixes.
+
+    Measured acceptance against the first says whether the verifier is doing its job; the first
+    against the second says whether the draft distribution is shaped wrong inside its candidates;
+    the second says whether the candidate set is too narrow. Without the split, "raise the
+    acceptance rate" has three answers and no way to choose.
+
+    Returns (reachable, covered), summed over the positions given. Two passes over the vocabulary,
+    so the caller samples rather than asking every step.
+    """
+    k = draft_probs.shape[-2]
+    p = target_probs[..., :k, :]
+    return float(torch.minimum(p, draft_probs).sum()), float((p * (draft_probs > 0)).sum())
+
+
 def commit_batch(picks: torch.Tensor, drafts: torch.Tensor, alive: torch.Tensor, generated: torch.Tensor, limit: torch.Tensor,
                  ends: torch.Tensor, accepted: "torch.Tensor | None" = None):
     """The device half of adapter._commit for a decode batch running ahead of the host (45차 §23 B3).
