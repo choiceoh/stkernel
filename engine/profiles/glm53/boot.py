@@ -146,7 +146,7 @@ def declared(a, comm_world: int) -> Config:
                  lanes="served", decode_eager=0, execution="native")
     facts_ += [Fact(k, v, "native TP4 execution") for k, v in fixed.items()]
     if getattr(a, "production", False):
-        defaults = dict(mla_prefill="stock", context_ceiling=0)
+        defaults = dict(mla_prefill="stock", context_ceiling=0, drafter_calib="")     # production never sums: the knob's value is fixed off
         return Config(facts_ + [Fact(k, v, "qualified production default") for k, v in defaults.items()], knobs=[])
     knobs = [
         Knob("mla_prefill", "stock", _dt.date(2026, 9, 30),
