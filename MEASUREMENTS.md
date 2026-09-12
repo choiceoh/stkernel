@@ -1382,7 +1382,6 @@ GLM 점별 연산의 이전 GPU 비교도 재현했다. 세부 수치·로그·�
 하니스 43은 개별 총/추론 8192/4096, 묶음 24576/12288로 늘리고 질문·정답·판정기는 유지한다.
 증량 후 실측 정답률은 아직 없다. 새 예산의 원패스 CPU 검사 103개 통과. 이전 하니스 수치를 새 예산의
 성능 근거로 재사용하지 않는다.
-||||||| 21cb0539
 ### 45차 — ost-97x 는 테일넷의 **Windows 박스**였다: 이름은 srv2 의 ssh 별칭이 풀고, 사용자·포트도 별칭이 정한다 (2026-09-13, 맥→srv2, PR #771)
 
 PR #767 의 "준비물" 을 실제로 만들려고 ost-97x 부터 찾았다.
@@ -1540,7 +1539,6 @@ The v3 baseline boot reached canonical preparation, not a completed measurement.
 `21a4c816` adds a conservative in-flight-aware boundary drain, with the existing rich sampler enforcing the cap and async decoding resuming after committed reasoning end. It also keeps hypothetical rejected draft end tokens from disabling the cap. Focused CPU validation: 19 reasoning/gate tests plus 35 async runner/pipeline/sampling tests passed.
 
 The user explicitly requested **no corrected-baseline measurement** and to proceed directly with the corrected improved candidate. The next boot therefore runs two canonical onepass invocations on the candidate alone. Record absolute step/s against the 22 step/s target, actual output tok/s and quality, with `no baseline on this build`; do not claim a matched consumer speedup. Evidence: `measurements/st_decode_22step_20260912/`.
-||||||| cd62b83a
 ### 45차 — 단일 GPU 레인은 **srv4 한 대에서 프로덕션 옆에**: 증거는 여유 메모리, 첫 실측이 OOM 과 b12x m=8 을 가르쳐 줬다 (2026-09-13, 맥→srv2/srv4, PR #774)
 
 **결정.** PR #771 뒤의 세 갈래(5050 = WSL2 sshd + x86 이미지 + DeepGEMM 포크 소스, 스파크 한 대 옆, OST-97X 우분투)
@@ -1717,5 +1715,16 @@ revision changed` 로 **멈추는** 쪽을 택했다 — "큐가 다른 것을 �
 이미 있음/3장 뒤 포기/간격/off 스위치/판정기 없음)와 유닛 경로 핀, "배포할 것 없음일 때만" 소스 핀. `tests/test_fleet_st_bracket.py`
 에 가드 핀. 플릿·엔진 스위트는 main 기준선과 실패 집합 동일(27F+2E / 1F+3E), 새 실패 0. `FLEET_AUDIT` 갱신.
 
-**실측 없음.** 첫 실제 재핀은 srv2 에서 대기 티켓 하나를 둔 채 체크아웃을 옮겨 보면 된다(`show` 의 history 에 `repin`). 남는 노출:
-재핀은 준비를 통째로 다시 하므로 CPU 준비 명령이 있는 티켓은 그만큼 대기 루프가 멈춘다 — §95 에서 사람이 `edit` 하던 비용과 같다.
+**실측 (srv2, 02:30 KST, 운영자 "너가 srv2 에 하면 되잖아").** 이 브랜치의 워크트리에서 프로브 티켓 `repin-trial` 을 걸었다 — 큐는
+`prefill3000-batch10i`(codex 세션의 부팅, 리스 `queue/…`)가 쥐고 있어 "a queue holder is not asked" 로 기다렸다 — 워크트리 HEAD 를
+빈 커밋으로 옮기니(2cb63b1e → 6d63b897) **30 초 뒤** 레코드가 revision 2, history 에 `checkout moved 2cb63b1ecd68 -> 6d63b897eb17:
+prepared again at 6d63b897eb17`, 영수증은 새 것(379e4c28 → 39575ebc), 대기 로그에 `RE-PIN repin-trial: …`. `cancel` 로 GO 전에
+거뒀고 홀더는 건드리지 않았다. 같은 워크트리에서 이 PR 의 리눅스 전용 테스트 83 개도 OK. 그리고 srv2 에서 한 것: `~/fleet-controller`
+를 f9e776c2(#612 시절, 639 커밋 뒤의 §91 그 상태)에서 **origin/main 639bd63a(#783)** 로 옮겼고(깨끗한 워크트리, 쓰는 프로세스 없음),
+새 유휴 복구 유닛을 설치했다(`daemon-reload`; 타이머는 운영자가 꺼 둔 대로 **disabled** 유지, 백업 `.bak-20260913`). **안 한 것**과 이유:
+슈퍼바이저 드롭인은 그대로다 — `~/.config/st-glm53.env` 가 프로덕션 트리를 `st-releases/prod-abceb6a0-grammar-9391`(codex 가 자른
+릴리스, main 에 없는 grammar 패치)로, CKPT 를 `5734b29fde84/st-glm53-meta` 로 박아 두었고 슈퍼바이저 스크립트는 5734b29f(#770 이전)다.
+프로덕션은 20:36 부터 내려 있고(세션들이 큐로 플릿을 번갈아 쓴다) deploy-watch 유닛은 srv2 에 **설치된 적이 없다**(`not-found`,
+`~/st-engine` 에 `st-deploy-watch.py` 없음). 즉 #770 뒤의 프로덕션 리스·컨트롤러 추종·D17 프로브·자가 치유는 모두 deploy-watch 를 무장하고
+드롭인·env 를 main 의 릴리스로 옮길 때 비로소 산다 — 어느 트리를 프로덕션으로 할지는 운영자의 결정이라 손대지 않았다.
+남는 노출: 재핀은 준비를 통째로 다시 하므로 CPU 준비 명령이 있는 티켓은 그만큼 대기 루프가 멈춘다 — §95 에서 사람이 `edit` 하던 비용과 같다.
