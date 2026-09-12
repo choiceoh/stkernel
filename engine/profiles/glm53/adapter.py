@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import time
 
+import numpy as np
 import torch
 from math import isfinite
 
@@ -80,6 +81,7 @@ class Glm53Engine:
         self.decode_graphs = None
         self.sampling_graphs = None
         self.pipeline = None                                # pipeline.AsyncDecode once the graphs are captured (45차 §23 B3)
+        self._ids_stage = None                              # pinned host ids for the captured decode: an asynchronous upload, not a pageable one
         self.inflight = {}                                  # seq -> decode steps launched ahead whose tokens the host has not read
         self.staged = {}                                    # seq -> the block boundary a step ahead parked in the caches' stage
         self.memory = None
@@ -283,7 +285,11 @@ class Glm53Engine:
 
     # -- the runner's protocol -------------------------------------------------------
     def validate(self, ids, max_new, temperature) -> None:
-        if not ids or any(type(t) is not int or not 0 <= t < self.F.vocab for t in ids):
+        # every rank runs this inside the step loop when a request is admitted: the Python loop over a 120K prompt
+        # was 3.8 ms of a stalled decoder, numpy's conversion + min/max 1.3 ms (measured on the host). No dtype is
+        # forced, so a float or a string makes a non-integer array and is refused, never truncated.
+        packed = np.asarray(ids) if ids else None
+        if packed is None or packed.ndim != 1 or packed.dtype.kind != "i" or packed.min() < 0 or packed.max() >= self.F.vocab:
             raise ValueError("prompt token id is outside the model vocabulary")
         if type(max_new) is not int or max_new <= 0:
             raise ValueError("generation limit must be a positive integer")
@@ -306,6 +312,11 @@ class Glm53Engine:
     def history(self, seq: int) -> "list[int]":
         """Every token the row has seen or produced: what a re-sent chat must start with to continue it (B1)."""
         return list(self.tokens[seq])
+
+    def history_ref(self, seq: int) -> "list[int]":
+        """The same list, not copied: for a reader that compares and never mutates (the door scans every idle
+        conversation per request; copying 128K tokens per candidate was the scan's whole cost)."""
+        return self.tokens[seq]
 
     def logprobs(self, seq: int) -> "list | None":
         return self.lps.get(seq)
@@ -716,7 +727,16 @@ class Glm53Engine:
             ids = [self.tokens[seq][-1]] + drafts[seq]
             segments.append(Segment(seq, slot, self.ctx[seq], len(flat), len(ids)))
             flat.extend(ids)
-        step = Step(torch.tensor(flat, dtype=torch.int64, device=self.caches.device), tuple(segments))
+        if self.decode_graphs is not None and self.caches.device.type == "cuda":
+            # the graph's fill copies the ids into its static input: from pinned memory that copy is asynchronous,
+            # from a pageable device tensor built here it would first wait for everything queued on the stream
+            if self._ids_stage is None or self._ids_stage.numel() < len(flat):
+                self._ids_stage = torch.empty(max(len(flat), self.caches.pool.max_seqs * (self.drafter.k + 1)), dtype=torch.int64, pin_memory=True)
+            ids_t = self._ids_stage[:len(flat)]
+            ids_t.copy_(torch.tensor(flat, dtype=torch.int64))
+        else:
+            ids_t = torch.tensor(flat, dtype=torch.int64, device=self.caches.device)
+        step = Step(ids_t, tuple(segments))
         rich = {s.seq: self._rich(s.seq) for s in step.segments}
         temps = [self.limits[s.seq][1] for s in step.segments for _ in range(s.length)]
         if self.decode_graphs is None:

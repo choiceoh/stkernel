@@ -656,10 +656,11 @@ class Server:
             elif (m > 1 and m - 1 < n and history[-1] in ends and (best is None or m - 1 > best[1]) and ids[:m - 1] == history[:-1]
                     and [(p, d) for p, d in marks if p < m - 1] == sorted((int(p), str(d)) for p, d in history_marks)):
                 best = (key, m - 1, True)
+        view = getattr(self.engine, "history_ref", None) or getattr(self.engine, "history", None)
         for row in list(self._idle_order):
             key = self._conversation_of.get(row)
-            if key is not None and hasattr(self.engine, "history"):
-                consider(key, self.engine.history(row),
+            if key is not None and view is not None:
+                consider(key, view(row),                                  # read, compared, never mutated
                          self.engine.media_marks(row) if hasattr(self.engine, "media_marks") else [])
         for key in self.runner.parked_keys():
             record = self.runner.parked_record(key)
