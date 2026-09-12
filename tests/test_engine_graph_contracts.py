@@ -6,9 +6,11 @@ graphs' memory pool, and that the replay path stages its small arrays through
 pinned memory instead of building a CPU tensor per step.
 """
 import ast
+import contextlib
 import sys
 import types
 import unittest
+import unittest.mock
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -210,6 +212,86 @@ class WarmupPolicyTests(unittest.TestCase):
     def test_a_policy_that_asks_for_no_warmup_is_refused(self):
         with self.assertRaisesRegex(ValueError, "at least one warmup pass"):
             self.capture(lambda shape: 0)
+
+
+class _Stream:
+    def wait_stream(self, other): pass
+
+
+class _Graph:
+    def reset(self): pass
+    def register_generator_state(self, generator): pass
+
+
+class _Cuda:
+    """Enough of torch.cuda to run the capture loop's bookkeeping on a CPU host."""
+    def graph_pool_handle(self): return object()
+    def Stream(self): return _Stream()
+    def current_stream(self): return _Stream()
+    def stream(self, s): return contextlib.nullcontext()
+    def CUDAGraph(self): return _Graph()
+    def graph(self, g, pool=None): return contextlib.nullcontext()
+    def synchronize(self): pass
+
+
+class _Ledger:
+    def __init__(self): self.rows = []
+    def checkpoint(self, phase): self.rows.append(phase)
+
+
+class LedgerRowTests(unittest.TestCase):
+    """A ledger row is a fleet-wide barrier, so the capture writes one per shape.
+
+    Every row synchronizes the device and all-reduces a qualification flag across
+    the TP ranks. A measured boot paid 21.9 ms per row; three rows over 51 shapes
+    was 3.4 s, 12% of that boot's graph work.
+    """
+
+    def capture(self, **kw):
+        from engine.base import graphs as module
+        ledger = _Ledger()
+        with unittest.mock.patch.object(module, "torch", SimpleNamespace(cuda=_Cuda())):
+            module.DecodeGraphs(lambda inp: inp, lambda *shape: shape,
+                                [(1, 6), (2, 6), (4, 6)], warmup=1,
+                                memory=ledger, label="target", **kw)
+        return ledger.rows
+
+    def test_one_row_per_shape_by_default(self):
+        self.assertEqual(self.capture(), ["target/(1, 6)", "target/(2, 6)", "target/(4, 6)"])
+
+    def test_detail_restores_the_split_that_priced_the_warmup_policy(self):
+        rows = self.capture(detail=True)
+        self.assertEqual(len(rows), 9)
+        self.assertEqual(rows[:3], ["target/(1, 6)/before", "target/(1, 6)/warmup",
+                                    "target/(1, 6)/captured"])
+
+    def test_a_capture_without_a_ledger_asks_for_nothing(self):
+        from engine.base import graphs as module
+        with unittest.mock.patch.object(module, "torch", SimpleNamespace(cuda=_Cuda())):
+            module.DecodeGraphs(lambda inp: inp, lambda *shape: shape, [(1, 6)], warmup=1)
+
+
+class DeviceStepTests(unittest.TestCase):
+    """The step's segment tuple is asked for once per layer, so it is built once."""
+
+    def step(self, n=4, tokens=6):
+        from engine.profiles.glm53.decode_graphs import DeviceStep
+        contexts = torch.zeros(n, dtype=torch.int64)
+        return DeviceStep(torch.zeros(n * tokens, dtype=torch.int64), contexts, tokens), contexts
+
+    def test_the_same_tuple_comes_back_every_time(self):
+        step, _ = self.step()
+        self.assertIs(step.segments, step.segments)
+        self.assertEqual([(s.seq, s.slot, s.start, s.length) for s in step.segments],
+                         [(0, 0, 0, 6), (1, 1, 6, 6), (2, 2, 12, 6), (3, 3, 18, 6)])
+
+    def test_a_cached_segment_still_reads_what_replay_wrote(self):
+        # The contexts buffer is overwritten in place, never rebound: that is what lets
+        # the captured graph record its address, and what keeps these views correct.
+        step, contexts = self.step()
+        held = step.segments
+        contexts.copy_(torch.tensor([10, 20, 30, 40]))
+        self.assertEqual([int(s.ctx) for s in held], [10, 20, 30, 40])
 
 
 if __name__ == "__main__":

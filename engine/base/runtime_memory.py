@@ -86,7 +86,7 @@ class RuntimeMemory:
 
     def spend(self, top: int = 8) -> "list[tuple[str, float]]":
         """Where a boot's checkpointed time went: the phase prefixes, most expensive first.
-        `target/(4, 6, 4096)/warmup` counts under `target`, so the ladder, the samplers and
+        `target/(4, 6, 4096)` counts under `target`, so the ladder, the samplers and
         the prefill warmups are separable without reading 351 rows."""
         totals = {}
         for row in self.phases:
