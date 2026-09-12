@@ -173,6 +173,21 @@ def fetch_media(kind: str, url: str) -> bytes:
     raise RequestError(f"{kind}: url must be a data: or http(s) URL")
 
 
+def prompt_switches(req: dict) -> "tuple[bool, bool]":
+    """`add_generation_prompt` and `continue_final_message`, as OpenAI names them.
+
+    They are opposites -- open a new assistant turn, or resume inside the one already
+    there -- so both true is refused rather than left to the template to resolve.
+    """
+    opening = req.get("add_generation_prompt", True)
+    resuming = req.get("continue_final_message", False)
+    if not isinstance(opening, bool) or not isinstance(resuming, bool):
+        raise RequestError("add_generation_prompt and continue_final_message must be booleans")
+    if opening and resuming:
+        raise RequestError("add_generation_prompt and continue_final_message cannot both be true")
+    return opening, resuming
+
+
 def stop_strings(req: dict) -> "list[str]":
     stop = req.get("stop")
     stop = [stop] if isinstance(stop, str) else (stop or [])
@@ -205,6 +220,21 @@ def response_format_grammar(req: dict) -> "dict | None":
     raise RequestError("response_format.type must be text, json_object or json_schema")
 
 
+def partial_suffix(text: str, needles) -> int:
+    """How many trailing characters of `text` could still turn into one of `needles`.
+
+    Showing them would be a mistake that cannot be taken back: a client that reads
+    "STO" has read it, and the cut that arrives with the next token comes too late.
+    """
+    keep = 0
+    for needle in needles:
+        for cut in range(min(len(needle) - 1, len(text)), keep, -1):
+            if text.endswith(needle[:cut]):
+                keep = cut
+                break
+    return keep
+
+
 class _Choice:
     """One generation inside an OpenAI response: its request, its token queue and the per-channel text it has
     shown so far. Chat answers split at the reasoning-end token into reasoning_content / content; a content that
@@ -218,6 +248,8 @@ class _Choice:
         self.held = {"reasoning_content": [], "content": []}
         self.shown = {"reasoning_content": 0, "content": 0}
         self.text = {"reasoning_content": "", "content": ""}
+        self.acc = {"reasoning_content": "", "content": ""}      # decoded so far, grown a window at a time
+        self.window = {"reasoning_content": [0, 0], "content": [0, 0]}   # into `held`: shown up to, decoded up to
         self.logprobs = []                           # per generated token: (id, logprob, [(id, logprob), ...])
         self.total = 0
         self.finish = None
@@ -236,23 +268,48 @@ class _Choice:
                 continue
             self.held["reasoning_content" if self.reasoning else "content"].append(t)
 
+    def _decoded(self, channel: str, final: bool) -> str:
+        """This channel's text, extended by whatever the newest tokens added.
+
+        Neither obvious way works. Decoding one token alone is wrong -- a token's
+        rendering depends on its neighbours, because a character can be spread over
+        several byte pieces and because a piece carries its leading space only when
+        something precedes it. Decoding the whole answer again for every token is
+        right but quadratic: measured on this checkpoint's tokenizer, 3.06 s of CPU
+        for a 4,096-token answer against 0.011 s for this. So decode a two-token
+        window and subtract the part of it already accounted for, which is what
+        vLLM's prefix and read offsets do.
+        """
+        ids = self.held[channel]
+        prefix, read = self.window[channel]
+        if read < len(ids):
+            before = self.tok.decode(ids[prefix:read]) if read > prefix else ""
+            grown = self.tok.decode(ids[prefix:])
+            # a trailing replacement character is half a code point: wait for the rest,
+            # unless nothing more is coming
+            if len(grown) > len(before) and (final or not grown.endswith("\ufffd")):
+                self.acc[channel] += grown[len(before):]
+                self.window[channel] = [read, len(ids)]
+        return self.acc[channel]
+
     def flush(self, final: bool = False) -> "list[dict]":
         """Decode each channel; what is new becomes a delta. Returns the deltas in order."""
         deltas = []
-        for channel, ids in self.held.items():
-            decoded = self.tok.decode(ids)
+        for channel in self.held:
+            decoded = self._decoded(channel, final)
             if channel == "content":
                 if self.stop:
                     cut = min((decoded.find(x) for x in self.stop if x in decoded), default=-1)
                     if cut >= 0:
                         decoded = decoded[:cut]
                         self.finish = "stop"
+                    elif not final:                                 # a tail that could still become one waits
+                        held_back = partial_suffix(decoded, self.stop)
+                        decoded = decoded[:len(decoded) - held_back] if held_back else decoded
                 if self.tool_parser is not None:
                     if not final:                                   # a partial "<tool_call>" prefix waits for the rest
-                        for cut in range(min(len("<tool_call>") - 1, len(decoded)), 0, -1):
-                            if decoded.endswith("<tool_call>"[:cut]):
-                                decoded = decoded[:-cut]
-                                break
+                        held_back = partial_suffix(decoded, ("<tool_call>",))
+                        decoded = decoded[:len(decoded) - held_back] if held_back else decoded
                     start = decoded.find("<tool_call>")
                     if start >= 0:
                         blocks = _TOOL_CALL.findall(decoded)
@@ -266,7 +323,7 @@ class _Choice:
                         self._tool_seen = len(blocks)
                         decoded = decoded[:start]
             delta = decoded[self.shown[channel]:]
-            if delta and (final or self.finish == "stop" or not delta.endswith("�")):   # a partial character waits
+            if delta:
                 deltas.append({channel: delta})
                 self.shown[channel] = len(decoded)
             self.text[channel] = decoded[:self.shown[channel]]
@@ -415,6 +472,9 @@ class Server:
         self.itl = _Histogram(_ITL_BOUNDS)
         self.e2e = _Histogram(_E2E_BOUNDS)
         self._streams = {}                         # request id -> queue of ("tokens", ids) | ("end", finish) | ("error", text)
+        self._wake = threading.Event()             # set whenever a stream queue gains an item, so a drain can wait
+                                                   # on it instead of polling; a 20 ms poll put 20 ms of jitter on
+                                                   # every streamed token, a fifth of this engine's inter-token time
         self._sent = {}                            # row -> generated tokens already handed to its stream
         self.prompt_tokens_total = self.generation_tokens_total = 0
         self.arrivals = queue.Queue()
@@ -521,12 +581,19 @@ class Server:
         best = None
         n = len(ids)
         marks = sorted((m["positions"][0], m["digest"]) for m in media)
+        ends = set(getattr(self.engine, "eos", None) or ())
         def consider(key, history, history_marks):
             nonlocal best
+            history = list(history)
             m = len(history)
-            if (0 < m < n and (best is None or m > best[1]) and ids[:m] == list(history)
+            if (0 < m < n and (best is None or m > best[1]) and ids[:m] == history
                     and [(p, d) for p, d in marks if p < m] == sorted((int(p), str(d)) for p, d in history_marks)):
-                best = (key, m)
+                best = (key, m, False)
+            # the history ended with an end token the template does not render back (<|endoftext|> after an answer,
+            # where the next turn renders <|user|>): the caches stand before that token, which was sampled but never fed
+            elif (m > 1 and m - 1 < n and history[-1] in ends and (best is None or m - 1 > best[1]) and ids[:m - 1] == history[:-1]
+                    and [(p, d) for p, d in marks if p < m - 1] == sorted((int(p), str(d)) for p, d in history_marks)):
+                best = (key, m - 1, True)
         for row in list(self._idle_order):
             key = self._conversation_of.get(row)
             if key is not None and hasattr(self.engine, "history"):
@@ -645,6 +712,7 @@ class Server:
             stream = self._streams.get(request)
             if stream is not None:
                 stream.put(("error", str(result)) if isinstance(result, RequestError) else ("end", self.finish_reason(result, request)))
+                self._wake.set()
             self._stop_ids.pop(request, None)
 
     def _drain(self):
@@ -675,8 +743,9 @@ class Server:
             row = None
             resident = held = 0
             parked = False
+            drop = False
             if conversation is None and hint is not None:
-                key, prefix = hint
+                key, prefix, drop = hint
                 row_ = self._conversations.get(key)
                 rest = self._media_after(media, prefix)
                 if rest is None:
@@ -753,12 +822,13 @@ class Server:
                         raise
                     self._resuming[row] = dict(conversation=conversation, request=request, ids=ids, limit=limit,
                                                temperature=temperature, promised=promised, min_new=min_new, options=options,
-                                               media=media, cancelled=None)
+                                               media=media, drop=drop, cancelled=None)
                     self._waiting.popleft()
                     continue                                              # admitted when every rank's read is done (_settle)
                 self._idle_order.pop(row)
                 tokens = self.engine.extend(row, ids, max_new=limit, temperature=temperature, **({"min_new": min_new} if min_new else {}),
-                                            **({"options": options} if options else {}), **({"media": media} if media else {}))
+                                            **({"options": options} if options else {}), **({"media": media} if media else {}),
+                                            **({"drop_unfed": True} if drop else {}))
                 self.runner.extend(row, tokens)
             self._waiting.popleft()
             self._active[row] = (request, promised)
@@ -825,7 +895,8 @@ class Server:
                     tokens = self.engine.extend(row, e["ids"], max_new=e["limit"], temperature=e["temperature"],
                                                 **({"min_new": e["min_new"]} if e["min_new"] else {}),
                                                 **({"options": e["options"]} if e.get("options") else {}),
-                                                **({"media": e["media"]} if e.get("media") else {}))
+                                                **({"media": e["media"]} if e.get("media") else {}),
+                                                **({"drop_unfed": True} if e.get("drop") else {}))
                     self.runner.extend(row, tokens)
                     self._conversations[conversation] = row
                     self._conversation_of[row] = conversation
@@ -896,6 +967,7 @@ class Server:
             self._drain()
         for stream in list(self._streams.values()):
             stream.put(("error", "engine stopped before completing the request"))
+        self._wake.set()
         self._streams.clear()
         self._sent.clear()
         self._deadline.clear()
@@ -1081,6 +1153,7 @@ class Server:
                         lp = getattr(self.engine, "logprobs", None)
                         entries = lp(row) if lp is not None else None
                         stream.put(("tokens", (list(generated[sent:]), list(entries[sent:]) if entries else None)))
+                        self._wake.set()
                     self._sent[row] = len(generated)
             live = set(self.runner.state.running) | set(self.runner.state.waiting)
             for row in list(self._active):
@@ -1191,6 +1264,9 @@ class Server:
                 False when the client left (every live generation is cancelled)."""
                 live = {c.request: c for c in choices}
                 while live:
+                    # Cleared before the queues are read, so an item that arrives during the
+                    # read leaves the flag set and the wait below returns at once.
+                    server._wake.clear()
                     progressed = False
                     for c in list(live.values()):
                         try:
@@ -1224,7 +1300,7 @@ class Server:
                             for c in live.values():
                                 server.cancel(c.request, "client closed")
                             return False
-                        time.sleep(0.02)
+                        server._wake.wait(0.02)      # the timeout is the disconnect check's period
                 return True
 
             def release(self, choices):
@@ -1320,7 +1396,9 @@ class Server:
                         except ValueError as exc:
                             raise RequestError(f"{kind}: {exc}") from exc
                 try:
-                    prompt = server.chat(messages, dict(kwargs, tools=tools) if tools else kwargs)
+                    opening, resuming = prompt_switches(req)
+                    prompt = server.chat(messages, dict(kwargs, tools=tools) if tools else kwargs,
+                                         generation_prompt=opening, continue_final=resuming)
                 except Exception as exc:                                  # noqa: BLE001 -- the template's verdict on these messages
                     raise RequestError(f"chat template rejected the request: {exc}") from exc
                 ids = server.tok.encode(prompt, add_special_tokens=False).ids
@@ -1534,7 +1612,9 @@ class Server:
                     kwargs = req.get("chat_template_kwargs") or {}
                     tools = req.get("tools")
                     try:
-                        prompt = server.chat(req["messages"], dict(kwargs, tools=tools) if tools else dict(kwargs))
+                        opening, resuming = prompt_switches(req)
+                        prompt = server.chat(req["messages"], dict(kwargs, tools=tools) if tools else dict(kwargs),
+                                             generation_prompt=opening, continue_final=resuming)
                     except Exception as exc:                              # noqa: BLE001
                         raise RequestError(f"chat template rejected the request: {exc}") from exc
                     add_special = bool(req.get("add_special_tokens", False))

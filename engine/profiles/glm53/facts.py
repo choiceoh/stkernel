@@ -24,7 +24,11 @@ CKPT = Path("/home/choiceoh/models/glm53-redhat-nvfp4")
 RANKS = Path("/home/choiceoh/models/st-glm53-9391-up-gate-full")          # preshard output, one file per rank
 TP = 4                                                                # four Sparks: the only world this profile has
 BOX = {"name": "GB10 (DGX Spark)", "capability": (12, 1), "devices": 1, "unified": True}
-BLOCK = 2304                                                          # launcher --block-size (shapes.py's 6,912 law)
+CHUNK_ALIGN = 2304                                                    # the prefill chunk's alignment: launcher --block-size (shapes.py's 6,912 law)
+BLOCK = 768                                                           # the paged KV / prefix-reuse block: a third of the chunk alignment (45차 §23:
+                                                                      # production reuses whole 2,304 blocks; three per chunk alignment lets a shared
+                                                                      # prefix's tail be reused in 768s -- 64-aligned for the KDA kernel's chunks,
+                                                                      # whole indexer pools of 4, nine per 6,912 prefill chunk)
 SPEC_K = 5                                                            # DFlash2 draft slots per decode step
 KV_DTYPE = "fp8_e4m3"                                                 # launcher KV_DTYPE
 EXPERTS = "tp"                                                        # launcher ENABLE_EP=0
@@ -68,6 +72,7 @@ class Facts:
     post_mult: float
     # serving
     block: int = BLOCK
+    chunk_align: int = CHUNK_ALIGN
     spec_k: int = SPEC_K
 
     # -- what one of the four ranks holds (TP by heads / intermediate / vocab) --
@@ -144,6 +149,7 @@ def load(ckpt: "str | Path" = CKPT) -> Facts:
     assert t["n_shared_experts"] == 1 and t["hidden_act"] == "silu"
     assert t["index_kpool_compress"] and t["index_kpool_always_select_tail"] and t["indexer_rope_interleave"]
     assert f.topk % f.kpool == 0 and f.block % f.kpool == 0 and f.idx_dim == 128, "kpool pools of 4 tile the block; FWHT is 128-wide"
+    assert f.chunk_align % f.block == 0 and f.block % 64 == 0, "the prefill chunk is whole blocks and a block is whole KDA kernel chunks"
     assert not t["tie_word_embeddings"]
     q = c["quantization_config"]["config_groups"]["group_0"]
     assert q["format"] == "nvfp4-pack-quantized" and q["weights"]["group_size"] == 16 and q["input_activations"]["group_size"] == 16

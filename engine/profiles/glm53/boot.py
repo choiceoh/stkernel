@@ -16,6 +16,7 @@ import argparse
 import os
 import sys
 import time
+from functools import partial
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
@@ -41,7 +42,7 @@ from engine.base.prefix import PrefixCache                       # noqa: E402
 from engine.base.shapes import chunk_for                         # noqa: E402
 from engine.base.tiered_kv import TieredKV                       # noqa: E402
 from engine.profiles.glm53 import facts, lanes as lane_tables    # noqa: E402
-from engine.profiles.glm53.caches import Glm53Caches, layout, snapshot_layout   # noqa: E402
+from engine.profiles.glm53.caches import Glm53Caches, layout, snapshot_layout, stage_bytes   # noqa: E402
 from engine.profiles.glm53 import drafter as drafter_mod           # noqa: E402
 from engine.profiles.glm53.adapter import Glm53Engine, NullDrafter             # noqa: E402
 from engine.profiles.glm53.net import Glm53Net                   # noqa: E402
@@ -53,9 +54,9 @@ KV_GIB = 24.0                       # production parity (vLLM's 24.02 GiB/rank, 
 TOKEN_BUDGET = 8192                 # MAX_BATCHED: the 6,912 chunk law follows (shapes.py)
 MAX_WAIT_S = 20.0                   # D10's one starvation valve
 MAX_SEQS = 4                        # launcher MAX_SEQS
-PREFIX_SNAPSHOTS = 24               # block-boundary checkpoints kept for prefix reuse (base/prefix.py): ~77 MiB each per rank at
-                                    # 45 layers with the drafter (34 KDA states + conv taps + the drafter's context ring); the unit is
-                                    # the 2,304 block (three per 6,912 chunk, 45차 §23), so three times the eight chunk boundaries
+PREFIX_SNAPSHOTS = 96               # block-boundary checkpoints: ~45 MiB/rank with the native two-head drafter KV shard.
+                                    # The unit is the 768 block (nine per 6,912 chunk); boundaries a request adopted
+                                    # outlive the ones nobody asked for (prefix._victim), so churn cannot flush them.
 
 
 def tokenizer(ckpt=facts.CKPT):
@@ -99,8 +100,13 @@ def chat_renderer(ckpt=facts.CKPT):
     t = AutoTokenizer.from_pretrained(str(ckpt))
     t.chat_template = (Path(ckpt) / CHAT_TEMPLATE).read_text()
 
-    def render(messages, kwargs):
-        return t.apply_chat_template(messages, add_generation_prompt=True, tokenize=False, **kwargs)
+    def render(messages, kwargs, *, generation_prompt: bool = True, continue_final: bool = False):
+        """`continue_final` resumes inside the last assistant turn instead of opening a new
+        one, which is what a caller wants when it is handing back a partial answer to extend.
+        It is passed only when asked for, so a template engine without it keeps working."""
+        resume = {"continue_final_message": True} if continue_final else {}
+        return t.apply_chat_template(messages, add_generation_prompt=generation_prompt,
+                                     tokenize=False, **resume, **kwargs)
     return render
 
 
@@ -168,7 +174,11 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     drafter_dir = Path(drafter_dir)
     D = drafter_mod.load(drafter_dir) if use_drafter else None
     dspecs = drafter_mod.specs(D) if D else []
-    draft_shape = (D.layers, D.window, D.kv_heads, D.head_dim) if D else None
+    # Native DFlash stores only this rank's KV heads. The direct-ring lane
+    # reads that shard; reserving the replicated ring would also waste three
+    # quarters of every persistent prefix snapshot's drafter state.
+    draft_heads = (D.kv_heads // comm.world_size if execution == "native" else D.kv_heads) if D else 0
+    draft_shape = (D.layers, D.window, draft_heads, D.head_dim) if D else None
     cache_layout = layout(F, net.layers, draft_shape)
     bb, sb = cache_layout.block_bytes, cache_layout.slot_bytes
     ns = max_seqs + 1
@@ -184,7 +194,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     VF = vision_mod.load(ckpt_meta) if vision_file.exists() else None
     vspecs = vision_mod.specs(VF) if VF else []
     arena_bytes = (total_bytes(specs) + total_bytes(dspecs) + total_bytes(vspecs) + 256 * (len(specs) + len(dspecs) + len(vspecs) + 64)
-                   + cache_layout.nbytes(nb, max_seqs) + PREFIX_SNAPSHOTS * snapshot_bytes)
+                   + cache_layout.nbytes(nb, max_seqs) + PREFIX_SNAPSHOTS * snapshot_bytes + stage_bytes(F, net.layers, max_seqs))
     memory = None
     if len(net.layers) == F.layers:
         # Fixed byte ceilings, not a measured workspace claim. Preparation
@@ -198,9 +208,11 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         failure = None
         try:
             report = prepare_allocation(arena_bytes, files, workspace_bytes + os_reserve_bytes,
-                                        lambda: torch.cuda.mem_get_info()[0])
+                                        lambda: torch.cuda.mem_get_info()[0],
+                                        cache_roots=(Path(ranks_dir).parent, drafter_dir.parent))
             memory = RuntimeMemory(arena_bytes, workspace_bytes, os_reserve_bytes, comm=comm,
-                                   reclaim=reclaim_preparation_pages)
+                                   reclaim=partial(reclaim_preparation_pages,
+                                                   cache_roots=(Path(ranks_dir).parent, drafter_dir.parent)))
         except (MemoryError, OSError, RuntimeError) as exc:
             failure = exc
         # A failed rank must prevent peers from starting their large CUDA
@@ -212,10 +224,12 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             raise MemoryError(f"TP arena admission failed: {failure or 'a peer has insufficient immediately free memory'}") from failure
         recorder.gauge("boot_immediately_free_GiB", round(report["immediately_free"] / GIB, 3))
         recorder.gauge("boot_reclaimed_GiB", round(report["reclaimed"] / GIB, 3))
+        recorder.gauge("boot_model_cache_files_returned", report["cache_files"])
         # D1: the box declared, with every line's provenance, before the arena is allocated
         from engine.profiles.glm53 import budget as budget_mod
-        b = budget_mod.budget(kv_gib, max_seqs, chunk=sched.chunk_for(F.block, TOKEN_BUDGET, D.k if D else 0), ckpt=ckpt_meta,
-                              ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None, snapshots=PREFIX_SNAPSHOTS)
+        b = budget_mod.budget(kv_gib, max_seqs, chunk=sched.chunk_for(F.chunk_align, TOKEN_BUDGET, D.k if D else 0), ckpt=ckpt_meta,
+                              ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None, snapshots=PREFIX_SNAPSHOTS,
+                              draft_tp=comm.world_size if execution == "native" else 1)
         recorder.gauge("budget_unassigned_GiB", round(b.kv_gib - b.kv_declared_gib, 2))
         if comm.rank == 0:
             print(budget_mod.report(b))
@@ -262,13 +276,13 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         # (boot-time study 5-c): the caches and their zeroing, the engine, the tier's pinned staging,
         # the prefix snapshots and the runner.
         with recorder.phase("caches"):
-            caches = Glm53Caches(arena, F, net.layers, nb, max_seqs, draft=draft_shape, snapshots=PREFIX_SNAPSHOTS)
+            caches = Glm53Caches(arena, F, net.layers, nb, max_seqs, draft=draft_shape, snapshots=PREFIX_SNAPSHOTS, stage=True)
         with recorder.phase("engine"):
             # the aux layers must lie inside the chain: a layer subset (the local smoke) clips them to its last layer -- plumbing only
             aux = [min(L, net.layers[-1]) for L in drafter.aux_layers] if D else None
             engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(ckpt_meta), temperature=temperature, seed=seed,
                                  decodable=decodable, aux_layers=aux, context_ceiling=context_ceiling)
-            contract = sched.Contract(chunk_align=F.block, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
+            contract = sched.Contract(chunk_align=F.chunk_align, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
                                       max_wait_s=MAX_WAIT_S, max_running=max_seqs)
             engine.memory = memory
             engine.vision = vision
@@ -280,7 +294,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             if tier_dir:                                                                # D16: idle conversations park on NVMe, per rank
                 tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes)   # a block is one NVMe unit (block-major)
                 tiered = TieredKV(caches.pool, tier)
-            prefix = PrefixCache(F.block, engine.prefill_chunk, PREFIX_SNAPSHOTS)      # boundaries = prefill chunks (base/prefix.py)
+            prefix = PrefixCache(F.block, engine.prefill_chunk, PREFIX_SNAPSHOTS)      # boundaries = every 768 block (base/prefix.py)
             runner = Runner(engine, contract, caches.pool, caches.slots, Ring(4096, STEP_RECORD.size), recorder, tiered=tiered,
                             keep_idle=tiered is not None, prefix=prefix)                # with a tier, conversations live on and park
         recorder.gauge("blocks", nb); recorder.gauge("slots", ns); recorder.gauge("arena_GiB", round(arena.used / GIB, 3))

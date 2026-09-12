@@ -22,15 +22,18 @@ def host_free_bytes():
     raise RuntimeError("MemFree is unavailable")
 
 
-def reclaim_preparation_pages(need, headroom):
+def reclaim_preparation_pages(need, headroom, *, cache_roots=()):
     """Make a boot's remaining byte budget available despite UMA file cache.
 
     Anonymous faults evict clean cache where CUDA allocation does not. The
     temporary allocation must itself leave the declared workspace/OS floor;
     insufficient MemAvailable leaves the existing admission failure intact.
     """
-    from engine.base.arena import _meminfo, touch_pages
+    from engine.base.arena import _meminfo, release_model_cache, touch_pages
     memory = _meminfo()
+    if memory['MemFree'] < need and cache_roots:
+        release_model_cache(cache_roots)
+        memory = _meminfo()
     if memory['MemFree'] >= need or need > memory['MemAvailable'] - headroom:
         return 0
     return touch_pages(need)

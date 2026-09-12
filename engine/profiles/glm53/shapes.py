@@ -12,7 +12,8 @@ from __future__ import annotations
 from engine.base.shapes import Constraint, chunk_for as base_chunk_for
 from engine.profiles.glm53.plan import text_config
 
-BLOCK = 2304          # launcher --block-size; KDA state aligns to it (mamba "align" mode)
+BLOCK = 2304          # launcher --block-size; the prefill chunk's alignment (facts.CHUNK_ALIGN). The paged KV / prefix block
+                      # is facts.BLOCK = 768, a divisor: the 6,912 law is unchanged, its boundaries are three times as many
 SPEC_K = 5            # profile SPEC_K=5: DFlash2 draft slots taken out of the token budget
 
 

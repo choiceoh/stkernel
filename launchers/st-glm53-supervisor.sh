@@ -45,7 +45,14 @@ containers_up(){
 fleet_taken(){   # someone else's serving stack: production vLLM, q38, another ST run -- never fight it
   local ip busy held
   held=$(node_sh "${NODES[0]}" "cat /home/choiceoh/st-fleet.lock 2>/dev/null || true") || { echo "head unreachable"; return 0; }
-  case "$held" in ""|*" st-glm53 "*) ;; *) echo "lock: $held"; return 0 ;; esac
+  if [ -n "$held" ]; then
+    case "$SELF_IPS" in
+      *" ${NODES[0]} "*) python3 "$REPO/engine/base/fleet_lease.py" owner --container "$NAME" --path /home/choiceoh/st-fleet.lock >/dev/null 2>&1 ;;
+      *) ssh -o BatchMode=yes -o ConnectTimeout=8 "choiceoh@${NODES[0]}" \
+          "python3 - owner --container $NAME --path /home/choiceoh/st-fleet.lock" < "$REPO/engine/base/fleet_lease.py" >/dev/null 2>&1 ;;
+    esac
+    [ "$?" = 0 ] || { echo "lock: $held"; return 0; }
+  fi
   for ip in "${NODES[@]}"; do
     busy=$(node_sh "$ip" "docker ps --format '{{.Names}}'" 2>/dev/null) || { echo "$ip unreachable"; return 0; }
     busy=$(printf '%s\n' "$busy" | grep -E '^(glm53|q38|vllm|st-)' | grep -vx "$NAME" || true)

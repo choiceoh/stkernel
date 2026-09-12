@@ -172,6 +172,7 @@ class AsyncDecode:
             picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)
             accepted = None
         count, done, accepted, tokens = commit_batch(picks, b["drafts"], b["alive"], b["generated"], b["limit"], b["ends"], accepted)
+        e.caches.stage_boundaries(b["real_slot"], ctx_before, count)       # a block boundary crossed: its state parked for the host
         b["generated"] += count
         b["ctx"] += count
         last = tokens.gather(1, (count - 1).clamp_min(0).unsqueeze(1)).squeeze(1)
@@ -222,10 +223,14 @@ class AsyncDecode:
                 continue
             c = counts[i]
             if c > 0:
+                before = e.ctx[seq]
                 e.tokens[seq] += tokens[i][:c]
                 e.ctx[seq] += c
                 e.accepted_total += accepted[i]
                 e.drafted_total += K
+                boundary = (e.ctx[seq] // e.F.block) * e.F.block
+                if boundary > before:
+                    e.staged[seq] = boundary                                  # the runner may checkpoint it from the stage
         e.steps += 1
         self.free.append(pending.slot)
         return [bool(d) for d in dones]

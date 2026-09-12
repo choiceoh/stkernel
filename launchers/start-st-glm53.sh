@@ -17,6 +17,11 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
 IMAGE=${ST_IMAGE:-${IMAGE:-st-engine:glm53}}
 PORT=${PORT:-8000}
+KV_ARG=""
+if [ -n "${ST_KV_GIB:-}" ]; then
+  [[ "$ST_KV_GIB" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "ST_KV_GIB must be a positive GiB byte budget" >&2; exit 2; }
+  KV_ARG="--kv-gib $ST_KV_GIB"
+fi
 PRODUCTION_ARG=""
 case "${ST_PRODUCTION:-0}" in
   0) ;;
@@ -33,6 +38,7 @@ DUMP_DIR=${ST_DUMP_DIR:-/home/choiceoh/glm53-logs/st-dumps}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"
 NAME=st-glm53
 LOCK=/home/choiceoh/st-fleet.lock
+LEASE_OWNER=${LEASE_OWNER:-$(whoami)@$(hostname -s)/$$}
 
 # A node cannot ssh to itself (srv2 refuses its own key), and the head runs this script: run its own
 # commands in a local shell instead. Same for the tree push -- and if this checkout *is* the node's
@@ -51,16 +57,23 @@ push_tree() {
   fi
 }
 
+lease() {
+  if is_self "${NODES[0]}"; then
+    python3 "$REPO/engine/base/fleet_lease.py" "$@" --path "$LOCK"
+  else
+    local quoted
+    printf -v quoted '%q ' "$@"
+    ssh $SSHOPT "choiceoh@${NODES[0]}" "python3 - $quoted --path $LOCK" < "$REPO/engine/base/fleet_lease.py"
+  fi
+}
+
 case "${1:-start}" in
   stop)
-    held=$(node_sh "${NODES[0]}" "cat $LOCK 2>/dev/null || true")
-    case "$held" in
-      ""|*" st-glm53 "*) ;;
-      *) echo "ABORT: refusing to stop another fleet owner's lock: $held" >&2; exit 1 ;;
-    esac
-    printf -v held_q '%q' "$held"
+    held_owner=$(lease owner --container "$NAME") || {
+      echo "ABORT: refusing to stop another fleet owner's lease" >&2; exit 1;
+    }
     for ip in "${NODES[@]}"; do node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 && echo '$ip: stopped' || echo '$ip: none'"; done
-    node_sh "${NODES[0]}" "[ \"\$(cat $LOCK 2>/dev/null)\" != $held_q ] || rm -f $LOCK"; exit 0 ;;
+    lease release --owner "$held_owner"; exit 0 ;;
   logs)
     r=${2:-0}; node_sh "${NODES[$r]}" "docker logs --tail 60 $NAME"; exit 0 ;;
   start) ;;
@@ -73,26 +86,25 @@ for ip in "${NODES[@]}"; do
   busy=$(node_sh "$ip" "docker ps --format '{{.Names}}' | grep -E '^(glm53|q38|vllm|st-)' || true")
   [ -z "$busy" ] || { echo "ABORT: $ip runs $busy -- the fleet is taken (hand off the queue, do not squat)" >&2; exit 1; }
 done
-held=$(node_sh "${NODES[0]}" "cat $LOCK 2>/dev/null || true")
-[ -z "$held" ] || { echo "ABORT: the fleet is locked by '$held' ($LOCK on ${NODES[0]}); wait or 'stop' from that side" >&2; exit 1; }
+# The lease is the engine's own (engine/base/fleet_lease.py): an owner, the container that
+# is its evidence, an estimate and a reason -- so a crashed boot goes stale on its own
+# instead of needing a human to delete a file, and a live one names who to ask.
+# Piped, not rsynced: taking the lease must not touch $ENGINE_DIR, which a live session
+# may have mounted into its containers. The module is stdlib-only, so `python3 -` is enough.
 # The bench queue reserves the same four nodes and does not know this lock exists. Read its
 # holder before taking the fleet, so the two mechanisms refuse each other in both directions
 # until they become one (bench/fleet.sh now refuses a grant while any st-* container is up).
 FLEET_HOLDER=${FLEET_HOLDER:-/home/choiceoh/glm53-logs/fleet/holder}
 queued=$(node_sh "${NODES[0]}" "cat $FLEET_HOLDER 2>/dev/null || true")
 [ -z "$queued" ] || { echo "ABORT: the bench queue holds the fleet: $queued (bench/fleet.sh status; release it there)" >&2; exit 1; }
-owner="$(whoami)@$(hostname) st-glm53 $(date -u '+%F %T UTC') pid=$$"
-printf -v owner_q '%q' "$owner"
-node_sh "${NODES[0]}" "set -C; printf '%s\\n' $owner_q > $LOCK" || {
-  echo "ABORT: another runner acquired $LOCK" >&2; exit 1;
-}
+lease acquire --owner "$LEASE_OWNER" --container "$NAME" --est-minutes "${LEASE_MINUTES:-45}" \
+      --note "${LEASE_NOTE:-st-glm53 on four Sparks}" \
+  || { echo "ABORT: $(lease read 2>/dev/null || echo 'the fleet lease refused')" >&2; exit 1; }
 stage=$(mktemp -d)
 launched=0
 cleanup() {
   rm -rf "$stage"
-  if [ "$launched" = 0 ]; then
-    node_sh "${NODES[0]}" "[ \"\$(cat $LOCK 2>/dev/null)\" != $owner_q ] || rm -f $LOCK" || true
-  fi
+  if [ "$launched" = 0 ]; then lease release --owner "$LEASE_OWNER" >/dev/null || true; fi
 }
 trap cleanup EXIT
 
@@ -142,7 +154,7 @@ start_rank() {
     -e RANK=$r -e WORLD_SIZE=4 -e MASTER_ADDR=10.10.10.2 -e MASTER_PORT=29555 -e LOCAL_RANK=0 $NCCL_ENV \
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
-    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py $PRODUCTION_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER --tier-dir $TIER_DIR --dump-dir $DUMP_DIR' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py $PRODUCTION_ARG $KV_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER --tier-dir $TIER_DIR --dump-dir $DUMP_DIR' >/dev/null && echo '$ip: started'"
 }
 
 pids=()

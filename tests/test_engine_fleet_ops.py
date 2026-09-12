@@ -1,5 +1,6 @@
 """Exercise fleet ownership using real shell control flow and an isolated fake fleet."""
 import os
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -19,6 +20,8 @@ class FleetOps(unittest.TestCase):
         self.bin.mkdir()
         self.repo = self.home / "repo"
         shutil.copytree(ROOT / "launchers", self.repo / "launchers")
+        (self.repo / 'engine/base').mkdir(parents=True)
+        shutil.copy2(ROOT / 'engine/base/fleet_lease.py', self.repo / 'engine/base/fleet_lease.py')
         self.lock = self.home / "fleet.lock"
         self.events = self.home / "events"
         self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
@@ -32,7 +35,7 @@ h = pathlib.Path(os.environ['FAKE_HOME'])
 cmd = sys.argv[-1].replace('/home/choiceoh/st-fleet.lock', str(h / 'fleet.lock'))
 if os.environ.get('FAKE_SSH_FAIL'):
     sys.exit(255)
-if 'set -C;' in cmd and os.environ.get('FAKE_RACE'):
+if 'python3 - acquire' in cmd and os.environ.get('FAKE_RACE'):
     (h / 'fleet.lock').write_text('other-runner won the race')
 sys.exit(subprocess.call(['/bin/bash', '-c', cmd], env=os.environ))
 ''')
@@ -84,6 +87,24 @@ elif a and a[0] == 'ps':
         result = self.run_script("start-st-glm53.sh")
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.lock.exists())
+        self.assertFalse(self.events.exists())
+
+    def test_json_lease_is_owned_by_its_container_for_stop_and_supervision(self):
+        self.lock.write_text(json.dumps(dict(owner='prod-release', container='st-glm53')))
+        self.env['FAKE_CONTAINERS'] = 'st-glm53'
+        result = self.run_script('st-glm53-supervisor.sh')
+        self.assertEqual(result.stdout.strip(), 'healthy', result.stderr)
+        result = self.run_script('start-st-glm53.sh', 'stop')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.lock.exists())
+        self.assertEqual(self.events.read_text().splitlines(), ['stop'] * 4)
+
+    def test_json_foreign_lease_is_preserved(self):
+        text = json.dumps(dict(owner='other-task', container='st-probe'))
+        self.lock.write_text(text)
+        result = self.run_script('start-st-glm53.sh', 'stop')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.lock.read_text(), text)
         self.assertFalse(self.events.exists())
 
     def test_supervisor_waits_for_foreign_lock(self):

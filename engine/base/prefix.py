@@ -29,6 +29,7 @@ class Entry:
     tokens: int
     snap: int
     used: int
+    hits: int = 0                   # adoptions: a boundary that served once is worth more than one nobody asked for
 
 
 class PrefixCache:
@@ -75,6 +76,7 @@ class PrefixCache:
                 entry = self.entries[chain[tokens]]
                 self.tick += 1
                 entry.used = self.tick
+                entry.hits += 1
                 self.hits += 1
                 return tokens, entry, chain[tokens]
         self.misses += 1
@@ -84,10 +86,18 @@ class PrefixCache:
         return h in self.entries
 
     # -- snapshots and entries ----------------------------------------------------------------
+    def _victim(self) -> bytes:
+        """Who leaves when room is needed: among the boundaries nobody adopted yet, the oldest; only when every
+        boundary has served, the least recently used -- so one long prompt's forty fresh boundaries cannot flush the
+        system prompt every conversation shares (45차 §23: the cache is tolerant of churn, not just of size)."""
+        fresh = [h for h, e in self.entries.items() if e.hits == 0]
+        pool = fresh if fresh else list(self.entries)
+        return min(pool, key=lambda h: self.entries[h].used)
+
     def take_snapshot(self) -> "int | None":
-        """A free snapshot slot, evicting the least recently used entry for it if none is free."""
+        """A free snapshot slot, evicting a boundary for it if none is free (`_victim`)."""
         if not self.free_snaps and self.entries:
-            self._evict(min(self.entries, key=lambda h: self.entries[h].used))
+            self._evict(self._victim())
         return self.free_snaps.pop() if self.free_snaps else None
 
     def give_snapshot(self, snap: int) -> None:
@@ -111,7 +121,7 @@ class PrefixCache:
         """Free at least `blocks` by evicting least recently used entries; returns how many were freed."""
         freed = 0
         while freed < blocks and self.entries:
-            freed += self._evict(min(self.entries, key=lambda h: self.entries[h].used))
+            freed += self._evict(self._victim())
         return freed
 
     def reclaimable(self) -> int:

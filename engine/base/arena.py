@@ -63,7 +63,37 @@ def touch_pages(nbytes: int) -> int:
     return n
 
 
-def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=touch_pages) -> dict:
+def release_model_cache(roots) -> int:
+    """Return clean model-download pages without allocating or changing files.
+
+    The model volume also holds checkpoints being downloaded for preparation.
+    Those pages can occupy UMA DRAM without belonging to a running process.
+    DONTNEED returns only clean pages; active writes and file contents survive.
+    Never follow symlinks or walk outside the explicitly supplied model roots.
+    """
+    released = 0
+    for root in sorted({Path(p).resolve() for p in roots}):
+        if root == Path(root.anchor):
+            raise ValueError("a model cache root cannot be the filesystem root")
+        for base, _, names in os.walk(root, followlinks=False):
+            for name in names:
+                if not name.endswith((".safetensors", ".incomplete")):
+                    continue
+                try:
+                    fd = os.open(Path(base) / name, os.O_RDONLY | os.O_NOFOLLOW)
+                    try:
+                        os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+                    finally:
+                        os.close(fd)
+                    released += 1
+                except OSError:
+                    # Downloads can rename their incomplete file during this
+                    # walk. The final physical-memory check remains decisive.
+                    continue
+    return released
+
+
+def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=touch_pages, *, cache_roots=()) -> dict:
     """Drop clean pages of the supplied weight files, reclaim the rest of the
     shortfall, then check physical headroom.
 
@@ -83,6 +113,11 @@ def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=t
     need = nbytes + headroom
     free = min(memory["MemFree"], device_free())
     reclaimed = 0
+    cache_files = 0
+    if free < need and memory["MemFree"] < need and cache_roots:
+        cache_files = release_model_cache(cache_roots)
+        memory = _meminfo()
+        free = min(memory["MemFree"], device_free())
     if free < need and memory["MemFree"] < need:
         if need > memory["MemAvailable"] - headroom:
             raise MemoryError(f"arena admission: allocation {nbytes/GIB:.2f} GiB plus headroom {headroom/GIB:.2f} GiB "
@@ -97,7 +132,7 @@ def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=t
                           f"memory {free/GIB:.2f} GiB after reclaiming {reclaimed/GIB:.2f} GiB; MemAvailable "
                           f"{memory['MemAvailable']/GIB:.2f} GiB includes reclaimable pages")
     return dict(allocation=nbytes, headroom=headroom, immediately_free=free,
-                available=memory["MemAvailable"], reclaimed=reclaimed)
+                available=memory["MemAvailable"], reclaimed=reclaimed, cache_files=cache_files)
 
 
 def expandable_segments() -> bool:

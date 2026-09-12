@@ -107,8 +107,14 @@ def snapshot_layout(F, layers, draft=None):
     return aligned(max(at, 1), ALIGN), tuple(fields)
 
 
+def stage_bytes(F, layers, max_seqs: int) -> int:
+    """The boundary stage: per state slot, one KDA state and conv taps (a snapshot without the drafter ring) where a
+    decode step ahead of the host parks the state of a block boundary it crossed (45차 §23: boundaries while generating)."""
+    return (max_seqs + 1) * snapshot_layout(F, layers, None)[0]
+
+
 class Glm53Caches:
-    def __init__(self, arena, F, layers, num_blocks: int, max_seqs: int, draft=None, snapshots: int = 0):
+    def __init__(self, arena, F, layers, num_blocks: int, max_seqs: int, draft=None, snapshots: int = 0, stage: bool = False):
         import torch
 
         self.F, self.layers = F, tuple(layers)
@@ -118,9 +124,10 @@ class Glm53Caches:
         self.pool = BlockPool(num_blocks, F.block, max_seqs, num_blocks)
         self.slots = SlotPool(max_seqs + 1)
         p = self.layout
+        staged = stage_bytes(F, self.layers, max_seqs) if stage else 0
         # Preflight all regions, including alignment at an existing arena cursor.
-        if aligned(arena.used, ALIGN) + p.nbytes(num_blocks, max_seqs) + snapshots * self.snapshot_bytes > arena.nbytes:
-            raise MemoryError("arena cannot hold the declared GLM caches, block table and prefix snapshots")
+        if aligned(arena.used, ALIGN) + p.nbytes(num_blocks, max_seqs) + snapshots * self.snapshot_bytes + staged > arena.nbytes:
+            raise MemoryError("arena cannot hold the declared GLM caches, block table, prefix snapshots and boundary stage")
         self.paged = arena.carve(num_blocks * p.block_bytes, "glm53 paged KV")
         self.device = self.paged.device
         self.pool.attach_storage(self.paged, p.block_bytes)
@@ -145,6 +152,17 @@ class Glm53Caches:
                 base = self.snapshot_store.view(dtype)
                 self._snap[f.name, f.layer] = base.as_strided((snapshots, *f.shape), (self.snapshot_bytes // size, *strides),
                                                               base.storage_offset() + f.offset // size)
+        self._stage = {}
+        if stage:
+            self.stage_bytes, self._stage_fields = snapshot_layout(F, self.layers, None)
+            self.stage_store = arena.carve((max_seqs + 1) * self.stage_bytes, "glm53 boundary stage")
+            for f in self._stage_fields:
+                dtype = torch.float32 if f.dtype == "f32" else torch.bfloat16
+                size = 4 if f.dtype == "f32" else 2
+                strides = tuple(prod(f.shape[i + 1:]) for i in range(len(f.shape)))
+                base = self.stage_store.view(dtype)
+                self._stage[f.name, f.layer] = base.as_strided((max_seqs + 1, *f.shape), (self.stage_bytes // size, *strides),
+                                                               base.storage_offset() + f.offset // size)
         record = F.idx_dim + 4
         self._latent = self.paged.view(torch.float8_e4m3fn).view(-1, F.kv_lora)
         self._keys = self.paged.as_strided((self.paged.numel() // record, F.idx_dim),
@@ -242,6 +260,51 @@ class Glm53Caches:
 
     def snapshot_draft_ring(self, snap: int):
         return self._snap["draft", -1][snap]
+
+    # -- boundaries crossed while generating (45차 §23) ----------------------------------------------------------
+    def stage_boundaries(self, slots, ctx_before, counts) -> None:
+        """For every row of a decode step (device tensors [n]: state slot, context before the step, tokens committed):
+        if the step crossed a block boundary P (ctx_before < P <= ctx_before + count), park the KDA state at P-1 and
+        the conv inputs before P in the slot's stage. The rings hold them now; a step ahead of the host would have
+        overwritten them by the time the host asks. Nothing moves for rows that did not cross."""
+        import torch
+        if not self._stage:
+            raise RuntimeError("this cache has no boundary stage")
+        F = self.F
+        n = int(slots.numel())
+        if self.device.type == "cuda":
+            from engine.kernels.state import stage_boundaries
+            stage_boundaries(self, slots, ctx_before, counts)
+            return
+        for i in range(n):                                          # the eager form: what the kernel does, for tests
+            slot, before, count = int(slots[i]), int(ctx_before[i]), int(counts[i])
+            after = before + count
+            P = (after // F.block) * F.block
+            if count <= 0 or P <= before:
+                continue
+            conv_cells = self._ring_cells(P, F.conv - 1, F.conv - 1 + F.spec_k)
+            rec_cell = (P - 1) % (F.spec_k + 1)
+            for L in self.layers:
+                if F.is_dsa(L):
+                    continue
+                conv_ring, rec_ring = self.kda(L, slot)
+                self._stage["conv", L][slot].copy_(conv_ring.index_select(1, conv_cells))
+                self._stage["rec", L][slot].copy_(rec_ring[rec_cell])
+
+    def checkpoint_from_stage(self, slot: int, snap: int) -> None:
+        """The staged boundary of `slot` into snapshot `snap`. The drafter's ring is taken live: the steps since the
+        boundary wrote at most a dozen positions past it, which land on the oldest cells of its 2,048 window."""
+        if not 0 <= snap < self.snapshots or not 0 < slot < self.slots.num_slots:
+            raise IndexError("checkpoint needs a real state slot and a declared snapshot")
+        if not self._stage:
+            raise RuntimeError("this cache has no boundary stage")
+        for L in self.layers:
+            if self.F.is_dsa(L):
+                continue
+            self._snap["conv", L][snap].copy_(self._stage["conv", L][slot])
+            self._snap["rec", L][snap].copy_(self._stage["rec", L][slot])
+        if ("draft", -1) in self._snap:
+            self._snap["draft", -1][snap].copy_(self.draft_ring(slot))
 
     def restore(self, slot: int, position: int, snap: int) -> None:
         """The inverse: `slot` continues from `position` with the snapshot's state."""

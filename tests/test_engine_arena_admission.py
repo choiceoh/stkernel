@@ -12,6 +12,27 @@ def meminfo(free, available):
 
 
 class ArenaAdmissionTests(unittest.TestCase):
+    def test_clean_model_cache_satisfies_admission_without_a_large_temporary_allocation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            model = root / 'model.safetensors'
+            download = root / 'chunk.incomplete'
+            other = root / 'other.db'
+            for p in (model, download, other):
+                p.write_bytes(bytes(range(256)) * 32)
+            advised = []
+            def advise(fd, *args):
+                advised.append(Path('/proc/self/fd/' + str(fd)).resolve().name)
+            with patch.object(Path, 'read_text', side_effect=[meminfo(80, 96), meminfo(92, 96)]), \
+                 patch('os.posix_fadvise', side_effect=advise):
+                report = prepare_allocation(74 * GIB, [], 16 * GIB, lambda: 120 * GIB,
+                    reclaim=lambda n: self.fail('no anonymous pressure is needed'), cache_roots=(root,))
+            self.assertEqual(set(advised), {'model.safetensors', 'chunk.incomplete'})
+            self.assertEqual(report['cache_files'], 2)
+            self.assertEqual(report['reclaimed'], 0)
+            for p in (model, download, other):
+                self.assertEqual(p.read_bytes(), bytes(range(256)) * 32)
+
     def test_large_available_value_cannot_hide_low_immediately_free_memory(self):
         # MemAvailable 100 but only 8 free and the reclaim disabled: admission refuses
         with patch.object(Path, 'read_text', return_value=meminfo(8, 100)):

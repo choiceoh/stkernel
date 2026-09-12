@@ -13,8 +13,14 @@ def source_files(repo):
     source = repo/'bench'
     files = {str(p.relative_to(repo)):p.read_bytes() for p in sorted(source.iterdir())
              if p.suffix in ('.py', '.sh') and p.is_file()}
-    # Canonical campaign entrypoints participate in the same policy identity.
-    for relative in ('probes/run_ar_consumer_campaign.sh',):
+    # Canonical entrypoints outside bench/ participate in the same policy identity.
+    # Execution re-validates against THIS snapshot, so an entry the queue admits must
+    # also be pinned here or it passes admission and then stalls before it runs
+    # (2026-09-12: three ST reservations paused on 'cannot verify ... No such file').
+    import fleet_onepass
+    canonical = ('probes/run_ar_consumer_campaign.sh',
+                 *fleet_onepass.ST_ENTRIES, *fleet_onepass.ST_PROBES)
+    for relative in canonical:
         if (repo / relative).is_file():
             files[relative] = (repo / relative).read_bytes()
     return files
