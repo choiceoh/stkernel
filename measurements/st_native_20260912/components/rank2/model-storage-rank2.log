@@ -1,0 +1,42 @@
+[W911 23:50:45.019062275 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[osar] phase rank=2 us/collective (n=6): guard=2.6 copy=4.1 wait=111.1 reduce=3.4 | total=121.2  @1592 MHz assumed | wait by size: <=128KiB n=4 15.8, >128KiB n=2 301.9
+[rank2]:[W911 23:50:57.272665988 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=49, addr=[srv3]:52064, remote=[::ffff:10.10.10.2]:29673): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+Exception raised from recvBytes at /__w/pytorch/pytorch/torch/csrc/distributed/c10d/Utils.hpp:787 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0xc8 (0xf0414988e158 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+frame #1: c10::DistError::DistError(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x78 (0xf0414988ed48 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+frame #2: c10::DistNetworkError::DistNetworkError(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x78 (0xf0414988f0c8 in /usr/local/lib/python3.12/dist-packages/torch/lib/libc10.so)
+frame #3: <unknown function> + 0x70b84d4 (0xf041671f84d4 in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cpu.so)
+frame #4: c10d::TCPStore::check(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) + 0x258 (0xf041671fab38 in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cpu.so)
+frame #5: c10d::ProcessGroupNCCL::HeartbeatMonitor::runLoop() + 0x330 (0xf0414a7d7350 in /usr/local/lib/python3.12/dist-packages/torch/lib/libtorch_cuda.so)
+frame #6: <unknown function> + 0xe1ae0 (0xf041fa4a1ae0 in /lib/aarch64-linux-gnu/libstdc++.so.6)
+frame #7: <unknown function> + 0x8582c (0xf041fb10582c in /lib/aarch64-linux-gnu/libc.so.6)
+frame #8: <unknown function> + 0xeb79c (0xf041fb16b79c in /lib/aarch64-linux-gnu/libc.so.6)
+
+[rank2]:[W911 23:50:57.281124191 ProcessGroupNCCL.cpp:1876] [PG ID 0 PG GUID 0(default_pg) Rank 2] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+phase                                      seconds   dev GiB  counters
+arena                                        0.156     +4.78  
+load                                         1.261     +3.16  blocks=3 bytes=1.90739e+09
+load drafter                                 0.415     +0.00  blocks=3 bytes=2.34216e+09
+prepare native execution                     5.153     +0.33  
+{"arena_expandable": 1, "dense_pack_cache": 45, "dense_pack_gptq": 43, "dense_pack_rtn": 2, "target_native_linears": 10, "drafter_native_linears": 31, "blocks": 210, "slots": 3, "arena_GiB": 4.678, "prefix_snapshots": 8, "snapshot_MiB": 41.0}
+[rank2]: Traceback (most recent call last):
+[rank2]:   File "/repo/engine_parity_graph_check.py", line 87, in <module>
+[rank2]:     if __name__=='__main__':main()
+[rank2]:                             ^^^^^^
+[rank2]:   File "/repo/engine_parity_graph_check.py", line 36, in main
+[rank2]:     target_graph=Glm53DecodeGraphs(net,caches,2,6)
+[rank2]:                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 216, in __init__
+[rank2]:     self.graphs = DecodeGraphs(forward, make_inputs,
+[rank2]:                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/repo/engine/base/graphs.py", line 55, in __init__
+[rank2]:     inp = make_inputs(*shape)
+[rank2]:           ^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 202, in make_inputs
+[rank2]:     return step, seqs, slots, GraphCaches(caches, seqs, slots, capacity), logits_for(n, t)
+[rank2]:                                                                           ^^^^^^^^^^^^^^^^
+[rank2]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 193, in logits_for
+[rank2]:     dtype=net.p["head"].dtype)
+[rank2]:           ^^^^^^^^^^^^^^^^^^^
+[rank2]: AttributeError: 'NoneType' object has no attribute 'dtype'

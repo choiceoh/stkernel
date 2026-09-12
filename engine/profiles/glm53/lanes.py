@@ -99,6 +99,8 @@ def reference() -> Lanes:
         no calibrated input scale -- what the served SM12x lane does)."""
         from engine.modules.nvfp4_sf import unswizzle_sf
         from engine.modules.expert_layout import W13_K_IN_BYTES, W2_K_IN_BYTES, row_major_expert
+        if any(getattr(t,"_st_sf6_consumed",False) for t in (w13_sf,w2_sf)):
+            raise ValueError("raw scale storage was retired; reload rank weights for the reference lane")
         E, two_i, half_h = w13.shape
         i_local, hidden = two_i // 2, half_h * 2
         one = torch.ones((), device=x.device)
@@ -138,7 +140,7 @@ def parse_moe_static(value: str) -> "tuple[str | None, bool]":
     return (spec or None), q0
 
 
-def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = MOE_STATIC_STOCK,
+def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = MOE_STATIC_STOCK, consume_scales: bool = False,
            mla_prefill: str = "stock") -> Lanes:
     """Bind the ST kernel package without an overlay or vLLM installation.
 
@@ -261,6 +263,8 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                                          activation_precision="fp4", quant_mode="nvfp4",
                                          tiled=tiled, sf_pack=sf_pack, reform_sf_pack=reform,
                                          packed_only=bool(tiled and reform and not sf_pack))   # sf6: packed scales only, no converted raw copies
+            if in_place and consume_scales and views.packed_only:
+                md.consume_packed_scale_storage(views,w13_sf,w2_sf)
             prepared[key] = (views, sf13, sf2)
             return prepared[key]
 

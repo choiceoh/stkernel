@@ -1,0 +1,8 @@
+test_decode_prefill_and_replayed_changed_inputs (test_engine_dense.DenseTests.test_decode_prefill_and_replayed_changed_inputs) ... ok
+test_gptq_calibration_and_cache_identity (test_engine_dense.DenseTests.test_gptq_calibration_and_cache_identity) ... ok
+test_retired_arena_storage_keeps_pack_bytes_and_graph_addresses (test_engine_dense.DenseTests.test_retired_arena_storage_keeps_pack_bytes_and_graph_addresses) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 8.671s
+
+OK

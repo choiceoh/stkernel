@@ -1,0 +1,29 @@
+[W911 23:50:46.169438334 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[osar] phase rank=0 us/collective (n=6): guard=2.8 copy=4.0 wait=149.4 reduce=3.8 | total=160.1  @1592 MHz assumed | wait by size: <=128KiB n=4 128.4, >128KiB n=2 191.2
+phase                                      seconds   dev GiB  counters
+arena                                        0.182     +4.78  
+load                                         1.503     +2.97  blocks=3 bytes=1.90739e+09
+load drafter                                 0.232     +0.00  blocks=3 bytes=2.34216e+09
+prepare native execution                     3.365     +0.37  
+{"arena_expandable": 1, "dense_pack_cache": 45, "dense_pack_gptq": 43, "dense_pack_rtn": 2, "target_native_linears": 10, "drafter_native_linears": 31, "blocks": 210, "slots": 3, "arena_GiB": 4.678, "prefix_snapshots": 8, "snapshot_MiB": 41.0}
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/repo/engine_parity_graph_check.py", line 87, in <module>
+[rank0]:     if __name__=='__main__':main()
+[rank0]:                             ^^^^^^
+[rank0]:   File "/repo/engine_parity_graph_check.py", line 36, in main
+[rank0]:     target_graph=Glm53DecodeGraphs(net,caches,2,6)
+[rank0]:                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 216, in __init__
+[rank0]:     self.graphs = DecodeGraphs(forward, make_inputs,
+[rank0]:                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/base/graphs.py", line 55, in __init__
+[rank0]:     inp = make_inputs(*shape)
+[rank0]:           ^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 202, in make_inputs
+[rank0]:     return step, seqs, slots, GraphCaches(caches, seqs, slots, capacity), logits_for(n, t)
+[rank0]:                                                                           ^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 193, in logits_for
+[rank0]:     dtype=net.p["head"].dtype)
+[rank0]:           ^^^^^^^^^^^^^^^^^^^
+[rank0]: AttributeError: 'NoneType' object has no attribute 'dtype'

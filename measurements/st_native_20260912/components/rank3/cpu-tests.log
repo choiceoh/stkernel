@@ -1,0 +1,181 @@
+........EEsssssssss2026-09-11 23:38:21,684 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/p_17d60c678dec82c7
+2026-09-11 23:38:21,684 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmpjluto8va/st_b12x_direct_micro_sm121a_cute_dsl/p_17d60c678dec82c7.o
+..2026-09-11 23:38:21,686 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834
+2026-09-11 23:38:21,686 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmprn98c0ig/st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834.o
+2026-09-11 23:38:21,687 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834
+2026-09-11 23:38:21,687 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmprn98c0ig/st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834.o
+2026-09-11 23:38:21,688 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834
+2026-09-11 23:38:21,688 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmprn98c0ig/st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834.o
+...ss.............ssEEEEEEEEssssssssssssssssssssssssssss...................ssss..ssss.ssssssssss....F.F..F..........Essss....s......s....ssss........................................s......sss......................................sss........................s..ss...
+======================================================================
+ERROR: test_a_node_that_fails_stops_the_rest (test_engine_bootpaths.LauncherTests.test_a_node_that_fails_stops_the_rest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_bootpaths.py", line 60, in setUp
+    self.text = (Path(__file__).resolve().parents[1] / "launchers/start-st-glm53.sh").read_text()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/repo/launchers/start-st-glm53.sh'
+
+======================================================================
+ERROR: test_nodes_start_in_parallel_and_report_in_rank_order (test_engine_bootpaths.LauncherTests.test_nodes_start_in_parallel_and_report_in_rank_order)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_bootpaths.py", line 60, in setUp
+    self.text = (Path(__file__).resolve().parents[1] / "launchers/start-st-glm53.sh").read_text()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/repo/launchers/start-st-glm53.sh'
+
+======================================================================
+ERROR: test_atomic_acquisition_preserves_race_winner (test_engine_fleet_ops.FleetOps.test_atomic_acquisition_preserves_race_winner)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_fleet_ops.py", line 21, in setUp
+    shutil.copytree(ROOT / "launchers", self.repo / "launchers")
+  File "/usr/lib/python3.12/shutil.py", line 598, in copytree
+    with os.scandir(src) as itr:
+         ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/repo/launchers'
+
+======================================================================
+ERROR: test_metadata_failure_releases_only_our_lock (test_engine_fleet_ops.FleetOps.test_metadata_failure_releases_only_our_lock)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_fleet_ops.py", line 21, in setUp
+    shutil.copytree(ROOT / "launchers", self.repo / "launchers")
+  File "/usr/lib/python3.12/shutil.py", line 598, in copytree
+    with os.scandir(src) as itr:
+         ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/repo/launchers'
+
+======================================================================
+ERROR: test_stop_preserves_foreign_owner_and_containers (test_engine_fleet_ops.FleetOps.test_stop_preserves_foreign_owner_and_containers)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_fleet_ops.py", line 21, in setUp
+    shutil.copytree(ROOT / "launchers", self.repo / "launchers")
+  File "/usr/lib/python3.12/shutil.py", line 598, in copytree
+    with os.scandir(src) as itr:
+         ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/repo/launchers'
+
+======================================================================
+ERROR: test_stop_releases_production_fleet (test_engine_fleet_ops.FleetOps.test_stop_releases_production_fleet)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_fleet_ops.py", line 21, in setUp
+    shutil.copytree(ROOT / "launchers", self.repo / "launchers")
+  File "/usr/lib/python3.12/shutil.py", line 598, in copytree
+    with os.scandir(src) as itr:
+         ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/repo/launchers'
+
+======================================================================
+ERROR: test_supervisor_adopts_healthy_production (test_engine_fleet_ops.FleetOps.test_supervisor_adopts_healthy_production)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_fleet_ops.py", line 21, in setUp
+    shutil.copytree(ROOT / "launchers", self.repo / "launchers")
+  File "/usr/lib/python3.12/shutil.py", line 598, in copytree
+    with os.scandir(src) as itr:
+         ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/repo/launchers'
+
+======================================================================
+ERROR: test_supervisor_preserves_unreachable_fleet (test_engine_fleet_ops.FleetOps.test_supervisor_preserves_unreachable_fleet)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_fleet_ops.py", line 21, in setUp
+    shutil.copytree(ROOT / "launchers", self.repo / "launchers")
+  File "/usr/lib/python3.12/shutil.py", line 598, in copytree
+    with os.scandir(src) as itr:
+         ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/repo/launchers'
+
+======================================================================
+ERROR: test_supervisor_waits_for_foreign_lock (test_engine_fleet_ops.FleetOps.test_supervisor_waits_for_foreign_lock)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_fleet_ops.py", line 21, in setUp
+    shutil.copytree(ROOT / "launchers", self.repo / "launchers")
+  File "/usr/lib/python3.12/shutil.py", line 598, in copytree
+    with os.scandir(src) as itr:
+         ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/repo/launchers'
+
+======================================================================
+ERROR: test_supervisor_waits_for_other_st_container (test_engine_fleet_ops.FleetOps.test_supervisor_waits_for_other_st_container)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_fleet_ops.py", line 21, in setUp
+    shutil.copytree(ROOT / "launchers", self.repo / "launchers")
+  File "/usr/lib/python3.12/shutil.py", line 598, in copytree
+    with os.scandir(src) as itr:
+         ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/repo/launchers'
+
+======================================================================
+ERROR: test_probe_runner_and_launcher_forward_declared_knobs (test_engine_knobs.ProbeRunnerTests.test_probe_runner_and_launcher_forward_declared_knobs)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_knobs.py", line 195, in test_probe_runner_and_launcher_forward_declared_knobs
+    self.assertIn("compgen -v STK_", (ROOT / "probes/run_engine_probe.sh").read_text())
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/repo/probes/run_engine_probe.sh'
+
+======================================================================
+FAIL: test_kernels_read_no_environment_knobs (test_engine_kernels.KernelPackageTests.test_kernels_read_no_environment_knobs)
+D11 (2026-09-12): the kernel package has no env knob. The only os.environ read left is the
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_kernels.py", line 119, in test_kernels_read_no_environment_knobs
+    self.assertEqual(found, allowed)
+AssertionError: Items in the first set but not the second:
+('dense/__init__.py', 'ST_DENSE_BUILD_ROOT')
+('oneshot/__init__.py', 'ST_ONESHOT_BUILD_ROOT')
+
+======================================================================
+FAIL: test_relative_imports_resolve_inside_the_vendored_package (test_engine_kernels.KernelPackageTests.test_relative_imports_resolve_inside_the_vendored_package)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_kernels.py", line 100, in test_relative_imports_resolve_inside_the_vendored_package
+    self.assertTrue(child.with_suffix(".py").is_file() or (child / "__init__.py").is_file(), (path, base, alias.name))
+AssertionError: False is not true : (PosixPath('/repo/engine/kernels/dense/mhc.py'), 'engine.kernels.dense', 'extension')
+
+======================================================================
+FAIL: test_boot_declares_exactly_these_knobs (test_engine_knobs.KnobDeclarationTests.test_boot_declares_exactly_these_knobs)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_knobs.py", line 65, in test_boot_declares_exactly_these_knobs
+    self.assertEqual(src.count("Knob("), 5)     # every axis still under measurement, and no more
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 6 != 5
+
+----------------------------------------------------------------------
+Ran 285 tests in 12.266s
+
+FAILED (failures=3, errors=11, skipped=79)
+  box: test
+<MagicMock name='declared().table()' id='256613407180080'>
+  box: test
+<MagicMock name='declared().table()' id='256613416459664'>
+  box: test
+<MagicMock name='declared().table()' id='256613407731792'>
+  expert_layout: tile-major bytes read back row-major per expert OK

@@ -1,0 +1,6 @@
+test_dynamic_scale_is_ready_before_quantization (__main__.NVFP4OrderingTests.test_dynamic_scale_is_ready_before_quantization) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 50.890s
+
+OK

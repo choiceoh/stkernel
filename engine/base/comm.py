@@ -19,8 +19,9 @@ written for TP=4 and should be checked at TP=4 on one node too: `LocalTP`
 runs the four ranks as four threads on the one GB10, and its collectives are
 the real thing (barrier, sum, broadcast) -- so a wrong row/column split shows
 up on one box, not on the fleet. NCCL supplies sum and integer MAX.
-Vocabulary-parallel greedy selection uses one MAX candidate per token;
-the legacy one-shot all-reduce is not part of this execution path.
+Vocabulary-parallel greedy selection uses one MAX candidate per token.
+Profiles may prepare the owned one-shot transport for aligned BF16 sums;
+other dtypes/shapes keep NCCL. Both return the resulting tensor.
 """
 from __future__ import annotations
 
@@ -66,6 +67,13 @@ class Comm:
     world_size: int = 1
     rank: int = 0
     group: object = None
+    transport: object = None
+
+    def prepare_oneshot(self):
+        if self.transport is not None:
+            raise RuntimeError("one-shot transport is already bound")
+        from engine.kernels.oneshot import OneShot
+        self.transport = OneShot(self, NODES)
 
     @classmethod
     def init(cls, rank: "int | None" = None, world: "int | None" = None, *, timeout_s: float = 120.):
@@ -91,9 +99,23 @@ class Comm:
     def all_reduce(self, t):
         if self.world_size == 1:
             return t
+        if self.transport is not None and self.transport.eligible(t):
+            return self.transport.reduce(t)
         import torch.distributed as dist
         dist.all_reduce(t, group=self.group)
         return t
+
+    def reduce_scatter_rows(self, t):
+        """TP sum with each rank retaining one contiguous token shard."""
+        if self.world_size == 1:
+            return t
+        import torch
+        import torch.distributed as dist
+        if t.shape[0] % self.world_size:
+            raise ValueError("reduce-scatter requires equally sized token shards")
+        out = torch.empty((t.shape[0]//self.world_size, *t.shape[1:]), device=t.device, dtype=t.dtype)
+        dist.reduce_scatter_tensor(out,t.contiguous(),group=self.group)
+        return out
 
     def all_gather(self, t, dim=-1):
         if self.world_size == 1:
@@ -125,6 +147,9 @@ class Comm:
         return box[0]
 
     def close(self):
+        if self.transport is not None:
+            self.transport.close()
+            self.transport = None
         if self.world_size > 1:
             import torch.distributed as dist
             dist.destroy_process_group()

@@ -43,9 +43,10 @@ def touch_pages(nbytes: int) -> int:
 
     MemAvailable counts clean page cache the kernel reclaims for an anonymous
     allocation but not, on this UMA box, for a large device one. Faulting the
-    shortfall in as anonymous pages (MAP_POPULATE: one syscall, no Python
-    loop) makes the kernel drop that much cache; releasing it leaves the
-    pages immediately free for the arena. Returns the bytes touched.
+    desired free extent as anonymous pages (MAP_POPULATE: one syscall, no
+    Python loop) forces cache eviction once the already-free pages run out.
+    Touching only the shortfall can use free pages without evicting anything.
+    Releasing the allocation leaves its pages immediately free.
     """
     page = mmap.PAGESIZE
     n = -(-nbytes // page) * page
@@ -70,7 +71,7 @@ def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=t
     UMA can fail while that number still looks sufficient. This preflight
     counts immediately free pages: it drops the given files' cache, and when
     that is not enough but MemAvailable says the rest is reclaimable, it
-    makes it free (`reclaim`, bounded so MemAvailable never dips under
+    faults the desired free extent (`reclaim`, bounded so MemAvailable never dips under
     `headroom` -- earlyoom's floor is 5%, headroom is 16 GiB). It is a
     necessary admission check, not a guarantee against another process
     allocating after the check.
@@ -83,12 +84,11 @@ def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=t
     free = min(memory["MemFree"], device_free())
     reclaimed = 0
     if free < need and memory["MemFree"] < need:
-        shortfall = need - memory["MemFree"]
-        if memory["MemAvailable"] < need or shortfall > memory["MemAvailable"] - headroom:
+        if need > memory["MemAvailable"] - headroom:
             raise MemoryError(f"arena admission: allocation {nbytes/GIB:.2f} GiB plus headroom {headroom/GIB:.2f} GiB "
                               f"exceeds immediately free memory {free/GIB:.2f} GiB and cannot be reclaimed: MemAvailable "
                               f"{memory['MemAvailable']/GIB:.2f} GiB")
-        reclaimed = reclaim(shortfall) if reclaim is not None else 0
+        reclaimed = reclaim(need) if reclaim is not None else 0
         memory = _meminfo()
         free = min(memory["MemFree"], device_free())
     if free < need:

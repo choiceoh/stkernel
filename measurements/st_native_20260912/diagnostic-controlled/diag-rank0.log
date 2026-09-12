@@ -1,0 +1,352 @@
+[W912 00:59:56.977459998 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+GLM-5.3-Flash on ST, one rank of TP=4, chunk 6,912, kv_gib 8.73 -> 580 blocks
+
+  box                                      119.69 GiB
+  -------------------------------------  --------
+  reserve for the OS                       -11.97 GiB   [declared] 2x earlyoom's 5% floor (5.98 GiB)
+  runtime floor (CUDA ctx + NCCL 16ch)      -5.54 GiB   [ledger] GLM 40th boot table -- re-measure on ST
+  weights (this rank, TP=4)                -44.50 GiB   [read] rank0of4.safetensors header: 1,376 tensors
+  drafter (DFlash2, replicated)             -2.18 GiB   [read] drafter.specs: every rank holds the whole drafter (DRAFT_TP=1 as served)
+  state slots (4 + null) x 247 MiB          -1.21 GiB   [read] caches.layout: KDA conv/recurrent rings (K+1 states), indexer tails, drafter ring
+  prefix snapshots (8 x 75 MiB)             -0.59 GiB   [read] caches.snapshot_layout: chunk-boundary position rings for prefix reuse (boot.PREFIX_SNAPSHOTS)
+  workspace ceiling (outside the arena)    -12.00 GiB   [declared] base/runtime_memory ceiling: activations, graph pools, kernel scratch; the allocator refuses beyond it; no boot ledger given -- vLLM's slope 0.52 GiB/1K puts a 6,912-token chunk at 3.5 GiB, indexer selection bounded to 1,024 query rows per pass (net.SELECT_ROWS)
+  NVMe tier staging                         -0.12 GiB   [declared] kv_tier: pinned staging + device scratch
+  -------------------------------------  --------
+  KV (remainder)                            41.58 GiB
+
+  GATE: KV = 41.58 GiB, declared before load.
+  declared paged KV 7.52 GiB (7.52 in blocks of 13.28 MiB); unassigned +34.06 GiB
+  what the remainder buys at 6,043 B/token (paged, layout) + 247 MiB/sequence (slot):
+    concurrency   1: 1,048,576 tok each
+    concurrency   4: 1,048,576 tok each
+    concurrency   8:   880,634 tok each
+    concurrency  32:   187,982 tok each
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+[megakernel] selftest mla rel=3.07e-03 pair_prefill=False group=2 prefill32=False -> ARM
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+2026-09-12 01:00:57,341 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12 01:00:57,341 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_b8100dca67ecc476
+2026-09-12 01:01:00,766 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_b8100dca67ecc476.o
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=55296 -> rows 92032/92032 tiles 719/719 tasks 2876/2876
+[tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=6912
+2026-09-12 01:01:18,213 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12 01:01:18,213 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r48_tm32f2g2a32wutr16n128k256d256sf6v1_946887720f597aab
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-12 01:01:23,200 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r48_tm32f2g2a32wutr16n128k256d256sf6v1_946887720f597aab.o
+[b12x static v2] lane serving: static2_m6_k4096_n512_t8_r48_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=6, routed=48, smem=98304 B)
+2026-09-12 01:01:24,401 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m12_k4096_n512_t8_r96_tm32f2g2a32wutsf6v1_498686e3df00c407
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-12 01:01:29,297 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m12_k4096_n512_t8_r96_tm32f2g2a32wutsf6v1_498686e3df00c407.o
+[b12x static v2] lane serving: static2_m12_k4096_n512_t8_r96_tm32f2g2a32wutsf6v1 (mac=48, m=12, routed=96, smem=101376 B)
+2026-09-12 01:01:30,322 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m18_k4096_n512_t8_r144_tm32f2g2a32wutsf6v1_aba302afdf8ca081
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-12 01:01:35,234 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m18_k4096_n512_t8_r144_tm32f2g2a32wutsf6v1_aba302afdf8ca081.o
+[b12x static v2] lane serving: static2_m18_k4096_n512_t8_r144_tm32f2g2a32wutsf6v1 (mac=48, m=18, routed=144, smem=101376 B)
+2026-09-12 01:01:36,332 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m24_k4096_n512_t8_r192_tm32f2g2a32wutsf6v1_9f172c189be0b499
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-12 01:01:41,195 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m24_k4096_n512_t8_r192_tm32f2g2a32wutsf6v1_9f172c189be0b499.o
+[b12x static v2] lane serving: static2_m24_k4096_n512_t8_r192_tm32f2g2a32wutsf6v1 (mac=48, m=24, routed=192, smem=101376 B)
+2026-09-12 01:01:42,158 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r192_tm32f2g2a32wutr16n128k256d256sf6v1_6a1f3990a1ba41f8
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-12 01:01:47,002 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r192_tm32f2g2a32wutr16n128k256d256sf6v1_6a1f3990a1ba41f8.o
+[b12x static v2] lane serving: static2_m6_k4096_n512_t8_r192_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=6, routed=48, smem=98304 B)
+2026-09-12 01:01:47,508 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m12_k4096_n512_t8_r192_tm32f2g2a32wutsf6v1_032b2d1885fc701e
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-12 01:01:52,449 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m12_k4096_n512_t8_r192_tm32f2g2a32wutsf6v1_032b2d1885fc701e.o
+[b12x static v2] lane serving: static2_m12_k4096_n512_t8_r192_tm32f2g2a32wutsf6v1 (mac=48, m=12, routed=96, smem=101376 B)
+2026-09-12 01:01:53,064 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m18_k4096_n512_t8_r192_tm32f2g2a32wutsf6v1_38e617e4269dd161
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-12 01:01:58,005 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m18_k4096_n512_t8_r192_tm32f2g2a32wutsf6v1_38e617e4269dd161.o
+[b12x static v2] lane serving: static2_m18_k4096_n512_t8_r192_tm32f2g2a32wutsf6v1 (mac=48, m=18, routed=144, smem=101376 B)
+[transformers] You are using a model of type `glm5_next` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+{"rank": 0, "request": 0, "tokens": 2121}
+2026-09-12 01:02:29,346 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_cf93baeedfd01c43
+2026-09-12 01:02:38,672 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_cf93baeedfd01c43.o
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=16968 -> rows 53760/92032 tiles 420/719 tasks 1680/2876
+{"rank": 0, "prefill": [[0, 2121]], "nonfinite": false}
+{"rank": 0, "request": 0, "generated": [785, 1196, 374, 10156, 911, 279, 4704, 35464, 1334, 594, 26180, 6783, 13, 21083, 518, 279, 2197, 11, 358, 646, 1477, 25, 330, 83971, 27907, 88495, 133420, 90202, 20360, 62882, 29172, 57638, 23196, 16544, 220, 23, 98886, 22, 132086, 2217, 785, 3405, 17045, 369, 279, 26180, 6783, 315, 279, 4704, 35464, 1334, 11, 892, 374, 220, 23, 98886, 22, 4092, 311, 279, 2197, 382, 785, 1196, 6801, 279, 4226, 304, 16120, 11, 911, 1378, 42399, 11, 3118, 1172, 389, 279, 2197, 2213, 11, 323, 311, 12635, 6169, 89096, 11, 5109, 11, 12707, 11, 7096, 5109, 6896, 438, 5326, 304, 279, 2197, 382, 785, 2197, 1172, 702, 825, 11646, 911, 279, 4704, 35464, 1334, 25, 330, 83971, 27907, 88495, 133420, 90202, 20360, 62882, 29172, 57638, 23196, 16544, 220, 23, 98886, 22, 132086, 1189, 2055, 358, 1265, 4226, 429, 279, 26180, 6783, 374, 220, 23, 98886, 22, 13, 358, 1184, 311, 3270, 911, 1378, 42399, 11, 714, 279, 2197, 1172, 5610, 7199, 1995, 911, 419, 8543, 13, 358, 1265, 387, 16569, 537, 311, 13048, 349, 1995, 13, 358, 646, 1584, 279, 2097, 323, 8364, 5185, 429, 279, 2197, 3171, 944, 3410, 5107, 2266, 911, 279, 4704, 35464, 1334, 382, 10056, 752, 3270, 1378, 42399, 304, 16120, 1447, 41926, 220, 16, 25, 576, 2197, 5302, 429, 279, 4704, 35464, 1334, 594, 26180, 6783, 374, 220, 23, 98886, 22, 382, 41926, 220, 17, 25, 7036, 429, 279, 2197, 3171, 944, 3410, 4623, 3565, 911, 279, 4704, 35464, 1334, 476, 279, 25283, 315, 419, 6783, 382, 40, 1265, 2506, 432, 59485, 323, 3118, 1172, 389, 279, 2197, 13, 154842, 51248, 26612, 19355, 139060, 134282, 32146, 11, 51053, 27907, 88495, 133420, 90202, 20360, 62882, 29172, 57638, 23196, 16544, 220, 23, 98886, 22, 132086, 13, 23021, 16544, 53079, 26612, 65654, 56095, 51053, 27907, 88495, 133420, 90202, 53323, 91972, 141891, 81516, 149129, 29217, 51957, 132981, 31935, 23508, 28630, 59284, 59621, 17358, 11, 93816, 90202, 20360, 62882, 29172, 67736, 130883, 19355, 40495, 63659, 16544, 57638, 23196, 82117, 12796, 220, 23, 98886, 22, 17358, 53754, 49346, 63659, 30953, 35164, 48127, 17851, 139293, 28630, 89935, 382, 13138, 71997, 53079, 26612, 138835, 23021, 62882, 29172, 57638, 23196, 220, 23, 98886, 22, 12796, 149040, 97, 137380, 70054, 59895, 44260, 24821, 134650, 250, 19355, 141498, 26613, 63659, 16544, 21279, 11, 54459, 148732, 69401, 137094, 120, 91418, 59895, 141498, 26613, 74221, 136241, 76390, 19355, 137782, 67910, 136758, 57456, 78992, 33542, 61636, 29217, 63659, 30953, 35164], "text": "The user is asking about the meridian array's correction constant. Looking at the document, I can find: \"\uba54\ub9ac\ub514\uc548 \ubc30\uc5f4\uc758 \ubcf4\uc815 \uc0c1\uc218\ub294 8127\uc774\ub2e4.\"\n\nThe question asks for the correction constant of the meridian array, which is 8127 according to the document.\n\nThe user wants the answer in Korean, about two paragraphs, based only on the document content, and to quote proper nouns, numbers, dates, equipment numbers exactly as written in the document.\n\nThe document only has one sentence about the meridian array: \"\uba54\ub9ac\ub514\uc548 \ubc30\uc5f4\uc758 \ubcf4\uc815 \uc0c1\uc218\ub294 8127\uc774\ub2e4.\" So I should answer that the correction constant is 8127. I need to write about two paragraphs, but the document only contains limited information about this topic. I should be careful not to fabricate information. I can state the fact and perhaps note that the document doesn't provide additional context about the meridian array.\n\nLet me write two paragraphs in Korean:\n\nParagraph 1: The document states that the meridian array's correction constant is 8127.\n\nParagraph 2: Note that the document doesn't provide further details about the meridian array or the significance of this constant.\n\nI should keep it factual and based only on the document.</think>\ubb38\uc11c\uc5d0 \ub530\ub974\uba74, \uba54\ub9ac\ub514\uc548 \ubc30\uc5f4\uc758 \ubcf4\uc815 \uc0c1\uc218\ub294 8127\uc774\ub2e4. \uc774\ub294 \ubb38\uc11c \ub0b4\uc5d0\uc11c \uba54\ub9ac\ub514\uc548 \ubc30\uc5f4\uacfc \uad00\ub828\ud558\uc5ec \uba85\uc2dc\ub41c \uc720\uc77c\ud55c \uc218\uce58 \uc815\ubcf4\ub85c, \ud574\ub2f9 \ubc30\uc5f4\uc758 \ubcf4\uc815 \uc791\uc5c5\uc5d0 \uc0ac\uc6a9\ub418\ub294 \uc0c1\uc218\uac12\uc774 8127\ub85c \uae30\ub85d\ub418\uc5b4 \uc788\uc74c\uc744 \uc54c \uc218 \uc788\ub2e4.\n\n\ub2e4\ub9cc \ubb38\uc11c\uc5d0\ub294 \uc774 \ubcf4\uc815 \uc0c1\uc218 8127\uc774 \uc5b4\ub5a4 \uc7a5\ube44\ub098 \uc2dc\uc2a4\ud15c\uc5d0 \uc801\uc6a9\ub418\ub294\uc9c0, \uadf8 \uc0b0\ucd9c \uadfc\uac70\ub098 \uc801\uc6a9 \ubc29\ubc95 \ub4f1\uc5d0 \ub300\ud55c \ucd94\uac00\uc801\uc778 \uc124\uba85\uc740 \uc81c\uc2dc\ub418\uc5b4 \uc788"}
+{"rank": 0, "request": 1, "tokens": 2128}
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+  return func(*args, **kwargs)
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=17024 -> rows 53760/92032 tiles 420/719 tasks 1680/2876
+{"rank": 0, "prefill": [[0, 2128]], "nonfinite": false}
+{"rank": 0, "request": 1, "generated": [51248, 26612, 18381, 73285, 33720, 41436, 32146, 330, 47538, 41436, 134282, 14549, 120, 21988, 243, 54685, 16544, 220, 99887, 22, 131065, 220, 18, 133575, 220, 99367, 31935, 19355, 10759, 230, 108, 29237, 50015, 65033, 54685, 62882, 34225, 26612, 19355, 89118, 78992, 132465, 1189, 50015, 16544, 53079, 40626, 12796, 137205, 13, 23021, 18381, 81051, 60203, 243, 41802, 145578, 53079, 134213, 35873, 47683, 17358, 33978, 113, 27904, 222, 16172, 141880, 38027, 13, 154842, 169, 230, 108, 29237, 50015, 65033, 54685, 62882, 34225, 26612, 19355, 89118, 78992, 23508, 138591, 33542, 94205, 41436, 134282, 14549, 120, 21988, 243, 54685, 78318, 13, 53079, 26612, 19355, 139060, 134282, 32146, 94205, 41436, 134282, 14549, 120, 21988, 243, 54685, 16544, 220, 99887, 22, 131065, 220, 18, 133575, 220, 99367, 31935, 19355, 10759, 230, 108, 29237, 50015, 65033, 54685, 62882, 34225, 26612, 19355, 89118, 78992, 128915, 88622, 382, 12796, 53754, 49346, 33542, 53079, 26612, 65654, 56095, 10759, 230, 108, 29237, 50015, 65033, 54685, 62882, 34225, 26612, 79920, 91972, 141891, 51957, 132981, 31935, 23508, 89118, 78992, 59621, 17358, 11, 89118, 78992, 25635, 20360, 85325, 33542, 330, 47538, 41436, 134282, 14549, 120, 21988, 243, 54685, 1, 17358, 11, 89118, 78992, 37001, 254, 16729, 250, 16544, 220, 99887, 22, 131065, 220, 18, 133575, 220, 99367, 31935, 17358, 149129, 29217, 63659, 30953, 137205, 13, 154827], "text": "\ubb38\uc11c\ub97c \ud655\uc778\ud574\ubcf4\uba74 \"\ud560\ubcf4\ub974\uc13c \ubc15\uc0ac\ub294 1997\ub144 3\uc6d4 14\uc77c\uc5d0 \ud230\ub4dc\ub77c \uc870\uc0ac \ubcf4\uace0\uc11c\uc5d0 \uc11c\uba85\ud588\ub2e4.\"\ub77c\ub294 \ubb38\uc7a5\uc774 \uc788\uc2b5\ub2c8\ub2e4. \uc774\ub97c \ubc14\ud0d5\uc73c\ub85c \ub450 \ubb38\ub2e8 \uc815\ub3c4\ub85c \ub2f5\ubcc0\ud558\uaca0\uc2b5\ub2c8\ub2e4.</think>\ud230\ub4dc\ub77c \uc870\uc0ac \ubcf4\uace0\uc11c\uc5d0 \uc11c\uba85\ud55c \uc0ac\ub78c\uc740 \ud560\ubcf4\ub974\uc13c \ubc15\uc0ac\uc785\ub2c8\ub2e4. \ubb38\uc11c\uc5d0 \ub530\ub974\uba74 \ud560\ubcf4\ub974\uc13c \ubc15\uc0ac\ub294 1997\ub144 3\uc6d4 14\uc77c\uc5d0 \ud230\ub4dc\ub77c \uc870\uc0ac \ubcf4\uace0\uc11c\uc5d0 \uc11c\uba85\ud588\uc2b5\ub2c8\ub2e4.\n\n\uc774 \uae30\ub85d\uc740 \ubb38\uc11c \ub0b4\uc5d0\uc11c \ud230\ub4dc\ub77c \uc870\uc0ac \ubcf4\uace0\uc11c\uc640 \uad00\ub828\ub41c \uc720\uc77c\ud55c \uc11c\uba85 \uc815\ubcf4\ub85c, \uc11c\uba85\uc790\uc758 \uc774\ub984\uc740 \"\ud560\ubcf4\ub974\uc13c \ubc15\uc0ac\"\ub85c, \uc11c\uba85 \ub0a0\uc9dc\ub294 1997\ub144 3\uc6d4 14\uc77c\ub85c \uba85\uc2dc\ub418\uc5b4 \uc788\uc2b5\ub2c8\ub2e4."}
+{"rank": 0, "request": 2, "tokens": 2128}
+{"rank": 0, "prefill": [[0, 2128]], "nonfinite": false}
+{"rank": 0, "request": 2, "generated": [785, 1196, 374, 10156, 911, 279, 12845, 557, 27349, 31299, 518, 279, 35888, 320, 168, 146016, 139693, 40626, 20360, 73412, 55526, 141463, 134213, 21988, 116, 150332, 568, 21083, 518, 279, 2197, 11, 358, 646, 1477, 25, 330, 168, 146016, 139693, 40626, 20360, 73412, 55526, 141463, 134213, 21988, 116, 150332, 16544, 62299, 223, 168, 103, 121, 47371, 121, 19355, 64055, 730, 12, 101961, 21988, 116, 150332, 132086, 2217, 4416, 279, 4226, 374, 25, 576, 12845, 557, 27349, 31299, 518, 279, 35888, 374, 279, 730, 12, 101961, 31299, 11, 7407, 389, 279, 10195, 7002, 320, 146698, 168, 103, 121, 47371, 121, 3593, 785, 1196, 6801, 279, 4226, 304, 16120, 11, 911, 1378, 42399, 11, 3118, 1172, 389, 279, 2197, 2213, 11, 323, 311, 12635, 6169, 89096, 11, 5109, 11, 12707, 11, 7096, 5109, 6896, 438, 5326, 304, 279, 2197, 382, 10056, 752, 3270, 264, 1378, 12, 27634, 4226, 304, 16120, 13, 576, 2197, 1172, 702, 825, 11646, 911, 419, 8543, 11, 773, 358, 1184, 311, 387, 16569, 537, 311, 13048, 349, 1995, 13, 358, 1265, 4226, 3118, 389, 1128, 594, 304, 279, 2197, 382, 785, 9755, 11646, 25, 330, 168, 146016, 139693, 40626, 20360, 73412, 55526, 141463, 134213, 21988, 116, 150332, 16544, 62299, 223, 168, 103, 121, 47371, 121, 19355, 64055, 730, 12, 101961, 21988, 116, 150332, 132086, 2217, 40, 646, 9222, 10073, 553, 2732, 1095, 279, 1995, 11, 714, 358, 13125, 944, 912, 13057, 537, 304, 279, 2197, 13, 9040, 42399, 2578, 387, 264, 2699, 1753, 369, 1741, 7199, 3546, 11, 714, 358, 646, 5944, 432, 438, 25, 1156, 14301, 24513, 279, 31299, 320, 42, 12, 101961, 701, 2086, 14301, 911, 1181, 3728, 320, 61461, 7002, 568, 358, 1265, 2506, 432, 36228, 311, 279, 2197, 382, 10056, 752, 3270, 1447, 51248, 134213, 220, 16, 25, 3315, 146016, 139693, 40626, 20360, 73412, 55526, 141463, 134213, 21988, 116, 150332, 19355, 137782, 57456, 78992, 481, 53079, 26612, 19355, 139060, 134282, 32146, 3315, 146016, 139693, 40626, 20360, 73412, 55526, 141463, 134213, 21988, 116, 150332, 16544, 730, 12, 101961, 21988, 116, 150332, 132086, 382, 51248, 134213, 220, 17, 25, 98147, 481, 23021, 21988, 116, 150332, 16544, 3315, 146016, 139693, 40626, 20360, 62299, 223, 168, 103, 121, 47371, 121, 19355, 89935, 382, 40, 1265, 5185, 429, 279, 2197, 1172, 5707, 419, 3175, 6573, 315, 1995, 911, 279, 31299, 11, 773, 358, 3278, 2506, 279, 4226, 63141, 714, 23063, 304, 1378, 42399, 438, 11218, 13, 154842, 51248, 26612], "text": "The user is asking about the emergency shutoff valve at the quarry (\ucc44\uc11d\uc7a5\uc758 \ube44\uc0c1 \ucc28\ub2e8 \ubc38\ube0c). Looking at the document, I can find: \"\ucc44\uc11d\uc7a5\uc758 \ube44\uc0c1 \ucc28\ub2e8 \ubc38\ube0c\ub294 \ubd81\ucabd \ubcbd\uc5d0 \uc788\ub294 K-42 \ubc38\ube0c\uc774\ub2e4.\"\n\nSo the answer is: The emergency shutoff valve at the quarry is the K-42 valve, located on the north wall (\ubd81\ucabd \ubcbd).\n\nThe user wants the answer in Korean, about two paragraphs, based only on the document content, and to quote proper nouns, numbers, dates, equipment numbers exactly as written in the document.\n\nLet me write a two-paragraph answer in Korean. The document only has one sentence about this topic, so I need to be careful not to fabricate information. I should answer based on what's in the document.\n\nThe relevant sentence: \"\ucc44\uc11d\uc7a5\uc758 \ube44\uc0c1 \ucc28\ub2e8 \ubc38\ube0c\ub294 \ubd81\ucabd \ubcbd\uc5d0 \uc788\ub294 K-42 \ubc38\ube0c\uc774\ub2e4.\"\n\nI can expand slightly by restating the information, but I shouldn't add facts not in the document. Two paragraphs might be a bit much for such limited info, but I can structure it as: first paragraph identifying the valve (K-42), second paragraph about its location (north wall). I should keep it faithful to the document.\n\nLet me write:\n\n\ubb38\ub2e8 1: \ucc44\uc11d\uc7a5\uc758 \ube44\uc0c1 \ucc28\ub2e8 \ubc38\ube0c\uc5d0 \ub300\ud55c \uc124\uba85 - \ubb38\uc11c\uc5d0 \ub530\ub974\uba74 \ucc44\uc11d\uc7a5\uc758 \ube44\uc0c1 \ucc28\ub2e8 \ubc38\ube0c\ub294 K-42 \ubc38\ube0c\uc774\ub2e4.\n\n\ubb38\ub2e8 2: \uc704\uce58 - \uc774 \ubc38\ube0c\ub294 \ucc44\uc11d\uc7a5\uc758 \ubd81\ucabd \ubcbd\uc5d0 \uc788\ub2e4.\n\nI should note that the document only provides this single piece of information about the valve, so I'll keep the answer concise but formatted in two paragraphs as requested.</think>\ubb38\uc11c"}
+{"rank": 0, "request": 3, "tokens": 32545}
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=39176 -> rows 76032/92032 tiles 594/719 tasks 2376/2876
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+{"rank": 0, "request": 3, "generated": [785, 1196, 374, 10156, 2326, 4755, 304, 16120, 11, 323, 6801, 752, 311, 4226, 3118, 1172, 389, 279, 3897, 9290, 13, 6771, 752, 2711, 1526, 279, 9290, 369, 1817, 3405, 382, 16, 13, 51053, 27907, 88495, 133420, 90202, 20360, 62882, 29172, 57638, 23196, 16544, 78664, 120, 132826, 31197, 19931, 30, 320, 3838, 374, 279, 37416, 6783, 315, 279, 8754, 35464, 1334, 50472, 17, 13], "text": "The user is asking three questions in Korean, and wants me to answer based only on the provided documents. Let me search through the documents for each question.\n\n1. \uba54\ub9ac\ub514\uc548 \ubc30\uc5f4\uc758 \ubcf4\uc815 \uc0c1\uc218\ub294 \uc5bc\ub9c8\uc778\uac00? (What is the calibration constant of the Meridian array?)\n2."}
+DIAGNOSTIC_CONTROL_READY
+DIAGNOSTIC_COMMAND 01_compare_prefill.py
+{"rank": 0, "mode": [false, false], "blocks": [565, 566, 567, 568, 569, 570, 571, 572, 573, 574, 575, 576, 577, 579, 578]}
+{"rank": 0, "mode": [false, false], "ctx": 0, "before": 13, "packed": 13, "after": 13, "delta": 0.0}
+{"rank": 0, "mode": [false, false], "ctx": 6912, "before": 41802, "packed": 41802, "after": 41802, "delta": 0.0}
+{"rank": 0, "mode": [false, false], "ctx": 13824, "before": 53754, "packed": 53754, "after": 53754, "delta": 0.0}
+{"rank": 0, "mode": [false, false], "ctx": 20736, "before": 135631, "packed": 135631, "after": 135631, "delta": 0.0}
+{"rank": 0, "mode": [false, false], "ctx": 27648, "before": 785, "packed": 785, "after": 785, "delta": 0.0}
+{"rank": 0, "mode": [true, false], "blocks": [578, 579, 577, 576, 575, 574, 573, 572, 571, 570, 569, 568, 567, 566, 565]}
+{"rank": 0, "mode": [true, false], "ctx": 0, "before": 13, "packed": 13, "after": 13, "delta": 0.0}
+{"rank": 0, "mode": [true, false], "ctx": 6912, "before": 41802, "packed": 41802, "after": 41802, "delta": 0.0}
+{"rank": 0, "mode": [true, false], "ctx": 13824, "before": 11, "packed": 11, "after": 11, "delta": 0.0}
+{"rank": 0, "mode": [true, false], "ctx": 20736, "before": 135631, "packed": 135631, "after": 135631, "delta": 0.0}
+{"rank": 0, "mode": [true, false], "ctx": 27648, "before": 785, "packed": 785, "after": 785, "delta": 0.0}
+{"rank": 0, "mode": [true, true], "blocks": [565, 566, 567, 568, 569, 570, 571, 572, 573, 574, 575, 576, 577, 579, 578]}
+{"rank": 0, "mode": [true, true], "ctx": 0, "before": 13, "packed": 13, "after": 13, "delta": 0.0}
+{"rank": 0, "mode": [true, true], "ctx": 6912, "before": 41802, "packed": 41802, "after": 41802, "delta": 0.0}
+{"rank": 0, "mode": [true, true], "ctx": 13824, "before": 53754, "packed": 53754, "after": 53754, "delta": 0.0}
+{"rank": 0, "mode": [true, true], "ctx": 20736, "before": 135631, "packed": 135631, "after": 135631, "delta": 0.0}
+{"rank": 0, "mode": [true, true], "ctx": 27648, "before": 785, "packed": 785, "after": 785, "delta": 0.0}
+{"rank": 0, "mode": [false, false], "blocks": [578, 579, 577, 576, 575, 574, 573, 572, 571, 570, 569, 568, 567, 566, 565]}
+{"rank": 0, "mode": [false, false], "ctx": 0, "before": 154850, "packed": 154850, "after": 154850, "delta": 0.0}
+{"rank": 0, "mode": [false, false], "ctx": 6912, "before": 12796, "packed": 12796, "after": 12796, "delta": 0.0}
+{"rank": 0, "mode": [false, false], "ctx": 13824, "before": 131871, "packed": 131871, "after": 131871, "delta": 0.0}
+{"rank": 0, "mode": [false, false], "ctx": 20736, "before": 135631, "packed": 135631, "after": 135631, "delta": 0.0}
+{"rank": 0, "mode": [false, false], "ctx": 27648, "before": 785, "packed": 785, "after": 785, "delta": 0.0}
+DIAGNOSTIC_DONE 01_compare_prefill.py
+DIAGNOSTIC_COMMAND 02_cache_reuse.py
+{"rank": 0, "clear_pages": false, "blocks": [565, 566, 567, 568, 569, 570, 571, 572, 573, 574, 575, 576, 577, 579, 578]}
+{"rank": 0, "clear_pages": false, "ctx": 0, "token": 13, "finite": true}
+{"rank": 0, "clear_pages": false, "ctx": 6912, "token": 41802, "finite": true}
+{"rank": 0, "clear_pages": false, "ctx": 13824, "token": 53754, "finite": true}
+{"rank": 0, "clear_pages": false, "ctx": 20736, "token": 135631, "finite": true}
+{"rank": 0, "clear_pages": false, "ctx": 27648, "token": 785, "finite": true}
+{"rank": 0, "clear_pages": true, "blocks": [578, 579, 577, 576, 575, 574, 573, 572, 571, 570, 569, 568, 567, 566, 565]}
+{"rank": 0, "clear_pages": true, "ctx": 0, "token": 13, "finite": true}
+{"rank": 0, "clear_pages": true, "ctx": 6912, "token": 41802, "finite": true}
+{"rank": 0, "clear_pages": true, "ctx": 13824, "token": 53754, "finite": true}
+{"rank": 0, "clear_pages": true, "ctx": 20736, "token": 135631, "finite": true}
+{"rank": 0, "clear_pages": true, "ctx": 27648, "token": 785, "finite": true}
+{"rank": 0, "clear_pages": false, "blocks": [565, 566, 567, 568, 569, 570, 571, 572, 573, 574, 575, 576, 577, 579, 578]}
+{"rank": 0, "clear_pages": false, "ctx": 0, "token": 13, "finite": true}
+{"rank": 0, "clear_pages": false, "ctx": 6912, "token": 41802, "finite": true}
+{"rank": 0, "clear_pages": false, "ctx": 13824, "token": 53754, "finite": true}
+{"rank": 0, "clear_pages": false, "ctx": 20736, "token": 135631, "finite": true}
+{"rank": 0, "clear_pages": false, "ctx": 27648, "token": 785, "finite": true}
+{"rank": 0, "clear_pages": true, "blocks": [578, 579, 577, 576, 575, 574, 573, 572, 571, 570, 569, 568, 567, 566, 565]}
+{"rank": 0, "clear_pages": true, "ctx": 0, "token": 13, "finite": true}
+{"rank": 0, "clear_pages": true, "ctx": 6912, "token": 41802, "finite": true}
+{"rank": 0, "clear_pages": true, "ctx": 13824, "token": 53754, "finite": true}
+{"rank": 0, "clear_pages": true, "ctx": 20736, "token": 135631, "finite": true}
+{"rank": 0, "clear_pages": true, "ctx": 27648, "token": 785, "finite": true}
+DIAGNOSTIC_DONE 02_cache_reuse.py
+DIAGNOSTIC_COMMAND 03_step_order.py
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "sync_observe": false, "checkpoint": false, "first": [220], "text": " "}
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "sync_observe": true, "checkpoint": false, "first": [785], "text": "The"}
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "sync_observe": false, "checkpoint": true, "first": [785], "text": "The"}
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "sync_observe": true, "checkpoint": true, "first": [785], "text": "The"}
+DIAGNOSTIC_DONE 03_step_order.py
+DIAGNOSTIC_COMMAND 04_sync_repeat.py
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "mode": "none", "first": [785], "text": "The"}
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "mode": "stream", "first": [785], "text": "The"}
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "mode": "none", "first": [10056], "text": "Let"}
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "mode": "hold", "first": [54685], "text": "\uc0ac"}
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "mode": "none", "first": [785], "text": "The"}
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "mode": "device", "first": [785], "text": "The"}
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "mode": "none", "first": [785], "text": "The"}
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "mode": "hold", "first": [785], "text": "The"}
+DIAGNOSTIC_DONE 04_sync_repeat.py
+DIAGNOSTIC_COMMAND 05_trace_repeat.py
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "trace_mode": "none", "first": [11], "text": ","}
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "trace_mode": "stream", "first": [10056], "text": "Let"}
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "trace_mode": "none", "first": [785], "text": "The"}
+{"rank": 0, "trace_run": 0, "differences": [{"ctx": 0, "op": "_moe", "layer": 3, "input_max": 0.0, "output_max": 0.03125, "reference_max": 1.40625}, {"ctx": 0, "op": "_kda", "layer": 4, "input_max": 0.0625, "output_max": 0.0048828125, "reference_max": 0.0625}, {"ctx": 0, "op": "_moe", "layer": 4, "input_max": 0.0625, "output_max": 0.06640625, "reference_max": 0.32421875}, {"ctx": 0, "op": "_kda", "layer": 5, "input_max": 0.03125, "output_max": 0.002044677734375, "reference_max": 0.020751953125}, {"ctx": 0, "op": "_moe", "layer": 5, "input_max": 0.0625, "output_max": 0.10546875, "reference_max": 0.59765625}, {"ctx": 0, "op": "_kda", "layer": 6, "input_max": 0.03125, "output_max": 0.00189208984375, "reference_max": 0.00927734375}, {"ctx": 0, "op": "_moe", "layer": 6, "input_max": 0.078125, "output_max": 0.08154296875, "reference_max": 0.267578125}, {"ctx": 0, "op": "_dsa", "layer": 7, "input_max": 0.0078125, "output_max": 21.736328125, "reference_max": 0.8671875}, {"ctx": 0, "op": "_moe", "layer": 7, "input_max": 1.71875, "output_max": 0.490234375, "reference_max": 0.52734375}, {"ctx": 0, "op": "_kda", "layer": 8, "input_max": 0.63134765625, "output_max": 0.008270263671875, "reference_max": 0.012451171875}, {"ctx": 0, "op": "_moe", "layer": 8, "input_max": 1.640625, "output_max": 0.447265625, "reference_max": 0.318359375}, {"ctx": 0, "op": "_kda", "layer": 9, "input_max": 0.8515625, "output_max": 0.0137939453125, "reference_max": 0.0145263671875}]}
+{"rank": 0, "trace_run": 2, "differences": [{"ctx": 0, "op": "_kda", "layer": 0, "input_max": 0.0, "output_max": 0.0281982421875, "reference_max": 0.052734375}, {"ctx": 0, "op": "_dense", "layer": 0, "input_max": 0.84375, "output_max": 0.0361328125, "reference_max": 0.0517578125}, {"ctx": 0, "op": "_kda", "layer": 1, "input_max": 0.140625, "output_max": 0.014404296875, "reference_max": 0.01373291015625}, {"ctx": 0, "op": "_dense", "layer": 1, "input_max": 0.5234375, "output_max": 0.01904296875, "reference_max": 0.0234375}, {"ctx": 0, "op": "_kda", "layer": 2, "input_max": 0.25, "output_max": 0.009521484375, "reference_max": 0.0140380859375}, {"ctx": 0, "op": "_dense", "layer": 2, "input_max": 0.09375, "output_max": 0.058349609375, "reference_max": 0.095703125}, {"ctx": 0, "op": "_dsa", "layer": 3, "input_max": 0.041015625, "output_max": 0.65234375, "reference_max": 0.921875}, {"ctx": 0, "op": "_moe", "layer": 3, "input_max": 1.1875, "output_max": 2.1875, "reference_max": 1.40625}, {"ctx": 0, "op": "_kda", "layer": 4, "input_max": 0.28125, "output_max": 0.028564453125, "reference_max": 0.0625}, {"ctx": 0, "op": "_moe", "layer": 4, "input_max": 0.75, "output_max": 0.3173828125, "reference_max": 0.32421875}, {"ctx": 0, "op": "_kda", "layer": 5, "input_max": 0.4453125, "output_max": 0.00994873046875, "reference_max": 0.020751953125}, {"ctx": 0, "op": "_moe", "layer": 5, "input_max": 0.6875, "output_max": 0.23046875, "reference_max": 0.59765625}]}
+DIAGNOSTIC_DONE 05_trace_repeat.py
+DIAGNOSTIC_COMMAND 06_sync_generation.py
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "sync_generation": 0, "elapsed": 31.951278722001007, "tokens": 1200, "text": "The user is asking three questions based on the document:\n\n1. 메리디안 배열의 보정 상수는 얼마인가? (What is the correction constant of the Meridian array?)\n2. 툰드라 조사 보고서에는 누가, 언제 서명했는가? (Who signed the Tundra survey report and when?)\n3. 채석장의 비상 차단 밸브는 무엇이고 어디에 있는가? (What is the quarry's emergency shutoff valve and where is it located?)\n\nLet me find the relevant passages in the document:\n\n1. \"메리디안 배열의 보정 상수는 8127이다.\" - The correction constant of the Meridian array is 8127.\n\n2. \"할보르센 박사는 1997년 3월 14일에 툰드라 조사 보고서에 서명했다.\" - Dr. Halvorsen signed the Tundra survey report on March 14, 1997.\n\n3. \"채석장의 비상 차단 밸브는 북쪽 벽에 있는 K-42 밸브이다.\" - The quarry's emergency shutoff valve is the K-42 valve located on the north wall.\n\nNow I need to answer each question in Korean, numbered, with about two paragraphs each. The user wants specific names, numbers, dates, and equipment numbers quoted exactly as they appear in the document.\n\nLet me write the answers:\n\n1. 메리디안 배열의 보정 상수는 8127이다. The document states this directly. I should write about two paragraphs for each answer, but the information is quite sparse. I'll expand a bit while staying grounded in the document only.\n\nFor question 1: The document only says \"메리디안 배열의 보정 상수는 8127이다.\" I can elaborate on what this means - it's a correction constant for the Meridian array, and the value is 8127. I shouldn't add information not in the document. I can note that the document provides this single fact.\n\nFor question 2: \"할보르센 박사는 1997년 3월 14일에 툰드라 조사 보고서에 서명했다.\" - Dr. Halvorsen signed on March 14, 1997.\n\nFor question 3: \"채석장의 비상 차단 밸브는 북쪽 벽에 있는 K-42 밸브이다.\" - The K-42 valve on the north wall.\n\nThe user asked for \"각각 두 문단 정도\" (about two paragraphs each). Since the document contains only single sentences about each topic, I need to be careful not to fabricate information. I can write two paragraphs where the first states the fact and the second provides context about what the document does/doesn't say, or I can restate the information in different ways. But I must not invent facts.\n\nLet me structure each answer with two paragraphs, being honest that the document contains limited information on these topics.\n\nAnswer 1:\n문단 1: 문서에 따르면 메리디안 배열의 보정 상수는 8127이다. 이 값이 메리디안 배열과 관련해 기록된 유일한 수치다.\n문단 2: 다만 문서에는 이 상수가 어떤 방식으로 산출되었거나 어디에 적용되는지 등의 부가 설명은 없으며, \"메리디안 배열의 보정 상수는 8127이다\"라는 사실만 확인할 수 있다.\n\nAnswer 2:\n문단 1: 툰드라 조사 보고서에는 할보르센 박사가 서명했으며, 서명 날짜는 1997년 3월 14일이다.\n문단 2: 문서에는 할보르센 박사 외의 서명자나 보고서의 세부 내용은 기록되어 있지 않다.\n\nAnswer 3:\n문단 1: 채석장의 비상 차단 밸브는 K-42 밸브이며, 위치는 채석장의 북쪽 벽이다.\n문단 2: 문서에는 이 밸브의 기능이나 규격 등 추가 정보는 없고, \"채석장의 비상 차단 밸브는 북쪽 벽에 있는 K-42 밸브이다\"라는 사실만 언급된다.\n\nThis approach is honest and grounded. Let me write it out properly in Korean.</think>1. 메리디안 배열의 보정 상수\n\n문서에 따르면 메리디안 배열의 보정 상수는 8127이다. 이는 문서에서 메리디안 배열과 관련하여 기록된 유일한 수치로, 해당 배열의 보정에 사용되는 상수가 8127이라는 점을 명시하고 있다.\n\n다만 문서에는 이 상수가 어떤 과정을 통해 산출되었는지, 혹은 실제로 어느 항목에 적용되는지에 대한 부가적인 설명은 제시되어 있지 않다. 따라서 확인할 수 있는 사실은 \"메리디안 배열의 보정 상수는 8127이다\"라는 기술뿐이며, 그"}
+{"rank": 0, "prefill": [[0, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[6912, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[13824, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[20736, 6912]], "nonfinite": false}
+{"rank": 0, "prefill": [[27648, 4897]], "nonfinite": false}
+{"rank": 0, "sync_generation": 1, "elapsed": 30.790426545005175, "tokens": 1200, "text": "The user is asking three questions based on the document:\n\n1. 메리디안 배열의 보정 상수는 얼마인가? (What is the correction constant of the meridian array?)\nLooking at the document: \"메리디안 배열의 보정 상수는 8127이다.\" - The answer is 8127.\n\n2. 툰드라 조사 보고서에는 누가, 언제 서명했는가? (Who signed the tundra survey report and when?)\nLooking at the document: \"할보르센 박사는 1997년 3월 14일에 툰드라 조사 보고서에 서명했다.\" - The answer is 할보르센 박사 (Dr. Halvorsen) on 1997년 3월 14일 (March 14, 1997).\n\n3. 채석장의 비상 차단 밸브는 무엇이고 어디에 있는가? (What is the quarry's emergency shutoff valve and where is it located?)\nLooking at the document: \"채석장의 비상 차단 밸브는 북쪽 벽에 있는 K-42 밸브이다.\" - The answer is K-42 밸브 located on the north wall (북쪽 벽).\n\nThe user wants answers in Korean, numbered, each about two paragraphs long. But these are simple factual questions - the answers are one sentence each in the document. The user asks for \"각각 두 문단 정도로\" (about two paragraphs each). Hmm, that's a bit odd for such simple facts, but I should try to provide some elaboration while staying strictly within the document's content. The instruction says \"문서의 내용만 근거로\" (only based on the document's content), so I can't add external information. I need to be careful not to fabricate details.\n\nLet me write two short paragraphs for each, but I must be careful not to invent facts. I can restate the fact and perhaps note what the document does/doesn't say, or provide context from the document if available. Actually, for these very short facts, expanding to two paragraphs risks fabrication. I should keep it honest - maybe one paragraph of the direct answer and a second paragraph noting the document provides no further details, or elaborating carefully only on what's in the document.\n\nLet me check the document for any related context:\n\n1. \"메리디안 배열의 보정 상수는 8127이다.\" - This is a standalone sentence. No other context about 메리디안 배열 in the document.\n\n2. \"할보르센 박사는 1997년 3월 14일에 툰드라 조사 보고서에 서명했다.\" - Standalone sentence. No other context.\n\n3. \"채석장의 비상 차단 밸브는 북쪽 벽에 있는 K-42 밸브이다.\" - Standalone sentence. No other context.\n\nSo for each question, I can give the direct answer and then a second paragraph noting that the document contains no additional details about the subject. That's honest and follows the constraint of using only the document.\n\nActually, the user asked for \"두 문단 정도\" (about two paragraphs) - \"정도\" means \"approximately/roughly\", so I have some flexibility. I could do one solid paragraph each, or two short paragraphs. Let me aim for two short paragraphs each where the second paragraph honestly notes the limits of the document, or I could combine. Let me try:\n\n1. 메리디안 배열의 보정 상수\n- Paragraph 1: 문서에 따르면 메리디안 배열의 보정 상수는 8127이다.\n- Paragraph 2: 문서에는 이 상수가 어떤 방식으로 산출되거나 적용되는지에 대한 추가 설명은 없으며, 메리디안 배열에 관한 다른 정보도 기재되어 있지 않다.\n\n2. 툰드라 조사 보고서 서명\n- Paragraph 1: 할보르센 박사가 1997년 3월 14일에 툰드라 조사 보고서에 서명했다.\n- Paragraph 2: 문서에는 할보르센 박사의 소속이나 보고서의 세부 내용 등 추가 정보는 나와 있지 않다.\n\n3. 채석장의 비상 차단 밸브\n- Paragraph 1: 채석장의 비상 차단 밸브는 K-42 밸브이며, 위치는 북쪽 벽이다.\n- Paragraph 2: 문서에는 이 밸브의 작동 방식이나 채석장에 대한 다른 세부 사항은 기록되어 있지 않다.\n\nThis is honest and follows the constraint. The format should be numbered answers. Length: moderate, each answer two short paragraphs. I'll use numbered format matching the questions.</think>1. 메리디안 배열의 보정 상수\n문서에 따르면 메리디안 배열의 보정 상수는 8127이다.\n다만 문서에는 이 상수가 어떻게 산출되거나 적용되는지에 대한 설명이나, 메리디안 배열에 관한 그 밖의 정보는 기재되어 있지 않다.\n\n2. 툰드라 조사 보고서의 서명\n"}
+DIAGNOSTIC_DONE 06_sync_generation.py
+DIAGNOSTIC_COMMAND 07_fixed_l0.py
+{"rank": 0, "fixed_l0": 1, "differences": [{"name": "L0.kda.in_proj0", "max_abs": 0.0, "ref_max": 5.84375}, {"name": "L0.kda.f_b0", "max_abs": 0.0, "ref_max": 4.90625}, {"name": "L0.kda.g_b0", "max_abs": 0.0, "ref_max": 3.453125}, {"name": "conv_prefill0", "max_abs": 0.0, "ref_max": 0.87109375}, {"name": "conv_prefill1", "max_abs": 0.0, "ref_max": 1.71875}, {"name": "kda_chunk0", "max_abs": 0.0, "ref_max": 0.004791259765625}, {"name": "kda_chunk1", "max_abs": 0.0, "ref_max": 0.07268102467060089}, {"name": "kda_output_norm0", "max_abs": 0.0, "ref_max": 0.0615234375}, {"name": "L0.kda.o_proj0", "max_abs": 0.0, "ref_max": 0.02392578125}, {"name": "reduce0", "max_abs": 0.0, "ref_max": 0.072265625}]}
+{"rank": 0, "fixed_l0": 2, "differences": [{"name": "L0.kda.in_proj0", "max_abs": 0.0, "ref_max": 5.84375}, {"name": "L0.kda.f_b0", "max_abs": 0.0, "ref_max": 4.90625}, {"name": "L0.kda.g_b0", "max_abs": 0.0, "ref_max": 3.453125}, {"name": "conv_prefill0", "max_abs": 0.0, "ref_max": 0.87109375}, {"name": "conv_prefill1", "max_abs": 0.0, "ref_max": 1.71875}, {"name": "kda_chunk0", "max_abs": 0.0, "ref_max": 0.004791259765625}, {"name": "kda_chunk1", "max_abs": 0.0, "ref_max": 0.07268102467060089}, {"name": "kda_output_norm0", "max_abs": 0.0, "ref_max": 0.0615234375}, {"name": "L0.kda.o_proj0", "max_abs": 0.0, "ref_max": 0.02392578125}, {"name": "reduce0", "max_abs": 0.0, "ref_max": 0.072265625}]}
+{"rank": 0, "fixed_l0": 3, "differences": [{"name": "L0.kda.in_proj0", "max_abs": 0.0, "ref_max": 5.84375}, {"name": "L0.kda.f_b0", "max_abs": 0.0, "ref_max": 4.90625}, {"name": "L0.kda.g_b0", "max_abs": 0.0, "ref_max": 3.453125}, {"name": "conv_prefill0", "max_abs": 0.0, "ref_max": 0.87109375}, {"name": "conv_prefill1", "max_abs": 0.0, "ref_max": 1.71875}, {"name": "kda_chunk0", "max_abs": 0.0, "ref_max": 0.004791259765625}, {"name": "kda_chunk1", "max_abs": 0.0, "ref_max": 0.07268102467060089}, {"name": "kda_output_norm0", "max_abs": 0.0, "ref_max": 0.0615234375}, {"name": "L0.kda.o_proj0", "max_abs": 0.0, "ref_max": 0.02392578125}, {"name": "reduce0", "max_abs": 0.0, "ref_max": 0.072265625}]}
+{"rank": 0, "fixed_l0": 4, "differences": [{"name": "L0.kda.in_proj0", "max_abs": 0.0, "ref_max": 5.84375}, {"name": "L0.kda.f_b0", "max_abs": 0.0, "ref_max": 4.90625}, {"name": "L0.kda.g_b0", "max_abs": 0.0, "ref_max": 3.453125}, {"name": "conv_prefill0", "max_abs": 0.0, "ref_max": 0.87109375}, {"name": "conv_prefill1", "max_abs": 0.0, "ref_max": 1.71875}, {"name": "kda_chunk0", "max_abs": 0.0, "ref_max": 0.004791259765625}, {"name": "kda_chunk1", "max_abs": 0.0, "ref_max": 0.07268102467060089}, {"name": "kda_output_norm0", "max_abs": 0.0, "ref_max": 0.0615234375}, {"name": "L0.kda.o_proj0", "max_abs": 0.0, "ref_max": 0.02392578125}, {"name": "reduce0", "max_abs": 0.0, "ref_max": 0.072265625}]}
+{"rank": 0, "fixed_l0": 5, "differences": [{"name": "L0.kda.in_proj0", "max_abs": 0.0, "ref_max": 5.84375}, {"name": "L0.kda.f_b0", "max_abs": 0.0, "ref_max": 4.90625}, {"name": "L0.kda.g_b0", "max_abs": 0.0, "ref_max": 3.453125}, {"name": "conv_prefill0", "max_abs": 0.0, "ref_max": 0.87109375}, {"name": "conv_prefill1", "max_abs": 0.0, "ref_max": 1.71875}, {"name": "kda_chunk0", "max_abs": 0.0, "ref_max": 0.004791259765625}, {"name": "kda_chunk1", "max_abs": 0.0, "ref_max": 0.07268102467060089}, {"name": "kda_output_norm0", "max_abs": 0.0, "ref_max": 0.0615234375}, {"name": "L0.kda.o_proj0", "max_abs": 0.0, "ref_max": 0.02392578125}, {"name": "reduce0", "max_abs": 0.0, "ref_max": 0.072265625}]}
+{"rank": 0, "fixed_l0": 6, "differences": [{"name": "L0.kda.in_proj0", "max_abs": 0.0, "ref_max": 5.84375}, {"name": "L0.kda.f_b0", "max_abs": 0.0, "ref_max": 4.90625}, {"name": "L0.kda.g_b0", "max_abs": 0.0, "ref_max": 3.453125}, {"name": "conv_prefill0", "max_abs": 0.0, "ref_max": 0.87109375}, {"name": "conv_prefill1", "max_abs": 0.0, "ref_max": 1.71875}, {"name": "kda_chunk0", "max_abs": 0.0, "ref_max": 0.004791259765625}, {"name": "kda_chunk1", "max_abs": 0.0, "ref_max": 0.07268102467060089}, {"name": "kda_output_norm0", "max_abs": 0.0, "ref_max": 0.0615234375}, {"name": "L0.kda.o_proj0", "max_abs": 0.0, "ref_max": 0.02392578125}, {"name": "reduce0", "max_abs": 0.0, "ref_max": 0.072265625}]}
+{"rank": 0, "fixed_l0": 7, "differences": [{"name": "L0.kda.in_proj0", "max_abs": 0.0, "ref_max": 5.84375}, {"name": "L0.kda.f_b0", "max_abs": 0.0, "ref_max": 4.90625}, {"name": "L0.kda.g_b0", "max_abs": 0.0, "ref_max": 3.453125}, {"name": "conv_prefill0", "max_abs": 0.0, "ref_max": 0.87109375}, {"name": "conv_prefill1", "max_abs": 0.0, "ref_max": 1.71875}, {"name": "kda_chunk0", "max_abs": 0.0, "ref_max": 0.004791259765625}, {"name": "kda_chunk1", "max_abs": 0.0, "ref_max": 0.07268102467060089}, {"name": "kda_output_norm0", "max_abs": 0.0, "ref_max": 0.0615234375}, {"name": "L0.kda.o_proj0", "max_abs": 0.0, "ref_max": 0.02392578125}, {"name": "reduce0", "max_abs": 0.0, "ref_max": 0.072265625}]}
+DIAGNOSTIC_DONE 07_fixed_l0.py
+DIAGNOSTIC_COMMAND 08_input_repeat.py
+{"rank": 0, "input_repeat": 1, "differences": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0462646484375]}
+{"rank": 0, "input_repeat": 2, "differences": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0462646484375]}
+{"rank": 0, "input_repeat": 3, "differences": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0462646484375]}
+{"rank": 0, "input_repeat": 4, "differences": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0462646484375]}
+{"rank": 0, "input_repeat": 5, "differences": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0462646484375]}
+DIAGNOSTIC_DONE 08_input_repeat.py
+DIAGNOSTIC_COMMAND 09_lifetime_l0.py
+{"rank": 0, "lifetime_mode": "all", "attempt": 0, "diff": 0.0}
+{"rank": 0, "lifetime_mode": "all", "attempt": 1, "diff": 0.0}
+{"rank": 0, "lifetime_mode": "none", "attempt": 0, "diff": 0.0}
+{"rank": 0, "lifetime_mode": "none", "attempt": 1, "diff": 0.0}
+{"rank": 0, "lifetime_mode": "linear", "attempt": 0, "diff": 0.0}
+{"rank": 0, "lifetime_mode": "linear", "attempt": 1, "diff": 0.0}
+{"rank": 0, "lifetime_mode": "conv_prefill", "attempt": 0, "diff": 0.0}
+{"rank": 0, "lifetime_mode": "conv_prefill", "attempt": 1, "diff": 0.0}
+{"rank": 0, "lifetime_mode": "kda_chunk", "attempt": 0, "diff": 0.0}
+{"rank": 0, "lifetime_mode": "kda_chunk", "attempt": 1, "diff": 0.0}
+{"rank": 0, "lifetime_mode": "kda_output_norm", "attempt": 0, "diff": 0.0}
+{"rank": 0, "lifetime_mode": "kda_output_norm", "attempt": 1, "diff": 0.0}
+{"rank": 0, "lifetime_mode": "none", "attempt": 0, "diff": 0.0}
+{"rank": 0, "lifetime_mode": "none", "attempt": 1, "diff": 0.0}
+{"rank": 0, "lifetime_mode": "all", "attempt": 0, "diff": 0.0}
+{"rank": 0, "lifetime_mode": "all", "attempt": 1, "diff": 0.0}
+DIAGNOSTIC_DONE 09_lifetime_l0.py
+DIAGNOSTIC_COMMAND 10_fresh_l0_trace.py
+{"rank": 0, "fresh_trace": 1, "differences": [{"name": "input0", "max_abs": 0.0}, {"name": "L0.kda.in_proj0", "max_abs": 0.0}, {"name": "L0.kda.f_b0", "max_abs": 0.0}, {"name": "L0.kda.g_b0", "max_abs": 0.0}, {"name": "conv_prefill0", "max_abs": 0.0}, {"name": "conv_prefill1", "max_abs": 0.0}, {"name": "kda_chunk0", "max_abs": 0.0}, {"name": "kda_chunk1", "max_abs": 0.0}, {"name": "kda_output_norm0", "max_abs": 0.0}, {"name": "L0.kda.o_proj0", "max_abs": 0.0}, {"name": "reduce0", "max_abs": 0.0}]}
+{"rank": 0, "fresh_trace": 2, "differences": [{"name": "input0", "max_abs": 0.0}, {"name": "L0.kda.in_proj0", "max_abs": 0.0}, {"name": "L0.kda.f_b0", "max_abs": 0.0}, {"name": "L0.kda.g_b0", "max_abs": 0.0}, {"name": "conv_prefill0", "max_abs": 0.0}, {"name": "conv_prefill1", "max_abs": 0.0}, {"name": "kda_chunk0", "max_abs": 0.0}, {"name": "kda_chunk1", "max_abs": 0.0}, {"name": "kda_output_norm0", "max_abs": 0.0}, {"name": "L0.kda.o_proj0", "max_abs": 0.0}, {"name": "reduce0", "max_abs": 0.0}]}
+{"rank": 0, "fresh_trace": 3, "differences": [{"name": "input0", "max_abs": 0.0}, {"name": "L0.kda.in_proj0", "max_abs": 10376640987136.0}, {"name": "L0.kda.f_b0", "max_abs": 6012954214400.0}, {"name": "L0.kda.g_b0", "max_abs": 5463198400512.0}, {"name": "conv_prefill0", "max_abs": 2018634629120.0}, {"name": "conv_prefill1", "max_abs": 1924145348608.0}, {"name": "kda_chunk0", "max_abs": 8858370048.0}, {"name": "kda_chunk1", "max_abs": 66318839808.0}, {"name": "kda_output_norm0", "max_abs": 1.367415428161621}, {"name": "L0.kda.o_proj0", "max_abs": 0.404296875}, {"name": "reduce0", "max_abs": 0.831787109375}]}
+{"rank": 0, "fresh_trace": 4, "differences": [{"name": "input0", "max_abs": 0.0}, {"name": "L0.kda.in_proj0", "max_abs": 0.0}, {"name": "L0.kda.f_b0", "max_abs": 0.0}, {"name": "L0.kda.g_b0", "max_abs": 0.0}, {"name": "conv_prefill0", "max_abs": 0.0}, {"name": "conv_prefill1", "max_abs": 0.0}, {"name": "kda_chunk0", "max_abs": 0.0}, {"name": "kda_chunk1", "max_abs": 0.0}, {"name": "kda_output_norm0", "max_abs": 0.0}, {"name": "L0.kda.o_proj0", "max_abs": 0.0}, {"name": "reduce0", "max_abs": 0.0}]}
+{"rank": 0, "fresh_trace": 5, "differences": [{"name": "input0", "max_abs": 0.0}, {"name": "L0.kda.in_proj0", "max_abs": 0.0}, {"name": "L0.kda.f_b0", "max_abs": 0.0}, {"name": "L0.kda.g_b0", "max_abs": 0.0}, {"name": "conv_prefill0", "max_abs": 0.0}, {"name": "conv_prefill1", "max_abs": 0.0}, {"name": "kda_chunk0", "max_abs": 0.0}, {"name": "kda_chunk1", "max_abs": 0.0}, {"name": "kda_output_norm0", "max_abs": 0.0}, {"name": "L0.kda.o_proj0", "max_abs": 0.0}, {"name": "reduce0", "max_abs": 0.0}]}
+{"rank": 0, "fresh_trace": 6, "differences": [{"name": "input0", "max_abs": 0.0}, {"name": "L0.kda.in_proj0", "max_abs": 0.0}, {"name": "L0.kda.f_b0", "max_abs": 0.0}, {"name": "L0.kda.g_b0", "max_abs": 0.0}, {"name": "conv_prefill0", "max_abs": 0.0}, {"name": "conv_prefill1", "max_abs": 0.0}, {"name": "kda_chunk0", "max_abs": 0.0}, {"name": "kda_chunk1", "max_abs": 0.0}, {"name": "kda_output_norm0", "max_abs": 0.0}, {"name": "L0.kda.o_proj0", "max_abs": 0.0}, {"name": "reduce0", "max_abs": 0.0}]}
+{"rank": 0, "fresh_trace": 7, "differences": [{"name": "input0", "max_abs": 0.0}, {"name": "L0.kda.in_proj0", "max_abs": 0.0}, {"name": "L0.kda.f_b0", "max_abs": 0.0}, {"name": "L0.kda.g_b0", "max_abs": 0.0}, {"name": "conv_prefill0", "max_abs": 0.0}, {"name": "conv_prefill1", "max_abs": 0.0}, {"name": "kda_chunk0", "max_abs": 0.0}, {"name": "kda_chunk1", "max_abs": 0.0}, {"name": "kda_output_norm0", "max_abs": 0.0}, {"name": "L0.kda.o_proj0", "max_abs": 0.0}, {"name": "reduce0", "max_abs": 0.0}]}
+DIAGNOSTIC_DONE 10_fresh_l0_trace.py
+DIAGNOSTIC_COMMAND 11_nvfp4_boundary.py
+{"rank": 0, "nv_boundary": "none", "worst": 0.0}
+{"rank": 0, "nv_boundary": "quant_sync", "worst": 0.0}
+{"rank": 0, "nv_boundary": "none", "worst": 0.0}
+{"rank": 0, "nv_boundary": "scale_sync", "worst": 0.0}
+{"rank": 0, "nv_boundary": "none", "worst": 0.0}
+{"rank": 0, "nv_boundary": "gemm_sync", "worst": 0.0}
+DIAGNOSTIC_DONE 11_nvfp4_boundary.py

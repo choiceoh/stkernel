@@ -1,0 +1,8 @@
+vllm:request_success_total{engine="st"} 137
+vllm:num_requests_running{engine="st"} 0
+vllm:num_requests_waiting{engine="st"} 1
+vllm:prompt_tokens_total{engine="st"} 182967
+vllm:generation_tokens_total{engine="st"} 2202
+vllm:spec_decode_num_accepted_tokens_total{engine="st"} 1356
+vllm:spec_decode_num_draft_tokens_total{engine="st"} 3630
+st:requests_cancelled_total{engine="st"} 0

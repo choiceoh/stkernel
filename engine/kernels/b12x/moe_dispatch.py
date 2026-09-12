@@ -1142,6 +1142,28 @@ def _prepared_reform_scales(source1, source2, raw1, raw2, *, experts, n, k):
     return owner
 
 
+def consume_packed_scale_storage(views, first, second):
+    """Retire arena raw scales once every consumer holds this SF6 owner."""
+    from engine.modules.packed_storage import consume
+    from .moe_reform_sf_pack import ReformScales
+    owner=views.reform_scales
+    if not views.packed_only or owner is None or not owner.enabled:
+        raise ValueError("raw-scale retirement requires a packed-only SF6 layer")
+    for storage,pack in ((first,owner.fc1),(second,owner.fc2)):
+        if (not storage.is_contiguous() or storage.device!=pack.device
+                or storage.numel()*storage.element_size()<pack.numel()):
+            raise ValueError("SF6 pack does not fit its raw-scale arena region")
+    a,=consume(first,[owner.fc1])
+    b,=consume(second,[owner.fc2])
+    replacement=ReformScales(a,b)
+    for key,cached in tuple(_REFORM_SF_CACHE.items()):
+        if cached is owner:
+            _REFORM_SF_CACHE[key]=replacement
+    views.reform_scales=replacement
+    views.sfb1_packed,views.sfb2_packed=a,b
+    first._st_sf6_consumed=second._st_sf6_consumed=True
+
+
 def _packed_fc1_scales(sf: torch.Tensor, num_experts: int) -> torch.Tensor:
     """(E, blocks per expert, SF_STAGE_BYTES) u8 -- the FC1 weight scales
     6-bit packed per 4 KB block, the unit the kernel stages (39차 §4c). Cached
@@ -2186,6 +2208,11 @@ def _get_static_kernel_v2(
         swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit,
     )
+    scatter_fp32 = _glm_tp_scatter_fp32(
+        state_E=state_E,weight_E=weight_E,k=k,n=n,num_topk=num_topk,
+        quant_mode=quant_mode,activation=activation,swiglu_alpha=swiglu_alpha,
+        swiglu_beta=swiglu_beta,swiglu_limit=swiglu_limit)
+    cache_key = (*cache_key,"tp_scatter_fp32_v1",scatter_fp32)
     cached = _STATIC_V2_KERNEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -2199,6 +2226,7 @@ def _get_static_kernel_v2(
     tiled = bool(config.get("tiled", False))
     kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4
     kernel: Any = kernel_cls(
+        scatter_fp32=scatter_fp32,
         a_ring=bool(config.get("a_ring", False)),
         sf_pack=bool(config.get("sf_pack", False)),
         decode_reform=reform,
@@ -2303,7 +2331,7 @@ def _get_static_kernel_v2(
         alpha_dtype, (weight_E,), assumed_align=16
     )
     scatter_fake = cute.runtime.make_fake_compact_tensor(
-        a_dtype, (m, k), stride_order=(1, 0), assumed_align=16
+        cutlass.Float32 if scatter_fp32 else a_dtype, (m, k), stride_order=(1, 0), assumed_align=16
     )
     token_map_fake = cute.runtime.make_fake_compact_tensor(
         cutlass.Int32, (state_E, max_rows), stride_order=(1, 0), assumed_align=4
@@ -3370,8 +3398,6 @@ def launch_sm120_static_moe(
                 f"agree: views tiled={bool(getattr(weights, 'tiled', False))}, "
                 f"lane tiled={want_tiled}"
             )
-        if glm_tp_fp32 and static_v2_config is not None:
-            raise ValueError("GLM TP FP32 scatter requires the declared row-major static kernel")
         if static_v2_config is not None:
             static_v2_config = _static_v2_decode_config(static_v2_config, num_tokens)
             if static_v2_config.get("reform_sf_pack"):

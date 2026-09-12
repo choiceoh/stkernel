@@ -1,0 +1,110 @@
+{
+  "quality": {
+    "ok": 9,
+    "total": 9
+  },
+  "korean": {
+    "dirty": 0,
+    "n": 5,
+    "kinds": {
+      "replacement": 0,
+      "lone_jamo": 0,
+      "cjk_mixed": 0,
+      "control": 0
+    },
+    "hits": []
+  },
+  "traffic_valid": true,
+  "total_s": 164.26190638542175,
+  "gen_tokens": 3327,
+  "accepted_drafts": 2321,
+  "drafted_tokens": 5025,
+  "raw_acceptance": 0.4618905472636816,
+  "derived_tokens_per_step": 3.3094527363184083,
+  "contexts": [
+    {
+      "ctx": 2000,
+      "prompt_tokens": [
+        2121,
+        2128,
+        2128
+      ],
+      "ttft_s": [
+        1.0590935349973734,
+        1.0494027219974669,
+        1.0482518089993391
+      ],
+      "decode_tok_s": [
+        39.002757812855506,
+        36.10133689783445,
+        34.177221110624664
+      ],
+      "decode_median_tok_s": 36.10133689783445,
+      "step_windows": 27,
+      "median_step_s": 10.96567874139638,
+      "completion_tokens": [
+        400,
+        400,
+        400
+      ],
+      "finish_reasons": [
+        "length",
+        "length",
+        "length"
+      ],
+      "final_content_chars": [
+        127,
+        245,
+        186
+      ]
+    },
+    {
+      "ctx": 32000,
+      "prompt_tokens": [
+        32545
+      ],
+      "ttft_s": [
+        2.678523454000242
+      ],
+      "decode_tok_s": [
+        35.59967667910165
+      ],
+      "decode_median_tok_s": 35.59967667910165,
+      "step_windows": 31,
+      "median_step_s": 10.960248472136483,
+      "completion_tokens": [
+        1200
+      ],
+      "finish_reasons": [
+        "length"
+      ],
+      "final_content_chars": [
+        0
+      ]
+    },
+    {
+      "ctx": 128000,
+      "prompt_tokens": [
+        128559
+      ],
+      "ttft_s": [
+        64.41288099500525
+      ],
+      "decode_tok_s": [
+        33.83572286022923
+      ],
+      "decode_median_tok_s": 33.83572286022923,
+      "step_windows": 26,
+      "median_step_s": 10.958774822551888,
+      "completion_tokens": [
+        927
+      ],
+      "finish_reasons": [
+        "stop"
+      ],
+      "final_content_chars": [
+        933
+      ]
+    }
+  ]
+}

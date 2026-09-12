@@ -28,6 +28,7 @@ import cutlass.utils.blockscaled_layout as blockscaled_utils
 
 from cutlass.cutlass_dsl import Int32, Int64, Uint8, Uint64
 from cutlass.cute.nvgpu import cpasync
+from .moe_micro_kernel import scatter_add_bf16x2_to_f32
 
 from flashinfer.cute_dsl.utils import (
     sm120_make_smem_layout_sfa,
@@ -102,6 +103,7 @@ class MoEStaticKernelV4:
         sf_vec_size: int,
         output_tile_count_n: int,
         *,
+        scatter_fp32: bool = False,
         fc1_stages: int = 2,
         fc2_stages: int = 2,
         stamps: bool = False,
@@ -128,6 +130,7 @@ class MoEStaticKernelV4:
             raise ValueError("pipeline stages must be >= 1")
         self._dense_cls = DenseGemmKernel
         self.acc_dtype = cutlass.Float32
+        self.scatter_fp32 = bool(scatter_fp32)
         self.sf_vec_size = sf_vec_size
         self.input_scales_are_reciprocal = input_scales_are_reciprocal
         self.activation = activation
@@ -969,7 +972,10 @@ class MoEStaticKernelV4:
         scatter_total = num_tokens * cols
         j = flat_tid
         while j < scatter_total:
-            scatter_output[j // cols, j % cols] = cutlass.BFloat16(0.0)
+            if cutlass.const_expr(self.scatter_fp32):
+                scatter_output[j // cols, j % cols] = cutlass.Float32(0.0)
+            else:
+                scatter_output[j // cols, j % cols] = cutlass.BFloat16(0.0)
             j += flat_stride
         cute.arch.sync_threads()
         self._resident_grid_barrier(
@@ -1863,13 +1869,27 @@ class MoEStaticKernelV4:
                         sc_v7 = cutlass.Float32(
                             sC[warp_m_base + local_row, local_col + Int32(7), 0]
                         )
-                        scatter_add_v4_bf16x2(
-                            get_ptr_as_int64(
-                                scatter_output, tok * scatter_N + global_col
-                            ),
-                            wv * sc_v0, wv * sc_v1, wv * sc_v2, wv * sc_v3,
-                            wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7,
-                        )
+                        if cutlass.const_expr(self.scatter_fp32):
+                            scatter_add_bf16x2_to_f32(
+                                get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(0)),
+                                wv * sc_v0, wv * sc_v1)
+                            scatter_add_bf16x2_to_f32(
+                                get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(2)),
+                                wv * sc_v2, wv * sc_v3)
+                            scatter_add_bf16x2_to_f32(
+                                get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(4)),
+                                wv * sc_v4, wv * sc_v5)
+                            scatter_add_bf16x2_to_f32(
+                                get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(6)),
+                                wv * sc_v6, wv * sc_v7)
+                        else:
+                            scatter_add_v4_bf16x2(
+                                get_ptr_as_int64(
+                                    scatter_output, tok * scatter_N + global_col
+                                ),
+                                wv * sc_v0, wv * sc_v1, wv * sc_v2, wv * sc_v3,
+                                wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7,
+                            )
                         vec_idx += Int32(self.num_threads_per_warp)
                     self.epilog_sync_barrier.arrive_and_wait()
 

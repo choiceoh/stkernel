@@ -1,0 +1,15 @@
+ST fleet idle; supervisor probes suspended, containers retained
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+   2000    2128        2009        2030      1.06s      1.05s  o o o
+  32000   32545       12150     (1 req)      2.68s          -  o o o
+ 128000  128559        1996     (1 req)     64.41s          -  o o o
+  warm 처리량: 2030 -> 1996 tok/s (over 2128 -> 128559 tokens)
+=> 9/9 correct
+decode: windows n=84 med 11.0 [10.0, 12.0] step/s (inside the answers only; per context: 2K: n=27 med 11.0  32K: n=31 med 11.0  128K: n=26 med 11.0), raw acc 46.2%, tokens/step 3.309 (k=5.0), generated 3327 tokens over 164s
+응답 5개 · 문자 8,324
+  깨진 응답: 0/5 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass ST-PROD-5734-20260912-0746: 164s total

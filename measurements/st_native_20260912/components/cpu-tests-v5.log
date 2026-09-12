@@ -1,0 +1,20 @@
+..........sssssssssss2026-09-12 00:48:33,212 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/p_17d60c678dec82c7
+2026-09-12 00:48:33,213 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmp61junu8_/st_b12x_direct_micro_sm121a_cute_dsl/p_17d60c678dec82c7.o
+..2026-09-12 00:48:33,217 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834
+2026-09-12 00:48:33,218 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmp_mdit11z/st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834.o
+2026-09-12 00:48:33,221 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834
+2026-09-12 00:48:33,221 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmp_mdit11z/st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834.o
+2026-09-12 00:48:33,223 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834
+2026-09-12 00:48:33,223 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmp_mdit11z/st_b12x_direct_micro_sm121a_cute_dsl/direct_micro_test_5dcddd328d8bd834.o
+...ss.............ss........ssssssssssssssssssssssssssss...................ssss..ssss.ssssssssss.....................ssss....s......s....ssss........................................s......sss......................................sss........................s..ss...
+----------------------------------------------------------------------
+Ran 287 tests in 14.875s
+
+OK (skipped=81)
+  box: test
+<MagicMock name='declared().table()' id='281273339401792'>
+  box: test
+<MagicMock name='declared().table()' id='281273332467568'>
+  box: test
+<MagicMock name='declared().table()' id='281273332545632'>
+  expert_layout: tile-major bytes read back row-major per expert OK

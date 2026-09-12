@@ -131,20 +131,33 @@ class Glm53Engine:
         if caches.pool.rows_in_use or any(owner >= 0 for owner in caches.slots.owner[1:]):
             raise ValueError("memory preparation requires empty request and state slots")
         capacity = caches.pool.num_blocks * self.F.block
-        length = min(self.prefill_chunk, capacity)
+        largest = min(self.prefill_chunk, capacity)
+        shapes = [(largest, context) for context in sorted({0, capacity-largest})]
+        if getattr(self.net, 'dense', None):
+            # Cover the prepared FP8 range and the non-Q0 NVFP4 prefill
+            # family before requests arrive. The maximum chunk alone uses
+            # NVFP4 + Q0 and never executes either of these legal families.
+            shapes = [(length, 0) for length in (128, 1024) if length < largest] + shapes
         slot = caches.slots.take(0)
         try:
             caches.pool.reserve(0, capacity)
-            for context in sorted({0, capacity-length}):
+            for length, context in shapes:
+                caches.reset_slot(slot)
                 self.memory.checkpoint(f"prefill/{length}/{context}/before")
                 ids = torch.zeros(length, device=caches.device, dtype=torch.int64)
                 step = Step.prefill(ids, context, 0, slot)
                 h, aux = self._forward(step)
-                self.net.head(h[-1:])
+                logits = self.net.head(h[-1:])
+                valid = torch.isfinite(h).all() & torch.isfinite(logits).all()
+                if aux is not None:
+                    valid &= torch.isfinite(aux).all()
+                bad = (~valid).to(torch.int32).reshape(1)
+                if self.net.comm.all_reduce_max(bad).item():
+                    raise FloatingPointError(f"prefill/{length}/{context}: non-finite model output during qualification")
                 if aux is not None:
                     self.drafter.observe(caches.draft_ring(slot),
                                          torch.arange(context, context+length, device=caches.device), aux)
-                del h, aux, step, ids
+                del h, aux, logits, valid, bad, step, ids
                 self.memory.checkpoint(f"prefill/{length}/{context}/prepared")
         finally:
             caches.pool.release(0)

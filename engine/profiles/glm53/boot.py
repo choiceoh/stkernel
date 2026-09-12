@@ -116,9 +116,13 @@ def declared(a, comm_world: int) -> Config:
         # These are the full-fleet qualified defaults; STK_* overrides are rejected
         # by Config because production declares facts and no experiment knobs.
         defaults = dict(moe_static="stock", mla_prefill="stock", context_ceiling=0,
-                        lanes="served", decode_eager=0)
+                        lanes="served", decode_eager=0, execution="stock")
         return Config(facts_ + [Fact(k, v, "qualified production default") for k, v in defaults.items()], knobs=[])
     knobs = [
+        Knob("execution", "stock", _dt.date(2026, 9, 30),
+             "parity: native W4/GPTQ dense, FP8/NVFP4 prefill, TP drafter, MK MHC/PDL, one-shot AR and prefill SP; "
+             "requires full-fleet quality, memory and onepass qualification before production adoption",
+             "STK_execution=stock"),
         Knob("moe_static", lane_tables.MOE_STATIC_STOCK, _dt.date(2026, 9, 30),
              f"b12x static lane: production's 2026-09-09 adoption {lane_tables.MOE_STATIC_PRODUCTION!r} (+q0 = the TP recipe) "
              "against the stock kernel the §15~18 judge ran; win = bake t,r,sf6 into lanes.served and delete this knob",
@@ -154,11 +158,13 @@ def decodable_vocab(tok) -> int:
 
 def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_drafter: bool, recorder: Recorder,
           max_new: int = 256, temperature: float = 0.0, seed: int = 0, tier_dir: "str | None" = None,
-          context_ceiling: "int | None" = None,
+          context_ceiling: "int | None" = None, execution: str = "stock",
           ckpt_meta: "str | Path" = facts.CKPT, drafter_dir: "str | Path" = drafter_mod.DRAFTER):
     """`ckpt_meta`: where config.json / tokenizer.json / generation_config.json are -- the HF checkpoint dir, or a
     copy of just those files: a node needs its rank file, the drafter and this, not the 185 GB checkpoint."""
     F = facts.load(ckpt_meta)
+    if execution not in ("stock", "parity"):
+        raise ValueError("execution must be stock or parity")
     net = Glm53Net(F, comm, lanes, layers)
     specs = net.specs()
     drafter_dir = Path(drafter_dir)
@@ -223,6 +229,24 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 dviews = RankLoader(drafter_dir / "model.safetensors").load([s.name for s in dspecs], arena=arena, recorder=recorder)
             drafter = drafter_mod.Drafter(D, net, decodable)
             drafter.bind(dviews)
+        if execution == "parity":
+            from engine.kernels.dense.store import PackStore
+            from engine.kernels.prefill_collectives import PrefillCollectives
+            store = PackStore("/cache", comm.rank)
+            with recorder.phase("prepare native execution"):
+                net.prepare_dense(store, consume_weights=True)
+                net.prefill_transport = PrefillCollectives(comm)
+                if D:
+                    drafter.prepare_fast(store, consume_weights=True)
+            for name, count in store.stats.items():
+                recorder.gauge("dense_pack_"+name, count)
+            recorder.gauge("target_native_linears", len(net.dense)-1)
+            recorder.gauge("drafter_native_linears", len(drafter.dense) if D else 0)
+            # Scratch from one-time quantization must not consume the workspace
+            # measured for prefill/capture. Live packs and graph owners remain.
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+            store.release_pages()
         caches = Glm53Caches(arena, F, net.layers, nb, max_seqs, draft=draft_shape, snapshots=PREFIX_SNAPSHOTS)
         # the aux layers must lie inside the chain: a layer subset (the local smoke) clips them to its last layer -- plumbing only
         aux = [min(L, net.layers[-1]) for L in drafter.aux_layers] if D else None
@@ -261,6 +285,28 @@ def run_prompts(engine: Glm53Engine, runner: Runner, prompts: "dict[int, list[in
             if out[seq] is None and seq not in runner.state.running and seq not in runner.state.waiting:
                 out[seq] = engine.generated(seq)
     return out
+
+
+def native_execution_report(net, drafter):
+    """Reject a prepared but unused lane before the full-model door opens."""
+    target = [layer for name, layer in net.dense.items() if name != 'head']
+    draft = list(drafter.dense.values())
+    expected_mhc = 2*len(net.layers)-1  # first attn pre has no preceding post
+    proof = dict(target_w4=sum(bool(p.executed & 1) for p in target),
+                 target_nvfp4=sum(bool(p.executed & 4) for p in target),
+                 target_fp8=sum(bool(p.executed & 2) for p in target),
+                 head_fp8=net.dense['head'].executed,
+                 drafter_w4=sum(bool(p.executed & 1) for p in draft),
+                 drafter_context_fp8=bool(drafter.dense['fc.weight'].executed & 2),
+                 mhc=len(net.mhc.executed),
+                 prefill_collectives=sorted(net.prefill_transport.executed))
+    if (proof['target_w4'] != len(target) or proof['target_nvfp4'] != len(target)
+            or proof['target_fp8'] != len(target)
+            or proof['drafter_w4'] != len(draft) or not proof['head_fp8']
+            or not proof['drafter_context_fp8'] or proof['mhc'] != expected_mhc
+            or len(proof['prefill_collectives']) != 2):
+        raise RuntimeError(f'native execution proof is incomplete: {proof}')
+    return proof
 
 
 def local(a) -> int:
@@ -456,9 +502,15 @@ def fleet(a) -> int:
     try:
         if comm.rank == 0:
             print(cfg.table())
+        if cfg["execution"] == "parity":
+            if cfg["lanes"] != "served":
+                raise ValueError("parity execution requires the served lane table")
+            with rec.phase("prepare one-shot"):
+                comm.prepare_oneshot()
         with rec.phase("lanes"):
             if cfg["lanes"] == "served":
-                lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"])   # every served lane, or the boot dies (D3)
+                lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
+                                           consume_scales=cfg["execution"] == "parity")   # every served lane, or the boot dies (D3)
             elif cfg["lanes"] == "reference":
                 lanes = lane_tables.reference()                                                          # declared (STK_lanes), not a fallback
             else:
@@ -467,7 +519,8 @@ def fleet(a) -> int:
         F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir,
-                                               context_ceiling=cfg["context_ceiling"] or None)
+                                               context_ceiling=cfg["context_ceiling"] or None,
+                                               execution=cfg["execution"])
         # a stale tier under one rank diverges the ranks (45th 21): find it in seconds, not after the capture
         Server._agree_on_parked(comm, sorted(runner.parked_keys()))
         with rec.phase("capture decode"):
@@ -477,6 +530,10 @@ def fleet(a) -> int:
                 engine.capture_decode(MAX_SEQS)
         if engine.memory is None or not engine.memory.ready:
             raise RuntimeError("full-model serving requires runtime memory qualification")
+        if cfg['execution'] == 'parity':
+            import json
+            proof = native_execution_report(net, engine.drafter)
+            print('ST_NATIVE_EXECUTION '+json.dumps(dict(rank=comm.rank, **proof)), flush=True)
         engine.memory.write(Path(a.dump_dir) / f"memory-rank{comm.rank}.json")
         dump = DeathDump(a.dump_dir, runner.ring, boot_id=f"glm53-r{comm.rank}-{int(time.time())}")
         if comm.rank == 0:

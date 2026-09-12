@@ -1,0 +1,106 @@
+[W912 00:35:44.789926877 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+GLM-5.3-Flash on ST, one rank of TP=4, chunk 6,912, kv_gib 8.73 -> 580 blocks
+
+  box                                      119.69 GiB
+  -------------------------------------  --------
+  reserve for the OS                       -11.97 GiB   [declared] 2x earlyoom's 5% floor (5.98 GiB)
+  runtime floor (CUDA ctx + NCCL 16ch)      -5.54 GiB   [ledger] GLM 40th boot table -- re-measure on ST
+  weights (this rank, TP=4)                -44.50 GiB   [read] rank0of4.safetensors header: 1,376 tensors
+  drafter (DFlash2, replicated)             -2.18 GiB   [read] drafter.specs: every rank holds the whole drafter (DRAFT_TP=1 as served)
+  state slots (4 + null) x 247 MiB          -1.21 GiB   [read] caches.layout: KDA conv/recurrent rings (K+1 states), indexer tails, drafter ring
+  prefix snapshots (8 x 75 MiB)             -0.59 GiB   [read] caches.snapshot_layout: chunk-boundary position rings for prefix reuse (boot.PREFIX_SNAPSHOTS)
+  workspace ceiling (outside the arena)    -12.00 GiB   [declared] base/runtime_memory ceiling: activations, graph pools, kernel scratch; the allocator refuses beyond it; no boot ledger given -- vLLM's slope 0.52 GiB/1K puts a 6,912-token chunk at 3.5 GiB, indexer selection bounded to 1,024 query rows per pass (net.SELECT_ROWS)
+  NVMe tier staging                         -0.12 GiB   [declared] kv_tier: pinned staging + device scratch
+  -------------------------------------  --------
+  KV (remainder)                            41.58 GiB
+
+  GATE: KV = 41.58 GiB, declared before load.
+  declared paged KV 7.52 GiB (7.52 in blocks of 13.28 MiB); unassigned +34.06 GiB
+  what the remainder buys at 6,043 B/token (paged, layout) + 247 MiB/sequence (slot):
+    concurrency   1: 1,048,576 tok each
+    concurrency   4: 1,048,576 tok each
+    concurrency   8:   880,634 tok each
+    concurrency  32:   187,982 tok each
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[transformers] You are using a model of type `glm5_next` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+{"rank": 0, "tokens": 32545}
+{"rank": 0, "variant": {"sp": true, "nvfp4": true}}
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+[megakernel] selftest mla rel=3.07e-03 pair_prefill=False group=2 prefill32=False -> ARM
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+2026-09-12 00:36:52,753 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12 00:36:52,754 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_b8100dca67ecc476
+2026-09-12 00:37:00,389 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_b8100dca67ecc476.o
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=55296 -> rows 92032/92032 tiles 719/719 tasks 2876/2876
+[tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=6912
+{"rank": 0, "context": 0, "length": 6912, "token": 13, "text": ".", "passed": true}
+{"rank": 0, "context": 6912, "length": 6912, "token": 41802, "text": "\uc73c\ub85c", "passed": true}
+{"rank": 0, "context": 13824, "length": 6912, "token": 53754, "text": " \uae30", "passed": true}
+{"rank": 0, "context": 20736, "length": 6912, "token": 135631, "text": "\ubb3c", "passed": true}
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=39176 -> rows 76032/92032 tiles 594/719 tasks 2376/2876
+{"rank": 0, "context": 27648, "length": 4897, "token": 785, "text": "The", "passed": true}
+{"rank": 0, "variant": {"sp": false, "nvfp4": true}}
+{"rank": 0, "context": 0, "length": 6912, "token": 13, "text": ".", "passed": true}
+{"rank": 0, "context": 6912, "length": 6912, "token": 41802, "text": "\uc73c\ub85c", "passed": true}
+{"rank": 0, "context": 13824, "length": 6912, "token": 53754, "text": " \uae30", "passed": true}
+{"rank": 0, "context": 20736, "length": 6912, "token": 135631, "text": "\ubb3c", "passed": true}
+{"rank": 0, "context": 27648, "length": 4897, "token": 785, "text": "The", "passed": true}
+{"rank": 0, "variant": {"sp": true, "nvfp4": false}}
+{"rank": 0, "context": 0, "length": 6912, "token": 13, "text": ".", "passed": true}
+{"rank": 0, "context": 6912, "length": 6912, "token": 41802, "text": "\uc73c\ub85c", "passed": true}
+{"rank": 0, "context": 13824, "length": 6912, "token": 53754, "text": " \uae30", "passed": true}
+{"rank": 0, "context": 20736, "length": 6912, "token": 135631, "text": "\ubb3c", "passed": true}
+{"rank": 0, "context": 27648, "length": 4897, "token": 785, "text": "The", "passed": true}
+{"rank": 0, "variant": {"sp": false, "nvfp4": false}}
+{"rank": 0, "context": 0, "length": 6912, "token": 13, "text": ".", "passed": true}
+{"rank": 0, "context": 6912, "length": 6912, "token": 78570, "text": " \ufffd", "passed": true}
+{"rank": 0, "context": 13824, "length": 6912, "token": 53754, "text": " \uae30", "passed": true}
+{"rank": 0, "context": 20736, "length": 6912, "token": 135631, "text": "\ubb3c", "passed": true}
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+{"rank": 0, "context": 27648, "length": 4897, "token": 785, "text": "The", "passed": true}

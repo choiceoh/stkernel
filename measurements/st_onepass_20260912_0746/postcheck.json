@@ -1,0 +1,52 @@
+{
+  "checked_at": "2026-09-11T22:54:51.561021+00:00",
+  "nodes": [
+    {
+      "host": "10.10.10.2",
+      "id": "b1806a9d18214ded5fd6108998d1f3638de8751882b3d4b63ae31b715f294bdb",
+      "image": "st-engine:prod-5734b29fde84",
+      "started_at": "2026-09-11T21:42:23.102861926Z",
+      "running": true,
+      "restart_count": 0
+    },
+    {
+      "host": "10.10.10.1",
+      "id": "0bcd9968e325ee4b8813d004782647ec85f14a0989984da14f0d1da468f673cb",
+      "image": "st-engine:prod-5734b29fde84",
+      "started_at": "2026-09-11T21:42:24.674534796Z",
+      "running": true,
+      "restart_count": 0
+    },
+    {
+      "host": "10.10.10.3",
+      "id": "3e5496079160a22f22e6d9c3d8440eca5ad2b1af79e8d07526169275d9476b02",
+      "image": "st-engine:prod-5734b29fde84",
+      "started_at": "2026-09-11T21:42:24.588067026Z",
+      "running": true,
+      "restart_count": 0
+    },
+    {
+      "host": "10.10.10.4",
+      "id": "ab3476f9bd81a6b66020028c0a463277a00273cd314d575bfbde4c866a7d1a51",
+      "image": "st-engine:prod-5734b29fde84",
+      "started_at": "2026-09-11T21:42:24.542302486Z",
+      "running": true,
+      "restart_count": 0
+    }
+  ],
+  "supervisor_active": "active",
+  "supervisor_enabled": "enabled",
+  "head": {
+    "engine": "ST",
+    "model": "glm-5.3-flash",
+    "running": [],
+    "waiting": [],
+    "queued": 0,
+    "parked": 158,
+    "parking": 0,
+    "resuming": 0,
+    "steps": 1930,
+    "served": 150
+  },
+  "supervisor_log": "Sep 12 07:47:24 srv2 systemd[2398]: Stopped st-glm53.service - ST engine GLM-5.3 TP=4 supervisor (4x GB10; boot-start + crash recovery; launchers/st-glm53-supervisor.sh).\nSep 12 07:47:24 srv2 systemd[2398]: st-glm53.service: Consumed 16.276s CPU time.\nSep 12 07:48:14 srv2 systemd[2398]: Started st-glm53.service - ST engine GLM-5.3 TP=4 supervisor (4x GB10; boot-start + crash recovery; launchers/st-glm53-supervisor.sh).\nSep 12 07:51:16 srv2 systemd[2398]: Stopping st-glm53.service - ST engine GLM-5.3 TP=4 supervisor (4x GB10; boot-start + crash recovery; launchers/st-glm53-supervisor.sh)...\nSep 12 07:51:16 srv2 systemd[2398]: Stopped st-glm53.service - ST engine GLM-5.3 TP=4 supervisor (4x GB10; boot-start + crash recovery; launchers/st-glm53-supervisor.sh).\nSep 12 07:54:00 srv2 systemd[2398]: Started st-glm53.service - ST engine GLM-5.3 TP=4 supervisor (4x GB10; boot-start + crash recovery; launchers/st-glm53-supervisor.sh).\n"
+}

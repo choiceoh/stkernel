@@ -1,0 +1,61 @@
+{
+  "comparison": "historical equal HTTP request bodies; not a paired same-day deployment experiment",
+  "vllm_source": "measurements/glm53_ep_local_20260908/onepass2-completed/onepass.jsonl",
+  "st_source": "measurements/st_onepass_20260912_0746/result.jsonl",
+  "matching_request_hashes": 5,
+  "requests": [
+    {
+      "ctx": 2000,
+      "question": 0,
+      "request_sha256": "6892d85470c14a0fab53e11b46d18f9587587c82f0aa1ca3cde696ca75b47104",
+      "vllm_decode_tok_s": 69.26176607877828,
+      "st_decode_tok_s": 39.002757812855506,
+      "vllm_ttft_s": 2.3857299470109865,
+      "st_ttft_s": 1.0590935349973734
+    },
+    {
+      "ctx": 2000,
+      "question": 1,
+      "request_sha256": "e19da4e8cef976a067e90bf7bce933afa65a88a85c17be2218182fac2a4e2a8b",
+      "vllm_decode_tok_s": 77.85686390015867,
+      "st_decode_tok_s": 36.10133689783445,
+      "vllm_ttft_s": 0.8813254490378313,
+      "st_ttft_s": 1.0494027219974669
+    },
+    {
+      "ctx": 2000,
+      "question": 2,
+      "request_sha256": "c36bfff63cfa297dd209f0c6b97e0fd430fe215696bed1cb080e89640aa06265",
+      "vllm_decode_tok_s": 83.08372390163763,
+      "st_decode_tok_s": 34.177221110624664,
+      "vllm_ttft_s": 0.8803491109865718,
+      "st_ttft_s": 1.0482518089993391
+    },
+    {
+      "ctx": 32000,
+      "question": "all",
+      "request_sha256": "c3463c6e8116db5558e3b809b6b59a1f438fe68b0ad0be391ef96480da7de9ed",
+      "vllm_decode_tok_s": 76.78414765577128,
+      "st_decode_tok_s": 35.59967667910165,
+      "vllm_ttft_s": 10.730707166017964,
+      "st_ttft_s": 2.678523454000242
+    },
+    {
+      "ctx": 128000,
+      "question": "all",
+      "request_sha256": "ee7545109ae85229ab3c88185749ca056baf52f376547da4dd57b2fa18d70228",
+      "vllm_decode_tok_s": 84.73783770676715,
+      "st_decode_tok_s": 33.83572286022923,
+      "vllm_ttft_s": 41.60224503703648,
+      "st_ttft_s": 64.41288099500525
+    }
+  ],
+  "vllm_step_s": 22.78864333379765,
+  "st_step_s": 10.96250161779981,
+  "vllm_ms_per_step": 43.88150647462669,
+  "st_ms_per_step": 91.22005495317788,
+  "step_rate_ratio": 0.4810510857195879,
+  "tokens_per_step_ratio": 0.9540764645242258,
+  "vllm_acceptance": 0.49375,
+  "st_acceptance": 0.4618905472636816
+}

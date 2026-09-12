@@ -31,26 +31,26 @@ class ArenaAdmissionTests(unittest.TestCase):
             self.assertEqual(report['reclaimed'], 0)
             self.assertEqual(weight.read_bytes(), before)
 
-    def test_shortfall_is_reclaimed_from_page_cache_when_available_says_it_can_be(self):
-        # srv2 on 09-11: 54 free, 99 available, a 55.4 GiB arena. The pump must ask for exactly the shortfall.
+    def test_reclaim_faults_the_desired_extent_instead_of_reusing_free_pages(self):
+        # srv4 on 09-12: a shortfall-only pump reused free pages, evicted no
+        # cache, and repeatedly failed restart. The full extent forces eviction.
         touched = []
 
         def pump(nbytes):
             touched.append(nbytes)
-            states.append(meminfo(100, 99))               # the cache is gone: MemFree caught up
+            states.append(meminfo(100 if nbytes > 54*GIB else 54, 99))
             return nbytes
 
         states = [meminfo(54, 99)]
         with patch.object(Path, 'read_text', side_effect=lambda *a, **k: states[-1]):
             report = prepare_allocation(int(55.4 * GIB), [], 16 * GIB, lambda: 120 * GIB, reclaim=pump)
-        self.assertEqual(touched, [int(55.4 * GIB) + 16 * GIB - 54 * GIB])
+        self.assertEqual(touched, [int(55.4 * GIB) + 16 * GIB])
         self.assertEqual(report['reclaimed'], touched[0])
         self.assertEqual(report['immediately_free'], 100 * GIB)
 
     def test_reclaim_is_refused_when_it_would_starve_the_box(self):
-        # (30 free, 60 available): 55.4 + 16 does not fit at all; (10 free, 72 available): it fits, but pumping the
-        # 61.4 GiB shortfall would leave MemAvailable at 10.6, under the 16 GiB headroom earlyoom needs
-        for free, available in ((30, 60), (10, 72)):
+        # The temporary anonymous extent must also leave the full headroom.
+        for free, available in ((30, 60), (10, 72), (66, 80)):
             with self.subTest(free=free, available=available), \
                  patch.object(Path, 'read_text', return_value=meminfo(free, available)):
                 with self.assertRaisesRegex(MemoryError, 'cannot be reclaimed'):

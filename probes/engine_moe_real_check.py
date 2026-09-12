@@ -56,6 +56,7 @@ def main():
     ap.add_argument('--seeds',type=int,default=3)
     ap.add_argument('--repeats',type=int,default=64)
     ap.add_argument('--tokens',type=int,nargs='+',default=[1,4,6,12,18,24])
+    ap.add_argument('--moe-static',default='stock')
     a=ap.parse_args()
     torch.backends.cuda.matmul.allow_tf32=False
     names=[f'L{a.layer}.moe.{key}' for key in ('w13','w13_sf','w2','w2_sf')]
@@ -82,7 +83,7 @@ def main():
             coefficient=((sel==expert)*route).sum(-1,keepdim=True)
             out+=((hq@second.T)*coefficient).bfloat16().float()
         return out.bfloat16()
-    lane=served()
+    lane=served(moe_static=a.moe_static)
     rows=[]
     for seed in range(a.seeds):
         torch.manual_seed(seed)
@@ -125,7 +126,7 @@ def main():
                 for _ in range(a.repeats): call()
                 end.record(); end.synchronize()
                 return start.elapsed_time(end)/a.repeats
-            row=dict(seed=seed,tokens=tokens,routing=mode,repeats=a.repeats,original_relative=relative(out,expect),
+            row=dict(seed=seed,tokens=tokens,routing=mode,repeats=a.repeats,moe_static=a.moe_static,original_relative=relative(out,expect),
                 native_repeat_relative=relative(native_runs,native_runs[0]),
                 graph_relative=relative(graph_runs,native_runs[0]),
                 original_repeat_relative=relative(original_runs,original_runs[0]),
