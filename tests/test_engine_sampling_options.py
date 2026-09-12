@@ -52,8 +52,8 @@ class OptionTests(unittest.TestCase):
         self.assertAlmostEqual(out[4].item(), 0.0 - 1.0 - 0.5)
         self.assertEqual(out[3].item(), 3.0)
         seen, counts = self.history(5, [], [])
-        out = process_logits(logits, {}, seen, counts, decodable=3, mask=torch.tensor([True, False, True, True, True]))
-        self.assertTrue(torch.isinf(out[1]) and torch.isinf(out[3]) and torch.isinf(out[4]) and out[0] == 2.0)
+        out = process_logits(logits, {}, seen, counts, decodable=3)
+        self.assertTrue(torch.isinf(out[3]) and torch.isinf(out[4]) and out[0] == 2.0)
 
     def test_this_step_drafts_count_without_being_written_into_the_history(self):
         logits = torch.zeros(5)
@@ -134,13 +134,17 @@ class OptionTests(unittest.TestCase):
         self.assertTrue(torch.isinf(out[1]) and torch.isinf(out[4]))
         self.assertEqual([float(out[i]) for i in (0, 2, 3, 5)], [0.0] * 4)
 
-    def test_a_grammar_mask_and_a_forbidden_list_both_apply(self):
-        logits = torch.zeros(4)
-        seen, counts = self.history(4, [], [])
-        out = process_logits(logits, {}, seen, counts, mask=torch.tensor([True, True, False, True]),
-                             forbid=torch.tensor([0]))
-        self.assertTrue(torch.isinf(out[0]) and torch.isinf(out[2]))
-        self.assertEqual([float(out[i]) for i in (1, 3)], [0.0, 0.0])
+    def test_a_buffer_receives_the_row_instead_of_a_fresh_vocabulary(self):
+        """The grammar mask crosses a whole row in one launch, which needs the row's positions in consecutive
+        rows of one tensor -- so a position can be asked to land in one (base/grammar, 45차 §28)."""
+        raw = torch.tensor([1.0, -2.0, 3.0, 4.0])
+        seen, counts = self.history(4, [1], [1])
+        buf = torch.empty(2, 4)
+        got = process_logits(raw, {"repetition_penalty": 2.0}, seen, counts, forbid=torch.tensor([0]), out=buf[1])
+        self.assertEqual(got.data_ptr(), buf[1].data_ptr(), "the answer is in the buffer, not beside it")
+        fresh = process_logits(raw, {"repetition_penalty": 2.0}, seen, counts, forbid=torch.tensor([0]))
+        self.assertTrue(torch.equal(torch.nan_to_num(buf[1], neginf=-1e9), torch.nan_to_num(fresh, neginf=-1e9)))
+        self.assertTrue(torch.isinf(buf[1][0]))
 
     def test_picking_every_row_at_once_draws_what_picking_them_one_by_one_would(self):
         from engine.base.sampler import draw, pick_each
