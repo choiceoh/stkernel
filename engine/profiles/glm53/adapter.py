@@ -632,7 +632,7 @@ class Glm53Engine:
     def _pick_rich(self, seq: int, rows: torch.Tensor, drafts: "list[int]", draft_probs: "torch.Tensor | None"):
         """One sequence's positions through the base sampler. rows: [len(drafts) + 1, vocab] fp32 raw logits.
         Returns (accepted drafts, committed tokens, per-token (id, logprob, top) or None)."""
-        from engine.base.sampler import distribution, pick_each, speculative_pick, top_logprobs
+        from engine.base.sampler import block_verify, distribution, pick_each, top_logprobs
         opts = self.options.get(seq, {})
         temperature = self.limits[seq][1]
         gen = self.gens.get(seq, self.gen)
@@ -654,7 +654,7 @@ class Glm53Engine:
                 accepted += 1
             new = picks[: accepted + 1]
         else:
-            accepted, new = speculative_pick(torch.stack(dists), drafts[: len(dists) - 1], draft_probs, gen)
+            accepted, new = block_verify(torch.stack(dists), drafts[: len(dists) - 1], draft_probs, gen)
         want = opts.get("logprobs")
         lps = None
         if want is not None:
