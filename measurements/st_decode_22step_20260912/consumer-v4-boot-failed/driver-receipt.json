@@ -1,0 +1,14 @@
+{
+  "pid": 2629860,
+  "source": "/home/choiceoh/st-decode22/candidate-d77005ef",
+  "sha": "d77005ef46f20ea602ca8a703288cf86a93eb32e",
+  "command": [
+    "/usr/bin/python3",
+    "/home/choiceoh/st-decode22/candidate-d77005ef/measurements/st_decode_22step_20260912/run_bracket.py"
+  ],
+  "root": "/home/choiceoh/glm53-logs/st-decode22-consumer-v4",
+  "arms": [
+    "A"
+  ],
+  "baseline_measured": false
+}

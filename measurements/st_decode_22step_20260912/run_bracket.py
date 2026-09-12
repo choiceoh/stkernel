@@ -25,6 +25,7 @@ SOURCE = Path('/home/choiceoh/st-decode22')
 SEED = Path('/home/choiceoh/glm53-cache-decode22-seed-e12cb4b5')
 HOSTS = (None, 'choiceoh@10.10.10.1', 'choiceoh@10.10.10.3', 'choiceoh@10.10.10.4')
 PORT = 18122
+KV_GIB = os.environ.get('ST_DECODE22_KV_GIB', '6')  # user requested a smaller KV reservation after v4 admission failed
 BASE_URL = f'http://127.0.0.1:{PORT}'
 CANDIDATE = 'candidate-' + os.environ['ST_DECODE22_CANDIDATE']
 ARMS = (('A', CANDIDATE),)
@@ -118,7 +119,7 @@ def run_arm(arm, source_name):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', PORT))
     env = {key: value for key, value in os.environ.items() if not key.startswith(('STK_', 'FLEET_WORKLOAD'))}
-    env.update(ST_IMAGE='st-engine:decode22-' + arm.lower(), PORT=str(PORT), ST_PRODUCTION='1', ST_KV_GIB='7',
+    env.update(ST_IMAGE='st-engine:decode22-' + arm.lower(), PORT=str(PORT), ST_PRODUCTION='1', ST_KV_GIB=KV_GIB,
                RANKS_DIR='/home/choiceoh/models/st-glm53-nvidia-tp4-9391', CKPT=str(source / 'st-glm53-meta'),
                DRAFTER='/home/choiceoh/models/GLM-5.3-Flash-DFlash2', ST_ENGINE_DIR='/home/choiceoh/st-releases/decode22-' + arm,
                CACHE_DIR=str(cache), ST_TIER_DIR=str(directory / 'tier'), ST_DUMP_DIR=str(directory / 'dumps'),
