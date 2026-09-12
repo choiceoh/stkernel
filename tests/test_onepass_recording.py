@@ -147,6 +147,35 @@ class EvidenceTests(unittest.TestCase):
         self.assertNotEqual(a['request_sha256'], b['request_sha256'])
         self.assertEqual(requests[0].get_header('X-st-latency-token'), 'test')
 
+    def test_reasoning_usage_survives_normal_stop_and_missing_usage_stays_unknown(self):
+        for details, expected in (({'reasoning_tokens': 4096}, 4096),
+                                  ({'reasoning_tokens': 0}, 0), ({}, None), (None, None)):
+            with self.subTest(details=details), TemporaryDirectory() as root:
+                frames = [
+                    {'choices': [{'delta': {'reasoning_content': '계산 중'}}]},
+                    {'choices': [{'delta': {'content': '최종 답변'}, 'finish_reason': 'stop'}]},
+                    {'choices': [], 'usage': {'prompt_tokens': 10, 'completion_tokens': 4200,
+                                             'completion_tokens_details': details}}]
+                raw = ''.join('data: ' + json.dumps(row) + '\n' for row in frames).encode()
+                # Exercise the real durable request writer as well as SSE usage parsing.
+                with patch('urllib.request.urlopen', side_effect=OSError('offline')):
+                    run = Run({}, Path(root) / 'ledger.jsonl', 'http://localhost/v1/chat/completions')
+                run.begin('measure-c1')
+                timing = {}
+                try:
+                    with patch('urllib.request.urlopen', return_value=io.BytesIO(raw)):
+                        result = onepass.ask_stream('http://localhost/v1/chat/completions', 'm',
+                            'same', 8192, timing, reasoning_budget=4096)
+                    self.assertEqual(result[-1], 'stop')
+                    self.assertEqual(timing['reasoning_tokens'], expected)
+                    run.finish()
+                finally:
+                    CURRENT.set(None)
+                saved = json.loads((run.path / 'requests.jsonl').read_text())
+                self.assertEqual(saved['reasoning_tokens'], expected)
+                self.assertEqual(saved['reasoning_budget'], 4096)
+                self.assertEqual(saved['finish_reason'], 'stop')
+
 
 if __name__ == '__main__':
     unittest.main()
