@@ -173,6 +173,26 @@ def fetch_media(kind: str, url: str) -> bytes:
     raise RequestError(f"{kind}: url must be a data: or http(s) URL")
 
 
+def stop_token_ids_for(stops, tok) -> "list[int]":
+    """The stop strings this model can emit as one token, for the engine to end on itself.
+
+    The text scan stays and is still the authority: the same string can arrive as several
+    tokens, or straddle a boundary, and only the scan sees that. This lets the common case
+    -- a marker that is its own token -- end the row one step earlier and without the door
+    having to cancel it afterwards. A token whose text is not exactly the stop string (a
+    special token renders as nothing here) is not eligible.
+    """
+    ids = []
+    for stop in stops:
+        try:
+            encoded = tok.encode(stop, add_special_tokens=False).ids
+        except TypeError:                                   # a tokenizer without the switch
+            encoded = tok.encode(stop).ids
+        if len(encoded) == 1 and tok.decode(encoded) == stop:
+            ids.append(encoded[0])
+    return ids
+
+
 def prompt_switches(req: dict) -> "tuple[bool, bool]":
     """`add_generation_prompt` and `continue_final_message`, as OpenAI names them.
 
@@ -241,10 +261,13 @@ class _Choice:
     reaches a stop string ends there; complete <tool_call> blocks become tool_calls (streamed as they complete)."""
 
     def __init__(self, index: int, request: int, event, q, *, tok, stop, reasoning: bool, tool_parser=None,
-                 want_logprobs: "int | None" = None):
+                 want_logprobs: "int | None" = None, min_new: int = 0):
         self.index, self.request, self.event, self.q = index, request, event, q
         self.tok, self.stop, self.reasoning, self.tool_parser = tok, list(stop), reasoning, tool_parser
         self.want_logprobs = want_logprobs
+        self.min_new = min_new
+        self._stop_from = 0          # a stop string may not START below the floor: min_tokens means at least
+                                     # that many, and a stop the model happens to write early cannot undo it
         self.held = {"reasoning_content": [], "content": []}
         self.shown = {"reasoning_content": 0, "content": 0}
         self.text = {"reasoning_content": "", "content": ""}
@@ -299,11 +322,14 @@ class _Choice:
             decoded = self._decoded(channel, final)
             if channel == "content":
                 if self.stop:
-                    cut = min((decoded.find(x) for x in self.stop if x in decoded), default=-1)
+                    if self.total <= self.min_new:
+                        self._stop_from = len(decoded)
+                    hits = [i for i in (decoded.find(x, self._stop_from) for x in self.stop) if i >= 0]
+                    cut = min(hits) if hits else -1
                     if cut >= 0:
                         decoded = decoded[:cut]
                         self.finish = "stop"
-                    elif not final:                                 # a tail that could still become one waits
+                    elif not final and self.total > self.min_new:    # a tail that could still become one waits
                         held_back = partial_suffix(decoded, self.stop)
                         decoded = decoded[:len(decoded) - held_back] if held_back else decoded
                 if self.tool_parser is not None:
@@ -339,10 +365,20 @@ class _Choice:
         if self.want_logprobs is None:
             return None
         rows = []
+        seen = {}
+
+        def text_of(tid):
+            """One decode per distinct id. The payload asks for each token's text and its bytes,
+            and the top-k of one position repeat across the next, so this was two calls per entry
+            over the whole answer at once -- a stall in front of the last chunk."""
+            if tid not in seen:
+                seen[tid] = self.tok.decode([tid])
+            return seen[tid]
+
         for tid, lp, top in self.logprobs[offset:]:
-            token = self.tok.decode([tid])
+            token = text_of(tid)
             rows.append({"token": token, "logprob": lp, "bytes": list(token.encode()),
-                         "top_logprobs": [{"token": self.tok.decode([i]), "logprob": v, "bytes": list(self.tok.decode([i]).encode())}
+                         "top_logprobs": [{"token": text_of(i), "logprob": v, "bytes": list(text_of(i).encode())}
                                           for i, v in top[: self.want_logprobs]]})
         return {"content": rows}
 
@@ -1256,7 +1292,8 @@ class Server:
                     request, event = server.submit(ids, max_new, temperature, stream=True, min_new=min_new,
                                                    options=opts, continue_history=continue_history, media=media)
                     choices.append(_Choice(len(choices), request, event, server._streams[request], tok=server.tok, stop=stop,
-                                           reasoning=reasoning, tool_parser=tool_parser, want_logprobs=want_logprobs))
+                                           reasoning=reasoning, tool_parser=tool_parser, want_logprobs=want_logprobs,
+                                           min_new=min_new))
                 return choices
 
             def run_choices(self, choices, on_delta) -> bool:
@@ -1374,6 +1411,9 @@ class Server:
                 include_usage = bool(options_stream and options_stream.get("include_usage"))
                 model = req.get("model") if isinstance(req.get("model"), str) and req.get("model") else server.model_name
                 temperature, options = sampling_options(req, server.generation)
+                derived = stop_token_ids_for(stop, server.tok) if (stop and server.tok is not None) else []
+                if derived:
+                    options["stop_token_ids"] = sorted(set(options.get("stop_token_ids") or []) | set(derived))
                 if want_logprobs is not None:
                     options["logprobs"] = want_logprobs
                 grammar = response_format_grammar(req)
@@ -1514,6 +1554,9 @@ class Server:
                 include_usage = bool(isinstance(options_stream, dict) and options_stream.get("include_usage"))
                 model = req.get("model") if isinstance(req.get("model"), str) and req.get("model") else server.model_name
                 temperature, options = sampling_options(req, server.generation)
+                derived = stop_token_ids_for(stop, server.tok) if (stop and server.tok is not None) else []
+                if derived:
+                    options["stop_token_ids"] = sorted(set(options.get("stop_token_ids") or []) | set(derived))
                 count = best_of or n
                 if want_logprobs is not None or best_of:
                     options["logprobs"] = want_logprobs if want_logprobs is not None else 0
