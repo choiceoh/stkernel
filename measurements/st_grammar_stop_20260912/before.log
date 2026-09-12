@@ -1,0 +1,102 @@
+test_a_draft_the_grammar_refuses_ends_the_row (test_engine_grammar.GrammarTests.test_a_draft_the_grammar_refuses_ends_the_row) ... [06:55:10] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+/usr/local/lib/python3.12/dist-packages/xgrammar/matcher.py:242: DeprecationWarning: max_rollback_tokens is deprecated. You don't need to set it and it's always unlimited (-1).
+  warnings.warn(
+ok
+test_a_schema_the_compiler_refuses_is_a_value_error_not_the_compiler_s_own (test_engine_grammar.GrammarTests.test_a_schema_the_compiler_refuses_is_a_value_error_not_the_compiler_s_own)
+xgrammar's C++ layer raises for a regex it cannot convert and a `$ref` that goes nowhere. Raised ... [06:55:10] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+ok
+test_dormant_draft_walk_across_answer_and_eos_rolls_back (test_engine_grammar.GrammarTests.test_dormant_draft_walk_across_answer_and_eos_rolls_back) ... [06:55:10] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+ERROR
+test_json_object_masks_follow_the_grammar_and_drafts_roll_back (test_engine_grammar.GrammarTests.test_json_object_masks_follow_the_grammar_and_drafts_roll_back) ... [06:55:10] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+ok
+test_json_schema_is_enforced (test_engine_grammar.GrammarTests.test_json_schema_is_enforced) ... [06:55:10] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+ok
+test_stop_draft_ends_the_walk_and_termination_rolls_back (test_engine_grammar.GrammarTests.test_stop_draft_ends_the_walk_and_termination_rolls_back)
+DFlash may propose EOS with more drafts behind it; xgrammar rejects a mask after EOS. ... [06:55:10] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+ERROR
+test_the_compile_runs_on_a_thread_and_the_first_mask_waits_for_it (test_engine_grammar.GrammarTests.test_the_compile_runs_on_a_thread_and_the_first_mask_waits_for_it) ... [06:55:10] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+ok
+test_the_engine_s_end_tokens_are_the_grammar_s_stop_tokens (test_engine_grammar.GrammarTests.test_the_engine_s_end_tokens_are_the_grammar_s_stop_tokens)
+Left to itself xgrammar takes the tokenizer's single eos. A model whose generation config ends on ... [06:55:10] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+[06:55:10] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+ok
+test_the_real_compiler_and_kernel_qualify_together (test_engine_grammar.GrammarTests.test_the_real_compiler_and_kernel_qualify_together) ... [06:55:10] /project/cpp/tokenizer_info.cc:144: Warning: Vocab type detection failed: (hf_tokenizer_obj.count("decoder") && hf_tokenizer_obj.at("decoder").is<picojson::object>()) is false: Decoder field is not found in tokenizer.json. Using RAW VocabType by default.
+ok
+test_a_row_with_no_step_to_ride_along_with_fills_its_own (test_engine_grammar.PickRichTests.test_a_row_with_no_step_to_ride_along_with_fills_its_own)
+The prompt's first token is picked outside any decode step: it still gets its mask. ... ok
+test_the_mask_decides_the_pick_and_a_refused_draft_ends_the_row (test_engine_grammar.PickRichTests.test_the_mask_decides_the_pick_and_a_refused_draft_ends_the_row) ... ok
+test_the_row_writes_its_positions_into_one_kept_buffer (test_engine_grammar.PickRichTests.test_the_row_writes_its_positions_into_one_kept_buffer)
+The step's block is the buffer: the mask kernel wants consecutive rows and so does the sampler. ... ok
+test_two_grammar_rows_in_one_call_keep_their_own_span_of_the_block (test_engine_grammar.PickRichTests.test_two_grammar_rows_in_one_call_keep_their_own_span_of_the_block)
+The premise the mask kernel rests on: a row's positions are CONSECUTIVE rows of the step's block, ... ok
+test_a_kernel_that_agrees_with_the_bitmask_qualifies (test_engine_grammar.QualifyTests.test_a_kernel_that_agrees_with_the_bitmask_qualifies) ... ok
+test_a_kernel_that_masks_the_wrong_ids_fails_the_boot (test_engine_grammar.QualifyTests.test_a_kernel_that_masks_the_wrong_ids_fails_the_boot) ... ok
+test_a_mask_that_allows_everything_fails_the_boot (test_engine_grammar.QualifyTests.test_a_mask_that_allows_everything_fails_the_boot)
+All-true at a JSON start means the head and the tokenizer disagree about the vocabulary -- every ... ok
+test_a_dormant_row_costs_nothing_and_refuses_nothing (test_engine_grammar.ReasoningGateTests.test_a_dormant_row_costs_nothing_and_refuses_nothing) ... ok
+test_a_draft_that_ends_the_reasoning_arms_the_rest_of_the_step_and_is_taken_back (test_engine_grammar.ReasoningGateTests.test_a_draft_that_ends_the_reasoning_arms_the_rest_of_the_step_and_is_taken_back) ... ok
+test_only_a_committed_token_arms_it (test_engine_grammar.ReasoningGateTests.test_only_a_committed_token_arms_it) ... ok
+test_the_tokens_after_the_end_token_are_fed_to_the_grammar (test_engine_grammar.ReasoningGateTests.test_the_tokens_after_the_end_token_are_fed_to_the_grammar) ... ok
+test_a_mask_that_refuses_nothing_is_not_applied_at_all (test_engine_grammar.StepBufferTests.test_a_mask_that_refuses_nothing_is_not_applied_at_all) ... ok
+test_a_refused_draft_ends_the_row_and_the_dead_positions_are_never_filled (test_engine_grammar.StepBufferTests.test_a_refused_draft_ends_the_row_and_the_dead_positions_are_never_filled) ... ok
+test_a_row_without_a_grammar_keeps_all_of_its_positions_and_is_not_masked (test_engine_grammar.StepBufferTests.test_a_row_without_a_grammar_keeps_all_of_its_positions_and_is_not_masked) ... ok
+test_each_row_owns_a_slice_so_no_mask_can_land_on_another_row (test_engine_grammar.StepBufferTests.test_each_row_owns_a_slice_so_no_mask_can_land_on_another_row)
+vLLM fills compactly and then sorts the rows back into the batch's order, because one kernel call ... ok
+test_every_position_gets_the_grammar_it_asked_for (test_engine_grammar.StepBufferTests.test_every_position_gets_the_grammar_it_asked_for) ... ok
+test_the_buffers_are_kept_between_steps_and_grow_only_upwards (test_engine_grammar.StepBufferTests.test_the_buffers_are_kept_between_steps_and_grow_only_upwards) ... ok
+test_the_crossing_happens_once_after_the_walk_not_inside_it (test_engine_grammar.StepBufferTests.test_the_crossing_happens_once_after_the_walk_not_inside_it) ... ok
+test_the_mask_lands_on_top_of_what_the_sampler_already_forbade (test_engine_grammar.StepBufferTests.test_the_mask_lands_on_top_of_what_the_sampler_already_forbade) ... ok
+
+======================================================================
+ERROR: test_dormant_draft_walk_across_answer_and_eos_rolls_back (test_engine_grammar.GrammarTests.test_dormant_draft_walk_across_answer_and_eos_rolls_back)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_grammar.py", line 79, in test_dormant_draft_walk_across_answer_and_eos_rolls_back
+    masks = self.allowed(m, [after, brace, close, eos, brace])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/tests/test_engine_grammar.py", line 33, in allowed
+    masks = self.grammars.prepare([("row", matcher, list(drafts))], "cpu")
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/base/grammar.py", line 140, in prepare
+    live, needed = matcher.fill(staging, at, drafts)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/base/grammar.py", line 252, in fill
+    needed |= self.matcher.fill_next_token_bitmask(bitmask, at + i) is not False
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/xgrammar/matcher.py", line 343, in fill_next_token_bitmask
+    return self._handle.fill_next_token_bitmask(bitmask, index, debug_print)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "python/tvm_ffi/cython/type_info.pxi", line 1176, in tvm_ffi.core._member_method_wrapper.wrapper
+  File "python/tvm_ffi/cython/function.pxi", line 968, in tvm_ffi.core.Function.__call__
+RuntimeError: [06:55:10] /project/cpp/grammar_matcher.cc:812: Check failed: (!IsStopTokenAccepted()) is false: GrammarMatcher has terminated after accepting the stop token, but is trying to find the next token mask
+
+
+======================================================================
+ERROR: test_stop_draft_ends_the_walk_and_termination_rolls_back (test_engine_grammar.GrammarTests.test_stop_draft_ends_the_walk_and_termination_rolls_back)
+DFlash may propose EOS with more drafts behind it; xgrammar rejects a mask after EOS.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_grammar.py", line 70, in test_stop_draft_ends_the_walk_and_termination_rolls_back
+    self.assertEqual(self.allowed(m, [eos, *trailing]), [{eos}])
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/tests/test_engine_grammar.py", line 33, in allowed
+    masks = self.grammars.prepare([("row", matcher, list(drafts))], "cpu")
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/base/grammar.py", line 140, in prepare
+    live, needed = matcher.fill(staging, at, drafts)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/base/grammar.py", line 252, in fill
+    needed |= self.matcher.fill_next_token_bitmask(bitmask, at + i) is not False
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/xgrammar/matcher.py", line 343, in fill_next_token_bitmask
+    return self._handle.fill_next_token_bitmask(bitmask, index, debug_print)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "python/tvm_ffi/cython/type_info.pxi", line 1176, in tvm_ffi.core._member_method_wrapper.wrapper
+  File "python/tvm_ffi/cython/function.pxi", line 968, in tvm_ffi.core.Function.__call__
+RuntimeError: [06:55:10] /project/cpp/grammar_matcher.cc:812: Check failed: (!IsStopTokenAccepted()) is false: GrammarMatcher has terminated after accepting the stop token, but is trying to find the next token mask
+
+
+----------------------------------------------------------------------
+Ran 28 tests in 4.023s
+
+FAILED (errors=2)
