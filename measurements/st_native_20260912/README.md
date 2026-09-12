@@ -124,3 +124,15 @@ The valid 32K request generated 730 tokens and stopped normally with 672 final-a
 A full-model 128,559-token diagnostic without prefix marks produced the correct first token (`The`) with native NVFP4 + SP and explicitly retrieved 8127 in its first 64 generated tokens. Explicit FP8 and no-SP controls also recognized the document/questions (`diagnostic-long-h/`). The remaining investigation adds prefix marks and the real runner while retaining the native computation.
 
 The merged block-table upload ring had a separate proven ordering defect: it recorded the reuse event before enqueueing the upload. A deliberately delayed upload caused the old code to read `[21,22,23,24]` where `[11,12,13,14]` had been submitted. The event now follows its upload. The real GPU regression fails on H and passes on the repair; the full CPU suite ran 503 tests with 115 skips and no failures. This defect is fixed independently; the long-context failure is not yet attributed to it.
+
+### Prefix observation bisection (H, eager runner, 128,559 input tokens)
+
+The loaded four-rank model was reused for controlled diagnostic arms in `diagnostic-marks-h/`. These runs are numerical diagnostics, not serving performance measurements: no decode capture, asynchronous runner, HTTP door, or NVMe prefix tier. All native dense/SP lanes remained active. Every request cleared prefix entries and cache contents before admission.
+
+- Direct target forward with KDA prefix marks retained the expected first token 785 (`The`) and meaningful document-question reasoning.
+- The real runner with target auxiliary states and drafter observations into all prefix snapshots selected token 220 and repeated `1.` for 192 tokens.
+- Disabling all observations, disabling prefix caching, or skipping only snapshot observations each selected 785.
+- Keeping snapshot observations but writing their drafter state into cloned scratch rings selected 154842 (`</think>`); the discrepancy is not specific to the snapshot arena address.
+- Synchronizing before each observation, after each observation, or only once after each target forward selected 785. This narrows the discrepancy to a lifetime/order-sensitive path; it does not yet identify the faulty operation or establish full answer correctness.
+
+The wrapper exited 0, restored the pinned serving release and active systemd service, and removed its ingress drain rule. A separate fresh-session native / synchronized / native repeat is next, to check order effects before changing production behavior. The independently repaired pinned block-ID event is not claimed to explain this result.
