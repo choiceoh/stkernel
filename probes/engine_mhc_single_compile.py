@@ -5,8 +5,18 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
+
+
+def mhc_resources(resources):
+    # CUDA 13 prints "Function <symbol>:", while older dumps used
+    # "Function : <symbol>". Match the symbol before inspecting its usage.
+    return [dict(kernel=name.strip().rstrip(':'), usage=usage.strip())
+            for name, usage in re.findall(r'^\s*Function\s+(?::\s*)?([^\n]+)\n([^\n]*)',
+                                           resources, flags=re.MULTILINE)
+            if 'mk_mhc_ar_' in name]
 
 
 def main():
@@ -38,9 +48,8 @@ def main():
     if torch.cuda.is_initialized():
         raise RuntimeError('extension loading unexpectedly initialized a GPU')
     resources = subprocess.check_output(['cuobjdump', '--dump-resource-usage', extension.__file__], text=True)
-    sections = [section.strip() for section in resources.split('Function :')
-                if 'mk_mhc_ar_' in section.splitlines()[0]]
-    if not any('mk_mhc_ar_single_kernel' in section for section in sections):
+    sections = mhc_resources(resources)
+    if not any('mk_mhc_ar_single_kernel' in section['kernel'] for section in sections):
         raise RuntimeError('the candidate kernel was not emitted')
     report = dict(status='PASS', scope='full CUDA/Torch build and resources only; GPU numerics and timing pending',
                   gpu_used=False, torch=torch.__version__, cuda=torch.version.cuda, flags=flags,
