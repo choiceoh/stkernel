@@ -405,6 +405,55 @@ class NvmeControlTests(unittest.TestCase):
         self.assertEqual(writer.result(timeout=2), 8)
         self.assertEqual(reader.result(timeout=2), 8)
 
+    def test_close_returns_the_staging_buffers_and_leaves_what_is_parked_on_disk(self):
+        # A tier's pinned host staging and device scratch live OUTSIDE the arena, so the
+        # engine's release cannot reach them: on a handover they are held for nothing.
+        import torch
+        tier = NvmeTier.__new__(NvmeTier)
+        tier.stage_t = torch.empty(64, dtype=torch.uint8)
+        tier.stage = memoryview(tier.stage_t.numpy())
+        tier.scratch = torch.empty(32, dtype=torch.uint8)
+        tier.stream = object()
+        tier.index = {"7": {"file": "seq-7.kv"}}
+
+        self.assertEqual(tier.close(), 96)
+        self.assertIsNone(tier.stage)
+        self.assertIsNone(tier.stage_t)
+        self.assertIsNone(tier.scratch)
+        self.assertIsNone(tier.stream)
+        self.assertEqual(tier.index, {"7": {"file": "seq-7.kv"}})   # D16: parked conversations outlive the process
+        self.assertEqual(tier.close(), 0)                           # idempotent
+
+    def test_closing_a_tier_that_has_no_staging_of_its_own_is_nothing_rather_than_an_error(self):
+        # Probes hand TieredKV a bare object; a shutdown must not care which kind it got.
+        self.assertEqual(make_tier().close(), 0)
+
+    def test_close_waits_for_a_transfer_still_holding_the_staging_it_is_about_to_free(self):
+        kv = make_tier()
+        started, release, done = threading.Event(), threading.Event(), []
+
+        def work():
+            started.set()
+            release.wait(2)
+            done.append("finished")
+            return 8
+
+        kv.inflight[0] = ("park", 11, 16, kv.tier.run_async(work))
+        self.assertTrue(started.wait(2))
+        threading.Timer(0.05, release.set).start()
+        kv.close()
+        self.assertEqual(done, ["finished"], "the staging went while a thread was still in it")
+        self.assertFalse(kv.inflight)
+
+    def test_a_failed_transfer_does_not_stop_the_shutdown(self):
+        from concurrent.futures import Future
+        kv = make_tier()
+        failed = Future()
+        failed.set_exception(OSError("the disk went away"))
+        kv.inflight[0] = ("park", 11, 16, failed)
+        self.assertEqual(kv.close(), 0)
+        self.assertFalse(kv.inflight)
+
     def test_invalid_staging_geometry_fails_before_cuda_allocation(self):
         for block, stage in [(0, SECTOR), (-SECTOR, SECTOR), (1, SECTOR),
                              (SECTOR, 0), (SECTOR, SECTOR - 1)]:

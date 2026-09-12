@@ -55,6 +55,43 @@ class RuntimeMemoryTests(unittest.TestCase):
         self.assertFalse(memory.ready)
         memory.close()
 
+    def test_the_floor_is_what_the_box_is_down_before_the_arena_and_outside_the_allocator(self):
+        # 1000 total, 900 free, 10 of it the allocator's: 90 is the CUDA context plus NCCL.
+        # The budget's floor line quoted vLLM's 40th boot until this number existed.
+        cuda = Cuda()
+        memory = self.budget(cuda)
+        self.assertEqual(memory.floor_bytes, 90)
+        self.assertEqual(memory.report()["floor_bytes"], 90)
+        memory.close()
+
+    def test_measured_splits_the_prefill_activation_peak_from_what_the_graphs_keep(self):
+        # ST's `profile_run` equivalent: the largest legal prefill runs before any graph is
+        # captured, so the peak standing at the last prefill row IS the activation peak, and
+        # everything capture adds to the reservation afterwards is the pools.
+        cuda = Cuda()
+        memory = self.budget(cuda)
+        cuda.allocated = cuda.reserved = cuda.peak_reserved = 410          # the arena, nothing else
+        memory.checkpoint("prefill/6912/0/before")
+        cuda.peak_reserved = 470                                           # activations, given back after
+        memory.checkpoint("prefill/6912/0/prepared")
+        cuda.reserved = 430                                                # graph pools, kept
+        memory.checkpoint("target/(4, 6, 4096)/captured")
+
+        m = memory.measured()
+        self.assertEqual(m["prefill_peak_bytes"], 60)
+        self.assertEqual(m["prefill_shapes"], ["prefill/6912/0/prepared"])
+        self.assertEqual(m["graph_bytes"], 20)
+        self.assertEqual(m["peak_workspace_bytes"], 60)
+        self.assertEqual(m["retained_workspace_bytes"], 20)
+        self.assertEqual(m["at_phase"], "target/(4, 6, 4096)/captured")
+        self.assertEqual(memory.report()["measured"], m)
+        memory.close()
+
+    def test_measured_says_nothing_rather_than_guessing_before_a_phase_exists(self):
+        memory = self.budget()
+        self.assertEqual(memory.measured(), {})
+        memory.close()
+
     def test_non_allocator_or_peer_usage_must_leave_the_os_reserve(self):
         free = [800]
         memory = self.budget(host_free=lambda: free[0])

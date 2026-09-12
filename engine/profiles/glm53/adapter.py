@@ -94,6 +94,8 @@ class Glm53Engine:
         self.inflight = {}                                  # seq -> decode steps launched ahead whose tokens the host has not read
         self.staged = {}                                    # seq -> the block boundary a step ahead parked in the caches' stage
         self.memory = None
+        self.budget = None                                  # boot's declared table, re-runnable against this boot's own ledger
+        self.arena = None                                   # the one allocation every device tensor here is a view of; `release` frees it
         self.prefill_chunk = None
 
     def capture_decode(self, max_seqs: int) -> None:
@@ -346,6 +348,43 @@ class Glm53Engine:
             self.drafter.decode_graphs = None
         if self.memory is not None:
             self.memory.close()
+
+    def release(self) -> dict:
+        """Serving is over: give the box back what this rank was holding.
+
+        Order matters in one place. A captured graph owns a memory pool and points at the
+        tensors it replayed over, so the graphs go first (`close_decode`); after that every
+        device tensor here is a view of ONE arena (D1) -- weights, KV blocks, state slots,
+        resident scales -- and the arena frees its storage outright rather than waiting to
+        become the last reference, which at shutdown it never is.
+
+        Worth doing even though the process is about to exit, because it is not about to:
+        filing calibration blobs, closing the death dump and tearing NCCL down take seconds,
+        and a handover has the next holder already asking for the same 55 GiB while earlyoom
+        watches an absolute 6 GiB floor and picks the engine first (OOM_STUDY 2). Those
+        seconds are the whole point of doing it here instead of leaving it to exit.
+
+        Returns the bytes declared and what `memory_reserved` said either side -- the only
+        honest answer to "did it land", since a workspace nobody freed would show up as a
+        `returned` far short of `arena_bytes`.
+        """
+        import torch
+
+        cuda = torch.cuda.is_available()
+        before = torch.cuda.memory_reserved() if cuda else 0
+        self.close_decode()                                 # graphs and their pool before what they point at
+        arena = getattr(self, "arena", None)
+        given = arena.release() if arena is not None else 0
+        self.arena = None
+        self.sampling_history = None                        # penalty tensors, outside the arena
+        self.grammars = None                                # xgrammar's bitmask buffers
+        self.staged = {}
+        if cuda:
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()                        # expandable chunks go back to the driver here
+        after = torch.cuda.memory_reserved() if cuda else 0
+        return {"arena_bytes": given, "reserved_before": before,
+                "reserved_after": after, "returned": before - after}
 
     # -- the runner's protocol -------------------------------------------------------
     def validate(self, ids, max_new, temperature) -> None:

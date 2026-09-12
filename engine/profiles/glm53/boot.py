@@ -240,6 +240,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     arena_bytes = (total_bytes(specs) + total_bytes(dspecs) + total_bytes(vspecs) + 256 * (len(specs) + len(dspecs) + len(vspecs) + 64)
                    + cache_layout.nbytes(nb, max_seqs) + PREFIX_SNAPSHOTS * snapshot_bytes + stage_bytes(F, net.layers, max_seqs) + calib_bytes)
     memory = None
+    redeclare = None                    # the same table, re-runnable once a ledger exists (45차 §51)
     if len(net.layers) == F.layers:
         # Fixed byte ceilings, not a measured workspace claim. Preparation
         # records peaks for the largest prefill and every declared graph.
@@ -271,10 +272,13 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         recorder.gauge("boot_model_cache_files_returned", report["cache_files"])
         # D1: the box declared, with every line's provenance, before the arena is allocated
         from engine.profiles.glm53 import budget as budget_mod
-        b = budget_mod.budget(kv_gib, max_seqs, chunk=sched.chunk_for(F.chunk_align, TOKEN_BUDGET, D.k if D else 0), ckpt=ckpt_meta,
-                              ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None, snapshots=PREFIX_SNAPSHOTS,
-                              draft_tp=comm.world_size if execution == "native" else 1,
-                              draft_native=execution == "native")
+        redeclare = partial(budget_mod.budget, kv_gib, max_seqs,
+                            chunk=sched.chunk_for(F.chunk_align, TOKEN_BUDGET, D.k if D else 0), ckpt=ckpt_meta,
+                            ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None,
+                            snapshots=PREFIX_SNAPSHOTS,
+                            draft_tp=comm.world_size if execution == "native" else 1,
+                            draft_native=execution == "native")
+        b = redeclare()
         recorder.gauge("budget_unassigned_GiB", round(b.kv_gib - b.kv_declared_gib, 2))
         if comm.rank == 0:
             print(budget_mod.report(b))
@@ -340,6 +344,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             contract = sched.Contract(chunk_align=F.chunk_align, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
                                       max_wait_s=MAX_WAIT_S, max_running=max_seqs)
             engine.memory = memory
+            engine.budget = redeclare           # printed once from guesses at boot, once from this boot's ledger
+            engine.arena = arena                # every device tensor is a view of it: `release` needs the last reference
             engine.vision = vision
             engine.calibration, engine.calibration_root = calibration, (str(store.root) if store is not None else None)
             engine.pack_stats = dict(store.stats) if store is not None else {}
@@ -611,7 +617,7 @@ def fleet(a) -> int:
     with rec.phase("comm"):
         comm = Comm.init()
     rec.root.name = f"rank{comm.rank}"
-    engine = dump = None
+    engine = dump = runner = None
     try:
         if comm.rank == 0:
             print(cfg.table())
@@ -654,6 +660,14 @@ def fleet(a) -> int:
         proof = native_execution_report(net, engine.drafter)
         print('ST_NATIVE_EXECUTION '+json.dumps(dict(rank=comm.rank, **proof)), flush=True)
         engine.memory.write(Path(a.dump_dir) / f"memory-rank{comm.rank}.json")
+        if comm.rank == 0 and engine.budget is not None:
+            # D1 a second time, with this boot's own numbers. The table above was printed
+            # before a byte was allocated, so its two hardest lines were guesses -- a runtime
+            # floor carried over from vLLM's 40th-boot table and a 12 GiB workspace CEILING
+            # standing in for activations nobody here had measured. The ledger written a line
+            # ago has both (45차 §51), and what it costs to say so is one more table.
+            from engine.profiles.glm53 import budget as budget_mod
+            print(budget_mod.report(engine.budget(ledger=engine.memory.report())))
         dump = DeathDump(a.dump_dir, runner.ring, boot_id=f"glm53-r{comm.rank}-{int(time.time())}")
         if comm.rank == 0:
             print(rec.table())
@@ -691,7 +705,20 @@ def fleet(a) -> int:
                         if written:
                             print(f"  calibration: rank {comm.rank} filed {len(written)} blobs under {engine.calibration_root}/mkcalib/rank{comm.rank}/", flush=True)
                 finally:
-                    engine.close_decode()
+                    # The door is shut and the last blob is filed: hand the box back before NCCL
+                    # teardown, not after the process happens to die (45차 §51). A handover has the
+                    # next holder already asking for the same 55 GiB. The tiers go first because
+                    # their staging lives outside the arena, so nothing else can reach it.
+                    try:
+                        staging = sum(t.close() for t in (getattr(runner, "tiered", None),
+                                                          getattr(runner, "prefix_tier", None)) if t is not None)
+                        back = engine.release()
+                        print(f"  released: rank {comm.rank} gave back {back['returned'] / GIB:.2f} GiB of "
+                              f"{back['arena_bytes'] / GIB:.2f} GiB arena plus {staging / 2**20:.0f} MiB of tier "
+                              f"staging; {back['reserved_after'] / GIB:.2f} GiB still reserved", flush=True)
+                    except Exception as exc:                  # noqa: BLE001 -- a shutdown never fails a shutdown
+                        print(f"  released: rank {comm.rank} could not: {type(exc).__name__}: {exc}", flush=True)
+                        engine.close_decode()
         finally:
             comm.close()
     return 0
