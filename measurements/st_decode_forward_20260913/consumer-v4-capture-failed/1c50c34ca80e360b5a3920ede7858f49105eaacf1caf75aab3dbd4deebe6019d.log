@@ -1,0 +1,12 @@
+waiting: pos 1/1, lease: production production/srv2/381911 on srv2 since 2026-09-13 05:00:56 (production st-glm53 on four Sparks) 2026-09-13_05:03:35
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "ad2a5917bbc14e8691d9e86124d21f62", "phase": "waiting", "reason": "dequeue", "since": 117939.648516613, "updated_at": 1789243799.756328, "version": 1}
+GO st-decode-consumer0913v4 2026-09-13_05:09:59
+  node 10.10.10.1: gpu=ok stray=3 ram=91G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=96G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=101G path=ok 
+== 05:10:01 chain: A (base = A = 5e2f297d0850, session st-decode-consumer0913v4, rehearse=0)
+  cut /home/choiceoh/st-releases/5e2f297d0850
+== 05:10:01 arm A = 5e2f297d0850cef86c217880cf0378aa84332095 -> /home/choiceoh/st-releases/5e2f297d0850 (port 18122)
+== 05:15:07 rank 0 died during boot (see /home/choiceoh/glm53-logs/st-bracket/st-decode-consumer0913v4/boot-A.log)
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "bf20bbc658a8472ab2bd180f906e6524", "phase": "waiting", "reason": "release", "since": 118249.222247749, "updated_at": 1789244109.330054, "version": 1}

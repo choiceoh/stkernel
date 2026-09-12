@@ -2,11 +2,65 @@
   "timezone": "Asia/Seoul",
   "date": "2026-09-13",
   "events": [
-    {"time": "04:42:02", "kind": "planned deployment", "source": "644fbbea6095702b394093bb60095d4c7e0a25e4", "evidence": "st-deploy-watch.log; deploy gate passed and official stop/start"},
-    {"time": "04:52:40", "kind": "candidate startup failure", "source": "a39ca8ac4dc5e11f78d671f602682109973c9651", "cause": "ModelOpt checkpoint metadata was incorrectly paired with B12x rank weights; all rank guards rejected it before weight loading", "evidence": "consumer-v2-startup-failed/"},
-    {"time": "04:57:17", "kind": "production runtime failure", "source": "644fbbea6095702b394093bb60095d4c7e0a25e4", "observed": "ranks 2 and 3 stalled in one-shot peer flags at sequence 5518, then trapped; ranks 0 and 1 lost Gloo peer connections in transfer settlement", "first_divergent_operation": "unresolved", "evidence": "production-045819/"},
-    {"time": "04:59:48", "kind": "production restart refused", "cause": "NVMe parked conversation keys differ: ranks 0 and 1 have 0..13, ranks 2 and 3 have 0..12", "evidence": "st-forensics/20260913-045948 and read-only per-rank manifest inspection", "effect": "retrying the same boot cannot repair the persisted mismatch"},
-    {"time": "05:09:59", "kind": "canonical queue admission", "session": "st-decode-consumer0913v4", "ticket": "1789243414536389", "source": "5e2f297d0850cef86c217880cf0378aa84332095", "observed": "the production supervisor used its official stop, the waiting queue acquired the lease, and the production relaunch refused that queue owner", "manual_stop_performed": false}
+    {
+      "time": "04:42:02",
+      "kind": "planned deployment",
+      "source": "644fbbea6095702b394093bb60095d4c7e0a25e4",
+      "evidence": "st-deploy-watch.log; deploy gate passed and official stop/start"
+    },
+    {
+      "time": "04:52:40",
+      "kind": "candidate startup failure",
+      "source": "a39ca8ac4dc5e11f78d671f602682109973c9651",
+      "cause": "ModelOpt checkpoint metadata was incorrectly paired with B12x rank weights; all rank guards rejected it before weight loading",
+      "evidence": "consumer-v2-startup-failed/"
+    },
+    {
+      "time": "04:57:17",
+      "kind": "production runtime failure",
+      "source": "644fbbea6095702b394093bb60095d4c7e0a25e4",
+      "observed": "ranks 2 and 3 stalled in one-shot peer flags at sequence 5518, then trapped; ranks 0 and 1 lost Gloo peer connections in transfer settlement",
+      "first_divergent_operation": "unresolved",
+      "evidence": "production-045819/"
+    },
+    {
+      "time": "04:59:48",
+      "kind": "production restart refused",
+      "cause": "NVMe parked conversation keys differ: ranks 0 and 1 have 0..13, ranks 2 and 3 have 0..12",
+      "evidence": "st-forensics/20260913-045948 and read-only per-rank manifest inspection",
+      "effect": "retrying the same boot cannot repair the persisted mismatch"
+    },
+    {
+      "time": "05:09:59",
+      "kind": "canonical queue admission",
+      "session": "st-decode-consumer0913v4",
+      "ticket": "1789243414536389",
+      "source": "5e2f297d0850cef86c217880cf0378aa84332095",
+      "observed": "the production supervisor used its official stop, the waiting queue acquired the lease, and the production relaunch refused that queue owner",
+      "manual_stop_performed": false
+    },
+    {
+      "time": "05:15:01",
+      "kind": "candidate graph capture failure",
+      "session": "st-decode-consumer0913v4",
+      "source": "5e2f297d0850cef86c217880cf0378aa84332095",
+      "cause": "drafter observation uses five 4096-column tiles of a 20480-wide parent input; preserving that row stride exposed the input-reuse packer's old dense-row assumption",
+      "error": "the explicit input-reuse probe needs dense rows",
+      "evidence": "consumer-v4-capture-failed/",
+      "consumer_requests": 0,
+      "official_stop_and_release": "05:15:09",
+      "fix_commit": "c8562a7c55a49d53eefc13794ee035c4ed6dc10a",
+      "fix": "pass the actual parent row stride to input packing; test offset tiles and the complete five-pack drafter projection under changing captured inputs"
+    },
+    {
+      "time": "05:24:20",
+      "kind": "repeated production runtime failure",
+      "source": "644fbbea6095702b394093bb60095d4c7e0a25e4",
+      "observed": "health chat answered at 05:23:46, then ranks 2 and 3 stalled again at one-shot sequence 5518; ranks 0 and 1 lost their peers in transfer settlement",
+      "evidence": "production-052420/",
+      "first_divergent_operation": "unresolved",
+      "effect": "the same deterministic stall recurred after a fresh boot"
+    }
   ],
   "consumer": {
     "port": 18122,

@@ -17,6 +17,10 @@ quality hypothesis until the new consumer actually answers.
 - Native shared-expert GU/activation/down fusion and overlap with routed MoE,
   restricted to C=1 after C=4 regressions. The same native W4 packs are reused.
 - W4 row strides remove copies of narrow KDA projection inputs.
+- Input-reuse packing also follows the parent row stride. This is required by
+  the drafter's five-tile 20K observation projection during graph capture; the
+  earlier contiguous-only GPU fixture missed that combination. The new fixture
+  checks both offset tiles with poisoned padding and the complete five-pack fold.
 - Input quantization reuse and CTA-local split folding now cover M=7. The
   former M=6 dispatch silently excluded the actual C=1 verification width.
   Each shape retains its ordinary K-slice boundaries, FP32 fold order and BF16
@@ -73,8 +77,8 @@ and the canonical harness 43 budgets. Candidate-only `st_bracket.sh chain` will
 run two complete onepasses and release its own boot through the official stop.
 
 PR #789 was merged as `938de3f93a19`. The fleet subsequently completed the
-queued component probe and handed the reservation to the next task. The current
-production restart at 04:34 includes the PR #790 sampled-request fix; its real
+queued component probe and handed the reservation to the next task. The
+production restart at 04:34 included the PR #790 sampled-request fix; its real
 health ping passed at 04:38:32 and the supervisor reset its failure counters.
 The older stop request is no longer needed. A fresh candidate-only canonical
 consumer run follows the removal of the rejected probe geometry.
@@ -102,3 +106,33 @@ metadata rejection. The first divergent operation has not yet been established.
 
 No component result establishes 22 step/s, answer quality, speculative
 acceptance or a same-build consumer speedup.
+
+The admitted `st-decode-consumer0913v4` failed at graph capture on all four ranks
+at 05:15:01 KST, before any consumer request. Removing the W4 tile copy preserved
+the 20K parent row stride, but the M=6/7 input-reuse packer still required dense
+rows. `c8562a7c` fixes the packer's addressing without adding the copies back.
+`consumer-v4-capture-failed/` preserves its immutable container identities and
+all rank logs; the official launcher stopped that boot and released its lease
+at 05:15:09. The focused CPU check passes 32 tests with eight CUDA skips.
+The new strided and full-width captured numerical checks must pass on the
+reserved GPU before another full consumer boot.
+
+A later production boot answered its health chat at 05:23:46, then repeated
+the same one-shot sequence-5518 stall and peer loss at 05:24:20. The four logs
+are retained in `production-052420/`. The transport counters establish repeated
+rank divergence, not which operation first caused it. The queue acquired the
+fleet normally at 05:30:42 for the bounded strided-W4 GPU gate; no manual stop
+was performed.
+
+`decode7-c8562a7c.log` passes all three CUDA numerical/replay tests in
+48.410 s, including the previously failing offset inputs and complete five-pack
+observation projection. Exact consumer-pack router IDs agree for 2352 rows.
+The captured B/A/A/B component bracket puts N6416 effectively flat (+0.19%
+with visible timing drift), N4096/N6144 about 1.5% faster, and the 42 router
+pipelines at 3.198 to 1.574 ms. These are not engine speeds.
+
+`st-decode-consumer0913v5` now runs source `c8562a7c55a4` through the canonical
+two-onepass chain on one boot. All four logs and the PR760 watcher are bound to
+that boot's immutable container IDs. Reused private compilation caches include
+the work paid by the previous failed capture; they still contain no calibration
+blobs. Cold-prefix and preparation/measurement phases remain explicit.

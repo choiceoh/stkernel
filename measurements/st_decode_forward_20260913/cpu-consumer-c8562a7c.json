@@ -1,0 +1,20 @@
+{
+  "commit": "c8562a7c55a49d53eefc13794ee035c4ed6dc10a",
+  "image": "st-engine:main-ff728f43",
+  "entrypoint": "python3",
+  "workdir": "/repo",
+  "device": "CPU; CUDA_VISIBLE_DEVICES empty",
+  "modules": [
+    "tests.test_engine_pipeline",
+    "tests.test_engine_native_execution",
+    "tests.test_engine_shared_mlp",
+    "tests.test_engine_decode_seven",
+    "tests.test_engine_kda_storage"
+  ],
+  "tests": 40,
+  "passed": 32,
+  "skipped_gpu": 8,
+  "duration_s": 2.394,
+  "exit_code": 0,
+  "scope": "CPU contracts; strided input packing and five-tile graph replay still require GPU validation"
+}

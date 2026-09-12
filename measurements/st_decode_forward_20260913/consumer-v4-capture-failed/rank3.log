@@ -1,0 +1,157 @@
+2026-09-12T20:10:08.570437852Z   fleet reserved by queue/st-decode-consumer0913v4
+2026-09-12T20:10:08.821924026Z   box: GB10 (DGX Spark): SM121, unified 122 GiB (85 free)
+2026-09-12T20:10:08.840397549Z [W912 20:10:08.103748089 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+2026-09-12T20:10:14.033544010Z boot rendezvous arena-admission: rank 3 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-12T20:10:26.209234983Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:26.339265367Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:26.468134860Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:26.597097424Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:26.726315956Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:26.855603527Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:26.986114022Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:27.115545321Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:27.245239483Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:27.376955590Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:27.508298291Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:27.638335044Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:27.768011430Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:27.898775972Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:28.028288807Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:28.157296267Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:28.287348716Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:28.416500559Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:28.546235041Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:28.674802439Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:28.804879400Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:28.934129995Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:29.063647373Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:29.193637774Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:29.323196017Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:29.452937811Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:29.583115635Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:29.712738565Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:29.842080920Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:29.971412555Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:30.101850747Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:30.231833836Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:30.361505806Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:30.490055875Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:30.618913528Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:30.748095436Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:30.877366223Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:31.006954401Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:31.139686809Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:31.270233672Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:31.400109914Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:10:31.529338269Z [b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-12T20:11:39.099667513Z boot rendezvous weights-loaded: rank 3 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-12T20:12:04.730168988Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:12:04.730200492Z   return func(*args, **kwargs)
+2026-09-12T20:12:16.882031899Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+2026-09-12T20:12:16.882080379Z   return func(*args, **kwargs)
+2026-09-12T20:13:13.088318707Z [megakernel] selftest mla rel=3.13e-03 prefill32=True -> ARM
+2026-09-12T20:13:13.093657746Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+2026-09-12T20:13:13.093695745Z   return func(*args, **kwargs)
+2026-09-12T20:13:13.094049744Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:13:13.094063456Z   return func(*args, **kwargs)
+2026-09-12T20:13:15.657427204Z 2026-09-12 20:13:15,657 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12T20:13:15.658517376Z 2026-09-12 20:13:15,658 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_d279bbfc7515c28d
+2026-09-12T20:13:23.548742210Z 2026-09-12 20:13:23,548 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_d279bbfc7515c28d.o
+2026-09-12T20:13:23.548981681Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=1024 -> rows 37760/37760 tiles 295/295 tasks 1180/1180
+2026-09-12T20:13:23.549881566Z [tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=128
+2026-09-12T20:13:23.851670852Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:13:23.851715044Z   return func(*args, **kwargs)
+2026-09-12T20:13:23.855688791Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+2026-09-12T20:13:23.855734663Z   return func(*args, **kwargs)
+2026-09-12T20:13:24.276187363Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:13:24.276209171Z   return func(*args, **kwargs)
+2026-09-12T20:13:24.285323973Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+2026-09-12T20:13:24.285341509Z   return func(*args, **kwargs)
+2026-09-12T20:13:24.308275048Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=8192 -> rows 44928/44928 tiles 351/351 tasks 1404/1404
+2026-09-12T20:13:24.895485435Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:13:24.895503611Z   return func(*args, **kwargs)
+2026-09-12T20:13:29.070414393Z [megakernel] mla prefill32 LAUNCHED T=9216 W=2051 register-Q tile=32
+2026-09-12T20:13:29.107769245Z 2026-09-12 20:13:29,107 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12T20:13:29.107847004Z 2026-09-12 20:13:29,107 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_b992da48e5369332
+2026-09-12T20:13:37.983059366Z 2026-09-12 20:13:37,982 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_b992da48e5369332.o
+2026-09-12T20:13:37.983212454Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=73728 -> rows 110464/110464 tiles 863/863 tasks 3452/3452
+2026-09-12T20:13:40.829396189Z /usr/local/lib/python3.12/dist-packages/triton/language/core.py:2284: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+2026-09-12T20:13:40.829423293Z   warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+2026-09-12T20:14:03.952454399Z 2026-09-12 20:14:03,952 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r8_tm32f2g2a32wutr16n128k256d256sf6v1_99d2213b325520ff
+2026-09-12T20:14:05.108202146Z DECODE_REFORM_LAYOUT_PASS 1024
+2026-09-12T20:14:06.033310354Z REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-12T20:14:09.343666964Z 2026-09-12 20:14:09,343 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r8_tm32f2g2a32wutr16n128k256d256sf6v1_99d2213b325520ff.o
+2026-09-12T20:14:09.343774243Z [b12x static v2] lane serving: static2_m1_k4096_n512_t8_r8_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=1, routed=8, smem=98304 B)
+2026-09-12T20:14:09.589508771Z 2026-09-12 20:14:09,589 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1_c7b815ca2d5d4289
+2026-09-12T20:14:10.738024014Z DECODE_REFORM_LAYOUT_PASS 1024
+2026-09-12T20:14:11.648694895Z REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-12T20:14:14.753442666Z 2026-09-12 20:14:14,753 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1_c7b815ca2d5d4289.o
+2026-09-12T20:14:14.753533306Z [b12x static v2] lane serving: static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=8, routed=64, smem=98304 B)
+2026-09-12T20:14:18.608391179Z 2026-09-12 20:14:18,608 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m64_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_c77ac2a564f71fd3
+2026-09-12T20:14:19.911175781Z REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-12T20:14:23.803785048Z 2026-09-12 20:14:23,803 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m64_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_c77ac2a564f71fd3.o
+2026-09-12T20:14:23.803969304Z [b12x static v2] lane serving: static2_m64_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1 (mac=48, m=64, routed=512, smem=101376 B)
+2026-09-12T20:14:24.225949134Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:14:24.225981374Z   return func(*args, **kwargs)
+2026-09-12T20:14:24.235253616Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+2026-09-12T20:14:24.235288576Z   return func(*args, **kwargs)
+2026-09-12T20:14:24.256090522Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=4096 -> rows 40832/110464 tiles 319/863 tasks 1276/3452
+2026-09-12T20:14:25.431625899Z 2026-09-12 20:14:25,431 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m28_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_d7bbdb97ffdecbeb
+2026-09-12T20:14:26.533884543Z REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-12T20:14:30.569126792Z 2026-09-12 20:14:30,568 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m28_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_d7bbdb97ffdecbeb.o
+2026-09-12T20:14:30.569239800Z [b12x static v2] lane serving: static2_m28_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1 (mac=48, m=28, routed=224, smem=101376 B)
+2026-09-12T20:14:34.279180201Z 2026-09-12 20:14:34,278 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m21_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_55501d9399a7708c
+2026-09-12T20:14:35.442340019Z REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-12T20:14:39.313717516Z 2026-09-12 20:14:39,313 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m21_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_55501d9399a7708c.o
+2026-09-12T20:14:39.313805835Z [b12x static v2] lane serving: static2_m21_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1 (mac=48, m=21, routed=168, smem=101376 B)
+2026-09-12T20:14:42.249308072Z 2026-09-12 20:14:42,249 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m14_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_f20d98d05ad9f491
+2026-09-12T20:14:42.673547975Z REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-12T20:14:44.415258431Z 2026-09-12 20:14:44,415 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m14_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_f20d98d05ad9f491.o
+2026-09-12T20:14:44.415347935Z [b12x static v2] lane serving: static2_m14_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1 (mac=48, m=14, routed=112, smem=101376 B)
+2026-09-12T20:14:47.181344190Z 2026-09-12 20:14:47,181 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256sf6v1_b2a485c76ae56c90
+2026-09-12T20:14:48.328697628Z DECODE_REFORM_LAYOUT_PASS 1024
+2026-09-12T20:14:49.249694762Z REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-12T20:14:52.194590486Z 2026-09-12 20:14:52,194 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m7_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256sf6v1_b2a485c76ae56c90.o
+2026-09-12T20:14:52.194707254Z [b12x static v2] lane serving: static2_m7_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=7, routed=56, smem=98304 B)
+2026-09-12T20:14:58.070763437Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:14:58.070794413Z   return func(*args, **kwargs)
+2026-09-12T20:14:58.115744599Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-12T20:14:58.115777271Z   return func(*args, **kwargs)
+2026-09-12T20:14:59.756133920Z   calibration: rank 3 not filed -- collecting 0/32768 rows over 20 blobs, 214 tiles deferred to a later boot (fewer than 4096 rows)
+2026-09-12T20:15:00.718623875Z   released: rank 3 gave back 55.29 GiB of 55.01 GiB arena plus 189 MiB of tier memory; 0.90 GiB reserved and 817 MiB allocated still
+2026-09-12T20:15:00.718664035Z   released: rank 3 did NOT come back clean -- 817 MiB is still held by live tensors, largest blocks 288 MiB, 216 MiB, 36 MiB, 32 MiB, 32 MiB, 32 MiB
+2026-09-12T20:15:01.342145677Z [rank3]: Traceback (most recent call last):
+2026-09-12T20:15:01.342177101Z [rank3]:   File "/repo/engine/profiles/glm53/boot.py", line 1116, in <module>
+2026-09-12T20:15:01.342180365Z [rank3]:     raise SystemExit(main())
+2026-09-12T20:15:01.342182429Z [rank3]:                      ^^^^^^
+2026-09-12T20:15:01.342184237Z [rank3]:   File "/repo/engine/profiles/glm53/boot.py", line 1112, in main
+2026-09-12T20:15:01.342186109Z [rank3]:     return fleet(a)
+2026-09-12T20:15:01.342187741Z [rank3]:            ^^^^^^^^
+2026-09-12T20:15:01.342189453Z [rank3]:   File "/repo/engine/profiles/glm53/boot.py", line 995, in fleet
+2026-09-12T20:15:01.342191261Z [rank3]:     engine.capture_decode(MAX_SEQS)
+2026-09-12T20:15:01.342192957Z [rank3]:   File "/repo/engine/profiles/glm53/adapter.py", line 122, in capture_decode
+2026-09-12T20:15:01.342194909Z [rank3]:     self.drafter.capture_decode(self.caches, memory=self.memory, generator=self.gen, vocab=self.F.vocab)
+2026-09-12T20:15:01.342196781Z [rank3]:   File "/repo/engine/profiles/glm53/drafter.py", line 177, in capture_decode
+2026-09-12T20:15:01.342198589Z [rank3]:     self.decode_graphs = DrafterDecodeGraphs(self, caches, memory=memory, generator=generator, vocab=vocab)
+2026-09-12T20:15:01.342200445Z [rank3]:                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-12T20:15:01.342202285Z [rank3]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 416, in __init__
+2026-09-12T20:15:01.342204029Z [rank3]:     self.observations = DecodeGraphs(observe, observe_inputs,
+2026-09-12T20:15:01.342205933Z [rank3]:                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-12T20:15:01.342207853Z [rank3]:   File "/repo/engine/base/graphs.py", line 128, in __init__
+2026-09-12T20:15:01.342209629Z [rank3]:     step_fn(inp)
+2026-09-12T20:15:01.342211325Z [rank3]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 390, in observe
+2026-09-12T20:15:01.342213149Z [rank3]:     drafter.observe((self.field,inputs["slot"]), inputs["positions"], inputs["aux"])
+2026-09-12T20:15:01.342215117Z [rank3]:   File "/repo/engine/profiles/glm53/drafter.py", line 286, in observe
+2026-09-12T20:15:01.342216845Z [rank3]:     self._observe(ring, positions, aux)
+2026-09-12T20:15:01.342218525Z [rank3]:   File "/repo/engine/profiles/glm53/drafter.py", line 301, in _observe
+2026-09-12T20:15:01.342235709Z [rank3]:     c = norm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)          # context states, normed once for every layer
+2026-09-12T20:15:01.342237949Z [rank3]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-12T20:15:01.342239933Z [rank3]:   File "/repo/engine/profiles/glm53/drafter.py", line 281, in linear
+2026-09-12T20:15:01.342241757Z [rank3]:     return layer(x)
+2026-09-12T20:15:01.342243405Z [rank3]:            ^^^^^^^^
+2026-09-12T20:15:01.342246269Z [rank3]:   File "/repo/engine/kernels/dense/__init__.py", line 246, in __call__
+2026-09-12T20:15:01.342248108Z [rank3]:     partial = w4_gemm(flat[:, at:at+pack.cols], pack).float()
+2026-09-12T20:15:01.342249804Z [rank3]:               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-12T20:15:01.342251484Z [rank3]:   File "/repo/engine/kernels/dense/__init__.py", line 162, in w4_gemm
+2026-09-12T20:15:01.342253244Z [rank3]:     extension().run_gemm(x, pack.data, pack.scale, out, pack.rows,
+2026-09-12T20:15:01.342255644Z [rank3]: RuntimeError: the explicit input-reuse probe needs dense rows

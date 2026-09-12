@@ -1,0 +1,57 @@
+{
+  "commit": "c8562a7c55a49d53eefc13794ee035c4ed6dc10a",
+  "session": "st-decode-stride0913v2",
+  "ticket": "1789244663673977",
+  "image": "st-engine:main-ff728f43",
+  "numerics": {
+    "tests": 3,
+    "skipped": 0,
+    "duration_s": 48.41,
+    "passed": true,
+    "strided_offset_tiles_exact": true,
+    "complete_five_pack_drafter_graph_exact": true,
+    "changed_inputs": true,
+    "consumer_router_selected_ids_exact": true,
+    "consumer_router_checked_rows": 2352
+  },
+  "timings": [
+    {
+      "lane": "seven_row_dense_timing",
+      "rows": 7,
+      "n": 6416,
+      "baseline_ms": 0.0703790932893753,
+      "candidate_ms": 0.07051612436771393,
+      "change_percent": 0.19470423947520743,
+      "scope": "same packs, captured projection; not consumer speed"
+    },
+    {
+      "lane": "seven_row_dense_timing",
+      "rows": 7,
+      "n": 4096,
+      "baseline_ms": 0.04332956112921238,
+      "candidate_ms": 0.042649656534194946,
+      "change_percent": -1.56914719950636,
+      "scope": "same packs, captured projection; not consumer speed"
+    },
+    {
+      "lane": "seven_row_dense_timing",
+      "rows": 7,
+      "n": 6144,
+      "baseline_ms": 0.06435209140181541,
+      "candidate_ms": 0.06336581334471703,
+      "change_percent": -1.5326278223656398,
+      "scope": "same packs, captured projection; not consumer speed"
+    },
+    {
+      "lane": "tensorcore_router_timing",
+      "rows": 7,
+      "n": null,
+      "baseline_ms": 3.1984095573425293,
+      "candidate_ms": 1.5742592811584473,
+      "change_percent": -50.77993443508666,
+      "scope": "real router weights, synthetic hidden states, captured; not consumer speed"
+    }
+  ],
+  "verdict": "Numerical gate passes. Router and two W4 shapes are faster in this component bracket; N6416 is effectively flat with timing drift. No engine speedup or quality claim.",
+  "baseline": "component B/A on the same packs; no baseline consumer on this build"
+}
