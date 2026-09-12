@@ -1,0 +1,11 @@
+From https://github.com/choiceoh/stkernel
+ * branch              codex/st-decode-forward-22 -> FETCH_HEAD
+   3b40dddc..04f6dba4  codex/st-decode-forward-22 -> origin/codex/st-decode-forward-22
+Previous HEAD position was 3b40dddc fix(engine): use explicit native package import for shared MLP
+HEAD is now at 04f6dba4 fix(engine): allocate sampled draft distributions from drafter facts
+................................sssss..ss
+----------------------------------------------------------------------
+Ran 41 tests in 3.869s
+
+OK (skipped=7)
+  expert_layout: tile-major bytes read back row-major per expert OK

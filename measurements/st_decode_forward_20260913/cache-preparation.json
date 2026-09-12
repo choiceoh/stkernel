@@ -1,0 +1,384 @@
+{
+  "nodes": [
+    {
+      "host": "head",
+      "receipt": {
+        "source": "/home/choiceoh/glm53-cache-st-decode22-consumer-v6-A",
+        "destination": "/home/choiceoh/glm53-cache-st-decode-forward-consumer-A",
+        "files": 4652,
+        "bytes": 1488532575,
+        "excluded_calibration": [
+          {
+            "path": "mkcalib/rank0/DFlash2Qwen3ForCausalLM/model.layers.0.mlp_conv.kernel_projection.pt",
+            "bytes": 67127557
+          },
+          {
+            "path": "mkcalib/rank0/DFlash2Qwen3ForCausalLM/model.layers.1.mlp.down_proj.pt",
+            "bytes": 37763229
+          },
+          {
+            "path": "mkcalib/rank0/DFlash2Qwen3ForCausalLM/model.layers.0.self_attn.qkv_proj.pt",
+            "bytes": 67127493
+          },
+          {
+            "path": "mkcalib/rank0/DFlash2Qwen3ForCausalLM/model.layers.0.attention_conv.kernel_projection.pt",
+            "bytes": 67127669
+          },
+          {
+            "path": "mkcalib/rank0/DFlash2Qwen3ForCausalLM/model.layers.2.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank0/DFlash2Qwen3ForCausalLM/model.layers.4.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank0/DFlash2Qwen3ForCausalLM/model.layers.0.mlp.gate_up_proj.pt",
+            "bytes": 67127477
+          },
+          {
+            "path": "mkcalib/rank0/DFlash2Qwen3ForCausalLM/model.layers.3.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank0/DFlash2Qwen3ForCausalLM/model.layers.0.mlp.down_proj.pt",
+            "bytes": 37763229
+          },
+          {
+            "path": "mkcalib/rank0/DFlash2Qwen3ForCausalLM/model.layers.1.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank0/DFlash2Qwen3ForCausalLM/model.layers.1.self_attn.qkv_proj.pt",
+            "bytes": 67127493
+          },
+          {
+            "path": "mkcalib/rank0/DFlash2Qwen3ForCausalLM/model.layers.0.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank0/DFlash2Qwen3ForCausalLM/model.fc.pt",
+            "bytes": 1677805437
+          },
+          {
+            "path": "mkcalib/rank0/Glm5NextForCausalLM/model.layers.3.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank0/Glm5NextForCausalLM/model.layers.7.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank0/Glm5NextForCausalLM/model.layers.5.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank0/Glm5NextForCausalLM/model.layers.9.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank0/Glm5NextForCausalLM/model.layers.4.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank0/Glm5NextForCausalLM/model.layers.8.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank0/Glm5NextForCausalLM/model.layers.6.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          }
+        ],
+        "seconds": 2.949402332305908,
+        "policy": "independent copy; exclude mkcalib; preserve original; content-addressed RTN packs"
+      }
+    },
+    {
+      "host": "choiceoh@10.10.10.1",
+      "receipt": {
+        "source": "/home/choiceoh/glm53-cache-st-decode22-consumer-v6-A",
+        "destination": "/home/choiceoh/glm53-cache-st-decode-forward-consumer-A",
+        "files": 4644,
+        "bytes": 1486737300,
+        "excluded_calibration": [
+          {
+            "path": "mkcalib/rank1/DFlash2Qwen3ForCausalLM/model.fc.pt",
+            "bytes": 1677805437
+          },
+          {
+            "path": "mkcalib/rank1/DFlash2Qwen3ForCausalLM/model.layers.2.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank1/DFlash2Qwen3ForCausalLM/model.layers.1.mlp.down_proj.pt",
+            "bytes": 37763229
+          },
+          {
+            "path": "mkcalib/rank1/DFlash2Qwen3ForCausalLM/model.layers.0.mlp_conv.kernel_projection.pt",
+            "bytes": 67127557
+          },
+          {
+            "path": "mkcalib/rank1/DFlash2Qwen3ForCausalLM/model.layers.1.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank1/DFlash2Qwen3ForCausalLM/model.layers.0.mlp.down_proj.pt",
+            "bytes": 37763229
+          },
+          {
+            "path": "mkcalib/rank1/DFlash2Qwen3ForCausalLM/model.layers.3.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank1/DFlash2Qwen3ForCausalLM/model.layers.0.mlp.gate_up_proj.pt",
+            "bytes": 67127477
+          },
+          {
+            "path": "mkcalib/rank1/DFlash2Qwen3ForCausalLM/model.layers.1.self_attn.qkv_proj.pt",
+            "bytes": 67127493
+          },
+          {
+            "path": "mkcalib/rank1/DFlash2Qwen3ForCausalLM/model.layers.0.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank1/DFlash2Qwen3ForCausalLM/model.layers.0.self_attn.qkv_proj.pt",
+            "bytes": 67127493
+          },
+          {
+            "path": "mkcalib/rank1/DFlash2Qwen3ForCausalLM/model.layers.0.attention_conv.kernel_projection.pt",
+            "bytes": 67127669
+          },
+          {
+            "path": "mkcalib/rank1/DFlash2Qwen3ForCausalLM/model.layers.4.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank1/Glm5NextForCausalLM/model.layers.9.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank1/Glm5NextForCausalLM/model.layers.4.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank1/Glm5NextForCausalLM/model.layers.6.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank1/Glm5NextForCausalLM/model.layers.7.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank1/Glm5NextForCausalLM/model.layers.5.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank1/Glm5NextForCausalLM/model.layers.8.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank1/Glm5NextForCausalLM/model.layers.3.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          }
+        ],
+        "seconds": 2.2624828815460205,
+        "policy": "independent copy; exclude mkcalib; preserve original; content-addressed RTN packs"
+      }
+    },
+    {
+      "host": "choiceoh@10.10.10.3",
+      "receipt": {
+        "source": "/home/choiceoh/glm53-cache-st-decode22-consumer-v6-A",
+        "destination": "/home/choiceoh/glm53-cache-st-decode-forward-consumer-A",
+        "files": 4702,
+        "bytes": 1811634720,
+        "excluded_calibration": [
+          {
+            "path": "mkcalib/rank2/DFlash2Qwen3ForCausalLM/model.fc.pt",
+            "bytes": 1677805437
+          },
+          {
+            "path": "mkcalib/rank2/DFlash2Qwen3ForCausalLM/model.layers.0.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank2/DFlash2Qwen3ForCausalLM/model.layers.1.self_attn.qkv_proj.pt",
+            "bytes": 67127493
+          },
+          {
+            "path": "mkcalib/rank2/DFlash2Qwen3ForCausalLM/model.layers.0.mlp.down_proj.pt",
+            "bytes": 37763229
+          },
+          {
+            "path": "mkcalib/rank2/DFlash2Qwen3ForCausalLM/model.layers.1.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank2/DFlash2Qwen3ForCausalLM/model.layers.0.mlp.gate_up_proj.pt",
+            "bytes": 67127477
+          },
+          {
+            "path": "mkcalib/rank2/DFlash2Qwen3ForCausalLM/model.layers.0.mlp_conv.kernel_projection.pt",
+            "bytes": 67127557
+          },
+          {
+            "path": "mkcalib/rank2/DFlash2Qwen3ForCausalLM/model.layers.2.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank2/DFlash2Qwen3ForCausalLM/model.layers.0.self_attn.qkv_proj.pt",
+            "bytes": 67127493
+          },
+          {
+            "path": "mkcalib/rank2/DFlash2Qwen3ForCausalLM/model.layers.3.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank2/DFlash2Qwen3ForCausalLM/model.layers.1.mlp.down_proj.pt",
+            "bytes": 37763229
+          },
+          {
+            "path": "mkcalib/rank2/DFlash2Qwen3ForCausalLM/model.layers.0.attention_conv.kernel_projection.pt",
+            "bytes": 67127669
+          },
+          {
+            "path": "mkcalib/rank2/DFlash2Qwen3ForCausalLM/model.layers.4.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank2/Glm5NextForCausalLM/model.layers.7.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank2/Glm5NextForCausalLM/model.layers.8.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank2/Glm5NextForCausalLM/model.layers.5.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank2/Glm5NextForCausalLM/model.layers.3.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank2/Glm5NextForCausalLM/model.layers.4.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank2/Glm5NextForCausalLM/model.layers.6.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank2/Glm5NextForCausalLM/model.layers.9.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          }
+        ],
+        "seconds": 2.8070390224456787,
+        "policy": "independent copy; exclude mkcalib; preserve original; content-addressed RTN packs"
+      }
+    },
+    {
+      "host": "choiceoh@10.10.10.4",
+      "receipt": {
+        "source": "/home/choiceoh/glm53-cache-st-decode22-consumer-v6-A",
+        "destination": "/home/choiceoh/glm53-cache-st-decode-forward-consumer-A",
+        "files": 4702,
+        "bytes": 1811680161,
+        "excluded_calibration": [
+          {
+            "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.1.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.0.mlp.gate_up_proj.pt",
+            "bytes": 67127477
+          },
+          {
+            "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.0.self_attn.qkv_proj.pt",
+            "bytes": 67127493
+          },
+          {
+            "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.4.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.0.mlp_conv.kernel_projection.pt",
+            "bytes": 67127557
+          },
+          {
+            "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.1.self_attn.qkv_proj.pt",
+            "bytes": 67127493
+          },
+          {
+            "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.fc.pt",
+            "bytes": 1677805437
+          },
+          {
+            "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.0.attention_conv.kernel_projection.pt",
+            "bytes": 67127669
+          },
+          {
+            "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.2.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.1.mlp.down_proj.pt",
+            "bytes": 37763229
+          },
+          {
+            "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.0.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.0.mlp.down_proj.pt",
+            "bytes": 37763229
+          },
+          {
+            "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.3.self_attn.o_proj.pt",
+            "bytes": 4200629
+          },
+          {
+            "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.9.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.3.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.5.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.4.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.6.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.7.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          },
+          {
+            "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.8.mlp.shared_experts.down_proj.pt",
+            "bytes": 1052949
+          }
+        ],
+        "seconds": 2.6891467571258545,
+        "policy": "independent copy; exclude mkcalib; preserve original; content-addressed RTN packs"
+      }
+    }
+  ],
+  "production_env": "/home/choiceoh/glm53-logs/st-decode-forward-consumer.env",
+  "values": {
+    "RANKS_DIR": "/home/choiceoh/models/st-glm53-9391-up-gate-full",
+    "CKPT": "/home/choiceoh/models/st-glm53-nvidia-tp4-9391",
+    "DRAFTER": "/home/choiceoh/models/GLM-5.3-Flash-DFlash2",
+    "ST_KV_GIB": "6",
+    "CACHE_DIR": "/home/choiceoh/glm53-cache-st-decode-forward-consumer-A"
+  }
+}
