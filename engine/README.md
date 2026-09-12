@@ -37,6 +37,9 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
     curl -s http://10.10.10.2:8000/tokenize -d '{"prompt": "..."}'; curl -s http://10.10.10.2:8000/detokenize -d '{"tokens": [1, 2]}'
     STK_moe_static=t,r,sf6 STK_context_ceiling=131072 bash launchers/start-st-glm53.sh   # 선언된 D11 노브는 STK_* 로 부팅에 들어간다(미선언·만료 = 사망)
     bash launchers/start-st-glm53.sh stop        # 컨테이너 제거 + 잠금 해제. start 는 glm53*/q38*/vllm*/st-* 컨테이너나 srv2 의 `st-fleet.lock` 이 있으면 거부한다
+    bash launchers/start-st-glm53.sh held         # 누가 쥐고 있고 무엇을 하는 중인지(엔진이 리스에 계속 쓴다)
+    bash launchers/start-st-glm53.sh yield "이유"  # 죽이지 말고 넘겨받기: 엔진이 받던 요청을 끝내고
+                                                 # 대화를 NVMe 로 파킹한 뒤 리스를 놓는다. 다음 보유자가 그 대화를 이어받는다.
                                                  # (플릿을 쓰는 세션은 모두 이 잠금을 지킨다: 09-11 19:42 두 세션의 플릿이 같은 노드에서 충돌해 둘 다 죽었다)
     curl -s http://10.10.10.2:8000/v1/chat/completions -d '{"messages":[{"role":"user","content":"..."}],"max_tokens":64,"stream":true}'   # OpenAI 방언(SSE), bench/onepass.py 가 쓰는 것
     curl -s http://10.10.10.2:8000/v1/models; curl -s http://10.10.10.2:8000/metrics                                  # 모델 이름, 벤치 이름의 카운터
