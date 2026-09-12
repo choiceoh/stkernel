@@ -26,6 +26,8 @@ import os
 import re
 from collections import defaultdict
 
+from engine.base.loader import MAX_RUN
+
 _LAYER = re.compile(r"(?P<prefix>.*\.layers\.)(?P<index>\d+)\.")
 
 
@@ -77,7 +79,7 @@ class Checkpoint:
         return loader
 
     def load(self, keys: list[str], *, device: str = "cpu", recorder=None,
-             max_run: int = 1 << 30) -> dict:
+             max_run: int = MAX_RUN) -> dict:
         """Read exactly these tensors as coalesced ranges, one shard at a time.
 
         Each returned tensor is a view into the range its shard was read in, so a
