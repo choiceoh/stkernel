@@ -178,7 +178,7 @@ def declared(a, comm_world: int) -> Config:
     knobs = [
         Knob("mla_prefill", "tile32", _dt.date(2026, 9, 30),
              "large-M MLA prefill: tile32 is the qualified production default, stock the baseline "
-             "(the pair/pair4 union candidates were measured and retired -- 45차 §23 조사 16차)",
+             "(the pair/pair4 union candidates were measured and retired -- 45차 §23 조사 16차, PR #698)",
              "STK_mla_prefill=tile32"),
         Knob("context_ceiling", 0, _dt.date(2026, 9, 30),
              "the served context ceiling: the door refuses a longer horizon and the decode ladder captures no bucket above it. "
