@@ -35,6 +35,52 @@ def host_available_bytes():
     raise RuntimeError("MemAvailable is unavailable")
 
 
+DECLARED_OOM_FLOOR = (6 << 30, 9 << 29)      # /etc/default/earlyoom: SIGTERM 6 GiB, SIGKILL 4.5 GiB
+
+
+def oom_floor(default=DECLARED_OOM_FLOOR, sources=None) -> "tuple[int, int]":
+    """(SIGTERM bytes, SIGKILL bytes) -- the lines at which this box kills the engine.
+
+    A reserve the engine picks for itself is a number about nothing: the box has its own,
+    and on this fleet they did not agree. The engine kept 4 GiB; earlyoom SIGTERMs at 6 GiB
+    and SIGKILLs at 4.5 GiB, `--prefer python3`, engine first on purpose. So the engine's
+    own tripwire sat BELOW both and could never fire first -- fourteen recorded boots, six
+    of them under the SIGTERM line, every one of them reported healthy (2026-09-12).
+
+    earlyoom's `-M term,kill` is in KiB and decides on MemAvailable, which is why
+    `host_available_bytes` exists above. Read the running configuration; fall back to the
+    fleet's declared values rather than to optimism.
+
+    Inside the engine's container there is no host /etc, so production takes the fallback --
+    which is why the default is the fleet's real pair and not a guess. Change one and change
+    the other: a floor this module cannot see is a floor it must still respect.
+    """
+    import re
+    import shlex
+    if sources is None:
+        sources = (Path("/etc/default/earlyoom"), Path("/proc/self/root/etc/default/earlyoom"))
+    for source in sources:
+        try:
+            text = source.read_text()
+        except OSError:
+            continue
+        found = re.search(r'EARLYOOM_ARGS="?(.*?)"?$', text, re.M)
+        if not found:
+            continue
+        args = shlex.split(found.group(1))
+        for flag, value in zip(args, args[1:]):
+            if flag != "-M":
+                continue
+            parts = [p for p in value.split(",") if p.strip().isdigit()]
+            if not parts:
+                break
+            term = int(parts[0]) * 1024
+            kill = int(parts[1]) * 1024 if len(parts) > 1 else term // 2
+            return term, kill
+        break
+    return default
+
+
 def live_device_blocks(top: int = 6) -> "list[int]":
     """The sizes of device blocks still ALLOCATED, largest first.
 
@@ -76,13 +122,18 @@ def reclaim_preparation_pages(need, headroom, *, cache_roots=()):
 
 class RuntimeMemory:
     def __init__(self, arena_bytes, workspace_bytes, os_reserve_bytes, *, comm=None,
-                 cuda=None, host_free=host_free_bytes, reclaim=None):
+                 cuda=None, host_free=host_free_bytes, reclaim=None,
+                 host_available=host_available_bytes, floor=None):
         if min(arena_bytes, workspace_bytes, os_reserve_bytes) <= 0:
             raise ValueError("arena, workspace ceiling and OS reserve must be positive bytes")
         if cuda is None:
             import torch
             cuda = torch.cuda
         self.cuda, self.comm, self.host_free = cuda, comm, host_free
+        self.host_available = host_available
+        # The box's lines, not ours. Every row is graded against them so a boot that ran
+        # close says so in the ledger instead of being found out by a SIGKILL.
+        self.sigterm_bytes, self.sigkill_bytes = floor if floor is not None else oom_floor()
         self.reclaim = reclaim
         self.arena_bytes, self.workspace_bytes = arena_bytes, workspace_bytes
         self.os_reserve_bytes = os_reserve_bytes
@@ -133,11 +184,25 @@ class RuntimeMemory:
                    peak_reserved_bytes=cuda.max_memory_reserved(),
                    immediately_free_bytes=min(free, host_free), reclaimed_bytes=reclaimed)
         row["peak_workspace_bytes"] = max(0, row["peak_reserved_bytes"] - self.baseline_reserved - self.arena_bytes)
+        # MemAvailable, because that is the line earlyoom reads -- MemFree above is the boot
+        # gate's number (a driver page cannot be reclaimed the way a clean file page can).
+        # The margin is what the ledger was missing: how close this phase came to the kill.
+        try:
+            row["available_bytes"] = self.host_available()
+        except (OSError, RuntimeError):
+            row["available_bytes"] = row["immediately_free_bytes"]
+        row["oom_margin_bytes"] = row["available_bytes"] - self.sigterm_bytes
         error = None
         if row["peak_reserved_bytes"] > self.allocator_limit_bytes:
             error = "allocator peak exceeds the declared runtime byte ceiling"
         if row["immediately_free_bytes"] < self.os_reserve_bytes:
             error = "preparation consumed the OS memory reserve"
+        if row["available_bytes"] < self.sigkill_bytes:
+            # Below this the box has already decided; carrying on only means being killed
+            # with nothing in the ledger to say why (three of fourteen recorded boots).
+            error = (f"{row['available_bytes'] / (1 << 30):.2f} GiB available is under this box's "
+                     f"SIGKILL line ({self.sigkill_bytes / (1 << 30):.2f} GiB)")
+        row["oom_close"] = row["available_bytes"] < self.sigterm_bytes
         if self.comm is not None:
             self.status.fill_(int(error is not None))
             if int(self.comm.all_reduce_max(self.status).item()) and error is None:
@@ -206,6 +271,14 @@ class RuntimeMemory:
             retained_workspace_bytes=max(0, outside(final)),
             workspace_limit_bytes=self.workspace_bytes,
             at_phase=final["phase"],
+            # How close this boot came to the box's own kill line, and where. Without it a
+            # ledger cannot tell a boot that had room from one that was about to be killed:
+            # fourteen recorded boots reached 1.48-15.74 GiB and all read "ready".
+            oom_margin_bytes=min(row.get("oom_margin_bytes", 0) for row in self.phases),
+            oom_margin_phase=min(self.phases, key=lambda row: row.get("oom_margin_bytes", 0))["phase"],
+            oom_sigterm_bytes=self.sigterm_bytes,
+            oom_sigkill_bytes=self.sigkill_bytes,
+            oom_close_phases=[row["phase"] for row in self.phases if row.get("oom_close")],
         )
 
     def report(self):

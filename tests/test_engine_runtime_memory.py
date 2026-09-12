@@ -27,6 +27,47 @@ class Cuda:
     def synchronize(self): pass
 
 
+class OomFloorTests(unittest.TestCase):
+    """The box's kill line, read from the box.
+
+    A reserve the engine picks for itself is a number about nothing. earlyoom on this fleet
+    SIGTERMs at 6 GiB and SIGKILLs at 4.5, `--prefer python3`, the engine first on purpose --
+    and the engine kept 4 GiB, below both, so its own "preparation consumed the OS memory
+    reserve" check could never fire first (2026-09-12).
+    """
+
+    def write(self, text):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / "earlyoom"
+        path.write_text(text)
+        return path
+
+    def read(self, path, default=(1, 2)):
+        from engine.base.runtime_memory import oom_floor
+        return oom_floor(default, sources=(path,))
+
+    def test_it_reads_both_stages_in_kib_from_the_running_configuration(self):
+        path = self.write('# comment\nEARLYOOM_ARGS="-M 6291456,4718592 -s 100,100 -r 60 -n"\n')
+        self.assertEqual(self.read(path), (6 << 30, 9 << 29))          # 6.0 GiB and 4.5 GiB
+
+    def test_one_stage_means_the_kill_line_is_half_like_earlyooms_own_default(self):
+        self.assertEqual(self.read(self.write('EARLYOOM_ARGS="-M 6291456"\n')), (6 << 30, 3 << 30))
+
+    def test_a_configuration_it_cannot_read_falls_back_declared_not_optimistic(self):
+        from engine.base.runtime_memory import DECLARED_OOM_FLOOR, oom_floor
+        self.assertEqual(self.read(self.write('EARLYOOM_ARGS="-m 2 -s 2"\n')), (1, 2))
+        self.assertEqual(self.read(self.write("nothing here\n")), (1, 2))
+        self.assertEqual(oom_floor(sources=(Path("/nonexistent/earlyoom"),)), DECLARED_OOM_FLOOR)
+
+    def test_the_profile_keeps_more_than_the_box_kills_at(self):
+        """The regression itself: 4.0 GiB reserved against a 6.0 GiB SIGTERM."""
+        from engine.base.runtime_memory import oom_floor
+        from engine.profiles.glm53.budget import os_reserve_gib
+        sigterm, _ = oom_floor()
+        self.assertGreater(os_reserve_gib(), sigterm / (1 << 30))
+
+
 class RuntimeMemoryTests(unittest.TestCase):
     def budget(self, cuda=None, host_free=lambda: 800):
         return RuntimeMemory(400, 200, 100, cuda=cuda or Cuda(), host_free=host_free)
@@ -38,6 +79,46 @@ class RuntimeMemoryTests(unittest.TestCase):
         self.assertEqual(cuda.fraction, .61)
         memory.close(); memory.close()
         self.assertEqual(cuda.fraction, .9)
+
+    def test_every_row_records_how_close_the_box_came_to_killing_it(self):
+        """A ledger that says `ready` and nothing else cannot tell a boot that had room from
+        one that was about to be SIGKILLed: fourteen recorded boots reached 1.48-15.74 GiB of
+        free memory and every one of them read healthy (2026-09-12)."""
+        cuda = Cuda()
+        memory = RuntimeMemory(400, 200, 100, cuda=cuda, host_free=lambda: 800,
+                               host_available=lambda: 700, floor=(600, 450))
+        row = memory.checkpoint("target/4/6")
+        self.assertEqual((row["available_bytes"], row["oom_margin_bytes"]), (700, 100))
+        self.assertFalse(row["oom_close"])
+
+        memory.host_available = lambda: 520                     # under SIGTERM, over SIGKILL
+        close = memory.checkpoint("target/2/6")
+        self.assertTrue(close["oom_close"] and close["passed"], "a warning, not a refusal")
+        self.assertEqual(close["oom_margin_bytes"], -80)
+
+        report = memory.measured()
+        self.assertEqual(report["oom_margin_bytes"], -80)
+        self.assertEqual(report["oom_margin_phase"], "target/2/6")
+        self.assertEqual(report["oom_close_phases"], ["target/2/6"])
+        self.assertEqual((report["oom_sigterm_bytes"], report["oom_sigkill_bytes"]), (600, 450))
+
+    def test_below_the_boxs_kill_line_the_boot_stops_instead_of_being_killed(self):
+        """Carrying on past it only means dying with nothing in the ledger to say why."""
+        cuda = Cuda()
+        memory = RuntimeMemory(400, 200, 100, cuda=cuda, host_free=lambda: 800,
+                               host_available=lambda: 400, floor=(600, 450))
+        with self.assertRaisesRegex(MemoryError, "SIGKILL line"):
+            memory.checkpoint("target/1/6")
+        self.assertFalse(memory.phases[-1]["passed"])
+        self.assertFalse(memory.ready)
+
+    def test_an_unreadable_meminfo_does_not_take_the_boot_down(self):
+        def refuse():
+            raise RuntimeError("MemAvailable is unavailable")
+        memory = RuntimeMemory(400, 200, 100, cuda=Cuda(), host_free=lambda: 800,
+                               host_available=refuse, floor=(600, 450))
+        row = memory.checkpoint("target/4/6")
+        self.assertEqual(row["available_bytes"], row["immediately_free_bytes"])
 
     def test_peak_cannot_be_hidden_by_freed_intermediates(self):
         cuda = Cuda()

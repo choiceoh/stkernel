@@ -266,7 +266,12 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     if len(net.layers) == F.layers:
         # Fixed byte ceilings, not a measured workspace claim. Preparation
         # records peaks for the largest prefill and every declared graph.
-        workspace_bytes, os_reserve_bytes = 12 * GIB, 4 * GIB
+        # One source, not two: the same literals lived here and in budget.py, and the budget
+        # table is what anyone reads to decide whether a boot fits. The reserve is the box's
+        # own kill line plus a margin (budget.os_reserve_gib), not a number we picked.
+        from engine.profiles.glm53 import budget as _budget_mod
+        workspace_bytes = int(_budget_mod.WORKSPACE_GIB * GIB)
+        os_reserve_bytes = int(_budget_mod.OS_RESERVE_GIB * GIB)
         files = sorted(Path(ranks_dir).glob("rank*of4.safetensors"))
         if D:
             files.append(drafter_dir / "model.safetensors")
