@@ -11,6 +11,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -62,15 +63,56 @@ class TenancyTests(unittest.TestCase):
         self.assertEqual(tenancy.held_by(where), "me@srv4/1")
         self.assertIsNone(tenancy.claim(where, "me@srv4/1"), "and the next restart is not a handover")
 
-    def test_it_clears_directories_and_files_alike(self):
+    def test_a_handover_renames_and_deletes_on_a_thread_not_in_the_ranks_way(self):
+        """Deleting here took the fleet down. Every rank runs this, each has a different amount to delete,
+        the ones that finish first enter the next collective and wait, and the slow ones are still in
+        rmtree -- so NCCL's watchdog timed the collective out and all four aborted (2026-09-12, first boot
+        after a real serving run handed over: 34 parked conversations, 3.38 GiB of prefix tier). A rename
+        is one inode operation and costs every node the same, which is what the ranks need of each other."""
         where = self.dir()
         tenancy.claim(where, "them@srv1/9")
         (where / "loose.bin").write_bytes(b"x")
         (where / "deep" / "deeper").mkdir(parents=True)
         removed = []
-        tenancy.claim(where, "me@srv4/1", clear=lambda p: removed.append(p.name))
-        self.assertEqual(sorted(removed), ["deep"], "directories go through `clear`")
-        self.assertFalse((where / "loose.bin").exists(), "and plain files are unlinked")
+        tenancy.claim(where, "me@srv4/1", clear=lambda p: removed.append(p.name), background=False)
+        # the old state is out of the tenant's way the instant claim returns: what is left is the marker and
+        # the discard the stub `clear` did not actually delete
+        left = sorted(c.name for c in where.iterdir())
+        self.assertNotIn("loose.bin", left); self.assertNotIn("deep", left)
+        self.assertEqual([n for n in left if not n.startswith(tenancy.DISCARD)], [tenancy.MARKER])
+        self.assertEqual(len(removed), 1, "one discard directory, not one call per child")
+        self.assertTrue(removed[0].startswith(tenancy.DISCARD))
+
+    def test_the_rename_happens_before_the_delete_does(self):
+        """The point is the ordering: if `clear` can still see the old state, the rank is still paying for it."""
+        where = self.dir()
+        tenancy.claim(where, "them@srv1/9")
+        self.state(where)
+        seen = []
+        tenancy.claim(where, "me@srv4/1", background=False,
+                      clear=lambda p: seen.append(sorted(c.name for c in where.iterdir())))
+        self.assertEqual(len(seen), 1)
+        self.assertNotIn("conversations", seen[0], "the old state was already out of the way")
+        self.assertNotIn("prefix", seen[0])
+
+    def test_a_discard_left_by_a_boot_that_died_is_swept_by_the_next_claim(self):
+        where = self.dir()
+        tenancy.claim(where, "me@srv4/1")
+        orphan = where / f"{tenancy.DISCARD}.deadbeef"
+        (orphan / "conversations").mkdir(parents=True)
+        removed = []
+        tenancy.claim(where, "me@srv4/1", clear=lambda p: removed.append(p.name), background=False)
+        self.assertEqual(removed, [orphan.name], "nothing accumulates across boots")
+
+    def test_a_filesystem_that_will_not_rename_still_gets_a_clean_handover(self):
+        """A slow handover is better than a dirty one."""
+        where = self.dir()
+        tenancy.claim(where, "them@srv1/9")
+        self.state(where)
+        removed = []
+        with unittest.mock.patch.object(pathlib.Path, "rename", side_effect=OSError("no")):
+            tenancy.claim(where, "me@srv4/1", clear=lambda p: removed.append(p.name), background=False)
+        self.assertEqual(sorted(removed), ["conversations", "prefix"], "deleted in place instead")
 
     def test_a_plain_string_path_works_too(self):
         """The signature says `str | Path` and the engine passes a Path; a caller that passes a string must not
