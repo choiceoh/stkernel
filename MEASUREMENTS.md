@@ -12163,3 +12163,41 @@ norm / collective)로 **스텝당 µs 와 스텝당 런치 수**를 찍는다 �
 분류되지 않은 커널은 버킷에 숨기지 않고 제 이름으로 남는다.
 
 `tests/test_engine_graph_profile.py` 가 **허용 목록의 모든 이름에 파일이 있는지**를 박는다.
+
+### 45차 §91 — 대기예약을 걸었다, 그리고 **큐가 하지 않은 부탁을 했다고 적고 있었다** (2026-09-12, srv4→srv2, 프로덕션 유지)
+
+§90 에서 양보를 요청한 게 과했다. 운영자가 짚은 대로 **대기예약이면 충분하다.** 요청을 거두고
+(`clear-yield`, 리스는 다시 깨끗) 큐로 갔다.
+
+**먼저 큐가 거짓말을 하고 있었다 — 오래된 체크아웃 때문에.** srv2 의 `~/stkernel` 이 origin/main 보다
+**639 커밋 뒤**(PR #511)라 `probes/run_engine_probe.sh` 조차 없었고, 그래서 티켓이
+"custom GPU scripts and standalone checks are disabled" 로 거부됐다. 같은 트리로 `fleet.sh status` 는
+**`fleet: FREE`** 라고 답했다 — 네 노드가 서빙 중인데. (큐 도움말이 그 함정을 이미 적어 뒀다:
+*"a tree from before the ST-engine check reported an empty fleet with four nodes serving"*.)
+돌고 있는 부팅은 `~/stkernel` 이 아니라 릴리스 스냅샷 `/home/choiceoh/st-releases/main-ff728f43` 를
+`/repo` 로 물고 있으므로 트리를 올려도 홀더는 안 건드린다. 기존 브랜치
+`codex/fleet-onepass-live-20260909`(5e0216cf)를 남긴 채 main 으로 옮겼다. 이제 status 가 리스와 네 노드를
+다 읽고 **`TAKEN by the ST engine, outside this queue`** 라고 답한다. 티켓 `st-fwd-lanes` 가 대기 중이다.
+
+**그리고 이 시스템에서 "대기예약" 은 곧 "양보 요청" 이다.** `bench/fleet.sh` 가 그렇게 설계돼 있다:
+*"Refusing is not enough: a queued session would then wait for a human to go and ask ... so the queue asks on
+the waiter's behalf -- once per refusal."* 내가 손으로 한 것은 큐가 자동으로 하는 일과 같은 것이었다.
+
+**그런데 그 부탁이 조용히 안 나간다.** `st_engine_yield` 는 `$FLEET_RUNNER_REPO/launchers/lib/fleet-lease.sh`
+를 찾는데, 러너는 **`bench/`, `engine/`, `probes/` 만 담긴 스냅샷**에서 실행되고 **`launchers/` 는 거기 없다.**
+그래서 함수가 첫 줄에서 `return 0` 하고, 호출부는 성공으로 치고, 로그에는
+`asking it to yield to st-fwd-lanes` 가 남는다 — **아무도 부탁받지 않았는데.** 리스를 읽어 확인했다:
+`asked: no`. 대기자는 "말해 뒀다" 고 믿고 홀더는 아무것도 못 듣는다.
+
+**동작은 그대로 두고(운영자 판단: 조용히 기다린다) 말만 고쳤다.** `st_engine_yield` 가 이제 **부탁했을 때만
+0** 을 돌려주고(`|| true` 를 뺐다 — 상태를 삼키는 것이 거짓말이 들어온 경로다), 호출부가 둘 중 무엇이
+일어났는지 적는다:
+
+    hold refused: ... ; asking it to yield to $s
+    hold refused: ... ; $s waits, and the holder was NOT asked -- this runner has no launchers/lib/fleet-lease.sh
+
+`tests/test_engine_fleet_lease.py` 가 두 분기와 `|| true` 의 부재를 박는다. `FLEET_AUDIT` 핀도 같이 갱신했다
+(하나만 낡아도 모두의 CPU 재사용이 꺼진다).
+
+**남은 판단**: 러너 스냅샷에 `launchers/` 를 넣으면 설계대로 돌아오지만, 그때부터 큐는 티켓이 설 때마다
+홀더를 끊는다. 지금은 끊지 않는 쪽을 택했다.
