@@ -35,6 +35,28 @@ def host_available_bytes():
     raise RuntimeError("MemAvailable is unavailable")
 
 
+def live_device_blocks(top: int = 6) -> "list[int]":
+    """The sizes of device blocks still ALLOCATED, largest first.
+
+    After a release, `memory_reserved` says what the allocator still holds and this says what
+    a live tensor still holds -- the part no amount of `empty_cache` can give back, because
+    something in the process is still pointing at it. That is the number that decides whether
+    a shutdown was clean.
+
+    The blocks have no names unless `_record_memory_history` was on, so this is a lead rather
+    than an answer: one 268 MiB survivor is a different bug from forty 2 MiB ones, and the
+    shape of the list says which without paying for recorded history on every boot.
+    """
+    import torch
+    if not torch.cuda.is_available():
+        return []
+    sizes = [block["size"]
+             for segment in torch.cuda.memory_snapshot()
+             for block in segment.get("blocks", ())
+             if block.get("state") == "active_allocated"]
+    return sorted(sizes, reverse=True)[:top]
+
+
 def reclaim_preparation_pages(need, headroom, *, cache_roots=()):
     """Make a boot's remaining byte budget available despite UMA file cache.
 

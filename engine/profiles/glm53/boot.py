@@ -378,6 +378,46 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         raise
 
 
+CLEAN_RELEASE_BYTES = 64 << 20
+"""What may still be ALLOCATED on the device after a release and still count as clean.
+
+Not a tolerance for leaks -- a floor under the things a CUDA process keeps for as long as it
+has a context: NCCL's own buffers, the runtime memory gate's status word, whatever a kernel
+module built once at import. Anything above it is a holder `Glm53Engine.release` did not find,
+and the block sizes printed beside it are the lead (45차 §52).
+"""
+
+
+def release_all(engine: Glm53Engine, runner: "Runner | None" = None) -> dict:
+    """Hand the box back. The tiers go first: their staging is outside the arena, so nothing
+    the engine does can reach it. Never raises -- a shutdown does not fail a shutdown."""
+    staging = 0
+    for tier in (getattr(runner, "tiered", None), getattr(runner, "prefix_tier", None)):
+        if tier is None:
+            continue
+        try:
+            staging += tier.close()
+        except Exception as exc:                            # noqa: BLE001
+            print(f"  released: a tier could not close: {type(exc).__name__}: {exc}", flush=True)
+    report = engine.release()
+    report["tier_staging_bytes"] = staging
+    return report
+
+
+def release_line(report: dict, rank: int = 0) -> str:
+    """What came back, and -- when something did not -- the sizes of what stayed."""
+    line = (f"  released: rank {rank} gave back {report['returned'] / GIB:.2f} GiB of "
+            f"{report['arena_bytes'] / GIB:.2f} GiB arena plus {report.get('tier_staging_bytes', 0) / 2**20:.0f} MiB "
+            f"of tier staging; {report['reserved_after'] / GIB:.2f} GiB reserved and "
+            f"{report['allocated_after'] / 2**20:.0f} MiB allocated still")
+    if report["allocated_after"] > CLEAN_RELEASE_BYTES:
+        held = ", ".join(f"{n / 2**20:.0f} MiB" for n in report.get("still_held") or ())
+        line += (f"\n  released: rank {rank} did NOT come back clean -- "
+                 f"{report['allocated_after'] / 2**20:.0f} MiB is still held by live tensors"
+                 + (f", largest blocks {held}" if held else ""))
+    return line
+
+
 def run_prompts(engine: Glm53Engine, runner: Runner, prompts: "dict[int, list[int]]"):
     """Submit every prompt, step until idle. Returns {seq: generated ids}."""
     for seq, ids in prompts.items():
@@ -462,9 +502,11 @@ def local(a) -> int:
                 torch.cuda.synchronize()
             parked = {"wrote": wrote, "got": got, "free_before": free_before, "free_after": free_after,
                       "continued": continued, "straight_tail": engine.generated(straight)[a.max_new:]}
-        return {"rec": rec, "out": out, "steps": runner.steps, "ring": runner.ring.count, "secs": time.perf_counter() - t0,
-                "kinds": [STEP_RECORD.unpack(r)[2] for r in runner.ring.ordered()], "blocks": caches.pool.available, "slots": caches.slots.available,
-                "accepted": engine.accepted_total, "drafted": engine.drafted_total, "k": engine.drafter.k, "parked": parked}
+        report = {"rec": rec, "out": out, "steps": runner.steps, "ring": runner.ring.count, "secs": time.perf_counter() - t0,
+                  "kinds": [STEP_RECORD.unpack(r)[2] for r in runner.ring.ordered()], "blocks": caches.pool.available, "slots": caches.slots.available,
+                  "accepted": engine.accepted_total, "drafted": engine.drafted_total, "k": engine.drafter.k, "parked": parked}
+        report["release"] = release_all(engine, runner)   # last: it forgets every request this dict just read
+        return report
 
     if a.serve:
         try:
@@ -492,6 +534,13 @@ def local(a) -> int:
               f"read back {pk['got'] / 2**20:.1f} MiB, continued {pk['continued']} == straight run's {pk['straight_tail']}: "
               f"{pk['continued'] == pk['straight_tail']}; ranks agree {same_p}")
         ok = ok and same_p and pk["wrote"] == pk["got"] and pk["free_after"] > pk["free_before"] and pk["continued"] == pk["straight_tail"]
+    dirty = [(rank, o) for rank, o in enumerate(outs) if o["release"]["allocated_after"] > CLEAN_RELEASE_BYTES]
+    print(f"  release: {sum(o['release']['arena_bytes'] for o in outs) / GIB:.2f} GiB of arena back over four ranks, "
+          f"most still allocated after {max(o['release']['allocated_after'] for o in outs) / 2**20:.0f} MiB "
+          f"({'clean' if not dirty else f'{len(dirty)} rank(s) NOT clean'})")
+    for rank, o in dirty:
+        print(release_line(o["release"], rank).split("\n")[-1])
+    ok = ok and not dirty and all(o["release"]["arena_bytes"] > 0 for o in outs)
     print("\n  " + ("PASS: the runner drove prefill and decode through the engine on four ranks" if ok else "FAIL"))
     if a.park:
         import shutil
@@ -573,7 +622,12 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
             raise RuntimeError(f"client: {results['error']}")
         if comm.rank == 0 and server.pending:
             raise RuntimeError("rank 0 stopped with answers pending")
-        return {"served": server.served, "steps": runner.steps}
+        # The smoke is the only door that runs a whole serve and then stops on purpose, so it is
+        # where the release is gated: every rank hands the box back and says what stayed (45차 §52).
+        back = release_all(engine, runner)
+        print(release_line(back, comm.rank), flush=True)
+        return {"served": server.served, "steps": runner.steps,
+                "released": back["arena_bytes"], "allocated_after": back["allocated_after"]}
 
     import threading
     t0 = time.perf_counter()
@@ -591,6 +645,11 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
     print(f"    chat (v2 template, streamed): {chat.get('usage', {}).get('completion_tokens')} tokens, finish {chat.get('finish_reason')}, text {chat.get('text', '')[:60]!r}")
     ok = ok and chat.get("usage", {}).get("completion_tokens") == 6 and chat.get("finish_reason") in ("stop", "length")
     print(f"  serve loop on four ranks: {outs[0]['steps']} steps, {outs[0]['served']} answered over HTTP in {secs:.1f} s")
+    dirty = [o for o in outs if o["allocated_after"] > CLEAN_RELEASE_BYTES]
+    print(f"  release on four ranks: {sum(o['released'] for o in outs) / GIB:.2f} GiB of arena back, "
+          f"most still allocated after {max(o['allocated_after'] for o in outs) / 2**20:.0f} MiB "
+          f"({'clean' if not dirty else f'{len(dirty)} rank(s) NOT clean'})")
+    ok = ok and not dirty and all(o["released"] > 0 for o in outs)
     print("\n  " + ("PASS: requests in at rank 0, tokens out, every rank in lockstep" if ok else "FAIL"))
     return 0 if ok else 1
 
@@ -710,12 +769,7 @@ def fleet(a) -> int:
                     # next holder already asking for the same 55 GiB. The tiers go first because
                     # their staging lives outside the arena, so nothing else can reach it.
                     try:
-                        staging = sum(t.close() for t in (getattr(runner, "tiered", None),
-                                                          getattr(runner, "prefix_tier", None)) if t is not None)
-                        back = engine.release()
-                        print(f"  released: rank {comm.rank} gave back {back['returned'] / GIB:.2f} GiB of "
-                              f"{back['arena_bytes'] / GIB:.2f} GiB arena plus {staging / 2**20:.0f} MiB of tier "
-                              f"staging; {back['reserved_after'] / GIB:.2f} GiB still reserved", flush=True)
+                        print(release_line(release_all(engine, runner), comm.rank), flush=True)
                     except Exception as exc:                  # noqa: BLE001 -- a shutdown never fails a shutdown
                         print(f"  released: rank {comm.rank} could not: {type(exc).__name__}: {exc}", flush=True)
                         engine.close_decode()
