@@ -76,8 +76,9 @@ def series(metrics: dict, name: str, **labels):
 def _buckets(metrics: dict, name: str, **labels):
     """(le, 누적 count) 오름차순. +Inf 는 뺀다 — 전체는 _count 계열이 말한다."""
     rows = []
+    want = [f'{k}="{v}"' for k, v in labels.items()]
     for key, value in metrics.items():
-        if not key.startswith(name + "_bucket{"):
+        if not key.startswith(name + "_bucket{") or not all(w in key for w in want):
             continue
         for part in key[key.index("{") + 1:-1].split(","):
             k, _, v = part.partition("=")

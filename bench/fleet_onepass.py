@@ -33,6 +33,7 @@ ST_ENTRIES = ('probes/run_engine_probe.sh', 'probes/run_engine_check.sh')
 ST_PROBES = ('probes/engine_kernel_check.py', 'probes/engine_decode_graph_check.py',
              'probes/engine_drafter_graph_check.py', 'probes/engine_full_check.py',
              'probes/engine_graph_profile.py', 'probes/engine_kda_deferred_check.py',
+             'probes/engine_prefill_fp8_consumer_check.py',
              'engine/profiles/glm53/check.py')
 ST_FLAGS = {'--layers', '--tokens', '--chunk', '--seed', '--moe-static', '--mla-prefill',
             '--lanes', '--moe-experts', '--samples', '--contexts', '--output', '--ranks',
