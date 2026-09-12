@@ -1,6 +1,9 @@
 # GB10 TMA and cluster optimization campaign
 
 Baseline: `815dc9551a9bc251c5c85dc85e0c34554ad35671`, ST GLM TP=4.
+The same mHC and MLA baseline files are available byte for byte at public
+`main` revision `d881f8dc`; the reproduction commands below use that revision
+so they do not depend on the local experiment branch.
 The baseline MLA and mHC sources also matched the concurrent native-serving
 adoption checkout byte for byte. Initial tests used a private srv4 container and the existing
 `st-engine:9391` image (Torch 2.13.0+cu130, TileLang 0.1.12, CUDA 13).
@@ -137,7 +140,7 @@ baseline bank conflict to remove.
 Generate the principal `ldmatrix` candidates with:
 
 ```sh
-git show 815dc9551a9bc251c5c85dc85e0c34554ad35671:engine/kernels/mla/glm53_megakernel.cu > /tmp/st-mla-baseline.cu
+git show d881f8dc:engine/kernels/mla/glm53_megakernel.cu > /tmp/st-mla-baseline.cu
 python3 probes/engine_mla_ldmatrix_candidates.py --baseline /tmp/st-mla-baseline.cu --output /tmp/st-mla-candidates
 ```
 
@@ -168,7 +171,7 @@ For the later GPU comparison, supply the baseline explicitly so that "stock"
 cannot accidentally refer to the newly adopted default:
 
 ```sh
-git show 815dc9551a9bc251c5c85dc85e0c34554ad35671:engine/kernels/mhc/tilelang_kernels.py > /tmp/st-mhc-baseline.py
+git show d881f8dc:engine/kernels/mhc/tilelang_kernels.py > /tmp/st-mhc-baseline.py
 python3 probes/engine_mhc_tma_check.py --source /tmp/st-mhc-baseline.py --variants stock,adopted --output /tmp/st-mhc-ab
 ```
 
