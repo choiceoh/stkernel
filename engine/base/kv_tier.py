@@ -116,9 +116,31 @@ class NvmeTier:
         return sum(int(meta.get("bytes", 0)) for meta in self.index.values() if not meta.get("deleting"))
 
     def oldest(self) -> "int | None":
-        """The least recently parked conversation (a forget candidate), or None."""
+        """The next conversation to forget when the tier is full, or None.
+
+        A foreign block layout goes FIRST. It sits on the disk and counts against the capacity,
+        and no boot of this layout can ever promote it (`stale`) -- so it is not a conversation,
+        it is bytes. Until this order existed a tier whose stale entries alone filled the cap
+        had nothing it was willing to give up and refused every park forever, which is exactly
+        what 85 GiB of one checkpoint's parked conversations would have done to the other's
+        (45차 §53).
+
+        Then the least recently parked conversation this layout CAN promote, which is the LRU
+        the callers have always assumed.
+        """
+        foreign = [(meta.get("at", 0.0), int(k)) for k, meta in self.index.items()
+                   if not meta.get("deleting")
+                   and meta.get("block_bytes", self.block_bytes) != self.block_bytes]
+        if foreign:
+            return min(foreign)[1]
         live = [(meta.get("at", 0.0), int(k)) for k, meta in self.index.items() if self.has(int(k))]
         return min(live)[1] if live else None
+
+    def stale_bytes(self) -> int:
+        """What the foreign layouts occupy: the number the boot line owed the operator."""
+        return sum(int(meta.get("bytes", 0)) for meta in self.index.values()
+                   if not meta.get("deleting")
+                   and meta.get("block_bytes", self.block_bytes) != self.block_bytes)
 
     def record(self, seq: int) -> "dict | None":
         path = self._record_path(seq)
