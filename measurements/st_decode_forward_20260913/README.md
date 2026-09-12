@@ -68,7 +68,7 @@ result, not an engine throughput claim.
 
 Consumer preparation uses private cache copies on all four nodes, excluding
 `mkcalib` (see `cache-preparation.json` and `prepare_consumer.py`). Planned shape:
-TP4, SPEC_K=6, C=1/C=4, KV=6 GiB, FP32 KDA state, the up/gate full rank pack,
+TP4, SPEC_K=6, C=1/C=4, KV=6 GiB, FP16 KDA state, the up/gate full rank pack,
 and the canonical harness 43 budgets. Candidate-only `st_bracket.sh chain` will
 run two complete onepasses and release its own boot through the official stop.
 
@@ -78,6 +78,27 @@ production restart at 04:34 includes the PR #790 sampled-request fix; its real
 health ping passed at 04:38:32 and the supervisor reset its failure counters.
 The older stop request is no longer needed. A fresh candidate-only canonical
 consumer run follows the removal of the rejected probe geometry.
+
+The first admitted consumer (`st-decode-consumer0913v2`, source `a39ca8ac`)
+failed before weight loading or requests. Its private CKPT directory incorrectly
+selected NVIDIA ModelOpt metadata for the B12x up/gate rank pack. All four layout
+guards correctly refused the mismatch. The launcher stopped its own boot and the
+queue released the lease. `consumer-v2-startup-failed/` preserves all four logs,
+container/runtime identities and the launcher output. No measurement was produced.
+`metadata-correction.json` records the corrected, unchanged B12x metadata files and
+their hashes. Preparation now checks all four safetensors layout markers before
+making the private metadata copy.
+
+The next submission (`st-decode-consumer0913v3`) was refused before a GPU hold:
+main had added PR #791's FP16 KDA default. The next admitted source includes that
+change, with unchanged block/snapshot capacity. It will therefore validate the
+combined candidate with FP16 storage, not relabel the earlier FP32 preparation.
+
+Separately, `production-045819/` records a production failure on deployed
+`644fbbea6095`: ranks 2 and 3 stalled in one-shot peer flags at sequence 5518;
+ranks 0 and 1 later lost the control connection in transfer settlement. This is
+distinct from the repaired missing `sel_top_k` attribute and from the consumer's
+metadata rejection. The first divergent operation has not yet been established.
 
 No component result establishes 22 step/s, answer quality, speculative
 acceptance or a same-build consumer speedup.

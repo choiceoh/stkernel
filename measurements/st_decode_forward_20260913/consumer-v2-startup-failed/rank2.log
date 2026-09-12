@@ -1,0 +1,19 @@
+2026-09-12T19:52:11.200712351Z   fleet reserved by queue/st-decode-consumer0913v2
+2026-09-12T19:52:11.432624238Z   box: GB10 (DGX Spark): SM121, unified 120 GiB (83 free)
+2026-09-12T19:52:11.451065693Z [W912 19:52:11.417781998 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+2026-09-12T19:52:40.813062908Z [rank2]: Traceback (most recent call last):
+2026-09-12T19:52:40.813083644Z [rank2]:   File "/repo/engine/profiles/glm53/boot.py", line 1116, in <module>
+2026-09-12T19:52:40.813085292Z [rank2]:     raise SystemExit(main())
+2026-09-12T19:52:40.813086540Z [rank2]:                      ^^^^^^
+2026-09-12T19:52:40.813087676Z [rank2]:   File "/repo/engine/profiles/glm53/boot.py", line 1112, in main
+2026-09-12T19:52:40.813088892Z [rank2]:     return fleet(a)
+2026-09-12T19:52:40.813089916Z [rank2]:            ^^^^^^^^
+2026-09-12T19:52:40.813091020Z [rank2]:   File "/repo/engine/profiles/glm53/boot.py", line 974, in fleet
+2026-09-12T19:52:40.813092204Z [rank2]:     F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
+2026-09-12T19:52:40.813093292Z [rank2]:                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-12T19:52:40.813094284Z [rank2]:   File "/repo/engine/profiles/glm53/boot.py", line 286, in build
+2026-09-12T19:52:40.813095340Z [rank2]:     rank = rank_loader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors", expected_layout=F.weight_layout)
+2026-09-12T19:52:40.813096364Z [rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-09-12T19:52:40.813097436Z [rank2]:   File "/repo/engine/profiles/glm53/weights.py", line 18, in rank_loader
+2026-09-12T19:52:40.813098540Z [rank2]:     raise ValueError(f"{path}: checkpoint/rank weight layout mismatch: {expected_layout} != {marker}")
+2026-09-12T19:52:40.813099708Z [rank2]: ValueError: /home/choiceoh/models/st-glm53-9391-up-gate-full/rank2of4.safetensors: checkpoint/rank weight layout mismatch: st-glm53-modelopt-up-gate-v1 != st-glm53-b12x-up-gate-v1
