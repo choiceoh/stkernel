@@ -50,6 +50,16 @@ Canonical pass 1 began at 06:30:57 KST, run `20260912T213057-9725b41d901c`.
 Both full consumer passes and their quality verdicts remain pending; this
 functional gate is not consumer quality or engine speed proof.
 
+At 06:49 KST, `finish_same_boot.py` took over the controller while retaining
+the already-running first consumer process (PID 1065892) and all four ranks.
+The original wrapper's `check=True` would have treated a fully recorded
+onepass quality/evidence exit 2 as a crash and stopped before pass 2. The
+replacement verifies fresh complete canonical records, retains their failed
+checks, and continues pass 2 on the same boot. It also leaves the canonical
+hold's 210-minute limit in charge rather than imposing a shorter per-pass
+timeout. Only the exact original controller PID was terminated; the consumer,
+containers, frozen checkout and hold were not signalled or restarted.
+
 `prior-c8562a7c-stages.json` joins sampled device stages to each completed C=1
 request in the previous, incomplete consumer. Rank 0 forward averages were
 46.341 / 47.471 / 49.303 ms at 2K / 32K / 128K; drafter proposal averaged
