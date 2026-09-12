@@ -119,14 +119,14 @@ class Glm53Caches:
 
         self.F, self.layers = F, tuple(layers)
         self.layout = layout(F, self.layers, draft)
-        self.snapshot_bytes, self._snapshot_fields = snapshot_layout(F, self.layers, draft)
+        self.snapshot_bytes_n, self._snapshot_fields = snapshot_layout(F, self.layers, draft)
         self.snapshots = snapshots
         self.pool = BlockPool(num_blocks, F.block, max_seqs, num_blocks)
         self.slots = SlotPool(max_seqs + 1)
         p = self.layout
         staged = stage_bytes(F, self.layers, max_seqs) if stage else 0
         # Preflight all regions, including alignment at an existing arena cursor.
-        if aligned(arena.used, ALIGN) + p.nbytes(num_blocks, max_seqs) + snapshots * self.snapshot_bytes + staged > arena.nbytes:
+        if aligned(arena.used, ALIGN) + p.nbytes(num_blocks, max_seqs) + snapshots * self.snapshot_bytes_n + staged > arena.nbytes:
             raise MemoryError("arena cannot hold the declared GLM caches, block table, prefix snapshots and boundary stage")
         self.paged = arena.carve(num_blocks * p.block_bytes, "glm53 paged KV")
         self.device = self.paged.device
@@ -144,13 +144,13 @@ class Glm53Caches:
                 base.storage_offset() + f.offset // size)
         self._snap = {}
         if snapshots:
-            self.snapshot_store = arena.carve(snapshots * self.snapshot_bytes, "glm53 prefix snapshots")
+            self.snapshot_store = arena.carve(snapshots * self.snapshot_bytes_n, "glm53 prefix snapshots")
             for f in self._snapshot_fields:
                 dtype = torch.float32 if f.dtype == "f32" else torch.bfloat16
                 size = 4 if f.dtype == "f32" else 2
                 strides = tuple(prod(f.shape[i + 1:]) for i in range(len(f.shape)))
                 base = self.snapshot_store.view(dtype)
-                self._snap[f.name, f.layer] = base.as_strided((snapshots, *f.shape), (self.snapshot_bytes // size, *strides),
+                self._snap[f.name, f.layer] = base.as_strided((snapshots, *f.shape), (self.snapshot_bytes_n // size, *strides),
                                                               base.storage_offset() + f.offset // size)
         self._stage = {}
         if stage:
@@ -260,6 +260,13 @@ class Glm53Caches:
 
     def snapshot_draft_ring(self, snap: int):
         return self._snap["draft", -1][snap]
+
+    def snapshot_bytes(self, snap: int):
+        """A snapshot's bytes as one contiguous uint8 arena view: what the prefix tier writes and reads back."""
+        if not 0 <= snap < self.snapshots:
+            raise IndexError("only a declared snapshot has bytes to move")
+        n = self.snapshot_bytes_n
+        return self.snapshot_store[snap * n:(snap + 1) * n]
 
     # -- boundaries crossed while generating (45차 §23) ----------------------------------------------------------
     def stage_boundaries(self, slots, ctx_before, counts) -> None:

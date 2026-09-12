@@ -27,7 +27,7 @@ from engine.profiles.glm53.caches import layout, snapshot_layout
 RUNTIME_FLOOR_GIB = 5.54            # ledger 40th boot table (vLLM): CUDA context + NCCL 16 channels -- re-measure on ST
 WORKSPACE_GIB = 12.0                # base/runtime_memory's enforced ceiling for everything outside the arena (#549)
 OS_RESERVE_MULTIPLE = 2.0           # 2x earlyoom's 5% floor (D1: six SIGTERMs at 5%)
-NVME_STAGING_BYTES = 2 * (64 << 20)  # kv_tier: 64 MiB pinned staging + 64 MiB device scratch
+NVME_STAGING_BYTES = 2 * (64 << 20) + 2 * (32 << 20)   # kv_tier: 64 MiB pinned staging + 64 MiB device scratch, and the prefix tier's 32 + 32
 SELECT_ROWS_TRANSIENT_NOTE = "indexer selection bounded to 1,024 query rows per pass (net.SELECT_ROWS)"
 
 
@@ -94,7 +94,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
         Line(f"prefix snapshots ({snapshots} x {snapshot_bytes / 2**20:.0f} MiB)", snapshots * snapshot_bytes / GIB, READ,
              "caches.snapshot_layout: chunk-boundary position rings for prefix reuse (boot.PREFIX_SNAPSHOTS)"),
         Line("workspace ceiling (outside the arena)", WORKSPACE_GIB, DECLARED, workspace_evidence),
-        Line("NVMe tier staging", NVME_STAGING_BYTES / GIB, DECLARED, "kv_tier: pinned staging + device scratch"),
+        Line("NVMe tier staging", NVME_STAGING_BYTES / GIB, DECLARED, "kv_tier: pinned staging + device scratch, conversations and prefix tiers"),
     ]
     b = Budget(box_gib, lines, label=f"GLM-5.3-Flash on ST, one rank of TP={facts.TP}, chunk {chunk:,}, kv_gib {kv_gib} -> {blocks_at_kv:,} blocks")
     b.kv_declared_gib = kv_gib - slots_gib                              # what boot.py actually gives the paged KV + table

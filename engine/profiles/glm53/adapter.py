@@ -456,6 +456,10 @@ class Glm53Engine:
     def state_bytes(self, slot: int):
         return self.caches.slot_bytes(slot)
 
+    def snapshot_bytes(self, snap: int):
+        """A prefix snapshot's bytes (base/runner spills and restores them through the prefix tier)."""
+        return self.caches.snapshot_bytes(snap)
+
     def extend(self, seq: int, ids: "list[int]", max_new: "int | None" = None, temperature: "float | None" = None,
                min_new: int = 0, options: "dict | None" = None, media=None, drop_unfed: bool = False) -> int:
         """A new turn: more prompt tokens on a conversation the caches still hold.
