@@ -147,6 +147,43 @@ class DraftAttentionTests(unittest.TestCase):
                 gap = (want - got.float()).norm(dim=-1) / want.norm(dim=-1).clamp_min(1e-6)
                 self.assertLess(gap.max().item(), 2 ** -8)   # the answer is stored bf16: a step is the floor
 
+    def test_a_step_s_rows_are_a_grid_dimension_not_a_loop(self):
+        """Every row reads its own slot at its own context length, so the batched form has to be the per-row
+        one -- give or take the rounding of a different window split, which a different row count chooses."""
+        from engine.kernels.draft_attention import attend_rows, draft_attention
+        for n, b, h, hk, cells, ctxs in ((1, 7, 8, 2, 2056, (900,)), (4, 7, 8, 2, 2056, (900, 3, 70_000, 50)),
+                                         (2, 7, 8, 2, 2056, (10, 2000)), (4, 7, 32, 8, 520, (5, 6, 7, 8))):
+            with self.subTest(n=n, h=h, hk=hk, cells=cells):
+                gen = torch.Generator(device="cuda").manual_seed(n + b + h)
+                kind = dict(device="cuda", generator=gen, dtype=torch.float32)
+                q = torch.randn(n, b, h, 128, **kind).bfloat16()
+                k = torch.randn(n, b, hk, 128, **kind).bfloat16()
+                v = torch.randn(n, b, hk, 128, **kind).bfloat16()
+                ring = torch.randn(6, 3, 2, cells, hk, 128, **kind).bfloat16()
+                slots = torch.arange(1, n + 1, device="cuda")
+                ctx = torch.tensor(ctxs, device="cuda", dtype=torch.int64)
+                rows = attend_rows(q, k, v, ring, ctx, slot=slots, layer=1)
+                one = torch.stack([draft_attention(q[r].contiguous(), k[r].contiguous(), v[r].contiguous(),
+                                                   ring, ctx[r:r+1].reshape(()), slot=slots[r:r+1], layer=1)
+                                   for r in range(n)])
+                gap = (rows.float() - one.float()).norm(dim=-1) / one.float().norm(dim=-1).clamp_min(1e-6)
+                self.assertLess(gap.max().item(), 2 ** -8)
+
+    def test_it_refuses_rows_it_cannot_place(self):
+        from engine.kernels.draft_attention import attend_rows
+        q = torch.zeros(2, 4, 8, 128, device="cuda", dtype=torch.bfloat16)
+        kv = torch.zeros(2, 4, 2, 128, device="cuda", dtype=torch.bfloat16)
+        ring = torch.zeros(3, 1, 2, 72, 2, 128, device="cuda", dtype=torch.bfloat16)
+        ctx = torch.zeros(2, dtype=torch.int64, device="cuda")
+        with self.assertRaises(ValueError):
+            attend_rows(q, kv, kv, ring, ctx, slot=torch.zeros(1, dtype=torch.int64, device="cuda"))
+        with self.assertRaises(ValueError):
+            attend_rows(q, kv, kv, ring, ctx[:1], slot=torch.zeros(2, dtype=torch.int64, device="cuda"))
+        with self.assertRaises(ValueError):
+            attend_rows(q[0], kv[0], kv[0], ring, ctx, slot=torch.zeros(2, dtype=torch.int64, device="cuda"))
+        with self.assertRaises(ValueError):
+            attend_rows(q, kv, kv, ring[1, 0], ctx, slot=None)      # a bare ring belongs to one row
+
     def test_a_whole_kv_head_of_queries_does_not_outgrow_a_cta(self):
         """One KV head can serve every query head: b * (h // hk) is 24 at TP=4 but 128 here, and an
         accumulator that wide will not fit. The tile is bounded and carried on the grid instead."""

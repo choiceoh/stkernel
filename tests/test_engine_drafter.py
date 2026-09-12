@@ -239,8 +239,13 @@ class DrafterTests(unittest.TestCase):
             per-row one beside it so the two are still being asked to agree."""
             for r in range(len(slots)):
                 write(rings, slots[r:r + 1], layer, positions[r], k[r], v[r], valid=valid[r])
+        def attend(q, k, v, rings, positions, *, slot, layer):
+            """The batched form the fast path uses now: the rows are a grid dimension, and the stub keeps the
+            per-row one beside it so the two are still being asked to agree."""
+            return torch.stack([attention(q[r], k[r], v[r], rings, positions[r], slot=slot[r:r+1], layer=layer)
+                                for r in range(len(slot))])
         kernels.draft_attention, kernels.write_draft_kv = attention, write
-        kernels.write_draft_kv_rows = write_rows
+        kernels.write_draft_kv_rows, kernels.attend_rows = write_rows, attend
         prior = sys.modules.get(kernels.__name__)
         sys.modules[kernels.__name__] = kernels
         try:

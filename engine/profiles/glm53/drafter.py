@@ -41,7 +41,7 @@ from engine.base.params import Spec
 from engine.kernels.draft_conv import tap_mix
 from engine.kernels.draft_select import walk_scores
 from engine.kernels.swiglu import swiglu
-from engine.kernels.norm_rope import norm, norm_rope, warm as warm_rotary
+from engine.kernels.norm_rope import add_norm, norm, norm_rope, warm as warm_rotary
 from engine.profiles.glm53.facts import SPEC_K, TP
 
 DRAFTER = Path("/home/choiceoh/models/GLM-5.3-Flash-DFlash2")
@@ -360,14 +360,12 @@ class Drafter:
             if res is None:
                 res, h = x, norm(x, p[q + "input_layernorm.weight"], F.rms_eps)
             else:
-                res = res + x
-                h = norm(res, p[q + "input_layernorm.weight"], F.rms_eps)
+                res, h = add_norm(res, x, p[q + "input_layernorm.weight"], F.rms_eps)
             coeff = self.linear(h, q + "attention_conv.kernel_projection.weight").reshape(B, 2, F.conv_taps, -1)
             h = self._conv(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0])
             h = self._attn(L, h, positions, ring, ctx_len)
             h = self._conv(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1])
-            res = res + h
-            h = norm(res, p[q + "post_attention_layernorm.weight"], F.rms_eps)
+            res, h = add_norm(res, h, p[q + "post_attention_layernorm.weight"], F.rms_eps)
             coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight").reshape(B, 2, F.conv_taps, -1)
             h = self._conv(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0])
             if self.fast_attention:
@@ -379,7 +377,7 @@ class Drafter:
             if self.fast_attention:
                 h = self.target.comm.all_reduce(h)
             x = self._conv(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1])
-        return norm(res + x, p["norm.weight"], F.rms_eps)
+        return add_norm(res, x, p["norm.weight"], F.rms_eps)[1]
 
     # -- every row of a step at once (45차 §23 GPU 판정 4차) --------------------------------------------
     # The pipeline used to replay the one-row graphs once per row: each replay read the whole drafter (2.03 GiB of
@@ -432,18 +430,17 @@ class Drafter:
         F, p = self.F, self.p
         q = f"layers.{L}.self_attn."
         if self.fast_attention:
-            from engine.kernels.draft_attention import draft_attention
+            from engine.kernels.draft_attention import attend_rows
             heads, kv, D = self.local_heads, self.local_kv_heads, F.head_dim
             q0, k0, v0 = self.linear(x, q + "qkv", rows_ok).split((heads*D, kv*D, kv*D), -1)
             qh = norm_rope(q0.reshape(n*t, heads, D), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
             kh = norm_rope(k0.reshape(n*t, kv, D), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
-            vh = v0.reshape(n*t, kv, D)
-            # GEMMs cover all rows once; attention reads each device-selected
-            # slot directly, with no replicated heads or SDPA ring scratch.
-            out = [draft_attention(qh[r*t:(r+1)*t].contiguous(), kh[r*t:(r+1)*t].contiguous(),
-                                   vh[r*t:(r+1)*t].contiguous(), field, ctx[r], slot=slots[r:r+1], layer=L)
-                   for r in range(n)]
-            return self.target.comm.all_reduce(self.linear(torch.cat(out).reshape(n*t, heads*D), q + "o_proj.weight", rows_ok))
+            vh = v0.reshape(n*t, kv, D).contiguous()
+            # GEMMs cover all rows once, and so does the attention: each row reads its own device-selected slot
+            # at its own context length, so the rows are a grid dimension and there is nothing to concatenate.
+            out = attend_rows(qh.view(n, t, heads, D), kh.view(n, t, kv, D), vh.view(n, t, kv, D),
+                              field, ctx, slot=slots, layer=L)
+            return self.target.comm.all_reduce(self.linear(out.reshape(n*t, heads*D), q + "o_proj.weight", rows_ok))
         S, W, kv, D, rep = field.shape[0], F.window, F.kv_heads, F.head_dim, F.heads // F.kv_heads
         qh = norm_rope(Fn.linear(x, p[q + "q_proj.weight"]).view(n * t, F.heads, D), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
         kh = norm_rope(Fn.linear(x, p[q + "k_proj.weight"]).view(n * t, kv, D), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
@@ -475,14 +472,12 @@ class Drafter:
             if res is None:
                 res, h = x, norm(x, p[q + "input_layernorm.weight"], F.rms_eps)
             else:
-                res = res + x
-                h = norm(res, p[q + "input_layernorm.weight"], F.rms_eps)
+                res, h = add_norm(res, x, p[q + "input_layernorm.weight"], F.rms_eps)
             coeff = self.linear(h, q + "attention_conv.kernel_projection.weight", rows_ok).reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0], t)
             h = self._attn_rows(L, h, positions, slots, ctx, field, n, t, rows_ok)
             h = self._conv_rows(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1], t)
-            res = res + h
-            h = norm(res, p[q + "post_attention_layernorm.weight"], F.rms_eps)
+            res, h = add_norm(res, h, p[q + "post_attention_layernorm.weight"], F.rms_eps)
             coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight", rows_ok).reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0], t)
             if self.fast_attention:
@@ -494,7 +489,7 @@ class Drafter:
             if self.fast_attention:
                 h = self.target.comm.all_reduce(h)
             x = self._conv_rows(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], t)
-        return norm(res + x, p["norm.weight"], F.rms_eps)
+        return add_norm(res, x, p["norm.weight"], F.rms_eps)[1]
 
     def propose_rows(self, field: torch.Tensor, slots: torch.Tensor, anchors: torch.Tensor, positions: torch.Tensor,
                      temps: "torch.Tensor | None" = None, generator=None, vocab: "int | None" = None, alive=None):
