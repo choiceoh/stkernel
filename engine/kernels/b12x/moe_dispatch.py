@@ -2144,12 +2144,20 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("decode_reform", False)),
         bool(config.get("reform_sf_pack", False)),
     )
+    # The private probe override may exercise v4's resident wave schedule.
+    # Never alias it with the served handle, including in the disk cache.
+    # The default tuple stays byte-for-byte the same.
+    if config.get("even", False):
+        cfg += ("probe_even_waves_v1",)
     return cfg + _static_kernel_cache_key(**fields)
 
 
 def _static_v2_decode_config(config: dict, m: int) -> dict:
     """Specialize the integrated tile geometry only for C=1 decode rows."""
     reform = bool(config.get("decode_reform", False)) and 1 <= m <= 8
+    if config.get("even", False) and not (reform and config.get("tiled")
+                                         and config.get("reform_sf_pack")):
+        raise ValueError("even-wave probe requires packed t,r,sf6 with 1..8 tokens")
     return dict(config, decode_reform=reform)
 
 
@@ -2238,6 +2246,7 @@ def _get_static_kernel_v2(
     kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4
     kernel: Any = kernel_cls(
         scatter_fp32=scatter_fp32,
+        even=bool(config.get("even", False)),
         a_ring=bool(config.get("a_ring", False)),
         sf_pack=bool(config.get("sf_pack", False)),
         decode_reform=reform,

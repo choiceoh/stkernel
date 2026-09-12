@@ -59,7 +59,7 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "mhc_single", "indexer", "kpool", "mla", "moe", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "mhc_single", "indexer", "kpool", "mla", "moe", "moe_waves", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7"}, selected
 
     if "mhc_single" in selected:
         import unittest
@@ -70,6 +70,10 @@ def main():
         report("mhc_single", passed=True, tests=result.testsRun)
         from probes.engine_decode_fusions import mhc_single
         mhc_single(report)
+
+    if "moe_waves" in selected:
+        from probes.engine_moe_waves import check as check_waves
+        check_waves(report, args.ranks)
 
     if "decode7" in selected:
         import unittest
