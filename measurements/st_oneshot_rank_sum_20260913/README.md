@@ -19,13 +19,51 @@ python3 -m unittest tests.test_engine_oneshot_sum tests.test_engine_oneshot_inte
 python3 probes/engine_oneshot_cpu_check.py --output /out/compile.json
 ```
 
-GPU qualification remains pending. The production constructor now checks the
+GPU constructor qualification passed on source `8c8b031b`. The constructor checks the
 four cancellation columns at 1, 7, 24 and 64 rows, both ordinary and PDL entry
 points where supported, plus seven-row graph replay at changed input scales.
-Transport publication/fences and MAX packet arithmetic are unchanged.
+Transport publication/fences and MAX packet arithmetic are unchanged. The door
+opened at 06:29 KST after these checks, including changed-input graph replay.
 
 The production sequence-5518 stall has not been reproduced with a traced first
 divergence. This independently demonstrated numerical defect is not yet proof
 of its cause or repair. The consumer's separate parked-row `KeyError` is fixed
 in the base PR #792 and reproduced by a four-row CPU scheduler test. No engine
 speedup or completed consumer-quality result is claimed here.
+
+Both PR heads passed CI. Source `8c8b031b94bb80175cfccd49cfb6329d18cdecae`
+combines the two fixes and is frozen remotely for `st-decode-ranksum0913`.
+The canonical hold performs the boot; `functional_then_onepass.py` first checks
+the exact sampled four-token production health request for another 35 seconds,
+then four concurrent requests with staggered limits at temperatures 0 and 1.
+All four immutable container identities must survive each wave. Only after
+that qualification do two canonical onepasses run, with prefix resets on the
+same boot. The first pass is explicitly labelled `cold=reset`: functional
+traffic precedes it. The hold's own stop file releases it on completion or error.
+
+`functional-8c8b031b.json` records PASS: the four-token sampled health response
+completed in 1.945 seconds and all four ranks remained alive for another 35
+seconds. Both C=4 waves completed their 128/256/384/512-token limits, with
+running requests falling through 3, 2, 1, 0 and no container replacement.
+`runtime-8c8b031b.json` retains immutable IDs and per-rank runtime manifests.
+Canonical pass 1 began at 06:30:57 KST, run `20260912T213057-9725b41d901c`.
+Both full consumer passes and their quality verdicts remain pending; this
+functional gate is not consumer quality or engine speed proof.
+
+`prior-c8562a7c-stages.json` joins sampled device stages to each completed C=1
+request in the previous, incomplete consumer. Rank 0 forward averages were
+46.341 / 47.471 / 49.303 ms at 2K / 32K / 128K; drafter proposal averaged
+3.031 / 3.036 / 3.095 ms. These are sampled stages, not a live kernel profile,
+and overlapping host waits must not be added to them. They identify target
+forward work as the main remaining budget for 22 step/s, not a measured win.
+
+Private cache copies retain compiled files but exclude all calibration blobs;
+`cache-preparation.json` records the source, independent copy and unchanged B12x
+metadata. Root-owned immutable compiler source files required root-assisted
+copying, without changing their originals. The served numerical packs therefore
+start with the same RTN policy as the preceding candidate.
+
+The separate production boot at 06:17:22 was refused because ranks 0/1 retain
+conversation 0 while ranks 2/3 retain none. `production-061722/` preserves the
+four startup refusals. This persisted disagreement explains why repeating that
+production boot does not recover it; no production tier was edited here.

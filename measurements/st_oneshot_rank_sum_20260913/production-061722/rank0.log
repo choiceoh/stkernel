@@ -1,0 +1,110 @@
+  fleet reserved by production/srv2/554527
+  box: GB10 (DGX Spark): SM121, unified 120 GiB (82 free)
+[W912 21:15:48.969028597 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+  facts
+    model                    /repo/st-glm53-meta              [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+    ranks                    /home/choiceoh/models/st-glm53-9391-up-gate-full [preshard output]
+    world                    4                                [facts.TP: four Sparks]
+    block                    768                              [launcher --block-size]
+    spec_k                   6                                [launcher SPEC_K with DFlash2]
+    kv_gib                   7.0                              [--kv-gib (local)]
+    port                     8000                             [--port]
+    max_seqs                 4                                [resident rows, state slots and captured decode widths]
+    prefix_snapshot_gib      2.125                            [tiered raw block-boundary checkpoints; count follows the shape]
+    prefix_untiered_snapshot_gib 4.25                             [raw checkpoints when no prefix tier is configured]
+    prefix_compressed_bytes  1073741824                       [prefix tier's bounded lossless RAM cache; codec workspace declared separately]
+    moe_static               t,r,sf6,q0                       [native TP4 execution]
+    lanes                    served                           [native TP4 execution]
+    decode_eager             0                                [native TP4 execution]
+    execution                native                           [native TP4 execution]
+    mla_prefill              tile32                           [qualified production default]
+    context_ceiling          0                                [qualified production default]
+    kda_state_dtype          fp32                             [qualified production default]
+  knobs (every one expires)
+NCCL version 2.29.7+cuda13.2
+boot rendezvous arena-admission: rank 0 prepared; waiting for 4 ranks (deadline 1800s)
+GLM-5.3-Flash on ST, one rank of TP=4, chunk 9,216, kv_gib 7.0 -> 1,309 blocks
+
+  box                                      119.69 GiB
+  -------------------------------------  --------
+  reserve for the OS                        -8.00 GiB   [declared] base/runtime_memory: immediately free host/device byte floor
+  runtime floor (CUDA ctx + NCCL 16ch)      -5.54 GiB   [measured] this boot: the measured floor 39.67 GiB less what this engine's own start-up costs (GLM 40th boot table)
+  already on this box before us            -34.13 GiB   [measured] this boot floor minus start-up: other containers, page cache and anything else holding pages -- unified memory means they come out of our KV
+  weights (this rank, TP=4)                -44.50 GiB   [read] rank0of4.safetensors header: 1,376 tensors
+  resident FP32 routers                     -0.18 GiB   [read] net.router_nbytes: immutable BF16 gate values converted once into the arena
+  drafter weight reservation                -0.44 GiB   [read] drafter_storage: live packed readers; compute/KV TP=4
+  vision tower (BF16, replicated)           -1.05 GiB   [read] vision.safetensors header
+  state slots (4 + null) x 252 MiB          -1.23 GiB   [read] caches.layout: KDA fp32 recurrent rings (K+1 states), BF16 conv, indexer tails, drafter ring
+  prefix snapshots (48 x 45 MiB)            -2.12 GiB   [read] caches.snapshot_layout: chunk-boundary position rings for prefix reuse; the count follows the FP32 baseline's tiered/untiered budget (sharded drafter ring: yes)
+  compressed prefix cache and codec         -1.00 GiB   [declared] prefix tier: bounded lossless RAM copies plus chunk workspace, outside the raw arena; compression ratio unmeasured
+  generated-boundary staging                -0.17 GiB   [read] caches.stage_bytes: per-slot recurrent state and convolution history
+  workspace ceiling (outside the arena)    -12.00 GiB   [declared] base/runtime_memory ceiling: activations, graph pools, kernel scratch; the allocator refuses beyond it; no boot ledger given -- vLLM's slope 0.52 GiB/1K puts a 9,216-token chunk at 4.7 GiB, indexer selection bounded to 1,024 query rows per pass (net.SELECT_ROWS)
+  NVMe tier staging                         -0.19 GiB   [declared] kv_tier: pinned staging + device scratch, conversations and prefix tiers
+  -------------------------------------  --------
+  KV (remainder)                             9.14 GiB
+
+  GATE: KV = 9.14 GiB, declared before load.
+  declared paged KV 5.77 GiB (5.77 in blocks of 4.51 MiB); unassigned +3.36 GiB
+  what the remainder buys at 6,160 B/token (paged, layout) + 252 MiB/sequence (slot):
+    concurrency   1: 1,048,576 tok each
+    concurrency   4:   355,283 tok each
+    concurrency   8:   156,224 tok each
+    concurrency  32:     6,930 tok each
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+boot rendezvous weights-loaded: rank 0 prepared; waiting for 4 ranks (deadline 1800s)
+  calibration: rank 0 not filed -- collecting 0/32768 rows over 234 blobs (210 for their channel peaks alone) (fewer than 4096 rows)
+  released: rank 0 gave back 57.40 GiB of 57.30 GiB arena plus 189 MiB of tier memory; 0.07 GiB reserved and 71 MiB allocated still
+  released: rank 0 did NOT come back clean -- 71 MiB is still held by live tensors, largest blocks 1 MiB, 1 MiB, 1 MiB, 1 MiB, 1 MiB, 1 MiB
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 1110, in <module>
+[rank0]:     raise SystemExit(main())
+[rank0]:                      ^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 1106, in main
+[rank0]:     return fleet(a)
+[rank0]:            ^^^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 987, in fleet
+[rank0]:     Server._agree_on_parked(comm, sorted(runner.parked_keys()))
+[rank0]:   File "/repo/engine/base/serve.py", line 1139, in _agree_on_parked
+[rank0]:     raise RuntimeError(
+[rank0]: RuntimeError: the ranks' NVMe tiers hold different conversations: this rank has 1 [0], the fleet's highest is [1, 0, 1] (count, last key, checksum). Clear glm53-logs/st-tier on every node, or fan the same tier out -- a boot cannot start with the ranks numbering conversations differently.
