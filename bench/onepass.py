@@ -464,7 +464,7 @@ def workload_requests(args, cq):
                 args.combined_max_tokens, args.combined_reasoning_budget, 'all'))
         else:
             items.extend(quality.request_item(ctx, args.seed + ctx, [case], cq.filler,
-                args.max_tokens, args.max_tokens // 3, i) for i, case in enumerate(cases))
+                args.max_tokens, args.max_tokens // 2, i) for i, case in enumerate(cases))
     return items
 
 
@@ -537,7 +537,7 @@ def _main() -> int:
     rec["engine_shape"] = engine_shape(bd.URL)
     rec["generation_budget"] = {
         "individual_max_tokens": args.max_tokens,
-        "individual_reasoning_budget": args.max_tokens // 3,
+        "individual_reasoning_budget": args.max_tokens // 2,
         "combined_max_tokens": args.combined_max_tokens,
         "combined_reasoning_budget": args.combined_reasoning_budget,
     }
@@ -555,7 +555,7 @@ def _main() -> int:
     fixed_item = None
     if args.fixed_decode_tokens:
         fixed_item = quality.request_item(2000, args.seed + 2000, quality.cases(args.seed + 2000),
-            cq.filler, args.fixed_decode_tokens, args.fixed_decode_tokens // 3, 'fixed-all')
+            cq.filler, args.fixed_decode_tokens, args.fixed_decode_tokens // 2, 'fixed-all')
         fixed_item['min_tokens'] = args.fixed_decode_tokens
     run.workloads(items + ([fixed_item] if fixed_item else []))
     prove_spec = 'VLLM_GLM53_SPEC_K' in (rec.get('knobs') or {})

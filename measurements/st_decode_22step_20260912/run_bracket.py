@@ -124,7 +124,7 @@ def run_arm(arm, source_name):
                DRAFTER='/home/choiceoh/models/GLM-5.3-Flash-DFlash2', ST_ENGINE_DIR='/home/choiceoh/st-releases/decode22-' + arm,
                CACHE_DIR=str(cache), ST_TIER_DIR=str(directory / 'tier'), ST_DUMP_DIR=str(directory / 'dumps'),
                ST_LEASE_KIND='session', LEASE_OWNER=owner, LEASE_MINUTES='120',
-               LEASE_NOTE='ST decode22 ' + arm + '; two canonical harness-42 onepass runs; candidate-only by user request')
+               LEASE_NOTE='ST decode22 ' + arm + '; two canonical harness-43 onepass runs; candidate-only by user request')
     launcher = ['bash', str(source / 'launchers/start-st-glm53.sh')]
     event(arm + ': launching four ranks')
     try:
@@ -151,10 +151,10 @@ def run_arm(arm, source_name):
             env['EVIDENCE_DIR'] = str(result_dir)
             (result_dir / 'prefix-reset.json').write_text(json.dumps(get('/v1/prefix/reset', {})) + '\n')
             command = [sys.executable, str(Path(__file__).with_name('run_onepass.py')), '--name', f'decode22-{arm}-{number}',
-                       '--ctx', '2000,32000,128000', '--max-tokens', '2400',
-                       '--combined-max-tokens', '7200', '--combined-reasoning-budget', '2400',
+                       '--ctx', '2000,32000,128000', '--max-tokens', '8192',
+                       '--combined-max-tokens', '24576', '--combined-reasoning-budget', '12288',
                        '--num-spec', '6', '--seed', '7',
-                       '--require-exclusive', '--fixed-decode-tokens', '7200', '--fixed-decode-reps', '3',
+                       '--require-exclusive', '--fixed-decode-tokens', '24576', '--fixed-decode-reps', '3',
                        '--out', str(result_dir / 'raw.jsonl')]
             event(f'{arm}: canonical onepass {number}/2')
             with (result_dir / 'console.log').open('x') as stream:

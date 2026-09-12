@@ -1,0 +1,11 @@
+{
+  "kv_gib": 6,
+  "blocks": 1082,
+  "block_tokens": 768,
+  "concurrency": 4,
+  "prompt_tokens_per_request": 140000,
+  "max_completion_tokens": 24576,
+  "inflight_tokens": 21,
+  "blocks_required": 860,
+  "blocks_remaining": 222
+}

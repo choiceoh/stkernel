@@ -238,6 +238,13 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(json.loads((run.path / 'workloads.json').read_text()), [item])
             self.assertEqual(run.record['recording']['status'], 'incomplete')
 
+    def test_default_reasoning_budgets_leave_room_for_complete_certificates(self):
+        items = onepass.workload_requests(self.fixture(), SimpleNamespace(filler=lambda n, r: ''))
+        self.assertEqual([(i['max_tokens'], i['reasoning_budget']) for i in items],
+                         [(8192, 4096)] * 3 + [(24576, 12288)] * 2)
+        self.assertTrue(all(i['max_tokens'] - i['reasoning_budget'] >= i['reasoning_budget']
+                            for i in items))
+
     def test_c1_grading_is_after_windows_and_latency_session(self):
         tree = ast.parse(Path(onepass.__file__).read_text())
         main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == '_main')

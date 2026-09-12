@@ -31,7 +31,7 @@ assert c['HostConfig']['NetworkMode']=='host' and port, 'unexpected ST listener 
 print(json.dumps(dict(rank=int(env['RANK']),boot_id=c['Id']+'|'+c['State']['StartedAt'],image=c['Image'],
     image_tag=c['Config']['Image'],command=cmd,port=int(port.group(1)),
     source_sha256=hashlib.sha256(json.dumps(hashes,sort_keys=True).encode()).hexdigest(),
-    files=hashes,runtime=manifest,mounts=c['Mounts'],
+    files=hashes,runtime=manifest,mounts=sorted(c['Mounts'],key=lambda m:(m['Destination'],m['Source'])),
     environment={k:v for k,v in env.items() if k.startswith(('STK_','ST_LEASE_'))})))
 '''
 

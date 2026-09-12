@@ -1,0 +1,466 @@
+[
+  {
+    "ctx": 2000,
+    "question": 0,
+    "quality": [
+      {
+        "case": "ledger",
+        "version": "ko-reasoning-v1",
+        "passed": false,
+        "checks": {
+          "format": true,
+          "completion": true,
+          "result": false,
+          "derivation": false,
+          "evidence": false,
+          "counterfactual": false
+        },
+        "score": 2,
+        "max_score": 6,
+        "failures": [
+          {
+            "dimension": "result",
+            "expected": {
+              "available": 287,
+              "decision": "보류"
+            },
+            "actual": {
+              "available": 151,
+              "decision": "전량승인"
+            }
+          },
+          {
+            "dimension": "derivation",
+            "expected": {
+              "selected": [
+                "L11",
+                "L13",
+                "L16",
+                "L17"
+              ],
+              "received": 228,
+              "net": 381,
+              "after_loss": 331
+            },
+            "actual": {
+              "selected": [
+                "L12",
+                "L14",
+                "L17",
+                "L16"
+              ],
+              "received": 288,
+              "net": 206,
+              "after_loss": 195
+            }
+          },
+          {
+            "dimension": "evidence",
+            "expected": {
+              "selection": [
+                "L1",
+                "L10",
+                "L11",
+                "L12",
+                "L13",
+                "L14",
+                "L15",
+                "L16",
+                "L17"
+              ],
+              "arithmetic": [
+                "L2",
+                "L3"
+              ],
+              "decision": [
+                "L4"
+              ],
+              "counterfactual": [
+                "L5"
+              ]
+            },
+            "actual": {
+              "selection": [
+                "L1",
+                "L10",
+                "L11",
+                "L12",
+                "L13",
+                "L14",
+                "L15",
+                "L16"
+              ],
+              "arithmetic": [
+                "L2",
+                "L3",
+                "L12",
+                "L14",
+                "L15",
+                "L16",
+                "L17"
+              ],
+              "decision": [
+                "L4"
+              ],
+              "counterfactual": [
+                "L5"
+              ]
+            }
+          },
+          {
+            "dimension": "counterfactual",
+            "expected": {
+              "available": 296,
+              "shortfall": 0,
+              "decision": "전량승인"
+            },
+            "actual": {
+              "available": 160,
+              "shortfall": 0,
+              "decision": "전량승인"
+            }
+          }
+        ],
+        "parse_error": null,
+        "finish_reason": "stop",
+        "visible_sha256": "046a5c7b884d22ec6ea3d36c18a38ab65ee0d6dad408cf1624fccbf737c0f68f",
+        "oracle_sha256": "87594da5e1e2c60f4611f6908e6303fad6794d54ad77da14ab8f63d0e471132f"
+      }
+    ],
+    "reasoning": "We need answer in Korean likely. Need parse problem. We have document with many distractor paragraphs and rule lines [L*]. Need use only [L*] records as evidence. Need compute ledger: at cutoff determine full approval? and revision selection, unit conversion, loss calculation. Also after L5 assumption change compute available and order shortfall (0 if not short). selected includes final adopted row IDs including cancellation. evidence classify all transaction rows and rules needed into structure.\n\nNeed output JSON object only with specified fields. Need understand rules.\n\nLet's identify all [L*] lines:\n\n[L12] 거래 입고갑 개정3: 효력7일, 기록11일, 입고 24상자.\n[L14] 거래 출고을 개정2: 효력11일, 기록9일, 출고 53개.\n[L17] 거래 반품정 개정1: 효력9일, 기록9일, 반품 13개.\n[L1] 마감은 10일 18시다. 효력일과 기록일이 모두 마감 이전인 행만 고려한다. 같은 거래는 남은 행 중 가장 높은 개정 번호로 교체한다. 취소 개정은 수량 0이다. 개정들을 합산하지 않는다.\n[L16] 거래 입고병 개정2: 효력8일, 기록10일 12시, 취소.\n[L13] 거래 출고을 개정1: 효력8일, 기록8일, 출고 42개.\n[L5] 가정 변경: 예약만 9개 해제한다. 다른 조건과 거래는 그대로다.\n[L3] 순재고 전체에 손실률 13%를 한 번 적용하고 소수 부분을 버린 뒤 예약 44개를 뺀 값이 가용량이다.\n[L10] 거래 입고갑 개정1: 효력7일, 기록7일, 입고 16상자.\n[L11] 거래 입고갑 개정2: 효력7일, 기록9일, 입고 19상자.\n[L2] 기초 재고 182개. 1상자는 12개다. 입고와 반품은 더하고 출고는 뺀다.\n[L15] 거래 입고병 개정1: 효력8일, 기록8일, 입고 9상자.\n[L4] 주문 290개 이상이면 전량승인, 미만이면 보류다. 부분승인은 없다.\n\nNeed maybe [L5] is assumption change not transaction. Need compute.\n\nLet's parse transaction rows. There are transactions with item? \"입고갑\", \"출고을\", \"반품정\", \"입고병\" maybe transaction IDs? Need select revisions by same transaction? \"같은 거래\" likely same transaction type+item? Need identify groups:\n- 입고갑: revisions 1 [L10], 2 [L11], 3 [L12].\n- 출고을: revisions 1 [L13], 2 [L14].\n- 반품정: revision 1 [L17].\n- 입고병: revisions 1 [L15], 2 [L16] cancellation.\n\nNeed apply cutoff: only rows with both effective date and record date before cutoff (10일 18시). Need interpret dates/times: \"효력7일\" means day 7 (before cutoff day",
+    "visible": "{\n  \"ledger\": {\n    \"result\": {\n      \"available\": 151,\n      \"decision\": \"전량승인\"\n    },\n    \"derivation\": {\n      \"selected\": [\n        \"L12\",\n        \"L14\",\n        \"L17\",\n        \"L16\"\n      ],\n      \"received\": 288,\n      \"net\": 206,\n      \"after_loss\": 195\n    },\n    \"evidence\": {\n      \"selection\": [\n        \"L1\",\n        \"L10\",\n        \"L11\",\n        \"L12\",\n        \"L13\",\n        \"L14\",\n        \"L15\",\n        \"L16\"\n      ],\n      \"arithmetic\": [\n        \"L2\",\n        \"L3\",\n        \"L12\",\n        \"L14\",\n        \"L15\",\n        \"L16\",\n        \"L17\"\n      ],\n      \"decision\": [\n        \"L4\"\n      ],\n      \"counterfactual\": [\n        \"L5\"\n      ]\n    },\n    \"counterfactual\": {\n      \"available\": 160,\n      \"shortfall\": 0,\n      \"decision\": \"전량승인\"\n    }\n  }\n}"
+  },
+  {
+    "ctx": 2000,
+    "question": 1,
+    "quality": [
+      {
+        "case": "portfolio",
+        "version": "ko-reasoning-v1",
+        "passed": false,
+        "checks": {
+          "format": false,
+          "completion": true,
+          "result": false,
+          "derivation": false,
+          "evidence": false,
+          "counterfactual": false
+        },
+        "score": 1,
+        "max_score": 6,
+        "failures": [
+          {
+            "dimension": "result",
+            "expected": {
+              "best": "ABE",
+              "score": 81,
+              "runner_up": "ADE",
+              "margin": 8
+            },
+            "actual": null
+          },
+          {
+            "dimension": "derivation",
+            "expected": {
+              "candidates": [
+                {
+                  "ids": "ABC",
+                  "cost": 16,
+                  "staff": 5,
+                  "score": 72,
+                  "violations": []
+                },
+                {
+                  "ids": "ABD",
+                  "cost": 18,
+                  "staff": 6,
+                  "score": 72,
+                  "violations": []
+                },
+                {
+                  "ids": "ABE",
+                  "cost": 20,
+                  "staff": 7,
+                  "score": 81,
+                  "violations": []
+                },
+                {
+                  "ids": "ACD",
+                  "cost": 14,
+                  "staff": 6,
+                  "score": 64,
+                  "violations": []
+                },
+                {
+                  "ids": "ACE",
+                  "cost": 16,
+                  "staff": 7,
+                  "score": 71,
+                  "violations": [
+                    "conflict"
+                  ]
+                },
+                {
+                  "ids": "ADE",
+                  "cost": 18,
+                  "staff": 8,
+                  "score": 73,
+                  "violations": []
+                },
+                {
+                  "ids": "BCD",
+                  "cost": 15,
+                  "staff": 4,
+                  "score": 66,
+                  "violations": [
+                    "dependency"
+                  ]
+                },
+                {
+                  "ids": "BCE",
+                  "cost": 17,
+                  "staff": 5,
+                  "score": 66,
+                  "violations": [
+                    "dependency",
+                    "conflict"
+                  ]
+                },
+                {
+                  "ids": "BDE",
+                  "cost": 19,
+                  "staff": 6,
+                  "score": 74,
+                  "violations": [
+                    "dependency"
+                  ]
+                },
+                {
+                  "ids": "CDE",
+                  "cost": 15,
+                  "staff": 6,
+                  "score": 55,
+                  "violations": [
+                    "conflict"
+                  ]
+                }
+              ]
+            },
+            "actual": null
+          },
+          {
+            "dimension": "evidence",
+            "expected": {
+              "constraints": [
+                "O1",
+                "O2",
+                "O3"
+              ],
+              "objective": [
+                "O4"
+              ],
+              "projects": [
+                "OA",
+                "OB",
+                "OC",
+                "OD",
+                "OE"
+              ],
+              "counterfactual": [
+                "O5"
+              ]
+            },
+            "actual": null
+          },
+          {
+            "dimension": "counterfactual",
+            "expected": {
+              "best": "ADE",
+              "score": 73,
+              "feasible": [
+                "ADE",
+                "ABC",
+                "ABD",
+                "ACD"
+              ]
+            },
+            "actual": null
+          }
+        ],
+        "parse_error": "Extra data: line 3 column 1 (char 1519)",
+        "finish_reason": "stop",
+        "visible_sha256": "70cd0045004e6e7267de74070e273f77c8a0149a3e821e987c431f44eafc179d",
+        "oracle_sha256": "928a5057e0e8a9743ffb44b4b225ce8d0e6180cd72cefc4e3738ff9d2287a407"
+      }
+    ],
+    "reasoning": "We need answer in Korean likely. Need parse problem. We have document with records [L*], [O*], [U*] only are rules/evidence. But in provided doc there are only [O*] records? Need identify constraints and data. Need solve portfolio optimization.\n\nWe have projects A-E with cost, staff, boom revenue, recession revenue, risk:\n[OA] A: cost 6, staff 3, boom 18, recession 37, risk 0\n[OB] B: cost 7, staff 1, boom 35, recession 36, risk 2\n[OC] C: cost 3, staff 1, boom 27, recession 17, risk 2\n[OD] D: cost 5, staff 2, boom 27, recession 25, risk 2\n[OE] E: cost 7, staff 3, boom 40, recession 29, risk 4\n\nConstraints:\n[O1] choose exactly 3 of A-E. Budget upper 22, staff upper 9. equality allowed.\n[O2] B requires A. A alone allowed. So if B selected then A selected. (A without B ok)\n[O3] C and E cannot both be selected.\n[O4] score = min(sum boom, sum recession) - 2*sum risk. Not per project min first. Choose feasible combo max score; tie by combo ID lexicographic.\n[O5] assumption change: budget upper only reduced by 3. \"예산 상한만 3 줄인다\" from 22 to 19. Re-select optimal. Need after change best and all feasible IDs.\n\nNeed output JSON with:\nportfolio.result: best, score, runner_up, margin for base conditions. \"차선 조합, 점수 차\" likely runner-up among feasible? Need determine. \"기본 조건의 최적 조합, 차선 조합, 점수 차\" best and runner-up. Need include all 10 combinations in candidates with cost, staff, score, violations. \"불가능한 조합도 점수를 계산한다.\" So for all 10 combinations of 3 from A-E? Since O1 exactly 3, candidates are 10 combinations of size 3. Need compute cost, staff, score (even if violations), violations list all applicable: budget if cost >22, staff if staff >9, dependency if B selected without A, conflict if C and E both selected. For base. Need maybe score for infeasible combos too. Then best among feasible, runner-up among feasible? Need decide. \"가능한 조합 중 점수 최대를 택하고 동점은 조합 ID 사전순이다.\" O4. So best feasible. Runner-up likely second-best feasible combination (could tie? tie-break maybe order). Need margin = best score - runner-up score. If tie? Need handle. We'll compute.\n\nThen evidence:\nconstraints: list of rule IDs/quotes? Need provide \"constraints\": [\"O1: ...\", \"O2: ...\", \"O3: ...\", maybe O4? But objective separate. \"projects\": [\"OA: ...\", ...]. \"objective\": [\"O4: ...\"]. \"counterfactual\": [\"O5: ...\"]. Need include exact enough. They want 근거 ID. Maybe strings with IDs and content. Need no extra fields. The final JSON schema includes evidence.counterfactual and top-level counterfactual. Need fill both.\n\nTop-level counterfactual: after O5: best, score, feasible all feasible combo IDs. Need compute.\n\nNeed be careful with \"조합 ID는 문자를 사전순으로 붙인다.\" So combos IDs: \"ABC\", \"ABD\", \"AB",
+    "visible": "{\"portfolio\":{\"result\":{\"best\":\"ABD\",\"score\":74,\"runner_up\":\"ABE\",\"margin\":1},\"derivation\":{\"candidates\":[{\"ids\":\"ABC\",\"cost\":16,\"staff\":5,\"score\":66,\"violations\":[\"conflict\"]},{\"ids\":\"ABD\",\"cost\":18,\"staff\":6,\"score\":74,\"violations\":[]},{\"ids\":\"ABE\",\"cost\":20,\"staff\":7,\"score\":73,\"violations\":[]},{\"ids\":\"ACD\",\"cost\":14,\"staff\":6,\"score\":57,\"violations\":[]},{\"ids\":\"ACE\",\"cost\":16,\"staff\":7,\"score\":57,\"violations\":[\"conflict\"]},{\"ids\":\"ADE\",\"cost\":18,\"staff\":8,\"score\":57,\"violations\":[]},{\"ids\":\"BCD\",\"cost\":15,\"staff\":4,\"score\":69,\"violations\":[\"dependency\"]},{\"ids\":\"BCE\",\"cost\":17,\"staff\":5,\"score\":69,\"violations\":[\"dependency\",\"conflict\"]},{\"ids\":\"BDE\",\"cost\":19,\"staff\":6,\"score\":69,\"violations\":[\"dependency\"]},{\"ids\":\"CDE\",\"cost\":15,\"staff\":6,\"score\":60,\"violations\":[\"conflict\"]}]},\"evidence\":{\"constraints\":[\"[O1] 사업 A~E 중 정확히 3개를 고른다. 예산 상한 22, 인력 상한 9. 등호는 허용한다.\",\"[O2] B를 선택하려면 A도 선택해야 한다. A만 선택하는 것은 허용된다.\",\"[O3] C와 E는 동시에 선택할 수 없다.\"],\"objective\":[\"[O4] 점수는 min(선택 사업의 호황 수익 합, 불황 수익 합) - 2×위험 합이다. 사업별 최솟값을 먼저 합산하지 않는다. 가능한 조합 중 점수 최대를 택하고 동점은 조합 ID 사전순이다.\"],\"projects\":[\"[OA] 사업 A: 비용, 인력, 호황 수익, 불황 수익, 위험 = 6, 3, 18, 37, 0\",\"[OB] 사업 B: 비용, 인력, 호황 수익, 불황 수익, 위험 = 7, 1, 35, 36, 2\",\"[OC] 사업 C: 비용, 인력, 호황 수익, 불황 수익, 위험 = 3, 1, 27, 17, 2\",\"[OD] 사업 D: 비용, 인력, 호황 수익, 불황 수익, 위험 = 5, 2, 27, 25, 2\",\"[OE] 사업 E: 비용, 인력, 호황 수익, 불황 수익, 위험 = 7, 3, 40, 29, 4\"],\"counterfactual\":[\"[O5] 가정 변경: 예산 상한만 3 줄인다. 다시 최적 조합을 선택한다.\"]},\"counterfactual\":{\"best\":\"ABD\",\"score\":74,\"feasible\":[\"ABD\",\"ABE\",\"ACD\",\"ADE\"]}}} \n\n## 검산표\n\n### 사업 데이터\n\n| ID | 비용 | 인력 | 호황 | 불황 | 위험 |\n|---|---:|---:|---:|---:|---:|\n| A | 6 | 3 | 18 | 37 | 0 |\n| B | 7 | 1 | 35 | 36 | 2 |\n| C | 3 | 1 | 27 | 17 | 2 |\n| D | 5 | 2 | 27 | 25 | 2 |\n| E | 7 | 3 | 40 | 29 | 4 |\n\n### 기본 조건 전체 조합\n\n| ID | 비용 | 인력 | 점수 | 위반 |\n|---|---:|---:|---:|---|\n| ABC | 16 | 5 | 66 | conflict |\n| ABD | 18 | 6 | 74 | [] |\n| ABE | 20 | 7 | 73 | [] |\n| ACD | 14 | 6 | 57 | [] |\n| ACE | 16 | 7 | 57 | conflict |\n| ADE | 18 | 8 | 57 | [] |\n| BCD | 15 | 4 | 69 | dependency |\n| BCE | 17 | 5 | 69 | dependency, conflict |\n| BDE | 19 | 6 | 69 | dependency |\n| CDE | 15 | 6 | 60 | conflict |\n\n- 기본 최적: **ABD**, 점수 **74**\n- 차선: **ABE**, 점수 **73**\n- 점수 차: **1**\n\n### O5 변경 후: 예산 상한 22 → 19\n\n가능 조합은 비용 ≤ 19인 ABD(18), ABE(20 탈락), ACD(14), ADE(18) 중 conflict가 없는 **ABD, ACD, ADE**와 ABE는 예산 위반으로 제외. 따라서 feasible은 **ABD, ACD, ADE**이고 최적은 **ABD**(74).\n\n반례 확인: ABE는 기본에서는 가능하지만 O5 후 비용 20 > 19로 budget 위반."
+  },
+  {
+    "ctx": 2000,
+    "question": 2,
+    "quality": [
+      {
+        "case": "logic",
+        "version": "ko-reasoning-v1",
+        "passed": false,
+        "checks": {
+          "format": true,
+          "completion": true,
+          "result": false,
+          "derivation": false,
+          "evidence": true,
+          "counterfactual": true,
+          "witnesses": false
+        },
+        "score": 4,
+        "max_score": 7,
+        "failures": [
+          {
+            "dimension": "result",
+            "expected": {
+              "statuses": [
+                "판단불가",
+                "참",
+                "거짓",
+                "판단불가"
+              ]
+            },
+            "actual": {
+              "statuses": [
+                "false",
+                "false",
+                "true",
+                "false"
+              ]
+            }
+          },
+          {
+            "dimension": "derivation",
+            "expected": {
+              "worlds": [
+                "000110",
+                "010011",
+                "010110",
+                "101110"
+              ]
+            },
+            "actual": {
+              "worlds": [
+                "000000",
+                "000001",
+                "000010",
+                "000011",
+                "000100",
+                "000101",
+                "000110",
+                "000111",
+                "001000",
+                "001001",
+                "001010",
+                "001011",
+                "001100",
+                "001101",
+                "001110",
+                "001111",
+                "010000",
+                "010001",
+                "010010",
+                "010011",
+                "010100",
+                "010101",
+                "010110",
+                "010111",
+                "011000",
+                "011001",
+                "011010",
+                "011011",
+                "011100",
+                "011101",
+                "011110",
+                "011111",
+                "100000",
+                "100001",
+                "100010",
+                "100011",
+                "100100",
+                "100101",
+                "100110",
+                "100111",
+                "101000",
+                "101001",
+                "101010",
+                "101011",
+                "101100",
+                "101101",
+                "101110",
+                "101111",
+                "110000",
+                "110001",
+                "110010",
+                "110011",
+                "110100",
+                "110101",
+                "110110",
+                "110111",
+                "111000",
+                "111001",
+                "111010",
+                "111011",
+                "111100",
+                "111101",
+                "111110",
+                "111111"
+              ]
+            }
+          },
+          {
+            "dimension": "witnesses",
+            "expected": [
+              {
+                "true": "101110",
+                "false": "000110"
+              },
+              {
+                "true": "000110",
+                "false": null
+              },
+              {
+                "true": null,
+                "false": "000110"
+              },
+              {
+                "true": "010011",
+                "false": "000110"
+              }
+            ],
+            "actual": [
+              {
+                "true": null,
+                "false": "000000"
+              },
+              {
+                "true": null,
+                "false": "000000"
+              },
+              {
+                "true": "000000",
+                "false": "110000"
+              },
+              {
+                "true": null,
+                "false": "000000"
+              }
+            ]
+          }
+        ],
+        "parse_error": null,
+        "finish_reason": "stop",
+        "visible_sha256": "77cda88db95021890396d8d21f4d983b9a9d6535d3ccfa027cd37baae5a80177",
+        "oracle_sha256": "f96ea8b33b08fa11410aead1ae75770059e1a513682fbcc65548830811483ce8"
+      }
+    ],
+    "reasoning": "We need answer in Korean likely. Need parse problem carefully. We have document with background paragraphs and bracketed rules [U*], [O*]? Actually user says \"[L*], [O*], [U*] 기록만 해당 문제의 근거다. 일반 배경 문단은 규칙이 아니다.\" Document contains [U4], [U6], [U2], [U3], [U0], [U5], [U1]. Need use only these records. Need solve logic.\n\nWe have variables E,C,A,B,D,F binary. U0 defines. Rules:\n[U4] E, B, D 중 적어도 둘이 1이다. => at least two of E,B,D are 1.\n[U6] 가정 변경: U1~U5를 모두 유지하고 E=0을 추가한다. => counterfactual? Need determine consistency and minimal contradiction rule sets. It says U1~U5 all maintained and E=0 added. Need include U0 fixed not in core. Need minimal inconsistent subsets among rules? We need parse.\n\n[U2] C와 A의 값은 같다. => C = A.\n[U3] A와 B가 동시에 1일 수 없다. => not (A=1 and B=1), i.e. A=0 or B=0.\n[U5] D와 F 중 정확히 하나가 1이다. => D + F =1 (xor).\n[U1] E 또는 C 중 적어도 하나는 1이다. => E=1 or C=1.\nU6 is assumption change: maintain U1-U5 and add E=0. Need check consistency. It is inconsistent? Let's see with E=0, U1 requires C=1. U2 C=A => A=1. U3 A and B not both 1 => B=0. U4 at least two of E,B,D are 1; E=0,B=0 => impossible regardless D. So inconsistent. Minimal cores? Need identify all minimal subsets of rules (including U6? likely yes) that are contradictory, excluding U0. Need include U1-U5 and U6? U6 itself is a rule \"U1~U5 유지 and E=0 추가\" maybe as assumption. Need determine minimal contradiction rule sets. There may be one minimal core: {U1,U2,U3,U4,U6}? Let's analyze if U5 irrelevant. U6 includes E=0 and maintaining U1-U5. If treating U6 as a rule that asserts E=0 and includes U1-U5? Hmm \"가정 변경: U1~U5를 모두 유지하고 E=0을 추가한다.\" In context, for counterfactual, we add E=0 to constraints U1-U5. So constraints are U1,U2,U3,U4,U5,E=0. Need find minimal inconsistent subsets among {U1,U2,U3,U4,U5,E0}. U5 independent. Minimal core likely {U1,U2,U3,U4,E0}: E0 + U1 => C=1; U2 => A=1; U3 => B=0; U4 with E=0,B=0 impossible. Is each necessary? Remove U1: E0,U2,U3,U4 can be satisfied? E=0, A=C maybe 0, B=1? U3 ok if A=0, U4 needs two of E,B,D: B=1,D=1 works. yes satisfiable. Remove U2: E0,U1,U3,U4: C=1, A=0, B=0? U3 ok, U4 needs D=1? E=0,B=0,D=",
+    "visible": "{\n  \"logic\": {\n    \"result\": {\n      \"statuses\": [\"false\", \"false\", \"true\", \"false\"]\n    },\n    \"derivation\": {\n      \"worlds\": [\n        \"000000\",\n        \"000001\",\n        \"000010\",\n        \"000011\",\n        \"000100\",\n        \"000101\",\n        \"000110\",\n        \"000111\",\n        \"001000\",\n        \"001001\",\n        \"001010\",\n        \"001011\",\n        \"001100\",\n        \"001101\",\n        \"001110\",\n        \"001111\",\n        \"010000\",\n        \"010001\",\n        \"010010\",\n        \"010011\",\n        \"010100\",\n        \"010101\",\n        \"010110\",\n        \"010111\",\n        \"011000\",\n        \"011001\",\n        \"011010\",\n        \"011011\",\n        \"011100\",\n        \"011101\",\n        \"011110\",\n        \"011111\",\n        \"100000\",\n        \"100001\",\n        \"100010\",\n        \"100011\",\n        \"100100\",\n        \"100101\",\n        \"100110\",\n        \"100111\",\n        \"101000\",\n        \"101001\",\n        \"101010\",\n        \"101011\",\n        \"101100\",\n        \"101101\",\n        \"101110\",\n        \"101111\",\n        \"110000\",\n        \"110001\",\n        \"110010\",\n        \"110011\",\n        \"110100\",\n        \"110101\",\n        \"110110\",\n        \"110111\",\n        \"111000\",\n        \"111001\",\n        \"111010\",\n        \"111011\",\n        \"111100\",\n        \"111101\",\n        \"111110\",\n        \"111111\"\n      ]\n    },\n    \"evidence\": {\n      \"domain\": [\"U0\"],\n      \"constraints\": [\"U1\", \"U2\", \"U3\", \"U4\", \"U5\"],\n      \"counterfactual\": [\"U6\"]\n    },\n    \"counterfactual\": {\n      \"consistent\": false,\n      \"minimal_cores\": [\n        [\"U1\", \"U2\", \"U3\", \"U4\", \"U6\"]\n      ]\n    },\n    \"witnesses\": [\n      {\n        \"true\": null,\n        \"false\": \"000000\"\n      },\n      {\n        \"true\": null,\n        \"false\": \"000000\"\n      },\n      {\n        \"true\": \"000000\",\n        \"false\": \"110000\"\n      },\n      {\n        \"true\": null,\n        \"false\": \"000000\"\n      }\n    ]\n  }\n}"
+  }
+]

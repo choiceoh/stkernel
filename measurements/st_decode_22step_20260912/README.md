@@ -1,6 +1,14 @@
 # Native ST decode: target 22 step/s
 
-Candidate branch: `codex/st-decode-22step`. Consumer result pending. No 22 step/s claim and no production promotion.
+Candidate branch: `codex/st-decode-22step`. The user stopped further measurement and requested merging the implementation with larger reasoning budgets. Only harness-42 preparation completed; no canonical onepass pass finished, no matched baseline exists, and 22 step/s or higher-budget quality is not claimed.
+
+Current evidence: frozen engine `7b687301`, native TP4/K6/KV6. All four ranks passed production memory admission (immediately free 12.06 / 22.40 / 10.59 / 12.91 GiB). 2K preparation requests produced 73.00–79.45 output tok/s; PR760 observation over 56 interior decode windows gave median 18.903 step/s, pooled 18.572 step/s, and 51.82% draft acceptance. 32K produced 72.85 output tok/s (five observed windows: median 17.909 step/s, 52.01% acceptance), 128K 71.93 output tok/s. Two completed 7200-token preparation repetitions produced 66.57 and 56.60 output tok/s. Overall pre-stop accepted/drafted was 21536/44100 = 48.83%. These are preparation/observation figures, not completed onepass verdicts.
+
+All three 2K reasoning streams re-tokenize to exactly 800 tokens and stop mid-sentence before finishing their calculations. The visible certificates fail the unchanged checker. Truncation is the leading explanation, not a proven sole cause. The attempted 800/4096 causal comparison sent no requests: its first selector also matched fixed-all, and its corrected attempt met the interrupted recording's HTTP 409 control lock. Its finally block resumed the owner-checked driver, which preserved logs and officially stopped all four nodes. The user then requested no further measurement.
+
+Harness 43 raises individual total/reasoning tokens to 8192/4096 and combined to 24576/12288, reserving half for final content. Questions and grading are unchanged. The campaign reproducer uses those budgets; **the increased-budget version has not been measured**. The 103 onepass CPU tests pass. `consumer-v6-stopped/` retains rates, counters, raw reasoning/visible quality failures, memory admission, and source/artifact hashes. Docker changed only the order of mount-list entries between the identity receipts; normalized all-rank identities match, and the helper now sorts that list.
+
+The remaining paragraphs are the chronological experiment record; the current scope above supersedes earlier plans.
 
 The candidate groups small calibration rows into 256-row Gram updates, fuses their masks/counts/peaks, and charges the staging buffers to the arena budget. Declared DenseLinear inputs stage their original BF16 values; generic observers retain FP32. It also binds native GLM clamped SwiGLU, target RMSNorm and indexer LayerNorm, fuses the router's surrounding arithmetic while retaining torch.topk, and removes redundant FP32 conversions from the BF16 expert join. CPU/reference lanes retain their original forms.
 
