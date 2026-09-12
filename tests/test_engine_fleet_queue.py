@@ -192,6 +192,10 @@ class LeaseQueueTests(unittest.TestCase):
         """The live onepass (D17's sample of the deployed commit) needs production UP and idle: the
         production lease is not occupation for it, the door's own quiet reading is its condition,
         and it takes no lease. Behind a session's boot it waits like everything else."""
+        pid0 = self.sleeper()
+        self.enqueue("p0", pid0, kind="probe")
+        self.assertEqual(self.try_hold("p0", pid0, kind="probe"), 1, "nothing serves: a probe has no door to measure")
+        self.sh("with_lock _dequeue p0")
         self.lease_cmd("acquire", "--owner", "production/srv2/1", "--kind", "production", "--container", "st-glm53")
         self.env["FAKE_DOCKER_PS"] = "st-glm53"                 # production's containers are up
         pid = self.sleeper()

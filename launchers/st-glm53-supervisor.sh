@@ -29,6 +29,9 @@ LAUNCH_BACKOFF_BASE=60
 LAUNCH_BACKOFF_MAX=1800
 LAUNCH_HOLD_AFTER=5
 FORENSICS=${ST_FORENSICS:-/home/choiceoh/glm53-logs/st-forensics}
+FLEET_DIR=${FLEET_DIR:-/home/choiceoh/glm53-logs/fleet}   # the queue's files; its activity clock lives here (bench/fleet_idle.py)
+RESTORE_GRACE=${ST_RESTORE_GRACE_S:-300}   # a free fleet is not restored while the queue was active this recently: its next ticket is on its way
+LOOP_SLEEP=${ST_SUPERVISOR_SLEEP:-30}; BOOT_POLL=${ST_BOOT_POLL:-15}; MAX_LOOPS=${ST_SUPERVISOR_LOOPS:-0}   # tests shorten and bound the loop
 log(){ echo "$(date '+%F %T') $*"; }
 SELF_IPS=" $(hostname -I 2>/dev/null) "                 # this loop runs on rank 0's node, which cannot ssh to itself
 node_sh(){ local ip=$1; shift
@@ -54,6 +57,65 @@ containers_up(){
     n=$(node_sh "$ip" "docker ps -q --filter name=^$NAME\$ | wc -l" 2>/dev/null || echo 0)
     [ "$n" = 1 ] || return 1
   done
+}
+HEALTH_DETAIL=
+health(){  # 0 when a real chat answers -- the file's first line: a listening door is not health, and a
+  # container census is not either (a node whose ssh stalls is not a dead ring). What each probe
+  # said is kept for the log: "health check failed (n/3)" alone told nothing on 2026-09-13.
+  local c d ch=no
+  containers_up && c=yes || c=no
+  door_up && d=yes || d=no
+  [ "$d" = yes ] && chat_ok && ch=yes
+  HEALTH_DETAIL="containers=$c door=$d chat=$ch"
+  [ "$ch" = yes ]
+}
+head_age(){  # seconds since the head's container started; 1 when there is none
+  local started; started=$(docker inspect -f '{{.State.StartedAt}}' "$NAME" 2>/dev/null) && [ -n "$started" ] || return 1
+  echo $(( $(date +%s) - $(date -d "$started" +%s 2>/dev/null || echo 0) ))
+}
+booting_fleet(){  # every rank up, no door yet, the head's container younger than a boot takes: a boot in progress
+  # -- ours, started by deploy-watch a moment before this loop, or the last launch's. On 2026-09-13
+  # 03:54 this loop's first act after a deploy was to stop that boot and start another; and at
+  # 03:59, 04:04 and 04:11 it relaunched a fleet whose door was up because the first chat after
+  # a cold boot had not answered yet. Twenty minutes of flapping, four boots for one.
+  containers_up || return 1
+  door_up && return 1
+  local age; age=$(head_age) || return 1
+  [ "$age" -lt "$BOOT_GRACE" ]
+}
+queue_active_ago(){  # seconds since the queue last enqueued, granted or released (its activity clock); empty when it has none
+  python3 - "$FLEET_DIR/idle-recovery.json" <<'PY'
+import json, sys, time
+try:
+    t = json.load(open(sys.argv[1])).get("updated_at")
+    print(int(time.time() - float(t)) if t else "")
+except Exception:
+    print("")
+PY
+}
+wait_for_health(){  # <what>: the door, then a real chat -- a listening door is not health (the file's first line)
+  local what=$1 waited=0 door_seen=0
+  while [ "$waited" -lt "$BOOT_GRACE" ]; do
+    if door_up; then
+      [ "$door_seen" = 1 ] || { door_seen=1; log "$what: door up after ${waited}s"; }
+      if chat_ok; then log "$what: healthy after ${waited}s (a chat answered)"; fails=0; return 0; fi
+    fi
+    containers_up || { log "$what: a rank died during boot"; forensics; return 1; }
+    sleep "$BOOT_POLL"; waited=$((waited+BOOT_POLL))
+  done
+  log "$what: boot grace exceeded (${BOOT_GRACE}s)"; forensics; return 1
+}
+adopt_boot(){ log "a fleet is booting (head container $(head_age || echo '?')s old, no door yet): adopting it, not relaunching it"; wait_for_health adoption; }
+wait_reason(){  # key<TAB>text: why not to launch right now; 1 when there is no reason
+  local taken ago
+  if taken=$(fleet_taken); then printf 'taken:%s\t%s\n' "${taken%% since *}" "fleet taken ($taken)"; return 0; fi
+  if handing_over; then printf 'handover\tengine is handing the fleet over\n'; return 0; fi
+  if booting_fleet; then printf 'booting\ta fleet is booting\n'; return 0; fi
+  ago=$(queue_active_ago)
+  if [ -n "$ago" ] && [ "$ago" -lt "$RESTORE_GRACE" ]; then
+    printf 'grace\tfleet free, but the queue was active %ss ago: %ss of quiet queue before production is restored (its next ticket takes the fleet as it is)\n' "$ago" "$RESTORE_GRACE"; return 0
+  fi
+  return 1
 }
 # The lease module runs on the head, where the file and its evidence (docker) are: locally when
 # this loop is the head (it cannot ssh to itself), piped over ssh otherwise.
@@ -102,77 +164,81 @@ forensics(){
   log "forensics: $d"
 }
 launch(){
-  local taken waited=0
+  local taken
   if taken=$(fleet_taken); then log "fleet taken ($taken): not launching"; return 1; fi
   log "launching the ST fleet (production lease as $PROD_OWNER)"
   ST_LEASE_KIND=production LEASE_OWNER_PRODUCTION=$PROD_OWNER bash "$LAUNCHER" stop >>"$FORENSICS/launch.log" 2>&1 \
     || { log "stop refused; preserving fleet owner"; return 1; }
   ST_LEASE_KIND=production LEASE_OWNER_PRODUCTION=$PROD_OWNER bash "$LAUNCHER" >>"$FORENSICS/launch.log" 2>&1 \
     || { log "launcher returned nonzero (see $FORENSICS/launch.log)"; return 1; }
-  while [ $waited -lt $BOOT_GRACE ]; do
-    door_up && { log "door up after ${waited}s"; return 0; }
-    containers_up || { log "a rank died during boot"; forensics; return 1; }
-    sleep 15; waited=$((waited+15))
-  done
-  log "boot grace exceeded (${BOOT_GRACE}s)"; forensics; return 1
+  wait_for_health launch
 }
-launch_fails=0; next_launch_at=0; held_logged=0; fails=0
+launch_fails=0; next_launch_at=0; held_logged=0; fails=0; wait_logged=
 attempt_launch(){
-  local taken
-  if taken=$(fleet_taken); then log "fleet taken ($taken): waiting without consuming a launch attempt"; return; fi
-  if handing_over; then log "engine is handing the fleet over: waiting without consuming a launch attempt"; return; fi
-  launch || true
+  local reason key text
+  if reason=$(wait_reason); then
+    IFS=$'\t' read -r key text <<< "$reason"
+    case "$key" in
+      booting) adopt_boot ;;
+      *) log "$text: waiting without consuming a launch attempt" ;;
+    esac
+    return
+  fi
+  if launch; then launch_fails=0; next_launch_at=0; held_logged=0; return; fi
   launch_fails=$((launch_fails+1))
   local backoff=$(( LAUNCH_BACKOFF_BASE * (1 << (launch_fails - 1)) ))
   [ "$backoff" -gt "$LAUNCH_BACKOFF_MAX" ] && backoff=$LAUNCH_BACKOFF_MAX
   next_launch_at=$(( $(date +%s) + backoff ))
-  log "launch attempt $launch_fails/$LAUNCH_HOLD_AFTER done; none before ${backoff}s unless it goes healthy"
+  log "launch attempt $launch_fails/$LAUNCH_HOLD_AFTER failed; none before ${backoff}s unless it goes healthy"
 }
 
 mkdir -p "$FORENSICS"
 if [ "${ST_SUPERVISOR_ONCE:-0}" = 1 ]; then
   if taken=$(fleet_taken); then echo "fleet taken: $taken"
   elif handing_over; then echo "handing over: waiting"
-  elif containers_up && door_up && chat_ok; then echo "healthy"
+  elif health; then echo "healthy"
+  elif booting_fleet; then echo "booting: would adopt (head container $(head_age || echo '?')s old, no door yet)"
+  elif ago=$(queue_active_ago) && [ -n "$ago" ] && [ "$ago" -lt "$RESTORE_GRACE" ]; then echo "fleet free, queue active ${ago}s ago: would wait (grace ${RESTORE_GRACE}s)"
   else echo "would launch (containers_up=$(containers_up && echo yes || echo no) door_up=$(door_up && echo yes || echo no))"; fi
   exit 0
 fi
 log "=== st-glm53 supervisor start ==="
-if containers_up && door_up && chat_ok; then
+if health; then
   log "existing ST fleet healthy -- adopting"
 else
   attempt_launch
 fi
+loops=0
 while :; do
-  sleep 30
-  if containers_up && door_up && chat_ok; then
+  sleep "$LOOP_SLEEP"
+  if [ "$MAX_LOOPS" -gt 0 ]; then loops=$((loops+1)); [ "$loops" -le "$MAX_LOOPS" ] || { log "loop bound reached ($MAX_LOOPS)"; exit 0; }; fi
+  if health; then
     [ "$fails" -gt 0 ] && log "recovered (fails reset)"
-    fails=0
+    fails=0; wait_logged=
     if [ "$launch_fails" -gt 0 ]; then log "healthy again -- clearing $launch_fails launch attempt(s)"; launch_fails=0; next_launch_at=0; held_logged=0; fi
     continue
   fi
-  if handing_over; then
-    log "engine is handing the fleet over: waiting, this is not a failed health check"
+  if reason=$(wait_reason); then
+    # Someone else's fleet, a handover, our own boot in progress, a queue that was active a moment
+    # ago: none is a failure of ours -- no forensics (each dump evicts one of the ten kept, and on
+    # 2026-09-13 02:49-02:55 every kept dump was a "fleet taken" snapshot), no launch attempt, one
+    # line per reason. A boot in progress is adopted and waited for.
+    IFS=$'\t' read -r key text <<< "$reason"
+    case "$key" in
+      booting) adopt_boot ;;
+      *) [ "$key" = "$wait_logged" ] || { log "$text: waiting -- no forensics, no launch attempt"; wait_logged=$key; } ;;
+    esac
     continue
   fi
+  wait_logged=
   fails=$((fails+1))
-  log "health check failed ($fails/$FAILS_NEEDED)"
+  log "health check failed ($fails/$FAILS_NEEDED): $HEALTH_DETAIL"
   [ "$fails" -ge "$FAILS_NEEDED" ] || continue
   if [ "$launch_fails" -ge "$LAUNCH_HOLD_AFTER" ]; then
     [ "$held_logged" = 1 ] || { log "HELD after $launch_fails relaunches with no healthy fleet -- a person is needed; still probing, will adopt a healthy fleet"; held_logged=1; }
     continue
   fi
   [ "$(date +%s)" -lt "$next_launch_at" ] && continue
-  if taken=$(fleet_taken); then
-    # Someone else's fleet -- a ticket's window, a session's boot -- is not a failure of ours: no
-    # forensics (each dump evicts one of the ten kept, and on 2026-09-13 02:49-02:55 every kept
-    # dump was a "fleet taken" snapshot, the last real failure's evidence gone), no launch
-    # attempt, one line per holder.
-    taken_key=${taken%% since *}
-    [ "$taken_key" = "$taken_logged" ] || { log "fleet taken ($taken): waiting -- no forensics, no launch attempt"; taken_logged=$taken_key; }
-    continue
-  fi
-  taken_logged=
   forensics
   attempt_launch
 done
