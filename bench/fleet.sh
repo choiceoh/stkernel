@@ -344,8 +344,11 @@ st_engine_ask() {  # session pid est note -- under .lock, after a refused hold; 
     logit "hold refused: production holds the fleet and could not be asked ($(lease_state))"
   fi
 }
-serving_idle() {  # a probe may run beside this: healthy, nothing in flight, not booting
-  ! serving_up && return 0
+serving_idle() {  # a probe may run beside this: healthy, nothing in flight, not booting -- and something must be serving
+  # A probe measures a door. With nothing serving, "idle" granted two D17 probes on 2026-09-13
+  # (02:57, 03:54) that aborted a second later with "no engine answers": one while the fleet
+  # was between tickets, one while production's containers were still being started.
+  serving_up || return 1
   booting && return 1
   if st_serving_up; then
     # The ST engine says itself whether anything is outstanding (st:quiet, the same reading as
