@@ -53,10 +53,13 @@ def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
     h,
     h0,
     ht,
+    hs,
+    at,
     cu_seqlens,
     chunk_offsets,
     T,
     AUTOTUNE_REGIME,
+    N_AT: tl.constexpr,
     H: tl.constexpr,
     Hg: tl.constexpr,
     K: tl.constexpr,
@@ -133,6 +136,24 @@ def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
 
     # main recurrence
     for i_t in range(NT):
+        if N_AT > 0:
+            # ST engine (45차 §23): the fp32 state at the start of a requested chunk -- the position state a prefix
+            # snapshot keeps at a block boundary inside this prefill chunk -- out of the very accumulator the
+            # recurrence carries, so it is the uncut computation's state, not a cut one's (and `h` below is bf16).
+            for j in tl.static_range(N_AT):
+                if tl.load(at + j) == i_t:
+                    hs_j = hs + ((i_n * N_AT + j) * H + i_h).to(tl.int64) * V * K
+                    p_s = tl.make_block_ptr(hs_j, (V, K), (K, 1), (i_v * BV, 0), (BV, 64), (1, 0))
+                    tl.store(p_s, b_h1.to(p_s.dtype.element_ty), boundary_check=(0, 1))
+                    if K > 64:
+                        p_s = tl.make_block_ptr(hs_j, (V, K), (K, 1), (i_v * BV, 64), (BV, 64), (1, 0))
+                        tl.store(p_s, b_h2.to(p_s.dtype.element_ty), boundary_check=(0, 1))
+                    if K > 128:
+                        p_s = tl.make_block_ptr(hs_j, (V, K), (K, 1), (i_v * BV, 128), (BV, 64), (1, 0))
+                        tl.store(p_s, b_h3.to(p_s.dtype.element_ty), boundary_check=(0, 1))
+                    if K > 192:
+                        p_s = tl.make_block_ptr(hs_j, (V, K), (K, 1), (i_v * BV, 192), (BV, 64), (1, 0))
+                        tl.store(p_s, b_h4.to(p_s.dtype.element_ty), boundary_check=(0, 1))
         p_h1 = tl.make_block_ptr(
             h + i_t.to(tl.int64) * stride_h,
             (V, K),
@@ -334,7 +355,11 @@ def chunk_gated_delta_rule_fwd_h(
     chunk_offsets: torch.Tensor | None = None,
     use_exp2: bool = False,
     autotune_regime: int = 0,
+    states_at=None,
+    states_out: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    """`states_at`: chunk indices (per sequence, ascending) whose starting state is wanted in fp32; `states_out`
+    [N, len(states_at), H, V, K] fp32 receives them (the ST engine's prefix snapshots inside a prefill chunk)."""
     # This kernel is slightly different from fla to support Q/K with different head numbers.
     # In fla, Q/K always have the same head number, so Hg is always equal to H.
     B, T, Hg, K, V = *k.shape, u.shape[-1]
@@ -358,6 +383,16 @@ def chunk_gated_delta_rule_fwd_h(
     )
 
     v_new = torch.empty_like(u) if save_new_value else None
+    n_at = len(states_at) if states_at else 0
+    if n_at:
+        if states_out is None or tuple(states_out.shape) != (N, n_at, H, V, K) or states_out.dtype != torch.float32:
+            raise ValueError("states_out must be fp32 [N, len(states_at), H, V, K]")
+        at = torch.tensor([int(c) for c in states_at], dtype=torch.int32, device=k.device)
+        if any(c < 0 or c >= NT for c in states_at) or list(states_at) != sorted(set(states_at)):
+            raise ValueError("states_at are ascending chunk indices inside the sequence")
+    else:
+        at = torch.zeros(1, dtype=torch.int32, device=k.device)          # unused: N_AT == 0 compiles the side output away
+        states_out = at
 
     def grid(meta):
         return (triton.cdiv(V, meta["BV"]), N * H)
@@ -372,10 +407,13 @@ def chunk_gated_delta_rule_fwd_h(
         h=h,
         h0=initial_state,
         ht=final_state,
+        hs=states_out,
+        at=at,
         cu_seqlens=cu_seqlens,
         chunk_offsets=chunk_offsets,
         T=T,
         AUTOTUNE_REGIME=autotune_regime,
+        N_AT=n_at,
         H=H,
         Hg=Hg,
         K=K,

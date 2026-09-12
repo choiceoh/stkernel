@@ -11,30 +11,52 @@ not behave alike, so they get two allocators:
 
 Both are represented the way a kernel wants them (CHARTER I2): a block table
 is a [max_seqs, max_blocks] int32 array filled with -1, a free list is an
-int32 stack. No Python object graph sits between the scheduler and the launch.
+int32 linked list. No Python object graph sits between the scheduler and the
+launch.
 
 Running out is an error, not a fallback (D3): the budget declared how many
 blocks exist before the model loaded, so exhaustion means the scheduler broke
 its contract, and hiding that behind an eviction would hide the bug.
 
-Blocks are owned by count: a row references the blocks in its table, a prefix
-cache pins the blocks of a boundary it keeps (base/prefix.py), and a block
-returns to the free stack when its count reaches zero. A row may adopt a
-cached prefix (read-only, already complete blocks) ahead of its own
-reservation. When the free stack cannot cover a reservation, the pool first
-asks the cache to reclaim -- that is the one place an eviction happens, and it
-frees blocks nobody but the cache holds; a shortage after that is still the
-scheduler's error.
+Blocks are owned by rows and remembered by boundaries. A row references the
+blocks in its table and a block is free when no row does -- but free is not
+blank. The prefix cache (base/prefix.py) CLAIMS the blocks of a boundary it
+keeps: a claimed block waits in the free list under that boundary's name, and
+the next prompt that begins the same way takes it back without a copy and
+without anyone having pinned it. A claim costs nothing and blocks nobody; the
+block leaves the moment a row needs one, and the boundary stops being one
+then, not before.
+
+Free blocks leave in three grades, and never out of order:
+
+  anonymous   no boundary remembers it                  -- handed out first
+  faded       a boundary that lost its snapshot claims  -- only its state can
+              still come back (from the prefix tier), so the blocks are worth
+              less than a whole boundary's and more than nobody's
+  cached      a boundary that can be adopted right now
+  pinned      a boundary an operator warmed by hand     -- handed out last of
+              all, which is the whole promise of pinning one
+
+Within a grade the front leaves first, and a row gives its blocks back TAIL
+FIRST, so the head of a prompt -- the part the next prompt is most likely to
+share -- is the last thing anybody takes.
+
+`pin` remains for the one owner that is not a row: bytes being read off the
+device (a prefix-tier write) must not move while the read is in flight.
 """
 from __future__ import annotations
 
 from array import array
 
 EMPTY = -1
+HELD = -1                                   # in no free list: a row or a transfer holds it
+ANON, FADED, CACHED, PINNED = 0, 1, 2, 3    # the grades of a free block, taken in this order
 
 
 class BlockPool:
-    """Fixed-size blocks handed out from a stack; a sequence owns a row."""
+    """Fixed-size blocks handed out from a graded free list; a sequence owns a row."""
+
+    ANON, FADED, CACHED, PINNED = ANON, FADED, CACHED, PINNED
 
     def __init__(self, num_blocks: int, block_size: int, max_seqs: int, max_blocks_per_seq: int):
         if any(not isinstance(n, int) or n <= 0
@@ -42,8 +64,6 @@ class BlockPool:
             raise ValueError("block count, block size, row count and row width must be positive integers")
         self.block_size = block_size
         self.num_blocks = num_blocks
-        # free stack: block ids, top at the end. int32 so it can be handed to a kernel.
-        self.free = array("i", range(num_blocks - 1, -1, -1))
         self._table = array("i", [EMPTY]) * (max_seqs * max_blocks_per_seq)
         self.table = memoryview(self._table).toreadonly()
         # Within one epoch a row only appends blocks. Release starts a new
@@ -56,9 +76,137 @@ class BlockPool:
         self.rows_in_use = 0
         self.storage = None                                # arena view, once attached
         self.block_bytes = 0
-        self.refs = array("i", [0]) * num_blocks           # owners per block: rows + cache pins
-        self.reclaim = None                                # cache callback: free at least n blocks, returns how many
-        self.reclaimable = None                            # cache callback: blocks only the cache holds
+        self.refs = array("i", [0]) * num_blocks           # owners per block: rows, plus a transfer's pin
+        self.claims = array("i", [0]) * num_blocks         # cached boundaries that remember it (blocks and snapshot)
+        self.fades = array("i", [0]) * num_blocks          # boundaries that remember only its blocks
+        self.pins = array("i", [0]) * num_blocks           # boundaries an operator pinned
+        self.forget = None                                 # cache callback: this block is leaving, drop every boundary on it
+        # the free list: one doubly linked chain per grade, threaded through the block ids themselves
+        self._next = array("i", [EMPTY]) * num_blocks
+        self._prev = array("i", [EMPTY]) * num_blocks
+        self._grade = array("b", [ANON]) * num_blocks
+        self._head, self._tail, self._sizes = [EMPTY] * 4, [EMPTY] * 4, [0, 0, 0, 0]
+        for block in range(num_blocks):
+            self._grade[block] = HELD
+            self._append(block, ANON)
+
+    # -- the graded free list ---------------------------------------------------------------
+    def _append(self, block: int, grade: int) -> None:
+        """`block` joins the back of `grade`; the front is what leaves first."""
+        self._prev[block], self._next[block] = self._tail[grade], EMPTY
+        if self._tail[grade] == EMPTY:
+            self._head[grade] = block
+        else:
+            self._next[self._tail[grade]] = block
+        self._tail[grade] = block
+        self._grade[block] = grade
+        self._sizes[grade] += 1
+
+    def _unlink(self, block: int) -> None:
+        grade = self._grade[block]
+        if grade == HELD:
+            return
+        before, after = self._prev[block], self._next[block]
+        if before == EMPTY:
+            self._head[grade] = after
+        else:
+            self._next[before] = after
+        if after == EMPTY:
+            self._tail[grade] = before
+        else:
+            self._prev[after] = before
+        self._prev[block] = self._next[block] = EMPTY
+        self._grade[block] = HELD
+        self._sizes[grade] -= 1
+
+    def _regrade(self, block: int) -> None:
+        """Put `block` where its owners say it belongs, at the back of that grade."""
+        if self.refs[block]:
+            want = HELD
+        elif self.pins[block]:
+            want = PINNED
+        elif self.claims[block]:
+            want = CACHED
+        elif self.fades[block]:
+            want = FADED
+        else:
+            want = ANON
+        if self._grade[block] == want:
+            return
+        self._unlink(block)
+        if want != HELD:
+            self._append(block, want)
+
+    def _take(self) -> int:
+        """The next block to hand out: anonymous first, a whole boundary's last."""
+        for grade in (ANON, FADED, CACHED, PINNED):
+            block = self._head[grade]
+            if block == EMPTY:
+                continue
+            if grade != ANON:
+                self.forget(block)                         # every boundary on it stops being one; the block turns anonymous
+            self._unlink(block)
+            self.refs[block] = 1
+            return block
+        raise MemoryError("no block is free")
+
+    def free_order(self) -> "list[int]":
+        """Every free block in the order it would be handed out -- anonymous first, an operator's pin last.
+        The state a test or a diagnostic compares; nothing in the engine's path walks it."""
+        out = []
+        for grade in (ANON, FADED, CACHED, PINNED):
+            block = self._head[grade]
+            while block != EMPTY:
+                out.append(block)
+                block = self._next[block]
+        return out
+
+    @property
+    def available(self) -> int:
+        """Blocks no row holds: free now, counting the ones a boundary would give up."""
+        return self._sizes[ANON] + self._sizes[FADED] + self._sizes[CACHED] + self._sizes[PINNED]
+
+    @property
+    def anonymous(self) -> int:
+        """Free blocks nothing remembers: what a reservation spends before any boundary pays."""
+        return self._sizes[ANON]
+
+    @property
+    def cached(self) -> int:
+        """Free blocks a cached boundary still holds -- the reuse a reservation spends after everything anonymous."""
+        return self._sizes[CACHED] + self._sizes[PINNED]
+
+    @property
+    def faded(self) -> int:
+        """Free blocks held by a boundary whose snapshot is gone (its state lives on the prefix tier)."""
+        return self._sizes[FADED]
+
+    def _counts(self, grade: int):
+        return {FADED: self.fades, CACHED: self.claims, PINNED: self.pins}[grade]
+
+    def claim(self, blocks, grade: int) -> None:
+        """A boundary remembers these blocks: they stay where they are, behind everything of a lower grade."""
+        if self.forget is None:
+            raise ValueError("a pool only takes claims from a bound cache: nothing would answer for the blocks")
+        if grade not in (FADED, CACHED, PINNED):
+            raise ValueError("a boundary claims blocks as pinned, cached or faded")
+        counts = self._counts(grade)
+        for block in blocks:
+            if not 0 <= block < self.num_blocks:
+                raise ValueError("a claim names a block of this pool")
+        for block in blocks:
+            counts[block] += 1
+            self._regrade(block)
+
+    def disclaim(self, blocks, grade: int) -> None:
+        """That boundary is gone (or changed grade): the blocks fall back to what is left holding them."""
+        counts = self._counts(grade)
+        for block in blocks:
+            if counts[block] <= 0:
+                raise ValueError("disclaim of a block that boundary never claimed")
+        for block in blocks:
+            counts[block] -= 1
+            self._regrade(block)
 
     def attach_storage(self, view, block_bytes: int) -> None:
         """Bind the pool to `num_blocks * block_bytes` of arena (D16)."""
@@ -74,11 +222,6 @@ class BlockPool:
     def blocks_of(self, seq: int) -> "list":
         """A sequence's blocks in order, as views (what a tier demotes)."""
         return [self.block(b) for b in self.row(seq) if b != EMPTY]
-
-    @property
-    def available(self) -> int:
-        """Free now plus what the cache would give back on demand."""
-        return len(self.free) + (self.reclaimable() if self.reclaimable is not None else 0)
 
     def blocks_for(self, tokens: int) -> int:
         return -(-tokens // self.block_size)
@@ -98,7 +241,7 @@ class BlockPool:
         """Grow a batch by `tokens` per row, all or nothing.
 
         Validate every row and the combined demand before touching the free
-        stack. A decoder never sees a batch whose earlier rows were reserved
+        list. A decoder never sees a batch whose earlier rows were reserved
         but whose later rows ran out. Called on the runner's owning thread.
         """
         if not isinstance(tokens, int) or tokens < 0:
@@ -134,18 +277,14 @@ class BlockPool:
                 raise MemoryError(f"seq {seq} would exceed {self.max_blocks_per_seq} blocks")
             growth.append((seq, have, need, tokens))
         grow = sum(need - have for _, have, need, _ in growth)
-        if grow > len(self.free) and self.reclaim is not None:
-            self.reclaim(grow - len(self.free))            # the cache gives back least recently used boundaries
-        if grow > len(self.free):
+        if grow > self.available:
             raise MemoryError(
-                f"batch needs {grow} more blocks, {len(self.free)} free: the "
+                f"batch needs {grow} more blocks, {self.available} free: the "
                 "scheduler admitted more than the budget declared")
         for seq, have, need, tokens in growth:
             base = seq * self.max_blocks_per_seq
             for i in range(have, need):
-                block = self.free.pop()
-                self._table[base + i] = block
-                self.refs[block] = 1
+                self._table[base + i] = self._take()   # anonymous blocks first; a boundary pays only when they run out
             if self.tokens[seq] == 0 and tokens:
                 self.rows_in_use += 1
             self.tokens[seq] += tokens
@@ -160,49 +299,52 @@ class BlockPool:
             raise ValueError(f"seq {seq} already holds blocks; a prefix is adopted into an empty row")
         if type(tokens) is not int or tokens <= 0 or tokens % self.block_size or len(blocks) != tokens // self.block_size:
             raise ValueError("an adopted prefix is whole blocks with exactly their token count")
-        if len(blocks) > self.max_blocks_per_seq or any(not 0 <= b < self.num_blocks or self.refs[b] <= 0 for b in blocks):
-            raise ValueError("adopted blocks must be live cached blocks that fit the row")
+        if len(blocks) > self.max_blocks_per_seq or any(
+                not 0 <= b < self.num_blocks
+                or not (self.claims[b] or self.fades[b] or self.pins[b] or self.refs[b]) for b in blocks):
+            raise ValueError("adopted blocks must be blocks a boundary still holds")
         base = seq * self.max_blocks_per_seq
         for i, block in enumerate(blocks):
             self._table[base + i] = block
             self.refs[block] += 1
+            self._regrade(block)                       # a row holds it now: out of the free list (vLLM's touch)
         self.tokens[seq] = tokens
         self.rows_in_use += 1
 
     def pin(self, blocks) -> None:
-        """One more owner for each block (a cache entry)."""
+        """One more owner for each block, for an owner that is not a row: bytes a transfer is reading."""
         for b in blocks:
-            if not 0 <= b < self.num_blocks or self.refs[b] <= 0:
-                raise ValueError("only a live block can be pinned")
+            if not 0 <= b < self.num_blocks:
+                raise ValueError("only a block of this pool can be pinned")
         for b in blocks:
             self.refs[b] += 1
+            self._regrade(b)
 
     def unpin(self, blocks) -> int:
-        """Drop the cache's ownership; blocks nobody else holds go back to the free stack. Returns how many did."""
+        """Drop that owner; blocks nobody else holds go back to the free list. Returns how many did."""
         freed = 0
         for b in blocks:
             if self.refs[b] <= 0:
                 raise ValueError("unpin of a block with no owner")
             self.refs[b] -= 1
             if self.refs[b] == 0:
-                self.free.append(b)
                 freed += 1
+            self._regrade(b)
         return freed
 
     def release(self, seq: int) -> int:
-        """Give every block of `seq` back (to the free stack when the row was its last owner). Returns how many."""
+        """Give every block of `seq` back, TAIL FIRST -- the head of a prompt is what the next prompt shares,
+        so it must be the last block anyone takes. Returns how many blocks the row held."""
         row = self.row(seq)
         base = seq * self.max_blocks_per_seq
         n = 0
-        for i in range(self.max_blocks_per_seq):
-            if row[i] == EMPTY:
-                break
+        while n < self.max_blocks_per_seq and row[n] != EMPTY:
+            n += 1
+        for i in range(n - 1, -1, -1):
             block = row[i]
             self.refs[block] -= 1
-            if self.refs[block] == 0:
-                self.free.append(block)
             self._table[base + i] = EMPTY
-            n += 1
+            self._regrade(block)
         if n:
             self._epochs[seq] += 1
         if self.tokens[seq]:
@@ -268,9 +410,28 @@ def _selfcheck() -> None:
     except MemoryError:
         pass
     assert pool.release(1) == 7 and pool.available == 7 and pool.tokens[1] == 0
+    row0 = list(pool.row(0))[:3]
     assert pool.release(0) == 3 and pool.available == 10 and pool.rows_in_use == 0
+    # tail first: a row gives its last block back first, so its head is the last thing taken
+    tail = BlockPool(3, 16, 2, 3)
+    tail.reserve(0, 16 * 3)
+    row = list(tail.row(0))[:3]
+    tail.release(0)
+    tail.reserve(1, 16 * 3)
+    assert list(tail.row(1))[:3] == row[::-1], "the tail of a released row leaves before its head"
+    # grades: a claimed block waits behind every anonymous one, and pays one at a time
+    graded = BlockPool(10, 16, 3, 10)
+    graded.forget = lambda b: graded.disclaim((b,), CACHED)
+    graded.reserve(0, 16 * 10)
+    kept = tuple(graded.row(0))[:2]
+    graded.claim(kept, CACHED)
+    graded.release(0)
+    assert graded.available == 10 and graded.anonymous == 8 and graded.cached == 2
+    assert graded.reserve(1, 16 * 8) == 8 and graded.cached == 2, "eight anonymous blocks came first"
+    assert graded.reserve(2, 16) == 1 and graded.cached == 1, "then one boundary's block, not the rest"
+    assert len(graded.free_order()) == graded.available == 1
+    assert graded.row(2)[0] == kept[1], "and the tail of the boundary before its head"
     # storage: attach a fake arena and read a sequence's blocks back as views
-    import array as _a
     fake = memoryview(bytearray(10 * 64))
     class _View:                    # duck-typed like a uint8 torch view for the check
         def __init__(s, mv): s.mv = mv

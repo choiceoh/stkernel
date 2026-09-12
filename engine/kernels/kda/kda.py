@@ -1725,6 +1725,8 @@ def _chunk_kda_fwd_with_cumulative_g(
     chunk_size: int = FLA_CHUNK_SIZE,
     autotune_regime: int = 0,
     out: torch.Tensor | None = None,
+    states_at=None,
+    states_out: torch.Tensor | None = None,
 ):
     # `g` must already be chunk-local cumulatively-summed AND scaled by
     # RCP_LN2 (so the downstream exp2-based kernels reproduce exp(g)).
@@ -1767,6 +1769,8 @@ def _chunk_kda_fwd_with_cumulative_g(
         chunk_indices=chunk_indices,
         use_exp2=True,
         autotune_regime=autotune_regime,
+        states_at=states_at,
+        states_out=states_out,
     )
     del w, u, kg
     o = chunk_gla_fwd_o_gk(
@@ -1842,6 +1846,8 @@ def chunk_kda_with_fused_gate_fwd(
     safe_gate: bool = False,
     lower_bound: float = -5.0,
     out: torch.Tensor | None = None,
+    states_at=None,
+    states_out: torch.Tensor | None = None,
 ):
     _validate_chunk_kda_output(
         out, v, (q, k, v, raw_g, beta, A_log, g_bias, initial_state, cu_seqlens)
@@ -1891,6 +1897,8 @@ def chunk_kda_with_fused_gate_fwd(
         chunk_size=chunk_size,
         autotune_regime=autotune_regime,
         out=out,
+        states_at=states_at,
+        states_out=states_out,
     )
 
 
@@ -1944,9 +1952,16 @@ def chunk_kda_with_fused_gate(
     safe_gate: bool = False,
     lower_bound: float = -5.0,
     out: torch.Tensor | None = None,
+    states_at=None,
     **kwargs,
 ):
-    """Run chunk KDA from raw gate projection using fused gate+cumsum."""
+    """Run chunk KDA from raw gate projection using fused gate+cumsum.
+
+    `states_at`: ascending indices of the 64-token kernel chunks whose starting state is wanted -- the fp32 state
+    after every token before chunk c, straight out of the recurrence's accumulator (45차 §23: the ST engine's prefix
+    snapshots at block boundaries inside a prefill chunk, without cutting the computation). With it, a third value
+    is returned: [len(states_at), H, V, K] fp32 for the one sequence (the kernel's [V, K] layout, as `final_state`).
+    """
     # Validate before contiguous/l2norm copies can hide an input alias.
     _validate_chunk_kda_output(
         out, v, (q, k, v, raw_g, beta, A_log, g_bias, initial_state, cu_seqlens)
@@ -1962,6 +1977,12 @@ def chunk_kda_with_fused_gate(
         else:
             q, k = normalized
 
+    states_out = None
+    if states_at:
+        n_seq = (len(cu_seqlens) - 1) if cu_seqlens is not None else q.shape[0]
+        if n_seq != 1:
+            raise ValueError("states_at is served for one sequence per call")
+        states_out = torch.empty(1, len(states_at), v.shape[-2], v.shape[-1], k.shape[-1], dtype=torch.float32, device=q.device)
     o, final_state = chunk_kda_with_fused_gate_fwd(
         q=q,
         k=k,
@@ -1977,7 +1998,11 @@ def chunk_kda_with_fused_gate(
         safe_gate=safe_gate,
         lower_bound=lower_bound,
         out=out,
+        states_at=states_at,
+        states_out=states_out,
     )
+    if states_out is not None:
+        return o, final_state, states_out[0]
     return o, final_state
 
 
