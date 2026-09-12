@@ -92,6 +92,7 @@ class PrefixCache:
         self.fades = 0                            # boundaries that gave a snapshot away and kept their blocks
         self.pool = None
         self.tier_keys: "dict[bytes, int]" = {}   # boundaries whose blocks + snapshot the prefix tier holds (base/runner spills them)
+        self.tier_owner: "dict[int, bytes]" = {}  # and the inverse, which is what makes the tier's short key safe (below)
         self._by_blocks: "dict[tuple, bytes]" = {}   # block list -> hash: an entry's parent is the one a block shorter
         self._on_block: "dict[int, list]" = {}    # block -> the boundaries that hold it, in the order they took it: who stops
         # being one when it leaves. A LIST, not a set: `bytes` hash randomly per process, so a set would be walked in a
@@ -384,10 +385,32 @@ class PrefixCache:
         elif h in self.faded:
             self._forget(h)
 
+    def tier_holder(self, key: int) -> "bytes | None":
+        """Which boundary the tier's slot `key` belongs to, or None.
+
+        The tier indexes by an int -- the first seven bytes of a boundary's hash (base/runner.tier_key) -- so two
+        boundaries could name the same slot. 56 bits puts that past 2^28 entries and the tier holds thousands, but the
+        failure is handing one tenant the other's KV, quietly, which is exactly what the tenant salt exists to stop.
+        So the slot has ONE owner: a spill onto a taken slot does not happen (base/runner), and a restore asks here
+        first. Mooncake solves the same shape -- short physical keys for long logical ones -- with store-if-not-exists
+        and a byte comparison on conflict; at our size one owner is enough (engine/MOONCAKE_COMPARISON_20260912.md).
+        """
+        return self.tier_owner.get(key)
+
+    def hold_tier(self, h: bytes, key: int) -> None:
+        """Record that the tier's slot `key` now holds boundary `h`. The caller has checked the slot was free."""
+        held = self.tier_owner.get(key)
+        if held is not None and held != h:
+            raise ValueError(f"prefix tier slot {key} already holds {held.hex()[:8]}")
+        self.tier_keys[h] = key
+        self.tier_owner[key] = h
+
     def forget_tier(self, h: bytes) -> "int | None":
         """The tier no longer holds this boundary. Returns the key it had. A faded boundary whose slot is gone too
         has nothing left anywhere, so it stops holding its blocks."""
         key = self.tier_keys.pop(h, None)
+        if key is not None and self.tier_owner.get(key) == h:
+            del self.tier_owner[key]
         entry = self.entries.get(h)
         if entry is not None:
             entry.spilled = False                       # it is memory-only again, and leaves before one that is not
