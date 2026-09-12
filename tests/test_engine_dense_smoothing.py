@@ -95,7 +95,7 @@ class SmoothingTests(unittest.TestCase):
 
     def test_the_calibration_files_peaks_and_undoes_its_smoothing(self):
         from engine.kernels.dense.calibration import Calibration
-        from engine.kernels.dense.store import PackStore
+        from engine.kernels.dense.store import Need, PackStore
         c = Calibration("cpu", budget_bytes=1 << 20)
         layer = SimpleNamespace(cols=32, name="T/model.layers.0.x", observer=None)
         s = torch.rand(32) + 0.5
@@ -113,7 +113,8 @@ class SmoothingTests(unittest.TestCase):
             torch.testing.assert_close(store.amax(layer.name), blob["amax"])
             self.assertEqual(store.missing_calibration(layer.name, 32), [])
             torch.save({"H": blob["H"], "ntok": 8, "name": layer.name}, store.calibration_path(layer.name))
-            self.assertEqual(store.missing_calibration(layer.name, 32), [(layer.name, 0, 32)], "a blob without peaks is summed again")
+            self.assertEqual(store.missing_calibration(layer.name, 32), [Need(layer.name, 0, 32, hessian=False)],
+                             "a blob without peaks is summed again -- for the peaks alone, its Hessian stays")
             self.assertIsNone(store.amax(layer.name))
             self.assertTrue(store.calibrated(layer.name), "its Hessian still packs meanwhile")
 

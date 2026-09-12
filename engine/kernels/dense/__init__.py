@@ -57,7 +57,7 @@ def _tile_pack(codes, scales, shift, n, k0, k1):
 
 
 @torch.inference_mode()
-def pack_w4(weight, *, hessian=None, per_row=True, act_order=None):
+def pack_w4(weight, *, hessian=None, per_row=True, act_order=None, factor=None):
     from .packing import _E2M1_GRID, _E2M1_MIDS, _w4_row_shift, _w4_rtn_codes, _w4_gptq_codes
     if (not weight.is_cuda or weight.ndim != 2 or weight.dtype != torch.bfloat16
             or weight.shape[1] % 128 or not 0 < weight.shape[1] <= TILE):
@@ -72,14 +72,14 @@ def pack_w4(weight, *, hessian=None, per_row=True, act_order=None):
     else:
         if hessian.shape != (k, k) or not torch.isfinite(hessian).all():
             raise ValueError("GPTQ Hessian must be finite and match the input dimension")
-        codes, scales = _w4_gptq_codes(weight, shift, need, hessian, mids, grid,
+        codes, scales = _w4_gptq_codes(weight, shift, need, hessian, mids, grid, factor=factor,
                                        act_order=GPTQ_ACT_ORDER if act_order is None else act_order)
     pack = _tile_pack(codes, scales, shift, n, 0, k)
     return W4Pack(pack.data, pack.scale, pack.rowscale, n, k, hessian is not None)
 
 
 @torch.inference_mode()
-def pack_w4_wide(weight, hessian, *, per_row=True, act_order=None):
+def pack_w4_wide(weight, hessian, *, per_row=True, act_order=None, factor=None):
     """GPTQ over the WHOLE K of a weight wider than a tile (the drafter's fc: 20480 = five tiles), with the full
     Hessian: the error feedback crosses tile boundaries, which tile-by-tile packing cannot (its input, the target's
     hidden states of five layers, is correlated across the tiles). The fp64 factorisation runs on the CPU. Returns
@@ -95,7 +95,7 @@ def pack_w4_wide(weight, hessian, *, per_row=True, act_order=None):
     mids = torch.tensor(_E2M1_MIDS, device=weight.device)
     grid = torch.tensor(_E2M1_GRID, device=weight.device)
     need, shift, _ = _w4_row_shift(weight, padded, k//16, per_row)
-    codes, scales = _w4_gptq_codes(weight, shift, need, hessian, mids, grid,
+    codes, scales = _w4_gptq_codes(weight, shift, need, hessian, mids, grid, factor=factor,
                                    act_order=GPTQ_ACT_ORDER if act_order is None else act_order, factor_device="cpu")
     packs = []
     for k0 in range(0, k, TILE):

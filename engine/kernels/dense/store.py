@@ -9,8 +9,20 @@ import hashlib
 import inspect
 import os
 from pathlib import Path
+from typing import NamedTuple
 
 import torch
+
+
+class Need(NamedTuple):
+    """A calibration blob a boot has to sum, and how much of it. `hessian` False is a blob whose Gram sums already
+    fit the served weight but that predates the channel peaks the smoothing reads (kernels/dense/smoothing): the
+    peaks are [K] floats beside a [K, K] Hessian that stays on disk, so summing them costs kilobytes instead of the
+    gigabytes a whole Hessian would take from the boot's budget."""
+    key: str
+    start: int
+    width: int
+    hessian: bool = True
 
 
 class PackStore:
@@ -18,19 +30,21 @@ class PackStore:
         self.root, self.rank = Path(root), rank
         self.stats = Counter()
         self.read_files = set()
+        self._factor_entry = None                # (identity, factor) of the last weight: its two lanes share one factorisation
         from engine.kernels.dense import pack_w4
         self.algorithm = hashlib.sha256(
             Path(__file__).with_name('packing.py').read_bytes()
             + inspect.getsource(pack_w4).encode()).hexdigest()
 
     TILE = 4096                                  # DenseLinear packs K in tiles of this width, one calibration blob each
+    FACTOR_BYTES = 256 << 20                     # the largest inverse factor kept between a weight's two lanes (K <= 8192)
 
     @staticmethod
     def tiles(name, cols):
         """(blob key, first column, width) a dense weight of `cols` columns is calibrated in: one blob over the whole K
         -- a weight wider than the decode kernel's tile is packed by one GPTQ over its full Hessian (pack_wide), so
         the calibration covers the columns' correlations across the tiles."""
-        return [(name, 0, cols)]
+        return [Need(name, 0, cols)]
 
     def calibration_path(self, key, rank=None):
         return self.root/'mkcalib'/f'rank{self.rank if rank is None else rank}'/(key+'.pt')
@@ -43,18 +57,19 @@ class PackStore:
         """The blobs of `name` this store lacks: what a calibrating boot must sum. A blob that exists but does not fit
         the weight is reported by name -- `pack` refuses it, so the boot says which file to remove."""
         missing, foreign = [], []
-        for key, start, width in self.tiles(name, cols):
+        for tile in self.tiles(name, cols):
+            key, start, width = tile.key, tile.start, tile.width
             path = self.calibration_path(key)
             if not path.is_file():
-                missing.append((key, start, width))
+                missing.append(Need(key, start, width))
                 continue
             blob = torch.load(path, map_location='cpu', mmap=True, weights_only=True)
             hessian = blob.get('H')
             if (hessian is None or tuple(hessian.shape) != (width, width) or int(blob.get('ntok', 0)) <= 0
                     or blob.get('name', key) != key or not hessian.is_floating_point()):
                 foreign.append(str(path))
-            elif blob.get('amax') is None:                  # an older blob without the channel peaks: summed again, packs GPTQ meanwhile
-                missing.append((key, start, width))
+            elif blob.get('amax') is None:                  # a blob from before the peaks: only they are summed, its Hessian packs GPTQ meanwhile
+                missing.append(Need(key, start, width, hessian=False))
         if foreign:
             raise ValueError(f"calibration blobs that do not fit {name} [{cols} columns]: remove them and reboot -- {foreign}")
         return missing
@@ -90,6 +105,25 @@ class PackStore:
     def _smooth_sha(smooth):
         return 'none' if smooth is None else hashlib.sha256(smooth.detach().float().cpu().contiguous().numpy()).hexdigest()
 
+    def _factor(self, name, hessian, smooth_sha, device):
+        """The column order and inverse factor of `name`'s Hessian (packing.gptq_factor), computed once for the
+        weight and reused by its other lane: the W4 pack and the FP8 pack walk the same columns of the same H, and
+        the factorisation is a fifth of a tile-wide pack. One entry -- the next weight replaces it, and a factor
+        above FACTOR_BYTES (the drafter's fc is 1.6 GiB) is used and dropped, because a boot packs beside a full
+        arena. `device`: where the fp64 work runs -- the weight's device for a tile-wide K, the CPU above it."""
+        from engine.kernels.dense import GPTQ_ACT_ORDER
+        from engine.kernels.dense.packing import gptq_factor
+        identity = (name, smooth_sha, tuple(hessian.shape), str(device))
+        if self._factor_entry is not None and self._factor_entry[0] == identity:
+            self.stats['factor_reused'] += 1
+            return self._factor_entry[1]
+        self._factor_entry = None                                   # the previous weight's, freed before this one's
+        factor = gptq_factor(hessian, act_order=GPTQ_ACT_ORDER, factor_device=device)
+        self.stats['factor_built'] += 1
+        if factor[1].numel() * factor[1].element_size() <= self.FACTOR_BYTES:
+            self._factor_entry = (identity, factor)
+        return factor
+
     def pack_wide(self, weight, name, *, rank=None, smooth=None):
         """The tiles of a weight wider than the decode kernel's K, from one GPTQ over the whole weight and its full
         calibration Hessian (kernels/dense.pack_w4_wide); cached as one blob under the wide identity."""
@@ -117,7 +151,8 @@ class PackStore:
                 packs.append(W4Pack(tile.data, tile.scale, tile.rowscale, n, self.TILE, True))
             self.stats['cache'] += 1
         else:
-            packs = pack_w4_wide(weight, hessian, per_row=identity['per_row'])
+            packs = pack_w4_wide(weight, hessian, per_row=identity['per_row'],
+                                 factor=self._factor(name, hessian, identity['smooth'], 'cpu'))
             self.stats['built'] += 1
             cache.parent.mkdir(parents=True, exist_ok=True)
             temporary = cache.with_suffix(f'.{os.getpid()}.tmp')
@@ -178,7 +213,9 @@ class PackStore:
                 self.stats['legacy'] += 1
                 break
             if pack is None:
-                pack = pack_w4(weight, hessian=hessian, per_row=per_row)
+                factor = (None if hessian is None else
+                          self._factor(name, hessian, identity['smooth'], weight.device))
+                pack = pack_w4(weight, hessian=hessian, per_row=per_row, factor=factor)
                 self.stats['built'] += 1
             elif hessian is not None:
                 from dataclasses import replace
@@ -216,7 +253,9 @@ class PackStore:
             q, scale = blob['q'].to(weight.device), blob['scale'].to(weight.device)
             self.stats['fp8_cache'] += 1
         else:
-            q, scale = fp8_gptq(weight, hessian.to(weight.device), factor_device="cpu" if k > self.TILE else None)
+            device = 'cpu' if k > self.TILE else weight.device
+            q, scale = fp8_gptq(weight, hessian.to(weight.device),
+                                factor=self._factor(name, hessian, identity['smooth'], device))
             self.stats['fp8_built'] += 1
             cache.parent.mkdir(parents=True, exist_ok=True)
             temporary = cache.with_suffix(f'.{os.getpid()}.tmp')

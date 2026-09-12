@@ -240,8 +240,20 @@ def _gptq_inverse_factor(H, k, percdamp, factor_device, perm=None):
     return U, dead
 
 
+def gptq_factor(H, percdamp=0.01, act_order=True, factor_device=None):
+    """The fp64 step both of a weight's GPTQ lanes share: the column order and the inverse factor of its input's
+    Hessian. The W4 pack and the FP8 pack of one weight walk the same columns of the same H, so the factorisation --
+    a fifth of a 4096-wide pack, a minute of a 20480-wide one -- is worth computing once and handing to both
+    (kernels/dense/store._factor). Returns (perm or None, U, dead) as `_gptq_inverse_factor` does."""
+    import torch
+
+    perm = torch.argsort(torch.diagonal(H).to(torch.float64), descending=True) if act_order else None
+    U, dead = _gptq_inverse_factor(H, H.shape[0], percdamp, factor_device, perm)
+    return perm, U, dead
+
+
 def _w4_gptq_codes(weight, shift, need, H, mids, grid, blocksize=128,
-                   percdamp=0.01, act_order=False, factor_device=None):
+                   percdamp=0.01, act_order=False, factor_device=None, factor=None):
     """GPTQ (OBQ error feedback, Frantar et al. 2022) on the e2m1 x e4m3
     grid: columns are quantized in order; each column's rounding error is
     fed forward into the not-yet-quantized columns through the inverse
@@ -269,12 +281,12 @@ def _w4_gptq_codes(weight, shift, need, H, mids, grid, blocksize=128,
     W[:n] = weight.float() * torch.exp2(shift[:n, None])
     codes = torch.zeros(n_pad, k, dtype=torch.uint8, device=dev)
     if act_order:
-        perm = torch.argsort(torch.diagonal(H).to(torch.float64), descending=True)   # no copy of H for its diagonal
         d_out, sc_static = _w4_static_scales(weight, shift, need, mids, grid)
     else:
-        perm = None
         d_out = torch.zeros(n_pad, kg, dtype=torch.int8, device=dev)
-    Hinv, dead = _gptq_inverse_factor(H, k, percdamp, factor_device, perm)
+    if factor is None:
+        factor = gptq_factor(H, percdamp, act_order, factor_device)
+    perm, Hinv, dead = factor
     Hinv = Hinv.to(dev)
     dead = dead.to(dev)
     if perm is not None:
@@ -403,7 +415,7 @@ def fp8_rtn(weight):
     return (w / per).to(torch.float8_e4m3fn), scale
 
 
-def fp8_gptq(weight, H, blocksize=128, percdamp=0.01, act_order=True, factor_device=None):
+def fp8_gptq(weight, H, blocksize=128, percdamp=0.01, act_order=True, factor_device=None, factor=None):
     """GPTQ on the FP8 lane's own grid: the served 128x128 UE8M0 block scales stay (static), each column is rounded to
     e4m3 under its block's scale in decreasing Hessian-diagonal order, the error fed forward through the inverse
     Hessian. The fp8 rounding is what the lane pays for every prefill row; compensating it costs the same pack time
@@ -415,8 +427,9 @@ def fp8_gptq(weight, H, blocksize=128, percdamp=0.01, act_order=True, factor_dev
     scale = fp8_block_scales(weight)
     n_pad = scale.shape[0] * FP8_BLOCK
     rows_scale = scale.repeat_interleave(FP8_BLOCK, dim=0)                 # [n_pad, k/128]
-    perm = torch.argsort(torch.diagonal(H).to(torch.float64), descending=True) if act_order else None
-    U, dead = _gptq_inverse_factor(H, k, percdamp, factor_device, perm)
+    if factor is None:
+        factor = gptq_factor(H, percdamp, act_order, factor_device)
+    perm, U, dead = factor
     U, dead = U.to(dev), dead.to(dev)
     if perm is not None:
         perm = perm.to(dev)
