@@ -1,7 +1,9 @@
 """CPU-only cold NVCC A/B for the one-shot extension's Torch includes.
 
 Use a fresh cache and Python process per sample in the ST image without GPUs.
-The only source difference is torch/extension.h versus Tensor/pybind headers.
+Compare full versus Tensor/pybind headers, or Tensor/pybind versus narrower
+per-operator factory headers. The latter retains torch::empty_like and uses
+the same underlying ATen Tensor and dtype aliases explicitly.
 Extracted device cubins must match after normalizing only NVCC's source-file
 IDs in internal symbol strings. Code, constants and launch metadata remain
 byte-exact. No transport or GPU kernel is executed. cuobjdump extraction does
@@ -23,6 +25,26 @@ from probes.engine_native_cache_check import ONESHOT_API, ONESHOT_FILES, ROOT
 
 FULL = '#include <torch/extension.h>\n'
 LEAN = '#include <torch/types.h>\n#include <torch/csrc/utils/pybind.h>\n'
+OPERATORS = ('#define AT_PER_OPERATOR_HEADERS\n#include <ATen/core/Tensor.h>\n'
+             '#include <torch/csrc/autograd/generated/variable_factories.h>\n'
+             '#include <torch/csrc/utils/pybind.h>\n')
+
+
+def source_variants(code, comparison):
+    counts = tuple(code.count(block) for block in (FULL, LEAN, OPERATORS))
+    if counts not in ((1, 0, 0), (0, 1, 0), (0, 0, 1)):
+        raise ValueError('expected exactly one supported Torch include block')
+    if counts[2]:
+        code = code.replace(OPERATORS, LEAN).replace('at::Tensor', 'torch::Tensor')
+        code = code.replace('at::kBFloat16', 'torch::kBFloat16').replace('at::kLong', 'torch::kInt64')
+    lean = code.replace(FULL, LEAN)
+    if comparison == 'full-lean':
+        return dict(full=lean.replace(LEAN, FULL), lean=lean)
+    if comparison != 'lean-operators':
+        raise ValueError(f'unknown comparison: {comparison}')
+    operators = lean.replace(LEAN, OPERATORS).replace('torch::Tensor', 'at::Tensor')
+    operators = operators.replace('torch::kBFloat16', 'at::kBFloat16').replace('torch::kInt64', 'at::kLong')
+    return dict(lean=lean, operators=operators)
 
 
 def canonical_cubin(path):
@@ -57,22 +79,19 @@ def canonical_cubin(path):
     return hashlib.sha256(data).hexdigest(), replacements, text_sections
 
 
-def run(output, repeats):
+def run(output, repeats, comparison):
     output.mkdir(parents=True, exist_ok=False)
     source = ROOT / 'engine/kernels/oneshot'
     code = (source / ONESHOT_FILES[1]).read_text()
-    if (code.count(FULL), code.count(LEAN)) not in ((1, 0), (0, 1)):
-        raise ValueError('expected exactly one supported Torch include block')
-    baseline = code.replace(LEAN, FULL)
-    candidate = code.replace(FULL, LEAN)
-    variants = dict(full=baseline, lean=candidate)
+    variants = source_variants(code, comparison)
+    arms = tuple(variants)
     for arm, content in variants.items():
         destination = output / arm
         destination.mkdir()
         for name in ONESHOT_FILES:
             shutil.copy2(source / name, destination / name)
         (destination / ONESHOT_FILES[1]).write_text(content)
-    report = dict(scope=__doc__, gpu_used=False, complete=False, rows=[],
+    report = dict(scope=__doc__, comparison=comparison, gpu_used=False, complete=False, rows=[],
                   source_sha256={str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                                  for p in (Path(__file__).resolve(), ROOT / 'probes/engine_native_cache_check.py',
                                            ROOT / 'engine/kernels/native_cache.py',
@@ -80,7 +99,7 @@ def run(output, repeats):
                   variant_sha256={arm: hashlib.sha256(code.encode()).hexdigest() for arm, code in variants.items()})
     cubin_hashes = None
     for sample in range(repeats):
-        for arm in (('full', 'lean') if sample % 2 == 0 else ('lean', 'full')):
+        for arm in (arms if sample % 2 == 0 else tuple(reversed(arms))):
             command = [sys.executable, str(ROOT / 'probes/engine_native_cache_check.py'),
                        '--worker', '--fixture', 'oneshot', '--arm', 'stable',
                        '--input', str(output / arm), '--cache', str(output / f'cache-{sample}-{arm}')]
@@ -116,7 +135,10 @@ def run(output, repeats):
     medians = {arm: statistics.median(row['load_seconds'] for row in report['rows'] if row['headers'] == arm)
                for arm in variants}
     report.update(complete=True, median_load_seconds=medians,
-                  reduction_percent=100 * (1 - medians['lean'] / medians['full']))
+                  median_compiler_cpu_seconds={arm: statistics.median(row['compiler_cpu_seconds']
+                                               for row in report['rows'] if row['headers'] == arm)
+                                               for arm in arms},
+                  reduction_percent=100 * (1 - medians[arms[1]] / medians[arms[0]]))
     (output / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps({k: report[k] for k in ('complete', 'median_load_seconds', 'reduction_percent')}), flush=True)
 
@@ -125,7 +147,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--repeats', type=int, default=3)
+    parser.add_argument('--comparison', choices=('full-lean', 'lean-operators'), default='full-lean')
     args = parser.parse_args()
     if args.repeats < 1:
         parser.error('--repeats must be positive')
-    run(args.output.resolve(), args.repeats)
+    run(args.output.resolve(), args.repeats, args.comparison)
