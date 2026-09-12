@@ -399,6 +399,29 @@ class PrefixCache:
         """Blocks a boundary holds and no row does: what a reservation would spend last."""
         return self.pool.cached + self.pool.faded
 
+    def check(self) -> None:
+        """The invariants a boundary's two resources have to keep, as SGLang's `mamba_radix_cache.sanity_check`
+        keeps `full_lock_ref >= mamba_lock_ref`: a boundary that cannot name its blocks is not a boundary, and a
+        faded one with its state nowhere is worse -- it holds blocks back for nothing. Called by the tests and by
+        anyone diagnosing a pool; never on the step path."""
+        for h, e in self.entries.items():
+            counts = self.pool.pins if e.pinned else self.pool.claims
+            if any(counts[b] <= 0 for b in e.blocks):
+                raise AssertionError(f"entry {h.hex()[:8]} holds blocks it never claimed at its grade")
+            if any(h not in self._on_block.get(b, ()) for b in e.blocks):
+                raise AssertionError(f"entry {h.hex()[:8]} holds a block that would not tell it when it leaves")
+        for h, e in self.faded.items():
+            if h not in self.tier_keys:
+                raise AssertionError(f"faded {h.hex()[:8]} has its state nowhere: it holds blocks for nothing")
+            if any(self.pool.fades[b] <= 0 for b in e.blocks):
+                raise AssertionError(f"faded {h.hex()[:8]} holds blocks it never claimed as faded")
+            if any(h not in self._on_block.get(b, ()) for b in e.blocks):
+                raise AssertionError(f"faded {h.hex()[:8]} holds a block that would not tell it when it leaves")
+        for b, holders in self._on_block.items():
+            for h in holders:
+                if h not in self.entries and h not in self.faded:
+                    raise AssertionError(f"block {b} still names {h.hex()[:8]}, which is neither")
+
     def clear(self) -> None:
         for h in list(self.entries):
             self._drop(h)

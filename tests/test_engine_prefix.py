@@ -66,6 +66,7 @@ def runner(blocks=16, snapshots=2):
 def run_to_end(r, seq):
     while seq in r.state.waiting or seq in r.state.running:
         r.step(now=0)
+        r.prefix.check()                                     # the two resources' invariants hold at every step
 
 
 class PoolOwnershipTests(unittest.TestCase):
