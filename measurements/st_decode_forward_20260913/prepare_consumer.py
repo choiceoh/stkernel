@@ -13,16 +13,25 @@ ENV = '/home/choiceoh/glm53-logs/st-decode-forward-consumer.env'
 RANKS = Path('/home/choiceoh/models/st-glm53-9391-up-gate-full')
 META_SOURCE = Path('/home/choiceoh/st-engine/st-glm53-meta')
 META = Path('/home/choiceoh/glm53-logs/st-decode-forward-consumer-b12x-meta')
+NODES = (None, 'choiceoh@10.10.10.1', 'choiceoh@10.10.10.3', 'choiceoh@10.10.10.4')
+
+
+def rank_layout(rank, host):
+    # Each Spark owns only its rank file; homes are not shared.
+    script = ("import json\n"
+              f"with open({str(RANKS / f'rank{rank}of4.safetensors')!r}, 'rb') as f:\n"
+              " h=json.loads(f.read(int.from_bytes(f.read(8), 'little')))\n"
+              "print(h['__metadata__']['weight_layout'])\n")
+    cmd = ['python3', '-c', script] if host is None else ['ssh', host, 'python3 -c ' + shlex.quote(script)]
+    return subprocess.check_output(cmd, text=True).strip()
 
 
 def prepare_metadata():
     """Bind the actual B12x ranks to matching metadata before any GPU boot."""
     from engine.profiles.glm53 import facts
     F = facts.load(META_SOURCE)
-    for rank in range(4):
-        with (RANKS / f'rank{rank}of4.safetensors').open('rb') as stream:
-            header = json.loads(stream.read(int.from_bytes(stream.read(8), 'little')))
-        assert header['__metadata__']['weight_layout'] == F.weight_layout
+    for rank, host in enumerate(NODES):
+        assert rank_layout(rank, host) == F.weight_layout, (rank, host)
     META.mkdir(exist_ok=False)
     names = ('config.json', 'tokenizer.json', 'tokenizer_config.json',
              'generation_config.json', 'processor_config.json')
@@ -71,7 +80,7 @@ def prepare(host):
 if __name__ == '__main__':
     metadata = prepare_metadata()
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-        receipts = list(pool.map(prepare, (None, 'choiceoh@10.10.10.1', 'choiceoh@10.10.10.3', 'choiceoh@10.10.10.4')))
+        receipts = list(pool.map(prepare, NODES))
     values = dict(RANKS_DIR=str(RANKS), CKPT=str(META),
                   DRAFTER='/home/choiceoh/models/GLM-5.3-Flash-DFlash2', ST_KV_GIB='6', CACHE_DIR=DEST)
     with Path(ENV).open('x') as stream:
