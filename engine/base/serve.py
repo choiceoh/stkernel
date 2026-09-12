@@ -59,6 +59,22 @@ class RequestError(Exception):
 _TOOL_CALL = re.compile(r"<tool_call>(.*?)</tool_call>", re.S)
 _SAMPLING_RANGES = {"presence_penalty": (-2.0, 2.0), "frequency_penalty": (-2.0, 2.0)}
 
+EFFORT_RUNGS = {"low": "low", "medium": "high", "high": "high", "max": "max"}
+"""OpenAI's rungs onto GLM-5.3's two, mapped on purpose instead of by falling through.
+
+The template reads `reasoning_effort in ['low', 'high']` and turns EVERYTHING ELSE into 'max'.
+So an ordinary OpenAI `"medium"` silently buys the deepest setting there is -- the opposite of
+what the caller asked for. Refusing it was wrong the other way: `medium` is a standard value of
+the API this door claims to speak, and the Deneb gateway sends it whenever its thinking budget
+lands between 4K and 10K tokens. That 400 does not fail over either, because wormhole
+deliberately does not treat a request-shape 4xx as transient -- it goes straight back to the
+caller as a dead turn (45차 §59).
+
+`medium` therefore maps to `high`: the order survives (low <= medium <= high <= max) and nothing
+buys `max` by accident. A caller who wants a real ceiling has `reasoning_budget`, which counts
+tokens instead of naming a rung.
+"""
+
 
 def cache_key(req: dict) -> "str | None":
     """The caller's own string for the cache, under either name. `cache_salt` is vLLM's; `prompt_cache_key` is the
@@ -2479,12 +2495,14 @@ class Server:
                 if "enable_thinking" in kwargs and "thinking" not in kwargs:
                     kwargs["thinking"] = kwargs["enable_thinking"]
                 effort = req.get("reasoning_effort")
+                if effort is None and "reasoning_effort" in kwargs:
+                    effort = kwargs["reasoning_effort"]       # a caller that only spoke to the template
                 if effort is not None:
-                    if effort not in ("low", "high", "max"):
-                        raise RequestError("reasoning_effort must be low, high, or max")
+                    if effort not in EFFORT_RUNGS:
+                        raise RequestError("reasoning_effort must be low, medium, high, or max")
                     if kwargs.get("reasoning_effort", effort) != effort:
                         raise RequestError("top-level and template reasoning_effort must agree")
-                    kwargs["reasoning_effort"] = effort
+                    kwargs["reasoning_effort"] = EFFORT_RUNGS[effort]
                 options_stream = req.get("stream_options")
                 if options_stream is not None and not isinstance(options_stream, dict):
                     raise RequestError("stream_options must be an object")
