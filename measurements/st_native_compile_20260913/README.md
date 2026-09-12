@@ -73,3 +73,17 @@ cubin 해시 차이에서 중단했고, 조사 결과 46개 섹션 중 내부 �
 이 측정은 네이티브 확장 컴파일·로드에 한정된다. 전체 모델의 콜드 부팅·TTFT·tok/s,
 GPU 통신·수치·그래프 실행을 판정하지 않는다. 헤더 블록의 소스 바이트가 달라지므로
 새 버전을 처음 사용할 때는 새 키로 컴파일한다.
+
+## 회귀 검사
+
+최신 main 병합 후 `5b4e0765f6a4a31f8b7e61a8928bc00df4ac9c6d`에서 같은 ST 이미지의
+CPU 검사 30개가 통과했다([로그](cpu-tests.log)). 측정한 축소 헤더의 소스 해시와 최종
+CUDA 파일, probe·빌더·캐시 helper의 해시도 대조했다.
+
+```sh
+python3 -m unittest tests.test_engine_native_compile tests.test_engine_native_cache \
+  tests.test_engine_oneshot_integer tests.test_engine_mla_hardware \
+  tests.test_engine_kernels tests.test_engine_drafter_storage -q
+```
+
+macOS에서도 ELF 비교·캐시·one-shot 정수 계약 검사 12개가 통과했다.
