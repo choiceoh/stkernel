@@ -10862,3 +10862,51 @@ glm-5.3-flash-local-low    max_model_len=-
 생길 때까지 미룬다. **게이트를 통과했다는 것 자체는 그 로그가 증명한다** — 예전이라면 이미지가 그 앞에서 떨어졌다.
 
 **되돌리기**: `cp ~/.wormhole/config.json.bak-vision-<타임스탬프> ~/.wormhole/config.json` 하나, 3초 안에 자동 반영.
+
+### 45차 §58 — 데네브까지의 사슬을 끝까지 따라가 보니, 빠진 고리는 우리 한 칸뿐이었다 (2026-09-12, srv4, 종단 판정 1건 + 라이브 설정 1건)
+
+운영자 "데네브와의 연계성 개선". 웜홀 위 한 층을 더 읽었다 — `deneb/gateway-go/internal/ai/modelrole/` 와 `modelcaps/`.
+
+**사슬 전체를 소스로 확인했다.**
+
+```
+ST /v1/models  →  웜홀 windows 캐시(60초)  →  웜홀 /v1/models  →  데네브 vllmWindows  →  CapabilityForModel
+```
+
+- 데네브 `harvestVllmWindows` 는 **`ServesVllmBacked(id)` 인 모든 프로바이더**를 훑는다 — 거기 **웜홀이 포함된다**.
+- 파싱 모양이 세 층에서 **완전히 같다**: `data[].id` + `data[].max_model_len` (웜홀 `probeMaxModelLen`, 데네브 `DiscoverServedVllmModelInfos`, 그리고 우리 `model_card()`).
+- 데네브 `CapabilityForModel` 주석이 왜 그게 중요한지 직접 적어 뒀다:
+
+> *"the served model's advertised max_model_len is ground truth, so it wins over the deneb.json static value, which is demoted to a FALLBACK … removing the stale-config footgun where a hand-maintained contextWindow drifts from the server (**too high → prompts that exceed max_model_len 400 the turn; too low → the model's headroom is wasted and compaction fires early**)."*
+
+**즉 데네브는 이 값을 "ground truth" 로 대접할 준비가 되어 있었고, 세 층에서 빠진 칸은 우리 한 칸이었다.**
+실물로 확인했다 — 지금 도는 릴리스의 응답과, 그 결과 웜홀이 다운스트림에 내는 행:
+
+```
+ST      : {"object":"list","data":[{"id":"glm-5.3-flash","object":"model","owned_by":"st"}]}
+웜홀 →  : glm-5.3-flash-local      max_model_len=(absent)
+          glm-5.3-flash-local-low  max_model_len=(absent)
+```
+
+§56 의 `model_card()` 가 배포되면 이 두 줄이 저절로 채워지고, 데네브의 손으로 적은 값은 폴백으로 강등된다.
+**엔진 쪽에 더 할 일은 없다** — 사슬이 이미 우리를 기다리고 있었다.
+
+**종단 판정 1건 — §57 이 미뤄 둔 것.** 헤드가 안정된 틈에 웜홀을 통과하는 이미지를 찍었다:
+
+| | |
+|---|---|
+| 요청 | `glm-5.3-flash-local-low` + 112×112 파란 PNG, "색을 한 단어로" |
+| 답 | **`파랑`**, `model='glm-5.3-flash'`, 20.8 s(부팅 직후 첫 이미지; 웜 상태 직접 호출은 0.7 s) |
+| 증거 | **ST 의 `served` 15 → 16** — 클라우드 폴백이 아니라 **우리 엔진**에 닿았다 |
+
+§57 의 `vision: true` 가 실제로 동작한다. 예전이라면 이미지가 게이트에서 떨어져 텍스트만 갔다.
+
+**라이브 설정 1건.** `~/.deneb/deneb.json` 의 `wormhole/glm-5.3-flash-local` / `-low` 가 `contextWindow: 1000000` 이었다.
+ST 의 실제 상한은 **1,048,576**(프로덕션 `context_ceiling`). 데네브 자신의 말로 *"too low → 모델의 여유가 낭비되고 압축이 일찍 걸린다"* 인 4.6% 다.
+백업 뜨고 **두 줄만** 1048576 로 고쳤다 — 클라우드 항목(`glm-5.3-flash` 등)은 Z.AI 것이라 1000000 그대로 뒀다.
+데네브 게이트웨이는 설정을 기동 시 읽으므로 **다음 재기동부터** 적용된다(discovery 가 살아나면 어차피 이 값은 폴백이다).
+
+**되돌리기**: `cp ~/.deneb/deneb.json.bak-ctxwindow-<타임스탬프> ~/.deneb/deneb.json`.
+
+**확인만 하고 안 건드린 것**: 데네브의 `vision`/`reasoning`/`promptCache` 오버라이드는 **discovery 대상이 아니다**
+(주석이 명시). 로컬 항목엔 `vision` 키가 아예 없어 관대한 기본값이라 이미지가 통과한다 — 눈가리개는 웜홀 쪽 한 곳뿐이었고 §57 에서 껐다.
