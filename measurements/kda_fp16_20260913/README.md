@@ -5,8 +5,10 @@ gates, prefill working states and functional output states in FP32. Direct ring
 writes cast in the existing Triton kernel. There is no extra decode conversion
 launch, scaling metadata, duplicate weight set or stochastic rounding.
 
-The production default remains FP32 pending same-runtime quality and performance
-evidence. A non-production boot accepts `STK_kda_state_dtype=fp16`; invalid values
+The operator selected FP16 as the production default on 2026-09-13 after the
+storage/rollback/staging checks, without waiting for the matched onepass result.
+This default selection is not an end-to-end quality or speed verdict.
+A non-production comparison boot accepts `STK_kda_state_dtype=fp32`; invalid values
 are rejected before allocation. Production rejects all experiment overrides.
 The canonical ST bracket selects committed source arms, so its FP16 arm changes
 only `facts.KDA_STATE_DTYPE` after the common implementation commit.
@@ -86,6 +88,12 @@ bash bench/fleet.sh st-pair kda-fp16-pair0913c \
 The bracket retains cold/warm JSONL and per-request artifacts under
 `/home/choiceoh/glm53-logs/`; session logs are available through
 `bash bench/fleet.sh logs kda-fp16-pair0913c`.
+
+That attempt ended during the FP16 arm's boot: the controller reported
+`rank 0 died during boot` and returned 1 before onepass started. It supplies no
+quality or throughput comparison. The subsequent operator-selected FP16 default
+is based on current main, including the later decode and sampled-drafter fixes;
+the failed attempt is not counted as a successful serving validation.
 
 The research motivation is [DAMP, Table 1](https://arxiv.org/html/2608.27513v1#S6.T1):
 FP16 state storage retained Kimi-Linear KDA reasoning quality better than BF16 at
