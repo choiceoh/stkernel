@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "private": true,
+  "canonical": true,
+  "source_datasets": [
+    "qlora-pool-2026-09-12-v5",
+    "qlora-sft-2026-09-12-v3",
+    "qlora-tokens-glm53-2026-09-12-v4"
+  ],
+  "pool_rows": 7152,
+  "review_queue_rows": 7050,
+  "reviewed_sft_rows": 48,
+  "human_verified_labels": 0,
+  "training_performed": false,
+  "code_sha256": {
+    "deneb_qlora_dataset.py": "b3c3f17ed29d943a66ddd533e015143120595c6e6b0acb53953c266aafbf3428",
+    "engine_sparse_deneb_corpus.py": "b9dfa535aa71d3dba0d992e6edc2b6a1f0374f3e879b70b4a0794d370fe23cbe",
+    "engine_sparse_deneb_workloads.py": "2044ec312a57f3d296f4451122d1e5858caea4a4ef5f19578bb644b52b813eec",
+    "deneb_qlora_tokenize.py": "20806b76103fd83a040c5f4352beafb06af9ddc622ed2c07253c9d3d46a9636e",
+    "deneb_qlora_audit.py": "d0a7e6b2373769ffe19f870791abd80e7adc1ee2ac240f82dc721b92145fdcab"
+  }
+}

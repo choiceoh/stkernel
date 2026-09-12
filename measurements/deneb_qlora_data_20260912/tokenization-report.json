@@ -1,0 +1,81 @@
+{
+  "counts": {
+    "train": 32,
+    "validation": 8,
+    "test": 8
+  },
+  "max_length": 4096,
+  "oversized_excluded": 0,
+  "sft_sequence_tokens": {
+    "train": {
+      "count": 32,
+      "min": 407,
+      "median": 639,
+      "p95": 1593,
+      "max": 1844
+    },
+    "validation": {
+      "count": 8,
+      "min": 442,
+      "median": 696,
+      "p95": 1074,
+      "max": 1074
+    },
+    "test": {
+      "count": 8,
+      "min": 453,
+      "median": 738,
+      "p95": 1212,
+      "max": 1212
+    }
+  },
+  "pool_payload_tokens": {
+    "notification": {
+      "count": 3035,
+      "min": 14,
+      "median": 57,
+      "p95": 290,
+      "max": 2261,
+      "over_4096": 0,
+      "over_8192": 0
+    },
+    "mail": {
+      "count": 3617,
+      "min": 40,
+      "median": 413,
+      "p95": 1810,
+      "max": 2447,
+      "over_4096": 0,
+      "over_8192": 0
+    },
+    "conversation": {
+      "count": 500,
+      "min": 19,
+      "median": 429,
+      "p95": 3155,
+      "max": 29988,
+      "over_4096": 19,
+      "over_8192": 3
+    }
+  },
+  "prompt_labels_all_ignored": true,
+  "completion_roundtrip_verified": true,
+  "eos_token": "<|endoftext|>",
+  "eos_id": 154820,
+  "tokenizer_version": "0.23.1",
+  "jinja_version": "3.1.6",
+  "metadata_sha256": {
+    "tokenizer.json": "19e773648cb4e65de8660ea6365e10acca112d42a854923df93db4a6f333a82d",
+    "tokenizer_config.json": "98b1271574f41abf89427ae2dda030d94dc9478f0edc5a8bd240db213c6fd5fc",
+    "chat_template.jinja": "34d5ee66b12fa6446cdae131c352b8f68cd85369e0e6fda115583805fada3891"
+  },
+  "sft_manifest_sha256": "f8c139579cd1fbe91cf10d970a724206c71b215b0d4824d209d269e27aa9117f",
+  "rendering_options": {
+    "reasoning_effort": "low",
+    "clear_thinking": true,
+    "tools": []
+  },
+  "native_sft_trainer_tested": false,
+  "model_weights_loaded": false,
+  "note": "Pre-tokenized files are specific to these tokenizer/template hashes. Retokenize portable SFT for another model."
+}
