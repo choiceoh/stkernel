@@ -69,6 +69,11 @@ class Glm53Engine:
         self.embeds = {}                                    # seq -> {media index: [tokens, hidden] rows} encoded at the first chunk that needs them
         self.accepted_total = 0
         self.drafted_total = 0
+        # Free observability for decisions this engine keeps having to make by probe.
+        # All of it is host arithmetic on numbers already in hand: no device read, no sync.
+        self.decode_shape_counts = {}              # (sequences, capacity bucket) -> decode steps replayed there
+        self.accepted_per_step = [0] * (self.drafter.k + 2)   # how many drafts a step committed, 0..k+1
+        self.lane_info = {}                        # what is actually bound: set by the boot that built the lanes
         self.steps = 0
         self.decode_graphs = None
         self.sampling_graphs = None
@@ -174,6 +179,8 @@ class Glm53Engine:
                         caches.reset()
         finally:
             self.accepted_total = self.drafted_total = 0
+            self.decode_shape_counts = {}
+            self.accepted_per_step = [0] * len(self.accepted_per_step)
             self.steps = 0
         return paid
 
@@ -543,8 +550,11 @@ class Glm53Engine:
         if matcher is not None and new:
             matcher.advance(new)
         self.tokens[seq] += new
-        self.accepted_total += min(accepted, len(new))
+        committed = min(accepted, len(new))
+        self.accepted_total += committed
         self.drafted_total += drafted
+        if committed < len(self.accepted_per_step):
+            self.accepted_per_step[committed] += 1   # the shape of acceptance, not only its mean: what prices spec_k
         done = any(t in self.ends.get(seq, self.eos) for t in new) or self._generated_count(seq) >= self.limits[seq][0]
         return new, done
 
@@ -589,6 +599,11 @@ class Glm53Engine:
             sampled = self._sample_hidden(h, temps).tolist() if not all(rich.values()) else None
         else:
             shape = self.decode_graphs.shape(step)                         # the sampler names itself from it too
+            # Which captured graph this step ran: its sequence count is the batch the scheduler
+            # actually filled, and its capacity bucket is the only production evidence for how
+            # far the ladder needs to reach (decode_graphs.capacity_ladder).
+            key = (shape[0], shape[2])
+            self.decode_shape_counts[key] = self.decode_shape_counts.get(key, 0) + 1
             h, aux, local = self.decode_graphs.run(step, shape)
             sampled = self.sampling_graphs.run(shape, temps).tolist() if not all(rich.values()) else None
         finished = []
