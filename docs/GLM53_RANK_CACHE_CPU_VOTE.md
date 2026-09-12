@@ -1,5 +1,7 @@
 # GLM53 rank-cache CPU readiness vote
 
+> 그대로 두는 기록 — **캠페인 산출물.** 당시의 기록이라 고치지 않는다 — 고치면 기록이 거짓이 된다.
+
 Status: experimental, default off. This removes a possible startup allocation
 trigger to unblock private prefill observation. It is not a measured prefill
 optimization, and the campaign's 1.40x direct-throughput target remains unproven.

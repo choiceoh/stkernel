@@ -79,6 +79,29 @@ class Run:
     def checkpoint(self):
         write(self.path / 'record.json', self.record)
 
+    def workloads(self, items):
+        from onepass_quality import VERSION, digest
+        write(self.path / 'workloads.json', items)
+        self.record['quality_protocol'] = dict(version=VERSION, workloads_sha256=digest(items),
+            grading='visible final content only; deterministic proof certificates',
+            artifact='workloads.json')
+        self.checkpoint()
+
+    def grade(self, item, timing, events, finish, phase=None):
+        from onepass_quality import assess
+        result = assess(item, events, finish, fixed=bool(timing.get('fixed_decode')))
+        timing['quality'] = result
+        # Appended after the stream/window has ended. Join back to the durable
+        # raw response by its salted request hash (or client/phase in fixtures).
+        value = dict(phase=phase or self.phase, ctx=item['ctx'], question=item['question'],
+                     client=timing.get('client'), request_sha256=timing.get('request_sha256'),
+                     output_sha256=timing.get('output_sha256'), results=result)
+        with (self.path / 'quality.jsonl').open('a') as f:
+            f.write(json.dumps(value, ensure_ascii=False) + '\n')
+            f.flush()
+            os.fsync(f.fileno())
+        return result
+
     def control(self, **body):
         req = urllib.request.Request(self.url, data=json.dumps(body).encode(), headers={'Content-Type': 'application/json'})
         with urllib.request.urlopen(req, timeout=75) as r:
@@ -168,23 +191,29 @@ class Run:
         self.complete = True
 
 
-def group(run, ask, url, model, item, concurrency, scan=None, expected=None):
+def group(run, ask, url, model, item, concurrency, scan=None, *, grade=False):
     barrier = threading.Barrier(concurrency)
     def request(index):
         CURRENT.set(run)
         timing = dict(ctx=item['ctx'], question=item['question'], concurrency=concurrency, client=index)
+        traces = []
         barrier.wait(timeout=30)
         text, _, _, _, finish = ask(url, model, item['content'], item['max_tokens'], timing,
-            min_tokens=item.get('min_tokens', 0), seed=item.get('seed'), reasoning_budget=item.get('reasoning_budget'))
+            min_tokens=item.get('min_tokens', 0), seed=item.get('seed'), reasoning_budget=item.get('reasoning_budget'),
+            channel_trace=traces)
+        return timing, text, finish, traces
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        responses = list(pool.map(request, range(concurrency)))
+    # Keep scanning/grading off every request's measured critical path, even
+    # when another client is still decoding.
+    requests = []
+    for timing, text, finish, traces in responses:
         if scan is not None:
             hits = scan.scan(text, truncated=finish == 'length')
             timing['corruption'] = {k: v for k, v in hits.items() if k not in scan.INFORMATIONAL and v}
-        if expected is not None:
-            questions = range(len(expected)) if item['question'] in ('all', 'fixed-all') else [item['question']]
-            timing['quality'] = [all(any(alt in text.lower() for alt in forms) for forms in expected[q]) for q in questions]
-        return timing
-    with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        requests = list(pool.map(request, range(concurrency)))
+        if grade:
+            run.grade(item, timing, traces[0], finish)
+        requests.append(timing)
     elapsed = max(r['ended_monotonic'] for r in requests) - min(r['started_monotonic'] for r in requests)
     return dict(ctx=item['ctx'], concurrency=concurrency, requests=requests, elapsed_s=elapsed,
                 aggregate_output_tok_s=sum(r['completion_tokens'] for r in requests) / elapsed,

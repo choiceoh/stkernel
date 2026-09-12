@@ -290,7 +290,7 @@ class ChannelDiagnosticsTests(unittest.TestCase):
         main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == '_main')
         asks = [n for n in ast.walk(main) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
                 and n.func.id == 'ask_stream']
-        self.assertEqual(len(asks), 3)  # combined, ordinary, fixed requests.
+        self.assertEqual(len(asks), 2)  # Shared combined/ordinary path, and fixed requests.
         self.assertTrue(all(any(k.arg == 'channel_trace' and isinstance(k.value, ast.Name)
                                 and k.value.id == 'channel_traces' for k in call.keywords) for call in asks))
         with_step = next(n for n in main.body if isinstance(n, ast.With) and '_StepWindows' in ast.unparse(n.items[0].context_expr))

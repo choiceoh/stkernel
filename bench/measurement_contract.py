@@ -3,8 +3,11 @@
 import json
 import math
 
-HARNESS = 41
-DEFAULTS = dict(ctx=[2000, 32000, 128000], seed=7, max_tokens=400, combine_min_ctx=32000,
+HARNESS = 42
+MAX_TOKENS = 2400
+COMBINED_MAX_TOKENS = 7200
+COMBINED_REASONING_BUDGET = 2400
+DEFAULTS = dict(ctx=[2000, 32000, 128000], seed=7, max_tokens=MAX_TOKENS, combine_min_ctx=32000,
                 fixed_decode_tokens=0, fixed_decode_reps=0, require_exclusive=False)
 
 

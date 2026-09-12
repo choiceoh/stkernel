@@ -1,0 +1,4 @@
+== steps-sim-20260912-232529-2000k256-d50.ring: 스텝 337 푸시, 337 보존
+   prefill n=41    med     0.336 ms  p95     0.696  max     0.727  tokens med 4080
+   decode  n=296   med   105.246 ms  p95   109.428  max   117.660  tokens med 12
+   (wall 은 launch→readback in-flight — async 스텝은 depth 대기가 포함된다)

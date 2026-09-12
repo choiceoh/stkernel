@@ -1,9 +1,14 @@
-# Onepass recording (harness 41)
+# Onepass recording (harness 42)
+
+> 살아 있는 참조 — **원패스가 무엇을 기록하는지. 하니스가 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
 
 `python3 bench/onepass.py --name NAME` runs the Korean context ladder at C=1
 and C=4. C=4 sends four independent streaming requests for each canonical
 question with a start barrier. Request rates and aggregate rates have different
-denominators; C=4 never enters the C=1 decode-window pool.
+denominators; C=4 never enters the C=1 decode-window pool. Questions now require
+versioned [reasoning proof certificates](ONEPASS_QUALITY.md): as-of transaction
+reconciliation, constrained optimization and possible-world/contradiction proofs.
+Only the final content channel is graded. C=1 and C=4 reuse identical prompts.
 
 Each arm first replays its complete workload to exercise the actual shapes and
 generation path. Every request uses a different `cache_salt`, leaving the model
@@ -12,7 +17,7 @@ observed new Triton/CuTe/C++ specialization or ST graph capture, complete
 traffic counters, and the requested decode width on every rank. These are
 observed preparation conditions, not a claim that every external compiler or
 OS page cache is known. The compiler observers report their coverage. Missing
-evidence invalidates comparison. Harness 40 records are incompatible.
+evidence invalidates comparison. Harness 41 and older records are incompatible.
 
 The printed first/median TTFT values are prepared, fresh-prefix requests.
 `cold_s` and `warm_s` remain compatibility aliases for first/median; they do not
@@ -34,6 +39,8 @@ also creates an immutable `onepass-runs/<UTC-time>-<id>/` next to the ledger:
 | --- | --- |
 | `record.json` | Checkpointed run identity, shape, policy, C=1/C=4 results and validity |
 | `requests.jsonl` | Completed requests, raw answer/channel deltas, hashes, first reasoning/content times, SSE gaps and token usage; flushed and fsynced per completion |
+| `workloads.json` | Exact prompts, budgets, seeded evidence, answer oracles and permitted witness sets; saved before preparation |
+| `quality.jsonl` | Per-request/per-case rubric checks, failures with expected/actual certificates, final-content and oracle hashes; appended and fsynced after measurement |
 | `<phase>/server.json` | All-rank preparation counters, request-to-row mappings, host steps, sampled device stages and trace checksums |
 | `<phase>/latency.jsonl` | Individual host/device/kernel latency rows with phase, rank and step |
 | `<phase>/latency-summary.json` | Per-operation/kernel count, sum, mean, median and range; per-rank, per-step GPU interval unions |
@@ -60,7 +67,9 @@ gaps are not token ITL, since a speculative event can contain several tokens.
 Small samples have counts and ranges, without misleading tail percentiles.
 
 The ST endpoint is `GET/POST /v1/engine/latency`. Controls require loopback
-access, idle serving and a unique token. All ranks participate. While recording,
+access, idle serving and a unique token. All ranks participate;
+each rank must be a separate serving process; threaded LocalTP is refused
+because its ranks share one CUDA profiler. While recording,
 inference requests must carry `X-ST-Latency-Token`. `end` requires idle serving;
 `abort` with the owning token releases an abandoned recording and marks it
 incomplete. An abandoned idle recording expires after 120 seconds; active

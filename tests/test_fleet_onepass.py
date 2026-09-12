@@ -179,7 +179,7 @@ class OnepassPolicyTests(unittest.TestCase):
                        '--require-exclusive', '--out', str(self.root / 'records.jsonl')])
         for args in (['--after', 'gpu-check'], ['--ctx', '0'], ['--num-spec', '-1'],
                      ['--combined-max-tokens', '1199'],
-                     ['--combined-reasoning-budget', '2400'],
+                     ['--combined-reasoning-budget', '7200'],
                      ['--fixed-decode-tokens', '1', '--fixed-decode-reps', '0']):
             with self.subTest(args=args), self.assertRaises(ValueError):
                 self.validate(['python3', 'bench/onepass.py', *args])

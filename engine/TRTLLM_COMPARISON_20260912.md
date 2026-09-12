@@ -1,5 +1,7 @@
 # TensorRT-LLM 에서 배워올 것 — 조사 (2026-09-12)
 
+> 그날의 조사 — **2026-09-12 의 조사다.** 그날 참이었던 것이고 유지되지 않는다 — 이후 무엇이 바뀌었는지는 `MEASUREMENTS.md` 가 안다.
+
 NVIDIA/TensorRT-LLM `a76e0b2`(2026-09-11, 하루 전)의 파이썬 백엔드(`tensorrt_llm/_torch`)를 sparse clone 으로
 읽고 ST 와 대조했다. TRT engine 빌드 경로가 아니라 **PyTorch 백엔드**가 우리와 비교 가능한 쪽이다.
 
