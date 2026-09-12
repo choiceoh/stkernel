@@ -86,6 +86,8 @@ class DeviceStep:
     contexts: torch.Tensor
     tokens: int
     captured = True
+    patches = ()                  # image embeddings are installed during eager prefill
+    marks = ()                    # prefix checkpoints belong to prefill boundaries
 
     def __post_init__(self):
         # Built once. Every layer asks for this tuple -- one loop in KDA, two in sparse

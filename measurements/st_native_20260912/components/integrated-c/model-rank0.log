@@ -1,0 +1,31 @@
+[W912 01:52:43.800912301 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+phase                                      seconds   dev GiB  counters
+arena                                        0.249     +6.49  
+load                                         1.595     +3.09  blocks=3 bytes=1.90739e+09
+load drafter                                 0.229     +0.00  blocks=3 bytes=2.34216e+09
+prepare native execution                     4.569     +2.78  
+load vision                                  0.117     -0.00  blocks=2 bytes=1.12726e+09
+caches                                       0.000     +0.00  
+engine                                       0.000     +0.00  
+runner                                       0.000     +0.00  
+{"arena_expandable": 1, "dense_pack_cache": 45, "dense_pack_gptq": 43, "dense_pack_rtn": 2, "target_native_linears": 10, "drafter_native_linears": 31, "blocks": 210, "slots": 3, "arena_GiB": 6.369, "prefix_snapshots": 24, "snapshot_MiB": 41.0}
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/repo/probes/engine_parity_graph_check.py", line 99, in <module>
+[rank0]:     if __name__=='__main__':main()
+[rank0]:                             ^^^^^^
+[rank0]:   File "/repo/probes/engine_parity_graph_check.py", line 36, in main
+[rank0]:     target_graph=Glm53DecodeGraphs(net,caches,2,6)
+[rank0]:                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 271, in __init__
+[rank0]:     self.graphs = DecodeGraphs(forward, make_inputs,
+[rank0]:                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/base/graphs.py", line 127, in __init__
+[rank0]:     step_fn(inp)
+[rank0]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 259, in forward
+[rank0]:     result = net.forward(step, scratch, aux_layers=self.aux_layers)
+[rank0]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/net.py", line 477, in forward
+[rank0]:     for pos, rows in step.patches:                                               # image rows in place of their placeholders
+[rank0]:                      ^^^^^^^^^^^^
+[rank0]: AttributeError: 'DeviceStep' object has no attribute 'patches'
