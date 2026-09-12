@@ -1,5 +1,19 @@
 # Rank-consistent one-shot sums
 
+The operator's current criterion is decode step/s and speculative acceptance;
+answer grading is excluded from this performance decision. Raw grading records
+remain intact. `c1-two-pass-metrics.json` retains both completed C=1 measurements
+on the same `8c8b031b` boot: window medians **19.896 / 19.891 step/s**, acceptance
+**44.260% / 44.549%**, and **3.656 / 3.673 tokens per step** (six draft tokens).
+This is a repeat on one candidate, **no baseline on this build**, and below 22 step/s.
+The first full onepass is complete; pass 2 is continuing through C=4 and diagnostics.
+
+Fresh-prefix C=1 prefill (input tokens / TTFT) is **2,795 / 2,844 tok/s** at 32K
+and **2,672 / 2,688 tok/s** at 128K for passes 1 / 2. Pass 2 TTFT is 11.760 s
+and 48.093 s respectively; all five C=1 requests report zero cached tokens.
+Both runs retain FP16 KDA state. These repeats do not isolate FP16's effect on
+acceptance; the separate state-rounding work is not part of this change.
+
 The old local-first FP32 fold gives different BF16 outputs across ranks for
 the same four operands. `[2^24, -2^24, 1, 1]` gives `[2, 2, 1, 1]` instead of
 one replicated result. Fold ranks 0, 1, 2, 3 on every rank; rank 0's arithmetic
@@ -144,8 +158,7 @@ current record reports FP16**. FP16 support landed at 03:31 (#788), and became
 the default at 04:42 (#791). Both build and cap changed between these samples.
 The user is investigating state rounding in another session; this work does not
 duplicate that state change or conclude that token limits are the sole cause.
-Future comparisons need actual reasoning-token usage, natural termination,
-quality and answer completion time alongside step/s. Merged #798 (`17b660f2`)
+Merged #798 (`17b660f2`)
 retains the server's reasoning-token usage for future runs; these frozen clients
 remain unchanged.
 
