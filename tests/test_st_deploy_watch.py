@@ -474,11 +474,22 @@ class QueueGraceTests(unittest.TestCase):
         (self.fleet / "idle-recovery.json").write_text("not json")
         self.assertIsNone(watch.queue_active_within(300, self.fleet))
 
+    def test_a_waiting_boot_ticket_goes_first(self):
+        (self.fleet / "queue").write_text("3|kda-probe|100|5|note|probe|11\n4|kda-fp16-pair|100|60|note|boot|12\n")
+        self.assertEqual(watch.boot_ticket_waiting(self.fleet), "kda-fp16-pair")
+        (self.fleet / "queue").write_text("3|kda-probe|100|5|note|probe|11\n5|one-gpu|100|5|note|single|13\n")
+        self.assertIsNone(watch.boot_ticket_waiting(self.fleet), "probes and single-GPU checks do not take the fleet")
+        (self.fleet / "queue").write_text("")
+        self.assertIsNone(watch.boot_ticket_waiting(self.fleet))
+        (self.fleet / "queue").unlink()
+        self.assertIsNone(watch.boot_ticket_waiting(self.fleet))
+
     def test_the_cycle_asks_after_the_lease_and_before_the_deploy(self):
         source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
         body = source[source.index("def cycle("):source.index("def cycle(") + source[source.index("def cycle("):].index("\n\n\n")]
         self.assertLess(body.index("fleet_taken_by_another(log)"), body.index("queue_active_within(a.queue_grace)"))
         self.assertLess(body.index("queue_active_within(a.queue_grace)"), body.index("ok = deploy(release, log)"))
+        self.assertLess(body.index("boot_ticket_waiting()"), body.index("ok = deploy(release, log)"))
         self.assertIn("--queue-grace", source)
 
 
