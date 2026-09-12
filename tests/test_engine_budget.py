@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 
-CONFIG = Path("/home/choiceoh/models/glm53-redhat-nvfp4/config.json")
+CONFIG = Path("/home/choiceoh/models/st-glm53-nvidia-tp4-9391/config.json")
 
 
 @unittest.skipUnless(CONFIG.exists() and importlib.util.find_spec("torch") is not None, "needs the GLM-5.3 config and torch")
@@ -20,7 +20,7 @@ class BudgetTests(unittest.TestCase):
         names = [l.name for l in b.lines]
         self.assertIn("weights (this rank, TP=4)", names)
         weights = next(l for l in b.lines if l.name.startswith("weights"))
-        self.assertAlmostEqual(weights.gib, 44.50, places=1)
+        self.assertAlmostEqual(weights.gib, 44.353017, places=5)
         self.assertGreater(b.kv_gib, b.kv_declared_gib)                 # the box holds more KV than the boot declares
         self.assertGreater(b.kv_gib - b.kv_declared_gib, 30)
         text = budget.report(b)
