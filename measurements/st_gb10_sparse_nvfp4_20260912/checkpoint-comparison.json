@@ -1,0 +1,41 @@
+{
+  "nvidia": {
+    "revision": "09b04e5e74bca08ca8549fc736d4cdd8624bfde3",
+    "mtp_expert_tensor_count_by_dtype": {
+      "BF16": 864
+    },
+    "mtp_expert_bytes": 14495514624,
+    "total_tensor_bytes": 204419110596
+  },
+  "redhat": {
+    "mtp_expert_tensor_count_by_dtype": {
+      "F8_E4M3": 864,
+      "BF16": 864
+    },
+    "mtp_expert_bytes": 7248642048,
+    "total_tensor_bytes": 197816133372
+  },
+  "extra_quantized_scope": "layers 0-2 dense MLP gate/up/down, 9 matrices",
+  "dense_mlp_weight_elements": 452984832,
+  "bf16_bytes": 905969664,
+  "nvfp4_payload_and_block_scale_bytes": 254803968,
+  "dense_mlp_saving_bytes": 651165696,
+  "tp4_rank_saving_bytes": 162791424,
+  "full_tensor_size_increase_bytes": 6602977224,
+  "mtp_expert_increase_bytes": 7246872576,
+  "nvidia_mtp_header_check": "all 864 expert weight tensors inspected in headers of shards 1,2,3; every tensor BF16",
+  "redhat_mtp_header_check": "all 864 expert weights FP8 E4M3 plus 864 BF16 block-scale tensors inspected locally",
+  "nvidia_export_quant_method": "modelopt",
+  "redhat_export_quant_method": "compressed-tensors",
+  "nvidia_recipe": "https://github.com/NVIDIA/Model-Optimizer/blob/4956213d670c382385d9bc43e17379b9fc064e50/modelopt_recipes/models/zai-org/GLM-5.3-Flash/ptq/nvfp4_experts_dense_mlp-kv_fp8_cast.yaml",
+  "quality_comparison": "No controlled head-to-head evaluation. NVIDIA GPQA 92.11% vs own BF16 92.17%; RedHat reports 90.57% over 3 seeds. Different reported evaluation protocols preclude causal comparison.",
+  "download": {
+    "host": "srv4",
+    "local_dir": "/home/choiceoh/models/glm53-nvidia-nvfp4",
+    "revision": "09b04e5e74bca08ca8549fc736d4cdd8624bfde3",
+    "files": 44,
+    "safetensors_shards": 33,
+    "status_at_documentation": "download started; completion and hf cache verify logged separately"
+  },
+  "unattributed_other_tensor_delta_bytes": 7270344
+}

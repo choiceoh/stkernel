@@ -2,6 +2,7 @@
 
     python3 engine/profiles/glm53/preshard.py                       # -> facts.RANKS/rank{0..3}of4.safetensors
     python3 engine/profiles/glm53/preshard.py --layers 0-4 --out /some/dev/dir
+    python3 engine/profiles/glm53/preshard.py --vision               # -> facts.RANKS/vision.safetensors (the tower, whole; seconds)
 
 Runs once, offline. What the fleet boots from afterwards is `rank{r}of{W}.safetensors`
 read by base/loader.RankLoader with coalesced range reads into the arena --
@@ -39,7 +40,14 @@ def main(argv=None) -> int:
     ap.add_argument("--layers", default="all")
     ap.add_argument("--out", default=str(facts.RANKS))
     ap.add_argument("--ckpt", default=str(facts.CKPT))
+    ap.add_argument("--vision", action="store_true", help="write only vision.safetensors: the vision tower, whole, for every rank (45차 §23 A7)")
     a = ap.parse_args(argv)
+    if a.vision:
+        from engine.profiles.glm53 import vision
+        print(f"  glm53 preshard: vision tower -> {Path(a.out) / vision.FILE}")
+        size = vision.write_file(a.ckpt, a.out)
+        print(f"  done: {size / 2**30:.2f} GiB")
+        return 0
     F = facts.load(a.ckpt)
     layers = parse_layers(a.layers, F.layers)
     ck = Checkpoint(a.ckpt)

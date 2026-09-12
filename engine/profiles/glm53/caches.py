@@ -224,6 +224,25 @@ class Glm53Caches:
         if ("draft", -1) in self._snap:
             self._snap["draft", -1][snap].copy_(self.draft_ring(slot))
 
+    def mark_kda(self, layer: int, snap: int, state, taps) -> None:
+        """A block boundary inside a prefill step: the layer's recurrent state there [H, K, V] and the conv inputs of the
+        conv-1 positions before it [conv-1, C], straight into snapshot `snap` (net._kda cuts the recurrence at the mark)."""
+        if not 0 <= snap < self.snapshots:
+            raise IndexError("a mark needs a declared snapshot")
+        self._snap["rec", layer][snap].copy_(state)
+        self._snap["conv", layer][snap].copy_(taps.T)
+
+    def mark_draft(self, snap: int, slot: int) -> None:
+        """The drafter's context ring as it stands before the step's observations: the mark's ring is this plus the
+        step's positions before the mark (the adapter observes them into the snapshot itself)."""
+        if not 0 <= snap < self.snapshots or not 0 < slot < self.slots.num_slots:
+            raise IndexError("a mark needs a declared snapshot and a real state slot")
+        if ("draft", -1) in self._snap:
+            self._snap["draft", -1][snap].copy_(self.draft_ring(slot))
+
+    def snapshot_draft_ring(self, snap: int):
+        return self._snap["draft", -1][snap]
+
     def restore(self, slot: int, position: int, snap: int) -> None:
         """The inverse: `slot` continues from `position` with the snapshot's state."""
         F = self.F

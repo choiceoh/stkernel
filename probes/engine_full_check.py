@@ -106,7 +106,7 @@ def main():
         def post(ids,limit=360,conversation=None):
             payload=dict(ids=ids,max_tokens=limit,temperature=0.)
             if conversation is not None: payload['conversation']=conversation
-            req=urllib.request.Request(f'http://127.0.0.1:{args.port}/v1/completions',
+            req=urllib.request.Request(f'http://127.0.0.1:{args.port}/v1/engine/completions',
                 data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'})
             with urllib.request.urlopen(req,timeout=3600) as response: return json.load(response)
         def client():

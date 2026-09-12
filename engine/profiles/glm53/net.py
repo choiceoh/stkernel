@@ -37,6 +37,7 @@ from typing import Protocol
 import torch
 import torch.nn.functional as Fn
 
+from engine.base.constants import fresh, iota
 from engine.modules.sparse_indexer import topk_positions
 from engine.profiles.glm53 import specs
 from engine.profiles.glm53.facts import TP, Facts
@@ -65,10 +66,23 @@ class Segment:
 class Step:
     ids: torch.Tensor           # [N] int64
     segments: "tuple[Segment, ...]"
+    patches: tuple = ()         # ((positions [n] int64 into ids, rows [n, hidden]) ...): rows that replace the embedding at
+                                # those positions -- the vision tower's output at image placeholders (45차 §23 A7, vision.py)
+    marks: tuple = ()           # ((position into ids, snapshot) ...): block boundaries inside a prefill segment whose position
+                                # state the caches keep as a prefix snapshot (base/prefix.py): the KDA recurrence is cut there
 
     def __post_init__(self):
         if self.ids.ndim != 1 or self.ids.dtype != torch.int64 or not self.segments:
             raise ValueError("a step needs a flat int64 token vector and nonempty segments")
+        for pos, rows in self.patches:
+            if (pos.ndim != 1 or pos.dtype != torch.int64 or rows.ndim != 2 or rows.shape[0] != pos.numel()
+                    or (pos.numel() and (int(pos.min()) < 0 or int(pos.max()) >= self.ids.numel()))):
+                raise ValueError("patches are (positions inside the step, one row per position)")
+        if self.marks:
+            positions = [p for p, _ in self.marks]
+            if (len(self.segments) != 1 or positions != sorted(set(positions)) or positions[0] <= 0
+                    or positions[-1] >= self.ids.numel() or any(type(p) is not int or type(s) is not int for p, s in self.marks)):
+                raise ValueError("marks are increasing positions strictly inside a single prefill segment, each with its snapshot")
         end, seqs, slots = 0, set(), set()
         for s in self.segments:
             if s.start != end or s.length <= 0 or s.ctx < 0 or s.seq < 0 or s.slot <= 0:
@@ -85,8 +99,8 @@ class Step:
         return torch.cat([torch.arange(s.ctx, s.ctx + s.length, device=self.ids.device) for s in self.segments])
 
     @staticmethod
-    def prefill(ids: torch.Tensor, ctx: int, seq: int, slot: int) -> "Step":
-        return Step(ids, (Segment(seq, slot, ctx, 0, ids.shape[0]),))
+    def prefill(ids: torch.Tensor, ctx: int, seq: int, slot: int, patches: tuple = (), marks: tuple = ()) -> "Step":
+        return Step(ids, (Segment(seq, slot, ctx, 0, ids.shape[0]),), patches, marks)
 
     @staticmethod
     def decode(chunks: "list[tuple[torch.Tensor, int, int, int]]") -> "Step":
@@ -243,24 +257,63 @@ class Glm53Net:
         captured = getattr(step, "captured", False)
         for s in step.segments:
             sl = slice(s.start, s.start + s.length)
+            direct_ring = self.lanes.kda_recurrent_ring is not None and s.length <= wr
+            direct_conv = direct_ring and self.lanes.conv_ring is not None and s.length <= min(8, wc)
             if captured:
-                hist, state0 = caches.kda_history(L, s.slot, s.ctx)
+                if direct_conv:
+                    conv_ring, ring, physical = caches.kda_rings(L, s.slot)
+                elif direct_ring:
+                    hist, ring, physical = caches.kda_ring_history(L, s.slot, s.ctx)
+                else:
+                    hist, state0 = caches.kda_history(L, s.slot, s.ctx)
             else:
                 conv_ring, rec_ring = caches.kda(L, s.slot)
-                hist_pos = s.ctx + torch.arange(-(K - 1), 0, device=x.device)
-                hist = conv_ring[:, hist_pos.clamp_min(0) % wc].masked_fill((hist_pos < 0)[None, :], 0)
-                state0 = rec_ring[(s.ctx - 1) % wr][None] if s.ctx > 0 else None
-            y, _ = self.lanes.conv_prefill(qkv_all[sl], p[n + "conv"], hist if captured or s.ctx > 0 else None)
-            if captured:
-                caches.write_conv(L, s.slot, s.ctx, qkv_all[sl])
+                if not direct_conv:
+                    hist_pos = s.ctx + torch.arange(-(K - 1), 0, device=x.device)
+                    hist = conv_ring[:, hist_pos.clamp_min(0) % wc].masked_fill((hist_pos < 0)[None, :], 0)
+                if direct_ring:
+                    ring, physical = rec_ring[None], 0
+                else:
+                    state0 = rec_ring[(s.ctx - 1) % wr][None] if s.ctx > 0 else None
+            if direct_conv:
+                y = self.lanes.conv_ring(qkv_all[sl], p[n + "conv"], conv_ring if captured else conv_ring[None], physical, s.ctx)
             else:
-                keep = min(s.length, wc)
-                pos = s.ctx + torch.arange(s.length - keep, s.length, device=x.device)
-                conv_ring[:, pos % wc] = qkv_all[sl][-keep:].T
+                y, _ = self.lanes.conv_prefill(qkv_all[sl], p[n + "conv"], hist if captured or s.ctx > 0 else None)
+                if captured:
+                    caches.write_conv(L, s.slot, s.ctx, qkv_all[sl])
+                else:
+                    keep = min(s.length, wc)
+                    pos = s.ctx + torch.arange(s.length - keep, s.length, device=x.device)
+                    conv_ring[:, pos % wc] = qkv_all[sl][-keep:].T
             q, k, v = (t.reshape(1, s.length, Hl, D) for t in y.split(Hl * D, dim=-1))
             g_raw, beta = g_raw_all[sl][None], beta_all[sl][None]
-            if s.length > wr:                                                       # a prefill chunk: only the final state is kept
-                o, state = self.lanes.kda_chunk(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
+            if direct_ring:
+                o = self.lanes.kda_recurrent_ring(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"],
+                                                  ring, physical, s.ctx, F.lower_bound)
+            elif s.length > wr:                                                     # a prefill chunk: only the final state is kept --
+                # except at the step's marks (prefix snapshots inside the chunk): the recurrence is cut there and each piece's
+                # final state goes to its snapshot with the conv taps before it. Cutting is exact: the kernel's chunks restart
+                # at every mark, which the runner places on block boundaries (64-aligned from a chunk-aligned start).
+                cuts = [m for m, _ in step.marks if 0 < m < s.length] if step.marks else []
+                if not cuts:
+                    o, state = self.lanes.kda_chunk(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
+                else:
+                    snaps = dict(step.marks)
+                    pieces, state, lo = [], state0, 0
+                    for hi in cuts + [s.length]:
+                        piece = slice(lo, hi)
+                        if hi - lo > wr:
+                            o_p, state = self.lanes.kda_chunk(q[:, piece], k[:, piece], v[:, piece], g_raw[:, piece], beta[:, piece],
+                                                              p[n + "A_log"], p[n + "dt_bias"], state, F.lower_bound)
+                        else:                                                       # a short tail piece: one state per position
+                            o_p, states = self.lanes.kda_recurrent(q[:, piece], k[:, piece], v[:, piece], g_raw[:, piece], beta[:, piece],
+                                                                   p[n + "A_log"], p[n + "dt_bias"], state, F.lower_bound)
+                            state = states[-1:]
+                        pieces.append(o_p)
+                        if hi in snaps:
+                            caches.mark_kda(L, snaps[hi], state[0], qkv_all[sl][hi - (K - 1):hi])
+                        lo = hi
+                    o = torch.cat(pieces, dim=1)
                 rec_ring[(s.ctx + s.length - 1) % wr] = state[0]
             else:                                                                   # a decode/verify step: one state per position
                 o, states = self.lanes.kda_recurrent(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
@@ -293,17 +346,30 @@ class Glm53Net:
         slots_out = torch.empty((N, width), dtype=torch.int32, device=x.device)
         valid_out = torch.empty(N, dtype=torch.int32, device=x.device)
         keys, scales = caches.pool_keys(L), caches.pool_scales(L)
+        captured = getattr(step, "captured", False)
+        index = iota if captured else fresh                 # see _dsa: kept only for the bounded set
+        tail_width = kp - 1 + F.spec_k
+        if captured:
+            from engine.profiles.glm53.decode_graphs import complete_pools   # the profile's captured writer
+            tails = caches.tails(L)
+            if tails.shape[1] != tail_width:
+                raise ValueError(f"indexer tail needs {tail_width} positions to support draft rollback")
+            # Every segment's pools are completed before any selection runs. A segment
+            # selects only from its own sequence's blocks and a step may not carry a
+            # sequence twice, so the order the pools are written in changes nothing.
+            rows = len(step.segments)
+            width = step.tokens
+            pooled = complete_pools(self, L, step.contexts, width, tails,
+                                    k.view(rows, width, d), gate.view(rows, width, d), caches)
         for s in step.segments:
             sl = slice(s.start, s.start + s.length)
-            tail = caches.tail(L, s.slot)
-            tail_width = kp - 1 + F.spec_k
-            if tail.shape[0] != tail_width:
-                raise ValueError(f"indexer tail needs {tail_width} positions to support draft rollback")
-            end = s.ctx + s.length
-            if getattr(step, "captured", False):
-                from engine.profiles.glm53.decode_graphs import complete_pools
-                n_cand = complete_pools(self, L, s, tail, k[sl], gate[sl], caches)
+            if captured:
+                n_cand = pooled
             else:
+                tail = caches.tail(L, s.slot)
+                if tail.shape[0] != tail_width:
+                    raise ValueError(f"indexer tail needs {tail_width} positions to support draft rollback")
+                end = s.ctx + s.length
                 pool0 = (s.ctx // kp) * kp                                              # the pool ctx sits in may be half-built
                 lead = s.ctx - pool0                                                    # its earlier tokens are in the tail ring
                 lead_pos = torch.arange(pool0, s.ctx, device=x.device)
@@ -322,11 +388,11 @@ class Glm53Net:
                 tail[new_pos[-keep:] % tail_width, 0] = k[sl][-keep:]
                 tail[new_pos[-keep:] % tail_width, 1] = gate[sl][-keep:]
                 n_cand = end // kp
-            new_pos = s.ctx + torch.arange(s.length, device=x.device)
+            new_pos = s.ctx + index(s.length, x.device)
             # -- selection -----------------------------------------------------------
             seq_lens = (new_pos + 1).to(torch.int32)
             if n_cand:
-                cand = caches.pool_slots(L, s.seq, torch.arange(n_cand, device=x.device)).long()
+                cand = caches.pool_slots(L, s.seq, index(n_cand, x.device)).long()
                 pool_ids = self._select_pools(q8[sl], w_eff[sl], keys[cand], scales[cand], seq_lens // kp, n_cand, F.topk // kp)
             else:
                 pool_ids = torch.full((s.length, F.topk // kp), -1, dtype=torch.int32, device=x.device)
@@ -356,9 +422,12 @@ class Glm53Net:
         q = self.linear(qr, n + "q_b").view(N, Hl, F.qk_nope)
         kv_n = rmsnorm(kv_c, p[n + "kv_a_norm"], F.rms_eps)
         latent = caches.latent(L)
+        # A captured step asks for the same few lengths forever, so they come from the kept
+        # constants; an eager prefill's follow the request and would grow that cache unbounded.
+        index = iota if getattr(step, "captured", False) else fresh
         for s in step.segments:                                                     # fp8 KV, scale 1 (no kv scales in the checkpoint)
             sl = slice(s.start, s.start + s.length)
-            latent[caches.token_slots(L, s.seq, (s.ctx + torch.arange(s.length, device=x.device))).long()] = kv_n[sl].to(E4M3)
+            latent[caches.token_slots(L, s.seq, (s.ctx + index(s.length, x.device))).long()] = kv_n[sl].to(E4M3)
         slots, valid = self._indexer(L, x, qr, step, caches)
         kv_b = p[n + "kv_b"].view(Hl, F.qk_nope + F.v_dim, F.kv_lora)
         w_uk, w_uv = kv_b[:, : F.qk_nope, :], kv_b[:, F.qk_nope:, :]
@@ -405,6 +474,8 @@ class Glm53Net:
                                        and not getattr(step, "captured", False)) else None
         reduce = sp.reduce_scatter if sp else self.comm.all_reduce
         x = self.embed(step.ids)
+        for pos, rows in step.patches:                                               # image rows in place of their placeholders
+            x.index_copy_(0, pos, rows.to(x.dtype))
         if sp:
             x = x.chunk(self.comm.world_size, dim=0)[self.rank]
             N = x.shape[0]

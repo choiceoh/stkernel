@@ -222,10 +222,12 @@ class KernelBindingTests(unittest.TestCase):
             for future in futures:
                 future.result(timeout=10)
         for table in tables:
-            # Every lane is bound, including reference_for overrides: an idle
-            # owner must reject before executing a kernel or inspecting args.
+            # Resource enumeration is host metadata collected after capture,
+            # outside a LocalTP run. Kernel lanes still belong to their owner.
+            self.assertIs(table.graph_resources, direct.graph_resources)
+            self.assertIsInstance(table.graph_resources(), tuple)
             for field in fields(table):
-                if field.name != "name":
+                if field.name not in ("name", "graph_resources"):
                     with self.subTest(lane=field.name), self.assertRaisesRegex(RuntimeError, "active run"):
                         getattr(table, field.name)()
         actual = direct.indexer_quant(rows)

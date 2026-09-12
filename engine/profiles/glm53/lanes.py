@@ -44,6 +44,9 @@ class Lanes:
     moe_prepare: object = None  # (w13, w13_sf, w2, w2_sf, top_k, limit) -> None, once per bound MoE layer BEFORE any capture:
                               #  the served lane's weight views (in-place tile-major relayout, packed SF6 owner); reference: None
     graph_resources: object = None  # () -> external workspace owners to retain until the captured graphs close
+    kda_recurrent_ring: object = None  # recurrent inputs, then (ring [slots,R,H,K,V] f32, slot, context, lower_bound)
+                                     # -> output only; writes each token state into the selected ring. None uses the functional lane.
+    conv_ring: object = None  # (x [T,C], w [C,K], ring [slots,C,R], slot, context) -> y; writes raw inputs into ring, T<=8
 
 
 def swiglu_clamped(g: torch.Tensor, u: torch.Tensor, limit: float) -> torch.Tensor:
@@ -124,11 +127,11 @@ def reference() -> Lanes:
 
 
 MOE_STATIC_STOCK = "stock"          # the §15~18 judged default of STK_moe_static
-MOE_STATIC_PRODUCTION = "t,r,sf6"   # production glm53.env VLLM_GLM53_B12X_STATIC_V2 (2026-09-09 adoption); "+q0" = the TP recipe
+MOE_STATIC_PRODUCTION = "t,r,sf6,q0"  # native TP4 decode and prefill recipe
 
 
 def parse_moe_static(value: str) -> "tuple[str | None, bool]":
-    """STK_moe_static -> (b12x static-lane spec or None for stock, TP SF6 Q0 flag).
+    """Explicit probe specification -> (b12x static lane, TP SF6 Q0 flag).
     Cells are the dispatcher's (u, t, r, sf6, f<n>, g<n>, ...); q0 is the engine's token."""
     tokens = [t.strip() for t in str(value).split(",") if t.strip()]
     if tokens in ([], [MOE_STATIC_STOCK], ["0"], ["off"]):
@@ -140,7 +143,7 @@ def parse_moe_static(value: str) -> "tuple[str | None, bool]":
     return (spec or None), q0
 
 
-def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = MOE_STATIC_STOCK, consume_scales: bool = False,
+def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = MOE_STATIC_PRODUCTION, consume_scales: bool = False,
            mla_prefill: str = "stock") -> Lanes:
     """Bind the ST kernel package without an overlay or vLLM installation.
 
@@ -154,13 +157,15 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     and warmup; constructing another table never rebinds an existing one.
 
     `moe_static` / `mla_prefill` are the profile's declared D11 knobs
-    (boot.declared: STK_moe_static, STK_mla_prefill), applied to the kernel
+    (boot.declared: STK_mla_prefill; MoE is fixed for serving), applied to the kernel
     package here, once, before anything binds or arms.
     """
     expert_lane = "reference" if "expert" in reference_for else "b12x"
     from engine.kernels.kda import chunk_kda_with_fused_gate, fused_recurrent_kda
     from engine.kernels.kda.output import kda_output_norm
+    from engine.kernels.kda.ring import recurrent_kda_ring
     from engine.kernels.causal_conv_single import causal_conv1d_single as conv_prefill
+    from engine.kernels.causal_conv_ring import causal_conv1d_ring
     from engine.kernels.mhc import mhc_pre_tilelang, mhc_post_tilelang
     from engine.kernels.deep_gemm import fp8_fp4_mqa_logits
     from engine.kernels.kpool import compress_pool_keys, fwht128_quant_fp8
@@ -222,6 +227,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
 
     if "kda_recurrent" in reference_for:
         kda_recurrent = ref.kda_recurrent
+        recurrent_kda_ring = None
     moe_prepare = None
     graph_resources = None
     if expert_lane == "reference":
@@ -303,7 +309,9 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     table = Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, compress_pool_keys, mla, moe,
                                             fwht128_quant_fp8, pool_slots, kda_output_norm)),
                   moe_prepare=None if moe_prepare is None else on_main(moe_prepare),
-                  graph_resources=graph_resources)
+                  graph_resources=graph_resources,
+                  kda_recurrent_ring=None if recurrent_kda_ring is None else on_main(recurrent_kda_ring),
+                  conv_ring=None if "conv_prefill" in reference_for else on_main(causal_conv1d_ring))
     # 45차 §21 bisect: any other lane named in `reference_for` runs on the torch reference in this table
     # (the served output is garbage while every self-consistency judge passes -- which lane, if any, is found by
     # swapping them one at a time; "expert" and "kda_recurrent" are the two the kernels already know how to declare).

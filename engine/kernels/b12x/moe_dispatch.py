@@ -1630,6 +1630,7 @@ def _kernel_source_files() -> Tuple[str, ...]:
 
     return (
         __file__,
+        os.path.join(os.path.dirname(__file__), "fp4_quant.py"),
         moe_activation.__file__,
         moe_static_kernel.__file__,
         moe_static_common.__file__,

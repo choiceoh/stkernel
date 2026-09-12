@@ -91,25 +91,30 @@ def draft_attention(q, k, v, ring, position, *, slot=None, layer=0):
 
 
 @triton.jit
-def _write_kv(K,V,R,Slot,Pos,N:tl.constexpr,WIDTH:tl.constexpr,ROW:tl.constexpr,W:tl.constexpr,
+def _write_kv(K,V,R,Slot,Pos,Valid,HAS_VALID:tl.constexpr,N:tl.constexpr,WIDTH:tl.constexpr,ROW:tl.constexpr,W:tl.constexpr,
               STRIDE:tl.constexpr,OFFSET:tl.constexpr,BLOCK:tl.constexpr):
     token=tl.program_id(0)
     d=tl.program_id(1)*BLOCK+tl.arange(0,BLOCK)
     slot=tl.load(Slot).to(tl.int64)
     pos=tl.load(Pos+token).to(tl.int64)%W
     base=R+slot*STRIDE+OFFSET+pos*ROW+d
-    tl.store(base,tl.load(K+token*WIDTH+d,d<WIDTH,other=0),d<WIDTH)
-    tl.store(base+W*ROW,tl.load(V+token*WIDTH+d,d<WIDTH,other=0),d<WIDTH)
+    accepted = token < tl.load(Valid) if HAS_VALID else True
+    mask=(d<WIDTH)&accepted
+    tl.store(base,tl.load(K+token*WIDTH+d,mask,other=0),mask)
+    tl.store(base+W*ROW,tl.load(V+token*WIDTH+d,mask,other=0),mask)
 
 
-def write_draft_kv(field,slot,layer,positions,k,v):
+def write_draft_kv(field,slot,layer,positions,k,v,*,valid=None):
     """Write only accepted positions in the arena, without copying a whole ring."""
     if (field.ndim!=6 or k.shape!=v.shape or k.shape[-1]!=field.shape[-1] or k.shape[-2]>field.shape[-2]
             or positions.numel()!=k.shape[0] or k.shape[0]>field.shape[3]
             or slot.numel()!=1 or slot.dtype!=torch.int64 or positions.dtype!=torch.int64
             or not 0<=layer<field.shape[1]):
         raise ValueError("invalid direct DFlash ring write")
+    if valid is not None and (valid.numel()!=1 or valid.dtype!=torch.int64 or valid.device!=field.device):
+        raise ValueError("accepted DFlash count must be an int64 device scalar")
     width=k.shape[-1]*k.shape[-2]
     _write_kv[(k.shape[0],triton.cdiv(width,256))](
-        k.contiguous(),v.contiguous(),field,slot,positions,k.shape[0],width,field.shape[-1]*field.shape[-2],field.shape[3],
+        k.contiguous(),v.contiguous(),field,slot,positions,valid if valid is not None else slot,valid is not None,
+        k.shape[0],width,field.shape[-1]*field.shape[-2],field.shape[3],
         field.stride(0),layer*field.stride(1),256)

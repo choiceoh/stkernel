@@ -75,6 +75,12 @@ for ip in "${NODES[@]}"; do
 done
 held=$(node_sh "${NODES[0]}" "cat $LOCK 2>/dev/null || true")
 [ -z "$held" ] || { echo "ABORT: the fleet is locked by '$held' ($LOCK on ${NODES[0]}); wait or 'stop' from that side" >&2; exit 1; }
+# The bench queue reserves the same four nodes and does not know this lock exists. Read its
+# holder before taking the fleet, so the two mechanisms refuse each other in both directions
+# until they become one (bench/fleet.sh now refuses a grant while any st-* container is up).
+FLEET_HOLDER=${FLEET_HOLDER:-/home/choiceoh/glm53-logs/fleet/holder}
+queued=$(node_sh "${NODES[0]}" "cat $FLEET_HOLDER 2>/dev/null || true")
+[ -z "$queued" ] || { echo "ABORT: the bench queue holds the fleet: $queued (bench/fleet.sh status; release it there)" >&2; exit 1; }
 owner="$(whoami)@$(hostname) st-glm53 $(date -u '+%F %T UTC') pid=$$"
 printf -v owner_q '%q' "$owner"
 node_sh "${NODES[0]}" "set -C; printf '%s\\n' $owner_q > $LOCK" || {
@@ -89,6 +95,7 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+
 
 NCCL_ENV="-e NCCL_P2P_LEVEL=SYS -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 \
 -e NCCL_NET=IB -e NCCL_IB_DISABLE=0 -e NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 \
@@ -107,7 +114,7 @@ for v in $(compgen -v STK_ || true); do NCCL_ENV="$NCCL_ENV -e $v=${!v}"; done
 # the checkpoint's metadata travels with the engine tree: a node needs its rank file, the drafter and these few files,
 # not the full HF checkpoint
 META="$REPO/build/st-glm53-meta"; mkdir -p "$META"
-cp "$CKPT"/config.json "$CKPT"/tokenizer.json "$CKPT"/tokenizer_config.json "$CKPT"/generation_config.json "$META"/ 2>/dev/null
+cp "$CKPT"/config.json "$CKPT"/tokenizer.json "$CKPT"/tokenizer_config.json "$CKPT"/generation_config.json "$CKPT"/processor_config.json "$META"/ 2>/dev/null
 cp "$CKPT"/chat_template*.jinja "$META"/ 2>/dev/null || true
 # When the supervisor launches from the installed tree, refresh its own metadata too.
 if [ "$(readlink -f "$REPO")" = "$(readlink -f "$ENGINE_DIR")" ]; then
@@ -127,6 +134,7 @@ start_rank() {
   node_sh "$ip" "ST_IMAGE=$IMAGE bash $ENGINE_DIR/engine/runtime/build.sh" \
     || { echo "ABORT: $ip could not build $IMAGE (engine/runtime/build.sh)" >&2; return 1; }
   node_sh "$ip" "test -s $RANKS_DIR/rank${r}of4.safetensors" || { echo "ABORT: $ip lacks rank${r}of4.safetensors (fanout-st-ranks.sh)" >&2; return 1; }
+  node_sh "$ip" "test -s $RANKS_DIR/vision.safetensors" || { echo "ABORT: $ip lacks vision.safetensors (preshard.py --vision --out $RANKS_DIR, once per node)" >&2; return 1; }
   node_sh "$ip" "test -s $DRAFTER/model.safetensors" || { echo "ABORT: $ip lacks the DFlash2 drafter at $DRAFTER" >&2; return 1; }
   node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 || true; docker run -d --name $NAME --gpus all --restart no \
     --network host --ipc host --shm-size 32g --ulimit memlock=-1:-1 --ulimit nofile=524288:524288 --cap-add IPC_LOCK \
@@ -153,4 +161,4 @@ if [ -n "$failed" ]; then
   exit 1
 fi
 launched=1
-echo "head: http://10.10.10.2:$PORT/v1/completions  (GET / for status)"
+echo "head: http://10.10.10.2:$PORT/v1/chat/completions (OpenAI), /v1/engine/completions (engine dialect), GET / for status"

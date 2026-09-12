@@ -1,0 +1,47 @@
+{
+  "baseline_commit": "0990b6e04cf00d6b6ba9f7799ed888cfdc77b67a",
+  "host": "srv4",
+  "gpu": "NVIDIA GB10",
+  "target": "sm_121a",
+  "image": "st-engine:9391",
+  "image_id": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+  "cuda_compiler": "13.0.88",
+  "driver": "580.159.03",
+  "torch": "2.13.0+cu130",
+  "triton": "3.7.1",
+  "date_kst": "2026-09-12",
+  "nvdisasm": {
+    "version": "13.0.85",
+    "deb_url": "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/sbsa/cuda-nvdisasm-13-0_13.0.85-1_arm64.deb",
+    "deb_sha256": "a5d26564038abf69b9f8da875076d20e9b77787fa1c6034210be7b37c6dd2102",
+    "installation": "extracted only inside task temporary directory"
+  },
+  "rank_file": "/home/choiceoh/models/st-glm53-9391-up-gate-full/rank0of4.safetensors",
+  "loaded_keys": [
+    "L3.moe.w13",
+    "L3.moe.w13_sf",
+    "L3.moe.w2",
+    "L3.moe.w2_sf"
+  ],
+  "source_sha256": {
+    "engine/kernels/b12x/fp4_quant.py": "b96d40ed26bfb5b897bee9ecd88fb00acb65744363df6ba8c439675af6c8d537",
+    "engine/kernels/b12x/moe_static_kernel.py": "dc24b0e1b73076fc4d3abeace44fa2c6a4c99a077f7687616d9c561a897c4de4",
+    "engine/kernels/b12x/moe_micro_kernel.py": "f0a11dfe7d371551bb350de0218e44b7c6d0d7505ef944727e1fd49391353d33",
+    "engine/kernels/b12x/moe_dispatch.py": "f849d96ae1b53a110ba126db23028a3d27111dfeedfd342c3b063ec5fb5b7a80",
+    "engine/kernels/SOURCES.json": "e8319bcadc3c0ebd281c7a7965439295bf90b70b176cd0a74f731add33f3cdc2",
+    "probes/engine_fp4_instructions.py": "b446a15206060692bb970885693efd4c5603d2938907aff11632629aed8a60b3",
+    "probes/engine_moe_instructions.py": "b38df4b4e706fdfaf74af027de36b92f98cb5692e7ea4a6dc6563e97e0a90fbb",
+    "probes/engine_fp4_disassembly.py": "b7ee61e6a174e68e2257bd56a7b5ecb058abd2dba0494b4b2159e8bcb39aaf75",
+    "tests/test_engine_fp4_instructions.py": "024ef2b9acffa126683e7db9732b8736ff717fa6a22362a8f1d9e7273ab4e957"
+  },
+  "measured_helper_sha256": "30c09e7483d142bc7e24aa888815d7bb0aa071b48ad3daa269e36edf260bea3e",
+  "helper_after_measurement": "Only the PTX versus SASS explanatory comments changed; Python AST equality checked against measured helper.",
+  "validation": {
+    "engine_tests": 294,
+    "skips": 0,
+    "elapsed_s": 100.18,
+    "exact_quant_blocks": 135210,
+    "real_weight_cases": 8
+  },
+  "scope": "One GB10 and actual TP4 rank0 L3 tensors; no four-server end-to-end run; shared GPU, clocks not locked"
+}

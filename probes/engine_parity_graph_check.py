@@ -29,7 +29,7 @@ def main():
         comm.prepare_oneshot()
         rec=Recorder('parity-components')
         F,net,caches,engine,runner=build(comm,[0,3],served(moe_static='t,r,sf6,q0',consume_scales=True),args.ranks,.4,2,
-            True,rec,ckpt_meta=args.ckpt_meta,drafter_dir=args.drafter_dir,execution='parity')
+            True,rec,ckpt_meta=args.ckpt_meta,drafter_dir=args.drafter_dir,execution='native')
         print(rec.table(),flush=True)
         print(json.dumps(rec.root.counters),flush=True)
         drafter=engine.drafter
@@ -75,12 +75,24 @@ def main():
                 ring.copy_(saved);drafter.observe(ring,positions,aux);expected=ring.clone()
                 ring.copy_(saved);drafter.observe_decode(ring,positions,aux)
                 assert torch.equal(ring,expected),(context,count)
+            positions=context+torch.arange(6,device='cuda')
+            aux=torch.randn(6,20480,device='cuda',dtype=torch.bfloat16)*.02
+            ring.copy_(saved);drafter.observe(ring,positions,aux);complete=ring.clone()
+            for count in (0,1,3,6):
+                expected=saved.clone()
+                indices=positions[:count]%drafter.F.window
+                expected[:,:,indices]=complete[:,:,indices]
+                ring.copy_(saved)
+                drafter.decode_graphs.observe_masked(ring,positions,aux,
+                    torch.tensor(count,device='cuda',dtype=torch.int64))
+                assert torch.equal(ring,expected),('masked',context,count)
             print(json.dumps(dict(rank=comm.rank,drafter_context=context,passed=True)),flush=True)
         comm.barrier()
     finally:
         if target_graph is not None:target_graph.graphs.close()
         if drafter is not None and drafter.decode_graphs is not None:
             drafter.decode_graphs.proposals.close();drafter.decode_graphs.observations.close()
+            drafter.decode_graphs.masked.close()
         comm.close()
 
 

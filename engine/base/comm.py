@@ -67,6 +67,7 @@ class Comm:
     world_size: int = 1
     rank: int = 0
     group: object = None
+    control: object = None            # a gloo group beside NCCL: the loop's arrivals and votes are host objects (45차 §23 B3)
     transport: object = None
 
     def prepare_oneshot(self):
@@ -89,7 +90,11 @@ class Comm:
         for k, v in fleet_env(rank, world).items():
             os.environ.setdefault(k, v)
         dist.init_process_group("nccl", world_size=world, rank=rank, timeout=timedelta(seconds=timeout_s))
-        return cls(world, rank, dist.group.WORLD)
+        # The control plane is gloo over the same sockets: a broadcast of arrivals or a vote on the NCCL group is a
+        # device collective, ordered behind every kernel of the step in flight and synchronised to read back -- which
+        # is exactly the wait an asynchronous step loop exists to remove.
+        control = dist.new_group(backend="gloo", timeout=timedelta(seconds=timeout_s))
+        return cls(world, rank, dist.group.WORLD, control)
 
     # A collective of this class is device work on the caller's stream (NCCL), or at
     # world 1 no work at all, so a CUDA graph may capture it. LocalTP's cannot --
@@ -138,13 +143,25 @@ class Comm:
             dist.barrier(group=self.group)
 
     def broadcast_object(self, obj):
-        """rank 0's `obj` on every rank (the arrivals of a step)."""
+        """rank 0's `obj` on every rank (the arrivals of a step): on the control group, so it neither waits for the
+        device nor makes the device wait."""
         if self.world_size == 1:
             return obj
         import torch.distributed as dist
         box = [obj]
-        dist.broadcast_object_list(box, src=0, group=self.group)
+        dist.broadcast_object_list(box, src=0, group=self.control if self.control is not None else self.group)
         return box[0]
+
+    def all_reduce_host(self, values) -> "list[int]":
+        """Sum small integer vectors across ranks on the control group (a vote), without touching the device."""
+        values = [int(v) for v in values]
+        if self.world_size == 1 or not values:
+            return values
+        import torch
+        import torch.distributed as dist
+        t = torch.tensor(values, dtype=torch.int64)
+        dist.all_reduce(t, group=self.control if self.control is not None else self.group)
+        return [int(v) for v in t.tolist()]
 
     def close(self):
         if self.transport is not None:

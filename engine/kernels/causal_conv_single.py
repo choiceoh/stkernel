@@ -12,13 +12,23 @@ import triton
 import triton.language as tl
 
 
-@triton.jit
+@triton.jit(do_not_specialize=["ring_slot", "ring_context"])
 def _single_conv(X, W, S, Y, F, T: tl.constexpr, C: tl.constexpr,
                  XS: tl.constexpr, XC: tl.constexpr, WS: tl.constexpr, WC: tl.constexpr,
                  SS: tl.constexpr, SC: tl.constexpr, K: tl.constexpr,
-                 HAS_STATE: tl.constexpr, BC: tl.constexpr, BT: tl.constexpr):
+                 HAS_STATE: tl.constexpr, BC: tl.constexpr, BT: tl.constexpr,
+                 ring_slot=None, ring_context=None, RING_SIZE: tl.constexpr = 0,
+                 RING_SLOT_STRIDE: tl.constexpr = 0, RING_DEVICE_INDICES: tl.constexpr = False):
     c = tl.program_id(0) * BC + tl.arange(0, BC)
     start = tl.program_id(1) * BT
+    if RING_SIZE:
+        # The ring wrapper launches one time tile. A CTA owns each channel's
+        # complete initial history and every current token, including writes.
+        if RING_DEVICE_INDICES:
+            slot, context = tl.load(ring_slot).to(tl.int64), tl.load(ring_context).to(tl.int64)
+        else:
+            slot, context = ring_slot.to(tl.int64), ring_context.to(tl.int64)
+        ring_base = S + slot * RING_SLOT_STRIDE + c * SS
     history = ()
     weights = ()
     for j in tl.static_range(K):
@@ -26,7 +36,12 @@ def _single_conv(X, W, S, Y, F, T: tl.constexpr, C: tl.constexpr,
         if j < K - 1:
             pos = start - (K - 1) + j
             value = tl.load(X + pos * XS + c * XC, (c < C) & (pos >= 0), other=0.)
-            if HAS_STATE:
+            if RING_SIZE:
+                old_pos = context + pos
+                old = tl.load(ring_base + (tl.maximum(old_pos, 0) % RING_SIZE) * SC,
+                              (c < C) & (pos < 0) & (old_pos >= 0), other=0.)
+                value = tl.where(pos < 0, old.to(X.dtype.element_ty), value)
+            elif HAS_STATE:
                 old = tl.load(S + c * SS + j * SC, (c < C) & (pos < 0), other=0.)
                 # The old adapter assigned the history into an x.dtype table.
                 value = tl.where(pos < 0, old.to(X.dtype.element_ty), value)
@@ -40,7 +55,11 @@ def _single_conv(X, W, S, Y, F, T: tl.constexpr, C: tl.constexpr,
         history = values[1:]
         acc = acc / (1 + tl.exp(-acc))
         tl.store(Y + token * C + c, acc, c < C)
-    if start + BT >= T:
+        if RING_SIZE:
+            # All initial history was loaded before the first write, so ring
+            # wrap cannot race another CTA reading this channel's history.
+            tl.store(ring_base + ((context + token) % RING_SIZE) * SC, current, c < C)
+    if not RING_SIZE and start + BT >= T:
         for j in tl.static_range(K - 1):
             tl.store(F + c * (K - 1) + j, history[j], c < C)
 

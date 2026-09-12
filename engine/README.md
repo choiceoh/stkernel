@@ -28,13 +28,22 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 
     bash launchers/fanout-st-ranks.sh            # 랭크 r 파일을 노드 r 로
     bash launchers/start-st-glm53.sh             # 부팅; glm53*/q38* 컨테이너가 있으면 거부
-    curl -s http://10.10.10.2:8000/v1/completions -d '{"prompt": "...", "max_tokens": 64}'
-    curl -s http://10.10.10.2:8000/v1/completions -d '{"conversation": 0, "prompt": "...", "max_tokens": 64}'   # 파킹된 대화 이어가기
-    STK_moe_static=t,r,sf6 STK_context_ceiling=131072 bash launchers/start-st-glm53.sh   # 선언된 D11 노브는 STK_* 로 부팅에 들어간다(미선언·만료 = 사망)
+    bash bench/fleet.sh run --gpu st 30 "decode graph" -- bash probes/run_engine_probe.sh probes/engine_decode_graph_check.py
+                                                 # GPU 검사는 벤치 큐에 줄을 선다(2026-09-12): 창이 없으면 미루지 말고 예약한다.
+                                                 # 큐는 st-* 컨테이너가 떠 있으면 허가하지 않고, 런처는 큐에 holder 가 있으면 거부한다.
+    curl -s http://10.10.10.2:8000/v1/engine/completions -d '{"prompt": "...", "max_tokens": 64}'                    # 엔진 방언: ids/text
+    curl -s http://10.10.10.2:8000/v1/engine/completions -d '{"conversation": 0, "prompt": "...", "max_tokens": 64}'   # 파킹된 대화 이어가기
+    curl -s http://10.10.10.2:8000/v1/completions -d '{"prompt": "...", "max_tokens": 64, "n": 2, "logprobs": 3}'    # OpenAI completions
+    curl -s http://10.10.10.2:8000/tokenize -d '{"prompt": "..."}'; curl -s http://10.10.10.2:8000/detokenize -d '{"tokens": [1, 2]}'
+    STK_context_ceiling=131072 bash launchers/start-st-glm53.sh   # 선언된 D11 노브는 STK_* 로 부팅에 들어간다(미선언·만료 = 사망)
     bash launchers/start-st-glm53.sh stop        # 컨테이너 제거 + 잠금 해제. start 는 glm53*/q38*/vllm*/st-* 컨테이너나 srv2 의 `st-fleet.lock` 이 있으면 거부한다
                                                  # (플릿을 쓰는 세션은 모두 이 잠금을 지킨다: 09-11 19:42 두 세션의 플릿이 같은 노드에서 충돌해 둘 다 죽었다)
     curl -s http://10.10.10.2:8000/v1/chat/completions -d '{"messages":[{"role":"user","content":"..."}],"max_tokens":64,"stream":true}'   # OpenAI 방언(SSE), bench/onepass.py 가 쓰는 것
     curl -s http://10.10.10.2:8000/v1/models; curl -s http://10.10.10.2:8000/metrics                                  # 모델 이름, 벤치 이름의 카운터
+
+`/metrics`(프로메테우스 텍스트, HELP·TYPE 포함): 벤치 방언(`vllm:request_success_total`·`num_requests_{running,waiting}`·`prompt/generation_tokens_total`·`spec_decode_*`·`iteration_tokens_total_count`)은 이름과 의미 그대로 유지하고, 그 위에 **지연 히스토그램 셋**(`vllm:time_to_first_token_seconds`·`time_per_output_token_seconds`·`e2e_request_latency_seconds`, 요청 도착 시각 기준), **포화도**(`vllm:gpu_cache_usage_perc`·`st:kv_blocks_{total,used,free}`·`st:state_slots_{total,free}`), **재사용**(`vllm:prefix_cache_{queries,hits}_total`·`st:prefix_cache_*`), **스텝 종류**(`st:steps_{prefill,decode}_total`, D9), **티어**(`st:conversations_parked`·`st:tier_bytes_*`), **취소·타임아웃**(`st:requests_{cancelled,timed_out}_total`)을 낸다.
+vLLM 이 낼 수 없는 것(이 엔진에만 있는 부품이라): **어느 캡처 그래프가 돌았나**(`st:decode_steps_by_sequences_total{sequences}` = 스케줄러가 실제로 채운 배치, `st:decode_capacity_bucket_total{capacity}` = `STK_context_ceiling` 을 자를 유일한 프로덕션 증거), **스텝 벽시계**(`st:step_seconds{kind}`, 호스트 관측 종단 — 두 종류 모두 샘플 읽기로 끝나므로 발사 시간이 아니라 스텝 전체다), **수용 분포**(`st:spec_accepted_per_step_total{accepted}` — 평균이 아니라 모양이 `spec_k` 를 정한다), **무엇이 실제로 묶였나**(`st:lane_info{lanes,moe_static,mla_prefill,spec_k,context_ceiling}` — "무장 ≠ 서빙"을 부팅 로그가 아니라 스크레이프로 판정).
+비용(실측): 렌더 0.096 ms·11 KB·190줄(스크레이프당 1회), 관측 0.96 µs(디코드 스텝 최악 24회 = 46 ms 스텝의 0.05%). 디바이스 읽기·동기화 없음.
 
 문(`base/serve.py`): 엔진 방언(`POST /v1/completions` ids|prompt, `conversation` 으로 이어가기)과 OpenAI chat 방언(`POST /v1/chat/completions`,
 `stream` 이면 토큰 단위 SSE, `chat_template_kwargs` 통과, `</think>` 앞은 `reasoning_content` 뒤는 `content`; `GET /v1/models`, `/metrics`, `/health`).
@@ -43,6 +52,22 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 `<tool_call>` 은 `tool_calls` 로 파싱, finish `tool_calls`), `n`=1 만, `logprobs` 는 400. 클라이언트가 끊으면(소켓 EOF·broken pipe) 요청을
 취소해 행을 돌려주고, `REQUEST_TIMEOUT_S`(3600) 를 넘긴 요청은 504 로 취소한다 — 취소는 rank 0 이 도착과 같은 브로드캐스트로 실어 네 랭크가
 같은 반복에서 같은 행을 버린다(`/metrics` 의 `st:requests_cancelled_total`).
+그림(45차 §23 A7, `profiles/glm53/vision.py`): chat 의 `content` 배열에 `image_url`(≤4)·`video_url`(≤1, 프로덕션 PR #431 의 MM_LIMIT) 파트를
+받는다 — `data:` 또는 http(s) URL. rank 0 의 문이 프로덕션 프로세서와 같은 규칙으로 캔버스를 만들고(28 정렬·pad·bicubic, 영상은 32 프레임
+균등 → GLM 샘플러 → 프레임 쌍마다 `<|begin_of_image|>…<|end_of_image|>N.N seconds`), 템플릿의 자리표시자 하나를 토큰 수만큼 늘려 보낸다;
+캔버스는 요청과 함께 네 랭크로 가고 각 랭크가 같은 비전 타워(`vision.safetensors`, 랭크 파일 옆; `preshard.py --vision` 으로 한 번)를 돌려
+자리표시자 위치의 임베딩을 바꿔 넣는다(D3: 네 랭크의 결과 합이 다르면 죽는다). 같은 자리표시자에 다른 그림은 다른 프롬프트다 — 이어가기(B1)와
+prefix 캐시 둘 다 그림의 digest 를 본다. 플릿 부팅은 `vision.safetensors` 가 없으면 서지 않는다(프로덕션이 그림을 서빙하므로).
+prefix 재사용의 단위는 풀의 **블록(2,304)** 이다(`base/prefix.py`, 프로덕션 APC 와 같음): 프리필 청크(6,912) 안의 두 경계는 스텝 전에
+`marks` 로 이름 붙여 스텝이 도는 동안 받는다 — KDA 되풀이를 그 자리에서 끊어(정확: 커널 청크가 64 정렬 경계에서 다시 시작) 조각의 끝
+상태와 conv 입력을 스냅샷에 쓰고, 드래프터 링은 스텝 전 링 + 경계 전 위치를 스냅샷에 관측한다(`adapter.prefill`). 스냅샷 24개(경계당
+~77 MiB, `boot.PREFIX_SNAPSHOTS`). 디코드는 **호스트보다 앞서 돈다**(`profiles/glm53/pipeline.py`, vLLM 의 비동기 스케줄링): 타깃
+그래프 → 샘플러 → 커밋(`base/sampler.commit_batch`) → 마스크 관측 → 제안 → 다음 스텝 ids 가 장치에 남고, 결과만 핀 버퍼로 건너와
+다음 스텝이 이미 도는 동안 읽힌다(`runner.inflight`, 깊이 2). 장치에서 끝난 행은 상태 슬롯을 null 슬롯으로 돌려 유령 스텝이 링에 아무
+것도 못 쓰고, 러너는 한 스텝 늦게 끝을 알아 그 유령의 결과를 버린다. 온도/top_p 만 있는 행은 장치의 기각 샘플링
+(`speculative_pick_batch`)으로 앞서 돌고, 페널티·logit_bias·seed·logprobs·문법·min_tokens 미충족 행은 동기 경로(러너가 먼저 비운다).
+루프의 도착 브로드캐스트와 투표는 gloo 제어 그룹(`Comm.control`)으로 간다 — NCCL 그룹의 객체 브로드캐스트는 스텝의 커널 뒤에
+줄 서고 읽기 위해 장치를 기다린다.
 
 운영(`launchers/st-glm53-supervisor.sh` + `st-glm53.service`, 헤드 srv2 의 사용자 유닛): 30 s 마다 진짜 4 토큰 chat 으로 건강을 재고(문이
 열려 있어도 링은 죽어 있을 수 있다), 3 회 연속 실패면 포렌식(네 랭크 로그·free·nvidia-smi·metrics → `~/glm53-logs/st-forensics/`) → stop →
@@ -57,7 +82,7 @@ start. 재시작 간격은 60 s 부터 두 배씩 30 분까지, 5 회 실패 뒤
     bash launchers/start-st-glm53.sh stop            # 네 노드 컨테이너 + 잠금 해제
     systemctl --user start fleet-idle-recovery.timer # 5 분 유휴 뒤 vLLM 복귀
 
-프로덕션은 `ST_PRODUCTION=1`로 실행한다. `boot.py --production`은 검증된 stock MoE/MLA, 전체 컨텍스트,
+프로덕션은 `ST_PRODUCTION=1`로 실행한다. `boot.py --production`은 네이티브 dense·one-shot AR·TP4 GPTQ 드래프터·프리필 SP, `t,r,sf6,q0` MoE, stock MLA와 전체 컨텍스트,
 served 레인, 캡처 decode를 고정한다. 실험 노브를 선언하지 않아 실험 만료일이 지난 뒤에도 같은 릴리스로 재시작할 수 있고,
 `STK_*`를 섞으면 부팅을 거절한다. 실험은 기존 기본 실행 모드와 만료 규칙을 사용한다.
 

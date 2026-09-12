@@ -65,3 +65,186 @@ def _selfcheck() -> None:
 
 if __name__ == "__main__":
     _selfcheck()
+
+
+# ---- the OpenAI-dialect options a row may carry (45차 §23 A3/A4/B4) ----------------------------------------------
+# A row with any of these leaves the captured sampler: its logits are gathered whole and processed here, on every
+# rank identically (same generator seeds, same order), so the picks agree without a message.
+
+OPTION_KEYS = ("top_p", "top_k", "seed", "presence_penalty", "frequency_penalty", "repetition_penalty",
+               "logit_bias", "stop_token_ids", "logprobs", "grammar")
+
+
+def validate_options(options: dict) -> None:
+    """The engine's verdict on a request's options: unknown keys and out-of-range values are refused (D3)."""
+    unknown = sorted(set(options) - set(OPTION_KEYS))
+    if unknown:
+        raise ValueError(f"unknown sampling options {unknown}")
+    p = options.get("top_p")
+    if p is not None and (type(p) not in (int, float) or not 0 < p <= 1):
+        raise ValueError("top_p must be in (0, 1]")
+    k = options.get("top_k")
+    if k is not None and (type(k) is not int or k < 1):
+        raise ValueError("top_k must be a positive integer")
+    for key in ("presence_penalty", "frequency_penalty"):
+        v = options.get(key)
+        if v is not None and (type(v) not in (int, float) or not -2 <= v <= 2):
+            raise ValueError(f"{key} must be between -2 and 2")
+    rp = options.get("repetition_penalty")
+    if rp is not None and (type(rp) not in (int, float) or not 0 < rp <= 2):
+        raise ValueError("repetition_penalty must be in (0, 2]")
+    seed = options.get("seed")
+    if seed is not None and (type(seed) is not int or seed < 0):
+        raise ValueError("seed must be a nonnegative integer")
+    bias = options.get("logit_bias")
+    if bias is not None and (not isinstance(bias, dict) or any(type(k) is not int or k < 0 or type(v) not in (int, float) for k, v in bias.items())):
+        raise ValueError("logit_bias must map token ids to numbers")
+    stop = options.get("stop_token_ids")
+    if stop is not None and (not isinstance(stop, list) or any(type(t) is not int or t < 0 for t in stop)):
+        raise ValueError("stop_token_ids must be a list of token ids")
+    lp = options.get("logprobs")
+    if lp is not None and (type(lp) is not int or not 0 <= lp <= 20):
+        raise ValueError("logprobs must be an integer between 0 and 20")
+    g = options.get("grammar")
+    if g is not None and (not isinstance(g, dict) or g.get("type") not in ("json_object", "json_schema")):
+        raise ValueError("grammar must be a json_object or json_schema spec")
+
+
+def needs_rich_sampler(options: dict, temperature: float, drafts: bool) -> bool:
+    """Whether a row's logits must be processed here rather than by the captured greedy/top-p sampler:
+    any option beyond temperature/top_p, or a stochastic row with drafts (rejection sampling needs the probabilities)."""
+    if any(options.get(k) is not None for k in ("top_p", "top_k", "seed", "presence_penalty", "frequency_penalty",
+                                                 "repetition_penalty", "logit_bias", "logprobs", "grammar")):
+        return True                                  # (the captured sampler was recorded without a nucleus branch: top_p is rich)
+    return drafts and temperature > 0
+
+
+def process_logits(logits: torch.Tensor, options: dict, prompt_ids, generated_ids, decodable: "int | None" = None,
+                   mask: "torch.Tensor | None" = None) -> torch.Tensor:
+    """One row's raw logits [V] fp32 -> the logits the pick is made from: logit_bias, repetition/presence/frequency
+    penalties over the row's tokens, the decodable cut and an optional grammar mask (True = allowed)."""
+    out = logits.float().clone()
+    bias = options.get("logit_bias")
+    if bias:
+        ids = torch.tensor(list(bias.keys()), device=out.device, dtype=torch.int64)
+        out.index_add_(0, ids, torch.tensor(list(bias.values()), device=out.device, dtype=torch.float32))
+    rp = options.get("repetition_penalty")
+    if rp and rp != 1 and (prompt_ids or generated_ids):
+        seen = torch.tensor(sorted(set(prompt_ids) | set(generated_ids)), device=out.device, dtype=torch.int64)
+        vals = out[seen]
+        out[seen] = torch.where(vals > 0, vals / rp, vals * rp)
+    pres, freq = options.get("presence_penalty"), options.get("frequency_penalty")
+    if (pres or freq) and generated_ids:
+        gen = torch.tensor(generated_ids, device=out.device, dtype=torch.int64)
+        counts = torch.zeros_like(out).index_add_(0, gen, torch.ones(len(generated_ids), device=out.device))
+        out -= (freq or 0.0) * counts + (pres or 0.0) * (counts > 0).float()
+    if decodable is not None and out.shape[-1] > decodable:
+        out[decodable:] = float("-inf")
+    if mask is not None:
+        out = out.masked_fill(~mask, float("-inf"))
+    return out
+
+
+def distribution(logits: torch.Tensor, temperature: float, top_k: "int | None", top_p: "float | None") -> torch.Tensor:
+    """The row's sampling distribution [V] at `temperature` under top-k / top-p (temperature 0 = one-hot argmax)."""
+    if temperature <= 0:
+        p = torch.zeros_like(logits)
+        p[logits.argmax()] = 1.0
+        return p
+    scaled = logits / temperature
+    if top_k is not None and 0 < top_k < scaled.shape[-1]:
+        kth = scaled.topk(top_k).values[-1]
+        scaled = scaled.masked_fill(scaled < kth, float("-inf"))
+    probs = torch.softmax(scaled, dim=-1)
+    if top_p is not None and top_p < 1:
+        srt, idx = probs.sort(descending=True)
+        cum = srt.cumsum(-1)
+        keep = (cum - srt) < top_p
+        srt = srt * keep
+        probs = torch.zeros_like(probs).scatter_(0, idx, srt / srt.sum())
+    return probs
+
+
+def draw(probs: torch.Tensor, generator: "torch.Generator | None") -> int:
+    return int(torch.multinomial(probs, 1, generator=generator).item())
+
+
+def speculative_pick(target_probs, draft_ids, draft_probs, generator) -> "tuple[int, list[int]]":
+    """Rejection sampling over K drafts (Leviathan/Chen; vLLM's rejection_sample): returns (accepted count, the
+    committed tokens = accepted drafts + one recovered or bonus token).
+
+    target_probs: K+1 rows [V] -- the target's distribution at each draft position and the bonus position.
+    draft_ids: the K proposed tokens; draft_probs: K rows [V] -- the drafter's distribution each was drawn from
+    (zero outside its candidates). u ~ U(0,1) per position from `generator`, identical on every rank."""
+    k = len(draft_ids)
+    accepted = 0
+    for i, d in enumerate(draft_ids):
+        p, q = float(target_probs[i][d]), float(draft_probs[i][d])
+        u = float(torch.rand((), generator=generator, device=target_probs.device))
+        if q > 0 and u < min(1.0, p / q):
+            accepted += 1
+            continue
+        recovered = (target_probs[i] - draft_probs[i]).clamp_min(0)
+        total = float(recovered.sum())
+        if total <= 0:
+            recovered = target_probs[i]
+            total = float(recovered.sum())
+        return accepted, list(draft_ids[:accepted]) + [draw(recovered / total, generator)]
+    return accepted, list(draft_ids) + [draw(target_probs[k], generator)]
+
+
+def speculative_pick_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_probs: torch.Tensor, generator):
+    """`speculative_pick` for a whole decode batch on the device, with no host round trip (45차 §23 B3): rows run
+    ahead of the host, so their picks must be tensors. target_probs [n, K+1, V]; drafts [n, K]; draft_probs [n, K, V].
+    Returns (accepted [n], tokens [n, K+1] with the committed ones first, count [n] = accepted + 1). Draws K uniforms
+    per row then one multinomial per row from `generator`, in that order, identically on every rank."""
+    n, k1, V = target_probs.shape
+    K = k1 - 1
+    device = target_probs.device
+    rows = torch.arange(n, device=device)
+    u = torch.rand(n, K, generator=generator, device=device)
+    p_d = target_probs[:, :K].gather(2, drafts.unsqueeze(2)).squeeze(2)                 # the target's mass on each draft
+    q_d = draft_probs.gather(2, drafts.unsqueeze(2)).squeeze(2)                          # the drafter's
+    accept = (q_d > 0) & (u < (p_d / q_d.clamp_min(1e-30)).clamp_max(1.0))
+    accepted = accept.long().cumprod(1).sum(1)                                           # leading accepts only
+    at = accepted.clamp_max(K)                                                           # the position drawn afresh: recovered or bonus
+    row_p = target_probs[rows, at]
+    row_q = torch.where((at < K).unsqueeze(1), draft_probs[rows, at.clamp_max(K - 1)], torch.zeros_like(row_p))
+    recovered = (row_p - row_q).clamp_min(0)
+    total = recovered.sum(1, keepdim=True)
+    recovered = torch.where(total > 0, recovered / total.clamp_min(1e-30), row_p / row_p.sum(1, keepdim=True).clamp_min(1e-30))
+    fresh = torch.multinomial(recovered, 1, generator=generator).squeeze(1)
+    tokens = torch.cat([drafts, torch.zeros(n, 1, dtype=drafts.dtype, device=device)], 1)
+    tokens.scatter_(1, at.unsqueeze(1), fresh.unsqueeze(1))
+    return accepted, tokens, accepted + 1
+
+
+def commit_batch(picks: torch.Tensor, drafts: torch.Tensor, alive: torch.Tensor, generated: torch.Tensor, limit: torch.Tensor,
+                 ends: torch.Tensor, accepted: "torch.Tensor | None" = None):
+    """The device half of adapter._commit for a decode batch running ahead of the host (45차 §23 B3).
+    picks [n, K+1]: the tokens chosen at each position (greedy: the sampler's; stochastic: speculative_pick_batch's, with
+    `accepted` given); drafts [n, K]; alive [n] bool; generated/limit [n]; ends [n, E] end-token ids padded with -1.
+    Returns (count [n] tokens committed, done [n], accepted [n], tokens [n, K+1] = picks). A row that is not alive
+    commits nothing; the row's remaining limit and its first end token clip the run, as the host does."""
+    n, k1 = picks.shape
+    K = k1 - 1
+    if accepted is None:
+        accepted = (picks[:, :K] == drafts).long().cumprod(1).sum(1)
+    count = accepted + 1
+    room = (limit - generated).clamp_min(0)
+    count = torch.minimum(count, room)
+    is_end = (picks.unsqueeze(2) == ends.unsqueeze(1)).any(2)                            # [n, K+1]
+    positions = torch.arange(k1, device=picks.device).unsqueeze(0)
+    first_end = torch.where(is_end & (positions < count.unsqueeze(1)), positions, torch.full_like(positions, k1)).min(1).values
+    count = torch.minimum(count, first_end + 1)
+    count = torch.where(alive, count, torch.zeros_like(count))
+    hit_end = (first_end < k1) & alive
+    done = alive & (hit_end | (generated + count >= limit))
+    return count, done, torch.minimum(accepted, (count - 1).clamp_min(0)), picks
+
+
+def top_logprobs(logits: torch.Tensor, chosen: int, k: int) -> "tuple[float, list[tuple[int, float]]]":
+    """(log-probability of `chosen`, the k most likely (id, logprob)) from raw logits, vLLM's raw_logprobs mode."""
+    lp = torch.log_softmax(logits.float(), dim=-1)
+    top = lp.topk(k).indices.tolist() if k > 0 else []
+    return float(lp[chosen]), [(i, float(lp[i])) for i in top]

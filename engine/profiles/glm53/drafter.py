@@ -16,10 +16,11 @@ anchor. The walk at temperature 0 is what the served speculator's
 `_selector_walk_kernel` does; the Gumbel branch is not ported (the engine
 samples the TARGET; drafts only need to be good guesses).
 
-Replicated: every rank holds the whole drafter (2.18 GiB, DRAFT_TP=1 as
-served) and computes identical drafts from identical inputs; the only
-collectives are the target's vocab-parallel embed and head, which the
-drafter borrows (its checkpoint ships neither).
+The loader reserves the whole 2.18 GiB drafter on every rank. Native
+preparation retires dense weights into calibrated packs and shards its
+attention heads and MLP across TP4; row-parallel outputs are reduced.
+It also borrows the target's vocab-parallel embed and head (the drafter
+checkpoint ships neither).
 
 Two calls, from the engine (engine.py):
     observe(slot, positions, aux)    the target's aux hidden of newly VERIFIED tokens -> context K/V into the slot's ring
@@ -203,6 +204,13 @@ class Drafter:
     # -- context: verified tokens' target states -> K/V rings -------------------------------
     def observe(self, ring: torch.Tensor, positions: torch.Tensor, aux: torch.Tensor) -> None:
         """ring [L, 2, window, kv_heads, D] bf16 (a slot's); positions [n]; aux [n, 5*4096] target states."""
+        self._observe(ring, positions, aux)
+
+    def observe_masked(self, ring, positions, aux, valid):
+        """Commit a device-counted accepted prefix using the same TP context projection."""
+        self._observe(ring, positions, aux, valid)
+
+    def _observe(self, ring, positions, aux, valid=None):
         F, p = self.F, self.p
         if positions.numel() == 0:
             return
@@ -221,8 +229,12 @@ class Drafter:
             v = context[:,L,1] if context is not None else self.linear(c, q + "v_proj.weight").view(-1, F.kv_heads, F.head_dim)
             if isinstance(ring, tuple):
                 from engine.kernels.draft_attention import write_draft_kv
-                write_draft_kv(ring[0],ring[1],L,positions,k,v)
+                write_draft_kv(ring[0],ring[1],L,positions,k,v,valid=valid)
             else:
+                if valid is not None:
+                    keep = (torch.arange(len(positions), device=positions.device) < valid)[:, None, None]
+                    k = torch.where(keep, k, ring[L, 0, idx, :self.local_kv_heads])
+                    v = torch.where(keep, v, ring[L, 1, idx, :self.local_kv_heads])
                 ring[L, 0, idx, :self.local_kv_heads] = k
                 ring[L, 1, idx, :self.local_kv_heads] = v
 
@@ -333,6 +345,63 @@ class Drafter:
             prev = scores[s].index_select(0, prev).argmax(-1)
             out.append(cand[s].index_select(0, prev))
         return torch.cat(out)
+
+    def propose_sampled(self, anchor: int, position: int, ring: torch.Tensor, temperature: float, generator,
+                        vocab: int) -> "tuple[list[int], torch.Tensor]":
+        """The same walk drawn at `temperature` instead of argmax (production's DRAFT_SAMPLE=probabilistic): returns the K
+        draft ids and the distribution each was drawn from, [K, vocab] fp32 (zero outside the 16 candidates) -- what
+        rejection sampling divides by (base/sampler.speculative_pick). Eager, for stochastic rows only."""
+        F, p = self.F, self.p
+        K = self.k
+        dev = ring.device
+        anchor_t = torch.full((1,), anchor, dtype=torch.int64, device=dev)
+        ids = torch.cat([anchor_t, torch.full((K,), F.mask_id, dtype=torch.int64, device=dev)])
+        positions = position + torch.arange(K + 1, device=dev)
+        h = self.block(ids, positions, ring, position)[1:]
+        from engine.modules.vocab import topk
+        unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp, F.sel_top_k, self.decodable)
+        proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float()
+        pred_ids = torch.cat([anchor_t.reshape(1, 1).expand(1, F.sel_top_k), cand[:-1]])
+        pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()
+        succ = p["candidate_selector.successor_codebook"][cand].float()
+        scores = unary[:, None, :] + torch.einsum("kpr,kcr->kpc", pred * proj[:, None, :], succ)
+        drafts, dists = [], torch.zeros(K, vocab, device=dev, dtype=torch.float32)
+        prev = 0
+        for s in range(K):
+            probs = torch.softmax(scores[s][prev].float() / max(temperature, 1e-5), dim=-1)          # over the 16 candidates
+            pick = int(torch.multinomial(probs, 1, generator=generator).item())
+            dists[s].index_add_(0, cand[s], probs)                                                 # duplicates (if any) add up
+            drafts.append(int(cand[s][pick].item()))
+            prev = pick
+        return drafts, dists
+
+
+    def propose_sampled_tensor(self, anchor: torch.Tensor, position, ring: torch.Tensor, temperature: float, generator,
+                               vocab: int) -> "tuple[torch.Tensor, torch.Tensor]":
+        """`propose_sampled` with every pick a tensor (45차 §23 B3: a row ahead of the host cannot read its drafts back).
+        anchor [1] int64 on device; position a device scalar or int. Returns (drafts [K], dists [K, vocab] fp32)."""
+        F, p = self.F, self.p
+        K = self.k
+        dev = ring.device
+        ids = torch.cat([anchor.reshape(1), torch.full((K,), F.mask_id, dtype=torch.int64, device=dev)])
+        positions = position + torch.arange(K + 1, device=dev)
+        h = self.block(ids, positions, ring, position)[1:]
+        from engine.modules.vocab import topk
+        unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp, F.sel_top_k, self.decodable)
+        proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float()
+        pred_ids = torch.cat([anchor.reshape(1, 1).expand(1, F.sel_top_k), cand[:-1]])
+        pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()
+        succ = p["candidate_selector.successor_codebook"][cand].float()
+        scores = unary[:, None, :] + torch.einsum("kpr,kcr->kpc", pred * proj[:, None, :], succ)
+        drafts, dists = [], torch.zeros(K, vocab, device=dev, dtype=torch.float32)
+        prev = torch.zeros(1, dtype=torch.int64, device=dev)
+        for s in range(K):
+            probs = torch.softmax(scores[s].index_select(0, prev)[0].float() / max(temperature, 1e-5), dim=-1)   # over the 16 candidates
+            pick = torch.multinomial(probs, 1, generator=generator)
+            dists[s].index_add_(0, cand[s], probs)
+            drafts.append(cand[s].index_select(0, pick))
+            prev = pick
+        return torch.cat(drafts), dists
 
 
 def ring_bytes(F: DrafterFacts) -> int:

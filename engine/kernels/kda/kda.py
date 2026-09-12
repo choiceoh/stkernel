@@ -299,6 +299,15 @@ def fused_recurrent_kda_fwd(
         raise ValueError("state_layout must be 'vk' or 'kv'")
     state_kv = state_layout == "kv"
     if state_kv:
+        # The strided loader indexes these logical axes directly. Validate
+        # them before launching instead of relying on a materialized copy.
+        if (not q.is_cuda or H <= 0 or HV <= 0 or HV % H or
+                q.shape != k.shape or v.shape != (B, T, HV, V) or
+                g.shape != (B, T, HV, K) or
+                beta.shape not in ((B, T, HV), (B, T, HV, V)) or
+                any(t.device != q.device or t.dtype not in
+                    (torch.bfloat16, torch.float16, torch.float32) for t in (q, k, v, g, beta))):
+            raise ValueError("kv inputs require compatible CUDA floating Q/K, V, gate and beta shapes")
         # The engine owns a dense, one-sequence [H,K,V] rollback ring. Keep
         # this API separate from the legacy indexed/in-place state tables.
         if (B != 1 or inplace_final_state or cu_seqlens is not None
@@ -308,6 +317,15 @@ def fused_recurrent_kda_fwd(
                 initial_state.shape != (1, HV, K, V) or not initial_state.is_contiguous()
                 or initial_state.dtype != torch.float32 or initial_state.device != q.device):
             raise ValueError("kv initial_state must be contiguous FP32 [1,HV,K,V] on the input device")
+        if out is not None:
+            if (out.shape != v.shape or out.dtype != v.dtype or out.device != v.device
+                    or not out.is_contiguous()):
+                raise ValueError("kv output must match V shape/dtype/device and be contiguous")
+            storage = out.untyped_storage().data_ptr()
+            if any(t is not None and t.device == out.device and
+                   t.untyped_storage().data_ptr() == storage
+                   for t in (q, k, v, g, beta, initial_state, a_log, g_bias)):
+                raise ValueError("kv output must not share storage with an input")
     BK, BV = next_power_of_2(K), min(next_power_of_2(V), 8)
     # GB10/TP4 decode and six-token verification: 128 CTAs at BV=16,
     # one warp per CTA. Larger/other shapes retain the conservative tile.
@@ -330,7 +348,9 @@ def fused_recurrent_kda_fwd(
 
     output_like = v if state_kv else k
     if out is None:
-        o = torch.empty_like(output_like)
+        # Input views may be strided; the output addressing remains dense.
+        o = (torch.empty_like(output_like) if output_like.is_contiguous() else
+             torch.empty(output_like.shape, dtype=output_like.dtype, device=output_like.device))
     else:
         # Caller-provided output buffer; must be layout-compatible with the
         # tensor the kernel indexes (v for kv, legacy k for vk).
@@ -354,6 +374,11 @@ def fused_recurrent_kda_fwd(
     else:
         stride_indices_seq, stride_indices_tok = ssm_state_indices.stride()
 
+    # Preserve the original dense specialization (including normal T=1).
+    # Only noncontiguous views need a stride-bearing JIT specialization.
+    inputs = (q, k, v, g, beta)
+    input_strides = (tuple(t.stride()[1:] for t in inputs)
+                     if state_kv and any(not t.is_contiguous() for t in inputs) else None)
     grid = (NK, NV, N * HV)
     fused_recurrent_gated_delta_rule_fwd_kernel[grid](
         q=q,
@@ -392,6 +417,7 @@ def fused_recurrent_kda_fwd(
         SAFE_GATE=True,
         LOWER_BOUND=lower_bound if lower_bound is not None else -5.0,
         STATE_KV=state_kv,
+        INPUT_STRIDES=input_strides,
         num_warps=num_warps,
         num_stages=num_stages,
     )
@@ -426,6 +452,7 @@ def fused_recurrent_kda(
     The default ``vk`` retains the ported state-table API. ``kv`` accepts
     only one dense sequence, separate output states, and a contiguous FP32
     [1,HV,K,V] initial state (or None for zero state). It never mutates it.
+    Input views are read with their token/head/channel strides; outputs are dense.
     """
     if cu_seqlens is not None and q.shape[0] != 1:
         raise ValueError(
@@ -436,11 +463,11 @@ def fused_recurrent_kda(
         scale = k.shape[-1] ** -0.5
 
     o, final_state = fused_recurrent_kda_fwd(
-        q=q.contiguous(),
-        k=k.contiguous(),
-        v=v.contiguous(),
-        g=g.contiguous(),
-        beta=beta.contiguous(),
+        q=q if state_layout == "kv" else q.contiguous(),
+        k=k if state_layout == "kv" else k.contiguous(),
+        v=v if state_layout == "kv" else v.contiguous(),
+        g=g if state_layout == "kv" else g.contiguous(),
+        beta=beta if state_layout == "kv" else beta.contiguous(),
         scale=scale,
         initial_state=initial_state,
         inplace_final_state=inplace_final_state,

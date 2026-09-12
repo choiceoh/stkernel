@@ -4,8 +4,10 @@ Active sequence count, tokens per sequence and a declared context-capacity
 bucket select a graph. Exact context lengths and physical cache ownership
 are replay inputs, including rollback.
 Paged and recurrent writes go directly to the arena using device slot ids.
-Only the conv history, initial recurrent state and small indexer tail are
-read into temporary buffers. No request may be live during capture.
+The served ring lanes directly address both convolution and recurrent state;
+only the small indexer tail needs a temporary buffer. Functional lanes also
+gather convolution history and initial recurrent state.
+No request may be live during capture.
 """
 from dataclasses import dataclass
 
@@ -13,6 +15,7 @@ import torch
 import triton
 import triton.language as tl
 
+from engine.base.constants import iota
 from engine.base.graphs import DecodeGraphs
 from engine.profiles.glm53.net import Segment
 
@@ -36,28 +39,44 @@ def scatter_rows(src, dst, indices, valid):
                                   dst.stride(0), triton.next_power_of_2(width))
 
 
-def complete_pools(net, layer, segment, tail, k, gate, caches):
-    """Return the fixed candidate capacity after masked pool and ring writes."""
+def complete_pools(net, layer, contexts, length, tails, k, gate, caches):
+    """Complete every segment's pools for this step, then return the fixed candidate capacity.
+
+    A captured step's segments have the same length and differ only in device scalars,
+    so the whole prologue -- the window that joins the tail ring's earlier tokens to
+    this step's new ones, and the pooling itself -- is one set of operations over
+    [segments, pools, ...] rather than one set per segment. Stacking them is the same
+    work in the same order because `compress_pool_keys` runs one program per pool and
+    reads each through its own strides; segments only decide which pools exist.
+
+    The cache writes stay per segment. Their kernels take one ring slot and one count,
+    and making them take many is a kernel change, not a caller change.
+    """
     F = net.F
     kp, d = F.kpool, F.idx_dim
-    ctx, length = segment.ctx, segment.length
-    lead = ctx % kp
-    count = (lead + length) // kp
+    n, tail_width = tails.shape[0], tails.shape[1]
     max_pools = (kp - 1 + length) // kp
-    relative = torch.arange(max_pools * kp, device=k.device) - lead
-    current = relative.clamp(0, length - 1).long()
-    previous = ((ctx + relative) % tail.shape[0]).long()
-    kw = torch.where((relative < 0)[:, None], tail[previous, 0], k[current])
-    gw = torch.where((relative < 0)[:, None], tail[previous, 1], gate[current])
-    pk, ps = net.lanes.kpool_compress(kw.view(max_pools, kp, d),
-                                     gw.view(max_pools, kp, d), net.p[f"L{layer}.idx.ape"])
-    pids = ctx // kp + torch.arange(max_pools, device=k.device)
+    lead = contexts % kp                                                  # [n] the half-built pool
+    counts = (lead + length) // kp                                        # [n] complete pools this step
+    relative = iota(max_pools * kp, k.device) - lead[:, None]             # [n, pools*kpool]
+    current = relative.clamp(0, length - 1)
+    previous = (contexts[:, None] + relative) % tail_width
+    rows = iota(n, k.device)[:, None]
+    earlier = (relative < 0)[..., None]                                   # before this step: from the ring
+    kw = torch.where(earlier, tails[rows, previous, 0], k[rows, current])
+    gw = torch.where(earlier, tails[rows, previous, 1], gate[rows, current])
+    pk, ps = net.lanes.kpool_compress(kw.view(n * max_pools, kp, d),
+                                      gw.view(n * max_pools, kp, d), net.p[f"L{layer}.idx.ape"])
     # Padded pids at the final context boundary are not read by scatter_rows.
-    pids = pids.clamp_max(caches.candidate_capacity - 1)
-    slots = caches.pool_slots(layer, segment.seq, pids).long()
-    scatter_rows(pk.view(torch.uint8), caches.pool_keys(layer).view(torch.uint8), slots, count)
-    scatter_rows(ps.reshape(-1, 1), caches.pool_scales(layer).unsqueeze(-1), slots, count)
-    caches.write_tail(layer, segment.slot, ctx, k, gate)
+    pids = (contexts[:, None] // kp + iota(max_pools, k.device)).clamp_max(caches.candidate_capacity - 1)
+    slots = caches.pool_rows(layer, pids).long()                          # [n, pools]
+    keys, scales = caches.pool_keys(layer).view(torch.uint8), caches.pool_scales(layer).unsqueeze(-1)
+    pk8 = pk.view(torch.uint8).view(n, max_pools, -1)
+    ps1 = ps.view(n, max_pools, 1)
+    for i in range(n):
+        scatter_rows(pk8[i], keys, slots[i], counts[i])
+        scatter_rows(ps1[i], scales, slots[i], counts[i])
+        caches.write_tail(layer, i, contexts[i], k[i], gate[i])
     return caches.candidate_capacity
 
 
@@ -68,10 +87,19 @@ class DeviceStep:
     tokens: int
     captured = True
 
+    def __post_init__(self):
+        # Built once. Every layer asks for this tuple -- one loop in KDA, two in sparse
+        # MLA, so 45 layers ask 75 times per step -- and rebuilding it costs two view ops
+        # per segment per ask. The views stay correct because replay overwrites `contexts`
+        # in place rather than rebinding it, which is the same reason the captured graph
+        # can record their addresses.
+        self._segments = tuple(
+            Segment(i, i, self.contexts[i:i+1].reshape(()), i * self.tokens, self.tokens)
+            for i in range(self.contexts.numel()))
+
     @property
     def segments(self):
-        return tuple(Segment(i, i, self.contexts[i:i+1].reshape(()), i * self.tokens, self.tokens)
-                     for i in range(self.contexts.numel()))
+        return self._segments
 
     @property
     def positions(self):
@@ -94,6 +122,15 @@ class GraphCaches:
         return kda_history(self.real._fields["conv", layer], self.real._fields["rec", layer],
                            self.slots[slot:slot+1], context, self.F.conv - 1)
 
+    def kda_ring_history(self, layer, slot, context):
+        from engine.kernels.state import conv_history
+        physical = self.slots[slot:slot+1]
+        hist = conv_history(self.real._fields["conv", layer], physical, context, self.F.conv - 1)
+        return hist, self.real._fields["rec", layer], physical
+
+    def kda_rings(self, layer, slot):
+        return self.real._fields["conv", layer], self.real._fields["rec", layer], self.slots[slot:slot+1]
+
     def write_conv(self, layer, slot, context, inputs):
         from engine.kernels.state import write_conv
         write_conv(inputs, self.real._fields["conv", layer], self.slots[slot:slot+1], context)
@@ -104,6 +141,10 @@ class GraphCaches:
 
     def tail(self, layer, slot):
         return self.real._fields["tail", layer].index_select(0, self.slots[slot:slot+1])[0]
+
+    def tails(self, layer):
+        """Every segment's tail ring in one gather; tail(layer, i) is row i of it."""
+        return self.real._fields["tail", layer].index_select(0, self.slots)
 
     def write_tail(self, layer, slot, context, keys, gates):
         from engine.kernels.state import write_ring
@@ -131,6 +172,15 @@ class GraphCaches:
         from engine.profiles.glm53.caches import Glm53Caches
         return Glm53Caches.pool_slots(self, layer, seq, pool_ids)
 
+    def pool_rows(self, layer, pool_ids):
+        """pool_slots for every segment at once: row i of `pool_ids` reads row i of the
+        gathered block table, which is what pool_slots(layer, i, ...) does one at a time."""
+        F, p = self.F, self.layout
+        per, record = F.block // F.kpool, F.idx_dim + 4
+        blocks = torch.gather(self.block_table, 1, (pool_ids // per).long())
+        return (blocks * (p.block_bytes // record)
+                + p.pool_offsets[layer] // record + pool_ids % per).to(blocks.dtype)
+
 
 def capacity_ladder(pool_tokens: int, max_position: int, ceiling: "int | None") -> "list[int]":
     """The context-capacity buckets to capture, smallest first.
@@ -153,7 +203,8 @@ def capacity_ladder(pool_tokens: int, max_position: int, ceiling: "int | None") 
 
 
 class Glm53DecodeGraphs:
-    def __init__(self, net, caches, max_seqs, tokens, aux_layers=(), memory=None, ceiling=None):
+    def __init__(self, net, caches, max_seqs, tokens, aux_layers=(), memory=None, ceiling=None,
+                 detail=False):
         if any(owner >= 0 for owner in caches.slots.owner[1:]):
             raise ValueError("capture requires no live state slots")
         if tokens not in (1, net.F.spec_k + 1):
@@ -170,7 +221,7 @@ class Glm53DecodeGraphs:
         # number (adapter.max_context, which serve.py refuses past); unset means the
         # model's trained positions. Capping it is the only lever on the graph count:
         # a bucket is captured whether or not any request will reach it, and each costs
-        # a warmup pair plus a capture (their seconds are memory rows, "target/<shape>/").
+        # a warmup pass plus a capture (their seconds are one memory row, "target/<shape>").
         self.capacities = capacity_ladder(caches.block_table.shape[1] * net.F.block,
                                          net.F.max_position, ceiling)
 
@@ -213,10 +264,15 @@ class Glm53DecodeGraphs:
                 del scratch.block_table
 
         try:
+            # Largest shape first. The first capture sizes the pool every later one
+            # shares, so the small rungs reuse it instead of making it grow -- and on
+            # unified memory a pool that grows is pages mapped again. vLLM orders its
+            # captures largest-first and says the same reason.
             self.graphs = DecodeGraphs(forward, make_inputs,
-                                       [(n, tokens, capacity) for capacity in self.capacities
-                                        for n in range(1, max_seqs + 1)], memory=memory, label="target",
-                                       resources=net.lanes.graph_resources)
+                                       [(n, tokens, capacity) for n in range(max_seqs, 0, -1)
+                                        for capacity in reversed(self.capacities)],
+                                       memory=memory, label="target",
+                                       resources=net.lanes.graph_resources, detail=detail)
         finally:
             # Warmup and capture execute real writes, before requests exist.
             caches.reset()
@@ -228,6 +284,13 @@ class Glm53DecodeGraphs:
         for capacity in self.capacities:
             if end <= capacity:
                 return len(step.segments), self.tokens, capacity
+        raise ValueError("decode context exceeds the captured cache capacity")
+
+    def shape_for(self, n: int, end: int):
+        """The graph for `n` rows whose longest context may reach `end` (a step ahead of the host rounds up)."""
+        for capacity in self.capacities:
+            if end <= capacity:
+                return n, self.tokens, capacity
         raise ValueError("decode context exceeds the captured cache capacity")
 
     def run(self, step, shape=None):
@@ -246,6 +309,22 @@ class Glm53DecodeGraphs:
             target.contexts.copy_(self.staging[0, :n], non_blocking=True)
             seqs.copy_(self.staging[1, :n], non_blocking=True)
             slots.copy_(self.staging[2, :n], non_blocking=True)
+
+        return self.graphs.run(shape, fill)
+
+    def run_device(self, shape, host_step, ids, contexts, seqs, slots):
+        """Replay with every input already on the device (45차 §23 B3: the step ahead of the host reads the previous
+        step's commit, not the host's view). `host_step` carries the segments the block tables are prepared from --
+        its contexts may lag the device's; the reservation covers the lag."""
+        self.caches.prepare(host_step)
+
+        def fill(inputs):
+            target, seqs_in, slots_in, _, _ = inputs
+            n = contexts.numel()
+            target.ids.copy_(ids)
+            target.contexts.copy_(contexts)
+            seqs_in.copy_(seqs[:n])
+            slots_in.copy_(slots[:n])
 
         return self.graphs.run(shape, fill)
 
@@ -281,15 +360,34 @@ class DrafterDecodeGraphs:
             drafter.observe(rings[0], inputs["positions"], inputs["aux"])
             self.field.index_copy_(0, inputs["slot"], rings)
 
+        def masked_inputs(n, t):
+            return dict(positions=torch.arange(t, device=device, dtype=torch.int64),
+                        aux=torch.zeros(t, drafter.F.hidden * len(drafter.aux_layers),
+                                        device=device, dtype=torch.bfloat16),
+                        slot=torch.zeros(1, device=device, dtype=torch.int64),
+                        valid=torch.zeros((), device=device, dtype=torch.int64))
+
+        def observe_masked(inputs):
+            if drafter.fast_attention:
+                drafter.observe_masked((self.field,inputs["slot"]), inputs["positions"], inputs["aux"], inputs["valid"])
+                return
+            rings = self.field.index_select(0, inputs["slot"])
+            drafter.observe_masked(rings[0], inputs["positions"], inputs["aux"], inputs["valid"])
+            self.field.index_copy_(0, inputs["slot"], rings)
+
         try:
             self.proposals = DecodeGraphs(propose, propose_inputs, [(1, drafter.k + 1)],
                                           memory=memory, label="drafter/propose")
             self.observations = DecodeGraphs(observe, observe_inputs,
                                              [(1, t) for t in range(1, drafter.k + 2)],
                                              memory=memory, label="drafter/observe")
+            # the step ahead of the host observes all K+1 positions with a device count of the valid ones (B3)
+            self.masked = DecodeGraphs(observe_masked, masked_inputs, [(1, drafter.k + 1)],
+                                       memory=memory, label="drafter/observe_masked")
         except BaseException:
-            if hasattr(self, "proposals"):
-                self.proposals.close()
+            for name in ("proposals", "observations", "masked"):
+                if hasattr(self, name):
+                    getattr(self, name).close()
             raise
         finally:
             caches.reset()
@@ -316,6 +414,24 @@ class DrafterDecodeGraphs:
             inputs["aux"].copy_(aux)
             inputs["slot"].fill_(slot)
         self.observations.run((1, positions.numel()), fill)
+
+    def observe_masked(self, ring, positions, aux, valid):
+        """All K+1 positions of a step ahead of the host; `valid` (a device scalar) says how many enter the ring."""
+        slot = self.slot(ring)
+        def fill(inputs):
+            inputs["positions"].copy_(positions)
+            inputs["aux"].copy_(aux)
+            inputs["slot"].fill_(slot)
+            inputs["valid"].copy_(valid)
+        self.masked.run((1, positions.numel()), fill)
+
+    def propose_from(self, anchor, position, slot):
+        """`propose` with the anchor, the position and the slot as device tensors (45차 §23 B3)."""
+        def fill(inputs):
+            inputs["anchor"].copy_(anchor.reshape(1))
+            inputs["position"].copy_(position.reshape(()))
+            inputs["slot"].copy_(slot.reshape(1))
+        return self.proposals.run((1, self.drafter.k + 1), fill)
 
 
 class SamplingGraphs:

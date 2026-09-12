@@ -38,14 +38,26 @@ STEP_RECORD = struct.Struct("<QdBIIi")     # count, wall, kind, n_seqs, tokens, 
 KIND = {sched.PREFILL: 1, sched.DECODE: 2}
 
 
+class Pending(Protocol):
+    """A decode step launched ahead of its result (45차 §23 B3): `resolve` waits for the device, applies the tokens to the
+    model's host view and says which sequences finished. Rows the runner finished meanwhile (from an earlier step's
+    result) are reported again and ignored: the model's device side made their extra step inert."""
+    def resolve(self) -> "list[bool]": ...
+
+
 class Model(Protocol):
     def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int) -> "bool | None": ...  # finished on the prompt's first sample?
     def decode(self, seqs, blocks, slots) -> "list[bool]": ...   # per seq: finished?
+    # optional: asynchronous decode -- `async_ready(seqs)` says whether these rows can run ahead of the host
+    # (captured graphs, plain sampling); `decode_async` launches and returns a Pending. `horizon` must then cover
+    # the growth of every step in flight for the row, since reservations precede results.
     def horizon(self, seq: int) -> int: ...  # exclusive end of the next decode writes
     def context(self, seq: int) -> int: ...  # tokens computed so far (a new turn prefills from here)
     def open(self, seq: int, slot: int) -> None: ...
     def close(self, seq: int) -> None: ...           # must also clean up a partially failed open
-    # with a prefix cache (base/prefix.py): the position state at a chunk boundary, out and back in
+    # with a prefix cache (base/prefix.py): the position state at a block boundary, out and back in. The boundary at a
+    # prefill step's end is copied out of the rings afterwards (`checkpoint`); boundaries INSIDE a step are named before
+    # it (`prefill(..., marks={position: snapshot})`) and taken while the step runs, since the rings only hold its end.
     def checkpoint(self, seq: int, position: int, snap: int) -> None: ...   # copy seq's state at `position` into snapshot `snap`
     def restore(self, seq: int, position: int, snap: int) -> None: ...      # seq starts at `position` with that state
     # -- parking (only with a tier) --
@@ -64,8 +76,8 @@ class Runner:
         self.keep_idle = keep_idle                          # a finished turn keeps its blocks and slot: the conversation lives (D16)
         self.prefix = prefix                                # base/prefix.py, or None: no reuse across requests
         if prefix is not None:
-            if prefix.block_size != kv.block_size or prefix.chunk % contract.chunk_align:
-                raise ValueError("the prefix cache must share the pool's block size and align with the contract's chunks")
+            if prefix.block_size != kv.block_size or prefix.chunk % contract.chunk_align or contract.chunk_align % prefix.block_size:
+                raise ValueError("the prefix cache must share the pool's block size, which must divide the contract's chunk alignment")
             prefix.bind(kv)
         self._chain = {}                                    # seq -> boundary tokens -> hash (live prompts with a cache)
         self.idle = {}                                      # seq -> True: finished, not released, parkable
@@ -76,13 +88,17 @@ class Runner:
         self.slot_of = {}
         self.rec = recorder or Recorder("runner")
         self.steps = 0
+        self.inflight = []                                  # [(step, pending, launched_at)]: decode steps ahead of their results
+        self.depth = 2                                      # steps the device may hold before the host reads the oldest back
+        self.async_steps = 0
 
-    def submit(self, seq: int, prompt_len: int, now: float | None = None, ids=None) -> None:
+    def submit(self, seq: int, prompt_len: int, now: float | None = None, ids=None, salts=()) -> None:
         """Publish a request only after its blocks, slot and model state exist.
 
         Admission failures return everything acquired here; an existing live
         or parked sequence is never released by a failed duplicate submit.
-        `ids`: the prompt, when a prefix cache may reuse its beginning.
+        `ids`: the prompt, when a prefix cache may reuse its beginning; `salts`:
+        (position, digest) of the media standing at placeholder ids (base/prefix.chain).
         """
         now = time.monotonic() if now is None else now
         sched.validate_arrival(self.state, seq, prompt_len, now)
@@ -93,8 +109,8 @@ class Runner:
         if self.prefix is not None and ids is not None:
             if len(ids) != prompt_len:
                 raise ValueError("the prompt ids must be the prompt")
-            reused, entry, _ = self.prefix.lookup(ids)
-            chain = self.prefix.chain(ids)
+            reused, entry, _ = self.prefix.lookup(ids, salts)
+            chain = self.prefix.chain(ids, salts)
         if reused:
             self.kv.adopt(seq, entry.blocks, reused)       # the shared, complete prefix; the row's own blocks follow
         try:
@@ -142,6 +158,7 @@ class Runner:
         Parked conversations are not rows: see `forget_parked`."""
         if seq not in self.slot_of:
             return
+        self.drain()                                         # its steps ahead must land before the row's state goes
         self._settle_row(seq)
         if seq not in self.slot_of:                          # its park finished: the row is free already
             return
@@ -261,9 +278,36 @@ class Runner:
             pass
 
     def settle(self) -> None:
-        """Every transfer in flight, finished (shutdown/abort path: this waits)."""
+        """Every transfer and step in flight, finished (shutdown/abort path: this waits)."""
+        try:
+            self.drain()
+        except Exception:                                    # noqa: BLE001 -- shutdown: the engine's failure is reported elsewhere
+            self.inflight.clear()
         for seq in list(self.retiring) + list(self.resuming):
             self._settle_row(seq)
+
+    # -- steps ahead of their results (45차 §23 B3) ------------------------------------------------
+    def resolve_oldest(self) -> None:
+        """Read the oldest launched decode step back and apply it: finished rows leave; rows that already left
+        (finished by the step before, then run once more as ghosts) are ignored."""
+        step, pending, launched = self.inflight.pop(0)
+        done = pending.resolve()
+        if len(done) != len(step.seqs):
+            raise ValueError("decode must return one completion flag per sequence")
+        for seq, finished in zip(step.seqs, done):
+            if finished and seq in self.state.running:
+                self._finish(seq)
+        self.ring.push(STEP_RECORD.pack(self.steps, time.perf_counter() - launched, KIND[step.kind],
+                                        len(step.seqs), step.tokens, step.seqs[0]))
+
+    def drain(self) -> None:
+        while self.inflight:
+            self.resolve_oldest()
+
+    def _async_ok(self, step) -> bool:
+        ready = getattr(self.model, "async_ready", None)
+        return (step.kind == sched.DECODE and ready is not None and hasattr(self.model, "decode_async")
+                and bool(ready(step.seqs)))
 
     def is_parked(self, key: int) -> bool:
         return self.tiered is not None and (key in self.parked or self.tiered.is_parked(key))
@@ -323,7 +367,7 @@ class Runner:
         self.state.computed[seq] = held
 
     def _checkpoint(self, seq: int, position: int) -> None:
-        """A prefill just reached `position`: if it is a chunk boundary nobody cached yet, keep the
+        """A prefill just reached `position`: if it is a block boundary nobody cached yet, keep the
         model's state there and pin the blocks before it."""
         h = self._chain[seq].get(position)
         if h is None or self.prefix.has(h):
@@ -336,22 +380,80 @@ class Runner:
         except BaseException:
             self.prefix.give_snapshot(snap)
             raise
+        self._insert(seq, position, h, snap)
+
+    def _insert(self, seq: int, position: int, h: bytes, snap: int) -> None:
         blocks = tuple(self.kv.row(seq)[: position // self.kv.block_size])
         self.prefix.insert(h, blocks, position, snap)
 
+    def _marks(self, seq: int, start: int, end: int) -> dict:
+        """{position: snapshot} for the uncached block boundaries strictly inside a prefill step [start, end): the
+        rings will not hold those states after the step, so the model takes them on the way (45차 §23: block-level
+        reuse -- a 5,000-token prompt shares its first 4,608 tokens, not nothing)."""
+        marks = {}
+        if seq not in self._chain:
+            return marks
+        chain = self._chain[seq]
+        for position in range(start + self.kv.block_size - start % self.kv.block_size, end, self.kv.block_size):
+            h = chain.get(position)
+            if h is None or self.prefix.has(h):
+                continue
+            snap = self.prefix.take_snapshot()
+            if snap is None:
+                break
+            marks[position] = snap
+        return marks
+
     def step(self, now: float | None = None) -> "sched.Step | None":
         now = time.monotonic() if now is None else now
-        step = sched.plan(self.state, self.c, now)
-        if step is None:
-            return None
+        while True:
+            if len(self.inflight) >= self.depth:
+                self.resolve_oldest()
+            step = sched.plan(self.state, self.c, now)
+            if step is None:
+                if self.inflight:
+                    self.resolve_oldest()
+                    continue
+                return None
+            if self._async_ok(step):
+                return self._launch(step)
+            if self.inflight:                                # a prefill or a synchronous decode needs every step ahead landed
+                self.resolve_oldest()
+                continue
+            return self._run(step)
+
+    def _launch(self, step) -> "sched.Step":
+        """A decode step the device runs while the host goes on: its result is read back at `resolve_oldest`."""
+        with self.rec.phase(step.kind, aggregate=True):
+            self.kv.reserve_to(step.seqs, [self.model.horizon(s) for s in step.seqs])
+            pending = self.model.decode_async(step.seqs, [self.kv.row(s) for s in step.seqs],
+                                              [self.slot_of[s] for s in step.seqs])
+            sched.advance(self.state, step)
+        self.steps += 1
+        self.async_steps += 1
+        self.inflight.append((step, pending, time.perf_counter()))
+        self.rec.count(f"{step.kind}_steps")
+        self.rec.count(f"{step.kind}_tokens", step.tokens)
+        return step
+
+    def _run(self, step) -> "sched.Step":
         t0 = time.perf_counter()
         with self.rec.phase(step.kind, aggregate=True):
             if step.kind == sched.PREFILL:
                 (seq,) = step.seqs
                 start = self.state.computed[seq]
-                finished = self.model.prefill(seq, start, step.tokens, self.kv.row(seq), self.slot_of[seq])
+                marks = self._marks(seq, start, start + step.tokens)
+                try:
+                    finished = self.model.prefill(seq, start, step.tokens, self.kv.row(seq), self.slot_of[seq],
+                                                  **({"marks": marks} if marks else {}))
+                except BaseException:
+                    for snap in marks.values():
+                        self.prefix.give_snapshot(snap)
+                    raise
                 if finished and start + step.tokens != self.state.prompt_len[seq]:
                     raise ValueError("prefill may finish only at the end of the prompt")
+                for position, snap in marks.items():
+                    self._insert(seq, position, self._chain[seq][position], snap)
                 if seq in self._chain:
                     self._checkpoint(seq, start + step.tokens)
             else:

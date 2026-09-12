@@ -29,18 +29,68 @@ caller that depends on the separation can assert it instead of assuming it.
 """
 from __future__ import annotations
 
+import contextlib
+import gc
+
 import torch
 
 
+@contextlib.contextmanager
+def frozen_gc():
+    """No Python garbage collection while a graph is recording.
+
+    This is a correctness guard before it is a speed one. A Triton kernel object
+    finalized during capture unloads its CUDA module, and the graph that recorded
+    a call into that module is then invalid -- it does not fail at capture, it
+    fails later, on a replay, which is the worst place to find out. vLLM guards
+    the same way and says the same reason in its own capture path.
+
+    Freezing first moves everything already alive out of the collector's reach, so
+    the collection that runs when the guard is released has little to walk.
+
+    Nesting is a no-op: the outermost guard owns the collector, and the captures
+    inside it must not re-enable collection when they finish.
+    """
+    if not gc.isenabled():
+        yield                               # an outer guard already owns it
+        return
+    gc.collect()
+    gc.freeze()
+    gc.disable()
+    try:
+        yield
+    finally:
+        gc.unfreeze()
+        gc.enable()
+
+
 class DecodeGraphs:
-    def __init__(self, step_fn, make_inputs, shapes: "list[tuple[int, ...]]", warmup: int = 2, generators=(),
-                 memory=None, label="decode", resources=None):
+    def __init__(self, step_fn, make_inputs, shapes: "list[tuple[int, ...]]", warmup=1, generators=(),
+                 memory=None, label="decode", resources=None, detail=False):
         """step_fn(inputs) runs one decode step over static `inputs`;
         make_inputs(num_seqs, tokens_per_seq) allocates them once per shape.
+
+        `warmup` is how many passes run on the side stream before a shape is
+        captured, either a count or a function of the shape. One is the default,
+        and it is what the pass has to do: compile whatever this shape selects and
+        leave the allocator in the state the capture will record. It used to be two,
+        on the theory that a second pass settled the allocator -- but the allocator
+        is no longer emptied before each capture (below), so it arrives settled from
+        the shape before. vLLM warms each of its shapes once for the same reason.
+        Warmup was 18.3 s of a measured boot's 28 s of graph work (boot-time study),
+        so a caller who needs more should declare it rather than inherit it.
 
         resources() returns owners of external kernel workspaces used by the
         capture. CUDA records their addresses, not Python references. Keep each
         generation alive before the next shape's warmup can replace it.
+
+        `memory` gets ONE row per shape, because a row is not free: each one
+        synchronizes the device and then all-reduces a qualification flag across
+        every TP rank, so it is a fleet-wide barrier whose price is the slowest
+        node's skew. A measured boot paid 21.9 ms per row, and three rows over
+        51 shapes came to 3.4 s -- 12% of that boot's graph work (boot-time study
+        5-h). `detail=True` restores the before/warmup/captured split for
+        diagnosis; it is what priced the warmup policy, and it costs 2.2 s.
         """
         self.graphs, self.inputs, self.outputs = {}, {}, {}
         self.resources = {}
@@ -48,40 +98,64 @@ class DecodeGraphs:
         # every other instance's: see the module docstring's second rule.
         self.pool = pool = torch.cuda.graph_pool_handle()
         side = torch.cuda.Stream()
-        try:
-            for shape in shapes:
-                if memory is not None:
-                    memory.checkpoint(f"{label}/{shape}/before")
-                inp = make_inputs(*shape)
-                side.wait_stream(torch.cuda.current_stream())
-                with torch.cuda.stream(side):
-                    for _ in range(warmup):
-                        step_fn(inp)
-                torch.cuda.current_stream().wait_stream(side)
-                if memory is not None:
-                    memory.checkpoint(f"{label}/{shape}/warmup")
-                g = torch.cuda.CUDAGraph()
-                for generator in generators:
-                    g.register_generator_state(generator)
-                # Published only once the capture has completed: a graph whose capture
-                # raised is reset here, by the one reference that exists, and never
-                # reaches close() -- which would be resetting an uncaptured graph.
-                try:
-                    with torch.cuda.graph(g, pool=pool):
-                        out = step_fn(inp)
-                    if resources is not None:
-                        for owner in resources():
-                            self.resources[id(owner)] = owner
-                except BaseException:
-                    g.reset()
-                    raise
-                self.graphs[shape], self.inputs[shape], self.outputs[shape] = g, inp, out
-                if memory is not None:
-                    memory.checkpoint(f"{label}/{shape}/captured")
-            torch.cuda.synchronize()
-        except BaseException:
-            self.close()
-            raise
+        recording = torch.cuda.Stream()
+        # torch.cuda.graph() empties the caching allocator before EVERY capture, to
+        # give the pool room. Per shape that throws away exactly what this shape's
+        # own warmup just allocated, and on unified memory a released page has to be
+        # mapped again before the next shape can touch it -- so the loop pays an
+        # unmap and a remap per shape for blocks the next shape wants anyway. The
+        # shapes here allocate alike (a rung's cost is flat from 4,096 to 1,048,576),
+        # so one flush for the instance leaves the blocks where the next warmup can
+        # reuse them. The ledger row after each shape still holds the byte ceiling,
+        # so if reserved climbs instead of plateauing the boot says so and fails.
+        torch.cuda.empty_cache()
+        def mark(shape, name=None):
+            if memory is not None:
+                memory.checkpoint(f"{label}/{shape}/{name}" if name else f"{label}/{shape}")
+        with frozen_gc():
+            try:
+                for shape in shapes:
+                    if detail:
+                        mark(shape, "before")
+                    inp = make_inputs(*shape)
+                    passes = warmup(shape) if callable(warmup) else warmup
+                    if not isinstance(passes, int) or passes < 1:
+                        raise ValueError(f"{label}: {shape} needs at least one warmup pass, got {passes!r}")
+                    side.wait_stream(torch.cuda.current_stream())
+                    with torch.cuda.stream(side):
+                        for _ in range(passes):
+                            step_fn(inp)
+                    torch.cuda.current_stream().wait_stream(side)
+                    if detail:
+                        mark(shape, "warmup")
+                    g = torch.cuda.CUDAGraph()
+                    for generator in generators:
+                        g.register_generator_state(generator)
+                    # Published only once the capture has completed: a graph whose capture
+                    # raised is reset here, by the one reference that exists, and never
+                    # reaches close() -- which would be resetting an uncaptured graph.
+                    try:
+                        # torch.cuda.graph() is this plus a flush of the caching allocator,
+                        # which is the one thing this loop must not do per shape (above).
+                        torch.cuda.synchronize()
+                        with torch.cuda.stream(recording):
+                            g.capture_begin(pool, capture_error_mode="global")
+                            try:
+                                out = step_fn(inp)
+                            finally:
+                                g.capture_end()
+                        if resources is not None:
+                            for owner in resources():
+                                self.resources[id(owner)] = owner
+                    except BaseException:
+                        g.reset()
+                        raise
+                    self.graphs[shape], self.inputs[shape], self.outputs[shape] = g, inp, out
+                    mark(shape, "captured" if detail else None)
+                torch.cuda.synchronize()
+            except BaseException:
+                self.close()
+                raise
 
     def run(self, shape: "tuple[int, ...]", fill):
         """fill(inputs) copies this step's data into the static buffers; then replay."""

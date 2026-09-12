@@ -34,7 +34,7 @@ def main():
     try:
         comm.prepare_oneshot()
         F,net,caches,engine,runner=build(comm,None,served(moe_static='t,r,sf6,q0',consume_scales=True),
-            args.ranks,8.73,4,True,Recorder('finite-prefill'),execution='parity',
+            args.ranks,8.73,4,True,Recorder('finite-prefill'),execution='native',
             ckpt_meta=args.ckpt_meta,drafter_dir=args.drafter_dir)
         if args.requests:
             replay_requests(args, comm, net, caches, engine, runner)

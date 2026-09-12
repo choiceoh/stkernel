@@ -1,0 +1,221 @@
+{
+  "passed": true,
+  "rank": 0,
+  "real_weight_bytes": 70492480,
+  "weights": {
+    "L0.kda.in_proj": {
+      "sha256": "b4643fc6d73d1d6270cf50c778326a55e07fb769803513cd887e3cc6ccdacbe0",
+      "bytes": 52559872
+    },
+    "L0.kda.f_b": {
+      "sha256": "0f5faaadb93f74b5516e53beee8428c3a240ef896aca7615ded2d189b37e90ee",
+      "bytes": 524288
+    },
+    "L0.kda.g_b": {
+      "sha256": "06eddbce2bc038d2eaa984bbbfbe80bd1f12fe9277e97f3c61234a6af4c0335d",
+      "bytes": 524288
+    },
+    "L0.kda.conv": {
+      "sha256": "464ec25a38f012636d84f9871049ae0fa67d88adf59e8110c552c3e5c5c48dd2",
+      "bytes": 98304
+    },
+    "L0.kda.A_log": {
+      "sha256": "253580a9211bceafa0e54f1f18922fbc7f869a84b1c31cb39fda4ed36c8903a1",
+      "bytes": 64
+    },
+    "L0.kda.dt_bias": {
+      "sha256": "5967fa07fcb3190309ce3ccf6663375395227c2d7951d16cb22352536eb1a7ad",
+      "bytes": 8192
+    },
+    "L0.kda.o_norm": {
+      "sha256": "5827105a7348f193adb1a267f88f5451488b97a34fe9663e350c1f2585c9ded0",
+      "bytes": 256
+    },
+    "L0.kda.o_proj": {
+      "sha256": "6dcdccf3cb3d42bf8c5084fc65a2ef989f7aea2792ce9e6d88d33fc74d93355e",
+      "bytes": 16777216
+    }
+  },
+  "baseline_net_sha256": null,
+  "baseline_lanes_sha256": null,
+  "baseline_strides_sha256": {
+    "kda.py": "0adac7cefaeaa249cb3bb1c3b4342719976305dd20e93248fe475daa694f29a8",
+    "fused_recurrent.py": "04ef53a25293f2672f7ab715419bd9503a66aecb25e6573a052f0566a6c486be"
+  },
+  "config_sha256": "29c9f4171196910e99b9c069d6b76c56e3cdcd0f436dc1bacbc9513c9a7529ac",
+  "synthetic_activations": true,
+  "collectives": false,
+  "graph_eager_bytes_exact": true,
+  "checks": [
+    {
+      "case": "prefill",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "verify",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "reject_four",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "decode",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx0_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx1_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx7_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx8_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx4095_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t1_ctx4096_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx0_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx1_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx7_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx8_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx4095_slot2",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    },
+    {
+      "case": "graph_t6_ctx4096_slot1",
+      "output_relative_max": 0.0,
+      "ring_relative_max": 0.0,
+      "output_and_state_bits_exact": true
+    }
+  ],
+  "measurements": [
+    {
+      "tokens": 1,
+      "context": 4096,
+      "samples_us": [
+        [
+          411.3920032978058,
+          413.08799386024475,
+          414.5599901676178,
+          410.43201088905334,
+          421.31200432777405,
+          416.48000478744507,
+          420.1599955558777,
+          410.3359878063202,
+          412.416011095047,
+          412.54401206970215,
+          415.6799912452698
+        ],
+        [
+          412.447988986969,
+          413.4080111980438,
+          414.4960045814514,
+          409.9520146846771,
+          449.44000244140625,
+          799.7120022773743,
+          411.52000427246094,
+          412.4799966812134,
+          418.5279905796051,
+          408.4160029888153,
+          413.37600350379944
+        ]
+      ],
+      "median_us": [
+        413.08799386024475,
+        413.37600350379944
+      ]
+    },
+    {
+      "tokens": 6,
+      "context": 4096,
+      "samples_us": [
+        [
+          416.51201248168945,
+          421.60001397132874,
+          421.7279851436615,
+          418.5599982738495,
+          415.4239892959595,
+          419.5519983768463,
+          412.6720130443573,
+          414.36800360679626,
+          417.05599427223206,
+          416.48000478744507,
+          416.51201248168945
+        ],
+        [
+          409.66400504112244,
+          413.4399890899658,
+          415.45599699020386,
+          414.65601325035095,
+          421.4720129966736,
+          414.68799114227295,
+          417.1839952468872,
+          416.4159893989563,
+          414.68799114227295,
+          413.1520092487335,
+          418.17599534988403
+        ]
+      ],
+      "median_us": [
+        416.51201248168945,
+        414.68799114227295
+      ]
+    }
+  ]
+}

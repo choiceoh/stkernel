@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from engine.base.runtime_memory import RuntimeMemory
 
@@ -61,6 +62,46 @@ class RuntimeMemoryTests(unittest.TestCase):
         with self.assertRaisesRegex(MemoryError, "OS memory reserve"):
             memory.checkpoint("external CUDA allocation")
         memory.close()
+
+    def test_reclaim_covers_remaining_workspace_without_relaxing_either_limit(self):
+        free = [800]
+        calls = []
+        cuda = Cuda()
+        def reclaim(need, headroom):
+            calls.append((need, headroom))
+            free[0] = need
+            return need
+        memory = RuntimeMemory(400, 200, 100, cuda=cuda, host_free=lambda: free[0], reclaim=reclaim)
+        cuda.reserved = cuda.peak_reserved = 510
+        free[0] = 99
+        row = memory.checkpoint('cache refilled during preparation')
+        self.assertEqual(calls, [(200, 300)])
+        self.assertEqual(row['reclaimed_bytes'], 200)
+        self.assertTrue(row['passed'])
+        cuda.peak_reserved = 611
+        with self.assertRaisesRegex(MemoryError, 'byte ceiling'):
+            memory.checkpoint('workspace overflow')
+        memory.close()
+
+    def test_reclaim_failure_still_refuses_readiness(self):
+        free = [800]
+        memory = RuntimeMemory(400, 200, 100, cuda=Cuda(), host_free=lambda: free[0],
+                               reclaim=lambda *_: 0)
+        free[0] = 99
+        with self.assertRaisesRegex(MemoryError, 'OS memory reserve'):
+            memory.checkpoint('unreclaimable allocation')
+        memory.close()
+
+    def test_reclaim_faults_the_free_extent_and_preserves_available_headroom(self):
+        from engine.base.runtime_memory import reclaim_preparation_pages
+        with patch('engine.base.arena._meminfo', return_value={'MemFree': 50, 'MemAvailable': 700}), \
+             patch('engine.base.arena.touch_pages', return_value=200) as touch:
+            self.assertEqual(reclaim_preparation_pages(200, 300), 200)
+            touch.assert_called_once_with(200)
+        with patch('engine.base.arena._meminfo', return_value={'MemFree': 50, 'MemAvailable': 499}), \
+             patch('engine.base.arena.touch_pages') as touch:
+            self.assertEqual(reclaim_preparation_pages(200, 300), 0)
+            touch.assert_not_called()
 
     def test_invalid_admission_does_not_change_allocator_configuration(self):
         for free, previous, backend in [(600, .9, "native"), (800, .5, "native"), (800, .9, "cudaMallocAsync")]:

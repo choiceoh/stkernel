@@ -1,5 +1,5 @@
 """A captured raw workspace address must outlive eager cache replacement."""
-from contextlib import contextmanager, nullcontext
+from contextlib import nullcontext
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -14,9 +14,16 @@ class Workspace:
 
 
 class Capture:
-    def __init__(self):
+    def __init__(self, owner):
+        self.owner = owner
         self.address = None
         self.reset_done = False
+
+    def capture_begin(self, pool, capture_error_mode="global"):
+        self.owner.current = self
+
+    def capture_end(self):
+        self.owner.current = None
 
     def replay(self):
         assert self.address() is not None, 'captured workspace was freed'
@@ -36,20 +43,12 @@ class GraphResourceTests(unittest.TestCase):
         self.cuda = SimpleNamespace(
             graph_pool_handle=object, Stream=lambda: stream, current_stream=lambda: stream,
             stream=lambda _: nullcontext(), synchronize=lambda: None,
-            CUDAGraph=self.new_capture, graph=self.capture)
+            empty_cache=lambda: None, CUDAGraph=self.new_capture)
 
     def new_capture(self):
-        graph = Capture()
+        graph = Capture(self)
         self.captures.append(graph)
         return graph
-
-    @contextmanager
-    def capture(self, graph, **kwargs):
-        self.current = graph
-        try:
-            yield
-        finally:
-            self.current = None
 
     def step(self, rows):
         if not self.cache or self.cache['moe'].rows < rows:
@@ -90,15 +89,20 @@ class GraphResourceTests(unittest.TestCase):
             self.assertIsNone(self.refs[0]())
 
     def test_failed_capture_resets_before_releasing_previous_owners(self):
-        class FailingMemory:
-            def checkpoint(_, phase):
-                if phase == 'decode/(24,)/captured':
-                    raise MemoryError('test budget')
-        with patch('engine.base.graphs.torch.cuda', self.cuda):
-            with self.assertRaisesRegex(MemoryError, 'test budget'):
-                self.build(memory=FailingMemory())
-            self.assertTrue(all(g.reset_done for g in self.captures))
-            self.assertTrue(all(ref() is None for ref in self.refs[:-1]))
+        # The ledger row after a shape's capture is where the byte ceiling is enforced,
+        # under either row policy: one row per shape, or the detailed split.
+        for detail, row in ((False, 'decode/(24,)'), (True, 'decode/(24,)/captured')):
+            with self.subTest(detail=detail):
+                self.setUp()
+                class FailingMemory:
+                    def checkpoint(_, phase):
+                        if phase == row:
+                            raise MemoryError('test budget')
+                with patch('engine.base.graphs.torch.cuda', self.cuda):
+                    with self.assertRaisesRegex(MemoryError, 'test budget'):
+                        self.build(memory=FailingMemory(), detail=detail)
+                    self.assertTrue(all(g.reset_done for g in self.captures))
+                    self.assertTrue(all(ref() is None for ref in self.refs[:-1]))
 
 
 if __name__ == '__main__':

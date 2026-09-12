@@ -1,0 +1,27 @@
+{
+  "date": "2026-09-12",
+  "host": "srv4",
+  "base_commit": "bc61f243",
+  "gpu": "NVIDIA GB10",
+  "architecture": "sm_121a",
+  "image": "st-engine:9391",
+  "image_id": "sha256:fa1183e3dd660f09f42ee72918948d53466a96789babc58d6a4bd3a21147a9a7",
+  "cuda": "13.0.88",
+  "cutlass": "4.5.0",
+  "torch": "2.13.0+cu130",
+  "nvdisasm": "13.0.85",
+  "compile_memory_limit_GiB": 16,
+  "compile_cpus": 2,
+  "shared_gpu": true,
+  "library_sha256": "c46f4c4692f8a755ee74627668f85cdfcae38a9f1b65a4553e3ac7bfeda8ff96",
+  "cubin_sha256": "40cafad2592a8a93771d122b0d7a14c9b35f9a6336993c5867e3462552d34e17",
+  "source_sha256": {
+    "probes/engine_sparse_nvfp4.cu": "54d22127bc9f7aab6abd61267c904aab55a254e4a6799fa327f83341b8f5922b",
+    "probes/engine_sparse_nvfp4.py": "a9720d13ad0727b3537f335ecbef526a4316a1e39472c7631651f3432b5c9ba9",
+    "probes/engine_sparse_nvfp4_prune.py": "2005794c6e084ee09f81ab3feeec5a29bed52b8f596f7a93ef7f8551119f2b6b",
+    "tests/test_engine_sparse_nvfp4.py": "95fff5b71374347ccefc7b43e6d9c9ebe1d67cda04a2e2b4d54cd5973941e7d9",
+    "engine/modules/nvfp4_sf.py": "50052c0a3e808bb20d419e6de19780b6e7e8eb202eb2e4ad73128b4332752673"
+  },
+  "source_code_changes": "diagnostic probes/tests only; no serving kernel or checkpoint modification",
+  "download_started_after_benchmarks": true
+}

@@ -9,6 +9,29 @@ if importlib.util.find_spec("torch"):
 
 @unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA")
 class DraftAttentionTests(unittest.TestCase):
+    def test_captured_device_count_writes_only_the_accepted_prefix(self):
+        from engine.kernels.draft_attention import write_draft_kv
+        storage=torch.randn(3,5*2*127*8*128+512,device='cuda',dtype=torch.bfloat16)
+        field=storage[:,:-512].view(3,5,2,127,8,128)
+        slot=torch.tensor([1],device='cuda',dtype=torch.int64)
+        positions=torch.arange(125,131,device='cuda',dtype=torch.int64)
+        valid=torch.zeros((),device='cuda',dtype=torch.int64)
+        k=torch.randn(6,2,128,device='cuda',dtype=torch.bfloat16)
+        v=torch.randn_like(k)
+        def call():write_draft_kv(field,slot,4,positions,k,v,valid=valid)
+        call()
+        graph=torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):call()
+        try:
+            for target,count in ((1,0),(2,1),(1,3),(2,6)):
+                storage.normal_();saved=storage.clone();slot.fill_(target);valid.fill_(count)
+                graph.replay()
+                expected=saved[:,:-512].view_as(field)
+                expected[target,4,0,positions[:count]%127,:2]=k[:count]
+                expected[target,4,1,positions[:count]%127,:2]=v[:count]
+                self.assertTrue(torch.equal(storage,saved))
+        finally:graph.reset()
+
     def test_direct_arena_slot_changes_and_tp_head_writes(self):
         from engine.kernels.draft_attention import draft_attention, write_draft_kv
         # Real arena slots contain other state fields after the draft ring.

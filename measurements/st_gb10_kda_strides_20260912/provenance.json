@@ -1,0 +1,21 @@
+{
+  "date_kst": "2026-09-12",
+  "baseline_commit": "e9702f7b1b773fd73ed28f21d1ffb13d45684cf1",
+  "integrated_main": "f5de3168",
+  "engine_commit": "d9f91017436557a80c41770c98f481a5e6b50529",
+  "host": "srv4",
+  "engine_files": 137,
+  "mounted_source_verified": true,
+  "suite_passed": 276,
+  "suite_skipped": 0,
+  "timing_rounds": 12,
+  "samples_per_order": 6,
+  "source_sha256": {
+    "engine/kernels/SOURCES.json": "fbd7e5f62252c686f2f880d1fc191cbe677e9db5f53b4c947eca009e0bb35a1b",
+    "probes/engine_kda_strides_perf.py": "6de6b09f1f90d4e9fb161b31b1f7634c3264acd06f75c04b141050f462d894c1",
+    "probes/engine_kda_state_real.py": "682ddc94a6cb9b7319e151d75d80a1c1fbd994c3ebf25393f0015c3fd6c00e4f",
+    "tests/test_engine_kda_strides.py": "71ce943f7890849d4329eaec1336ee7861684b102b65281b0586a8b6f21723e5",
+    "tests/test_engine_execution.py": "53cf2a1a9e65ed75b1f2c0030759632ea9aef279287ab2203a8900a7d36b0b57",
+    "tests/test_engine_kernels.py": "f3d0560112dd9602c987d409653ed97b1a75e30d2cb1ca729ff41b8e32f4df5e"
+  }
+}

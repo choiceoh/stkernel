@@ -9356,4 +9356,75 @@ drafter 2.8 s, **capture decode 238.9 s**(콜드; 두 번째부터 63.7 s), 총 
 **부수 수정**: 런처·슈퍼바이저의 자기 ssh(헤드 srv2 는 자기 키를 거부 → 로컬 셸), `facts.RANKS`·런처 기본값을 실재하는 표식본으로, `STK_*` 노브 컨테이너 전달, `qualify_eager_decode(warmup=)`.
 **뿌리 2 의 답(06:28, main #567 병합 뒤 재부팅)**: codex 가 원인을 찾았다 — 캡처 워밍업·첫 프리필이 MoE 워크스페이스 캐시를 키우며 **그래프에 기록된 작은 할당을 해제**해 replay 가 해제된 주소를 읽었다; #567 이 소유자를 그래프 수명 동안 붙든다. 이 브랜치 + #567 로 그래프 부팅(capture 92.9 s): `The capital of France is` → ` Paris. In French, …`, 3토큰·7토큰 첫 토큰 정상, **256 토큰 스트림 29.7 tok/s(TTFT 4.78 s, 수용 173/525)** — 이거 10.7 tok/s 의 2.8배, 프로덕션 C=1(16.6 step/s × ~2.2) 의 ~80%. 표본 하나, 띠 아님(D14).
 **그래프 경로 첫 onepass(ST-GRAPH-45, 06:31, 123 s)**: 2K 2/3 · 32K 0/3 · 128K 0/3 = **2/9**, 한국어 깨진 응답 1/5, 디코드 창 없음 — 그런데 표의 프롬프트 토큰이 세 문맥 모두 **2048**, 32K 프리필이 1.18 s. 원인: `tokenizer.json` 이 `truncation {max_length 2048, direction Right}` 를 싣고 있고 문의 `tokenizers.Tokenizer.from_file` 이 그 규칙을 그대로 적용해 **모든 프롬프트를 앞 2048 토큰으로 자른다**(질문이 끝에 있으니 채움글 얘기만: 32K 답이 사원수·해밀턴). transformers 의 AutoTokenizer(vLLM 의 토크나이즈 경로)는 이 설정을 무시한다. 직접 확인: 2,684자·10,583자·30,085자 프롬프트 모두 `prompt_tokens` 2048, 끝에 심은 코드 못 찾음. 조치: `boot.tokenizer()` 가 `no_truncation()`·`no_padding()`; `tests/test_engine_tokenizer.py`.
-**남은 것**: (1) 잘림 수정 뒤 그래프 경로 onepass 로 띠 세우기; (2) 이거 디코드 10.7 tok/s 는 프로덕션(16.6 step/s × ~2.2)의 1/7 — 그래프가 돌아야 전환 논의 가능; (3) onepass 품질 게이트(9/9·한국어) 미측정; (4) KV·max_seqs 결정(미할당 34 GiB).
+**잘림 수정 뒤(06:37 부팅, 그래프 경로)**: 바늘 찾기 2,684자/10,583자/30,085자 → prompt_tokens 2,220/8,545/24,251, 코드 셋 다 정답(BLUE-7742·RED-3319·GREEN-5561; 1·1.2·3 청크). **onepass ST-GRAPH-45b(173 s): 9/9 정답 · 한국어 깨짐 0/5 · 프리필 2K 2,028 tok/s(웜, TTFT 1.05 s) · 32K 2,117 tok/s(TTFT 15.4 s) · 128K 1,990 tok/s(TTFT 64.6 s)**; 디코드 창은 안 잡힘(이 워크로드의 답이 짧아 2 s 창 없음 — 고정 길이 다리 `--fixed-decode-tokens` 로 따로). 프로덕션 기준선(23K 2,696 tok/s·TTFT 8.55 s)의 프리필 ~79%. 한 부팅 한 표본 — 띠가 아니다(D14).
+**디코드(고정 길이 다리, ST-GRAPH-45c, 297 s, 같은 부팅)**: `--fixed-decode-tokens 2048 --fixed-decode-reps 3` → C=1 **32.8 / 32.3 / 35.4 tok/s**(2048/2048 토큰씩), 품질 18/18, 한국어 0/8. 프로덕션 C=1 기준선 16.6 step/s × raw acc 18~25%(≈2.0~2.2 tok/step) ≈ 33~36 tok/s 와 같은 급. onepass 의 디코드 창(step/s)은 ST 문에 `vllm:iteration_tokens_total_count` 가 없어 0개였다("INVALID: too few fixed decode windows") — 문에 그 행(= runner.steps)을 추가, 다음 부팅부터 창이 잡힌다.
+**남은 것**: (1) 부팅 반복으로 띠(프리필·디코드 창) 세우기; (2) 이거 디코드 10.7 tok/s 는 프로덕션(16.6 step/s × ~2.2)의 1/7 — 그래프가 돌아야 전환 논의 가능; (3) onepass 품질 게이트(9/9·한국어) 미측정; (4) KV·max_seqs 결정(미할당 34 GiB).
+
+**A/B 전체 구현(09:05, PR #575)**: vLLM 대비 미구현 조사(A 계약·B 엔진)를 문(`base/serve.py`)·어댑터·샘플러에 다 넣었다 — A1 샘플링 옵션(top_k/top_p/min_p/반복·빈도·존재 페널티/logit_bias/seed/stop ids/min_tokens/n≤4/best_of/echo; 옵션 있는 행만 base/sampler 의 리치 경로, 드래프터는 `propose_sampled` + 기각 샘플링으로 유지), A2 `response_format`(xgrammar, 드래프트 K=5 를 롤백으로 걷는 마스크), A3 logprobs/top_logprobs, A4 tools/tool_choice + `<tool_call>` 스트리밍(부분 태그 보류), A5 reasoning_effort/enable_thinking, A6 레거시 `/v1/completions`·`/tokenize`·`/detokenize`(엔진 방언은 `/v1/engine/completions` 로), B1 이어가기(히스토리가 진접두면 `extend`), B2 generation_config 기본값·KV 24 GiB, B4 웜업 사다리(64…4096 × 폭 1…4), B6 `vllm:iteration_tokens_total_count`. B3(비동기 스케줄링)·B5(선점) 는 보류·설계대로. CPU 스위트 305 OK; 플릿 검증은 #570 슈퍼바이저가 수동 부팅을 죽여 창 대기.
+**A7 그림(09:25, 같은 PR)**: 운영자 정정 — 프로덕션 vLLM 은 이미지 4·영상 1 을 서빙한다(PR #431); "텍스트 전용" 은 틀린 옛 요약. 프로덕션 이미지에서 `glm5next/nvidia/multimodal.py`(타워)와 `transformers_utils/processors/glm5next.py`(프로세서)를 읽어 vLLM 없이 다시 썼다(`profiles/glm53/vision.py`, 700줄): 24블록 ViT(qkv 편향, q/k RMSNorm eps 1e-5, 2-D neox rope 32/64, 클램프 SwiGLU 10) → post norm → 2×2 conv 다운샘플 → 머저(proj·LayerNorm·GELU·SwiGLU 10240) 4096폭; 프로세서는 토큰 예산 → 픽셀 예산(이미지 16~8000 토큰, 영상 16~30000 = 프로덕션의 `_MAX_VIDEO_TOKENS` 캡), 28 정렬 위로 올림·예산 초과면 이진 탐색, pad 모드(비율 유지·우하 0 패딩·축소만), bicubic antialias, CLIP 평균/표준편차를 rescale 과 융합, 시간 패치 2(정지 이미지는 같은 프레임 둘), Qwen-VL 패치 순서; 영상은 프로덕션 로더처럼 32 프레임 균등 → 전부 실렸으면 GLM 샘플러(`fps_interval` 2, 2048 프레임 상한, 짝수화) → 프레임 쌍마다 `<|begin_of_image|>` + 토큰 + `<|end_of_image|>` + "N.N seconds"; EXIF 회전 정규화·투명은 흰 바탕 합성, 178,956,970 픽셀 초과 거부. **판정**: 합성 이미지(407×613)·합성 영상(8 프레임)의 `pixel_values` 가 프로덕션 프로세서와 sha256 비트 일치, 캔버스 크기 9종·영상 5종·프레임 인덱스 7종 일치(`tests/fixtures/glm53_vision_reference.json`, 프로덕션 이미지에서 뽑음). 배관: 문이 `image_url`/`video_url` 파트를 받아(data:·http(s), 이미지 5 s·영상 30 s, 64/512 MiB 상한) 캔버스(uint8)를 만들고 자리표시자를 늘려 `media` 로 넘긴다 → 도착 브로드캐스트에 실려 네 랭크 → 어댑터가 그 위치에 닿는 첫 프리필 청크에서 타워를 돌려(`net.Step.patches` 로 임베딩 행 교체) 청크 창으로 자르고 지난 뒤 버린다; 네 랭크의 행 합을 max-reduce 로 대조(D3). 가중치는 `vision.safetensors`(347 텐서 1.05 GiB, `preshard.py --vision`, 1.4 s; RankLoader 1.0 s) — 4노드 배포 완료(체크섬 609aaf3d…), 플릿 부팅은 없으면 죽는다; 부팅이 최대 이미지(32,000 패치)·최대 영상(16쌍)을 한 번 인코딩해 SDPA 백엔드·워크스페이스를 증명한다(수학 백엔드 배제: 최대 이미지에서 32 GiB). 같은 자리표시자에 다른 그림은 다른 프롬프트: 이어가기 판정과 prefix 캐시 체인에 그림 digest 를 섞었다. 실제 가중치로 CPU 인코딩 448×448 → 256×4096 유한(rms 0.019). CPU 스위트 326 OK; **vLLM 타워와의 수치 대조와 플릿 검증은 운영자 지시로 생략**(09:30).
+**블록 단위 prefix + 비동기 스케줄링(10:20, 같은 PR; 운영자 "블록단위 프리픽스, 비동기 스케줄링 구현")**: (1) prefix 캐시의 단위를 프리필 청크 6,912 에서 풀의 블록 2,304 로(프로덕션 APC 와 같음). 청크 안 경계의 상태는 링에 남지 않으므로 러너가 스텝 전에 `marks={위치: 스냅샷}` 로 이름 붙이고 스텝이 받는다: `net._kda` 가 KDA 되풀이를 경계에서 끊어(조각마다 `kda_chunk`, 상태 이어 넘김; 경계가 청크 시작에서 64 정렬이라 커널 청크가 거기서 다시 시작 → 자르지 않은 계산과 같은 순서) 조각 끝 상태·conv 입력 3개를 `caches.mark_kda` 로 스냅샷에, 드래프터 링은 스텝 전 링 복사 + 경계 전 위치 관측(`mark_draft`); 스텝 끝 경계는 종전대로 `checkpoint`. 스냅샷 8 → 24(경계당 77 MiB, 1.8 GiB/랭크). CPU 판정: 참조 레인 tiny facts 로 자른 것과 안 자른 것의 출력·끝 상태 일치(atol 2e-2 bf16), 경계 상태 = 접두만 돌린 상태, conv 탭 = 경계 전 입력(`tests/test_engine_kda_marks.py`); 러너: 19 토큰 프롬프트가 4·8·12·16 에 경계, 13 토큰 공유 프롬프트가 12 를 재사용(전엔 8). (2) 디코드가 호스트보다 앞서 돈다(`pipeline.py`): 장치에 타깃 그래프 → 샘플러 → `commit_batch`(수용·한도·끝 토큰 클립) → 마스크 관측(`observe_masked`, 유효 개수 장치 스칼라) → 제안(`propose_from`/`propose_sampled_tensor`) → 다음 ids 를 남기고 결과만 핀 버퍼 + CUDA 이벤트로; 러너는 `inflight` 깊이 2 로 띄우고 `resolve_oldest` 로 한 스텝 늦게 적용, 프리필·동기 디코드·취소·정지 전엔 비운다(`drain`). 끝난 행은 장치가 `alive=0` 으로 슬롯을 null 로 돌려 유령 스텝이 링·꼬리에 아무것도 못 쓰고 KV 는 ctx 뒤 자리라 무해; 예약은 `horizon = ctx + 6 × (1 + 앞선 스텝 수)`. 온도/top_p 행은 장치 기각 샘플링 `speculative_pick_batch`(그리디 행은 원-핫 드래프트 분포로 같은 식), 나머지 옵션 행은 동기. 루프의 객체 브로드캐스트·투표는 gloo 제어 그룹으로(NCCL 그룹의 `broadcast_object_list` 는 스텝 커널 뒤에 줄 서고 읽기에 장치 동기화). CPU 판정: 러너 파이프라인(가짜 모델: 깊이 2, 유령 무시, 프리필/동기/취소 전 비움, 지평선), 기각 샘플러·커밋 클립 성질(같은 분포면 전부 수용, 분리 지지면 첫 기각·복구, 시드 결정성, 한도·끝 토큰), 분포 배치·readback 부기 — 스위트 354 OK. **GPU 경로(그래프 device fill·마스크 관측 그래프·이벤트 readback)와 실측은 미검증**(운영자 지시로 생략) — 첫 플릿 창의 할 일: 부팅 qualify + 원패스 디코드 창(동기 대비 스텝 간 거품 제거분).
+
+### 45차 §24 — ST 엔진 관측 메트릭: 세 질문에 답하도록 (2026-09-12, srv4, GPU 없음)
+
+운영자 "리베이스 후 st엔진 관측 메트릭 개선". 브랜치를 main(#575 까지)으로 패스트포워드한 뒤 `/metrics` 를 다시 썼다.
+**전**: 9줄, 전부 맨 카운터/게이지, HELP·TYPE 없음 — 지연 0, 용량 0, 캐시 0, 스텝 종류 0. 서빙 엔진인데 "요청이 얼마나 기다렸나 / 캐시가 얼마나 찼나 / 만든 재사용이 먹히나" 를 못 물었다.
+**후**: 벤치 방언 9줄은 이름·의미 그대로(게이트 불변, `bench/window_metrics.traffic_state` 재확인), 그 위에
+
+- **지연 히스토그램 셋**(vLLM 이름·vLLM 버킷 경계): `time_to_first_token_seconds`, `time_per_output_token_seconds`, `e2e_request_latency_seconds`.
+  **도착 시각 기준**이다(요청을 서빙한 스텝이 아니라 `submit` 의 `clock()`). 한 스텝이 토큰 여러 개를 내면(드래프터 수용 구간) 그 스텝의 경과를 토큰 수로 나눠 각각 관측 — vLLM 의 spec-decode 규약.
+  버킷은 이 엔진 범위를 가른다: 프리필 스텝 214.7 ms 는 TTFT 의 0.25 근처, 토큰 간격 46 ms 는 0.025~0.05 사이.
+- **포화도**: `vllm:gpu_cache_usage_perc`(원시 점유 — `kv.available()` 이 아니다; 그건 프리픽스 캐시가 내놓을 블록까지 세므로 별 계열로 뺐다), `st:kv_blocks_{total,used,free}`, `st:kv_rows_in_use`, `st:state_slots_{total,free}`.
+- **재사용**: `vllm:prefix_cache_{queries,hits}_total`, `st:prefix_cache_evictions_total`, `st:prefix_cache_reclaimable_blocks`.
+- **스텝 종류**(D9): `st:steps_{prefill,decode}_total` — 합이 `iteration_tokens_total_count` 와 같다(테스트가 강제).
+- **티어·실패**: `st:conversations_parked`, `st:tier_bytes_{written,read}_total`(NvmeTier 에만 있으므로 `getattr` 로 보호 — 계측이 문을 내리지 않는다), `st:requests_{cancelled,timed_out}_total`(타임아웃을 취소에서 분리).
+- 모든 계열에 **HELP·TYPE**.
+
+**구현 함정 둘(둘 다 테스트가 잡음)**: (1) 취소 경로에서 대기열 분기는 `row` 를 바인딩하지 않는데 거기에 `_token_at.pop(row)` 를 넣어 `NameError` — 문 테스트 44개가 전부 죽었다(행 아는 자리로 옮김).
+(2) `BlockPool.available` 은 메서드, `SlotPool.available` 은 프로퍼티 — 비대칭. 그리고 `available()` 은 "지금 빈 것 + 캐시가 내놓을 것"이라 점유율에 쓰면 과소평가다.
+
+**검증**(이미지 안, GPU 없음): 엔진 CPU 스위트 358 tests OK(104 skip), 새 `tests/test_engine_metrics.py` 10 tests(벤치 방언 유지·도착 기준 지연·스텝 합·원시 점유·타임아웃 분리·티어 조건부·노출 형식·히스토그램 누적/포함 경계/불량 표본/찢긴 읽기 단조성).
+한 요청 4토큰을 돌린 실측: TTFT 1회 0.05 s, 토큰 간격 3회 합 0.15 s, e2e 0.2 s, 프리필 1 + 디코드 3 = 스텝 4. **GPU·플릿 미검증**(프로덕션 서빙 중).
+
+### 45차 §25 — vLLM 이 못 내는 관측: 어느 그래프가 돌았나, 스텝이 얼마나 걸렸나, 수용은 어떤 모양인가, 무엇이 묶였나 (2026-09-12, srv4, GPU 없음)
+
+운영자 "성능에 악영향이 없을만 하면서 vllm 에서 지원 안 하지만 커널이나 서빙 개선에 도움이 될만한 메트릭". 기준 셋: **디바이스 읽기·동기화 0**, **이미 손에 있는 수로만**, **열린 결정 하나를 닫을 것**.
+
+| 계열 | 닫는 결정 | 왜 vLLM 엔 없나 |
+|---|---|---|
+| `st:decode_steps_by_sequences_total{sequences}` | 스케줄러가 실제로 채운 배치. 4행이 있는데 n=1 스텝만 쌓이면 처리량 손실이 스케줄링에 있다 | 캡처 그래프 모양을 노출하지 않는다 |
+| `st:decode_capacity_bucket_total{capacity}` | **§22 가 연 채로 둔 사다리 천장**. 262K/524K/1M 버킷이 한 주 서빙에도 0 이면 `STK_context_ceiling` 을 잘라 타깃 그래프 36→24 | 용량 버킷이라는 개념 자체가 없다 |
+| `st:step_seconds{kind}`(히스토그램) | 호스트 관측 스텝 시간. 두 종류 모두 샘플 읽기로 끝나 종단이다. CUPTI 없이 회귀를 본다(오프라인 46 ms 디코드·214.7 ms 프리필 사이를 버킷이 가른다) | 스텝 시간을 종류로 가른 히스토그램이 없다 |
+| `st:spec_accepted_per_step_total{accepted}` | `spec_k`. 0 과 k 에 몰린 분포와 완만히 꼬리 무는 분포는 같은 평균에 **다른 k** 를 부른다 — 총합만으론 구분 불가 | 총합(·일부 빌드의 위치별)만 낸다 |
+| `st:lane_info{lanes,moe_static,mla_prefill,spec_k,context_ceiling}` | **"무장 ≠ 서빙"**(§17). 어떤 커널 셀이 이 프로세스에 묶였는지를 부팅 로그가 아니라 스크레이프가 답한다 | 커널 셀이라는 축이 없다 |
+
+**생산 지점**(전부 이미 계산된 값 옆): 그래프 모양은 어댑터가 샘플러에 넘기려고 이미 구한 `shape` 에서 `(shape[0], shape[2])` 한 줄; 수용 분포는 `_commit` 이 이미 구한 `committed` 에서 한 줄;
+스텝 시간은 `once()` 의 `clock()` 한 번 추가; lane_info 는 부팅 상수. 딕셔너리는 유계다(모양 = 최대 시퀀스 × 버킷 = 4×9 = 36, 수용 = k+2).
+
+**비용 실측**(이미지 안, 플릿 규모 상태로 채운 뒤): 렌더 **0.096 ms / 11,250 B / 190 줄**(스크레이프당 1회, HTTP 스레드), 관측 **0.96 µs**/회 — 디코드 스텝 최악(4 시퀀스 × 6 토큰 = 24회)이 **23 µs**,
+46 ms 스텝의 **0.05%**. 디바이스 읽기·동기화 없음.
+
+**한계**: 그래프 모양 계열은 캡처 경로에서만 는다(이거 폴백은 모양이 없다 — 정직하게 0). `st:lane_info` 는 `fleet()` 부팅만 채운다.
+**검증**: 엔진 CPU 스위트 368 tests OK(104 skip), `tests/test_engine_metrics.py` 16 tests(새 6: 그래프 모양 계열, 생산 지점, 수용 분포, 스텝 시간 종류 분할·합=스텝 카운터, lane_info, 부팅이 lane_info 를 채움).
+**GPU·플릿 미검증**(프로덕션 서빙 중).
+
+### 45차 §26 — 플릿 예약을 하나로: 큐가 ST 를 받고, ST 가 큐를 본다 (2026-09-12, srv4)
+
+운영자 "플릿 예약 기능이 원래 잘되어 있었잖아. 그걸 왜 안 써? 안 옮겨왔나". **안 옮겼다.** 확인한 사실:
+
+1. `bench/fleet.sh` + 21 모듈 5,146줄의 예약 큐는 살아 있다(상태 `/home/choiceoh/glm53-logs/fleet`).
+2. GPU 승인이 **onepass 전용**이라 ST 검사는 줄을 못 선다 — 실측 거부: `GPU work is onepass-only; ...; custom GPU scripts and standalone checks are disabled`.
+3. 그래서 §19 가 런처에 `~/st-fleet.lock` 이라는 **두 번째 기구**를 달았다(대기·노화·우선순위·증거·하트비트·복구 없음).
+4. **둘이 서로를 못 본다.** 09-12 10:20 실측: 네 노드 전부 `st-glm53`(다른 세션 prefill-diag, 파일 잠금은 잡음) 인데 `fleet.sh status` 는 `fleet: FREE`, `holder: none`. `FREE` 는 holder 파일이 비었는지만 보고,
+   점유 감지는 `glm53` 이라는 **이름의 컨테이너만** 찾는다. 이 상태에서 누가 브래킷을 큐에 넣으면 큐가 허가하고 09-11 19:42 충돌이 한 층 위에서 재현된다.
+5. 덤: `fleet.sh` 가 `REPO=/home/choiceoh/stkernel` 로 고정 — 그때 거기는 다른 세션 브랜치라 `bench/fleet_*.py` 가 0개였고, 워크트리에서 부른 하위 명령이 전부 파일 없음으로 깨졌다.
+6. **내 잘못**: 그동안 "창이 없다"고 미룬 판단은 `docker ps` 만 본 것이다. 큐가 있었으면 미룰 게 아니라 예약해 두고 열릴 때 돌게 했어야 한다(밀린 GPU 검증 셋: 커널 노브 §21, 그래프 재생 §22, direct micro 디스크 캐시 §보충 3).
+
+**해결 넷**:
+- **큐가 ST 를 본다**: `st_engine_up()`(로컬 `st-*` 컨테이너) 이 `_try_hold`·`_adopt` 에서 허가를 거부하고, `status` 가 `TAKEN by the ST engine, outside this queue` 라고 답한다.
+- **런처가 큐를 본다**: `start-st-glm53.sh` 가 rank 0 노드의 `$FLEET_DIR/holder` 를 읽고 holder 가 있으면 거부. 양방향이 됐다.
+- **ST 검사가 큐에 선다**: `fleet_onepass.SHELL_ENTRIES` 에 `probes/run_engine_{probe,check}.sh` 추가. 러너는 `docker run --gpus all <probe>` 라 **러너를 승인하면 임의 프로브가 승인되므로**,
+  프로브 이름을 `ST_PROBES` 에 못박고 러너와 함께 바이트 고정했다. 인자는 리터럴 플래그 화이트리스트(`ST_FLAGS`/`ST_SWITCHES`)만. 실측: 정식 다섯 조합 ADMIT, 지어낸 프로브·`--sanitizer`·`; rm -rf /` 전부 거부.
+- **`REPO` 를 스크립트 위치에서 해석** → 워크트리에서도 하위 명령이 돈다.
+
+**검증**: 플릿 스위트 385 tests, 실패 4 — **origin/main 에서도 같은 4개가 실패**(coalescing 2, feedback 1, source 1; 임시 워크트리로 대조)라 회귀 0. 새 테스트 8개(ST 승인 4 + 상호 배제 4).
+`fleet.sh preflight ... probes/engine_decode_graph_check.py` → PASS, `classify` → gpu.

@@ -59,6 +59,14 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     else:
         weights_gib = sum(s.nbytes() for s in weight_specs) / GIB
         weights_evidence = f"specs.py: {len(weight_specs):,} tensors/rank at TP={facts.TP}"
+    vision_file = Path(ranks_dir) / "vision.safetensors" if ranks_dir else None
+    if vision_file is not None and vision_file.exists():
+        vision_gib, vision_evidence = rank_weights(vision_file)[0], f"{vision_file.name} header"
+    elif (Path(ckpt) / "processor_config.json").exists():
+        from engine.profiles.glm53 import vision as vision_mod
+        vision_gib, vision_evidence = sum(s.nbytes() for s in vision_mod.specs(vision_mod.load(ckpt))) / GIB, "vision.specs: whole tower per rank"
+    else:
+        vision_gib, vision_evidence = 0.0, "no vision tower declared (no processor_config.json)"
     draft_shape, drafter_gib = None, 0.0
     if drafter_dir and (Path(drafter_dir) / "config.json").exists():
         D = drafter_mod.load(drafter_dir)
@@ -80,6 +88,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
         Line("runtime floor (CUDA ctx + NCCL 16ch)", RUNTIME_FLOOR_GIB, LEDGER, "GLM 40th boot table -- re-measure on ST"),
         Line("weights (this rank, TP=4)", weights_gib, READ, weights_evidence),
         Line("drafter (DFlash2, replicated)", drafter_gib, READ, "drafter.specs: every rank holds the whole drafter (DRAFT_TP=1 as served)"),
+        Line("vision tower (BF16, replicated)", vision_gib, READ, vision_evidence),
         Line(f"state slots ({max_seqs} + null) x {lay.slot_bytes / 2**20:.0f} MiB", slots_gib, READ,
              "caches.layout: KDA conv/recurrent rings (K+1 states), indexer tails, drafter ring"),
         Line(f"prefix snapshots ({snapshots} x {snapshot_bytes / 2**20:.0f} MiB)", snapshots * snapshot_bytes / GIB, READ,

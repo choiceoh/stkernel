@@ -23,7 +23,7 @@ class OnepassPolicyTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.controller = self.root / 'controller'
         self.repo = self.root / 'candidate'
-        for relative in (*policy.SHELL_ENTRIES, *policy.PYTHON_ENTRIES,
+        for relative in (*policy.SHELL_ENTRIES, *policy.PYTHON_ENTRIES, *policy.ST_PROBES,
                          'bench/fleet.sh', 'bench/serving_group.py', 'bench/experiment_baselines.py',
                          'bench/onepass_deploy.py'):
             for root in (self.controller, self.repo):
@@ -67,6 +67,45 @@ class OnepassPolicyTests(unittest.TestCase):
         for entry in policy.SHELL_ENTRIES:
             with self.subTest(entry=entry), self.assertRaisesRegex(ValueError, 'live-serving lane'):
                 self.validate(['bash', entry, 'A'], kind='probe')
+
+    def test_the_st_engine_checks_queue_like_everything_else(self):
+        """They take the same four nodes, so they belong in this queue and not behind a
+        second launcher lock no other session can see (2026-09-12)."""
+        for command in (['bash', 'probes/run_engine_check.sh', '--layers', '0-4'],
+                        ['bash', 'probes/run_engine_check.sh', '--layers', '0-4',
+                         '--moe-static', 't,r,sf6', '--mla-prefill', 'stock'],
+                        ['bash', 'probes/run_engine_probe.sh', 'probes/engine_decode_graph_check.py'],
+                        ['bash', 'probes/run_engine_probe.sh', 'probes/engine_kernel_check.py',
+                         '--imports-only'],
+                        ['bash', 'probes/run_engine_probe.sh', 'engine/profiles/glm53/check.py',
+                         '--layers', '0-4', '--distributed']):
+            with self.subTest(command=command):
+                self.assertEqual(self.validate(command)['entry'], command[1])
+
+    def test_admitting_the_st_runner_never_admits_an_arbitrary_probe(self):
+        """The runner is `docker run --gpus all <probe>`; the probe is named, not supplied."""
+        for probe in ('probes/invented.py', 'engine/profiles/glm53/boot.py', '../escape.py'):
+            with self.subTest(probe=probe), self.assertRaisesRegex(ValueError, 'not a canonical ST check'):
+                self.validate(['bash', 'probes/run_engine_probe.sh', probe])
+        with self.assertRaisesRegex(ValueError, 'the ST probe runner needs one of'):
+            self.validate(['bash', 'probes/run_engine_probe.sh'])
+
+    def test_st_checks_take_literal_flags_only(self):
+        for extra in (['--sanitizer', 'on'], ['--layers'], ['; rm -rf /'],
+                      ['--moe-static', '$(id)'], ['--output', '/etc/shadow;x']):
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                self.validate(['bash', 'probes/run_engine_check.sh', *extra])
+
+    def test_a_modified_st_runner_or_probe_is_refused(self):
+        for relative in ('probes/run_engine_probe.sh', 'probes/engine_decode_graph_check.py'):
+            with self.subTest(relative=relative):
+                path = self.repo / relative
+                original = path.read_bytes()
+                path.write_bytes(original + b'# docker run --gpus all whatever\n')
+                with self.assertRaisesRegex(ValueError, 'differs from the current canonical'):
+                    self.validate(['bash', 'probes/run_engine_probe.sh',
+                                   'probes/engine_decode_graph_check.py'])
+                path.write_bytes(original)
 
     def test_familiar_filename_cannot_hide_modified_source(self):
         (self.repo / 'bench/pair.sh').write_text('docker run --gpus all extra\n')
@@ -176,3 +215,42 @@ class OnepassPolicyTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FleetOccupancyTests(unittest.TestCase):
+    """The queue and the ST launcher reserve the same four nodes. Until they are one
+    mechanism they must at least refuse each other, in both directions (2026-09-12: four
+    nodes ran st-glm53 while `fleet.sh status` answered FREE, because FREE only meant
+    'the holder file is empty')."""
+
+    def setUp(self):
+        root = Path(__file__).resolve().parents[1]
+        self.fleet = (root / 'bench/fleet.sh').read_text()
+        self.launcher = (root / 'launchers/start-st-glm53.sh').read_text()
+
+    def test_the_queue_sees_st_containers(self):
+        self.assertIn("st_engine_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qE '^st-'; }",
+                      self.fleet)
+        # a grant is refused on both paths that hand out the fleet
+        self.assertIn('if st_engine_up; then logit "hold refused: ST engine occupies the fleet', self.fleet)
+        self.assertIn('if st_engine_up; then echo "ST engine occupies the fleet', self.fleet)
+        # and status says so instead of FREE
+        self.assertIn('TAKEN by the ST engine, outside this queue', self.fleet)
+
+    def test_the_launcher_reads_the_queue_holder(self):
+        self.assertIn('FLEET_HOLDER=${FLEET_HOLDER:-/home/choiceoh/glm53-logs/fleet/holder}', self.launcher)
+        self.assertIn('ABORT: the bench queue holds the fleet', self.launcher)
+        # and it still honours its own lock and refuses to share with serving containers
+        self.assertIn('st-fleet.lock', self.launcher)
+        self.assertIn("grep -E '^(glm53|q38|vllm|st-)'", self.launcher)
+
+    def test_the_queue_resolves_its_own_checkout(self):
+        """It hardcoded /home/choiceoh/stkernel, which is whatever branch another session
+        left there -- on 2026-09-12 one with no bench/fleet_*.py, so every helper errored."""
+        self.assertIn('REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}', self.fleet)
+        self.assertNotIn('REPO=${REPO:-/home/choiceoh/stkernel}', self.fleet)
+
+    def test_the_classifier_calls_the_st_runners_gpu(self):
+        self.assertIn('run_engine_probe|run_engine_check', self.fleet)
+        classify = (Path(__file__).resolve().parents[1] / 'bench/fleet_classify.py').read_text()
+        self.assertIn('run_engine_probe|run_engine_check', classify)

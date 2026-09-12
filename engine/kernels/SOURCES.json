@@ -6,10 +6,11 @@
       "source": "overlay/modules/glm53_kernels/kda.py",
       "sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
       "origin": "repository",
-      "local_sha256": "0adac7cefaeaa249cb3bb1c3b4342719976305dd20e93248fe475daa694f29a8",
+      "local_sha256": "b125f61cf10f2d6c9b576b82e628998fb81bbe5d337ebc490936e5a317211a74",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults (strided Q/K norm on: production VLLM_GLM53_KDA_PREFILL_QK_NORM=1)",
-        "2026-09-11 GB10 recurrent: explicit dense kv state layout, optional zero initial state, BV16/one-warp TP4 decode geometry"
+        "2026-09-11 GB10 recurrent: explicit dense kv state layout, optional zero initial state, BV16/one-warp TP4 decode geometry",
+        "2026-09-12 GB10 recurrent: read kv input views directly, allocate dense outputs, validate tensor shapes and reject output/input aliases."
       ]
     },
     "kda/chunk_delta_h.py": {
@@ -26,9 +27,11 @@
       "source": "vllm/third_party/flash_linear_attention/ops/fused_recurrent.py",
       "sha256": "371e7d733e90a7147fbca8dbfe67e62503ba663bd1570424bc0efa22c54f3e2b",
       "origin": "image",
-      "local_sha256": "04ef53a25293f2672f7ab715419bd9503a66aecb25e6573a052f0566a6c486be",
+      "local_sha256": "b02f5acac2d50b0c6d713395d6ada6762b09a365529587cf01d3e14ba73650b8",
       "local_modifications": [
-        "2026-09-11 GB10 recurrent: direct canonical K,V state addressing and masked gate loads at padded K boundaries"
+        "2026-09-11 GB10 recurrent: direct canonical K,V state addressing and masked gate loads at padded K boundaries",
+        "2026-09-12 GB10 recurrent: constexpr token/head/channel strides for canonical KDA inputs; preserve legacy dense addressing and recurrence arithmetic.",
+        "2026-09-12 GB10 recurrent: optional direct canonical ring state loads and per-token writes with runtime slot/context; no staging states."
       ]
     },
     "kda/index.py": {
@@ -81,9 +84,10 @@
       "source": "engine/kernels/causal_conv.py @ b7a6e44c",
       "sha256": "5a768e68031ffe92f79fe1fbe4e1cd7615f6305ecc8d145e9125c382b716dd65",
       "origin": "repository",
-      "local_sha256": "1dca96f7df20f8a432fc5e8fea3eb52f9498e90157e50a01a0ad510f8458acec",
+      "local_sha256": "bc1e742c128ebae0bef9e6874dd6d91cd026499cb4d7e4115ac4265153744d1d",
       "local_modifications": [
-        "2026-09-12 GB10: specialize the forward recurrence for one sequence; remove batching metadata and mutable state table; use 128 channels and eight tokens per CTA; preserve arithmetic order and rounded history."
+        "2026-09-12 GB10: specialize the forward recurrence for one sequence; remove batching metadata and mutable state table; use 128 channels and eight tokens per CTA; preserve arithmetic order and rounded history.",
+        "2026-09-12 GB10 short conv: optional direct raw-input ring history loads and writes; one time tile, no history buffers."
       ]
     },
     "kpool.py": {
@@ -124,11 +128,12 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "c34a64f8e04a34f74e66ffaea925c5e71270a6034d6bcaf4c5c8d2f552194de2",
+      "local_sha256": "4046daeb055ca1a1cadb3ba2290c0f865da0ab82c9a39f0018dab52a54af1fd4",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
-        "2026-09-12 ST native execution: tiled static v2 preserves BF16 contribution rounding with FP32 route scatter; owned SF6 scales may reuse retired arena storage before capture"
+        "2026-09-12 ST native execution: tiled static v2 preserves BF16 contribution rounding with FP32 route scatter; owned SF6 scales may reuse retired arena storage before capture",
+        "2026-09-12 GB10: include the NVFP4 max3 PTX reduction helper in persistent CuTe cache identity."
       ]
     },
     "b12x/moe_dynamic_kernel.py": {
@@ -139,12 +144,20 @@
     "b12x/moe_micro_kernel.py": {
       "source": "overlay/modules/glm53_moe/moe_micro_kernel.py",
       "sha256": "1949bb2f6edbcfe7728b2fd3cddcd2f853605dbc55aac8fe614d737b29600e66",
-      "origin": "repository"
+      "origin": "repository",
+      "local_sha256": "f0a11dfe7d371551bb350de0218e44b7c6d0d7505ef944727e1fd49391353d33",
+      "local_modifications": [
+        "2026-09-12 GB10: eight max.abs.f32 PTX operations form an NVFP4 amax tree; shorten SASS dependencies while preserving MXFP4 and quantizer arithmetic."
+      ]
     },
     "b12x/moe_static_kernel.py": {
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py",
       "sha256": "b87e2b80f706e1db91b95c8a619806af37f7be25021b33a1da7f117ff4d87610",
-      "origin": "image"
+      "origin": "image",
+      "local_sha256": "dc24b0e1b73076fc4d3abeace44fa2c6a4c99a077f7687616d9c561a897c4de4",
+      "local_modifications": [
+        "2026-09-12 GB10: eight max.abs.f32 PTX operations form an NVFP4 amax tree; shorten SASS dependencies while preserving MXFP4 and quantizer arithmetic."
+      ]
     },
     "b12x/moe_w4a16_activations.py": {
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_w4a16_activations.py",

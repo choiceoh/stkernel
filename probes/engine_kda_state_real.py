@@ -18,6 +18,7 @@ from engine.profiles.glm53.net import Glm53Net, Step
 from engine.profiles.glm53.weights import rank_loader
 from engine_kda_state_perf import baseline_lane
 from engine_causal_conv_perf import baseline_conv
+from engine_kda_strides_perf import baseline_strides, paired_timing
 
 
 class IsolatedRank:
@@ -41,10 +42,13 @@ def main():
     baseline.add_argument("--baseline-dir", type=Path)
     baseline.add_argument("--baseline-net", type=Path, help="frozen net.py for comparing the complete KDA method")
     baseline.add_argument("--baseline-lanes", type=Path, help="frozen lanes.py for comparing the conv adapter")
+    baseline.add_argument("--baseline-strides", type=Path, help="frozen canonical driver and recurrent kernel directory")
     ap.add_argument("--checkpoint", type=Path, required=True)
     ap.add_argument("--rank-file", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
+    ap.add_argument("--timing-replays", type=int, default=1, help="graph replays per timed sample")
     a = ap.parse_args()
+    if a.timing_replays < 1: ap.error("--timing-replays must be positive")
     torch.cuda.set_per_process_memory_fraction((1024*2**20)/torch.cuda.get_device_properties(0).total_memory)
     torch.manual_seed(93812)
     F = facts.load(a.checkpoint)
@@ -58,8 +62,13 @@ def main():
         methods[0] = module.Glm53Net._kda
         tables = [current,current]
     elif a.baseline_lanes:
+        current = replace(current,conv_ring=None)
         tables = [replace(current,conv_prefill=baseline_conv(a.baseline_lanes)),current]
+    elif a.baseline_strides:
+        current = replace(current,kda_recurrent_ring=None)
+        tables = [replace(current,kda_recurrent=baseline_strides(a.baseline_strides)),current]
     else:
+        current = replace(current,kda_recurrent_ring=None)
         tables = [replace(current,kda_recurrent=baseline_lane(a.baseline_dir)),current]
     net = Glm53Net(F,IsolatedRank(),current,layers=[0])
     specs = [s for s in net.specs() if s.name.startswith("L0.kda.")]
@@ -74,7 +83,7 @@ def main():
         assert output_error < .008 and state_error < 2e-6,(label,output_error,state_error)
         assert torch.equal(caches[1]._fields["conv",0],caches[0]._fields["conv",0]),label
         exact = same_bits(outputs[1],outputs[0]) and torch.equal(caches[1].state,caches[0].state)
-        if a.baseline_net or a.baseline_lanes: assert exact,label
+        if a.baseline_net or a.baseline_lanes or a.baseline_strides: assert exact,label
         checked.append({"case":label,"output_relative_max":output_error,"ring_relative_max":state_error,
                         "output_and_state_bits_exact":exact})
     for cache in caches: cache.reset()
@@ -119,15 +128,49 @@ def main():
                 "output_relative":relative(eager,expected_out),
                 "state_byte_differences":int((caches[1].state!=expected_state).sum())}
         samples=[[],[]]
-        for iteration in range(11):
+        for iteration in range(12):
             for index in ((0,1) if iteration%2==0 else (1,0)):
                 graphs[index].replay()
                 start,end=torch.cuda.Event(enable_timing=True),torch.cuda.Event(enable_timing=True)
-                start.record();graphs[index].replay();end.record();end.synchronize()
-                samples[index].append(start.elapsed_time(end)*1000)
+                start.record()
+                for _ in range(a.timing_replays): graphs[index].replay()
+                end.record();end.synchronize()
+                samples[index].append(start.elapsed_time(end)*1000/a.timing_replays)
         measurements.append({"tokens":t,"context":4096,"samples_us":samples,
+                             "paired":paired_timing(samples),
                              "median_us":[statistics.median(s) for s in samples]})
         for graph in graphs: graph.reset()
+    # Two simultaneous sequences exercise distinct physical slots, strided
+    # projection slices and independent zero/nonzero contexts in one graph.
+    # Run this correctness-only extension after timing to keep its JIT separate.
+    for t in (1,6):
+        x=torch.randn(2*t,F.hidden,device="cuda",dtype=torch.bfloat16)*.1
+        ctx=torch.tensor([0,5],device="cuda",dtype=torch.int64)
+        slot=torch.tensor([1,2],device="cuda",dtype=torch.int64)
+        seq=torch.tensor([0,1],device="cuda",dtype=torch.int64)
+        step=DeviceStep(torch.zeros(2*t,device="cuda",dtype=torch.int64),ctx,t)
+        graphs,outputs=[],[]
+        for table,cache,method in zip(tables,caches,methods):
+            view=GraphCaches(cache,seq,slot,4096)
+            net.lanes=table
+            method(net,0,x,step,view)
+            graph=torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph):out=method(net,0,x,step,view)
+            graphs.append(graph);outputs.append(out)
+        for contexts,physical in (((0,5),(1,2)),((2,4096),(2,1)),((1,4095),(1,2))):
+            ctx.copy_(torch.tensor(contexts,device="cuda"));slot.copy_(torch.tensor(physical,device="cuda"))
+            x.normal_(std=.1)
+            for field in caches[0]._fields.values():field.normal_(std=.1)
+            caches[1].state.copy_(caches[0].state)
+            original=caches[1].state.clone()
+            for graph in graphs:graph.replay()
+            compare(outputs,f"two_seq_graph_t{t}_ctx{contexts}_slots{physical}")
+            expected_state=caches[1].state.clone();expected_out=outputs[1].clone()
+            caches[1].state.copy_(original);net.lanes=current
+            eager_step=Step.decode([(step.ids[i*t:(i+1)*t],contexts[i],i,physical[i]) for i in range(2)])
+            eager=net._kda(0,x,eager_step,caches[1])
+            assert same_bits(eager,expected_out) and torch.equal(caches[1].state,expected_state)
+        for graph in graphs:graph.reset()
     weights={}
     with a.rank_file.open("rb") as stream:
         for s in specs:
@@ -137,7 +180,9 @@ def main():
     result={"passed":True,"rank":0,"real_weight_bytes":total_bytes(specs),"weights":weights,
         "baseline_net_sha256":hashlib.sha256(a.baseline_net.read_bytes()).hexdigest() if a.baseline_net else None,
         "baseline_lanes_sha256":hashlib.sha256(a.baseline_lanes.read_bytes()).hexdigest() if a.baseline_lanes else None,
+        "baseline_strides_sha256":{p:hashlib.sha256((a.baseline_strides/p).read_bytes()).hexdigest() for p in ("kda.py","fused_recurrent.py")} if a.baseline_strides else None,
         "config_sha256":hashlib.sha256((a.checkpoint/"config.json").read_bytes()).hexdigest(),
+        "timing_replays":a.timing_replays,
         "synthetic_activations":True,"collectives":False,"graph_eager_bytes_exact":True,
         "checks":checked,"measurements":measurements}
     a.output.write_text(json.dumps(result,indent=2)+"\n")
