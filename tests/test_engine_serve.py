@@ -735,7 +735,7 @@ class ChatDoorTests(unittest.TestCase):
                 return json.load(r)
         try:
             with concurrent.futures.ThreadPoolExecutor(1) as pool:
-                out = drive(s, pool.submit(post, {"model": "m", "messages": [{"role": "user", "content": "ab"}], "max_tokens": 3}))
+                out = drive(s, pool.submit(post, {"model": s.model_name, "messages": [{"role": "user", "content": "ab"}], "max_tokens": 3}))
             self.assertEqual(out['object'], 'chat.completion')
             # the fake engine runs to its limit regardless of eos; the door names the ending by the last token
             self.assertEqual(out['choices'][0]['message'], {'role': 'assistant', 'content': 'bbb'})
@@ -2601,6 +2601,37 @@ class OpenAIDialectTests(unittest.TestCase):
         page = s.metrics()
         self.assertIn('st:reuse_path_total{engine="st",path="continuation"} 2\n', page)
         self.assertIn('st:reuse_path_total{engine="st",path="prefix_or_cold"} 7\n', page)
+
+    def test_a_model_this_engine_does_not_serve_is_refused_and_not_answered_under_that_name(self):
+        """The door used to echo whatever name arrived while answering with the model it has.
+        A router entry left pointing here under an old name then gets a correct-looking answer
+        wearing the wrong label, and everything keyed on the name believes it -- per-model
+        usage, a metered gate, sampling profiles. The fleet has that wiring today: wormhole's
+        `deepseek-v4-flash` entry still points at this head (45차 §73)."""
+        s = chat_server()
+        self.assertEqual(s.check_model(None), s.model_name, "no name is this engine's own")
+        self.assertEqual(s.check_model(""), s.model_name)
+        self.assertEqual(s.check_model(s.model_name), s.model_name)
+        with self.assertRaises(RequestError) as caught:
+            s.check_model("deepseek-v4-flash")
+        self.assertEqual(caught.exception.status, 404)
+        # vLLM's sentence verbatim, so a client that matches on the message keeps working
+        self.assertIn("The model `deepseek-v4-flash` does not exist.", str(caught.exception))
+
+    def test_the_door_answers_404_for_an_unserved_model(self):
+        s = chat_server()
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                with self.assertRaises(urllib.error.HTTPError) as caught:
+                    drive(s, pool.submit(self._post, base, "/v1/chat/completions",
+                                         {"model": "deepseek-v4-flash",
+                                          "messages": [{"role": "user", "content": "ab"}], "max_tokens": 1}))
+            self.assertEqual(caught.exception.code, 404)
+            self.assertIn("does not exist", json.loads(caught.exception.read())["error"])
+        finally:
+            httpd.shutdown(); httpd.server_close()
 
     def test_the_grammar_cache_meters_reach_the_scrape(self):
         s = chat_server()

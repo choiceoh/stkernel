@@ -1627,6 +1627,30 @@ class Server:
             cache = self._prompt_tokens = PromptTokens(self.tok)
         return cache
 
+    def check_model(self, name) -> str:
+        """The model this request is for, or 404 if this engine does not serve it.
+
+        Until now the door took whatever name arrived and **echoed it back** in the response
+        while answering with the model it actually has. That is worse than refusing: a router
+        entry left pointing here under an old name gets a correct-looking answer labelled as
+        something else, and everything downstream that keys on the name -- Deneb's per-model
+        usage, its metered gate, its `ProfileFor` sampling rules -- believes the label. The
+        fleet has that exact wiring today: wormhole's `deepseek-v4-flash` and `dsv4-nothink`
+        entries still point at this head with `upstreamModel: deepseek-v4-flash`, and Deneb's
+        own notes record what the same class of stale entry cost the last time nobody noticed
+        (1,346 billed calls over twelve days).
+
+        So it answers the way every OpenAI-compatible server does, vLLM included
+        (`entrypoints/openai/models/serving.check_model`): an absent or empty name is this
+        engine's own, and a name it does not serve is a 404 carrying that sentence verbatim,
+        so a client matching on the message keeps working (45차 §73).
+        """
+        if not isinstance(name, str) or not name:
+            return self.model_name
+        if name == self.model_name:
+            return name
+        raise RequestError(f"The model `{name}` does not exist.", 404)
+
     def fleet_status(self) -> "dict | None":
         """Who holds the fleet, whether it has been asked to let go, and how the handover went.
 
@@ -2699,7 +2723,7 @@ class Server:
                     max_tokens = answer_budget(server.tok, nfc(written_text(messages)))
                 stream = bool(req.get("stream", False))
                 include_usage = bool(options_stream and options_stream.get("include_usage"))
-                model = req.get("model") if isinstance(req.get("model"), str) and req.get("model") else server.model_name
+                model = server.check_model(req.get("model"))
                 temperature, options = sampling_options(req, server.generation)
                 derived = stop_token_ids_for(stop, server.tok) if (stop and server.tok is not None) else []
                 if derived:
@@ -2869,7 +2893,7 @@ class Server:
                 stream = bool(req.get("stream", False))
                 options_stream = req.get("stream_options")
                 include_usage = bool(isinstance(options_stream, dict) and options_stream.get("include_usage"))
-                model = req.get("model") if isinstance(req.get("model"), str) and req.get("model") else server.model_name
+                model = server.check_model(req.get("model"))
                 temperature, options = sampling_options(req, server.generation)
                 derived = stop_token_ids_for(stop, server.tok) if (stop and server.tok is not None) else []
                 if derived:
