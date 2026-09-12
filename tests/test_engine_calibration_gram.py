@@ -77,7 +77,9 @@ class BufferedGramTests(unittest.TestCase):
                 oracle = expected_rows.double().T @ expected_rows.double()
                 torch.testing.assert_close(saved["H"].double(), oracle.cpu(), rtol=3e-5, atol=2e-4)
                 self.assertEqual(saved["ntok"], len(expected_rows))
-                torch.testing.assert_close(saved["amax"], expected_rows.abs().amax(0).cpu(), rtol=0, atol=0)
+                # The persisted peak contract is FP32 even when the exact
+                # input values arrive in BF16. Keep dtype checking enabled.
+                torch.testing.assert_close(saved["amax"], expected_rows.float().abs().amax(0).cpu(), rtol=0, atol=0)
                 self.assertEqual(int(c.staging["x"][1]), 0)
                 before = c.H["x"].clone()
                 c.flush()
