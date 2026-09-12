@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import pathlib
 import sys
 import time
 from functools import partial
@@ -697,20 +698,46 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
     return 0 if ok else 1
 
 
-def fleet_lease_of() -> "dict | None":
-    """The reservation the launcher took for this boot, if it took one.
+def fleet_lease_of() -> dict:
+    """The reservation this boot holds, or the boot does not happen.
 
-    With it the engine publishes what it is doing and can be ASKED to hand the fleet
-    over -- it finishes, parks its conversations where they survive (D16), and lets go.
-    Without it the engine serves exactly as before; a lease is a reservation, not a
-    dependency.
+    It used to say "a lease is a reservation, not a dependency" -- the engine served
+    with or without one. That made the reservation advisory, and an advisory
+    reservation is not one: on 2026-09-12 a yield was asked for and granted, the
+    holder parked its conversations and let go, and the containers came straight back
+    up on all four nodes because whatever started them never needed the lock. Nobody
+    was at fault; there was nothing to be at fault against.
+
+    So it is checked HERE, in the engine, and not only in the launcher. A launcher can
+    be bypassed by one `docker run`; the engine is the thing that actually occupies the
+    fleet, and the only place a rule about occupying it can be enforced (D3: refuse,
+    do not serve anyway). `launchers/start-st-glm53.sh` acquires before it starts, so
+    the ordinary path is unaffected -- this only stops the paths that never asked.
     """
     owner, path = os.environ.get("ST_LEASE_OWNER"), os.environ.get("ST_LEASE_PATH")
-    return {"owner": owner, "path": path} if owner and path else None
+    if not owner or not path:
+        raise RuntimeError(
+            "this boot holds no fleet reservation: ST_LEASE_OWNER and ST_LEASE_PATH are unset. "
+            "Start through launchers/start-st-glm53.sh, which acquires the lease first; "
+            "`start-st-glm53.sh yield` asks a current holder to hand over.")
+    from engine.base import fleet_lease
+    record = fleet_lease.read(pathlib.Path(path))
+    if not record:
+        raise RuntimeError(f"the fleet lock at {path} is empty: nothing reserved this boot")
+    held = record.get("owner")
+    if held != owner:
+        raise RuntimeError(
+            f"the fleet is reserved by {held!r}, not by this boot ({owner!r}). "
+            f"Ask for it: launchers/start-st-glm53.sh yield '<why>'")
+    return {"owner": owner, "path": path}
 
 
 def fleet(a) -> int:
     """One rank per node, inside the glm53 image: served lanes (D3: all or nothing), every layer, then serve."""
+    # Before the 67 GiB, not after it: a boot with no reservation must cost nothing. `local` is exempt --
+    # it does not take the fleet.
+    lease = fleet_lease_of()
+    print(f"  fleet reserved by {lease['owner']}")
     print(f"  box: {facts.check_box()}")
     cfg = declared(a, facts.TP)
     # The rendezvous and the kernel imports are boot time too: 15.6 s of a measured 90.2 s boot sat
@@ -796,7 +823,7 @@ def fleet(a) -> int:
                tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_grammar=tool_grammar,
                         tool_call_start=tool_call_token(tok), generation=generation_defaults(a.ckpt_meta),
                vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 else None,
-               lease=fleet_lease_of()).loop()
+               lease=lease).loop()
     finally:
         try:
             if dump is not None:

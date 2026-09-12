@@ -22,7 +22,9 @@ class BootPathTests(unittest.TestCase):
         tp = SimpleNamespace(run=lambda fn: fn(comm))
         for mode in ("local", "http", "fleet"):
             args.serve = mode == "http"
+            # the fleet path refuses to boot without a reservation (fleet_lease_of), so this one holds it
             with self.subTest(mode=mode), \
+                 patch.object(boot, "fleet_lease_of", return_value={"owner": "test", "path": "/unused"}), \
                  patch.object(boot.facts, "check_box", return_value="test"), \
                  patch.object(boot, "declared"), \
                  patch.object(boot, "LocalTP", return_value=tp), \

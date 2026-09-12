@@ -6,10 +6,14 @@ runner pinning) stays in bench/fleet.sh: it is a solved problem, and a second
 copy here would repeat the mistake this module exists to end.
 """
 import json
+import os
+import pathlib
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -441,7 +445,9 @@ class ProbeLeaseTests(unittest.TestCase):
     def test_the_boot_hands_the_lease_to_the_engine(self):
         boot = (ROOT / "engine/profiles/glm53/boot.py").read_text()
         self.assertIn("def fleet_lease_of()", boot)
-        self.assertIn("lease=fleet_lease_of()).loop()", boot)
+        # the reservation is now taken at the top of fleet() -- before the 67 GiB, not after -- and carried
+        self.assertIn("lease = fleet_lease_of()", boot)
+        self.assertIn("lease=lease).loop()", boot)
 
 
 class QueueMaintenanceTests(unittest.TestCase):
@@ -487,3 +493,55 @@ class QueueMaintenanceTests(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         module._selfcheck()
+
+
+class ReservationIsRequiredTests(unittest.TestCase):
+    """A reservation nobody has to hold is not one.
+
+    On 2026-09-12 a yield was asked for through the protocol and granted -- the holder parked its
+    conversations and let go -- and the containers came straight back up on all four nodes, because whatever
+    started them never needed the lock. Nobody was at fault; there was nothing to be at fault against. So the
+    check moved into the engine, which is the thing that actually occupies the fleet: a launcher can be
+    bypassed with one `docker run`, and the engine cannot.
+    """
+
+    def boot(self):
+        import importlib
+        return importlib.import_module("engine.profiles.glm53.boot")
+
+    def test_no_environment_means_no_boot(self):
+        boot = self.boot()
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(RuntimeError) as caught:
+                boot.fleet_lease_of()
+        self.assertIn("holds no fleet reservation", str(caught.exception))
+        self.assertIn("start-st-glm53.sh", str(caught.exception), "it has to say how to get one")
+
+    def test_an_empty_lock_is_not_a_reservation(self):
+        boot = self.boot()
+        with tempfile.TemporaryDirectory() as tmp:
+            lock = os.path.join(tmp, "st-fleet.lock")
+            with mock.patch.dict(os.environ, {"ST_LEASE_OWNER": "me", "ST_LEASE_PATH": lock}, clear=True):
+                with self.assertRaises(RuntimeError) as caught:
+                    boot.fleet_lease_of()
+        self.assertIn("empty", str(caught.exception))
+
+    def test_another_owner_s_reservation_is_not_this_boot_s(self):
+        boot = self.boot()
+        with tempfile.TemporaryDirectory() as tmp:
+            lock = pathlib.Path(tmp) / "st-fleet.lock"
+            acquire("someone@elsewhere", path=lock, container="st-glm53")
+            with mock.patch.dict(os.environ, {"ST_LEASE_OWNER": "me", "ST_LEASE_PATH": str(lock)}, clear=True):
+                with self.assertRaises(RuntimeError) as caught:
+                    boot.fleet_lease_of()
+        self.assertIn("someone@elsewhere", str(caught.exception))
+        self.assertIn("yield", str(caught.exception), "it has to say how to ask for it")
+
+    def test_the_boot_that_holds_it_proceeds(self):
+        boot = self.boot()
+        with tempfile.TemporaryDirectory() as tmp:
+            lock = pathlib.Path(tmp) / "st-fleet.lock"
+            acquire("me@srv4/1", path=lock, container="st-glm53")
+            with mock.patch.dict(os.environ, {"ST_LEASE_OWNER": "me@srv4/1", "ST_LEASE_PATH": str(lock)}, clear=True):
+                got = boot.fleet_lease_of()
+        self.assertEqual(got, {"owner": "me@srv4/1", "path": str(lock)})
