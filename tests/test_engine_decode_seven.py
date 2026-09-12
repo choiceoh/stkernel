@@ -8,6 +8,64 @@ from tests.image_kernels import PRESENT, REASON
 
 @unittest.skipUnless(torch.cuda.is_available() and PRESENT, 'requires CUDA; ' + REASON)
 class SevenRowDenseTests(unittest.TestCase):
+    def test_input_reuse_reads_strided_tiles_and_preserves_wide_pack_folding(self):
+        from engine.kernels.dense import DenseLinear, extension
+        ext = extension()
+        before, mode, state = ext.gemm_input_mode(), ext.gemm_input_cta_mode(), ext.probe_state()
+        torch.manual_seed(91408)
+        try:
+            ext.set_input_cta(4)
+            ext.set_gemm2(0)
+            for n in (6416, 4096, 6144):
+                layer = DenseLinear((torch.randn(n, 4096, device='cuda') * .02).bfloat16(), prefill=False)
+                for rows in (6, 7):
+                    for stride, offset in ((20480, 0), (20480, 4096), (20480, 16384), (4104, 4)):
+                        parent = torch.full((rows, stride), float('nan'), device='cuda', dtype=torch.bfloat16)
+                        x = parent[:, offset:offset+4096]
+                        x.normal_()
+                        self.assertFalse(x.is_contiguous())
+                        ext.set_gemm_input(1)
+                        layer(x)
+                        graph = torch.cuda.CUDAGraph()
+                        with torch.cuda.graph(graph):
+                            actual = layer(x)
+                        try:
+                            for magnitude in (0., .001, 1., 50.):
+                                x.normal_().mul_(magnitude)
+                                ext.set_gemm_input(0)
+                                expected = layer(x.contiguous())
+                                graph.replay()
+                                torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+                        finally:
+                            graph.reset()
+            # The drafter's uncalibrated 20K context projection keeps five
+            # tiles with distinct row scales. Each addend rounds to BF16.
+            weight = torch.randn(4096, 20480, device='cuda', dtype=torch.bfloat16)
+            for tile in range(5):
+                weight[:, tile*4096:(tile+1)*4096].mul_(2.**tile)
+            wide = DenseLinear(weight, prefill=False)
+            self.assertEqual(len(wide.packs), 5)
+            for rows in (6, 7):
+                x = torch.randn(rows, 20480, device='cuda', dtype=torch.bfloat16)
+                ext.set_gemm_input(1)
+                wide(x)
+                graph = torch.cuda.CUDAGraph()
+                with torch.cuda.graph(graph):
+                    actual = wide(x)
+                try:
+                    for magnitude in (0., .01, 1.):
+                        x.normal_().mul_(magnitude)
+                        ext.set_gemm_input(0)
+                        expected = wide(x)
+                        graph.replay()
+                        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+                finally:
+                    graph.reset()
+        finally:
+            ext.set_gemm_input(before)
+            ext.set_input_cta(mode)
+            ext.restore_probe_state(state)
+
     def test_input_reuse_matches_same_packs_every_row_and_changed_graph_inputs(self):
         from engine.kernels.dense import DenseLinear, extension
         ext = extension()

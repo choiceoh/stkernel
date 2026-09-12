@@ -1145,6 +1145,7 @@ struct MKInputPackCtx {
   uint8_t* aq;
   float* scales;
   int m, k;
+  int64_t x_stride;
 };
 __global__ void mk_input_pack_kernel(MKInputPackCtx c) {
   asm volatile("griddepcontrol.launch_dependents;");
@@ -1152,7 +1153,7 @@ __global__ void mk_input_pack_kernel(MKInputPackCtx c) {
   const int row=threadIdx.x>>5, lane=threadIdx.x&31, kb=blockIdx.x;
   float v[4]={}, mx=0;
   if (row<c.m) {
-    const uint2 raw=*(const uint2*)(c.x+(size_t)row*c.k+kb*KSTEP+lane*4);
+    const uint2 raw=*(const uint2*)(c.x+(size_t)row*c.x_stride+kb*KSTEP+lane*4);
     const __nv_bfloat16* bf=(const __nv_bfloat16*)&raw;
 #pragma unroll
     for (int j=0;j<4;++j) {v[j]=__bfloat162float(bf[j]);mx=fmaxf(mx,fabsf(v[j]));}
@@ -3214,7 +3215,6 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                       || (size_t)c2.m * c2.n * c2.ksr <= (size_t)MK2_PART_ELEMS),
               "gemm2 plan out of contract");
   if (input_reuse) {
-    TORCH_CHECK(x.is_contiguous(), "the explicit input-reuse probe needs dense rows");
     const int qbytes = (c2.k / KSTEP) * 1024;
     const int sbytes = (c2.k / KSTEP) * 8 * sizeof(float);
     // PyTorch owns this allocation on the current stream. CUDA graph capture
@@ -3224,7 +3224,7 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
     auto* scales = reinterpret_cast<float*>(q + qbytes);
     c2.input_q = q; c2.input_s = scales;
     mk_launch(mk_input_pack_kernel, c2.k / KSTEP, 0, stream,
-              MKInputPackCtx{c2.x, q, scales, c2.m, c2.k});
+              MKInputPackCtx{c2.x, q, scales, c2.m, c2.k, c2.x_stride});
     const int cta=mk_gemm_input_cta_mode();
     if (cta==4 && c2.ksr==2 && (c2.n_orig==4096 || c2.n_orig==6144)) {
       mk_launch<128>(mk_gemm_input_cta3_kernel<2,2,2>,c2.n_orig/32,INPUT_CTA2_SMEM,stream,c2);
