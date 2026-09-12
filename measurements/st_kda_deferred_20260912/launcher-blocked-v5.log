@@ -10,8 +10,8 @@ waiting: pos 1/3 2026-09-12_23:10:02
 waiting: pos 1/4 2026-09-12_23:11:09
 {"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "05f3ba09eb7f49789171b2de5ce7ba70", "phase": "waiting", "reason": "dequeue", "since": 96416.670967481, "updated_at": 1789222276.7787743, "version": 1}
 GO stkda-deferred0912v5 2026-09-12_23:11:16
-  node 10.10.10.1: gpu=ok stray=3 ram=92G path=ok 
+  node 10.10.10.1: gpu=ok stray=3 ram=92G path=ok
   node 10.10.10.2: ssh=FAIL
-  node 10.10.10.3: gpu=ok stray=1 ram=96G path=ok 
-  node 10.10.10.4: gpu=ok stray=14 ram=102G path=ok 
+  node 10.10.10.3: gpu=ok stray=1 ram=96G path=ok
+  node 10.10.10.4: gpu=ok stray=14 ram=102G path=ok
 {"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "91ce3f1292e34cc8ace6eb7a3354858a", "phase": "waiting", "reason": "release", "since": 96531.147930243, "updated_at": 1789222391.2557364, "version": 1}

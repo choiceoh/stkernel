@@ -6,7 +6,7 @@
   "reservation": {
     "session": "stkda-deferred0912v7",
     "ticket": "17892227321982710",
-    "revision": 1,
+    "revision": 8,
     "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/900f071acc243ad4dcef89cd21a030bab620db1cbdfbcbe5fb6856291f3b2308.log"
   },
   "source_sha256": {
@@ -17,7 +17,7 @@
     "probes/engine_kda_deferred_compile.py": "8e52b6234b6784f0451866b338aed3b240f660e82e5297f3c9036f0dd9fdd289",
     "tests/test_engine_kda_deferred.py": "613c56ee3dfb4828c25a99aa44c15527b06943a1ab72a3da917c635a458404d6"
   },
-  "status": "GPU pending; accepted fixed-launcher reservation",
+  "status": "GPU paused for operator-authorized prefill onepass priority; no GPU result",
   "previous_reservations": [
     {
       "session": "stkda-deferred0912v5",
@@ -36,5 +36,6 @@
     "failures": 0,
     "image": "st-engine:main-ff728f43",
     "gpu_used": false
-  }
+  },
+  "last_status_check": "2026-09-12T14:52:35.746229+00:00"
 }

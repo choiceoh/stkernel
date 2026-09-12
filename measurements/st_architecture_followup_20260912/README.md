@@ -75,5 +75,8 @@ bash bench/fleet.sh run --gpu --detach st-prefill-consumer 5 \
   bash probes/run_engine_probe.sh probes/engine_prefill_fp8_consumer_check.py
 ```
 
+The code CI passed (run `34700356197`). GPU correctness and performance
+remain unmeasured while the operator prioritizes prefill onepass.
+
 The KDA deferred-state reservation remains frozen in its original remote
 checkout; these additional changes do not replace its queued source.

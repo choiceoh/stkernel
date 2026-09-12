@@ -89,8 +89,9 @@ regression test demonstrates that the original helper times out, while the
 fixed helper returns its PID promptly and continues renewing. This preserves
 both the lease and its heartbeat. The fixed same-image CPU suite ran 110 tests
 without errors (3 GPU-dependent skips). The fresh reservation is
-`stkda-deferred0912v7`, ticket `17892227321982710`, revision 1, source `19113939`;
-it is queued. The v6 submission failed before admission because main had
+`stkda-deferred0912v7`, ticket `17892227321982710`, frozen source `19113939`. At the latest inspection
+it is paused at revision 8 for the operator-authorized prefill onepass
+priority, so no GPU result is available. The v6 submission failed before admission because main had
 advanced; v7 includes those documentation changes.
 
 The GPU output is `/home/choiceoh/.cache/st-kda-deferred/kda-deferred.json`.
