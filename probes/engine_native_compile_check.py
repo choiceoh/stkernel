@@ -2,7 +2,8 @@
 
 Use a fresh cache and Python process per sample in the ST image without GPUs.
 The only source difference is torch/extension.h versus Tensor/pybind headers.
-All device SASS must match exactly; no transport or GPU kernel is executed.
+All extracted device cubins must match exactly; no transport or GPU kernel
+is executed. cuobjdump extraction does not require nvdisasm or a GPU driver.
 """
 import argparse
 import hashlib
@@ -41,7 +42,7 @@ def run(output, repeats):
                                            ROOT / 'engine/kernels/native_cache.py',
                                            *(source / name for name in ONESHOT_FILES))},
                   variant_sha256={arm: hashlib.sha256(code.encode()).hexdigest() for arm, code in variants.items()})
-    sass_hash = None
+    cubin_hashes = None
     for sample in range(repeats):
         for arm in (('full', 'lean') if sample % 2 == 0 else ('lean', 'full')):
             command = [sys.executable, str(ROOT / 'probes/engine_native_cache_check.py'),
@@ -57,19 +58,22 @@ def run(output, repeats):
             if row['value'] != ONESHOT_API or row['nvcc_compilations'] != 1 or row['cuda_initialized']:
                 raise RuntimeError(f'cold compilation or exported API differs: {row}')
             binary = Path(row['directory']) / f"st_oneshot_{row['key']}.so"
-            sass = subprocess.check_output(['cuobjdump', '--dump-sass', str(binary)])
-            stem.with_suffix('.sass').write_bytes(sass)
-            if b'Function :' not in sass:
-                raise RuntimeError('cuobjdump returned no device functions')
-            digest = hashlib.sha256(sass).hexdigest()
-            if sass_hash is None:
-                sass_hash = digest
-            row.update(headers=arm, sample=sample, sass_sha256=digest)
+            extracted = output / f'{sample}-{arm}-cubins'
+            extracted.mkdir()
+            subprocess.run(['cuobjdump', '--extract-elf', 'all', str(binary)],
+                           cwd=extracted, check=True, capture_output=True)
+            cubins = sorted(extracted.glob('*.cubin'))
+            if not cubins:
+                raise RuntimeError('cuobjdump extracted no device cubins')
+            digests = sorted(hashlib.sha256(p.read_bytes()).hexdigest() for p in cubins)
+            if cubin_hashes is None:
+                cubin_hashes = digests
+            row.update(headers=arm, sample=sample, cubin_sha256=digests)
             report['rows'].append(row)
             (output / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
             print(json.dumps(row), flush=True)
-            if digest != sass_hash:
-                raise RuntimeError('device SASS differs; inspect the saved dumps before adopting the header change')
+            if digests != cubin_hashes:
+                raise RuntimeError('device cubins differ; inspect the saved binaries before adopting the header change')
     medians = {arm: statistics.median(row['load_seconds'] for row in report['rows'] if row['headers'] == arm)
                for arm in variants}
     report.update(complete=True, median_load_seconds=medians,
