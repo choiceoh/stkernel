@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 from engine.base.comm import LocalTP, RankLeft
 
+from tests.image_kernels import PRESENT, REASON
+
 
 class ExecutionOwnershipTests(unittest.TestCase):
     def test_invalid_world_timeout_and_rank_are_rejected(self):
@@ -166,7 +168,7 @@ if importlib.util.find_spec("torch") is not None:
     import torch
 
 
-@unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA PyTorch")
+@unittest.skipUnless(torch is not None and torch.cuda.is_available() and PRESENT, "requires CUDA PyTorch; " + REASON)
 class KernelBindingTests(unittest.TestCase):
     def test_tensor_collectives_remain_exact_across_runs_and_a_rank_failure(self):
         tp = LocalTP(4, timeout_s=2)

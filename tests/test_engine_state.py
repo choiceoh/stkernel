@@ -49,7 +49,7 @@ class StateGraphTests(unittest.TestCase):
         from engine.base.arena import Arena
         from engine.profiles.glm53.caches import Glm53Caches, layout
         from engine.profiles.glm53.decode_graphs import GraphCaches
-        from test_engine_glm53 import tiny_facts
+        from tests.test_engine_glm53 import tiny_facts
         F = tiny_facts()
         plan = layout(F, [0, 1])
         caches = [Glm53Caches(Arena(plan.nbytes(4, 3)), F, [0, 1], 4, 3) for _ in range(2)]

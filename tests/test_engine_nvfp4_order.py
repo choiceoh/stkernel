@@ -5,8 +5,10 @@ from unittest.mock import patch
 
 import torch
 
+from tests.image_kernels import PRESENT, REASON
 
-@unittest.skipUnless(torch.cuda.is_available(), 'CUDA required')
+
+@unittest.skipUnless(torch.cuda.is_available() and PRESENT, 'CUDA required; ' + REASON)
 class NVFP4OrderingTests(unittest.TestCase):
     def test_dynamic_scale_is_ready_before_quantization(self):
         import flashinfer

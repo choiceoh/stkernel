@@ -10439,3 +10439,20 @@ llama.cpp 은 `--reasoning-budget N` 으로 사고를 묶고, 예산이 다하�
 남은 29 는 전부 **환경**이다: `flashinfer` 24, `cutlass` 1, `ninja` 1, "No available kernel" 3 — 이미지 안에서만 도는 커널 스위트다. **호스트에서 돌 수 있는 것은 이제 전부 초록**이다.
 
 **교훈 둘**: (a) 회귀 판정을 main 대비로만 하면 main 이 썩는 것을 아무도 못 본다 — 절대 수를 가끔 봐야 한다. (b) 가짜가 실물을 못 따라가면 테스트는 조용히 **안 도는 상태**가 된다. 특히 3번은 통과하면서 아무것도 안 보고 있었다.
+
+
+#### §48 보충 — 남은 29 를 점검했더니: 26 은 거짓말이었고, 3 은 설계대로였고, 넷은 안 돌고 있었다 (2026-09-12)
+
+운영자 "나머지 에러 점검". §48 에서 "남은 29 는 전부 환경" 이라고 적었는데, **그 문장이 바로 §48 이 경고한 실수**였다 — 세어 보지 않고 분류했다. 하나씩 봤다.
+
+**증거부터**: `nemotron-vllm` 컨테이너에 flashinfer·cutlass·tilelang 이 있다. 거기에 같은 트리를 넣고 CPU 로 돌리니 **68 tests, 46 skipped, error 1**. 호스트에서 29개 에러를 내던 것이 **패키지만 있으면 조용히 skip** 된다는 뜻이고, 동시에 **에러 하나는 진짜였다.**
+
+1. **26 은 거짓말이었다.** 그 스위트들은 `skipUnless(torch.cuda.is_available())` 로만 막혀 있었는데, **플릿 노드에는 CUDA 가 있다**. 그래서 skip 이 아니라 `setUp` 이 돌고 flashinfer 임포트에서 터졌다 — **"여기 없다" 는 뜻의 에러**다. §48 의 교훈이 그대로 반복됐다: 그런 에러는 진짜 문제가 있는지를 가린다.
+   `tests/image_kernels.py` 를 두고(`flashinfer·tilelang·cutlass·deep_gemm·ninja` 유무), 11개 스위트의 관문에 더했다. 이제 호스트에서 **"requires the ST image's kernel packages (... missing)"** 로 skip 한다.
+2. **3 은 설계대로였다.** `test_engine_drafter` 의 `No available kernel` 은 `drafter._attn_rows` 가 SDPA 를 **cuDNN/efficient 로 못박고 math 폴백을 거부**하기 때문이다 — 코드에 그렇게 적혀 있다(`# D3: no math fallback on CUDA`). 이 호스트 torch 는 그 둘을 head_dim 4 에서 런타임 거부한다(플래그 `cudnn_sdp_enabled()` 등은 **전부 True 를 반환하면서** 그렇다 — 거부는 호출·모양·아키텍처마다 정해진다). **엔진은 옳게 행동하고 있었다.** 그래서 관문을 "쓸 모양으로 한 번 물어본다"(`fused_sdpa(head_dim)`)로 바꿨다.
+3. **넷은 안 돌고 있었다.** `test_engine_{boundary_stage,kda_marks,kda_norm,state}` 가 `from test_engine_glm53 import tiny_facts` — §48 에서 고친 것과 **같은 형제 임포트 버그**다. 호스트에서는 flashinfer 에러에 가려 안 보였고, 컨테이너에서 드러났다.
+
+**결과**(호스트, 엔진 스위트 54개 전부): **671 tests, OK (skipped=79)** — failures 0, errors 0.
+같은 트리를 패키지가 있는 컨테이너에서 돌리면 **76 tests, OK (skipped=49)** 로, 호스트에서 못 돌던 27개가 실제로 돈다. 관문이 정직하다는 뜻이다.
+
+**교훈**: "환경 문제" 는 **분류가 아니라 주장**이다. 주장하려면 그 환경을 하나 구해서 돌려 봐야 한다 — 그렇게 하니 26/3/4 로 갈렸고, 그중 넷은 아무도 안 돌리고 있던 테스트였다.

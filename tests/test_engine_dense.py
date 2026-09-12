@@ -2,12 +2,14 @@
 import importlib.util
 import unittest
 
+from tests.image_kernels import PRESENT, REASON
+
 torch = None
 if importlib.util.find_spec("torch"):
     import torch
 
 
-@unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA")
+@unittest.skipUnless(torch is not None and torch.cuda.is_available() and PRESENT, "requires CUDA; " + REASON)
 class DenseTests(unittest.TestCase):
     def test_retired_arena_storage_keeps_pack_bytes_and_graph_addresses(self):
         from engine.kernels.dense import DenseLinear
