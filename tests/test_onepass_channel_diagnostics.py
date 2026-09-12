@@ -160,12 +160,15 @@ class ChannelDiagnosticsTests(unittest.TestCase):
                     frames = wire(deltas, extra=extra)
                     old = self.call(legacy_stream(), frames, timed=timed)
                     new = self.call(onepass.ask_stream, frames, trace=True, timed=timed)
-                    self.assertEqual(new[:2], old[:2])
+                    self.assertEqual(new[0], old[0])
+                    self.assertEqual({k: new[1][k] for k in old[1]} if timed else new[1], old[1])
                     self.assertEqual(new[3], old[3])
                     self.assertEqual(new[3][-2], 1)  # Exactly one unchanged HTTP request.
         # No content still uses the original fallback TTFT and clock count.
-        self.assertEqual(self.call(onepass.ask_stream, wire([]), trace=True)[:2],
-                         self.call(legacy_stream(), wire([]))[:2])
+        new = self.call(onepass.ask_stream, wire([]), trace=True)
+        old = self.call(legacy_stream(), wire([]))
+        self.assertEqual(new[0], old[0])
+        self.assertEqual({k: new[1][k] for k in old[1]}, old[1])
 
     def test_reasoning_content_offense_is_not_misattributed_to_clean_content(self):
         result, diag, hits = self.diagnose([
@@ -284,7 +287,7 @@ class ChannelDiagnosticsTests(unittest.TestCase):
 
     def test_every_canonical_request_is_traced_and_analysis_is_outside_sampling(self):
         tree = ast.parse((ROOT / 'bench/onepass.py').read_text())
-        main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+        main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == '_main')
         asks = [n for n in ast.walk(main) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
                 and n.func.id == 'ask_stream']
         self.assertEqual(len(asks), 3)  # combined, ordinary, fixed requests.

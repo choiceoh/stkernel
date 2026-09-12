@@ -384,26 +384,49 @@ class Drafter:
     # GEMM weights, replicated on every rank) and copied the row's 40 MiB ring three times. Batched over the rows the
     # weights are read once a step; the rings are never copied -- the observe writes its cells in place and the
     # attention reads every slot's ring where it lies, one fused call over the whole field per layer.
+    def observe_kv(self, positions: torch.Tensor, aux: torch.Tensor, valid: torch.Tensor):
+        """observe's compute phase (fast path): every position's drafter K/V, per layer, from `aux` and
+        `positions` alone. It does NOT read the slot or the accepted count -- `valid` only forms the mask a
+        CALIBRATING pack sums through, a no-op once the packs are calibrated -- so on a serving boot this can
+        run while the target's last layers, the sampler and the commit are still deciding how many of these
+        positions survive. Returns [(k, v)] over the layers, each [n, t, kv, D]."""
+        F, p = self.F, self.p
+        n, t = positions.shape
+        keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)
+        c = norm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)
+        context = Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)
+        out = []
+        for L in range(F.layers):
+            q = f"layers.{L}.self_attn."
+            k = norm_rope(context[:, :, L, 0].reshape(n * t, self.local_kv_heads, F.head_dim),
+                          p[q + "k_norm.weight"], F.rms_eps, positions.reshape(-1), F.rope_theta)
+            out.append((k.reshape(n, t, self.local_kv_heads, F.head_dim), context[:, :, L, 1]))
+        return out
+
+    def observe_write(self, field: torch.Tensor, slots: torch.Tensor, positions: torch.Tensor, kv, valid) -> None:
+        """observe's write phase (fast path): the computed K/V into the slots' rings, `valid` of the t positions
+        a row. One launch a layer (draft_attention.write_draft_kv_rows). This is the only part that needs the
+        accepted count, so it is the only part that waits for the commit."""
+        from engine.kernels.draft_attention import write_draft_kv_rows
+        for L, (k, v) in enumerate(kv):
+            write_draft_kv_rows(field, slots, L, positions, k, v, valid=valid)
+
     def observe_rows(self, field: torch.Tensor, slots: torch.Tensor, positions: torch.Tensor, aux: torch.Tensor,
                      valid: torch.Tensor) -> None:
         """`observe_masked` for every row at once, straight into the slots' rings. field [S, L, 2, cells, kv, D] is
         the whole draft field; slots [n]; positions [n, t]; aux [n*t, A] in row order; valid [n] (device counts)."""
         F, p = self.F, self.p
+        if self.fast_attention:
+            # observe in two phases so the compute can overlap the target's tail (45차 §96): the K/V transform
+            # reads only `aux` and `positions`, and `positions` is `ctx_before + arange`, known at the step's
+            # start (decode_commit.advance returns the ENTERING context). Only the ring write needs `valid`
+            # (= how many drafts commit accepted), so it alone waits for the commit. This split is byte-for-byte
+            # the single call; the overlap that uses it lives in the captured pipeline.
+            self.observe_write(field, slots, positions, self.observe_kv(positions, aux, valid), valid)
+            return
         n, t = positions.shape
         keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)
         c = norm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)
-        if self.fast_attention:
-            from engine.kernels.draft_attention import write_draft_kv_rows
-            context = Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)
-            for L in range(F.layers):
-                q = f"layers.{L}.self_attn."
-                k = norm_rope(context[:, :, L, 0].reshape(n*t, self.local_kv_heads, F.head_dim),
-                              p[q + "k_norm.weight"], F.rms_eps, positions.reshape(-1), F.rope_theta)
-                k = k.reshape(n, t, self.local_kv_heads, F.head_dim)
-                # one launch a layer, not one a (layer, row): the single-slot kernel required numel()==1 and
-                # the loop was the consequence
-                write_draft_kv_rows(field, slots, L, positions, k, context[:, :, L, 1], valid=valid)
-            return
         flat = positions.reshape(-1)
         idx = positions % F.window
         rows = slots.view(n, 1)

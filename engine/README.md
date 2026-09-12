@@ -71,9 +71,9 @@ prefix 재사용의 단위는 풀의 **블록 768**(`facts.BLOCK`; 프리필 청
 위치를 스냅샷에 관측한다(`adapter.prefill`). **생성 중에 넘은 경계**도 들어간다: 동기 스텝 뒤엔 링에서, 앞서 도는 스텝은 장치의
 "경계 스테이지"(슬롯당 KDA 상태 + conv 탭, `caches.stage_boundaries`; 넘은 스텝만 쓴다)에 놓아 두고 호스트가 결과를 읽을 때
 스냅샷으로 옮긴다(드래프터 링은 그때의 산 링: 넘은 뒤 몇 자리가 창의 가장 오래된 칸에 얹힐 뿐). 스냅샷 96개(경계당 ~45 MiB,
-`boot.PREFIX_SNAPSHOTS`); 자리가 모자라면 **한 번도 채택되지 않은 경계부터** 나간다(`prefix._victim`) — 긴 프롬프트 하나가 모두가
+`boot.PREFIX_SNAPSHOT_GIB` 가 선언한 바이트에서 형상이 개수를 정한다 — native 4.25 GiB = 45 MiB × 96); 자리가 모자라면 **한 번도 채택되지 않은 경계부터** 나간다(`prefix._victim`) — 긴 프롬프트 하나가 모두가
 공유하는 시스템 프롬프트를 밀어내지 못한다. 밀려나는 **잎 경계**(다른 경계가 잇지 않는 것)는 NVMe **prefix 티어**에 남는다: 스냅샷이
-`runner.spill_low_water`(8) 아래로 줄면 러너가 미리 잎을 써 두고(블록 + 스냅샷 77 MiB + 기록, 대화 티어 옆 `prefix/` 디렉터리, 키는
+`runner.spill_low_water`(8) 아래로 줄면 러너가 미리 잎을 써 두고(블록 + 스냅샷 45 MiB + 기록, 대화 티어 옆 `prefix/` 디렉터리, 키는
 해시 56비트), 메모리에 없는 경계를 티어가 들고 있으면 요청 행에 읽어 들여(`restore_begin/finish`, 네 랭크 투표 뒤) 그 뒤부터 프리필한다
 — 32K 프롬프트 재적중 ≈ 280 MB 읽기 vs 16 s 프리필. 같은 프롬프트가 동시에 오면 둘째는 **첫째의 프리필이 그 경계를 캐시할 때까지
 기다렸다 채택**한다(`runner.shared_ahead`, 대기 중 다른 요청을 먼저 들여보내고 경계가 오면 맨 앞으로). `POST /v1/prefix/warm`
@@ -270,7 +270,7 @@ HTTP 요청 번호는 내부 KV 행 번호와 분리한다. `Server`는 기본 6
 회귀검사와 구성요소 측정은
 [`measurements/st_engine_cache_20260911`](../measurements/st_engine_cache_20260911/README.md)에 있다.
 
-예산은 `profiles/glm53/budget.py`가 선언한다(D1): OS 예비 2×5%, 런타임 바닥(원장), 가중치·드래프터(랭크 파일), 상태 슬롯·prefix 스냅샷(레이아웃),
+예산은 `profiles/glm53/budget.py`가 선언한다(D1): OS 예비 = 이 박스의 earlyoom SIGTERM 선 + 2 GiB(`budget.os_reserve_gib`, 여기선 8.00 — 2×5% 는 dsv41 프로필의 식이고 glm53 은 4.0 을 박아 두고 있었다), 런타임 바닥(원장, 그리고 그중 우리 기동분이 아닌 몫은 "already on this box before us" 로 따로 선다), 가중치·드래프터(랭크 파일), 상태 슬롯·prefix 스냅샷(레이아웃),
 아레나 밖 작업공간 상한 12 GiB(`base/runtime_memory`가 강제; 부팅 원장 `memory-rankN.json`을 주면 실측 피크를 줄에 적는다),
 NVMe 스테이징 — 남는 것이 KV 자리이고, 전체 모델 부팅은 rank 0 에서 그 표와 "선언한 KV 가 남기는 양"을 찍는다
 (`python3 engine/profiles/glm53/budget.py [--ledger …]`). 프리필 인덱서 선택은 질의 1,024 행씩 나눠(`net.SELECT_ROWS`) 로짓 과도를
