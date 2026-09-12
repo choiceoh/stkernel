@@ -150,6 +150,17 @@ class BlockPool:
             return block
         raise MemoryError("no block is free")
 
+    def free_order(self) -> "list[int]":
+        """Every free block in the order it would be handed out -- anonymous first, an operator's pin last.
+        The state a test or a diagnostic compares; nothing in the engine's path walks it."""
+        out = []
+        for grade in (ANON, FADED, CACHED, PINNED):
+            block = self._head[grade]
+            while block != EMPTY:
+                out.append(block)
+                block = self._next[block]
+        return out
+
     @property
     def available(self) -> int:
         """Blocks no row holds: free now, counting the ones a boundary would give up."""
@@ -418,6 +429,7 @@ def _selfcheck() -> None:
     assert graded.available == 10 and graded.anonymous == 8 and graded.cached == 2
     assert graded.reserve(1, 16 * 8) == 8 and graded.cached == 2, "eight anonymous blocks came first"
     assert graded.reserve(2, 16) == 1 and graded.cached == 1, "then one boundary's block, not the rest"
+    assert len(graded.free_order()) == graded.available == 1
     assert graded.row(2)[0] == kept[1], "and the tail of the boundary before its head"
     # storage: attach a fake arena and read a sequence's blocks back as views
     fake = memoryview(bytearray(10 * 64))

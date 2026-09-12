@@ -973,6 +973,23 @@ class ByteTokenizer:
         return bytes(ids).decode("utf-8", errors="replace")
 
 
+def _stream_bytes(data, tok, stop=(), per_step=6):
+    c = _choice(tok, stop)
+    shown = []
+    for i in range(0, len(data), per_step):
+        c.feed(list(data[i:i + per_step]), None, None)
+        shown.extend(d.get("content", "") for d in c.flush())
+        if c.finish == "stop":
+            return "".join(shown), c
+    shown.extend(d.get("content", "") for d in c.flush(final=True))
+    return "".join(shown), c
+
+
+def _choice(tok, stop=()):
+    from engine.base.serve import _Choice
+    return _Choice(0, 1, threading.Event(), queue.Queue(), tok=tok, stop=list(stop), reasoning=False)
+
+
 class StreamedTextTests(unittest.TestCase):
     """What the door shows a client, token by token, must be what the whole answer says."""
 
@@ -1027,6 +1044,175 @@ class StreamedTextTests(unittest.TestCase):
 
         self.stream(list(b"x" * 200), Counting())
         self.assertLessEqual(max(seen), 4, "a window, not the whole answer")
+
+
+@unittest.skipUnless(importlib.util.find_spec("tokenizers") is not None, "requires the tokenizers library")
+class RustStreamTests(unittest.TestCase):
+    """The Rust DecodeStream path, against the Python window it replaces.
+
+    The fixture is a byte-fallback tokenizer whose id IS the byte, so it says exactly what
+    ByteTokenizer above says: the two paths can be put on the same tokens and compared.
+    """
+
+    def rust(self):
+        from tokenizers import Tokenizer, decoders, models
+        tok = Tokenizer(models.BPE({f"<0x{b:02X}>": b for b in range(256)}, [],
+                                   byte_fallback=True, unk_token=None))
+        tok.decoder = decoders.Sequence([decoders.ByteFallback(), decoders.Fuse()])
+        return tok
+
+    def shown(self, ids, tok, *, per_step=1, stop=()):
+        """What a client saw, fed `per_step` tokens at a time."""
+        c = _choice(tok, stop)
+        out = []
+        for i in range(0, len(ids), per_step):
+            c.feed(ids[i:i + per_step], None, None)
+            out.extend(d.get("content", "") for d in c.flush())
+            if c.finish == "stop":
+                return "".join(out), c
+        out.extend(d.get("content", "") for d in c.flush(final=True))
+        return "".join(out), c
+
+    def test_the_rust_stream_is_the_path_a_real_tokenizer_takes(self):
+        from engine.base.serve import _Stream
+        self.assertIsNotNone(_Stream(self.rust())._stream, "a Rust tokenizer must not fall to the window")
+        self.assertIsNone(_Stream(ByteTokenizer())._stream, "anything else must")
+
+    def test_both_paths_show_the_same_text(self):
+        text = "한국어 mixed ascii 漢字 and emoji 🙂 tail"
+        ids = list(text.encode())
+        for per_step in (1, 3, 7):
+            with self.subTest(per_step=per_step):
+                fast, _ = self.shown(ids, self.rust(), per_step=per_step)
+                slow, _ = self.shown(ids, ByteTokenizer(), per_step=per_step)
+                self.assertEqual(fast, text)
+                self.assertEqual(fast, slow)
+                self.assertNotIn("\ufffd", fast)
+
+    def test_a_stop_string_spanning_tokens_never_shows_its_prefix(self):
+        shown, c = self.shown(list(b"hi STOP there"), self.rust(), stop=["STOP"])
+        self.assertEqual(shown, "hi ")
+        self.assertEqual(c.finish, "stop")
+
+    # -- the two repairs vLLM hit in production ------------------------------------------------
+
+    def test_an_id_that_is_not_a_token_id_costs_its_own_text_and_no_more(self):
+        """vllm-project/vllm#21951. The batch is refused before the stream is touched, so a step
+        that carries several tokens still loses only the one id that is not a token id."""
+        from engine.base.serve import DETOK_REPAIRS
+        before = DETOK_REPAIRS["invalid_token_id"]
+        for bad in (-1, 2 ** 63, 1.5, None):
+            with self.subTest(bad=bad):
+                ids = list(b"ab") + [bad] + list(b"cd")
+                shown, c = self.shown(ids, self.rust(), per_step=5)
+                self.assertEqual(shown, "abcd")
+                self.assertIsNone(c.error)
+        self.assertEqual(DETOK_REPAIRS["invalid_token_id"], before + 4)
+
+    def test_a_decoder_that_rewrites_its_own_output_does_not_end_the_answer(self):
+        """vllm-project/vllm#17448: a non-monotonic decoder breaks DecodeStream's prefix, and
+        every later step raises the same way until the stream is replaced."""
+        from tokenizers import Tokenizer, decoders, models, pre_tokenizers
+        from engine.base.serve import DETOK_REPAIRS, _Stream
+        tok = Tokenizer(models.WordLevel({"a": 0, "b": 1, "c": 2}, unk_token=None))
+        tok.pre_tokenizer = pre_tokenizers.Whitespace()
+        tok.decoder = decoders.Sequence([decoders.Fuse(), decoders.Replace("ab", "X")])
+        stream = _Stream(tok)
+        stream.extend([0])
+        self.assertEqual(stream.decoded(False), "a")            # the stream's prefix is now "a"
+        before = DETOK_REPAIRS["invalid_prefix"]
+        stream.extend([1])
+        self.assertEqual(stream.decoded(False), "a")            # "ab" became "X": held, not shown
+        stream.extend([2])
+        # Repaired, not raised. "a" is already out and cannot be taken back, so no answer here
+        # equals decode([0,1,2]) == "Xc"; this one at least loses no token -- vLLM's drops the
+        # held "b" and shows "ac".
+        self.assertEqual(stream.decoded(False), "abc")
+        self.assertEqual(DETOK_REPAIRS["invalid_prefix"], before + 1)
+        stream.extend([2])                                      # and the primed stream carries on
+        self.assertEqual(stream.decoded(True), "abcc")
+
+    def test_a_tail_that_will_never_finish_is_shown_instead_of_held_forever(self):
+        """A held-back tail is a character waiting for its rest, and that wait is bounded. A run
+        of lone lead bytes is not waiting: holding it shows the client nothing for the rest of
+        the answer, and the decode that repeats grows with the run."""
+        from engine.base.serve import DETOK_REPAIRS
+        before = DETOK_REPAIRS["stalled"]
+        stuck = [0xED] * 64
+        for tok in (self.rust(), ByteTokenizer()):
+            with self.subTest(tok=type(tok).__name__):
+                c = _choice(tok)
+                seen = 0
+                for i in range(0, len(stuck), 4):
+                    c.feed(stuck[i:i + 4], None, None)
+                    seen += sum(len(d.get("content", "")) for d in c.flush())
+                self.assertGreater(seen, 0, "the client saw nothing while the answer ran")
+        self.assertGreater(DETOK_REPAIRS["stalled"], before)
+
+    def test_an_unfinished_character_at_the_very_end_is_still_shown(self):
+        shown, _ = self.shown(list("ok ".encode()) + [0xED], self.rust())
+        self.assertEqual(shown, "ok \ufffd")
+
+
+class StopScanCostTests(unittest.TestCase):
+    """A streamed step must not cost more because the answer is longer."""
+
+    def test_the_stop_scan_reads_the_new_tail_not_the_answer(self):
+        spans = []
+
+        class Seen(str):
+            def find(self, sub, start=0, *rest):
+                spans.append(len(self) - start)
+                return str.find(self, sub, start, *rest)
+
+        class Watched:
+            """The real stream, with what the stop scan is handed put on the record."""
+            def __init__(self, inner):
+                self.inner, self.ids = inner, inner.ids
+
+            def extend(self, ids):
+                self.inner.extend(ids)
+
+            def decoded(self, final):
+                return Seen(self.inner.decoded(final))
+
+        c = _choice(ByteTokenizer(), stop=["STOP", "\n\nHuman:"])
+        c.streams["content"] = Watched(c.streams["content"])
+        answer = list(b"the quick brown fox. " * 400)
+        for i in range(0, len(answer), 6):
+            c.feed(answer[i:i + 6], None, None)
+            c.flush()
+        self.assertGreater(len(c.text["content"]), 8000)
+        self.assertGreater(len(spans), 100)
+        self.assertLessEqual(max(spans), 64, "the scan grew with the answer")
+
+    def test_a_stop_string_is_still_found_after_a_long_run_before_it(self):
+        shown, c = _stream_bytes(b"x" * 5000 + b"STOP tail", ByteTokenizer(), stop=["STOP"])
+        self.assertEqual(c.finish, "stop")
+        self.assertEqual(shown, "x" * 5000)
+
+    def test_the_short_circuit_in_partial_suffix_changes_no_answer(self):
+        import itertools
+        import random
+        from engine.base.serve import partial_suffix
+
+        def naive(text, needles):
+            keep = 0
+            for needle in needles:
+                for cut in range(min(len(needle) - 1, len(text)), keep, -1):
+                    if text.endswith(needle[:cut]):
+                        keep = cut
+                        break
+            return keep
+
+        random.seed(11)
+        alphabet = "abST"
+        needles = ["STOP", "ab", "aab", "S"]
+        cases = ["".join(t) for n in range(5) for t in itertools.product(alphabet, repeat=n)]
+        cases += ["".join(random.choice(alphabet) for _ in range(random.randrange(12))) for _ in range(400)]
+        for text in cases:
+            for subset in (needles, needles[:1], needles[1:], []):
+                self.assertEqual(partial_suffix(text, subset), naive(text, subset), (text, subset))
 
 
 class StepCostTests(unittest.TestCase):
@@ -1089,6 +1275,20 @@ class MetricsTests(unittest.TestCase):
         out = self.text(s)
         self.assertIn('finished_reason="stop"} 2', out)
         self.assertIn('finished_reason="length"} 1', out)
+
+    def test_the_detokenizer_says_which_path_it_took_and_what_it_had_to_repair(self):
+        from engine.base.serve import DETOK_REPAIRS
+        s = server()
+        kept = dict(DETOK_REPAIRS)
+        try:
+            DETOK_REPAIRS.update(dict.fromkeys(DETOK_REPAIRS, 0))
+            out = self.text(s)
+            self.assertIn("st:detokenizer_rust_stream", out)        # D3: a silent path is an unchecked path
+            self.assertNotIn("st:detokenizer_repairs_total", out)   # no series at all in a healthy run
+            DETOK_REPAIRS["invalid_prefix"] = 1
+            self.assertIn('st:detokenizer_repairs_total{engine="st",reason="invalid_prefix"} 1', self.text(s))
+        finally:
+            DETOK_REPAIRS.update(kept)
 
     def test_the_queue_clock_is_taken_once_for_a_continued_request(self):
         s = server()

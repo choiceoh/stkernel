@@ -249,11 +249,190 @@ def partial_suffix(text: str, needles) -> int:
     """
     keep = 0
     for needle in needles:
+        # Every flush asks this and almost every answer is no, so settle the no in one test: if
+        # `text` ends with `needle[:cut]` for any cut below the whole needle, its last character
+        # is one of `needle[:-1]`. Without this the loop builds and compares a prefix per length
+        # per needle per flush, which measured as the door's largest cost per streamed step.
+        if not text or text[-1] not in needle[:-1]:
+            continue
         for cut in range(min(len(needle) - 1, len(text)), keep, -1):
             if text.endswith(needle[:cut]):
                 keep = cut
                 break
     return keep
+
+
+# Streamed text the door had to repair, by what went wrong: `/metrics` reports it, because a
+# repair is the one thing here that changes what a client reads and leaves no other trace.
+DETOK_REPAIRS = {"invalid_token_id": 0, "invalid_prefix": 0, "stalled": 0}
+
+# tokenizers raises this one untyped, so the message is the only way to tell it from a real bug.
+# https://github.com/huggingface/tokenizers `DecodeStreamError::InvalidPrefix`
+_INVALID_PREFIX = "Invalid prefix encountered"
+
+# How many trailing tokens may be held back waiting for a character to finish. A UTF-8 code point
+# is four bytes at most, so four byte-fallback tokens; past that the stream is not waiting, it is
+# stuck (see _Stream.decoded).
+_STALL_TOKENS = 8
+
+
+def decode_stream(tok, skip_special_tokens: bool = True, ids=None):
+    """`tokenizers`' Rust DecodeStream for this tokenizer, or None when that is not what it is.
+
+    The library's own default here is False where `Tokenizer.decode`'s is True, so the flag is
+    passed rather than left out: the two paths below must render the same text.
+
+    `ids` primes the stream -- it takes them as already said, without producing their text. Only
+    the repair below needs that, and only tokenizers >= 0.22 has it; older ones start empty and
+    the repair costs a token's text instead of none.
+    """
+    try:
+        from tokenizers import Tokenizer
+        from tokenizers.decoders import DecodeStream
+    except ImportError:                                  # base imports without the library
+        return None
+    if not isinstance(tok, Tokenizer):                   # a wrapper, or one of the tests' fakes
+        return None
+    if ids:
+        try:
+            return DecodeStream(ids=list(ids), skip_special_tokens=skip_special_tokens)
+        except TypeError:
+            pass
+    return DecodeStream(skip_special_tokens=skip_special_tokens)
+
+
+def _decode(tok, ids) -> str:
+    """`tok.decode(ids)`, with an id that is not a token id dropped instead of raised.
+
+    `Tokenizer.decode` raises OverflowError on a negative or oversized id and TypeError on one
+    that is not an integer. On the HTTP thread that ends the answer mid-stream and the client
+    never learns why, so a bad id costs its own text and nothing else.
+    """
+    try:
+        return tok.decode(ids)
+    except (OverflowError, TypeError):
+        DETOK_REPAIRS["invalid_token_id"] += 1
+        keep = []
+        for tid in ids:
+            try:
+                tok.decode([tid])
+            except (OverflowError, TypeError):
+                continue
+            keep.append(tid)
+        return tok.decode(keep)
+
+
+class _Stream:
+    """One channel's text, extended as its tokens arrive.
+
+    Neither obvious way works. Decoding one token alone is wrong -- a token's rendering
+    depends on its neighbours, because a character can be spread over several byte pieces
+    and because a piece carries its leading space only when something precedes it. Decoding
+    the whole answer again for every token is right but quadratic: measured on this
+    checkpoint's tokenizer, 3.06 s of CPU for a 4,096-token answer against 0.011 s for a
+    two-token window whose already-accounted part is subtracted, which is what vLLM's prefix
+    and read offsets do.
+
+    `tokenizers` has that window in Rust (`DecodeStream`), and a checkpoint's own tokenizer
+    is the Rust one, so that is the path it takes: one call a step -- the step's whole batch
+    of tokens at once -- instead of two decodes and the Python arithmetic around them.
+    Anything else (every fake in the tests) keeps the window below. Same algorithm, same
+    text, and `tests/test_engine_serve.py` pins the two against each other.
+    """
+
+    __slots__ = ("tok", "ids", "text", "_rust", "_stream", "_fed", "_holding", "_prefix", "_read")
+
+    def __init__(self, tok):
+        self.tok = tok
+        self.ids = []                       # this channel's tokens, in order
+        self.text = ""                      # what they say, decoded so far
+        self._stream = decode_stream(tok)   # None where the window below is the path
+        self._rust = self._stream is not None   # decided once: the two keep different bookkeeping,
+                                                # and changing path mid-answer would say it all twice
+        self._fed = 0                       # ids already handed to the Rust stream
+        self._holding = 0                   # trailing ids it took and has not turned into text
+        self._prefix = self._read = 0       # the Python window, as offsets into `ids`
+
+    def extend(self, ids) -> None:
+        self.ids.extend(ids)
+
+    def decoded(self, final: bool) -> str:
+        """This channel's text, extended by whatever the newest tokens added."""
+        if not self._rust:
+            self._window(final)
+            return self.text
+        if self._fed < len(self.ids):
+            pending = self.ids[self._fed:]
+            self._fed = len(self.ids)
+            grown, self._holding = self._step(pending)
+            self.text += grown
+        # A held-back tail is a character waiting for its rest, and that wait is bounded. A
+        # longer one is not waiting -- it is a run of lone bytes nothing will complete -- and
+        # holding it shows the client nothing while the decode that repeats grows with the run.
+        # Both ends the same way: say what the tail says, replacement characters and all.
+        if self._holding and (final or self._holding > _STALL_TOKENS):
+            if not final:
+                DETOK_REPAIRS["stalled"] += 1
+            self.text += _decode(self.tok, self.ids[len(self.ids) - self._holding:])
+            self._holding = 0
+            self._stream = decode_stream(self.tok)   # its prefix now names text already shown
+        return self.text
+
+    def _step(self, ids) -> "tuple[str, int]":
+        """One `step`, and the two ways it is known to fail where people are watching.
+
+        Both are vLLM's, hit in production there and repaired there (vllm-project/vllm#21951
+        and #17448). vLLM steps one token at a time and so repairs one token at a time; carrying
+        the step's whole batch would normally make a repair coarser, and does not here, because
+        the argument conversion refuses the batch before the stream is touched.
+
+        Returns the text produced and how many trailing ids the stream is then holding back.
+        """
+        try:
+            text = self._stream.step(self.tok, ids) or ""
+            return text, 0 if text else self._holding + len(ids)
+        except (OverflowError, TypeError):
+            # Not a token id at all: out of the range the Rust side takes, or not an integer.
+            # The argument conversion fails before any of the batch is taken, so the rest of
+            # the step is still good -- replay it one at a time and lose only the bad one.
+            DETOK_REPAIRS["invalid_token_id"] += 1
+            text, holding = "", self._holding
+            for tid in ids:
+                try:
+                    piece = self._stream.step(self.tok, tid) or ""
+                except (OverflowError, TypeError):
+                    continue
+                holding = 0 if piece else holding + 1
+                text += piece
+            return text, holding
+        except Exception as exc:                     # noqa: BLE001 -- tokenizers raises it untyped
+            if not str(exc).startswith(_INVALID_PREFIX):
+                raise
+            # The decoder rewrote text it had already produced, so the stream's own prefix no
+            # longer names what it holds and every later step raises the same way. The state is
+            # gone; the text is not, and neither are the ids: say what everything the old stream
+            # had not accounted for says, and prime a new stream with exactly those so it carries
+            # on with the right prefix. vLLM drops that token's text here; we do not.
+            DETOK_REPAIRS["invalid_prefix"] += 1
+            unaccounted = self.ids[len(self.ids) - self._holding - len(ids):]
+            self._stream = decode_stream(self.tok, ids=unaccounted)
+            return _decode(self.tok, unaccounted), 0
+
+    def _window(self, final: bool) -> None:
+        """The same window in Python, for a tokenizer that is not the Rust one."""
+        ids = self.ids
+        if self._read >= len(ids):
+            return
+        before = _decode(self.tok, ids[self._prefix:self._read]) if self._read > self._prefix else ""
+        grown = _decode(self.tok, ids[self._prefix:])
+        # a trailing replacement character is half a code point: wait for the rest, unless
+        # nothing more is coming or the wait has stopped being one
+        stalled = len(ids) - self._read > _STALL_TOKENS
+        if len(grown) > len(before) and (final or stalled or not grown.endswith("\ufffd")):
+            if stalled and not final and grown.endswith("\ufffd"):
+                DETOK_REPAIRS["stalled"] += 1
+            self.text += grown[len(before):]
+            self._prefix, self._read = self._read, len(ids)
 
 
 class _Choice:
@@ -269,11 +448,11 @@ class _Choice:
         self.min_new = min_new
         self._stop_from = 0          # a stop string may not START below the floor: min_tokens means at least
                                      # that many, and a stop the model happens to write early cannot undo it
-        self.held = {"reasoning_content": [], "content": []}
+        self._scanned = 0            # how much of the content channel the stop scan has already read
+        self._stop_span = max((len(s) for s in self.stop), default=1) - 1   # how far back a new one can reach
+        self.streams = {"reasoning_content": _Stream(tok), "content": _Stream(tok)}
         self.shown = {"reasoning_content": 0, "content": 0}
         self.text = {"reasoning_content": "", "content": ""}
-        self.acc = {"reasoning_content": "", "content": ""}      # decoded so far, grown a window at a time
-        self.window = {"reasoning_content": [0, 0], "content": [0, 0]}   # into `held`: shown up to, decoded up to
         self.logprobs = []                           # per generated token: (id, logprob, [(id, logprob), ...])
         self.total = 0
         self.finish = None
@@ -283,49 +462,41 @@ class _Choice:
         self._tool_seen = 0
 
     def feed(self, tokens, logprobs, reasoning_end) -> None:
+        """The step's new tokens, into the channel they belong to -- as one batch, not one at a
+        time, because a batch is one call into the decode stream instead of one per token."""
+        if not self.reasoning and logprobs is None:      # an answer past its reasoning, which is most steps
+            self.total += len(tokens)
+            self.streams["content"].extend(tokens)
+            return
+        channel = "reasoning_content" if self.reasoning else "content"
+        batch = []
         for i, t in enumerate(tokens):
             self.total += 1
             if logprobs is not None and i < len(logprobs):
                 self.logprobs.append(logprobs[i])
             if self.reasoning and t == reasoning_end:
-                self.reasoning = False
+                self.streams[channel].extend(batch)          # the split lands inside this step
+                batch, channel, self.reasoning = [], "content", False
                 continue
-            self.held["reasoning_content" if self.reasoning else "content"].append(t)
-
-    def _decoded(self, channel: str, final: bool) -> str:
-        """This channel's text, extended by whatever the newest tokens added.
-
-        Neither obvious way works. Decoding one token alone is wrong -- a token's
-        rendering depends on its neighbours, because a character can be spread over
-        several byte pieces and because a piece carries its leading space only when
-        something precedes it. Decoding the whole answer again for every token is
-        right but quadratic: measured on this checkpoint's tokenizer, 3.06 s of CPU
-        for a 4,096-token answer against 0.011 s for this. So decode a two-token
-        window and subtract the part of it already accounted for, which is what
-        vLLM's prefix and read offsets do.
-        """
-        ids = self.held[channel]
-        prefix, read = self.window[channel]
-        if read < len(ids):
-            before = self.tok.decode(ids[prefix:read]) if read > prefix else ""
-            grown = self.tok.decode(ids[prefix:])
-            # a trailing replacement character is half a code point: wait for the rest,
-            # unless nothing more is coming
-            if len(grown) > len(before) and (final or not grown.endswith("\ufffd")):
-                self.acc[channel] += grown[len(before):]
-                self.window[channel] = [read, len(ids)]
-        return self.acc[channel]
+            batch.append(t)
+        self.streams[channel].extend(batch)
 
     def flush(self, final: bool = False) -> "list[dict]":
         """Decode each channel; what is new becomes a delta. Returns the deltas in order."""
         deltas = []
-        for channel in self.held:
-            decoded = self._decoded(channel, final)
+        for channel, stream in self.streams.items():
+            decoded = stream.decoded(final)
             if channel == "content":
                 if self.stop:
                     if self.total <= self.min_new:
                         self._stop_from = len(decoded)
-                    hits = [i for i in (decoded.find(x, self._stop_from) for x in self.stop) if i >= 0]
+                    # Scan the tail the last flush could not have seen whole, not the answer: a stop
+                    # that lies entirely below `_scanned` was already looked for, and the floor only
+                    # ever rises. Searching from 0 every step made the cost of a step grow with the
+                    # answer, which is the shape you cannot fix later with a faster decode.
+                    floor = max(self._stop_from, self._scanned - self._stop_span)
+                    self._scanned = len(decoded)
+                    hits = [i for i in (decoded.find(x, floor) for x in self.stop) if i >= 0]
                     cut = min(hits) if hits else -1
                     if cut >= 0:
                         decoded = decoded[:cut]
@@ -473,7 +644,8 @@ class Server:
     def __init__(self, engine, runner, comm, port: int = 8000, tokenizer=None,
                  host: str = "0.0.0.0", max_pending: int = 64, chat=None, model_name: str = "st",
                  reasoning_end: "int | None" = None, request_timeout_s: float = 3600.0, tool_parser=None,
-                 generation: "dict | None" = None, max_choices: int = 4, vision=None):
+                 generation: "dict | None" = None, max_choices: int = 4, vision=None,
+                 lease: "dict | None" = None):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
         if type(request_timeout_s) not in (int, float) or not request_timeout_s > 0:
@@ -484,6 +656,9 @@ class Server:
             raise ValueError("reasoning_end must be a token id")
         self.engine, self.runner, self.comm = engine, runner, comm
         self.port, self.host, self.tok = port, host, tokenizer
+        # D3 is about kernels, but its rule holds here too: a path that is taken silently is a
+        # path nobody checks. /metrics says which detokenizer served, so a scrape settles it.
+        self.rust_detok = tokenizer is not None and decode_stream(tokenizer) is not None
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
         self.tool_parser = tool_parser             # text -> [(name, arguments json)] or None (the profile knows the model's format)
         self.vision = vision                       # the profile's door half for pictures (prepare / expand / limits), or None: text only
@@ -498,6 +673,15 @@ class Server:
         self._deadline = {}                        # request id -> clock() by which it must have finished (rank 0)
         self.cancelled = 0
         self.timed_out = 0                         # the subset of `cancelled` the deadline scan took
+        # The fleet lease (engine/base/fleet_lease): `{'owner':..., 'path':...}` on rank 0, or
+        # None when nothing reserved this fleet. Two things ride on it -- what this engine is
+        # doing, published for whoever is waiting, and the request to hand the fleet over.
+        self.lease = dict(lease) if lease else None
+        self.draining = None                       # the requester we are handing the fleet to
+        self.drained = False                       # every conversation parked; the loop may end
+        self.handed_over = None                    # {'to':..., 'parked': n, 'lost': n} once it happens
+        self._lease_seen = 0.0                     # last poll, so a step is not a file stat
+        self.lease_poll_s = 2.0
         self.steps_prefill = self.steps_decode = 0   # D9: a step is one kind or the other, never both
         # Latency is owed from the request's arrival, not from the step that served it.
         # Rank 0 admits, answers and serves /metrics, so only rank 0 keeps these.
@@ -565,6 +749,11 @@ class Server:
         not a secret and not authentication: it separates namespaces, which is all a prefix cache can promise."""
         if self.comm.rank != 0:
             raise RequestError("requests must enter on rank 0")
+        if self.draining is not None:
+            # Handing the fleet over: what is here finishes and is parked, nothing new joins.
+            # Refused before any state exists -- a rejected request that left a pending entry
+            # behind would keep the engine from ever going quiet, and so from ever letting go.
+            raise RequestError("the engine is handing the fleet over; retry shortly", 503)
         options = dict(options or {})
         if options and hasattr(self.engine, "validate_options"):
             try:
@@ -1131,6 +1320,74 @@ class Server:
                     if e["cancelled"] is None:
                         self._answer(request, RequestError("conversation could not be restored from the tier", 503))
 
+    def _yield_asked(self) -> "str | None":
+        """Rank 0: has anyone asked for the fleet? Polled, and it publishes while it looks.
+
+        This is the half of a handover a queue cannot do on its own. A queue can put a
+        session at the front of the line; only the engine can finish the conversations it
+        is holding and put them where they survive the next boot (D16).
+        """
+        if self.draining is not None:
+            return self.draining
+        if not self.lease or self.comm.rank != 0:
+            return None
+        now = self.clock()
+        if now - self._lease_seen < self.lease_poll_s:
+            return None
+        self._lease_seen = now
+        from engine.base import fleet_lease
+        try:
+            record = fleet_lease.read(self.lease["path"])
+            if not record or record.get("owner") != self.lease["owner"]:
+                return None                       # not our lease any more: nothing to answer
+            fleet_lease.publish(self.lease["owner"], path=self.lease["path"],
+                                running=len(self.runner.state.running),
+                                waiting=len(self.runner.state.waiting) + len(self._waiting),
+                                served=self.served, steps=self.runner.steps)
+            asked = fleet_lease.yield_requested(record)
+        except Exception:                         # noqa: BLE001 -- the lease never takes serving down
+            return None
+        return asked.get("requester") if asked else None
+
+    def _quiet(self) -> bool:
+        """Nothing left to finish: no request anywhere, and no transfer on the tier's thread."""
+        return not (self.runner.state.running or self.runner.state.waiting or self._waiting
+                    or self.pending or self._active or self._retiring or self._resuming
+                    or self._restoring)
+
+    def _hand_over(self) -> None:
+        """Park what is still resident, let the lease go, and end the loop.
+
+        A finished turn is already parked by `_retire` when a tier is configured, so what
+        is left here is the rows that stayed resident. They are parked under their
+        conversation key, which is exactly what the next holder resumes by -- so the
+        fleet changes hands without anyone losing their context.
+        """
+        parked = lost = 0
+        if self.runner.tiered is not None:
+            for row, conversation in list(self._conversation_of.items()):
+                self._conversations.pop(conversation, None)
+                self._conversation_of.pop(row, None)
+                self._idle_order.pop(row, None)
+                try:
+                    self.runner.park(row, key=conversation)
+                    parked += 1
+                except Exception:                 # noqa: BLE001 -- one lost turn is not a lost handover
+                    lost += 1                     # ... but it is never a silent one
+        self.handed_over = {"to": self.draining, "parked": parked, "lost": lost}
+        if lost:
+            print(f"  handover to {self.draining}: {parked} conversations parked, {lost} LOST", flush=True)
+        if self.lease and self.comm.rank == 0:
+            from engine.base import fleet_lease
+            try:
+                # Say what happened before letting go: the next holder reads this file.
+                fleet_lease.publish(self.lease["owner"], path=self.lease["path"],
+                                    phase="handed over", parked=parked, lost=lost)
+                fleet_lease.release(self.lease["owner"], path=self.lease["path"])
+            except Exception:                     # noqa: BLE001
+                pass
+        self.alive = False                        # `once` returns False and `loop` ends
+
     def _retire(self, row):
         """A finished turn leaves its row: parked with a tier, resident idle without, released otherwise."""
         if not self.runner.keep_idle:
@@ -1231,6 +1488,12 @@ class Server:
             ("counter", "st:steps_decode_total", "steps that were a decode", self.steps_decode),
             ("counter", "st:requests_cancelled_total", "requests cancelled, for any reason", self.cancelled),
             ("counter", "st:requests_timed_out_total", "the subset the deadline scan took", self.timed_out),
+            ("gauge", "st:handing_over", "1 while the fleet is being handed to another session",
+             int(self.draining is not None)),
+            ("counter", "st:handover_conversations_parked", "turns parked for the next holder",
+             (self.handed_over or {}).get("parked", 0)),
+            ("counter", "st:handover_conversations_lost", "turns a handover could not park",
+             (self.handed_over or {}).get("lost", 0)),
             ("gauge", "st:kv_blocks_total", f"blocks of {kv.block_size} tokens in the pool", kv.num_blocks),
             ("gauge", "st:kv_blocks_used", "blocks a row holds (or a tier transfer in flight)", used_blocks),
             ("gauge", "st:kv_rows_in_use", "pool rows with tokens", kv.rows_in_use),
@@ -1242,6 +1505,8 @@ class Server:
              kv.cached),
             ("gauge", "st:kv_blocks_faded", "free blocks held by a boundary whose snapshot is gone", kv.faded),
             ("gauge", "st:state_slots_free", "state slots a new request could take", slots.available),
+            ("gauge", "st:detokenizer_rust_stream",
+             "1 when streamed text is decoded through tokenizers' Rust DecodeStream", int(self.rust_detok)),
         ]
         prefix = getattr(runner, "prefix", None)
         if prefix is not None:
@@ -1296,6 +1561,11 @@ class Server:
             labelled.append(("st:decode_capacity_bucket_total", "counter",
                              "decode steps by the context-capacity bucket whose graph served them",
                              [(f'capacity="{c}"', v) for c, v in sorted(by_bucket.items())]))
+        if any(DETOK_REPAIRS.values()):
+            # Zero in every healthy run, so the series only exists once something went wrong.
+            labelled.append(("st:detokenizer_repairs_total", "counter",
+                             "streamed text the door had to repair, by what went wrong",
+                             [(f'reason="{reason}"', count) for reason, count in sorted(DETOK_REPAIRS.items()) if count]))
         if self.by_reason:
             labelled.append(("vllm:request_success_by_reason_total", "counter",
                              "requests answered, by why they stopped",
@@ -1347,8 +1617,11 @@ class Server:
         try:
             if self.comm.rank == 0:
                 self._expire()
-            alive, arrivals, cancels, controls = self.comm.broadcast_object(
-                (self.alive, self._drain(), self._drain_cancels(), self._drain_controls()) if self.comm.rank == 0 else None)
+            alive, arrivals, cancels, controls, draining = self.comm.broadcast_object(
+                (self.alive, self._drain(), self._drain_cancels(), self._drain_controls(),
+                 self._yield_asked()) if self.comm.rank == 0 else None)
+            if draining is not None and self.draining is None:
+                self.draining = draining          # every rank stops admitting on the same step
             if not alive:
                 self._abort()
                 self._fail_pending()
@@ -1399,6 +1672,9 @@ class Server:
                         stream.put(("tokens", (self.engine.generated_since(row, sent), list(entries[sent:]) if entries else None)))
                         self._wake.set()
                     self._sent[row] = count
+            if self.draining is not None and not self.drained and self._quiet():
+                self.drained = True
+                self._hand_over()
             live = set(self.runner.state.running) | set(self.runner.state.waiting)
             for row in list(self._active):
                 if row not in live:
@@ -1705,7 +1981,7 @@ class Server:
                         return
                     usage = {"prompt_tokens": len(ids), "completion_tokens": sum(c.total for c in choices),
                              "total_tokens": len(ids) + sum(c.total for c in choices),
-                             "completion_tokens_details": {"reasoning_tokens": sum(len(c.held["reasoning_content"]) for c in choices)}}
+                             "completion_tokens_details": {"reasoning_tokens": sum(len(c.streams["reasoning_content"].ids) for c in choices)}}
                     if stream:
                         for c in choices:
                             chunk(c.index, None, finish=c.finish_reason(), logprobs=c.logprobs_payload())
@@ -1717,7 +1993,7 @@ class Server:
                         out = []
                         for c in choices:
                             message = {"role": "assistant", "content": c.text["content"] or None}
-                            if c.held["reasoning_content"]:
+                            if c.streams["reasoning_content"].ids:
                                 message["reasoning_content"] = c.text["reasoning_content"]
                             if c.tool_calls:
                                 message["tool_calls"] = c.tool_calls
