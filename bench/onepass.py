@@ -10,7 +10,7 @@
                 caching is off on this fleet)
      32K, 128K: ONE streaming request carrying the three questions (the
                 document is prefilled once; a 128K prefill is ~48 s), three
-                answers' worth of tokens (max_tokens x 3)
+                answers' worth of tokens (a separately recorded combined budget)
        time to the first content chunk  -> prefill tok/s and TTFT
        the answer text                  -> retrieval (any-of groups with the
                                            Korean spellings) + corruption scan
@@ -62,6 +62,14 @@ INSTRUCTION = ("문서의 내용만 근거로 한국어로 두 문단 정도로 
 INSTRUCTION_COMBINED = ("문서의 내용만 근거로 아래 질문 세 개에 한국어로 번호를 붙여 각각 두 문단 정도로 답해줘. "
                         "이름·숫자·날짜·장비 번호 같은 고유 표기는 문서에 적힌 그대로 인용해줘.\n질문:\n")
 
+# A combined request spends completion tokens on both the model's reasoning
+# block and the three visible answers. The old 400 * 3 limit could stop after
+# the facts had been found but before the final answer was emitted. Keep the
+# per-question 400-token workload unchanged and give combined requests their
+# own explicit, recorded budget.
+DEFAULT_COMBINED_MAX_TOKENS = 2400
+DEFAULT_COMBINED_REASONING_BUDGET = 900
+
 
 def _load(fname, modname):
     spec = importlib.util.spec_from_file_location(modname, os.path.join(HERE, fname))
@@ -80,19 +88,22 @@ def _counter(text, name):
 
 
 def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=None,
-               channel_trace=None):
+               channel_trace=None, reasoning_budget=None):
     """(text, ttft_s, prompt_tokens, completion_tokens, finish_reason) of one
     streamed chat completion: ttft = first chunk carrying content."""
-    body = json.dumps({"model": model, "max_tokens": max_tokens, "min_tokens": min_tokens,
-                       "seed": seed, "temperature": 0.0,
-                       "stream": True, "stream_options": {"include_usage": True},
-                       "messages": [{"role": "user", "content": content}],
-                       # 39차: thinking ON, explicitly. The stock template ignored this
-                       # kwarg and always reasoned, so every reference (BASE39-*, DEF40, ...)
-                       # was measured with reasoning in the stream; the v2 template honours
-                       # the kwarg and thinking=false gives answers too short for the 2 s
-                       # decode windows (TPL1: no windows). Keep the condition constant.
-                       "chat_template_kwargs": {"thinking": True}}).encode()
+    body_obj = {"model": model, "max_tokens": max_tokens, "min_tokens": min_tokens,
+                "seed": seed, "temperature": 0.0,
+                "stream": True, "stream_options": {"include_usage": True},
+                "messages": [{"role": "user", "content": content}],
+                # 39차: thinking ON, explicitly. The stock template ignored this
+                # kwarg and always reasoned, so every reference (BASE39-*, DEF40, ...)
+                # was measured with reasoning in the stream; the v2 template honours
+                # the kwarg and thinking=false gives answers too short for the 2 s
+                # decode windows (TPL1: no windows). Keep the condition constant.
+                "chat_template_kwargs": {"thinking": True}}
+    if reasoning_budget is not None:
+        body_obj["reasoning_budget"] = reasoning_budget
+    body = json.dumps(body_obj).encode()
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
     stream_channels = [] if channel_trace is not None else None
     t0 = time.monotonic()
@@ -147,6 +158,8 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
                       tpot_ms=1000 * decode_s / (ctok - 1) if ctok > 1 else None,
                       decode_tok_s=(ctok - 1) / decode_s if ctok > 1 and decode_s > 0 else None,
                       chunk_gaps_ms=[1000 * (b - a) for a, b in zip(arrivals, arrivals[1:])])
+        if reasoning_budget is not None:
+            timing["reasoning_budget"] = reasoning_budget
     if channel_trace is not None:
         channel_trace.append(stream_channels)
     return ("".join(parts), ttft, int(usage.get("prompt_tokens", 0) or 0),
@@ -343,6 +356,14 @@ def main() -> int:
     ap.add_argument("--name", default="onepass")
     ap.add_argument("--ctx", default=os.environ.get("QUALITY_CTX", "2000,32000,128000"))
     ap.add_argument("--max-tokens", type=int, default=400)
+    ap.add_argument("--combined-max-tokens", type=int,
+                    default=int(os.environ.get("ONEPASS_COMBINED_MAX_TOKENS",
+                                               str(DEFAULT_COMBINED_MAX_TOKENS))),
+                    help="total completion budget for the three-question combined request")
+    ap.add_argument("--combined-reasoning-budget", type=int,
+                    default=int(os.environ.get("ONEPASS_COMBINED_REASONING_BUDGET",
+                                               str(DEFAULT_COMBINED_REASONING_BUDGET))),
+                    help="reasoning token cap inside the combined completion")
     ap.add_argument("--num-spec", type=int, default=int(os.environ.get("SPEC_K", "7")))
     ap.add_argument("--combine-min-ctx", type=int, default=int(os.environ.get("ONEPASS_COMBINE_MIN_CTX", "32000")),
                     help="contexts at or above this size ask the three questions in ONE request (one prefill "
@@ -363,6 +384,11 @@ def main() -> int:
             args.fixed_decode_reps = 3  # CLI validity; normalized identity records zero when disabled
     if args.fixed_decode_tokens < 0 or args.fixed_decode_reps < 1:
         ap.error("fixed decode needs nonnegative tokens and positive repetitions")
+    min_combined = args.max_tokens * 3
+    if args.combined_max_tokens < min_combined:
+        ap.error(f"combined max tokens must be at least {min_combined}")
+    if not 0 <= args.combined_reasoning_budget < args.combined_max_tokens:
+        ap.error("combined reasoning budget must be nonnegative and below combined max tokens")
 
     kq = _load("korean-corruption.py", "onepass_korean")
     cq = _load("check-quality.py", "onepass_quality")
@@ -373,6 +399,11 @@ def main() -> int:
         rec["experiment_id"] = os.environ["FLEET_EXPERIMENT_ID"]
         rec["runtime"] = json.loads(os.environ.get("FLEET_CONTEXT", "{}"))
     rec["endpoint"] = {"completion": bd.URL, "metrics": bd.METRICS}
+    rec["generation_budget"] = {
+        "individual_max_tokens": args.max_tokens,
+        "combined_max_tokens": args.combined_max_tokens,
+        "combined_reasoning_budget": args.combined_reasoning_budget,
+    }
     rec.update(_served_build(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     prove_spec = 'VLLM_GLM53_SPEC_K' in (rec.get('knobs') or {})
     spec_before = _served_speculation(rec.get('boot_id')) if prove_spec else None
@@ -424,8 +455,10 @@ def main() -> int:
                 content = f"문서:\n{doc}\n\n{INSTRUCTION_COMBINED}{qs}"
                 t_req = time.monotonic()
                 timing = {"ctx": ctx, "question": "all"}
-                text, ttft, ptok, ctok, finish = ask_stream(bd.URL, cq.MODEL, content, args.max_tokens * len(facts), timing,
-                                                        channel_trace=channel_traces)
+                text, ttft, ptok, ctok, finish = ask_stream(
+                    bd.URL, cq.MODEL, content, args.combined_max_tokens, timing,
+                    channel_trace=channel_traces,
+                    reasoning_budget=args.combined_reasoning_budget)
                 rec["requests"].append(timing)
                 phases.append((ctx, t_req + ttft, time.monotonic()))
                 tok = ptok or tok

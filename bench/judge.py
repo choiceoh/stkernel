@@ -60,7 +60,8 @@ def compatible(a, b):
         return False
     if b.get("overlay") and a.get("overlay") != b["overlay"]:
         return False
-    return all(a.get(k) == b.get(k) for k in ("harness", "doc_lang", "thinking", "workload", "runtime"))
+    return all(a.get(k) == b.get(k) for k in
+               ("harness", "doc_lang", "thinking", "workload", "generation_budget", "runtime"))
 
 
 def record_errors(rec):
@@ -106,7 +107,8 @@ def floor_of(rows, rec, objective=None):
         wins = windows([x for x in rows
                 if is_baseline(x)[0] and not x.get("rehearsal")
                 and x.get("harness") == rec.get("harness")
-                and all(x.get(k) == rec.get(k) for k in ("doc_lang", "thinking", "workload", "runtime"))
+                and all(x.get(k) == rec.get(k) for k in
+                        ("doc_lang", "thinking", "workload", "generation_budget", "runtime"))
                 and not record_errors(x) and required_proofs(x) == required_proofs(rec)])
         scope = "same harness, across builds"
     if len(wins) < 2:

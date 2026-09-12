@@ -145,10 +145,13 @@ class OnepassPolicyTests(unittest.TestCase):
 
     def test_onepass_accepts_public_arguments_and_rejects_custom_hooks(self):
         self.validate(['python3', 'bench/onepass.py', '--name', 'A', '--max-tokens', '400',
+                       '--combined-max-tokens', '2400', '--combined-reasoning-budget', '900',
                        '--num-spec', '7', '--seed', '7', '--combine-min-ctx', '32000',
                        '--fixed-decode-tokens', '20', '--fixed-decode-reps', '2',
                        '--require-exclusive', '--out', str(self.root / 'records.jsonl')])
         for args in (['--after', 'gpu-check'], ['--ctx', '0'], ['--num-spec', '-1'],
+                     ['--combined-max-tokens', '1199'],
+                     ['--combined-reasoning-budget', '2400'],
                      ['--fixed-decode-tokens', '1', '--fixed-decode-reps', '0']):
             with self.subTest(args=args), self.assertRaises(ValueError):
                 self.validate(['python3', 'bench/onepass.py', *args])
