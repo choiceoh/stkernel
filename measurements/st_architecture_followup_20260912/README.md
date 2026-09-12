@@ -18,7 +18,11 @@ none establishes a serving improvement.
   matched baseline for the new experiments. Its printed cold/warm labels
   do not by themselves prove that prefix-cache state was controlled.
 - The first real `step_peek` attempt ran on srv2 against its local port 8000.
-  Connection was refused; zero samples were obtained. No traffic was sent
+  Connection was refused; zero samples were obtained. A later attempt against
+  the canonical `10.10.10.2:8000` address also refused the connection while
+  container `st-glm53` was running image `st-engine:main-f838f71a` on the host
+  network. A running container is not proof that its HTTP server is ready.
+  No traffic was sent
   to an inference endpoint and no fleet lease was acquired.
 - Inspection found `_buckets` ignored its label filter. Prefill buckets
   could therefore enter the decode quantile calculation, despite the count
@@ -48,6 +52,10 @@ BF16 through its indexer, and MoE reads it through routing and experts; they
 are not eligible for this replacement. An active calibration observer also
 requires the BF16 input. Integration must explicitly check those consumers
 and the bound FP8 projection instead of changing all transport outputs.
+
+`compile.json` records a successful SM121 compilation on Torch 2.13.0+cu130
+and Triton 3.7.1 without initializing CUDA. The local admission/tool gate ran
+39 tests successfully; the focused package-import check also passes.
 
 The current implementation is an unconnected kernel experiment. Its GPU
 gate compares FP8 bytes and FP32 scales against ordinary unpack+quantize,
