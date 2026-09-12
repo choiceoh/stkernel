@@ -29,7 +29,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--imports-only", action="store_true")
     parser.add_argument("--lanes", default="conv,kda,mhc,indexer,kpool,mla,moe")
-    parser.add_argument("--router-ranks", help="exact consumer rank directory for real router validation")
+    parser.add_argument("--ranks", help="exact consumer rank directory for real router validation")
     parser.add_argument("--moe-experts", type=int, choices=(8, 288), default=8,
                         help="8 for bounded smoke; 288 for GLM's full TP4 expert geometry")
     parser.add_argument("--moe-static", default="stock", help="served b12x static-lane spec (STK_moe_static): stock | t,r,sf6[,q0]")
@@ -42,7 +42,7 @@ def main():
         # Configure CuTe artifact emission before importing its compiler: the
         # residency gate needs the actual cubin before a cooperative launch.
         from probes.engine_moe_compact_check import main as compact_check
-        compact_check(router_ranks=args.router_ranks)
+        compact_check(router_ranks=args.ranks)
         return
 
     import torch
@@ -76,7 +76,7 @@ def main():
         report("decode7", passed=True, tests=result.testsRun)
         from probes.engine_decode_fusions import seven_row_dense, tensorcore_router
         seven_row_dense(report)
-        tensorcore_router(report, ranks=args.router_ranks)
+        tensorcore_router(report, ranks=args.ranks)
 
     if "kda_ring" in selected:
         import unittest
