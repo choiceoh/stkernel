@@ -1295,6 +1295,58 @@ class KoreanBudgetTests(unittest.TestCase):
         self.assertLess(s.room_for(s.max_context), room)
 
 
+class KoreanWireTests(unittest.TestCase):
+    """What a Korean answer costs between the door and the client (45차 §39)."""
+
+    def raw(self, s, path, body=None):
+        httpd = s._serve_http()
+        url = f"http://127.0.0.1:{httpd.server_port}{path}"
+        try:
+            req = urllib.request.Request(url, data=json.dumps(body).encode()) if body else urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.read()
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_the_body_carries_utf8_and_not_escapes(self):
+        s = chat_server()
+        s.model_name = "한국어-모델"
+        body = self.raw(s, "/v1/models")
+        self.assertIn("한국어-모델".encode(), body)
+        self.assertNotIn(rb"\u", body, "a Korean character must not cost six bytes where three do")
+        self.assertEqual(json.loads(body)["data"][0]["id"], "한국어-모델")   # still JSON, and still says the same
+
+    def test_a_refusal_says_the_numbers(self):
+        s = chat_server()
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self.raw(s, "/v1/chat/completions",
+                     {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 10 ** 6})
+        message = json.loads(err.exception.read())["error"]
+        self.assertRegex(message, r"\d+ tokens")
+        self.assertIn("to generate", message)
+        self.assertIn("for the prompt", message)
+
+    def test_the_characters_a_client_read_are_counted_next_to_the_tokens(self):
+        s = chat_server()
+        before = s.generation_characters_total
+        out = self._drive(s, {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 3})
+        shown = out["choices"][0]["message"]["content"]
+        self.assertEqual(s.generation_characters_total - before, len(shown))
+        self.assertIn("st:generation_characters_total", s.metrics())
+
+    def _drive(self, s, body):
+        httpd = s._serve_http()
+        url = f"http://127.0.0.1:{httpd.server_port}/v1/chat/completions"
+        def post():
+            with urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(body).encode()), timeout=5) as r:
+                return json.load(r)
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                return drive(s, pool.submit(post))
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+
 class TokenSpanTests(unittest.TestCase):
     """`text_offset` has to index into the text it describes, in every language."""
 
