@@ -2239,10 +2239,18 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
     const int j0 = min(len, sp_i * per);
     const int j1 = min(len, j0 + per);
 
-    for (int i = threadIdx.x; i < MLA_H * (MLA_D / 8); i += MK_THREADS) {
-      const int h = i / (MLA_D / 8), c8 = i - h * (MLA_D / 8);
-      *(uint4*)(sq + h * MLA_CP + c8 * 8) =
-          *(const uint4*)(a.q + ((size_t)t * MLA_H + h) * MLA_D + c8 * 8);
+    // Q joins the first KV async group, so its copy overlaps the ring preload
+    // and the existing first wait covers both. Keep Q's L1 caching (.ca),
+    // while the one-use KV ring keeps .cg. Empty splits never consume Q.
+    if (j1 > j0) {
+      for (int i = threadIdx.x; i < MLA_H * (MLA_D / 8); i += MK_THREADS) {
+        const int h = i / (MLA_D / 8), c8 = i - h * (MLA_D / 8);
+        const uint32_t dst = static_cast<uint32_t>(__cvta_generic_to_shared(
+            sq + h * MLA_CP + c8 * 8));
+        const __nv_bfloat16* src = a.q + ((size_t)t * MLA_H + h) * MLA_D + c8 * 8;
+        asm volatile("cp.async.ca.shared.global [%0], [%1], 16;"
+                     :: "r"(dst), "l"(src) : "memory");
+      }
     }
     float acc[8][4];
 #pragma unroll
@@ -2415,9 +2423,9 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
     const int t = blockIdx.x / a.splits;
     const int rank = cluster.block_rank();
     float* local = (float*)mla_smem;
-    // Spread output heads across CTAs; consecutive lanes read consecutive
-    // dimensions to avoid the bank conflicts of lane*16 shared-memory reads.
-    for (int h = rank * MLA_WARPS + warp; h < MLA_H; h += a.splits * MLA_WARPS) {
+    // Interleave heads across ranks: three CTAs now merge 6/5/5 heads instead
+    // of 8/8/0. Consecutive lanes still read consecutive dimensions.
+    for (int h = warp * a.splits + rank; h < MLA_H; h += a.splits * MLA_WARPS) {
       float mm = -INFINITY;
       for (int split = 0; split < a.splits; ++split) {
         const float* peer = cluster.map_shared_rank(local, split);
@@ -2465,15 +2473,16 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
       if (!(lsp > 0.f)) continue;
       const float w = __expf(ml[0] - mm);
       ltot = fmaf(lsp, w, ltot);
-      const float* src = a.part + (((size_t)t * a.splits + sp) * MLA_H + h) * MLA_D
-                        + lane * MLA_VD;
+      // Match the coalesced DSMEM layout: each warp instruction accesses
+      // consecutive dimensions instead of 32 separate lane*16 regions.
+      const float* src = a.part + (((size_t)t * a.splits + sp) * MLA_H + h) * MLA_D;
 #pragma unroll
-      for (int e = 0; e < MLA_VD; ++e) o[e] = fmaf(src[e], w, o[e]);
+      for (int e = 0; e < MLA_VD; ++e) o[e] = fmaf(src[e * 32 + lane], w, o[e]);
     }
     const float inv = (ltot > 0.f) ? __frcp_rn(ltot) : 0.f;
-    __nv_bfloat16* dst = a.out + ((size_t)t * MLA_H + h) * MLA_D + lane * MLA_VD;
+    __nv_bfloat16* dst = a.out + ((size_t)t * MLA_H + h) * MLA_D;
 #pragma unroll
-    for (int e = 0; e < MLA_VD; ++e) dst[e] = __float2bfloat16(o[e] * inv);
+    for (int e = 0; e < MLA_VD; ++e) dst[e * 32 + lane] = __float2bfloat16(o[e] * inv);
   }
 }
 

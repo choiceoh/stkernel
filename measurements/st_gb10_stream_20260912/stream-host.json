@@ -1,0 +1,20 @@
+{
+  "source_sha256": "36ce39f77e2e48ec594cec6d39e513340212fe37d23fc04f23b650db5a82ae52",
+  "harness_sha256": "3b24a4c74cb2a0c82c9f6b6a9757e293605aa55a8f6e3c9f00a44bb529208aea",
+  "gpu_used": false,
+  "slice_cases": 60,
+  "threads_per_case": 256,
+  "cluster_splits": [
+    2,
+    3,
+    4,
+    8
+  ],
+  "three_cta_head_counts": [
+    6,
+    5,
+    5
+  ],
+  "reduction_dimensions": 512,
+  "missing_wait_rejected": true
+}

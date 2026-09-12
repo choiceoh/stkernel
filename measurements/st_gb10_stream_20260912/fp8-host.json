@@ -1,0 +1,6 @@
+{
+  "source_sha256": "36ce39f77e2e48ec594cec6d39e513340212fe37d23fc04f23b650db5a82ae52",
+  "gpu_used": false,
+  "host_fp8_pairs_exact": 65536,
+  "fragment_addresses_pass": true
+}
