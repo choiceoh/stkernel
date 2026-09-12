@@ -61,6 +61,7 @@ class Glm53Engine:
         self.options = {}                                   # seq -> the request's sampling options beyond temperature (base/sampler.OPTION_KEYS)
         self.gens = {}                                      # seq -> its own torch.Generator when the request carries a seed
         self.ends = {}                                      # seq -> end tokens: the model's plus the request's stop_token_ids
+        self._ends_tensor = {}                              # seq -> the same, on the device, for min_tokens
         self.history = None                                 # base/sampler.History, built at the first row that needs penalties
         self.lps = {}                                       # seq -> per committed token (id, logprob, [(id, logprob)...]) when asked
         self.matchers = {}                                  # seq -> base/grammar.Matcher when the request carries a grammar
@@ -350,7 +351,7 @@ class Glm53Engine:
         if seq in self.slot:
             raise ValueError(f"seq {seq} is still live")
         for rows in (self.tokens, self.prompt_len, self.limits, self.min_new, self.options, self.gens, self.ends, self.lps, self.matchers,
-                     self.media, self.embeds, self.inflight, self.staged):
+                     self.media, self.embeds, self.inflight, self.staged, self._ends_tensor):
             rows.pop(seq, None)                             # a row leaving does not move the others: the pipeline shrinks its view
         if self.history is not None:
             self.history.forget(seq)
@@ -525,6 +526,15 @@ class Glm53Engine:
     def generated(self, seq: int) -> "list[int]":
         return self.tokens[seq][self.prompt_len[seq]:]
 
+    def generated_count(self, seq: int) -> int:
+        """How many tokens this row has produced. The step loop asks every row every step, so it
+        must not be `len(generated(seq))`: that copies the whole answer to count it."""
+        return len(self.tokens[seq]) - self.prompt_len[seq]
+
+    def generated_since(self, seq: int, sent: int) -> "list[int]":
+        """Only what the caller has not seen, so the cost follows the step and not the answer."""
+        return self.tokens[seq][self.prompt_len[seq] + sent:]
+
     def _generated_count(self, seq: int) -> int:
         return len(self.tokens[seq]) - self.prompt_len[seq]
 
@@ -588,17 +598,22 @@ class Glm53Engine:
         if self.history is None:                            # the vocabulary is whatever the head just produced
             self.history = History(int(raw.shape[-1]), raw.device)
         seen, counts = self.history.of(seq, self.tokens[seq], self.prompt_len[seq])
-        mask = None
         need = self.min_new.get(seq, 0) - self._generated_count(seq) - len(drafts_before)
-        if need > 0 and self.ends.get(seq):
-            mask = torch.ones(raw.shape[-1], dtype=torch.bool, device=raw.device)
-            mask[list(self.ends[seq])] = False
-        return process_logits(raw, opts, seen, counts, drafts_before, self.decodable, mask)
+        forbid = self._end_ids(seq, raw.device) if need > 0 and self.ends.get(seq) else None
+        return process_logits(raw, opts, seen, counts, drafts_before, self.decodable, forbid=forbid)
+
+    def _end_ids(self, seq: int, device) -> torch.Tensor:
+        """This row's end tokens as a tensor, kept: min_tokens asks for them on every position it covers."""
+        held = self._ends_tensor.get(seq)
+        if held is None or held.device != torch.device(device):
+            held = torch.tensor(sorted(self.ends[seq]), dtype=torch.int64, device=device)
+            self._ends_tensor[seq] = held
+        return held
 
     def _pick_rich(self, seq: int, rows: torch.Tensor, drafts: "list[int]", draft_probs: "torch.Tensor | None"):
         """One sequence's positions through the base sampler. rows: [len(drafts) + 1, vocab] fp32 raw logits.
         Returns (accepted drafts, committed tokens, per-token (id, logprob, top) or None)."""
-        from engine.base.sampler import distribution, draw, speculative_pick, top_logprobs
+        from engine.base.sampler import distribution, pick_each, speculative_pick, top_logprobs
         opts = self.options.get(seq, {})
         temperature = self.limits[seq][1]
         gen = self.gens.get(seq, self.gen)
@@ -612,7 +627,7 @@ class Glm53Engine:
             processed.append(logits)
             dists.append(distribution(logits, temperature, opts.get("top_k"), opts.get("top_p")))
         if temperature <= 0 or draft_probs is None or not drafts:
-            picks = [int(d.argmax().item()) if temperature <= 0 else draw(d, gen) for d in dists]
+            picks = pick_each(dists, temperature, gen)
             accepted = 0
             for d, got in zip(drafts, picks):
                 if d != got:

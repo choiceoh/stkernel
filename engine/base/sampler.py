@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import torch
 
+from engine.base.constants import iota
+
 
 def sample(logits: torch.Tensor, temperature: torch.Tensor, top_p: torch.Tensor,
            generator: "torch.Generator | None" = None, *, top_p_enabled=None) -> torch.Tensor:
@@ -175,12 +177,17 @@ class History:
 
 
 def process_logits(logits: torch.Tensor, options: dict, seen: torch.Tensor, counts: torch.Tensor,
-                   extra=(), decodable: "int | None" = None, mask: "torch.Tensor | None" = None) -> torch.Tensor:
+                   extra=(), decodable: "int | None" = None, mask: "torch.Tensor | None" = None,
+                   forbid: "torch.Tensor | None" = None) -> torch.Tensor:
     """One row's raw logits [V] fp32 -> the logits the pick is made from: logit_bias, repetition/presence/frequency
     penalties over the row's tokens, the decodable cut and an optional grammar mask (True = allowed).
 
     `seen` and `counts` come from `History`. `extra` is this step's drafts before this position: they belong to both
     and are applied as a correction, because rebuilding either for five ids would cost the whole prompt.
+
+    `mask` and `forbid` are not the same thing. A grammar allows a set the size of the vocabulary and has to be
+    given as one; min_tokens forbids a handful of end tokens, and writing those few is cheaper than building a
+    vocabulary of True to say so.
     """
     out = logits.float().clone()
     bias = options.get("logit_bias")
@@ -203,6 +210,8 @@ def process_logits(logits: torch.Tensor, options: dict, seen: torch.Tensor, coun
         out -= (freq or 0.0) * counted + (pres or 0.0) * (counted > 0).float()
     if decodable is not None and out.shape[-1] > decodable:
         out[decodable:] = float("-inf")
+    if forbid is not None:
+        out[forbid] = float("-inf")
     if mask is not None:
         out = out.masked_fill(~mask, float("-inf"))
     return out
@@ -232,6 +241,18 @@ def draw(probs: torch.Tensor, generator: "torch.Generator | None") -> int:
     return int(torch.multinomial(probs, 1, generator=generator).item())
 
 
+def pick_each(dists, temperature: float, generator: "torch.Generator | None") -> "list[int]":
+    """One pick per row of `dists`: the argmax at temperature zero, a draw otherwise.
+
+    `draw` returns an int, so asking it row by row costs a device-to-host synchronization each
+    time -- one per draft position per sequence in a decode step. The picks are made in the same
+    order here, so a seeded request sees the same stream; only the crossing is deferred to one.
+    """
+    if temperature <= 0:
+        return torch.stack([d.argmax() for d in dists]).tolist()
+    return torch.cat([torch.multinomial(d, 1, generator=generator) for d in dists]).tolist()
+
+
 def speculative_pick(target_probs, draft_ids, draft_probs, generator) -> "tuple[int, list[int]]":
     """Rejection sampling over K drafts (Leviathan/Chen; vLLM's rejection_sample): returns (accepted count, the
     committed tokens = accepted drafts + one recovered or bonus token).
@@ -241,8 +262,15 @@ def speculative_pick(target_probs, draft_ids, draft_probs, generator) -> "tuple[
     (zero outside its candidates). u ~ U(0,1) per position from `generator`, identical on every rank."""
     k = len(draft_ids)
     accepted = 0
+    # The two probabilities every position compares are gathered in one crossing rather than two
+    # per position; the uniform stays drawn where it is, so the generator advances exactly as far
+    # as the acceptances take it.
+    chosen = torch.tensor(list(draft_ids), device=target_probs.device, dtype=torch.int64)
+    at = iota(k, target_probs.device)
+    ps = target_probs[at, chosen].tolist()
+    qs = draft_probs[at, chosen].tolist()
     for i, d in enumerate(draft_ids):
-        p, q = float(target_probs[i][d]), float(draft_probs[i][d])
+        p, q = ps[i], qs[i]
         u = float(torch.rand((), generator=generator, device=target_probs.device))
         if q > 0 and u < min(1.0, p / q):
             accepted += 1
