@@ -23,6 +23,9 @@
 #   fleet.sh cancel s                                   stop the waiter and withdraw
 #   fleet.sh run --gpu --fleet s [est] [note] -- <ST check>   keep a one-GPU check on the four Sparks
 #   fleet.sh kick [--force] [single]                    a dead holder: the fleet's, or the single GPU's
+#   fleet.sh st-pair s <sha> [--base <sha>] [est] [note]   the ST engine: one commit against the deployed one, two runs per boot
+#   fleet.sh st-chain s [est] [note] -- A=<sha> B=<sha> A B  ST arms in order; a repeated name alternates (A B A B)
+#   fleet.sh st-hold s <sha> [est] [note]               boot a commit and keep it for a session's window (end: cancel s)
 #
 # TWO LANES. A boot, a pair, a chain, a live onepass take the fleet: four Sparks, one holder.
 # An ST check that needs ONE GPU (probes/run_engine_check.sh, or run_engine_probe.sh without
@@ -1008,6 +1011,26 @@ case "$cmd" in
     s=${1:?session}; name=${2:?NAME}; knobs=${3:-}; est=${4:-25}; note=${5:-pair $name}
     [ "${FLEET_REHEARSE:-0}" = 1 ] && lane=--cpu || lane=--gpu
     exec bash "$0" run $lane "$s" "$est" "$note" -- bash "$REPO/bench/pair.sh" "$name" "$knobs";;
+  # ---- the ST engine's bracket (bench/st_bracket.sh): one committed sha per arm, production
+  # shape, two onepass runs per boot (D17). A boot ticket like pair/chain: it takes the fleet
+  # lease at GO and the release's own launcher verifies it.
+  st-pair)   # fleet.sh st-pair s <sha> [--base <sha>] [est] [note]
+    s=${1:?session}; sha=${2:?candidate sha}; shift 2; base=()
+    [ "${1:-}" = --base ] && { base=(--base "${2:?base sha}"); shift 2; }
+    est=${1:-25}; note=${2:-st-pair $sha}
+    [ "${FLEET_REHEARSE:-0}" = 1 ] && lane=--cpu || lane=--gpu
+    exec bash "$0" run $lane "$s" "$est" "$note" -- bash "$REPO/bench/st_bracket.sh" pair "$sha" ${base[@]+"${base[@]}"};;
+  st-chain)  # fleet.sh st-chain s [est] [note] -- A=<sha> B=<sha> A B     (a repeated name alternates)
+    s=${1:?session}; shift; est=45; note=""
+    [ "${1:-}" != "--" ] && { est=$1; shift; }
+    [ "${1:-}" != "--" ] && { note=$1; shift; }
+    [ "${1:-}" = "--" ] && shift
+    [ $# -gt 0 ] || { echo "usage: fleet.sh st-chain <session> [est] [note] -- NAME=<sha> [NAME=<sha> ...] [NAME ...]" >&2; exit 2; }
+    [ "${FLEET_REHEARSE:-0}" = 1 ] && lane=--cpu || lane=--gpu
+    exec bash "$0" run $lane "$s" "$est" "${note:-st-chain $*}" -- bash "$REPO/bench/st_bracket.sh" chain "$@";;
+  st-hold)   # fleet.sh st-hold s <sha> [est] [note]: boot a commit and keep it for a session's window; end with cancel
+    s=${1:?session}; sha=${2:?sha}; est=${3:-45}; note=${4:-st-hold $sha}
+    exec bash "$0" run --gpu "$s" "$est" "$note" -- bash "$REPO/bench/st_bracket.sh" hold "$sha" "$est";;
   deploy)
     s=${1:?session}; rev=${2:?rev}
     [ -s "$H" ] && [ "$(cut -d'|' -f1 "$H")" = "$s" ] || { echo "deploy needs the fleet: $s is not the holder ($(holder_line 2>/dev/null || echo none))" >&2; exit 1; }

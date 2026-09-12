@@ -68,6 +68,28 @@ only when none waits. A bare `bash launchers/start-st-glm53.sh` or
 `bash probes/run_engine_probe.sh` is refused: take a ticket, or say
 `ST_LEASE_KIND=session` for a session's own boot by hand.
 
+## The ST bracket
+
+`fleet.sh st-pair SESSION SHA [--base SHA] [EST] [NOTE]` measures one committed
+ST commit against the deployed one (or `--base`), `fleet.sh st-chain SESSION
+[EST] [NOTE] -- A=SHA B=SHA A B` runs arms in order (a repeated name is another
+boot of the same commit: `A B A B` alternates, the way 45차 §93 asked), and
+`fleet.sh st-hold SESSION SHA [EST]` boots a commit and keeps it for a session's
+window (`fleet.sh cancel SESSION` ends it). All three are boot tickets: the queue
+takes the fleet lease at GO and the arm's own launcher verifies it.
+
+An arm is a sha origin has (a working tree is not citable). `bench/st_bracket.sh`
+cuts it into `~/st-releases/<sha12>` with `launchers/st_release.py` -- the same
+cut deploy-watch makes, so a winner is promoted by pointing production at that
+directory -- pushes it to the four nodes, and boots it in production shape
+(`~/.config/st-glm53.env`: KV, rows, `ST_PRODUCTION=1`) on port 8001 with a tier
+and dump directory of its own. STK_ knobs are not arms. The leg per arm is fixed:
+boot, onepass (the cold column), `POST /v1/prefix/reset`, onepass (the warm
+column), stop; `bench/st_judge.py` judges warm against warm with the base's
+run-to-run spread as the floor and prints the cold column beside it. `st-pair`
+boots the base only when its sha has no warm sample yet. `FLEET_REHEARSE=1`
+boots nothing and fabricates records, so the flow can be checked without GPUs.
+
 Plans now batch their independent CPU stages, publish reusable evidence before
 creating another checkout on a cache hit, and keep core/fleet/startup results
 separate. A consumer's declared dependencies still decide when it can execute.

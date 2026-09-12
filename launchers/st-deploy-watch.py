@@ -54,8 +54,10 @@ LOCK = Path(os.environ.get("FLEET_LEASE_PATH", "/home/choiceoh/glm53-logs/st-fle
 # release under engine/base/): the queue applies the same gate before asking production to hand
 # over, so there is one definition of "quiet" and one of "taken".
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from engine.base import fleet_lease                                                  # noqa: E402
 from engine.base.fleet_lease import LeaseHeld, door_load as busy, door_unsupported as unsupported   # noqa: E402
+import st_release                                                                    # noqa: E402  the one shape of release
 
 
 def run(cmd, cwd=None, timeout=1800, env=None):
@@ -132,31 +134,13 @@ def regressed(deployed: "dict[str, str]", candidate: "dict[str, str]") -> "list[
 
 # -- the actions ----------------------------------------------------------------------------------
 def cut(sha: str, log) -> "Path | None":
-    """A release directory for `sha`: a checkout, not a copy of a working tree that may be mid-edit."""
-    target = RELEASES / sha[:12]
-    if target.exists():
-        log(f"  release {target} is already cut")
-        return target
-    RELEASES.mkdir(parents=True, exist_ok=True)
-    staging = target.with_suffix(".partial")
-    run(["rm", "-rf", str(staging)])
-    staging.mkdir(parents=True)
-    for part in CARRY:
-        # pipefail: without it the exit code is tar's, and tar is happy to extract the prefix of a
-        # stream that died halfway -- a release that looks complete and is not
-        code, _, err = run(["bash", "-c", "set -o pipefail; "
-                            f"git -C {SOURCE} archive {sha} {part} | tar -x -C {staging}"])
-        if code and part != "build":                      # `build` is the tokenizer meta: not in git on every tree
-            log(f"  ABORT: {sha[:12]} has no {part} ({err.strip()[:80]})")
-            run(["rm", "-rf", str(staging)])
-            return None
-    meta = HOME / "st-engine" / "st-glm53-meta"
-    if meta.is_dir():                                     # the chat templates and tokenizer the door needs
-        (staging / "build").mkdir(parents=True, exist_ok=True)
-        run(["rsync", "-a", f"{meta}/", str(staging / "build" / "st-glm53-meta") + "/"])
-    staging.rename(target)
-    log(f"  cut {target}")
-    return target
+    """A release directory for `sha`: a checkout, not a copy of a working tree that may be mid-edit.
+
+    The cut itself lives in launchers/st_release.py, shared with bench/st_bracket.sh: one shape of
+    release, so a bracket's winning arm is promoted by pointing production at the directory the
+    bracket already booted.
+    """
+    return st_release.cut(sha, source=SOURCE, releases=RELEASES, log=log, meta=HOME / "st-engine" / "st-glm53-meta")
 
 
 def deploy(release: Path, log) -> bool:

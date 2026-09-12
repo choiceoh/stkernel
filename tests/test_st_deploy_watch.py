@@ -172,11 +172,13 @@ class ReleaseCuttingTests(unittest.TestCase):
     def test_a_half_written_archive_cannot_be_published_as_a_release(self):
         """Without pipefail the exit code is tar's, and tar extracts the prefix of a dead stream
         happily -- a release that looks whole, with a tests/ the gate then silently under-runs."""
-        source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
+        source = (Path(__file__).resolve().parents[1] / "launchers/st_release.py").read_text()
         body = source[source.index("def cut("):]
         body = body[:body.index("\n\ndef ", 10)]
         self.assertIn("set -o pipefail", body)
         self.assertIn("| tar -x", body)
+        watch = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
+        self.assertIn("st_release.cut(sha, source=SOURCE, releases=RELEASES", watch)   # one cut, shared with the bracket
 
     def test_pipefail_is_what_it_claims_to_be(self):
         """The property the line rests on, checked against the shell rather than assumed."""

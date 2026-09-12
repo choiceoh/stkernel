@@ -28,8 +28,16 @@ SINGLE = 'single'
 KINDS = ('boot', 'probe', SINGLE)
 SHELL_ENTRIES = ('bench/pair.sh', 'bench/chain.sh', 'bench/ab-lever.sh',
                  'probes/run_ar_consumer_campaign.sh',
-                 'probes/run_engine_probe.sh', 'probes/run_engine_check.sh')
+                 'probes/run_engine_probe.sh', 'probes/run_engine_check.sh',
+                 'bench/st_bracket.sh')
 PYTHON_ENTRIES = ('bench/onepass.py', 'bench/experiments.py')
+# The ST engine's bracket: one committed sha per arm in production shape, two onepass runs per
+# boot (D17). It is admitted like pair/chain -- byte-pinned with what it executes -- and its
+# grammar is shas and literal arm names only: a sha is a thing origin has, so the arm is
+# citable and the runner cuts it from git itself (launchers/st_release.py).
+ST_BRACKET = 'bench/st_bracket.sh'
+ST_BRACKET_DEPENDENCIES = ('bench/onepass.py', 'bench/st_judge.py', 'launchers/st_release.py')
+SHA = re.compile(r'[0-9a-f]{7,40}')
 # The ST engine's canonical checks. They are not onepass -- they judge kernels and
 # replay, not tokens/s -- but they take the same four nodes, so they belong in the same
 # queue instead of a second launcher lock nobody else can see (2026-09-12). The runner
@@ -81,6 +89,44 @@ def _st_args(relative, args, cwd, repo):
         else:
             raise ValueError(POLICY + '; the ST checks accept only ' +
                              ', '.join(sorted(ST_SWITCHES | ST_FLAGS)))
+
+
+def _st_bracket_args(args):
+    """pair <sha> [--base <sha>] | chain NAME=<sha> ... [NAME ...] | hold <sha> [minutes]."""
+    usage = POLICY + '; the ST bracket takes pair <sha> [--base <sha>], chain NAME=<sha> [NAME ...], or hold <sha> [minutes]'
+    if not args:
+        raise ValueError(usage)
+    verb, rest = args[0], list(args[1:])
+    if verb == 'pair':
+        if not rest or not SHA.fullmatch(rest[0]):
+            raise ValueError(usage + ' (a candidate sha is required)')
+        rest = rest[1:]
+        if rest[:1] == ['--base']:
+            if len(rest) < 2 or not SHA.fullmatch(rest[1]):
+                raise ValueError(usage + ' (--base takes a sha)')
+            rest = rest[2:]
+        if rest:
+            raise ValueError(usage + ' (unexpected: ' + ' '.join(rest) + ')')
+    elif verb == 'chain':
+        if not rest:
+            raise ValueError(usage + ' (a chain needs at least one NAME=<sha>)')
+        named = set()
+        for arm in rest:
+            name, equal, sha = arm.partition('=')
+            _name(name)
+            if equal:
+                if not SHA.fullmatch(sha):
+                    raise ValueError(usage + ' (' + name + ' must name a sha)')
+                named.add(name)
+            elif name not in named:
+                raise ValueError(usage + ' (' + name + ' names no sha; say ' + name + '=<sha> first)')
+    elif verb == 'hold':
+        if not rest or not SHA.fullmatch(rest[0]):
+            raise ValueError(usage + ' (hold needs a sha)')
+        if len(rest) > 2 or (len(rest) == 2 and not re.fullmatch(r'[1-9][0-9]{0,2}', rest[1])):
+            raise ValueError(usage + ' (hold takes minutes 1..999)')
+    else:
+        raise ValueError(usage)
 
 
 def _path(value, cwd):
@@ -222,6 +268,10 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
         # the ST runner, not the vLLM bracket: pin what it actually executes
         dependencies = ('probes/run_engine_probe.sh',) + (
             ('probes/run_engine_check.sh',) if relative == 'probes/run_engine_check.sh' else ())
+    elif relative == ST_BRACKET:
+        # the ST bracket boots a RELEASE's own launcher (the arm under test), so the launcher is
+        # not pinned; what the controller runs -- onepass, the judge, the release cut -- is
+        dependencies = ST_BRACKET_DEPENDENCIES
     else:
         dependencies = ('bench/ab-lever.sh', 'bench/onepass.py', 'bench/onepass_deploy.py') if relative in SHELL_ENTRIES else ('bench/onepass.py',)
     if relative == 'probes/run_ar_consumer_campaign.sh':
@@ -253,6 +303,8 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
         _experiment(args, cwd, repo, effective)
     elif relative in ST_ENTRIES:
         _st_args(relative, args, cwd, repo)
+    elif relative == ST_BRACKET:
+        _st_bracket_args(args)
     else:
         while args:
             if args[0] == '--baseline-only':
@@ -261,8 +313,8 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
                 args = args[2:]
             else:
                 raise ValueError('AR onepass campaign accepts only --baseline-only or --gpu-evidence DIR')
-    if rehearsal_only and relative not in {'bench/pair.sh', 'bench/chain.sh', 'bench/ab-lever.sh'}:
-        raise ValueError('CPU rehearsal supports only the canonical pair, chain and ab-lever helpers')
+    if rehearsal_only and relative not in {'bench/pair.sh', 'bench/chain.sh', 'bench/ab-lever.sh', ST_BRACKET}:
+        raise ValueError('CPU rehearsal supports only the canonical pair, chain, ab-lever and ST bracket helpers')
     gpus = gpus_needed(relative, args)
     if kind == SINGLE and gpus != 1:
         raise ValueError(POLICY + '; the single-GPU lane takes only an ST check without --distributed, and '
