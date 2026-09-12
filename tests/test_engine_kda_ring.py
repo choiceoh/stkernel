@@ -30,8 +30,9 @@ class KdaRingTests(unittest.TestCase):
         beta = torch.randn(1,t,hv*3,device='cuda',dtype=dtype)[..., :hv]
         a, bias = torch.randn(h,device='cuda')*.2, torch.randn(h*k,device='cuda')*.1
         width = hv*k*v
-        backing = torch.randn(3*(6*width+64)+64,device='cuda')*.1
-        shape, stride = (3,6,hv,k,v), (6*width+64,width,k*v,v,1)
+        r = max(6, t)
+        backing = torch.randn(3*(r*width+64)+64,device='cuda')*.1
+        shape, stride = (3,r,hv,k,v), (r*width+64,width,k*v,v,1)
         ring = backing.as_strided(shape,stride,64)
         return (q,kk,vv,g,beta,a,bias), backing, ring
 
@@ -41,22 +42,23 @@ class KdaRingTests(unittest.TestCase):
     def expected(self, args, backing, ring, slot, ctx, lb=-5.):
         expected = backing.clone()
         target = expected.as_strided(ring.shape,ring.stride(),ring.storage_offset())
-        initial = ring[slot,(ctx-1)%6][None] if ctx else None
+        r = ring.shape[1]
+        initial = ring[slot,(ctx-1)%r][None] if ctx else None
         out,states = self.functional(*args,initial,lb)
-        for i,state in enumerate(states): target[slot,(ctx+i)%6].copy_(state)
+        for i,state in enumerate(states): target[slot,(ctx+i)%r].copy_(state)
         return out,expected,states
 
     def test_every_snapshot_and_padding_with_wrapping_initial_row(self):
-        for t in range(1,7):
+        for t in range(1,8):
             args,backing,ring = self.inputs(t)
-            for slot,ctx in ((0,0),(1,1),(2,5),(1,6),(2,32768)):
+            for slot,ctx in ((0,0),(1,1),(2,ring.shape[1]-1),(1,ring.shape[1]),(2,32768)):
                 with self.subTest(tokens=t,slot=slot,context=ctx):
                     out,expected,_ = self.expected(args,backing,ring,slot,ctx)
                     actual = self.run(*args,ring,slot,ctx,-5.)
                     self.equal(actual,out); self.equal(backing,expected)
 
     def test_graph_mutable_slot_context_and_rejected_drafts(self):
-        for t in (1,6):
+        for t in (1,6,7):
             args,backing,ring = self.inputs(t)
             slot,ctx = (torch.tensor(x,device='cuda',dtype=torch.int64) for x in (1,0))
             self.run(*args,ring,slot,ctx,-5.)

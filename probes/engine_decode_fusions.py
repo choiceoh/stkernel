@@ -26,6 +26,74 @@ def _time(graph, iterations=256, flush=None):
     return start.elapsed_time(end) / iterations
 
 
+def kda_ring(report):
+    """The prior BV=8 against BV=16 on distinct per-layer state, no product knob."""
+    from unittest.mock import patch
+    from engine.kernels.kda import ring as impl
+    kernel = impl.fused_recurrent_gated_delta_rule_fwd_kernel
+
+    class ValueTile:
+        def __init__(self, width):
+            self.width = width
+
+        def __getitem__(self, grid):
+            def launch(**kwargs):
+                kwargs['BV'] = self.width
+                return kernel[(1, (kwargs['V'] + self.width - 1) // self.width, kwargs['HV'])](**kwargs)
+            return launch
+
+    for seqs in (1, 4):
+        layers, t, h, d = 34, 7, 16, 128
+        states = torch.randn(layers, seqs + 1, t, h, d, d, device='cuda') * .1
+        initial = states.clone()
+        inputs = []
+        for _ in range(layers):
+            merged = torch.randn(seqs, t, 3 * h * d, device='cuda', dtype=torch.bfloat16)
+            q, k, v = (x.reshape(seqs, t, h, d) for x in merged.split(h * d, dim=-1))
+            g = torch.randn_like(q)
+            beta = torch.randn(seqs, t, h, device='cuda', dtype=torch.bfloat16)
+            a = torch.randn(h, device='cuda') * .2
+            bias = torch.randn(h * d, device='cuda') * .1
+            inputs.append((q, k, v, g, beta, a, bias))
+        slot = torch.arange(1, seqs + 1, device='cuda', dtype=torch.int64)
+        context = torch.full((seqs,), 2048, device='cuda', dtype=torch.int64)
+
+        def run():
+            return [impl.recurrent_kda_ring(*(x[s:s+1] for x in args[:5]), *args[5:],
+                                            states[L], slot[s:s+1], context[s:s+1], -5.)
+                    for L, args in enumerate(inputs) for s in range(seqs)]
+
+        graphs, outputs = [], []
+        try:
+            for bv in (8, 16):
+                with patch.object(impl, 'fused_recurrent_gated_delta_rule_fwd_kernel', ValueTile(bv)):
+                    graph, output = _capture(run)
+                graphs.append(graph); outputs.append(output)
+            for step in range(3):
+                context.fill_(2048 + step * 3)
+                for args in inputs:
+                    for x in args[:5]:
+                        x.normal_()
+                states.copy_(initial)
+                graphs[0].replay()
+                reference_states = states.clone()
+                reference_outputs = [x.clone() for x in outputs[0]]
+                states.copy_(initial)
+                graphs[1].replay()
+                assert torch.equal(states, reference_states), 'KDA BV=16 changed a rollback snapshot'
+                for actual, expected in zip(outputs[1], reference_outputs):
+                    assert torch.equal(actual, expected), 'KDA BV=16 changed an output'
+                del reference_states, reference_outputs
+            measurements = [dict(arm=label, ms=_time(graphs[i], iterations=64)) for label, i in
+                            (('B8', 0), ('A16', 1), ('A16', 1), ('B8', 0))]
+            report('kda_ring_timing', seqs=seqs, tokens=t, layers=layers, every_state_exact=True,
+                   measurements=measurements, scope='captured 34-layer recurrence; not consumer speed')
+        finally:
+            for graph in graphs:
+                graph.reset()
+        del states, initial, inputs, outputs, graphs
+
+
 def shared_mlp(report, native):
     from tests.test_engine_shared_mlp import SharedMLPTests
     gu, down, fused = SharedMLPTests.layers()
