@@ -189,7 +189,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     drafter_dir = Path(drafter_dir)
     D = drafter_mod.load(drafter_dir) if use_drafter else None
     dspecs = drafter_mod.specs(D) if D else []
-    draft_shape = (D.layers, D.window, D.kv_heads, D.head_dim) if D else None
+    draft_shape = (D.layers, drafter_mod.ring_cells(D), D.kv_heads, D.head_dim) if D else None
     cache_layout = layout(F, net.layers, draft_shape)
     bb, sb = cache_layout.block_bytes, cache_layout.slot_bytes
     ns = max_seqs + 1
