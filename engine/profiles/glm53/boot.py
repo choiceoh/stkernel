@@ -566,6 +566,78 @@ def native_execution_report(net, drafter):
     return proof
 
 
+# A test boot runs the SAME path production runs -- the served lanes and captured decode graphs -- because a
+# boot that decodes eagerly is a different engine and its numbers answer about nothing (45차 §94). What it
+# drops is everything the path does not go through, and what it opens is the measurement.
+#
+#   same      served lanes; decode replays captured graphs, as production's does.
+#   off       the qualification a fleet boot owes its door before opening it -- the vision tower, the
+#             grammars, the parked-conversation tier, the calibration sums.
+#   fast      one captured decode width instead of max_seqs of them. Capture is three quarters of a fleet
+#             boot's 87 seconds ([[stkernel-st-boot-time]]), and it is paid per width.
+#   open      every step timed instead of one in sixty-four, and /v1/engine/profile for the kernels.
+#
+# What it is NOT is a speed measurement. Four ranks are four threads on ONE GPU here, so the device does four
+# ranks' arithmetic and a step takes what a step takes on this box, not on the fleet. D17 says a change that
+# claims speed is not finished until the fleet has measured it, and this mode does not change that.
+TEST_WIDTHS = 1            # captured decode widths: production's four cost four captures
+TEST_CLOCK_EVERY = 1       # a test boot times every step; production samples one in sixty-four
+TEST_FLOOR_GIB = 16.0      # what a --test boot must leave the box, over and above its own KV
+
+
+def arm_test_measurement(engine, recorder):
+    """Capture what production captures, then time every step of it.
+
+    The decode graphs are the point: a boot that decodes eagerly runs different kernels in a different order
+    and answers about nothing. One width is captured rather than `max_seqs` of them -- production serves one
+    sequence today, and each width is its own capture.
+    """
+    from engine.base.stage_clock import StageClock
+    with recorder.phase("capture decode"):
+        engine.capture_decode(TEST_WIDTHS)
+    pipeline = getattr(engine, "pipeline", None)
+    if pipeline is None:                                   # no drafter: there is no async decode to time
+        return None
+    pipeline.clock = StageClock(every=TEST_CLOCK_EVERY, device=engine.caches.device)
+    return pipeline.clock
+
+
+def stage_table(clock, steps: int) -> str:
+    """What a decode step is made of. These are the stages production exports, sampled at every step."""
+    if clock is None or not clock.totals or not clock.samples:
+        return "  decode: nothing timed (no drafter, or no decode step ran)"
+    total = sum(clock.totals.values())
+    lines = [f"  decode, by stage over {clock.samples} of {steps} steps ({total / clock.samples * 1e3:.1f} ms each;"
+             f" this box's time, not the fleet's):"]
+    for stage, seconds in sorted(clock.totals.items(), key=lambda kv: -kv[1]):
+        lines.append(f"    {stage:12s}{seconds / clock.samples * 1e3:9.2f} ms{seconds / total * 100:8.1f}%")
+    return "\n".join(lines)
+
+
+def memory_left(kv_gib: float) -> float:
+    """MemAvailable less the KV this boot declares, in GiB. The weights and the arena come out of the rest."""
+    for line in Path("/proc/meminfo").read_text().splitlines():
+        if line.startswith("MemAvailable:"):
+            return int(line.split()[1]) / 2 ** 20 - kv_gib
+    raise RuntimeError("/proc/meminfo does not report MemAvailable")
+
+
+def guard_test_memory(kv_gib: float, floor: float = TEST_FLOOR_GIB) -> None:
+    """A test boot must not be the thing that takes production down.
+
+    GB10 has one pool for host and device, earlyoom's floor is absolute, and the engine is a preferred kill
+    target -- on 2026-09-11 a smoke test beside production killed the fleet's worker, not itself. So this
+    refuses rather than guesses (D3), and prints the two numbers the caller needs to make it fit.
+    """
+    left = memory_left(kv_gib)
+    if left < floor:
+        raise SystemExit(
+            f"  --test refuses: {left:.1f} GiB would be left after this boot's {kv_gib:.1f} GiB of KV and the "
+            f"floor is {floor:.1f}. Narrow --layers, lower --kv-gib, or wait for the box. A test boot that "
+            f"earlyooms production has not tested anything.")
+    print(f"  memory: {left:.1f} GiB left after {kv_gib:.1f} GiB of KV, floor {floor:.1f} -- room for the weights")
+
+
 def local(a) -> int:
     print(f"  box: {facts.check_box()}")
     print(declared(a, facts.TP).table())
@@ -573,7 +645,12 @@ def local(a) -> int:
     torch.manual_seed(a.seed)
     prompts = {seq: torch.randint(0, 100_000, (a.prompt + 7 * seq,)).tolist() for seq in range(a.seqs)}
     tp = LocalTP(facts.TP)
-    lanes = lane_tables.reference()
+    if a.lanes == "served":
+        guard_test_memory(a.kv_gib)
+        print("  lanes: served, decode captured -- the path production runs, on this box alone. This is not "
+              "the fleet and it holds no lease; four ranks are four threads on ONE GPU, so the PATH is "
+              "production's and the TIMES are this box's. D17 still wants the fleet for a speed claim.")
+    lanes = lane_tables.served() if a.lanes == "served" else lane_tables.reference()
     if a.park:                                            # a run-private tier: parked ids from an earlier smoke must not collide
         import tempfile
         Path(a.tier_dir).mkdir(parents=True, exist_ok=True)
@@ -585,10 +662,13 @@ def local(a) -> int:
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed,
                                                tier_dir=a.tier_dir if a.park else None,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
+        clock = arm_test_measurement(engine, rec) if a.lanes == "served" else None
         t0 = time.perf_counter()
         with rec.phase("generate"):
             out = run_prompts(engine, runner, prompts)
             torch.cuda.synchronize()
+        if a.lanes == "served" and comm.rank == 0:
+            print(stage_table(clock, runner.steps), flush=True)
         parked = None
         if a.park:
             # D16 on the real caches: the finished conversation 0 still holds its blocks (keep_idle); park it, the arena
@@ -932,7 +1012,13 @@ def fleet(a) -> int:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--local", action="store_true", help="four ranks as threads on this box, reference lanes")
+    ap.add_argument("--local", action="store_true", help="four ranks as threads on this box")
+    ap.add_argument("--lanes", choices=("reference", "served"), default="reference",
+                    help="with --local: `reference` proves the plumbing, `served` runs the kernels production "
+                         "runs -- the only way to judge them without taking the fleet")
+    ap.add_argument("--test", action="store_true",
+                    help="--local --lanes served: a real engine on one box, no lease, refused if it would "
+                         "leave the box under the memory floor")
     ap.add_argument("--production", action="store_true", help="fixed serving defaults without expiring experiment knobs; rejects STK_* overrides")
     ap.add_argument("--layers", default="0-4")
     ap.add_argument("--ranks", default=str(facts.RANKS))
@@ -951,6 +1037,8 @@ def main(argv=None) -> int:
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--dump-dir", default="/home/choiceoh/glm53-logs/st-dumps")
     a = ap.parse_args(argv)
+    if a.test:
+        a.local, a.lanes = True, "served"
     if a.local:
         if a.kv_gib == KV_GIB:
             a.kv_gib = 1.0                                      # a layer subset on one box
