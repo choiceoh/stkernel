@@ -18,6 +18,8 @@ ENV PYTHONPATH=/opt/st \
     DG_JIT_CACHE_DIR=/cache/deep_gemm \
     FLASHINFER_WORKSPACE_BASE=/cache \
     ST_MLA_BUILD_ROOT=/cache/mla \
+    ST_DENSE_BUILD_ROOT=/cache/st-dense \
+    ST_ONESHOT_BUILD_ROOT=/cache/st-oneshot \
     MAX_JOBS=2
 ENTRYPOINT ["python3", "-m", "engine.profiles.glm53.boot"]
 CMD ["--help"]

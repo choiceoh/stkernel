@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 """ST sparse MLA with GB10 warp MMA and cluster-local split reduction."""
-import hashlib
 import logging
 import math
 import os
@@ -55,13 +54,12 @@ def _build():
         return _EXT
     import torch
     from torch.utils.cpp_extension import load
+    from engine.kernels.native_cache import prepare_sources
     src = Path(__file__).with_name("glm53_megakernel.cu")
     flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a"]
-    key = hashlib.sha256(src.read_bytes() + repr((flags, torch.__version__, torch.version.cuda)).encode()).hexdigest()[:16]
     root = Path(os.environ.get("ST_MLA_BUILD_ROOT", str(Path.home() / ".cache/st/mla")))
-    build = root / key
-    build.mkdir(parents=True, exist_ok=True)
-    _EXT = load(name="st_mla_" + key, sources=[str(src)], extra_cuda_cflags=flags,
+    key, build, sources = prepare_sources(root, [src], (flags, torch.__version__, torch.version.cuda))
+    _EXT = load(name="st_mla_" + key, sources=list(sources), extra_cuda_cflags=flags,
                 build_directory=str(build), verbose=False)
     return _EXT
 
