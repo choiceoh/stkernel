@@ -179,7 +179,7 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
     assert q_nope.is_contiguous() and slots.is_contiguous()
     assert slots.dtype == torch.int32 and lens.dtype == torch.int32
     if (ENABLE_MLA_PREFILL32
-            and 4096 <= T <= 8192 and 1 <= slots.shape[1] <= 2176
+            and 4096 <= T <= 16384 and 1 <= slots.shape[1] <= 2176
             and q_nope.dtype == torch.bfloat16 and ckv.is_contiguous()
             and ckv.element_size() == 1 and lens.is_contiguous()
             and not torch.cuda.is_current_stream_capturing()):
