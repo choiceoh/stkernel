@@ -1405,13 +1405,15 @@ mk_gemm_input_cta_kernel(const MKGemm2Ctx c) {
   }
 }
 
-// Opt-in CTA=4: preserve 10/11/11 groups for foreground N4096/N6144.
-template <int TILES, int NB>
-__global__ void __launch_bounds__(TILES*96,TILES==1?6:3)
+// CTA=4: keep the ordinary two or three K slices. In particular M7/N6144
+// uses 16/16 groups, while the compact M6 lane uses 10/11/11.
+template <int TILES, int NB, int SLICES=3>
+__global__ void __launch_bounds__(TILES*SLICES*32,TILES==1?6:3)
 mk_gemm_input_cta3_kernel(const MKGemm2Ctx c) {
+  static_assert(SLICES==2 || SLICES==3);
   constexpr int MODE=0;
   const int m=c.m;
-  constexpr int RAW_NIB=TILES*48*64,RAW_BYTES=TILES*48*72;
+  constexpr int RAW_NIB=TILES*SLICES*16*64,RAW_BYTES=TILES*SLICES*16*72;
   asm volatile("griddepcontrol.launch_dependents;");
   extern __shared__ uint8_t smem[];
   uint8_t* sraw=smem;
@@ -1419,8 +1421,8 @@ mk_gemm_input_cta3_kernel(const MKGemm2Ctx c) {
   sraw+=(MK_SMEM_ALIGN-(sm&(MK_SMEM_ALIGN-1)))&(MK_SMEM_ALIGN-1);
   float* partial=reinterpret_cast<float*>(sraw+NB*RAW_BYTES);
   const int lane=threadIdx.x&31, warp=threadIdx.x>>5, g=lane>>2, q=lane&3;
-  const int kblk=32,nt=blockIdx.x*TILES+warp/3,slice=warp%3;
-  const int kb0=32*slice/3,kbn=32*(slice+1)/3;
+  const int kblk=32,nt=blockIdx.x*TILES+warp/SLICES,slice=warp%SLICES;
+  const int kb0=32*slice/SLICES,kbn=32*(slice+1)/SLICES;
   constexpr int DIST=NB-1;
   auto stage_raw=[&](int kb,int buf) {
     const uint8_t* w=c.wq4+((size_t)(nt/8)*kblk+kb)*8192+(nt%8)*1024;
@@ -1496,7 +1498,7 @@ mk_gemm_input_cta3_kernel(const MKGemm2Ctx c) {
     mk_cp_wait_upto(min(DIST-1,kbn-kb-2));__syncwarp();
   }
   }
-  // Each three-warp group owns the original three K slices. Publish all
+  // Each warp group owns the original K slices. Publish all
   // m x 16 partials inside this CTA, then reduce in exactly the old slice order.
   // This removes device-wide partial traffic, arrival atomics and fences.
 #pragma unroll
@@ -1505,12 +1507,12 @@ mk_gemm_input_cta3_kernel(const MKGemm2Ctx c) {
     if(row<m)partial[(warp*m+row)*16+col]=acc[i];
   }
   __syncthreads();
-  for(int t=threadIdx.x;t<TILES*m*16;t+=TILES*96) {
+  for(int t=threadIdx.x;t<TILES*m*16;t+=TILES*SLICES*32) {
     const int tile=t/(m*16),local=t%(m*16),row=local/16;
     const int col=(blockIdx.x*TILES+tile)*16+local%16;
     float value=0.f;
 #pragma unroll
-    for(int s=0;s<3;++s)value+=partial[(tile*3+s)*m*16+local];
+    for(int s=0;s<SLICES;++s)value+=partial[(tile*SLICES+s)*m*16+local];
     value*=c.rgs?c.rgs[col]:1.f;
     c.out[(size_t)row*c.n_orig+col]=__float2bfloat16(value);
   }
@@ -2873,11 +2875,16 @@ int g_gemm_input_bps = 0;
 int g_input_cta_bps[3] = {};
 constexpr int INPUT_CTA_SMEM=MK_SMEM_ALIGN+2*W4_RAW_BYTES+8*8*16*sizeof(float);
 constexpr int INPUT_CTA3_SMEM=MK_SMEM_ALIGN+2*2*48*72+2*3*8*16*sizeof(float);
+constexpr int INPUT_CTA2_SMEM=MK_SMEM_ALIGN+2*2*32*72+2*2*8*16*sizeof(float);
 int g_input_cta3_bps=0;
+int g_input_cta2_bps=0;
 int g_mk_sms = 0;  // multiprocessors, from the device (48 on GB10)
 
 void set_kernel_attrs() {
   if (g_attrs_set) return;
+  MK_CHECK_CUDA(cudaFuncSetAttribute(mk_gemm_input_cta3_kernel<2,2,2>,cudaFuncAttributeMaxDynamicSharedMemorySize,INPUT_CTA2_SMEM));
+  MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+      &g_input_cta2_bps,mk_gemm_input_cta3_kernel<2,2,2>,128,INPUT_CTA2_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(mk_gemm_input_cta3_kernel<2,2>,cudaFuncAttributeMaxDynamicSharedMemorySize,INPUT_CTA3_SMEM));
   MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
       &g_input_cta3_bps,mk_gemm_input_cta3_kernel<2,2>,192,INPUT_CTA3_SMEM));
@@ -3197,7 +3204,7 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   c2.ksr = mk_choose_ksr2(c2.m, c2.n, c2.k, c2.lr_r > 0);
   const bool input_reuse = mk_gemm_input_mode() &&
       mk_input_shape(c2.m, c2.n_orig, c2.k, bg != 0, c2.lr_r != 0) &&
-      (c2.n_orig==6416 || c2.ksr==3);
+      (c2.n_orig==6416 || c2.ksr==2 || c2.ksr==3);
   // one slice per tile stores bf16 straight from the accumulators (no
   // partial is read or written), so the partial bound is a split's
   // contract only: m = 32 on the head (32 x 38,784 floats) is served whole
@@ -3219,7 +3226,9 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
     mk_launch(mk_input_pack_kernel, c2.k / KSTEP, 0, stream,
               MKInputPackCtx{c2.x, q, scales, c2.m, c2.k});
     const int cta=mk_gemm_input_cta_mode();
-    if (cta==4 && c2.ksr==3 && (c2.n_orig==4096 || c2.n_orig==6144)) {
+    if (cta==4 && c2.ksr==2 && (c2.n_orig==4096 || c2.n_orig==6144)) {
+      mk_launch<128>(mk_gemm_input_cta3_kernel<2,2,2>,c2.n_orig/32,INPUT_CTA2_SMEM,stream,c2);
+    } else if (cta==4 && c2.ksr==3 && (c2.n_orig==4096 || c2.n_orig==6144)) {
       mk_launch<192>(mk_gemm_input_cta3_kernel<2,2>,c2.n_orig/32,INPUT_CTA3_SMEM,stream,c2);
     } else if (cta && c2.ksr==8) {
       if (cta==1)
@@ -3805,18 +3814,18 @@ std::vector<int64_t> mk_gemm_input_plan(int m, int n, int k, bool bg, bool lr) {
   const int n_pad = ((n + SMEM_W_ROWS - 1) / SMEM_W_ROWS) * SMEM_W_ROWS;
   const int ordinary = mk_choose_ksr2(m, n_pad, k, lr);
   const int split = ordinary;  // retain the existing FP32 reduction order
-  const bool enabled=shape && (n==6416 || split==3);
+  const bool enabled=shape && (n==6416 || split==2 || split==3);
   const int cta = enabled && n==6416 && split == 8 ? mk_gemm_input_cta_mode() : 0;
   const bool cta3=enabled && n!=6416;
-  return {enabled, split, cta3 ? g_input_cta3_bps : cta ? g_input_cta_bps[cta==4?1:cta-1] : g_gemm_input_bps,
+  return {enabled, split, cta3 ? (split==2?g_input_cta2_bps:g_input_cta3_bps) : cta ? g_input_cta_bps[cta==4?1:cta-1] : g_gemm_input_bps,
           enabled ? (k / KSTEP) * 1056 : 0};
 }
 std::vector<int64_t> mk_gemm_input_cta_plan(int m,int n,int k,bool bg,bool lr) {
   const auto input=mk_gemm_input_plan(m,n,k,bg,lr);
-  const bool cta3=input[0] && n!=6416 && input[1]==3;
+  const bool cta3=input[0] && n!=6416 && (input[1]==2 || input[1]==3);
   const int mode=input[0] && (input[1]==8 || cta3) ? mk_gemm_input_cta_mode() : 0;
-  return {mode,cta3?3:8,cta3?g_input_cta3_bps:mode?g_input_cta_bps[mode==4?1:mode-1]:0,
-          cta3?INPUT_CTA3_SMEM:mode?INPUT_CTA_SMEM:0};
+  return {mode,cta3?input[1]:8,cta3?input[2]:mode?g_input_cta_bps[mode==4?1:mode-1]:0,
+          cta3?(input[1]==2?INPUT_CTA2_SMEM:INPUT_CTA3_SMEM):mode?INPUT_CTA_SMEM:0};
 }
 void mk_set_gemm2(int64_t ksr) {
   if (ksr >= 0) g_probe_ksr2 = (int)ksr;
@@ -4066,6 +4075,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     cudaFuncAttributes a{};
     MK_CHECK_CUDA(cudaFuncGetAttributes(&a,mk_gemm_input_cta3_kernel<2,2>));
     out.insert(out.end(),{a.numRegs,(int64_t)a.localSizeBytes,g_input_cta3_bps,INPUT_CTA3_SMEM});
+    MK_CHECK_CUDA(cudaFuncGetAttributes(&a,mk_gemm_input_cta3_kernel<2,2,2>));
+    out.insert(out.end(),{a.numRegs,(int64_t)a.localSizeBytes,g_input_cta2_bps,INPUT_CTA2_SMEM});
     return out;
   });
   m.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM (W4 pack)");

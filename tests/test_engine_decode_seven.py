@@ -22,7 +22,9 @@ class SevenRowDenseTests(unittest.TestCase):
                 for rows in (6, 7):
                     x = torch.randn(rows, 4096, device='cuda', dtype=torch.bfloat16)
                     ext.set_gemm_input(1)
-                    self.assertTrue(ext.gemm_input_plan(rows, n, 4096, False, False)[0])
+                    plan = ext.gemm_input_plan(rows, n, 4096, False, False)
+                    self.assertTrue(plan[0], (rows, n, plan))
+                    self.assertEqual(plan[1], ext.gemm2_plan(rows, n, 4096)[0])
                     self.assertFalse(ext.gemm_input_plan(rows, n, 4096, True, False)[0])
                     self.assertFalse(ext.gemm_input_plan(rows, n, 4096, False, True)[0])
                     layer(x)
