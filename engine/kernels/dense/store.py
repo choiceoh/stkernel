@@ -182,6 +182,39 @@ class PackStore:
         self.stats['gptq' if hessian is not None else 'rtn'] += 1
         return pack
 
+    def pack_fp8(self, weight, name, *, rank=None):
+        """The FP8 lane's (q e4m3, UE8M0 block scales) of a calibrated weight: GPTQ on the fp8 grid (packing.fp8_gptq),
+        cached under the weight's, the Hessian's and the packer's identity; None when the store has no calibration."""
+        from engine.kernels.dense.packing import fp8_gptq
+        n, k = weight.shape
+        hessian = self._hessian(name, k)
+        if hessian is None:
+            return None
+        raw = weight.detach().contiguous().view(torch.uint8).cpu().numpy()
+        identity = dict(version=2, weight=hashlib.sha256(raw).hexdigest(), shape=(n,k), name=name, kind='fp8',
+                        calibration=hashlib.sha256(hessian.contiguous().numpy()).hexdigest(), algorithm=self.algorithm)
+        key = hashlib.sha256(repr(identity).encode()).hexdigest()
+        cache = self.root/'st-dense-packs'/(key+'.pt')
+        if cache.is_file():
+            self.read_files.add(cache)
+            blob = torch.load(cache, map_location='cpu', mmap=True, weights_only=True)
+            if blob['identity'] != identity:
+                raise ValueError(f'dense pack identity mismatch: {cache}')
+            q, scale = blob['q'].to(weight.device), blob['scale'].to(weight.device)
+            self.stats['fp8_cache'] += 1
+        else:
+            q, scale = fp8_gptq(weight, hessian.to(weight.device), factor_device="cpu" if k > self.TILE else None)
+            self.stats['fp8_built'] += 1
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            temporary = cache.with_suffix(f'.{os.getpid()}.tmp')
+            try:
+                torch.save(dict(identity=identity, q=q.cpu(), scale=scale.cpu()), temporary)
+                os.replace(temporary,cache)
+            finally:
+                temporary.unlink(missing_ok=True)
+        self.stats['fp8_gptq'] += 1
+        return q, scale
+
     def release_pages(self):
         """All mmap readers have returned; return their clean UMA file cache."""
         for path in self.read_files:
