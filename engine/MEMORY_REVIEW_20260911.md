@@ -1,5 +1,7 @@
 # ST 엔진 메모리 검토 (2026-09-11, main d44e3825 기준)
 
+> 그날의 조사 — **2026-09-11 의 조사다.** 그날 참이었던 것이고 유지되지 않는다 — 이후 무엇이 바뀌었는지는 `MEASUREMENTS.md` 가 안다.
+
 코드(`engine/base`, `engine/profiles/glm53`, `engine/kernels` 워크스페이스), 헌장 D1·D16, 원장 45차,
 `measurements/st_engine_*` 를 읽고, 프로필 코드로 아레나 구성을 다시 계산한 결과다. GPU 실측은 없다:
 검토 시점에 srv2·srv4 모두 프로덕션 vLLM(glm53, 74,437 MiB)이 떠 있어 ST 부팅·할당 시험이 불가했다.

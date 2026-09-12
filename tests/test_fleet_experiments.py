@@ -236,7 +236,11 @@ class PriorityTests(unittest.TestCase):
     def test_real_admission_function_preserves_live_holder_and_uses_priority_when_free(self):
         source = (ROOT / "bench/fleet.sh").read_text()
         function = source[source.index("_try_hold() {"):source.index("_ledger_row() {")]
-        function = next(line for line in source.splitlines() if line.startswith("kind_of() {")) + "\n" + function
+        # the admission function's own one-line helpers: the kind, its lane, its holder, its head
+        helpers = [line for line in source.splitlines()
+                   if line.startswith(("kind_of() {", "lane_of() {", "holder_file() {", "lane_front() {"))]
+        self.assertEqual(len(helpers), 4)
+        function = "\n".join(helpers) + "\n" + function
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             queue = root / "queue"

@@ -39,6 +39,28 @@ class OwnershipTests(unittest.TestCase):
         self.assertFalse((self.root/'restore-debt.json').exists())
         self.assertTrue((self.root/'holder').read_text().startswith('donor|1|'))
 
+    def test_single_lane_admission_writes_its_own_holder_and_leaves_the_fleet_alone(self):
+        """A check on the 5050 is not the fleet being held: its own holder file, no idle-clock
+        reset, no restore-debt change, no managed receipt (2026-09-12)."""
+        with (self.root/'queue').open('a') as stream:
+            stream.write(f'7|check|{time.time()}|5|kernel check|single|7\n')
+        handoff.write(self.root/'restore-debt.json', dict(owner=dict(session='old'), target=None))
+        self.assertTrue(handoff.admit(self.root, 'check', 7, 'single', '5', 'kernel check'))
+        row = (self.root/'holder-single').read_text().strip().split('|')
+        self.assertEqual((row[0], row[1], row[4], row[5], row[6]), ('check', '7', '5', 'kernel check', 'single'))
+        self.assertFalse((self.root/'holder').exists())               # the fleet is not held
+        self.assertTrue((self.root/'restore-debt.json').exists())     # the fleet's debt is not ours to clear
+        self.assertFalse((self.root/'idle-recovery.json').exists())   # and no fleet activity was recorded
+        self.assertEqual(list(handoff.holders(self.root)), ['single'])
+        # the fleet lane admits beside it, into its own file
+        self.ready('donor', 1)
+        self.assertTrue(handoff.admit(self.root, 'donor', 1, 'boot'))
+        self.assertEqual(sorted(handoff.holders(self.root)), ['fleet', 'single'])
+        self.assertTrue((self.root/'holder').read_text().startswith('donor|1|'))
+        self.assertTrue((self.root/'idle-recovery.json').exists())
+        self.assertEqual(handoff.holder_path(self.root, 'single'), self.root/'holder-single')
+        self.assertEqual(handoff.holder_path(self.root, 'probe'), self.root/'holder')
+
     def test_legacy_debt_and_target_do_not_block_queued_probe(self):
         owner = self.ready('old', 1)
         target = self.ready('target', 2)

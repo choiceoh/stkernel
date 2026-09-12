@@ -1,5 +1,7 @@
 # Shared experiments for coding agents
 
+> 살아 있는 참조 — **플릿 큐의 계약. 큐가 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
+
 Optimize the time from an agent's question to usable evidence. Submit once,
 continue independent implementation, and read the shared result. `fleet.sh`
 owns GPU admission and fast source preflight. GPU experiments run only the standard
@@ -26,6 +28,19 @@ onepass workload. Pending command edits and final execution recheck the policy;
 already-running older controllers retain their accepted payloads.
 Bare `request`/`wait` and unvalidated `adopt` cannot create new GPU holds; the
 registered supervisor owns admission for every new GPU command.
+
+The queue has two GPU lanes. A boot, a pair, a chain and a live onepass take the
+fleet: four Sparks, one holder. An ST check that needs **one** GPU
+(`probes/run_engine_check.sh`, or `run_engine_probe.sh` without `--distributed`)
+takes the single-GPU lane instead: the 5050 on ost-97x (`FLEET_SINGLE_GPU_HOST`;
+set it empty to turn the lane off), with its own holder (`holder-single`) and its
+own evidence (that host's GPU process list; unreachable is not free). The lanes
+never block each other -- a check behind a queued boot runs now, and a boot
+behind a queued check runs now. The supervisor passes `ST_PROBE_HOST` to the
+runner, which rsyncs `engine/` and `probes/` to that host, runs the container
+there and takes no fleet lease; a verdict from there is that card's (sm_120), not
+the fleet's. `run --gpu --fleet` keeps a one-GPU check on the Sparks, `status`
+shows the lane beside the fleet, and `kick [--force] single` clears its holder.
 
 ## The fleet lease
 

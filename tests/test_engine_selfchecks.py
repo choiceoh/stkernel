@@ -39,6 +39,14 @@ NEEDS_CUDA = {
     "engine.profiles.glm53.facts": "asserts the box is the one the profile is written for",
 }
 
+# These checks use the installed checkpoint's geometry. They still run in the
+# ST image when its model directory is mounted; GitHub CPU runners have neither
+# checkpoint. Missing files are not a failed numerical or shape assertion.
+NEEDS_CONFIG = {
+    'engine.profiles.glm53.net': ('engine.profiles.glm53.facts', 'CKPT'),
+    'engine.profiles.glm53.drafter': ('engine.profiles.glm53.drafter', 'DRAFTER'),
+}
+
 
 def modules():
     """Every engine module that defines a module-level `_selfcheck`."""
@@ -54,6 +62,11 @@ class SelfCheckTests(unittest.TestCase):
             if name in NEEDS_MORE or (name in NEEDS_CUDA and not torch.cuda.is_available()):
                 continue
             with self.subTest(module=name):
+                if name in NEEDS_CONFIG:
+                    module, field = NEEDS_CONFIG[name]
+                    config = Path(getattr(importlib.import_module(module), field)) / 'config.json'
+                    if not config.is_file():
+                        self.skipTest(f'checkpoint config not installed: {config}')
                 importlib.import_module(name)._selfcheck()
                 ran.append(name)
         self.assertGreater(len(ran), 20, ran)
@@ -61,7 +74,7 @@ class SelfCheckTests(unittest.TestCase):
     def test_the_excused_lists_name_only_modules_that_have_a_self_check(self):
         """An excuse that outlives its module hides a self-check that is no longer run."""
         found = set(modules())
-        self.assertEqual(sorted((set(NEEDS_MORE) | set(NEEDS_CUDA)) - found), [])
+        self.assertEqual(sorted((set(NEEDS_MORE) | set(NEEDS_CUDA) | set(NEEDS_CONFIG)) - found), [])
         self.assertEqual(sorted(set(NEEDS_MORE) & set(NEEDS_CUDA)), [])
 
     @unittest.skipUnless(torch.cuda.is_available(), "the excused-for-CUDA list is only checkable with one")

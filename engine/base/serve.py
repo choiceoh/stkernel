@@ -136,6 +136,10 @@ class PromptTokens:
         return out
 
 
+BODYLESS = ("/v1/prefix/reset",)
+"""POST routes that configure nothing, so an empty body is the whole request."""
+
+
 EFFORT_RUNGS = {"low": "low", "medium": "high", "high": "high", "max": "max"}
 """OpenAI's rungs onto GLM-5.3's two, mapped on purpose instead of by falling through.
 
@@ -1776,12 +1780,19 @@ class Server:
             operation, token = payload.get('op'), payload.get('token')
             try:
                 if operation == 'begin':
-                    if self._active or self._waiting or self.runner.inflight or self._profiling is not None:
+                    if hasattr(self.comm, 'tp'):
+                        raise ValueError('onepass recording requires one serving process per rank; LocalTP shares the profiler')
+                    if self._active or self._waiting or self._profiling is not None:
                         raise ValueError('latency recording requires idle serving and no other profiler')
+                    self.runner.drain()  # finish retired asynchronous rows before the measurement boundary
                     mine = self.latency.begin(token, payload.get('diagnostic', False), payload.get('concurrency', 1))
                 elif operation in ('end', 'abort'):
-                    if operation == 'end' and (self._active or self._waiting or self.runner.inflight):
+                    if self.latency.active is None or self.latency.active['token'] != token:
+                        raise ValueError('latency token does not own the active recording')
+                    if operation == 'end' and (self._active or self._waiting):
                         raise ValueError('latency recording still has active requests')
+                    if operation == 'end':
+                        self.runner.drain()  # consumers finished; resolve ghost steps outside the timed request
                     if operation == 'abort' and self.latency.active and self.latency.active['token'] == token:
                         self.latency.active['errors'].append('client aborted recording')
                     clock = getattr(getattr(self.engine, 'pipeline', None), 'clock', None)
@@ -1794,7 +1805,7 @@ class Server:
                 mine = dict(rank=self.comm.rank, token=token, error=str(exc), complete=False)
             ranks = self.comm.gather_objects(mine) if getattr(self.comm, 'world_size', 1) > 1 else [mine]
             if operation == 'begin' and any(r.get('error') for r in ranks):
-                if self.latency.active and self.latency.active['token'] == token:
+                if mine.get('status') == 'recording' and self.latency.active and self.latency.active['token'] == token:
                     self.latency.active['errors'].append('another rank rejected begin')
                     self.latency.finish(token)
             if self.comm.rank == 0:
@@ -2693,8 +2704,10 @@ class Server:
                         status["fleet"] = fleet
                     self.reply(200, status)
 
-            def body(self):
+            def body(self, allow_empty: bool = False):
                 n = int(self.headers.get("Content-Length", "0"))
+                if n == 0 and allow_empty:
+                    return {}
                 if not 0 < n <= 4 << 20:
                     raise RequestError("request body must contain 1 to 4194304 bytes", 413)
                 req = json.loads(self.rfile.read(n))
@@ -3326,7 +3339,12 @@ class Server:
                     handler = routes.get(self.path)
                     if handler is None:
                         raise RequestError("unknown endpoint", 404)
-                    handler(self.body())
+                    # A route that takes no arguments should not need a body to say so. `body()`
+                    # demands 1..4 MiB, so `curl -X POST .../v1/prefix/reset` -- the way an operator
+                    # actually reaches the one hook that has nothing to configure -- answered 413
+                    # (2026-09-12, mid-measurement: the cache was not reset and the next bracket
+                    # quietly read it back).
+                    handler(self.body(allow_empty=self.path in BODYLESS))
                 except RequestError as exc:
                     self.reply(exc.status, {"error": str(exc)})
                 except (ValueError, TypeError, UnicodeError) as exc:

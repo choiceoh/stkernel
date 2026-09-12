@@ -72,6 +72,10 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
     RING_SIZE: tl.constexpr = 0,
     RING_SLOT_STRIDE: tl.constexpr = 0,
     RING_DEVICE_INDICES: tl.constexpr = False,
+    deferred_keys=None,
+    deferred_decay=None,
+    deferred_updates=None,
+    DEFERRED_STATE: tl.constexpr = False,
 ):
     i_k, i_v, i_nh = tl.program_id(0), tl.program_id(1), tl.program_id(2)
     i_n, i_hv = i_nh // HV, i_nh % HV
@@ -200,6 +204,16 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
         if SIGMOID_BETA:
             b_beta = tl.sigmoid(b_beta)
         b_v *= b_beta
+        if DEFERRED_STATE:
+            # Store the exact FP32 operands of the state update, not its
+            # matrix. Each value tile owns its update vector; tile zero
+            # alone owns the shared key/decay vectors. The initial ring
+            # row stays untouched until acceptance is known.
+            factor = (i_t * HV + i_hv)
+            if i_v == 0:
+                tl.store(deferred_keys + factor * K + o_k, b_k, mask=mask_k)
+                tl.store(deferred_decay + factor * K + o_k, exp(b_gk), mask=mask_k)
+            tl.store(deferred_updates + factor * V + o_v, b_v, mask=mask_v)
         # [BV, BK]
         b_h += b_v[:, None] * b_k[None, :]
         # [BV]
@@ -207,7 +221,9 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
         tl.store(p_o, b_o.to(p_o.dtype.element_ty), mask=mask_v)
 
         # keep the states for multi-query tokens
-        if RING_SIZE:
+        if DEFERRED_STATE:
+            pass
+        elif RING_SIZE:
             # Each CTA owns disjoint [head,K,V] cells for every ring row.
             # Even when T == RING_SIZE, only this CTA can overwrite its
             # initial cells, already loaded into registers before the loop.

@@ -1,5 +1,7 @@
 # EP tile-major decode and prefill
 
+> 그대로 두는 기록 — **캠페인 산출물.** 당시의 기록이라 고치지 않는다 — 고치면 기록이 거짓이 된다.
+
 The GLM53 default retains EP4 expert ownership and shares one tile-major weight
 allocation between a dedicated static decode kernel and the EP-local prefill
 kernel. SF6 scale compression and verified input preparation remain enabled,

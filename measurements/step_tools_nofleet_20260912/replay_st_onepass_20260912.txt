@@ -1,0 +1,8 @@
+== onepass ST-PROD-5734-20260912-0746 (None, git None, session None)
+       ctx  cold TTFT  warm TTFT cold tok/s warm tok/s
+      2000      1.06s      1.05s       2009       2030
+     32000      2.68s      2.68s      12150      12150  (1요청 결합)
+    128000     64.41s     64.41s       1996       1996  (1요청 결합)
+   decode step/s 10.96250161779981 (창 84개)
+   수락률 46.2%, tokens/step 3.3094527363184083, TTFT med 1.059s, TPOT med 28.09 ms p95 29.55
+   품질 9/9, 깨진 응답 0/5

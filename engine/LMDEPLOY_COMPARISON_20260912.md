@@ -1,5 +1,7 @@
 # LMDeploy / TurboMind 에서 배워올 것 — 조사 (2026-09-12)
 
+> 그날의 조사 — **2026-09-12 의 조사다.** 그날 참이었던 것이고 유지되지 않는다 — 이후 무엇이 바뀌었는지는 `MEASUREMENTS.md` 가 안다.
+
 `InternLM/lmdeploy` `309d2b5`(2026-09-11, 하루 전)를 읽고 ST 와 대조했다. 읽은 곳:
 `src/turbomind/engine/{README.md,scheduler.cc,engine.cc}`, `src/turbomind/{models,kernels}/`,
 `docs/en/inference/turbomind.md`, `docs/en/advance/pytorch_new_model.md`.

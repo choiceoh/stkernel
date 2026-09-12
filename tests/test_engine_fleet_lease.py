@@ -181,7 +181,7 @@ class LauncherAndQueueTests(unittest.TestCase):
         # the lease never rsyncs over a live session's engine tree
         self.assertIn("launchers/lib/fleet-lease.sh", self.launcher)
         helper = (ROOT / "launchers/lib/fleet-lease.sh").read_text()
-        self.assertIn('ssh $FLEET_LEASE_SSH "choiceoh@$FLEET_HEAD" "python3 - $* --path $FLEET_LEASE_PATH" < "$module"', helper)
+        self.assertIn('ssh $FLEET_LEASE_SSH "choiceoh@$FLEET_HEAD" "python3 - $quoted" < "$module"', helper)
 
     def test_the_queue_refuses_to_answer_off_the_controller(self):
         """Homes are not shared: elsewhere it would create a second, empty queue."""
@@ -196,7 +196,8 @@ class LauncherAndQueueTests(unittest.TestCase):
         import fleet_onepass
         import fleet_pin
         pinned = set(fleet_pin.source_files(ROOT))
-        for relative in (*fleet_onepass.ST_ENTRIES, *fleet_onepass.ST_PROBES):
+        for relative in ('launchers/lib/fleet-lease.sh', 'engine/base/fleet_lease.py',
+                         *fleet_onepass.ST_ENTRIES, *fleet_onepass.ST_PROBES):
             if (ROOT / relative).is_file():
                 self.assertIn(relative, pinned, relative)
         # and the lease itself: a runner that cannot read the lease counts it as occupied,
@@ -344,6 +345,39 @@ class SmoothnessTests(unittest.TestCase):
         self.assertNotIn("BEAT=$(fleet_lease_beat", self.probe)
         self.assertIn("the ticket's supervisor on the head node is the lease's", self.probe)
 
+    def test_heartbeat_pid_capture_returns_while_renewal_is_running(self):
+        import signal
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as tmp:
+            mark = Path(tmp) / "renewed"
+            script = '''
+source "$1"
+sleep() { command sleep 0.02; }
+fleet_lease() { printf '%s\\n' "$*" >> "$RENEW_MARK"; }
+beat=$(fleet_lease_beat test-owner)
+trap 'kill "$beat" 2>/dev/null || true' EXIT
+kill -0 "$beat" || exit 2
+for i in {1..100}; do
+  [ ! -s "$RENEW_MARK" ] || { printf 'ready\\n'; exit 0; }
+  command sleep 0.02
+done
+exit 3
+'''
+            proc = subprocess.Popen(["bash", "-c", script, "test", str(ROOT / "launchers/lib/fleet-lease.sh")],
+                                    env={**os.environ, "RENEW_MARK": str(mark)}, start_new_session=True,
+                                    text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                out, err = proc.communicate(timeout=5)
+                self.assertEqual((proc.returncode, out), (0, "ready\n"), err)
+                self.assertIn("renew --owner test-owner", mark.read_text())
+            finally:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                proc.communicate()
+
     def test_a_cpu_only_probe_reserves_nothing(self):
         """Taking four Sparks for an import check is the opposite of smooth."""
         self.assertIn('if [ "${ST_PROBE_NO_GPU:-0}" != 1 ]; then', self.probe)
@@ -354,7 +388,7 @@ class SmoothnessTests(unittest.TestCase):
         ticket's supervisor sees the payload end and passes the lease on or lets it go. And a lease
         that does go stale is still reported as such."""
         self.assertIn("A probe killed outright leaks", self.probe)
-        self.assertNotIn("trap ", self.probe)
+        self.assertNotIn("fleet_lease release", self.probe)          # nothing of its own to release
         module = (ROOT / "engine/base/fleet_lease.py").read_text()
         self.assertIn('print("free (stale: " + describe(held) + ")")', module)
 
@@ -553,7 +587,7 @@ class ProbeLeaseTests(unittest.TestCase):
         ST_LEASE_OWNER here and the runner only verifies it. A bare run has no ticket and is refused --
         that was the last way onto the GPUs that no launcher and no queue could see."""
         runner = (ROOT / "probes/run_engine_probe.sh").read_text()
-        self.assertIn("fleet_lease verify --owner \"'$ST_LEASE_OWNER'\"", runner)
+        self.assertIn('fleet_lease verify --owner "$ST_LEASE_OWNER"', runner)
         self.assertIn("this probe holds no fleet reservation", runner)
         self.assertIn("bash bench/fleet.sh run --gpu <session>", runner)
         self.assertNotIn("fleet_lease acquire", runner)              # one record: the queue's
@@ -728,9 +762,9 @@ class OneRecordTests(unittest.TestCase):
         self.assertIn('lease() { python3 "${FLEET_RUNNER_REPO:-$REPO}/engine/base/fleet_lease.py"', self.fleet)
         self.assertNotIn("launchers/lib/fleet-lease.sh", self.fleet)     # the helper no snapshot carried
         hold = self.fleet[self.fleet.index("_try_hold() {"):self.fleet.index("_ledger_row() {")]
-        self.assertIn('if [ "$kind" != probe ] && ! lease_mine "$s"; then', hold)   # a probe runs beside production
+        self.assertIn('if [ "$kind" = boot ] && ! lease_mine "$s"; then', hold)    # a probe runs beside production; the single lane is not the fleet
         self.assertIn('ST_MINE=$s st_engine_up', hold)
-        self.assertRegex(self.fleet, r"(?m)^FLEET_RULES=2$")             # occupancy answers changed
+        self.assertRegex(self.fleet, r"(?m)^FLEET_RULES=3$")             # occupancy answers changed
 
     def test_a_boot_holder_lives_by_the_lease(self):
         body = self.fleet[self.fleet.index("holder_alive() {"):self.fleet.index("holder_probe() {")]
@@ -744,7 +778,7 @@ class OneRecordTests(unittest.TestCase):
         self.assertIn('lease transfer --owner "queue/$1" --to "queue/$next" --kind queue --pid "$npid"', self.fleet)
         self.assertIn("no boot ticket waits: production restores itself", self.fleet)
         release = self.fleet[self.fleet.index("_release() {"):self.fleet.index("_adopt() {")]
-        self.assertIn('[ "${hkind:-boot}" = probe ] || [ "${FLEET_KEEP_LEASE:-0}" = 1 ] || _lease_pass_on "$1"', release)
+        self.assertIn('[ "${hkind:-boot}" != boot ] || [ "${FLEET_KEEP_LEASE:-0}" = 1 ] || _lease_pass_on "$1"', release)
         self.assertIn("FLEET_KEEP_LEASE=1 FLEET_NO_RESTORE_CHECK=1 with_lock _release", self.fleet)   # a yield to a probe keeps it
         self.assertIn("elif args.action == 'next':", self.handoff)
         dequeue = self.fleet[self.fleet.index("_dequeue() {"):self.fleet.index("_withdraw_owned() {")]

@@ -1,0 +1,29 @@
+{
+  "scope": "SM121 compilation only; no numerical or speed verdict",
+  "gpu_used": false,
+  "torch": "2.13.0+cu130",
+  "triton": "3.7.1",
+  "status": "PASS",
+  "variants": [
+    {
+      "out_stride_type": "i32",
+      "cubin_sha256": "66976eafba11787be5cb202db270eeafa65375f673d4fab0267635cb0e1b04e6",
+      "shared_bytes": 0
+    },
+    {
+      "out_stride_type": "i64",
+      "cubin_sha256": "e7c958eedfff3899c59c2ad2ec836f696ac3ed1aced07d0ab8541b63f456109b",
+      "shared_bytes": 0
+    }
+  ],
+  "torch_reduce_header_sha256": "ef9bea8fdfd03cec2d7e7421cbe75d98fddfdaafddb4f25a1ed655c5861dfb65",
+  "source_sha256": {
+    "engine/kernels/mhc_contract.py": "79b4e3602e491095e31d48ab7691ca83c8b88cd46fd28f2794f846d83221c905",
+    "engine/kernels/mhc/__init__.py": "c32a6ad884173f13c68bf6c02a09c128fab776fa231e232c791b571c765da0cd",
+    "engine/kernels/mhc/tilelang_kernels.py": "ef1aa257c8fee2b3bb4799a3d301bc293bd28448926ea56c3a87f53783e39357",
+    "engine/profiles/glm53/net.py": "1ca4b68189a6b17e36f8c8f4fd3c35f37edbe1fe0858361ae23fae253131d3ef",
+    "engine/profiles/glm53/drafter.py": "111a5e0b54b35df8d64835910fad19dbd9786c14c3b04c7d626961631011e797",
+    "tests/test_engine_mhc_contract.py": "c917016ca49e39671bad28b2318147dd481ee38ad352271329bd173592643f50",
+    "probes/engine_mhc_contract_check.py": "070c69587e58069278ef1ba9c4f0d628d8859a9272b76024cb6e2568299a5ffd"
+  }
+}

@@ -347,6 +347,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             failure = exc
         # A failed rank must prevent peers from starting their large CUDA
         # allocations; closing NCCL only after one rank fails is too late.
+        comm.wait_prepared("arena-admission")
         failed = comm.all_reduce(torch.tensor([int(failure is not None)], device="cuda"))
         if int(failed.item()):
             if memory is not None:
@@ -447,6 +448,12 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 engine.pack_stats["fp8_gptq"] = sum(1 for layer in dense_layers if getattr(getattr(layer, "fp8", layer), "calibrated", False))
                 engine.pack_stats["smoothed"] = sum(1 for layer in dense_layers if getattr(layer, "smooth", None) is not None)
             engine.prefill_chunk = sched.chunk_for(contract.chunk_align, contract.token_budget, contract.draft_slots)
+        # Per-rank GPTQ/calibration caches can take very different times to
+        # prepare. A fast rank used to enqueue the memory vote while a peer
+        # still packed weights, exhausting NCCL's 120 s serving deadline.
+        # Meet on the CPU control plane before any post-load device collective.
+        with recorder.phase("wait for weight preparation"):
+            comm.wait_prepared("weights-loaded", final=True)
         if memory is not None:
             memory.checkpoint("loaded")
         with recorder.phase("runner"):

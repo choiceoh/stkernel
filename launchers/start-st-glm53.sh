@@ -151,8 +151,8 @@ case "${1:-start}" in
     # TRANSFER to the requester named here, so the fleet is this owner's the moment the holder
     # lets go -- start with that owner in ST_LEASE_OWNER.
     use_lease
-    asked=$(fleet_lease yield --requester "'$LEASE_OWNER'" --kind session --pid $$ --host "$(hostname -s)" \
-              --note "'${2:-another session needs the fleet}'") || exit 1
+    asked=$(fleet_lease yield --requester "$LEASE_OWNER" --kind session --pid $$ --host "$(hostname -s)" \
+              --note "${2:-another session needs the fleet}") || exit 1
     case "$asked" in free) echo "the fleet is already free"; exit 0 ;; esac
     echo "asked: $asked"
     deadline=$(( $(date +%s) + 60 * ${YIELD_WAIT_MINUTES:-30} ))

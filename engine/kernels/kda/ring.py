@@ -18,6 +18,10 @@ def recurrent_kda_ring(q, k, v, g, beta, a_log, g_bias, ring, slot, context, low
     [0, slots), context nonnegative, and concurrent invocations must own
     different slots. Device values are never copied to the host.
     """
+    return _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound)
+
+
+def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound, *, deferred=False):
     if any(t.ndim != 4 for t in (q, k, v, g)):
         raise ValueError("ring KDA requires [1,T,H,D] inputs")
     b, t, h, kd = k.shape
@@ -57,6 +61,9 @@ def recurrent_kda_ring(q, k, v, g, beta, a_log, g_bias, ring, slot, context, low
         if x.data_ptr() < ring_hi and hi > ring_lo:
             raise ValueError("ring writes must not overlap inputs or device indices")
     out = torch.empty(v.shape, dtype=v.dtype, device=v.device)
+    factors = (torch.empty((t, hv, kd), device=q.device, dtype=torch.float32),
+               torch.empty((t, hv, kd), device=q.device, dtype=torch.float32),
+               torch.empty((t, hv, vd), device=q.device, dtype=torch.float32)) if deferred else (None, None, None)
     bk, bv = triton.next_power_of_2(kd), min(triton.next_power_of_2(vd), 8)
     if h == hv == 16 and kd == vd == 128 and t <= 6:
         bv = 16
@@ -73,5 +80,7 @@ def recurrent_kda_ring(q, k, v, g, beta, a_log, g_bias, ring, slot, context, low
         LOWER_BOUND=lower_bound, STATE_KV=True, INPUT_STRIDES=strides,
         ring_slot=slot, ring_context=context, RING_SIZE=ring.shape[1],
         RING_SLOT_STRIDE=ring.stride(0), RING_DEVICE_INDICES=device_indices,
+        deferred_keys=factors[0], deferred_decay=factors[1], deferred_updates=factors[2],
+        DEFERRED_STATE=deferred,
         num_warps=1, num_stages=3)
-    return out
+    return (out, factors) if deferred else out
