@@ -135,12 +135,25 @@ class KdaRingTests(unittest.TestCase):
                     if context == 0:
                         ring.fill_(float('nan'))
                     slot.fill_(physical); ctx.fill_(context)
-                    out, expected, _ = self.expected(args, backing, ring, physical, context)
+                    out, expected, states = self.expected(args, backing, ring, physical, context)
                     graph.replay()
                     # Start from the same FP16 bits, do an entire step in FP32,
-                    # then round each snapshot. This catches a half accumulator
-                    # or a reload of a rounded state between speculative tokens.
+                    # then allow one FP16 rounding plus the independently gated
+                    # FP32 arithmetic tolerance. Pointer dtype changes compiler
+                    # tiling: round-to-nearest ties need not choose identical
+                    # FP16 bits when FP32 sums differ by a few ULPs.
                     self.equal(actual, out, f'T={t} slot={physical} ctx={context} output')
+                    target = expected.as_strided(ring.shape, ring.stride(), ring.storage_offset())
+                    for i, state in enumerate(states):
+                        row = (context + i) % ring.shape[1]
+                        stored = ring[physical, row]
+                        self.assertTrue(torch.isfinite(stored).all())
+                        tolerance = state.abs() * 2**-11 + 2**-25 + state.abs().max() * 3e-6
+                        self.assertTrue(((stored.float() - state).abs() <= tolerance).all(),
+                                        f'T={t} slot={physical} ctx={context} state={i}: beyond FP16 rounding')
+                        target[physical, row].copy_(stored)
+                    # Every byte outside the written rows (including NaNs and
+                    # slot padding) must still match exactly.
                     self.equal(backing, expected, f'T={t} slot={physical} ctx={context} ring')
                     self.assertTrue(torch.isfinite(actual).all())
                     if context == 0:
