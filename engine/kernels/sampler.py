@@ -35,7 +35,7 @@ ROUNDS = tl.constexpr(15)      # a four-way split resolves two bits a round
 
 
 @triton.jit
-def _tails(lp, N, mx, inv, t1, t2, t3, BLOCK: tl.constexpr, COUNT: tl.constexpr):
+def _tails(lp, N, mx, temp, t1, t2, t3, BLOCK: tl.constexpr, COUNT: tl.constexpr):
     """The row's tail mass (or population) at three bit thresholds, in one streaming pass.
 
     Three accumulators ride the same load: the loads are what the pass costs, so asking three
@@ -49,7 +49,9 @@ def _tails(lp, N, mx, inv, t1, t2, t3, BLOCK: tl.constexpr, COUNT: tl.constexpr)
         idx = off + cols
         m = idx < N
         v = tl.load(lp + idx, mask=m, other=NEG_INF).to(tl.float32)
-        w = tl.exp((v - mx) * inv)                   # (0, 1]; a masked lane is exp(-inf) = 0
+        # divided, not scaled by a reciprocal: 1/T is inf for a temperature the door accepts but
+        # fp32 cannot invert (below ~1e-38), and then the row's own maximum is 0 * inf = NaN
+        w = tl.exp((v - mx) / temp)                   # (0, 1]; a masked lane is exp(-inf) = 0
         b = w.to(tl.int32, bitcast=True)
         if COUNT:
             val = tl.where(m, 1.0, 0.0)
@@ -62,7 +64,7 @@ def _tails(lp, N, mx, inv, t1, t2, t3, BLOCK: tl.constexpr, COUNT: tl.constexpr)
 
 
 @triton.jit
-def _tail(lp, N, mx, inv, t, BLOCK: tl.constexpr):
+def _tail(lp, N, mx, temp, t, BLOCK: tl.constexpr):
     """The row's tail mass at one bit threshold."""
     cols = tl.arange(0, BLOCK)
     acc = tl.zeros([BLOCK], tl.float32)
@@ -70,13 +72,13 @@ def _tail(lp, N, mx, inv, t, BLOCK: tl.constexpr):
         idx = off + cols
         m = idx < N
         v = tl.load(lp + idx, mask=m, other=NEG_INF).to(tl.float32)
-        w = tl.exp((v - mx) * inv)
+        w = tl.exp((v - mx) / temp)
         acc += tl.where(m & (w.to(tl.int32, bitcast=True) >= t), w, 0.0)
     return tl.sum(acc)
 
 
 @triton.jit
-def _search(lp, N, mx, inv, target, standing, BLOCK: tl.constexpr, COUNT: tl.constexpr):
+def _search(lp, N, mx, temp, target, standing, BLOCK: tl.constexpr, COUNT: tl.constexpr):
     """The largest bit threshold whose tail still reaches `target`, and that tail.
 
     The invariant is the ordinary one of a binary search over the integers: the answer is always
@@ -91,7 +93,7 @@ def _search(lp, N, mx, inv, target, standing, BLOCK: tl.constexpr, COUNT: tl.con
         t1 = lo + step
         t2 = lo + 2 * step
         t3 = lo + 3 * step
-        s1, s2, s3 = _tails(lp, N, mx, inv, t1, t2, t3, BLOCK, COUNT)
+        s1, s2, s3 = _tails(lp, N, mx, temp, t1, t2, t3, BLOCK, COUNT)
         lo = tl.where(s3 >= target, t3, tl.where(s2 >= target, t2, tl.where(s1 >= target, t1, lo)))
         reached = tl.where(s3 >= target, s3, tl.where(s2 >= target, s2, tl.where(s1 >= target, s1, reached)))
         step = step >> 2
@@ -141,7 +143,6 @@ def _sampler(LOGITS, TEMP, TOPK, TOPP, UNIFORM, OUT, PROBS, TAU, KEPT,
         # -- one pass for the row's max and its softmax denominator ------------------------------
         # The max has to come first for exp not to overflow, and the denominator wants the max:
         # the online rescale (flash attention's) gets both out of a single read of the row.
-        inv = 1.0 / temp
         mx = NEG_INF
         total = 0.0
         for off in range(0, N, BLOCK):
@@ -149,8 +150,8 @@ def _sampler(LOGITS, TEMP, TOPK, TOPP, UNIFORM, OUT, PROBS, TAU, KEPT,
             v = tl.load(lp + idx, mask=idx < N, other=NEG_INF).to(tl.float32)
             alive = (idx < N) & (v > NEG_INF)
             nm = tl.maximum(mx, tl.max(tl.where(alive, v, NEG_INF)))
-            total = tl.where(mx > NEG_INF, total * tl.exp((mx - nm) * inv), 0.0) \
-                + tl.sum(tl.where(alive, tl.exp((v - nm) * inv), 0.0))
+            total = tl.where(mx > NEG_INF, total * tl.exp((mx - nm) / temp), 0.0) \
+                + tl.sum(tl.where(alive, tl.exp((v - nm) / temp), 0.0))
             mx = nm
 
         # -- the two truncations, each a threshold search over the same bit range ----------------
@@ -158,13 +159,13 @@ def _sampler(LOGITS, TEMP, TOPK, TOPP, UNIFORM, OUT, PROBS, TAU, KEPT,
         kept = total
         k = tl.load(TOPK + row)
         if (k > 0) & (k < N):
-            tau, _ = _search(lp, N, mx, inv, k.to(tl.float32), 0.0, BLOCK, True)
-            kept = _tail(lp, N, mx, inv, tau, BLOCK)
+            tau, _ = _search(lp, N, mx, temp, k.to(tl.float32), 0.0, BLOCK, True)
+            kept = _tail(lp, N, mx, temp, tau, BLOCK)
         p = tl.load(TOPP + row)
         if p < 1.0:
             # top-p sits on top of top-k: below tau_k the tail already holds the whole kept mass,
             # so searching the full range again can only land at or above it. No second bracket.
-            tau, kept = _search(lp, N, mx, inv, p * kept, kept, BLOCK, False)
+            tau, kept = _search(lp, N, mx, temp, p * kept, kept, BLOCK, False)
 
         # -- the draw: one uniform walked against the kept mass, in id order ----------------------
         # A caller that only wants the distributions (the speculative path picks with them, not
@@ -186,7 +187,7 @@ def _sampler(LOGITS, TEMP, TOPK, TOPP, UNIFORM, OUT, PROBS, TAU, KEPT,
             idx = off + cols
             live = idx < N
             v = tl.load(lp + idx, mask=live, other=NEG_INF).to(tl.float32)
-            w = tl.exp((v - mx) * inv)
+            w = tl.exp((v - mx) / temp)
             keep = live & (w.to(tl.int32, bitcast=True) >= tau)
             wk = tl.where(keep, w, 0.0)
             if DRAW:
@@ -221,6 +222,10 @@ def sample_rows(logits: torch.Tensor, temperature: torch.Tensor, top_k: torch.Te
     """
     if logits.ndim != 2:
         raise ValueError("the sampler takes one block of rows")
+    if logits.stride(1) != 1:
+        # The kernel addresses a row as `base + i`. A strided view would be read at the wrong
+        # offsets and still return a token, so this refuses rather than answering quietly (D3).
+        raise ValueError("the sampler needs each row contiguous: logits.stride(1) must be 1")
     M, V = logits.shape
     N = V if valid is None else min(V, valid)
     if N <= 0:
