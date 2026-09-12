@@ -139,5 +139,8 @@ def verify_rows(target_probs, drafts, draft_cand, draft_probs, uniforms, rest=No
     _verify[(n,)](target_probs, drafts, draft_cand, draft_probs, uniforms, accepted, at, tokens, rest,
                   V, target_probs.stride(0), target_probs.stride(1), drafts.stride(0),
                   draft_cand.stride(0), draft_cand.stride(1), uniforms.stride(0), tokens.stride(0),
-                  K, C, triton.next_power_of_2(K + 1), triton.next_power_of_2(C), 4096, num_warps=8)
+                  # 8192/16 against the 4096/8 this shipped with: a tie at one row and 13% at four
+                  # (245.2 -> 213.4 us, min of four interleaved rounds -- a single round said the opposite
+                  # about 4096/16, which is why it is four). One program a row is still the real ceiling.
+                  K, C, triton.next_power_of_2(K + 1), triton.next_power_of_2(C), 8192, num_warps=16)
     return accepted, at, tokens, rest
