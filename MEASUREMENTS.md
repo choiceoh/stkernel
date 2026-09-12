@@ -10579,3 +10579,46 @@ vLLM 이 `profile_run` + `profile_cudagraph_memory` **두 번**으로 얻는 분
 아레나(살아 있는 뷰를 가로질러 해제·멱등·해제 뒤 carve 거절·표), 엔진 릴리스(그래프가 먼저·아레나 밖 보유자·아레나 없는 엔진·두 번 호출·리포트·**장비 1건**),
 런타임 메모리(바닥·프리필/그래프 분리·페이즈 없으면 침묵), 예산(원장이 두 줄을 채운다·리포트 dict 자체가 원장·원장 없으면 그대로),
 티어(스테이징 반납 + 디스크 보존·바 티어는 0·**전송 중이면 기다린다**·실패한 전송이 종료를 막지 않는다).
+
+### 45차 §52 — "확실히 깔끔하게": 아레나만으론 안 끝난다, 그리고 끝났는지 말하는 숫자 (2026-09-12, srv4, GPU 판정 2건)
+
+운영자 "확실히 깔끔하게 메모리를 놔주도록해". §51 의 반납은 **아레나와 티어 스테이징**까지였다. 그 둘은 큰 덩어리지만 전부가 아니다.
+
+**아레나 밖에 살아 있던 것들 — 하나씩 찾아야 했다.** `empty_cache` 는 **아무도 참조하지 않는 것**만 가져간다. 엔진이 붙잡고 있으면 아무 일도 안 일어난다:
+
+| 붙잡고 있던 것 | 무엇 |
+|---|---|
+| 요청별 | 문법 매처(`matchers`), 그림 행(`embeds`), 요청별 종료 토큰(`_ends_tensor`), 시드 생성기(`gens`) |
+| `_ids_stage` | 캡처된 디코드의 **핀 호스트** 업로드 스테이징 |
+| `_rich_stage` | 리치 샘플러의 `[rows, vocab]` fp32 **두 장** |
+| `sampling_history` | 페널티 텐서 |
+| `grammars` | xgrammar 컴파일 문법 + 비트마스크 버퍼 |
+| `vision._rope` | **이번 부팅이 본 그림 격자마다 한 장**씩 쌓인 rope 테이블 |
+| `caches._id_ring` | 핀 호스트 16개 + 그 이벤트들 |
+
+요청별 상태는 `close(seq)` → `forget(seq)` 순서로 놓는다 — `forget` 은 슬롯을 쥔 요청을 **거부**하므로 순서가 계약이고, 테스트가 그 순서를 박아 둔다.
+
+**그리고 "끝났는지" 를 말하는 숫자.** 그동안 종료 줄은 `memory_reserved` 만 말했다. 그건 **할당자가 들고 있는 양**이지 **살아 있는 텐서가 붙잡은 양**이 아니다. 후자가 진짜 판정이다 — 아무리 `empty_cache` 해도 안 돌아오는 부분이니까.
+`base/runtime_memory.live_device_blocks()` 가 `memory_snapshot()` 에서 **아직 `active_allocated` 인 블록을 큰 것부터** 돌려준다. 이름은 없다(`_record_memory_history` 를 켜야 이름이 붙고, 그건 매 부팅에 비용이다) — **268 MiB 하나와 2 MiB 마흔 개는 다른 버그**이고, 리스트의 모양이 그걸 말해 준다.
+
+종료 줄이 이렇게 바뀐다:
+
+```
+released: rank 0 gave back 55.41 GiB of 55.41 GiB arena plus 192 MiB of tier staging;
+          0.05 GiB reserved and 3 MiB allocated still
+```
+
+그리고 `CLEAN_RELEASE_BYTES = 64 MiB` 를 넘으면 **한 줄 더**: `did NOT come back clean -- N MiB is still held by live tensors, largest blocks ...`.
+이건 **누수 허용치가 아니다** — CUDA 컨텍스트가 프로세스 수명 동안 들고 있는 것들(NCCL 버퍼, 런타임 게이트의 상태 워드, import 시점에 커널 모듈이 만든 것)의 **바닥**이고, 그 위는 전부 `release` 가 **못 찾은 보유자**다.
+
+**문 전부가 같은 경로를 쓴다.** `boot.release_all(engine, runner)` + `boot.release_line(report, rank)` 하나로 프로덕션 `fleet`, 서브 스모크 `local_serve`, 층 부분집합 스모크 `local` 셋 다.
+스모크 둘은 **판정에 넣었다** — `allocated_after > 64 MiB` 인 랭크가 하나라도 있으면 **FAIL**. 즉 다음 창의 아무 스모크나 깨끗한 반납의 **상시 관문**이 된다.
+
+**장비 판정 2건** (srv4, 256 MiB 규모 단독): (1) 살아 있는 64 MiB 뷰를 가로질러 아레나 해제 → `memory_reserved` −256 MiB, 뷰 스토리지 0; (2) `live_device_blocks()` 가 아무도 안 놓은 8 MiB 텐서를 **큰 것부터** 집어낸다.
+
+**안 한 것**: 45층 실물에서의 `allocated_after` 실측 — 플릿 창이 필요하고, 위 관문이 그 창에서 스스로 답한다.
+
+**검증**: 엔진 스위트 **719 tests, OK (skipped=147**, `CUDA_VISIBLE_DEVICES=` 단독). 새 테스트 9개 —
+살아 있는 요청은 **닫힌 뒤에 잊힌다**(`forget` 의 거부가 순서 계약), 아레나 밖 보유자 열넷이 전부 비워진다,
+리포트가 `allocated_after` 와 생존 블록을 싣는다, 깨끗한 줄/안 깨끗한 줄/바닥값 셋, 티어 먼저·티어가 실패해도 아레나는 간다·러너 없는 문,
+`live_device_blocks()` 가 장비 없으면 빈 목록·있으면 큰 것부터.

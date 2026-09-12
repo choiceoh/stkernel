@@ -350,41 +350,60 @@ class Glm53Engine:
             self.memory.close()
 
     def release(self) -> dict:
-        """Serving is over: give the box back what this rank was holding.
+        """Serving is over: give the box back everything this rank was holding.
 
         Order matters in one place. A captured graph owns a memory pool and points at the
         tensors it replayed over, so the graphs go first (`close_decode`); after that every
-        device tensor here is a view of ONE arena (D1) -- weights, KV blocks, state slots,
-        resident scales -- and the arena frees its storage outright rather than waiting to
-        become the last reference, which at shutdown it never is.
+        device tensor that is a view of the ONE arena (D1) -- weights, KV blocks, state slots,
+        resident scales -- goes with it, because the arena frees its storage outright rather
+        than waiting to become the last reference, which at shutdown it never is.
+
+        The arena is not everything, though, and what is not in it is what a release actually
+        has to reach: it is live, so `empty_cache` will not take it while this engine points
+        at it. Per request that is the grammar matcher, the picture rows and the end ids;
+        per engine it is the pinned upload staging, the rich sampler's two [rows, vocab]
+        planes, the penalty history, the compiled grammars, the vision tower's rope tables and
+        the caches' pinned id ring. Each is named below because each had to be found.
 
         Worth doing even though the process is about to exit, because it is not about to:
         filing calibration blobs, closing the death dump and tearing NCCL down take seconds,
         and a handover has the next holder already asking for the same 55 GiB while earlyoom
-        watches an absolute 6 GiB floor and picks the engine first (OOM_STUDY 2). Those
-        seconds are the whole point of doing it here instead of leaving it to exit.
+        watches an absolute 6 GiB floor and picks the engine first (OOM_STUDY 2).
 
-        Returns the bytes declared and what `memory_reserved` said either side -- the only
-        honest answer to "did it land", since a workspace nobody freed would show up as a
-        `returned` far short of `arena_bytes`.
+        Returns what `memory_reserved` said either side and -- the number that actually
+        decides it -- what is still ALLOCATED afterwards, with the largest survivors, since
+        anything left there is something this method failed to find.
         """
         import torch
 
+        from engine.base.runtime_memory import live_device_blocks
+
         cuda = torch.cuda.is_available()
         before = torch.cuda.memory_reserved() if cuda else 0
-        self.close_decode()                                 # graphs and their pool before what they point at
+        for seq in sorted(set(self.tokens) | set(self.slot)):   # matchers, picture rows, per-request end ids
+            self.close(seq)                                 # the slot first: `forget` refuses a row that still holds one
+            self.forget(seq)
+        self.close_decode()                                 # graphs and their pool, before what they point at
+        self._ids_stage = self._rich_stage = None           # pinned host ids; the rich sampler's two fp32 planes
+        self.sampling_history = None                        # penalty tensors
+        self.grammars = None                                # xgrammar's compiled grammars and bitmask buffers
+        self._ends_tensor, self.matchers, self.embeds, self.gens = {}, {}, {}, {}
+        self.staged, self.inflight, self.lps, self.media = {}, {}, {}, {}
+        if self.vision is not None:
+            self.vision._rope = {}                          # one rope table per distinct picture grid this boot saw
+        if getattr(self.caches, "_id_ring", None) is not None:
+            self.caches._id_ring = None                     # 16 pinned host buffers and their events
         arena = getattr(self, "arena", None)
         given = arena.release() if arena is not None else 0
         self.arena = None
-        self.sampling_history = None                        # penalty tensors, outside the arena
-        self.grammars = None                                # xgrammar's bitmask buffers
-        self.staged = {}
         if cuda:
             torch.cuda.synchronize()
             torch.cuda.empty_cache()                        # expandable chunks go back to the driver here
         after = torch.cuda.memory_reserved() if cuda else 0
-        return {"arena_bytes": given, "reserved_before": before,
-                "reserved_after": after, "returned": before - after}
+        return {"arena_bytes": given, "reserved_before": before, "reserved_after": after,
+                "returned": before - after,
+                "allocated_after": torch.cuda.memory_allocated() if cuda else 0,
+                "still_held": live_device_blocks()}
 
     # -- the runner's protocol -------------------------------------------------------
     def validate(self, ids, max_new, temperature) -> None:
