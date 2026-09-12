@@ -163,7 +163,7 @@ def parse_moe_static(value: str) -> "tuple[str | None, bool]":
 
 
 def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = MOE_STATIC_PRODUCTION, consume_scales: bool = False,
-           mla_prefill: str = "stock") -> Lanes:
+           mla_prefill: str = "tile32") -> Lanes:
     """Bind the ST kernel package without an overlay or vLLM installation.
 
     `reference_for` names lanes DECLARED to run on the torch reference in

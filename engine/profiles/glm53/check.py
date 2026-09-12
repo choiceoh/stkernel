@@ -220,7 +220,7 @@ def main(argv=None) -> int:
     ap.add_argument("--lanes", choices=["reference", "served"], default="reference")
     ap.add_argument("--moe-static", default=lane_tables.MOE_STATIC_STOCK,
                     help=f"served b12x static-lane spec (the STK_moe_static knob): stock | {lane_tables.MOE_STATIC_PRODUCTION}[,q0]")
-    ap.add_argument("--mla-prefill", default="stock", help="served MLA large-M prefill mode (STK_mla_prefill): stock | tile32 | pair | pair4")
+    ap.add_argument("--mla-prefill", default="tile32", help="served MLA large-M prefill mode (STK_mla_prefill): stock | tile32 | pair | pair4")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--distributed", action="store_true", help="one rank per GB10; RANK/WORLD_SIZE/MASTER_* from the launcher")
     a = ap.parse_args(argv)
