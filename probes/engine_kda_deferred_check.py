@@ -38,8 +38,14 @@ def main():
     cases = []
     with torch.inference_mode():
         for t in (1, 6, 7):
-            inputs, backing, ring = fixture.inputs(t)
-            baseline_ring = ring.clone()
+            inputs, backing, _ = fixture.inputs(t)
+            width = 16*128*128
+            # Match production SPEC_K=6: seven dense state positions.
+            ring = backing.as_strided((3, 7, 16, 128, 128),
+                                      (7*width+64, width, 128*128, 128, 1), 64)
+            baseline_backing = backing.clone()
+            baseline_ring = baseline_backing.as_strided(ring.shape, ring.stride(), ring.storage_offset())
+            initial = torch.randn((16, 128, 128), device="cuda")*.1
             slot, context, count = (torch.tensor(x, device="cuda") for x in (1, 4096, t))
             def old():
                 return recurrent_kda_ring(*inputs, baseline_ring, slot, context, -5.)
@@ -65,13 +71,17 @@ def main():
                             for iteration in range(args.samples):
                                 for arm in ((0, 1) if iteration % 2 == 0 else (1, 0)):
                                     graphs[arm].replay()
+                                    # T==R overwrites the initial row, and the
+                                    # two policies write different future rows.
+                                    # Restore equal inputs outside the timer.
+                                    (baseline_ring, ring)[arm][1, (ctx-1) % 7].copy_(initial)
                                     if regime == "evicted":
                                         trash.zero_()
                                     start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
                                     start.record(); graphs[arm].replay(); end.record(); end.synchronize()
                                     samples[arm].append(start.elapsed_time(end)*1000)
                             medians = [statistics.median(s) for s in samples]
-                            row = dict(tokens=t, accepted=accepted, context=ctx, regime=regime,
+                            row = dict(tokens=t, ring_width=7, accepted=accepted, context=ctx, regime=regime,
                                        baseline_us=medians[0], deferred_us=medians[1],
                                        change_pct=100*(medians[1]/medians[0]-1), samples_us=samples)
                             cases.append(row)
