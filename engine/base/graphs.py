@@ -33,6 +33,7 @@ import contextlib
 import gc
 
 import torch
+from engine.base.graph_labels import capture as label_capture
 
 
 @contextlib.contextmanager
@@ -141,7 +142,8 @@ class DecodeGraphs:
                         with torch.cuda.stream(recording):
                             g.capture_begin(pool, capture_error_mode="global")
                             try:
-                                out = step_fn(inp)
+                                with label_capture(recording.cuda_stream, f'{label}/{shape}'):
+                                    out = step_fn(inp)
                             finally:
                                 g.capture_end()
                         if resources is not None:

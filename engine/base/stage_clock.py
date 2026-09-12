@@ -20,6 +20,10 @@ class StageClock:
         self._pending: "list[tuple[str, object, object]]" = []
         self._live = False
         self._torch = None
+        self.sink = None
+        self.context = None
+        self._pending_sink = None
+        self._pending_context = None
         if device is not None and getattr(device, "type", None) == "cuda":
             import torch
             self._torch = torch
@@ -29,6 +33,8 @@ class StageClock:
         self._steps += 1
         self._drain()
         self._live = self._torch is not None and self._steps % self.every == 0
+        if self._live:
+            self._pending_sink, self._pending_context = self.sink, self.context
         return self._live
 
     def mark(self, name: str):
@@ -44,7 +50,10 @@ class StageClock:
             if not end.query():
                 return                                   # not finished: leave the whole round for next time
         for name, start, end in self._pending:
-            self.totals[name] = self.totals.get(name, 0.0) + start.elapsed_time(end) / 1000.0
+            seconds = start.elapsed_time(end) / 1000.0
+            self.totals[name] = self.totals.get(name, 0.0) + seconds
+            if self._pending_sink is not None:
+                self._pending_sink(name, seconds, self._pending_context)
         self.samples += 1
         self._pending = []
 

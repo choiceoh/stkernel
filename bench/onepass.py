@@ -1,38 +1,22 @@
 #!/usr/bin/env python3
-"""THE test (operator, 39차: "원패스 한국어 본문판만 남기고 모든 테스트는 저거
-한 개로 통일"). One Korean workload gives every gate at once:
+"""Canonical Korean consumer test, harness 41: C=1 and C=4 at 2K/32K/128K.
 
-  for ctx in 2K / 32K / 128K: a KOREAN document (check-quality.py: Korean
-  Wikipedia paragraphs from bench/ko_filler.txt in seeded order, three facts
-  planted in Korean at 25/50/75% depth)
-     2K:        three streaming requests, one question each (the first is the
-                cold prefill sample, the other two the warm ones; prefix
-                caching is off on this fleet)
-     32K, 128K: ONE streaming request carrying the three questions (the
-                document is prefilled once; a 128K prefill is ~48 s), three
-                answers' worth of tokens (a separately recorded combined budget)
-       time to the first content chunk  -> prefill tok/s and TTFT
-       the answer text                  -> retrieval (any-of groups with the
-                                           Korean spellings) + corruption scan
-                                           (korean-corruption.py's scanner)
-       the engine's step counter,       -> decode windows (2 s, bracket.py's
-       sampled throughout                  _StepWindows; windows that span a
-                                           prefill read low and are dropped)
-       spec-decode counters before/after-> raw acceptance, tokens/step
+Every invocation prepares each workload with a full replay, measures with the
+profiler off and a unique prefix salt, then runs separate bounded GPU diagnostic
+replays. Preparation changes, prefix reuse, missing evidence and external traffic
+invalidate steady-state comparisons. First reasoning/content, SSE gaps, per-request
+rates, actual batch widths, host/device stages and raw traces are retained under
+onepass-runs/<run-id> beside the append-only output ledger, including partial runs.
 
-There is no other leg: no English document, no separate Korean prompt set,
-no decode-only bracket, no C>1 arm. ~2.5 min on a healthy boot. Prints the
-numbers and appends one JSON record (harness 39) to
-~/glm53-logs/bracket-onepass.jsonl. Records before 2026-09-06 15:30 (English
-word-salad documents, separate Korean set) compare only on decode windows,
-raw acc and tokens/step.
+C=4 sends four independent requests simultaneously for each canonical question;
+its aggregate output rate includes prefill and remains separate from C=1 decode.
+The legacy cold_s/warm_s fields are aliases for first/median prepared fresh-prefix
+TTFT, not claims about compiler or cache warmth. Harness 40 is incompatible.
 
-    python3 bench/onepass.py --name PRODV3 [--ctx 2000,32000,128000]
+    python3 bench/onepass.py --name RUN [--ctx 2000,32000,128000]
 
-Optional C=1 follow-up: --fixed-decode-tokens 2048 --fixed-decode-reps 3
---require-exclusive adds fixed-length 2K responses to this same workload.
-Their interior windows are the primary decode metric; the normal context
-ladder and all quality checks remain. Counter mismatches invalidate the run.
+Optional --fixed-decode-tokens 2048 --fixed-decode-reps 3 retains the C=1 fixed
+response gate. Detailed GPU recording requires the ST latency endpoint.
 """
 import argparse
 import hashlib
@@ -43,6 +27,11 @@ import re
 import sys
 import time
 import urllib.request
+import uuid
+
+from onepass_recording import CURRENT, Run, group, steady_errors
+
+_RUN = None
 
 from statistics import median
 
@@ -103,15 +92,24 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
                 "chat_template_kwargs": {"thinking": True}}
     if reasoning_budget is not None:
         body_obj["reasoning_budget"] = reasoning_budget
+    identity = hashlib.sha256(json.dumps(body_obj).encode()).hexdigest()
+    run = CURRENT.get()
+    headers = {"Content-Type": "application/json"}
+    if run is not None:
+        body_obj['cache_salt'] = uuid.uuid4().hex
+        headers['X-ST-Latency-Token'] = run.token
+        timing = timing if timing is not None else {}
     body = json.dumps(body_obj).encode()
-    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-    stream_channels = [] if channel_trace is not None else None
+    req = urllib.request.Request(url, data=body, headers=headers)
+    stream_channels = [] if channel_trace is not None or run is not None else None
     t0 = time.monotonic()
     ttft = None
     arrivals = []
     parts = []
     usage = {}
     finish = None
+    first_channels = {}
+    response_id = None
     with urllib.request.urlopen(req, timeout=1800) as r:
         for raw in r:
             line = raw.decode("utf-8", "replace").strip()
@@ -126,6 +124,7 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
                 continue
             if obj.get("usage"):
                 usage = obj["usage"]
+            response_id = obj.get('id', response_id)
             for ch in obj.get("choices") or []:
                 d = ch.get("delta") or {}
                 piece = d.get("content") or d.get("reasoning_content") or d.get("reasoning") or ""
@@ -135,6 +134,9 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
                     if ttft is None:
                         ttft = arrived - t0
                     parts.append(piece)
+                    for name in ('content', 'reasoning_content', 'reasoning'):
+                        if d.get(name):
+                            first_channels.setdefault(name, arrived - t0)
                 if ch.get("finish_reason"):
                     finish = ch["finish_reason"]
                 if stream_channels is not None:
@@ -144,7 +146,8 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
     if ttft is None:
         ttft = time.monotonic() - t0
     if timing is not None:
-        elapsed = time.monotonic() - t0
+        ended = time.monotonic()
+        elapsed = ended - t0
         ctok = int(usage.get("completion_tokens", 0) or 0)
         decode_s = elapsed - ttft
         # Standard request TPOT includes the final stream/usage tail. SSE
@@ -158,10 +161,18 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
                       tpot_ms=1000 * decode_s / (ctok - 1) if ctok > 1 else None,
                       decode_tok_s=(ctok - 1) / decode_s if ctok > 1 and decode_s > 0 else None,
                       chunk_gaps_ms=[1000 * (b - a) for a, b in zip(arrivals, arrivals[1:])])
+        timing.update(started_monotonic=t0, ended_monotonic=ended, response_id=response_id,
+                      workload_sha256=identity, first_channels_s=first_channels,
+                      cached_tokens=(usage.get('prompt_tokens_details') or {}).get('cached_tokens'),
+                      ttft_scope='first nonempty reasoning or content chunk',
+                      chunk_gap_scope='SSE event gaps, not token ITL',
+                      prefix_policy='unique salt' if run else 'server default')
         if reasoning_budget is not None:
             timing["reasoning_budget"] = reasoning_budget
     if channel_trace is not None:
         channel_trace.append(stream_channels)
+    if run is not None:
+        run.request(timing, ''.join(parts), stream_channels)
     return ("".join(parts), ttft, int(usage.get("prompt_tokens", 0) or 0),
             int(usage.get("completion_tokens", 0) or 0), finish)
 
@@ -390,7 +401,40 @@ def engine_shape(completion_url: str) -> dict:
     return out
 
 
+def workload_requests(args, cq):
+    items = []
+    for ctx in map(int, args.ctx.split(',')):
+        doc = cq.build(ctx, args.seed + ctx)
+        combined = bool(args.combine_min_ctx) and ctx >= args.combine_min_ctx
+        if combined:
+            qs = '\n'.join(f'{i + 1}. {q}' for i, (_, q, _) in enumerate(cq.FACTS))
+            items.append(dict(ctx=ctx, question='all', content=f'문서:\n{doc}\n\n{INSTRUCTION_COMBINED}{qs}',
+                max_tokens=args.combined_max_tokens, reasoning_budget=args.combined_reasoning_budget))
+        else:
+            items.extend(dict(ctx=ctx, question=i, content=f'문서:\n{doc}\n\n{INSTRUCTION}{q}',
+                max_tokens=args.max_tokens) for i, (_, q, _) in enumerate(cq.FACTS))
+    return items
+
+
 def main() -> int:
+    global _RUN
+    try:
+        return _main()
+    except BaseException as exc:
+        if _RUN is not None and not _RUN.complete:
+            _RUN.finish(error=exc)
+            if _RUN.supported and _RUN.token:
+                try:
+                    _RUN.control(op='abort', token=_RUN.token)
+                except Exception:
+                    pass  # The partial manifest retains the token for manual recovery.
+        raise
+    finally:
+        CURRENT.set(None)
+
+
+def _main() -> int:
+    global _RUN
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", default="onepass")
     ap.add_argument("--ctx", default=os.environ.get("QUALITY_CTX", "2000,32000,128000"))
@@ -445,6 +489,8 @@ def main() -> int:
         "combined_reasoning_budget": args.combined_reasoning_budget,
     }
     rec.update(_served_build(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    run = _RUN = Run(rec, args.out, bd.URL)
+    items = workload_requests(args, cq)
     prove_spec = 'VLLM_GLM53_SPEC_K' in (rec.get('knobs') or {})
     spec_before = _served_speculation(rec.get('boot_id')) if prove_spec else None
     prove_prep = os.environ.get('ONEPASS_REQUIRE_PREP_FUSED') == '1'
@@ -469,13 +515,29 @@ def main() -> int:
     quality_ok = quality_total = 0
     gen_tokens = 0
 
+    print('prepare C=1: full context ladder; retained separately', flush=True)
+    run.begin('prepare-c1')
+    for item in items:
+        group(run, ask_stream, bd.URL, cq.MODEL, item, 1)
+    if args.fixed_decode_tokens:
+        doc = cq.build(2000, args.seed + 2000)
+        qs = '\n'.join(f'{i + 1}. {q}' for i, (_, q, _) in enumerate(cq.FACTS))
+        fixed_content = (f'문서:\n{doc}\n\n{INSTRUCTION_COMBINED}{qs}\n'
+                         '세 답의 근거를 먼저 제시한 뒤 문서의 주제, 주요 개념, 사례와 한계를 '
+                         '한국어로 길고 상세하게 설명해줘. 내용을 여러 절로 구성해줘.')
+        for rep in range(args.fixed_decode_reps):
+            group(run, ask_stream, bd.URL, cq.MODEL, dict(ctx=2000, question='fixed-all', content=fixed_content,
+                max_tokens=args.fixed_decode_tokens, min_tokens=args.fixed_decode_tokens, seed=args.seed + rep), 1)
+    run.end()
+    run.begin('measure-c1')
+
     from window_metrics import traffic_state, exclusive_errors, decode_windows
     metrics_before = _metrics_text(bd.METRICS)
     before_traffic = traffic_state(metrics_before)
     if args.require_exclusive and (before_traffic["running"] != 0 or before_traffic["waiting"] != 0):
         raise RuntimeError("exclusive onepass requires an idle server before sending requests")
     m0 = bd._parse_spec_metrics(metrics_before)
-    print(f"{'ctx':>7} {'tok':>7} {'cold tok/s':>11} {'warm tok/s':>11} {'cold TTFT':>10} {'warm TTFT':>10}  quality", flush=True)
+    print(f"{'ctx':>7} {'tok':>7} {'first tok/s':>11} {'median tok/s':>11} {'first TTFT':>10} {'median TTFT':>10}  quality", flush=True)
     t_dec0 = time.time()
     # 39차: 1 s windows (were 2 s) with 0.5 s margins -- the 2K answers decode
     # for ~3-4 s and produced 0-3 windows per boot; medians of step/s are
@@ -532,11 +594,12 @@ def main() -> int:
                 if not good:
                     print(f"    MISS ctx~{ctx // 1000}K q={q!r} -> {text[:100]!r}", flush=True)
                 texts.append((f"ctx{ctx // 1000}K q{qi}", text, finish))
-            cold, warm = ttfts[0], min(ttfts[1:]) if len(ttfts) > 1 else ttfts[0]
+            cold, warm = ttfts[0], median(ttfts)
             rec["prefill"].append({"ctx": ctx, "tok": tok, "cold_s": cold, "warm_s": warm,
                                    "cold_tok_s": tok / cold if cold > 0 else 0.0,
                                    "warm_tok_s": tok / warm if warm > 0 else 0.0,
-                                   "ttft_samples_s": ttfts,
+                                   "ttft_samples_s": ttfts, "first_s": cold, "median_s": warm,
+                                   "state": "prepared fresh-prefix; see steady_state validity",
                                    "combined": combined})
             warm_col = f"{tok / warm:>11.0f}" if not combined else f"{'(1 req)':>11}"
             warm_t = f"{warm:>9.2f}s" if not combined else f"{'-':>10}"
@@ -568,6 +631,10 @@ def main() -> int:
                       f"decode={timing['decode_tok_s']:.2f} tok/s", flush=True)
     wall = time.time() - t_dec0
     metrics_after = _metrics_text(bd.METRICS)
+    c1_report = run.end()
+    c1_issues = steady_errors(c1_report, rec['requests'], 1)
+    rec['steady_state'] = dict(valid=not c1_issues, issues=c1_issues, profile='off', prefix='fresh',
+                              preparation='no observed specialization or capture' if not c1_issues else 'unverified')
     spec_after = _served_speculation(rec.get('boot_id')) if prove_spec else None
     prep_after = _served_speculation(rec.get('boot_id'), preparation=True) if prove_prep else None
     m1 = bd._parse_spec_metrics(metrics_after)
@@ -577,7 +644,7 @@ def main() -> int:
                       "samples": sw.traffic_samples, "issues": traffic_issues}
     rows = rec["prefill"]
     if len(rows) >= 2:
-        print(f"  warm 처리량: {rows[0]['warm_tok_s']:.0f} -> {rows[-1]['warm_tok_s']:.0f} tok/s "
+        print(f"  준비 후 처리량: {rows[0]['warm_tok_s']:.0f} -> {rows[-1]['warm_tok_s']:.0f} tok/s "
               f"(over {rows[0]['tok']} -> {rows[-1]['tok']} tokens)")
     rec["quality"] = {"ok": quality_ok, "total": quality_total}
     print(f"=> {quality_ok}/{quality_total} correct", flush=True)
@@ -649,7 +716,9 @@ def main() -> int:
             print(f"\n  [{tag}] {ks}")
     rec["korean"] = {"dirty": len(dirty), "n": n, "kinds": kinds_tot,
                      "hits": [(tag, k) for tag, k, _ in dirty]}
-    issues = list(traffic_issues) if args.require_exclusive else []
+    issues = list(traffic_issues) + c1_issues
+    if quality_ok != quality_total or dirty:
+        issues.append('C=1 quality or Korean corruption gate failed')
     if args.fixed_decode_tokens:
         if any(sb < sa for (_, sa), (_, sb) in zip(samp, samp[1:])):
             issues.append("engine step counter reset during workload")
@@ -684,10 +753,49 @@ def main() -> int:
     except Exception:
         pass
 
-    print(f"== onepass {args.name}: {time.time() - t_all:.0f}s total", flush=True)
-    os.makedirs(os.path.dirname(args.out), exist_ok=True)
-    with open(args.out, "a", encoding="utf-8") as f:
-        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    # C=4 and profiler replays have their own counters, requests and artifacts.
+    c4_items = items
+    rec['c4'] = []
+    for item in c4_items:
+        ctx = item['ctx']
+        suffix = f"{ctx}-q{item['question']}"
+        print(f'prepare C=4 ctx={ctx}', flush=True)
+        run.begin(f'prepare-c4-{suffix}', 4)
+        group(run, ask_stream, bd.URL, cq.MODEL, item, 4)
+        run.end()
+        run.begin(f'measure-c4-{suffix}', 4)
+        before = traffic_state(_metrics_text(bd.METRICS))
+        result = group(run, ask_stream, bd.URL, cq.MODEL, item, 4, kq, FACT_EXPECT)
+        after = traffic_state(_metrics_text(bd.METRICS))
+        report = run.end()
+        errors = steady_errors(report, result['requests'], 4) + exclusive_errors(before, after, [], 4)
+        if any(r.get('corruption') or not all(r['quality']) for r in result['requests']):
+            errors.append('C=4 quality or Korean corruption gate failed')
+        result.update(valid=not errors, issues=errors, traffic=dict(before=before, after=after),
+                      latency_artifacts=f'measure-c4-{suffix}')
+        rec['c4'].append(result)
+        issues.extend(f'C=4 ctx={ctx}: {e}' for e in errors)
+        print(f"C=4 ctx={ctx}: {result['aggregate_output_tok_s']:.2f} total tok/s; valid={not errors}", flush=True)
+        run.checkpoint()
+    rec['diagnostics'] = []
+    diagnostic_items = [next(item for item in items if item['ctx'] == ctx) for ctx in map(int, args.ctx.split(','))]
+    for concurrency in (1, 4):
+        for item in diagnostic_items:
+            phase = f"diagnostic-c{concurrency}-{item['ctx']}"
+            print(phase, flush=True)
+            run.begin(phase, concurrency, diagnostic=True)
+            group(run, ask_stream, bd.URL, cq.MODEL, item, concurrency)
+            report = run.end()
+            complete = bool(report['ranks']) and all(r.get('complete') and r.get('traces') for r in report['ranks'])
+            rec['diagnostics'].append(dict(phase=phase, complete=complete))
+            if not complete:
+                issues.append(f'{phase}: detailed GPU evidence incomplete')
+    rec['evidence_issues'] = issues
+    if issues:
+        rec['decode'].setdefault('raw_windows_med', rec['decode']['windows_med'])
+        rec['decode']['windows_med'] = None
+    print(f"== onepass {args.name}: {time.time() - t_all:.0f}s total; artifacts {run.path}", flush=True)
+    run.finish()
     return 2 if issues else 0
 
 
