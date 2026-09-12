@@ -39,6 +39,8 @@ fleet_lease() {
 # lease would look stale after GRACE_S and another session could take the fleet underneath it.
 fleet_lease_beat() {
   local owner=$1
-  ( while sleep 120; do fleet_lease renew --owner "$owner" >/dev/null 2>&1 || exit 0; done ) &
+  # The caller captures the PID with BEAT=$(...). The background loop must
+  # close that substitution's pipe, or BEAT waits forever before the GPU starts.
+  ( while sleep 120; do fleet_lease renew --owner "$owner" >/dev/null 2>&1 || exit 0; done ) </dev/null >/dev/null 2>&1 &
   echo $!
 }

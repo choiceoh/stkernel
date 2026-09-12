@@ -222,6 +222,24 @@ class OnepassIntegrationTests(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout),
                 [expected_module, 'yield', '--requester', owner, '--note', note, '--path', lease_path])
 
+    def test_lease_heartbeat_returns_its_pid_before_the_first_renewal(self):
+        import signal
+        process = subprocess.Popen([BASH, '-c',
+            '. "$FLEET_REPO/launchers/lib/fleet-lease.sh"; '
+            'beat=$(fleet_lease_beat fixture); echo "started:$beat"; kill "$beat"'],
+            env={**os.environ, 'FLEET_REPO': str(ROOT)}, start_new_session=True,
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            stdout, stderr = process.communicate(timeout=3)
+            self.assertEqual(process.returncode, 0, stderr)
+            self.assertRegex(stdout.strip(), r'^started:[0-9]+$')
+        finally:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait(timeout=3)
+
     def test_failed_real_preflight_edit_preserves_ticket_command_and_order(self):
         runner = fleet_pin.pin(self.repo, self.directory)
         pid = os.getpid()
