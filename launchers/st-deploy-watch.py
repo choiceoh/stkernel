@@ -125,6 +125,15 @@ def queue_active_within(seconds: float, fleet_dir: "Path | None" = None) -> "int
     return ago if ago < seconds else None
 
 
+def fleet_busy_with_tickets() -> bool:
+    """The queue owns the fleet right now, or is about to: a lease of any kind but production, or a boot ticket waiting."""
+    try:
+        who = fleet_lease.taken(fleet_lease.read(LOCK), mine_kind="production", container_up=fleet_lease.docker_evidence)
+    except LeaseHeld:
+        return True
+    return bool(who) or boot_ticket_waiting() is not None
+
+
 def boot_ticket_waiting(fleet_dir: "Path | None" = None) -> "str | None":
     """The first boot ticket queued (bench/fleet.sh's queue file, kind in field 6), or None. A deploy
     is a production boot, and production comes back only when no boot ticket waits (the operator's
@@ -200,13 +209,13 @@ def deploy(release: Path, log) -> bool:
 # -- one cycle ------------------------------------------------------------------------------------
 def cycle(a, log) -> int:
     held = state_of(STATE)
+    ensure_probe(held.get("deployed") or "", held, a, log)      # the deployed commit keeps its warm sample, candidate or not
     run(["git", "-C", str(SOURCE), "fetch", "origin", "--quiet"], timeout=300)
     _, head, _ = run(["git", "-C", str(SOURCE), "rev-parse", "origin/main"], timeout=60)
     head = head.strip()
     why = wanted(head, held)
     if why is None:
         log(f"nothing to deploy (main {head[:12]}, deployed {str(held.get('deployed'))[:12]})")
-        ensure_probe(held.get("deployed") or "", held, a, log)      # the deployed commit keeps its warm sample
         return 0
     log(f"candidate: {why}")
 
@@ -231,6 +240,9 @@ def cycle(a, log) -> int:
         except Exception as exc:                                     # noqa: BLE001 -- any failure is "not known to be quiet"
             load = None
             log(f"  /metrics did not answer ({type(exc).__name__}); not treating that as quiet")
+        if fleet_busy_with_tickets():
+            log("  a ticket took the fleet, or one waits, while this waited for quiet: leaving it to the queue")
+            return 0                                   # deferred: an hour of polling a door the queue owns helps nobody (05:12-06:12, 2026-09-13)
         if load:
             quiet_since = None
         elif load == 0:

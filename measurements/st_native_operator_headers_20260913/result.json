@@ -1,0 +1,281 @@
+{
+  "scope": "CPU-only cold NVCC A/B for the one-shot extension's Torch includes.\n\nUse a fresh cache and Python process per sample in the ST image without GPUs.\nCompare full versus Tensor/pybind headers, or Tensor/pybind versus narrower\nper-operator factory headers. The latter retains torch::empty_like and uses\nthe same underlying ATen Tensor and dtype aliases explicitly.\nExtracted device cubins must match after normalizing only NVCC's source-file\nIDs in internal symbol strings. Code, constants and launch metadata remain\nbyte-exact. No transport or GPU kernel is executed. cuobjdump extraction does\nnot require nvdisasm or a GPU driver.\n",
+  "comparison": "lean-operators",
+  "gpu_used": false,
+  "complete": true,
+  "rows": [
+    {
+      "arm": "stable",
+      "fixture": "oneshot",
+      "key": "3acfb5c1ed9631e29a58031e",
+      "value": [
+        "connect",
+        "healthy",
+        "init",
+        "local_infos",
+        "oneshot_ar",
+        "oneshot_ar_consumer",
+        "oneshot_ar_hint",
+        "oneshot_max_int64",
+        "phase_counters",
+        "shutdown",
+        "transport_modes"
+      ],
+      "load_seconds": 32.30237275600666,
+      "compiler_cpu_seconds": 32.273360000000004,
+      "compiler_max_rss_kib": 1792564,
+      "nvcc_compilations": 1,
+      "directory": "/evidence/oneshot-operators-0913-v1/cache-0-lean/3acfb5c1ed9631e29a58031e",
+      "torch": "2.13.0+cu130",
+      "cuda": "13.0",
+      "cuda_initialized": false,
+      "host_guards": [
+        "oneshot_ar",
+        "oneshot_max_int64"
+      ],
+      "headers": "lean",
+      "sample": 0,
+      "cubin_sha256": [
+        "afa4a7159c5bd8e041f59ac6143f753d224e8a33cc7a24d482476fa1f4ac17e2"
+      ],
+      "canonical_cubins": [
+        {
+          "sha256": "7617b744bc100df726341c6e9b7cbade36d0e7289ae69f6a4b8382c3a9a92f19",
+          "normalized_file_ids": 29,
+          "text_sections": 3
+        }
+      ]
+    },
+    {
+      "arm": "stable",
+      "fixture": "oneshot",
+      "key": "91173d156ae8f73a300c1b75",
+      "value": [
+        "connect",
+        "healthy",
+        "init",
+        "local_infos",
+        "oneshot_ar",
+        "oneshot_ar_consumer",
+        "oneshot_ar_hint",
+        "oneshot_max_int64",
+        "phase_counters",
+        "shutdown",
+        "transport_modes"
+      ],
+      "load_seconds": 20.76651760500681,
+      "compiler_cpu_seconds": 20.730771,
+      "compiler_max_rss_kib": 1437480,
+      "nvcc_compilations": 1,
+      "directory": "/evidence/oneshot-operators-0913-v1/cache-0-operators/91173d156ae8f73a300c1b75",
+      "torch": "2.13.0+cu130",
+      "cuda": "13.0",
+      "cuda_initialized": false,
+      "host_guards": [
+        "oneshot_ar",
+        "oneshot_max_int64"
+      ],
+      "headers": "operators",
+      "sample": 0,
+      "cubin_sha256": [
+        "de01b14d6ccbfcf6b54a345e7ab0a7b6018784abb8e8538b66dbb84967d4afe8"
+      ],
+      "canonical_cubins": [
+        {
+          "sha256": "7617b744bc100df726341c6e9b7cbade36d0e7289ae69f6a4b8382c3a9a92f19",
+          "normalized_file_ids": 29,
+          "text_sections": 3
+        }
+      ]
+    },
+    {
+      "arm": "stable",
+      "fixture": "oneshot",
+      "key": "91173d156ae8f73a300c1b75",
+      "value": [
+        "connect",
+        "healthy",
+        "init",
+        "local_infos",
+        "oneshot_ar",
+        "oneshot_ar_consumer",
+        "oneshot_ar_hint",
+        "oneshot_max_int64",
+        "phase_counters",
+        "shutdown",
+        "transport_modes"
+      ],
+      "load_seconds": 16.960374023008626,
+      "compiler_cpu_seconds": 16.932688,
+      "compiler_max_rss_kib": 1437568,
+      "nvcc_compilations": 1,
+      "directory": "/evidence/oneshot-operators-0913-v1/cache-1-operators/91173d156ae8f73a300c1b75",
+      "torch": "2.13.0+cu130",
+      "cuda": "13.0",
+      "cuda_initialized": false,
+      "host_guards": [
+        "oneshot_ar",
+        "oneshot_max_int64"
+      ],
+      "headers": "operators",
+      "sample": 1,
+      "cubin_sha256": [
+        "9059c04455aa2c0d4cfc3bc0d53f98f6040e1b7f365fc84b2850c20c86b2dc86"
+      ],
+      "canonical_cubins": [
+        {
+          "sha256": "7617b744bc100df726341c6e9b7cbade36d0e7289ae69f6a4b8382c3a9a92f19",
+          "normalized_file_ids": 29,
+          "text_sections": 3
+        }
+      ]
+    },
+    {
+      "arm": "stable",
+      "fixture": "oneshot",
+      "key": "3acfb5c1ed9631e29a58031e",
+      "value": [
+        "connect",
+        "healthy",
+        "init",
+        "local_infos",
+        "oneshot_ar",
+        "oneshot_ar_consumer",
+        "oneshot_ar_hint",
+        "oneshot_max_int64",
+        "phase_counters",
+        "shutdown",
+        "transport_modes"
+      ],
+      "load_seconds": 26.39730111400422,
+      "compiler_cpu_seconds": 26.377095,
+      "compiler_max_rss_kib": 1792564,
+      "nvcc_compilations": 1,
+      "directory": "/evidence/oneshot-operators-0913-v1/cache-1-lean/3acfb5c1ed9631e29a58031e",
+      "torch": "2.13.0+cu130",
+      "cuda": "13.0",
+      "cuda_initialized": false,
+      "host_guards": [
+        "oneshot_ar",
+        "oneshot_max_int64"
+      ],
+      "headers": "lean",
+      "sample": 1,
+      "cubin_sha256": [
+        "c53c6fb3df6d1cce41c1af522ea822631900dafd7761df30f93739abe120ef56"
+      ],
+      "canonical_cubins": [
+        {
+          "sha256": "7617b744bc100df726341c6e9b7cbade36d0e7289ae69f6a4b8382c3a9a92f19",
+          "normalized_file_ids": 29,
+          "text_sections": 3
+        }
+      ]
+    },
+    {
+      "arm": "stable",
+      "fixture": "oneshot",
+      "key": "3acfb5c1ed9631e29a58031e",
+      "value": [
+        "connect",
+        "healthy",
+        "init",
+        "local_infos",
+        "oneshot_ar",
+        "oneshot_ar_consumer",
+        "oneshot_ar_hint",
+        "oneshot_max_int64",
+        "phase_counters",
+        "shutdown",
+        "transport_modes"
+      ],
+      "load_seconds": 27.369567728994298,
+      "compiler_cpu_seconds": 27.348807,
+      "compiler_max_rss_kib": 1792336,
+      "nvcc_compilations": 1,
+      "directory": "/evidence/oneshot-operators-0913-v1/cache-2-lean/3acfb5c1ed9631e29a58031e",
+      "torch": "2.13.0+cu130",
+      "cuda": "13.0",
+      "cuda_initialized": false,
+      "host_guards": [
+        "oneshot_ar",
+        "oneshot_max_int64"
+      ],
+      "headers": "lean",
+      "sample": 2,
+      "cubin_sha256": [
+        "e95b12fd7269409deaccb4158d42f20a4099198980389a27ae10f0b1bbb66d8e"
+      ],
+      "canonical_cubins": [
+        {
+          "sha256": "7617b744bc100df726341c6e9b7cbade36d0e7289ae69f6a4b8382c3a9a92f19",
+          "normalized_file_ids": 29,
+          "text_sections": 3
+        }
+      ]
+    },
+    {
+      "arm": "stable",
+      "fixture": "oneshot",
+      "key": "91173d156ae8f73a300c1b75",
+      "value": [
+        "connect",
+        "healthy",
+        "init",
+        "local_infos",
+        "oneshot_ar",
+        "oneshot_ar_consumer",
+        "oneshot_ar_hint",
+        "oneshot_max_int64",
+        "phase_counters",
+        "shutdown",
+        "transport_modes"
+      ],
+      "load_seconds": 18.119114893008373,
+      "compiler_cpu_seconds": 18.111036,
+      "compiler_max_rss_kib": 1437488,
+      "nvcc_compilations": 1,
+      "directory": "/evidence/oneshot-operators-0913-v1/cache-2-operators/91173d156ae8f73a300c1b75",
+      "torch": "2.13.0+cu130",
+      "cuda": "13.0",
+      "cuda_initialized": false,
+      "host_guards": [
+        "oneshot_ar",
+        "oneshot_max_int64"
+      ],
+      "headers": "operators",
+      "sample": 2,
+      "cubin_sha256": [
+        "d4ca5c62cbccfa5a5f0e624ce52ceb91ca789e602198fd37b6121242df4d2271"
+      ],
+      "canonical_cubins": [
+        {
+          "sha256": "7617b744bc100df726341c6e9b7cbade36d0e7289ae69f6a4b8382c3a9a92f19",
+          "normalized_file_ids": 29,
+          "text_sections": 3
+        }
+      ]
+    }
+  ],
+  "source_sha256": {
+    "probes/engine_native_compile_check.py": "53cc650caac02d26dee66774f3efda9f525c7712d2625cc6e83198810f0872c2",
+    "probes/engine_native_cache_check.py": "e92c3adf913f11c7f09b1403cfad46107649581fcffb058a8d28ed699727da57",
+    "engine/kernels/native_cache.py": "1e9e1e88a81f4b684b1cf13c16057a7d0a8fc20755ed07ac509c1722cf9abcf8",
+    "engine/kernels/oneshot/__init__.py": "5cca8f1564b28a1f620474587ed4496901e25a9deb62dd4c6a5758249f4d8bd8",
+    "engine/kernels/oneshot/dsv4_oneshot_ar.cu": "8ab1de7e5cc86e5e8774fa06d5a613dc70ea126a9c97bb4050ae91a838e428c7",
+    "engine/kernels/oneshot/dsv4_oneshot_transport.h": "98af9423143e50dbdba51d3c473ca62c712332d33bf5881f4a03fbf509672cc6"
+  },
+  "variant_sha256": {
+    "lean": "8ab1de7e5cc86e5e8774fa06d5a613dc70ea126a9c97bb4050ae91a838e428c7",
+    "operators": "bdc9db83c9eb938bd5bf254a44774a900f98327b3333c6d7e3b8fd41b70d8ca3"
+  },
+  "median_load_seconds": {
+    "lean": 27.369567728994298,
+    "operators": 18.119114893008373
+  },
+  "median_compiler_cpu_seconds": {
+    "lean": 27.348807,
+    "operators": 18.111036
+  },
+  "reduction_percent": 33.79831544137375
+}

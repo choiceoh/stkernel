@@ -8,7 +8,9 @@
 //   oneshot_ar(Tensor) -> Tensor  # graph-capturable AllReduce (out-of-place)
 //   healthy() -> bool             # proxy watchdog status
 //   shutdown()
-#include <torch/types.h>
+#define AT_PER_OPERATOR_HEADERS
+#include <ATen/core/Tensor.h>
+#include <torch/csrc/autograd/generated/variable_factories.h>
 #include <torch/csrc/utils/pybind.h>
 #include <c10/cuda/CUDAStream.h>
 #include <cuda_bf16.h>
@@ -807,11 +809,11 @@ static void py_connect(std::vector<std::string> all) {
   pthread_create(&g_proxy, nullptr, proxy_fn, nullptr);
   g_started = true;
 }
-static torch::Tensor py_oneshot_impl(torch::Tensor input,
+static at::Tensor py_oneshot_impl(at::Tensor input,
                                      const std::vector<int64_t> &ptrs,
                                      const std::vector<int64_t> &lens,
                                      bool consumer_pdl = false) {
-  TORCH_CHECK(input.is_cuda() && input.scalar_type() == torch::kBFloat16);
+  TORCH_CHECK(input.is_cuda() && input.scalar_type() == at::kBFloat16);
   TORCH_CHECK(input.is_contiguous());
   // The copy/reduce phases use 16B vectors; the ring side is aligned by
   // construction (every stride is a multiple of 8 bf16), the tensor side by
@@ -880,20 +882,20 @@ static torch::Tensor py_oneshot_impl(torch::Tensor input,
   }
   return out;
 }
-static torch::Tensor py_oneshot(torch::Tensor input) {
+static at::Tensor py_oneshot(at::Tensor input) {
   return py_oneshot_impl(input, {}, {});
 }
-static torch::Tensor py_oneshot_hint(torch::Tensor input,
+static at::Tensor py_oneshot_hint(at::Tensor input,
                                       std::vector<int64_t> ptrs,
                                       std::vector<int64_t> lens) {
   return py_oneshot_impl(input, ptrs, lens);
 }
-static torch::Tensor py_oneshot_consumer(torch::Tensor input) {
+static at::Tensor py_oneshot_consumer(at::Tensor input) {
   return py_oneshot_impl(input, {}, {}, true);
 }
 
-static torch::Tensor py_oneshot_max_int64(torch::Tensor input) {
-  TORCH_CHECK(input.is_cuda() && input.scalar_type() == torch::kInt64 && input.is_contiguous(),
+static at::Tensor py_oneshot_max_int64(at::Tensor input) {
+  TORCH_CHECK(input.is_cuda() && input.scalar_type() == at::kLong && input.is_contiguous(),
               "oneshot MAX requires contiguous CUDA int64");
   TORCH_CHECK(input.numel() > 0 && input.numel() <= 64 &&
                   (reinterpret_cast<uintptr_t>(input.data_ptr()) & 15) == 0,

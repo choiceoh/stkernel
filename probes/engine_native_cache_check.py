@@ -12,6 +12,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import resource
 import shutil
 import subprocess
 import sys
@@ -63,6 +64,7 @@ def worker(args):
         build.update(directory=directory, before=compilations(directory))
         return load(**(kwargs | {"verbose": True}))
 
+    child_usage = resource.getrusage(resource.RUSAGE_CHILDREN)
     start = time.perf_counter()
     if args.fixture == "oneshot" and args.arm == "stable":
         # Exercise the actual production builder; the wrapper only records
@@ -86,6 +88,9 @@ def worker(args):
         module = measured_load(name=prefix + key, sources=[staged[0]], extra_cuda_cflags=flags,
                                extra_ldflags=ldflags, build_directory=str(directory))
     duration = time.perf_counter() - start
+    completed_usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+    compiler_cpu = (completed_usage.ru_utime + completed_usage.ru_stime
+                    - child_usage.ru_utime - child_usage.ru_stime)
     directory = build["directory"]
     value = module.answer() if args.fixture == "mini" else sorted(n for n in dir(module) if not n.startswith("_"))
     host_guards = []
@@ -105,7 +110,8 @@ def worker(args):
                 raise RuntimeError(f"{function} accepted a CPU tensor")
     assert not torch.cuda.is_initialized()
     print("RESULT " + json.dumps(dict(arm=args.arm, fixture=args.fixture, key=directory.name,
-          value=value, load_seconds=duration,
+          value=value, load_seconds=duration, compiler_cpu_seconds=compiler_cpu,
+          compiler_max_rss_kib=completed_usage.ru_maxrss,
           nvcc_compilations=compilations(directory) - build["before"], directory=str(directory),
           torch=torch.__version__, cuda=torch.version.cuda, cuda_initialized=False,
           host_guards=host_guards)), flush=True)

@@ -78,7 +78,11 @@ of quiet queue: a ticket that just ended is likely to have the next one on its
 way, and a production boot in that window is paid for twice (2026-09-13 03:08,
 03:48: restored, asked to hand over within minutes). The supervisor adopts a
 fleet that is booting -- deploy-watch's, or its own -- and calls a launch done
-only when a chat answers, not when the door listens.
+only when a chat answers, not when the door listens. A boot whose ranks disagree
+on what their NVMe tiers hold drops it all and boots (`engine/base/serve.py`,
+`_agree_on_parked`): the skew a rank crash leaves behind -- survivors park on the
+way down, the dead rank parked nothing -- is not a reason for production to stay
+down, and what is dropped could not have been resumed without every rank's part.
 
 ## The ST bracket
 

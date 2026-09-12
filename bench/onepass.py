@@ -171,6 +171,9 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
         timing.update(started_monotonic=t0, ended_monotonic=ended, response_id=response_id,
                       workload_sha256=identity, first_channels_s=first_channels,
                       cached_tokens=(usage.get('prompt_tokens_details') or {}).get('cached_tokens'),
+                      # Overall stop can follow a forced reasoning-end token.
+                      # Keep the server's count; absent usage means unknown, not zero.
+                      reasoning_tokens=(usage.get('completion_tokens_details') or {}).get('reasoning_tokens'),
                       ttft_scope='first nonempty reasoning or content chunk',
                       chunk_gap_scope='SSE event gaps, not token ITL',
                       prefix_policy='unique salt' if run else 'server default')
