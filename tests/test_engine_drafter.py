@@ -234,7 +234,13 @@ class DrafterTests(unittest.TestCase):
             rows = positions[:count] % F.window
             rings[int(slot[0]), layer, 0, rows] = k[:count]
             rings[int(slot[0]), layer, 1, rows] = v[:count]
+        def write_rows(rings, slots, layer, positions, k, v, *, valid):
+            """The batched form the fast path uses now: one call for every row of the step. The stub keeps the
+            per-row one beside it so the two are still being asked to agree."""
+            for r in range(len(slots)):
+                write(rings, slots[r:r + 1], layer, positions[r], k[r], v[r], valid=valid[r])
         kernels.draft_attention, kernels.write_draft_kv = attention, write
+        kernels.write_draft_kv_rows = write_rows
         prior = sys.modules.get(kernels.__name__)
         sys.modules[kernels.__name__] = kernels
         try:

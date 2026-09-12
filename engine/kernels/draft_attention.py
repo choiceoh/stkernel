@@ -104,6 +104,44 @@ def _write_kv(K,V,R,Slot,Pos,Valid,HAS_VALID:tl.constexpr,N:tl.constexpr,WIDTH:t
     tl.store(base+W*ROW,tl.load(V+token*WIDTH+d,mask,other=0),mask)
 
 
+@triton.jit
+def _write_kv_rows(K,V,R,Slot,Pos,Valid,N:tl.constexpr,T:tl.constexpr,WIDTH:tl.constexpr,ROW:tl.constexpr,
+                   W:tl.constexpr,STRIDE:tl.constexpr,OFFSET:tl.constexpr,BLOCK:tl.constexpr):
+    """`_write_kv` for every row of the step at once. Same store, one program per (row, token) instead of one
+    LAUNCH per row: the single-slot form made `observe_rows` issue layers x rows kernels a step, which is the
+    same disease the commit and the block verifier had."""
+    row=tl.program_id(0)
+    token=tl.program_id(1)
+    d=tl.program_id(2)*BLOCK+tl.arange(0,BLOCK)
+    slot=tl.load(Slot+row).to(tl.int64)
+    pos=tl.load(Pos+row*T+token).to(tl.int64)%W
+    base=R+slot*STRIDE+OFFSET+pos*ROW+d
+    mask=(d<WIDTH)&(token<tl.load(Valid+row))
+    src=(row*T+token)*WIDTH+d
+    tl.store(base,tl.load(K+src,mask,other=0),mask)
+    tl.store(base+W*ROW,tl.load(V+src,mask,other=0),mask)
+
+
+def write_draft_kv_rows(field,slots,layer,positions,k,v,*,valid):
+    """The step's whole block into the rings: slots [n], positions [n, t], k/v [n, t, kv, D], valid [n].
+
+    One launch a layer instead of one a (layer, row). `observe_rows` is 21% of a decode step in production
+    (45차: forward 63.5%, observe 21.4%, propose 15.1%), and its fast path was looping rows because the
+    single-slot kernel required `slot.numel() == 1`.
+    """
+    n,t=positions.shape
+    if (field.ndim!=6 or k.shape!=v.shape or k.shape[:2]!=(n,t) or k.shape[-1]!=field.shape[-1]
+            or k.shape[-2]>field.shape[-2] or t>field.shape[3] or slots.numel()!=n
+            or slots.dtype!=torch.int64 or positions.dtype!=torch.int64 or valid.numel()!=n
+            or valid.dtype!=torch.int64 or not 0<=layer<field.shape[1]):
+        raise ValueError("invalid batched DFlash ring write")
+    width=k.shape[-1]*k.shape[-2]
+    _write_kv_rows[(n,t,triton.cdiv(width,256))](
+        k.contiguous(),v.contiguous(),field,slots.contiguous(),positions.contiguous(),valid.contiguous(),
+        n,t,width,field.shape[-1]*field.shape[-2],field.shape[3],
+        field.stride(0),layer*field.stride(1),256)
+
+
 def write_draft_kv(field,slot,layer,positions,k,v,*,valid=None):
     """Write only accepted positions in the arena, without copying a whole ring."""
     if (field.ndim!=6 or k.shape!=v.shape or k.shape[-1]!=field.shape[-1] or k.shape[-2]>field.shape[-2]

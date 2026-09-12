@@ -392,15 +392,16 @@ class Drafter:
         keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)
         c = rmsnorm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)
         if self.fast_attention:
-            from engine.kernels.draft_attention import write_draft_kv
+            from engine.kernels.draft_attention import write_draft_kv_rows
             context = Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)
             for L in range(F.layers):
                 q = f"layers.{L}.self_attn."
                 k = rope(rmsnorm(context[:, :, L, 0].reshape(n*t, self.local_kv_heads, F.head_dim),
                                  p[q + "k_norm.weight"], F.rms_eps), positions.reshape(-1), F.rope_theta)
                 k = k.reshape(n, t, self.local_kv_heads, F.head_dim)
-                for r in range(n):
-                    write_draft_kv(field, slots[r:r+1], L, positions[r], k[r], context[r, :, L, 1], valid=valid[r])
+                # one launch a layer, not one a (layer, row): the single-slot kernel required numel()==1 and
+                # the loop was the consequence
+                write_draft_kv_rows(field, slots, L, positions, k, context[:, :, L, 1].contiguous(), valid=valid)
             return
         flat = positions.reshape(-1)
         idx = positions % F.window
