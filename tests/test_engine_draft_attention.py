@@ -105,3 +105,51 @@ class DraftAttentionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BatchedRingWriteTests(unittest.TestCase):
+    """`observe_rows` is 21% of a decode step in production (45차: forward 63.5%, observe 21.4%, propose 15.1%)
+    and its fast path wrote one row at a time, because the kernel required `slot.numel() == 1`. The batched form
+    must put exactly the same bytes in the same cells -- a ring write that is merely close is a drafter that
+    proposes from something the target never said."""
+
+    @unittest.skipUnless(torch.cuda.is_available(), "the ring write is a device kernel")
+    def test_it_writes_what_the_per_row_form_wrote(self):
+        from engine.kernels.draft_attention import write_draft_kv, write_draft_kv_rows
+        dev = torch.device("cuda")
+        torch.manual_seed(5)
+        S, L, CELLS, KV, D = 6, 3, 64, 4, 128
+        n, t = 4, 6
+        fresh = lambda: torch.zeros(S, L, 2, CELLS, KV, D, device=dev, dtype=torch.bfloat16)   # noqa: E731
+        slots = torch.tensor([1, 3, 2, 5], device=dev)
+        positions = torch.randint(0, 500, (n, t), device=dev, dtype=torch.int64)
+        k = torch.randn(n, t, KV, D, device=dev, dtype=torch.bfloat16)
+        v = torch.randn(n, t, KV, D, device=dev, dtype=torch.bfloat16)
+        # a row that accepted nothing, one that accepted everything, and two in between
+        valid = torch.tensor([6, 3, 0, 5], device=dev, dtype=torch.int64)
+        one = fresh()
+        for layer in range(L):
+            for r in range(n):
+                write_draft_kv(one, slots[r:r + 1], layer, positions[r], k[r], v[r], valid=valid[r])
+        many = fresh()
+        for layer in range(L):
+            write_draft_kv_rows(many, slots, layer, positions, k, v, valid=valid)
+        self.assertTrue(torch.equal(one, many))
+
+    def test_it_refuses_a_shape_it_cannot_write(self):
+        from engine.kernels.draft_attention import write_draft_kv_rows
+        n, t, KV, D = 2, 3, 4, 8
+        field = torch.zeros(4, 2, 2, 16, KV, D)
+        slots = torch.zeros(n, dtype=torch.int64)
+        positions = torch.zeros(n, t, dtype=torch.int64)
+        k = v = torch.zeros(n, t, KV, D)
+        valid = torch.zeros(n, dtype=torch.int64)
+        for bad in (dict(slots=torch.zeros(n + 1, dtype=torch.int64)),
+                    dict(valid=torch.zeros(n, dtype=torch.int32)),
+                    dict(positions=torch.zeros(n, t, dtype=torch.int32)),
+                    dict(layer=9)):
+            args = dict(field=field, slots=slots, layer=0, positions=positions, k=k, v=v, valid=valid)
+            args.update(bad)
+            with self.assertRaises(ValueError):
+                write_draft_kv_rows(args["field"], args["slots"], args["layer"], args["positions"],
+                                    args["k"], args["v"], valid=args["valid"])
