@@ -182,6 +182,12 @@ class FactorSharingTests(unittest.TestCase):
         shared, alone = fp8_gptq(w, H, factor=first), fp8_gptq(w, H)
         self.assertTrue(torch.equal(shared[0].view(torch.uint8), alone[0].view(torch.uint8)), "the shared factor changes no code")
         self.assertTrue(torch.equal(shared[1], alone[1]))
+        with self.assertRaisesRegex(ValueError, "column order"):
+            fp8_gptq(w, H, act_order=False, factor=first)                 # a factor walked in a different order is not this pack's
+        plain = gptq_factor(H, act_order=False, factor_device="cpu")
+        self.assertIsNone(plain[0])
+        self.assertTrue(torch.equal(fp8_gptq(w, H, act_order=False, factor=plain)[0].view(torch.uint8),
+                                    fp8_gptq(w, H, act_order=False)[0].view(torch.uint8)))
 
 
 class Fp8GptqTests(unittest.TestCase):

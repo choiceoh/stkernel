@@ -287,6 +287,8 @@ def _w4_gptq_codes(weight, shift, need, H, mids, grid, blocksize=128,
     if factor is None:
         factor = gptq_factor(H, percdamp, act_order, factor_device)
     perm, Hinv, dead = factor
+    if (perm is not None) != bool(act_order):
+        raise ValueError("a shared factor's column order must be the one this pack asked for (act_order)")
     Hinv = Hinv.to(dev)
     dead = dead.to(dev)
     if perm is not None:
@@ -430,6 +432,8 @@ def fp8_gptq(weight, H, blocksize=128, percdamp=0.01, act_order=True, factor_dev
     if factor is None:
         factor = gptq_factor(H, percdamp, act_order, factor_device)
     perm, U, dead = factor
+    if (perm is not None) != bool(act_order):
+        raise ValueError("a shared factor's column order must be the one this pack asked for (act_order)")
     U, dead = U.to(dev), dead.to(dev)
     if perm is not None:
         perm = perm.to(dev)
