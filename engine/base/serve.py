@@ -2258,6 +2258,18 @@ class Server:
                  "checkpoints a prefill displaced to make room for its own later ones: state copies computed and thrown away",
                  getattr(runner, "snapshot_self_evicts", 0)),
             ]
+        # The prefix tier's OWN bytes, keyed on that tier and not on the cache above it. The pair
+        # under `tiered` below is the CONVERSATION tier, so everything the boundary tier moved was
+        # invisible: a live fleet showed 42 spills and 2 restores against `st:tier_bytes_read_total`
+        # 0, and the one thing that decides the snapshot pool's size -- what a faded boundary costs
+        # to read back -- could not be read from the scrape at all (2026-09-12).
+        boundary = getattr(getattr(runner, "prefix_tier", None), "tier", None)
+        moved_out, moved_in = getattr(boundary, "bytes_written", None), getattr(boundary, "bytes_read", None)
+        if moved_out is not None and moved_in is not None:
+            rows += [("counter", "st:prefix_tier_bytes_written_total",
+                      "bytes of boundary state written to the prefix tier", moved_out),
+                     ("counter", "st:prefix_tier_bytes_read_total",
+                      "bytes of boundary state read back from the prefix tier", moved_in)]
         tiered = getattr(runner, "tiered", None)
         if tiered is not None:
             tier = getattr(tiered, "tier", None)

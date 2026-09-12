@@ -149,6 +149,25 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(_series(text, "st:tier_bytes_written_total"), 4096.0)
         self.assertEqual(_series(text, "st:tier_bytes_read_total"), 512.0)
 
+    def test_the_prefix_tiers_bytes_are_its_own_and_not_the_conversation_tiers(self):
+        """`st:tier_bytes_*` reads runner.tiered -- the CONVERSATION tier. Everything the boundary
+        tier moved was invisible: a live fleet showed 42 prefix spills and 2 restores against
+        `st:tier_bytes_read_total` 0, so the one thing that decides the snapshot pool's size --
+        what a faded boundary actually costs to read back -- could not be read at all (2026-09-12)."""
+        import types
+        import test_engine_serve as T
+        s = T.server(tiered=True)
+        self.assertIsNone(_series(s.metrics(), "st:prefix_tier_bytes_written_total"))   # no prefix tier, no series
+        s.runner.prefix_tier = types.SimpleNamespace(
+            tier=types.SimpleNamespace(bytes_written=1 << 20, bytes_read=3 << 20))
+        s.runner.tiered.tier.bytes_written, s.runner.tiered.tier.bytes_read = 4096, 512
+        text = s.metrics()
+        self.assertEqual(_series(text, "st:prefix_tier_bytes_written_total"), float(1 << 20))
+        self.assertEqual(_series(text, "st:prefix_tier_bytes_read_total"), float(3 << 20))
+        self.assertEqual(_series(text, "st:tier_bytes_written_total"), 4096.0, "the two tiers stay apart")
+        self.assertEqual(_series(text, "st:tier_bytes_read_total"), 512.0)
+        _exposition_is_wellformed(self, text)
+
     def test_the_exposition_is_wellformed(self):
         for server in (self._served(), self._served(tiered=True)):
             _exposition_is_wellformed(self, server.metrics())
