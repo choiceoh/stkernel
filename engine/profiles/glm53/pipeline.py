@@ -141,15 +141,15 @@ class AsyncDecode:
         graphs = e.drafter.decode_graphs
         if b["stochastic"]:
             if graphs is not None:
-                drafts, dists = graphs.propose_rows_sampled(b["anchor"], b["ctx"], b["real_slot"], b["temps"])
+                drafts, dists = graphs.propose_rows_sampled(b["anchor"], b["ctx"], b["real_slot"], b["temps"], b["alive"])
             else:
                 drafts, dists = e.drafter.propose_rows(e.caches.draft_field(), b["real_slot"], b["anchor"], b["ctx"],
-                                                       temps=b["temps"], generator=e.gen, vocab=e.F.vocab)
+                                                       temps=b["temps"], generator=e.gen, vocab=e.F.vocab, alive=b["alive"])
             b["dists"].copy_(dists)
         elif graphs is not None:
-            drafts = graphs.propose_rows(b["anchor"], b["ctx"], b["real_slot"])
+            drafts = graphs.propose_rows(b["anchor"], b["ctx"], b["real_slot"], b["alive"])
         else:
-            drafts = e.drafter.propose_rows(e.caches.draft_field(), b["real_slot"], b["anchor"], b["ctx"])
+            drafts = e.drafter.propose_rows(e.caches.draft_field(), b["real_slot"], b["anchor"], b["ctx"], alive=b["alive"])
         b["drafts"].copy_(drafts)
         ids = b["ids"].view(n, t)
         ids[:, 0] = b["anchor"]

@@ -30,6 +30,7 @@ class NullDrafter:
     """No drafts (K=0): a decode step is one token per sequence."""
     k = 0
     aux_layers = ()
+    calibration = None
 
     def observe(self, ring, positions, aux) -> None:
         pass
