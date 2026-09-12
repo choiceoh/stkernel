@@ -2370,6 +2370,18 @@ class OpenAIDialectTests(unittest.TestCase):
         prefills = [c for c in s.engine.__dict__.get("prefills", [])]     # the fake does not record steps; the counters above say it
         self.assertIn("st:prefix_dedup_waits_total{engine=\"st\"} 1\n", s.metrics())
 
+    def test_the_decode_chain_meters_reach_the_metrics_page(self):
+        """How much of decode runs ahead on the device, how often that pipeline is emptied, and by what. The
+        engine's own `async_steps` existed and never left the process, so nobody could see the first of these."""
+        s = chat_server()
+        s.runner.async_steps, s.runner.sync_drain_steps = 12, 3
+        s.engine.chain_exits = {"logprobs": 7, "rows_churned": 2}
+        page = s.metrics()
+        self.assertIn('st:async_decode_steps_total{engine="st"} 12\n', page)       # how much ran ahead
+        self.assertIn('st:sync_drain_steps_total{engine="st"} 3\n', page)          # how often it was emptied
+        self.assertIn('st:decode_chain_exits_total{engine="st",reason="logprobs"} 7\n', page)     # ... and by what
+        self.assertIn('st:decode_chain_exits_total{engine="st",reason="rows_churned"} 2\n', page)
+
     def test_the_snapshot_pressure_meters_reach_the_metrics_page(self):
         """A prompt has a block boundary every BLOCK tokens and the engine has a fixed number of snapshot slots, so a
         long enough prompt drops checkpoints it just computed. These three say whether that is happening."""

@@ -76,6 +76,7 @@ class Glm53Engine:
         # Free observability for decisions this engine keeps having to make by probe.
         # All of it is host arithmetic on numbers already in hand: no device read, no sync.
         self.decode_shape_counts = {}              # (sequences, capacity bucket) -> decode steps replayed there
+        self.chain_exits = {}                      # what kept a decode step off the device chain -> how often
         self.accepted_per_step = [0] * (self.drafter.k + 2)   # how many drafts a step committed, 0..k+1
         self.reachable_mass = 0.0                            # sum_x min(p, q): the most any rule could accept
         self.covered_mass = 0.0                              # the target mass the drafter's candidates cover
@@ -680,12 +681,45 @@ class Glm53Engine:
             return False
         return self.min_new.get(seq, 0) <= self._generated_count(seq)
 
+    # WHAT kept a decode step off the device-side chain. `st:async_decode_steps_total` and
+    # `st:sync_drain_steps_total` say how often it happened; neither says why, and the two answers call for
+    # opposite work. A drain because rows churned is the pipeline's problem (PR #671 took most of those away);
+    # a drain because one row asked for logprobs is a scheduling problem, and no amount of fusing inside the
+    # chain touches it. Reasons are named the way an operator would ask about them.
+    CHAIN_BLOCKERS = ("seed", "presence_penalty", "frequency_penalty", "repetition_penalty",
+                      "logit_bias", "logprobs", "grammar", "min_p")
+
+    def _chain_exit(self, reason: str) -> bool:
+        self.chain_exits[reason] = self.chain_exits.get(reason, 0) + 1
+        return False
+
+    def _blocked_by(self, seq: int) -> "str | None":
+        """The first reason this row may not run ahead. `_plain_ahead` asks the same question as a yes or no."""
+        opts = self.options.get(seq, {})
+        for name in self.CHAIN_BLOCKERS:
+            if opts.get(name) is not None:
+                return name
+        if seq in self.matchers:
+            return "grammar"
+        if seq in self.gens:
+            return "seed"
+        if seq in self.lps:
+            return "logprobs"
+        if self.min_new.get(seq, 0) > self._generated_count(seq):
+            return "min_tokens"
+        return None
+
     def async_ready(self, seqs) -> bool:
         if self.pipeline is None or self.decode_graphs is None or not self.drafter.k:
-            return False
+            return self._chain_exit("no_pipeline")
         if not self.pipeline.ready_for(seqs):
-            return False
-        return all(self._plain_ahead(s) for s in seqs)
+            return self._chain_exit("rows_churned")
+        blocked = next((why for why in (self._blocked_by(s) for s in seqs) if why is not None), None)
+        if blocked is not None:
+            # One row is enough: the batch runs ahead together or not at all, so at max_seqs 4 a single
+            # request asking for logprobs takes the other three off the chain with it.
+            return self._chain_exit(blocked)
+        return True
 
     def decode_async(self, seqs, blocks, slots):
         return self.pipeline.launch(seqs, slots)
