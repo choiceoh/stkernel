@@ -39,28 +39,44 @@ def scatter_rows(src, dst, indices, valid):
                                   dst.stride(0), triton.next_power_of_2(width))
 
 
-def complete_pools(net, layer, segment, tail, k, gate, caches):
-    """Return the fixed candidate capacity after masked pool and ring writes."""
+def complete_pools(net, layer, contexts, length, tails, k, gate, caches):
+    """Complete every segment's pools for this step, then return the fixed candidate capacity.
+
+    A captured step's segments have the same length and differ only in device scalars,
+    so the whole prologue -- the window that joins the tail ring's earlier tokens to
+    this step's new ones, and the pooling itself -- is one set of operations over
+    [segments, pools, ...] rather than one set per segment. Stacking them is the same
+    work in the same order because `compress_pool_keys` runs one program per pool and
+    reads each through its own strides; segments only decide which pools exist.
+
+    The cache writes stay per segment. Their kernels take one ring slot and one count,
+    and making them take many is a kernel change, not a caller change.
+    """
     F = net.F
     kp, d = F.kpool, F.idx_dim
-    ctx, length = segment.ctx, segment.length
-    lead = ctx % kp
-    count = (lead + length) // kp
+    n, tail_width = tails.shape[0], tails.shape[1]
     max_pools = (kp - 1 + length) // kp
-    relative = iota(max_pools * kp, k.device) - lead
-    current = relative.clamp(0, length - 1).long()
-    previous = ((ctx + relative) % tail.shape[0]).long()
-    kw = torch.where((relative < 0)[:, None], tail[previous, 0], k[current])
-    gw = torch.where((relative < 0)[:, None], tail[previous, 1], gate[current])
-    pk, ps = net.lanes.kpool_compress(kw.view(max_pools, kp, d),
-                                     gw.view(max_pools, kp, d), net.p[f"L{layer}.idx.ape"])
-    pids = ctx // kp + iota(max_pools, k.device)
+    lead = contexts % kp                                                  # [n] the half-built pool
+    counts = (lead + length) // kp                                        # [n] complete pools this step
+    relative = iota(max_pools * kp, k.device) - lead[:, None]             # [n, pools*kpool]
+    current = relative.clamp(0, length - 1)
+    previous = (contexts[:, None] + relative) % tail_width
+    rows = iota(n, k.device)[:, None]
+    earlier = (relative < 0)[..., None]                                   # before this step: from the ring
+    kw = torch.where(earlier, tails[rows, previous, 0], k[rows, current])
+    gw = torch.where(earlier, tails[rows, previous, 1], gate[rows, current])
+    pk, ps = net.lanes.kpool_compress(kw.view(n * max_pools, kp, d),
+                                      gw.view(n * max_pools, kp, d), net.p[f"L{layer}.idx.ape"])
     # Padded pids at the final context boundary are not read by scatter_rows.
-    pids = pids.clamp_max(caches.candidate_capacity - 1)
-    slots = caches.pool_slots(layer, segment.seq, pids).long()
-    scatter_rows(pk.view(torch.uint8), caches.pool_keys(layer).view(torch.uint8), slots, count)
-    scatter_rows(ps.reshape(-1, 1), caches.pool_scales(layer).unsqueeze(-1), slots, count)
-    caches.write_tail(layer, segment.slot, ctx, k, gate)
+    pids = (contexts[:, None] // kp + iota(max_pools, k.device)).clamp_max(caches.candidate_capacity - 1)
+    slots = caches.pool_rows(layer, pids).long()                          # [n, pools]
+    keys, scales = caches.pool_keys(layer).view(torch.uint8), caches.pool_scales(layer).unsqueeze(-1)
+    pk8 = pk.view(torch.uint8).view(n, max_pools, -1)
+    ps1 = ps.view(n, max_pools, 1)
+    for i in range(n):
+        scatter_rows(pk8[i], keys, slots[i], counts[i])
+        scatter_rows(ps1[i], scales, slots[i], counts[i])
+        caches.write_tail(layer, i, contexts[i], k[i], gate[i])
     return caches.candidate_capacity
 
 
@@ -126,6 +142,10 @@ class GraphCaches:
     def tail(self, layer, slot):
         return self.real._fields["tail", layer].index_select(0, self.slots[slot:slot+1])[0]
 
+    def tails(self, layer):
+        """Every segment's tail ring in one gather; tail(layer, i) is row i of it."""
+        return self.real._fields["tail", layer].index_select(0, self.slots)
+
     def write_tail(self, layer, slot, context, keys, gates):
         from engine.kernels.state import write_ring
         write_ring(torch.stack((keys, gates), dim=1), self.real._fields["tail", layer],
@@ -151,6 +171,15 @@ class GraphCaches:
     def pool_slots(self, layer, seq, pool_ids):
         from engine.profiles.glm53.caches import Glm53Caches
         return Glm53Caches.pool_slots(self, layer, seq, pool_ids)
+
+    def pool_rows(self, layer, pool_ids):
+        """pool_slots for every segment at once: row i of `pool_ids` reads row i of the
+        gathered block table, which is what pool_slots(layer, i, ...) does one at a time."""
+        F, p = self.F, self.layout
+        per, record = F.block // F.kpool, F.idx_dim + 4
+        blocks = torch.gather(self.block_table, 1, (pool_ids // per).long())
+        return (blocks * (p.block_bytes // record)
+                + p.pool_offsets[layer] // record + pool_ids % per).to(blocks.dtype)
 
 
 def capacity_ladder(pool_tokens: int, max_position: int, ceiling: "int | None") -> "list[int]":

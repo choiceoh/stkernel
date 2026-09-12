@@ -270,15 +270,25 @@ class Glm53Net:
         tail_width = kp - 1 + F.spec_k
         if captured:
             from engine.profiles.glm53.decode_graphs import complete_pools   # the profile's captured writer
+            tails = caches.tails(L)
+            if tails.shape[1] != tail_width:
+                raise ValueError(f"indexer tail needs {tail_width} positions to support draft rollback")
+            # Every segment's pools are completed before any selection runs. A segment
+            # selects only from its own sequence's blocks and a step may not carry a
+            # sequence twice, so the order the pools are written in changes nothing.
+            rows = len(step.segments)
+            width = step.tokens
+            pooled = complete_pools(self, L, step.contexts, width, tails,
+                                    k.view(rows, width, d), gate.view(rows, width, d), caches)
         for s in step.segments:
             sl = slice(s.start, s.start + s.length)
-            tail = caches.tail(L, s.slot)
-            if tail.shape[0] != tail_width:
-                raise ValueError(f"indexer tail needs {tail_width} positions to support draft rollback")
-            end = s.ctx + s.length
             if captured:
-                n_cand = complete_pools(self, L, s, tail, k[sl], gate[sl], caches)
+                n_cand = pooled
             else:
+                tail = caches.tail(L, s.slot)
+                if tail.shape[0] != tail_width:
+                    raise ValueError(f"indexer tail needs {tail_width} positions to support draft rollback")
+                end = s.ctx + s.length
                 pool0 = (s.ctx // kp) * kp                                              # the pool ctx sits in may be half-built
                 lead = s.ctx - pool0                                                    # its earlier tokens are in the tail ring
                 lead_pos = torch.arange(pool0, s.ctx, device=x.device)
