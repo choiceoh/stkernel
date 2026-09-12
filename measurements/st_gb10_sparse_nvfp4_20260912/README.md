@@ -126,6 +126,50 @@ The pruning distortion is much larger than kernel numerical error. Production
 adoption would need pair-aware calibrated pruning, scale-aware reconstruction,
 and likely selective finetuning/distillation with end-to-end quality gates.
 
+## Recovery options after the magnitude baseline
+
+The 45% local error is not NVIDIA checkpoint quantization error or an inherent
+error of sparse Tensor Cores. The hardware correctly calculates the supplied
+sparse operands. NVIDIA's original accuracy-preserving recipe explicitly
+includes retraining after pruning; its current Model Optimizer also offers
+data-driven SparseGPT calibration without retraining.
+
+[NVIDIA sparse training workflow](https://developer.nvidia.com/blog/accelerating-inference-with-sparsity-using-ampere-and-tensorrt/),
+[Model Optimizer sparsity guide](https://nvidia.github.io/Model-Optimizer/guides/6_sparsity.html).
+
+Recommended follow-up experiments, **not implemented or measured here**:
+
+1. Capture representative routed expert inputs, including separate w13 and w2
+   inputs, and reserve independent prompts for validation. Compare activation-
+   weighted pair selection (Wanda-style) with pair-constrained SparseGPT weight
+   reconstruction. Fit and evaluate the final K32 quantized representation,
+   including activation quantization, rather than measuring a floating-point
+   reconstruction that cannot be exported. Generic scalar 2:4 or unrestricted
+   4:8 implementations do not enforce this kernel's adjacent-pair constraint.
+2. Evaluate only layers/experts with adequate calibration coverage; retain
+   dense weights where accuracy or measured latency does not improve. Sparse
+   coverage should be weighted by routed execution frequency, not parameter
+   count. Mixed dispatch overhead belongs in the timing comparison.
+3. Test an activation-aware low-rank residual, as in EoRA, on the remaining
+   compression error. Keep the residual as a separate computation: merging
+   it into the sparse matrix generally fills its required zeros. Benchmark
+   residual reads, GEMMs and accumulation together with the sparse path.
+4. If calibration and residual correction are insufficient, consider masked
+   recovery training/distillation with the final sparse quantization simulated
+   during training. Start from a higher-precision checkpoint when available;
+   dequantizing an existing FP4 checkpoint does not recover its original values.
+
+[Wanda implementation](https://github.com/locuslab/wanda),
+[SparseGPT paper](https://arxiv.org/abs/2301.00774),
+[NVIDIA EoRA explanation and results](https://developer.nvidia.com/blog/a-fine-tuning-free-approach-for-rapidly-recovering-llm-compression-errors-with-eora/).
+
+These are candidate methods, not an established GLM-5.3/GB10 recipe. EoRA's
+published examples include improvements that still fall short of the original
+model, so recovery must be measured rather than assumed. Whole-model evaluation
+must include language/coding/reasoning quality and real serving latency. The
+current 1.34x projection result leaves only about 25% of dense projection time
+for extra work before that isolated speed advantage disappears.
+
 ## Red Hat versus NVIDIA checkpoint
 
 The NVIDIA revision inspected/downloaded is
