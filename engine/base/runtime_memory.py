@@ -123,9 +123,11 @@ def reclaim_preparation_pages(need, headroom, *, cache_roots=()):
 class RuntimeMemory:
     def __init__(self, arena_bytes, workspace_bytes, os_reserve_bytes, *, comm=None,
                  cuda=None, host_free=host_free_bytes, reclaim=None,
-                 host_available=host_available_bytes, floor=None):
+                 host_available=host_available_bytes, floor=None, host_budget_bytes=0):
         if min(arena_bytes, workspace_bytes, os_reserve_bytes) <= 0:
             raise ValueError("arena, workspace ceiling and OS reserve must be positive bytes")
+        if type(host_budget_bytes) is not int or host_budget_bytes < 0:
+            raise ValueError("host budget must be nonnegative bytes")
         if cuda is None:
             import torch
             cuda = torch.cuda
@@ -137,6 +139,7 @@ class RuntimeMemory:
         self.reclaim = reclaim
         self.arena_bytes, self.workspace_bytes = arena_bytes, workspace_bytes
         self.os_reserve_bytes = os_reserve_bytes
+        self.host_budget_bytes = host_budget_bytes  # RAM cache/codec outside the CUDA allocator on UMA
         self.phases, self.ready, self.closed = [], False, False
         self.clock = time.monotonic                 # injectable for tests
         self.started = self.clock()
@@ -158,7 +161,7 @@ class RuntimeMemory:
         self.previous_fraction = cuda.get_per_process_memory_fraction()
         if self.allocator_limit_bytes > int(total * self.previous_fraction):
             raise MemoryError("runtime byte budget exceeds the existing allocator limit")
-        if arena_bytes + workspace_bytes + os_reserve_bytes > min(free, host_free()):
+        if arena_bytes + workspace_bytes + os_reserve_bytes + host_budget_bytes > min(free, host_free()):
             raise MemoryError("runtime byte budget plus OS reserve exceeds immediately free memory")
         if cuda.get_allocator_backend() != "native":
             raise RuntimeError("ST's byte ceiling requires the pinned native CUDA allocator")
@@ -171,9 +174,9 @@ class RuntimeMemory:
         cuda.synchronize()                          # the row's peaks and its clock read the same instant
         reclaimed = 0
         host_free = self.host_free()
-        need = self.os_reserve_bytes + max(0, self.allocator_limit_bytes-cuda.memory_reserved())
+        need = self.os_reserve_bytes + self.host_budget_bytes + max(0, self.allocator_limit_bytes-cuda.memory_reserved())
         if self.reclaim is not None and host_free < need:
-            reclaimed = self.reclaim(need, self.workspace_bytes+self.os_reserve_bytes)
+            reclaimed = self.reclaim(need, self.workspace_bytes+self.os_reserve_bytes+self.host_budget_bytes)
             host_free = self.host_free()
         now = self.clock()
         free, _ = cuda.mem_get_info()
@@ -286,6 +289,7 @@ class RuntimeMemory:
                     floor_bytes=self.floor_bytes, measured=self.measured(),
                     workspace_limit_bytes=self.workspace_bytes,
                     os_reserve_bytes=self.os_reserve_bytes,
+                    host_budget_bytes=self.host_budget_bytes,
                     baseline_reserved_bytes=self.baseline_reserved,
                     allocator_limit_bytes=self.allocator_limit_bytes,
                     seconds=round(self.last - self.started, 4),

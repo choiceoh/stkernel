@@ -110,7 +110,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
            ckpt: "str | Path" = facts.CKPT, ranks_dir: "str | Path | None" = None, rank: int = 0,
            drafter_dir: "str | Path | None" = drafter_mod.DRAFTER, ledger: "str | Path | None" = None,
            snapshots: "int | None" = None, draft_tp: int = 1, draft_native: "bool | None" = None,
-           router_bytes: int = 0) -> Budget:
+           router_bytes: int = 0, tier_enabled: bool = True) -> Budget:
     """The box, one rank of TP=4. `kv_gib`/`max_seqs` are boot.py's declared values; the table says what they leave."""
     host_total, _ = host_box()
     if box_gib is None:
@@ -155,9 +155,9 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     lay = layout(F, range(F.layers), draft_shape)
     slots_gib = (max_seqs + 1) * lay.slot_bytes / GIB
     snapshot_bytes = snapshot_layout(F, range(F.layers), draft_shape)[0]
+    from engine.profiles.glm53 import boot
     if snapshots is None:
-        from engine.profiles.glm53.boot import snapshot_count      # the count follows the shape, not a constant
-        snapshots = snapshot_count(snapshot_bytes)
+        snapshots = boot.snapshot_count(snapshot_bytes, boot.PREFIX_SNAPSHOT_GIB if tier_enabled else boot.PREFIX_UNTIERED_SNAPSHOT_GIB)
     blocks_at_kv = int((kv_gib * GIB - (max_seqs + 1) * lay.slot_bytes) // (lay.block_bytes + max_seqs * 4))
     m = ledger_measured(ledger)
     ledger_name = Path(ledger).name if isinstance(ledger, (str, Path)) and ledger else "this boot"
@@ -208,7 +208,9 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
              "caches.layout: KDA conv/recurrent rings (K+1 states), indexer tails, drafter ring"),
         Line(f"prefix snapshots ({snapshots} x {snapshot_bytes / 2**20:.0f} MiB)", snapshots * snapshot_bytes / GIB, READ,
              f"caches.snapshot_layout: chunk-boundary position rings for prefix reuse; the count follows "
-             f"boot.PREFIX_SNAPSHOT_GIB and this shape (sharded drafter ring: {'yes' if draft_native else 'no'})"),
+             f"the tiered/untiered raw byte budget and this shape (sharded drafter ring: {'yes' if draft_native else 'no'})"),
+        Line("compressed prefix cache and codec", boot.prefix_host_bytes(tier_enabled) / GIB, DECLARED,
+             "prefix tier: bounded lossless RAM copies plus chunk workspace, outside the raw arena; compression ratio unmeasured"),
         Line("generated-boundary staging", stage_bytes(F, range(F.layers), max_seqs) / GIB, READ,
              "caches.stage_bytes: per-slot recurrent state and convolution history"),
         Line("workspace ceiling (outside the arena)", WORKSPACE_GIB, DECLARED, workspace_evidence),

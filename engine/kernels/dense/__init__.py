@@ -6,7 +6,6 @@ retire BF16 storage into prepared packs; standalone numerical tests retain it.
 """
 from dataclasses import dataclass
 from functools import cache
-import hashlib
 import os
 from pathlib import Path
 
@@ -16,15 +15,15 @@ import torch
 @cache
 def extension():
     from torch.utils.cpp_extension import load
+    from engine.kernels.native_cache import prepare_sources
     source = Path(__file__).with_name("kernels.cu")
     flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a",
              "-DMK_GRID_DEF=96", "-DMK_MHC_GRID_DEF=144", "-DMK_NBUF2_DEF=3",
              "-DMK_FP8_PACK2_DEF=1", "-DMK_GEMM_TRANSPOSE_M8_DEF=1",
              "-DMK_GEMM_COMPACT_M8_DEF=1", "-DMK_M8_FASTPATH_DEF=1"]
-    key = hashlib.sha256(source.read_bytes()+repr((flags, torch.__version__, torch.version.cuda)).encode()).hexdigest()[:16]
-    directory = Path(os.environ.get("ST_DENSE_BUILD_ROOT", str(Path.home()/".cache/st/dense")))/key
-    directory.mkdir(parents=True, exist_ok=True)
-    ext = load(name="st_dense_"+key, sources=[str(source)], extra_cuda_cflags=flags,
+    root = Path(os.environ.get("ST_DENSE_BUILD_ROOT", str(Path.home()/".cache/st/dense")))
+    key, directory, sources = prepare_sources(root, [source], (flags, torch.__version__, torch.version.cuda))
+    ext = load(name="st_dense_"+key, sources=list(sources), extra_cuda_cflags=flags,
                build_directory=str(directory), verbose=False)
     if tuple(ext.probe_device())[:3] != (12, 1, 48):
         raise RuntimeError("native dense lane requires GB10 SM121 with 48 SMs")

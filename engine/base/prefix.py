@@ -21,8 +21,9 @@ being one exactly when a block of it is handed out -- not a moment earlier, so a
 back while its blocks are still there pays nothing at all.
 
 The scarce thing here is not the block, it is the SNAPSHOT: a declared few gigabytes of them
-against thousands of blocks (profiles/glm53/boot.PREFIX_SNAPSHOT_GIB, 96 of 45 MiB as production
-runs), and a snapshot is only ever freed because something else wants it that instant. So the two
+against thousands of blocks (profiles/glm53/boot.PREFIX_SNAPSHOT_GIB, 48 of 45 MiB as production
+runs, with cold copies in a bounded compressed RAM cache over NVMe), and a snapshot is only ever
+freed because something else wants it that instant. So the two
 resources part ways, and a boundary has three lives, not two:
 
   entry   blocks and snapshot in memory       -- adopt and restore, free

@@ -172,7 +172,7 @@ class ReleaseReportTests(unittest.TestCase):
 
     def test_a_clean_release_says_what_came_back_and_nothing_else(self):
         line = boot.release_line(self.report(1 << 20), rank=2)
-        self.assertIn("rank 2 gave back 2.00 GiB of 2.00 GiB arena plus 192 MiB of tier staging", line)
+        self.assertIn("rank 2 gave back 2.00 GiB of 2.00 GiB arena plus 192 MiB of tier memory", line)
         self.assertNotIn("NOT come back clean", line)
 
     def test_a_holder_the_release_did_not_find_is_named_with_its_block_sizes(self):
