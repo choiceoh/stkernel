@@ -26,7 +26,24 @@ from engine.profiles.glm53.caches import layout, snapshot_layout, stage_bytes
 
 RUNTIME_FLOOR_GIB = 5.54            # ledger 40th boot table (vLLM): CUDA context + NCCL 16 channels -- re-measure on ST
 WORKSPACE_GIB = 12.0                # base/runtime_memory's enforced ceiling for everything outside the arena (#549)
-OS_RESERVE_GIB = 4.0               # RuntimeMemory's fixed physical reserve; admission also budgets all workspace
+OS_RESERVE_MARGIN_GIB = 2.0        # above the box's own SIGTERM line, so the engine notices first
+
+
+def os_reserve_gib() -> float:
+    """What to keep free for the box, derived from the box's kill line rather than declared.
+
+    It used to be a flat 4.0 GiB. earlyoom on these nodes SIGTERMs at 6 GiB and SIGKILLs at
+    4.5, `--prefer python3`, the engine first on purpose -- so the engine's own reserve sat
+    BELOW both and its "preparation consumed the OS memory reserve" check could not fire
+    first. Fourteen recorded boots reached 1.48-15.74 GiB of free memory and every one of
+    them reported healthy; six were under the SIGTERM line (2026-09-12, 45차).
+    """
+    from engine.base.runtime_memory import oom_floor
+    sigterm, _sigkill = oom_floor()
+    return max(4.0, sigterm / GIB + OS_RESERVE_MARGIN_GIB)
+
+
+OS_RESERVE_GIB = os_reserve_gib()  # admission's physical reserve; admission also budgets all workspace
 NVME_STAGING_BYTES = 2 * (64 << 20) + 2 * (32 << 20)   # kv_tier: 64 MiB pinned staging + 64 MiB device scratch, and the prefix tier's 32 + 32
 SELECT_ROWS_TRANSIENT_NOTE = "indexer selection bounded to 1,024 query rows per pass (net.SELECT_ROWS)"
 
