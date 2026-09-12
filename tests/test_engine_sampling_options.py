@@ -324,3 +324,26 @@ class DraftCeilingTests(unittest.TestCase):
         self.assertLessEqual(reachable, covered + 1e-6, "what a rule can accept sits under what the candidates cover")
         self.assertLessEqual(accepted / rounds, reachable + 0.05, "and acceptance sits under both")
 
+
+class HistoryLifetimeTests(unittest.TestCase):
+    """A kept history is only safe while the tokens it was built from are the row's own."""
+
+    def test_a_row_reused_with_the_same_shape_does_not_inherit_the_old_counts(self):
+        from engine.base.sampler import History
+        h = History(8, "cpu")
+        first = [1, 1, 2, 3]
+        h.of(0, first, 2)
+        self.assertEqual(float(h.of(0, first, 2)[1][1]), 0.0)     # token 1 is prompt here, not output
+        # the row is handed a different conversation of the same length and prompt length
+        h.forget(0)
+        second = [4, 5, 1, 1]
+        seen, counts = h.of(0, second, 2)
+        self.assertEqual(float(counts[1]), 2.0)
+        self.assertFalse(bool(seen[2]), "nothing of the old conversation survives")
+
+    def test_the_adapter_drops_it_wherever_it_reassigns_a_row_s_tokens(self):
+        source = (ROOT / "engine/profiles/glm53/adapter.py").read_text()
+        for site in ("self.tokens[seq] = list(ids)", 'self.tokens[seq] = list(record["tokens"])'):
+            after = source[source.index(site):]
+            self.assertIn("self.history.forget(seq)", after[:400], site)
+
