@@ -55,7 +55,28 @@ GIB = 1 << 30
 KV_GIB = 24.0                       # production parity (vLLM's 24.02 GiB/rank, 28차 §8); the ST budget table leaves 41.6 GiB, 45차 §23
 TOKEN_BUDGET = 8192                 # MAX_BATCHED: the 6,912 chunk law follows (shapes.py)
 MAX_WAIT_S = 0.0                    # admit into a free decode row at the next chunk boundary
-MAX_SEQS = 8                        # 48 target tokens with K=5; mHC and one-shot cover this width
+MAX_SEQS = 4
+"""Resident decode rows: state slots, captured decode widths and the context ceiling follow.
+
+8 was chosen for kernel coverage (48 target tokens at K=5, which mHC and one-shot reach) and
+nothing else, and no release has ever served it -- every production release pins 4. Measured
+side by side from two boot ledgers on the same commit (45차 §72, 2026-09-12):
+
+    width          graph pool   captured ceiling   target graphs   boot     state slots
+    1-4 (this)       0.60 GiB          1,035,264              36   161.9 s     1.21 GiB
+    1-8              2.50 GiB            364,032              64   208.7 s     2.17 GiB
+
+2.86 GiB of a box that reached 7.09 GiB free during capture, and 47 s of boot, to buy a
+concurrency nothing serves. And the rows are not free of each other: the state slots come out
+of the same `kv_gib`, so at 7.0 the pool is 1,314 blocks at four rows and 1,095 at eight
+(budget.budget, same argument). Fewer blocks is a shorter longest sequence, which is why the
+captured ladder tops out lower -- the width that was supposed to serve more requests serves
+each of them less context.
+
+Coverage still holds at 4: 24 target tokens is inside the same kernels. The repo default and
+what production serves are now one number -- they disagreed, and that is exactly how two
+onepass runs 27 minutes apart on one commit came out incomparable (45차 §72).
+"""
 PREFIX_TIER_STAGE = 32 << 20        # the prefix tier's pinned staging + device scratch
 TIER_GIB = 64.0
 """What a rank's parked conversations may occupy on NVMe, and its evicted prefix boundaries below.
