@@ -1,0 +1,82 @@
+{
+  "version": 2,
+  "private": true,
+  "created_at": "2026-09-12T03:36:46.079387+00:00",
+  "counts": {
+    "mail_raw": 3632,
+    "mail_analysis_pages": 567,
+    "mail_analysis_joined": 515,
+    "mail_empty_body": 13,
+    "notification_ledger_raw": 3382,
+    "too_short_notification": 723,
+    "notification_judgment_starts": 5237,
+    "truncated_judgment_preview": 9,
+    "unparsed_judgment_preview": 1,
+    "transcript_files_inventory": 630,
+    "transcript_files_outside_scope": 495,
+    "eligible_transcript_files": 135,
+    "eligible_transcript_records": 8686,
+    "too_short_conversation": 26
+  },
+  "read_issues": {
+    "malformed_line": 2
+  },
+  "source_files": 1526,
+  "source_bytes": 60188050,
+  "rows_before_dedup": 12031,
+  "exact_duplicates_removed": 4879,
+  "pool_rows": 7152,
+  "category_split": {
+    "notification/train": 1435,
+    "mail/train": 2878,
+    "mail/validation": 316,
+    "notification/validation": 1357,
+    "notification/test": 241,
+    "mail/test": 373,
+    "conversation/validation": 70,
+    "conversation/train": 422,
+    "mail/quarantine": 50,
+    "conversation/test": 6,
+    "notification/quarantine": 2,
+    "conversation/quarantine": 2
+  },
+  "label_status": {
+    "unlabeled": 6137,
+    "production_unreviewed": 1015
+  },
+  "exclusions": {
+    "shared_160_character_span_with_earlier_split": 44,
+    "synthetic_or_corrupted_source": 8,
+    "duplicate_payload_crosses_splits": 2
+  },
+  "redactions": {
+    "pattern_0": 0,
+    "pattern_1": 0,
+    "pattern_2": 0,
+    "pattern_3": 1,
+    "pattern_4": 11622,
+    "pattern_5": 1260,
+    "url_credentials": 22,
+    "otp": 6,
+    "chat_delimiters": 0
+  },
+  "tool_corrections_review_only": 11,
+  "preexisting_evaluation_files_excluded": [
+    "wiki-qa-gold-analysis-xl.jsonl",
+    "wiki-qa-gold-analysis.jsonl",
+    "wiki-qa-gold-bm25.jsonl",
+    "wiki-qa-gold-facet.jsonl",
+    "wiki-qa-gold-hard.jsonl",
+    "wiki-qa-gold-meeting-xl.jsonl",
+    "wiki-qa-gold-multiturn-a1sim.jsonl",
+    "wiki-qa-gold-multiturn.jsonl",
+    "wiki-qa-gold-traffic.jsonl",
+    "wiki-qa-gold-typed.jsonl",
+    "wiki-qa-gold.jsonl"
+  ],
+  "gold_labels": 0,
+  "system_prompt_reconstructed": true,
+  "historical_test_is_development_only": true,
+  "source_code_sha256": "b3c3f17ed29d943a66ddd533e015143120595c6e6b0acb53953c266aafbf3428",
+  "model_or_api_calls": 0
+}
