@@ -137,7 +137,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
         vision_gib, vision_evidence = sum(s.nbytes() for s in vision_mod.specs(vision_mod.load(ckpt))) / GIB, "vision.specs: whole tower per rank"
     else:
         vision_gib, vision_evidence = 0.0, "no vision tower declared (no processor_config.json)"
-    draft_shape, drafter_gib = None, 0.0
+    draft_shape, drafter_gib, draft_evidence = None, 0.0, "no drafter declared"
     if drafter_dir and (Path(drafter_dir) / "config.json").exists():
         D = drafter_mod.load(drafter_dir)
         if draft_tp <= 0 or D.kv_heads % draft_tp:
@@ -145,7 +145,13 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
         native = draft_tp > 1 if draft_native is None else draft_native
         cells = D.window if native else drafter_mod.ring_cells(D)
         draft_shape = (D.layers, cells, D.kv_heads // draft_tp, D.head_dim)
-        drafter_gib = sum(s.nbytes() for s in drafter_mod.specs(D)) / GIB
+        if native:
+            from engine.profiles.glm53.drafter_storage import nbytes as draft_resident_bytes
+            drafter_gib = draft_resident_bytes(D, draft_tp, max_seqs) / GIB
+            draft_evidence = f"drafter_storage: live packed readers; compute/KV TP={draft_tp}"
+        else:
+            drafter_gib = sum(s.nbytes() for s in drafter_mod.specs(D)) / GIB
+            draft_evidence = f"drafter.specs: source weights; compute/KV TP={draft_tp}"
     lay = layout(F, range(F.layers), draft_shape)
     slots_gib = (max_seqs + 1) * lay.slot_bytes / GIB
     snapshot_bytes = snapshot_layout(F, range(F.layers), draft_shape)[0]
@@ -196,7 +202,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
         *( (tenants_line,) if tenants_line is not None else () ),
         Line("weights (this rank, TP=4)", weights_gib, READ, weights_evidence),
         Line("resident FP32 routers", router_bytes / GIB, READ, "net.router_nbytes: immutable BF16 gate values converted once into the arena"),
-        Line("drafter weight reservation", drafter_gib, READ, f"drafter.specs: source reservation retained; compute/KV TP={draft_tp}"),
+        Line("drafter weight reservation", drafter_gib, READ, draft_evidence),
         Line("vision tower (BF16, replicated)", vision_gib, READ, vision_evidence),
         Line(f"state slots ({max_seqs} + null) x {lay.slot_bytes / 2**20:.0f} MiB", slots_gib, READ,
              "caches.layout: KDA conv/recurrent rings (K+1 states), indexer tails, drafter ring"),

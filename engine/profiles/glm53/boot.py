@@ -320,7 +320,14 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 budget -= need
                 calib_bytes += need
     router_bytes = net.router_nbytes() if execution == "native" else 0
-    arena_bytes = (total_bytes(specs) + total_bytes(dspecs) + total_bytes(vspecs) + router_bytes + 256 * (len(specs) + len(dspecs) + len(vspecs) + 64)
+    draft_bytes = total_bytes(dspecs)
+    if D and execution == "native":
+        from engine.profiles.glm53.drafter_storage import nbytes as draft_resident_bytes
+        draft_bytes = draft_resident_bytes(D, comm.world_size, max_seqs)
+        recorder.gauge("drafter_source_bytes", total_bytes(dspecs))
+        recorder.gauge("drafter_resident_bytes", draft_bytes)
+        recorder.gauge("drafter_arena_saved_bytes", total_bytes(dspecs) - draft_bytes)
+    arena_bytes = (total_bytes(specs) + draft_bytes + total_bytes(vspecs) + router_bytes + 256 * (len(specs) + len(dspecs) + len(vspecs) + 64)
                    + cache_layout.nbytes(nb, max_seqs) + snapshots * snapshot_bytes + stage_bytes(F, net.layers, max_seqs) + calib_bytes)
     memory = None
     redeclare = None                    # the same table, re-runnable once a ledger exists (45차 §51)
@@ -387,11 +394,17 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         tok = tokenizer(ckpt_meta)
         decodable = decodable_vocab(tok)
         drafter = NullDrafter()
-        if D:
+        def load_drafter():
             with recorder.phase("load drafter"):
-                dviews = RankLoader(drafter_dir / "model.safetensors").load([s.name for s in dspecs], arena=arena, recorder=recorder)
-            drafter = drafter_mod.Drafter(D, net, decodable)
-            drafter.bind(dviews)
+                # Native packs and surviving BF16 readers are copied into their
+                # compact region below. The full checkpoint is temporary scratch.
+                dviews = RankLoader(drafter_dir / "model.safetensors").load(
+                    [s.name for s in dspecs], arena=None if execution == "native" else arena, recorder=recorder)
+            result = drafter_mod.Drafter(D, net, decodable)
+            result.bind(dviews)
+            return result  # the loader's mapping must not outlive this call
+        if D and execution != "native":
+            drafter = load_drafter()
         calibration = None
         if execution == "native":
             from engine.kernels.prefill_collectives import PrefillCollectives
@@ -401,7 +414,11 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 net.prepare_dense(store, consume_weights=True)
                 net.prefill_transport = PrefillCollectives(comm)
                 if D:
-                    drafter.prepare_fast(store, consume_weights=True)
+                    # Do not overlap the temporary checkpoint with target packing.
+                    drafter = load_drafter()
+                    drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena)
+                    recorder.gauge("drafter_block_fp8_packs", sum(
+                        layer.fp8 is not None for name, layer in drafter.dense.items() if name != "fc.weight"))
             if calib_plan:                                            # this boot sums what the store lacked, within the budget
                 calibration = Calibration(torch.device("cuda"), BUDGET_BYTES, arena=arena,
                                           max_decode_rows=max_seqs * (1 + drafter.k))
