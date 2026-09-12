@@ -30,6 +30,14 @@ wait_door() {
   return 1
 }
 changed=0
+ingress_closed=0
+drain_rule=(-p tcp --dport 8000 '!' -i lo -m conntrack --ctstate NEW -m comment --comment st-native-e-drain -j REJECT --reject-with tcp-reset)
+reopen_ingress() {
+  if [ "$ingress_closed" = 1 ]; then
+    sudo -n iptables -D INPUT "${drain_rule[@]}"
+    ingress_closed=0
+  fi
+}
 restore() {
   local rc=$?
   trap - EXIT INT TERM
@@ -53,6 +61,7 @@ restore() {
   fi
   systemctl --user start st-glm53.service
   systemctl --user is-active st-glm53.service > restored-service.txt
+  reopen_ingress
   printf '%s\n' "$rc" > exclusive-exit-code.txt
   exit "$rc"
 }
@@ -62,9 +71,16 @@ trap restore EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 systemctl --user stop st-glm53.service
+# The HTTP/1.0 endpoint closes each response. Preserve established requests,
+# but prevent new external connections from defeating the bounded drain.
+sudo -n iptables -I INPUT 1 "${drain_rule[@]}"
+ingress_closed=1
+# A separately scheduled cleanup also survives an abrupt wrapper termination.
+sudo -n systemd-run --quiet --unit=st-native-e-drain-cleanup --on-active=60m \
+  /usr/sbin/iptables -D INPUT "${drain_rule[@]}"
 python3 - <<'PY'
 import json,time,urllib.request
-for _ in range(60):
+for _ in range(600):
     with urllib.request.urlopen('http://127.0.0.1:8000/',timeout=5) as r: state=json.load(r)
     if not any(state.get(k) for k in ('running','waiting','queued','parking','resuming')): break
     time.sleep(1)

@@ -1,0 +1,61 @@
+[W912 02:19:52.818230342 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+phase                                      seconds   dev GiB  counters
+arena                                        0.407     +6.58  
+load                                         1.926     +3.19  blocks=3 bytes=1.90739e+09
+load drafter                                 0.263     +0.00  blocks=3 bytes=2.34216e+09
+prepare native execution                     4.890     +3.17  
+load vision                                  0.141     -0.00  blocks=2 bytes=1.12726e+09
+caches                                       0.001     +0.00  
+engine                                       0.000     +0.00  
+runner                                       0.000     +0.00  
+{"arena_expandable": 1, "dense_pack_cache": 45, "dense_pack_gptq": 43, "dense_pack_rtn": 2, "target_native_linears": 10, "drafter_native_linears": 31, "blocks": 700, "slots": 3, "arena_GiB": 6.445, "prefix_snapshots": 96, "snapshot_MiB": 11.0}
+[megakernel] selftest mla rel=3.07e-03 pair_prefill=False group=2 prefill32=False -> ARM
+2026-09-12 02:20:16,375 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12 02:20:16,376 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m12_k4096_n512_t8_r96_tm32f2g2a32wutsf6v1_498686e3df00c407
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-12 02:20:18,797 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m12_k4096_n512_t8_r96_tm32f2g2a32wutsf6v1_498686e3df00c407.o
+[b12x static v2] lane serving: static2_m12_k4096_n512_t8_r96_tm32f2g2a32wutsf6v1 (mac=48, m=12, routed=96, smem=101376 B)
+2026-09-12 02:20:22,298 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r96_tm32f2g2a32wutr16n128k256d256sf6v1_82fe9b63fc412d29
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-12 02:20:24,553 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m6_k4096_n512_t8_r96_tm32f2g2a32wutr16n128k256d256sf6v1_82fe9b63fc412d29.o
+[b12x static v2] lane serving: static2_m6_k4096_n512_t8_r96_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=6, routed=48, smem=98304 B)
+{"rank": 0, "target_context": 0, "relative": 0.0, "passed": true}
+[oneshot] STALL rank=0 phase=wait(peer-flags) seq=119 slot=3 missing_peer_mask=0x4 tx_seq=119 ack_seq=119 rxf[slot]={119,119,115} beat=5566528607
+2026-09-12 02:20:49,715 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m17_k4096_n512_t8_r136_tm32f2g2a32wutsf6v1_340c615c7a8e6b70
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-12 02:20:54,751 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m17_k4096_n512_t8_r136_tm32f2g2a32wutsf6v1_340c615c7a8e6b70.o
+[b12x static v2] lane serving: static2_m17_k4096_n512_t8_r136_tm32f2g2a32wutsf6v1 (mac=48, m=17, routed=136, smem=101376 B)
+2026-09-12 02:20:55,156 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m12_k4096_n512_t8_r136_tm32f2g2a32wutsf6v1_feca82035be15442
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-12 02:21:00,185 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static2_m12_k4096_n512_t8_r136_tm32f2g2a32wutsf6v1_feca82035be15442.o
+[b12x static v2] lane serving: static2_m12_k4096_n512_t8_r136_tm32f2g2a32wutsf6v1 (mac=48, m=12, routed=96, smem=101376 B)
+{"rank": 0, "target_context": 17, "relative": 0.0, "passed": true}
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.reduce_scatter_tensor` is deprecated. Please use `torch.distributed.reduce_scatter_single` instead.
+  return func(*args, **kwargs)
+2026-09-12 02:21:00,443 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_cf93baeedfd01c43
+2026-09-12 02:21:10,968 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_cf93baeedfd01c43.o
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=1024 -> rows 37760/37760 tiles 295/295 tasks 1180/1180
+{"rank": 0, "target_context": 128, "relative": 0.0, "passed": true}
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=2048 -> rows 38784/38784 tiles 303/303 tasks 1212/1212
+{"rank": 0, "target_context": 256, "relative": 0.0, "passed": true}
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+2026-09-12 02:21:12,236 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-12 02:21:12,236 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_b8100dca67ecc476
+2026-09-12 02:21:20,093 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_b8100dca67ecc476.o
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=32768 -> rows 69504/69504 tiles 543/543 tasks 2172/2172
+[tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=4096
+{"rank": 0, "target_context": 4096, "relative": 0.0, "passed": true}
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=32776 -> rows 69632/69632 tiles 544/544 tasks 2176/2176
+{"rank": 0, "target_context": 4097, "relative": 0.0, "passed": true}
+{"rank": 0, "drafter_context": 0, "passed": true}
+{"rank": 0, "drafter_context": 1, "passed": true}
+{"rank": 0, "drafter_context": 2047, "passed": true}
+{"rank": 0, "drafter_context": 2048, "passed": true}
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+{"rank": 0, "drafter_context": 2057, "passed": true}

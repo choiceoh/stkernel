@@ -38,6 +38,18 @@ class BudgetTests(unittest.TestCase):
         self.assertEqual(workspace.gib, budget.WORKSPACE_GIB)
         self.assertIn("measured peak 5.00 GiB at target/(4, 6, 4096)/captured", workspace.evidence)
 
+    @unittest.skipUnless(Path('/home/choiceoh/models/GLM-5.3-Flash-DFlash2/config.json').exists(), 'DFlash2 metadata')
+    def test_native_kv_shards_remove_replicated_heads_from_every_snapshot(self):
+        from engine.profiles.glm53 import budget
+        replicated = budget.budget(16, 4, snapshots=96, draft_tp=1)
+        native = budget.budget(16, 4, snapshots=96, draft_tp=4)
+        def snapshots(b):
+            return next(l.gib for l in b.lines if l.name.startswith('prefix snapshots'))
+        saved_per_ring = 5 * 2 * 2048 * (8 - 2) * 128 * 2
+        self.assertEqual(snapshots(replicated) - snapshots(native), 96 * saved_per_ring / (1 << 30))
+        self.assertEqual(replicated.slot_bytes - native.slot_bytes, saved_per_ring)
+        self.assertGreater(native.paged_gib, replicated.paged_gib)
+
 
 if __name__ == "__main__":
     unittest.main()

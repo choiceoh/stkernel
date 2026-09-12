@@ -53,6 +53,8 @@ def ask(*args,**kwargs):
  return result
 op.ask_stream=ask
 code=op.main()
+if code == 0:
+ code=subprocess.call([sys.executable, str(ROOT/'run_api_smoke.py')])
 after=json.loads(subprocess.check_output(['docker','inspect','st-glm53'],text=True))[0]
 assert after['Id']==container['Id'] and after['State']['StartedAt']==container['State']['StartedAt'] and after['State']['Running']
 raise SystemExit(code)
