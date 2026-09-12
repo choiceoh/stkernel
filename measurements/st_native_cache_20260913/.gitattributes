@@ -1,0 +1,2 @@
+# Preserve raw compiler output, including NVCC's trailing spaces.
+*.log -whitespace
