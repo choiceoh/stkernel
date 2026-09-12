@@ -18,6 +18,18 @@ from onepass_recording import CURRENT, Run, group, steady_errors
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_diagnostic_needs_four_distinct_decode_traces_on_every_rank(self):
+        traces = [dict(phase='prefill', step=1, activities=1)] + [
+            dict(phase='decode', step=i, activities=1) for i in range(2, 6)]
+        rank = dict(complete=True, traces=traces)
+        self.assertTrue(onepass.diagnostic_complete(dict(ranks=[rank] * 4)))
+        self.assertFalse(onepass.diagnostic_complete(dict(ranks=[])))
+        for bad in (dict(rank, complete=False), dict(rank, traces=traces[:-1]),
+                    dict(rank, traces=traces[1:]),
+                    dict(rank, traces=[traces[0]] + [traces[1]] * 4),
+                    dict(rank, traces=[dict(t, activities=0) for t in traces])):
+            self.assertFalse(onepass.diagnostic_complete(dict(ranks=[rank, rank, rank, bad])))
+
     def test_kda_state_precision_is_read_from_the_bound_lane(self):
         for dtype in ("fp32", "fp16"):
             self.assertEqual(onepass.kda_state_storage(
@@ -134,6 +146,35 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(a['workload_sha256'], b['workload_sha256'])
         self.assertNotEqual(a['request_sha256'], b['request_sha256'])
         self.assertEqual(requests[0].get_header('X-st-latency-token'), 'test')
+
+    def test_reasoning_usage_survives_normal_stop_and_missing_usage_stays_unknown(self):
+        for details, expected in (({'reasoning_tokens': 4096}, 4096),
+                                  ({'reasoning_tokens': 0}, 0), ({}, None), (None, None)):
+            with self.subTest(details=details), TemporaryDirectory() as root:
+                frames = [
+                    {'choices': [{'delta': {'reasoning_content': '계산 중'}}]},
+                    {'choices': [{'delta': {'content': '최종 답변'}, 'finish_reason': 'stop'}]},
+                    {'choices': [], 'usage': {'prompt_tokens': 10, 'completion_tokens': 4200,
+                                             'completion_tokens_details': details}}]
+                raw = ''.join('data: ' + json.dumps(row) + '\n' for row in frames).encode()
+                # Exercise the real durable request writer as well as SSE usage parsing.
+                with patch('urllib.request.urlopen', side_effect=OSError('offline')):
+                    run = Run({}, Path(root) / 'ledger.jsonl', 'http://localhost/v1/chat/completions')
+                run.begin('measure-c1')
+                timing = {}
+                try:
+                    with patch('urllib.request.urlopen', return_value=io.BytesIO(raw)):
+                        result = onepass.ask_stream('http://localhost/v1/chat/completions', 'm',
+                            'same', 8192, timing, reasoning_budget=4096)
+                    self.assertEqual(result[-1], 'stop')
+                    self.assertEqual(timing['reasoning_tokens'], expected)
+                    run.finish()
+                finally:
+                    CURRENT.set(None)
+                saved = json.loads((run.path / 'requests.jsonl').read_text())
+                self.assertEqual(saved['reasoning_tokens'], expected)
+                self.assertEqual(saved['reasoning_budget'], 4096)
+                self.assertEqual(saved['finish_reason'], 'stop')
 
 
 if __name__ == '__main__':

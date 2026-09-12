@@ -1,0 +1,2 @@
+# Preserve raw compiler command output, including trailing spaces.
+*.log -whitespace

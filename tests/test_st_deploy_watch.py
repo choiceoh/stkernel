@@ -439,12 +439,64 @@ class ProbeSelfHealTests(unittest.TestCase):
         self.assertFalse(self.queued())
         self.assertIn("cannot tell whether", "\n".join(self.lines))
 
-    def test_the_cycle_asks_only_when_there_is_nothing_to_deploy(self):
+    def test_the_cycle_asks_at_its_start_candidate_or_not(self):
+        """Tied to the nothing-to-deploy branch, the self-heal never ran while main kept moving: 05:12
+        to 06:12 on 2026-09-13 the cycle chased a candidate through an hour of quiet-polling instead."""
         source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
         body = source[source.index("def cycle("):source.index("    log(f\"candidate: {why}\")")]
         self.assertIn("ensure_probe(held.get(\"deployed\")", body)
+        self.assertLess(body.index("ensure_probe("), body.index("wanted(head, held)"))
+        self.assertEqual(body.count("ensure_probe("), 1)
+        wait = source[source.index("while time.time() < deadline:"):source.index("never went quiet")]
+        self.assertIn("fleet_busy_with_tickets()", wait, "the quiet wait yields to the queue instead of polling a door it does not own")
         for flag in ("--probe-attempts", "--probe-gap"):
             self.assertIn(flag, source)
+
+
+class QueueGraceTests(unittest.TestCase):
+    """A deploy right after a ticket ended takes the fleet from the next one (srv2, 2026-09-13)."""
+
+    def setUp(self):
+        import tempfile
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.fleet = Path(self.temporary.name)
+
+    def clock(self, ago):
+        import json as _json
+        import time
+        (self.fleet / "idle-recovery.json").write_text(_json.dumps({"updated_at": time.time() - ago, "reason": "release"}))
+
+    def test_a_queue_active_a_moment_ago_defers(self):
+        self.clock(ago=20)
+        self.assertIsNotNone(watch.queue_active_within(300, self.fleet))
+        self.assertLess(watch.queue_active_within(300, self.fleet), 60)
+
+    def test_a_quiet_queue_and_a_missing_clock_do_not(self):
+        self.clock(ago=1000)
+        self.assertIsNone(watch.queue_active_within(300, self.fleet))
+        (self.fleet / "idle-recovery.json").unlink()
+        self.assertIsNone(watch.queue_active_within(300, self.fleet))
+        (self.fleet / "idle-recovery.json").write_text("not json")
+        self.assertIsNone(watch.queue_active_within(300, self.fleet))
+
+    def test_a_waiting_boot_ticket_goes_first(self):
+        (self.fleet / "queue").write_text("3|kda-probe|100|5|note|probe|11\n4|kda-fp16-pair|100|60|note|boot|12\n")
+        self.assertEqual(watch.boot_ticket_waiting(self.fleet), "kda-fp16-pair")
+        (self.fleet / "queue").write_text("3|kda-probe|100|5|note|probe|11\n5|one-gpu|100|5|note|single|13\n")
+        self.assertIsNone(watch.boot_ticket_waiting(self.fleet), "probes and single-GPU checks do not take the fleet")
+        (self.fleet / "queue").write_text("")
+        self.assertIsNone(watch.boot_ticket_waiting(self.fleet))
+        (self.fleet / "queue").unlink()
+        self.assertIsNone(watch.boot_ticket_waiting(self.fleet))
+
+    def test_the_cycle_asks_after_the_lease_and_before_the_deploy(self):
+        source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
+        body = source[source.index("def cycle("):source.index("def cycle(") + source[source.index("def cycle("):].index("\n\n\n")]
+        self.assertLess(body.index("fleet_taken_by_another(log)"), body.index("queue_active_within(a.queue_grace)"))
+        self.assertLess(body.index("queue_active_within(a.queue_grace)"), body.index("ok = deploy(release, log)"))
+        self.assertLess(body.index("boot_ticket_waiting()"), body.index("ok = deploy(release, log)"))
+        self.assertIn("--queue-grace", source)
 
 
 if __name__ == "__main__":

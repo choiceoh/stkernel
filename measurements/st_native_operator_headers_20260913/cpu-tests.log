@@ -1,0 +1,6 @@
+sha256:a13be2698a579983329b82a1fc2a98d6462346a323981ba17e97f27c3b7fbd7b
+----------------------------------------------------------------------
+Ran 31 tests in 7.051s
+
+OK
+  expert_layout: tile-major bytes read back row-major per expert OK

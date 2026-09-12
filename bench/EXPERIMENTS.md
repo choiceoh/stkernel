@@ -70,7 +70,19 @@ only when none waits. A bare `bash launchers/start-st-glm53.sh` or
 (`run --gpu --probe`, `st-probe`) is the one exception: it runs beside a
 `production` lease when the door is idle -- `st:quiet` and nothing in flight,
 the quiet gate's own reading -- and takes no lease; behind a `session` or a
-ticket's boot it waits like everything else.
+ticket's boot it waits like everything else, and when nothing serves at all it
+waits for a door (a probe measures one). Production comes back by its own
+supervisor only after the queue has been quiet for `ST_RESTORE_GRACE_S` (300 s),
+and deploy-watch takes the fleet for a deploy only after `--queue-grace` (300 s)
+of quiet queue: a ticket that just ended is likely to have the next one on its
+way, and a production boot in that window is paid for twice (2026-09-13 03:08,
+03:48: restored, asked to hand over within minutes). The supervisor adopts a
+fleet that is booting -- deploy-watch's, or its own -- and calls a launch done
+only when a chat answers, not when the door listens. A boot whose ranks disagree
+on what their NVMe tiers hold drops it all and boots (`engine/base/serve.py`,
+`_agree_on_parked`): the skew a rank crash leaves behind -- survivors park on the
+way down, the dead rank parked nothing -- is not a reason for production to stay
+down, and what is dropped could not have been resumed without every rank's part.
 
 ## The ST bracket
 

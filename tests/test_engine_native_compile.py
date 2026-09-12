@@ -4,7 +4,26 @@ import struct
 import tempfile
 import unittest
 
-from probes.engine_native_compile_check import canonical_cubin
+from probes.engine_native_compile_check import LEAN, canonical_cubin, source_variants
+
+
+class HeaderVariantTests(unittest.TestCase):
+    def test_old_and_current_headers_reproduce_the_same_pair_and_keep_the_factory(self):
+        source = LEAN + '''torch::Tensor copy(torch::Tensor input) {
+  if (input.scalar_type() == torch::kBFloat16 || input.scalar_type() == torch::kInt64)
+    return torch::empty_like(input);
+  return input;
+}
+'''
+        pair = source_variants(source, 'lean-operators')
+        self.assertEqual(pair['lean'], source)
+        self.assertIn('at::Tensor copy(at::Tensor input)', pair['operators'])
+        self.assertIn('at::kBFloat16 || input.scalar_type() == at::kLong', pair['operators'])
+        self.assertIn('return torch::empty_like(input);', pair['operators'])
+        old = source_variants(source, 'full-lean')['full']
+        for current in (old, *pair.values()):
+            self.assertEqual(source_variants(current, 'lean-operators'), pair)
+            self.assertEqual(source_variants(current, 'full-lean'), dict(full=old, lean=source))
 
 
 class CubinComparisonTests(unittest.TestCase):

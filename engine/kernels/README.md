@@ -137,8 +137,10 @@ Torch/Ninja의 빌드·헤더 의존성 검사·잠금은 그대로 사용한다
 연결해야 한다. CPU 전용 NVCC 재현은 `probes/engine_native_cache_check.py`와
 [네이티브 빌드 캐시 측정](../../measurements/st_native_cache_20260913/README.md)에 있다.
 
-one-shot은 전체 Torch C++ 프런트엔드 대신 Tensor·pybind 헤더만 읽어 첫 NVCC 빌드의
-파싱 비용도 줄인다. [콜드 컴파일 비교](../../measurements/st_native_compile_20260913/README.md)는
+one-shot은 Tensor 본체·기존 factory·pybind 헤더와 `AT_PER_OPERATOR_HEADERS`를 사용해
+전체 Torch 프런트엔드·연산 목록·라이브러리 등록 헤더의 파싱을 피한다.
+[최초 헤더 축소](../../measurements/st_native_compile_20260913/README.md)와
+[연산별 헤더 비교](../../measurements/st_native_operator_headers_20260913/README.md)는
 매번 새 캐시로 세 쌍을 실행하고 생성된 GPU 코드·상수·실행 메타데이터를 대조한다.
 
 b12x 는 flashinfer 래퍼(`build_and_load_cute_dsl_kernel`)가
