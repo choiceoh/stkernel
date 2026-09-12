@@ -18,7 +18,11 @@ def source_files(repo):
     # also be pinned here or it passes admission and then stalls before it runs
     # (2026-09-12: three ST reservations paused on 'cannot verify ... No such file').
     import fleet_onepass
-    canonical = ('probes/run_ar_consumer_campaign.sh',
+    # The fleet lease is read and taken by the queue from THIS snapshot: the helper under
+    # launchers/ was never pinned, so a runner-driven wait could not read the lease and, since
+    # "cannot read" counts as occupied, could never be granted (2026-09-12).
+    canonical = ('probes/run_ar_consumer_campaign.sh', 'engine/base/fleet_lease.py',
+                 'launchers/lib/fleet-lease.sh',
                  *fleet_onepass.ST_ENTRIES, *fleet_onepass.ST_PROBES)
     for relative in canonical:
         if (repo / relative).is_file():

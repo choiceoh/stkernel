@@ -27,6 +27,23 @@ already-running older controllers retain their accepted payloads.
 Bare `request`/`wait` and unvalidated `adopt` cannot create new GPU holds; the
 registered supervisor owns admission for every new GPU command.
 
+## The fleet lease
+
+Every boot holds the fleet lease -- one record, `engine/base/fleet_lease.py`, one
+file on the head node -- and the queue is its authority for tickets. `run --gpu`
+takes the lease as `queue/<session>` at GO and hands `ST_LEASE_OWNER` to the
+payload; `launchers/start-st-glm53.sh` and `probes/run_engine_probe.sh` only
+verify it. Production holds a `production` lease of its own (the supervisor and
+deploy-watch boot with `ST_LEASE_KIND=production`); the queue asks that holder to
+hand over only through the quiet gate -- `st:quiet` and no request for
+`FLEET_QUIET_S` (120 s, deploy-watch's own rule) -- and never asks a `session`
+boot (a ticket behind it waits). A handover is a transfer: the engine parks its
+conversations and rewrites the lease to the ticket in one step, and at the
+ticket's end the lease goes to the next waiting boot ticket, back to production
+only when none waits. A bare `bash launchers/start-st-glm53.sh` or
+`bash probes/run_engine_probe.sh` is refused: take a ticket, or say
+`ST_LEASE_KIND=session` for a session's own boot by hand.
+
 Plans now batch their independent CPU stages, publish reusable evidence before
 creating another checkout on a cache hit, and keep core/fleet/startup results
 separate. A consumer's declared dependencies still decide when it can execute.

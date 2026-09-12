@@ -84,6 +84,86 @@ class LeaseTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 acquire(bad, path=self.path)
 
+    def test_every_lease_has_a_kind_and_a_dead_queue_holder_is_free(self):
+        """The queue's supervisor on the head IS the holder of a `queue` lease: gone means free,
+        without the grace a launcher's exit needs (its containers outlive it)."""
+        from engine.base.fleet_lease import KINDS
+        acquire("boot-a", path=self.path)
+        self.assertEqual(read(self.path)["kind"], "session")
+        release("boot-a", path=self.path)
+        with self.assertRaises(ValueError):
+            acquire("x", path=self.path, kind="nonsense")
+        acquire("queue/t1", path=self.path, kind="queue", pid=os.getpid())
+        self.assertTrue(alive(read(self.path), container_up=lambda name: False))
+        dead = dict(read(self.path), pid=999999999)
+        self.assertFalse(alive(dead, container_up=lambda name: False), "no grace for a dead supervisor")
+        self.assertTrue(alive(dict(dead, kind="session"), container_up=lambda name: False),
+                        "a session's boot keeps its grace: its launcher exits while its containers serve")
+        self.assertEqual(KINDS, ("session", "production", "queue", "probe"))
+
+    def test_a_handover_is_a_transfer(self):
+        """Released, the fleet reads as free for a moment and the production supervisor relaunches
+        into the window somebody was granted; transferred, it is the requester's in one step."""
+        from engine.base.fleet_lease import request_yield, transfer, verify, yield_requested
+        acquire("holder", path=self.path, container="st-glm53")
+        request_yield("queue/t1", path=self.path, reason="a ticket", kind="queue", pid=os.getpid(), est_minutes=20)
+        asked = yield_requested(read(self.path))
+        with self.assertRaises(LeaseLost):
+            transfer("somebody-else", asked["requester"], path=self.path)
+        transfer("holder", asked["requester"], path=self.path, kind=asked["kind"], pid=asked["pid"],
+                 host=asked["host"], est_minutes=asked["est_minutes"])
+        record = read(self.path)
+        self.assertEqual((record["owner"], record["kind"], record["pid"], record["handed_from"]),
+                         ("queue/t1", "queue", os.getpid(), "holder"))
+        self.assertIsNone(yield_requested(record))
+        self.assertEqual(verify("queue/t1", path=self.path)["owner"], "queue/t1")
+        with self.assertRaises(LeaseLost):
+            verify("holder", path=self.path)
+
+    def test_taken_is_judged_by_kind_and_liveness(self):
+        from engine.base.fleet_lease import taken
+        self.assertEqual(taken(None), "")
+        acquire("production/srv2/1", path=self.path, kind="production", container="st-glm53")
+        self.assertEqual(taken(read(self.path), mine_kind="production", container_up=lambda n: True), "")
+        self.assertIn("production/srv2/1", taken(read(self.path), mine_kind="queue", container_up=lambda n: True))
+        stale = dict(read(self.path), pid=0, beat=time.time() - 2 * GRACE_S, since=time.time() - 2 * GRACE_S)
+        self.assertEqual(taken(stale, mine_kind="queue", container_up=lambda n: False), "")
+
+    def test_the_asker_can_take_its_request_back(self):
+        """A cancelled ticket must not leave production draining for nobody."""
+        from engine.base.fleet_lease import request_yield, withdraw_yield, yield_requested
+        acquire("holder", path=self.path)
+        request_yield("queue/t1", path=self.path)
+        self.assertFalse(withdraw_yield("queue/t2", path=self.path))
+        self.assertTrue(withdraw_yield("queue/t1", path=self.path))
+        self.assertIsNone(yield_requested(read(self.path)))
+
+    def test_a_container_is_attached_as_evidence_later(self):
+        from engine.base.fleet_lease import attach, owner_for
+        acquire("queue/t1", path=self.path, kind="queue")
+        self.assertEqual(owner_for("st-glm53", path=self.path), "queue/t1")   # no container yet: the owner all the same
+        attach("queue/t1", "st-glm53", path=self.path)
+        self.assertEqual(read(self.path)["container"], "st-glm53")
+        with self.assertRaises(LeaseHeld):
+            owner_for("st-probe-7", path=self.path)
+
+    def test_the_quiet_gate_reads_the_door_like_deploy_watch(self):
+        """One definition of quiet: the queue asks production to hand over by the rule
+        deploy-watch applies to its own restarts."""
+        from engine.base.fleet_lease import door_load, door_unsupported
+        quiet = "vllm:num_requests_running 0\nvllm:num_requests_waiting 0\nst:handing_over 0\nst:quiet 1\n"
+        self.assertEqual(door_load(quiet), 0)
+        self.assertEqual(door_load(quiet.replace("waiting 0", "waiting 2")), 2)
+        self.assertEqual(door_load(quiet.replace("st:quiet 1", "st:quiet 0")), 1)     # a tier transfer counts
+        self.assertIsNone(door_load(""))                                                # no answer is not quiet
+        self.assertTrue(door_unsupported("vllm:num_requests_running 0\n"))
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("st_deploy_watch", ROOT / "launchers/st-deploy-watch.py")
+        watch = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(watch)
+        self.assertIs(watch.busy, door_load)
+        self.assertIs(watch.unsupported, door_unsupported)
+
 
 class LauncherAndQueueTests(unittest.TestCase):
     """Both sides of the reservation, pinned as text: the launcher takes the engine's lease,
@@ -119,6 +199,10 @@ class LauncherAndQueueTests(unittest.TestCase):
         for relative in (*fleet_onepass.ST_ENTRIES, *fleet_onepass.ST_PROBES):
             if (ROOT / relative).is_file():
                 self.assertIn(relative, pinned, relative)
+        # and the lease itself: a runner that cannot read the lease counts it as occupied,
+        # which meant no runner-driven ticket could ever be granted (2026-09-12)
+        self.assertIn("engine/base/fleet_lease.py", pinned)
+        self.assertIn("launchers/lib/fleet-lease.sh", pinned)
 
 
 if __name__ == "__main__":
@@ -252,21 +336,25 @@ class SmoothnessTests(unittest.TestCase):
             self.assertIn("launchers/lib/fleet-lease.sh", source)
         self.assertNotIn("$HOME/st-fleet.lock", self.probe)
 
-    def test_a_long_hold_keeps_its_lease_fresh(self):
-        """The head node's docker cannot see a probe container on another node, so without
-        a heartbeat the lease would go stale under a probe that is still running."""
-        self.assertIn("fleet_lease_beat", self.helper)
-        self.assertIn("BEAT=$(fleet_lease_beat", self.probe)
-        self.assertIn("kill $BEAT", self.probe)
+    def test_a_ticket_s_probe_needs_no_heartbeat(self):
+        """The head node's docker cannot see a probe container on another node. A probe used to beat
+        for itself; now its lease is the ticket's, and the ticket's supervisor on the head node is the
+        record's pid -- conclusive evidence, no heartbeat, and gone means free."""
+        self.assertIn("fleet_lease_beat", self.helper)                # still there for shell callers
+        self.assertNotIn("BEAT=$(fleet_lease_beat", self.probe)
+        self.assertIn("the ticket's supervisor on the head node is the lease's", self.probe)
 
     def test_a_cpu_only_probe_reserves_nothing(self):
         """Taking four Sparks for an import check is the opposite of smooth."""
-        self.assertIn('[ "${ST_PROBE_NO_LEASE:-0}" != 1 ] && [ "${ST_PROBE_NO_GPU:-0}" != 1 ]', self.probe)
+        self.assertIn('if [ "${ST_PROBE_NO_GPU:-0}" != 1 ]; then', self.probe)
+        self.assertIn("ST_PROBE_NO_GPU=1 for an import/source check that needs no GPU", self.probe)
 
-    def test_a_killed_probe_leaks_a_lease_that_goes_stale_on_its_own(self):
-        """SIGKILL runs no trap. The lease must not need a human: its evidence is on another
-        node, so it ages out on the grace and `read` says so meanwhile."""
-        self.assertIn("goes stale after the grace", self.probe)
+    def test_a_killed_probe_leaks_nothing(self):
+        """SIGKILL runs no trap. The lease is the queue's, so there is nothing here to leak: the
+        ticket's supervisor sees the payload end and passes the lease on or lets it go. And a lease
+        that does go stale is still reported as such."""
+        self.assertIn("A probe killed outright leaks", self.probe)
+        self.assertNotIn("trap ", self.probe)
         module = (ROOT / "engine/base/fleet_lease.py").read_text()
         self.assertIn('print("free (stale: " + describe(held) + ")")', module)
 
@@ -297,14 +385,18 @@ class SmoothnessTests(unittest.TestCase):
             self.assertTrue(alive(read(path), container_up=lambda name: False))
 
     def test_the_probe_waits_for_the_fleet_instead_of_losing_its_turn(self):
+        """The previous holder's handover lands as a transfer to this ticket; a probe the queue
+        just sent in must not lose its turn to that last second."""
         self.assertIn("ST_PROBE_WAIT_MINUTES", self.probe)
-        self.assertIn("waiting for the fleet", self.probe)
-        self.assertIn("the fleet stayed held for", self.probe)
+        self.assertIn("waiting for the ticket's lease", self.probe)
+        self.assertIn("the lease is not this ticket's after", self.probe)
 
     def test_the_queue_reads_the_lease_not_only_containers(self):
         """They disagreed once and the queue granted while the lease was still held."""
-        self.assertIn("fleet_lease read", self.fleet)
+        self.assertIn("lease_state() { lease read", self.fleet)
         self.assertIn("st_engine_up() {", self.fleet)
+        # and a lease handed to the very ticket that is asking is not occupation
+        self.assertIn('[ -n "${ST_MINE:-}" ] && lease_mine "$ST_MINE" && return 0', self.fleet)
 
     def test_occupancy_is_a_fleet_fact_not_this_node_s_fact(self):
         """`docker ps` here answers for one of four nodes. A fleet whose rank 0 had gone
@@ -396,19 +488,21 @@ class SmoothnessTests(unittest.TestCase):
         self.assertIn("did not let go within", self.launcher)
 
     def test_the_queue_asks_instead_of_only_refusing(self):
-        """Otherwise a queued session waits for a human to go and ask."""
-        self.assertIn("st_engine_yield()", self.fleet)
-        self.assertIn('if st_engine_yield "$s"; then', self.fleet)
-        self.assertIn("asking it to yield to", self.fleet)
+        """Otherwise a queued session waits for a human to go and ask -- and whom it may ask is
+        the holder's KIND: production through the quiet gate, a session never (45차 §91)."""
+        self.assertIn("st_engine_ask() {", self.fleet)
+        self.assertIn('st_engine_ask "$s" "$pid" "$est" "$note"', self.fleet)
+        self.assertIn("asked it to hand over to", self.fleet)
 
-    def test_it_reports_the_ask_it_could_not_make(self):
-        """A runner runs out of a snapshot of bench/, engine/ and probes/ -- launchers/ is not in it, so the
-        helper is absent and the request has nowhere to go. Logging an ask nobody made leaves the waiter and
-        the holder each believing the other has been told (45차 §91)."""
-        self.assertIn("the holder was NOT asked", self.fleet)
-        body = self.fleet.split("st_engine_yield() {", 1)[1].split("\n}", 1)[0]
-        self.assertIn('[ -f "$repo/launchers/lib/fleet-lease.sh" ] || return 1', body)
-        self.assertNotIn("|| true", body)          # swallowing the status is how the lie got in
+    def test_an_ask_that_could_not_be_made_is_said(self):
+        """A runner runs out of a snapshot of bench/, engine/ and probes/. The ask used to go through
+        launchers/lib/fleet-lease.sh, absent from every snapshot, and a logged ask nobody made left the
+        waiter and the holder each believing the other had been told (45차 §91). Now the module is pinned
+        into the snapshot and the ask goes through it; an ask that still fails is said to have failed."""
+        self.assertIn("could not be asked", self.fleet)
+        body = self.fleet.split("st_engine_ask() {", 1)[1].split("\n}", 1)[0]
+        self.assertNotIn("|| true", body.split("lease yield", 1)[1].split("\n", 1)[0])   # the status decides the log line
+        self.assertNotIn("launchers/lib/fleet-lease.sh", self.fleet)
 
     def test_a_sourced_helper_keeps_its_defaults(self):
         """Assignment prefixes on `.` are temporary in bash: the helper's own defaults are
@@ -432,17 +526,40 @@ class SmoothnessTests(unittest.TestCase):
         serve = (ROOT / "engine/base/serve.py").read_text()
         self.assertIn('phase="handed over", parked=parked, lost=lost', serve)
 
+    def test_the_handover_transfers_the_lease_to_the_requester(self):
+        """Released, the fleet read as free for a moment and the production supervisor could relaunch
+        into the window this drain was for (its own comment names that race). The record becomes the
+        requester's in one step, as the request named it: kind, pid, host."""
+        serve = (ROOT / "engine/base/serve.py").read_text()
+        self.assertIn('fleet_lease.transfer(self.lease["owner"], to,', serve)
+        import test_engine_serve as T
+        from engine.base.fleet_lease import request_yield
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "lease"
+            acquire("holder", path=path, container="st-glm53")
+            request_yield("queue/t1", path=path, reason="a ticket", kind="queue", pid=os.getpid())
+            server = T.server()
+            server.lease = {"owner": "holder", "path": str(path)}
+            server.draining = "queue/t1"
+            server._hand_over()
+            record = read(path)
+            self.assertEqual((record["owner"], record["kind"], record["handed_from"]), ("queue/t1", "queue", "holder"))
+            self.assertFalse(server.alive)
+
 
 class ProbeLeaseTests(unittest.TestCase):
-    def test_the_probe_runner_takes_and_releases_the_lease(self):
-        """A probe takes the same GPUs as a boot. Until now it was a bare `docker run`
-        that no launcher and no queue could see."""
+    def test_the_probe_runner_verifies_the_ticket_s_lease(self):
+        """A probe takes the same GPUs as a boot, so it runs under the queue's lease: the ticket hands
+        ST_LEASE_OWNER here and the runner only verifies it. A bare run has no ticket and is refused --
+        that was the last way onto the GPUs that no launcher and no queue could see."""
         runner = (ROOT / "probes/run_engine_probe.sh").read_text()
-        self.assertIn("fleet_lease acquire --owner", runner)
-        self.assertIn("trap ", runner)
-        self.assertIn("release --owner", runner)
-        self.assertIn('docker run --rm --name "$NAME"', runner)      # named: the lease's evidence
-        self.assertIn("ST_PROBE_NO_LEASE", runner)                   # an explicit way out, for a nested run
+        self.assertIn("fleet_lease verify --owner \"'$ST_LEASE_OWNER'\"", runner)
+        self.assertIn("this probe holds no fleet reservation", runner)
+        self.assertIn("bash bench/fleet.sh run --gpu <session>", runner)
+        self.assertNotIn("fleet_lease acquire", runner)              # one record: the queue's
+        self.assertNotIn("release --owner", runner)
+        self.assertIn('docker run --rm --name "$NAME"', runner)
+        self.assertIn("ST_PROBE_NO_LEASE", runner)                   # a nested run under the same ticket
 
     def test_the_launcher_can_ask_and_can_report(self):
         launcher = (ROOT / "launchers/start-st-glm53.sh").read_text()
@@ -585,3 +702,123 @@ class ReservationIsRequiredTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {"ST_LEASE_OWNER": "me@srv4/1", "ST_LEASE_PATH": str(lock)}, clear=True):
                 got = boot.fleet_lease_of()
         self.assertEqual(got, {"owner": "me@srv4/1", "path": str(lock)})
+
+
+class OneRecordTests(unittest.TestCase):
+    """The lease is ONE record and the queue is its authority (2026-09-12, after the operator asked
+    why the queue and the lease were two things). Every boot holds one; the holder's KIND decides
+    what the queue may ask of it; a handover is a transfer; production returns when nobody waits.
+
+    Two live defects closed with it: a runner snapshot could not read the lease (the helper under
+    launchers/ was never pinned) and "cannot read" rightly counted as occupied, so no runner-driven
+    ticket could be granted; and the production supervisor read the legacy lock path, so a ticket's
+    boot was invisible to it and its crash recovery would have evicted that boot 90 s in."""
+
+    def setUp(self):
+        self.fleet = (ROOT / "bench/fleet.sh").read_text()
+        self.launcher = (ROOT / "launchers/start-st-glm53.sh").read_text()
+        self.supervisor = (ROOT / "launchers/st-glm53-supervisor.sh").read_text()
+        self.watch = (ROOT / "launchers/st-deploy-watch.py").read_text()
+        self.boot = (ROOT / "bench/fleet_boot.py").read_text()
+        self.handoff = (ROOT / "bench/fleet_handoff.py").read_text()
+
+    def test_the_queue_takes_the_lease_at_go_from_its_pinned_module(self):
+        self.assertIn('lease acquire --owner "queue/$s" --kind queue --pid "$pid"', self.fleet)
+        self.assertIn('lease_mine() { lease verify --owner "queue/$1"', self.fleet)
+        self.assertIn('lease() { python3 "${FLEET_RUNNER_REPO:-$REPO}/engine/base/fleet_lease.py"', self.fleet)
+        self.assertNotIn("launchers/lib/fleet-lease.sh", self.fleet)     # the helper no snapshot carried
+        hold = self.fleet[self.fleet.index("_try_hold() {"):self.fleet.index("_ledger_row() {")]
+        self.assertIn('if [ "$kind" != probe ] && ! lease_mine "$s"; then', hold)   # a probe runs beside production
+        self.assertIn('ST_MINE=$s st_engine_up', hold)
+        self.assertRegex(self.fleet, r"(?m)^FLEET_RULES=2$")             # occupancy answers changed
+
+    def test_a_boot_holder_lives_by_the_lease(self):
+        body = self.fleet[self.fleet.index("holder_alive() {"):self.fleet.index("holder_probe() {")]
+        self.assertIn('lease_mine "$s" && return 0', body)
+        self.assertIn("the lease is somebody else's", body)
+        self.assertIn("kill -0", body)                                    # a probe holder, and a pre-lease holder, as before
+
+    def test_the_lease_goes_ticket_to_ticket_and_back_to_production_when_nobody_waits(self):
+        self.assertIn("_lease_pass_on() {", self.fleet)
+        self.assertIn('fleet_handoff.py" next "$FLEET_DIR" "$1"', self.fleet)
+        self.assertIn('lease transfer --owner "queue/$1" --to "queue/$next" --kind queue --pid "$npid"', self.fleet)
+        self.assertIn("no boot ticket waits: production restores itself", self.fleet)
+        release = self.fleet[self.fleet.index("_release() {"):self.fleet.index("_adopt() {")]
+        self.assertIn('[ "${hkind:-boot}" = probe ] || [ "${FLEET_KEEP_LEASE:-0}" = 1 ] || _lease_pass_on "$1"', release)
+        self.assertIn("FLEET_KEEP_LEASE=1 FLEET_NO_RESTORE_CHECK=1 with_lock _release", self.fleet)   # a yield to a probe keeps it
+        self.assertIn("elif args.action == 'next':", self.handoff)
+        dequeue = self.fleet[self.fleet.index("_dequeue() {"):self.fleet.index("_withdraw_owned() {")]
+        self.assertIn('lease withdraw-yield --requester "queue/$1"', dequeue)   # a cancelled ticket takes its ask back
+        self.assertIn('|| ! lease_mine "$1" || _lease_pass_on "$1"', dequeue)
+
+    def test_production_is_asked_only_through_the_quiet_gate_and_a_session_never(self):
+        self.assertIn("production_quiet() {", self.fleet)
+        self.assertIn("FLEET_QUIET_S=${FLEET_QUIET_S:-120}", self.fleet)       # deploy-watch's --quiet default
+        ask = self.fleet[self.fleet.index("st_engine_ask() {"):self.fleet.index("serving_idle() {")]
+        self.assertIn("production) ;;", ask)
+        self.assertIn("is not asked", ask)
+        self.assertIn('lease yield --requester "queue/$s" --kind queue --pid "$pid" --host "$(me)"', ask)
+        self.assertIn('[ -f "$marker" ] && return 0', ask)                       # once per ticket
+        self.assertIn("production_quiet ||", ask.replace("if ! production_quiet; then", "production_quiet ||"))
+        self.assertNotIn("st_engine_yield", self.fleet)
+
+    def test_the_launcher_verifies_a_ticket_s_lease_and_refuses_a_bare_boot(self):
+        self.assertIn('held=$(lease verify --owner "$LEASE_OWNER" 2>&1)', self.launcher)
+        self.assertIn('elif [ "${ST_LEASE_KIND:-}" = production ]; then', self.launcher)
+        self.assertIn("--kind production", self.launcher)
+        self.assertIn("this boot holds no reservation", self.launcher)
+        self.assertIn('elif [ "${ST_LEASE_KIND:-}" = session ]; then', self.launcher)   # by hand, and said so
+        self.assertIn("--kind session", self.launcher)
+        self.assertNotIn("FLEET_HOLDER", self.launcher)                         # the holder file is not a second record
+        self.assertIn('lease attach --owner "$LEASE_OWNER" --container "$NAME"', self.launcher)
+
+    def test_only_the_holder_stops_its_boot(self):
+        """Every boot is named st-glm53: a stop resolved by container name alone let the production
+        supervisor's crash recovery evict a ticket's boot."""
+        stop = self.launcher[self.launcher.index("  stop)"):self.launcher.index("  yield)")]
+        self.assertIn("not by this ticket", stop)
+        self.assertIn("STOP_FORCE", stop)
+        self.assertIn('case "$held_kind" in "$ST_LEASE_KIND"|free) ;;', stop)
+        self.assertIn('[ "$held_origin" = explicit ]', stop)                    # records from before kinds: the old rule
+        self.assertIn("--state phase=stopped", stop)                            # a ticket's lease is the queue's to let go
+
+    def test_a_lease_from_before_kinds_is_judged_by_its_container(self):
+        """The production lease running on 2026-09-12 names no kind. The supervisor of that era
+        judged "mine" by the container name, so such records keep being judged by it -- or the
+        first deploy of this code would wait forever behind its own production."""
+        from engine.base.fleet_lease import _kind, origin, taken
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "lease"
+            path.write_text(json.dumps({"owner": "prod-release", "container": "st-glm53", "since": time.time(), "beat": time.time()}) + "\n")
+            self.assertEqual((origin(read(path)), _kind(read(path))), ("legacy", "production"))
+            self.assertEqual(taken(read(path), mine_kind="production", container_up=lambda n: True), "")
+            path.write_text(json.dumps({"owner": "other-task", "container": "st-probe", "since": time.time(), "beat": time.time()}) + "\n")
+            self.assertEqual(_kind(read(path)), "session")
+            self.assertIn("other-task", taken(read(path), mine_kind="production", container_up=lambda n: True))
+            path.write_text("choiceoh@srv2 st-glm53 2026-09-12 10:00:00\n")
+            self.assertEqual((origin(read(path)), _kind(read(path))), ("opaque", "production"))
+            acquire("queue/t1", path=Path(tmp) / "fresh", kind="queue")
+            self.assertEqual(origin(read(Path(tmp) / "fresh")), "explicit")
+
+    def test_the_supervisor_reads_the_one_lease_file_by_kind(self):
+        self.assertIn("LOCK=${FLEET_LEASE_PATH:-/home/choiceoh/glm53-logs/st-fleet.lock}", self.supervisor)
+        self.assertIn("lease_head taken --kind production", self.supervisor)
+        self.assertIn("ST_LEASE_KIND=production LEASE_OWNER_PRODUCTION=$PROD_OWNER", self.supervisor)
+        taken = self.supervisor[self.supervisor.index("fleet_taken(){"):self.supervisor.index("forensics(){")]
+        # the older path keeps the older rule (a plain-text lock naming the container); the one
+        # lease file is judged by kind, never by the container name every boot shares
+        self.assertIn('lease_at "$LEGACY_LOCK" owner --container "$NAME"', taken)
+        self.assertEqual(taken.count("owner --container"), 1)
+        self.assertNotIn("/home/choiceoh/st-fleet.lock", taken)
+        self.assertIn('*) echo "lease unreadable (rc=$rc)"; return 0 ;;', taken)   # unreadable is not free
+
+    def test_deploy_watch_defers_to_a_granted_window_without_recording_a_rejection(self):
+        self.assertIn("def fleet_taken_by_another(log)", self.watch)
+        self.assertIn('"ST_LEASE_KIND": "production"', self.watch)
+        cycle = self.watch[self.watch.index("def cycle("):self.watch.index("def main(")]
+        self.assertLess(cycle.index("fleet_taken_by_another(log)"), cycle.index("ok = deploy(release, log)"))
+        self.assertIn("# deferred, not rejected", cycle)
+
+    def test_the_supervisor_hands_the_ticket_s_owner_to_the_payload(self):
+        self.assertIn("self.env['ST_LEASE_OWNER'] = 'queue/' + session", self.boot)
+        self.assertIn("'ST_LEASE_OWNER', 'ST_LEASE_PATH', 'FLEET_LEASE_PATH'", self.boot)

@@ -140,7 +140,7 @@ def clear(directory, session):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('action', choices=['admit', 'offer', 'clear', 'ready'])
+    ap.add_argument('action', choices=['admit', 'offer', 'clear', 'ready', 'next'])
     ap.add_argument('directory', type=Path)
     ap.add_argument('session')
     ap.add_argument('pid', nargs='?', type=int)
@@ -152,6 +152,14 @@ def main():
         return 0 if admit(args.directory, args.session, args.pid, args.kind, args.estimate, args.note) else 1
     if args.action == 'ready':
         ready(args.directory, args.session, args.pid)
+    elif args.action == 'next':
+        # The waiting boot ticket the fleet lease is handed to when `session` lets go: the
+        # queue's own priority order, a live supervisor, and never a probe (it runs beside
+        # production, so it is a reason to release, not to hold).
+        target = successor(args.directory, args.session)
+        if not target:
+            return 1
+        print(f"{target['session']} {target['pid']}")
     elif args.action == 'clear':
         clear(args.directory, args.session)
     else:

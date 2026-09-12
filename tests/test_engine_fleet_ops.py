@@ -24,9 +24,11 @@ class FleetOps(unittest.TestCase):
         shutil.copy2(ROOT / 'engine/base/fleet_lease.py', self.repo / 'engine/base/fleet_lease.py')
         self.lock = self.home / "fleet.lock"
         self.events = self.home / "events"
+        # A boot says what it is (2026-09-12): these are a session's own boots by hand. The
+        # supervisor overrides this with production for its own.
         self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
                         FAKE_HOME=str(self.home), ST_FORENSICS=str(self.home / "forensics"),
-                        ST_REPO=str(self.repo), ST_SUPERVISOR_ONCE="1",
+                        ST_REPO=str(self.repo), ST_SUPERVISOR_ONCE="1", ST_LEASE_KIND="session",
                         CKPT=str(self.home / "missing-checkpoint"))
         self.script("hostname", "#!/bin/sh\necho 192.0.2.1\n")
         self.script("ssh", '''#!/usr/bin/env python3

@@ -221,10 +221,10 @@ if __name__ == '__main__':
 
 
 class FleetOccupancyTests(unittest.TestCase):
-    """The queue and the ST launcher reserve the same four nodes. Until they are one
-    mechanism they must at least refuse each other, in both directions (2026-09-12: four
-    nodes ran st-glm53 while `fleet.sh status` answered FREE, because FREE only meant
-    'the holder file is empty')."""
+    """The queue and the ST launcher reserve the same four nodes, and the fleet LEASE is the one
+    record of who holds them: the queue takes it at GO, the launcher verifies it (2026-09-12: four
+    nodes ran st-glm53 while `fleet.sh status` answered FREE, because FREE only meant 'the holder
+    file is empty' -- and later, a ticket's own boot was refused by the holder file that was its)."""
 
     def setUp(self):
         root = Path(__file__).resolve().parents[1]
@@ -237,22 +237,25 @@ class FleetOccupancyTests(unittest.TestCase):
         # `docker ps` alone answered for one Spark of four (2026-09-12)
         self.assertIn("grep -E '^st-'", self.fleet)
         self.assertIn("st_engine_elsewhere", self.fleet)
-        self.assertIn("fleet_lease read", self.fleet)      # containers AND the lease: they disagreed once
-        # a grant is refused on both paths that hand out the fleet
-        self.assertIn('logit "hold refused: ST engine occupies the fleet', self.fleet)
-        # refusing alone would leave a queued session waiting for a human to go and ask
-        self.assertIn('if st_engine_yield "$s"; then', self.fleet)
-        # ... and when it CANNOT ask, it says so rather than reporting an ask nobody made:
-        # a runner's snapshot carries bench/, engine/ and probes/, not launchers/ (45차 §91)
-        self.assertIn('the holder was NOT asked', self.fleet)
-        self.assertIn('if st_engine_up; then echo "ST engine occupies the fleet', self.fleet)
+        self.assertIn("lease_state() { lease read", self.fleet)      # containers AND the lease: they disagreed once
+        # a grant is refused on both paths that hand out the fleet -- unless the lease is the
+        # asking ticket's own, handed to it by the holder that drained
+        self.assertIn('if ST_MINE=$s st_engine_up; then', self.fleet)
+        self.assertIn('if ST_MINE=$s st_engine_up; then echo "ST engine occupies the fleet', self.fleet)
+        # refusing alone would leave a queued session waiting for a human to go and ask: the
+        # holder's KIND decides -- production through the quiet gate, a session never (45차 §91)
+        self.assertIn('st_engine_ask "$s" "$pid" "$est" "$note"', self.fleet)
+        self.assertIn('is not asked', self.fleet)
         # and status says so instead of FREE
         self.assertIn('TAKEN by the ST engine, outside this queue', self.fleet)
 
-    def test_the_launcher_reads_the_queue_holder(self):
-        self.assertIn('FLEET_HOLDER=${FLEET_HOLDER:-/home/choiceoh/glm53-logs/fleet/holder}', self.launcher)
-        self.assertIn('ABORT: the bench queue holds the fleet', self.launcher)
-        # and it still honours its own lock and refuses to share with serving containers
+    def test_the_launcher_verifies_the_queue_s_lease(self):
+        """One record. The launcher used to read the queue's holder file as a second one, and
+        that file refused a ticket's own boot: no ST boot could run under the queue at all."""
+        self.assertNotIn('FLEET_HOLDER', self.launcher)
+        self.assertIn('lease verify --owner "$LEASE_OWNER"', self.launcher)
+        self.assertIn('this boot holds no reservation', self.launcher)
+        # and it still honours the older lock and refuses to share with serving containers
         self.assertIn('st-fleet.lock', self.launcher)
         self.assertIn("grep -E '^(glm53|q38|vllm|st-)'", self.launcher)
 

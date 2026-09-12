@@ -30,6 +30,12 @@ class Supervisor:
         self.env = dict(payload_environment(os.environ), FLEET_PID=str(os.getpid()), FLEET_SESSION=session,
                         FLEET_RESTORE_MANAGED='1' if self.kind == 'boot' else '0', FLEET_RUNNER_REPO=str(self.repo),
                         FLEET=fleet, FLEET_NO_RESTORE_CHECK='1')
+        # The queue takes the fleet lease as queue/<session> at GO; the payload's launcher and
+        # probe runner VERIFY that record instead of taking one of their own (one record, one
+        # owner). This process is the record's pid, so its death frees the fleet at once.
+        if self.kind == 'boot':
+            self.env['ST_LEASE_OWNER'] = 'queue/' + session
+            self.env['ST_LEASE_PATH'] = os.environ.get('FLEET_LEASE_PATH', '/home/choiceoh/glm53-logs/st-fleet.lock')
         self.child = None
         self.child_interruptible = True
         self.stopping = 0
@@ -283,7 +289,8 @@ class Supervisor:
         # supervisor still supplies fleet and recovery context.
         for key in ('FLEET_DIR', 'FLEET_SESSION', 'FLEET_PID', 'FLEET_RUNNER_REPO',
                     'FLEET_RESTORE_MANAGED', 'FLEET_NO_RESTORE_CHECK', 'FLEET',
-                    'FLEET_VALIDATION_STORE', 'FLEET_VALIDATION_REQUIRED', 'FLEET_VALIDATION_LEVEL', 'FLEET_RECOVERY_RECEIPT'):
+                    'FLEET_VALIDATION_STORE', 'FLEET_VALIDATION_REQUIRED', 'FLEET_VALIDATION_LEVEL', 'FLEET_RECOVERY_RECEIPT',
+                    'ST_LEASE_OWNER', 'ST_LEASE_PATH', 'FLEET_LEASE_PATH'):
             if key in self.env:
                 environment[key] = self.env[key]
         # Edits may replace the prepared receipt while this supervisor waits.

@@ -4,8 +4,11 @@
 # door is not health: the TP ring can be dead behind a live socket); FAILS_NEEDED misses in a row ->
 # forensics (docker logs of all four ranks, free, nvidia-smi) -> stop -> start. Relaunch pacing is a
 # next-allowed-time with exponential backoff and a hard hold after LAUNCH_HOLD_AFTER attempts: a boot that
-# fails five times needs a person, not a sixth attempt. The fleet lock (~/st-fleet.lock) belongs to this
-# loop while it runs: `start` takes it, `stop` releases it.
+# fails five times needs a person, not a sixth attempt. The fleet lease (glm53-logs/st-fleet.lock, the
+# ONE file every caller reads) is this loop's while it runs, as kind `production`: `start` takes it,
+# `stop` releases it, and a lease of any other kind -- a ticket the queue granted, a session's boot --
+# is a window this loop waits out without consuming a launch attempt. The queue asks this holder to
+# hand over only through the quiet gate, and hands the fleet back by releasing when no ticket waits.
 #
 #   systemctl --user enable --now st-glm53      # launchers/st-glm53.service (this script)
 #   ST_SUPERVISOR_ONCE=1 bash st-glm53-supervisor.sh   # one probe cycle, no launching: what would it do?
@@ -16,6 +19,9 @@ BASE=${ST_BASE:-http://127.0.0.1:8000}
 MODEL=${ST_MODEL:-glm-5.3-flash}
 NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
 NAME=st-glm53
+LOCK=${FLEET_LEASE_PATH:-/home/choiceoh/glm53-logs/st-fleet.lock}   # the one lease file (launchers/lib/fleet-lease.sh)
+LEGACY_LOCK=/home/choiceoh/st-fleet.lock                            # older launchers wrote here
+PROD_OWNER=production/$(hostname -s)/$$                             # this loop's own boots; production by KIND across restarts
 CHAT_TIMEOUT=${CHAT_TIMEOUT:-300}       # a long ingest blocks new requests until its prefill ends: outlast it
 FAILS_NEEDED=${FAILS_NEEDED:-3}
 BOOT_GRACE=${BOOT_GRACE:-1800}          # cold JIT (triton/tilelang/DeepGEMM/MLA/CuTe-DSL) on four nodes
@@ -49,17 +55,36 @@ containers_up(){
     [ "$n" = 1 ] || return 1
   done
 }
-fleet_taken(){   # someone else's serving stack: production vLLM, q38, another ST run -- never fight it
-  local ip busy held
-  held=$(node_sh "${NODES[0]}" "cat /home/choiceoh/st-fleet.lock 2>/dev/null || true") || { echo "head unreachable"; return 0; }
+# The lease module runs on the head, where the file and its evidence (docker) are: locally when
+# this loop is the head (it cannot ssh to itself), piped over ssh otherwise.
+lease_at(){
+  local path=$1; shift
+  case "$SELF_IPS" in
+    *" ${NODES[0]} "*) python3 "$REPO/engine/base/fleet_lease.py" "$@" --path "$path" ;;
+    *) local quoted; printf -v quoted '%q ' "$@"
+       ssh -o BatchMode=yes -o ConnectTimeout=8 "choiceoh@${NODES[0]}" "python3 - $quoted --path $path" < "$REPO/engine/base/fleet_lease.py" ;;
+  esac
+}
+lease_head(){ lease_at "$LOCK" "$@"; }
+fleet_taken(){   # someone else's fleet: a ticket's or a session's lease, an older lock, another stack -- never fight it
+  local ip busy held who rc
+  # an older launcher's lock at the older path: judged as it always was, by the container it names
+  held=$(node_sh "${NODES[0]}" "cat $LEGACY_LOCK 2>/dev/null || true") || { echo "head unreachable"; return 0; }
   if [ -n "$held" ]; then
-    case "$SELF_IPS" in
-      *" ${NODES[0]} "*) python3 "$REPO/engine/base/fleet_lease.py" owner --container "$NAME" --path /home/choiceoh/st-fleet.lock >/dev/null 2>&1 ;;
-      *) ssh -o BatchMode=yes -o ConnectTimeout=8 "choiceoh@${NODES[0]}" \
-          "python3 - owner --container $NAME --path /home/choiceoh/st-fleet.lock" < "$REPO/engine/base/fleet_lease.py" >/dev/null 2>&1 ;;
-    esac
-    [ "$?" = 0 ] || { echo "lock: $held"; return 0; }
+    lease_at "$LEGACY_LOCK" owner --container "$NAME" >/dev/null 2>&1 || { echo "lock: $held"; return 0; }
   fi
+  # The ONE lease file, judged by KIND. Production's own lease is not "taken" whichever supervisor
+  # pid took it (this loop restarts and adopts; a lease from before kinds naming st-glm53 is
+  # production's too); a live lease of any other kind is a window the queue granted or a session's
+  # boot; a stale one is nobody's. Reading only the legacy path here left every ticket's boot
+  # invisible to this loop, whose crash recovery then evicted it (2026-09-12). An answer this loop
+  # could not get is not free (D3).
+  who=$(lease_head taken --kind production 2>/dev/null); rc=$?
+  case "$rc" in
+    0) echo "lease: $who"; return 0 ;;
+    1) ;;
+    *) echo "lease unreadable (rc=$rc)"; return 0 ;;
+  esac
   for ip in "${NODES[@]}"; do
     busy=$(node_sh "$ip" "docker ps --format '{{.Names}}'" 2>/dev/null) || { echo "$ip unreachable"; return 0; }
     busy=$(printf '%s\n' "$busy" | grep -E '^(glm53|q38|vllm|st-)' | grep -vx "$NAME" || true)
@@ -79,9 +104,11 @@ forensics(){
 launch(){
   local taken waited=0
   if taken=$(fleet_taken); then log "fleet taken ($taken): not launching"; return 1; fi
-  log "launching the ST fleet"
-  bash "$LAUNCHER" stop >>"$FORENSICS/launch.log" 2>&1 || { log "stop refused; preserving fleet owner"; return 1; }
-  bash "$LAUNCHER" >>"$FORENSICS/launch.log" 2>&1 || { log "launcher returned nonzero (see $FORENSICS/launch.log)"; return 1; }
+  log "launching the ST fleet (production lease as $PROD_OWNER)"
+  ST_LEASE_KIND=production LEASE_OWNER_PRODUCTION=$PROD_OWNER bash "$LAUNCHER" stop >>"$FORENSICS/launch.log" 2>&1 \
+    || { log "stop refused; preserving fleet owner"; return 1; }
+  ST_LEASE_KIND=production LEASE_OWNER_PRODUCTION=$PROD_OWNER bash "$LAUNCHER" >>"$FORENSICS/launch.log" 2>&1 \
+    || { log "launcher returned nonzero (see $FORENSICS/launch.log)"; return 1; }
   while [ $waited -lt $BOOT_GRACE ]; do
     door_up && { log "door up after ${waited}s"; return 0; }
     containers_up || { log "a rank died during boot"; forensics; return 1; }

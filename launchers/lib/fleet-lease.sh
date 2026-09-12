@@ -18,6 +18,9 @@ FLEET_LEASE_SSH=${FLEET_LEASE_SSH:--o BatchMode=yes -o ConnectTimeout=10 -o Stri
 # piping it there, so taking a lease never needs a tree rsynced onto a node first.
 # A node cannot ssh to itself here (srv2 refuses its own key), and the head node is where
 # the queue's controller runs -- so the most important caller was the one that could not ask.
+# The queue itself (bench/fleet.sh, always on the head) does not use this helper: it runs the
+# module from its pinned runner snapshot directly, which is why this file was never needed
+# there -- and why its absence from the snapshot once read as "occupied" (2026-09-12, §91).
 _fleet_lease_is_head() {
   case " $(hostname -I 2>/dev/null) $(hostname -s) " in *" $FLEET_HEAD "*) return 0 ;; esac
   return 1
