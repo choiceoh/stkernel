@@ -347,3 +347,20 @@ class HistoryLifetimeTests(unittest.TestCase):
             after = source[source.index(site):]
             self.assertIn("self.history.forget(seq)", after[:400], site)
 
+
+class VerificationPathTests(unittest.TestCase):
+    """A served row and a row with penalties must be verified by the same rule."""
+
+    def test_the_row_path_and_the_batch_path_accept_the_same_prefix(self):
+        from engine.base.sampler import block_verify, block_verify_batch
+        torch.manual_seed(11)
+        K, V = 4, 9
+        for trial in range(25):
+            target = torch.softmax(torch.randn(K + 1, V), -1)
+            draft = torch.softmax(torch.randn(K, V), -1)
+            ids = [int(torch.multinomial(draft[i], 1)) for i in range(K)]
+            one, _ = block_verify(target, ids, draft, torch.Generator().manual_seed(trial))
+            many, _, _ = block_verify_batch(target.unsqueeze(0), torch.tensor([ids]), draft.unsqueeze(0),
+                                            torch.Generator().manual_seed(trial))
+            self.assertEqual(one, int(many[0]), f"trial {trial}")
+

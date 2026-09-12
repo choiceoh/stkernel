@@ -906,6 +906,7 @@ class Server:
                     self.timed_out += reason == "timeout"
                     self._deadline.pop(request, None)
                     self._arrived.pop(request, None)
+                    self._admitted.pop(request, None)
                     self._answer(request, RequestError(f"request cancelled: {reason}", 504 if reason == "timeout" else 499))
                     return
                 restoring = next((r for r, e in self._restoring.items() if e["request"] == request), None)
@@ -915,10 +916,12 @@ class Server:
                     self.timed_out += reason == "timeout"
                     self._deadline.pop(request, None)
                     self._arrived.pop(request, None)
+                    self._admitted.pop(request, None)
                     self._answer(request, RequestError(f"request cancelled: {reason}", 504 if reason == "timeout" else 499))
                     return
                 self._deadline.pop(request, None)
                 self._arrived.pop(request, None)
+                self._admitted.pop(request, None)
                 return                                     # finished already (or unknown): nothing to drop
             self._active.pop(row)
             self._sent.pop(row, None)
@@ -935,6 +938,7 @@ class Server:
         self.timed_out += reason == "timeout"
         self._deadline.pop(request, None)
         self._arrived.pop(request, None)
+        self._admitted.pop(request, None)
         status = 504 if reason == "timeout" else 499
         self._answer(request, RequestError(f"request cancelled: {reason}", status))
 
