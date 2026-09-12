@@ -982,7 +982,7 @@ def fleet(a) -> int:
                tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_grammar=tool_grammar,
                         tool_call_start=tool_call_token(tok), generation=generation_defaults(a.ckpt_meta),
                vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 else None,
-               lease=lease, latency_root=Path(a.dump_dir) / 'onepass-latency').loop()
+               latency_root=Path(a.dump_dir) / 'onepass-latency', lease=lease).loop()
     finally:
         try:
             if dump is not None:

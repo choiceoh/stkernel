@@ -523,10 +523,10 @@ class Runner:
         (finished by the step before, then run once more as ghosts) are ignored."""
         step, pending, launched = self.inflight.pop(0)
         before = {s: self.model.context(s) for s in self._tracked(step.seqs)}
-        resolve_start = time.perf_counter()
-        done = pending.resolve()
         latency = getattr(self, 'latency', None)
-        if latency is not None:
+        resolve_start = time.perf_counter() if latency is not None and latency.active else None
+        done = pending.resolve()
+        if resolve_start is not None:
             latency.row(kind='host_wait', operation='resolve', phase='decode', rows=list(step.seqs),
                         duration_us=(time.perf_counter() - resolve_start) * 1e6)
         if len(done) != len(step.seqs):

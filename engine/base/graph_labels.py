@@ -127,6 +127,7 @@ def capture(stream, label):
     global _api, CAPTURES
     CAPTURES += 1
     try:
+        stream = stream if isinstance(stream, int) else stream.cuda_stream
         if _api is None:
             _api = CUDA()
     except Exception as exc:

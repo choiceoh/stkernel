@@ -142,7 +142,7 @@ class DecodeGraphs:
                         with torch.cuda.stream(recording):
                             g.capture_begin(pool, capture_error_mode="global")
                             try:
-                                with label_capture(recording.cuda_stream, f'{label}/{shape}'):
+                                with label_capture(recording, f'{label}/{shape}'):
                                     out = step_fn(inp)
                             finally:
                                 g.capture_end()

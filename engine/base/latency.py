@@ -112,12 +112,15 @@ class Recorder:
             return
         row = dict(rank=self.rank, request_token=run['token'], **value)
         with self.lock:
+            if self.active is not run or self.file.closed:
+                return
             self.file.write(json.dumps(row, ensure_ascii=False) + '\n')
             run['row_count'] += 1
-        # Basic rows remain available in the control reply; kernel rows live in
-        # the trace artifact and are summarized offline, not copied twice.
-        if row.get('kind') != 'gpu_activity':
-            run['rows'].append(row)
+            run['last_row_at'] = time.monotonic()
+            # Basic rows remain available in the control reply; kernel rows live
+            # in the trace artifact and are summarized offline, not copied twice.
+            if row.get('kind') != 'gpu_activity':
+                run['rows'].append(row)
 
     @contextmanager
     def step(self, kind, seqs, positions, tokens):
@@ -168,6 +171,8 @@ class Recorder:
                     raw = path.read_bytes()
                     trace = json.loads(raw)
                     rows = attribute(trace, graph_labels.NODE_LABELS)
+                    if not rows:
+                        run['errors'].append('profile has no CUDA activities')
                     trace['st_graph_labels'] = {str(r['graph_node_id']): r['operation'] for r in rows
                                                if r['attribution'] == 'graph_node'}
                     compressed = gzip.compress(json.dumps(trace).encode(), compresslevel=1, mtime=0)
@@ -196,9 +201,11 @@ class Recorder:
                      pending=bool(device_clock._pending), timing_scope='lifetime counters; not request deltas')
         if run['diagnostic'] and not run['selected']['decode']:
             run['errors'].append('no decode step at requested concurrency was profiled')
-        self.file.flush()
-        os.fsync(self.file.fileno())
-        self.file.close()
+        with self.lock:
+            self.file.flush()
+            os.fsync(self.file.fileno())
+            self.file.close()
+            self.active = None
         result = dict(schema=SCHEMA, token=token, rank=self.rank, diagnostic=run['diagnostic'],
                       preparation_before=run['before'], preparation_after=after,
                       preparation_changed=any(run['before'][k] != after[k] for k in ('specializations', 'graph_captures')),
@@ -208,7 +215,6 @@ class Recorder:
                       server_directory=str(run['directory']), complete=not run['errors'])
         _write(run['directory'] / 'manifest.json', {k: v for k, v in result.items() if k != 'traces'} |
                {'status': 'complete' if result['complete'] else 'incomplete', 'traces': run['profiles']})
-        self.active = None
         _OBSERVER = None
         self.last = result
         return result

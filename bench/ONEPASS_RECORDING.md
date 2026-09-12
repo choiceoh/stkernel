@@ -63,7 +63,8 @@ The ST endpoint is `GET/POST /v1/engine/latency`. Controls require loopback
 access, idle serving and a unique token. All ranks participate. While recording,
 inference requests must carry `X-ST-Latency-Token`. `end` requires idle serving;
 `abort` with the owning token releases an abandoned recording and marks it
-incomplete. Trace downloads are restricted to the completed session's declared
+incomplete. An abandoned idle recording expires after 120 seconds; active
+inference is never interrupted by this timeout. Trace downloads are restricted to the completed session's declared
 files and bounded chunks. Servers without this endpoint still produce client
 records, with detailed/steady-state evidence marked unavailable.
 
