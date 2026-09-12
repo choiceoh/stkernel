@@ -335,8 +335,9 @@ class PickRichTests(unittest.TestCase):
         e.options, e.limits, e.gens, e.gen = {0: {}}, {0: (16, 0.0)}, {}, torch.Generator().manual_seed(0)
         e.matchers, e.grammars = {0: m}, g
         e.tokens, e.prompt_len, e.min_new, e.ends, e._ends_tensor = {0: [9]}, {0: 1}, {}, {}, {}
-        e.history, e.decodable, e._logits_stage = None, None, None
+        e.history, e.decodable, e._rich_stage = None, None, None
         e.drafter, e.eos = SimpleNamespace(k=k), set()
+        e.top_p, e.caches = 1.0, SimpleNamespace(pool=SimpleNamespace(max_seqs=1))
         return e, g, m
 
     def logits(self, rank):
@@ -355,7 +356,8 @@ class PickRichTests(unittest.TestCase):
         raw = rows.clone()
         masks = g.prepare([(0, m, [5, 4, 3])], "cpu")
         self.assertEqual(masks.live(0, 4), 2, "the grammar refuses draft 4: positions 2.. are dead")
-        accepted, new, lps = e._pick_rich(0, rows, [5, 4, 3], None, masks)
+        # the row is handed over already trimmed to its live positions, as the step's gather does
+        (accepted, new, lps), = e._pick_rich([(0, rows[:2], [5, 4, 3], None)], masks)
         self.assertEqual(new, [5, 70], "the mask's best allowed id at each live position, not id 0")
         self.assertEqual(accepted, 1, "the first draft was picked; the row stops at the refused one")
         self.assertIsNone(lps)
@@ -363,18 +365,19 @@ class PickRichTests(unittest.TestCase):
         self.assertTrue(torch.equal(rows, raw), "the gathered logits are read, not masked in place")
 
     def test_the_row_writes_its_positions_into_one_kept_buffer(self):
+        """The step's block is the buffer: the mask kernel wants consecutive rows and so does the sampler."""
         e, g, m = self.engine()
         masks = g.prepare([(0, m, [5, 5])], "cpu")
-        e._pick_rich(0, self.logits([5, 70, 1]), [5, 5], None, masks)
-        kept = e._logits_stage
-        self.assertEqual(tuple(kept.shape), (4, 128), "k + 1 positions, the widest step a row can take")
-        e._pick_rich(0, self.logits([5, 70, 1]), [5, 5], None, masks)
-        self.assertIs(e._logits_stage, kept)
+        e._pick_rich([(0, self.logits([5, 70, 1]), [5, 5], None)], masks)
+        kept = e._rich_stage
+        self.assertEqual(tuple(kept[0].shape), (4, 128), "k + 1 positions, the widest step a row can take")
+        e._pick_rich([(0, self.logits([5, 70, 1]), [5, 5], None)], masks)
+        self.assertIs(e._rich_stage, kept)
 
     def test_a_row_with_no_step_to_ride_along_with_fills_its_own(self):
         """The prompt's first token is picked outside any decode step: it still gets its mask."""
         e, g, m = self.engine()
-        accepted, new, lps = e._pick_rich(0, self.logits([70]), [], None)
+        (accepted, new, lps), = e._pick_rich([(0, self.logits([70]), [], None)])
         self.assertEqual(new, [70])
         self.assertEqual(g.xgr.fills, [0])
 

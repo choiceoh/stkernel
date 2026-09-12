@@ -270,10 +270,17 @@ DETOK_REPAIRS = {"invalid_token_id": 0, "invalid_prefix": 0, "stalled": 0}
 # https://github.com/huggingface/tokenizers `DecodeStreamError::InvalidPrefix`
 _INVALID_PREFIX = "Invalid prefix encountered"
 
-# How many trailing tokens may be held back waiting for a character to finish. A UTF-8 code point
-# is four bytes at most, so four byte-fallback tokens; past that the stream is not waiting, it is
-# stuck (see _Stream.decoded).
-_STALL_TOKENS = 8
+# How many settled tokens to decode with a held-back tail so it says what it says in place.
+# SGLang keeps the same five (`INIT_INCREMENTAL_DETOKENIZATION_OFFSET`).
+_CONTEXT_TOKENS = 5
+
+# How far a held-back tail may reach before it is said as it is. This is NOT a bound on how
+# long a character may wait: a step commits several tokens at once, so a tail one byte short of
+# a character is already `k` tokens long, and two such steps are twice that -- counting four
+# bytes' worth of tokens cut Korean answers apart, one U+FFFD per syllable, because Hangul is
+# three bytes and the guard fired before the third arrived. It only exists so the decode a held
+# step repeats cannot grow without end, so it is eight of the widest speculative steps.
+_STALL_TOKENS = 64
 
 
 def decode_stream(tok, skip_special_tokens: bool = True, ids=None):
@@ -322,6 +329,19 @@ def _decode(tok, ids) -> str:
         return tok.decode(keep)
 
 
+def _whole(text: str) -> str:
+    """`text` without the trailing bytes that are not a character yet.
+
+    A code point split across tokens renders as U+FFFD at the very end, one per byte still
+    missing, so what comes before is whole. A U+FFFD the model really wrote is trimmed here
+    too and arrives with whatever follows it, which costs nothing.
+    """
+    i = len(text)
+    while i and text[i - 1] == "\ufffd":
+        i -= 1
+    return text[:i]
+
+
 class _Stream:
     """One channel's text, extended as its tokens arrive.
 
@@ -338,14 +358,25 @@ class _Stream:
     of tokens at once -- instead of two decodes and the Python arithmetic around them.
     Anything else (every fake in the tests) keeps the window below. Same algorithm, same
     text, and `tests/test_engine_serve.py` pins the two against each other.
+
+    A step whose text ends mid-character does not hold that whole step back. `text` is what
+    is settled, `_ahead` is the whole characters in front of it that are shown but not
+    settled, and `decoded` is the two together -- which only grows, so nothing is said twice.
+    It matters where a character is not one byte: at six accepted tokens a step, holding the
+    step back showed the client nothing on 37.2% of the steps of Korean and 43.5% of CJK,
+    against 0.0% of English, which is why it went unseen (45차 §32). SGLang has this and vLLM
+    does not, though SGLang cuts at the last space (HF's TextStreamer heuristic, whose own
+    comment says Hangul is not covered) where this cuts at the character.
     """
 
-    __slots__ = ("tok", "ids", "text", "_rust", "_stream", "_fed", "_holding", "_prefix", "_read")
+    __slots__ = ("tok", "ids", "text", "_ahead", "_rust", "_stream", "_fed", "_holding",
+                 "_prefix", "_read")
 
     def __init__(self, tok):
         self.tok = tok
         self.ids = []                       # this channel's tokens, in order
-        self.text = ""                      # what they say, decoded so far
+        self.text = ""                      # what they say, settled
+        self._ahead = ""                    # whole characters shown in front of it, not settled
         self._stream = decode_stream(tok)   # None where the window below is the path
         self._rust = self._stream is not None   # decided once: the two keep different bookkeeping,
                                                 # and changing path mid-answer would say it all twice
@@ -360,23 +391,47 @@ class _Stream:
         """This channel's text, extended by whatever the newest tokens added."""
         if not self._rust:
             self._window(final)
-            return self.text
+            return self.text + self._ahead
         if self._fed < len(self.ids):
             pending = self.ids[self._fed:]
             self._fed = len(self.ids)
             grown, self._holding = self._step(pending)
-            self.text += grown
-        # A held-back tail is a character waiting for its rest, and that wait is bounded. A
-        # longer one is not waiting -- it is a run of lone bytes nothing will complete -- and
-        # holding it shows the client nothing while the decode that repeats grows with the run.
-        # Both ends the same way: say what the tail says, replacement characters and all.
-        if self._holding and (final or self._holding > _STALL_TOKENS):
-            if not final:
-                DETOK_REPAIRS["stalled"] += 1
-            self.text += _decode(self.tok, self.ids[len(self.ids) - self._holding:])
-            self._holding = 0
-            self._stream = decode_stream(self.tok)   # its prefix now names text already shown
-        return self.text
+            if grown:
+                self.text += grown          # which begins with whatever `_ahead` was showing
+                self._ahead = ""
+        # A held-back tail is a character waiting for its rest. A tail past the bound is not
+        # waiting -- it is a run of lone bytes nothing will complete -- and holding it shows the
+        # client nothing while the decode that repeats grows with the run. Both end the same
+        # way: say what the tail says, replacement characters and all.
+        if self._holding:
+            if final or self._holding > _STALL_TOKENS:
+                if not final:
+                    DETOK_REPAIRS["stalled"] += 1
+                self.text += _decode(self.tok, self.ids[len(self.ids) - self._holding:])
+                self._ahead = ""
+                self._holding = 0
+                self._stream = decode_stream(self.tok)   # its prefix names text already shown
+            else:
+                self._ahead = self._ahead_text()
+        return self.text + self._ahead
+
+    def _ahead_text(self) -> str:
+        """The whole characters inside the tail the stream is still holding.
+
+        It says "not yet" about the whole tail, but a step can end mid-character and have
+        finished several characters before that. So decode the tail where it sits -- a few
+        settled tokens in front of it, subtracted off again, because a piece carries its
+        leading space only when something precedes it -- and keep what is whole.
+
+        A decoder that rewrites the settled part when an incomplete byte follows (byte
+        fallback turns the whole run into U+FFFD) fails the prefix test and gets nothing,
+        which is the old behaviour and is the safe one: nothing shown is ever taken back.
+        """
+        cut = len(self.ids) - self._holding
+        context = self.ids[max(0, cut - _CONTEXT_TOKENS):cut]
+        before = _decode(self.tok, context) if context else ""
+        grown = _decode(self.tok, context + self.ids[cut:])
+        return _whole(grown[len(before):]) if grown.startswith(before) else ""
 
     def _step(self, ids) -> "tuple[str, int]":
         """One `step`, and the two ways it is known to fail where people are watching.
@@ -425,14 +480,20 @@ class _Stream:
             return
         before = _decode(self.tok, ids[self._prefix:self._read]) if self._read > self._prefix else ""
         grown = _decode(self.tok, ids[self._prefix:])
-        # a trailing replacement character is half a code point: wait for the rest, unless
-        # nothing more is coming or the wait has stopped being one
+        new = grown[len(before):]
+        if not new:
+            return
+        # a trailing replacement character is a code point waiting for its rest: show what is
+        # whole and wait, unless nothing more is coming or the wait has stopped being one
         stalled = len(ids) - self._read > _STALL_TOKENS
-        if len(grown) > len(before) and (final or stalled or not grown.endswith("\ufffd")):
-            if stalled and not final and grown.endswith("\ufffd"):
+        if final or stalled or not new.endswith("\ufffd"):
+            if stalled and not final and new.endswith("\ufffd"):
                 DETOK_REPAIRS["stalled"] += 1
-            self.text += grown[len(before):]
+            self.text += new
+            self._ahead = ""
             self._prefix, self._read = self._read, len(ids)
+        else:
+            self._ahead = _whole(new) if grown.startswith(before) else ""
 
 
 class _Choice:
