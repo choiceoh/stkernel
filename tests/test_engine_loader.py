@@ -108,10 +108,38 @@ class StagingTests(unittest.TestCase):
                                "third": ("U8", (2048,), b"\x33" * 2048)})
             reader = RankLoader(path)
             self.assertEqual(len(reader.runs(["first", "second", "third"], max_run=2048)), 3)
+            # the cap bounds the host buffer, and the buffer is what pins memory while a rank
+            # loads: a run can never be narrower than one tensor, so the cap's only job is to
+            # stop coalescing from making the pair wider than that (45차 §49)
+            wide = reader.runs(["first", "second", "third"], max_run=1 << 30)
+            narrow = reader.runs(["first", "second", "third"], max_run=2048)
+            self.assertLess(reader.staging_bytes(narrow), reader.staging_bytes(wide))
+            self.assertGreaterEqual(reader.staging_bytes(narrow),
+                                    max(reader.header[k]["data_offsets"][1] - reader.header[k]["data_offsets"][0]
+                                        for k in ("first", "second", "third")))
             out = reader.load(["first", "second", "third"], device="cpu", max_run=2048)
             for name, value in (("first", 0x11), ("second", 0x22), ("third", 0x33)):
                 self.assertTrue(bool((out[name] == value).all()), name)
             self.assertEqual(len({t.untyped_storage().data_ptr() for t in out.values()}), 3)
+
+    def test_one_run_is_read_with_one_buffer(self):
+        """The second buffer exists to overlap a read with the upload before it. With a single
+        run there is nothing to overlap, and it would be half a gigabyte pinned for nothing."""
+        from unittest.mock import patch
+        import engine.base.loader as loader
+        with tempfile.TemporaryDirectory(dir=scratch()) as d:
+            path = write_file(Path(d) / "one.safetensors", {"only": ("I32", (2,), b"\x01\x00\x00\x00\x02\x00\x00\x00")})
+            reader = loader.RankLoader(path)
+            counted, real = [], loader.staging
+
+            def counting(nbytes, count, device):
+                counted.append(count)
+                return real(nbytes, count, device)
+
+            with patch.object(loader, "staging", counting):
+                out = reader.load(["only"], device="cpu")
+            self.assertEqual(counted, [1])
+            self.assertEqual(out["only"].tolist(), [1, 2])
 
     def test_an_empty_selection_reads_nothing(self):
         with tempfile.TemporaryDirectory(dir=scratch()) as d:
