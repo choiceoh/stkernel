@@ -2,6 +2,7 @@
 import importlib.util
 from types import SimpleNamespace
 import unittest
+from pathlib import Path
 
 torch = None
 if importlib.util.find_spec("torch") is not None:
@@ -70,6 +71,38 @@ class DrafterTests(unittest.TestCase):
         actual = d.propose_tensor(torch.full((1,), anchor, device=dev, dtype=torch.int64), 9,
                                    torch.empty(0, device=dev))
         self.assertEqual(actual.tolist(), expected)
+
+    def test_the_sampled_walk_hands_back_the_distribution_it_drew_from(self):
+        """The accept test divides by this, so it has to be the one the pick came out of."""
+        d = self.make_drafter()
+        dev = "cuda" if torch.cuda.is_available() else "cpu"
+        gen = torch.Generator(device=dev).manual_seed(71)
+        rand = lambda *shape: torch.randn(*shape, device=dev, generator=gen).bfloat16()
+        hidden, logits = rand(4, 16), rand(3, 21).float()
+        d.block = lambda *args: hidden
+        from engine.base.comm import Comm
+        d.target.head_local = lambda h: logits.clone()
+        d.target.comm, d.target.rank, d.target.vp = Comm(), 0, 21
+        prefix = "candidate_selector."
+        d.p = {prefix + "hidden_projection.weight": rand(4, 16),
+               prefix + "predecessor_codebook": rand(21, 4),
+               prefix + "successor_codebook": rand(21, 4)}
+        ring = torch.empty(0, device=dev)
+        ids, dists = d.propose_sampled(7, 9, ring, 0.8, torch.Generator(device=dev).manual_seed(5), 21)
+        same, same_dists = d.propose_sampled_tensor(torch.full((1,), 7, device=dev, dtype=torch.int64), 9, ring,
+                                                    0.8, torch.Generator(device=dev).manual_seed(5), 21)
+        self.assertEqual(ids, same.tolist(), "the host walk is the device walk, read back once at the end")
+        self.assertTrue(torch.equal(dists, same_dists))
+        for step, token in enumerate(ids):
+            self.assertGreater(float(dists[step, token]), 0.0, "the pick has mass in what the verifier is given")
+            self.assertAlmostEqual(float(dists[step].sum()), 1.0, places=4)
+            self.assertLessEqual(int((dists[step] > 0).sum()), 3, "and the mass sits only on the candidates")
+
+    def test_the_host_walk_crosses_once_not_twice_a_position(self):
+        source = (Path(__file__).resolve().parents[1] / "engine/profiles/glm53/drafter.py").read_text()
+        body = source[source.index("    def propose_sampled(self"):source.index("    def propose_sampled_tensor(")]
+        self.assertNotIn(".item()", body)
+        self.assertIn("propose_sampled_tensor(", body)
 
 
 if __name__ == "__main__":
