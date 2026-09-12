@@ -1113,12 +1113,13 @@ class RustStreamTests(unittest.TestCase):
         self.assertEqual(stream.decoded(True), "abcc")
 
     def test_a_tail_that_will_never_finish_is_shown_instead_of_held_forever(self):
-        """A held-back tail is a character waiting for its rest, and that wait is bounded. A run
-        of lone lead bytes is not waiting: holding it shows the client nothing for the rest of
-        the answer, and the decode that repeats grows with the run."""
-        from engine.base.serve import DETOK_REPAIRS
+        """A held-back tail is a character waiting for its rest. A run of lone lead bytes is not
+        waiting: holding it shows the client nothing for the rest of the answer, and the decode
+        that repeats grows with the run. The bound is `_STALL_TOKENS` tokens, not bytes -- see
+        the multi-byte test above for why that distinction is the whole point."""
+        from engine.base.serve import DETOK_REPAIRS, _STALL_TOKENS
         before = DETOK_REPAIRS["stalled"]
-        stuck = [0xED] * 64
+        stuck = [0xED] * (_STALL_TOKENS * 4)
         for tok in (self.rust(), ByteTokenizer()):
             with self.subTest(tok=type(tok).__name__):
                 c = _choice(tok)
@@ -1128,6 +1129,23 @@ class RustStreamTests(unittest.TestCase):
                     seen += sum(len(d.get("content", "")) for d in c.flush())
                 self.assertGreater(seen, 0, "the client saw nothing while the answer ran")
         self.assertGreater(DETOK_REPAIRS["stalled"], before)
+
+    def test_a_step_that_carries_several_tokens_does_not_break_multi_byte_text(self):
+        """The wait for a character's rest is bounded by the bytes missing, not by the tokens
+        they arrived among. Counting tokens, a step that commits five of them reaches the
+        bound after two waits and gives up on a character that was one byte away -- and the
+        answer gets a U+FFFD in the middle of a word. Korean is three bytes a syllable, so
+        this is every Korean answer under speculative decoding; English never shows it."""
+        from engine.base.serve import DETOK_REPAIRS
+        text = "안녕하세요 세계 여러분 반갑습니다 좋은 하루 되세요 " * 8
+        for tok in (self.rust(), ByteTokenizer()):
+            for per_step in (2, 3, 5, 7):
+                with self.subTest(tok=type(tok).__name__, per_step=per_step):
+                    before = DETOK_REPAIRS["stalled"]
+                    shown, _ = self.shown(list(text.encode()), tok, per_step=per_step)
+                    self.assertEqual(shown, text)
+                    self.assertNotIn("\ufffd", shown)
+                    self.assertEqual(DETOK_REPAIRS["stalled"], before, "nothing here is stuck")
 
     def test_an_unfinished_character_at_the_very_end_is_still_shown(self):
         shown, _ = self.shown(list("ok ".encode()) + [0xED], self.rust())

@@ -269,10 +269,13 @@ DETOK_REPAIRS = {"invalid_token_id": 0, "invalid_prefix": 0, "stalled": 0}
 # https://github.com/huggingface/tokenizers `DecodeStreamError::InvalidPrefix`
 _INVALID_PREFIX = "Invalid prefix encountered"
 
-# How many trailing tokens may be held back waiting for a character to finish. A UTF-8 code point
-# is four bytes at most, so four byte-fallback tokens; past that the stream is not waiting, it is
-# stuck (see _Stream.decoded).
-_STALL_TOKENS = 8
+# How far a held-back tail may reach before it is said as it is. This is NOT a bound on how
+# long a character may wait: a step commits several tokens at once, so a tail one byte short of
+# a character is already `k` tokens long, and two such steps are twice that -- counting four
+# bytes' worth of tokens cut Korean answers apart, one U+FFFD per syllable, because Hangul is
+# three bytes and the guard fired before the third arrived. It only exists so the decode a held
+# step repeats cannot grow without end, so it is eight of the widest speculative steps.
+_STALL_TOKENS = 64
 
 
 def decode_stream(tok, skip_special_tokens: bool = True, ids=None):
@@ -365,10 +368,10 @@ class _Stream:
             self._fed = len(self.ids)
             grown, self._holding = self._step(pending)
             self.text += grown
-        # A held-back tail is a character waiting for its rest, and that wait is bounded. A
-        # longer one is not waiting -- it is a run of lone bytes nothing will complete -- and
-        # holding it shows the client nothing while the decode that repeats grows with the run.
-        # Both ends the same way: say what the tail says, replacement characters and all.
+        # A held-back tail is a character waiting for its rest. A tail past the bound is not
+        # waiting -- it is a run of lone bytes nothing will complete -- and holding it shows the
+        # client nothing while the decode that repeats grows with the run. Both end the same
+        # way: say what the tail says, replacement characters and all.
         if self._holding and (final or self._holding > _STALL_TOKENS):
             if not final:
                 DETOK_REPAIRS["stalled"] += 1
