@@ -24,6 +24,7 @@ ENGINE_DIR=/home/choiceoh/st-engine                     # the engine tree, rsync
 CACHE_DIR=${CACHE_DIR:-/home/choiceoh/glm53-cache}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"
 NAME=st-glm53
+LEASE_OWNER=${LEASE_OWNER:-$(whoami)@$(hostname -s)/$$}   # who holds the fleet, for the lease record
 
 # A node cannot ssh to itself (srv2 refuses its own key), and the head runs this script: run its own
 # commands in a local shell instead. Same for the tree push -- and if this checkout *is* the node's
@@ -45,7 +46,9 @@ push_tree() {
 case "${1:-start}" in
   stop)
     for ip in "${NODES[@]}"; do node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 && echo '$ip: stopped' || echo '$ip: none'"; done
-    node_sh "${NODES[0]}" "rm -f /home/choiceoh/st-fleet.lock"; exit 0 ;;
+    ssh $SSHOPT "choiceoh@${NODES[0]}" "python3 - release --owner x --force --path /home/choiceoh/st-fleet.lock" \
+      < "$REPO/engine/base/fleet_lease.py" || true
+    exit 0 ;;
   logs)
     r=${2:-0}; node_sh "${NODES[$r]}" "docker logs --tail 60 $NAME"; exit 0 ;;
   start) ;;
@@ -59,15 +62,21 @@ for ip in "${NODES[@]}"; do
   busy=$(node_sh "$ip" "docker ps --format '{{.Names}}' | grep -E '^(glm53|q38|vllm|st-)' || true")
   [ -z "$busy" ] || { echo "ABORT: $ip runs $busy -- the fleet is taken (hand off the queue, do not squat)" >&2; exit 1; }
 done
-held=$(node_sh "${NODES[0]}" "cat $LOCK 2>/dev/null || true")
-[ -z "$held" ] || { echo "ABORT: the fleet is locked by '$held' ($LOCK on ${NODES[0]}); wait or 'stop' from that side" >&2; exit 1; }
+# The lease is the engine's own (engine/base/fleet_lease.py): an owner, the container that
+# is its evidence, an estimate and a reason -- so a crashed boot goes stale on its own
+# instead of needing a human to delete a file, and a live one names who to ask.
+# Piped, not rsynced: taking the lease must not touch $ENGINE_DIR, which a live session
+# may have mounted into its containers. The module is stdlib-only, so `python3 -` is enough.
+lease() { ssh $SSHOPT "choiceoh@${NODES[0]}" "python3 - $* --path $LOCK" < "$REPO/engine/base/fleet_lease.py"; }
 # The bench queue reserves the same four nodes and does not know this lock exists. Read its
 # holder before taking the fleet, so the two mechanisms refuse each other in both directions
 # until they become one (bench/fleet.sh now refuses a grant while any st-* container is up).
 FLEET_HOLDER=${FLEET_HOLDER:-/home/choiceoh/glm53-logs/fleet/holder}
 queued=$(node_sh "${NODES[0]}" "cat $FLEET_HOLDER 2>/dev/null || true")
 [ -z "$queued" ] || { echo "ABORT: the bench queue holds the fleet: $queued (bench/fleet.sh status; release it there)" >&2; exit 1; }
-node_sh "${NODES[0]}" "echo '$(whoami)@$(hostname) st-glm53 $(date '+%F %T')' > $LOCK"
+lease acquire --owner "'$LEASE_OWNER'" --container "$NAME" --est-minutes "${LEASE_MINUTES:-45}" \
+      --note "'${LEASE_NOTE:-st-glm53 on four Sparks}'" \
+  || { echo "ABORT: $(lease read 2>/dev/null || echo 'the fleet lease refused') -- wait, or 'stop' from that side" >&2; exit 1; }
 
 # the engine's own namespace travels into the container: a declared, expiring knob (D11) is set on the launch line
 KNOB_ENV=""; for name in $(compgen -v STK_ 2>/dev/null); do KNOB_ENV="$KNOB_ENV -e $name=${!name}"; done
