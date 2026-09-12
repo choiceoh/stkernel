@@ -1382,7 +1382,6 @@ GLM 점별 연산의 이전 GPU 비교도 재현했다. 세부 수치·로그·�
 하니스 43은 개별 총/추론 8192/4096, 묶음 24576/12288로 늘리고 질문·정답·판정기는 유지한다.
 증량 후 실측 정답률은 아직 없다. 새 예산의 원패스 CPU 검사 103개 통과. 이전 하니스 수치를 새 예산의
 성능 근거로 재사용하지 않는다.
-||||||| 21cb0539
 ### 45차 — ost-97x 는 테일넷의 **Windows 박스**였다: 이름은 srv2 의 ssh 별칭이 풀고, 사용자·포트도 별칭이 정한다 (2026-09-13, 맥→srv2, PR #771)
 
 PR #767 의 "준비물" 을 실제로 만들려고 ost-97x 부터 찾았다.
@@ -1540,7 +1539,6 @@ The v3 baseline boot reached canonical preparation, not a completed measurement.
 `21a4c816` adds a conservative in-flight-aware boundary drain, with the existing rich sampler enforcing the cap and async decoding resuming after committed reasoning end. It also keeps hypothetical rejected draft end tokens from disabling the cap. Focused CPU validation: 19 reasoning/gate tests plus 35 async runner/pipeline/sampling tests passed.
 
 The user explicitly requested **no corrected-baseline measurement** and to proceed directly with the corrected improved candidate. The next boot therefore runs two canonical onepass invocations on the candidate alone. Record absolute step/s against the 22 step/s target, actual output tok/s and quality, with `no baseline on this build`; do not claim a matched consumer speedup. Evidence: `measurements/st_decode_22step_20260912/`.
-||||||| cd62b83a
 ### 45차 — 단일 GPU 레인은 **srv4 한 대에서 프로덕션 옆에**: 증거는 여유 메모리, 첫 실측이 OOM 과 b12x m=8 을 가르쳐 줬다 (2026-09-13, 맥→srv2/srv4, PR #774)
 
 **결정.** PR #771 뒤의 세 갈래(5050 = WSL2 sshd + x86 이미지 + DeepGEMM 포크 소스, 스파크 한 대 옆, OST-97X 우분투)
