@@ -455,6 +455,105 @@ KV·max_seqs 결정이 아직 열려 있으니, 그 결정에 부팅 시간이 �
 남은 것 — KDA 34 층의 세그먼트 루프와 인덱서 **선택** — 은 둘 다 커널 변경이다.
 선택을 배치화하면 게더가 `[n, 후보, 128]` 로 **n 배 커진다**(상단 단에서 층당 32 → 128 MiB). 커널이 색인을 받아 안에서 모아야 한다.
 
+## 5-l. vLLM 의 부팅 경로를 읽고 (2026-09-12) — 가져올 것 넷, 이미 앞선 것 하나
+
+같은 상자 이미지의 vLLM(`glm53:v13-b12x-it`, `0.1.dev20051`)을 읽었다. 부팅에서 우리가 안 하는 일만 적는다.
+
+### A. 문 열기 전에 JIT 를 다 굽는 전용 단계 — §5-g 의 답이 여기 있다
+
+vLLM 은 캡처 **전에** `kernel_warmup(worker)` 를 따로 돈다(`v1/worker/gpu_worker.py:714`).
+그 안에 `fa4_cutedsl_warmup` · `sparse_mla_triton_warmup` · `cutedsl_warmup()` 등이 있고,
+`model_executor/warmup/cutedsl_warmup.py` 는 **등록 레지스트리**다 — 커널 모듈이
+`register_cutedsl_warmup_provider()` 로 `CuTeDSLCompileUnit(name, key, compile)` 를 내면 부팅이 전부 컴파일한다.
+목적이 주석에 그대로 적혀 있다: 커널을 **토큰 크기를 가로질러** 미리 구워
+*"the first real request doesn't pay JIT cost"*.
+
+우리 §5-g 가 관찰한 것이 정확히 그 비용이다 — `serving on :8000` 뒤 43 초에 `st_b12x_moe_sm121a_cute_dsl/static_m14_…`
+가 **1.55 s** 걸려 컴파일됐고, 그건 프리필 안이라 그 요청의 TTFT 에 통째로 실렸다. 처음 보는 M 마다 되풀이된다.
+**우리에겐 그 단계가 없다.** 있어야 할 자리는 `capture_decode()` 안, 프리필 웜업과 그래프 캡처 사이다.
+
+### B. 캡처 동안 GC 를 얼린다 — 속도이기 전에 **정확성**이다
+
+`gpu_model_runner.py:6681` 의 `_freeze_gc()` 가 캡처 전체를 감싼다: `gc.collect()` → `gc.freeze()` → **`gc.disable()`**.
+이유가 주석에 있다:
+
+> *"A Triton kernel finalized during stream capture unloads its module and invalidates the captured graph."*
+
+그리고 노브 설명(`envs.py`): *"If set to 0 (default), enables GC freezing to speed up capture time."* — 기본값이 얼리는 쪽이다.
+
+**우리는 `gc` 를 한 번도 건드리지 않는다**(`engine/` 전체에 `gc.` 호출 없음). 캡처 51 번 동안 파이썬 GC 는 자유롭게 돈다.
+우리도 트리톤 커널을 캡처한다(`scatter_rows`, `write_ring`, kpool). 확률적이지만 **조용히 깨지는** 종류라 더 나쁘다.
+
+### C. **큰 모양을 먼저** 캡처한다
+
+`gpu_model_runner.py:6983`: *"Capture the large shapes first so that the smaller shapes can reuse the memory pool allocated for the large shapes."*
+`v1/cudagraph_dispatcher.py:326` 이 그걸 집행한다 — *"Batch descriptors are sorted largest-first for memory efficiency."*
+
+우리는 반대다. `decode_graphs.py` 의 모양은 가족 순서 안에서 **용량 오름차순**이라 가장 작은 것이 먼저다.
+풀이 모양마다 자라고, 통합 메모리에서 자란다는 건 페이지를 새로 매핑한다는 뜻이다.
+§5-h 에서 캡처마다의 플러시를 없앤 뒤라 순서의 값이 더 커졌다.
+
+### D. 모양마다 워밍업 **1 회**
+
+`config/compilation.py:643` 기본값 `cudagraph_num_of_warmups = 0`, 그래프를 켜면 `config/vllm.py:1547` 에서 **1** 이 된다.
+우리는 가족의 첫 모양에 2 회다(§5-e). **다만 그대로 베끼면 안 된다** — vLLM 이 1 로 되는 건
+A 의 커널 웜업과 내림차순 `_dummy_run` 을 캡처 **전에** 이미 돌렸기 때문이다.
+**A 가 들어온 뒤에야** 우리도 1 로 내릴 근거가 생긴다. 값은 약 0.77 s.
+
+### 곁가지 둘 (속도 아님, 관문)
+
+`capture_model()` 끝에서 `set_cudagraph_capturing_enabled(False)` 로 **이후의 예기치 않은 캡처를 잡고**,
+`lock_workspace()`(`v1/worker/workspace.py:239`) 로 **커널 워크스페이스가 서빙 중 자라는 것을 막는다**.
+우리는 워크스페이스를 붙잡아 두기만 하고(`graph_resources`) 자라는 것을 막지는 않는다.
+
+### 확인된 것 둘
+
+`capture_model` 은 **`@torch.inference_mode()` 가 아니다**(데코레이터는 `execute_model`·`sample_tokens` 에만).
+§5-h 에서 우리가 기각한 것과 같은 결론이다.
+그리고 vLLM 도 캡처 전체를 감싸 `empty_cache()` 를 **한 번** 부른다(`gpu_model_runner.py:7026`) — §5-h 가 간 길과 같다.
+
+### 로딩은 **우리가 앞서 있다**
+
+vLLM 의 기본 safetensors 경로는 `safe_open` + `get_tensor` 로 **단일 스레드**이고,
+**pinned 스테이징이 없고**(모든 H2D 가 `non_blocking` 없는 `copy_`), **읽기와 복사가 겹치지 않는다**.
+`O_DIRECT`·`preadv`·`fadvise` 는 vLLM 코드에 **한 번도 안 나온다**. 병렬화는 있어도 **파일 단위**라
+랭크마다 파일 하나인 우리 배치에는 아무 이득이 없다. GDS 는 `fastsafetensors` 에 있지만 **TP>1 이면 강제로 꺼진다**
+(`cuFileDriverOpen()` 이 보이는 모든 GPU 에 컨텍스트를 만들기 때문).
+전문가 필터(`ep_weight_filter.py`, *"experts … ~85-90 % of total weight bytes"*)와 `ShardedStateLoader` 는
+**우리가 이미 사전샤딩으로 얻고 있는 것**이다. **가져올 것이 없다.** §5-i 의 남은 질문(경로 게이지, 읽기 크기, 스레드 수)은 우리 스스로 답해야 한다.
+
+## 5-m. 넷을 들였다 (2026-09-12)
+
+§5-l 이 vLLM 에서 찾은 넷을 전부 넣었다.
+
+**A. 문 열기 전 커널 웜업** — `adapter._warmup_serving_kernels()` 가 캡처 직전에
+선언된 프롬프트 폭 `WARM_PREFILL_TOKENS = (1, 8, 64, 512)` 을 한 번씩 돈다.
+메모리 웜업(#549)은 **늘 전체 청크만** 돌았고, 그래서 청크보다 짧은 프롬프트는 전부 **차가운 커널**을 만났다 —
+§5-g 가 잰 그 1.55 s 가 그 자리다. 네 폭은 첫 프롬프트가 모이는 짧은 쪽을 덮고, 비용은 수백 토큰이다.
+**보장은 아니다**: 목록에 없는 폭은 여전히 처음 올 때 컴파일한다. 그걸 없애려면 레인마다 원하는 모양을 등록하는
+커널 쪽 레지스트리여야 하고(vLLM `model_executor/warmup` 이 그것이다), 그건 커널 소유자 몫이다.
+
+**B. 캡처 중 GC 정지** — `engine/base/graphs.py` 의 `frozen_gc()` 가 `collect → freeze → disable` 로 캡처 전체를 감싼다.
+**속도보다 정확성이다**: 캡처 중에 트리톤 커널 객체가 소멸되면 CUDA 모듈이 내려가고,
+그 모듈을 부르는 그래프는 **캡처 때가 아니라 나중 재생에서** 무효가 된다. 중첩은 무연산이라
+안쪽 캡처가 바깥 보호를 되돌리지 못한다. 실패해도 수집기는 돌아온다.
+
+**C. 큰 모양부터 캡처** — 모양 순서가 `n` 내림차순 × 용량 내림차순이 됐다. 첫 캡처가 풀 크기를 정하고
+나머지는 그 풀을 쓴다. 버킷 조회(`shape()`)는 **오름차순 그대로**다 — 문맥을 덮는 **첫** 용량을 골라야 하므로.
+
+**D. 모양마다 워밍업 1 회** — `DecodeGraphs` 의 기본값이 2 → **1**. 둘째 패스의 명분이던 "할당자 안정"은
+§5-h 에서 캡처마다의 플러시를 없앤 뒤로 사라졌다(앞 모양에서 이미 안정된 채 온다). 가족 정책은 없앴다.
+호출자가 더 필요하면 **선언**한다. 0 은 여전히 거부된다.
+
+**값**: C·D 는 부팅을 줄이고(가족 정책의 나머지 ~0.77 s + 풀 성장 제거), **A 는 부팅을 늘린다**(수백 토큰의 프리필).
+A 는 부팅 시계가 아니라 **첫 요청들의 TTFT** 를 사는 것이고, §5-g 가 그게 실재하는 비용임을 쟀다.
+순액은 다음 부팅의 표가 말한다. 읽을 줄은 둘이다 — `capture decode` 의 초, 그리고
+**`serving on :8000` 뒤에 컴파일 줄이 하나라도 남는지**.
+
+**검증**: CPU 375 개. 새 것은 캡처가 큰 것부터인지, 조회 사다리는 오름차순인지, 기본 워밍업이 1 인지,
+`frozen_gc` 가 중첩·실패에서 수집기를 옳게 다루는지, 그리고 캡처 루프가 그 보호 안에 있는지다.
+CUDA 쪽 기계 시험(선언된 횟수, 재생 == eager, 0 회 거부)은 이미지에서만 돈다.
+
 ## 6. 하지 말 것
 
 - **캡처를 서빙 경로로 미루기(lazy capture).** I1 이 금지한다 — 선언되지 않은 모양은 스케줄러 버그이고(D3),

@@ -103,7 +103,7 @@ class GraphPoolSeparationTests(unittest.TestCase):
         source = (ROOT / "engine/base/graphs.py").read_text()
         self.assertIn("self.pool = pool = torch.cuda.graph_pool_handle()", source)
         # and publishes a graph only once its capture returned
-        self.assertIn("except BaseException:\n                    g.reset()\n                    raise", source)
+        self.assertIn("except BaseException:\n                        g.reset()\n                        raise", source)
 
 
 class ReplayStagingTests(unittest.TestCase):
@@ -144,29 +144,69 @@ class ReplayStagingTests(unittest.TestCase):
         self.assertIn("def run(self, step, shape=None):", DECODE_GRAPHS.read_text())
 
 
-class WarmupDeclarationTests(unittest.TestCase):
-    """The family-aware warmup is only correct if the shapes arrive family by family."""
+class CaptureOrderTests(unittest.TestCase):
+    """The first capture sizes the pool every later one shares, so it is the largest."""
 
     def setUp(self):
         self.text = DECODE_GRAPHS.read_text()
 
-    def test_the_target_shapes_are_ordered_by_family_and_declare_their_warmup(self):
-        self.assertIn("warmup=warmup_for", self.text)
-        seqs = self.text.index("for n in range(1, max_seqs + 1)")
-        caps = self.text.index("for capacity in self.capacities", seqs)
-        # capacity-major order would give two passes to the first four shapes and one to every
-        # family after them, which is not what "the first shape of a family" means
-        self.assertLess(seqs, caps)
+    def test_the_target_shapes_run_largest_first(self):
+        self.assertIn("for n in range(max_seqs, 0, -1)", self.text)
+        seqs = self.text.index("for n in range(max_seqs, 0, -1)")
+        self.assertIn("for capacity in reversed(self.capacities)",
+                      self.text[seqs:seqs + 200])
 
-    def test_the_policy_gives_the_first_shape_of_each_family_two_passes(self):
-        body = self.text[self.text.index("def warmup_for"):self.text.index("self.graphs = DecodeGraphs")]
-        self.assertIn("key = shape[:2]", body)
-        self.assertIn("return 2 if first else 1", body)
+    def test_the_bucket_lookup_still_reads_the_ladder_upwards(self):
+        # shape() must return the FIRST capacity that covers the context, so the
+        # ladder it walks stays ascending however the captures are ordered.
+        body = self.text[self.text.index("    def shape(self, step):"):]
+        body = body[:body.index("\n    def ", 10)]
+        self.assertIn("for capacity in self.capacities:", body)
+        self.assertIn("if end <= capacity:", body)
+
+    def test_one_warmup_pass_is_the_declared_default(self):
+        source = (ROOT / "engine/base/graphs.py").read_text()
+        self.assertIn("warmup=1, generators=()", source)
+        self.assertNotIn("warmup_for", self.text)
+
+
+class FrozenCollectorTests(unittest.TestCase):
+    """A Triton kernel collected mid-capture unloads its module and voids the graph."""
+
+    def test_the_capture_runs_with_collection_off(self):
+        import gc
+        from engine.base.graphs import frozen_gc
+        was = gc.isenabled()
+        with frozen_gc():
+            self.assertFalse(gc.isenabled())
+            with frozen_gc():                       # nested guards must not hand it back
+                self.assertFalse(gc.isenabled())
+            self.assertFalse(gc.isenabled())
+        self.assertEqual(gc.isenabled(), was)
+
+    def test_the_collector_comes_back_after_a_failed_capture(self):
+        import gc
+        from engine.base.graphs import frozen_gc
+        with self.assertRaisesRegex(RuntimeError, "capture failed"):
+            with frozen_gc():
+                raise RuntimeError("capture failed")
+        self.assertTrue(gc.isenabled())
+
+    def test_the_capture_loop_is_inside_the_guard(self):
+        source = (ROOT / "engine/base/graphs.py").read_text()
+        guard = source.index("with frozen_gc():")
+        self.assertLess(guard, source.index("for shape in shapes:"))
+        self.assertLess(guard, source.index("g.capture_begin("))
 
 
 @unittest.skipUnless(torch.cuda.is_available(), "requires CUDA")
 class WarmupPolicyTests(unittest.TestCase):
-    """A declared warmup count per shape, and a graph that still replays what eager computes."""
+    """The mechanism, not the profile's policy: a caller may declare a count per shape.
+
+    The GLM-5.3 profile declares one pass for every shape (the kernels are compiled
+    before capture starts). A caller who knows better may still ask for more, and a
+    caller who asks for none is refused.
+    """
 
     def capture(self, warmup):
         from engine.base.graphs import DecodeGraphs
@@ -184,9 +224,19 @@ class WarmupPolicyTests(unittest.TestCase):
             return h
 
         shapes = [(n, 2, cap) for n in (1, 2) for cap in (4, 8, 16)]
-        return DecodeGraphs(step, make_inputs, shapes, warmup=warmup), step, runs, weight
+        kwargs = {} if warmup is None else {"warmup": warmup}
+        return DecodeGraphs(step, make_inputs, shapes, **kwargs), step, runs, weight
 
-    def test_a_family_warms_twice_then_once_and_replays_what_eager_computes(self):
+    def test_the_default_is_one_pass_per_shape(self):
+        graphs, step, runs, weight = self.capture(None)
+        try:
+            self.assertEqual(len(graphs.graphs), 6)
+            for cap in (4.0, 8.0, 16.0):
+                self.assertEqual(runs[cap], 2 * (1 + 1))   # two families, one warmup plus the capture
+        finally:
+            graphs.close()
+
+    def test_a_declared_count_per_shape_is_honoured_and_replays_what_eager_computes(self):
         warmed = set()
 
         def policy(shape):

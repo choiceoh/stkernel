@@ -221,7 +221,7 @@ class Glm53DecodeGraphs:
         # number (adapter.max_context, which serve.py refuses past); unset means the
         # model's trained positions. Capping it is the only lever on the graph count:
         # a bucket is captured whether or not any request will reach it, and each costs
-        # a warmup pair plus a capture (their seconds are memory rows, "target/<shape>/").
+        # a warmup pass plus a capture (their seconds are one memory row, "target/<shape>").
         self.capacities = capacity_ladder(caches.block_table.shape[1] * net.F.block,
                                          net.F.max_position, ceiling)
 
@@ -263,25 +263,15 @@ class Glm53DecodeGraphs:
             finally:
                 del scratch.block_table
 
-        warmed = set()
-
-        def warmup_for(shape):
-            """Two passes for the first shape of a (seqs, tokens) family, one for the capacity
-            buckets that follow it. The family's first pass compiles and autotunes the whole chain
-            and its second settles the allocator; a later bucket runs those same kernels over a
-            different candidate count, which its own pass covers. The shapes are ordered by family
-            so "first" means what it says. 72 warmup passes become 40 (boot-time study: warmup is
-            18.3 s of the 28 s of graph work)."""
-            key = shape[:2]
-            first = key not in warmed
-            warmed.add(key)
-            return 2 if first else 1
-
         try:
+            # Largest shape first. The first capture sizes the pool every later one
+            # shares, so the small rungs reuse it instead of making it grow -- and on
+            # unified memory a pool that grows is pages mapped again. vLLM orders its
+            # captures largest-first and says the same reason.
             self.graphs = DecodeGraphs(forward, make_inputs,
-                                       [(n, tokens, capacity) for n in range(1, max_seqs + 1)
-                                        for capacity in self.capacities],
-                                       warmup=warmup_for, memory=memory, label="target",
+                                       [(n, tokens, capacity) for n in range(max_seqs, 0, -1)
+                                        for capacity in reversed(self.capacities)],
+                                       memory=memory, label="target",
                                        resources=net.lanes.graph_resources, detail=detail)
         finally:
             # Warmup and capture execute real writes, before requests exist.
