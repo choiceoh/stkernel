@@ -73,7 +73,7 @@ ST_PROBE_NO_GPU=1 bash probes/run_engine_probe.sh \
 # GPU: submit from the isolated checkout on srv2.
 REPO=$PWD ST_IMAGE=st-engine:main-ff728f43 \
   ST_CACHE=/home/choiceoh/.cache/st-kda-deferred \
-  bash bench/fleet.sh run --gpu --detach stkda-deferred0912v6 5 \
+  bash bench/fleet.sh run --gpu --detach stkda-deferred0912v7 5 \
   "KDA deferred state correctness and paired verify commit timing" -- \
   bash probes/run_engine_probe.sh probes/engine_kda_deferred_check.py --samples 20
 ```
@@ -87,7 +87,11 @@ reservation's process group and exact-owner lease were stopped/released.
 The helper now detaches the background loop's standard streams. A real-shell
 regression test demonstrates that the original helper times out, while the
 fixed helper returns its PID promptly and continues renewing. This preserves
-both the lease and its heartbeat. A fresh GPU reservation is pending.
+both the lease and its heartbeat. The fixed same-image CPU suite ran 110 tests
+without errors (3 GPU-dependent skips). The fresh reservation is
+`stkda-deferred0912v7`, ticket `17892227321982710`, revision 1, source `19113939`;
+it is queued. The v6 submission failed before admission because main had
+advanced; v7 includes those documentation changes.
 
 The GPU output is `/home/choiceoh/.cache/st-kda-deferred/kda-deferred.json`.
 The kernel runner takes and releases the fleet lease.
