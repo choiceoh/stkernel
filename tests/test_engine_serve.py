@@ -2408,6 +2408,18 @@ class OpenAIDialectTests(unittest.TestCase):
         prefills = [c for c in s.engine.__dict__.get("prefills", [])]     # the fake does not record steps; the counters above say it
         self.assertIn("st:prefix_dedup_waits_total{engine=\"st\"} 1\n", s.metrics())
 
+    def test_the_decode_stage_breakdown_reaches_the_metrics_page(self):
+        """Which stage of a decode step the device is actually in. The two step kinds were already counted; this
+        is what a step is made of, and it is the number every further decode design has to be argued against."""
+        from types import SimpleNamespace
+        s = chat_server()
+        s.engine.pipeline = SimpleNamespace(clock=SimpleNamespace(
+            totals={"forward": 1.5, "sample": 0.25, "verify": 0.125}, samples=7))
+        page = s.metrics()
+        self.assertIn('st:decode_stage_seconds_total{engine="st",stage="forward"} 1.5\n', page)
+        self.assertIn('st:decode_stage_seconds_total{engine="st",stage="verify"} 0.125\n', page)
+        self.assertIn('st:decode_stage_samples_total{engine="st"} 7\n', page)
+
     def test_the_decode_chain_meters_reach_the_metrics_page(self):
         """How much of decode runs ahead on the device, how often that pipeline is emptied, and by what. The
         engine's own `async_steps` existed and never left the process, so nobody could see the first of these."""

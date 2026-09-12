@@ -22,6 +22,7 @@ from __future__ import annotations
 import torch
 
 from engine.base.sampler import block_verify_batch, commit_batch, rows as sampler_rows
+from engine.base.stage_clock import StageClock
 from engine.profiles.glm53.net import Segment, Step
 
 
@@ -54,6 +55,7 @@ class AsyncDecode:
     def __init__(self, engine, depth: int = 2):
         self.e = engine
         self.depth = depth
+        self.clock = StageClock(device=getattr(getattr(engine, "caches", None), "device", None))
         self.batch = ()                                  # the rows the device buffers describe, in order
         self.stale = True                                # host state moved without this chain: rebuild from the host
         self.pending = []                                # Pending, oldest first
@@ -262,22 +264,29 @@ class AsyncDecode:
         host_step = Step(zeros, tuple(Segment(s, slot, e.ctx[s], i * t, t) for i, (s, slot) in enumerate(zip(seqs, slots))))
         end = max(e.ctx[s] + t * ahead for s in seqs)
         shape = e.decode_graphs.shape_for(n, end)
-        h, aux, local = e.decode_graphs.run_device(shape, host_step, b["ids"], b["ctx"], b["seqs"], b["slot"])
+        self.clock.step()
+        with self.clock.mark("forward"):
+            h, aux, local = e.decode_graphs.run_device(shape, host_step, b["ids"], b["ctx"], b["seqs"], b["slot"])
         if b["stochastic"]:
             # the model's dtype, not fp32: the sampler converts as it reads, and the undecodable tail
             # is a width it stops at rather than a copy of the block with minus infinity in its end
-            full = e.net.comm.all_gather(local, dim=-1)
-            probs = distribution_batch(full, b["temps"].repeat_interleave(t), b["top_k"].repeat_interleave(t),
-                                       b["top_p"].repeat_interleave(t), e.decodable,
-                                       self._dists(n * t, full.shape[-1])).view(n, t, -1)
+            with self.clock.mark("all_gather"):
+                full = e.net.comm.all_gather(local, dim=-1)
+            with self.clock.mark("sample"):
+                probs = distribution_batch(full, b["temps"].repeat_interleave(t), b["top_k"].repeat_interleave(t),
+                                           b["top_p"].repeat_interleave(t), e.decodable,
+                                           self._dists(n * t, full.shape[-1])).view(n, t, -1)
             e.note_ceilings(probs, b["qprob"], b["qcand"])
-            accepted, picks, _ = block_verify_batch(probs, b["drafts"], b["qcand"], b["qprob"], e.gen)
+            with self.clock.mark("verify"):
+                accepted, picks, _ = block_verify_batch(probs, b["drafts"], b["qcand"], b["qprob"], e.gen)
         else:
-            picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)
+            with self.clock.mark("sample"):
+                picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)
             accepted = None
         if picks.is_cuda:
             from engine.kernels.decode_commit import advance
-            count, done, accepted, tokens, ctx_before = advance(picks, b, accepted)
+            with self.clock.mark("commit"):
+                count, done, accepted, tokens, ctx_before = advance(picks, b, accepted)
         else:
             ctx_before = b["ctx"].clone()
             count, done, accepted, tokens = commit_batch(picks, b["drafts"], b["alive"], b["generated"], b["limit"], b["ends"], accepted)
@@ -287,14 +296,17 @@ class AsyncDecode:
             b["anchor"] = torch.where(count > 0, last, b["anchor"])
             b["alive"] = b["alive"] & ~done
             b["slot"] = torch.where(b["alive"], b["real_slot"], torch.zeros_like(b["real_slot"]))
-        e.caches.stage_boundaries(b["real_slot"], ctx_before, count)       # a block boundary crossed: its state parked for the host
+        with self.clock.mark("boundaries"):
+            e.caches.stage_boundaries(b["real_slot"], ctx_before, count)   # a block boundary crossed: parked for the host
         if aux is not None:
             positions = ctx_before.view(n, 1) + torch.arange(t, device=aux.device)
-            if e.drafter.decode_graphs is not None:
-                e.drafter.decode_graphs.observe_rows(b["real_slot"], positions, aux, count)
-            else:
-                e.drafter.observe_rows(e.caches.draft_field(), b["real_slot"], positions, aux, count)
-        self._propose_rows()
+            with self.clock.mark("observe"):
+                if e.drafter.decode_graphs is not None:
+                    e.drafter.decode_graphs.observe_rows(b["real_slot"], positions, aux, count)
+                else:
+                    e.drafter.observe_rows(e.caches.draft_field(), b["real_slot"], positions, aux, count)
+        with self.clock.mark("propose"):
+            self._propose_rows()
         # the outcome crosses to the host behind an event; the next step is already queued when it is read
         lane = self.free.pop(0)
         host = self.host[lane]
