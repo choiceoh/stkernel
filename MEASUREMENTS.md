@@ -322,6 +322,8 @@ vs 3.4e-2/1.4e-1 — **캐시 경로는 아무것도 더하지 않는다**. PASS
 - **§96** — 관측 겹치기를 준비했다: observe 는 commit 전에 계산을 시작할 수 있다
 - **§97** — 서빙 중에 멎은 플릿: 같은 집합통신에 네 랭크가 서로 다른 형상으로 들어갔다
 - **PR #767** — GPU 하나면 되는 검사는 플릿이 아니라 **ost-97x 의 5050** 으로: 큐에 레인이 둘
+- **PR #770** — 리스를 큐 아래로: 기록 하나, 주인은 큐, 인계는 이전 — 그리고 러너가 **영원히 거부**하고 있었다
+- **PR #771** — ost-97x 는 테일넷의 **Windows 박스**였다: 이름은 srv2 의 ssh 별칭이 풀고, 사용자·포트도 별칭이 정한다
 
 ### 45차 §23 — 프로덕션 전환 시도: 창·45층 4노드 부팅·문 사다리, 그리고 깨진 글의 원인 = KDA `o_norm` epsilon (2026-09-11 밤 ~ 09-12 새벽)
 
@@ -1358,3 +1360,153 @@ GLM 점별 연산의 이전 GPU 비교도 재현했다. 세부 수치·로그·�
 같은 캐시 원본으로 띄워 부팅마다 최신 canonical onepass 두 판을 잰다. TP4, K=6, KV=7 GiB,
 2K/32K/128K, C=1/C=4, 고정 디코드 7200 토큰×3, 추론 품질 인증 문항과 별도 GPU 진단을 포함한다.
 00:32에 첫 기준 부팅을 시작했다. 아직 원패스 성능·품질 결과와 22 step/s 판정은 없다.
+||||||| 21cb0539
+### 45차 — ost-97x 는 테일넷의 **Windows 박스**였다: 이름은 srv2 의 ssh 별칭이 풀고, 사용자·포트도 별칭이 정한다 (2026-09-13, 맥→srv2, PR #771)
+
+PR #767 의 "준비물" 을 실제로 만들려고 ost-97x 부터 찾았다.
+
+**찾은 것.** 맥·srv4·srv2 어디에도 DNS·mDNS·`/etc/hosts` 에 없다. 테일넷에 있다: **`OST-97X`**(테일넷 이름
+`office-topsolar.tail7fec17.ts.net`, 100.116.174.65) — **Windows**, DERP 릴레이로만 닿고(직결 없음), 22·3389 닫힘.
+집 LAN(192.168.68.0/22) 스윕에서 ssh 가 열린 호스트는 스파크 넷(srv1 .59, srv4 .72, srv3 .73, srv2 .77)뿐이다.
+즉 이 박스에는 아직 sshd 가 없고, 리눅스도 아니다.
+
+**한 것.** (1) srv2 `~/.ssh/config` 에 `Host ost-97x → HostName office-topsolar.tail7fec17.ts.net`(srv2 의 MagicDNS 가
+푼다). `ssh -o BatchMode=yes ost-97x true` 의 답이 "Could not resolve hostname" 에서 "port 22: Connection timed out"
+으로 바뀌었다 — 이름은 풀리고, 그쪽에 sshd 가 없다. `status` 의 single 줄도 이제 그렇게 말한다. (2) 코드: 레인이
+`choiceoh@` 를 강제하지 않는다. `fleet_single.target()` 과 `probes/run_engine_probe.sh` 는 호스트를 준 그대로 쓰고,
+컨트롤러의 ssh 별칭이 주소·사용자·포트를 정한다 — 그 박스는 스파크도, choiceoh 의 것도 아니다.
+
+**막힌 것 — 운영자의 손이 필요하다.** (1) OST-97X 에 srv2 에서 BatchMode 로 닿는 sshd. 러너가 bash·rsync·docker
+(NVIDIA 런타임)를 쓰므로 **WSL2 Ubuntu 안의 sshd** 가 실용적인 모양이다(테일넷 100.116.174.65:22 로 노출). srv2 의
+공개키(`~/.ssh/id_ed25519.pub`, `choiceoh@spark4tb`)를 그 계정의 `authorized_keys` 에, 사용자·포트를 srv2 별칭에.
+(2) **x86_64 ST 이미지가 없다.** 지금 이미지는 GB10 시드(aarch64) 위에 짓고, DeepGEMM 은 시드에서 뽑은
+`_C.cpython-3xx-aarch64-linux-gnu.so` + JIT 헤더(821 파일)뿐 — `csrc` 가 없고, API 는 포크 것(`fp8_fp4_mqa_logits`,
+`tf32_hc_prenorm_gemm`, 2.6.1). x86 에서 다시 지으려면 그 포크의 확장 소스가 있어야 한다. ST 검사는 전부
+`deep_gemm` 을 임포트하므로, 이게 없는 한 5050 에서 도는 ST 검사는 없다. (3) 그때까지 단일 레인 티켓은
+"Connection timed out" 을 말하며 기다리고, `run --gpu --fleet` 가 우회다.
+
+**검증.** 맥: `test_fleet_single` 12 · onepass · source · ledger_numbering 통과, `FLEET_AUDIT` 갱신(`test_docs_status`
+는 main 의 `bench/FLEET_BOOT_READINESS.md` 배너 누락으로 빨갛다 — 이 PR 밖, 칩으로 띄움). srv2: 별칭 실측은 위와
+같다. 5050 실물 왕복은 여전히 없다.
+
+### 773차 — 시뮬레이터가 기록의 나머지 숫자들도 맞춘다: 폴드아웃 검증으로 잡은 버그 셋 (2026-09-12~13, ost 노트북 macOS arm64·CPU, PR #773)
+
+760차의 `step_sim` 은 스텝 캐던스 하나를 맞추고 나머지는 못 맞췄다. "다른 측정값과도 거의 일치"를 요구받고
+네 기록(ST 엔진 + 노브가 서로 다른 glm53 부팅 셋: EP tiled·EP local·MLA)에 대해 폴드아웃 검증을 돌린 결과,
+**일치하지 않던 것은 전부 모형의 버그였다**:
+
+1. **수용률 매핑** — 원장의 `raw_acc` 는 accepted/drafted 비율이라 위치별 수용 확률은
+   q≈0.75 인데(k=5, acc 46.2%에서) q=0.462 로 추첨해 tokens/step 이 절반쯤으로 나갔다.
+   `per_position_acc()` 가 이등분법으로 q 를 푼다. 이 매핑은 프로브가 아니라 산술이다 —
+   원장 숫자를 시뮬레이션에 옮기는 모두가 밟는 자리.
+2. **행 기준** — tokens/step 을 스텝 수로 나눠 폭 2 스텝이 2배로 읽혔다. 행-스텝 기준
+   (`st:decode_row_steps` 와 같은 정의)으로 고쳤다.
+3. **도착 증폭** — 기록 e2e 누적으로 도착을 유도하니 시뮬이 살짝 느릴 때 다음 프리필이
+   겹쳐 프리필-디코드 간섭이 되먹임으로 커졌다(32K e2e +171%). 하네스는 순차 실행이므로
+   검증은 **closed-loop**(엔진이 한가해야 다음 제출, 폭 1)로 재현한다.
+
+**폴딩·검증**: `fit_cost` 가 기록에서 상수를 폴딩한다(prefill 은 컨텍스트별 실측 처리량 계단 —
+실제 토큰수·warm, decode ms 는 판정 채널의 역수, k·수용률은 스펙 카운터). `--against` 는
+기록마다 closed-loop 재현 후 델타표를 내고 매 행에 [입력](폼 상수, 일치는 자명)과 [예측]
+(폼에 얹히지 않은 값)을 단다.
+
+**결과** — 예측 24행(ST 6 + glm53 18) 중 |잔여|>10% 는 **0행**:
+
+| 기록 | 예측 행 최대 잔여 |
+|---|---|
+| ST-PROD-5734-20260912 (ST 엔진) | +4.9% (e2e 2K) |
+| EPTILEDWORD4B (EP tiled) | +6.8% (TPOT) |
+| EPONEPASS25B0 (EP local) | −6.7% (TTFT warm 2K) |
+| MLAPREF50907B1PRIME (MLA) | +9.1% (TPOT) |
+
+TTFT(warm) 32K/128K 는 네 기록 전부 ±0.5% 이내, tokens/step ±1.2% 이내, 클라이언트 tok/s·TPOT
+−8.3~+2.4%. 남은 −5~−9% 클라이언트 체계 잔여는 모형 오차가 아니라 **기록 안의 채널 차이**다 — 같은
+기록에서 창 메디안×tokens/step 와 요청별 실측이 2~5% 다르고, `--fit-channel client` 로 폼을 옮기면
+step/s 가 +3.4% 예측이 되는 대칭이 관측된다. 어느 쪽에 맞추든 반대채널이 채널 차이만큼 벌어진다.
+
+미계수는 명시돼 있다: decode 의 폭·컨텍스트 의존은 평탄 가정(요약 줄마다 표시). C=2/4 기록(#754)이
+쌓이면 `--cost-json` 으로 폴딩할 자리. 증거: `measurements/step_tools_nofleet_20260912/sim_validate_4records.txt`.
+D17 그대로 — 이것은 시뮬레이션이고 판정은 플릿 onepass 두 판이다.
+
+### 45차 — 리스를 큐 아래로: 기록 하나, 주인은 큐, 인계는 이전 — 그리고 러너가 **영원히 거부**하고 있었다 (2026-09-12~13, 맥 + 리눅스 컨테이너, GPU·플릿 미검증, PR #770)
+
+운영자 "리스와 큐가 왜 따로 있는거지? 리스를 큐의 기능화 하는게 좋지않나". **가르는 답**: 따로일 이유는 반쪽이다.
+엔진이 양보 요청을 알아채려면 리스가 컨테이너 안에서 읽혀야 하고(bind-mount 된 `glm53-logs/`, stdlib 모듈), 큐를
+안 거치는 부팅(수동 세션·슈퍼바이저·deploy-watch)이 있다 — 여기까지가 진짜다. 나머지는 하루 안에 생긴 역사다:
+§27 은 "큐를 엔진에 넣을까" 만 따졌고 거울상은 따지지 않았다. 코드 자체가 과도기라고 적어 놓았다 — 런처 "until they
+become one", 리스 모듈 "The queue takes the lease when it grants" — 그런데 **그 후반부는 구현된 적이 없었다.**
+페이로드(런처·프로브 러너)가 리스를 잡고 큐는 `holder` 파일을 따로 썼다. 기록 둘, 생존 규칙 둘, 양방향 교차 검사.
+
+**이음매가 낸 사고 — 오늘 것 셋에 더해, 살아 있던 결함 둘**(코드 판독 + 로컬 재현; srv2 실측은 아님):
+
+1. **러너에서 도는 티켓은 플릿이 비어 있어도 영원히 거부됐다.** 큐의 대기 루프는 핀된 러너 스냅샷(`bench/`,
+   `engine/`, `probes/`)에서 돌고 거기엔 `launchers/lib/fleet-lease.sh` 가 없었다(같은 날 PR #768 이 독립적으로 같은 구멍을
+   찾아 헬퍼를 스냅샷에 핀했다; 이 PR 은 헬퍼 대신 모듈을 직접 읽어 큐의 `launchers/` 의존 자체를 없앤다). `st_engine_lease` 는 그때
+   "unreadable -- this node cannot say the fleet is free" 를 답하고, #706 이후 그 답은 (옳게도) 점유로 친다.
+   로컬에서 `fleet_pin.py` 로 러너를 핀해 재현: `lease: unreadable from .../runners/9637dec1... -- this node
+   cannot say the fleet is free`. #706 이후 GO 를 받은 러너 티켓이 하나도 없는 이유다.
+2. **슈퍼바이저는 옛 경로를 읽었다.** `st-glm53-supervisor.sh` 의 `fleet_taken` 이 `~/st-fleet.lock` 을 보는데
+   런처는 `glm53-logs/st-fleet.lock` 에 쓴다. 티켓의 부팅(컨테이너 이름도 `st-glm53`)은 슈퍼바이저에게 보이지 않고,
+   90초 뒤 건강검사 3회 실패로 `stop`→`start` 에 죽었을 것이다. 손으로 하던 A/B 스크립트(`run-exclusive-*.sh`)가 맨
+   먼저 `systemctl stop st-glm53.service` 를 한 이유가 이거였다.
+3. 덤: `holder_alive` 의 `read` 가 `local` 없이 호출자의 `s`/`pid` 를 덮어썼다(bash 동적 스코프). 죽은 홀더를
+   킥한 바로 그 폴에서 `_try_hold` 의 세션이 죽은 홀더의 이름이 되어 GO 검사가 한 번 헛돌았다. 샌드박스가 잡았다.
+
+**결정(운영자, 인터뷰 여섯 문답):** (1) 리스를 큐의 **권한**으로 — 기록과 모듈은 엔진 쪽에 둔다(컨테이너 안에서 읽혀야
+하므로). (2) 모든 부팅은 리스를 쥔다; 벤치 부팅은 큐가 GO 때 `queue/<session>` 으로 잡아 소유자만 넘기고 런처·프로브
+러너는 **검증만** 한다. 프로덕션은 `kind=production` 리스를 직접 잡는다(릴리스 트리에 `bench/` 가 없다). (3) 홀더를
+대하는 규칙은 **kind** 로 갈린다: production 은 **정숙 게이트**(deploy-watch 의 규칙: `st:quiet`=1·요청 0 이
+`FLEET_QUIET_S`=120 s 내내)일 때만 양보 요청, session 은 §91 대로 묻지 않음, 큐 자신은 자기 것. (4) 인계는 해제가
+아니라 **이전**: 엔진 핸드오버의 끝은 요청자에게 소유권 이전(빈 창 없음). (5) 티켓이 끝나면 **대기 부팅 티켓이 있으면
+그 티켓으로 이전, 없으면 해제** → 슈퍼바이저가 고정 릴리스 복구 ("대기 예약이 없을 때만 되돌리면 되지"). 대기 프로브
+티켓은 프로덕션이 있어야 도니 해제 쪽. (6) PR 셋: 이것(리스를 큐 아래로) → ST 브래킷(`st-pair`/`st-chain`/`st-hold`,
+sha 하나·프로덕션 형상) → 배포·큐 연결(D17 프로브 티켓, 컨트롤러 워크트리 추종).
+
+**구현(이 PR; PR #767 의 단일 GPU 레인과 병합 — 그 레인은 플릿이 아니라 리스를 잡지 않는다):**
+- `engine/base/fleet_lease.py`: 기록에 `kind`(session/production/queue/probe); `transfer`(이전), `verify`, `taken`(kind 로
+  판정), `attach`(컨테이너 증거 뒤늦게), `withdraw_yield`, `door_load`(deploy-watch 의 `busy` 를 옮김 — 정숙의 정의 하나).
+  `queue`/`probe` 리스는 pid 가 **결정적**: 헤드의 슈퍼바이저 프로세스가 곧 홀더라 죽으면 유예 없이 free. kind 없는
+  옛 기록(지금 srv2 의 프로덕션 리스가 그렇다)과 평문 잠금은 **컨테이너 이름으로 판정**(st-glm53 = production) — 옛
+  슈퍼바이저의 규칙 그대로. 이게 없으면 첫 배포가 자기 프로덕션 뒤에서 영원히 기다린다.
+- `bench/fleet.sh`: `_try_hold` 가 GO 때 리스를 잡거나(빈 플릿) 이미 넘겨받은 것을 확인; `st_engine_ask` 가 kind 로
+  묻는다(production 만, 정숙 게이트, 티켓당 한 번, `.asked.<s>` 마커); `_release` → `_lease_pass_on`(다음 부팅 티켓으로
+  `transfer`, 없으면 `release`); `holder_alive` 는 부팅 홀더를 **리스로** 판정(리스 없는 옛 홀더·프로브 홀더는 전처럼
+  pid); `_dequeue` 가 자기 요청을 거둔다(`withdraw-yield`); `yield`(프로브에 양보)는 `FLEET_KEEP_LEASE=1` 로 리스를 쥔
+  채; 핀된 모듈에서 직접 읽는다(`launchers/` 헬퍼 참조 제거); `status`·`waiting:` 줄에 `lease:`; `FLEET_RULES=3`(PR #767 의 2 다음).
+- `bench/fleet_pin.py` 가 `engine/base/fleet_lease.py`·`launchers/lib/fleet-lease.sh` 를 핀; `bench/fleet_boot.py` 가
+  페이로드에 `ST_LEASE_OWNER=queue/<s>` 를 넘김; `bench/fleet_handoff.py next` = 이전 받을 다음 부팅 티켓(우선순위
+  순, 살아 있는 슈퍼바이저, 프로브 제외).
+- `engine/base/serve.py::_hand_over`: 요청이 지명한 기록(kind·pid·host)으로 `transfer`, 요청자가 없을 때만 `release`.
+- `launchers/start-st-glm53.sh`: `ST_LEASE_OWNER`(검증만) / `ST_LEASE_KIND=production`(획득) / `ST_LEASE_KIND=session`
+  (수동 세션 부팅, `st-hold` 가 오기 전까지의 다리) 셋 중 하나가 없으면 거부. `stop` 은 **홀더만**: 티켓은 소유자 일치,
+  production/session 은 kind 일치, 사람은 `STOP_FORCE=1`; kind 이전 기록은 옛 규칙. 티켓 모드의 `stop` 은 리스를 놓지
+  않고 `phase=stopped` 만 적는다(놓으면 다음 티켓에 못 넘긴다). 큐 holder 파일 검사(`FLEET_HOLDER`) 제거. 부팅 뒤 `attach`.
+- `launchers/st-glm53-supervisor.sh`: 한 리스 파일을 `taken --kind production` 으로 판정(옛 경로는 옛 규칙으로 계속),
+  자기 부팅은 `ST_LEASE_KIND=production`. `launchers/st-deploy-watch.py`: 리스가 프로덕션 것이 아니면 **미룸**(거부로
+  기록하지 않음 — `cycle()` 에서 `deploy()` 전에), `busy`/`unsupported` 는 리스 모듈의 것.
+- `probes/run_engine_probe.sh`: `ST_LEASE_OWNER` 검증만(획득·하트비트·해제 없음); 티켓 없는 GPU 프로브는 거부.
+
+**검증(GPU 없음):** 리스 자가검증 통과. 리눅스 컨테이너(python:3.12 aarch64, CPU torch + triton):
+`tests/test_engine_fleet_lease.py` **76 tests OK**(전 58; 새로 kind·이전·verify/taken·요청 회수·attach·정숙 정의 하나·
+핸드오버가 실제 리스 파일을 이전함·러너 핀·슈퍼바이저 경로·deploy-watch 미룸·런처 거부/검증·`stop` 규칙·kind 이전 기록),
+새 `tests/test_engine_fleet_queue.py` **6 시나리오** — `bench/fleet.sh` 의 진짜 함수들을 샌드박스(사설 FLEET_DIR·리스
+파일, 테스트가 쓰는 `/metrics`, 컨테이너 없는 docker, ssh 없음)에서: 정숙 게이트 → 한 번의 요청 → 이전 → GO;
+티켓→티켓 이전 → 큐 비면 해제; 대기 프로브는 해제 사유; session 홀더는 묻지 않음 + 취소 티켓은 요청 회수; 죽은 홀더
+킥과 리스 회수; `status` 의 `lease:` 줄. `test_engine_fleet_ops`(슈퍼바이저·런처 실제 셸 흐름)·`test_engine_queue_lease_shell`
+(PR #768 의 핀된 러너 셸 테스트, 새 설계로 갱신)·`test_st_deploy_watch`·`test_fleet_single`(PR #767 단일 GPU 레인)·`test_fleet_onepass`
+도 OK. origin/main(PR #767·#768 포함)에 병합한 트리로 전체 스위트를 origin/main 사본과 대조: 플릿 스위트 **409**, 엔진 스위트
+**991**(기준선 969 + 새 22) — 실패 집합이 기준선과 **완전히 같다**(플릿 28·2, 엔진 1·3, 전부 환경: 프로세스 정체·git·docker·모델
+파일 없음), 회귀 0. `test_fleet_onepass`·`test_fleet_single` 의 옛 설계 핀(런처가 큐 holder 파일을 읽는다, 프로브가 리스를 잡는다)은
+새 설계로 갱신, `FLEET_AUDIT` 재생성. 맥에서는 torch 없는 6개만 오류.
+**실측 없음**: 플릿(10.10.10.x)이 이 맥에서 닿지 않는다.
+
+**다음 창의 첫 일(srv2):** (1) `~/.config/systemd/user/st-glm53.service.d/release.conf` 드롭인을 새 릴리스로 옮기거나
+지워 `~/st-engine` 을 따르게 — 슈퍼바이저 수정은 deploy-watch 로는 프로덕션에 닿지 않는다(실행 파일이 릴리스
+`5734b29fde84` 에 고정). (2) `bash bench/fleet.sh status` 가 `lease: production ...` 을 읽는지. (3) 티켓 하나
+(`run --gpu s -- bash probes/run_engine_probe.sh probes/engine_kernel_check.py`)가 정숙 게이트 → 양보 요청 → 엔진 이전
+→ GO → 해제 → 슈퍼바이저 복구를 지나는지 — 이것이 §90 의 `st-fwd-lanes` 가 못 받은 GO 다. (4) PR 2(ST 브래킷), PR 3.
+
+**남는 노출(정직하게):** 배포된 엔진(옛 릴리스)의 핸드오버는 여전히 `release()` 라 새 코드가 프로덕션에 오르기 전까지
+빈 창이 남는다 — 그동안은 옛 런처의 `stop` 이 남의 리스(컨테이너 없는 큐 리스)를 거부하므로 슈퍼바이저가 티켓 부팅을
+죽이지는 않는다. `--probe` 레인은 아직 ST 를 모른다(PR 3). `ST_LEASE_KIND=session` 수동 부팅은 `st-hold` 전까지의
+다리이고, 그 `stop` 은 kind 만 맞으면 된다(세션끼리 서로 내릴 수 있음 — 지금과 같다).

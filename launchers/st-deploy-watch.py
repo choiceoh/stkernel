@@ -23,8 +23,11 @@ same reason `base/fleet_lease.py` is: it has to be runnable where the engine's v
    absolute count is not a signal and a green bar is not available; the delta is.
 
 What it does NOT do: it does not arm itself (`--install` prints the two commands and stops), it
-does not take the fleet from another stack, and it does not restart more often than `--min-gap`
-seconds however fast main moves.
+does not take the fleet from another stack -- nor from a ticket the queue granted or a session's
+boot: a live fleet lease of any kind but `production` defers the deploy to the next cycle, without
+recording anything -- and it does not restart more often than `--min-gap` seconds however fast
+main moves. Its own boots hold the `production` lease (ST_LEASE_KIND=production), the fleet's
+default state, which the queue asks to hand over only through the same quiet gate used here.
 """
 from __future__ import annotations
 
@@ -45,6 +48,14 @@ SOURCE = Path(os.environ.get("ST_SOURCE", HOME / "stkernel"))
 BASE = os.environ.get("ST_BASE", "http://127.0.0.1:8000")
 SERVICE = os.environ.get("ST_SERVICE", "st-glm53")
 CARRY = ("engine", "launchers", "tests", "probes", "build")   # what a release has to hold to boot and be judged
+LOCK = Path(os.environ.get("FLEET_LEASE_PATH", "/home/choiceoh/glm53-logs/st-fleet.lock"))   # the one lease file
+
+# The quiet gate's reading of the door, and the lease, live with the lease module (stdlib, in every
+# release under engine/base/): the queue applies the same gate before asking production to hand
+# over, so there is one definition of "quiet" and one of "taken".
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from engine.base import fleet_lease                                                  # noqa: E402
+from engine.base.fleet_lease import LeaseHeld, door_load as busy, door_unsupported as unsupported   # noqa: E402
 
 
 def run(cmd, cwd=None, timeout=1800, env=None):
@@ -72,40 +83,31 @@ def wanted(head: str, held: dict) -> "str | None":
     return f"main is {head[:12]}, deployed is {str(held.get('deployed'))[:12]}"
 
 
-def busy(metrics: str) -> "int | None":
-    """What the engine still has outstanding, or None when it did not answer in a way we understand.
+# `busy(metrics)` -- what the engine still has outstanding, or None when it did not answer in a way we
+# understand -- and `unsupported(metrics)` are fleet_lease.door_load / door_unsupported (imported above).
+# `st:quiet` is the engine's OWN answer and is the one that counts; None is not zero: an engine that
+# cannot be asked is not known to be quiet, and this refuses to deploy on top of a question it could
+# not get an answer to -- including one too old to publish `st:quiet`, which `unsupported` names.
 
-    `st:quiet` is the engine's OWN answer (`serve._quiet`) and is the one that counts: a conversation
-    being retired to or restored from the NVMe tier runs on its own thread, is not a request, and
-    leaves both request gauges reading zero. Taking the fleet down on those two alone would cut
-    exactly the work a handover waits for. The request counts are still read, to say how busy.
 
-    None is not zero. An engine that cannot be asked is not known to be quiet, and this refuses to
-    deploy on top of a question it could not get an answer to -- including one too old to publish
-    `st:quiet`, which is the shape of engine this must not assume anything about.
+def fleet_taken_by_another(log) -> bool:
+    """A live fleet lease of any kind but production is a window somebody was granted.
+
+    The queue takes the lease for a ticket's boot and a session's boot holds one of its own; deploying
+    over either would be the launcher's `stop` evicting somebody else's boot (it refuses now, but this
+    should not even try). Deferred, not rejected: nothing is recorded, the next cycle looks again.
+    A lease this cannot read is not free (D3).
     """
-    seen = {}
-    for name in ("vllm:num_requests_running", "vllm:num_requests_waiting", "st:handing_over", "st:quiet"):
-        m = re.search(rf"^{re.escape(name)}(?:\{{[^}}]*\}})? +([0-9.eE+-]+)$", metrics, re.M)
-        if m is None:
-            return None
-        seen[name] = float(m.group(1))
-    requests = int(seen["vllm:num_requests_running"] + seen["vllm:num_requests_waiting"])
-    if seen["st:handing_over"] or not seen["st:quiet"]:
-        return max(1, requests)                     # something is outstanding, whatever the counts say
-    return requests
-
-
-def unsupported(metrics: str) -> bool:
-    """True when the engine answered, but is older than `st:quiet` and cannot say whether it is idle.
-
-    Not the same as silence, and the difference matters: waiting fixes silence and does not fix this.
-    It is also the bootstrap -- `st:quiet` exists only in the tree this would deploy -- so an engine
-    this old has to be moved forward once by a person before the watcher can take over.
-    """
-    if re.search(r"^vllm:num_requests_running(?:\{[^}]*\})? +", metrics, re.M) is None:
-        return False                                  # nothing that looks like this engine's door
-    return re.search(r"^st:quiet(?:\{[^}]*\})? +", metrics, re.M) is None
+    try:
+        who = fleet_lease.taken(fleet_lease.read(LOCK), mine_kind="production",
+                                container_up=fleet_lease.docker_evidence)
+    except LeaseHeld as exc:
+        log(f"  the fleet lease could not be read ({exc}); not deploying over a question")
+        return True
+    if who:
+        log(f"  the fleet is held by {who}: deferring the deploy to the next cycle")
+        return True
+    return False
 
 
 def failures(tree: Path, timeout: int) -> "dict[str, str]":
@@ -167,10 +169,14 @@ def deploy(release: Path, log) -> bool:
     if not launcher.exists():
         log(f"  ABORT: {launcher} is missing")
         return False
+    # Its boots are production's: the lease they take is kind `production`, and `stop` is judged
+    # by that kind too (the supervisor's pid, or this one's, does not matter across restarts).
+    env = {"REPO": str(release), "ST_LEASE_KIND": "production",
+           "LEASE_OWNER_PRODUCTION": f"production/deploy/{os.getpid()}"}
     run(["systemctl", "--user", "stop", SERVICE], timeout=300)
-    code, out, err = run(["bash", str(launcher), "stop"], timeout=600, env={"REPO": str(release)})
+    code, out, err = run(["bash", str(launcher), "stop"], timeout=600, env=env)
     log(f"  stop: rc={code} {out.strip().splitlines()[-1] if out.strip() else ''}")
-    code, out, err = run(["bash", str(launcher), "start"], timeout=3600, env={"REPO": str(release)})
+    code, out, err = run(["bash", str(launcher), "start"], timeout=3600, env=env)
     for line in (out + err).strip().splitlines()[-6:]:
         log(f"  {line}")
     if code:
@@ -257,6 +263,8 @@ def cycle(a, log) -> int:
         log("    (or --no-gate, which is a different decision)")
         return 1
 
+    if fleet_taken_by_another(log):
+        return 0                                       # deferred, not rejected: main has not moved past it
     log(f"  deploying {head[:12]}")
     ok = deploy(release, log)
     if not ok:

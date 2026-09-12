@@ -48,38 +48,29 @@ ssh() { local command="${!#}"; bash -c "$command"; }
                 self.shell(prelude + 'fleet_lease release --owner "$TEST_OWNER"')
                 self.assertFalse(self.lease.exists())
 
-    def test_actual_queue_functions_read_and_request_yield_from_snapshot(self):
+    def test_actual_queue_functions_read_the_lease_from_the_snapshot(self):
+        """The queue reads and takes the lease through its own pinned module (bench/fleet.sh
+        `lease`), never through the launchers/ helper: a runner snapshot that could not read
+        the lease counted it as occupied, and no runner-driven ticket was ever granted."""
+        import tempfile
         source = (self.runner / 'bench/fleet.sh').read_text()
-        functions = '\n'.join(name + '() {' + source.split(name + '() {', 1)[1].split('\n}', 1)[0] + '\n}'
-                              for name in ('st_engine_lease', 'st_engine_yield'))
-        # A shell function exported into each helper's subshell identifies this host.
-        prelude = 'hostname() { printf "test-head\\n"; }\n' + functions + '\n'
-        self.assertEqual(self.shell(prelude + 'st_engine_lease'), '')
-        self.shell(self.local + 'fleet_lease acquire --owner holder')
-        held = self.shell(prelude + 'st_engine_lease; st_engine_yield waiter')
-        self.assertIn('holder', held)
-        record = json.loads(self.lease.read_text())
-        self.assertEqual(record['yield_to']['requester'], 'queue/waiter')
-        self.assertEqual(record['yield_to']['reason'], 'a queued reservation needs the fleet')
-        # Missing dependency is still a refusal, never a free fleet.
-        (self.runner / 'engine/base/fleet_lease.py').unlink()
-        self.assertIn('unreadable', self.shell(prelude + 'st_engine_lease'))
-
-    def test_heartbeat_pid_capture_does_not_wait_for_background_loop(self):
-        process = subprocess.Popen(['bash', '-euc', self.local +
-                                    'BEAT=$(fleet_lease_beat holder); printf "%s\\n" "$BEAT"'],
-                                   env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                   text=True, start_new_session=True)
-        try:
-            out, err = process.communicate(timeout=3)
-            self.assertEqual(process.returncode, 0, err)
-            os.kill(int(out.strip()), 0)  # the heartbeat is alive while its caller has returned
-        finally:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            process.communicate(timeout=5)
+        prelude = source[:source.index('\ncmd=${1:-status}')]
+        with tempfile.TemporaryDirectory() as fleet_dir:
+            env = dict(self.env, FLEET_DIR=fleet_dir + '/fleet', LOGD=fleet_dir, FLEET_RUNNER_REPO=str(self.runner))
+            def queue(script):
+                return subprocess.run(['bash', '-c', prelude + '\n' + script], env=env, capture_output=True,
+                                      text=True, timeout=30, check=True).stdout.strip()
+            self.assertEqual(queue('st_engine_lease'), '')                       # free: silence
+            self.assertEqual(queue('lease_kind'), 'free')
+            self.shell(self.local + 'fleet_lease acquire --owner "production/srv2/1" --kind production')
+            self.assertIn('production production/srv2/1', queue('st_engine_lease'))
+            self.assertEqual(queue('lease_kind'), 'production')
+            self.shell(self.local + 'fleet_lease release --owner "production/srv2/1"')
+            # a lease handed to the very ticket that is asking is not occupation
+            self.shell(self.local + 'fleet_lease acquire --owner "queue/t1" --kind queue --pid 1')
+            self.assertIn('queue queue/t1', queue('st_engine_lease'))
+            self.assertEqual(queue('ST_MINE=t1 st_engine_lease'), '')
+            self.assertEqual(queue('lease_mine t1 && echo mine'), 'mine')
 
 
 if __name__ == '__main__':

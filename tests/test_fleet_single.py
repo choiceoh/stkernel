@@ -42,7 +42,7 @@ class EvidenceTests(unittest.TestCase):
             calls.append(argv)
             return Done(0, '')
         self.assertEqual(single.evidence('ost-97x', run=free), [])
-        self.assertEqual(calls[0][-2:], ['choiceoh@ost-97x', single.QUERY])   # the fleet's user unless named
+        self.assertEqual(calls[0][-2:], ['ost-97x', single.QUERY])   # the alias as given; ~/.ssh/config owns the rest
         self.assertIn('BatchMode=yes', calls[0])
         busy = single.evidence('ost-97x', run=lambda *a, **k: Done(0, '4242, python3, 512\n4243, python3, 64\n'))
         self.assertEqual(busy, ['ost-97x: busy outside this queue -- pid 4242 (python3) and 1 more'])
@@ -54,9 +54,12 @@ class EvidenceTests(unittest.TestCase):
         self.assertIn('No route to host', failed[0])
         self.assertIn('lane is off', single.evidence('')[0])
 
-    def test_a_user_in_the_host_name_is_kept(self):
+    def test_the_ssh_alias_decides_user_and_address(self):
+        """ost-97x is a Windows box on the tailnet, not a Spark: the controller's ~/.ssh/config
+        names its address, user and port, and nothing here forces the fleet's user onto it."""
         self.assertEqual(single.target('ost@ost-97x'), 'ost@ost-97x')
-        self.assertEqual(single.target('ost-97x'), 'choiceoh@ost-97x')
+        self.assertEqual(single.target('ost-97x'), 'ost-97x')
+        self.assertFalse(hasattr(single, 'USER'))
 
     def test_the_cache_remembers_one_answer_per_ttl_and_per_host(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -108,9 +111,10 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(handoff.holder_path('/f', 'single'), Path('/f/holder-single'))
         for kind in ('boot', 'probe'):
             self.assertEqual(handoff.holder_path('/f', kind), Path('/f/holder'))
-        # the ST launcher reads the FLEET's holder and nothing else: a check on the 5050 must
-        # never look like the fleet being held to it
-        self.assertIn('FLEET_HOLDER=${FLEET_HOLDER:-/home/choiceoh/glm53-logs/fleet/holder}', self.launcher)
+        # the ST launcher reads the fleet LEASE (the queue's one record, PR #770) and no holder
+        # file at all: a check on the 5050 must never look like the fleet being held to it
+        self.assertIn('lease verify --owner "$LEASE_OWNER"', self.launcher)
+        self.assertNotIn('FLEET_HOLDER', self.launcher)
         self.assertNotIn('holder-single', self.launcher)
         # each lane takes its own head of the ranked order, not the queue's first row
         self.assertIn('[ "$(lane_front "$kind")" = "$s" ] || return 1', self.fleet)
@@ -118,20 +122,23 @@ class ContractTests(unittest.TestCase):
         # the fleet's occupancy checks belong to the fleet lane; the single lane asks its host
         self.assertIn('if [ "$kind" != single ]; then', self.fleet)
         self.assertIn('single_refused "$s" "$why"; return 1', self.fleet)
-        self.assertIn('FLEET_RULES=2', self.fleet)
+        self.assertIn('FLEET_RULES=3', self.fleet)
 
     def test_the_runner_goes_where_the_lane_says_and_takes_no_lease_there(self):
         self.assertIn('probe_host=${ST_PROBE_HOST:-}', self.runner)
         remote = self.runner[self.runner.index('probe_host=${ST_PROBE_HOST:-}'):self.runner.index('mkdir -p "$cache"')]
         self.assertIn('rsync -a --delete --exclude __pycache__ -e "ssh $SSHOPT" "$repo/engine" "$repo/probes"', remote)
-        self.assertIn('probe_host="choiceoh@$probe_host"', remote)
+        self.assertNotIn('choiceoh@$probe_host', remote)          # the alias as given, never the fleet's user
+        self.assertIn('ssh $SSHOPT "$probe_host"', remote)
         self.assertIn('''trap 'ssh $SSHOPT "$probe_host" "docker rm -f $NAME"''', remote)
         self.assertIn('exit $rc', remote)
         self.assertNotIn('fleet_lease', remote)
-        # the fleet path is untouched: the lease, the wait, the heartbeat
+        # the fleet path verifies the ticket's lease (the queue took it at GO, PR #770) and waits
+        # for it; it takes none of its own
         local = self.runner[self.runner.index('mkdir -p "$cache"'):]
-        for text in ('fleet_lease acquire', 'fleet_lease_beat', 'ST_PROBE_NO_LEASE'):
+        for text in ('fleet_lease verify --owner "$ST_LEASE_OWNER"', 'ST_PROBE_WAIT_MINUTES', 'ST_PROBE_NO_LEASE'):
             self.assertIn(text, local)
+        self.assertNotIn('fleet_lease acquire', local)
         # the supervisor sets the host for the single lane, after the payload's own env prefix
         boot = (ROOT / 'bench/fleet_boot.py').read_text()
         self.assertIn("environment['ST_PROBE_HOST'] = host", boot)

@@ -497,6 +497,11 @@ ost-97x 의 5050 으로 간다 — 큐의 단일 GPU 레인(`holder-single`)이�
 플릿이 5분 동안 유휴 상태일 때 중앙 타이머가 검증된 기존 버전으로 자동 복구한다.
 전체 CPU 릴리스 검증과 복구 버전 갱신은 명시적으로 실행한다. 실험에 별도로 지정한 CPU
 선행 검증은 그대로 적용하며, `inbox`/`result`로 결과를 받는 동안 작업을 계속할 수 있다.
+플릿 점유 기록은 **리스 하나**(`engine/base/fleet_lease.py`, srv2 의 `glm53-logs/st-fleet.lock`)이고
+큐가 그 주인이다: GO 때 큐가 `queue/<session>` 으로 잡아 페이로드(런처·프로브 러너)는 검증만 하고,
+티켓이 끝나면 대기 중인 부팅 티켓에 넘기거나 놓는다. 프로덕션(슈퍼바이저·deploy-watch)은
+`kind=production` 리스를 직접 잡고, 큐는 그 홀더에게만 — 정숙 게이트(`st:quiet`, `FLEET_QUIET_S`)를
+지날 때만 — 양보를 요청한다. 세션의 부팅(`ST_LEASE_KIND=session`)에는 묻지 않는다(45차 §91, PR #770).
 
 **플릿 없이 쓰는 측정 경로** — 4박스를 잡지 못한 상태(누가 쥐고 있거나, 노트북에서
 작업 중이거나)에서도 스텝/레이턴시 숫자를 얻는 세 도구가 아래 표 끝에 있다:
@@ -518,7 +523,7 @@ ost-97x 의 5050 으로 간다 — 큐의 단일 GPU 레인(`holder-single`)이�
 | `bracket.py` | base→cand→base 브래킷의 기록·판정 도구 (판정 규칙 자체는 원장) | 도구가 판정을 대신하지 않는다 — 게이트 통과 여부는 사람이 원장에 적는다 |
 | `streamgap.py` | 동시 수용 매끄러움 — 디코드 스트리밍 중에 34K 프리필을 끼얹는다 | 서빙 품질 축이라 step/s 와 다른 신호다 |
 | `pp-ctx-benchy.py` · `tg-llama-benchy.py` | llama-benchy 호환 축(pp2048 프리필 · ctx_tg@dN · tg128) — 외부 수치와 견줄 때 | 우리 브래킷 채널(C=1 step/s)과 정의가 다르다. 비교용이지 판정용이 아니다 |
-| `step_sim.py` | **플릿 없는 스텝 루프 측정** — 진짜 `Runner`/스케줄러/Ring 을 GPU 없이 돌려 스텝당 숙주 ms(종류별 med/p95), StepMeta 빌드 비용, `--device-ms` 주입 시 겹침 캐던스와 숙주 여유까지 | 커널 시간이 없다 — 이 숫자가 좋다고 서빙이 빨라지지 않는다(45차 회귀 중 커널 편은 여기서 안 잡힌다) |
+| `step_sim.py` | **플릿 없는 스텝 루프·형상 시뮬레이션** — 숙주 비용(장치 0, 종류별 med/p95·StepMeta)에 더해 실측 상수 모형(`CostModel`: k·수용률→위치별 q 매핑, 컨텍스트별 prefill 처리량, decode ms)으로 진짜 러너를 돌려 TTFT·e2e·클라이언트 tok/s·TPOT 를 낸다. `--against <onepass jsonl...>` 는 각 기록에서 상수를 폴딩해 closed-loop 로 재현하고 나머지 측정값과 델타표(ST+glm53 4개 기록에서 예측 행 전부 ±9% 이내). `--arrive-ms`/`--max-wait-s` 로 D10 밸브 실험 | 장치 시간이 모형인 데다 폭·컨텍스트 의존은 미계수(평탄); 창 채널과 클라이언트 채널이 기록 안에서도 2~5% 다르다(`--fit-channel`). 판정은 플릿 onepass(D17) |
 | `step_peek.py` | **관측 전용 /metrics 스크랩** — 플릿을 잡지 않고 살아있는 부팅의 step/s·gen tok/s·수용률과 `st:step_seconds`·TTFT 히스토그램 분포(두 스크랩 차)를 창 단위로 | 내 워크로드가 아니라 지금 돌고 있는 누군가의 부팅을 보고 있다 — 독점성도 판정도 없다(D17) |
 | `step_replay.py` | **저장 증거 재계산** — `steps-*.ring`(스텝 in-flight 분포), onepass jsonl(컨텍스트별 TTFT·step/s·TPOT), bracket 다리, peek 샘플을 다시 판다; onepass 기록 둘 이상이면 재부팅 없이 델타 | 링의 wall 은 launch→readback — async 스텝은 depth 대기만큼 길다; 재분석이지 재측정이 아니다 |
 | `bench_common.py` | 위 도구들의 공용 하네스(엔드포인트·프롬프트·수용률 델타 읽기) | |

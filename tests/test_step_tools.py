@@ -27,6 +27,94 @@ CONTRACT = sched.Contract(chunk_align=16, token_budget=1024, draft_slots=3,
                           max_wait_s=0.0, max_running=8)
 
 
+class CostModelTest(unittest.TestCase):
+    FAST = sim.CostModel(k=2, acc=0.5, decode_ms=2.0, prefill_tok_s={512: 5120.0, 2048: 5120.0},
+                         name="fast-test")
+
+    def test_per_position_acc_solves_the_ledger_mapping(self):
+        # 원장 tokens/step = 1 + k×raw_acc 를 만드는 위치별 q: k=5, acc=46.2% → ~0.75.
+        # 이 매핑을 건너뛰면 스텝당 토큰이 절반쯤으로 나간다(검증에서 발견한 버그).
+        cost = sim.CostModel(k=5, acc=0.462)
+        q = cost.per_position_acc()
+        self.assertTrue(0.70 < q < 0.80, q)
+        self.assertAlmostEqual(cost.tokens_per_step_mean(), 1 + 5 * 0.462, places=6)
+
+    def test_tokens_per_step_is_row_basis(self):
+        out = sim.run_once([512, 512], 96, CONTRACT, cost=self.FAST, can_async=False)
+        # 행-스텝 기준: 폭 2 스텝이 많아도 토큰/행-스텝 은 기댓값 1+k×acc=2.0 근처
+        self.assertAlmostEqual(out["tokens_per_step"], 2.0, delta=0.5)
+        if out["steps"]["decode"]:
+            self.assertGreaterEqual(out["tokens_per_wall_step"], out["tokens_per_step"])
+
+    def test_seed_makes_runs_reproducible(self):
+        a = sim.run_once([512], 64, CONTRACT, cost=self.FAST, can_async=False)
+        b = sim.run_once([512], 64, CONTRACT, cost=self.FAST, can_async=False)
+        self.assertEqual(a["steps"], b["steps"])
+        self.assertEqual(a["tokens_per_step"], b["tokens_per_step"])
+
+    def test_ttft_is_prefill_throughput(self):
+        out = sim.run_once([512], 64, CONTRACT, cost=self.FAST, can_async=False)
+        (q,) = out["requests"]
+        self.assertAlmostEqual(q["ttft_s"], 512 / 5120.0, delta=0.06)
+
+    def test_late_arrival_does_not_queue_behind_earlier_request(self):
+        out = sim.run_once([512, 512], 96, CONTRACT, cost=self.FAST, can_async=False,
+                           arrive_ms=[0.0, 900.0])
+        first, second = out["requests"]
+        self.assertAlmostEqual(first["ttft_s"], 512 / 5120.0, delta=0.06)
+        # 두번째는 자기 도착에서 잰다: 첫 요청의 디코드가 이미 끝났으니 큐잉이 없다
+        self.assertAlmostEqual(second["ttft_s"], 512 / 5120.0, delta=0.06)
+
+    def test_closed_loop_admits_next_only_after_completion(self):
+        # 하네스 의미(검증 모드): 앞 요청이 끝나야 다음이 간다 — 겹침이 없으니
+        # 두번째 TTFT 는 첫 요청 e2e 뒤에도 프리필 값 그대로다.
+        out = sim.run_once([512, 512], 96, CONTRACT, cost=self.FAST, can_async=False,
+                           closed_loop=True)
+        first, second = out["requests"]
+        self.assertAlmostEqual(second["ttft_s"], 512 / 5120.0, delta=0.06)
+        # 순차 실행: 두번째의 시작은 첫 e2e 뒤(도착=끝남 시각의 차로 확인)
+        self.assertGreater(second["e2e_s"], 0.0)
+        widths = out["decode_widths"]
+        self.assertTrue(all(int(n) == 1 for n in widths), widths)   # 폭 1 만 허용
+
+    def test_arrivals_from_record_and_validation(self):
+        record = {"requests": [
+            {"ctx": 2000, "ttft_s": 1.0, "decode_s": 4.0, "completion_tokens": 120,
+             "decode_tok_s": 30.0, "tpot_ms": 33.3},
+            {"ctx": 2000, "ttft_s": 1.0, "decode_s": 4.0, "completion_tokens": 120,
+             "decode_tok_s": 30.0, "tpot_ms": 33.3},
+            {"ctx": 32000, "ttft_s": 2.5, "decode_s": 4.0, "completion_tokens": 200,
+             "decode_tok_s": 50.0, "tpot_ms": 20.0}],
+            "prefill": [{"ctx": 2000, "tok": 2128, "cold_s": 2.4, "warm_s": 1.0},
+                        {"ctx": 32000, "tok": 32660, "cold_s": 10.0, "warm_s": 9.5}],
+            "decode": {"tokens_per_step": 3.0, "windows_med": 10.0, "num_spec": 5,
+                       "acc_raw": 0.4, "fixed_pooled_step_s": 10.0}}
+        derived = sim.arrivals_from_record(record)
+        self.assertEqual(derived[0], [0.0, 5000.0, 10000.0])   # 요청마다 앞 요청의 e2e 뒤
+        self.assertEqual(derived[1], [120, 120, 200])
+        self.assertEqual(derived[2], [2128, 2128, 32660])      # 실제 토큰수, ctx 아님
+        self.assertEqual(derived[3], [2000, 2000, 32000])
+        # 폴딩: decode_ms 는 판정 채널의 역수, prefill 계단은 warm 실측 처리량
+        cost = sim.fit_cost(record)
+        self.assertAlmostEqual(cost.decode_ms, 100.0)
+        self.assertAlmostEqual(cost.prefill_tok_s[2128], 2128.0)
+        self.assertAlmostEqual(cost.prefill_tok_s[32660], 32660 / 9.5, places=1)
+        # 검증 행: [예측] 표시가 붙은 값들이 기록에서 온 비교값과 짝을 이룬다
+        sim_out = {"tokens_per_step": 3.02, "decode_step_s_phase": 10.1, "requests": [
+            {"ctx": 2000, "ttft_s": 1.01, "e2e_s": 5.0, "tok_s": 29.8},
+            {"ctx": 2000, "ttft_s": 1.00, "e2e_s": 5.1, "tok_s": 30.2},
+            {"ctx": 32000, "ttft_s": 9.6, "e2e_s": 13.5, "tok_s": 49.5}]}
+        rows = {label: (kind, delta) for label, kind, _r, _s, delta in
+                sim.validate_against(record, sim_out)}
+        self.assertEqual(rows["decode step/s"][0], "입력")
+        self.assertEqual(rows["tokens/step"][0], "예측")
+        self.assertEqual(rows["클라이언트 tok/s"][0], "예측")
+        self.assertEqual(rows["TPOT ms"][0], "예측")
+        self.assertAlmostEqual(rows["클라이언트 tok/s"][1], 0.2 / 30.0, places=3)
+        self.assertAlmostEqual(rows["TPOT ms"][1], (1000 / 30.2 - 33.3) / 33.3, places=3)
+        self.assertAlmostEqual(rows["e2e med ctx2K"][1], (5.05 - 5.0) / 5.0, places=2)
+
+
 class StepSimTest(unittest.TestCase):
     def test_host_cost_by_kind(self):
         out = sim.run_once([200, 400], 32, CONTRACT)
@@ -44,8 +132,8 @@ class StepSimTest(unittest.TestCase):
         # 숙주 비용(~0.1 ms)이 병목일 이유도 없다.
         out = sim.run_once([256], 40, CONTRACT, device_s=0.05, can_async=True, host_med_ms=0.1)
         self.assertGreater(out["async"], 0)
-        self.assertGreater(out["decode_step_s"], 12.0)
-        self.assertLess(out["decode_step_s"], 21.0)
+        self.assertGreater(out["decode_step_s_wall"], 12.0)
+        self.assertLess(out["decode_step_s_wall"], 21.0)
         self.assertGreater(out["headroom"], 0.5)
         # async 스텝의 in-flight wall 은 depth 대기를 포함해 장치 시간보다 길다
         self.assertGreater(out["by_kind"]["decode"]["med_ms"], 50.0)

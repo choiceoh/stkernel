@@ -8,9 +8,24 @@
 #   bash launchers/start-st-glm53.sh            # start all four (rank 0=srv2, rank 1=srv1, then srv3/srv4)
 #   bash launchers/start-st-glm53.sh stop       # docker rm -f st-glm53 on every node
 #
+# Every boot holds the fleet LEASE (engine/base/fleet_lease.py), and who may start one is decided
+# by how it got the lease:
+#   ST_LEASE_OWNER=queue/<s>  a ticket's boot: bench/fleet.sh took the lease at GO and hands the
+#                             owner here; this script only VERIFIES it. Sessions get a window with
+#                             `bench/fleet.sh st-hold <session> <sha>`, not by running this by hand.
+#   ST_LEASE_KIND=production  the supervisor's / deploy-watch's own boot: acquires a `production`
+#                             lease, the fleet's default state, which the queue asks to hand over
+#                             only through the quiet gate.
+#   ST_LEASE_KIND=session     a session's own boot by hand: a `session` lease the queue never asks
+#                             to hand over (a ticket behind it waits). Kept until the queue can boot
+#                             for sessions (`fleet.sh st-hold`); say it, it is not the default.
+# Anything else is refused: a boot nobody reserved is the collision of 09-11 19:42 waiting to happen.
+#
 # `stop` is the only way to take these containers down, and the nodes enforce it: a running
 # rank carries its lease owner, and launchers/docker-fleet-guard.sh (installed in front of
 # docker) refuses `docker rm|kill|stop` on one unless you name the owner you are evicting.
+# And only the holder stops its own boot: a ticket by its exact owner, production by its kind,
+# a person with STOP_FORCE=1 (the operator's word).
 #   bash launchers/start-st-glm53.sh logs [r]   # tail rank r's container log
 #
 # Rank order is base/comm.NODES (srv2, srv1, srv3, srv4): rank 0 hosts the rendezvous store, so it is the head.
@@ -92,6 +107,25 @@ case "${1:-start}" in
     legacy_owner=$(LOCK=$LEGACY_LOCK lease owner --container "$NAME") || {
       echo "ABORT: refusing to stop another owner's legacy lease" >&2; exit 1;
     }
+    # Only the holder stops its own boot. Every boot is named st-glm53, so a `stop` resolved by
+    # container name alone would let the production supervisor's crash recovery evict a ticket's
+    # boot 90 s in (its door is elsewhere, so its health checks fail). A ticket names its owner
+    # exactly (ST_LEASE_OWNER), production names its kind (ST_LEASE_KIND=production -- whichever
+    # supervisor pid took the lease, the loop restarts and adopts), a person says STOP_FORCE=1.
+    # A record from before kinds (a plain-text lock, or a JSON lease naming no kind -- the
+    # production lease of 2026-09-12 is one) is judged as it always was: by the container name
+    # `owner` resolved above, and a stop is allowed.
+    held_origin=$(lease origin 2>/dev/null || echo unreadable)
+    if [ -n "$held_owner" ] && [ "$held_origin" = explicit ]; then
+      if [ -n "${ST_LEASE_OWNER:-}" ]; then
+        [ "$held_owner" = "$ST_LEASE_OWNER" ] || { echo "ABORT: the fleet is held by $held_owner, not by this ticket ($ST_LEASE_OWNER)" >&2; exit 1; }
+      elif [ "${ST_LEASE_KIND:-}" = production ] || [ "${ST_LEASE_KIND:-}" = session ]; then
+        held_kind=$(lease kind 2>/dev/null || echo unreadable)
+        case "$held_kind" in "$ST_LEASE_KIND"|free) ;; *) echo "ABORT: the fleet is held by $held_owner ($held_kind), not by a $ST_LEASE_KIND boot; the queue hands it back when its tickets are done" >&2; exit 1 ;; esac
+      elif [ "${STOP_FORCE:-0}" != 1 ]; then
+        echo "ABORT: the fleet is held by $held_owner. Stop it from its own side (bench/fleet.sh cancel or release; the supervisor for production). STOP_FORCE=1 is the operator's word." >&2; exit 1
+      fi
+    fi
     # `stop` has already resolved the lease above -- owner_for RAISES when another workload
     # holds it -- so this is the deliberate path, and it names the owner it is evicting for
     # the node's docker guard (launchers/docker-fleet-guard.sh). Read the owner off the
@@ -99,14 +133,26 @@ case "${1:-start}" in
     # be stoppable, and the lease check that guards this line already happened.
     for ip in "${NODES[@]}"; do node_sh "$ip" "ST_FLEET_OK=\$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' $NAME 2>/dev/null | sed -n 's/^ST_LEASE_OWNER=//p' | head -1) docker rm -f $NAME >/dev/null 2>&1 && echo '$ip: stopped' || echo '$ip: none'"; done
     use_lease
-    lease release --owner "$held_owner"
+    # A ticket's lease is the queue's to pass on or let go at the ticket's end, not this
+    # script's to release: released here, the next waiting ticket could not be handed it and
+    # the production supervisor would relaunch into the window. Say the boot is down instead.
+    if [ -n "$held_owner" ] && [ "${ST_LEASE_OWNER:-}" = "$held_owner" ]; then
+      lease publish --owner "$held_owner" --state phase=stopped >/dev/null 2>&1 || true
+    elif [ -n "$held_owner" ]; then
+      lease release --owner "$held_owner"
+    fi
     node_sh "${NODES[0]}" "rm -f $LEGACY_LOCK" >/dev/null 2>&1 || true
     exit 0 ;;
   yield)
     # Ask whoever holds the fleet to finish, park its conversations and let go, then WAIT
     # for that to happen -- asking and leaving the caller to poll is not a handover.
+    # An operator's tool: the queue asks production by itself (through the quiet gate) and
+    # never asks a session's boot, so this is for a person who has decided. The handover is a
+    # TRANSFER to the requester named here, so the fleet is this owner's the moment the holder
+    # lets go -- start with that owner in ST_LEASE_OWNER.
     use_lease
-    asked=$(fleet_lease yield --requester "$LEASE_OWNER" --note "${2:-another session needs the fleet}") || exit 1
+    asked=$(fleet_lease yield --requester "$LEASE_OWNER" --kind session --pid $$ --host "$(hostname -s)" \
+              --note "${2:-another session needs the fleet}") || exit 1
     case "$asked" in free) echo "the fleet is already free"; exit 0 ;; esac
     echo "asked: $asked"
     deadline=$(( $(date +%s) + 60 * ${YIELD_WAIT_MINUTES:-30} ))
@@ -114,6 +160,7 @@ case "${1:-start}" in
       held=$(fleet_lease read 2>/dev/null || echo unreachable)
       case "$held" in
         free|free\ *) echo "the fleet is free: start when ready"; exit 0 ;;
+        "session $LEASE_OWNER "*) echo "the fleet is yours -- handed to $LEASE_OWNER. Start with: ST_LEASE_OWNER='$LEASE_OWNER' $0"; exit 0 ;;
         unreachable) ;;
         *) echo "  waiting: $held" ;;
       esac
@@ -143,22 +190,56 @@ done
 # may have mounted into its containers. The module is stdlib-only, so `python3 -` is enough.
 use_lease
 
-# The bench queue reserves the same four nodes and does not know this lock exists. Read its
-# holder before taking the fleet, so the two mechanisms refuse each other in both directions
-# until they become one (bench/fleet.sh now refuses a grant while any st-* container is up).
-FLEET_HOLDER=${FLEET_HOLDER:-/home/choiceoh/glm53-logs/fleet/holder}
+# The lease is ONE record and bench/fleet.sh is its authority for tickets: a ticket's boot arrives
+# with the owner the queue took at GO and only verifies it, production takes a lease of its own
+# kind, and nothing else boots. (Before this the queue's holder file and this lock were two records
+# that refused each other in both directions, and a ticket's own boot was refused by the holder
+# file that was its -- so no ST boot could run under the queue at all, 2026-09-12.)
 legacy=$(node_sh "${NODES[0]}" "cat $LEGACY_LOCK 2>/dev/null || true")
 [ -z "$legacy" ] || { echo "ABORT: a session on the older lock path holds the fleet: $legacy ($LEGACY_LOCK on ${NODES[0]}); 'stop' from that side" >&2; exit 1; }
-queued=$(node_sh "${NODES[0]}" "cat $FLEET_HOLDER 2>/dev/null || true")
-[ -z "$queued" ] || { echo "ABORT: the bench queue holds the fleet: $queued (bench/fleet.sh status; release it there)" >&2; exit 1; }
-lease acquire --owner "$LEASE_OWNER" --container "$NAME" --est-minutes "${LEASE_MINUTES:-45}" \
-      --note "${LEASE_NOTE:-st-glm53 on four Sparks}" \
-  || { echo "ABORT: $(lease read 2>/dev/null || echo 'the fleet lease refused')" >&2; exit 1; }
+LEASE_MODE=""
+if [ -n "${ST_LEASE_OWNER:-}" ]; then
+  LEASE_OWNER=$ST_LEASE_OWNER
+  held=$(lease verify --owner "$LEASE_OWNER" 2>&1) \
+    || { echo "ABORT: this boot's ticket does not hold the fleet: $held" >&2; exit 1; }
+  echo "lease: verified, $held"
+  LEASE_MODE=ticket
+elif [ "${ST_LEASE_KIND:-}" = production ]; then
+  LEASE_OWNER=${LEASE_OWNER_PRODUCTION:-production/$(hostname -s)/$$}
+  lease acquire --owner "$LEASE_OWNER" --kind production --container "$NAME" --est-minutes "${LEASE_MINUTES:-0}" \
+        --note "${LEASE_NOTE:-production st-glm53 on four Sparks}" \
+    || { echo "ABORT: $(lease read 2>/dev/null || echo 'the fleet lease refused')" >&2; exit 1; }
+  LEASE_MODE=production
+elif [ "${ST_LEASE_KIND:-}" = session ]; then
+  # A session's own boot, by hand, said so: a `session` lease the queue never asks to hand over
+  # (45차 §91) -- a ticket behind it waits. This is the path sessions used until now, kept until
+  # the queue can boot for them (`fleet.sh st-hold`, the ST bracket runner); it is not the default,
+  # because a boot that did not say what it is was the collision of 09-11 19:42.
+  lease acquire --owner "$LEASE_OWNER" --kind session --container "$NAME" --est-minutes "${LEASE_MINUTES:-45}" \
+        --note "${LEASE_NOTE:-st-glm53 on four Sparks}" \
+    || { echo "ABORT: $(lease read 2>/dev/null || echo 'the fleet lease refused')" >&2; exit 1; }
+  LEASE_MODE=session
+else
+  cat >&2 <<EOF
+ABORT: this boot holds no reservation, and a boot nobody reserved is not started. Say what it is:
+  ST_LEASE_OWNER=queue/<session>   a ticket's boot -- the queue takes the lease at GO and hands the owner here
+  ST_LEASE_KIND=production $0       the supervisor's / deploy-watch's own production boot
+  ST_LEASE_KIND=session $0          a session's own boot by hand (never asked to hand over; tickets wait behind it)
+EOF
+  exit 1
+fi
 stage=$(mktemp -d)
 launched=0
 cleanup() {
   rm -rf "$stage"
-  if [ "$launched" = 0 ]; then lease release --owner "$LEASE_OWNER" >/dev/null || true; fi
+  if [ "$launched" = 0 ]; then
+    # a boot of our own that did not come up gives its lease back; a ticket's lease is the
+    # queue's to pass on or let go -- say what happened on it instead
+    case "$LEASE_MODE" in
+      production|session) lease release --owner "$LEASE_OWNER" >/dev/null || true ;;
+      ticket) lease publish --owner "$LEASE_OWNER" --state phase=boot-failed >/dev/null 2>&1 || true ;;
+    esac
+  fi
 }
 trap cleanup EXIT
 
@@ -231,4 +312,7 @@ if [ -n "$failed" ]; then
   exit 1
 fi
 launched=1
+# a ticket's lease was taken without a container; now that rank 0 is up, that container is its
+# evidence (the head's docker answers for it) -- attach it, best effort
+[ "$LEASE_MODE" != ticket ] || lease attach --owner "$LEASE_OWNER" --container "$NAME" >/dev/null 2>&1 || true
 echo "head: http://10.10.10.2:$PORT/v1/chat/completions (OpenAI), /v1/engine/completions (engine dialect), GET / for status"

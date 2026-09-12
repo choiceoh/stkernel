@@ -33,7 +33,9 @@ The queue has two GPU lanes. A boot, a pair, a chain and a live onepass take the
 fleet: four Sparks, one holder. An ST check that needs **one** GPU
 (`probes/run_engine_check.sh`, or `run_engine_probe.sh` without `--distributed`)
 takes the single-GPU lane instead: the 5050 on ost-97x (`FLEET_SINGLE_GPU_HOST`;
-set it empty to turn the lane off), with its own holder (`holder-single`) and its
+set it empty to turn the lane off; the controller's `~/.ssh/config` names the
+alias's address, user and port -- the box is a Windows machine on the tailnet,
+so that means sshd inside WSL2), with its own holder (`holder-single`) and its
 own evidence (that host's GPU process list; unreachable is not free). The lanes
 never block each other -- a check behind a queued boot runs now, and a boot
 behind a queued check runs now. The supervisor passes `ST_PROBE_HOST` to the
@@ -41,6 +43,23 @@ runner, which rsyncs `engine/` and `probes/` to that host, runs the container
 there and takes no fleet lease; a verdict from there is that card's (sm_120), not
 the fleet's. `run --gpu --fleet` keeps a one-GPU check on the Sparks, `status`
 shows the lane beside the fleet, and `kick [--force] single` clears its holder.
+
+## The fleet lease
+
+Every boot holds the fleet lease -- one record, `engine/base/fleet_lease.py`, one
+file on the head node -- and the queue is its authority for tickets. `run --gpu`
+takes the lease as `queue/<session>` at GO and hands `ST_LEASE_OWNER` to the
+payload; `launchers/start-st-glm53.sh` and `probes/run_engine_probe.sh` only
+verify it. Production holds a `production` lease of its own (the supervisor and
+deploy-watch boot with `ST_LEASE_KIND=production`); the queue asks that holder to
+hand over only through the quiet gate -- `st:quiet` and no request for
+`FLEET_QUIET_S` (120 s, deploy-watch's own rule) -- and never asks a `session`
+boot (a ticket behind it waits). A handover is a transfer: the engine parks its
+conversations and rewrites the lease to the ticket in one step, and at the
+ticket's end the lease goes to the next waiting boot ticket, back to production
+only when none waits. A bare `bash launchers/start-st-glm53.sh` or
+`bash probes/run_engine_probe.sh` is refused: take a ticket, or say
+`ST_LEASE_KIND=session` for a session's own boot by hand.
 
 Plans now batch their independent CPU stages, publish reusable evidence before
 creating another checkout on a cache hit, and keep core/fleet/startup results

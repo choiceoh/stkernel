@@ -28,7 +28,9 @@
 # An ST check that needs ONE GPU (probes/run_engine_check.sh, or run_engine_probe.sh without
 # --distributed: one container, the four ranks as threads on one card) does not wait for the
 # Sparks. It takes the single-GPU lane -- the 5050 on ost-97x (FLEET_SINGLE_GPU_HOST; set it
-# empty to turn the lane off) -- with its own holder (holder-single) and its own evidence
+# empty to turn the lane off; the controller's ~/.ssh/config names that alias's address,
+# user and port, since the box is a Windows machine on the tailnet, not a Spark) -- with its
+# own holder (holder-single) and its own evidence
 # (that host's GPU process list; unreachable is not free). The lanes never block each other:
 # a check behind a queued boot runs now, and a boot behind a queued check runs now. The
 # supervisor hands the check to probes/run_engine_probe.sh with ST_PROBE_HOST, which rsyncs
@@ -43,8 +45,12 @@
 # over a named, byte-pinned probe) are admitted too: they take the same four nodes, so
 # they queue here rather than behind the launcher's own lock. The probe is named in
 # fleet_onepass.ST_PROBES -- admitting the runner never admits an arbitrary probe path.
-# A grant is refused while any st-* container is up, and start-st-glm53.sh refuses while
-# this queue has a holder, so the two mechanisms see each other in both directions.
+# The fleet LEASE (engine/base/fleet_lease.py) is the one record of who holds the four
+# nodes, and this queue is its authority for tickets: GO takes it as queue/<session>, the
+# payload's launcher only verifies it, release hands it to the next waiting boot ticket or
+# lets it go. Production holds a `production` lease and is asked to hand over only through
+# the quiet gate; a session's own boot is never asked (45차 §91). A grant is refused while
+# any st-* container is up or the lease is another's.
 # --probe is the internal idle-serving scheduling lane; only onepass.py may
 # enter it. A rehearsal skips GPUs only for canonical pair/chain/ab-lever.
 # No bypass: a FAILed preflight is not queued. Fix the printed cause.
@@ -147,10 +153,28 @@ holder_file_of() {  # session -> the holder file naming it; 1 when it holds noth
 }
 lane_front() { awk -F'|' -v lane="$(lane_of "${1:-}")" '{ k = ($6 == "single") ? "single" : "fleet" } k == lane { print $2; exit }' "$Q"; }   # kind -> the first queued session of its lane, in the ranked order
 serving_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^glm53$'; }
-# The ST engine takes the whole fleet (one container per node, named st-*) without
-# entering this queue -- it has its own launcher lock. Until both are one mechanism the
-# queue must at least SEE it: holder-empty is not the same as free (2026-09-12, four
-# nodes running st-glm53 while status said FREE).
+# ---- the fleet lease: ONE record of who holds the four Sparks (engine/base/fleet_lease.py).
+# This queue is its authority for tickets. _try_hold takes it as queue/<session> at GO (or
+# finds it already handed to the ticket by a holder that drained), _release hands it to the
+# next waiting boot ticket or lets it go, and the payload's launcher only VERIFIES it
+# (ST_LEASE_OWNER). Production -- the supervisor, deploy-watch -- holds a `production` lease
+# of its own; a session's own boot holds a `session` one. The record's kind decides what the
+# queue may ask of its holder: see st_engine_ask. The single-GPU lane is not the fleet and
+# takes no lease.
+#
+# Read from THIS checkout's pinned module, never from launchers/: the helper under launchers/
+# was absent from every runner snapshot before PR #768, and "cannot read" rightly counts as
+# occupied, so a runner-driven ticket could never be granted at all (2026-09-12, found
+# reviewing §91).
+LEASE=${FLEET_LEASE_PATH:-/home/choiceoh/glm53-logs/st-fleet.lock}
+export FLEET_LEASE_PATH=$LEASE
+lease() { python3 "${FLEET_RUNNER_REPO:-$REPO}/engine/base/fleet_lease.py" "$@" --path "$LEASE"; }
+lease_state() { lease read 2>/dev/null || echo unreadable; }   # free | free (stale: ..) | <kind> <owner> on <host> since .. | unreadable
+lease_kind() { lease kind 2>/dev/null || echo unreadable; }     # free | production | session | queue | probe | unreadable
+lease_mine() { lease verify --owner "queue/$1" >/dev/null 2>&1; }   # held by this ticket, and alive
+# The ST engine takes the whole fleet (one container per node, named st-*). The queue must
+# SEE it whoever started it: holder-empty is not the same as free (2026-09-12, four nodes
+# running st-glm53 while status said FREE).
 # Containers AND the lease: the two disagreed once and the queue granted while the lease
 # was still held, so three reservations died on it in two seconds each (2026-09-12).
 #
@@ -187,15 +211,20 @@ st_engine_elsewhere() {   # the nodes this one cannot see, in parallel; cached f
   rm -rf "$tmp"; mv -f "$ST_PROBE.$$" "$ST_PROBE" 2>/dev/null || rm -f "$ST_PROBE.$$"
   cat "$ST_PROBE" 2>/dev/null
 }
-st_engine_lease() {   # the launcher's own lock on the head: silence only when it says free
-  local repo=${FLEET_RUNNER_REPO:-$REPO} held
-  [ -f "$repo/launchers/lib/fleet-lease.sh" ] \
-    && held=$( FLEET_REPO=$repo; . "$repo/launchers/lib/fleet-lease.sh"; fleet_lease read 2>&1 ) \
-    || { echo "lease: unreadable from $repo -- this node cannot say the fleet is free"; return 0; }
-  case "$held" in free|free\ *) return 0 ;; *) echo "lease: $held" ;; esac
+st_engine_lease() {   # the lease on the head: silence only when it says free, or it is this ticket's own
+  local held; held=$(lease_state)
+  case "$held" in
+    free|free\ *) return 0 ;;
+    unreadable) echo "lease: unreadable at $LEASE -- this node cannot say the fleet is free"; return 0 ;;
+  esac
+  # a lease handed to the ticket asking (its holder drained and transferred it) is not occupation
+  [ -n "${ST_MINE:-}" ] && lease_mine "$ST_MINE" && return 0
+  echo "lease: $held"
 }
 st_engine_evidence() {   # every reason to believe these four nodes are not ours; empty = free
   local here
+  # containers of a holder whose lease was just handed to the asking ticket are on their way
+  # out: the lease says whose turn it is, the containers say when the last holder has gone
   here=$(docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -E '^st-' | head -1)
   [ -z "$here" ] || echo "$(me): $here"
   st_engine_lease
@@ -240,7 +269,8 @@ single_line() {   # for status: the lane's holder, else its evidence, else FREE
 # knows there is anything to warn about -- but from here on the class reports itself.
 #   1  the ST-engine occupancy check (2026-09-12)
 #   2  the single-GPU lane: one-GPU checks are admitted to the 5050, not the fleet (2026-09-12)
-FLEET_RULES=2
+#   3  the lease is the queue's: taken at GO, asked by kind through the quiet gate, handed on (2026-09-13)
+FLEET_RULES=3
 entry_rules() { sed -n 's/^FLEET_RULES=\([0-9][0-9]*\).*/\1/p' "${1:?file}" 2>/dev/null | head -1; }
 entry_line() {
   local entry=$LOGD/fleet.sh theirs
@@ -252,19 +282,49 @@ entry_line() {
   echo "               before the ST-engine check reported an empty fleet with four nodes serving."
 }
 # Refusing is not enough: a queued session would then wait for a human to go and ask.
-# The ST engine can be ASKED to finish, park its conversations and let go, so the queue
-# asks on the waiter's behalf -- once per refusal, and never for a holder that predates
-# the protocol (its plain-text lock has nobody listening).
-#
-# Older runner snapshots omit the lease helper. Say which of the two happened:
-# a log line that reports an ask nobody made
-# leaves a waiter and a holder each believing the other has been told (45차 §91).
-# Returns 0 when the holder was actually asked.
-st_engine_yield() {
-  local who=$1 repo=${FLEET_RUNNER_REPO:-$REPO}
-  [ -f "$repo/launchers/lib/fleet-lease.sh" ] || return 1
-  ( FLEET_REPO=$repo; . "$repo/launchers/lib/fleet-lease.sh"
-    fleet_lease yield --requester "queue/$who" --note "a queued reservation needs the fleet" ) >/dev/null 2>&1
+# Whom the queue may ask is decided by the holder's KIND (engine/base/fleet_lease.py):
+#   production  the supervisor's boot, the fleet's default state. Asked only through the
+#               QUIET GATE -- nothing outstanding (st:quiet, no request) for FLEET_QUIET_S,
+#               the rule deploy-watch applies to its own restarts. An idle engine parks its
+#               conversations and hands the lease to the ticket; nobody's answer is cut.
+#   session     another session's boot. Never asked (operator, 45차 §91): the ticket waits.
+#   queue/probe the queue's own; it hands over by itself at release.
+# The ask is made ONCE per ticket (the engine drains on its own from there), through the
+# pinned module, and it names the ticket's supervisor -- kind queue, its pid on this host --
+# so that the handover transfers the lease to exactly that record and no free moment exists
+# in between. An ask that fails is said to have failed: a logged ask nobody made left a
+# waiter and a holder each believing the other had been told (45차 §91).
+FLEET_QUIET_S=${FLEET_QUIET_S:-120}
+production_quiet() {  # 0 once the door has answered "nothing outstanding" for FLEET_QUIET_S
+  local load since now; now=$(now)
+  load=$(curl -s -m 5 "$HEAD_URL/metrics" 2>/dev/null | lease load 2>/dev/null); load=${load:-unknown}
+  if [ "$load" != 0 ]; then rm -f "$FLEET_DIR/.quiet-since"; return 1; fi
+  [ -f "$FLEET_DIR/.quiet-since" ] || echo "$now" > "$FLEET_DIR/.quiet-since"
+  since=$(cat "$FLEET_DIR/.quiet-since" 2>/dev/null || echo "$now")
+  [ $(( now - since )) -ge "$FLEET_QUIET_S" ]
+}
+st_engine_ask() {  # session pid est note -- under .lock, after a refused hold; logs each state once
+  local s=$1 pid=$2 est=$3 note=$4 kind marker="$FLEET_DIR/.asked.$1"
+  if lease_mine "$s"; then
+    [ -f "$marker.handed" ] || { logit "lease handed to $s; waiting for the last holder's containers to exit"; touch "$marker.handed"; }
+    return 0
+  fi
+  kind=$(lease_kind)
+  case "$kind" in
+    production) ;;
+    free|unreadable) return 0 ;;                          # containers without a lease, or no answer: nobody to ask
+    *) [ -f "$marker.waits" ] || { logit "hold refused: $(st_engine_line); $s waits (a $kind holder is not asked)"; touch "$marker.waits"; }; return 0 ;;
+  esac
+  [ -f "$marker" ] && return 0                            # asked once; the engine drains from here
+  if ! production_quiet; then
+    [ -f "$marker.busy" ] || { logit "hold refused: production holds the fleet and is not quiet; $s waits for ${FLEET_QUIET_S}s of quiet before asking"; touch "$marker.busy"; }
+    return 0
+  fi
+  if lease yield --requester "queue/$s" --kind queue --pid "$pid" --host "$(me)" --est-minutes "$est" --note "$note" >/dev/null 2>&1; then
+    touch "$marker"; logit "hold refused: production holds the fleet; quiet for ${FLEET_QUIET_S}s, asked it to hand over to $s"; _event ask "$s" "$note"
+  else
+    logit "hold refused: production holds the fleet and could not be asked ($(lease_state))"
+  fi
 }
 serving_idle() {  # a probe may run beside this: healthy, nothing in flight, not booting
   ! serving_up && return 0
@@ -489,12 +549,22 @@ booting() {  # a head container younger than 12 min is still booting (health not
 }
 legacy_busy() { [ "$(busy_procs)" != 0 ] || [ "$(busy_reqs)" != 0 ] || booting; }
 
-# ---- holder liveness: pid on this host checked directly; elsewhere, trust it
-# until 3x its estimate has passed.
+# ---- holder liveness. A boot holder of the FLEET holds the lease (queue/<session>), and the
+# lease's own evidence rule answers -- one rule, not this file's pid/ssh/3x-estimate guesses
+# beside it. A holder from before the queue took leases (no lease at all), a probe holder
+# (beside production, no lease) and the single-GPU lane's holder are judged as before: pid on
+# this host directly; elsewhere, asked over ssh (evidence first, the window only when the
+# node cannot answer).
 holder_alive() {  # [holder file], the fleet's by default
-  local hf=${1:-$H}
+  # `local`, or this read lands in the CALLER's variables (bash scopes dynamically): _try_hold's
+  # session became the dead holder's and its GO check failed once for nothing, on every kick.
+  local hf=${1:-$H} s pid host t0 est note kind
   [ -s "$hf" ] || return 1
   IFS='|' read -r s pid host t0 est note kind < "$hf"
+  if [ "$hf" = "$H" ] && [ "${kind:-boot}" = boot ]; then
+    lease_mine "$s" && return 0
+    case "$(lease_state)" in free|free\ *) ;; *) return 1 ;; esac   # the lease is somebody else's: this holder is not it
+  fi
   if [ "$host" = "$(me)" ] && [ -n "$pid" ]; then kill -0 "$pid" 2>/dev/null && return 0; return 1; fi
   # A holder on another node used to be trusted blind for 3x its estimate -- a crashed
   # one blocked the fleet for two hours at est 40, and the recovery the header promises
@@ -565,6 +635,12 @@ _dequeue() {
   done
   rm -f "$FLEET_DIR/.single-refused.$1"
   [ "$existed" = 0 ] || [ "$rowkind" = single ] || python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" dequeue
+  # A ticket that leaves the line takes its ask back, and a lease already handed to it (but
+  # not yet GO: the fleet's holder file is not its) moves on. At GO the holder file IS its,
+  # and the lease stays exactly where it is.
+  lease withdraw-yield --requester "queue/$1" >/dev/null 2>&1 || true
+  rm -f "$FLEET_DIR/.asked.$1" "$FLEET_DIR/.asked.$1".* 2>/dev/null
+  [ "$(cut -d'|' -f1 "$H" 2>/dev/null)" = "$1" ] || ! lease_mine "$1" || _lease_pass_on "$1"
 }
 _withdraw_owned() {  # session pid; an older supervisor cannot erase a reused name
   local rowpid
@@ -580,19 +656,17 @@ _try_hold() {  # session pid est note [kind] -> 0 when held
   if [ "$kind" != single ]; then
     # The fleet lane: the ST engine, a serving container, a legacy chain all occupy the
     # four Sparks. None of that is evidence about the single GPU, so the single lane
-    # skips this and asks its own host below.
-    if st_engine_up; then
-      if st_engine_yield "$s"; then
-        logit "hold refused: ST engine occupies the fleet ($(st_engine_line)); asking it to yield to $s"
-      else
-        logit "hold refused: ST engine occupies the fleet ($(st_engine_line)); $s waits, and the holder was NOT asked -- this runner has no launchers/lib/fleet-lease.sh"
-      fi
+    # skips this and asks its own host below. Occupied by someone else -- a lease that is
+    # not this ticket's, or st-* containers still up -- the lease's kind decides whether
+    # the holder is asked (st_engine_ask) or waited for.
+    if ST_MINE=$s st_engine_up; then
+      st_engine_ask "$s" "$pid" "$est" "$note"
       return 1
     fi
   fi
   if [ -s "$hf" ]; then
     if holder_alive "$hf"; then return 1; fi
-    logit "auto-kick dead holder: $(holder_line "$hf")"; rm -f "$hf"
+    logit "auto-kick dead holder: $(holder_line "$hf")"; [ "$kind" = single ] || _kick_lease; rm -f "$hf"
     [ "$kind" = single ] || python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" dead-holder || return 1
   fi
   # We hold .lock and have no live holder in this lane. Every waiter sees the same order;
@@ -623,17 +697,27 @@ _try_hold() {  # session pid est note [kind] -> 0 when held
   python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_pause.py" admission "$s"; local prepared_rc=$?
   [ "$prepared_rc" != 4 ] || return 4
   [ "$prepared_rc" = 0 ] || { _dequeue "$s"; return 3; }
-  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_handoff.py" admit "$FLEET_DIR" "$s" "$pid" "$kind" "$est" "$note" || return 1
+  # The lease, as this ticket: already handed to it by the holder that drained, or taken now
+  # from a free fleet (a stale one is reclaimed by acquire itself). The ticket's supervisor on
+  # this host is the record's pid, so its death frees the fleet at once. A probe ticket runs
+  # beside production and the single-GPU lane is not the fleet: neither takes one.
+  if [ "$kind" = boot ] && ! lease_mine "$s"; then
+    lease acquire --owner "queue/$s" --kind queue --pid "$pid" --est-minutes "$est" --note "$note" >/dev/null 2>&1 \
+      || { logit "hold refused: the lease could not be taken for $s ($(lease_state))"; return 1; }
+  fi
+  python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_handoff.py" admit "$FLEET_DIR" "$s" "$pid" "$kind" "$est" "$note" \
+    || { [ "$kind" != boot ] || _lease_pass_on "$s"; return 1; }
   _dequeue "$s"
   if [ "$kind" = single ]; then
     logit "GO $s (pid $pid) [single: $(single_gpu_label)]"
   else
     rm -f "$LOGD"/FLEET-free-for-*.done 2>/dev/null; touch "$LOGD/FLEET-held-by-$s.done"
-    logit "GO $s (pid $pid)"
+    logit "GO $s (pid $pid)$( [ "$kind" != boot ] || echo " holding the lease as queue/$s")"
   fi
   _event GO "$s" "$note"; return 0
 }
 _ledger_row() {  # session [holder file] -- from the holder file, before it is removed
+  local s pid host t0 est note kind
   IFS='|' read -r s pid host t0 est note kind < "${2:-$H}"
   local held boots recs; held=$(( ($(now) - t0 + 30) / 60 ))
   boots=$(find "$LOGD" -maxdepth 1 -name 'boot-*.log' -newermt "@$t0" 2>/dev/null | wc -l)
@@ -660,13 +744,36 @@ _yield_requeue() {
   _enqueue "$1" "$2" "$3" boot "${FLEET_PID:-$PPID}"; _front "$1"
   echo "$4" > "$FLEET_DIR/priority-yield"
 }   # the yielding holder resumes immediately after its chosen probe
+# The fleet goes ticket to ticket and returns to production only when nobody waits (operator,
+# 2026-09-12: "대기 예약이 없을 때만 되돌리면 되지"). Let go, the production supervisor relaunches
+# within 30 s and the next ticket would wait for a whole quiet window again. A waiting PROBE
+# ticket runs beside production, so it is a reason to let go, not to hold.
+_lease_pass_on() {  # session -- caller holds .lock; the holder file may already be gone
+  local next npid
+  next=$(python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_handoff.py" next "$FLEET_DIR" "$1" 2>/dev/null) || next=""
+  if [ -n "$next" ]; then
+    npid=${next#* }; next=${next%% *}
+    if lease transfer --owner "queue/$1" --to "queue/$next" --kind queue --pid "$npid" --host "$(me)" --note "handed from $1" >/dev/null 2>&1; then
+      logit "lease handed from $1 to $next (a boot ticket waits; production returns when none does)"; _event handed "$1" "$next"; return 0
+    fi
+  fi
+  if lease release --owner "queue/$1" >/dev/null 2>&1; then logit "lease released by $1 (no boot ticket waits: production restores itself)"; fi
+  return 0
+}
+_kick_lease() {  # the fleet holder file's session loses its lease too (dead, or the operator's word)
+  local hs; hs=$(cut -d'|' -f1 "$H" 2>/dev/null); [ -n "$hs" ] || return 0
+  lease release --owner "queue/$hs" >/dev/null 2>&1 && logit "lease of $hs released with the kick"
+  return 0
+}
 _release() {  # session -- whichever lane's holder names it
-  local hf
+  local hf hkind
   if hf=$(holder_file_of "$1"); then
+    hkind=$(cut -d'|' -f7 "$hf")
     _ledger_row "$1" "$hf"
     rm -f "$hf" "$(hb_file "$1")"; _event release "$1" ""
     if [ "$hf" = "$HS" ]; then logit "release $1 [single]"; return 0; fi
     rm -f "$LOGD/FLEET-held-by-$1.done"; logit "release $1"
+    [ "${hkind:-boot}" != boot ] || [ "${FLEET_KEEP_LEASE:-0}" = 1 ] || _lease_pass_on "$1"
     python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" release || return 1
     # legacy markers for chains that still poll them
     for p in fusion mkg3 b12x glmfix; do touch "$LOGD/FLEET-free-for-$p.done"; done
@@ -678,8 +785,10 @@ _release() {  # session -- whichever lane's holder names it
 _adopt() {  # caller holds .lock throughout the ownership transition
   local s=$1 pid=$2 est=${3:-30} note=${4:-}
   if [ -s "$H" ] && holder_alive; then echo "fleet already held: $(holder_line)" >&2; return 1; fi
-  if st_engine_up; then echo "ST engine occupies the fleet: $(st_engine_line)" >&2; return 1; fi
+  if ST_MINE=$s st_engine_up; then echo "ST engine occupies the fleet: $(st_engine_line)" >&2; return 1; fi
   kill -0 "$pid" 2>/dev/null || { echo "pid $pid is not alive on $(me)" >&2; return 1; }
+  lease_mine "$s" || lease acquire --owner "queue/$s" --kind queue --pid "$pid" --est-minutes "$est" --note "$note" >/dev/null 2>&1 \
+    || { echo "the lease could not be taken for $s: $(lease_state)" >&2; return 1; }
   printf '%s|%s|%s|%s|%s|%s|boot\n' "$s" "$pid" "$(me)" "$(now)" "$est" "$note" > "$H"
   rm -f "$LOGD"/FLEET-free-for-*.done; touch "$LOGD/FLEET-held-by-$s.done"
   python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" adopt || return 1
@@ -691,7 +800,7 @@ _kick() {  # [--force] [single] -- preserve the same lock used by idle recovery 
   hf=$(holder_file "$lane")
   if [ ! -s "$hf" ]; then echo "nothing held$([ "$lane" = single ] && echo ' (single)')"; return 0; fi
   if holder_alive "$hf" && [ -z "$force" ]; then echo "holder is ALIVE: $(holder_line "$hf") -- use --force only on the operator's word" >&2; return 1; fi
-  logit "kick${force:+ $force}$([ "$lane" = single ] && echo ' [single]') of $(holder_line "$hf")"; rm -f "$hf"
+  logit "kick${force:+ $force}$([ "$lane" = single ] && echo ' [single]') of $(holder_line "$hf")"; [ "$lane" = single ] || _kick_lease; rm -f "$hf"
   if [ "$lane" = fleet ]; then
     python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" kick || return 1
     touch "$LOGD"/FLEET-free-for-{fusion,mkg3,b12x,glmfix}.done
@@ -744,7 +853,7 @@ case "$cmd" in
       [ "$admission_rc" != 4 ] || continue
       why="pos $(_position "$s")/$(grep -c . "$Q")"; hf=$(holder_file "$kind"); [ -s "$hf" ] && why="$why, held by $(holder_line "$hf")"
       if [ "$kind" = single ]; then sgl=$(single_gpu_line); [ -z "$sgl" ] || why="$why, $sgl"
-      else legacy_busy && why="$why, legacy busy ($(busy_procs) procs, $(busy_reqs) reqs$(booting && echo ', booting'))"; fi
+      else legacy_busy && why="$why, legacy busy ($(busy_procs) procs, $(busy_reqs) reqs$(booting && echo ', booting'))"; why="$why, lease: $(lease_state | cut -c1-120)"; fi
       [ "$why" = "$last" ] || { echo "waiting: $why $(ts)"; last=$why; }
       sleep 1
     done
@@ -821,6 +930,7 @@ case "$cmd" in
   status)
     echo "fleet: $( [ -s "$H" ] && { holder_alive && echo "HELD by $(holder_line)" || echo "held by DEAD $(holder_line)"; } \
                   || { st_engine_up && echo "TAKEN by the ST engine, outside this queue -- $(st_engine_line)" || echo FREE; } )"
+    echo "lease: $(lease_state)"
     entry_line
     single_line
     remaining=0
@@ -893,7 +1003,9 @@ case "$cmd" in
     IFS='|' read -r hs hpid hhost ht0 hest hnote hkind < "$H"
     logit "yield $s -> $cand"; _event yield "$s" "$cand"
     with_lock _yield_requeue "$s" "$hest" "$hnote" "$cand"
-    FLEET_NO_RESTORE_CHECK=1 with_lock _release "$s"
+    # the holder keeps its LEASE across a yield to a probe: the probe runs beside its serving,
+    # and letting the lease go would invite the production supervisor onto the same nodes
+    FLEET_KEEP_LEASE=1 FLEET_NO_RESTORE_CHECK=1 with_lock _release "$s"
     echo "yielded to $cand; waiting to resume"
     # give the probe its head start: its waiter polls every 15 s, ours would win the race otherwise
     for i in $(seq 1 15); do [ -s "$H" ] && [ "$(cut -d'|' -f1 "$H")" = "$cand" ] && break; sleep 3; done
