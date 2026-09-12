@@ -1,5 +1,7 @@
 # Current-default prefill attribution
 
+> 그대로 두는 기록 — **캠페인 산출물.** 당시의 기록이라 고치지 않는다 — 고치면 기록이 거짓이 된다.
+
 Status: worker instrumentation, isolated boot/restoration, canonical quality/TTFT
 requests and all-rank trace transfer/analysis are implemented. CPU contracts pass;
 the first capture is queued as `glm53observe0908v1` with frozen source

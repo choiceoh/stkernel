@@ -1,5 +1,7 @@
 # Profiles
 
+> 살아 있는 참조 — **프로필이 무슨 모듈을 싣는지. 프로필이 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
+
 A profile names the modules a model loads. Nothing else decides what gets
 mounted.
 

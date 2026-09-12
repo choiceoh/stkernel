@@ -1,5 +1,7 @@
 # TP SF6 Q0 prefill
 
+> 그대로 두는 기록 — **캠페인 산출물.** 당시의 기록이라 고치지 않는다 — 고치면 기록이 거짓이 된다.
+
 The default choice uses TP Q0 producer fusion while retaining TP decode.
 The [campaign record](GLM53_EP_PREFILL_LOCAL.md) reports the completed
 onepass25/27 measurements and their unresolved canonical performance verdicts.

@@ -1,5 +1,7 @@
 # Kernel tuning campaign — GB10 (sm_121a, 48 SMs)
 
+> 그대로 두는 기록 — **2026-08-11 에 닫힌 캠페인.** 당시의 기록이라 고치지 않는다 — 고치면 기록이 거짓이 된다.
+
 Status: **CAMPAIGN CLOSED (2026-08-11). P2a (b12x MoE) DONE — no win.
 Mystery-wmma DONE — router-gate fused kernel ADOPTED (+3.5%). P2b DONE —
 mhc small-M tile (256,6,4) ADOPTED (decode −0.22ms/step, bracket +0.57%);

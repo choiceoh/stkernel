@@ -1,5 +1,7 @@
 # Onepass recording (harness 41)
 
+> 살아 있는 참조 — **원패스가 무엇을 기록하는지. 하니스가 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
+
 `python3 bench/onepass.py --name NAME` runs the Korean context ladder at C=1
 and C=4. C=4 sends four independent streaming requests for each canonical
 question with a start barrier. Request rates and aggregate rates have different

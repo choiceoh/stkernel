@@ -1,5 +1,7 @@
 # GLM prefill follow-up verification
 
+> 그대로 두는 기록 — **캠페인 산출물.** 당시의 기록이라 고치지 않는다 — 고치면 기록이 거짓이 된다.
+
 PR #439 adds FP8 unpack/MHC post fusion, independent AG/RS thresholds, and
 direct grouped PyNCCL packet exchange. Both new execution paths remain off
 by default; the separate thresholds inherit the existing shared boundary.
