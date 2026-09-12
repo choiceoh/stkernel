@@ -88,18 +88,22 @@ class MemoryTier:
 
     def promote(self, seq, storage, ids, extra=None):
         data = self.data[seq]
-        if len(ids) != self.index[str(seq)]["blocks"]:
+        if ids is not None and len(ids) != self.index[str(seq)]["blocks"]:
             raise ValueError("wrong block count")
         want = len(self.extra.get(seq, b""))
         if (len(extra) if extra is not None else 0) != want:
             raise ValueError("slot bytes on disk do not match the view given")
-        for j, i in enumerate(ids):
+        if ids is None and not want:
+            raise ValueError("a snapshot-only read would read nothing")
+        for j, i in enumerate(ids or ()):                 # ids None: the blocks are already in memory, read the slot alone
             storage[i * 4:(i + 1) * 4] = data[j * 4:(j + 1) * 4]
             if self.fail_promote:
                 raise OSError("disk read failed")
+        if self.fail_promote and ids is None:
+            raise OSError("disk read failed")
         if want:
             extra[:] = self.extra[seq]
-        return self.index[str(seq)]["bytes"]
+        return want if ids is None else self.index[str(seq)]["bytes"]
 
     def forget(self, seq):
         if self.fail_forget:

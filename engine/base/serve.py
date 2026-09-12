@@ -42,6 +42,7 @@ import urllib.request
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from engine.base import prefix as prefix_cache
 from engine.base.kv_tier import TierFull
 
 MEDIA_FETCH_TIMEOUT_S = {"image": 5.0, "video": 30.0}           # vLLM's VLLM_IMAGE_FETCH_TIMEOUT / VLLM_VIDEO_FETCH_TIMEOUT defaults
@@ -718,6 +719,9 @@ class Server:
         self._active = {}                          # reusable row -> (request id, promised blocks)
         self._admitted = {}                        # request id -> clock() when a row began stepping it
         self._conversations, self._conversation_of = {}, {}   # resident (idle or live) conversations <-> rows
+        self._tenant_of = {}                                  # conversation -> its tenant salt: only that tenant continues it.
+        # Parked conversations outlive the process; after a restart theirs is unknown, and an unknown tenant matches
+        # nobody but the unsalted caller -- a miss and a fresh prompt (whose prefix chain still hits), never a leak.
         self._idle_order = {}                      # resident idle rows, least recently completed turn first (no tier)
         self._retiring = {}                        # row -> conversation: its park is on the tier's thread (D10: no step waits on it)
         self._resuming = {}                        # row -> (conversation, request, ids, limit, temperature, promised): its resume is in flight
@@ -729,7 +733,8 @@ class Server:
             raise ValueError("the server needs at least one request row and state slot")
 
     def submit(self, ids, max_new: int, temperature: float, conversation: "int | None" = None, stream: bool = False,
-               min_new: int = 0, options: "dict | None" = None, continue_history: bool = False, media=None):
+               min_new: int = 0, options: "dict | None" = None, continue_history: bool = False, media=None,
+               cache_salt: "str | None" = None):
         """Validate and enqueue on rank 0 without acquiring any model resources.
         `stream`: the request also gets a token queue (see `_streams`). `min_new`: no end token before this many.
         `options`: the request's sampling/behaviour options beyond temperature (the engine validates them).
@@ -738,7 +743,10 @@ class Server:
         prefilling everything again (45차 §23 B1). The hint is taken here, on rank 0; admission re-checks it and
         falls back to a fresh prompt if the conversation left in between.
         `media`: the pictures standing at placeholder runs inside `ids` (the profile's door built them: kind, digest,
-        positions, canvas, grid); they ride to every rank with the request and are encoded there (45차 §23 A7)."""
+        positions, canvas, grid); they ride to every rank with the request and are encoded there (45차 §23 A7).
+        `cache_salt`: vLLM's field of the same name -- a tenant's own string, folded into the first block of the
+        boundary chain, so one tenant's prompts can never adopt (or be told about) another's cached prefix. It is
+        not a secret and not authentication: it separates namespaces, which is all a prefix cache can promise."""
         if self.comm.rank != 0:
             raise RequestError("requests must enter on rank 0")
         if self.draining is not None:
@@ -752,6 +760,9 @@ class Server:
                 self.engine.validate_options(options)
             except ValueError as exc:
                 raise RequestError(str(exc)) from exc
+        if cache_salt is not None and (not isinstance(cache_salt, str) or not 0 < len(cache_salt) <= 256):
+            raise RequestError("cache_salt must be a string of 1 to 256 characters")
+        salt = prefix_cache.tenant_salt(cache_salt) if cache_salt else None
         media = list(media or [])
         for m in media:
             if (not isinstance(m, dict) or not isinstance(m.get("kind"), str) or not isinstance(m.get("digest"), str)
@@ -762,12 +773,16 @@ class Server:
             raise RequestError("images are not served by this engine")
         hint = None
         if continue_history and conversation is None and self.runner.keep_idle:
-            hint = self._continuation(ids, media)
+            hint = self._continuation(ids, media, salt)
         if conversation is not None:
             if type(conversation) is not int or conversation < 0:
                 raise RequestError("conversation must be a nonnegative integer")
             if not self.runner.keep_idle:
                 raise RequestError("this server does not retain conversations", 409)
+            if self._tenant_of.get(conversation) != salt:
+                # Conversation ids are small integers, so naming one is not proof of anything: it has to be the
+                # tenant that started it. The same answer as an unknown one, which is also what it is to this caller.
+                raise RequestError("conversation is unknown, live or evicted", 409)
         if not isinstance(ids, (list, tuple)) or not ids or any(type(t) is not int or t < 0 for t in ids):
             raise RequestError("ids must be a nonempty list of nonnegative token integers")
         if type(max_new) is not int or max_new <= 0:
@@ -814,25 +829,34 @@ class Server:
             if conversation is None and prefix is not None:
                 # the prompt's boundary chain, hashed once here and carried to every rank with the request: admission's
                 # lookups, the dedup lookahead, the tier candidate and the runner's submit all read it, none recompute it
-                salts = [(m["positions"][0], bytes.fromhex(m["digest"])) for m in media]
+                salts = ([salt] if salt else []) + [(m["positions"][0], bytes.fromhex(m["digest"])) for m in media]
                 chain = prefix.chain(ids, salts)
                 if hint is None and getattr(self.runner, "prefix_tier", None) is not None:
                     found = prefix.tier_lookup_chain(chain, len(ids), prefix.peek_chain(chain, len(ids)))   # rank 0's view; every rank votes
                     if found is not None:
                         tier = (found[0], found[1].hex())
-            self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation, min_new, options, hint, media, tier, chain))
+            if conversation is None and self.runner.keep_idle:
+                if len(self._tenant_of) > 4 * self.max_pending:
+                    live = set(self._conversations) | set(self.runner.parked_keys())
+                    self._tenant_of = {k: v for k, v in self._tenant_of.items() if k in live}
+                self._tenant_of[request] = salt                # the conversation this turn may become belongs to that tenant
+            self.arrivals.put((request, list(ids), max_new, float(temperature), blocks, conversation, min_new, options, hint,
+                               media, tier, chain, salt))
         return request, event
 
-    def _continuation(self, ids, media=()) -> "tuple[int, int] | None":
+    def _continuation(self, ids, media=(), salt=None) -> "tuple[int, int] | None":
         """(conversation, prefix length) of the retained conversation whose history is the longest proper prefix of
         `ids`: a resident idle row, or a parked one (its record carries the tokens). None if nothing matches.
-        The pictures must match too: the same placeholder run with another picture is another prompt."""
+        The pictures must match too: the same placeholder run with another picture is another prompt, and so does the
+        tenant salt: a conversation another tenant left behind is not this one's to continue."""
         best = None
         n = len(ids)
         marks = sorted((m["positions"][0], m["digest"]) for m in media)
         ends = set(getattr(self.engine, "eos", None) or ())
         def consider(key, history, history_marks):
             nonlocal best
+            if self._tenant_of.get(key) != salt:
+                return                                            # another tenant's turn, or one this boot cannot vouch for
             m = len(history)
             if m <= 1 or m - 1 >= n or (ids[m - 1] != history[m - 1] and ids[m - 2] != history[m - 2]):
                 return                                            # the cheap test first: no list compare for the many that cannot match
@@ -1049,7 +1073,8 @@ class Server:
         self._reorder_waiting()
         spun = 0
         while self._waiting:
-            request, ids, limit, temperature, promised, conversation, min_new, options, hint, media, tier, chain = self._waiting[0]
+            (request, ids, limit, temperature, promised, conversation, min_new, options, hint, media, tier, chain,
+             salt) = self._waiting[0]
             row = None
             resident = held = 0
             parked = False
@@ -1059,16 +1084,16 @@ class Server:
                 row_ = self._conversations.get(key)
                 rest = self._media_after(media, prefix)
                 if rest is None:
-                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier, chain)   # a picture straddles the cut
+                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier, chain, salt)   # a picture straddles the cut
                     continue
                 if (row_ is not None and row_ in self.runner.idle) or (row_ is None and self.runner.is_parked(key)):
                     conversation, ids, media = key, ids[prefix:], rest     # continue the retained conversation with the new turn
                 elif row_ is not None or key in self._retiring.values() or any(e["conversation"] == key for e in self._resuming.values()):
                     break                                         # it is mid-park/resume or live: decide next step
                 else:
-                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier, chain)   # gone: fresh prompt
+                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier, chain, salt)   # gone: fresh prompt
                     continue
-            salts = [(m["positions"][0], bytes.fromhex(m["digest"])) for m in media] if media else []
+            salts = ([salt] if salt else []) + [(m["positions"][0], bytes.fromhex(m["digest"])) for m in media]
             if conversation is None and hint is None and getattr(self.runner, "prefix", None) is not None:
                 if chain is None:
                     chain = self.runner.prefix.chain(ids, salts)  # a request that arrived without one (a continuation that fell back)
@@ -1140,13 +1165,14 @@ class Server:
                         self.runner.restore_begin(row, h, tokens)
                     except Exception:                             # noqa: BLE001 -- no snapshot / no blocks / no tier: prefill it instead
                         heapq.heappush(self._free_rows, row)
-                        self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None, chain)
+                        self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None, chain, salt)
                         continue
                     self._restoring[row] = dict(request=request, ids=ids, limit=limit, temperature=temperature, promised=promised,
-                                                min_new=min_new, options=options, media=media, chain=chain, cancelled=None)
+                                                min_new=min_new, options=options, media=media, chain=chain, salt=salt,
+                                                cancelled=None)
                     self._waiting.popleft()
                     continue
-                self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None, chain)
+                self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None, chain, salt)
                 continue
             if conversation is None:
                 row = heapq.heappop(self._free_rows)
@@ -1269,7 +1295,7 @@ class Server:
                     heapq.heappush(self._free_rows, row)
                     if e["cancelled"] is None:                    # prefill it the plain way, ahead of the queue
                         self._waiting.appendleft((request, e["ids"], e["limit"], e["temperature"], e["promised"], None, e["min_new"],
-                                                  e["options"], None, e["media"], None, e.get("chain")))
+                                                  e["options"], None, e["media"], None, e.get("chain"), e.get("salt")))
             else:
                 e = self._resuming.pop(row)
                 conversation, request = e["conversation"], e["request"]
@@ -1435,10 +1461,11 @@ class Server:
         """
         engine, runner = self.engine, self.runner
         kv, slots = runner.kv, runner.slots
-        # Raw occupancy, not kv.available(): that one adds the blocks the prefix cache would
-        # give back on demand, which is a separate series below. A block pinned by the cache
-        # is held, and the saturation signal has to say so.
-        free_blocks = len(kv.free)
+        # Occupancy is what a row (or a tier read in flight) holds. A block a boundary still
+        # claims is NOT held: it waits in the free list under that boundary's name and leaves
+        # the moment a reservation wants one (base/kv.py), exactly as vLLM's free queue holds
+        # its cached blocks. How much of the free space is reuse is the split below.
+        free_blocks = kv.available
         used_blocks = kv.num_blocks - free_blocks
         rows = [
             ("counter", "vllm:request_success_total", "requests answered", self.served),
@@ -1472,11 +1499,15 @@ class Server:
             ("counter", "st:handover_conversations_lost", "turns a handover could not park",
              (self.handed_over or {}).get("lost", 0)),
             ("gauge", "st:kv_blocks_total", f"blocks of {kv.block_size} tokens in the pool", kv.num_blocks),
-            ("gauge", "st:kv_blocks_used", "blocks held by a row or pinned by the cache", used_blocks),
+            ("gauge", "st:kv_blocks_used", "blocks a row holds (or a tier transfer in flight)", used_blocks),
             ("gauge", "st:kv_rows_in_use", "pool rows with tokens", kv.rows_in_use),
             ("gauge", "st:state_slots_total", "recurrent/conv state slots (slot 0 is the null slot)",
              slots.num_slots - 1),
-            ("gauge", "st:kv_blocks_free", "blocks no row or pin holds", free_blocks),
+            ("gauge", "st:kv_blocks_free", "blocks no row holds: free now, whoever remembers them", free_blocks),
+            ("gauge", "st:kv_blocks_anonymous", "free blocks no boundary remembers: spent before any reuse is", kv.anonymous),
+            ("gauge", "st:kv_blocks_cached", "free blocks a cached boundary holds: the last thing a reservation spends",
+             kv.cached),
+            ("gauge", "st:kv_blocks_faded", "free blocks held by a boundary whose snapshot is gone", kv.faded),
             ("gauge", "st:state_slots_free", "state slots a new request could take", slots.available),
             ("gauge", "st:detokenizer_rust_stream",
              "1 when streamed text is decoded through tokenizers' Rust DecodeStream", int(self.rust_detok)),
@@ -1488,11 +1519,15 @@ class Server:
                  prefix.hits + prefix.misses),
                 ("counter", "vllm:prefix_cache_hits_total", "lookups that reused a cached prefix", prefix.hits),
                 ("counter", "st:prefix_cache_evictions_total", "cached prefixes dropped", prefix.evictions),
-                ("gauge", "st:prefix_cache_reclaimable_blocks", "blocks only the prefix cache holds",
+                ("gauge", "st:prefix_cache_reclaimable_blocks", "free blocks a boundary holds: reuse a reservation can spend",
                  prefix.reclaimable()),
                 ("counter", "st:prefix_reused_tokens_total", "prompt tokens served from a cached boundary (memory or tier)",
                  getattr(runner, "reused_tokens", 0)),
                 ("gauge", "st:prefix_entries", "boundaries in memory", len(prefix.entries)),
+                ("gauge", "st:prefix_faded_entries", "boundaries that kept their blocks after giving up a snapshot",
+                 len(prefix.faded)),
+                ("counter", "st:prefix_cache_fades_total", "boundaries that gave a snapshot away and kept their blocks",
+                 prefix.fades),
                 ("gauge", "st:prefix_pinned_entries", "boundaries an operator pinned", sum(1 for e in prefix.entries.values() if e.pinned)),
                 ("gauge", "st:prefix_tier_entries", "boundaries the prefix tier holds", len(prefix.tier_keys)),
                 ("counter", "st:prefix_tier_spills_total", "boundaries written to the prefix tier", getattr(runner, "prefix_spills", 0)),
@@ -1751,7 +1786,7 @@ class Server:
 
             # ---- the OpenAI dialect ------------------------------------------------------------------------------
             def choices_for(self, ids, count, max_new, temperature, options, stop, *, reasoning, tool_parser=None,
-                            want_logprobs=None, min_new=0, continue_history=False, media=None):
+                            want_logprobs=None, min_new=0, continue_history=False, media=None, cache_salt=None):
                 """Submit `count` generations of one prompt; each is a _Choice fed by its own token queue.
                 With a seed, choice i draws from seed + i so the n answers differ but stay reproducible."""
                 choices = []
@@ -1760,7 +1795,8 @@ class Server:
                     if count > 1 and "seed" in opts:
                         opts["seed"] = opts["seed"] + i
                     request, event = server.submit(ids, max_new, temperature, stream=True, min_new=min_new,
-                                                   options=opts, continue_history=continue_history, media=media)
+                                                   options=opts, continue_history=continue_history, media=media,
+                                                   cache_salt=cache_salt)
                     choices.append(_Choice(len(choices), request, event, server._streams[request], tok=server.tok, stop=stop,
                                            reasoning=reasoning, tool_parser=tool_parser, want_logprobs=want_logprobs,
                                            min_new=min_new))
@@ -1924,7 +1960,7 @@ class Server:
                 reasoning = server.reasoning_end is not None and not (ids and ids[-1] == server.reasoning_end)
                 choices = self.choices_for(ids, n, max_tokens, temperature, options, stop, reasoning=reasoning,
                                            tool_parser=server.tool_parser, want_logprobs=want_logprobs, min_new=min_tokens,
-                                           continue_history=True, media=media)
+                                           continue_history=True, media=media, cache_salt=req.get("cache_salt"))
                 head = {"id": f"chatcmpl-{choices[0].request}", "created": int(time.time()), "model": model}
 
                 def chunk(index, delta=None, finish=None, usage=None, logprobs=None):
@@ -2034,7 +2070,7 @@ class Server:
                 choices, prompt_of = [], {}
                 for ids in prompts:
                     group = self.choices_for(ids, count, max_tokens, temperature, options, stop, reasoning=False,
-                                             want_logprobs=lp_want)
+                                             want_logprobs=lp_want, cache_salt=req.get("cache_salt"))
                     for c in group:
                         c.index = len(choices)
                         prompt_of[c.request] = ids
@@ -2160,7 +2196,8 @@ class Server:
                 t0 = time.perf_counter()
                 conversation = req.get("conversation")
                 temperature, options = sampling_options(req, {})
-                request, event = server.submit(ids, req.get("max_tokens", 64), temperature, conversation, options=options)
+                request, event = server.submit(ids, req.get("max_tokens", 64), temperature, conversation, options=options,
+                                               cache_salt=req.get("cache_salt"))
                 out = self.wait_result(request, event)
                 text = server.tok.decode(out) if server.tok is not None else None
                 conversation = (request if conversation is None else conversation) if server.runner.keep_idle else None
@@ -2170,7 +2207,7 @@ class Server:
             def prefix_warm(self, req):
                 """Compute a prompt's prefix so its boundaries are cached before anyone asks (45차 §23 C): `messages` (through
                 the chat template) or `prompt` / `ids`; one token is generated and discarded. `pin: true` keeps the
-                boundaries out of eviction until `/v1/prefix/unpin`."""
+                boundaries out of eviction until `/v1/prefix/unpin`. `cache_salt` warms that tenant's own chain."""
                 if getattr(server.runner, "prefix", None) is None:
                     raise RequestError("this server has no prefix cache", 404)
                 if req.get("messages") is not None:
@@ -2192,13 +2229,14 @@ class Server:
                     ids = req["ids"]
                 else:
                     raise RequestError("warm needs messages, a prompt or ids")
-                request, event = server.submit(ids, 1, 0.0)
+                request, event = server.submit(ids, 1, 0.0, cache_salt=req.get("cache_salt"))
                 if not event.wait(server.request_timeout_s):
                     server.cancel(request, "timeout")
                     raise RequestError("warm timed out", 504)
                 server.take_result(request)
                 prefix = server.runner.prefix
-                chain = prefix.chain(ids)
+                salt = req.get("cache_salt")
+                chain = prefix.chain(ids, [prefix_cache.tenant_salt(salt)] if salt else ())
                 cached = sorted(t for t, h in chain.items() if prefix.has(h))
                 if req.get("pin"):
                     server.controls.put(("pin", [chain[t].hex() for t in cached]))
