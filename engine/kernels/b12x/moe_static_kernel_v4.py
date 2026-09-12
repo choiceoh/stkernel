@@ -156,6 +156,7 @@ class MoEStaticKernelV4:
         self.fc1_tile_k = 256 if self.decode_reform else _FC1_TILE_K
         self.fc2_tile_n = 256 if self.decode_reform and not self.decode_compact else _FC2_TILE_N
         self.fc2_tile_k = _FC2_TILE_K
+        self.scatter_warp_cols = self.fc2_tile_n // 4 if self.decode_reform else 64
         self.fc1_halves = self.fc2_tile_k // self.fc1_tile_n
         # even waves: only the largest CTA count in {48, 44, 40, 36, 32} that
         # leaves the fewest empty item slots takes items, so the last wave is
@@ -475,6 +476,19 @@ class MoEStaticKernelV4:
             1,
         )
         if self.decode_reform:
+            # Four warps cover the entire N tile. The compact N128 tile must
+            # use 32 columns per warp: retaining N256's 64 overruns sC and
+            # the last global output tile even when the MMA map is correct.
+            scatter_coords = []
+            for warp in range(4):
+                for lane in range(32):
+                    for vector in range(lane, self.tile_m * self.scatter_warp_cols // 8, 32):
+                        row, col = divmod(vector, self.scatter_warp_cols // 8)
+                        scatter_coords.extend((row, warp * self.scatter_warp_cols + col * 8 + j)
+                                              for j in range(8))
+            assert len(scatter_coords) == self.tile_m * self.fc2_tile_n
+            assert set(scatter_coords) == {(m, n) for m in range(self.tile_m)
+                                          for n in range(self.fc2_tile_n)}
             for mma, shape in ((self.tiled_mma1, (self.tile_m, self.fc1_tile_n)),
                                (self.tiled_mma, (self.tile_m, self.fc2_tile_n))):
                 ident = cute.make_identity_tensor(shape)
@@ -1405,7 +1419,7 @@ class MoEStaticKernelV4:
             warp_in_tile = Int32(tidx) >> Int32(5)
             if cutlass.const_expr(self.decode_reform):
                 warp_m_base = Int32(0)
-                warp_n_base = warp_in_tile * Int32(64)
+                warp_n_base = warp_in_tile * Int32(self.scatter_warp_cols)
             else:
                 warp_m_base = (warp_in_tile >> Int32(1)) * Int32(64)
                 warp_n_base = (warp_in_tile & Int32(1)) * Int32(64)
@@ -1840,7 +1854,7 @@ class MoEStaticKernelV4:
                         warp_epi_rows = Int32(64)
                     if warp_epi_rows < Int32(0):
                         warp_epi_rows = Int32(0)
-                    tile_vec_cols = Int32(64) // Int32(8)
+                    tile_vec_cols = Int32(self.scatter_warp_cols) // Int32(8)
                     vec_idx = lane_id
                     while vec_idx < warp_epi_rows * tile_vec_cols:
                         local_row = vec_idx // tile_vec_cols

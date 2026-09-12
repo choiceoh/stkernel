@@ -57,9 +57,12 @@ def occupancy(since, dynamic_smem, mac):
         checked(cu.cuModuleUnload(module))
 
 
-def main():
+def main(router_ranks=None):
     assert torch.cuda.get_device_capability() == (12, 1)
     torch.manual_seed(91613)
+    if router_ranks:
+        from probes.engine_decode_fusions import tensorcore_router
+        tensorcore_router(lambda lane, **values: report(lane=lane, **values), ranks=router_ranks)
     native = served(moe_static='t,r,sf6,q0')
     cfg = md._parse_glm53_static_v2('t,r,sf6', probe=True)
     original_get = md._get_static_kernel_v2

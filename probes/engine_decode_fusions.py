@@ -66,12 +66,14 @@ def seven_row_dense(report):
         ext.restore_probe_state(state)
 
 
-def tensorcore_router(report):
+def tensorcore_router(report, ranks=None):
+    from pathlib import Path
     from safetensors import safe_open
     from engine.kernels.glm_pointwise import router_logits, route_weights
     from engine.profiles.glm53 import facts
+    rank_file = Path(ranks or facts.RANKS) / 'rank0of4.safetensors'
     weights = []
-    with safe_open(str(facts.RANKS / 'rank0of4.safetensors'), framework='pt', device='cpu') as source:
+    with safe_open(str(rank_file), framework='pt', device='cpu') as source:
         for key in sorted(k for k in source.keys() if k.endswith('.moe.gate')):
             gate = source.get_tensor(key).cuda()
             bias = source.get_tensor(key.removesuffix('gate')+'bias').cuda()
@@ -106,6 +108,7 @@ def tensorcore_router(report):
         measurements = [dict(arm=label, ms=_time(graphs[i], iterations=64)) for label, i in
                         (('B', 0), ('A', 1), ('A', 1), ('B', 0))]
         report('tensorcore_router_timing', rows=7, layers=len(weights), checked_rows=checked_rows,
+               rank_file=str(rank_file),
                selected_ids_exact=True, max_logit_error=max_logit_error, measurements=measurements,
                scope='real router weights, synthetic hidden states, captured; not consumer speed')
     finally:
