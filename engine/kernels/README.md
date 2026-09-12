@@ -91,7 +91,7 @@ dispatch도 다른 레인과 같이 적용한다. 실제 가중치·반올림·�
   `lanes.served()` 가 `moe_dispatch.configure_static_v2()`/`configure_tp_sf6_q0()` 로 한 번 적용하고, 바인딩 때
   `Lanes.moe_prepare` 가 층마다 뷰를 만든다(셀 `t` 는 아레나 바이트를 제자리 타일 우선으로, `sf6` 는 packed-only 스케일 소유자).
   참조 레인은 `engine/modules/expert_layout.py` 로 같은 바이트를 행 우선으로 읽는다.
-  `STK_mla_prefill` — 큰 M 프리필 후보 `stock | tile32 | pair | pair4`(프로덕션 off), `mla.configure_prefill()` 이 무장 전에 적용.
+  `STK_mla_prefill` — 큰 M 프리필 후보 `stock | tile32 | pair | pair4`(tile32 프로덕션 기본값), `mla.configure_prefill()` 이 무장 전에 적용.
 - **프로브 훅으로 남긴 것**(env 가 아니라 인자·모듈 속성; 서빙은 안 건드림): MLA 분할 강제 `mla_decode(splits=)`, MLA 루프라인 모드
   `mla_decode(probe=)`(`.cu` `run_mla` 의 넷째 int), 쌍 프리필 겹침 통계 `mla.PAIR_STATS`, 동적 tile_m 고정
   `moe_dispatch._DYNAMIC_TILE_M_OVERRIDE`(새 형상 셀 측정용), 백엔드·컷오버·MAC 사다리 `moe_dispatch._GLM53_B12X_*`(직접 대입),

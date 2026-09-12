@@ -98,7 +98,7 @@ start. 재시작 간격은 60 s 부터 두 배씩 30 분까지, 5 회 실패 뒤
     bash launchers/start-st-glm53.sh stop            # 네 노드 컨테이너 + 잠금 해제
     systemctl --user start fleet-idle-recovery.timer # 5 분 유휴 뒤 vLLM 복귀
 
-프로덕션은 `ST_PRODUCTION=1`로 실행한다. `boot.py --production`은 네이티브 dense·one-shot AR·TP4 GPTQ 드래프터·프리필 SP, `t,r,sf6,q0` MoE, stock MLA와 전체 컨텍스트,
+프로덕션은 `ST_PRODUCTION=1`로 실행한다. `boot.py --production`은 네이티브 dense·one-shot AR·TP4 GPTQ 드래프터·프리필 SP, `t,r,sf6,q0` MoE, 검증된 tile32 MLA 대형 프리필과 전체 컨텍스트,
 served 레인, 캡처 decode를 고정한다. 실험 노브를 선언하지 않아 실험 만료일이 지난 뒤에도 같은 릴리스로 재시작할 수 있고,
 `STK_*`를 섞으면 부팅을 거절한다. `ST_KV_GIB`는 명시적인 KV 바이트 예산을 `--kv-gib`로 전달하며, 미지정 시 프로필 기본값 24GiB를 사용한다. 실험은 기존 기본 실행 모드와 만료 규칙을 사용한다.
 

@@ -311,7 +311,7 @@
       "origin": "repository",
       "local_sha256": "0bf06de1ae33d107e1d2d9a89168b4b65852a216fe476f909380302542c76f43",
       "local_modifications": [
-        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_prefill (STK_mla_prefill), mla_decode(splits=, probe=), PAIR_STATS, ENABLE_MLA_CLUSTER baked on"
+        "2026-09-12 D11 knob sunset: no environment read; tile32 large-M MLA prefill is qualified and selected by the production boot default; configure_prefill (STK_mla_prefill), mla_decode(splits=, probe=), PAIR_STATS, ENABLE_MLA_CLUSTER baked on"
       ]
     }
   }
