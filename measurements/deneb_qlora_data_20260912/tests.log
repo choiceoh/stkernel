@@ -1,0 +1,18 @@
+test_evidence_and_dates_must_be_grounded (test_deneb_qlora_dataset.DenebQLoRADataTests.test_evidence_and_dates_must_be_grounded) ... ok
+test_input_change_or_quarantine_prevents_export (test_deneb_qlora_dataset.DenebQLoRADataTests.test_input_change_or_quarantine_prevents_export) ... ok
+test_mail_analysis_without_optional_heading_is_preserved (test_deneb_qlora_dataset.DenebQLoRADataTests.test_mail_analysis_without_optional_heading_is_preserved) ... ok
+test_only_explicit_reviewed_answers_exported_with_split_preserved (test_deneb_qlora_dataset.DenebQLoRADataTests.test_only_explicit_reviewed_answers_exported_with_split_preserved) ... ok
+test_private_outputs_reject_git_and_existing_destination (test_deneb_qlora_dataset.DenebQLoRADataTests.test_private_outputs_reject_git_and_existing_destination) ... ok
+test_prompt_mask_and_eos_preserve_whole_completion (test_deneb_qlora_dataset.DenebQLoRADataTests.test_prompt_mask_and_eos_preserve_whole_completion) ... ok
+test_redaction_retains_entity_distinctions_without_credentials (test_deneb_qlora_dataset.DenebQLoRADataTests.test_redaction_retains_entity_distinctions_without_credentials) ... ok
+test_reserved_groups_never_promoted (test_deneb_qlora_dataset.DenebQLoRADataTests.test_reserved_groups_never_promoted) ... ok
+test_synthetic_payload_and_truncated_preview_are_flagged (test_deneb_qlora_dataset.DenebQLoRADataTests.test_synthetic_payload_and_truncated_preview_are_flagged) ... ok
+test_synthetic_sessions_excluded (test_deneb_qlora_dataset.DenebQLoRADataTests.test_synthetic_sessions_excluded) ... ok
+test_text_turn_pairing_does_not_reverse_or_cross_tools (test_deneb_qlora_dataset.DenebQLoRADataTests.test_text_turn_pairing_does_not_reverse_or_cross_tools) ... ok
+test_unicode_line_separators_are_not_jsonl_record_boundaries (test_deneb_qlora_dataset.DenebQLoRADataTests.test_unicode_line_separators_are_not_jsonl_record_boundaries) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.004s
+
+OK
+{"version": 1, "counts": {"train": 0, "validation": 0, "test": 1}, "category_split": {"mail/test": 1}, "decisions": {"act": 1}, "annotation_kind": "assistant_reviewed_source_grounded", "human_verified": false, "groups_disjoint": true, "evidence_exact_match": true, "historical_test_is_development_only": true, "pool_sha256": "a50f57dcf56043ceb72690e8884bc4c6e17797210b9c1f486d8c561a5c9b7aee", "annotations_sha256": "56aa8f8cc761c453294b641e2ed117ed24dbf48843c18bccfb6dfaaf1b9f0a87", "loss_policy": "completion_only", "truncate_targets": false, "model_training_performed": false}

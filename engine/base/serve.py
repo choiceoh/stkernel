@@ -121,6 +121,56 @@ def sampling_options(req: dict, defaults: "dict | None" = None) -> "tuple[float,
     return float(temperature), options
 
 
+# What a chat answer may be when the request does not say. It is a length in CHARACTERS, not
+# in tokens, because a token is not the same amount of answer in every language: on this
+# checkpoint it buys 5.8 characters of English and 1.3 of Korean, so one number in tokens is
+# four different answers in four languages -- and the shortest of them was Korean, cut at 334
+# characters where English got 1,480 (45차 §38). vLLM and SGLang have no cap at all; ours
+# stays, because admission reserves a request's whole horizon and never preempts (D3), but it
+# is priced in the unit a reader counts.
+DEFAULT_ANSWER_CHARS = 1500
+DEFAULT_ANSWER_TOKENS = (256, 2048)          # never below what the old token budget bought, never past this
+
+
+def written_text(messages) -> str:
+    """What the person actually wrote in the last turn they wrote, template scaffolding aside.
+
+    The rendered prompt would be cheaper -- it is already tokenized -- but it carries the
+    template's own English, and a long system block would read a short Korean question as
+    English. The last user turn is the one the answer follows.
+    """
+    for m in reversed(messages if isinstance(messages, list) else []):
+        if not isinstance(m, dict) or m.get("role") != "user":
+            continue
+        content = m.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return "".join(part.get("text", "") for part in content
+                           if isinstance(part, dict) and part.get("type") == "text")
+    return ""
+
+
+def answer_budget(tok, text: str) -> int:
+    """How many tokens `DEFAULT_ANSWER_CHARS` characters cost in the language this was written in.
+
+    The text's own tokens-per-character is the whole measurement: 0.77 for Korean, 0.73 for
+    Japanese, 0.54 for Chinese, 0.17 for English on this checkpoint -- and it reads that way
+    off six characters of prompt, so a one-line question is enough to price its own answer.
+    """
+    floor, ceiling = DEFAULT_ANSWER_TOKENS
+    if tok is None or not text:
+        return floor
+    try:
+        try:
+            n = len(tok.encode(text, add_special_tokens=False).ids)
+        except TypeError:                                   # a tokenizer without the switch
+            n = len(tok.encode(text).ids)
+    except Exception:                                       # noqa: BLE001 -- a budget never fails a request
+        return floor
+    return max(floor, min(ceiling, round(DEFAULT_ANSWER_CHARS * n / len(text))))
+
+
 def media_parts(messages) -> "list[tuple[str, str]]":
     """(kind, url) of every image_url / video_url part, in the order the chat template renders them. Text parts
     pass through; any other part type is refused here rather than silently dropped by the template."""
@@ -327,6 +377,71 @@ def _decode(tok, ids) -> str:
                 continue
             keep.append(tid)
         return tok.decode(keep)
+
+
+def _byte_level_chars() -> "list[str]":
+    """GPT-2's byte-to-character table, which a byte-level BPE vocabulary is written in."""
+    printable = (list(range(ord("!"), ord("~") + 1)) + list(range(0xA1, 0xAD)) + list(range(0xAE, 0x100)))
+    table, spare = {}, 0
+    for b in range(256):
+        table[b] = chr(b) if b in printable else chr(256 + spare)
+        spare += b not in printable
+    return [table[b] for b in range(256)]
+
+
+_BYTE_OF_CHAR = {c: b for b, c in enumerate(_byte_level_chars())}
+
+
+def token_bytes(tok, tid: int, text: str) -> "list[int]":
+    """A token's own bytes, for OpenAI's `bytes` field.
+
+    That field exists for exactly one reason, which the spec states: a character can be spread
+    over several tokens, and a client rejoins it from the bytes. So a token that is half a
+    character is the case the field is for -- and `decode([id])` cannot answer it, because a
+    Python string cannot hold half a character. It renders U+FFFD, whose bytes say nothing.
+    On this checkpoint that is 32.1% of the tokens of Korean, against 0.0% of English.
+
+    So when the text came back with a replacement character, read the vocabulary entry
+    instead: a byte-level entry spells its bytes in GPT-2's table, a byte-fallback one spells
+    one byte as `<0xNN>`. Anything else keeps the old answer. vLLM and SGLang both return the
+    replacement character's bytes here.
+    """
+    if "\ufffd" not in text:
+        return list(text.encode())
+    piece = tok.id_to_token(tid) if hasattr(tok, "id_to_token") else None
+    if isinstance(piece, str):
+        if len(piece) == 6 and piece.startswith("<0x") and piece.endswith(">"):
+            try:
+                return [int(piece[3:5], 16)]
+            except ValueError:
+                pass
+        elif piece and all(c in _BYTE_OF_CHAR for c in piece):
+            return [_BYTE_OF_CHAR[c] for c in piece]
+    return list(text.encode())
+
+
+def token_spans(tok, ids, start: int = 0) -> "tuple[list[str], list[int]]":
+    """What each token added to the text, and where that lands in it.
+
+    `text_offset` indexes into the answer, so a token's entry has to be what that token added
+    -- not what it says decoded on its own. The two differ wherever a character is spread over
+    tokens: each half renders U+FFFD, one character wide, and the offsets walk off the text.
+    Measured on this checkpoint, a Korean answer drifted 44 characters and English none
+    (45차 §38). So grow the text a token at a time, the way the door streams it, and take the
+    growth: the halves add nothing and the token that finishes the character adds it whole.
+    """
+    stream, said, pos = _Stream(tok), "", start
+    tokens, offsets = [], []
+    for tid in ids:
+        stream.extend((tid,))
+        grown = stream.decoded(False)
+        added, said = grown[len(said):], grown
+        tokens.append(added)
+        offsets.append(pos)
+        pos += len(added)
+    if tokens:
+        tokens[-1] += stream.decoded(True)[len(said):]      # whatever never became a character
+    return tokens, offsets
 
 
 def _whole(text: str) -> str:
@@ -608,10 +723,16 @@ class _Choice:
                 seen[tid] = self.tok.decode([tid])
             return seen[tid]
 
+        bytes_seen = {}
+
+        def bytes_of(tid):
+            if tid not in bytes_seen:
+                bytes_seen[tid] = token_bytes(self.tok, tid, text_of(tid))
+            return bytes_seen[tid]
+
         for tid, lp, top in self.logprobs[offset:]:
-            token = text_of(tid)
-            rows.append({"token": token, "logprob": lp, "bytes": list(token.encode()),
-                         "top_logprobs": [{"token": text_of(i), "logprob": v, "bytes": list(text_of(i).encode())}
+            rows.append({"token": text_of(tid), "logprob": lp, "bytes": bytes_of(tid),
+                         "top_logprobs": [{"token": text_of(i), "logprob": v, "bytes": bytes_of(i)}
                                           for i, v in top[: self.want_logprobs]]})
         return {"content": rows}
 
@@ -792,6 +913,18 @@ class Server:
         self._free_rows = list(range(min(runner.kv.max_seqs, runner.c.max_running, runner.slots.available)))
         if not self._free_rows:
             raise ValueError("the server needs at least one request row and state slot")
+
+    def room_for(self, prompt_tokens: int) -> int:
+        """The largest `max_new` this prompt could still be given, both limits together.
+
+        A request reserves its whole horizon at admission and is never preempted (D3), so a
+        default that does not fit is a refusal the caller did not ask for. Only defaults are
+        clamped by this -- a number the caller wrote is still answered with a refusal.
+        """
+        kv = self.runner.kv
+        draft = self.runner.c.draft_slots
+        by_blocks = min(kv.num_blocks, kv.max_blocks_per_seq) * kv.block_size
+        return max(1, min(self.max_context, by_blocks) - prompt_tokens + 1 - draft)
 
     def submit(self, ids, max_new: int, temperature: float, conversation: "int | None" = None, stream: bool = False,
                min_new: int = 0, options: "dict | None" = None, continue_history: bool = False, media=None,
@@ -1978,7 +2111,10 @@ class Server:
                     raise RequestError("min_tokens must be a nonnegative integer")
                 max_tokens = req.get("max_tokens")
                 if max_tokens is None:
-                    max_tokens = req.get("max_completion_tokens", 256)
+                    max_tokens = req.get("max_completion_tokens")
+                defaulted = max_tokens is None
+                if defaulted:
+                    max_tokens = answer_budget(server.tok, written_text(messages))
                 stream = bool(req.get("stream", False))
                 include_usage = bool(options_stream and options_stream.get("include_usage"))
                 model = req.get("model") if isinstance(req.get("model"), str) and req.get("model") else server.model_name
@@ -2029,6 +2165,11 @@ class Server:
                     # reasoning -- including the block's own end token, so the block would never close and the
                     # whole answer would come back as reasoning_content with content empty. It waits instead.
                     options["grammar_after"] = server.reasoning_end
+                if defaulted:
+                    # Only ever back down to what the old token budget was: a prompt the old
+                    # default could not fit is still refused, in the same words, rather than
+                    # quietly answered in one token.
+                    max_tokens = min(max_tokens, max(DEFAULT_ANSWER_TOKENS[0], server.room_for(len(ids))))
                 choices = self.choices_for(ids, n, max_tokens, temperature, options, stop, reasoning=reasoning,
                                            tool_parser=server.tool_parser, want_logprobs=want_logprobs, min_new=min_tokens,
                                            continue_history=True, media=media, cache_salt=req.get("cache_salt"))
@@ -2151,12 +2292,11 @@ class Server:
                 def legacy_logprobs(c, ids_prompt):
                     if want_logprobs is None:
                         return None
-                    tokens, lps, tops, offsets = [], [], [], []
-                    pos = len(server.tok.decode(ids_prompt)) if echo else 0
-                    for tid, lp, top in c.logprobs:
-                        text = server.tok.decode([tid])
-                        tokens.append(text); lps.append(lp); offsets.append(pos); pos += len(text)
-                        tops.append({server.tok.decode([i]): v for i, v in top[:want_logprobs]} if want_logprobs else None)
+                    start = len(server.tok.decode(ids_prompt)) if echo else 0
+                    tokens, offsets = token_spans(server.tok, [tid for tid, _, _ in c.logprobs], start)
+                    lps = [lp for _, lp, _ in c.logprobs]
+                    tops = [{server.tok.decode([i]): v for i, v in top[:want_logprobs]} if want_logprobs else None
+                            for _, _, top in c.logprobs]
                     return {"tokens": tokens, "token_logprobs": lps, "top_logprobs": tops, "text_offset": offsets}
 
                 def chunk(index, text=None, finish=None, usage=None):
