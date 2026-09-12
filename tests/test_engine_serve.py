@@ -1245,6 +1245,28 @@ class StepCostTests(unittest.TestCase):
         self.assertEqual(s.engine.generated_since(0, 2), [9, 10])
 
 
+class RequestClockTests(unittest.TestCase):
+    """Two clocks per request. A request that does not finish must still clear both."""
+
+    def test_a_cancelled_request_leaves_no_clock_behind(self):
+        s = server()
+        request, event = s.submit([1, 2], 8, 0.0)
+        for _ in range(3):
+            s.once()
+        self.assertIn(request, s._admitted, "it was admitted, so the queue clock stopped")
+        s.cancel(request, "client closed")
+        for _ in range(3):
+            s.once()
+        self.assertNotIn(request, s._arrived)
+        self.assertNotIn(request, s._admitted)
+
+    def test_both_clocks_are_cleared_in_the_same_places(self):
+        source = (ROOT / "engine/base/serve.py").read_text()
+        self.assertEqual(source.count("self._arrived.pop(request, None)"),
+                         source.count("self._admitted.pop(request, None)"),
+                         "one of them is cleared somewhere the other is not")
+
+
 class MetricsTests(unittest.TestCase):
     """The numbers a dashboard needs that a single latency histogram cannot give."""
 
@@ -1455,6 +1477,46 @@ class OpenAIDialectTests(unittest.TestCase):
                                                    {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
                                                     "reasoning_effort": "high", "chat_template_kwargs": {"reasoning_effort": "low"}}))
         self.assertEqual(err.exception.code, 400)
+
+    def test_a_grammar_waits_for_the_reasoning_to_end(self):
+        """A grammar armed inside the think block forbids the block's own end token, so the block never closes
+        and the whole answer comes back as reasoning_content with content empty -- the 45차 §22 bug, reached
+        through response_format this time. The door tells the engine which token the grammar waits for."""
+        s = chat_server()
+        s.reasoning_end = ord('y')
+        body = {"messages": [{"role": "user", "content": "xy"}], "max_tokens": 1,
+                "response_format": {"type": "json_object"}, "chat_template_kwargs": {"thinking": True}}
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body))
+        opts = s.engine.options[0]                       # the rendered prompt is "xy!": the answer starts in the block
+        self.assertEqual(opts["grammar"], {"type": "json_object"})
+        self.assertEqual(opts["grammar_after"], ord('y'))
+        s = chat_server()
+        s.reasoning_end = ord('y')                       # thinking off: the prompt "xy" ends with the reasoning end,
+        body = dict(body); body.pop("chat_template_kwargs")   # so the answer starts in content and the grammar is armed at once
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body))
+        self.assertNotIn("grammar_after", s.engine.options[0])
+
+    def test_a_schema_the_grammar_compiler_refuses_is_a_bad_request_not_a_dead_engine(self):
+        """`prepare_options` builds the grammar at the door. On the loop the compiler's error would leave
+        `once()` and take every live row on every rank with it."""
+        s = chat_server()
+        asked = []
+
+        class Engine(type(s.engine)):
+            def prepare_options(self, options):
+                asked.append(options.get("grammar"))
+                if options.get("grammar", {}).get("type") == "json_schema":
+                    raise ValueError("the grammar cannot be compiled: Regex parsing error")
+
+        s.engine.__class__ = Engine
+        body = {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
+                "response_format": {"type": "json_schema", "json_schema": {"schema": {"type": "string", "pattern": "(a)"}}}}
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body))
+        self.assertEqual(err.exception.code, 400)
+        self.assertIn("the grammar cannot be compiled", err.exception.read().decode())
+        self.assertFalse(s.pending or s.results or s._waiting)
+        self.assertTrue(asked)
 
     def test_sampling_options_are_validated_and_travel_to_the_engine(self):
         s = chat_server()
