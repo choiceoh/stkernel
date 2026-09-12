@@ -79,6 +79,11 @@ def _buckets(metrics: dict, name: str, **labels):
     for key, value in metrics.items():
         if not key.startswith(name + "_bucket{"):
             continue
+        fields = dict((k.strip(), v.strip().strip('"'))
+                      for part in key[key.index("{") + 1:-1].split(",")
+                      for k, _, v in [part.partition("=")])
+        if any(fields.get(k) != str(v) for k, v in labels.items()):
+            continue
         for part in key[key.index("{") + 1:-1].split(","):
             k, _, v = part.partition("=")
             if k.strip() == "le":
@@ -100,7 +105,9 @@ def hist_delta(a: dict, b: dict, name: str, **labels) -> "dict | None":
         return None
     bounds, cum = [], []
     b0, b1 = _buckets(a, name, **labels), _buckets(b, name, **labels)
-    if b0 and b1 and len(b0) == len(b1):
+    # A changed bucket layout cannot be zipped into a distribution even when
+    # it has the same number of buckets. Count/mean remain independently valid.
+    if b0 and b1 and [le for le, _ in b0] == [le for le, _ in b1]:
         for (le, v0), (_, v1) in zip(b0, b1):
             bounds.append(le)
             cum.append(max(0.0, v1 - v0))
