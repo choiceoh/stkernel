@@ -9,7 +9,7 @@ import torch
 import triton
 import triton.language as tl
 
-from . import BLOCK
+from engine.kernels.prefill_collectives import BLOCK
 
 
 @triton.jit(do_not_specialize=["LOCAL_N", "PAYLOAD_BYTES"])
