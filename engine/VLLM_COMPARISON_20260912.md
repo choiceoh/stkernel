@@ -82,7 +82,7 @@ vLLM 의 `v1/engine/detokenizer.py` 는 `tokenizers` 의 **러스트 `DecodeStre
 (`_protected_step`): 토큰 id 가 아닌 id(`OverflowError`/`TypeError`, vllm#21951)와 `Invalid prefix encountered`(vllm#17448).
 우리는 같은 알고리즘을 파이썬으로 들고 있었고 **복구는 없었다** — `Tokenizer.decode` 의 `OverflowError` 는 HTTP 스레드에서 SSE 를 중간에 끊는다.
 
-**한 것은 45차 §28** 에 있다. 요지: 러스트 스트림(스텝 배치 하나로), 복구 둘(B 는 미정산 id 로 새 스트림을 프리필해 **잃는 토큰이 없다** — vLLM 은 하나 잃는다),
+**한 것은 45차 §30** 에 있다. 요지: 러스트 스트림(스텝 배치 하나로), 복구 둘(B 는 미정산 id 로 새 스트림을 프리필해 **잃는 토큰이 없다** — vLLM 은 하나 잃는다),
 그리고 vLLM 에 없는 정지 가드. 다만 **문의 시간은 디코드에 있지 않았다**: 러스트 스트림만으로 −8%, 나머지는 `partial_suffix` 와 답 전체를 매 스텝 훑던 정지 문자열 스캔이었다.
 스텝당 6.22 → 3.97 µs, 그리고 16K 답에서 21.51 → 4.29 µs (답 길이에 대해 평평해졌다).
 

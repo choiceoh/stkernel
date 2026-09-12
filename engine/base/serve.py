@@ -643,7 +643,8 @@ class Server:
     def __init__(self, engine, runner, comm, port: int = 8000, tokenizer=None,
                  host: str = "0.0.0.0", max_pending: int = 64, chat=None, model_name: str = "st",
                  reasoning_end: "int | None" = None, request_timeout_s: float = 3600.0, tool_parser=None,
-                 generation: "dict | None" = None, max_choices: int = 4, vision=None):
+                 generation: "dict | None" = None, max_choices: int = 4, vision=None,
+                 lease: "dict | None" = None):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
         if type(request_timeout_s) not in (int, float) or not request_timeout_s > 0:
@@ -671,6 +672,15 @@ class Server:
         self._deadline = {}                        # request id -> clock() by which it must have finished (rank 0)
         self.cancelled = 0
         self.timed_out = 0                         # the subset of `cancelled` the deadline scan took
+        # The fleet lease (engine/base/fleet_lease): `{'owner':..., 'path':...}` on rank 0, or
+        # None when nothing reserved this fleet. Two things ride on it -- what this engine is
+        # doing, published for whoever is waiting, and the request to hand the fleet over.
+        self.lease = dict(lease) if lease else None
+        self.draining = None                       # the requester we are handing the fleet to
+        self.drained = False                       # every conversation parked; the loop may end
+        self.handed_over = None                    # {'to':..., 'parked': n, 'lost': n} once it happens
+        self._lease_seen = 0.0                     # last poll, so a step is not a file stat
+        self.lease_poll_s = 2.0
         self.steps_prefill = self.steps_decode = 0   # D9: a step is one kind or the other, never both
         # Latency is owed from the request's arrival, not from the step that served it.
         # Rank 0 admits, answers and serves /metrics, so only rank 0 keeps these.
@@ -731,6 +741,11 @@ class Server:
         positions, canvas, grid); they ride to every rank with the request and are encoded there (45차 §23 A7)."""
         if self.comm.rank != 0:
             raise RequestError("requests must enter on rank 0")
+        if self.draining is not None:
+            # Handing the fleet over: what is here finishes and is parked, nothing new joins.
+            # Refused before any state exists -- a rejected request that left a pending entry
+            # behind would keep the engine from ever going quiet, and so from ever letting go.
+            raise RequestError("the engine is handing the fleet over; retry shortly", 503)
         options = dict(options or {})
         if options and hasattr(self.engine, "validate_options"):
             try:
@@ -1279,6 +1294,74 @@ class Server:
                     if e["cancelled"] is None:
                         self._answer(request, RequestError("conversation could not be restored from the tier", 503))
 
+    def _yield_asked(self) -> "str | None":
+        """Rank 0: has anyone asked for the fleet? Polled, and it publishes while it looks.
+
+        This is the half of a handover a queue cannot do on its own. A queue can put a
+        session at the front of the line; only the engine can finish the conversations it
+        is holding and put them where they survive the next boot (D16).
+        """
+        if self.draining is not None:
+            return self.draining
+        if not self.lease or self.comm.rank != 0:
+            return None
+        now = self.clock()
+        if now - self._lease_seen < self.lease_poll_s:
+            return None
+        self._lease_seen = now
+        from engine.base import fleet_lease
+        try:
+            record = fleet_lease.read(self.lease["path"])
+            if not record or record.get("owner") != self.lease["owner"]:
+                return None                       # not our lease any more: nothing to answer
+            fleet_lease.publish(self.lease["owner"], path=self.lease["path"],
+                                running=len(self.runner.state.running),
+                                waiting=len(self.runner.state.waiting) + len(self._waiting),
+                                served=self.served, steps=self.runner.steps)
+            asked = fleet_lease.yield_requested(record)
+        except Exception:                         # noqa: BLE001 -- the lease never takes serving down
+            return None
+        return asked.get("requester") if asked else None
+
+    def _quiet(self) -> bool:
+        """Nothing left to finish: no request anywhere, and no transfer on the tier's thread."""
+        return not (self.runner.state.running or self.runner.state.waiting or self._waiting
+                    or self.pending or self._active or self._retiring or self._resuming
+                    or self._restoring)
+
+    def _hand_over(self) -> None:
+        """Park what is still resident, let the lease go, and end the loop.
+
+        A finished turn is already parked by `_retire` when a tier is configured, so what
+        is left here is the rows that stayed resident. They are parked under their
+        conversation key, which is exactly what the next holder resumes by -- so the
+        fleet changes hands without anyone losing their context.
+        """
+        parked = lost = 0
+        if self.runner.tiered is not None:
+            for row, conversation in list(self._conversation_of.items()):
+                self._conversations.pop(conversation, None)
+                self._conversation_of.pop(row, None)
+                self._idle_order.pop(row, None)
+                try:
+                    self.runner.park(row, key=conversation)
+                    parked += 1
+                except Exception:                 # noqa: BLE001 -- one lost turn is not a lost handover
+                    lost += 1                     # ... but it is never a silent one
+        self.handed_over = {"to": self.draining, "parked": parked, "lost": lost}
+        if lost:
+            print(f"  handover to {self.draining}: {parked} conversations parked, {lost} LOST", flush=True)
+        if self.lease and self.comm.rank == 0:
+            from engine.base import fleet_lease
+            try:
+                # Say what happened before letting go: the next holder reads this file.
+                fleet_lease.publish(self.lease["owner"], path=self.lease["path"],
+                                    phase="handed over", parked=parked, lost=lost)
+                fleet_lease.release(self.lease["owner"], path=self.lease["path"])
+            except Exception:                     # noqa: BLE001
+                pass
+        self.alive = False                        # `once` returns False and `loop` ends
+
     def _retire(self, row):
         """A finished turn leaves its row: parked with a tier, resident idle without, released otherwise."""
         if not self.runner.keep_idle:
@@ -1378,6 +1461,12 @@ class Server:
             ("counter", "st:steps_decode_total", "steps that were a decode", self.steps_decode),
             ("counter", "st:requests_cancelled_total", "requests cancelled, for any reason", self.cancelled),
             ("counter", "st:requests_timed_out_total", "the subset the deadline scan took", self.timed_out),
+            ("gauge", "st:handing_over", "1 while the fleet is being handed to another session",
+             int(self.draining is not None)),
+            ("counter", "st:handover_conversations_parked", "turns parked for the next holder",
+             (self.handed_over or {}).get("parked", 0)),
+            ("counter", "st:handover_conversations_lost", "turns a handover could not park",
+             (self.handed_over or {}).get("lost", 0)),
             ("gauge", "st:kv_blocks_total", f"blocks of {kv.block_size} tokens in the pool", kv.num_blocks),
             ("gauge", "st:kv_blocks_used", "blocks held by a row or pinned by the cache", used_blocks),
             ("gauge", "st:kv_rows_in_use", "pool rows with tokens", kv.rows_in_use),
@@ -1493,8 +1582,11 @@ class Server:
         try:
             if self.comm.rank == 0:
                 self._expire()
-            alive, arrivals, cancels, controls = self.comm.broadcast_object(
-                (self.alive, self._drain(), self._drain_cancels(), self._drain_controls()) if self.comm.rank == 0 else None)
+            alive, arrivals, cancels, controls, draining = self.comm.broadcast_object(
+                (self.alive, self._drain(), self._drain_cancels(), self._drain_controls(),
+                 self._yield_asked()) if self.comm.rank == 0 else None)
+            if draining is not None and self.draining is None:
+                self.draining = draining          # every rank stops admitting on the same step
             if not alive:
                 self._abort()
                 self._fail_pending()
@@ -1545,6 +1637,9 @@ class Server:
                         stream.put(("tokens", (self.engine.generated_since(row, sent), list(entries[sent:]) if entries else None)))
                         self._wake.set()
                     self._sent[row] = count
+            if self.draining is not None and not self.drained and self._quiet():
+                self.drained = True
+                self._hand_over()
             live = set(self.runner.state.running) | set(self.runner.state.waiting)
             for row in list(self._active):
                 if row not in live:

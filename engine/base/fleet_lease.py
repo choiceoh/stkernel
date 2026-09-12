@@ -37,6 +37,7 @@ from pathlib import Path
 
 DEFAULT_PATH = Path.home() / "st-fleet.lock"
 GRACE_S = 900.0            # 15 min without evidence or heartbeat before a lease is stale
+LOCK_STALE_S = 30.0        # a mutation lock older than this was left by a killed writer
 FIELDS = ("owner", "host", "pid", "container", "since", "beat", "est_minutes", "note")
 
 
@@ -50,6 +51,43 @@ class LeaseLost(RuntimeError):
 
 def _now() -> float:
     return time.time()
+
+
+class _Mutation:
+    """A short lock around read-modify-write: the holder publishes its state while another
+    session asks it to yield, and neither may drop the other's field."""
+
+    def __init__(self, path):
+        self.path = Path(str(path) + ".mut")
+
+    def __enter__(self):
+        for _ in range(300):
+            try:
+                os.close(os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
+                return self
+            except FileExistsError:
+                try:
+                    if _now() - self.path.stat().st_mtime > LOCK_STALE_S:
+                        self.path.unlink()          # its writer died holding it
+                        continue
+                except FileNotFoundError:
+                    continue
+                time.sleep(0.02)
+        raise LeaseHeld(f"the lease at {self.path} stayed locked by another writer")
+
+    def __exit__(self, *exc):
+        try:
+            self.path.unlink()
+        except FileNotFoundError:
+            pass
+        return False
+
+
+def _write(path, record) -> None:
+    path = Path(path)
+    temporary = path.with_suffix(path.suffix + f".tmp.{os.getpid()}")
+    temporary.write_text(json.dumps(record, indent=2) + "\n")
+    os.replace(temporary, path)
 
 
 def read(path=DEFAULT_PATH) -> "dict | None":
@@ -113,7 +151,14 @@ def describe(record) -> str:
     since = record.get("since") or 0
     when = time.strftime("%F %T", time.localtime(since)) if since else "unknown time"
     note = record.get("note") or ""
-    return f"{record.get('owner')} on {record.get('host') or '?'} since {when}" + (f" ({note})" if note else "")
+    line = f"{record.get('owner')} on {record.get('host') or '?'} since {when}" + (f" ({note})" if note else "")
+    state = record.get("state") or {}
+    if state:
+        line += ": " + ", ".join(f"{k}={v}" for k, v in sorted(state.items()))
+    asked = yield_requested(record)
+    if asked:
+        line += f" -- asked to yield to {asked.get('requester')}"
+    return line
 
 
 def acquire(owner: str, *, path=DEFAULT_PATH, container: str = "", note: str = "",
@@ -150,14 +195,59 @@ def acquire(owner: str, *, path=DEFAULT_PATH, container: str = "", note: str = "
     raise LeaseHeld(f"the fleet lease at {path} could not be taken")
 
 
+def publish(owner: str, *, path=DEFAULT_PATH, **state) -> dict:
+    """The holder says what it is doing, and beats at the same time.
+
+    A lease that only says "held" makes every other session guess. The engine knows what
+    it is doing -- layers loaded, requests in flight, when it expects to be free -- so it
+    says so, and `read` turns that into one line anybody can act on.
+    """
+    with _Mutation(path):
+        record = read(path)
+        if not record or record.get("owner") != owner:
+            raise LeaseLost(f"the lease is {describe(record)}, not {owner}")
+        if state:
+            record["state"] = {**(record.get("state") or {}), **state}
+        record["beat"] = _now()
+        _write(path, record)
+        return record
+
+
 def renew(owner: str, *, path=DEFAULT_PATH) -> dict:
     """Push the heartbeat forward. A long boot must not look stale while it works."""
-    record = read(path)
-    if not record or record.get("owner") != owner:
-        raise LeaseLost(f"the lease is {describe(record)}, not {owner}")
-    record["beat"] = _now()
-    Path(path).write_text(json.dumps(record, indent=2) + "\n")
-    return record
+    return publish(owner, path=path)
+
+
+def request_yield(requester: str, *, path=DEFAULT_PATH, reason: str = "") -> "dict | None":
+    """Ask the holder to hand the fleet over. Returns the lease asked, or None if free.
+
+    This is the half a queue alone cannot do. The holder is a running engine with live
+    conversations, so the answer is not "kill it" but "stop admitting, finish what you
+    have, park it where it survives, and let go" -- and only the engine can carry that
+    out. Asking is not taking: the requester still acquires the lease afterwards, like
+    anybody else, and loses the race if a third session is quicker.
+    """
+    with _Mutation(path):
+        record = read(path)
+        if record is None:
+            return None
+        if record.get("opaque"):
+            raise LeaseHeld("the holder predates the yield protocol; ask its session directly")
+        record["yield_to"] = {"requester": requester, "reason": reason, "asked": _now()}
+        _write(path, record)
+        return record
+
+
+def yield_requested(record) -> "dict | None":
+    return (record or {}).get("yield_to") or None
+
+
+def clear_yield(owner: str, *, path=DEFAULT_PATH) -> None:
+    """Withdraw the request: the asker gave up, or the holder has already let go."""
+    with _Mutation(path):
+        record = read(path)
+        if record and record.get("owner") == owner and record.pop("yield_to", None) is not None:
+            _write(path, record)
 
 
 def release(owner: str, *, path=DEFAULT_PATH, force: bool = False) -> "dict | None":
@@ -202,13 +292,32 @@ def _selfcheck() -> None:
         except LeaseLost:
             pass
         assert renew("boot-b", path=path)["beat"] >= taken["beat"]
+        # the holder says what it is doing, and another session asks it to go
+        publish("boot-b", path=path, phase="serving", running=3, free_in_minutes=12)
+        assert "running=3" in describe(read(path)) and "phase=serving" in describe(read(path))
+        assert yield_requested(read(path)) is None
+        request_yield("boot-c", path=path, reason="45차 §22 그래프 재생")
+        asked = yield_requested(read(path))
+        assert asked["requester"] == "boot-c" and "asked to yield to boot-c" in describe(read(path))
+        # publishing again must not drop the request, nor the request the state
+        publish("boot-b", path=path, running=0)
+        assert yield_requested(read(path))["requester"] == "boot-c"
+        assert read(path)["state"]["phase"] == "serving" and read(path)["state"]["running"] == 0
+        clear_yield("boot-b", path=path)
+        assert yield_requested(read(path)) is None
         assert release("boot-b", path=path)["owner"] == "boot-b" and read(path) is None
         # an older launcher's plain-text lock is a lease we can read and must honour
         Path(path).write_text("choiceoh@srv2 st-glm53 2026-09-12 10:00:00\n")
         opaque = read(path)
         assert opaque["owner"].startswith("choiceoh@srv2") and alive(opaque, container_up=lambda n: True)
+        try:
+            request_yield("boot-c", path=path)
+            raise AssertionError("an opaque holder cannot be asked to yield")
+        except LeaseHeld:
+            pass
     print("  fleet_lease: one owner, evidence before heartbeat, unreachable is not free, "
-          "stale is reclaimable once, plain-text locks are honoured OK")
+          "stale is reclaimable once, plain-text locks are honoured, state and yield "
+          "survive each other OK")
 
 
 def docker_evidence(name: str) -> "bool | None":
@@ -229,13 +338,16 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="the fleet lease, for the launcher")
-    parser.add_argument("action", choices=("acquire", "release", "renew", "read", "selfcheck"))
+    parser.add_argument("action", choices=("acquire", "release", "renew", "read", "publish",
+                                          "yield", "clear-yield", "asked", "selfcheck"))
     parser.add_argument("--owner", default="")
     parser.add_argument("--path", default=str(DEFAULT_PATH))
     parser.add_argument("--container", default="")
     parser.add_argument("--note", default="")
     parser.add_argument("--est-minutes", type=int, default=0)
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--requester", default="")
+    parser.add_argument("--state", default="", help="k=v,k=v published with the heartbeat")
     a = parser.parse_args()
     # The lease file lives on the head node and this module runs THERE, so the container
     # question is answered by the local docker: the evidence and the record are colocated.
@@ -254,5 +366,18 @@ if __name__ == "__main__":
     elif a.action == "renew":
         renew(a.owner, path=a.path)
         print("renewed")
+    elif a.action == "publish":
+        pairs = dict(p.split("=", 1) for p in a.state.split(",") if "=" in p)
+        publish(a.owner, path=a.path, **pairs)
+        print("published")
+    elif a.action == "yield":
+        asked = request_yield(a.requester or a.owner, path=a.path, reason=a.note)
+        print(describe(asked) if asked else "free")
+    elif a.action == "clear-yield":
+        clear_yield(a.owner, path=a.path)
+        print("cleared")
+    elif a.action == "asked":
+        asked = yield_requested(read(a.path))
+        print(f"{asked['requester']}: {asked.get('reason') or 'no reason given'}" if asked else "no")
     else:
         print("released" if release(a.owner, path=a.path, force=a.force) else "free")

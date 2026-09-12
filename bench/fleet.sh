@@ -126,6 +126,16 @@ serving_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^glm53$'; 
 # nodes running st-glm53 while status said FREE).
 st_engine_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qE '^st-'; }
 st_engine_line() { docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -E '^st-' | head -1; }
+# Refusing is not enough: a queued session would then wait for a human to go and ask.
+# The ST engine can be ASKED to finish, park its conversations and let go, so the queue
+# asks on the waiter's behalf -- once per refusal, and never for a holder that predates
+# the protocol (its plain-text lock has nobody listening).
+st_engine_yield() {
+  local who=$1 repo=${FLEET_RUNNER_REPO:-$REPO}
+  [ -f "$repo/launchers/lib/fleet-lease.sh" ] || return 0
+  ( FLEET_REPO=$repo; . "$repo/launchers/lib/fleet-lease.sh"
+    fleet_lease yield --requester "'queue/$who'" --note "'a queued reservation needs the fleet'" ) >/dev/null 2>&1 || true
+}
 serving_idle() {  # a probe may run beside this: healthy, nothing in flight, not booting
   ! serving_up && return 0
   booting && return 1
@@ -363,7 +373,11 @@ _front() { { grep "^[0-9]*|$1|" "$Q"; grep -v "^[0-9]*|$1|" "$Q"; } > "$Q.tmp"; 
 
 _try_hold() {  # session pid est note [kind] -> 0 when held
   local s=$1 pid=$2 est=$3 note=$4 kind; kind=$(kind_of "${5:-}")
-  if st_engine_up; then logit "hold refused: ST engine occupies the fleet ($(st_engine_line))"; return 1; fi
+  if st_engine_up; then
+    logit "hold refused: ST engine occupies the fleet ($(st_engine_line)); asking it to yield to $s"
+    st_engine_yield "$s"
+    return 1
+  fi
   if [ -s "$H" ]; then
     if holder_alive; then return 1; fi
     logit "auto-kick dead holder: $(holder_line)"; rm -f "$H"

@@ -93,8 +93,11 @@ class LauncherAndQueueTests(unittest.TestCase):
         self.assertIn("engine/base/fleet_lease.py", self.launcher)
         self.assertIn("lease acquire --owner", self.launcher)
         self.assertNotIn("echo '$(whoami)@$(hostname) st-glm53", self.launcher)
-        # piped, so taking the lease never rsyncs over a live session's engine tree
-        self.assertIn('python3 - $* --path $LOCK" < "$REPO/engine/base/fleet_lease.py"', self.launcher)
+        # through the one shared helper, which pipes the module to the head node: taking
+        # the lease never rsyncs over a live session's engine tree
+        self.assertIn("launchers/lib/fleet-lease.sh", self.launcher)
+        helper = (ROOT / "launchers/lib/fleet-lease.sh").read_text()
+        self.assertIn('python3 - $* --path $FLEET_LEASE_PATH" < "${FLEET_REPO', helper)
 
     def test_the_queue_refuses_to_answer_off_the_controller(self):
         """Homes are not shared: elsewhere it would create a second, empty queue."""
@@ -116,3 +119,207 @@ class LauncherAndQueueTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class YieldProtocolTests(unittest.TestCase):
+    """Asking a running engine to hand the fleet over, rather than waiting for it or
+    killing it. The queue can order the line; only the engine can finish what it is
+    holding and park it where the next holder finds it (D16)."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name) / "lease"
+        acquire("holder", path=self.path, container="st-glm53")
+
+    def test_the_holder_publishes_what_it_is_doing(self):
+        from engine.base.fleet_lease import publish, yield_requested
+        publish("holder", path=self.path, phase="serving", running=3, free_in_minutes=12)
+        line = describe(read(self.path))
+        for fragment in ("phase=serving", "running=3", "free_in_minutes=12"):
+            self.assertIn(fragment, line)
+        self.assertIsNone(yield_requested(read(self.path)))
+
+    def test_asking_and_publishing_do_not_drop_each_other(self):
+        """Both sides write the same record: the holder must not erase the request, and
+        the request must not erase what the holder said."""
+        from engine.base.fleet_lease import publish, request_yield, yield_requested
+        publish("holder", path=self.path, phase="serving", running=3)
+        request_yield("waiter", path=self.path, reason="graph replay check")
+        publish("holder", path=self.path, running=0)
+        record = read(self.path)
+        self.assertEqual(yield_requested(record)["requester"], "waiter")
+        self.assertEqual(record["state"]["phase"], "serving")
+        self.assertEqual(record["state"]["running"], 0)
+        self.assertIn("asked to yield to waiter", describe(record))
+
+    def test_asking_is_not_taking(self):
+        from engine.base.fleet_lease import request_yield
+        request_yield("waiter", path=self.path)
+        with self.assertRaisesRegex(LeaseHeld, "holder"):
+            acquire("waiter", path=self.path, container_up=lambda name: True)
+        self.assertEqual(read(self.path)["owner"], "holder")
+
+    def test_a_holder_that_predates_the_protocol_cannot_be_asked(self):
+        from engine.base.fleet_lease import request_yield
+        self.path.write_text("choiceoh@srv2 st-glm53 2026-09-12 10:00:00\n")
+        with self.assertRaisesRegex(LeaseHeld, "predates"):
+            request_yield("waiter", path=self.path)
+
+    def test_a_free_fleet_has_nobody_to_ask(self):
+        from engine.base.fleet_lease import request_yield, release as rel
+        rel("holder", path=self.path)
+        self.assertIsNone(request_yield("waiter", path=self.path))
+
+    def test_the_holder_clears_the_request_when_it_has_let_go(self):
+        from engine.base.fleet_lease import clear_yield, request_yield, yield_requested
+        request_yield("waiter", path=self.path)
+        clear_yield("someone-else", path=self.path)
+        self.assertIsNotNone(yield_requested(read(self.path)))      # not theirs to clear
+        clear_yield("holder", path=self.path)
+        self.assertIsNone(yield_requested(read(self.path)))
+
+
+class EngineHandoverTests(unittest.TestCase):
+    """The engine side of the handover, pinned as text and as behaviour."""
+
+    def setUp(self):
+        self.serve = (ROOT / "engine/base/serve.py").read_text()
+
+    def test_the_step_loop_asks_parks_and_lets_go(self):
+        self.assertIn("def _yield_asked(self)", self.serve)
+        self.assertIn("def _quiet(self)", self.serve)
+        self.assertIn("def _hand_over(self)", self.serve)
+        # the decision travels with the step's other decisions, so every rank drains together
+        self.assertIn("self._yield_asked()) if self.comm.rank == 0 else None)", self.serve)
+        self.assertIn("self.draining = draining", self.serve)
+        # and it is visible to anyone scraping, not only to the lease
+        self.assertIn('"st:handing_over"', self.serve)
+
+    def test_a_draining_door_refuses_new_work_with_503(self):
+        self.assertIn("the engine is handing the fleet over; retry shortly\", 503", self.serve)
+
+    def test_the_handover_parks_under_the_conversation_key(self):
+        """That key is what the next holder resumes by, so a turn survives the change."""
+        self.assertIn("self.runner.park(row, key=conversation)", self.serve)
+
+    def test_a_draining_engine_refuses_admission_and_ends_its_loop(self):
+        import test_engine_serve as T
+        server = T.server()
+        server.submit([1, 2, 3], max_new=2, temperature=0.0)
+        server.draining = "waiter"
+        from engine.base.serve import RequestError
+        with self.assertRaises(RequestError):
+            server.submit([4, 5], max_new=1, temperature=0.0)
+        for _ in range(80):                                    # what is already in finishes
+            server.once()
+            if not server.alive:
+                break
+        self.assertTrue(server.drained and not server.alive, "a quiet draining engine lets go")
+
+    def test_an_engine_without_a_lease_serves_exactly_as_before(self):
+        import test_engine_serve as T
+        server = T.server()
+        self.assertIsNone(server.lease)
+        self.assertIsNone(server._yield_asked())
+        server.submit([1, 2, 3], max_new=2, temperature=0.0)
+        for _ in range(80):
+            if not server.once() and not server._waiting:
+                break
+        self.assertIsNone(server.draining)
+        self.assertTrue(server.alive)
+
+
+class SmoothnessTests(unittest.TestCase):
+    """The gaps an audit of §28 found: a feature nobody can reach easily is not done."""
+
+    def setUp(self):
+        self.launcher = (ROOT / "launchers/start-st-glm53.sh").read_text()
+        self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+        self.fleet = (ROOT / "bench/fleet.sh").read_text()
+        self.helper = (ROOT / "launchers/lib/fleet-lease.sh").read_text()
+
+    def test_every_caller_uses_one_lease_file_on_the_head_node(self):
+        """The probe took $HOME/st-fleet.lock on whatever node it ran on while a boot took
+        the head node's: homes are not shared, so the two never met."""
+        self.assertIn("FLEET_HEAD=${FLEET_HEAD:-10.10.10.2}", self.helper)
+        for source in (self.launcher, self.probe):
+            self.assertIn("launchers/lib/fleet-lease.sh", source)
+        self.assertNotIn("$HOME/st-fleet.lock", self.probe)
+
+    def test_a_long_hold_keeps_its_lease_fresh(self):
+        """The head node's docker cannot see a probe container on another node, so without
+        a heartbeat the lease would go stale under a probe that is still running."""
+        self.assertIn("fleet_lease_beat", self.helper)
+        self.assertIn("BEAT=$(fleet_lease_beat", self.probe)
+        self.assertIn("kill $BEAT", self.probe)
+
+    def test_a_cpu_only_probe_reserves_nothing(self):
+        """Taking four Sparks for an import check is the opposite of smooth."""
+        self.assertIn('[ "${ST_PROBE_NO_LEASE:-0}" != 1 ] && [ "${ST_PROBE_NO_GPU:-0}" != 1 ]', self.probe)
+
+    def test_a_killed_probe_leaks_a_lease_that_goes_stale_on_its_own(self):
+        """SIGKILL runs no trap. The lease must not need a human: its evidence is on another
+        node, so it ages out on the grace and `read` says so meanwhile."""
+        self.assertIn("goes stale after the grace", self.probe)
+        module = (ROOT / "engine/base/fleet_lease.py").read_text()
+        self.assertIn('print("free (stale: " + describe(held) + ")")', module)
+
+    def test_yield_waits_for_the_handover(self):
+        """Asking and leaving the caller to poll is not a handover."""
+        self.assertIn("YIELD_WAIT_MINUTES", self.launcher)
+        self.assertIn("the fleet is free: start when ready", self.launcher)
+        self.assertIn("did not let go within", self.launcher)
+
+    def test_the_queue_asks_instead_of_only_refusing(self):
+        """Otherwise a queued session waits for a human to go and ask."""
+        self.assertIn("st_engine_yield()", self.fleet)
+        self.assertIn('st_engine_yield "$s"', self.fleet)
+        self.assertIn("asking it to yield to", self.fleet)
+
+    def test_a_sourced_helper_keeps_its_defaults(self):
+        """Assignment prefixes on `.` are temporary in bash: the helper's own defaults are
+        discarded when the builtin returns, and the next call sees an unbound variable."""
+        self.assertIn("use_lease() {", self.launcher)
+        self.assertNotIn("FLEET_REPO=$REPO FLEET_HEAD=", self.launcher)
+
+    def test_the_launcher_defines_what_its_subcommands_use(self):
+        lock = self.launcher.index("LOCK=/home/choiceoh/st-fleet.lock")
+        for token in ("use_lease() {", 'case "${1:-start}" in'):
+            self.assertLess(lock, self.launcher.index(token), token)
+        self.assertEqual(self.launcher.count("LOCK=/home/choiceoh/st-fleet.lock"), 1)
+
+    def test_a_handover_counts_what_it_saved_and_what_it_lost(self):
+        serve = (ROOT / "engine/base/serve.py").read_text()
+        self.assertIn("self.handed_over = {\"to\": self.draining", serve)
+        self.assertIn("conversations parked, {lost} LOST", serve)
+        self.assertIn('"st:handover_conversations_lost"', serve)
+
+    def test_the_handover_reports_through_the_lease_before_letting_go(self):
+        serve = (ROOT / "engine/base/serve.py").read_text()
+        self.assertIn('phase="handed over", parked=parked, lost=lost', serve)
+
+
+class ProbeLeaseTests(unittest.TestCase):
+    def test_the_probe_runner_takes_and_releases_the_lease(self):
+        """A probe takes the same GPUs as a boot. Until now it was a bare `docker run`
+        that no launcher and no queue could see."""
+        runner = (ROOT / "probes/run_engine_probe.sh").read_text()
+        self.assertIn("fleet_lease acquire --owner", runner)
+        self.assertIn("trap ", runner)
+        self.assertIn("release --owner", runner)
+        self.assertIn('docker run --rm --name "$NAME"', runner)      # named: the lease's evidence
+        self.assertIn("ST_PROBE_NO_LEASE", runner)                   # an explicit way out, for a nested run
+
+    def test_the_launcher_can_ask_and_can_report(self):
+        launcher = (ROOT / "launchers/start-st-glm53.sh").read_text()
+        self.assertIn("  yield)", launcher)
+        self.assertIn("  held)", launcher)
+        self.assertIn("ST_LEASE_OWNER", launcher)
+        self.assertIn("usage: $0 [start|stop|yield [reason]|held|logs r]", launcher)
+
+    def test_the_boot_hands_the_lease_to_the_engine(self):
+        boot = (ROOT / "engine/profiles/glm53/boot.py").read_text()
+        self.assertIn("def fleet_lease_of()", boot)
+        self.assertIn("lease=fleet_lease_of()).loop()", boot)
