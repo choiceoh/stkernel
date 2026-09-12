@@ -314,6 +314,51 @@ class AllocatorFlushTests(unittest.TestCase):
         self.assertEqual(len(ended), 1)
 
 
+class KeptConstantTests(unittest.TestCase):
+    """The decode path's index constants are built once, and never inside a capture."""
+
+    def setUp(self):
+        from engine.base import constants
+        self.constants = constants
+        constants.forget()
+
+    def tearDown(self):
+        self.constants.forget()
+
+    def test_the_same_length_comes_back_as_the_same_tensor(self):
+        kept = self.constants.iota(6, "cpu")
+        self.assertIs(self.constants.iota(6, "cpu"), kept)
+        self.assertEqual(kept.tolist(), [0, 1, 2, 3, 4, 5])
+        self.assertIsNot(self.constants.fresh(6, "cpu"), self.constants.fresh(6, "cpu"))
+
+    def test_a_new_constant_is_refused_while_a_graph_is_recording(self):
+        # Memory taken during capture belongs to that graph's pool, which the next
+        # capture takes back, so a constant built there would alias it later.
+        with unittest.mock.patch.object(torch.cuda, "is_current_stream_capturing",
+                                        return_value=True):
+            with self.assertRaisesRegex(RuntimeError, "while a graph was recording"):
+                self.constants.iota(12, "cuda")
+
+    def test_one_already_built_is_handed_out_during_a_capture(self):
+        kept = self.constants.iota(12, "cpu")               # as the warmup pass would
+        with unittest.mock.patch.object(torch.cuda, "is_current_stream_capturing",
+                                        return_value=True):
+            self.assertIs(self.constants.iota(12, "cpu"), kept)
+
+    def test_the_captured_decode_path_builds_no_index_of_its_own(self):
+        # complete_pools runs only under capture, so both of its indices are bounded.
+        source = DECODE_GRAPHS.read_text()
+        body = source[source.index("def complete_pools"):source.index("@dataclass")]
+        self.assertNotIn("torch.arange", body)
+        self.assertEqual(body.count("iota("), 2)
+        net = (ROOT / "engine/profiles/glm53/net.py").read_text()
+        for loop in ("_indexer", "_dsa"):
+            chunk = net[net.index(f"def {loop}("):]
+            chunk = chunk[:chunk.index("\n    def ", 10)]
+            self.assertIn("index = iota if", chunk, loop)
+            self.assertNotIn("torch.arange(s.length", chunk, loop)
+
+
 class DeviceStepTests(unittest.TestCase):
     """The step's segment tuple is asked for once per layer, so it is built once."""
 

@@ -37,6 +37,7 @@ from typing import Protocol
 import torch
 import torch.nn.functional as Fn
 
+from engine.base.constants import fresh, iota
 from engine.modules.sparse_indexer import topk_positions
 from engine.profiles.glm53 import specs
 from engine.profiles.glm53.facts import TP, Facts
@@ -264,15 +265,18 @@ class Glm53Net:
         slots_out = torch.empty((N, width), dtype=torch.int32, device=x.device)
         valid_out = torch.empty(N, dtype=torch.int32, device=x.device)
         keys, scales = caches.pool_keys(L), caches.pool_scales(L)
+        captured = getattr(step, "captured", False)
+        index = iota if captured else fresh                 # see _dsa: kept only for the bounded set
+        tail_width = kp - 1 + F.spec_k
+        if captured:
+            from engine.profiles.glm53.decode_graphs import complete_pools   # the profile's captured writer
         for s in step.segments:
             sl = slice(s.start, s.start + s.length)
             tail = caches.tail(L, s.slot)
-            tail_width = kp - 1 + F.spec_k
             if tail.shape[0] != tail_width:
                 raise ValueError(f"indexer tail needs {tail_width} positions to support draft rollback")
             end = s.ctx + s.length
-            if getattr(step, "captured", False):
-                from engine.profiles.glm53.decode_graphs import complete_pools
+            if captured:
                 n_cand = complete_pools(self, L, s, tail, k[sl], gate[sl], caches)
             else:
                 pool0 = (s.ctx // kp) * kp                                              # the pool ctx sits in may be half-built
@@ -293,11 +297,11 @@ class Glm53Net:
                 tail[new_pos[-keep:] % tail_width, 0] = k[sl][-keep:]
                 tail[new_pos[-keep:] % tail_width, 1] = gate[sl][-keep:]
                 n_cand = end // kp
-            new_pos = s.ctx + torch.arange(s.length, device=x.device)
+            new_pos = s.ctx + index(s.length, x.device)
             # -- selection -----------------------------------------------------------
             seq_lens = (new_pos + 1).to(torch.int32)
             if n_cand:
-                cand = caches.pool_slots(L, s.seq, torch.arange(n_cand, device=x.device)).long()
+                cand = caches.pool_slots(L, s.seq, index(n_cand, x.device)).long()
                 pool_ids = self._select_pools(q8[sl], w_eff[sl], keys[cand], scales[cand], seq_lens // kp, n_cand, F.topk // kp)
             else:
                 pool_ids = torch.full((s.length, F.topk // kp), -1, dtype=torch.int32, device=x.device)
@@ -327,9 +331,12 @@ class Glm53Net:
         q = Fn.linear(qr, p[n + "q_b"]).view(N, Hl, F.qk_nope)
         kv_n = rmsnorm(kv_c, p[n + "kv_a_norm"], F.rms_eps)
         latent = caches.latent(L)
+        # A captured step asks for the same few lengths forever, so they come from the kept
+        # constants; an eager prefill's follow the request and would grow that cache unbounded.
+        index = iota if getattr(step, "captured", False) else fresh
         for s in step.segments:                                                     # fp8 KV, scale 1 (no kv scales in the checkpoint)
             sl = slice(s.start, s.start + s.length)
-            latent[caches.token_slots(L, s.seq, (s.ctx + torch.arange(s.length, device=x.device))).long()] = kv_n[sl].to(E4M3)
+            latent[caches.token_slots(L, s.seq, (s.ctx + index(s.length, x.device))).long()] = kv_n[sl].to(E4M3)
         slots, valid = self._indexer(L, x, qr, step, caches)
         kv_b = p[n + "kv_b"].view(Hl, F.qk_nope + F.v_dim, F.kv_lora)
         w_uk, w_uv = kv_b[:, : F.qk_nope, :], kv_b[:, F.qk_nope:, :]

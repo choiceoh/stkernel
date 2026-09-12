@@ -15,6 +15,7 @@ import torch
 import triton
 import triton.language as tl
 
+from engine.base.constants import iota
 from engine.base.graphs import DecodeGraphs
 from engine.profiles.glm53.net import Segment
 
@@ -46,14 +47,14 @@ def complete_pools(net, layer, segment, tail, k, gate, caches):
     lead = ctx % kp
     count = (lead + length) // kp
     max_pools = (kp - 1 + length) // kp
-    relative = torch.arange(max_pools * kp, device=k.device) - lead
+    relative = iota(max_pools * kp, k.device) - lead
     current = relative.clamp(0, length - 1).long()
     previous = ((ctx + relative) % tail.shape[0]).long()
     kw = torch.where((relative < 0)[:, None], tail[previous, 0], k[current])
     gw = torch.where((relative < 0)[:, None], tail[previous, 1], gate[current])
     pk, ps = net.lanes.kpool_compress(kw.view(max_pools, kp, d),
                                      gw.view(max_pools, kp, d), net.p[f"L{layer}.idx.ape"])
-    pids = ctx // kp + torch.arange(max_pools, device=k.device)
+    pids = ctx // kp + iota(max_pools, k.device)
     # Padded pids at the final context boundary are not read by scatter_rows.
     pids = pids.clamp_max(caches.candidate_capacity - 1)
     slots = caches.pool_slots(layer, segment.seq, pids).long()
