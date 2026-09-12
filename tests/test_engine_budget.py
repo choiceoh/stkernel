@@ -68,6 +68,36 @@ class BudgetTests(unittest.TestCase):
         self.assertEqual(next(l for l in b.lines if l.name.startswith("runtime floor")).gib, 3.0)
         self.assertIn("this boot peaked at 4.00", budget.report(b))
 
+    def test_the_floor_separates_our_start_up_from_what_was_already_on_the_box(self):
+        """Operator: "모델은 그렇게 크지 않은데 왜 이렇게 죽나". Because the floor is one number
+        holding two different problems. 5.54 GiB is this engine starting up; on rank 3 the other
+        33.50 GiB was already there -- other containers, page cache, anything holding pages --
+        and unified memory means it comes straight out of the KV. The table never showed it,
+        so the box looked like it had 42.77 GiB of room when it had 9.27 (2026-09-12)."""
+        from engine.base.budget import MEASURED
+        from engine.profiles.glm53 import budget
+        plain = budget.budget(7.0, 8, box_gib=121.63, drafter_dir=None)
+        with_floor = budget.budget(7.0, 8, box_gib=121.63, drafter_dir=None,
+                                   ledger={"floor_bytes": int(39.04 * (1 << 30))})
+        tenants = next(l for l in with_floor.lines if l.name == "already on this box before us")
+        self.assertEqual(tenants.source, MEASURED)
+        self.assertAlmostEqual(tenants.gib, 39.04 - budget.RUNTIME_FLOOR_GIB, places=2)
+        start_up = next(l for l in with_floor.lines if l.name.startswith("runtime floor"))
+        self.assertAlmostEqual(start_up.gib, budget.RUNTIME_FLOOR_GIB, places=2)
+        # and it is the KV that pays for them, which is the whole point of showing it
+        self.assertAlmostEqual(plain.kv_gib - with_floor.kv_gib, tenants.gib, places=2)
+        self.assertNotIn("already on this box", [l.name for l in plain.lines])
+
+    def test_a_floor_measured_before_any_phase_still_reaches_the_table(self):
+        """RuntimeMemory takes the floor in __init__, and boot prints the table right after --
+        which is the moment anyone decides how much KV to ask for. A report with no phases yet
+        used to return None and leave the table quoting vLLM's constant."""
+        from engine.profiles.glm53 import budget
+        fresh = {"ready": False, "arena_bytes": 0, "floor_bytes": 39 << 30, "measured": {},
+                 "workspace_limit_bytes": 0, "phases": []}
+        self.assertEqual(budget.ledger_measured(fresh), {"floor_bytes": 39 << 30})
+        self.assertIsNone(budget.ledger_measured({"phases": [], "floor_bytes": 0}))
+
     def test_a_ledger_without_the_two_lines_leaves_them_exactly_where_they_were(self):
         from engine.base.budget import LEDGER
         from engine.profiles.glm53 import budget

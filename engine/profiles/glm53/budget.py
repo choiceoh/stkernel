@@ -86,7 +86,12 @@ def ledger_measured(source) -> "dict | None":
         return report["measured"]
     phases, arena = report.get("phases", []), report.get("arena_bytes", 0)
     if not phases:
-        return None
+        # The floor is taken in RuntimeMemory.__init__, before any phase exists. A report
+        # handed over at the START of a boot therefore already carries the one line this
+        # table used to guess -- and that is the moment anyone reads the table and decides
+        # how much KV to ask for. Returning None here is why the first print said 42.77 GiB
+        # of KV remained on a box that had 9.26 (2026-09-12).
+        return dict(floor_bytes=report["floor_bytes"]) if report.get("floor_bytes") else None
     base = report.get("baseline_reserved_bytes", 0)
     outside = lambda row: row.get("reserved_bytes", 0) - base - arena                    # noqa: E731
     prefill = [row for row in phases if row.get("phase", "").startswith("prefill/")]
@@ -160,16 +165,31 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     else:
         workspace_evidence += (f"; no boot ledger given -- vLLM's slope 0.52 GiB/1K puts a {chunk:,}-token chunk at "
                                f"{chunk / 1024 * 0.52:.1f} GiB, {SELECT_ROWS_TRANSIENT_NOTE}")
+    tenants_line = None
     if m and m.get("floor_bytes"):
         # A cost, not a ceiling: nothing hands this back, so the measurement IS the line.
         floor_gib, floor_source = m["floor_bytes"] / GIB, MEASURED
         floor_evidence = f"{ledger_name}: device in use outside the allocator when the ceiling armed (context + NCCL + one-shot)"
+        # ... and split it, because the two halves are different problems. 5.54 GiB is this
+        # engine starting up; the rest is what was ALREADY on the box, which no amount of
+        # engine work reduces and which the table never showed. On rank 3 that half is
+        # 33.50 GiB of a 121.63 GiB box -- larger than the KV it leaves (2026-09-12).
+        # The dsv41 profile has carried an "other tenants" line since it was written.
+        others = floor_gib - RUNTIME_FLOOR_GIB
+        if others > 0.05:
+            floor_gib, floor_evidence = RUNTIME_FLOOR_GIB, (
+                f"{ledger_name}: the measured floor {m['floor_bytes'] / GIB:.2f} GiB less what this engine's "
+                "own start-up costs (GLM 40th boot table)")
+            tenants_line = Line("already on this box before us", others, MEASURED,
+                                f"{ledger_name} floor minus start-up: other containers, page cache and anything "
+                                "else holding pages -- unified memory means they come out of our KV")
     else:
         floor_gib, floor_source = RUNTIME_FLOOR_GIB, LEDGER
         floor_evidence = "GLM 40th boot table (vLLM) -- no ST ledger given"
     lines = [
         Line("reserve for the OS", OS_RESERVE_GIB, DECLARED, "base/runtime_memory: immediately free host/device byte floor"),
         Line("runtime floor (CUDA ctx + NCCL 16ch)", floor_gib, floor_source, floor_evidence),
+        *( (tenants_line,) if tenants_line is not None else () ),
         Line("weights (this rank, TP=4)", weights_gib, READ, weights_evidence),
         Line("drafter weight reservation", drafter_gib, READ, f"drafter.specs: source reservation retained; compute/KV TP={draft_tp}"),
         Line("vision tower (BF16, replicated)", vision_gib, READ, vision_evidence),
