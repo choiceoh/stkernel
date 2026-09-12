@@ -1295,6 +1295,55 @@ class KoreanBudgetTests(unittest.TestCase):
         self.assertLess(s.room_for(s.max_context), room)
 
 
+class HangulPatternTests(unittest.TestCase):
+    """`[가-힣]` is the natural way to say "Hangul", and xgrammar drops most of it (45차 §41)."""
+
+    def split(self, pattern):
+        from engine.base.serve import split_surrogate_branch
+        return split_surrogate_branch(pattern)
+
+    def test_a_range_that_ends_inside_the_0xed_branch_becomes_two(self):
+        self.assertEqual(self.split("^[가-힣]+$"), "^[가-\uCFFF\uD000-힣]+$")
+        self.assertEqual(self.split("^[가-힣a-z0-9 ]+$"), "^[가-\uCFFF\uD000-힣a-z0-9 ]+$")
+        self.assertEqual(self.split("^[^가-힣]+$"), "^[^가-\uCFFF\uD000-힣]+$")
+
+    def test_the_escaped_spelling_of_the_same_range_is_read_too(self):
+        self.assertEqual(self.split(r"^[\uAC00-\uD7A3]+$"), "^[\\uAC00-\uCFFF\uD000-\\uD7A3]+$")
+        self.assertEqual(self.split(r"^[\x41-\uD7A3]$"), "^[\\x41-\uCFFF\uD000-\\uD7A3]$")
+
+    def test_everything_else_is_handed_on_byte_for_byte(self):
+        for pattern in ("^[a-z]+$", "^[가-쿿]+$", "^[\uD000-힣]+$", r"\[가-힣\]", "가-힣", "",
+                        r"^[\d]+$", "^[-가-쿿]$", "^(안녕|반가워)$", "^한.*$"):
+            with self.subTest(pattern=pattern):
+                self.assertEqual(self.split(pattern), pattern)
+
+    def test_a_dash_at_either_end_of_a_class_is_a_literal(self):
+        self.assertEqual(self.split("^[-가-힣]$"), "^[-가-\uCFFF\uD000-힣]$")
+        self.assertEqual(self.split("^[가-힣-]$"), "^[가-\uCFFF\uD000-힣-]$")
+
+    def test_every_pattern_in_a_schema_is_repaired_wherever_it_sits(self):
+        from engine.base.serve import repair_patterns
+        schema = {"type": "object",
+                  "properties": {"name": {"type": "string", "pattern": "^[가-힣]+$"},
+                                 "tags": {"type": "array", "items": {"type": "string", "pattern": "^[가-힣]$"}}},
+                  "anyOf": [{"pattern": "^[가-힣]{2}$"}, {"pattern": "^[a-z]+$"}],
+                  "description": "^[가-힣]+$"}
+        out = repair_patterns(schema)
+        self.assertEqual(out["properties"]["name"]["pattern"], "^[가-\uCFFF\uD000-힣]+$")
+        self.assertEqual(out["properties"]["tags"]["items"]["pattern"], "^[가-\uCFFF\uD000-힣]$")
+        self.assertEqual(out["anyOf"][0]["pattern"], "^[가-\uCFFF\uD000-힣]{2}$")
+        self.assertEqual(out["anyOf"][1]["pattern"], "^[a-z]+$")
+        self.assertEqual(out["description"], "^[가-힣]+$", "only a pattern is a pattern")
+
+    def test_the_door_repairs_what_it_sends_to_the_grammar(self):
+        from engine.base.serve import response_format_grammar
+        spec = response_format_grammar({"response_format": {
+            "type": "json_schema",
+            "json_schema": {"schema": {"type": "object",
+                                       "properties": {"v": {"type": "string", "pattern": "^[가-힣]+$"}}}}}})
+        self.assertIn("\uD000", json.loads(spec["schema"])["properties"]["v"]["pattern"])
+
+
 class KoreanWireTests(unittest.TestCase):
     """What a Korean answer costs between the door and the client (45차 §40)."""
 

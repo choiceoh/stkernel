@@ -171,6 +171,74 @@ def answer_budget(tok, text: str) -> int:
     return max(floor, min(ceiling, round(DEFAULT_ANSWER_CHARS * n / len(text))))
 
 
+# UTF-8's lead byte 0xED covers U+D000-U+D7FF, and its continuations are cut short by the
+# surrogate hole above U+D7FF. xgrammar compiles a character-class range into byte branches and
+# loses a range that ENDS inside that branch, keeping only its exact endpoint: `[가-힣]` admits
+# 이 and 힣 and refuses 타 파 하 한 해 호 후 희 흥 -- a sixth of the Hangul block, and the sixth
+# Korean uses most (45차 §41). Hangul is the only common script that straddles it.
+_ED_BRANCH = 0xD000
+
+
+def _class_item(pattern: str, i: int) -> "tuple[int | None, int]":
+    """(code point, characters it spelled) for the class item at `i`; None where it is a set."""
+    c = pattern[i]
+    if c != "\\" or i + 1 >= len(pattern):
+        return ord(c), 1
+    kind = pattern[i + 1]
+    width = {"u": 4, "x": 2, "U": 8}.get(kind)
+    if width and i + 2 + width <= len(pattern):
+        try:
+            return int(pattern[i + 2:i + 2 + width], 16), 2 + width
+        except ValueError:
+            return None, 2
+    return None, 2                                   # \d, \w, \\ ... not an endpoint to reason about
+
+
+def split_surrogate_branch(pattern: str) -> str:
+    """A class range that ends inside the 0xED branch, written as two that do not.
+
+    `[가-힣]` becomes `[가-\uCFFF\uD000-힣]`, the same set of characters -- U+CFFF and U+D000 are
+    neighbours -- and one xgrammar compiles correctly. Only that one shape is touched; anything
+    this cannot read confidently is handed on unchanged, because a pattern is the caller's.
+    """
+    if "-" not in pattern or "[" not in pattern:
+        return pattern
+    out, i, n, inside = [], 0, len(pattern), False
+    while i < n:
+        c = pattern[i]
+        if not inside:
+            if c == "\\" and i + 1 < n:
+                out.append(pattern[i:i + 2]); i += 2
+            else:
+                inside = c == "["
+                out.append(c); i += 1
+            continue
+        if c == "]":
+            inside = False
+            out.append(c); i += 1
+            continue
+        low, width = _class_item(pattern, i)
+        after = i + width
+        if low is not None and after + 1 < n and pattern[after] == "-" and pattern[after + 1] != "]":
+            high, hwidth = _class_item(pattern, after + 1)
+            if high is not None and low < _ED_BRANCH <= high:
+                out.append(pattern[i:after] + "-\uCFFF\uD000-" + pattern[after + 1:after + 1 + hwidth])
+                i = after + 1 + hwidth
+                continue
+        out.append(pattern[i:after]); i = after
+    return "".join(out)
+
+
+def repair_patterns(node):
+    """Every `pattern` in a JSON schema, with `split_surrogate_branch` applied."""
+    if isinstance(node, dict):
+        return {k: (split_surrogate_branch(v) if k == "pattern" and isinstance(v, str) else repair_patterns(v))
+                for k, v in node.items()}
+    if isinstance(node, list):
+        return [repair_patterns(v) for v in node]
+    return node
+
+
 def media_parts(messages) -> "list[tuple[str, str]]":
     """(kind, url) of every image_url / video_url part, in the order the chat template renders them. Text parts
     pass through; any other part type is refused here rather than silently dropped by the template."""
@@ -285,7 +353,7 @@ def response_format_grammar(req: dict) -> "dict | None":
         if not isinstance(schema, dict):
             raise RequestError("response_format.json_schema.schema must be an object")
         try:
-            return {"type": "json_schema", "schema": json.dumps(schema, sort_keys=True)}
+            return {"type": "json_schema", "schema": json.dumps(repair_patterns(schema), sort_keys=True)}
         except (TypeError, ValueError) as exc:
             raise RequestError(f"json_schema is not JSON: {exc}") from exc
     raise RequestError("response_format.type must be text, json_object or json_schema")
