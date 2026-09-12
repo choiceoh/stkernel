@@ -447,5 +447,40 @@ class ProbeSelfHealTests(unittest.TestCase):
             self.assertIn(flag, source)
 
 
+class QueueGraceTests(unittest.TestCase):
+    """A deploy right after a ticket ended takes the fleet from the next one (srv2, 2026-09-13)."""
+
+    def setUp(self):
+        import tempfile
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.fleet = Path(self.temporary.name)
+
+    def clock(self, ago):
+        import json as _json
+        import time
+        (self.fleet / "idle-recovery.json").write_text(_json.dumps({"updated_at": time.time() - ago, "reason": "release"}))
+
+    def test_a_queue_active_a_moment_ago_defers(self):
+        self.clock(ago=20)
+        self.assertIsNotNone(watch.queue_active_within(300, self.fleet))
+        self.assertLess(watch.queue_active_within(300, self.fleet), 60)
+
+    def test_a_quiet_queue_and_a_missing_clock_do_not(self):
+        self.clock(ago=1000)
+        self.assertIsNone(watch.queue_active_within(300, self.fleet))
+        (self.fleet / "idle-recovery.json").unlink()
+        self.assertIsNone(watch.queue_active_within(300, self.fleet))
+        (self.fleet / "idle-recovery.json").write_text("not json")
+        self.assertIsNone(watch.queue_active_within(300, self.fleet))
+
+    def test_the_cycle_asks_after_the_lease_and_before_the_deploy(self):
+        source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
+        body = source[source.index("def cycle("):source.index("def cycle(") + source[source.index("def cycle("):].index("\n\n\n")]
+        self.assertLess(body.index("fleet_taken_by_another(log)"), body.index("queue_active_within(a.queue_grace)"))
+        self.assertLess(body.index("queue_active_within(a.queue_grace)"), body.index("ok = deploy(release, log)"))
+        self.assertIn("--queue-grace", source)
+
+
 if __name__ == "__main__":
     unittest.main()

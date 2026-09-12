@@ -112,6 +112,19 @@ def fleet_taken_by_another(log) -> bool:
     return False
 
 
+def queue_active_within(seconds: float, fleet_dir: "Path | None" = None) -> "int | None":
+    """Seconds since the queue's activity clock moved (bench/fleet_idle.py: enqueue, grant, release)
+    when that is under `seconds`, else None. A queue that just released a ticket is likely to have
+    its next one on its way; a deploy in that window takes the fleet from it, and the supervisor
+    keeps the same grace before restoring production (ST_RESTORE_GRACE_S)."""
+    try:
+        stamp = json.loads((Path(fleet_dir or FLEET) / "idle-recovery.json").read_text()).get("updated_at")
+        ago = int(time.time() - float(stamp))
+    except (OSError, ValueError, TypeError):
+        return None
+    return ago if ago < seconds else None
+
+
 def failures(tree: Path, timeout: int) -> "dict[str, str]":
     """{test file: its one-line verdict} for the files that do not pass, over `tree`."""
     out = {}
@@ -250,6 +263,10 @@ def cycle(a, log) -> int:
 
     if fleet_taken_by_another(log):
         return 0                                       # deferred, not rejected: main has not moved past it
+    ago = queue_active_within(a.queue_grace)
+    if ago is not None:
+        log(f"  the queue was active {ago}s ago: deferring the deploy until it has been quiet for {a.queue_grace}s")
+        return 0
     log(f"  deploying {head[:12]}")
     ok = deploy(release, log)
     if not ok:
@@ -441,6 +458,7 @@ def main(argv=None) -> int:
     ap.add_argument("--no-probe", dest="probe", action="store_false", help="queue no D17 probe ticket after a deploy")
     ap.add_argument("--probe-attempts", type=int, default=3, help="probe tickets per deployed sha before giving up")
     ap.add_argument("--probe-gap", type=int, default=1800, help="seconds between two probe tickets for the same sha")
+    ap.add_argument("--queue-grace", type=int, default=300, help="seconds of quiet queue before a deploy takes the fleet")
     a = ap.parse_args(argv)
 
     def log(line):
