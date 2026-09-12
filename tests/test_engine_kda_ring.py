@@ -137,6 +137,12 @@ class KdaRingTests(unittest.TestCase):
                     # or a reload of a rounded state between speculative tokens.
                     self.equal(actual, out)
                     self.equal(backing, expected)
+                    self.assertTrue(torch.isfinite(actual).all())
+                    if context == 0:
+                        # NaNs prove zero-context masking and untouched bytes,
+                        # but the later physical slots/rollback rows must hold
+                        # valid histories (T=1 did not initialize seven rows).
+                        backing.normal_(std=.1)
             finally:
                 graph.reset()
 
