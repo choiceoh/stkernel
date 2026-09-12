@@ -1,5 +1,7 @@
 # Standalone ST runtime
 
+> 살아 있는 참조 — **독립 ST 런타임 이미지를 어떻게 짓는지. 빌드가 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
+
 Build from the pinned local fleet image with `bash engine/runtime/build.sh`.
 The build performs no network downloads. `build.sh` checks the seed image ID
 against `dependencies.json`, then binds that ID to the Dockerfile build.

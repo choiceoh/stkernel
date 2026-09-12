@@ -1,5 +1,7 @@
 # TP SF6 Q0 prefill and historical EP experiments
 
+> 그대로 두는 기록 — **캠페인 산출물.** 당시의 기록이라 고치지 않는다 — 고치면 기록이 거짓이 된다.
+
 ## Final implementation and default decision
 
 The selected implementation keeps TP4, 288 I512 expert shards per GPU and the

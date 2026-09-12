@@ -1,5 +1,7 @@
 # Mooncake 에서 배워올 것 — 조사 (2026-09-12)
 
+> 그날의 조사 — **2026-09-12 의 조사다.** 그날 참이었던 것이고 유지되지 않는다 — 이후 무엇이 바뀌었는지는 `MEASUREMENTS.md` 가 안다.
+
 `kvcache-ai/Mooncake` `2ccf4cb`(2026-09-11, 하루 전)를 sparse clone 으로 읽고 ST 의 접두사 캐시·NVMe 티어와
 대조했다. 읽은 곳: `docs/source/design/{nvme-kv-backend,hicache-design}.md`, `mooncake-store/include/`
 (`eviction_strategy.h`, `count_min_sketch.h`, `master_service.h`), 그리고 ST 쪽
