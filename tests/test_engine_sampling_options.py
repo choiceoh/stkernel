@@ -287,3 +287,40 @@ class BlockVerificationTests(unittest.TestCase):
         self.assertEqual(count.tolist(), [a + 1 for a in want])
         for r, a in enumerate(want):
             self.assertEqual(tokens[r, :a].tolist(), ids[r, :a].tolist(), "accepted drafts are committed as they were")
+
+
+class DraftCeilingTests(unittest.TestCase):
+    """Acceptance has three ceilings; the split is what makes "raise it" answerable."""
+
+    def test_the_reachable_mass_is_the_overlap_and_the_covered_mass_is_the_support(self):
+        from engine.base.sampler import draft_ceilings
+        target = torch.tensor([[0.5, 0.3, 0.2], [0.1, 0.8, 0.1]])
+        draft = torch.tensor([[0.4, 0.6, 0.0]])                       # one position, two candidates
+        reachable, covered = draft_ceilings(target, draft)
+        self.assertAlmostEqual(reachable, 0.4 + 0.3, places=6)        # min(.5,.4) + min(.3,.6) + min(.2,0)
+        self.assertAlmostEqual(covered, 0.5 + 0.3, places=6)          # the target mass on the two candidates
+
+    def test_a_draft_that_covers_nothing_reaches_nothing(self):
+        from engine.base.sampler import draft_ceilings
+        target = torch.tensor([[0.0, 0.0, 1.0], [0.5, 0.5, 0.0]])
+        draft = torch.tensor([[0.5, 0.5, 0.0]])
+        reachable, covered = draft_ceilings(target, draft)
+        self.assertAlmostEqual(reachable, 0.0, places=6)
+        self.assertAlmostEqual(covered, 0.0, places=6)
+
+    def test_the_ceilings_bound_the_acceptance_they_explain(self):
+        from engine.base.sampler import block_verify, draft_ceilings, draw
+        torch.manual_seed(5)
+        K, V, rounds = 3, 6, 4000
+        target = torch.softmax(torch.randn(K + 1, V), -1)
+        draft = torch.softmax(torch.randn(K, V), -1)
+        gen = torch.Generator().manual_seed(7)
+        accepted = 0
+        for _ in range(rounds):
+            ids = [draw(draft[i], gen) for i in range(K)]
+            got, _ = block_verify(target, ids, draft, gen)
+            accepted += got
+        reachable, covered = draft_ceilings(target, draft)
+        self.assertLessEqual(reachable, covered + 1e-6, "what a rule can accept sits under what the candidates cover")
+        self.assertLessEqual(accepted / rounds, reachable + 0.05, "and acceptance sits under both")
+

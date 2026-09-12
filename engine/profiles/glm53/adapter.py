@@ -76,6 +76,10 @@ class Glm53Engine:
         # All of it is host arithmetic on numbers already in hand: no device read, no sync.
         self.decode_shape_counts = {}              # (sequences, capacity bucket) -> decode steps replayed there
         self.accepted_per_step = [0] * (self.drafter.k + 2)   # how many drafts a step committed, 0..k+1
+        self.reachable_mass = 0.0                            # sum_x min(p, q): the most any rule could accept
+        self.covered_mass = 0.0                              # the target mass the drafter's candidates cover
+        self.ceiling_positions = 0                           # draft positions behind those two sums
+        self._ceiling_every = 64                             # two vocabulary passes, so sampled, not every step
         self.lane_info = {}                        # what is actually bound: set by the boot that built the lanes
         self.steps = 0
         self.decode_graphs = None
@@ -358,6 +362,17 @@ class Glm53Engine:
         self.limits[seq] = (max_new, temperature)
         self.min_new[seq] = min_new
         self._bind_options(seq, options)
+
+    def note_ceilings(self, target_probs, draft_probs) -> None:
+        """Every 64th verification, record what the draft allowed. See base/sampler.draft_ceilings."""
+        self.steps_verified = getattr(self, "steps_verified", 0) + 1
+        if self.steps_verified % self._ceiling_every:
+            return
+        from engine.base.sampler import draft_ceilings
+        reachable, covered = draft_ceilings(target_probs, draft_probs)
+        self.reachable_mass += reachable
+        self.covered_mass += covered
+        self.ceiling_positions += int(draft_probs.shape[-2]) * (1 if draft_probs.dim() == 2 else int(draft_probs.shape[0]))
 
     def forget(self, seq: int) -> None:
         if seq in self.slot:
@@ -679,7 +694,9 @@ class Glm53Engine:
                 accepted += 1
             new = picks[: accepted + 1]
         else:
-            accepted, new = block_verify(torch.stack(dists), drafts[: len(dists) - 1], draft_probs, gen)
+            stacked = torch.stack(dists)
+            self.note_ceilings(stacked, draft_probs)
+            accepted, new = block_verify(stacked, drafts[: len(dists) - 1], draft_probs, gen)
         want = opts.get("logprobs")
         lps = None
         if want is not None:
