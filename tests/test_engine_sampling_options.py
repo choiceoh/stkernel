@@ -345,13 +345,34 @@ class HistoryLifetimeTests(unittest.TestCase):
         self.assertEqual(float(counts[1]), 2.0)
         self.assertFalse(bool(seen[2]), "nothing of the old conversation survives")
 
-    def test_the_adapter_drops_it_wherever_it_reassigns_a_row_s_tokens(self):
-        """Through `_forget_history`, which is the only caller that survives a history nobody has built yet."""
+    def test_the_adapter_drops_it_wherever_a_row_stops_owning_its_tokens(self):
+        """The property, not a list of lines: every place a row is handed a different conversation, and the
+        place a row leaves, drops the history first. The sites are found rather than enumerated, so a fourth
+        one does not depend on anyone remembering this test."""
+        import re
         source = (ROOT / "engine/profiles/glm53/adapter.py").read_text()
-        for site in ("self.tokens[seq] = list(ids)", 'self.tokens[seq] = list(record["tokens"])'):
-            after = source[source.index(site):]
-            self.assertIn("self._forget_history(seq)", after[:400], site)
-        self.assertIn("self.history.forget(seq)", source, "and the helper still reaches the History")
+        sites = [m.start() for m in re.finditer(r"^ +self\.tokens\[seq\] = ", source, re.M)]
+        self.assertGreaterEqual(len(sites), 2, "the reassignment sites moved: this test cannot see them")
+        for at in sites + [source.index("rows.pop(seq, None)")]:
+            self.assertIn("self._forget_history(seq)", source[at: at + 400], source[at: at + 60])
+
+    def test_forgetting_reaches_the_history_and_tolerates_one_that_was_never_built(self):
+        """What a source pin cannot see. A helper that is only a name passes the test above; and the history
+        is lazy, so the callers that used to reach `self.history` directly died on the first request of a boot
+        that had not built one yet (which is what the helper was introduced for)."""
+        from engine.base.sampler import History
+        from engine.profiles.glm53.adapter import Glm53Engine
+        source = (ROOT / "engine/profiles/glm53/adapter.py").read_text()
+        body = source[source.index("    def _forget_history"):]
+        self.assertIn("self.history.forget(seq)", body[: body.index("\n    def ", 1)], "the helper must reach the History")
+        engine = Glm53Engine.__new__(Glm53Engine)            # the method, none of the boot
+        engine.history = None
+        engine._forget_history(0)                            # a boot whose first request has not asked for penalties
+        engine.history = History(8, "cpu")
+        engine.history.of(0, [1, 1, 2, 3], 2)
+        self.assertIn(0, engine.history.rows)
+        engine._forget_history(0)
+        self.assertNotIn(0, engine.history.rows, "the helper has to reach the history, not merely exist")
 
 
 class VerificationPathTests(unittest.TestCase):
