@@ -566,7 +566,52 @@ def native_execution_report(net, drafter):
     return proof
 
 
+# A test boot runs the SAME path production runs -- the served lanes and captured decode graphs -- because a
+# boot that decodes eagerly is a different engine and its numbers answer about nothing (45차 §94). What it
+# drops is everything the path does not go through, and what it opens is the measurement.
+#
+#   same      served lanes; decode replays captured graphs, as production's does.
+#   off       the qualification a fleet boot owes its door before opening it -- the vision tower, the
+#             grammars, the parked-conversation tier, the calibration sums.
+#   fast      one captured decode width instead of max_seqs of them. Capture is three quarters of a fleet
+#             boot's 87 seconds ([[stkernel-st-boot-time]]), and it is paid per width.
+#   open      every step timed instead of one in sixty-four, and /v1/engine/profile for the kernels.
+#
+# What it is NOT is a speed measurement. Four ranks are four threads on ONE GPU here, so the device does four
+# ranks' arithmetic and a step takes what a step takes on this box, not on the fleet. D17 says a change that
+# claims speed is not finished until the fleet has measured it, and this mode does not change that.
+TEST_WIDTHS = 1            # captured decode widths: production's four cost four captures
+TEST_CLOCK_EVERY = 1       # a test boot times every step; production samples one in sixty-four
 TEST_FLOOR_GIB = 16.0      # what a --test boot must leave the box, over and above its own KV
+
+
+def arm_test_measurement(engine, recorder):
+    """Capture what production captures, then time every step of it.
+
+    The decode graphs are the point: a boot that decodes eagerly runs different kernels in a different order
+    and answers about nothing. One width is captured rather than `max_seqs` of them -- production serves one
+    sequence today, and each width is its own capture.
+    """
+    from engine.base.stage_clock import StageClock
+    with recorder.phase("capture decode"):
+        engine.capture_decode(TEST_WIDTHS)
+    pipeline = getattr(engine, "pipeline", None)
+    if pipeline is None:                                   # no drafter: there is no async decode to time
+        return None
+    pipeline.clock = StageClock(every=TEST_CLOCK_EVERY, device=engine.caches.device)
+    return pipeline.clock
+
+
+def stage_table(clock, steps: int) -> str:
+    """What a decode step is made of. These are the stages production exports, sampled at every step."""
+    if clock is None or not clock.totals or not clock.samples:
+        return "  decode: nothing timed (no drafter, or no decode step ran)"
+    total = sum(clock.totals.values())
+    lines = [f"  decode, by stage over {clock.samples} of {steps} steps ({total / clock.samples * 1e3:.1f} ms each;"
+             f" this box's time, not the fleet's):"]
+    for stage, seconds in sorted(clock.totals.items(), key=lambda kv: -kv[1]):
+        lines.append(f"    {stage:12s}{seconds / clock.samples * 1e3:9.2f} ms{seconds / total * 100:8.1f}%")
+    return "\n".join(lines)
 
 
 def memory_left(kv_gib: float) -> float:
@@ -602,8 +647,9 @@ def local(a) -> int:
     tp = LocalTP(facts.TP)
     if a.lanes == "served":
         guard_test_memory(a.kv_gib)
-        print("  lanes: served -- the kernels production runs, on this box alone. This is not the fleet and "
-              "it holds no lease; four ranks are four threads and every collective is local.")
+        print("  lanes: served, decode captured -- the path production runs, on this box alone. This is not "
+              "the fleet and it holds no lease; four ranks are four threads on ONE GPU, so the PATH is "
+              "production's and the TIMES are this box's. D17 still wants the fleet for a speed claim.")
     lanes = lane_tables.served() if a.lanes == "served" else lane_tables.reference()
     if a.park:                                            # a run-private tier: parked ids from an earlier smoke must not collide
         import tempfile
@@ -616,10 +662,13 @@ def local(a) -> int:
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed,
                                                tier_dir=a.tier_dir if a.park else None,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
+        clock = arm_test_measurement(engine, rec) if a.lanes == "served" else None
         t0 = time.perf_counter()
         with rec.phase("generate"):
             out = run_prompts(engine, runner, prompts)
             torch.cuda.synchronize()
+        if a.lanes == "served" and comm.rank == 0:
+            print(stage_table(clock, runner.steps), flush=True)
         parked = None
         if a.park:
             # D16 on the real caches: the finished conversation 0 still holds its blocks (keep_idle); park it, the arena
