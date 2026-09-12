@@ -22,6 +22,8 @@ def source_files(repo):
                  # Occupancy and yield execute from the pinned control tree.
                  # Without both files, a free lease looks unreadable forever.
                  'launchers/lib/fleet-lease.sh', 'engine/base/fleet_lease.py',
+                 # The ST bracket cuts its arms' releases with this (bench/st_bracket.sh).
+                 'launchers/st_release.py',
                  *fleet_onepass.ST_ENTRIES, *fleet_onepass.ST_PROBES)
     for relative in canonical:
         if (repo / relative).is_file():

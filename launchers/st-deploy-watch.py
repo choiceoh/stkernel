@@ -54,8 +54,10 @@ LOCK = Path(os.environ.get("FLEET_LEASE_PATH", "/home/choiceoh/glm53-logs/st-fle
 # release under engine/base/): the queue applies the same gate before asking production to hand
 # over, so there is one definition of "quiet" and one of "taken".
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from engine.base import fleet_lease                                                  # noqa: E402
 from engine.base.fleet_lease import LeaseHeld, door_load as busy, door_unsupported as unsupported   # noqa: E402
+import st_release                                                                    # noqa: E402  the one shape of release
 
 
 def run(cmd, cwd=None, timeout=1800, env=None):
@@ -132,31 +134,13 @@ def regressed(deployed: "dict[str, str]", candidate: "dict[str, str]") -> "list[
 
 # -- the actions ----------------------------------------------------------------------------------
 def cut(sha: str, log) -> "Path | None":
-    """A release directory for `sha`: a checkout, not a copy of a working tree that may be mid-edit."""
-    target = RELEASES / sha[:12]
-    if target.exists():
-        log(f"  release {target} is already cut")
-        return target
-    RELEASES.mkdir(parents=True, exist_ok=True)
-    staging = target.with_suffix(".partial")
-    run(["rm", "-rf", str(staging)])
-    staging.mkdir(parents=True)
-    for part in CARRY:
-        # pipefail: without it the exit code is tar's, and tar is happy to extract the prefix of a
-        # stream that died halfway -- a release that looks complete and is not
-        code, _, err = run(["bash", "-c", "set -o pipefail; "
-                            f"git -C {SOURCE} archive {sha} {part} | tar -x -C {staging}"])
-        if code and part != "build":                      # `build` is the tokenizer meta: not in git on every tree
-            log(f"  ABORT: {sha[:12]} has no {part} ({err.strip()[:80]})")
-            run(["rm", "-rf", str(staging)])
-            return None
-    meta = HOME / "st-engine" / "st-glm53-meta"
-    if meta.is_dir():                                     # the chat templates and tokenizer the door needs
-        (staging / "build").mkdir(parents=True, exist_ok=True)
-        run(["rsync", "-a", f"{meta}/", str(staging / "build" / "st-glm53-meta") + "/"])
-    staging.rename(target)
-    log(f"  cut {target}")
-    return target
+    """A release directory for `sha`: a checkout, not a copy of a working tree that may be mid-edit.
+
+    The cut itself lives in launchers/st_release.py, shared with bench/st_bracket.sh: one shape of
+    release, so a bracket's winning arm is promoted by pointing production at the directory the
+    bracket already booted.
+    """
+    return st_release.cut(sha, source=SOURCE, releases=RELEASES, log=log, meta=HOME / "st-engine" / "st-glm53-meta")
 
 
 def deploy(release: Path, log) -> bool:
@@ -283,7 +267,63 @@ def cycle(a, log) -> int:
     STATE.write_text(json.dumps({"deployed": head, "release": str(release), "deployed_at": time.time(),
                                  "launched_ok": True}, indent=1))
     log(f"  deployed {head[:12]} from {release}")
+    after_deploy(head, a, log)
     return 0
+
+
+# -- after a deploy: the queue follows ------------------------------------------------------------
+CONTROLLER = Path(os.environ.get("FLEET_CONTROLLER_REPO", HOME / "fleet-controller"))   # the queue's own checkout on the head
+
+
+def follow_controller(head: str, log, controller: Path = CONTROLLER) -> bool:
+    """The queue's checkout moves to the deployed commit, so the queue answers by production's rules.
+
+    A controller 639 commits behind main once told a session the fleet was FREE with four nodes
+    serving (45차 §91). Waiting tickets are unaffected: they run out of pinned runner snapshots.
+    """
+    if not (controller / ".git").exists():
+        log(f"  controller {controller} is not a checkout; the queue's rules stay where they are")
+        return False
+    code, _, err = run(["git", "-C", str(controller), "fetch", "--quiet", "origin", head], timeout=600)
+    if code:                                           # a remote that refuses a bare sha still serves its refs
+        code, _, err = run(["git", "-C", str(controller), "fetch", "--quiet", "origin"], timeout=600)
+    if code:
+        log(f"  controller: could not fetch {head[:12]} ({err.strip()[:80]})")
+        return False
+    code, _, err = run(["git", "-C", str(controller), "checkout", "--quiet", "--detach", head], timeout=120)
+    if code:
+        log(f"  controller: could not move to {head[:12]} ({err.strip()[:80]})")
+        return False
+    log(f"  controller {controller} now at {head[:12]}")
+    return True
+
+
+def queue_probe(head: str, log, controller: Path = CONTROLLER) -> bool:
+    """One D17 probe ticket for the deployed commit: two onepass runs on the live door when it is
+    idle, so the deployed commit always has a warm sample and st-pair never boots the base."""
+    fleet = controller / "bench" / "fleet.sh"
+    if not fleet.exists():
+        log(f"  no {fleet}: no D17 probe queued")
+        return False
+    session = "d17-" + head[:12]
+    code, out, err = run(["bash", str(fleet), "st-probe", "--detach", session, head, "10", f"D17 after deploy {head[:12]}"],
+                         cwd=str(controller), timeout=300)
+    tail = (out + err).strip().splitlines()[-1:] or [""]
+    if code:
+        log(f"  D17 probe {session} was not queued (rc={code}): {tail[0][:120]}")
+        return False
+    log(f"  D17 probe {session} queued: {tail[0][:120]}")
+    return True
+
+
+def after_deploy(head: str, a, log) -> None:
+    if getattr(a, "dry_run", False):
+        return
+    controller = Path(getattr(a, "controller", CONTROLLER))
+    if getattr(a, "follow", True):
+        follow_controller(head, log, controller)
+    if getattr(a, "probe", True):
+        queue_probe(head, log, controller)
 
 
 def main(argv=None) -> int:
@@ -300,6 +340,9 @@ def main(argv=None) -> int:
     ap.add_argument("--test-timeout", type=int, default=900)
     ap.add_argument("--no-gate", dest="gate", action="store_false")
     ap.add_argument("--interval", type=int, default=300, help="seconds between cycles in the loop")
+    ap.add_argument("--controller", default=str(CONTROLLER), help="the queue's checkout: moved to the deployed commit after a deploy")
+    ap.add_argument("--no-follow", dest="follow", action="store_false", help="leave the controller checkout where it is")
+    ap.add_argument("--no-probe", dest="probe", action="store_false", help="queue no D17 probe ticket after a deploy")
     a = ap.parse_args(argv)
 
     def log(line):

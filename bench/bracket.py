@@ -128,7 +128,12 @@ class _StepWindows:
         from window_metrics import traffic_state
         self.traffic_samples.append(traffic_state(text))
         m = re.search(r"^vllm:iteration_tokens_total_count\{[^}]*\}\s+([0-9.e+]+)", text, re.M)
-        return float(m.group(1)) if m else None
+        if m:
+            return float(m.group(1))
+        # the ST engine counts its steps under its own names: prefill chunks plus decode steps
+        st = [re.search(rf"^{name}(?:\{{[^}}]*\}})?\s+([0-9.e+]+)", text, re.M)
+              for name in ("st:steps_prefill_total", "st:steps_decode_total")]
+        return sum(float(x.group(1)) for x in st) if all(st) else None
 
     def _run(self):
         import time

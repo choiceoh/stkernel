@@ -172,11 +172,13 @@ class ReleaseCuttingTests(unittest.TestCase):
     def test_a_half_written_archive_cannot_be_published_as_a_release(self):
         """Without pipefail the exit code is tar's, and tar extracts the prefix of a dead stream
         happily -- a release that looks whole, with a tests/ the gate then silently under-runs."""
-        source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
+        source = (Path(__file__).resolve().parents[1] / "launchers/st_release.py").read_text()
         body = source[source.index("def cut("):]
         body = body[:body.index("\n\ndef ", 10)]
         self.assertIn("set -o pipefail", body)
         self.assertIn("| tar -x", body)
+        watch = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
+        self.assertIn("st_release.cut(sha, source=SOURCE, releases=RELEASES", watch)   # one cut, shared with the bracket
 
     def test_pipefail_is_what_it_claims_to_be(self):
         """The property the line rests on, checked against the shell rather than assumed."""
@@ -200,6 +202,101 @@ class StateTests(unittest.TestCase):
         self.assertIn("After=st-glm53.service", unit, "it restarts that service: it must not race its start")
         timer = (here / "st-deploy-watch.timer").read_text()
         self.assertNotIn("Persistent=true", timer, "a missed cycle sees the same main; there is nothing to catch up")
+
+
+class AfterDeployTests(unittest.TestCase):
+    """After a deploy the queue follows: the controller checkout moves to the deployed commit and one
+    D17 probe ticket is queued for it. Neither is allowed to fail the deploy, and a dry run does neither."""
+
+    def setUp(self):
+        import tempfile
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.tmp = Path(self.temporary.name)
+        self.lines = []
+
+    def log(self, line):
+        self.lines.append(line)
+
+    def git(self, repo, *args):
+        import subprocess
+        done = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True,
+                              env={**dict(__import__("os").environ), "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                   "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return done.stdout.strip()
+
+    def commit(self, repo, name):
+        (repo / name).write_text(name)
+        self.git(repo, "add", name)
+        self.git(repo, "commit", "--quiet", "-m", name)
+        return self.git(repo, "rev-parse", "HEAD")
+
+    def stub_controller(self, rc=0):
+        controller = self.tmp / "controller"
+        (controller / "bench").mkdir(parents=True)
+        fleet = controller / "bench" / "fleet.sh"
+        fleet.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{self.tmp}/argv"\necho queued; exit {rc}\n')
+        return controller
+
+    def test_the_controller_checkout_moves_to_the_deployed_commit(self):
+        """A controller 639 commits behind main once called a serving fleet FREE (45차 §91)."""
+        origin = self.tmp / "origin"
+        origin.mkdir()
+        self.git(origin, "init", "--quiet", "-b", "main")
+        self.commit(origin, "one")
+        self.git(self.tmp, "clone", "--quiet", str(origin), "controller")
+        controller = self.tmp / "controller"
+        two = self.commit(origin, "two")
+        self.assertNotEqual(self.git(controller, "rev-parse", "HEAD"), two)
+        self.assertTrue(watch.follow_controller(two, self.log, controller))
+        self.assertEqual(self.git(controller, "rev-parse", "HEAD"), two)
+        self.assertIn(f"now at {two[:12]}", "\n".join(self.lines))
+
+    def test_a_directory_that_is_not_a_checkout_is_left_alone(self):
+        plain = self.tmp / "plain"
+        plain.mkdir()
+        self.assertFalse(watch.follow_controller("0" * 40, self.log, plain))
+        self.assertIn("not a checkout", "\n".join(self.lines))
+        self.assertFalse(watch.follow_controller("0" * 40, self.log, self.tmp / "absent"))
+
+    def test_the_probe_is_one_ticket_in_the_live_lane_for_the_deployed_commit(self):
+        controller = self.stub_controller()
+        head = "0123abcdef" * 4
+        self.assertTrue(watch.queue_probe(head, self.log, controller))
+        argv = (self.tmp / "argv").read_text().splitlines()
+        self.assertEqual(argv, ["st-probe", "--detach", "d17-0123abcdef01", head, "10", "D17 after deploy 0123abcdef01"])
+        self.assertIn("D17 probe d17-0123abcdef01 queued", "\n".join(self.lines))
+
+    def test_a_refused_ticket_is_reported_and_is_not_a_failed_deploy(self):
+        controller = self.stub_controller(rc=3)
+        self.assertFalse(watch.queue_probe("0" * 40, self.log, controller))
+        self.assertIn("was not queued (rc=3)", "\n".join(self.lines))
+        self.assertFalse(watch.queue_probe("0" * 40, self.log, self.tmp / "absent"))
+        self.assertIn("no D17 probe queued", "\n".join(self.lines))
+
+    def test_a_dry_run_and_the_two_flags_hold_it_back(self):
+        from types import SimpleNamespace
+        controller = self.stub_controller()
+        watch.after_deploy("0" * 40, SimpleNamespace(dry_run=True, controller=str(controller)), self.log)
+        self.assertFalse((self.tmp / "argv").exists(), "a dry run queues nothing")
+        watch.after_deploy("0" * 40, SimpleNamespace(dry_run=False, controller=str(controller), follow=False, probe=False), self.log)
+        self.assertFalse((self.tmp / "argv").exists())
+        watch.after_deploy("0" * 40, SimpleNamespace(dry_run=False, controller=str(controller), follow=False, probe=True), self.log)
+        self.assertTrue((self.tmp / "argv").exists())
+        self.assertNotIn("controller", "\n".join(self.lines), "--no-follow: the checkout was not even looked at")
+
+    def test_it_runs_only_after_a_deploy_that_is_recorded(self):
+        """A failed launch is a rejection; nothing follows it, and no probe samples a fleet in recovery."""
+        source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
+        body = source[source.index("    ok = deploy(release, log)"):]
+        body = body[:body.index("\n\ndef ", 10)]
+        failed = body[body.index("if not ok:"):body.index("return 1")]
+        self.assertNotIn("after_deploy", failed)
+        recorded = body[body.index('"launched_ok": True'):]
+        self.assertIn("after_deploy(head, a, log)", recorded)
+        for flag in ("--controller", "--no-follow", "--no-probe"):
+            self.assertIn(flag, source)
 
 
 if __name__ == "__main__":

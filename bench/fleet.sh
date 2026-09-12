@@ -23,6 +23,10 @@
 #   fleet.sh cancel s                                   stop the waiter and withdraw
 #   fleet.sh run --gpu --fleet s [est] [note] -- <ST check>   keep a one-GPU check on the four Sparks
 #   fleet.sh kick [--force] [single]                    a dead holder: the fleet's, or the single GPU's
+#   fleet.sh st-pair s <sha> [--base <sha>] [est] [note]   the ST engine: one commit against the deployed one, two runs per boot
+#   fleet.sh st-chain s [est] [note] -- A=<sha> B=<sha> A B  ST arms in order; a repeated name alternates (A B A B)
+#   fleet.sh st-hold s <sha> [est] [note]               boot a commit and keep it for a session's window (end: cancel s)
+#   fleet.sh st-probe [--detach] s [sha] [est] [note]   two onepass runs on the LIVE door when idle: D17's sample of the deployed commit
 #
 # TWO LANES. A boot, a pair, a chain, a live onepass take the fleet: four Sparks, one holder.
 # An ST check that needs ONE GPU (probes/run_engine_check.sh, or run_engine_probe.sh without
@@ -159,7 +163,8 @@ holder_file_of() {  # session -> the holder file naming it; 1 when it holds noth
 }
 lane_front() { awk -F'|' -v lane="$(lane_of "${1:-}")" '{ k = ($6 == "single") ? "single" : "fleet" } k == lane { print $2; exit }' "$Q"; }   # kind -> the first queued session of its lane, in the ranked order
 single_on_fleet() { case "${FLEET_SINGLE_GPU_ON_FLEET:-}" in 1) return 0;; 0) return 1;; esac; case "${FLEET_SINGLE_GPU_HOST#*@}" in srv[1-4]|srv[1-4].*|spark*|10.10.0.[1-4]|10.10.1.[1-4]|10.10.10.[1-4]|10.10.11.[1-4]) return 0;; *) return 1;; esac; }   # is the single host one of the fleet's own boxes? (= fleet_single.on_fleet)
-serving_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^glm53$'; }
+serving_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qE '^(glm53|st-glm53)$'; }   # production: vLLM's or the ST engine's
+st_serving_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^st-glm53$'; }
 # ---- the fleet lease: ONE record of who holds the four Sparks (engine/base/fleet_lease.py).
 # This queue is its authority for tickets. _try_hold takes it as queue/<session> at GO (or
 # finds it already handed to the ticket by a holder that drained), _release hands it to the
@@ -342,6 +347,17 @@ st_engine_ask() {  # session pid est note -- under .lock, after a refused hold; 
 serving_idle() {  # a probe may run beside this: healthy, nothing in flight, not booting
   ! serving_up && return 0
   booting && return 1
+  if st_serving_up; then
+    # The ST engine says itself whether anything is outstanding (st:quiet, the same reading as
+    # the quiet gate); an engine too old to say it is judged by its request gauges and a door
+    # that answers; a door that does not answer is not idle.
+    local load; load=$(curl -s -m 5 "$HEAD_URL/metrics" 2>/dev/null | lease load 2>/dev/null); load=${load:-unknown}
+    case "$load" in
+      0) return 0 ;;
+      unknown) [ "$(curl -s -m 3 -o /dev/null -w '%{http_code}' "$HEAD_URL/v1/models")" = 200 ] && [ "$(busy_reqs)" = 0 ]; return ;;
+      *) return 1 ;;
+    esac
+  fi
   [ "$(curl -s -m 3 -o /dev/null -w '%{http_code}' "$HEAD_URL/health")" = 200 ] && [ "$(busy_reqs)" = 0 ]
 }
 # expected minutes for a session: median of its last 5 actual holds, else the estimate
@@ -557,7 +573,11 @@ busy_reqs() {
   curl -s -m 3 "$HEAD_URL/metrics" 2>/dev/null | awk '/^vllm:num_requests_(running|waiting)/ {s+=$2} END {print s+0}'
 }
 booting() {  # a head container younger than 12 min is still booting (health not yet)
-  docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -E '^glm53 ' | grep -qE 'Up ([0-9]+ seconds|Less than a|[0-9] minutes|1[01] minutes)' \
+  local young='Up ([0-9]+ seconds|Less than a|[0-9] minutes|1[01] minutes)'
+  if docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -E '^st-glm53 ' | grep -qE "$young"; then
+    [ "$(curl -s -m 3 -o /dev/null -w '%{http_code}' "$HEAD_URL/v1/models")" != 200 ]; return
+  fi
+  docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -E '^glm53 ' | grep -qE "$young" \
     && [ "$(curl -s -m 3 -o /dev/null -w '%{http_code}' "$HEAD_URL/health")" != 200 ]
 }
 legacy_busy() { [ "$(busy_procs)" != 0 ] || [ "$(busy_reqs)" != 0 ] || booting; }
@@ -666,12 +686,15 @@ _front() { { grep "^[0-9]*|$1|" "$Q"; grep -v "^[0-9]*|$1|" "$Q"; } > "$Q.tmp"; 
 
 _try_hold() {  # session pid est note [kind] -> 0 when held
   local s=$1 pid=$2 est=$3 note=$4 kind hf; kind=$(kind_of "${5:-}"); hf=$(holder_file "$kind")
-  if [ "$kind" != single ]; then
+  if [ "$kind" != single ] && ! { [ "$kind" = probe ] && [ "$(lease_kind)" = production ]; }; then
     # The fleet lane: the ST engine, a serving container, a legacy chain all occupy the
     # four Sparks. None of that is evidence about the single GPU, so the single lane
     # skips this and asks its own host below. Occupied by someone else -- a lease that is
     # not this ticket's, or st-* containers still up -- the lease's kind decides whether
-    # the holder is asked (st_engine_ask) or waited for.
+    # the holder is asked (st_engine_ask) or waited for. A PROBE ticket runs beside
+    # production (the live onepass, D17's free base sample): production's own lease is not
+    # occupation for it, an idle door is its condition (serving_idle, below), and it takes
+    # no lease; behind a session's or a ticket's boot it waits like everything else.
     if ST_MINE=$s st_engine_up; then
       st_engine_ask "$s" "$pid" "$est" "$note"
       return 1
@@ -680,7 +703,7 @@ _try_hold() {  # session pid est note [kind] -> 0 when held
     # box's free memory, and the check would be what earlyoom finds first. Beside serving
     # (a probe) they run at once, and on a box of its own the lanes never meet.
     if [ "$kind" = boot ] && single_on_fleet && [ -s "$HS" ] && holder_alive "$HS"; then return 1; fi
-  elif single_on_fleet && [ -s "$H" ] && [ "$(cut -d'|' -f7 "$H" | tr -d '\n')" = boot ] && holder_alive "$H"; then
+  elif [ "$kind" = single ] && single_on_fleet && [ -s "$H" ] && [ "$(cut -d'|' -f7 "$H" | tr -d '\n')" = boot ] && holder_alive "$H"; then
     single_refused "$s" "the fleet boot $(cut -d'|' -f1 "$H") holds this box too"; return 1
   fi
   if [ -s "$hf" ]; then
@@ -1008,6 +1031,34 @@ case "$cmd" in
     s=${1:?session}; name=${2:?NAME}; knobs=${3:-}; est=${4:-25}; note=${5:-pair $name}
     [ "${FLEET_REHEARSE:-0}" = 1 ] && lane=--cpu || lane=--gpu
     exec bash "$0" run $lane "$s" "$est" "$note" -- bash "$REPO/bench/pair.sh" "$name" "$knobs";;
+  # ---- the ST engine's bracket (bench/st_bracket.sh): one committed sha per arm, production
+  # shape, two onepass runs per boot (D17). A boot ticket like pair/chain: it takes the fleet
+  # lease at GO and the release's own launcher verifies it.
+  st-pair)   # fleet.sh st-pair s <sha> [--base <sha>] [est] [note]
+    s=${1:?session}; sha=${2:?candidate sha}; shift 2; base=()
+    [ "${1:-}" = --base ] && { base=(--base "${2:?base sha}"); shift 2; }
+    est=${1:-25}; note=${2:-st-pair $sha}
+    [ "${FLEET_REHEARSE:-0}" = 1 ] && lane=--cpu || lane=--gpu
+    exec bash "$0" run $lane "$s" "$est" "$note" -- bash "$REPO/bench/st_bracket.sh" pair "$sha" ${base[@]+"${base[@]}"};;
+  st-chain)  # fleet.sh st-chain s [est] [note] -- A=<sha> B=<sha> A B     (a repeated name alternates)
+    s=${1:?session}; shift; est=45; note=""
+    [ "${1:-}" != "--" ] && { est=$1; shift; }
+    [ "${1:-}" != "--" ] && { note=$1; shift; }
+    [ "${1:-}" = "--" ] && shift
+    [ $# -gt 0 ] || { echo "usage: fleet.sh st-chain <session> [est] [note] -- NAME=<sha> [NAME=<sha> ...] [NAME ...]" >&2; exit 2; }
+    [ "${FLEET_REHEARSE:-0}" = 1 ] && lane=--cpu || lane=--gpu
+    exec bash "$0" run $lane "$s" "$est" "${note:-st-chain $*}" -- bash "$REPO/bench/st_bracket.sh" chain "$@";;
+  st-hold)   # fleet.sh st-hold s <sha> [est] [note]: boot a commit and keep it for a session's window; end with cancel
+    s=${1:?session}; sha=${2:?sha}; est=${3:-45}; note=${4:-st-hold $sha}
+    exec bash "$0" run --gpu "$s" "$est" "$note" -- bash "$REPO/bench/st_bracket.sh" hold "$sha" "$est";;
+  st-probe)  # fleet.sh st-probe [--detach] s [sha] [est] [note]: two onepass runs on the LIVE door when it is idle
+    # -- D17's sample for the deployed commit, no boot, no lease. deploy-watch queues one after
+    # every deploy, so st-pair never has to boot the base.
+    detach=(); [ "${1:-}" = --detach ] && { detach=(--detach); shift; }
+    s=${1:?session}; shift; sha=""
+    if [ -n "${1:-}" ] && [[ "$1" =~ ^[0-9a-f]{7,40}$ ]]; then sha=$1; shift; fi
+    est=${1:-10}; note=${2:-st-probe ${sha:-deployed}}
+    exec bash "$0" run --gpu --probe ${detach[@]+"${detach[@]}"} "$s" "$est" "$note" -- bash "$REPO/bench/st_bracket.sh" probe ${sha:+"$sha"};;
   deploy)
     s=${1:?session}; rev=${2:?rev}
     [ -s "$H" ] && [ "$(cut -d'|' -f1 "$H")" = "$s" ] || { echo "deploy needs the fleet: $s is not the holder ($(holder_line 2>/dev/null || echo none))" >&2; exit 1; }

@@ -55,6 +55,15 @@ def resolve(value, cwd):
     return str((Path(cwd) / value).resolve())
 
 
+def pins_its_own_revision(command):
+    """The ST bracket (bench/st_bracket.sh) names the commits it boots; the checkout's HEAD is not its revision."""
+    try:
+        argv = command_environment(command)[0]
+    except (ValueError, TypeError):
+        return False
+    return len(argv) > 1 and Path(str(argv[1])).name == 'st_bracket.sh'
+
+
 def command_environment(command, environment=None):
     """Unwrap literal env prefixes without evaluating shell text."""
     command = list(command)
@@ -510,6 +519,13 @@ def prepare(directory, session, command, cwd, *, spec_path=None, fleet=None, exe
         import fleet_source
         if any(c['kind'] == 'source-base' and fleet_source.audited_wrapper(c['source'], repo) for c in value['checks']):
             value['source_identity'] = dict(repo=repo, identity=fleet_source.identity(repo, protected_paths=value['protected_paths']))
+        elif pins_its_own_revision(command):
+            # The ST bracket names the commits it measures -- its shas are the arms -- and cuts
+            # them from git itself (launchers/st_release.py). The checkout's HEAD is not this
+            # ticket's revision, so a controller checkout that moves while the ticket waits must
+            # not pause it ("queued checkout revision changed", 45차 §95).
+            value['arms'] = [token.split('=', 1)[-1] for token in command_environment(command)[0][2:]
+                             if re.fullmatch(r'[0-9a-f]{7,40}', token.split('=', 1)[-1])]
         else:
             value['head'] = [repo, run(['git', 'rev-parse', 'HEAD'], repo, 3)]
     value['deployment_sources'] = {}

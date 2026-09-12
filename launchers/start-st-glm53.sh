@@ -292,7 +292,7 @@ start_rank() {
     -e RANK=$r -e WORLD_SIZE=4 -e MASTER_ADDR=10.10.10.2 -e MASTER_PORT=29555 -e LOCAL_RANK=0 $NCCL_ENV \
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
-    -e ST_LEASE_OWNER="$LEASE_OWNER" -e ST_LEASE_PATH="$LOCK" \
+    -e ST_LEASE_OWNER="$LEASE_OWNER" -e ST_LEASE_PATH="$LOCK" -e ST_RELEASE="$(basename "$ENGINE_DIR")" \
     --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py $PRODUCTION_ARG $KV_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER --tier-dir $TIER_DIR --dump-dir $DUMP_DIR' >/dev/null && echo '$ip: started'"
 }
 
@@ -312,7 +312,8 @@ if [ -n "$failed" ]; then
   exit 1
 fi
 launched=1
-# a ticket's lease was taken without a container; now that rank 0 is up, that container is its
-# evidence (the head's docker answers for it) -- attach it, best effort
-[ "$LEASE_MODE" != ticket ] || lease attach --owner "$LEASE_OWNER" --container "$NAME" >/dev/null 2>&1 || true
+# A ticket's lease deliberately names NO container. Its evidence is the queue's supervisor process
+# on the head, which is conclusive; and a supervisor from before kinds resolves `stop` by container
+# name alone, so a lease naming st-glm53 would let that supervisor's crash recovery evict the
+# ticket's boot 90 s in. Nameless, the older `stop` refuses it (2026-09-13).
 echo "head: http://10.10.10.2:$PORT/v1/chat/completions (OpenAI), /v1/engine/completions (engine dialect), GET / for status"

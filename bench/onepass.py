@@ -259,6 +259,45 @@ def _channel_diagnostics(events, text, finish, hits, scanner):
                                  if count and kind not in scanner.INFORMATIONAL and kind not in located])
 
 
+def _st_build(names, name: str = "st-glm53") -> dict:
+    """What the ST engine's container is running, read off the container itself.
+
+    `engine_source_sha256` is the runtime manifest's hash of the engine tree the container
+    mounts (the same identity measurements/st_production_*/README cites); `release` is what the
+    launcher stamped (ST_RELEASE: the release directory's name, a sha12 for a release deploy-watch
+    or the bracket cut); `knobs` are the STK_* the boot was given. Every failure degrades to a
+    missing field: a bench must never die over its own label.
+    """
+    import subprocess
+    out = {"engine": "st"}
+    try:
+        boot = subprocess.run(["docker", "inspect", "-f", "{{.Id}}|{{.State.StartedAt}}", name],
+                              capture_output=True, text=True, timeout=10)
+        if boot.returncode == 0 and "|" in boot.stdout.strip():
+            out["boot_id"] = boot.stdout.strip()
+        raw = subprocess.run(["docker", "inspect", "-f", "{{json .Config.Env}}", name],
+                             capture_output=True, text=True, timeout=10).stdout
+        env = dict(e.split("=", 1) for e in json.loads(raw or "[]") if "=" in e)
+        out["knobs"] = {k: v for k, v in sorted(env.items()) if k.startswith("STK_")}
+        if env.get("ST_RELEASE"):
+            out["release"] = env["ST_RELEASE"]
+        image = subprocess.run(["docker", "inspect", "-f", "{{.Config.Image}}", name],
+                               capture_output=True, text=True, timeout=10).stdout.strip()
+        if image:
+            out["image"] = image
+    except Exception:
+        pass
+    try:
+        manifest = subprocess.run(["docker", "exec", name, "cat", "/opt/st/runtime-manifest.json"],
+                                  capture_output=True, text=True, timeout=15).stdout
+        source = json.loads(manifest or "{}").get("engine_source_sha256")
+        if source:
+            out["engine_source_sha256"] = source
+    except Exception:
+        pass
+    return out
+
+
 def _served_build(repo: str, profile: str = "glm53") -> dict:
     """What the SERVER is running: the deployed overlay stamp and the knobs
     that differ from the profile's defaults.
@@ -275,6 +314,17 @@ def _served_build(repo: str, profile: str = "glm53") -> dict:
     import subprocess
     out = {}
     try:
+        names = subprocess.run(["docker", "ps", "--format", "{{.Names}}"],
+                               capture_output=True, text=True,
+                               timeout=10).stdout.split()
+    except Exception:
+        names = []
+    if "st-glm53" in names:
+        # The ST engine, not vLLM: its identity is the source the container runs (the runtime
+        # manifest's sha256), the release the launcher stamped, and STK_* knobs -- never the
+        # vLLM overlay stamp, which would make every ST release look like one build.
+        return _st_build(names)
+    try:
         stamp = os.environ.get("MK_OVERLAY_STAMP",
                                "/home/choiceoh/glm53-cache/.overlay-sha")
         with open(stamp) as fh:
@@ -282,9 +332,6 @@ def _served_build(repo: str, profile: str = "glm53") -> dict:
     except Exception:
         pass
     try:
-        names = subprocess.run(["docker", "ps", "--format", "{{.Names}}"],
-                               capture_output=True, text=True,
-                               timeout=10).stdout.split()
         name = next((n for n in names if n.startswith("glm53")), None)
         if not name:
             return out
@@ -495,6 +542,14 @@ def _main() -> int:
         "combined_reasoning_budget": args.combined_reasoning_budget,
     }
     rec.update(_served_build(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    if os.environ.get("ONEPASS_RUN_INDEX"):
+        # D17 (45차 §93): two runs on one boot. Run 1 carries the cold column (TTFT, the compile
+        # tail); run 2 the warm one. bench/st_judge.py judges warm against warm.
+        rec["run_index"] = int(os.environ["ONEPASS_RUN_INDEX"])
+    if os.environ.get("ST_BRACKET_SHA"):
+        rec["arm_sha"] = os.environ["ST_BRACKET_SHA"]              # the commit the bracket named for this arm
+    if os.environ.get("ST_BRACKET_COLD"):
+        rec["cold"] = os.environ["ST_BRACKET_COLD"]                # what run 1 followed: a boot, or only a prefix reset
     run = _RUN = Run(rec, args.out, bd.URL)
     items = workload_requests(args, cq)
     fixed_item = None

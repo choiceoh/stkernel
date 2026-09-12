@@ -503,6 +503,8 @@ srv4 한 대에서 프로덕션 옆에 돈다 — 큐의 단일 GPU 레인(`hold
 티켓이 끝나면 대기 중인 부팅 티켓에 넘기거나 놓는다. 프로덕션(슈퍼바이저·deploy-watch)은
 `kind=production` 리스를 직접 잡고, 큐는 그 홀더에게만 — 정숙 게이트(`st:quiet`, `FLEET_QUIET_S`)를
 지날 때만 — 양보를 요청한다. 세션의 부팅(`ST_LEASE_KIND=session`)에는 묻지 않는다(45차 §91, PR #770).
+프로브 티켓(`run --gpu --probe`, `st-probe`)만 예외로 프로덕션 리스 옆에서 문이 유휴일 때 돌고 리스를 잡지 않는다;
+deploy-watch 는 배포 뒤 큐의 체크아웃 `~/fleet-controller` 를 배포된 sha 로 옮기고 D17 프로브 티켓 하나를 건다.
 
 **플릿 없이 쓰는 측정 경로** — 4박스를 잡지 못한 상태(누가 쥐고 있거나, 노트북에서
 작업 중이거나)에서도 스텝/레이턴시 숫자를 얻는 세 도구가 아래 표 끝에 있다:
@@ -528,6 +530,7 @@ srv4 한 대에서 프로덕션 옆에 돈다 — 큐의 단일 GPU 레인(`hold
 | `step_peek.py` | **관측 전용 /metrics 스크랩** — 플릿을 잡지 않고 살아있는 부팅의 step/s·gen tok/s·수용률과 `st:step_seconds`·TTFT 히스토그램 분포(두 스크랩 차)를 창 단위로 | 내 워크로드가 아니라 지금 돌고 있는 누군가의 부팅을 보고 있다 — 독점성도 판정도 없다(D17) |
 | `step_replay.py` | **저장 증거 재계산** — `steps-*.ring`(스텝 in-flight 분포), onepass jsonl(컨텍스트별 TTFT·step/s·TPOT), bracket 다리, peek 샘플을 다시 판다; onepass 기록 둘 이상이면 재부팅 없이 델타 | 링의 wall 은 launch→readback — async 스텝은 depth 대기만큼 길다; 재분석이지 재측정이 아니다 |
 | `bench_common.py` | 위 도구들의 공용 하네스(엔드포인트·프롬프트·수용률 델타 읽기) | |
+| `st_bracket.sh` · `st_judge.py` | **ST 엔진 브래킷** — 커밋 sha 하나가 팔, 프로덕션 형상, 부팅당 onepass 두 판(콜드·웜), `fleet.sh st-pair/st-chain/st-hold` 로 큐에 건다; `st-probe` 는 부팅 없이 라이브 문에서 두 판(프로브 레인, 리스 없음 — 배포된 커밋의 웜 표본) | 팔은 #770 이후의 sha 여야 한다(릴리스의 런처가 티켓 리스를 검증) · 판정은 웜끼리, 기준선 부팅이 둘 미만이면 바닥 없음 |
 
 ## probes/ — 계측 빌드 · 오프라인 프로브
 
