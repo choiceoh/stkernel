@@ -337,6 +337,12 @@ _TTFT_BOUNDS = (0.001, 0.005, 0.01, 0.02, 0.04, 0.06, 0.08, 0.1, 0.25, 0.5, 0.75
 _ITL_BOUNDS = (0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.5)
 _E2E_BOUNDS = (0.3, 0.5, 0.8, 1.0, 1.5, 2.0, 2.5, 5.0, 10.0, 15.0, 20.0, 30.0, 40.0,
                50.0, 60.0, 120.0, 240.0, 480.0)
+# Step wall time, host-observed. Both kinds end on a readback (the sampled ids), so this
+# is the whole step, not a launch time. The bounds straddle what this engine measured
+# offline -- a 46 ms decode step and a 214.7 ms prefill chunk -- finely enough that a
+# regression moves a bucket, which is what a scrape can see and a CUPTI trace cannot.
+_STEP_BOUNDS = (0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.1, 0.15, 0.2, 0.25,
+                0.3, 0.4, 0.5, 0.75, 1.0, 2.0)
 
 
 class Server:
@@ -404,6 +410,8 @@ class Server:
         self._arrived = {}                         # request id -> clock() at admission
         self._token_at = {}                        # row -> clock() of its last delivered token
         self.ttft = _Histogram(_TTFT_BOUNDS)
+        self.step_seconds = {"prefill": _Histogram(_STEP_BOUNDS), "decode": _Histogram(_STEP_BOUNDS)}
+        self._step_began = None                    # clock() at the top of the step being timed
         self.itl = _Histogram(_ITL_BOUNDS)
         self.e2e = _Histogram(_E2E_BOUNDS)
         self._streams = {}                         # request id -> queue of ("tokens", ids) | ("end", finish) | ("error", text)
@@ -961,16 +969,62 @@ class Server:
             if written is not None and read is not None:
                 rows += [("counter", "st:tier_bytes_written_total", "bytes parked to the tier", written),
                          ("counter", "st:tier_bytes_read_total", "bytes resumed from the tier", read)]
+        # --- what no vLLM counter can answer, because no vLLM has these parts ---
+        labelled = []                                   # (name, type, help, [(label text, value)])
+        shapes = getattr(engine, "decode_shape_counts", None)
+        if shapes:
+            # The scheduler's real batch: how many sequences a decode step actually carried.
+            by_seqs = {}
+            for (seqs, _), count in shapes.items():
+                by_seqs[seqs] = by_seqs.get(seqs, 0) + count
+            labelled.append(("st:decode_steps_by_sequences_total", "counter",
+                             "decode steps that carried this many sequences: the batch the scheduler filled",
+                             [(f'sequences="{n}"', v) for n, v in sorted(by_seqs.items())]))
+            # The captured graph each step ran. A bucket that never appears is a graph captured
+            # at every boot for a request that does not arrive (STK_context_ceiling prices it).
+            by_bucket = {}
+            for (_, capacity), count in shapes.items():
+                by_bucket[capacity] = by_bucket.get(capacity, 0) + count
+            labelled.append(("st:decode_capacity_bucket_total", "counter",
+                             "decode steps by the context-capacity bucket whose graph served them",
+                             [(f'capacity="{c}"', v) for c, v in sorted(by_bucket.items())]))
+        accepted = getattr(engine, "accepted_per_step", None)
+        if accepted:
+            # Acceptance as a shape, not a mean: a run that is bimodal at 0 and k wants a
+            # different k than one that tails off, and the totals above cannot tell them apart.
+            labelled.append(("st:spec_accepted_per_step_total", "counter",
+                             "decode segments that committed this many drafted tokens",
+                             [(f'accepted="{i}"', v) for i, v in enumerate(accepted) if v or i <= 1]))
         out = []
         for kind, name, help_text, value in rows:
             out.append(f"# HELP {name} {help_text}\n# TYPE {name} {kind}\n")
             out.append(f'{name}{{engine="st"}} {max(0, value)}\n')
+        for name, kind, help_text, series in labelled:
+            out.append(f"# HELP {name} {help_text}\n# TYPE {name} {kind}\n")
+            out.extend(f'{name}{{engine="st",{label}}} {max(0, value)}\n' for label, value in series)
+        info = getattr(engine, "lane_info", None)
+        if info:
+            # Armed is not served (45차 §17): this says which lanes and kernel cells this
+            # process bound, so a scrape settles it instead of a boot log nobody kept.
+            labels = ",".join(f'{k}="{str(v)[:64]}"' for k, v in sorted(info.items()))
+            out.append("# HELP st:lane_info the lanes and kernel cells this process actually bound\n"
+                       "# TYPE st:lane_info gauge\n")
+            out.append(f'st:lane_info{{engine="st",{labels}}} 1\n')
         for name, help_text, histogram in (
                 ("vllm:time_to_first_token_seconds", "admission to first token", self.ttft),
                 ("vllm:time_per_output_token_seconds", "interval between consecutive tokens", self.itl),
                 ("vllm:e2e_request_latency_seconds", "admission to the answer", self.e2e)):
             out.append(f"# HELP {name} {help_text}\n# TYPE {name} histogram\n")
             out.extend(f"{series} {value}\n" for series, value in histogram.rows(name))
+        # One step, host-observed end to end: both kinds finish on a readback of the sampled
+        # ids, so this is the step and not its launch. The floor of the decode series is the
+        # host cost I1 exists to bound, without a trace.
+        out.append("# HELP st:step_seconds one model step, host-observed end to end\n"
+                   "# TYPE st:step_seconds histogram\n")
+        for kind, histogram in self.step_seconds.items():
+            for series, value in histogram.rows("st:step_seconds"):
+                head, _, tail = series.partition('{engine="st"')
+                out.append(f'{head}{{engine="st",kind="{kind}"{tail} {value}\n')
         return "".join(out)
 
     def once(self) -> bool:
@@ -989,13 +1043,16 @@ class Server:
                 self._cancel(request, reason)
             self._settle()
             self._admit()
+            began = self.clock()
             step = self.runner.step()
+            now = self.clock()
             if step is not None:                                    # D9: one kind or the other
-                if step.kind == "prefill":        # base/scheduler.PREFILL; a step is prefill or decode
+                kind = "prefill" if step.kind == "prefill" else "decode"   # base/scheduler.PREFILL
+                if kind == "prefill":
                     self.steps_prefill += 1
                 else:
                     self.steps_decode += 1
-            now = self.clock()
+                self.step_seconds[kind].observe(now - began)
             # Every live row's new tokens, whether or not it streams: the first one is this
             # request's time to first token, each later one an inter-token interval. A step
             # that lands several (the drafter's accepted run) shares its elapsed time across

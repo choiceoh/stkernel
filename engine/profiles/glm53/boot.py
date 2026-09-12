@@ -500,6 +500,11 @@ def fleet(a) -> int:
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir,
                                                context_ceiling=cfg["context_ceiling"] or None)
+        # "무장 != 서빙": which lanes and kernel cells this process actually bound, readable at
+        # scrape time instead of inferred from a boot log nobody kept (45차 §17 lesson).
+        engine.lane_info = {"lanes": lanes.name, "moe_static": cfg["moe_static"],
+                            "mla_prefill": cfg["mla_prefill"], "spec_k": str(engine.drafter.k),
+                            "context_ceiling": str(engine.max_context)}
         # a stale tier under one rank diverges the ranks (45th 21): find it in seconds, not after the capture
         Server._agree_on_parked(comm, sorted(runner.parked_keys()))
         with rec.phase("capture decode"):

@@ -21,23 +21,34 @@ def _series(text, name):
 
 
 def _exposition_is_wellformed(case, text):
-    """Every series carries HELP and TYPE, and every bucket set is monotone."""
+    """Every series carries HELP and TYPE, and every bucket set is cumulative and closed."""
     typed = dict(re.findall(r"^# TYPE (\S+) (\S+)$", text, re.M))
     helped = {m.group(1) for m in re.finditer(r"^# HELP (\S+) .+$", text, re.M)}
     case.assertEqual(set(typed), helped, "every TYPE needs its HELP")
+    buckets, counts = {}, {}
     for line in text.splitlines():
         if line.startswith("#") or not line.strip():
             continue
-        name = line.split("{")[0].split(" ")[0]
+        series, _, value = line.rpartition(" ")
+        name, _, labels = series.partition("{")
+        labels = dict(re.findall(r'(\w+)="([^"]*)"', labels))
         base = re.sub(r"_(bucket|sum|count)$", "", name)
         case.assertTrue(name in typed or base in typed, f"{name} has no TYPE")
-    for histogram in set(n for n, t in typed.items() if t == "histogram"):
-        pairs = re.findall(re.escape(histogram) + r'_bucket\{engine="st",le="([^"]+)"\} (\d+)', text)
-        case.assertTrue(pairs, histogram)
-        counts = [int(v) for _, v in pairs]
-        case.assertEqual(counts, sorted(counts), f"{histogram} buckets must be cumulative")
-        case.assertEqual(counts[-1], int(_series(text, histogram + "_count")), histogram)
-        case.assertEqual(pairs[-1][0], "+Inf")
+        case.assertEqual(labels.get("engine"), "st", line)
+        if typed.get(base) != "histogram":
+            continue
+        key = (base, tuple(sorted((k, v) for k, v in labels.items() if k != "le")))
+        if name.endswith("_bucket"):
+            buckets.setdefault(key, []).append((labels["le"], int(value)))
+        elif name.endswith("_count"):
+            counts[key] = int(value)
+    case.assertTrue(buckets, "no histogram buckets were emitted")
+    for key, pairs in buckets.items():
+        values = [v for _, v in pairs]
+        case.assertEqual(values, sorted(values), f"{key} buckets must be cumulative")
+        case.assertEqual(pairs[-1][0], "+Inf", f"{key} must close at +Inf")
+        case.assertIn(key, counts, f"{key} has no _count")
+        case.assertEqual(values[-1], counts[key], f"{key}: +Inf must equal the count")
 
 
 class MetricsTests(unittest.TestCase):
@@ -141,6 +152,77 @@ class MetricsTests(unittest.TestCase):
     def test_the_exposition_is_wellformed(self):
         for server in (self._served(), self._served(tiered=True)):
             _exposition_is_wellformed(self, server.metrics())
+
+
+class KernelAndServingTests(unittest.TestCase):
+    """The series no vLLM counter answers, because no vLLM has these parts. Each one exists
+    to settle a decision this engine otherwise has to re-measure with a probe."""
+
+    def test_decode_shape_counters_name_the_graph_that_ran(self):
+        import test_engine_serve as T
+        server = T.server()
+        server.engine.decode_shape_counts = {(1, 4096): 7, (2, 4096): 3, (2, 8192): 2}
+        text = server.metrics()
+        self.assertEqual(_series(text, 'st:decode_steps_by_sequences_total'), 12.0)
+        for labels, expected in (('sequences="1"', 7), ('sequences="2"', 5)):
+            self.assertIn(f'st:decode_steps_by_sequences_total{{engine="st",{labels}}} {expected}', text)
+        # the capacity bucket is the only production evidence for how far the ladder must reach
+        self.assertIn('st:decode_capacity_bucket_total{engine="st",capacity="4096"} 10', text)
+        self.assertIn('st:decode_capacity_bucket_total{engine="st",capacity="8192"} 2', text)
+        self.assertEqual(_series(text, "st:decode_capacity_bucket_total"), 12.0)
+
+    def test_the_engine_counts_the_shape_it_replayed(self):
+        """The counter comes from the shape the adapter already computed: no extra work."""
+        source = (ROOT / "engine/profiles/glm53/adapter.py").read_text()
+        self.assertIn("key = (shape[0], shape[2])", source)
+        self.assertIn("self.decode_shape_counts[key] = self.decode_shape_counts.get(key, 0) + 1", source)
+        self.assertIn("self.accepted_per_step[committed] += 1", source)
+
+    def test_acceptance_is_exposed_as_a_distribution(self):
+        import test_engine_serve as T
+        server = T.server()
+        server.engine.accepted_per_step = [4, 2, 1, 0, 0, 5]
+        text = server.metrics()
+        self.assertIn('st:spec_accepted_per_step_total{engine="st",accepted="0"} 4', text)
+        self.assertIn('st:spec_accepted_per_step_total{engine="st",accepted="5"} 5', text)
+        self.assertNotIn('accepted="3"', text)                  # empty middles are not emitted
+        self.assertEqual(_series(text, "st:spec_accepted_per_step_total"), 12.0)
+
+    def test_step_seconds_are_split_by_kind_and_counted_once_per_step(self):
+        """One observation per step, under the kind that step was. The value is host wall
+        time, so the test pins the count and the split, not a duration the fixture invents."""
+        import test_engine_serve as T
+        server = T.server()
+        ticks = [0.0]
+        server.clock = lambda: ticks.__setitem__(0, ticks[0] + 0.01) or ticks[0]
+        server.submit([1, 2, 3], max_new=4, temperature=0.0)
+        for _ in range(60):
+            if not server.once() and not server._waiting:
+                break
+        text = server.metrics()
+        prefill = _series(text, 'st:step_seconds_count{engine="st",kind="prefill"}')
+        decode = _series(text, 'st:step_seconds_count{engine="st",kind="decode"}')
+        self.assertEqual(prefill, _series(text, "st:steps_prefill_total"))
+        self.assertEqual(decode, _series(text, "st:steps_decode_total"))
+        self.assertEqual(prefill + decode, _series(text, "vllm:iteration_tokens_total_count"))
+        self.assertGreater(prefill, 0)
+        self.assertGreater(decode, 0)
+        for kind in ("prefill", "decode"):
+            self.assertGreater(_series(text, f'st:step_seconds_sum{{engine="st",kind="{kind}"}}'), 0)
+            self.assertEqual(_series(text, f'st:step_seconds_bucket{{engine="st",kind="{kind}",le="+Inf"}}'),
+                             _series(text, f'st:step_seconds_count{{engine="st",kind="{kind}"}}'))
+
+    def test_lane_info_says_what_is_actually_bound(self):
+        import test_engine_serve as T
+        server = T.server()
+        self.assertIsNone(_series(server.metrics(), "st:lane_info"))
+        server.engine.lane_info = {"lanes": "served", "moe_static": "t,r,sf6", "spec_k": "5"}
+        text = server.metrics()
+        self.assertIn('st:lane_info{engine="st",lanes="served",moe_static="t,r,sf6",spec_k="5"} 1', text)
+
+    def test_the_fleet_boot_publishes_lane_info(self):
+        source = (ROOT / "engine/profiles/glm53/boot.py").read_text()
+        self.assertIn('engine.lane_info = {"lanes": lanes.name, "moe_static": cfg["moe_static"]', source)
 
 
 class HistogramTests(unittest.TestCase):
