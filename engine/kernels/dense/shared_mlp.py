@@ -9,7 +9,7 @@ import math
 
 import torch
 
-from . import DenseLinear, extension
+from engine.kernels.dense import DenseLinear, extension
 
 
 class SharedMLP:

@@ -42,6 +42,7 @@ Raw logs retain admission, execution and lease-release records.
 | `cpu-8f67f39a.log` | 76 focused tests: 32 pass and 44 GPU skips. The preceding wrong module invocation is retained separately. |
 | `cpu-07f98a06.log` | 68 focused tests: 33 pass and 35 GPU skips. |
 | `decode7-07f98a06-plan-failure.log` | Synthetic router selection and graph tests pass. The W4 test stops at an incorrect dispatch assumption: M=7/N=6144 retains two K slices and cannot use the three-slice CTA. `c80c59cb` adds the matching two-slice implementation. |
+| `cpu-suite-c80c59cb.log` | 1046 engine tests, 201 GPU skips; one package-boundary check rejects the new bare relative symbol import. Replaced with the explicit native package import. |
 
 No component result establishes 22 step/s, answer quality, speculative
 acceptance or a same-build consumer speedup.
