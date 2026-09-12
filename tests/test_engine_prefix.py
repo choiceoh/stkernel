@@ -286,6 +286,44 @@ class PrefixCacheTests(unittest.TestCase):
         self.assertEqual(r.state.computed[1], 8)              # the answer's first block is reused
         self.assertEqual(cache.hits, 1)
 
+    def test_a_prompt_shorter_than_one_block_still_caches_what_it_generates(self):
+        """Most first turns are shorter than a block (768 tokens in production). Its own chain is empty -- there is no
+        whole block in it -- but its ANSWER crosses boundaries, and those are the ones the next turn wants."""
+        class Generating(Model):
+            def __init__(self, media=False):
+                super().__init__(); self.ids, self.left = {}, {}
+                if media:
+                    self.media_marks = lambda seq: []       # a model that tells its pictures rebuilds salts from itself
+            def submit_ids(self, seq, ids, left):
+                self.ids[seq], self.left[seq] = list(ids), left
+            def history(self, seq):
+                return self.ids[seq]
+            def decode(self, seqs, blocks, slots):
+                out = []
+                for seq in seqs:
+                    self.ids[seq].append(200 + self.ctx[seq]); self.ctx[seq] += 1; self.left[seq] -= 1
+                    out.append(self.left[seq] == 0)
+                return out
+
+        def answer(prompt_len, salts=(), media=False):
+            m = Generating(media)
+            cache = PrefixCache(BLOCK, CHUNK, 8)
+            r = Runner(m, CONTRACT, BlockPool(16, BLOCK, 4, 16), SlotPool(5), Ring(16, STEP_RECORD.size), prefix=cache)
+            m.submit_ids(0, list(range(prompt_len)), 12)
+            r.submit(0, prompt_len, now=0, ids=list(range(prompt_len)), salts=salts,
+                     chain=cache.chain(list(range(prompt_len)), salts))
+            run_to_end(r, 0)
+            return cache
+
+        self.assertEqual(sorted(e.tokens for e in answer(3).entries.values()), [4, 8, 12])
+        self.assertEqual(sorted(e.tokens for e in answer(1).entries.values()), [4, 8, 12])
+        # and the tenant follows it there: the model knows its pictures, never whose request this is
+        red, blue = answer(3, [tenant_salt("red")]), answer(3, [tenant_salt("blue")])
+        self.assertEqual(len(red.entries), 3)
+        self.assertFalse(set(red.entries) & set(blue.entries), "one tenant's answer is not another's")
+        self.assertEqual(set(answer(3, [tenant_salt("red")], media=True).entries), set(red.entries),
+                         "a model that rebuilds its own media salts must not drop the tenant's")
+
     def test_boundaries_a_request_adopted_outlive_the_ones_nobody_asked_for(self):
         c = PrefixCache(BLOCK, CHUNK, 2)
         pool = BlockPool(16, BLOCK, 4, 16); c.bind(pool)

@@ -45,6 +45,15 @@ from engine.base.kv import CACHED, FADED, PINNED
 NO_SNAPSHOT = -1
 
 
+TENANT_TAG = b"tenant:"
+
+
+def is_tenant_salt(salt) -> bool:
+    """Whether a (position, bytes) salt is a tenant's, not a picture's. The runner rebuilds a row's media salts from
+    the model every time it extends a chain; the tenant's is not the model's to remember, so it is carried across."""
+    return salt[0] == 0 and bytes(salt[1]).startswith(TENANT_TAG)
+
+
 def tenant_salt(tenant) -> "tuple[int, bytes]":
     """The salt entry that separates one tenant's boundaries from every other tenant's.
 
@@ -52,7 +61,7 @@ def tenant_salt(tenant) -> "tuple[int, bytes]":
     the same place vLLM puts `cache_salt` (`kv_cache_utils.py`: extra keys on the first block only).
     The tag keeps it from ever colliding with a media digest standing at position 0."""
     raw = tenant.encode() if isinstance(tenant, str) else bytes(tenant)
-    return (0, b"tenant:" + raw)
+    return (0, TENANT_TAG + raw)
 
 
 @dataclass
