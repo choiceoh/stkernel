@@ -105,3 +105,60 @@ def partial_tool_calls(content: str):
                          + json.dumps(sofar, ensure_ascii=False)[:-1])
         calls.append((name, text, False))
         return calls
+
+
+def tool_call_token(tok) -> "int | None":
+    """The id of `<tool_call>`, where `tool_grammar` arms -- or None if it is not one token.
+
+    The template writes it whole and this vocabulary has it whole (154843), which is what lets a
+    grammar begin exactly there. A checkpoint that spelled it in pieces gets no tool grammar
+    rather than one that arms in the middle of the marker.
+    """
+    if tok is None:
+        return None
+    try:
+        try:
+            out = tok.encode(_OPEN, add_special_tokens=False)
+        except TypeError:                                    # a tokenizer without the switch
+            out = tok.encode(_OPEN)
+        ids = list(getattr(out, "ids", out))                 # the Rust tokenizer's Encoding, or a plain list
+        return ids[0] if len(ids) == 1 and tok.decode(ids) == _OPEN else None
+    except Exception:                                        # noqa: BLE001 -- no tokenizer, no grammar
+        return None
+
+
+def tool_grammar(tools) -> "str | None":
+    """A grammar for this request's tool calls, to arm at `<tool_call>` (45차 §45).
+
+    The template teaches the model a shape, and nothing held it to it: a call could name a tool
+    that was never declared, or an argument the tool does not take, and the door would hand the
+    caller something it cannot make. llama.cpp binds the declared schema from the `<tool_call>`
+    trigger onward (`grammar_lazy`, `grammar_triggers`); every marker here is a single token, so
+    that trigger is exactly our `grammar_after`.
+
+    What it binds is the name, the argument keys, and the shape. **Not the values** -- a value is
+    written as raw text and may be anything, including `<` and code, so its rule admits every
+    character. That ambiguity with the closing tag is the point: inside a value the mask forbids
+    nothing, and the model closes when it means to.
+
+    The grammar begins after the trigger token, so its root is what follows `<tool_call>`. Prose
+    after a call is not in it -- and costs nothing, because `_Choice.flush` already drops
+    everything from the first `<tool_call>` on.
+    """
+    calls, rules = [], []
+    for i, tool in enumerate(tools or []):
+        fn = tool.get("function") if isinstance(tool, dict) else None
+        name = (fn or {}).get("name")
+        if not isinstance(name, str) or not name:
+            return None                          # a tool we cannot name, so nothing to hold anyone to
+        keys = sorted(k for k in ((fn.get("parameters") or {}).get("properties") or {}) if isinstance(k, str))
+        rules.append(f'call{i} ::= {json.dumps(name)} pairs{i} "</tool_call>"')
+        rules.append(f'pairs{i} ::= ("<arg_key>" key{i} "</arg_key>" "<arg_value>" value "</arg_value>")*'
+                     if keys else f'pairs{i} ::= ""')
+        if keys:
+            rules.append(f"key{i} ::= " + " | ".join(json.dumps(k) for k in keys))
+        calls.append(f"call{i}")
+    if not calls:
+        return None
+    head = ['root ::= call ("<tool_call>" call)*', "call ::= " + " | ".join(calls), "value ::= [^\\u0000]*"]
+    return "\n".join(head + rules) + "\n"

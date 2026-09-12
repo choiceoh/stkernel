@@ -971,6 +971,7 @@ class Server:
                  host: str = "0.0.0.0", max_pending: int = 64, chat=None, model_name: str = "st",
                  reasoning_end: "int | None" = None, request_timeout_s: float = 3600.0, tool_parser=None,
                  generation: "dict | None" = None, max_choices: int = 4, vision=None, tool_stream=None,
+                 tool_grammar=None, tool_call_start: "int | None" = None,
                  lease: "dict | None" = None):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
@@ -989,6 +990,8 @@ class Server:
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
         self.tool_parser = tool_parser             # text -> [(name, arguments json)] or None (the profile knows the model's format)
         self.tool_stream = tool_stream             # the same format, read while it is still arriving (streamed deltas)
+        self.tool_grammar = tool_grammar           # tools -> an EBNF grammar for calls of them, or None
+        self.tool_call_start = tool_call_start     # the token that opens a call: where that grammar arms
         self.vision = vision                       # the profile's door half for pictures (prepare / expand / limits), or None: text only
         self.generation = dict(generation or {})   # the checkpoint's generation_config defaults (temperature ...) a request may omit
         self.max_choices = int(max_choices)        # n / best_of ceiling: one row each, never more than the decode width
@@ -2306,6 +2309,16 @@ class Server:
                 grammar = response_format_grammar(req)
                 if grammar is not None:
                     options["grammar"] = grammar
+                elif tools and server.tool_grammar is not None and server.tool_call_start is not None:
+                    # Nothing held a tool call to the tools that were declared: a call could name a
+                    # tool nobody offered, or an argument it does not take, and the caller would be
+                    # handed something it cannot make. The grammar arms at `<tool_call>` and not
+                    # before, so the answer's prose is free -- llama.cpp's lazy trigger, and our
+                    # `grammar_after` is exactly that (45차 §45).
+                    ebnf = server.tool_grammar(tools)
+                    if ebnf is not None:
+                        options["grammar"] = {"type": "ebnf", "grammar": ebnf}
+                        options["grammar_after"] = server.tool_call_start
                 parts = media_parts(messages)                            # (kind, url) in the order the template will emit them
                 items = []
                 if parts:
@@ -2339,7 +2352,7 @@ class Server:
                 # token), so everything generated is content -- otherwise a whole answer lands in reasoning_content
                 # (45차 §22: the gateway's -low route asks thinkingMode off and reads content)
                 reasoning = server.reasoning_end is not None and not (ids and ids[-1] == server.reasoning_end)
-                if reasoning and "grammar" in options:
+                if reasoning and "grammar" in options and "grammar_after" not in options:
                     # The answer starts inside a think block, and a grammar that started here would forbid the
                     # reasoning -- including the block's own end token, so the block would never close and the
                     # whole answer would come back as reasoning_content with content empty. It waits instead.

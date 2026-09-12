@@ -2059,6 +2059,44 @@ class OpenAIDialectTests(unittest.TestCase):
                                            "function": {"name": "f", "arguments": '{"a": 1}'}}]}])
         self.assertEqual(c.finish_reason(), "tool_calls")
 
+    def test_a_tool_call_is_held_to_the_tools_that_were_declared(self):
+        """The grammar arms at `<tool_call>` and not before, so the prose is free -- llama.cpp's
+        lazy trigger, and `grammar_after` is exactly that (45차 §45)."""
+        from engine.profiles.glm53.tools import tool_grammar
+        s = chat_server()
+        s.tool_grammar, s.tool_call_start = tool_grammar, 154843
+        tools = [{"type": "function", "function": {"name": "f", "parameters": {
+            "type": "object", "properties": {"a": {}}}}}]
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               {"messages": [{"role": "user", "content": "ab"}],
+                                                "max_tokens": 1, "tools": tools}))
+        got = s.engine.options[0]
+        self.assertEqual(got["grammar"]["type"], "ebnf")
+        self.assertIn('call0 ::= "f"', got["grammar"]["grammar"])
+        self.assertEqual(got["grammar_after"], 154843)
+
+    def test_a_response_format_wins_over_the_tool_grammar(self):
+        """One grammar a row. What the caller asked for in `response_format` is what they get."""
+        from engine.profiles.glm53.tools import tool_grammar
+        s = chat_server()
+        s.tool_grammar, s.tool_call_start = tool_grammar, 154843
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
+                                                "tools": [{"type": "function", "function": {"name": "f"}}],
+                                                "response_format": {"type": "json_object"}}))
+        self.assertEqual(s.engine.options[0]["grammar"], {"type": "json_object"})
+
+    def test_without_a_trigger_token_no_tool_grammar_is_armed(self):
+        """D3, one floor down: a marker this vocabulary spells in pieces gets no grammar at all
+        rather than one that arms in the middle of it."""
+        from engine.profiles.glm53.tools import tool_grammar
+        s = chat_server()
+        s.tool_grammar, s.tool_call_start = tool_grammar, None
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
+                                                "tools": [{"type": "function", "function": {"name": "f"}}]}))
+        self.assertNotIn("grammar", s.engine.options[0])
+
     def test_legacy_completions_tokenize_and_detokenize(self):
         s = chat_server()
         out = self._serve(s, lambda base: self._post(base, "/v1/completions", {"prompt": "xy", "max_tokens": 2, "echo": True, "n": 1}))

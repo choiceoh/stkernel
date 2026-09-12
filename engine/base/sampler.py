@@ -180,8 +180,10 @@ def validate_options(options: dict) -> None:
     if lp is not None and (type(lp) is not int or not 0 <= lp <= 20):
         raise ValueError("logprobs must be an integer between 0 and 20")
     g = options.get("grammar")
-    if g is not None and (not isinstance(g, dict) or g.get("type") not in ("json_object", "json_schema")):
-        raise ValueError("grammar must be a json_object or json_schema spec")
+    if g is not None and (not isinstance(g, dict) or g.get("type") not in ("json_object", "json_schema", "ebnf")):
+        raise ValueError("grammar must be a json_object, json_schema or ebnf spec")
+    if g is not None and g.get("type") == "ebnf" and not (isinstance(g.get("grammar"), str) and g["grammar"]):
+        raise ValueError("an ebnf grammar spec needs its grammar text")
     after = options.get("grammar_after")
     if after is not None and (type(after) is not int or after < 0):
         raise ValueError("grammar_after must be a token id")

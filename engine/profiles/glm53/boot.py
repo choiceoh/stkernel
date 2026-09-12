@@ -456,11 +456,12 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
                                                tier_dir=a.tier_dir if a.park else None,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
         tok = tokenizer(a.ckpt_meta)
-        from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls
+        from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls, tool_call_token, tool_grammar
         engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device, engine.eos)
         server = Server(engine, runner, comm, port=port, tokenizer=tok, chat=chat_renderer(a.ckpt_meta) if comm.rank == 0 else None,
                         model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
-                        tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, generation=generation_defaults(a.ckpt_meta),
+                        tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_grammar=tool_grammar,
+                        tool_call_start=tool_call_token(tok), generation=generation_defaults(a.ckpt_meta),
                         vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 and engine.vision is not None else None)
         httpd = None
         if comm.rank == 0:
@@ -608,12 +609,13 @@ def fleet(a) -> int:
         with rec.phase("door"):
             tok = tokenizer(a.ckpt_meta)
             renderer = chat_renderer(a.ckpt_meta) if comm.rank == 0 else None
-        from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls
+        from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls, tool_call_token, tool_grammar
         if comm.rank == 0:
             print("  warmup: " + ", ".join(f"{k} {v}s" for k, v in paid.items()) + (f"; structured output: {'on' if engine.grammars else 'off (no xgrammar)'}"))
         Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=renderer,
                model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
-               tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, generation=generation_defaults(a.ckpt_meta),
+               tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_grammar=tool_grammar,
+                        tool_call_start=tool_call_token(tok), generation=generation_defaults(a.ckpt_meta),
                vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 else None,
                lease=fleet_lease_of()).loop()
     finally:

@@ -79,6 +79,10 @@ class Grammars:
                 return self.compiler.compile_builtin_json_grammar()
             if spec["type"] == "json_schema":
                 return self.compiler.compile_json_schema(spec["schema"])
+            if spec["type"] == "ebnf":
+                # A grammar the profile wrote, for a wire format that is not JSON -- the tool-call
+                # shape the chat template teaches (45차 §45). The door builds it; this compiles it.
+                return self.compiler.compile_grammar(self.xgr.Grammar.from_ebnf(spec["grammar"]))
         except (RuntimeError, TypeError, ValueError, UnicodeError) as exc:
             raise ValueError(f"the grammar cannot be compiled: {exc}") from exc
         raise ValueError(f"unknown grammar spec {spec['type']!r}")
