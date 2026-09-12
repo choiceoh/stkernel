@@ -450,5 +450,62 @@ class RunnerTests(unittest.TestCase):
         self.assert_empty(r)
 
 
+
+class ParkedRecordMemory(unittest.TestCase):
+    """A record is the conversation's whole token list; holding one per parked conversation is
+    a gigabyte at this fleet's 280 (45차 §62)."""
+
+    def runner(self):
+        from engine.base.runner import Runner
+        r = Runner.__new__(Runner)
+        from collections import OrderedDict
+        r.parked, r.digests = OrderedDict(), {}
+        records = {k: {"tokens": list(range(100, 100 + 50 + k)), "media": []} for k in range(40)}
+        r.reads = []
+
+        class Tier:
+            def record(self, key):
+                r.reads.append(key)
+                return records.get(key)
+        r.tiered = Tier()
+        r.is_parked = lambda key: key in records
+        return r, records
+
+    def test_only_a_few_whole_records_stay_in_memory(self):
+        r, records = self.runner()
+        for key in records:
+            r.parked_record(key)
+        self.assertEqual(len(r.parked), r.PARKED_RECORDS_KEPT)
+        self.assertEqual(sorted(r.parked)[-1], 39, "the most recent are the ones kept")
+
+    def test_a_digest_is_kept_for_everybody_and_is_read_once(self):
+        r, records = self.runner()
+        for key in records:
+            r.parked_digest(key)
+        self.assertEqual(len(r.digests), len(records))
+        before = len(r.reads)
+        for key in records:
+            d = r.parked_digest(key)
+            self.assertEqual(d["tokens"], len(records[key]["tokens"]))
+            self.assertEqual((d["last"], d["prev"]), tuple(records[key]["tokens"][-1:] + records[key]["tokens"][-2:-1]))
+        self.assertEqual(len(r.reads), before, "a digest is built once, not re-read")
+
+    def test_forgetting_a_conversation_drops_its_digest_too(self):
+        # A digest that outlived its conversation would make the scan consider a key the tier
+        # no longer has, and the record read behind it would come back None every request.
+        r, records = self.runner()
+        forgotten = []
+        r.tiered.forget = forgotten.append
+        r.parked_digest(7)
+        r.parked_record(7)
+        self.assertIn(7, r.digests)
+        self.assertIn(7, r.parked)
+
+        r.forget_parked(7)
+
+        self.assertEqual(forgotten, [7])
+        self.assertNotIn(7, r.digests)
+        self.assertNotIn(7, r.parked)
+
 if __name__ == "__main__":
     unittest.main()
