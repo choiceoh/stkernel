@@ -94,9 +94,13 @@ class Calibration:
                    for _key, _start, width, hessian in Calibration._needs(missing))
 
     def arm(self) -> None:
+        if self.filed is not None:
+            raise ValueError('filed calibration is complete; use a new observer for another collection')
         self.armed.fill_(1.0)
 
     def observe(self, name: str, flat: torch.Tensor, rows_ok, small_rows: bool) -> None:
+        if self.filed is not None:
+            return  # eager prefill needs no more statistics after the blobs are durable
         if flat.shape[0] <= self.max_decode_rows and not small_rows:
             return
         if self.device.type == "cuda" and flat.shape[0] <= self.max_decode_rows:
@@ -181,6 +185,12 @@ class Calibration:
             finally:
                 temporary.unlink(missing_ok=True)
             written.append(path)
+        # These blobs are filed once per boot. Captured small-row observers
+        # retain the device scalar's address, so disarming also makes old
+        # decode graphs stop accumulating without recapture or a host read.
+        # Do this only after every write succeeded: a failed save must remain
+        # collectable and retryable.
+        self.armed.zero_()
         self.filed = written
         return written
 

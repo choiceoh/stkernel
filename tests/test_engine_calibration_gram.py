@@ -82,8 +82,18 @@ class BufferedGramTests(unittest.TestCase):
                 torch.testing.assert_close(saved["amax"], expected_rows.float().abs().amax(0).cpu(), rtol=0, atol=0)
                 self.assertEqual(int(c.staging["x"][1]), 0)
                 before = c.H["x"].clone()
+                # Graphs captured before filing keep running during serving,
+                # but their observers must stop reading/writing statistics.
+                for n, graph in graphs.items():
+                    inputs[n].fill_(float('nan'))
+                    masks[n].fill_(True)
+                    graph.replay()
+                layer.observer(torch.full((71, width), float('nan'), device='cuda', dtype=dtype), None)
                 c.flush()
                 torch.testing.assert_close(c.H["x"], before, rtol=0, atol=0)
+                torch.testing.assert_close(c.amax['x'].cpu(), saved['amax'], rtol=0, atol=0)
+                self.assertEqual(c.progress(), saved['ntok'])
+                self.assertEqual(int(c.staging['x'][1]), 0)
 
     def test_small_unmasked_target_rows_are_still_excluded(self):
         class Layer:

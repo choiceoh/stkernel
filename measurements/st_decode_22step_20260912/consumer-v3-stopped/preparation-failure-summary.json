@@ -1,0 +1,66 @@
+{
+  "status": "interrupted during baseline preparation; candidate never ran",
+  "source": "019425f82097a9d0ef9a526014fe5dd782397c13",
+  "requests": [
+    {
+      "ctx": 2000,
+      "question": 0,
+      "concurrency": 1,
+      "phase": "prepare-c1",
+      "reasoning_budget": 800,
+      "completion_tokens": 2400,
+      "max_tokens": 2400,
+      "finish_reason": "length",
+      "decode_tok_s": 43.1810385446395,
+      "ttft_s": 22.429483604995767,
+      "decode_s": 55.5567925380019,
+      "request_sha256": "b85a0cb5f076e5ee95c4fb85533cf2e1ca834538c3da1cd44a003b5a0edd6a38",
+      "output_sha256": "3ece85a44398f303de74b8dd80b557aff1e40ec91e9f54bf480b1cc729fad9e7",
+      "first_channels_s": {
+        "reasoning_content": 22.429483604995767
+      },
+      "visible_chars": 0,
+      "reasoning_chars": 6770
+    },
+    {
+      "ctx": 2000,
+      "question": 1,
+      "concurrency": 1,
+      "phase": "prepare-c1",
+      "reasoning_budget": 800,
+      "completion_tokens": 2400,
+      "max_tokens": 2400,
+      "finish_reason": "length",
+      "decode_tok_s": 43.34644748397643,
+      "ttft_s": 6.359880351999891,
+      "decode_s": 55.34478923300048,
+      "request_sha256": "2d6333e9a5575e1289ae5f666465462c0dfd895978eae60be36f60c403c39701",
+      "output_sha256": "b31809c2febfca9403f40b6d087bab189b07f0c61ef78c5bbfedcd35b733af74",
+      "first_channels_s": {
+        "reasoning_content": 6.359880351999891
+      },
+      "visible_chars": 0,
+      "reasoning_chars": 6578
+    },
+    {
+      "ctx": 2000,
+      "question": 2,
+      "concurrency": 1,
+      "phase": "prepare-c1",
+      "reasoning_budget": 800,
+      "completion_tokens": 2400,
+      "max_tokens": 2400,
+      "finish_reason": "length",
+      "decode_tok_s": 43.02470789576241,
+      "ttft_s": 6.339344082996831,
+      "decode_s": 55.758658624996315,
+      "request_sha256": "6e63126a52818edee8de5d976a2183180bbc94ad886c9fb4d3ac24a36c744ff9",
+      "output_sha256": "6917e7be5e2563cadcfff74f038cce8eeb38980260933c815da8e899769a8392",
+      "first_channels_s": {
+        "reasoning_content": 6.339344082996831
+      },
+      "visible_chars": 0,
+      "reasoning_chars": 6236
+    }
+  ]
+}
