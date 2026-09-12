@@ -1,0 +1,46 @@
+{
+  "base": "http://127.0.0.1:8001",
+  "model": "glm-5.3-flash",
+  "started": 1789195175.2379646,
+  "cases": [
+    {
+      "name": "korean",
+      "id": "chatcmpl-0",
+      "model": "glm-5.3-flash",
+      "seconds": 5.792,
+      "content": "서울",
+      "reasoning": "",
+      "tools": [],
+      "usage": {
+        "prompt_tokens": 30,
+        "completion_tokens": 3,
+        "total_tokens": 33,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish": "stop"
+    },
+    {
+      "name": "stream-content",
+      "id": "chatcmpl-1",
+      "model": "glm-5.3-flash",
+      "seconds": 5.677,
+      "ttft": 5.554222820996074,
+      "content": "Paris",
+      "reasoning": "",
+      "usage": {
+        "prompt_tokens": 27,
+        "completion_tokens": 2,
+        "total_tokens": 29,
+        "completion_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      },
+      "finish": "stop",
+      "done": true
+    }
+  ],
+  "passed": true,
+  "finished": 1789195186.7071674
+}

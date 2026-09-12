@@ -1,0 +1,15 @@
+  box: GB10 (DGX Spark): SM121, unified 122 GiB (107 free)
+[W912 06:21:23.234230883 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[rank1]: Traceback (most recent call last):
+[rank1]:   File "/repo/engine/profiles/glm53/boot.py", line 672, in <module>
+[rank1]:     raise SystemExit(main())
+[rank1]:                      ^^^^^^
+[rank1]:   File "/repo/engine/profiles/glm53/boot.py", line 668, in main
+[rank1]:     return fleet(a)
+[rank1]:            ^^^^^^^^
+[rank1]:   File "/repo/engine/profiles/glm53/boot.py", line 578, in fleet
+[rank1]:     F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
+[rank1]:                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/repo/engine/profiles/glm53/boot.py", line 239, in build
+[rank1]:     raise MemoryError(f"TP arena admission failed: {failure or 'a peer has insufficient immediately free memory'}") from failure
+[rank1]: MemoryError: TP arena admission failed: a peer has insufficient immediately free memory
