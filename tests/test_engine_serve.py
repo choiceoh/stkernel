@@ -1152,6 +1152,79 @@ class RustStreamTests(unittest.TestCase):
         self.assertEqual(shown, "ok \ufffd")
 
 
+@unittest.skipUnless(importlib.util.find_spec("tokenizers") is not None, "requires the tokenizers library")
+class ProvisionalTextTests(unittest.TestCase):
+    """A step that ends mid-character still shows the characters it did finish.
+
+    Where a character is one byte this never happens and there is nothing to see. Where it is
+    three, holding the step back is most of what the client waits for (45차 §32).
+    """
+
+    def byte_level(self):
+        """A tokenizer whose decode is a plain byte concatenation, as GLM-5.3's is."""
+        from tokenizers import Tokenizer, decoders, models, pre_tokenizers
+        alphabet = pre_tokenizers.ByteLevel.alphabet()
+        tok = Tokenizer(models.BPE({c: i for i, c in enumerate(sorted(alphabet))}, [], unk_token=None))
+        tok.decoder = decoders.ByteLevel()
+        return tok, {b: sorted(alphabet).index(c) for b, c in
+                     zip(range(256), _byte_level_chars())}
+
+    def ids_for(self, text):
+        tok, of_byte = self.byte_level()
+        return tok, [of_byte[b] for b in text.encode()]
+
+    def test_a_step_that_ends_mid_character_shows_what_it_finished(self):
+        from engine.base.serve import _Stream
+        tok, ids = self.ids_for("가나다")                      # three bytes a syllable
+        stream = _Stream(tok)
+        stream.extend(ids[:4])                                 # "가" and one byte of "나"
+        self.assertEqual(stream.decoded(False), "가")          # not "" -- the syllable is whole
+        stream.extend(ids[4:])
+        self.assertEqual(stream.decoded(True), "가나다")
+
+    def test_nothing_shown_is_taken_back(self):
+        from engine.base.serve import _Stream
+        tok, ids = self.ids_for("가나다라마바사아자차카타파하 ok 끝")
+        for per_step in (1, 2, 4, 7):
+            with self.subTest(per_step=per_step):
+                stream, seen = _Stream(tok), ""
+                for i in range(0, len(ids), per_step):
+                    stream.extend(ids[i:i + per_step])
+                    out = stream.decoded(False)
+                    self.assertTrue(out.startswith(seen), "what was shown changed")
+                    seen = out
+                self.assertEqual(stream.decoded(True), tok.decode(ids))
+
+    def test_a_decoder_that_rewrites_its_settled_run_is_shown_nothing_early(self):
+        """Byte fallback turns a whole run into U+FFFD the moment one byte of it is missing,
+        so the settled part is not a prefix of the grown one. Then there is nothing safe to
+        show early, and the old behaviour -- wait -- is what happens."""
+        from engine.base.serve import _Stream
+        from tokenizers import Tokenizer, decoders, models
+        tok = Tokenizer(models.BPE({f"<0x{b:02X}>": b for b in range(256)}, [],
+                                   byte_fallback=True, unk_token=None))
+        tok.decoder = decoders.Sequence([decoders.ByteFallback(), decoders.Fuse()])
+        stream = _Stream(tok)
+        stream.extend(list("가".encode()) + list("나".encode())[:1])
+        self.assertEqual(stream.decoded(False), "")            # nothing, rather than something wrong
+        stream.extend(list("나".encode())[1:])
+        self.assertEqual(stream.decoded(True), "가나")
+
+
+def _byte_level_chars():
+    """GPT-2's byte-to-character map, which `pre_tokenizers.ByteLevel` decodes back."""
+    printable = (list(range(ord("!"), ord("~") + 1)) + list(range(ord("\u00a1"), ord("\u00ac") + 1))
+                 + list(range(ord("\u00ae"), ord("\u00ff") + 1)))
+    table, spare = {}, 0
+    for b in range(256):
+        if b in printable:
+            table[b] = chr(b)
+        else:
+            table[b] = chr(256 + spare)
+            spare += 1
+    return [table[b] for b in range(256)]
+
+
 class StopScanCostTests(unittest.TestCase):
     """A streamed step must not cost more because the answer is longer."""
 
