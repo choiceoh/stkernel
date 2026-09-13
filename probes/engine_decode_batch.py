@@ -11,16 +11,16 @@ from probes.engine_decode_fusions import _capture, _time
 from probes.engine_decode_scatter_check import rank_path
 
 
-def timing(report, name, rows, base, candidate, **extra):
+def timing(report, name, rows, base, candidate, functions, **extra):
     graphs = [base, candidate]
     # 128 MiB exceeds GB10 L2; graph the eviction to keep host overhead out.
     cold = torch.empty(128 << 20, dtype=torch.uint8, device='cuda')
     evicted = []
     try:
-        for graph in graphs:
-            def run():
+        for fn in functions:
+            def run(fn=fn):
                 cold.fill_(19)
-                graph.replay()
+                return fn()
             evicted.append(_capture(run)[0])
         for cache, pair in (('warm', graphs), ('evicted', evicted)):
             samples = [dict(arm=label, ms=_time(pair[i], iterations=32))
@@ -95,7 +95,7 @@ def indexer_check(report, ranks):
                                 raise RuntimeError(f'indexer output {i} relative error {error}')
             report('decode_batch_numerics', candidate='indexer_pair_boundary', rows=rows, layers=11,
                    relative_max=maximum, exact_query_and_weights=True, poisoned_replay=True, rank_file=str(path))
-            timing(report, 'indexer_pair_boundary', rows, *graphs, layers=11,
+            timing(report, 'indexer_pair_boundary', rows, *graphs, (base, candidate), layers=11,
                    resident_bytes=sum(o.weight.numel()*2 for o in owners))
         finally:
             for graph in graphs:
@@ -133,8 +133,9 @@ def wide_check(report, ranks):
                         outputs.append(y)
                     return outputs
                 graphs, outputs = [], []
+                base = lambda: [w4_gemm(x, pack) for pack in packs]
                 try:
-                    for fn in (lambda: [w4_gemm(x, pack) for pack in packs], candidate):
+                    for fn in (base, candidate):
                         graph, output = _capture(fn)
                         graphs.append(graph); outputs.append(output)
                     for magnitude in (0., .001, 1., 50., 1.):
@@ -149,7 +150,7 @@ def wide_check(report, ranks):
                     report('decode_batch_numerics', candidate='wide_input', key=key, tile=tile,
                            rows=rows, n=p.rows, k=p.cols, exact=True, poisoned_replay=True, rank_file=str(path))
                     if rows in (14, 21, 28):
-                        timing(report, 'wide_input', rows, *graphs, key=key, tile=tile, n=p.rows, k=p.cols,
+                        timing(report, 'wide_input', rows, *graphs, (base, candidate), key=key, tile=tile, n=p.rows, k=p.cols,
                                packs=len(packs), plan=ext.gemm2_plan(rows, p.rows, p.cols))
                 finally:
                     for graph in graphs:

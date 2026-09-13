@@ -35,7 +35,7 @@ def main():
     parser.add_argument("--moe-static", default="stock", help="served b12x static-lane spec (STK_moe_static): stock | t,r,sf6[,q0]")
     parser.add_argument("--mla-prefill", default="stock", help="served MLA prefill mode (STK_mla_prefill): stock | tile32 | pair | pair4")
     args = parser.parse_args()
-    if args.lanes in ('scatter_bundle', 'batch_fusions'):
+    if args.lanes in ('scatter_bundle', 'batch_fusions', 'batch_boundaries'):
         from probes.engine_decode_bundle import check as decode_bundle
         decode_bundle(args.ranks, bundle=args.lanes)
         return
