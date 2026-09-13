@@ -280,6 +280,19 @@ class DenseLinear:
             return None
         return self._project_packets
 
+    def slot_writer(self, rows):
+        """Only a single existing W4 product can write its final BF16 result."""
+        if not 1 <= rows <= 32 or self.rows != 4096 or len(self.packs) != 1 or self.observer is not None:
+            return None
+        return self._write_slot
+
+    def _write_slot(self, x, address):
+        if self.slot_writer(x.shape[0]) is None or x.ndim != 2 or x.shape[1] != self.cols:
+            raise ValueError("unsupported direct W4 producer")
+        p = self.packs[0]
+        extension().run_gemm_to_slot(x, p.data, p.scale, address, p.rows, p.rowscale.data_ptr(), self.workspace)
+        self.executed |= 1
+
     def _project_packets(self, received, local_rows):
         if self.packet_projector() is None or local_rows * 4 <= 32:
             raise ValueError("packet projection requires the unobserved FP8 prefill lane")

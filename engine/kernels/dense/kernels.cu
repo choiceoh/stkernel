@@ -499,6 +499,7 @@ struct MKGemm2Ctx {
   const __nv_bfloat16* x;  // [m, k]
   int64_t x_stride = 0;    // 0 means dense; split projections may retain a wider parent row
   __nv_bfloat16* out;      // [m, n_orig]
+  const int64_t* out_address = nullptr;  // replay-time reserved TX slot
   const uint8_t* wq4;      // tile-major W4 pack [n/128, k/128, 128, 64]
   const int8_t* ws4;
   float wgs;
@@ -601,9 +602,9 @@ __device__ __forceinline__ void mk2_lr_partial(const MKGemm2Ctx& c,
 // LR: the low-rank-correction instantiation (33차 lever 4). The plain one
 // carries none of its code, scratch or waits -- the production path must
 // not pay for a lever that is off.
-template <int RQ, bool LR, bool COMPACT = false>
+template <int RQ, bool LR, bool COMPACT = false, bool DIRECT = false>
 __global__ void __launch_bounds__(MK_THREADS, (MK_COMPACT_M8 && COMPACT) ? 3 : 2)
-mk_gemm2_kernel(const MKGemm2Ctx c) {
+mk_gemm2_kernel(MKGemm2Ctx c) {
   static_assert(RQ == 1 || RQ == 2 || RQ == 4, "rows per warp");
   constexpr int MT = (RQ == 4) ? 2 : 1;   // m-tiles present
   // C=1 verifies six tokens. Put W on the 16-row MMA operand and X on
@@ -917,6 +918,7 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
   for (int d = 0; d < DIST; ++d)
     if (kb0 + d < kbn) stage_raw(kb0 + d, (kb0 + d) % NB);
   asm volatile("griddepcontrol.wait;" ::: "memory");
+  if constexpr (DIRECT) c.out = reinterpret_cast<__nv_bfloat16*>(*c.out_address);
   load_x(kb0);
   quant_x(0);
   mk_cp_wait_upto(min(DIST - 1, kbn - kb0 - 1));  // raw(kb0) landed
@@ -1088,6 +1090,7 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
         c.out[(size_t)r * c.n_orig + col] = __float2bfloat16(o);
       }
     });
+    if constexpr (DIRECT) __threadfence_system();
     if (c.pair_act) pair_finish(nt);  // the tile's final store was just made
     if constexpr (LR) lr_done();
     MK2_TS(3);
@@ -1134,6 +1137,7 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
       if (col + 2 < c.n_orig) o[2] = __float2bfloat16(v4.z);
       if (col + 3 < c.n_orig) o[3] = __float2bfloat16(v4.w);
     }
+    if constexpr (DIRECT) __threadfence_system();
     if (c.pair_act) pair_finish(nt);  // the fold was this tile's final store
     if constexpr (LR) lr_done();
   }
@@ -1172,8 +1176,9 @@ __global__ void mk_input_pack_kernel(MKInputPackCtx c) {
   }
 }
 constexpr int GEMM_INPUT_SMEM=MK_SMEM_ALIGN+W4_RAW_NBUF2*W4_RAW_BYTES;
+template <bool DIRECT = false>
 __global__ void __launch_bounds__(MK_THREADS,3)
-mk_gemm_input_kernel(const MKGemm2Ctx c) {
+mk_gemm_input_kernel(MKGemm2Ctx c) {
   asm volatile("griddepcontrol.launch_dependents;");
   extern __shared__ uint8_t smem[];
   uint8_t* sraw=smem;
@@ -1245,6 +1250,7 @@ mk_gemm_input_kernel(const MKGemm2Ctx c) {
 #pragma unroll
   for(int d=0;d<DIST;++d)if(kb0+d<kbn)stage_raw(kb0+d,(kb0+d)%NB);
   asm volatile("griddepcontrol.wait;" ::: "memory");
+  if constexpr (DIRECT) c.out = reinterpret_cast<__nv_bfloat16*>(*c.out_address);
   mk_cp_wait_upto(min(DIST-1,kbn-kb0-1));__syncwarp();
   for(int kb=kb0;;++kb) {
     if(kb+DIST<kbn)stage_raw(kb+DIST,(kb+DIST)%NB);
@@ -1263,7 +1269,9 @@ mk_gemm_input_kernel(const MKGemm2Ctx c) {
   if(c.ksr==1) {
     store_tile([&](int r,int col,float v) {
       if(col<c.n_orig)c.out[(size_t)r*c.n_orig+col]=__float2bfloat16(v*(c.rgs?c.rgs[col]:1.f));
-    });return;
+    });
+    if constexpr (DIRECT) __threadfence_system();
+    return;
   }
   float* partial=(c.private_partial ? c.private_partial : g_mk2_partial)+(size_t)slice*c.m*c.n;
   store_tile([&](int r,int col,float v){partial[(size_t)r*c.n+col]=v;});
@@ -1294,6 +1302,7 @@ mk_gemm_input_kernel(const MKGemm2Ctx c) {
       if(col+2<c.n_orig)out[2]=__float2bfloat16(v.z);
       if(col+3<c.n_orig)out[3]=__float2bfloat16(v.w);
     }
+    if constexpr (DIRECT) __threadfence_system();
   }
 }
 
@@ -1301,9 +1310,9 @@ mk_gemm_input_kernel(const MKGemm2Ctx c) {
 // W4 packs, FP8 preparation, per-slice arithmetic and reduction order are unchanged.
 // Exact route only: M6 or M7 / N6416 / K4096 and split8; two W staging buffers.
 // MODE 0 retains runtime geometry; MODE 1/2 specialize it, with 3/4 blocks per SM.
-template <int MODE>
+template <int MODE, bool DIRECT = false>
 __global__ void __launch_bounds__(MK_THREADS,MODE==2?4:3)
-mk_gemm_input_cta_kernel(const MKGemm2Ctx c) {
+mk_gemm_input_cta_kernel(MKGemm2Ctx c) {
   constexpr int NB=2;
   const int m=c.m;
   asm volatile("griddepcontrol.launch_dependents;");
@@ -1374,6 +1383,7 @@ mk_gemm_input_cta_kernel(const MKGemm2Ctx c) {
 #pragma unroll
   for(int d=0;d<DIST;++d)if(kb0+d<kbn)stage_raw(kb0+d,(kb0+d)%NB);
   asm volatile("griddepcontrol.wait;" ::: "memory");
+  if constexpr (DIRECT) c.out = reinterpret_cast<__nv_bfloat16*>(*c.out_address);
   mk_cp_wait_upto(min(DIST-1,kbn-kb0-1));__syncwarp();
   if constexpr (MODE) {
 #pragma unroll
@@ -1408,13 +1418,14 @@ mk_gemm_input_cta_kernel(const MKGemm2Ctx c) {
     value*=c.rgs?c.rgs[col]:1.f;
     c.out[(size_t)row*c.n_orig+col]=__float2bfloat16(value);
   }
+  if constexpr (DIRECT) __threadfence_system();
 }
 
 // CTA=4: keep the ordinary two or three K slices. In particular M7/N6144
 // uses 16/16 groups, while the compact M6 lane uses 10/11/11.
-template <int TILES, int NB, int SLICES=3>
+template <int TILES, int NB, int SLICES=3, bool DIRECT=false>
 __global__ void __launch_bounds__(TILES*SLICES*32,TILES==1?6:3)
-mk_gemm_input_cta3_kernel(const MKGemm2Ctx c) {
+mk_gemm_input_cta3_kernel(MKGemm2Ctx c) {
   static_assert(SLICES==2 || SLICES==3);
   constexpr int MODE=0;
   const int m=c.m;
@@ -1486,6 +1497,7 @@ mk_gemm_input_cta3_kernel(const MKGemm2Ctx c) {
 #pragma unroll
   for(int d=0;d<DIST;++d)if(kb0+d<kbn)stage_raw(kb0+d,(kb0+d)%NB);
   asm volatile("griddepcontrol.wait;" ::: "memory");
+  if constexpr (DIRECT) c.out = reinterpret_cast<__nv_bfloat16*>(*c.out_address);
   mk_cp_wait_upto(min(DIST-1,kbn-kb0-1));__syncwarp();
   if constexpr (MODE) {
 #pragma unroll
@@ -1521,6 +1533,7 @@ mk_gemm_input_cta3_kernel(const MKGemm2Ctx c) {
     value*=c.rgs?c.rgs[col]:1.f;
     c.out[(size_t)row*c.n_orig+col]=__float2bfloat16(value);
   }
+  if constexpr (DIRECT) __threadfence_system();
 }
 
 // ===========================================================================
@@ -2922,10 +2935,10 @@ void set_kernel_attrs() {
   input_cta_attrs(mk_gemm_input_cta_kernel<0>,0);
   input_cta_attrs(mk_gemm_input_cta_kernel<1>,1);
   input_cta_attrs(mk_gemm_input_cta_kernel<2>,2);
-  MK_CHECK_CUDA(cudaFuncSetAttribute(mk_gemm_input_kernel,
+  MK_CHECK_CUDA(cudaFuncSetAttribute(mk_gemm_input_kernel<>,
       cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM_INPUT_SMEM));
   MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-      &g_gemm_input_bps, mk_gemm_input_kernel, MK_THREADS, GEMM_INPUT_SMEM));
+      &g_gemm_input_bps, mk_gemm_input_kernel<>, MK_THREADS, GEMM_INPUT_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_gemm2_kernel<1, false>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
@@ -2964,6 +2977,26 @@ void set_kernel_attrs() {
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_mla_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_SMEM));
   g_attrs_set = true;
+}
+
+
+void set_direct_kernel_attrs() {
+  static bool ready = false;
+  if (ready) return;
+  auto set = [](auto kernel, int bytes) {
+    MK_CHECK_CUDA(cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, bytes));
+  };
+  set(mk_gemm2_kernel<1,false,false,true>, GEMM2_SMEM);
+  set(mk_gemm2_kernel<2,false,false,true>, GEMM2_SMEM);
+  set(mk_gemm2_kernel<4,false,false,true>, GEMM2_SMEM);
+  set(mk_gemm2_kernel<1,false,true,true>, GEMM2_M8_SMEM);
+  set(mk_gemm_input_kernel<true>, GEMM_INPUT_SMEM);
+  set(mk_gemm_input_cta_kernel<0,true>, INPUT_CTA_SMEM);
+  set(mk_gemm_input_cta_kernel<1,true>, INPUT_CTA_SMEM);
+  set(mk_gemm_input_cta_kernel<2,true>, INPUT_CTA_SMEM);
+  set(mk_gemm_input_cta3_kernel<2,2,2,true>, INPUT_CTA2_SMEM);
+  set(mk_gemm_input_cta3_kernel<2,2,3,true>, INPUT_CTA3_SMEM);
+  ready = true;
 }
 
 // Resident block count for a persistent grid, clamped to MK_GRID_CAP.
@@ -3111,26 +3144,29 @@ int mk_choose_ksr2(int m, int n, int k, bool lr = false) {
 }
 
 // One v2 launch: the instantiation follows m (rows quantized per warp).
+template <bool DIRECT = false>
 void mk_launch_gemm2(const MKGemm2Ctx& c2, cudaStream_t stream) {
   const int grid2 = (c2.n / SMEM_W_ROWS) * c2.ksr
                     + (c2.lr_r > 0 ? LR_CTAS : 0);
+  if constexpr (!DIRECT) {
   if (c2.lr_r > 0) {
     if (c2.m <= 8)
-      mk_launch(mk_gemm2_kernel<1, true>, grid2, GEMM2_SMEM, stream, c2);
+      mk_launch(mk_gemm2_kernel<1, true, false, DIRECT>, grid2, GEMM2_SMEM, stream, c2);
     else if (c2.m <= 16)
-      mk_launch(mk_gemm2_kernel<2, true>, grid2, GEMM2_SMEM, stream, c2);
+      mk_launch(mk_gemm2_kernel<2, true, false, DIRECT>, grid2, GEMM2_SMEM, stream, c2);
     else
-      mk_launch(mk_gemm2_kernel<4, true>, grid2, GEMM2_SMEM, stream, c2);
+      mk_launch(mk_gemm2_kernel<4, true, false, DIRECT>, grid2, GEMM2_SMEM, stream, c2);
     return;
   }
+  }
   if (mk_use_compact_m8(c2.m, c2.n, c2.k))
-    mk_launch(mk_gemm2_kernel<1, false, true>, grid2, GEMM2_M8_SMEM, stream, c2);
+    mk_launch(mk_gemm2_kernel<1, false, true, DIRECT>, grid2, GEMM2_M8_SMEM, stream, c2);
   else if (c2.m <= 8)
-    mk_launch(mk_gemm2_kernel<1, false>, grid2, GEMM2_SMEM, stream, c2);
+    mk_launch(mk_gemm2_kernel<1, false, false, DIRECT>, grid2, GEMM2_SMEM, stream, c2);
   else if (c2.m <= 16)
-    mk_launch(mk_gemm2_kernel<2, false>, grid2, GEMM2_SMEM, stream, c2);
+    mk_launch(mk_gemm2_kernel<2, false, false, DIRECT>, grid2, GEMM2_SMEM, stream, c2);
   else
-    mk_launch(mk_gemm2_kernel<4, false>, grid2, GEMM2_SMEM, stream, c2);
+    mk_launch(mk_gemm2_kernel<4, false, false, DIRECT>, grid2, GEMM2_SMEM, stream, c2);
 }
 
 }  // namespace
@@ -3184,11 +3220,13 @@ std::vector<int64_t> mk_read_mhc_ts() {
 #endif
 }
 
+template <bool DIRECT = false>
 void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                  torch::Tensor out, int64_t n_orig, double wgs, int64_t bg,
                  int64_t rgs_ptr, int64_t lr_a_ptr, int64_t lr_b_ptr,
-                 int64_t lr_r, float* private_partial = nullptr, unsigned int* private_arrive = nullptr) {
+                 int64_t lr_r, float* private_partial = nullptr, unsigned int* private_arrive = nullptr, const int64_t* out_address = nullptr) {
   set_kernel_attrs();
+  if constexpr (DIRECT) set_direct_kernel_attrs();
   MKGemm2Ctx c2{};
   c2.private_partial = private_partial;
   c2.private_arrive = private_arrive;
@@ -3202,6 +3240,7 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   TORCH_CHECK(lr_r == 0 || (lr_a_ptr && lr_b_ptr),
               "low-rank correction needs both factors");
   c2.out = (__nv_bfloat16*)out.data_ptr();
+  c2.out_address = out_address;
   c2.m = (int)x.size(0);
   c2.k = (int)x.size(1);        // k is the ACTIVATION width
   c2.x_stride = x.stride(0);
@@ -3254,21 +3293,21 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
               MKInputPackCtx{c2.x, q, scales, c2.m, c2.k, c2.x_stride});
     const int cta=mk_gemm_input_cta_mode();
     if (cta==4 && c2.ksr==2 && (c2.n_orig==4096 || c2.n_orig==6144)) {
-      mk_launch<128>(mk_gemm_input_cta3_kernel<2,2,2>,c2.n_orig/32,INPUT_CTA2_SMEM,stream,c2);
+      mk_launch<128>(mk_gemm_input_cta3_kernel<2,2,2,DIRECT>,c2.n_orig/32,INPUT_CTA2_SMEM,stream,c2);
     } else if (cta==4 && c2.ksr==3 && (c2.n_orig==4096 || c2.n_orig==6144)) {
-      mk_launch<192>(mk_gemm_input_cta3_kernel<2,2>,c2.n_orig/32,INPUT_CTA3_SMEM,stream,c2);
+      mk_launch<192>(mk_gemm_input_cta3_kernel<2,2,3,DIRECT>,c2.n_orig/32,INPUT_CTA3_SMEM,stream,c2);
     } else if (cta && c2.ksr==8) {
       if (cta==1)
-        mk_launch(mk_gemm_input_cta_kernel<0>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
+        mk_launch(mk_gemm_input_cta_kernel<0,DIRECT>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
       else if (cta==2 || cta==4)
-        mk_launch(mk_gemm_input_cta_kernel<1>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
+        mk_launch(mk_gemm_input_cta_kernel<1,DIRECT>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
       else
-        mk_launch(mk_gemm_input_cta_kernel<2>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
+        mk_launch(mk_gemm_input_cta_kernel<2,DIRECT>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
     } else {
-      mk_launch(mk_gemm_input_kernel, nblk * c2.ksr, GEMM_INPUT_SMEM, stream, c2);
+      mk_launch(mk_gemm_input_kernel<DIRECT>, nblk * c2.ksr, GEMM_INPUT_SMEM, stream, c2);
     }
   } else {
-    mk_launch_gemm2(c2, stream);
+    mk_launch_gemm2<DIRECT>(c2, stream);
   }
 }
 
@@ -3291,6 +3330,33 @@ void mk_run_gemm_private(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   float* partial = workspace.data_ptr<float>();
   auto* arrive = reinterpret_cast<unsigned int*>(partial + MK2_PART_ELEMS);
   mk_run_gemm_impl(x, wq4, ws4, out, n_orig, 1., 0, rgs_ptr, 0, 0, 0, partial, arrive);
+}
+
+
+// The owner guarantees the descriptor names a live, sufficiently large mapped
+// TX slot. It is resolved on device after the reservation dependency, every replay.
+void mk_run_gemm_to_slot(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
+                        torch::Tensor address, int64_t n_orig, int64_t rgs_ptr,
+                        c10::optional<torch::Tensor> workspace) {
+  TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2 &&
+              x.size(0) >= 1 && x.size(0) <= 32 && n_orig == 4096 &&
+              address.device() == x.device() && address.scalar_type() == torch::kInt64 &&
+              address.is_contiguous() && address.numel() >= 1 &&
+              wq4.device() == x.device() && ws4.device() == x.device() && rgs_ptr,
+              "direct GEMM requires BF16 decode rows and a reserved 4096-column TX slot");
+  float* partial = nullptr;
+  unsigned int* arrive = nullptr;
+  if (workspace.has_value()) {
+    auto w = *workspace;
+    TORCH_CHECK(w.device() == x.device() && w.scalar_type() == torch::kFloat32 &&
+                w.is_contiguous() && w.numel() == MK2_PART_ELEMS + MK2_TILES_MAX,
+                "invalid direct GEMM private workspace");
+    partial = w.data_ptr<float>();
+    arrive = reinterpret_cast<unsigned int*>(partial + MK2_PART_ELEMS);
+  }
+  // 'address' is metadata only; DIRECT replaces c.out before any output access.
+  mk_run_gemm_impl<true>(x, wq4, ws4, address, n_orig, 1., 0, rgs_ptr, 0, 0, 0,
+                         partial, arrive, address.data_ptr<int64_t>());
 }
 
 // ptrs: x, res_in, pm_in, cm_in, fn, hc_scale, hc_base, norm_w, res_out,
@@ -4149,7 +4215,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
       MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&bps,kernel,MK_THREADS,smem));
       out.insert(out.end(),{a.numRegs,(int64_t)a.localSizeBytes,bps,smem});
     };
-    note(mk_gemm_input_kernel,GEMM_INPUT_SMEM);
+    note(mk_gemm_input_kernel<>,GEMM_INPUT_SMEM);
     note(mk_gemm_input_cta_kernel<0>,INPUT_CTA_SMEM);
     note(mk_gemm_input_cta_kernel<1>,INPUT_CTA_SMEM);
     note(mk_gemm_input_cta_kernel<2>,INPUT_CTA_SMEM);
@@ -4161,6 +4227,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     return out;
   });
   m.def("run_gemm", &mk_run_gemm, "MK_SEG_GEMM (W4 pack)");
+  m.def("run_gemm_to_slot", &mk_run_gemm_to_slot, "W4 directly into a replay-time reserved TX slot");
   m.def("run_gemm_private", &mk_run_gemm_private, "W4 with caller-owned partials and arrivals");
   m.def("gemm_workspace_elements", []() { return MK2_PART_ELEMS + MK2_TILES_MAX; });
   m.def("gemm2_plan", &mk_gemm2_plan, "bench: {ksr, units, blocks/SM} of (m, n, k)");
