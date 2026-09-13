@@ -710,3 +710,26 @@ class KernelBudgetTests(unittest.TestCase):
                               capture_output=True, text=True, timeout=120)
         self.assertEqual(out3.returncode, 1)
         self.assertIn("--partial", out3.stdout)
+
+    def test_generic_tier_widens_interval_and_lowers_confidence(self):
+        # 전용 커널: 실측 그대로. 범용 커널: 근거 있는 페널티 구간 ×1.25~3 — 신뢰도 하락
+        b = kern.EngineBytes()
+        base = kern.decode_range(b, "glm53", 32000)
+        self.assertEqual(base["confidence"], 100.0)
+        self.assertEqual(base["generic"], [])
+        gen = kern.decode_range(b, "glm53", 32000, generic_lanes=("moe", "kda_recurrent"))
+        self.assertIn("MoE 전문가", gen["generic"])
+        self.assertIn("비MoE(정적·dense·KDA·글루)", gen["generic"])
+        self.assertGreater(gen["hi_ms"], base["hi_ms"] * 1.2)
+        self.assertLess(gen["lo_ms"], base["lo_ms"] * 1.3)   # 하한은 페널티 하한 ×1.25 근처
+        self.assertLess(gen["confidence"], base["confidence"])
+        # 레인→성분 지도: 집합통신 레인은 통신 성분만
+        comms = kern.decode_range(b, "glm53", 32000, generic_lanes=("oneshot",))
+        self.assertEqual(comms["generic"], ["집합통신"])
+        # what-if 파사드: --generic 가 predict 를 통해 같은 효과를 낸다
+        out = subprocess.run([sys.executable, str(ROOT / "bench" / "storacle.py"),
+                              "predict", "--model", "glm53", "--generic", "moe"],
+                             capture_output=True, text=True, timeout=120)
+        self.assertEqual(out.returncode, 0)
+        self.assertIn("범용 서빙 성분: MoE 전문가", out.stdout)
+        self.assertIn("신뢰도 74%", out.stdout)
