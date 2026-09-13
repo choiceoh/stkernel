@@ -26,12 +26,14 @@ class FleetHarness(unittest.TestCase):
         shutil.copy2(ROOT / 'engine/base/fleet_lease.py', self.repo / 'engine/base/fleet_lease.py')
         self.lock = self.home / "fleet.lock"
         self.events = self.home / "events"
+        self.fleet_dir = self.home / "fleet"
+        self.fleet_dir.mkdir()
         # A boot says what it is (2026-09-12): these are a session's own boots by hand. The
         # supervisor overrides this with production for its own.
         self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
                         FAKE_HOME=str(self.home), ST_FORENSICS=str(self.home / "forensics"),
                         ST_REPO=str(self.repo), ST_SUPERVISOR_ONCE="1", ST_LEASE_KIND="session",
-                        CKPT=str(self.home / "missing-checkpoint"))
+                        CKPT=str(self.home / "missing-checkpoint"), FLEET_DIR=str(self.fleet_dir))
         self.script("hostname", "#!/bin/sh\necho 192.0.2.1\n")
         self.script("ssh", '''#!/usr/bin/env python3
 import os, pathlib, subprocess, sys
@@ -187,8 +189,6 @@ class SupervisorLoopTests(FleetHarness):
 
     def setUp(self):
         super().setUp()
-        self.fleet_dir = self.home / "fleet"
-        self.fleet_dir.mkdir()
         launcher = self.home / "launcher.sh"
         launcher.write_text('#!/bin/sh\necho "launch $*" >> "$FAKE_HOME/events"\ntouch "$FAKE_HOME/containers-up"\nexit 0\n')
         self.script("docker", '''#!/usr/bin/env python3
@@ -295,7 +295,12 @@ print('{}')
         self.assertIn("of quiet queue", out.stdout)
         self.assertEqual(self.launches(), [], "a window keeps production down between a session's tickets")
         (self.fleet_dir / "window.json").unlink()
-        out = self.loop(FAKE_DOOR_DOWN_CALLS=99, ST_RESTORE_GRACE_S=100)   # the operator's constant wins
+        # This case tests when restoration starts. Make the fake door healthy
+        # when its launcher runs, instead of spending 99 zero-delay polls on it.
+        self.script("curl", '#!/bin/sh\n[ -f "$FAKE_HOME/containers-up" ] || exit 22\n'
+                            'echo \'{"data":[{"id":"glm-5.3-flash"}],"choices":[{}]}\'\n')
+        out = self.loop(ST_RESTORE_GRACE_S=100)   # the operator's constant wins
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
         self.assertEqual(self.launches(), ["launch stop", "launch "])
 
     def test_a_fleet_taken_while_launching_is_not_a_failed_attempt(self):

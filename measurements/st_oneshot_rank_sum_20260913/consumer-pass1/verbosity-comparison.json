@@ -1,0 +1,81 @@
+{
+  "scope": "Saved preparation from 7b687301 versus measured requests from 8c8b031b. Prompts identical; different engine builds and reasoning caps. Token counts are re-tokenized retained text, not a causal verbosity comparison.",
+  "requests": [
+    {
+      "ctx": 2000,
+      "question": 0,
+      "old_phase": "prepare-c1",
+      "new_phase": "measure-c1",
+      "old_seed": null,
+      "new_seed": null,
+      "old_min_tokens": 0,
+      "new_min_tokens": 0,
+      "old_reasoning_tokens": 800,
+      "new_reasoning_tokens": 4096,
+      "old_answer_tokens": 251,
+      "new_answer_tokens": 152,
+      "old_first_800_tail": "n 1 [L17].\n- 입고병: revisions 1 [L15], 2 [L16] cancellation.\n\nNeed apply cutoff: only rows with both effective date and record date before cutoff (10일 18시). Need interpret dates/times: \"효력7일\" means day 7 (before cutoff day",
+      "new_first_800_tail": "tes/times. For date-only records? \"기록11일\" maybe 11일 no time, after deadline? \"기록10일 12시\" before 18? yes. \"기록9일\" before. \"기록7일\", \"8일\". \"효력11일\" after deadline? L14 effective 11일, record 9일; both must be before deadline, so"
+    },
+    {
+      "ctx": 2000,
+      "question": 1,
+      "old_phase": "prepare-c1",
+      "new_phase": "measure-c1",
+      "old_seed": null,
+      "new_seed": null,
+      "old_min_tokens": 0,
+      "new_min_tokens": 0,
+      "old_reasoning_tokens": 800,
+      "new_reasoning_tokens": 4096,
+      "old_answer_tokens": 1239,
+      "new_answer_tokens": 617,
+      "old_first_800_tail": "nd top-level counterfactual. Need fill both.\n\nTop-level counterfactual: after O5: best, score, feasible all feasible combo IDs. Need compute.\n\nNeed be careful with \"조합 ID는 문자를 사전순으로 붙인다.\" So combos IDs: \"ABC\", \"ABD\", \"AB",
+      "new_first_800_tail": "for count. They list only budget, staff, dependency, conflict. So okay.\n\nCompute scores:\nA boom 18 bust37 risk0\nB 35,36,2\nC 27,17,2\nD 27,25,2\nE 40,29,4\n\nCombo ABC: boom=18+35+27=80; bust=37+36+17=90; min=80; risk=0+2+2=4"
+    },
+    {
+      "ctx": 2000,
+      "question": 2,
+      "old_phase": "prepare-c1",
+      "new_phase": "measure-c1",
+      "old_seed": null,
+      "new_seed": null,
+      "old_min_tokens": 0,
+      "new_min_tokens": 0,
+      "old_reasoning_tokens": 800,
+      "new_reasoning_tokens": 4096,
+      "old_answer_tokens": 561,
+      "new_answer_tokens": 475,
+      "old_first_800_tail": " each necessary? Remove U1: E0,U2,U3,U4 can be satisfied? E=0, A=C maybe 0, B=1? U3 ok if A=0, U4 needs two of E,B,D: B=1,D=1 works. yes satisfiable. Remove U2: E0,U1,U3,U4: C=1, A=0, B=0? U3 ok, U4 needs D=1? E=0,B=0,D=",
+      "new_first_800_tail": "1 0 0 1 1 = \"010011\".\n- D=1 => F=0, B can 0 or1. Worlds \"001010\" (A0 B0 C1? Wait order ABCDEF: A=0,B=0,C=0,D=1,E=1,F=0 -> \"001010\") and \"011010\" (A0 B1 C0 D1 E1 F0). Yes.\n\nCase A=C=1:\nU3 => B=0. U1 satisfied. U4: E+0+D>="
+    },
+    {
+      "ctx": 32000,
+      "question": "all",
+      "old_phase": "prepare-c1",
+      "new_phase": "measure-c1",
+      "old_seed": null,
+      "new_seed": null,
+      "old_min_tokens": 0,
+      "new_min_tokens": 0,
+      "old_reasoning_tokens": 2400,
+      "new_reasoning_tokens": 12288,
+      "old_answer_tokens": 1896,
+      "new_answer_tokens": 1575
+    },
+    {
+      "ctx": 128000,
+      "question": "all",
+      "old_phase": "prepare-c1",
+      "new_phase": "measure-c1",
+      "old_seed": null,
+      "new_seed": null,
+      "old_min_tokens": 0,
+      "new_min_tokens": 0,
+      "old_reasoning_tokens": 2400,
+      "new_reasoning_tokens": 12288,
+      "old_answer_tokens": 2796,
+      "new_answer_tokens": 1686
+    }
+  ]
+}

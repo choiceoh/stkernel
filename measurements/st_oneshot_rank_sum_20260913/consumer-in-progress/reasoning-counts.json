@@ -1,0 +1,85 @@
+{
+  "source": "8c8b031b94bb80175cfccd49cfb6329d18cdecae",
+  "run_id": "20260912T213057-9725b41d901c",
+  "method": "CPU re-tokenization of complete retained SSE channel text with truncation/padding disabled; not original generated token IDs. Original usage.reasoning_tokens was not retained by this harness.",
+  "tokenizer_sha256": "0cfe2c099a7702a0921abc315ee039deb51e4a34b4818fc509bd27fa3dc4acc1",
+  "tokenizers_version": "0.23.2",
+  "original_tokenizer_truncation": {
+    "max_length": 2048,
+    "stride": 0,
+    "strategy": "longest_first",
+    "direction": "right"
+  },
+  "requests": [
+    {
+      "ctx": 2000,
+      "question": 0,
+      "phase": "measure-c1",
+      "reasoning_budget": 4096,
+      "completion_tokens": 4250,
+      "finish_reason": "stop",
+      "response_id": "chatcmpl-14",
+      "output_sha256": "cdff46cfd38f7fcc21e143a0e25bc8a4a15ff50a98771175c9770ffe0fb447ab",
+      "reasoning_retokenized": 4096,
+      "content_retokenized": 152,
+      "reasoning_at_cap": true,
+      "reasoning_tail": "fective 8, record 10일 12시, cancel.\nL17 반품정 개정1: effective 9, record 9, return 13 units.\n\nNeed consider time for date-only effective/record. \"10일 18시\" deadline. Date-only \"기록11일\" maybe at 00:00? after. \"효력11일\" after. \"기록10일 12시\" before. Good.\n\nCould \""
+    },
+    {
+      "ctx": 2000,
+      "question": 1,
+      "phase": "measure-c1",
+      "reasoning_budget": 4096,
+      "completion_tokens": 4715,
+      "finish_reason": "stop",
+      "response_id": "chatcmpl-15",
+      "output_sha256": "8986b6b0aa1c3dc648838b88b2aade92426bf0738ec06a9c5820961a8452b7e9",
+      "reasoning_retokenized": 4096,
+      "content_retokenized": 617,
+      "reasoning_at_cap": true,
+      "reasoning_tail": " 3 줄인다\" Could mean reduce budget cap by 3 from 22 to 19. Yes. \"상한만\" maybe only budget cap changes, staff unchanged. Good.\n\nPotential nuance: \"등호는 허용한다\" for budget/staff caps. We treat <=. Good.\n\nPotential nuance: \"사업별 최솟값을 먼저 합산하지 않는다.\" We did min of"
+    },
+    {
+      "ctx": 2000,
+      "question": 2,
+      "phase": "measure-c1",
+      "reasoning_budget": 4096,
+      "completion_tokens": 4573,
+      "finish_reason": "stop",
+      "response_id": "chatcmpl-16",
+      "output_sha256": "f60d475177e198fa9683eb695210cf95247b96d489fea67d7de46527e01678fc",
+      "reasoning_retokenized": 4096,
+      "content_retokenized": 475,
+      "reasoning_at_cap": true,
+      "reasoning_tail": "D. Use rule IDs. \"U0의 이진 정의는 고정이며 core에 넣지 않는다.\" So core arrays contain rule IDs, not U0. Good.\n\nNeed fill evidence arrays. Let's parse requested: \"최종 답변은 다음 구조의 JSON 객체 하나로 제출하라. 코드 펜스는 허용한다. 설명 대신 계산표·근거 ID·반례 증명서를 작성한다. 표시된 자료형은 실제 값으로 대체하고 배열은 요구"
+    },
+    {
+      "ctx": 32000,
+      "question": "all",
+      "phase": "measure-c1",
+      "reasoning_budget": 12288,
+      "completion_tokens": 13865,
+      "finish_reason": "stop",
+      "response_id": "chatcmpl-17",
+      "output_sha256": "a8cf31ca46dcfa458d57b1c7222a0316210aeefd6366aed0c89e04d970972999",
+      "reasoning_retokenized": 12288,
+      "content_retokenized": 1575,
+      "reasoning_at_cap": true,
+      "reasoning_tail": "상이면 전량승인\" — and the order is 272 → 전량승인. And the CF decision is also 전량승인 (order unchanged). The shortfall is only asked for CF (0, since 275 ≥ 272).\n\nHmm, but then why would the base not ask for shortfall? Because in the base case, the decision is 전"
+    },
+    {
+      "ctx": 128000,
+      "question": "all",
+      "phase": "measure-c1",
+      "reasoning_budget": 12288,
+      "completion_tokens": 13976,
+      "finish_reason": "stop",
+      "response_id": "chatcmpl-18",
+      "output_sha256": "26cf70aef00e741dbab297134e97a9453ae25a1e9920929de70f88d2f1f58f61",
+      "reasoning_retokenized": 12288,
+      "content_retokenized": 1686,
+      "reasoning_at_cap": true,
+      "reasoning_tail": " the counterfactual asks for \"주문 부족량\" — if the main decision were 전량승인 (interpretation B), the main scenario would have a shortfall of 3 (302 < 305) yet still be \"전량승인\"?? That's contradictory: you can't fully approve an order you can't fulfill. Under"
+    }
+  ]
+}

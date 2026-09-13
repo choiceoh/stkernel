@@ -1,0 +1,62 @@
+{
+  "source": "8c8b031b94bb80175cfccd49cfb6329d18cdecae",
+  "session": "st-decode-ranksum0913",
+  "status": "waiting for existing pass 1",
+  "passes": [],
+  "script_sha256": "7d0107f565d64295587ed65eb20509f3caacff33ed4fcc8c64b9894c7de0bdce",
+  "reason": "bound pass-2 diagnostic output while preserving measured workloads and the live engine",
+  "harnesses": {
+    "pass1": "8c8b031b94bb80175cfccd49cfb6329d18cdecae",
+    "pass2": "905d8fe6f2c5a971c1325fd2179af080892fbcd8"
+  },
+  "measured_workload_compatibility": {
+    "unchanged": true,
+    "module_sha256": {
+      "onepass_quality.py": "b7fbe2465522331fe7776d7e78847a759cbbd2445bdbbdb99ce60ae802bc5530",
+      "onepass_recording.py": "03c0c425d18306060cb3a50b49af84f66f2fa09b8e9b33627203fa34ced06094",
+      "window_metrics.py": "e791c6dbafae901e1e9d9abe7380c2c395e6f10039b8c8a6c97f6e70d1807cb5",
+      "bench-dec.py": "a9f8d709f5d9be36df998ecaffd38425ec694c090bbc0ea38c65f414096f533b",
+      "check-quality.py": "4995a58d51f46cb0741cb3156e57336c78e239a8150c41a67b366aae9d2f36ed",
+      "bracket.py": "4746c3b4ea5177919b0a55f6c826133d22bd8649fb6577e1564374c675d248be",
+      "korean-corruption.py": "34a9aacc7e82bf819fa3e0e5e5c6c0538e3e94877b07b7186a9eda69189324e8"
+    },
+    "main_before_diagnostics_sha256": "f93e89701e594928afe1d48f7717fa8d5550ac36012e1adc3cdebd5e7798362a",
+    "engine_tree_unchanged": true,
+    "diagnostic_max_tokens": 64,
+    "diagnostic_reasoning_budget": 32
+  },
+  "old_controller": {
+    "pid": 1148789,
+    "start": "12388220"
+  },
+  "existing_consumer": {
+    "pid": 1065892,
+    "start": "12279723"
+  },
+  "containers": [
+    {
+      "rank": 0,
+      "id": "8f055b03662995db50df27977fd51996737a1a4962c835838e39c38988d997e0",
+      "image": "sha256:2ea0408e66861158a1ca4eb84a6dc70f2fa04d31a6c34e32dfcaf57be2074235",
+      "started": "2026-09-12T21:25:52.266002699Z"
+    },
+    {
+      "rank": 1,
+      "id": "d8bf8ee5c327cfda038ea132ce5b1949367689601947089cf78437889cb10810",
+      "image": "sha256:b75832b051b763f90d6587c2cddd0a919f0175b86b0c97479dede14c483d3773",
+      "started": "2026-09-12T21:25:54.164056378Z"
+    },
+    {
+      "rank": 2,
+      "id": "9a8f9ed6bd2d89d68eb7b254d2be9c770ffc3d98d0fa313c600686068c21a732",
+      "image": "sha256:d2337d493eca638b8bcb7367dbc33dca60f036e81938b332d4f836e64de3c972",
+      "started": "2026-09-12T21:25:53.982623894Z"
+    },
+    {
+      "rank": 3,
+      "id": "f4664f4e3120ab6739dbe7860dcbd9b6b8dbd1340cbe3878f66e3cfc98886b61",
+      "image": "sha256:d2964b3f083902d7260e1a3f9177fff9de3fc5d67e277afe332f1ce267fe447c",
+      "started": "2026-09-12T21:25:54.049858536Z"
+    }
+  ]
+}
