@@ -44,6 +44,16 @@ class QueryShard:
     def score_rows(self):
         return self.end - self.score_begin
 
+    @property
+    def all_covered(self):
+        return (self.context+self.rows)//self.pool <= self.topk_pools
+
+    @property
+    def wire_bits(self):
+        # 65535 is the invalid marker. Two uint16 IDs travel in an int32
+        # NCCL lane; no arithmetic collective interprets the packed word.
+        return 16 if self.topk_pools % 2 == 0 and (self.context+self.rows)//self.pool <= 65535 else 32
+
     def project_input(self, x):
         """Keep small tails on DenseLinear's FP8 prefill lane (>32 rows)."""
         if x.shape[0] != self.rows or not self.score_rows:
@@ -59,6 +69,12 @@ class QueryShard:
         if (comm.world_size != self.world or comm.rank != self.rank
                 or complete.shape != (self.rows,)):
             raise ValueError('query result must use its original rank and row ownership')
+        if self.all_covered:
+            if scored is not None:
+                raise ValueError('covered queries must not be scored')
+            ids = torch.arange(self.topk_pools, device=complete.device, dtype=torch.int32)
+            full = ids.expand(self.rows, -1).contiguous()
+            return full.masked_fill_(full >= complete[:,None], -1)
         owned = self.end - self.begin
         ids = torch.arange(self.topk_pools, device=complete.device, dtype=torch.int32)
         local = ids.expand(owned, -1).contiguous()
@@ -71,4 +87,9 @@ class QueryShard:
             raise ValueError('covered queries must not be scored')
         if owned < self.capacity:
             local = torch.cat((local, local.new_full((self.capacity-owned, self.topk_pools), -1)))
-        return comm.all_gather(local, dim=0)[:self.rows]
+        if self.wire_bits == 32:
+            return comm.all_gather(local, dim=0)[:self.rows]
+        packet = local.to(torch.int16).view(torch.int32)
+        gathered = comm.all_gather(packet, dim=0).view(torch.int16)[:self.rows]
+        result = gathered.to(torch.int32).bitwise_and_(65535)
+        return result.masked_fill_(result == 65535, -1)

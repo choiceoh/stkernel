@@ -31,6 +31,38 @@ class QueryOwnershipTests(unittest.TestCase):
 
 @unittest.skipUnless(torch is not None, 'requires CPU torch')
 class IndexerStateTests(unittest.TestCase):
+    def test_pool_id_wire_preserves_sign_boundary_sentinel_and_wide_fallback(self):
+        from engine.base.comm import LocalTP
+        from types import SimpleNamespace as NS
+        for candidates, topk, bits in ((65535,4,16),(65536,4,32),(65535,3,32)):
+            rows,context=131,candidates*4-131
+            complete=(context+torch.arange(rows,dtype=torch.int32)+1)//4
+            values=torch.tensor([0,32767,32768,65534,-1],dtype=torch.int32)
+            expected=values[torch.arange(rows*topk).reshape(rows,topk)%len(values)]
+            if candidates>65535: expected[0,0]=65535
+            def rank(comm):
+                shard=QueryShard(rows,context,comm.rank,4,topk,4)
+                sizes=[]
+                wrapped=NS(rank=comm.rank,world_size=4,all_gather=lambda packet,**kw:
+                           sizes.append(packet.numel()*packet.element_size()) or comm.all_gather(packet,**kw))
+                actual=shard.collect(expected[shard.begin:shard.end],complete,wrapped)
+                torch.testing.assert_close(actual,expected,rtol=0,atol=0)
+                self.assertEqual(shard.wire_bits,bits)
+                self.assertEqual(sizes,[shard.capacity*topk*bits//8])
+            LocalTP(4,timeout_s=10).run(rank)
+
+    def test_fully_covered_selection_needs_no_collective(self):
+        from types import SimpleNamespace as NS
+        from unittest.mock import Mock
+        shard=QueryShard(2000,0,3,4,512,4)
+        comm=NS(rank=3,world_size=4,all_gather=Mock(side_effect=AssertionError('unexpected collective')))
+        complete=(torch.arange(2000,dtype=torch.int32)+1)//4
+        result=shard.collect(None,complete,comm)
+        self.assertEqual(result.shape,(2000,512))
+        self.assertTrue(bool((result[0]==-1).all()))
+        self.assertEqual(result[-1,:500].tolist(),list(range(500)))
+        self.assertTrue(bool((result[-1,500:]==-1).all()))
+
     def test_full_model_regular_and_layer_major_preserve_hidden_state_and_next_decode(self):
         from types import SimpleNamespace as NS
         from engine.base.comm import LocalTP
