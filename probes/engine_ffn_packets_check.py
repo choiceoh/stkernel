@@ -92,6 +92,11 @@ def measure(args, report):
         root = facts.RANKS.parent/root
     rank, prefix = rank_on_this_node(str(root)), 'L3.moe.'
     path = root/f'rank{rank}of4.safetensors'
+    model = facts.load(args.ckpt_meta)
+    if model.swiglu_limit != 10. or model.topk_experts != 8:
+        raise RuntimeError('checkpoint does not declare the fixed GLM FFN arithmetic')
+    report['model'] = dict(metadata=args.ckpt_meta, routed_scale=model.routed_scale,
+        config_sha256=hashlib.sha256((Path(args.ckpt_meta)/'config.json').read_bytes()).hexdigest())
     loader = rank_loader(path)
     suffixes = ('w13', 'w13_sf', 'w2', 'w2_sf', 'gate', 'bias', 'sh_gate_up', 'sh_down')
     scale_names = ('w13_alpha', 'a13_scale', 'w2_alpha', 'a2_scale')
@@ -130,7 +135,7 @@ def measure(args, report):
         def ffn(packets):
             x = None if packets else unpack()
             logits = router_packet_logits(batch, gate) if packets else router_logits(x, gate)
-            ids, routes = route_weights(logits, bias, 8, 2.5)
+            ids, routes = route_weights(logits, bias, 8, model.routed_scale)
             routed = packet_expert(batch, ids, routes) if packets else expert(x, ids, routes)
             q, s = quantize_gather(batch.received, g.local_rows, real_rows=rows) if packets else quantize(x)
             up = shared_up.project_quantized(q, s)
@@ -211,6 +216,7 @@ def main():
     from engine.profiles.glm53 import facts
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--ranks', default=str(facts.RANKS))
+    parser.add_argument('--ckpt-meta', default=str(facts.CKPT))
     parser.add_argument('--samples', type=int, default=8)
     parser.add_argument('--output', type=Path, default=Path('/cache/ffn-packets.json'))
     args = parser.parse_args()
