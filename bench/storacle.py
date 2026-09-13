@@ -47,7 +47,7 @@ def cmd_models() -> int:
     return 0
 
 
-def cmd_predict(model: str, partial: bool, ctx: int = 32000) -> int:
+def cmd_predict(model: str, partial: bool, ctx: int = 32000, generic: "list[str] | None" = None) -> int:
     """새 모델 예측: 마법사가 어떤 커널 레인을 확보하는지 판정하고, ST 오라클이 예상
     속도를 신뢰도와 함께 뽑는다 — 한 장으로. 레인이 거부되면 그 모델은 이 엔진에
     커널이 없는 것이다: 속도보다 레시피가 답이다."""
@@ -92,12 +92,15 @@ def cmd_predict(model: str, partial: bool, ctx: int = 32000) -> int:
     if miss and not partial:
         print(f"\n[속도] 결측 — {', '.join(miss)} · --partial 로 구간·신뢰도와 함께")
         return 1
-    rng = kern.decode_range(b, model, ctx)
+    rng = kern.decode_range(b, model, ctx, generic_lanes=tuple(generic))
     step_s = 1000.0 / rng["mid_ms"]
     tps = 1 + b.spec_k * 0.45
     print(f"\n[예상 속도] ctx {ctx//1000}K C=1: 스텝 {rng['lo_ms']:.1f}~{rng['hi_ms']:.1f} ms"
           f" ({step_s:.1f} step/s) · 클라이언트 ~{step_s*tps:.0f} tok/s (k={b.spec_k}, acc 45% 가정)"
           f" · 신뢰도 {rng['confidence']:.0f}%")
+    if rng["generic"]:
+        print(f"  범용 서빙 성분: {', '.join(rng['generic'])} ×{kern.GENERIC_FACTOR[0]:g}~{kern.GENERIC_FACTOR[1]:g}"
+              " (전용 실측 대비 — 범용 격차 실측이 다음 프로브)")
     if miss:
         print(f"  가정: {', '.join(rng['assumed'])}"
               + ("" if model == "glm53" else " · 이관: 비MoE·통신 상수·k 는 glm53 실측"))
@@ -117,8 +120,11 @@ def main() -> int:
         ap.add_argument("--model", default="glm53")
         ap.add_argument("--partial", action="store_true")
         ap.add_argument("--ctx", type=int, default=32000)
+        ap.add_argument("--generic", default="",
+                        help="what-if: 이 레인들을 범용 커널로 서빙한다고 보고 속도를 잰다(쉼표: mhc_decode,kda_recurrent)")
         a = ap.parse_args(sys.argv[2:])
-        return cmd_predict(a.model, a.partial, a.ctx)
+        return cmd_predict(a.model, a.partial, a.ctx,
+                           [x.strip() for x in a.generic.split(",") if x.strip()])
     if sub not in TOOLS:
         print(f"알 수 없는 하위 명령 {sub!r} — models | sim | kernels | peek | replay", file=sys.stderr)
         return 2

@@ -281,23 +281,57 @@ class StepBudget:
 
 _NEED = ("experts", "topk", "moe_layers", "expert_mb", "static_weights")   # 조립에 필요한 것들
 
+# 마법사의 서빙 계층을 조립 성분으로 옮기는 지도와 벌칙. 전용 셀(specialized)은 실측
+# 속도 그대로(207~241 GB/s, 공칭의 76~88%). 범용 고속 커널(generic, engine/kernels/common)
+# 은 같은 수학의 모양 무관 커널 — 모양 특화 타일링이 없어 그 아래다. 실측이 아직 없어
+# **근거 있는 구간** [1.25, 3]×시간으로 두고 신뢰도에 반영한다(전용/범용 격차의 직접
+# 측정이 이 분야의 다음 프로브다). 'nothing fast' 는 참조 경로 — 가격을 매기지 않는다.
+LANE_COMPONENT = {
+    "moe": "MoE 전문가",
+    "mla": "어텐션·인덱서(컨텍스트)", "indexer": "어텐션·인덱서(컨텍스트)",
+    "kda_recurrent": "비MoE(정적·dense·KDA·글루)", "kda_ring": "비MoE(정적·dense·KDA·글루)",
+    "kda_chunk": "비MoE(정적·dense·KDA·글루)", "dense": "비MoE(정적·dense·KDA·글루)",
+    "mhc_decode": "비MoE(정적·dense·KDA·글루)", "mhc_prefill": "비MoE(정적·dense·KDA·글루)",
+    "universal": "비MoE(정적·dense·KDA·글루)",
+    "oneshot": "집합통신", "prefill_collectives": "집합통신",
+    "draft": "드래프터(W4)",
+}
+GENERIC_FACTOR = (1.25, 3.0)   # 범용 서빙의 시간 배수 구간(실측 대기 — 위 각주)
+
+
+def _tier_factored(budget_ms: dict, generic_components: set, which: str) -> dict:
+    """한 예산에 범용 페널티를 곱한다 — which 가 'lo' 면 하한 계수, 'hi' 면 상한."""
+    f = GENERIC_FACTOR[0] if which == "lo" else GENERIC_FACTOR[1]
+    return {k: v * (f if k in generic_components else 1.0) for k, v in budget_ms.items()}
+
 
 def decode_range(b: EngineBytes, model: str, ctx: int, width: int = 1,
-                 k: int | None = None, routing: str = "measured") -> dict:
+                 k: int | None = None, routing: str = "measured",
+                 generic_lanes: "frozenset | set | tuple" = ()) -> dict:
     """결측이 있어도 값을 준다 — 구간과 신뢰도와 함께. 순수 함수.
 
     결측 필드를 MODEL_BOUNDS 의 lo/hi 로 각각 채워 스텝을 두 번 조립하고, 그 벌어짐으로
     신뢰도를 말한다: 신뢰도% = 100×(1−spread/2), spread=(hi−lo)/중간. 구간조차 없는 결측은
     여전히 거부한다(0 이라고 말하는 것보다 나으니까)."""
     if not b.missing():
-        t = decode_step(b, ctx, width, k=k, routing=routing).total()
-        return {"lo_ms": t, "hi_ms": t, "mid_ms": t, "confidence": 100.0, "assumed": []}
+        budget = decode_step(b, ctx, width, k=k, routing=routing)
+        generic_components = {LANE_COMPONENT.get(l) for l in generic_lanes} - {None}
+        lo, hi = (sum(_tier_factored(budget.ms, generic_components, w).values()) for w in ("lo", "hi"))
+        mid = (lo + hi) / 2
+        spread = (hi - lo) / mid if mid > 0 else 1.0
+        return {"lo_ms": lo, "hi_ms": hi, "mid_ms": mid,
+                "confidence": 100.0 if not generic_components else max(5.0, round(100 * (1 - spread / 2), 1)),
+                "generic": sorted(generic_components), "assumed": []}
     bounds = EngineBytes.bounds_for(model)
     uncovered = [f for f in _NEED if getattr(b, f, None) in (None, 0, 0.0) and f not in bounds]
     if uncovered:
         raise ValueError("ST 오라클: 구간조차 없는 결측 — " + ", ".join(uncovered))
-    lo = decode_step(EngineBytes.fill(b, model, "lo"), ctx, width, k=k, routing=routing).total()
-    hi = decode_step(EngineBytes.fill(b, model, "hi"), ctx, width, k=k, routing=routing).total()
+    generic_components = {LANE_COMPONENT.get(l) for l in generic_lanes} - {None}
+    lo_b = decode_step(EngineBytes.fill(b, model, "lo"), ctx, width, k=k, routing=routing)
+    hi_b = decode_step(EngineBytes.fill(b, model, "hi"), ctx, width, k=k, routing=routing)
+    # 바이트 구간과 범용 페널티가 같이 열린다: lo 예산에 페널티 하한, hi 예산에 상한
+    lo = sum(_tier_factored(lo_b.ms, generic_components, "lo").values())
+    hi = sum(_tier_factored(hi_b.ms, generic_components, "hi").values())
     mid = (lo + hi) / 2
     spread = (hi - lo) / mid if mid > 0 else 1.0
     def _human(v):
@@ -310,6 +344,7 @@ def decode_range(b: EngineBytes, model: str, ctx: int, width: int = 1,
         return f"{v:g}"
     return {"lo_ms": lo, "hi_ms": hi, "mid_ms": mid,
             "confidence": max(5.0, round(100 * (1 - spread / 2), 1)),
+            "generic": sorted(generic_components),
             "assumed": [f"{f}[{_human(bounds[f][0])}..{_human(bounds[f][1])}]" for f in bounds
                         if getattr(b, f, None) in (None, 0, 0.0)]}
 
