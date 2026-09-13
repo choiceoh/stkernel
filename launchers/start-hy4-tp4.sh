@@ -1,5 +1,8 @@
 #!/bin/bash
-# DeepSeek-V4-Flash-0731 TP=4 on the PROD-PROVEN hybrid-1.6 stack (aidendle94 sparkrun fork).
+# DeepSeek-V4 TP=4 on the PROD-PROVEN hybrid-1.6 stack (aidendle94 sparkrun fork).
+# Its default profile, dsv4 (V4-Flash-0731), retired 2026-09-13 when those weights
+# were deleted from the fleet, so a bare run no longer boots; the live lane is
+# dsv41, reached with PROFILE_ENV=profiles/dsv41.env.
 # Faithful port of ~/hybrid-stack compose.{head,worker}.yaml from TP2(srv2+srv3) to
 # TP4(srv2 head + srv3/srv1/srv4 workers): same image, overlays, kernel caches, env,
 # dspark speculative decode (SPEC_TOKENS=5). First boot recompiles kernels for TP4

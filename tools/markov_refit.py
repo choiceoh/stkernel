@@ -35,6 +35,10 @@ CPU-only but the rule is absolute):
         --base /home/choiceoh/models/DeepSeek-V4-Flash-0731 \
         --corpus /home/choiceoh/models/refit-corpus/*.txt \
         --out /home/choiceoh/models/markov-refit-v1.pt
+
+The 0731 checkpoint was deleted from the fleet on 2026-09-13 (dsv4 retired);
+re-fetch it before running this example -- --base needs its shipped MTP
+Markov weights, which DeepSeek-V4.1-Flash does not stand in for.
 """
 from __future__ import annotations
 
