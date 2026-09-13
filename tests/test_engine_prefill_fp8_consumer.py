@@ -67,6 +67,37 @@ class PrefillConsumerTests(unittest.TestCase):
         finally:
             graph.reset()
 
+    def test_real_rows_are_cropped_before_shared_quantization_output(self):
+        from engine.kernels.prefill_collectives.consumer import quantize_gather
+        received = self.received(2049)
+        q, s = self.baseline(received, 2049)
+        for rows in (8193, 8194, 8195, 8196):
+            self.exact(quantize_gather(received, 2049, real_rows=rows), (q[:rows], s[:rows]))
+        for invalid in (8192, 8197, True):
+            with self.assertRaises(ValueError):
+                quantize_gather(received, 2049, real_rows=invalid)
+
+    def test_packet_router_preserves_logits_and_route_selection(self):
+        from engine.kernels.prefill_collectives import BLOCK
+        from engine.kernels.prefill_collectives.kernels import _unpack_gather
+        from engine.kernels.prefill_router import router_logits, router_packet_logits
+        from engine.kernels.glm_pointwise import route_weights
+        from engine.modules.prefill_packets import PacketBatch, PacketGeometry
+        torch.manual_seed(895)
+        gate = (torch.randn(288, 4096, device='cuda') / 64).bfloat16()
+        bias = torch.linspace(-.1, .1, 288, device='cuda')
+        for rows in (8193, 8194, 8195, 9216, 32768):
+            g = PacketGeometry(rows, (rows+3)//4)
+            received = self.received(g.local_rows)
+            x = torch.empty((g.padded_rows, 4096), device='cuda', dtype=torch.bfloat16)
+            _unpack_gather[(x.numel()//BLOCK,)](
+                received.view(torch.float8_e4m3fn), received.view(torch.float32), x,
+                g.local_elements, g.stride, BLOCK=BLOCK)
+            expected = router_logits(x[:rows], gate)
+            actual = router_packet_logits(PacketBatch(received, g), gate)
+            self.exact((actual,), (expected,))
+            self.exact(route_weights(actual, bias, 8, 2.5), route_weights(expected, bias, 8, 2.5))
+
 
 if __name__ == "__main__":
     unittest.main()

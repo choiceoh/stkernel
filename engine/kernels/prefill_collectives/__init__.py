@@ -11,7 +11,6 @@ profile with another hidden width declares it instead of editing this file.
 import torch
 import torch.distributed as dist
 
-from .kernels import _pack_rs_payload, _unpack_gather, _unpack_sum_payload
 from engine.kernels.cells import PREFILL_BLOCK as BLOCK     # the packet block, stated once (cells.py)
 
 # Phase2 candidate: include 2K requests in the existing block-scaled FP8
@@ -49,6 +48,7 @@ class PrefillCollectives:
                 summed = torch.cat((summed, summed.new_zeros((padded_rows-x.shape[0],self.hidden))))
             return self.reduce_scatter(summed)
         from .sum_pack import _pack_sum_rs_payload
+        from .kernels import _unpack_sum_payload
         local = padded_rows*self.hidden//self.world
         if local % BLOCK:
             raise ValueError('fused sum packets require whole blocks per destination')
@@ -87,6 +87,7 @@ class PrefillCollectives:
 
     @staticmethod
     def pack(x, local_elements):
+        from .kernels import _pack_rs_payload
         packet_bytes = ((local_elements + 4*(local_elements//BLOCK) + 127)//128)*128
         peers = x.numel()//local_elements
         payload = torch.empty(packet_bytes*peers, device=x.device, dtype=torch.uint8)
@@ -100,6 +101,7 @@ class PrefillCollectives:
         world = self.world
         if x.shape[0]*world < FP8_MIN_ROWS:
             return self.comm.all_gather(x, dim=0)
+        from .kernels import _unpack_gather
         payload, stride = self.pack(x, x.numel())
         received = torch.empty(payload.numel()*world, device=x.device, dtype=torch.uint8)
         dist.all_gather_into_tensor(received, payload, group=self.comm.group)
@@ -110,6 +112,21 @@ class PrefillCollectives:
         self.executed.add('fp8_all_gather')
         return out
 
+    def all_gather_packets(self, x, *, rows):
+        """The ordinary full FP8 exchange with an invocation-owned packet result."""
+        from engine.modules.prefill_packets import PacketBatch, PacketGeometry, ffn_packet_rows
+        self.check(x)
+        geometry = PacketGeometry(rows, x.shape[0], self.hidden, self.world, BLOCK)
+        if not ffn_packet_rows(rows):
+            raise ValueError('packet FFN requires 8192 < real rows <= 32768')
+        payload, stride = self.pack(x, x.numel())
+        if stride != geometry.stride:
+            raise ValueError('FFN packet stride differs from its declared transport')
+        received = torch.empty(geometry.nbytes, device=x.device, dtype=torch.uint8)
+        dist.all_gather_into_tensor(received, payload, group=self.comm.group)
+        self.executed.update(('fp8_all_gather', 'ffn_packets_v1'))
+        return PacketBatch(received, geometry)
+
     def reduce_scatter(self, x):
         self.check(x)
         world = self.world
@@ -117,6 +134,7 @@ class PrefillCollectives:
             raise ValueError("prefill reduce-scatter requires equal token shards")
         if x.shape[0] < FP8_MIN_ROWS:
             return self.comm.reduce_scatter_rows(x)
+        from .kernels import _unpack_sum_payload
         local = x.numel()//world
         payload, stride = self.pack(x, local)
         received = torch.empty_like(payload)

@@ -24,10 +24,13 @@ class ExecutionPlan:
     prefill_dense_prefix: bool = False
     prefill_absorb_tiles: bool = False
     decode_fastpaths: bool = False
+    prefill_ffn_packets: bool = False
 
     def __post_init__(self):
-        if any(type(v) is not bool for v in (self.overlap, self.early_observe, self.direct_mhc, self.prefill_project_tiles, self.deferred_kda, self.compact_kda, self.terminal_mhc, self.prefill_indexer_shards, self.prefill_dense_prefix, self.prefill_absorb_tiles, self.decode_fastpaths)):
+        if any(type(v) is not bool for v in (self.overlap, self.early_observe, self.direct_mhc, self.prefill_project_tiles, self.deferred_kda, self.compact_kda, self.terminal_mhc, self.prefill_indexer_shards, self.prefill_dense_prefix, self.prefill_absorb_tiles, self.decode_fastpaths, self.prefill_ffn_packets)):
             raise ValueError("execution switches must be booleans")
+        if self.prefill_ffn_packets and self.prefill_tiles != 1:
+            raise ValueError('packet FFN currently requires chunk-ordered prefill')
         if self.compact_kda:
             object.__setattr__(self, "deferred_kda", True)
             if self.prefill_tiles != 1:
@@ -49,7 +52,7 @@ class ExecutionPlan:
     def active(self):
         return (self.overlap or self.early_observe or self.prefill_tiles != 1 or self.direct_mhc
                 or self.prefill_project_tiles or self.decode_iterations != 1 or self.deferred_kda or self.terminal_mhc
-                or self.prefill_indexer_shards or self.prefill_dense_prefix or self.prefill_absorb_tiles or self.decode_fastpaths)
+                or self.prefill_indexer_shards or self.prefill_dense_prefix or self.prefill_absorb_tiles or self.decode_fastpaths or self.prefill_ffn_packets)
 
     def groups(self, sequences):
         if sequences <= 0:
@@ -66,7 +69,7 @@ class ExecutionPlan:
                 f"prefill_indexer_shards={int(self.prefill_indexer_shards)},"
                 f"prefill_dense_prefix={int(self.prefill_dense_prefix)},"
                 f"prefill_absorb_tiles={int(self.prefill_absorb_tiles)},"
-                f"decode_fastpaths={int(self.decode_fastpaths)}")
+                f"prefill_ffn_packets={int(self.prefill_ffn_packets)},decode_fastpaths={int(self.decode_fastpaths)}")
 
 
 @dataclass

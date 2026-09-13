@@ -364,11 +364,11 @@ class DenseLinear:
             extension().run_gemm_to_slot(x, p.data, p.scale, address, p.rows, p.rowscale.data_ptr(), self.workspace)
         self.executed |= 1
 
-    def _project_packets(self, received, local_rows):
+    def _project_packets(self, received, local_rows, *, real_rows=None):
         if self.packet_projector() is None or local_rows * 4 <= 32:
             raise ValueError("packet projection requires the unobserved FP8 prefill lane")
         from engine.kernels.prefill_collectives.consumer import quantize_gather
-        out = self.fp8.project_quantized(*quantize_gather(received, local_rows))
+        out = self.fp8.project_quantized(*quantize_gather(received, local_rows, real_rows=real_rows))
         self.executed |= 2
         return out
 

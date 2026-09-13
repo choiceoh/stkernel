@@ -245,6 +245,7 @@ def declared(a, comm_world: int) -> Config:
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
                         execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0, compact_kda=0, terminal_mhc=0,
+                        prefill_ffn_packets=0,
                         draft_fc_precision=SERVING_POLICY.fc_precision, draft_fc_calibration=SERVING_POLICY.fc_calibration,
                         draft_diagnostics=int(SERVING_POLICY.diagnostics), draft_tuning='', **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
@@ -252,6 +253,9 @@ def declared(a, comm_world: int) -> Config:
         Knob("decode_fastpaths", gb10_defaults["decode_fastpaths"], _dt.date(2026, 9, 30),
              "Operator-enabled K=7 input reuse, paired projections and direct TX outputs; GPU qualification pending",
              "STK_decode_fastpaths=0", int),
+        Knob('prefill_ffn_packets', 0, _dt.date(2026, 9, 30),
+             'Unqualified long-prefill FP8 packet inputs for router, routed and shared experts',
+             'STK_prefill_ffn_packets=0', int),
         Knob("prefill_absorb_tiles", gb10_defaults["prefill_absorb_tiles"], _dt.date(2026, 9, 30),
              "Operator-enabled token-major MLA contractions; GPU timing and quality qualification pending",
              "STK_prefill_absorb_tiles=0", int),
@@ -338,6 +342,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         raise ValueError('draft tuning requires the native drafter')
     if draft_policy.active and (execution != "native" or not use_drafter):
         raise ValueError("draft acceptance experiments require the native drafter")
+    if execution_plan is not None and execution_plan.prefill_ffn_packets and execution != 'native':
+        raise ValueError('packet FFN requires native execution')
     F = facts.load(ckpt_meta)
     if execution_plan is not None and execution_plan.compact_kda:
         if execution != "native":
@@ -507,6 +513,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                             ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None,
                             snapshots=snapshots, tier_enabled=bool(tier_dir), kda_state_dtype=F.kda_state_dtype,
                             kda_state_layout=F.kda_state_layout,
+                            prefill_ffn_packets=bool(execution_plan is not None and execution_plan.prefill_ffn_packets),
                             draft_tp=comm.world_size if execution == "native" else 1,
                             draft_native=execution == "native", router_bytes=router_bytes, projection_bytes=projection_bytes,
                             draft_policy=draft_policy, workspace_gib=workspace_gib)
@@ -557,6 +564,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 net.prefill_indexer_shards = bool(execution_plan is not None and execution_plan.prefill_indexer_shards)
                 net.prefill_dense_prefix = bool(execution_plan is not None and execution_plan.prefill_dense_prefix)
                 net.prefill_absorb_tiles = bool(execution_plan is not None and execution_plan.prefill_absorb_tiles)
+                net.prefill_ffn_packets = bool(execution_plan is not None and execution_plan.prefill_ffn_packets)
                 if D:
                     # Do not overlap the temporary checkpoint with target packing.
                     drafter = load_drafter()
@@ -800,7 +808,12 @@ def native_execution_report(net, drafter):
                  prefill_indexer_shards=sorted(getattr(net, 'prefill_indexer_executed', ())),
                  prefill_dense_prefix=sorted(getattr(net, 'prefill_dense_prefix_executed', ())),
                  prefill_covered_queries=sorted(getattr(net, 'prefill_covered_queries_executed', ())),
-                 prefill_absorb_tiles=sorted(getattr(net, 'prefill_absorb_tiles_executed', ())))
+                 prefill_absorb_tiles=sorted(getattr(net, 'prefill_absorb_tiles_executed', ())),
+                 prefill_ffn_packets=sorted(getattr(net, 'prefill_packet_executed', ())),
+                 prefill_ffn_packet_plan=sorted(getattr(net, 'prefill_packet_planned', ())),
+                 prefill_ffn_received_peak_bytes=getattr(net, 'prefill_packet_peak_bytes', 0))
+    if proof['prefill_ffn_packets'] != proof['prefill_ffn_packet_plan']:
+        raise RuntimeError(f'agreed packet FFN readers were not executed: {proof}')
     if (getattr(net, 'prefill_absorb_tiles', False)
             and set(proof['prefill_absorb_tiles']) != {
                 (L, side) for L in net.layers if net.F.is_dsa(L) for side in ('query', 'output')}):
@@ -1190,7 +1203,7 @@ def fleet(a) -> int:
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
                                        consume_scales=True)
         from engine.profiles.glm53.execution import ExecutionPlan
-        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "compact_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths")):
+        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "compact_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "prefill_ffn_packets")):
             raise ValueError("execution switches must be 0 or 1")
         plan = ExecutionPlan(bool(cfg["execution_overlap"]), bool(cfg["early_observe"]), cfg["prefill_tiles"],
                              sched.chunk_for(facts.CHUNK_ALIGN, TOKEN_BUDGET, facts.SPEC_K),
@@ -1200,6 +1213,7 @@ def fleet(a) -> int:
                              terminal_mhc=bool(cfg["terminal_mhc"]), prefill_indexer_shards=bool(cfg["prefill_indexer_shards"]),
                              prefill_dense_prefix=bool(cfg["prefill_dense_prefix"]),
                              prefill_absorb_tiles=bool(cfg["prefill_absorb_tiles"]),
+                             prefill_ffn_packets=bool(cfg["prefill_ffn_packets"]),
                              decode_fastpaths=bool(cfg["decode_fastpaths"]))
         from engine.profiles.glm53.draft_policy import DraftPolicy
         if cfg["draft_diagnostics"] not in (0, 1):

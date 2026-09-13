@@ -44,21 +44,24 @@ from engine.profiles.glm53.facts import SPEC_K, TP
 # The model-free kernels come from the engine's default lanes (engine/base/lanes): one launch each for the
 # drafter's norms, norm+rope and gated MLP. The names stay module-level because the tests and probes take the
 # same functions the block runs from here.
-def _lazy_lane(alias, name):
-    # Budget/fact readers must not import Triton. The first executed call
-    # installs the real function; graph warmup pays this dispatch only once.
-    def first(*args, **kwargs):
-        function = getattr(common_lanes(), name)
-        globals()[alias] = function
-        return function(*args, **kwargs)
-    return first
+_COMMON_NAMES = dict(swiglu='swiglu', add_norm='add_rmsnorm', norm='rmsnorm',
+                     norm_rope='rmsnorm_rope', warm_rotary='rope_table')
 
 
-swiglu = _lazy_lane("swiglu", "swiglu")
-add_norm = _lazy_lane("add_norm", "add_rmsnorm")
-norm = _lazy_lane("norm", "rmsnorm")
-norm_rope = _lazy_lane("norm_rope", "rmsnorm_rope")
-warm_rotary = _lazy_lane("warm_rotary", "rope_table")
+def _bind_common_lanes():
+    # Fact/budget imports stay CPU-only. Constructing a drafter or importing
+    # a public kernel name binds the actual functions, preserving identity
+    # and test/diagnostic hooks without a wrapper on executed calls.
+    table = common_lanes()
+    for alias, name in _COMMON_NAMES.items():
+        globals().setdefault(alias, getattr(table, name))
+
+
+def __getattr__(name):
+    if name not in _COMMON_NAMES:
+        raise AttributeError(name)
+    _bind_common_lanes()
+    return globals()[name]
 
 DRAFTER = Path("/home/choiceoh/models/GLM-5.3-Flash-DFlash2")
 BF16, F32 = torch.bfloat16, torch.float32
@@ -175,6 +178,7 @@ def dense_shapes(F: DrafterFacts, world: int) -> "dict[str, tuple[int, int]]":
 class Drafter:
     def __init__(self, F: DrafterFacts, target, decodable: int):
         """`target` is the Glm53Net (embed/head are borrowed); `decodable` masks ids the tokenizer cannot decode."""
+        _bind_common_lanes()
         self.F, self.target, self.decodable = F, target, decodable
         self.k = F.k
         self.p = None
@@ -692,7 +696,6 @@ class Drafter:
             out.append(cand[rows, s, pick])
             prev = pick
         from engine.modules.draft_agreement import agree_walk
-        from engine.kernels.draft_select import walk_scores
         return agree_walk(self.target.comm, torch.stack(out, 1), qcand, qprob)
 
     def propose(self, anchor: int, position: int, ring: torch.Tensor, *, boundary=None) -> "list[int]":
@@ -727,6 +730,7 @@ class Drafter:
             self.diagnostics.support.index_copy_(0, support_slot.reshape(1), cand.unsqueeze(0))
         proj = self.selector_projection(h)        # [K, 256]
         from engine.modules.draft_agreement import agree_walk
+        from engine.kernels.draft_select import walk_scores
         drafts = walk_scores(unary.unsqueeze(0), cand.unsqueeze(0), anchor.reshape(1), proj.unsqueeze(0),
                              p["candidate_selector.predecessor_codebook"],
                              p["candidate_selector.successor_codebook"], alpha=self.selector_alpha, boundary=boundary,

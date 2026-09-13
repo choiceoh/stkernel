@@ -164,6 +164,10 @@ class Glm53Net:
         self.decode_fastpath_rows = ()
         self.decode_pairs_executed = set()
         self.prefill_transport = None
+        self.prefill_ffn_packets = False
+        self.prefill_packet_executed = set()
+        self.prefill_packet_planned = set()
+        self.prefill_packet_peak_bytes = 0
         self.prefill_indexer_shards = False
         self.prefill_indexer_executed = set()
         self.prefill_dense_prefix = False
@@ -180,6 +184,8 @@ class Glm53Net:
         # The dense MLPs as one-expert NVFP4 (ModelOpt's own layout); BF16 dense MLPs take the packed dense path.
         self.dense_nvfp4 = self.modelopt and self.weight_layout != MODELOPT_BF16_DENSE_LAYOUT
         self._experts = {}
+        self._packet_experts = {}
+        self._packet_capabilities = {}
         self._quant_scales = {}
         if self.dense_nvfp4:
             self._dense = self._dense_nvfp4
@@ -215,6 +221,11 @@ class Glm53Net:
                         F.topk_experts if F.is_moe(L) else 1, F.swiglu_limit, **kw)
             self._experts[L] = partial(self.lanes.moe, w13=p[n+'w13'], w13_sf=p[n+'w13_sf'],
                 w2=p[n+'w2'], w2_sf=p[n+'w2_sf'], limit=F.swiglu_limit, **kw)
+            if F.is_moe(L) and self.lanes.moe_packets is not None and self.lanes.moe_packets_supported is not None:
+                args = dict(w13=p[n+'w13'], w13_sf=p[n+'w13_sf'], w2=p[n+'w2'],
+                            w2_sf=p[n+'w2_sf'], limit=F.swiglu_limit, **kw)
+                self._packet_experts[L] = partial(self.lanes.moe_packets, **args)
+                self._packet_capabilities[L] = partial(self.lanes.moe_packets_supported, **args)
 
     def router_nbytes(self):
         """FP32 routing matrices, explicitly reserved apart from BF16 rank weights."""
@@ -843,12 +854,50 @@ class Glm53Net:
             else:
                 gate = self._router_weights.get(L, p[n + "gate"])
                 logits = x.float() @ gate.float().T
+        return self._select_routes(L, logits)
+
+    def _select_routes(self, L, logits):
+        F, p, n = self.F, self.p, f"L{L}.moe."
         if self.lanes.route_weights is not None:
             return self.lanes.route_weights(logits, p[n + "bias"], F.topk_experts, F.routed_scale)
         s = torch.sigmoid(logits)
         sel = (s + p[n + "bias"]).topk(F.topk_experts, dim=-1).indices
         w = s.gather(-1, sel)
         return sel.to(torch.int32), w / w.sum(-1, keepdim=True) * F.routed_scale
+
+    def _packet_ffn_layers(self, rows):
+        from engine.modules.prefill_packets import agreed_layers, ffn_packet_rows
+        if not getattr(self, 'prefill_ffn_packets', False) or not ffn_packet_rows(rows):
+            return frozenset()
+        supported = set()
+        for L, capable in self._packet_capabilities.items():
+            gate = self.p[f'L{L}.moe.gate']
+            shared = self.dense.get(f'L{L}.moe.sh_gate_up')
+            projector = getattr(shared, 'packet_projector', lambda: None)()
+            if (projector is not None and gate.is_cuda and gate.is_contiguous()
+                    and gate.dtype == torch.bfloat16 and tuple(gate.shape) == (288,4096)
+                    and capable(rows)):
+                supported.add(L)
+        agreed = agreed_layers(self.comm, self.layers, supported)
+        self.prefill_packet_planned.update(agreed)
+        return agreed
+
+    @operation('moe', layer_arg=1)
+    def _moe_packets(self, L, batch, shards):
+        from engine.kernels.prefill_router import router_packet_logits
+        n = f'L{L}.moe.'
+        logits = router_packet_logits(batch, self.p[n+'gate'])
+        ids, weights = self._select_routes(L, logits)
+        out = self._packet_experts[L](batch, ids, weights)
+        project = self.dense[n+'sh_gate_up'].packet_projector()
+        if project is None:
+            raise RuntimeError('packet FFN reader changed after the agreed plan')
+        g, u = project(batch.received, batch.geometry.local_rows, real_rows=shards.rows).chunk(2, dim=-1)
+        shared = self.linear(self._activation(g, u, self.F.swiglu_limit), n+'sh_down')
+        self.prefill_packet_executed.add(L)
+        self.prefill_packet_peak_bytes = max(self.prefill_packet_peak_bytes, batch.geometry.nbytes)
+        return (shards.reduce_scatter_pair(out, shared) if shards.fuse_sum else
+                shards.reduce_scatter(out + shared))
 
     @operation("moe", layer_arg=1)
     def _moe(self, L: int, x: torch.Tensor, reduce=None, *, reduce_pair=None, finalize=None) -> torch.Tensor:
@@ -890,7 +939,7 @@ class Glm53Net:
         aux_hidden_states: hc_post then hc_contract after layer idx). Prefill may
         request only the final hidden row, which supplies its first sampled token."""
         F = self.F
-        eager_compact = self.compact_kda and not getattr(step, "captured", False)
+        eager_compact = getattr(self, 'compact_kda', False) and not getattr(step, "captured", False)
         if eager_compact:
             caches.begin_compact(step, commit_all=compact_commit)
         if contract is not None and aux_layers and any(L not in self.layers for L in aux_layers):
@@ -902,6 +951,7 @@ class Glm53Net:
         if sp is not None:
             from engine.modules.token_shards import TokenShards
             sp = TokenShards(sp, N, self.rank)
+        packet_layers = self._packet_ffn_layers(sp.rows) if sp is not None else frozenset()
         reduce = sp.reduce_scatter if sp else self.comm.all_reduce
         x = self.embed(step.ids)
         for pos, rows in step.patches:                                               # image rows in place of their placeholders
@@ -929,12 +979,17 @@ class Glm53Net:
             if self.probe:
                 self.probe("dsa" if F.is_dsa(L) else "kda", L, x)
             res, post, comb, x = self._hc_post_pre(L, x, res, post, comb, "ffn")
-            if sp:
-                x = sp.all_gather(x.contiguous())
-            if F.is_moe(L) and sp and sp.fuse_sum:
-                x = self._moe(L, x, reduce, reduce_pair=sp.reduce_scatter_pair)
+            if L in packet_layers:
+                packets = sp.all_gather_packets(x.contiguous())
+                x = self._moe_packets(L, packets, sp)
+                del packets  # all readers used this stream; the next FFN owns a new packet
             else:
-                x = self._moe(L, x, reduce) if F.is_moe(L) else self._dense(L, x, reduce)
+                if sp:
+                    x = sp.all_gather(x.contiguous())
+                if F.is_moe(L) and sp and sp.fuse_sum:
+                    x = self._moe(L, x, reduce, reduce_pair=sp.reduce_scatter_pair)
+                else:
+                    x = self._moe(L, x, reduce) if F.is_moe(L) else self._dense(L, x, reduce)
             if self.probe:
                 self.probe("moe" if F.is_moe(L) else "dense", L, x)
             if aux_layers and L in aux_layers:

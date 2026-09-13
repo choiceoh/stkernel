@@ -4167,6 +4167,7 @@ def _get_dynamic_kernel(
     _prefill_tile64: bool = False,
     _prefill_n128: bool = False,
     _prefill_q0_batch8: bool = False,
+    _prefill_packets: bool = False,
 ):
     """Compile (or retrieve cached) the SM120 dynamic MoE kernel.
 
@@ -4332,6 +4333,13 @@ def _get_dynamic_kernel(
         activation=activation, swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit, ep_local=ep_local_cls is not None,
         tp_sf6_q0=tp_sf6_q0, share_input_across_experts=share_input_across_experts)
+    if type(_prefill_packets) is not bool:
+        raise TypeError('private FFN packet selector must be bool')
+    if _prefill_packets:
+        if (not prefill_word_unpack or prefill_reuse or _prefill_scale_expansion
+                or _prefill_tile64 or _prefill_n128 or _prefill_q0_batch8):
+            raise ValueError('FFN packets require the ordinary long-prefill SF6 M128 body')
+        cache_key = (*cache_key, 'long_prefill_fp8_packets_v1')
     if prefill_word_unpack:
         cache_key = (*cache_key, 'long_prefill_sf6_route_words_v1')
     short_word_unpack = _short_prefill_q0_word_unpack(
@@ -4401,6 +4409,9 @@ def _get_dynamic_kernel(
             if prefill_word_unpack:
                 from .moe_dynamic_gated_sf6_prefill import MoEGatedDynamicKernelSF6Prefill
                 tiled_cls = MoEGatedDynamicKernelSF6Prefill
+                if _prefill_packets:
+                    from .moe_dynamic_prefill_packets import MoEGatedDynamicKernelSF6Packets
+                    tiled_cls = MoEGatedDynamicKernelSF6Packets
             elif short_word_unpack:
                 from .moe_dynamic_gated_sf6_q0_words import MoEGatedDynamicKernelSF6Q0Words
                 tiled_cls = MoEGatedDynamicKernelSF6Q0Words
@@ -4628,6 +4639,9 @@ def _get_dynamic_kernel(
         ),
         extra_key_files=_kernel_source_files() + (
             tuple(os.path.join(os.path.dirname(__file__), name) for name in
+                  ('moe_dynamic_prefill_packets.py', 'moe_w4a16_fp4_helpers.py'))
+            if _prefill_packets else ()) + (
+            tuple(os.path.join(os.path.dirname(__file__), name) for name in
                   ('moe_prefill_q0_batch8.py', '_prefill_q0_batch8.py'))
             if _prefill_q0_batch8 else ()) + (
             (os.path.join(os.path.dirname(__file__), 'moe_dynamic_prefill_n128_tiled.py'),)
@@ -4712,7 +4726,7 @@ def launch_sm120_dynamic_moe(
     *,
     workspace: Sm120DynamicMoEWorkspace,
     weights: _WeightViews,
-    a: torch.Tensor,
+    a: torch.Tensor | None,
     topk_ids: torch.Tensor,
     topk_weights: torch.Tensor,
     input_gs: torch.Tensor,
@@ -4736,9 +4750,32 @@ def launch_sm120_dynamic_moe(
     _prefill_tile64: bool | None = None,
     _prefill_n128: bool = False,
     _prefill_q0_batch8: bool = False,
+    _packet_input=None,
 ) -> torch.Tensor:
     """Launch the SM120 dynamic MoE kernel."""
     global _TP_SF6_Q0_LAUNCH_LOGGED
+    if _packet_input is not None:
+        from engine.modules.prefill_packets import PacketBatch, ffn_packet_rows
+        if (a is not None or not isinstance(_packet_input, PacketBatch)
+                or not ffn_packet_rows(num_tokens)
+                or (_packet_input.geometry.rows, _packet_input.geometry.hidden) != (num_tokens, k)
+                or (num_experts, k, n, top_k, workspace.tile_m) != (288, 4096, 512, 8, 128)
+                or input_gs.numel() != num_experts
+                or _prefill_scale_expansion or _prefill_tile64 or _prefill_n128 or _prefill_q0_batch8):
+            raise ValueError('FFN packet launch requires its explicit real-row/weight/workspace contract')
+        device = _packet_input.received.device
+        if (scatter_output.device != device or workspace.device != device
+                or tuple(scatter_output.shape) != (num_tokens, k)
+                or scatter_output.dtype != torch.bfloat16 or not scatter_output.is_contiguous()
+                or tuple(topk_ids.shape) != (num_tokens, top_k) or topk_weights.shape != topk_ids.shape
+                or topk_ids.device != device or topk_weights.device != device):
+            raise ValueError('FFN packet routes and output must use exactly the real rows on one device')
+        if torch.cuda.is_current_stream_capturing():
+            raise ValueError('FFN packet MoE is eager-only')
+    else:
+        if a is None:
+            raise ValueError('dynamic MoE requires a BF16 input or an explicit packet owner')
+        device = a.device
     activation_precision = _normalize_activation_precision(activation_precision)
     if activation_precision == "bf16":
         raise ValueError(
@@ -4851,13 +4888,14 @@ def launch_sm120_dynamic_moe(
         _prefill_tile64=_prefill_tile64,
         _prefill_n128=_prefill_n128,
         _prefill_q0_batch8=_prefill_q0_batch8,
+        _prefill_packets=_packet_input is not None,
     )
 
     # Dynamic kernel: runtime-shaped args are DataPointer (pass data_ptr()),
     # fixed-shape args are Tensor (pass torch tensor directly).  No stream
     # argument -- see the note in launch_sm120_static_moe.
     runtime_args: Tuple[Any, ...] = (
-        a.data_ptr(),
+        a.data_ptr() if _packet_input is None else _packet_input.received.data_ptr(),
         flat_ids.data_ptr(),
         flat_weights.data_ptr(),
         workspace.packed_a_view.data_ptr(),
@@ -4885,8 +4923,8 @@ def launch_sm120_dynamic_moe(
         accumulator.data_ptr(),
         workspace.token_map.data_ptr(),
         workspace.token_weights.data_ptr(),
-        weights.sfb1_packed if direct_sf6 else _sf_pack_dummy(a.device),
-        weights.sfb2_packed if direct_sf6 else _sf_pack_dummy(a.device),
+        weights.sfb1_packed if direct_sf6 else _sf_pack_dummy(device),
+        weights.sfb2_packed if direct_sf6 else _sf_pack_dummy(device),
         num_tokens,
         workspace.max_rows,
         workspace.physical_tiles_capacity * workspace.tile_m,

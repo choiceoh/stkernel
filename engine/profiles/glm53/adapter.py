@@ -47,7 +47,7 @@ class Glm53Engine:
         self.net, self.caches, self.F = net, caches, F
         from engine.profiles.glm53.execution import ExecutionPlan
         self.execution_plan = execution_plan or ExecutionPlan()
-        if self.execution_plan.compact_kda != getattr(caches, "compact", False):
+        if self.execution_plan.compact_kda != (getattr(caches, "compact", False) is True):
             raise ValueError("compact KDA execution plan and cache layout must agree")
         if self.execution_plan.active and getattr(F, "kda_state_dtype", "fp32") != "fp32":
             raise ValueError("GB10 execution experiments require FP32 KDA state")
