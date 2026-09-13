@@ -3,12 +3,13 @@
 import json
 import math
 
-HARNESS = 43
-# Harness 42 exhausted all three individual reasoning streams at 800 tokens,
-# before their calculations finished. Keep half the larger budget for answers.
-MAX_TOKENS = 8192
-COMBINED_MAX_TOKENS = 24576
-COMBINED_REASONING_BUDGET = 12288
+HARNESS = 44
+# Harness 43 (8192/4096 individual, 24576/12288 combined) ended every measured
+# reasoning stream at its cap mid-sentence; the 128K combined request spent the
+# whole cap on the first of its three cases. Keep half the doubled budget for answers.
+MAX_TOKENS = 16384
+COMBINED_MAX_TOKENS = 49152
+COMBINED_REASONING_BUDGET = 24576
 DEFAULTS = dict(ctx=[2000, 32000, 128000], seed=7, max_tokens=MAX_TOKENS, combine_min_ctx=32000,
                 fixed_decode_tokens=0, fixed_decode_reps=0, require_exclusive=False)
 

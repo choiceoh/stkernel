@@ -11,21 +11,21 @@ import re
 
 from measurement_contract import MAX_TOKENS, COMBINED_MAX_TOKENS, COMBINED_REASONING_BUDGET
 
-VERSION = 'ko-reasoning-v1'
+VERSION = 'ko-reasoning-v2'
 
 
 def digest(value):
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
-def _case(name, evidence, question, answer):
-    return dict(id=name, evidence=evidence, question=question, answer=answer)
+def _case(name, evidence, question, answer, hints=None):
+    return dict(id=name, evidence=evidence, question=question, answer=answer, schema_hints=hints or {})
 
 
 def _ledger(rng):
     opening, boxes, unit = rng.randrange(170, 220), rng.randrange(13, 20), rng.choice([6, 8, 12])
     shipped, returned, reserve = rng.randrange(40, 60), rng.randrange(7, 16), rng.randrange(25, 45)
-    loss = rng.choice([7, 9, 13])
+    loss = rng.choice([5, 10, 15])
     gross = opening + boxes * unit - shipped + returned
     usable = gross * (100 - loss) // 100 - reserve
     demand = usable + rng.choice([-1, 1]) * rng.randrange(2, 8)
@@ -56,9 +56,14 @@ def _ledger(rng):
         counterfactual=dict(available=usable - extra, shortfall=max(0, demand - (usable - extra)),
                             decision='전량승인' if usable - extra >= demand else '보류'))
     return _case('ledger', evidence,
-        '마감 시점의 전량승인 여부를 판정하고 개정 선택·단위 환산·손실 계산을 검증 가능한 수치로 제시하라. '
-        'L5 가정 변경 후 가용량과 주문 부족량(부족하지 않으면 0)도 계산하라. selected에는 취소를 포함한 최종 채택 행 ID를 적는다. '
-        'evidence에는 선택 검토에 필요한 모든 거래 행과 규칙을 위 구조에 따라 분류한다.', answer)
+        '마감 시점의 전량승인 여부를 판정하라. result와 derivation은 L5를 적용하지 않은 기본 조건이고 counterfactual만 L5를 적용한다. '
+        'selected에는 취소 개정을 포함해 최종 채택한 거래 행 ID를 적는다. received는 채택한 입고 상자 수에 상자당 개수를 곱한 값이며 '
+        '반품과 출고는 넣지 않는다. net은 기초 재고에 채택한 입고·반품을 더하고 출고를 뺀 순재고, after_loss는 순재고에 손실률을 '
+        '적용하고 소수 부분을 버린 값이다. counterfactual에는 L5 적용 후 가용량, 주문 부족량(부족하지 않으면 0), 판정을 적는다. '
+        'evidence.selection에는 마감·개정 규칙과 모든 거래 행, arithmetic에는 단위·손실 규칙, decision에는 승인 규칙, '
+        'counterfactual에는 가정 변경 규칙의 ID를 넣는다.', answer,
+        hints={'result.decision': '전량승인|보류', 'counterfactual.decision': '전량승인|보류',
+               'derivation.selected': ['거래 행 ID']})
 
 
 def _portfolio_rows(projects, budget, staff):
@@ -71,7 +76,7 @@ def _portfolio_rows(projects, budget, staff):
         if 'B' in ids and 'A' not in ids: violations.append('dependency')
         if 'C' in ids and 'E' in ids: violations.append('conflict')
         rows.append(dict(ids=''.join(ids), cost=cost, staff=people,
-                         score=min(upside, downside) - 2 * risk, violations=violations))
+                         score=None if violations else min(upside, downside) - 2 * risk, violations=violations))
     return rows
 
 
@@ -112,10 +117,16 @@ def _portfolio(rng):
         counterfactual=dict(best=alternate[0]['ids'], score=alternate[0]['score'],
                             feasible=[r['ids'] for r in alternate]))
     return _case('portfolio', evidence,
-        '기본 조건의 최적 조합, 차선 조합, 점수 차를 구하라. 최적성 증명으로 10개 조합 전체의 '
-        '비용·인력·점수·위반 목록을 candidates에 제출하라. 불가능한 조합도 점수를 계산한다. '
-        '위반 이름은 budget, staff, dependency, conflict이고 모든 위반을 기재한다. 없으면 []이다. '
-        'O5 변경 후 최적 조합과 가능한 모든 조합 ID도 제시하라. 조합 ID는 문자를 사전순으로 붙인다.', answer)
+        '기본 조건의 최적 조합, 차선 조합, 점수 차를 구하라. 최적성 증명으로 10개 조합 전체의 비용·인력·위반 목록을 '
+        'candidates에 제출하라. 점수는 위반이 없는 조합만 계산하고 위반이 있는 조합의 score는 null이다. '
+        '위반 이름은 budget, staff, dependency, conflict이고 해당하는 위반을 모두 기재한다. 없으면 []이다. '
+        'O5 변경 후 최적 조합과 점수, 가능한 모든 조합 ID도 제시하라. 조합 ID는 문자를 사전순으로 붙인다. '
+        'evidence.constraints에는 선택·예산·인력·의존·배타 규칙, objective에는 점수 규칙, projects에는 사업 기록, '
+        'counterfactual에는 가정 변경 규칙의 ID를 넣는다.', answer,
+        hints={'derivation.candidates.ids': '조합 ID', 'derivation.candidates.score': 'integer|null',
+               'derivation.candidates.violations': ['budget|staff|dependency|conflict'],
+               'result.best': '조합 ID', 'result.runner_up': '조합 ID',
+               'counterfactual.best': '조합 ID', 'counterfactual.feasible': ['조합 ID']})
 
 
 def _rules(bits):
@@ -152,7 +163,8 @@ def _logic(rng):
                 cores.append(indices)
     evidence = {
         'U0': f'변수는 {", ".join(labels)}이며 각각 0 또는 1이다. 기록에 없는 조건은 추가하지 않는다. '
-              '가능 세계는 ABCDEF 순서의 6자리 비트 문자열로 표시한다.',
+              '가능 세계는 변수 이름의 알파벳 순서 ABCDEF로 나열한 6자리 비트 문자열로 표시한다. '
+              '예: A=1, B=0, C=0, D=1, E=1, F=0이면 100110이다.',
         'U1': f'{a} 또는 {b} 중 적어도 하나는 1이다.',
         'U2': f'{b}와 {c}의 값은 같다.',
         'U3': f'{c}와 {d}가 동시에 1일 수 없다.',
@@ -168,11 +180,15 @@ def _logic(rng):
                               false=x['false'][0] if x['false'] else None) for x in witnesses]
     case = _case('logic', evidence,
         '명제 순서 ' + ', '.join(f'Q{i + 1}={query_texts[q]}' for i, q in enumerate(order)) + '에 대해 '
-        '모든 가능한 세계에서 참이면 참, 모두 거짓이면 거짓, 양쪽이 존재하면 판단불가로 분류하라. '
+        'U1~U5를 모두 만족하는 가능 세계 전체에서 참이면 참, 모두 거짓이면 거짓, 양쪽이 존재하면 판단불가로 분류하라. '
         '가능 세계 전체를 worlds에 열거하고 명제별 true/false 증인 세계 하나씩을 제출하라. '
         '해당 증인이 없을 때만 null이다. statuses와 witnesses의 배열 순서는 Q1~Q4다. '
-        'U6을 추가한 일관성 여부와 모든 최소 모순 규칙 집합을 제시하라. 최소란 어떤 한 규칙을 '
-        '빼도 모순이 사라진다는 뜻이다. U0의 이진 정의는 고정이며 core에 넣지 않는다.', answer)
+        'U6을 추가했을 때의 일관성 여부(consistent)와, 모순이면 모든 최소 모순 규칙 집합을 minimal_cores에 제시하라. '
+        '최소란 어떤 한 규칙을 빼도 모순이 사라진다는 뜻이다. U0의 이진 정의는 고정이며 core에 넣지 않는다. '
+        'evidence.domain에는 변수 정의, constraints에는 U1~U5, counterfactual에는 가정 변경 규칙의 ID를 넣는다.', answer,
+        hints={'result.statuses': ['참|거짓|판단불가'], 'derivation.worlds': ['6자리 비트열'],
+               'witnesses.true': '6자리 비트열|null', 'witnesses.false': '6자리 비트열|null',
+               'counterfactual.minimal_cores': [['규칙 ID']]})
     case['witness_options'] = witnesses
     return case
 
@@ -182,9 +198,14 @@ def cases(seed):
     return [_ledger(rng), _portfolio(rng), _logic(rng)]
 
 
-def _shape(value):
-    if isinstance(value, dict): return {k: _shape(v) for k, v in value.items()}
-    if isinstance(value, list): return [_shape(value[0])] if value else ['...']
+def _shape(value, hints=None, path=''):
+    """The JSON skeleton shown to the model. Enumerated fields spell out their
+    choices, evidence arrays hold record IDs, everything else names its type."""
+    hints = hints or {}
+    if path in hints: return hints[path]
+    if isinstance(value, dict): return {k: _shape(v, hints, f'{path}.{k}' if path else k) for k, v in value.items()}
+    if isinstance(value, list): return [_shape(value[0], hints, path)] if value else ['...']
+    if path.partition('.')[0] == 'evidence': return '기록 ID'
     return 'boolean' if type(value) is bool else 'integer' if type(value) is int else 'string|null'
 
 
@@ -201,14 +222,14 @@ def request_item(ctx, seed, selected, filler, max_tokens, reasoning_budget, ques
     for key, value in evidence:
         chunks.extend([filler(per, rng), f'[{key}] {value}'])
     chunks.append(filler(per, rng))
-    schemas = {case['id']: _shape(case['answer']) for case in selected}
+    schemas = {case['id']: _shape(case['answer'], case.get('schema_hints')) for case in selected}
     content = ('아래 문서의 [L*], [O*], [U*] 기록만 해당 문제의 근거다. 일반 배경 문단은 규칙이 아니다.\n문서:\n'
         + '\n'.join(chunks) + '\n\n문제:\n'
         + '\n'.join(case['id'] + ': ' + case['question'] for case in selected)
-        + '\n최종 답변은 다음 구조의 JSON 객체 하나로 제출하라. 코드 펜스는 허용한다. '
-          '설명 대신 계산표·근거 ID·반례 증명서를 작성한다. 표시된 자료형은 실제 값으로 대체하고 '
-          '배열은 요구한 모든 항목을 채운다. 추가 필드는 넣지 않는다. '
-          '숫자는 정수, 증인 없음은 null이다. witnesses와 statuses 외 배열의 순서는 무관하다.\n'
+        + '\n최종 답변은 다음 구조의 JSON 객체 하나만 제출하라. 코드 펜스는 허용하지만 JSON 밖에는 표·설명·문장을 쓰지 않는다. '
+          '표시된 자료형은 실제 값으로 대체하고 "a|b" 꼴은 그중 하나를 그대로 적는다. 배열은 요구한 모든 항목을 채우고 '
+          '추가 필드는 넣지 않는다. 기록 ID는 L1, O4, U2처럼 대괄호 없이 적고 설명을 붙이지 않는다. '
+          '숫자는 정수, 없는 값은 null이다. witnesses와 statuses 외 배열의 순서는 무관하다.\n'
         + json.dumps(schemas, ensure_ascii=False))
     return dict(ctx=ctx, question=question, content=content, max_tokens=max_tokens,
                 reasoning_budget=reasoning_budget, quality_cases=selected, quality_version=VERSION)
