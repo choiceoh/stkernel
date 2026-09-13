@@ -24,7 +24,7 @@ class TiledProjection:
         self.owner = owner
         self.stream = torch.cuda.Stream()
 
-    def __call__(self, x, project):
+    def __call__(self, x, project, *, packet_project=None):
         import torch
         import torch.distributed as dist
         from engine.kernels.prefill_collectives import BLOCK, FP8_MIN_ROWS
@@ -41,6 +41,7 @@ class TiledProjection:
         tile_rows = ((x.shape[0] + pieces * 32 - 1) // (pieces * 32)) * 32
         # This decision belongs to the original full operation, not each tile.
         fp8 = x.shape[0] * world >= FP8_MIN_ROWS
+        fused = fp8 and packet_project is not None and (world, hidden) == (4, 4096)
         parent = torch.cuda.current_stream(x.device)
         self.stream.wait_stream(parent)
         x.record_stream(self.stream)
@@ -52,7 +53,7 @@ class TiledProjection:
                 slots.append(dict(
                     payload=torch.empty(packet_limit, device=x.device, dtype=torch.uint8) if fp8 else None,
                     received=torch.empty(packet_limit * world, device=x.device, dtype=torch.uint8) if fp8 else None,
-                    value=torch.empty((tile_rows * world, hidden), device=x.device, dtype=x.dtype),
+                    value=None if fused else torch.empty((tile_rows * world, hidden), device=x.device, dtype=x.dtype),
                     ready=torch.cuda.Event(), released=torch.cuda.Event(), used=False))
         output = None
 
@@ -62,7 +63,7 @@ class TiledProjection:
             with torch.cuda.stream(self.stream):
                 if slot["used"]:
                     self.stream.wait_event(slot["released"])
-                value = slot["value"][:rows * world]
+                value = None if fused else slot["value"][:rows * world]
                 source = x[start:end]
                 if fp8:
                     local = rows * hidden
@@ -73,9 +74,12 @@ class TiledProjection:
                         local, local, stride, BLOCK=BLOCK)
                     work = dist.all_gather_into_tensor(received, payload, group=owner.comm.group, async_op=True)
                     work.wait()  # orders the current CUDA stream, not a host polling loop
-                    _unpack_gather[(local * world // BLOCK,)](
-                        received.view(torch.float8_e4m3fn), received.view(torch.float32), value,
-                        local, stride, BLOCK=BLOCK)
+                    if fused:
+                        value = received
+                    else:
+                        _unpack_gather[(local * world // BLOCK,)](
+                            received.view(torch.float8_e4m3fn), received.view(torch.float32), value,
+                            local, stride, BLOCK=BLOCK)
                 else:
                     work = dist.all_gather_into_tensor(value, source, group=owner.comm.group, async_op=True)
                     work.wait()
@@ -87,7 +91,7 @@ class TiledProjection:
             slot, value, work = pending
             parent.wait_event(slot["ready"])
             value.record_stream(parent)
-            projected = project(value)
+            projected = packet_project(value, end-start) if fused else project(value)
             if projected.ndim != 2 or projected.shape[0] != (end-start)*world:
                 raise ValueError("tile projection must preserve rows")
             if output is None:
@@ -106,4 +110,6 @@ class TiledProjection:
             # owner on the caller stream. No fallback after an issued collective.
             parent.wait_stream(self.stream)
         owner.executed.add("fp8_tiled_projection" if fp8 else "bf16_tiled_projection")
+        if fused:
+            owner.executed.add("fp8_packet_projection")
         return output.flatten(0, 1)

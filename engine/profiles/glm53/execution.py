@@ -80,7 +80,7 @@ def prepare(net, layer, carry, side):
         c.res, c.post, c.comb, c.x = net._hc_post_pre(layer, c.x, c.res, c.post, c.comb, side)
     c.projection = None
     if c.sp is not None and side == "attn" and not net.F.is_dsa(layer) and c.sp.project_tiles:
-        c.projection = c.sp.gather_project(c.x.contiguous(), lambda v: net.linear(v, f"L{layer}.kda.in_proj"))
+        c.projection = net.prefill_project(c.sp, c.x, f"L{layer}.kda.in_proj")
     elif c.sp is not None:
         c.x = c.sp.all_gather(c.x.contiguous())
 

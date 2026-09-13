@@ -31,13 +31,13 @@ class PrefillCollectives:
         self.project_tiles = project_tiles
         self.projector = None
 
-    def gather_project(self, x, project):
+    def gather_project(self, x, project, *, packet_project=None):
         if not self.project_tiles:
             return project(self.all_gather(x))
         if self.projector is None:
             from .tiles import TiledProjection
             self.projector = TiledProjection(self)
-        return self.projector(x, project)
+        return self.projector(x, project, packet_project=packet_project)
 
     def check(self, x):
         if (x.ndim != 2 or x.shape[1] != self.hidden or x.dtype != torch.bfloat16

@@ -273,6 +273,21 @@ class DenseLinear:
             self.executed |= 2
         return out.reshape(*shape, self.rows)
 
+    def packet_projector(self):
+        """The prefill transport may bypass BF16 storage only without observers."""
+        if (self.cols != 4096 or self.fp8 is None or self.observer is not None
+                or self.fp8.observer is not None):
+            return None
+        return self._project_packets
+
+    def _project_packets(self, received, local_rows):
+        if self.packet_projector() is None or local_rows * 4 <= 32:
+            raise ValueError("packet projection requires the unobserved FP8 prefill lane")
+        from engine.kernels.prefill_collectives.consumer import quantize_gather
+        out = self.fp8.project_quantized(*quantize_gather(received, local_rows))
+        self.executed |= 2
+        return out
+
 
 class FP8Linear:
     """Block-scaled FP8 for prefill and the accuracy-sensitive vocabulary head. `quantized`: (q, scale) prepared by
@@ -304,16 +319,25 @@ class FP8Linear:
         self.weight=consume(storage,self.weight)
 
     def __call__(self, x, rows_ok=None):
-        from deep_gemm import fp8_gemm_nt
         if self.observer is not None:
             self.observer(x.reshape(-1, self.cols), rows_ok)
         from .fp8 import quantize
-        from engine.kernels.deep_gemm import _initialize
-        _initialize()
         shape = x.shape[:-1]
         flat = x.reshape(-1, self.cols).contiguous()
         q, scale = quantize(flat)
-        out = torch.empty((flat.shape[0], self.weight[0].shape[0]), device=x.device, dtype=torch.bfloat16)
+        return self.project_quantized(q, scale).reshape(*shape, self.rows)
+
+    def project_quantized(self, q, scale):
+        """Consume the existing 128-column FP8 recipe, including padded weight rows."""
+        from deep_gemm import fp8_gemm_nt
+        from engine.kernels.deep_gemm import _initialize
+        if (q.ndim != 2 or q.shape[1] != self.cols or q.dtype != torch.float8_e4m3fn
+                or scale.shape != (q.shape[0], self.cols // 128) or scale.dtype != torch.float32
+                or not q.is_contiguous() or not scale.is_contiguous()
+                or q.device != self.weight[0].device or scale.device != q.device):
+            raise ValueError("FP8 activation bytes/scales must match the bound weight")
+        _initialize()
+        out = torch.empty((q.shape[0], self.weight[0].shape[0]), device=q.device, dtype=torch.bfloat16)
         fp8_gemm_nt((q, scale), self.weight, out)
         self.executed = True
-        return out[:, :self.rows].reshape(*shape, self.rows)
+        return out[:, :self.rows]

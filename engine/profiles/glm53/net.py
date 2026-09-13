@@ -311,6 +311,14 @@ class Glm53Net:
         layer = self.dense.get(name)
         return layer(x) if layer is not None else Fn.linear(x, self.p[name])
 
+    def prefill_project(self, transport, x, name):
+        project = lambda value: self.linear(value, name)
+        layer = self.dense.get(name)
+        packets = getattr(layer, "packet_projector", lambda: None)()
+        if packets is None:
+            return transport.gather_project(x.contiguous(), project)
+        return transport.gather_project(x.contiguous(), project, packet_project=packets)
+
     # -- embed / head -------------------------------------------------------------
     @operation("embed")
     def embed(self, ids: torch.Tensor) -> torch.Tensor:
@@ -731,7 +739,7 @@ class Glm53Net:
                 post, comb, x = self._hc_pre(L, res, "attn")
             projection = None
             if sp and not F.is_dsa(L) and sp.project_tiles:
-                projection = sp.gather_project(x.contiguous(), lambda v: self.linear(v, f"L{L}.kda.in_proj"))
+                projection = self.prefill_project(sp, x, f"L{L}.kda.in_proj")
             elif sp:
                 x = sp.all_gather(x.contiguous())
             x = self._dsa(L, x, step, caches, reduce) if F.is_dsa(L) else self._kda(
