@@ -10,6 +10,29 @@ from engine.kernels.dense.smoothing import CLAMP, fold, scales, smooth_hessian, 
 
 
 class SmoothingTests(unittest.TestCase):
+    def test_fold_preserves_signed_and_zero_norm_channels(self):
+        for dtype in (torch.bfloat16, torch.float32):
+            with self.subTest(dtype=dtype):
+                norm_w = torch.tensor([-1., 2., 0., -0.5, 0.75, -0.], dtype=dtype)
+                original = norm_w.clone()
+                s = torch.tensor([2., 0.5, 4., 64., 1 / 64., 8.])
+                x = torch.tensor([[1., 2., 4., 0.5, -2., 8.],
+                                  [2., -1., 8., 4., 0.5, -4.]], dtype=dtype)
+                readers = [torch.tensor([[1., 0.5, 2., -1., 4., 0.25],
+                                         [-2., 1., 0.5, 2., 1., -4.]], dtype=dtype),
+                           torch.tensor([[0.5, -2., 1., 4., -1., 2.]], dtype=dtype)]
+                before = [torch.nn.functional.linear(x * original, w) for w in readers]
+                factor = fold(norm_w, s)
+                self.assertTrue(torch.equal(factor, torch.where(original != 0, s, 1.)))
+                self.assertTrue(bool(torch.isfinite(factor).all()))
+                self.assertTrue(torch.equal(torch.signbit(norm_w), torch.signbit(original)))
+                for w, expected in zip(readers, before):
+                    actual = torch.nn.functional.linear(x * norm_w, smooth_weight(w, factor))
+                    self.assertTrue(torch.equal(actual, expected))
+                # Calibration uses the same positive undo, not a sign flip.
+                hessian = torch.eye(len(s))
+                torch.testing.assert_close(smooth_hessian(hessian, factor).diagonal(), factor.reciprocal().square())
+
     def test_the_fold_keeps_every_readers_product_and_evens_the_activation(self):
         from engine.profiles.glm53.net import rmsnorm
         g = torch.Generator().manual_seed(1)
