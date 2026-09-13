@@ -145,13 +145,18 @@ MLA는 필수 레인이므로 이전 `VLLM_GLM53_MEGAKERNEL`/`VLLM_GLM53_MK_MLA`
 **형상 마법사와 기록.** 래퍼가 거부 기준으로 삼는 컴파일된 셀(MLA 16×512, Hadamard-128, mHC hidden 4096/5120·hc 4,
 one-shot world 4·MAXEL, prefill 블록 2048, 융합 게이트의 per-channel decay)은 `engine/kernels/cells.py` 한 곳에 있고
 래퍼가 거기서 임포트한다. 그래서 `cells.admission(shape)` 가 부팅 없이 레인별 판정을 낸다.
+셀은 기하와 **연산 변형**을 함께 뜻한다. 두 모델이 16×512 를 공유해도 softmax 의 sink 항, 인덱서 키 압축 방식, 하이퍼커넥션
+형식이 다를 수 있으므로 형상 기술자가 `Attention.sink`, `Indexer.compress`(kpool / ced / qsa), `hc_variant`(mhc / split_sinkhorn)를
+기본값 없이 선언하고, 판정표와 래퍼(`mla._check_cell`, `dense/mhc.geometry`, TileLang mHC 믹스, `kpool._indexer_cell`)가 모두 변형까지
+맞아야 받는다(`cells.MLA_SINK`, `INDEXER_KEY_COMPRESS`, `MHC_VARIANT`). 모델의 참조를 아직 읽지 않았으면 `None` 으로 두고,
+그 레인은 establish 레시피("참조를 읽고 선언")로 거부된다.
 **admitted** 는 컴파일된 셀 안이면서 측정된 셀 안, **unmeasured** 는 래퍼가 서빙은 하지만 그 레인의 측정된 디스패치 선택(split 지점,
 타일, BF16/FP8 전환)이 다른 셀에서 정해져 선언으로만 도는 경우, **refused** 는 래퍼가 이름을 대고 죽는 경우다. 측정된 셀
 (`ONESHOT_MEASURED_HIDDEN`, `DENSE_MEASURED_HIDDEN`, `MHC_MEASURED_HIDDEN`, `KDA_MEASURED_CELLS` …)은 측정 기록이 있는 폭뿐이고,
 폭은 그 기록을 들여오는 변경에서만 튜플에 들어간다(예: mHC 5120 인스턴스는 컴파일됐지만 GPU 프로브가 아직 안 돌아
 `measurements/dsv41_mhc_20260910` — unmeasured).
 
-**작업표.** admitted 가 아닌 판정마다 `Recipe` 가 붙는다: 종류(measure / instance / kernel / wire / convert / rewrite), 손댈 위치,
+**작업표.** admitted 가 아닌 판정마다 `Recipe` 가 붙는다: 종류(establish / measure / instance / kernel / wire / convert / rewrite), 손댈 위치,
 싼 것부터의 선택지, 판정 프로브·오라클·허용오차, 완료 기준, 비용 등급(minutes / hours / days). `cells.plan()` 이 그것을 비용순
 (같은 비용이면 refused 먼저)으로 세운 것이 새 모델의 작업 목록이다. 레시피가 이름 대는 파일은 테스트가 실재를 확인한다.
 모델을 들이는 단계(`preshard.py`, `preshard_modelopt.py`)가 마법사를 돌려 rank 파일 옆에 `kernel_shape.json`
@@ -161,8 +166,10 @@ config 해시가 맞으면 그것을 바인딩하며(낡은 기록은 사망: "�
 기록 열람: `... show --ranks DIR [--json]`. `--json` 은 형상·레시피 포함 판정·작업 순서를 한 JSON 문서로 내 에이전트가 표 대신 읽는다.
 측정 핀(`MoE.dynamic_tile_m` 등)은 config 에서 나오지 않는 모델별 결정이라 이 기록이 그 자리다.
 선형 어텐션이나 희소 인덱서가 없는 모델은 `linear`/`indexer` 를 `None` 으로 선언하고, 그 레인은 판정표에서 빠지며 래퍼는 이름을 대고 거부한다
-(dsv41: 2026-09-13 srv4 의 DeepSeek-V4.1-Flash config — MLA 16×512·인덱서 128 통과, mHC 5120·one-shot·prefill·dense 는 폭 미측정,
-MoE 는 FP4 [32,32] 블록이라 거부, KDA 레인 없음. 작업표: dense·mHC·one-shot·prefill 측정(hours) 다음 MoE 재양자화 또는 새 셀(days)).
+(dsv41: 2026-09-13 srv4 의 DeepSeek-V4.1-Flash config — 16×512 기하는 같지만 어텐션에 sink 항이 있어 MLA 거부, 키 압축이 CED 라
+인덱서 거부, 하이퍼커넥션이 split-sinkhorn 이라 mHC 디코드·프리필 거부, MoE 는 FP4 [32,32] 블록이라 거부; one-shot·prefill·dense 는
+폭 미측정, KDA 레인 없음. 작업표: mHC 디코드는 메가커널 V4.1 계약 판정(hours), 측정 셋(hours), 인덱서·mHC 프리필·MLA sink·MoE(days).
+Qwen3.8 은 sink 와 하이퍼커넥션 형식이 아직 확정되지 않아 establish 가 먼저다).
 
 ## 런타임 이미지
 

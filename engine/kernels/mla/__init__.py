@@ -7,7 +7,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 # The compiled cell, stated once in engine/kernels/cells.py (the wizard's table refuses against the same numbers).
-from engine.kernels.cells import MLA_HEADS as MLA_H, MLA_LATENT as MLA_D   # noqa: E402
+from engine.kernels.cells import MLA_HEADS as MLA_H, MLA_LATENT as MLA_D, MLA_SINK   # noqa: E402
 MLA_SPLITS_MAX = 64
 MLA_MAX_SPLIT_ROWS = 64
 MLA_WS_ROWS = 3 * MLA_MAX_SPLIT_ROWS
@@ -57,8 +57,8 @@ def _check_cell():
     """The kernel is compiled for one attention cell (MLA_H heads over an MLA_D latent per rank);
     a bound kernel shape that differs is refused by name before anything is armed (D3)."""
     a = _bound().attention
-    if (a.kind, a.heads, a.head_dim) != ("mla", MLA_H, MLA_D):
-        raise RuntimeError(f"ST MLA is compiled for the {MLA_H} heads x {MLA_D} latent MLA cell; "
+    if (a.kind, a.heads, a.head_dim, a.sink) != ("mla", MLA_H, MLA_D, MLA_SINK):
+        raise RuntimeError(f"ST MLA is compiled for the {MLA_H} heads x {MLA_D} latent MLA cell without a sink term; "
                            f"the bound kernel shape asks for {a}")
 
 
