@@ -106,7 +106,13 @@ class Comm:
     # see its own flag. Capture sites must read this before they begin.
     graph_capture_safe = True
 
+    def _check_packets(self):
+        if self.transport is not None and (getattr(self.transport, "pending", None) is not None
+                                          or getattr(self.transport, "packet_failed", False)):
+            raise RuntimeError("consume rank packets before the next device collective")
+
     def all_reduce(self, t):
+        self._check_packets()
         if self.world_size == 1:
             return t
         if self.transport is not None and self.transport.eligible(t):
@@ -117,6 +123,7 @@ class Comm:
 
     def reduce_scatter_rows(self, t):
         """TP sum with each rank retaining one contiguous token shard."""
+        self._check_packets()
         if self.world_size == 1:
             return t
         import torch
@@ -128,6 +135,7 @@ class Comm:
         return out
 
     def all_gather(self, t, dim=-1):
+        self._check_packets()
         if self.world_size == 1:
             return t
         import torch
@@ -142,6 +150,7 @@ class Comm:
         return gathered.movedim(0, dim).flatten(dim, dim + 1)
 
     def all_reduce_max(self, t):
+        self._check_packets()
         if self.world_size > 1:
             if self.transport is not None and self.transport.eligible_max(t):
                 return self.transport.reduce_max(t)
@@ -150,6 +159,7 @@ class Comm:
         return t
 
     def barrier(self):
+        self._check_packets()
         if self.world_size > 1:
             import torch.distributed as dist
             dist.barrier(group=self.group)

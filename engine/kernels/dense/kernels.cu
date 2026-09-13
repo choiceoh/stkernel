@@ -1564,6 +1564,10 @@ struct MKMhcV41Args : MKMhcArgs {
   float* current_pre_output;       // [T, HC]
 };
 
+struct MKMhcPacketsArgs : MKMhcArgs {
+  const __nv_bfloat16* const* rank_inputs;  // device descriptor, rank 0..3
+};
+
 // Per-token chunk arrivals (rearmed by the block that runs the token's
 // tail), the tail ticket counter, and the exit ticket whose last holder
 // rearms the tail counter -- so graph replay needs no host-side reset (the
@@ -1781,7 +1785,7 @@ __device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
 }
 
 template <bool BF16_FN, bool AR_CONSUMER = false, int HID = HIDDEN,
-          bool V41 = false, typename Args = MKMhcArgs>
+          bool V41 = false, typename Args = MKMhcArgs, bool PACKETS = false>
 __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
   // Shadows the file-scope NCHUNK; every chunk loop below reads unchanged.
   constexpr int NCHUNK = HID / HCHUNK;
@@ -1813,7 +1817,18 @@ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
   // ahead so the chain does not open with a global round trip
   auto load_tok = [&](int t, int h, float& xv_, float (&res_)[HC],
                       float (&pm_)[HC], float (&cm_)[HC][HC]) {
-    xv_ = __bfloat162float(a.x_in[t * HID + h]);
+    if constexpr (PACKETS) {
+      // Keep the ordinary one-shot sum order and its BF16 rounding BEFORE
+      // mHC. Combining this sum with the following FP32 mix would change it.
+      const int i = t * HID + h;
+      float sum = __fadd_rn(__bfloat162float(a.rank_inputs[0][i]),
+                           __bfloat162float(a.rank_inputs[1][i]));
+      sum = __fadd_rn(sum, __bfloat162float(a.rank_inputs[2][i]));
+      sum = __fadd_rn(sum, __bfloat162float(a.rank_inputs[3][i]));
+      xv_ = __bfloat162float(__float2bfloat16_rn(sum));
+    } else {
+      xv_ = __bfloat162float(a.x_in[t * HID + h]);
+    }
 #pragma unroll
     for (int k = 0; k < HC; ++k)
       res_[k] = __bfloat162float(
@@ -2061,6 +2076,12 @@ __global__ void mk_mhc_ar_kernel(const MKMhcArgs a) {
   MK_MHC_TS(0);
   mk_mhc_p1_impl<BF16_FN, true, HID>(a, blockIdx.x);
   MK_MHC_TS(7);
+}
+
+template <bool BF16_FN>
+__global__ void mk_mhc_packets_kernel(const MKMhcPacketsArgs a) {
+  asm volatile("griddepcontrol.launch_dependents;");
+  mk_mhc_p1_impl<BF16_FN, true, HIDDEN, false, MKMhcPacketsArgs, true>(a, blockIdx.x);
 }
 
 // Actual V4.1 currently uses FP32 coefficients and no AR-consumer pack.
@@ -3343,9 +3364,9 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer) {
   mk_launch(mk_mhc_kernel<HID>, mhc_grid, 0, stream, a);
 }
 
-void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
+static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scalars,
                 std::vector<int64_t> ints, bool bf16_fn = false,
-                bool ar_consumer = false) {
+                bool ar_consumer = false, const at::Tensor& packets = {}) {
   set_kernel_attrs();
   // Ahead of the unpack, not after it: this used to sit below 19 ptrs[]
   // reads, so a short vector was already out of bounds before it fired.
@@ -3359,6 +3380,13 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
   TORCH_CHECK(ints[0] > 0 && ints[0] <= MHC_MAX_TOK,
               "mhc: token count outside compiled MHC bound");
   const int hidden = static_cast<int>(hidden_arg);
+  const bool direct = packets.defined();
+  if (direct) {
+    TORCH_CHECK(hidden == HIDDEN && ints[0] <= 64 && mk_pdl_enabled() &&
+                packets.is_cuda() && packets.scalar_type() == at::kLong &&
+                packets.is_contiguous() && packets.dim() == 1 && packets.numel() == 4,
+                "MHC packets require PDL, 1..64 hidden-4096 rows and a CUDA int64[4] descriptor");
+  }
   // A BF16 consumer pointer has the vector layout. Never silently send it
   // to the scalar-layout fallback when an internal caller breaks the gate.
   TORCH_CHECK(!ar_consumer || (mk_pdl_enabled() && ints[0] > 0 && ints[0] <= 8),
@@ -3392,8 +3420,34 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
 
   auto stream = c10::cuda::getCurrentCUDAStream();
   (void)stream;
-  if (hidden == HIDDEN_V41) mk_mhc_launch<HIDDEN_V41>(a, bf16_fn, ar_consumer);
+  if (direct) {
+    MKMhcPacketsArgs packet_args{};
+    static_cast<MKMhcArgs&>(packet_args) = a;
+    packet_args.rank_inputs = reinterpret_cast<const __nv_bfloat16* const*>(packets.data_ptr());
+    auto kernel = bf16_fn ? mk_mhc_packets_kernel<true> : mk_mhc_packets_kernel<false>;
+    static int grids[2] = {0, 0};
+    int& grid = grids[bf16_fn ? 1 : 0];
+    if (!grid) {
+      int per_sm = 0, sms = 0;
+      MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&per_sm, kernel, MK_THREADS, 0));
+      MK_CHECK_CUDA(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, 0));
+      grid = std::min(std::min(per_sm, 1) * sms, MK_MHC_GRID_CAP);
+      TORCH_CHECK(grid > 0, "MHC packet consumer has no resident blocks");
+    }
+    packet_args.grid = grid;
+    mk_launch(kernel, grid, 0, stream, packet_args);
+  } else if (hidden == HIDDEN_V41) mk_mhc_launch<HIDDEN_V41>(a, bf16_fn, ar_consumer);
   else mk_mhc_launch<HIDDEN>(a, bf16_fn, ar_consumer);
+}
+
+void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
+                std::vector<int64_t> ints, bool bf16_fn = false, bool ar_consumer = false) {
+  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, ar_consumer);
+}
+
+void mk_run_mhc_packets(std::vector<int64_t> ptrs, std::vector<double> scalars,
+                        std::vector<int64_t> ints, at::Tensor packets, bool bf16_fn) {
+  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, false, packets);
 }
 
 // V4.1 has a separate occupancy cache from every legacy PR518 kernel.
@@ -4118,6 +4172,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         pybind11::arg("scalars"), pybind11::arg("ints"),
         pybind11::arg("bf16_fn") = false,
         pybind11::arg("ar_consumer") = false);
+  m.def("run_mhc_packets", &mk_run_mhc_packets, "TP4 packet input to native MHC");
   m.def("run_mhc_v41", &mk_run_mhc_v41, "Experimental HF V4.1 MHC seam",
         pybind11::arg("ptrs"), pybind11::arg("scalars"), pybind11::arg("ints"),
         pybind11::arg("hidden") = HIDDEN_V41);
