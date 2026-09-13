@@ -10,8 +10,9 @@ D17 은 "속도 주장은 플릿 onepass 두 번"이고 이 도구는 그것을 
   2. **형상 시뮬레이션** — 장치 시간을 상수 sleep 이 아니라 `CostModel` 로 준다:
      prefill 은 컨텍스트별 실측 처리량(tok/s 테이블), decode 는 스텝당 ms, 스펙
      디코드는 k 와 수용률로 스텝마다 1+accepted 토큰을 뽑는다. 그러면 러너의
-     진짜 스텝 수·TTFT·큐잉이 모형에 반응한다 — 도착 시각(`--arrive-ms`)과 기아
-     밸브(`--max-wait-s`, D10)까지 실험된다.
+     진짜 스텝 수·TTFT·큐잉이 모형에 반응한다 — 요청별 **큐 대기**(도착→첫 프리필
+     청크: D10 밸브와 직렬 프리필이 실제로 미루는 만큼)가 잡히고, 도착 시각
+     (`--arrive-ms`)과 기아 밸브(`--max-wait-s`, D10)까지 실험된다.
   3. **정확도 검증** — `--against <onepass result.jsonl>`: 기록된 플릿 숫자와
      시뮬레이션 결과를 나란히 놓고 델타를 낸다. 상수를 그 기록에서 폈으면 일치는
      자명하다 — 검증의 의미는 **스케줄러·러너 층이 실측 형상을 재현한다**는 것과,
@@ -160,6 +161,7 @@ class NullModel:
         self.target: dict = {}
         self.prompt: dict = {}
         self.arrived: dict = {}
+        self.prefill_start: dict = {}                    # 첫 프리필 청크가 시작된 시각 — 큐 대기의 끝
         self.prefill_done: dict = {}
         self.done: dict = {}
         self.gen_tokens = 0
@@ -180,6 +182,10 @@ class NullModel:
         return self.ctx[seq]
 
     def prefill(self, seq, start, tokens, blocks, slot):
+        # 큐 대기의 끝: 이 요청의 첫 청크가 실제로 시작된 시각(D10 밸브·직렬 프리필이
+        # 미뤄도 실제로 돌기 시작한 쪽에서 잰다)
+        if seq not in self.prefill_start:
+            self.prefill_start[seq] = time.monotonic()
         _delay(self.cost.prefill_delay(self.prompt[seq], tokens))
         self.ctx[seq] = start + tokens
         if start + tokens >= self.prompt[seq]:
@@ -332,7 +338,7 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
         stats[k] = {"steps": len(walls), "med_ms": round(statistics.median(walls), 3),
                     "p95_ms": round(_pct(walls, 0.95), 3), "max_ms": round(max(walls), 3),
                     "tokens_med": int(statistics.median(tokens[k]))}
-    # 요청별 결과 — TTFT 는 prefill 종점, e2e 는 마지막 토큰(모형이 직접 잰 시계)
+    # 요청별 결과 — 큐 대기(도착→첫 청크)·프리필·TTFT·e2e 를 각각 잰 시계
     requests = []
     for seq, p in sorted(model.prompt.items()):
         if seq not in model.done:
@@ -342,10 +348,15 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
         e2e = model.done[seq] - model.arrived[seq]
         requests.append({"seq": seq, "prompt": p,
                          "ctx": labels[seq - 1] if labels else p,
+                         "queue_wait_s": round(model.prefill_start[seq] - model.arrived[seq], 3),
+                         "prefill_s": round(ttft - (model.prefill_start[seq] - model.arrived[seq]), 3),
                          "ttft_s": round(ttft, 3),
                          "e2e_s": round(e2e, 3),
                          "decode_s": round(e2e - ttft, 3),
                          "tok_s": round((gen_i - 1) / (e2e - ttft), 2) if e2e > ttft else None})
+    waits = [q["queue_wait_s"] for q in requests]
+    queue_wait = {"med_s": round(statistics.median(waits), 3),
+                  "p95_s": round(_pct(waits, 0.95), 3), "max_s": round(max(waits), 3)} if waits else None
     # 토큰/스텝 은 행-스텝 기준(원장의 tokens/step = C=1 토큰/스텝) — 폭 w 스텝은
     # w 개의 행-스텝을 실으니 스텝 수로 나누면 w 배 부풀린다(검증에서 발견).
     row_steps = sum(n * c for n, c in enumerate(r.decode_batches))
@@ -368,6 +379,7 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
            "async": r.async_steps, "sync_drains": r.sync_drain_steps,
            "decode_widths": {str(n): c for n, c in enumerate(r.decode_batches) if n and c},
            "requests": requests,
+           "queue_wait": queue_wait,
            "recorder": rec.as_dict()["root"]["children"],
            "meta_med_us": round(statistics.median(meta_us), 1) if meta_us else None}
     out["ring"] = ring                                    # 호출자가 쓸 때만 덤프
@@ -406,6 +418,10 @@ def _fmt(out: dict, meta: bool) -> str:
                      f"p95 {s['p95_ms']:>8.3f}  max {s['max_ms']:>8.3f}  (in-flight, launch→readback)")
     for p, s in _ttft_by_ctx(out["requests"]).items():
         lines.append(f"  TTFT ctx{p // 1000}K: n={s['n']} med {s['med_s']:.3f}s p95 {s['p95_s']:.3f}s")
+    qw = out.get("queue_wait")
+    if qw:
+        lines.append(f"  큐 대기: med {qw['med_s']:.3f}s p95 {qw['p95_s']:.3f}s max {qw['max_s']:.3f}s"
+                     " (도착→첫 프리필 청크; TTFT = 대기 + 프리필)")
     toks = [q["tok_s"] for q in out["requests"] if q.get("tok_s")]
     if toks:
         lines.append(f"  클라이언트 decode: med {statistics.median(toks):.1f} tok/s"
@@ -426,6 +442,11 @@ def _fmt(out: dict, meta: bool) -> str:
         widths = " ".join(f"{n}×{c}" for n, c in out["decode_widths"].items())
         lines.append(f"디코드 폭: {widths} (스텝이 실은 행 수 × 스텝 수)")
     return "\n".join(lines)
+
+
+def pick_last(records: list, n: int) -> list:
+    """`--last N`: 끝의 N개 기록(0 은 전부). 원장은 줄이 append 되므로 '최근'이 끝이다."""
+    return records[-n:] if n > 0 else records
 
 
 def arrivals_from_record(record: dict):
@@ -544,6 +565,8 @@ def main() -> int:
     ap.add_argument("--cost-json", help="CostModel JSON (k/acc/decode_ms/prefill_tok_s/...)")
     ap.add_argument("--against", type=Path, nargs="+",
                     help="onepass result.jsonl 한 개 이상 — 각 기록에서 상수를 폴드하고 나머지 측정값과 나란히 델타")
+    ap.add_argument("--last", type=int, default=1,
+                    help="--against 각 파일에서 끝의 N개 기록(기본 1; 대기 작업 재검증은 최근 기록이 맞다)")
     ap.add_argument("--fit-channel", choices=("windows", "client"), default="windows",
                     dest="fit_channel",
                     help="폴딩이 맞출 decode 채널: windows=판정 채널(기본), client=요청별 실측")
@@ -580,35 +603,39 @@ def main() -> int:
         worst = []
         for path in args.against:
             with open(path, encoding="utf-8") as f:
-                record = json.loads(next(line for line in f if line.strip()))
-            cost = fit_cost(record, channel=args.fit_channel)
-            if cost is None:
-                print(f"!! {path.name}: 판정 채널(step/s)이 없어 폴딩 불가 — 건너뛴다")
+                records = [json.loads(line) for line in f if line.strip()]
+            if not records:
+                print(f"!! {path.name}: 기록이 없다 — 건너뛴다")
                 continue
-            cost = overrides(cost)
-            derived = arrivals_from_record(record)
-            if derived is None:
-                print(f"!! {path.name}: 요청 기록이 없다 — 건너뛴다")
-                continue
-            arrive, gen, toks, labels = derived
-            out = run_once(toks, gen, contract, cost=cost, arrive_ms=arrive,
-                           can_async=True, host_med_ms=(calib or {}).get("host_med_decode_ms"),
-                           labels=labels, closed_loop=True)
-            print(f"== {path.name} · {record.get('name')} · git {record.get('git')}"
-                  f" · 요청 {len(toks)}개")
-            print(cost.summary())
-            print(_fmt(out, False))
-            rows = validate_against(record, out)
-            print(f"-- 검증 ({path.name}): [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,")
-            print("   [예측] 폼에 얹히지 않은 값이 따라 오는 것이 주장이다:")
-            for label, kind, rec_v, sim_v, delta in rows:
-                def _f(v):
-                    return f"{v:.4g}" if isinstance(v, (int, float)) else "-"
-                move = f" ({delta:+.1%})" if isinstance(delta, float) else ""
-                print(f"   [{kind:<4}] {label:<24} 기록 {_f(rec_v):>10}  시뮬 {_f(sim_v):>10}{move}")
-                if kind == "예측" and isinstance(delta, float):
-                    worst.append((abs(delta), path.name, label, delta))
-            print()
+            for record in pick_last(records, args.last):
+                cost = fit_cost(record, channel=args.fit_channel)
+                if cost is None:
+                    print(f"!! {path.name}: 판정 채널(step/s)이 없어 폴딩 불가 — 건너뛴다")
+                    continue
+                cost = overrides(cost)
+                derived = arrivals_from_record(record)
+                if derived is None:
+                    print(f"!! {path.name}: 요청 기록이 없다 — 건너뛴다")
+                    continue
+                arrive, gen, toks, labels = derived
+                out = run_once(toks, gen, contract, cost=cost, arrive_ms=arrive,
+                               can_async=True, host_med_ms=(calib or {}).get("host_med_decode_ms"),
+                               labels=labels, closed_loop=True)
+                print(f"== {path.name} · {record.get('name')} · git {record.get('git')}"
+                      f" · 요청 {len(toks)}개")
+                print(cost.summary())
+                print(_fmt(out, False))
+                rows = validate_against(record, out)
+                print(f"-- 검증 ({path.name}): [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,")
+                print("   [예측] 폼에 얹히지 않은 값이 따라 오는 것이 주장이다:")
+                for label, kind, rec_v, sim_v, delta in rows:
+                    def _f(v):
+                        return f"{v:.4g}" if isinstance(v, (int, float)) else "-"
+                    move = f" ({delta:+.1%})" if isinstance(delta, float) else ""
+                    print(f"   [{kind:<4}] {label:<24} 기록 {_f(rec_v):>10}  시뮬 {_f(sim_v):>10}{move}")
+                    if kind == "예측" and isinstance(delta, float):
+                        worst.append((abs(delta), path.name, label, delta))
+                print()
         if worst:
             worst.sort(reverse=True)
             print(f"-- 예측 행 최대 잔여: {worst[0][2]} {worst[0][3]:+.1%} ({worst[0][1]}),"
