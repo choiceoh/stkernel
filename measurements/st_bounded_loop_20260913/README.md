@@ -78,6 +78,13 @@ both without a CUDA context. After composition, 112 focused engine tests ran:
 The later host-stop/row-departure guards passed the focused 34-test
 pipeline/burst suite. Mapped alignment and allocation accounting passed all
 38 tier/boot tests. These are overlapping suites, not additive coverage totals.
+After integrating main's DSA glue change (#819), the focused integration gate
+passed 128 CPU tests and skipped 16 CUDA-only tests (the execution-plans module
+was run separately after correcting its name in the invocation). The merge
+changes the DSA helper portion of decode_graphs.py and net.py, so their whole-file
+hashes differ from the earlier GPU reports. The native kernels, composition
+bindings and burst protocol tested by the toy GPU gate are unchanged. This
+integration does not substitute for a full real-weight TP4 qualification.
 
 `probes/engine_bounded_loop_check.py` tests actual conditional graphs, native
 commit, changing inputs and owner lifetime, plus the real serving adapter with
