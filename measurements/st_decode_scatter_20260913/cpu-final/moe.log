@@ -1,0 +1,52 @@
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+[b12x static v2] lane serving: static2_m7_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=7, routed=56, smem=98304 B)
+{"rows": 7, "route_scatter": false, "direct_scatter": false, "kernel": "static2_m7_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_8ef59f439d8eddd2", "status": "PASS", "seconds": 4.969101767987013}
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+[b12x static v2] lane serving: static2_m7_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=7, routed=56, smem=98304 B)
+{"rows": 7, "route_scatter": true, "direct_scatter": false, "kernel": "static2_m7_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_b55852eb0ae3b7e1", "status": "PASS", "seconds": 4.643750713992631}
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+{"rows": 7, "route_scatter": false, "direct_scatter": true, "kernel": "static2_m7_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_8d2f863027523d8f", "status": "PASS", "seconds": 6.705728408996947}
+[b12x static v2] lane serving: static2_m7_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=7, routed=56, smem=98304 B)
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+{"rows": 7, "route_scatter": true, "direct_scatter": true, "kernel": "static2_m7_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_823766c014cb7166", "status": "PASS", "seconds": 6.892111608991399}
+[b12x static v2] lane serving: static2_m7_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=7, routed=56, smem=98304 B)
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+[b12x static v2] lane serving: static2_m14_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1 (mac=48, m=14, routed=112, smem=101376 B)
+{"rows": 14, "route_scatter": false, "direct_scatter": false, "kernel": "static2_m14_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_fe56e47302a59303", "status": "PASS", "seconds": 5.294474422000349}
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+{"rows": 14, "route_scatter": true, "direct_scatter": false, "kernel": "static2_m14_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_5c2c39cf8117dfc2", "status": "PASS", "seconds": 5.315127225010656}
+[b12x static v2] lane serving: static2_m14_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1 (mac=48, m=14, routed=112, smem=101376 B)
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+{"rows": 14, "route_scatter": false, "direct_scatter": true, "kernel": "static2_m14_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_f8fdfa068975ff4e", "status": "PASS", "seconds": 6.92627928298316}
+[b12x static v2] lane serving: static2_m14_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1 (mac=48, m=14, routed=112, smem=101376 B)
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+{"rows": 14, "route_scatter": true, "direct_scatter": true, "kernel": "static2_m14_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_7b981a91bcf50c6c", "status": "PASS", "seconds": 6.98460779900779}
+[b12x static v2] lane serving: static2_m14_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1 (mac=48, m=14, routed=112, smem=101376 B)
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+[b12x static v2] lane serving: static2_m21_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1 (mac=48, m=21, routed=168, smem=101376 B)
+{"rows": 21, "route_scatter": false, "direct_scatter": false, "kernel": "static2_m21_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_f5b76423fb4a4b2d", "status": "PASS", "seconds": 5.608847088005859}
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+{"rows": 21, "route_scatter": true, "direct_scatter": false, "kernel": "static2_m21_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_4838df8d251f5453", "status": "PASS", "seconds": 5.345078491984168}
+[b12x static v2] lane serving: static2_m21_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1 (mac=48, m=21, routed=168, smem=101376 B)
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+{"rows": 21, "route_scatter": false, "direct_scatter": true, "kernel": "static2_m21_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_c5d88a958c31ffac", "status": "PASS", "seconds": 6.82291305900435}
+[b12x static v2] lane serving: static2_m21_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1 (mac=48, m=21, routed=168, smem=101376 B)
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+[b12x static v2] lane serving: static2_m21_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1 (mac=48, m=21, routed=168, smem=101376 B)
+{"rows": 21, "route_scatter": true, "direct_scatter": true, "kernel": "static2_m21_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_4097bbbe4208749a", "status": "PASS", "seconds": 6.945688756008167}
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+{"rows": 28, "route_scatter": false, "direct_scatter": false, "kernel": "static2_m28_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_d652d052086303f8", "status": "PASS", "seconds": 5.281944927992299}
+[b12x static v2] lane serving: static2_m28_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1 (mac=48, m=28, routed=224, smem=101376 B)
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+{"rows": 28, "route_scatter": true, "direct_scatter": false, "kernel": "static2_m28_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_8506f03afa76aea1", "status": "PASS", "seconds": 5.329621921002399}
+[b12x static v2] lane serving: static2_m28_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1 (mac=48, m=28, routed=224, smem=101376 B)
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+{"rows": 28, "route_scatter": false, "direct_scatter": true, "kernel": "static2_m28_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_d6edd39843365f9a", "status": "PASS", "seconds": 6.854587625013664}
+[b12x static v2] lane serving: static2_m28_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1 (mac=48, m=28, routed=224, smem=101376 B)
+REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+{"rows": 28, "route_scatter": true, "direct_scatter": true, "kernel": "static2_m28_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_51f7f986c0e46794", "status": "PASS", "seconds": 6.851920292014256}
+[b12x static v2] lane serving: static2_m28_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1 (mac=48, m=28, routed=224, smem=101376 B)
