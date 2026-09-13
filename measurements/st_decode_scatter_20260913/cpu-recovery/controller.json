@@ -1,0 +1,29 @@
+{
+  "head": "bb5fb1faebaa28b48b3b7a562a7842f75e8049bd",
+  "checks": [
+    {
+      "check": "moe",
+      "exit_code": 0,
+      "elapsed_s": 91.18580865859985,
+      "gpu_used": false
+    },
+    {
+      "check": "projection",
+      "exit_code": 0,
+      "elapsed_s": 2.572251558303833,
+      "gpu_used": false
+    },
+    {
+      "check": "tests",
+      "exit_code": 0,
+      "elapsed_s": 5.577582836151123,
+      "gpu_used": false
+    },
+    {
+      "check": "imports",
+      "exit_code": 0,
+      "elapsed_s": 6.213888645172119,
+      "gpu_used": false
+    }
+  ]
+}

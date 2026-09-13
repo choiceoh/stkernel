@@ -77,3 +77,9 @@ consumer remains C1 twice and C4 once, including 32K/128K, decode step/s,
 committed token rate, decode row width and acceptance. PR760's `step_peek.py`
 can report the live counters before the complete one-pass report. There is
 no new baseline model boot, and answer grades are not the decision gate.
+
+Recovery preparation on `bb5fb1fa` passed all 16 CuTe handles using actual routed-row
+workspace sizes and repeated normalization, all 13 Triton combinations, 15 CPU
+tests and 88 module imports. `cpu-recovery/` retains the source-bound records.
+Main merged the earlier `fe6e8275` tree as PR #816 while these fixes were being
+prepared; the fixes therefore follow in a separate PR.
