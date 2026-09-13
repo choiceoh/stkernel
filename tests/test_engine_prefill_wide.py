@@ -46,12 +46,12 @@ class WidePrefillTests(unittest.TestCase):
                 return 'fallback'
 
     def test_large_grid_uses_prefill_kernel(self):
-        for tokens in (4096, 16128, 16384, 16385, 29952, 32256, 32768):
+        for tokens in (128, 129, 289, 1024, 2121, 2128, 2304, 4095, 4096, 16128, 16384, 16385, 29952, 32256, 32768):
             for width in (1, 33, 2048, 2176):
                 self.assertEqual(self.route(tokens, width), 'prefill')
 
     def test_decode_capture_and_invalid_storage_keep_existing_route(self):
-        for tokens in (1, 7, 28, 64, 4095, 32769):
+        for tokens in (1, 7, 28, 64, 127, 32769):
             self.assertEqual(self.route(tokens), 'fallback')
         self.assertEqual(self.route(32256, 2177), 'fallback')
         self.assertEqual(self.route(32256, dtype='fp16'), 'fallback')

@@ -1,4 +1,4 @@
-"""Explicit eager token-shard transport: BF16 below 4096 rows, FP8 v3 above.
+"""Explicit eager token-shard transport: BF16 below 2048 rows, FP8 v3 above.
 
 Packets carry independently scaled FP8 values and FP32 scales in one byte
 exchange. Reduce-scatter sums all source packets in FP32, then rounds once.
@@ -14,7 +14,9 @@ import torch.distributed as dist
 from .kernels import _pack_rs_payload, _unpack_gather, _unpack_sum_payload
 from engine.kernels.cells import PREFILL_BLOCK as BLOCK     # the packet block, stated once (cells.py)
 
-FP8_MIN_ROWS = 4096
+# Phase2 candidate: include 2K requests in the existing block-scaled FP8
+# transport. The wider precision admission still needs full quality proof.
+FP8_MIN_ROWS = 2048
 
 
 class PrefillCollectives:

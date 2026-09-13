@@ -8,13 +8,14 @@ import torch
 @unittest.skipUnless(torch.cuda.is_available(), "requires admitted GB10 GPU")
 class PrefillTilesCudaTests(unittest.TestCase):
     def test_bf16_fp8_threshold_tail_and_delayed_slot_reuse(self):
-        from engine.kernels.prefill_collectives import PrefillCollectives, BLOCK
+        from engine.kernels.prefill_collectives import PrefillCollectives, BLOCK, FP8_MIN_ROWS
         from engine.kernels.dense import DenseLinear, FP8Linear
         if torch.cuda.get_device_capability() != (12, 1):
             self.skipTest("requires GB10")
         torch.manual_seed(931302)
         project = FP8Linear((torch.randn(1024, 4096, device="cuda") * .02).bfloat16())
-        for local_rows in (256, 576, 1024, 2304):
+        owner = None
+        for local_rows in (256, 511, 512, 668, 1024, 2304, 576, 8064):
             peers = [(torch.randn(local_rows, 4096, device="cuda") + r).bfloat16() for r in range(4)]
             cursor = [0]
             modes = []
@@ -36,7 +37,11 @@ class PrefillTilesCudaTests(unittest.TestCase):
                 out = torch.empty((x.shape[0]*4, 4096), device=x.device, dtype=x.dtype)
                 exchange(out, x)
                 return out
-            owner = PrefillCollectives(NS(world_size=4, group=None, all_gather=ordinary), project_tiles=True)
+            comm = NS(world_size=4, group=None, all_gather=ordinary)
+            if owner is None:
+                owner = PrefillCollectives(comm, project_tiles=True)
+            else:
+                owner.comm = comm
             with patch("torch.distributed.all_gather_into_tensor", side_effect=exchange):
                 expected_input = owner.all_gather(peers[0])
                 expected = project(expected_input)
@@ -49,21 +54,30 @@ class PrefillTilesCudaTests(unittest.TestCase):
                         observed.append(x.clone())  # must survive two-slot reuse
                         return project(x)
                     actual = owner.gather_project(peers[0], consume)
+                    allocations = owner.projector.allocations
+                    if repeat:
+                        self.assertEqual(allocations, previous_allocations)
+                    previous_allocations = allocations
                     torch.cuda.synchronize()
                     reconstructed = torch.cat([x.view(4, -1, 4096) for x in observed], dim=1).flatten(0, 1)
                     torch.testing.assert_close(reconstructed, expected_input, rtol=0, atol=0)
                     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
                     self.assertEqual(cursor[0], local_rows)
-                    self.assertEqual(set(modes), {"fp8" if local_rows >= 1024 else "bf16"})
-                    if local_rows >= 1024:
-                        # The serving DenseLinear callback consumes received bytes;
-                        # neither its ordinary BF16 path nor the projection callback runs.
-                        layer = DenseLinear.__new__(DenseLinear)
-                        layer.cols, layer.fp8, layer.observer, layer.executed = 4096, project, None, 0
+                    self.assertEqual(set(modes), {"fp8" if local_rows * 4 >= FP8_MIN_ROWS else "bf16"})
+                if local_rows * 4 >= FP8_MIN_ROWS:
+                    # The serving DenseLinear callback consumes received bytes;
+                    # neither its ordinary BF16 path nor the projection callback runs.
+                    layer = DenseLinear.__new__(DenseLinear)
+                    layer.cols, layer.fp8, layer.observer, layer.executed = 4096, project, None, 0
+                    for repeat in range(3):
                         cursor[0] = 0
                         fallback = Mock(side_effect=AssertionError("materialized BF16 projection"))
                         fused = owner.gather_project(peers[0], fallback,
                                                      packet_project=layer.packet_projector())
+                        allocations = owner.projector.allocations
+                        if repeat:
+                            self.assertEqual(allocations, previous_allocations)
+                        previous_allocations = allocations
                         torch.cuda.synchronize()
                         torch.testing.assert_close(fused, expected, rtol=0, atol=0)
                         fallback.assert_not_called()

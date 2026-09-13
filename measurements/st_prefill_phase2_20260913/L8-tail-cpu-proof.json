@@ -1,0 +1,23 @@
+{
+  "base_candidate": "3c7bcc0a08842d59a91e3f5166f5d5227a9e5cd6",
+  "status": "CPU passed; successor source is not deployed or queued",
+  "change": "Remove GLM53 prefill_tail_multiple=4 now that TokenShards supports real ragged lengths. Keep full chunk budget and short prefill interleave while decoders are live.",
+  "regression_before": {
+    "tests": 2,
+    "subcase_failures": 8,
+    "cases": "2305,2617,2618,2619,2671,2673,32255 split unnecessarily; 128559 used five traversals instead of four"
+  },
+  "after": {
+    "command": "python3 -m unittest tests.test_engine_prefill_tail",
+    "tests": 6,
+    "failures": 0,
+    "seconds": 0.226,
+    "scheduler_selfcheck": "python3 -m engine.base.scheduler passed"
+  },
+  "unavailable_broad_attempt": "Local Python lacks torch for unchanged token-shard/output tests; test_engine_scheduler was a nonexistent module name. These were not counted as passes. Focused production-contract cases and scheduler selfcheck passed.",
+  "source_sha256": {
+    "engine/profiles/glm53/boot.py": "b36257d173ac2c6dacf38618b2c725e210878928d947c455f723bfd8fbbc1775",
+    "tests/test_engine_prefill_tail.py": "f1957eeac1ef8efa764c6105f09ad2a5ff36347c12550b44887bfef4f976d851"
+  },
+  "gpu_throughput_or_quality_proven": false
+}

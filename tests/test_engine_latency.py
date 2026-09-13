@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from engine.base.graph_labels import assign
-from engine.base.latency import Recorder
+from engine.base.latency import Recorder, decode_host_state, record_step
 from engine.base.latency_trace import attribute, summarize, union_us
 from engine.base.stage_clock import StageClock
 
@@ -57,6 +57,33 @@ class AttributionTests(unittest.TestCase):
 
 
 class RecordingTests(unittest.TestCase):
+    def test_dispatch_retains_independent_host_state_without_device_reads(self):
+        class DeviceValue:
+            def __len__(self): raise AssertionError('device inspection')
+            def __getitem__(self, key): raise AssertionError('device inspection')
+        model = SimpleNamespace(tokens={0: [10, 11, 4, 5], 1: DeviceValue()},
+                                prompt_len={0: 2, 1: 2}, ctx={0: 4},
+                                inflight={0: 1}, thinking={0: True})
+        self.assertIsNone(decode_host_state(model, [1])[0]['generated'])
+        with TemporaryDirectory() as root:
+            rec = Recorder(2, root)
+            rec.begin('dispatch')
+            runner = SimpleNamespace(model=model, latency=rec,
+                                     state=SimpleNamespace(computed={0: 2}))
+            step = SimpleNamespace(kind='decode', seqs=[0], tokens=7)
+            @record_step
+            def launch(runner, step):
+                model.tokens[0].append(6)
+                model.ctx[0] = 5
+                return 'launched'
+            self.assertEqual(launch(runner, step), 'launched')
+            row = rec.finish('dispatch')['rows'][0]
+            self.assertEqual(row['dispatch'], 'launch')
+            self.assertEqual(row['positions'], [2])
+            self.assertEqual(row['host_state']['before'][0]['generated'], 2)
+            self.assertEqual(row['host_state']['before'][0]['tail'], [4, 5])
+            self.assertEqual(row['host_state']['after'][0]['context'], 5)
+
     def test_immutable_run_and_token_ownership(self):
         with TemporaryDirectory() as root:
             rec = Recorder(0, root)

@@ -144,7 +144,7 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "6f8132c58a155ab8e4e9e7fdbb03b653c11b2b5004814cd02fe846cc5a47f595",
+      "local_sha256": "13a848fc4fe4f62d039aa864aef033aa16d16151d20ab199cdf91f0cc5f12b1f",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
@@ -159,7 +159,8 @@
         "2026-09-13 private decode: independently keyed route-owned FP32 partials and direct register scatter; serving defaults unchanged.",
         "2026-09-13: retire measured resident-wave/batch/stage probe hooks and restore separate epilogue storage; retain only the new private output candidates.",
         "2026-09-13 kernel shape descriptor: the exact-shape gates (_is_admitted_tp_geometry, ex _is_glm53_b12x_tp_geometry; _tp_sf6_q0_eligible; _glm_tp_scatter_shape/_fp32), the Q0 launch line and the dynamic tile pin read engine/base/kernel_shape.bound().moe instead of GLM literals; the measured GB10 TP4 cell is the unbound default, so the served GLM path is unchanged.",
-        "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged."
+        "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged.",
+        "2026-09-13 phase 2: short-prefill Q0 word-scale producer; actual-weight GPU gates passed on 3c7bcc0a. Consumer quality and absolute targets remain failed."
       ]
     },
     "b12x/moe_dynamic_kernel.py": {
@@ -340,7 +341,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
       "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
       "origin": "repository",
-      "local_sha256": "e42e3e0ddd33e2dccf95564cf7b2657da1ec43147e4bc536cc96b9bea4e9f7a6",
+      "local_sha256": "ccbc0a6ccdbc5f318baa634f10a6bfb80378f10b4b1c02e084b7ef2f41028337",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; tile32 large-M MLA prefill is qualified and selected by the production boot default; configure_prefill (STK_mla_prefill), mla_decode(splits=, probe=), PAIR_STATS, ENABLE_MLA_CLUSTER baked on",
         "2026-09-13 native build cache: stage content-addressed source inputs so identical checkout paths and timestamps do not trigger NVCC; keep Torch/Ninja build validation.",
@@ -348,7 +349,8 @@
         "2026-09-13 kernel shape descriptor: maybe_arm checks the bound kernel shape against the compiled 16x512 MLA cell and the device it declares (engine/base/kernel_shape) instead of a (12, 1, 48) literal; refuses another attention cell by name before arming.",
         "2026-09-13 shape wizard: MLA_H/MLA_D are imported from engine/kernels/cells.py, the one place the compiled cells are stated, so the wizard's admission table and maybe_arm's refusal read the same numbers.",
         "2026-09-13 common kernels: the native build cache moved to engine/kernels/common/native_cache.py; _build imports it from there. Build flags, sources and the cache key are unchanged.",
-        "2026-09-13 operation variants: _check_cell also refuses a bound attention whose sink is not cells.MLA_SINK (the compiled softmax has no sink term)."
+        "2026-09-13 operation variants: _check_cell also refuses a bound attention whose sink is not cells.MLA_SINK (the compiled softmax has no sink term).",
+        "2026-09-13 phase 2: short-prefill tile32 admission; short MLA GPU gates passed on 3c7bcc0a. Retain current bound-shape and sink guards; later integration has no new consumer result."
       ]
     }
   }
