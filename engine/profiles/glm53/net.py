@@ -160,6 +160,8 @@ class Glm53Net:
         self._router_tensorcore = set()
         self._decode_pairs = {}
         self.prefill_transport = None
+        self.prefill_indexer_shards = False
+        self.prefill_indexer_executed = set()
         self.mhc = None
         from engine.profiles.glm53.weights import WEIGHT_LAYOUT, MODELOPT_WEIGHT_LAYOUT
         self.weight_layout = getattr(F, 'weight_layout', WEIGHT_LAYOUT)
@@ -516,9 +518,16 @@ class Glm53Net:
         in-progress tail, as latent slots (valid prefix first) and counts."""
         F, p, n = self.F, self.p, f"L{L}.idx."
         N = x.shape[0]; kp, nh, d = F.kpool, F.idx_heads, F.idx_dim
-        q = self.linear(qr, n + "wq_b").view(N, nh, d)
+        shard = None
+        if (self.prefill_indexer_shards and N >= 128 and len(step.segments) == 1
+                and not getattr(step, "captured", False) and not self.probe):
+            from engine.modules.prefill_indexer import QueryShard
+            shard = QueryShard(N, step.segments[0].ctx, self.rank, self.comm.world_size, F.topk // kp, kp)
+        query_x = x if shard is None else (shard.project_input(x) if shard.score_rows else None)
+        query_qr = qr if shard is None else (shard.project_input(qr) if shard.score_rows else None)
+        q = self.linear(query_qr, n + "wq_b").view(-1, nh, d) if query_qr is not None else None
         pair = self._decode_pair(L, step, N)
-        w = x.float() @ p[n + "w_heads"].T                                           # fp32 head gate, as served
+        w = query_x.float() @ p[n + "w_heads"].T if query_x is not None else None    # fp32 head gate, as served
         if pair is not None:
             from engine.kernels.decode_projection import indexer_boundary
             k, gate = pair(x)
@@ -530,9 +539,13 @@ class Glm53Net:
             else:
                 k = self.lanes.layernorm(k, p[n + "k_norm_w"], p[n + "k_norm_b"], K_NORM_EPS)
             gate = self.linear(x, n + "gate")
-            q8, qs = self.lanes.indexer_quant(q.reshape(-1, d))
-            q8 = q8.view(N, nh, d)
-            w_eff = self.lanes.head_gate(w, qs.view(N, nh), F.idx_scale)
+            q8 = w_eff = None
+            if q is not None:
+                q8, qs = self.lanes.indexer_quant(q.reshape(-1, d))
+                q8 = q8.view(q.shape[0], nh, d)
+                w_eff = self.lanes.head_gate(w, qs.view(q.shape[0], nh), F.idx_scale)
+                if shard is not None:
+                    q8, w_eff = q8[:shard.score_rows], w_eff[:shard.score_rows]
         width = F.topk + kp - 1
         slots_out = torch.empty((N, width), dtype=torch.int32, device=x.device)
         valid_out = torch.empty(N, dtype=torch.int32, device=x.device)
@@ -586,7 +599,15 @@ class Glm53Net:
             new_pos = s.ctx + index(s.length, x.device)
             # -- selection -----------------------------------------------------------
             seq_lens = (new_pos + 1).to(torch.int32)
-            if n_cand:
+            if shard is not None:
+                selected = None
+                if shard.score_rows:
+                    cand = caches.pool_slots(L, s.seq, index(n_cand, x.device)).long()
+                    selected = self._select_pools(q8, w_eff, keys[cand], scales[cand],
+                        seq_lens[shard.score_begin:shard.end] // kp, n_cand, F.topk // kp)
+                pool_ids = shard.collect(selected, seq_lens // kp, self.comm)
+                self.prefill_indexer_executed.add(L)
+            elif n_cand:
                 cand = caches.pool_slots(L, s.seq, index(n_cand, x.device)).long()
                 pool_ids = self._select_pools(q8[sl], w_eff[sl], keys[cand], scales[cand], seq_lens // kp, n_cand, F.topk // kp)
             else:

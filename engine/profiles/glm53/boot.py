@@ -234,7 +234,7 @@ def declared(a, comm_world: int) -> Config:
     # One serving recipe in both modes. These four were enabled by operator
     # request; their component gates are not full-model performance proof.
     gb10_defaults = dict(direct_mhc=1, prefill_project_tiles=1,
-                         nvme_mapped_staging=1, decode_iterations=4)
+                         nvme_mapped_staging=1, decode_iterations=4, prefill_indexer_shards=0)
     if getattr(a, "production", False):
         # tile32 passed the full GPU numerical/graph and matched 2K/32K/128K
         # serving brackets. Keep it in the production contract so a stale
@@ -246,6 +246,9 @@ def declared(a, comm_world: int) -> Config:
                         draft_diagnostics=int(SERVING_POLICY.diagnostics), draft_tuning='', **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
+        Knob("prefill_indexer_shards", 0, _dt.date(2026, 9, 30),
+             "Unqualified prefill candidate: shard replicated indexer queries and bypass fully covered selections",
+             "STK_prefill_indexer_shards=0", int),
         Knob('draft_tuning', '', _dt.date(2026, 9, 30),
              'Explicit draft-only selector, boundary and preparation tuning JSON; empty preserves baseline coefficients',
              'STK_draft_tuning='),
@@ -510,6 +513,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 recorder.gauge('decode_projection_resident_bytes', projection_bytes)
                 net.prefill_transport = PrefillCollectives(comm, project_tiles=bool(
                     execution_plan is not None and execution_plan.prefill_project_tiles))
+                net.prefill_indexer_shards = bool(execution_plan is not None and execution_plan.prefill_indexer_shards)
                 if D:
                     # Do not overlap the temporary checkpoint with target packing.
                     drafter = load_drafter()
@@ -722,7 +726,11 @@ def native_execution_report(net, drafter):
                  shared_mlp=sum(p.executed for p in net.shared_mlp.values()),
                  shared_overlap=bool(net.shared_overlap and net.shared_overlap.executed),
                  router_tensorcore=len(net._router_tensorcore),
-                 prefill_collectives=sorted(net.prefill_transport.executed))
+                 prefill_collectives=sorted(net.prefill_transport.executed),
+                 prefill_indexer_shards=sorted(getattr(net, 'prefill_indexer_executed', ())))
+    if (getattr(net, 'prefill_indexer_shards', False)
+            and set(proof['prefill_indexer_shards']) != {L for L in net.layers if net.F.is_dsa(L)}):
+        raise RuntimeError(f'prefill indexer query shards were not executed on every DSA layer: {proof}')
     if (proof['target_w4'] != len(target) or proof['target_fp8'] != len(target)
             or proof['drafter_w4'] != required_draft_w4 or not proof['head_fp8']
             or not proof['drafter_context_fp8'] or proof['mhc'] != expected_mhc
@@ -1097,13 +1105,13 @@ def fleet(a) -> int:
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
                                        consume_scales=True)
         from engine.profiles.glm53.execution import ExecutionPlan
-        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "terminal_mhc")):
+        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "terminal_mhc", "prefill_indexer_shards")):
             raise ValueError("execution switches must be 0 or 1")
         plan = ExecutionPlan(bool(cfg["execution_overlap"]), bool(cfg["early_observe"]), cfg["prefill_tiles"],
                              sched.chunk_for(facts.CHUNK_ALIGN, TOKEN_BUDGET, facts.SPEC_K),
                              direct_mhc=bool(cfg["direct_mhc"]), prefill_project_tiles=bool(cfg["prefill_project_tiles"]),
                              decode_iterations=cfg["decode_iterations"], deferred_kda=bool(cfg["deferred_kda"]),
-                             terminal_mhc=bool(cfg["terminal_mhc"]))
+                             terminal_mhc=bool(cfg["terminal_mhc"]), prefill_indexer_shards=bool(cfg["prefill_indexer_shards"]))
         from engine.profiles.glm53.draft_policy import DraftPolicy
         if cfg["draft_diagnostics"] not in (0, 1):
             raise ValueError("draft diagnostics must be 0 or 1")
