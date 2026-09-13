@@ -60,6 +60,6 @@ test_startup_wrap_graph_and_poisoned_unused_slots (tests.test_engine_draft_atten
 test_the_slices_combine_into_the_attention_they_were_cut_from (tests.test_engine_draft_attention.DraftAttentionTests.test_the_slices_combine_into_the_attention_they_were_cut_from) ... skipped 'requires CUDA'
 
 ----------------------------------------------------------------------
-Ran 56 tests in 4.837s
+Ran 56 tests in 4.661s
 
 OK (skipped=10)

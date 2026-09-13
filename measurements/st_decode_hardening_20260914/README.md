@@ -17,10 +17,12 @@ was `sha256:1fdddb4c04fe77eaabba7076d983226c8ff15c4f541661ff04f83d20d357ea28`.
 decode calibration was active. The collector accepted that integer for a
 mask comparison; the native writer required an int64 device tensor. That
 call originated in #862, before #904/#906; the serving calibration default
-now exercises it. The fix separates the collector's explicit all-true mask
-from KV validity: synchronous rows are already clipped and need no count.
-Masked asynchronous observations still pass their original device count.
-Precision, calibration policy and fused MoE remain enabled as before.
+now exercises it. The native writer now receives an int64 device scalar
+created with a capture-safe constant fill, matching the independently
+prepared #909 fix already undergoing a fleet boot. The collector keeps its
+explicit committed-row mask. Masked asynchronous observations still pass
+their original device count. Precision, calibration policy and fused MoE
+remain enabled as before.
 
 The old packet wrappers could enqueue a native exchange and then raise while
 leaving the ring reusable. Ordinary exchange, direct producers and MoE output

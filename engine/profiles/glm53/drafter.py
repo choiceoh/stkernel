@@ -347,8 +347,9 @@ class Drafter:
         self._observe(ring, positions, aux)
 
     def observe_committed(self, ring, positions, aux):
-        """Synchronous decode has already clipped its rows; every KV cell is valid."""
-        self._observe(ring, positions, aux, decode=True)
+        """Synchronous decode has already clipped its rows; mark them explicitly."""
+        valid = positions.numel() if self.decode_calibration else None
+        self._observe(ring, positions, aux, valid, decode=True)
 
     def observe_masked(self, ring, positions, aux, valid):
         """Commit a device-counted accepted prefix using the same TP context projection."""
@@ -363,11 +364,6 @@ class Drafter:
         # defined last-writer order.
         positions, aux = positions[-F.window:], aux[-F.window:]
         keep = (torch.arange(len(positions), device=positions.device) < valid) if valid is not None else None
-        if valid is None and decode and self.decode_calibration:
-            # The collector needs an explicit committed-row mask. The KV
-            # writer needs no count for this already-clipped observation;
-            # only observe_masked supplies its device-owned scalar there.
-            keep = torch.ones(len(positions), device=positions.device, dtype=torch.bool)
         decode = decode or valid is not None
         c = self.context_normed(self.context_linear(aux, keep, decode=decode), decode=decode)
         idx = positions % F.window
@@ -380,7 +376,10 @@ class Drafter:
             v = context[:,L,1] if context is not None else self.linear(c, q + "v_proj.weight").view(-1, F.kv_heads, F.head_dim)
             if isinstance(ring, tuple):
                 from engine.kernels.draft_attention import write_draft_kv
-                write_draft_kv(ring[0],ring[1],L,positions,k,v,valid=valid)
+                # observe_committed marks a synchronous decode's rows with a Python count; the direct ring write
+                # takes the accepted count as an int64 device scalar (a constant fill inside a captured graph).
+                count = valid if valid is None or torch.is_tensor(valid) else positions.new_full((), int(valid))
+                write_draft_kv(ring[0],ring[1],L,positions,k,v,valid=count)
             else:
                 if valid is not None:
                     keep = (torch.arange(len(positions), device=positions.device) < valid)[:, None, None]

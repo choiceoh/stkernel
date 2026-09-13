@@ -14,5 +14,12 @@
   "oneshot_build_function_ast_unchanged": true,
   "gpu_used": false,
   "queued_session": "st-decode-output-bundle0913v2",
-  "queued_source": "12c9ce9a75b875684c836a9c7f86e2de91043514"
+  "queued_source": "12c9ce9a75b875684c836a9c7f86e2de91043514",
+  "draft_fix": {
+    "same_as_pr": 909,
+    "pr_head": "b30c6a49d9d9514496abe84a1bc3f39e4bcc070e",
+    "sha256": "ada7b03a6896f7bb71cb0910657596a5e502bccc85673a22d5a1ae8f15cfdf4c",
+    "running_rank0_sha256": "ada7b03a6896f7bb71cb0910657596a5e502bccc85673a22d5a1ae8f15cfdf4c",
+    "boot_complete": false
+  }
 }
