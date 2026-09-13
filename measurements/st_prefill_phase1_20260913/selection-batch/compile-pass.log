@@ -1,0 +1,32 @@
+test_passes_of_select_rows_match_one_pass_and_bound_the_transient (tests.test_engine_indexer_select.SelectionTests.test_passes_of_select_rows_match_one_pass_and_bound_the_transient) ... ok
+test_topk_positions_in_place_masks_the_callers_logits (tests.test_engine_indexer_select.SelectionTests.test_topk_positions_in_place_masks_the_callers_logits) ... ok
+test_topk_positions_picks_the_same_set_a_sorted_top_k_would (tests.test_engine_indexer_select.SelectionTests.test_topk_positions_picks_the_same_set_a_sorted_top_k_would)
+pool_slots re-orders the winners by position, so the selection owes the set, not an order -- and the ... ok
+test_long_prefill_uses_original_operands_and_separate_fp32_output (tests.test_engine_prefill_router.PrefillRouterTests.test_long_prefill_uses_original_operands_and_separate_fp32_output) ... ok
+test_short_decode_unsupported_and_capture_do_not_launch (tests.test_engine_prefill_router.PrefillRouterTests.test_short_decode_unsupported_and_capture_do_not_launch) ... ok
+test_a_layer_whose_small_calls_may_be_ghosts_sums_only_its_large_calls (tests.test_engine_dense_calibration.CalibrationTests.test_a_layer_whose_small_calls_may_be_ghosts_sums_only_its_large_calls) ... ok
+test_a_wide_weight_is_summed_whole_and_the_budget_defers_whole_layers (tests.test_engine_dense_calibration.CalibrationTests.test_a_wide_weight_is_summed_whole_and_the_budget_defers_whole_layers)
+A weight wider than the decode tile gets ONE Hessian over its whole K (pack_wide's error feedback crosses the ... ok
+test_observing_allocates_no_host_tensor_so_it_can_run_inside_a_graph_capture (tests.test_engine_dense_calibration.CalibrationTests.test_observing_allocates_no_host_tensor_so_it_can_run_inside_a_graph_capture)
+The drafter captures a decode graph over a layer this observer is attached to, and ... ok
+test_sums_the_real_rows_only_once_armed_and_files_the_stores_blobs (tests.test_engine_dense_calibration.CalibrationTests.test_sums_the_real_rows_only_once_armed_and_files_the_stores_blobs) ... ok
+test_the_store_reports_missing_tiles_and_refuses_foreign_blobs (tests.test_engine_dense_calibration.CalibrationTests.test_the_store_reports_missing_tiles_and_refuses_foreign_blobs) ... ok
+test_wider_decode_does_not_calibrate_on_unmasked_ghost_rows (tests.test_engine_dense_calibration.CalibrationTests.test_wider_decode_does_not_calibrate_on_unmasked_ghost_rows) ... ok
+test_both_lanes_of_a_weight_share_one_factorisation_and_get_the_same_answer (tests.test_engine_dense_calibration.FactorSharingTests.test_both_lanes_of_a_weight_share_one_factorisation_and_get_the_same_answer) ... ok
+test_fp8_gptq_keeps_the_lanes_block_scales_and_lowers_the_output_error (tests.test_engine_dense_calibration.Fp8GptqTests.test_fp8_gptq_keeps_the_lanes_block_scales_and_lowers_the_output_error) ... ok
+test_the_store_packs_fp8_only_from_calibration_and_caches_it (tests.test_engine_dense_calibration.Fp8GptqTests.test_the_store_packs_fp8_only_from_calibration_and_caches_it) ... ok
+test_a_blob_that_only_lacks_its_peaks_costs_its_columns_not_its_square (tests.test_engine_dense_calibration.PeaksOnlyTests.test_a_blob_that_only_lacks_its_peaks_costs_its_columns_not_its_square) ... ok
+test_the_peaks_are_summed_and_filed_into_the_blob_the_store_already_had (tests.test_engine_dense_calibration.PeaksOnlyTests.test_the_peaks_are_summed_and_filed_into_the_blob_the_store_already_had) ... ok
+test_completed_e_changes_only_quality_verdict (tests.test_prefill3000_assessment.KoreanExceptionTest.test_completed_e_changes_only_quality_verdict) ... ok
+test_other_names_and_extended_han_phrases_are_not_waived (tests.test_prefill3000_assessment.KoreanExceptionTest.test_other_names_and_extended_han_phrases_are_not_waived) ... ok
+test_tampered_output_evidence_is_rejected (tests.test_prefill3000_assessment.KoreanExceptionTest.test_tampered_output_evidence_is_rejected) ... ok
+test_unrelated_damage_survives_exception (tests.test_prefill3000_assessment.KoreanExceptionTest.test_unrelated_damage_survives_exception) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 4.590s
+
+OK
+W0913 01:13:13.340000 1 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda'
+{"kernel": "_router_gemm", "shared": 16384, "cubin_sha256": "32d286b5eebca711dc0cd73b2800d0c27e1a8d27bbdfede089652143adba2d68"}
+{"kernel": "_gram", "shared": 16384, "cubin_sha256": "a12900f2e3293b9e38b637db8cd45022032f708fb6f8890cef413a7361abb379"}
+{"passed": true, "gpu_used": false}

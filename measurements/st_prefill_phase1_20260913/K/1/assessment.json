@@ -1,0 +1,84 @@
+{
+  "name": "prefill3000-K1",
+  "boot_id": "5317c46fb5e877a26ddccdc4c479ad42896dd0dd3cb3cf7b096859fc972dce97|2026-09-13T01:19:09.166211504Z",
+  "engine_source_sha256": "092868e3df846887ebf8c92f1a41d346617848506cb42c4319b93479115fe650",
+  "engine_shape": {
+    "model": "glm-5.3-flash",
+    "max_model_len": 1048576,
+    "max_concurrent_requests": 4,
+    "speculative_tokens": 6,
+    "prefix_cache": true,
+    "conversation_tier": true,
+    "engine": "ST",
+    "parked": 0
+  },
+  "prefill": [
+    {
+      "context": 32000,
+      "prompt_tokens": 32545,
+      "ttft_s": 12.072251864999998,
+      "tok_s": 2695.8516409316153,
+      "target_tok_s": 3300,
+      "target_ttft_s": 9.862121212121211,
+      "target_met": false
+    },
+    {
+      "context": 128000,
+      "prompt_tokens": 128559,
+      "ttft_s": 38.73429751599906,
+      "tok_s": 3318.996554588325,
+      "target_tok_s": 3300,
+      "target_ttft_s": 38.95727272727273,
+      "target_met": true
+    }
+  ],
+  "prefill_target_tok_s": 3300,
+  "prefill_target_met": false,
+  "quality": {
+    "ok": 18,
+    "total": 18
+  },
+  "korean": {
+    "dirty": 0,
+    "n": 8,
+    "kinds": {
+      "replacement": 0,
+      "lone_jamo": 0,
+      "cjk_mixed": 0,
+      "control": 0
+    },
+    "hits": []
+  },
+  "korean_policy": {
+    "policy": "operator-approved-halvorsen-exception-20260913",
+    "authorization": "Operator identified Halvorsen博士 as a pre-existing vLLM issue and approved ignoring it.",
+    "ignored": [],
+    "dirty": 0,
+    "n": 8,
+    "kinds": {
+      "replacement": 0,
+      "lone_jamo": 0,
+      "cjk_mixed": 0,
+      "control": 0
+    },
+    "pass_after_exception": true
+  },
+  "quality_pass": true,
+  "fixed_decode_tok_s": 49.95126429538302,
+  "fixed_decode_repetitions": [
+    {
+      "tok_s": 43.10564753818595,
+      "output_sha256": "d6792ebe079cab7c763bd34735cac806c59a97d2bbdddd8f2f696c5819878185"
+    },
+    {
+      "tok_s": 44.97456210212112,
+      "output_sha256": "b2b4afb6902932006343466f04fb1667a4932fe725ed6a4e60b3bb9a78a4980d"
+    },
+    {
+      "tok_s": 68.37638478427212,
+      "output_sha256": "bdb07e8d3214586926f5c571ef2c394558e015f6e702076e36b3edabee7d0a07"
+    }
+  ],
+  "decode_regression": "not assessed: operator withdrew baseline reruns",
+  "note": "Candidate absolute measurement. No paired speedup or decode non-regression claim."
+}

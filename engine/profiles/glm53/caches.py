@@ -303,8 +303,7 @@ class Glm53Caches:
         self._snap["conv", layer][snap].copy_(taps.T)
 
     def mark_draft(self, snap: int, slot: int) -> None:
-        """The drafter's context ring as it stands before the step's observations: the mark's ring is this plus the
-        step's positions before the mark (the adapter observes them into the snapshot itself)."""
+        """Copy the drafter's current context ring into a block-boundary snapshot."""
         if not 0 <= snap < self.snapshots or not 0 < slot < self.slots.num_slots:
             raise IndexError("a mark needs a declared snapshot and a real state slot")
         if ("draft", -1) in self._snap:

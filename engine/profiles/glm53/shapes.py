@@ -57,6 +57,7 @@ def _selfcheck() -> None:
     assert chunk_for(9216) == 6912                           # six tokens short: still 6,912
     assert chunk_for(9222) == 9216                           # N x 2304 + SPEC_K is the only way up
     assert chunk_for(10240) == 9216                          # what ST serves: four blocks (조사 19차)
+    assert chunk_for(32768) == 32256                         # (32768-6)//2304 = 14 blocks
     assert chunk_for(16384) == 16128                         # (16384-6)//2304 = 7 blocks
     print("  glm53 shapes: 8192->6,912, 9216->6,912, 9222->9,216, 10240->9,216 -- the chunk law reproduces OK")
 

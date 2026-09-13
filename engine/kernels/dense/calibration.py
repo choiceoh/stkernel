@@ -113,6 +113,11 @@ class Calibration:
                 observe(flat[:, start:start + width], rows_ok, buffer, self.H.get(key), cursor,
                         self.armed, self.rows[key], self.amax[key])
             return
+        if flat.is_cuda and flat.dtype == torch.bfloat16 and rows_ok is None and flat.shape[0] > self.max_decode_rows:
+            from .calibration_prefill import observe
+            self.flush()
+            observe(flat, self.armed, self.tiles[name], self.H, self.amax, self.rows, ROWS_TARGET)
+            return
         xf = flat.float()
         if rows_ok is not None:
             xf = xf * rows_ok.to(xf.dtype).view(-1, 1)

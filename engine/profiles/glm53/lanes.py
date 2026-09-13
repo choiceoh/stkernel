@@ -267,12 +267,13 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
 
     def kda_chunk(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound, states_at=None):
         t = q.shape[1]
+        from engine.kernels.kda.index import single_sequence_bounds
         out = torch.empty_like(v)
         result = chunk_kda_with_fused_gate(
             q=q, k=k, v=v, raw_g=g_raw, beta=torch.sigmoid(beta_raw.float()), A_log=A_log.view(1, 1, -1, 1), g_bias=dt_bias,
             initial_state=state0.transpose(-1, -2).contiguous() if state0 is not None else None,
             output_final_state=True, use_qk_l2norm_in_kernel=True,
-            cu_seqlens=torch.tensor([0, t], dtype=torch.int32, device=q.device),
+            cu_seqlens=single_sequence_bounds(t, q.device),
             safe_gate=True, lower_bound=lower_bound, out=out, states_at=list(states_at) if states_at else None)
         # The kernel stores [H,V,K]; the engine/reference contract is [H,K,V].
         if states_at:
