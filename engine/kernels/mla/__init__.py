@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
-MLA_D = 512
-MLA_H = 16
+# The compiled cell, stated once in engine/kernels/cells.py (the wizard's table refuses against the same numbers).
+from engine.kernels.cells import MLA_HEADS as MLA_H, MLA_LATENT as MLA_D   # noqa: E402
 MLA_SPLITS_MAX = 64
 MLA_MAX_SPLIT_ROWS = 64
 MLA_WS_ROWS = 3 * MLA_MAX_SPLIT_ROWS

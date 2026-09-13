@@ -13,9 +13,12 @@ def _check_cell() -> None:
     runs fused_recurrent_kda with kda/decay.per_channel. Checked once per bound shape."""
     global _CELL_SEEN
     from engine.base.kernel_shape import bound
+    from engine.kernels.cells import FUSED_GATE_DECAY
     shape = bound()
     if shape is not _CELL_SEEN:
-        if shape.linear.decay != "channel":
+        if shape.linear is None:
+            raise ValueError("the bound kernel shape declares no linear attention; the ring KDA lane does not apply")
+        if shape.linear.decay != FUSED_GATE_DECAY:
             raise ValueError("the ring KDA lane fuses KDA's per-channel gate; a per-head decay cell "
                              "(linear.decay == 'head') runs fused_recurrent_kda(compute_gate=False) "
                              "on a decay widened by engine.kernels.linear_decay.per_channel")

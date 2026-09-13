@@ -339,12 +339,13 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
       "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
       "origin": "repository",
-      "local_sha256": "38547507a79d254c7770d8817932660ac8dd100a21efffd4397250d3cb58227a",
+      "local_sha256": "080aae0e96a8264559071fb3a26b3c4b0c61f0fe6df05adc13afd8cfcaac4aa0",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; tile32 large-M MLA prefill is qualified and selected by the production boot default; configure_prefill (STK_mla_prefill), mla_decode(splits=, probe=), PAIR_STATS, ENABLE_MLA_CLUSTER baked on",
         "2026-09-13 native build cache: stage content-addressed source inputs so identical checkout paths and timestamps do not trigger NVCC; keep Torch/Ninja build validation.",
         "2026-09-13 wide prefill: extend the existing row-local path to 32768 rows for 32256-token chunks; preserve kernel arithmetic and small decode.",
-        "2026-09-13 kernel shape descriptor: maybe_arm checks the bound kernel shape against the compiled 16x512 MLA cell and the device it declares (engine/base/kernel_shape) instead of a (12, 1, 48) literal; refuses another attention cell by name before arming."
+        "2026-09-13 kernel shape descriptor: maybe_arm checks the bound kernel shape against the compiled 16x512 MLA cell and the device it declares (engine/base/kernel_shape) instead of a (12, 1, 48) literal; refuses another attention cell by name before arming.",
+        "2026-09-13 shape wizard: MLA_H/MLA_D are imported from engine/kernels/cells.py, the one place the compiled cells are stated, so the wizard's admission table and maybe_arm's refusal read the same numbers."
       ]
     }
   }

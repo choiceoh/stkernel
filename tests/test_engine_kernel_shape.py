@@ -2,7 +2,11 @@
 cell from its checkpoint, binding is once per process, and the kernel wrappers read the bound
 shape instead of a model's literals. CPU contracts, no accelerator."""
 import ast
+import contextlib
 import importlib.util
+import io
+import json
+import tempfile
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -57,6 +61,24 @@ def glm_shape():
 def qwen_shape():
     from engine.profiles.qwen38 import shapes
     return shapes.kernel_shape(QWEN38_TEXT_CONFIG)
+
+
+# DeepSeek-V4.1-Flash, read off srv4 on 2026-09-13 (/home/choiceoh/models/DeepSeek-V4.1-Flash/config.json):
+# the second real checkpoint on the fleet, outside the engine's scope (D5) -- the wizard's second model.
+DSV41_TEXT_CONFIG = {
+    "model_type": "deepseek_v41_text", "hidden_size": 5120, "num_hidden_layers": 40, "num_attention_heads": 64,
+    "num_key_value_heads": 1, "head_dim": 512, "q_lora_rank": 1280, "qk_rope_head_dim": 64,
+    "index_n_heads": 32, "index_head_dim": 128, "index_topk": 512,
+    "compress_ratios": [0, 0] + [2] * 18 + [1] * 20 + [0, 0, 0], "candidate_block_size": 8,
+    "n_routed_experts": 384, "num_experts_per_tok": 6, "moe_intermediate_size": 2304, "intermediate_size": None,
+    "n_shared_experts": 1, "hidden_act": "silu", "swiglu_limit": 10.0, "hc_mult": 4, "hc_sinkhorn_iters": 20,
+    "hc_eps": 1e-06, "dspark_block_size": 5, "num_nextn_predict_layers": 3, "sliding_window": 128,
+}
+
+
+def dsv41_shape():
+    from engine.profiles.dsv41 import shapes
+    return shapes.kernel_shape(DSV41_TEXT_CONFIG)
 
 
 def load_dispatch(names, cell):
@@ -141,6 +163,28 @@ class DescriptorTests(unittest.TestCase):
         self.assertIn("decay/head", q.describe())
         ks.bind(q)
         self.assertIs(ks.bound(), q)
+
+    def test_dsv41_declares_no_linear_attention_and_its_own_expert_encoding(self):
+        from engine.kernels import cells
+        s = dsv41_shape()
+        self.assertEqual((s.hidden, s.hc, s.tp, s.spec_k, s.linear, s.drafter), (5120, 4, 4, 3, None, None))
+        self.assertEqual(s.attention, Attention("mla", heads=16, head_dim=512, kv_heads=1))
+        self.assertEqual(s.indexer, Indexer(heads=32, head_dim=128, pool=2, topk=512))
+        self.assertEqual(s.moe, MoE(experts=384, experts_local=96, hidden=5120, inter=2304, inter_local=2304, topk=6,
+                                    quant="fp4-block32", activation="silu", swiglu_limit=10.0, dense_inter_local=0))
+        self.assertEqual(ks.from_dict(json.loads(json.dumps(ks.to_dict(s)))), s)      # None survives the record
+        self.assertIn("linear none", s.describe())
+        verdicts = {v.lane: v for v in cells.admission(s)}
+        status = {lane: v.status for lane, v in verdicts.items()}
+        admitted = ("device", "mla", "mhc_decode", "indexer", "oneshot", "prefill_collectives", "dense")
+        self.assertEqual({k: status[k] for k in admitted}, dict.fromkeys(admitted, cells.ADMITTED))
+        self.assertEqual(status["moe"], cells.REFUSED)                              # FP4 [32,32] blocks, not NVFP4
+        self.assertFalse({"kda_recurrent", "kda_ring", "kda_chunk", "draft"} & set(status))
+        self.assertIn("hidden 5120", verdicts["mhc_decode"].why)                    # the HIDDEN_V41 instance
+        self.assertIn("every 2 rows", verdicts["prefill_collectives"].why)
+        self.assertIn("unmeasured", verdicts["oneshot"].why)
+        ks.bind(s)
+        self.assertIs(ks.bound(), s)
 
     def test_the_tiny_test_facts_still_derive_a_valid_shape(self):
         from tests.test_engine_glm53 import tiny_facts
@@ -267,12 +311,149 @@ class WrapperTests(unittest.TestCase):
     def test_the_boot_binds_the_checkpoint_shape_before_the_lanes(self):
         source = (ROOT / "engine/profiles/glm53/boot.py").read_text()
         fleet = source.split("def fleet(a) -> int:", 1)[1]
-        self.assertLess(fleet.index("kernel_shape.bind(facts.load(a.ckpt_meta).kernel_shape())"),
+        self.assertLess(fleet.index("kernel_shape.bind_recorded(a.ranks, Path(a.ckpt_meta) / \"config.json\""),
                         fleet.index("comm.prepare_oneshot()"))
         local = source.split("def local(a) -> int:", 1)[1].split("def ", 1)[0]
-        self.assertLess(local.index("kernel_shape.bind(facts.load(a.ckpt_meta).kernel_shape())"),
+        self.assertLess(local.index("kernel_shape.bind_recorded(a.ranks, Path(a.ckpt_meta) / \"config.json\""),
                         local.index("lane_tables.served()"))
         self.assertIn("kernel_shape.bind_drafter(kernel_shape.Drafter(head_dim=D.head_dim", source)
+        for tool in ("preshard.py", "preshard_modelopt.py"):
+            self.assertIn("kernel_shape.write_record(", (ROOT / "engine/profiles/glm53" / tool).read_text(), tool)
+
+
+# A config.json the GLM loader accepts offline: the text config plus the Red Hat NVFP4 encoding facts.load() checks.
+GLM53_CONFIG_FILE = dict(GLM53_TEXT_CONFIG, quantization_config={"config_groups": {"group_0": {
+    "format": "nvfp4-pack-quantized", "weights": {"group_size": 16}, "input_activations": {"group_size": 16},
+    "targets": ["re:.*\\.layers\\.(?:[3-9]|[1-3][0-9]|4[0-4])\\.mlp\\.experts\\..*(gate|up|down)_proj$"]}}})
+
+
+class CellTests(unittest.TestCase):
+    """engine/kernels/cells: the compiled cells the wrappers refuse against, judged before a boot."""
+
+    def test_the_measured_cell_is_admitted_on_every_lane(self):
+        from engine.kernels import cells
+        verdicts = {v.lane: v for v in cells.admission(MEASURED)}
+        self.assertEqual({v.status for v in verdicts.values()}, {cells.ADMITTED}, verdicts)
+        self.assertIn("draft", verdicts)
+        self.assertIn(" admitted, 0 unmeasured, 0 refused", cells.table(list(verdicts.values())))
+
+    def test_qwen38_gets_its_table_before_any_boot(self):
+        from engine.kernels import cells
+        status = {v.lane: v.status for v in cells.admission(qwen_shape())}
+        refused = ("mla", "mhc_decode", "kda_ring", "kda_chunk")
+        admitted = ("device", "indexer", "mhc_prefill", "oneshot", "prefill_collectives", "dense", "kda_recurrent", "universal")
+        self.assertEqual({k: status[k] for k in refused}, dict.fromkeys(refused, cells.REFUSED))
+        self.assertEqual({k: status[k] for k in admitted}, dict.fromkeys(admitted, cells.ADMITTED))
+        self.assertEqual(status["moe"], cells.UNMEASURED)
+        self.assertNotIn("draft", status)                                  # no drafter declared
+        pinned = {v.lane: v for v in cells.admission(ks.pin(qwen_shape(), "moe.dynamic_tile_m", 32))}
+        self.assertEqual(pinned["moe"].status, cells.UNMEASURED)          # a pin is not a measurement
+        mx = {v.lane: v for v in cells.admission(replace(MEASURED, moe=replace(MEASURED.moe, quant="mxfp4")))}
+        self.assertEqual(mx["moe"].status, cells.REFUSED)
+
+    def test_the_wrappers_refuse_against_the_cells(self):
+        from engine.kernels import cells, mla, oneshot
+        from engine.kernels.dense import mhc
+        self.assertEqual((mla.MLA_H, mla.MLA_D), (cells.MLA_HEADS, cells.MLA_LATENT))
+        self.assertEqual((mhc.COMPILED_HIDDEN, mhc.COMPILED_HC, mhc.MHC_MAX_TOK, mhc.HCHUNK),
+                         (cells.MHC_HIDDEN, cells.MHC_HC, cells.MHC_MAX_TOK, cells.MHC_HCHUNK))
+        self.assertEqual((oneshot.COMPILED_WORLD, oneshot.MAX_ELEMENTS, oneshot.CONSUMER_MAX_ELEMENTS),
+                         (cells.ONESHOT_WORLD, cells.ONESHOT_MAX_ELEMENTS, cells.ONESHOT_CONSUMER_MAX_ELEMENTS))
+        if importlib.util.find_spec("triton") is not None:
+            from engine.kernels import kpool, prefill_collectives
+            self.assertEqual(kpool.INDEX_HEAD_DIM, cells.INDEXER_HEAD_DIM)
+            self.assertEqual(prefill_collectives.BLOCK, cells.PREFILL_BLOCK)
+        source = (ROOT / "engine/kernels/decode_projection.py").read_text()   # #816's candidates read the shape
+        self.assertNotIn("2048", source)
+        self.assertNotIn("(128, 4096)", source)
+
+
+class RecordTests(unittest.TestCase):
+    """The record the wizard writes when a model is taken in, and what a boot does with it."""
+
+    def setUp(self):
+        ks.reset()
+        self.addCleanup(ks.reset)
+
+    def test_a_record_binds_while_it_still_describes_the_config(self):
+        from engine.kernels import cells
+        with tempfile.TemporaryDirectory() as d:
+            ranks, cfg = Path(d) / "ranks", Path(d) / "config.json"
+            ranks.mkdir()
+            cfg.write_text(json.dumps(GLM53_CONFIG_FILE))
+            shape = glm_shape()
+            path = ks.write_record(ranks, shape, profile="glm53", config_sha256=ks.config_sha256(cfg),
+                                   admission=cells.admission(shape))
+            self.assertEqual(path, ranks / ks.RECORD)
+            record = ks.read_record(ranks)
+            self.assertEqual((record["profile"], record["version"]), ("glm53", ks.RECORD_VERSION))
+            self.assertEqual(ks.from_dict(record["shape"]), shape)
+            self.assertEqual(record["admission"][0]["lane"], "device")
+            derived = []
+            bound_shape, source = ks.bind_recorded(ranks, cfg, lambda: derived.append(1) or shape)
+            self.assertEqual((source, derived, ks.bound()), ("record", [], shape))
+            ks.reset()
+            cfg.write_text(json.dumps(dict(GLM53_CONFIG_FILE, hidden_size=2560)))     # the checkpoint moved
+            with self.assertRaisesRegex(RuntimeError, "rerun"):
+                ks.bind_recorded(ranks, cfg, lambda: shape)
+            self.assertFalse(ks.is_bound())
+            _, source = ks.bind_recorded(Path(d) / "no-ranks", cfg, lambda: shape)   # no record: derived, as before
+            self.assertEqual((source, ks.bound()), ("derived", shape))
+            (ranks / ks.RECORD).write_text(json.dumps({"version": 0}))
+            with self.assertRaisesRegex(RuntimeError, "version"):
+                ks.read_record(ranks)
+
+    def test_pins_are_part_of_the_recorded_shape(self):
+        pinned = ks.pin(glm_shape(), "moe.dynamic_tile_m", 32)
+        self.assertEqual(pinned.moe.dynamic_tile_m, 32)
+        self.assertEqual(ks.from_dict(json.loads(json.dumps(ks.to_dict(pinned)))), pinned)
+        self.assertEqual(ks.from_dict(json.loads(json.dumps(ks.to_dict(MEASURED)))), MEASURED)   # drafter, capability
+        for key in ("moe", "moe.tile", "nope.x", "drafter.head_dim"):          # the derived shape has no drafter
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                ks.pin(glm_shape(), key, 1)
+        with self.assertRaises(ValueError):
+            ks.pin(glm_shape(), "moe.dynamic_tile_m", 48)
+
+    def test_the_wizard_judges_a_checkpoint_and_records_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            ckpt, ranks, qckpt = Path(d) / "ckpt", Path(d) / "ranks", Path(d) / "qwen"
+            ckpt.mkdir()
+            (ckpt / "config.json").write_text(json.dumps(GLM53_CONFIG_FILE))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = ks.main(["wizard", "--profile", "glm53", "--ckpt", str(ckpt), "--ranks", str(ranks),
+                                "--write", "--pin", "moe.dynamic_tile_m=64"])
+            self.assertEqual(code, 0)
+            text = out.getvalue()
+            self.assertIn("recorded ->", text)
+            self.assertIn("tile pinned at 64", text)
+            self.assertIn("0 refused", text)
+            record = ks.read_record(ranks)
+            self.assertEqual(ks.from_dict(record["shape"]), ks.pin(glm_shape(), "moe.dynamic_tile_m", 64))
+            self.assertEqual(record["config_sha256"], ks.config_sha256(ckpt / "config.json"))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(ks.main(["show", "--ranks", str(ranks)]), 0)
+            self.assertIn("glm53 recorded", out.getvalue())
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(ks.main(["show", "--ranks", str(Path(d) / "none")]), 1)
+            qckpt.mkdir()
+            (qckpt / "config.json").write_text(json.dumps({"text_config": QWEN38_TEXT_CONFIG}))
+            result = ks.wizard("qwen38", qckpt)
+            self.assertEqual(result["shape"], qwen_shape())
+            self.assertIsNone(result["path"])
+            self.assertIn("refused", {v.status for v in result["admission"]})
+            dckpt = Path(d) / "dsv41"
+            dckpt.mkdir()
+            (dckpt / "config.json").write_text(json.dumps({"text_config": DSV41_TEXT_CONFIG}))
+            result = ks.wizard("dsv41", dckpt, ranks=Path(d) / "dranks", write=True)
+            self.assertEqual(result["shape"], dsv41_shape())
+            self.assertEqual(ks.from_dict(ks.read_record(Path(d) / "dranks")["shape"]), dsv41_shape())
+            self.assertEqual({v.lane for v in result["admission"] if v.status == "refused"}, {"moe"})
+            with self.assertRaises(ValueError):
+                ks.wizard("glm53", ckpt, pins=["moe.dynamic_tile_m"])
+            with self.assertRaises(ValueError):
+                ks.derive_for("dsv4", ckpt)                                    # not a profile this engine knows
 
 
 if __name__ == "__main__":

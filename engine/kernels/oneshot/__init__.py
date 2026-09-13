@@ -11,9 +11,10 @@ from pathlib import Path
 import torch
 import torch.distributed as dist
 
-MAX_ELEMENTS = 64 * 4096            # the transport's element cap, compiled in as MAXEL (64 rows of the measured hidden)
-CONSUMER_MAX_ELEMENTS = 8 * 4096    # the PDL consumer kernel's bound: 1..32768 elements run on its 12-CTA form
-COMPILED_WORLD = 4                  # dsv4_oneshot_ar.cu NPEER 3: the rank table is four wide
+# The compiled cell, stated once in engine/kernels/cells.py: the element cap compiled in as MAXEL (64 rows of the
+# measured hidden), the PDL consumer kernel's bound (1..32768 elements run its 12-CTA form), NPEER 3 (four ranks).
+from engine.kernels.cells import (ONESHOT_CONSUMER_MAX_ELEMENTS as CONSUMER_MAX_ELEMENTS,
+                                  ONESHOT_MAX_ELEMENTS as MAX_ELEMENTS, ONESHOT_WORLD as COMPILED_WORLD)
 
 
 def _cell():

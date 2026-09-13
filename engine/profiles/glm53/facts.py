@@ -140,6 +140,11 @@ class Facts:
             spec_k=self.spec_k, device=Device(capability=BOX["capability"], sms=BOX["sms"]))
 
 
+def kernel_shape_of(ckpt: "str | Path" = CKPT) -> "KernelShape":
+    """The shape wizard's entry (engine/base/kernel_shape.derive_for): this checkpoint's kernel shape."""
+    return load(ckpt).kernel_shape()
+
+
 def load(ckpt: "str | Path" = CKPT) -> Facts:
     c = json.loads((Path(ckpt) / "config.json").read_text())
     if c['quantization_config'].get('quant_method') == 'modelopt':
