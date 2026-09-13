@@ -91,6 +91,8 @@ class CostModel:
     prefill_tok_s: dict = field(default_factory=lambda: {2000: 2009.0, 32000: 12150.0,
                                                          128000: 1996.0})
     prefill_flat_ms: float = 0.0      # >0 이면 처리량 테이블 대신 청크당 상수(수동 비교용)
+    prefill_ms_per_token: float = 0.0     # 청크 구조 모형: total = v·토큰 + F·청크 (#838 §4)
+    prefill_fixed_ms_per_chunk: float = 0.0  # F — v·F 둘 다 있으면 사다리를 대신한다
     front_ms: float = 0.0             # 문의 앞면(입장·토큰화) — 요청마다 한 번
     cold_extra_s: dict = field(default_factory=dict)       # {프롬프트 토큰: 초} — 그 길이의 첫 요청만
     acc_hist: list = field(default_factory=list)            # accepted=0..k 개수 — 실측 분포(st:spec_accepted_per_step_total). 비면 기하 추첨
@@ -144,6 +146,11 @@ class CostModel:
         return ms / 1e3
 
     def prefill_delay(self, prompt_len: int, chunk_tokens: int) -> float:
+        if self.prefill_ms_per_token > 0 and self.prefill_fixed_ms_per_chunk > 0:
+            # 청크 구조(#838 §4): 청크가 작을수록 토큰당 비싸다 — 고정비 F 가 청크 수로 나뉘기
+            # 때문이다. 이 모드에서 TTFT 는 청크 크기·개수에 구조적으로 반응한다.
+            return (self.prefill_ms_per_token * chunk_tokens
+                    + self.prefill_fixed_ms_per_chunk) / 1e3
         if self.prefill_flat_ms > 0:
             return self.prefill_flat_ms / 1e3
         table = sorted((int(c), float(v)) for c, v in self.prefill_tok_s.items())
@@ -424,7 +431,8 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
     out = {"cost": {f: getattr(cost, f) for f in
                     ("name", "k", "acc", "decode_ms", "decode_ms_per_row", "decode_ms_per_1k_ctx",
                      "decode_ms_by_ctx", "prefill_tok_s", "prefill_flat_ms", "front_ms",
-                     "cold_extra_s", "acc_hist")},
+                     "cold_extra_s", "acc_hist", "prefill_ms_per_token",
+                     "prefill_fixed_ms_per_chunk")},
            "steps": kinds, "wall_s": round(wall, 3), "step_s": cadence,
            "decode_step_s_wall": decode_rate,
            "decode_step_s_phase": round(1.0 / cost.decode_delay(1, 0), 2) if cost.decode_ms > 0 else None,
@@ -468,7 +476,9 @@ def _fmt(out: dict, meta: bool) -> str:
     lines = [f"cost {out['cost']['name']}: k={out['cost']['k']} acc={out['cost']['acc']:.1%}"
              f" decode {out['cost']['decode_ms']:g} ms"
              + (f" prefill flat {out['cost']['prefill_flat_ms']:g} ms" if out['cost']['prefill_flat_ms']
-                else " prefill " + " ".join(f"{c // 1000}K:{v:.0f}" for c, v in sorted(out['cost']['prefill_tok_s'].items())))
+                else (f" prefill 청크 {out['cost']['prefill_ms_per_token'] * 1000:.1f}µs/토큰+{out['cost']['prefill_fixed_ms_per_chunk']:.0f}ms"
+                      if out['cost']['prefill_ms_per_token']
+                      else " prefill " + " ".join(f"{c // 1000}K:{v:.0f}" for c, v in sorted(out['cost']['prefill_tok_s'].items()))))
              + (" [폭·컨텍스트 미계수: 평탄]" if not (out['cost']['decode_ms_per_row'] or out['cost']['decode_ms_per_1k_ctx']) else "")]
     lines.append(f"steps: {out['steps']['prefill']} prefill, {out['steps']['decode']} decode"
                  + (f", async {out['async']} (동기 drain {out['sync_drains']})" if out["async"] else "")
@@ -502,6 +512,39 @@ def _fmt(out: dict, meta: bool) -> str:
         widths = " ".join(f"{n}×{c}" for n, c in out["decode_widths"].items())
         lines.append(f"디코드 폭: {widths} (스텝이 실은 행 수 × 스텝 수)")
     return "\n".join(lines)
+
+
+def composed_cost(routing: str = "measured", prefill_profile: "str | None" = None,
+                  acc: float = 0.45) -> "CostModel":
+    """조립 모형(step_kernels) 전부를 CostModel 로 — 형상은 facts.py, 라우팅은 아티팩트/
+    역산, 프리필은 청크 구조(아티팩트 폴딩), **폭 계수까지** 4행 조립에서 푼다. 손으로
+    쥐는 것은 수용률 하나(실측 분포가 오면 --acc-hist-from 이 대신한다)."""
+    import step_kernels as kern
+    facts = kern.load_engine_facts()
+    b = kern.EngineBytes()
+    if facts:
+        b.spec_k, b.tp = facts["spec_k"], facts["tp"]
+    if routing == "artifact":
+        folded = kern.fold_routing_from_timeline(
+            "measurements/c4_scaling_20260913/decode-timeline-rank3.json")
+        if folded:
+            b.routing_gamma, b.routing_scale = folded["routing_gamma"], folded["routing_scale"]
+    ladder = {c: round(kern.decode_step(b, c, 1).total(), 2) for c in (2000, 32000, 128000)}
+    per_row = round((kern.decode_step(b, 2000, 4).total() - ladder[2000]) / 3.0, 3)
+    cost = CostModel(name=f"composed-{routing}", k=b.spec_k, acc=acc,
+                     decode_ms=ladder[32000], decode_ms_by_ctx=ladder,
+                     decode_ms_per_row=per_row,
+                     prefill_tok_s={})
+    profile = prefill_profile or "measurements/c4_scaling_20260913/chunk-profile-rank3-sf6.json"
+    fold = kern.fold_prefill_from_profile(profile) if Path(profile).exists() else {}
+    if fold:
+        # 플릿 계수(+110ms/청크)까지 구조에 넣는다 — 단일랭크 값에 두는 것이 아니라
+        cost.prefill_ms_per_token = fold["ms_per_token"]
+        cost.prefill_fixed_ms_per_chunk = fold["fixed_ms_per_chunk"] + 110.0
+    # 문 앞면·JIT 꼬리: 폴딩 기록이 없으면 문서 실측 기본(K1: 46.6ms / 2K +0.4s)
+    cost.front_ms = 46.6
+    cost.cold_extra_s = {2128: 0.4}
+    return cost
 
 
 def acc_hist_from_peek(path) -> "list | None":
@@ -714,6 +757,12 @@ def main() -> int:
                     help="step_peek 스크랩 jsonl — 수용률을 실측 분포로 뽑는다(기하 추첨 대신)")
     ap.add_argument("--fold-width", type=Path, nargs=2, dest="fold_width", metavar=("C1", "C4"),
                     help="C=1·C=4 기록 두 파일에서 폭 계수를 폴딩해 인쇄한다(완결 C=4 대기 중)")
+    ap.add_argument("--compose", action="store_true",
+                    help="cost 를 조립 모형에서 한 번에: facts.py 형상 + 아티팩트 라우팅·프리필 + 폭 계수(4행 조립)")
+    ap.add_argument("--routing", choices=("measured", "artifact"), default="measured",
+                    help="--compose 의 라우팅 기준(기본: 플릿 역산 U=33/95)")
+    ap.add_argument("--conc", type=int,
+                    help="동시성: 같은 프롬프트를 N 개 동시 도착(C=4 재현) — --closed-loop 과 배타")
     ap.add_argument("--closed-loop", action="store_true", dest="closed_loop",
                     help="onepass 하네스 의미로 돈다: 앞 요청이 끝나야 다음(가상 벤치마크의 표준 자세)")
     ap.add_argument("--out-dir", help="steps-sim-*.ring 덤프를 이 디렉터리에 쓴다 (step_replay 가 읽는다)")
@@ -730,7 +779,8 @@ def main() -> int:
 
     contract = sched.Contract(chunk_align=args.chunk_align, token_budget=args.token_budget,
                               draft_slots=args.draft_slots, max_wait_s=args.max_wait_s,
-                              max_running=args.max_running)
+                              max_running=args.max_running,
+                              **({"decode_token_budget": 2304} if args.compose else {}))
     calib = None
     if not args.no_calib:
         calib = run_once([512], 300, contract)            # 장치 0, 동기 — 숙주 전용 캘리브레이션
@@ -796,9 +846,17 @@ def main() -> int:
             print("[폭 폴딩] 완결 C=1/C=4 짝이 없다 — 조립 예측(step_kernels --width) 이 그 자리를 지킨다")
         return 0
     prompts = [int(x) for x in args.prompts.split(",")]
-    arrive = [float(x) for x in args.arrive_ms.split(",")] if args.arrive_ms else None
+    if args.conc and args.conc > 1:
+        prompts = prompts * args.conc                 # 같은 컨텍스트 N 개, 전부 t=0 도착
+    arrive = [0.0] * len(prompts)
     gen: "int | list" = args.gen
-    if args.device_ms or args.prefill_device_ms:
+    if args.compose:
+        cost = composed_cost(routing=args.routing)
+        # 계약도 엔진의 실제 값으로: 청크 정렬 2304, 혼자 프리필 9216, 디코더 옆 2304(#838 §4)
+        args.chunk_align = 2304
+        args.token_budget = 9216
+        args.max_wait_s = args.max_wait_s or 0.0
+    elif args.device_ms or args.prefill_device_ms:
         cost = CostModel(decode_ms=args.device_ms, prefill_flat_ms=args.prefill_device_ms,
                          k=0, acc=0.0, prefill_tok_s={}, name="manual")
     else:

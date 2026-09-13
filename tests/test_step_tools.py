@@ -562,3 +562,33 @@ class KernelBudgetTests(unittest.TestCase):
         mixed = {"requests": [{"ctx": 2000, "concurrency": 1}, {"ctx": 2000, "concurrency": 4}],
                  "decode": {"windows_med": 10.0}}
         self.assertIsNone(sim.fold_width_from_records([mixed]))
+
+    def test_chunk_structural_prefill(self):
+        # 청크 모형(#838 §4): total = v·토큰 + F·청크 — 청크가 작을수록 토큰당 비싸다
+        cost = sim.CostModel(k=0, acc=0.0, decode_ms=1.0,
+                             prefill_ms_per_token=0.2879, prefill_fixed_ms_per_chunk=379.5,
+                             prefill_tok_s={}, name="chunk")
+        self.assertAlmostEqual(cost.prefill_delay(2128, 2128) * 1e3,
+                               0.2879 * 2128 + 379.5, delta=1.0)
+        self.assertAlmostEqual(cost.prefill_delay(9216, 2304) * 1e3,
+                               0.2879 * 2304 + 379.5, delta=1.0)
+
+    def test_composed_cost_has_every_coefficient(self):
+        cost = sim.composed_cost(routing="measured")
+        self.assertAlmostEqual(cost.decode_ms_by_ctx[2000], 51.4, delta=0.2)
+        self.assertAlmostEqual(cost.decode_ms_by_ctx[128000], 55.4, delta=0.2)
+        # 폭 계수는 4행 조립에서 풀린다 — "폭 미계수" 상태가 아니다
+        self.assertAlmostEqual(cost.decode_ms_per_row, (113.5 - 51.4) / 3, delta=0.3)
+        self.assertAlmostEqual(cost.prefill_ms_per_token, 0.2879, delta=0.0005)
+        self.assertAlmostEqual(cost.prefill_fixed_ms_per_chunk, 269.5 + 110.0, delta=1.0)
+        art = sim.composed_cost(routing="artifact")
+        self.assertLess(art.decode_ms_by_ctx[2000], cost.decode_ms_by_ctx[2000])  # U(7)=29.3 < 33
+
+    def test_conc_mode_runs_rows_together(self):
+        fast = sim.CostModel(k=2, acc=0.5, decode_ms=2.0,
+                             prefill_tok_s={512: 5120.0, 2048: 5120.0}, name="conc")
+        out = sim.run_once([512] * 3, 64, CONTRACT, cost=fast, can_async=False)
+        widths = {int(n) for n in out["decode_widths"]}
+        self.assertIn(3, widths)                       # 세 행이 한 스텝에 함께 디코드
+        waits = [q["queue_wait_s"] for q in out["requests"]]
+        self.assertGreater(max(waits), 0.0)            # 동시 도착: 직렬 프리필 뒤에 줄이 선다
