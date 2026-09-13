@@ -171,7 +171,8 @@ class Glm53Engine:
                     self.memory.checkpoint("capture_decode/failed", failed=f"{type(exc).__name__}: {str(exc)[:300]}")
                 except BaseException:                 # noqa: BLE001 -- it raises by design; `exc` is the cause
                     pass
-            self.close_decode()
+            from engine.base.graphs import cleanup_after_error
+            cleanup_after_error(exc, self.close_decode, "close decode after capture failure")
             raise
 
     def _check_graph_pools(self) -> None:

@@ -90,6 +90,18 @@ def engine(rows=4):
 
 
 class ServedBurstTests(unittest.TestCase):
+    def test_boot_failure_survives_bounded_graph_teardown_failure(self):
+        original = ValueError('bounded graph rejects node type 5 at body/0')
+
+        class BrokenBurst(CpuBurst):
+            def _capture(self): raise original
+            def close(self): raise RuntimeError('CUDA context unavailable during close')
+
+        with self.assertRaises(ValueError) as raised:
+            BrokenBurst(engine(1), 4)
+        self.assertIs(raised.exception, original)
+        self.assertIn('close bounded decode also failed', original.__notes__[0])
+
     def test_shared_results_publish_in_order_and_hold_rows_until_retirement(self):
         e = engine(4)
         p = CpuBurst(e, 4)

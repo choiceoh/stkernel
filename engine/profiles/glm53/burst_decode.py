@@ -11,7 +11,7 @@ import threading
 import time
 from contextlib import contextmanager
 
-from engine.base.graphs import frozen_gc
+from engine.base.graphs import cleanup_after_error, frozen_gc
 from engine.base.graph_labels import capture as label_capture
 from engine.profiles.glm53.bounded_loop import agree_stop, stop_at_boundary
 from engine.profiles.glm53.net import Segment, Step
@@ -78,8 +78,8 @@ class BurstDecode(AsyncDecode):
                 from engine.kernels.decode_queue import SharedDecodeQueue
                 self.queue = SharedDecodeQueue(n, self.t)
             self._capture()
-        except BaseException:
-            self.close()
+        except BaseException as exc:
+            cleanup_after_error(exc, self.close, "close bounded decode")
             raise
 
     def reserve_steps(self, seq):
@@ -171,19 +171,25 @@ class BurstDecode(AsyncDecode):
                             try:
                                 with label_capture(recording, f"bounded/{shape}/{self.iterations}"):
                                     self._body(shape)
-                            finally:
+                            except BaseException as exc:
+                                cleanup_after_error(exc, captured.capture_end, "bounded capture_end")
+                                raise
+                            else:
                                 captured.capture_end()
                         loop = BoundedGraph(captured, controls["count"], controls["stop"], self.iterations,
                                             owners=(b, self.logs[n], controls, e.decode_graphs,
                                                     e.sampling_graphs, e.drafter.decode_graphs, self.queue))
-                    except BaseException:
-                        captured.reset()
+                    except BaseException as exc:
+                        cleanup_after_error(exc, captured.reset, f"reset bounded/{shape}/{self.iterations}")
                         raise
                     self.loops[shape] = loop
                     if e.memory is not None:
                         e.memory.checkpoint(f"bounded-decode/{shape}/{self.iterations}")
                 torch.cuda.synchronize()
-        finally:
+        except BaseException as exc:
+            cleanup_after_error(exc, e.caches.reset, "reset bounded warmup caches")
+            raise
+        else:
             e.caches.reset()  # real warmup writes happened only before admission
 
     def launch(self, seqs, slots):
