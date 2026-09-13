@@ -123,12 +123,19 @@ def _stage_rec(RING, STAGE, ROFF, SOFF, SLOT, BEFORE, COUNT, BLOCK_TOKENS: tl.co
 
 @triton.jit
 def _stage_conv(RING, STAGE, ROFF, SOFF, SLOT, BEFORE, COUNT, BLOCK_TOKENS: tl.constexpr, WIDTH: tl.constexpr,
-                TAPS: tl.constexpr, CHANNELS: tl.constexpr, RS: tl.constexpr, SS: tl.constexpr, BLOCK: tl.constexpr):
+                TAPS: tl.constexpr, CHANNELS: tl.constexpr, RS: tl.constexpr, SS: tl.constexpr, BLOCK: tl.constexpr,
+                META=None, MS: tl.constexpr = 0, COMPACT: tl.constexpr = False):
     i, L, c = tl.program_id(0), tl.program_id(1), tl.program_id(2)
-    slot, before, count = tl.load(SLOT + i), tl.load(BEFORE + i), tl.load(COUNT + i)
+    slot, before, count = tl.load(SLOT + i).to(tl.int64), tl.load(BEFORE + i).to(tl.int64), tl.load(COUNT + i).to(tl.int64)
     after = before + count
     boundary = (after // BLOCK_TOKENS) * BLOCK_TOKENS
     crossed = (count > 0) & (boundary > before)
+    if COMPACT:
+        # Published in the same stream as materialization. Consumers wait
+        # for this whole launch, including every layer's convolution taps.
+        if L == 0 and c == 0:
+            tl.store(META + slot * MS, after, count > 0)
+            tl.store(META + slot * MS + 1, boundary, crossed)
     ch = c * BLOCK + tl.arange(0, BLOCK)
     mask = (ch < CHANNELS) & crossed
     for j in tl.static_range(TAPS):
@@ -144,6 +151,7 @@ def stage_boundaries(caches, slots, ctx_before, counts):
     if not kda:
         return
     recurrent = caches._fields["rec", kda[0]]
+    compact = getattr(caches, "compact", False)
     state_rec, state_bf16 = caches.state.view(recurrent.dtype), caches.state.view(torch.bfloat16)
     stage_rec, stage_bf16 = caches.stage_store.view(recurrent.dtype), caches.stage_store.view(torch.bfloat16)
     rec_size = recurrent.element_size()
@@ -153,16 +161,20 @@ def stage_boundaries(caches, slots, ctx_before, counts):
         dev = slots.device
         tables = caches._stage_tables = (
             torch.tensor([caches._fields["rec", L].storage_offset() - state_rec.storage_offset() for L in kda], device=dev),
-            torch.tensor([caches._stage["rec", L].storage_offset() - stage_rec.storage_offset() for L in kda], device=dev),
+            torch.tensor([0 if compact else caches._stage["rec", L].storage_offset() - stage_rec.storage_offset()
+                          for L in kda], device=dev),
             torch.tensor([caches._fields["conv", L].storage_offset() - state_bf16.storage_offset() for L in kda], device=dev),
             torch.tensor([caches._stage["conv", L].storage_offset() - stage_bf16.storage_offset() for L in kda], device=dev))
     rec_off, rec_stage_off, conv_off, conv_stage_off = tables
     n, cells = int(slots.numel()), F.spec_k + 1
     cell = F.kda_heads_local * F.kda_dim * F.kda_dim
-    _stage_rec[(n, len(kda), triton.cdiv(cell, 1024))](
-        state_rec, stage_rec, rec_off, rec_stage_off, slots, ctx_before, counts, F.block, cells, cell,
-        caches.layout.slot_bytes // rec_size, caches.stage_bytes // rec_size, 1024)
+    if not compact:
+        _stage_rec[(n, len(kda), triton.cdiv(cell, 1024))](
+            state_rec, stage_rec, rec_off, rec_stage_off, slots, ctx_before, counts, F.block, cells, cell,
+            caches.layout.slot_bytes // rec_size, caches.stage_bytes // rec_size, 1024)
     channels, width, taps = 3 * F.kda_heads_local * F.kda_dim, F.conv - 1 + F.spec_k, F.conv - 1
+    meta = caches._fields["rec_meta", -1] if compact else None
     _stage_conv[(n, len(kda), triton.cdiv(channels, 256))](
         state_bf16, stage_bf16, conv_off, conv_stage_off, slots, ctx_before, counts, F.block, width, taps, channels,
-        caches.layout.slot_bytes // 2, caches.stage_bytes // 2, 256)
+        caches.layout.slot_bytes // 2, caches.stage_bytes // 2, 256,
+        meta, meta.stride(0) if compact else 0, compact)

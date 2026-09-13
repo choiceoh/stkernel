@@ -1,6 +1,8 @@
 # GB10 × 4 실행 형상의 후속 설계
 
-설계 기준: PR #895의 `56e3f3d8`와 그 기반 `71306bda`. [상위 설계](ST_GB10_ARCHITECTURE_20260913.md)의 후속 작업을 코드 경계와 검증 단위로 구체화한다. **이 문서의 API·상태 필드·실험 단계는 제안이며 아직 구현되지 않았다.** #895에서 구현한 것은 compact FP32 KDA 커널 ABI와 probe다. 그 커널의 GPU 검증도 예약 당시 대기 상태이며, 아래 설계를 성능 결과로 해석하지 않는다.
+설계 기준: PR #895의 `56e3f3d8`와 그 기반 `71306bda`. [상위 설계](ST_GB10_ARCHITECTURE_20260913.md)의 후속 작업을 코드 경계와 검증 단위로 구체화한다. **S의 cache·eager·graph 연결은 실험 옵션으로 구현했고, P/M/I의 제안은 아직 후속 작업이다.** 커널의 GPU 검증도 예약 당시 대기 상태이며, 아래 설계를 성능 결과로 해석하지 않는다.
+
+S 구현: `STK_compact_kda=1` → `ExecutionPlan.compact_kda` → `Facts.kda_state_layout="committed_boundary"`. deferred 검증을 함께 선택하며 native FP32, 분할 없는 decode, `prefill_tiles=1`을 요구한다. `rec_meta[2]`에는 current/boundary의 문맥 위치를 저장하고 물리 slot과 함께 이동한다. eager transaction이 미확정인 동안 재검증·snapshot·restore·slot 재사용을 거부한다. graph 수명과 slot 재사용의 stream fence는 기존 runner가 소유한다. [compact_state.py](../engine/profiles/glm53/compact_state.py), [CPU 검증](../measurements/kda_compact_20260913/serving_cpu.json). 아래 상세 설계의 이름은 구현 API와 다를 수 있다.
 
 목표는 단일 요청의 품질·수락률·출력 tok/s를 유지하면서, 정해진 TP4 모델의 불필요한 상태 저장과 프리필 입력 이동을 없애는 것이다. 이후 디코드가 이미 읽는 expert 가중치에 프리필 계산을 함께 실어 본다. 기존 커널 선택·수치 경계·통신 순서를 함께 소유하므로 가능한 변경이다. 알고리즘 자체의 독점성을 주장하지 않는다.
 

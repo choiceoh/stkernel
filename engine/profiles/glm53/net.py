@@ -151,7 +151,9 @@ class Glm53Net:
         self.Hk = F.kda_heads_local                  # KDA heads on this rank (16)
         self.vp = F.vocab_local
         self.conv_ring = F.conv - 1 + F.spec_k       # conv inputs kept per slot: the window plus K drafts
-        self.rec_ring = F.spec_k + 1                 # recurrent states kept per slot: one per draft position
+        self.verify_tokens = F.spec_k + 1
+        self.compact_kda = getattr(F, "kda_state_layout", "ring") == "committed_boundary"
+        self.rec_ring = 1 if self.compact_kda else self.verify_tokens
         self.p = None
         self.dense = {}
         self.shared_mlp = {}
@@ -435,10 +437,13 @@ class Glm53Net:
             g_raw_all = self.linear(f_a, n + "f_b").view(N, Hl, D)
             g_out = self.linear(g_a, n + "g_b").view(N, Hl, D)
         beta_all = b_all                                                             # raw logits: each lane sigmoids as its kernel wants
-        wc, wr = self.conv_ring, self.rec_ring
+        wc, wr = self.conv_ring, self.verify_tokens
         captured = getattr(step, "captured", False)
+        compact = self.compact_kda
         single_chunk = not captured and len(step.segments) == 1 and N > wr
         rows = self._ring_rows(step, wc, wr)
+        if compact and captured and (not rows or getattr(caches, "deferred_state", None) is None):
+            raise ValueError("compact captured KDA requires deferred row verification")
         if rows:
             # a captured decode step: every row's conv and recurrence in one launch each, and the output lands in
             # step order without a copy per row (45차, the C=4 question: four rows were four times the launches --
@@ -457,8 +462,8 @@ class Glm53Net:
             core = None if single_chunk else torch.empty(N, Hl, D, dtype=x.dtype, device=x.device)
         for s in (() if rows else step.segments):
             sl = slice(s.start, s.start + s.length)
-            direct_ring = self.lanes.kda_recurrent_ring is not None and s.length <= wr
-            direct_conv = direct_ring and self.lanes.conv_ring is not None and s.length <= min(8, wc)
+            direct_ring = not compact and self.lanes.kda_recurrent_ring is not None and s.length <= wr
+            direct_conv = (direct_ring or compact) and self.lanes.conv_ring is not None and s.length <= min(8, wc)
             if captured:
                 if direct_conv:
                     conv_ring, ring, physical = caches.kda_rings(L, s.slot)
@@ -468,13 +473,14 @@ class Glm53Net:
                     hist, state0 = caches.kda_history(L, s.slot, s.ctx)
             else:
                 conv_ring, rec_ring = caches.kda(L, s.slot)
+                physical = 0
                 if not direct_conv:
                     hist_pos = s.ctx + torch.arange(-(K - 1), 0, device=x.device)
                     hist = conv_ring[:, hist_pos.clamp_min(0) % wc].masked_fill((hist_pos < 0)[None, :], 0)
                 if direct_ring:
                     ring, physical = rec_ring[None], 0
                 else:
-                    state0 = rec_ring[(s.ctx - 1) % wr][None] if s.ctx > 0 else None
+                    state0 = rec_ring[0 if compact else (s.ctx - 1) % wr][None] if s.ctx > 0 else None
             if direct_conv:
                 y = self.lanes.conv_ring(qkv_all[sl], p[n + "conv"], conv_ring if captured else conv_ring[None], physical, s.ctx)
             else:
@@ -487,7 +493,10 @@ class Glm53Net:
                     conv_ring[:, pos % wc] = qkv_all[sl][-keep:].T
             q, k, v = (t.reshape(1, s.length, Hl, D) for t in y.split(Hl * D, dim=-1))
             g_raw, beta = g_raw_all[sl][None], beta_all[sl][None]
-            if direct_ring:
+            if compact and s.length <= wr:
+                o = caches.verify_compact(L, s, (q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"]),
+                                          self.lanes.kda_recurrent)
+            elif direct_ring:
                 o = self.lanes.kda_recurrent_ring(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"],
                                                   ring, physical, s.ctx, F.lower_bound)
             elif s.length > wr:                                                     # a prefill chunk: only the final state is kept --
@@ -506,7 +515,9 @@ class Glm53Net:
                         caches.mark_kda(L, snap, st, qkv_all[sl][m - (K - 1):m])
                 else:
                     o, state = self.lanes.kda_chunk(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
-                rec_ring[(s.ctx + s.length - 1) % wr] = state[0]
+                rec_ring[0 if compact else (s.ctx + s.length - 1) % wr] = state[0]
+                if compact:
+                    caches._compact_eager.complete_layer(L, s)
             else:                                                                   # a decode/verify step: one state per position
                 o, states = self.lanes.kda_recurrent(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
                 if captured:
@@ -870,7 +881,7 @@ class Glm53Net:
 
     # -- the step ---------------------------------------------------------------------------
     def forward(self, step: Step, caches: Caches, finish: bool = True, aux_layers=None, aux_ready=None,
-                *, last_hidden_only=False, contract=None):
+                *, last_hidden_only=False, contract=None, compact_commit=True):
         """One step: every segment's tokens through the chain. Returns the final
         hidden states [N, hidden] (post final norm) when `finish`, else the raw
         mHC carry (res, post, comb, x) for inspection. With `aux_layers`, also
@@ -879,6 +890,9 @@ class Glm53Net:
         aux_hidden_states: hc_post then hc_contract after layer idx). Prefill may
         request only the final hidden row, which supplies its first sampled token."""
         F = self.F
+        eager_compact = self.compact_kda and not getattr(step, "captured", False)
+        if eager_compact:
+            caches.begin_compact(step, commit_all=compact_commit)
         if contract is not None and aux_layers and any(L not in self.layers for L in aux_layers):
             raise ValueError("terminal features must name layers in this target")
         N = step.ids.shape[0]
@@ -936,6 +950,8 @@ class Glm53Net:
                     if features is None:
                         features = torch.cat([aux[l] for l in aux_layers], dim=-1)
                     aux_ready(features)
+        if eager_compact and compact_commit:
+            caches.commit_compact()
         if not finish:
             return res, post, comb, x
         if last_hidden_only:

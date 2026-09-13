@@ -151,7 +151,8 @@ class Batch:
     crossing, the boundary record in the same launch. Counts are the actual
     accepted counts after EOS/length clipping, not the verifier's raw count.
     A commit spans at most one block; snapshots must consume a boundary
-    before a later crossing replaces it. No serving cache uses this ABI yet.
+    before a later crossing replaces it. The opt-in compact serving cache
+    supplies these views; the production default remains the ordinary ring.
     """
     def __init__(self, rings, rows, tokens, *, block, tiled=True, cells=2048, hoist_final=True, warps=4,
                  vectorize=True, boundaries=None):

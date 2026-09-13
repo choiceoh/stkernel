@@ -38,17 +38,27 @@ from contextlib import nullcontext
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from engine.base.params import Spec
-from engine.kernels.draft_conv import tap_mix
-from engine.kernels.draft_select import walk_scores
 from engine.base.lanes import served as common_lanes
 from engine.profiles.glm53.facts import SPEC_K, TP
 
 # The model-free kernels come from the engine's default lanes (engine/base/lanes): one launch each for the
 # drafter's norms, norm+rope and gated MLP. The names stay module-level because the tests and probes take the
 # same functions the block runs from here.
-_COMMON = common_lanes()
-swiglu, add_norm, norm, norm_rope, warm_rotary = (_COMMON.swiglu, _COMMON.add_rmsnorm, _COMMON.rmsnorm,
-                                                 _COMMON.rmsnorm_rope, _COMMON.rope_table)
+def _lazy_lane(alias, name):
+    # Budget/fact readers must not import Triton. The first executed call
+    # installs the real function; graph warmup pays this dispatch only once.
+    def first(*args, **kwargs):
+        function = getattr(common_lanes(), name)
+        globals()[alias] = function
+        return function(*args, **kwargs)
+    return first
+
+
+swiglu = _lazy_lane("swiglu", "swiglu")
+add_norm = _lazy_lane("add_norm", "add_rmsnorm")
+norm = _lazy_lane("norm", "rmsnorm")
+norm_rope = _lazy_lane("norm_rope", "rmsnorm_rope")
+warm_rotary = _lazy_lane("warm_rotary", "rope_table")
 
 DRAFTER = Path("/home/choiceoh/models/GLM-5.3-Flash-DFlash2")
 BF16, F32 = torch.bfloat16, torch.float32
@@ -391,6 +401,7 @@ class Drafter:
     # -- the block ------------------------------------------------------------------------------
     def _conv(self, x, delta, base):
         """The grouped causal tap mix over one block's rows (kernels/draft_conv)."""
+        from engine.kernels.draft_conv import tap_mix
         return tap_mix(x, delta, base, self.F.conv_group)
 
     def _attn(self, L: int, x: torch.Tensor, positions: torch.Tensor, ring: torch.Tensor, ctx_len: int) -> torch.Tensor:
@@ -538,6 +549,7 @@ class Drafter:
 
     def _conv_rows(self, x, delta, base, t: int):
         """`_conv` over the step's blocks of t rows: the taps look back inside a block, never into the one before."""
+        from engine.kernels.draft_conv import tap_mix
         return tap_mix(x, delta, base, self.F.conv_group, block=t)
 
     def _attn_rows(self, L: int, x: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor, ctx: torch.Tensor,
@@ -642,6 +654,7 @@ class Drafter:
         if temps is None:
             # the scores never exist: a step reads one codebook row against this step's candidates
             from engine.modules.draft_agreement import agree_walk
+            from engine.kernels.draft_select import walk_scores
             drafts = walk_scores(unary, cand, anchors, proj, p["candidate_selector.predecessor_codebook"],
                                  p["candidate_selector.successor_codebook"], alpha=self.selector_alpha)
             return agree_walk(self.target.comm, drafts)
@@ -679,6 +692,7 @@ class Drafter:
             out.append(cand[rows, s, pick])
             prev = pick
         from engine.modules.draft_agreement import agree_walk
+        from engine.kernels.draft_select import walk_scores
         return agree_walk(self.target.comm, torch.stack(out, 1), qcand, qprob)
 
     def propose(self, anchor: int, position: int, ring: torch.Tensor, *, boundary=None) -> "list[int]":

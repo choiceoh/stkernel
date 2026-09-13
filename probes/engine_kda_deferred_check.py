@@ -18,6 +18,8 @@ def main():
                     help="check batched commit and replay, then compare flat/tiled commit on identical factors")
     mode.add_argument("--compact-only", action="store_true",
                       help="check the compact current/boundary ABI and compare three state layouts")
+    mode.add_argument("--serving-only", action="store_true",
+                      help="compact ABI plus real cache, clipped commit, prefix and graph integration")
     args = ap.parse_args()
     if args.samples < 4:
         ap.error("at least four timing samples are required")
@@ -33,6 +35,9 @@ def main():
              "engine/profiles/glm53/pipeline.py", "engine/profiles/glm53/adapter.py",
              "tests/test_engine_kda_deferred.py", "tests/test_engine_kda_deferred_batch.py",
              "tests/test_engine_kda_compact.py", "probes/engine_kda_compact_bench.py",
+             "engine/kernels/state.py", "engine/profiles/glm53/caches.py",
+             "engine/profiles/glm53/compact_state.py", "engine/profiles/glm53/execution.py",
+             "tests/test_engine_compact_serving.py", "tests/test_engine_compact_serving_cuda.py",
              "tests/test_engine_burst_decode_cuda.py", "tests/test_engine_graph_labels.py", "probes/engine_kda_deferred_check.py",
              "probes/engine_kda_batch_bench.py", "probes/engine_candidate_packet_bench.py",
              "engine/kernels/common/vocab_candidates.py", "engine/modules/vocab.py")
@@ -41,17 +46,19 @@ def main():
                   torch=torch.__version__, cuda=torch.version.cuda, status="RUNNING")
     started = time.monotonic()
     try:
-        names = ("tests.test_engine_kda_compact",) if args.compact_only else (
+        names = ("tests.test_engine_kda_compact", "tests.test_engine_compact_serving",
+                 "tests.test_engine_compact_serving_cuda") if args.serving_only else (
+            ("tests.test_engine_kda_compact",) if args.compact_only else (
             ("tests.test_engine_kda_deferred_batch",) if args.commit_only else (
             "tests.test_engine_kda_deferred", "tests.test_engine_kda_deferred_batch")
-        )
+        ))
         suite = unittest.defaultTestLoader.loadTestsFromNames(names)
         result = unittest.TextTestRunner(verbosity=2).run(suite)
         report["correctness"] = dict(tests=result.testsRun, skips=len(result.skipped),
                                       errors=result.errors, failures=result.failures)
         if not result.wasSuccessful() or result.skipped:
             raise RuntimeError("deferred-state gate failed or skipped")
-        if args.compact_only:
+        if args.compact_only or args.serving_only:
             from probes.engine_kda_compact_bench import measure
             with torch.inference_mode():
                 report["compact"] = measure(args.samples)

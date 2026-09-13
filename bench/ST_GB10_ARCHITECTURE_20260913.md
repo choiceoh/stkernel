@@ -1,8 +1,8 @@
 # GB10 × 4 전용 ST 실행 형상
 
-검토 기준: `e0b5c184`에서 분석을 시작하고 GPU 등록 전에 `71306bda`에 리베이스한 엔진 및 2026-09-13 공식 문서. 목표는 **C=1의 품질을 유지하면서 토큰당 가중치 읽기, 상태 쓰기, 중간 텐서 이동을 줄이는 것**이다. 첫 구현은 FP32 KDA의 물리적 저장 형상을 바꾸는 커널 실험이다. 서빙 연결과 처리량 검증은 아직 완료하지 않았다.
+검토 기준: `e0b5c184`에서 분석을 시작하고 GPU 등록 전에 `71306bda`에 리베이스한 엔진 및 2026-09-13 공식 문서. 목표는 **C=1의 품질을 유지하면서 토큰당 가중치 읽기, 상태 쓰기, 중간 텐서 이동을 줄이는 것**이다. 첫 구현은 FP32 KDA의 물리적 저장 형상을 바꾸는 커널과 서빙 연결 실험이다. 실제 GPU 정확도와 처리량 검증은 아직 완료하지 않았다.
 
-구체적인 cache 수명, packet 입력 ABI, expert 타일 선택식, 구현 순서와 인수 조건은 [후속 설계](ST_GB10_FOLLOWUP_DESIGN_20260913.md)에 정리했다. 후속 설계의 API와 scheduler는 아직 구현되지 않았다.
+구체적인 cache 수명, packet 입력 ABI, expert 타일 선택식, 구현 순서와 인수 조건은 [후속 설계](ST_GB10_FOLLOWUP_DESIGN_20260913.md)에 정리했다. compact KDA의 서빙 연결은 `STK_compact_kda=1` 실험 경로로 구현했다. 기본값은 0이며 실제 GPU 서빙 성능은 아직 검증하지 않았다. packet FFN과 혼합 MoE scheduler는 후속 설계다.
 
 ## 하드웨어가 정해 주는 방향
 
@@ -54,7 +54,7 @@ flowchart LR
   C --> B[prefix 경계 FP32 상태]
 ```
 
-`Batch(..., boundaries=...)`로만 새 ABI를 선택한다. 현재 서빙 캐시는 이 인수를 전달하지 않는다.
+`Batch(..., boundaries=...)`로 새 ABI를 선택한다. `STK_compact_kda=1`은 native FP32 cache를 이 ABI에 연결하고 deferred verification을 함께 선택한다. 현재 지원 실행 순서는 `prefill_tiles=1`이며 분할 decode overlap과 혼용하지 않는다.
 
 - 검증 커널은 확정 상태 한 셀을 읽고 기존 FP32 연산 순서로 출력과 update factor를 계산한다. 확정 상태와 경계 레코드는 쓰지 않는다.
 - 수락 이후 하나의 커널이 실제 수락된 update만 재생하고 확정 상태를 저장한다. 경계를 건넜다면 별도 레코드에도 저장한다.
@@ -79,13 +79,13 @@ flowchart LR
 
 계측은 [engine_kda_compact_bench.py](../probes/engine_kda_compact_bench.py)에서 일반 링 / 기존 deferred / 새 레코드를 같은 빌드로 비교한다. 34층 recurrence와 commit을 측정하며 실제 모델의 projection·conv·NIC·sampler·출력 tok/s는 포함하지 않는다. 초기화·컴파일·캡처는 측정 구간 밖이고, 64 MiB eviction 유무와 원시 샘플을 별도로 남긴다. 새 경로의 경계 레코드 쓰기는 측정에 포함되지만 기존 경로의 후속 stage 복사는 포함되지 않는다.
 
-서빙 통합에 남은 일:
+서빙 통합 구현과 남은 검증:
 
-1. `Glm53Caches`에 명시적인 상태 배치를 연결하고 기존 FP32 기준 KV 블록 수를 유지한 채 arena를 줄인다.
-2. prefill 최종 상태, checkpoint/restore, stage, 작은 eager decode를 같은 두 레코드 규약으로 연결한다. 작은 decode는 verify 후 전체 count commit을 해야 한다.
-3. C=1/C=4와 문맥 capacity별 graph가 같은 물리 상태를 공유하고, 각자 필요한 factor만 소유하도록 한다.
-4. bounded decode의 EOS clipping·경계 stage·슬롯 반환 순서를 검증한다. 단순히 `rec_ring=1`로 바꾸는 패치는 올바르지 않다.
-5. 같은 런타임에서 C=1 우선 품질·수락률·tok/s 및 C=4, 32K/128K TTFT를 비교한다.
+1. 구현: 명시적인 상태 배치와 기존 FP32 기준 KV 블록·snapshot 수를 유지하는 arena 예산. recurrent stage는 boundary 필드를 alias하며 conv만 별도 할당한다.
+2. 구현: prefill 최종 상태, 내부 marks, checkpoint/restore, stage, 작은 eager decode. 작은 투기 decode도 최종 clipped count만 commit한다.
+3. 구현: C=1/C=4와 문맥 capacity별 graph가 같은 물리 상태를 공유하고 `(행 수, 검증 폭)`별 factor를 소유한다. eager factor도 유한한 segment index/width로 재사용한다.
+4. CPU 검증: eager 모델 출력·prefix 복원·수락 0..8·ragged C=4·EOS clipping. 실제 cache의 CUDA stage와 4회 graph commit 검사를 추가했고 GPU 실행은 대기 중이다.
+5. 미검증: 같은 런타임의 C=1 품질·수락률·tok/s 및 C=4, 32K/128K TTFT. [서빙 연결의 CPU 기록](../measurements/kda_compact_20260913/serving_cpu.json)
 
 ## 2. 프리필: FP8 패킷을 연산의 입력으로 유지
 

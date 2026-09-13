@@ -77,6 +77,7 @@ class Facts:
     spec_k: int = SPEC_K
     weight_layout: str = "st-glm53-b12x-up-gate-v1"  # selected from checkpoint metadata before allocation
     kda_state_dtype: str = KDA_STATE_DTYPE
+    kda_state_layout: str = "ring"
 
     # -- what one of the four ranks holds (TP by heads / intermediate / vocab) --
     @property
