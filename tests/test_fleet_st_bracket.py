@@ -119,7 +119,7 @@ class AdmissionTests(unittest.TestCase):
         body = text[text.index('probe() {'):]
         self.assertIn('docker exec st-glm53 printenv ST_RELEASE', body)
         self.assertIn('ABORT: the door serves release $served, not ${ARM_SHA:0:12}', body)
-        self.assertLess(body.index('printenv ST_RELEASE'), body.index('for run in $(seq 1 "$RUNS")'), 'before any run')
+        self.assertLess(body.index('printenv ST_RELEASE'), body.index('for run in $(seq 1 "$runs")'), 'before any run')
         self.assertIn('[ "$REHEARSE" != 1 ]', body[:body.index('printenv ST_RELEASE')], 'a rehearsal has no door to ask')
 
     def test_the_runner_snapshot_carries_what_the_bracket_needs(self):
@@ -221,7 +221,7 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual((out['n_cand'], out['n_base']), (1, 2))
         self.assertAlmostEqual(out['delta_pct'], (13.5 - 12.2) / 12.2 * 100, places=6)
         self.assertAlmostEqual(out['floor_pct'], 0.4 / 12.2 * 100, places=6)
-        self.assertIn('BEYOND the floor', out['verdict'])
+        self.assertIn('BEYOND the base floor', out['verdict'])
         self.assertEqual(out['cand_summary']['cold_ttft_2k_s'], 6.0)      # the cold column rides beside
         self.assertEqual(len(st_judge.samples(rows, BASE)), 2)
         table = st_judge.table(out)
@@ -235,6 +235,54 @@ class JudgeTests(unittest.TestCase):
     def test_a_single_base_boot_has_no_floor_and_says_so(self):
         rows = [record(BASE, 'B', 12.0), record(CAND, 'C', 12.6)]
         self.assertIn('NO FLOOR', st_judge.judge(rows, CAND, BASE)['verdict'])
+
+    def test_a_single_base_boot_borrows_the_floor_other_commits_measured(self):
+        """Booting the base again only to learn what noise is costs a boot; the noise of this engine on
+        these boxes is in the records already. The pooled floor is the median spread of every commit
+        that has two boots -- and the verdict says it borrowed."""
+        import statistics
+        X, Y = 'aaaa' * 10, 'bbbb' * 10
+        rows = [record(BASE, 'B', 12.0), record(CAND, 'C', 12.3),
+                record(X, 'X', 10.0, boot='x1'), record(X, 'X', 10.2, boot='x2'),          # 0.2 / 10.1 = 1.98% spread
+                record(Y, 'Y', 20.0, boot='y1'), record(Y, 'Y', 20.8, boot='y2')]          # 0.8 / 20.4 = 3.92% spread
+        out = st_judge.judge(rows, CAND, BASE)
+        self.assertEqual(out['floor_source'], 'pooled')
+        self.assertAlmostEqual(out['floor_pct'], statistics.median([0.2 / 10.1, 0.8 / 20.4]) * 100, places=6)
+        self.assertIn('WITHIN the pooled floor', out['verdict'])                           # +2.5% against a 2.95% floor
+        self.assertIn('pooled from 2 commits', out['verdict'])
+        rows.append(record(BASE, 'B', 12.5, boot='b2'))
+        self.assertEqual(st_judge.judge(rows, CAND, BASE)['floor_source'], 'base', 'the base speaks for itself once it can')
+
+    def test_the_adopted_candidate_s_records_are_the_next_base_s(self):
+        """The operator's rule (2026-09-13): a candidate that is adopted brings its own measurement
+        along as the next baseline. Identity is the engine tree, so the squash commit main made of
+        the candidate, or a fleet-side merge that left engine/ alone, is the same sample."""
+        SQUASH = 'cccc' * 10
+        rows = [dict(record(CAND, 'C', 13.0), arm_tree='0d3c61aa802d'), record('dddd' * 10, 'N', 14.0)]
+        self.assertEqual(len(st_judge.samples(rows, SQUASH)), 0, 'by commit: a stranger')
+        self.assertEqual(len(st_judge.samples(rows, SQUASH, tree='0d3c61aa802d')), 1, 'by tree: the adopted candidate')
+        out = st_judge.judge(rows, 'dddd' * 10, SQUASH, base_tree='0d3c61aa802d')
+        self.assertNotIn('NO BASE', out['verdict'])
+        self.assertEqual(out['base_summary']['n'], 1)
+        self.assertEqual(len(st_judge.samples(rows, SQUASH, tree='ffffffffffff')), 0, 'another tree is another engine')
+
+    def test_a_probe_s_run_after_a_reset_is_a_warm_sample(self):
+        """One run on a live door is a sample: run 1 after a prefix reset is warm (cold=reset), not the
+        boot's cold column -- so a probe needs one run, not two."""
+        rows = [dict(record(BASE, 'd17', 12.0, run_index=1, boot='live'), cold='reset')]
+        self.assertEqual(len(st_judge.samples(rows, BASE)), 1)
+        self.assertEqual(st_judge.colds(rows, BASE), [])
+
+    def test_boots_names_the_boot_each_sample_came_from(self):
+        import subprocess
+        import tempfile
+        rows = [record(BASE, 'B', 12.0, boot='b1'), record(BASE, 'B', 12.0, run_index=1, boot='b1'), record(BASE, 'B', 12.2, boot='b2')]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'r.jsonl'
+            path.write_text(''.join(json.dumps(r) + '\n' for r in rows))
+            out = subprocess.run([sys.executable, str(ROOT / 'bench/st_judge.py'), 'boots', '--sha', BASE, '--jsonl', str(path)],
+                                 capture_output=True, text=True)
+            self.assertEqual(out.stdout.split(), ['b1|started', 'b2|started'])
 
     def test_gates_make_a_record_no_evidence(self):
         rows = [record(BASE, 'B', 12.0), record(CAND, 'C', 15.0, quality=(8, 9))]
@@ -335,14 +383,27 @@ class RehearsalTests(unittest.TestCase):
         self.assertEqual([r['name'] for r in recs], ['A', 'A', 'B', 'B', 'A', 'A', 'B', 'B'])
         self.assertEqual(out.stdout.count('verdict:'), 1)
         self.assertIn('judge B against A', out.stdout)
+        self.assertTrue(all('arm_tree' in r for r in recs if r['name'] == 'B'), 'the real commit names its engine tree')
+        self.assertTrue(all('arm_tree' not in r for r in recs if r['name'] == 'A'), 'a commit the source lacks has no tree')
+        out = self.run_bracket('chain', '--reuse', 'A=' + self.base, 'B=' + self.cand, 'A', 'B')
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual(len(self.records()), 8, '--reuse: every arm had a sample already, nothing was booted')
+        self.assertEqual(out.stdout.count('reused:'), 4)
+        self.assertIn('verdict:', out.stdout)
 
-    def test_probe_rehearses_two_runs_on_the_live_door(self):
+    def test_probe_rehearses_one_run_on_the_live_door_and_names_the_engine_tree(self):
         out = self.run_bracket('probe', self.cand)
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
         recs = self.records()
-        self.assertEqual([(r['run_index'], r['cold'], r['name']) for r in recs],
-                         [(1, 'reset', 'd17-' + self.cand[:12]), (2, 'reset', 'd17-' + self.cand[:12])])
+        self.assertEqual([(r['run_index'], r['cold'], r['name']) for r in recs], [(1, 'reset', 'd17-' + self.cand[:12])],
+                         'one run: a boot is one sample, and after a reset it is warm')
+        self.assertEqual(recs[0]['arm_tree'], subprocess.run(['git', 'rev-parse', self.cand + ':engine'], cwd=ROOT,
+                                                             capture_output=True, text=True).stdout.strip()[:12])
         self.assertIn('no boot, no lease', out.stdout)
+        self.env['ST_PROBE_RUNS'] = '2'
+        out = self.run_bracket('probe', self.cand)
+        self.assertEqual(len(self.records()), 3, 'ST_PROBE_RUNS=2 still gives two')
+        del self.env['ST_PROBE_RUNS']
         (self.tmp / 'deploy-state.json').write_text(json.dumps({'deployed': self.base}))
         out = self.run_bracket('probe')
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)

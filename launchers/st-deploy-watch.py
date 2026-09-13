@@ -411,6 +411,35 @@ def probe_session(sha: str, attempt: int = 1) -> str:
     return f"d17-{sha[:12]}" + (f"-{attempt}" if attempt > 1 else "")
 
 
+def engine_tree(sha: str) -> str:
+    """The engine/ tree at `sha` (launchers/st_release.py engine_tree): what a sample identifies."""
+    try:
+        return st_release.engine_tree(sha, source=SOURCE)
+    except Exception:                                  # noqa: BLE001 -- no tree is no identity, not a failure
+        return ""
+
+
+def sample_boots(sha: str, log, controller: Path = CONTROLLER, jsonl: Path = JSONL, tree: str = "") -> "list[str] | None":
+    """The production boots that gave `sha` a warm, valid sample -- by the controller's own judge
+    (bench/st_judge.py boots), so what a sample is gets decided once. None when it cannot be told,
+    and None never queues anything."""
+    judge = controller / "bench" / "st_judge.py"
+    if not judge.exists():
+        log(f"  no {judge}: cannot tell whether {sha[:12]} has a warm sample")
+        return None
+    code, out, err = run([sys.executable, str(judge), "boots", "--sha", sha, "--jsonl", str(jsonl)] + (["--tree", tree] if tree else []), timeout=120)
+    if code:
+        log(f"  st_judge could not list samples for {sha[:12]}: {(err or out).strip()[:120]}")
+        return None
+    return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+def production_boot_id() -> "str | None":
+    """The head's production container, the way onepass names a boot (docker Id|StartedAt); None when none serves."""
+    code, out, _ = run(["docker", "inspect", "-f", "{{.Id}}|{{.State.StartedAt}}", "st-glm53"], timeout=20)
+    return out.strip() if code == 0 and "|" in out else None
+
+
 def ticket_open(session: str, fleet_dir: Path = FLEET) -> bool:
     """A ticket of this name -- or of this name with an attempt suffix -- is queued or holding,
     read off the queue's own files."""
@@ -434,46 +463,58 @@ def ticket_open(session: str, fleet_dir: Path = FLEET) -> bool:
 
 
 def remember_probe(sha: str, queued: bool, state: Path = None, tally: dict = None) -> dict:
-    """The tally of probe tickets this watcher queued for the deployed sha, in the state file."""
+    """The tally of probe tickets this watcher queued for the deployed sha on the boot it saw, in the state file."""
     state = state or STATE
     held = state_of(state)
     tally = tally if tally and tally.get("sha") == sha else held.get("probe") or {}
     if tally.get("sha") != sha:
-        tally = {"sha": sha, "attempts": 0}
+        tally = {"sha": sha, "boot": None, "attempts": 0}
     tally = {**tally, "attempts": tally["attempts"] + 1, "last_at": time.time(), "queued": queued}
     state.write_text(json.dumps({**held, "probe": tally}, indent=1))
     return tally
 
 
 def ensure_probe(sha: str, held: dict, a, log, *, controller: Path = None, fleet_dir: Path = None,
-                 jsonl: Path = None, state: Path = None) -> bool:
-    """A D17 probe ticket for the deployed commit whenever it has no warm sample and none is on
-    its way. The ticket after the deploy is the first; this is for the cycles after it, when
-    that ticket ran into traffic (onepass --require-exclusive gives up and leaves no record) or
-    was cancelled. Bounded: --probe-attempts tickets per deployed sha, --probe-gap apart."""
+                 jsonl: Path = None, state: Path = None, boot: "str | None" = "?", tree: "str | None" = "?") -> bool:
+    """A D17 probe ticket for the deployed commit only while it has fewer than --probe-samples (1)
+    warm samples -- by commit or by engine tree, so a candidate the bracket measured and main then
+    adopted needs none (the operator's rule: its own measurement is the next baseline), and a
+    fleet-side merge inherits the sample of the engine it did not touch. Samples count per
+    production boot; a boot that already gave its sample is not probed again. Bounded:
+    --probe-attempts per boot, --probe-gap apart; nothing is queued while a probe ticket is queued
+    or holding, when the judge cannot be asked, or when nothing serves."""
     if getattr(a, "dry_run", False) or not getattr(a, "probe", True) or not sha:
         return False
     controller = Path(controller or getattr(a, "controller", CONTROLLER))
     fleet_dir = Path(fleet_dir or FLEET)
     jsonl = Path(jsonl or JSONL)
+    tree = engine_tree(sha) if tree == "?" else (tree or "")
+    boots = sample_boots(sha, log, controller, jsonl, tree)
+    if boots is None:
+        return False
+    target = getattr(a, "probe_samples", 1)
+    if len(boots) >= target:
+        return False
+    boot = production_boot_id() if boot == "?" else boot
+    if not boot:
+        return False                                   # nothing serves: nothing to sample until production is back
+    if boot in boots:
+        return False                                   # this boot gave its sample; the next boot gives the next
     tally = held.get("probe") or {}
-    if tally.get("sha") != sha:
-        tally = {"sha": sha, "attempts": 0, "last_at": 0}
+    if tally.get("sha") != sha or tally.get("boot") != boot:
+        tally = {"sha": sha, "boot": boot, "attempts": 0, "last_at": 0}
     limit = getattr(a, "probe_attempts", 3)
     if tally["attempts"] >= limit:
         if not tally.get("gave_up"):
-            log(f"  {sha[:12]} has no warm sample after {tally['attempts']} probe tickets; queuing no more "
-                f"(fleet.sh st-probe by hand, or a new deploy)")
+            log(f"  {sha[:12]}: {len(boots)} of {target} samples, and this boot gave none after {tally['attempts']} probe tickets; "
+                f"queuing no more on it (fleet.sh st-probe by hand, or the next boot)")
             (state or STATE).write_text(json.dumps({**state_of(state or STATE), "probe": {**tally, "gave_up": True}}, indent=1))
         return False
     if time.time() - tally.get("last_at", 0) < getattr(a, "probe_gap", 1800):
         return False
-    count = warm_samples(sha, log, controller, jsonl)
-    if count is None or count > 0:
-        return False
     if ticket_open(probe_session(sha), fleet_dir):
         return False
-    log(f"  {sha[:12]} has no warm sample and no probe ticket on its way (attempt {tally['attempts'] + 1}/{limit})")
+    log(f"  {sha[:12]} has {len(boots)} of {target} warm samples and no probe ticket on its way (attempt {tally['attempts'] + 1}/{limit} on this boot)")
     queued = queue_probe(sha, log, controller, attempt=tally["attempts"] + 1)
     remember_probe(sha, queued, state, tally)
     return queued
@@ -506,7 +547,8 @@ def main(argv=None) -> int:
     ap.add_argument("--controller", default=str(CONTROLLER), help="the queue's checkout: moved to the deployed commit after a deploy")
     ap.add_argument("--no-follow", dest="follow", action="store_false", help="leave the controller checkout where it is")
     ap.add_argument("--no-probe", dest="probe", action="store_false", help="queue no D17 probe ticket after a deploy")
-    ap.add_argument("--probe-attempts", type=int, default=3, help="probe tickets per deployed sha before giving up")
+    ap.add_argument("--probe-attempts", type=int, default=3, help="probe tickets per production boot before giving up on that boot")
+    ap.add_argument("--probe-samples", type=int, default=1, help="warm samples (by commit or engine tree, one per production boot) the deployed sha is kept at")
     ap.add_argument("--probe-gap", type=int, default=1800, help="seconds between two probe tickets for the same sha")
     ap.add_argument("--queue-grace", type=int, default=None, help="seconds of quiet queue before a deploy takes the fleet (default: the queue's own pace, floor 300)")
     a = ap.parse_args(argv)

@@ -48,9 +48,15 @@ export ONEPASS_JSONL=$JSONL LEGS=onepass
 cd "$REPO" || exit 1
 say() { echo "== $(date +%T) $*"; }
 
-RELEASE=""; ARM=""; ARM_SHA=""
+RELEASE=""; ARM=""; ARM_SHA=""; ARM_TREE=""
 sha_of() {  # the full commit id when the source tree can say; the name as given otherwise (rehearsal)
   python3 "$REPO/launchers/st_release.py" resolve "$1" --source "$SOURCE" 2>/dev/null || echo "$1"
+}
+tree_of() {  # the engine/ tree at that commit -- the sample's identity across squashes and fleet-side merges; empty when unknown
+  python3 "$REPO/launchers/st_release.py" tree "$1" --source "$SOURCE" 2>/dev/null || true
+}
+tree_args() {  # --tree for st_judge, when the tree is known
+  local tree; tree=$(tree_of "$1"); [ -z "$tree" ] || printf -- '--tree %s' "$tree"
 }
 release_of() {  # sha -> its release directory, cut if it is not yet; a rehearsal cuts nothing
   [ "$REHEARSE" != 1 ] || { echo "$RELEASES/rehearsal-${1:0:12}"; return 0; }
@@ -103,6 +109,7 @@ rec = dict(real[-1]) if real else {
     "korean": {"dirty": 0, "n": 5}, "traffic": {"issues": []}, "harness": 42,
     "prefill": [{"ctx": 2000, "cold_s": 6.7, "warm_tok_s": 3000.0}, {"ctx": 32000, "cold_s": 40.0, "warm_tok_s": 3200.0}]}
 rec.update({"name": name, "t": time.strftime("%F %T"), "rehearsal": True, "engine": "st", "arm_sha": sha,
+            **({"arm_tree": os.environ["ST_BRACKET_TREE"]} if os.environ.get("ST_BRACKET_TREE") else {}),
             "run_index": run, "cold": os.environ.get("ST_BRACKET_COLD", "boot"),
             "session": os.environ.get("FLEET_SESSION", ""), "knobs": {}})
 rec.pop("boot_id", None); rec.pop("run_id", None)
@@ -116,9 +123,9 @@ MEASURE_RECORDED=0
 measure() {  # run-index -> one onepass on the candidate's door, exclusive
   local run=$1 offset=0 rc
   MEASURE_RECORDED=0
-  [ "$REHEARSE" != 1 ] || { rehearse_record "$run"; return; }
+  [ "$REHEARSE" != 1 ] || { ST_BRACKET_TREE=$ARM_TREE rehearse_record "$run"; return; }
   [ ! -f "$JSONL" ] || offset=$(wc -c < "$JSONL")
-  GLM53_API_PORT=$PORT BENCH_MODEL=$MODEL ONEPASS_RUN_INDEX=$run ST_BRACKET_SHA=$ARM_SHA ST_BRACKET_COLD=${ST_BRACKET_COLD:-boot} \
+  GLM53_API_PORT=$PORT BENCH_MODEL=$MODEL ONEPASS_RUN_INDEX=$run ST_BRACKET_SHA=$ARM_SHA ST_BRACKET_TREE=$ARM_TREE ST_BRACKET_COLD=${ST_BRACKET_COLD:-boot} \
     python3 "$REPO/bench/onepass.py" --name "$ARM" --require-exclusive 2>&1 | tail -40
   rc=${PIPESTATUS[0]}
   # onepass returns 2 after recording quality/evidence issues, but argparse
@@ -155,7 +162,7 @@ reset_prefix() {  # between the runs: run 2 must not hit the cache run 1 filled 
 }
 leg() {  # name sha -> the fixed leg; 0 when every run recorded
   local name=$1 sha=$2 run rc=0
-  ARM_SHA=$(sha_of "$sha")
+  ARM_SHA=$(sha_of "$sha"); ARM_TREE=$(tree_of "$sha")
   boot_arm "$name" "$sha" || return 1
   for run in $(seq 1 "$RUNS"); do
     if [ "$run" != 1 ] && [ "$REHEARSE" != 1 ]; then reset_prefix; fi
@@ -172,8 +179,10 @@ leg() {  # name sha -> the fixed leg; 0 when every run recorded
   stop_arm
   return $rc
 }
-judge() {  # cand base
-  python3 "$REPO/bench/st_judge.py" judge --cand "$1" --base "$2" --write $( [ "$REHEARSE" = 1 ] && echo --allow-rehearsal )
+judge() {  # cand base -- by commit, and by engine tree: an adopted candidate's records are the base's
+  local ct bt; ct=$(tree_of "$1"); bt=$(tree_of "$2")
+  python3 "$REPO/bench/st_judge.py" judge --cand "$1" --base "$2" ${ct:+--cand-tree "$ct"} ${bt:+--base-tree "$bt"} --write \
+    $( [ "$REHEARSE" = 1 ] && echo --allow-rehearsal )
 }
 pair() {
   local cand=${1:?pair needs a candidate sha} base=""; shift
@@ -189,7 +198,7 @@ pair() {
   say "pair: candidate ${cs:0:12} against base ${bs:0:12} (session $S, rehearse=$REHEARSE)"
   leg "ST-${cs:0:12}" "$cand" || return $?
   local have
-  have=$(python3 "$REPO/bench/st_judge.py" samples --sha "$bs" $( [ "$REHEARSE" = 1 ] && echo --allow-rehearsal )) || have=0
+  have=$(python3 "$REPO/bench/st_judge.py" samples --sha "$bs" $(tree_args "$base") $( [ "$REHEARSE" = 1 ] && echo --allow-rehearsal )) || have=0
   if [ "${have:-0}" -lt "$FLOOR_N" ]; then
     say "base ${bs:0:12} has ${have:-0} warm sample(s), $FLOOR_N wanted: booting it"
     leg "ST-${bs:0:12}" "$base" || return $?
@@ -199,9 +208,10 @@ pair() {
   say "judge"; judge "$cs" "$bs"
   say "pair done"
 }
-chain() {  # NAME=<sha> ... [NAME ...]: a repeated name is another boot of the same commit (A B A B alternates)
-  [ $# -gt 0 ] || { echo "usage: st_bracket.sh chain NAME=<sha> [NAME=<sha> ...] [NAME ...]" >&2; return 2; }
-  local arm name sha first="" base=""
+chain() {  # [--reuse] NAME=<sha> ... [NAME ...]: a repeated name is another boot of the same commit (A B A B alternates)
+  local reuse=0; [ "${1:-}" != --reuse ] || { reuse=1; shift; }
+  [ $# -gt 0 ] || { echo "usage: st_bracket.sh chain [--reuse] NAME=<sha> [NAME=<sha> ...] [NAME ...]" >&2; return 2; }
+  local arm name sha first="" base="" have
   declare -A shas=()
   local -a order=()
   for arm in "$@"; do
@@ -212,8 +222,17 @@ chain() {  # NAME=<sha> ... [NAME ...]: a repeated name is another boot of the s
     order+=("$name"); [ -n "$first" ] || first=$name
   done
   base=${shas[$first]}
-  say "chain: ${order[*]} (base = $first = ${base:0:12}, session $S, rehearse=$REHEARSE)"
-  for name in "${order[@]}"; do leg "$name" "${shas[$name]}" || return $?; done
+  say "chain: ${order[*]} (base = $first = ${base:0:12}, session $S, rehearse=$REHEARSE${reuse:+, reuse=$reuse})"
+  for name in "${order[@]}"; do
+    if [ "$reuse" = 1 ]; then
+      # --reuse: an arm whose commit already has a warm sample is not booted again; the judge takes
+      # the samples that exist (and a pooled floor when the base has one boot). A B A B without
+      # --reuse still alternates the boots, the way §93 asked, when the spread itself is the question.
+      have=$(python3 "$REPO/bench/st_judge.py" samples --sha "${shas[$name]}" $(tree_args "${shas[$name]}") $( [ "$REHEARSE" = 1 ] && echo --allow-rehearsal )) || have=0
+      if [ "${have:-0}" -ge 1 ]; then say "$name reused: ${have} warm sample(s) of ${shas[$name]:0:12} already (no --reuse to boot it again)"; continue; fi
+    fi
+    leg "$name" "${shas[$name]}" || return $?
+  done
   local judged=" "
   for name in "${order[@]}"; do
     sha=${shas[$name]}; [ "$sha" != "$base" ] || continue
@@ -224,7 +243,7 @@ chain() {  # NAME=<sha> ... [NAME ...]: a repeated name is another boot of the s
 }
 hold() {  # sha [minutes]: boot and keep, for a session's window; ended by the minutes, a stop file, or fleet.sh cancel
   local sha=${1:?hold needs a sha} minutes=${2:-45} t0
-  ARM_SHA=$(sha_of "$sha")
+  ARM_SHA=$(sha_of "$sha"); ARM_TREE=$(tree_of "$sha")
   boot_arm "hold-${ARM_SHA:0:12}" "$sha" || return 1
   say "holding ${ARM_SHA:0:12} on $(door) for up to ${minutes}m -- end early with: bash bench/fleet.sh cancel $S   (or: touch $OUT/stop)"
   trap 'say "hold interrupted"; stop_arm; exit 143' TERM INT
@@ -246,8 +265,11 @@ probe() {  # [sha]: two onepass runs on the LIVE production door -- no boot, no 
     sha=$(python3 "$REPO/launchers/st_release.py" deployed --state "$STATE") \
       || { say "ABORT: no sha and nothing recorded as deployed in $STATE"; return 2; }
   fi
-  ARM_SHA=$(sha_of "$sha"); ARM="d17-${ARM_SHA:0:12}"; PORT=${ST_PROBE_PORT:-8000}; RELEASE=""
-  say "probe: $RUNS runs on the live door $(door) for ${ARM_SHA:0:12} (no boot, no lease; session $S, rehearse=$REHEARSE)"
+  ARM_SHA=$(sha_of "$sha"); ARM_TREE=$(tree_of "$sha"); ARM="d17-${ARM_SHA:0:12}"; PORT=${ST_PROBE_PORT:-8000}; RELEASE=""
+  # One run: to the judge a boot is one sample however many runs it carries, and on a live door
+  # every run after a reset is warm. The second run bought nothing (ST_PROBE_RUNS=2 to have it).
+  local runs=${ST_PROBE_RUNS:-1}
+  say "probe: $runs run(s) on the live door $(door) for ${ARM_SHA:0:12} (no boot, no lease; session $S, rehearse=$REHEARSE)"
   [ "$REHEARSE" = 1 ] || door_up || { say "ABORT: no engine answers on $(door)"; return 1; }
   if [ "$REHEARSE" != 1 ]; then
     # A probe's record says arm_sha=<what it was queued for>; the door must be serving exactly
@@ -258,9 +280,9 @@ probe() {  # [sha]: two onepass runs on the LIVE production door -- no boot, no 
     fi
     [ -n "$served" ] || say "the door does not name its release (a boot older than PR #775?): trusting ${ARM_SHA:0:12}"
   fi
-  for run in $(seq 1 "$RUNS"); do
+  for run in $(seq 1 "$runs"); do
     [ "$REHEARSE" = 1 ] || reset_prefix
-    say "onepass run $run/$RUNS ($( [ "$run" = 1 ] && echo 'after a reset' || echo warm ))"
+    say "onepass run $run/$runs (after a reset: warm)"
     ST_BRACKET_COLD=reset measure "$run" || {
       rc=$?
       if [ "$rc" = 2 ] && [ "$MEASURE_RECORDED" = 1 ]; then
