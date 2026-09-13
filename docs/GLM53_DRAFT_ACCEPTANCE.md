@@ -1,5 +1,7 @@
 # DFlash acceptance experiments
 
+> 살아 있는 참조 — **DFlash 드래프트 노브(서빙 기본값·실험 팔)와 거절 원인 기록이 지금 어떻게 동작하는지. 드래프트 정책이 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
+
 The observed 43–47% → about 54% aggregate change is not a matched precision result.
 For the recorded `3c7bcc0a` run `20260913T065924-4fefee2be2e1`, natural-output
 2K requests accepted 6,248 / 13,902 proposals (44.943%), while 32K/128K requests

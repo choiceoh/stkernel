@@ -1,5 +1,7 @@
 # Low-cost DFlash acceptance review
 
+> 그날의 조사 — **2026-09-13 의 조사다.** 그날 참이었던 것이고 유지되지 않는다 — 이후 무엇이 바뀌었는지는 `MEASUREMENTS.md` 가 안다.
+
 Code review on 2026-09-13, against the implementation merged in #863
 (`c99e2e56`). No fleet reservation, GPU execution or live acceptance measurement
 was used. The accompanying default change enables the existing three controls;
