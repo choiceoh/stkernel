@@ -103,17 +103,21 @@ def live_device_blocks(top: int = 6) -> "list[int]":
     return sorted(sizes, reverse=True)[:top]
 
 
-def reclaim_preparation_pages(need, headroom, *, cache_roots=()):
+def reclaim_preparation_pages(need, headroom, *, cache_roots=(), host_reclaim=None):
     """Make a boot's remaining byte budget available despite UMA file cache.
 
     Anonymous faults evict clean cache where CUDA allocation does not. The
     temporary allocation must itself leave the declared workspace/OS floor;
     insufficient MemAvailable leaves the existing admission failure intact.
+    Before the fault, the host is asked to drop the cache (`arena.host_reclaim`):
+    no allocation, so no commit room -- what a strict-overcommit node lacks.
     """
     from engine.base.arena import _meminfo, release_model_cache, touch_pages
     memory = _meminfo()
     if memory['MemFree'] < need and cache_roots:
         release_model_cache(cache_roots)
+        memory = _meminfo()
+    if memory['MemFree'] < need and host_reclaim is not None and host_reclaim() is not None:
         memory = _meminfo()
     if memory['MemFree'] >= need or need > memory['MemAvailable'] - headroom:
         return 0

@@ -28,7 +28,7 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 import torch                                                     # noqa: E402
 
 from engine.base import scheduler as sched                       # noqa: E402
-from engine.base.arena import Arena, prepare_allocation          # noqa: E402
+from engine.base.arena import Arena, host_reclaim, prepare_allocation  # noqa: E402
 from engine.base.runtime_memory import RuntimeMemory, reclaim_preparation_pages  # noqa: E402
 from engine.base import tenancy                                   # noqa: E402
 from engine.base import kernel_shape                              # noqa: E402
@@ -451,13 +451,18 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             files.append(vision_file)
         failure = None
         try:
+            # the host drops the page cache when this rank is short (launchers/st-reclaim-broker.sh via ST_RECLAIM_DIR):
+            # no commit charge, so srv2's strict overcommit no longer decides whether a boot's reclaim can run
             report = prepare_allocation(arena_bytes, files, workspace_bytes + os_reserve_bytes + host_budget_bytes,
                                         lambda: torch.cuda.mem_get_info()[0],
-                                        cache_roots=(Path(ranks_dir).parent, drafter_dir.parent))
+                                        cache_roots=(Path(ranks_dir).parent, drafter_dir.parent), host_reclaim=host_reclaim)
+            if report["host_reclaim"] is not None:
+                print(f"  rank {comm.rank} admission asked the host for its file cache: {report['host_reclaim']['line']}", flush=True)
             memory = RuntimeMemory(arena_bytes, workspace_bytes, os_reserve_bytes, comm=comm,
                                    host_budget_bytes=host_budget_bytes,
                                    reclaim=partial(reclaim_preparation_pages,
-                                                   cache_roots=(Path(ranks_dir).parent, drafter_dir.parent)))
+                                                   cache_roots=(Path(ranks_dir).parent, drafter_dir.parent),
+                                                   host_reclaim=host_reclaim))
         except (MemoryError, OSError, RuntimeError) as exc:
             failure = exc
         # A failed rank must prevent peers from starting their large CUDA
@@ -475,6 +480,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         # container (launchers/st-return-file-cache.sh) reached this rank, and how much of the box the boot was left
         recorder.gauge("boot_file_cache_GiB", round(report["file_cache"] / GIB, 3))
         recorder.gauge("boot_available_GiB", round(report["available"] / GIB, 3))
+        recorder.gauge("boot_host_reclaim", 0 if report["host_reclaim"] is None else 1 + int(report["host_reclaim"]["returned"]))
         # D1: the box declared, with every line's provenance, before the arena is allocated
         from engine.profiles.glm53 import budget as budget_mod
         redeclare = partial(budget_mod.budget, kv_gib, max_seqs,

@@ -90,6 +90,12 @@ class LaunchHarness(FleetHarness):
         engine_dir = self.home / "st-engine"
         (engine_dir / "engine/runtime").mkdir(parents=True)
         (engine_dir / "engine/runtime/build.sh").write_text("exit 0\n")
+        # the node's copy of the broker (the tree push is a no-op here): it says it started, for which rank dir
+        (engine_dir / "launchers").mkdir()
+        (engine_dir / "launchers/st-reclaim-broker.sh").write_text(
+            'echo "${FAKE_NODE:-?} broker:$1:$(basename "${2:-}")" >> "$FAKE_HOME/events"\n'
+            '[ "$1" = start ] && [ -n "${FAKE_BROKER_FAIL:-}" ] && { echo "reclaim broker did not start in $2"; exit 1; }\n'
+            'echo "reclaim broker serving $2 (pid 4242)"\n')
         meminfo = self.home / "meminfo"
         meminfo.write_text("MemTotal: 125000000 kB\nMemFree: 35000000 kB\nMemAvailable: 110000000 kB\n"
                            "Cached: 75000000 kB\nCommitLimit: 79477760 kB\nCommitted_AS: 4718592 kB\n")
@@ -139,6 +145,9 @@ elif a and a[0] == 'ps':
         return runs.read_text().splitlines() if runs.exists() else []
 
 
+RANK_OF = {"10.10.10.2": 0, "10.10.10.1": 1, "10.10.10.3": 2, "10.10.10.4": 3}
+
+
 class FileCacheReturnTests(LaunchHarness):
     """Each node returns its clean file cache from the host the moment before its container starts (2026-09-13).
 
@@ -152,7 +161,7 @@ class FileCacheReturnTests(LaunchHarness):
     def test_every_node_returns_its_cache_after_the_old_container_goes_and_before_the_new_one_starts(self):
         result, steps = self.launch()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(steps, {ip: ["rm", "reclaim", "run"] for ip in self.NODES})
+        self.assertEqual(steps, {ip: ["rm", "reclaim", f"broker:start:rank{RANK_OF[ip]}", "run"] for ip in self.NODES})
         for ip in self.NODES:
             self.assertIn(f"{ip}: file cache returned: MemFree 33.4 GiB, MemAvailable 104.9 GiB, Cached 71.5 GiB -> ",
                           result.stdout)
@@ -165,7 +174,7 @@ class FileCacheReturnTests(LaunchHarness):
         self.env["FAKE_SUDO_FAIL"] = "1"
         result, steps = self.launch()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(steps, {ip: ["rm", "reclaim", "run"] for ip in self.NODES})
+        self.assertEqual(steps, {ip: ["rm", "reclaim", f"broker:start:rank{RANK_OF[ip]}", "run"] for ip in self.NODES})
         self.assertEqual(result.stdout.count("file cache NOT returned (sudo -n refused): MemFree 33.4 GiB"), 4)
         self.assertEqual(result.stdout.count("starting anyway, the engine's admission decides"), 4)
 
@@ -175,6 +184,7 @@ class FileCacheReturnTests(LaunchHarness):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(steps, {ip: ["rm", "run"] for ip in self.NODES})
         self.assertNotIn("file cache", result.stdout)
+        self.assertFalse([c for c in self.boot_commands() if "ST_RECLAIM_DIR" in c], "no broker, so no directory to ask")
 
     def test_a_foreign_container_or_a_typo_returns_nothing_and_starts_nothing(self):
         for setting, busy in (("1", "st-other"), ("typo", "")):
@@ -193,6 +203,43 @@ class FileCacheReturnTests(LaunchHarness):
         self.assertLess(rank.index('docker rm -f $NAME >/dev/null 2>&1 || true"'), rank.index("st-return-file-cache.sh"))
         self.assertLess(rank.index("st-return-file-cache.sh"), rank.index("docker run -d --name $NAME"))
         self.assertNotIn("memfree-preflight.sh", text, "the vLLM sizing preflight no longer gates an ST boot")
+
+
+class ReclaimBrokerLaunchTests(LaunchHarness):
+    """Each rank's node runs a broker the engine asks when it is short of immediately free memory (2026-09-13).
+
+    srv2 runs strict overcommit at ratio 50 (CommitLimit 75.8 GiB), and the engine's own reclaim is an anonymous
+    mapping that never fits there. The host's drop needs no commit room, so the launcher starts a broker per
+    rank and hands the container its directory."""
+
+    def test_every_rank_gets_its_own_broker_and_its_container_is_told_where(self):
+        result, steps = self.launch()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for ip in self.NODES:
+            self.assertEqual(steps[ip][2], f"broker:start:rank{RANK_OF[ip]}", "after the return, before the container")
+            self.assertIn(f"reclaim broker serving /home/choiceoh/glm53-logs/st-reclaim/rank{RANK_OF[ip]} (pid 4242)", result.stdout)
+        commands = dict(line.split(" ", 1) for line in self.boot_commands())
+        for ip, command in commands.items():
+            self.assertIn(f"-e ST_RECLAIM_DIR=/home/choiceoh/glm53-logs/st-reclaim/rank{RANK_OF[ip]} ", command)
+            self.assertIn(f"-e RANK={RANK_OF[ip]} ", command, "the directory and the rank agree")
+
+    def test_a_broker_that_does_not_start_leaves_the_container_its_own_reclaim(self):
+        self.env["FAKE_BROKER_FAIL"] = "1"
+        result, steps = self.launch()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual({ip: s[-1] for ip, s in steps.items()}, {ip: "run" for ip in self.NODES})
+        self.assertEqual(result.stdout.count("the reclaim broker did not start -- admission falls back to its own reclaim"), 4)
+        self.assertFalse([c for c in self.boot_commands() if "ST_RECLAIM_DIR" in c])
+
+    def test_stop_ends_every_broker_after_the_containers(self):
+        self.lock.write_text("choiceoh@srv2 st-glm53 2026-09-12")
+        result = self.run_script("start-st-glm53.sh", "stop")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        steps = {}
+        for line in self.events.read_text().splitlines():
+            node, what = line.split(" ", 1)
+            steps.setdefault(node, []).append(what)
+        self.assertEqual(steps, {ip: ["rm", "broker:stop-all:st-reclaim"] for ip in self.NODES})
 
 
 class WorkspaceCeilingLaunchTests(LaunchHarness):

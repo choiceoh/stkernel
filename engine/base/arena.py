@@ -28,6 +28,7 @@ import errno
 import mmap
 import os
 from pathlib import Path
+import time
 
 GIB = 1 << 30
 ALIGN = 256                       # every carve starts on a 256 B boundary (TMA-friendly)
@@ -116,6 +117,59 @@ def release_model_cache(roots) -> int:
     return released
 
 
+RECLAIM_DIR_ENV = "ST_RECLAIM_DIR"
+
+
+def host_reclaim(directory=None, *, timeout_s: float = 150.0, fresh_s: float = 5.0, poll_s: float = 0.2,
+                 clock=time.monotonic, sleep=time.sleep) -> "dict | None":
+    """Ask this node's host to return its clean file cache now, and wait for it to say it did.
+
+    The container cannot drop another workload's cache, and faulting the shortfall as anonymous memory needs
+    commit room a strict-overcommit node does not have: srv2 (overcommit_memory=2, ratio 50, CommitLimit
+    75.8 GiB) refused every such mapping on 2026-09-13. The host can drop it without allocating anything --
+    launchers/st-reclaim-broker.sh, which the launcher starts for this rank and names in ST_RECLAIM_DIR.
+
+    None when nobody serves: no directory, or a heartbeat older than `fresh_s` (a broker that ended, a boot
+    without one), so a boot that has no broker does not wait. Otherwise {returned, rc, line}: returned is
+    whether the host dropped it; line is its one-line report (MemFree, MemAvailable, Cached before and after).
+    """
+    directory = directory or os.environ.get(RECLAIM_DIR_ENV)
+    if not directory:
+        return None
+    root = Path(directory)
+    try:
+        if time.time() - (root / "heartbeat").stat().st_mtime > fresh_s:
+            return None
+    except OSError:
+        return None
+    ident = f"{os.getpid()}-{time.time_ns()}"
+    try:
+        (root / "done").unlink()                        # an answer nobody read belongs to an earlier question
+    except OSError:
+        pass
+    staged = root / f"request.{ident}.tmp"
+    try:
+        staged.write_text(ident + "\n")
+        os.replace(staged, root / "request")
+    except OSError as exc:
+        return dict(returned=False, rc=None, line=f"could not ask the host: {exc}")
+    deadline = clock() + timeout_s
+    while clock() < deadline:
+        try:
+            lines = (root / "done").read_text().splitlines()
+        except OSError:
+            lines = []
+        if len(lines) >= 2 and lines[0] == ident:
+            try:
+                (root / "done").unlink()
+            except OSError:
+                pass
+            rc = int(lines[1]) if lines[1].strip().isdigit() else None
+            return dict(returned=rc == 0, rc=rc, line=lines[2] if len(lines) > 2 else "")
+        sleep(poll_s)
+    return dict(returned=False, rc=None, line=f"the host did not answer in {timeout_s:.0f} s")
+
+
 TRANSIENT_MARGIN = 2 << 30
 """How far above the box's SIGTERM line the momentary reclaim fault must stay.
 
@@ -127,7 +181,8 @@ nothing is serving, so the only line with a consequence is the box's.
 """
 
 
-def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=touch_pages, *, cache_roots=()) -> dict:
+def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=touch_pages, *, cache_roots=(),
+                       host_reclaim=None) -> dict:
     """Drop clean pages of the supplied weight files, reclaim the rest of the
     shortfall, then check physical headroom.
 
@@ -140,6 +195,10 @@ def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=t
     which is not allocated yet and has nothing serving behind it). It is a
     necessary admission check, not a guarantee against another process
     allocating after the check.
+
+    `host_reclaim`: asked before the anonymous fault, when the model cache was not enough -- the host drops
+    the cache without the commit charge a strict-overcommit node refuses (`host_reclaim` above). Its answer
+    rides the report; when it is None or not enough, the fault below runs as it always did.
     """
     for path in files:
         with Path(path).open("rb") as stream:
@@ -150,10 +209,17 @@ def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=t
     free = min(memory["MemFree"], device_free())
     reclaimed = 0
     cache_files = 0
+    returned = None
     if free < need and memory["MemFree"] < need and cache_roots:
         cache_files = release_model_cache(cache_roots)
         memory = _meminfo()
         free = min(memory["MemFree"], device_free())
+    if free < need and memory["MemFree"] < need and host_reclaim is not None:
+        returned = host_reclaim()
+        if returned is not None:
+            memory = _meminfo()
+            free = min(memory["MemFree"], device_free())
+    said = "" if returned is None else f"; the host {'returned' if returned['returned'] else 'did not return'} file cache: {returned['line']}"
     if free < need and memory["MemFree"] < need:
         # What the momentary fault must not cross is the BOX's kill line, not the engine's whole
         # future headroom. The reclaim faults `need` for an instant -- MemFree first, so the cache
@@ -170,7 +236,7 @@ def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=t
             raise MemoryError(f"arena admission: allocation {nbytes/GIB:.2f} GiB plus headroom {headroom/GIB:.2f} GiB "
                               f"exceeds immediately free memory {free/GIB:.2f} GiB and cannot be reclaimed without "
                               f"crossing this box's SIGTERM line plus margin ({floor/GIB:.2f} GiB): MemAvailable "
-                              f"{memory['MemAvailable']/GIB:.2f} GiB, file cache {file_cache/GIB:.2f} GiB when admission began")
+                              f"{memory['MemAvailable']/GIB:.2f} GiB, file cache {file_cache/GIB:.2f} GiB when admission began{said}")
         reclaimed = reclaim(need) if reclaim is not None else 0
         memory = _meminfo()
         free = min(memory["MemFree"], device_free())
@@ -179,9 +245,10 @@ def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=t
                           f"headroom {headroom/GIB:.2f} GiB exceeds immediately free "
                           f"memory {free/GIB:.2f} GiB after reclaiming {reclaimed/GIB:.2f} GiB; MemAvailable "
                           f"{memory['MemAvailable']/GIB:.2f} GiB includes reclaimable pages "
-                          f"(file cache {file_cache/GIB:.2f} GiB when admission began)")
+                          f"(file cache {file_cache/GIB:.2f} GiB when admission began){said}")
     return dict(allocation=nbytes, headroom=headroom, immediately_free=free,
-                available=memory["MemAvailable"], reclaimed=reclaimed, cache_files=cache_files, file_cache=file_cache)
+                available=memory["MemAvailable"], reclaimed=reclaimed, cache_files=cache_files, file_cache=file_cache,
+                host_reclaim=returned)
 
 
 def expandable_segments() -> bool:
