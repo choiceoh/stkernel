@@ -187,6 +187,11 @@ class TraceTests(unittest.TestCase):
         d.trace_rank = 1
         d.note_sync(1, 200, 2, 0, [10], 50, set())
         self.assertEqual(len([r for r in records if r['kind'] == 'draft_selector']), 2)
+        d.trace_rank = 0
+        for seq in range(2, 20):
+            d.note_sync(seq, 200, 2, 0, [10], 50, set())
+        self.assertEqual(len(d.trace_steps), 1, 'retired sequence ids do not accumulate')
+        self.assertEqual(len([r for r in records if r['kind'] == 'draft_selector']), 20)
         d.close()
         self.assertIsNone(d.selector_trace)
 
