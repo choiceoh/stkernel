@@ -226,26 +226,29 @@ def declared(a, comm_world: int) -> Config:
     fixed = dict(moe_static=lane_tables.MOE_STATIC_PRODUCTION,
                  lanes="served", decode_eager=0, execution="native")
     facts_ += [Fact(k, v, "native TP4 execution") for k, v in fixed.items()]
+    # One serving recipe in both modes. These four were enabled by operator
+    # request; their component gates are not full-model performance proof.
+    gb10_defaults = dict(direct_mhc=1, prefill_project_tiles=1,
+                         nvme_mapped_staging=1, decode_iterations=4)
     if getattr(a, "production", False):
         # tile32 passed the full GPU numerical/graph and matched 2K/32K/128K
         # serving brackets. Keep it in the production contract so a stale
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
-                        execution_overlap=0, early_observe=0, prefill_tiles=1, direct_mhc=0, prefill_project_tiles=0,
-                        nvme_mapped_staging=0, decode_iterations=1)
-        return Config(facts_ + [Fact(k, v, "qualified production default") for k, v in defaults.items()], knobs=[])
+                        execution_overlap=0, early_observe=0, prefill_tiles=1, **gb10_defaults)
+        return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
-        Knob("decode_iterations", 1, _dt.date(2026, 9, 30),
+        Knob("decode_iterations", gb10_defaults["decode_iterations"], _dt.date(2026, 9, 30),
              "Bounded greedy TP4 decode: reserve/read back 2 or 4 iterations with rank-agreed exits",
              "STK_decode_iterations=1", int),
-        Knob("nvme_mapped_staging", 0, _dt.date(2026, 9, 30),
+        Knob("nvme_mapped_staging", gb10_defaults["nvme_mapped_staging"], _dt.date(2026, 9, 30),
              "One mapped GB10 staging allocation for NVMe host I/O and GPU gather/scatter",
              "STK_nvme_mapped_staging=0", int),
-        Knob("prefill_project_tiles", 0, _dt.date(2026, 9, 30),
+        Knob("prefill_project_tiles", gb10_defaults["prefill_project_tiles"], _dt.date(2026, 9, 30),
              "Overlap TP4 prefill tile arrival with independent KDA input projection",
              "STK_prefill_project_tiles=0", int),
-        Knob("direct_mhc", 0, _dt.date(2026, 9, 30),
+        Knob("direct_mhc", gb10_defaults["direct_mhc"], _dt.date(2026, 9, 30),
              "TP4 rank packets consumed inside native MHC; exact rounding, C=1/C=4 latency and quality",
              "STK_direct_mhc=0", int),
         Knob("execution_overlap", 0, _dt.date(2026, 9, 30),

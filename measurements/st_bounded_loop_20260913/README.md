@@ -1,11 +1,23 @@
 # GB10 serving connections
 
 The serving boot now selects a bounded greedy decode pipeline with
-`decode_iterations=2` or `4` (default `1`). It reuses the existing target,
+`decode_iterations=2` or `4` (default `4`). It reuses the existing target,
 sampling, token-commit, observation and proposal chain. KDA state stays FP32.
 Direct MHC and tiled prefill are already connected to the same profile;
 `nvme_mapped_staging` connects the two NVMe tiers to shared mapped storage.
-These options are experiments, off in the qualified production defaults.
+As requested on 2026-09-13, all four options default on in ordinary fleet and
+production boots: `direct_mhc=1`, `prefill_project_tiles=1`,
+`nvme_mapped_staging=1`, `decode_iterations=4`. This changes selection, not the
+scope of the component validation recorded below; full-model performance and
+quality remain unqualified. Existing running processes adopt these defaults
+when rebuilt/restarted from this source.
+
+Non-production boots retain explicit `STK_direct_mhc=0`,
+`STK_prefill_project_tiles=0`, `STK_nvme_mapped_staging=0` and
+`STK_decode_iterations=1` rollback controls. Production continues to reject
+environment overrides. LocalTP/reference constructors retain the ordinary
+plan because they do not own the real TP4 transport. The separate overlap,
+early-observation and layer-major prefill experiments keep defaults `0/0/1`.
 
 | Option | Serving consumer |
 | --- | --- |
@@ -37,7 +49,7 @@ The receiver optimization does not implement producer GEMM writes into a send ri
   separate log rows; resolve them in order before admitting the next burst.
   Zero progress without completion fails instead of scheduling indefinitely.
   Streaming sees tokens when the burst retires, so inter-chunk delivery latency
-  must be measured alongside throughput before promotion.
+  must be measured alongside throughput for a performance verdict.
 - Existing runner cancellation drains the finite burst before releasing its
   rows. Prefill, row changes and slot reuse follow the same drain/identity
   contracts. There is no concurrent raw CPU write to CUDA memory.
@@ -96,7 +108,8 @@ The prior attempt passed both native tests but rejected ordinary nested replay;
 `capture-failure.log` records that failure before explicit child composition.
 Full real-weight,
 matched C=1/C=4 onepass acceptance, quality, length, tok/s and TTFT remain required
-before changing production defaults.
+for performance and quality qualification; the requested default change does
+not supply that evidence.
 Explicit seeds and an unmet min_tokens constraint retain the ordinary
 scheduler path, including onepass's seeded fixed-length decode phase. A
 bounded-decode performance verdict must additionally attest actual

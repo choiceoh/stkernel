@@ -47,11 +47,16 @@ class KnobDeclarationTests(unittest.TestCase):
         with self.assertRaises(ConfigError):
             self._declared({"STK_mla_prefill":"stock"}, production=True)
 
-    def test_execution_experiments_are_off_and_production_refuses_overrides(self):
+    def test_gb10_serving_defaults_are_on_and_production_refuses_overrides(self):
         from engine.base.config import ConfigError
         for production in (False, True):
             cfg = self._declared({}, production=production)
-            self.assertEqual([cfg[k] for k in ("execution_overlap", "early_observe", "prefill_tiles", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "decode_iterations")], [0, 0, 1, 0, 0, 0, 1])
+            self.assertEqual([cfg[k] for k in ("execution_overlap", "early_observe", "prefill_tiles", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "decode_iterations")], [0, 0, 1, 1, 1, 1, 4])
+            self.assertEqual(cfg["kda_state_dtype"], "fp32")
+        rollback = {"direct_mhc": 0, "prefill_project_tiles": 0,
+                    "nvme_mapped_staging": 0, "decode_iterations": 1}
+        cfg = self._declared({"STK_"+key: str(value) for key, value in rollback.items()})
+        self.assertEqual({key: cfg[key] for key in rollback}, rollback)
         for key in ("execution_overlap", "early_observe", "prefill_tiles", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "decode_iterations"):
             with self.subTest(key=key), self.assertRaises(ConfigError):
                 self._declared({"STK_"+key:"1"}, production=True)
