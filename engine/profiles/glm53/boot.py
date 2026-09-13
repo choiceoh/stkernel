@@ -233,9 +233,12 @@ def declared(a, comm_world: int) -> Config:
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
-                        execution_overlap=0, early_observe=0, prefill_tiles=1, direct_mhc=0)
+                        execution_overlap=0, early_observe=0, prefill_tiles=1, direct_mhc=0, prefill_project_tiles=0)
         return Config(facts_ + [Fact(k, v, "qualified production default") for k, v in defaults.items()], knobs=[])
     knobs = [
+        Knob("prefill_project_tiles", 0, _dt.date(2026, 9, 30),
+             "Overlap TP4 prefill tile arrival with independent KDA input projection",
+             "STK_prefill_project_tiles=0", int),
         Knob("direct_mhc", 0, _dt.date(2026, 9, 30),
              "TP4 rank packets consumed inside native MHC; exact rounding, C=1/C=4 latency and quality",
              "STK_direct_mhc=0", int),
@@ -443,7 +446,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 net.prepare_routers(arena)
                 recorder.gauge('router_resident_bytes', router_bytes)
                 net.prepare_dense(store, consume_weights=True)
-                net.prefill_transport = PrefillCollectives(comm)
+                net.prefill_transport = PrefillCollectives(comm, project_tiles=bool(
+                    execution_plan is not None and execution_plan.prefill_project_tiles))
                 if D:
                     # Do not overlap the temporary checkpoint with target packing.
                     drafter = load_drafter()
@@ -995,11 +999,11 @@ def fleet(a) -> int:
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
                                        consume_scales=True)
         from engine.profiles.glm53.execution import ExecutionPlan
-        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc")):
-            raise ValueError("execution_overlap, early_observe and direct_mhc must be 0 or 1")
+        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles")):
+            raise ValueError("execution switches must be 0 or 1")
         plan = ExecutionPlan(bool(cfg["execution_overlap"]), bool(cfg["early_observe"]), cfg["prefill_tiles"],
                              sched.chunk_for(facts.CHUNK_ALIGN, TOKEN_BUDGET, facts.SPEC_K),
-                             direct_mhc=bool(cfg["direct_mhc"]))
+                             direct_mhc=bool(cfg["direct_mhc"]), prefill_project_tiles=bool(cfg["prefill_project_tiles"]))
         F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir,

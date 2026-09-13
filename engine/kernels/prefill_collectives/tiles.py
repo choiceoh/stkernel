@@ -1,0 +1,103 @@
+"""Two-slot rank-major prefill input projection; eager and TP4 only."""
+from collections import deque
+
+
+def tile_pipeline(rows, tile_rows, launch, consume):
+    """Reuse a slot only after its prior consumer has submitted a release."""
+    if type(rows) is not int or rows <= 0 or type(tile_rows) is not int or tile_rows <= 0:
+        raise ValueError("positive row and tile sizes required")
+    pending = deque()
+    for number, start in enumerate(range(0, rows, tile_rows)):
+        if len(pending) == 2:
+            consume(*pending.popleft())
+        end = min(rows, start + tile_rows)
+        pending.append((start, end, launch(start, end, number % 2)))
+    while pending:
+        consume(*pending.popleft())
+
+
+class TiledProjection:
+    TILE_ROWS = 256
+
+    def __init__(self, owner):
+        import torch
+        self.owner = owner
+        self.stream = torch.cuda.Stream()
+
+    def __call__(self, x, project):
+        import torch
+        import torch.distributed as dist
+        from . import BLOCK, FP8_MIN_ROWS
+        from .kernels import _pack_rs_payload, _unpack_gather
+        owner = self.owner
+        owner.check(x)
+        if x.shape[0] <= self.TILE_ROWS:
+            return project(owner.all_gather(x))
+        # This decision belongs to the original full operation, not each tile.
+        fp8 = x.shape[0] * 4 >= FP8_MIN_ROWS
+        parent = torch.cuda.current_stream(x.device)
+        self.stream.wait_stream(parent)
+        x.record_stream(self.stream)
+        limit = self.TILE_ROWS * 4096
+        packet_limit = ((limit + 4 * (limit // BLOCK) + 127) // 128) * 128
+        slots = []
+        with torch.cuda.stream(self.stream):
+            for _ in range(2):
+                slots.append(dict(
+                    payload=torch.empty(packet_limit, device=x.device, dtype=torch.uint8) if fp8 else None,
+                    received=torch.empty(packet_limit * 4, device=x.device, dtype=torch.uint8) if fp8 else None,
+                    value=torch.empty((self.TILE_ROWS * 4, 4096), device=x.device, dtype=x.dtype),
+                    ready=torch.cuda.Event(), released=torch.cuda.Event(), used=False))
+        output = None
+
+        def launch(start, end, slot_id):
+            slot = slots[slot_id]
+            rows = end - start
+            with torch.cuda.stream(self.stream):
+                if slot["used"]:
+                    self.stream.wait_event(slot["released"])
+                value = slot["value"][:rows * 4]
+                source = x[start:end]
+                if fp8:
+                    local = rows * 4096
+                    stride = ((local + 4 * (local // BLOCK) + 127) // 128) * 128
+                    payload, received = slot["payload"][:stride], slot["received"][:stride * 4]
+                    _pack_rs_payload[(local // BLOCK,)](
+                        source, payload.view(torch.float8_e4m3fn), payload.view(torch.float32),
+                        local, local, stride, BLOCK=BLOCK)
+                    work = dist.all_gather_into_tensor(received, payload, group=owner.comm.group, async_op=True)
+                    work.wait()  # orders the current CUDA stream, not a host polling loop
+                    _unpack_gather[(local * 4 // BLOCK,)](
+                        received.view(torch.float8_e4m3fn), received.view(torch.float32), value,
+                        local, stride, BLOCK=BLOCK)
+                else:
+                    work = dist.all_gather_into_tensor(value, source, group=owner.comm.group, async_op=True)
+                    work.wait()
+                slot["ready"].record()
+            return slot, value, work
+
+        def consume(start, end, pending):
+            nonlocal output
+            slot, value, work = pending
+            parent.wait_event(slot["ready"])
+            value.record_stream(parent)
+            projected = project(value)
+            if projected.ndim != 2 or projected.shape[0] != (end-start)*4:
+                raise ValueError("tile projection must preserve rows")
+            if output is None:
+                output = torch.empty((4, x.shape[0], projected.shape[1]),
+                                     device=projected.device, dtype=projected.dtype)
+            # Gather orders ranks within each tile; restore the original
+            # rank-major token order before any recurrent kernel sees it.
+            output[:, start:end].copy_(projected.view(4, end-start, -1))
+            slot["released"].record(parent)
+            slot["used"] = True
+
+        try:
+            tile_pipeline(x.shape[0], self.TILE_ROWS, launch, consume)
+        finally:
+            # Includes exceptions: queued transfers cannot outlive their input
+            # owner on the caller stream. No fallback after an issued collective.
+            parent.wait_stream(self.stream)
+        owner.executed.add("fp8_tiled_projection" if fp8 else "bf16_tiled_projection")
+        return output.flatten(0, 1)
