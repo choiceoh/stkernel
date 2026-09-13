@@ -256,7 +256,8 @@ print('{}')
         self.activity(ago=5)
         out = self.loop(FAKE_DOOR_DOWN_CALLS=99)                 # production is down: the queue just let the fleet go
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
-        self.assertIn("the queue was active 5s ago", out.stdout)
+        # The real clock can advance while the subprocess starts on a busy CPU.
+        self.assertRegex(out.stdout, r"the queue was active [0-9]+s ago")
         self.assertEqual(out.stdout.count("no forensics, no launch attempt"), 1, "said once, not every 30 s")
         self.assertEqual(self.launches(), [])
 

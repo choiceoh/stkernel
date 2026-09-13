@@ -1,3 +1,5 @@
+> Historical preparation and gate checkpoint. The completed consumer run is recorded in [K/FULL_RESULTS.md](../K/FULL_RESULTS.md).
+
 # Post-J4 prefill batch: GPU proof pending
 
 Engine `2c2ee77f`, remote candidate-v25; controller `de67dc0e`.
