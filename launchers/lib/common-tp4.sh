@@ -158,7 +158,9 @@ ct_check_load_format() {
 # broke at 00:29 when srv4's worker was killed, and srv2/srv3's workers were
 # still holding ~55 GiB twelve hours later because nothing ever tore them down.
 # TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 was set alongside it and is inert while
-# this is 0. With 1 a broken ring frees the node instead of stranding it.
+# this is 0. With 1 a broken ring frees the node instead of stranding it. The ST
+# launcher serves with 300 (2026-09-13): the heartbeat bounds a watchdog thread
+# that itself hangs, and two hours of that is a dead door nobody restarts.
 #
 # The risk 0 was presumably buying is a spurious teardown on a legitimately slow
 # collective; the watchdog fires on the process-group timeout (minutes), and the

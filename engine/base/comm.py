@@ -111,12 +111,31 @@ class Comm:
                                           or getattr(self.transport, "packet_failed", False)):
             raise RuntimeError("consume rank packets before the next device collective")
 
+    @staticmethod
+    def _settled(t):
+        """The tensor as a lane decision may read it: contiguous and 16-byte aligned.
+
+        The one-shot transport's eligibility (`OneShot.eligible`) reads `data_ptr() % 16`, and a
+        pointer is this rank's alone -- an allocator that fragmented differently here would send
+        this rank to NCCL for the same sum its peers make on the one-shot kernel, and the two
+        collectives would wait for each other. Dtype and shape travel with the step; a pointer does
+        not. So a view that is not aligned is copied first, and the lane follows from what every
+        rank shares. The allocator's own blocks are 512-byte aligned, so the copy is rare.
+        """
+        if not t.is_contiguous():
+            t = t.contiguous()
+        if t.numel() and t.data_ptr() % 16:
+            t = t.clone()
+        return t
+
     def all_reduce(self, t):
         self._check_packets()
         if self.world_size == 1:
             return t
-        if self.transport is not None and self.transport.eligible(t):
-            return self.transport.reduce(t)
+        if self.transport is not None:
+            t = self._settled(t)
+            if self.transport.eligible(t):
+                return self.transport.reduce(t)
         import torch.distributed as dist
         dist.all_reduce(t, group=self.group)
         return t
@@ -152,8 +171,10 @@ class Comm:
     def all_reduce_max(self, t):
         self._check_packets()
         if self.world_size > 1:
-            if self.transport is not None and self.transport.eligible_max(t):
-                return self.transport.reduce_max(t)
+            if self.transport is not None:
+                t = self._settled(t)
+                if self.transport.eligible_max(t):
+                    return self.transport.reduce_max(t)
             import torch.distributed as dist
             dist.all_reduce(t, op=dist.ReduceOp.MAX, group=self.group)
         return t

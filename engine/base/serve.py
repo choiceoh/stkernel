@@ -1179,7 +1179,8 @@ class Server:
                  reasoning_end: "int | None" = None, request_timeout_s: float = 3600.0, tool_parser=None,
                  generation: "dict | None" = None, max_choices: int = 4, vision=None, tool_stream=None,
                  tool_grammar=None, tool_call_start: "int | None" = None,
-                 lease: "dict | None" = None, latency_root=None, reasoning_effort_aliases: "dict | None" = None):
+                 lease: "dict | None" = None, latency_root=None, reasoning_effort_aliases: "dict | None" = None,
+                 step_watch=None):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
         if type(request_timeout_s) not in (int, float) or not request_timeout_s > 0:
@@ -1193,6 +1194,16 @@ class Server:
         from pathlib import Path
         self.latency = Recorder(comm.rank, latency_root or Path.home() / 'glm53-logs' / 'onepass-latency')
         runner.latency = self.latency
+        # A step that never returns is bounded from beside the loop (base/stall): a note in the
+        # log after a minute, the ring written and the rank killed after five. The notes go next
+        # to the latency recorder, in the dump directory, where they outlive the container.
+        from engine.base.stall import StepWatch
+        self.watch = step_watch if step_watch is not None else StepWatch(
+            comm.rank, notes_dir=Path(latency_root).parent if latency_root else None)
+        # Every host vote and the step broadcast carry (sequence, site): ranks that meet at different
+        # collectives raise the same attributed error instead of waiting for each other (base/tripwire).
+        from engine.base.tripwire import Tripwire
+        self.tripwire = Tripwire.of(comm)
         self.latency_replies = {}
         self.latency_boot_id = uuid.uuid4().hex
         self.port, self.host, self.tok = port, host, tokenizer
@@ -1931,13 +1942,20 @@ class Server:
         if not self._deferred or len(self._waiting) < 2:
             return
         prefix = self.runner.prefix
+        first = len(self._waiting)                                    # the entry this rank would move first, or none
         for i, entry in enumerate(self._waiting):
             if i and entry[0] in self._deferred:
                 ids, chain = entry[1], entry[11]
                 if chain is None or self.runner.shared_ahead(ids, (), prefix.peek_chain(chain, len(ids)), chain=chain) is None:
-                    del self._waiting[i]
-                    self._waiting.appendleft(entry)
-                    return
+                    first = i
+                    break
+        # The prefix cache is per rank (a restore that landed here but not everywhere leaves it so), and
+        # an order chosen from it would admit in different orders: the lowest index any rank found moves.
+        first = min(row[0] for row in self.tripwire.exchange("admit:reorder", [first]))
+        if first < len(self._waiting):
+            entry = self._waiting[first]
+            del self._waiting[first]
+            self._waiting.appendleft(entry)
 
     def _admit(self):
         self._reorder_waiting()
@@ -1970,7 +1988,11 @@ class Server:
                 # the same prompt is being prefilled right now: wait for its boundary rather than compute it beside it (B)
                 above = self.runner.prefix.peek_chain(chain, len(ids))
                 ahead = self.runner.shared_ahead(ids, salts, above, chain=chain)
-                if ahead is not None:
+                # Both are this rank's prefix cache's view. The branch below must be the fleet's: the boundary
+                # every rank has is the lowest one, and one rank seeing the prompt in flight makes every rank wait.
+                rows = self.tripwire.exchange("admit:prefix", [above, int(ahead is not None)])
+                above = min(row[0] for row in rows)
+                if any(row[1] for row in rows):
                     if request not in self._deferred:
                         self._deferred.add(request)
                         self.runner.dedup_waits += 1
@@ -2021,7 +2043,11 @@ class Server:
             future = (sum(b - self.runner.kv.blocks_for(self.runner.kv.tokens[r]) for r, (_, b) in self._active.items())
                       + sum(e["promised"] - self.runner.kv.blocks_for(self.runner.kv.tokens[r]) for r, e in self._resuming.items())
                       + sum(e["promised"] - self.runner.kv.blocks_for(self.runner.kv.tokens[r]) for r, e in self._restoring.items()))
-            if promised > self.runner.kv.available - future + resident:
+            # `available` is per rank too: a prefix spill pins blocks on the rank whose tier thread got there.
+            # A request fits when it fits everywhere; otherwise every rank evicts or waits alike.
+            fits = int(promised <= self.runner.kv.available - future + resident)
+            world = int(getattr(self.comm, "world_size", 1) or 1)
+            if self._votes([fits], "admit:fits")[0] < world:
                 if self._evict_idle(exclude=row):
                     continue
                 break
@@ -2030,8 +2056,7 @@ class Server:
                 # above already holds this request's blocks; the restore takes the first of them now.
                 tokens, h = int(tier[0]), bytes.fromhex(tier[1])
                 have = h in self.runner.prefix.tier_keys and not self.runner.prefix.has(h)
-                world = int(getattr(self.comm, "world_size", 1) or 1)
-                if self._votes([have])[0] == world:
+                if self._votes([have], "admit:restore")[0] == world:
                     row = heapq.heappop(self._free_rows)
                     try:
                         self.runner.restore_begin(row, h, tokens)
@@ -2089,18 +2114,11 @@ class Server:
         except (KeyError, IndexError, AttributeError):
             return True
 
-    def _votes(self, flags) -> "list[int]":
+    def _votes(self, flags, site: str = "vote") -> "list[int]":
         """How many ranks say yes to each flag. Every rank must call this with the same flags in the
-        same order (the transfers are submitted in lockstep); a single rank answers itself."""
-        world = int(getattr(self.comm, "world_size", 1) or 1)
-        if world <= 1 or not flags:
-            return [int(bool(f)) for f in flags]
-        if hasattr(self.comm, "all_reduce_host"):                       # the control group: no device work, no stream wait
-            return self.comm.all_reduce_host([int(bool(f)) for f in flags])
-        import torch
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        votes = torch.tensor([int(bool(f)) for f in flags], dtype=torch.int32, device=device)
-        return [int(v) for v in self.comm.all_reduce(votes).tolist()]
+        same order (the transfers are submitted in lockstep); a single rank answers itself. The site
+        travels with the vote: ranks that meet at different votes raise, attributed, instead of waiting."""
+        return self.tripwire.vote(site, [int(bool(f)) for f in flags])
 
     def _settle(self):
         """Finish the transfers every rank agrees are done. Nothing here waits on the disk (D10):
@@ -2113,7 +2131,7 @@ class Server:
         if not rows:
             return
         world = int(getattr(self.comm, "world_size", 1) or 1)
-        done = self._votes([self._transfer_done(r) for r in rows])
+        done = self._votes([self._transfer_done(r) for r in rows], "settle:done")
         outcomes = []                                         # (row, ok, full)
         restored = {}                                         # row -> (tokens, snap) a prefix restore landed with
         for row, votes in zip(rows, done):
@@ -2137,7 +2155,7 @@ class Server:
             outcomes.append((row, ok, full))
         if not outcomes:
             return
-        agreed = self._votes([ok for _, ok, _ in outcomes] + [full for _, _, full in outcomes])
+        agreed = self._votes([ok for _, ok, _ in outcomes] + [full for _, _, full in outcomes], "settle:outcome")
         for (row, ok, full), all_ok, all_full in zip(outcomes, agreed[:len(outcomes)], agreed[len(outcomes):]):
             self._failed_begins.discard(row)
             if row in self._retiring:
@@ -2635,15 +2653,18 @@ class Server:
     def once(self) -> bool:
         """One ordered broadcast, bounded admission and homogeneous model step."""
         try:
+            self.watch.enter("the step's broadcast")
             if self.comm.rank == 0:
                 self._expire()
                 run = self.latency.active
                 if (run and not self._active and not self._waiting and not self.runner.inflight and self.arrivals.empty()
                         and time.monotonic() - run.get('last_row_at', run['started']) > 120):
                     self.controls.put(('latency', dict(op='abort', token=run['token'], _control_id='idle-expiry')))
-            alive, arrivals, cancels, controls, draining = self.comm.broadcast_object(
+            alive, arrivals, cancels, controls, draining, stamp = self.comm.broadcast_object(
                 (self.alive, self._drain(), self._drain_cancels(), self._drain_controls(),
-                 self._yield_asked()) if self.comm.rank == 0 else None)
+                 self._yield_asked(), self.tripwire.stamp()) if self.comm.rank == 0 else None)
+            if self.comm.rank != 0:
+                self.tripwire.expect(stamp)          # one collective out of step, and this says which and where
             if draining is not None and self.draining is None:
                 self.draining = draining          # every rank stops admitting on the same step
             if not alive:
@@ -2655,10 +2676,13 @@ class Server:
                 self._cancel(request, reason)
             for control in controls:
                 self._control(control)
+            self.watch.enter("settling transfers")
             self._settle()
             self._admit()
             began = self.clock()
+            self.watch.enter(f"step {self.runner.steps + 1}")
             step = self.runner.step()
+            self.watch.enter("after the step")
             housekeeping = getattr(self.engine, "housekeeping", None)      # a model's own after-step chores (rare device reads)
             if housekeeping is not None and step is not None:
                 housekeeping(self.runner.steps)
@@ -2727,7 +2751,8 @@ class Server:
                     self._deadline.pop(request, None)
                     self._answer(request, result)
             return step is not None
-        except BaseException:
+        except BaseException as exc:
+            self._death_note(exc)
             try:
                 self._abort()
             except BaseException:
@@ -2735,6 +2760,17 @@ class Server:
             finally:
                 self._fail_pending()
             raise
+        finally:
+            self.watch.leave()
+
+    def _death_note(self, exc: BaseException) -> None:
+        """What this rank died of, where in the step, and whose fault: a line in the log and a file in
+        the dump directory, written before the process is gone and the container removed."""
+        try:
+            from engine.base.tripwire import death_note
+            death_note(self.watch.notes_dir, self.comm.rank, exc, phase=self.watch.current, calls=self.tripwire.last)
+        except Exception:                             # noqa: BLE001 -- a note never fails a death
+            pass
 
     def _serve_http(self):
         server = self
@@ -3448,6 +3484,7 @@ class Server:
 
     def loop(self, idle_sleep: float = 0.002):
         httpd = self._serve_http() if self.comm.rank == 0 else None
+        self.watch.start()
         try:
             while True:                              # rank 0 broadcasts the stop before leaving
                 ran = self.once()
@@ -3456,6 +3493,7 @@ class Server:
                 if not ran:
                     time.sleep(idle_sleep)
         finally:
+            self.watch.stop()
             self._fail_pending()
             if httpd is not None:
                 httpd.shutdown()

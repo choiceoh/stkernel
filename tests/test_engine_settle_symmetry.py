@@ -6,6 +6,7 @@ and spun in it until its stall trap: Xid 43, "unspecified launch failure", twice
 (04:57, 05:24). A begin that fails on one rank is now a transfer that rank still votes on, and the
 vote turns every rank the same way: dropped, prefilled, refused.
 """
+import importlib.util
 import sys
 import threading
 import unittest
@@ -18,21 +19,34 @@ sys.path.insert(0, str(ROOT / "tests"))
 import test_engine_serve as T                                          # noqa: E402
 from test_engine_tier import MemoryTier                                # noqa: E402
 from engine.base.serve import RequestError                             # noqa: E402
+from engine.base.tripwire import pack, site_id, unpack                  # noqa: E402
 
 
 class TwoRankComm(T.Comm):
-    """This rank and one imagined peer that agrees with every flag it is shown (doubling the sums)."""
+    """This rank and one imagined peer that stands where this rank stands and agrees with every value it
+    is shown -- except at the sites in `answers`, where the peer's values are the ones given (by site id).
+    The vectors are the tripwire's: the peer's contribution is packed the way a real rank packs it and
+    summed, which is what the control group does."""
     world_size = 2
 
-    def __init__(self):
-        self.votes = []
+    def __init__(self, answers=None):
+        self.votes = []                                   # (site id, this rank's values) as cast
+        self.answers = dict(answers or {})
 
     def all_reduce_host(self, values):
-        self.votes.append([int(v) for v in values])
-        return [int(v) * 2 for v in values]
+        tags, region = unpack(values, self.world_size)
+        seq, sid, count, exchange = tags[0]               # this rank is rank 0
+        mine = region[:count]
+        self.votes.append((sid, mine))
+        theirs = self.answers.get(sid, mine)
+        return [a + b for a, b in zip(values, pack(self.world_size, 1, seq, sid, theirs, bool(exchange)))]
 
     def all_reduce_max(self, t):
         return t
+
+    def cast(self, site):
+        """This rank's values at `site`, in the order they were cast."""
+        return [values for sid, values in self.votes if sid == site_id(site)]
 
 
 def settle(s, steps=200):
@@ -73,8 +87,8 @@ class SettleSymmetryTests(unittest.TestCase):
         s.submit([3], 1, 0)
         settle(s)
         self.assertFalse(s.runner.transfers(), "nothing ever began on this rank")
-        self.assertIn([1], comm.votes, "and it still voted 'done' for the row")
-        self.assertIn([0, 0], comm.votes, "and 'not ok, not full' on the outcome")
+        self.assertIn([1], comm.cast("settle:done"), "and it still voted 'done' for the row")
+        self.assertIn([0, 0], comm.cast("settle:outcome"), "and 'not ok, not full' on the outcome")
         self.assertFalse(s._retiring or s._failed_begins)
 
     def test_a_restore_that_cannot_begin_here_turns_the_prompt_into_a_prefill_by_the_vote(self):
@@ -124,6 +138,40 @@ class SettleSymmetryTests(unittest.TestCase):
         self.assertFalse(s._resuming or s._failed_begins)
         self.assertEqual(sorted(s._free_rows), [0, 1])
 
+    @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "a two-rank server imports torch")
+    def test_a_request_that_fits_here_waits_until_it_fits_everywhere(self):
+        """`kv.available` is per rank (a prefix spill pins blocks on the rank whose tier thread got there):
+        one rank admitting a request the others do not is the seven-rows-against-six step of 2026-09-12."""
+        comm = TwoRankComm({site_id("admit:fits"): [0]})           # the peer says it does not fit
+        s = T.server(rows=1, comm=comm)
+        request, _ = s.submit([3], 1, 0)
+        for _ in range(5):
+            s.once()
+        self.assertEqual(len(s._waiting), 1, "not admitted here either")
+        self.assertEqual(sorted(s._free_rows), [0])
+        self.assertEqual(comm.cast("admit:fits")[-1], [1], "this rank's own answer was yes")
+        comm.answers.clear()                                        # the peer's spill ended
+        settle(s)
+        self.assertEqual(list(s.take_result(request)), [3])
+
+    @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "a two-rank server imports torch")
+    def test_a_prompt_one_rank_sees_in_flight_waits_on_every_rank(self):
+        """The prefix cache is per rank; whether the same prompt is being prefilled beside this request,
+        and how much of it is already cached, are agreed before the branch: one rank's 'in flight' makes
+        every rank wait, and the boundary every rank has is the lowest."""
+        comm = TwoRankComm({site_id("admit:prefix"): [0, 1]})      # the peer: nothing cached, the prompt is in flight
+        s = T.server(rows=2, comm=comm, prefix=4)
+        request, _ = s.submit([1, 2, 3, 4, 5, 6, 7, 8], 1, 0)
+        for _ in range(5):
+            s.once()
+        self.assertEqual(len(s._waiting), 1, "deferred here too, though this rank sees nothing in flight")
+        self.assertIn(request, s._deferred)
+        self.assertEqual(comm.cast("admit:prefix")[-1][1], 0, "this rank's own answer was 'not in flight'")
+        comm.answers.clear()
+        settle(s)
+        self.assertEqual(len(list(s.take_result(request))), 1)
+        self.assertNotIn(request, s._deferred)
+
     def test_the_source_keeps_its_word(self):
         serve = (ROOT / "engine/base/serve.py").read_text()
         body = serve[serve.index("    def _settle(self):"):serve.index("    def _yield_asked(self)")]
@@ -131,6 +179,15 @@ class SettleSymmetryTests(unittest.TestCase):
         self.assertNotIn("rows = self.runner.transfers()", body)
         self.assertNotIn("prefill it instead", serve, "no rank prefills on its own after a vote admitted a restore")
         self.assertIn("self._failed_begins.add(row)", serve)
+        admit = serve[serve.index("    def _admit(self):"):serve.index("    def _transfer_done(self, row)")]
+        self.assertIn('rows = self.tripwire.exchange("admit:prefix", [above, int(ahead is not None)])', admit)
+        self.assertIn("above = min(row[0] for row in rows)", admit)
+        self.assertIn("if any(row[1] for row in rows):", admit)
+        self.assertNotIn("if ahead is not None:", admit, "this rank's prefix cache no longer decides the branch alone")
+        self.assertIn('if self._votes([fits], "admit:fits")[0] < world:', admit)
+        self.assertNotIn("if promised > self.runner.kv.available - future + resident:", admit)
+        reorder = serve[serve.index("    def _reorder_waiting(self)"):serve.index("    def _admit(self):")]
+        self.assertIn('first = min(row[0] for row in self.tripwire.exchange("admit:reorder", [first]))', reorder)
 
 
 if __name__ == "__main__":
