@@ -27,6 +27,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import step_kernels as kernels
+import step_acceptance as acceptance
 
 HERE = Path(__file__).resolve().parent
 EXTENSIONS = {'.py', '.cu', '.cuh', '.c', '.cc', '.cpp', '.h', '.hpp', '.json', '.jinja', '.sh'}
@@ -213,10 +214,12 @@ def _budgets(probe, ctx, width, fold):
 
 
 def compare(base: Source, candidate: Source, *, contexts=(2000, 32000, 128000), widths=(1, 4),
-            acc=.45, settings=None, config=None, profile=None):
+            acc=.45, settings=None, config=None, profile=None, acceptance_profile=None):
     if not math.isfinite(acc) or not 0 <= acc <= 1 or any(type(n) is not int or n <= 0 for n in (*contexts, *widths)):
         raise ValueError('contexts/widths must be positive integers; acceptance must be in [0, 1]')
     left, right = base.inspect(config=config), candidate.inspect(settings=settings, config=config)
+    if acceptance_profile is not None:
+        acceptance_profile = acceptance.profile(acceptance_profile)
     changed = changes(base, candidate)
     unpriced = {c for row in changed for c in row['unpriced_components']}
     if left['settings'] != right['settings']:
@@ -256,16 +259,27 @@ def compare(base: Source, candidate: Source, *, contexts=(2000, 32000, 128000), 
                                   modeled_delta=move, delta=move if not missing else None,
                                   unpriced_components=sorted(missing), profiled_components=sorted(measured))
                 if phase == 'decode':
-                    row[phase]['output_rate_assumption'] = {
-                        arm: dict(per_request_tok_s=(1+p['facts']['spec_k']*acc)*1000/ms if ms else None,
-                                  aggregate_tok_s=width*(1+p['facts']['spec_k']*acc)*1000/ms if ms else None)
-                        for arm, p, ms in zip(('base', 'candidate'), (left, right), totals)}
+                    rates = {}
+                    for arm, p, ms in zip(('base', 'candidate'), (left, right), totals):
+                        lo, hi = acceptance.yield_bounds(p['facts']['spec_k'], observed=acceptance_profile,
+                                                        reference_k=left['facts']['spec_k'], raw_acceptance=acc)
+                        point = lo if lo == hi else None
+                        rates[arm] = dict(tokens_per_row=point, tokens_per_row_range=[lo, hi],
+                                          per_request_tok_s=point*1000/ms if point is not None and ms else None,
+                                          aggregate_tok_s=width*point*1000/ms if point is not None and ms else None,
+                                          per_request_tok_s_range=[v*1000/ms for v in (lo, hi)] if ms else None,
+                                          aggregate_tok_s_range=[width*v*1000/ms for v in (lo, hi)] if ms else None)
+                    row[phase]['output_rate_assumption'] = rates
             forecasts.append(row)
     return dict(schema=1, base=left, candidate=right, changed_files=changed, forecasts=forecasts,
                 memory_delta={name: right['memory'][name]-left['memory'][name]
                               for name in left['memory'] if isinstance(left['memory'][name], (int, float))},
                 profile=receipt, model_sha256=digest(dict(decode=asdict(kernels.EngineBytes()), prefill=fold)),
-                assumptions=[f'raw acceptance held at {acc:g}; source edits do not prove acceptance or quality',
+                acceptance_scenario=acceptance_profile,
+                assumptions=[('observed prefix distribution transferred to both sources and all requested shapes'
+                              if acceptance_profile is not None else f'baseline raw acceptance assumed {acc:g}; a different K is bounded, not refitted'),
+                             'one bonus token per row; terminal censoring retained; source edits do not prove acceptance or quality',
+                             'yield bounds identify missing prefixes, not sampling uncertainty; no context/width invariance is measured',
                              'component timing coefficients transfer from #838 unless replaced by a paired profile',
                              'memory bytes execute source layout; allocated bytes are not GPU traffic or a speedup',
                              'prefill is compute only, excludes queueing, tokenizer, JIT and prefix reuse',
@@ -316,6 +330,19 @@ def format_comparison(data):
                 lines.append(f"    계측 반영: {', '.join(p['profiled_components'])}")
             if p['unpriced_components']:
                 lines.append(f"    미계측: {', '.join(p['unpriced_components'])}; paired profile로 교체")
+            if phase == 'decode':
+                rates = []
+                for arm, rate in p['output_rate_assumption'].items():
+                    lo, hi = rate['per_request_tok_s_range']
+                    value = f'{lo:.2f}' if rate['per_request_tok_s'] is not None else f'{lo:.2f}–{hi:.2f}'
+                    rates.append(f'{arm} {value}')
+                lines.append('    수락률 가정·시간 모형의 요청당 tok/s: ' + ' → '.join(rates))
+    if data['acceptance_scenario']:
+        a = data['acceptance_scenario']
+        lines.append(f"수락률: K={a['k']}, {a['rows']}행 관측 분포를 양쪽 코드·컨텍스트·폭에 이관하는 가정.")
+    else:
+        lines.append('수락률: 기준 K의 평균 가정만 사용; 다른 K는 단일 수치 대신 식별 가능한 범위를 표시.')
+    lines.append('범위는 관측되지 않은 prefix의 가능 범위이며 표본 신뢰구간이 아니다. 보너스 1토큰/행을 가정한다.')
     lines.append('과거 시간 계수를 유지한 예측. 상태 메모리 절감·소스 변경만으로 실제 속도/품질 개선을 판정하지 않는다.')
     return '\n'.join(lines)
 
@@ -328,7 +355,10 @@ def main():
     ap.add_argument('--model', choices=['glm53'], default='glm53', help='source probe currently supports the native GLM53 engine')
     ap.add_argument('--ctx', default='2000,32000,128000')
     ap.add_argument('--width', default='1,4')
-    ap.add_argument('--acc', type=float, default=.45)
+    acc_input = ap.add_mutually_exclusive_group()
+    acc_input.add_argument('--acc', type=float, help='baseline raw acceptance assumption (default .45)')
+    acc_input.add_argument('--acceptance-from', type=Path, help='validated peek JSONL; transfer its prefix distribution as a scenario')
+    ap.add_argument('--acceptance-k', type=int, help='observed K for older scrapes lacking lane identity')
     ap.add_argument('--config', type=Path, help='checkpoint config.json for the actual model geometry')
     ap.add_argument('--set', action='append', default=[], metavar='NAME=JSON', help='candidate execution setting; explicit what-if override')
     ap.add_argument('--profile', type=Path, help='paired component timings bound to both source fingerprints')
@@ -343,10 +373,17 @@ def main():
                 raise ValueError('--set needs unique NAME=JSON entries')
             settings[name] = json.loads(value)
         root = Path(git(args.tree, 'rev-parse', '--show-toplevel').decode().strip())
+        observed = acceptance.load_profile(args.acceptance_from, args.acceptance_k) if args.acceptance_from else None
+        if args.acceptance_k is not None and observed is None:
+            raise ValueError('--acceptance-k requires --acceptance-from')
+        if observed is not None:
+            observed['receipt'] = dict(path=str(args.acceptance_from), sha256=digest(args.acceptance_from.read_bytes()),
+                                       usage='explicit scenario transfer; not measured acceptance of either source snapshot')
         data = compare(Source.read(root, args.base), Source.read(root, args.candidate),
                        contexts=tuple(int(x) for x in args.ctx.split(',')), widths=tuple(int(x) for x in args.width.split(',')),
-                       acc=args.acc, settings=settings, config=json.loads(args.config.read_text()) if args.config else None,
-                       profile=args.profile)
+                       acc=args.acc if args.acc is not None else .45, settings=settings,
+                       config=json.loads(args.config.read_text()) if args.config else None,
+                       profile=args.profile, acceptance_profile=observed)
         if args.write_profile_template:
             with args.write_profile_template.open('x') as f:
                 json.dump(profile_template(data), f, indent=2, ensure_ascii=False)

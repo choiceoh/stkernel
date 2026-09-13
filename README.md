@@ -527,10 +527,13 @@ deploy-watch 는 배포 뒤 큐의 체크아웃 `~/fleet-controller` 를 배포�
 그 결과로 prefill/decode 비용과 메모리 변화를 다시 계산한다. 커널의 미계측 영향은 표시하고
 양쪽 소스에 묶인 paired profile로 해당 시간 항목을 교체할 수 있다. 사용법과 범위는
 [개발 소스 예측](bench/ST_ORACLE_SOURCE.md)에 있다.
+`--acceptance-from peek.jsonl`을 더하면 관측된 위치별 수락 분포로 기대 출력을 계산한다.
+K가 관측 범위를 넘으면 tok/s를 단정하지 않고 가능한 범위를 출력한다.
 
 `python3 bench/storacle.py acceptance peek.jsonl`은 **각 위치까지의 누적 수락률**을
 행-스텝 수와 함께 보여준다. 예를 들어 K=6이면 마지막 행은 `6개 모두 수락한 행 / 전체 행`이다.
 옆의 조건부 비율은 `6개 모두 수락한 행 / 5개 이상 수락한 행`으로 분모가 다르다.
+`--economics`를 더하면 K를 한 칸 늘릴 때 허용되는 스텝 시간 증가율도 나온다.
 원본 metrics 두 장은 `acceptance --before before.txt --after after.txt`로 읽는다.
 구형 스크랩에 `st:lane_info`가 없으면 `--k 6`처럼 실제 K를 지정한다. `--json`은 독립 JSON이다.
 엔진 수락 카운터 기준이며 보너스 토큰은 제외한다. EOS·출력 길이 제한으로 끝난 행은

@@ -11,8 +11,10 @@ python3 bench/storacle.py compare --base HEAD --set prefill_tiles=2
 
 현재 지원하는 소스 프로브는 native GLM53이다. 기본 비교 범위는 2K/32K/128K와 C=1/C=4다.
 `--ctx 32000,128000 --width 1,4 --acc 0.45`로 범위를 정한다. `--acc`는 양쪽에 적용하는
-평균 수락률 **가정**이다. 코드 수정으로 품질이나 수락률이 좋아졌다고 간주하지 않는다.
-출력의 `output_rate_assumption`은 요청당·전체 예상 tok/s를 구분한다.
+동일 prefix 분포의 **기준 K 평균 수락률 가정**이다. 다른 K의 평균을 같은 값으로 놓지 않는다.
+평균만으로 새 K의 기대 출력을 식별할 수 없으면 단일 tok/s는 `null`이고 범위를 출력한다.
+코드 수정으로 품질이나 수락률이 좋아졌다고 간주하지 않는다. 출력의
+`output_rate_assumption`은 요청당·전체 예상 tok/s와 `tokens_per_row_range`를 구분한다.
 
 `predict`의 기존 모델 레지스트리/범용 레인 모드는 그대로이고, `--base`를 주면 이 소스 비교로 들어간다.
 기존 `sim --compose`는 #838 계측 형상을 재현하는 모드다. 현재 개발 코드의 형상은 이 비교에서 읽는다.
@@ -68,3 +70,37 @@ profile은 같은 소스에서 다른 컨텍스트/폭으로 자동 외삽하지
 
 실제 TTFT에는 큐·토큰화·JIT·접두사 재사용이 추가된다. 이 모드의 prefill은 compute 예측이고,
 속도/품질 판정은 해당 소스로 실행한 consumer onepass 기록에서 한다.
+
+## 뒤쪽 draft 위치의 가치와 K 변경
+
+```sh
+python3 bench/storacle.py acceptance peek.jsonl --economics
+python3 bench/storacle.py predict --base BASE_SHA --acceptance-from peek.jsonl
+```
+
+첫 명령은 검증된 누적 카운터 차이에서 각 위치의 기대 토큰과 허용 스텝 시간 증가율을 계산한다.
+`s_i = P(accepted >= i)`라면 `E_K = 1 + sum(s_1 ... s_K)`이고, K−1에서 K로 늘릴 때
+허용 시간 증가는 `s_K / E_(K−1)` **미만**이다. 보너스 1토큰/행과 동일 prefix 분포를 가정한다.
+예를 들어 6번째 누적 수락률이 20%, K=5의 기대 출력이 4토큰이면 스텝 시간이 5% 미만
+늘어야 이득이다. 20% 더 느려져도 된다는 뜻이 아니다. 이 수치는 설명용 예시다.
+
+두 번째 명령은 같은 히스토그램을 기준·후보의 시간 모형에 연결한다. 더 짧은 K는 관측
+prefix를 잘라서 기대 토큰을 구한다. 관측 K를 넘는 위치는 0부터 마지막 관측 누적 수락률까지의
+가능 범위만 알 수 있다. 예시에서 K=6의 `E=4.2`이면 K=7은 `[4.2, 4.4]`이며 점 추정은 없다.
+평균 수락률만 있는 경우도 prefix 확률이 감소한다는 제약으로 범위를 구한다.
+
+`--acceptance-from`은 관측 분포를 양쪽 소스와 요청한 컨텍스트·폭에 **이관하는 시나리오**다.
+해당 코드·워크로드의 수락률을 실측했다는 뜻이 아니며, drafter/정밀도/K 변화가 prefix 분포를
+유지한다고 검증하지도 않는다. 카운터에 남은 EOS·출력 길이 제한 영향도 유지한다.
+범위는 표본 신뢰구간이 아니다. 원본 경로·SHA·관측 K·행 수를 출력에 남기고, 리셋·빈 창·
+카운터 불일치는 오류로 처리한다. `--acc`와 함께 지정할 수 없으며, lane K가 없는 오래된
+기록은 `--acceptance-k`를 명시한다. 미계측 커널의 전체 시간 변화는 계속 미확정이다.
+
+## 프리필 계수를 다시 구할 때
+
+`step_kernels.fold_prefill_from_profile`은 저장된 `prefill_fit`이 없으면
+`total_ms = ms_per_token * total_tokens + fixed_ms_per_chunk * chunks`를 두 변수로 맞춘다.
+`chunk`는 청크 크기다. 전체 토큰 수는 `steps[].tokens` 합계, 명시된 행/프로파일 `tokens`,
+마지막으로 모두 꽉 찬 청크를 의미하는 기존 `chunk * chunks` 순으로 읽는다.
+청크 크기가 하나뿐이어서 두 계수를 분리할 수 없는 기록, 음수·비유한 비용, 서로 모순되는
+토큰/청크 수는 계수로 소비하지 않는다. 다시 맞춘 결과에는 행 수와 최대 상대 잔차가 남는다.

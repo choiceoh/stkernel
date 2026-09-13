@@ -13,8 +13,10 @@
     python3 bench/storacle.py kernels --model ...    # step_kernels 로
     python3 bench/storacle.py peek|replay ...        # 관측·재분석으로
     python3 bench/storacle.py acceptance peek.jsonl  # 위치별 누적 수락률 실측
+    python3 bench/storacle.py acceptance peek.jsonl --economics  # K 증가의 손익분기
     python3 bench/storacle.py predict --base HEAD    # 현재 개발 코드(미커밋 포함)와 비교
     python3 bench/storacle.py compare --base origin/main --json  # 코드·형상·바이트·시간 예측
+    python3 bench/storacle.py predict --base HEAD --acceptance-from peek.jsonl  # 관측 prefix를 쓰는 시나리오
 
 D17 그대로: 오라클은 부팅 수를 줄이지, 판정을 대신하지 않는다.
 """
