@@ -1,0 +1,1709 @@
+{
+  "scope": "CPU Runner timing only; no bounded GPU execution, async overlap or quality proof",
+  "ceiling_assumption": "All measured host work hypothetically amortizes over L steps; real result consumption still costs work",
+  "unmodeled": [
+    "Torch/kernel submission",
+    "TP4 stop collective and conditional graph control",
+    "actual GPU critical path",
+    "already hidden async host work",
+    "serving burst reservation/readback"
+  ],
+  "runtime": {
+    "python": "3.12.13 (main, Mar  3 2026, 12:39:30) [Clang 17.0.0 (clang-1700.6.3.2)]",
+    "platform": "macOS-26.6-arm64-arm-64bit"
+  },
+  "contract": {
+    "chunk_align": 2304,
+    "token_budget": 32768,
+    "draft_slots": 6,
+    "max_wait_s": 0.0,
+    "max_running": 4,
+    "decode_token_budget": 2310,
+    "prefill_tail_multiple": 4
+  },
+  "workload": "C=1/C=4, 2K/32K/128K, 512 generated positions, fixed seed7 acceptance assumption, 3 repeats",
+  "source_sha256": {
+    "bench/step_sim.py": "b0b113b8e95820e2b0838a2e13388f4b9e804f83785539cd3ece467bd26fefa0",
+    "engine/base/scheduler.py": "e8f6e1a37f784fb8e804f423152266d56ee8bf2ed89ee3e9be20f60473741740",
+    "engine/profiles/glm53/boot.py": "0a5ac84f8d75d1a491d099358e3533be7f644fba78b440413144056f6d257dd0",
+    "engine/profiles/glm53/facts.py": "688b9751a04de175bd0c6e20a4cfea244d865d9b8240ae491bb9dad1a18ac366",
+    "measurements/st_bounded_loop_20260913/simulate.py": "581a58156e613f2b2f57ad55ef0ea26b3ebd84aec298f85383bd74243dc6702b"
+  },
+  "summary": [
+    {
+      "context": 2000,
+      "concurrency": 1,
+      "measured_host_step_median_us": 3.0,
+      "optimistic_saved_us_per_step": {
+        "2": 1.5,
+        "4": 2.25
+      },
+      "observed_decode_widths": {
+        "1": 132
+      }
+    },
+    {
+      "context": 2000,
+      "concurrency": 4,
+      "measured_host_step_median_us": 6.0,
+      "optimistic_saved_us_per_step": {
+        "2": 3.0,
+        "4": 4.5
+      },
+      "observed_decode_widths": {
+        "1": 1,
+        "2": 3,
+        "3": 1,
+        "4": 127
+      }
+    },
+    {
+      "context": 32000,
+      "concurrency": 1,
+      "measured_host_step_median_us": 3.0,
+      "optimistic_saved_us_per_step": {
+        "2": 1.5,
+        "4": 2.25
+      },
+      "observed_decode_widths": {
+        "1": 132
+      }
+    },
+    {
+      "context": 32000,
+      "concurrency": 4,
+      "measured_host_step_median_us": 6.0,
+      "optimistic_saved_us_per_step": {
+        "2": 3.0,
+        "4": 4.5
+      },
+      "observed_decode_widths": {
+        "1": 27,
+        "2": 18,
+        "3": 39,
+        "4": 85
+      }
+    },
+    {
+      "context": 128000,
+      "concurrency": 1,
+      "measured_host_step_median_us": 3.0,
+      "optimistic_saved_us_per_step": {
+        "2": 1.5,
+        "4": 2.25
+      },
+      "observed_decode_widths": {
+        "1": 132
+      }
+    },
+    {
+      "context": 128000,
+      "concurrency": 4,
+      "measured_host_step_median_us": 4.0,
+      "optimistic_saved_us_per_step": {
+        "2": 2.0,
+        "4": 3.0
+      },
+      "observed_decode_widths": {
+        "1": 113,
+        "2": 145,
+        "3": 39
+      }
+    }
+  ],
+  "records": [
+    {
+      "context": 2000,
+      "concurrency": 1,
+      "repeat": 0,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 1,
+          "decode": 132
+        },
+        "wall_s": 0.452,
+        "step_s": 294.54,
+        "decode_step_s_wall": 292.33,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.894,
+        "tokens_per_wall_step": 3.894,
+        "by_kind": {
+          "prefill": {
+            "steps": 1,
+            "med_ms": 450.872,
+            "p95_ms": 450.872,
+            "max_ms": 450.872,
+            "tokens_med": 2000
+          },
+          "decode": {
+            "steps": 132,
+            "med_ms": 0.003,
+            "p95_ms": 0.005,
+            "max_ms": 0.023,
+            "tokens_med": 7
+          }
+        },
+        "host_med_decode_ms": 0.003,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 132
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 2000,
+            "ctx": 2000,
+            "ttft_s": 0.451,
+            "e2e_s": 0.452,
+            "decode_s": 0.001,
+            "tok_s": 780003.94
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 1.2e-05
+          },
+          {
+            "name": "decode",
+            "seconds": 0.000343,
+            "calls": 132
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 2000,
+      "concurrency": 4,
+      "repeat": 0,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 4,
+          "decode": 132
+        },
+        "wall_s": 0.001,
+        "step_s": 132268.95,
+        "decode_step_s_wall": 128378.69,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.952,
+        "tokens_per_wall_step": 15.508,
+        "by_kind": {
+          "prefill": {
+            "steps": 4,
+            "med_ms": 0.003,
+            "p95_ms": 0.007,
+            "max_ms": 0.007,
+            "tokens_med": 2000
+          },
+          "decode": {
+            "steps": 132,
+            "med_ms": 0.006,
+            "p95_ms": 0.006,
+            "max_ms": 0.013,
+            "tokens_med": 28
+          }
+        },
+        "host_med_decode_ms": 0.006,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 1,
+          "2": 3,
+          "3": 1,
+          "4": 127
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 2000,
+            "ctx": 2000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 517053.89
+          },
+          {
+            "seq": 2,
+            "prompt": 2000,
+            "ctx": 2000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 532406.92
+          },
+          {
+            "seq": 3,
+            "prompt": 2000,
+            "ctx": 2000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 541911.43
+          },
+          {
+            "seq": 4,
+            "prompt": 2000,
+            "ctx": 2000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 534332.57
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 1e-05,
+            "calls": 4
+          },
+          {
+            "name": "decode",
+            "seconds": 0.000685,
+            "calls": 132
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 32000,
+      "concurrency": 1,
+      "repeat": 0,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 1,
+          "decode": 132
+        },
+        "wall_s": 0.001,
+        "step_s": 216980.82,
+        "decode_step_s_wall": 215349.39,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.894,
+        "tokens_per_wall_step": 3.894,
+        "by_kind": {
+          "prefill": {
+            "steps": 1,
+            "med_ms": 0.005,
+            "p95_ms": 0.005,
+            "max_ms": 0.005,
+            "tokens_med": 32000
+          },
+          "decode": {
+            "steps": 132,
+            "med_ms": 0.003,
+            "p95_ms": 0.003,
+            "max_ms": 0.01,
+            "tokens_med": 7
+          }
+        },
+        "host_med_decode_ms": 0.003,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 132
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 32000,
+            "ctx": 32000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 865429.14
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 2e-06
+          },
+          {
+            "name": "decode",
+            "seconds": 0.000314,
+            "calls": 132
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 32000,
+      "concurrency": 4,
+      "repeat": 0,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 43,
+          "decode": 169
+        },
+        "wall_s": 0.001,
+        "step_s": 164980.57,
+        "decode_step_s_wall": 131517.53,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.95,
+        "tokens_per_wall_step": 12.154,
+        "by_kind": {
+          "prefill": {
+            "steps": 43,
+            "med_ms": 0.002,
+            "p95_ms": 0.003,
+            "max_ms": 0.004,
+            "tokens_med": 2304
+          },
+          "decode": {
+            "steps": 169,
+            "med_ms": 0.006,
+            "p95_ms": 0.006,
+            "max_ms": 0.013,
+            "tokens_med": 28
+          }
+        },
+        "host_med_decode_ms": 0.006,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 27,
+          "2": 18,
+          "3": 39,
+          "4": 85
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 32000,
+            "ctx": 32000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 518276.84
+          },
+          {
+            "seq": 2,
+            "prompt": 32000,
+            "ctx": 32000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 480019.17
+          },
+          {
+            "seq": 3,
+            "prompt": 32000,
+            "ctx": 32000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 559361.4
+          },
+          {
+            "seq": 4,
+            "prompt": 32000,
+            "ctx": 32000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 583001.01
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 4.4e-05,
+            "calls": 43
+          },
+          {
+            "name": "decode",
+            "seconds": 0.000748,
+            "calls": 169
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 128000,
+      "concurrency": 1,
+      "repeat": 0,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 4,
+          "decode": 132
+        },
+        "wall_s": 0.001,
+        "step_s": 210852.86,
+        "decode_step_s_wall": 204651.3,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.894,
+        "tokens_per_wall_step": 3.894,
+        "by_kind": {
+          "prefill": {
+            "steps": 4,
+            "med_ms": 0.002,
+            "p95_ms": 0.004,
+            "max_ms": 0.004,
+            "tokens_med": 32256
+          },
+          "decode": {
+            "steps": 132,
+            "med_ms": 0.003,
+            "p95_ms": 0.003,
+            "max_ms": 0.022,
+            "tokens_med": 7
+          }
+        },
+        "host_med_decode_ms": 0.003,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 132
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 128000,
+            "ctx": 128000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 868003.02
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 6e-06,
+            "calls": 4
+          },
+          {
+            "name": "decode",
+            "seconds": 0.000326,
+            "calls": 132
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 128000,
+      "concurrency": 4,
+      "repeat": 0,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 172,
+          "decode": 297
+        },
+        "wall_s": 0.002,
+        "step_s": 205912.56,
+        "decode_step_s_wall": 130396.66,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.95,
+        "tokens_per_wall_step": 6.916,
+        "by_kind": {
+          "prefill": {
+            "steps": 172,
+            "med_ms": 0.002,
+            "p95_ms": 0.002,
+            "max_ms": 0.004,
+            "tokens_med": 2304
+          },
+          "decode": {
+            "steps": 297,
+            "med_ms": 0.004,
+            "p95_ms": 0.005,
+            "max_ms": 0.025,
+            "tokens_med": 14
+          }
+        },
+        "host_med_decode_ms": 0.004,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 113,
+          "2": 145,
+          "3": 39
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 128000,
+            "ctx": 128000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 472729.15
+          },
+          {
+            "seq": 2,
+            "prompt": 128000,
+            "ctx": 128000,
+            "ttft_s": 0.001,
+            "e2e_s": 0.002,
+            "decode_s": 0.001,
+            "tok_s": 440216.65
+          },
+          {
+            "seq": 3,
+            "prompt": 128000,
+            "ctx": 128000,
+            "ttft_s": 0.001,
+            "e2e_s": 0.002,
+            "decode_s": 0.001,
+            "tok_s": 524977.75
+          },
+          {
+            "seq": 4,
+            "prompt": 128000,
+            "ctx": 128000,
+            "ttft_s": 0.002,
+            "e2e_s": 0.002,
+            "decode_s": 0.001,
+            "tok_s": 701360.55
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 0.000161,
+            "calls": 172
+          },
+          {
+            "name": "decode",
+            "seconds": 0.001003,
+            "calls": 297
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 128000,
+      "concurrency": 4,
+      "repeat": 1,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 172,
+          "decode": 297
+        },
+        "wall_s": 0.002,
+        "step_s": 205935.05,
+        "decode_step_s_wall": 130410.89,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.95,
+        "tokens_per_wall_step": 6.916,
+        "by_kind": {
+          "prefill": {
+            "steps": 172,
+            "med_ms": 0.002,
+            "p95_ms": 0.002,
+            "max_ms": 0.004,
+            "tokens_med": 2304
+          },
+          "decode": {
+            "steps": 297,
+            "med_ms": 0.004,
+            "p95_ms": 0.005,
+            "max_ms": 0.025,
+            "tokens_med": 14
+          }
+        },
+        "host_med_decode_ms": 0.004,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 113,
+          "2": 145,
+          "3": 39
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 128000,
+            "ctx": 128000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 472600.89
+          },
+          {
+            "seq": 2,
+            "prompt": 128000,
+            "ctx": 128000,
+            "ttft_s": 0.001,
+            "e2e_s": 0.002,
+            "decode_s": 0.001,
+            "tok_s": 440200.76
+          },
+          {
+            "seq": 3,
+            "prompt": 128000,
+            "ctx": 128000,
+            "ttft_s": 0.001,
+            "e2e_s": 0.002,
+            "decode_s": 0.001,
+            "tok_s": 527325.39
+          },
+          {
+            "seq": 4,
+            "prompt": 128000,
+            "ctx": 128000,
+            "ttft_s": 0.002,
+            "e2e_s": 0.002,
+            "decode_s": 0.001,
+            "tok_s": 708368.98
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 0.000162,
+            "calls": 172
+          },
+          {
+            "name": "decode",
+            "seconds": 0.001001,
+            "calls": 297
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 128000,
+      "concurrency": 1,
+      "repeat": 1,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 4,
+          "decode": 132
+        },
+        "wall_s": 0.001,
+        "step_s": 210065.75,
+        "decode_step_s_wall": 203887.35,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.894,
+        "tokens_per_wall_step": 3.894,
+        "by_kind": {
+          "prefill": {
+            "steps": 4,
+            "med_ms": 0.002,
+            "p95_ms": 0.004,
+            "max_ms": 0.004,
+            "tokens_med": 32256
+          },
+          "decode": {
+            "steps": 132,
+            "med_ms": 0.003,
+            "p95_ms": 0.003,
+            "max_ms": 0.022,
+            "tokens_med": 7
+          }
+        },
+        "host_med_decode_ms": 0.003,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 132
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 128000,
+            "ctx": 128000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 863722.13
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 6e-06,
+            "calls": 4
+          },
+          {
+            "name": "decode",
+            "seconds": 0.000323,
+            "calls": 132
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 32000,
+      "concurrency": 4,
+      "repeat": 1,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 43,
+          "decode": 169
+        },
+        "wall_s": 0.001,
+        "step_s": 162659.91,
+        "decode_step_s_wall": 129667.57,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.95,
+        "tokens_per_wall_step": 12.154,
+        "by_kind": {
+          "prefill": {
+            "steps": 43,
+            "med_ms": 0.002,
+            "p95_ms": 0.002,
+            "max_ms": 0.004,
+            "tokens_med": 2304
+          },
+          "decode": {
+            "steps": 169,
+            "med_ms": 0.006,
+            "p95_ms": 0.006,
+            "max_ms": 0.013,
+            "tokens_med": 28
+          }
+        },
+        "host_med_decode_ms": 0.006,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 27,
+          "2": 18,
+          "3": 39,
+          "4": 85
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 32000,
+            "ctx": 32000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 509006.54
+          },
+          {
+            "seq": 2,
+            "prompt": 32000,
+            "ctx": 32000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 470732.93
+          },
+          {
+            "seq": 3,
+            "prompt": 32000,
+            "ctx": 32000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 545745.96
+          },
+          {
+            "seq": 4,
+            "prompt": 32000,
+            "ctx": 32000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 571854.18
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 4.3e-05,
+            "calls": 43
+          },
+          {
+            "name": "decode",
+            "seconds": 0.000763,
+            "calls": 169
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 32000,
+      "concurrency": 1,
+      "repeat": 1,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 1,
+          "decode": 132
+        },
+        "wall_s": 0.001,
+        "step_s": 213940.86,
+        "decode_step_s_wall": 212332.28,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.894,
+        "tokens_per_wall_step": 3.894,
+        "by_kind": {
+          "prefill": {
+            "steps": 1,
+            "med_ms": 0.004,
+            "p95_ms": 0.004,
+            "max_ms": 0.004,
+            "tokens_med": 32000
+          },
+          "decode": {
+            "steps": 132,
+            "med_ms": 0.003,
+            "p95_ms": 0.003,
+            "max_ms": 0.01,
+            "tokens_med": 7
+          }
+        },
+        "host_med_decode_ms": 0.003,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 132
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 32000,
+            "ctx": 32000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 850779.36
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 2e-06
+          },
+          {
+            "name": "decode",
+            "seconds": 0.00032,
+            "calls": 132
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 2000,
+      "concurrency": 4,
+      "repeat": 1,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 4,
+          "decode": 132
+        },
+        "wall_s": 0.001,
+        "step_s": 134575.69,
+        "decode_step_s_wall": 130617.58,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.952,
+        "tokens_per_wall_step": 15.508,
+        "by_kind": {
+          "prefill": {
+            "steps": 4,
+            "med_ms": 0.002,
+            "p95_ms": 0.004,
+            "max_ms": 0.004,
+            "tokens_med": 2000
+          },
+          "decode": {
+            "steps": 132,
+            "med_ms": 0.006,
+            "p95_ms": 0.006,
+            "max_ms": 0.011,
+            "tokens_med": 28
+          }
+        },
+        "host_med_decode_ms": 0.006,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 1,
+          "2": 3,
+          "3": 1,
+          "4": 127
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 2000,
+            "ctx": 2000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 518693.79
+          },
+          {
+            "seq": 2,
+            "prompt": 2000,
+            "ctx": 2000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 530289.51
+          },
+          {
+            "seq": 3,
+            "prompt": 2000,
+            "ctx": 2000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 537517.3
+          },
+          {
+            "seq": 4,
+            "prompt": 2000,
+            "ctx": 2000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 531254.28
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 6e-06,
+            "calls": 4
+          },
+          {
+            "name": "decode",
+            "seconds": 0.000689,
+            "calls": 132
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 2000,
+      "concurrency": 1,
+      "repeat": 1,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 1,
+          "decode": 132
+        },
+        "wall_s": 0.001,
+        "step_s": 217839.06,
+        "decode_step_s_wall": 216201.17,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.894,
+        "tokens_per_wall_step": 3.894,
+        "by_kind": {
+          "prefill": {
+            "steps": 1,
+            "med_ms": 0.004,
+            "p95_ms": 0.004,
+            "max_ms": 0.004,
+            "tokens_med": 2000
+          },
+          "decode": {
+            "steps": 132,
+            "med_ms": 0.003,
+            "p95_ms": 0.004,
+            "max_ms": 0.007,
+            "tokens_med": 7
+          }
+        },
+        "host_med_decode_ms": 0.003,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 132
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 2000,
+            "ctx": 2000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 855051.19
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 2e-06
+          },
+          {
+            "name": "decode",
+            "seconds": 0.000309,
+            "calls": 132
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 2000,
+      "concurrency": 1,
+      "repeat": 2,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 1,
+          "decode": 132
+        },
+        "wall_s": 0.001,
+        "step_s": 220441.73,
+        "decode_step_s_wall": 218784.27,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.894,
+        "tokens_per_wall_step": 3.894,
+        "by_kind": {
+          "prefill": {
+            "steps": 1,
+            "med_ms": 0.004,
+            "p95_ms": 0.004,
+            "max_ms": 0.004,
+            "tokens_med": 2000
+          },
+          "decode": {
+            "steps": 132,
+            "med_ms": 0.003,
+            "p95_ms": 0.003,
+            "max_ms": 0.006,
+            "tokens_med": 7
+          }
+        },
+        "host_med_decode_ms": 0.003,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 132
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 2000,
+            "ctx": 2000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 865918.09
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 2e-06
+          },
+          {
+            "name": "decode",
+            "seconds": 0.000307,
+            "calls": 132
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 2000,
+      "concurrency": 4,
+      "repeat": 2,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 4,
+          "decode": 132
+        },
+        "wall_s": 0.001,
+        "step_s": 133649.96,
+        "decode_step_s_wall": 129719.08,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.952,
+        "tokens_per_wall_step": 15.508,
+        "by_kind": {
+          "prefill": {
+            "steps": 4,
+            "med_ms": 0.003,
+            "p95_ms": 0.004,
+            "max_ms": 0.004,
+            "tokens_med": 2000
+          },
+          "decode": {
+            "steps": 132,
+            "med_ms": 0.006,
+            "p95_ms": 0.007,
+            "max_ms": 0.012,
+            "tokens_med": 28
+          }
+        },
+        "host_med_decode_ms": 0.006,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 1,
+          "2": 3,
+          "3": 1,
+          "4": 127
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 2000,
+            "ctx": 2000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 515120.91
+          },
+          {
+            "seq": 2,
+            "prompt": 2000,
+            "ctx": 2000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 526261.24
+          },
+          {
+            "seq": 3,
+            "prompt": 2000,
+            "ctx": 2000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 533635.16
+          },
+          {
+            "seq": 4,
+            "prompt": 2000,
+            "ctx": 2000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 528278.88
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 6e-06,
+            "calls": 4
+          },
+          {
+            "name": "decode",
+            "seconds": 0.000695,
+            "calls": 132
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 32000,
+      "concurrency": 1,
+      "repeat": 2,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 1,
+          "decode": 132
+        },
+        "wall_s": 0.001,
+        "step_s": 218914.99,
+        "decode_step_s_wall": 217269.01,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.894,
+        "tokens_per_wall_step": 3.894,
+        "by_kind": {
+          "prefill": {
+            "steps": 1,
+            "med_ms": 0.004,
+            "p95_ms": 0.004,
+            "max_ms": 0.004,
+            "tokens_med": 32000
+          },
+          "decode": {
+            "steps": 132,
+            "med_ms": 0.003,
+            "p95_ms": 0.003,
+            "max_ms": 0.01,
+            "tokens_med": 7
+          }
+        },
+        "host_med_decode_ms": 0.003,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 132
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 32000,
+            "ctx": 32000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 869972.48
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 2e-06
+          },
+          {
+            "name": "decode",
+            "seconds": 0.00031,
+            "calls": 132
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 32000,
+      "concurrency": 4,
+      "repeat": 2,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 43,
+          "decode": 169
+        },
+        "wall_s": 0.001,
+        "step_s": 162857.74,
+        "decode_step_s_wall": 129825.27,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.95,
+        "tokens_per_wall_step": 12.154,
+        "by_kind": {
+          "prefill": {
+            "steps": 43,
+            "med_ms": 0.002,
+            "p95_ms": 0.002,
+            "max_ms": 0.004,
+            "tokens_med": 2304
+          },
+          "decode": {
+            "steps": 169,
+            "med_ms": 0.006,
+            "p95_ms": 0.007,
+            "max_ms": 0.013,
+            "tokens_med": 28
+          }
+        },
+        "host_med_decode_ms": 0.006,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 27,
+          "2": 18,
+          "3": 39,
+          "4": 85
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 32000,
+            "ctx": 32000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 508795.08
+          },
+          {
+            "seq": 2,
+            "prompt": 32000,
+            "ctx": 32000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 470895.34
+          },
+          {
+            "seq": 3,
+            "prompt": 32000,
+            "ctx": 32000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 545891.47
+          },
+          {
+            "seq": 4,
+            "prompt": 32000,
+            "ctx": 32000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 570683.64
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 4.3e-05,
+            "calls": 43
+          },
+          {
+            "name": "decode",
+            "seconds": 0.000767,
+            "calls": 169
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 128000,
+      "concurrency": 1,
+      "repeat": 2,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 4,
+          "decode": 132
+        },
+        "wall_s": 0.001,
+        "step_s": 210512.72,
+        "decode_step_s_wall": 204321.17,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.894,
+        "tokens_per_wall_step": 3.894,
+        "by_kind": {
+          "prefill": {
+            "steps": 4,
+            "med_ms": 0.002,
+            "p95_ms": 0.004,
+            "max_ms": 0.004,
+            "tokens_med": 32256
+          },
+          "decode": {
+            "steps": 132,
+            "med_ms": 0.003,
+            "p95_ms": 0.003,
+            "max_ms": 0.022,
+            "tokens_med": 7
+          }
+        },
+        "host_med_decode_ms": 0.003,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 132
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 128000,
+            "ctx": 128000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 864331.68
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 6e-06,
+            "calls": 4
+          },
+          {
+            "name": "decode",
+            "seconds": 0.000324,
+            "calls": 132
+          }
+        ],
+        "meta_med_us": null
+      }
+    },
+    {
+      "context": 128000,
+      "concurrency": 4,
+      "repeat": 2,
+      "result": {
+        "cost": {
+          "name": "host-only; assumed acceptance 0.5",
+          "k": 6,
+          "acc": 0.5,
+          "decode_ms": 0,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_1k_ctx": 0.0,
+          "prefill_tok_s": {},
+          "prefill_flat_ms": 0.0
+        },
+        "steps": {
+          "prefill": 172,
+          "decode": 297
+        },
+        "wall_s": 0.002,
+        "step_s": 197890.3,
+        "decode_step_s_wall": 125316.46,
+        "decode_step_s_phase": null,
+        "tokens_per_step": 3.95,
+        "tokens_per_wall_step": 6.916,
+        "by_kind": {
+          "prefill": {
+            "steps": 172,
+            "med_ms": 0.002,
+            "p95_ms": 0.002,
+            "max_ms": 0.01,
+            "tokens_med": 2304
+          },
+          "decode": {
+            "steps": 297,
+            "med_ms": 0.004,
+            "p95_ms": 0.006,
+            "max_ms": 0.027,
+            "tokens_med": 14
+          }
+        },
+        "host_med_decode_ms": 0.004,
+        "headroom": null,
+        "async": 0,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 113,
+          "2": 145,
+          "3": 39
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 128000,
+            "ctx": 128000,
+            "ttft_s": 0.0,
+            "e2e_s": 0.001,
+            "decode_s": 0.001,
+            "tok_s": 440264.34
+          },
+          {
+            "seq": 2,
+            "prompt": 128000,
+            "ctx": 128000,
+            "ttft_s": 0.001,
+            "e2e_s": 0.002,
+            "decode_s": 0.001,
+            "tok_s": 408391.44
+          },
+          {
+            "seq": 3,
+            "prompt": 128000,
+            "ctx": 128000,
+            "ttft_s": 0.001,
+            "e2e_s": 0.002,
+            "decode_s": 0.001,
+            "tok_s": 513030.55
+          },
+          {
+            "seq": 4,
+            "prompt": 128000,
+            "ctx": 128000,
+            "ttft_s": 0.002,
+            "e2e_s": 0.002,
+            "decode_s": 0.001,
+            "tok_s": 695829.92
+          }
+        ],
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 0.000174,
+            "calls": 172
+          },
+          {
+            "name": "decode",
+            "seconds": 0.001042,
+            "calls": 297
+          }
+        ],
+        "meta_med_us": null
+      }
+    }
+  ]
+}

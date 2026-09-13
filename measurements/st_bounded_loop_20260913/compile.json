@@ -1,0 +1,14 @@
+{
+  "scope": "SM121a conditional graph compilation only; no CUDA context",
+  "result": {
+    "module": "st_bounded_graph_f00812871cceffad62a11097"
+  },
+  "seconds": 46.8759225269896,
+  "source_sha256": {
+    "engine/kernels/bounded_graph/loop.cu": "03106d0d85688038827c2ded69d900f09d62e9d0d0185b902967a59ab5dad4ec",
+    "engine/kernels/bounded_graph/__init__.py": "fc31994f14224fcc5ff215c699b7feb58ce31c1f87d797f4072c0ab014f92f1e",
+    "engine/profiles/glm53/bounded_loop.py": "ac5072a5e373bf68bb08ff3f13153a98a7008a9aa34ab31e94fd37ca41f39cc1",
+    "engine/kernels/decode_commit.py": "1cd3c0baa43b662cf08823064c2703a7d74a9e9d37023445b3926a3cab01d2bc",
+    "tests/test_engine_bounded_loop_cuda.py": "7caa14f4779f55de017c47e6065e36a5b872e8f9d615ce58fc956270b85134b1"
+  }
+}

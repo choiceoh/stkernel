@@ -54,6 +54,7 @@ ST_PROBES = ('probes/engine_kernel_check.py', 'probes/engine_decode_graph_check.
              'probes/engine_direct_mhc_check.py',
              'probes/engine_prefill_tiles_check.py',
              'probes/engine_mapped_tier_check.py',
+             'probes/engine_bounded_loop_check.py',
              'probes/engine_prefill_chunk_profile.py',
              'engine/profiles/glm53/check.py')
 ST_FLAGS = {'--layers', '--tokens', '--chunk', '--seed', '--moe-static', '--mla-prefill',
