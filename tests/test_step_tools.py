@@ -493,3 +493,72 @@ class KernelBudgetTests(unittest.TestCase):
         # 전문가·드래프터는 스텝에 한 번, 컨텍스트·비MoE 행 성분만 행마다 — 실측 2.3~2.6×
         self.assertLess(four / one, 4.0)
         self.assertGreater(four / one, 2.0)
+
+    def test_reads_engine_facts_module(self):
+        # 시뮬레이터가 엔진 자신의 사실 원천을 읽는다 — 엔진이 바뀌면 따라간다
+        facts = kern.load_engine_facts()
+        self.assertEqual(facts.get("tp"), 4)
+        self.assertEqual(facts.get("spec_k"), 6)
+        self.assertEqual(facts.get("chunk_align"), 2304)
+        self.assertIn("facts.py", facts.get("source", ""))
+
+    def test_folds_routing_from_timeline_artifact(self):
+        # 합성 아티팩트에서 멱법칙 회복
+        with tempfile.TemporaryDirectory() as d:
+            art = Path(d) / "tl.json"
+            art.write_text(json.dumps({"decode": [
+                {"tokens": 7, "unique_experts_mean": 29.0},
+                {"tokens": 28, "unique_experts_mean": 62.0}]}), encoding="utf-8")
+            folded = kern.fold_routing_from_timeline(art)
+            self.assertAlmostEqual(folded["routing_gamma"], 0.5608, delta=0.02)
+            u7 = kern.distinct_experts(7, gamma=folded["routing_gamma"], scale=folded["routing_scale"])
+            self.assertAlmostEqual(u7, 29.0, delta=0.2)
+        # 실물 #838 아티팩트: 층별 실측 (7,28.9)...(28,62.0)
+        real = Path("measurements/c4_scaling_20260913/decode-timeline-rank3.json")
+        if real.exists():
+            folded = kern.fold_routing_from_timeline(real)
+            self.assertEqual([p[0] for p in folded["points"]], [7, 14, 21, 28])
+            self.assertAlmostEqual(folded["points"][0][1], 28.9, delta=0.1)
+
+    def test_kernel_table_and_prefill_fold_from_artifacts(self):
+        tl = Path("measurements/c4_scaling_20260913/decode-timeline-rank3.json")
+        if tl.exists():
+            table = kern.fold_kernels_from_timeline(tl)
+            self.assertEqual(len(table), 32)
+            moe7 = next(e for e in table if "static" in e["kernel"] and e["rows"] == 7)
+            self.assertAlmostEqual(moe7["median_us"], 868.0, delta=1.0)
+            cls = kern.kernel_classes(table)
+            self.assertGreater(len(cls["launch"]), len(cls["bytes"]))   # 대다수는 런치 바닥 급
+        cp = Path("measurements/c4_scaling_20260913/chunk-profile-rank3-sf6.json")
+        if cp.exists():
+            fold = kern.fold_prefill_from_profile(cp)
+            self.assertAlmostEqual(fold["ms_per_token"], 0.28795, delta=0.0002)
+            self.assertAlmostEqual(fold["fixed_ms_per_chunk"], 269.5, delta=0.5)
+            # 플릿 32K(9216 청크) 예측이 측정 모형의 10.89s 를 재현
+            self.assertAlmostEqual(kern.prefill_ms(32545, 9216, fold, fleet=True) / 1000, 10.89, delta=0.05)
+
+    def test_acc_hist_roundtrip_from_peek_scrapes(self):
+        a = peek.parse_metrics('st:spec_accepted_per_step_total{engine="st",accepted="0"} 100\n'
+                               'st:spec_accepted_per_step_total{engine="st",accepted="6"} 10\n')
+        b = peek.parse_metrics('st:spec_accepted_per_step_total{engine="st",accepted="0"} 110\n'
+                               'st:spec_accepted_per_step_total{engine="st",accepted="6"} 18\n')
+        hist = peek.acc_hist_from_scrapes(a, b)
+        self.assertEqual(hist, [10.0, 0, 0, 0, 0, 0, 8.0])
+        self.assertIsNone(peek.acc_hist_from_scrapes({}, {}))
+        with tempfile.TemporaryDirectory() as d:
+            q = Path(d) / "p.jsonl"
+            q.write_text("\n".join(json.dumps({"monotonic": i, "series": s}) for i, s in enumerate((a, b))) + "\n",
+                         encoding="utf-8")
+            self.assertEqual(sim.acc_hist_from_peek(q), hist)
+
+    def test_fold_width_waits_for_a_completed_c4_pair(self):
+        c1 = {"requests": [{"ctx": 2000, "concurrency": 1}], "decode": {"fixed_pooled_step_s": 19.5}}
+        c4 = {"requests": [{"ctx": 2000, "concurrency": 4}], "decode": {"fixed_pooled_step_s": 8.8}}
+        folded = sim.fold_width_from_records([c1, c4])
+        self.assertAlmostEqual(folded["decode_ms"], 51.3, delta=0.1)
+        self.assertAlmostEqual(folded["decode_ms_per_row"], (113.6 - 51.3) / 3, delta=0.1)
+        # 짝이 없으면 None — 지금 리포의 정답(완결 C=4 대기)
+        self.assertIsNone(sim.fold_width_from_records([c1]))
+        mixed = {"requests": [{"ctx": 2000, "concurrency": 1}, {"ctx": 2000, "concurrency": 4}],
+                 "decode": {"windows_med": 10.0}}
+        self.assertIsNone(sim.fold_width_from_records([mixed]))
