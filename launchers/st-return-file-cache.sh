@@ -21,6 +21,7 @@
 # the launcher says so and starts the container anyway -- the engine's admission still decides.
 set -u
 MEMINFO=${ST_MEMINFO:-/proc/meminfo}
+OVERCOMMIT=${ST_OVERCOMMIT:-/proc/sys/vm/overcommit_memory}
 
 mem() {
   awk '/^(MemFree|MemAvailable|Cached):/ {
@@ -28,12 +29,22 @@ mem() {
        }' "$MEMINFO" 2>/dev/null
 }
 
+# Strict overcommit (mode 2) refuses any anonymous mapping past CommitLimit, whatever is free -- srv2's 75.8 GiB
+# refused the engine's own reclaim. Said on every boot, so a node whose commit room is short is named before it fails.
+commit() {
+  local mode
+  mode=$(cat "$OVERCOMMIT" 2>/dev/null || echo "?")
+  awk -v mode="$mode" '/^(CommitLimit|Committed_AS):/ { v[substr($1, 1, length($1) - 1)] = $2 / 1048576 }
+       END { if ("CommitLimit" in v) printf "; commit: overcommit_memory %s, CommitLimit %.1f GiB, Committed_AS %.1f GiB", mode, v["CommitLimit"], v["Committed_AS"] }' \
+    "$MEMINFO" 2>/dev/null
+}
+
 before=$(mem)
 # What is dirty cannot be dropped: flush it first, bounded -- a heavy writer can hold sync for minutes.
 timeout "${ST_SYNC_TIMEOUT_S:-60}" sync 2>/dev/null || true
 if sudo -n sh -c 'echo 3 > /proc/sys/vm/drop_caches' 2>/dev/null; then
-  echo "file cache returned: ${before:-meminfo unreadable} -> $(mem)"
+  echo "file cache returned: ${before:-meminfo unreadable} -> $(mem)$(commit)"
   exit 0
 fi
-echo "file cache NOT returned (sudo -n refused): ${before:-meminfo unreadable}"
+echo "file cache NOT returned (sudo -n refused): ${before:-meminfo unreadable}$(commit)"
 exit 3
