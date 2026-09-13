@@ -48,5 +48,13 @@ ordinary norms through a newly parameterized CUDA kernel. The affected precision
 and serving-integration tests were rerun: 23 discovered, 20 passed, 3 CUDA
 skips (`cpu-kernel-followup.log`); these overlap the 60-test run above.
 
+Post-merge repair for #894: the complete CPU CI found that the early-observe
+reference constructs a drafter without running its initializer. Treat its
+absent optional `fc_bias` as disabled, preserving the reference path. The other
+reported failure was an order-sensitive KDA probe assertion, already repaired
+on main by #892. Against main `208070ca`, the two failing modules plus the
+precision/integration contracts pass: 27 discovered, 24 passed, 3 CUDA skips
+(`cpu-reference-default.log`). No GPU run was added.
+
 See the [tuning guide](../../docs/GLM53_DRAFT_TUNING.md) for exact collection,
 fitting, profile loading and memory contracts.
