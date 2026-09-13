@@ -22,7 +22,7 @@ def exchange_local(net, layer, carry, side, *, moe_output=False):
     transport = net.comm.transport
     if moe_output and side == "ffn" and net.F.is_moe(layer):
         return net._moe(layer, carry.x, finalize=transport.exchange_moe)
-    if not hasattr(transport, "produce") or (side == "ffn" and (net.F.is_moe(layer) or getattr(net, "modelopt", False))):
+    if not hasattr(transport, "produce") or (side == "ffn" and (net.F.is_moe(layer) or getattr(net, "dense_nvfp4", False))):
         return transport.exchange(local(net, layer, carry, side))
     def project(x, name):
         dense = net.dense.get(name)
