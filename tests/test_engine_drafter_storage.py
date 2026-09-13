@@ -59,13 +59,19 @@ class DrafterStorageTests(unittest.TestCase):
         regions, size = layout(F, 4, 4)
         storage = torch.empty(size, dtype=torch.uint8)
         norm = torch.randn(F.layers, F.head_dim, dtype=torch.bfloat16)
+        bias = torch.randn(F.hidden, dtype=torch.float32)
         d = SimpleNamespace(F=F, target=SimpleNamespace(comm=SimpleNamespace(world_size=4)),
             p={s.name: torch.zeros(s.shape, dtype=s.dtype) for s in retained_specs(F)}, dense={},
             context_kv=torch.zeros(F.layers * 2 * (F.kv_heads // 4) * F.head_dim, F.hidden,
-                                   dtype=torch.bfloat16), context_norm=norm)
+                                   dtype=torch.bfloat16), context_norm=norm, fc_bias=bias)
         compact(d, SimpleNamespace(carve=lambda count, label: storage[:count]), 4)
         self.assertTrue(torch.equal(d.context_norm, norm))
         self.assertEqual(d.context_norm.data_ptr(), storage.data_ptr() + regions['context_norm'][0])
+        self.assertEqual(regions['fc_bias'][1], F.hidden * 4)
+        self.assertEqual(d.fc_bias.data_ptr(), storage.data_ptr() + regions['fc_bias'][0])
+        self.assertTrue(torch.equal(d.fc_bias, bias))
+        bias.zero_()
+        self.assertFalse(torch.equal(d.fc_bias, bias))
         norm.zero_()
         self.assertFalse(torch.equal(d.context_norm, norm))
 

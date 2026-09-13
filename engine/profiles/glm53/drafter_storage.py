@@ -60,6 +60,7 @@ def layout(F, world, max_seqs, *, policy=None):
         add('smooth/' + name, cols * 4)
     add('context_kv', F.layers * 2 * (F.kv_heads // world) * F.head_dim * F.hidden * 2)
     add('context_norm', F.layers * F.head_dim * 2)
+    add('fc_bias', F.hidden * 4)  # optional decode correction; one fixed FP32 vector
     return regions, (end + ALIGN - 1) // ALIGN * ALIGN
 
 
@@ -99,5 +100,7 @@ def compact(drafter, arena, max_seqs, *, policy=None):
             layer.smooth = copy('smooth/' + name, layer.smooth)
     drafter.context_kv = copy('context_kv', drafter.context_kv)
     drafter.context_norm = copy('context_norm', drafter.context_norm)
+    if getattr(drafter, 'fc_bias', None) is not None:
+        drafter.fc_bias = copy('fc_bias', drafter.fc_bias)
     drafter.p = kept
     drafter.resident_bytes = size
