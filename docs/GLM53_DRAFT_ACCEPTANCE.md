@@ -66,7 +66,8 @@ reject attribution if shared calibration changes. Never compare the collector's
 Hessian-update overhead with an arm whose collection has finished. A/C need
 matching shared files, with C additionally reading the completed decode blob.
 
-Run full onepass with C=1/C=4 and the same 2K/32K/128K questions, K, temperature,
+Run full onepass with the existing coverage: C=1 at 2K/32K/128K and C=4 at
+2K/32K once; C=4 128K remains excluded. Keep the same questions, K, temperature,
 token limits, checkpoint, tokenizer and target packs. Use A/B/A and A/C/A warm
 comparisons, retaining cold runs separately and resetting prefix reuse. Record
 per-question acceptance, first-rejection histogram, quality/logic checks, finish
