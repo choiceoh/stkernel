@@ -447,34 +447,49 @@ if __name__ == "__main__":
 
 
 class KernelBudgetTests(unittest.TestCase):
-    """바이트 예산 조립(step_kernels) — 흉내 낼 수 있는 층의 산술."""
+    """바이트 예산 조립(step_kernels) — 상수는 PR #838(c4_scaling_20260913) 실측."""
 
-    def test_distinct_experts_expectation(self):
-        # 7 토큰(1+k) × top-8: 288×(1−(1−8/288)^7)+1 ≈ 52.6 — 상한(무작위 라우팅) 쪽
+    def test_distinct_experts_uniform_and_measured(self):
+        # 균등 가정(상한 쪽): 7 토큰 ≈ 52.6 / 28 토큰 ≈ 157
         self.assertAlmostEqual(kern.distinct_experts(7), 52.6, delta=0.5)
+        self.assertLess(kern.distinct_experts(7), 7 * 8)
         self.assertEqual(kern.distinct_experts(0), 0.0)
-        self.assertLess(kern.distinct_experts(7), 7 * 8)          # 중복은 당연히 절약된다
+        # 실측 멱법칙(라우팅 몰림): U(7)=33, U(28)=95 — #838 §6 역산
+        b = kern.EngineBytes()
+        self.assertAlmostEqual(kern.distinct_experts(7, gamma=b.routing_gamma, scale=b.routing_scale), 33.0, delta=0.3)
+        self.assertAlmostEqual(kern.distinct_experts(28, gamma=b.routing_gamma, scale=b.routing_scale), 95.0, delta=0.5)
+
+    def test_composition_reproduces_the_measured_step_table(self):
+        # #838 §3 의 단계 합(forward + propose + observe) 열두 지점을 ±10% 안에.
+        b = kern.EngineBytes()
+        measured = {(2000, 1): 51.1, (2000, 2): 77.5, (2000, 3): 99.7, (2000, 4): 115.6,
+                    (32000, 1): 50.1, (32000, 2): 83.4, (32000, 3): 105.6, (32000, 4): 125.0,
+                    (128000, 1): 55.1, (128000, 2): 86.0, (128000, 3): 104.9, (128000, 4): 131.9}
+        worst = 0.0
+        for (ctx, w), m in measured.items():
+            got = kern.decode_step(b, ctx, w).total()
+            worst = max(worst, abs(got / m - 1))
+        self.assertLess(worst, 0.10, f"worst residual {worst:.1%}")
 
     def test_composition_explains_measured_flatness(self):
         b = kern.EngineBytes()
-        lo = kern.decode_step(b, 2000, eff=0.85, ar_ms=0.041)
-        hi = kern.decode_step(b, 128000, eff=0.85, ar_ms=0.041)
-        # 어텐션 KV 만 컨텍스트에 자란다: 2K→128K 잔여가 스텝의 ~5% 이내 (실측: 평탄)
-        self.assertLess(hi.total() - lo.total(), 0.05 * hi.total())
-        self.assertAlmostEqual(lo.ms["어텐션 KV"], 0.05, delta=0.02)
+        lo = kern.decode_step(b, 2000)
+        hi = kern.decode_step(b, 128000)
+        # 컨텍스트에 자라는 항은 인덱서·MLA 뿐: 2K→128K 잔여가 스텝의 ~8% 이내 (실측: 평탄)
+        self.assertLess(hi.total() - lo.total(), 0.08 * hi.total())
 
-    def test_knobs_move_the_step_by_their_bytes(self):
+    def test_knob_moves_the_step_by_its_bytes(self):
         b = kern.EngineBytes()
-        base = kern.decode_step(b, 32000, eff=0.85, ar_ms=0.041).total()
-        w4 = replace(b, drafter_weights=0.55 * kern.GIB)
-        got = kern.decode_step(w4, 32000, eff=0.85, ar_ms=0.041).total()
-        # 드래프터 bf16→W4: (2.03−0.55)GiB ÷ 273GB/s × 0.85 역수 ≈ 6.85ms 절약
-        self.assertAlmostEqual(base - got, (2.03 - 0.55) * kern.GIB / (273e9 * 0.85) * 1e3, delta=0.05)
+        base = kern.decode_step(b, 32000).total()
+        # 드래프터 W4→bf16 복원: 2.03 GiB ÷ 207 GB/s ≈ 10.6 ms (실측 W4 는 3.4)
+        got = kern.decode_step(replace(b, drafter_ms=10.6), 32000).total()
+        self.assertAlmostEqual(base - got, 3.4 - 10.6, delta=0.01)
+        self.assertAlmostEqual((2.03 - 0.55) * kern.GIB / 207e9 * 1e3, 7.68, delta=0.1)
 
     def test_width_prediction_is_sublinear(self):
         b = kern.EngineBytes()
-        one = kern.decode_step(b, 32000, width=1, eff=0.85, ar_ms=0.041).total()
-        four = kern.decode_step(b, 32000, width=4, eff=0.85, ar_ms=0.041).total()
-        # MoE·드래프터는 스텝에 한 번, KV·상태만 행마다 — 4행이 4배보다 싸다
+        one = kern.decode_step(b, 32000, width=1).total()
+        four = kern.decode_step(b, 32000, width=4).total()
+        # 전문가·드래프터는 스텝에 한 번, 컨텍스트·비MoE 행 성분만 행마다 — 실측 2.3~2.6×
         self.assertLess(four / one, 4.0)
         self.assertGreater(four / one, 2.0)

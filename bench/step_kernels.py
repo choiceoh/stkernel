@@ -65,13 +65,30 @@ class EngineBytes:
     spec_k: int = 6
     tp: int = 4
     bw_bytes_s: float = 273e9                  # GB10 통합메모리 공칭(도달률은 --eff)
+    # ---- PR #838(c4_scaling_20260913) 실측 정정: 바이트는 맞았으나 셋이 틀렸다 ----
+    expert_mb: float = 2.10 + 1.05 + 0.30      # w13 2.10 + w2 1.05 + SF6 0.30 MB/전문가/랭크 (3.44; 아레나 표 평균 3.54 와 3%)
+    moe_bw: float = 207e9                      # 정적 MoE 커널 실측 207 GB/s = 공칭의 76% (§6 CUPTI)
+    routing_gamma: float = 0.763               # 실측 역산 U(7)=33, U(28)=95 → U(t)=a·t^γ (§6; 균등 가정 51.5/157 은 우연히만 맞았다)
+    routing_scale: float = 33.0 / 7 ** 0.763
+    nonmoe_flat_ms: float = 22.0               # 비MoE(정적·dense·KDA·글루): 1행 22 ms (§3: MoE 60~65% + 비MoE 30% + 집단통신 5~10%)
+    nonmoe_per_row_ms: float = 4.33            # 4행에서 35 ms (KDA 링 쓰기 + elementwise + FP32 SGEMM 라우터)
+    ctx_slope_ms_per_token: float = 3.17e-5    # 1행 2K→128K +4.0 ms (인덱서 logits 풀 32K × 질의 + 희소 MLA top-2048)
+    comms_flat_ms: float = 1.0                 # 집단통신 잔여(테이블 대비): ~1 + 1.9×행 ms
+    comms_per_row_ms: float = 1.9
+    drafter_ms: float = 3.4                    # propose+observe 실측(§3 표; forward 와 별개) — W4 드래프터
 
 
-def distinct_experts(tokens: int, experts: int = 288, topk: int = 8) -> float:
-    """검증 토큰 `tokens` 개가 무작위 라우팅으로 뽑는 서로 다른 전문가 수의 기댓값.
-    라우팅이 몰리면(실제 문서는 그렇다) 이보다 작아진다 — 기댓값은 상한 쪽이다."""
+def distinct_experts(tokens: int, experts: int = 288, topk: int = 8,
+                     gamma: float = 0.0, scale: float = 0.0) -> float:
+    """검증 토큰 `tokens` 개가 뽑는 서로 다른 전문가 수.
+
+    gamma>0 면 실측 멱법칙 U(t)=min(288, scale·t^gamma) — PR #838 §6 이 플릿 forward
+    에서 역산한 U(7)=33, U(28)=95 (합성 라우팅 프로브조차 28.7/61.5: 라우터 가중치가
+    실제로 몰린다). gamma=0 면 균등 가정(상한 쪽): 288×(1−(1−8/288)^t)+1."""
     if tokens <= 0:
         return 0.0
+    if gamma > 0:
+        return min(experts, scale * tokens ** gamma)
     p = min(1.0, topk / experts)
     return experts * (1.0 - (1.0 - p) ** tokens) + 1.0   # + 공유 전문가 1
 
@@ -87,12 +104,11 @@ class StepBudget:
         total = self.total()
         lines = [f"{'구성':<28}{'ms':>9}  {'몫':>6}  바이트 근거"]
         notes = {
-            "MoE 전문가": "서로 다른 전문가 × 3.55 MB/랭크 × 42 층",
-            "정적 가중치(dense·KDA·MLA·head)": "M=7 행에서는 가중치 읽기가 바닥",
-            "드래프터(DFlash2)": "2.03 GiB GEMM 가중치, 랭크마다 통째",
-            "어텐션 KV": "ctx × 5.90 KiB/토큰 — 컨텍스트 항 (평탄성의 이유)",
-            "KDA 상태": "247.2 MiB 읽기+쓰기 × 행",
-            "집합통신(AR 102회)": "지연 × 102 — 바이트는 무시할 만큼 작다",
+            "MoE 전문가": "고유 전문가 U(토큰) × 3.44 MB × 42 층 ÷ 207 GB/s (정적 커널 실측)",
+            "비MoE(정적·dense·KDA·글루)": "22 ms + 4.33 ms/행 — #838 §3/§6 (KDA 링 쓰기·elementwise·FP32 라우터)",
+            "어텐션·인덱서(컨텍스트)": "31.7 µs/1K-토큰/행 — 인덱서 logits 풀 32K × 질의 + 희소 MLA top-2048 (평탄성의 이유)",
+            "집합통신": "≈ 1 + 1.9×행 ms (AR 102회/스텝, 스텝의 5~10%)",
+            "드래프터(W4)": "propose+observe 실측 3.4 ms — forward 와 별개",
         }
         for k, v in self.ms.items():
             share = f"{100 * v / total:5.1f}%" if total else "  -  "
@@ -102,27 +118,24 @@ class StepBudget:
 
 
 def decode_step(b: EngineBytes, ctx: int, width: int = 1, k: int | None = None,
-                eff: float = 0.85, ar_ms: float = 0.05) -> StepBudget:
-    """검증 스텝 하나의 바이트 예산 → ms. 순수 함수."""
+                routing: str = "measured") -> StepBudget:
+    """검증 스텝 하나의 예산 → ms. 순수 함수.
+
+    구조는 바이트에서, 상수는 PR #838 의 실측에서: MoE 는 고유 전문가 수 × 3.44 MB
+    를 정적 커널의 207 GB/s 로, 비MoE 는 22 ms + 4.33 ms/행(정적·dense·KDA 링 쓰기·
+    글루), 컨텍스트 항은 31.7 µs/1K-토큰/행(인덱서 logits + 희소 MLA), 집단통신은
+    잔여 1 + 1.9×행 ms. routing="uniform" 은 라우팅 몰림을 무시한 상한 쪽 값이다."""
     k = b.spec_k if k is None else k
     tokens = width * (1 + k)                    # 검증은 폭×(1+k) 토큰을 한 번에 본다
-    expert_bytes = b.expert_bytes_all / (b.experts * b.moe_layers)
+    gamma, scale = (b.routing_gamma, b.routing_scale) if routing == "measured" else (0.0, 0.0)
     out = StepBudget()
-    out.ms["MoE 전문가"] = distinct_experts(tokens, b.experts, b.topk) * expert_bytes * b.moe_layers / (b.bw_bytes_s * eff) * 1e3
-    out.ms["정적 가중치(dense·KDA·MLA·head)"] = b.static_weights / (b.bw_bytes_s * eff) * 1e3
-    out.ms["드래프터(DFlash2)"] = b.drafter_weights / (b.bw_bytes_s * eff) * 1e3
-    out.ms["어텐션 KV"] = width * ctx * b.kv_bytes_per_token / (b.bw_bytes_s * eff) * 1e3
-    out.ms["KDA 상태"] = width * b.state_ring_bytes * 2 / (b.bw_bytes_s * eff) * 1e3
-    out.ms["집합통신(AR 102회)"] = b.ar_per_step * ar_ms
+    out.ms["MoE 전문가"] = (distinct_experts(tokens, b.experts, b.topk, gamma, scale)
+                            * b.expert_mb * 1e6 * b.moe_layers / b.moe_bw * 1e3)
+    out.ms["비MoE(정적·dense·KDA·글루)"] = b.nonmoe_flat_ms + b.nonmoe_per_row_ms * (width - 1)
+    out.ms["어텐션·인덱서(컨텍스트)"] = max(0, ctx - 2000) * b.ctx_slope_ms_per_token * width
+    out.ms["집합통신"] = b.comms_flat_ms + b.comms_per_row_ms * width
+    out.ms["드래프터(W4)"] = b.drafter_ms
     return out
-
-
-def calibrate(b: EngineBytes, target_ms: float, ctx: int = 32000, width: int = 1,
-              eff: float = 0.85) -> float:
-    """AR 지연 하나를 target_ms 에 맞춘다(도달률은 주어진 값으로 굳는다) —
-    지연이 음수로 나오면 도달률이 낮다는 뜻이다."""
-    fixed = decode_step(b, ctx, width, eff=eff, ar_ms=0.0).total()
-    return max(0.0, (target_ms - fixed) / b.ar_per_step)
 
 
 def main() -> int:
@@ -130,37 +143,32 @@ def main() -> int:
     ap.add_argument("--ctx", default="2000,32000,128000")
     ap.add_argument("--width", default="1", help="행 수(폭) — C=4 예측은 --width 1,4")
     ap.add_argument("--k", type=int, help="드래프트 k (기본 6)")
-    ap.add_argument("--drafter-gib", type=float, dest="drafter_gib",
-                    help="드래프터 GEMM 가중치 GiB(기본 2.03 bf16) — W4 드래프터 부팅은 ~0.55")
-    ap.add_argument("--eff", type=float, default=0.85, help="대역폭 도달률 (기본 0.85)")
-    ap.add_argument("--ar-ms", type=float, help="집합통신 1회 지연 — 주지 않으면 한 기록에 폼판다")
-    ap.add_argument("--calibrate-to", type=float, default=71.7,
-                    help="AR 지연 폴딩의 기준 스텝 ms (기본: K-steady 32K 실측 71.7)")
+    ap.add_argument("--routing", choices=("measured", "uniform"), default="measured",
+                    help="고유 전문가 수: measured=#838 역산 멱법칙 U(7)=33,U(28)=95 (기본) / uniform=균등 가정(상한)")
+    ap.add_argument("--drafter-ms", type=float, dest="drafter_ms",
+                    help="드래프터(propose+observe) ms — bf16 복원은 ~10.6 (2.03 GiB ÷ 207 GB/s... 실측 W4 기본 3.4)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
-    # AR 지연은 기본 바이트로 *한 번* 폼한다 — 노브를 바꿔 볼 때 지연이 그것을 다시
-    # 흡수하면 순환이 된다(드래프터 W4 를 줄였는데 합계가 그대로인 잘못을 막는다).
-    ar_ms = args.ar_ms if args.ar_ms is not None else calibrate(EngineBytes(), args.calibrate_to, eff=args.eff)
     b = EngineBytes()
-    if args.drafter_gib is not None:
-        b.drafter_weights = args.drafter_gib * GIB
+    if args.drafter_ms is not None:
+        b.drafter_ms = args.drafter_ms
     ctxs = [int(x) for x in args.ctx.split(",")]
     widths = [int(x) for x in args.width.split(",")]
 
     rows = []
     for width in widths:
         for ctx in ctxs:
-            budget = decode_step(b, ctx, width, k=args.k, eff=args.eff, ar_ms=ar_ms)
+            budget = decode_step(b, ctx, width, k=args.k, routing=args.routing)
             rows.append((width, ctx, budget))
             if not args.json:
                 print(f"== decode 스텝 — ctx {ctx//1000}K, 폭 {width}, k={args.k or b.spec_k}, "
-                      f"eff={args.eff:g}, AR {ar_ms*1e3:.0f}us:")
+                      f"routing={args.routing}:")
                 print(budget.rows())
                 print()
     if len(ctxs) > 1 and not args.json:
         base = next(t for w, _c, t in rows if w == widths[0])
-        flat = [t.ms["어텐션 KV"] for w, _c, t in rows if w == widths[0]]
+        flat = [t.ms["어텐션·인덱서(컨텍스트)"] for w, _c, t in rows if w == widths[0]]
         print(f"평탄성 검증: 어텐션 KV 항이 {ctxs[0]//1000}K→{ctxs[-1]//1000}K 에서 "
               f"{flat[0]:.2f}→{flat[-1]:.2f} ms — 스텝의 {100*flat[-1]/base.total():.1f}% "
               f"(실측: 대부분 부팅에서 컨텍스트에 평탄)")
