@@ -6,7 +6,6 @@ and spun in it until its stall trap: Xid 43, "unspecified launch failure", twice
 (04:57, 05:24). A begin that fails on one rank is now a transfer that rank still votes on, and the
 vote turns every rank the same way: dropped, prefilled, refused.
 """
-import importlib.util
 import sys
 import threading
 import unittest
@@ -43,6 +42,9 @@ class TwoRankComm(T.Comm):
 
     def all_reduce_max(self, t):
         return t
+
+    def gather_objects(self, obj):
+        return [obj, obj]                                 # the peer's tier holds what this rank's does
 
     def cast(self, site):
         """This rank's values at `site`, in the order they were cast."""
@@ -138,7 +140,6 @@ class SettleSymmetryTests(unittest.TestCase):
         self.assertFalse(s._resuming or s._failed_begins)
         self.assertEqual(sorted(s._free_rows), [0, 1])
 
-    @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "a two-rank server imports torch")
     def test_a_request_that_fits_here_waits_until_it_fits_everywhere(self):
         """`kv.available` is per rank (a prefix spill pins blocks on the rank whose tier thread got there):
         one rank admitting a request the others do not is the seven-rows-against-six step of 2026-09-12."""
@@ -154,7 +155,6 @@ class SettleSymmetryTests(unittest.TestCase):
         settle(s)
         self.assertEqual(list(s.take_result(request)), [3])
 
-    @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "a two-rank server imports torch")
     def test_a_prompt_one_rank_sees_in_flight_waits_on_every_rank(self):
         """The prefix cache is per rank; whether the same prompt is being prefilled beside this request,
         and how much of it is already cached, are agreed before the branch: one rank's 'in flight' makes

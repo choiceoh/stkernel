@@ -1069,8 +1069,12 @@ def fleet(a) -> int:
                             "smoothed": str(engine.pack_stats.get("smoothed", 0)),                             # inputs' channel smoothing folded into their norms
                             "calibration": engine.calibration.status() if engine.calibration is not None else "complete",
                             "dense_w4a16_guard_rows": str(lane_tables.dense_w4a16_guard_rows())}
-        # a stale tier under one rank diverges the ranks (45th 21): find it in seconds, not after the capture
-        Server._agree_on_parked(comm, sorted(runner.parked_keys()))
+        # A stale tier under one rank diverges the ranks (45th 21), and a fleet that split mid-step leaves
+        # a turn parked on half of them (2026-09-13 13:01:47). Reconcile in seconds, before the capture: every
+        # rank keeps the conversations every rank holds alike and drops the rest. This check used to KILL the
+        # boot on any skew, ahead of the constructor's recovery, and six production launches died on it.
+        Server._reconcile_parked(comm, Server._parked_entries(runner.tiered, sorted(runner.parked_keys()), comm.rank),
+                                 forget=runner.forget_parked)
         # and the seed the drafts and samples are drawn from: nothing checked it, and a rank booted by
         # hand with another one would have sampled its own tokens for as long as the fleet stood
         from engine.base.tripwire import Tripwire
