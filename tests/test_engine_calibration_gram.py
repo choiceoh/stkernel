@@ -17,6 +17,20 @@ class BudgetTests(unittest.TestCase):
         self.assertEqual(bf16_extra * 2, extra)
         self.assertLess(Calibration.nbytes(missing, max_decode_rows=28), 2 << 30)
 
+    def test_prefill_flushes_only_its_own_pending_hessian_tiles(self):
+        from types import SimpleNamespace as NS
+        from unittest.mock import Mock, patch
+        c = Calibration("cpu")
+        c.tiles = {"layer": [("h", 0, 64, True), ("peak", 64, 64, False)],
+                   "other": [("foreign", 0, 64, True)]}
+        c.flush = Mock()
+        kernel = Mock()
+        flat = NS(shape=(71, 128), is_cuda=True, dtype=torch.bfloat16)
+        with patch.dict('sys.modules', {'engine.kernels.dense.calibration_prefill': NS(observe=kernel)}):
+            c.observe("layer", flat, None, False)
+        c.flush.assert_called_once_with("h")
+        self.assertIs(kernel.call_args.args[2], c.tiles["layer"])
+
 
 @unittest.skipUnless(torch.cuda.is_available(), "CUDA graph and Triton execution required")
 class BufferedGramTests(unittest.TestCase):

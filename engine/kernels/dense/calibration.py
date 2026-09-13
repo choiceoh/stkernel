@@ -115,7 +115,9 @@ class Calibration:
             return
         if flat.is_cuda and flat.dtype == torch.bfloat16 and rows_ok is None and flat.shape[0] > self.max_decode_rows:
             from .calibration_prefill import observe
-            self.flush()
+            for key, _start, _width, hessian in self.tiles[name]:
+                if hessian:
+                    self.flush(key)
             observe(flat, self.armed, self.tiles[name], self.H, self.amax, self.rows, ROWS_TARGET)
             return
         xf = flat.float()
