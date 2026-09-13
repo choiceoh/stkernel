@@ -63,7 +63,7 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "paired_projection", "shared_serial", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "paired_projection", "shared_serial", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows"}, selected
 
     if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'paired_projection', 'shared_serial'}:
         from probes.engine_decode_bundle import require_current_probe
@@ -80,6 +80,16 @@ def main():
             paired_check(report, args.ranks)
         if 'shared_serial' in selected:
             shared_check(report, args.ranks)
+
+    if "decode_rows" in selected:
+        import unittest
+        # every kernel a captured decode step folds over its rows (45차, the C=4 question) against its one-row
+        # launches, byte for byte: the KDA rings, the conv ring, the pool/tail writers and the slot finalizer
+        suite = unittest.defaultTestLoader.loadTestsFromNames(["tests.test_engine_kda_ring", "tests.test_engine_conv_ring",
+                                                               "tests.test_engine_state", "tests.test_engine_pool_slots"])
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        assert result.wasSuccessful() and not result.skipped, "decode row-fold checks did not pass"
+        report("decode_rows", passed=True, tests=result.testsRun)
 
     if "decode7" in selected:
         import unittest

@@ -45,6 +45,60 @@ class StateGraphTests(unittest.TestCase):
             write_ring(source,target,slot,ctx)
             self.assertTrue(torch.equal(storage.view(torch.uint8), expected.view(torch.uint8)))
 
+    def test_ring_write_rows_matches_one_row_writes_and_replays(self):
+        """A captured decode step writes every row's ring in one launch (write_ring_rows: grid axis 2 is the
+        row): byte-equal to one write_ring per row, and a captured graph replays it for new slots and contexts."""
+        from engine.kernels.state import write_ring, write_ring_rows
+        width, rows = 1089, 3
+        for tokens in (1, 6, 17):
+            storage = torch.randn(5*(6*width+64)+64, device="cuda")
+            expected = storage.clone()
+            shape, stride = (5,6,width), (6*width+64,width,1)
+            target = storage.as_strided(shape,stride,64)
+            reference = expected.as_strided(shape,stride,64)
+            source = torch.randn(rows, tokens, width, device="cuda")
+            slots = torch.tensor([3, 1, 4], device="cuda")
+            contexts = torch.tensor([32768, 0, 7], device="cuda")
+            for i in range(rows):
+                write_ring(source[i], reference, slots[i:i+1], contexts[i])
+            write_ring_rows(source, target, slots, contexts)
+            self.assertTrue(torch.equal(storage.view(torch.uint8), expected.view(torch.uint8)), tokens)
+            # replay: the graph reads the slot and context vectors, not the values it was captured with
+            dev_slots, dev_contexts = slots.clone(), contexts.clone()
+            side = torch.cuda.Stream()
+            side.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(side):
+                write_ring_rows(source, target, dev_slots, dev_contexts)
+            torch.cuda.current_stream().wait_stream(side)
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph):
+                write_ring_rows(source, target, dev_slots, dev_contexts)
+            storage.copy_(expected)
+            source.normal_()
+            dev_slots.copy_(torch.tensor([0, 2, 1], device="cuda")); dev_contexts.copy_(torch.tensor([5, 4096, 1], device="cuda"))
+            for i in range(rows):
+                write_ring(source[i], reference, dev_slots[i:i+1], dev_contexts[i])
+            graph.replay()
+            torch.cuda.synchronize()
+            self.assertTrue(torch.equal(storage.view(torch.uint8), expected.view(torch.uint8)), (tokens, "replay"))
+
+    def test_scatter_rows_over_segments_matches_one_segment_launches(self):
+        """complete_pools writes every segment's pools in one launch (scatter_rows over [n, P, W]): byte-equal
+        to one launch per segment with that segment's rows, slots and count."""
+        from engine.profiles.glm53.decode_graphs import scatter_rows
+        n, pools, width = 3, 2, 12
+        for dst_width in (width, width + 5):                     # a strided destination row
+            dst = torch.randint(0, 255, (50, dst_width), device="cuda", dtype=torch.uint8)[:, :width]
+            expected = dst.clone()
+            src = torch.randint(0, 255, (n, pools, width), device="cuda", dtype=torch.uint8)
+            slots = torch.tensor([[5, 9], [11, 40], [0, 1]], device="cuda")
+            counts = torch.tensor([2, 1, 0], device="cuda")
+            for i in range(n):
+                scatter_rows(src[i], expected, slots[i], counts[i])
+            scatter_rows(src, dst, slots, counts)
+            self.assertTrue(torch.equal(dst, expected), dst_width)
+            self.assertTrue(torch.equal(dst[40], expected[40]) and not torch.equal(dst[1], src[2, 1]), "counts bound the writes")
+
     def test_slot_remapping_zero_context_wrap_and_rejected_future_writes(self):
         from engine.base.arena import Arena
         from engine.profiles.glm53.caches import Glm53Caches, layout

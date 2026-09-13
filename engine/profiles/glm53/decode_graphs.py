@@ -23,18 +23,33 @@ from engine.profiles.glm53.net import Segment
 @triton.jit
 def _scatter_rows(SRC, DST, INDEX, VALID, WIDTH: tl.constexpr,
                   SRC_STRIDE: tl.constexpr, DST_STRIDE: tl.constexpr,
-                  BLOCK: tl.constexpr):
+                  BLOCK: tl.constexpr, SEG_SRC: tl.constexpr = 0, SEG_INDEX: tl.constexpr = 0):
+    # Grid axis 1 is the segment of a captured decode step: program (row, seg) reads segment seg's count,
+    # indices and source rows. A one-segment launch has one program there, at seg 0 with both segment
+    # strides 0 -- the same loads and stores as before the axis existed.
     row = tl.program_id(0)
+    seg = tl.program_id(1)
     col = tl.arange(0, BLOCK)
-    valid = row < tl.load(VALID)
-    dst = tl.load(INDEX + row, valid, other=0)
-    value = tl.load(SRC + row * SRC_STRIDE + col, valid & (col < WIDTH), other=0)
+    valid = row < tl.load(VALID + seg)
+    dst = tl.load(INDEX + seg * SEG_INDEX + row, valid, other=0)
+    value = tl.load(SRC + seg * SEG_SRC + row * SRC_STRIDE + col, valid & (col < WIDTH), other=0)
     tl.store(DST + dst * DST_STRIDE + col, value, valid & (col < WIDTH))
 
 
 def scatter_rows(src, dst, indices, valid):
-    """Write only complete pools; padded rows must never alias real cache rows."""
+    """Write only complete pools; padded rows must never alias real cache rows.
+
+    One segment: src [P, W], indices [P], valid a device scalar count. Every segment of a captured step
+    at once: src [n, P, W], indices [n, P], valid [n] -- one launch whose program (p, i) is what the
+    one-segment launch's program p does for segment i."""
     width = src.shape[-1]
+    if src.ndim == 3:
+        n, rows = src.shape[0], src.shape[1]
+        if indices.shape != (n, rows) or valid.shape != (n,) or valid.stride(0) != 1:
+            raise ValueError("segment-batched scatter takes [n, P] indices and one contiguous count per segment")
+        _scatter_rows[(rows, n)](src, dst, indices, valid, width, src.stride(1), dst.stride(0),
+                                 triton.next_power_of_2(width), SEG_SRC=src.stride(0), SEG_INDEX=indices.stride(0))
+        return
     _scatter_rows[(src.shape[0],)](src, dst, indices, valid, width, src.stride(0),
                                   dst.stride(0), triton.next_power_of_2(width))
 
@@ -49,8 +64,9 @@ def complete_pools(net, layer, contexts, length, tails, k, gate, caches):
     work in the same order because `compress_pool_keys` runs one program per pool and
     reads each through its own strides; segments only decide which pools exist.
 
-    The cache writes stay per segment. Their kernels take one ring slot and one count,
-    and making them take many is a kernel change, not a caller change.
+    The cache writes are one launch each as well (45차, the C=4 question: three launches
+    a segment a layer were three a layer): `scatter_rows` and `write_ring_rows` carry the
+    segment on a grid axis, and each program does what the one-segment launch's did.
     """
     F = net.F
     kp, d = F.kpool, F.idx_dim
@@ -73,10 +89,9 @@ def complete_pools(net, layer, contexts, length, tails, k, gate, caches):
     keys, scales = caches.pool_keys(layer).view(torch.uint8), caches.pool_scales(layer).unsqueeze(-1)
     pk8 = pk.view(torch.uint8).view(n, max_pools, -1)
     ps1 = ps.view(n, max_pools, 1)
-    for i in range(n):
-        scatter_rows(pk8[i], keys, slots[i], counts[i])
-        scatter_rows(ps1[i], scales, slots[i], counts[i])
-        caches.write_tail(layer, i, contexts[i], k[i], gate[i])
+    scatter_rows(pk8, keys, slots, counts.contiguous())
+    scatter_rows(ps1, scales, slots, counts.contiguous())
+    caches.write_tails(layer, contexts, k, gate)
     return caches.candidate_capacity
 
 
@@ -168,6 +183,13 @@ class GraphCaches:
         write_ring(torch.stack((keys, gates), dim=1), self.real._fields["tail", layer],
                    self.slots[slot:slot+1], context)
 
+    def write_tails(self, layer, contexts, keys, gates):
+        """write_tail for every segment at once: row i of keys/gates [n, t, d] goes to segment i's tail ring
+        from contexts[i]. One stack and one ring launch instead of one of each per segment."""
+        from engine.kernels.state import write_ring_rows
+        write_ring_rows(torch.stack((keys, gates), dim=2), self.real._fields["tail", layer],
+                        self.slots, contexts.contiguous())
+
     def latent(self, layer):
         return self.real.latent(layer)
 
@@ -193,9 +215,22 @@ class GraphCaches:
         from engine.profiles.glm53.caches import Glm53Caches
         return Glm53Caches.token_map(self, layer, seq)
 
+    def token_maps(self, layer):
+        """token_map for every segment at once: the gathered block table whole, row i being what
+        token_map(layer, i) returns, with the same scalars."""
+        F, p = self.F, self.layout
+        return self.block_table, F.block, p.block_bytes // F.kv_lora, p.token_offsets[layer] // F.kv_lora
+
     def pool_slots(self, layer, seq, pool_ids):
         from engine.profiles.glm53.caches import Glm53Caches
         return Glm53Caches.pool_slots(self, layer, seq, pool_ids)
+
+    def candidate_rows(self, layer, n_cand):
+        """pool_slots(layer, i, iota(n_cand)) for every segment i at once, as gather indices: a captured step's
+        candidates are the bucket's whole capacity for every row (the selection masks what lies past each
+        row's context), so the ids are one kept constant and the block-table read is one gather."""
+        ids = iota(n_cand, self.block_table.device)[None, :].expand(self.block_table.shape[0], n_cand)
+        return self.pool_rows(layer, ids).long()
 
     def pool_rows(self, layer, pool_ids):
         """pool_slots for every segment at once: row i of `pool_ids` reads row i of the

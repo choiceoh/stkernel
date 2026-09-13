@@ -64,7 +64,8 @@ class Lanes:
                               #   -> (post [T,hc,1] f32, comb [T,hc,hc] f32, x [T,H] bf16 = rmsnorm(sum_i pre_i res_i) * norm_w)
     mhc_post: object          # (x [T,H] bf16, res [T,hc,H], post, comb) -> res' [T,hc,H] bf16
     indexer_logits: object    # (q8 [T,h,128] e4m3 (rotated), k8 [N,128] e4m3, k_scale [N] f32, w [T,h] f32 (q scale folded),
-                              #  ke [T] int32: keys [0, ke[m]) count for query m) -> [T,N] f32, garbage past ke
+                              #  ke [T] int32: keys [0, ke[m]) count for query m, ks=None: a kept int32 zeros [T] a captured
+                              #  step hands in for the keys' start) -> [T,N] f32, garbage past ke
     kpool_compress: object    # (k [P,kp,128] bf16, score [P,kp,128] bf16, ape [kp,128] f32) -> (fp8 [P,128], scale [P,1] f32)
     mla_sparse: object        # (q_abs [T,H,512] bf16, latent [S,512] e4m3, slots [T,W] int32 (valid prefix), valid [T] int32,
                               #  scale, ckv_scale) -> [T,H,512] bf16
@@ -73,7 +74,8 @@ class Lanes:
                               #  scales=None: folded Red Hat; ModelOptScales: separate NVIDIA multipliers. E=1/k=1 also serves dense MLPs.
     indexer_quant: object     # contiguous [R,128] bf16 -> Hadamard-rotated [R,128] e4m3, per-row pow2 [R,1] f32 scale
     pool_slots: object        # (pool ids [T,G] int32, seq_lens [T] int32, pool size, block row | None, block size/stride,
-                              #  layer offset, out [T,G*pool+pool-1], counts [T]) -> None; descending token positions, mapped valid prefix
+                              #  layer offset, out [T,G*pool+pool-1], counts [T], tokens=1) -> None; descending token positions,
+                              #  mapped valid prefix. A captured step passes its rows' block rows [S,blocks] with tokens = T/S
     kda_output_norm: object   # (core/gate [T,H,D] bf16, weight [D] bf16/f32, eps) -> [T,H,D] bf16; FP32 RMS norm and sigmoid gate
     moe_prepare: object = None  # (w13, w13_sf, w2, w2_sf, top_k, limit, *, scales=None) -> None, once per bound layer BEFORE any capture:
                               #  the served lane's weight views (in-place tile-major relayout, packed SF6 owner); reference: None
@@ -142,7 +144,7 @@ def reference() -> Lanes:
             outs.append(o); states.append(state[0])
         return torch.cat(outs, dim=1), torch.stack(states)
 
-    def logits(q8, k8, k_scale, w, ke):
+    def logits(q8, k8, k_scale, w, ke, ks=None):
         return indexer_logits(q8.float(), k8.float() * k_scale[:, None], w)     # relu(c x) = c relu(x): scales fold
 
     def pre(res, fn, scale, base, rms_eps, hc_eps, post_mult, sinkhorn, norm_w, norm_eps):
@@ -309,10 +311,13 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     def post(x, res, p, comb):
         return mhc_post_tilelang(x, res, p, comb)
 
-    def logits(q8, k8, k_scale, w, ke):
+    def logits(q8, k8, k_scale, w, ke, ks=None):
         t = q8.shape[0]
+        # every query's keys start at 0; a captured step hands the kept zeros in (`ks`) instead of filling
+        # a fresh vector per row per layer
         return fp8_fp4_mqa_logits((q8, None), (k8, k_scale.contiguous()), w.contiguous(),
-                                  torch.zeros(t, device=q8.device, dtype=torch.int32), ke.contiguous(), clean_logits=False)
+                                  torch.zeros(t, device=q8.device, dtype=torch.int32) if ks is None else ks,
+                                  ke.contiguous(), clean_logits=False)
 
     def mla(q_abs, latent, slots, valid, scale, ckv_scale):
         mk.maybe_arm()
