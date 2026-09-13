@@ -1,5 +1,5 @@
-"""Independent, boot-time DFlash acceptance experiments."""
-from dataclasses import dataclass
+"""DFlash serving defaults and independently reproducible baseline arms."""
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -11,8 +11,8 @@ class DraftPolicy:
     def __post_init__(self):
         if self.fc_precision not in ('w4', 'fp8'):
             raise ValueError('draft FC precision must be w4 or fp8')
-        if self.fc_calibration not in ('shared', 'collect', 'decode'):
-            raise ValueError('draft FC calibration must be shared, collect or decode')
+        if self.fc_calibration not in ('shared', 'collect', 'decode', 'auto'):
+            raise ValueError('draft FC calibration must be shared, collect, decode or auto')
         if type(self.diagnostics) is not bool:
             raise ValueError('draft diagnostics must be a boolean')
 
@@ -26,6 +26,42 @@ class DraftPolicy:
 
     def label(self):
         return f'fc={self.fc_precision},calibration={self.fc_calibration},diagnostics={int(self.diagnostics)}'
+
+
+# Keep DraftPolicy() as the explicit no-experiment baseline used by stock/local
+# probes. Both serving declarations take their defaults from this one recipe.
+SERVING_POLICY = DraftPolicy('fp8', 'auto', True)
+
+
+def resolve_calibration(policy, store, name, cols, comm):
+    """Resolve auto once, before arena sizing: all ranks consume, or all collect.
+
+    Missing statistics bootstrap through the existing bounded collector. An
+    invalid file is an error on every rank, including ranks whose own file is
+    valid. Explicit decode arms still require completed statistics everywhere.
+    The preparation rendezvous absorbs file-validation skew before the short
+    host-control collective; no CUDA vote or serving-step work is added.
+    """
+    if policy.fc_calibration not in ('auto', 'decode'):
+        return policy
+    ready, error = False, None
+    try:
+        if store is None:
+            raise ValueError('decode FC calibration requires a pack store')
+        if policy.fc_calibration == 'decode' or store.calibration_path(decode_name(name)).is_file():
+            require_decode_calibration(store, name, cols)
+            ready = True
+    except Exception as exc:
+        error = f'{type(exc).__name__}: {exc}'
+    comm.wait_prepared('draft-calibration')
+    reports = comm.gather_objects({'ready': ready, 'error': error})
+    errors = [f'rank {rank}: {report["error"]}' for rank, report in enumerate(reports) if report['error']]
+    if errors:
+        raise ValueError('TP decode FC calibration failed: ' + '; '.join(errors))
+    if policy.fc_calibration == 'decode' and not all(report['ready'] for report in reports):
+        raise ValueError('explicit decode FC calibration requires completed statistics on every rank')
+    mode = 'decode' if all(report['ready'] for report in reports) else 'collect'
+    return replace(policy, fc_calibration=mode)
 
 
 def decode_name(name):

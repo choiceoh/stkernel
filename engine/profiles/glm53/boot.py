@@ -214,6 +214,7 @@ def declared(a, comm_world: int) -> Config:
     through an old environment file.
     """
     import datetime as _dt
+    from engine.profiles.glm53.draft_policy import SERVING_POLICY
     facts_ = [
         Fact("model", str(a.ckpt_meta), "the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)"),
         Fact("ranks", str(a.ranks), "preshard output"),
@@ -241,15 +242,16 @@ def declared(a, comm_world: int) -> Config:
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
                         execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0, terminal_mhc=0,
-                        draft_fc_precision="w4", draft_fc_calibration="shared", draft_diagnostics=0, **gb10_defaults)
+                        draft_fc_precision=SERVING_POLICY.fc_precision, draft_fc_calibration=SERVING_POLICY.fc_calibration,
+                        draft_diagnostics=int(SERVING_POLICY.diagnostics), **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
-        Knob("draft_fc_precision", "w4", _dt.date(2026, 9, 30),
+        Knob("draft_fc_precision", SERVING_POLICY.fc_precision, _dt.date(2026, 9, 30),
              "DFlash FC decode precision; shared or committed-decode FP8 pack", "STK_draft_fc_precision=w4"),
-        Knob("draft_fc_calibration", "shared", _dt.date(2026, 9, 30),
-             "shared baseline, collect committed decode inputs, or consume their isolated GPTQ calibration",
+        Knob("draft_fc_calibration", SERVING_POLICY.fc_calibration, _dt.date(2026, 9, 30),
+             "auto collects missing committed decode inputs and consumes GPTQ on a subsequent boot; shared/collect/decode are fixed arms",
              "STK_draft_fc_calibration=shared"),
-        Knob("draft_diagnostics", 0, _dt.date(2026, 9, 30),
+        Knob("draft_diagnostics", int(SERVING_POLICY.diagnostics), _dt.date(2026, 9, 30),
              "Record greedy first rejection as candidate miss, selector miss or output boundary",
              "STK_draft_diagnostics=0", int),
         Knob("terminal_mhc", 0, _dt.date(2026, 9, 30),
@@ -309,7 +311,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
           nvme_mapped_staging=False, draft_policy=None):
     """`ckpt_meta`: where config.json / tokenizer.json / generation_config.json are -- the HF checkpoint dir, or a
     copy of just those files: a node needs its rank file, the drafter and this, not the 185 GB checkpoint."""
-    from engine.profiles.glm53.draft_policy import DraftPolicy, decode_name, require_decode_calibration
+    from engine.profiles.glm53.draft_policy import DraftPolicy, decode_name, resolve_calibration
     draft_policy = draft_policy or DraftPolicy()
     if draft_policy.active and (execution != "native" or not use_drafter):
         raise ValueError("draft acceptance experiments require the native drafter")
@@ -369,10 +371,12 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         store = PackStore("/cache", comm.rank)
         calib_plan = []                                                   # (module, weight key, store name, missing tiles, small rows)
         if D:
+            recorder.gauge('draft_policy_requested', draft_policy.label())
+            draft_policy = resolve_calibration(draft_policy, store, drafter_mod.store_name('fc.weight'),
+                                               D.hidden * len(D.target_layers), comm)
+            recorder.gauge('draft_policy', draft_policy.label())
             for key, (_rows, cols) in drafter_mod.dense_shapes(D, comm.world_size).items():
                 name = drafter_mod.store_name(key)
-                if key == "fc.weight" and draft_policy.fc_calibration == "decode":
-                    require_decode_calibration(store, name, cols)
                 if key == "fc.weight" and draft_policy.fc_calibration != "shared":
                     name = decode_name(name)
                 missing = store.missing_calibration(name, cols)
@@ -1106,7 +1110,8 @@ def fleet(a) -> int:
         # "무장 != 서빙": which lanes and kernel cells this process actually bound, readable at
         # scrape time instead of inferred from a boot log nobody kept (45차 §17 lesson).
         engine.lane_info = {"lanes": lanes.name, "moe_static": cfg["moe_static"],
-                            "execution_plan": plan.label(), "draft_policy": draft_policy.label(),
+                            "execution_plan": plan.label(), "draft_policy": engine.draft_policy.label(),
+                            "draft_policy_requested": draft_policy.label(),
                             "nvme_mapped_staging": str(cfg["nvme_mapped_staging"]),
                             "kda_state_dtype": F.kda_state_dtype,
                             "mla_prefill": cfg["mla_prefill"], "spec_k": str(engine.drafter.k),

@@ -10,11 +10,76 @@ import torch
 from engine.kernels.dense import DenseLinear
 from engine.kernels.dense.calibration import Calibration, ROWS_FLOOR
 from engine.kernels.dense.store import PackStore
-from engine.profiles.glm53.draft_policy import DraftPolicy, decode_name, require_decode_calibration
+from engine.profiles.glm53.draft_policy import (DraftPolicy, SERVING_POLICY, decode_name,
+                                             require_decode_calibration, resolve_calibration)
 from engine.profiles.glm53.draft_diagnostics import DraftDiagnostics, classify
 
 
 class DraftAcceptanceTests(unittest.TestCase):
+    def test_serving_boot_collects_missing_statistics_then_consumes_on_the_next_boot(self):
+        from engine.base.comm import Comm
+        with tempfile.TemporaryDirectory() as root:
+            store, name, cols = PackStore(root, 0), 'draft/model.fc', 16
+            first = resolve_calibration(SERVING_POLICY, store, name, cols, Comm())
+            self.assertEqual(first, DraftPolicy('fp8', 'collect', True))
+            self.assertFalse(first.separate_decode_fp8)
+            with self.assertRaisesRegex(ValueError, 'missing'):
+                resolve_calibration(DraftPolicy('fp8', 'decode', True), store, name, cols, Comm())
+            key = decode_name(name)
+            path = store.calibration_path(key)
+            path.parent.mkdir(parents=True)
+            torch.save(dict(name=key, input_scope='committed_decode_v1', ntok=ROWS_FLOOR,
+                            H=torch.eye(cols), amax=torch.ones(cols)), path)
+            original = path.read_bytes()
+            second = resolve_calibration(SERVING_POLICY, store, name, cols, Comm())
+            self.assertEqual(second, DraftPolicy('fp8', 'decode', True))
+            self.assertTrue(second.separate_decode_fp8)
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_one_missing_rank_keeps_every_rank_on_collection_without_overwriting_ready_files(self):
+        with tempfile.TemporaryDirectory() as root:
+            store, name, cols = PackStore(root, 0), 'draft/model.fc', 16
+            key = decode_name(name)
+            path = store.calibration_path(key)
+            path.parent.mkdir(parents=True)
+            torch.save(dict(name=key, input_scope='committed_decode_v1', ntok=ROWS_FLOOR,
+                            H=torch.eye(cols), amax=torch.ones(cols)), path)
+            original, calls = path.read_bytes(), []
+            def gather(report):
+                self.assertEqual(calls, ['draft-calibration'])
+                self.assertEqual(report, dict(ready=True, error=None))
+                return [report, dict(ready=False, error=None)]
+            comm = SimpleNamespace(wait_prepared=calls.append, gather_objects=gather)
+            got = resolve_calibration(SERVING_POLICY, store, name, cols, comm)
+            self.assertEqual(got.fc_calibration, 'collect')
+            self.assertEqual(store.missing_calibration(key, cols), [])
+            self.assertEqual(path.read_bytes(), original)
+            calls.clear()
+            with self.assertRaisesRegex(ValueError, 'completed statistics on every rank'):
+                resolve_calibration(DraftPolicy('fp8', 'decode', True), store, name, cols, comm)
+
+    def test_corrupt_local_or_peer_statistics_fail_all_ranks_instead_of_downgrading_to_rtn(self):
+        from engine.base.comm import Comm
+        with tempfile.TemporaryDirectory() as root:
+            store, name, cols = PackStore(root, 0), 'draft/model.fc', 16
+            key = decode_name(name)
+            path = store.calibration_path(key)
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b'not a torch checkpoint')
+            with self.assertRaisesRegex(ValueError, 'TP decode FC calibration failed: rank 0'):
+                resolve_calibration(SERVING_POLICY, store, name, cols, Comm())
+            path.unlink()
+            calls = []
+            comm = SimpleNamespace(wait_prepared=calls.append,
+                gather_objects=lambda report: [report, dict(ready=False, error='bad scope')])
+            with self.assertRaisesRegex(ValueError, 'rank 1: bad scope'):
+                resolve_calibration(SERVING_POLICY, store, name, cols, comm)
+            self.assertEqual(calls, ['draft-calibration'])
+            # Fixed baseline/collector arms do not introduce a preparation vote.
+            for mode in ('shared', 'collect'):
+                policy = DraftPolicy(fc_calibration=mode)
+                self.assertIs(resolve_calibration(policy, None, name, cols, None), policy)
+
     def test_arms_are_independent_and_combined_mode_is_explicit(self):
         self.assertFalse(DraftPolicy().active)
         self.assertTrue(DraftPolicy(fc_precision='fp8').active)

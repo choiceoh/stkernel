@@ -11,6 +11,7 @@ following three experiments. FP32 KDA state remains the default.
 
 | Arm | `STK_draft_fc_precision` | `STK_draft_fc_calibration` | `STK_draft_diagnostics` |
 |---|---|---|---|
+| Serving default | `fp8` | `auto` | `1` |
 | A: shared W4 baseline | `w4` | `shared` | `1` |
 | B: FC FP8 | `fp8` | `shared` | `1` |
 | Collection, excluded from timing verdict | `w4` | `collect` | `1` |
@@ -18,8 +19,28 @@ following three experiments. FP32 KDA state remains the default.
 | Combined collection | `fp8` | `collect` | `1` |
 | Combined measurement | `fp8` | `decode` | `1` |
 
-Production defaults are `w4/shared/0`. These are experimental knobs in a
-non-production boot. `bench/st_bracket.sh` runs immutable commits in production
+Production and ordinary serving default to `fp8/auto/1`, enabled by operator
+request; this is not a measured acceptance or throughput verdict. `auto` resolves
+before arena sizing: if every rank has valid committed-decode statistics, all
+consume `fp8/decode/1`. Otherwise all use `fp8/collect/1`, keeping any already
+complete files intact and collecting the missing ones within the existing
+2 GiB calibration budget. This collection boot uses the shared FP8 pack;
+it does not claim to have activated decode GPTQ yet. Completed statistics are
+consumed on a subsequent boot, never by changing weights inside captured graphs.
+For the current FC and C=4 capacity, its missing full Hessian plus staging
+reserves about 1.57 GiB per collecting rank and adds Gram-update work. This
+bootstrap cost must stay outside timing comparisons. No GPU job is queued by
+changing the defaults.
+
+Readiness and invalid-file errors are agreed over the host preparation/control
+groups before allocation. Corrupt, incompatible or incomplete existing files
+remain explicit errors on every rank; `auto` only bootstraps absent files. An
+explicit `decode` arm still fails if any rank lacks completed statistics.
+Boot records and lane information distinguish `draft_policy_requested` from
+the resolved `draft_policy` (`collect` or `decode`). FP32 KDA state is unchanged.
+
+Fixed arms remain available in a non-production boot.
+`bench/st_bracket.sh` runs immutable commits in production
 shape and clears knobs: create arm commits from the same implementation commit,
 changing only the three corresponding production facts in `boot.declared` for
 each row above. Do not present an environment override as a bracket arm.
@@ -36,7 +57,8 @@ each row above. Do not present an environment override as a bracket arm.
    `input_scope=committed_decode_v1`; shared calibration is not overwritten.
    At least 4,096 rows are required; automatic filing targets 32,768. Collection
    stays within the existing 2 GiB calibration budget. Consume on a subsequent
-   boot. Missing, incomplete or foreign calibration fails before serving.
+   boot. Explicit `decode` requires completed calibration before serving;
+   `auto` handles absent files as described above.
    With W4 decode, only the FC W4 pack uses it. With FP8 decode, a separate
    FP8 pack is GPTQ-calibrated on the FP8 grid using this Hessian; the shared
    prefill FP8 pack retains its identity. The context call explicitly
