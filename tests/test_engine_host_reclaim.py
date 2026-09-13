@@ -97,6 +97,16 @@ class ClientTests(unittest.TestCase):
         self.assertEqual((answer["returned"], answer["rc"]), (False, 3))
         self.assertIn("sudo -n refused", answer["line"])
 
+    def test_a_rank_asks_at_most_once_in_the_gap(self):
+        b = self.broker()
+        first = host_reclaim(self.root, timeout_s=10)
+        self.assertTrue(first["returned"])
+        self.assertIsNone(host_reclaim(self.root, timeout_s=10), "within the gap: the caller falls back, nothing is written")
+        self.assertFalse((self.root / "request").exists())
+        self.assertEqual(len(b.served), 1)
+        self.assertTrue(host_reclaim(self.root, timeout_s=10, min_gap_s=0)["returned"], "past the gap it asks again")
+        self.assertEqual(len(b.served), 2)
+
     def test_an_answer_to_another_question_is_not_this_ones(self):
         (self.root / "done").write_text("an-earlier-boot\n0\nstale\n")
         self.broker(answer_id="someone-else")
@@ -143,8 +153,9 @@ class AdmissionTests(unittest.TestCase):
             report = prepare_allocation(int(55.47 * GIB), [], 18 * GIB, lambda: 120 * GIB, reclaim=pump, host_reclaim=host)
         self.assertEqual(len(faulted), 1)
         self.assertEqual(report["host_reclaim"]["rc"], 3)
+        # 75 GiB available covers the 73.47 needed, so the host is asked; faulting it would cross the SIGTERM line
         with patch("engine.base.runtime_memory.oom_floor", return_value=(6 * GIB, 9 * GIB // 2)), \
-             patch.object(Path, "read_text", return_value=meminfo(40, 70, 30)):
+             patch.object(Path, "read_text", return_value=meminfo(40, 75, 35)):
             with self.assertRaisesRegex(MemoryError, r"cannot be reclaimed.*the host did not return file cache: refused"):
                 prepare_allocation(int(55.47 * GIB), [], 18 * GIB, lambda: 120 * GIB, reclaim=lambda n: n,
                                    host_reclaim=lambda: dict(returned=False, rc=3, line="refused"))
@@ -159,6 +170,23 @@ class AdmissionTests(unittest.TestCase):
         with patch.object(Path, "read_text", return_value=meminfo(96, 104, 3)):
             prepare_allocation(int(55.47 * GIB), [], 18 * GIB, lambda: 120 * GIB, reclaim=None,
                                host_reclaim=lambda: self.fail("enough was free"))
+
+    def test_a_node_short_of_memory_rather_than_of_cache_is_not_asked(self):
+        """MemAvailable under the need: dropping every clean page still would not cover it."""
+        with patch("engine.base.runtime_memory.oom_floor", return_value=(6 * GIB, 9 * GIB // 2)), \
+             patch.object(Path, "read_text", return_value=meminfo(40, 70, 30)):
+            with self.assertRaises(MemoryError) as caught:
+                prepare_allocation(int(55.47 * GIB), [], 18 * GIB, lambda: 120 * GIB, reclaim=lambda n: n,
+                                   host_reclaim=lambda: self.fail("nothing the host drops can cover it"))
+        self.assertNotIn("the host", str(caught.exception))
+
+    def test_warmup_asks_only_when_the_cache_covers_the_shortfall(self):
+        """Checkpoints run by the hundred: a node short of memory, not of cache, must not drop the box's cache at each."""
+        states = [meminfo(10, 15, 5)]
+        with patch("engine.base.arena._meminfo", side_effect=lambda: {k: int(v.split()[0]) * 1024 for k, v in
+                                                                     (l.split(":") for l in states[-1].splitlines())}), \
+             patch("engine.base.arena.touch_pages", side_effect=lambda n: self.fail("refused by the MemAvailable gate")):
+            self.assertEqual(reclaim_preparation_pages(20 * GIB, 8 * GIB, host_reclaim=lambda: self.fail("15 < 20")), 0)
 
     def test_warmup_reclaim_asks_the_host_before_it_faults(self):
         states = [meminfo(5, 60, 40)]
@@ -227,7 +255,7 @@ class BrokerScriptTests(unittest.TestCase):
         self.running.write_text("false\n")
         self.assertTrue(self.wait_gone(pid), "a broker outlived its container")
         self.assertFalse((self.dir / "heartbeat").exists())
-        self.assertIsNone(host_reclaim(self.dir, timeout_s=1), "and nobody asks a broker that ended")
+        self.assertIsNone(host_reclaim(self.dir, timeout_s=1, min_gap_s=0), "and nobody asks a broker that ended")
 
     def test_a_new_boot_replaces_the_old_broker_and_stop_all_ends_it(self):
         self.assertEqual(self.broker("start", str(self.dir), "st-glm53").returncode, 0)

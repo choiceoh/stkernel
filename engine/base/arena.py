@@ -118,10 +118,12 @@ def release_model_cache(roots) -> int:
 
 
 RECLAIM_DIR_ENV = "ST_RECLAIM_DIR"
+HOST_RECLAIM_GAP_S = 30.0
+_asked_at: "dict[str, float]" = {}
 
 
 def host_reclaim(directory=None, *, timeout_s: float = 150.0, fresh_s: float = 5.0, poll_s: float = 0.2,
-                 clock=time.monotonic, sleep=time.sleep) -> "dict | None":
+                 min_gap_s: float = HOST_RECLAIM_GAP_S, clock=time.monotonic, sleep=time.sleep) -> "dict | None":
     """Ask this node's host to return its clean file cache now, and wait for it to say it did.
 
     The container cannot drop another workload's cache, and faulting the shortfall as anonymous memory needs
@@ -130,8 +132,11 @@ def host_reclaim(directory=None, *, timeout_s: float = 150.0, fresh_s: float = 5
     launchers/st-reclaim-broker.sh, which the launcher starts for this rank and names in ST_RECLAIM_DIR.
 
     None when nobody serves: no directory, or a heartbeat older than `fresh_s` (a broker that ended, a boot
-    without one), so a boot that has no broker does not wait. Otherwise {returned, rc, line}: returned is
-    whether the host dropped it; line is its one-line report (MemFree, MemAvailable, Cached before and after).
+    without one), so a boot that has no broker does not wait. None too within `min_gap_s` of this rank's last
+    question: warmup checkpoints run by the hundred, and a node that stays short would otherwise drop its
+    cache at every one of them -- a slower boot, and every other workload on the box rereading its files.
+    Otherwise {returned, rc, line}: returned is whether the host dropped it; line is its one-line report
+    (MemFree, MemAvailable, Cached before and after).
     """
     directory = directory or os.environ.get(RECLAIM_DIR_ENV)
     if not directory:
@@ -142,6 +147,10 @@ def host_reclaim(directory=None, *, timeout_s: float = 150.0, fresh_s: float = 5
             return None
     except OSError:
         return None
+    last = _asked_at.get(str(root))
+    if last is not None and clock() - last < min_gap_s:
+        return None
+    _asked_at[str(root)] = clock()
     ident = f"{os.getpid()}-{time.time_ns()}"
     try:
         (root / "done").unlink()                        # an answer nobody read belongs to an earlier question
@@ -214,8 +223,8 @@ def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=t
         cache_files = release_model_cache(cache_roots)
         memory = _meminfo()
         free = min(memory["MemFree"], device_free())
-    if free < need and memory["MemFree"] < need and host_reclaim is not None:
-        returned = host_reclaim()
+    if free < need and memory["MemFree"] < need and memory["MemAvailable"] >= need and host_reclaim is not None:
+        returned = host_reclaim()                  # only when dropping what is reclaimable can cover the shortfall
         if returned is not None:
             memory = _meminfo()
             free = min(memory["MemFree"], device_free())
