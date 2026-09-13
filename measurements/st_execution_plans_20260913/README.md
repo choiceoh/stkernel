@@ -135,3 +135,11 @@ fixture timeout unrelated to these engine changes. Main subsequently fixed
 the fixture; after merging that fix and the rank-consistent one-shot sums,
 the 124-test integration slice passes (5 CUDA skips). Subsequent focused
 results and fleet qualification are recorded separately below.
+
+After adding the captured commit writer and exact subgroup-capacity checks,
+77 focused tests pass (5 CUDA skips). `arms.json` names the same-code baseline
+and one-fact-only measurement branches; `make_arms.py` reproduces those trees
+without modifying the current checkout. They are experimental arm commits,
+not production-default changes. The private-workspace fleet gate is queued
+as `st-gb10-scratch0913v2`; no GPU correctness or consumer speed verdict has
+been recorded yet.
