@@ -7,7 +7,7 @@ name: engine check
 
 on:
   pull_request:
-    paths: ["engine/**", "tests/**", "tools/**", ".github/workflows/engine-check.yml"]
+    paths: ["engine/**", "tests/**", "tools/**", "bench/step*.py", "bench/storacle.py", ".github/workflows/engine-check.yml"]
   workflow_dispatch:
 
 jobs:
@@ -41,3 +41,5 @@ jobs:
         run: python3 tools/check.py --list
       - name: onepass recording and consumer measurement contracts
         run: python3 -m unittest discover -s tests -p 'test_onepass*.py'
+      - name: ST Oracle source and scenario contracts
+        run: python3 -m unittest discover -s tests -p 'test_step*.py'

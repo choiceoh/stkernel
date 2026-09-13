@@ -522,6 +522,12 @@ deploy-watch 는 배포 뒤 큐의 체크아웃 `~/fleet-controller` 를 배포�
 기록 간 델타). D17 은 그대로다: 이 숫자들은 숙주 비용·관측·재분석이지, 속도 주장의
 판정 채널(플릿 onepass 두 번)이 아니다.
 
+`python3 bench/storacle.py predict --base origin/main`은 **개발 중인 실제 코드**를 기준 커밋과
+비교한다. 미커밋 변경까지 별도 사본으로 읽어 부팅 계약·청크 계산·상태 layout을 실행하고,
+그 결과로 prefill/decode 비용과 메모리 변화를 다시 계산한다. 커널의 미계측 영향은 표시하고
+양쪽 소스에 묶인 paired profile로 해당 시간 항목을 교체할 수 있다. 사용법과 범위는
+[개발 소스 예측](bench/ST_ORACLE_SOURCE.md)에 있다.
+
 `python3 bench/storacle.py acceptance peek.jsonl`은 **각 위치까지의 누적 수락률**을
 행-스텝 수와 함께 보여준다. 예를 들어 K=6이면 마지막 행은 `6개 모두 수락한 행 / 전체 행`이다.
 옆의 조건부 비율은 `6개 모두 수락한 행 / 5개 이상 수락한 행`으로 분모가 다르다.
