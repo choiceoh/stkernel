@@ -39,6 +39,8 @@ The receiver optimization does not implement producer GEMM writes into a send ri
   sampling/min-token/reasoning constraints retain the existing scheduler gate,
   with the thinking-cap horizon enlarged for a possible burst. More than eight
   stop-token IDs use the ordinary path without truncating the set.
+- String-stop requests use the ordinary pipeline so the host checks text at
+  the existing cadence, without additional burst lookahead.
 
 ## Timing and records
 
@@ -61,8 +63,9 @@ CPU tests cover C=1/C=4 equality with the existing pipeline, the full reservatio
 prefix/EOS/bucket exits, row and slot reuse, reasoning caps, ordered result
 retirement, zero-progress rejection, record counts and nanosecond/unit conversion.
 The existing pipeline, runner, graph, boot, release, tier and package checks also run.
-The combined ST-image suite ran 156 tests: 151 passed and 5 unrelated GPU tests
-were skipped. `compile.json` records the final SM121a compilation (55.25 seconds)
+The combined ST-image suite ran 165 tests: 160 passed and 5 unrelated GPU tests
+were skipped. A separate HTTP/sampling/burst suite ran 232 tests: 230 passed and
+2 were skipped. `compile.json` records the final SM121a compilation (55.25 seconds)
 with no CUDA context.
 
 `probes/engine_bounded_loop_check.py` tests actual conditional graphs, native

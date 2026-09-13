@@ -10,13 +10,14 @@ scatters directly from it. The staging/scratch copy disappears. Contiguous
 extra state still uses its existing pinned transfer. FP32 KDA bytes, compression,
 file layout, generation publication and per-transfer stream synchronization
 are unchanged. The conservative boot memory budget is retained; the recorder
-reports actual saved staging bytes. With the nominal 64/32 MiB windows this
-removes up to 96 MiB per rank, reduced by block-size rounding.
+reports saved allocation bytes. With the nominal 64/32 MiB windows this
+removes up to 96 MiB per rank, reduced by block-size rounding and 8190 bytes
+of explicit alignment padding across the two allocations.
 
 Shutdown now refuses to free staging if a worker's close timeout expires.
 An unfinished future and its buffers are retained for retry; a completed
 failed transfer still permits shutdown. Unique allocation accounting counts
-the mapped aliases once.
+the mapped aliases once, including their alignment padding.
 
 Validation on 2026-09-13:
 
@@ -24,6 +25,11 @@ Validation on 2026-09-13:
   shared-alias oracle, permuted blocks, extra-state tails, compressed restore,
   close timeout, idempotent release, default flags and boot paths.
 - SM121a native compilation passed without initializing CUDA; see compile.json.
+- The first admitted GPU gate passed alias visibility/lifetime, but its next
+  allocation exposed sub-page alignment from cudaHostAlloc. The allocator now
+  reserves 4095 extra bytes and aligns both aliases with the same offset, while
+  their shared owner frees the original allocation. The repeated-allocation
+  gate and O_DIRECT round trip must pass on this corrected source.
 - `probes/engine_mapped_tier_check.py` is the admitted real-GPU gate for
   host/device visibility, both alias lifetimes and lossless NVMe round trips.
   GPU qualification and serving interference/performance remain pending.

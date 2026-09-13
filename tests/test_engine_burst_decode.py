@@ -150,6 +150,21 @@ class ServedBurstTests(unittest.TestCase):
         self.assertEqual(p.reserve_steps(1), 1)
         p.close()
 
+    def test_text_stops_keep_the_ordinary_host_verification_cadence(self):
+        from engine.base.sampler import validate_options
+        e = engine(1)
+        e.options[1] = dict(_host_stop=True)
+        validate_options(e.options[1])
+        with self.assertRaises(ValueError):
+            validate_options(dict(_host_stop=1))
+        p = CpuBurst(e, 4)
+        self.assertEqual(p.reserve_steps(1), 1)
+        pending = p.launch([1], [1])
+        self.assertNotIsInstance(pending, BurstPending)
+        pending.resolve()
+        self.assertEqual(e.ctx[1], 3)
+        p.close()
+
     def test_whole_burst_horizon_and_reasoning_cap_cover_every_iteration(self):
         e = engine(1)
         e.pipeline = CpuBurst(e, 4)

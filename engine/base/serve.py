@@ -2970,6 +2970,8 @@ class Server:
                 include_usage = bool(options_stream and options_stream.get("include_usage"))
                 model = server.check_model(req.get("model"))
                 temperature, options = sampling_options(req, server.generation)
+                if stop:
+                    options["_host_stop"] = True  # text matching needs the ordinary verification cadence
                 derived = stop_token_ids_for(stop, server.tok) if (stop and server.tok is not None) else []
                 if derived:
                     options["stop_token_ids"] = sorted(set(options.get("stop_token_ids") or []) | set(derived))
@@ -3149,6 +3151,8 @@ class Server:
                 include_usage = bool(isinstance(options_stream, dict) and options_stream.get("include_usage"))
                 model = server.check_model(req.get("model"))
                 temperature, options = sampling_options(req, server.generation)
+                if stop:
+                    options["_host_stop"] = True
                 derived = stop_token_ids_for(stop, server.tok) if (stop and server.tok is not None) else []
                 if derived:
                     options["stop_token_ids"] = sorted(set(options.get("stop_token_ids") or []) | set(derived))

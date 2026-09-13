@@ -57,7 +57,7 @@ class MappedTierTests(unittest.TestCase):
     def test_real_io_through_shared_cpu_aliases_and_ordinary_buffers(self):
         empty = torch.empty
         def aligned(n):
-            raw = empty(n+4096, dtype=torch.uint8)
+            raw = empty(n+4095, dtype=torch.uint8)
             start = (-raw.data_ptr()) % 4096
             return raw[start:start+n]
         def host_empty(*args, **kwargs):
@@ -83,7 +83,7 @@ class MappedTierTests(unittest.TestCase):
                         round_trip(self, tier, "cpu")
                         if tier.snapshot_cache is not None:
                             tier.snapshot_cache.clear()
-                        self.assertEqual(tier.close(), 8192 if mapped else 16384)
+                        self.assertEqual(tier.close(), 8192+4095 if mapped else 16384)
                         self.assertEqual(tier.close(), 0)
                     finally:
                         tier.close()

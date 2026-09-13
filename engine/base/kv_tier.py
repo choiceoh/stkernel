@@ -89,6 +89,7 @@ class NvmeTier:
         if type(mapped_staging) is not bool:
             raise ValueError("mapped_staging must be a boolean")
         self.mapped_staging = mapped_staging
+        self.staging_padding_bytes = SECTOR - 1 if mapped_staging else 0
         self.state_format = state_format
         from engine.base.compressed_snapshots import CompressedSnapshots
         self.snapshot_cache = CompressedSnapshots(snapshot_cache_bytes) if snapshot_cache_bytes else None
@@ -98,7 +99,7 @@ class NvmeTier:
         self.block_bytes, self.stage_bytes = block_bytes, stage_bytes
         self.capacity_bytes, self.reserve_bytes = capacity_bytes, reserve_bytes
         self.per = stage_bytes // block_bytes
-        # pinned host staging (cudaHostAlloc is page-aligned, which O_DIRECT needs)
+        # Pinned host staging; the mapped helper explicitly aligns the O_DIRECT payload.
         if mapped_staging:
             from engine.kernels.mapped_staging import allocate
             self.stage_t, self.scratch = allocate(stage_bytes)
@@ -475,7 +476,12 @@ class NvmeTier:
             if buf is not None:
                 sizes.append(buf.numel() * buf.element_size())
                 setattr(self, name, None)
-        given += max(sizes, default=0) if getattr(self, "mapped_staging", False) else sum(sizes)
+        if getattr(self, "mapped_staging", False):
+            given += max(sizes, default=0)
+            if sizes:
+                given += self.staging_padding_bytes
+        else:
+            given += sum(sizes)
         self.stream = None
         cache = getattr(self, "snapshot_cache", None)
         if cache is not None:

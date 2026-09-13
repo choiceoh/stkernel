@@ -74,7 +74,8 @@ class BurstDecode(AsyncDecode):
     def reserve_steps(self, seq):
         e = self.e
         ends = e.ends.get(seq, e.eos)
-        return self.iterations if e.limits[seq][1] <= 0 and len(ends) <= self.END_IDS else 1
+        return (self.iterations if e.limits[seq][1] <= 0 and len(ends) <= self.END_IDS
+                and not e.options.get(seq, {}).get("_host_stop") else 1)
 
     def ready_for(self, seqs, slots=None):
         # A second burst could overwrite its readback/stage. Resolve first;

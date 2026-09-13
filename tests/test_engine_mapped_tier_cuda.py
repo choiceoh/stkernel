@@ -34,6 +34,12 @@ class MappedTierCudaTests(unittest.TestCase):
         gc.collect()
         host.fill_(11)
         self.assertTrue(torch.all(host == 11).item())
+        for nbytes in (4096, 8192, 12288, 4096) * 4:
+            host, gpu = allocate(nbytes)
+            self.assertEqual(host.data_ptr() % 4096, 0)
+            gpu.fill_(31)
+            torch.cuda.synchronize()
+            self.assertTrue(torch.all(host == 31).item())
 
     def test_real_nvme_permuted_blocks_extra_tail_and_compressed_restore(self):
         from engine.base.kv_tier import NvmeTier
@@ -45,7 +51,7 @@ class MappedTierCudaTests(unittest.TestCase):
                     round_trip(self, tier, "cuda")
                     if tier.snapshot_cache is not None:
                         tier.snapshot_cache.clear()
-                    self.assertEqual(tier.close(), 8192 if mapped else 16384)
+                    self.assertEqual(tier.close(), 8192+4095 if mapped else 16384)
                     self.assertEqual(tier.close(), 0)
                 finally:
                     tier.close()

@@ -1,0 +1,12 @@
+{
+  "scope": "CUDA slot reuse and FP8 projection with synthetic peers; not NIC or serving speed proof",
+  "tests": 1,
+  "skipped": 0,
+  "seconds": 5.62528579699574,
+  "source_sha256": {
+    "engine/kernels/prefill_collectives/tiles.py": "8267aa901732f7bb14e9def65a81462582c35305eeb7a30880a3ad4f76c69329",
+    "engine/kernels/prefill_collectives/__init__.py": "87ddc926c428290b71054bfe67794d9dbfcf4d0bee63ef74cac792dd84fdb80e",
+    "engine/profiles/glm53/net.py": "90c880f594eb936974e5816234139cd34d587af1c0751efd94f4682ebaf4ec4c",
+    "tests/test_engine_prefill_tiles_cuda.py": "ba9d34fb22d47c4bd8285f05bedc864f896d91758729dd7b410742870a90eb85"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "scope": "SM121a compilation only; no CUDA context",
+  "result": {
+    "module": "st_mapped_staging_5612bc3c35e5d6d1e53f857c"
+  },
+  "seconds": 34.309182705997955,
+  "source_sha256": {
+    "engine/kernels/mapped_staging/buffer.cu": "fea2f7fcc66eda670af8f7dc94dc74f69aa9ef64a935e7c32573cdaf2dc2cc22",
+    "engine/kernels/mapped_staging/__init__.py": "7b3d19f726ac397d10552c5ffaecd3cd397f1e6c23af13c7dbad4f33a888f0ba",
+    "engine/base/kv_tier.py": "09c047d5bf05981d71b7d5c3f6355b7082148f9c696846648aa51f4c81721370",
+    "tests/test_engine_mapped_tier_cuda.py": "a7fcc5dfc2c2702dbb8c37178ab3b71fd5031412ac032937238d9a0a2a3c052b"
+  }
+}

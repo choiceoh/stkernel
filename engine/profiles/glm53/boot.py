@@ -551,7 +551,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                                                              snapshot_cache_bytes=PREFIX_COMPRESSED_BYTES,
                                                              state_format=state_format, mapped_staging=nvme_mapped_staging))
                 recorder.gauge("nvme_mapped_staging", int(nvme_mapped_staging))
-                recorder.gauge("nvme_staging_saved_bytes", (tier.stage_bytes + prefix_tier.tier.stage_bytes)
+                recorder.gauge("nvme_staging_saved_bytes", (tier.stage_bytes + prefix_tier.tier.stage_bytes
+                               - tier.staging_padding_bytes - prefix_tier.tier.staging_padding_bytes)
                                if nvme_mapped_staging else 0)
             prefix = PrefixCache(F.block, engine.prefill_chunk, snapshots)      # boundaries = every 768 block (base/prefix.py)
             # Reducing hot slots must not also halve the metadata budget for

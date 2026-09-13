@@ -13,11 +13,15 @@ std::vector<at::Tensor> mapped_pair(int64_t bytes) {
   TORCH_CHECK(p.major == 12 && p.minor == 1 && p.multiProcessorCount == 48 &&
               p.unifiedAddressing && p.canMapHostMemory,
               "mapped staging requires GB10 SM121 with host mapping and UVA");
-  void *host = nullptr, *mapped = nullptr;
-  C10_CUDA_CHECK(cudaHostAlloc(&host, bytes, cudaHostAllocMapped | cudaHostAllocPortable));
-  auto owner = std::shared_ptr<void>(host, [](void* ptr) { cudaFreeHost(ptr); });
-  C10_CUDA_CHECK(cudaHostGetDevicePointer(&mapped, host, 0));
-  TORCH_CHECK(reinterpret_cast<uintptr_t>(host) % 4096 == 0, "host staging is not page aligned");
+  void *raw = nullptr, *mapped_base = nullptr;
+  // CUDA host allocations can be sub-page aligned on GB10. O_DIRECT needs
+  // the payload itself aligned; retain/free the original allocation base.
+  C10_CUDA_CHECK(cudaHostAlloc(&raw, bytes + 4095, cudaHostAllocMapped | cudaHostAllocPortable));
+  auto owner = std::shared_ptr<void>(raw, [](void* ptr) { cudaFreeHost(ptr); });
+  C10_CUDA_CHECK(cudaHostGetDevicePointer(&mapped_base, raw, 0));
+  auto offset = (-reinterpret_cast<uintptr_t>(raw)) & uintptr_t(4095);
+  void* host = static_cast<char*>(raw) + offset;
+  void* mapped = static_cast<char*>(mapped_base) + offset;
   // Either alias can outlive the other. Their deleters share the allocation;
   // the GPU alias is not an independently allocated CUDA storage block.
   auto cpu = at::from_blob(host, {bytes}, [owner](void*) {},
