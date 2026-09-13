@@ -1,5 +1,6 @@
 """The KDA ring timing lane (probes/engine_kda_ring_bench.py): what the CPU can pin -- the lane is one the admitted
 kernel check dispatches, and the byte and rate arithmetic its answer is read by."""
+import ast
 from pathlib import Path
 import sys
 import unittest
@@ -11,7 +12,10 @@ sys.path.insert(0, str(ROOT))
 class RingBenchTests(unittest.TestCase):
     def test_the_kernel_check_admits_and_dispatches_the_lane(self):
         source = (ROOT / "probes/engine_kernel_check.py").read_text()
-        self.assertIn('"kda_ring_bench"}, selected', source)
+        admitted = next(node.comparators[0] for node in ast.walk(ast.parse(source))
+                        if isinstance(node, ast.Compare) and isinstance(node.left, ast.Name)
+                        and node.left.id == 'selected' and isinstance(node.ops[0], ast.LtE))
+        self.assertIn('kda_ring_bench', ast.literal_eval(admitted))
         self.assertIn('if "kda_ring_bench" in selected:', source)
         self.assertIn("from probes.engine_kda_ring_bench import bench", source)
 

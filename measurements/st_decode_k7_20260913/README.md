@@ -27,8 +27,8 @@ Missing or mixed MLP declarations fail before measurement.
 
 ## Validation
 
-- Six CPU checks cover K=7 scope, weight-family selection, override restoration,
-  failed-arm continuation and the native resource report parser.
+- Eight CPU checks cover K=7 scope, weight-family selection, override restoration,
+  failed-arm continuation, native resource reporting and ring-lane admission/accounting.
 - `native-compile.json`: complete CUDA/Torch extension build on the pinned
   ST image, with CUDA hidden. Source SHA256 is bound in the report.
 - `k7-triton-compile.json`: 11 SM121 compilations, including both input strides
