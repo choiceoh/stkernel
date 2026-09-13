@@ -47,7 +47,7 @@ def kernel_shape(c: "dict | None" = None, tp: int = 4, spec_k: int = 1) -> "Kern
     whole experts, so `inter_local` is the model's `inter`), the shared expert TP-sharded. GDN's
     decay is per head; the checkpoint is NVFP4 (D5) with a plain gated SiLU, so the MoE lane is
     admitted for `silu` without a clamp. `spec_k` is the MTP head's one draft. A width the config
-    lacks (the shared expert's) counts as 0: that lane is not served for this model.
+    lacks (the shared expert's) counts as 0: the dense lane is then judged on the projections' width alone.
     """
     from engine.base.kernel_shape import Attention, Comm, Indexer, KernelShape, LinearAttention, MoE
     c = text_config() if c is None else c

@@ -548,6 +548,11 @@ class DenseGlueTests(unittest.TestCase):
             self.assertIsNone(layer.slot_writer(4))
             aligned = dense.PaddedDenseLinear(torch.randn(8, 512, dtype=torch.bfloat16))
             self.assertEqual((aligned.pad, aligned.cols), (0, 512))
+            self.assertEqual((dense.padded_columns(576), dense.padded_columns(512), dense.padded_columns(20480)), (640, 512, 20480))
+            with self.assertRaisesRegex(ValueError, "widest K"):
+                dense.padded_columns(20500)
+            with self.assertRaisesRegex(ValueError, r"\[N, K\]"):
+                dense.PaddedDenseLinear(torch.zeros(4, 4, 576, dtype=torch.bfloat16))
             with self.assertRaisesRegex(ValueError, "Hessians"):
                 dense.PaddedDenseLinear(weight, hessians=torch.eye(576))
             with self.assertRaisesRegex(ValueError, "widest K"):

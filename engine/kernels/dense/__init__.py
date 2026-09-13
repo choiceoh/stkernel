@@ -50,6 +50,15 @@ TILE = 4096                 # one GPTQ tile of K: a wider weight is packed as a 
 KMAX = DENSE_KMAX           # the decode kernel's widest K (kernels.cu KBLK_LIMIT): the drafter's fc, whole
 
 
+def padded_columns(cols: int) -> int:
+    """The input width PaddedDenseLinear packs a `cols`-wide weight at: the next multiple of DENSE_ALIGN. The arena a
+    preshard reserves for such a projection is `packed_nbytes(rows, padded_columns(cols))`."""
+    why = dense_glue_refusal(cols)
+    if why is not None:
+        raise ValueError(f"PaddedDenseLinear: {why}")
+    return -(-cols // DENSE_ALIGN) * DENSE_ALIGN
+
+
 def packed_nbytes(rows, cols, *, prefill=True):
     """Aligned resident bound for W4 tiles (folded or not) plus optional FP8.
 
@@ -324,18 +333,20 @@ class PaddedDenseLinear(DenseLinear):
     at the call; rows are padded inside the pack already. Exact: a zero column adds nothing to a row's product, the W4
     row shift and the real columns' E4M3 group scales are maxima a zero never raises, and both activation quantizers
     (the W4A8 kernel's and fp8.quantize) scale by the amax of their groups. A calibration observer sees the padded input,
-    so the Hessians it sums are the padded weight's -- unpadded `hessians` are refused. The direct producers (the packet
-    projector, the slot writer) read an input the caller has not widened, so they are not offered."""
+    so the Hessians it sums are the padded weight's -- unpadded `hessians` are refused, and a `store` calibrated for
+    `name` at the unpadded width packs round-to-nearest (its `pack` keeps only a Hessian of the weight's width; the
+    layer's `calibrated` says which). `consume_weight` takes the padded weight's storage, `packed_nbytes(rows,
+    padded_columns(cols))` wide. The direct producers (the packet projector, the slot writer) read an input the caller
+    has not widened, so they are not offered."""
 
     def __init__(self, weight, *, prefill=True, hessians=None, store=None, name=None, smooth=None):
-        why = dense_glue_refusal(weight.shape[-1]) if weight.ndim == 2 else "a dense weight is [N, K]"
-        if why is not None:
-            raise ValueError(f"PaddedDenseLinear: {why}")
+        if weight.ndim != 2:
+            raise ValueError("PaddedDenseLinear: a dense weight is [N, K]")
         if hessians is not None:
             raise ValueError("PaddedDenseLinear takes no unpadded Hessians: calibrate at the padded width "
                              "(its observer sees the padded input)")
         self.input_cols = weight.shape[1]
-        self.pad = -self.input_cols % DENSE_ALIGN
+        self.pad = padded_columns(self.input_cols) - self.input_cols
         if self.pad:
             weight = torch.nn.functional.pad(weight, (0, self.pad))
             if smooth is not None:

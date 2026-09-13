@@ -28,7 +28,8 @@ Every layer also names what serves it (`Serve`), fastest first: the lane's own k
 compiled kernel reached through an exact adapter that pads, groups, packs, widens or pieces the tensors (glue), a
 shape-generic fast kernel that computes the same math (generic), or nothing fast (none) -- each judged or not. The
 engine/modules oracles judge them; they are never a serving candidate. The glue rules -- when an adapter can put a
-shape on a compiled kernel -- live here beside the cells, and the adapters refuse by them.
+shape on a compiled kernel -- live here beside the cells, and the adapters refuse by them: a layer the table serves by
+glue is one its adapter admits, and an operation variant not yet established serves nothing until it is.
 """
 from __future__ import annotations
 
@@ -286,7 +287,7 @@ def _recipe_indexer_compress(i):
 def _recipe_mhc_variant(shape, lane):
     """The work for a hyper-connection form the MK segment and the TileLang mixes do not compute."""
     if mhc_v41_refusal(shape) is not None:
-        return _recipe_mhc(shape)
+        return _recipe_mhc(shape, seam="v41")             # the V4.1 seam lacks the width or hc, not the form
     seam = ("engine/kernels/dense/mhc.MHCV41 wraps the megakernel's V4.1 seam (run_mhc_v41): the previous sublayer's "
             "post and comb mixed into the residual, this sublayer's split-sinkhorn mixes projected from it, the layer "
             "input collapsed by the previous sublayer's pre, and this pre carried to the next call")
@@ -314,27 +315,34 @@ def _recipe_indexer(i):
                   "cells.INDEXER_HEAD_DIM admits D and the wrappers pass it", "days")
 
 
-def _recipe_mhc(shape):
+def _recipe_mhc(shape, seam="mhc"):
+    """The work for a hyper-connection width or hc the compiled segment lacks: `seam` "mhc" is the MK segment (run_mhc,
+    GLM-5.3's form), "v41" the megakernel's V4.1 seam (run_mhc_v41, the split-sinkhorn form the MHCV41 glue serves)."""
+    v41 = seam == "v41"
+    judge = (f"{_GLUE_TEST} on {_GPU} against probes/mk_mhc_geometry_bench.py v41_component_reference (pooled and "
+             "worst-token rel <= 1e-3)" if v41 else
+             "tests/test_engine_mk_mhc.py vs modules/hyper_connection.mhc_pre/mhc_post (rel < 0.006, captured replay)")
+    served = "MHCV41 serves it" if v41 else "the D17 probe boots"
     if shape.hc != MHC_HC:
         return Recipe("rewrite", "engine/kernels/dense/kernels.cu (HC, NOUT = HC*(2+HC), the pmix strides)",
-                      f"HC {MHC_HC} is a compile-time constant across the whole mHC segment; hc {shape.hc} is a segment "
-                      "rewrite, or the shape-generic TileLang mixes for decode as well, at their own measured cost",
-                      "tests/test_engine_mk_mhc.py vs modules/hyper_connection.mhc_pre/mhc_post (rel < 0.006, captured replay)",
-                      "the segment serves the new hc and the D17 probe boots", "days")
+                      f"HC {MHC_HC} is a compile-time constant across the whole mHC segment, the V4.1 seam included; hc "
+                      f"{shape.hc} is a segment rewrite" + ("" if v41 else ", or the shape-generic TileLang mixes for decode "
+                                                               "as well, at their own measured cost"),
+                      judge, f"the segment serves the new hc and {served}", "days")
     if shape.hidden % MHC_HCHUNK:
         return Recipe("rewrite", "engine/kernels/dense/kernels.cu (HCHUNK, NCHUNK, MHC_EPT)",
                       f"hidden {shape.hidden} is not a multiple of {MHC_HCHUNK}: NCHUNK = hidden/{MHC_HCHUNK} and MHC_EPT = "
                       "hidden/256 threads would not be integral, so the segment would need a tail block",
-                      "tests/test_engine_mk_mhc.py vs modules/hyper_connection.mhc_pre/mhc_post (rel < 0.006, captured replay)",
-                      "the segment serves the width and the D17 probe boots", "days")
-    return Recipe("instance", "engine/kernels/dense/kernels.cu (HIDDEN, HIDDEN_V41, mk_mhc_launch<HID>, the TORCH_CHECK on "
-                  "hidden) and cells.MHC_HIDDEN",
+                      judge, f"the segment serves the width and {served}", "days")
+    return Recipe("instance", "engine/kernels/dense/kernels.cu (HIDDEN, HIDDEN_V41, "
+                  + ("mk_mhc_v41_launch<HID>, the hidden TORCH_CHECK in mk_run_mhc_v41" if v41 else
+                     "mk_mhc_launch<HID>, the TORCH_CHECK on hidden") + ") and cells.MHC_HIDDEN",
                   f"add an instance for hidden {shape.hidden}: NCHUNK = {shape.hidden // MHC_HCHUNK} and MHC_EPT = "
-                  f"{shape.hidden // 256} are integral (5120 was added this way, PR #518); engine/kernels/dense/mhc.py then "
-                  "admits it through cells.MHC_HIDDEN",
-                  f"tests/test_engine_mk_mhc.py vs modules/hyper_connection.mhc_pre/mhc_post (rel < 0.006, captured replay) and "
-                  f"probes/mk_mhc_geometry_bench.py on {_GPU}",
-                  "cells.MHC_HIDDEN lists the width and the D17 probe boots", "hours")
+                  f"{shape.hidden // 256} are integral (5120 was added this way, PR #518); "
+                  + ("engine/kernels/dense/mhc.MHCV41" if v41 else "engine/kernels/dense/mhc.py") + " then admits it "
+                  "through cells.MHC_HIDDEN",
+                  judge + ("" if v41 else f" and probes/mk_mhc_geometry_bench.py on {_GPU}"),
+                  f"cells.MHC_HIDDEN lists the width and {served}", "hours")
 
 
 def _recipe_mhc_measure(shape):
@@ -370,8 +378,17 @@ def _recipe_prefill_measure(c):
                   f"cells.PREFILL_MEASURED_HIDDEN lists {c.hidden} with the run's record", "hours")
 
 
+def _dense_widths(shape, m) -> "tuple[list[tuple[str, int]], str]":
+    """The input widths the dense lane packs -- the projections at hidden and, when the model has one, the dense or
+    shared MLP's down projection -- and the phrase the table asks with."""
+    widths = [("hidden", shape.hidden)] + ([("dense intermediate", m.dense_inter_local)] if m.dense_inter_local else [])
+    asked = ", ".join(f"{name} {width}" for name, width in widths)
+    return widths, asked + ("" if m.dense_inter_local else " (no dense or shared MLP: the projections alone)")
+
+
 def _recipe_dense(shape, m):
-    unaligned = [c for c in (shape.hidden, m.dense_inter_local) if c % DENSE_ALIGN]
+    widths, asked = _dense_widths(shape, m)
+    unaligned = [width for _, width in widths if width % DENSE_ALIGN]
     too_wide = [why for why in map(dense_glue_refusal, unaligned) if why]
     if not too_wide:
         return Recipe("wire", "engine/profiles/<profile>/lanes.py (bind engine/kernels/dense.PaddedDenseLinear where "
@@ -379,7 +396,7 @@ def _recipe_dense(shape, m):
                       f"PaddedDenseLinear zero-extends the weight to a multiple of {DENSE_ALIGN} columns before packing and "
                       "the input at the call (rows are padded inside the pack already). Exact: a zero column adds nothing, "
                       "and neither the W4 row shift, the real columns' group scales nor the amax activation scales see it. "
-                      f"Asked hidden {shape.hidden}, dense intermediate {m.dense_inter_local}",
+                      f"Asked {asked}",
                       f"{_GLUE_TEST} and tests/test_engine_dense.py on {_GPU}",
                       "the profile's lanes bind the padded projections", "hours")
     return Recipe("rewrite", "engine/kernels/dense/kernels.cu (KBLK_LIMIT) and cells.DENSE_KMAX",
@@ -481,26 +498,29 @@ DSV4_SINK_HEAD, DSV4_SINK_MAX_HEADS = 512, 128
 
 
 def _serve_attention(a, i):
-    """The fastest kernel for a full attention the MLA lane refuses."""
+    """The fastest kernel for a full attention the MLA lane refuses. An attention whose sink is not established has
+    nothing fast: the adapters refuse it (mla_glue_refusal), so the note names the candidate and the establish recipe
+    is the work."""
     qsa = i is not None and i.compress == "qsa"
-    unknown = "; valid only once the establish recipe finds no sink" if a.sink is None else ""
+    qsa_op = ("qsa_sparse_paged_attention in overlay/modules/qwen38_qsa/ops_qsa.py (vLLM's Triton QSA sparse paged GQA "
+              "attention, the kernel that served Qwen3.8 in the vLLM stack; to port)")
     if a.kind != "mla":
+        packed = 2 * a.head_dim <= MLA_LATENT
+        if a.sink is None:
+            candidate = ("engine/kernels/mla/glue.gqa" if packed else qsa_op if qsa else
+                         "flashinfer's paged decode and prefill (engine/INVENTORY.md)")
+            return _nothing(f"the sink decides which kernel computes this attention; establish it first -- with no sink, "
+                            f"{candidate} serves it")
         if a.sink:
             return _nothing("no GQA kernel that takes sinks is named in the repo or in engine/INVENTORY.md")
-        if 2 * a.head_dim <= MLA_LATENT:
+        if packed:
             return _serve(GLUE, "engine/kernels/mla/glue.gqa (the megakernel's sparse MLA with each KV head's key and "
                           "value packed side by side into its latent)", False,
                           "exact arithmetic, but the KV cache becomes the latent's one-scale e4m3"
-                          + ("; the BF16-KV alternative is vLLM's Triton QSA op (overlay/modules/qwen38_qsa/ops_qsa.py "
-                             "qsa_sparse_paged_attention, the kernel that served Qwen3.8 in the vLLM stack; to port)"
-                             if qsa else "") + unknown)
+                          + (f"; the BF16-KV alternative is {qsa_op}" if qsa else ""))
         if qsa:
-            return _serve(GENERIC, "qsa_sparse_paged_attention in overlay/modules/qwen38_qsa/ops_qsa.py (vLLM's Triton QSA "
-                          "sparse paged GQA attention, the kernel that served Qwen3.8 in the vLLM stack; to port)", False,
-                          "judge it against modules/sparse_attention.gqa_sparse over the indexer's selected positions"
-                          + unknown)
-        if a.sink is None:
-            return _nothing("the sink decides which kernel computes this attention; establish it first")
+            return _serve(GENERIC, qsa_op, False,
+                          "judge it against modules/sparse_attention.gqa_sparse over the indexer's selected positions")
         return _serve(GENERIC, "flashinfer BatchDecodeWithPagedKVCacheWrapper and BatchPrefillWithPagedKVCacheWrapper (in "
                       "the image, engine/INVENTORY.md)", False, "never judged in this engine")
     if a.sink is None:
@@ -668,12 +688,12 @@ def admission(shape) -> "list[Verdict]":
                    _recipe_prefill_measure(c), _serve(SPECIALIZED, collectives, False, "its checks build 4096-wide rows"))
 
     dense = "engine/kernels/dense (W4A8 decode, FP8 prefill)"
-    if m.dense_inter_local == 0:
-        pass                                           # a model without a dense or shared MLP has no dense lane to judge
-    elif shape.hidden % DENSE_ALIGN or m.dense_inter_local % DENSE_ALIGN:
-        unaligned = [c for c in (shape.hidden, m.dense_inter_local) if c % DENSE_ALIGN]
-        refuse("dense", f"dense W4 tiles need {DENSE_ALIGN}-aligned columns; asked hidden {shape.hidden}, dense intermediate "
-                        f"{m.dense_inter_local}", _recipe_dense(shape, m),
+    # the projections pack K = hidden whatever the MLPs are; a model without a dense or shared MLP (dense_inter_local 0,
+    # engine/base/kernel_shape.MoE) is judged on that width alone
+    widths, asked = _dense_widths(shape, m)
+    unaligned = [width for _, width in widths if width % DENSE_ALIGN]
+    if unaligned:
+        refuse("dense", f"dense W4 tiles need {DENSE_ALIGN}-aligned columns; asked {asked}", _recipe_dense(shape, m),
                _serve(GLUE, "engine/kernels/dense.PaddedDenseLinear (the W4A8/FP8 lane over zero-padded columns)", False,
                       "exact: zero weight columns and a zero-extended input ("
                       + ", ".join(f"{c} -> {-(-c // DENSE_ALIGN) * DENSE_ALIGN}" for c in unaligned) + "); unjudged on a GPU")

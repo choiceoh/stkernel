@@ -24,8 +24,13 @@ What is not exact: the KV cache is the latent's one-scale e4m3, so a model whose
 served FP8 KV (the quality gate decides). A softmax with a sink term is not this kernel's math; `check` refuses it by
 the rule the wizard's table uses (cells.mla_glue_refusal).
 
+`ckv_scale` keeps the kernel's meaning: the cache row times it is the latent (`mla_decode_ref`). `pad_rows` and
+`pack_kv` produce the latent itself, what a writer stores at ckv_scale 1 (as engine/profiles/glm53/net.py stores its
+latent); a writer that stores rows divided by a scale passes that scale.
+
 `attend` is the kernel call, `mla_decode` once `arm()` has armed it; a test hands a torch twin instead. It receives
-[T, MLA_HEADS, MLA_LATENT] contiguous queries and the caller's cache, slots, lens, scales and a contiguous `out`.
+[T, MLA_HEADS, MLA_LATENT] contiguous queries and the caller's cache, slots, lens, scales and a contiguous `out`, and
+writes `out`; its return value is not read.
 """
 from __future__ import annotations
 
@@ -41,7 +46,7 @@ def check(attention=None) -> None:
         attention = bound().attention
     why = mla_glue_refusal(attention)
     if why is not None:
-        raise RuntimeError(f"MLA glue: {why}; the bound kernel shape asks for {attention}")
+        raise RuntimeError(f"MLA glue: {why}; the attention asks for {attention}")
 
 
 def arm() -> None:
@@ -94,7 +99,8 @@ def _groups(q, ckv, slots, lens, sm_scale, ckv_scale, attend):
     t, h, w = q.shape
     if (h, w) == (MLA_HEADS, MLA_LATENT):
         out = q.new_empty(t, MLA_HEADS, MLA_LATENT)
-        return attend(q.contiguous(), ckv, slots, lens, sm_scale, ckv_scale, out=out)
+        attend(q.contiguous(), ckv, slots, lens, sm_scale, ckv_scale, out=out)
+        return out
     groups = -(-h // MLA_HEADS)
     wide = q.new_zeros(groups, t, MLA_HEADS, MLA_LATENT)     # each [g] is a contiguous [T, MLA_HEADS, MLA_LATENT]
     for g in range(groups):

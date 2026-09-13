@@ -671,7 +671,7 @@ class RecipeTests(unittest.TestCase):
             expected = [v.lane for v in cells.plan(cells.admission(qwen_shape()))]
             self.assertEqual(doc["plan"], expected)
             self.assertEqual(doc["counts"], {"admitted": 2, "unmeasured": 5, "refused": 6})
-            self.assertEqual(doc["serving"], {"specialized": 4, "glue": 4, "generic": 2, "none": 2, "glue_judged": 0,
+            self.assertEqual(doc["serving"], {"specialized": 4, "glue": 3, "generic": 2, "none": 3, "glue_judged": 0,
                                               "generic_judged": 1})
             self.assertEqual(ks.from_dict(doc["shape"]), qwen_shape())
             self.assertEqual(doc["record"], str(ranks / ks.RECORD))
@@ -679,7 +679,7 @@ class RecipeTests(unittest.TestCase):
             self.assertEqual(set(by_lane["mhc_decode"]["recipe"]), {"kind", "where", "how", "judge", "done", "cost"})
             self.assertIsNone(by_lane["device"]["recipe"])
             self.assertIsNone(by_lane["device"]["serve"])
-            self.assertEqual((by_lane["mla"]["serve"]["tier"], by_lane["mla"]["serve"]["judged"]), ("glue", False))
+            self.assertEqual((by_lane["mla"]["serve"]["tier"], by_lane["mla"]["serve"]["judged"]), ("none", False))
             record = ks.read_record(ranks)
             self.assertEqual(record["plan"], expected)
             self.assertEqual([cells.from_dict(v) for v in record["admission"]], cells.admission(qwen_shape()))
@@ -710,7 +710,7 @@ class RecipeTests(unittest.TestCase):
             with contextlib.redirect_stdout(out):
                 self.assertEqual(ks.main(["show", "--ranks", str(ranks)]), 0)
             self.assertIn("older cells", out.getvalue())
-            self.assertIn("serving: 4 specialized, 4 glue", out.getvalue())
+            self.assertIn("serving: 4 specialized, 3 glue", out.getvalue())
 
 
 class ServeTests(unittest.TestCase):
@@ -768,17 +768,21 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(cells.serving(list(d.values())), {"specialized": 2, "glue": 3, "generic": 3, "none": 1,
                                                             "glue_judged": 0, "generic_judged": 1})
         qwen = {lane: (v.serve.tier, v.serve.judged) for lane, v in self.verdicts(qwen_shape()).items() if v.serve}
-        self.assertEqual(qwen, {"mla": (L, False), "indexer": (G, False), "mhc_decode": (N, False), "mhc_prefill": (N, False),
+        self.assertEqual(qwen, {"mla": (N, False), "indexer": (G, False), "mhc_decode": (N, False), "mhc_prefill": (N, False),
                                 "oneshot": (S, True), "prefill_collectives": (S, False), "dense": (S, True),
                                 "kda_recurrent": (L, False), "kda_ring": (L, False), "kda_chunk": (L, False),
                                 "moe": (S, False), "universal": (G, True)})
         q = self.verdicts(qwen_shape())
-        self.assertIn("glue.gqa", q["mla"].serve.kernel)                                 # 256 + 256 fill the 512 latent
-        self.assertIn("qsa_sparse_paged_attention", q["mla"].serve.note)                 # the BF16-KV alternative, named
-        self.assertIn("finds no sink", q["mla"].serve.note)
+        # its sink is not established, so nothing serves the attention yet; the note names the glue that will
+        self.assertIn("establish it first", q["mla"].serve.note)
+        self.assertIn("engine/kernels/mla/glue.gqa", q["mla"].serve.note)               # 256 + 256 fill the 512 latent
+        established = self.verdicts(replace(qwen_shape(), attention=replace(qwen_shape().attention, sink=False)))
+        self.assertEqual(established["mla"].serve.tier, L)
+        self.assertIn("glue.gqa", established["mla"].serve.kernel)
+        self.assertIn("qsa_sparse_paged_attention", established["mla"].serve.note)      # the BF16-KV alternative, named
         self.assertIn("recurrent_decay_ring", q["kda_ring"].serve.kernel)
         self.assertIn("chunk_kda_with_decay", q["kda_chunk"].serve.kernel)
-        self.assertEqual(cells.serving(list(q.values())), {"specialized": 4, "glue": 4, "generic": 2, "none": 2,
+        self.assertEqual(cells.serving(list(q.values())), {"specialized": 4, "glue": 3, "generic": 2, "none": 3,
                                                             "glue_judged": 0, "generic_judged": 1})
 
     def test_the_tier_follows_the_refusal(self):
@@ -794,6 +798,11 @@ class ServeTests(unittest.TestCase):
                             "BatchDecodeMlaWithPagedKVCacheWrapper", ""),
             "unknown sink": (attention("mla", heads=16, head_dim=512, sink=None), "mla", N, "", "establish"),
             "gqa": (attention("gqa", heads=8, head_dim=128, kv_heads=2, sink=False), "mla", L, "glue.gqa", "e4m3"),
+            # an unestablished sink serves nothing, whatever would fit: the adapter refuses it (cells.mla_glue_refusal)
+            "gqa unknown sink": (attention("gqa", heads=8, head_dim=128, kv_heads=2, sink=None), "mla", N, "",
+                                 "with no sink, engine/kernels/mla/glue.gqa"),
+            "wide gqa unknown, qsa": (replace(attention("gqa", heads=8, head_dim=512, kv_heads=2, sink=None), indexer=qsa),
+                                      "mla", N, "", "with no sink, qsa_sparse_paged_attention"),
             "wide gqa": (attention("gqa", heads=8, head_dim=512, kv_heads=2, sink=False), "mla", G,
                          "BatchDecodeWithPagedKVCacheWrapper", ""),
             "wide gqa, qsa": (replace(attention("gqa", heads=8, head_dim=512, kv_heads=2, sink=False), indexer=qsa),
@@ -825,11 +834,38 @@ class ServeTests(unittest.TestCase):
         judged = {name: self.verdicts(shape)[lane].serve.judged for name, (shape, lane, *_) in cases.items()}
         self.assertEqual({n for n, j in judged.items() if j}, {"tp2", "dense past KMAX", "hidden2560"})
 
-    def test_a_model_without_a_dense_mlp_has_no_dense_verdict(self):
-        # zero is the descriptor's "no dense or shared MLP" (engine/profiles/qwen38/shapes.py); nothing to serve (Codex on #847)
-        verdicts = self.verdicts(RecipeTests.SHAPES["no_dense"])
-        self.assertNotIn("dense", verdicts)
-        self.assertIn("dense", self.verdicts(MEASURED))
+    def test_a_model_without_a_dense_mlp_is_judged_on_its_projections(self):
+        from engine.kernels import cells
+        # zero is the descriptor's "no dense or shared MLP" (engine/profiles/qwen38/shapes.py): the lane still packs the
+        # projections at K = hidden, so that width alone is judged -- not a nonexistent MLP width (Codex on #847)
+        dense = self.verdicts(RecipeTests.SHAPES["no_dense"])["dense"]
+        self.assertEqual((dense.status, dense.serve.tier), (cells.ADMITTED, cells.SPECIALIZED))
+        self.assertNotIn("dense intermediate", dense.why)
+        unaligned = self.verdicts(replace(RecipeTests.SHAPES["no_dense"], hidden=4000, comm=Comm(4, 4000),
+                                          moe=replace(RecipeTests.SHAPES["no_dense"].moe, hidden=4000)))["dense"]
+        self.assertEqual((unaligned.status, unaligned.serve.tier, unaligned.recipe.kind), (cells.REFUSED, cells.GLUE, "wire"))
+        self.assertIn("projections alone", unaligned.why)
+        self.assertIn("4000 -> 4096", unaligned.serve.note)
+        self.assertIn("dense intermediate 3072", self.verdicts(RecipeTests.SHAPES["hidden4000"])["dense"].why)
+
+    def test_the_v41_seam_gets_its_own_instance_recipe(self):
+        """A split-sinkhorn model at a width the seam is not compiled for asks for a V4.1 instance, judged by the V4.1
+        reference -- not for the MK segment's mhc instance."""
+        from engine.kernels import cells
+        for lane in ("mhc_decode", "mhc_prefill"):
+            with self.subTest(lane=lane):
+                v = self.verdicts(RecipeTests.SHAPES["hc_split2560"])[lane]
+                self.assertEqual((v.status, v.serve.tier, v.recipe.kind, v.recipe.cost), (cells.REFUSED, cells.NONE, "instance", "hours"))
+                self.assertIn("mk_mhc_v41_launch", v.recipe.where)
+                self.assertIn("v41_component_reference", v.recipe.judge)
+                self.assertIn("MHCV41", v.recipe.done)
+                self.assertNotIn("mhc_pre/mhc_post", v.recipe.judge)
+        hc8 = self.verdicts(replace(MEASURED, hc=8, hc_variant="split_sinkhorn"))["mhc_decode"]
+        self.assertEqual((hc8.recipe.kind, hc8.recipe.cost), ("rewrite", "days"))
+        self.assertIn("V4.1 seam included", hc8.recipe.how)
+        mhc = self.verdicts(RecipeTests.SHAPES["hidden2560"])["mhc_decode"]        # the mhc form keeps its own names
+        self.assertIn("mk_mhc_launch", mhc.recipe.where)
+        self.assertIn("mhc_pre/mhc_post", mhc.recipe.judge)
 
     def test_the_glue_rules_are_the_adapters_rules(self):
         from engine.kernels import cells

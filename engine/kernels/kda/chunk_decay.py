@@ -25,10 +25,12 @@ def chunk_kda_with_decay(q, k, v, decay, beta, scale=None, initial_state=None, o
     """`chunk_kda_with_fused_gate` with the log-decay itself in place of (raw_g, A_log, g_bias, safe_gate, lower_bound).
 
     q, k [B,T,H,K]; v [B,T,HV,V], HV a multiple of H; `decay` the natural-log decay (<= 0) per head [B,T,HV] or per
-    channel [B,T,HV,K]; beta [B,T,HV] after its sigmoid, as the fused entry takes it. Returns (o [B,T,HV,V], the final
-    state [N,HV,V,K] fp32 or None) and, with `states_at` (ascending FLA_CHUNK_SIZE-chunk indices, one sequence), the
-    fp32 states at those chunk starts [len(states_at),HV,V,K] -- the kernel's [V,K] layout, as the fused entry. Without
-    `out` the output is written over a contiguous `v`'s storage, as the fused entry (and FLA's chunk_kda) does."""
+    channel [B,T,HV,K]; beta [B,T,HV] after its sigmoid, as the fused entry takes it; `initial_state` [N,HV,V,K] fp32
+    in the kernel's [V,K] layout (the lane transposes the engine's [K,V], as it does for the fused entry) or None.
+    Returns (o [B,T,HV,V], the final state [N,HV,V,K] fp32 or None) and, with `states_at` (ascending FLA_CHUNK_SIZE-chunk
+    indices, one sequence), the fp32 states at those chunk starts [len(states_at),HV,V,K] -- the kernel's layout, as
+    the fused entry. Without `out` the output is written over a contiguous `v`'s storage, as the fused entry (and FLA's
+    chunk_kda) does."""
     if q.ndim != 4 or k.shape != q.shape or v.ndim != 4 or v.shape[:2] != q.shape[:2]:
         raise ValueError("chunk decay KDA takes q, k [B,T,H,K] and v [B,T,HV,V]")
     b, t, h, kd = k.shape
