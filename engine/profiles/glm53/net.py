@@ -413,8 +413,12 @@ class Glm53Net:
             conv_ring, rec_ring, slots = caches.kda_rings_rows(L)
             y = self.lanes.conv_ring_rows(qkv_all, p[n + "conv"], conv_ring, slots, step.contexts)
             q, k, v = (t.reshape(1, N, Hl, D) for t in y.split(Hl * D, dim=-1))
-            o = self.lanes.kda_recurrent_ring_rows(q, k, v, g_raw_all[None], beta_all[None], p[n + "A_log"], p[n + "dt_bias"],
-                                                   rec_ring, slots, step.contexts, F.lower_bound)
+            if getattr(caches, "deferred_state", None) is not None:
+                o = caches.verify_kda(L, q, k, v, g_raw_all[None], beta_all[None], p[n + "A_log"], p[n + "dt_bias"],
+                                      step.contexts, F.lower_bound)
+            else:
+                o = self.lanes.kda_recurrent_ring_rows(q, k, v, g_raw_all[None], beta_all[None], p[n + "A_log"], p[n + "dt_bias"],
+                                                       rec_ring, slots, step.contexts, F.lower_bound)
             core = o[0]
         else:
             core = None if single_chunk else torch.empty(N, Hl, D, dtype=x.dtype, device=x.device)

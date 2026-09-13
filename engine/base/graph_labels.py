@@ -131,8 +131,16 @@ class Capture:
 
     def finish(self):
         try:
+            # CUDA may expose no graph handle before the first captured node.
+            # A body without semantic scopes never refreshes that initial
+            # frontier. Resolve the completed body's handle before querying
+            # topology; passing the initial null handle poisons the runtime's
+            # last-error state and breaks the next otherwise valid launch.
+            self.frontier()
             if self.error:
                 raise RuntimeError(self.error)
+            if self.graph is None:
+                return  # an empty capture has no nodes to attribute
             ids, parents = _api.topology(self.graph)
             labels = assign(parents, self.spans)
             NODE_LABELS.update({ids[node]: labels.get(node, self.label + '/unmapped') for node in ids})

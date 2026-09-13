@@ -54,7 +54,7 @@ def recurrent_kda_ring_rows(q, k, v, g, beta, a_log, g_bias, ring, slots, contex
     return _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slots, contexts, lower_bound, rows=slots.numel())
 
 
-def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound, *, deferred=False, rows=1):
+def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound, *, deferred=False, rows=1, factors=None):
     _check_cell()
     if any(t.ndim != 4 for t in (q, k, v, g)):
         raise ValueError("ring KDA requires [1,T,H,D] inputs")
@@ -100,9 +100,27 @@ def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound
         if x.data_ptr() < ring_hi and hi > ring_lo:
             raise ValueError("ring writes must not overlap inputs or device indices")
     out = torch.empty(v.shape, dtype=v.dtype, device=v.device)
-    factors = (torch.empty((t, hv, kd), device=q.device, dtype=torch.float32),
-               torch.empty((t, hv, kd), device=q.device, dtype=torch.float32),
-               torch.empty((t, hv, vd), device=q.device, dtype=torch.float32)) if deferred else (None, None, None)
+    if deferred:
+        if ring.dtype != torch.float32:
+            raise ValueError("deferred recurrence preserves only the FP32 state contract")
+        shapes = ((rows*t, hv, kd), (rows*t, hv, kd), (rows*t, hv, vd))
+        if factors is None:
+            factors = tuple(torch.empty(s, device=q.device, dtype=torch.float32) for s in shapes)
+        if len(factors) != 3 or any(x.shape != s or x.device != q.device or x.dtype != torch.float32
+                                   or not x.is_contiguous() for x, s in zip(factors, shapes)):
+            raise ValueError("deferred factors need contiguous FP32 [rows*T,H,D] storage")
+        spans = [(x.data_ptr(), x.data_ptr()+x.numel()*x.element_size()) for x in factors]
+        for i, (lo, hi) in enumerate(spans):
+            reads = (*inputs, a_log, g_bias, *((slot, context) if device_indices else ()))
+            forbidden = [(ring_lo, ring_hi), *spans[:i]]
+            forbidden += [(x.data_ptr(), x.data_ptr()+(1+sum((n-1)*s for n, s in zip(x.shape, x.stride())))*x.element_size())
+                          for x in reads]
+            if any(lo < end and start < hi for start, end in forbidden):
+                raise ValueError("deferred factor writes must not overlap ring, inputs or another factor")
+    else:
+        if factors is not None:
+            raise ValueError("factor storage belongs only to deferred recurrence")
+        factors = (None, None, None)
     bk, bv = triton.next_power_of_2(kd), min(triton.next_power_of_2(vd), 8)
     # BV=16 at seven tokens changed rollback results in the GPU exact gate.
     if h == hv == 16 and kd == vd == 128 and t <= 6:

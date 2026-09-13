@@ -211,7 +211,7 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
             # matrix. Each value tile owns its update vector; tile zero
             # alone owns the shared key/decay vectors. The initial ring
             # row stays untouched until acceptance is known.
-            factor = (i_t * HV + i_hv)
+            factor = ((i_n * T + i_t) * HV + i_hv)
             if i_v == 0:
                 tl.store(deferred_keys + factor * K + o_k, b_k, mask=mask_k)
                 tl.store(deferred_decay + factor * K + o_k, exp(b_gk), mask=mask_k)

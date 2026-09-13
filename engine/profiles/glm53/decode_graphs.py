@@ -79,11 +79,14 @@ class DeviceStep:
 
 
 class GraphCaches:
-    def __init__(self, real, sequence_ids, slots, capacity):
+    def __init__(self, real, sequence_ids, slots, capacity, deferred_state=None):
         self.real, self.sequence_ids, self.slots = real, sequence_ids, slots
         self.F, self.layout = real.F, real.layout
         self.capacity = capacity
         self.candidate_capacity = capacity // real.F.kpool
+        self.deferred_state = deferred_state
+        layers = [layer for layer in real.layers if not real.F.is_dsa(layer)] if deferred_state else []
+        self.deferred_layers = {layer: i for i, layer in enumerate(layers)}
 
     def gather(self):
         # Unreserved pages are masked out of attention by valid pool counts.
@@ -91,6 +94,8 @@ class GraphCaches:
         self.block_table = self.real.block_table.index_select(0, self.sequence_ids).clamp_min(0)
 
     def subset(self, start, end):
+        if self.deferred_state is not None:
+            raise ValueError("deferred state belongs to the complete target batch")
         child = GraphCaches(self.real, self.sequence_ids[start:end], self.slots[start:end],
                             self.capacity)
         child.block_table = self.block_table[start:end]
@@ -114,6 +119,10 @@ class GraphCaches:
         """Every segment's rings at once: the conv and recurrent fields whole, and the step's physical slots in
         segment order -- what net._kda hands the row lanes (one launch per kernel for the whole step)."""
         return self.real._fields["conv", layer], self.real._fields["rec", layer], self.slots
+
+    def verify_kda(self, layer, q, k, v, g, beta, a_log, g_bias, contexts, lower_bound):
+        return self.deferred_state.verify(self.deferred_layers[layer], q, k, v, g, beta, a_log, g_bias,
+                                           self.slots, contexts, lower_bound)
 
     def write_conv(self, layer, slot, context, inputs):
         from engine.kernels.state import write_conv
@@ -258,6 +267,9 @@ class Glm53DecodeGraphs:
         # alone, so sharing the buffer across a row's capacity buckets is what lets one sampler graph
         # serve all of them: 72 sampling graphs become 8 (boot-time study, 2026-09-11).
         self.logits = {}
+        self.deferred_states = {}
+        if self.execution_plan.deferred_kda and (net.lanes.kda_recurrent_ring_rows is None or net.lanes.conv_ring_rows is None):
+            raise ValueError("deferred KDA requires the captured row ring lanes")
         # Replay writes four small arrays per step. Staged through ONE pinned block so
         # each is an async copy on the caller's stream instead of a fresh CPU tensor and
         # a pageable (implicitly synchronizing) transfer. Safe to overwrite between
@@ -278,7 +290,15 @@ class Glm53DecodeGraphs:
             slots = seqs + 1
             contexts = torch.zeros(n, device=device, dtype=torch.int64)
             step = DeviceStep(torch.zeros(n * t, device=device, dtype=torch.int64), contexts, t)
-            return step, seqs, slots, GraphCaches(caches, seqs, slots, capacity), logits_for(n, t)
+            state = None
+            if self.execution_plan.deferred_kda:
+                from engine.kernels.kda.deferred import Batch
+                key = (n, t)
+                if key not in self.deferred_states:
+                    rings = [caches._fields["rec", layer] for layer in caches.layers if not caches.F.is_dsa(layer)]
+                    self.deferred_states[key] = Batch(rings, n, t, block=caches.F.block)
+                state = self.deferred_states[key]
+            return step, seqs, slots, GraphCaches(caches, seqs, slots, capacity, state), logits_for(n, t)
 
         def forward(inputs):
             step, _, _, scratch, logits = inputs
@@ -389,6 +409,11 @@ class Glm53DecodeGraphs:
             slots_in.copy_(slots[:n])
 
         return self.graphs.run(shape, fill)
+
+    def materialize(self, shape, slots, contexts, counts):
+        """Accepted states become canonical before boundaries or the next target replay."""
+        if self.execution_plan.deferred_kda:
+            self.deferred_states[shape[:2]].commit(slots, contexts, counts)
 
 
 class DrafterDecodeGraphs:
