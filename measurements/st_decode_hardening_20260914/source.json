@@ -1,0 +1,18 @@
+{
+  "base": "91280525b1484537dc45933698922b20e61274d3",
+  "scope": "host ownership and component process cleanup; no kernel arithmetic or normal CUDA launch change",
+  "unchanged_sha256": {
+    "engine/kernels/oneshot/dsv4_oneshot_ar.cu": "a3c798a597fffdadb3fec3df5fa53abc5b1bcec3caa09f4b6940a9edb94ea74e",
+    "engine/kernels/oneshot/dsv4_oneshot_transport.h": "dc9943e1c59ed623feb602fbfbf970d40da9800051d437d06a22092e6bb47099",
+    "engine/kernels/moe_output.py": "006d1ab7244f37bfc5f1dfe3b734c0950fa8c02b51d6629994e65492a1068068",
+    "engine/kernels/b12x/b12x_moe.py": "650e49b201baa7823065056ece90606184ddd331f1f4301fe7afd1eff06afce6",
+    "engine/kernels/b12x/moe_dispatch.py": "b0c66b782da7de2e4892e1c1c03e0fec472efbbadad38eea9cdcc966ee0cf739",
+    "engine/kernels/dense/shared_mlp.py": "3fe4eaee2ba200365040dc33a833d9775e8307d469e132f08cc21bc629504415",
+    "engine/profiles/glm53/direct_mhc.py": "255535869f01bc955765ae48bafd96af9e589ac8e68a6f43eb785eaef2fd7087",
+    "engine/profiles/glm53/decode_graphs.py": "20ef92f362ad0248594ce056dc50b3064545398a20c99cd198cbe707c314af86"
+  },
+  "oneshot_build_function_ast_unchanged": true,
+  "gpu_used": false,
+  "queued_session": "st-decode-output-bundle0913v2",
+  "queued_source": "12c9ce9a75b875684c836a9c7f86e2de91043514"
+}
