@@ -1,5 +1,5 @@
-"""Small, explicit draft-only controls; default coefficients preserve the baseline."""
-from dataclasses import dataclass, field
+"""Draft-only controls, including default FP32 projection and fitted-bias discovery."""
+from dataclasses import dataclass, field, replace
 import hashlib
 import json
 import math
@@ -20,9 +20,12 @@ class DraftTuning:
     gptq_damping: dict = field(default_factory=dict)
     request_boundaries: bool = False
     trace_every: int = 0
-    digest: str = 'baseline'
-    selector_projection_fp32: bool = False
+    digest: str = 'selector-fp32-fc-bias-auto-v1'
+    selector_projection_fp32: bool = True
     fc_bias: dict = field(default_factory=dict)
+    fc_bias_auto: bool = True
+    fc_bias_source: str = 'none'
+    fc_bias_status: str = 'unavailable'
 
     def alphas(self, k):
         if not self.selector_alpha:
@@ -34,7 +37,8 @@ class DraftTuning:
     @classmethod
     def from_dict(cls, value):
         fields = {'version', 'selector_alpha', 'smoothing_alpha', 'gptq_damping',
-                  'request_boundaries', 'trace_every', 'evidence', 'selector_projection_fp32', 'fc_bias'}
+                  'request_boundaries', 'trace_every', 'evidence', 'selector_projection_fp32', 'fc_bias',
+                  'fc_bias_auto'}
         if (not isinstance(value, dict) or type(value.get('version')) is not int
                 or value['version'] != 1 or value.keys() - fields):
             raise ValueError('draft tuning requires version 1 and known fields')
@@ -51,13 +55,16 @@ class DraftTuning:
         boundary, trace = value.get('request_boundaries', False), value.get('trace_every', 0)
         if type(boundary) is not bool or type(trace) is not int or not 0 <= trace <= 1_000_000:
             raise ValueError('request_boundaries must be bool; trace_every must be a nonnegative bounded integer')
-        projection = value.get('selector_projection_fp32', False)
-        if type(projection) is not bool:
-            raise ValueError('selector_projection_fp32 must be bool')
+        projection = value.get('selector_projection_fp32', True)
+        auto = value.get('fc_bias_auto', True)
+        if type(projection) is not bool or type(auto) is not bool:
+            raise ValueError('selector_projection_fp32 and fc_bias_auto must be bool')
         from .draft_fc_bias import validate_profile
         bias = validate_profile(value.get('fc_bias', {}))
-        digest = hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
-        return cls(alpha, *maps, boundary, trace, digest, projection, bias)
+        effective = dict(value, selector_projection_fp32=projection, fc_bias_auto=auto)
+        digest = hashlib.sha256(json.dumps(effective, sort_keys=True, allow_nan=False).encode()).hexdigest()
+        return cls(alpha, *maps, boundary, trace, digest, projection, bias, auto,
+                   'profile' if bias else 'none', 'pending' if bias else ('unavailable' if auto else 'disabled'))
 
     def validate(self, facts, dense_names):
         self.alphas(facts.k)
@@ -69,7 +76,7 @@ class DraftTuning:
             raise ValueError('draft tuning names must belong to the prepared draft norms/readers')
 
 
-def load_agreed(path, facts, shapes, comm):
+def load_agreed(path, facts, shapes, comm, *, fc_bias_path=None):
     # Every native draft rank participates, including an empty profile. A
     # missing path on one peer must not skip the other peers' preparation vote.
     tuning, error = DraftTuning(), None
@@ -81,11 +88,18 @@ def load_agreed(path, facts, shapes, comm):
                 raise ValueError('FC bias must cover every TP rank')
     except Exception as exc:
         error = f'{type(exc).__name__}: {exc}'
+    discover_bias = tuning.fc_bias_auto and not tuning.fc_bias and fc_bias_path is not None
     comm.wait_prepared('draft-tuning')
-    reports = comm.gather_objects(dict(digest=tuning.digest if tuning else None, error=error))
+    reports = comm.gather_objects(dict(digest=tuning.digest, error=error, discover_bias=discover_bias))
     errors = [f'rank {i}: {r["error"]}' for i, r in enumerate(reports) if r['error']]
-    if errors or len({r['digest'] for r in reports}) != 1:
-        raise ValueError('draft tuning must agree across ranks: ' + '; '.join(errors or ['different profile digests']))
+    if errors or len({(r['digest'], r.get('discover_bias', False)) for r in reports}) != 1:
+        raise ValueError('draft tuning must agree across ranks: ' + '; '.join(
+            errors or ['different profile digests or FC cache discovery']))
+    if discover_bias:
+        from .draft_fc_bias import load_auto
+        bias, status, artifact_digest = load_auto(fc_bias_path, facts, comm)
+        digest = hashlib.sha256(f'{tuning.digest}:fc-bias-auto:{artifact_digest or status}'.encode()).hexdigest()
+        tuning = replace(tuning, fc_bias=bias, fc_bias_source='auto', fc_bias_status=status, digest=digest)
     return tuning
 
 
@@ -93,14 +107,15 @@ def prepare_store(tuning, store, policy, facts, comm):
     """Refuse a tuned reader that cannot use its calibration; agree errors before allocation."""
     from .drafter import store_name
     from .draft_policy import decode_name
-    if not tuning.smoothing_alpha and not tuning.gptq_damping and not tuning.trace_every and not tuning.fc_bias:
+    explicit_bias = tuning.fc_bias and tuning.fc_bias_source != 'auto'
+    if not tuning.smoothing_alpha and not tuning.gptq_damping and not tuning.trace_every and not explicit_bias:
         return
     error = None
     try:
         import torch
         if tuning.trace_every and not policy.diagnostics:
             raise ValueError('selector trace requires draft diagnostics')
-        if tuning.fc_bias and policy.fc_precision != 'fp8':
+        if explicit_bias and policy.fc_precision != 'fp8':
             raise ValueError('FC bias requires the fixed FP8 decode reader')
         for norm in tuning.smoothing_alpha:
             prefix = norm.rsplit('.', 2)[0] + '.'

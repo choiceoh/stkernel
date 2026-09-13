@@ -67,7 +67,11 @@ class SelfCheckTests(unittest.TestCase):
                     config = Path(getattr(importlib.import_module(module), field)) / 'config.json'
                     if not config.is_file():
                         self.skipTest(f'checkpoint config not installed: {config}')
-                importlib.import_module(name)._selfcheck()
+                default = torch.get_default_dtype()
+                try:
+                    importlib.import_module(name)._selfcheck()
+                finally:                                     # norm, linear and logits set bf16 for their own checks
+                    torch.set_default_dtype(default)         # and must not leave it to every test run after this one
                 ran.append(name)
         self.assertGreater(len(ran), 20, ran)
 
@@ -81,7 +85,11 @@ class SelfCheckTests(unittest.TestCase):
     def test_the_ones_excused_for_a_gpu_pass_when_there_is_one(self):
         for name in sorted(NEEDS_CUDA):
             with self.subTest(module=name):
-                importlib.import_module(name)._selfcheck()
+                default = torch.get_default_dtype()
+                try:
+                    importlib.import_module(name)._selfcheck()
+                finally:
+                    torch.set_default_dtype(default)
 
 
 if __name__ == "__main__":

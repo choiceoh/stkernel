@@ -1,5 +1,8 @@
-"""NVFP4 (W4A4, group 16) expert weights: what the bytes mean, and a reference
-GEMM that consumes them (module).
+"""The MoE family (module): one router, one expert loop, three activations and three ways shared experts join --
+the channel mixer Qwen3.8, GLM-5.3, DeepSeek-V3 / Ling-3.0, MiniMax-M3, Inkling and Kimi K3 share (`MoE`, `Dense`,
+`route`, `apply_experts`, `gated_mlp`, `named`/`experts_of`/`shared_of`; held to transformers on the CPU in
+tests/test_engine_moe_family.py). First, NVFP4 (W4A4, group 16) expert weights: what the bytes mean, and a reference
+GEMM that consumes them.
 
 Qwen3.8's routed experts are the only NVFP4 tensors in its checkpoint
 (hf_quant_config: quant_algo NVFP4, group_size 16, everything else excluded).
@@ -223,42 +226,238 @@ def route_softmax_topk(logits: torch.Tensor, k: int, normalize: bool) -> "tuple[
     return ids, top.to(logits.dtype)
 
 
-class SharedExpertMoE:
-    """A routed MoE with one sigmoid-gated shared expert, as a channel mixer (engine/base/composition.Feature): Qwen3.8's
-    MLP (transformers qwen4_exp Qwen4ExpTextSparseMoeBlock).
+# --------------------------------------------------------------------------
+# the MoE family: one router, one expert loop, the axes the seven models differ on
+# --------------------------------------------------------------------------
 
-    out = sum_k w_k * expert_k(x) + sigmoid(shared_expert_gate(x)) * shared_expert(x), every expert and the shared one a
-    gated MLP act(gate(x)) * up(x) -> down, the router `route_softmax_topk`. Experts add their tokens in ascending expert
-    id, as the reference loop does.
+def gated_mlp(gate: torch.Tensor, up: torch.Tensor, activation) -> torch.Tensor:
+    """The expert nonlinearity on (gate, up) -- the family's three:
 
-    `weights(layer, name)`: gate (the router), shared_expert.gate_proj, shared_expert.up_proj, shared_expert.down_proj,
-    shared_expert_gate. `expert(layer, e)` -> (gate_up [2I, H], down [H, I]) as floats: the transformers fused tensors
-    sliced, or a checkpoint's NVFP4 experts dequantised (`dequant_nvfp4`), whichever the profile holds."""
+        "silu"                       silu(gate) * up                                     (Qwen3.8, DeepSeek, Ling, Inkling)
+        ("swiglu_clamped", limit)    silu(min(gate, limit)) * clamp(up, -limit, limit)   (GLM-5.3: swiglu_limit 10)
+        ("swigluoai", alpha, limit)  (clamp(up) + 1) * g * sigmoid(alpha * g), g = min(gate, limit)   (MiniMax-M3)
+    """
+    if activation == "silu":
+        return torch.nn.functional.silu(gate) * up
+    kind = activation[0]
+    if kind == "swiglu_clamped":
+        limit = activation[1]
+        return torch.nn.functional.silu(gate.clamp(max=limit)) * up.clamp(min=-limit, max=limit)
+    if kind == "swigluoai":
+        alpha, limit = activation[1], activation[2]
+        gate, up = gate.clamp(max=limit), up.clamp(min=-limit, max=limit)
+        return (up + 1.0) * (gate * torch.sigmoid(gate * alpha))
+    raise ValueError(f"activation is 'silu', ('swiglu_clamped', limit) or ('swigluoai', alpha, limit), not {activation!r}")
 
-    def __init__(self, *, experts: int, topk: int, normalize: bool, weights, expert, activation: str = "silu"):
+
+def route(x: torch.Tensor, weight: torch.Tensor, *, score: str, topk: int, bias: "torch.Tensor | None" = None,
+          groups: "tuple[int, int] | None" = None, normalize: bool = True, scaling: float = 1.0, fp32: bool = True,
+          sink: int = 0, sink_scale: "torch.Tensor | None" = None):
+    """The family's router: (ids [N, k] int64, weights [N, k], gammas [N, sink] or None).
+
+    score "softmax": probabilities in fp32 over every expert, the k largest, renormalised when `normalize`, in the
+        logits' dtype (transformers qwen4_exp Qwen4ExpTextTopKRouter).
+    score "sigmoid": sigmoid scores; the CHOICE by score + bias (the correction bias never weights); with `groups`
+        (n_group, topk_group) the choice is confined to the topk_group groups whose top-2 sum is largest
+        (DeepSeek-V3's noaux_tc: deepseek_v3, glm5_next, Ling-3.0); the chosen experts' scores, renormalised when
+        `normalize` (+1e-20 in the denominator as the models write it), times `scaling`. `fp32`: logits and scores
+        in fp32 (deepseek_v3, glm5_next); else the logits in the model dtype and the sigmoid in fp32 (minimax_m3_vl).
+    `sink` > 0: Inkling's shared experts are scored by the router too -- the weight has E + sink rows; the chosen
+        experts' logits and the shared logits normalise together, exp(logsigmoid - logsumexp), times `scaling` and
+        `sink_scale` (the router's global_scale); the last `sink` weights are the shared experts' gammas."""
+    if sink:
+        logits = torch.nn.functional.linear(x, weight)                                             # [N, E + S]
+        scores = torch.sigmoid(logits)
+        routed_scores, routed_logits = scores[:, :-sink], logits[:, :-sink]
+        choice = routed_scores + bias if bias is not None else routed_scores
+        ids = torch.topk(choice, topk, dim=-1, sorted=False).indices
+        chosen = torch.cat([routed_logits.gather(-1, ids), logits[:, -sink:]], dim=-1)
+        log_probs = torch.nn.functional.logsigmoid(chosen)
+        weights = torch.exp(log_probs - torch.logsumexp(log_probs, dim=-1, keepdim=True)) * scaling
+        if sink_scale is not None:
+            weights = weights * sink_scale
+        return ids, weights[:, :topk], weights[:, topk:]
+    if score == "softmax":
+        ids, weights = route_softmax_topk(torch.nn.functional.linear(x, weight), topk, normalize)
+        return ids, weights * scaling if scaling != 1.0 else weights, None
+    if score != "sigmoid":
+        raise ValueError(f"score is 'softmax' or 'sigmoid', not {score!r}")
+    if fp32:
+        logits = torch.nn.functional.linear(x.float(), weight.float())
+    else:
+        logits = torch.nn.functional.linear(x.to(weight.dtype), weight).float()
+    scores = torch.sigmoid(logits)
+    choice = scores + bias.float() if bias is not None else scores
+    if groups is not None:
+        n_group, topk_group = groups
+        experts = weight.shape[0]
+        group_scores = choice.view(-1, n_group, experts // n_group).topk(2, dim=-1).values.sum(dim=-1)
+        group_idx = torch.topk(group_scores, k=topk_group, dim=-1, sorted=False).indices
+        group_mask = torch.zeros_like(group_scores).scatter_(1, group_idx, 1)
+        score_mask = group_mask[:, :, None].expand(-1, n_group, experts // n_group).reshape(-1, experts)
+        choice = choice.masked_fill(~score_mask.bool(), float("-inf"))
+    ids = torch.topk(choice, k=topk, dim=-1, sorted=False).indices
+    weights = scores.gather(1, ids)
+    if normalize:
+        weights = weights / (weights.sum(dim=-1, keepdim=True) + 1e-20)
+    return ids, weights * scaling, None
+
+
+def apply_experts(x: torch.Tensor, ids: torch.Tensor, weights: torch.Tensor, experts: int, expert, activation):
+    """sum_k w_k expert_k(x) over the chosen experts, each a gated MLP `expert(e)` -> (gate_up [2I, H], down [H, I]),
+    experts adding their tokens in ascending id (the reference loop of every transformers MoE)."""
+    linear = torch.nn.functional.linear
+    out = torch.zeros_like(x)
+    mask = torch.nn.functional.one_hot(ids, num_classes=experts).permute(2, 1, 0)
+    for e in torch.greater(mask.sum(dim=(-1, -2)), 0).nonzero():
+        e = int(e[0])
+        slot, tokens = torch.where(mask[e])
+        gate_up, down = expert(e)
+        gate, up = linear(x[tokens], gate_up).chunk(2, dim=-1)
+        y = linear(gated_mlp(gate, up, activation), down) * weights[tokens, slot, None]
+        out.index_add_(0, tokens, y.to(out.dtype))
+    return out
+
+
+class Dense:
+    """A gated MLP as a channel mixer (engine/base/composition.Feature): the dense layers before the MoE ones (GLM-5.3
+    3, DeepSeek 3, Ling-3.0 2, MiniMax-M3 3, Inkling 2), with the family's activation; `scale` (Inkling's global_scale)
+    multiplies the output when the checkpoint has one.
+
+    `weights(layer, name)`: gate_up [2I, H], down [H, I], scale (optional scalar)."""
+
+    def __init__(self, *, activation="silu", weights):
+        gated_mlp(torch.zeros(1), torch.zeros(1), activation)                       # the activation is checked here
+        self.activation, self.weights = activation, weights
+
+    def __call__(self, layer, x, step=None, state=None):
+        linear = torch.nn.functional.linear
+        gate, up = linear(x, self.weights(layer, "gate_up")).chunk(2, dim=-1)
+        y = linear(gated_mlp(gate, up, self.activation), self.weights(layer, "down"))
+        try:
+            scale = self.weights(layer, "scale")
+        except KeyError:
+            return y
+        return y * scale
+
+
+class MoE:
+    """Routed experts and shared experts as a channel mixer (engine/base/composition.Feature): the family Qwen3.8,
+    GLM-5.3, DeepSeek-V3 / Ling-3.0, MiniMax-M3 and Inkling share (`route`, `apply_experts`, `gated_mlp`). Axes:
+
+        score, bias, groups, normalize, scaling, router_fp32     the router (`route`)
+        scaling_on   "weights" (the weights carry routed_scaling_factor: DeepSeek, GLM, Ling, Inkling's route_scale)
+                     | "output" (the routed sum is scaled, in the model dtype: MiniMax-M3)
+        shared, shared_mode   how many shared experts and how they join: None | "plain" (added: GLM, DeepSeek, Ling,
+                     M3, Kimi K3) | "sigmoid" (times sigmoid(shared_gate(x)): Qwen3.8) | "sink" (scored by the router,
+                     each shared expert's gamma from the joint normalisation, summed in fp32: Inkling)
+        activation   "silu" | ("swiglu_clamped", limit) | ("swigluoai", alpha, limit)
+
+    `weights(layer, name)`: router [E (+ shared, "sink"), H], router_bias [E] (optional), router_scale (scalar,
+    "sink", optional), shared_gate [1, H] ("sigmoid"). `expert(layer, e)` -> (gate_up [2I, H], down [H, I]) as
+    floats: the transformers fused tensors sliced, or a checkpoint's NVFP4 experts dequantised (`dequant_nvfp4`),
+    whichever the profile holds; `shared_expert(layer, i)` the same for shared expert i (a "plain" model's one wide
+    MLP is its shared expert 0)."""
+
+    def __init__(self, *, experts: int, topk: int, score: str = "sigmoid", bias: bool = False, groups=None,
+                 normalize: bool = True, scaling: float = 1.0, scaling_on: str = "weights", router_fp32: bool = True,
+                 shared: int = 0, shared_mode: "str | None" = None, activation="silu", weights, expert, shared_expert=None):
         if not 0 < topk <= experts:
             raise ValueError(f"top-{topk} of {experts} experts")
-        self.experts, self.topk, self.normalize, self.weights, self.expert = experts, topk, normalize, weights, expert
-        self.activation = activation
-
-    def _act(self, x):
-        if self.activation != "silu":
-            raise ValueError(f"SharedExpertMoE computes a silu-gated MLP, not {self.activation!r}")
-        return torch.nn.functional.silu(x)
+        if score not in ("softmax", "sigmoid"):
+            raise ValueError(f"score is 'softmax' or 'sigmoid', not {score!r}")
+        if groups is not None and (score != "sigmoid" or experts % groups[0] or groups[1] > groups[0]):
+            raise ValueError("groups (n_group, topk_group): a sigmoid router, n_group dividing the experts, topk_group <= n_group")
+        if scaling_on not in ("weights", "output"):
+            raise ValueError(f"scaling_on is 'weights' or 'output', not {scaling_on!r}")
+        if shared_mode not in (None, "plain", "sigmoid", "sink") or (shared > 0) != (shared_mode is not None):
+            raise ValueError("shared experts come with a mode: None, 'plain', 'sigmoid' or 'sink'")
+        if shared_mode == "sink" and score != "sigmoid":
+            raise ValueError("Inkling's shared-expert sink is a sigmoid router's")
+        if shared and shared_expert is None:
+            raise ValueError("shared experts need `shared_expert(layer, i)`")
+        gated_mlp(torch.zeros(1), torch.zeros(1), activation)
+        self.experts, self.topk, self.score, self.bias, self.groups = experts, topk, score, bias, groups
+        self.normalize, self.scaling, self.scaling_on, self.router_fp32 = normalize, scaling, scaling_on, router_fp32
+        self.shared, self.shared_mode, self.activation = shared, shared_mode, activation
+        self.weights, self.expert, self.shared_expert = weights, expert, shared_expert
 
     def __call__(self, layer, x, step=None, state=None):
         linear = torch.nn.functional.linear
         w = lambda name: self.weights(layer, name)
-        shared = linear(self._act(linear(x, w("shared_expert.gate_proj"))) * linear(x, w("shared_expert.up_proj")),
-                        w("shared_expert.down_proj"))
-        ids, weights = route_softmax_topk(linear(x, w("gate")), self.topk, self.normalize)
-        out = torch.zeros_like(x)
-        mask = torch.nn.functional.one_hot(ids, num_classes=self.experts).permute(2, 1, 0)
-        for e in torch.greater(mask.sum(dim=(-1, -2)), 0).nonzero():
-            e = int(e[0])
-            slot, tokens = torch.where(mask[e])
-            gate_up, down = self.expert(layer, e)
-            g, u = linear(x[tokens], gate_up).chunk(2, dim=-1)
-            y = linear(self._act(g) * u, down) * weights[tokens, slot, None]
-            out.index_add_(0, tokens, y.to(out.dtype))
-        return out + torch.sigmoid(linear(x, w("shared_expert_gate"))) * shared
+        sink = self.shared if self.shared_mode == "sink" else 0
+        ids, weights, gammas = route(
+            x, w("router"), score=self.score, topk=self.topk, bias=w("router_bias") if self.bias else None,
+            groups=self.groups, normalize=self.normalize, scaling=self.scaling if self.scaling_on == "weights" else 1.0,
+            fp32=self.router_fp32, sink=sink, sink_scale=self._optional(w, "router_scale") if sink else None)
+        out = apply_experts(x, ids, weights, self.experts, lambda e: self.expert(layer, e), self.activation)
+        if self.scaling_on == "output":
+            out = out * self.scaling
+        if not self.shared:
+            return out
+        if self.shared_mode == "sink":
+            total = torch.zeros(x.shape[0], x.shape[1], dtype=torch.float32, device=x.device)
+            for i in range(self.shared):
+                gate_up, down = self.shared_expert(layer, i)
+                gate, up = linear(x, gate_up).chunk(2, dim=-1)
+                total = total + linear(gated_mlp(gate, up, self.activation) * gammas[:, i, None], down).float()
+            return out + total.to(x.dtype)
+        gate_up, down = self.shared_expert(layer, 0)
+        gate, up = linear(x, gate_up).chunk(2, dim=-1)
+        shared = linear(gated_mlp(gate, up, self.activation), down)
+        if self.shared_mode == "sigmoid":
+            shared = torch.sigmoid(linear(x, w("shared_gate"))) * shared
+        return out + shared
+
+    @staticmethod
+    def _optional(w, name):
+        try:
+            return w(name)
+        except KeyError:
+            return None
+
+
+# The family's canonical names on each checkpoint's, and the fused expert layouts every transformers MoE keeps
+# (experts.gate_up_proj [E, 2I, H], experts.down_proj [E, H, I]); shared experts differ in layout per model.
+SCHEMES = {
+    "qwen4_exp": {"router": "gate", "shared_gate": "shared_expert_gate",
+                  "shared": ("shared_expert.gate_proj", "shared_expert.up_proj", "shared_expert.down_proj")},
+    "glm5_next": {"router": "gate", "router_bias": "gate.e_score_correction_bias",
+                  "shared": ("shared_experts.gate_proj", "shared_experts.up_proj", "shared_experts.down_proj")},
+    "deepseek_v3": {"router": "gate", "router_bias": "gate.e_score_correction_bias",
+                    "shared": ("shared_experts.gate_proj", "shared_experts.up_proj", "shared_experts.down_proj")},
+    "minimax_m3_vl": {"router": "gate", "router_bias": "gate.e_score_correction_bias",
+                      "shared_fused": ("shared_experts.gate_up_proj", "shared_experts.down_proj")},
+    "inkling": {"router": "gate", "router_bias": "gate.e_score_correction_bias", "router_scale": "gate.global_scale",
+                "shared_stacked": ("shared_experts.gate_proj", "shared_experts.up_proj", "shared_experts.down_proj")},
+}
+
+
+def named(scheme: str, source):
+    """canonical name -> tensor over `source(checkpoint name)`; KeyError for a name the scheme or the checkpoint lacks."""
+    table = SCHEMES[scheme]
+
+    def get(name: str) -> torch.Tensor:
+        if name not in table or not isinstance(table[name], str):
+            raise KeyError(name)
+        return source(table[name])
+    return get
+
+
+def experts_of(source, prefix: str = "experts."):
+    """expert(e) -> (gate_up [2I, H], down [H, I]) from the fused 3D tensors."""
+    return lambda e: (source(f"{prefix}gate_up_proj")[e], source(f"{prefix}down_proj")[e])
+
+
+def shared_of(scheme: str, source):
+    """shared(i) -> (gate_up [2I, H], down [H, I]) for the scheme's shared-expert layout: separate gate/up/down
+    matrices (one wide expert), a fused gate_up (MiniMax-M3), or stacked [S, ...] tensors (Inkling)."""
+    table = SCHEMES[scheme]
+    if "shared" in table:
+        g, u, d = table["shared"]
+        return lambda i: (torch.cat([source(g), source(u)], dim=0), source(d))
+    if "shared_fused" in table:
+        gu, d = table["shared_fused"]
+        return lambda i: (source(gu), source(d))
+    g, u, d = table["shared_stacked"]
+    return lambda i: (torch.cat([source(g)[i], source(u)[i]], dim=0), source(d)[i])

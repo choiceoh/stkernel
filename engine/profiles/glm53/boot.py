@@ -232,10 +232,11 @@ def declared(a, comm_world: int) -> Config:
                  lanes="served", decode_eager=0, execution="native")
     facts_ += [Fact(k, v, "native TP4 execution") for k, v in fixed.items()]
     # One serving recipe in both modes, selected by operator request. Dense
-    # prefix was enabled explicitly on 2026-09-13; its GPU timing/quality gate
-    # is still pending, independently of this default selection.
+    # prefix and token-major absorption were enabled on 2026-09-13; their
+    # GPU timing/quality gates remain pending independently of this choice.
     gb10_defaults = dict(direct_mhc=1, prefill_project_tiles=1,
-                         nvme_mapped_staging=1, decode_iterations=4, prefill_indexer_shards=0, prefill_dense_prefix=1)
+                         nvme_mapped_staging=1, decode_iterations=4, prefill_indexer_shards=0, prefill_dense_prefix=1,
+                         prefill_absorb_tiles=1)
     if getattr(a, "production", False):
         # tile32 passed the full GPU numerical/graph and matched 2K/32K/128K
         # serving brackets. Keep it in the production contract so a stale
@@ -247,6 +248,9 @@ def declared(a, comm_world: int) -> Config:
                         draft_diagnostics=int(SERVING_POLICY.diagnostics), draft_tuning='', **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
+        Knob("prefill_absorb_tiles", gb10_defaults["prefill_absorb_tiles"], _dt.date(2026, 9, 30),
+             "Operator-enabled token-major MLA contractions; GPU timing and quality qualification pending",
+             "STK_prefill_absorb_tiles=0", int),
         Knob("prefill_dense_prefix", gb10_defaults["prefill_dense_prefix"], _dt.date(2026, 9, 30),
              "Operator-enabled causal-prefix KV sharing; GPU timing and quality qualification pending",
              "STK_prefill_dense_prefix=0", int),
@@ -387,11 +391,14 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             draft_policy = resolve_calibration(draft_policy, store, drafter_mod.store_name('fc.weight'),
                                                D.hidden * len(D.target_layers), comm)
             from engine.profiles.glm53.draft_tuning import load_agreed, prepare_store
-            tuning = load_agreed(draft_tuning_path, D, drafter_mod.dense_shapes(D, comm.world_size), comm)
+            from engine.profiles.glm53.draft_fc_bias import AUTO_BIAS_FILE
+            tuning = load_agreed(draft_tuning_path, D, drafter_mod.dense_shapes(D, comm.world_size), comm,
+                                 fc_bias_path=store.root / AUTO_BIAS_FILE)
             prepare_store(tuning, store, draft_policy, D, comm)
             recorder.gauge('draft_tuning', tuning.digest)
             recorder.gauge('draft_selector_projection_fp32', tuning.selector_projection_fp32)
             recorder.gauge('draft_fc_bias_ranks', len(tuning.fc_bias))
+            recorder.gauge('draft_fc_bias_auto', tuning.fc_bias_auto)
             recorder.gauge('draft_policy', draft_policy.label())
             for key, (_rows, cols) in drafter_mod.dense_shapes(D, comm.world_size).items():
                 name = drafter_mod.store_name(key)
@@ -534,10 +541,13 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                     execution_plan is not None and execution_plan.prefill_project_tiles))
                 net.prefill_indexer_shards = bool(execution_plan is not None and execution_plan.prefill_indexer_shards)
                 net.prefill_dense_prefix = bool(execution_plan is not None and execution_plan.prefill_dense_prefix)
+                net.prefill_absorb_tiles = bool(execution_plan is not None and execution_plan.prefill_absorb_tiles)
                 if D:
                     # Do not overlap the temporary checkpoint with target packing.
                     drafter = load_drafter()
                     drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena, policy=draft_policy, tuning=tuning)
+                    recorder.gauge('draft_fc_bias_applied', drafter.fc_bias is not None)
+                    recorder.gauge('draft_fc_bias_status', drafter.fc_bias_status)
                     recorder.gauge("drafter_block_fp8_packs", sum(
                         layer.fp8 is not None for name, layer in drafter.dense.items() if name != "fc.weight"))
             if calib_plan:                                            # this boot sums what the store lacked, within the budget
@@ -748,7 +758,12 @@ def native_execution_report(net, drafter):
                  router_tensorcore=len(net._router_tensorcore),
                  prefill_collectives=sorted(net.prefill_transport.executed),
                  prefill_indexer_shards=sorted(getattr(net, 'prefill_indexer_executed', ())),
-                 prefill_dense_prefix=sorted(getattr(net, 'prefill_dense_prefix_executed', ())))
+                 prefill_dense_prefix=sorted(getattr(net, 'prefill_dense_prefix_executed', ())),
+                 prefill_absorb_tiles=sorted(getattr(net, 'prefill_absorb_tiles_executed', ())))
+    if (getattr(net, 'prefill_absorb_tiles', False)
+            and set(proof['prefill_absorb_tiles']) != {
+                (L, side) for L in net.layers if net.F.is_dsa(L) for side in ('query', 'output')}):
+        raise RuntimeError(f'prefill absorb tiles were not executed on both sides of every DSA layer: {proof}')
     if (getattr(net, 'prefill_dense_prefix', False)
             and set(proof['prefill_dense_prefix']) != {L for L in net.layers if net.F.is_dsa(L)}):
         raise RuntimeError(f'dense prefix attention was not executed on every DSA layer: {proof}')
@@ -1131,14 +1146,15 @@ def fleet(a) -> int:
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
                                        consume_scales=True)
         from engine.profiles.glm53.execution import ExecutionPlan
-        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix")):
+        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles")):
             raise ValueError("execution switches must be 0 or 1")
         plan = ExecutionPlan(bool(cfg["execution_overlap"]), bool(cfg["early_observe"]), cfg["prefill_tiles"],
                              sched.chunk_for(facts.CHUNK_ALIGN, TOKEN_BUDGET, facts.SPEC_K),
                              direct_mhc=bool(cfg["direct_mhc"]), prefill_project_tiles=bool(cfg["prefill_project_tiles"]),
                              decode_iterations=cfg["decode_iterations"], deferred_kda=bool(cfg["deferred_kda"]),
                              terminal_mhc=bool(cfg["terminal_mhc"]), prefill_indexer_shards=bool(cfg["prefill_indexer_shards"]),
-                             prefill_dense_prefix=bool(cfg["prefill_dense_prefix"]))
+                             prefill_dense_prefix=bool(cfg["prefill_dense_prefix"]),
+                             prefill_absorb_tiles=bool(cfg["prefill_absorb_tiles"]))
         from engine.profiles.glm53.draft_policy import DraftPolicy
         if cfg["draft_diagnostics"] not in (0, 1):
             raise ValueError("draft diagnostics must be 0 or 1")
@@ -1161,6 +1177,8 @@ def fleet(a) -> int:
                             "draft_tuning": getattr(getattr(engine.drafter, 'tuning', None), 'digest', 'baseline'),
                             "draft_selector_projection_fp32": str(getattr(getattr(engine.drafter, 'tuning', None), 'selector_projection_fp32', False)),
                             "draft_fc_bias": str(getattr(engine.drafter, 'fc_bias', None) is not None),
+                            "draft_fc_bias_auto": str(getattr(getattr(engine.drafter, 'tuning', None), 'fc_bias_auto', False)),
+                            "draft_fc_bias_status": getattr(engine.drafter, 'fc_bias_status', 'unavailable'),
                             "draft_selector_trace_every": str(getattr(getattr(engine.drafter, 'tuning', None), 'trace_every', 0)),
                             "nvme_mapped_staging": str(cfg["nvme_mapped_staging"]),
                             "kda_state_dtype": F.kda_state_dtype,

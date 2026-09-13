@@ -103,13 +103,13 @@ class GatedResidualStreams:
     def open(self, x: torch.Tensor) -> torch.Tensor:
         return x.repeat(1, self.hc)
 
-    def enter(self, layer: int, site: str, h: torch.Tensor):
+    def enter(self, layer: int, site: str, h: torch.Tensor, step=None, state=None):
         w = lambda name: self.weights(layer, site, name)
         mixed, inject = gated_residual(h, w("hc_norm"), w("input_mix_weight_down"), w("input_mix_weight_up"),
                                        w("block_inject_weight"), self.hc, self.eps)
         return mixed, (h, inject)
 
-    def leave(self, layer: int, site: str, out: torch.Tensor, carry) -> torch.Tensor:
+    def leave(self, layer: int, site: str, out: torch.Tensor, carry, step=None, state=None) -> torch.Tensor:
         h, inject = carry
         return h + (out.unsqueeze(-2) * inject.unsqueeze(-1)).flatten(-2)
 

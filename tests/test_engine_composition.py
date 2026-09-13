@@ -46,8 +46,8 @@ class LoopContractTests(unittest.TestCase):
 
         class Streams:                                          # a plain residual: h + f(h)
             def open(self, x): return x
-            def enter(self, layer, site, h): calls.append(("enter", layer, site)); return h, h
-            def leave(self, layer, site, out, carry): return carry + out
+            def enter(self, layer, site, h, step, state): calls.append(("enter", layer, site)); return h, h
+            def leave(self, layer, site, out, carry, step, state): return carry + out
             def close(self, h): return h
 
         class Feature:
@@ -132,12 +132,12 @@ class Qwen38PlanTests(unittest.TestCase):
         per_seq, kv_tok, idx_tok = state_bytes(QWEN38_TEXT, tp=1)
         by_name = lambda specs: {s.name: s for s in specs}
         slot, page = by_name(slots), by_name(paged)
-        gdn = slot["gdn conv state"], slot["gdn recurrent state"]
+        gdn = slot["linear conv state"], slot["linear recurrent state"]
         self.assertEqual({s.layers for s in gdn}, {36})
         self.assertEqual(sum(s.layers * s.bytes_per_seq for s in gdn), per_seq)
         self.assertEqual(page["attention kv"].layers * page["attention kv"].bytes_per_token, kv_tok)
         self.assertEqual(page["qsa raw keys"].layers * page["qsa raw keys"].bytes_per_token, idx_tok * QWEN38_TEXT["indexer_compress_ratio"])
-        self.assertEqual((slot["ple token context"].layers, slot["ple conv state"].bytes_per_seq), (1, 4 * 2560 * 3 * 3 * 2))
+        self.assertEqual((slot["ngram token context"].layers, slot["ngram conv state"].bytes_per_seq), (1, 4 * 2560 * 3 * 3 * 2))
 
 
 def tiny_oracle(dtype="float32", seed=0):

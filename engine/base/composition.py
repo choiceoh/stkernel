@@ -41,6 +41,7 @@ class Segment:
     ctx: int                        # tokens already computed for this sequence: this segment's positions are ctx..
     start: int                      # first token of the segment in the step's flat arrays
     length: int
+    verify: bool = False            # provisional tokens (a drafter's): the state after each is kept until `accept`
 
     def __post_init__(self):
         if min(self.ctx, self.start) < 0 or self.length <= 0:
@@ -75,13 +76,16 @@ class Step:
         return torch.tensor([s.start + s.length - 1 for s in self.segments], dtype=torch.int64, device=self.ids.device)
 
     @staticmethod
-    def of(chunks: "list[tuple[int, int, torch.Tensor]]") -> "Step":
-        """A step from (seq, ctx, ids) per sequence, laid out in order."""
-        segments, at = [], 0
-        for seq, ctx, ids in chunks:
-            segments.append(Segment(seq, ctx, at, ids.numel()))
+    def of(chunks) -> "Step":
+        """A step from (seq, ctx, ids) or (seq, ctx, ids, verify) per sequence, laid out in order."""
+        segments, at, flat = [], 0, []
+        for chunk in chunks:
+            seq, ctx, ids = chunk[:3]
+            verify = bool(chunk[3]) if len(chunk) > 3 else False
+            segments.append(Segment(seq, ctx, at, ids.numel(), verify))
+            flat.append(ids.reshape(-1).to(torch.int64))
             at += ids.numel()
-        return Step(torch.cat([ids.reshape(-1).to(torch.int64) for _, _, ids in chunks]), tuple(segments))
+        return Step(torch.cat(flat), tuple(segments))
 
 
 class State:
@@ -89,17 +93,33 @@ class State:
     of base/cache_spec: a whole value per sequence (`get`/`put`: a slot -- a recurrent state, a conv history) and rows
     per token (`put_rows`/`rows`: paged -- keys and values, indexer keys). A feature owns its keys. `check` refuses a
     step that does not continue its sequences; `commit` records where they now are. base/composed.PositionStore is the
-    same protocol over blocks and slots."""
+    same protocol over blocks and slots.
+
+    A verify segment's tokens are provisional (a drafter's): a feature records the value after EACH of them
+    (`put(..., at=j)`, `put_state` below) instead of the value after the last, and the step leaves the sequence where
+    it was until `accept(seq, n)` keeps the first n -- the values after token n-1 become the sequence's, its rows past
+    them are dropped (a served store overwrites them instead). Rolling back is choosing a position, never recomputing."""
 
     def __init__(self):
         self._values: dict = {}
         self._rows: dict = {}
+        self._provisional: dict = {}                 # (layer, key, seq) -> {offset: value}
+        self._verifying: dict = {}                   # seq -> (ctx, length) of a verify step awaiting accept
+        self._step: dict = {}                        # seq -> segment of the step being run
         self.contexts: dict = {}
 
     def get(self, layer: int, key: str, seq: int, default=None):
         return self._values.get((layer, key, seq), default)
 
-    def put(self, layer: int, key: str, seq: int, value) -> None:
+    def put(self, layer: int, key: str, seq: int, value, at: "int | None" = None) -> None:
+        segment = self._step.get(seq)
+        if segment is not None and segment.verify:
+            if at is None or not 0 <= at < segment.length:
+                raise ValueError(f"{key}: a verify step keeps the value after each of its {segment.length} tokens")
+            self._provisional.setdefault((layer, key, seq), {})[at] = value
+            return
+        if at is not None:
+            raise ValueError(f"{key}: only a verify step keeps values by offset")
         self._values[(layer, key, seq)] = value
 
     def put_rows(self, layer: int, key: str, seq: int, rows) -> None:
@@ -117,24 +137,66 @@ class State:
     def check(self, step: Step) -> None:
         """Refuse a step whose segments do not continue their sequences from where the state left them."""
         for s in step.segments:
+            if s.seq in self._verifying:
+                raise ValueError(f"sequence {s.seq} has a verify step waiting for accept")
             if self.contexts.get(s.seq, 0) != s.ctx:
                 raise ValueError(f"sequence {s.seq} is at {self.contexts.get(s.seq, 0)} tokens, the step says {s.ctx}")
+        self._step = {s.seq: s for s in step.segments}
 
     def commit(self, step: Step) -> None:
         for s in step.segments:
-            self.contexts[s.seq] = s.ctx + s.length
+            if s.verify:
+                self._verifying[s.seq] = (s.ctx, s.length)
+            else:
+                self.contexts[s.seq] = s.ctx + s.length
+        self._step = {}
+
+    def accept(self, seq: int, n: int) -> None:
+        """Keep the first `n` tokens of the sequence's verify step: their values are the sequence's, its context
+        ctx + n."""
+        if seq not in self._verifying:
+            raise ValueError(f"sequence {seq} has no verify step to accept")
+        ctx, length = self._verifying[seq]
+        if not 1 <= n <= length:
+            raise ValueError(f"accept keeps 1..{length} tokens of sequence {seq}'s verify step, not {n}")
+        del self._verifying[seq]
+        for key in [k for k in self._provisional if k[2] == seq]:
+            held = self._provisional.pop(key)
+            if n - 1 not in held:
+                raise ValueError(f"{key[1]}: layer {key[0]} kept no value after token {n - 1}")
+            self._values[key] = held[n - 1]
+        for key in [k for k in self._rows if k[2] == seq]:
+            self._rows[key] = self._rows[key][:ctx + n]
+        self.contexts[seq] = ctx + n
 
     def drop(self, seq: int) -> None:
         self._values = {k: v for k, v in self._values.items() if k[2] != seq}
         self._rows = {k: v for k, v in self._rows.items() if k[2] != seq}
+        self._provisional = {k: v for k, v in self._provisional.items() if k[2] != seq}
+        self._verifying.pop(seq, None)
         self.contexts.pop(seq, None)
 
 
+def put_state(state, layer: int, key: str, segment: Segment, final, each=None) -> None:
+    """The value a sequence carries past `segment`: `final`, the value after its last token -- or, when the segment is a
+    verify one, `each` [length, ...], the value after every token, so the model can accept any prefix. A feature
+    that cannot give `each` cannot be verified, and says so here rather than leaving a rejected draft in its state."""
+    if not segment.verify:
+        state.put(layer, key, segment.seq, final)
+        return
+    if each is None or each.shape[0] != segment.length:
+        raise ValueError(f"{key}: a verify segment of {segment.length} tokens needs the value after each of them")
+    for j in range(segment.length):
+        state.put(layer, key, segment.seq, each[j], at=j)
+
+
 class Residual(Protocol):
-    """How sublayers read and write the residual state."""
+    """How sublayers read and write the residual state (engine/modules/residual: the forms). `enter` and `leave` see the
+    step and the state: a form may keep per-sequence state of its own (Inkling's convs on the sublayer outputs) and
+    declare it with `cache_specs(layers)` like a feature."""
     def open(self, x: torch.Tensor) -> torch.Tensor: ...                                    # embeddings [N, H] -> state
-    def enter(self, layer: int, site: str, h: torch.Tensor) -> "tuple[torch.Tensor, object]": ...   # -> input [N, H], carry
-    def leave(self, layer: int, site: str, out: torch.Tensor, carry) -> torch.Tensor: ...  # sublayer output -> state
+    def enter(self, layer: int, site: str, h: torch.Tensor, step: "Step", state: "State") -> "tuple[torch.Tensor, object]": ...
+    def leave(self, layer: int, site: str, out: torch.Tensor, carry, step: "Step", state: "State") -> torch.Tensor: ...
     def close(self, h: torch.Tensor) -> torch.Tensor: ...                                    # state -> final [N, H]
 
 
@@ -182,9 +244,11 @@ class Composition:
         if self.head is None:
             raise ValueError("a composition needs a head")
 
-    def forward(self, step: Step, state: State, *, logits: str = "last") -> torch.Tensor:
+    def forward(self, step: Step, state: State, *, logits: str = "last", hidden: bool = False):
         """Run one step: logits for each segment's last token ("last") or for every token ("all"). The state advances
-        past the step's tokens."""
+        past the step's tokens (a verify segment's, once accepted). With `hidden`, also the residual state before the
+        closing mix for every token -- what a drafter reads (Qwen3.8's MTP takes the multi-stream state) -- as
+        (logits, hidden)."""
         if logits not in ("last", "all"):
             raise ValueError("logits are 'last' or 'all'")
         state.check(step)
@@ -193,11 +257,13 @@ class Composition:
             for name in layer.inject:
                 h = h + self.features[name](layer_index, h, step, state)
             for site, name in zip(SITES, (layer.mixer, layer.mlp)):
-                x, carry = self.residual.enter(layer_index, site, h)
-                h = self.residual.leave(layer_index, site, self.features[name](layer_index, x, step, state), carry)
+                x, carry = self.residual.enter(layer_index, site, h, step, state)
+                h = self.residual.leave(layer_index, site, self.features[name](layer_index, x, step, state), carry,
+                                        step, state)
         out = self.residual.close(h)
         state.commit(step)
-        return self.head(out if logits == "all" else out[step.last()])
+        result = self.head(out if logits == "all" else out[step.last()])
+        return (result, h) if hidden else result
 
     def cache_specs(self) -> "tuple[list[PagedSpec], list[SlotSpec]]":
         """What the features cache, per kind: every feature that declares `cache_specs(layers)` for the layers the plan
@@ -220,6 +286,11 @@ class Composition:
                 continue
             for spec in declare(layers):
                 yield name, layers, spec
+        declare = getattr(self.residual, "cache_specs", None)       # the residual form's own state, on every layer
+        if declare is not None:
+            layers = list(range(len(self.plan.layers)))
+            for spec in declare(layers):
+                yield "residual", layers, spec
 
 
-__all__ = ["SITES", "Segment", "Step", "State", "Residual", "Feature", "Layer", "Plan", "Composition"]
+__all__ = ["SITES", "Segment", "Step", "State", "put_state", "Residual", "Feature", "Layer", "Plan", "Composition"]

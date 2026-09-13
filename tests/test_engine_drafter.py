@@ -65,7 +65,8 @@ class DrafterTests(unittest.TestCase):
                prefix + "successor_codebook": rand(21, 4)}
         anchor = 7
         unary, cand = logits.topk(3, dim=-1)
-        projection = torch.nn.functional.linear(hidden[1:], d.p[prefix + "hidden_projection.weight"]).float()
+        # The default selector retains FP32 output from its BF16 operands.
+        projection = (hidden[1:].double() @ d.p[prefix + "hidden_projection.weight"].double().T).float()
         expected, previous = [], anchor
         for step in range(3):
             pred = d.p[prefix + "predecessor_codebook"][previous].float()

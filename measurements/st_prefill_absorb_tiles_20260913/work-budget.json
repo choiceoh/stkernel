@@ -1,0 +1,71 @@
+{
+  "scope": "source copy payload; not measured DRAM or TTFT",
+  "chunk": 32256,
+  "cases": [
+    {
+      "input_tokens": 2000,
+      "eligible_tokens": 2000,
+      "dsa_layers": 11,
+      "query_copy_payload_bytes": 32768000,
+      "output_copy_payload_bytes": 16384000,
+      "removed_copy_read_write_bytes_per_rank_dsa_layer": 98304000,
+      "removed_copy_read_write_gib_per_rank_request": 1.007080078125,
+      "largest_removed_query_temporary_bytes": 32768000,
+      "largest_removed_output_temporary_bytes": 16384000,
+      "new_persistent_bytes": 0,
+      "new_collectives": 0
+    },
+    {
+      "input_tokens": 2672,
+      "eligible_tokens": 2672,
+      "dsa_layers": 11,
+      "query_copy_payload_bytes": 43778048,
+      "output_copy_payload_bytes": 21889024,
+      "removed_copy_read_write_bytes_per_rank_dsa_layer": 131334144,
+      "removed_copy_read_write_gib_per_rank_request": 1.345458984375,
+      "largest_removed_query_temporary_bytes": 43778048,
+      "largest_removed_output_temporary_bytes": 21889024,
+      "new_persistent_bytes": 0,
+      "new_collectives": 0
+    },
+    {
+      "input_tokens": 32000,
+      "eligible_tokens": 32000,
+      "dsa_layers": 11,
+      "query_copy_payload_bytes": 524288000,
+      "output_copy_payload_bytes": 262144000,
+      "removed_copy_read_write_bytes_per_rank_dsa_layer": 1572864000,
+      "removed_copy_read_write_gib_per_rank_request": 16.11328125,
+      "largest_removed_query_temporary_bytes": 524288000,
+      "largest_removed_output_temporary_bytes": 262144000,
+      "new_persistent_bytes": 0,
+      "new_collectives": 0
+    },
+    {
+      "input_tokens": 128000,
+      "eligible_tokens": 128000,
+      "dsa_layers": 11,
+      "query_copy_payload_bytes": 2097152000,
+      "output_copy_payload_bytes": 1048576000,
+      "removed_copy_read_write_bytes_per_rank_dsa_layer": 6291456000,
+      "removed_copy_read_write_gib_per_rank_request": 64.453125,
+      "largest_removed_query_temporary_bytes": 528482304,
+      "largest_removed_output_temporary_bytes": 264241152,
+      "new_persistent_bytes": 0,
+      "new_collectives": 0
+    },
+    {
+      "input_tokens": 129025,
+      "eligible_tokens": 129024,
+      "dsa_layers": 11,
+      "query_copy_payload_bytes": 2113929216,
+      "output_copy_payload_bytes": 1056964608,
+      "removed_copy_read_write_bytes_per_rank_dsa_layer": 6341787648,
+      "removed_copy_read_write_gib_per_rank_request": 64.96875,
+      "largest_removed_query_temporary_bytes": 528482304,
+      "largest_removed_output_temporary_bytes": 264241152,
+      "new_persistent_bytes": 0,
+      "new_collectives": 0
+    }
+  ]
+}

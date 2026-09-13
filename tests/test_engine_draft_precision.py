@@ -1,4 +1,4 @@
-"""CPU numerical and artifact contracts for the two optional draft changes."""
+"""CPU numerical and artifact contracts for default draft precision controls."""
 import copy
 import json
 from dataclasses import replace
@@ -15,7 +15,7 @@ import torch
 from bench.draft_fc_bias import collect_fc_pairs, fit_fc_bias, fit_fc_bias_ranks
 from engine.modules.draft_projection import project
 from engine.profiles.glm53.draft_fc_bias import prepare_bias, reader_identity
-from engine.profiles.glm53.draft_tuning import DraftTuning
+from engine.profiles.glm53.draft_tuning import DraftTuning, load_agreed, prepare_store
 
 
 def fixture(rank=0, world=1):
@@ -28,7 +28,7 @@ def fixture(rank=0, world=1):
     layer = SimpleNamespace(rows=2, cols=2, decode_precision='fp8', fp8=Reader(), decode_fp8=None)
     comm = SimpleNamespace(rank=rank, world_size=world, wait_prepared=lambda label: None,
                            gather_objects=lambda error: [error] * world)
-    d = SimpleNamespace(F=SimpleNamespace(hidden=2, rms_eps=1e-6), target=SimpleNamespace(comm=comm),
+    d = SimpleNamespace(F=SimpleNamespace(hidden=2, rms_eps=1e-6, k=1, layers=0), target=SimpleNamespace(comm=comm),
         dense={'fc.weight': layer}, p={'fc.weight': source, 'hidden_norm.weight': torch.tensor([-1., 2.]).bfloat16()},
         tuning=DraftTuning())
     batches = [dict(aux=torch.tensor([[2., 3.], [float('nan'), 1.]]).bfloat16(),
@@ -41,7 +41,7 @@ class ProjectionTests(unittest.TestCase):
     def test_output_rounding_can_hide_a_real_score_difference(self):
         x = torch.tensor([[1., 1 / 256]], dtype=torch.bfloat16)
         w = torch.tensor([[1., 0.], [1., 1.]], dtype=torch.bfloat16)
-        base, kept = project(x, w), project(x, w, fp32=True)
+        base, kept = project(x, w, fp32=False), project(x, w)
         self.assertEqual(base.tolist(), [[1., 1.]])
         self.assertEqual(kept.tolist(), [[1., 1.00390625]])
         self.assertEqual((base.argmax().item(), kept.argmax().item()), (0, 1))
@@ -91,6 +91,11 @@ class BiasFitTests(unittest.TestCase):
             self.assertEqual(set(DraftTuning.from_dict(value).fc_bias), {'0', '1'})
             self.assertEqual(len(value['evidence']['input_sha256']), 64)
             self.assertEqual(len(value['evidence']['peer_sha256']), 1)
+            d, _ = fixture(1, 2)
+            d.tuning = load_agreed('', d.F, [], d.target.comm, fc_bias_path=output)
+            self.assertTrue(d.tuning.selector_projection_fp32)
+            self.assertEqual(prepare_bias(d).tolist(), [-1., 2.])
+            self.assertEqual(d.fc_bias_status, 'applied-auto')
 
     def test_collect_masks_ghost_rows_and_fits_the_correction_sign(self):
         d, batches = fixture()
@@ -194,6 +199,125 @@ class BindingTests(unittest.TestCase):
         d.dense['fc.weight'].decode_precision = 'w4'
         with self.assertRaisesRegex(ValueError, 'fixed FP8'):
             prepare_bias(d)
+
+
+class AutomaticBiasTests(unittest.TestCase):
+    def setUp(self):
+        root = tempfile.TemporaryDirectory()
+        self.addCleanup(root.cleanup)
+        self.path = Path(root.name) / 'draft-fc-bias.json'
+        self.d, _ = fixture(1, 2)
+        self.stages = []
+        self.d.target.comm.wait_prepared = self.stages.append
+
+    def artifact(self):
+        return fit_fc_bias_ranks([collect_fc_pairs(*fixture(rank, 2)) for rank in range(2)])
+
+    def write(self, value):
+        self.path.write_text(json.dumps(value))
+
+    def load(self, profile=''):
+        d = self.d
+        d.tuning = load_agreed(profile, d.F, [], d.target.comm, fc_bias_path=self.path)
+        return d.tuning
+
+    def test_empty_cache_is_enabled_but_does_not_hash_or_allocate_a_vector(self):
+        with patch('engine.profiles.glm53.draft_fc_bias.reader_identity', side_effect=AssertionError('unused')):
+            tuning = self.load()
+            self.assertTrue(tuning.selector_projection_fp32)
+            self.assertTrue(tuning.fc_bias_auto)
+            self.assertIsNone(prepare_bias(self.d))
+        self.assertEqual(self.d.fc_bias_status, 'missing')
+        self.assertEqual(self.stages, ['draft-tuning', 'draft-fc-bias-auto'])
+
+    def test_fitter_artifact_is_bound_to_own_rank_and_changes_runtime_identity(self):
+        missing = self.load().digest
+        self.write(self.artifact())
+        tuning = self.load()
+        self.assertNotEqual(tuning.digest, missing)
+        self.assertEqual(tuning.fc_bias_source, 'auto')
+        self.assertEqual(prepare_bias(self.d).tolist(), [-1., 2.])
+        self.assertEqual(self.d.fc_bias_status, 'applied-auto')
+        self.assertEqual(self.stages[-1], 'draft-fc-bias')
+
+    def test_explicit_profile_wins_and_both_defaults_can_be_disabled(self):
+        profile = self.path.with_name('explicit.json')
+        with patch('engine.profiles.glm53.draft_fc_bias.load_auto', side_effect=AssertionError('unused')):
+            profile.write_text(json.dumps(dict(version=1, selector_projection_fp32=False, fc_bias_auto=False)))
+            tuning = self.load(profile)
+            self.assertFalse(tuning.selector_projection_fp32)
+            self.assertFalse(tuning.fc_bias_auto)
+            self.assertIsNone(prepare_bias(self.d))
+            self.assertEqual(self.d.fc_bias_status, 'disabled')
+            profile.write_text(json.dumps(self.artifact()))
+            self.assertEqual(self.load(profile).fc_bias_source, 'profile')
+            self.assertEqual(prepare_bias(self.d).tolist(), [-1., 2.])
+            self.assertEqual(self.d.fc_bias_status, 'applied-profile')
+
+    def test_missing_or_different_peer_artifact_disables_all_ranks_before_hashing(self):
+        self.write(self.artifact())
+        for peer in (dict(digest=None, error='missing'), dict(digest='other', error=None)):
+            self.d.target.comm.gather_objects = lambda report: (
+                [peer, report] if self.stages[-1] == 'draft-fc-bias-auto' else [report, report])
+            with patch('engine.profiles.glm53.draft_fc_bias.reader_identity', side_effect=AssertionError('unused')):
+                self.assertEqual(self.load().fc_bias, {})
+                self.assertIsNone(prepare_bias(self.d))
+            self.assertIn('skipped:', self.d.fc_bias_status)
+
+    def test_discovery_configuration_cannot_split_preparation_collectives(self):
+        self.d.target.comm.gather_objects = lambda report: [dict(report, discover_bias=False), report]
+        with self.assertRaisesRegex(ValueError, 'FC cache discovery'):
+            self.load()
+        self.assertEqual(self.stages, ['draft-tuning'])
+
+    def test_stale_reader_and_peer_binding_failure_fall_back_without_blocking_boot(self):
+        self.write(self.artifact())
+        self.load()
+        self.d.target.comm.gather_objects = lambda report: ['peer reader mismatch', report]
+        self.assertIsNone(prepare_bias(self.d))
+        self.assertIn('rank 0: peer reader mismatch', self.d.fc_bias_status)
+        self.d.target.comm.gather_objects = lambda report: [report, report]
+        self.d.p['fc.weight'][0, 0] += 1
+        self.assertIsNone(prepare_bias(self.d))
+        self.assertIn('identity mismatch', self.d.fc_bias_status)
+
+    def test_automatic_bias_does_not_make_an_explicit_w4_policy_fail(self):
+        self.write(self.artifact())
+        tuning = self.load()
+        policy = SimpleNamespace(fc_precision='w4')
+        prepare_store(tuning, None, policy, self.d.F, self.d.target.comm)
+        self.d.dense['fc.weight'].decode_precision = 'w4'
+        self.assertIsNone(prepare_bias(self.d))
+        self.assertIn('fixed FP8', self.d.fc_bias_status)
+
+    def test_corrupt_incomplete_or_unvalidated_cache_never_enables_a_correction(self):
+        good = self.artifact()
+        invalid = [dict(version=1, fc_bias=good['fc_bias']), dict(good, fc_bias={}),
+                   dict(good, version=True), dict(good, selector_projection_fp32=False)]
+        for key in ('fc_error', 'norm_error'):
+            bad = copy.deepcopy(good)
+            report = bad['evidence']['ranks']['0']
+            report['candidate'][key] = report['baseline'][key]
+            invalid.append(bad)
+        bad = copy.deepcopy(good)
+        bad['evidence']['ranks']['0']['validation_families'] = 0
+        invalid.append(bad)
+        bad = copy.deepcopy(good)
+        bad['fc_bias']['0']['values'] = [0.]
+        invalid.append(bad)
+        with patch('engine.profiles.glm53.draft_fc_bias.reader_identity', side_effect=AssertionError('unused')):
+            for value in invalid:
+                with self.subTest(value=value):
+                    self.write(value)
+                    self.assertEqual(self.load().fc_bias, {})
+                    self.assertIsNone(prepare_bias(self.d))
+                    self.assertIn('skipped:', self.d.fc_bias_status)
+            self.path.write_text('{incomplete')
+            self.assertEqual(self.load().fc_bias, {})
+            self.assertIn('JSONDecodeError', self.d.tuning.fc_bias_status)
+            with patch('engine.profiles.glm53.draft_fc_bias.MAX_AUTO_BYTES', 4):
+                self.assertEqual(self.load().fc_bias, {})
+                self.assertIn('size limit', self.d.tuning.fc_bias_status)
 
 
 if __name__ == '__main__':

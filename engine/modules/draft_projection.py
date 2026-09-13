@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 
 
-def project(x, weight, *, fp32=False):
+def project(x, weight, *, fp32=True):
     if not fp32:
         return F.linear(x, weight).float()
     if (x.ndim != 2 or weight.ndim != 2 or x.shape[1] != weight.shape[1]
