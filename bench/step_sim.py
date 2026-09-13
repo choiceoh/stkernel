@@ -86,6 +86,7 @@ class CostModel:
     acc: float = 0.462                # raw 수용률 (1 + k×acc = tokens/step 기댓값)
     decode_ms: float = 91.2           # decode 스텝 장치 시간 (1000/10.963)
     decode_ms_per_row: float = 0.0    # 미계수: 스텝당 행 수 의존 (C=4 기록이 채울 자리)
+    decode_ms_per_row_basis: str = "manual or fitted"
     decode_ms_per_1k_ctx: float = 0.0 # 예비 계수 — by-ctx 계단이 있으면 보통 쓰이지 않는다
     decode_ms_by_ctx: dict = field(default_factory=dict)   # {ctx: ms} — windows_by_ctx 폴딩
     prefill_tok_s: dict = field(default_factory=lambda: {2000: 2009.0, 32000: 12150.0,
@@ -437,7 +438,7 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
     cadence = round(sum(kinds.values()) / wall, 2) if wall > 0 else None
     decode_rate = round(kinds["decode"] / wall, 2) if wall > 0 and kinds["decode"] else None
     out = {"contract": asdict(contract), "cost": {f: getattr(cost, f) for f in
-                    ("name", "k", "acc", "decode_ms", "decode_ms_per_row", "decode_ms_per_1k_ctx",
+                     ("name", "k", "acc", "decode_ms", "decode_ms_per_row", "decode_ms_per_row_basis", "decode_ms_per_1k_ctx",
                      "decode_ms_by_ctx", "prefill_tok_s", "prefill_flat_ms", "front_ms",
                      "cold_extra_s", "acc_hist", "prefill_ms_per_token",
                      "prefill_fixed_ms_per_chunk", "confidence")},
@@ -553,13 +554,16 @@ def composed_cost(routing: str = "measured", prefill_profile: "str | None" = Non
             b.routing_gamma, b.routing_scale = folded["routing_gamma"], folded["routing_scale"]
     ladder = {c: round(kern.decode_step(b, c, 1).total(), 2) for c in (2000, 32000, 128000)}
     composed_row = (kern.decode_step(b, 2000, 4).total() - ladder[2000]) / 3.0
-    # 폭 계수: 조립 예측이 아니라 플릿 실측(#838 §3 스테이지 표)으로 못박는다 —
-    # 조립값과의 차가 교차검증이다(측정 계보에서 1.5% 안).
+    # The fleet width table measured K=6. A different draft width must not
+    # inherit that coefficient while its C=1 ladder changes underneath it.
     stage = fold_width_from_stage(STAGE_WIDTH_2K)
-    per_row = round(stage["decode_ms_per_row"], 3)
+    measured_width = model == "glm53" and b.spec_k == STAGE_WIDTH_SPEC_K
+    per_row = round(stage["decode_ms_per_row"] if measured_width else composed_row, 3)
+    width_basis = ("fleet #838 at 2K, K=6" if measured_width else
+                   f"component estimate at 2K, K={b.spec_k}; not a fleet measurement")
     cost = CostModel(name=f"composed-{routing}", k=b.spec_k, acc=acc,
                      decode_ms=ladder[32000], decode_ms_by_ctx=ladder,
-                     decode_ms_per_row=per_row,
+                     decode_ms_per_row=per_row, decode_ms_per_row_basis=width_basis,
                      prefill_tok_s={})
     cost._composed_row_crosscheck = round(composed_row, 3)   # 참고용: 조립이 말한 폭
     cost.confidence = confidence
@@ -595,6 +599,7 @@ def acc_hist_from_peek(path, k=None) -> "list | None":
 # #838 §3 의 스테이지 표(CUDA 이벤트, 랭크 0, 2K) — 폭의 플릿 실측. 조립(step_kernels)이
 # 같은 값을 20.7 로 예측한다(1.5% 안): 폭 계수의 두 독립 출처가 일치한다.
 STAGE_WIDTH_2K = {1: 47.7, 2: 73.7, 3: 95.6, 4: 110.8}
+STAGE_WIDTH_SPEC_K = 6
 
 
 def fold_width_from_stage(stage: dict) -> dict:

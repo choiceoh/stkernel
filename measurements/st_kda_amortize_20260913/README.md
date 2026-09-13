@@ -29,6 +29,17 @@ record rather than being relabeled as new evidence. New GPU timing uses K=7
 (eight verified positions), and must not be compared directly to the old K=6
 timing as if only the implementation changed.
 
+The ST Oracle now also distinguishes the K=6 fleet width coefficient from
+other widths. K=7 uses the component-derived width cost and labels it as an
+estimate in JSON. Historical coefficient tests explicitly request K=6;
+changing the production fact must not relabel those old measurements.
+
+Integration includes main through `7fd05905` (#863, #870 and #871 were
+already merged there): its DFlash serving policy is FP8/auto calibration
+with acceptance diagnostics. Those are separate main changes, not gains
+attributable to this KDA patch. A later consumer must record the resolved
+calibration policy and pack identity along with K=7.
+
 CPU validation: 28 layout, shape, deferred-state binding, execution-plan and
 state-budget tests passed in 4.314 seconds. Six execution-order tests then
 passed in 4.069 seconds after changing their decode rows to eight tokens,
