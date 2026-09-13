@@ -575,8 +575,8 @@ def composed_cost(routing: str = "measured", prefill_profile: "str | None" = Non
     return cost
 
 
-def acc_hist_from_peek(path) -> "list | None":
-    """step_peek 이 저장한 스크랩 jsonl 에서 수용률 실측 분포를 뽑는다(첫·끝 스크랩 차)."""
+def acc_hist_from_peek(path, k=None) -> "list | None":
+    """step_peek 스크랩의 분포. 중간 reset과 엔진/시뮬레이터 K 불일치도 거른다."""
     import step_peek as _peek
     samples = []
     with open(path, encoding="utf-8") as f:
@@ -589,7 +589,7 @@ def acc_hist_from_peek(path) -> "list | None":
                 samples.append(rec["series"])
     if len(samples) < 2:
         return None
-    return _peek.acc_hist_from_scrapes(samples[0], samples[-1])
+    return _peek.acc_hist_from_samples(samples, k)
 
 
 # #838 §3 의 스테이지 표(CUDA 이벤트, 랭크 0, 2K) — 폭의 플릿 실측. 조립(step_kernels)이
@@ -930,12 +930,12 @@ def main() -> int:
             cost.name = loaded.get("name", cost.name + "+json")
     cost = overrides(cost)
     if args.acc_hist_from and args.acc_hist_from.exists():
-        hist = acc_hist_from_peek(args.acc_hist_from)
+        hist = acc_hist_from_peek(args.acc_hist_from, cost.k)
         if hist:
             cost = replace(cost, acc_hist=[float(x) for x in hist])
             print(f"[수용률] 실측 분포 {hist} — 기하 추첨을 이 분포로 바꾼다")
         else:
-            print(f"[수용률] {args.acc_hist_from} 에 분포 계열이 없다 — 기하 추첨 그대로")
+            print(f"[수용률] {args.acc_hist_from} 에 유효한 분포가 없다 (결측/불일치/빈 창) — 기하 추첨 그대로")
     out = run_once(prompts, gen, contract, cost=cost, arrive_ms=arrive,
                    can_async=True, with_meta=args.meta, closed_loop=args.closed_loop,
                    host_med_ms=(calib or {}).get("host_med_decode_ms"))
