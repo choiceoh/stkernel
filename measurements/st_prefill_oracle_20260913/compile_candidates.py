@@ -106,7 +106,8 @@ def main():
         files = [*root.glob('engine/kernels/b12x/**/*.py'),root/'engine/kernels/prefill_mhc.py',
                  root/'engine/kernels/dense/mhc.py',root/'engine/profiles/glm53/net.py',
                  root/'engine/kernels/prefill_collectives/sum_pack.py',
-                 root/'engine/kernels/prefill_collectives/__init__.py',root/'engine/modules/token_shards.py']
+                 root/'engine/kernels/prefill_collectives/__init__.py',root/'engine/modules/token_shards.py',
+                 root/'engine/profiles/glm53/execution.py']
         report['source_sha256']={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
         (output/'result.json').write_text(json.dumps(report,indent=2)+'\n')
         print(json.dumps({k:report[k] for k in ('status','cuda_initialized','elapsed_s')}),flush=True)

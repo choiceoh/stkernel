@@ -248,7 +248,10 @@ def prefill_layer_major(net, step, caches, plan, aux_layers=(), *, contract=None
             for c in carries:
                 prepare(net, layer, c, side)
                 reduce = c.sp.reduce_scatter if c.sp is not None else net.comm.all_reduce
-                c.x = reduce(local(net, layer, c, side))
+                if side == "ffn" and net.F.is_moe(layer) and c.sp is not None and c.sp.fuse_sum:
+                    c.x = net._moe(layer, c.x, reduce_pair=c.sp.reduce_scatter_pair)
+                else:
+                    c.x = reduce(local(net, layer, c, side))
                 s = c.step.segments[0]
                 end = s.ctx + s.length
                 if side == "attn" and not net.F.is_dsa(layer) and end - origin in end_marks:

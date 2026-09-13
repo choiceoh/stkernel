@@ -11,6 +11,7 @@ IMAGE = 'sha256:f85de49afc0a41596cce3df2dab11af992a9aa5d21129c0f50ba719c30f68781
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--tests', nargs='+', help='Explicit focused CPU suite; default retains the full suite')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     output = args.output.resolve()
@@ -34,6 +35,9 @@ def main():
                  'tests.test_engine_prefill_outputs', 'tests.test_prefill_q0_batch8', 'tests.test_prefill_oracle_candidates', 'tests.test_moe_prefill_m64',
                  'tests.test_moe_prefill_scale_expansion', 'tests.test_engine_mhc_contract',
                  'tests.test_engine_direct_mhc']
+        if args.tests is not None:
+            tests = args.tests
+        (output/'test-scope.json').write_text(json.dumps(tests,indent=2)+'\n')
         with (output/'cpu-tests.log').open('w') as log:
             subprocess.run(command + ['-m', 'unittest', *tests], stdout=log,
                            stderr=subprocess.STDOUT, timeout=240, check=True)

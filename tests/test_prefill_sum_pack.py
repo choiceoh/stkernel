@@ -50,6 +50,50 @@ class SumHandoffTests(unittest.TestCase):
 
 @unittest.skipUnless(torch is not None,'requires CPU torch')
 class SumPacketTests(unittest.TestCase):
+    def test_four_rank_model_and_layer_major_keep_hidden_and_state_with_fused_handoff(self):
+        from dataclasses import replace
+        from engine.base.comm import LocalTP
+        from engine.profiles.glm53.net import Step
+        from engine.profiles.glm53.execution import prefill_layer_major
+        from tests.test_engine_execution_plans import model
+        from tests.test_engine_prefill_tiles import OraclePrefill
+        class Transport(OraclePrefill):
+            fuse_sum=False
+            pair_calls=0
+            def reduce_scatter_pair(self,x,y,*,padded_rows):
+                self.pair_calls+=1
+                joined=x+y
+                joined=torch.cat((joined,joined.new_zeros((padded_rows-len(x),x.shape[1]))))
+                return self.reduce_scatter(joined)
+        torch.set_num_threads(1)
+        for layer_major,rows in ((False,131),(True,259)):
+            def rank(comm):
+                net,cache=model(('kda','dsa','kda'),comm=comm)
+                net.F=replace(net.F,dense=(0,1))
+                gen=torch.Generator().manual_seed(719)
+                net.p={s.name:(torch.randn(s.shape,generator=gen)*.04).to(s.dtype) for s in net.specs()}
+                for name,value in net.p.items():
+                    if 'norm' in name or name.endswith('o_norm'): value.fill_(1)
+                net._experts[2]=lambda x,ids,weights:(torch.cos(x.float())*.125).bfloat16()
+                owner=Transport(comm,False);net.prefill_transport=owner
+                slot=cache.slots.take(0);cache.pool.reserve(0,rows)
+                step=Step.prefill(torch.arange(rows)%net.vp,0,0,slot)
+                cache.prepare(step)
+                initial,paged=cache.state.clone(),cache.paged.clone()
+                def run():
+                    if layer_major:
+                        return prefill_layer_major(net,step,cache,NS(tile_rows=128,prefill_tiles=4))
+                    return net.forward(step,cache)
+                expected=run();state,pages=cache.state.clone(),cache.paged.clone()
+                cache.state.copy_(initial);cache.paged.copy_(paged)
+                owner.fuse_sum=True
+                actual=run()
+                torch.testing.assert_close(actual,expected,rtol=0,atol=0)
+                torch.testing.assert_close(cache.state,state,rtol=0,atol=0)
+                torch.testing.assert_close(cache.paged,pages,rtol=0,atol=0)
+                self.assertEqual(owner.pair_calls,2 if layer_major else 1)
+            LocalTP(4,timeout_s=30).run(rank)
+
     def test_actual_fused_body_matches_materialized_bf16_sum_packet_bytes(self):
         class Pointer:
             def __init__(self,data,offset=0): self.data,self.offset=data.reshape(-1),offset
