@@ -267,7 +267,9 @@
     "b12x/moe_dynamic_prefill.py": {
       "source": "overlay/modules/glm53_moe/moe_dynamic_prefill.py",
       "sha256": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
-      "origin": "repository"
+      "origin": "repository",
+      "local_sha256": "21b25effb54dafad14439594fac302ccf0dc921199bce4ed65b128ee2bf41977",
+      "local_modifications": " Private N128 tiled candidate can retain original FC2 fragment reloads to bound register lifetime; default reuse path unchanged."
     },
     "b12x/moe_dynamic_prefill_n128.py": {
       "source": "overlay/modules/glm53_moe/moe_dynamic_prefill_n128.py",
