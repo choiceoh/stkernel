@@ -11,6 +11,8 @@ from pathlib import Path
 
 import torch
 
+from engine.kernels.cells import DENSE_ALIGN, DENSE_KMAX, dense_glue_refusal
+
 
 @cache
 def extension():
@@ -45,7 +47,7 @@ class W4Pack:
 
 GPTQ_ACT_ORDER = True       # columns in decreasing Hessian-diagonal order with static groups (45차 §23 GPU 판정 7차)
 TILE = 4096                 # one GPTQ tile of K: a wider weight is packed as a sequence of them
-KMAX = 20480                # the decode kernel's widest K (kernels.cu KBLK_LIMIT): the drafter's fc, whole
+KMAX = DENSE_KMAX           # the decode kernel's widest K (kernels.cu KBLK_LIMIT): the drafter's fc, whole
 
 
 def packed_nbytes(rows, cols, *, prefill=True):
@@ -313,6 +315,43 @@ class DenseLinear:
         out = self.fp8.project_quantized(*quantize_gather(received, local_rows))
         self.executed |= 2
         return out
+
+
+class PaddedDenseLinear(DenseLinear):
+    """DenseLinear for a weight whose input width is not DENSE_ALIGN-aligned: glue (cells.GLUE, cells.dense_glue_refusal).
+
+    The weight gains zero columns up to the next multiple of DENSE_ALIGN before it is packed, and the input gains zeros
+    at the call; rows are padded inside the pack already. Exact: a zero column adds nothing to a row's product, the W4
+    row shift and the real columns' E4M3 group scales are maxima a zero never raises, and both activation quantizers
+    (the W4A8 kernel's and fp8.quantize) scale by the amax of their groups. A calibration observer sees the padded input,
+    so the Hessians it sums are the padded weight's -- unpadded `hessians` are refused. The direct producers (the packet
+    projector, the slot writer) read an input the caller has not widened, so they are not offered."""
+
+    def __init__(self, weight, *, prefill=True, hessians=None, store=None, name=None, smooth=None):
+        why = dense_glue_refusal(weight.shape[-1]) if weight.ndim == 2 else "a dense weight is [N, K]"
+        if why is not None:
+            raise ValueError(f"PaddedDenseLinear: {why}")
+        if hessians is not None:
+            raise ValueError("PaddedDenseLinear takes no unpadded Hessians: calibrate at the padded width "
+                             "(its observer sees the padded input)")
+        self.input_cols = weight.shape[1]
+        self.pad = -self.input_cols % DENSE_ALIGN
+        if self.pad:
+            weight = torch.nn.functional.pad(weight, (0, self.pad))
+            if smooth is not None:
+                smooth = torch.nn.functional.pad(smooth, (0, self.pad), value=1.0)
+        super().__init__(weight, prefill=prefill, store=store, name=name, smooth=smooth)
+
+    def __call__(self, x, rows_ok=None, *, observe=True):
+        if x.shape[-1] != self.input_cols or x.dtype != torch.bfloat16:
+            raise ValueError("dense input does not match its bound weight")
+        return super().__call__(torch.nn.functional.pad(x, (0, self.pad)) if self.pad else x, rows_ok, observe=observe)
+
+    def packet_projector(self):
+        return None
+
+    def slot_writer(self, rows):
+        return None
 
 
 class FP8Linear:

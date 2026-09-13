@@ -132,12 +132,12 @@ MLA는 필수 레인이므로 이전 `VLLM_GLM53_MEGAKERNEL`/`VLLM_GLM53_MK_MLA`
 | b12x MoE 입장 게이트·Q0·FP32 scatter·동적 tile 핀 | `moe.*` (`_admitted_moe()`) | 선언한 셀이 곧 입장 조건. 새 셀은 측정 뒤 `dynamic_tile_m` 을 핀한다 |
 | one-shot AR | `comm.world/hidden` | 행 폭이 따라간다. world 는 4 로 컴파일(NPEER 3) → 다른 world 는 거부 |
 | prefill collectives / tiled projection | `comm.world/hidden` | 패킷 커널은 둘 다 일반. 2,048 원소 블록을 채우는 행 수만 요구 |
-| MK mHC (`dense/mhc.py`) | `hidden`, `hc` | hidden 4096/5120·hc 4 로 컴파일 → 그 밖은 이름을 대고 거부 |
-| MLA (`mla.maybe_arm`) | `attention`, `device` | 16×512 MLA 셀로 컴파일 → 다른 어텐션 셀은 무장 전 거부 |
+| MK mHC (`dense/mhc.py`) | `hidden`, `hc`, `hc_variant` | hidden 4096/5120·hc 4 로 컴파일 → 그 밖은 이름을 대고 거부. split-sinkhorn 형식은 `MHCV41`(글루) |
+| MLA (`mla.maybe_arm`) | `attention`, `device` | 16×512 MLA 셀로 컴파일 → 다른 어텐션 셀은 무장 전 거부. 헤드 묶음·잠재 폭 패딩·GQA 는 `mla/glue.py`(글루) |
 | 인덱서 (`kpool`) | `indexer.head_dim` | Hadamard-128 → 다른 폭은 첫 호출에서 거부 |
 | 드래프트 커널 (`draft_attention`, `draft_observe`) | `drafter.head_dim`, `device.sms` | D 는 constexpr 라 그대로 따라간다 |
-| KDA ring (`kda/ring.py`) | `linear.decay` | 커널 안 KDA 게이트 융합 → per-head(GDN) 셀은 거부; 그 셀은 `linear_decay.per_channel` 로 넓힌 decay 를 `fused_recurrent_kda(compute_gate=False)` 에 준다 |
-| dense W4A8/FP8 (`dense/__init__`) | `device` | 장치 계약만. TILE/KMAX 는 커널 상수 |
+| KDA ring (`kda/ring.py`) | `linear.decay` | 커널 안 KDA 게이트 융합 → per-head(GDN) 셀은 거부; 그 셀은 같은 파일의 decay 진입점 `recurrent_decay_ring(_rows)`(글루) |
+| dense W4A8/FP8 (`dense/__init__`) | `device` | 장치 계약만. TILE/KMAX 는 커널 상수. 128 정렬이 아닌 입력 폭은 `PaddedDenseLinear`(글루) |
 
 모델 무관으로 이미 보편인 커널(샘플러, 블록 검증, decode commit, 후보 키, SwiGLU, norm+RoPE, route 히스토그램,
 빌드 캐시, 자기 보정)은 형상 필드를 읽지 않는다 — 인자가 곧 형상이다.
@@ -160,7 +160,8 @@ one-shot world 4·MAXEL, prefill 블록 2048, 융합 게이트의 per-channel de
 싼 것부터의 선택지, 판정 프로브·오라클·허용오차, 완료 기준, 비용 등급(minutes / hours / days). `cells.plan()` 이 그것을 비용순
 (같은 비용이면 refused 먼저)으로 세운 것이 새 모델의 작업 목록이다. 레시피가 이름 대는 파일은 테스트가 실재를 확인한다.
 **무엇이 서빙하나.** 층마다 판정에 `Serve` 가 붙어, 이 형상에서 그 층을 무엇이 돌리는지를 빠른 순서로 적는다:
-레인 자신의 커널(specialized), 같은 수식을 계산하는 형상 범용 고속 커널(generic, 판정 여부와 함께), 빠른 것이 없음(none).
+레인 자신의 커널(specialized), 그 컴파일된 커널에 텐서를 패딩·묶음·패킹·확장·분할해 넣는 정확한 어댑터(glue, 아래 절),
+같은 수식을 계산하는 형상 범용 고속 커널(generic), 빠른 것이 없음(none) — 각각 판정 여부와 함께.
 `engine/modules` 오라클은 둘 다를 판정할 뿐 서빙 후보가 아니다(`Serve` 가 거부한다). 범용 후보는 저장소와 이미지에 실제로 있는
 것만 이름을 대고, 엔진 밖에 있으면 옮겨 올 위치를 적는다 — 예: Qwen3.8 어텐션·인덱서는 vLLM 스택에서 이 모델을 돌리던 Triton QSA 연산
 (`overlay/modules/qwen38_qsa/ops_qsa.py`), DeepSeek-V4.1 어텐션은 sink 를 받는 flashinfer `trtllm_batch_decode_sparse_mla_dsv4`,
@@ -176,9 +177,34 @@ config 해시가 맞으면 그것을 바인딩하며(낡은 기록은 사망: "�
 측정 핀(`MoE.dynamic_tile_m` 등)은 config 에서 나오지 않는 모델별 결정이라 이 기록이 그 자리다.
 선형 어텐션이나 희소 인덱서가 없는 모델은 `linear`/`indexer` 를 `None` 으로 선언하고, 그 레인은 판정표에서 빠지며 래퍼는 이름을 대고 거부한다
 (dsv41: 2026-09-13 srv4 의 DeepSeek-V4.1-Flash config — 16×512 기하는 같지만 어텐션에 sink 항이 있어 MLA 거부, 키 압축이 CED 라
-인덱서 거부, 하이퍼커넥션이 split-sinkhorn 이라 mHC 디코드·프리필 거부, MoE 는 FP4 [32,32] 블록이라 거부; one-shot·prefill·dense 는
-폭 미측정, KDA 레인 없음. 작업표: mHC 디코드는 메가커널 V4.1 계약 판정(hours), 측정 셋(hours), 인덱서·mHC 프리필·MLA sink·MoE(days).
-Qwen3.8 은 sink 와 하이퍼커넥션 형식이 아직 확정되지 않아 establish 가 먼저다).
+인덱서 거부, 하이퍼커넥션이 split-sinkhorn 이라 mHC 디코드·프리필 거부(서빙은 `MHCV41` 글루), 전문가는 FP4 를 행마다 32개 묶음·E8M0
+스케일로 둔 MXFP4 가중치 배치에 FP8 활성값이라 거부, dense 층이 없어 공유 전문가(2304 → rank 576)가 dense MLP 인데 576 이 128 정렬이
+아니라 거부(서빙은 `PaddedDenseLinear` 글루); one-shot·prefill 은 폭 미측정, KDA 레인 없음. 작업표: dense·mHC 디코드·프리필 글루 연결과
+측정 둘(hours), 인덱서·MLA sink·MoE(days). Qwen3.8 은 sink 와 하이퍼커넥션 형식이 아직 확정되지 않아 establish 가 먼저다).
+
+## 글루 (2026-09-13)
+
+거부된 형상 중에는 수식이 같고 텐서 모양만 다른 것이 있다. 그런 층은 전용 커널을 새로 쓰지 않고, 컴파일된 커널에 텐서를 맞춰 넣는
+**정확한 어댑터**로 돌린다. 어댑터가 받는 조건은 `cells.py` 의 글루 규칙(`mla_glue_refusal`, `mhc_v41_refusal`, `dense_glue_refusal`)
+한 곳에 있고 어댑터가 그 함수로 거부하므로, 판정표와 어댑터가 어긋나지 않는다. 판정표에서는 `glue` 계층이다.
+
+| 어댑터 | 받는 형상 | 왜 정확한가 | 바뀌는 것 |
+| --- | --- | --- | --- |
+| `mla/glue.grouped` | sink 없는 MLA, 헤드 수 무관, 잠재 폭 ≤ 512 | 헤드는 서로 섞이지 않는다: 16개씩 묶고 모자란 자리는 영 쿼리 헤드로 채워 출력을 버린다. 영 좌표는 내적에 아무것도 더하지 않는다: 잠재 행(`pad_rows`)과 쿼리를 512 로 확장한다 | 패딩 헤드만큼의 일, 좁은 잠재는 캐시 메모리 512/폭 배 |
+| `mla/glue.gqa` | sink 없는 GQA, 2 × head_dim ≤ 512 | KV 헤드의 키와 값을 한 잠재 행에 나란히 싣고(`pack_kv`: `[k·gk ; v·gv ; 0]`) 쿼리를 `[q/gk ; 0]` 으로 두면, 커널의 softmax(q'·c)·c 의 값 절반이 곧 GQA 출력이다. 이득은 2의 거듭제곱이라 BF16·e4m3 에서 정확하다 | KV 캐시가 잠재의 단일 스케일 e4m3 가 된다(BF16 KV 대비는 품질 게이트가 판정) |
+| `kda/ring.recurrent_decay_ring(_rows)` | per-head decay(GDN) | 링 레인의 같은 발사·같은 링 쓰기에서 커널 안 게이트만 끈다(COMPUTE_GATE). per-head decay 는 채널 축 stride 0 으로 복사 없이 읽는다 | 없음 |
+| `kda/chunk_decay.chunk_kda_with_decay` | per-head decay(GDN), 키 헤드 < 값 헤드 | 융합 게이트 청크 파이프라인에 밖에서 계산한 decay 를 청크 누적합·RCP_LN2·채널 확장해 넣는다(`states_at`, `out` 포함). 키 헤드는 값 헤드 수로 반복한다(링 커널의 i_h = i_hv // (HV/H) 묶음) | `out` 없이 부르면 출력이 `v` 저장소에 쓰인다(융합 진입점과 같음) |
+| `dense/mhc.MHCV41` (`prefill`) | split-sinkhorn, hidden 4096/5120, hc 4 | 메가커널의 V4.1 이음매 `run_mhc_v41` 를 20포인터 계약 그대로 감싼다. 토큰마다 따로 섞으므로 프리필은 128토큰 조각이 정확하다 | 조각마다 발사 한 번 |
+| `dense.PaddedDenseLinear` | 128 정렬이 아닌 입력 폭(≤ 20480) | 가중치에 영 열을, 입력에 영을 붙인다. 영 열은 곱에 아무것도 더하지 않고, W4 행 시프트·실제 열의 그룹 스케일·amax 활성값 스케일은 영이 올리지 못하는 최댓값이다 | 패딩 열만큼의 일. 패킷 프로젝터·슬롯 라이터는 제공하지 않는다 |
+
+글루가 **못** 하는 것: sink 항(DeepSeek-V4.1 어텐션 — 커널이 logZ 를 내보내야 한다), 다른 키 압축(CED), 다른 활성값 정밀도(MXFP4
+전문가의 FP8 활성값)는 수식이 달라 글루가 아니다. MLA 무장은 `glue.arm()` 이 `mla.maybe_arm(check=glue.check)` 로 하고,
+커널 자기 판정은 여전히 컴파일된 16×512 셀에서 돈다.
+
+판정 상태: 어댑터 산술은 `tests/test_engine_kernel_glue.py` 가 CPU 에서 커널의 torch 쌍둥이를 끼워 오라클
+(`modules/sparse_attention.mla_sparse_mqa`·`gqa_sparse`, `probes/mk_mhc_geometry_bench.py` 의 V4.1 참조, torch 선형 곱)에 대조한다.
+같은 파일의 GPU 사례(무장한 실제 커널)는 아직 GPU 에서 돌지 않았으므로 판정표의 글루는 전부 unjudged 다. 어느 프로파일도 아직 글루를
+바인딩하지 않는다 — 판정표의 wire 레시피가 그 작업이다.
 
 ## 런타임 이미지
 

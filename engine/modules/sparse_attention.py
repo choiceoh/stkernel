@@ -63,6 +63,35 @@ def mla_sparse_mqa(q_abs: torch.Tensor, kv_c: torch.Tensor, topk_slots: torch.Te
     return torch.einsum("thk,tkd->thd", p, rows).to(q_abs.dtype)
 
 
+def gqa_sparse(q: torch.Tensor, k_cache: torch.Tensor, v_cache: torch.Tensor, slots: torch.Tensor,
+               valid: torch.Tensor, scale: float) -> torch.Tensor:
+    """Sparse grouped-query attention over selected positions, no sink -- the math Qwen3.8's attention computes
+    (overlay/modules/qwen38_qsa/ops_qsa.py: qsa_sparse_paged_attention, without its paging):
+
+        q        [T, H, D]      queries after RoPE
+        k_cache  [S, G, D]      keys after RoPE, G KV heads per position, H a multiple of G
+        v_cache  [S, G, D]
+        slots    [T, K] int32   selected positions, the valid prefix first
+        valid    [T] int32      how many of the K are real
+
+    Query head h reads KV head h // (H // G). Causality is in the selection; the only mask is `valid`, and a row with
+    no valid position is zero (as the sparse kernels leave it) rather than NaN. fp32 inside, q's dtype outside.
+    """
+    t, h, d = q.shape
+    g = k_cache.shape[1]
+    if h % g or k_cache.shape != v_cache.shape or k_cache.shape[2] != d:
+        raise ValueError("gqa_sparse takes q [T,H,D] and K/V caches [S,G,D] with H a multiple of G")
+    idx = slots.long().clamp_min(0)
+    heads = torch.arange(h, device=q.device) // (h // g)
+    keys = k_cache[idx].float()[:, :, heads]                                # [T, K, H, D]
+    values = v_cache[idx].float()[:, :, heads]
+    scores = torch.einsum("thd,tkhd->thk", q.float(), keys) * scale
+    padding = torch.arange(slots.shape[1], device=q.device)[None, :] >= valid[:, None]   # [T, K]
+    scores = scores.masked_fill(padding[:, None, :], float("-inf"))
+    p = torch.softmax(scores, dim=-1).masked_fill((valid <= 0)[:, None, None], 0.0)
+    return torch.einsum("thk,tkhd->thd", p, values).to(q.dtype)
+
+
 def _selfcheck_mla() -> None:
     torch.manual_seed(0); dev = "cuda" if torch.cuda.is_available() else "cpu"
     T, H, D, S, K = 5, 4, 512, 300, 32

@@ -6,6 +6,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import re
 import tempfile
 from dataclasses import replace
 from pathlib import Path
@@ -185,14 +186,15 @@ class DescriptorTests(unittest.TestCase):
         self.assertEqual(s.indexer, Indexer(heads=32, head_dim=128, pool=2, topk=512, compress="ced"))
         self.assertEqual(s.hc_variant, "split_sinkhorn")
         self.assertEqual(s.moe, MoE(experts=384, experts_local=96, hidden=5120, inter=2304, inter_local=2304, topk=6,
-                                    quant="mxfp4-a8", activation="silu", swiglu_limit=10.0, dense_inter_local=0))
+                                    quant="mxfp4-a8", activation="silu", swiglu_limit=10.0,
+                                    dense_inter_local=576))                     # the shared expert, 2304 / 4
         self.assertEqual(ks.from_dict(json.loads(json.dumps(ks.to_dict(s)))), s)      # None survives the record
         self.assertIn("linear none", s.describe())
         verdicts = {v.lane: v for v in cells.admission(s)}
         status = {lane: v.status for lane, v in verdicts.items()}
         admitted = ("device", "universal")
-        unmeasured = ("oneshot", "prefill_collectives", "dense")                    # math-free transports, measured at 4096
-        refused = ("mla", "indexer", "mhc_decode", "mhc_prefill", "moe")            # same geometry, different math
+        unmeasured = ("oneshot", "prefill_collectives")                             # math-free transports, measured at 4096
+        refused = ("mla", "indexer", "mhc_decode", "mhc_prefill", "moe", "dense")   # different math, or 576 unaligned columns
         self.assertEqual({k: status[k] for k in admitted}, dict.fromkeys(admitted, cells.ADMITTED))
         self.assertEqual({k: status[k] for k in unmeasured}, dict.fromkeys(unmeasured, cells.UNMEASURED))
         self.assertEqual({k: status[k] for k in refused}, dict.fromkeys(refused, cells.REFUSED))
@@ -201,9 +203,10 @@ class DescriptorTests(unittest.TestCase):
         self.assertEqual(verdicts["mla"].recipe.kind, "kernel")
         self.assertIn("ced", verdicts["indexer"].why)
         self.assertIn("split_sinkhorn", verdicts["mhc_decode"].why)
-        self.assertIn("run_mhc_v41", verdicts["mhc_decode"].recipe.how)            # the candidate, its GPU probe pending
+        self.assertIn("run_mhc_v41", verdicts["mhc_decode"].recipe.how)            # the glue, its GPU probe pending
         self.assertIn("dsv41_mhc_20260910", verdicts["mhc_decode"].recipe.how)
-        self.assertEqual(verdicts["mhc_prefill"].recipe.kind, "kernel")
+        self.assertEqual((verdicts["mhc_decode"].recipe.kind, verdicts["mhc_prefill"].recipe.kind), ("wire", "wire"))
+        self.assertEqual(verdicts["dense"].recipe.kind, "wire")                     # PaddedDenseLinear: 576 -> 640
         self.assertIn("every 2 rows", verdicts["prefill_collectives"].why)
         self.assertEqual(verdicts["oneshot"].recipe.kind, "measure")
         ks.bind(s)
@@ -412,6 +415,25 @@ class CellTests(unittest.TestCase):
                 kpool._indexer_cell()
             ks.reset()
             self.assertEqual(prefill_collectives.BLOCK, cells.PREFILL_BLOCK)
+        # the adapters refuse by the glue rules, before any kernel is touched
+        from engine.kernels.mla import glue
+        with self.assertRaisesRegex(RuntimeError, "no sink term"):
+            glue.check(replace(MEASURED.attention, sink=True))
+        glue.check(Attention("gqa", heads=6, head_dim=256, kv_heads=1, sink=False))
+        ks.bind(qwen_shape())
+        with self.assertRaisesRegex(RuntimeError, "not established"):          # Qwen3.8's sink is still unread
+            glue.check()
+        ks.reset()
+        self.assertEqual(mhc.geometry_v41(dsv41_shape()), (5120, 4, 24, 20))
+        with self.assertRaisesRegex(ValueError, "mixes by mhc"):
+            mhc.geometry_v41(MEASURED)
+        with self.assertRaisesRegex(ValueError, "hidden 2560"):
+            mhc.geometry_v41(RecipeTests.SHAPES["hc_split2560"])
+        self.assertEqual(mhc.pieces(300), [(0, 128), (128, 256), (256, 300)])
+        self.assertEqual(mhc.pieces(128), [(0, 128)])
+        if importlib.util.find_spec("torch") is not None:
+            from engine.kernels import dense
+            self.assertEqual(dense.KMAX, cells.DENSE_KMAX)
         source = (ROOT / "engine/kernels/decode_projection.py").read_text()   # #816's candidates read the shape
         self.assertNotIn("2048", source)
         self.assertNotIn("(128, 4096)", source)
@@ -500,7 +522,7 @@ class RecordTests(unittest.TestCase):
             self.assertEqual(result["shape"], dsv41_shape())
             self.assertEqual(ks.from_dict(ks.read_record(Path(d) / "dranks")["shape"]), dsv41_shape())
             self.assertEqual({v.lane for v in result["admission"] if v.status == "refused"},
-                             {"mla", "indexer", "mhc_decode", "mhc_prefill", "moe"})
+                             {"mla", "indexer", "mhc_decode", "mhc_prefill", "moe", "dense"})
             with self.assertRaises(ValueError):
                 ks.wizard("glm53", ckpt, pins=["moe.dynamic_tile_m"])
             with self.assertRaises(ValueError):
@@ -515,6 +537,13 @@ class RecipeTests(unittest.TestCase):
         "glm": MEASURED, "qwen38": None, "dsv41": None,
         "mla32": replace(MEASURED, attention=Attention("mla", heads=32, head_dim=512, sink=False)),
         "mla_latent256": replace(MEASURED, attention=Attention("mla", heads=16, head_dim=256, sink=False)),
+        "mla_latent1024": replace(MEASURED, attention=Attention("mla", heads=16, head_dim=1024, sink=False)),
+        "gqa": replace(MEASURED, attention=Attention("gqa", heads=8, head_dim=128, kv_heads=2, sink=False)),
+        "gqa_wide": replace(MEASURED, attention=Attention("gqa", heads=8, head_dim=512, kv_heads=2, sink=False)),
+        "dense_wide": replace(MEASURED, moe=replace(MEASURED.moe, dense_inter_local=20500)),
+        "no_dense": replace(MEASURED, moe=replace(MEASURED.moe, dense_inter_local=0)),
+        "hc_split2560": replace(MEASURED, hidden=2560, comm=Comm(4, 2560), moe=replace(MEASURED.moe, hidden=2560),
+                                hc_variant="split_sinkhorn"),
         "sink": replace(MEASURED, attention=replace(MEASURED.attention, sink=True)),
         "sink_unknown": replace(MEASURED, attention=replace(MEASURED.attention, sink=None)),
         "ced": replace(MEASURED, indexer=replace(MEASURED.indexer, compress="ced")),
@@ -550,31 +579,33 @@ class RecipeTests(unittest.TestCase):
                          ("mhc_decode", "refused", "instance"), ("mhc_decode", "refused", "rewrite"),
                          ("mhc_decode", "unmeasured", "measure"), ("oneshot", "refused", "rewrite"),
                          ("oneshot", "unmeasured", "measure"), ("prefill_collectives", "unmeasured", "measure"),
-                         ("dense", "refused", "convert"), ("dense", "unmeasured", "measure"),
+                         ("dense", "refused", "wire"), ("dense", "refused", "rewrite"), ("dense", "unmeasured", "measure"),
                          ("indexer", "refused", "kernel"), ("draft", "unmeasured", "measure"),
                          ("kda_recurrent", "unmeasured", "measure"), ("kda_ring", "refused", "wire"),
-                         ("kda_ring", "unmeasured", "measure"), ("kda_chunk", "refused", "kernel"),
+                         ("kda_ring", "unmeasured", "measure"), ("kda_chunk", "refused", "wire"),
                          ("kda_chunk", "unmeasured", "measure"), ("moe", "refused", "convert"),
                          ("moe", "unmeasured", "measure"), ("device", "refused", "rewrite"),
                          ("mla", "refused", "establish"), ("mhc_decode", "refused", "establish"),
                          ("mhc_prefill", "refused", "establish"), ("mhc_decode", "refused", "wire"),
-                         ("mhc_prefill", "refused", "kernel")} <= seen, seen)
+                         ("mhc_prefill", "refused", "wire"), ("mhc_prefill", "refused", "instance")} <= seen, seen)
 
     def test_the_plan_is_cheapest_first_with_refusals_first_at_equal_cost(self):
         from engine.kernels import cells
         self.assertEqual(cells.plan(cells.admission(MEASURED)), [])
         self.assertIn("work: none", cells.work_table(cells.admission(MEASURED)))
         qwen = cells.plan(cells.admission(qwen_shape()))
-        self.assertEqual([(v.lane, v.status, v.recipe.cost) for v in qwen], [
-            ("kda_ring", "refused", "hours"), ("mhc_decode", "refused", "hours"), ("mhc_prefill", "refused", "hours"),
-            ("dense", "unmeasured", "hours"), ("kda_recurrent", "unmeasured", "hours"), ("moe", "unmeasured", "hours"),
-            ("oneshot", "unmeasured", "hours"), ("prefill_collectives", "unmeasured", "hours"),
-            ("indexer", "refused", "days"), ("kda_chunk", "refused", "days"), ("mla", "refused", "days")])
+        self.assertEqual([(v.lane, v.status, v.recipe.kind, v.recipe.cost) for v in qwen], [
+            ("kda_chunk", "refused", "wire", "hours"), ("kda_ring", "refused", "wire", "hours"),
+            ("mhc_decode", "refused", "establish", "hours"), ("mhc_prefill", "refused", "establish", "hours"),
+            ("mla", "refused", "establish", "hours"),               # the sink decides whether the GQA glue computes it
+            ("dense", "unmeasured", "measure", "hours"), ("kda_recurrent", "unmeasured", "measure", "hours"),
+            ("moe", "unmeasured", "measure", "hours"), ("oneshot", "unmeasured", "measure", "hours"),
+            ("prefill_collectives", "unmeasured", "measure", "hours"), ("indexer", "refused", "kernel", "days")])
         self.assertEqual([v.lane for v in cells.plan(cells.admission(dsv41_shape()))],
-                         ["mhc_decode", "dense", "oneshot", "prefill_collectives", "indexer", "mhc_prefill", "mla", "moe"])
+                         ["dense", "mhc_decode", "mhc_prefill", "oneshot", "prefill_collectives", "indexer", "mla", "moe"])
         text = cells.work_table(cells.admission(qwen_shape()))
         self.assertIn("work (11)", text)
-        self.assertIn("1. kda_ring [refused] wire, hours", text)
+        self.assertIn("1. kda_chunk [refused] wire, hours", text)
         for field in ("how:", "where:", "judge:", "done:"):
             self.assertEqual(text.count(field), 11, field)
 
@@ -590,13 +621,33 @@ class RecipeTests(unittest.TestCase):
                 for text in texts:
                     for token in pattern.findall(text):
                         token = token.rstrip(".,;:)").replace("<profile>", "glm53")
-                        head, dot, tail = token.rpartition(".")
-                        candidates = [token, token + ".py"] + ([head, head + ".py"] if dot and "/" not in tail else [])
                         with self.subTest(lane=v.lane, token=token):
-                            self.assertTrue(any((ROOT / c).exists() for c in candidates), candidates)
+                            self.assertTrue(self.resolves(token), token)
                         checked.add(token)
         self.assertIn("probes/mk_mhc_geometry_bench.py", checked)
         self.assertIn("measurements/dsv41_mhc_20260910", checked)
+        self.assertIn("engine/kernels/dense/mhc.MHCV41.prefill", checked)
+        self.assertFalse(self.resolves("engine/kernels/dense/mhc.MHCV42"))      # a named attribute must be in its file
+        self.assertFalse(self.resolves("engine/kernels/nowhere.py"))
+
+    @staticmethod
+    def resolves(token: str) -> bool:
+        """A path that exists, or a module path followed by attributes (`dense/mhc.MHCV41.prefill`) whose file names
+        every one of them."""
+        if (ROOT / token).exists() or (ROOT / (token + ".py")).exists():
+            return True
+        head, attributes = token, []
+        while "." in head.rpartition("/")[2]:
+            head, _, attribute = head.rpartition(".")
+            attributes.insert(0, attribute)
+            for path in (ROOT / head, ROOT / (head + ".py")):
+                if path.is_file():
+                    source = path.read_text()
+                    return all(re.search(rf"\b{re.escape(name)}\b", source) for name in attributes)
+                if path.is_dir():
+                    return (path / "__init__.py").is_file() and all(
+                        re.search(rf"\b{re.escape(name)}\b", (path / "__init__.py").read_text()) for name in attributes)
+        return False
 
     def test_a_recipe_names_its_kind_cost_and_every_field(self):
         from engine.kernels import cells
@@ -620,14 +671,15 @@ class RecipeTests(unittest.TestCase):
             expected = [v.lane for v in cells.plan(cells.admission(qwen_shape()))]
             self.assertEqual(doc["plan"], expected)
             self.assertEqual(doc["counts"], {"admitted": 2, "unmeasured": 5, "refused": 6})
-            self.assertEqual(doc["serving"], {"specialized": 5, "generic": 5, "none": 2, "generic_judged": 1})
+            self.assertEqual(doc["serving"], {"specialized": 4, "glue": 4, "generic": 2, "none": 2, "glue_judged": 0,
+                                              "generic_judged": 1})
             self.assertEqual(ks.from_dict(doc["shape"]), qwen_shape())
             self.assertEqual(doc["record"], str(ranks / ks.RECORD))
             by_lane = {entry["lane"]: entry for entry in doc["admission"]}
             self.assertEqual(set(by_lane["mhc_decode"]["recipe"]), {"kind", "where", "how", "judge", "done", "cost"})
             self.assertIsNone(by_lane["device"]["recipe"])
             self.assertIsNone(by_lane["device"]["serve"])
-            self.assertEqual((by_lane["mla"]["serve"]["tier"], by_lane["mla"]["serve"]["judged"]), ("generic", False))
+            self.assertEqual((by_lane["mla"]["serve"]["tier"], by_lane["mla"]["serve"]["judged"]), ("glue", False))
             record = ks.read_record(ranks)
             self.assertEqual(record["plan"], expected)
             self.assertEqual([cells.from_dict(v) for v in record["admission"]], cells.admission(qwen_shape()))
@@ -635,22 +687,35 @@ class RecipeTests(unittest.TestCase):
             with contextlib.redirect_stdout(out):
                 self.assertEqual(ks.main(["show", "--ranks", str(ranks), "--json"]), 0)
             shown = json.loads(out.getvalue())
-            self.assertEqual((shown["plan"], shown["counts"]), (expected, doc["counts"]))
+            self.assertEqual((shown["plan"], shown["counts"], shown["serving"]), (expected, doc["counts"], doc["serving"]))
+            self.assertTrue(shown["recorded_table_current"])
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 self.assertEqual(ks.main(["show", "--ranks", str(ranks)]), 0)
             self.assertIn("work (11)", out.getvalue())
-            # a record written before recipes existed still reads: its verdicts simply carry none
-            old = dict(record, admission=[{k: v for k, v in entry.items() if k != "recipe"} for entry in record["admission"]])
+            self.assertNotIn("older cells", out.getvalue())
+            # a record written before recipes and the serving column: `show` judges its shape against today's cells, so
+            # the serving counts and lines are there, and it says the recorded table is stale
+            old = dict(record, admission=[{k: v for k, v in entry.items() if k not in ("recipe", "serve")}
+                                          for entry in record["admission"]])
             old.pop("plan")
             (ranks / ks.RECORD).write_text(json.dumps(old))
-            with contextlib.redirect_stdout(io.StringIO()):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(ks.main(["show", "--ranks", str(ranks), "--json"]), 0)
+            shown = json.loads(out.getvalue())
+            self.assertEqual((shown["serving"], shown["plan"]), (doc["serving"], expected))
+            self.assertFalse(shown["recorded_table_current"])
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
                 self.assertEqual(ks.main(["show", "--ranks", str(ranks)]), 0)
+            self.assertIn("older cells", out.getvalue())
+            self.assertIn("serving: 4 specialized, 4 glue", out.getvalue())
 
 
 class ServeTests(unittest.TestCase):
-    """What serves each layer: the lane's own kernel, a shape-generic fast kernel for the same math, or nothing fast --
-    and never an oracle."""
+    """What serves each layer: the lane's own kernel, that kernel through an exact adapter, a shape-generic fast kernel
+    for the same math, or nothing fast -- and never an oracle."""
 
     def verdicts(self, shape):
         from engine.kernels import cells
@@ -669,9 +734,12 @@ class ServeTests(unittest.TestCase):
                     if lane == "universal":
                         self.assertEqual(tier, cells.GENERIC)
                     elif v.status == cells.REFUSED:
-                        self.assertIn(tier, (cells.GENERIC, cells.NONE))
+                        self.assertIn(tier, (cells.GLUE, cells.GENERIC, cells.NONE))
                     else:
-                        self.assertEqual(tier, cells.SPECIALIZED)
+                        self.assertIn(tier, (cells.SPECIALIZED, cells.GLUE))
+                    if tier == cells.GLUE:
+                        self.assertFalse(v.serve.judged)                # no adapter has run on a GPU yet
+                        self.assertIn("glue" if lane == "mla" else "engine/kernels", v.serve.kernel)
                     self.assertNotIn("engine/modules", v.serve.kernel)
                     self.assertFalse(v.serve.kernel.startswith("modules/"))
 
@@ -684,60 +752,119 @@ class ServeTests(unittest.TestCase):
 
     def test_the_second_models_name_their_fastest_kernels(self):
         from engine.kernels import cells
-        S, G, N = cells.SPECIALIZED, cells.GENERIC, cells.NONE
+        S, L, G, N = cells.SPECIALIZED, cells.GLUE, cells.GENERIC, cells.NONE
         dsv41 = {lane: (v.serve.tier, v.serve.judged) for lane, v in self.verdicts(dsv41_shape()).items() if v.serve}
-        self.assertEqual(dsv41, {"mla": (G, False), "indexer": (N, False), "mhc_decode": (G, False), "mhc_prefill": (G, False),
-                                 "oneshot": (S, True), "prefill_collectives": (S, False), "dense": (S, True),
+        self.assertEqual(dsv41, {"mla": (G, False), "indexer": (N, False), "mhc_decode": (L, False), "mhc_prefill": (L, False),
+                                 "oneshot": (S, True), "prefill_collectives": (S, False), "dense": (L, False),
                                  "moe": (G, False), "universal": (G, True)})
         d = self.verdicts(dsv41_shape())
         self.assertIn("trtllm_batch_decode_sparse_mla_dsv4", d["mla"].serve.kernel)   # the sink-capable decode kernel
-        self.assertIn("run_mhc_v41", d["mhc_decode"].serve.kernel)
+        self.assertIn("MHCV41", d["mhc_decode"].serve.kernel)
+        self.assertIn("MHCV41.prefill", d["mhc_prefill"].serve.kernel)
+        self.assertIn("PaddedDenseLinear", d["dense"].serve.kernel)
+        self.assertIn("576 -> 640", d["dense"].serve.note)
         self.assertIn("MXFP4", d["moe"].serve.kernel)
         self.assertIn("torch", d["indexer"].serve.note)                               # the CED compressor has no fast kernel
+        self.assertEqual(cells.serving(list(d.values())), {"specialized": 2, "glue": 3, "generic": 3, "none": 1,
+                                                            "glue_judged": 0, "generic_judged": 1})
         qwen = {lane: (v.serve.tier, v.serve.judged) for lane, v in self.verdicts(qwen_shape()).items() if v.serve}
-        self.assertEqual(qwen, {"mla": (G, False), "indexer": (G, False), "mhc_decode": (N, False), "mhc_prefill": (N, False),
+        self.assertEqual(qwen, {"mla": (L, False), "indexer": (G, False), "mhc_decode": (N, False), "mhc_prefill": (N, False),
                                 "oneshot": (S, True), "prefill_collectives": (S, False), "dense": (S, True),
-                                "kda_recurrent": (S, False), "kda_ring": (G, False), "kda_chunk": (G, False),
+                                "kda_recurrent": (L, False), "kda_ring": (L, False), "kda_chunk": (L, False),
                                 "moe": (S, False), "universal": (G, True)})
         q = self.verdicts(qwen_shape())
-        self.assertIn("qsa_sparse_paged_attention", q["mla"].serve.kernel)            # the kernel vLLM served it with
-        self.assertIn("settles the unestablished sink", q["mla"].serve.note)
-        self.assertEqual(cells.serving(list(q.values())), {"specialized": 5, "generic": 5, "none": 2, "generic_judged": 1})
+        self.assertIn("glue.gqa", q["mla"].serve.kernel)                                 # 256 + 256 fill the 512 latent
+        self.assertIn("qsa_sparse_paged_attention", q["mla"].serve.note)                 # the BF16-KV alternative, named
+        self.assertIn("finds no sink", q["mla"].serve.note)
+        self.assertIn("recurrent_decay_ring", q["kda_ring"].serve.kernel)
+        self.assertIn("chunk_kda_with_decay", q["kda_chunk"].serve.kernel)
+        self.assertEqual(cells.serving(list(q.values())), {"specialized": 4, "glue": 4, "generic": 2, "none": 2,
+                                                            "glue_judged": 0, "generic_judged": 1})
 
-    def test_the_generic_tier_follows_the_refusal(self):
+    def test_the_tier_follows_the_refusal(self):
         from engine.kernels import cells
+        L, G, N = cells.GLUE, cells.GENERIC, cells.NONE
+        attention = lambda *args, **kw: replace(MEASURED, attention=Attention(*args, **kw))
+        qsa = Indexer(heads=1, head_dim=128, pool=4, topk=2048, compress="qsa")
         cases = {
-            "grouped heads": (replace(MEASURED, attention=Attention("mla", heads=32, head_dim=512, sink=False)), "mla",
-                              cells.GENERIC, True, "per group of 16"),
-            "other latent": (replace(MEASURED, attention=Attention("mla", heads=16, head_dim=256, sink=False)), "mla",
-                             cells.GENERIC, False, "BatchDecodeMlaWithPagedKVCacheWrapper"),
-            "unknown sink": (replace(MEASURED, attention=replace(MEASURED.attention, sink=None)), "mla", cells.NONE, False, ""),
+            "grouped heads": (attention("mla", heads=32, head_dim=512, sink=False), "mla", L, "glue.grouped", "world 1"),
+            "odd heads": (attention("mla", heads=20, head_dim=512, sink=False), "mla", L, "glue.grouped", "zero-query"),
+            "narrow latent": (attention("mla", heads=16, head_dim=256, sink=False), "mla", L, "zero-extended", "512/256"),
+            "wide latent": (attention("mla", heads=16, head_dim=1024, sink=False), "mla", G,
+                            "BatchDecodeMlaWithPagedKVCacheWrapper", ""),
+            "unknown sink": (attention("mla", heads=16, head_dim=512, sink=None), "mla", N, "", "establish"),
+            "gqa": (attention("gqa", heads=8, head_dim=128, kv_heads=2, sink=False), "mla", L, "glue.gqa", "e4m3"),
+            "wide gqa": (attention("gqa", heads=8, head_dim=512, kv_heads=2, sink=False), "mla", G,
+                         "BatchDecodeWithPagedKVCacheWrapper", ""),
+            "wide gqa, qsa": (replace(attention("gqa", heads=8, head_dim=512, kv_heads=2, sink=False), indexer=qsa),
+                              "mla", G, "qsa_sparse_paged_attention", "gqa_sparse"),
+            # a sink is math the sink-free kernels cannot compute, whatever else would fit (Codex on #847)
+            "gqa sink, qsa": (replace(attention("gqa", heads=8, head_dim=128, kv_heads=2, sink=True), indexer=qsa),
+                              "mla", N, "", "sinks"),
+            "sink 16x512": (attention("mla", heads=16, head_dim=512, sink=True), "mla", G,
+                            "trtllm_batch_decode_sparse_mla_dsv4", ""),
+            "sink 16x256": (attention("mla", heads=16, head_dim=256, sink=True), "mla", N, "", "head size 512"),
+            "sink 192 heads": (attention("mla", heads=192, head_dim=512, sink=True), "mla", N, "", "at most 128"),
             "tp2": (replace(MEASURED, tp=2, comm=Comm(2, 4096), moe=replace(MEASURED.moe, inter_local=1024)), "oneshot",
-                    cells.GENERIC, True, "NCCL"),
+                    G, "NCCL", ""),
             "hidden4000": (replace(MEASURED, hidden=4000, comm=Comm(4, 4000), moe=replace(MEASURED.moe, hidden=4000)),
-                           "dense", cells.GENERIC, True, "cuBLAS"),
+                           "dense", L, "PaddedDenseLinear", "4000 -> 4096"),
+            "dense past KMAX": (RecipeTests.SHAPES["dense_wide"], "dense", G, "cuBLAS", ""),
             "hidden2560": (replace(MEASURED, hidden=2560, comm=Comm(4, 2560), moe=replace(MEASURED.moe, hidden=2560)),
-                           "mhc_decode", cells.GENERIC, True, "TileLang"),
+                           "mhc_decode", G, "TileLang", ""),
+            "split-sinkhorn at 2560": (RecipeTests.SHAPES["hc_split2560"], "mhc_decode", N, "", "compiled for hidden"),
             "index64": (replace(MEASURED, indexer=Indexer(heads=32, head_dim=64, pool=4, topk=2048, compress="kpool")),
-                        "indexer", cells.NONE, False, ""),
+                        "indexer", N, "", ""),
         }
-        for name, (shape, lane, tier, judged, kernel) in cases.items():
+        for name, (shape, lane, tier, kernel, note) in cases.items():
             with self.subTest(case=name):
                 serve = self.verdicts(shape)[lane].serve
-                self.assertEqual((serve.tier, serve.judged), (tier, judged))
+                self.assertEqual(serve.tier, tier)
                 self.assertIn(kernel, serve.kernel)
+                self.assertIn(note, serve.note)
+        judged = {name: self.verdicts(shape)[lane].serve.judged for name, (shape, lane, *_) in cases.items()}
+        self.assertEqual({n for n, j in judged.items() if j}, {"tp2", "dense past KMAX", "hidden2560"})
+
+    def test_a_model_without_a_dense_mlp_has_no_dense_verdict(self):
+        # zero is the descriptor's "no dense or shared MLP" (engine/profiles/qwen38/shapes.py); nothing to serve (Codex on #847)
+        verdicts = self.verdicts(RecipeTests.SHAPES["no_dense"])
+        self.assertNotIn("dense", verdicts)
+        self.assertIn("dense", self.verdicts(MEASURED))
+
+    def test_the_glue_rules_are_the_adapters_rules(self):
+        from engine.kernels import cells
+        self.assertIsNone(cells.mla_glue_refusal(Attention("mla", heads=20, head_dim=256, sink=False)))
+        self.assertIsNone(cells.mla_glue_refusal(Attention("gqa", heads=6, head_dim=256, kv_heads=1, sink=False)))
+        for a, why in ((Attention("gqa", heads=6, head_dim=512, kv_heads=1, sink=False), "side by side"),
+                       (Attention("mla", heads=16, head_dim=1024, sink=False), "does not fit"),
+                       (Attention("mla", heads=16, head_dim=512, sink=True), "no sink term"),
+                       (Attention("gqa", heads=6, head_dim=256, kv_heads=1, sink=None), "not established")):
+            with self.subTest(attention=a):
+                self.assertIn(why, cells.mla_glue_refusal(a))
+        self.assertIsNone(cells.mhc_v41_refusal(dsv41_shape()))
+        self.assertIsNone(cells.mhc_v41_refusal(replace(MEASURED, hc_variant="split_sinkhorn")))   # 4096 is compiled too
+        self.assertIn("mixes by mhc", cells.mhc_v41_refusal(MEASURED))
+        self.assertIn("hidden 2560", cells.mhc_v41_refusal(RecipeTests.SHAPES["hc_split2560"]))
+        self.assertIsNone(cells.dense_glue_refusal(576))
+        self.assertIsNone(cells.dense_glue_refusal(20480))
+        self.assertIn("20608", cells.dense_glue_refusal(20500))
+        self.assertIsNotNone(cells.dense_glue_refusal(0))
 
     def test_a_serve_is_validated(self):
         from engine.kernels import cells
         cells.Serve(cells.GENERIC, "flashinfer", False, "")
+        cells.Serve(cells.GLUE, "engine/kernels/mla/glue.gqa", False, "")
         for bad in ((cells.NONE, "x", False, ""), (cells.NONE, "", True, ""), ("best", "x", False, ""),
                     (cells.GENERIC, "", False, ""), (cells.GENERIC, "engine/modules/moe.py", True, ""),
+                    (cells.GLUE, "", False, ""), (cells.GLUE, "modules/sparse_attention.gqa_sparse", False, ""),
                     (cells.SPECIALIZED, "x", 1, "")):
             with self.subTest(serve=bad), self.assertRaises(ValueError):
                 cells.Serve(*bad)
+        self.assertEqual(cells.TIERS, (cells.SPECIALIZED, cells.GLUE, cells.GENERIC, cells.NONE))   # fastest first
         text = cells.table(cells.admission(dsv41_shape()))
-        self.assertIn("serving: 3 specialized, 5 generic (1 judged), 1 with nothing fast", text)
+        self.assertIn("serving: 2 specialized, 3 glue (0 judged), 3 generic (1 judged), 1 with nothing fast", text)
         self.assertIn("nothing fast -- the CED compressor", text)
+        self.assertIn("glue, unjudged: engine/kernels/dense/mhc.MHCV41", text)
 
 
 if __name__ == "__main__":
