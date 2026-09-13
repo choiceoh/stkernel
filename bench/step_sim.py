@@ -55,7 +55,7 @@ import statistics
 import sys
 import threading
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -436,7 +436,7 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
     row_steps = sum(n * c for n, c in enumerate(r.decode_batches))
     cadence = round(sum(kinds.values()) / wall, 2) if wall > 0 else None
     decode_rate = round(kinds["decode"] / wall, 2) if wall > 0 and kinds["decode"] else None
-    out = {"cost": {f: getattr(cost, f) for f in
+    out = {"contract": asdict(contract), "cost": {f: getattr(cost, f) for f in
                     ("name", "k", "acc", "decode_ms", "decode_ms_per_row", "decode_ms_per_1k_ctx",
                      "decode_ms_by_ctx", "prefill_tok_s", "prefill_flat_ms", "front_ms",
                      "cold_extra_s", "acc_hist", "prefill_ms_per_token",
@@ -462,7 +462,9 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
     return out
 
 
-def _drop_ring(out: dict) -> dict:
+def _drop_ring(out: "dict | None") -> "dict | None":
+    if out is None:
+        return None
     o = dict(out)
     o.pop("ring", None)
     return o
@@ -523,7 +525,8 @@ def _fmt(out: dict, meta: bool) -> str:
 
 
 def composed_cost(routing: str = "measured", prefill_profile: "str | None" = None,
-                  acc: float = 0.45, model: str = "glm53", partial: bool = False) -> "CostModel":
+                  acc: float = 0.45, model: str = "glm53", partial: bool = False,
+                  k: "int | None" = None) -> "CostModel":
     """조립 모형(step_kernels) 전부를 CostModel 로 — 형상은 facts.py, 라우팅은 아티팩트/
     역산, 프리필은 청크 구조(아티팩트 폴딩), **폭 계수까지** 4행 조립에서 푼다. 손으로
     쥐는 것은 수용률 하나(실측 분포가 오면 --acc-hist-from 이 대신한다)."""
@@ -541,6 +544,8 @@ def composed_cost(routing: str = "measured", prefill_profile: "str | None" = Non
         globals()["_LAST_PARTIAL"] = rng
     if facts:
         b.spec_k, b.tp = facts["spec_k"], facts["tp"]
+    if k is not None:
+        b.spec_k = k
     if routing == "artifact":
         folded = kern.fold_routing_from_timeline(
             "measurements/c4_scaling_20260913/decode-timeline-rank3.json")
@@ -787,7 +792,8 @@ def main() -> int:
                     help="폴딩이 맞출 decode 채널: windows=판정 채널(기본), client=요청별 실측")
     ap.add_argument("--chunk-align", type=int, default=16)
     ap.add_argument("--token-budget", type=int, default=4096)
-    ap.add_argument("--draft-slots", type=int, default=3)
+    ap.add_argument("--draft-slots", type=int,
+                    help="예약 드래프트 슬롯 (compose: k, 수동: 3)")
     ap.add_argument("--max-running", type=int, default=8)
     ap.add_argument("--meta", action="store_true", help="StepMeta 구축 비용을 별도로 같이 잰다")
     ap.add_argument("--no-calib", action="store_true", help="장치 0 캘리브레이션 스텝을 건너뛴다")
@@ -811,18 +817,32 @@ def main() -> int:
     ap.add_argument("--json", action="store_true", help="결과를 JSON 한 줄로")
     args = ap.parse_args()
 
-    args = ap.parse_args()
-
     def overrides(cost):
         for flag, attr in ((args.k, "k"), (args.acc, "acc"), (args.decode_ms, "decode_ms")):
             if flag is not None:
                 cost = replace(cost, **{attr: flag})
+        if args.decode_ms is not None:
+            # An explicit flat step time must not be shadowed by a fitted
+            # context ladder. Width cost remains separately visible.
+            cost = replace(cost, decode_ms_by_ctx={}, decode_ms_per_1k_ctx=0.0)
+        if args.acc is not None:
+            cost = replace(cost, acc_hist=[])
         return cost
 
+    if args.compose:
+        # Configure the contract before constructing it (and calibrating).
+        # These are the chunk shapes of the source #838 component profile.
+        args.chunk_align = 2304
+        if args.draft_slots is None:
+            import step_kernels as kern
+            args.draft_slots = args.k if args.k is not None else kern.load_engine_facts(args.model).get("spec_k", 6)
+        args.token_budget = 9216 + args.draft_slots
+    elif args.draft_slots is None:
+        args.draft_slots = 3
     contract = sched.Contract(chunk_align=args.chunk_align, token_budget=args.token_budget,
                               draft_slots=args.draft_slots, max_wait_s=args.max_wait_s,
                               max_running=args.max_running,
-                              **({"decode_token_budget": 2304} if args.compose else {}))
+                              **({"decode_token_budget": 2304 + args.draft_slots} if args.compose else {}))
     calib = None
     if not args.no_calib:
         calib = run_once([512], 300, contract)            # 장치 0, 동기 — 숙주 전용 캘리브레이션
@@ -893,16 +913,12 @@ def main() -> int:
     arrive = [0.0] * len(prompts)
     gen: "int | list" = args.gen
     if args.compose:
-        cost = composed_cost(routing=args.routing, model=args.model, partial=args.partial)
+        cost = composed_cost(routing=args.routing, model=args.model, partial=args.partial, k=args.k)
         if getattr(cost, "confidence", 100.0) < 100.0:
             rng = globals().get("_LAST_PARTIAL", {})
             print(f"[신뢰도] {cost.confidence:.0f}% — 스텝 {rng.get('lo_ms', 0):.1f}~{rng.get('hi_ms', 0):.1f} ms"
                   f" · 가정: {', '.join(rng.get('assumed', []))}"
                   + ("" if args.model == "glm53" else " · 이관: 비MoE·통신 상수·k 는 glm53 실측"))
-        # 계약도 엔진의 실제 값으로: 청크 정렬 2304, 혼자 프리필 9216, 디코더 옆 2304(#838 §4)
-        args.chunk_align = 2304
-        args.token_budget = 9216
-        args.max_wait_s = args.max_wait_s or 0.0
     elif args.device_ms or args.prefill_device_ms:
         cost = CostModel(decode_ms=args.device_ms, prefill_flat_ms=args.prefill_device_ms,
                          k=0, acc=0.0, prefill_tok_s={}, name="manual")
@@ -912,7 +928,7 @@ def main() -> int:
             loaded = json.loads(Path(args.cost_json).read_text(encoding="utf-8"))
             cost = replace(cost, **loaded)
             cost.name = loaded.get("name", cost.name + "+json")
-        cost = overrides(cost)
+    cost = overrides(cost)
     if args.acc_hist_from and args.acc_hist_from.exists():
         hist = acc_hist_from_peek(args.acc_hist_from)
         if hist:
