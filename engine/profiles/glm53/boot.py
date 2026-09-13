@@ -240,7 +240,7 @@ def declared(a, comm_world: int) -> Config:
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
         Knob("terminal_mhc", 0, _dt.date(2026, 9, 30),
-             "Direct decode: preserve BF16 channel rounding while writing terminal means into final feature columns",
+             "Decode and prefill: preserve BF16 channel rounding while writing terminal means into final feature columns",
              "STK_terminal_mhc=0", int),
         Knob("deferred_kda", 0, _dt.date(2026, 9, 30),
              "FP32 KDA: verify into update factors, commit accepted states across all layers in one launch",

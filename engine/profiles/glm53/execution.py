@@ -107,7 +107,9 @@ def local(net, layer, carry, side, *, project=None):
     return op(layer, c.x, reduce=identity, **output)
 
 
-def auxiliary(net, carry):
+def auxiliary(net, carry, *, contract=None):
+    if contract is not None:
+        return contract(carry.x, carry.res, carry.post, carry.comb)
     return net.lanes.mhc_post(carry.x, carry.res, carry.post, carry.comb).float().mean(1).to(carry.x.dtype)
 
 
@@ -227,7 +229,7 @@ def prefill_steps(step, tile_rows):
         yield Step.prefill(step.ids[start:end], s.ctx + start, s.seq, s.slot, tuple(patches), marks)
 
 
-def prefill_layer_major(net, step, caches, plan, aux_layers=()):
+def prefill_layer_major(net, step, caches, plan, aux_layers=(), *, contract=None):
     """Bounded window: same tile shapes/arithmetic, a different layer order.
 
     A layer's tiles always run in token order. KDA and indexer histories are
@@ -257,8 +259,8 @@ def prefill_layer_major(net, step, caches, plan, aux_layers=()):
         if layer in aux_layers:
             parts = []
             for c in carries:
-                a = auxiliary(net, c)
+                a = auxiliary(net, c, contract=contract)
                 parts.append(c.sp.gather_result(a) if c.sp is not None else a)
             aux[layer] = torch.cat(parts, dim=0)
-    h = torch.cat([finish(net, c) for c in carries], dim=0)
+    h = torch.cat([finish(net, c, contract=contract) for c in carries], dim=0)
     return (h, torch.cat([aux[l] for l in aux_layers], dim=-1)) if aux_layers else h
