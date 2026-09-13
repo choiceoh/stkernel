@@ -1,0 +1,59 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "source_sha256": {
+    "engine/modules/mixed_experts.py": "4cb1d9de5b348c49b135bb7f0c2290b203dba462d2a77cd8ffe1d6adbd880b62",
+    "engine/kernels/b12x/moe_mixed.py": "16b966d2f9e7c717f3179765c8437cd14287ba9049018ed46c18455f8097036c",
+    "engine/kernels/b12x/moe_mixed_frontend.py": "465b8aef59b69840eb7594c799f783522b753221808bf78c39c18006605442c7",
+    "engine/kernels/b12x/moe_dispatch.py": "3c2957d505ffa651aa82554cf4e49b9abb7075840eee183d7d2d905c00488de1",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "87db391f8cacca3a6484797cc0562ad5b1346aba41294ebbafaadfe5794cf88c",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "engine/kernels/b12x/moe_micro_kernel.py": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914",
+    "probes/engine_mixed_experts_compile.py": "66e32700b9a9ba55de1bf021a1667015f68575a1862a2a6cece39bc9301fe47f",
+    "tests/test_engine_mixed_experts.py": "c7f2b5a5c4e48c9fb5a60d507857bf3e14cc845d31f528cca5128e6c118a0ebf"
+  },
+  "scope": "actual CuTe, PTXAS and TVM-FFI compilation; no GPU execution",
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "kernels": [
+    {
+      "kind": "producer",
+      "runtime_row_extents": true,
+      "name": "mixed_route_producer_v1",
+      "status": "PASS",
+      "seconds": 0.4912499280180782
+    },
+    {
+      "kind": "expert_body",
+      "rows": 8,
+      "prepared": false,
+      "name": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1_c7b815ca2d5d4289",
+      "status": "PASS",
+      "seconds": 6.001116530998843
+    },
+    {
+      "kind": "expert_body",
+      "rows": 8,
+      "prepared": true,
+      "name": "static2_m8_k4096_n512_t8_r32_tm32f2g2a32wutr16n128k256d256sf6v1_9be1c92254dcdcd8",
+      "status": "PASS",
+      "seconds": 5.343852202990092
+    },
+    {
+      "kind": "expert_body",
+      "rows": 32,
+      "prepared": false,
+      "name": "static2_m32_k4096_n512_t8_r256_tm32f2g2a32wutsf6v1_a023e92ede0f0a3a",
+      "status": "PASS",
+      "seconds": 5.832091741991462
+    },
+    {
+      "kind": "expert_body",
+      "rows": 32,
+      "prepared": true,
+      "name": "static2_m32_k4096_n512_t8_r32_tm32f2g2a32wutsf6v1_2b8e312897d81bb2",
+      "status": "PASS",
+      "seconds": 5.7402404729800764
+    }
+  ]
+}

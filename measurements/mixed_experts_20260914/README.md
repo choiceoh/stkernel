@@ -35,3 +35,12 @@ Run it through an admitted fleet reservation. It uses the local rank's actual L3
 The timing arms are native decode, prepared decode only, and prepared decode plus hot routes, each including the probe's output reduction. Host preparation is separate and includes validation, CPU route transfer/planning, metadata/workspace allocation and cold-route enumeration; initial compilation is labeled. Cold/shared work is explicitly marked incomplete. These samples can expose decode interference but cannot establish total workload benefit. Future adoption requires cold completion and matched 32K/128K C=1/C=4 consumer measurements.
 
 Existing compact KDA and packet FFN admissions keep their frozen source revisions. This component uses a separate checkout and reservation.
+
+## Recorded validation
+
+- `cpu.json`: 33 isolated Linux modules at `79a554e5`, 288 discovered / 271 passed / 17 CUDA skips. No GPU exposed and no CUDA context initialized.
+- `cpu-followup.json`: the final host resource-freezing change at `f8151e61` passes all 9 mixed-expert tests. Replacing the prior 8-case module gives **289 discovered / 272 passed / 17 CUDA skips** without double-counting repeat tests.
+- `compile.json`: five real SM121 builds at `79a554e5`. All compiled source files remain byte-identical at `f8151e61`; only the host owner and its tests changed, covered by the follow-up CPU gate. `source-continuity.json` records both sets of hashes.
+- Pinned CPU/compiler image: `sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc`, PyTorch `2.13.0+cu130`.
+- Exact code HEAD `f8151e61` passed [PR CI](https://github.com/choiceoh/stkernel/actions/runs/34789934124/job/103812159001). Python-version AST formatting and unguarded CUDA-only observe tests were repaired before this pass.
+- GPU reservation `st-mixed-experts0914v1` was accepted/queued with ticket `1789342553296863` on source `f8151e61`. `admission.json` records the separate frozen checkout, image, command and log. No GPU result is recorded yet.
