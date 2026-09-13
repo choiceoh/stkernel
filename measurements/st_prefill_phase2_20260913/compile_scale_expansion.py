@@ -20,6 +20,7 @@ def digest(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--include-m64', action='store_true')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(root))
@@ -94,6 +95,14 @@ def main():
                 report['variants'].append(dict(rows=rows, expanded_scales=expansion,
                                                cache_key=repr(list(md._DYNAMIC_KERNEL_CACHE)[-1])))
                 print(f'compiled rows={rows} expanded_scales={expansion}', flush=True)
+        if args.include_m64:
+            md._get_dynamic_kernel(288, 2672, 4096, 512, 8, 2672,
+                activation='swigluoai_uninterleave', swiglu_alpha=1., swiglu_beta=0.,
+                swiglu_limit=10., tiled=True, reform_sf_pack=True, tile_m=64,
+                _prefill_tile64=True)
+            report['variants'].append(dict(rows=2672, tile_m=64,
+                cache_key=repr(list(md._DYNAMIC_KERNEL_CACHE)[-1])))
+            print('compiled private M64 short prefill', flush=True)
         resources = []
         for cubin in sorted((output / 'cute').rglob('*.cubin')):
             result = subprocess.run(['/usr/local/cuda/bin/cuobjdump', '--dump-resource-usage', str(cubin)],
@@ -101,8 +110,9 @@ def main():
             cubin.with_suffix('.resources.log').write_text(result.stdout)
             resources.append(dict(path=str(cubin.relative_to(output)), sha256=digest(cubin),
                                   resources=result.stdout))
-        assert len(md._DYNAMIC_KERNEL_CACHE) == 4, 'all packed/raw short/long readers must compile'
-        assert len(resources) >= 4, 'fresh cubin evidence missing'
+        readers = 5 if args.include_m64 else 4
+        assert len(md._DYNAMIC_KERNEL_CACHE) == readers, 'all requested readers must compile'
+        assert len(resources) >= readers, 'fresh cubin evidence missing'
         report.update(status='PASS', resources=resources)
     except BaseException as error:
         report.update(status='FAIL', error=repr(error))

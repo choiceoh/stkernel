@@ -145,7 +145,7 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "beff013042513f7248c064ba12089ecd3bf0fadf8e47f01aa2099d37c9502968",
+      "local_sha256": "b53d0b429453a13b0a34e8c491203154b994d444faf8f48c17c67e9c4a95b00d",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
@@ -163,7 +163,8 @@
         "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged.",
         "2026-09-13 phase 2: short-prefill Q0 word-scale producer; actual-weight GPU gates passed on 3c7bcc0a. Consumer quality and absolute targets remain failed.",
         "2026-09-13 private FIFO candidate: one-layer temporary SF6 expansion for exact eager prefill; decode, capture, raw fallback and Q0 controls retain existing readers. Numerical and consumer qualification pending.",
-        "2026-09-13 L8 GPU component result: retain short packed reader through 8192 rows; automatic temporary expansion remains private and long-only. Actual-weight numerical checks passed at 975f1fb9; consumer proof remains pending."
+        "2026-09-13 L8 GPU component result: retain short packed reader through 8192 rows; automatic temporary expansion remains private and long-only. Actual-weight numerical checks passed at 975f1fb9; consumer proof remains pending.",
+        "2026-09-13 private M64 short-prefill compiler/launcher with exact geometry and separate workspace/cache key; no automatic selection. M128 parents remain unchanged; GPU qualification pending."
       ]
     },
     "b12x/moe_dynamic_kernel.py": {
