@@ -387,11 +387,14 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             draft_policy = resolve_calibration(draft_policy, store, drafter_mod.store_name('fc.weight'),
                                                D.hidden * len(D.target_layers), comm)
             from engine.profiles.glm53.draft_tuning import load_agreed, prepare_store
-            tuning = load_agreed(draft_tuning_path, D, drafter_mod.dense_shapes(D, comm.world_size), comm)
+            from engine.profiles.glm53.draft_fc_bias import AUTO_BIAS_FILE
+            tuning = load_agreed(draft_tuning_path, D, drafter_mod.dense_shapes(D, comm.world_size), comm,
+                                 fc_bias_path=store.root / AUTO_BIAS_FILE)
             prepare_store(tuning, store, draft_policy, D, comm)
             recorder.gauge('draft_tuning', tuning.digest)
             recorder.gauge('draft_selector_projection_fp32', tuning.selector_projection_fp32)
             recorder.gauge('draft_fc_bias_ranks', len(tuning.fc_bias))
+            recorder.gauge('draft_fc_bias_auto', tuning.fc_bias_auto)
             recorder.gauge('draft_policy', draft_policy.label())
             for key, (_rows, cols) in drafter_mod.dense_shapes(D, comm.world_size).items():
                 name = drafter_mod.store_name(key)
@@ -538,6 +541,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                     # Do not overlap the temporary checkpoint with target packing.
                     drafter = load_drafter()
                     drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena, policy=draft_policy, tuning=tuning)
+                    recorder.gauge('draft_fc_bias_applied', drafter.fc_bias is not None)
+                    recorder.gauge('draft_fc_bias_status', drafter.fc_bias_status)
                     recorder.gauge("drafter_block_fp8_packs", sum(
                         layer.fp8 is not None for name, layer in drafter.dense.items() if name != "fc.weight"))
             if calib_plan:                                            # this boot sums what the store lacked, within the budget
@@ -1161,6 +1166,8 @@ def fleet(a) -> int:
                             "draft_tuning": getattr(getattr(engine.drafter, 'tuning', None), 'digest', 'baseline'),
                             "draft_selector_projection_fp32": str(getattr(getattr(engine.drafter, 'tuning', None), 'selector_projection_fp32', False)),
                             "draft_fc_bias": str(getattr(engine.drafter, 'fc_bias', None) is not None),
+                            "draft_fc_bias_auto": str(getattr(getattr(engine.drafter, 'tuning', None), 'fc_bias_auto', False)),
+                            "draft_fc_bias_status": getattr(engine.drafter, 'fc_bias_status', 'unavailable'),
                             "draft_selector_trace_every": str(getattr(getattr(engine.drafter, 'tuning', None), 'trace_every', 0)),
                             "nvme_mapped_staging": str(cfg["nvme_mapped_staging"]),
                             "kda_state_dtype": F.kda_state_dtype,

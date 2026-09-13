@@ -1,8 +1,10 @@
-# Optional low-cost draft controls
+# Low-cost draft controls
 
 The three follow-ups to the [low-cost review](GLM53_DRAFT_LOW_COST_REVIEW.md)
-are connected to native ST serving. They are explicit experiments: this change
-does not supply checkpoint-fitted coefficients or claim higher acceptance.
+are connected to native ST serving. Selector FP32 output and automatic fitted
+FC-bias discovery are enabled by default. Other fitted coefficients remain
+explicit experiments; no checkpoint-fitted coefficients or higher acceptance
+result are supplied with the code.
 No fleet or GPU run was used to develop this change.
 
 | Control | Serving work | Application |
@@ -11,14 +13,16 @@ No fleet or GPU run was used to develop this change.
 | Known request boundaries | One sparse EOS-mask launch before local top-k and forced-token choices | Synchronous `min_tokens` and reasoning-budget boundaries, including sampled q |
 | Draft smoothing alpha / GPTQ damping | Preparation and new packs only | Draft reader namespaces; packed formats and steady-state shapes unchanged |
 | FP32 selector projection output | Same BF16 operands and GEMM dimensions; removes the BF16 intermediate and widening operation | Greedy/sampled, synchronous/batched selector paths |
-| Decode FC mean-error correction | FP32 vector add fused into the existing RMSNorm launch; 16 KiB per rank reserved in the compact arena | Explicitly fitted FP8 decode reader only; prefill has no correction |
+| Decode FC mean-error correction | FP32 vector add fused into the existing RMSNorm launch; 16 KiB per rank reserved in the compact arena | Matching fitted FP8 decode reader only; prefill has no correction |
 
 The empty profile preserves alpha=1, smoothing alpha=0.5, and GPTQ damping=0.01.
 Existing serving defaults remain FC FP8, automatic committed-decode calibration,
 and rejection diagnostics. K comes from the serving build (currently seven
 after #869); profiles never change K or the candidate count. FP32 KDA state is
-unchanged. Production pins the empty tuning profile; the experimental boot can
-load an explicit profile before preparation and graph capture:
+unchanged. Production pins the empty tuning profile, which now enables FP32
+selector output and looks for `/cache/draft-fc-bias.json`. Without a valid fitted
+artifact, FC correction is absent and boot continues normally. The experimental
+boot can load an explicit profile before preparation and graph capture:
 
 ```sh
 STK_draft_tuning=/absolute/path/draft-profile.json <existing native boot command>
@@ -39,13 +43,14 @@ the profile underneath a running server: it is bound at boot.
   "request_boundaries": true,
   "smoothing_alpha": {},
   "gptq_damping": {},
-  "selector_projection_fp32": false,
+  "selector_projection_fp32": true,
+  "fc_bias_auto": true,
   "fc_bias": {},
   "trace_every": 0
 }
 ```
 
-This example enables only request boundaries. A single selector coefficient
+This example adds request boundaries to the defaults. A single selector coefficient
 broadcasts to the serving K; a position-specific list must contain exactly K
 finite values in [0, 2]. Missing selector coefficients mean all ones.
 
@@ -61,10 +66,11 @@ provenance written by the fitting command.
 using `torch.mm(..., out_dtype=torch.float32)` on CUDA. The CPU reference
 multiplies FP32-widened BF16 operands. It removes one output rounding boundary;
 it does not change the source weight, candidate count, or recurrent state.
-The existing BF16-output path remains the default until matched runtime evidence
-supports adoption. Identical GEMM dimensions do not guarantee identical kernel
-latency. Selector trace records retain this flag, and the selector fitter carries
-it into its result and rejects mixtures of the two projection modes.
+FP32 output is the default, including when the field is omitted. Set it to
+`false` for the BF16-output path. Identical GEMM dimensions do not guarantee
+identical kernel latency. Selector trace records retain this flag, and the
+selector fitter carries it into its result and rejects mixtures of the two
+projection modes. Older traces without this field still mean BF16 output.
 
 `fc_bias` maps every TP rank number (string keys) to an object with
 `reader_sha256` and `values`, a finite FP32 vector of exactly `hidden_size`
@@ -77,14 +83,35 @@ This binds a vector to the reader it was fitted on; it does not certify the
 full target model, workload quality, or an unversioned external library build.
 Keep the calibration run's full runtime/target identity alongside the bundle.
 
-Correction identity checks run only when an explicit bias profile is loaded.
+`fc_bias_auto` defaults to `true`. When `fc_bias` is empty, native boot reads
+the CPU fitter's complete artifact from `/cache/draft-fc-bias.json`. It requires
+selected fits and strictly improved held-out FC and normalized errors for every
+rank. Every rank must read identical bytes. Only the correction is imported;
+this cache file cannot alter selector or other tuning settings. File reads are
+bounded to 8 MiB. Missing, malformed, mismatched or stale automatic artifacts
+disable correction across all ranks and record the reason without blocking boot.
+An explicit nonempty `fc_bias` takes precedence and retains strict error handling.
+Set `fc_bias_auto: false` with an empty `fc_bias` to disable correction for A/B.
+
+Correction identity checks run only after every rank has an agreed bias candidate.
 They stream at most 128 weight rows to the CPU at once and never retain a second
 whole FC weight. The vector is copied into its own compact arena region before
 capture. No reference FC, collector, hashing, CPU readback, or extra collective
 runs in steady-state decoding. Both the synchronous committed path and the
 batched/precomputed context path apply the correction, including when calibration
 uses the shared pack. Even a one-token prefill keeps the ordinary normalization.
-Active projection precision and correction presence appear in `st:lane_info`.
+Boot gauges and `st:lane_info` distinguish automatic discovery from an applied
+correction: `draft_fc_bias_auto`, `draft_fc_bias` (lane) / `draft_fc_bias_applied`
+(boot), and `draft_fc_bias_status` (`missing`, `disabled`, `applied-auto`,
+`applied-profile`, or `skipped: ...`). The tuning digest includes the discovered
+artifact identity or its absence. No artifact means no reader hashing or vector
+allocation; the existing arena reservation remains 16 KiB per rank.
+
+To disable both defaults in an explicit tuning profile:
+
+```json
+{"version": 1, "selector_projection_fp32": false, "fc_bias_auto": false, "fc_bias": {}}
+```
 
 ## Fitting the FC correction
 
@@ -129,9 +156,13 @@ output has an empty `fc_bias` map. The command records the input file hashes,
 row/family counts, baseline/candidate errors, and `live_acceptance: false`.
 It never substitutes fitted residual error for measured speculative acceptance.
 
-To combine with selector FP32, add `"selector_projection_fp32": true` to the
-generated profile. Preserve any other explicitly chosen tuning fields when
-combining fitting results. No checkpoint-fitted bias vector ships with the code.
+For automatic application on the next boot, place the identical generated
+`fc-bias.json` at `/cache/draft-fc-bias.json` on every TP node (write a temporary
+file and rename it into place). It must remain the fitter artifact with only
+`version`, `fc_bias`, and `evidence`; use the explicit tuning profile for other
+controls. Selector FP32 is already the default. Preserve explicitly chosen
+tuning fields when combining results into an explicit profile. No checkpoint-fitted
+bias vector ships with the code, and boot never starts collection or fitting.
 
 For the separate offline weight-rounding study, see
 [GPTQ/FP4 rounding research](GLM53_DRAFT_ROUNDING_RESEARCH.md).

@@ -20,6 +20,10 @@ from engine.profiles.glm53.draft_tuning import DraftTuning, load_agreed
 class ProfileTests(unittest.TestCase):
     def test_baseline_and_explicit_names(self):
         self.assertEqual(DraftTuning().alphas(6), (1.,) * 6)
+        for tuning in (DraftTuning(), DraftTuning.from_dict(dict(version=1))):
+            self.assertTrue(tuning.selector_projection_fp32)
+            self.assertTrue(tuning.fc_bias_auto)
+            self.assertEqual(tuning.fc_bias, {})
         comm = SimpleNamespace(wait_prepared=lambda stage: None, gather_objects=lambda x: [x])
         self.assertIsInstance(load_agreed('', None, None, comm), DraftTuning)
         profile = DraftTuning.from_dict(dict(version=1, selector_alpha=[.75],
@@ -34,7 +38,8 @@ class ProfileTests(unittest.TestCase):
         for values in ({'version': True}, {'selector_alpha': [float('nan')]},
                        {'selector_alpha': [-.1]}, {'selector_alpha': [True]},
                        {'gptq_damping': {'fc.weight': 0}}, {'smoothing_alpha': {'x': 1.1}},
-                       {'trace_every': True}, {'request_boundaries': 1}, {'unknown': 1}):
+                       {'trace_every': True}, {'request_boundaries': 1}, {'unknown': 1},
+                       {'fc_bias_auto': 1}, {'selector_projection_fp32': 1}):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 DraftTuning.from_dict(dict({'version': 1}, **values))
         with self.assertRaisesRegex(ValueError, 'exactly 6'):
@@ -65,6 +70,8 @@ class ProfileTests(unittest.TestCase):
 
 class SelectorFitTests(unittest.TestCase):
     def test_fitted_alpha_preserves_projection_precision_and_refuses_mixed_records(self):
+        self.assertFalse(fit_selector(self.rows())['selector_projection_fp32'],
+                         'legacy BF16 traces must not be reinterpreted using new serving defaults')
         records = [dict(row, selector_projection_fp32=True) for row in self.rows()]
         self.assertTrue(fit_selector(records)['selector_projection_fp32'])
         records[0]['selector_projection_fp32'] = False

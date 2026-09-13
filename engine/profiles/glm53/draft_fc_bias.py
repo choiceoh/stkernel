@@ -15,6 +15,10 @@ import re
 import torch
 
 
+AUTO_BIAS_FILE = 'draft-fc-bias.json'
+MAX_AUTO_BYTES = 8 * 1024 * 1024
+
+
 def validate_entry(value):
     if not isinstance(value, dict):
         raise ValueError('fc_bias must be an object')
@@ -34,6 +38,55 @@ def validate_profile(value):
                                           for k in value)):
         raise ValueError('fc_bias must map TP rank numbers to reader corrections')
     return {rank: validate_entry(entry) for rank, entry in value.items()}
+
+
+def load_auto(path, facts, comm):
+    """Read the CPU fitter's shared artifact; absent/stale caches never block boot.
+
+    Agree presence and bytes before any rank may hash its prepared GPU reader.
+    Only the correction is imported, never other tuning flags from a cache file.
+    """
+    profile, digest, error = {}, None, None
+    try:
+        with Path(path).open('rb') as source:
+            raw = source.read(MAX_AUTO_BYTES + 1)
+        if len(raw) > MAX_AUTO_BYTES:
+            raise ValueError('FC bias artifact exceeds the size limit')
+        value = json.loads(raw)
+        if (not isinstance(value, dict) or type(value.get('version')) is not int or value['version'] != 1
+                or value.keys() - {'version', 'fc_bias', 'evidence'}):
+            raise ValueError('automatic FC bias requires a version 1 fc-bias fitter artifact')
+        profile = validate_profile(value.get('fc_bias', {}))
+        ranks = {str(rank) for rank in range(comm.world_size)}
+        if set(profile) != ranks or any(len(entry['values']) != facts.hidden for entry in profile.values()):
+            raise ValueError('FC bias artifact must cover every TP rank with the correct hidden width')
+        evidence = value.get('evidence', {})
+        if (evidence.get('kind') != 'held_out_decode_FC_bias' or evidence.get('selected') is not True
+                or set(evidence.get('ranks', {})) != ranks):
+            raise ValueError('FC bias artifact needs held-out fitting evidence for every TP rank')
+        for report in evidence['ranks'].values():
+            if (report.get('selected') is not True
+                    or any(type(report.get(key)) is not int or report[key] < 1
+                           for key in ('train_rows', 'validation_rows', 'train_families', 'validation_families'))):
+                raise ValueError('FC bias artifact needs selected fits with nonempty held-out families')
+            for key in ('fc_error', 'norm_error'):
+                before, after = report['baseline'][key], report['candidate'][key]
+                if (any(type(v) not in (int, float) or not math.isfinite(v) for v in (before, after))
+                        or not 0 <= after < before):
+                    raise ValueError('FC bias artifact must improve held-out FC and normalized errors')
+        digest = hashlib.sha256(raw).hexdigest()
+    except FileNotFoundError:
+        error = 'missing'
+    except Exception as exc:
+        error = f'{type(exc).__name__}: {exc}'[:256]
+    comm.wait_prepared('draft-fc-bias-auto')
+    reports = comm.gather_objects(dict(digest=digest, error=error))
+    if all(r['error'] == 'missing' for r in reports):
+        return {}, 'missing', None
+    errors = [f'rank {i}: {r["error"]}' for i, r in enumerate(reports) if r['error']]
+    if errors or len({r['digest'] for r in reports}) != 1:
+        return {}, 'skipped: ' + '; '.join(errors or ['different artifact digests']), None
+    return profile, 'pending', digest
 
 
 def decode_reader(layer):
@@ -85,8 +138,10 @@ def reader_identity(layer, source_weight, norm_weight, eps):
 
 def prepare_bias(drafter):
     profile = drafter.tuning.fc_bias
+    drafter.fc_bias_status = drafter.tuning.fc_bias_status
     if not profile:
         return None
+    automatic = drafter.tuning.fc_bias_source == 'auto'
     error, result = None, None
     comm = drafter.target.comm
     try:
@@ -107,6 +162,10 @@ def prepare_bias(drafter):
     comm.wait_prepared('draft-fc-bias')
     errors = comm.gather_objects(error)
     if any(errors):
-        raise ValueError('draft FC bias preparation failed: ' + '; '.join(
-            f'rank {i}: {e}' for i, e in enumerate(errors) if e))
+        reason = '; '.join(f'rank {i}: {e}' for i, e in enumerate(errors) if e)
+        drafter.fc_bias_status = 'skipped: ' + reason
+        if automatic:
+            return None
+        raise ValueError('draft FC bias preparation failed: ' + reason)
+    drafter.fc_bias_status = 'applied-auto' if automatic else 'applied-profile'
     return result

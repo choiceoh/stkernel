@@ -182,6 +182,7 @@ class Drafter:
         self.selector_alpha = self.tuning.alphas(F.k)
         self.request_boundaries = False
         self.fc_bias = None
+        self.fc_bias_status = self.tuning.fc_bias_status
 
     def capture_decode(self, caches, memory=None, draws_seed=None, vocab=None, prepared_context=False,
                        append_child=None):
