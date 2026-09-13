@@ -1,0 +1,28 @@
+revision=45ada81da11c7825dcd72c83b59d14c01b46ab03
+test_only_bounded_single_segment_eager_prefill_uses_lane (tests.test_engine_prefill_absorb_tiles.AbsorbRoutingTests.test_only_bounded_single_segment_eager_prefill_uses_lane) ... ok
+test_runtime_marker_requires_both_contractions_on_every_dsa_layer (tests.test_engine_prefill_absorb_tiles.AbsorbRoutingTests.test_runtime_marker_requires_both_contractions_on_every_dsa_layer) ... ok
+test_serving_default_on_with_experimental_rollback_and_neutral_bare_plan (tests.test_engine_prefill_absorb_tiles.AbsorbRoutingTests.test_serving_default_on_with_experimental_rollback_and_neutral_bare_plan) ... ok
+test_missing_native_implementation_cannot_pass_coverage (tests.test_engine_native_execution.NativeQualificationTests.test_missing_native_implementation_cannot_pass_coverage) ... ok
+test_nonfinite_prefill_releases_slots_and_refuses_readiness (tests.test_engine_native_execution.NativeQualificationTests.test_nonfinite_prefill_releases_slots_and_refuses_readiness) ... ok
+test_acceptance_defaults_are_on_and_cannot_override_production (tests.test_engine_knobs.KnobDeclarationTests.test_acceptance_defaults_are_on_and_cannot_override_production) ... ok
+test_adopted_execution_cannot_be_changed_by_stale_bisect_environment (tests.test_engine_knobs.KnobDeclarationTests.test_adopted_execution_cannot_be_changed_by_stale_bisect_environment) ... ok
+test_gb10_serving_defaults_are_on_and_production_refuses_overrides (tests.test_engine_knobs.KnobDeclarationTests.test_gb10_serving_defaults_are_on_and_production_refuses_overrides) ... ok
+test_indexer_shards_are_explicit_and_cannot_change_production (tests.test_engine_knobs.KnobDeclarationTests.test_indexer_shards_are_explicit_and_cannot_change_production) ... ok
+test_only_declared_precision_mla_context_and_execution_experiments_remain (tests.test_engine_knobs.KnobDeclarationTests.test_only_declared_precision_mla_context_and_execution_experiments_remain) ... ok
+test_production_remains_restartable_after_experiment_expiry (tests.test_engine_knobs.KnobDeclarationTests.test_production_remains_restartable_after_experiment_expiry) ... ok
+test_unqualified_tuning_requires_an_explicit_profile (tests.test_engine_knobs.KnobDeclarationTests.test_unqualified_tuning_requires_an_explicit_profile) ... ok
+test_configure_prefill_modes (tests.test_engine_knobs.MlaPrefillModeTests.test_configure_prefill_modes) ... ok
+test_dispatcher_spec_is_applied_once_and_refused_after_views_exist (tests.test_engine_knobs.MoeStaticSpecTests.test_dispatcher_spec_is_applied_once_and_refused_after_views_exist) ... ok
+test_parse_moe_static (tests.test_engine_knobs.MoeStaticSpecTests.test_parse_moe_static) ... ok
+test_the_timing_cells_reach_the_served_recipe_but_never_serving (tests.test_engine_knobs.MoeStaticSpecTests.test_the_timing_cells_reach_the_served_recipe_but_never_serving)
+xs/xa drop a TMA issue at compile time, which is the only way to ask which of the served recipe's ... ok
+test_tile_major_relayout_reads_back_row_major (tests.test_engine_knobs.MoeStaticSpecTests.test_tile_major_relayout_reads_back_row_major) ... ok
+test_dynamic_tile_m_override_is_validated (tests.test_engine_knobs.ProbeHookTests.test_dynamic_tile_m_override_is_validated) ... ok
+test_mhc_pass_hook_is_fixed_before_the_kernels_compile (tests.test_engine_knobs.ProbeHookTests.test_mhc_pass_hook_is_fixed_before_the_kernels_compile) ... ok
+test_mla_probe_instruments_are_arguments_not_env (tests.test_engine_knobs.ProbeHookTests.test_mla_probe_instruments_are_arguments_not_env) ... ok
+test_probe_runner_and_launcher_forward_declared_knobs (tests.test_engine_knobs.ProbeRunnerTests.test_probe_runner_and_launcher_forward_declared_knobs) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 4.477s
+
+OK
