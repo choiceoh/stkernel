@@ -813,15 +813,21 @@ class Runner:
         now = time.monotonic() if now is None else now
         self.maintain_prefix()
         while True:
-            if len(self.inflight) >= self.depth:
+            full = len(self.inflight) >= self.depth
+            step = None if full else sched.plan(self.state, self.c, now)
+            asynchronous = step is not None and self._async_ok(step)
+            agree = getattr(self.model, "agree_step", None)
+            if agree is not None:
+                asynchronous = agree(step, asynchronous, [list(s.seqs) for s, _, _ in self.inflight], self.depth)
+            if full:
                 self.resolve_oldest()
-            step = sched.plan(self.state, self.c, now)
+                continue
             if step is None:
                 if self.inflight:
                     self.resolve_oldest()
                     continue
                 return None
-            if self._async_ok(step):
+            if asynchronous:
                 return self._launch(step)
             if self.inflight:                                # a prefill or a synchronous decode needs every step ahead landed
                 self.sync_drain_steps += 1

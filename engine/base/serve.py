@@ -2725,6 +2725,7 @@ class Server:
                 if (run and not self._active and not self._waiting and not self.runner.inflight and self.arrivals.empty()
                         and time.monotonic() - run.get('last_row_at', run['started']) > 120):
                     self.controls.put(('latency', dict(op='abort', token=run['token'], _control_id='idle-expiry')))
+            self.tripwire.before_broadcast()
             alive, arrivals, cancels, controls, draining, stamp = self.comm.broadcast_object(
                 (self.alive, self._drain(), self._drain_cancels(), self._drain_controls(),
                  self._yield_asked(), self.tripwire.stamp()) if self.comm.rank == 0 else None)

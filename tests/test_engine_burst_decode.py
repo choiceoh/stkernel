@@ -78,9 +78,11 @@ class CpuBurst(BurstDecode):
 
 
 def engine(rows=4):
+    from engine.base.tripwire import peers_agree
     e = pipeline_tests.BatchTransitionTests().engine()
     e.max_context, e.memory = 64, None
-    e.net = NS(comm=NS(world_size=4, transport=NS(eligible_max=lambda t: True), all_reduce_max=lambda t: t))
+    e.net = NS(comm=NS(world_size=4, transport=NS(eligible_max=lambda t: True), all_reduce_max=lambda t: t,
+                       all_reduce_host=lambda values: peers_agree(values, 4)))
     e.caches.pool.tokens = [64] * 5
     e.caches.prepare = lambda step: None
     e.decode_graphs.run_inputs = lambda *args: (None, None, None)
