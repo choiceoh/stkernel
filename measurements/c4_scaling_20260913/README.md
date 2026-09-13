@@ -316,6 +316,27 @@ strided 입력·e4m3/bf16/f32·비-2의 거듭제곱 후보 수 포함), 같은 
 둘 다 `id ≥ length // pool` 을 스스로 -1 로 다루므로 슬롯·카운트 출력이 같다(`test_rows_short_of_the_selection_width_finalize_like_the_loop`,
 완전한 풀이 top-k 폭보다 적은 컨텍스트로). GPU 티켓은 이번에도 없다.
 
+**넷째 접기 — 남은 두 런치짜리들 (운영자 "추가 접기 및 융합 작업", 2026-09-13 오후, PR #819 뒤).** 셋째 접기 뒤 스텝에서 바이트 동일하게
+접히는 것을 다시 세었다(§6 의 1행 재생 표 + 코드 열거):
+
+| 자리 | 전 | 후 | 근거 |
+|---|---:|---:|---|
+| 인덱서 head gate `w * qs * scale` (DSA 층당) | 2 | 1 | `head_gate` 커널: fp32 곱 둘을 같은 순서로(레인 `Lanes.head_gate`) |
+| `complete_pools` 풀 레코드 쓰기(키·스케일) | 2 | 1 | `scatter_pools`: 한 프로그램이 128 바이트 키와 fp32 스케일을 레코드에 |
+| 테일 링 쓰기(stack + `write_ring_rows`) | 2 | 1 | `write_tails`: 두 원본을 그대로 읽어 링의 두 반에 |
+| 선택의 지평 마스크(마스크 텐서 + 행별 `masked_fill_`) | 1 + 행 | 행 | `mask_horizon`: −inf 를 제자리에, 마스크 텐서 없이(128K 에서 층당 ~1 MB 트래픽도 준다) |
+| 드래프터 샘플 워크(K=6 걸음) | 걸음당 `temps > 0`·`clamp_min`·`qcand[:, s]` | 한 번 | 루프 불변식 끌어올림, `qcand = cand.clone()` |
+| `DeviceStep.positions` (관찰 훅) | arange + add | add | kept iota |
+
+스텝당 **−45 런치(DSA 층당 4 × 11 + 1) + 샘플 워크 −16 ≈ −0.15 ms**. 다섯째는 없다 — 남은 런치는 커널 자체다: 1행 스텝 ~800 런치 중 dense
+GEMM 365(mk_gemm2·입력 CTA·cutlass·splitK), mHC 89(층당 fused post+pre 두 번), MoE 45, KDA 링 68, DSA 층당 ~14 + 행당 3, 라우터 층당 6
+(GEMM+splitK, `_scores`, top-k 둘, `_weights`), 스텝 진입·마무리·aux ~40, 샘플러·드래프터 ~100. 이 가운데 바이트 동일하게 접을 수 있는 것은
+없다: GEMM 병합은 cuBLAS/cutlass 의 커널 선택(split-K)을 바꾸고, 라우터 top-k 의 `sorted=False` 는 `sel` 열 순서를 바꿔 전문가 합의 순서를
+바꾸며, aux 층의 `mhc_post` 재사용은 fused post+pre 를 따로 부르는 것이라 다른 커널이고, `res.float().mean(1)` 류의 축소는 torch 의 합 순서를
+재현할 수 없다. **런치 레버는 여기서 끝이다.** 남는 것은 전부 수치가 바뀌는 커널 작업이다 — 1행 기준 dense GEMM 13 ms(35%: W4 가중치를 M=7 에서
+~80~160 GB/s 로 읽는 작은 GEMM 들, `mk_gemm_input_cta` 의 C=1 opt-in 같은 커널 효율), MoE 정적 커널 207 → 240 GB/s, mHC 3 ms(8%), fp32 head gate
+SGEMM 0.5 ms(1.4%, `gemmSN` 48 µs/호출) — 각각 브래킷이 필요하다.
+
 ## 10. SF6 dynamic 프리필 커널 (운영자 "sf6 다이내믹 프리필 커널 진행", 2026-09-13)
 
 **모델을 먼저 고친다.** §6·§9 의 세 커널 실측이 한 식에 맞는다: `시간 = 바이트 / ~188 GB/s`, 바이트 = m 타일 수 × (전문가 가중치 3.1 MB + SF6

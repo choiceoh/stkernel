@@ -82,23 +82,6 @@ class StateGraphTests(unittest.TestCase):
             torch.cuda.synchronize()
             self.assertTrue(torch.equal(storage.view(torch.uint8), expected.view(torch.uint8)), (tokens, "replay"))
 
-    def test_scatter_rows_over_segments_matches_one_segment_launches(self):
-        """complete_pools writes every segment's pools in one launch (scatter_rows over [n, P, W]): byte-equal
-        to one launch per segment with that segment's rows, slots and count."""
-        from engine.profiles.glm53.decode_graphs import scatter_rows
-        n, pools, width = 3, 2, 12
-        for dst_width in (width, width + 5):                     # a strided destination row
-            dst = torch.randint(0, 255, (50, dst_width), device="cuda", dtype=torch.uint8)[:, :width]
-            expected = dst.clone()
-            src = torch.randint(0, 255, (n, pools, width), device="cuda", dtype=torch.uint8)
-            slots = torch.tensor([[5, 9], [11, 40], [0, 1]], device="cuda")
-            counts = torch.tensor([2, 1, 0], device="cuda")
-            for i in range(n):
-                scatter_rows(src[i], expected, slots[i], counts[i])
-            scatter_rows(src, dst, slots, counts)
-            self.assertTrue(torch.equal(dst, expected), dst_width)
-            self.assertTrue(torch.equal(dst[40], expected[40]) and not torch.equal(dst[1], src[2, 1]), "counts bound the writes")
-
     def test_slot_remapping_zero_context_wrap_and_rejected_future_writes(self):
         from engine.base.arena import Arena
         from engine.profiles.glm53.caches import Glm53Caches, layout

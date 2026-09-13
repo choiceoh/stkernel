@@ -251,3 +251,37 @@ def pool_addresses(contexts, block_table, per, block_stride, layer_offset, pool_
     blocks = torch.gather(block_table, 1, (pids // per).long())
     slots = (blocks * block_stride + layer_offset + pids % per).to(blocks.dtype).long()
     return counts, slots
+
+
+def head_gate(w, qs, scale: float):
+    """The indexer's fp32 head gate with the query scale and the softmax scale folded in, as two products."""
+    return (w * qs * scale).contiguous()
+
+
+def scatter_pools(pooled_keys, pooled_scales, keys, scales, slots, counts):
+    """Segment i's first counts[i] pools go to records slots[i, :counts[i]]: keys as bytes, scales as fp32."""
+    n, max_pools = slots.shape
+    pk = pooled_keys.view(torch.uint8).view(n, max_pools, -1)
+    ps = pooled_scales.view(n, max_pools)
+    kb = keys.view(torch.uint8)
+    for i in range(n):
+        c = int(counts[i])
+        if c:
+            kb[slots[i, :c]] = pk[i, :c]
+            scales[slots[i, :c]] = ps[i, :c]
+
+
+def write_tails(field, slots, contexts, keys, gates):
+    """Segment i's keys and gates into ring slots[i] at cells (contexts[i] + j) % width."""
+    n, t, d = keys.shape
+    width = field.shape[1]
+    for i in range(n):
+        cells = (contexts[i] + torch.arange(t, device=keys.device)) % width
+        field[slots[i], cells, 0] = keys[i]
+        field[slots[i], cells, 1] = gates[i]
+
+
+def mask_horizon(logits, ke):
+    """logits[r, c] = -inf for c >= ke[r], in place."""
+    n = logits.shape[1]
+    return logits.masked_fill_(torch.arange(n, device=logits.device)[None, :] >= ke[:, None], float("-inf"))
