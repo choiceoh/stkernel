@@ -40,13 +40,21 @@ class KnobDeclarationTests(unittest.TestCase):
         cfg = self._declared({"STK_mla_prefill":"stock", "STK_context_ceiling":"131072"})
         self.assertEqual(set(cfg.knobs), {"mla_prefill", "context_ceiling", "kda_state_dtype",
                                           "execution_overlap", "early_observe", "prefill_tiles", "direct_mhc", "prefill_project_tiles",
-                                          "nvme_mapped_staging", "decode_iterations", "deferred_kda", "terminal_mhc",
+                                          "nvme_mapped_staging", "decode_iterations", "deferred_kda", "terminal_mhc", "prefill_indexer_shards",
                                           "draft_fc_precision", "draft_fc_calibration", "draft_diagnostics"})
         self.assertEqual((cfg["mla_prefill"], cfg["context_ceiling"]), ("stock", 131072))
         self.assertEqual((cfg["execution"], cfg["moe_static"]), ("native", "t,r,sf6,q0"))
         from engine.base.config import ConfigError
         with self.assertRaises(ConfigError):
             self._declared({"STK_mla_prefill":"stock"}, production=True)
+
+    def test_indexer_shards_are_explicit_and_cannot_change_production(self):
+        from engine.base.config import ConfigError
+        for production in (False, True):
+            self.assertEqual(self._declared({},production=production)['prefill_indexer_shards'],0)
+        self.assertEqual(self._declared({'STK_prefill_indexer_shards':'1'})['prefill_indexer_shards'],1)
+        with self.assertRaises(ConfigError):
+            self._declared({'STK_prefill_indexer_shards':'1'},production=True)
 
     def test_gb10_serving_defaults_are_on_and_production_refuses_overrides(self):
         from engine.base.config import ConfigError
