@@ -105,7 +105,7 @@ class DrafterStorageTests(unittest.TestCase):
                         end = (end + 255) // 256 * 256 + size
                     self.assertLessEqual(end, packed_nbytes(rows, cols, prefill=prefill))
 
-    def test_combined_fp8_is_declared_and_both_packs_are_arena_owned(self):
+    def test_combined_fp8_is_declared_and_both_packs_are_sent_to_compaction(self):
         import torch
         from engine.kernels.dense import DenseLinear, W4Pack, packed_nbytes
         from engine.profiles.glm53.draft_policy import DraftPolicy
@@ -119,13 +119,17 @@ class DrafterStorageTests(unittest.TestCase):
         def fp8():
             return SimpleNamespace(weight=(torch.ones(128, 128, dtype=torch.uint8), torch.ones(1, 1)))
         layer.fp8, layer.decode_fp8 = fp8(), fp8()
-        source = layer.decode_fp8.weight[0]
+        sources = tuple(t for p in layer.packs for t in (p.data, p.scale, p.rowscale)) + layer.fp8.weight + layer.decode_fp8.weight
+        destinations = tuple(torch.zeros_like(t) for t in sources)
         storage = torch.empty(packed_nbytes(128, 128, decode_fp8=True), dtype=torch.uint8)
-        layer.consume_weight(storage)
-        for t in (*layer.fp8.weight, *layer.decode_fp8.weight):
-            self.assertEqual(t.untyped_storage().data_ptr(), storage.data_ptr())
-        source.zero_()
-        self.assertTrue(torch.all(layer.decode_fp8.weight[0] == 1))
+        # The allocator itself requires CUDA. This CPU contract checks the
+        # complete handoff and rebinding without weakening that guard.
+        with patch('engine.modules.packed_storage.consume', return_value=destinations) as consume:
+            layer.consume_weight(storage)
+        self.assertIs(consume.call_args.args[0], storage)
+        self.assertEqual([id(t) for t in consume.call_args.args[1]], [id(t) for t in sources])
+        rebound = tuple(t for p in layer.packs for t in (p.data, p.scale, p.rowscale)) + layer.fp8.weight + layer.decode_fp8.weight
+        self.assertEqual([id(t) for t in rebound], [id(t) for t in destinations])
 
     def test_context_phase_survives_early_projection_and_short_commits(self):
         import torch
