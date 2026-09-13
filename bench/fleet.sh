@@ -30,6 +30,17 @@
 #   fleet.sh window s [MINUTES|off]                      a campaign window: production stays down between this session's tickets
 #   fleet.sh run ... --replaces OLD                       a fresh ticket that inherits OLD's place in line (cancel + re-request loses it)
 #
+# THE ORDER (bench/fleet_priority.py, 2026-09-13). In each lane the SMALL tickets -- an estimate of
+# FLEET_SMALL_MAX_MIN (5) minutes or less -- go as a batch, oldest first, ahead of anything larger,
+# up to FLEET_BATCH_CAP_MIN (15) minutes of small work per ranking: a CPU pipeline drains the short
+# instructions queued behind a long one rather than holding them all for it. A ticket that has
+# waited 30 minutes goes oldest-first ahead of the unaged; one that has waited FLEET_STARVE_S
+# (3600) is passed by nothing but the explicit front and a yielded probe. The estimate a ticket is
+# ranked by is the experiment DB's prediction, else the ledger's median of its own or its family's
+# last five holds, else the declared one -- `run` without an estimate takes that history too, the
+# probe's own memory budget is exported as ST_PROBE_GIB when none was set, and a single check's
+# fresh files come back to results/<session> when it releases.
+#
 # TWO LANES. A boot, a pair, a chain, a live onepass take the fleet: four Sparks, one holder.
 # An ST check that needs ONE GPU (probes/run_engine_check.sh, or run_engine_probe.sh without
 # --distributed: one container, the four ranks as threads on one card) does not wait for the
@@ -299,7 +310,7 @@ single_line() {   # for status: the lane's holder, else its evidence, else FREE
 #   3  the lease is the queue's: taken at GO, asked by kind through the quiet gate, handed on (2026-09-13)
 #   4  the single-GPU lane is one Spark beside production: room, not a free GPU, is the evidence,
 #      and on a fleet box a fleet boot and a single check never share it (2026-09-13)
-FLEET_RULES=4
+FLEET_RULES=5
 entry_rules() { sed -n 's/^FLEET_RULES=\([0-9][0-9]*\).*/\1/p' "${1:?file}" 2>/dev/null | head -1; }
 entry_line() {
   local entry=$LOGD/fleet.sh theirs
@@ -385,10 +396,32 @@ serving_idle() {  # a probe may run beside this: healthy, nothing in flight, not
   fi
   [ "$(curl -s -m 3 -o /dev/null -w '%{http_code}' "$HEAD_URL/health")" = 200 ] && [ "$(busy_reqs)" = 0 ]
 }
-# expected minutes for a session: median of its last 5 actual holds, else the estimate
+# expected minutes for a session: median of its last 5 actual holds -- the same name, else its family
+# (the name with the digits out: the numbered reruns of a ticket) -- else the estimate (= fleet_priority.history_estimates)
 expected_min() {  # session est
-  local m; m=$(awk -F'\t' -v s="$1" '$2==s {v[++n]=$5} END {if (n) {asort(v); print v[int((n+1)/2)]}}' "$LEDGER" 2>/dev/null)
+  local m fam; fam=$(printf '%s' "$1" | sed 's/[0-9]//g')
+  m=$(awk -F'\t' -v s="$1" -v fam="$fam" '
+      $5 > 0 { if ($2 == s) v[++n] = $5; else { t = $2; gsub(/[0-9]/, "", t); if (t == fam) w[++k] = $5 } }
+      END { if (!n) { n = k; for (i = 1; i <= k; i++) v[i] = w[i] }
+            if (n) { j = 0; for (i = (n > 5 ? n - 4 : 1); i <= n; i++) u[++j] = v[i] + 0
+                     # five values at most: an insertion sort, so any awk will do (asort is gawk only)
+                     for (a = 2; a <= j; a++) { x = u[a]; b = a - 1; while (b > 0 && u[b] > x) { u[b + 1] = u[b]; b-- } u[b + 1] = x }
+                     print u[int((j + 1) / 2)] } }' "$LEDGER" 2>/dev/null)
   echo "${m:-$2}"
+}
+# the check's fresh files on the lane host (~/.cache/st, the container's /cache), into results/<session> here:
+# a session reads its numbers on the controller instead of fetching them box to box (2026-09-13, operator: automate).
+# In the background and off the queue lock -- fd 9 closed, or the child would hold the flock for the whole copy
+# (a timeline trace is 14 MB).
+_collect_single() {  # session t0
+  [ -n "$FLEET_SINGLE_GPU_HOST" ] || return 0
+  local into="$LOGD/results/$1"
+  ( if n=$(python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_single.py" collect --host "$FLEET_SINGLE_GPU_HOST" --since "$2" --into "$into" 2>/dev/null); then
+      logit "results of $1: $n file(s) in $into"
+    else
+      logit "results of $1: not collected from $FLEET_SINGLE_GPU_HOST"
+    fi ) 9>&- >/dev/null 2>&1 &
+  return 0
 }
 # ---- preflight: the traps that cost a boot on 09-06, checked before the boot
 preflight() {  # [--probe|--single] session [-- cmd...] -> 0 PASS, 1 FAIL
@@ -838,12 +871,12 @@ _kick_lease() {  # the fleet holder file's session loses its lease too (dead, or
   return 0
 }
 _release() {  # session -- whichever lane's holder names it
-  local hf hkind
+  local hf hkind t0
   if hf=$(holder_file_of "$1"); then
-    hkind=$(cut -d'|' -f7 "$hf")
+    hkind=$(cut -d'|' -f7 "$hf"); t0=$(cut -d'|' -f4 "$hf")
     _ledger_row "$1" "$hf"
     rm -f "$hf" "$(hb_file "$1")"; _event release "$1" ""
-    if [ "$hf" = "$HS" ]; then logit "release $1 [single]"; return 0; fi
+    if [ "$hf" = "$HS" ]; then logit "release $1 [single]"; _collect_single "$1" "${t0:-0}"; return 0; fi
     rm -f "$LOGD/FLEET-held-by-$1.done"; logit "release $1"
     [ "${hkind:-boot}" != boot ] || [ "${FLEET_KEEP_LEASE:-0}" = 1 ] || _lease_pass_on "$1"
     python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" release || return 1
@@ -962,11 +995,13 @@ case "$cmd" in
   run)
     kind=boot; force=""; detach=0; prepare_spec=""; prepared_manifest=""; lane_force=""; replaces=""
     while :; do case "${1:-}" in --probe) kind=probe; shift;; --cpu|--nogpu) force=nogpu; shift;; --gpu) force=gpu; shift;; --fleet) lane_force=fleet; shift;; --detach) detach=1; shift;; --prepare) prepare_spec=${2:?preparation spec}; shift 2;; --prepared) prepared_manifest=${2:?prepared manifest}; shift 2;; --replaces) replaces=${2:?the session this ticket replaces}; shift 2;; *) break;; esac; done
-    s=${1:?session}; shift; est=30; note=""
+    s=${1:?session}; shift; est=""; note=""
     [ "${1:-}" != "--" ] && { est=$1; shift; }
     [ "${1:-}" != "--" ] && { note=$1; shift; }
     [ "${1:-}" = "--" ] && shift
     [ $# -gt 0 ] || { echo "usage: fleet.sh run --gpu|--cpu [--probe] [--fleet] <session> [est_min] [note] -- cmd..." >&2; exit 2; }
+    # no estimate given: the ledger's median for this session or its family, else 30 (2026-09-13, operator: automate)
+    if [ -z "$est" ]; then est=$(expected_min "$s" 30); echo "estimate: ${est}m ($([ "$est" = 30 ] && echo default || echo "from the ledger's history of $s"))"; fi
     if [ "$detach" = 1 ]; then
       detached_args=(run)
       [ "$kind" = probe ] && detached_args+=(--probe)
@@ -988,6 +1023,12 @@ case "$cmd" in
     [ -z "$force" ] && echo "no --gpu/--cpu given: classified as $auto"
     if [ "$cls" != nogpu ]; then
       contract=$(python3 "$REPO/bench/fleet_onepass.py" --repo "$REPO" --cwd "$PWD" --kind "$kind" -- "$@") || exit 2
+      # the probe's own memory budget beside production (fleet_onepass.ST_PROBE_BUDGET_GIB) unless the submitter
+      # set ST_PROBE_GIB: a full-model probe asks for 64 GiB, a kernel check for 8, and nobody has to remember which
+      if [ -z "${ST_PROBE_GIB:-}" ]; then
+        budget=$(printf '%s' "$contract" | sed -n 's/.*"budget_gib": *\([0-9][0-9.]*\).*/\1/p')
+        [ -z "$budget" ] || { export ST_PROBE_GIB=$budget; echo "budget: ${budget} GiB beside production (the probe's own; ST_PROBE_GIB overrides)"; }
+      fi
       # A check that needs ONE GPU does not wait for the four Sparks: it takes the single-GPU
       # lane (the 5050 on ost-97x) unless the caller said --fleet or the lane is off.
       if [ "$kind" = boot ] && [ "$lane_force" != fleet ] && [ -n "$FLEET_SINGLE_GPU_HOST" ] \

@@ -221,17 +221,52 @@ def cached_evidence(name: str, directory, budget: float = None, *, ttl: float = 
     return reasons
 
 
+RESULT_FIND = ("find .cache/st -maxdepth 1 -type f -newermt @{since} "
+               "\\( -name '*.json' -o -name '*.jsonl' -o -name '*.log' -o -name '*.tsv' \\) -print")
+
+
+def collect(name: str, since: float, into, run=subprocess.run):
+    """The check's fresh files on the lane host -- what it wrote under ~/.cache/st (the container's /cache)
+    since `since` -- copied into `into` on the controller, so a session reads its results here instead of
+    fetching them box to box by hand. Returns the files copied; a host that cannot answer copies nothing."""
+    listing = run([*SSH, target(name), RESULT_FIND.format(since=int(since))], capture_output=True, text=True, timeout=30)
+    if listing.returncode != 0:
+        raise OSError(f'{name}: could not list its results ({listing.stderr.strip() or listing.returncode})')
+    # only what find printed: paths under the cache, one name deep -- never an answer that merely has lines
+    files = [line.strip() for line in listing.stdout.splitlines()
+             if re.fullmatch(r'\.cache/st/[A-Za-z0-9][A-Za-z0-9_.,=-]*', line.strip())]
+    if not files:
+        return []
+    into = Path(into)
+    into.mkdir(parents=True, exist_ok=True)
+    copied = []
+    for remote in files:
+        done = run(['scp', '-q', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=4', f'{target(name)}:{remote}', str(into)],
+                   capture_output=True, text=True, timeout=300)
+        if done.returncode == 0:
+            copied.append(Path(remote).name)
+    return copied
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('evidence', 'reclaim', 'host', 'label', 'on-fleet', 'budget'))
+    parser.add_argument('action', choices=('evidence', 'reclaim', 'host', 'label', 'on-fleet', 'budget', 'collect'))
     parser.add_argument('--host', default=None, help='defaults to FLEET_SINGLE_GPU_HOST, then ' + DEFAULT_HOST)
     parser.add_argument('--gib', type=float, default=None, help=f'this check\'s budget; defaults to {BUDGET_ENV}, then {DEFAULT_BUDGET_GIB}')
     parser.add_argument('--cache', help='fleet directory; remembers the answer for --ttl seconds')
     parser.add_argument('--ttl', type=float, default=TTL_S)
+    parser.add_argument('--since', type=float, default=None, help='collect: files the lane host wrote after this epoch second')
+    parser.add_argument('--into', default=None, help='collect: the controller directory the files go to')
     args = parser.parse_args(argv)
     name = host() if args.host is None else args.host.strip()
     if args.action == 'host':
         print(name)
+        return 0
+    if args.action == 'collect':
+        if args.since is None or not args.into or not name:
+            parser.error('collect needs --since, --into and a lane host')
+        copied = collect(name, args.since, args.into)
+        print(len(copied))
         return 0
     if args.action == 'label':
         print(label())

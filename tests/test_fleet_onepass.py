@@ -111,6 +111,18 @@ class OnepassPolicyTests(unittest.TestCase):
                                           '--kind', 'single', '--', 'bash', 'probes/run_engine_check.sh']), 0)
         self.assertEqual(json.loads(out.getvalue())['gpus'], 1)
 
+    def test_the_contract_carries_the_probe_s_own_memory_budget(self):
+        """The queue exports it as ST_PROBE_GIB when the submitter set none (2026-09-13): a full-model probe asks
+        for room for the rank file, a kernel check for a kernel check's 8, and nobody has to remember which."""
+        def budget(*command):
+            return self.validate(['bash', *command]).get('budget_gib')
+        self.assertEqual(budget('probes/run_engine_probe.sh', 'probes/engine_prefill_chunk_profile.py', '--lanes', 'timeline'), 64)
+        self.assertEqual(budget('probes/run_engine_probe.sh', 'probes/engine_graph_profile.py'), 64)
+        self.assertEqual(budget('probes/run_engine_probe.sh', 'probes/engine_kernel_check.py', '--lanes', 'decode_rows'), 8)
+        self.assertEqual(budget('probes/run_engine_check.sh', '--layers', '0-4'), 8)
+        self.assertIsNone(budget('bench/pair.sh', 'CAND', 'VLLM_X=1'))          # a fleet boot has no budget beside production
+        self.assertTrue(set(policy.ST_PROBE_BUDGET_GIB) <= set(policy.ST_PROBES), "every budgeted probe is an admitted one")
+
     def test_admitting_the_st_runner_never_admits_an_arbitrary_probe(self):
         """The runner is `docker run --gpus all <probe>`; the probe is named, not supplied."""
         for probe in ('probes/invented.py', 'engine/profiles/glm53/boot.py', '../escape.py'):

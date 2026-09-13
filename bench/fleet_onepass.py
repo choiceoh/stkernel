@@ -61,6 +61,18 @@ ST_FLAGS = {'--layers', '--tokens', '--chunk', '--seed', '--moe-static', '--mla-
             '--lanes', '--moe-experts', '--samples', '--contexts', '--output', '--ranks',
             '--ckpt-meta', '--seqs', '--steps'}
 ST_SWITCHES = {'--imports-only', '--distributed'}
+# What a check may take beside production on the single-GPU lane, in GiB, by probe: the full-model probes
+# load a 44 GB rank file plus caches, a kernel check a few GiB. The queue exports this as ST_PROBE_GIB when
+# the submitter set none (bench/fleet_single.py: the default is a kernel check's 8).
+ST_PROBE_BUDGET_GIB = {'probes/engine_prefill_chunk_profile.py': 64, 'probes/engine_graph_profile.py': 64,
+                       'probes/engine_decode_graph_check.py': 64, 'probes/engine_full_check.py': 64,
+                       'probes/engine_execution_plan_check.py': 64, 'probes/engine_drafter_graph_check.py': 24,
+                       'probes/engine_drafter_storage_check.py': 24}
+
+
+def probe_budget_gib(relative):
+    """The probe's own memory budget beside production; a kernel check's default for the ones the table leaves out."""
+    return ST_PROBE_BUDGET_GIB.get(relative, 8)
 
 
 def gpus_needed(relative, args):
@@ -336,7 +348,11 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
         # the single lane), never the command's: an env prefix naming a host would move a
         # fleet-lane check onto a GPU the queue did not reserve.
         raise ValueError(POLICY + '; ST_PROBE_HOST is set by the single-GPU lane, not by the command')
-    return dict(policy='onepass-only', entry=relative, kind=kind, gpus=gpus)
+    contract = dict(policy='onepass-only', entry=relative, kind=kind, gpus=gpus)
+    if relative in ST_ENTRIES:
+        # what the check takes beside production: the named probe's own budget, a kernel check's for the rest
+        contract['budget_gib'] = probe_budget_gib(args[0] if relative == 'probes/run_engine_probe.sh' and args else '')
+    return contract
 
 
 def authorize_wait(directory, session, pid):
