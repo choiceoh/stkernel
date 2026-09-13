@@ -60,7 +60,7 @@ def runtime_identity(container):
 
 def cases():
     """24 unconstrained pairs plus forced/named/none completion guardrails."""
-    # Keep 12 topic/effort groups using the allowed low/high settings; max is disabled.
+    # Keep 12 distinct topic/effort groups: max is an alias of high for this model.
     topics = ["a weekend trip", "a programming course", "an office lunch", "a new laptop",
               "a home workout", "a team workshop"]
     pref = {"type": "object", "properties": {

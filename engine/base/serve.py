@@ -1179,7 +1179,7 @@ class Server:
                  reasoning_end: "int | None" = None, request_timeout_s: float = 3600.0, tool_parser=None,
                  generation: "dict | None" = None, max_choices: int = 4, vision=None, tool_stream=None,
                  tool_grammar=None, tool_call_start: "int | None" = None,
-                 lease: "dict | None" = None, latency_root=None):
+                 lease: "dict | None" = None, latency_root=None, reasoning_effort_aliases: "dict | None" = None):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
         if type(request_timeout_s) not in (int, float) or not request_timeout_s > 0:
@@ -1202,6 +1202,7 @@ class Server:
         self._prompt_tokens = None                 # built from `tok` on first use (see the property)
         self.detok_repairs = new_repairs()         # this door's, so a scrape names who repaired
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
+        self.reasoning_effort_aliases = dict(reasoning_effort_aliases or {})
         self.tool_parser = tool_parser             # text -> [(name, arguments json)] or None (the profile knows the model's format)
         self.tool_stream = tool_stream             # the same format, read while it is still arriving (streamed deltas)
         self.tool_grammar = tool_grammar           # tools -> an EBNF grammar for calls of them, or None
@@ -2887,13 +2888,18 @@ class Server:
                 if "enable_thinking" in kwargs and "thinking" not in kwargs:
                     kwargs["thinking"] = kwargs["enable_thinking"]
                 effort = req.get("reasoning_effort")
-                if effort is None and "reasoning_effort" in kwargs:
-                    effort = kwargs["reasoning_effort"]       # a caller that only spoke to the template
-                if effort is not None:
-                    if effort not in EFFORT_RUNGS:
+                template_effort = kwargs.get("reasoning_effort")
+                for value in (effort, template_effort):
+                    if value is not None and value not in EFFORT_RUNGS:
                         raise RequestError("reasoning_effort must be low, medium, high, or max")
-                    if kwargs.get("reasoning_effort", effort) != effort:
-                        raise RequestError("top-level and template reasoning_effort must agree")
+                # Compare the profile's effective values: GLM's max and high are the same request.
+                effort = server.reasoning_effort_aliases.get(effort, effort)
+                template_effort = server.reasoning_effort_aliases.get(template_effort, template_effort)
+                if effort is not None and template_effort is not None and effort != template_effort:
+                    raise RequestError("top-level and template reasoning_effort must agree")
+                if effort is None:
+                    effort = template_effort
+                if effort is not None:
                     kwargs["reasoning_effort"] = EFFORT_RUNGS[effort]
                 server.note_reasoning(kwargs)             # the shape the template will render (45차 §81)
                 options_stream = req.get("stream_options")
