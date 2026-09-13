@@ -102,6 +102,37 @@ class ConvRingTests(unittest.TestCase):
             expected,raw,_=self.expected(x,w,storage,ring,1,8)
             self.exact(self.run(x,w,ring,1,8),expected);self.exact(storage,raw)
 
+    def test_rows_fold_matches_one_row_launches_and_replays(self):
+        """net._kda folds a captured step's rows into one conv launch (45차, the C=4 question): byte-equal to the
+        one-row kernel on each row in turn, replayed with whatever the slot and context vectors hold."""
+        from engine.kernels.causal_conv_ring import causal_conv1d_ring_rows
+        rows=3
+        for t in (1,6,8):
+            x,w,storage,ring=self.inputs(t*rows)
+
+            def one_by_one(slots,contexts):
+                raw=storage.clone()
+                view=raw.as_strided(ring.shape,ring.stride(),ring.storage_offset())
+                return torch.cat([self.run(x[i*t:(i+1)*t],w,view,slots[i],contexts[i]) for i in range(rows)]),raw
+
+            slots,contexts=[1,0,2],[0,t+1,32768]
+            expected,raw=one_by_one(slots,contexts)
+            dev=tuple(torch.tensor(v,device='cuda',dtype=torch.int64) for v in (slots,contexts))
+            actual=causal_conv1d_ring_rows(x,w,ring,*dev)
+            self.exact(actual,expected);self.exact(storage,raw)
+            graph=torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph):actual=causal_conv1d_ring_rows(x,w,ring,*dev)
+            try:
+                for slots,contexts in (([2,1,0],[3,0,4095]),([0,2,1],[t,1,t+2])):
+                    x.normal_();w.normal_()
+                    dev[0].copy_(torch.tensor(slots,device='cuda'));dev[1].copy_(torch.tensor(contexts,device='cuda'))
+                    expected,raw=one_by_one(slots,contexts)
+                    graph.replay();self.exact(actual,expected);self.exact(storage,raw)
+            finally:graph.reset()
+        with self.assertRaises(ValueError):
+            x,w,_,ring=self.inputs(7)
+            causal_conv1d_ring_rows(x,w,ring,torch.tensor([0,1],device='cuda'),torch.tensor([0,0],device='cuda'))
+
     def test_disjoint_slots_on_two_streams(self):
         x,w,storage,ring=self.inputs(6)
         other=x.neg()

@@ -333,6 +333,7 @@ vs 3.4e-2/1.4e-1 — **캐시 경로는 아무것도 더하지 않는다**. PASS
 - **PR #804** — 큐의 전환 비용: 유예는 **기록의 p75**, 게이트는 아무도 안 쓴 프로덕션에 바로 열리고, 창과 자리 승계가 생겼다
 - **PR #807** — 기준선은 최소로: 도입된 후보의 표본이 **그대로 다음 기준선**(정체성은 엔진 트리), 바닥은 기록에서 빌리고, 프로브는 한 판
 - **PR #808** — `engine/` 이 그대로인 main 은 **부팅 없이** 배포된 것으로 기록한다
+- **PR #810** — C=4 는 왜 C=1 의 1.4~1.7배뿐인가: 배치 4 스텝은 전문가 스트리밍이 60% 이상, 긴 컨텍스트는 **직렬 프리필**이 36%; 라우터 TC 를 전폭으로
 - **PR #782** — 움직인 체크아웃은 큐가 **다시 핀**하고, 유휴 복구는 배포된 체크아웃에서 돌고, D17 표본은 스스로 채워진다
 
 ### 45차 §23 — 프로덕션 전환 시도: 창·45층 4노드 부팅·문 사다리, 그리고 깨진 글의 원인 = KDA `o_norm` epsilon (2026-09-11 밤 ~ 09-12 새벽)
@@ -1981,3 +1982,75 @@ begin 실패 → 503 에 랭크는 삶; 소스 핀. 엔진·플릿 스위트 실
 Campaign source `2c2ee77f`, controller `de67dc0e`, GLM-5.3-Flash / 4 GB10 / C=1 / KV 2 GiB per rank / FP32 KDA / spec 6 / harness 40. Profiler off and prefix reuse 0 for both stages. Actual tokens / TTFT: 32K 2695.852 first, 3412.559 later; 128K 3318.997 first, 3360.426 later. First-pass quality 18/18, Korean 0/8; later long requests 6/6, 0/2. Fixed 1024 decode pooled 49.951264 tok/s, with different trajectories from J4 so no decode nonregression claim.
 
 C=4 omitted and the later two long requests are not a second full C=1 pass. No baseline engine rerun, as directed by the user. The port retains newer main behavior and therefore has a different engine identity: these are K campaign results, not measured results of the merged runtime. See [scope, full raw evidence and limitations](measurements/st_prefill_phase1_20260913/README.md). Phase 2 targets C=1 2K >= 3300 and 128K >= 4000 tok/s under the same no-cache, unprofiled metric.
+
+### 45차 — C=4 는 왜 C=1 의 1.4~1.7배뿐인가: 배치 4 스텝은 전문가 스트리밍이 60% 이상, 긴 컨텍스트는 **직렬 프리필**이 36% (2026-09-13, srv2 09-12 기록 재해석 + srv4 단일 GPU 레인, PR #810)
+
+운영자: "프리필을 포함한 동일 기준으로 C=4 합산 처리량이 C=1 의 2K 1.66–1.71배, 32K 1.50배, 128K 1.41배 — 너무 낮다, 개선해."
+그 숫자는 srv2 의 onepass 기록 `20260912T213057`(커밋 8c8b031b, 하니스 43 예산)에서 그대로 재구성된다(C=1 은 같은 질문의
+`completion/elapsed`, C=4 는 하니스의 합산 정의). **새 플릿 실측은 없다.** 기록의 스텝 열·디바이스 단계 표본·진단 커널 표를 다시 읽고,
+남는 물음 둘을 단일 GPU 레인(srv4, rank 3)의 새 프로브로 쟀다. 전부 `measurements/c4_scaling_20260913/`.
+
+**1. 디코드: 네 행은 한 행의 2.3~2.5배, 드래프터는 그대로.** 디바이스 단계 표본(랭크 0): forward 47.7 → 73.7 → 95.6 → 110.8 ms(2K, 행 1..4),
+128K 는 51.7 → 127.3; propose+observe 3.4 → 4.6 ms. 단일 랭크 재생(집단통신 항등, 합성 라우팅): 36.9 / 55.6 / 67.1 / 76.3 ms, 층당 고유
+전문가 28.7 / 43.9 / 55.3 / 61.5, **정적 MoE 커널은 고유 전문가당 0.69~0.70 ms = 144.6 MB 를 207 GB/s 로**(이론 273 의 76%). 비 MoE 는
+22 → 35 ms: KDA +5.9(순환 상태 링 K+1 개 FP32 쓰기 = 행·층당 8 MB, 대역폭에 묶임), 행별 루프의 elementwise +3.0(런치 948 → 2,143),
+라우터 +1.7(M=28 은 FP32 SGEMM), mHC +1.2, MLA +0.8. 플릿의 실제 고유 전문가 수는 여기서 역산하면 **대략 33 / 95** — 처음 세운
+"288 중 top-8 균등 라우팅" 모델(51 / 157)이 플릿 forward 를 1 ms 안에 맞춘 것은 우연이었다. 바른 그림: **배치 4 스텝 ≈ MoE 60~65% +
+비 MoE 30% + 집단통신 5~10%**, 커널로 닿는 몫은 10% 안팎(라우터 TC 1.7 ms, 행별 루프 ~3 ms, MoE 207 → 240 GB/s 면 −6 ms).
+
+**2. 2K 의 상한.** 배치 4 스텝 115.6 ms 에 4 × 3.67 토큰 = 127 tok/s; C=1 의 같은 기준 63~70 tok/s 에 대해 램프·꼬리 없는 상한 **1.8~2.0배**.
+측정 1.66~1.71 과의 차이는 램프(넷째 요청의 첫 토큰이 6.2 s 에: 프리필 1.3 + 디코더 옆 프리필 1.5~1.8 s 씩 셋)와 꼬리(완료 길이 4,240~4,881 로
+갈려 마지막 9~10 s 가 2행·1행) — 스케줄러가 없앨 것이 아니다.
+
+**3. 긴 컨텍스트: 디코더 옆의 2,304 청크는 토큰당 1.4배.** 스텝 열은 D10 그대로다 — 첫 요청은 9,216 청크로 혼자, 뒤의 셋은 `2,304 청크 → 디코드 1 스텝`
+을 번갈아(128K: 57 회씩). TTFT 사다리 48.6 / 119.4 / 191.7 / 265.2 s: 둘째부터의 간격 70.7 / 72.3 / 73.5 s 는 혼자 프리필한 48.4 s 의
+1.5 배(32K 도 17.8~18.3 vs 11.9). 청크 하나 1,188 ms(128K) vs 9,216 청크 3,374 ms → 토큰당 516 vs 366 µs. 128K C=4 벽시계 731 s =
+첫 프리필 48.6 + 옆 프리필 셋 216.6 + 4행 디코드 394(3,105 스텝 × 127 ms) + 2·3·1행 62(꼬리 49 s 는 수용률 편차: 넷째 요청 4.7 토큰/스텝,
+둘째 3.7). **프리필이 36%다.** 살아 있는 행은 옆 프리필 동안 1.19 s 에 한 스텝만 받는다(둘째 요청은 217 s 동안 168 스텝).
+
+**4. 청크 고정비의 정체 — 병적 상수가 아니라 "청크마다 288 전문가를 한 번 읽는다".** 단일 랭크 스윕(27,648 토큰, 2,304/4,608/6,912/9,216 청크):
+11,114 / 9,701 / 9,400 / 8,367 ms, 최소제곱 **288 µs/토큰 + 270 ms/청크**(헌장 D9 의 vLLM 스택 214.7 ms/step 대응값). 첫 청크 커널 표
+2,304 vs 9,216: dynamic MoE(SF6) 335 → 646 ms(1.93 배) = **고정 231 ms + 45 µs/토큰** — 층당 5.5 ms = 907 MB 의 전문가 가중치를
+165 GB/s 로 한 번; 나머지 커널은 토큰 비례(mHC 4.1 배, deep_gemm 3.7, KDA 3.9, 라우터 SGEMM 3.8). 없앨 수 있는 것은 그 읽기의 효율
+(165 → 200+ GB/s 면 청크당 −40~60 ms)이고, 나머지는 청크를 키워야만 나뉜다 — 그 방향은 D10 이 금한다(총 처리량을 목적함수로).
+플릿의 청크 고정비 ~380 ms 와의 차 ~110 ms 는 이 랭크에 없는 것들(청크당 NCCL 90 회, 드래프터 관측, prefix 마크).
+`--moe-static t,r`(SF6 없이 raw 스케일) 팔은 돌지 않았다(타일 가중치의 프리필 커널은 SF6 판뿐). 대신 행 우선 `u` 셀(스톡 정적 v4 +
+스톡 동적, raw 스케일 TMA)이 같은 스윕에서 **278 µs/토큰 + 202 ms/청크**: 2,304 청크 12 개가 11,114 → 10,119 ms(−9%), 9,216 청크는 −1%,
+첫 2,304 청크의 MoE 커널 335 → 263 ms. 청크 고정비 68 ms 는 SF6 gated 파이프라인의 몫이다 — M128 타일 고정(전문가당 64 행에서 반이 빔)과
+producer 워프의 6 비트 전개. 디코드는 SF6 정적 커널이 2 ms 빠르므로 셀을 되돌릴 일은 아니고, 남는 길은 SF6 파이프라인에 M64 타일을 더하거나
+전개를 파이프라인화하는 커널 작업(128K 옆 프리필 −5%), 또는 4,608 토큰 아래에서만 generic 커널로 가는 하이브리드(raw 사본 4.75 GB/랭크).
+
+**5. 같은 커널로 스케줄만 바꾸면(계산, 미실측).** 128K C=4: 청크 고정비를 0 으로 → ~674 s(1.53배); 디코더 옆도 9,216 청크 → ~665 s(1.55배,
+ITL 정지 1.2 → 3.4 s, D10 금지); 2K 는 어느 것도 못 바꾼다. **두 스트림 겹침(§80 이 열어 둔 D9 의 질문)은 단일 랭크에서 실물 커널로 재어
+지웠다**(`--lanes coexist`, 티켓 `c4-coexist2`): 스트림 A 에 4행 디코드 재생 38 회, 스트림 B 에 2,304 청크 — 청크 안에서 돈 디코드 스텝
+**261 ms(단독 77.2, 3.38 배)**, 청크 **1,122 ms(단독 883, 1.27 배)**, 같은 일을 순서대로 했을 1,115 ms 대 실제 1,122 ms = **겹침 이득 0.99.**
+둘 다 DRAM 에 묶인 커널이라 나눌 SM 이 없다; §80 의 1.21 배는 대역폭을 안 쓰는 샘플러의 이야기였다. 겹침은 처리량이 아니라 ITL 의
+도구다(청크당 1.2 s 정지 → ~270 ms 스텝).
+
+**6. 이 PR 이 바꾼 것.** (a) `probes/engine_prefill_chunk_profile.py`(큐 admit): 청크 스윕 + 행별 디코드 + 두 스트림 공존, 단일 랭크; 격리 랭크
+프로브 둘 다 **노드가 가진 랭크로** 돌고(srv4 = rank 3) 토큰 id 를 그 랭크의 어휘 조각 안에서 뽑는다(남의 조각 id 는 영벡터로 박혀 편향
+8개 전문가로만 라우팅됐다); `--seqs/--steps` admit. (b) **라우터 텐서코어 경로를 모든 폭으로**(`net.route`): PR #789 는 M ≤ 7 만 열고
+나머지를 FP32 SGEMM 에 뒀는데, 그 나머지가 9,216 청크당 `magma_sgemmEx` 121 ms + `x.float()` 복사(토큰당 13 µs, 프리필의 ~5%)와 4행
+스텝 1.7 ms 였다. 곱은 양쪽 다 정확(BF16 피연산자를 FP32 로)하고 합 순서만 다르다; GPU 검사(`test_engine_decode_seven.RouterTensorCoreTests`)가
+동점 전문가에서 1·7·28·2,304 행의 선택 일치를 박고, CPU 검사(`test_engine_router_widths.py`)가 폭별 경로를 박는다. **미실측**: 서빙
+라우팅 수치가 바뀌는 변경이라 채택은 브래킷(품질 9/9·한국어·수용률)이 답한다. 후속: 상주 FP32 라우터 사본 189 MiB/랭크는 이제 읽히지 않는다.
+(c) **캡처된 디코드 스텝의 행별 루프 접기**(운영자 "남은 레버 작업"): `net._kda` 가 세그먼트마다 띄우던 conv 링·순환 링 커널과 행 출력
+복사, `_dsa` 의 행별 latent 흩뿌림을 층당 한 번으로. 두 링 커널에 행 축을 더했다(순환: 프로그램 i_n 이 자기 행의 slot/context 를 읽고
+토큰 구간 `[i_n·T, (i_n+1)·T)` 를 맡는다; conv: grid 셋째 축이 행; `RING_INDEX_STRIDE`). 프로그램별 산술은 한 행 런치와 같아 출력과 링
+쓰기가 바이트 단위로 같다 — `tests/test_engine_kda_ring.py`·`test_engine_conv_ring.py` 의 rows 검사(캡처 재생 포함, `engine_kernel_check
+--lanes kda_ring` 이 둘 다 돌린다), `GraphCaches.token_rows` 는 모은 블록표에서 모든 행의 latent 슬롯을 한 번에, `Glm53Net._ring_rows` 가
+어느 스텝이 접히는지 정한다(CPU 검사 `test_engine_decode_rows.py`). 단일 레인 실측: `engine_kernel_check --lanes kda_ring` 18 검사 OK(rows 패리티
+둘 포함), 재생 행 1/2/3/4 = 36.8 / 53.3 / 64.3 / 73.0 ms(전 36.9 / 55.6 / 67.1 / 76.3) — **4행 −3.3 ms(−4.3%)**; 순환 링 136 → 34 런치, conv
+136 → 34, elementwise 2,143 → 1,782, 라우터 SIMT SGEMM 2.45 → TC 1.17 ms. eager 대 재생 검사(`engine_decode_graph_check`)는 플릿 부팅 뒤 대기.
+(d) `probes/engine_decode_graph_check.py` 는 큐가 admit 하되 srv4 에서 돌 수 없던 검사였다(없는 Red Hat 메타 디렉터리, #732 이후 틀린 검증 폭 6,
+랭크 0 의 어휘 조각) — 서빙 체크포인트·노드의 랭크·`spec_k+1` 로 고쳤다.
+
+**7. 레버 순위** (2K / 32K / 128K 비에 대한 추정): dynamic MoE 프리필 커널의 읽기 효율 165 → 200+ GB/s (0 / +2 / +8%, 커널 작업) ·
+라우터 TC 전폭 (+1.5 / +2 / +2, 이 PR) · 배치가 클 때 K 축소 (+3~10 / 0 / 0, 캡처 폭·링·파이프라인 전부 K 고정) · 디코드 정적 MoE 207 → 240 GB/s
+(+5 / +5 / +3, compact 타일은 졌다) · 행별 루프 접기 (+2~3 / 0 / 0) · 디코더 옆 청크 확대 (0 / +3~5 / +6~10, **D10 금지 — 운영자만 풀 수 있다**) ·
+~~두 스트림 겹침~~ (0, 실측). **2K 의 비는 이미 물리 상한(1.8~2.0)의 90% 이고, 긴 컨텍스트의 비는 직렬 프리필이 정한다 — 그 프리필의 청크
+고정비는 구조(청크마다 288 전문가 한 번 읽기)라 커널 효율과 청크 정책 둘만이 움직인다.**
+
+**검증.** 컨테이너 CPU: `test_engine_router_widths` 3, `test_engine_prefill_chunk_profile` 5, `test_engine_graph_profile`·`test_fleet_onepass`·
+`test_fleet_single`·`test_engine_decode_seven`·`test_engine_decode_residency`·`test_engine_native_execution` 모두 OK(GPU 검사는 skip).
+srv4 단일 레인: `c4-chunk-profile` 완주(위 수치), `c4-chunk-profile-raw` 디스패처 거부, `c4-coexist2` 완주(§5).
