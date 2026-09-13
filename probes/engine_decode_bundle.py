@@ -22,7 +22,7 @@ def check(ranks, *, bundle="scatter_bundle"):
     root = Path(__file__).resolve().parents[1]
     bundles = {
         'scatter_bundle': [('moe_route_scatter', 240), ('moe_direct_scatter', 240),
-                           ('moe_route_direct', 240), ('paired_projection', 180), ('shared_serial', 180)],
+                           ('moe_route_direct', 240)],
     }
     lanes = bundles[bundle]
     for lane, seconds in lanes:

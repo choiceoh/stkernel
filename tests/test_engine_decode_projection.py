@@ -55,6 +55,15 @@ class ProjectionTests(unittest.TestCase):
                     torch.testing.assert_close(out, partial.sum((1, 2)), rtol=0, atol=0)
                     self.assertTrue(storage[0].eq(-123.).all().item())
                     self.assertTrue(storage[-1].eq(-123.).all().item())
+                partial.zero_()
+                tiny = torch.finfo(torch.float32).tiny
+                partial[:, 0, 0, 0] = tiny / 2
+                partial[:, 0, 1, 0] = tiny / 2
+                partial[:, 0, 0, 1] = tiny
+                partial[:, 0, 1, 1] = -tiny / 2
+                graph.replay()
+                self.assertTrue(out[:, 0].eq(0.).all().item())
+                self.assertTrue(out[:, 1].eq(tiny).all().item())
             finally:
                 graph.reset()
 

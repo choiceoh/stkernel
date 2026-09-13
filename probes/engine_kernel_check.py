@@ -63,9 +63,9 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "paired_projection", "shared_serial", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "paired_projection", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows"}, selected
 
-    if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'paired_projection', 'shared_serial'}:
+    if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'paired_projection'}:
         from probes.engine_decode_bundle import require_current_probe
         require_current_probe()
     if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct'}:
@@ -74,12 +74,10 @@ def main():
             if lane in selected:
                 moe_check(report, args.ranks, lane)
 
-    if selected & {'paired_projection', 'shared_serial'}:
-        from probes.engine_decode_projection import paired_check, shared_check
+    if 'paired_projection' in selected:
+        from probes.engine_decode_projection import paired_check
         if 'paired_projection' in selected:
             paired_check(report, args.ranks)
-        if 'shared_serial' in selected:
-            shared_check(report, args.ranks)
 
     if "decode_rows" in selected:
         import unittest

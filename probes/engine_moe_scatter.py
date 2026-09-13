@@ -13,13 +13,21 @@ import triton.language as tl
 
 
 @tr.jit
+def _add_ftz(a, b):
+    # The served global FP32 RED flushes subnormal inputs and results.
+    return tl.inline_asm_elementwise('add.ftz.f32 $0, $1, $2;', constraints='=f,f,f',
+                                     args=[a, b], dtype=tl.float32, is_pure=True, pack=1)
+
+
+@tr.jit
 def _reduce_routes(Partial, Out, K: tl.constexpr, PARTS: tl.constexpr, BLOCK: tl.constexpr):
     row = tl.program_id(0)
     col = tl.program_id(1) * BLOCK + tl.arange(0, BLOCK)
     part = tl.arange(0, PARTS)
     values = tl.load(Partial + (row * PARTS + part[:, None]) * K + col[None, :])
-    # Each value was BF16-rounded, then route-weighted in FP32 in the producer.
-    tl.store(Out + row * K + col, tl.sum(values, axis=0))
+    # Preserve BOTH BF16 boundaries: the down partial and the route-weighted
+    # contribution, including satfinite, before the FP32 sum.
+    tl.store(Out + row * K + col, tl.reduce(values, axis=0, combine_fn=_add_ftz))
 
 
 class RouteScatter:

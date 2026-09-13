@@ -22,6 +22,13 @@ def rank_path(ranks):
 
 
 def moe_check(report, ranks, lane_name):
+    if lane_name == 'moe_route_scatter':
+        import unittest
+        suite = unittest.defaultTestLoader.loadTestsFromName(
+            'tests.test_engine_decode_projection.ProjectionTests.test_route_reduction_layout_and_replayed_zero_overwrite')
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        if not result.wasSuccessful() or result.skipped or result.testsRun != 1:
+            raise RuntimeError('route reduction layout/FTZ gate did not pass')
     from engine.kernels.b12x import moe_dispatch as md
     from engine.profiles.glm53.lanes import served
     from engine.profiles.glm53.weights import rank_loader

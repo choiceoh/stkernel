@@ -144,7 +144,7 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "dd8d3d77d0afe8a1874f15f57049f8ead125b77886d8ba8933d2a643c6ef022d",
+      "local_sha256": "8391325f7675cd4819b35c411c37588de46dea0c3f9e55267a3bc8a815ca1c64",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
@@ -157,7 +157,8 @@
         "2026-09-13 prototype: select a separately keyed long TP SF6 word-decoder subclass only for unshared-scale 8193..32768-row prefill; preserve the pinned parent and all Q0/decode sources.",
         "2026-09-13 prototype batch: retain BF16 long-prefill scatter while combining Q0 route metadata reuse and word scale decoding in a separately keyed subclass; preserve short Q0/decode.",
         "2026-09-13 private decode: independently keyed route-owned FP32 partials and direct register scatter; serving defaults unchanged.",
-        "2026-09-13: retire measured resident-wave/batch/stage probe hooks and restore separate epilogue storage; retain only the new private output candidates."
+        "2026-09-13: retire measured resident-wave/batch/stage probe hooks and restore separate epilogue storage; retain only the new private output candidates.",
+        "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged."
       ]
     },
     "b12x/moe_dynamic_kernel.py": {
@@ -169,9 +170,10 @@
       "source": "overlay/modules/glm53_moe/moe_micro_kernel.py",
       "sha256": "1949bb2f6edbcfe7728b2fd3cddcd2f853605dbc55aac8fe614d737b29600e66",
       "origin": "repository",
-      "local_sha256": "f0a11dfe7d371551bb350de0218e44b7c6d0d7505ef944727e1fd49391353d33",
+      "local_sha256": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914",
       "local_modifications": [
-        "2026-09-12 GB10: eight max.abs.f32 PTX operations form an NVFP4 amax tree; shorten SASS dependencies while preserving MXFP4 and quantizer arithmetic."
+        "2026-09-12 GB10: eight max.abs.f32 PTX operations form an NVFP4 amax tree; shorten SASS dependencies while preserving MXFP4 and quantizer arithmetic.",
+        "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged."
       ]
     },
     "b12x/moe_static_kernel.py": {
@@ -281,12 +283,13 @@
       "source": "overlay/modules/glm53_moe/moe_static_kernel_v4.py",
       "sha256": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
       "origin": "repository",
-      "local_sha256": "347d794cbf5f5e8b16ee27c04c6ad2b048e0734c5e325f6f8d8588ae67ac3ddb",
+      "local_sha256": "a12ced6fe865237ac1ba5a409d8a53eb2b3235fa46f4348840b9a8c2d8249c74",
       "local_modifications": [
         "2026-09-12 ST native execution: tiled static v2 preserves BF16 contribution rounding with FP32 route scatter; owned SF6 scales may reuse retired arena storage before capture",
         "2026-09-13: opt-in epilogue lifetime alias saves 4 KiB for the three-stage FC1 probe; separate-storage offsets and named barriers are preserved.",
         "2026-09-13 private decode: independently keyed route-owned FP32 partials and direct register scatter; serving defaults unchanged.",
-        "2026-09-13: retire measured resident-wave/batch/stage probe hooks and restore separate epilogue storage; retain only the new private output candidates."
+        "2026-09-13: retire measured resident-wave/batch/stage probe hooks and restore separate epilogue storage; retain only the new private output candidates.",
+        "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged."
       ]
     },
     "b12x/moe_static_kernel_v5.py": {
