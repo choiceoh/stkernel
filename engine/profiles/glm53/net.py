@@ -457,11 +457,12 @@ class Glm53Net:
 
     # -- sparse MLA + kpool indexer ------------------------------------------------------
     @operation("indexer", layer_arg=1)
-    def _indexer(self, L: int, x: torch.Tensor, qr: torch.Tensor, step: Step, caches: Caches):
+    def _indexer(self, L: int, x: torch.Tensor, qr: torch.Tensor, step: Step, caches: Caches, positions=None):
         """kpool indexer: per segment, complete this step's pools (pooling the
         tail ring's earlier tokens with the new ones), keep the new tail, then
         select for every query the top-k complete pools before it plus the
-        in-progress tail, as latent slots (valid prefix first) and counts."""
+        in-progress tail, as latent slots (valid prefix first) and counts.
+        `positions` [rows, t]: a captured step's, when _dsa already built them."""
         F, p, n = self.F, self.p, f"L{L}.idx."
         N = x.shape[0]; kp, nh, d = F.kpool, F.idx_heads, F.idx_dim
         q = self.linear(qr, n + "wq_b").view(N, nh, d)
@@ -494,6 +495,12 @@ class Glm53Net:
             width = step.tokens
             pooled = complete_pools(self, L, step.contexts, width, tails,
                                     k.view(rows, width, d), gate.view(rows, width, d), caches)
+            if self._indexer_rows(step, caches):
+                # every row's selection with the per-row launches folded (45차, the C=4 question)
+                if positions is None:
+                    positions = step.contexts[:, None] + index(width, x.device)
+                self._select_rows(L, q8, w_eff, keys, scales, pooled, positions, caches, slots_out, valid_out)
+                return slots_out, valid_out
         for s in step.segments:
             sl = slice(s.start, s.start + s.length)
             if captured:
@@ -533,6 +540,52 @@ class Glm53Net:
                                   slots_out[sl], valid_out[sl])
         return slots_out.contiguous(), valid_out
 
+    def _indexer_rows(self, step, caches) -> int:
+        """How many rows a captured step's indexer selects in one folded pass: all of them when the caches are a
+        graph's (gathered block table: `candidate_rows`, `token_maps`) and every segment is the step's width;
+        0 keeps the per-segment loop -- eager steps, prefill chunks, the eager caches."""
+        if (not getattr(step, "captured", False) or getattr(step, "contexts", None) is None
+                or not hasattr(caches, "candidate_rows") or not hasattr(caches, "token_maps")):
+            return 0
+        t = getattr(step, "tokens", None)
+        if t is None or any(s.length != t for s in step.segments):
+            return 0
+        return len(step.segments)
+
+    def _select_rows(self, L: int, q8, w_eff, keys, scales, n_cand: int, positions, caches, slots_out, valid_out) -> None:
+        """The segment loop's selection for every row of a captured step, with the per-row launches folded.
+
+        Per row the loop gathers the row's candidate keys and scales, scores them, masks past the row's horizon,
+        takes the top-k, pads the misses with -1 and finalizes against the row's block row -- some twenty
+        launches a row a layer. Here the candidate slots are one gather for all rows (`candidate_rows`), the
+        keys and scales one gather each, the mask one compare, the id fixups one op each and the finalize one
+        launch over the rows' block rows; only the logits kernel and the top-k stay per row, on the same tensors
+        (the row's own keys, the row's own queries, the row's own horizon), so every row's ids are the ones the
+        loop computes. `positions` [rows, t] are the rows' new token positions."""
+        from engine.base.constants import zeros
+        F = self.F
+        kp, k = F.kpool, F.topk // F.kpool
+        rows, t = positions.shape
+        dev = q8.device
+        if n_cand < k:
+            raise ValueError(f"a captured step's candidate capacity ({n_cand} pools) is below the selection width ({k})")
+        seq_lens = (positions.reshape(-1) + 1).to(torch.int32)                        # [rows*t]
+        ke = seq_lens // kp                                                            # complete pools before each query
+        cand = caches.candidate_rows(L, n_cand)                                        # [rows, n_cand] pool slots
+        keys_all, scales_all = keys[cand], scales[cand]                                # [rows, n_cand, d], [rows, n_cand]
+        horizon = iota(n_cand, dev)[None, :] >= ke[:, None]                            # [rows*t, n_cand]
+        values = torch.empty((rows * t, k), dtype=torch.float32, device=dev)
+        winners = torch.empty((rows * t, k), dtype=torch.int64, device=dev)
+        ks = zeros(t, dev)
+        for r in range(rows):
+            sl = slice(r * t, (r + 1) * t)
+            logits = self.lanes.indexer_logits(q8[sl], keys_all[r], scales_all[r], w_eff[sl], ke[sl], ks=ks)[:, :n_cand].float()
+            logits.masked_fill_(horizon[sl], float("-inf"))                            # topk_positions, in place
+            torch.topk(logits, k, dim=-1, sorted=False, out=(values[sl], winners[sl]))
+        pool_ids = winners.to(torch.int32)
+        pool_ids.masked_fill_(pool_ids >= ke[:, None], -1)                             # a miss past the horizon
+        self.lanes.pool_slots(pool_ids, seq_lens, kp, *caches.token_maps(L), slots_out, valid_out, tokens=t)
+
     def _select_pools(self, q8, w_eff, keys, scales, ke, n_cand: int, k: int) -> torch.Tensor:
         """Top-k complete pools per query, in passes of SELECT_ROWS rows: every row's
         selection is independent, so the passes are exact and the transient is bounded."""
@@ -568,17 +621,18 @@ class Glm53Net:
         # constants; an eager prefill's follow the request and would grow that cache unbounded.
         captured = getattr(step, "captured", False)
         index = iota if captured else fresh
+        positions = None
         if captured and hasattr(caches, "token_rows") and getattr(step, "contexts", None) is not None:
             # every row's new latents in one write: the gathered block table gives each row's slots at once
             # (45차, the C=4 question: three launches a row a layer became three a layer)
             rows = len(step.segments)
-            slots = caches.token_rows(L, step.positions.view(rows, -1))
+            positions = step.contexts[:, None] + index(step.tokens, x.device)     # [rows, t]: the indexer reads it too
+            slots = caches.token_rows(L, positions)
             latent[slots.flatten().long()] = kv_n.to(E4M3)
-        for s in (() if captured and hasattr(caches, "token_rows") and getattr(step, "contexts", None) is not None
-                  else step.segments):                                              # fp8 KV, scale 1 (no kv scales in the checkpoint)
+        for s in (() if positions is not None else step.segments):                 # fp8 KV, scale 1 (no kv scales in the checkpoint)
             sl = slice(s.start, s.start + s.length)
             latent[caches.token_slots(L, s.seq, (s.ctx + index(s.length, x.device))).long()] = kv_n[sl].to(E4M3)
-        slots, valid = self._indexer(L, x, qr, step, caches)
+        slots, valid = self._indexer(L, x, qr, step, caches, positions=positions)
         kv_b = p[n + "kv_b"].view(Hl, F.qk_nope + F.v_dim, F.kv_lora)
         w_uk, w_uv = kv_b[:, : F.qk_nope, :], kv_b[:, F.qk_nope:, :]
         q_abs = torch.einsum("thd,hdc->thc", q, w_uk)                                # absorb W_UK: MQA over the latent

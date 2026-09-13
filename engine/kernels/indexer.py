@@ -18,8 +18,12 @@ def _map_positions(pos, table, table_s0, block_size: tl.constexpr,
 def _pool_slots(ids, lengths, table, out, counts, groups: tl.constexpr,
                 id_s0, id_s1, len_s0, table_s0, out_s0, out_s1, count_s0,
                 block_size: tl.constexpr, block_stride, layer_offset,
-                POOL: tl.constexpr, MAPPED: tl.constexpr, BLOCK: tl.constexpr):
+                POOL: tl.constexpr, MAPPED: tl.constexpr, BLOCK: tl.constexpr,
+                table_s1=0, TOKENS: tl.constexpr = 1):
     row = tl.program_id(0)
+    # A captured decode step's rows come TOKENS to a sequence, each sequence with its own block row at
+    # table_s1 apart; a one-sequence launch has table_s1 0, and reads the one row it was given.
+    table += (row // TOKENS) * table_s1
     g = tl.arange(0, BLOCK)
     seq = tl.load(lengths + row * len_s0)
     tail = seq % POOL
@@ -59,7 +63,7 @@ def _minimum(a, b):
 
 
 def pool_slots(pool_ids, seq_lens, pool_size, block_table, block_size, block_stride,
-               layer_offset, out, counts):
+               layer_offset, out, counts, tokens: int = 1):
     """Expand selected complete pools directly into descending-position slots.
 
     Integer-only, no scratch allocation or device-to-host reads. Invalid pools
@@ -67,6 +71,10 @@ def pool_slots(pool_ids, seq_lens, pool_size, block_table, block_size, block_str
     Inputs/outputs may be strided but must not overlap. Sequence lengths are
     nonnegative int32; valid token positions must fit int32 and the block row.
     Mapped KV blocks must contain a whole number of pools.
+
+    A 2-D block table [sequences, blocks] serves a captured decode step: rows come
+    `tokens` to a sequence in order, and row r reads block row r // tokens -- one
+    launch whose program r is what a one-sequence launch's program does for that row.
     """
     assert pool_ids.ndim == 2 and pool_ids.dtype == torch.int32
     rows, groups = pool_ids.shape
@@ -74,16 +82,23 @@ def pool_slots(pool_ids, seq_lens, pool_size, block_table, block_size, block_str
     assert seq_lens.shape == (rows,) and seq_lens.dtype == torch.int32
     assert out.shape == (rows, groups * pool_size + pool_size - 1) and out.dtype == torch.int32
     assert counts.shape == (rows,) and counts.dtype == torch.int32 and block_size > 0
+    table_s0 = table_s1 = 0
     if block_table is not None:
-        assert block_table.ndim == 1 and block_table.dtype == torch.int32
+        assert block_table.ndim in (1, 2) and block_table.dtype == torch.int32
         assert block_size % pool_size == 0
+        if block_table.ndim == 2:
+            assert tokens > 0 and block_table.shape[0] * tokens == rows, "one block row per `tokens` query rows"
+            table_s0, table_s1 = block_table.stride(1), block_table.stride(0)
+        else:
+            table_s0 = block_table.stride(0)
     if rows == 0:
         return
     _pool_slots[(rows,)](
         pool_ids, seq_lens, block_table if block_table is not None else pool_ids, out, counts, groups,
-        *pool_ids.stride(), seq_lens.stride(0), block_table.stride(0) if block_table is not None else 0,
+        *pool_ids.stride(), seq_lens.stride(0), table_s0,
         *out.stride(), counts.stride(0), block_size, block_stride, layer_offset,
-        POOL=pool_size, MAPPED=block_table is not None, BLOCK=triton.next_power_of_2(max(1, groups)), num_warps=4)
+        POOL=pool_size, MAPPED=block_table is not None, BLOCK=triton.next_power_of_2(max(1, groups)), num_warps=4,
+        table_s1=table_s1, TOKENS=tokens if block_table is not None and block_table.ndim == 2 else 1)
 
 
 @triton.jit

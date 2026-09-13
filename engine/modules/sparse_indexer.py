@@ -158,8 +158,19 @@ def indexer_slots(tokens, block_table, block_size, block_stride, layer_offset, o
 
 
 def pool_slots(pool_ids, seq_lens, pool_size, block_table, block_size, block_stride,
-               layer_offset, out, counts):
-    """Expanded-token oracle for the compressed-pool slot finalization lane."""
+               layer_offset, out, counts, tokens: int = 1):
+    """Expanded-token oracle for the compressed-pool slot finalization lane.
+
+    A 2-D block table [sequences, blocks] is a captured decode step's: rows come `tokens`
+    to a sequence in order, and each sequence's rows are finalized against its own block row."""
+    if block_table is not None and block_table.ndim == 2:
+        if tokens <= 0 or block_table.shape[0] * tokens != pool_ids.shape[0]:
+            raise ValueError("one block row per `tokens` query rows")
+        for i in range(block_table.shape[0]):
+            sl = slice(i * tokens, (i + 1) * tokens)
+            indexer_slots(select_with_tail(pool_ids[sl], seq_lens[sl], pool_size), block_table[i],
+                          block_size, block_stride, layer_offset, out[sl], counts[sl])
+        return
     indexer_slots(select_with_tail(pool_ids, seq_lens, pool_size), block_table,
                   block_size, block_stride, layer_offset, out, counts)
 

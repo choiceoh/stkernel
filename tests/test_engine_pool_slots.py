@@ -53,6 +53,31 @@ class PoolSlotTests(unittest.TestCase):
                     self.compare(ids, lengths, pool, table)
                     self.compare(ids, lengths, pool)
 
+    def test_a_block_table_per_group_of_rows_matches_one_group_launches(self):
+        """A captured decode step finalizes every row in one launch over the rows' own block rows (2-D table,
+        `tokens` rows to a row): byte-equal to one launch per group with that group's row, kernel and oracle."""
+        g = torch.Generator(device=DEVICE).manual_seed(931)
+        groups, tokens, pool, blocks = 3, 7, 4, 512
+        rows = groups * tokens
+        ids = torch.randint(-8, 2100, (rows, 33), device=DEVICE, dtype=torch.int32, generator=g)
+        lengths = torch.randint(0, blocks * 16, (rows,), device=DEVICE, dtype=torch.int32, generator=g)
+        lengths[::5] = 0
+        width = 33 * pool + pool - 1
+        for strided in (False, True):
+            table = torch.randperm(8192, device=DEVICE, generator=g).int()[:groups * blocks * 2].view(groups, blocks * 2)
+            table = table[:, ::2] if strided else table[:, :blocks].contiguous()
+            with self.subTest(strided=strided):
+                outs = [torch.full((rows, width), -777, device=DEVICE, dtype=torch.int32) for _ in range(3)]
+                counts = [torch.full((rows,), -777, device=DEVICE, dtype=torch.int32) for _ in range(3)]
+                self.fused(ids, lengths, pool, table, 16, 3072, 512, outs[0], counts[0], tokens=tokens)
+                self.reference(ids, lengths, pool, table, 16, 3072, 512, outs[1], counts[1], tokens=tokens)
+                for i in range(groups):
+                    sl = slice(i * tokens, (i + 1) * tokens)
+                    self.fused(ids[sl], lengths[sl], pool, table[i], 16, 3072, 512, outs[2][sl], counts[2][sl])
+                for out, count in zip(outs[1:], counts[1:]):
+                    self.assertTrue(torch.equal(outs[0], out))
+                    self.assertTrue(torch.equal(counts[0], count))
+
     def test_empty_shapes_and_all_padding_overwrite(self):
         for rows, groups in ((0, 512), (3, 0), (6, 512)):
             self.compare(torch.full((rows, groups), -1, device=DEVICE, dtype=torch.int32),
