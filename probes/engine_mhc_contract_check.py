@@ -12,6 +12,7 @@ import unittest
 
 import torch
 
+ROOT = Path(__file__).resolve().parents[1]
 
 def compile_only():
     import triton
@@ -23,7 +24,7 @@ def compile_only():
         kernel = triton.compile(ASTSource(_contract,
             {"X": "*bf16", "Residual": "*bf16", "Post": "*fp32", "Comb": "*fp32",
              "Out": "*bf16", "OUT_STRIDE": stride_type}, constexprs={"H": 4096, "B": 512}),
-            target=GPUTarget("cuda", 121, 32), options={"num_warps": 4})
+            target=GPUTarget("cuda", 121, 32), options={"num_warps": 4, "enable_fp_fusion": False})
         variants.append(dict(out_stride_type=stride_type,
                              cubin_sha256=hashlib.sha256(kernel.asm["cubin"]).hexdigest(),
                              shared_bytes=kernel.metadata.shared))
@@ -120,7 +121,7 @@ def main():
              "engine/kernels/mhc/tilelang_kernels.py", "engine/profiles/glm53/net.py",
              "engine/profiles/glm53/drafter.py", "tests/test_engine_mhc_contract.py",
              "probes/engine_mhc_contract_check.py")
-    report["source_sha256"] = {p: hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in files}
+    report["source_sha256"] = {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for p in files}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report), flush=True)

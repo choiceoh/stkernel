@@ -240,7 +240,7 @@ def declared(a, comm_world: int) -> Config:
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
-                        execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0,
+                        execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0, terminal_mhc=0,
                         draft_fc_precision="w4", draft_fc_calibration="shared", draft_diagnostics=0, **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
@@ -252,6 +252,9 @@ def declared(a, comm_world: int) -> Config:
         Knob("draft_diagnostics", 0, _dt.date(2026, 9, 30),
              "Record greedy first rejection as candidate miss, selector miss or output boundary",
              "STK_draft_diagnostics=0", int),
+        Knob("terminal_mhc", 0, _dt.date(2026, 9, 30),
+             "Decode and prefill: preserve BF16 channel rounding while writing terminal means into final feature columns",
+             "STK_terminal_mhc=0", int),
         Knob("deferred_kda", 0, _dt.date(2026, 9, 30),
              "FP32 KDA: verify into update factors, commit accepted states across all layers in one launch",
              "STK_deferred_kda=0", int),
@@ -1075,12 +1078,13 @@ def fleet(a) -> int:
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
                                        consume_scales=True)
         from engine.profiles.glm53.execution import ExecutionPlan
-        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda")):
+        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "terminal_mhc")):
             raise ValueError("execution switches must be 0 or 1")
         plan = ExecutionPlan(bool(cfg["execution_overlap"]), bool(cfg["early_observe"]), cfg["prefill_tiles"],
                              sched.chunk_for(facts.CHUNK_ALIGN, TOKEN_BUDGET, facts.SPEC_K),
                              direct_mhc=bool(cfg["direct_mhc"]), prefill_project_tiles=bool(cfg["prefill_project_tiles"]),
-                             decode_iterations=cfg["decode_iterations"], deferred_kda=bool(cfg["deferred_kda"]))
+                             decode_iterations=cfg["decode_iterations"], deferred_kda=bool(cfg["deferred_kda"]),
+                             terminal_mhc=bool(cfg["terminal_mhc"]))
         from engine.profiles.glm53.draft_policy import DraftPolicy
         if cfg["draft_diagnostics"] not in (0, 1):
             raise ValueError("draft diagnostics must be 0 or 1")

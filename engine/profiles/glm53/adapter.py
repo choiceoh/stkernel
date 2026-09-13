@@ -981,14 +981,18 @@ class Glm53Engine:
 
     def _forward(self, step: Step, **kwargs):
         self.caches.prepare(step)
+        terminal = {}
+        if self.execution_plan.terminal_mhc:
+            from engine.kernels.mhc_contract import contract
+            terminal["contract"] = contract
         if self.execution_plan.prefill_tiles > 1 and step.ids.numel() > self.execution_plan.tile_rows:
             from engine.profiles.glm53.execution import prefill_layer_major
             result = prefill_layer_major(self.net, step, self.caches, self.execution_plan,
-                                        self.aux_layers if self.drafter.k else ())
+                                        self.aux_layers if self.drafter.k else (), **terminal)
             return result if self.drafter.k else (result, None)
         if self.drafter.k:
-            return self.net.forward(step, self.caches, aux_layers=self.aux_layers, **kwargs)
-        return self.net.forward(step, self.caches, **kwargs), None
+            return self.net.forward(step, self.caches, aux_layers=self.aux_layers, **kwargs, **terminal)
+        return self.net.forward(step, self.caches, **kwargs, **terminal), None
 
     def _prefill_forward(self, step: Step):
         h, aux = self._forward(step, last_hidden_only=True)

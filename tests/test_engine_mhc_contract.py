@@ -32,14 +32,57 @@ class MhcContractTests(unittest.TestCase):
 
     def test_decode_and_prefill_match_the_served_consumer(self):
         from engine.kernels.mhc_contract import contract
-        for rows in (1, 6, 7, 8, 65, 1728, 6912):
+        for rows in (1, 6, 7, 8, 28, 65, 1728, 6912):
             with self.subTest(rows=rows):
                 values = self.inputs(rows)
-                self.exact(contract(*values), self.baseline(*values))
+                actual, expected = contract(*values), self.baseline(*values)
+                if not torch.equal(actual, expected):
+                    self.diagnose(values, actual, expected)
+                self.exact(actual, expected)
+
+    @staticmethod
+    def diagnose(values, actual, expected):
+        """Retain exact synthetic failures at post and mean boundaries."""
+        import ctypes as C
+        import ctypes.util
+        import json
+        from engine.kernels.mhc import mhc_post_tilelang
+        fma = C.CDLL(ctypes.util.find_library('m')).fmaf
+        fma.argtypes, fma.restype = [C.c_float] * 3, C.c_float
+        x, residual, post, comb = (v.cpu() for v in values)
+        served = mhc_post_tilelang(*values).float().cpu()
+        samples = []
+        for row, col in (actual != expected).nonzero()[:3].tolist():
+            channels = []
+            for channel in range(4):
+                value = C.c_float(float(comb[row, 0, channel]) * float(residual[row, 0, col])).value
+                value = fma(float(post[row, channel, 0]), float(x[row, col]), value)
+                for source in range(1, 4):
+                    value = fma(float(comb[row, source, channel]), float(residual[row, source, col]), value)
+                channels.append(torch.tensor(value).bfloat16().float().item())
+            total = 0.
+            for value in channels:
+                total = C.c_float(total + value).value
+            samples.append(dict(row=row, col=col, actual=actual[row,col].item(), expected=expected[row,col].item(),
+                                served_channels=served[row,:,col].tolist(), oracle_channels=channels,
+                                oracle_mean=torch.tensor(total*.25).bfloat16().float().item()))
+        print(json.dumps(dict(mhc_mismatch_rows=x.shape[0], different=int((actual != expected).sum()), samples=samples)), flush=True)
 
     def test_rounding_and_cancellation_are_not_folded_through_the_mean(self):
         from engine.kernels.mhc_contract import contract
         from engine.kernels.mhc import mhc_post_tilelang
+        values = self.inputs(8)
+        x, residual, post, comb = values
+        # The served PTX rounds comb[0] * residual[0] before adding post * x
+        # with FMA. Rounding post * x first instead produces 8.67843628e-5.
+        # Reproduce this rare random failure deterministically at every cell.
+        x.fill_(-1.8671875)
+        residual.zero_(); residual[:, 0].fill_(1.21875)
+        post.fill_(0.8058584332466125)
+        comb.zero_(); comb[:, 0, :].fill_(1.2346874475479126)
+        served = self.baseline(*values)
+        self.assertTrue(torch.all(served == 8.630752563476562e-5).item())
+        self.exact(contract(*values), served)
         values = self.inputs(8)
         x, residual, post, comb = values
         # Identity mix with a small, different post contribution per channel:

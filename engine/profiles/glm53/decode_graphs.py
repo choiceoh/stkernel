@@ -323,7 +323,10 @@ class Glm53DecodeGraphs:
                 hook = observe if self.observe_stream is not None else None
                 if self.execution_plan.direct_mhc:
                     from engine.profiles.glm53.direct_mhc import decode_direct
-                    result = decode_direct(net, step, scratch, self.aux_layers, hook)
+                    contract = None
+                    if self.execution_plan.terminal_mhc:
+                        from engine.kernels.mhc_contract import contract
+                    result = decode_direct(net, step, scratch, self.aux_layers, hook, contract=contract)
                 elif self.streams is not None:
                     from engine.profiles.glm53.execution import decode_overlap
                     result = decode_overlap(net, step, scratch, self.execution_plan, self.streams,

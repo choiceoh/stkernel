@@ -1,0 +1,106 @@
+{
+  "session": "st-terminal-write0913v2",
+  "ticket": "17892916293354350",
+  "revision": 4,
+  "source": "93197d54fb3711ffd6b41efcb9959ea8d14d24e0",
+  "go_kst": "2026-09-13 18:46:41",
+  "scope": "terminal contraction and feature assembly; no full-model speed claim",
+  "correctness": {
+    "status": "PASS",
+    "tests": 5,
+    "skips": 0,
+    "seconds": 4.318
+  },
+  "timing": {
+    "status": "COMPLETE",
+    "paired_samples_per_case": 20,
+    "cases": [
+      {
+        "local_rows": 7,
+        "features": 1,
+        "regime": "warm",
+        "baseline_us": 12.480000033974648,
+        "fused_us": 7.151999976485968,
+        "change_pct": -42.69230803673172,
+        "output_sha256": "007304f89f03f2cd3d0f55576ae845ed4e356218cd50c81190349cb3408f7db6"
+      },
+      {
+        "local_rows": 7,
+        "features": 1,
+        "regime": "evicted",
+        "baseline_us": 20.128000527620316,
+        "fused_us": 8.191999979317188,
+        "change_pct": -59.300478117158974,
+        "output_sha256": "007304f89f03f2cd3d0f55576ae845ed4e356218cd50c81190349cb3408f7db6"
+      },
+      {
+        "local_rows": 7,
+        "features": 5,
+        "regime": "warm",
+        "baseline_us": 53.05600166320801,
+        "fused_us": 12.06399966031313,
+        "change_pct": -77.26176251106578,
+        "output_sha256": "6f9aff6e2a089af2a64d9a60cb0f36fb20bf9562181afe1d61ca8d8041154f98"
+      },
+      {
+        "local_rows": 7,
+        "features": 5,
+        "regime": "evicted",
+        "baseline_us": 69.2799985408783,
+        "fused_us": 26.27200074493885,
+        "change_pct": -62.07852006602281,
+        "output_sha256": "6f9aff6e2a089af2a64d9a60cb0f36fb20bf9562181afe1d61ca8d8041154f98"
+      },
+      {
+        "local_rows": 1728,
+        "features": 1,
+        "regime": "warm",
+        "baseline_us": 2255.423903465271,
+        "fused_us": 393.16800236701965,
+        "change_pct": -82.56788882289712,
+        "output_sha256": "13a1258cb83fd9b1e318a2e109dddf3f679a0be2dfec30e725ab7ee1315b6bf5"
+      },
+      {
+        "local_rows": 1728,
+        "features": 1,
+        "regime": "evicted",
+        "baseline_us": 2265.247941017151,
+        "fused_us": 436.91200017929077,
+        "change_pct": -80.7123983088974,
+        "output_sha256": "13a1258cb83fd9b1e318a2e109dddf3f679a0be2dfec30e725ab7ee1315b6bf5"
+      },
+      {
+        "local_rows": 1728,
+        "features": 5,
+        "regime": "warm",
+        "baseline_us": 11582.144260406494,
+        "fused_us": 1916.4479970932007,
+        "change_pct": -83.45342663668445,
+        "output_sha256": "cbe5fcabe3d7789f5a103e19665148dc5c1e898005011299b0349be9c70a8374"
+      },
+      {
+        "local_rows": 1728,
+        "features": 5,
+        "regime": "evicted",
+        "baseline_us": 11883.24785232544,
+        "fused_us": 1985.8400225639343,
+        "change_pct": -83.28874355527876,
+        "output_sha256": "cbe5fcabe3d7789f5a103e19665148dc5c1e898005011299b0349be9c70a8374"
+      }
+    ],
+    "raw_samples_available": false
+  },
+  "payload_status": "FAIL after completed tests and timings",
+  "reporting_error": "FileNotFoundError: relative tests/test_engine_mhc_contract.py at final source hashing",
+  "source_binding": "Hashes recovered from the immutable prepared checkout, not reconstructed timing samples",
+  "source_sha256": {
+    "engine/kernels/mhc_contract.py": "19c7d88cd44e51674056b81e9b940e32bcea1eef9270e0cc9387bc86ff1aba2f",
+    "engine/kernels/mhc/__init__.py": "a98d59b0f6f451d043e4f9cdef4919f284bdcb3a4f76869ccb4ff59801384cc4",
+    "engine/kernels/mhc/tilelang_kernels.py": "c27219a453a7897f03ed9179ffd90311200f40766214e2bd0c2a09b5ce2eef1b",
+    "engine/profiles/glm53/net.py": "66b38b354d4003554a3d3f31e282ac1f5608df77bde657ab84062d327e5b3067",
+    "engine/profiles/glm53/drafter.py": "498e2997405fbad56781f6ddebabfa1014109f89a2b957fb03b2b6009524b502",
+    "tests/test_engine_mhc_contract.py": "e39e01c42242cf06e4a9be4d163a3c8f863404b2ce908c4777931b8f5f73f40c",
+    "probes/engine_mhc_contract_check.py": "070c69587e58069278ef1ba9c4f0d628d8859a9272b76024cb6e2568299a5ffd"
+  },
+  "log_sha256": "bf62df5f5e2b52dc5cd111c60a5c2b2aab9c2e7c7b2d5ef71d2650c02a2cf9e5"
+}
