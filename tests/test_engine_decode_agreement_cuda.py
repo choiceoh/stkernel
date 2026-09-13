@@ -4,16 +4,13 @@ No weights or engine boot: exercise changing MAX tails through the actual
 transport kernel, then isolate the production-sized candidate merge. The CPU
 proxy stands in for three NIC peers; this is not a real TP4/model verdict.
 """
-import hashlib
-import json
-from pathlib import Path
-import time
 from types import SimpleNamespace as NS
 import unittest
 
 import torch
 
 
+@unittest.skipUnless(torch.cuda.is_available(), "requires admitted GB10")
 class DecodeAgreementTests(unittest.TestCase):
     def test_max_tails_with_changing_peers_inside_four_iteration_graphs(self):
         from engine.kernels.bounded_graph import BoundedGraph
@@ -81,25 +78,6 @@ class DecodeAgreementTests(unittest.TestCase):
                     graph.reset()
 
 
-def main():
-    if not torch.cuda.is_available() or torch.cuda.get_device_capability() != (12, 1):
-        raise RuntimeError('requires an admitted GB10')
-    started = time.monotonic()
-    result = unittest.TextTestRunner(verbosity=2).run(
-        unittest.defaultTestLoader.loadTestsFromTestCase(DecodeAgreementTests))
-    root = Path(__file__).resolve().parents[1]
-    files = ('engine/kernels/oneshot/dsv4_oneshot_ar.cu', 'engine/modules/vocab.py',
-             'engine/kernels/common/vocab_candidates.py', 'probes/engine_decode_agreement_check.py')
-    report = dict(status='PASS' if result.wasSuccessful() else 'FAIL', tests=result.testsRun,
-                  failures=len(result.failures), errors=len(result.errors), seconds=time.monotonic()-started,
-                  scope='single GB10; CPU proxy peers and production-sized vocabulary merge; no model/NIC proof',
-                  torch=torch.__version__, cuda=torch.version.cuda,
-                  source_sha256={p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in files})
-    Path('/cache/decode-agreement.json').write_text(json.dumps(report, indent=2)+'\n')
-    print(json.dumps(report), flush=True)
-    if not result.wasSuccessful():
-        raise SystemExit(1)
-
 
 if __name__ == '__main__':
-    main()
+    unittest.main()
