@@ -84,6 +84,55 @@ class AbsorbRoutingTests(unittest.TestCase):
 
 
 class AbsorbKernelTests(unittest.TestCase):
+    def test_actual_wrapper_launch_geometry_and_fresh_output_without_a_device(self):
+        # Execute the actual wrapper with only the launch/stream surface mocked.
+        # This proves argument wiring and ownership, not a GPU launch.
+        class CudaInput:
+            is_cuda = True
+
+            def __init__(self, tensor):
+                self.tensor = tensor
+
+            def __getattr__(self, name):
+                return getattr(self.tensor, name)
+
+        launch = Mock()
+        grids = []
+
+        class Kernel:
+            def __getitem__(self, grid):
+                grids.append(grid)
+                return launch
+
+        captured = [False]
+        path = ROOT/'engine/kernels/mla/prefill_absorb.py'
+        node = copy.deepcopy(next(n for n in ast.parse(path.read_text()).body
+                                  if isinstance(n, ast.FunctionDef) and n.name == 'mla_prefill_absorb'))
+        scope = dict(torch=NS(bfloat16=torch.bfloat16, empty=torch.empty,
+                             cuda=NS(is_current_stream_capturing=lambda: captured[0])),
+                     triton=NS(cdiv=lambda a, b: (a+b-1)//b), _absorb=Kernel())
+        exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), 'exec'), scope)
+        run = scope['mla_prefill_absorb']
+        owner = torch.zeros(16, 512, 512).bfloat16()
+        for transpose in (False, True):
+            inner, outer = (512, 256) if transpose else (256, 512)
+            x = CudaInput(torch.zeros(131, 16, inner).bfloat16())
+            w = owner[:, 256:] if transpose else owner[:, :256]
+            first = run(x, w, transpose=transpose)
+            second = run(x, w, transpose=transpose)
+            self.assertEqual(first.shape, (131, 16, outer))
+            self.assertTrue(first.is_contiguous())
+            self.assertNotEqual(first.data_ptr(), second.data_ptr())
+            self.assertEqual(grids[-1], (3, outer//64, 16))
+            args = launch.call_args.args
+            self.assertIs(args[0], x)
+            self.assertIs(args[1], w)
+            self.assertIs(args[2], second)
+            self.assertEqual(args[3:], (131, 16, inner, outer, 512*512, 512, transpose, 64, 64, 32))
+        captured[0] = True
+        with self.assertRaisesRegex(ValueError, 'eager CUDA'):
+            run(x, w, transpose=True)
+
     def test_actual_kernel_body_strides_offsets_tails_and_independent_einsums(self):
         torch.set_num_threads(1)
 
