@@ -64,7 +64,7 @@ class StoreTests(unittest.TestCase):
         paged, slots = self.comp.cache_specs()
         layout = Layout(paged, slots, 4, self.comp.spec_layers())
         self.assertEqual(set(layout.paged), {"attention_kv", "qsa_raw_keys"})
-        self.assertEqual(set(layout.slot), {"gdn_conv", "gdn_state", "ngram_context", "ngram_conv"})
+        self.assertEqual(set(layout.slot), {"linear_conv", "linear_state", "ngram_context", "ngram_conv"})
         for at, spec in list(layout.paged.values()) + list(layout.slot.values()):
             self.assertEqual(at % ALIGN, 0)
         kv = layout.paged["attention_kv"][1]
@@ -147,7 +147,7 @@ class StoreTests(unittest.TestCase):
             self.comp.forward(Step.of([(1, 0, torch.tensor([1, 2]))]), store)   # no blocks reserved
         with self.assertRaisesRegex(ValueError, "slot 0"):
             store.open(2, 0)
-        self.assertIsNone(store.get(0, "gdn_state", 1))                          # nothing computed yet
+        self.assertIsNone(store.get(0, "linear_state", 1))                          # nothing computed yet
 
 
 @unittest.skipUnless(torch is not None, "requires torch")

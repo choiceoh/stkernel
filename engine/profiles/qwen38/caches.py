@@ -12,8 +12,8 @@ def caches(tp: int = 4) -> "list[Cache]":
     conv_dim = c["linear_key_head_dim"] * c["linear_num_key_heads"] * 2 + c["linear_value_head_dim"] * c["linear_num_value_heads"]
     conv = n_lin * (conv_dim // tp) * (c["linear_conv_kernel_dim"] - 1) * 2
     return [
-        Cache("gdn conv state", n_lin, 0.0, conv, 0.0, f"[{conv_dim // tp}, {c['linear_conv_kernel_dim'] - 1}] bf16 per GDN layer; a slot, not a page"),
-        Cache("gdn recurrent state", n_lin, 0.0, per_seq - conv, 0.0,
+        Cache("linear conv state", n_lin, 0.0, conv, 0.0, f"[{conv_dim // tp}, {c['linear_conv_kernel_dim'] - 1}] bf16 per GDN layer; a slot, not a page"),
+        Cache("linear recurrent state", n_lin, 0.0, per_seq - conv, 0.0,
               f"[{c['linear_num_value_heads'] // tp}, {c['linear_value_head_dim']}, {c['linear_key_head_dim']}] fp32 (mamba_ssm_dtype) per GDN layer"),
         Cache("full-attn kv", n_full, kv_tok, 0.0, 0.0,
               f"1 kv head per rank (2 < TP {tp}, replicated) x {c['head_dim']} x k,v x bf16 per QSA layer -- paged"),

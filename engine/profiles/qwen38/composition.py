@@ -1,8 +1,8 @@
 """Qwen3.8-Flash-Next as a composition (profile): the plan, the residual form and the features, bound by name.
 
 Nothing here computes. The layer loop is engine/base/composition's; the math is the features' (engine/modules:
-hyper_connection.GatedResidualStreams, linear_attention.GatedDeltaNet, sparse_attention.GatedSparseAttention,
-ngram_embedding.NGramInjection, moe.SharedExpertMoE). What is Qwen3.8's -- and so lives here -- is which layer runs
+hyper_connection.GatedResidualStreams, linear_attention.GatedDeltaNet, attention.Attention (+ attention.QSA),
+ngram_embedding.NGramInjection, moe.MoE). What is Qwen3.8's -- and so lives here -- is which layer runs
 which feature (config `layer_types`, `ple_layer_ids`), the hyperparameters read off its text config, and the
 checkpoint names the features' weights sit under (transformers qwen4_exp, pinned in plan.py).
 
@@ -42,10 +42,14 @@ def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None, dtype: "str
     `dtype` is the activations' (the cache rows a store keeps): the config's `dtype`, else bfloat16. `table(name,
     rows)` -> [..., heads, width] gathers PLE rows by index; by default the whole table tensor is indexed."""
     from engine.modules.hyper_connection import GatedResidualStreams
-    from engine.modules.linear_attention import GatedDeltaNet
-    from engine.modules.moe import SharedExpertMoE
-    from engine.modules.ngram_embedding import NGramInjection
-    from engine.modules.sparse_attention import GatedSparseAttention
+    from engine.modules.linear_attention import VARIANTS, GatedDeltaNet, named
+    from engine.modules.moe import MoE, shared_of
+    from engine.modules.moe import named as moe_named
+    from engine.modules.ngram_embedding import NGramHash, NGramInjection
+    from engine.modules.ngram_embedding import VARIANTS as NGRAM_VARIANTS
+    from engine.modules.ngram_embedding import named as ngram_named
+    from engine.modules.attention import QSA, Attention
+    from engine.modules.attention import named as attention_named
 
     def layer_name(layer, part, name):
         # a module's matrix is "<name>.weight"; a bare parameter (dt_bias, A_log, the fused experts) is "<name>"
@@ -66,26 +70,34 @@ def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None, dtype: "str
     features = {
         "linear_attention": GatedDeltaNet(
             k_heads=cfg["linear_num_key_heads"], v_heads=cfg["linear_num_value_heads"], k_dim=cfg["linear_key_head_dim"],
-            v_dim=cfg["linear_value_head_dim"], conv=cfg["linear_conv_kernel_dim"], eps=eps,
+            v_dim=cfg["linear_value_head_dim"], conv=cfg["linear_conv_kernel_dim"], eps=eps, **VARIANTS["gdn"],
             gate_activation=cfg.get("output_gate_type") or cfg["hidden_act"], activation=cfg["hidden_act"],
-            weights=lambda layer, name: layer_name(layer, "linear_attn", name), dtype=dtype),
-        "sparse_attention": GatedSparseAttention(
-            heads=cfg["num_attention_heads"], kv_heads=cfg["num_key_value_heads"], head_dim=cfg["head_dim"],
-            rotary_dim=rotary, theta=rope.get("rope_theta", cfg.get("rope_theta")), eps=eps,
-            index_heads=cfg["indexer_n_heads"], index_head_dim=cfg["indexer_head_dim"], budget=cfg["indexer_budget"],
-            ratio=cfg["indexer_compress_ratio"], mrope_section=tuple(section) if section else None,
-            weights=lambda layer, name: layer_name(layer, "self_attn", name), dtype=dtype),
-        "moe": SharedExpertMoE(
-            experts=cfg["num_experts"], topk=cfg["num_experts_per_tok"], normalize=cfg.get("norm_topk_prob", True),
-            activation=cfg["hidden_act"], weights=lambda layer, name: layer_name(layer, "mlp", name), expert=expert),
+            weights=lambda layer, name: named("qwen4_exp", lambda hf: layer_name(layer, "linear_attn", hf))(name),
+            dtype=dtype),
+        "sparse_attention": Attention(
+            form="gqa", heads=cfg["num_attention_heads"], kv_heads=cfg["num_key_value_heads"], head_dim=cfg["head_dim"],
+            rotary_dim=rotary, theta=rope.get("rope_theta", cfg.get("rope_theta")), eps=eps, qk_norm="rms_unit_offset",
+            gate="channel", mrope_section=tuple(section) if section else None,
+            select=QSA(index_heads=cfg["indexer_n_heads"], index_head_dim=cfg["indexer_head_dim"],
+                       budget=cfg["indexer_budget"], ratio=cfg["indexer_compress_ratio"]),
+            weights=lambda layer, name: attention_named("qwen4_exp", lambda hf: layer_name(layer, "self_attn", hf),
+                                                        heads=cfg["num_attention_heads"], head_dim=cfg["head_dim"])(name),
+            dtype=dtype),
+        "moe": MoE(
+            experts=cfg["num_experts"], topk=cfg["num_experts_per_tok"], score="softmax", normalize=cfg.get("norm_topk_prob", True),
+            router_fp32=False, shared=1, shared_mode="sigmoid", activation=cfg["hidden_act"],
+            weights=lambda layer, name: moe_named("qwen4_exp", lambda hf: layer_name(layer, "mlp", hf))(name),
+            expert=expert, shared_expert=lambda layer, i: shared_of("qwen4_exp", lambda hf: layer_name(layer, "mlp", hf))(i)),
     }
     if ple_layers:
         features["ple"] = NGramInjection(
-            hidden=hidden, hc=hc, ngram_size=cfg["ngram_size"], heads_per_ngram=cfg["heads_per_ngram"],
-            unigram_vocab=cfg["vocab_size"], ngram_vocab_base=cfg["ngram_vocab_size_base"], seed=cfg.get("seed", 1234),
-            eos=_eos(cfg), conv=cfg["ple_conv_kernel_size"], eps=eps,
-            table_index=lambda layer: ple_layers.index(layer + 1),
-            weights=lambda layer, name: layer_name(layer, "ple", name),
+            hidden=hidden, hc=hc, ngram_size=cfg["ngram_size"], conv=cfg["ple_conv_kernel_size"], eps=eps,
+            **NGRAM_VARIANTS["ple"],
+            hash=lambda layer: NGramHash.splitmix(
+                ngram_size=cfg["ngram_size"], heads=cfg["heads_per_ngram"], unigram_vocab=cfg["vocab_size"],
+                base=cfg["ngram_vocab_size_base"], table_index=ple_layers.index(layer + 1), seed=cfg.get("seed", 1234),
+                eos=_eos(cfg)),
+            weights=lambda layer, name: ngram_named("qwen4_exp", lambda hf: layer_name(layer, "ple", hf))(name),
             table=(lambda layer, rows: layer_name(layer, "ple", "ple_embedding.ngram_embedding.weight")[rows]) if table is None
             else (lambda layer, rows: table(f"{prefix}layers.{layer}.ple.ple_embedding.ngram_embedding", rows)),
             dtype=dtype)

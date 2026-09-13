@@ -27,8 +27,8 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
     base/       모델 이름이 없는 것: 아레나, 로더(사전샤딩된 랭크 파일의 범위 읽기), KV 블록/슬롯, NVMe 티어, 스케줄러,
                 스텝 메타, 러너, 기록/사망 덤프, 설정(사실+만료 노브), 증명·판정, 그래프, comm(플릿 / LocalTP),
                 조합 틀(composition: 층 계획 + 잔차 형식 + 특징, 한 step 루프)
-    modules/    특징 모듈: 선형 어텐션(KDA·GDN), 희소 인덱서(kpool·QSA)·희소 MLA·게이트 희소 GQA, NVFP4 선형·MoE(공유 전문가
-                게이트 포함)·양자화, 하이퍼커넥션(mhc·split-sinkhorn·게이트 잔차), n-gram PLE, 노름, 회전, 로짓
+    modules/    특징 모듈: 선형 순환 가족(GDN·KDA 한 특징, 여섯 축), 어텐션 가족(GQA|MLA × 회전 × 노름 × 게이트 × 선택 QSA|DSA|MSA|윈도 × 싱크·상대 편향), MoE 가족(라우터 softmax|sigmoid × 보정 편향 × 그룹 × 활성 silu|clamped|swigluoai × 공유 전문가 plain|sigmoid|sink), 잔차 형식 가족(pre-norm(+출력 conv)·게이트 스트림·mHC 스트림·AttnRes), 해시 n-gram 메모리 가족(Qwen PLE·DSv4.1 engram), 희소 커널 참조(kpool·QSA·MLA·GQA), NVFP4 선형·MoE(공유 전문가
+                게이트 포함)·양자화, 하이퍼커넥션(mhc·split-sinkhorn·게이트 잔차), 노름, 회전, 로짓
     profiles/   모델별: 사실·가중치 지도(specs)·사전샤딩·레인 표·조합(net)·검증(check). glm53 이 첫 대상.
                 qwen38 은 base/composition 위에 계획과 가중치 이름만 선언한다(composition.py).
     kernels/    ST가 소유하는 Triton·TileLang·CuTe DSL·CUDA 커널과 필요한 보조 코드
@@ -41,6 +41,45 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 `tests/test_engine_composition.py` 가 그 조립을 transformers 5.16.1 의 `Qwen4ExpForCausalLM`(plan.py 가 sha 로 핀한
 오라클)과 CPU 에서 대조한다: prefill 전 토큰·증분 디코드·청크 prefill·EOS 가 섞인 두 시퀀스 한 step 모두 FP32 에서
 최대 5e-8, BF16 상대오차 5e-3. 캐시 명세 합은 `qwen38/plan.state_bytes` 와 같다(QSA 키만 원시 키라 압축 비율배).
+**특징은 가족이다(modules/linear_attention, 2026-09-13).** 새 모델의 조립 시간을 줄이는 쪽은 모델별 구현을 나란히 두는 게 아니라
+가족 하나에 변형 축을 다는 것이다. Qwen3.8(GDN)·GLM-5.3(KDA)·Kimi K3·Ling-3.0-flash 의 선형 어텐션은 되풀이 하나(`gated_delta_rule`)에
+여섯 축이다: decay 가 헤드별이냐 채널별이냐, safe gate 의 lower_bound 냐 softplus 냐, decay·게이트 투영이 저랭크 쌍이냐 한 행렬이냐,
+게이트 활성(silu|sigmoid), 노름의 반올림 위치(qwen4_exp 는 가중치 전에, glm5_next 는 끝에 한 번). `GatedDeltaNet` 이 그 특징이고
+`VARIANTS` 가 네 모델을 축의 값으로 이름 짓는다(gdn·kda·kda_full_gate·kda_full); fused/separate 투영과 conv 는 축이 아니라 가중치 배치라
+`named(scheme, source)` 가 이어 붙인다. GLM 의 레인이 임포트하는 `kda_gate`·`kda_output_norm` 은 이 위의 래퍼로 그대로다.
+`tests/test_engine_linear_family.py` 가 KDA 변형을 transformers 5.16.1 의 `Glm5NextTextLinearAttention` 에 두 decay 형 모두 FP32 2e-6 으로
+붙잡고(GDN 변형은 조립 테스트가 qwen4_exp 에), 조각 prefill·디코드 == 통짜, 분리 가중치 == fused, full-rank == 저랭크 쌍을 본다.
+**어텐션도 가족이다(modules/attention).** 일곱 모델의 어텐션은 계산 하나 — 선택이 허용한 위치들에 softmax(q·k·scale + bias) v — 에
+축이다: 형식(GQA | MLA 잠재), 회전(없음 | 헤드 앞부분 | MLA 의 rope 부분, neox | interleaved), q/k 노름(없음 | T5 | 1+w), 출력 게이트(없음 |
+채널 | 헤드), scale, 선택(Causal | Window | QSA | DSAKpool | MSA — 인덱서는 자기 키 행을 따로 든다), 싱크, Inkling 의 상대 편향·log
+scaling·k/v 짧은 conv. `Attention` 이 그 특징이고 `named(scheme)` 이 여섯 체크포인트 이름을 잇는다(Qwen 의 q_proj 는 헤드마다 게이트를
+옆에 두어 binder 가 가른다). `tests/test_engine_attention_family.py` 가 각 형식을 그것을 정의한 transformers 구현에 CPU 에서 붙잡는다:
+glm5_next(MLA + DSA k-pool, 회전 없음), deepseek_v3(dense MLA, 두 회전, q_lora 유무 — K3·Ling 의 형), minimax_m3_vl(GQA + MSA),
+inkling(윈도 + 상대 편향 + k/v conv, 전역 층의 log scaling), 싱크는 `sparse_attention.sparse_attn`(DSv4.1 커널 의미)에; Qwen 의
+GQA + QSA + 게이트는 조립 테스트가 qwen4_exp 에. 참조가 커널을 따르는 곳 둘: 허용 위치가 없는 행은 0, 인덱서의 동점은 앞 풀/블록으로.
+**MoE 도 가족이다(modules/moe).** 일곱 모델의 채널 믹서는 라우터 하나 + 전문가 루프 하나에 축이다: 점수(softmax | sigmoid), 선택용 보정
+편향(가중치엔 안 들어간다), 그룹 선택(noaux_tc: n_group·topk_group), 정규화, routed scaling 이 가중치에 붙느냐 출력에 붙느냐, 라우터가 fp32 냐,
+활성(silu | GLM 의 clamped swiglu | M3 의 swigluoai), 공유 전문가의 결합(plain | Qwen 의 sigmoid 게이트 | Inkling 의 라우터 sink — 공유 전문가의
+로짓이 선택된 전문가들과 함께 정규화된다). `MoE`·`Dense` 가 특징이고 `named`/`experts_of`/`shared_of` 가 다섯 체크포인트의 이름과 공유
+전문가 배치(분리 | fused | 쌓인 [S,…])를 잇는다. `tests/test_engine_moe_family.py` 가 각 블록을 그것을 정의한 transformers 구현에 붙잡는다:
+glm5_next(그룹 없음/있음, clamped), deepseek_v3(grouped), minimax_m3_vl(swigluoai, 출력 scaling), inkling(sink, route_scale × global_scale),
+각 모델의 dense MLP; Qwen 의 softmax + sigmoid 공유는 조립 테스트가 qwen4_exp 에. 전문가의 양자화 형식(NVFP4·GPTQ·FP8·MXFP4)은 로더 쪽
+`expert(layer, e)` 의 일이라 특징의 축이 아니다.
+**잔차 형식도 가족이다(modules/residual).** 서브층이 잔차를 읽고 쓰는 방식은 다섯: `PreNorm`(x = norm(h), h += out; Inkling 은 out 에 fp32 짧은
+conv 를 더한 뒤 — 잔차 형식이 시퀀스별 상태를 들고 `cache_specs` 로 선언한다), Qwen 의 `GatedResidualStreams`(hyper_connection), `HyperStreams`
+(mHC: hc 스트림, 서브층마다 노름된 스트림의 선형 하나가 pre·post·comb 를 주고 comb 는 Sinkhorn — GLM-5.3 은 헤드가 평균, DeepSeek-V4 는 가중
+collapse), `AttnRes`(Kimi K3: 잔차는 현재 블록의 합, 블록 경계마다 저장, 서브층 입력은 깊이 방향 softmax 혼합 — modeling 코드 인용, 로컬
+오라클 없음). Residual 프로토콜의 enter/leave 가 step·state 를 받는다. `tests/test_engine_residual_family.py`: HyperStreams 를 glm5_next 디코더
+층(서브층은 HF 모듈 그대로, 잔차 형식만 우리 것)과 deepseek_v4 헤드에, PreNorm 을 deepseek_v3 층과 inkling 층(출력 conv 포함)에, 조각 == 통짜.
+**해시 n-gram 메모리도 가족이다(modules/ngram_embedding).** Qwen3.8 의 PLE 와 DeepSeek-V4.1 의 engram 은 해시 하나와 게이트-쓰기 하나다.
+해시(`NGramHash`): 창의 규칙(시퀀스 시작·dead(이미지) 토큰에서 멈춤, Qwen 은 한 칸 이상 뒤의 EOS 에서도), 키(토큰 id | 정규화해 겹치는
+토큰 맵 — `normalized_token_map`), 곱수(splitmix | numpy rng), 버킷(둘 다 base 이상의 연속 소수, 표 t·차수 o·헤드 h 순). 게이트-쓰기
+(`NGramInjection`): key·value 투영(둘 | wkv 하나), 노름 순서(separate: 따로 노름해 반올림 뒤 내적 | joint: fp32 곱 × rsqrt 두 개의 곱),
+(1+w) | w, 부호 붙은 sqrt 의 0 처리(sign | copysign), 팽창 conv(Qwen) 유무. 표의 역양자화는 `table` 호출의 일(DSv4.1 은
+`block_fp8_rows`). `tests/test_engine_ngram_family.py`: PLE 를 qwen4_exp 의 해시 id·층에, engram 을 **벤더 DeepSeek-V4.1 추론 코드**
+(srv4 체크포인트의 inference/engram.py·model.py, MIT, model.py 는 profiles/dsv41/caches.py 가 핀한 sha; git 제외 .oracle-site/dsv41) 에 —
+실제 config 의 소수·곱수(합 == 표 높이 384,006,168 / 384,016,682), 토큰 맵, 이미지 스팬과 청크를 넘는 해시 id, 조회는 torch.equal,
+fp32 쓰기도 비트 동일; bf16 서빙 경로는 반올림 두 번 거리 안.
 **조립이 서빙된다(base/composed).** `PositionStore` 는 같은 State 계약을 엔진의 메모리 위에서 답한다: 특징의 토큰별 행
 (`put_rows`/`rows`)은 BlockPool 의 블록에 **위치**로 산다 — 블록은 위치 // 블록 토큰, 행은 위치 % 블록 토큰 — 그래서 시퀀스의
 이력은 그 블록표이고 캐시된 prefix 의 블록은 복사 없이 입양된다(base/prefix). 시퀀스별 값(`get`/`put`)은 고정 슬롯에 살고, 슬롯의
