@@ -33,7 +33,7 @@ def main():
     for rows in (1, 6, 7, 14, 21, 28):
         for stride0, stride1 in ((6416, 6416), (128, 6416)):
             source = ASTSource(fn=_kda_pair, signature={name: '*bf16' for name in ('X0', 'X1', 'W0', 'W1', 'Y')},
-                               constexprs=dict(M=rows, XS0=stride0, XS1=stride1, BM=16, BN=64))
+                               constexprs=dict(M=rows, XS0=stride0, XS1=stride1, BM=16, BN=64, K=128, N=2048))
             kernel = triton.compile(source, target=GPUTarget('cuda', 121, 32), options=dict(num_warps=4))
             records.append(dict(kernel='kda_pair', rows=rows, strides=[stride0, stride1],
                                 shared_bytes=kernel.metadata.shared, status='PASS'))

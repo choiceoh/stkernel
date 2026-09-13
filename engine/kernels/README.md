@@ -132,6 +132,17 @@ MLA는 필수 레인이므로 이전 `VLLM_GLM53_MEGAKERNEL`/`VLLM_GLM53_MK_MLA`
 모델 무관으로 이미 보편인 커널(샘플러, 블록 검증, decode commit, 후보 키, SwiGLU, norm+RoPE, route 히스토그램,
 빌드 캐시, 자기 보정)은 형상 필드를 읽지 않는다 — 인자가 곧 형상이다.
 
+**형상 마법사와 기록.** 래퍼가 거부 기준으로 삼는 컴파일된 셀(MLA 16×512, Hadamard-128, mHC hidden 4096/5120·hc 4,
+one-shot world 4·MAXEL, prefill 블록 2048, 융합 게이트의 per-channel decay)은 `engine/kernels/cells.py` 한 곳에 있고
+래퍼가 거기서 임포트한다. 그래서 `cells.admission(shape)` 가 부팅 없이 레인별 판정(admitted / refused / unmeasured)을
+낸다. 모델을 들이는 단계(`preshard.py`, `preshard_modelopt.py`)가 마법사를 돌려 rank 파일 옆에 `kernel_shape.json`
+(형상 + 측정 핀 + 판정표 + 유도한 config.json 의 sha256)을 쓰고, 부팅(`kernel_shape.bind_recorded`)은 그 기록이 있고
+config 해시가 맞으면 그것을 바인딩하며(낡은 기록은 사망: "마법사를 다시 돌려라"), 없으면 예전처럼 config 에서 유도한다.
+수동 실행: `python3 -m engine.base.kernel_shape wizard --profile glm53|qwen38|dsv41 --ckpt DIR [--ranks DIR] [--pin moe.dynamic_tile_m=32] [--write]`,
+기록 열람: `... show --ranks DIR`. 측정 핀(`MoE.dynamic_tile_m` 등)은 config 에서 나오지 않는 모델별 결정이라 이 기록이 그 자리다.
+선형 어텐션이나 희소 인덱서가 없는 모델은 `linear`/`indexer` 를 `None` 으로 선언하고, 그 레인은 판정표에서 빠지며 래퍼는 이름을 대고 거부한다
+(dsv41: 2026-09-13 srv4 의 DeepSeek-V4.1-Flash config 로 마법사 실행 — MLA 16×512·mHC 5120·인덱서 128·one-shot·prefill·dense 통과, MoE 는 FP4 [32,32] 블록이라 거부, KDA 레인 없음).
+
 ## 런타임 이미지
 
 저장소 루트에서 `bash engine/runtime/build.sh`로 `st-engine:glm53`을 만든다.

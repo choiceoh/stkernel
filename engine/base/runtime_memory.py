@@ -168,24 +168,40 @@ class RuntimeMemory:
         cuda.set_per_process_memory_fraction(self.allocator_limit_bytes / total)
         cuda.reset_peak_memory_stats()
 
-    def checkpoint(self, phase):
-        """Boot only: retain transient peaks and require every TP rank to pass."""
+    def checkpoint(self, phase, failed: "str | None" = None):
+        """Boot only: retain transient peaks and require every TP rank to pass.
+
+        The vote at the end is a device collective every rank must reach: a rank that raised on
+        the way there (a sticky CUDA error under `synchronize`, a page-cache walk that failed)
+        used to leave its peers in NCCL MAX until the 120 s deadline, and the deadline was the
+        only thing they ever heard. So the way there is caught into the same flag the vote already
+        carries, and `failed` lets a phase that died elsewhere cast that flag too.
+        """
         cuda = self.cuda
-        cuda.synchronize()                          # the row's peaks and its clock read the same instant
+        error = failed or None
         reclaimed = 0
-        host_free = self.host_free()
-        need = self.os_reserve_bytes + self.host_budget_bytes + max(0, self.allocator_limit_bytes-cuda.memory_reserved())
-        if self.reclaim is not None and host_free < need:
-            reclaimed = self.reclaim(need, self.workspace_bytes+self.os_reserve_bytes+self.host_budget_bytes)
+        row = dict(phase=phase)
+        try:
+            cuda.synchronize()                      # the row's peaks and its clock read the same instant
             host_free = self.host_free()
-        now = self.clock()
-        free, _ = cuda.mem_get_info()
-        row = dict(phase=phase, at_seconds=round(now - self.started, 4),
-                   seconds=round(now - self.last, 4), allocated_bytes=cuda.memory_allocated(),
-                   reserved_bytes=cuda.memory_reserved(),
-                   peak_allocated_bytes=cuda.max_memory_allocated(),
-                   peak_reserved_bytes=cuda.max_memory_reserved(),
-                   immediately_free_bytes=min(free, host_free), reclaimed_bytes=reclaimed)
+            need = self.os_reserve_bytes + self.host_budget_bytes + max(0, self.allocator_limit_bytes-cuda.memory_reserved())
+            if self.reclaim is not None and host_free < need:
+                reclaimed = self.reclaim(need, self.workspace_bytes+self.os_reserve_bytes+self.host_budget_bytes)
+                host_free = self.host_free()
+            now = self.clock()
+            free, _ = cuda.mem_get_info()
+            row.update(at_seconds=round(now - self.started, 4),
+                       seconds=round(now - self.last, 4), allocated_bytes=cuda.memory_allocated(),
+                       reserved_bytes=cuda.memory_reserved(),
+                       peak_allocated_bytes=cuda.max_memory_allocated(),
+                       peak_reserved_bytes=cuda.max_memory_reserved(),
+                       immediately_free_bytes=min(free, host_free), reclaimed_bytes=reclaimed)
+        except Exception as exc:                    # noqa: BLE001 -- the vote below must still be cast
+            error = error or f"{type(exc).__name__}: {exc}"
+            now = self.clock()
+            row.update(at_seconds=round(now - self.started, 4), seconds=round(now - self.last, 4),
+                       allocated_bytes=0, reserved_bytes=0, peak_allocated_bytes=0, peak_reserved_bytes=0,
+                       immediately_free_bytes=0, reclaimed_bytes=reclaimed, read_error=error)
         row["peak_workspace_bytes"] = max(0, row["peak_reserved_bytes"] - self.baseline_reserved - self.arena_bytes)
         # MemAvailable, because that is the line earlyoom reads -- MemFree above is the boot
         # gate's number (a driver page cannot be reclaimed the way a clean file page can).
@@ -195,16 +211,16 @@ class RuntimeMemory:
         except (OSError, RuntimeError):
             row["available_bytes"] = row["immediately_free_bytes"]
         row["oom_margin_bytes"] = row["available_bytes"] - self.sigterm_bytes
-        error = None
-        if row["peak_reserved_bytes"] > self.allocator_limit_bytes:
-            error = "allocator peak exceeds the declared runtime byte ceiling"
-        if row["immediately_free_bytes"] < self.os_reserve_bytes:
-            error = "preparation consumed the OS memory reserve"
-        if row["available_bytes"] < self.sigkill_bytes:
-            # Below this the box has already decided; carrying on only means being killed
-            # with nothing in the ledger to say why (three of fourteen recorded boots).
-            error = (f"{row['available_bytes'] / (1 << 30):.2f} GiB available is under this box's "
-                     f"SIGKILL line ({self.sigkill_bytes / (1 << 30):.2f} GiB)")
+        if error is None:                           # a reading that failed already names its own error
+            if row["peak_reserved_bytes"] > self.allocator_limit_bytes:
+                error = "allocator peak exceeds the declared runtime byte ceiling"
+            if row["immediately_free_bytes"] < self.os_reserve_bytes:
+                error = "preparation consumed the OS memory reserve"
+            if row["available_bytes"] < self.sigkill_bytes:
+                # Below this the box has already decided; carrying on only means being killed
+                # with nothing in the ledger to say why (three of fourteen recorded boots).
+                error = (f"{row['available_bytes'] / (1 << 30):.2f} GiB available is under this box's "
+                         f"SIGKILL line ({self.sigkill_bytes / (1 << 30):.2f} GiB)")
         row["oom_close"] = row["available_bytes"] < self.sigterm_bytes
         if self.comm is not None:
             self.status.fill_(int(error is not None))

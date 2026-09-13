@@ -68,6 +68,11 @@ def kernel_shape(c: "dict | None" = None, tp: int = 4, spec_k: int = 1) -> "Kern
         spec_k=spec_k)
 
 
+def kernel_shape_of(ckpt, tp: int = 4) -> "KernelShape":
+    """The shape wizard's entry (engine/base/kernel_shape.derive_for): the checkpoint's text config, derived."""
+    return kernel_shape(text_config(ckpt), tp)
+
+
 if __name__ == "__main__":
     cs = constraints(); w = max(len(k.name) for k in cs)
     for k in cs:

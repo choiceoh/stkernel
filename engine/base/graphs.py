@@ -160,7 +160,17 @@ class DecodeGraphs:
                     self.graphs[shape], self.inputs[shape], self.outputs[shape] = g, inp, out
                     mark(shape, "captured" if detail else None)
                 torch.cuda.synchronize()
-            except BaseException:
+            except BaseException as exc:
+                # Every row of the ledger above is a fleet-wide vote, and the peers are at the next
+                # one for this shape. A rank that leaves now leaves them there until NCCL's deadline,
+                # and what they then report is the deadline. One failed vote pairs with their next
+                # row and turns it into "a TP peer failed", now, on every rank; this rank's own
+                # error is what it dies of.
+                if memory is not None:
+                    try:
+                        memory.checkpoint(f"{label}/failed", failed=f"{type(exc).__name__}: {str(exc)[:300]}")
+                    except BaseException:           # noqa: BLE001 -- the vote raises by design; the cause is `exc`
+                        pass
                 self.close()
                 raise
 

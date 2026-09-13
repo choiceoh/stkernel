@@ -101,6 +101,62 @@ class IndexerRowsKernelTests(unittest.TestCase):
                     self.assertEqual(a.dtype, torch.int64)
                     self.assertTrue(torch.equal(a, b))
 
+    def test_head_gate(self):
+        for n, nh in ((1, 32), (28, 32), (2304, 32), (5, 3)):
+            with self.subTest(n=n, heads=nh):
+                w = torch.randn(n, nh, device=DEVICE, generator=self.g) * 3
+                qs = torch.rand(n, nh, device=DEVICE, generator=self.g) * 7
+                got = self.kernels.head_gate(w, qs, 128 ** -0.5 * 32 ** -0.5)
+                want = self.reference.head_gate(w, qs, 128 ** -0.5 * 32 ** -0.5)
+                self.assertTrue(torch.equal(got, want))
+
+    def test_scatter_pools(self):
+        """Into the paged cache's record layout: 128 key bytes, then the fp32 scale, 132 bytes a record."""
+        n, pools, records = 3, 2, 60
+        paged = torch.randint(0, 256, (records * 132,), device=DEVICE, dtype=torch.uint8, generator=self.g)
+        keys = paged.as_strided((records, 128), (132, 1)).view(torch.float8_e4m3fn)
+        scales = paged.view(torch.float32).as_strided((records,), (33,), 32)
+        scales.copy_(torch.rand(records, device=DEVICE, generator=self.g))
+        want = paged.clone()
+        want_keys = want.as_strided((records, 128), (132, 1)).view(torch.float8_e4m3fn)
+        want_scales = want.view(torch.float32).as_strided((records,), (33,), 32)
+        pk = torch.randint(0, 256, (n * pools, 128), device=DEVICE, dtype=torch.uint8, generator=self.g).view(torch.float8_e4m3fn)
+        ps = torch.rand(n * pools, device=DEVICE, generator=self.g)
+        slots = torch.tensor([[5, 9], [11, 40], [0, 1]], device=DEVICE)
+        counts = torch.tensor([2, 1, 0], device=DEVICE)
+        self.reference.scatter_pools(pk, ps, want_keys, want_scales, slots, counts)
+        self.kernels.scatter_pools(pk, ps, keys, scales, slots, counts)
+        self.assertTrue(torch.equal(paged, want))
+
+    def test_write_tails(self):
+        n, w = 3, 9
+        for t, d, strided in ((1, 8, False), (7, 128, False), (7, 128, True), (6, 8, True)):
+            with self.subTest(tokens=t, d=d, strided=strided):
+                field = torch.randn(5, w, 2, d, device=DEVICE, generator=self.g).to(torch.bfloat16)
+                want = field.clone()
+                wide = torch.randn(n * t, 3 * d, device=DEVICE, generator=self.g).to(torch.bfloat16)
+                keys = (wide[:, :d] if strided else wide[:, :d].contiguous()).view(n, t, d)
+                gates = (wide[:, d:2 * d] if strided else wide[:, d:2 * d].contiguous()).view(n, t, d)
+                slots, contexts = torch.tensor([3, 1, 4], device=DEVICE), torch.tensor([32768, 0, 7], device=DEVICE)
+                self.reference.write_tails(want, slots, contexts, keys, gates)
+                self.kernels.write_tails(field, slots, contexts, keys, gates)
+                self.assertTrue(torch.equal(field.view(torch.uint8), want.view(torch.uint8)))
+
+    def test_mask_horizon(self):
+        for t, n, strided in ((7, 40, False), (7, 1024, False), (7, 1025, True), (1, 3000, False)):
+            with self.subTest(tokens=t, n=n, strided=strided):
+                wide = torch.randn(t, n + 5, device=DEVICE, generator=self.g)
+                logits = wide[:, :n] if strided else wide[:, :n].contiguous()
+                want = logits.clone()
+                ke = torch.randint(0, n + 1, (t,), device=DEVICE, dtype=torch.int32, generator=self.g)
+                ke[0] = 0
+                self.reference.mask_horizon(want, ke)
+                got = self.kernels.mask_horizon(logits, ke)
+                self.assertIs(got, logits)
+                self.assertTrue(torch.equal(logits, want))
+                if strided:
+                    self.assertTrue(torch.equal(wide[:, n:], wide[:, n:]))      # the columns past the view are untouched
+
     @unittest.skipIf(INTERPRET, "graph replay needs a GPU")
     def test_graph_replay_reads_new_contexts_and_tables(self):
         """A captured launch of each kernel reads the contexts and block rows of the replay, not the capture."""

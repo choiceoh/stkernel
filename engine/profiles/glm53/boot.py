@@ -226,26 +226,29 @@ def declared(a, comm_world: int) -> Config:
     fixed = dict(moe_static=lane_tables.MOE_STATIC_PRODUCTION,
                  lanes="served", decode_eager=0, execution="native")
     facts_ += [Fact(k, v, "native TP4 execution") for k, v in fixed.items()]
+    # One serving recipe in both modes. These four were enabled by operator
+    # request; their component gates are not full-model performance proof.
+    gb10_defaults = dict(direct_mhc=1, prefill_project_tiles=1,
+                         nvme_mapped_staging=1, decode_iterations=4)
     if getattr(a, "production", False):
         # tile32 passed the full GPU numerical/graph and matched 2K/32K/128K
         # serving brackets. Keep it in the production contract so a stale
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
-                        execution_overlap=0, early_observe=0, prefill_tiles=1, direct_mhc=0, prefill_project_tiles=0,
-                        nvme_mapped_staging=0, decode_iterations=1)
-        return Config(facts_ + [Fact(k, v, "qualified production default") for k, v in defaults.items()], knobs=[])
+                        execution_overlap=0, early_observe=0, prefill_tiles=1, **gb10_defaults)
+        return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
-        Knob("decode_iterations", 1, _dt.date(2026, 9, 30),
+        Knob("decode_iterations", gb10_defaults["decode_iterations"], _dt.date(2026, 9, 30),
              "Bounded greedy TP4 decode: reserve/read back 2 or 4 iterations with rank-agreed exits",
              "STK_decode_iterations=1", int),
-        Knob("nvme_mapped_staging", 0, _dt.date(2026, 9, 30),
+        Knob("nvme_mapped_staging", gb10_defaults["nvme_mapped_staging"], _dt.date(2026, 9, 30),
              "One mapped GB10 staging allocation for NVMe host I/O and GPU gather/scatter",
              "STK_nvme_mapped_staging=0", int),
-        Knob("prefill_project_tiles", 0, _dt.date(2026, 9, 30),
+        Knob("prefill_project_tiles", gb10_defaults["prefill_project_tiles"], _dt.date(2026, 9, 30),
              "Overlap TP4 prefill tile arrival with independent KDA input projection",
              "STK_prefill_project_tiles=0", int),
-        Knob("direct_mhc", 0, _dt.date(2026, 9, 30),
+        Knob("direct_mhc", gb10_defaults["direct_mhc"], _dt.date(2026, 9, 30),
              "TP4 rank packets consumed inside native MHC; exact rounding, C=1/C=4 latency and quality",
              "STK_direct_mhc=0", int),
         Knob("execution_overlap", 0, _dt.date(2026, 9, 30),
@@ -572,7 +575,15 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         recorder.gauge("prefix_compressed_budget_bytes", host_budget_bytes)
         recorder.gauge("prefix_snapshots", snapshots); recorder.gauge("snapshot_MiB", round(snapshot_bytes / 2**20, 1))
         return F, net, caches, engine, runner
-    except BaseException:
+    except BaseException as exc:
+        # The peers wait at "weights-loaded" for up to 1800 s, and what ends their wait is the
+        # deadline. A rank that failed on the way meets them there instead, with a phase that says
+        # so: the rendezvous compares phases and every rank raises now, naming this one's error.
+        if getattr(comm, "preparation", None) is not None:
+            try:
+                comm.wait_prepared(f"failed: rank {comm.rank}: {type(exc).__name__}: {str(exc)[:200]}", timeout_s=60., final=True)
+            except BaseException:                     # noqa: BLE001 -- it raises by design; `exc` is the cause
+                pass
         if memory is not None:
             memory.close()
         raise
@@ -744,7 +755,8 @@ def guard_test_memory(kv_gib: float, floor: float = TEST_FLOOR_GIB) -> None:
 def local(a) -> int:
     print(f"  box: {facts.check_box()}")
     print(declared(a, facts.TP).table())
-    kernel_shape.bind(facts.load(a.ckpt_meta).kernel_shape())     # before the lanes, as the fleet boot does
+    kernel_shape.bind_recorded(a.ranks, Path(a.ckpt_meta) / "config.json",   # before the lanes, as the fleet boot does
+                               lambda: facts.load(a.ckpt_meta).kernel_shape())
     layers = [int(x) for x in a.layers.split("-")]; layers = list(range(layers[0], layers[-1] + 1))
     torch.manual_seed(a.seed)
     prompts = {seq: torch.randint(0, 100_000, (a.prompt + 7 * seq,)).tolist() for seq in range(a.seqs)}
@@ -1005,9 +1017,13 @@ def fleet(a) -> int:
     print(f"  box: {facts.check_box()}")
     cfg = declared(a, facts.TP)
     # The checkpoint's kernel shape, bound before any transport or lane reads it (base/kernel_shape):
-    # the geometry every kernel is admitted for. GLM's equals the kernels' measured cell, so nothing
-    # served changes; a checkpoint that differs is refused by the lanes that cannot serve it, by name (D3).
-    shape = kernel_shape.bind(facts.load(a.ckpt_meta).kernel_shape())
+    # the geometry every kernel is admitted for. The record the shape wizard wrote beside the rank
+    # files when the model was taken in (preshard) is bound when present and still describes this
+    # config.json; without one the shape is derived from the config as before. GLM's equals the
+    # kernels' measured cell, so nothing served changes; a checkpoint that differs is refused by the
+    # lanes that cannot serve it, by name (D3).
+    shape, shape_source = kernel_shape.bind_recorded(a.ranks, Path(a.ckpt_meta) / "config.json",
+                                                     lambda: facts.load(a.ckpt_meta).kernel_shape())
     # The rendezvous and the kernel imports are boot time too: 15.6 s of a measured 90.2 s boot sat
     # outside this table (boot-time study, 2026-09-11), so the recorder opens before them.
     rec = Recorder("boot")
@@ -1015,10 +1031,11 @@ def fleet(a) -> int:
         comm = Comm.init()
     rec.root.name = f"rank{comm.rank}"
     engine = dump = runner = None
+    serving = False                                     # the door is open: from here the loop keeps its own books
     try:
         if comm.rank == 0:
             print(cfg.table())
-            print(f"  kernel shape: {shape.describe()}")
+            print(f"  kernel shape ({shape_source}): {shape.describe()}")
         with rec.phase("prepare one-shot"):
             comm.prepare_oneshot()
         with rec.phase("lanes"):
@@ -1054,6 +1071,10 @@ def fleet(a) -> int:
                             "dense_w4a16_guard_rows": str(lane_tables.dense_w4a16_guard_rows())}
         # a stale tier under one rank diverges the ranks (45th 21): find it in seconds, not after the capture
         Server._agree_on_parked(comm, sorted(runner.parked_keys()))
+        # and the seed the drafts and samples are drawn from: nothing checked it, and a rank booted by
+        # hand with another one would have sampled its own tokens for as long as the fleet stood
+        from engine.base.tripwire import Tripwire
+        Tripwire.of(comm).agree("boot:seed", [int(a.seed)])
         with rec.phase("capture decode"):
             engine.capture_decode(MAX_SEQS)
         with rec.phase("warmup shapes"):
@@ -1106,13 +1127,32 @@ def fleet(a) -> int:
             print(f"  calibration: rank {comm.rank} summing the inputs of {len(engine.calibration.rows)} uncalibrated pack tiles "
                   f"({len(engine.calibration.deferred)} deferred) -> {engine.calibration_root}/mkcalib/rank{comm.rank}/ "
                   "(filed on its own at 32K rows, at shutdown, or on POST /v1/engine/calibration; the next boot packs GPTQ from them)", flush=True)
-        Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=renderer,
+        from engine.base.stall import StepWatch
+        server = Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=renderer,
                reasoning_effort_aliases=REASONING_EFFORT_ALIASES,
+               step_watch=StepWatch(comm.rank, notes_dir=a.dump_dir, dump=dump.write_now),
                model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
                tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_grammar=tool_grammar,
                         tool_call_start=tool_call_token(tok), generation=generation_defaults(a.ckpt_meta),
                vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 else None,
-               latency_root=Path(a.dump_dir) / 'onepass-latency', lease=lease).loop()
+               latency_root=Path(a.dump_dir) / 'onepass-latency', lease=lease)
+        serving = True
+        server.loop()
+    except BaseException as exc:
+        # Before the door opens every peer is at a ledger vote (a capture's, a qualification's,
+        # "production/ready"): a rank that dies here without voting is heard of at NCCL's deadline.
+        # One failed vote pairs with their next row and stops every rank now, naming a peer.
+        # After the door opens the loop keeps its own books (base/tripwire, base/stall).
+        memory = getattr(engine, "memory", None)
+        if not serving and memory is not None:
+            try:
+                memory.checkpoint("boot/failed", failed=f"rank {comm.rank}: {type(exc).__name__}: {str(exc)[:300]}")
+            except BaseException:                     # noqa: BLE001 -- it raises by design; `exc` is the cause
+                pass
+        if not serving:
+            from engine.base.tripwire import death_note
+            death_note(getattr(a, "dump_dir", None), comm.rank, exc, phase="boot")
+        raise
     finally:
         try:
             if dump is not None:

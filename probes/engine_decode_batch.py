@@ -4,6 +4,7 @@ The ordinary component is only a numerical/timing reference, never a second
 consumer boot. Include packing, output conversion and all postops in timing.
 """
 import gc
+from statistics import median
 import torch
 import torch.nn.functional as F
 
@@ -13,29 +14,47 @@ from probes.engine_decode_scatter_check import rank_path
 
 def timing(report, name, rows, base, candidate, functions, **extra):
     graphs = [base, candidate]
-    # 128 MiB exceeds GB10 L2; graph the eviction to keep host overhead out.
+    # 128 MiB exceeds GB10 L2. Events inside each captured component exclude
+    # eviction bandwidth and host enqueue delays from the measured interval.
     cold = torch.empty(128 << 20, dtype=torch.uint8, device='cuda')
     evicted = []
     try:
         for fn in functions:
-            def run(fn=fn):
+            start, end = (torch.cuda.Event(enable_timing=True, external=True) for _ in range(2))
+            def run(fn=fn, start=start, end=end):
                 cold.fill_(19)
-                return fn()
-            evicted.append(_capture(run)[0])
-        for cache, pair in (('warm', graphs), ('evicted', evicted)):
-            samples = [dict(arm=label, ms=_time(pair[i], iterations=32))
-                       for label, i in (('B', 0), ('A', 1), ('A', 1), ('B', 0))]
+                start.record()
+                result = fn()
+                end.record()
+                return result
+            evicted.append((_capture(run)[0], start, end))
+        for cache in ('warm', 'evicted'):
+            samples = []
+            for label, i in (('B', 0), ('A', 1), ('A', 1), ('B', 0)):
+                if cache == 'warm':
+                    ms = _time(graphs[i], iterations=64)
+                else:
+                    graph, start, end = evicted[i]
+                    values = []
+                    for _ in range(32):
+                        graph.replay()
+                        end.synchronize()
+                        values.append(start.elapsed_time(end))
+                    ms = median(values)
+                samples.append(dict(arm=label, ms=ms))
             report('decode_batch_timing', candidate=name, rows=rows, cache=cache, samples=samples,
                    eviction_bytes=cold.numel() if cache == 'evicted' else 0,
-                   scope='captured same-weight components; eviction included equally; not engine speed', **extra)
+                   timing_version=2, eviction_in_timing=False,
+                   scope='captured same-weight components; eviction outside events; not engine speed', **extra)
     finally:
-        for graph in evicted:
+        for graph, _, _ in evicted:
             graph.reset()
 
 
 def indexer_check(report, ranks):
     from engine.kernels.decode_projection import IndexerPair, indexer_boundary, DECODE_ROWS
     from engine.kernels.glm_pointwise import layernorm
+    from engine.kernels.indexer import head_gate
     from engine.kernels.kpool import fwht128_quant_fp8
     from engine.profiles.glm53.weights import rank_loader
     path = rank_path(ranks)
@@ -60,7 +79,7 @@ def indexer_check(report, ranks):
                 w = x.float() @ wh.T
                 g = F.linear(x, gate)
                 q8, qs = fwht128_quant_fp8(q.reshape(-1, 128))
-                outputs.append((q8.view_as(q), k, (w * qs.view(rows, heads) * scale).contiguous(), g))
+                outputs.append((q8.view_as(q), k, head_gate(w, qs.view(rows, heads), scale), g))
             return outputs
         def candidate():
             outputs = []

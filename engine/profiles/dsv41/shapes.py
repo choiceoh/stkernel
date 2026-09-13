@@ -55,6 +55,42 @@ def constraints(repo: "str | Path") -> "list[Constraint]":
     ]
 
 
+def kernel_shape(cfg: dict, tp: int = 4, spec_k: "int | None" = None) -> "KernelShape":
+    """DeepSeek-V4.1-Flash's kernel shape (engine/base/kernel_shape) from its text config.
+
+    Per rank at TP=4 the way placement.py lays it out: query heads split by heads over ONE shared
+    `head_dim`-wide compressed key per position (num_key_value_heads 1 -- the MQA-over-a-latent form
+    the ST MLA lane serves, so `kind` "mla"); routed experts whole and one to a rank (EP: `experts // tp`
+    local, `inter_local` the model's); no linear attention (`linear` None: the KDA lanes do not apply);
+    the CED indexer at `index_n_heads` x `index_head_dim` over compressor pools of the largest compress
+    ratio; `spec_k` the MTP head's `num_nextn_predict_layers`. The experts are FP4 with [32, 32] block
+    scales (quant "fp4-block32"), not the b12x lane's NVFP4 group-16: the admission table refuses that
+    lane for this model, by name. DSv4.1 is outside the engine's scope (CHARTER D5); this derivation
+    exists so the wizard can judge a second real checkpoint.
+    """
+    from engine.base.kernel_shape import Attention, Comm, Indexer, KernelShape, MoE
+    hidden = cfg["hidden_size"]
+    ratios = [r for r in cfg["compress_ratios"] if r > 0]
+    dense = cfg.get("intermediate_size") or 0
+    return KernelShape(
+        comm=Comm(world=tp, hidden=hidden), hidden=hidden, hc=cfg["hc_mult"], tp=tp,
+        attention=Attention(kind="mla", heads=cfg["num_attention_heads"] // tp, head_dim=cfg["head_dim"],
+                            kv_heads=max(1, cfg["num_key_value_heads"] // tp)),
+        linear=None,
+        indexer=Indexer(heads=cfg["index_n_heads"], head_dim=cfg["index_head_dim"],
+                        pool=max(ratios) if ratios else 1, topk=cfg["index_topk"]),
+        moe=MoE(experts=cfg["n_routed_experts"], experts_local=cfg["n_routed_experts"] // tp, hidden=hidden,
+                inter=cfg["moe_intermediate_size"], inter_local=cfg["moe_intermediate_size"],
+                topk=cfg["num_experts_per_tok"], quant="fp4-block32", activation=cfg.get("hidden_act", "silu"),
+                swiglu_limit=cfg.get("swiglu_limit"), dense_inter_local=dense // tp),
+        spec_k=cfg["num_nextn_predict_layers"] if spec_k is None else spec_k)
+
+
+def kernel_shape_of(ckpt: "str | Path", tp: int = 4) -> "KernelShape":
+    """The shape wizard's entry (engine/base/kernel_shape.derive_for): the checkpoint's text config, derived."""
+    return kernel_shape(json.loads((Path(ckpt) / "config.json").read_text())["text_config"], tp)
+
+
 def chunk_for(repo: "str | Path", token_budget: int, draft_slots: int = 0) -> int:
     """The largest legal prefill chunk inside a token budget.
 

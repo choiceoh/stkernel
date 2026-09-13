@@ -60,6 +60,15 @@ def main(argv=None) -> int:
                         metadata={"model": "glm53", "world": facts.TP, "layers": a.layers,
                                   "layout": "engine.profiles.glm53.specs", "weight_layout": WEIGHT_LAYOUT})
     print(f"  done: {sizes[0] / 2**30:.2f} GiB per rank")
+    # The shape wizard runs here, when the model is taken in: the record a boot binds (base/kernel_shape).
+    from engine.base import kernel_shape
+    from engine.kernels import cells
+    shape = F.kernel_shape()
+    verdicts = cells.admission(shape)
+    record = kernel_shape.write_record(out, shape, profile="glm53",
+                                       config_sha256=kernel_shape.config_sha256(Path(a.ckpt) / "config.json"),
+                                       admission=verdicts)
+    print(f"  kernel shape -> {record}\n{cells.table(verdicts)}")
     return 0
 
 

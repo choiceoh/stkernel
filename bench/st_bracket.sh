@@ -48,7 +48,7 @@ export ONEPASS_JSONL=$JSONL LEGS=onepass
 cd "$REPO" || exit 1
 say() { echo "== $(date +%T) $*"; }
 
-RELEASE=""; ARM=""; ARM_SHA=""; ARM_TREE=""
+RELEASE=""; ARM=""; ARM_SHA=""; ARM_TREE=""; DUMPS=""
 sha_of() {  # the full commit id when the source tree can say; the name as given otherwise (rehearsal)
   python3 "$REPO/launchers/st_release.py" resolve "$1" --source "$SOURCE" 2>/dev/null || echo "$1"
 }
@@ -70,23 +70,62 @@ shape() {  # production's shape, minus what an arm decides for itself (tree, ima
 }
 door() { echo "http://127.0.0.1:$PORT"; }
 door_up() { curl -fsS --max-time 5 "$(door)/v1/models" 2>/dev/null | grep -q "\"$MODEL\""; }
+# The four nodes, named the way the launcher and the supervisor name them (rank order); the head
+# cannot ssh to itself. A boot's death is judged on ALL FOUR containers, not on rank 0's alone: a
+# worker that dies first leaves rank 0 alive until the control group times out (120 s; the boot
+# rendezvous 1800 s), and what rank 0 then dies of is "Connection closed by peer" -- the symptom,
+# recorded as the cause for four boots on 2026-09-13 while the dying rank's own words were erased
+# by the stop that followed. So the logs are pulled BEFORE the stop, as the supervisor does.
+NODES=(${ST_NODES:-10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4})
+SELF_IPS=" $(hostname -I 2>/dev/null) "
+node_sh() { local ip=$1; shift
+  case "$SELF_IPS" in *" $ip "*) bash -c "$*" </dev/null; return ;; esac
+  ssh -n -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new "choiceoh@$ip" "$@"; }
+dead_ranks() {  # one line per rank whose st-glm53 container is not running: "r ip exit=N oom=B" (or gone / unreachable)
+  local r ip state
+  for r in "${!NODES[@]}"; do ip=${NODES[$r]}
+    state=$(node_sh "$ip" "docker inspect --format '{{.State.Running}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' st-glm53 2>/dev/null" 2>/dev/null) || state=unreachable
+    case "$state" in true*) ;; "") echo "$r $ip gone" ;; *) echo "$r $ip ${state#false }" ;; esac
+  done
+}
+first_error() {  # a rank's own last word: its last exception line, else its last stall/refusal/kill line
+  grep -a -E "(Error|Exception)(: |$)|STALL rank=|refuse|Killed|different conversations|died" "$1" 2>/dev/null \
+    | grep -v -E "error_recovery|errors=0|Warning" | tail -1 | cut -c1-300
+}
+forensics() {  # <dir>: the four ranks' last 400 lines, pulled before a stop erases them (the supervisor keeps the same)
+  local d=$1 r ip; mkdir -p "$d" 2>/dev/null || return 0
+  for r in "${!NODES[@]}"; do ip=${NODES[$r]}
+    node_sh "$ip" "docker logs --tail=400 st-glm53" > "$d/rank$r-$ip.log" 2>&1 || true
+  done
+  say "forensics: $d"
+}
 wait_door() {  # the launcher returns when the containers start; the door answers minutes later (load, capture)
-  local waited=0
+  local waited=0 dead r ip state line
   while [ "$waited" -lt "$BOOT_WAIT" ]; do
     door_up && return 0
-    [ "$(docker inspect --format '{{.State.Running}}' st-glm53 2>/dev/null)" = true ] || { say "rank 0 died during boot (see $OUT/boot-$ARM.log)"; return 1; }
+    dead=$(dead_ranks)
+    if [ -n "$dead" ]; then
+      while read -r r ip state; do say "rank $r ($ip) died during boot: $state"; done <<< "$dead"
+      forensics "$DUMPS"
+      while read -r r ip state; do
+        line=$(first_error "$DUMPS/rank$r-$ip.log"); [ -n "$line" ] && say "rank $r said: $line"
+      done <<< "$dead"
+      say "(rank logs: $DUMPS; launcher: $OUT/boot-$ARM.log)"
+      return 1
+    fi
     sleep 10; waited=$((waited + 10))
   done
-  say "the door did not answer within ${BOOT_WAIT}s"; return 1
+  say "the door did not answer within ${BOOT_WAIT}s"; forensics "$DUMPS"; return 1
 }
 boot_arm() {  # name sha
   ARM=$1; local sha=$2
   RELEASE=$(release_of "$sha") || { say "ABORT: $sha could not be cut into a release"; return 1; }
   say "arm $ARM = $ARM_SHA -> $RELEASE (port $PORT)"
   [ "$REHEARSE" != 1 ] || return 0
+  DUMPS=$LOGD/st-bracket-dumps/$S-$ARM
   ( shape
     export ST_ENGINE_DIR=$RELEASE ST_IMAGE="st-engine:bracket-${ARM_SHA:0:12}" REPO=$RELEASE
-    export ST_TIER_DIR=$LOGD/st-bracket-tier/$S-$ARM ST_DUMP_DIR=$LOGD/st-bracket-dumps/$S-$ARM
+    export ST_TIER_DIR=$LOGD/st-bracket-tier/$S-$ARM ST_DUMP_DIR=$DUMPS
     mkdir -p "$ST_TIER_DIR" "$ST_DUMP_DIR"
     bash "$RELEASE/launchers/start-st-glm53.sh" start ) > "$OUT/boot-$ARM.log" 2>&1 \
     || { tail -5 "$OUT/boot-$ARM.log"; say "ABORT: the launcher refused or failed (see $OUT/boot-$ARM.log)"; return 1; }

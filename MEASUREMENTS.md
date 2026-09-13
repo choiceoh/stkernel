@@ -2078,4 +2078,55 @@ logits 커널과 `torch.topk` 만 행마다 그대로 둔다(같은 텐서·같�
 `Lanes.decode_rows`; 참조 표는 접기 전 torch 합성) → 층당 14 + 행당 3, 스텝당 **−528 런치 ≈ −1.3 ms**(1행 −3.6%, 4행 −1.9%). 전부 바이트 복사
 아니면 정수라 서빙과 참조가 바이트 동일하고, **컨테이너의 Triton 인터프리터(`TRITON_INTERPRET=1`, CPU)** 가 다섯 커널을 참조와 바이트 대조로
 박았다(`test_engine_indexer_rows`) — #815 의 `_pool_slots` 2-D 블록표도 같은 길로 CPU 에서 박혔다. 선택의 `masked_fill_(ids ≥ ke, -1)` 은 뺐다
-(`_pool_slots`·오라클이 같은 조건을 스스로 -1 로 다룬다; CPU 검사가 출력 동일을 박는다). GPU 티켓 없음.
+(`_pool_slots`·오라클이 같은 조건을 스스로 -1 로 다룬다; CPU 검사가 출력 동일을 박는다). GPU 티켓 없음. PR #819.
+
+**넷째 접기 (운영자 "추가 접기 및 융합 작업", 같은 날 오후, README §9 표).** 남은 두 런치짜리들 — head gate 의 곱 둘, 풀 레코드의 키·스케일
+쓰기, 테일 링의 stack+쓰기, 선택의 지평 마스크 텐서, 드래프터 샘플 워크의 루프 불변식, 관찰 훅의 arange — 를 각각 하나로(`head_gate`·
+`scatter_pools`·`write_tails`·`mask_horizon` 커널, 인터프리터 바이트 대조 OK): 스텝당 −45 런치 + 샘플 워크 −16 ≈ −0.15 ms. **런치 레버는 여기서
+끝**: 1행 스텝 ~800 런치의 나머지는 커널 자체(dense GEMM 365, mHC 89, MoE 45, KDA 링 68, 라우터 층당 6, 스텝 진입·마무리·샘플러·드래프터)이고
+바이트 동일하게 접히는 것이 없다(GEMM 병합은 split-K 선택을, 라우터 `sorted=False` 는 전문가 합 순서를, aux `mhc_post` 재사용은 fused post+pre 를
+바꾼다). 남는 레버는 전부 수치가 바뀌는 커널 작업이다: dense W4 GEMM 의 소형 M 효율(1행 13 ms, 35%), MoE 207 → 240 GB/s, mHC 3 ms, fp32 head
+gate SGEMM 0.5 ms — 브래킷 필요.
+
+### 45차 — 갈라진 랭크는 기다리지 않고 말하며 죽는다: 호스트 집합통신의 트립와이어, 스텝 감시, 부팅 표의 실패 투표, 브래킷 포렌식 (2026-09-13, 맥 + srv4 CPU, 운영자 "통신장애가 일반 vLLM 보다 안 일어나게 만들어야 하는데 맨날 일어나네" → "1~3 전부")
+
+**기록.** 36시간에 세 번 같은 모양으로 죽었고 셋 다 사망증명서가 틀렸다. §97(9/12 22:31) 디코드 `_gather` 에 랭크 0·1 은 7행,
+2·3 은 6행으로 들어가 16분 정지(GPU 0%); #796(9/13 새벽) NVMe 티어의 대화가 랭크마다 달라 부팅 일곱 번 사망; #800(05:24) 접두사
+복원 실패를 랭크 2·3 만 혼자 프리필로 돌려 절반은 gloo 투표에 절반은 원샷 all-reduce 스톨 트랩에. 회선 증거는 없다: 3일치 큐
+run-logs·오늘 프로덕션 포렌식 10건에 NCCL WARN 0, 링크 플랩 0(9/11 20:24 이후). "Connection closed by peer"·"TCPStore recvValue
+failed"·"timed out" 은 전부 **먼저 죽은 다른 랭크**를 기다리던 쪽의 말이었다. vLLM 이 덜 죽는 이유는 결정 주체가 하나(드라이버)라
+워커가 랭크-지역 판단으로 집합통신을 가르는 자리가 없기 때문이고, ST 는 그 자리를 여럿 만들었다(티어 정산·복원·파킹, 티어 합의,
+메모리 자격, 교정 관측, 랭크별 드래프트 생성기, 피어 플래그 스핀). 감사(에이전트 인벤토리 60여 지점) 결과 진짜 위험은 일곱:
+`_admit` 의 접두사 캐시(`peek_chain`/`shared_ahead`)와 `kv.available`(스필 핀), `RuntimeMemory.checkpoint` 의 표 전 예외, 캡처
+루프의 실패, 원샷 레인 선택의 `data_ptr()%16`, `_gather_divergence` 의 랭크-지역 루프 횟수, 성공 경로에서만 닿는 부팅 랑데부·표.
+
+**한 것.**
+- `engine/base/tripwire.py` **트립와이어**: 모든 호스트 투표·교환이 고정 길이(80 int64) 벡터에 랭크마다 (순번, 지점, 개수, 방식)
+  꼬리표를 싣는다. 지점이 달라도 같은 all-reduce 를 완주하고, 네 랭크가 같은 표를 읽어 **같은** `CollectiveDivergence` 를 던진다
+  (실패 경로에서만 `gather_objects` 로 이름을 모은다). 스텝 브로드캐스트는 rank 0 이 찍고(`stamp`) 나머지가 대조한다(`expect`).
+  `Tripwire.of(comm)` 하나가 서버 투표·엔진 gather·부팅 시드를 같은 순번으로 센다. 지점: `settle:done`·`settle:outcome`·
+  `admit:restore`·`admit:fits`·`admit:prefix`·`admit:reorder`·`gather:rows`·`gather:detail`·`boot:seed`. 꼬리표는 2^24 아래(순번
+  mod 2^20, 지점 16비트): LocalTP 가 float32 로 합쳐 701907001 을 701907008 로 만든 것을 테스트가 잡았다.
+- `serve.py` **입장은 플릿의 결정**: 접두사 경계·진행 중 여부는 `admit:prefix` 교환으로 최소/any, 재정렬 인덱스는 `admit:reorder`
+  로 최소, 풀 여유는 `admit:fits` 투표로 "모두 맞을 때만" 입장 — §97 의 7행 대 6행이 여기서 나올 수 있는 모양이었다.
+  죽을 때 `death-rank{r}-*.json`(divergence / peer-left / local, 단계, 마지막 지점)을 덤프 디렉터리에 남긴다.
+- `adapter._gather`: 행 수 교환이 트립와이어를 타고, 보고서는 고정 5행 교환 하나(전엔 랭크-지역 횟수만큼 집합통신을 돌았다).
+  "rich 행이 다르다" 도 이름을 댄다. `runtime_memory.checkpoint(phase, failed=)`: 읽기 예외를 표로 던진다. `graphs.py`·
+  `capture_decode`·`fleet`: 실패한 랭크가 나머지가 기다리는 다음 표에 `failed` 를 던져 120 s 대신 지금 모두 세운다. `build`:
+  `weights-loaded` 전에 죽는 랭크는 `failed:` 단계로 랑데부에 합류(1800 s 대신 지금). `boot:seed` 합의. `Comm._settled`: 원샷
+  레인은 포인터 정렬이 아니라 dtype·형상으로(정렬 안 된 뷰는 복사).
+- `engine/base/stall.py` **스텝 감시**: 옆 스레드가 60 s 에 기록, 300 s 에 링을 직접 쓰고 SIGKILL(`ST_STEP_STALL_NOTE_S`/
+  `_TRAP_S`; SIGTERM 은 CUDA 호출에 갇힌 메인 스레드의 파이썬 핸들러에 못 닿는다). `TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC` 7200 → 300
+  (`ST_NCCL_HEARTBEAT_S`): §97 의 멎은 플릿이 두 시간 서 있을 값이었다; 캡처된 집합통신은 워치독이 보지 않으므로 부팅 캡처는 무관.
+- `bench/st_bracket.sh` **포렌식**: 네 컨테이너를 모두 보고, 죽으면 정지 전에 네 랭크 `docker logs --tail=400` 을
+  `st-bracket-dumps/<session>-<arm>/rank{r}-<ip>.log` 에 남기고 죽은 랭크의 마지막 오류 줄을 실행 로그에 찍는다(오늘 브래킷 사망
+  4건 중 2건은 로그가 지워져 원인을 영영 모른다).
+- 남은 것(별도 PR): 랭크별 생성기가 한 스트림을 데이터 의존 횟수만큼 전진시키는 드래프트/샘플 난수 — (시드, seq, 세대, 위치)로
+  키를 매기는 무상태 균일난수로 바꾸는 일(에이전트 분석: `propose_rows` 의 `multinomial(generator)`, `SamplingGraphs`, `block_verify`).
+
+**검증.** srv4(Linux, CPU): `tools/check.py --list` 126 파일 1,237 테스트 전부 ok(리베이스 후 main b1c33d45 위). 새 테스트: 트립와이어
+스레드 4랭크(지점 불일치·한 랭크 누락·시드 불일치 → 네 랭크가 같은 문장으로 죽고 아무도 기다리지 않음; 사망 노트), 스텝 감시(기록·
+트랩·링·SIGKILL), 입장 합의(피어가 "안 맞다"/"진행 중" 이면 여기서도 대기, 합의되면 입장), gather 보고서(rich 행 불일치), 메모리
+표(읽기 예외도 표), 소스 핀(serve·adapter·comm·graphs·runtime_memory·boot·런처·브래킷). LocalTP 4랭크 락스텝 테스트가 첫 판에
+잡은 것: 꼬리표를 float32 로 합치면 지점 id 가 깨진다 → 2^24 아래로. **GPU·플릿 실측 없음**: 다음 부팅·다음 사고가 답한다 —
+사고가 나면 이제 `death-rank*.json` 과 브래킷의 `rank{r}-<ip>.log` 가 원인을 말해야 한다.

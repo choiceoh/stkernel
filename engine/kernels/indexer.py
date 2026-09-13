@@ -299,3 +299,98 @@ def pool_addresses(contexts, block_table, per, block_stride, layer_offset, pool_
                               block_table.stride(0), block_table.stride(1), block_stride, layer_offset, capacity,
                               triton.next_power_of_2(max_pools))
     return counts, slots
+
+
+# -- the same fold, the pieces that were still two launches or a mask apart (fourth fold) ------------------------------
+
+@triton.jit
+def _head_gate(W, QS, OUT, NH: tl.constexpr, scale, BLOCK: tl.constexpr):
+    r = tl.program_id(0)
+    h = tl.arange(0, BLOCK)
+    w = tl.load(W + r * NH + h, h < NH, other=0.)
+    qs = tl.load(QS + r * NH + h, h < NH, other=0.)
+    tl.store(OUT + r * NH + h, (w * qs) * scale, h < NH)     # two fp32 roundings, in the composition's order
+
+
+def head_gate(w, qs, scale: float):
+    """`(w * qs * scale)` for the indexer's fp32 head gate: the query scale and the softmax scale folded into the gate,
+    one launch instead of two. w, qs [N, heads] fp32 contiguous; the products round exactly as torch's two do."""
+    assert w.ndim == 2 and w.shape == qs.shape and w.dtype == qs.dtype == torch.float32 and w.is_contiguous() and qs.is_contiguous()
+    n, nh = w.shape
+    out = torch.empty_like(w)
+    if n:
+        _head_gate[(n,)](w, qs, out, nh, float(scale), triton.next_power_of_2(nh))
+    return out
+
+
+@triton.jit
+def _scatter_pools(PK, PS, KEYS, SCALES, SLOTS, COUNTS, MAXP: tl.constexpr, key_s0, scale_s0, DB: tl.constexpr):
+    pool = tl.program_id(0)
+    seg = tl.program_id(1)
+    live = pool < tl.load(COUNTS + seg)
+    rec = tl.load(SLOTS + seg * MAXP + pool, live, other=0)
+    d = tl.arange(0, DB)
+    tl.store(KEYS + rec * key_s0 + d, tl.load(PK + (seg * MAXP + pool) * DB + d, live & (d < DB), other=0), live & (d < DB))
+    tl.store(SCALES + rec * scale_s0, tl.load(PS + seg * MAXP + pool, live, other=0.), live)
+
+
+def scatter_pools(pooled_keys, pooled_scales, keys, scales, slots, counts):
+    """Every segment's completed pools into the pool cache: pool p of segment i (p < counts[i]) goes to record
+    slots[i, p] -- its key bytes into `keys` (record-strided [P, d]) and its scale into `scales` ([P], the record's
+    tail) in one launch. pooled_keys [n * max_pools, d] (any 1-byte dtype), pooled_scales [n * max_pools] fp32."""
+    n, max_pools = slots.shape
+    assert pooled_keys.ndim == 2 and pooled_keys.element_size() == 1 and pooled_keys.is_contiguous()
+    assert pooled_keys.shape[0] == n * max_pools and pooled_scales.shape == (n * max_pools,) and pooled_scales.is_contiguous()
+    assert keys.ndim == 2 and keys.element_size() == 1 and keys.stride(1) == 1 and keys.shape[1] == pooled_keys.shape[1]
+    assert scales.ndim == 1 and counts.shape == (n,) and counts.stride(0) == 1 and slots.is_contiguous()
+    width = keys.shape[1]
+    assert width & (width - 1) == 0
+    if n and max_pools:
+        _scatter_pools[(max_pools, n)](pooled_keys.view(torch.uint8), pooled_scales, keys.view(torch.uint8), scales, slots, counts,
+                                       max_pools, keys.stride(0), scales.stride(0), width)
+
+
+@triton.jit
+def _write_tails(K, GATE, DST, SLOTS, CTX, T: tl.constexpr, W: tl.constexpr, D: tl.constexpr,
+                 k_s0, k_s1, gate_s0, gate_s1, dst_s0, dst_s1, dst_s2):
+    row = tl.program_id(0)
+    seg = tl.program_id(1)
+    slot, ctx = tl.load(SLOTS + seg), tl.load(CTX + seg)
+    d = tl.arange(0, D)
+    cell = DST + slot * dst_s0 + ((ctx + row) % W) * dst_s1
+    tl.store(cell + d, tl.load(K + seg * k_s0 + row * k_s1 + d))
+    tl.store(cell + dst_s2 + d, tl.load(GATE + seg * gate_s0 + row * gate_s1 + d))
+
+
+def write_tails(field, slots, contexts, keys, gates):
+    """Every segment's raw keys and gates of this step into its tail ring, at cells (context + j) % width: the tail
+    writer without the stack -- one launch reading the two [n, t, d] sources as they are. field [S, W, 2, d]."""
+    n, t, d = keys.shape
+    assert gates.shape == (n, t, d) and keys.stride(2) == 1 and gates.stride(2) == 1
+    assert field.ndim == 4 and field.shape[2] == 2 and field.shape[3] == d and field.stride(3) == 1
+    assert slots.shape == (n,) and contexts.shape == (n,) and slots.stride(0) == 1 and contexts.stride(0) == 1
+    assert t <= field.shape[1], "a step's tokens fit the tail ring (write each cell once)"
+    assert d & (d - 1) == 0
+    if n and t:
+        _write_tails[(t, n)](keys, gates, field, slots, contexts, t, field.shape[1], d,
+                             keys.stride(0), keys.stride(1), gates.stride(0), gates.stride(1),
+                             field.stride(0), field.stride(1), field.stride(2))
+
+
+@triton.jit
+def _mask_horizon(LOGITS, KE, n_cand, s0, BLOCK: tl.constexpr):
+    r = tl.program_id(0)
+    c = tl.program_id(1) * BLOCK + tl.arange(0, BLOCK)
+    ke = tl.load(KE + r)
+    tl.store(LOGITS + r * s0 + c, float("-inf"), (c < n_cand) & (c >= ke))
+
+
+def mask_horizon(logits, ke):
+    """logits[r, c] = -inf for c >= ke[r], in place: what `topk_positions` does with a built mask, without the
+    mask. logits [t, n_cand] fp32 (rows may be strided), ke [t] int32."""
+    t, n_cand = logits.shape
+    assert logits.dtype == torch.float32 and logits.stride(1) == 1 and ke.shape == (t,) and ke.stride(0) == 1
+    if t and n_cand:
+        block = 1024
+        _mask_horizon[(t, triton.cdiv(n_cand, block))](logits, ke, n_cand, logits.stride(0), block)
+    return logits

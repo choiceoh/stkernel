@@ -129,6 +129,14 @@ def main():
         if path.is_file() and (path.suffix in ('.json','.jinja','.md') or path.name.upper().startswith(('LICENSE','NOTICE'))) and path.name!='model.safetensors.index.json':
             shutil.copyfile(path,partial/path.name)
             metadata.append(dict(name=path.name,sha256=file_hash(path)))
+    # The shape wizard runs here, when the model is taken in: the record a boot binds (base/kernel_shape).
+    from engine.base import kernel_shape
+    from engine.kernels import cells
+    shape=F.kernel_shape();verdicts=cells.admission(shape)
+    record=kernel_shape.write_record(partial,shape,profile='glm53',config_sha256=report['source_config_sha256'],admission=verdicts)
+    report['kernel_shape']=dict(name=record.name,sha256=file_hash(record),
+                                admission={v.lane:v.status for v in verdicts})
+    print(json.dumps(dict(stage='kernel_shape',shape=shape.describe(),admission=report['kernel_shape']['admission'])),flush=True)
     report.update(metadata_files=metadata,seconds=time.monotonic()-started,
                   torch_version=torch.__version__,source_script_sha256=file_hash(__file__))
     (partial/'preshard-manifest.json').write_text(json.dumps(report,indent=2)+'\n')
