@@ -27,7 +27,7 @@ class TiledProjection:
     def __call__(self, x, project):
         import torch
         import torch.distributed as dist
-        from . import BLOCK, FP8_MIN_ROWS
+        from engine.kernels.prefill_collectives import BLOCK, FP8_MIN_ROWS
         from .kernels import _pack_rs_payload, _unpack_gather
         owner = self.owner
         owner.check(x)
