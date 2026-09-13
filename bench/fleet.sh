@@ -27,6 +27,8 @@
 #   fleet.sh st-chain s [est] [note] -- A=<sha> B=<sha> A B  ST arms in order; a repeated name alternates (A B A B)
 #   fleet.sh st-hold s <sha> [est] [note]               boot a commit and keep it for a session's window (end: cancel s)
 #   fleet.sh st-probe [--detach] s [sha] [est] [note]   two onepass runs on the LIVE door when idle: D17's sample of the deployed commit
+#   fleet.sh window s [MINUTES|off]                      a campaign window: production stays down between this session's tickets
+#   fleet.sh run ... --replaces OLD                       a fresh ticket that inherits OLD's place in line (cancel + re-request loses it)
 #
 # TWO LANES. A boot, a pair, a chain, a live onepass take the fleet: four Sparks, one holder.
 # An ST check that needs ONE GPU (probes/run_engine_check.sh, or run_engine_probe.sh without
@@ -261,6 +263,15 @@ single_refused() {  # session reason -- logged once per distinct reason, not onc
   [ "$(cat "$marker" 2>/dev/null)" = "$2" ] && return 0
   printf '%s' "$2" > "$marker"; logit "hold refused (single): $2; $1 waits"
 }
+pace_line() {  # for status: how long production waits after the last ticket, and why
+  local pace; pace=$(python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_pace.py" show "$FLEET_DIR" 2>/dev/null) || return 0
+  python3 - "$pace" <<'PY'
+import json, sys
+p = json.loads(sys.argv[1])
+w = f", window {p['window_s'] // 60}m left by {p['window_session']}" if p.get('window_s') else ""
+print(f"pace: production returns after {p['grace_s'] // 60}m{p['grace_s'] % 60:02d}s of quiet queue (adaptive {p['adaptive_s']}s{w})")
+PY
+}
 single_line() {   # for status: the lane's holder, else its evidence, else FREE
   [ -n "$FLEET_SINGLE_GPU_HOST" ] || { echo "single: off (FLEET_SINGLE_GPU_HOST is empty; one-GPU checks take the four Sparks)"; return 0; }
   local what
@@ -313,12 +324,23 @@ entry_line() {
 # in between. An ask that fails is said to have failed: a logged ask nobody made left a
 # waiter and a holder each believing the other had been told (45차 §91).
 FLEET_QUIET_S=${FLEET_QUIET_S:-120}
-production_quiet() {  # 0 once the door has answered "nothing outstanding" for FLEET_QUIET_S
-  local load since now; now=$(now)
-  load=$(curl -s -m 5 "$HEAD_URL/metrics" 2>/dev/null | lease load 2>/dev/null); load=${load:-unknown}
+QUIET_WHY=""
+production_quiet() {  # 0 once the door has answered "nothing outstanding" for FLEET_QUIET_S -- or has nobody to protect
+  local load since now body served idle; now=$(now)
+  body=$(curl -s -m 5 "$HEAD_URL/metrics" 2>/dev/null)
+  load=$(printf '%s\n' "$body" | lease load 2>/dev/null); load=${load:-unknown}
   if [ "$load" != 0 ]; then rm -f "$FLEET_DIR/.quiet-since"; return 1; fi
+  # The gate protects a user mid-conversation. An engine that has answered nobody since it booted,
+  # or whose last request is already older than the gate, has nobody to protect: it is quiet now.
+  # Tickets waited a median 13 minutes at this gate on 2026-09-13, mostly for a production that had
+  # booted for no one.
+  served=$(printf '%s\n' "$body" | awk '/^vllm:request_success_total(\{[^}]*\})? / {print int($2); exit}')
+  idle=$(printf '%s\n' "$body" | awk '/^st:idle_seconds(\{[^}]*\})? / {print int($2); exit}')
+  if [ "${served:-x}" = 0 ]; then QUIET_WHY="served nobody since it booted"; return 0; fi
+  if [ -n "${idle:-}" ] && [ "$idle" -ge "$FLEET_QUIET_S" ]; then QUIET_WHY="idle for ${idle}s already"; return 0; fi
   [ -f "$FLEET_DIR/.quiet-since" ] || echo "$now" > "$FLEET_DIR/.quiet-since"
   since=$(cat "$FLEET_DIR/.quiet-since" 2>/dev/null || echo "$now")
+  QUIET_WHY="quiet for ${FLEET_QUIET_S}s"
   [ $(( now - since )) -ge "$FLEET_QUIET_S" ]
 }
 st_engine_ask() {  # session pid est note -- under .lock, after a refused hold; logs each state once
@@ -339,7 +361,7 @@ st_engine_ask() {  # session pid est note -- under .lock, after a refused hold; 
     return 0
   fi
   if lease yield --requester "queue/$s" --kind queue --pid "$pid" --host "$(me)" --est-minutes "$est" --note "$note" >/dev/null 2>&1; then
-    touch "$marker"; logit "hold refused: production holds the fleet; quiet for ${FLEET_QUIET_S}s, asked it to hand over to $s"; _event ask "$s" "$note"
+    touch "$marker"; logit "hold refused: production holds the fleet; ${QUIET_WHY:-quiet}, asked it to hand over to $s"; _event ask "$s" "$note"
   else
     logit "hold refused: production holds the fleet and could not be asked ($(lease_state))"
   fi
@@ -635,7 +657,7 @@ holder_line() { local hf=${1:-$H}; [ -s "$hf" ] && IFS='|' read -r s pid host t0
 
 with_lock() { ( flock -x 9; "$@" ) 9>"$LK"; }
 
-_enqueue() {  # session est note [kind] [pid] -- idempotent per session; a repeat refreshes est/note/kind in place
+_enqueue() {  # session est note [kind] [pid] [enqueued_at] -- idempotent per session; a repeat refreshes est/note/kind in place
   local kind pid reconcile_rc; kind=$(kind_of "${4:-}"); pid=${5:-}
   # Parked and resumed records own their original ticket even when the queue
   # projection is absent. Older request/wait fixtures have no parking helper.
@@ -656,7 +678,7 @@ _enqueue() {  # session est note [kind] [pid] -- idempotent per session; a repea
     [ "$kind" = single ] || python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" enqueue || return 1
     return 0
   fi
-  echo "$(now)$$|$1|$(now)|${2:-30}|${3:-}|$kind|$pid" >> "$Q"; logit "request $1 est=${2:-30}m $3${4:+ [$4]}"
+  echo "$(now)$$|$1|${6:-$(now)}|${2:-30}|${3:-}|$kind|$pid" >> "$Q"; logit "request $1 est=${2:-30}m $3${4:+ [$4]}${6:+ (keeps the place of the ticket it replaces)}"
   # A single-GPU check is not fleet activity: the idle controller's clock is the fleet's.
   [ "$kind" = single ] || python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" enqueue
 }
@@ -820,6 +842,10 @@ _release() {  # session -- whichever lane's holder names it
     rm -f "$LOGD/FLEET-held-by-$1.done"; logit "release $1"
     [ "${hkind:-boot}" != boot ] || [ "${FLEET_KEEP_LEASE:-0}" = 1 ] || _lease_pass_on "$1"
     python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" activity "$FLEET_DIR" release || return 1
+    # The queue's pace, for whoever restores production: how soon the next ticket tends to come
+    # after one ends (bench/fleet_pace.py -> restore-grace.json). A constant grace restored
+    # production into the next ticket's face 17 times in one night (2026-09-13).
+    [ ! -f "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_pace.py" ] || python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_pace.py" grace "$FLEET_DIR" >/dev/null 2>&1 || true
     # legacy markers for chains that still poll them
     for p in fusion mkg3 b12x glmfix; do touch "$LOGD/FLEET-free-for-$p.done"; done
     return 0
@@ -911,8 +937,8 @@ case "$cmd" in
   version) vr=${FLEET_RUNNER_REPO:-$REPO}; sha256sum "$vr/bench/fleet.sh" "$vr/bench/fleet_boot.py" "$vr/bench/fleet_handoff.py"; echo "handoff_protocol=2";;
   release) with_lock _release "${1:?session}";;
   run)
-    kind=boot; force=""; detach=0; prepare_spec=""; prepared_manifest=""; lane_force=""
-    while :; do case "${1:-}" in --probe) kind=probe; shift;; --cpu|--nogpu) force=nogpu; shift;; --gpu) force=gpu; shift;; --fleet) lane_force=fleet; shift;; --detach) detach=1; shift;; --prepare) prepare_spec=${2:?preparation spec}; shift 2;; --prepared) prepared_manifest=${2:?prepared manifest}; shift 2;; *) break;; esac; done
+    kind=boot; force=""; detach=0; prepare_spec=""; prepared_manifest=""; lane_force=""; replaces=""
+    while :; do case "${1:-}" in --probe) kind=probe; shift;; --cpu|--nogpu) force=nogpu; shift;; --gpu) force=gpu; shift;; --fleet) lane_force=fleet; shift;; --detach) detach=1; shift;; --prepare) prepare_spec=${2:?preparation spec}; shift 2;; --prepared) prepared_manifest=${2:?prepared manifest}; shift 2;; --replaces) replaces=${2:?the session this ticket replaces}; shift 2;; *) break;; esac; done
     s=${1:?session}; shift; est=30; note=""
     [ "${1:-}" != "--" ] && { est=$1; shift; }
     [ "${1:-}" != "--" ] && { note=$1; shift; }
@@ -925,6 +951,7 @@ case "$cmd" in
       case "$force" in gpu) detached_args+=(--gpu);; nogpu) detached_args+=(--cpu);; esac
       [ -n "$prepare_spec" ] && detached_args+=(--prepare "$prepare_spec")
       [ -n "$prepared_manifest" ] && detached_args+=(--prepared "$prepared_manifest")
+      [ -n "$replaces" ] && detached_args+=(--replaces "$replaces")
       detached_args+=("$s" "$est" "$note" -- "$@")
       exec python3 "$REPO/bench/fleet_launch.py" start "$REPO/bench/fleet.sh" "$s" -- "${detached_args[@]}"
     fi
@@ -944,6 +971,11 @@ case "$cmd" in
           && [ "$(printf '%s' "$contract" | sed -n 's/.*"gpus": *\([0-9][0-9]*\).*/\1/p')" = 1 ]; then
         kind=single
         echo "needs one GPU, not four: single-GPU lane ($(single_gpu_label)); say --fleet to take the four Sparks instead"
+      elif [ "$kind" = boot ] && [ "$lane_force" = fleet ] && [ -n "$FLEET_SINGLE_GPU_HOST" ] \
+          && [ "$(printf '%s' "$contract" | sed -n 's/.*"gpus": *\([0-9][0-9]*\).*/\1/p')" = 1 ]; then
+        # 33 one-GPU checks said --fleet on 2026-09-13: each cost production a drain and a boot, and
+        # waited a median 13 minutes for it, while the single lane answered in 0. Say so, once.
+        echo "note: this check needs one GPU; --fleet takes the four Sparks (production drains, then reboots) -- the single-GPU lane beside production ($(single_gpu_label)) would take it now"
       fi
     fi
     prep_args=(); [ -n "$prepare_spec" ] && prep_args=(--spec "$prepare_spec")
@@ -974,7 +1006,19 @@ case "$cmd" in
       export FLEET_VALIDATION_REQUIRED=1 FLEET_VALIDATION_LEVEL=admission
     fi
     runner=$(with_lock python3 "$REPO/bench/fleet_pin.py" "$REPO" "$FLEET_DIR") || exit 3
-    with_lock _enqueue "$s" "$est" "$note" "$kind" "$$" || exit 6
+    inherited=""
+    if [ -n "$replaces" ]; then
+      # A cancel followed by a fresh name loses the place the old ticket had earned (19 of 77 tickets
+      # went that way on 2026-09-13). The new ticket takes the old one's enqueue time; the old one goes.
+      inherited=$(grep "^[0-9]*|$replaces|" "$Q" | head -1 | cut -d'|' -f3)
+      if [ -n "$inherited" ]; then
+        bash "$0" cancel "$replaces" >/dev/null 2>&1 || true
+        echo "replaces $replaces: keeps its place in line (queued $(date -d @"$inherited" +%H:%M))"
+      else
+        echo "replaces $replaces: it is not queued; this ticket starts a place of its own"
+      fi
+    fi
+    with_lock _enqueue "$s" "$est" "$note" "$kind" "$$" ${inherited:+"$inherited"} || exit 6
     export FLEET_RUN_KIND=$kind
     exec python3 "$runner/bench/fleet_boot.py" "$runner/bench/fleet.sh" "$s" "$est" "$note" "$@";;
   status)
@@ -983,6 +1027,7 @@ case "$cmd" in
     echo "lease: $(lease_state)"
     entry_line
     single_line
+    pace_line
     remaining=0
     if [ -s "$H" ]; then
       IFS='|' read -r hs hpid hhost ht0 hest hnote hkind < "$H"; held=$(( ($(now) - ht0) / 60 ))
@@ -1054,6 +1099,11 @@ case "$cmd" in
   st-hold)   # fleet.sh st-hold s <sha> [est] [note]: boot a commit and keep it for a session's window; end with cancel
     s=${1:?session}; sha=${2:?sha}; est=${3:-45}; note=${4:-st-hold $sha}
     exec bash "$0" run --gpu "$s" "$est" "$note" -- bash "$REPO/bench/st_bracket.sh" hold "$sha" "$est";;
+  window)  # fleet.sh window s [MINUTES|off]: a campaign window -- production stays down between this session's tickets
+    s=${1:?session}; m=${2:-30}
+    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_pace.py" window "$FLEET_DIR" "$s" "$m" >/dev/null || exit 2
+    if [ "$m" = off ]; then logit "window $s closed"; echo "window closed by $s"; else logit "window $s ${m}m"; echo "window open: production returns only after ${m}m of quiet queue (or the window closes)"; fi
+    pace_line;;
   st-probe)  # fleet.sh st-probe [--detach] s [sha] [est] [note]: two onepass runs on the LIVE door when it is idle
     # -- D17's sample for the deployed commit, no boot, no lease. deploy-watch queues one after
     # every deploy, so st-pair never has to boot the base.
