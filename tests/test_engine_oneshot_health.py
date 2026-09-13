@@ -1,4 +1,4 @@
-"""Device-free watchdog regression: fast capture polls are not a dead proxy."""
+"""Device-free watchdog: rapid polls and idle gaps use proxy publication time."""
 from pathlib import Path
 import shutil
 import subprocess
@@ -15,20 +15,27 @@ class ProxyHealthTests(unittest.TestCase):
         program = '#include <cassert>\n' + rules + r'''
 int main() {
   OsarProxyHealth h;
+  constexpr uint64_t second = 1000000000ULL;
   assert(!h.check(false, 0, 0));
-  assert(h.check(true, 0, 10));
-  // The old comparison fails at the second query if its nonzero beat repeats.
-  assert(h.check(true, 123, 100));
-  for (uint64_t i = 0; i < 10000; ++i) assert(h.check(true, 123, 100+i));
-  assert(h.check(true, 123, 100+OsarProxyHealth::stale_ns-1));
-  assert(!h.check(true, 123, 100+OsarProxyHealth::stale_ns));
-  assert(h.check(true, 124, 100+OsarProxyHealth::stale_ns));
-  assert(!h.check(false, 125, 101+OsarProxyHealth::stale_ns));
-  h = {};
-  assert(h.check(true, 0, 200+OsarProxyHealth::stale_ns));
-  assert(!h.check(true, 0, 200+2*OsarProxyHealth::stale_ns));
-  assert(h.check(true, UINT64_MAX, 201+2*OsarProxyHealth::stale_ns));
-  assert(h.check(true, 0, 202+2*OsarProxyHealth::stale_ns));
+  assert(!h.check(true, 0, 10));
+  // Repeated reads within one proxy publication interval remain healthy.
+  for (uint64_t i = 0; i < 10000; ++i) assert(h.check(true, 100, 100+i));
+  assert(h.check(true, 100, 100+OsarProxyHealth::stale_ns-1));
+  assert(!h.check(true, 100, 100+OsarProxyHealth::stale_ns));
+  // A beat unseen by the caller is already stale on the next request. The
+  // observer-based implementation incorrectly renewed grace here (PR #830).
+  assert(!h.check(true, second, 11*second));
+  OsarProxyHealth first_query;
+  assert(!first_query.check(true, second, 11*second));
+  // Genuine proxy progress recovers health; exit wins over a fresh timestamp.
+  assert(h.check(true, 11*second, 11*second));
+  assert(!h.check(false, 11*second, 11*second));
+  // Restart grace is anchored to connect, even when first queried much later.
+  assert(h.check(true, 20*second, 20*second+1));
+  assert(!h.check(true, 20*second, 23*second));
+  assert(!h.check(true, 24*second, 23*second));
+  assert(h.check(true, UINT64_MAX-10, UINT64_MAX));
+  assert(!h.check(true, UINT64_MAX-10, 10));
 }
 '''
         with tempfile.TemporaryDirectory() as directory:

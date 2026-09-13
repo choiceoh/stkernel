@@ -138,9 +138,14 @@ static int g_rank = -1, g_world = 0, g_sgid = -1, g_peers[NPEER];
 static pthread_t g_proxy;
 static bool g_started = false;
 static std::atomic<bool> g_proxy_running{false};
-static OsarProxyHealth g_proxy_health;
+static std::atomic<uint64_t> g_proxy_heartbeat_ns{0};
 static unsigned g_inline_cap[NPEER] = {};
 static const char *DEVNAME = "rocep1s0f0";
+
+static uint64_t proxy_now_ns() {
+  const auto now = std::chrono::steady_clock::now().time_since_epoch();
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(now).count();
+}
 
 // ---------------- kernels (device-side slot from tx_seq) ----------------
 // One launch per collective. #89 folded the guard into k_copy_in and the wait
@@ -592,6 +597,11 @@ static void *proxy_fn(void *) {
   uint64_t sent = 0, done[64] = {0}, beat = 0;
   while (!g_ctrl->stop) {
     __atomic_store_n(&g_ctrl->proxy_beat, ++beat, __ATOMIC_RELAXED);
+    // Timestamp the first loop and every 256 polls. This amortizes clock reads
+    // in the busy proxy while preserving the actual publication time across
+    // request gaps; healthy() cannot extend a stalled proxy's deadline.
+    if ((beat & 255u) == 1u)
+      g_proxy_heartbeat_ns.store(proxy_now_ns(), std::memory_order_release);
     uint64_t s = g_ctrl->tx_seq;
     while (sent < s) {
       sent++;
@@ -855,7 +865,8 @@ static void py_connect(std::vector<std::string> all) {
                                           : g_remote[s].mtu);
     to_rts(g_qp[s], &g_remote[s], g_local[s].psn, mtu);
   }
-  g_proxy_health = {};
+  // Startup grace begins at thread creation, not the first health query.
+  g_proxy_heartbeat_ns.store(proxy_now_ns(), std::memory_order_release);
   g_proxy_running.store(true, std::memory_order_release);
   const int created = pthread_create(&g_proxy, nullptr, proxy_fn, nullptr);
   if (created != 0) g_proxy_running.store(false, std::memory_order_release);
@@ -1092,10 +1103,9 @@ static std::vector<int64_t> py_phase_counters() {
 }
 static bool py_healthy() {
   if (!g_started) return false;
-  const auto now = std::chrono::steady_clock::now().time_since_epoch();
-  return g_proxy_health.check(g_proxy_running.load(std::memory_order_acquire),
-      __atomic_load_n(&g_ctrl->proxy_beat, __ATOMIC_RELAXED),
-      std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
+  const bool running = g_proxy_running.load(std::memory_order_acquire);
+  const uint64_t heartbeat = g_proxy_heartbeat_ns.load(std::memory_order_acquire);
+  return OsarProxyHealth::check(running, heartbeat, proxy_now_ns());
 }
 static void py_shutdown() {
   if (!g_started) return;

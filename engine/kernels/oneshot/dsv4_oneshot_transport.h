@@ -43,24 +43,13 @@ OSAR_HD constexpr bool osar_publication_last(uint64_t old, unsigned weight,
 
 #undef OSAR_HD
 
-// Host-only, monotonic-time watchdog. Two calls during the same proxy time
-// slice are healthy; an unchanged beat must persist for the whole deadline.
+// Host-only watchdog. The proxy publishes its own monotonic timestamp; callers
+// must not grant fresh grace when they first observe progress after an idle gap.
 struct OsarProxyHealth {
   static constexpr uint64_t stale_ns = 2000000000ULL;
-  uint64_t last_beat = 0, changed_ns = 0;
-  bool observed = false;
-
-  bool check(bool running, uint64_t beat, uint64_t now_ns) {
-    if (!running) {
-      observed = false;
-      return false;
-    }
-    if (!observed || beat != last_beat) {
-      last_beat = beat;
-      changed_ns = now_ns;
-      observed = true;
-    }
-    return now_ns - changed_ns < stale_ns;
+  static bool check(bool running, uint64_t heartbeat_ns, uint64_t now_ns) {
+    return running && heartbeat_ns != 0 && now_ns >= heartbeat_ns &&
+           now_ns - heartbeat_ns < stale_ns;
   }
 };
 

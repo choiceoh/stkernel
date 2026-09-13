@@ -1,0 +1,10 @@
+{
+  "before": {
+    "exit_code": 1
+  },
+  "after": {
+    "exit_code": 0
+  },
+  "scenario": "A proxy publishes after the prior poll, hangs for 10 seconds, and is first queried again; stale state must be rejected.",
+  "status": "PASS"
+}

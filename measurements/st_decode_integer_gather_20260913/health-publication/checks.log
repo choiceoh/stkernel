@@ -1,0 +1,22 @@
+test_capture_bursts_real_stalls_thread_exit_and_restart (tests.test_engine_oneshot_health.ProxyHealthTests.test_capture_bursts_real_stalls_thread_exit_and_restart) ... ok
+test_signed_packets_odd_tails_and_publication_weight (tests.test_engine_oneshot_integer.IntegerTransportTests.test_signed_packets_odd_tails_and_publication_weight) ... ok
+test_cancellation_and_bf16_inputs_agree_on_all_ranks (tests.test_engine_oneshot_sum.RankOrderedSumTests.test_cancellation_and_bf16_inputs_agree_on_all_ranks) ... ok
+test_integer_packets_use_native_gather_after_layout_normalization (tests.test_engine_comm_layout.GatherTests.test_integer_packets_use_native_gather_after_layout_normalization) ... ok
+test_rank_major_collective_matches_cat_on_every_axis (tests.test_engine_comm_layout.GatherTests.test_rank_major_collective_matches_cat_on_every_axis) ... ok
+test_real_two_process_gloo_with_strided_inputs (tests.test_engine_comm_layout.GatherTests.test_real_two_process_gloo_with_strided_inputs) ... /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+ok
+test_small_max_uses_the_exact_transport_and_other_types_keep_nccl (tests.test_engine_comm_layout.GatherTests.test_small_max_uses_the_exact_transport_and_other_types_keep_nccl) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 5.161s
+
+OK
+W0913 06:13:09.629000 1 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda'
+{"status": "PASS", "evidence": "full Torch extension compile/load only", "gpu_used": false, "torch": "2.13.0+cu130", "cuda": "13.0", "max_elements": 262144, "tests": 7, "extension_sha256": "b4162420a9a9d2675eef6e7c19e7ef2f56f1e54397542ef9bf3038c0de1ffb00", "source_sha256": {"engine/kernels/oneshot/SOURCE.json": "b9c7f40d9576b068d805d65fdd2f91013beab52173d636ce4817744e0d173159", "engine/kernels/oneshot/__init__.py": "c598e53ee09f0ef4d8a2d2075103d605fe08a3aeb8e5e671d3f53c9aee4529be", "engine/kernels/oneshot/dsv4_oneshot_ar.cu": "c14ff1ddc297c67ba527685a0dbdafa082d87faf0111dad688ebe62e6a78a291", "engine/kernels/oneshot/dsv4_oneshot_transport.h": "dc9943e1c59ed623feb602fbfbf970d40da9800051d437d06a22092e6bb47099"}}
