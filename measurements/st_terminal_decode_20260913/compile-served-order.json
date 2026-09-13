@@ -1,0 +1,64 @@
+{
+  "status": "PASS",
+  "scope": "SM121 compilation and host FMA canary only; GPU exactness and timing still required",
+  "gpu_used": false,
+  "torch": "2.13.0+cu130",
+  "triton": "3.7.1",
+  "options": {
+    "num_warps": 4,
+    "enable_fp_fusion": false
+  },
+  "variants": [
+    {
+      "stride": "i32",
+      "cubin_sha256": "5124f31eefbe53f115a13a9e23480f58176190d1563a1cf665ee4ef807a15f49",
+      "shared_bytes": 0,
+      "separate_product_rounding": true
+    },
+    {
+      "stride": "i64",
+      "cubin_sha256": "b1a2054040aa848b8da2a4d6f400493e71b61d36f0dabdfcd88023097ad0016a",
+      "shared_bytes": 0,
+      "separate_product_rounding": true
+    }
+  ],
+  "canary": {
+    "x": -1.8671875,
+    "residual0": 1.21875,
+    "post": 0.8058584332466125,
+    "comb0": 1.2346874475479126,
+    "old_fp32": 8.658692240715027e-05,
+    "served_fp32": 8.64923931658268e-05,
+    "old_bf16": 8.678436279296875e-05,
+    "served_bf16": 8.630752563476562e-05
+  },
+  "source_sha256": {
+    "engine/kernels/mhc_contract.py": "19c7d88cd44e51674056b81e9b940e32bcea1eef9270e0cc9387bc86ff1aba2f",
+    "tests/test_engine_mhc_contract.py": "e39e01c42242cf06e4a9be4d163a3c8f863404b2ce908c4777931b8f5f73f40c",
+    "engine/kernels/mhc/tilelang_kernels.py": "c27219a453a7897f03ed9179ffd90311200f40766214e2bd0c2a09b5ce2eef1b"
+  },
+  "served_reference": {
+    "scope": "CPU-only TileLang lowering and nvcc SM121 PTX; arithmetic body unchanged",
+    "generated_cuda_sha256": "bb9d5b4507f0b271f3ce53dddc4508a38b2843106fbcff1eaa8e1eeaa9cf4b41",
+    "ptx_sha256": "b83488361ceb6875a5494135155af750e24f4f055d1859ac607e347ee84985c1",
+    "channel0_instructions": [
+      "\tmul.f32 \t%f57, %f56, %f5;",
+      "\tfma.rn.f32 \t%f58, %f1, %f21, %f57;",
+      "\tfma.rn.f32 \t%f59, %f52, %f9, %f58;",
+      "\tfma.rn.f32 \t%f60, %f48, %f13, %f59;",
+      "\tfma.rn.f32 \t%f25, %f44, %f17, %f60;"
+    ],
+    "registers": {
+      "f56": "comb[0,0]",
+      "f5": "residual[0]",
+      "f1": "post[0]",
+      "f21": "x",
+      "f52": "comb[1,0]",
+      "f9": "residual[1]",
+      "f48": "comb[2,0]",
+      "f13": "residual[2]",
+      "f44": "comb[3,0]",
+      "f17": "residual[3]"
+    }
+  }
+}

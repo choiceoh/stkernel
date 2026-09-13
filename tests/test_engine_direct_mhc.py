@@ -136,6 +136,7 @@ class DirectMhcTests(unittest.TestCase):
             owner.pending = packet
             with self.assertRaises(RuntimeError):
                 OneShot.assert_consumed(owner)
+
             for op in ("all_reduce", "all_reduce_max", "all_gather", "reduce_scatter_rows", "barrier"):
                 with self.subTest(op=op), self.assertRaisesRegex(RuntimeError, "consume rank packets"):
                     fn = getattr(Comm(4, 0, transport=owner), op)
@@ -155,6 +156,51 @@ class DirectMhcTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 OneShot.assert_consumed(owner)
 
+    def test_terminal_columns_keep_c1_c4_state_feature_order_and_callback(self):
+        torch.set_num_threads(1)
+        def rank(comm):
+            for count in (1, 4):
+                net, cache = model(("kda", "dsa", "kda"), comm=comm)
+                chunks = []
+                for seq in (2, 0, 3, 1)[:count]:
+                    slot = cache.slots.take(seq)
+                    cache.pool.reserve(seq, 7)
+                    chunks.append(((torch.arange(7)+seq) % net.vp, 0, seq, slot))
+                step = Step.decode(chunks)
+                cache.prepare(step)
+                before, paged = cache.state.clone(), cache.paged.clone()
+                features = (2, 0, 2)
+                expected = net.forward(step, cache, aux_layers=features)
+                after, paged_after = cache.state.clone(), cache.paged.clone()
+                cache.state.copy_(before); cache.paged.copy_(paged)
+                writes, callbacks = [], []
+                def terminal(x, residual, post, comb, *, out=None):
+                    result = net.lanes.mhc_post(x, residual, post, comb).float().mean(1).to(x.dtype)
+                    if out is None:
+                        return result
+                    writes.append((out.shape, out.stride()))
+                    out.copy_(result)
+                    return out
+                comm.transport = OracleTransport(comm)
+                try:
+                    actual = decode_direct(net, step, cache, features, callbacks.append,
+                                           consumer=oracle_consume, contract=terminal)
+                    comm.transport.assert_consumed()
+                finally:
+                    comm.transport = None
+                for a, b in zip(actual, expected):
+                    torch.testing.assert_close(a, b, rtol=0, atol=0)
+                torch.testing.assert_close(cache.state, after, rtol=0, atol=0)
+                torch.testing.assert_close(cache.paged, paged_after, rtol=0, atol=0)
+                self.assertEqual(len(writes), 3)
+                self.assertTrue(all(stride == (3 * net.F.hidden, 1) for _, stride in writes))
+                self.assertEqual(len(callbacks), 1)
+                self.assertIs(callbacks[0], actual[1])
+            return actual[0]
+        outputs = LocalTP(4, timeout_s=30).run(rank)
+        for out in outputs[1:]:
+            torch.testing.assert_close(out, outputs[0], rtol=0, atol=0)
+
     def test_default_and_unsupported_split(self):
         self.assertFalse(ExecutionPlan().direct_mhc)
         self.assertTrue(ExecutionPlan(direct_mhc=True).active)
@@ -162,6 +208,10 @@ class DirectMhcTests(unittest.TestCase):
             ExecutionPlan(direct_mhc=True, overlap=True)
         with self.assertRaises(ValueError):
             ExecutionPlan(direct_mhc=1)
+        with self.assertRaisesRegex(ValueError, "direct decode"):
+            ExecutionPlan(terminal_mhc=True)
+        self.assertFalse(ExecutionPlan().terminal_mhc)
+        self.assertIn("terminal_mhc=1", ExecutionPlan(direct_mhc=True, terminal_mhc=True).label())
 
 
 if __name__ == "__main__":

@@ -1,0 +1,6 @@
+..............  kernel warmup returned 0.00 GiB of inactive allocator cache
+........................sssss
+----------------------------------------------------------------------
+Ran 43 tests in 12.522s
+
+OK (skipped=5)
