@@ -1,0 +1,38 @@
+{
+  "candidate": "3c7bcc0a08842d59a91e3f5166f5d5227a9e5cd6",
+  "expected_source_files": 245,
+  "expected_source_sha256": "904cb249b5b71d528cb5c67246147d6db149f7f453ce4aed01e84de3329962bc",
+  "ranks": [
+    {
+      "rank": 0,
+      "manifest_sha256": "bbe75b56327074b92ea278f6cffa9a7fb3eb14ab321e115812aaeb9cd215d292",
+      "source_file_count": 245,
+      "live_source_count": 3,
+      "issues": []
+    },
+    {
+      "rank": 1,
+      "manifest_sha256": "bbe75b56327074b92ea278f6cffa9a7fb3eb14ab321e115812aaeb9cd215d292",
+      "source_file_count": 245,
+      "live_source_count": 3,
+      "issues": []
+    },
+    {
+      "rank": 2,
+      "manifest_sha256": "bbe75b56327074b92ea278f6cffa9a7fb3eb14ab321e115812aaeb9cd215d292",
+      "source_file_count": 245,
+      "live_source_count": 3,
+      "issues": []
+    },
+    {
+      "rank": 3,
+      "manifest_sha256": "bbe75b56327074b92ea278f6cffa9a7fb3eb14ab321e115812aaeb9cd215d292",
+      "source_file_count": 245,
+      "live_source_count": 3,
+      "issues": []
+    }
+  ],
+  "all_four_manifests_identical": true,
+  "passed": true,
+  "scope": "Retained ABI manifest and live major-kernel hashes; GPU identity and consumer gates remain separate."
+}

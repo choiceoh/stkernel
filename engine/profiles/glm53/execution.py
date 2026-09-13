@@ -66,13 +66,16 @@ class Carry:
 
 def begin(net, step, caches):
     sp = net.prefill_transport if (not net.probe and len(step.segments) == 1
-                                  and step.ids.numel() >= 128 and step.ids.numel() % net.comm.world_size == 0
+                                  and step.ids.numel() >= 128
                                   and not getattr(step, "captured", False)) else None
+    if sp is not None:
+        from engine.modules.token_shards import TokenShards
+        sp = TokenShards(sp, step.ids.numel(), net.rank)
     x = net.embed(step.ids)
     for pos, rows in step.patches:
         x.index_copy_(0, pos, rows.to(x.dtype))
     if sp is not None:
-        x = x.chunk(net.comm.world_size, dim=0)[net.rank]
+        x = sp.shard(x)
     return Carry(step, caches, x, x[:, None, :].expand(-1, net.F.hc, net.F.hidden).contiguous(), sp)
 
 
@@ -108,7 +111,7 @@ def auxiliary(net, carry):
 def finish(net, carry):
     res = net.lanes.mhc_post(carry.x, carry.res, carry.post, carry.comb)
     h = net._norm(res.float().mean(1).to(carry.x.dtype), net.p["norm"], net.F.rms_eps)
-    return net.comm.all_gather(h, dim=0) if carry.sp is not None else h
+    return carry.sp.gather_result(h) if carry.sp is not None else h
 
 
 class SerialStreams:
@@ -248,7 +251,7 @@ def prefill_layer_major(net, step, caches, plan, aux_layers=()):
             parts = []
             for c in carries:
                 a = auxiliary(net, c)
-                parts.append(net.comm.all_gather(a, dim=0) if c.sp is not None else a)
+                parts.append(c.sp.gather_result(a) if c.sp is not None else a)
             aux[layer] = torch.cat(parts, dim=0)
     h = torch.cat([finish(net, c) for c in carries], dim=0)
     return (h, torch.cat([aux[l] for l in aux_layers], dim=-1)) if aux_layers else h

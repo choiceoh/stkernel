@@ -123,7 +123,7 @@ class Recorder:
                 run['rows'].append(row)
 
     @contextmanager
-    def step(self, kind, seqs, positions, tokens):
+    def step(self, kind, seqs, positions, tokens, *, dispatch=None, host_state=None):
         run = self.active
         if run is None:
             yield
@@ -160,7 +160,8 @@ class Recorder:
             self.row(kind='host_step', operation='runner', phase=kind, step=index, rows=list(seqs),
                      positions=positions, tokens=tokens, duration_us=duration,
                      timing_scope='host launch/runner work; asynchronous GPU completion is separate',
-                     profiled=prof is not None, preparation_before=before, preparation_after=preparation(), error=error)
+                     profiled=prof is not None, preparation_before=before, preparation_after=preparation(), error=error,
+                     dispatch=dispatch, host_state=host_state)
             graph_labels.profiling(False)
             if prof is not None:
                 try:
@@ -232,6 +233,25 @@ class Recorder:
                     base64=base64.b64encode(block).decode(), bytes=path.stat().st_size)
 
 
+def decode_host_state(model, seqs):
+    """Already committed host bookkeeping only; never query device tensors.
+
+    Keep the short token tail so equal lengths cannot hide different commits.
+    Context and pending counts locate a rank disagreement at a graph/budget
+    boundary without synchronizing or hashing the entire generated answer.
+    """
+    result = []
+    for seq in seqs:
+        tokens = getattr(model, 'tokens', {}).get(seq)
+        prompt = getattr(model, 'prompt_len', {}).get(seq)
+        result.append(dict(seq=seq, context=getattr(model, 'ctx', {}).get(seq),
+                           generated=len(tokens) - prompt if type(tokens) is list and type(prompt) is int else None,
+                           tail=tokens[max(prompt or 0, len(tokens) - 8):] if type(tokens) is list else None,
+                           inflight=getattr(model, 'inflight', {}).get(seq),
+                           thinking=getattr(model, 'thinking', {}).get(seq)))
+    return result
+
+
 def record_step(fn):
     @wraps(fn)
     def measured(runner, step):
@@ -247,6 +267,11 @@ def record_step(fn):
                     recorder.row(kind='device_stage', operation=name, duration_us=seconds * 1e6, **context)
             clock.sink = sink
             clock.context = dict(phase=step.kind, step=recorder.step_index + 1, rows=list(step.seqs))
-        with recorder.step(step.kind, step.seqs, positions, step.tokens):
-            return fn(runner, step)
+        state = dict(before=decode_host_state(runner.model, step.seqs))
+        with recorder.step(step.kind, step.seqs, positions, step.tokens,
+                           dispatch=fn.__name__, host_state=state):
+            try:
+                return fn(runner, step)
+            finally:
+                state['after'] = decode_host_state(runner.model, step.seqs)
     return measured

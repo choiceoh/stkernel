@@ -1,0 +1,225 @@
+{
+  "candidate": "3c7bcc0a08842d59a91e3f5166f5d5227a9e5cd6",
+  "run_id": "20260913T065924-4fefee2be2e1",
+  "boot_id": "9f93c96a60a1c490133051fd6a911a6a0fefd906778c94c06a68594e1370ef61|2026-09-13T06:50:32.236272244Z",
+  "latency_boot_id": "b862190728a64bd7aa4f1d3051b2344c",
+  "recording_phase": "measure-c4-2000-q0",
+  "whole_onepass_complete": false,
+  "c1_requests_complete": true,
+  "c1_distinct_ranks": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "steady_errors": [],
+  "requests": [
+    {
+      "ctx": 2000,
+      "question": 0,
+      "fixed_decode": null,
+      "rep": null,
+      "prompt_tokens": 2672,
+      "ttft_s": 1.107012108026538,
+      "completion_tokens": 2231,
+      "cached_tokens": 0,
+      "decode_tok_s": 90.42091139061243,
+      "request_sha256": "53633d60dbd68fec2137c6713ea1d57447f7eb7e520bf03d0d377c9644a69de0",
+      "output_sha256": "d1fde6c9f387bb31dc51f6ec074d6e9faad01be2aeef9cd5d11cb5f30ff831dc",
+      "prefill_tok_s": 2413.704403616103,
+      "output_hash_matches": true
+    },
+    {
+      "ctx": 2000,
+      "question": 1,
+      "fixed_decode": null,
+      "rep": null,
+      "prompt_tokens": 2632,
+      "ttft_s": 1.1065866830176674,
+      "completion_tokens": 3215,
+      "cached_tokens": 0,
+      "decode_tok_s": 72.22599218082163,
+      "request_sha256": "04027dc0b989d0d69bc8c82efa40b22c966e42c1e158fa5df9696d6a99766af9",
+      "output_sha256": "aac3b6408921c43091ebdd120878deadc2cf54ac0fbd8110ab2eb7f46ff53df0",
+      "prefill_tok_s": 2378.4851565559447,
+      "output_hash_matches": true
+    },
+    {
+      "ctx": 2000,
+      "question": 2,
+      "fixed_decode": null,
+      "rep": null,
+      "prompt_tokens": 2618,
+      "ttft_s": 1.5040356910030823,
+      "completion_tokens": 3122,
+      "cached_tokens": 0,
+      "decode_tok_s": 73.01315064488251,
+      "request_sha256": "942be36e2698d9491b1ba51f1098b57afbda0900f28b7a58fa98a8ac20a67925",
+      "output_sha256": "84d76951611d5befabac2565b361377aff63334a882ea030bb01b300ecb3838f",
+      "prefill_tok_s": 1740.6501824793695,
+      "output_hash_matches": true
+    },
+    {
+      "ctx": 32000,
+      "question": "all",
+      "fixed_decode": null,
+      "rep": null,
+      "prompt_tokens": 33817,
+      "ttft_s": 9.985236831009388,
+      "completion_tokens": 20874,
+      "cached_tokens": 0,
+      "decode_tok_s": 87.03712118888399,
+      "request_sha256": "2ec5aa41291fa26a3523cd601f11e20130b0342dd26dea64a1c284482199632e",
+      "output_sha256": "ad81d2f844e3cbb0aaac5ce40cc825e684be146c7622e268ee880a15dd572efb",
+      "prefill_tok_s": 3386.699842209101,
+      "output_hash_matches": true
+    },
+    {
+      "ctx": 128000,
+      "question": "all",
+      "fixed_decode": null,
+      "rep": null,
+      "prompt_tokens": 129775,
+      "ttft_s": 39.257811443996616,
+      "completion_tokens": 11442,
+      "cached_tokens": 0,
+      "decode_tok_s": 84.66756549539974,
+      "request_sha256": "77132ff23ad3399bdb44a70f61ffc83fcd5c050c96a364fbeaacaf34ff9f2134",
+      "output_sha256": "b1ae1aeed9f5bd38c5be0ae4371aea7122c5dd002e4e0996a0b65d9bb228a2d6",
+      "prefill_tok_s": 3305.7115317070343,
+      "output_hash_matches": true
+    },
+    {
+      "ctx": 2000,
+      "question": "fixed-all",
+      "fixed_decode": true,
+      "rep": 0,
+      "prompt_tokens": 3422,
+      "ttft_s": 1.6991242600197438,
+      "completion_tokens": 1024,
+      "cached_tokens": 0,
+      "decode_tok_s": 69.66082124888545,
+      "request_sha256": "a6b5607b2af731682f1042ef078d73a697fcfd2c6ccc43c3ebc8f929706f983f",
+      "output_sha256": "7bff7ffdc852f9d15ef1530ca780e169897ce82a065c87baa26758886627d37a",
+      "prefill_tok_s": 2013.9786597833854,
+      "output_hash_matches": true
+    },
+    {
+      "ctx": 2000,
+      "question": "fixed-all",
+      "fixed_decode": true,
+      "rep": 1,
+      "prompt_tokens": 3422,
+      "ttft_s": 1.703932092001196,
+      "completion_tokens": 1024,
+      "cached_tokens": 0,
+      "decode_tok_s": 86.09293983356173,
+      "request_sha256": "a06a4447834abf6725cf85c0fe7871c498a9340796baaa62fd9cfeb79fea825f",
+      "output_sha256": "7bff7ffdc852f9d15ef1530ca780e169897ce82a065c87baa26758886627d37a",
+      "prefill_tok_s": 2008.2959972782753,
+      "output_hash_matches": true
+    },
+    {
+      "ctx": 2000,
+      "question": "fixed-all",
+      "fixed_decode": true,
+      "rep": 2,
+      "prompt_tokens": 3422,
+      "ttft_s": 1.6901845970132854,
+      "completion_tokens": 1024,
+      "cached_tokens": 0,
+      "decode_tok_s": 76.89106885194269,
+      "request_sha256": "040dc129dfd98762b0f11870dd9a549af55419c04ebf1ebe370818e51cf70f5b",
+      "output_sha256": "f5ed09d4e73ae90610555f6da447a3d7fc7f6a0a3e8e980f9e0946edf7e43a3e",
+      "prefill_tok_s": 2024.6309225909376,
+      "output_hash_matches": true
+    }
+  ],
+  "decode": {
+    "gen_tokens": 43956,
+    "wall_s": 584.919154882431,
+    "acc_raw": 0.5353811258066578,
+    "acc_legacy": 0.5353811258066578,
+    "tokens_per_step": 4.212286754839947,
+    "windows_med": null,
+    "num_spec": 6,
+    "primary": "fixed-2K",
+    "fixed_pooled_step_s": 15.933619707879657,
+    "raw_windows_med": 16.94585923397044
+  },
+  "observed_step_medians": {
+    "2000": 19.906359154766342,
+    "32000": 19.91080786322695,
+    "128000": 19.907927746257712
+  },
+  "quality": {
+    "version": "ko-reasoning-v2",
+    "ok": 3,
+    "total": 18,
+    "score": 42,
+    "max_score": 114,
+    "dimensions": {
+      "format": {
+        "ok": 6,
+        "total": 18
+      },
+      "completion": {
+        "ok": 18,
+        "total": 18
+      },
+      "result": {
+        "ok": 5,
+        "total": 18
+      },
+      "derivation": {
+        "ok": 3,
+        "total": 18
+      },
+      "evidence": {
+        "ok": 4,
+        "total": 18
+      },
+      "counterfactual": {
+        "ok": 5,
+        "total": 18
+      },
+      "witnesses": {
+        "ok": 1,
+        "total": 6
+      }
+    },
+    "scope": "visible final content; deterministic proof certificates"
+  },
+  "korean": {
+    "dirty": 0,
+    "n": 8,
+    "kinds": {
+      "replacement": 0,
+      "lone_jamo": 0,
+      "cjk_mixed": 0,
+      "control": 0
+    },
+    "hits": []
+  },
+  "evidence_issues": [
+    "C=1 quality or Korean corruption gate failed"
+  ],
+  "goal_achieved": false,
+  "scope": "First C1 phase completed before operator cancellation of C4 128K. The second C1 run and GPU diagnostics did not complete. Quality failure invalidates acceptance; timings are observations of the earlier measured source, not this merge.",
+  "quality_by_budget": {
+    "natural_completion": {
+      "requests": 5,
+      "quality_passed": 3,
+      "quality_total": 9,
+      "budget_exhausted_requests": 0,
+      "reasoning_budget_reached_requests": 0
+    },
+    "fixed_1024": {
+      "requests": 3,
+      "quality_passed": 0,
+      "quality_total": 9,
+      "budget_exhausted_requests": 3,
+      "reasoning_budget_reached_requests": 3
+    }
+  }
+}

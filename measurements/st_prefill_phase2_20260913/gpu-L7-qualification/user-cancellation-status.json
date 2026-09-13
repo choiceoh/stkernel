@@ -1,0 +1,42 @@
+{
+  "at": "2026-09-13T08:13:16.669931+00:00",
+  "processes": {
+    "2259540": {
+      "exists": false
+    },
+    "2264124": {
+      "exists": false
+    },
+    "2336116": {
+      "exists": false
+    }
+  },
+  "containers": [
+    {
+      "rank": 0,
+      "rc": 1,
+      "state": "",
+      "error": "error: no such object: st-glm53"
+    },
+    {
+      "rank": 1,
+      "rc": 1,
+      "state": "",
+      "error": "error: no such object: st-glm53"
+    },
+    {
+      "rank": 2,
+      "rc": 1,
+      "state": "",
+      "error": "error: no such object: st-glm53"
+    },
+    {
+      "rank": 3,
+      "rc": 1,
+      "state": "",
+      "error": "error: no such object: st-glm53"
+    }
+  ],
+  "current_lease_owner": null,
+  "our_lease_released": true
+}

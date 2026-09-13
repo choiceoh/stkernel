@@ -23,6 +23,10 @@ class TiledProjection:
         import torch
         self.owner = owner
         self.stream = torch.cuda.Stream()
+        self.slots = None
+        self.capacity = 0
+        self.storage_kind = None
+        self.allocations = 0
 
     def __call__(self, x, project, *, packet_project=None):
         import torch
@@ -46,15 +50,24 @@ class TiledProjection:
         self.stream.wait_stream(parent)
         x.record_stream(self.stream)
         limit = tile_rows * hidden
-        packet_limit = ((limit + 4 * (limit // BLOCK) + 127) // 128) * 128     # 4: the FP32 scale of every block
-        slots = []
-        with torch.cuda.stream(self.stream):
-            for _ in range(2):
-                slots.append(dict(
-                    payload=torch.empty(packet_limit, device=x.device, dtype=torch.uint8) if fp8 else None,
-                    received=torch.empty(packet_limit * world, device=x.device, dtype=torch.uint8) if fp8 else None,
-                    value=None if fused else torch.empty((tile_rows * world, hidden), device=x.device, dtype=x.dtype),
-                    ready=torch.cuda.Event(), released=torch.cuda.Event(), used=False))
+        packet_limit = ((limit + 4 * (limit // BLOCK) + 127) // 128) * 128
+        kind = (x.device, x.dtype, fp8, fused, world, hidden)
+        if self.slots is None or self.capacity < tile_rows or self.storage_kind != kind:
+            slots = []
+            with torch.cuda.stream(self.stream):
+                for _ in range(2):
+                    slots.append(dict(
+                        payload=torch.empty(packet_limit, device=x.device, dtype=torch.uint8) if fp8 else None,
+                        received=torch.empty(packet_limit * world, device=x.device, dtype=torch.uint8) if fp8 else None,
+                        value=None if fused else torch.empty((tile_rows * world, hidden), device=x.device, dtype=x.dtype),
+                        ready=torch.cuda.Event(), released=torch.cuda.Event(), used=False))
+            self.slots, self.capacity, self.storage_kind = slots, tile_rows, kind
+            self.allocations += 1
+        else:
+            # The arrival stream already waits for the caller above. The
+            # previous call's consumers and release events therefore precede
+            # reuse, including a smaller prompt after the maximum boot warmup.
+            slots = self.slots
         output = None
 
         def launch(start, end, slot_id):

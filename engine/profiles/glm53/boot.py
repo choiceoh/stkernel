@@ -515,10 +515,11 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                                  execution_plan=execution_plan)
             plan = engine.execution_plan
             token_budget = plan.tile_rows * plan.prefill_tiles + drafter.k if plan.prefill_tiles > 1 else TOKEN_BUDGET
+            # TokenShards pads communication rows and crops to the real length.
+            # Splitting a ragged tail now adds a second full model traversal.
             contract = sched.Contract(chunk_align=F.chunk_align, token_budget=token_budget, draft_slots=drafter.k,
                                       max_wait_s=MAX_WAIT_S, max_running=max_seqs,
-                                      decode_token_budget=F.chunk_align + drafter.k,
-                                      prefill_tail_multiple=facts.TP)
+                                      decode_token_budget=F.chunk_align + drafter.k)
             engine.memory = memory
             engine.budget = redeclare           # printed once from guesses at boot, once from this boot's ledger
             engine.arena = arena                # every device tensor is a view of it: `release` needs the last reference

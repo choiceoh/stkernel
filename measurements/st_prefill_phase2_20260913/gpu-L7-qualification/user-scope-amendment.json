@@ -1,0 +1,23 @@
+{
+  "at": "2026-09-13T08:10:47.645499+00:00",
+  "reason": "User requested removal of C=4 128K; active harness has no per-item cancellation",
+  "excluded": {
+    "concurrency": 4,
+    "ctx": 128000,
+    "phases": [
+      "prepare",
+      "measure",
+      "diagnostic"
+    ]
+  },
+  "preserved_phase": "measure-c4-128000-qall",
+  "completed_c4_contexts": [
+    2000,
+    2000,
+    2000,
+    32000
+  ],
+  "run_status": "operator_interrupted_incomplete",
+  "c1_repeat_status": "not_started",
+  "controller_pid": 2264124
+}

@@ -4064,6 +4064,13 @@ def _long_prefill_sf6_word_unpack(*, m, E, k, n, num_topk, tile_m,
             and not ep_local and not tp_sf6_q0 and not share_input_across_experts)
 
 
+def _short_prefill_q0_word_unpack(*, m, tp_sf6_q0, reform_sf_pack, ep_local):
+    # The existing Q0 selector has already checked exact GLM geometry and math.
+    # Keep small decode and the raw-scale subclass on their established source.
+    return (type(m) is int and 64 < m <= 8192 and tp_sf6_q0
+            and reform_sf_pack and not ep_local)
+
+
 def _get_dynamic_kernel(
     E: int,
     m: int,
@@ -4225,6 +4232,11 @@ def _get_dynamic_kernel(
         tp_sf6_q0=tp_sf6_q0, share_input_across_experts=share_input_across_experts)
     if prefill_word_unpack:
         cache_key = (*cache_key, 'long_prefill_sf6_route_words_v1')
+    short_word_unpack = _short_prefill_q0_word_unpack(
+        m=m, tp_sf6_q0=tp_sf6_q0, reform_sf_pack=reform_sf_pack,
+        ep_local=ep_local_cls is not None)
+    if short_word_unpack:
+        cache_key = (*cache_key, 'short_prefill_q0_words_v1')
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -4273,6 +4285,9 @@ def _get_dynamic_kernel(
             if prefill_word_unpack:
                 from .moe_dynamic_gated_sf6_prefill import MoEGatedDynamicKernelSF6Prefill
                 tiled_cls = MoEGatedDynamicKernelSF6Prefill
+            elif short_word_unpack:
+                from .moe_dynamic_gated_sf6_q0_words import MoEGatedDynamicKernelSF6Q0Words
+                tiled_cls = MoEGatedDynamicKernelSF6Q0Words
             tiled_kwargs = dict(reform_sf_pack=True)
         kernel = tiled_cls(
             sf_vec_size=sf_vec_size,
@@ -4491,6 +4506,9 @@ def _get_dynamic_kernel(
             tuple(os.path.join(os.path.dirname(__file__), name) for name in
                   ("moe_dynamic_gated_sf6_words.py", "moe_dynamic_gated_sf6_prefill.py"))
             if prefill_word_unpack else ()) + (
+            tuple(os.path.join(os.path.dirname(__file__), name) for name in
+                  ("moe_dynamic_gated_sf6_words.py", "moe_dynamic_gated_sf6_q0_words.py"))
+            if short_word_unpack else ()) + (
             (os.path.join(os.path.dirname(__file__), "moe_dynamic_gated_sf6_q0.py"),)
             if tp_sf6_q0 else ()) + (
             (os.path.join(os.path.dirname(__file__), "moe_dynamic_gated_raw_q0.py"),)

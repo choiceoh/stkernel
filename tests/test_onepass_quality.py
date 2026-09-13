@@ -294,6 +294,17 @@ class IntegrationTests(unittest.TestCase):
                 self.assertLess(diag['reasoning_budget'], diag['max_tokens'])
         self.assertEqual(items, before)
 
+    def test_preparation_keeps_prompt_and_does_not_shorten_scored_fixed_decode(self):
+        items = onepass.workload_requests(self.fixture(), SimpleNamespace(filler=lambda n, r: ''))
+        items.append(dict(items[0], min_tokens=1024, max_tokens=1024, reasoning_budget=512, seed=11))
+        before = copy.deepcopy(items)
+        for item in items:
+            prep = onepass.preparation_request(item, 6)
+            self.assertEqual((prep['min_tokens'], prep['max_tokens'], prep['reasoning_budget']), (64, 64, 32))
+            for key in set(item) - {'min_tokens', 'max_tokens', 'reasoning_budget'}:
+                self.assertEqual(prep[key], item[key])
+        self.assertEqual(items, before)
+
     def test_c1_grading_is_after_windows_and_latency_session(self):
         tree = ast.parse(Path(onepass.__file__).read_text())
         main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == '_main')
@@ -348,36 +359,48 @@ class IntegrationTests(unittest.TestCase):
             record = json.loads((Path(root) / 'ledger.jsonl').read_text())
             self.assertEqual((record['quality']['ok'], record['quality']['total']), (9, 9))
             if include_c4:
-                self.assertEqual((record['quality_c4']['ok'], record['quality_c4']['total']), (36, 36))
+                self.assertEqual((record['quality_c4']['ok'], record['quality_c4']['total']), (24, 24))
             else:
                 self.assertIsNone(record['quality_c4'])
                 self.assertEqual(record['c4'], [])
-            self.assertEqual(record['concurrency_coverage'], dict(policy='c1-twice-c4-once-v1',
+            self.assertEqual(record['concurrency_coverage'], dict(policy='c1-twice-c4-once-no-128k-v2',
                 included=[1, 4] if include_c4 else [1],
+                contexts={'1': [2000, 32000, 128000], '4': [2000, 32000] if include_c4 else []},
+                c4_excluded_contexts=[128000],
                 c4_status='measured' if include_c4 else 'omitted_after_run_1'))
             grades = [json.loads(s) for s in (Path(record['artifacts']) / 'quality.jsonl').read_text().splitlines()]
-            self.assertEqual(len(grades), 25 if include_c4 else 5)
+            self.assertEqual(len(grades), 21 if include_c4 else 5)
             expected_phases = {'measure-c1'}
             if include_c4:
-                expected_phases |= {f"measure-c4-{item['ctx']}-q{item['question']}" for item in items}
+                expected_phases |= {f"measure-c4-{item['ctx']}-q{item['question']}" for item in items
+                                    if item['ctx'] != 128000}
             self.assertEqual({r['phase'] for r in grades}, expected_phases)
             self.assertEqual(record['recording']['status'], 'complete')
             self.assertFalse(record['steady_state']['valid'])
             requests = [json.loads(s) for s in (Path(record['artifacts']) / 'requests.jsonl').read_text().splitlines()]
             diagnostics = [r for r in requests if r['phase'].startswith('diagnostic-')]
-            self.assertEqual(len(diagnostics), 15 if include_c4 else 3)
+            self.assertEqual(len(diagnostics), 11 if include_c4 else 3)
+            self.assertFalse(any(r['concurrency'] == 4 and r['ctx'] == 128000 for r in requests))
+            self.assertEqual({r['phase'].split('-')[0] for r in requests
+                              if r['concurrency'] == 1 and r['ctx'] == 128000},
+                             {'prepare', 'measure', 'diagnostic'})
             self.assertEqual({r['concurrency'] for r in requests}, {1, 4} if include_c4 else {1})
             if not include_c4:
                 self.assertFalse(any('c4' in r['phase'] for r in requests))
             self.assertEqual({(r['max_tokens'], r['min_tokens'], r['reasoning_budget']) for r in diagnostics},
                              {(64, 64, 32)})
-            measured = [r for r in requests if not r['phase'].startswith('diagnostic-')]
-            self.assertEqual(len(measured), 50 if include_c4 else 10)
+            prepared = [r for r in requests if r['phase'].startswith('prepare-')]
+            self.assertEqual(len(prepared), 21 if include_c4 else 5)
+            self.assertEqual({(r['max_tokens'], r['min_tokens'], r['reasoning_budget']) for r in prepared},
+                             {(64, 64, 32)})
+            self.assertEqual(record['preparation_budget']['max_tokens'], 64)
+            measured = [r for r in requests if r['phase'].startswith('measure-')]
+            self.assertEqual(len(measured), 21 if include_c4 else 5)
             self.assertEqual({(r['max_tokens'], r['reasoning_budget']) for r in measured},
                              {(16384, 8192), (49152, 24576)})
         onepass._RUN = None
 
-    def test_canonical_main_records_all_nine_c1_and_36_c4_cases(self):
+    def test_canonical_main_keeps_c1_128k_and_excludes_every_c4_128k_phase(self):
         for run_index in (None, 1):
             with self.subTest(run_index=run_index):
                 self._check_canonical_coverage(run_index)

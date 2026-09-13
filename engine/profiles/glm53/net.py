@@ -762,14 +762,17 @@ class Glm53Net:
         F = self.F
         N = step.ids.shape[0]
         sp = self.prefill_transport if (finish and not self.probe and len(step.segments) == 1
-                                       and N >= 128 and N % self.comm.world_size == 0
+                                       and N >= 128
                                        and not getattr(step, "captured", False)) else None
+        if sp is not None:
+            from engine.modules.token_shards import TokenShards
+            sp = TokenShards(sp, N, self.rank)
         reduce = sp.reduce_scatter if sp else self.comm.all_reduce
         x = self.embed(step.ids)
         for pos, rows in step.patches:                                               # image rows in place of their placeholders
             x.index_copy_(0, pos, rows.to(x.dtype))
         if sp:
-            x = x.chunk(self.comm.world_size, dim=0)[self.rank]
+            x = sp.shard(x)
             N = x.shape[0]
         res = x[:, None, :].expand(N, F.hc, F.hidden).contiguous()                   # hc_expand
         post = comb = None
@@ -805,17 +808,18 @@ class Glm53Net:
         if not finish:
             return res, post, comb, x
         if last_hidden_only:
-            x, res, post, comb = x[-1:], res[-1:], post[-1:], comb[-1:]
+            last = slice(sp.last_local, sp.last_local + 1) if sp else slice(-1, None)
+            x, res, post, comb = x[last], res[last], post[last], comb[last]
         res = self.lanes.mhc_post(x, res, post, comb)
         h = self._norm(res.float().mean(1).to(x.dtype), self.p["norm"], F.rms_eps)      # hc_contract, final norm
         if sp:
-            h = self.comm.all_gather(h, dim=0)
+            h = self.comm.all_gather(h, dim=0) if last_hidden_only else sp.gather_result(h)
         if last_hidden_only:
             h = h[-1:]  # the last SP rank owns the global last token
         if aux_layers:
             if features is None:
                 features = torch.cat([aux[L] for L in aux_layers], dim=-1)
-            return h, self.comm.all_gather(features, dim=0) if sp else features
+            return h, sp.gather_result(features) if sp else features
         return h
 
     def prefill(self, ids: torch.Tensor, ctx: int, seq: int, slot: int, caches: Caches, finish: bool = True):
