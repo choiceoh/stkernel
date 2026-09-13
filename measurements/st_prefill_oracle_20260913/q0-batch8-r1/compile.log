@@ -1,0 +1,34 @@
+mhc-bm16-bk64-s1 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _post_prenorm:
+  REG:214 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:984 TEXTURE:0 SURFACE:0 SAMPLER:0
+mhc-bm16-bk64-s2 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _post_prenorm:
+  REG:214 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:984 TEXTURE:0 SURFACE:0 SAMPLER:0
+mhc-bm16-bk64-s4 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _post_prenorm:
+  REG:214 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:984 TEXTURE:0 SURFACE:0 SAMPLER:0
+compiled N128 2672
+compiled N128 32256
+
+[91m[1m[Internal Error] The compiler hit a problem it could not trace back to your code.[0m
+This is a bug in the DSL, not a mistake in your kernel.
+
+[94mDetail:[0m 🧊🧊🧊 ICE IR Verification Failed 🧊🧊🧊
+
+[94mCause:[0m Caused exception: Verification failed:
+error: unknown: 'cute.composed_get_inner' op using value defined outside the region
+ note: unknown: see current operation: %487 = "cute.composed_get_inner"(<<UNKNOWN SSA VALUE>>) : (!cute.composed_layout<"S<2,4,3> o 0 o ((8,16),(128,1),(1,2)):((128,1024),(1,0),(0,16384))">) -> !cute.swizzle<"S<2,4,3>">
+ note: "MoEGatedDynamicKernelSF6"("/repo/engine/kernels/b12x/moe_dynamic_gated_sf6.py":421:0): required by region isolation constraints
+
+[92mWhat to do:[0m
+  [92mPlease report this with the snippet above and your kernel.[0m
+  [92mRe-run with CUTE_DSL_SHOW_STACKTRACE=1 to include the full technical detail.[0m
+
+====================================================================================================
+{"status": "FAIL", "cuda_initialized": false, "elapsed_s": 16.34365457299282}

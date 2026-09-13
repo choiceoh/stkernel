@@ -84,6 +84,61 @@ def environment(shared):
 
 
 class Q0Batch8Tests(unittest.TestCase):
+    def test_actual_opt_in_guard_excludes_decode_long_context_and_capture(self):
+        tree=ast.parse((ROOT/'engine/kernels/b12x/moe_dispatch.py').read_text())
+        compiler=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_get_dynamic_kernel')
+        guards=[n for n in compiler.body if isinstance(n,ast.If)
+                and ast.unparse(n.test).startswith(('type(_prefill_q0_batch8)', '_prefill_q0_batch8 and'))]
+        code=compile(ast.Module(body=guards,type_ignores=[]),'<actual-Q0-compiler-guard>','exec')
+        valid=dict(_prefill_q0_batch8=True,tp_sf6_q0=True,_prefill_tile64=False,m=2672)
+        for rows in (65,2672,8192): exec(code,dict(valid,m=rows))
+        for change in ({'m':64},{'m':8193},{'tp_sf6_q0':False},{'_prefill_tile64':True}):
+            with self.assertRaises(ValueError): exec(code,dict(valid,**change))
+        with self.assertRaises(TypeError): exec(code,dict(valid,_prefill_q0_batch8=1))
+        launch=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='launch_sm120_dynamic_moe')
+        branch=next(n for n in launch.body if isinstance(n,ast.If) and ast.unparse(n.test)=='_prefill_q0_batch8')
+        code=compile(ast.Module(body=[branch],type_ignores=[]),'<actual-Q0-launch-guard>','exec')
+        env=dict(_prefill_q0_batch8=True,_prefill_tile64=None,_prefill_scale_expansion=None,
+                 num_tokens=2672,workspace=NS(tile_m=128),
+                 torch=NS(cuda=NS(is_current_stream_capturing=lambda:False)))
+        exec(code,env)
+        self.assertIs(env['_prefill_tile64'],False)
+        self.assertIs(env['_prefill_scale_expansion'],False)
+        env['torch']=NS(cuda=NS(is_current_stream_capturing=lambda:True))
+        with self.assertRaises(RuntimeError): exec(code,env)
+        for node in (compiler,launch):
+            defaults=dict(zip((a.arg for a in node.args.kwonlyargs),node.args.kw_defaults))
+            self.assertIs(ast.literal_eval(defaults['_prefill_q0_batch8']),False)
+
+    def test_actual_copy_sizes_cover_ragged_requests_and_avoid_route_metadata(self):
+        loop=next(n for n in statements() if isinstance(n,ast.While)
+                  and ast.unparse(n.test)=='produce_active > Int32(0)')
+        branch=next(n for n in loop.body if isinstance(n,ast.If)
+                    and ast.unparse(n.test)=='batch_base >= producer_limit')
+        stop=next(i for i,n in enumerate(branch.orelse) if isinstance(n,ast.If)
+                  and ast.unparse(n.test)=='warp_idx == Int32(self.num_mma_warps)')
+        sizes=compile(ast.Module(body=branch.orelse[:stop],type_ignores=[]),'<actual-Q0-copy-sizes>','exec')
+        remap=[n for n in statements() if isinstance(n,ast.Assign) and
+               isinstance(n.targets[0],ast.Name) and n.targets[0].id in ('route_phys_rows_addr','route_expert_ids_addr')]
+        aliases=compile(ast.Module(body=remap,type_ignores=[]),'<actual-Q0-aliases>','exec')
+        for tokens in (65,67,2672,2675,8192):
+            covered=[]
+            for start in range(0,tokens,8):
+                env=dict(Int32=int,num_tokens=tokens,batch_base=start,producer_batch_tokens=8,cols=4096)
+                exec(sizes,env)
+                first,second=env['first_copy_bytes'],env['second_copy_bytes']
+                self.assertTrue(0<first<=32768 and 0<=second<=32768)
+                self.assertEqual(first+second,min(8,tokens-start)*8192)
+                self.assertLessEqual(start*8192+first+second,tokens*8192)
+                env.update(self=NS(q0_route_shift=16384),q0_input_stage_base_addr=16384)
+                exec(aliases,env)
+                self.assertEqual(env['route_phys_rows_addr'],0)
+                self.assertEqual(env['route_expert_ids_addr'],1152)
+                self.assertLessEqual(env['route_phys_rows_addr']+3*288*4,16384)
+                self.assertLessEqual(32768+second,32768+40960)
+                covered.extend(range(start,start+(first+second)//8192))
+            self.assertEqual(covered,list(range(tokens)))
+
     def test_static_body_matches_pinned_generator_and_has_no_missing_jit_globals(self):
         path=ROOT/'measurements/st_prefill_oracle_20260913/generate_q0_batch8.py'
         spec=importlib.util.spec_from_file_location('_q0_generator',path)

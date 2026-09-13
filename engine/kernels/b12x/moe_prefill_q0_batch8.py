@@ -35,7 +35,8 @@ def check_layout(kernel, hidden_size):
 class _Batch8(Q0Batch8Body):
     def _setup_attributes(self, hidden_size):
         super()._setup_attributes(hidden_size)
-        check_layout(self, hidden_size)
+        layout = check_layout(self, hidden_size)
+        self.q0_route_shift = layout['b_bytes']
 
 
 class PrefillQ0Batch8Packed(_Batch8, MoEGatedDynamicKernelSF6Q0Words):

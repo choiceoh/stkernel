@@ -22,7 +22,7 @@ def build():
     old = '        num_tokens = Int32(a_input.shape[0])'
     remap = '''        # Startup-idle sB precedes sC, followed by sA, in both pinned kernels.
         # Move all route caches out of sA before staging eight rows over sC+sA.
-        route_phys_rows_addr = q0_input_stage_base_addr - Int32(cute.size_in_bytes(self.b_dtype, self.b_smem_layout_staged))
+        route_phys_rows_addr = q0_input_stage_base_addr - Int32(self.q0_route_shift)
         route_expert_ids_addr = route_phys_rows_addr + Int32(9 * 32 * 4)
 '''
     assert method.count(old)==1
