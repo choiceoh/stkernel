@@ -17,9 +17,26 @@ class NativeQualificationTests(unittest.TestCase):
                  shared_mlp={1: NS(executed=True)},
                  shared_overlap=NS(executed=True),
                  _router_weights={1: None}, _router_tensorcore={1},
-                 prefill_transport=NS(executed={'fp8_all_gather', 'fp8_reduce_scatter'}))
+                 prefill_transport=NS(executed={'fp8_all_gather', 'fp8_reduce_scatter'}, project_tiles=False))
         drafter = NS(dense={'fc.weight': NS(executed=3), 'q': NS(executed=1)})
         self.assertEqual(native_execution_report(net, drafter)['target_fp8'], 1)
+        required = {'fp8_all_gather', 'fp8_reduce_scatter'}
+        for extra in (set(), {'fp8_tiled_projection'}, {'fp8_tiled_projection', 'fp8_packet_projection'}):
+            net.prefill_transport.executed = required | extra
+            with self.subTest(extra=extra):
+                self.assertEqual(set(native_execution_report(net, drafter)['prefill_collectives']), required | extra)
+        for missing in required:
+            # Two markers can still be incomplete; additional optimized lanes
+            # must never stand in for the missing gather or reduce-scatter.
+            net.prefill_transport.executed = (required - {missing}) | {'fp8_tiled_projection'}
+            with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, 'proof is incomplete'):
+                native_execution_report(net, drafter)
+        net.prefill_transport.executed = required
+        net.prefill_transport.project_tiles = True
+        with self.assertRaisesRegex(RuntimeError, 'proof is incomplete'):
+            native_execution_report(net, drafter)
+        net.prefill_transport.executed = required | {'fp8_tiled_projection', 'fp8_packet_projection'}
+        native_execution_report(net, drafter)
         for obj, field, value in ((net.dense['a'], 'executed', 1),      # the decode lane alone: no prefill row ran
                                    (net.dense['a'], 'executed', 2),      # the prefill lane alone: no decode row ran
                                    (drafter.dense['q'], 'executed', 0),
