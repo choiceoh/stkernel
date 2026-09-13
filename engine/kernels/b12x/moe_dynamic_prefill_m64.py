@@ -5,7 +5,8 @@ The pinned M128 implementation stays intact. This subclass owns the smaller
 M tile, its two-row Q0 staging contract and its 16-row-per-warp scatter strips.
 FC1/Q1/FC2 arithmetic and the BF16-contribution/FP32-accumulation helper remain
 inherited. Route allocation and atomic order can differ: GPU numerical and
-consumer qualification are required. No serving selector enables this lane.
+consumer qualification are required. The private branch selects this lane
+only for native eager 65..4096-row prefill; decode and capture retain M128.
 """
 import cutlass
 import cutlass.cute as cute

@@ -83,7 +83,7 @@ def check_case(judge, views, scales, workspace, rows, kind, sink):
             input_gs=first, down_input_scale=second, scatter_output=output,
             num_experts=288, num_tokens=rows, k=4096, n=512, top_k=8,
             activation='swigluoai_uninterleave', swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.,
-            _prefill_scale_expansion=expansion)
+            _prefill_scale_expansion=expansion, _prefill_tile64=False)
         assert got is output and got.dtype == torch.bfloat16
 
     def eager(expansion, side=None):
@@ -155,6 +155,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('ranks', type=Path)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--long-only', action='store_true')
     args = parser.parse_args()
     if args.output.exists():
         raise ValueError('use a fresh output file')
@@ -190,7 +191,8 @@ def main():
             quant_mode='nvfp4', tile_m=128)
         layer = dict(layer=3, cases=[])
         report['layers'].append(layer)
-        for rows, kind in CASES:
+        cases = ((9216, 'balanced'), (32256, 'concentrated')) if args.long_only else CASES
+        for rows, kind in cases:
             cell = {}
             layer['cases'].append(cell)
             check_case(judge, views, scales, workspace, rows, kind, cell)
@@ -200,7 +202,7 @@ def main():
         report.update(status='PASS', actual_weights_preserved=True,
                       candidate_keys=[repr(k) for k in md._DYNAMIC_KERNEL_CACHE
                                       if k[-1] == 'temporary_prefill_raw_scales_v1'])
-        assert len(report['candidate_keys']) == 2, 'short FP32 and long BF16 readers must execute'
+        assert len(report['candidate_keys']) == (1 if args.long_only else 2), 'requested readers must execute'
         del workspace
         gc.collect()
     except BaseException as error:

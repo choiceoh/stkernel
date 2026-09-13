@@ -1,9 +1,11 @@
 """Private M64 selection and scatter coverage; GPU proof remains separate."""
 import ast
+from collections import Counter
 import copy
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
+import struct
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +21,29 @@ def functions(path, names):
 
 
 class M64ContractTests(unittest.TestCase):
+    def test_gpu_gate_checks_prefixes_routes_and_signed_zero_weights(self):
+        path = ROOT / 'measurements/st_prefill_phase2_20260913/check_m64_prefill.py'
+        node = next(n for n in ast.parse(path.read_text()).body
+                    if isinstance(n, ast.FunctionDef) and n.name == 'route_samples')
+        ns = dict(Counter=Counter, struct=struct)
+        exec(compile(ast.Module(body=[node], type_ignores=[]), '<actual-m64-route-gate>', 'exec'), ns)
+        check = ns['route_samples']
+        counts, bases = [8, 8] + [0] * 286, [0, 1] + [2] * 287
+        tokens, weights = [-1] * 128, [0.] * 128
+        tokens[:8], tokens[64:72] = [0] * 8, [1] * 8
+        weights[:8], weights[64:72] = [-0.] * 8, [.125] * 8
+        inputs, input_weights = [[0] * 8, [1] * 8], [[-0.] * 8, [.125] * 8]
+        self.assertEqual(len(check(counts, bases, tokens, weights, inputs, input_weights)), 16)
+        bad = bases.copy(); bad[1] = 0
+        with self.assertRaises(AssertionError):
+            check(counts, bad, tokens, weights, inputs, input_weights)
+        bad_weights = weights.copy(); bad_weights[0] = 0.
+        with self.assertRaises(AssertionError):
+            check(counts, bases, tokens, bad_weights, inputs, input_weights)
+        bad_tokens = tokens.copy(); bad_tokens[64] = 0
+        with self.assertRaises(AssertionError):
+            check(counts, bases, bad_tokens, weights, inputs, input_weights)
+
     def test_static_fork_is_reproducible_from_the_pinned_sources(self):
         path = ROOT / 'measurements/st_prefill_phase2_20260913/generate_m64_bodies.py'
         spec = importlib.util.spec_from_file_location('_m64_source_generator', path)
@@ -91,12 +116,44 @@ class M64ContractTests(unittest.TestCase):
                        {'share_input_across_experts': True}, {'swiglu_limit': 0.}):
             self.assertFalse(select(**dict(args, **change)), change)
 
-    def test_no_automatic_m64_launch_or_compile_default(self):
+    def test_compile_override_remains_explicit_and_launch_can_select_eager_candidate(self):
         tree = ast.parse((ROOT / 'engine/kernels/b12x/moe_dispatch.py').read_text())
         for name in ('_get_dynamic_kernel', 'launch_sm120_dynamic_moe'):
             node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name)
             defaults = dict(zip((a.arg for a in node.args.kwonlyargs), node.args.kw_defaults))
-            self.assertIs(ast.literal_eval(defaults['_prefill_tile64']), False)
+            expected = False if name == '_get_dynamic_kernel' else None
+            self.assertIs(ast.literal_eval(defaults['_prefill_tile64']), expected)
+
+    def test_actual_automatic_selector_preserves_decode_capture_controls_and_long_prefill(self):
+        tree = ast.parse((ROOT / 'engine/kernels/b12x/moe_dispatch.py').read_text())
+        helpers = [n for n in tree.body if isinstance(n, ast.FunctionDef)
+                   and n.name in ('_prefill_scale_expansion_eligible', '_prefill_m64_eligible')]
+        launch = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'launch_sm120_dynamic_moe')
+        branch = next(n for n in launch.body if isinstance(n, ast.If) and ast.unparse(n.test) == '_prefill_tile64 is None')
+        code = compile(ast.Module(body=helpers + [branch], type_ignores=[]), '<actual-auto-m64>', 'exec')
+        def selected(**changes):
+            calls = []
+            ns = dict(_prefill_tile64=None, _TP_SF6_Q0_ENABLED=True, _tp_sf6_q0_override=None,
+                      _prefill_scale_expansion=None, workspace=SimpleNamespace(tile_m=128),
+                      num_tokens=2672, num_experts=288, k=4096, n=512, top_k=8,
+                      quant_mode='nvfp4', weights=SimpleNamespace(tiled=True), direct_sf6=True,
+                      activation='swigluoai_uninterleave', swiglu_alpha=1., swiglu_beta=0.,
+                      swiglu_limit=10., input_gs_is_shared=False,
+                      _prefill_m64_workspace=lambda ws, rows: calls.append(rows) or SimpleNamespace(tile_m=64))
+            capturing = changes.pop('capturing', False)
+            ns['torch'] = SimpleNamespace(cuda=SimpleNamespace(is_current_stream_capturing=lambda: capturing))
+            ns.update(changes)
+            exec(code, ns)
+            return ns['_prefill_tile64'], calls
+        for rows in (65, 2121, 2672, 2675, 4096):
+            self.assertEqual(selected(num_tokens=rows), (True, [rows]))
+        for change in ({'num_tokens': 7}, {'num_tokens': 28}, {'num_tokens': 64},
+                       {'num_tokens': 4097}, {'num_tokens': 8192}, {'num_tokens': 32256},
+                       {'direct_sf6': False}, {'capturing': True}, {'input_gs_is_shared': True},
+                       {'_tp_sf6_q0_override': True}, {'_tp_sf6_q0_override': False},
+                       {'_prefill_scale_expansion': False}, {'_prefill_scale_expansion': True},
+                       {'_prefill_tile64': False}):
+            self.assertEqual(selected(**change), (False, []), change)
 
 
 if __name__ == '__main__':

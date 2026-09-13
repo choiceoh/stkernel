@@ -4626,6 +4626,24 @@ def _ep_local_scatter_buffer(workspace, output, num_tokens, k, *, tp=False):
     return current[:num_tokens]
 
 
+def _prefill_m64_workspace(original, num_tokens):
+    """A separate eager workspace; M128 and captured decode owners stay intact."""
+    key = ('private_prefill_m64_workspace_v1', original.state_E, original.weight_E,
+           original.k, original.n, original.num_topk, str(original.device))
+    cached = _WORKSPACE_CACHE.get(key)
+    if cached is not None and cached.routed_rows_capacity >= num_tokens * original.num_topk:
+        return cached
+    capacity = 1 << (num_tokens - 1).bit_length()
+    cached = allocate_sm120_dynamic_workspace(
+        state_E=original.state_E, weight_E=original.weight_E,
+        routed_rows=capacity * original.num_topk, k=original.k, n=original.n,
+        num_topk=original.num_topk, device=original.device,
+        activation='swigluoai_uninterleave', quant_mode='nvfp4',
+        tile_m=64, _prefill_tile64=True)
+    _WORKSPACE_CACHE[key] = cached
+    return cached
+
+
 def launch_sm120_dynamic_moe(
     *,
     workspace: Sm120DynamicMoEWorkspace,
@@ -4651,7 +4669,7 @@ def launch_sm120_dynamic_moe(
     quant_mode: str = "nvfp4",
     _tp_sf6_q0_override: bool | None = None,
     _prefill_scale_expansion: bool | None = None,
-    _prefill_tile64: bool = False,
+    _prefill_tile64: bool | None = None,
 ) -> torch.Tensor:
     """Launch the SM120 dynamic MoE kernel."""
     global _TP_SF6_Q0_LAUNCH_LOGGED
@@ -4674,6 +4692,21 @@ def launch_sm120_dynamic_moe(
     if direct_sf6:
         from .moe_dynamic_gated_sf6 import stock_contract_matches
         direct_sf6 = bool(stock_contract_matches())
+    if _prefill_tile64 is None:
+        # This private branch's short-prefill candidate. Explicit controls,
+        # graph capture and every non-native/fallback geometry retain M128.
+        _prefill_tile64 = bool(_TP_SF6_Q0_ENABLED and _tp_sf6_q0_override is None
+            and _prefill_scale_expansion is None and workspace.tile_m == 128
+            and type(num_tokens) is int and 64 < num_tokens <= 4096
+            and _prefill_m64_eligible(
+                m=num_tokens, E=num_experts, k=k, n=n, num_topk=top_k,
+                tile_m=64, quant_mode=quant_mode,
+                tiled=bool(getattr(weights, 'tiled', False)), reform_sf_pack=direct_sf6,
+                activation=activation, swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+                swiglu_limit=swiglu_limit, share_input_across_experts=input_gs_is_shared)
+            and not torch.cuda.is_current_stream_capturing())
+        if _prefill_tile64:
+            workspace = _prefill_m64_workspace(workspace, num_tokens)
     if type(_prefill_tile64) is not bool:
         raise TypeError('private prefill tile64 override must be bool')
     if _prefill_tile64:
