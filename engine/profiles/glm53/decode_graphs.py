@@ -395,7 +395,7 @@ class DrafterDecodeGraphs:
     """One proposal graph and the finite accepted-prefix context updates, per row (the synchronous step), and the
     same over every row of a step at once (the pipeline, 45차 §23 GPU 판정 4차): one replay a step instead of one
     a row, the weights read once, the rings never copied."""
-    def __init__(self, drafter, caches, memory=None, generator=None, vocab=None, prepared_context=False,
+    def __init__(self, drafter, caches, memory=None, draws_seed=None, vocab=None, prepared_context=False,
                  append_child=None):
         self.field = caches._fields["draft", -1]
         self.drafter = drafter
@@ -434,11 +434,19 @@ class DrafterDecodeGraphs:
         def rows_sampled_inputs(n, t):
             inputs = rows_propose_inputs(n, t)
             inputs["temps"] = torch.ones(n, device=device, dtype=torch.float32)
+            inputs["nonce"] = torch.arange(1, n + 1, device=device, dtype=torch.int64)          # the draws' key (base/draws)
+            inputs["generated"] = torch.zeros(n, device=device, dtype=torch.int64)
             return inputs
 
         def rows_sampled(inputs):
-            return drafter.propose_rows(self.field, inputs["slots"], inputs["anchors"], inputs["positions"],
-                                        temps=inputs["temps"], generator=generator, vocab=vocab, alive=inputs["alive"])
+            # Everything the step draws for these rows, keyed inside the graph: the walk takes its K, the
+            # verification of the proposals this makes takes the rest at the next step (same generation count).
+            from engine.base import draws
+            block = draws.step_block(draws_seed, inputs["nonce"], inputs["generated"], drafter.k)
+            proposed = drafter.propose_rows(self.field, inputs["slots"], inputs["anchors"], inputs["positions"],
+                                            temps=inputs["temps"], uniforms=block[:, :drafter.k], vocab=vocab,
+                                            alive=inputs["alive"])
+            return (*proposed, block[:, drafter.k:])
 
         def propose_inputs(n, t):
             return dict(anchor=torch.zeros(1, device=device, dtype=torch.int64),
@@ -480,7 +488,6 @@ class DrafterDecodeGraphs:
             self.field.index_copy_(0, inputs["slot"], rings)
 
         rows_shapes = [(n, drafter.k + 1) for n in range(1, rows_max + 1)]
-        saved = generator.get_state() if generator is not None else None                # capture draws; the engine's stream must not move
         try:
             self.proposals = DecodeGraphs(propose, propose_inputs, [(1, drafter.k + 1)],
                                           memory=memory, label="drafter/propose")
@@ -499,15 +506,14 @@ class DrafterDecodeGraphs:
                                                    memory=memory, label="drafter/commit_prepared", append_child=append_child)
             self.rows_propose = DecodeGraphs(rows_propose, rows_propose_inputs, rows_shapes,
                                              memory=memory, label="drafter/propose_rows", append_child=append_child)
-            if generator is not None and vocab is not None:
-                self.rows_sampled = DecodeGraphs(rows_sampled, rows_sampled_inputs, rows_shapes, generators=(generator,),
+            if draws_seed is not None and vocab is not None:
+                # no generator state rides into the capture: the draws are a hash of the replay's inputs
+                self.rows_sampled = DecodeGraphs(rows_sampled, rows_sampled_inputs, rows_shapes,
                                                  memory=memory, label="drafter/propose_rows_sampled")
         except BaseException:
             self.close()
             raise
         finally:
-            if saved is not None:
-                generator.set_state(saved)
             caches.reset()
 
     def close(self):
@@ -584,31 +590,37 @@ class DrafterDecodeGraphs:
             inputs["alive"].copy_(alive)
         return self.rows_propose.run((anchors.numel(), self.drafter.k + 1), fill)
 
-    def propose_rows_sampled(self, anchors, positions, slots, temps, alive):
-        """Every row's drafts drawn at its temperature (0 = greedy) and the distribution they came from, as the
-        candidates and their mass: [n, K], [n, K, sel_top_k], [n, K, sel_top_k]."""
+    def propose_rows_sampled(self, anchors, positions, slots, temps, alive, nonce, generated):
+        """Every row's drafts drawn at its temperature (0 = greedy), the distribution they came from as the
+        candidates and their mass, and the K+1 uniforms the verification of these drafts will take -- all keyed by
+        the rows' `nonce` and `generated` [n] inside the graph (base/draws.step_block):
+        [n, K], [n, K, sel_top_k], [n, K, sel_top_k], [n, K+1]. The outputs are the graph's: copy them out."""
         def fill(inputs):
             inputs["anchors"].copy_(anchors)
             inputs["positions"].copy_(positions)
             inputs["slots"].copy_(slots)
             inputs["temps"].copy_(temps)
             inputs["alive"].copy_(alive)
+            inputs["nonce"].copy_(nonce)
+            inputs["generated"].copy_(generated)
         return self.rows_sampled.run((anchors.numel(), self.drafter.k + 1), fill)
 
 
 class SamplingGraphs:
     """Greedy and stochastic sampling bind the target graphs' output buffers.
 
-    Greedy replay draws no random numbers; mixed/stochastic replay advances the
-    engine's explicit generator exactly as the eager sampler does.
+    Greedy replay draws no random numbers; mixed/stochastic replay draws none either:
+    its uniforms are an input, keyed by what each is for (base/draws), staged like
+    the temperatures -- so the captured program holds no generator state, and four
+    ranks replaying it hold the same numbers whatever came before.
 
-    Temperature, top-k and top-p all arrive as per-row arrays staged from pinned
-    memory, so the captured program has no nucleus branch to be recorded with or
-    without -- one capture serves every truncation a request can ask for. That is
-    why a plain `temperature + top_p` row no longer needs the rich sampler
+    Temperature, top-k, top-p and the uniforms all arrive as per-row arrays staged
+    from pinned memory, so the captured program has no nucleus branch to be recorded
+    with or without -- one capture serves every truncation a request can ask for.
+    That is why a plain `temperature + top_p` row no longer needs the rich sampler
     (base/sampler.needs_rich_sampler).
     """
-    def __init__(self, target, generator, decodable, top_p):
+    def __init__(self, target, decodable, top_p):
         from engine.base.sampler import sample
         from engine.modules.vocab import argmax
         self.tokens = target.tokens
@@ -625,14 +637,14 @@ class SamplingGraphs:
             elif target.graphs.outputs[first[key]][2] is not logits:
                 raise ValueError(f"target shapes {first[key]} and {shape} must share one logits buffer")
         shapes = list(first)
-        # Same pinned staging as the target's replay path, for the three arrays this one writes.
+        # Same pinned staging as the target's replay path, for the four arrays this one writes.
         width = max(n * t for n, t in shapes)
         self.default_p = top_p
         self.policy = (torch.empty(width, dtype=torch.float32, pin_memory=True),
                        torch.empty(width, dtype=torch.int32, pin_memory=True),
+                       torch.empty(width, dtype=torch.float32, pin_memory=True),
                        torch.empty(width, dtype=torch.float32, pin_memory=True))
         self.staged = [x.numpy() for x in self.policy]
-        saved = generator.get_state()
 
         def make_inputs(*shape):
             n, t = shape[:2]
@@ -642,40 +654,43 @@ class SamplingGraphs:
             logits.zero_()
             return (logits, torch.ones(n*t, device=logits.device),
                     torch.zeros(n*t, dtype=torch.int32, device=logits.device),
-                    torch.full((n*t,), top_p, device=logits.device))
+                    torch.full((n*t,), top_p, device=logits.device),
+                    torch.full((n*t,), 0.5, device=logits.device))
 
         def greedy(inputs):
             return argmax(inputs[0], target.net.comm, target.net.rank * target.net.vp, decodable)
 
         def stochastic(inputs):
-            local_logits, temps, k, p = inputs
+            local_logits, temps, k, p, u = inputs
             # The undecodable tail is a `valid` width the sampler stops at, not a copy of the
             # whole gathered block with minus infinity written into its end.
-            return sample(target.net.comm.all_gather(local_logits, dim=-1), temps, p, generator,
+            return sample(target.net.comm.all_gather(local_logits, dim=-1), temps, p, u,
                           top_k=k, valid=decodable)
 
         try:
             memory = getattr(target, "memory", None)
             self.greedy = DecodeGraphs(greedy, make_inputs, shapes, memory=memory, label="sampling/greedy",
                                         append_child=getattr(target, "append_child", None))
-            self.stochastic = DecodeGraphs(stochastic, make_inputs, shapes, generators=(generator,),
+            self.stochastic = DecodeGraphs(stochastic, make_inputs, shapes,
                                           memory=memory, label="sampling/stochastic")
         except BaseException:
             if hasattr(self, "greedy"):
                 self.greedy.close()
             raise
-        finally:
-            generator.set_state(saved)
 
-    def run(self, shape, temperatures, top_k=None, top_p=None):
-        """`shape` is the target's, whose first two entries name the sampler."""
+    def run(self, shape, temperatures, top_k=None, top_p=None, uniforms=None):
+        """`shape` is the target's, whose first two entries name the sampler. `uniforms`: one a row (base/draws),
+        required as soon as a row samples."""
         shape = tuple(shape[:2])
         if all(t <= 0 for t in temperatures):
             return self.greedy.run(shape, lambda inputs: None)
         rows = len(temperatures)
+        if uniforms is None or len(uniforms) != rows:
+            raise ValueError(f"a stochastic step needs one uniform a row: {rows} rows")
         self.staged[0][:rows] = temperatures
         self.staged[1][:rows] = 0 if top_k is None else top_k
         self.staged[2][:rows] = self.default_p if top_p is None else top_p
+        self.staged[3][:rows] = uniforms
 
         def fill(inputs):
             for held, static in zip(self.policy, inputs[1:]):

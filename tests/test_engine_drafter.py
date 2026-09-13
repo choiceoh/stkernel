@@ -93,9 +93,10 @@ class DrafterTests(unittest.TestCase):
                prefix + "predecessor_codebook": rand(21, 4),
                prefix + "successor_codebook": rand(21, 4)}
         ring = torch.empty(0, device=dev)
-        ids, dists = d.propose_sampled(7, 9, ring, 0.8, torch.Generator(device=dev).manual_seed(5), 21)
+        uniforms = torch.rand(d.k, generator=torch.Generator(device=dev).manual_seed(5), device=dev)
+        ids, dists = d.propose_sampled(7, 9, ring, 0.8, uniforms, 21)
         same, same_dists = d.propose_sampled_tensor(torch.full((1,), 7, device=dev, dtype=torch.int64), 9, ring,
-                                                    0.8, torch.Generator(device=dev).manual_seed(5), 21)
+                                                    0.8, uniforms, 21)
         self.assertEqual(ids, same.tolist(), "the host walk is the device walk, read back once at the end")
         self.assertTrue(torch.equal(dists, same_dists))
         for step, token in enumerate(ids):
@@ -165,7 +166,8 @@ class DrafterTests(unittest.TestCase):
         anchors = torch.tensor([2, 7, 11], device=dev)
         temps = torch.tensor([0.8, 0.0, 0.5], device=dev)
         greedy = d.propose_rows(field, slots, anchors, ctx)
-        drafts, cand, q = d.propose_rows(field, slots, anchors, ctx, temps=temps, generator=torch.Generator(device=dev).manual_seed(9), vocab=21)
+        uniforms = torch.rand(3, F.k, generator=torch.Generator(device=dev).manual_seed(9), device=dev)
+        drafts, cand, q = d.propose_rows(field, slots, anchors, ctx, temps=temps, uniforms=uniforms, vocab=21)
         # the candidates and their mass, not a row per position: the walk puts nothing outside them, so the
         # vocabulary-wide form was 21 (154,880 in production) numbers to carry sel_top_k of them
         self.assertEqual(tuple(cand.shape), (3, F.k, F.sel_top_k))

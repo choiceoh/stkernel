@@ -85,7 +85,7 @@ def engine(rows=4):
     e.caches.prepare = lambda step: None
     e.decode_graphs.run_inputs = lambda *args: (None, None, None)
     for seq in range(1, rows+1):
-        e.tokens[seq], e.ctx[seq], e.limits[seq] = [5+seq], 1, (100, 0.)
+        e.tokens[seq], e.ctx[seq], e.limits[seq], e.nonces[seq] = [5+seq], 1, (100, 0.), seq
     return e
 
 

@@ -47,7 +47,7 @@ class ShrinkTests(unittest.TestCase):
         p = AsyncDecode(e)
         t, n = p.t, 3
         b = {name: torch.arange(n) for name in
-             ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "temps", "top_k", "top_p", "anchor")}
+             ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "nonce", "temps", "top_k", "top_p", "anchor")}
         b.update(ends=torch.zeros(n, 1, dtype=torch.int64), alive=torch.ones(n, dtype=torch.bool),
                  drafts=torch.zeros(n, 2, dtype=torch.int64), ids=torch.arange(n * t), qcand=None, qprob=None)
         p.buf, p.batch = b, (1, 2, 3)
@@ -55,6 +55,7 @@ class ShrinkTests(unittest.TestCase):
         self.assertEqual(b["seqs"].tolist(), [2, 0])
         self.assertEqual(b["top_k"].tolist(), [2, 0], "a row's truncation follows the row")
         self.assertEqual(b["top_p"].tolist(), [2, 0])
+        self.assertEqual(b["nonce"].tolist(), [2, 0], "a row's draw key follows the row (base/draws)")
         self.assertEqual(b["ids"].tolist(), list(range(2 * t, 3 * t)) + list(range(t)))
         self.assertEqual(p.batch, (3, 1))
 
@@ -206,7 +207,7 @@ class BatchTransitionTests(unittest.TestCase):
             F=SimpleNamespace(vocab=32, block=16), tokens={1: [5], 2: [6]}, ctx={1: 1, 2: 1},
             limits={1: (10, 0.0), 2: (10, 0.0)}, options={}, ends={}, eos={31}, top_p=1.0,
             inflight={}, staged={}, accepted_total=0, drafted_total=0, steps=0,
-            gen=torch.Generator().manual_seed(1))
+            seed=1, nonces={1: 1, 2: 2})
         e._generated_count = lambda seq: len(e.tokens[seq]) - 1
         e.decode_graphs = SimpleNamespace(shape_for=lambda n, end: (n, 2, 64),
                                          run_device=lambda *args: (None, None, None))

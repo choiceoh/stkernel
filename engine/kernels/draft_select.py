@@ -5,8 +5,9 @@ takes the best of that position's `sel_top_k` candidates, and carries the choice
 is five iterations of gather / argmax / gather over tensors holding sixteen numbers -- about twenty-five device
 operations for a walk whose whole state is one integer.
 
-Only the greedy walk folds. A sampled row draws with the engine's generator, and moving that draw inside a
-kernel would put rank agreement and D12's replay in there with it -- the same line `block_verify` draws.
+Only the greedy walk folds. A sampled row walks over keyed uniforms (base/draws: a hash of what each draw is
+for, the same on every rank), and moving that walk inside a kernel would put D12's replay in there with it --
+the same line `block_verify` draws.
 
 The walk is exact, not close: the keys it maximises over are the scores as computed, and `argmax` breaks ties
 toward the lower index on both sides.
