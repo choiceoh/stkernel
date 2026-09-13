@@ -108,6 +108,17 @@ class RecordingTests(unittest.TestCase):
             with patch.object(latency, '_PREPARATIONS', latency._PREPARATIONS + 1):
                 self.assertTrue(rec.finish('test')['preparation_changed'])
 
+    def test_selector_trace_instrumentation_is_retained_even_without_eligible_labels(self):
+        with TemporaryDirectory() as root:
+            rec = Recorder(0, root)
+            instrumentation = {'draft_selector_trace_every': 8}
+            rec.begin('selector', instrumentation=instrumentation)
+            instrumentation.clear()
+            report = rec.finish('selector')
+            self.assertEqual(report['instrumentation'], {'draft_selector_trace_every': 8})
+            self.assertEqual(json.loads((Path(root) / 'selector/rank-0/manifest.json').read_text())['instrumentation'],
+                             report['instrumentation'])
+
     def test_server_control_and_four_real_scheduler_rows(self):
         from tests.test_engine_serve import server
         with TemporaryDirectory() as root:

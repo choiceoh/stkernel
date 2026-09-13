@@ -61,12 +61,13 @@ class DraftTuning:
 
 
 def load_agreed(path, facts, shapes, comm):
-    if not path:
-        return DraftTuning()
-    tuning, error = None, None
+    # Every native draft rank participates, including an empty profile. A
+    # missing path on one peer must not skip the other peers' preparation vote.
+    tuning, error = DraftTuning(), None
     try:
-        tuning = DraftTuning.from_dict(json.loads(Path(path).read_text()))
-        tuning.validate(facts, shapes)
+        if path:
+            tuning = DraftTuning.from_dict(json.loads(Path(path).read_text()))
+            tuning.validate(facts, shapes)
     except Exception as exc:
         error = f'{type(exc).__name__}: {exc}'
     comm.wait_prepared('draft-tuning')

@@ -61,6 +61,32 @@ class WalkTests(unittest.TestCase):
 
 
 class WiringTests(unittest.TestCase):
+    def test_capture_construction_binds_boundary_input_only_when_enabled(self):
+        class Graph:
+            def __init__(self, body, make, shapes, **kw):
+                self.body = body
+                self.inputs = {shape: make(*shape) for shape in shapes}
+            def run(self, shape, fill):
+                fill(self.inputs[shape])
+                return self.body(self.inputs[shape])
+            def close(self):
+                pass
+        field = torch.zeros(4, 8)
+        caches = SimpleNamespace(_fields={('draft', -1): field}, device='cpu',
+                                 pool=SimpleNamespace(max_seqs=3), reset=lambda: None)
+        d = SimpleNamespace(k=3, F=SimpleNamespace(hidden=4), aux_layers=(0,), fast_attention=True)
+        d.propose_tensor = lambda anchor, pos, ring, support_slot, boundary=None: (
+            boundary.clone() if boundary is not None else None)
+        for enabled in (False, True):
+            d.request_boundaries = enabled
+            with patch('engine.profiles.glm53.decode_graphs.DecodeGraphs', Graph):
+                graphs = DrafterDecodeGraphs(d, caches)
+            try:
+                got = graphs.propose(1, 5, field[2])
+                self.assertEqual(got.tolist() if got is not None else None, list(EMPTY) if enabled else None)
+            finally:
+                graphs.close()
+
     def test_actual_proposal_masks_before_topk_and_sampled_q_matches_the_forced_pick(self):
         from engine.base.comm import Comm
         facts = DrafterFacts(layers=1, hidden=16, heads=2, kv_heads=1, head_dim=4,

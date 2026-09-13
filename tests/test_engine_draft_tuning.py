@@ -2,10 +2,12 @@
 import copy
 import json
 import math
+import hashlib
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 import torch
 
@@ -18,7 +20,8 @@ from engine.profiles.glm53.draft_tuning import DraftTuning, load_agreed
 class ProfileTests(unittest.TestCase):
     def test_baseline_and_explicit_names(self):
         self.assertEqual(DraftTuning().alphas(6), (1.,) * 6)
-        self.assertIsInstance(load_agreed('', None, None, None), DraftTuning)
+        comm = SimpleNamespace(wait_prepared=lambda stage: None, gather_objects=lambda x: [x])
+        self.assertIsInstance(load_agreed('', None, None, comm), DraftTuning)
         profile = DraftTuning.from_dict(dict(version=1, selector_alpha=[.75],
             smoothing_alpha={'layers.0.input_layernorm.weight': .25},
             gptq_damping={'layers.0.self_attn.qkv': .02}, request_boundaries=True))
@@ -49,6 +52,8 @@ class ProfileTests(unittest.TestCase):
             comm.gather_objects = lambda x: [x, dict(digest='other', error=None)]
             with self.assertRaisesRegex(ValueError, 'different profile digests'):
                 load_agreed(path, facts, [], comm)
+            with self.assertRaisesRegex(ValueError, 'different profile digests'):
+                load_agreed('', facts, [], comm)
             comm.gather_objects = lambda x: [x, dict(digest=None, error='bad peer JSON')]
             with self.assertRaisesRegex(ValueError, 'rank 1: bad peer'):
                 load_agreed(path, facts, [], comm)
@@ -239,6 +244,36 @@ class PackingFitTests(unittest.TestCase):
             self.assertEqual(store._tuning_identity('target'), {})
             self.assertEqual(store.stats['factor_built'], 2)
             self.assertEqual(store.stats['factor_reused'], 1)
+
+    def test_tuned_pack_cannot_reuse_default_cache_or_unattested_legacy_bytes(self):
+        from engine.kernels.dense import W4Pack
+        from engine.kernels.dense.store import PackStore
+        with tempfile.TemporaryDirectory() as root:
+            store = PackStore(root, 0)
+            name = 'DFlash2Qwen3ForCausalLM/model.layers.0.self_attn.qkv_proj'
+            weight, h = torch.ones(8, 128).bfloat16(), torch.eye(128)
+            path = store.calibration_path(name)
+            path.parent.mkdir(parents=True)
+            torch.save(dict(H=h, ntok=128, name=name), path)
+            def packed(w, **kw):
+                return W4Pack(torch.zeros(1, 1, 128, 64, dtype=torch.uint8),
+                    torch.zeros(1, 1, 128, 8, dtype=torch.int8), torch.ones(128), 8, 128, True)
+            with patch('engine.kernels.dense.pack_w4', side_effect=packed) as build:
+                store.pack(weight, name)
+                digest = hashlib.sha256(weight.view(torch.uint8).numpy()).hexdigest()
+                legacy = Path(root) / 'mkpacks/rank0' / f'sha256-{digest}-8x128-bfloat16-v4-ten-gptq-lr0.pt'
+                legacy.parent.mkdir(parents=True)
+                legacy.write_bytes(b'not a trusted tuned pack')
+                store.gptq_damping[name] = .02
+                store.pack(weight, name)
+                store.pack(weight, name)
+                store.gptq_damping.clear()
+                store.pack(weight, name)
+                self.assertEqual(build.call_count, 2)
+            blobs = [torch.load(p, weights_only=True)['identity'] for p in (Path(root) / 'st-dense-packs').glob('*.pt')]
+            self.assertEqual(len(blobs), 2)
+            self.assertEqual(sorted(b.get('gptq_damping', .01) for b in blobs), [.01, .02])
+            self.assertNotIn(legacy, store.read_files)
 
 
 if __name__ == '__main__':
