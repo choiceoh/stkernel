@@ -63,9 +63,10 @@ def kernel_shape(cfg: dict, tp: int = 4, spec_k: "int | None" = None) -> "Kernel
     the ST MLA lane serves, so `kind` "mla"); routed experts whole and one to a rank (EP: `experts // tp`
     local, `inter_local` the model's); no linear attention (`linear` None: the KDA lanes do not apply);
     the CED indexer at `index_n_heads` x `index_head_dim` over compressor pools of the largest compress
-    ratio; `spec_k` the MTP head's `num_nextn_predict_layers`. The experts are FP4 with [32, 32] block
-    scales (quant "fp4-block32"), not the b12x lane's NVFP4 group-16: the admission table refuses that
-    lane for this model, by name. DSv4.1 is outside the engine's scope (CHARTER D5); this derivation
+    ratio; `spec_k` the MTP head's `num_nextn_predict_layers`. The experts are FP4 e2m1 in groups of 32
+    per row with E8M0 scales -- the MXFP4 weight layout -- multiplied by FP8 activations
+    (engine/modules/quant.fp4_gemm), so quant "mxfp4-a8", not the b12x lane's NVFP4 group-16: the
+    admission table refuses that lane for this model, by name. DSv4.1 is outside the engine's scope (CHARTER D5); this derivation
     exists so the wizard can judge a second real checkpoint.
     """
     from engine.base.kernel_shape import Attention, Comm, Indexer, KernelShape, MoE
@@ -82,7 +83,7 @@ def kernel_shape(cfg: dict, tp: int = 4, spec_k: "int | None" = None) -> "Kernel
                         pool=max(ratios) if ratios else 1, topk=cfg["index_topk"], compress="ced"),
         moe=MoE(experts=cfg["n_routed_experts"], experts_local=cfg["n_routed_experts"] // tp, hidden=hidden,
                 inter=cfg["moe_intermediate_size"], inter_local=cfg["moe_intermediate_size"],
-                topk=cfg["num_experts_per_tok"], quant="fp4-block32", activation=cfg.get("hidden_act", "silu"),
+                topk=cfg["num_experts_per_tok"], quant="mxfp4-a8", activation=cfg.get("hidden_act", "silu"),
                 swiglu_limit=cfg.get("swiglu_limit"), dense_inter_local=dense // tp),
         spec_k=cfg["num_nextn_predict_layers"] if spec_k is None else spec_k,
         hc_variant="split_sinkhorn")                           # modules/hyper_connection.hc_split_sinkhorn

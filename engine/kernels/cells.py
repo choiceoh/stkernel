@@ -23,6 +23,10 @@ cheapest first, what judges it, what "done" is, and the cost class. `plan()` ord
 cheapest first, refusals before measurements at equal cost -- the work table an agent starts from
 for a new model. The recipes name probes and oracles; nothing here claims a number without a
 measurement record (D4, D17).
+
+Every layer also names what serves it (`Serve`), fastest first: the lane's own kernel (specialized), a
+shape-generic fast kernel that computes the same math (generic, judged or not), or nothing fast (none).
+The engine/modules oracles judge both; they are never a serving candidate.
 """
 from __future__ import annotations
 
@@ -88,18 +92,45 @@ class Recipe:
             raise ValueError(f"a recipe names a kind in {KINDS}, a cost in {COSTS}, and where/how/judge/done: {self}")
 
 
+SPECIALIZED, GENERIC, NONE = "specialized", "generic", "none"
+TIERS = (SPECIALIZED, GENERIC, NONE)
+
+
+@dataclass(frozen=True)
+class Serve:
+    """What runs a layer for this shape, fastest first: the lane's own kernel (specialized), a shape-generic fast kernel
+    that computes the same math (generic), or nothing fast (none). The engine/modules oracles judge; they never serve.
+    `judged` says whether that kernel has been judged against the oracle for this math; `note` says what the judgment
+    covered, or what is missing, and where a kernel that lives outside engine/ has to be ported from."""
+    tier: str
+    kernel: str
+    judged: bool
+    note: str
+
+    def __post_init__(self):
+        if self.tier not in TIERS or type(self.judged) is not bool:
+            raise ValueError(f"a serve names a tier in {TIERS} and whether it is judged: {self}")
+        if (self.tier == NONE) != (self.kernel == ""):
+            raise ValueError(f"only 'none' serves without a kernel, and it names none: {self}")
+        if self.tier == NONE and self.judged:
+            raise ValueError("nothing cannot be judged")
+        if "engine/modules" in self.kernel or self.kernel.startswith("modules/"):
+            raise ValueError(f"an oracle judges; it never serves: {self.kernel}")
+
+
 @dataclass(frozen=True)
 class Verdict:
     lane: str
     status: str
     why: str
     recipe: "Recipe | None" = None
+    serve: "Serve | None" = None
 
 
 def from_dict(d: dict) -> Verdict:
     """A verdict back from its record form (`asdict`)."""
-    recipe = d.get("recipe")
-    return Verdict(d["lane"], d["status"], d["why"], Recipe(**recipe) if recipe else None)
+    recipe, serve = d.get("recipe"), d.get("serve")
+    return Verdict(d["lane"], d["status"], d["why"], Recipe(**recipe) if recipe else None, Serve(**serve) if serve else None)
 
 
 def to_dicts(verdicts: "list[Verdict]") -> "list[dict]":
@@ -323,10 +354,11 @@ def _recipe_kda_chunk_measure(l):
 def _recipe_moe_quant(m, measured):
     return Recipe("convert", "engine/profiles/<profile>/preshard.py (the NVFP4 group-16 export) or engine/kernels/b12x "
                   "(a scale-layout cell)",
-                  f"the b12x lane reads {measured.quant} group-16 scales only: (a) dequantize the {m.quant} experts and "
-                  f"re-quantize them to {measured.quant} group-16 in the preshard -- D5's base form -- then rerun the wizard "
-                  f"(the quality gate decides whether the re-rounding holds); (b) a b12x cell that reads the {m.quant} scale "
-                  "layout (CuTe DSL: the SF view, packing and epilogue)",
+                  f"the served b12x cell reads {measured.quant} group-16 scales: (a) b12x's MXFP4 kernels already read FP4 in "
+                  "groups of 32 with E8M0 scales but quantize activations to FP4 -- judge them where the model's weights have "
+                  "that layout; (b) dequantize the experts and re-quantize to NVFP4 group-16 in the preshard, D5's base form, "
+                  "and rerun the wizard; (c) a b12x cell with the model's own activation precision (CuTe DSL). The quality "
+                  "gate decides between them",
                   _MOE_JUDGE, "the wizard says admitted or unmeasured for moe", "days")
 
 
@@ -343,144 +375,263 @@ def _recipe_moe_measure(m):
 
 # ---- the table -------------------------------------------------------------------------------------------------------
 
+def _serve(tier, kernel, judged, note):
+    return Serve(tier, kernel, judged, note)
+
+
+def _nothing(note):
+    return Serve(NONE, "", False, note)
+
+
+def _serve_attention(a, i):
+    """The fastest kernel for a full attention the MLA lane refuses."""
+    if a.kind != "mla":
+        if i is not None and i.compress == "qsa":
+            return _serve(GENERIC, "qsa_sparse_paged_attention in overlay/modules/qwen38_qsa/ops_qsa.py (vLLM's Triton QSA "
+                          "sparse paged GQA attention, the kernel that served Qwen3.8 in the vLLM stack; to port)", False,
+                          "judge it against a torch GQA reference over the indexer's selected positions"
+                          + ("; reading it also settles the unestablished sink" if a.sink is None else ""))
+        if a.sink is None:
+            return _nothing("the sink decides which kernel computes this attention; establish it first")
+        if a.sink:
+            return _nothing("no GQA kernel with sinks is named in the repo or in engine/INVENTORY.md")
+        return _serve(GENERIC, "flashinfer BatchDecodeWithPagedKVCacheWrapper and BatchPrefillWithPagedKVCacheWrapper (in "
+                      "the image, engine/INVENTORY.md)", False, "never judged in this engine")
+    if a.sink is None:
+        return _nothing("the sink decides which kernel computes this attention; establish it first")
+    if a.sink:
+        return _serve(GENERIC, "flashinfer trtllm_batch_decode_sparse_mla_dsv4, which takes sinks (the V4-Flash call in "
+                      "overlay/modules/dsv4_flashinfer_sparse/flashinfer_sparse.py)", False,
+                      "decode only; whether its trtllm-gen kernel runs on sm_121a is part of the judgment")
+    if a.head_dim == MLA_LATENT and a.heads % MLA_HEADS == 0:
+        return _serve(GENERIC, f"engine/kernels/mla called per group of {MLA_HEADS} heads", True,
+                      "exact: MQA heads are independent, and engine/profiles/glm53/lanes.py already groups them at world 1")
+    return _serve(GENERIC, "flashinfer BatchDecodeMlaWithPagedKVCacheWrapper with page-size-1 slot indices (in the image, "
+                  "engine/INVENTORY.md)", False,
+                  "the vLLM-era GLM lane served sparse MLA through the page-size-1 wrapper; not judged at this latent")
+
+
+def _serve_indexer(i):
+    """The fastest kernels for an indexer the kpool lane refuses."""
+    if i.compress == "qsa":
+        return _serve(GENERIC, "qsa_compress_groups_with_ratio, qsa_mqa_paged and qsa_select_paged_tokens in "
+                      "overlay/modules/qwen38_qsa/ops_qsa.py (vLLM's Triton QSA ops, to port)", False,
+                      "judge the compression against the model's reference and the scoring against "
+                      "modules/sparse_indexer.indexer_logits")
+    if i.compress == "ced":
+        return _nothing("the CED compressor exists only in torch (overlay/modules/dsv41_model/dsv41_compressor.py); its "
+                        "scoring and packed keys have Triton kernels beside it (dsv41_indexer_triton.py, "
+                        "dsv41_packed_index_triton.py)")
+    return _nothing(f"no Hadamard-{i.head_dim} kernel; the kpool rotation is fixed at {INDEXER_HEAD_DIM}")
+
+
 def admission(shape) -> "list[Verdict]":
-    """One verdict per lane for a kernel shape: admitted, unmeasured or refused (see the module docstring).
-    Every verdict that is not admitted carries its recipe."""
+    """One verdict per lane for a kernel shape: admitted, unmeasured or refused (see the module docstring). Every verdict
+    that is not admitted carries its recipe, and every layer names what serves it: the lane's own kernel, a shape-generic
+    fast kernel for the same math, or nothing fast. The engine/modules oracles judge; they never serve."""
     from engine.base.kernel_shape import MEASURED
     a, l, i, m, c, d = shape.attention, shape.linear, shape.indexer, shape.moe, shape.comm, shape.device
     out = []
 
-    def admit(lane, why):
-        out.append(Verdict(lane, ADMITTED, why))
+    def admit(lane, why, serve):
+        out.append(Verdict(lane, ADMITTED, why, None, serve))
 
-    def unmeasured(lane, why, recipe):
-        out.append(Verdict(lane, UNMEASURED, why, recipe))
+    def unmeasured(lane, why, recipe, serve):
+        out.append(Verdict(lane, UNMEASURED, why, recipe, serve))
 
-    def refuse(lane, why, recipe):
-        out.append(Verdict(lane, REFUSED, why, recipe))
+    def refuse(lane, why, recipe, serve):
+        out.append(Verdict(lane, REFUSED, why, recipe, serve))
 
     if (tuple(d.capability), d.sms) == (MEASURED.device.capability, MEASURED.device.sms):
-        admit("device", f"GB10 SM{d.capability[0]}{d.capability[1]}, {d.sms} SMs")
+        admit("device", f"GB10 SM{d.capability[0]}{d.capability[1]}, {d.sms} SMs", None)
     else:
         refuse("device", f"every lane is built for GB10 sm_121a with {MEASURED.device.sms} SMs; asked "
-                         f"SM{d.capability[0]}{d.capability[1]}/{d.sms}", _recipe_device(d))
+                         f"SM{d.capability[0]}{d.capability[1]}/{d.sms}", _recipe_device(d), None)
 
     if a.kind != "mla" or (a.heads, a.head_dim) != (MLA_HEADS, MLA_LATENT):
         refuse("mla", f"compiled for the {MLA_HEADS} heads x {MLA_LATENT} latent MLA cell; asked {a.kind} {a.heads}x{a.head_dim}"
-                      + (" -- a GQA attention has no ST lane yet" if a.kind != "mla" else ""), _recipe_mla(a))
+                      + (" -- a GQA attention has no ST lane yet" if a.kind != "mla" else ""), _recipe_mla(a),
+               _serve_attention(a, i))
     elif a.sink is None:
         refuse("mla", "the attention sink is not established; the lane's math depends on it",
                _recipe_establish("attention sink", "the profile's kernel_shape (Attention.sink)",
-                                 "modules/sparse_attention: sparse_attn carries the sink, mla_sparse_mqa does not"))
+                                 "modules/sparse_attention: sparse_attn carries the sink, mla_sparse_mqa does not"),
+               _serve_attention(a, i))
     elif a.sink != MLA_SINK:
         refuse("mla", f"the {MLA_HEADS} x {MLA_LATENT} geometry matches, but this attention's softmax carries a sink term "
-                      "and the compiled MLA softmax has none", _recipe_mla_sink())
+                      "and the compiled MLA softmax has none", _recipe_mla_sink(), _serve_attention(a, i))
     else:
-        admit("mla", f"the compiled {MLA_HEADS} heads x {MLA_LATENT} latent cell, no sink")
+        admit("mla", f"the compiled {MLA_HEADS} heads x {MLA_LATENT} latent cell, no sink",
+              _serve(SPECIALIZED, "engine/kernels/mla (the megakernel's sparse MLA)", True,
+                     "the arm-time self-test against modules/sparse_attention.mla_sparse_mqa (rel <= 2e-2)"))
 
     if i is not None:                                  # a model without a sparse indexer has no indexer lane to judge
         if i.compress != INDEXER_KEY_COMPRESS:
             refuse("indexer", f"the indexer lane compresses keys by {INDEXER_KEY_COMPRESS}; this model compresses by "
-                              f"{i.compress} (only the MQA scoring formula is shared)", _recipe_indexer_compress(i))
+                              f"{i.compress} (only the MQA scoring formula is shared)", _recipe_indexer_compress(i),
+                   _serve_indexer(i))
         elif i.head_dim == INDEXER_HEAD_DIM:
-            admit("indexer", f"{INDEXER_KEY_COMPRESS} keys at Hadamard-{INDEXER_HEAD_DIM}, pool {i.pool}, top {i.topk} at launch")
+            admit("indexer", f"{INDEXER_KEY_COMPRESS} keys at Hadamard-{INDEXER_HEAD_DIM}, pool {i.pool}, top {i.topk} at launch",
+                  _serve(SPECIALIZED, "engine/kernels/kpool.py, engine/kernels/indexer.py and DeepGEMM fp8_fp4_mqa_logits "
+                         "(engine/kernels/deep_gemm.py)", True, "probes/indexer_check.py against modules/sparse_indexer"))
         else:
             refuse("indexer", f"the indexer lanes are written for head_dim {INDEXER_HEAD_DIM}; asked {i.head_dim}",
-                   _recipe_indexer(i))
+                   _recipe_indexer(i), _serve_indexer(i))
 
+    mk = "engine/kernels/dense/mhc.py (the MK mHC segment, run_mhc)"
+    tilelang = "engine/kernels/mhc (TileLang mhc_pre and mhc_post)"
     hc_unknown = _recipe_establish("hyper-connection form", "the profile's kernel_shape (hc_variant)",
                                    "modules/hyper_connection: mhc_pre/mhc_post or hc_split_sinkhorn reproduces the reference")
+    hc_nothing = _nothing("the hyper-connection form decides which kernel mixes; establish it first")
     if shape.hc_variant is None:
-        refuse("mhc_decode", "the hyper-connection form is not established; the segment's math depends on it", hc_unknown)
+        refuse("mhc_decode", "the hyper-connection form is not established; the segment's math depends on it", hc_unknown,
+               hc_nothing)
     elif shape.hc_variant != MHC_VARIANT:
         refuse("mhc_decode", f"the MK mHC segment computes {MHC_VARIANT}; this model mixes by {shape.hc_variant}",
-               _recipe_mhc_variant(shape, "mhc_decode"))
+               _recipe_mhc_variant(shape, "mhc_decode"),
+               _serve(GENERIC, "run_mhc_v41 in engine/kernels/dense/kernels.cu (the megakernel's V4.1 contract: it consumes "
+                      "the previous sublayer's pre coefficients)", False,
+                      "its GPU probe never ran (measurements/dsv41_mhc_20260910)")
+               if shape.hidden in MHC_HIDDEN and shape.hc == MHC_HC
+               else _nothing(f"the V4.1 contract is compiled for hidden {MHC_HIDDEN} at hc {MHC_HC} only"))
     elif shape.hidden not in MHC_HIDDEN or shape.hc != MHC_HC:
         refuse("mhc_decode", f"MK mHC is compiled for hidden {MHC_HIDDEN} at hc {MHC_HC}; asked hidden {shape.hidden} "
-                             f"hc {shape.hc}", _recipe_mhc(shape))
+                             f"hc {shape.hc}", _recipe_mhc(shape),
+               _serve(GENERIC, tilelang, True, "the same mhc math, judged at hidden 4096 (probes/mhc_check.py); "
+                      "shape-generic in hidden and hc, its timing unmeasured here"))
     elif shape.hidden not in MHC_MEASURED_HIDDEN:
         unmeasured("mhc_decode", f"the MK mHC instance for hidden {shape.hidden} is compiled; its GPU probe has not run",
-                   _recipe_mhc_measure(shape))
+                   _recipe_mhc_measure(shape), _serve(SPECIALIZED, mk, False, f"the H{shape.hidden} instance's GPU probe has not run"))
     else:
-        admit("mhc_decode", f"MK mHC instance for hidden {shape.hidden} at hc {shape.hc}")
+        admit("mhc_decode", f"MK mHC instance for hidden {shape.hidden} at hc {shape.hc}",
+              _serve(SPECIALIZED, mk, True, "tests/test_engine_mk_mhc.py against modules/hyper_connection (rel < 0.006)"))
     if shape.hc_variant is None:
-        refuse("mhc_prefill", "the hyper-connection form is not established; the mixes' math depends on it", hc_unknown)
+        refuse("mhc_prefill", "the hyper-connection form is not established; the mixes' math depends on it", hc_unknown,
+               hc_nothing)
     elif shape.hc_variant != MHC_VARIANT:
         refuse("mhc_prefill", f"the TileLang mixes compute {MHC_VARIANT}; this model mixes by {shape.hc_variant}",
-               _recipe_mhc_variant(shape, "mhc_prefill"))
+               _recipe_mhc_variant(shape, "mhc_prefill"),
+               _serve(GENERIC, f"run_mhc_v41 in {MHC_MAX_TOK}-token pieces (the mixing is per token)", False,
+                      "no prefill kernel for the V4.1 pairing exists; the vLLM stack mixed it in torch "
+                      "(overlay/modules/dsv41_vllm/dsv41_mhc.py)")
+               if shape.hidden in MHC_HIDDEN and shape.hc == MHC_HC
+               else _nothing(f"the V4.1 contract is compiled for hidden {MHC_HIDDEN} at hc {MHC_HC} only"))
     else:
-        admit("mhc_prefill", "TileLang mixes take hidden and hc from the tensors")
+        admit("mhc_prefill", "TileLang mixes take hidden and hc from the tensors",
+              _serve(SPECIALIZED, tilelang, True, "probes/mhc_check.py against modules/hyper_connection"))
 
+    oneshot = "engine/kernels/oneshot (the one-shot RDMA all-reduce)"
     if c.world != ONESHOT_WORLD or c.hidden % 8 or c.hidden > ONESHOT_MAX_ELEMENTS:
         refuse("oneshot", f"one-shot is compiled for {ONESHOT_WORLD} ranks and rows of 8-element multiples within "
-                          f"{ONESHOT_MAX_ELEMENTS}; asked world {c.world}, hidden {c.hidden}", _recipe_oneshot(c))
+                          f"{ONESHOT_MAX_ELEMENTS}; asked world {c.world}, hidden {c.hidden}", _recipe_oneshot(c),
+               _serve(GENERIC, "NCCL all-reduce through torch.distributed (engine/base/comm.py)", True,
+                      "the reference the one-shot boot self-test compares against"))
     else:
         rows = f"rows of {c.hidden} BF16, up to {ONESHOT_MAX_ELEMENTS // c.hidden} per collective"
+        selftest = _serve(SPECIALIZED, oneshot, True, "the boot self-test at every boot: sum == NCCL, rank-ordered "
+                          "cancellation, captured replay")
         if c.hidden in ONESHOT_MEASURED_HIDDEN:
-            admit("oneshot", rows)
+            admit("oneshot", rows, selftest)
         else:
             unmeasured("oneshot", f"{rows}; timed at hidden {'/'.join(map(str, ONESHOT_MEASURED_HIDDEN))} only",
-                       _recipe_oneshot_measure(c))
+                       _recipe_oneshot_measure(c), selftest)
 
     blocks = PREFILL_BLOCK // _gcd(PREFILL_BLOCK, c.hidden)
     packets = (f"FP8 packets over {c.world} ranks; rows must complete {PREFILL_BLOCK}-element blocks "
                f"(every {blocks} row{'s' if blocks > 1 else ''})")
+    collectives = "engine/kernels/prefill_collectives (FP8 packets)"
     if c.hidden in PREFILL_MEASURED_HIDDEN:
-        admit("prefill_collectives", packets)
+        admit("prefill_collectives", packets,
+              _serve(SPECIALIZED, collectives, True, "probes/engine_performance_comm_check.py"))
     else:
         unmeasured("prefill_collectives", f"{packets}; exercised at hidden {'/'.join(map(str, PREFILL_MEASURED_HIDDEN))} only",
-                   _recipe_prefill_measure(c))
+                   _recipe_prefill_measure(c), _serve(SPECIALIZED, collectives, False, "its checks build 4096-wide rows"))
 
+    dense = "engine/kernels/dense (W4A8 decode, FP8 prefill)"
     if shape.hidden % DENSE_ALIGN or m.dense_inter_local % DENSE_ALIGN:
         refuse("dense", f"dense W4 tiles need {DENSE_ALIGN}-aligned columns; asked hidden {shape.hidden}, dense intermediate "
-                        f"{m.dense_inter_local}", _recipe_dense(shape, m))
+                        f"{m.dense_inter_local}", _recipe_dense(shape, m),
+               _serve(GENERIC, "cuBLAS BF16 GEMM (torch.nn.functional.linear) on unpacked weights", True,
+                      "exact BF16 arithmetic; no W4 compression, so the weights stay resident in BF16"))
     elif shape.hidden not in DENSE_MEASURED_HIDDEN:
         unmeasured("dense", f"W4A8 decode / FP8 prefill, K {DENSE_ALIGN}-aligned; its dispatch was measured at hidden "
-                            f"{'/'.join(map(str, DENSE_MEASURED_HIDDEN))} only", _recipe_dense_measure(shape))
+                            f"{'/'.join(map(str, DENSE_MEASURED_HIDDEN))} only", _recipe_dense_measure(shape),
+                   _serve(SPECIALIZED, dense, True, "packing and GEMM are judged across widths (tests/test_engine_dense.py); "
+                          "the dispatch timing is unmeasured here"))
     else:
-        admit("dense", f"W4A8 decode / FP8 prefill, K {DENSE_ALIGN}-aligned")
+        admit("dense", f"W4A8 decode / FP8 prefill, K {DENSE_ALIGN}-aligned",
+              _serve(SPECIALIZED, dense, True, "tests/test_engine_dense.py"))
 
     if shape.drafter is not None:
+        draft = "engine/kernels/draft_attention.py and its siblings draft_conv, draft_select, draft_observe"
         if shape.drafter.head_dim in DRAFT_MEASURED_HEAD:
-            admit("draft", f"DFlash kernels at head {shape.drafter.head_dim}")
+            admit("draft", f"DFlash kernels at head {shape.drafter.head_dim}",
+                  _serve(SPECIALIZED, draft, True, "tests/test_engine_draft_attention.py"))
         else:
             unmeasured("draft", f"DFlash kernels take head {shape.drafter.head_dim} as a constexpr; timed at "
-                                f"{'/'.join(map(str, DRAFT_MEASURED_HEAD))} only", _recipe_draft_measure(shape.drafter))
+                                f"{'/'.join(map(str, DRAFT_MEASURED_HEAD))} only", _recipe_draft_measure(shape.drafter),
+                       _serve(SPECIALIZED, draft, False, "the fixtures are 128 wide"))
 
     if l is not None:                                  # a model without linear attention has no KDA lane to judge
         measured_cell = (l.heads, l.v_heads, l.k_dim, l.v_dim) in KDA_MEASURED_CELLS
+        per_head = l.decay != FUSED_GATE_DECAY
         recurrent = "fused_recurrent_kda over [B,T,HV,K] decays" + (
-            "" if l.decay == FUSED_GATE_DECAY else "; the per-head decay is widened by linear_decay.per_channel (compute_gate=False)")
-        if measured_cell:
-            admit("kda_recurrent", recurrent)
+            "; the per-head decay is widened by linear_decay.per_channel (compute_gate=False)" if per_head else "")
+        recurrent_serve = _serve(SPECIALIZED, "engine/kernels/kda (fused_recurrent_kda)", not per_head,
+                                 "the precomputed-decay path is unjudged for a per-head decay" if per_head
+                                 else "tests/test_engine_kda_state.py" + ("" if measured_cell else f", at {_KDA_CELLS_TEXT}"))
+        if measured_cell and not per_head:
+            admit("kda_recurrent", recurrent, recurrent_serve)
         else:
             unmeasured("kda_recurrent", f"{recurrent}; the BV=16 tile is measured at {_KDA_CELLS_TEXT} only",
-                       _recipe_kda_measure(l))
-        if l.decay != FUSED_GATE_DECAY:
-            refuse("kda_ring", "the ring lane fuses KDA's per-channel gate; a head-decay cell cannot run it", _recipe_kda_ring())
+                       _recipe_kda_measure(l), recurrent_serve)
+        if per_head:
+            refuse("kda_ring", "the ring lane fuses KDA's per-channel gate; a head-decay cell cannot run it", _recipe_kda_ring(),
+                   _serve(GENERIC, "fused_recurrent_kda(compute_gate=False) on linear_decay.per_channel(decay), with "
+                          "state.write_ring (engine/kernels/kda/kda.py, engine/kernels/state.py)", False,
+                          "judge it against modules/linear_attention with a per-head decay"))
             refuse("kda_chunk", "the chunk lane fuses KDA's gate; a head-decay prefill needs a chunk entry without it (not written)",
-                   _recipe_kda_chunk())
+                   _recipe_kda_chunk(),
+                   _serve(GENERIC, "chunk_gated_delta_rule_fwd_h in engine/kernels/kda/chunk_delta_h.py (the vendored FLA "
+                          "chunk kernel, which takes a decay tensor)", False,
+                          "judge it against modules/linear_attention: chunked == recurrent"))
         elif measured_cell:
-            admit("kda_ring", "the ring lane's fused per-channel KDA gate")
-            admit("kda_chunk", "chunk_kda_with_fused_gate over the prefill")
+            admit("kda_ring", "the ring lane's fused per-channel KDA gate",
+                  _serve(SPECIALIZED, "engine/kernels/kda/ring.py", True, "tests/test_engine_kda_ring.py"))
+            admit("kda_chunk", "chunk_kda_with_fused_gate over the prefill",
+                  _serve(SPECIALIZED, "engine/kernels/kda (chunk_kda_with_fused_gate)", True,
+                         "judged against the reference in probes (engine/profiles/glm53/lanes.py: KDA chunk 6.3e-3)"))
         else:
             unmeasured("kda_ring", f"the fused per-channel gate serves this cell; the BV=16 tile is measured at "
-                                   f"{_KDA_CELLS_TEXT} only", _recipe_kda_measure(l))
+                                   f"{_KDA_CELLS_TEXT} only", _recipe_kda_measure(l),
+                       _serve(SPECIALIZED, "engine/kernels/kda/ring.py", True, f"tests/test_engine_kda_ring.py, at {_KDA_CELLS_TEXT}"))
             unmeasured("kda_chunk", "chunk_kda_with_fused_gate serves this cell in its stock regime; the long-prefill regime "
-                                    "admits GLM-5.3's exact shape only", _recipe_kda_chunk_measure(l))
+                                    "admits GLM-5.3's exact shape only", _recipe_kda_chunk_measure(l),
+                       _serve(SPECIALIZED, "engine/kernels/kda (chunk_kda_with_fused_gate)", True,
+                              "the stock regime, judged at GLM-5.3's cell"))
 
     measured = replace(MEASURED.moe, dynamic_tile_m=None)
+    b12x = "engine/kernels/b12x (the NVFP4 dispatcher)"
     if m.quant != measured.quant:
-        refuse("moe", f"the b12x lane is {measured.quant} only (D5); asked {m.quant}", _recipe_moe_quant(m, measured))
+        refuse("moe", f"the b12x lane is {measured.quant} only (D5); asked {m.quant}", _recipe_moe_quant(m, measured),
+               _serve(GENERIC, "b12x's MXFP4 kernels (engine/kernels/b12x/moe_dispatch.py: FP4 in groups of 32 with E8M0 "
+                      "scales)", False, "they read MXFP4-layout weights as they are but quantize activations to FP4; the "
+                      "quality gate decides") if m.quant.startswith("mxfp4")
+               else _nothing(f"no fast kernel reads {m.quant} experts"))
     elif replace(m, dynamic_tile_m=None) == measured:
-        admit("moe", "the measured GB10 TP4 cell" + ("" if m.dynamic_tile_m is None else f", tile pinned at {m.dynamic_tile_m}"))
+        admit("moe", "the measured GB10 TP4 cell" + ("" if m.dynamic_tile_m is None else f", tile pinned at {m.dynamic_tile_m}"),
+              _serve(SPECIALIZED, b12x, True, "probes/engine_kernel_check.py --lanes moe --moe-experts 288"))
     else:
         unmeasured("moe", f"admitted by declaration ({m.experts} experts, {m.experts_local} local, I{m.inter_local}, "
                           f"top{m.topk}, {m.activation}); its tiles and scale packing were measured at the GLM-5.3 cell",
-                   _recipe_moe_measure(m))
+                   _recipe_moe_measure(m),
+                   _serve(SPECIALIZED, b12x, False, "generic NVFP4 shapes are checked at 2% against the original kernel; "
+                          "this cell is not"))
 
     admit("universal", "sampler, block verify, decode commit, vocab candidates, SwiGLU, norm+RoPE, route histogram, build "
-                       "cache, calibration: the arguments are the shape")
+                       "cache, calibration: the arguments are the shape",
+          _serve(GENERIC, "engine/kernels/common, bound as the engine's default lanes by engine/base/lanes.py", True,
+                 "each kernel's tests against its torch form"))
     return out
 
 
@@ -494,6 +645,14 @@ def counts(verdicts: "list[Verdict]") -> dict:
     return {s: sum(v.status == s for v in verdicts) for s in (ADMITTED, UNMEASURED, REFUSED)}
 
 
+def serving(verdicts: "list[Verdict]") -> dict:
+    """How many layers each tier serves, and how many of the generic ones are judged."""
+    served = [v.serve for v in verdicts if v.serve is not None]
+    out = {t: sum(x.tier == t for x in served) for t in TIERS}
+    out["generic_judged"] = sum(x.tier == GENERIC and x.judged for x in served)
+    return out
+
+
 def _gcd(a: int, b: int) -> int:
     while b:
         a, b = b, a % b
@@ -503,9 +662,19 @@ def _gcd(a: int, b: int) -> int:
 def table(verdicts: "list[Verdict]") -> str:
     """One line per lane, then the counts."""
     width = max(len(v.lane) for v in verdicts)
-    rows = [f"  {v.lane:<{width}}  {v.status:<10}  {v.why}" for v in verdicts]
-    n = counts(verdicts)
+    rows = []
+    for v in verdicts:
+        rows.append(f"  {v.lane:<{width}}  {v.status:<10}  {v.why}")
+        if v.serve is not None:
+            x = v.serve
+            if x.tier == NONE:
+                rows.append(f"  {'':<{width}}  {'serves':<10}  nothing fast -- {x.note}")
+            else:
+                rows.append(f"  {'':<{width}}  {'serves':<10}  {x.tier}, {'judged' if x.judged else 'unjudged'}: {x.kernel} -- {x.note}")
+    n, sv = counts(verdicts), serving(verdicts)
     rows.append(f"  {n[ADMITTED]} admitted, {n[UNMEASURED]} unmeasured, {n[REFUSED]} refused")
+    rows.append(f"  serving: {sv[SPECIALIZED]} specialized, {sv[GENERIC]} generic ({sv['generic_judged']} judged), "
+                f"{sv[NONE]} with nothing fast")
     return "\n".join(rows)
 
 
