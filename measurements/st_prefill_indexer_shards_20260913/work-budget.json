@@ -1,0 +1,296 @@
+{
+  "source": {
+    "ref": "227003ef",
+    "commit": "227003ef6ac4a00e2c1dfd34ea741cfe01c71b40",
+    "sha256": "781d4e14af2abcf7bf35fe4ad0b5311b72147304fc396473a7db11987c571485",
+    "dirty": false,
+    "files": 243,
+    "scope": "engine source; external libraries belong to the profile runtime"
+  },
+  "chunk": 32256,
+  "cases": [
+    {
+      "tokens": 2000,
+      "chunks": [
+        {
+          "context": 0,
+          "tokens": 2000,
+          "active": true,
+          "score_rows_per_rank": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "projection_rows_per_rank": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "gathered_id_bytes_per_rank": 0,
+          "remote_id_bytes_per_rank": 0
+        }
+      ],
+      "baseline_score_rows_all_ranks": 8000,
+      "candidate_score_rows_all_ranks": 0,
+      "score_row_reduction": 1.0,
+      "baseline_query_id_communication_bytes": 0,
+      "candidate_remote_id_bytes_per_rank": 0,
+      "scope": "per DSA layer; query work count and added ID traffic, not runtime or speed"
+    },
+    {
+      "tokens": 2672,
+      "chunks": [
+        {
+          "context": 0,
+          "tokens": 2672,
+          "active": true,
+          "score_rows_per_rank": [
+            0,
+            0,
+            0,
+            621
+          ],
+          "projection_rows_per_rank": [
+            0,
+            0,
+            0,
+            621
+          ],
+          "gathered_id_bytes_per_rank": 2736128,
+          "remote_id_bytes_per_rank": 2052096
+        }
+      ],
+      "baseline_score_rows_all_ranks": 10688,
+      "candidate_score_rows_all_ranks": 621,
+      "score_row_reduction": 0.9418974550898204,
+      "baseline_query_id_communication_bytes": 0,
+      "candidate_remote_id_bytes_per_rank": 2052096,
+      "scope": "per DSA layer; query work count and added ID traffic, not runtime or speed"
+    },
+    {
+      "tokens": 32000,
+      "chunks": [
+        {
+          "context": 0,
+          "tokens": 32000,
+          "active": true,
+          "score_rows_per_rank": [
+            5949,
+            8000,
+            8000,
+            8000
+          ],
+          "projection_rows_per_rank": [
+            5949,
+            8000,
+            8000,
+            8000
+          ],
+          "gathered_id_bytes_per_rank": 32768000,
+          "remote_id_bytes_per_rank": 24576000
+        }
+      ],
+      "baseline_score_rows_all_ranks": 128000,
+      "candidate_score_rows_all_ranks": 29949,
+      "score_row_reduction": 0.7660234375,
+      "baseline_query_id_communication_bytes": 0,
+      "candidate_remote_id_bytes_per_rank": 24576000,
+      "scope": "per DSA layer; query work count and added ID traffic, not runtime or speed"
+    },
+    {
+      "tokens": 128000,
+      "chunks": [
+        {
+          "context": 0,
+          "tokens": 32256,
+          "active": true,
+          "score_rows_per_rank": [
+            6013,
+            8064,
+            8064,
+            8064
+          ],
+          "projection_rows_per_rank": [
+            6013,
+            8064,
+            8064,
+            8064
+          ],
+          "gathered_id_bytes_per_rank": 33030144,
+          "remote_id_bytes_per_rank": 24772608
+        },
+        {
+          "context": 32256,
+          "tokens": 32256,
+          "active": true,
+          "score_rows_per_rank": [
+            8064,
+            8064,
+            8064,
+            8064
+          ],
+          "projection_rows_per_rank": [
+            8064,
+            8064,
+            8064,
+            8064
+          ],
+          "gathered_id_bytes_per_rank": 33030144,
+          "remote_id_bytes_per_rank": 24772608
+        },
+        {
+          "context": 64512,
+          "tokens": 32256,
+          "active": true,
+          "score_rows_per_rank": [
+            8064,
+            8064,
+            8064,
+            8064
+          ],
+          "projection_rows_per_rank": [
+            8064,
+            8064,
+            8064,
+            8064
+          ],
+          "gathered_id_bytes_per_rank": 33030144,
+          "remote_id_bytes_per_rank": 24772608
+        },
+        {
+          "context": 96768,
+          "tokens": 31232,
+          "active": true,
+          "score_rows_per_rank": [
+            7808,
+            7808,
+            7808,
+            7808
+          ],
+          "projection_rows_per_rank": [
+            7808,
+            7808,
+            7808,
+            7808
+          ],
+          "gathered_id_bytes_per_rank": 31981568,
+          "remote_id_bytes_per_rank": 23986176
+        }
+      ],
+      "baseline_score_rows_all_ranks": 512000,
+      "candidate_score_rows_all_ranks": 125949,
+      "score_row_reduction": 0.754005859375,
+      "baseline_query_id_communication_bytes": 0,
+      "candidate_remote_id_bytes_per_rank": 98304000,
+      "scope": "per DSA layer; query work count and added ID traffic, not runtime or speed"
+    },
+    {
+      "tokens": 129775,
+      "chunks": [
+        {
+          "context": 0,
+          "tokens": 32256,
+          "active": true,
+          "score_rows_per_rank": [
+            6013,
+            8064,
+            8064,
+            8064
+          ],
+          "projection_rows_per_rank": [
+            6013,
+            8064,
+            8064,
+            8064
+          ],
+          "gathered_id_bytes_per_rank": 33030144,
+          "remote_id_bytes_per_rank": 24772608
+        },
+        {
+          "context": 32256,
+          "tokens": 32256,
+          "active": true,
+          "score_rows_per_rank": [
+            8064,
+            8064,
+            8064,
+            8064
+          ],
+          "projection_rows_per_rank": [
+            8064,
+            8064,
+            8064,
+            8064
+          ],
+          "gathered_id_bytes_per_rank": 33030144,
+          "remote_id_bytes_per_rank": 24772608
+        },
+        {
+          "context": 64512,
+          "tokens": 32256,
+          "active": true,
+          "score_rows_per_rank": [
+            8064,
+            8064,
+            8064,
+            8064
+          ],
+          "projection_rows_per_rank": [
+            8064,
+            8064,
+            8064,
+            8064
+          ],
+          "gathered_id_bytes_per_rank": 33030144,
+          "remote_id_bytes_per_rank": 24772608
+        },
+        {
+          "context": 96768,
+          "tokens": 32256,
+          "active": true,
+          "score_rows_per_rank": [
+            8064,
+            8064,
+            8064,
+            8064
+          ],
+          "projection_rows_per_rank": [
+            8064,
+            8064,
+            8064,
+            8064
+          ],
+          "gathered_id_bytes_per_rank": 33030144,
+          "remote_id_bytes_per_rank": 24772608
+        },
+        {
+          "context": 129024,
+          "tokens": 751,
+          "active": true,
+          "score_rows_per_rank": [
+            188,
+            188,
+            188,
+            187
+          ],
+          "projection_rows_per_rank": [
+            188,
+            188,
+            188,
+            187
+          ],
+          "gathered_id_bytes_per_rank": 770048,
+          "remote_id_bytes_per_rank": 577536
+        }
+      ],
+      "baseline_score_rows_all_ranks": 519100,
+      "candidate_score_rows_all_ranks": 127724,
+      "score_row_reduction": 0.7539510691581583,
+      "baseline_query_id_communication_bytes": 0,
+      "candidate_remote_id_bytes_per_rank": 99667968,
+      "scope": "per DSA layer; query work count and added ID traffic, not runtime or speed"
+    }
+  ]
+}
