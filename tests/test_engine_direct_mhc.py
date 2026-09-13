@@ -113,7 +113,8 @@ class DirectMhcTests(unittest.TestCase):
                 comm.transport = transport
                 seen = []
                 try:
-                    actual = decode_direct(net, step, cache, [0, 2], seen.append, consumer=oracle_consume)
+                    actual = decode_direct(net, step, cache, [0, 2], seen.append,
+                                           consumer=oracle_consume, moe_output=False)
                 finally:
                     comm.transport = None
                 for a, b in zip(actual, expected):
@@ -184,7 +185,7 @@ class DirectMhcTests(unittest.TestCase):
                 comm.transport = OracleTransport(comm)
                 try:
                     actual = decode_direct(net, step, cache, features, callbacks.append,
-                                           consumer=oracle_consume, contract=terminal)
+                                           consumer=oracle_consume, contract=terminal, moe_output=False)
                     comm.transport.assert_consumed()
                 finally:
                     comm.transport = None
@@ -204,6 +205,8 @@ class DirectMhcTests(unittest.TestCase):
     def test_default_and_unsupported_split(self):
         self.assertFalse(ExecutionPlan().direct_mhc)
         self.assertTrue(ExecutionPlan(direct_mhc=True).active)
+        self.assertIn("moe_output=1", ExecutionPlan(direct_mhc=True).label())
+        self.assertIn("moe_output=0", ExecutionPlan().label())
         with self.assertRaisesRegex(ValueError, "unsplit"):
             ExecutionPlan(direct_mhc=True, overlap=True)
         with self.assertRaises(ValueError):

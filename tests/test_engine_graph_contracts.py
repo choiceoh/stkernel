@@ -32,6 +32,16 @@ def _pure(name, path=DECODE_GRAPHS):
 
 
 class CaptureSafetyTests(unittest.TestCase):
+    def test_fused_moe_refuses_oversized_capture_before_device_allocation(self):
+        from engine.base.comm import Comm
+        from engine.profiles.glm53.decode_graphs import Glm53DecodeGraphs
+        from engine.profiles.glm53.execution import ExecutionPlan
+        net = SimpleNamespace(comm=Comm(4), F=SimpleNamespace(spec_k=7))
+        caches = SimpleNamespace(slots=SimpleNamespace(owner=[-1] * 9))
+        with self.assertRaisesRegex(ValueError, 'at most 32 rows'):
+            Glm53DecodeGraphs(net, caches, max_seqs=5, tokens=8,
+                              execution_plan=ExecutionPlan(direct_mhc=True))
+
     def test_device_step_runs_the_same_embedding_prologue_as_eager_decode(self):
         from engine.base.comm import Comm
         from engine.profiles.glm53.decode_graphs import DeviceStep

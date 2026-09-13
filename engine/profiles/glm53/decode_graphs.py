@@ -244,6 +244,8 @@ class Glm53DecodeGraphs:
         self.aux_layers = tuple(aux_layers)
         from engine.profiles.glm53.execution import ExecutionPlan, CudaStreams
         self.execution_plan = execution_plan or ExecutionPlan()
+        if self.execution_plan.direct_mhc and max_seqs * tokens > 32:
+            raise ValueError('direct MHC MoE output capture supports at most 32 rows')
         self.append_child = None
         if self.execution_plan.decode_iterations > 1:
             from engine.kernels.bounded_graph import append_child, build

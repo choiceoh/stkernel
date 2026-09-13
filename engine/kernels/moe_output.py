@@ -2,7 +2,7 @@
 
 The caller owns the FP32 scatter until this stream-ordered consumer finishes.
 Packet finalization is fused separately into OneShot's existing exchange grid.
-Selection is explicit; serving continues to use its measured output path.
+The captured TP4 decode path selects this finalizer by default.
 """
 import torch
 import triton as tr
