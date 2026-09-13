@@ -168,7 +168,7 @@ class RuntimeMemory:
         cuda.set_per_process_memory_fraction(self.allocator_limit_bytes / total)
         cuda.reset_peak_memory_stats()
 
-    def checkpoint(self, phase, failed: "str | None" = None):
+    def checkpoint(self, phase, failed: "str | None" = None, *, release_cache: bool = False):
         """Boot only: retain transient peaks and require every TP rank to pass.
 
         The vote at the end is a device collective every rank must reach: a rank that raised on
@@ -176,14 +176,27 @@ class RuntimeMemory:
         used to leave its peers in NCCL MAX until the 120 s deadline, and the deadline was the
         only thing they ever heard. So the way there is caught into the same flag the vote already
         carries, and `failed` lets a phase that died elsewhere cast that flag too.
+
+        Warmup boundaries return inactive allocator blocks before grading physical
+        headroom. Other phases do so only when that floor is threatened. Live tensors
+        and graph pools remain owned; cumulative peaks are never reset by reclamation.
         """
         cuda = self.cuda
         error = failed or None
-        reclaimed = 0
-        row = dict(phase=phase)
+        reclaimed = allocator_reclaimed = 0
+        row = dict(phase=phase, release_cache=release_cache)
         try:
             cuda.synchronize()                      # the row's peaks and its clock read the same instant
             host_free = self.host_free()
+            free, _ = cuda.mem_get_info()
+            reserved = cuda.memory_reserved()
+            row.update(reserved_before_reclaim_bytes=reserved,
+                       immediately_free_before_reclaim_bytes=min(free, host_free))
+            if error is None and (release_cache or min(free, host_free) < self.os_reserve_bytes):
+                if reserved > cuda.memory_allocated():
+                    cuda.empty_cache()
+                    allocator_reclaimed = max(0, reserved - cuda.memory_reserved())
+                    host_free = self.host_free()
             need = self.os_reserve_bytes + self.host_budget_bytes + max(0, self.allocator_limit_bytes-cuda.memory_reserved())
             if self.reclaim is not None and host_free < need:
                 reclaimed = self.reclaim(need, self.workspace_bytes+self.os_reserve_bytes+self.host_budget_bytes)
@@ -195,6 +208,7 @@ class RuntimeMemory:
                        reserved_bytes=cuda.memory_reserved(),
                        peak_allocated_bytes=cuda.max_memory_allocated(),
                        peak_reserved_bytes=cuda.max_memory_reserved(),
+                       device_free_bytes=free, host_free_bytes=host_free,
                        immediately_free_bytes=min(free, host_free), reclaimed_bytes=reclaimed)
         except Exception as exc:                    # noqa: BLE001 -- the vote below must still be cast
             error = error or f"{type(exc).__name__}: {exc}"
@@ -202,6 +216,7 @@ class RuntimeMemory:
             row.update(at_seconds=round(now - self.started, 4), seconds=round(now - self.last, 4),
                        allocated_bytes=0, reserved_bytes=0, peak_allocated_bytes=0, peak_reserved_bytes=0,
                        immediately_free_bytes=0, reclaimed_bytes=reclaimed, read_error=error)
+        row["allocator_reclaimed_bytes"] = allocator_reclaimed
         row["peak_workspace_bytes"] = max(0, row["peak_reserved_bytes"] - self.baseline_reserved - self.arena_bytes)
         # MemAvailable, because that is the line earlyoom reads -- MemFree above is the boot
         # gate's number (a driver page cannot be reclaimed the way a clean file page can).
@@ -227,6 +242,7 @@ class RuntimeMemory:
             if int(self.comm.all_reduce_max(self.status).item()) and error is None:
                 error = "a TP peer failed runtime memory qualification"
         row["passed"] = error is None
+        row["failure_reason"] = error
         self.phases.append(row)
         self.last = now
         if error:
@@ -248,8 +264,8 @@ class RuntimeMemory:
         """Where a boot's memory went: what each phase prefix ADDED to the allocator's reservation, most first.
         `spend()` answers this for time and has since the boot-time study; the bytes were in every row all along
         and nobody summed them, so "which capture is worth its footprint" meant reading 351 rows by hand.
-        The reservation is what the box loses (GB10: reserved minus allocated is memory nobody gets back), so
-        that is the column, and a phase that gave memory back counts negative rather than being clipped to zero."""
+        Reservation includes live tensors and inactive blocks still held by the allocator, so
+        that is the column; a phase that returns blocks counts negative rather than being clipped to zero."""
         totals, last = {}, self.baseline_reserved
         for row in self.phases:
             key = row["phase"].split("/")[0]
@@ -268,12 +284,11 @@ class RuntimeMemory:
         (`_warmup_prefill_memory`), so the peak workspace standing at the last `prefill/` row
         IS the activation peak: load is arena, and nothing bigger has happened yet.
 
-        `graphs` -- capture only ever ADDS reservation and keeps it, so what the reservation
-        gained after that last prefill row is the pools plus persistent scratch, i.e. what the
-        box loses for as long as this engine serves.
+        `graphs` -- net reservation gained after the final prefill row: graph pools and
+        persistent scratch, less any inactive blocks returned at later checkpoints.
 
         `peak` is the whole transient the ceiling has to cover, and `retained` is what remains
-        at the end -- reserved minus allocated is memory nobody gets back on this box.
+        at the end, including any inactive blocks that reclamation could not return.
         """
         if not self.phases:
             return {}

@@ -1,0 +1,158 @@
+s...................................ssssssssssssssssssssssssssssssssssssssss....................[W913 05:21:37.410719522 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+[W913 05:21:37.730820381 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+boot rendezvous weights-loaded: rank 0 prepared; waiting for 2 ranks (deadline 3s)
+[rank0]:[E913 05:21:37.782642642 ProcessGroupGloo.cpp:2901] [Rank 0]: Rank 1 failed to pass monitoredBarrier in 3000 ms
+[rank0]:[E913 05:21:37.782660050 ProcessGroupGloo.cpp:67] [Rank 0]: Ranks 1 failed to pass monitoredBarrier in 3000 ms
+.[W913 05:21:38.728546299 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+[W913 05:21:39.357705614 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+boot rendezvous phase-0: rank 0 prepared; waiting for 2 ranks (deadline 6s)
+boot rendezvous phase-1: rank 1 prepared; waiting for 2 ranks (deadline 6s)
+.[W913 05:21:40.489570023 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+[W913 05:21:41.950327352 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+boot rendezvous weights-loaded: rank 0 prepared; waiting for 2 ranks (deadline 0.3s)
+[rank0]:[E913 05:21:41.283939864 ProcessGroupGloo.cpp:2901] [Rank 0]: Rank 1 failed to pass monitoredBarrier in 300 ms
+[rank0]:[E913 05:21:41.283980553 ProcessGroupGloo.cpp:67] [Rank 0]: Ranks 1 failed to pass monitoredBarrier in 300 ms
+.[W913 05:21:43.884454432 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+[W913 05:21:44.524115477 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+boot rendezvous loaded-1: rank 0 prepared; waiting for 2 ranks (deadline 6s)
+boot rendezvous loaded-1: rank 1 prepared; waiting for 2 ranks (deadline 6s)
+boot rendezvous loaded-0: rank 1 prepared; waiting for 2 ranks (deadline 6s)
+boot rendezvous loaded-0: rank 0 prepared; waiting for 2 ranks (deadline 6s)
+....  box: test
+  facts
+    model                    /alternate/config                [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+    ranks                    /alternate/ranks                 [preshard output]
+    world                    4                                [facts.TP: four Sparks]
+    block                    768                              [launcher --block-size]
+    spec_k                   6                                [launcher SPEC_K with DFlash2]
+    kv_gib                   0.25                             [--kv-gib (local)]
+    port                     8000                             [--port]
+    max_seqs                 4                                [resident rows, state slots and captured decode widths]
+    prefix_snapshot_gib      2.125                            [tiered raw block-boundary checkpoints; count follows the shape]
+    prefix_untiered_snapshot_gib 4.25                             [raw checkpoints when no prefix tier is configured]
+    prefix_compressed_bytes  1073741824                       [prefix tier's bounded lossless RAM cache; codec workspace declared separately]
+    moe_static               t,r,sf6,q0                       [native TP4 execution]
+    lanes                    served                           [native TP4 execution]
+    decode_eager             0                                [native TP4 execution]
+    execution                native                           [native TP4 execution]
+  knobs (every one expires)
+    decode_iterations        4                                until 2026-09-30  measures 'Bounded greedy TP4 decode: reserve/read back 2 or 4 iterations with rank-agreed exits', rollback 'STK_decode_iterations=1'
+    nvme_mapped_staging      1                                until 2026-09-30  measures 'One mapped GB10 staging allocation for NVMe host I/O and GPU gather/scatter', rollback 'STK_nvme_mapped_staging=0'
+    prefill_project_tiles    1                                until 2026-09-30  measures 'Overlap TP4 prefill tile arrival with independent KDA input projection', rollback 'STK_prefill_project_tiles=0'
+    direct_mhc               1                                until 2026-09-30  measures 'TP4 rank packets consumed inside native MHC; exact rounding, C=1/C=4 latency and quality', rollback 'STK_direct_mhc=0'
+    execution_overlap        0                                until 2026-09-30  measures 'GB10 C=4 ordered TP/compute overlap: matched onepass C=1/C=4 latency and acceptance', rollback 'STK_execution_overlap=0'
+    early_observe            0                                until 2026-09-30  measures 'DFlash2 context preparation overlaps target tail using private W4 scratch; FP32 state unchanged', rollback 'STK_early_observe=0'
+    prefill_tiles            1                                until 2026-09-30  measures 'layer-major prefill windows of 1/2/4 native tiles, separate from decoding; 32K/128K TTFT and memory', rollback 'STK_prefill_tiles=1'
+    kda_state_dtype          fp32                             until 2026-09-30  measures 'FP16 recurrent storage with FP32 arithmetic: matched C=1/C=4 onepass quality, latency and memory', rollback 'STK_kda_state_dtype=fp32'
+    mla_prefill              tile32                           until 2026-09-30  measures 'large-M MLA prefill: tile32 is the qualified production default, stock the baseline (the pair/pair4 union candidates were measured and retired -- 45차 §23 조사 16차, PR #698)', rollback 'STK_mla_prefill=tile32'
+    context_ceiling          0                                until 2026-09-30  measures "the served context ceiling: the door refuses a longer horizon and the decode ladder captures no bucket above it. 0 = the checkpoint's trained positions (1,048,576), which is nine buckets and 36 target graphs; the boot's 'target/<shape>/' memory rows carry each bucket's seconds, so a boot pair prices the cut before it is taken", rollback 'STK_context_ceiling=0'
+  box: test
+  facts
+    model                    /alternate/config                [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+    ranks                    /alternate/ranks                 [preshard output]
+    world                    4                                [facts.TP: four Sparks]
+    block                    768                              [launcher --block-size]
+    spec_k                   6                                [launcher SPEC_K with DFlash2]
+    kv_gib                   0.25                             [--kv-gib (local)]
+    port                     8000                             [--port]
+    max_seqs                 4                                [resident rows, state slots and captured decode widths]
+    prefix_snapshot_gib      2.125                            [tiered raw block-boundary checkpoints; count follows the shape]
+    prefix_untiered_snapshot_gib 4.25                             [raw checkpoints when no prefix tier is configured]
+    prefix_compressed_bytes  1073741824                       [prefix tier's bounded lossless RAM cache; codec workspace declared separately]
+    moe_static               t,r,sf6,q0                       [native TP4 execution]
+    lanes                    served                           [native TP4 execution]
+    decode_eager             0                                [native TP4 execution]
+    execution                native                           [native TP4 execution]
+  knobs (every one expires)
+    decode_iterations        4                                until 2026-09-30  measures 'Bounded greedy TP4 decode: reserve/read back 2 or 4 iterations with rank-agreed exits', rollback 'STK_decode_iterations=1'
+    nvme_mapped_staging      1                                until 2026-09-30  measures 'One mapped GB10 staging allocation for NVMe host I/O and GPU gather/scatter', rollback 'STK_nvme_mapped_staging=0'
+    prefill_project_tiles    1                                until 2026-09-30  measures 'Overlap TP4 prefill tile arrival with independent KDA input projection', rollback 'STK_prefill_project_tiles=0'
+    direct_mhc               1                                until 2026-09-30  measures 'TP4 rank packets consumed inside native MHC; exact rounding, C=1/C=4 latency and quality', rollback 'STK_direct_mhc=0'
+    execution_overlap        0                                until 2026-09-30  measures 'GB10 C=4 ordered TP/compute overlap: matched onepass C=1/C=4 latency and acceptance', rollback 'STK_execution_overlap=0'
+    early_observe            0                                until 2026-09-30  measures 'DFlash2 context preparation overlaps target tail using private W4 scratch; FP32 state unchanged', rollback 'STK_early_observe=0'
+    prefill_tiles            1                                until 2026-09-30  measures 'layer-major prefill windows of 1/2/4 native tiles, separate from decoding; 32K/128K TTFT and memory', rollback 'STK_prefill_tiles=1'
+    kda_state_dtype          fp32                             until 2026-09-30  measures 'FP16 recurrent storage with FP32 arithmetic: matched C=1/C=4 onepass quality, latency and memory', rollback 'STK_kda_state_dtype=fp32'
+    mla_prefill              tile32                           until 2026-09-30  measures 'large-M MLA prefill: tile32 is the qualified production default, stock the baseline (the pair/pair4 union candidates were measured and retired -- 45차 §23 조사 16차, PR #698)', rollback 'STK_mla_prefill=tile32'
+    context_ceiling          0                                until 2026-09-30  measures "the served context ceiling: the door refuses a longer horizon and the decode ladder captures no bucket above it. 0 = the checkpoint's trained positions (1,048,576), which is nine buckets and 36 target graphs; the boot's 'target/<shape>/' memory rows carry each bucket's seconds, so a boot pair prices the cut before it is taken", rollback 'STK_context_ceiling=0'
+  fleet reserved by test
+  box: test
+  facts
+    model                    /alternate/config                [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+    ranks                    /alternate/ranks                 [preshard output]
+    world                    4                                [facts.TP: four Sparks]
+    block                    768                              [launcher --block-size]
+    spec_k                   6                                [launcher SPEC_K with DFlash2]
+    kv_gib                   0.25                             [--kv-gib (local)]
+    port                     8000                             [--port]
+    max_seqs                 4                                [resident rows, state slots and captured decode widths]
+    prefix_snapshot_gib      2.125                            [tiered raw block-boundary checkpoints; count follows the shape]
+    prefix_untiered_snapshot_gib 4.25                             [raw checkpoints when no prefix tier is configured]
+    prefix_compressed_bytes  1073741824                       [prefix tier's bounded lossless RAM cache; codec workspace declared separately]
+    moe_static               t,r,sf6,q0                       [native TP4 execution]
+    lanes                    served                           [native TP4 execution]
+    decode_eager             0                                [native TP4 execution]
+    execution                native                           [native TP4 execution]
+  knobs (every one expires)
+    decode_iterations        4                                until 2026-09-30  measures 'Bounded greedy TP4 decode: reserve/read back 2 or 4 iterations with rank-agreed exits', rollback 'STK_decode_iterations=1'
+    nvme_mapped_staging      1                                until 2026-09-30  measures 'One mapped GB10 staging allocation for NVMe host I/O and GPU gather/scatter', rollback 'STK_nvme_mapped_staging=0'
+    prefill_project_tiles    1                                until 2026-09-30  measures 'Overlap TP4 prefill tile arrival with independent KDA input projection', rollback 'STK_prefill_project_tiles=0'
+    direct_mhc               1                                until 2026-09-30  measures 'TP4 rank packets consumed inside native MHC; exact rounding, C=1/C=4 latency and quality', rollback 'STK_direct_mhc=0'
+    execution_overlap        0                                until 2026-09-30  measures 'GB10 C=4 ordered TP/compute overlap: matched onepass C=1/C=4 latency and acceptance', rollback 'STK_execution_overlap=0'
+    early_observe            0                                until 2026-09-30  measures 'DFlash2 context preparation overlaps target tail using private W4 scratch; FP32 state unchanged', rollback 'STK_early_observe=0'
+    prefill_tiles            1                                until 2026-09-30  measures 'layer-major prefill windows of 1/2/4 native tiles, separate from decoding; 32K/128K TTFT and memory', rollback 'STK_prefill_tiles=1'
+    kda_state_dtype          fp32                             until 2026-09-30  measures 'FP16 recurrent storage with FP32 arithmetic: matched C=1/C=4 onepass quality, latency and memory', rollback 'STK_kda_state_dtype=fp32'
+    mla_prefill              tile32                           until 2026-09-30  measures 'large-M MLA prefill: tile32 is the qualified production default, stock the baseline (the pair/pair4 union candidates were measured and retired -- 45차 §23 조사 16차, PR #698)', rollback 'STK_mla_prefill=tile32'
+    context_ceiling          0                                until 2026-09-30  measures "the served context ceiling: the door refuses a longer horizon and the decode ladder captures no bucket above it. 0 = the checkpoint's trained positions (1,048,576), which is nine buckets and 36 target graphs; the boot's 'target/<shape>/' memory rows carry each bucket's seconds, so a boot pair prices the cut before it is taken", rollback 'STK_context_ceiling=0'
+  kernel shape (derived): hidden 128 hc 4 tp 4 | mla 1x16 | linear 1/1x8x8 conv 4 decay/channel | indexer 4x128 pool 4 top 8 | moe 4(4 local) I64/16 top2 nvfp4 swigluoai_uninterleave | spec 5
+[serve] death rank=0 kind=local phase='boot': StopAtBuild: 
+.  fleet reserved by test
+  box: test
+  facts
+    model                    /alternate/config                [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+    ranks                    /alternate/ranks                 [preshard output]
+    world                    4                                [facts.TP: four Sparks]
+    block                    768                              [launcher --block-size]
+    spec_k                   6                                [launcher SPEC_K with DFlash2]
+    kv_gib                   0.25                             [--kv-gib (local)]
+    port                     8000                             [--port]
+    max_seqs                 4                                [resident rows, state slots and captured decode widths]
+    prefix_snapshot_gib      2.125                            [tiered raw block-boundary checkpoints; count follows the shape]
+    prefix_untiered_snapshot_gib 4.25                             [raw checkpoints when no prefix tier is configured]
+    prefix_compressed_bytes  1073741824                       [prefix tier's bounded lossless RAM cache; codec workspace declared separately]
+    moe_static               t,r,sf6,q0                       [native TP4 execution]
+    lanes                    served                           [native TP4 execution]
+    decode_eager             0                                [native TP4 execution]
+    execution                native                           [native TP4 execution]
+    mla_prefill              tile32                           [production default]
+    context_ceiling          0                                [production default]
+    kda_state_dtype          fp32                             [production default]
+    execution_overlap        0                                [production default]
+    early_observe            0                                [production default]
+    prefill_tiles            1                                [production default]
+    direct_mhc               1                                [production default]
+    prefill_project_tiles    1                                [production default]
+    nvme_mapped_staging      1                                [production default]
+    decode_iterations        4                                [production default]
+  knobs (every one expires)
+  kernel shape (derived): hidden 128 hc 4 tp 4 | mla 1x16 | linear 1/1x8x8 conv 4 decay/channel | indexer 4x128 pool 4 top 8 | moe 4(4 local) I64/16 top2 nvfp4 swigluoai_uninterleave | spec 5
+[serve] death rank=0 kind=local phase='boot': StopAtBuild: 
+....................................sss............E
+======================================================================
+ERROR: test_probe_runner_and_launcher_forward_declared_knobs (tests.test_engine_knobs.ProbeRunnerTests.test_probe_runner_and_launcher_forward_declared_knobs)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/work/tests/test_engine_knobs.py", line 213, in test_probe_runner_and_launcher_forward_declared_knobs
+    self.assertIn("compgen -v STK_", (ROOT / "probes/run_engine_probe.sh").read_text())
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/work/probes/run_engine_probe.sh'
+
+----------------------------------------------------------------------
+Ran 156 tests in 15.507s
+
+FAILED (errors=1, skipped=44)

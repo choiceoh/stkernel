@@ -630,7 +630,7 @@ class CudaCacheTests(unittest.TestCase):
         engine = Glm53Engine(net, self.c, self.F)
         engine.prefill_chunk = 20
         phases = []
-        engine.memory = SimpleNamespace(checkpoint=phases.append)
+        engine.memory = SimpleNamespace(checkpoint=lambda phase, **_: phases.append(phase))
         capacity = self.c.pool.num_blocks * self.F.block
         with patch.object(net, "forward", wraps=net.forward) as forward:
             engine._warmup_prefill_memory()

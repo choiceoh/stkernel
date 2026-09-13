@@ -46,7 +46,7 @@ class NativeQualificationTests(unittest.TestCase):
                 aux = torch.ones(4, 16)
                 logits = torch.ones(1, 32)
                 {'hidden': h, 'aux': aux, 'head': logits}[failure].flatten()[0] = float('nan')
-                engine = NS(caches=caches, F=NS(block=1), prefill_chunk=4,
+                engine = NS(caches=caches, F=NS(block=1), prefill_chunk=4, max_context=8,
                             memory=MagicMock(), drafter=MagicMock(),
                             net=NS(comm=Comm(), head=lambda x: logits),
                             _prefill_forward=lambda step: (h, aux))

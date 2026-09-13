@@ -57,6 +57,7 @@ class PrefillOutputTests(unittest.TestCase):
         calls = []
         engine = Glm53Engine.__new__(Glm53Engine)
         engine.caches, engine.F, engine.prefill_chunk = caches, NS(block=64), 256
+        engine.max_context = 512
         engine.memory = MagicMock()
         engine.net = NS(comm=NS(all_reduce_max=lambda x: x), head=lambda x: x)
         def forward(step):
@@ -67,6 +68,48 @@ class PrefillOutputTests(unittest.TestCase):
         self.assertEqual([step.marks for step in calls], [((64, 0), (128, 1))] * 2)
         self.assertEqual([step.segments[0].ctx for step in calls], [0, 256])
         caches.reset.assert_called_once()
+
+    def test_warmup_uses_the_served_ceiling_and_releases_cache_at_each_boundary(self):
+        from unittest.mock import MagicMock, call
+        for ceiling in (128, 384, 1024):
+            with self.subTest(ceiling=ceiling):
+                caches = MagicMock(device='cpu', snapshots=0)
+                caches.pool.rows_in_use, caches.pool.num_blocks = 0, 8
+                caches.slots.owner = [-1, -1]
+                caches.slots.take.return_value = 1
+                engine = Glm53Engine.__new__(Glm53Engine)
+                engine.caches, engine.F, engine.prefill_chunk = caches, NS(block=64), 256
+                engine.max_context, engine.memory = ceiling, MagicMock()
+                engine.net = NS(comm=NS(all_reduce_max=lambda x: x), head=lambda x: x)
+                engine._prefill_forward = MagicMock(return_value=(torch.ones(1, 8), None))
+                engine._warmup_prefill_memory()
+                capacity, width = min(512, ceiling), min(256, ceiling)
+                starts = sorted({0, capacity - width})
+                steps = [c.args[0] for c in engine._prefill_forward.call_args_list]
+                self.assertEqual([(s.segments[0].ctx, s.ids.numel()) for s in steps],
+                                 [(start, width) for start in starts])
+                caches.pool.reserve.assert_called_once_with(0, capacity)
+                self.assertEqual(engine.memory.checkpoint.call_args_list,
+                                 [c for start in starts for c in
+                                  (call(f'prefill/{width}/{start}/before'),
+                                   call(f'prefill/{width}/{start}/prepared', release_cache=True))])
+
+    def test_kernel_warmup_respects_the_ceiling_and_releases_before_the_guard(self):
+        from unittest.mock import MagicMock
+        caches = MagicMock(device='cpu')
+        caches.pool.rows_in_use, caches.pool.num_blocks = 0, 8
+        caches.slots.owner = [-1, -1]
+        caches.slots.take.return_value = 1
+        engine = Glm53Engine.__new__(Glm53Engine)
+        engine.caches, engine.F, engine.prefill_chunk = caches, NS(block=64), 256
+        engine.max_context, engine.memory = 8, MagicMock()
+        engine.memory.checkpoint.return_value = {'allocator_reclaimed_bytes': 0}
+        engine.net = NS(head=lambda x: x)
+        engine._forward = MagicMock(return_value=(torch.ones(1, 8), None))
+        engine._warmup_serving_kernels()
+        self.assertEqual([c.args[0].ids.numel() for c in engine._forward.call_args_list], [1, 8])
+        caches.reset.assert_called_once()
+        engine.memory.checkpoint.assert_called_once_with('warm kernels [1, 8]', release_cache=True)
 
     def test_last_hidden_and_aux_equal_full_output_on_every_rank(self):
         for n, sharded in ((7, False), (128, True), (260, True), (129, True)):
