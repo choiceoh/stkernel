@@ -35,6 +35,10 @@ def main():
     parser.add_argument("--moe-static", default="stock", help="served b12x static-lane spec (STK_moe_static): stock | t,r,sf6[,q0]")
     parser.add_argument("--mla-prefill", default="stock", help="served MLA prefill mode (STK_mla_prefill): stock | tile32 | pair | pair4")
     args = parser.parse_args()
+    if args.lanes == 'decode_bundle':
+        from probes.engine_decode_bundle import check as decode_bundle
+        decode_bundle(args.ranks)
+        return
     sys.meta_path.insert(0, ForbidVllm())
     assert not any(n == "vllm" or n.startswith("vllm.") for n in sys.modules)
 
@@ -59,7 +63,15 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "mhc_single", "indexer", "kpool", "mla", "moe", "moe_waves", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "mhc_single", "indexer", "kpool", "mla", "moe", "moe_waves", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "input_pack", "short_gemm", "shared_direct"}, selected
+
+    if selected & {'input_pack', 'short_gemm', 'shared_direct'}:
+        from probes.engine_decode_batch import dense_check, shared_check
+        for lane in ('input_pack', 'short_gemm'):
+            if lane in selected:
+                dense_check(report, lane)
+        if 'shared_direct' in selected:
+            shared_check(report)
 
     if "mhc_single" in selected:
         import unittest
