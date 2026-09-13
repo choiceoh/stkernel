@@ -1,0 +1,8 @@
+....................................................................................PREPARE PAUSED (reservation retained): input changed
+........RE-PIN fixture: checkout moved aa0fc306d01f -> ed9e443358fb: prepared again at ed9e443358fb
+...........
+----------------------------------------------------------------------
+Ran 103 tests in 8.021s
+
+OK
+  fleet_prune: keeps the holder, the queue, the paused and every runner they name; removes only what is both unreferenced and old; dry by default OK

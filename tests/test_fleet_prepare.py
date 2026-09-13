@@ -84,7 +84,9 @@ class PrepareTests(unittest.TestCase):
         controller = self.root / 'controller' / 'bench'
         controller.mkdir(parents=True)
         (controller / 'fleet.sh').write_text('#!/bin/sh\nexit 0\n')          # preflight passes; no fleet_onepass.py beside it
-        env = dict(REPO=str(self.repo.resolve()), FLEET_DIR=str(self.directory), FLEET_SESSION='fixture')
+        env = dict(REPO=str(self.repo.resolve()), FLEET_DIR=str(self.directory), FLEET_SESSION='fixture',
+                   FLEET_LEASE_PATH=str(self.directory/'lease'), ST_LEASE_PATH=str(self.directory/'lease'),
+                   ST_LEASE_OWNER='queue/fixture')
         with mock.patch.dict(os.environ, env):
             self.prepare()
             receipt = next((self.directory / 'preparations').glob('*.json'))
@@ -117,7 +119,9 @@ class PrepareTests(unittest.TestCase):
         controller = self.root / 'controller' / 'bench'
         controller.mkdir(parents=True)
         (controller / 'fleet.sh').write_text('#!/bin/sh\nexit 0\n')
-        env = dict(REPO=str(self.repo.resolve()), FLEET_DIR=str(self.directory), FLEET_SESSION='fixture')
+        env = dict(REPO=str(self.repo.resolve()), FLEET_DIR=str(self.directory), FLEET_SESSION='fixture',
+                   FLEET_LEASE_PATH=str(self.directory/'lease'), ST_LEASE_PATH=str(self.directory/'lease'),
+                   ST_LEASE_OWNER='queue/fixture')
         with mock.patch.dict(os.environ, env):
             self.prepare()
             receipt = next((self.directory / 'preparations').glob('*.json'))

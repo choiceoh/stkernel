@@ -2160,13 +2160,18 @@ class OpenAIDialectTests(unittest.TestCase):
             self.assertEqual(err.exception.code, 400, bad)
 
     def test_n_choices_share_the_prompt_and_come_back_indexed(self):
-        s = chat_server()
-        out = self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
-                                                     {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2, "n": 2, "seed": 3}))
-        self.assertEqual([c["index"] for c in out["choices"]], [0, 1])
-        self.assertEqual([c["message"]["content"] for c in out["choices"]], ["bb", "bb"])
-        self.assertEqual(out["usage"]["completion_tokens"], 4)
-        self.assertEqual([s.engine.options[i]["seed"] for i in (0, 1)], [3, 4])
+        for rows in (1, 2):
+            with self.subTest(rows=rows):
+                s = chat_server(rows=rows)
+                with patch.object(s.engine, "add", wraps=s.engine.add) as admitted:
+                    out = self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                                                 {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2, "n": 2, "seed": 3}))
+                self.assertEqual([c["index"] for c in out["choices"]], [0, 1])
+                self.assertEqual([c["message"]["content"] for c in out["choices"]], ["bb", "bb"])
+                self.assertEqual(out["usage"]["completion_tokens"], 4)
+                # A completed row can be reused before the next choice arrives.
+                # Check each admission, not the last options stored by row id.
+                self.assertEqual([call.kwargs["options"]["seed"] for call in admitted.call_args_list], [3, 4])
 
     def test_tool_calls_stream_as_complete_blocks_and_content_stops_before_them(self):
         from engine.base.serve import _Choice
