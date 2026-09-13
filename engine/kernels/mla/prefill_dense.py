@@ -37,7 +37,7 @@ def _dense_prefix(Q, KV, Blocks, Out, ROWS, CONTEXT, SCALE: tl.constexpr,
         else:
             block = tl.load(Blocks + safe // BLOCK, position >= 0, other=0).to(tl.int64)
             slot = block * STRIDE + OFFSET + safe % BLOCK
-        key = tl.load(KV + slot[:, None] * DIM + d[None, :], position[:, None] >= 0, other=0).to(tl.bfloat16)
+        key = tl.load(KV + slot[:, None] * DIM + d[None, :], position[:, None] >= 0, other=0.0).to(tl.bfloat16)
         scores = tl.dot(q, tl.trans(key)) * (SCALE * KV_SCALE)
         allowed = (position[None, :] >= 0) & (position[None, :] <= CONTEXT + query[:, None])
         scores = tl.where(allowed, scores, -float('inf'))
