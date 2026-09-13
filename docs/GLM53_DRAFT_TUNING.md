@@ -10,6 +10,8 @@ No fleet or GPU run was used to develop this change.
 | Position-specific selector edge strength | Constant selection and one multiply per candidate in the existing greedy walk; no new projection, launch or collective | Greedy and sampled proposals, synchronous and batched |
 | Known request boundaries | One sparse EOS-mask launch before local top-k and forced-token choices | Synchronous `min_tokens` and reasoning-budget boundaries, including sampled q |
 | Draft smoothing alpha / GPTQ damping | Preparation and new packs only | Draft reader namespaces; packed formats and steady-state shapes unchanged |
+| FP32 selector projection output | Same BF16 operands and GEMM dimensions; removes the BF16 intermediate and widening operation | Greedy/sampled, synchronous/batched selector paths |
+| Decode FC mean-error correction | FP32 vector add fused into the existing RMSNorm launch; 16 KiB per rank reserved in the compact arena | Explicitly fitted FP8 decode reader only; prefill has no correction |
 
 The empty profile preserves alpha=1, smoothing alpha=0.5, and GPTQ damping=0.01.
 Existing serving defaults remain FC FP8, automatic committed-decode calibration,
@@ -37,6 +39,8 @@ the profile underneath a running server: it is bound at boot.
   "request_boundaries": true,
   "smoothing_alpha": {},
   "gptq_damping": {},
+  "selector_projection_fp32": false,
+  "fc_bias": {},
   "trace_every": 0
 }
 ```
@@ -52,6 +56,85 @@ finite values in [0, 2]. Missing selector coefficients mean all ones.
 (0, 1]. The loader validates names against the actual drafter facts.
 Unknown fields and nonfinite values are rejected; `evidence` is optional
 provenance written by the fitting command.
+
+`selector_projection_fp32: true` retains the BF16 matmul's output in FP32,
+using `torch.mm(..., out_dtype=torch.float32)` on CUDA. The CPU reference
+multiplies FP32-widened BF16 operands. It removes one output rounding boundary;
+it does not change the source weight, candidate count, or recurrent state.
+The existing BF16-output path remains the default until matched runtime evidence
+supports adoption. Identical GEMM dimensions do not guarantee identical kernel
+latency. Selector trace records retain this flag, and the selector fitter carries
+it into its result and rejects mixtures of the two projection modes.
+
+`fc_bias` maps every TP rank number (string keys) to an object with
+`reader_sha256` and `values`, a finite FP32 vector of exactly `hidden_size`
+entries. Use the fitter below to produce the full map. Ranks share the same JSON
+and profile digest, while each consumes its own correction. Missing ranks and
+W4 FC policies are refused during preparation. After packing, a second vote
+checks each correction against its exact source FC, executed FP8 bytes/scales,
+hidden-norm weight, epsilon, local reader source and runtime version identifiers.
+This binds a vector to the reader it was fitted on; it does not certify the
+full target model, workload quality, or an unversioned external library build.
+Keep the calibration run's full runtime/target identity alongside the bundle.
+
+Correction identity checks run only when an explicit bias profile is loaded.
+They stream at most 128 weight rows to the CPU at once and never retain a second
+whole FC weight. The vector is copied into its own compact arena region before
+capture. No reference FC, collector, hashing, CPU readback, or extra collective
+runs in steady-state decoding. Both the synchronous committed path and the
+batched/precomputed context path apply the correction, including when calibration
+uses the shared pack. Even a one-token prefill keeps the ordinary normalization.
+Active projection precision and correction presence appear in `st:lane_info`.
+
+## Fitting the FC correction
+
+Collection is an explicit preparation/research operation, not an automatic boot
+or serving observer. It needs an already prepared drafter whose BF16 sources
+were retained (`prepare_fast(..., consume_weights=False, compact_into=None)`).
+Use the same resolved FP8 policy/packs as the intended serving run. The helper
+does not boot an engine, contact a server, reserve a GPU, or capture a graph.
+
+```python
+from bench.draft_fc_bias import collect_fc_pairs
+
+# Each item contains actual committed-decode input rows on the reader's device:
+# aux [M, 20480] BF16, 1 <= M <= 32; keep [M] bool; ids [M] request-family
+# strings; split is "train" or "validation". Preserve the original M, including
+# rejected/ghost rows. keep selects only the committed rows to retain.
+bundle = collect_fc_pairs(drafter, batches, max_rows=4096)
+torch.save(bundle, f"rank{drafter.target.comm.rank}-fc-pairs.pt")
+```
+
+The saved pairs contain the actual FP8/A8/BF16-output reader result and the
+original BF16 FC result, rather than a weight-error approximation that omits
+activation quantization. Collection adds a teacher GEMM and readback, so its
+latencies are not steady serving measurements. At most 4,096 retained rows
+produce 64 MiB of paired BF16 FC outputs per rank, plus small metadata; CPU
+concatenation temporarily holds another copy of the split being joined. The
+caller owns the original input storage. Exceeding the chosen bound is an error.
+
+Fit the pairs on CPU, without Triton or CUDA:
+
+```sh
+python bench/draft_tune.py fc-bias rank0-fc-pairs.pt \
+  --peer-bundle rank1-fc-pairs.pt --peer-bundle rank2-fc-pairs.pt \
+  --peer-bundle rank3-fc-pairs.pt --out fc-bias.json
+```
+
+Training estimates `mean(reference - actual)` in FP64 and stores the vector in
+FP32. Entire request families are held out, including across ranks. Validation
+may only veto: both FC reconstruction error and error after the actual
+FP32-add/BF16-normalization rounding must improve on every rank. Otherwise the
+output has an empty `fc_bias` map. The command records the input file hashes,
+row/family counts, baseline/candidate errors, and `live_acceptance: false`.
+It never substitutes fitted residual error for measured speculative acceptance.
+
+To combine with selector FP32, add `"selector_projection_fp32": true` to the
+generated profile. Preserve any other explicitly chosen tuning fields when
+combining fitting results. No checkpoint-fitted bias vector ships with the code.
+
+For the separate offline weight-rounding study, see
+[GPTQ/FP4 rounding research](GLM53_DRAFT_ROUNDING_RESEARCH.md).
 
 Smoothing still covers every original consumer of the norm, including the
 convolution projections. The context-KV path retains its unsmoothed readers.

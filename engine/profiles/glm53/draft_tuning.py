@@ -21,6 +21,8 @@ class DraftTuning:
     request_boundaries: bool = False
     trace_every: int = 0
     digest: str = 'baseline'
+    selector_projection_fp32: bool = False
+    fc_bias: dict = field(default_factory=dict)
 
     def alphas(self, k):
         if not self.selector_alpha:
@@ -32,7 +34,7 @@ class DraftTuning:
     @classmethod
     def from_dict(cls, value):
         fields = {'version', 'selector_alpha', 'smoothing_alpha', 'gptq_damping',
-                  'request_boundaries', 'trace_every', 'evidence'}
+                  'request_boundaries', 'trace_every', 'evidence', 'selector_projection_fp32', 'fc_bias'}
         if (not isinstance(value, dict) or type(value.get('version')) is not int
                 or value['version'] != 1 or value.keys() - fields):
             raise ValueError('draft tuning requires version 1 and known fields')
@@ -49,11 +51,18 @@ class DraftTuning:
         boundary, trace = value.get('request_boundaries', False), value.get('trace_every', 0)
         if type(boundary) is not bool or type(trace) is not int or not 0 <= trace <= 1_000_000:
             raise ValueError('request_boundaries must be bool; trace_every must be a nonnegative bounded integer')
+        projection = value.get('selector_projection_fp32', False)
+        if type(projection) is not bool:
+            raise ValueError('selector_projection_fp32 must be bool')
+        from .draft_fc_bias import validate_profile
+        bias = validate_profile(value.get('fc_bias', {}))
         digest = hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
-        return cls(alpha, *maps, boundary, trace, digest)
+        return cls(alpha, *maps, boundary, trace, digest, projection, bias)
 
     def validate(self, facts, dense_names):
         self.alphas(facts.k)
+        if any(len(entry['values']) != facts.hidden for entry in self.fc_bias.values()):
+            raise ValueError('FC bias width must match the draft hidden dimension')
         norms = {f'layers.{layer}.{norm}.weight' for layer in range(facts.layers)
                  for norm in ('input_layernorm', 'post_attention_layernorm')}
         if self.smoothing_alpha.keys() - norms or self.gptq_damping.keys() - set(dense_names):
@@ -68,6 +77,8 @@ def load_agreed(path, facts, shapes, comm):
         if path:
             tuning = DraftTuning.from_dict(json.loads(Path(path).read_text()))
             tuning.validate(facts, shapes)
+            if tuning.fc_bias and set(tuning.fc_bias) != {str(rank) for rank in range(comm.world_size)}:
+                raise ValueError('FC bias must cover every TP rank')
     except Exception as exc:
         error = f'{type(exc).__name__}: {exc}'
     comm.wait_prepared('draft-tuning')
@@ -82,13 +93,15 @@ def prepare_store(tuning, store, policy, facts, comm):
     """Refuse a tuned reader that cannot use its calibration; agree errors before allocation."""
     from .drafter import store_name
     from .draft_policy import decode_name
-    if not tuning.smoothing_alpha and not tuning.gptq_damping and not tuning.trace_every:
+    if not tuning.smoothing_alpha and not tuning.gptq_damping and not tuning.trace_every and not tuning.fc_bias:
         return
     error = None
     try:
         import torch
         if tuning.trace_every and not policy.diagnostics:
             raise ValueError('selector trace requires draft diagnostics')
+        if tuning.fc_bias and policy.fc_precision != 'fp8':
+            raise ValueError('FC bias requires the fixed FP8 decode reader')
         for norm in tuning.smoothing_alpha:
             prefix = norm.rsplit('.', 2)[0] + '.'
             reader = prefix + ('self_attn.qkv' if norm.endswith('.input_layernorm.weight') else 'mlp.gate_up')

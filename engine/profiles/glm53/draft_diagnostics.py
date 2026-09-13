@@ -42,10 +42,12 @@ class DraftDiagnostics:
         self.trace_steps = {}         # slot -> (current sequence, sampled-step index); bounded by arena slots
         self.trace_digest = None
         self.trace_rank = 0
+        self.trace_projection_fp32 = False
 
-    def enable_selector_trace(self, every, digest, rank=0):
+    def enable_selector_trace(self, every, digest, rank=0, *, projection_fp32=False):
         self.trace_every, self.trace_digest = every, digest
         self.trace_rank = rank
+        self.trace_projection_fp32 = projection_fp32
         self.selector_trace = tuple(torch.empty_like(self.support, dtype=torch.float32) for _ in range(2))
 
     def slot(self, ring):
@@ -86,6 +88,7 @@ class DraftDiagnostics:
                 # after the first mismatch are never treated as teacher labels.
                 self.sink(kind='draft_selector', operation='selector_calibration', phase='decode',
                     seq=int(seq), context=int(context), tuning=self.trace_digest, policy_modified=bool(policy_modified),
+                    selector_projection_fp32=self.trace_projection_fp32,
                     target=list(map(int, new[:count])), candidates=self.support[slot, :count].tolist(),
                     unary=self.selector_trace[0][slot, :count].tolist(),
                     edge=self.selector_trace[1][slot, :count].tolist(), draft_width=self.k)

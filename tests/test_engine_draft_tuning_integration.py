@@ -21,6 +21,43 @@ def parts():
 
 
 class WalkTests(unittest.TestCase):
+    def test_fc_bias_norm_preserves_fp32_addition_and_signed_weight(self):
+        from engine.kernels.common.norm_rope import norm
+        x = torch.tensor([[1., 1.], [2., -1.]]).bfloat16()
+        bias = torch.tensor([1 / 256, -1 / 256])
+        gamma = torch.tensor([-2., 3.]).bfloat16()
+        expected_input = x.double() + bias.double()
+        expected = (expected_input * torch.rsqrt(expected_input.square().mean(-1, keepdim=True) + 1e-6))
+        expected = expected.bfloat16() * gamma
+        actual = norm(x, gamma, 1e-6, bias=bias)
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+        torch.testing.assert_close(norm(x, gamma, 1e-6, bias=torch.zeros(2)), norm(x, gamma, 1e-6), rtol=0, atol=0)
+        self.assertEqual(norm(x[:0], gamma, 1e-6, bias=bias).shape, (0, 2))
+        for invalid in (bias.bfloat16(), bias[:1], torch.ones(4)[::2]):
+            with self.assertRaisesRegex(ValueError, 'bias'):
+                norm(x, gamma, 1e-6, bias=invalid)
+
+    @unittest.skipUnless(torch.cuda.is_available(), 'CUDA fused norm numerics; CPU CI never launches GPUs')
+    def test_fc_bias_norm_cuda_graph_reads_the_owned_vector(self):
+        from engine.kernels.common.norm_rope import norm
+        gen = torch.Generator().manual_seed(19)
+        x = torch.randn(28, 4096, generator=gen).bfloat16().cuda()
+        gamma = torch.randn(4096, generator=gen).bfloat16().cuda()
+        bias = (torch.randn(4096, generator=gen) * .05).cuda()
+        for _ in range(3):
+            norm(x, gamma, 1e-6, bias=bias)
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):
+            actual = norm(x, gamma, 1e-6, bias=bias)
+        try:
+            for _ in range(2):
+                graph.replay()
+                expected = norm(x.cpu(), gamma.cpu(), 1e-6, bias=bias.cpu())
+                torch.testing.assert_close(actual.cpu(), expected, atol=.04, rtol=.016)
+                bias.zero_()
+        finally:
+            graph.reset()
+
     def test_position_alpha_and_forced_predecessor_are_used_in_the_actual_walk(self):
         args = parts()
         self.assertEqual(walk_scores(*args).tolist(), [[2, 2, 2]])
@@ -61,6 +98,51 @@ class WalkTests(unittest.TestCase):
 
 
 class WiringTests(unittest.TestCase):
+    def test_projection_precision_reaches_greedy_sampled_and_batched_paths(self):
+        from engine.base.comm import Comm
+        from engine.modules.draft_projection import project
+        facts = DrafterFacts(layers=1, hidden=16, heads=2, kv_heads=1, head_dim=4,
+            inter=16, rms_eps=1e-6, rope_theta=10000., window=8, block=4, mask_id=7,
+            conv_taps=2, conv_group=4, sel_rank=4, sel_top_k=2, target_layers=(1,), k=3)
+        target = SimpleNamespace(comm=Comm(), rank=0, vp=8,
+            head_local=lambda h: torch.tensor([[0., 1., 2., 3., 4., 5., 6., 7.]] * len(h)))
+        d = Drafter(facts, target, 8)
+        d.tuning = DraftTuning(selector_projection_fp32=True)
+        d.block = d.block_rows = lambda *args: torch.zeros(4, 16).bfloat16()
+        d.p = {'candidate_selector.hidden_projection.weight': torch.zeros(4, 16).bfloat16(),
+               'candidate_selector.predecessor_codebook': torch.zeros(8, 4).bfloat16(),
+               'candidate_selector.successor_codebook': torch.zeros(8, 4).bfloat16()}
+        with patch('engine.modules.draft_projection.project', wraps=project) as projection:
+            d.propose(0, 5, torch.zeros(2))
+            d.propose_sampled_tensor(torch.tensor([0]), 5, torch.zeros(2), 1., torch.full((3,), .5), 8)
+            d.propose_rows(torch.zeros(2), torch.tensor([0]), torch.tensor([0]), torch.tensor([5]))
+        self.assertEqual(projection.call_count, 3)
+        self.assertTrue(all(call.kwargs['fp32'] for call in projection.call_args_list))
+
+    def test_fc_bias_follows_decode_phase_even_with_shared_calibration(self):
+        facts = DrafterFacts(layers=1, hidden=4, heads=1, kv_heads=1, head_dim=4,
+            inter=4, rms_eps=1e-6, rope_theta=10000., window=8, block=2, mask_id=7,
+            conv_taps=2, conv_group=4, sel_rank=4, sel_top_k=2, target_layers=(1,), k=1)
+        d = Drafter(facts, SimpleNamespace(), 8)
+        d.p = {'hidden_norm.weight': torch.ones(4).bfloat16(),
+               'layers.0.self_attn.k_norm.weight': torch.ones(4).bfloat16()}
+        d.fc_bias = torch.tensor([-1., 2., 0., 0.])
+        d.context_kv = torch.cat([torch.eye(4), torch.eye(4)]).bfloat16()
+        d.context_linear = lambda aux, *args, **kwargs: aux
+        aux = torch.tensor([[3., 1., 2., 2.]]).bfloat16()
+        corrected = torch.tensor([[2., 3., 2., 2.]]).bfloat16()
+        from engine.kernels.common.norm_rope import norm
+        expected = norm(corrected, d.p['hidden_norm.weight'], facts.rms_eps)
+        ring = torch.zeros(1, 2, 8, 1, 4).bfloat16()
+        d.observe(ring, torch.tensor([0]), aux)
+        self.assertTrue(torch.equal(ring[0, 1, 0, 0], norm(aux, d.p['hidden_norm.weight'], facts.rms_eps)[0]))
+        d.observe_committed(ring, torch.tensor([0]), aux)
+        self.assertTrue(torch.equal(ring[0, 1, 0, 0], expected[0]))
+        for n in (1, 4):
+            ctx = d._project_context(torch.zeros(n, 2, dtype=torch.int64), aux.expand(n * 2, -1),
+                                     torch.ones(n, dtype=torch.int64), observe=False)
+            self.assertTrue(torch.equal(ctx[:, :, 0, 1, 0], expected.expand(n, 2, -1)))
+
     def test_capture_construction_binds_boundary_input_only_when_enabled(self):
         class Graph:
             def __init__(self, body, make, shapes, **kw):

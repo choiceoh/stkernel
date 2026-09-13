@@ -3,6 +3,7 @@
 
 selector reads recorded selector_calibration JSONL, split by request group.
 packing reads a torch weights/statistics/held-out-input bundle (see the guide).
+fc-bias reads per-rank native/reference FC output pairs and fits a mean correction.
 Neither command contacts a server, reserves GPUs, or promotes a default.
 """
 import argparse
@@ -19,9 +20,16 @@ def fit_selector(records, grid=(0., .5, .75, 1., 1.25)):
     from engine.profiles.glm53.draft_tuning import number
     grid = sorted(set([1.] + [number(a, 0, 2, 'alpha grid') for a in grid]))
     groups, samples, width = {}, [], None
+    projection_modes = set()
     for row in records:
         if row.get('kind') != 'draft_selector' or row.get('rank', 0) != 0 or row.get('policy_modified', False):
             continue
+        projection = row.get('selector_projection_fp32', False)
+        if type(projection) is not bool:
+            raise ValueError('selector projection precision must be bool')
+        projection_modes.add(projection)
+        if len(projection_modes) != 1:
+            raise ValueError('selector fitting cannot mix projection precision modes')
         group, split = row.get('sample_group'), row.get('split')
         if not isinstance(group, str) or not group or split not in ('train', 'validation'):
             raise ValueError('selector rows require sample_group and explicit train/validation split')
@@ -58,7 +66,7 @@ def fit_selector(records, grid=(0., .5, .75, 1., 1.25)):
         report.append(dict(position=step, train_rows=len(train), validation_rows=len(valid),
             validation_baseline=base, validation_selected=accuracy(valid, alpha),
             validation_covered=sum(r[2] in r[3] for r in valid), alpha=alpha))
-    return dict(version=1, selector_alpha=selected,
+    return dict(version=1, selector_alpha=selected, selector_projection_fp32=projection_modes.pop(),
                 evidence=dict(kind='held_out_position_agreement', live_acceptance=False, positions=report))
 
 
@@ -162,11 +170,15 @@ def fit_packing(bundle, alphas=(.25, .5, .75), dampings=(.005, .01, .02)):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=('selector', 'packing'))
+    parser.add_argument('mode', choices=('selector', 'packing', 'fc-bias'))
     parser.add_argument('input', type=Path)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--groups', type=Path, help='selector only: recording-token:seq to request-family/split JSON')
+    parser.add_argument('--peer-bundle', type=Path, action='append', default=[],
+                        help='fc-bias only: another TP rank bundle (repeat for every peer)')
     args = parser.parse_args()
+    if args.peer_bundle and args.mode != 'fc-bias':
+        parser.error('--peer-bundle applies only to fc-bias')
     if args.mode == 'selector':
         with args.input.open() as source:
             records = [json.loads(line) for line in source if line.strip()]
@@ -178,11 +190,21 @@ def main():
             parser.error('--groups applies only to selector records')
         import torch
         bundle = torch.load(args.input, map_location='cpu', mmap=True, weights_only=True)
-        result = fit_packing(bundle)
+        if args.mode == 'fc-bias':
+            from bench.draft_fc_bias import fit_fc_bias_ranks
+            peers = [torch.load(path, map_location='cpu', mmap=True, weights_only=True) for path in args.peer_bundle]
+            result = fit_fc_bias_ranks([bundle] + peers)
+        else:
+            result = fit_packing(bundle)
     with args.input.open('rb') as source:
         result['evidence']['input_sha256'] = hashlib.file_digest(source, 'sha256').hexdigest()
     if args.groups:
         result['evidence']['groups_sha256'] = hashlib.sha256(args.groups.read_bytes()).hexdigest()
+    if args.peer_bundle:
+        result['evidence']['peer_sha256'] = []
+        for path in args.peer_bundle:
+            with path.open('rb') as source:
+                result['evidence']['peer_sha256'].append(hashlib.file_digest(source, 'sha256').hexdigest())
     args.out.write_text(json.dumps(result, indent=2, allow_nan=False) + '\n')
     print(args.out)
 

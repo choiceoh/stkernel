@@ -64,6 +64,13 @@ class ProfileTests(unittest.TestCase):
 
 
 class SelectorFitTests(unittest.TestCase):
+    def test_fitted_alpha_preserves_projection_precision_and_refuses_mixed_records(self):
+        records = [dict(row, selector_projection_fp32=True) for row in self.rows()]
+        self.assertTrue(fit_selector(records)['selector_projection_fp32'])
+        records[0]['selector_projection_fp32'] = False
+        with self.assertRaisesRegex(ValueError, 'mix projection precision'):
+            fit_selector(records)
+
     def rows(self):
         return [dict(kind='draft_selector', rank=0, sample_group=split, split=split, draft_width=3,
                      target=[10, 10], candidates=[[10, 11], [10, 11]],
