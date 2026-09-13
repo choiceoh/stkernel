@@ -167,3 +167,8 @@ inside `shape()`. The runner now preserves its selected port while importing
 production shape, with a CPU regression test. This interrupted boot provides
 no numerical or timing verdict. Replacement order is exactly `B P T E B`;
 chain definitions themselves count as executions.
+
+`fleet-admission.json` records the replacement `st-gb10-orders0913v4` ticket
+and exact payload. At the recorded snapshot it was queued behind another
+session's prefill measurement. This is admission evidence only. The runner's
+41-test CPU slice, including isolated-port regression coverage, passes.
