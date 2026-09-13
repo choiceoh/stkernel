@@ -93,6 +93,7 @@ class CostModel:
     prefill_flat_ms: float = 0.0      # >0 이면 처리량 테이블 대신 청크당 상수(수동 비교용)
     front_ms: float = 0.0             # 문의 앞면(입장·토큰화) — 요청마다 한 번
     cold_extra_s: dict = field(default_factory=dict)       # {프롬프트 토큰: 초} — 그 길이의 첫 요청만
+    acc_hist: list = field(default_factory=list)            # accepted=0..k 개수 — 실측 분포(st:spec_accepted_per_step_total). 비면 기하 추첨
     seed: int = 7                     # 수용률 추첨의 시드 — 재현 가능해야 시뮬레이션이다
 
     def __post_init__(self):
@@ -100,8 +101,12 @@ class CostModel:
         self.prefill_tok_s = {int(c): float(v) for c, v in self.prefill_tok_s.items()}
         self.decode_ms_by_ctx = {int(c): float(v) for c, v in self.decode_ms_by_ctx.items()}
         self.cold_extra_s = {int(c): float(v) for c, v in self.cold_extra_s.items()}
+        self.acc_hist = [float(x) for x in self.acc_hist]
 
     def tokens_per_step_mean(self) -> float:
+        if self.acc_hist:
+            total = sum(self.acc_hist) or 1.0
+            return sum((i + 1) * c for i, c in enumerate(self.acc_hist)) / total
         return 1.0 + self.k * self.acc
 
     def per_position_acc(self) -> float:
@@ -258,6 +263,14 @@ class NullModel:
         return _Pending(self, seqs, th)
 
     def _accepted(self) -> int:
+        if self.cost.acc_hist:
+            # 실측 분포에서 뽑는다(쌍봉이면 쌍봉으로 나온다) — 기하 추첨은 평균만 맞춘다
+            r = self.rng.random() * (sum(self.cost.acc_hist) or 1.0)
+            for i, c in enumerate(self.cost.acc_hist):
+                r -= c
+                if r < 0:
+                    return min(i, self.cost.k)
+            return min(len(self.cost.acc_hist) - 1, self.cost.k)
         n = 0
         while n < self.cost.k and self.rng.random() < self.q:
             n += 1
@@ -411,7 +424,7 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
     out = {"cost": {f: getattr(cost, f) for f in
                     ("name", "k", "acc", "decode_ms", "decode_ms_per_row", "decode_ms_per_1k_ctx",
                      "decode_ms_by_ctx", "prefill_tok_s", "prefill_flat_ms", "front_ms",
-                     "cold_extra_s")},
+                     "cold_extra_s", "acc_hist")},
            "steps": kinds, "wall_s": round(wall, 3), "step_s": cadence,
            "decode_step_s_wall": decode_rate,
            "decode_step_s_phase": round(1.0 / cost.decode_delay(1, 0), 2) if cost.decode_ms > 0 else None,
@@ -661,6 +674,8 @@ def main() -> int:
     ap.add_argument("--max-running", type=int, default=8)
     ap.add_argument("--meta", action="store_true", help="StepMeta 구축 비용을 별도로 같이 잰다")
     ap.add_argument("--no-calib", action="store_true", help="장치 0 캘리브레이션 스텝을 건너뛴다")
+    ap.add_argument("--closed-loop", action="store_true", dest="closed_loop",
+                    help="onepass 하네스 의미로 돈다: 앞 요청이 끝나야 다음(가상 벤치마크의 표준 자세)")
     ap.add_argument("--out-dir", help="steps-sim-*.ring 덤프를 이 디렉터리에 쓴다 (step_replay 가 읽는다)")
     ap.add_argument("--json", action="store_true", help="결과를 JSON 한 줄로")
     args = ap.parse_args()
@@ -742,7 +757,7 @@ def main() -> int:
             cost.name = loaded.get("name", cost.name + "+json")
         cost = overrides(cost)
     out = run_once(prompts, gen, contract, cost=cost, arrive_ms=arrive,
-                   can_async=True, with_meta=args.meta,
+                   can_async=True, with_meta=args.meta, closed_loop=args.closed_loop,
                    host_med_ms=(calib or {}).get("host_med_decode_ms"))
 
     if args.out_dir:
