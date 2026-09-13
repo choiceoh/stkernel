@@ -1,0 +1,71 @@
+revision=1d452e11723e39588c8bd07673334d02377099de
+test_indexer_avoids_only_covered_queries_and_preserves_every_cache_write (tests.test_engine_prefill_covered_queries.CoveredQueriesTests.test_indexer_avoids_only_covered_queries_and_preserves_every_cache_write) ... ok
+test_owned_pool_destination_and_short_query_padding (tests.test_engine_prefill_covered_queries.CoveredQueriesTests.test_owned_pool_destination_and_short_query_padding) ... ok
+test_scored_shard_skips_discarded_fill_and_initializes_wire_padding (tests.test_engine_prefill_covered_queries.CoveredQueriesTests.test_scored_shard_skips_discarded_fill_and_initializes_wire_padding) ... ok
+test_select_pools_writes_destination_in_single_and_multiple_passes (tests.test_engine_prefill_covered_queries.CoveredQueriesTests.test_select_pools_writes_destination_in_single_and_multiple_passes) ... ERROR
+test_tp4_model_and_following_decode_match_with_independent_and_combined_lanes (tests.test_engine_prefill_covered_queries.CoveredQueriesTests.test_tp4_model_and_following_decode_match_with_independent_and_combined_lanes) ... ok
+test_actual_kernel_body_strides_offsets_tails_and_independent_einsums (tests.test_engine_prefill_absorb_tiles.AbsorbKernelTests.test_actual_kernel_body_strides_offsets_tails_and_independent_einsums) ... ok
+test_actual_wrapper_launch_geometry_and_fresh_output_without_a_device (tests.test_engine_prefill_absorb_tiles.AbsorbKernelTests.test_actual_wrapper_launch_geometry_and_fresh_output_without_a_device) ... ok
+test_existing_einsums_copy_and_reference_outputs_own_token_major_storage (tests.test_engine_prefill_absorb_tiles.AbsorbKernelTests.test_existing_einsums_copy_and_reference_outputs_own_token_major_storage) ... ok
+test_native_wrapper_rejects_unsupported_inputs_before_launch (tests.test_engine_prefill_absorb_tiles.AbsorbKernelTests.test_native_wrapper_rejects_unsupported_inputs_before_launch) ... ok
+test_tp4_reference_handoff_preserves_aux_cache_and_following_seven_token_decode (tests.test_engine_prefill_absorb_tiles.AbsorbModelTests.test_tp4_reference_handoff_preserves_aux_cache_and_following_seven_token_decode) ... ok
+test_only_bounded_single_segment_eager_prefill_uses_lane (tests.test_engine_prefill_absorb_tiles.AbsorbRoutingTests.test_only_bounded_single_segment_eager_prefill_uses_lane) ... ok
+test_runtime_marker_requires_both_contractions_on_every_dsa_layer (tests.test_engine_prefill_absorb_tiles.AbsorbRoutingTests.test_runtime_marker_requires_both_contractions_on_every_dsa_layer) ... ok
+test_serving_default_on_with_experimental_rollback_and_neutral_bare_plan (tests.test_engine_prefill_absorb_tiles.AbsorbRoutingTests.test_serving_default_on_with_experimental_rollback_and_neutral_bare_plan) ... ok
+test_actual_model_dispatch_splits_at_coverage_and_falls_back_outside_contract (tests.test_prefill_dense_prefix.PrefixGeometryTests.test_actual_model_dispatch_splits_at_coverage_and_falls_back_outside_contract) ... ok
+test_coverage_matches_complete_pool_selection_including_partial_pool (tests.test_prefill_dense_prefix.PrefixGeometryTests.test_coverage_matches_complete_pool_selection_including_partial_pool) ... ok
+test_runtime_marker_requires_every_dsa_layer (tests.test_prefill_dense_prefix.PrefixGeometryTests.test_runtime_marker_requires_every_dsa_layer) ... ok
+test_serving_defaults_on_with_experimental_rollback_and_fixed_production (tests.test_prefill_dense_prefix.PrefixGeometryTests.test_serving_defaults_on_with_experimental_rollback_and_fixed_production) ... ok
+test_actual_kernel_body_masks_pages_and_matches_independent_attention (tests.test_prefill_dense_prefix.PrefixKernelTests.test_actual_kernel_body_masks_pages_and_matches_independent_attention) ... ok
+test_actual_served_mla_skips_only_redundant_prefill_copy_and_writes_owned_output (tests.test_prefill_dense_prefix.PrefixKernelTests.test_actual_served_mla_skips_only_redundant_prefill_copy_and_writes_owned_output) ... ok
+test_native_wrapper_rejects_wrong_dtype_geometry_page_table_and_cpu (tests.test_prefill_dense_prefix.PrefixKernelTests.test_native_wrapper_rejects_wrong_dtype_geometry_page_table_and_cpu) ... ok
+test_four_rank_model_preserves_state_auxiliary_and_following_decode (tests.test_prefill_dense_prefix.PrefixModelTests.test_four_rank_model_preserves_state_auxiliary_and_following_decode) ... ok
+test_actual_indexer_matches_slots_valid_counts_pool_bytes_and_tail_state (tests.test_prefill_indexer_shards.IndexerStateTests.test_actual_indexer_matches_slots_valid_counts_pool_bytes_and_tail_state) ... ok
+test_full_model_regular_and_layer_major_preserve_hidden_state_and_next_decode (tests.test_prefill_indexer_shards.IndexerStateTests.test_full_model_regular_and_layer_major_preserve_hidden_state_and_next_decode) ... ok
+test_fully_covered_selection_needs_no_collective (tests.test_prefill_indexer_shards.IndexerStateTests.test_fully_covered_selection_needs_no_collective) ... ok
+test_pool_id_wire_preserves_sign_boundary_sentinel_and_wide_fallback (tests.test_prefill_indexer_shards.IndexerStateTests.test_pool_id_wire_preserves_sign_boundary_sentinel_and_wide_fallback) ... ok
+test_query_projection_padding_keeps_real_rows_and_never_enters_cache (tests.test_prefill_indexer_shards.IndexerStateTests.test_query_projection_padding_keeps_real_rows_and_never_enters_cache) ... ok
+test_default_is_off_and_execution_plan_rejects_non_boolean (tests.test_prefill_indexer_shards.QueryOwnershipTests.test_default_is_off_and_execution_plan_rejects_non_boolean) ... ok
+test_every_required_query_has_one_owner_and_covered_queries_have_none (tests.test_prefill_indexer_shards.QueryOwnershipTests.test_every_required_query_has_one_owner_and_covered_queries_have_none) ... ok
+test_c4_overlap_keeps_rows_state_and_auxiliary_order (tests.test_engine_execution_plans.ExecutionPlanTests.test_c4_overlap_keeps_rows_state_and_auxiliary_order) ... ok
+test_four_ranks_keep_collective_order_and_reduced_outputs (tests.test_engine_execution_plans.ExecutionPlanTests.test_four_ranks_keep_collective_order_and_reduced_outputs) ... ok
+test_layer_order_matches_chunk_order_and_all_prefix_states (tests.test_engine_execution_plans.ExecutionPlanTests.test_layer_order_matches_chunk_order_and_all_prefix_states) ... ok
+test_only_c4_splits_and_invalid_budgets_fail (tests.test_engine_execution_plans.ExecutionPlanTests.test_only_c4_splits_and_invalid_budgets_fail) ... ok
+test_oversized_window_refuses_before_mutating_state (tests.test_engine_execution_plans.ExecutionPlanTests.test_oversized_window_refuses_before_mutating_state) ... ok
+test_tiles_rebase_patches_and_keep_only_internal_marks (tests.test_engine_execution_plans.ExecutionPlanTests.test_tiles_rebase_patches_and_keep_only_internal_marks) ... ok
+test_missing_native_implementation_cannot_pass_coverage (tests.test_engine_native_execution.NativeQualificationTests.test_missing_native_implementation_cannot_pass_coverage) ... ok
+test_nonfinite_prefill_releases_slots_and_refuses_readiness (tests.test_engine_native_execution.NativeQualificationTests.test_nonfinite_prefill_releases_slots_and_refuses_readiness) ... ok
+test_acceptance_defaults_are_on_and_cannot_override_production (tests.test_engine_knobs.KnobDeclarationTests.test_acceptance_defaults_are_on_and_cannot_override_production) ... ok
+test_adopted_execution_cannot_be_changed_by_stale_bisect_environment (tests.test_engine_knobs.KnobDeclarationTests.test_adopted_execution_cannot_be_changed_by_stale_bisect_environment) ... ok
+test_gb10_serving_defaults_are_on_and_production_refuses_overrides (tests.test_engine_knobs.KnobDeclarationTests.test_gb10_serving_defaults_are_on_and_production_refuses_overrides) ... ok
+test_indexer_shards_are_explicit_and_cannot_change_production (tests.test_engine_knobs.KnobDeclarationTests.test_indexer_shards_are_explicit_and_cannot_change_production) ... ok
+test_only_declared_precision_mla_context_and_execution_experiments_remain (tests.test_engine_knobs.KnobDeclarationTests.test_only_declared_precision_mla_context_and_execution_experiments_remain) ... ok
+test_production_remains_restartable_after_experiment_expiry (tests.test_engine_knobs.KnobDeclarationTests.test_production_remains_restartable_after_experiment_expiry) ... ok
+test_unqualified_tuning_requires_an_explicit_profile (tests.test_engine_knobs.KnobDeclarationTests.test_unqualified_tuning_requires_an_explicit_profile) ... ok
+test_configure_prefill_modes (tests.test_engine_knobs.MlaPrefillModeTests.test_configure_prefill_modes) ... ok
+test_dispatcher_spec_is_applied_once_and_refused_after_views_exist (tests.test_engine_knobs.MoeStaticSpecTests.test_dispatcher_spec_is_applied_once_and_refused_after_views_exist) ... ok
+test_parse_moe_static (tests.test_engine_knobs.MoeStaticSpecTests.test_parse_moe_static) ... ok
+test_the_timing_cells_reach_the_served_recipe_but_never_serving (tests.test_engine_knobs.MoeStaticSpecTests.test_the_timing_cells_reach_the_served_recipe_but_never_serving)
+xs/xa drop a TMA issue at compile time, which is the only way to ask which of the served recipe's ... ok
+test_tile_major_relayout_reads_back_row_major (tests.test_engine_knobs.MoeStaticSpecTests.test_tile_major_relayout_reads_back_row_major) ... ok
+test_dynamic_tile_m_override_is_validated (tests.test_engine_knobs.ProbeHookTests.test_dynamic_tile_m_override_is_validated) ... ok
+test_mhc_pass_hook_is_fixed_before_the_kernels_compile (tests.test_engine_knobs.ProbeHookTests.test_mhc_pass_hook_is_fixed_before_the_kernels_compile) ... ok
+test_mla_probe_instruments_are_arguments_not_env (tests.test_engine_knobs.ProbeHookTests.test_mla_probe_instruments_are_arguments_not_env) ... ok
+test_probe_runner_and_launcher_forward_declared_knobs (tests.test_engine_knobs.ProbeRunnerTests.test_probe_runner_and_launcher_forward_declared_knobs) ... ok
+
+======================================================================
+ERROR: test_select_pools_writes_destination_in_single_and_multiple_passes (tests.test_engine_prefill_covered_queries.CoveredQueriesTests.test_select_pools_writes_destination_in_single_and_multiple_passes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/work/tests/test_engine_prefill_covered_queries.py", line 63, in test_select_pools_writes_destination_in_single_and_multiple_passes
+    expected = Glm53Net._select_pools(net, x, None, None, None, lengths, 9, 4)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work/engine/profiles/glm53/net.py", line 710, in _select_pools
+    logits = self.lanes.indexer_logits(q8[r0:r1], keys, scales, w_eff[r0:r1], ke[r0:r1])
+                                                                ~~~~~^^^^^^^
+TypeError: 'NoneType' object is not subscriptable
+
+----------------------------------------------------------------------
+Ran 52 tests in 29.720s
+
+FAILED (errors=1)

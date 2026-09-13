@@ -20,7 +20,9 @@ def _dense_prefix(Q, KV, Blocks, Out, ROWS, CONTEXT, SCALE: tl.constexpr,
                   KV_SCALE: tl.constexpr, BLOCK: tl.constexpr, STRIDE: tl.constexpr,
                   OFFSET: tl.constexpr, IDENTITY: tl.constexpr,
                   HEADS: tl.constexpr, DIM: tl.constexpr, BM: tl.constexpr, BN: tl.constexpr):
-    m = (tl.program_id(0) * BM + tl.arange(0, BM)).to(tl.int64)
+    # Query/output offsets are bounded by 2051x16x512; cache slots below
+    # still widen before their potentially large paged-cache byte offsets.
+    m = tl.program_id(0) * BM + tl.arange(0, BM)
     query = m // HEADS
     d = tl.arange(0, DIM)
     q = tl.load(Q + m[:, None] * DIM + d[None, :], query[:, None] < ROWS, other=0)

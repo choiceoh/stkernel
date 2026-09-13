@@ -16,7 +16,9 @@ def _absorb(X, W, Y, ROWS, HEADS: tl.constexpr, INPUT: tl.constexpr,
             OUTPUT: tl.constexpr, WH: tl.constexpr, WR: tl.constexpr,
             TRANSPOSE: tl.constexpr, BM: tl.constexpr, BN: tl.constexpr,
             BK: tl.constexpr):
-    m = (tl.program_id(0) * BM + tl.arange(0, BM)).to(tl.int64)
+    # At the bounded 32768x16x512 maximum, relative element offsets fit int32.
+    # Pointer addresses stay 64-bit; avoid widening every row-index intermediate.
+    m = tl.program_id(0) * BM + tl.arange(0, BM)
     n = tl.program_id(1) * BN + tl.arange(0, BN)
     h = tl.program_id(2)
     k = tl.arange(0, BK)

@@ -1,0 +1,66 @@
+absorb-query Resource usage:
+ Common:
+  GLOBAL:0
+ Function _absorb:
+  REG:128 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0
+absorb-output Resource usage:
+ Common:
+  GLOBAL:0
+ Function _absorb:
+  REG:151 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0
+dense-prefix-L3 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:180 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+dense-prefix-L7 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+dense-prefix-L11 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+dense-prefix-L15 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+dense-prefix-L19 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+dense-prefix-L23 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+dense-prefix-L27 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+dense-prefix-L31 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+dense-prefix-L35 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+dense-prefix-L39 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+dense-prefix-L43 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+{"status": "PASS", "cuda_initialized": false, "elapsed_s": 9.1038942449959}

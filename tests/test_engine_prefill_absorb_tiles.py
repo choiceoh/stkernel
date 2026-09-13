@@ -160,7 +160,7 @@ class AbsorbKernelTests(unittest.TestCase):
             data[index[mask]] = values.expand(index.shape)[mask].to(data.dtype)
 
         program = [0, 0, 0]
-        tl = NS(program_id=lambda d: program[d], arange=torch.arange,
+        tl = NS(program_id=lambda d: program[d], arange=lambda lo, hi: torch.arange(lo, hi, dtype=torch.int32),
                 int64=torch.int64, float32=torch.float32, bfloat16=torch.bfloat16,
                 load=load, store=store, cdiv=lambda a, b: (a+b-1)//b,
                 zeros=lambda shape, dtype: torch.zeros(shape, dtype=dtype),

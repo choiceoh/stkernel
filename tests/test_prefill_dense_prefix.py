@@ -3,7 +3,7 @@ import ast
 import copy
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace as NS
+from types import MethodType, SimpleNamespace as NS
 import unittest
 from unittest.mock import Mock
 
@@ -62,6 +62,7 @@ class PrefixGeometryTests(unittest.TestCase):
                     dense, sparse = Mock(side_effect=fill(2)), Mock(side_effect=fill(3))
                     net = NS(prefill_dense_prefix=enabled, probe=False, F=NS(topk=128, kpool=4, mla_scale=.1),
                              lanes=NS(mla_dense_prefix=dense, mla_sparse=sparse), prefill_dense_prefix_executed=set())
+                    net._mla_prefix = MethodType(Glm53Net._mla_prefix, net)
                     cache = NS(token_map=Mock(return_value=(None, 64, 128, 32)))
                     q = torch.zeros(rows, 2, 4).bfloat16()
                     result = Glm53Net._mla_context(net, 1, q, q, torch.zeros(rows, 131), torch.zeros(rows), step, cache)
@@ -92,6 +93,9 @@ class PrefixGeometryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'dense prefix attention was not executed'):
             native_execution_report(net, drafter)
         net.prefill_dense_prefix_executed = {L for L in net.layers if net.F.is_dsa(L)}
+        with self.assertRaisesRegex(RuntimeError, 'covered indexer queries were not bypassed'):
+            native_execution_report(net, drafter)
+        net.prefill_covered_queries_executed = {1}
         self.assertEqual(native_execution_report(net, drafter)['prefill_dense_prefix'],
                          sorted(net.prefill_dense_prefix_executed))
 
@@ -162,7 +166,7 @@ class PrefixKernelTests(unittest.TestCase):
             self.assertTrue(bool(((index[mask] >= 0) & (index[mask] < pointer.data.numel())).all()))
             pointer.data[index[mask]] = values.expand(index.shape)[mask].to(pointer.data.dtype)
         program = [0]
-        tl = NS(program_id=lambda d: program[d], arange=torch.arange, int64=torch.int64,
+        tl = NS(program_id=lambda d: program[d], arange=lambda lo, hi: torch.arange(lo, hi, dtype=torch.int32), int64=torch.int64,
                 float32=torch.float32, bfloat16=torch.bfloat16, load=load, store=store,
                 full=lambda shape, value, dtype: torch.full(shape, value, dtype=dtype),
                 zeros=lambda shape, dtype: torch.zeros(shape, dtype=dtype),
@@ -267,6 +271,7 @@ class PrefixModelTests(unittest.TestCase):
                 torch.testing.assert_close(cache.state, final, rtol=0, atol=0)
                 torch.testing.assert_close(cache.paged, final_pages, rtol=0, atol=0)
                 self.assertEqual(net.prefill_dense_prefix_executed, {1})
+                self.assertEqual(net.prefill_covered_queries_executed, {1})
             LocalTP(4, timeout_s=30).run(rank)
 
 

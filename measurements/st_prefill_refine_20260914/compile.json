@@ -1,0 +1,235 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "variants": [
+    {
+      "name": "absorb-query",
+      "constants": {
+        "HEADS": 16,
+        "INPUT": 256,
+        "OUTPUT": 512,
+        "WH": 262144,
+        "WR": 512,
+        "TRANSPOSE": false,
+        "BM": 64,
+        "BN": 64,
+        "BK": 32
+      },
+      "shared_bytes": 8192,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _absorb:\n  REG:128 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "absorb-output",
+      "constants": {
+        "HEADS": 16,
+        "INPUT": 512,
+        "OUTPUT": 256,
+        "WH": 262144,
+        "WR": 512,
+        "TRANSPOSE": true,
+        "BM": 64,
+        "BN": 64,
+        "BK": 32
+      },
+      "shared_bytes": 8192,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _absorb:\n  REG:151 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "dense-prefix-L3",
+      "constants": {
+        "SCALE": 0.0625,
+        "KV_SCALE": 1.0,
+        "BLOCK": 768,
+        "STRIDE": 9240,
+        "OFFSET": 0,
+        "IDENTITY": false,
+        "HEADS": 16,
+        "DIM": 512,
+        "BM": 32,
+        "BN": 32
+      },
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:180 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "dense-prefix-L7",
+      "constants": {
+        "SCALE": 0.0625,
+        "KV_SCALE": 1.0,
+        "BLOCK": 768,
+        "STRIDE": 9240,
+        "OFFSET": 818,
+        "IDENTITY": false,
+        "HEADS": 16,
+        "DIM": 512,
+        "BM": 32,
+        "BN": 32
+      },
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "dense-prefix-L11",
+      "constants": {
+        "SCALE": 0.0625,
+        "KV_SCALE": 1.0,
+        "BLOCK": 768,
+        "STRIDE": 9240,
+        "OFFSET": 1636,
+        "IDENTITY": false,
+        "HEADS": 16,
+        "DIM": 512,
+        "BM": 32,
+        "BN": 32
+      },
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "dense-prefix-L15",
+      "constants": {
+        "SCALE": 0.0625,
+        "KV_SCALE": 1.0,
+        "BLOCK": 768,
+        "STRIDE": 9240,
+        "OFFSET": 2454,
+        "IDENTITY": false,
+        "HEADS": 16,
+        "DIM": 512,
+        "BM": 32,
+        "BN": 32
+      },
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "dense-prefix-L19",
+      "constants": {
+        "SCALE": 0.0625,
+        "KV_SCALE": 1.0,
+        "BLOCK": 768,
+        "STRIDE": 9240,
+        "OFFSET": 3272,
+        "IDENTITY": false,
+        "HEADS": 16,
+        "DIM": 512,
+        "BM": 32,
+        "BN": 32
+      },
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "dense-prefix-L23",
+      "constants": {
+        "SCALE": 0.0625,
+        "KV_SCALE": 1.0,
+        "BLOCK": 768,
+        "STRIDE": 9240,
+        "OFFSET": 4090,
+        "IDENTITY": false,
+        "HEADS": 16,
+        "DIM": 512,
+        "BM": 32,
+        "BN": 32
+      },
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "dense-prefix-L27",
+      "constants": {
+        "SCALE": 0.0625,
+        "KV_SCALE": 1.0,
+        "BLOCK": 768,
+        "STRIDE": 9240,
+        "OFFSET": 4908,
+        "IDENTITY": false,
+        "HEADS": 16,
+        "DIM": 512,
+        "BM": 32,
+        "BN": 32
+      },
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "dense-prefix-L31",
+      "constants": {
+        "SCALE": 0.0625,
+        "KV_SCALE": 1.0,
+        "BLOCK": 768,
+        "STRIDE": 9240,
+        "OFFSET": 5726,
+        "IDENTITY": false,
+        "HEADS": 16,
+        "DIM": 512,
+        "BM": 32,
+        "BN": 32
+      },
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "dense-prefix-L35",
+      "constants": {
+        "SCALE": 0.0625,
+        "KV_SCALE": 1.0,
+        "BLOCK": 768,
+        "STRIDE": 9240,
+        "OFFSET": 6544,
+        "IDENTITY": false,
+        "HEADS": 16,
+        "DIM": 512,
+        "BM": 32,
+        "BN": 32
+      },
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "dense-prefix-L39",
+      "constants": {
+        "SCALE": 0.0625,
+        "KV_SCALE": 1.0,
+        "BLOCK": 768,
+        "STRIDE": 9240,
+        "OFFSET": 7362,
+        "IDENTITY": false,
+        "HEADS": 16,
+        "DIM": 512,
+        "BM": 32,
+        "BN": 32
+      },
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "dense-prefix-L43",
+      "constants": {
+        "SCALE": 0.0625,
+        "KV_SCALE": 1.0,
+        "BLOCK": 768,
+        "STRIDE": 9240,
+        "OFFSET": 8180,
+        "IDENTITY": false,
+        "HEADS": 16,
+        "DIM": 512,
+        "BM": 32,
+        "BN": 32
+      },
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    }
+  ],
+  "model_config_sha256": "e23c5d98f53e861d49a51bd3c68591621c5482ce829e42c31724152322fba03d",
+  "cuda_initialized": false,
+  "elapsed_s": 9.1038942449959,
+  "source_sha256": {
+    "engine/kernels/mla/prefill_absorb.py": "c6a8cdfd99e297156c8c262ad15c5af17924ad64b06363f2c69ac52fa92c6c3a",
+    "engine/kernels/mla/prefill_dense.py": "2a609f30375bd88cce2f34a3e90bb528519ec9fc9534cea314ee9d3d1c240e23",
+    "engine/modules/prefill_indexer.py": "769d143c74904c90e6fc1cc18b2774afbeb5443f452c637a2d9fb90d3e722aab",
+    "engine/profiles/glm53/net.py": "3f7ca35040375eaac155788f1e38d527f0999bd11c27249d6a76e09c9d61582a",
+    "engine/profiles/glm53/boot.py": "6756b78bd33ec40807db46a3023e8ba1d065f6f6c94df4ae88c054fa5392ab47"
+  }
+}

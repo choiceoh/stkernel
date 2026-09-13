@@ -759,6 +759,7 @@ def native_execution_report(net, drafter):
                  prefill_collectives=sorted(net.prefill_transport.executed),
                  prefill_indexer_shards=sorted(getattr(net, 'prefill_indexer_executed', ())),
                  prefill_dense_prefix=sorted(getattr(net, 'prefill_dense_prefix_executed', ())),
+                 prefill_covered_queries=sorted(getattr(net, 'prefill_covered_queries_executed', ())),
                  prefill_absorb_tiles=sorted(getattr(net, 'prefill_absorb_tiles_executed', ())))
     if (getattr(net, 'prefill_absorb_tiles', False)
             and set(proof['prefill_absorb_tiles']) != {
@@ -767,6 +768,9 @@ def native_execution_report(net, drafter):
     if (getattr(net, 'prefill_dense_prefix', False)
             and set(proof['prefill_dense_prefix']) != {L for L in net.layers if net.F.is_dsa(L)}):
         raise RuntimeError(f'dense prefix attention was not executed on every DSA layer: {proof}')
+    if (getattr(net, 'prefill_dense_prefix', False)
+            and set(proof['prefill_covered_queries']) != {L for L in net.layers if net.F.is_dsa(L)}):
+        raise RuntimeError(f'covered indexer queries were not bypassed on every DSA layer: {proof}')
     if (getattr(net, 'prefill_indexer_shards', False)
             and set(proof['prefill_indexer_shards']) != {L for L in net.layers if net.F.is_dsa(L)}):
         raise RuntimeError(f'prefill indexer query shards were not executed on every DSA layer: {proof}')
