@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Canonical Korean consumer test, harness 44: C=1 and C=4 at 2K/32K/128K.
+"""Canonical Korean consumer test, harness 44: C=1 2K/32K/128K; C=4 2K/32K.
 
-Every invocation prepares each workload with a full replay, measures with the
+Every invocation prepares full prompts with bounded output, measures with the
 profiler off and a unique prefix salt, then runs separate bounded GPU diagnostic
 replays. Preparation changes, prefix reuse, missing evidence and external traffic
 invalidate steady-state comparisons. First reasoning/content, SSE gaps, per-request
@@ -495,6 +495,17 @@ def diagnostic_request(item, num_spec):
     return dict(item, max_tokens=tokens, min_tokens=tokens, reasoning_budget=tokens // 2)
 
 
+def preparation_request(item, num_spec):
+    """Warm the unchanged input with bounded output, outside quality scoring.
+
+    Model boot captures the declared decode ladder. Preparation need not
+    solve the long reasoning task a second time. Any specialization or
+    capture that remains during scoring still fails steady_errors; this
+    shortened preparation is not itself evidence of steady state.
+    """
+    return diagnostic_request(item, num_spec)
+
+
 def diagnostic_complete(report):
     def complete(rank):
         traces = rank.get('traces', [])
@@ -584,10 +595,17 @@ def _main() -> int:
         # tail); run 2 the warm one. bench/st_judge.py judges warm against warm.
         rec["run_index"] = int(os.environ["ONEPASS_RUN_INDEX"])
     # Operator policy (2026-09-13): retain C=1 repeats, pay for C=4 once.
-    # A standalone invocation still includes both concurrency levels.
-    concurrencies = (1, 4) if rec.get('run_index', 1) == 1 else (1,)
-    rec['concurrency_coverage'] = dict(policy='c1-twice-c4-once-v1', included=list(concurrencies),
-        c4_status='scheduled' if 4 in concurrencies else 'omitted_after_run_1')
+    # The user removed C=4 128K, including preparation and diagnostic replays.
+    # Accept both decimal and binary spellings; C=1 retains every requested context.
+    contexts = list(map(int, args.ctx.split(',')))
+    c4_contexts = [ctx for ctx in contexts if ctx not in (128000, 131072)]
+    first_run = rec.get('run_index', 1) == 1
+    concurrencies = (1, 4) if first_run and c4_contexts else (1,)
+    rec['concurrency_coverage'] = dict(policy='c1-twice-c4-once-no-128k-v2',
+        included=list(concurrencies), contexts={'1': contexts, '4': c4_contexts if first_run else []},
+        c4_excluded_contexts=[ctx for ctx in contexts if ctx not in c4_contexts],
+        c4_status=('scheduled' if 4 in concurrencies else
+                   'omitted_after_run_1' if not first_run else 'omitted_context_scope'))
     if os.environ.get("ST_BRACKET_SHA"):
         rec["arm_sha"] = os.environ["ST_BRACKET_SHA"]              # the commit the bracket named for this arm
     if os.environ.get("ST_BRACKET_TREE"):
@@ -626,13 +644,18 @@ def _main() -> int:
     pending_quality = []
     gen_tokens = 0
 
-    print('prepare C=1: full context ladder; retained separately', flush=True)
+    prep_example = preparation_request(items[0], args.num_spec)
+    rec['preparation_budget'] = dict(version=1, max_tokens=prep_example['max_tokens'],
+        min_tokens=prep_example['min_tokens'], reasoning_budget=prep_example['reasoning_budget'],
+        scope='full original prompts; bounded ungraded output; scored steady-state checks remain mandatory')
+    print(f"prepare C=1: full context ladder, {prep_example['max_tokens']} output tokens per request; retained separately", flush=True)
     run.begin('prepare-c1')
     for item in items:
-        group(run, ask_stream, bd.URL, cq.MODEL, item, 1)
+        group(run, ask_stream, bd.URL, cq.MODEL, preparation_request(item, args.num_spec), 1)
     if args.fixed_decode_tokens:
         for rep in range(args.fixed_decode_reps):
-            group(run, ask_stream, bd.URL, cq.MODEL, dict(fixed_item, seed=args.seed + rep), 1)
+            group(run, ask_stream, bd.URL, cq.MODEL,
+                  preparation_request(dict(fixed_item, seed=args.seed + rep), args.num_spec), 1)
     run.end()
     run.begin('measure-c1')
 
@@ -842,14 +865,14 @@ def _main() -> int:
         pass
 
     # C=4 and profiler replays have their own counters, requests and artifacts.
-    c4_items = items if 4 in concurrencies else []
+    c4_items = [item for item in items if item['ctx'] in c4_contexts] if 4 in concurrencies else []
     rec['c4'] = []
     for item in c4_items:
         ctx = item['ctx']
         suffix = f"{ctx}-q{item['question']}"
         print(f'prepare C=4 ctx={ctx}', flush=True)
         run.begin(f'prepare-c4-{suffix}', 4)
-        group(run, ask_stream, bd.URL, cq.MODEL, item, 4)
+        group(run, ask_stream, bd.URL, cq.MODEL, preparation_request(item, args.num_spec), 4)
         run.end()
         run.begin(f'measure-c4-{suffix}', 4)
         before = traffic_state(_metrics_text(bd.METRICS))
@@ -877,6 +900,8 @@ def _main() -> int:
         scope='diagnostic replay only; consumer generation_budget and quality workloads unchanged')
     for concurrency in concurrencies:
         for item in diagnostic_items:
+            if concurrency == 4 and item['ctx'] not in c4_contexts:
+                continue
             phase = f"diagnostic-c{concurrency}-{item['ctx']}"
             print(phase, flush=True)
             run.begin(phase, concurrency, diagnostic=True)

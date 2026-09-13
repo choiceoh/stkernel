@@ -17,8 +17,9 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 CURRENT = ContextVar('onepass_recording', default=None)
-POLICY = dict(version=1, concurrency=[1, 4], prefix='unique salt per request',
-              preparation='full workload replay before each concurrency arm',
+POLICY = dict(version=2, concurrency=[1, 4], c4_excluded_contexts=[128000, 131072],
+              prefix='unique salt per request',
+              preparation='full prompt with bounded output before each concurrency arm',
               measurement='profiler off; no observed specialization or graph capture',
               diagnostic='separate replay; one prefill chunk and four decode steps per context and concurrency')
 

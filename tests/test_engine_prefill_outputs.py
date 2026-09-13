@@ -10,6 +10,8 @@ from engine.profiles.glm53.adapter import Glm53Engine
 
 
 class TokenShards:
+    project_tiles = False
+
     def __init__(self, comm):
         self.comm = comm
 
@@ -112,7 +114,7 @@ class PrefillOutputTests(unittest.TestCase):
         engine.memory.checkpoint.assert_called_once_with('warm kernels [1, 8]', release_cache=True)
 
     def test_last_hidden_and_aux_equal_full_output_on_every_rank(self):
-        for n, sharded in ((7, False), (128, True), (260, True), (129, True)):
+        for n, sharded in ((7, False), (128, True), (260, True), (129, True), (130, True), (131, True)):
             with self.subTest(n=n, sharded=sharded):
                 def rank(comm):
                     net = network(comm, sharded=sharded)
