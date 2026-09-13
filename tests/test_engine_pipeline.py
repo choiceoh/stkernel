@@ -232,10 +232,12 @@ class BatchTransitionTests(unittest.TestCase):
         e.limits[1] = (1, 0.0)
         p = AsyncDecode(e)
         self.assertEqual(p.launch([1], [1]).resolve(), [True])
-        self.assertEqual(e.accepted_per_step, [0, 1, 0])
+        # commit_batch's accepted counter reserves the final emitted token even
+        # when the output limit clips a verified prefix. Preserve that convention.
+        self.assertEqual(e.accepted_per_step, [1, 0, 0])
         self.assertEqual(p.launch([1], [1]).resolve(), [True])
-        self.assertEqual(e.accepted_per_step, [0, 1, 0])
-        self.assertEqual((e.accepted_total, e.drafted_total), (1, 1))
+        self.assertEqual(e.accepted_per_step, [1, 0, 0])
+        self.assertEqual((e.accepted_total, e.drafted_total), (0, 1))
 
     def test_first_sampled_request_uses_the_real_drafter_candidate_width(self):
         from tests.test_engine_glm53 import tiny_facts

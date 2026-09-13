@@ -5,8 +5,9 @@
     python3 bench/storacle.py acceptance peek.jsonl
     python3 bench/storacle.py acceptance --before before.txt --after after.txt --k 6
 
-Counts describe committed draft prefixes, excluding the bonus token. EOS/output
-limits can shorten a prefix; these are not uncensored verifier probabilities.
+Counts follow the engine's accepted-token counter, excluding the bonus token.
+Terminal prefixes are censored by its EOS/output-limit convention; these are not
+uncensored verifier probabilities.
 """
 from __future__ import annotations
 
@@ -145,7 +146,7 @@ def profile(data: dict) -> dict:
         reached = passed
     return {**data, "rows": n, "accepted_tokens": accepted, "raw_acceptance": accepted / (n*k),
             "positions": positions,
-            "basis": "committed draft prefixes; bonus excluded, EOS/output limits included"}
+            "basis": "engine accepted-token counters; bonus excluded, terminal prefixes censored"}
 
 
 def format_profile(data: dict) -> str:
@@ -155,7 +156,7 @@ def format_profile(data: dict) -> str:
         conditional = "-" if row["conditional"] is None else f"{row['conditional']:.1%}"
         lines.append(f"  {row['position']:>4}    {row['cumulative']:>9.1%}    {conditional:>16}"
                      f"    {row['accepted_rows']} / {data['rows']} / {row['reached_rows']}")
-    lines.append("  커밋된 draft 기준: 보너스 제외, EOS·출력 길이 제한에 따른 잘림 포함")
+    lines.append("  엔진 수락 카운터 기준: 보너스 제외, EOS·출력 길이 제한 영향 포함")
     return "\n".join(lines)
 
 
