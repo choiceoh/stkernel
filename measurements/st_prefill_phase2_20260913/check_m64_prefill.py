@@ -91,7 +91,7 @@ def check_case(judge, views, scales, workspaces, rows, kind, result):
         if alternate:
             side.wait_stream(torch.cuda.current_stream(device))
             with torch.cuda.stream(side):
-                call(m64, automatic=m64 and rows <= 4096)
+                call(m64)
             torch.cuda.current_stream(device).wait_stream(side)
         else:
             call(m64)
@@ -118,8 +118,7 @@ def check_case(judge, views, scales, workspaces, rows, kind, result):
             candidate = eager(True, alternate)
             observation = dict(alternate_stream=alternate)
             phase['candidate'].append(observation)
-            actual_workspace = (md._prefill_m64_workspace(workspaces[False], rows)
-                                if alternate and rows <= 4096 else workspaces[True])
+            actual_workspace = workspaces[True]
             try:
                 observation['q0'] = q0_m64(judge, actual_workspace, ids, weights)
                 observation['q0_matches'] = observation['q0'] == expected

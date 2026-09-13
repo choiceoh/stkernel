@@ -189,7 +189,7 @@ class M64ContractTests(unittest.TestCase):
                        {'share_input_across_experts': True}, {'swiglu_limit': 0.}):
             self.assertFalse(select(**dict(args, **change)), change)
 
-    def test_compile_override_remains_explicit_and_launch_can_select_eager_candidate(self):
+    def test_compile_and_launch_require_an_explicit_candidate_override(self):
         tree = ast.parse((ROOT / 'engine/kernels/b12x/moe_dispatch.py').read_text())
         for name in ('_get_dynamic_kernel', 'launch_sm120_dynamic_moe'):
             node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name)
@@ -197,7 +197,7 @@ class M64ContractTests(unittest.TestCase):
             expected = False if name == '_get_dynamic_kernel' else None
             self.assertIs(ast.literal_eval(defaults['_prefill_tile64']), expected)
 
-    def test_actual_automatic_selector_preserves_decode_capture_controls_and_long_prefill(self):
+    def test_unspecified_selector_never_activates_the_unqualified_candidate(self):
         tree = ast.parse((ROOT / 'engine/kernels/b12x/moe_dispatch.py').read_text())
         helpers = [n for n in tree.body if isinstance(n, ast.FunctionDef)
                    and n.name in ('_prefill_scale_expansion_eligible', '_prefill_m64_eligible')]
@@ -219,7 +219,7 @@ class M64ContractTests(unittest.TestCase):
             exec(code, ns)
             return ns['_prefill_tile64'], calls
         for rows in (65, 2121, 2672, 2675, 4096):
-            self.assertEqual(selected(num_tokens=rows), (True, [rows]))
+            self.assertEqual(selected(num_tokens=rows), (False, []))
         for change in ({'num_tokens': 7}, {'num_tokens': 28}, {'num_tokens': 64},
                        {'num_tokens': 4097}, {'num_tokens': 8192}, {'num_tokens': 32256},
                        {'direct_sf6': False}, {'capturing': True}, {'input_gs_is_shared': True},

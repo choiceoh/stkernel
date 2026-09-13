@@ -4741,20 +4741,8 @@ def launch_sm120_dynamic_moe(
         if _prefill_scale_expansion is None:
             _prefill_scale_expansion = False
     if _prefill_tile64 is None:
-        # This private branch's short-prefill candidate. Explicit controls,
-        # graph capture and every non-native/fallback geometry retain M128.
-        _prefill_tile64 = bool(_TP_SF6_Q0_ENABLED and _tp_sf6_q0_override is None
-            and _prefill_scale_expansion is None and workspace.tile_m == 128
-            and type(num_tokens) is int and 64 < num_tokens <= 4096
-            and _prefill_m64_eligible(
-                m=num_tokens, E=num_experts, k=k, n=n, num_topk=top_k,
-                tile_m=64, quant_mode=quant_mode,
-                tiled=bool(getattr(weights, 'tiled', False)), reform_sf_pack=direct_sf6,
-                activation=activation, swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
-                swiglu_limit=swiglu_limit, share_input_across_experts=input_gs_is_shared)
-            and not torch.cuda.is_current_stream_capturing())
-        if _prefill_tile64:
-            workspace = _prefill_m64_workspace(workspace, num_tokens)
+        # Unqualified experiments must never become the serving default.
+        _prefill_tile64 = False
     if type(_prefill_tile64) is not bool:
         raise TypeError('private prefill tile64 override must be bool')
     if _prefill_tile64:
@@ -4771,20 +4759,7 @@ def launch_sm120_dynamic_moe(
         if torch.cuda.is_current_stream_capturing():
             raise RuntimeError('private M64 prefill is eager-only pending GPU qualification')
     if _prefill_scale_expansion is None:
-        # Candidate-only long prefill path. L8 measured expansion slower at
-        # 2672 rows and only 1.5% faster at 8192; keep the short packed reader.
-        # Decode, graph capture and raw fallback layers retain their readers.
-        # The private bool override preserves the measured numerical control.
-        _prefill_scale_expansion = bool(direct_sf6 and _TP_SF6_Q0_ENABLED
-            and _tp_sf6_q0_override is None
-            and type(num_tokens) is int and num_tokens > 8192
-            and _prefill_scale_expansion_eligible(
-                m=num_tokens, E=num_experts, k=k, n=n, num_topk=top_k,
-                tile_m=workspace.tile_m, quant_mode=quant_mode,
-                tiled=bool(getattr(weights, "tiled", False)), activation=activation,
-                swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
-                swiglu_limit=swiglu_limit, share_input_across_experts=input_gs_is_shared)
-            and not torch.cuda.is_current_stream_capturing())
+        _prefill_scale_expansion = False
     if type(_prefill_scale_expansion) is not bool:
         raise TypeError("prefill scale expansion override must be bool")
     expanded_scales = None

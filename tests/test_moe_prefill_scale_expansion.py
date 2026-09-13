@@ -126,7 +126,7 @@ class ScaleExpansionCpuTests(unittest.TestCase):
                         {'share_input_across_experts': True}, {'swiglu_limit': 0.}):
             self.assertFalse(select(**dict(args, **changed)), changed)
 
-    def test_automatic_launch_preserves_short_prefill_decode_capture_and_q0_controls(self):
+    def test_unspecified_launch_never_expands_scales(self):
         tree = ast.parse((ROOT / 'engine/kernels/b12x/moe_dispatch.py').read_text())
         select = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
                       and n.name == '_prefill_scale_expansion_eligible')
@@ -150,14 +150,14 @@ class ScaleExpansionCpuTests(unittest.TestCase):
             exec(code, ns)
             return ns['_prefill_scale_expansion'], capture_queries
         for rows in (8193, 32256, 32768):
-            self.assertEqual(selected(num_tokens=rows), (True, [True]))
+            self.assertEqual(selected(num_tokens=rows), (False, []))
         for rows in (1, 7, 14, 21, 28, 64, 65, 2672, 2675, 8192, 32769, True):
             self.assertEqual(selected(num_tokens=rows), (False, []))
         for change in ({'direct_sf6': False}, {'_TP_SF6_Q0_ENABLED': False},
                        {'_tp_sf6_q0_override': False}, {'_tp_sf6_q0_override': True},
                        {'_prefill_scale_expansion': False}):
             self.assertEqual(selected(**change), (False, []))
-        self.assertEqual(selected(capturing=True), (False, [True]))
+        self.assertEqual(selected(capturing=True), (False, []))
 
 
 torch = None

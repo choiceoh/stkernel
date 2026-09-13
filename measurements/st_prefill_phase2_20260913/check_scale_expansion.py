@@ -123,7 +123,7 @@ def check_case(judge, views, scales, workspace, rows, kind, sink):
         context = dict(result=sink, third=b3, inputs=x, route_ids=ids,
                        route_weights=weights, expert_map=mapping, scales=backing)
         for stream_name, expansion, stream in (('explicit-current', True, None),
-                                               ('automatic-side', None, side)):
+                                               ('explicit-side', True, side)):
             candidate = eager(expansion, stream)
             phase['candidate'].append(dict(stream=stream_name,
                 **judge.compare(candidate, b1, b2, failure_context=context)))
