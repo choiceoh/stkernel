@@ -539,6 +539,37 @@ class KernelBudgetTests(unittest.TestCase):
             # 플릿 32K(9216 청크) 예측이 측정 모형의 10.89s 를 재현
             self.assertAlmostEqual(kern.prefill_ms(32545, 9216, fold, fleet=True) / 1000, 10.89, delta=0.05)
 
+    def test_prefill_refit_uses_actual_tokens_and_chunk_count_as_separate_costs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/"profile.json"
+            # Partial final chunks: capacity*chunks would overcount each row.
+            rows = [dict(tokens=t, chunks=c, chunk=capacity, total_ms=.25*t+70*c)
+                    for t,c,capacity in ((1000,4,256),(1000,2,512),(2000,3,768))]
+            path.write_text(json.dumps(dict(prefill=rows)))
+            fold = kern.fold_prefill_from_profile(path)
+            self.assertAlmostEqual(fold["ms_per_token"], .25)
+            self.assertAlmostEqual(fold["fixed_ms_per_chunk"], 70)
+            self.assertAlmostEqual(kern.prefill_ms(1000,512,fold,fleet=False),390)
+            # Existing artifacts state a common request total at top level.
+            rows = [dict(chunks=c, chunk=capacity, total_ms=250+70*c)
+                    for c,capacity in ((4,256),(2,512),(1,1024))]
+            path.write_text(json.dumps(dict(tokens=1000,prefill=rows)))
+            fold = kern.fold_prefill_from_profile(path)
+            self.assertAlmostEqual(fold["ms_per_token"], .25)
+            self.assertAlmostEqual(fold["fixed_ms_per_chunk"], 70)
+
+    def test_prefill_refit_refuses_missing_or_nonidentifiable_evidence(self):
+        bad_rows = [
+            [dict(chunk=256,chunks=4,total_ms=530),dict(chunk=512,chunks=2,total_ms=390)],
+            [dict(tokens=1000,chunks=2,total_ms=390),dict(tokens=2000,chunks=4,total_ms=780)],
+            [dict(tokens=1000,chunks=2,total_ms=390),dict(tokens=1000,chunks=4,total_ms=300)],
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/"profile.json"
+            for rows in bad_rows:
+                path.write_text(json.dumps(dict(prefill=rows)))
+                self.assertEqual(kern.fold_prefill_from_profile(path), {})
+
     def test_acc_hist_roundtrip_from_peek_scrapes(self):
         a = peek.parse_metrics('st:spec_accepted_per_step_total{engine="st",accepted="0"} 100\n'
                                'st:spec_accepted_per_step_total{engine="st",accepted="6"} 10\n')

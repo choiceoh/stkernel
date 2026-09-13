@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -221,15 +222,31 @@ def fold_prefill_from_profile(path) -> dict:
     rows = d.get("prefill") or []
     if len(rows) < 2:
         return {}
-    # total = v·tokens + F·chunks 최소제곱
-    import statistics
-    xs = [(r["chunks"], r["chunk"]) for r in rows]      # (chunks, tokens)
-    ys = [r["total_ms"] for r in rows]
-    n = len(rows)
-    sx = sum(c + t for c, t in xs); sy = sum(ys)
-    sxx = sum((c + t) ** 2 for c, t in xs); sxy = sum((c + t) * y for (c, t), y in zip(xs, ys))
-    v = (n * sxy - sx * sy) / (n * sxx - sx * sx)
-    return {"ms_per_token": v, "fixed_ms_per_chunk": (sy - v * sx) / n, "source": str(path)}
+    # total_ms = v * total_tokens + F * number_of_chunks. A chunk's
+    # capacity is not its request's token count (especially with a tail).
+    # Without actual totals, or independent columns, there is no fit.
+    points = []
+    for row in rows:
+        tokens = row.get("tokens", d.get("tokens"))
+        chunks, elapsed = row.get("chunks"), row.get("total_ms")
+        if (type(tokens) is not int or tokens <= 0 or type(chunks) is not int or chunks <= 0
+                or not isinstance(elapsed, (int, float)) or not math.isfinite(elapsed) or elapsed <= 0):
+            return {}
+        points.append((tokens, chunks, elapsed))
+    tt = sum(t*t for t, c, y in points)
+    cc = sum(c*c for t, c, y in points)
+    tc = sum(t*c for t, c, y in points)
+    ty = sum(t*y for t, c, y in points)
+    cy = sum(c*y for t, c, y in points)
+    determinant = tt*cc-tc*tc
+    if determinant <= 1e-12*tt*cc:
+        return {}
+    v, fixed = (ty*cc-cy*tc)/determinant, (cy*tt-ty*tc)/determinant
+    if not math.isfinite(v) or not math.isfinite(fixed) or v <= 0 or fixed < 0:
+        return {}
+    return {"ms_per_token": v, "fixed_ms_per_chunk": fixed, "source": str(path),
+            "fit_points": len(points),
+            "max_residual_ms": max(abs(v*t+fixed*c-y) for t, c, y in points)}
 
 
 def prefill_ms(tokens: int, chunk: int, fold: dict, fleet: bool = True) -> float:
