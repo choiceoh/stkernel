@@ -89,6 +89,15 @@ _DYNAMIC_SLICE_CHUNK = _TASK_SLICE_CHUNK
 # selects). Measure, then fix the cell in the table below; never an env read.
 _DYNAMIC_TILE_M_OVERRIDE: int | None = None
 SF_VEC_SIZE = 16
+
+
+def _admitted_moe():
+    """The MoE cell this process is admitted for: the profile's bound kernel shape
+    (engine/base/kernel_shape), or the measured GB10 TP4 cell when none is bound. Every
+    exact-shape gate below compares against it, so the same dispatcher serves a second
+    profile by declaration instead of by editing these functions."""
+    from engine.base.kernel_shape import bound
+    return bound().moe
 # D11 (2026-09-12, ST): nothing in this module reads the environment. Every
 # former knob is either the production value baked as a constant or a
 # profile-declared knob applied through configure_static_v2() /
@@ -109,17 +118,21 @@ _GLM53_EP_TILED = False                     # the EP tiled owner (E=72) left the
 def _tp_sf6_q0_eligible(*, enabled, E, m, k, n, num_topk, tile_m,
                          quant_mode, tiled, reform_sf_pack, activation,
                          swiglu_alpha, swiglu_beta, swiglu_limit,
-                         share_input_across_experts):
+                         share_input_across_experts, cell=None):
     # The recipe's FP32 sum must survive a layer failing lossless SF6
     # compression. Its raw-scale subclass uses the same Q0 and epilogue.
     # Long native chunks retain their original tiled SF6 path. Extending Q0
     # to those chunks passed numerics but did not improve the consumer run.
+    # `cell` is the admitted MoE shape (the bound kernel shape's); E is the
+    # weights' expert count, i.e. this rank's. The Q0 kernel's own tile (128)
+    # and the swigluoai alpha/beta stay its constants.
+    cell = _admitted_moe() if cell is None else cell
     return (enabled and type(m) is int and 1 <= m <= 8192
-            and (E,k,n,num_topk,tile_m) == (288,4096,512,8,128)
-            and quant_mode == "nvfp4" and tiled
+            and (E,k,n,num_topk,tile_m) == (cell.experts_local,cell.hidden,cell.inter_local,cell.topk,128)
+            and quant_mode == cell.quant and tiled
             and not share_input_across_experts
             and (activation,swiglu_alpha,swiglu_beta,swiglu_limit)
-                == ("swigluoai_uninterleave",1.,0.,10.))
+                == (cell.activation,1.,0.,cell.swiglu_limit))
 
 
 def _ep_local_prefill_kernel(*, E, m, k, n, num_topk, tile_m, activation,
@@ -506,7 +519,7 @@ def _static_v2_config_for(
     cfg = _STATIC_V2_OVERRIDE if _STATIC_V2_OVERRIDE is not None else _GLM53_B12X_STATIC_V2
     if cfg is None or activation_precision != "fp4":
         return None
-    if not _is_glm53_b12x_tp_geometry(
+    if not _is_admitted_tp_geometry(
         num_experts=num_experts,
         num_local_experts=num_local_experts,
         hidden_size=hidden_size,
@@ -551,7 +564,7 @@ def _lookup_mac_ladder(
     return None
 
 
-def _is_glm53_b12x_tp_geometry(
+def _is_admitted_tp_geometry(
     *,
     num_experts: int | None,
     num_local_experts: int | None,
@@ -562,25 +575,28 @@ def _is_glm53_b12x_tp_geometry(
     activation: str | None,
     swiglu_limit: float | None,
 ) -> bool:
-    """Admit only the deployed GLM-5.3 TP-sharded NVFP4 MoE geometry.
+    """Admit only the MoE geometry the bound kernel shape declares (the deployed
+    GLM-5.3 TP-sharded NVFP4 cell: 288 experts, hidden 4096, intermediate 512 per
+    rank, top-8 -- when nothing is bound).
 
-    The intermediate size arrives in two spellings: the model's 2048 at the
-    wrapper level and the PER-RANK 512 (2048 / TP4) that
+    The intermediate size arrives in two spellings: the model's (2048) at the
+    wrapper level and the PER-RANK one (512 = 2048 / TP4) that
     ``launch_sm120_static_moe`` derives from the sharded weights and passes
-    down. Until 2026-09-05 only 2048 was admitted, so every launch-time
+    down. Until 2026-09-05 only the model's was admitted, so every launch-time
     reader of this gate (the forced backend, the cutover, the MAC ladders and
     the static v2 lane) silently kept the stock path -- the first v2 probe
-    measured the stock kernel six times over.
+    measured the stock kernel six times over. Both spellings come from the cell.
     """
+    cell = _admitted_moe()
     return (
-        num_experts == 288
-        and num_local_experts == 288
-        and hidden_size == 4096
-        and intermediate_size in (512, 2048)
-        and num_topk == 8
-        and quant_mode == "nvfp4"
-        and activation == "swigluoai_uninterleave"
-        and swiglu_limit == 10.0
+        num_experts == cell.experts
+        and num_local_experts == cell.experts_local
+        and hidden_size == cell.hidden
+        and intermediate_size in (cell.inter_local, cell.inter)
+        and num_topk == cell.topk
+        and quant_mode == cell.quant
+        and activation == cell.activation
+        and swiglu_limit == cell.swiglu_limit
     )
 
 
@@ -599,7 +615,7 @@ def _effective_glm53_forced_backend(
     """Return the monkeypatch hook first, then the exact-shape GLM override."""
     if _FORCED_BACKEND is not None:
         return _FORCED_BACKEND
-    if _is_glm53_b12x_tp_geometry(
+    if _is_admitted_tp_geometry(
         num_experts=num_experts,
         num_local_experts=num_local_experts,
         hidden_size=hidden_size,
@@ -630,7 +646,7 @@ def _effective_glm53_static_cutover(
     activation: str | None,
     swiglu_limit: float | None,
 ) -> int:
-    if _is_glm53_b12x_tp_geometry(
+    if _is_admitted_tp_geometry(
         num_experts=num_experts,
         num_local_experts=num_local_experts,
         hidden_size=hidden_size,
@@ -668,7 +684,7 @@ def _effective_glm53_mac_ladder(
     activation: str,
     swiglu_limit: float | None,
 ) -> Tuple[Tuple[int, int], ...]:
-    if override is not None and _is_glm53_b12x_tp_geometry(
+    if override is not None and _is_admitted_tp_geometry(
         num_experts=num_experts,
         num_local_experts=num_local_experts,
         hidden_size=hidden_size,
@@ -804,6 +820,11 @@ def _select_dynamic_tile_m(
         if _DYNAMIC_TILE_M_OVERRIDE not in (16, 32, 64, 128):
             raise ValueError(f"_DYNAMIC_TILE_M_OVERRIDE must be 16/32/64/128, got {_DYNAMIC_TILE_M_OVERRIDE}")
         return _DYNAMIC_TILE_M_OVERRIDE
+    # The profile's measured pin (kernel_shape.MoE.dynamic_tile_m): the cell fixed after it was
+    # measured, the way the comment above says a new shape's cell starts. None keeps the table.
+    pinned = _admitted_moe().dynamic_tile_m
+    if pinned is not None:
+        return pinned
     if not is_gated_activation(activation):
         return _LEVEL_TILE_M
     routed_rows = max(1, int(routed_rows))
@@ -2479,17 +2500,20 @@ def _get_static_kernel_v2(
 _MICRO_KERNEL_CACHE: Dict[Tuple, Tuple] = {}
 
 
-def _glm_tp_scatter_shape(state_E, weight_E, k, n, num_topk):
+def _glm_tp_scatter_shape(state_E, weight_E, k, n, num_topk, cell=None):
+    """The admitted routed cell (this rank's experts) and the dense/shared MLP served through the E=1 lane."""
+    cell = _admitted_moe() if cell is None else cell
     return state_E == weight_E and (weight_E, k, n, num_topk) in (
-        (288, 4096, 512, 8), (1, 4096, 3072, 1))
+        (cell.experts_local, cell.hidden, cell.inter_local, cell.topk), (1, cell.hidden, cell.dense_inter_local, 1))
 
 
 def _glm_tp_scatter_fp32(*, state_E, weight_E, k, n, num_topk, quant_mode,
-                          activation, swiglu_alpha, swiglu_beta, swiglu_limit):
-    """The fixed GLM TP4 lane sums rounded route partials in FP32."""
-    return (_glm_tp_scatter_shape(state_E, weight_E, k, n, num_topk)
-            and quant_mode == "nvfp4" and activation == "swigluoai_uninterleave"
-            and (swiglu_alpha, swiglu_beta, swiglu_limit) == (1., 0., 10.))
+                          activation, swiglu_alpha, swiglu_beta, swiglu_limit, cell=None):
+    """The fixed TP4 lane sums rounded route partials in FP32 (the admitted cell's)."""
+    cell = _admitted_moe() if cell is None else cell
+    return (_glm_tp_scatter_shape(state_E, weight_E, k, n, num_topk, cell)
+            and quant_mode == cell.quant and activation == cell.activation
+            and (swiglu_alpha, swiglu_beta, swiglu_limit) == (1., 0., cell.swiglu_limit))
 
 
 def _glm_tp_scatter_buffer(workspace, output):
@@ -4649,7 +4673,8 @@ def launch_sm120_dynamic_moe(
                 swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
                 swiglu_limit=swiglu_limit, share_input_across_experts=input_gs_is_shared)
             and not torch.cuda.is_current_stream_capturing()):
-        print("[tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=" + str(num_tokens), flush=True)
+        cell = _admitted_moe()
+        print(f"[tp-sf6-q0] LAUNCHED E{cell.experts}/H{cell.hidden}/I{cell.inter_local}/top{cell.topk} T={num_tokens}", flush=True)
         _TP_SF6_Q0_LAUNCH_LOGGED = True
     if ep_local or tp_scatter_fp32:
         # CuTe and copy_ use the current PyTorch stream; completion of all

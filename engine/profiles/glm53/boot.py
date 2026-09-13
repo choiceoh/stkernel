@@ -31,6 +31,7 @@ from engine.base import scheduler as sched                       # noqa: E402
 from engine.base.arena import Arena, prepare_allocation          # noqa: E402
 from engine.base.runtime_memory import RuntimeMemory, reclaim_preparation_pages  # noqa: E402
 from engine.base import tenancy                                   # noqa: E402
+from engine.base import kernel_shape                              # noqa: E402
 from engine.base.comm import Comm, LocalTP                       # noqa: E402
 from engine.base.config import Config, Fact, Knob                # noqa: E402
 from engine.base.instruments import Recorder                     # noqa: E402
@@ -288,6 +289,9 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     specs = net.specs()
     drafter_dir = Path(drafter_dir)
     D = drafter_mod.load(drafter_dir) if use_drafter else None
+    if D:
+        # the draft kernels admit this head width (base/kernel_shape.drafter), bound once the drafter's facts are known
+        kernel_shape.bind_drafter(kernel_shape.Drafter(head_dim=D.head_dim, kv_heads=D.kv_heads, layers=D.layers, window=D.window))
     dspecs = drafter_mod.specs(D) if D else []
     # Native DFlash stores only this rank's KV heads. The direct-ring lane
     # reads that shard; reserving the replicated ring would also waste three
@@ -723,6 +727,7 @@ def guard_test_memory(kv_gib: float, floor: float = TEST_FLOOR_GIB) -> None:
 def local(a) -> int:
     print(f"  box: {facts.check_box()}")
     print(declared(a, facts.TP).table())
+    kernel_shape.bind(facts.load(a.ckpt_meta).kernel_shape())     # before the lanes, as the fleet boot does
     layers = [int(x) for x in a.layers.split("-")]; layers = list(range(layers[0], layers[-1] + 1))
     torch.manual_seed(a.seed)
     prompts = {seq: torch.randint(0, 100_000, (a.prompt + 7 * seq,)).tolist() for seq in range(a.seqs)}
@@ -982,6 +987,10 @@ def fleet(a) -> int:
     print(f"  fleet reserved by {lease['owner']}")
     print(f"  box: {facts.check_box()}")
     cfg = declared(a, facts.TP)
+    # The checkpoint's kernel shape, bound before any transport or lane reads it (base/kernel_shape):
+    # the geometry every kernel is admitted for. GLM's equals the kernels' measured cell, so nothing
+    # served changes; a checkpoint that differs is refused by the lanes that cannot serve it, by name (D3).
+    shape = kernel_shape.bind(facts.load(a.ckpt_meta).kernel_shape())
     # The rendezvous and the kernel imports are boot time too: 15.6 s of a measured 90.2 s boot sat
     # outside this table (boot-time study, 2026-09-11), so the recorder opens before them.
     rec = Recorder("boot")
@@ -992,6 +1001,7 @@ def fleet(a) -> int:
     try:
         if comm.rank == 0:
             print(cfg.table())
+            print(f"  kernel shape: {shape.describe()}")
         with rec.phase("prepare one-shot"):
             comm.prepare_oneshot()
         with rec.phase("lanes"):

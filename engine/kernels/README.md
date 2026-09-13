@@ -106,6 +106,32 @@ dispatch도 다른 레인과 같이 적용한다. 실제 가중치·반올림·�
 MLA는 필수 레인이므로 이전 `VLLM_GLM53_MEGAKERNEL`/`VLLM_GLM53_MK_MLA` 활성화 변수가 필요하지 않다.
 `SOURCES.json` 의 `sha256` 은 이식 전 바이트, `local_sha256`/`local_modifications` 가 서빙되는 ST 사본과 그 편집 내역이다.
 
+## 형상 기술자 (2026-09-13)
+
+커널이 기대는 모델 상수는 프로파일이 `engine/base/kernel_shape.KernelShape` 하나로 선언하고, 레인은
+리터럴 대신 `kernel_shape.bound()` 를 읽는다. 아무것도 바인딩되지 않으면 `MEASURED` — 이 커널들이
+컴파일·측정된 GB10 TP4 셀(2026-09-13 까지 소스에 박혀 있던 숫자 그대로) — 가 돌아오므로 단독 프로브는
+그대로 돌고, GLM 프로파일의 유도값은 `MEASURED` 와 필드 단위로 같다(`tests/test_engine_kernel_shape.py`
+가 srv2 의 config.json 값으로 고정). 바인딩은 프로세스당 한 번이며 다른 형상의 재바인딩은 거부한다(D3).
+부팅은 `boot.fleet/local` 이 `facts.load(ckpt_meta).kernel_shape()` 를 트랜스포트·레인보다 먼저 바인딩하고,
+`boot.build` 가 드래프터를 읽은 뒤 `bind_drafter` 한다. Qwen3.8 은 `engine/profiles/qwen38/shapes.kernel_shape()`
+가 같은 기술자를 만든다(EP 전문가, per-head decay, GQA).
+
+| 레인 | 읽는 필드 | 형상이 다르면 |
+| --- | --- | --- |
+| b12x MoE 입장 게이트·Q0·FP32 scatter·동적 tile 핀 | `moe.*` (`_admitted_moe()`) | 선언한 셀이 곧 입장 조건. 새 셀은 측정 뒤 `dynamic_tile_m` 을 핀한다 |
+| one-shot AR | `comm.world/hidden` | 행 폭이 따라간다. world 는 4 로 컴파일(NPEER 3) → 다른 world 는 거부 |
+| prefill collectives / tiled projection | `comm.world/hidden` | 패킷 커널은 둘 다 일반. 2,048 원소 블록을 채우는 행 수만 요구 |
+| MK mHC (`dense/mhc.py`) | `hidden`, `hc` | hidden 4096/5120·hc 4 로 컴파일 → 그 밖은 이름을 대고 거부 |
+| MLA (`mla.maybe_arm`) | `attention`, `device` | 16×512 MLA 셀로 컴파일 → 다른 어텐션 셀은 무장 전 거부 |
+| 인덱서 (`kpool`) | `indexer.head_dim` | Hadamard-128 → 다른 폭은 첫 호출에서 거부 |
+| 드래프트 커널 (`draft_attention`, `draft_observe`) | `drafter.head_dim`, `device.sms` | D 는 constexpr 라 그대로 따라간다 |
+| KDA ring (`kda/ring.py`) | `linear.decay` | 커널 안 KDA 게이트 융합 → per-head(GDN) 셀은 거부; 그 셀은 `linear_decay.per_channel` 로 넓힌 decay 를 `fused_recurrent_kda(compute_gate=False)` 에 준다 |
+| dense W4A8/FP8 (`dense/__init__`) | `device` | 장치 계약만. TILE/KMAX 는 커널 상수 |
+
+모델 무관으로 이미 보편인 커널(샘플러, 블록 검증, decode commit, 후보 키, SwiGLU, norm+RoPE, route 히스토그램,
+빌드 캐시, 자기 보정)은 형상 필드를 읽지 않는다 — 인자가 곧 형상이다.
+
 ## 런타임 이미지
 
 저장소 루트에서 `bash engine/runtime/build.sh`로 `st-engine:glm53`을 만든다.

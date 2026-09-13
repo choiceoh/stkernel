@@ -4,6 +4,23 @@ import triton
 
 from .fused_recurrent import fused_recurrent_gated_delta_rule_fwd_kernel
 
+_CELL_SEEN = None
+
+
+def _check_cell() -> None:
+    """This lane fuses KDA's per-channel gate (COMPUTE_GATE) inside the kernel. A kernel shape whose
+    linear attention keeps its decay per head (GDN) cannot run it: that cell precomputes its decay and
+    runs fused_recurrent_kda with kda/decay.per_channel. Checked once per bound shape."""
+    global _CELL_SEEN
+    from engine.base.kernel_shape import bound
+    shape = bound()
+    if shape is not _CELL_SEEN:
+        if shape.linear.decay != "channel":
+            raise ValueError("the ring KDA lane fuses KDA's per-channel gate; a per-head decay cell "
+                             "(linear.decay == 'head') runs fused_recurrent_kda(compute_gate=False) "
+                             "on a decay widened by engine.kernels.linear_decay.per_channel")
+        _CELL_SEEN = shape
+
 
 def recurrent_kda_ring(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound):
     """Return dense output and store FP32 accumulators directly in the typed ring.
@@ -35,6 +52,7 @@ def recurrent_kda_ring_rows(q, k, v, g, beta, a_log, g_bias, ring, slots, contex
 
 
 def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound, *, deferred=False, rows=1):
+    _check_cell()
     if any(t.ndim != 4 for t in (q, k, v, g)):
         raise ValueError("ring KDA requires [1,T,H,D] inputs")
     b, t, h, kd = k.shape

@@ -17,9 +17,25 @@ import torch
 import triton
 import triton.language as tl
 
-# The indexer head dim is fixed at 128 in the current GLM5Next config; the
-# Hadamard rotation below is the hard-coded H128 transform.
+# The indexer head dim these kernels are written for: the Hadamard rotation
+# below is the hard-coded H128 transform. A profile declares its own width in
+# the kernel shape (engine/base/kernel_shape); a width that is not this one is
+# refused by name on the lane's first call, not run through the wrong butterfly.
 INDEX_HEAD_DIM = 128
+_CELL_SEEN = None
+
+
+def _indexer_cell() -> int:
+    """The bound indexer head width, checked once per bound shape against the compiled 128."""
+    global _CELL_SEEN
+    from engine.base.kernel_shape import bound
+    shape = bound()
+    if shape is not _CELL_SEEN:
+        if shape.indexer.head_dim != INDEX_HEAD_DIM:
+            raise ValueError(f"the indexer lanes are written for head_dim {INDEX_HEAD_DIM} (Hadamard-{INDEX_HEAD_DIM}); "
+                             f"the bound kernel shape asks for {shape.indexer.head_dim}")
+        _CELL_SEEN = shape
+    return INDEX_HEAD_DIM
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +184,7 @@ def fwht128_quant_fp8(q: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     Returns:
         (q_fp8 ``[rows, 128]`` float8_e4m3fn, scale ``[rows, 1]`` float32).
     """
-    assert q.ndim == 2 and q.shape[1] == 128, q.shape
+    assert q.ndim == 2 and q.shape[1] == _indexer_cell(), q.shape
     assert q.dtype == torch.bfloat16
     assert q.is_contiguous()
     n_rows = q.shape[0]
@@ -371,7 +387,7 @@ def compress_pool_keys(slot_k: torch.Tensor, slot_score: torch.Tensor, ape: torc
     mask are materialized here. Only the returned FP8 keys/scales are allocated.
     Strides are explicit, including noncontiguous channel views.
     """
-    assert slot_k.ndim == 3 and slot_k.shape[2] == INDEX_HEAD_DIM
+    assert slot_k.ndim == 3 and slot_k.shape[2] == _indexer_cell()
     assert slot_k.dtype == torch.bfloat16
     assert slot_score.shape == slot_k.shape and slot_score.dtype in (torch.bfloat16, torch.float32)
     assert ape.shape == slot_k.shape[1:] and ape.dtype == torch.float32

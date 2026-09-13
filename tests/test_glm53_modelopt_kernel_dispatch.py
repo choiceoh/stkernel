@@ -6,8 +6,10 @@ import unittest
 from unittest.mock import patch
 
 import test_glm53_ep_scatter_fp32 as ep
+from engine.base.kernel_shape import MEASURED
 
 DISPATCH = Path(__file__).resolve().parents[1] / 'engine/kernels/b12x/moe_dispatch.py'
+CELL = MEASURED.moe     # the admitted MoE cell the gates compare against (engine/base/kernel_shape)
 
 
 def functions(*names):
@@ -36,7 +38,7 @@ class ModelOptKernelDispatchTests(unittest.TestCase):
         ns = functions('_glm_tp_scatter_shape', '_glm_tp_scatter_fp32')
         gate = ns['_glm_tp_scatter_fp32']
         common = dict(k=4096, quant_mode='nvfp4', activation='swigluoai_uninterleave',
-                      swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.)
+                      swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10., cell=CELL)
         for experts, width, topk in ((1,3072,1),(288,512,8)):
             args = dict(common, state_E=experts, weight_E=experts, n=width, num_topk=topk)
             self.assertTrue(gate(**args))
@@ -48,7 +50,7 @@ class ModelOptKernelDispatchTests(unittest.TestCase):
         args = dict(enabled=True, E=288, k=4096, n=512, num_topk=8, tile_m=128,
                     quant_mode='nvfp4', tiled=True, reform_sf_pack=True,
                     activation='swigluoai_uninterleave', swiglu_alpha=1., swiglu_beta=0.,
-                    swiglu_limit=10., share_input_across_experts=False)
+                    swiglu_limit=10., share_input_across_experts=False, cell=CELL)
         for rows in (1,17,64,129,4095,4096,8192):
             self.assertTrue(gate(**args,m=rows))
         for rows in (0,-1,8193,True,8192.):
