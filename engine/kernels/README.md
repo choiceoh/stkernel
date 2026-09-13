@@ -159,6 +159,15 @@ one-shot world 4·MAXEL, prefill 블록 2048, 융합 게이트의 per-channel de
 **작업표.** admitted 가 아닌 판정마다 `Recipe` 가 붙는다: 종류(establish / measure / instance / kernel / wire / convert / rewrite), 손댈 위치,
 싼 것부터의 선택지, 판정 프로브·오라클·허용오차, 완료 기준, 비용 등급(minutes / hours / days). `cells.plan()` 이 그것을 비용순
 (같은 비용이면 refused 먼저)으로 세운 것이 새 모델의 작업 목록이다. 레시피가 이름 대는 파일은 테스트가 실재를 확인한다.
+**무엇이 서빙하나.** 층마다 판정에 `Serve` 가 붙어, 이 형상에서 그 층을 무엇이 돌리는지를 빠른 순서로 적는다:
+레인 자신의 커널(specialized), 같은 수식을 계산하는 형상 범용 고속 커널(generic, 판정 여부와 함께), 빠른 것이 없음(none).
+`engine/modules` 오라클은 둘 다를 판정할 뿐 서빙 후보가 아니다(`Serve` 가 거부한다). 범용 후보는 저장소와 이미지에 실제로 있는
+것만 이름을 대고, 엔진 밖에 있으면 옮겨 올 위치를 적는다 — 예: Qwen3.8 어텐션·인덱서는 vLLM 스택에서 이 모델을 돌리던 Triton QSA 연산
+(`overlay/modules/qwen38_qsa/ops_qsa.py`), DeepSeek-V4.1 어텐션은 sink 를 받는 flashinfer `trtllm_batch_decode_sparse_mla_dsv4`,
+mHC 는 메가커널의 V4.1 계약 `run_mhc_v41`, 전문가는 가중치 배치가 같은 b12x MXFP4 커널(활성값 정밀도는 다름).
+빠른 커널이 없는 곳(none)이 채울 빈칸이다 — DeepSeek-V4.1 의 CED 압축기(torch 뿐), Qwen3.8 의 하이퍼커넥션(형식 미확정).
+표 끝의 `serving:` 줄과 `--json` 의 `serving` 이 층별 계층 수를 센다.
+
 모델을 들이는 단계(`preshard.py`, `preshard_modelopt.py`)가 마법사를 돌려 rank 파일 옆에 `kernel_shape.json`
 (형상 + 측정 핀 + 레시피 포함 판정표 + 작업 순서 + 유도한 config.json 의 sha256)을 쓰고, 부팅(`kernel_shape.bind_recorded`)은 그 기록이 있고
 config 해시가 맞으면 그것을 바인딩하며(낡은 기록은 사망: "마법사를 다시 돌려라"), 없으면 예전처럼 config 에서 유도한다.

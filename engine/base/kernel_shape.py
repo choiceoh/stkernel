@@ -435,7 +435,7 @@ def report(profile: str, source, shape: KernelShape, verdicts, path=None) -> dic
     """The machine-readable form of a wizard run or a record: what an agent reads instead of the tables."""
     from engine.kernels import cells
     return {"profile": profile, "source": str(source), "shape": to_dict(shape), "describe": shape.describe(),
-            "counts": cells.counts(verdicts), "admission": cells.to_dicts(verdicts),
+            "counts": cells.counts(verdicts), "serving": cells.serving(verdicts), "admission": cells.to_dicts(verdicts),
             "plan": [v.lane for v in cells.plan(verdicts)], "record": None if path is None else str(path)}
 
 
