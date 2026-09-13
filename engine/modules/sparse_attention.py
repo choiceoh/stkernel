@@ -92,6 +92,88 @@ def gqa_sparse(q: torch.Tensor, k_cache: torch.Tensor, v_cache: torch.Tensor, sl
     return torch.einsum("thk,tkhd->thd", p, values).to(q.dtype)
 
 
+class GatedSparseAttention:
+    """Full attention with a sigmoid output gate over the positions a QSA indexer selects, as a token mixer
+    (engine/base/composition.Feature): Qwen3.8's full-attention layer (transformers qwen4_exp Qwen4ExpTextAttention and
+    Qwen4ExpTextQSAIndexer, eager attention).
+
+    q_proj gives the query and its gate [heads, 2*head_dim]; q and k are RMS-normalised per head (unit-offset weight)
+    and rotated on their first `rotary_dim` channels; the indexer (index_qk_proj -> index heads' queries and one raw key
+    per position) selects each query's positions (modules/sparse_indexer.qsa_select); softmax(q.k * head_dim^-0.5) over
+    them in fp32, KV heads repeated to the query heads; the output times sigmoid(gate); o_proj. No sink: Qwen3.8's QSA
+    refuses one (vllm qwen3_8_flash_next nvidia/qsa.py). Per sequence it carries K and V (post-rotation) and the
+    indexer's raw keys for every position.
+
+    `weights(layer, name)`: q_proj, k_proj, v_proj, o_proj, q_norm, k_norm, indexer.index_qk_proj,
+    indexer.q_layernorm, indexer.k_layernorm -- the transformers names under `self_attn.`."""
+
+    def __init__(self, *, heads: int, kv_heads: int, head_dim: int, rotary_dim: int, theta: float, eps: float,
+                 index_heads: int, index_head_dim: int, budget: int, ratio: int, weights, mrope_section=None):
+        if heads % kv_heads or budget % ratio or rotary_dim > min(head_dim, index_head_dim):
+            raise ValueError("gated sparse attention: heads a multiple of kv_heads, budget of whole blocks, "
+                             "rotary_dim within both head widths")
+        self.heads, self.kv_heads, self.head_dim, self.rotary_dim, self.theta = heads, kv_heads, head_dim, rotary_dim, theta
+        self.eps, self.index_heads, self.index_head_dim, self.budget, self.ratio = eps, index_heads, index_head_dim, budget, ratio
+        self.weights, self.mrope_section = weights, mrope_section
+
+    def __call__(self, layer, x, step, state):
+        from engine.modules.norm import rmsnorm_unit_offset
+        from engine.modules.rotary import apply_rope, rope_tables
+        from engine.modules.sparse_indexer import qsa_select
+        linear = torch.nn.functional.linear
+        w = lambda name: self.weights(layer, name)
+        out = None
+        for s in step.segments:
+            xs = x[s.start:s.start + s.length]
+            t, total = xs.shape[0], s.ctx + s.length
+            cos_all, sin_all = rope_tables(torch.arange(total, device=xs.device), self.rotary_dim, self.theta,
+                                           xs.dtype, self.mrope_section)
+            cos, sin = cos_all[s.ctx:], sin_all[s.ctx:]
+            # the indexer: its queries at this segment's positions, its raw keys at every position so far
+            iq, ik = torch.split(linear(xs, w("indexer.index_qk_proj")),
+                                 [self.index_heads * self.index_head_dim, self.index_head_dim], dim=-1)
+            iq = apply_rope(rmsnorm_unit_offset(iq.reshape(t, self.index_heads, self.index_head_dim),
+                                                w("indexer.q_layernorm"), self.eps), cos, sin)
+            previous = state.get(layer, "qsa_raw_keys", s.seq)
+            raw_keys = ik if previous is None else torch.cat([previous, ik])
+            allowed = torch.zeros(t, total, dtype=torch.bool, device=xs.device)
+            for j in range(t):
+                allowed[j, qsa_select(iq[j], raw_keys, s.ctx + j, self.ratio, self.budget // self.ratio, cos_all,
+                                      sin_all, w("indexer.k_layernorm"), self.eps)] = True
+            # the attention over the selected positions
+            query, gate = torch.chunk(linear(xs, w("q_proj")).view(t, self.heads, 2 * self.head_dim), 2, dim=-1)
+            gate = gate.reshape(t, -1)
+            query = apply_rope(rmsnorm_unit_offset(query, w("q_norm"), self.eps), cos, sin)
+            key = apply_rope(rmsnorm_unit_offset(linear(xs, w("k_proj")).view(t, self.kv_heads, self.head_dim),
+                                                 w("k_norm"), self.eps), cos, sin)
+            value = linear(xs, w("v_proj")).view(t, self.kv_heads, self.head_dim)
+            past_k, past_v = state.get(layer, "attention_k", s.seq), state.get(layer, "attention_v", s.seq)
+            key = key if past_k is None else torch.cat([past_k, key])
+            value = value if past_v is None else torch.cat([past_v, value])
+            groups = self.heads // self.kv_heads
+            k_all = key.repeat_interleave(groups, dim=1).transpose(0, 1)        # [heads, total, D]
+            v_all = value.repeat_interleave(groups, dim=1).transpose(0, 1)
+            scores = torch.matmul(query.transpose(0, 1), k_all.transpose(1, 2)) * self.head_dim ** -0.5
+            scores = scores.masked_fill(~allowed[None], torch.finfo(scores.dtype).min)
+            probs = torch.softmax(scores, dim=-1, dtype=torch.float32).to(query.dtype)
+            attended = torch.matmul(probs, v_all).transpose(0, 1).reshape(t, -1)
+            ys = linear(attended * torch.sigmoid(gate), w("o_proj"))
+            if out is None:
+                out = xs.new_empty(x.shape[0], ys.shape[-1])
+            out[s.start:s.start + s.length] = ys
+            state.put(layer, "qsa_raw_keys", s.seq, raw_keys)
+            state.put(layer, "attention_k", s.seq, key)
+            state.put(layer, "attention_v", s.seq, value)
+        return out
+
+    def cache_specs(self, layers):
+        from engine.base.cache_spec import PagedSpec
+        return [PagedSpec("attention kv", len(layers), self.kv_heads * self.head_dim * 2 * 2,
+                          "[kv_heads, head_dim] x k,v bf16 per position"),
+                PagedSpec("qsa raw keys", len(layers), self.index_head_dim * 2,
+                          "[index_head_dim] bf16 per position, pooled per block at selection")]
+
+
 def _selfcheck_mla() -> None:
     torch.manual_seed(0); dev = "cuda" if torch.cuda.is_available() else "cpu"
     T, H, D, S, K = 5, 4, 512, 300, 32
