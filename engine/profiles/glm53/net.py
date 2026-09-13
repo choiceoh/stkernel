@@ -361,10 +361,22 @@ class Glm53Net:
         g_raw_all = self.linear(f_a, n + "f_b").view(N, Hl, D)
         g_out = self.linear(g_a, n + "g_b").view(N, Hl, D)
         beta_all = b_all                                                             # raw logits: each lane sigmoids as its kernel wants
-        core = torch.empty(N, Hl, D, dtype=x.dtype, device=x.device)
         wc, wr = self.conv_ring, self.rec_ring
         captured = getattr(step, "captured", False)
-        for s in step.segments:
+        rows = self._ring_rows(step, wc, wr)
+        if rows:
+            # a captured decode step: every row's conv and recurrence in one launch each, and the output lands in
+            # step order without a copy per row (45차, the C=4 question: four rows were four times the launches --
+            # 34 layers x 4 rows x ~7 kernels -- and a copy each; the kernels read each row's slot and context)
+            conv_ring, rec_ring, slots = caches.kda_rings_rows(L)
+            y = self.lanes.conv_ring_rows(qkv_all, p[n + "conv"], conv_ring, slots, step.contexts)
+            q, k, v = (t.reshape(1, N, Hl, D) for t in y.split(Hl * D, dim=-1))
+            o = self.lanes.kda_recurrent_ring_rows(q, k, v, g_raw_all[None], beta_all[None], p[n + "A_log"], p[n + "dt_bias"],
+                                                   rec_ring, slots, step.contexts, F.lower_bound)
+            core = o[0]
+        else:
+            core = torch.empty(N, Hl, D, dtype=x.dtype, device=x.device)
+        for s in (() if rows else step.segments):
             sl = slice(s.start, s.start + s.length)
             direct_ring = self.lanes.kda_recurrent_ring is not None and s.length <= wr
             direct_conv = direct_ring and self.lanes.conv_ring is not None and s.length <= min(8, wc)
@@ -426,6 +438,18 @@ class Glm53Net:
             core[sl] = o[0]
         out = self.lanes.kda_output_norm(core, g_out, p[n + "o_norm"], O_NORM_EPS)
         return (reduce or self.comm.all_reduce)(self.linear(out.reshape(N, Hl * D), n + "o_proj"))
+
+    def _ring_rows(self, step, wc: int, wr: int) -> int:
+        """How many rows a captured step folds into one ring launch per kernel: all of them when both row lanes
+        are bound and every segment is a decode block the direct rings accept (the same conditions the per-segment
+        loop's `direct_conv` checks); 0 keeps the loop -- eager steps, prefill chunks, a reference table."""
+        if (not getattr(step, "captured", False) or getattr(step, "contexts", None) is None
+                or self.lanes.kda_recurrent_ring_rows is None or self.lanes.conv_ring_rows is None):
+            return 0
+        t = step.segments[0].length
+        if t > wr or t > min(8, wc) or any(s.length != t for s in step.segments):
+            return 0
+        return len(step.segments)
 
     # -- sparse MLA + kpool indexer ------------------------------------------------------
     @operation("indexer", layer_arg=1)
@@ -530,8 +554,16 @@ class Glm53Net:
         latent = caches.latent(L)
         # A captured step asks for the same few lengths forever, so they come from the kept
         # constants; an eager prefill's follow the request and would grow that cache unbounded.
-        index = iota if getattr(step, "captured", False) else fresh
-        for s in step.segments:                                                     # fp8 KV, scale 1 (no kv scales in the checkpoint)
+        captured = getattr(step, "captured", False)
+        index = iota if captured else fresh
+        if captured and hasattr(caches, "token_rows") and getattr(step, "contexts", None) is not None:
+            # every row's new latents in one write: the gathered block table gives each row's slots at once
+            # (45차, the C=4 question: three launches a row a layer became three a layer)
+            rows = len(step.segments)
+            slots = caches.token_rows(L, step.positions.view(rows, -1))
+            latent[slots.flatten().long()] = kv_n.to(E4M3)
+        for s in (() if captured and hasattr(caches, "token_rows") and getattr(step, "contexts", None) is not None
+                  else step.segments):                                              # fp8 KV, scale 1 (no kv scales in the checkpoint)
             sl = slice(s.start, s.start + s.length)
             latent[caches.token_slots(L, s.seq, (s.ctx + index(s.length, x.device))).long()] = kv_n[sl].to(E4M3)
         slots, valid = self._indexer(L, x, qr, step, caches)
@@ -560,15 +592,22 @@ class Glm53Net:
     @operation("route", layer_arg=1)
     def route(self, L: int, x: torch.Tensor):
         """noaux_tc: sigmoid scores fp32, select by score + bias, weight by the
-        raw scores renormalised, times routed_scaling_factor."""
+        raw scores renormalised, times routed_scaling_factor.
+
+        Native execution projects every width on the tensor cores (BF16 checkpoint operands, FP32
+        accumulation and output -- the products are exact either way, only the summation order differs
+        from the FP32 SGEMM, and tests/test_engine_decode_seven pins the selection equal on tied experts
+        at 1..2,304 rows). PR #789 opened this path for the seven-row decode step alone; the 09-13 chunk
+        profile (measurements/c4_scaling_20260913) found the FP32 path it left behind costing 13 µs a
+        token in prefill (`magma_sgemmEx` 121 ms + the `x.float()` copy per 9,216-token chunk) and 1.7 ms
+        of a four-row decode step (cuBLAS SIMT SGEMM at M=28)."""
         F, p, n = self.F, self.p, f"L{L}.moe."
-        if self._router_weights and x.shape[0] <= F.spec_k + 1:
+        if self._router_weights:
             from engine.kernels.glm_pointwise import router_logits
             logits = router_logits(x, p[n + "gate"])
             self._router_tensorcore.add(L)
         else:
-            gate = self._router_weights.get(L, p[n + "gate"])
-            logits = x.float() @ gate.float().T
+            logits = x.float() @ p[n + "gate"].float().T
         if self.lanes.route_weights is not None:
             return self.lanes.route_weights(logits, p[n + "bias"], F.topk_experts, F.routed_scale)
         s = torch.sigmoid(logits)
@@ -596,7 +635,7 @@ class Glm53Net:
         return (reduce or self.comm.all_reduce)(out + shared)
 
     # -- the step ---------------------------------------------------------------------------
-    def forward(self, step: Step, caches: Caches, finish: bool = True, aux_layers=None):
+    def forward(self, step: Step, caches: Caches, finish: bool = True, aux_layers=None, aux_ready=None):
         """One step: every segment's tokens through the chain. Returns the final
         hidden states [N, hidden] (post final norm) when `finish`, else the raw
         mHC carry (res, post, comb, x) for inspection. With `aux_layers`, also
@@ -618,6 +657,7 @@ class Glm53Net:
         res = x[:, None, :].expand(N, F.hc, F.hidden).contiguous()                   # hc_expand
         post = comb = None
         aux = {}
+        features = None
         for L in self.layers:
             if post is not None:
                 res, post, comb, x = self._hc_post_pre(L, x, res, post, comb, "attn")
@@ -636,6 +676,11 @@ class Glm53Net:
                 self.probe("moe" if F.is_moe(L) else "dense", L, x)
             if aux_layers and L in aux_layers:
                 aux[L] = self.lanes.mhc_post(x, res, post, comb).float().mean(1).to(x.dtype)
+                if aux_ready is not None and L == max(aux_layers):
+                    if sp is not None:
+                        raise ValueError("early draft observation belongs to decode, not SP prefill")
+                    features = torch.cat([aux[l] for l in aux_layers], dim=-1)
+                    aux_ready(features)
         if not finish:
             return res, post, comb, x
         res = self.lanes.mhc_post(x, res, post, comb)
@@ -643,7 +688,8 @@ class Glm53Net:
         if sp:
             h = self.comm.all_gather(h, dim=0)
         if aux_layers:
-            features = torch.cat([aux[L] for L in aux_layers], dim=-1)
+            if features is None:
+                features = torch.cat([aux[L] for L in aux_layers], dim=-1)
             return h, self.comm.all_gather(features, dim=0) if sp else features
         return h
 

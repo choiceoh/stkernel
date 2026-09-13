@@ -45,12 +45,16 @@ class BootPathTests(unittest.TestCase):
             with self.subTest(mode=mode), \
                  patch.object(boot, "fleet_lease_of", return_value={"owner": "test", "path": "/unused"}), \
                  patch.object(boot.facts, "check_box", return_value="test"), \
-                 patch.object(boot, "declared"), \
+                 patch.object(boot, "declared") as declared, \
                  patch.object(boot, "LocalTP", return_value=tp), \
                  patch.object(boot.Comm, "init", return_value=comm), \
                  patch.object(boot.lane_tables, "reference"), \
                  patch.object(boot.lane_tables, "served"), \
                  patch.object(boot, "build", side_effect=StopAtBuild) as build:
+                declared.return_value.__getitem__.side_effect = lambda k: {
+                    "execution_overlap": 0, "early_observe": 0, "prefill_tiles": 1,
+                    "moe_static": "t,r,sf6,q0", "mla_prefill": "tile32", "context_ceiling": 0,
+                    "execution": "native", "kda_state_dtype": "fp32"}[k]
                 with self.assertRaises(StopAtBuild):
                     (boot.fleet if mode == "fleet" else boot.local)(args)
                 self.assertEqual(build.call_args.kwargs["ckpt_meta"], args.ckpt_meta)

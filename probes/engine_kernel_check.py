@@ -109,7 +109,8 @@ def main():
 
     if "kda_ring" in selected:
         import unittest
-        suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_engine_kda_ring")
+        # the conv ring rides with the recurrent ring: a decode step folds both over its rows (net._kda)
+        suite = unittest.defaultTestLoader.loadTestsFromNames(["tests.test_engine_kda_ring", "tests.test_engine_conv_ring"])
         result = unittest.TextTestRunner(verbosity=2).run(suite)
         assert result.wasSuccessful() and not result.skipped, "KDA ring numerical/replay checks did not pass"
         report("kda_ring", passed=True, tests=result.testsRun)

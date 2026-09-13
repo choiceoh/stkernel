@@ -228,13 +228,13 @@ def router_check(report, ranks):
                     torch.testing.assert_close(values, ref_values, rtol=5e-5, atol=3e-6)
             report('capacity_router_numerics', rows=rows, layers=42, selected_ids_exact=True,
                    max_logit_error=error, graph_replay=True, rank_file=str(path))
-            cases.append((rows, pair, x))
-        for rows, pair, _ in cases:
+            cases.append((rows, pair, x, outputs))
+        for rows, pair, _, outputs in cases:
             measurements = [dict(arm=arm, ms=_time(pair[index], iterations=64))
                             for _ in range(2)
                             for arm, index in (('B', 0), ('A', 1), ('A', 1), ('B', 0))]
             report('capacity_router_timing', rows=rows, layers=42, measurements=measurements,
-                   scope='complete 42-router projection and selection, component only')
+                   scope='complete 42-router projection and selection; served TC path versus FP32 reference, not a new serving gain')
         report('capacity_router_complete', passed=True, gpu=torch.cuda.get_device_name())
     finally:
         for graph in graphs:

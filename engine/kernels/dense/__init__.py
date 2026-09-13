@@ -152,15 +152,19 @@ def _fold(packs):
                    first.rowscale, first.rows, sum(p.cols for p in packs), first.calibrated)]
 
 
-def w4_gemm(x, pack):
+def w4_gemm(x, pack, workspace=None):
     if (x.ndim != 2 or not 1 <= x.shape[0] <= 32 or x.shape[1] != pack.cols or x.shape[1] > KMAX
             or x.dtype != torch.bfloat16 or x.device != pack.data.device):
         raise ValueError("W4 decode requires 1..32 BF16 rows matching the bound pack, K at most 20480")
     out = torch.empty(x.shape[0], pack.rows, dtype=x.dtype, device=x.device)
     # f_a/g_a are columns of the fused KDA projection: preserve their wider
     # row stride instead of launching a copy for each of the 68 products.
-    extension().run_gemm(x, pack.data, pack.scale, out, pack.rows,
-                         1., 0, pack.rowscale.data_ptr(), 0, 0, 0)
+    if workspace is None:
+        extension().run_gemm(x, pack.data, pack.scale, out, pack.rows,
+                             1., 0, pack.rowscale.data_ptr(), 0, 0, 0)
+    else:
+        extension().run_gemm_private(x, pack.data, pack.scale, out, pack.rows,
+                                    pack.rowscale.data_ptr(), workspace)
     return out
 
 
@@ -192,6 +196,7 @@ class DenseLinear:
         self.smooth = smooth
         self.observer = None  # calibration.Calibration sums this layer's inputs through it (X^T X for the GPTQ packs)
         self.executed = 0  # boot proof: W4=1, FP8=2
+        self.workspace = None  # optional private W4 scratch for independent execution
         packs = []
         if self.cols > TILE and store is not None and store.calibrated(name):
             packs = list(store.pack_wide(weight, name, smooth=smooth))   # one GPTQ over the whole K, from the full Hessian
@@ -224,26 +229,37 @@ class DenseLinear:
         if self.fp8 is not None:
             self.fp8.weight=next(owned),next(owned)
 
-    def __call__(self, x, rows_ok=None):
+    def isolate_workspace(self):
+        """Before capture: permit this layer to overlap another W4 GEMM.
+
+        One owner, one stream at a time. Counter words start at zero and are
+        rearmed by every completed GEMM. Packs and arithmetic are unchanged.
+        """
+        if self.workspace is None:
+            self.workspace = torch.zeros(extension().gemm_workspace_elements(), dtype=torch.float32,
+                                         device=self.packs[0].data.device)
+        return self.workspace.numel() * self.workspace.element_size()
+
+    def __call__(self, x, rows_ok=None, *, observe=True):
         """`rows_ok` [rows] bool: which rows are real -- only a calibration run reads it (the pipeline's ghost rows,
         a masked observation's positions past the committed count); the product itself covers every row."""
         if x.shape[-1] != self.cols or x.dtype != torch.bfloat16:
             raise ValueError("dense input does not match its bound weight")
         shape = x.shape[:-1]
         flat = x.reshape(-1, self.cols)
-        if self.observer is not None:
+        if observe and self.observer is not None:
             self.observer(flat, rows_ok)
         if flat.shape[0] <= 32:
             self.executed |= 1
             if len(self.packs) == 1:
-                out = w4_gemm(flat, self.packs[0])
+                out = w4_gemm(flat, self.packs[0], self.workspace)
             else:
                 # tiles whose row shifts disagree cannot be one pack (see `_fold`), so they are still summed
                 # here -- and each addend has already been rounded to bf16 by its own launch
                 acc = None
                 at = 0
                 for pack in self.packs:
-                    partial = w4_gemm(flat[:, at:at+pack.cols], pack).float()
+                    partial = w4_gemm(flat[:, at:at+pack.cols], pack, self.workspace).float()
                     acc = partial if acc is None else acc+partial
                     at += pack.cols
                 out = acc.bfloat16()

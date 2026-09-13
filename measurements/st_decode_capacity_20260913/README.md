@@ -4,7 +4,7 @@ The previous five-lane reservation is complete. It produced no material M7
 winner, so those results do not justify a fresh model boot. The full log,
 numerical results and rejected timings remain in `../st_decode_bundle_20260913/`.
 
-The next single reservation tests six independent candidates:
+The next single reservation tests six independent lanes:
 
 | Lane | Change | Numerical and timing scope |
 |---|---|---|
@@ -20,7 +20,11 @@ Every shape and routing case must pass before timing. Timings retain separate
 warm and 64-MiB-evicted B/A/A/B samples. Input/output ownership outlives all
 graph replays. Router timing includes projection and expert selection together.
 These are component tests, not C=4 consumer reruns or engine speed claims.
-All six candidates remain private probe choices; serving dispatch is unchanged.
+The MoE and mHC candidates remain private probe choices. While preparing this
+bundle, main PR #810 adopted the wide tensor-core router. Its lane now qualifies
+the served path against the FP32 reference, rather than claiming another gain.
+Main PR #809's private W4 scratch entry remains independent of the older optional
+packing probes and retains its original defaults.
 
 CPU compilation caught the unaliased 3/1 stage plan at 102400 shared bytes,
 above GB10's 101376-byte per-CTA limit (`cpu-initial/`). The aliased plan uses

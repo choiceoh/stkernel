@@ -1,0 +1,35 @@
+{
+  "scope": "admission receipt only; not execution or performance proof",
+  "session": "st-gb10-orders0913v4",
+  "ticket": "17892621663248681",
+  "launch_id": "5c88bb654072487c9c57fc12d417723b",
+  "source_commit": "81af41e0f",
+  "host": "srv2",
+  "cwd": "/home/choiceoh/st-worktrees/codex-gb10-execution-r1",
+  "order": [
+    "B",
+    "P",
+    "T",
+    "E",
+    "B"
+  ],
+  "payload": [
+    "bash",
+    "bench/st_bracket.sh",
+    "chain",
+    "B=7fede9678eced51f45709e27691d933e6e1c03e2",
+    "P=5f59841fe382e7dd69d6009829e04d01a32f6d2f",
+    "T=d111bd1ef550bc27ed2d859cff612d9267d39ca8",
+    "E=c0e550f5e38486ae76ab83c4c59b4a7ae35a100b",
+    "B"
+  ],
+  "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/465f7190cf4befd92bf6de8f8eb4131e815a586719f2443694846fcbd68a5d6a.log",
+  "admission_environment": {
+    "ST_LEASE_OWNER": "queue/st-gb10-orders0913v4",
+    "ST_LEASE_PATH": "/home/choiceoh/glm53-logs/st-fleet.lock"
+  },
+  "environment_reason": "Use the same own-session lease identity during preparation and supervision; normal fleet admission still acquires and verifies the lease.",
+  "state_at_observation": "queued",
+  "observed_at": "2026-09-13T10:16:19+09:00",
+  "predecessor": "prefill3300-selectionk"
+}

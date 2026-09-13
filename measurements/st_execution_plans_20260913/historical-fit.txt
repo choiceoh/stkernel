@@ -1,0 +1,28 @@
+== result.jsonl · ST-PROD-5734-20260912-0746 · git None · 요청 5개
+fit:ST-PROD-5734-20260912-0746 [decode 91.2201 ms, k=5, acc=46.2%, prefill 2K:2030 32K:12150 128K:1996] — 미계수(평탄 가정): 폭, 컨텍스트
+cost fit:ST-PROD-5734-20260912-0746: k=5 acc=46.2% decode 91.2201 ms prefill 2K:2030 32K:12150 128K:1996 [폭·컨텍스트 미계수: 평탄]
+steps: 21 prefill, 995 decode, async 995 (동기 drain 0), tokens/step 3.347
+  prefill n=21    med 4620.924 ms  p95 4626.117  max 4626.189  (in-flight, launch→readback)
+  decode  n=995   med  191.855 ms  p95  199.230  max  202.635  (in-flight, launch→readback)
+  TTFT ctx2K: n=3 med 1.057s p95 1.057s
+  TTFT ctx32K: n=1 med 2.701s p95 2.701s
+  TTFT ctx128K: n=1 med 64.488s p95 64.488s
+  클라이언트 decode: med 34.0 tok/s [33.6, 36.5] (첫 토큰 이후)
+decode 스텝: 벽 기준 5.99 step/s (prefill 포함), 모형 내재 10.96 step/s (1000/decode_ms)
+숙주 여유 +100%
+디코드 폭: 1×995 (스텝이 실은 행 수 × 스텝 수)
+-- 검증 (result.jsonl): [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,
+   [예측] 폼에 얹히지 않은 값이 따라 오는 것이 주장이다:
+   [입력  ] decode step/s            기록      10.96  시뮬      10.96 (-0.0%)
+   [예측  ] tokens/step              기록      3.309  시뮬      3.347 (+1.1%)
+   [입력+큐] TTFT(warm) ctx2K         기록      1.049  시뮬      1.057 (+0.8%)
+   [예측  ] e2e med ctx2K            기록       12.1  시뮬      12.82 (+5.9%)
+   [입력+큐] TTFT(warm) ctx32K        기록      2.679  시뮬      2.701 (+0.8%)
+   [예측  ] e2e med ctx32K           기록      36.36  시뮬      37.98 (+4.4%)
+   [입력+큐] TTFT(warm) ctx128K       기록      64.41  시뮬      64.49 (+0.1%)
+   [예측  ] e2e med ctx128K          기록      91.78  시뮬      89.85 (-2.1%)
+   [예측  ] 클라이언트 tok/s              기록       35.6  시뮬      33.99 (-4.5%)
+   [예측  ] TPOT ms                  기록      28.09  시뮬      29.42 (+4.7%)
+
+-- 예측 행 최대 잔여: e2e med ctx2K +5.9% (result.jsonl), 예측 6행 중 |잔여|>10% 는 0행
+D17: 이 숫자는 시뮬레이션이다 — 속도 주장은 플릿 onepass 두 번으로 끝난다.

@@ -41,8 +41,12 @@ class NullDrafter:
 class Glm53Engine:
     def __init__(self, net: Glm53Net, caches: Glm53Caches, F: Facts, drafter=None, max_new: int = 256,
                  eos_ids=(), temperature: float = 0.0, top_p: float = 1.0, seed: int = 0, decodable: "int | None" = None,
-                 aux_layers=None, context_ceiling: "int | None" = None):
+                 aux_layers=None, context_ceiling: "int | None" = None, execution_plan=None):
         self.net, self.caches, self.F = net, caches, F
+        from engine.profiles.glm53.execution import ExecutionPlan
+        self.execution_plan = execution_plan or ExecutionPlan()
+        if self.execution_plan.active and getattr(F, "kda_state_dtype", "fp32") != "fp32":
+            raise ValueError("GB10 execution experiments require FP32 KDA state")
         self.drafter = drafter or NullDrafter()
         if self.drafter.k > F.spec_k:
             raise ValueError(f"drafter proposes {self.drafter.k} > spec_k {F.spec_k}: the rings are sized for {F.spec_k}")
@@ -115,11 +119,23 @@ class Glm53Engine:
             if self.memory is not None:
                 self._warmup_prefill_memory()
             self._warmup_serving_kernels()
+            if self.execution_plan.early_observe:
+                projection = getattr(self.drafter, "dense", {}).get("fc.weight")
+                if projection is None or not hasattr(projection, "isolate_workspace"):
+                    raise ValueError("early observation requires a native W4 context projection")
+                if projection.smooth is not None:
+                    raise ValueError("early context calibration requires the declared unsmoothed FC input")
+                if max_seqs * (self.drafter.k + 1) > 32:
+                    raise ValueError("early observation is declared only for the W4 decode row domain")
+                private_bytes = projection.isolate_workspace()
+                self.lane_info["early_observe_workspace_bytes"] = str(private_bytes)
             self.decode_graphs = Glm53DecodeGraphs(self.net, self.caches, max_seqs,
                                                   self.drafter.k + 1, self.aux_layers, memory=self.memory,
-                                                  ceiling=self.max_context)
+                                                  ceiling=self.max_context, execution_plan=self.execution_plan,
+                                                  drafter=self.drafter)
             if self.drafter.k:
-                self.drafter.capture_decode(self.caches, memory=self.memory, generator=self.gen, vocab=self.F.vocab)
+                kwargs = {"prepared_context": True} if self.execution_plan.early_observe else {}
+                self.drafter.capture_decode(self.caches, memory=self.memory, generator=self.gen, vocab=self.F.vocab, **kwargs)
                 self._check_graph_pools()
             from engine.profiles.glm53.decode_graphs import SamplingGraphs
             self.sampling_graphs = SamplingGraphs(self.decode_graphs, self.gen, self.decodable, self.top_p)
@@ -141,7 +157,7 @@ class Glm53Engine:
         separation is what makes the loop correct, so it is asserted, not assumed."""
         target = self.decode_graphs.graphs.pool
         drafter = self.drafter.decode_graphs
-        for name in ("proposals", "observations", "masked", "rows_masked", "rows_propose", "rows_sampled"):
+        for name in ("proposals", "observations", "masked", "rows_masked", "rows_prepared", "rows_propose", "rows_sampled"):
             other = getattr(drafter, name, None)
             if other is not None and other.pool == target:
                 raise ValueError(f"the drafter's {name} graphs share the target graphs' memory pool: "
@@ -841,6 +857,11 @@ class Glm53Engine:
 
     def _forward(self, step: Step):
         self.caches.prepare(step)
+        if self.execution_plan.prefill_tiles > 1 and step.ids.numel() > self.execution_plan.tile_rows:
+            from engine.profiles.glm53.execution import prefill_layer_major
+            result = prefill_layer_major(self.net, step, self.caches, self.execution_plan,
+                                        self.aux_layers if self.drafter.k else ())
+            return result if self.drafter.k else (result, None)
         if self.drafter.k:
             return self.net.forward(step, self.caches, aux_layers=self.aux_layers)
         return self.net.forward(step, self.caches), None
@@ -1179,8 +1200,16 @@ class Glm53Engine:
             new, done = self._commit(s.seq, accepted, new, lps, len(drafts[s.seq]))
             committed = len(new)                                           # clipped tokens must not enter the next turn's context
             if aux is not None:
-                observe = self.drafter.observe_decode if self.decode_graphs is not None else self.drafter.observe
-                observe(self.caches.draft_ring(s.slot), torch.arange(s.ctx, s.ctx + committed, device=h.device), aux[s.start: s.start + committed])
+                prepared = getattr(self.decode_graphs, "observations", {}).get(shape) if self.decode_graphs is not None else None
+                if prepared is not None:
+                    row = s.start // s.length
+                    positions, context = prepared
+                    self.drafter.decode_graphs.observe_prepared_rows(
+                        torch.tensor([s.slot], device=h.device), positions[row:row+1], context[row:row+1],
+                        torch.tensor([committed], device=h.device), aux[rows])
+                else:
+                    observe = self.drafter.observe_decode if self.decode_graphs is not None else self.drafter.observe
+                    observe(self.caches.draft_ring(s.slot), torch.arange(s.ctx, s.ctx + committed, device=h.device), aux[s.start: s.start + committed])
             self.ctx[s.seq] += committed
             finished.append(done)
         self.steps += 1

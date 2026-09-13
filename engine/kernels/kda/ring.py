@@ -21,7 +21,20 @@ def recurrent_kda_ring(q, k, v, g, beta, a_log, g_bias, ring, slot, context, low
     return _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound)
 
 
-def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound, *, deferred=False):
+def recurrent_kda_ring_rows(q, k, v, g, beta, a_log, g_bias, ring, slots, contexts, lower_bound):
+    """`recurrent_kda_ring` over every row of a decode step in one launch (45차, the C=4 question).
+
+    The inputs hold the rows back to back along T: [1, rows*t, ...], row i at tokens [i*t, (i+1)*t).
+    `slots` and `contexts` are CUDA integer vectors of `rows` entries, one per row, in that order --
+    each program reads its own row's pair, so the arithmetic and the ring writes are those of `rows`
+    separate one-row launches (the tests pin the storage equal byte for byte). Rows must own
+    distinct slots. A captured graph replays it with whatever the vectors hold at replay time."""
+    if not (isinstance(slots, torch.Tensor) and isinstance(contexts, torch.Tensor)) or slots.numel() != contexts.numel():
+        raise ValueError("rows need one CUDA slot and one CUDA context per row")
+    return _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slots, contexts, lower_bound, rows=slots.numel())
+
+
+def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound, *, deferred=False, rows=1):
     if any(t.ndim != 4 for t in (q, k, v, g)):
         raise ValueError("ring KDA requires [1,T,H,D] inputs")
     b, t, h, kd = k.shape
@@ -33,6 +46,9 @@ def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound
             any(x.device != q.device or x.dtype not in (torch.bfloat16, torch.float16, torch.float32)
                 for x in inputs)):
         raise ValueError("ring KDA requires compatible CUDA floating Q/K, V, gate and scalar beta")
+    if type(rows) is not int or rows <= 0 or t % rows:
+        raise ValueError("rows must divide the token count: every row of a step holds the same tokens")
+    t = t // rows                                                    # tokens per row from here on
     if (ring.ndim != 5 or ring.shape[0] <= 0 or ring.shape[2:] != (hv, kd, vd) or
             not 1 <= t <= ring.shape[1] or ring.device != q.device or ring.dtype not in (torch.float32, torch.float16) or
             ring.stride()[1:] != (hv*kd*vd, kd*vd, vd, 1) or
@@ -45,9 +61,11 @@ def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound
         raise ValueError("ring KDA requires a bounded gate")
     device_indices = isinstance(slot, torch.Tensor) and isinstance(context, torch.Tensor)
     if device_indices:
-        if any(x.device != q.device or x.numel() != 1 or x.dtype not in (torch.int32, torch.int64)
-               for x in (slot, context)):
-            raise ValueError("slot and context must be CUDA integer singletons")
+        if any(x.device != q.device or x.numel() != rows or x.dtype not in (torch.int32, torch.int64)
+               or not x.is_contiguous() for x in (slot, context)):
+            raise ValueError("slot and context must be contiguous CUDA integer vectors, one entry per row")
+    elif rows != 1:
+        raise ValueError("rows need device slot and context vectors")
     elif (type(slot) is not int or type(context) is not int or not 0 <= slot < ring.shape[0] or context < 0):
         raise ValueError("slot and context must both be valid integers or CUDA singletons")
     # A write cannot race a Q/K/gate read by another value tile. Arena views
@@ -69,10 +87,13 @@ def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound
     if h == hv == 16 and kd == vd == 128 and t <= 6:
         bv = 16
     strides = tuple(x.stride()[1:] for x in inputs) if any(not x.is_contiguous() for x in inputs) else None
-    fused_recurrent_gated_delta_rule_fwd_kernel[(1, triton.cdiv(vd, bv), hv)](
+    # rows > 1: the kernel's sequence axis (program i_n) is the row -- sequence i_n starts at token i_n * T of the
+    # flat inputs and reads its own slot/context entry; B stays 1 because the only use of B*T is the K-block
+    # offset of the output, and K is one block here (BK = K)
+    fused_recurrent_gated_delta_rule_fwd_kernel[(1, triton.cdiv(vd, bv), rows * hv)](
         q=q, k=k, v=v, g=g, beta=beta, o=out, h0=ring, ht=ring,
         cu_seqlens=None, ssm_state_indices=None, num_accepted_tokens=None,
-        a_log=a_log, g_bias=g_bias, scale=kd**-0.5, N=1, T=t,
+        a_log=a_log, g_bias=g_bias, scale=kd**-0.5, N=rows, T=t,
         B=1, H=h, HV=hv, K=kd, V=vd, BK=bk, BV=bv,
         stride_init_state_token=ring.stride(1), stride_final_state_token=ring.stride(1),
         stride_indices_seq=1, stride_indices_tok=1,
@@ -81,6 +102,7 @@ def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound
         LOWER_BOUND=lower_bound, STATE_KV=True, INPUT_STRIDES=strides,
         ring_slot=slot, ring_context=context, RING_SIZE=ring.shape[1],
         RING_SLOT_STRIDE=ring.stride(0), RING_DEVICE_INDICES=device_indices,
+        RING_INDEX_STRIDE=1 if rows > 1 else 0,
         deferred_keys=factors[0], deferred_decay=factors[1], deferred_updates=factors[2],
         DEFERRED_STATE=deferred,
         num_warps=1, num_stages=3)

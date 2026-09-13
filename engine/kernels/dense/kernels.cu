@@ -494,6 +494,8 @@ __device__ unsigned long long g_mk2_ts[MK2_UNITS_MAX * 4];
 #endif
 
 struct MKGemm2Ctx {
+  float* private_partial = nullptr;
+  unsigned int* private_arrive = nullptr;
   const __nv_bfloat16* x;  // [m, k]
   int64_t x_stride = 0;    // 0 means dense; split projections may retain a wider parent row
   __nv_bfloat16* out;      // [m, n_orig]
@@ -1094,16 +1096,17 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
   // k-slice: assign (never accumulate) this slice's partial, count the
   // arrival, and let the last slice fold the tile in slice order.
   {
-    float* pb = g_mk2_partial + (size_t)slice * c.m * c.n;
+    float* pb = (c.private_partial ? c.private_partial : g_mk2_partial) + (size_t)slice * c.m * c.n;
     store_tile([&](int r, int col, float v) { pb[(size_t)r * c.n + col] = v; });
   }
   __syncthreads();
   __threadfence();  // release: the slice is visible device-wide first
   __syncthreads();
   if (threadIdx.x == 0) {
-    const unsigned prev = atomicAdd(&g_mk2_tile_arrive[nt], 1u);
+    auto* arrive = c.private_arrive ? c.private_arrive : g_mk2_tile_arrive;
+    const unsigned prev = atomicAdd(&arrive[nt], 1u);
     s_last = (prev + 1u == (unsigned)nslices);
-    if (s_last) g_mk2_tile_arrive[nt] = 0u;  // all slices in; rearm
+    if (s_last) arrive[nt] = 0u;  // all slices in; rearm
   }
   __syncthreads();
   if (s_last) {
@@ -1111,7 +1114,7 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
     if constexpr (LR) lr_wait();
     for (int i2 = threadIdx.x; i2 < c.m * 32; i2 += MK_THREADS) {
       const int r = i2 >> 5, c4 = (i2 & 31) * 4;
-      const float* src = g_mk2_partial + (size_t)r * c.n + nt * 128 + c4;
+      const float* src = (c.private_partial ? c.private_partial : g_mk2_partial) + (size_t)r * c.n + nt * 128 + c4;
       float4 v4 = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
       for (int s = 0; s < nslices; ++s) {  // fixed order -> reproducible
         const float4 pv = __ldcg((const float4*)(src + (size_t)s * c.m * c.n));
@@ -1265,13 +1268,14 @@ mk_gemm_input_kernel(const MKGemm2Ctx c) {
       if(col<c.n_orig)c.out[(size_t)r*c.n_orig+col]=__float2bfloat16(v*(c.rgs?c.rgs[col]:1.f));
     });return;
   }
-  float* partial=g_mk2_partial+(size_t)slice*c.m*c.n;
+  float* partial=(c.private_partial ? c.private_partial : g_mk2_partial)+(size_t)slice*c.m*c.n;
   store_tile([&](int r,int col,float v){partial[(size_t)r*c.n+col]=v;});
   __syncthreads();__threadfence();__syncthreads();
   if(threadIdx.x==0) {
-    const unsigned prev=atomicAdd(&g_mk2_tile_arrive[nt],1u);
+    auto* arrive=c.private_arrive ? c.private_arrive : g_mk2_tile_arrive;
+    const unsigned prev=atomicAdd(&arrive[nt],1u);
     last=prev+1u==(unsigned)c.ksr;
-    if(last)g_mk2_tile_arrive[nt]=0u;
+    if(last)arrive[nt]=0u;
   }
   __syncthreads();
   if(last) {
@@ -1279,7 +1283,7 @@ mk_gemm_input_kernel(const MKGemm2Ctx c) {
     for(int t=threadIdx.x;t<c.m*32;t+=MK_THREADS) {
       const int r=t>>5,col=nt*128+(t&31)*4;
       if(col>=c.n_orig)continue;  // padded partials and row scales are unused
-      const float* src=g_mk2_partial+(size_t)r*c.n+col;
+      const float* src=(c.private_partial ? c.private_partial : g_mk2_partial)+(size_t)r*c.n+col;
       float4 v=make_float4(0,0,0,0);
       for(int s=0;s<c.ksr;++s) {
         const float4 p=__ldcg((const float4*)(src+(size_t)s*c.m*c.n));
@@ -3245,12 +3249,15 @@ std::vector<int64_t> mk_read_mhc_ts() {
 #endif
 }
 
-void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
+void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                  torch::Tensor out, int64_t n_orig, double wgs, int64_t bg,
                  int64_t rgs_ptr, int64_t lr_a_ptr, int64_t lr_b_ptr,
-                 int64_t lr_r, int pack_rows=8, bool short_input=false) {
+                 int64_t lr_r, float* private_partial = nullptr, unsigned int* private_arrive = nullptr,
+                 int pack_rows=8, bool short_input=false) {
   set_kernel_attrs();
   MKGemm2Ctx c2{};
+  c2.private_partial = private_partial;
+  c2.private_arrive = private_arrive;
   c2.x = (const __nv_bfloat16*)x.data_ptr();
   c2.wq4 = (const uint8_t*)wq4.data_ptr();
   c2.ws4 = (const int8_t*)ws4.data_ptr();
@@ -3341,6 +3348,29 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   } else {
     mk_launch_gemm2(c2, stream);
   }
+}
+
+void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
+                 torch::Tensor out, int64_t n_orig, double wgs, int64_t bg,
+                 int64_t rgs_ptr, int64_t lr_a_ptr, int64_t lr_b_ptr, int64_t lr_r,
+                 int pack_rows=8, bool short_input=false) {
+  mk_run_gemm_impl(x, wq4, ws4, out, n_orig, wgs, bg, rgs_ptr, lr_a_ptr, lr_b_ptr, lr_r,
+                   nullptr, nullptr, pack_rows, short_input);
+}
+
+void mk_run_gemm_private(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
+                        torch::Tensor out, int64_t n_orig, int64_t rgs_ptr,
+                        torch::Tensor workspace) {
+  TORCH_CHECK(workspace.is_cuda() && workspace.device() == x.device()
+              && workspace.scalar_type() == torch::kFloat32 && workspace.is_contiguous()
+              && workspace.numel() == MK2_PART_ELEMS + MK2_TILES_MAX,
+              "private GEMM needs its declared FP32 partial/counter workspace");
+  // No LR correction or shared-MLP pair activation on this entry point.
+  // Those paths have additional global state. Plain/input-reuse GEMM writes
+  // only these partials and arrivals (input packing is invocation-owned).
+  float* partial = workspace.data_ptr<float>();
+  auto* arrive = reinterpret_cast<unsigned int*>(partial + MK2_PART_ELEMS);
+  mk_run_gemm_impl(x, wq4, ws4, out, n_orig, 1., 0, rgs_ptr, 0, 0, 0, partial, arrive);
 }
 
 // ptrs: x, res_in, pm_in, cm_in, fn, hc_scale, hc_base, norm_w, res_out,
@@ -4214,6 +4244,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         pybind11::arg("bg"), pybind11::arg("rgs_ptr"), pybind11::arg("lr_a_ptr"),
         pybind11::arg("lr_b_ptr"), pybind11::arg("lr_r"),
         pybind11::arg("pack_rows")=8, pybind11::arg("short_input")=false);
+  m.def("run_gemm_private", &mk_run_gemm_private, "W4 with caller-owned partials and arrivals");
+  m.def("gemm_workspace_elements", []() { return MK2_PART_ELEMS + MK2_TILES_MAX; });
   m.def("gemm2_plan", &mk_gemm2_plan, "bench: {ksr, units, blocks/SM} of (m, n, k)");
   m.def("set_gemm2", &mk_set_gemm2, "bench: force the GEMM's ksr (-1 = keep)");
   m.def("probe_state", &mk_probe_state, "snapshot the raw GEMM probe knob");
