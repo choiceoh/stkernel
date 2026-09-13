@@ -143,8 +143,33 @@ boot_arm() {  # name sha
 stop_arm() {  # the release's own stop: ST_LEASE_OWNER is the ticket's, so it stops this boot and no other
   [ "$REHEARSE" != 1 ] || return 0
   [ -n "$RELEASE" ] || return 0
-  ( shape; export REPO=$RELEASE; bash "$RELEASE/launchers/start-st-glm53.sh" stop ) >> "$OUT/boot-$ARM.log" 2>&1 \
-    || say "stop returned nonzero (see $OUT/boot-$ARM.log)"
+  if ( shape; export REPO=$RELEASE; bash "$RELEASE/launchers/start-st-glm53.sh" stop ) >> "$OUT/boot-$ARM.log" 2>&1; then
+    drop_tier "$LOGD/st-bracket-tier/$S-$ARM" "st-engine:bracket-${ARM_SHA:0:12}"
+  else
+    say "stop returned nonzero (see $OUT/boot-$ARM.log); the tier stays until a stop succeeds"
+  fi
+}
+# An arm's prefix tier is read by that boot alone: the next boot of any arm gets a directory of its
+# own. Left behind after the stop, the tiers came to 186-227 GB per node in one day (2026-09-13,
+# all four Sparks, found at 94-95% disk). The container wrote the files as root, so the arm's own
+# image -- present on every node that booted it -- removes them; a node where a running container
+# still names the directory keeps it. ST_BRACKET_KEEP_TIER=1 keeps every tier for inspection.
+drop_tier() {  # dir image
+  local dir=$1 image=$2 parent=$LOGD/st-bracket-tier name ip cmd out
+  [ "${ST_BRACKET_KEEP_TIER:-0}" != 1 ] || { say "tier kept (ST_BRACKET_KEEP_TIER=1): $dir"; return 0; }
+  name=${dir#"$parent/"}
+  case "$name" in
+    "$dir"|""|.|..|*/*) say "tier not dropped: $dir is not one directory directly under $parent"; return 0;;
+  esac
+  cmd="d=$(printf %q "$dir"); p=$(printf %q "$parent"); n=$(printf %q "$name"); i=$(printf %q "$image")"
+  cmd+='; [ -d "$d" ] || { echo absent; exit 0; }'
+  cmd+='; if docker ps -q | xargs -r docker inspect --format "{{.Args}}" | grep -qF -- "$d"; then echo "in use"; exit 0; fi'
+  cmd+='; docker run --rm --network none --entrypoint rm -v "$p:/tier" "$i" -rf -- "/tier/$n" >/dev/null 2>&1 || rm -rf -- "$d" 2>/dev/null'
+  cmd+='; [ ! -e "$d" ] && echo dropped || echo "left (not removable)"'
+  for ip in "${NODES[@]}"; do
+    out=$(node_sh "$ip" "$cmd" 2>/dev/null) || out=unreachable
+    say "tier $name on $ip: $out"
+  done
 }
 rehearse_record() {  # run-index: a record shaped like the last real ST one, or a stub, marked rehearsal
   python3 - "$ARM" "$ARM_SHA" "$1" "$JSONL" <<'PY'
