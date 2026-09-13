@@ -42,7 +42,7 @@ def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None, dtype: "str
     `dtype` is the activations' (the cache rows a store keeps): the config's `dtype`, else bfloat16. `table(name,
     rows)` -> [..., heads, width] gathers PLE rows by index; by default the whole table tensor is indexed."""
     from engine.modules.hyper_connection import GatedResidualStreams
-    from engine.modules.linear_attention import GatedDeltaNet
+    from engine.modules.linear_attention import VARIANTS, GatedDeltaNet, named
     from engine.modules.moe import SharedExpertMoE
     from engine.modules.ngram_embedding import NGramInjection
     from engine.modules.sparse_attention import GatedSparseAttention
@@ -66,9 +66,10 @@ def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None, dtype: "str
     features = {
         "linear_attention": GatedDeltaNet(
             k_heads=cfg["linear_num_key_heads"], v_heads=cfg["linear_num_value_heads"], k_dim=cfg["linear_key_head_dim"],
-            v_dim=cfg["linear_value_head_dim"], conv=cfg["linear_conv_kernel_dim"], eps=eps,
+            v_dim=cfg["linear_value_head_dim"], conv=cfg["linear_conv_kernel_dim"], eps=eps, **VARIANTS["gdn"],
             gate_activation=cfg.get("output_gate_type") or cfg["hidden_act"], activation=cfg["hidden_act"],
-            weights=lambda layer, name: layer_name(layer, "linear_attn", name), dtype=dtype),
+            weights=lambda layer, name: named("qwen4_exp", lambda hf: layer_name(layer, "linear_attn", hf))(name),
+            dtype=dtype),
         "sparse_attention": GatedSparseAttention(
             heads=cfg["num_attention_heads"], kv_heads=cfg["num_key_value_heads"], head_dim=cfg["head_dim"],
             rotary_dim=rotary, theta=rope.get("rope_theta", cfg.get("rope_theta")), eps=eps,
