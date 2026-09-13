@@ -1,0 +1,51 @@
+{
+  "scope": "single GB10 component and graph gate; no NIC or model throughput claim",
+  "source_sha256": {
+    "engine/kernels/kda/deferred.py": "102df50518b0a7de1358ba8366c77b6e0e05aea8e0fd8f1e2476929aedc5ddb4",
+    "engine/kernels/kda/ring.py": "a5bff224a11c69c36e0e2f1a23bd97976b1b55153a4eee8c22600ae4f728419e",
+    "engine/kernels/kda/fused_recurrent.py": "84c833a20ccf4e8c673802381987552aa035f582f3ffa65d3354ddf75d46be15",
+    "engine/base/graph_labels.py": "46b8c68f548e1b2fb583b9cb9a402f18cccdca842401f402f7cf72140e4c7461",
+    "engine/profiles/glm53/net.py": "66b38b354d4003554a3d3f31e282ac1f5608df77bde657ab84062d327e5b3067",
+    "engine/profiles/glm53/decode_graphs.py": "f0807bd82ace901817138662e7711737c0addb3a12388ed68e8bda2e126a0681",
+    "engine/profiles/glm53/pipeline.py": "72a25c471877ca5f1ccbadb4f3ee2b9d6f83aa2114605b961bf57e7884c81ca7",
+    "engine/profiles/glm53/adapter.py": "673469e4e9ef078eb2394de2a6abec240891a282b5e90fecc006e314a4a71701",
+    "tests/test_engine_kda_deferred.py": "613c56ee3dfb4828c25a99aa44c15527b06943a1ab72a3da917c635a458404d6",
+    "tests/test_engine_kda_deferred_batch.py": "cfb25d70c203f2498fa89502ecb058a5c994dae928788db194e32897e9a25d8f",
+    "tests/test_engine_burst_decode_cuda.py": "5526b9a7449187cbb83aa4079e49829d3dbeea50f1c3aa7d389a83acba4e18bd",
+    "probes/engine_kda_deferred_check.py": "bbf13fd823014277a81732922a1cc03c53f6d5d34ae2b90ad530d4c8ab560d37",
+    "probes/engine_kda_batch_bench.py": "9a798ea16125b9b2b30669167770fd40bdb4f9d6ebc2faa3b24346f4330156d6",
+    "probes/engine_candidate_packet_bench.py": "3cae2d83d15cd73638f4948245a58b5b08cca7ab18ea09317b1d8501a83a6ea2",
+    "engine/kernels/common/vocab_candidates.py": "0692207b663c57af3b8580cf0bde946cb93a9b490ad8e9e33d2e9cd2276fe512",
+    "engine/modules/vocab.py": "e757b852b01f31dcc0c420c4eb0a5b174135c30baf047ce2b8a8e0128a5994c5"
+  },
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "status": "FAIL",
+  "correctness": {
+    "tests": 9,
+    "skips": 0,
+    "errors": [
+      [
+        "test_boot_capture_rebinding_and_shared_chain_match_ordinary_serving (tests.test_engine_burst_decode_cuda.ServedBurstCudaTests.test_boot_capture_rebinding_and_shared_chain_match_ordinary_serving)",
+        "Traceback (most recent call last):\n  File \"/repo/tests/test_engine_burst_decode_cuda.py\", line 88, in test_boot_capture_rebinding_and_shared_chain_match_ordinary_serving\n    e, ref = toy_engine(), toy_engine()\n             ^^^^^^^^^^^^\n  File \"/repo/tests/test_engine_burst_decode_cuda.py\", line 45, in toy_engine\n    greedy = DecodeGraphs(lambda b: b.clone(), lambda n, t: buffers[n, t], [(n, 2) for n in range(4, 0, -1)],\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/repo/engine/base/graphs.py\", line 139, in __init__\n    step_fn(inp)\n  File \"/repo/tests/test_engine_burst_decode_cuda.py\", line 45, in <lambda>\n    greedy = DecodeGraphs(lambda b: b.clone(), lambda n, t: buffers[n, t], [(n, 2) for n in range(4, 0, -1)],\n                                    ^^^^^^^^^\ntorch.AcceleratorError: CUDA error: invalid argument\nSearch for `cudaErrorInvalidValue' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nFor more detailed error information, run with CUDA_LOG_FILE=stderr\n\n"
+      ],
+      [
+        "test_progress_can_cancel_before_the_four_iteration_burst_retires (tests.test_engine_burst_decode_cuda.ServedBurstCudaTests.test_progress_can_cancel_before_the_four_iteration_burst_retires)",
+        "Traceback (most recent call last):\n  File \"/repo/tests/test_engine_burst_decode_cuda.py\", line 60, in test_progress_can_cancel_before_the_four_iteration_burst_retires\n    e, p = toy_engine(), None\n           ^^^^^^^^^^^^\n  File \"/repo/tests/test_engine_burst_decode_cuda.py\", line 45, in toy_engine\n    greedy = DecodeGraphs(lambda b: b.clone(), lambda n, t: buffers[n, t], [(n, 2) for n in range(4, 0, -1)],\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/repo/engine/base/graphs.py\", line 139, in __init__\n    step_fn(inp)\n  File \"/repo/tests/test_engine_burst_decode_cuda.py\", line 45, in <lambda>\n    greedy = DecodeGraphs(lambda b: b.clone(), lambda n, t: buffers[n, t], [(n, 2) for n in range(4, 0, -1)],\n                                    ^^^^^^^^^\ntorch.AcceleratorError: CUDA error: invalid argument\nSearch for `cudaErrorInvalidValue' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nFor more detailed error information, run with CUDA_LOG_FILE=stderr\n\n"
+      ]
+    ],
+    "failures": []
+  },
+  "graph_label_errors": [
+    {
+      "graph": "decode/(4, 2)",
+      "error": "CUDA graph inspection returned 1"
+    },
+    {
+      "graph": "decode/(4, 2)",
+      "error": "CUDA graph inspection returned 1"
+    }
+  ],
+  "error": "RuntimeError: deferred-state/graph gate failed or skipped",
+  "seconds": 49.98324421301368
+}
