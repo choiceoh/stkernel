@@ -2078,4 +2078,12 @@ logits 커널과 `torch.topk` 만 행마다 그대로 둔다(같은 텐서·같�
 `Lanes.decode_rows`; 참조 표는 접기 전 torch 합성) → 층당 14 + 행당 3, 스텝당 **−528 런치 ≈ −1.3 ms**(1행 −3.6%, 4행 −1.9%). 전부 바이트 복사
 아니면 정수라 서빙과 참조가 바이트 동일하고, **컨테이너의 Triton 인터프리터(`TRITON_INTERPRET=1`, CPU)** 가 다섯 커널을 참조와 바이트 대조로
 박았다(`test_engine_indexer_rows`) — #815 의 `_pool_slots` 2-D 블록표도 같은 길로 CPU 에서 박혔다. 선택의 `masked_fill_(ids ≥ ke, -1)` 은 뺐다
-(`_pool_slots`·오라클이 같은 조건을 스스로 -1 로 다룬다; CPU 검사가 출력 동일을 박는다). GPU 티켓 없음.
+(`_pool_slots`·오라클이 같은 조건을 스스로 -1 로 다룬다; CPU 검사가 출력 동일을 박는다). GPU 티켓 없음. PR #819.
+
+**넷째 접기 (운영자 "추가 접기 및 융합 작업", 같은 날 오후, README §9 표).** 남은 두 런치짜리들 — head gate 의 곱 둘, 풀 레코드의 키·스케일
+쓰기, 테일 링의 stack+쓰기, 선택의 지평 마스크 텐서, 드래프터 샘플 워크의 루프 불변식, 관찰 훅의 arange — 를 각각 하나로(`head_gate`·
+`scatter_pools`·`write_tails`·`mask_horizon` 커널, 인터프리터 바이트 대조 OK): 스텝당 −45 런치 + 샘플 워크 −16 ≈ −0.15 ms. **런치 레버는 여기서
+끝**: 1행 스텝 ~800 런치의 나머지는 커널 자체(dense GEMM 365, mHC 89, MoE 45, KDA 링 68, 라우터 층당 6, 스텝 진입·마무리·샘플러·드래프터)이고
+바이트 동일하게 접히는 것이 없다(GEMM 병합은 split-K 선택을, 라우터 `sorted=False` 는 전문가 합 순서를, aux `mhc_post` 재사용은 fused post+pre 를
+바꾼다). 남는 레버는 전부 수치가 바뀌는 커널 작업이다: dense W4 GEMM 의 소형 M 효율(1행 13 ms, 35%), MoE 207 → 240 GB/s, mHC 3 ms, fp32 head
+gate SGEMM 0.5 ms — 브래킷 필요.

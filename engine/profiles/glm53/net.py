@@ -474,7 +474,7 @@ class Glm53Net:
         gate = self.linear(x, n + "gate")                                           # [N, 128] per-channel pool score
         q8, qs = self.lanes.indexer_quant(q.reshape(-1, d))
         q8 = q8.view(N, nh, d)
-        w_eff = (w * qs.view(N, nh) * F.idx_scale).contiguous()                     # q's scale folds into the head gate, as served
+        w_eff = self.lanes.head_gate(w, qs.view(N, nh), F.idx_scale)                 # q's scale folds into the head gate, as served
         width = F.topk + kp - 1
         slots_out = torch.empty((N, width), dtype=torch.int32, device=x.device)
         valid_out = torch.empty(N, dtype=torch.int32, device=x.device)
@@ -556,7 +556,7 @@ class Glm53Net:
         Per row the loop gathers the row's candidate keys and scales, scores them, masks past the row's horizon,
         takes the top-k, pads the misses with -1 and finalizes against the row's block row -- some twenty
         launches a row a layer. Here the lengths are one launch, the candidate keys and scales one gather
-        (`lanes.decode_rows`), the mask one compare and the finalize one launch over the rows' block rows; only
+        (`lanes.decode_rows`), the horizon a mask written in place and the finalize one launch over the rows' block rows; only
         the logits kernel and the top-k stay per row, on the same tensors (the row's own keys, the row's own
         queries, the row's own horizon), so every row's ids are the ones the loop computes. The loop's -1 for a
         winner past the horizon is left to the finalize, which masks `id >= length // pool` itself (kernel and
@@ -571,14 +571,13 @@ class Glm53Net:
         glue = self.lanes.decode_rows
         seq_lens, ke = glue.lengths(contexts, t, kp)                                   # [rows*t] i32: length at each query, pools before it
         keys_all, scales_all = glue.candidates(keys, scales, *caches.pool_maps(L), n_cand)   # [rows, n_cand, d], [rows, n_cand]
-        horizon = iota(n_cand, dev)[None, :] >= ke[:, None]                            # [rows*t, n_cand]
         values = torch.empty((rows * t, k), dtype=torch.float32, device=dev)
         winners = torch.empty((rows * t, k), dtype=torch.int64, device=dev)
         ks = zeros(t, dev)
         for r in range(rows):
             sl = slice(r * t, (r + 1) * t)
             logits = self.lanes.indexer_logits(q8[sl], keys_all[r], scales_all[r], w_eff[sl], ke[sl], ks=ks)[:, :n_cand].float()
-            logits.masked_fill_(horizon[sl], float("-inf"))                            # topk_positions, in place
+            glue.horizon(logits, ke[sl])                                                  # -inf past each query's pools, in place
             torch.topk(logits, k, dim=-1, sorted=False, out=(values[sl], winners[sl]))
         self.lanes.pool_slots(winners.to(torch.int32), seq_lens, kp, *caches.token_maps(L), slots_out, valid_out, tokens=t)
 

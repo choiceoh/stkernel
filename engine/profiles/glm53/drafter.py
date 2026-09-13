@@ -580,18 +580,20 @@ class Drafter:
         # [n, K, vocab] meant allocating and zeroing 12.4 MiB every decode step (n=4, K=5, V=154,880) to carry
         # 320 numbers, and the verifier then read it twice. The candidates and their mass are the same fact.
         qprob = torch.zeros(n, K, F.sel_top_k, dtype=torch.float32, device=dev)
-        qcand = torch.zeros(n, K, F.sel_top_k, dtype=torch.int64, device=dev)
+        qcand = cand.clone()                                                          # the candidates are the walk's, position by position
         # The sampled walk stays a loop: its draw is the engine's generator, and moving that into a kernel
-        # would put rank agreement and D12's replay in there with it.
+        # would put rank agreement and D12's replay in there with it. What does not change along the walk --
+        # which rows sample, and their temperatures -- is computed once (45차, the C=4 question: launches).
+        stochastic = (temps > 0).view(n, 1)
+        heat = temps.clamp_min(1e-5).view(n, 1)
         out = []
         for s in range(K):
             sel = scores[rows, s, prev]                                                                    # [n, 16]
             best = sel.argmax(-1)
-            stochastic = (temps > 0).view(n, 1)
-            probs = torch.softmax(sel / temps.clamp_min(1e-5).view(n, 1), dim=-1)
+            probs = torch.softmax(sel / heat, dim=-1)
             probs = torch.where(stochastic, probs, torch.zeros_like(probs).scatter_(1, best.view(n, 1), 1.0))
             pick = torch.where(stochastic.view(n), torch.multinomial(probs, 1, generator=generator).view(n), best)
-            qcand[:, s], qprob[:, s] = cand[:, s], probs
+            qprob[:, s] = probs
             out.append(cand[rows, s, pick])
             prev = pick
         return torch.stack(out, 1), qcand, qprob

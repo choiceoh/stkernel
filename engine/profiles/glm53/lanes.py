@@ -89,6 +89,7 @@ class Lanes:
     conv_ring_rows: object = None  # (x [rows*T,C], w, ring, slots [rows], contexts [rows]) -> y [rows*T,C]; None keeps the row loop
     decode_rows: object = None  # DecodeRows: a captured step's DSA glue, one launch apiece (byte copies and integer addressing;
                               #  the reference table binds the torch compositions they replace); None keeps the per-segment loops
+    head_gate: object = None  # (w [N,h] f32, qs [N,h] f32, scale) -> [N,h] f32 = (w * qs) * scale, two fp32 roundings; None: torch
     rmsnorm: object = None    # None declares net.py's torch composition; served binds native pointwise lanes
     swiglu: object = None     # (gate, up [T,I], limit) -> BF16; FP32 clamped activation
     route_weights: object = None  # (FP32 logits [T,E], bias [E], topk, scale) -> int32 ids, FP32 weights
@@ -109,6 +110,19 @@ class DecodeRows:
                           #  -> (kw, gw) [rows*max_pools, pool, d]: each row's window (ring's earlier tokens, then this step's)
     addresses: object     # (contexts, block rows, per, block stride, layer offset, pool, tokens, max_pools, capacity)
                           #  -> (counts [rows] i64: pools completed this step, slots [rows, max_pools] i64: their records)
+    pools: object         # (pooled keys [rows*max_pools, d] 1-byte, pooled scales [rows*max_pools] f32, pool keys [P, d] (record-
+                          #  strided), pool scales [P] f32, slots, counts) -> None: each row's first counts[i] pools into their records
+    tails: object         # (tail field [slots, W, 2, d] bf16, slots [rows], contexts, k [rows, t, d], gate [rows, t, d]) -> None:
+                          #  each row's raw keys and gates into its ring at (context + j) % W
+    horizon: object       # (logits [t, n] f32, ke [t] i32) -> the same logits with -inf at columns >= ke[r], in place
+
+
+def reference_decode_rows() -> DecodeRows:
+    """The glue as the torch compositions it fused (engine/modules/sparse_indexer.py): the reference table's binding,
+    and what a CPU test hands a composition."""
+    from engine.modules import sparse_indexer as si
+    return DecodeRows(si.row_lengths, si.latent_write_rows, si.gather_candidates, si.pool_window, si.pool_addresses,
+                      si.scatter_pools, si.write_tails, si.mask_horizon)
 
 
 def swiglu_clamped(g: torch.Tensor, u: torch.Tensor, limit: float) -> torch.Tensor:
@@ -199,10 +213,10 @@ def reference() -> Lanes:
             out.index_add_(0, rows, y.float() * w[rows, k][:, None])
         return out.to(x.dtype)
 
-    from engine.modules import sparse_indexer as si
+    from engine.modules.sparse_indexer import head_gate
     return Lanes("reference", conv_prefill, kda_chunk, kda_recurrent, pre, mhc_post, logits, kpool_compress,
                  mla_sparse_mqa, moe, fwht128_quant, pool_slots, kda_output_norm,
-                 decode_rows=DecodeRows(si.row_lengths, si.latent_write_rows, si.gather_candidates, si.pool_window, si.pool_addresses))
+                 decode_rows=reference_decode_rows(), head_gate=head_gate)
 
 
 MOE_STATIC_STOCK = "stock"          # the §15~18 judged default of STK_moe_static
@@ -249,7 +263,8 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     from engine.kernels.deep_gemm import fp8_fp4_mqa_logits
     from engine.kernels.kpool import compress_pool_keys, fwht128_quant_fp8
     from engine.kernels import mla as mk
-    from engine.kernels.indexer import pool_slots, row_lengths, latent_write_rows, gather_candidates, pool_window, pool_addresses
+    from engine.kernels.indexer import (pool_slots, row_lengths, latent_write_rows, gather_candidates, pool_window, pool_addresses,
+                                        scatter_pools, write_tails, mask_horizon, head_gate)
     mk.configure_prefill(mla_prefill)
     ref = reference()
     # ModelOpt keeps the first three dense MLPs in packed NVFP4.  Above the
@@ -507,7 +522,9 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                   conv_ring=None if "conv_prefill" in reference_for else on_main(causal_conv1d_ring),
                   kda_recurrent_ring_rows=None if recurrent_kda_ring_rows is None else on_main(recurrent_kda_ring_rows),
                   conv_ring_rows=None if "conv_prefill" in reference_for else on_main(causal_conv1d_ring_rows),
-                  decode_rows=DecodeRows(*(on_main(f) for f in (row_lengths, latent_write_rows, gather_candidates, pool_window, pool_addresses))),
+                  decode_rows=DecodeRows(*(on_main(f) for f in (row_lengths, latent_write_rows, gather_candidates, pool_window,
+                                                                pool_addresses, scatter_pools, write_tails, mask_horizon))),
+                  head_gate=on_main(head_gate),
                   rmsnorm=on_main(norm), swiglu=on_main(activation),
                   route_weights=on_main(route_weights), layernorm=on_main(layernorm))
     # 45차 §21 bisect: any other lane named in `reference_for` runs on the torch reference in this table

@@ -164,6 +164,48 @@ class GlueReferenceTests(unittest.TestCase):
             got_k, got_s = self.si.gather_candidates(keys, scales, *caches.pool_maps(layer), n_cand)
             self.assertTrue(torch.equal(got_k, keys[cand]) and torch.equal(got_s, scales[cand]))
 
+    def test_head_gate(self):
+        w, qs = torch.randn(28, 32), torch.rand(28, 32)
+        got = self.si.head_gate(w, qs, 0.0625 ** 0.5)
+        self.assertTrue(torch.equal(got, (w * qs * 0.0625 ** 0.5).contiguous()))
+
+    def test_scatter_pools(self):
+        n, pools, d = 3, 2, 8
+        pk = torch.randint(0, 256, (n * pools, d), dtype=torch.uint8)
+        ps = torch.rand(n * pools)
+        slots = torch.tensor([[5, 9], [11, 40], [0, 1]])
+        counts = torch.tensor([2, 1, 0])
+        keys, scales = torch.zeros(50, d, dtype=torch.uint8), torch.zeros(50)
+        want_k, want_s = keys.clone(), scales.clone()
+        for i in range(n):
+            for j in range(int(counts[i])):
+                want_k[slots[i, j]] = pk[i * pools + j]
+                want_s[slots[i, j]] = ps[i * pools + j]
+        self.si.scatter_pools(pk, ps, keys, scales, slots, counts)
+        self.assertTrue(torch.equal(keys, want_k) and torch.equal(scales, want_s))
+
+    def test_write_tails(self):
+        n, t, w, d = 3, 7, 9, 8
+        field = torch.randn(5, w, 2, d).to(torch.bfloat16)
+        want = field.clone()
+        keys, gates = torch.randn(n, t, d).to(torch.bfloat16), torch.randn(n, t, d).to(torch.bfloat16)
+        slots, contexts = torch.tensor([3, 1, 4]), torch.tensor([32768, 0, 7])
+        for i in range(n):
+            for j in range(t):
+                want[slots[i], (contexts[i] + j) % w, 0] = keys[i, j]
+                want[slots[i], (contexts[i] + j) % w, 1] = gates[i, j]
+        self.si.write_tails(field, slots, contexts, keys, gates)
+        self.assertTrue(torch.equal(field, want))
+
+    def test_mask_horizon(self):
+        from engine.modules.sparse_indexer import topk_positions
+        logits = torch.randn(7, 40)
+        ke = torch.tensor([0, 1, 5, 39, 40, 40, 12], dtype=torch.int32)
+        want = logits.clone()
+        topk_positions(want, 4, valid=ke, inplace=True)           # masks the caller's logits past `valid`
+        got = self.si.mask_horizon(logits.clone(), ke)
+        self.assertTrue(torch.equal(got, want))
+
     def test_pool_addresses(self):
         caches, kp = self.caches, 4
         for layer, t in ((3, 1), (3, 7), (7, 7)):
@@ -204,9 +246,8 @@ class SelectRowsTests(unittest.TestCase):
             return (q8.float().sum((-1, -2))[:, None] * 0.001 + (keys.float().sum(-1) * scales)[None, :] * 0.37).sin()
 
         from engine.modules import sparse_indexer as si
-        from engine.profiles.glm53.lanes import DecodeRows
-        glue = DecodeRows(si.row_lengths, si.latent_write_rows, si.gather_candidates, si.pool_window, si.pool_addresses)
-        self.net = NS(F=F, lanes=NS(indexer_logits=indexer_logits, pool_slots=si.pool_slots, decode_rows=glue))
+        from engine.profiles.glm53.lanes import reference_decode_rows
+        self.net = NS(F=F, lanes=NS(indexer_logits=indexer_logits, pool_slots=si.pool_slots, decode_rows=reference_decode_rows()))
 
     def tearDown(self):
         from engine.base import constants
