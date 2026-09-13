@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import torch  # noqa: E402
 
-from engine.kernels import norm_rope as K  # noqa: E402
+from engine.kernels.common import norm_rope as K  # noqa: E402
 from engine.profiles.glm53.drafter import rmsnorm, rope  # noqa: E402
 
 CUDA = torch.cuda.is_available()

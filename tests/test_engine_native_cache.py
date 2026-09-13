@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from engine.kernels.native_cache import prepare_sources
+from engine.kernels.common.native_cache import prepare_sources
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -95,7 +95,7 @@ class NativeCacheTests(unittest.TestCase):
     def test_concurrent_processes_preserve_one_complete_source_snapshot(self):
         code = '''import json,sys
 from pathlib import Path
-from engine.kernels.native_cache import prepare_sources
+from engine.kernels.common.native_cache import prepare_sources
 key,directory,sources = prepare_sources(sys.argv[1],sys.argv[2:],("same-runtime",))
 print(json.dumps([key,[(Path(p).read_text(),Path(p).stat().st_ino,Path(p).stat().st_mtime_ns) for p in sources]]))
 '''

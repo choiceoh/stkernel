@@ -291,9 +291,9 @@ class AsyncDecode:
                 picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)
             accepted = None
         if picks.is_cuda:
-            from engine.kernels.decode_commit import advance
+            from engine.base.lanes import served as common_lanes
             with mark("commit"):
-                count, done, accepted, tokens, ctx_before = advance(picks, b, accepted)
+                count, done, accepted, tokens, ctx_before = common_lanes().commit(picks, b, accepted)
         else:
             ctx_before = b["ctx"].clone()
             count, done, accepted, tokens = commit_batch(picks, b["drafts"], b["alive"], b["generated"], b["limit"], b["ends"], accepted)

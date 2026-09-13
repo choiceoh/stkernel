@@ -68,7 +68,7 @@ def _build():
         return _EXT
     import torch
     from torch.utils.cpp_extension import load
-    from engine.kernels.native_cache import prepare_sources
+    from engine.kernels.common.native_cache import prepare_sources
     src = Path(__file__).with_name("glm53_megakernel.cu")
     flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a"]
     root = Path(os.environ.get("ST_MLA_BUILD_ROOT", str(Path.home() / ".cache/st/mla")))

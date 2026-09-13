@@ -251,7 +251,7 @@ class DrafterTests(unittest.TestCase):
         kernels.write_draft_kv_rows, kernels.attend_rows = write_rows, attend
         observe_kernel = ModuleType("engine.kernels.draft_observe")
         def write_context(rings, slots, positions, context, weights, valid, eps, theta):
-            from engine.kernels.norm_rope import norm_rope
+            from engine.kernels.common.norm_rope import norm_rope
             n, t, layers, _, heads, dim = context.shape
             for layer in range(layers):
                 key = norm_rope(context[:, :, layer, 0].reshape(n*t, heads, dim), weights[layer], eps,

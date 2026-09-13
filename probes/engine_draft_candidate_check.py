@@ -99,7 +99,7 @@ def check(a,comm):
                 cuda=torch.version.cuda,device=torch.cuda.get_device_name(),cases=[],
                 baseline_sha256=hashlib.sha256(Path(a.baseline).read_bytes()).hexdigest(),
                 source_sha256={name:hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in (
-                    'engine/modules/vocab.py','engine/kernels/vocab_candidates.py','engine/base/comm.py',
+                    'engine/modules/vocab.py','engine/kernels/common/vocab_candidates.py','engine/base/comm.py',
                     'engine/base/loader.py','engine/profiles/glm53/drafter.py','probes/engine_draft_candidate_check.py')})
     for context in (0,1,17,2047,2048,2057):
         ring.zero_()

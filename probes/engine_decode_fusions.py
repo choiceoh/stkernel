@@ -181,7 +181,7 @@ def shared_mlp(report, native):
 
 def pointwise(report):
     from engine.kernels.glm_pointwise import swiglu_clamped, route_weights, layernorm
-    from engine.kernels.norm_rope import norm
+    from engine.kernels.common.norm_rope import norm
     from engine.profiles.glm53.lanes import swiglu_clamped as activation_ref
     from engine.profiles.glm53.net import rmsnorm
     x = torch.randn(7, 2560, device="cuda", dtype=torch.bfloat16)
@@ -216,7 +216,7 @@ def pointwise(report):
 def residency(report):
     from engine.kernels.draft_observe import write_context
     from engine.kernels.draft_attention import write_draft_kv_rows
-    from engine.kernels.norm_rope import norm_rope, warm
+    from engine.kernels.common.norm_rope import norm_rope, warm
     n, t, layers, heads, dim = 1, 7, 5, 2, 128
     context = torch.randn(n, t, layers, 2, heads, dim, device='cuda', dtype=torch.bfloat16)
     weights = torch.randn(layers, dim, device='cuda', dtype=torch.bfloat16)

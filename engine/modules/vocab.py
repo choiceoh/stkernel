@@ -17,7 +17,7 @@ def argmax(local_logits, comm, start: int, decodable: int | None = None):
         raise ValueError("vocabulary ids must fit nonnegative int32 and contain a valid token")
     valid = width if decodable is None else max(0, min(width, decodable - start))
     if local_logits.is_cuda and local_logits.ndim == 2:
-        from engine.kernels.vocab_candidates import argmax_key
+        from engine.kernels.common.vocab_candidates import argmax_key
         key = argmax_key(local_logits, start, valid)
     elif valid:
         value, index = local_logits[..., :valid].float().max(dim=-1)
@@ -66,7 +66,7 @@ def topk(local_logits, comm, start: int, k: int, decodable: int | None = None):
         if fused:
             # the k largest of a rank's shard, as a set: `sorted=False` says the order here is not the answer,
             # and the merge below decides that. The keys are unique, so the set is one (kernels/vocab_candidates)
-            from engine.kernels.vocab_candidates import pack, select
+            from engine.kernels.common.vocab_candidates import pack, select
             packet = select(pack(local_logits, start, valid), local_k)
             key = None
         else:
@@ -86,7 +86,7 @@ def topk(local_logits, comm, start: int, k: int, decodable: int | None = None):
         packet = torch.cat((packet, padding), dim=-1)
     gathered = comm.all_gather(packet, dim=-1)
     if fused:
-        from engine.kernels.vocab_candidates import restore
+        from engine.kernels.common.vocab_candidates import restore
         return restore(gathered, vocab).topk(k, dim=-1)
     ids = 0xffffffff - (gathered & 0xffffffff)
     ordered = gathered >> 32

@@ -22,7 +22,7 @@ what top-k already did here, and what top-p only appeared to do differently
 because a sort had to break its ties somehow. torch does not specify that tie
 order (`modules/vocab.topk` says so); a threshold does not have to.
 
-`engine.kernels.sampler` searches for that threshold without a sort. The torch
+`engine.kernels.common.sampler` searches for that threshold without a sort. The torch
 code below is the same definition written the obvious way, by sorting: it is
 what the CUDA kernel is judged against, not a fallback it drops to.
 """
@@ -45,7 +45,7 @@ def rows(logits: torch.Tensor, temperature: torch.Tensor, top_k: torch.Tensor, t
     row's sampling distribution (the speculative path picks with those, not from them).
     """
     if logits.is_cuda:
-        from engine.kernels.sampler import sample_rows
+        from engine.kernels.common.sampler import sample_rows
         return sample_rows(logits, temperature, top_k, top_p, uniform, valid, probs)
     return _rows_by_sorting(logits, temperature, top_k, top_p, uniform, valid, probs)
 
@@ -541,7 +541,7 @@ def block_verify_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_c
     if target_probs.is_cuda:
         # One launch instead of about 180; the correction draw stays in torch because `_inverse_cdf`'s cumsum
         # is a parallel scan and a sequential one differs in the last bits (engine/kernels/block_verify).
-        from engine.kernels.block_verify import verify_rows
+        from engine.kernels.common.block_verify import verify_rows
         accepted, at, tokens, rest = verify_rows(target_probs, drafts, draft_cand, draft_probs, uniforms[:, :K].contiguous())
         fresh = _inverse_cdf(rest, uniforms[:, K])
         tokens.scatter_(1, at.unsqueeze(1), fresh.unsqueeze(1))

@@ -30,7 +30,7 @@ def main():
     sys.path.insert(0, str(root))
     import torch
     from torch.utils.cpp_extension import load
-    from engine.kernels.native_cache import prepare_sources
+    from engine.kernels.common.native_cache import prepare_sources
     if torch.cuda.is_initialized():
         raise RuntimeError('a GPU was already initialized')
     directory = root / 'engine/kernels/dense'

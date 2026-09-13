@@ -11,7 +11,7 @@ from pathlib import Path
 def build():
     import torch
     from torch.utils.cpp_extension import load
-    from engine.kernels.native_cache import prepare_sources
+    from engine.kernels.common.native_cache import prepare_sources
     source = Path(__file__).with_name("queue.cu")
     flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a"]
     key, directory, staged = prepare_sources(Path.home()/".cache/st/decode-queue", [source],
