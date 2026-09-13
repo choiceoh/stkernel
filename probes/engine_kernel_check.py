@@ -79,6 +79,13 @@ def main():
         from probes.engine_moe_waves import check as check_waves
         check_waves(report, args.ranks)
 
+    if selected & {'paired_projection', 'shared_serial'}:
+        from probes.engine_decode_projection import paired_check, shared_check
+        if 'paired_projection' in selected:
+            paired_check(report, args.ranks)
+        if 'shared_serial' in selected:
+            shared_check(report, args.ranks)
+
     if "decode7" in selected:
         import unittest
         suite = unittest.defaultTestLoader.loadTestsFromName("tests.test_engine_decode_seven")
