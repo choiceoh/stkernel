@@ -234,7 +234,8 @@ class PauseTests(unittest.TestCase):
         (self.directory/'queue').write_text(f'original-owner|fixture|100|10|candidate|boot|{owner_pid}\n')
         pending.save_record(self.directory,value)
         pause.pause(self.directory,'fixture')
-        content=b'IMAGE=original-image\0CPU_GATE_CONFIG=original-config\0SSH_AUTH_SOCK=original-socket\0'
+        content=(b'IMAGE=original-image\0CPU_GATE_CONFIG=original-config\0SSH_AUTH_SOCK=original-socket\0'
+                 b'ST_LEASE_OWNER=stale-owner\0ST_LEASE_PATH=/stale/lease\0FLEET_LEASE_PATH=/original/lease\0')
         original_open=Path.open
         def open_file(path,*args,**kwargs):
             return io.BytesIO(content) if str(path)==f'/proc/{owner_pid}/environ' else original_open(path,*args,**kwargs)
@@ -244,6 +245,8 @@ class PauseTests(unittest.TestCase):
             self.assertEqual(os.environ['CPU_GATE_CONFIG'],'original-config')
             self.assertEqual(os.environ['FLEET_VALIDATION_STORE'],'/original/validation-store')
             self.assertEqual(os.environ['SSH_AUTH_SOCK'],'original-socket')
+            self.assertEqual(os.environ['ST_LEASE_OWNER'],'queue/fixture')
+            self.assertEqual(os.environ['ST_LEASE_PATH'],'/original/lease')
             seen.append(stage)
         def preflight(argv,**kwargs):
             check_environment('preflight')
@@ -288,6 +291,38 @@ class PauseTests(unittest.TestCase):
                 os.environ['TEMPORARY_PRIVATE_CONFIG']='private-value'
                 raise ValueError('fixture failure')
         self.assertEqual(dict(os.environ),before)
+
+    def test_legacy_boot_receipt_can_be_reprepared_for_the_existing_waiter(self):
+        import fleet_prepare
+        import fleet_prepared
+        from fleet_boot import Supervisor
+        controller=self.directory/'controller/bench/fleet.sh'
+        controller.parent.mkdir(parents=True)
+        controller.write_text('#!/bin/sh\nexit 0\n')
+        env=dict(os.environ, FLEET_DIR=str(self.directory), FLEET_RUN_KIND='boot',
+                 FLEET_LEASE_PATH=str(self.directory/'lease'))
+        env.pop('ST_LEASE_OWNER',None);env.pop('ST_LEASE_PATH',None)
+        with patch.dict(os.environ,env,clear=True):
+            old=fleet_prepare.prepare(self.directory,'fixture',self.value['command'],
+                                      self.directory,fleet=controller)
+            value=dict(self.value,cwd=str(self.directory),fleet=str(controller),
+                       prepare_manifest=str(old),prepare_receipt_required=True)
+            pending.save_record(self.directory,value)
+            supervisor=Supervisor(str(controller),'fixture',10,'test',value['command'])
+            with patch.dict(os.environ,supervisor.env,clear=True):
+                with self.assertRaisesRegex(ValueError,'prepared environment changed'):
+                    fleet_prepare.validate(fleet_prepared.read(self.directory,old),directory=self.directory)
+            pause.pause(self.directory,'fixture','lease environment differs')
+            edited=pending.edit(self.directory,'fixture',cwd=str(self.directory),expected=2)
+            self.assertNotEqual(edited['prepare_manifest'],str(old))
+            resumed=pause.resume(self.directory,'fixture',expected=3)
+            self.assertEqual((resumed['ticket'],resumed['pid'],resumed['enqueued_at']),
+                             (value['ticket'],value['pid'],value['enqueued_at']))
+            with patch.dict(os.environ,supervisor.env,clear=True):
+                fleet_prepare.validate(fleet_prepared.read(self.directory,resumed['prepare_manifest']),
+                                       directory=self.directory)
+        self.assertEqual((self.directory/'queue').read_text(),self.row)
+        self.assertFalse((self.directory/'holder').exists())
 
 
 if __name__=='__main__':unittest.main()

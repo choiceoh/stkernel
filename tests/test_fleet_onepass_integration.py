@@ -48,9 +48,9 @@ class OnepassIntegrationTests(unittest.TestCase):
         # failed. Imports of fleet_prepare still use its real source.
         shim = self.bin / 'python3'
         shim.write_text('#!' + sys.executable + '\n'
-                        'import os, pathlib, sys\n'
+                        'import json, os, pathlib, sys\n'
                         'if len(sys.argv)>1 and pathlib.Path(sys.argv[1]).name=="fleet_prepare.py":\n'
-                        '    pathlib.Path(os.environ["PREPARATION_SENTINEL"]).write_text("started")\n'
+                        '    pathlib.Path(os.environ["PREPARATION_SENTINEL"]).write_text(json.dumps({k:os.environ[k] for k in ("ST_LEASE_OWNER", "ST_LEASE_PATH") if k in os.environ}))\n'
                         '    raise SystemExit(79)\n'
                         'os.execv(' + repr(sys.executable) + ', [' + repr(sys.executable) + ', *sys.argv[1:]])\n')
         shim.chmod(0o700)
@@ -134,6 +134,26 @@ class OnepassIntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stdout)
         self.assertIn('onepass-only', result.stdout)
         self.assert_no_work()
+
+    def test_boot_binds_the_waiters_lease_before_signing_preparation(self):
+        for incoming in ({}, {'ST_LEASE_OWNER':'stale-owner', 'ST_LEASE_PATH':'/stale',
+                              'FLEET_LEASE_PATH':'/intended/lease'}):
+            with self.subTest(incoming=incoming):
+                result = self.run_fleet('run', '--gpu', '--fleet', 'lease-fixture', '1',
+                                        'fixture', '--', 'bash', 'bench/chain.sh', 'A=', **incoming)
+                self.assertEqual(result.returncode, 3, result.stdout)
+                self.assertEqual(json.loads(self.prepared.read_text()), {
+                    'ST_LEASE_OWNER':'queue/lease-fixture',
+                    'ST_LEASE_PATH':incoming.get('FLEET_LEASE_PATH', '/home/choiceoh/glm53-logs/st-fleet.lock')})
+                self.assertFalse(self.executed.exists())
+                self.assertFalse((self.directory / 'holder').exists())
+
+    def test_cpu_preparation_does_not_receive_a_queue_lease(self):
+        result = self.run_fleet('run', '--cpu', 'cpu-fixture', '1', 'fixture', '--',
+                                sys.executable, '-c', 'pass')
+        self.assertEqual(result.returncode, 3, result.stdout)
+        self.assertEqual(json.loads(self.prepared.read_text()), {})
+        self.assertFalse(self.executed.exists())
 
     def test_chain_after_is_rejected_before_cpu_preparation(self):
         result = self.run_fleet('run', '--gpu', '--prepare', str(self.preparation_spec),

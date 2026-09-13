@@ -1042,6 +1042,12 @@ case "$cmd" in
         echo "note: this check needs one GPU; --fleet takes the four Sparks (production drains, then reboots) -- the single-GPU lane beside production ($(single_gpu_label)) would take it now"
       fi
     fi
+    # The supervisor supplies this lease identity to its waiter and payload.
+    # Bind it before signing preparation too, or the first wait check pauses
+    # a boot whose caller did not already export ST_LEASE_OWNER.
+    if [ "$cls" != nogpu ] && [ "$kind" = boot ]; then
+      export ST_LEASE_OWNER="queue/$s" ST_LEASE_PATH="${FLEET_LEASE_PATH:-/home/choiceoh/glm53-logs/st-fleet.lock}"
+    fi
     prep_args=(); [ -n "$prepare_spec" ] && prep_args=(--spec "$prepare_spec")
     [ -n "$prepared_manifest" ] && prep_args+=(--prepared "$prepared_manifest")
     [ "$cls" = nogpu ] || [ "$kind" != boot ] || prep_args+=(--approve-deploy)
