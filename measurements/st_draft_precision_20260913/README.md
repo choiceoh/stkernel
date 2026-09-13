@@ -42,5 +42,11 @@ selector CUDA case. No GPU, fleet queue, SSH, boot, deployment or onepass run
 was used. Collection adds a reference GEMM/readback only when explicitly called;
 its output-error metrics must not be described as measured acceptance.
 
+Review follow-up: the original `_norm` GPU kernel and call signature are kept
+intact; only an explicit correction selects `_norm_bias`. This avoids routing
+ordinary norms through a newly parameterized CUDA kernel. The affected precision
+and serving-integration tests were rerun: 23 discovered, 20 passed, 3 CUDA
+skips (`cpu-kernel-followup.log`); these overlap the 60-test run above.
+
 See the [tuning guide](../../docs/GLM53_DRAFT_TUNING.md) for exact collection,
 fitting, profile loading and memory contracts.

@@ -61,13 +61,24 @@ def _add_norm(A, B, W, SUM, OUT, sA, sB, sS, sO, EPS, D: tl.constexpr, BD: tl.co
 
 
 @triton.jit
-def _norm(X, W, OUT, BIAS, sX, sO, EPS, D: tl.constexpr, BD: tl.constexpr, BIASED: tl.constexpr):
+def _norm(X, W, OUT, sX, sO, EPS, D: tl.constexpr, BD: tl.constexpr):
     r = tl.program_id(0)
     d = tl.arange(0, BD)
     m = d < D
     x = tl.load(X + r * sX + d, mask=m, other=0.0).to(tl.float32)
-    if BIASED:
-        x += tl.load(BIAS + d, mask=m, other=0.0)
+    scale = tl.rsqrt(tl.sum(x * x) / D + EPS)
+    w = tl.load(W + d, mask=m, other=0.0).to(tl.float32)
+    tl.store(OUT + r * sO + d, (x * scale).to(OUT.dtype.element_ty) * w.to(OUT.dtype.element_ty), mask=m)
+
+
+@triton.jit
+def _norm_bias(X, W, BIAS, OUT, sX, sO, EPS, D: tl.constexpr, BD: tl.constexpr):
+    # Keep the established uncorrected kernel intact, including its signature.
+    r = tl.program_id(0)
+    d = tl.arange(0, BD)
+    m = d < D
+    x = (tl.load(X + r * sX + d, mask=m, other=0.0).to(tl.float32)
+         + tl.load(BIAS + d, mask=m, other=0.0))
     scale = tl.rsqrt(tl.sum(x * x) / D + EPS)
     w = tl.load(W + d, mask=m, other=0.0).to(tl.float32)
     tl.store(OUT + r * sO + d, (x * scale).to(OUT.dtype.element_ty) * w.to(OUT.dtype.element_ty), mask=m)
@@ -112,9 +123,12 @@ def norm(x: torch.Tensor, w: torch.Tensor, eps: float, *, bias=None) -> torch.Te
     out = torch.empty_like(flat)
     D = flat.shape[1]
     if flat.shape[0]:
-        _norm[(flat.shape[0],)](flat, w, out, bias, flat.stride(0), out.stride(0), eps,
-                                D=D, BD=triton.next_power_of_2(D), BIASED=bias is not None,
-                                num_warps=4 if D <= 1024 else 8)
+        if bias is None:
+            _norm[(flat.shape[0],)](flat, w, out, flat.stride(0), out.stride(0), eps,
+                                    D=D, BD=triton.next_power_of_2(D), num_warps=4 if D <= 1024 else 8)
+        else:
+            _norm_bias[(flat.shape[0],)](flat, w, bias, out, flat.stride(0), out.stride(0), eps,
+                                        D=D, BD=triton.next_power_of_2(D), num_warps=4 if D <= 1024 else 8)
     return out.view_as(x)
 
 
