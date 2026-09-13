@@ -1,0 +1,17 @@
+{
+  "scope": "CUDA slot reuse and FP8 projection with synthetic peers; not NIC or serving speed proof",
+  "tests": 3,
+  "skipped": 0,
+  "seconds": 5.559334977006074,
+  "source_sha256": {
+    "engine/kernels/prefill_collectives/tiles.py": "2bbcd2559589d1b7775af2a10eef5bdeaf874df7d097f1b40bb47906e72cb19b",
+    "engine/kernels/prefill_collectives/__init__.py": "3ea77b996d110344dde8ead3df9c6b9029e6d21427ba59ce8f343273d1d86c8c",
+    "engine/kernels/prefill_collectives/consumer.py": "b820db42f2b9ed2e9f5fb30e18544dace9978f347cff00b09c719c4281f33707",
+    "engine/kernels/dense/__init__.py": "39e10f93f0acdc3b793ee5b1817ddb288cbed05c984d18883bdea10f38ed59fc",
+    "engine/kernels/dense/fp8.py": "fecc21c8b0f3088c765083cf7987db210de499313490559596dca7dee676c3ca",
+    "engine/profiles/glm53/net.py": "6e74e586cc25dc1b5ea60b0289e6e4604acefa02a02ae8bd1b51cf53c223c0d1",
+    "engine/profiles/glm53/execution.py": "9b443d4d9864ee1221549cc439dcdb67ff7c634c530fa952b80e200db110ee49",
+    "tests/test_engine_prefill_tiles_cuda.py": "27ea303439da6ab0b6a03a1d0c1069dc21c6a99321f82940593b5a9ae16e47b4",
+    "tests/test_engine_prefill_fp8_consumer.py": "3c019edcdb99366d26df0888c25b0038fe352a6cfee33cfd426fbefb08cf18fe"
+  }
+}
