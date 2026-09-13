@@ -1,0 +1,23 @@
+{
+  "scope": "CPU-only compiler evidence, before automatic serving selector integration",
+  "candidate": "8a93ef71d2",
+  "image": "sha256:f85de49afc0a41596cce3df2dab11af992a9aa5d21129c0f50ba719c30f68781",
+  "remote_output": "/home/choiceoh/glm53-logs/st-prefill-phase2-20260913/L8-scale-cpu-r3",
+  "archive": {
+    "path": "compiler-artifacts.tar.gz",
+    "bytes": 927720,
+    "sha256": "fc5a3c3172adcf3570adeb4e644343facb50e90359891d5ba05517849dc58e87"
+  },
+  "gpu_used": false,
+  "prior_attempts": [
+    {
+      "attempt": "L8-scale-cpu",
+      "failure": "Q0 recipe was not configured; no MoE readers compiled"
+    },
+    {
+      "attempt": "L8-scale-cpu-r2",
+      "failure": "four MoE readers compiled but the artifact directory was absent; fresh cubin evidence missing"
+    }
+  ],
+  "repair": "Create a distinct directory per reader and pass explicit keep-ptx, keep-cubin and dump-dir options. Preserve all four cubins and cuobjdump resource reports."
+}

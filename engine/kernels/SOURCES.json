@@ -145,7 +145,7 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "13a848fc4fe4f62d039aa864aef033aa16d16151d20ab199cdf91f0cc5f12b1f",
+      "local_sha256": "4ef746ca32ea768ed27b9db9efc13b63377c3e30e70faaa34ae7f057b37334f0",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
@@ -161,7 +161,16 @@
         "2026-09-13: retire measured resident-wave/batch/stage probe hooks and restore separate epilogue storage; retain only the new private output candidates.",
         "2026-09-13 kernel shape descriptor: the exact-shape gates (_is_admitted_tp_geometry, ex _is_glm53_b12x_tp_geometry; _tp_sf6_q0_eligible; _glm_tp_scatter_shape/_fp32), the Q0 launch line and the dynamic tile pin read engine/base/kernel_shape.bound().moe instead of GLM literals; the measured GB10 TP4 cell is the unbound default, so the served GLM path is unchanged.",
         "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged.",
-        "2026-09-13 phase 2: short-prefill Q0 word-scale producer; actual-weight GPU gates passed on 3c7bcc0a. Consumer quality and absolute targets remain failed."
+        "2026-09-13 phase 2: short-prefill Q0 word-scale producer; actual-weight GPU gates passed on 3c7bcc0a. Consumer quality and absolute targets remain failed.",
+        "2026-09-13 private FIFO candidate: one-layer temporary SF6 expansion for exact eager prefill; decode, capture, raw fallback and Q0 controls retain existing readers. Numerical and consumer qualification pending.",
+        "2026-09-13 L8 GPU component result: retain short packed reader through 8192 rows; automatic temporary expansion remains private and long-only. Actual-weight numerical checks passed at 975f1fb9; consumer proof remains pending.",
+        "2026-09-13 private M64 short-prefill compiler/launcher with exact geometry and separate workspace/cache key; no automatic selection. M128 parents remain unchanged; GPU qualification pending.",
+        "2026-09-13 M64 compiler repair: one physical M128 SFA atom per logical M64 tile, explicit allocation and size validation; forked descriptor/Q0 bodies are regenerated from pinned parents.",
+        "2026-09-13 private combined candidate: native eager 65..4096 rows use their own bounded M64 workspace, >8192 rows retain temporary scale expansion. Explicit numerical controls, decode and capture keep existing selection. Await GPU/consumer qualification.",
+        "2026-09-13 M64 repair after L9 numerical rejection: declare the full per-tile physical SFA view for the private compact M64 workspace; ordinary M128/decode views are unchanged.",
+        "2026-09-13 oracle candidate: explicit separately keyed tiled N128 prefill over per-call expanded scales; original decode and implicit selection unchanged.",
+        "2026-09-13 explicit eager M128 Q0 batch8 prefill candidate with separate packed/raw/N128 readers.",
+        "Keep M64 and scale-expansion experiments explicit-only when merging the private prefill candidates."
       ]
     },
     "b12x/moe_dynamic_kernel.py": {
@@ -260,12 +269,16 @@
     "b12x/moe_dynamic_prefill.py": {
       "source": "overlay/modules/glm53_moe/moe_dynamic_prefill.py",
       "sha256": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
-      "origin": "repository"
+      "origin": "repository",
+      "local_sha256": "21b25effb54dafad14439594fac302ccf0dc921199bce4ed65b128ee2bf41977",
+      "local_modifications": " Private N128 tiled candidate can retain original FC2 fragment reloads to bound register lifetime; default reuse path unchanged."
     },
     "b12x/moe_dynamic_prefill_n128.py": {
       "source": "overlay/modules/glm53_moe/moe_dynamic_prefill_n128.py",
       "sha256": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
-      "origin": "repository"
+      "origin": "repository",
+      "local_sha256": "c666fe6fbe584e354c65cb879c266ef31704297561f283ef75877565e1cc8361",
+      "local_modifications": "FC1 loop unrolling restored after CPU r3 increased private N128 stack from 528 to 784 bytes."
     },
     "b12x/moe_reform_sf_pack.py": {
       "source": "overlay/modules/glm53_moe/moe_reform_sf_pack.py",

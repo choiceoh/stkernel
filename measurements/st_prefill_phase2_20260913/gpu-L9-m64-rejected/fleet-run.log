@@ -1,0 +1,25 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-st-prefill-m64-L9r2-20260913-191416.txt
+waiting: pos 3/3, lease: production production/srv2/2697743 on srv2 since 2026-09-13 19:02:00 (production st-glm53 on four Sparks) 2026-09-13_19:14:17
+waiting: pos 2/2, held by st-terminal-prefill-consumer0913v2 [boot] (pid 3619709@srv2, since 19:17, est 30m, Qualified FP32 KDA and terminal decode/prefill bundle; one boot, C1 twice at 32K/128K, C4 once at 32K, KV5GiB, 3072/2048 tokens), legacy busy (0 procs, 0 reqs, booting), lease: queue queue/st-terminal-prefill-consumer0913v2 on srv2 since 2026-09-13 19:17:01 (Qualified FP32 KDA and terminal decode 2026-09-13_19:17:07
+waiting: pos 2/2, held by st-terminal-prefill-consumer0913v2 [boot] (pid 3619709@srv2, since 19:17, est 30m, Qualified FP32 KDA and terminal decode/prefill bundle; one boot, C1 twice at 32K/128K, C4 once at 32K, KV5GiB, 3072/2048 tokens), lease: queue queue/st-terminal-prefill-consumer0913v2 on srv2 since 2026-09-13 19:17:01 (Qualified FP32 KDA and terminal decode 2026-09-13_19:17:08
+waiting: pos 2/2, held by st-terminal-prefill-consumer0913v2 [boot] (pid 3619709@srv2, since 19:17, est 30m, Qualified FP32 KDA and terminal decode/prefill bundle; one boot, C1 twice at 32K/128K, C4 once at 32K, KV5GiB, 3072/2048 tokens), legacy busy (0 procs, 0 reqs, booting), lease: queue queue/st-terminal-prefill-consumer0913v2 on srv2 since 2026-09-13 19:17:01 (Qualified FP32 KDA and terminal decode 2026-09-13_19:17:10
+waiting: pos 1/1, held by st-draft-acceptance-collect0913v4 [boot] (pid 3699314@srv2, since 19:17, est 25m, DFlash committed decode calibration, isolated cache, 2K onepass), lease: queue queue/st-draft-acceptance-collect0913v4 on srv2 since 2026-09-13 19:17:57 (handed from st-terminal-prefill-consume 2026-09-13_19:18:03
+waiting: pos 1/1, held by st-draft-acceptance-collect0913v4 [boot] (pid 3699314@srv2, since 19:17, est 25m, DFlash committed decode calibration, isolated cache, 2K onepass), legacy busy (0 procs, 0 reqs, booting), lease: queue queue/st-draft-acceptance-collect0913v4 on srv2 since 2026-09-13 19:17:57 (handed from st-terminal-prefill-consume 2026-09-13_19:18:05
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "7215838a9d4e4362932b1d54c2b9e71f", "phase": "waiting", "reason": "dequeue", "since": 168909.679218099, "updated_at": 1789294769.7870238, "version": 1}
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-st-prefill-m64-L9r2-20260913-191416.txt
+GO st-prefill-m64-L9r2 2026-09-13_19:19:29
+  node 10.10.10.1: gpu=ok stray=3 ram=90G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=97G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=91G path=ok 
+2026-09-13T19:19:32 actual-weight short M64 and long scale gates before the improved engine boot
+2026-09-13T19:19:32 GPU numerical gate: m64-prefill
+Traceback (most recent call last):
+  File "/home/choiceoh/st-prefill-m64-controller/measurements/st_prefill_phase2_20260913/run_bracket.py", line 286, in <module>
+    main()
+  File "/home/choiceoh/st-prefill-m64-controller/measurements/st_prefill_phase2_20260913/run_bracket.py", line 204, in main
+    subprocess.run(gate_base + args, stdout=stream, stderr=subprocess.STDOUT,
+  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['docker', 'run', '--rm', '--gpus', 'all', '--network', 'none', '--name', 'st-prefill-m64-gate-L9', '--label', 'st.prefill.owner=queue/st-prefill-m64-L9r2', '-w', '/repo', '-e', 'PYTHONPATH=/repo', '-e', 'MAX_JOBS=2', '-v', '/home/choiceoh/st-prefill-m64-cpu:/repo:ro', '-v', '/home/choiceoh/models/st-glm53-nvidia-tp4-9391:/home/choiceoh/models/st-glm53-nvidia-tp4-9391:ro', '-v', '/home/choiceoh/glm53-logs/st-prefill-phase2-20260913/gate-kernel-cache:/cache', '-v', '/home/choiceoh/glm53-logs/st-prefill-phase2-20260913/L9-m64-qualification:/evidence', '--entrypoint', '/usr/bin/timeout', 'sha256:f85de49afc0a41596cce3df2dab11af992a9aa5d21129c0f50ba719c30f68781', '--signal=TERM', '--kill-after=15s', '1100s', 'python3', 'measurements/st_prefill_phase2_20260913/check_m64_prefill.py', '/home/choiceoh/models/st-glm53-nvidia-tp4-9391/rank0of4.safetensors', '--output', '/evidence/m64-prefill.json']' returned non-zero exit status 1.
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "96e144af9f804a88b8809328f73215ae", "phase": "waiting", "reason": "release", "since": 168925.211986835, "updated_at": 1789294785.3197935, "version": 1}

@@ -1,0 +1,667 @@
+{
+  "candidate": "3c7bcc0a08842d59a91e3f5166f5d5227a9e5cd6",
+  "run_id": "20260913T065924-4fefee2be2e1",
+  "spec_k": 6,
+  "scope": "retained profiler-off device bodies and client requests; not an accepted performance result",
+  "phases": {
+    "measure-c1": {
+      "server_sha256": "15c4e2fedead75074eb0de16d552f9f05b9be9fb8363d5a0a3e3279b5fa05dc7",
+      "source": "/home/choiceoh/glm53-logs/st-prefill-phase2-20260913/L7-qualification/1/onepass-runs/20260913T065924-4fefee2be2e1/measure-c1/server.json",
+      "rank_token_records_identical": true,
+      "bounded": {
+        "iterations": 9799,
+        "active_row_iterations": 9799,
+        "committed": 40879,
+        "accepted": 31080,
+        "bounded_acceptance": 0.5286253699357077,
+        "median_ms": 48.973152000000006,
+        "mean_ms": 49.13303433574855,
+        "device_seconds": 481.45460345600003,
+        "body_output_tok_s": 84.90727829074734,
+        "stage_mean_ms": {
+          "forward": 45.54198727543627,
+          "sample": 0.04186259985712828,
+          "commit": 0.0068269921420553124,
+          "boundaries": 0.03345528972344117,
+          "observe": 0.4057735654658639,
+          "propose": 3.019490939075416
+        }
+      },
+      "by_width": {
+        "1": {
+          "iterations": 9799,
+          "active_row_iterations": 9799,
+          "committed": 40879,
+          "accepted": 31080,
+          "bounded_acceptance": 0.5286253699357077,
+          "median_ms": 48.973152000000006,
+          "mean_ms": 49.13303433574855,
+          "device_seconds": 481.45460345600003,
+          "body_output_tok_s": 84.90727829074734,
+          "stage_mean_ms": {
+            "forward": 45.54198727543627,
+            "sample": 0.04186259985712828,
+            "commit": 0.0068269921420553124,
+            "boundaries": 0.03345528972344117,
+            "observe": 0.4057735654658639,
+            "propose": 3.019490939075416
+          }
+        }
+      },
+      "c1_by_request": {
+        "8": {
+          "iterations": 508,
+          "active_row_iterations": 508,
+          "committed": 2230,
+          "accepted": 1722,
+          "bounded_acceptance": 0.5649606299212598,
+          "median_ms": 47.714816000000006,
+          "mean_ms": 47.78427042519685,
+          "device_seconds": 24.274409376,
+          "body_output_tok_s": 91.8662928295504,
+          "stage_mean_ms": {
+            "forward": 44.18422601574803,
+            "sample": 0.04180648818897638,
+            "commit": 0.006323653543307086,
+            "boundaries": 0.03354122834645669,
+            "observe": 0.40701474015748035,
+            "propose": 3.024746141732283
+          }
+        },
+        "9": {
+          "iterations": 917,
+          "active_row_iterations": 917,
+          "committed": 3214,
+          "accepted": 2297,
+          "bounded_acceptance": 0.41748455107233734,
+          "median_ms": 47.074976,
+          "mean_ms": 47.19376495528899,
+          "device_seconds": 43.276682464000004,
+          "body_output_tok_s": 74.26632119210124,
+          "stage_mean_ms": {
+            "forward": 43.61050067611778,
+            "sample": 0.038533478735005455,
+            "commit": 0.006811079607415485,
+            "boundaries": 0.03303862159214831,
+            "observe": 0.4066029574700109,
+            "propose": 3.0134344165757905
+          }
+        },
+        "10": {
+          "iterations": 892,
+          "active_row_iterations": 892,
+          "committed": 3121,
+          "accepted": 2229,
+          "bounded_acceptance": 0.4164798206278027,
+          "median_ms": 47.013472,
+          "mean_ms": 47.132105506726454,
+          "device_seconds": 42.041838112,
+          "body_output_tok_s": 74.23557437440331,
+          "stage_mean_ms": {
+            "forward": 43.55015820627803,
+            "sample": 0.038815533632287,
+            "commit": 0.006543031390134529,
+            "boundaries": 0.03312247533632287,
+            "observe": 0.4061419192825112,
+            "propose": 3.013272071748879
+          }
+        },
+        "11": {
+          "iterations": 4840,
+          "active_row_iterations": 4840,
+          "committed": 20873,
+          "accepted": 16033,
+          "bounded_acceptance": 0.5521005509641873,
+          "median_ms": 49.217104000000006,
+          "mean_ms": 49.24218068099174,
+          "device_seconds": 238.33215449600002,
+          "body_output_tok_s": 87.57945416194488,
+          "stage_mean_ms": {
+            "forward": 45.66592376859504,
+            "sample": 0.039426869421487605,
+            "commit": 0.006853923966942148,
+            "boundaries": 0.033498961983471076,
+            "observe": 0.405440105785124,
+            "propose": 3.0084956033057852
+          }
+        },
+        "12": {
+          "iterations": 2642,
+          "active_row_iterations": 2642,
+          "committed": 11441,
+          "accepted": 8799,
+          "bounded_acceptance": 0.5550719152157456,
+          "median_ms": 50.043487999999996,
+          "mean_ms": 50.54107456775171,
+          "device_seconds": 133.529519008,
+          "body_output_tok_s": 85.68142898286445,
+          "stage_mean_ms": {
+            "forward": 46.91888918092354,
+            "sample": 0.048519763815291446,
+            "commit": 0.006975830431491295,
+            "boundaries": 0.03361574564723694,
+            "observe": 0.40573355942467826,
+            "propose": 3.0428250961392886
+          }
+        }
+      },
+      "ordinary_host_iterations": 635,
+      "consumer_decode_tokens": 40879,
+      "bounded_commit_coverage": 1.0
+    },
+    "measure-c4-2000-q0": {
+      "server_sha256": "52d68758c6995549fabdf3391808780214d85f6b7acceac22b7e865d88d93f81",
+      "source": "/home/choiceoh/glm53-logs/st-prefill-phase2-20260913/L7-qualification/1/onepass-runs/20260913T065924-4fefee2be2e1/measure-c4-2000-q0/server.json",
+      "rank_token_records_identical": true,
+      "bounded": {
+        "iterations": 411,
+        "active_row_iterations": 1537,
+        "committed": 7258,
+        "accepted": 5721,
+        "bounded_acceptance": 0.6203643461288224,
+        "median_ms": 105.018368,
+        "mean_ms": 101.63603986374697,
+        "device_seconds": 41.772412384000006,
+        "body_output_tok_s": 173.75103772508038,
+        "stage_mean_ms": {
+          "forward": 96.99731846228711,
+          "sample": 0.047908048661800484,
+          "commit": 0.007102287104622871,
+          "boundaries": 0.09949438442822385,
+          "observe": 0.4641465304136253,
+          "propose": 3.930391591240876
+        }
+      },
+      "by_width": {
+        "1": {
+          "iterations": 11,
+          "active_row_iterations": 11,
+          "committed": 58,
+          "accepted": 47,
+          "bounded_acceptance": 0.7121212121212122,
+          "median_ms": 49.695616,
+          "mean_ms": 49.40065454545456,
+          "device_seconds": 0.5434072000000001,
+          "body_output_tok_s": 106.73395567817282,
+          "stage_mean_ms": {
+            "forward": 45.613349818181824,
+            "sample": 0.07748363636363637,
+            "commit": 0.006944,
+            "boundaries": 0.031778909090909094,
+            "observe": 0.40658036363636363,
+            "propose": 3.15152
+          }
+        },
+        "2": {
+          "iterations": 29,
+          "active_row_iterations": 58,
+          "committed": 333,
+          "accepted": 275,
+          "bounded_acceptance": 0.7902298850574713,
+          "median_ms": 73.514912,
+          "mean_ms": 73.14116634482758,
+          "device_seconds": 2.121093824,
+          "body_output_tok_s": 156.9944696609517,
+          "stage_mean_ms": {
+            "forward": 69.11111393103448,
+            "sample": 0.041490758620689655,
+            "commit": 0.007287172413793104,
+            "boundaries": 0.054803862068965516,
+            "observe": 0.44392717241379315,
+            "propose": 3.380144551724138
+          }
+        },
+        "3": {
+          "iterations": 16,
+          "active_row_iterations": 48,
+          "committed": 212,
+          "accepted": 164,
+          "bounded_acceptance": 0.5694444444444444,
+          "median_ms": 89.96265600000002,
+          "mean_ms": 90.053194,
+          "device_seconds": 1.440851104,
+          "body_output_tok_s": 147.13525874495912,
+          "stage_mean_ms": {
+            "forward": 85.65665399999999,
+            "sample": 0.055600000000000004,
+            "commit": 0.00707,
+            "boundaries": 0.07759400000000001,
+            "observe": 0.453416,
+            "propose": 3.712518
+          }
+        },
+        "4": {
+          "iterations": 355,
+          "active_row_iterations": 1420,
+          "committed": 6655,
+          "accepted": 5235,
+          "bounded_acceptance": 0.6144366197183099,
+          "median_ms": 106.00707200000001,
+          "mean_ms": 106.10439508732395,
+          "device_seconds": 37.667060256000006,
+          "body_output_tok_s": 176.6795697559095,
+          "stage_mean_ms": {
+            "forward": 101.37865428732395,
+            "sample": 0.047169171830985915,
+            "commit": 0.007093543661971831,
+            "boundaries": 0.10623044507042254,
+            "observe": 0.4680656225352113,
+            "propose": 4.009295053521127
+          }
+        }
+      },
+      "c1_by_request": {},
+      "ordinary_host_iterations": 0,
+      "consumer_decode_tokens": 7258,
+      "bounded_commit_coverage": 1.0
+    },
+    "measure-c4-2000-q1": {
+      "server_sha256": "dff5c1c98d04d2ce16bf052866b855ed2fa154fb4a9fdbcaaef42cc263294dd2",
+      "source": "/home/choiceoh/glm53-logs/st-prefill-phase2-20260913/L7-qualification/1/onepass-runs/20260913T065924-4fefee2be2e1/measure-c4-2000-q1/server.json",
+      "rank_token_records_identical": true,
+      "bounded": {
+        "iterations": 1715,
+        "active_row_iterations": 5902,
+        "committed": 21180,
+        "accepted": 15278,
+        "bounded_acceptance": 0.43143567152377726,
+        "median_ms": 105.99280000000002,
+        "mean_ms": 97.5363508431487,
+        "device_seconds": 167.274841696,
+        "body_output_tok_s": 126.61796469364987,
+        "stage_mean_ms": {
+          "forward": 93.02784643731779,
+          "sample": 0.04321610262390671,
+          "commit": 0.00707265306122449,
+          "boundaries": 0.09193443265306123,
+          "observe": 0.45914872536443146,
+          "propose": 3.818629093877551
+        }
+      },
+      "by_width": {
+        "1": {
+          "iterations": 179,
+          "active_row_iterations": 179,
+          "committed": 1074,
+          "accepted": 895,
+          "bounded_acceptance": 0.8333333333333334,
+          "median_ms": 48.663392,
+          "mean_ms": 48.58343848044693,
+          "device_seconds": 8.696435488,
+          "body_output_tok_s": 123.49887508301377,
+          "stage_mean_ms": {
+            "forward": 44.99542096089385,
+            "sample": 0.03774301675977654,
+            "commit": 0.0068476424581005585,
+            "boundaries": 0.033497385474860336,
+            "observe": 0.40571655865921785,
+            "propose": 3.019656938547486
+          }
+        },
+        "2": {
+          "iterations": 133,
+          "active_row_iterations": 266,
+          "committed": 1022,
+          "accepted": 756,
+          "bounded_acceptance": 0.47368421052631576,
+          "median_ms": 72.708064,
+          "mean_ms": 73.20338911278196,
+          "device_seconds": 9.736050752,
+          "body_output_tok_s": 104.97069356279378,
+          "stage_mean_ms": {
+            "forward": 69.25942135338346,
+            "sample": 0.034938706766917293,
+            "commit": 0.007164631578947369,
+            "boundaries": 0.059054436090225565,
+            "observe": 0.43301437593984965,
+            "propose": 3.3194098045112783
+          }
+        },
+        "3": {
+          "iterations": 155,
+          "active_row_iterations": 465,
+          "committed": 1711,
+          "accepted": 1246,
+          "bounded_acceptance": 0.44659498207885306,
+          "median_ms": 91.902784,
+          "mean_ms": 92.37309790967743,
+          "device_seconds": 14.317830176000001,
+          "body_output_tok_s": 119.50134754832001,
+          "stage_mean_ms": {
+            "forward": 88.03939984516128,
+            "sample": 0.047722529032258064,
+            "commit": 0.007057961290322581,
+            "boundaries": 0.08282714838709677,
+            "observe": 0.4574319483870968,
+            "propose": 3.6490931612903226
+          }
+        },
+        "4": {
+          "iterations": 1248,
+          "active_row_iterations": 4992,
+          "committed": 17373,
+          "accepted": 12381,
+          "bounded_acceptance": 0.4133613782051282,
+          "median_ms": 107.78435200000001,
+          "mean_ms": 107.79208756410256,
+          "device_seconds": 134.52452528,
+          "body_output_tok_s": 129.14373764813334,
+          "stage_mean_ms": {
+            "forward": 103.06968451282052,
+            "sample": 0.04432353846153846,
+            "commit": 0.0070969487179487175,
+            "boundaries": 0.10495117948717948,
+            "observe": 0.46981084615384616,
+            "propose": 4.007483461538461
+          }
+        }
+      },
+      "c1_by_request": {},
+      "ordinary_host_iterations": 0,
+      "consumer_decode_tokens": 21180,
+      "bounded_commit_coverage": 1.0
+    },
+    "measure-c4-2000-q2": {
+      "server_sha256": "f76158a09f9c3176bf4c677c839ede49c5eb83ade84cda9a179fb292a9f7e48b",
+      "source": "/home/choiceoh/glm53-logs/st-prefill-phase2-20260913/L7-qualification/1/onepass-runs/20260913T065924-4fefee2be2e1/measure-c4-2000-q2/server.json",
+      "rank_token_records_identical": true,
+      "bounded": {
+        "iterations": 2518,
+        "active_row_iterations": 7571,
+        "committed": 25624,
+        "accepted": 18053,
+        "bounded_acceptance": 0.3974155769823449,
+        "median_ms": 105.15382400000001,
+        "mean_ms": 89.1161001556791,
+        "device_seconds": 224.39434019200002,
+        "body_output_tok_s": 114.19182844841437,
+        "stage_mean_ms": {
+          "forward": 84.77857256870531,
+          "sample": 0.040151498014297064,
+          "commit": 0.006947011914217633,
+          "boundaries": 0.0813245941223193,
+          "observe": 0.44902716441620333,
+          "propose": 3.672146185861795
+        }
+      },
+      "by_width": {
+        "1": {
+          "iterations": 591,
+          "active_row_iterations": 591,
+          "committed": 1701,
+          "accepted": 1110,
+          "bounded_acceptance": 0.3130287648054145,
+          "median_ms": 47.373760000000004,
+          "mean_ms": 47.37001313028765,
+          "device_seconds": 27.995677760000003,
+          "body_output_tok_s": 60.75937916496435,
+          "stage_mean_ms": {
+            "forward": 43.80227205414552,
+            "sample": 0.038565089678511,
+            "commit": 0.0064227952622673435,
+            "boundaries": 0.03288679526226734,
+            "observe": 0.40456766159052454,
+            "propose": 2.9998998307952625
+          }
+        },
+        "2": {
+          "iterations": 322,
+          "active_row_iterations": 644,
+          "committed": 2349,
+          "accepted": 1705,
+          "bounded_acceptance": 0.4412525879917184,
+          "median_ms": 73.416656,
+          "mean_ms": 73.56650017391304,
+          "device_seconds": 23.688413056,
+          "body_output_tok_s": 99.16240460882311,
+          "stage_mean_ms": {
+            "forward": 69.62145053416148,
+            "sample": 0.032652521739130434,
+            "commit": 0.007185391304347826,
+            "boundaries": 0.058500670807453414,
+            "observe": 0.4345481739130435,
+            "propose": 3.3234692173913043
+          }
+        },
+        "3": {
+          "iterations": 84,
+          "active_row_iterations": 252,
+          "committed": 973,
+          "accepted": 721,
+          "bounded_acceptance": 0.47685185185185186,
+          "median_ms": 94.721712,
+          "mean_ms": 94.31918742857144,
+          "device_seconds": 7.9228117440000005,
+          "body_output_tok_s": 122.80993559349173,
+          "stage_mean_ms": {
+            "forward": 89.98664038095238,
+            "sample": 0.04505942857142857,
+            "commit": 0.007058285714285715,
+            "boundaries": 0.07760419047619048,
+            "observe": 0.4574742857142857,
+            "propose": 3.6566030476190474
+          }
+        },
+        "4": {
+          "iterations": 1521,
+          "active_row_iterations": 6084,
+          "committed": 20601,
+          "accepted": 14517,
+          "bounded_acceptance": 0.39768244575936884,
+          "median_ms": 108.408192,
+          "mean_ms": 108.34151060618015,
+          "device_seconds": 164.787437632,
+          "body_output_tok_s": 125.01559764528737,
+          "stage_mean_ms": {
+            "forward": 103.62151090072321,
+            "sample": 0.04208441814595661,
+            "commit": 0.007094090729783037,
+            "boundaries": 0.10518294806048653,
+            "observe": 0.46890109138724523,
+            "propose": 4.008028633793557
+          }
+        }
+      },
+      "c1_by_request": {},
+      "ordinary_host_iterations": 9,
+      "consumer_decode_tokens": 25642,
+      "bounded_commit_coverage": 0.9992980266749864
+    },
+    "measure-c4-32000-qall": {
+      "server_sha256": "46a7d2496ef386e4bc26b541cfb094812216930a175475d706dbb9bb8fecc5f5",
+      "source": "/home/choiceoh/glm53-logs/st-prefill-phase2-20260913/L7-qualification/1/onepass-runs/20260913T065924-4fefee2be2e1/measure-c4-32000-qall/server.json",
+      "rank_token_records_identical": true,
+      "bounded": {
+        "iterations": 4759,
+        "active_row_iterations": 12174,
+        "committed": 52510,
+        "accepted": 40336,
+        "bounded_acceptance": 0.5522151032254532,
+        "median_ms": 100.68486400000002,
+        "mean_ms": 84.86757152679135,
+        "device_seconds": 403.884772896,
+        "body_output_tok_s": 130.01232906971038,
+        "stage_mean_ms": {
+          "forward": 80.67721704223575,
+          "sample": 0.04614527757932339,
+          "commit": 0.0068583954612313515,
+          "boundaries": 0.0712745232191637,
+          "observe": 0.4393441243958815,
+          "propose": 3.5404473612103384
+        }
+      },
+      "by_width": {
+        "1": {
+          "iterations": 2104,
+          "active_row_iterations": 2104,
+          "committed": 8845,
+          "accepted": 6741,
+          "bounded_acceptance": 0.5339828897338403,
+          "median_ms": 49.34792,
+          "mean_ms": 49.430655011406856,
+          "device_seconds": 104.00209814400002,
+          "body_output_tok_s": 85.04636115853474,
+          "stage_mean_ms": {
+            "forward": 45.84897400760456,
+            "sample": 0.03936962737642585,
+            "commit": 0.00654077566539924,
+            "boundaries": 0.03362231178707224,
+            "observe": 0.40577663878326997,
+            "propose": 3.0133730038022812
+          }
+        },
+        "2": {
+          "iterations": 105,
+          "active_row_iterations": 210,
+          "committed": 1129,
+          "accepted": 919,
+          "bounded_acceptance": 0.7293650793650793,
+          "median_ms": 79.169216,
+          "mean_ms": 82.42850895238097,
+          "device_seconds": 8.654993440000002,
+          "body_output_tok_s": 130.44492844814908,
+          "stage_mean_ms": {
+            "forward": 78.14790674285715,
+            "sample": 0.14993066666666666,
+            "commit": 0.007209142857142857,
+            "boundaries": 0.054609980952380954,
+            "observe": 0.43301790476190477,
+            "propose": 3.544293180952381
+          }
+        },
+        "3": {
+          "iterations": 340,
+          "active_row_iterations": 1020,
+          "committed": 4987,
+          "accepted": 3967,
+          "bounded_acceptance": 0.648202614379085,
+          "median_ms": 100.544128,
+          "mean_ms": 100.38383858823529,
+          "device_seconds": 34.13050512,
+          "body_output_tok_s": 146.11562244584792,
+          "stage_mean_ms": {
+            "forward": 96.04555247058825,
+            "sample": 0.04991698823529412,
+            "commit": 0.007144658823529411,
+            "boundaries": 0.0833056,
+            "observe": 0.4570337882352941,
+            "propose": 3.6513284705882354
+          }
+        },
+        "4": {
+          "iterations": 2210,
+          "active_row_iterations": 8840,
+          "committed": 37549,
+          "accepted": 28709,
+          "bounded_acceptance": 0.5412707390648567,
+          "median_ms": 115.8332,
+          "mean_ms": 116.33356388778282,
+          "device_seconds": 257.097176192,
+          "body_output_tok_s": 146.0498343706367,
+          "stage_mean_ms": {
+            "forward": 111.59077671674208,
+            "sample": 0.04708469864253394,
+            "commit": 0.007100076018099547,
+            "boundaries": 0.1060616108597285,
+            "observe": 0.46888066606334844,
+            "propose": 4.024999876923077
+          }
+        }
+      },
+      "c1_by_request": {},
+      "ordinary_host_iterations": 0,
+      "consumer_decode_tokens": 52510,
+      "bounded_commit_coverage": 1.0
+    }
+  },
+  "client_ratios": [
+    {
+      "ctx": 2000,
+      "question": 0,
+      "c1_output_tok_s_including_prefill": 86.575387001773,
+      "c4_output_tok_s_including_prefill": 151.23063010406125,
+      "matched_metric_ratio": 1.7468085946986776,
+      "all_four_after_first_token_s": 37.89155019397731,
+      "tail_after_first_completion_s": 3.058127113006776,
+      "elapsed_s": 48.01937276200624,
+      "first_token_arrivals_s": [
+        4.89788048400078,
+        1.1246246130031068,
+        7.069695455022156,
+        2.8709203580219764
+      ],
+      "completion_arrivals_s": [
+        44.961245648999466,
+        45.721088464022614,
+        48.01937276200624,
+        47.669118780002464
+      ]
+    },
+    {
+      "ctx": 2000,
+      "question": 1,
+      "c1_output_tok_s_including_prefill": 70.49541587000903,
+      "c4_output_tok_s_including_prefill": 121.70731931609868,
+      "matched_metric_ratio": 1.7264572144736692,
+      "all_four_after_first_token_s": 135.2798435970035,
+      "tail_after_first_completion_s": 31.78367777398671,
+      "elapsed_s": 174.05691061998368,
+      "first_token_arrivals_s": [
+        4.815069034986664,
+        6.993389248993481,
+        2.831764228991233,
+        1.151795088982908
+      ],
+      "completion_arrivals_s": [
+        142.27323284599697,
+        155.97366708199843,
+        165.2424826399947,
+        174.05691061998368
+      ]
+    },
+    {
+      "ctx": 2000,
+      "question": 2,
+      "c1_output_tok_s_including_prefill": 70.5540551658265,
+      "c4_output_tok_s_including_prefill": 110.44880913428806,
+      "matched_metric_ratio": 1.5654494823110459,
+      "all_four_after_first_token_s": 165.698190539988,
+      "tail_after_first_completion_s": 59.17753740301123,
+      "elapsed_s": 232.1980671499914,
+      "first_token_arrivals_s": [
+        5.189238945982652,
+        3.2133862389891874,
+        7.322339206992183,
+        1.5809304129797965
+      ],
+      "completion_arrivals_s": [
+        173.02052974698017,
+        203.58049139098148,
+        232.1980671499914,
+        180.2863043329853
+      ]
+    },
+    {
+      "ctx": 32000,
+      "question": "all",
+      "c1_output_tok_s_including_prefill": 83.56203012391487,
+      "c4_output_tok_s_including_prefill": 113.68792017523924,
+      "matched_metric_ratio": 1.3605212799000985,
+      "all_four_after_first_token_s": 258.46344254299765,
+      "tail_after_first_completion_s": 134.03338531198096,
+      "elapsed_s": 461.9136309209862,
+      "first_token_arrivals_s": [
+        10.07397334498819,
+        48.43835933599621,
+        69.41680306600756,
+        28.16294634199585
+      ],
+      "completion_arrivals_s": [
+        360.0642756129964,
+        461.9136309209862,
+        327.8802456090052,
+        356.3557263959956
+      ]
+    }
+  ]
+}

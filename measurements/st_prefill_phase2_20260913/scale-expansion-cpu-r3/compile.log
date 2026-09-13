@@ -1,0 +1,5 @@
+compiled rows=2672 expanded_scales=False
+compiled rows=2672 expanded_scales=True
+compiled rows=32256 expanded_scales=False
+compiled rows=32256 expanded_scales=True
+{"status": "PASS", "cuda_initialized": false, "elapsed_s": 27.774338315008208}

@@ -1,0 +1,22 @@
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+2026-09-13 10:19:37,881 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-13 10:19:37,881 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_fb88d8562a179eab
+2026-09-13 10:19:41,337 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_fb88d8562a179eab.o
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=21376 -> rows 58112/102272 tiles 454/799 tasks 1816/3196
+[tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=2672
+2026-09-13 10:19:41,460 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-13 10:19:41,460 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_6ec53d1bf77ed1a0
+2026-09-13 10:19:43,836 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_6ec53d1bf77ed1a0.o
+[b12x-bounds] state_E=288 n=512 tile_m=64 routed_rows=21376 -> rows 39744/83904 tiles 621/1311 tasks 2484/5244
+Traceback (most recent call last):
+  File "/repo/measurements/st_prefill_phase2_20260913/check_m64_prefill.py", line 183, in <module>
+    main()
+  File "/repo/measurements/st_prefill_phase2_20260913/check_m64_prefill.py", line 167, in main
+    check_case(judge, views, scales, workspaces, rows, kind, case)
+  File "/repo/measurements/st_prefill_phase2_20260913/check_m64_prefill.py", line 120, in check_case
+    **judge.compare(candidate, a, b, failure_context=context)))
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/overlay/modules/glm53_moe/glm53_ep_local_selftest.py", line 177, in compare
+    assert not result["bad_rows"], dict(verdict="CANDIDATE_NUMERICS_FAIL", **result)
+           ^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'verdict': 'CANDIDATE_NUMERICS_FAIL', 'bad_rows': 2672, 'max_row_relative_l2': 2.513047218322754, 'max_row_relative_abs': 4.97046422958374, 'stock_max_row_relative_l2': 0.0, 'stock_max_row_relative_abs': 0.0}

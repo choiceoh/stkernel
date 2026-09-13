@@ -3819,6 +3819,7 @@ def allocate_sm120_dynamic_workspace(
     activation: str = "silu",
     quant_mode: str = "nvfp4",
     tile_m: int | None = None,
+    _prefill_tile64: bool = False,
 ) -> Sm120DynamicMoEWorkspace:
     """Allocate workspace buffers for the SM120 dynamic MoE kernel."""
     activation_precision = _normalize_activation_precision(activation_precision)
@@ -3843,6 +3844,15 @@ def allocate_sm120_dynamic_workspace(
     # The kernel addresses activation scales in 128-row SF atoms regardless of
     # tile_m, so the scale plane must cover the last partial atom.
     scale_rows = _align_up(rows_padded, 128)
+    if type(_prefill_tile64) is not bool:
+        raise TypeError('private prefill tile64 allocation override must be bool')
+    if _prefill_tile64:
+        if ((state_E, weight_E, k, n, num_topk, tile_m) != (288, 288, 4096, 512, 8, 64)
+                or quant_mode != 'nvfp4' or activation != 'swigluoai_uninterleave'):
+            raise ValueError('private M64 scale allocation requires exact native geometry')
+        # One complete physical SFA atom per logical M64 tile. Different
+        # experts never share an atom; the lower 64 rows hold their scales.
+        scale_rows = physical_tiles * 128
     cols_pad_k = _align_up(k // sf_vec_size, 4)
     _check_memref_limit("dynamic packed_input", rows_padded * (k // 2))
     _check_memref_limit("dynamic packed_input_scale", scale_rows * cols_pad_k)
@@ -3911,6 +3921,7 @@ class _DynamicMoELaunch:
         activation_precision: str = "fp4",
         sf_vec_size: int = _NVFP4_BLOCK_SIZE,
         reform_sf_pack: bool = False,
+        prefill_tile64: bool = False,
     ):
         activation_precision = _normalize_activation_precision(activation_precision)
         if activation_precision == "bf16":
@@ -3923,6 +3934,7 @@ class _DynamicMoELaunch:
         self._num_topk = num_topk
         self._cols_pad_k = _align_up(k // sf_vec_size, 4)
         self._reform_sf_pack = bool(reform_sf_pack)
+        self._prefill_tile64 = bool(prefill_tile64)
 
     @cute.jit
     def __call__(
@@ -3994,6 +4006,10 @@ class _DynamicMoELaunch:
         # Activation scales live in 128-row SF atoms; the plane is allocated
         # through the last partial atom even when rows_padded is not aligned.
         scale_rows = ((rows_padded + 127) // 128) * 128
+        if cutlass.const_expr(self._prefill_tile64):
+            # Each compact 64-row tile owns a complete physical SFA atom.
+            # Its logical view must cover the allocation, including zeroing.
+            scale_rows = rows_padded * 2
         scale_storage = cute.make_tensor(
             scale_storage_ptr,
             layout=cute.make_layout((scale_rows * self._cols_pad_k,), stride=(1,)),
@@ -4071,6 +4087,28 @@ def _short_prefill_q0_word_unpack(*, m, tp_sf6_q0, reform_sf_pack, ep_local):
             and reform_sf_pack and not ep_local)
 
 
+def _prefill_scale_expansion_eligible(*, m, E, k, n, num_topk, tile_m,
+                                     quant_mode, tiled, activation,
+                                     swiglu_alpha, swiglu_beta, swiglu_limit,
+                                     share_input_across_experts):
+    return (type(m) is int and 64 < m <= 32768
+            and (E, k, n, num_topk, tile_m) == (288, 4096, 512, 8, 128)
+            and quant_mode == 'nvfp4' and tiled and not share_input_across_experts
+            and (activation, swiglu_alpha, swiglu_beta, swiglu_limit)
+                == ('swigluoai_uninterleave', 1., 0., 10.))
+
+
+def _prefill_m64_eligible(*, m, E, k, n, num_topk, tile_m, quant_mode,
+                        tiled, reform_sf_pack, activation, swiglu_alpha,
+                        swiglu_beta, swiglu_limit, share_input_across_experts):
+    return (type(m) is int and 64 < m <= 8192 and tile_m == 64 and reform_sf_pack
+            and _prefill_scale_expansion_eligible(
+                m=m, E=E, k=k, n=n, num_topk=num_topk, tile_m=128,
+                quant_mode=quant_mode, tiled=tiled, activation=activation,
+                swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+                swiglu_limit=swiglu_limit, share_input_across_experts=share_input_across_experts))
+
+
 def _get_dynamic_kernel(
     E: int,
     m: int,
@@ -4093,6 +4131,10 @@ def _get_dynamic_kernel(
     tiled: bool = False,
     reform_sf_pack: bool = False,
     _tp_sf6_q0_override: bool | None = None,
+    _prefill_scale_expansion: bool = False,
+    _prefill_tile64: bool = False,
+    _prefill_n128: bool = False,
+    _prefill_q0_batch8: bool = False,
 ):
     """Compile (or retrieve cached) the SM120 dynamic MoE kernel.
 
@@ -4186,8 +4228,18 @@ def _get_dynamic_kernel(
         raise TypeError("TP SF6 Q0 override must be bool or None")
     tp_sf6_q0_enabled = (_TP_SF6_Q0_ENABLED if _tp_sf6_q0_override is None
                         else _tp_sf6_q0_override)
+    if type(_prefill_tile64) is not bool:
+        raise TypeError('private prefill tile64 override must be bool')
+    if _prefill_tile64 and (not tp_sf6_q0_enabled or _prefill_scale_expansion
+            or not _prefill_m64_eligible(
+                m=m, E=E, k=k, n=n, num_topk=num_topk, tile_m=tile_m,
+                quant_mode=quant_mode, tiled=tiled, reform_sf_pack=reform_sf_pack,
+                activation=activation, swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+                swiglu_limit=swiglu_limit, share_input_across_experts=share_input_across_experts)):
+        raise ValueError('private M64 requires exact short packed TP Q0 prefill')
     tp_sf6_q0 = _tp_sf6_q0_eligible(
-        enabled=tp_sf6_q0_enabled,E=E,m=m,k=k,n=n,num_topk=num_topk,tile_m=tile_m,
+        enabled=tp_sf6_q0_enabled,E=E,m=m,k=k,n=n,num_topk=num_topk,
+        tile_m=128 if _prefill_tile64 else tile_m,
         quant_mode=quant_mode,tiled=tiled,reform_sf_pack=reform_sf_pack,
         activation=activation,swiglu_alpha=swiglu_alpha,swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit,share_input_across_experts=share_input_across_experts)
@@ -4198,6 +4250,24 @@ def _get_dynamic_kernel(
         from .moe_dynamic_gated_raw_q0 import MoEGatedDynamicKernelRawQ0
         if torch.cuda.get_device_capability() != (12,1) or not stock_contract_matches():
             raise RuntimeError("TP SF6 Q0 requires pinned SM121 source")
+
+    if type(_prefill_q0_batch8) is not bool:
+        raise TypeError('private Q0 batch8 override must be bool')
+    if _prefill_q0_batch8 and (not tp_sf6_q0 or _prefill_tile64 or not 64 < m <= 8192):
+        raise ValueError('private Q0 batch8 requires exact M128 short-prefill FP32 scatter')
+
+    if type(_prefill_scale_expansion) is not bool:
+        raise TypeError("prefill scale expansion override must be bool")
+    if type(_prefill_n128) is not bool or (_prefill_n128 and not _prefill_scale_expansion):
+        raise ValueError('private N128 requires the exact expanded-scale prefill contract')
+    if _prefill_scale_expansion and (reform_sf_pack or ep_local_cls is not None
+            or (m <= 8192 and not tp_sf6_q0)
+            or not _prefill_scale_expansion_eligible(
+                m=m, E=E, k=k, n=n, num_topk=num_topk, tile_m=tile_m,
+                quant_mode=quant_mode, tiled=tiled, activation=activation,
+                swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+                swiglu_limit=swiglu_limit, share_input_across_experts=share_input_across_experts)):
+        raise ValueError("expanded scales require the exact eager GLM prefill arithmetic")
 
     cache_key = _dynamic_kernel_cache_key(
         activation_precision=activation_precision,
@@ -4237,6 +4307,14 @@ def _get_dynamic_kernel(
         ep_local=ep_local_cls is not None)
     if short_word_unpack:
         cache_key = (*cache_key, 'short_prefill_q0_words_v1')
+    if _prefill_scale_expansion:
+        cache_key = (*cache_key, 'temporary_prefill_raw_scales_v1')
+    if _prefill_n128:
+        cache_key = (*cache_key, 'private_prefill_n128_tiled_v1')
+    if _prefill_q0_batch8:
+        cache_key = (*cache_key, 'private_prefill_q0_batch8_v1')
+    if _prefill_tile64:
+        cache_key = (*cache_key, 'private_prefill_m64_fp32_v1')
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -4249,7 +4327,7 @@ def _get_dynamic_kernel(
     a_dtype = cutlass.BFloat16
     alpha_dtype = cutlass.Float32
 
-    kernel: Any = MoEDynamicKernel(
+    kernel: Any = None if _prefill_tile64 else MoEDynamicKernel(
         sf_vec_size=sf_vec_size,
         mma_tiler_mn=mma_tiler_mn,
         input_scales_are_reciprocal=input_scales_are_reciprocal,
@@ -4272,12 +4350,18 @@ def _get_dynamic_kernel(
                 "tiled expert weights (static v2 cell t) and the prefill-reuse lane "
                 "cannot combine yet: turn one of them off"
             )
-        if not isinstance(kernel, MoEGatedDynamicKernel):
+        if not (_prefill_tile64 or _prefill_n128) and not isinstance(kernel, MoEGatedDynamicKernel):
             raise ValueError(
                 "tiled expert weights (static v2 cell t) need the gated dynamic "
                 f"kernel for prefill; the dispatcher selected {type(kernel).__name__}"
             )
         tiled_cls = MoEGatedDynamicKernelRawQ0 if tp_sf6_q0 else MoEGatedDynamicKernelTiled
+        if _prefill_scale_expansion and not tp_sf6_q0:
+            from .moe_dynamic_prefill_raw_route import MoEGatedDynamicKernelPrefillRawRoute
+            tiled_cls = MoEGatedDynamicKernelPrefillRawRoute
+        if _prefill_n128:
+            from .moe_dynamic_prefill_n128_tiled import MoEGatedPrefillN128TiledQ0, MoEGatedPrefillN128TiledLong
+            tiled_cls = MoEGatedPrefillN128TiledQ0 if tp_sf6_q0 else MoEGatedPrefillN128TiledLong
         tiled_kwargs = {}
         if reform_sf_pack:
             from .moe_dynamic_gated_sf6 import MoEGatedDynamicKernelSF6
@@ -4288,7 +4372,14 @@ def _get_dynamic_kernel(
             elif short_word_unpack:
                 from .moe_dynamic_gated_sf6_q0_words import MoEGatedDynamicKernelSF6Q0Words
                 tiled_cls = MoEGatedDynamicKernelSF6Q0Words
+            if _prefill_tile64:
+                from .moe_dynamic_prefill_m64 import MoEGatedDynamicKernelPrefillM64
+                tiled_cls = MoEGatedDynamicKernelPrefillM64
             tiled_kwargs = dict(reform_sf_pack=True)
+        if _prefill_q0_batch8:
+            from .moe_prefill_q0_batch8 import PrefillQ0Batch8Packed, PrefillQ0Batch8Raw, PrefillQ0Batch8N128
+            tiled_cls = (PrefillQ0Batch8N128 if _prefill_n128 else
+                         PrefillQ0Batch8Packed if reform_sf_pack else PrefillQ0Batch8Raw)
         kernel = tiled_cls(
             sf_vec_size=sf_vec_size,
             mma_tiler_mn=mma_tiler_mn,
@@ -4337,6 +4428,7 @@ def _get_dynamic_kernel(
         activation_precision=activation_precision,
         sf_vec_size=sf_vec_size,
         reform_sf_pack=reform_sf_pack,
+        prefill_tile64=_prefill_tile64,
     )
 
     topk_ids_cutlass_dtype = (
@@ -4504,6 +4596,18 @@ def _get_dynamic_kernel(
         ),
         extra_key_files=_kernel_source_files() + (
             tuple(os.path.join(os.path.dirname(__file__), name) for name in
+                  ('moe_prefill_q0_batch8.py', '_prefill_q0_batch8.py'))
+            if _prefill_q0_batch8 else ()) + (
+            (os.path.join(os.path.dirname(__file__), 'moe_dynamic_prefill_n128_tiled.py'),)
+            if _prefill_n128 else ()) + (
+            tuple(os.path.join(os.path.dirname(__file__), name) for name in
+                  ('moe_dynamic_prefill_m64.py', '_prefill_m64_bodies.py'))
+            if _prefill_tile64 else ()) + (
+            tuple(os.path.join(os.path.dirname(__file__), name) for name in
+                  ("moe_dynamic_prefill_raw_route.py", "moe_dynamic_gated_sf6_prefill.py",
+                   "moe_dynamic_gated_raw_q0.py", "moe_dynamic_gated_sf6_q0.py"))
+            if _prefill_scale_expansion else ()) + (
+            tuple(os.path.join(os.path.dirname(__file__), name) for name in
                   ("moe_dynamic_gated_sf6_words.py", "moe_dynamic_gated_sf6_prefill.py"))
             if prefill_word_unpack else ()) + (
             tuple(os.path.join(os.path.dirname(__file__), name) for name in
@@ -4554,6 +4658,24 @@ def _ep_local_scatter_buffer(workspace, output, num_tokens, k, *, tp=False):
     return current[:num_tokens]
 
 
+def _prefill_m64_workspace(original, num_tokens):
+    """A separate eager workspace; M128 and captured decode owners stay intact."""
+    key = ('private_prefill_m64_workspace_v1', original.state_E, original.weight_E,
+           original.k, original.n, original.num_topk, str(original.device))
+    cached = _WORKSPACE_CACHE.get(key)
+    if cached is not None and cached.routed_rows_capacity >= num_tokens * original.num_topk:
+        return cached
+    capacity = 1 << (num_tokens - 1).bit_length()
+    cached = allocate_sm120_dynamic_workspace(
+        state_E=original.state_E, weight_E=original.weight_E,
+        routed_rows=capacity * original.num_topk, k=original.k, n=original.n,
+        num_topk=original.num_topk, device=original.device,
+        activation='swigluoai_uninterleave', quant_mode='nvfp4',
+        tile_m=64, _prefill_tile64=True)
+    _WORKSPACE_CACHE[key] = cached
+    return cached
+
+
 def launch_sm120_dynamic_moe(
     *,
     workspace: Sm120DynamicMoEWorkspace,
@@ -4578,6 +4700,10 @@ def launch_sm120_dynamic_moe(
     activation_precision: str = "fp4",
     quant_mode: str = "nvfp4",
     _tp_sf6_q0_override: bool | None = None,
+    _prefill_scale_expansion: bool | None = None,
+    _prefill_tile64: bool | None = None,
+    _prefill_n128: bool = False,
+    _prefill_q0_batch8: bool = False,
 ) -> torch.Tensor:
     """Launch the SM120 dynamic MoE kernel."""
     global _TP_SF6_Q0_LAUNCH_LOGGED
@@ -4600,7 +4726,60 @@ def launch_sm120_dynamic_moe(
     if direct_sf6:
         from .moe_dynamic_gated_sf6 import stock_contract_matches
         direct_sf6 = bool(stock_contract_matches())
-    sf1_address, sf2_address = _scale_runtime_addresses(weights, direct_sf6=direct_sf6)
+    if _prefill_n128:
+        if _prefill_tile64 is True or _prefill_scale_expansion is False:
+            raise ValueError('private N128 cannot combine with M64 or disabled scale expansion')
+        _prefill_tile64, _prefill_scale_expansion = False, True
+    if type(_prefill_q0_batch8) is not bool:
+        raise TypeError('private Q0 batch8 override must be bool')
+    if _prefill_q0_batch8:
+        if _prefill_tile64 is True or not 64 < num_tokens <= 8192 or workspace.tile_m != 128:
+            raise ValueError('private Q0 batch8 requires a short M128 workspace')
+        if torch.cuda.is_current_stream_capturing():
+            raise RuntimeError('private Q0 batch8 is eager-only pending GPU qualification')
+        _prefill_tile64 = False
+        if _prefill_scale_expansion is None:
+            _prefill_scale_expansion = False
+    if _prefill_tile64 is None:
+        # Unqualified experiments must never become the serving default.
+        _prefill_tile64 = False
+    if type(_prefill_tile64) is not bool:
+        raise TypeError('private prefill tile64 override must be bool')
+    if _prefill_tile64:
+        required_scale_bytes = workspace.physical_tiles_capacity * 128 * (k // 16)
+        if workspace.scale_flat.numel() < required_scale_bytes:
+            raise ValueError('private M64 workspace lacks a physical SFA atom per logical tile')
+        if not _prefill_m64_eligible(
+                m=num_tokens, E=num_experts, k=k, n=n, num_topk=top_k,
+                tile_m=workspace.tile_m, quant_mode=quant_mode,
+                tiled=bool(getattr(weights, 'tiled', False)), reform_sf_pack=direct_sf6,
+                activation=activation, swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+                swiglu_limit=swiglu_limit, share_input_across_experts=input_gs_is_shared):
+            raise ValueError('private M64 launch requires its exact M64 workspace and packed weights')
+        if torch.cuda.is_current_stream_capturing():
+            raise RuntimeError('private M64 prefill is eager-only pending GPU qualification')
+    if _prefill_scale_expansion is None:
+        _prefill_scale_expansion = False
+    if type(_prefill_scale_expansion) is not bool:
+        raise TypeError("prefill scale expansion override must be bool")
+    expanded_scales = None
+    if _prefill_scale_expansion:
+        if not direct_sf6 or not _prefill_scale_expansion_eligible(
+                m=num_tokens, E=num_experts, k=k, n=n, num_topk=top_k,
+                tile_m=workspace.tile_m, quant_mode=quant_mode,
+                tiled=bool(getattr(weights, "tiled", False)), activation=activation,
+                swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+                swiglu_limit=swiglu_limit, share_input_across_experts=input_gs_is_shared):
+            raise ValueError("temporary expansion requires exact packed GLM prefill weights")
+        from .moe_sf6_prefill_scales import expand_scales
+        # Keep both owners through submission. They are produced and consumed
+        # on the same execution stream; no aliases are installed on weights.
+        expanded_scales = expand_scales(weights.reform_scales, experts=num_experts,
+                                       hidden=k, intermediate=n)
+        sf1_address, sf2_address = (v.data_ptr() for v in expanded_scales)
+        direct_sf6 = False
+    else:
+        sf1_address, sf2_address = _scale_runtime_addresses(weights, direct_sf6=direct_sf6)
     ep_local = _ep_local_prefill_kernel(
         E=num_experts, m=num_tokens, k=k, n=n, num_topk=top_k,
         tile_m=workspace.tile_m, activation=activation, swiglu_alpha=swiglu_alpha,
@@ -4609,7 +4788,7 @@ def launch_sm120_dynamic_moe(
     tp_scatter_fp32 = _tp_sf6_q0_eligible(
         enabled=_TP_SF6_Q0_ENABLED if _tp_sf6_q0_override is None else _tp_sf6_q0_override,
         E=num_experts, m=num_tokens, k=k, n=n, num_topk=top_k,
-        tile_m=workspace.tile_m, quant_mode=quant_mode,
+        tile_m=128 if _prefill_tile64 else workspace.tile_m, quant_mode=quant_mode,
         tiled=bool(getattr(weights, "tiled", False)), reform_sf_pack=direct_sf6,
         activation=activation, swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit, share_input_across_experts=input_gs_is_shared)
@@ -4636,6 +4815,10 @@ def launch_sm120_dynamic_moe(
         tiled=bool(getattr(weights, "tiled", False)),
         reform_sf_pack=direct_sf6,
         _tp_sf6_q0_override=_tp_sf6_q0_override,
+        _prefill_scale_expansion=_prefill_scale_expansion,
+        _prefill_tile64=_prefill_tile64,
+        _prefill_n128=_prefill_n128,
+        _prefill_q0_batch8=_prefill_q0_batch8,
     )
 
     # Dynamic kernel: runtime-shaped args are DataPointer (pass data_ptr()),

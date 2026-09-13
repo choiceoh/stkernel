@@ -1,0 +1,6 @@
+compiled rows=2672 expanded_scales=False
+compiled rows=2672 expanded_scales=True
+compiled rows=32256 expanded_scales=False
+compiled rows=32256 expanded_scales=True
+compiled private M64 short prefill
+{"status": "PASS", "cuda_initialized": false, "elapsed_s": 35.195126261009136}

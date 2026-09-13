@@ -28,7 +28,8 @@ def namespace():
              '_sf6_tensor_version', '_register_cache_eviction', '_tile_expert_weights',
              '_scale_runtime_addresses', 'prepare_packed_only_weight_views',
              'launch_sm120_dynamic_moe', '_dynamic_kernel_cache_key',
-             '_dynamic_workspace_tile_m'}
+             '_dynamic_workspace_tile_m', '_check_dynamic_capacity',
+             '_dynamic_task_geometry', '_align_up'}
     nodes = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))
              and node.name in names]
     assert len(nodes) == len(names)
@@ -46,6 +47,8 @@ def namespace():
         _static_v2_config_for=lambda **kw:dict(tiled=True,reform_sf_pack=True),
         _select_dynamic_tile_m=lambda rows,experts,activation:16,
         _check_memref_limit=lambda *a:None, _expand_to_experts=lambda t,n:t,
+        _B12X_BOUNDS=True, _LEVEL_TILE_M=128, _LEVEL_TILE_N=128, _DYNAMIC_SLICE_CHUNK=4,
+        _b12x_bounds_note=lambda *a:None,
         _sf_pack_dummy=Mock(side_effect=AssertionError('dummy requested on direct path')))
     exec(compile(ast.Module(body=nodes, type_ignores=[]), 'actual-sf6-dispatch', 'exec'), ns)
     return ns
@@ -110,18 +113,20 @@ class PackedViews(unittest.TestCase):
                  'barrier_epoch','pair_head','task_head','task_tail','task_expert','task_valid_rows',
                  'row_counts','expert_write_rows','expert_tile_base','token_map','token_weights')
         ws = types.SimpleNamespace(**{n:tensor for n in names},max_rows=512,tile_m=32,
-                                   physical_tiles_capacity=16,task_capacity=64)
+                                   physical_tiles_capacity=16,task_capacity=64,
+                                   state_E=2,activation_precision='fp4',routed_rows_capacity=32)
         compiled = Mock()
         compiler = self.ns['_get_dynamic_kernel'] = Mock(return_value=(compiled,48))
         contract = types.ModuleType(PACKAGE+'.moe_dynamic_gated_sf6')
         contract.stock_contract_matches = lambda:True
         with patch.dict(sys.modules,{contract.__name__:contract}):
-            self.ns['launch_sm120_dynamic_moe'](workspace=ws,weights=owner,
+            launch_args = dict(workspace=ws,weights=owner,
                 a=torch.zeros((16,512),dtype=torch.bfloat16),
                 topk_ids=torch.zeros((16,2),dtype=torch.int32),topk_weights=torch.ones((16,2)),
                 input_gs=torch.ones(2),down_input_scale=torch.ones(2),
                 scatter_output=torch.empty((16,512),dtype=torch.bfloat16),
                 num_experts=2,num_tokens=16,k=512,n=256,top_k=2)
+            self.ns['launch_sm120_dynamic_moe'](**launch_args)
         self.assertTrue(compiler.call_args.kwargs['reform_sf_pack'])
         args = compiled.call_args.args
         self.assertEqual(args[15],owner.sfb1_packed.data_ptr())
@@ -129,6 +134,12 @@ class PackedViews(unittest.TestCase):
         self.assertIs(args[28],owner.sfb1_packed)
         self.assertIs(args[29],owner.sfb2_packed)
         self.assertEqual(args[30:],(16,512,512,64))
+        compiled.reset_mock()
+        ws.routed_rows_capacity = 31
+        with patch.dict(sys.modules,{contract.__name__:contract}):
+            with self.assertRaisesRegex(ValueError, 'routed rows 32 > capacity 31'):
+                self.ns['launch_sm120_dynamic_moe'](**launch_args)
+        compiled.assert_not_called()
         self.assertFalse(torch.cuda.is_initialized())
 
     def test_ineligible_paths_decline_before_packing(self):
