@@ -327,7 +327,7 @@ class Drafter:
                        fp32=self.tuning.selector_projection_fp32)
 
     def context_normed(self, projected, *, decode):
-        bias = self.fc_bias if decode else None
+        bias = getattr(self, 'fc_bias', None) if decode else None
         if bias is None:
             return norm(projected, self.p['hidden_norm.weight'], self.F.rms_eps)
         return norm(projected, self.p['hidden_norm.weight'], self.F.rms_eps, bias=bias)
