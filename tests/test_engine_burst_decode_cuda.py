@@ -10,6 +10,7 @@ import torch
 
 def toy_engine():
     from engine.base.graphs import DecodeGraphs
+    from engine.kernels.bounded_graph import append_child
     from tests.test_engine_burst_decode import engine
     e = engine()
     e.eos = {1000000}
@@ -33,7 +34,7 @@ def toy_engine():
         out.copy_(b['ids'].view(n, 2) + 1)
         aux = b['ids'].float().view(n*2, 1)
         return aux, aux, out
-    graphs = DecodeGraphs(forward, inputs, [(n, 2, 64) for n in range(4, 0, -1)])
+    graphs = DecodeGraphs(forward, inputs, [(n, 2, 64) for n in range(4, 0, -1)], append_child=append_child)
     def run_inputs(shape, ids, ctx, seqs, slots):
         def fill(b):
             for key, value in zip(('ids', 'ctx', 'seqs', 'slots'), (ids, ctx, seqs, slots)):
@@ -41,7 +42,8 @@ def toy_engine():
         return graphs.run(shape, fill)
     e.decode_graphs = NS(graphs=graphs, shape_for=lambda n, end: (n, 2, 64), run_inputs=run_inputs,
                          run_device=lambda shape, step, *args: run_inputs(shape, *args))
-    greedy = DecodeGraphs(lambda b: b.clone(), lambda n, t: buffers[n, t], [(n, 2) for n in range(4, 0, -1)])
+    greedy = DecodeGraphs(lambda b: b.clone(), lambda n, t: buffers[n, t], [(n, 2) for n in range(4, 0, -1)],
+                           append_child=append_child)
     e.sampling_graphs = NS(greedy=greedy)
     e.observed = observed
     return e

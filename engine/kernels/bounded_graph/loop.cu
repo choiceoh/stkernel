@@ -58,6 +58,27 @@ static void validate_body(cudaGraph_t graph) {
   // forbidden dynamic/device launches and all conditional body constraints.
 }
 
+void append_child(uintptr_t body) {
+  TORCH_CHECK(body != 0, "composition needs a retained child graph");
+  auto stream = c10::cuda::getCurrentCUDAStream();
+  cudaStreamCaptureStatus status;
+  cudaGraph_t parent = nullptr;
+  const cudaGraphNode_t* dependencies = nullptr;
+  const cudaGraphEdgeData* edge_data = nullptr;
+  size_t count = 0;
+  C10_CUDA_CHECK(cudaStreamGetCaptureInfo(stream, &status, nullptr, &parent,
+                                         &dependencies, &edge_data, &count));
+  TORCH_CHECK(status == cudaStreamCaptureStatusActive && parent,
+              "child graph composition requires an active stream capture");
+  cudaGraphNode_t child;
+  // Full completion edges deliberately serialize the borrowed child against
+  // the preceding input copies/stamp. Its internal stream edges are cloned.
+  C10_CUDA_CHECK(cudaGraphAddChildGraphNode(&child, parent, dependencies, count,
+                                            reinterpret_cast<cudaGraph_t>(body)));
+  C10_CUDA_CHECK(cudaStreamUpdateCaptureDependencies(stream, &child, nullptr, 1,
+                                                     cudaStreamSetCaptureDependencies));
+}
+
 class BoundedGraph {
   // The cloned graph retains addresses, not Python allocation owners. Keep the
   // captured body/pool and all caller buffers alive until the last launch ends.
@@ -172,6 +193,7 @@ class BoundedGraph {
 };
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  m.def("append_child", &append_child);
   m.def("stamp", &stamp);
   pybind11::class_<BoundedGraph>(m, "BoundedGraph")
       .def(pybind11::init<uintptr_t, at::Tensor, at::Tensor, int, at::Tensor, pybind11::object>())

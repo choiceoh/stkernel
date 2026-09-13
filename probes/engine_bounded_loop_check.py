@@ -33,6 +33,8 @@ def main():
              "engine/profiles/glm53/bounded_loop.py", "engine/kernels/decode_commit.py",
              "engine/profiles/glm53/burst_decode.py", "engine/profiles/glm53/pipeline.py",
              "engine/profiles/glm53/adapter.py", "engine/base/runner.py",
+             "engine/base/graphs.py", "engine/profiles/glm53/decode_graphs.py",
+             "engine/profiles/glm53/drafter.py",
              "tests/test_engine_bounded_loop_cuda.py", "tests/test_engine_burst_decode_cuda.py")
     report = dict(scope=scope, result=result, seconds=time.monotonic()-start,
                   source_sha256={p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in files})

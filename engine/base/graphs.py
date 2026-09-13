@@ -67,7 +67,7 @@ def frozen_gc():
 
 class DecodeGraphs:
     def __init__(self, step_fn, make_inputs, shapes: "list[tuple[int, ...]]", warmup=1, generators=(),
-                 memory=None, label="decode", resources=None, detail=False):
+                 memory=None, label="decode", resources=None, detail=False, append_child=None):
         """step_fn(inputs) runs one decode step over static `inputs`;
         make_inputs(num_seqs, tokens_per_seq) allocates them once per shape.
 
@@ -94,6 +94,9 @@ class DecodeGraphs:
         diagnosis; it is what priced the warmup policy, and it costs 2.2 s.
         """
         self.graphs, self.inputs, self.outputs = {}, {}, {}
+        # Optional profile-owned composition: retain raw graphs only when a
+        # parent will embed them. Ordinary graphs keep their current lifetime.
+        self.append_child = append_child
         self.resources = {}
         # One memory pool for every graph of THIS instance, and a different pool from
         # every other instance's: see the module docstring's second rule.
@@ -129,7 +132,7 @@ class DecodeGraphs:
                     torch.cuda.current_stream().wait_stream(side)
                     if detail:
                         mark(shape, "warmup")
-                    g = torch.cuda.CUDAGraph()
+                    g = torch.cuda.CUDAGraph(keep_graph=True) if append_child is not None else torch.cuda.CUDAGraph()
                     for generator in generators:
                         g.register_generator_state(generator)
                     # Published only once the capture has completed: a graph whose capture
@@ -146,6 +149,8 @@ class DecodeGraphs:
                                     out = step_fn(inp)
                             finally:
                                 g.capture_end()
+                        if append_child is not None:
+                            g.instantiate()  # ordinary replays also remain ready before admission
                         if resources is not None:
                             for owner in resources():
                                 self.resources[id(owner)] = owner
@@ -165,7 +170,10 @@ class DecodeGraphs:
             raise KeyError(f"no captured graph for decode shape {shape}: the scheduler produced a "
                            f"shape the contract did not declare ({sorted(self.graphs)})")
         fill(self.inputs[shape])
-        self.graphs[shape].replay()
+        if self.append_child is not None and torch.cuda.is_current_stream_capturing():
+            self.append_child(self.graphs[shape].raw_cuda_graph())
+        else:
+            self.graphs[shape].replay()
         return self.outputs[shape]
 
     def close(self):

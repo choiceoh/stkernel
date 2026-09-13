@@ -137,6 +137,8 @@ class Glm53Engine:
                                                   drafter=self.drafter)
             if self.drafter.k:
                 kwargs = {"prepared_context": True} if self.execution_plan.early_observe else {}
+                if self.execution_plan.decode_iterations > 1:
+                    kwargs["append_child"] = self.decode_graphs.append_child
                 self.drafter.capture_decode(self.caches, memory=self.memory, generator=self.gen, vocab=self.F.vocab, **kwargs)
                 self._check_graph_pools()
             from engine.profiles.glm53.decode_graphs import SamplingGraphs

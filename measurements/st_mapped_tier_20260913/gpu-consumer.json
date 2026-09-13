@@ -1,0 +1,14 @@
+{
+  "scope": "GB10 mapped buffer visibility/lifetime and lossless NVMe round trips; not serving speed proof",
+  "result": {
+    "tests": 2,
+    "skipped": 0
+  },
+  "seconds": 52.93558794001001,
+  "source_sha256": {
+    "engine/kernels/mapped_staging/buffer.cu": "fea2f7fcc66eda670af8f7dc94dc74f69aa9ef64a935e7c32573cdaf2dc2cc22",
+    "engine/kernels/mapped_staging/__init__.py": "7b3d19f726ac397d10552c5ffaecd3cd397f1e6c23af13c7dbad4f33a888f0ba",
+    "engine/base/kv_tier.py": "3fdbbc85ecca6904a45c04cf854f7dc1560b41af617b4d2d305793aae4e016d1",
+    "tests/test_engine_mapped_tier_cuda.py": "d26f34a06c3ce801a180f3f5e0dc65e6f93c7eeef9a974ac3409f10bdbe50091"
+  }
+}

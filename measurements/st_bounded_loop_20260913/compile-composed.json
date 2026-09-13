@@ -1,0 +1,19 @@
+{
+  "scope": "SM121a conditional graph compilation only; no CUDA context",
+  "result": {
+    "module": "st_bounded_graph_63d4d5629a6dd0e88142a87f"
+  },
+  "seconds": 41.70919164898805,
+  "source_sha256": {
+    "engine/kernels/bounded_graph/loop.cu": "1c002e899628b2c42676f806fb28c20d0021e56b45b6f23af342668b73c034aa",
+    "engine/kernels/bounded_graph/__init__.py": "0f4ad733b9b2126201dc476e74a1210392efacf8586e25c8faf3b53e9e49ba03",
+    "engine/profiles/glm53/bounded_loop.py": "68e7ee0cdabe45616afaada92d45e3cf9fce0af7d96ba186a22cae559762e240",
+    "engine/kernels/decode_commit.py": "1cd3c0baa43b662cf08823064c2703a7d74a9e9d37023445b3926a3cab01d2bc",
+    "engine/profiles/glm53/burst_decode.py": "53a621822c017cf0b8829653478a4318223c95d38313173bf565a7b9472c1bd5",
+    "engine/profiles/glm53/pipeline.py": "d04497e665a906b46870b6c58d2306713fbe52b3ad9e9251dce30dfa04a2caf4",
+    "engine/profiles/glm53/adapter.py": "f721128f5823f98708be551d29dc0c599093ab5ca70da43370d52a74390a6e88",
+    "engine/base/runner.py": "1abe445657c3ff95cf639d748d7773565e0c1b99d4fe403fe7ccfa8055633baa",
+    "tests/test_engine_bounded_loop_cuda.py": "7caa14f4779f55de017c47e6065e36a5b872e8f9d615ce58fc956270b85134b1",
+    "tests/test_engine_burst_decode_cuda.py": "4e1eb4008d7e407e6e5f307e82d0aa0e8b8e6bf774464f26ca7a9b5244f94c95"
+  }
+}

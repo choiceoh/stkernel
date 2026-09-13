@@ -16,6 +16,11 @@ def build():
                 build_directory=str(directory), verbose=False)
 
 
+def append_child(graph):
+    """Embed a retained graph after the current stream's captured dependencies."""
+    build().append_child(graph)
+
+
 class BoundedGraph:
     """The body executes once, then until rank-agreed stop or the finite limit.
 

@@ -279,6 +279,11 @@ class Glm53DecodeGraphs:
         self.aux_layers = tuple(aux_layers)
         from engine.profiles.glm53.execution import ExecutionPlan, CudaStreams
         self.execution_plan = execution_plan or ExecutionPlan()
+        self.append_child = None
+        if self.execution_plan.decode_iterations > 1:
+            from engine.kernels.bounded_graph import append_child, build
+            build()
+            self.append_child = append_child
         self.observations = {}
         self.streams = CudaStreams() if self.execution_plan.overlap else None
         self.observe_stream = torch.cuda.Stream() if self.execution_plan.early_observe else None
@@ -368,7 +373,8 @@ class Glm53DecodeGraphs:
                                        [(n, tokens, capacity) for n in range(max_seqs, 0, -1)
                                         for capacity in reversed(self.capacities)],
                                        memory=memory, label="target",
-                                       resources=net.lanes.graph_resources, detail=detail)
+                                       resources=net.lanes.graph_resources, detail=detail,
+                                       append_child=self.append_child)
         finally:
             # Warmup and capture execute real writes, before requests exist.
             caches.reset()
@@ -433,7 +439,8 @@ class DrafterDecodeGraphs:
     """One proposal graph and the finite accepted-prefix context updates, per row (the synchronous step), and the
     same over every row of a step at once (the pipeline, 45차 §23 GPU 판정 4차): one replay a step instead of one
     a row, the weights read once, the rings never copied."""
-    def __init__(self, drafter, caches, memory=None, generator=None, vocab=None, prepared_context=False):
+    def __init__(self, drafter, caches, memory=None, generator=None, vocab=None, prepared_context=False,
+                 append_child=None):
         self.field = caches._fields["draft", -1]
         self.drafter = drafter
         device = caches.device
@@ -528,14 +535,14 @@ class DrafterDecodeGraphs:
             self.masked = DecodeGraphs(observe_masked, masked_inputs, [(1, drafter.k + 1)],
                                        memory=memory, label="drafter/observe_masked")
             self.rows_masked = DecodeGraphs(rows_masked, rows_masked_inputs, rows_shapes,
-                                            memory=memory, label="drafter/observe_rows")
+                                            memory=memory, label="drafter/observe_rows", append_child=append_child)
             if prepared_context:
                 # Commit/calibration stays captured too. Moving FC into target
                 # must not replace the remaining stage with eager dispatch.
                 self.rows_prepared = DecodeGraphs(prepared, prepared_inputs, rows_shapes,
-                                                   memory=memory, label="drafter/commit_prepared")
+                                                   memory=memory, label="drafter/commit_prepared", append_child=append_child)
             self.rows_propose = DecodeGraphs(rows_propose, rows_propose_inputs, rows_shapes,
-                                             memory=memory, label="drafter/propose_rows")
+                                             memory=memory, label="drafter/propose_rows", append_child=append_child)
             if generator is not None and vocab is not None:
                 self.rows_sampled = DecodeGraphs(rows_sampled, rows_sampled_inputs, rows_shapes, generators=(generator,),
                                                  memory=memory, label="drafter/propose_rows_sampled")
@@ -693,7 +700,8 @@ class SamplingGraphs:
 
         try:
             memory = getattr(target, "memory", None)
-            self.greedy = DecodeGraphs(greedy, make_inputs, shapes, memory=memory, label="sampling/greedy")
+            self.greedy = DecodeGraphs(greedy, make_inputs, shapes, memory=memory, label="sampling/greedy",
+                                        append_child=getattr(target, "append_child", None))
             self.stochastic = DecodeGraphs(stochastic, make_inputs, shapes, generators=(generator,),
                                           memory=memory, label="sampling/stochastic")
         except BaseException:
