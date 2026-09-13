@@ -30,7 +30,7 @@ Example (inside the image, CPU-only, never docker exec into hy4):
   docker run --rm -v /home/choiceoh/models:/home/choiceoh/models \
     -v ~/stkernel/bench:/bench --entrypoint python3 \
     aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6 \
-    /bench/ngram-ceiling.py --tokenizer /home/choiceoh/models/DeepSeek-V4-Flash-0731 \
+    /bench/ngram-ceiling.py --tokenizer /home/choiceoh/models/DeepSeek-V4.1-Flash \
     /home/choiceoh/models/refit-corpus/agent-traffic-*.jsonl
 """
 from __future__ import annotations

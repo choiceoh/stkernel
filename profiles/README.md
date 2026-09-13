@@ -25,7 +25,7 @@ file, the module was never model-agnostic and has to be split, not overridden.
 
 | profile | model | modules | state |
 |---|---|---|---|
-| `dsv4` | DeepSeek-V4-Flash-0731 | 18 | production |
+| `dsv4` | DeepSeek-V4-Flash-0731 | 18 | retired 2026-09-13 -- weights deleted from the fleet, does not boot |
 | `glm53` | GLM-5.3-Flash NVFP4 | 25 | kernel campaign -- boots daily; the megakernel set is its default (ledger 28차 §8) |
 | `qwen38` | Qwen3.8-Flash-Next NVFP4 | 6 | TEP=4 (TP=4 + EP) bring-up |
 
