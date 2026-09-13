@@ -150,7 +150,8 @@ class Comm:
         return obj
 
 
-def server(*, rows=2, blocks=16, comm=None, max_pending=64, keep_idle=False, tiered=False, tier=None, prefix=0, prefix_tier=False):
+def server(*, rows=2, blocks=16, comm=None, max_pending=64, keep_idle=False, tiered=False, tier=None, prefix=0, prefix_tier=False,
+           reasoning_effort_aliases=None):
     engine = Engine(rows + 1)
     cache = None
     if prefix:
@@ -166,7 +167,8 @@ def server(*, rows=2, blocks=16, comm=None, max_pending=64, keep_idle=False, tie
             runner.tiered = TieredKV(runner.kv, tier if tier is not None else MemoryTier())
         if prefix_tier:
             runner.prefix_tier = TieredKV(runner.kv, MemoryTier())
-    return Server(engine, runner, comm or Comm(), host="127.0.0.1", port=0, max_pending=max_pending)
+    return Server(engine, runner, comm or Comm(), host="127.0.0.1", port=0, max_pending=max_pending,
+                  reasoning_effort_aliases=reasoning_effort_aliases)
 
 
 class ServeTests(unittest.TestCase):

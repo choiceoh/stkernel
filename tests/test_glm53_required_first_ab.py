@@ -28,11 +28,12 @@ class PairedEvidenceTests(unittest.TestCase):
             self.assertTrue(b.pop("glm53_required_first"))
             self.assertEqual(a, b)
             self.assertEqual(case, before)
-        for effort in ("low", "high", "max"):
+        self.assertEqual({case["effort"] for case in selected}, {"low", "high"})
+        for effort in ("low", "high"):
             for stream in (False, True):
                 subset = [case for case in selected if case["choice"] == "auto" and
                           case["effort"] == effort and case["stream"] == stream]
-                self.assertEqual(len(subset), 4)
+                self.assertEqual(len(subset), 6)
 
     def message(self, arguments):
         return {"tool_calls": [{"id": "call_1", "type": "function", "function": {

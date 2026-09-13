@@ -1915,3 +1915,28 @@ begin 실패 → 503 에 랭크는 삶; 소스 핀. 엔진·플릿 스위트 실
 집합 동일. 실측은 오늘 밤의 캠페인이 잰다: `status` 의 pace 줄과 `fleet log` 의 "served nobody since it booted" 가 찍히면 된다.
 
 **남는 후보(안 함).** 7 배포 빈도(main 이 시간당 2~3번이면 30분마다 프로덕션 재시작), 8 야간 지연 복구, 9 GO 푸시 알림.
+### 45차 — 원패스 난이도 한 단 낮추고 토큰 예산 두 배: 하니스 44 / ko-reasoning-v2 (2026-09-13, 맥, CPU 검사만; 운영자 "난이도를 약간 낮추고 토큰 제한을 늘려")
+
+**기록.** consumer-v5(하니스 43, `measurements/st_decode_forward_20260913/consumer-v5-incomplete`)의 측정 요청 다섯 개는 모두
+`finish_reason=stop` 이지만 **추론은 전부 상한에서 문장 중간에 잘렸다**: 2K 개별 셋은 완료 4,336–4,598 토큰(추론 상한 4,096 + 보이는 답
+240–500), 32K·128K 묶음은 14,022–14,294(상한 12,288). 128K 묶음은 상한이 닫힐 때 아직 ledger 의 반사실을 계산하던 중이라 portfolio·logic
+은 추론 없이 답했다. 품질 **1/9**(2K portfolio 만 통과). 실패의 모양: 2K ledger 는 JSON 뒤에 "검증 계산표"와 "반례 증명서" 문단을 붙여
+파싱 실패("설명 대신 계산표·근거 ID·반례 증명서를 작성한다"를 초대장으로 읽었다); 묶음 답 셋은 evidence 배열에 ID 대신 설명문; received 는
+세 가지로 읽혔다(순증감 138, 상자×개수+반품 225·241); 2K logic 은 statuses 를 unknown/true/false 로 썼고 나머지 여섯 차원은 다 맞았다;
+128K logic 은 섞인 변수 이름과 ABCDEF 비트 순서를 잘못 대응해 다른 세계를 풀었다.
+
+**한 것.**
+- `bench/measurement_contract.py`: HARNESS 44, 개별 16,384/8,192, 묶음 49,152/24,576(하니스 43 의 두 배; 128K 프롬프트 129,295 + 49,152 =
+  178,447 < max_model_len 1,048,576). `judge.compatible` 이 harness·generation_budget·quality_protocol 을 보므로 하니스 43 기준선은
+  자동으로 재사용 불가.
+- `bench/onepass_quality.py` ko-reasoning-v2: 답변 지시는 JSON 밖에 아무것도 쓰지 않게, 스키마는 열거값을 그대로 보여 주고(`전량승인|보류`,
+  `참|거짓|판단불가`, `6자리 비트열|null`, `budget|staff|dependency|conflict`) evidence 배열은 `기록 ID`; ledger 는 received/net/after_loss
+  를 식으로 정의하고 L5 는 counterfactual 에만 적용한다고 못박고 손실률 7/9/13 → 5/10/15%; portfolio 는 위반 없는 조합만 점수(위반 행은
+  score null, 비용·인력·위반은 그대로 10행); logic 은 U0 에 인코딩 예(100110) 추가. 마감 둘·개정 교체·취소, 10행 전부, 세계·증인·모든 최소
+  core, 채점 규칙은 그대로다. `bench/ONEPASS_QUALITY.md` 가 v2 를 적는다.
+- 테스트: 독립 오라클(포트폴리오 비트마스크)이 위반 행 score None 을 확인, 위반 행에 점수를 쓰거나 가능 행 점수를 비운 답은 derivation
+  실패, 프롬프트가 열거값·기록 ID·null 점수를 말하는지 검사, NaN 픽스처를 시드 독립으로. `tests/test_fleet_onepass.py` 의
+  `--combined-reasoning-budget 7200` 거부 픽스처는 하니스 43 부터 낡아 있었다(7200 < 24576 이라 통과) — 기본 묶음 상한값으로 바꿨다.
+
+**검증.** `test_onepass*.py` 109 OK(이전 107 + 2), `test_fleet_onepass*` 36 OK(이전 실패 1 은 위 낡은 픽스처). **GPU 실측 없음**: 새 예산·새
+문제의 정답률은 다음 정식 onepass 가 답한다. 상한까지 쓰면 디코드 시간은 두 배까지 늘 수 있다(하니스 43 에서 2K 요청 65–72 s, 묶음 190 s).

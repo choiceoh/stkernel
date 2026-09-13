@@ -59,12 +59,12 @@ def normalize_chat_options(body: dict) -> dict:
         enabled = kwargs.get("thinking", kwargs.get("enable_thinking"))
         kwargs.update(thinking=enabled, enable_thinking=enabled)
 
-    efforts = [(key, value) for key, value in (
+    efforts = [(key, "high" if value == "max" else value) for key, value in (
         ("reasoning_effort", body.get("reasoning_effort")),
         ("chat_template_kwargs.reasoning_effort", kwargs.get("reasoning_effort")),
     ) if value is not None]
     for key, value in efforts:
-        if value not in ("low", "high", "max"):
+        if value not in ("low", "high"):
             raise ChatContractError(key, "GLM reasoning_effort must be low, high, or max.")
     if len(efforts) == 2 and efforts[0][1] != efforts[1][1]:
         raise ChatContractError("reasoning_effort", "Top-level and template reasoning_effort must agree.")
