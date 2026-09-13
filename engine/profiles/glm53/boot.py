@@ -465,6 +465,10 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         recorder.gauge("boot_immediately_free_GiB", round(report["immediately_free"] / GIB, 3))
         recorder.gauge("boot_reclaimed_GiB", round(report["reclaimed"] / GIB, 3))
         recorder.gauge("boot_model_cache_files_returned", report["cache_files"])
+        # the page cache admission found, and what the box could still give: whether the host's return before the
+        # container (launchers/st-return-file-cache.sh) reached this rank, and how much of the box the boot was left
+        recorder.gauge("boot_file_cache_GiB", round(report["file_cache"] / GIB, 3))
+        recorder.gauge("boot_available_GiB", round(report["available"] / GIB, 3))
         # D1: the box declared, with every line's provenance, before the arena is allocated
         from engine.profiles.glm53 import budget as budget_mod
         redeclare = partial(budget_mod.budget, kv_gib, max_seqs,
