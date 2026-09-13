@@ -25,7 +25,9 @@ class CompactServingCudaTests(unittest.TestCase):
                 compact = cache_for(replace(f, kda_state_layout="committed_boundary"), device="cuda")
                 args, _, _ = fixture(rows, 8, layers=2, width=8)
                 slots = torch.arange(rows, 0, -1, device="cuda", dtype=torch.int64)
-                initial_contexts = torch.tensor([766, 767, 32765, 131069][:rows], device="cuda")
+                # Near 32K/128K, cross actual 768-token prefix boundaries
+                # (33,024 and 131,328), not power-of-two context buckets.
+                initial_contexts = torch.tensor([766, 767, 33021, 131325][:rows], device="cuda")
                 counts = torch.arange(1, rows+1, device="cuda", dtype=torch.int64)
                 for L in range(2):
                     for slot, ctx in zip(slots.tolist(), initial_contexts.tolist()):

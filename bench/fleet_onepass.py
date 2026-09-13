@@ -101,7 +101,7 @@ def _st_args(relative, args, cwd, repo):
             raise ValueError(POLICY + '; ' + probe + ' is not a canonical ST check')
         _same(_path(probe, cwd), probe, repo)
         if probe == 'probes/engine_kda_deferred_check.py':
-            switches.update(('--commit-only', '--compact-only'))
+            switches.update(('--commit-only', '--compact-only', '--serving-only'))
     while args:
         token = args[0]
         if token in switches:

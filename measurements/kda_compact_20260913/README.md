@@ -1,6 +1,6 @@
-# Compact KDA state: compilation evidence
+# Compact KDA state: serving integration and compilation evidence
 
-**CPU compilation passed; GPU correctness, component timing and serving performance are pending.** The serving cache does not select the compact ABI.
+**CPU integration tests and SM121 compilation passed; GPU correctness, component timing and serving performance are pending.** Native serving selects the compact ABI with experimental `STK_compact_kda=1`; its default remains off.
 
 The candidate stores a committed FP32 state and a separate prefix-boundary state in one slot-major arena. At GLM K=7, the recurrent payload is 68 MiB instead of 272 MiB per request per rank, excluding factor workspace, padding, the null slot and all other caches. This is layout arithmetic, not a measured engine memory or tok/s result.
 
@@ -14,7 +14,7 @@ The candidate stores a committed FP32 state and a separate prefix-boundary state
 - The script asserts `not torch.cuda.is_initialized()` and reports `gpu_used=false`.
 - The two JSON files retain source fingerprints, cubin hashes, compiler shared-memory metadata and raw `cuobjdump` resource output.
 
-[Initial source snapshot](compile_a1a84c8f.json) and [current source at c386ee21](compile_c386ee21.json) each compiled eight variants: verify T=1/T=8 × ordinary/compact addressing, and commit C=1/C=4 × ordinary/compact addressing. Source hashes, rather than branch names, identify exactly what was compiled.
+[Initial source snapshot](compile_a1a84c8f.json) and [component source at c386ee21](compile_c386ee21.json) each compiled eight variants: verify T=1/T=8 × ordinary/compact addressing, and commit C=1/C=4 × ordinary/compact addressing. Source hashes, rather than branch names, identify exactly what was compiled.
 
 ## Observed compiler resources
 
@@ -37,10 +37,23 @@ uv run --with torch --with numpy python -m unittest \
 
 Result: **31 passed, 10 CUDA tests skipped** (41 discovered). Python compilation and `git diff --check` passed. GPU tests must run without skips before the numerical gate can pass.
 
+## Serving integration
+
+`STK_compact_kda=1` implies deferred verification and requires native FP32, unsplit decode and chunk-ordered prefill (`prefill_tiles=1`). The cache arena contains current/boundary states and 256 aligned bytes of position metadata per slot. Recurrent boundary staging aliases that arena; only convolution taps have separate stage storage. KV block and prefix snapshot counts stay equal to the ordinary FP32 baseline. The full-slot tier format is versioned separately from the ordinary ring.
+
+The path covers small and chunk prefill, internal prefix marks, eager clipped commit, captured decode, EOS/length clipping, current/boundary position checks, checkpoint/restore and slot reuse. Factor owners retain verification width independently of physical storage width. The [follow-up design](../../bench/ST_GB10_FOLLOWUP_DESIGN_20260913.md) distinguishes this implemented stage S from the remaining P/M/I proposals.
+
+- [Initial serving CPU tests](serving_cpu.json), source `e2ecdb9a`: **112 passed, 54 CUDA tests skipped** on Mac.
+- [Rebased CPU tests and fleet admission checks](serving_cpu_rebased.json), main base `21e8fd34`: **112 engine tests and 39 fleet tests passed**, with the same 54 CUDA skips. Both main's MLA prefill option and compact KDA are retained after conflict resolution.
+- [Linux CPU tests](serving_cpu_linux_e2ecdb9a.json), the frozen `e2ecdb9a` source in the image above: **114 passed, 43 CUDA tests skipped**. No GPU was exposed to the container.
+- [Serving compilation](compile_serving_e2ecdb9a.json): `--serving-only` compiled **10 SM121 variants**, adding ordinary/compact convolution-stage publication to the eight verify/commit variants. Both stage variants use 36 registers, zero shared memory and `LOCAL:0`, `STACK:0`; compact metadata publication adds no separate launch. Compiler source fingerprints still match after rebasing.
+
+The serving GPU test uses real cache arenas, C=1/C=4, four commits in one graph, both aliased recurrent and separate convolution stages, and prefix restore/rebinding. Its long-context cases cross actual 768-token boundaries at 33,024 and 131,328. This is a component integration gate; real-weight prefill/decode quality, acceptance and onepass tok/s remain separate gates.
+
 ## Remaining GPU gate
 
 The admitted probe is `engine_kda_deferred_check.py --compact-only --samples 8`. It compares actual outputs and committed/boundary states with the full FP32 ring before timing 34-layer ordinary / deferred-ring / compact-state graph replays. It retains raw samples and distinguishes state-reset and 64 MiB eviction conditions. Allocation, compilation, graph capture and state resets are outside timed replay.
 
 Two preparation attempts did not obtain reservations because the candidate needed recent main changes. After rebasing onto `71306bda`, session `st-kda-compact0913v3` was accepted into the queue with ticket `17893082511214606`. It uses output `/cache/kda-compact0913v3.json` and the image ID above. The submitted checkout is `6c4b47b4`; compiled source fingerprints still match. The [admission response](admission.json) is a queued-state snapshot, not a completed result. No other session's reservation is interrupted.
 
-The current exclusive fleet owner is a separate requantization campaign. This file records preparation and compilation, not a completed GPU run. No onepass result exists for this ABI because the prefill/checkpoint/restore/stage serving adapter is a subsequent change; its requirements are in the [architecture design](../../bench/ST_GB10_ARCHITECTURE_20260913.md).
+At the last queue inspection a separate requantization campaign held the exclusive fleet lease. The original admitted component checkout stays frozen. The expanded `--serving-only` probe needs its own source-bound reservation; adding serving code to this PR does not change the old reservation or make it serving evidence. No onepass result exists for this ABI. The [architecture design](../../bench/ST_GB10_ARCHITECTURE_20260913.md) defines the consumer gate required before adoption.

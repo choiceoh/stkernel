@@ -1,0 +1,60 @@
+{
+  "scope": "Rebased CPU model/lifecycle/compatibility and admission tests; no GPU execution or throughput proof",
+  "platform": "macOS-26.6-arm64-arm-64bit-Mach-O",
+  "python": "3.13.13 (main, Apr 14 2026, 14:32:41) [Clang 22.1.3 ]",
+  "torch": "2.14.0",
+  "gpu_used": false,
+  "head": "2576957ec32cb4c78c6c05b170caab0fc0f6062a",
+  "main_base": "21e8fd343eb3db2dea82db676b8e86e92e1ae381",
+  "groups": [
+    {
+      "modules": [
+        "test_engine_compact_serving",
+        "test_engine_kda_storage",
+        "test_engine_deferred_state_contracts",
+        "test_engine_execution_plans",
+        "test_engine_prefix",
+        "test_engine_kda_marks",
+        "test_engine_budget",
+        "test_engine_execution",
+        "test_engine_pipeline",
+        "test_engine_glm53",
+        "test_engine_kda_compact",
+        "test_engine_kda_deferred_batch",
+        "test_engine_compact_serving_cuda"
+      ],
+      "tests": 166,
+      "passed": 112,
+      "skipped": 54
+    },
+    {
+      "modules": [
+        "test_fleet_onepass",
+        "test_fleet_source"
+      ],
+      "tests": 39,
+      "passed": 39,
+      "skipped": 0
+    }
+  ],
+  "note": "Engine tests ran after rebase. The long-context CUDA fixture was corrected afterwards and remains unexecuted; fleet tests ran after the scoped serving-only admission and audit update.",
+  "source_sha256": {
+    "engine/profiles/glm53/caches.py": "b2db27bb849ca7d2e0b0c2bb4c26c9d58f1ffe800681900b9e32d0192da6c165",
+    "engine/profiles/glm53/compact_state.py": "ac9a1da2ba01f636dd917ed87921c0e1ebe866af69a4351e62485988bd245ea1",
+    "engine/profiles/glm53/adapter.py": "6cdc7a6f0e097310102844e67b7649a8b19980b00ddff43cda96793f590fc1c1",
+    "engine/profiles/glm53/boot.py": "d102dcfbfa7a1a8bff1a3f3bf620a36d7acc47d4534e0a92ec2976b6b4c36731",
+    "engine/profiles/glm53/budget.py": "c8151adcab7cce8008c950a2390aa15358bb43a22fa4d7ae255754e383ad3228",
+    "engine/profiles/glm53/decode_graphs.py": "df70344b9f7ccf28a2767199ac393c2ad34b64d34fcc187ccb71234e9b8f80b2",
+    "engine/profiles/glm53/net.py": "beed5e2948803e68f3ef98407be88e8ec41d168275d982491142e17aa4a73743",
+    "engine/profiles/glm53/execution.py": "200f0e97b1714acf590f598afd6067c735902ff97b5363df90835a5bce0a4723",
+    "engine/profiles/glm53/drafter.py": "30f0c0be0d44717e1cf1e5481659228785f30185ba99359c8d890a276bf0f98e",
+    "engine/profiles/glm53/facts.py": "49e5fc2e2fb19bd61727280feda5243313ab58a2d983a151e211a02f4b5d3420",
+    "engine/kernels/state.py": "1e0e2a3be9129a2b2904a41c71e55685b5f857d050705fd342ce8357c49786d1",
+    "tests/test_engine_compact_serving.py": "60107f2efef33ba95bfce918323b520c3909fc4a0e2636865ccbae4730c111ed",
+    "tests/test_engine_compact_serving_cuda.py": "85c37246f8750c28d510ee16867868e10816f75dcc068fec59e63d9be4c2fa50",
+    "bench/fleet_onepass.py": "bb65d48c897cb900072ab193a2575664e74d01c9ef66677bf7ecf1f16e9beade",
+    "bench/cpu_evidence.py": "a2cfd174cc73db7e869acf8c7a7a91cc3cbb96db154d151db801edfbf3e44255",
+    "tests/test_fleet_onepass.py": "784d816b218f68046122b5105c7825027075b0e1e7f89dc170f1dd66d0153713",
+    "tests/test_fleet_source.py": "4700e7f4dc853bf48441a5efb13e278afd390e2dda6fed08ea00f841c6630c51"
+  }
+}

@@ -96,12 +96,17 @@ class OnepassPolicyTests(unittest.TestCase):
             with self.subTest(output=unsafe), self.assertRaises(ValueError):
                 self.validate(command[:-1]+[unsafe])
 
-    def test_compact_only_is_scoped_to_the_pinned_kda_probe(self):
-        command = ['bash', 'probes/run_engine_probe.sh', 'probes/engine_kda_deferred_check.py', '--compact-only']
-        result = self.validate(command, kind='single')
-        self.assertEqual(result['gpus'], 1)
-        with self.assertRaises(ValueError):
-            self.validate(command[:2]+['probes/engine_full_check.py']+command[3:])
+    def test_compact_modes_are_scoped_to_the_pinned_kda_probe(self):
+        for mode in ('--compact-only', '--serving-only'):
+            with self.subTest(mode=mode):
+                command = ['bash', 'probes/run_engine_probe.sh', 'probes/engine_kda_deferred_check.py', mode]
+                self.assertEqual(self.validate(command, kind='single')['gpus'], 1)
+                for other in policy.ST_PROBES:
+                    if other != command[2]:
+                        with self.subTest(probe=other), self.assertRaises(ValueError):
+                            self.validate(command[:2]+[other]+command[3:])
+                with self.assertRaises(ValueError):
+                    self.validate(['bash', 'probes/run_engine_check.sh', mode])
 
     def test_the_contract_counts_gpus_and_the_single_lane_takes_only_one_gpu_checks(self):
         """A check that needs one GPU goes to the 5050 on ost-97x, not the four Sparks

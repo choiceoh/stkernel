@@ -1,0 +1,52 @@
+{
+  "scope": "Linux CPU execution in the pinned ST image; no GPU available",
+  "head": "e2ecdb9acd36f33236456ac9d9a93907906e9782",
+  "host": "srv2",
+  "checkout": "/home/choiceoh/st-worktrees/codex-gb10-compact-serving",
+  "image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+  "torch": "2.13.0+cu130",
+  "triton": "3.7.1",
+  "gpu_used": false,
+  "isolation": {
+    "runtime": "runc",
+    "cpus": 1,
+    "memory": "3g",
+    "network": "none",
+    "NVIDIA_VISIBLE_DEVICES": "void",
+    "CUDA_VISIBLE_DEVICES": "",
+    "gpus_flag": false
+  },
+  "modules": [
+    "test_engine_compact_serving",
+    "test_engine_kda_storage",
+    "test_engine_deferred_state_contracts",
+    "test_engine_execution_plans",
+    "test_engine_prefix",
+    "test_engine_kda_marks",
+    "test_engine_budget",
+    "test_engine_kda_metadata",
+    "test_engine_execution",
+    "test_engine_pipeline",
+    "test_engine_glm53"
+  ],
+  "tests": 157,
+  "passed": 114,
+  "skipped": 43,
+  "seconds": 19.625,
+  "exit_code": 0,
+  "source_sha256": {
+    "engine/profiles/glm53/caches.py": "b2db27bb849ca7d2e0b0c2bb4c26c9d58f1ffe800681900b9e32d0192da6c165",
+    "engine/profiles/glm53/compact_state.py": "ac9a1da2ba01f636dd917ed87921c0e1ebe866af69a4351e62485988bd245ea1",
+    "engine/profiles/glm53/adapter.py": "01f7fef0b5b90105e88b83a167bbc0f9b0b0298726ce2f831446a200b1576d52",
+    "engine/profiles/glm53/boot.py": "62c4c24309551f8139afee0df6d6b5d4f4bd4d41088b559b716dd6e919ac7c26",
+    "engine/profiles/glm53/budget.py": "c8151adcab7cce8008c950a2390aa15358bb43a22fa4d7ae255754e383ad3228",
+    "engine/profiles/glm53/decode_graphs.py": "df70344b9f7ccf28a2767199ac393c2ad34b64d34fcc187ccb71234e9b8f80b2",
+    "engine/profiles/glm53/net.py": "ea0690806fc7565b3a35f3d91ddc1879d9e3601bcb09cc3e78e3c9becabf2e6e",
+    "engine/profiles/glm53/execution.py": "3b14f017d12bd5a30c4fa3f764b8ab9ad22b629e214952932b2c52206e6d7702",
+    "engine/profiles/glm53/drafter.py": "3434c875ebf34fe394f5bfcb54d59bf962e686823268f6c5a203e6aa3b3438dd",
+    "engine/profiles/glm53/facts.py": "49e5fc2e2fb19bd61727280feda5243313ab58a2d983a151e211a02f4b5d3420",
+    "engine/kernels/state.py": "1e0e2a3be9129a2b2904a41c71e55685b5f857d050705fd342ce8357c49786d1",
+    "tests/test_engine_compact_serving.py": "60107f2efef33ba95bfce918323b520c3909fc4a0e2636865ccbae4730c111ed",
+    "tests/test_engine_compact_serving_cuda.py": "76f241ee91b3558fc953396d1f00af1c352bcf005f658c20e3e04bc9a0316b93"
+  }
+}
