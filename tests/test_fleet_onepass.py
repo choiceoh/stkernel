@@ -141,7 +141,7 @@ class OnepassPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'ST_PROBE_HOST is set by the single-GPU lane'):
             self.validate(['env', 'ST_PROBE_HOST=srv2', 'bash', 'probes/run_engine_check.sh'])
         out = io.StringIO()
-        with contextlib.redirect_stdout(out):
+        with patch.dict(os.environ, self.environment, clear=True), contextlib.redirect_stdout(out):
             self.assertEqual(policy.main(['--repo', str(self.controller), '--cwd', str(self.repo),
                                           '--kind', 'single', '--', 'bash', 'probes/run_engine_check.sh']), 0)
         self.assertEqual(json.loads(out.getvalue())['gpus'], 1)

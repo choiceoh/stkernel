@@ -71,7 +71,8 @@ def measure(args, report):
     from engine.profiles.glm53.lanes import served
     from engine.profiles.glm53.modelopt_scales import ModelOptScales
     from engine.profiles.glm53.weights import rank_loader
-    from probes.engine_decode_scatter_check import rank_path
+    from engine.profiles.glm53 import facts
+    from probes.engine_graph_profile import rank_on_this_node
     from tests.test_engine_prefill_fp8_consumer import PrefillConsumerTests
 
     if torch.cuda.get_device_capability() != (12, 1):
@@ -86,7 +87,11 @@ def measure(args, report):
     report.update(unit_tests=result.testsRun, device=torch.cuda.get_device_name(),
                   torch=torch.__version__, cuda=torch.version.cuda, memory_budget_bytes=budget)
 
-    path, prefix = rank_path(args.ranks), 'L3.moe.'
+    root = Path(args.ranks)
+    if not root.is_absolute():
+        root = facts.RANKS.parent/root
+    rank, prefix = rank_on_this_node(str(root)), 'L3.moe.'
+    path = root/f'rank{rank}of4.safetensors'
     loader = rank_loader(path)
     suffixes = ('w13', 'w13_sf', 'w2', 'w2_sf', 'gate', 'bias', 'sh_gate_up', 'sh_down')
     scale_names = ('w13_alpha', 'a13_scale', 'w2_alpha', 'a2_scale')
@@ -95,7 +100,7 @@ def measure(args, report):
     if not separate and any(prefix+s in keys for s in scale_names):
         raise RuntimeError('partial ModelOpt scale contract')
     loaded = loader.load([prefix+s for s in suffixes+(scale_names if separate else ())], device='cuda')
-    report['weights'] = dict(rank_file=str(path), scales='ModelOpt' if separate else 'folded',
+    report['weights'] = dict(rank=rank, rank_file=str(path), scales='ModelOpt' if separate else 'folded',
         source_sha256={k: sha_tensor(v) for k, v in loaded.items()})
     weights = [loaded[prefix+s] for s in suffixes[:4]]
     scales = (ModelOptScales.bind(*(loaded[prefix+s] for s in scale_names), experts=288,
@@ -203,8 +208,9 @@ def measure(args, report):
 
 
 def main():
+    from engine.profiles.glm53 import facts
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--ranks', required=True)
+    parser.add_argument('--ranks', default=str(facts.RANKS))
     parser.add_argument('--samples', type=int, default=8)
     parser.add_argument('--output', type=Path, default=Path('/cache/ffn-packets.json'))
     args = parser.parse_args()
