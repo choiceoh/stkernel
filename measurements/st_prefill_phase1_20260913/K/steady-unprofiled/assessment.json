@@ -1,0 +1,44 @@
+{
+  "phase": "later same-build requests; profiler OFF; zero prefix reuse",
+  "boot_id": "5317c46fb5e877a26ddccdc4c479ad42896dd0dd3cb3cf7b096859fc972dce97|2026-09-13T01:19:09.166211504Z",
+  "engine_source_sha256": "092868e3df846887ebf8c92f1a41d346617848506cb42c4319b93479115fe650",
+  "quality": {
+    "ok": 6,
+    "total": 6
+  },
+  "korean": {
+    "policy": "operator-approved-halvorsen-exception-20260913",
+    "authorization": "Operator identified Halvorsen博士 as a pre-existing vLLM issue and approved ignoring it.",
+    "ignored": [],
+    "dirty": 0,
+    "n": 2,
+    "kinds": {
+      "replacement": 0,
+      "lone_jamo": 0,
+      "cjk_mixed": 0,
+      "control": 0
+    },
+    "pass_after_exception": true
+  },
+  "prefill": [
+    {
+      "context": 32000,
+      "input_tokens": 32545,
+      "ttft_s": 9.536831439996604,
+      "tok_s": 3412.559003980004,
+      "target_met": true,
+      "request_sha256": "c7fe4ab7343af50a9f942f8b2fc5764cfc6d721fbecdad6a4b4e6adab160a621",
+      "output_sha256": "98aac954a74f8b38a8043466e1ef5f90527592c5c305545728c3734e35ca205d"
+    },
+    {
+      "context": 128000,
+      "input_tokens": 128559,
+      "ttft_s": 38.25675250298809,
+      "tok_s": 3360.426371526405,
+      "target_met": true,
+      "request_sha256": "f6c8abd6a22ae9c1687cf65965e56b8cb1368d8a4e3283d303aae4d37a2b38a8",
+      "output_sha256": "fc582e03ced36478175394a9fe096327ac4f71f0ad1638333e186f614a86051a"
+    }
+  ],
+  "target_met": true
+}

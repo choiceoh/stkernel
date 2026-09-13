@@ -1,0 +1,11 @@
+    ctx     tok  cold tok/s  warm tok/s  cold TTFT  warm TTFT  quality
+  32000   32545        3428     (1 req)      9.49s          -  o o o
+=> 3/3 correct
+decode: windows n=23 med 13.9 [9.9, 14.9] step/s (inside the answers only; per context: 32K: n=23 med 13.9), raw acc 35.5%, tokens/step 3.133 (k=6.0), generated 1038 tokens over 36s
+응답 1개 · 문자 2,507
+  깨진 응답: 0/1 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+== onepass prefill3000-K-profile-32000: 36s total

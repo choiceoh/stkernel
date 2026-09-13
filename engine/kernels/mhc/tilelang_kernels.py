@@ -211,6 +211,8 @@ def mhc_pre_big_fuse_tilelang(
 ):
     """Deeply fused kernels, everything other than gemm & sqrsum in mHC pre block."""
     num_tokens = T.dynamic("num_tokens")
+    if n_splits == 0:
+        n_splits = T.dynamic("n_splits")
     hc_mult3 = hc_mult * (2 + hc_mult)
     hidden_block = math.gcd(h_blk, hidden_size)  # deneb fork: overridable, default 512 = stock gcd
 
@@ -356,6 +358,8 @@ def mhc_pre_big_fuse_with_norm_tilelang(
     h_blk: int = 1024,
 ):
     num_tokens = T.dynamic("num_tokens")
+    if n_splits == 0:
+        n_splits = T.dynamic("n_splits")
     hc_mult3 = hc_mult * (2 + hc_mult)
     if gemm_last_dim < 0:
         gemm_last_dim = hc_mult3

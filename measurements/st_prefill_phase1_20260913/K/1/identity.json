@@ -1,0 +1,13 @@
+{
+  "engine": "st",
+  "boot_id": "5317c46fb5e877a26ddccdc4c479ad42896dd0dd3cb3cf7b096859fc972dce97|2026-09-13T01:19:09.166211504Z",
+  "image": "st-engine:prefill3000-2c2ee77f",
+  "image_id": "sha256:5940e9232f4e26a41a9ee72a3e61695807aef360b43af005cbfa72a19245272c",
+  "engine_source_sha256": "092868e3df846887ebf8c92f1a41d346617848506cb42c4319b93479115fe650",
+  "lease_owner": "queue/prefill3300-selectionk",
+  "command": [
+    "-lc",
+    "source /repo/launchers/lib/common-tp4.sh; eval \"$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py --production --kv-gib 2.0 --port 18030 --ranks /home/choiceoh/models/st-glm53-nvidia-tp4-9391 --ckpt-meta /repo/st-glm53-meta --drafter-dir /home/choiceoh/models/GLM-5.3-Flash-DFlash2 --tier-dir /home/choiceoh/glm53-logs/st-prefill-3000-20260912-batch6/tier-K-2c2ee77f-kv2 --dump-dir /home/choiceoh/glm53-logs/st-prefill-3000-20260912-batch6/K/dumps"
+  ],
+  "knobs": {}
+}

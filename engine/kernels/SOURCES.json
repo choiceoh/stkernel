@@ -6,22 +6,25 @@
       "source": "overlay/modules/glm53_kernels/kda.py",
       "sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
       "origin": "repository",
-      "local_sha256": "2deac1135b2eefcd8af70cacb67078467c249d87a0abf11f048f48200d38a48f",
+      "local_sha256": "0d6a58cbd5c5cc561ec4210424b538cea742fe86b4d0d53df46d5ba936309926",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults (strided Q/K norm on: production VLLM_GLM53_KDA_PREFILL_QK_NORM=1)",
         "2026-09-11 GB10 recurrent: explicit dense kv state layout, optional zero initial state, BV16/one-warp TP4 decode geometry",
         "2026-09-12 GB10 recurrent: read kv input views directly, allocate dense outputs, validate tensor shapes and reject output/input aliases.",
         "2026-09-12 prefix marks: chunk_kda_with_fused_gate(states_at=[...]) returns (o, final_state, states[n,H,V,K] fp32) for one sequence; threads states_at/states_out through the cumulative-g forward",
-        "2026-09-13 KDA state storage: allow FP16 canonical initial states, retaining FP32 recurrence and functional output states."
+        "2026-09-13 KDA state storage: allow FP16 canonical initial states, retaining FP32 recurrence and functional output states.",
+        "2026-09-13 prefill: extend the existing strided Q/K norm eligibility from 8192 to 16384 rows; arithmetic unchanged.",
+        "2026-09-13 wide prefill: extend the existing row-local path to 32768 rows for 32256-token chunks; preserve kernel arithmetic and small decode."
       ]
     },
     "kda/chunk_delta_h.py": {
       "source": "overlay/modules/glm53_kernels/chunk_delta_h.py",
       "sha256": "fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739",
       "origin": "repository",
-      "local_sha256": "df13adb86865ef8f2a6871b07e99c7db5bcba57dd8c70209d0540dbdfe169c81",
+      "local_sha256": "988bfe72b5f5f3a24d6b29bbaaf1b47a5f3f1dfa567782a57d592374b09ee7d9",
       "local_modifications": [
-        "2026-09-12 prefix marks: optional fp32 side output of the per-chunk state before requested 64-token chunks (states_at / N_AT); the main computation is untouched and bit-identical with or without it"
+        "2026-09-12 prefix marks: optional fp32 side output of the per-chunk state before requested 64-token chunks (states_at / N_AT); the main computation is untouched and bit-identical with or without it",
+        "2026-09-13 prefill: replace mark-count specialization and unrolled mark scans with a runtime ordered cursor; preserve state arithmetic and snapshots bit exactly."
       ]
     },
     "kda/cumsum.py": {
@@ -45,7 +48,11 @@
     "kda/index.py": {
       "source": "vllm/third_party/flash_linear_attention/ops/index.py",
       "sha256": "1fa36b77833c56cdc1ec1af3ea38225d8ae9e1faec5b218cf48af5482ddf15a0",
-      "origin": "image"
+      "origin": "image",
+      "local_sha256": "9dd23b46d063c0aa54ca9402e4b0242d46bbf30557fdd76fbaea2e87f53890a5",
+      "local_modifications": [
+        "2026-09-13 prefill: cache eight immutable sequence-bound identities and chunk indices to avoid repeated device-to-host metadata reads."
+      ]
     },
     "kda/l2norm.py": {
       "source": "vllm/third_party/flash_linear_attention/ops/l2norm.py",
@@ -137,12 +144,16 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "4046daeb055ca1a1cadb3ba2290c0f865da0ab82c9a39f0018dab52a54af1fd4",
+      "local_sha256": "e5ad6bd95592cbcd6629249d280c9e680d8722e3a0bcd964ad10f8892d5c74ec",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
         "2026-09-12 ST native execution: tiled static v2 preserves BF16 contribution rounding with FP32 route scatter; owned SF6 scales may reuse retired arena storage before capture",
-        "2026-09-12 GB10: include the NVFP4 max3 PTX reduction helper in persistent CuTe cache identity."
+        "2026-09-12 GB10: include the NVFP4 max3 PTX reduction helper in persistent CuTe cache identity.",
+        "2026-09-13: extend native TP Q0 admission to the existing 16384-row FP32 scatter capacity; validate long-chunk routes before consumer qualification",
+        "2026-09-13 prefill batch 10: restore Q0 ceiling 8192; runtime token extent for native E1 prefill while retaining decode specialization.",
+        "2026-09-13 prototype: select a separately keyed long TP SF6 word-decoder subclass only for unshared-scale 8193..32768-row prefill; preserve the pinned parent and all Q0/decode sources.",
+        "2026-09-13 prototype batch: retain BF16 long-prefill scatter while combining Q0 route metadata reuse and word scale decoding in a separately keyed subclass; preserve short Q0/decode."
       ]
     },
     "b12x/moe_dynamic_kernel.py": {
@@ -280,26 +291,28 @@
       "source": "overlay/modules/glm53_kernels/tilelang.py",
       "sha256": "bd53703a19bade2386d3594ad302355269a7b34b00c047f0bcbf65d2e95742b1",
       "origin": "repository",
-      "local_sha256": "c32a6ad884173f13c68bf6c02a09c128fab776fa231e232c791b571c765da0cd",
+      "local_sha256": "573c0510ce2d84ce28f99f0f04718e387bab69005cc25092fd8cc248605c7fe6",
       "local_modifications": [
-        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults"
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults",
+        "2026-09-13 prefill batch 10: use a runtime split extent for prefill pre-map; retain small decode specialization."
       ]
     },
     "mhc/tilelang_kernels.py": {
       "source": "overlay/modules/glm53_kernels/tilelang_kernels.py",
       "sha256": "432340343627bb2d615b4c2013e6ca4043fbce723644ed1a61252dcf1ce7bd12",
       "origin": "repository",
-      "local_sha256": "b5d8b89afe644d3e86e289d82070e6c170772b6df15604672461f3159d6f73e0",
+      "local_sha256": "c27219a453a7897f03ed9179ffd90311200f40766214e2bd0c2a09b5ce2eef1b",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; TileLang pass hook read from engine.kernels.MHC_PASSES",
-        "2026-09-12 GB10: fixed 512-column post CTAs and two explicit TMA loads sharing one transaction barrier; adopted before timing/GPU execution validation."
+        "2026-09-12 GB10: fixed 512-column post CTAs and two explicit TMA loads sharing one transaction barrier; adopted before timing/GPU execution validation.",
+        "2026-09-13 prefill batch 10: zero split sentinel binds split-K from tensor shape with unchanged serial accumulation."
       ]
     },
     "mla/glm53_megakernel.cu": {
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
       "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
       "origin": "repository",
-      "local_sha256": "0a185d2f7f7a7e3592831fae819a3a6266a8a7da8426b0ed6d75f5df919d5008",
+      "local_sha256": "ee0f9856c274f19f21d817961f3b2370af0cb8ba6867b06af63b05019910a86e",
       "local_modifications": [
         "SM121 integer warp max reduction",
         "Cluster-local MLA split reduction with reused shared memory",
@@ -307,17 +320,19 @@
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults (PDL on, MK_INPUT_CTA 4, MK_INPUT_REUSE 1; probe mode = run_mla's 4th int)",
         "2026-09-12 SM121: byte ldmatrix PV loads and BF16 ldmatrix Q/P loads in both ordinary and cluster MLA; split/MMA accumulation order unchanged; adopted before timing/GPU execution validation.",
         "2026-09-12 GB10: Q cp.async.ca joins the first KV group; empty splits skip Q; balanced cluster head ownership and coalesced global split reduction. Arithmetic order unchanged; GPU execution and timing pending.",
-        "2026-09-12 k6 (#732): the MAX_TOK comment counts SPEC_K 6, so T = 28 of 32. Comment only -- no code, no arithmetic. This record is the hash catching up: #732 left it behind and main's check has been red on it since."
+        "2026-09-12 k6 (#732): the MAX_TOK comment counts SPEC_K 6, so T = 28 of 32. Comment only -- no code, no arithmetic. This record is the hash catching up: #732 left it behind and main's check has been red on it since.",
+        "2026-09-13 wide prefill: extend the existing row-local path to 32768 rows for 32256-token chunks; preserve kernel arithmetic and small decode."
       ]
     },
     "mla/__init__.py": {
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
       "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
       "origin": "repository",
-      "local_sha256": "38153b92408f0dc392193ae8f5c3da3851710ab353765b9556f707a87c8e30fe",
+      "local_sha256": "a70bd84630d2b2eb11b0b9107c02df2fd17cbc0fdf80f0393db512119a5bbbb9",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; tile32 large-M MLA prefill is qualified and selected by the production boot default; configure_prefill (STK_mla_prefill), mla_decode(splits=, probe=), PAIR_STATS, ENABLE_MLA_CLUSTER baked on",
-        "2026-09-13 native build cache: stage content-addressed source inputs so identical checkout paths and timestamps do not trigger NVCC; keep Torch/Ninja build validation."
+        "2026-09-13 native build cache: stage content-addressed source inputs so identical checkout paths and timestamps do not trigger NVCC; keep Torch/Ninja build validation.",
+        "2026-09-13 wide prefill: extend the existing row-local path to 32768 rows for 32256-token chunks; preserve kernel arithmetic and small decode."
       ]
     }
   }
