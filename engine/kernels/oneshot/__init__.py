@@ -228,7 +228,7 @@ class OneShot:
             raise
 
     def exchange_moe(self, routed, shared):
-        """Explicit decode candidate: finalize and publish in the existing packet grid.
+        """Finalize decode MoE output and publish in the existing packet grid.
 
         The local descriptor points to TX, so no intermediate BF16 output must
         survive. The next same-stream MHC must consume it before another exchange.
