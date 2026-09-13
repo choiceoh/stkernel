@@ -15,9 +15,10 @@ class ExecutionPlan:
     prefill_tiles: int = 1
     tile_rows: int = 9216
     direct_mhc: bool = False
+    prefill_project_tiles: bool = False
 
     def __post_init__(self):
-        if any(type(v) is not bool for v in (self.overlap, self.early_observe, self.direct_mhc)):
+        if any(type(v) is not bool for v in (self.overlap, self.early_observe, self.direct_mhc, self.prefill_project_tiles)):
             raise ValueError("execution switches must be booleans")
         if self.direct_mhc and self.overlap:
             raise ValueError("direct MHC packets require unsplit same-stream collectives")
@@ -28,7 +29,7 @@ class ExecutionPlan:
 
     @property
     def active(self):
-        return self.overlap or self.early_observe or self.prefill_tiles != 1 or self.direct_mhc
+        return self.overlap or self.early_observe or self.prefill_tiles != 1 or self.direct_mhc or self.prefill_project_tiles
 
     def groups(self, sequences):
         if sequences <= 0:
@@ -38,7 +39,8 @@ class ExecutionPlan:
 
     def label(self):
         return (f"tp_overlap={int(self.overlap)},early_observe={int(self.early_observe)},"
-                f"prefill_tiles={self.prefill_tiles},direct_mhc={int(self.direct_mhc)}")
+                f"prefill_tiles={self.prefill_tiles},direct_mhc={int(self.direct_mhc)},"
+                f"prefill_project_tiles={int(self.prefill_project_tiles)}")
 
 
 @dataclass
@@ -51,6 +53,7 @@ class Carry:
     post: object = None
     comb: object = None
     ready: object = None
+    projection: object = None
 
 
 def begin(net, step, caches):
@@ -71,7 +74,10 @@ def prepare(net, layer, carry, side):
         c.post, c.comb, c.x = net._hc_pre(layer, c.res, side)
     else:
         c.res, c.post, c.comb, c.x = net._hc_post_pre(layer, c.x, c.res, c.post, c.comb, side)
-    if c.sp is not None:
+    c.projection = None
+    if c.sp is not None and side == "attn" and not net.F.is_dsa(layer) and c.sp.project_tiles:
+        c.projection = c.sp.gather_project(c.x.contiguous(), lambda v: net.linear(v, f"L{layer}.kda.in_proj"))
+    elif c.sp is not None:
         c.x = c.sp.all_gather(c.x.contiguous())
 
 
@@ -79,8 +85,9 @@ def local(net, layer, carry, side):
     c = carry
     identity = lambda x: x
     if side == "attn":
-        op = net._dsa if net.F.is_dsa(layer) else net._kda
-        return op(layer, c.x, c.step, c.caches, reduce=identity)
+        if net.F.is_dsa(layer):
+            return net._dsa(layer, c.x, c.step, c.caches, reduce=identity)
+        return net._kda(layer, c.x, c.step, c.caches, reduce=identity, projection=c.projection)
     op = net._moe if net.F.is_moe(layer) else net._dense
     return op(layer, c.x, reduce=identity)
 

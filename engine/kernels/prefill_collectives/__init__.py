@@ -14,11 +14,23 @@ FP8_MIN_ROWS = 4096
 
 
 class PrefillCollectives:
-    def __init__(self, comm):
+    def __init__(self, comm, *, project_tiles=False):
         if comm.world_size != 4:
             raise ValueError("prefill sequence parallelism requires TP4")
         self.comm = comm
         self.executed = set()
+        if type(project_tiles) is not bool:
+            raise ValueError("project_tiles must be a boolean")
+        self.project_tiles = project_tiles
+        self.projector = None
+
+    def gather_project(self, x, project):
+        if not self.project_tiles:
+            return project(self.all_gather(x))
+        if self.projector is None:
+            from .tiles import TiledProjection
+            self.projector = TiledProjection(self)
+        return self.projector(x, project)
 
     @staticmethod
     def check(x):

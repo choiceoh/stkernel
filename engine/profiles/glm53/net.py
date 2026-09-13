@@ -353,10 +353,10 @@ class Glm53Net:
                         F.rms_eps,F.hc_eps,F.post_mult,F.sinkhorn)
 
     @operation("kda", layer_arg=1)
-    def _kda(self, L: int, x: torch.Tensor, step: Step, caches: Caches, reduce=None) -> torch.Tensor:
+    def _kda(self, L: int, x: torch.Tensor, step: Step, caches: Caches, reduce=None, *, projection=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.kda."
-        N = x.shape[0]; Hl, D, K = self.Hk, F.kda_dim, F.conv
-        proj = self.linear(x, n + "in_proj")
+        proj = self.linear(x, n + "in_proj") if projection is None else projection
+        N = proj.shape[0]; Hl, D, K = self.Hk, F.kda_dim, F.conv
         qkv_all, b_all, f_a, g_a = proj.split([3 * Hl * D, Hl, D, D], dim=-1)
         g_raw_all = self.linear(f_a, n + "f_b").view(N, Hl, D)
         g_out = self.linear(g_a, n + "g_b").view(N, Hl, D)
@@ -683,9 +683,13 @@ class Glm53Net:
                 res, post, comb, x = self._hc_post_pre(L, x, res, post, comb, "attn")
             else:
                 post, comb, x = self._hc_pre(L, res, "attn")
-            if sp:
+            projection = None
+            if sp and not F.is_dsa(L) and sp.project_tiles:
+                projection = sp.gather_project(x.contiguous(), lambda v: self.linear(v, f"L{L}.kda.in_proj"))
+            elif sp:
                 x = sp.all_gather(x.contiguous())
-            x = self._dsa(L, x, step, caches, reduce) if F.is_dsa(L) else self._kda(L, x, step, caches, reduce)
+            x = self._dsa(L, x, step, caches, reduce) if F.is_dsa(L) else self._kda(
+                L, x, step, caches, reduce, projection=projection)
             if self.probe:
                 self.probe("dsa" if F.is_dsa(L) else "kda", L, x)
             res, post, comb, x = self._hc_post_pre(L, x, res, post, comb, "ffn")
