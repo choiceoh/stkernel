@@ -1,0 +1,111 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "variants": [
+    {
+      "name": "L43-m32-n32-w8",
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "L43-m32-n32-w4",
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:255 STACK:192 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "L43-m64-n32-w8",
+      "shared_bytes": 98304,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:255 STACK:24 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "L43-m32-n64-w8",
+      "shared_bytes": 98304,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:252 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "L43-m32-n32-w16",
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:128 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "L3-m32-n32-w8",
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:180 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "L7-m32-n32-w8",
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "L11-m32-n32-w8",
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "L15-m32-n32-w8",
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "L19-m32-n32-w8",
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "L23-m32-n32-w8",
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "L27-m32-n32-w8",
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "L31-m32-n32-w8",
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "L35-m32-n32-w8",
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "L39-m32-n32-w8",
+      "shared_bytes": 65536,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _dense_prefix:\n  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    }
+  ],
+  "model_config_sha256": "e23c5d98f53e861d49a51bd3c68591621c5482ce829e42c31724152322fba03d",
+  "geometry": {
+    "block": 768,
+    "stride": 9240,
+    "token_offsets": {
+      "3": 0,
+      "7": 818,
+      "11": 1636,
+      "15": 2454,
+      "19": 3272,
+      "23": 4090,
+      "27": 4908,
+      "31": 5726,
+      "35": 6544,
+      "39": 7362,
+      "43": 8180
+    },
+    "scale": 0.0625
+  },
+  "cuda_initialized": false,
+  "elapsed_s": 12.52897476500948,
+  "source_sha256": {
+    "engine/kernels/mla/prefill_dense.py": "49081d97cc9c17e2af8eb4a7527d277b358d720303c117670227230a15b07b1b",
+    "engine/modules/prefill_attention.py": "48a94489db67044e95fd8a9c77f3915864a00eecb8d9ec4ca575fa571ee0f20b",
+    "engine/modules/sparse_attention.py": "9361f3da388844cac93823aabd368d4700002e35184852dd8d75f357eedf5410",
+    "engine/profiles/glm53/net.py": "5949e018f192562a6e53ea93bab463a83bce3304a3164af0ff24d1e21a7b4288",
+    "engine/profiles/glm53/lanes.py": "b7950ad9164a9e06377221b8730e5418a5e9345e8f1d272f4927b8b8c58cc1f5",
+    "engine/profiles/glm53/execution.py": "99c3a5799f77224b3afa9295888799a9ded9ff050e19f0076775cc72b7ca756d",
+    "engine/profiles/glm53/boot.py": "7d57b3ce21d2cc34c700feed62f2831817f2d666269f006d3a42975f1d5a8537"
+  }
+}

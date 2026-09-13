@@ -32,7 +32,7 @@ def sparse_attn(q: torch.Tensor, kv: torch.Tensor, attn_sink: torch.Tensor,
 
 
 def mla_sparse_mqa(q_abs: torch.Tensor, kv_c: torch.Tensor, topk_slots: torch.Tensor,
-                   valid: torch.Tensor, scale: float, ckv_scale: float = 1.0) -> torch.Tensor:
+                   valid: torch.Tensor, scale: float, ckv_scale: float = 1.0, *, out=None) -> torch.Tensor:
     """GLM-5.3's sparse MLA in its MQA form, as the served lanes compute it
     (flashinfer_mla_sparse_sm90.py: `mla_decode(q, cache, slots, lens, scale,
     ckv_scale)` and the FlashInfer page_size=1 wrapper):
@@ -60,7 +60,11 @@ def mla_sparse_mqa(q_abs: torch.Tensor, kv_c: torch.Tensor, topk_slots: torch.Te
     mask = torch.arange(k, device=q_abs.device)[None, :] >= valid[:, None]   # [T, K] padding
     scores = scores.masked_fill(mask[:, None, :], float("-inf"))
     p = torch.softmax(scores, dim=-1)
-    return torch.einsum("thk,tkd->thd", p, rows).to(q_abs.dtype)
+    result = torch.einsum("thk,tkd->thd", p, rows).to(q_abs.dtype)
+    if out is not None:
+        out.copy_(result)
+        return out
+    return result
 
 
 def gqa_sparse(q: torch.Tensor, k_cache: torch.Tensor, v_cache: torch.Tensor, slots: torch.Tensor,

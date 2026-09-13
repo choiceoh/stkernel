@@ -1,0 +1,79 @@
+{
+  "scope": "source loads only; not a throughput prediction",
+  "chunk": 32256,
+  "queries_per_cta": 2,
+  "cases": [
+    {
+      "input_tokens": 2000,
+      "dense_queries": 2000,
+      "old_kv_rows": 2001000,
+      "new_kv_rows": 1001000,
+      "requested_load_reduction": 0.49975012493753124,
+      "old_requested_bytes_per_rank_dsa_layer": 1024512000,
+      "new_requested_bytes_per_rank_dsa_layer": 512512000,
+      "redundant_output_copy_read_write_bytes_removed_per_rank_dsa_layer": 65536000,
+      "new_collectives": 0,
+      "new_persistent_bytes": 0
+    },
+    {
+      "input_tokens": 2051,
+      "dense_queries": 2051,
+      "old_kv_rows": 2104326,
+      "new_kv_rows": 1053701,
+      "requested_load_reduction": 0.4992691246508383,
+      "old_requested_bytes_per_rank_dsa_layer": 1077414912,
+      "new_requested_bytes_per_rank_dsa_layer": 539494912,
+      "redundant_output_copy_read_write_bytes_removed_per_rank_dsa_layer": 67207168,
+      "new_collectives": 0,
+      "new_persistent_bytes": 0
+    },
+    {
+      "input_tokens": 2672,
+      "dense_queries": 2051,
+      "old_kv_rows": 3377064,
+      "new_kv_rows": 2326439,
+      "requested_load_reduction": 0.311106037670592,
+      "old_requested_bytes_per_rank_dsa_layer": 1729056768,
+      "new_requested_bytes_per_rank_dsa_layer": 1191136768,
+      "redundant_output_copy_read_write_bytes_removed_per_rank_dsa_layer": 87556096,
+      "new_collectives": 0,
+      "new_persistent_bytes": 0
+    },
+    {
+      "input_tokens": 32000,
+      "dense_queries": 2051,
+      "old_kv_rows": 63484800,
+      "new_kv_rows": 62434175,
+      "requested_load_reduction": 0.016549236982710824,
+      "old_requested_bytes_per_rank_dsa_layer": 32504217600,
+      "new_requested_bytes_per_rank_dsa_layer": 31966297600,
+      "redundant_output_copy_read_write_bytes_removed_per_rank_dsa_layer": 1048576000,
+      "new_collectives": 0,
+      "new_persistent_bytes": 0
+    },
+    {
+      "input_tokens": 128000,
+      "dense_queries": 2051,
+      "old_kv_rows": 260236800,
+      "new_kv_rows": 259186175,
+      "requested_load_reduction": 0.004037188437607586,
+      "old_requested_bytes_per_rank_dsa_layer": 133241241600,
+      "new_requested_bytes_per_rank_dsa_layer": 132703321600,
+      "redundant_output_copy_read_write_bytes_removed_per_rank_dsa_layer": 4194304000,
+      "new_collectives": 0,
+      "new_persistent_bytes": 0
+    },
+    {
+      "input_tokens": 129775,
+      "dense_queries": 2051,
+      "old_kv_rows": 263874664,
+      "new_kv_rows": 262824039,
+      "requested_load_reduction": 0.003981530413241896,
+      "old_requested_bytes_per_rank_dsa_layer": 135103827968,
+      "new_requested_bytes_per_rank_dsa_layer": 134565907968,
+      "redundant_output_copy_read_write_bytes_removed_per_rank_dsa_layer": 4252467200,
+      "new_collectives": 0,
+      "new_persistent_bytes": 0
+    }
+  ]
+}

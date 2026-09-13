@@ -162,6 +162,8 @@ class Glm53Net:
         self.prefill_transport = None
         self.prefill_indexer_shards = False
         self.prefill_indexer_executed = set()
+        self.prefill_dense_prefix = False
+        self.prefill_dense_prefix_executed = set()
         self.mhc = None
         from engine.profiles.glm53.weights import WEIGHT_LAYOUT, MODELOPT_WEIGHT_LAYOUT
         self.weight_layout = getattr(F, 'weight_layout', WEIGHT_LAYOUT)
@@ -707,9 +709,28 @@ class Glm53Net:
         kv_b = p[n + "kv_b"].view(Hl, F.qk_nope + F.v_dim, F.kv_lora)
         w_uk, w_uv = kv_b[:, : F.qk_nope, :], kv_b[:, F.qk_nope:, :]
         q_abs = torch.einsum("thd,hdc->thc", q, w_uk)                                # absorb W_UK: MQA over the latent
-        ctx_lat = self.lanes.mla_sparse(q_abs.contiguous(), latent, slots, valid, F.mla_scale, 1.0)
+        ctx_lat = self._mla_context(L, q_abs.contiguous(), latent, slots, valid, step, caches)
         o = torch.einsum("thc,hvc->thv", ctx_lat, w_uv)                              # un-absorb W_UV
         return (reduce or self.comm.all_reduce)((project or self.linear)(o.reshape(N, Hl * F.v_dim), n + "o_proj"))
+
+    def _mla_context(self, L, q, latent, slots, valid, step, caches):
+        prefix = 0
+        if (self.prefill_dense_prefix and self.lanes.mla_dense_prefix is not None
+                and 128 <= len(q) <= 32768 and len(step.segments) == 1
+                and not getattr(step, 'captured', False) and not self.probe):
+            from engine.modules.prefill_attention import covered_prefix
+            s = step.segments[0]
+            prefix = covered_prefix(len(q), s.ctx, self.F.topk, self.F.kpool)
+        if prefix < 128:
+            return self.lanes.mla_sparse(q, latent, slots, valid, self.F.mla_scale, 1.0)
+        out = torch.empty_like(q)
+        self.lanes.mla_dense_prefix(q[:prefix], latent, *caches.token_map(L, s.seq),
+                                   s.ctx, self.F.mla_scale, 1.0, out=out[:prefix])
+        self.prefill_dense_prefix_executed.add(L)
+        if prefix < len(q):
+            self.lanes.mla_sparse(q[prefix:], latent, slots[prefix:], valid[prefix:], self.F.mla_scale, 1.0,
+                                  out=out[prefix:])
+        return out
 
     # -- MLPs -----------------------------------------------------------------------------
     @operation("dense", layer_arg=1)

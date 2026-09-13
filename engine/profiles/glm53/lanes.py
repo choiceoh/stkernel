@@ -68,7 +68,7 @@ class Lanes:
                               #  step hands in for the keys' start) -> [T,N] f32, garbage past ke
     kpool_compress: object    # (k [P,kp,128] bf16, score [P,kp,128] bf16, ape [kp,128] f32) -> (fp8 [P,128], scale [P,1] f32)
     mla_sparse: object        # (q_abs [T,H,512] bf16, latent [S,512] e4m3, slots [T,W] int32 (valid prefix), valid [T] int32,
-                              #  scale, ckv_scale) -> [T,H,512] bf16
+                              #  scale, ckv_scale, *, out=None) -> [T,H,512] bf16; optional contiguous destination
     moe: object               # (x [T,H] bf16, sel [T,k] int32, w [T,k] f32, w13 [E,2I,H/2] u8 [up|gate], w13_sf [E, 2I*H/16] e4m3 (interleaved),
                               #  w2 [E,H,I/2] u8, w2_sf [E, H*I/16] e4m3, limit, *, scales=None) -> [T,H] bf16: this rank's routed partial
                               #  scales=None: folded Red Hat; ModelOptScales: separate NVIDIA multipliers. E=1/k=1 also serves dense MLPs.
@@ -94,6 +94,7 @@ class Lanes:
     swiglu: object = None     # (gate, up [T,I], limit) -> BF16; FP32 clamped activation
     route_weights: object = None  # (FP32 logits [T,E], bias [E], topk, scale) -> int32 ids, FP32 weights
     layernorm: object = None  # (x [T,D], weight, bias, eps) -> input dtype
+    mla_dense_prefix: object = None  # q, latent, token_map scalars, context, scales; explicit covered-prefix prefill only
 
 
 @dataclass(frozen=True)
@@ -214,9 +215,10 @@ def reference() -> Lanes:
         return out.to(x.dtype)
 
     from engine.modules.sparse_indexer import head_gate
+    from engine.modules.prefill_attention import mla_dense_prefix_ref
     return Lanes("reference", conv_prefill, kda_chunk, kda_recurrent, pre, mhc_post, logits, kpool_compress,
                  mla_sparse_mqa, moe, fwht128_quant, pool_slots, kda_output_norm,
-                 decode_rows=reference_decode_rows(), head_gate=head_gate)
+                 decode_rows=reference_decode_rows(), head_gate=head_gate, mla_dense_prefix=mla_dense_prefix_ref)
 
 
 MOE_STATIC_STOCK = "stock"          # the §15~18 judged default of STK_moe_static
@@ -354,15 +356,25 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                                   torch.zeros(t, device=q8.device, dtype=torch.int32) if ks is None else ks,
                                   ke.contiguous(), clean_logits=False)
 
-    def mla(q_abs, latent, slots, valid, scale, ckv_scale):
+    def mla(q_abs, latent, slots, valid, scale, ckv_scale, *, out=None):
+        if out is not None and (out.shape != q_abs.shape or out.dtype != q_abs.dtype
+                or out.device != q_abs.device or not out.is_contiguous()):
+            raise ValueError('MLA output must match the contiguous query geometry')
         mk.maybe_arm()
         if not mk._ARMED.get("mla"):
             raise RuntimeError("ST MLA lane did not pass its boot self-test")
         cache = latent.view(torch.uint8)
+        if out is not None and q_abs.shape[1] == mk.MLA_H:
+            return mk.mla_decode(q_abs, cache, slots, valid, scale, ckv_scale, out=out)
         # the lane is built for this fleet's 16 heads per rank; at world 1 the 64 heads go through in fours (MQA: heads are independent)
         parts = [mk.mla_decode(q_abs[:, i:i + mk.MLA_H].contiguous(), cache, slots, valid, scale, ckv_scale)
                  for i in range(0, q_abs.shape[1], mk.MLA_H)]
-        return torch.cat(parts, dim=1)
+        # TP4 already returns one fresh, contiguous output tensor. Concatenating
+        # it alone rereads and rewrites T*16*512 BF16 values for no change.
+        # Keep the established decode/capture path; this is eager prefill only.
+        if len(parts) == 1 and q_abs.shape[0] >= 128 and not torch.cuda.is_current_stream_capturing():
+            return parts[0]
+        return torch.cat(parts, dim=1, out=out)
 
     if "kda_recurrent" in reference_for:
         kda_recurrent = ref.kda_recurrent
@@ -514,6 +526,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     name = "served" + (f" (reference: {', '.join(reference_for)})" if reference_for else "")
     from engine.base.lanes import served as common_lanes
     from engine.kernels.glm_pointwise import swiglu_clamped as activation, route_weights, layernorm
+    from engine.kernels.mla.prefill_dense import mla_dense_prefix
     norm = common_lanes().rmsnorm          # the engine's default RMS norm; the clamped activation is GLM's own
     table = Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, compress_pool_keys, mla, moe,
                                             fwht128_quant_fp8, pool_slots, kda_output_norm)),
@@ -527,7 +540,8 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                                                                 pool_addresses, scatter_pools, write_tails, mask_horizon))),
                   head_gate=on_main(head_gate),
                   rmsnorm=on_main(norm), swiglu=on_main(activation),
-                  route_weights=on_main(route_weights), layernorm=on_main(layernorm))
+                  route_weights=on_main(route_weights), layernorm=on_main(layernorm),
+                  mla_dense_prefix=on_main(mla_dense_prefix))
     # 45차 §21 bisect: any other lane named in `reference_for` runs on the torch reference in this table
     # (the served output is garbage while every self-consistency judge passes -- which lane, if any, is found by
     # swapping them one at a time; "expert" and "kda_recurrent" are the two the kernels already know how to declare).

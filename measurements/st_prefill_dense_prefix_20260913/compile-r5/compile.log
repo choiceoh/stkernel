@@ -1,0 +1,76 @@
+L43-m32-n32-w8 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+L43-m32-n32-w4 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:255 STACK:192 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+L43-m64-n32-w8 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:255 STACK:24 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+L43-m32-n64-w8 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:252 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+L43-m32-n32-w16 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:128 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+L3-m32-n32-w8 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:180 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+L7-m32-n32-w8 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+L11-m32-n32-w8 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+L15-m32-n32-w8 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+L19-m32-n32-w8 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+L23-m32-n32-w8 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+L27-m32-n32-w8 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+L31-m32-n32-w8 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+L35-m32-n32-w8 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+L39-m32-n32-w8 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _dense_prefix:
+  REG:178 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:952 TEXTURE:0 SURFACE:0 SAMPLER:0
+{"status": "PASS", "cuda_initialized": false, "elapsed_s": 12.52897476500948}
