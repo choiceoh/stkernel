@@ -38,6 +38,44 @@ def oracle_consume(net, layer, carry, side, packet):
 
 
 class DirectMhcTests(unittest.TestCase):
+    def test_producer_reserves_before_writing_and_poison_prevents_fallback(self):
+        events = []
+        owner = OneShot.__new__(OneShot)
+        owner.pending, owner.packet_failed, owner.closed = None, False, False
+        owner.hidden, owner.world = 4096, 4
+        owner.eligible = lambda t: True
+        source, slot, descriptor = torch.empty(7, 4096), object(), torch.arange(4)
+        owner.ext = NS(healthy=lambda: True,
+                       reserve_packets=lambda t: events.append('reserve') or slot,
+                       publish_packets=lambda t, r: events.append('publish') or descriptor)
+        def producer(reservation):
+            self.assertIs(reservation, slot)
+            with self.assertRaises(RuntimeError):
+                owner.assert_consumed()
+            events.append('GEMM')
+        with patch('torch.cuda.current_stream', return_value=NS(cuda_stream=19)):
+            packet = owner.produce(source, producer)
+            self.assertEqual(events, ['reserve', 'GEMM', 'publish'])
+            self.assertIs(packet.consume(lambda t, d: d), descriptor)
+            owner.assert_consumed()
+            with self.assertRaisesRegex(ValueError, 'writer failed'):
+                owner.produce(source, lambda r: (_ for _ in ()).throw(ValueError('writer failed')))
+            with self.assertRaises(RuntimeError):
+                owner.exchange(source)
+            self.assertTrue(owner.packet_failed)
+
+    def test_direct_output_preserves_multi_pack_and_observer_boundaries(self):
+        from engine.kernels.dense import DenseLinear
+        layer = DenseLinear.__new__(DenseLinear)
+        layer.rows, layer.packs, layer.observer = 4096, (object(),), None
+        for rows in (1, 7, 28, 32):
+            self.assertIsNotNone(layer.slot_writer(rows))
+        self.assertIsNone(layer.slot_writer(33))
+        layer.observer = lambda x: None
+        self.assertIsNone(layer.slot_writer(7))
+        layer.observer, layer.packs = None, (object(), object())
+        self.assertIsNone(layer.slot_writer(7))
+
     def test_four_rank_c1_c4_outputs_aux_and_state(self):
         torch.set_num_threads(1)
         def rank(comm):

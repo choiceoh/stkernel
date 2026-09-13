@@ -37,6 +37,21 @@ class OraclePrefill:
 
 
 class PrefillTileTests(unittest.TestCase):
+    def test_packet_projection_requires_the_unobserved_fp8_lane(self):
+        from engine.kernels.dense import DenseLinear
+        layer = DenseLinear.__new__(DenseLinear)
+        layer.cols, layer.observer, layer.fp8 = 4096, None, NS(observer=None)
+        self.assertTrue(callable(layer.packet_projector()))
+        layer.observer = lambda x: None
+        self.assertIsNone(layer.packet_projector())
+        layer.observer = None
+        layer.fp8.observer = lambda x: None
+        self.assertIsNone(layer.packet_projector())
+        layer.fp8 = None
+        self.assertIsNone(layer.packet_projector())
+        layer.fp8, layer.cols = NS(observer=None), 128
+        self.assertIsNone(layer.packet_projector())
+
     def test_slots_are_released_before_reuse_and_tail_order_is_exact(self):
         for rows in (1, 255, 256, 257, 576, 2304):
             slots, log = [None, None], []

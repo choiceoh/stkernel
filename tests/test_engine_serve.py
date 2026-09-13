@@ -9,6 +9,7 @@ import socket
 import sys
 import threading
 import unittest
+from unittest.mock import patch
 import urllib.error
 import urllib.request
 
@@ -172,6 +173,28 @@ def server(*, rows=2, blocks=16, comm=None, max_pending=64, keep_idle=False, tie
 
 
 class ServeTests(unittest.TestCase):
+    def test_decode_progress_streams_each_publication_once_and_cancel_signals_engine(self):
+        callbacks, interrupts = [], []
+        with patch.object(Engine, 'set_decode_progress_callback', lambda self, cb: callbacks.append(cb), create=True), \
+                patch.object(Engine, 'interrupt_decode', lambda self: interrupts.append(True), create=True):
+            s = server(rows=1)
+            request, _ = s.submit([3], 20, 0)
+            stream = s._streams[request] = queue.Queue()
+            s.once()
+            self.assertEqual(stream.get_nowait()[1][0], [3])
+            row = next(iter(s._active))
+            for ids in ([4, 5], [6]):
+                s.engine.output[row].extend(ids)
+                callbacks[0]()
+                self.assertEqual(stream.get_nowait()[1][0], ids)
+                s._publish_tokens()
+                self.assertTrue(stream.empty())
+            self.assertEqual(s.generation_tokens_committed_total, 4)
+            s.cancel(request)
+            self.assertEqual(interrupts, [True])
+            self.assertIn(row, s._active)
+            self.drain(s)
+
     def test_live_counter_counts_a_multi_token_readback_in_full(self):
         s = server(rows=1)
         decode = s.engine.decode

@@ -109,6 +109,15 @@ class Glm53Engine:
         self.budget = None                                  # boot's declared table, re-runnable against this boot's own ledger
         self.arena = None                                   # the one allocation every device tensor here is a view of; `release` frees it
         self.prefill_chunk = None
+        self.on_decode_progress = None
+
+    def set_decode_progress_callback(self, callback):
+        self.on_decode_progress = callback
+
+    def interrupt_decode(self):
+        signal = getattr(self.pipeline, "signal_cancel", None)
+        if signal is not None:
+            signal()
 
     def capture_decode(self, max_seqs: int) -> None:
         """Bind the fleet's finite target decode graphs before admitting work."""
