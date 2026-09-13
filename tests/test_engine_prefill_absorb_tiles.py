@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class AbsorbRoutingTests(unittest.TestCase):
-    def test_default_off_and_explicit_experimental_plan(self):
+    def test_serving_default_on_with_experimental_rollback_and_neutral_bare_plan(self):
         from engine.base.config import ConfigError
         from engine.profiles.glm53.execution import ExecutionPlan
         from tests.test_engine_knobs import KnobDeclarationTests
@@ -30,11 +30,13 @@ class AbsorbRoutingTests(unittest.TestCase):
             ExecutionPlan(prefill_absorb_tiles=1)
         for production in (False, True):
             cfg = declared({}, production=production)
-            self.assertEqual(cfg['prefill_absorb_tiles'], 0)
+            self.assertEqual(cfg['prefill_absorb_tiles'], 1)
             self.assertEqual(cfg['prefill_dense_prefix'], 1)
         self.assertEqual(declared({'STK_prefill_absorb_tiles': '1'})['prefill_absorb_tiles'], 1)
-        with self.assertRaises(ConfigError):
-            declared({'STK_prefill_absorb_tiles': '1'}, production=True)
+        self.assertEqual(declared({'STK_prefill_absorb_tiles': '0'})['prefill_absorb_tiles'], 0)
+        for value in ('0', '1'):
+            with self.assertRaises(ConfigError):
+                declared({'STK_prefill_absorb_tiles': value}, production=True)
 
     def test_only_bounded_single_segment_eager_prefill_uses_lane(self):
         from engine.profiles.glm53.net import Glm53Net

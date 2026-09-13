@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Experimental MLA contractions that write token-major outputs directly.
+"""Operator-enabled MLA contractions that write token-major outputs directly.
 
 The existing einsums produce head-major storage, then both consumers copy it
 to token-major storage. These GEMMs keep BF16 operands, FP32 accumulation and
@@ -38,7 +38,7 @@ def _absorb(X, W, Y, ROWS, HEADS: tl.constexpr, INPUT: tl.constexpr,
 def mla_prefill_absorb(x, weight, *, transpose=False):
     """[T,16,256] @ W or [T,16,512] @ W.T -> fresh contiguous BF16.
 
-    This explicit opt-in lane is limited to eager prefill. The two weight
+    This profile-selected lane is limited to eager prefill. The two weight
     slices have shape [16,256,512], including the output slice's storage offset.
     """
     if type(transpose) is not bool:

@@ -232,11 +232,11 @@ def declared(a, comm_world: int) -> Config:
                  lanes="served", decode_eager=0, execution="native")
     facts_ += [Fact(k, v, "native TP4 execution") for k, v in fixed.items()]
     # One serving recipe in both modes, selected by operator request. Dense
-    # prefix was enabled explicitly on 2026-09-13; its GPU timing/quality gate
-    # is still pending, independently of this default selection.
+    # prefix and token-major absorption were enabled on 2026-09-13; their
+    # GPU timing/quality gates remain pending independently of this choice.
     gb10_defaults = dict(direct_mhc=1, prefill_project_tiles=1,
                          nvme_mapped_staging=1, decode_iterations=4, prefill_indexer_shards=0, prefill_dense_prefix=1,
-                         prefill_absorb_tiles=0)
+                         prefill_absorb_tiles=1)
     if getattr(a, "production", False):
         # tile32 passed the full GPU numerical/graph and matched 2K/32K/128K
         # serving brackets. Keep it in the production contract so a stale
@@ -248,8 +248,8 @@ def declared(a, comm_world: int) -> Config:
                         draft_diagnostics=int(SERVING_POLICY.diagnostics), draft_tuning='', **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
-        Knob("prefill_absorb_tiles", 0, _dt.date(2026, 9, 30),
-             "Unqualified prefill candidate: token-major MLA query and output contractions",
+        Knob("prefill_absorb_tiles", gb10_defaults["prefill_absorb_tiles"], _dt.date(2026, 9, 30),
+             "Operator-enabled token-major MLA contractions; GPU timing and quality qualification pending",
              "STK_prefill_absorb_tiles=0", int),
         Knob("prefill_dense_prefix", gb10_defaults["prefill_dense_prefix"], _dt.date(2026, 9, 30),
              "Operator-enabled causal-prefix KV sharing; GPU timing and quality qualification pending",

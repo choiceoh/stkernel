@@ -7,8 +7,11 @@ the same two contractions directly into fresh, contiguous token-major storage.
 It applies throughout eligible long-prefill chunks, beyond the 2,051-token
 dense prefix introduced by #887.
 
-`STK_prefill_absorb_tiles=1` explicitly selects the experimental lane. The
-production and experimental defaults are **off**. Production rejects overrides.
+**Operator enablement:** the user explicitly requested immediate enablement
+after reviewing the candidate. Production and experimental defaults are now
+**`prefill_absorb_tiles=1`**. Experimental rollback is `STK_prefill_absorb_tiles=0`;
+production rejects overrides. This changes selection, not GPU qualification.
+The default-on evidence is retained under `default-on/`.
 The operator-enabled `prefill_dense_prefix=1` remains on; indexer query sharding
 remains off by default. No GPU queue submission, engine build/boot or GPU launch
 was performed for this work.
