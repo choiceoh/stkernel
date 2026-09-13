@@ -243,9 +243,12 @@ def declared(a, comm_world: int) -> Config:
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
                         execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0, terminal_mhc=0,
                         draft_fc_precision=SERVING_POLICY.fc_precision, draft_fc_calibration=SERVING_POLICY.fc_calibration,
-                        draft_diagnostics=int(SERVING_POLICY.diagnostics), **gb10_defaults)
+                        draft_diagnostics=int(SERVING_POLICY.diagnostics), draft_tuning='', **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
+        Knob('draft_tuning', '', _dt.date(2026, 9, 30),
+             'Explicit draft-only selector, boundary and preparation tuning JSON; empty preserves baseline coefficients',
+             'STK_draft_tuning='),
         Knob("draft_fc_precision", SERVING_POLICY.fc_precision, _dt.date(2026, 9, 30),
              "DFlash FC decode precision; shared or committed-decode FP8 pack", "STK_draft_fc_precision=w4"),
         Knob("draft_fc_calibration", SERVING_POLICY.fc_calibration, _dt.date(2026, 9, 30),
@@ -308,11 +311,13 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
           context_ceiling: "int | None" = None, execution: str = "stock",
           ckpt_meta: "str | Path" = facts.CKPT, drafter_dir: "str | Path" = drafter_mod.DRAFTER,
           lease_owner: "str | None" = None, kda_state_dtype: "str | None" = None, execution_plan=None,
-          nvme_mapped_staging=False, draft_policy=None):
+          nvme_mapped_staging=False, draft_policy=None, draft_tuning_path=''):
     """`ckpt_meta`: where config.json / tokenizer.json / generation_config.json are -- the HF checkpoint dir, or a
     copy of just those files: a node needs its rank file, the drafter and this, not the 185 GB checkpoint."""
     from engine.profiles.glm53.draft_policy import DraftPolicy, decode_name, resolve_calibration
     draft_policy = draft_policy or DraftPolicy()
+    if draft_tuning_path and (execution != 'native' or not use_drafter):
+        raise ValueError('draft tuning requires the native drafter')
     if draft_policy.active and (execution != "native" or not use_drafter):
         raise ValueError("draft acceptance experiments require the native drafter")
     F = facts.load(ckpt_meta)
@@ -363,7 +368,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     vspecs = vision_mod.specs(VF) if VF else []
     # Self-calibration (kernels/dense/calibration): the packs the store cannot build GPTQ, summed from this boot's
     # serving, drafter first, within a fixed budget of the arena; the next boot packs GPTQ from the blobs.
-    store = calib_plan = None
+    store = calib_plan = tuning = None
     calib_bytes = 0
     if execution == "native":
         from engine.kernels.dense.calibration import BUDGET_BYTES, Calibration
@@ -374,6 +379,10 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             recorder.gauge('draft_policy_requested', draft_policy.label())
             draft_policy = resolve_calibration(draft_policy, store, drafter_mod.store_name('fc.weight'),
                                                D.hidden * len(D.target_layers), comm)
+            from engine.profiles.glm53.draft_tuning import load_agreed, prepare_store
+            tuning = load_agreed(draft_tuning_path, D, drafter_mod.dense_shapes(D, comm.world_size), comm)
+            prepare_store(tuning, store, draft_policy, D, comm)
+            recorder.gauge('draft_tuning', tuning.digest)
             recorder.gauge('draft_policy', draft_policy.label())
             for key, (_rows, cols) in drafter_mod.dense_shapes(D, comm.world_size).items():
                 name = drafter_mod.store_name(key)
@@ -504,7 +513,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 if D:
                     # Do not overlap the temporary checkpoint with target packing.
                     drafter = load_drafter()
-                    drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena, policy=draft_policy)
+                    drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena, policy=draft_policy, tuning=tuning)
                     recorder.gauge("drafter_block_fp8_packs", sum(
                         layer.fp8 is not None for name, layer in drafter.dense.items() if name != "fc.weight"))
             if calib_plan:                                            # this boot sums what the store lacked, within the budget
@@ -1105,13 +1114,16 @@ def fleet(a) -> int:
                                                context_ceiling=cfg["context_ceiling"] or None,
                                                execution=cfg["execution"], lease_owner=lease["owner"],
                                                kda_state_dtype=cfg["kda_state_dtype"], execution_plan=plan,
-                                               nvme_mapped_staging=bool(cfg["nvme_mapped_staging"]), draft_policy=draft_policy)
+                                               nvme_mapped_staging=bool(cfg["nvme_mapped_staging"]), draft_policy=draft_policy,
+                                               draft_tuning_path=cfg['draft_tuning'])
 
         # "무장 != 서빙": which lanes and kernel cells this process actually bound, readable at
         # scrape time instead of inferred from a boot log nobody kept (45차 §17 lesson).
         engine.lane_info = {"lanes": lanes.name, "moe_static": cfg["moe_static"],
                             "execution_plan": plan.label(), "draft_policy": engine.draft_policy.label(),
                             "draft_policy_requested": draft_policy.label(),
+                            "draft_tuning": getattr(getattr(engine.drafter, 'tuning', None), 'digest', 'baseline'),
+                            "draft_selector_trace_every": str(getattr(getattr(engine.drafter, 'tuning', None), 'trace_every', 0)),
                             "nvme_mapped_staging": str(cfg["nvme_mapped_staging"]),
                             "kda_state_dtype": F.kda_state_dtype,
                             "mla_prefill": cfg["mla_prefill"], "spec_k": str(engine.drafter.k),

@@ -31,6 +31,7 @@ class PackStore:
         self.stats = Counter()
         self.read_files = set()
         self._factor_entry = None                # (identity, factor) of the last weight: its two lanes share one factorisation
+        self.gptq_damping = {}                    # explicit per-reader preparation tuning; default identities stay intact
         from engine.kernels.dense import pack_w4
         self.algorithm = hashlib.sha256(
             Path(__file__).with_name('packing.py').read_bytes()
@@ -113,16 +114,21 @@ class PackStore:
         arena. `device`: where the fp64 work runs -- the weight's device for a tile-wide K, the CPU above it."""
         from engine.kernels.dense import GPTQ_ACT_ORDER
         from engine.kernels.dense.packing import gptq_factor
-        identity = (name, smooth_sha, tuple(hessian.shape), str(device))
+        damping = self.gptq_damping.get(name, 0.01)
+        identity = (name, smooth_sha, tuple(hessian.shape), str(device), damping)
         if self._factor_entry is not None and self._factor_entry[0] == identity:
             self.stats['factor_reused'] += 1
             return self._factor_entry[1]
         self._factor_entry = None                                   # the previous weight's, freed before this one's
-        factor = gptq_factor(hessian, act_order=GPTQ_ACT_ORDER, factor_device=device)
+        factor = gptq_factor(hessian, percdamp=damping, act_order=GPTQ_ACT_ORDER, factor_device=device)
         self.stats['factor_built'] += 1
         if factor[1].numel() * factor[1].element_size() <= self.FACTOR_BYTES:
             self._factor_entry = (identity, factor)
         return factor
+
+    def _tuning_identity(self, name):
+        damping = self.gptq_damping.get(name, 0.01)
+        return {} if damping == 0.01 else {'gptq_damping': damping}
 
     def pack_wide(self, weight, name, *, rank=None, smooth=None):
         """The tiles of a weight wider than the decode kernel's K, from one GPTQ over the whole weight and its full
@@ -137,7 +143,7 @@ class PackStore:
         identity = dict(version=2, weight=hashlib.sha256(raw).hexdigest(), shape=(n,k), name=name, wide=True,
                         calibration=hashlib.sha256(hessian.contiguous().numpy()).hexdigest(),
                         per_row=not name.startswith('DFlash2Qwen3ForCausalLM/'), algorithm=self.algorithm,
-                        smooth=self._smooth_sha(smooth))
+                        smooth=self._smooth_sha(smooth), **self._tuning_identity(name))
         key = hashlib.sha256(repr(identity).encode()).hexdigest()
         cache = self.root/'st-dense-packs'/(key+'.pt')
         if cache.is_file():
@@ -177,7 +183,7 @@ class PackStore:
                            if hessian is not None else 'rtn')
         identity = dict(version=2, weight=weight_sha, shape=(n,k), name=name,
                         calibration=calibration_sha, per_row=per_row, algorithm=self.algorithm,
-                        smooth=self._smooth_sha(smooth))
+                        smooth=self._smooth_sha(smooth), **self._tuning_identity(name))
         key = hashlib.sha256(repr(identity).encode()).hexdigest()
         cache = self.root/'st-dense-packs'/(key+'.pt')
         pack = None
@@ -195,6 +201,8 @@ class PackStore:
             kind = 'gptq' if hessian is not None else 'rtn'
             # The original cache used both MD5 and SHA256 aliases.
             for digest in ('sha256-'+weight_sha, hashlib.md5(raw).hexdigest()):
+                if self._tuning_identity(name):
+                    break            # legacy blobs do not attest a non-default inverse damping
                 mode = 'row' if per_row else 'ten'
                 legacy = self.root/'mkpacks'/f'rank{rank}'/(digest+f'-{n}x{k}-bfloat16-v4-{mode}-{kind}-lr0.pt')
                 if not legacy.is_file():
@@ -242,7 +250,7 @@ class PackStore:
         raw = weight.detach().contiguous().view(torch.uint8).cpu().numpy()
         identity = dict(version=2, weight=hashlib.sha256(raw).hexdigest(), shape=(n,k), name=name, kind='fp8',
                         calibration=hashlib.sha256(hessian.contiguous().numpy()).hexdigest(), algorithm=self.algorithm,
-                        smooth=self._smooth_sha(smooth))
+                        smooth=self._smooth_sha(smooth), **self._tuning_identity(name))
         key = hashlib.sha256(repr(identity).encode()).hexdigest()
         cache = self.root/'st-dense-packs'/(key+'.pt')
         if cache.is_file():

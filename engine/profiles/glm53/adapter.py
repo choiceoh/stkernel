@@ -59,6 +59,9 @@ class Glm53Engine:
             from engine.profiles.glm53.draft_diagnostics import DraftDiagnostics
             self.draft_diagnostics = DraftDiagnostics(caches.draft_field(), self.drafter.k, self.drafter.F.sel_top_k)
             self.drafter.diagnostics = self.draft_diagnostics
+            tuning = getattr(self.drafter, 'tuning', None)
+            if tuning is not None and tuning.trace_every:
+                self.draft_diagnostics.enable_selector_trace(tuning.trace_every, tuning.digest, net.comm.rank)
         if self.execution_plan.decode_iterations > 1 and not self.drafter.k:
             raise ValueError("bounded decode requires a speculative drafter")
         if self.drafter.k > F.spec_k:
@@ -787,6 +790,8 @@ class Glm53Engine:
     def _plain_ahead(self, seq: int) -> bool:
         """Greedy, or a truncation the sampler takes as numbers: the device can commit, observe and
         propose without the host. top-k joins top_p here -- the pipeline carries both per row now."""
+        if getattr(getattr(self.drafter, 'tuning', None), 'trace_every', 0):
+            return False
         opts = self.options.get(seq, {})
         if any(opts.get(k) is not None for k in ("seed", "presence_penalty", "frequency_penalty", "repetition_penalty",
                                                   "logit_bias", "logprobs", "grammar", "min_p")):
@@ -831,6 +836,8 @@ class Glm53Engine:
 
     def _blocked_by(self, seq: int) -> "str | None":
         """The first reason this row may not run ahead. `_plain_ahead` asks the same question as a yes or no."""
+        if getattr(getattr(self.drafter, 'tuning', None), 'trace_every', 0):
+            return 'draft_trace'      # calibration trace is synchronous and excluded from timing
         opts = self.options.get(seq, {})
         for name in self.CHAIN_BLOCKERS:
             if opts.get(name) is not None:
@@ -1291,12 +1298,15 @@ class Glm53Engine:
         flat, segments, drafts, draft_probs = [], [], {}, {}
         for seq, slot in zip(seqs, slots):
             ring = self.caches.draft_ring(slot) if self.drafter.k else None
+            from engine.modules.draft_boundary import for_request
+            boundary = for_request(self, seq) if self.drafter.k else None
+            proposal_options = {'boundary': boundary} if boundary is not None else {}
             if self.drafter.k and self._rich(seq) and self.limits[seq][1] > 0:
                 drafts[seq], draft_probs[seq] = self.drafter.propose_sampled(
                     self.tokens[seq][-1], self.ctx[seq], ring, self.limits[seq][1],
-                    self._uniform_tensor(seq, draws.DRAFT, self.drafter.k, ring.device), self.F.vocab)
+                    self._uniform_tensor(seq, draws.DRAFT, self.drafter.k, ring.device), self.F.vocab, **proposal_options)
             else:
-                drafts[seq] = self.drafter.propose(self.tokens[seq][-1], self.ctx[seq], ring)
+                drafts[seq] = self.drafter.propose(self.tokens[seq][-1], self.ctx[seq], ring, **proposal_options)
                 draft_probs[seq] = None
             ids = [self.tokens[seq][-1]] + drafts[seq]
             segments.append(Segment(seq, slot, self.ctx[seq], len(flat), len(ids)))
@@ -1363,7 +1373,8 @@ class Glm53Engine:
             if self.draft_diagnostics is not None and self.limits[s.seq][1] <= 0:
                 self.draft_diagnostics.note_sync(s.seq, s.ctx, s.slot, accepted, new,
                     self.limits[s.seq][0] - self._generated_count(s.seq), self.ends.get(s.seq, self.eos),
-                    policy_modified=rich[s.seq])
+                    policy_modified=rich[s.seq],
+                    trace_eligible=self.min_new.get(s.seq, 0) <= self._generated_count(s.seq))
             new, done = self._commit(s.seq, accepted, new, lps, len(drafts[s.seq]))
             committed = len(new)                                           # clipped tokens must not enter the next turn's context
             committed_counts.append(committed)

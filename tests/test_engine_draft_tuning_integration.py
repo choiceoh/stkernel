@@ -1,0 +1,134 @@
+"""CPU serving/capture contracts; the Triton numerical case is CUDA-only."""
+from types import SimpleNamespace
+import unittest
+from unittest.mock import patch
+
+import torch
+
+from engine.kernels.draft_select import walk_scores
+from engine.modules.draft_boundary import EMPTY, tensor
+from engine.profiles.glm53.draft_tuning import DraftTuning, prepare_store
+from engine.profiles.glm53.draft_policy import DraftPolicy, decode_name
+from engine.profiles.glm53.drafter import Drafter, DrafterFacts, store_name
+from engine.profiles.glm53.decode_graphs import DrafterDecodeGraphs
+
+
+def parts():
+    return (torch.tensor([[[2., 0.], [0., 0.], [0., 0.]]]),
+            torch.tensor([[[1, 2], [1, 2], [1, 2]]]), torch.tensor([0]),
+            torch.ones(1, 3, 1), torch.tensor([[3.], [0.], [3.], [0.], [-3.]]),
+            torch.tensor([[0.], [0.], [1.], [0.], [0.]]))
+
+
+class WalkTests(unittest.TestCase):
+    def test_position_alpha_and_forced_predecessor_are_used_in_the_actual_walk(self):
+        args = parts()
+        self.assertEqual(walk_scores(*args).tolist(), [[2, 2, 2]])
+        self.assertEqual(walk_scores(*args, alpha=(.5, 1., 1.)).tolist(), [[1, 1, 1]])
+        trace = (torch.zeros(3, 3, 2), torch.zeros(3, 3, 2))
+        packet = tensor((0, 0, 4) + (-1,) * 32, 'cpu')
+        got = walk_scores(*args, boundary=packet, trace=trace, trace_slots=torch.tensor([2]))
+        self.assertEqual(got.tolist(), [[4, 1, 1]])
+        self.assertEqual(trace[1][2, 1].tolist(), [0., -3.])
+        self.assertEqual(trace[0][0].count_nonzero().item(), 0, 'trace writes only its arena slot')
+        for alpha in ((float('nan'),), (1., 2.)):
+            with self.assertRaises(ValueError):
+                walk_scores(*args, alpha=alpha)
+
+    @unittest.skipUnless(torch.cuda.is_available(), 'CUDA selector numerics; CPU CI never launches GPUs')
+    def test_cuda_controlled_walk_and_trace_match_cpu_and_replay_changed_packets(self):
+        cpu = parts()
+        gpu = tuple(t.cuda() for t in cpu)
+        trace = (torch.zeros(3, 3, 2, device='cuda'), torch.zeros(3, 3, 2, device='cuda'))
+        slot = torch.tensor([2], device='cuda')
+        packet = tensor(None, 'cuda')
+        for alpha in ((1., 1., 1.), (.5, 1., .75)):
+            walk_scores(*gpu, alpha=alpha, boundary=packet, trace=trace, trace_slots=slot)
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph):
+                actual = walk_scores(*gpu, alpha=alpha, boundary=packet, trace=trace, trace_slots=slot)
+            try:
+                for value in (EMPTY, (0, 0, 4) + (-1,) * 32, EMPTY):
+                    packet.copy_(tensor(value, 'cuda'))
+                    graph.replay()
+                    expected_trace = (torch.zeros(3, 3, 2), torch.zeros(3, 3, 2))
+                    expected = walk_scores(*cpu, alpha=alpha, boundary=tensor(value, 'cpu'),
+                                          trace=expected_trace, trace_slots=slot.cpu())
+                    self.assertEqual(actual.cpu().tolist(), expected.tolist())
+                    torch.testing.assert_close(trace[1][2].cpu(), expected_trace[1][2])
+            finally:
+                graph.reset()
+
+
+class WiringTests(unittest.TestCase):
+    def test_actual_proposal_masks_before_topk_and_sampled_q_matches_the_forced_pick(self):
+        from engine.base.comm import Comm
+        facts = DrafterFacts(layers=1, hidden=16, heads=2, kv_heads=1, head_dim=4,
+            inter=16, rms_eps=1e-6, rope_theta=10000., window=8, block=4, mask_id=7,
+            conv_taps=2, conv_group=4, sel_rank=4, sel_top_k=2, target_layers=(1,), k=3)
+        target = SimpleNamespace(comm=Comm(), rank=0, vp=8,
+            head_local=lambda h: torch.tensor([[0., 1., 2., 3., 4., 5., 6., 100.]] * 3))
+        d = Drafter(facts, target, 8)
+        d.block = lambda *args: torch.zeros(4, 16).bfloat16()
+        d.p = {'candidate_selector.hidden_projection.weight': torch.zeros(4, 16).bfloat16(),
+               'candidate_selector.predecessor_codebook': torch.zeros(8, 4).bfloat16(),
+               'candidate_selector.successor_codebook': torch.zeros(8, 4).bfloat16()}
+        ring = torch.zeros(2)
+        self.assertEqual(d.propose(0, 5, ring), [7, 7, 7])
+        boundary = (1, 1, 4, 7) + (-1,) * 31
+        self.assertEqual(d.propose(0, 5, ring, boundary=boundary), [6, 4, 7])
+        tokens, q = d.propose_sampled_tensor(torch.tensor([0]), 5, ring, 1., torch.full((3,), .5), 8,
+                                             boundary=boundary)
+        self.assertEqual(q[0, 7].item(), 0.)
+        self.assertEqual(q[1, 4].item(), 1.)
+        self.assertEqual(tokens[1].item(), 4)
+        torch.testing.assert_close(q.sum(-1), torch.ones(3))
+        self.assertTrue(bool((q.gather(1, tokens[:, None]) > 0).all()))
+
+    def test_packet_reuse_resets_to_empty_on_both_graph_entry_points(self):
+        graphs = DrafterDecodeGraphs.__new__(DrafterDecodeGraphs)
+        graphs.field = torch.zeros(4, 8)
+        graphs.drafter = SimpleNamespace(k=3)
+        inputs = dict(anchor=torch.zeros(1, dtype=torch.int64), position=torch.tensor(0),
+                      slot=torch.zeros(1, dtype=torch.int64), boundary=tensor(None, 'cpu'))
+        def run(shape, fill):
+            self.assertEqual(shape, (1, 4))
+            fill(inputs)
+            return inputs['boundary'].clone()
+        graphs.proposals = SimpleNamespace(run=run)
+        boundary = (2, 0, 4, 7) + (-1,) * 31
+        self.assertEqual(graphs.propose(1, 5, graphs.field[2], boundary=boundary).tolist(), list(boundary))
+        self.assertEqual(inputs['slot'].item(), 2)
+        self.assertEqual(graphs.propose(1, 6, graphs.field[3]).tolist(), list(EMPTY))
+        graphs.propose(1, 7, graphs.field[2], boundary=boundary)
+        self.assertEqual(graphs.propose_from(torch.tensor([1]), torch.tensor(8), torch.tensor([3])).tolist(), list(EMPTY))
+        inputs.pop('boundary')
+        with self.assertRaisesRegex(ValueError, 'not enabled before'):
+            graphs.propose(1, 8, graphs.field[2], boundary=boundary)
+
+    def test_trace_collection_cannot_run_ahead_and_overwrite_its_proposal(self):
+        from engine.profiles.glm53.adapter import Glm53Engine
+        e = SimpleNamespace(drafter=SimpleNamespace(tuning=DraftTuning(trace_every=2)))
+        self.assertFalse(Glm53Engine._plain_ahead(e, 1))
+        self.assertEqual(Glm53Engine._blocked_by(e, 1), 'draft_trace')
+
+    def test_preparation_requires_real_statistics_and_binds_only_draft_names(self):
+        reader, norm = 'layers.0.self_attn.qkv', 'layers.0.input_layernorm.weight'
+        tuning = DraftTuning.from_dict(dict(version=1, smoothing_alpha={norm: .25},
+                                           gptq_damping={reader: .02, 'fc.weight': .02}))
+        store = SimpleNamespace(amax=lambda name: torch.ones(16), calibrated=lambda name: True,
+                                gptq_damping={'target': .01})
+        comm = SimpleNamespace(wait_prepared=lambda stage: None, gather_objects=lambda x: [x, x])
+        prepare_store(tuning, store, DraftPolicy('fp8', 'decode', True), SimpleNamespace(hidden=16), comm)
+        self.assertEqual(store.gptq_damping, {'target': .01, store_name(reader): .02,
+            store_name('fc.weight'): .02, decode_name(store_name('fc.weight')): .02})
+        store.amax = lambda name: None
+        with self.assertRaisesRegex(ValueError, 'channel peaks'):
+            prepare_store(tuning, store, DraftPolicy(), SimpleNamespace(hidden=16), comm)
+        comm.gather_objects = lambda x: [None, 'peer missing statistics']
+        with self.assertRaisesRegex(ValueError, 'rank 1: peer missing'):
+            prepare_store(tuning, store, DraftPolicy(), SimpleNamespace(hidden=16), comm)
+
+
+if __name__ == '__main__':
+    unittest.main()
