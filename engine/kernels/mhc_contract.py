@@ -69,5 +69,5 @@ The caller owns that destination; no input storage may overlap its span.
            and value.data_ptr() < end for value in tensors):
         raise ValueError("mHC contraction output must not overlap an input")
     _contract[(x.shape[0], 8)](x, residual, post, comb, out, out.stride(0), 4096, 512,
-                              num_warps=4)
+                              num_warps=4, enable_fp_fusion=False)
     return out

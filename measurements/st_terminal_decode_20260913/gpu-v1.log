@@ -1,0 +1,69 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-st-terminal-write0913v1-20260913-180540.txt
+waiting: pos 1/1, the fleet's expert-capture0913b holds this box too 2026-09-13_18:05:40
+waiting: pos 1/2, the fleet's expert-capture0913b holds this box too 2026-09-13_18:07:54
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-st-terminal-write0913v1-20260913-180540.txt
+GO st-terminal-write0913v1 2026-09-13_18:15:01
+  single GPU: probes/engine_mhc_contract_check.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 4 GiB beside production, no fleet lease)
+test_decode_and_prefill_match_the_served_consumer (tests.test_engine_mhc_contract.MhcContractTests.test_decode_and_prefill_match_the_served_consumer) ... 
+  test_decode_and_prefill_match_the_served_consumer (tests.test_engine_mhc_contract.MhcContractTests.test_decode_and_prefill_match_the_served_consumer) (rows=28) ... FAIL
+  test_decode_and_prefill_match_the_served_consumer (tests.test_engine_mhc_contract.MhcContractTests.test_decode_and_prefill_match_the_served_consumer) (rows=65) ... FAIL
+  test_decode_and_prefill_match_the_served_consumer (tests.test_engine_mhc_contract.MhcContractTests.test_decode_and_prefill_match_the_served_consumer) (rows=1728) ... FAIL
+  test_decode_and_prefill_match_the_served_consumer (tests.test_engine_mhc_contract.MhcContractTests.test_decode_and_prefill_match_the_served_consumer) (rows=6912) ... FAIL
+test_direct_feature_columns_preserve_neighbours_and_input_storage (tests.test_engine_mhc_contract.MhcContractTests.test_direct_feature_columns_preserve_neighbours_and_input_storage) ... ok
+test_graph_replay_updates_each_feature_without_reallocation (tests.test_engine_mhc_contract.MhcContractTests.test_graph_replay_updates_each_feature_without_reallocation) ... ok
+test_rejects_output_alias_and_overlapping_rows (tests.test_engine_mhc_contract.MhcContractTests.test_rejects_output_alias_and_overlapping_rows) ... ok
+test_rounding_and_cancellation_are_not_folded_through_the_mean (tests.test_engine_mhc_contract.MhcContractTests.test_rounding_and_cancellation_are_not_folded_through_the_mean) ... ok
+
+======================================================================
+FAIL: test_decode_and_prefill_match_the_served_consumer (tests.test_engine_mhc_contract.MhcContractTests.test_decode_and_prefill_match_the_served_consumer) (rows=28)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_mhc_contract.py", line 38, in test_decode_and_prefill_match_the_served_consumer
+    self.exact(contract(*values), self.baseline(*values))
+  File "/repo/tests/test_engine_mhc_contract.py", line 30, in exact
+    self.assertTrue(torch.equal(actual.contiguous().view(torch.uint8),
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_decode_and_prefill_match_the_served_consumer (tests.test_engine_mhc_contract.MhcContractTests.test_decode_and_prefill_match_the_served_consumer) (rows=65)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_mhc_contract.py", line 38, in test_decode_and_prefill_match_the_served_consumer
+    self.exact(contract(*values), self.baseline(*values))
+  File "/repo/tests/test_engine_mhc_contract.py", line 30, in exact
+    self.assertTrue(torch.equal(actual.contiguous().view(torch.uint8),
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_decode_and_prefill_match_the_served_consumer (tests.test_engine_mhc_contract.MhcContractTests.test_decode_and_prefill_match_the_served_consumer) (rows=1728)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_mhc_contract.py", line 38, in test_decode_and_prefill_match_the_served_consumer
+    self.exact(contract(*values), self.baseline(*values))
+  File "/repo/tests/test_engine_mhc_contract.py", line 30, in exact
+    self.assertTrue(torch.equal(actual.contiguous().view(torch.uint8),
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_decode_and_prefill_match_the_served_consumer (tests.test_engine_mhc_contract.MhcContractTests.test_decode_and_prefill_match_the_served_consumer) (rows=6912)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_mhc_contract.py", line 38, in test_decode_and_prefill_match_the_served_consumer
+    self.exact(contract(*values), self.baseline(*values))
+  File "/repo/tests/test_engine_mhc_contract.py", line 30, in exact
+    self.assertTrue(torch.equal(actual.contiguous().view(torch.uint8),
+AssertionError: False is not true
+
+----------------------------------------------------------------------
+Ran 5 tests in 5.125s
+
+FAILED (failures=4)
+Traceback (most recent call last):
+  File "/repo/probes/engine_mhc_contract_check.py", line 130, in <module>
+    main()
+  File "/repo/probes/engine_mhc_contract_check.py", line 118, in main
+    report = compile_only() if args.compile_only else measure(args.samples)
+                                                      ^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/probes/engine_mhc_contract_check.py", line 47, in measure
+    raise RuntimeError("terminal contraction correctness must pass without skips")
+RuntimeError: terminal contraction correctness must pass without skips
