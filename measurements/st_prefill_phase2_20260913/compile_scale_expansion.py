@@ -60,7 +60,29 @@ def main():
                                            shared_bytes=compiled.metadata.shared))
         md.get_num_sm = lambda *a: 48
         md.get_max_active_clusters = lambda *a: 48
-        md.build_and_load_cute_dsl_kernel = lambda module, name, build, **kw: build()
+        def build_reader(module, name, build, **kw):
+            # Create and pass each reader's artifact directory explicitly so
+            # identical entry names cannot overwrite another variant's evidence.
+            artifact_dir = output / 'cute' / name
+            artifact_dir.mkdir(parents=True, exist_ok=False)
+            compile_reader = md.cute.compile
+
+            def compile_with_artifacts(*args, **kwargs):
+                kwargs['options'] = (kwargs.get('options', '') +
+                    f' --keep-ptx --keep-cubin --dump-dir={artifact_dir}')
+                return compile_reader(*args, **kwargs)
+
+            md.cute.compile = compile_with_artifacts
+            try:
+                compiled = build()
+            finally:
+                md.cute.compile = compile_reader
+            cubins = sorted(artifact_dir.rglob('*.cubin'))
+            ptx_files = sorted(artifact_dir.rglob('*.ptx'))
+            assert cubins and ptx_files, f'missing reader artifacts: {name}'
+            return compiled
+
+        md.build_and_load_cute_dsl_kernel = build_reader
         md.configure_static_v2('t,r,sf6')
         md.configure_tp_sf6_q0(True)
         for rows in (2672, 32256):
