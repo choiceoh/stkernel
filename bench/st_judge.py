@@ -3,6 +3,7 @@
 """Judge one ST commit against another from onepass records: warm against warm, cold beside it.
 
     python3 bench/st_judge.py samples --sha <sha> [--allow-rehearsal]           # warm samples of that sha: a count
+    python3 bench/st_judge.py boots --sha <sha> [--allow-rehearsal]             # ... and the boot each came from
     python3 bench/st_judge.py judge --cand <sha> --base <sha> [--write] [--allow-rehearsal]
 
 D17 (CHARTER, PR #742) says a change that claims speed is not finished until the fleet has
@@ -48,7 +49,10 @@ def identity(rec) -> str:
     return ""
 
 
-def same(sha, rec) -> bool:
+def same(sha, rec, tree=None) -> bool:
+    """The record measured this commit -- or the same engine tree under another commit (`tree`)."""
+    if tree and rec.get("arm_tree") and str(rec["arm_tree"])[:12] == str(tree)[:12]:
+        return True
     mine = identity(rec)
     return bool(mine) and (sha[:12] == mine or mine.startswith(sha[:12]) or sha[:12].startswith(mine))
 
@@ -72,16 +76,19 @@ def errors(rec) -> list:
 
 
 def warm(rec) -> bool:
-    """The judged column. Run 1 of a bracket is the cold one; a record that names no run (a D17
-    probe ticket on idle production) is warm by construction -- the engine has been serving."""
-    return rec.get("run_index") != 1
+    """The judged column. Run 1 of a bracket is the cold one (a boot's compile tail); a record that
+    names no run, or whose run 1 followed a prefix reset on a live door (cold=reset: a D17 probe),
+    is warm by construction -- the engine had been serving."""
+    return rec.get("run_index") != 1 or rec.get("cold") == "reset"
 
 
-def samples(rows, sha, *, allow_rehearsal=False):
-    """The warm, valid records of `sha`, one per boot (two runs on one boot are one sample)."""
+def samples(rows, sha, *, allow_rehearsal=False, tree=None):
+    """The warm, valid records of `sha` -- or of its engine tree under another commit -- one per boot
+    (two runs on one boot are one sample). This is where an adopted candidate's measurement becomes
+    the next baseline: the deployed commit's tree is the candidate's, so its records are the base's."""
     picked = {}
     for index, rec in enumerate(rows):
-        if not same(sha, rec) or not warm(rec) or errors(rec):
+        if not same(sha, rec, tree) or not warm(rec) or errors(rec):
             continue
         if rec.get("rehearsal") and not allow_rehearsal:
             continue
@@ -89,10 +96,10 @@ def samples(rows, sha, *, allow_rehearsal=False):
     return list(picked.values())
 
 
-def colds(rows, sha, *, allow_rehearsal=False):
+def colds(rows, sha, *, allow_rehearsal=False, tree=None):
     """The cold column is a BOOT's run 1 (TTFT with the compile tail). A probe on the live door
     marks its run 1 cold=reset -- after a prefix reset, not a boot -- and stays out of it."""
-    return [rec for rec in rows if same(sha, rec) and rec.get("run_index") == 1
+    return [rec for rec in rows if same(sha, rec, tree) and rec.get("run_index") == 1
             and rec.get("cold", "boot") == "boot" and (allow_rehearsal or not rec.get("rehearsal"))]
 
 
@@ -138,14 +145,36 @@ def floor(warm_recs):
     return (max(values) - min(values)) / m if m else None, len(values)
 
 
-def judge(rows, cand, base, *, allow_rehearsal=False) -> dict:
-    cw, bw = samples(rows, cand, allow_rehearsal=allow_rehearsal), samples(rows, base, allow_rehearsal=allow_rehearsal)
-    cc, bc = colds(rows, cand, allow_rehearsal=allow_rehearsal), colds(rows, base, allow_rehearsal=allow_rehearsal)
+def pooled_floor(rows, *, exclude=(), allow_rehearsal=False):
+    """(relative spread, shas) -- the median run-to-run spread over every commit that has two or more
+    boots in the records, for a base that has only one. Booting the base again just to learn what
+    noise is costs a boot and the fleet; the noise of this engine on these four boxes is a property
+    of the boxes far more than of the commit, and the records already hold it."""
+    spreads = []
+    seen = set()
+    for rec in rows:
+        sha = identity(rec)
+        if not sha or sha in seen or any(same(x, rec) for x in exclude):
+            continue
+        seen.add(sha)
+        spread, n = floor(samples(rows, sha, allow_rehearsal=allow_rehearsal))
+        if spread is not None:
+            spreads.append(spread)
+    if not spreads:
+        return None, 0
+    return statistics.median(spreads), len(spreads)
+
+
+def judge(rows, cand, base, *, allow_rehearsal=False, cand_tree=None, base_tree=None) -> dict:
+    cw = samples(rows, cand, allow_rehearsal=allow_rehearsal, tree=cand_tree)
+    bw = samples(rows, base, allow_rehearsal=allow_rehearsal, tree=base_tree)
+    cc = colds(rows, cand, allow_rehearsal=allow_rehearsal, tree=cand_tree)
+    bc = colds(rows, base, allow_rehearsal=allow_rehearsal, tree=base_tree)
     cs, bs = summary(cw, cc), summary(bw, bc)
-    invalid = [f"{r.get('name')}: {', '.join(errors(r))}" for r in rows if same(cand, r) and warm(r) and errors(r)
+    invalid = [f"{r.get('name')}: {', '.join(errors(r))}" for r in rows if same(cand, r, cand_tree) and warm(r) and errors(r)
                and (allow_rehearsal or not r.get("rehearsal"))]
     out = dict(t=time.strftime("%F %T"), engine="st", cand=cand[:12], base=base[:12], cand_summary=cs, base_summary=bs,
-               invalid_candidates=invalid)
+               invalid_candidates=invalid, cand_tree=cand_tree, base_tree=base_tree)
     if not cw:
         out["verdict"] = "NO EVIDENCE: the candidate has no valid warm sample" + (" (its records failed gates)" if invalid else "")
         return out
@@ -154,13 +183,18 @@ def judge(rows, cand, base, *, allow_rehearsal=False) -> dict:
         return out
     delta = (cs["decode_steps_s"] - bs["decode_steps_s"]) / bs["decode_steps_s"] * 100
     spread, n = floor(bw)
-    out.update(delta_pct=delta, floor_pct=(spread * 100) if spread is not None else None, n_base=n, n_cand=len(cw))
+    source, where = "base", f"n={n}"
     if spread is None:
-        out["verdict"] = f"{delta:+.1f}% decode step/s, NO FLOOR (the base has {n} boot; two are needed to say what noise is)"
+        spread, k = pooled_floor(rows, exclude=(cand, base), allow_rehearsal=allow_rehearsal)
+        source, where = ("pooled", f"pooled from {k} commits' boots; the base has {n}") if spread is not None else (None, "")
+    out.update(delta_pct=delta, floor_pct=(spread * 100) if spread is not None else None, n_base=n, n_cand=len(cw),
+               floor_source=source)
+    if spread is None:
+        out["verdict"] = f"{delta:+.1f}% decode step/s, NO FLOOR (the base has {n} boot and no commit in the records has two)"
     elif abs(delta) > spread * 100:
-        out["verdict"] = f"{delta:+.1f}% decode step/s, BEYOND the floor ±{spread * 100:.1f}% (n={n})"
+        out["verdict"] = f"{delta:+.1f}% decode step/s, BEYOND the {source} floor ±{spread * 100:.1f}% ({where})"
     else:
-        out["verdict"] = f"{delta:+.1f}% decode step/s, WITHIN the floor ±{spread * 100:.1f}% (n={n})"
+        out["verdict"] = f"{delta:+.1f}% decode step/s, WITHIN the {source} floor ±{spread * 100:.1f}% ({where})"
     return out
 
 
@@ -189,23 +223,31 @@ def table(out) -> str:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("action", choices=("samples", "judge"))
+    ap.add_argument("action", choices=("samples", "boots", "judge"))
     ap.add_argument("--sha", default="")
+    ap.add_argument("--tree", default="", help="the engine/ tree of --sha: records of the same tree under another commit count too")
     ap.add_argument("--cand", default="")
     ap.add_argument("--base", default="")
+    ap.add_argument("--cand-tree", default="")
+    ap.add_argument("--base-tree", default="")
     ap.add_argument("--write", action="store_true", help="append the verdict to verdicts.jsonl")
     ap.add_argument("--allow-rehearsal", action="store_true")
     ap.add_argument("--jsonl", default=JSONL)
     a = ap.parse_args(argv)
     rows = load(a.jsonl)
-    if a.action == "samples":
+    if a.action in ("samples", "boots"):
         if not HEX.fullmatch(a.sha):
             ap.error("--sha must be a commit id")
-        print(len(samples(rows, a.sha, allow_rehearsal=a.allow_rehearsal)))
+        picked = samples(rows, a.sha, allow_rehearsal=a.allow_rehearsal, tree=a.tree or None)
+        if a.action == "samples":
+            print(len(picked))
+        else:                                        # one line per sample: the boot it came from (deploy-watch asks)
+            for rec in picked:
+                print(rec.get("boot_id") or rec.get("run_id") or "?")
         return 0
     if not (HEX.fullmatch(a.cand) and HEX.fullmatch(a.base)):
         ap.error("--cand and --base must be commit ids")
-    out = judge(rows, a.cand, a.base, allow_rehearsal=a.allow_rehearsal)
+    out = judge(rows, a.cand, a.base, allow_rehearsal=a.allow_rehearsal, cand_tree=a.cand_tree or None, base_tree=a.base_tree or None)
     print(table(out))
     if a.write:
         path = os.environ.get("ONEPASS_VERDICTS", os.path.join(os.path.dirname(a.jsonl), "verdicts.jsonl"))

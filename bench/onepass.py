@@ -590,6 +590,8 @@ def _main() -> int:
         c4_status='scheduled' if 4 in concurrencies else 'omitted_after_run_1')
     if os.environ.get("ST_BRACKET_SHA"):
         rec["arm_sha"] = os.environ["ST_BRACKET_SHA"]              # the commit the bracket named for this arm
+    if os.environ.get("ST_BRACKET_TREE"):
+        rec["arm_tree"] = os.environ["ST_BRACKET_TREE"]            # the engine/ tree at that commit: the sample's real identity
     if os.environ.get("ST_BRACKET_COLD"):
         rec["cold"] = os.environ["ST_BRACKET_COLD"]                # what run 1 followed: a boot, or only a prefix reset
     run = _RUN = Run(rec, args.out, bd.URL)

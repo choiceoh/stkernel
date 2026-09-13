@@ -9,6 +9,7 @@ second cut, no "the tree on the nodes is no longer known".
     python3 launchers/st_release.py cut <sha> [--source DIR] [--releases DIR]   # prints the directory
     python3 launchers/st_release.py resolve <sha> [--source DIR]                # the full sha (fetched if absent)
     python3 launchers/st_release.py deployed [--state FILE]                     # the sha production runs
+    python3 launchers/st_release.py tree <sha> [--source DIR]                   # the engine/ tree id: what a sample identifies
 
 stdlib only, like base/fleet_lease.py: it runs on the head node outside any virtualenv.
 """
@@ -79,6 +80,20 @@ def cut(sha: str, *, source: Path = SOURCE, releases: Path = RELEASES, log=print
     return target
 
 
+def engine_tree(sha: str, *, source: Path = SOURCE) -> str:
+    """Twelve characters of the git tree id of `engine/` at `sha`: the identity of what a release serves.
+
+    Two commits with the same engine tree serve the same engine -- a fleet-side merge, a docs
+    commit, a squash of a measured branch onto a main that did not move engine/ -- so a sample of
+    one is a sample of the other. The operator's rule for baselines (2026-09-13): a candidate
+    that is adopted brings its own measurement along as the next baseline; one that is not leaves
+    the baseline as it was. The tree is how the records know which candidate got adopted."""
+    code, out, _ = run(["git", "-C", str(source), "rev-parse", f"{sha}^{{commit}}:engine"], timeout=60)
+    if code or not out.strip():
+        return ""
+    return out.strip()[:12]
+
+
 def deployed(state: Path = STATE) -> str:
     """The sha deploy-watch recorded as running, or '' when nothing is recorded."""
     try:
@@ -90,7 +105,7 @@ def deployed(state: Path = STATE) -> str:
 def main(argv=None) -> int:
     import argparse
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("action", choices=("cut", "resolve", "deployed"))
+    ap.add_argument("action", choices=("cut", "resolve", "deployed", "tree"))
     ap.add_argument("sha", nargs="?", default="")
     ap.add_argument("--source", default=str(SOURCE))
     ap.add_argument("--releases", default=str(RELEASES))
@@ -107,6 +122,13 @@ def main(argv=None) -> int:
         full = resolve(a.sha, source=Path(a.source))
         if a.action == "resolve":
             print(full)
+            return 0
+        if a.action == "tree":
+            tree = engine_tree(full, source=Path(a.source))
+            if not tree:
+                print(f"{a.sha}: no engine/ tree in {a.source}", file=sys.stderr)
+                return 1
+            print(tree)
             return 0
         target = cut(full, source=Path(a.source), releases=Path(a.releases), log=lambda m: print(m, file=sys.stderr))
         if target is None:
