@@ -69,11 +69,11 @@ class Layout:
 
     def plan(self, kv_gib: float, max_seqs: int, sector: int = 4096) -> Plan:
         """base/cache_spec.plan's split with this layout's block and slot sizes (its rounding included)."""
-        block_bytes = -(-self.block_bytes // sector) * sector
+        block_bytes = max(sector, -(-self.block_bytes // sector) * sector)     # a model without paged rows still pages
         slots_bytes = self.slot_bytes * (max_seqs + 1)
         left = int(kv_gib * (1 << 30)) - slots_bytes
-        if left <= 0 or block_bytes == 0:
-            raise MemoryError(f"{max_seqs} slots need {slots_bytes} bytes of the budget, or nothing is paged")
+        if left <= 0:
+            raise MemoryError(f"{max_seqs} slots need {slots_bytes / 2**20:.1f} MiB of a {kv_gib:.3f} GiB budget")
         return Plan(self.block_tokens, block_bytes, left // block_bytes, self.slot_bytes, max_seqs + 1,
                     (left // block_bytes) * block_bytes / (1 << 30), slots_bytes / (1 << 30))
 
