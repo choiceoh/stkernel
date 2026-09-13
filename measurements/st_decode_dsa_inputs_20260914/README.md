@@ -4,7 +4,11 @@ Status: implemented, **default off**. The pinned Linux CPU checks and full nativ
 compile pass. GPU numerical/replay checks and timing are pending. No decode
 step/s, tokens/s, acceptance or answer-quality improvement is claimed.
 
-Base: `32fb2892ed7a17c8eda8f16e845bc0724ad3fd94` (#909–#912, including HY defaults).
+Implementation/CPU base: `32fb2892ed7a17c8eda8f16e845bc0724ad3fd94`
+(#909–#912, including HY defaults). Queue/oracle base now includes
+`0d3d6d5944bccf0739c5ea5ec8cea04347a64a1e` (#913). Its MoE changes do not alter
+the three compiled DSA sources or the focused CPU test modules. Their existing
+validation is reused; the source oracle was refreshed against this newer base.
 
 ## Changes
 
