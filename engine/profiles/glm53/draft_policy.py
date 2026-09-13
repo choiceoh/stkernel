@@ -15,8 +15,10 @@ class DraftPolicy:
             raise ValueError('draft FC calibration must be shared, collect or decode')
         if type(self.diagnostics) is not bool:
             raise ValueError('draft diagnostics must be a boolean')
-        if self.fc_precision == 'fp8' and self.fc_calibration == 'decode':
-            raise ValueError('decode-only GPTQ changes the W4 pack; compare it with fc_precision=w4')
+
+    @property
+    def separate_decode_fp8(self):
+        return self.fc_precision == 'fp8' and self.fc_calibration == 'decode'
 
     @property
     def active(self):

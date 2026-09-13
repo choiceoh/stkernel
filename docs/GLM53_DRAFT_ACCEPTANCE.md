@@ -15,6 +15,8 @@ following three experiments. FP32 KDA state remains the default.
 | B: FC FP8 | `fp8` | `shared` | `1` |
 | Collection, excluded from timing verdict | `w4` | `collect` | `1` |
 | C: decode GPTQ | `w4` | `decode` | `1` |
+| Combined collection | `fp8` | `collect` | `1` |
+| Combined measurement | `fp8` | `decode` | `1` |
 
 Production defaults are `w4/shared/0`. These are experimental knobs in a
 non-production boot. `bench/st_bracket.sh` runs immutable commits in production
@@ -33,9 +35,14 @@ each row above. Do not present an environment override as a bracket arm.
    At least 4,096 rows are required; automatic filing targets 32,768. Collection
    stays within the existing 2 GiB calibration budget. Consume on a subsequent
    boot. Missing, incomplete or foreign calibration fails before serving.
-   Only the FC W4 pack uses it; FC smoothing and its prefill FP8 pack retain
-   their shared calibration. `fp8/decode` is rejected because the changed W4
-   pack would not execute.
+   With W4 decode, only the FC W4 pack uses it. With FP8 decode, a separate
+   FP8 pack is GPTQ-calibrated on the FP8 grid using this Hessian; shared W4
+   and prefill FP8 packs retain their identities. The context call explicitly
+   identifies decode, including early projection and synchronous commits;
+   small prefill calls never select the decode pack. The extra FP8 pack
+   occupies 80.02 MiB per rank for the current FC, declared in both the boot
+   arena and budget table, and compacted into arena-owned storage. Native
+   qualification refuses a prepared but unexecuted decode FP8 pack.
 3. **First-rejection attribution** reads the actual global top-16 support and
    the first mismatching target greedy pick. `candidate_miss` means the target
    token was absent; `selector_miss` means it was present but not selected.
@@ -70,7 +77,7 @@ matching shared files, with C additionally reading the completed decode blob.
 Run full onepass with the existing coverage: C=1 at 2K/32K/128K and C=4 at
 2K/32K once; C=4 128K remains excluded. Keep the same questions, K, temperature,
 token limits, checkpoint, tokenizer and target packs. Use A/B/A and A/C/A warm
-comparisons, retaining cold runs separately and resetting prefix reuse. Record
+comparisons (or A/combined/A for the combined experiment), retaining cold runs separately and resetting prefix reuse. Record
 per-question acceptance, first-rejection histogram, quality/logic checks, finish
 reason, output length/hash, TTFT, decode tok/s and FC/observe latency. A valid
 greedy draft-only change should preserve the target output; higher acceptance
@@ -78,6 +85,11 @@ with different/repetitive output is not a win. Do not derive improvement from
 the pooled average or from a simulator alone.
 
 ## Validation status
+
+Combined testing first collects with `fp8/collect/1`, then boots
+`fp8/decode/1` using completed per-rank blobs. Collection is preparation, not a
+measured combined result. The baseline uses the same diagnostic recording and
+shared calibration. Freeze calibration before either measured arm.
 
 CPU tests cover dispatch, isolated W4/FP8 calibration identities, committed-row
 selection, output boundaries, cache-slot ownership, async/burst/shared-queue

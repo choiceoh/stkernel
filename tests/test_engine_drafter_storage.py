@@ -105,6 +105,54 @@ class DrafterStorageTests(unittest.TestCase):
                         end = (end + 255) // 256 * 256 + size
                     self.assertLessEqual(end, packed_nbytes(rows, cols, prefill=prefill))
 
+    def test_combined_fp8_is_declared_and_both_packs_are_arena_owned(self):
+        import torch
+        from engine.kernels.dense import DenseLinear, W4Pack, packed_nbytes
+        from engine.profiles.glm53.draft_policy import DraftPolicy
+        from engine.profiles.glm53.drafter_storage import nbytes
+        F = self.facts()
+        extra = nbytes(F, 4, 4, policy=DraftPolicy('fp8', 'decode', True)) - nbytes(F, 4, 4)
+        self.assertEqual(extra, 4096 * 20480 + (4096 // 128) * (20480 // 128) * 4)
+        layer = DenseLinear.__new__(DenseLinear)
+        layer.packs = (W4Pack(torch.ones(8192, dtype=torch.uint8), torch.ones(1024, dtype=torch.uint8),
+                            torch.ones(128), 128, 128),)
+        def fp8():
+            return SimpleNamespace(weight=(torch.ones(128, 128, dtype=torch.uint8), torch.ones(1, 1)))
+        layer.fp8, layer.decode_fp8 = fp8(), fp8()
+        source = layer.decode_fp8.weight[0]
+        storage = torch.empty(packed_nbytes(128, 128, decode_fp8=True), dtype=torch.uint8)
+        layer.consume_weight(storage)
+        for t in (*layer.fp8.weight, *layer.decode_fp8.weight):
+            self.assertEqual(t.untyped_storage().data_ptr(), storage.data_ptr())
+        source.zero_()
+        self.assertTrue(torch.all(layer.decode_fp8.weight[0] == 1))
+
+    def test_context_phase_survives_early_projection_and_short_commits(self):
+        import torch
+        from engine.profiles.glm53.drafter import Drafter
+        calls = []
+        class Projection:
+            decode_fp8 = object()
+            def __call__(self, x, mask=None, **kwargs):
+                calls.append((mask, kwargs))
+                return x
+        d = Drafter(self.facts(), SimpleNamespace(comm=SimpleNamespace(world_size=4, rank=0)), 154880)
+        d.dense = {'fc.weight': Projection()}
+        x = torch.ones(7, 128, dtype=torch.bfloat16)
+        mask = torch.arange(7) < 3
+        d.context_linear(x)
+        d.context_linear(x, mask, decode=True)
+        d.context_linear(x, decode=True, observe=False)
+        self.assertEqual([v for _, v in calls], [dict(decode=False, observe=True),
+                         dict(decode=True, observe=True), dict(decode=True, observe=False)])
+        self.assertIs(calls[1][0], mask)
+        # Synchronous commit is still explicitly decode after calibration
+        # has finished and there is no longer an observer attached.
+        d.decode_calibration = True
+        with patch.object(d, '_observe') as observe:
+            d.observe_committed(None, torch.arange(3), x[:3])
+        self.assertEqual(observe.call_args.args[-1], 3)
+
 
 if __name__ == '__main__':
     unittest.main()

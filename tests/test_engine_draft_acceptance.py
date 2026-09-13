@@ -15,13 +15,14 @@ from engine.profiles.glm53.draft_diagnostics import DraftDiagnostics, classify
 
 
 class DraftAcceptanceTests(unittest.TestCase):
-    def test_arms_are_independent_and_invalid_or_ineffective_choices_fail(self):
+    def test_arms_are_independent_and_combined_mode_is_explicit(self):
         self.assertFalse(DraftPolicy().active)
         self.assertTrue(DraftPolicy(fc_precision='fp8').active)
         self.assertTrue(DraftPolicy(fc_calibration='collect').active)
         self.assertTrue(DraftPolicy(diagnostics=True).active)
-        for options in ({'fc_precision': 'bf16'}, {'fc_calibration': 'oops'}, {'diagnostics': 1},
-                        {'fc_precision': 'fp8', 'fc_calibration': 'decode'}):
+        self.assertTrue(DraftPolicy('fp8', 'decode', True).separate_decode_fp8)
+        self.assertFalse(DraftPolicy('fp8', 'collect', True).separate_decode_fp8)
+        for options in ({'fc_precision': 'bf16'}, {'fc_calibration': 'oops'}, {'diagnostics': 1}):
             with self.assertRaises(ValueError):
                 DraftPolicy(**options)
 
@@ -100,6 +101,35 @@ class DraftAcceptanceTests(unittest.TestCase):
             DenseLinear(weight, store=store, name='shared', decode_name='decoded')
         self.assertEqual(w4_names, ['decoded'])
         self.assertEqual(fp8_names, ['shared'])
+
+    def test_combined_mode_calibrates_executed_fp8_and_preserves_shared_packs(self):
+        weight = SimpleNamespace(ndim=2, is_cuda=True, dtype=torch.bfloat16, shape=(128, 8192))
+        w4_names, fp8_names = [], []
+        store = SimpleNamespace(calibrated=lambda name: True,
+            pack_wide=lambda w, name, **kw: w4_names.append(name) or [SimpleNamespace(calibrated=True)],
+            pack_fp8=lambda w, name, **kw: fp8_names.append(name) or ('q', 'scale'))
+        with patch('engine.kernels.dense.extension'), patch('engine.kernels.dense._fold', side_effect=lambda x: x), \
+             patch('engine.kernels.dense.FP8Linear'):
+            layer = DenseLinear(weight, store=store, name='shared', decode_name='decoded', decode_precision='fp8')
+        self.assertEqual(w4_names, ['shared'])
+        self.assertEqual(fp8_names, ['shared', 'decoded'])
+        calls = []
+        layer.fp8 = lambda x: calls.append('prefill') or x[:, :128] + 1
+        layer.decode_fp8 = lambda x: calls.append('decode') or x[:, :128] + 2
+        observed = []
+        layer.observer = lambda x, mask: observed.append(mask)
+        x = torch.ones(7, 8192, dtype=torch.bfloat16)
+        # Identical row counts: a short prompt must keep shared calibration.
+        self.assertTrue(torch.equal(layer(x), x[:, :128] + 1))
+        self.assertTrue(torch.equal(layer(x, decode=True), x[:, :128] + 2))
+        layer(x, decode=True, observe=False)
+        layer(torch.ones(56, 8192, dtype=torch.bfloat16), decode=True)
+        self.assertEqual(calls, ['prefill', 'decode', 'decode', 'decode'])
+        self.assertEqual(len(observed), 3)
+        store.pack_fp8 = lambda w, name, **kw: None
+        with patch('engine.kernels.dense.extension'), patch('engine.kernels.dense._fold', side_effect=lambda x: x), \
+             patch('engine.kernels.dense.FP8Linear'), self.assertRaisesRegex(ValueError, 'completed decode'):
+            DenseLinear(weight, store=store, name='shared', decode_name='decoded', decode_precision='fp8')
 
     def test_first_rejection_covers_selection_support_eos_limits_and_inactive_rows(self):
         drafts = torch.tensor([[1, 2, 3]] * 7)

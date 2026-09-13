@@ -32,7 +32,7 @@ def retained_specs(F):
     return [spec for spec in specs(F) if spec.name not in retired]
 
 
-def layout(F, world, max_seqs):
+def layout(F, world, max_seqs, *, policy=None):
     from .drafter import dense_shapes
     block_rows(F, max_seqs)
     if world <= 0 or any(n % world for n in (F.heads, F.kv_heads, F.inter)):
@@ -46,7 +46,8 @@ def layout(F, world, max_seqs):
     for spec in retained_specs(F):
         add('source/' + spec.name, spec.nbytes())
     for name, (rows, cols) in dense_shapes(F, world).items():
-        add('pack/' + name, packed_nbytes(rows, cols, prefill=needs_fp8(F, max_seqs, name)))
+        add('pack/' + name, packed_nbytes(rows, cols, prefill=needs_fp8(F, max_seqs, name),
+            decode_fp8=bool(policy and policy.separate_decode_fp8 and name == 'fc.weight')))
         # Smoothing factors are optional FP32 vectors; reserve their maximum
         # independent of which calibration files happened to exist at boot.
         add('smooth/' + name, cols * 4)
@@ -55,13 +56,13 @@ def layout(F, world, max_seqs):
     return regions, (end + ALIGN - 1) // ALIGN * ALIGN
 
 
-def nbytes(F, world, max_seqs):
-    return layout(F, world, max_seqs)[1]
+def nbytes(F, world, max_seqs, *, policy=None):
+    return layout(F, world, max_seqs, policy=policy)[1]
 
 
-def compact(drafter, arena, max_seqs):
+def compact(drafter, arena, max_seqs, *, policy=None):
     """Copy the live readers into the declared region; retire all raw sources."""
-    regions, size = layout(drafter.F, drafter.target.comm.world_size, max_seqs)
+    regions, size = layout(drafter.F, drafter.target.comm.world_size, max_seqs, policy=policy)
     storage = arena.carve(size, 'drafter resident weights')
     def region(name):
         start, size = regions[name]
@@ -81,6 +82,9 @@ def compact(drafter, arena, max_seqs):
     for name, layer in drafter.dense.items():
         if (layer.fp8 is not None) != needs_fp8(drafter.F, max_seqs, name):
             raise ValueError(f'drafter precision does not match its resident declaration: {name}')
+        if (getattr(layer, 'decode_fp8', None) is not None) != bool(
+                policy and policy.separate_decode_fp8 and name == 'fc.weight'):
+            raise ValueError(f'drafter decode FP8 does not match its resident declaration: {name}')
         layer.consume_weight(region('pack/' + name))
         if layer.smooth is not None:
             layer.smooth = copy('smooth/' + name, layer.smooth)
