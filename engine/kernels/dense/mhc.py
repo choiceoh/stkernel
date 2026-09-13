@@ -10,11 +10,10 @@ shape outside that is refused here, by name, before any weight is packed.
 """
 import torch
 from engine.kernels.dense import extension
-
-MHC_MAX_TOK = 128               # kernels.cu MHC_MAX_TOK_DEF: the token rows the workspace holds
-HCHUNK = 256                    # kernels.cu HCHUNK: hidden is walked in chunks of this many
-COMPILED_HIDDEN = (4096, 5120)  # kernels.cu HIDDEN and HIDDEN_V41: what mk_run_mhc accepts
-COMPILED_HC = 4                 # kernels.cu HC
+# The compiled cell, stated once in engine/kernels/cells.py: MHC_MAX_TOK_DEF rows, HCHUNK, the HIDDEN/HIDDEN_V41
+# instances mk_run_mhc accepts, HC.
+from engine.kernels.cells import (MHC_HC as COMPILED_HC, MHC_HCHUNK as HCHUNK, MHC_HIDDEN as COMPILED_HIDDEN,
+                                  MHC_MAX_TOK)
 
 
 def geometry(shape=None) -> "tuple[int, int, int, int]":

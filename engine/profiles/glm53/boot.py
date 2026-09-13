@@ -741,7 +741,8 @@ def guard_test_memory(kv_gib: float, floor: float = TEST_FLOOR_GIB) -> None:
 def local(a) -> int:
     print(f"  box: {facts.check_box()}")
     print(declared(a, facts.TP).table())
-    kernel_shape.bind(facts.load(a.ckpt_meta).kernel_shape())     # before the lanes, as the fleet boot does
+    kernel_shape.bind_recorded(a.ranks, Path(a.ckpt_meta) / "config.json",   # before the lanes, as the fleet boot does
+                               lambda: facts.load(a.ckpt_meta).kernel_shape())
     layers = [int(x) for x in a.layers.split("-")]; layers = list(range(layers[0], layers[-1] + 1))
     torch.manual_seed(a.seed)
     prompts = {seq: torch.randint(0, 100_000, (a.prompt + 7 * seq,)).tolist() for seq in range(a.seqs)}
@@ -1002,9 +1003,13 @@ def fleet(a) -> int:
     print(f"  box: {facts.check_box()}")
     cfg = declared(a, facts.TP)
     # The checkpoint's kernel shape, bound before any transport or lane reads it (base/kernel_shape):
-    # the geometry every kernel is admitted for. GLM's equals the kernels' measured cell, so nothing
-    # served changes; a checkpoint that differs is refused by the lanes that cannot serve it, by name (D3).
-    shape = kernel_shape.bind(facts.load(a.ckpt_meta).kernel_shape())
+    # the geometry every kernel is admitted for. The record the shape wizard wrote beside the rank
+    # files when the model was taken in (preshard) is bound when present and still describes this
+    # config.json; without one the shape is derived from the config as before. GLM's equals the
+    # kernels' measured cell, so nothing served changes; a checkpoint that differs is refused by the
+    # lanes that cannot serve it, by name (D3).
+    shape, shape_source = kernel_shape.bind_recorded(a.ranks, Path(a.ckpt_meta) / "config.json",
+                                                     lambda: facts.load(a.ckpt_meta).kernel_shape())
     # The rendezvous and the kernel imports are boot time too: 15.6 s of a measured 90.2 s boot sat
     # outside this table (boot-time study, 2026-09-11), so the recorder opens before them.
     rec = Recorder("boot")
@@ -1015,7 +1020,7 @@ def fleet(a) -> int:
     try:
         if comm.rank == 0:
             print(cfg.table())
-            print(f"  kernel shape: {shape.describe()}")
+            print(f"  kernel shape ({shape_source}): {shape.describe()}")
         with rec.phase("prepare one-shot"):
             comm.prepare_oneshot()
         with rec.phase("lanes"):
