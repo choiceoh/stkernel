@@ -1,0 +1,900 @@
+{
+  "reused_from": "st-prefill-phase2-L7r2",
+  "source": "3c7bcc0a08842d59a91e3f5166f5d5227a9e5cd6",
+  "source_manifest_sha256": "4f047e27727cf9f8ed153a8dbb5e23b954c37a42a88f489fbea8505672accb77",
+  "source_checks": [
+    {
+      "path": "engine/base/comm.py",
+      "current_sha256": "d8d191a88647e101958b7217702627b6cb2c5209ab06ded864d2833ec036ed47",
+      "gate_sha256": "d8d191a88647e101958b7217702627b6cb2c5209ab06ded864d2833ec036ed47",
+      "same": true
+    },
+    {
+      "path": "engine/modules/draft_agreement.py",
+      "current_sha256": "45beeadf55164d13b7958f5da56734cf4a5f96d726824624502d3b4da5940acc",
+      "gate_sha256": "45beeadf55164d13b7958f5da56734cf4a5f96d726824624502d3b4da5940acc",
+      "same": true
+    },
+    {
+      "path": "engine/kernels/oneshot/dsv4_oneshot_ar.cu",
+      "current_sha256": "c14ff1ddc297c67ba527685a0dbdafa082d87faf0111dad688ebe62e6a78a291",
+      "gate_sha256": "c14ff1ddc297c67ba527685a0dbdafa082d87faf0111dad688ebe62e6a78a291",
+      "same": true
+    },
+    {
+      "path": "engine/kernels/oneshot/dsv4_oneshot_transport.h",
+      "current_sha256": "dc9943e1c59ed623feb602fbfbf970d40da9800051d437d06a22092e6bb47099",
+      "gate_sha256": "dc9943e1c59ed623feb602fbfbf970d40da9800051d437d06a22092e6bb47099",
+      "same": true
+    },
+    {
+      "path": "engine/kernels/oneshot/__init__.py",
+      "current_sha256": "4a4231eaedf14ec47f9d5eea5ec1ea0f41ef2400ef736ed90c700121cf008f7f",
+      "gate_sha256": "4a4231eaedf14ec47f9d5eea5ec1ea0f41ef2400ef736ed90c700121cf008f7f",
+      "same": true
+    },
+    {
+      "path": "engine/kernels/bounded_graph/loop.cu",
+      "current_sha256": "117725a832234efa430e180c8ce567615d3e1b6d589b5e5c30c596a632da867c",
+      "gate_sha256": "117725a832234efa430e180c8ce567615d3e1b6d589b5e5c30c596a632da867c",
+      "same": true
+    },
+    {
+      "path": "engine/kernels/bounded_graph/__init__.py",
+      "current_sha256": "1e6a85621540162f24048c384836e01d3cb49a075f1efdac38fccc61342fed18",
+      "gate_sha256": "1e6a85621540162f24048c384836e01d3cb49a075f1efdac38fccc61342fed18",
+      "same": true
+    },
+    {
+      "path": "engine/kernels/draft_select.py",
+      "current_sha256": "61eaf21299d9f96c40eef7080fa9f625d1e7a0258af8bdbdb3834a60e6513c86",
+      "gate_sha256": "61eaf21299d9f96c40eef7080fa9f625d1e7a0258af8bdbdb3834a60e6513c86",
+      "same": true
+    },
+    {
+      "path": "engine/kernels/common/vocab_candidates.py",
+      "current_sha256": "0692207b663c57af3b8580cf0bde946cb93a9b490ad8e9e33d2e9cd2276fe512",
+      "gate_sha256": "c33367d9fb47400b7b41f6649b0f159c7c2e47c8758a6004fe17266aca98fb6d",
+      "same": false
+    }
+  ],
+  "reports": [
+    {
+      "passed": true,
+      "rank": 0,
+      "checks": [
+        {
+          "rows": 1,
+          "sampled": false,
+          "eager": true,
+          "changed_replays": 2
+        },
+        {
+          "rows": 1,
+          "sampled": true,
+          "eager": true,
+          "changed_replays": 2
+        },
+        {
+          "rows": 4,
+          "sampled": false,
+          "eager": true,
+          "changed_replays": 2
+        },
+        {
+          "rows": 4,
+          "sampled": true,
+          "eager": true,
+          "changed_replays": 2
+        }
+      ],
+      "transport_rows": [
+        511,
+        512,
+        668,
+        2304,
+        576
+      ],
+      "bounded": {
+        "legacy_control": "bounded graph rejects node type 6 at body/0: host callbacks, event/semaphore nodes, allocation and nested conditions are forbidden",
+        "checks": [
+          {
+            "rows": 1,
+            "limit": 1,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 1,
+            "limit": 2,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 1,
+            "limit": 4,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 4,
+            "limit": 1,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 4,
+            "limit": 2,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 4,
+            "limit": 4,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          }
+        ],
+        "candidate_walk": [
+          {
+            "rows": 1,
+            "proposal_rows": 6,
+            "keys_per_rank": 96,
+            "limit": 1,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 1,
+            "proposal_rows": 6,
+            "keys_per_rank": 96,
+            "limit": 2,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 1,
+            "proposal_rows": 6,
+            "keys_per_rank": 96,
+            "limit": 4,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 4,
+            "proposal_rows": 24,
+            "keys_per_rank": 384,
+            "limit": 1,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 4,
+            "proposal_rows": 24,
+            "keys_per_rank": 384,
+            "limit": 2,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 4,
+            "proposal_rows": 24,
+            "keys_per_rank": 384,
+            "limit": 4,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          }
+        ]
+      },
+      "real_rows": [
+        2047,
+        2048,
+        2121,
+        2122,
+        2123,
+        2124,
+        2128,
+        2671,
+        2672,
+        32002,
+        32003
+      ],
+      "seconds": 76.97240917599993,
+      "scope": "real TP4 NCCL and one-shot, changed ordinary and bounded graph replay, FP8/BF16 transport; not consumer speed"
+    },
+    {
+      "passed": true,
+      "rank": 1,
+      "checks": [
+        {
+          "rows": 1,
+          "sampled": false,
+          "eager": true,
+          "changed_replays": 2
+        },
+        {
+          "rows": 1,
+          "sampled": true,
+          "eager": true,
+          "changed_replays": 2
+        },
+        {
+          "rows": 4,
+          "sampled": false,
+          "eager": true,
+          "changed_replays": 2
+        },
+        {
+          "rows": 4,
+          "sampled": true,
+          "eager": true,
+          "changed_replays": 2
+        }
+      ],
+      "transport_rows": [
+        511,
+        512,
+        668,
+        2304,
+        576
+      ],
+      "bounded": {
+        "legacy_control": "bounded graph rejects node type 6 at body/0: host callbacks, event/semaphore nodes, allocation and nested conditions are forbidden",
+        "checks": [
+          {
+            "rows": 1,
+            "limit": 1,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 1,
+            "limit": 2,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 1,
+            "limit": 4,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 4,
+            "limit": 1,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 4,
+            "limit": 2,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 4,
+            "limit": 4,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          }
+        ],
+        "candidate_walk": [
+          {
+            "rows": 1,
+            "proposal_rows": 6,
+            "keys_per_rank": 96,
+            "limit": 1,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 1,
+            "proposal_rows": 6,
+            "keys_per_rank": 96,
+            "limit": 2,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 1,
+            "proposal_rows": 6,
+            "keys_per_rank": 96,
+            "limit": 4,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 4,
+            "proposal_rows": 24,
+            "keys_per_rank": 384,
+            "limit": 1,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 4,
+            "proposal_rows": 24,
+            "keys_per_rank": 384,
+            "limit": 2,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 4,
+            "proposal_rows": 24,
+            "keys_per_rank": 384,
+            "limit": 4,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          }
+        ]
+      },
+      "real_rows": [
+        2047,
+        2048,
+        2121,
+        2122,
+        2123,
+        2124,
+        2128,
+        2671,
+        2672,
+        32002,
+        32003
+      ],
+      "seconds": 76.95208815200021,
+      "scope": "real TP4 NCCL and one-shot, changed ordinary and bounded graph replay, FP8/BF16 transport; not consumer speed"
+    },
+    {
+      "passed": true,
+      "rank": 2,
+      "checks": [
+        {
+          "rows": 1,
+          "sampled": false,
+          "eager": true,
+          "changed_replays": 2
+        },
+        {
+          "rows": 1,
+          "sampled": true,
+          "eager": true,
+          "changed_replays": 2
+        },
+        {
+          "rows": 4,
+          "sampled": false,
+          "eager": true,
+          "changed_replays": 2
+        },
+        {
+          "rows": 4,
+          "sampled": true,
+          "eager": true,
+          "changed_replays": 2
+        }
+      ],
+      "transport_rows": [
+        511,
+        512,
+        668,
+        2304,
+        576
+      ],
+      "bounded": {
+        "legacy_control": "bounded graph rejects node type 6 at body/0: host callbacks, event/semaphore nodes, allocation and nested conditions are forbidden",
+        "checks": [
+          {
+            "rows": 1,
+            "limit": 1,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 1,
+            "limit": 2,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 1,
+            "limit": 4,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 4,
+            "limit": 1,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 4,
+            "limit": 2,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 4,
+            "limit": 4,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          }
+        ],
+        "candidate_walk": [
+          {
+            "rows": 1,
+            "proposal_rows": 6,
+            "keys_per_rank": 96,
+            "limit": 1,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 1,
+            "proposal_rows": 6,
+            "keys_per_rank": 96,
+            "limit": 2,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 1,
+            "proposal_rows": 6,
+            "keys_per_rank": 96,
+            "limit": 4,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 4,
+            "proposal_rows": 24,
+            "keys_per_rank": 384,
+            "limit": 1,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 4,
+            "proposal_rows": 24,
+            "keys_per_rank": 384,
+            "limit": 2,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 4,
+            "proposal_rows": 24,
+            "keys_per_rank": 384,
+            "limit": 4,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          }
+        ]
+      },
+      "real_rows": [
+        2047,
+        2048,
+        2121,
+        2122,
+        2123,
+        2124,
+        2128,
+        2671,
+        2672,
+        32002,
+        32003
+      ],
+      "seconds": 76.97356327201123,
+      "scope": "real TP4 NCCL and one-shot, changed ordinary and bounded graph replay, FP8/BF16 transport; not consumer speed"
+    },
+    {
+      "passed": true,
+      "rank": 3,
+      "checks": [
+        {
+          "rows": 1,
+          "sampled": false,
+          "eager": true,
+          "changed_replays": 2
+        },
+        {
+          "rows": 1,
+          "sampled": true,
+          "eager": true,
+          "changed_replays": 2
+        },
+        {
+          "rows": 4,
+          "sampled": false,
+          "eager": true,
+          "changed_replays": 2
+        },
+        {
+          "rows": 4,
+          "sampled": true,
+          "eager": true,
+          "changed_replays": 2
+        }
+      ],
+      "transport_rows": [
+        511,
+        512,
+        668,
+        2304,
+        576
+      ],
+      "bounded": {
+        "legacy_control": "bounded graph rejects node type 6 at body/0: host callbacks, event/semaphore nodes, allocation and nested conditions are forbidden",
+        "checks": [
+          {
+            "rows": 1,
+            "limit": 1,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 1,
+            "limit": 2,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 1,
+            "limit": 4,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 4,
+            "limit": 1,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 4,
+            "limit": 2,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          },
+          {
+            "rows": 4,
+            "limit": 4,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_history": true
+          }
+        ],
+        "candidate_walk": [
+          {
+            "rows": 1,
+            "proposal_rows": 6,
+            "keys_per_rank": 96,
+            "limit": 1,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 1,
+            "proposal_rows": 6,
+            "keys_per_rank": 96,
+            "limit": 2,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 1,
+            "proposal_rows": 6,
+            "keys_per_rank": 96,
+            "limit": 4,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 4,
+            "proposal_rows": 24,
+            "keys_per_rank": 384,
+            "limit": 1,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 4,
+            "proposal_rows": 24,
+            "keys_per_rank": 384,
+            "limit": 2,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          },
+          {
+            "rows": 4,
+            "proposal_rows": 24,
+            "keys_per_rank": 384,
+            "limit": 4,
+            "changed_replays": 2,
+            "rank1_stop_positions": [
+              0,
+              1,
+              9
+            ],
+            "exact_topk_scores_ids_and_root_walk": true,
+            "retained_child": true
+          }
+        ]
+      },
+      "real_rows": [
+        2047,
+        2048,
+        2121,
+        2122,
+        2123,
+        2124,
+        2128,
+        2671,
+        2672,
+        32002,
+        32003
+      ],
+      "seconds": 76.97527245100355,
+      "scope": "real TP4 NCCL and one-shot, changed ordinary and bounded graph replay, FP8/BF16 transport; not consumer speed"
+    }
+  ],
+  "scope": "Reuse exact agreement/transport wrapper and native kernels; changed candidate staging remains separately queued; no complete consumer performance verdict."
+}

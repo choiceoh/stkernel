@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import torch
-from engine.base.comm import Comm
+from engine.base.comm import Comm, LocalTP
 
 
 def _gather_worker(rank, rendezvous):
@@ -21,6 +21,13 @@ def _gather_worker(rank, rendezvous):
         for dim in (0, 1, -1, -2):
             got = comm.all_gather(parts[rank], dim)
             torch.testing.assert_close(got, torch.cat(parts, dim), rtol=0, atol=0)
+        for dtype in (torch.int64, torch.float32):
+            value = parts[rank].to(dtype).clone()[:, ::2]
+            pointer = value.data_ptr()
+            got = comm.broadcast_tensor(value)
+            self_expected = parts[0].to(dtype)[:, ::2]
+            assert got.data_ptr() == pointer
+            torch.testing.assert_close(got, self_expected, rtol=0, atol=0)
     finally:
         dist.destroy_process_group()
 
@@ -45,6 +52,32 @@ class GatherTests(unittest.TestCase):
         import torch.multiprocessing as mp
         with tempfile.TemporaryDirectory() as temp:
             mp.spawn(_gather_worker, args=((Path(temp)/'rendezvous').as_uri(),), nprocs=2, join=True)
+
+    def test_native_root_broadcast_preserves_int64_bits_and_inplace_strided_views(self):
+        for size in (1, 6, 24, 64):
+            for layout in ('aligned', 'offset', 'strided'):
+                def rank(local):
+                    backing = torch.arange(size * 2 + 1, dtype=torch.int64) + local.rank * 1000
+                    value = backing[:size] if layout == 'aligned' else (
+                        backing[1:size+1] if layout == 'offset' else backing[1:2*size+1:2])
+                    expected = torch.arange(size, dtype=torch.int64) - 10
+                    expected[0] = torch.iinfo(torch.int64).min
+                    if size > 1:
+                        expected[-1] = torch.iinfo(torch.int64).max
+                    if local.rank == 0:
+                        value.copy_(expected)
+                    pointer = value.data_ptr()
+                    transport = SimpleNamespace(
+                        eligible_max=lambda t: t.dtype == torch.int64 and t.numel() <= 64
+                                               and t.is_contiguous() and t.data_ptr() % 16 == 0,
+                        reduce_max=local.all_reduce_max)
+                    got = Comm(4, local.rank, transport=transport).broadcast_tensor(value)
+                    self.assertIs(got, value)
+                    self.assertEqual(got.data_ptr(), pointer)
+                    torch.testing.assert_close(got, expected, rtol=0, atol=0)
+                with self.subTest(size=size, layout=layout), patch('torch.distributed.broadcast',
+                        side_effect=AssertionError('native broadcast entered NCCL')):
+                    LocalTP(4, timeout_s=20).run(rank)
 
     def test_rank_major_collective_matches_cat_on_every_axis(self):
         for shape in ((5,), (3, 7), (2, 3, 5)):

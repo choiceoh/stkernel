@@ -16,6 +16,7 @@ class IsolatedRank:
     world_size=4
     def all_reduce(self,x): return x
     def all_reduce_max(self,x): return x
+    def broadcast_tensor(self,x): return x  # no peers in the isolated arithmetic oracle
     def all_gather(self,x,dim=-1): return x
     def wait_prepared(self,phase,**kwargs): pass  # single-rank arithmetic diagnostic; no peers
 
