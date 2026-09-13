@@ -66,13 +66,15 @@ def kernel_shape(cfg: dict, tp: int = 4, spec_k: "int | None" = None) -> "Kernel
     ratio; `spec_k` the MTP head's `num_nextn_predict_layers`. The experts are FP4 e2m1 in groups of 32
     per row with E8M0 scales -- the MXFP4 weight layout -- multiplied by FP8 activations
     (engine/modules/quant.fp4_gemm), so quant "mxfp4-a8", not the b12x lane's NVFP4 group-16: the
-    admission table refuses that lane for this model, by name. DSv4.1 is outside the engine's scope (CHARTER D5); this derivation
+    admission table refuses that lane for this model, by name. The model has no dense layers (`intermediate_size` null):
+    its dense MLP is the shared expert every token passes, `n_shared_experts` x `moe_intermediate_size` wide and TP-sharded
+    (budget.py), so that is `dense_inter_local`. DSv4.1 is outside the engine's scope (CHARTER D5); this derivation
     exists so the wizard can judge a second real checkpoint.
     """
     from engine.base.kernel_shape import Attention, Comm, Indexer, KernelShape, MoE
     hidden = cfg["hidden_size"]
     ratios = [r for r in cfg["compress_ratios"] if r > 0]
-    dense = cfg.get("intermediate_size") or 0
+    dense = cfg.get("intermediate_size") or cfg.get("n_shared_experts", 0) * cfg["moe_intermediate_size"]
     return KernelShape(
         comm=Comm(world=tp, hidden=hidden), hidden=hidden, hc=cfg["hc_mult"], tp=tp,
         attention=Attention(kind="mla", heads=cfg["num_attention_heads"] // tp, head_dim=cfg["head_dim"],

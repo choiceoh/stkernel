@@ -1,28 +1,33 @@
-"""One-sequence KDA that owns writes to the engine's canonical rollback ring."""
+"""One-sequence KDA that owns writes to the engine's canonical rollback ring.
+
+Two gate forms reach the same launch. The fused entries (`recurrent_kda_ring`, `recurrent_kda_ring_rows`) compute
+KDA's per-channel gate inside the kernel from raw projections. The decay entries (`recurrent_decay_ring`,
+`recurrent_decay_ring_rows`) take a log-decay computed outside it -- GDN's, one value per head, read through a
+stride-0 channel axis (engine/kernels/linear_decay.per_channel) -- with the in-kernel gate off: glue (cells.GLUE),
+the recurrence being the same with every channel of a head sharing the decay (engine/modules/linear_attention).
+"""
 import torch
 import triton
 
 from .fused_recurrent import fused_recurrent_gated_delta_rule_fwd_kernel
 
-_CELL_SEEN = None
+_CELL_SEEN = {}
 
 
-def _check_cell() -> None:
-    """This lane fuses KDA's per-channel gate (COMPUTE_GATE) inside the kernel. A kernel shape whose
-    linear attention keeps its decay per head (GDN) cannot run it: that cell precomputes its decay and
-    runs fused_recurrent_kda with kda/decay.per_channel. Checked once per bound shape."""
-    global _CELL_SEEN
+def _check_cell(decay: bool = False) -> None:
+    """The fused entries compute KDA's per-channel gate (COMPUTE_GATE) inside the kernel; a kernel shape whose linear
+    attention keeps its decay per head (GDN) cannot run them and takes the decay entries. Checked once per bound shape
+    and entry form."""
     from engine.base.kernel_shape import bound
     from engine.kernels.cells import FUSED_GATE_DECAY
     shape = bound()
-    if shape is not _CELL_SEEN:
+    if _CELL_SEEN.get(decay) is not shape:
         if shape.linear is None:
             raise ValueError("the bound kernel shape declares no linear attention; the ring KDA lane does not apply")
-        if shape.linear.decay != FUSED_GATE_DECAY:
+        if not decay and shape.linear.decay != FUSED_GATE_DECAY:
             raise ValueError("the ring KDA lane fuses KDA's per-channel gate; a per-head decay cell "
-                             "(linear.decay == 'head') runs fused_recurrent_kda(compute_gate=False) "
-                             "on a decay widened by engine.kernels.linear_decay.per_channel")
-        _CELL_SEEN = shape
+                             "(linear.decay == 'head') runs recurrent_decay_ring on its precomputed decay")
+        _CELL_SEEN[decay] = shape
 
 
 def recurrent_kda_ring(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound):
@@ -54,8 +59,35 @@ def recurrent_kda_ring_rows(q, k, v, g, beta, a_log, g_bias, ring, slots, contex
     return _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slots, contexts, lower_bound, rows=slots.numel())
 
 
-def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound, *, deferred=False, rows=1, factors=None):
-    _check_cell()
+def recurrent_decay_ring(q, k, v, decay, beta, ring, slot, context):
+    """`recurrent_kda_ring` for a log-decay computed outside the kernel -- GDN's (glue, cells.GLUE).
+
+    `decay` is the natural-log decay (<= 0) per head [1,T,HV], read through a stride-0 channel axis without a copy, or
+    per channel [1,T,HV,K]. Beta holds raw logits (the kernel sigmoids them), Q/K are l2-normalised in the kernel, and
+    the ring, slot and context contract is `recurrent_kda_ring`'s. The launch and its ring writes are the fused entry's
+    with the in-kernel gate off, the recurrence fused_recurrent_kda(compute_gate=False) computes."""
+    return _recurrent(q, k, v, decay, beta, None, None, ring, slot, context, None, decay=True)
+
+
+def recurrent_decay_ring_rows(q, k, v, decay, beta, ring, slots, contexts):
+    """`recurrent_kda_ring_rows` for a log-decay computed outside the kernel (see `recurrent_decay_ring`): the rows of
+    a decode step back to back along T, one CUDA slot and context per row."""
+    if not (isinstance(slots, torch.Tensor) and isinstance(contexts, torch.Tensor)) or slots.numel() != contexts.numel():
+        raise ValueError("rows need one CUDA slot and one CUDA context per row")
+    return _recurrent(q, k, v, decay, beta, None, None, ring, slots, contexts, None, rows=slots.numel(), decay=True)
+
+
+def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound, *, deferred=False, rows=1, factors=None,
+               decay=False):
+    _check_cell(decay)
+    if decay:
+        if a_log is not None or g_bias is not None or lower_bound is not None:
+            raise ValueError("the decay entries take the decay itself, no gate parameters")
+        if not isinstance(g, torch.Tensor) or g.ndim not in (3, 4) or k.ndim != 4 or g.shape[:2] != k.shape[:2]:
+            raise ValueError("a ring decay is per head [1,T,HV] or per channel [1,T,HV,K]")
+        if g.ndim == 3:
+            from engine.kernels.linear_decay import per_channel
+            g = per_channel(g, k.shape[-1])
     if any(t.ndim != 4 for t in (q, k, v, g)):
         raise ValueError("ring KDA requires [1,T,H,D] inputs")
     b, t, h, kd = k.shape
@@ -75,11 +107,12 @@ def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound
             ring.stride()[1:] != (hv*kd*vd, kd*vd, vd, 1) or
             ring.stride(0) < ring.shape[1]*hv*kd*vd):
         raise ValueError("ring must be FP32/FP16 [slots,R,HV,K,V] with dense rows and 1 <= T <= R")
-    for x, size in ((a_log, h), (g_bias, h*kd)):
-        if x.device != q.device or x.dtype != torch.float32 or x.numel() != size or not x.is_contiguous():
-            raise ValueError("ring gate parameters must be contiguous FP32 on the input device")
-    if lower_bound is None:
-        raise ValueError("ring KDA requires a bounded gate")
+    if not decay:
+        for x, size in ((a_log, h), (g_bias, h*kd)):
+            if x.device != q.device or x.dtype != torch.float32 or x.numel() != size or not x.is_contiguous():
+                raise ValueError("ring gate parameters must be contiguous FP32 on the input device")
+        if lower_bound is None:
+            raise ValueError("ring KDA requires a bounded gate")
     device_indices = isinstance(slot, torch.Tensor) and isinstance(context, torch.Tensor)
     if device_indices:
         if any(x.device != q.device or x.numel() != rows or x.dtype not in (torch.int32, torch.int64)
@@ -95,7 +128,7 @@ def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound
     # This conservatively rejects reads from padding between this ring's slots.
     ring_lo, ring_hi = ring.data_ptr(), ring.data_ptr() + (
         (ring.shape[0]-1)*ring.stride(0) + ring.shape[1]*hv*kd*vd)*ring.element_size()
-    for x in (*inputs, a_log, g_bias, *((slot, context) if device_indices else ())):
+    for x in (*inputs, *(() if decay else (a_log, g_bias)), *((slot, context) if device_indices else ())):
         hi = x.data_ptr() + (1 + sum((n-1)*s for n,s in zip(x.shape,x.stride())))*x.element_size()
         if x.data_ptr() < ring_hi and hi > ring_lo:
             raise ValueError("ring writes must not overlap inputs or device indices")
@@ -111,7 +144,7 @@ def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound
             raise ValueError("deferred factors need contiguous FP32 [rows*T,H,D] storage")
         spans = [(x.data_ptr(), x.data_ptr()+x.numel()*x.element_size()) for x in factors]
         for i, (lo, hi) in enumerate(spans):
-            reads = (*inputs, a_log, g_bias, *((slot, context) if device_indices else ()))
+            reads = (*inputs, *(() if decay else (a_log, g_bias)), *((slot, context) if device_indices else ()))
             forbidden = [(ring_lo, ring_hi), *spans[:i]]
             forbidden += [(x.data_ptr(), x.data_ptr()+(1+sum((n-1)*s for n, s in zip(x.shape, x.stride())))*x.element_size())
                           for x in reads]
@@ -137,8 +170,9 @@ def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound
         stride_init_state_token=ring.stride(1), stride_final_state_token=ring.stride(1),
         stride_indices_seq=1, stride_indices_tok=1,
         INPLACE_FINAL_STATE=False, IS_BETA_HEADWISE=False, USE_QK_L2NORM_IN_KERNEL=True,
-        IS_KDA=True, SIGMOID_BETA=True, COMPUTE_GATE=True, SAFE_GATE=True,
-        LOWER_BOUND=lower_bound, STATE_KV=True, INPUT_STRIDES=strides,
+        # the decay entries: the gate is off and LOWER_BOUND unread, pinned to fused_recurrent_kda's -5.0 specialization
+        IS_KDA=True, SIGMOID_BETA=True, COMPUTE_GATE=not decay, SAFE_GATE=True,
+        LOWER_BOUND=-5.0 if decay else lower_bound, STATE_KV=True, INPUT_STRIDES=strides,
         ring_slot=slot, ring_context=context, RING_SIZE=ring.shape[1],
         RING_SLOT_STRIDE=ring.stride(0), RING_DEVICE_INDICES=device_indices,
         RING_INDEX_STRIDE=1 if rows > 1 else 0,

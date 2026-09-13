@@ -87,15 +87,17 @@ def _ensure_workspace(device):
     return _WS
 
 
-def maybe_arm():
-    """Compile and judge the mandatory MLA lane once, before graph capture."""
+def maybe_arm(check=None):
+    """Compile and judge the mandatory MLA lane once, before graph capture. `check` admits the bound attention:
+    `_check_cell` (the compiled cell only) by default; engine/kernels/mla/glue.arm passes the glue's, which admits the
+    cells its exact adapters put on this one. The self-test always runs at the compiled cell."""
     global _MLA_CLUSTER_MAX
     if _ARMED["mla"]:
         return
     import torch
     if torch.cuda.is_current_stream_capturing():
         raise RuntimeError("ST MLA must be warmed before CUDA graph capture")
-    _check_cell()
+    (_check_cell if check is None else check)()
     ext = _build()
     major, minor, sms, _ = ext.probe_device()
     device = _bound().device
