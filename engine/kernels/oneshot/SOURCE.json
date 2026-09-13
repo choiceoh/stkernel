@@ -4,6 +4,6 @@
     "build/glm53/dsv4_oneshot_ar.cu": "9f0c0a88dea9fc7f70ba639cdc5f3f19e09e48037a4af4da82941632d0f0d0d3",
     "build/glm53/dsv4_oneshot_transport.h": "98af9423143e50dbdba51d3c473ca62c712332d33bf5881f4a03fbf509672cc6"
   },
-  "changes": "Owned lockstep native binding; removed steady-state phase counters and periodic tracing, retaining stall watchdog and failure reports; BF16 sums fold global ranks in canonical order in both vector lanes and scalar tails Optional same-stream rank-packet exchange defers reduction to the immediate MHC consumer.",
-  "local_cuda_sha256": "1daee4e70a801162f4464efbfbe32b32eb28b2bd1bc3fe3a566d9af1c6cae68d"
+  "changes": "Owned lockstep native binding; removed steady-state phase counters and periodic tracing, retaining stall watchdog and failure reports; BF16 sums fold global ranks in canonical order in both vector lanes and scalar tails Optional same-stream rank-packet exchange defers reduction to the immediate MHC consumer. A replay-time TX reservation accepts direct W4 output; publication waits for all producer writers, preserves collective tickets, and hands canonical rank pointers to MHC.",
+  "local_cuda_sha256": "75ddec73716c7b0b82150620a8f14d13ba6a2faf383e5121ce5ce83fd0443d6c"
 }

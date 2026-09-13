@@ -935,6 +935,90 @@ static at::Tensor py_oneshot_packets(at::Tensor input) {
   return addresses;
 }
 
+// Reserve before the producer, publish only after its entire grid has retired.
+// The publication kernel waits for the producer's whole grid before publishing.
+// Only then may its dependent MHC begin preparing immutable weights.
+__global__ void k_reserve_packets(Ctrl* c, int64_t* reservation) {
+  const uint64_t next = c->tx_seq + 1;
+  int sp = 0;
+  unsigned ns = SPIN_NS0;
+  const auto start = clock64();
+  while (next > c->ack_seq + RING) {
+    osar_backoff(sp, ns);
+    osar_stall_check(c, sp, start, STALL_GUARD, next, next % RING, 0u);
+  }
+  c->pad[0] = 0;
+  reservation[0] = reinterpret_cast<int64_t>(c->tx[next % RING]);
+  reservation[1] = next;
+}
+
+__global__ void k_publish_packets(Ctrl* c, const int64_t* reservation,
+                                  int64_t* addresses, int nbytes, int rank) {
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  const uint64_t next = reservation[1];
+  const int slot = next % RING;
+  // Keep the existing ticket count aligned even when the next collective is
+  // an int64 MAX or an ordinary copied BF16 packet.
+  atomicAdd((unsigned long long*)&c->done_ctr, (unsigned long long)ARGRID);
+  c->nbytes[slot] = nbytes;
+  __threadfence_system();
+  c->tx_seq = next;
+  __threadfence_system();
+  asm volatile("griddepcontrol.launch_dependents;");
+  const auto start = clock64();
+  int sp = 0;
+  unsigned ns = SPIN_NS0;
+  for (int p = 0; p < NPEER; ++p) {
+    while (c->rxf[slot][p] < next) {
+      osar_backoff(sp, ns);
+      osar_stall_check(c, sp, start, STALL_WAIT, next, slot, 1u << p);
+    }
+  }
+  c->pad[0] = 0;
+  __threadfence_system();
+  int peer = 0;
+  for (int r = 0; r < 4; ++r)
+    addresses[r] = reinterpret_cast<int64_t>(r == rank ? c->tx[slot] : c->rx[slot][peer++]);
+}
+
+static void check_producer_template(const at::Tensor& input) {
+  TORCH_CHECK(g_started && input.is_cuda() && input.scalar_type() == at::kBFloat16 &&
+              input.is_contiguous() && input.dim() == 2 && input.size(1) == 4096 &&
+              input.size(0) > 0 && input.size(0) <= 32 &&
+              (reinterpret_cast<uintptr_t>(input.data_ptr()) & 15) == 0,
+              "one-shot producer requires live TP4 and BF16 [1..32,4096] metadata");
+}
+
+static at::Tensor py_reserve_packets(at::Tensor input) {
+  check_producer_template(input);
+  auto reservation = torch::empty({2}, input.options().dtype(at::kLong));
+  k_reserve_packets<<<1, 1, 0, c10::cuda::getCurrentCUDAStream()>>>(g_ctrl, reservation.data_ptr<int64_t>());
+  auto err = cudaGetLastError();
+  TORCH_CHECK(err == cudaSuccess, "one-shot reservation: ", cudaGetErrorString(err));
+  return reservation;
+}
+
+static at::Tensor py_publish_packets(at::Tensor input, at::Tensor reservation) {
+  check_producer_template(input);
+  TORCH_CHECK(reservation.device() == input.device() && reservation.scalar_type() == at::kLong &&
+              reservation.is_contiguous() && reservation.numel() == 2,
+              "invalid one-shot producer reservation");
+  auto addresses = torch::empty({4}, input.options().dtype(at::kLong));
+  cudaLaunchConfig_t cfg{};
+  cfg.gridDim = dim3(1);
+  cfg.blockDim = dim3(1);
+  cfg.stream = c10::cuda::getCurrentCUDAStream();
+  cudaLaunchAttribute attr{};
+  attr.id = cudaLaunchAttributeProgrammaticStreamSerialization;
+  attr.val.programmaticStreamSerializationAllowed = 1;
+  cfg.attrs = &attr;
+  cfg.numAttrs = 1;
+  auto err = cudaLaunchKernelEx(&cfg, k_publish_packets, g_ctrl, reservation.data_ptr<int64_t>(),
+      addresses.data_ptr<int64_t>(), int(input.numel() * 2), g_rank);
+  TORCH_CHECK(err == cudaSuccess, "one-shot publication: ", cudaGetErrorString(err));
+  return addresses;
+}
+
 static at::Tensor py_oneshot_max_int64(at::Tensor input) {
   TORCH_CHECK(input.is_cuda() && input.scalar_type() == at::kLong && input.is_contiguous(),
               "oneshot MAX requires contiguous CUDA int64");
@@ -970,6 +1054,7 @@ static void py_shutdown() {
   g_started = false;
 }
 
+#ifndef ST_ONESHOT_LOCAL_TEST
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("init", &py_init);
   m.def("local_infos", &py_local_infos);
@@ -977,6 +1062,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("oneshot_ar", &py_oneshot);
   m.def("oneshot_ar_consumer", &py_oneshot_consumer);
   m.def("oneshot_packets", &py_oneshot_packets);
+  m.def("reserve_packets", &py_reserve_packets);
+  m.def("publish_packets", &py_publish_packets);
   m.def("oneshot_max_int64", &py_oneshot_max_int64);
   m.def("oneshot_ar_hint", &py_oneshot_hint);
   m.def("phase_counters", &py_phase_counters);
@@ -988,3 +1075,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("healthy", &py_healthy);
   m.def("shutdown", &py_shutdown);
 }
+
+#endif  // ST_ONESHOT_LOCAL_TEST

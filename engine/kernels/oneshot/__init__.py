@@ -191,6 +191,33 @@ class OneShot:
         self.pending = RankPackets(self, t, self.ext.oneshot_packets(t))
         return self.pending
 
+    def produce(self, template, producer):
+        """Reserve -> GEMM -> publish, on one stream. Template is shape metadata.
+
+        The descriptor's local rank points to the reserved TX slot. Addresses
+        are resolved on device each replay; no graph retains a fixed ring slot.
+        """
+        self.assert_consumed()
+        if (self.closed or not self.eligible(template) or template.ndim != 2
+                or template.shape[1] != self.hidden or template.shape[0] > 32):
+            raise ValueError('direct producer requires live BF16 [1..32,4096] metadata')
+        if not self.ext.healthy():
+            raise RuntimeError('one-shot proxy stopped progressing')
+        stream = torch.cuda.current_stream(template.device).cuda_stream
+        self.pending = object()  # no collective is legal while the producer owns its slot
+        try:
+            reservation = self.ext.reserve_packets(template)
+            producer(reservation)
+            if torch.cuda.current_stream(template.device).cuda_stream != stream:
+                raise RuntimeError('direct producer changed its reservation stream')
+            descriptor = self.ext.publish_packets(template, reservation)
+            self.pending = RankPackets(self, template, descriptor)
+            return self.pending
+        except BaseException:
+            self.packet_failed = True  # a reserved slot cannot fall back to another collective
+            self.pending = None
+            raise
+
     @staticmethod
     def eligible_max(t):
         return (t.is_cuda and t.dtype == torch.int64 and t.is_contiguous()

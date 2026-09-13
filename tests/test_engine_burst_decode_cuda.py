@@ -51,6 +51,36 @@ def toy_engine():
 
 @unittest.skipUnless(torch.cuda.is_available(), 'requires admitted GB10')
 class ServedBurstCudaTests(unittest.TestCase):
+    def test_progress_can_cancel_before_the_four_iteration_burst_retires(self):
+        from engine.profiles.glm53.burst_decode import BurstDecode
+        class DelayedBurst(BurstDecode):
+            def _body(self, shape):
+                torch.cuda._sleep(50000000)
+                super()._body(shape)
+        e, p = toy_engine(), None
+        try:
+            p = DelayedBurst(e, 4)
+            seen = []
+            def progress():
+                seen.append((e.ctx[1], pending.event.query(), e.inflight[1]))
+                p.signal_cancel()
+            e.on_decode_progress = progress
+            pending = p.launch([1], [1])
+            pending.resolve()
+            self.assertTrue(any(not retired for _, retired, _ in seen))
+            self.assertTrue(all(held == 4 for _, _, held in seen))
+            self.assertLess(len(pending.outcomes), 4)
+            self.assertEqual([ctx for ctx, _, _ in seen], list(range(3, e.ctx[1]+1, 2)))
+            e.on_decode_progress = None
+            # A new launch resets cancellation only after the old graph has retired.
+            p.launch([1], [1]).resolve()
+            self.assertEqual(e.inflight[1], 0)
+        finally:
+            if p is not None:
+                p.close()
+            e.sampling_graphs.greedy.close()
+            e.decode_graphs.graphs.close()
+
     def test_boot_capture_rebinding_and_shared_chain_match_ordinary_serving(self):
         from engine.profiles.glm53.burst_decode import BurstDecode, BurstPending
         from engine.profiles.glm53.pipeline import AsyncDecode

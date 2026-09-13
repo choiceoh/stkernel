@@ -1,7 +1,7 @@
 """Actual CUDA tile readiness/slot reuse; synthetic peers, no NIC claim."""
 from types import SimpleNamespace as NS
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import torch
 
 
@@ -9,7 +9,7 @@ import torch
 class PrefillTilesCudaTests(unittest.TestCase):
     def test_bf16_fp8_threshold_tail_and_delayed_slot_reuse(self):
         from engine.kernels.prefill_collectives import PrefillCollectives, BLOCK
-        from engine.kernels.dense import FP8Linear
+        from engine.kernels.dense import DenseLinear, FP8Linear
         if torch.cuda.get_device_capability() != (12, 1):
             self.skipTest("requires GB10")
         torch.manual_seed(931302)
@@ -55,6 +55,20 @@ class PrefillTilesCudaTests(unittest.TestCase):
                     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
                     self.assertEqual(cursor[0], local_rows)
                     self.assertEqual(set(modes), {"fp8" if local_rows >= 1024 else "bf16"})
+                    if local_rows >= 1024:
+                        # The serving DenseLinear callback consumes received bytes;
+                        # neither its ordinary BF16 path nor the projection callback runs.
+                        layer = DenseLinear.__new__(DenseLinear)
+                        layer.cols, layer.fp8, layer.observer, layer.executed = 4096, project, None, 0
+                        cursor[0] = 0
+                        fallback = Mock(side_effect=AssertionError("materialized BF16 projection"))
+                        fused = owner.gather_project(peers[0], fallback,
+                                                     packet_project=layer.packet_projector())
+                        torch.cuda.synchronize()
+                        torch.testing.assert_close(fused, expected, rtol=0, atol=0)
+                        fallback.assert_not_called()
+                        self.assertEqual(layer.executed, 2)
+                        self.assertIn("fp8_packet_projection", owner.executed)
 
 
 if __name__ == "__main__":

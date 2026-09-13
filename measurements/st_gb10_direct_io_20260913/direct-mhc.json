@@ -1,0 +1,21 @@
+{
+  "scope": "real W4 producer, ring protocol with CPU proxy oracle, and MHC; NIC and serving speed pending",
+  "result": {
+    "tests": 3,
+    "skipped": 0
+  },
+  "seconds": 106.2441975880065,
+  "source_sha256": {
+    "engine/kernels/dense/kernels.cu": "6861bb922af1ce61d828119b9e85fa94baed33f8ab15320ac9c15a523f665ee3",
+    "engine/kernels/dense/mhc.py": "a915f91f14fab2cfee12b27d7f7f14f91af6c45eb32ca148495f0097607bc983",
+    "engine/kernels/oneshot/dsv4_oneshot_ar.cu": "75ddec73716c7b0b82150620a8f14d13ba6a2faf383e5121ce5ce83fd0443d6c",
+    "engine/kernels/oneshot/__init__.py": "067b73fc0b8b85304f5e5e55de8f67bdb091144c688b736e2d7839670767d3cb",
+    "engine/profiles/glm53/direct_mhc.py": "5956b4ecc4b1fb05dfdf4980b234f87405b6553e84855228427799db062f3d0b",
+    "tests/test_engine_direct_mhc_cuda.py": "664803e6a3be8f13e9da036a884c60d045f0f4c2a1e4d6d3539d9704b1bde7e5",
+    "engine/kernels/dense/__init__.py": "ded1a3d82a4b4c26503014d61cff8e57ebf5afc4f0530bf4f029c0cbe902ebe5",
+    "engine/profiles/glm53/net.py": "84fda64886688b65f9eb0152d24e080d52cbff547ca6982bffafa94d431e779a",
+    "engine/profiles/glm53/execution.py": "f44bb8b171c56ea62a589014064fb64b1cac0f37f43b373941e3ec9ae901c727",
+    "probes/oneshot_producer_oracle.cu": "7ea2c5006b21d75c029ba0b27cca7dc109f4792bcd5203903b96b91e798c5f54",
+    "tests/test_engine_direct_producer_cuda.py": "2a53541a89d631d92683204e412bbca73b6d30d0702af1d1062e0a27622f0672"
+  }
+}

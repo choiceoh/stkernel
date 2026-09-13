@@ -17,6 +17,21 @@ def consume(net, layer, carry, side, packet):
     carry.res, carry.post, carry.comb, carry.x = packet.consume(mhc)
 
 
+def exchange_local(net, layer, carry, side):
+    transport = net.comm.transport
+    if not hasattr(transport, "produce") or (side == "ffn" and (net.F.is_moe(layer) or getattr(net, "modelopt", False))):
+        return transport.exchange(local(net, layer, carry, side))
+    def project(x, name):
+        dense = net.dense.get(name)
+        writer = getattr(dense, "slot_writer", lambda rows: None)(x.shape[0])
+        if writer is None:
+            return transport.exchange(net.linear(x, name))
+        # The previous MHC activation has the result's shape. Native MHC
+        # uses it only as metadata when the descriptor supplies all ranks.
+        return transport.produce(carry.x, lambda address: writer(x, address))
+    return local(net, layer, carry, side, project=project)
+
+
 def decode_direct(net, step, caches, aux_layers=(), aux_ready=None, *, consumer=consume):
     import torch
     transport = net.comm.transport
@@ -35,14 +50,13 @@ def decode_direct(net, step, caches, aux_layers=(), aux_ready=None, *, consumer=
         else:
             consumer(net, layer, c, "attn", packet)
             packet = None
-        packet = transport.exchange(local(net, layer, c, "attn"))
+        packet = exchange_local(net, layer, c, "attn")
         consumer(net, layer, c, "ffn", packet)
         packet = None
-        value = local(net, layer, c, "ffn")
         if layer == net.layers[-1] or layer in aux_layers:
-            c.x = net.comm.all_reduce(value)
+            c.x = net.comm.all_reduce(local(net, layer, c, "ffn"))
         else:
-            packet = transport.exchange(value)
+            packet = exchange_local(net, layer, c, "ffn")
         if layer in aux_layers:
             aux[layer] = auxiliary(net, c)
             if aux_ready is not None and layer == max(aux_layers):

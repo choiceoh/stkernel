@@ -80,20 +80,21 @@ def prepare(net, layer, carry, side):
         c.res, c.post, c.comb, c.x = net._hc_post_pre(layer, c.x, c.res, c.post, c.comb, side)
     c.projection = None
     if c.sp is not None and side == "attn" and not net.F.is_dsa(layer) and c.sp.project_tiles:
-        c.projection = c.sp.gather_project(c.x.contiguous(), lambda v: net.linear(v, f"L{layer}.kda.in_proj"))
+        c.projection = net.prefill_project(c.sp, c.x, f"L{layer}.kda.in_proj")
     elif c.sp is not None:
         c.x = c.sp.all_gather(c.x.contiguous())
 
 
-def local(net, layer, carry, side):
+def local(net, layer, carry, side, *, project=None):
     c = carry
     identity = lambda x: x
+    output = {} if project is None else dict(project=project)
     if side == "attn":
         if net.F.is_dsa(layer):
-            return net._dsa(layer, c.x, c.step, c.caches, reduce=identity)
-        return net._kda(layer, c.x, c.step, c.caches, reduce=identity, projection=c.projection)
+            return net._dsa(layer, c.x, c.step, c.caches, reduce=identity, **output)
+        return net._kda(layer, c.x, c.step, c.caches, reduce=identity, projection=c.projection, **output)
     op = net._moe if net.F.is_moe(layer) else net._dense
-    return op(layer, c.x, reduce=identity)
+    return op(layer, c.x, reduce=identity, **output)
 
 
 def auxiliary(net, carry):

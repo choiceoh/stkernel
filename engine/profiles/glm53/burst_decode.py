@@ -1,12 +1,14 @@
 """Serve deterministic bounded decode bursts through the existing async chain.
 
 One burst may be in flight. The entire write horizon is reserved first; all
-iteration outcomes are read back together. A prefix crossing stops the burst
+iteration outcomes are published to an owned CPU/GPU queue. A prefix crossing stops the burst
 before another iteration can overwrite its staged recurrent checkpoint.
 """
 from __future__ import annotations
 
 import torch
+import threading
+import time
 from contextlib import contextmanager
 
 from engine.base.graphs import frozen_gc
@@ -38,6 +40,8 @@ class BurstPending:
         self.pipeline, self.seqs, self.shape = pipeline, tuple(seqs), shape
         self.event, self.staged = event, staged
         self.iteration_seconds = None
+        self.outcomes = []
+        self.finished = [False] * len(seqs)
 
     def resolve(self):
         return self.pipeline.resolve_burst(self)
@@ -55,17 +59,24 @@ class BurstDecode(AsyncDecode):
         self.iterations = iterations
         self.states, self.logs, self.controls, self.loops = {}, {}, {}, {}
         self.pool = None
+        self.queue = None
+        self._queue_lock = threading.Lock()
+        self._queue_rows = ()
         pin = engine.caches.device.type == "cuda"
         n = engine.caches.pool.max_seqs
-        self.readback = dict(tokens=torch.empty(4, n, self.t, dtype=torch.int64, pin_memory=pin),
-                             count=torch.empty(4, n, dtype=torch.int64, pin_memory=pin),
-                             done=torch.empty(4, n, dtype=torch.bool, pin_memory=pin),
-                             accepted=torch.empty(4, n, dtype=torch.int64, pin_memory=pin),
-                             before=torch.empty(4, n, dtype=torch.int64, pin_memory=pin),
-                             iterations=torch.empty(1, dtype=torch.int64, pin_memory=pin),
+        self.readback = dict(iterations=torch.empty(1, dtype=torch.int64, pin_memory=pin),
                              timings=torch.empty(4, 2, dtype=torch.int64, pin_memory=pin),
                              stages=torch.empty(4, 2*len(DeviceStages.NAMES), dtype=torch.int64, pin_memory=pin))
+        if not pin:
+            self.readback.update(tokens=torch.empty(4, n, self.t, dtype=torch.int64),
+                                 count=torch.empty(4, n, dtype=torch.int64),
+                                 done=torch.empty(4, n, dtype=torch.bool),
+                                 accepted=torch.empty(4, n, dtype=torch.int64),
+                                 before=torch.empty(4, n, dtype=torch.int64))
         try:
+            if pin:
+                from engine.kernels.decode_queue import SharedDecodeQueue
+                self.queue = SharedDecodeQueue(n, self.t)
             self._capture()
         except BaseException:
             self.close()
@@ -96,10 +107,12 @@ class BurstDecode(AsyncDecode):
         b["real_slot"].copy_(b["seqs"] + 1)
         b["slot"].copy_(b["real_slot"])
         b["limit"].fill_(128)
-        logs = {k: torch.empty(4, n, dtype=torch.int64, device=dev)
-                for k in ("count", "accepted", "before")}
-        logs["tokens"] = torch.empty(4, n, t, dtype=torch.int64, device=dev)
-        logs["done"] = torch.empty(4, n, dtype=torch.bool, device=dev)
+        logs = {}
+        if self.queue is None:
+            logs = {k: torch.empty(4, n, dtype=torch.int64, device=dev)
+                    for k in ("count", "accepted", "before")}
+            logs["tokens"] = torch.empty(4, n, t, dtype=torch.int64, device=dev)
+            logs["done"] = torch.empty(4, n, dtype=torch.bool, device=dev)
         controls = dict(count=torch.zeros(1, dtype=torch.int64, device=dev),
                         stop=torch.zeros(1, dtype=torch.int64, device=dev),
                         interrupt=torch.zeros(1, dtype=torch.int64, device=dev),
@@ -111,11 +124,23 @@ class BurstDecode(AsyncDecode):
         n = shape[0]
         b, log, control = self.states[n], self.logs[n], self.controls[n]
         result = self.iterate(shape, b, stage_clock=DeviceStages(control["stages"], control["count"]))
-        for key, value in result.items():
-            log[key].index_copy_(0, control["count"], value.unsqueeze(0))
+        if self.queue is None:
+            for key, value in result.items():
+                log[key].index_copy_(0, control["count"], value.unsqueeze(0))
+        if self.queue is not None:
+            self.queue.read_interrupt(control["interrupt"])
         vote = stop_at_boundary(result["before"], b["ctx"], b["alive"], control["reserved"], shape[2],
                                 control["interrupt"], step_tokens=self.t, block=self.e.F.block)
         control["stop"].copy_(agree_stop(self.e.net.comm, vote))
+        if self.queue is not None:
+            self.queue.publish(result, control["count"])
+
+    def signal_cancel(self):
+        # HTTP only publishes a stop request. Row retirement and reuse remain
+        # on the runner thread after every rank has left the finite burst.
+        with self._queue_lock:
+            if self.queue is not None and self._queue_rows:
+                self.queue.cancel()
 
     def _capture(self):
         from engine.kernels.bounded_graph import BoundedGraph, build
@@ -150,7 +175,7 @@ class BurstDecode(AsyncDecode):
                                 captured.capture_end()
                         loop = BoundedGraph(captured, controls["count"], controls["stop"], self.iterations,
                                             owners=(b, self.logs[n], controls, e.decode_graphs,
-                                                    e.sampling_graphs, e.drafter.decode_graphs))
+                                                    e.sampling_graphs, e.drafter.decode_graphs, self.queue))
                     except BaseException:
                         captured.reset()
                         raise
@@ -203,12 +228,24 @@ class BurstDecode(AsyncDecode):
         # replace the pipeline's tensor entries without changing graph owners.
         self.buf = dict(b)
         controls["reserved"].copy_(self._upload(reserved, torch.int64))
-        controls["interrupt"].zero_()  # host cancellation drains this finite burst
+        controls["interrupt"].zero_()
         controls["stages"].fill_(-1)
         loop = self.loops[shape]
-        loop.replay()
-        for key, value in self.logs[n].items():
-            self.readback[key][:, :n].copy_(value, non_blocking=True)
+        if self.queue is not None:
+            with self._queue_lock:
+                self.queue.begin()
+                self._queue_rows = tuple(seqs)
+        try:
+            loop.replay()
+        except BaseException:
+            if self.queue is not None:
+                torch.cuda.synchronize()  # a failed launch cannot leave mapped owners in use
+                with self._queue_lock:
+                    self._queue_rows = ()
+            raise
+        if self.queue is None:
+            for key, value in self.logs[n].items():
+                self.readback[key][:, :n].copy_(value, non_blocking=True)
         self.readback["iterations"].copy_(controls["count"], non_blocking=True)
         self.readback["timings"].copy_(loop.timings, non_blocking=True)
         self.readback["stages"].copy_(controls["stages"], non_blocking=True)
@@ -221,10 +258,60 @@ class BurstDecode(AsyncDecode):
         self.pending.append(pending)
         return pending
 
+    def _apply_outcome(self, pending, result):
+        e = self.e
+        active = [i for i, seq in enumerate(pending.seqs) if seq in e.tokens]
+        if active and not any(result["count"][i] > 0 or result["done"][i] for i in active):
+            raise RuntimeError("bounded decode made no progress")
+        # Validate the whole row set before publishing any host state.
+        for i in active:
+            if not 0 <= result["count"][i] <= self.t or e.ctx[pending.seqs[i]] != result["before"][i]:
+                raise RuntimeError("bounded decode readback lost row/context order")
+        for i, seq in enumerate(pending.seqs):
+            pending.finished[i] |= bool(result["done"][i])
+            if seq not in e.tokens:
+                continue
+            count = result["count"][i]
+            if count > 0:
+                e.tokens[seq] += result["tokens"][i][:count]
+                e.ctx[seq] += count
+                e.accepted_total += result["accepted"][i]
+                e.drafted_total += e.drafter.k
+                boundary = (e.ctx[seq] // e.F.block) * e.F.block
+                if boundary > result["before"][i]:
+                    e.staged[seq] = boundary
+        pending.outcomes.append(result)
+
+    def _poll_outcomes(self, pending):
+        def consume():
+            while len(pending.outcomes) < self.iterations:
+                result = self.queue.take(len(pending.outcomes), len(pending.seqs))
+                if result is None:
+                    break
+                self._apply_outcome(pending, result)
+                callback = getattr(self.e, "on_decode_progress", None)
+                if callback is not None:
+                    callback()
+        try:
+            while True:
+                consume()
+                if pending.event.query():
+                    break
+                time.sleep(0.00005)  # release the GIL for the HTTP stream/cancel threads
+            consume()
+        finally:
+            try:
+                pending.event.synchronize()
+            finally:
+                with self._queue_lock:
+                    self._queue_rows = ()
+
     def resolve_burst(self, pending):
         if not self.pending or self.pending[0] is not pending:
             raise RuntimeError("decode bursts resolve in launch order")
-        if pending.event is not None:
+        if self.queue is not None:
+            self._poll_outcomes(pending)
+        elif pending.event is not None:
             pending.event.synchronize()
         e, host, n = self.e, self.readback, len(pending.seqs)
         iterations = int(host["iterations"][0])
@@ -234,37 +321,23 @@ class BurstDecode(AsyncDecode):
         pending.iteration_seconds = [(end-start)*1e-9 for start, end in times]
         if any(t < 0 for t in pending.iteration_seconds):
             raise RuntimeError("invalid bounded decode device timestamps")
-        counts, dones, accepts, tokens, before = (host[k][:iterations, :n].tolist()
-            for k in ("count", "done", "accepted", "tokens", "before"))
+        if self.queue is None:
+            for j in range(iterations):
+                self._apply_outcome(pending, {k: host[k][j, :n].tolist()
+                    for k in ("count", "done", "accepted", "tokens", "before")})
+        if len(pending.outcomes) != iterations:
+            raise RuntimeError("shared decode publication count differs from the retired graph")
         stages = host["stages"][:iterations].tolist()
-        finished = [False] * n
         pending.iteration_records = []
         for j in range(iterations):
-            active = [i for i, seq in enumerate(pending.seqs) if seq in e.tokens]
-            if active and not any(counts[j][i] > 0 or dones[j][i] for i in active):
-                raise RuntimeError("bounded decode made no progress")
-            for i, seq in enumerate(pending.seqs):
-                finished[i] |= bool(dones[j][i])
-                if seq not in e.tokens:
-                    continue
-                c = counts[j][i]
-                if not 0 <= c <= self.t or e.ctx[seq] != before[j][i]:
-                    raise RuntimeError("bounded decode readback lost row/context order")
-                if c > 0:
-                    e.tokens[seq] += tokens[j][i][:c]
-                    e.ctx[seq] += c
-                    e.accepted_total += accepts[j][i]
-                    e.drafted_total += e.drafter.k
-                    boundary = (e.ctx[seq] // e.F.block) * e.F.block
-                    if boundary > before[j][i]:
-                        e.staged[seq] = boundary
+            result = pending.outcomes[j]
             stage_us = {name: (stages[j][2*k+1]-stages[j][2*k])*1e-3
                         for k, name in enumerate(DeviceStages.NAMES) if stages[j][2*k] >= 0}
             for name, us in stage_us.items():
                 if us < 0:
                     raise RuntimeError("invalid bounded stage timestamps")
                 self.clock.totals[name] = self.clock.totals.get(name, 0.) + us * 1e-6
-            pending.iteration_records.append(dict(positions=before[j], committed=counts[j], accepted=accepts[j],
+            pending.iteration_records.append(dict(positions=result["before"], committed=result["count"], accepted=result["accepted"],
                                                  stages_us=stage_us))
         self.clock.samples += iterations
         for seq in pending.seqs:
@@ -272,7 +345,7 @@ class BurstDecode(AsyncDecode):
         e.steps += iterations
         self.pending.pop(0)
         pending.staged = []
-        return finished
+        return pending.finished
 
     def close(self):
         while self.pending:
@@ -285,3 +358,4 @@ class BurstDecode(AsyncDecode):
         self.states.clear(); self.logs.clear(); self.controls.clear()
         self.buf = None
         self.pool = None
+        self.queue = None

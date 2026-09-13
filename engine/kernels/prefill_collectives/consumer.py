@@ -3,7 +3,8 @@
 The ordinary consumer unpacks to BF16, then quantizes 128-column groups.
 This kernel keeps that BF16 rounding in registers and emits the same FP8
 values and power-of-two scales without a full BF16 intermediate. It does
-not change the packet or communicate, and is not connected to serving yet.
+not change the packet or communicate. The tiled KDA prefill consumer uses it
+when no calibration observer needs the BF16 activation.
 """
 import torch
 import triton

@@ -339,6 +339,14 @@ class Glm53Net:
         layer = self.dense.get(name)
         return layer(x) if layer is not None else Fn.linear(x, self.p[name])
 
+    def prefill_project(self, transport, x, name):
+        project = lambda value: self.linear(value, name)
+        layer = self.dense.get(name)
+        packets = getattr(layer, "packet_projector", lambda: None)()
+        if packets is None:
+            return transport.gather_project(x.contiguous(), project)
+        return transport.gather_project(x.contiguous(), project, packet_project=packets)
+
     # -- embed / head -------------------------------------------------------------
     @operation("embed")
     def embed(self, ids: torch.Tensor) -> torch.Tensor:
@@ -381,7 +389,7 @@ class Glm53Net:
                         F.rms_eps,F.hc_eps,F.post_mult,F.sinkhorn)
 
     @operation("kda", layer_arg=1)
-    def _kda(self, L: int, x: torch.Tensor, step: Step, caches: Caches, reduce=None, *, projection=None) -> torch.Tensor:
+    def _kda(self, L: int, x: torch.Tensor, step: Step, caches: Caches, reduce=None, *, projection=None, project=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.kda."
         proj = self.linear(x, n + "in_proj") if projection is None else projection
         N = proj.shape[0]; Hl, D, K = self.Hk, F.kda_dim, F.conv
@@ -474,7 +482,7 @@ class Glm53Net:
             else:
                 core[sl] = o[0]
         out = self.lanes.kda_output_norm(core, g_out, p[n + "o_norm"], O_NORM_EPS)
-        return (reduce or self.comm.all_reduce)(self.linear(out.reshape(N, Hl * D), n + "o_proj"))
+        return (reduce or self.comm.all_reduce)((project or self.linear)(out.reshape(N, Hl * D), n + "o_proj"))
 
     def _ring_rows(self, step, wc: int, wr: int) -> int:
         """How many rows a captured step folds into one ring launch per kernel: all of them when both row lanes
@@ -643,7 +651,7 @@ class Glm53Net:
         return out
 
     @operation("dsa", layer_arg=1)
-    def _dsa(self, L: int, x: torch.Tensor, step: Step, caches: Caches, reduce=None) -> torch.Tensor:
+    def _dsa(self, L: int, x: torch.Tensor, step: Step, caches: Caches, reduce=None, *, project=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.mla."
         N = x.shape[0]; Hl = self.Hl
         q_a, kv_c = self.linear(x, n + "qkv_a").split([F.q_lora, F.kv_lora], dim=-1)
@@ -669,14 +677,14 @@ class Glm53Net:
         q_abs = torch.einsum("thd,hdc->thc", q, w_uk)                                # absorb W_UK: MQA over the latent
         ctx_lat = self.lanes.mla_sparse(q_abs.contiguous(), latent, slots, valid, F.mla_scale, 1.0)
         o = torch.einsum("thc,hvc->thv", ctx_lat, w_uv)                              # un-absorb W_UV
-        return (reduce or self.comm.all_reduce)(self.linear(o.reshape(N, Hl * F.v_dim), n + "o_proj"))
+        return (reduce or self.comm.all_reduce)((project or self.linear)(o.reshape(N, Hl * F.v_dim), n + "o_proj"))
 
     # -- MLPs -----------------------------------------------------------------------------
     @operation("dense", layer_arg=1)
-    def _dense(self, L: int, x: torch.Tensor, reduce=None) -> torch.Tensor:
+    def _dense(self, L: int, x: torch.Tensor, reduce=None, *, project=None) -> torch.Tensor:
         p, n = self.p, f"L{L}.mlp."
         g, u = self.linear(x, n + "gate_up").chunk(2, dim=-1)
-        return (reduce or self.comm.all_reduce)(self.linear(self._activation(g, u, self.F.swiglu_limit), n + "down"))
+        return (reduce or self.comm.all_reduce)((project or self.linear)(self._activation(g, u, self.F.swiglu_limit), n + "down"))
 
     @operation("dense_nvfp4", layer_arg=1)
     def _dense_nvfp4(self, L: int, x: torch.Tensor, reduce=None) -> torch.Tensor:
@@ -770,7 +778,7 @@ class Glm53Net:
                 post, comb, x = self._hc_pre(L, res, "attn")
             projection = None
             if sp and not F.is_dsa(L) and sp.project_tiles:
-                projection = sp.gather_project(x.contiguous(), lambda v: self.linear(v, f"L{L}.kda.in_proj"))
+                projection = self.prefill_project(sp, x, f"L{L}.kda.in_proj")
             elif sp:
                 x = sp.all_gather(x.contiguous())
             x = self._dsa(L, x, step, caches, reduce) if F.is_dsa(L) else self._kda(
