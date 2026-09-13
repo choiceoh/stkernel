@@ -27,7 +27,7 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
     base/       모델 이름이 없는 것: 아레나, 로더(사전샤딩된 랭크 파일의 범위 읽기), KV 블록/슬롯, NVMe 티어, 스케줄러,
                 스텝 메타, 러너, 기록/사망 덤프, 설정(사실+만료 노브), 증명·판정, 그래프, comm(플릿 / LocalTP),
                 조합 틀(composition: 층 계획 + 잔차 형식 + 특징, 한 step 루프)
-    modules/    특징 모듈: 선형 순환 가족(GDN·KDA 한 특징, 여섯 축), 어텐션 가족(GQA|MLA × 회전 × 노름 × 게이트 × 선택 QSA|DSA|MSA|윈도 × 싱크·상대 편향), MoE 가족(라우터 softmax|sigmoid × 보정 편향 × 그룹 × 활성 silu|clamped|swigluoai × 공유 전문가 plain|sigmoid|sink), 희소 커널 참조(kpool·QSA·MLA·GQA), NVFP4 선형·MoE(공유 전문가
+    modules/    특징 모듈: 선형 순환 가족(GDN·KDA 한 특징, 여섯 축), 어텐션 가족(GQA|MLA × 회전 × 노름 × 게이트 × 선택 QSA|DSA|MSA|윈도 × 싱크·상대 편향), MoE 가족(라우터 softmax|sigmoid × 보정 편향 × 그룹 × 활성 silu|clamped|swigluoai × 공유 전문가 plain|sigmoid|sink), 잔차 형식 가족(pre-norm(+출력 conv)·게이트 스트림·mHC 스트림·AttnRes), 희소 커널 참조(kpool·QSA·MLA·GQA), NVFP4 선형·MoE(공유 전문가
                 게이트 포함)·양자화, 하이퍼커넥션(mhc·split-sinkhorn·게이트 잔차), n-gram PLE, 노름, 회전, 로짓
     profiles/   모델별: 사실·가중치 지도(specs)·사전샤딩·레인 표·조합(net)·검증(check). glm53 이 첫 대상.
                 qwen38 은 base/composition 위에 계획과 가중치 이름만 선언한다(composition.py).
@@ -65,6 +65,12 @@ GQA + QSA + 게이트는 조립 테스트가 qwen4_exp 에. 참조가 커널을 
 glm5_next(그룹 없음/있음, clamped), deepseek_v3(grouped), minimax_m3_vl(swigluoai, 출력 scaling), inkling(sink, route_scale × global_scale),
 각 모델의 dense MLP; Qwen 의 softmax + sigmoid 공유는 조립 테스트가 qwen4_exp 에. 전문가의 양자화 형식(NVFP4·GPTQ·FP8·MXFP4)은 로더 쪽
 `expert(layer, e)` 의 일이라 특징의 축이 아니다.
+**잔차 형식도 가족이다(modules/residual).** 서브층이 잔차를 읽고 쓰는 방식은 다섯: `PreNorm`(x = norm(h), h += out; Inkling 은 out 에 fp32 짧은
+conv 를 더한 뒤 — 잔차 형식이 시퀀스별 상태를 들고 `cache_specs` 로 선언한다), Qwen 의 `GatedResidualStreams`(hyper_connection), `HyperStreams`
+(mHC: hc 스트림, 서브층마다 노름된 스트림의 선형 하나가 pre·post·comb 를 주고 comb 는 Sinkhorn — GLM-5.3 은 헤드가 평균, DeepSeek-V4 는 가중
+collapse), `AttnRes`(Kimi K3: 잔차는 현재 블록의 합, 블록 경계마다 저장, 서브층 입력은 깊이 방향 softmax 혼합 — modeling 코드 인용, 로컬
+오라클 없음). Residual 프로토콜의 enter/leave 가 step·state 를 받는다. `tests/test_engine_residual_family.py`: HyperStreams 를 glm5_next 디코더
+층(서브층은 HF 모듈 그대로, 잔차 형식만 우리 것)과 deepseek_v4 헤드에, PreNorm 을 deepseek_v3 층과 inkling 층(출력 conv 포함)에, 조각 == 통짜.
 **조립이 서빙된다(base/composed).** `PositionStore` 는 같은 State 계약을 엔진의 메모리 위에서 답한다: 특징의 토큰별 행
 (`put_rows`/`rows`)은 BlockPool 의 블록에 **위치**로 산다 — 블록은 위치 // 블록 토큰, 행은 위치 % 블록 토큰 — 그래서 시퀀스의
 이력은 그 블록표이고 캐시된 prefix 의 블록은 복사 없이 입양된다(base/prefix). 시퀀스별 값(`get`/`put`)은 고정 슬롯에 살고, 슬롯의

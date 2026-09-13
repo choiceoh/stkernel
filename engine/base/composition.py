@@ -131,10 +131,12 @@ class State:
 
 
 class Residual(Protocol):
-    """How sublayers read and write the residual state."""
+    """How sublayers read and write the residual state (engine/modules/residual: the forms). `enter` and `leave` see the
+    step and the state: a form may keep per-sequence state of its own (Inkling's convs on the sublayer outputs) and
+    declare it with `cache_specs(layers)` like a feature."""
     def open(self, x: torch.Tensor) -> torch.Tensor: ...                                    # embeddings [N, H] -> state
-    def enter(self, layer: int, site: str, h: torch.Tensor) -> "tuple[torch.Tensor, object]": ...   # -> input [N, H], carry
-    def leave(self, layer: int, site: str, out: torch.Tensor, carry) -> torch.Tensor: ...  # sublayer output -> state
+    def enter(self, layer: int, site: str, h: torch.Tensor, step: "Step", state: "State") -> "tuple[torch.Tensor, object]": ...
+    def leave(self, layer: int, site: str, out: torch.Tensor, carry, step: "Step", state: "State") -> torch.Tensor: ...
     def close(self, h: torch.Tensor) -> torch.Tensor: ...                                    # state -> final [N, H]
 
 
@@ -193,8 +195,9 @@ class Composition:
             for name in layer.inject:
                 h = h + self.features[name](layer_index, h, step, state)
             for site, name in zip(SITES, (layer.mixer, layer.mlp)):
-                x, carry = self.residual.enter(layer_index, site, h)
-                h = self.residual.leave(layer_index, site, self.features[name](layer_index, x, step, state), carry)
+                x, carry = self.residual.enter(layer_index, site, h, step, state)
+                h = self.residual.leave(layer_index, site, self.features[name](layer_index, x, step, state), carry,
+                                        step, state)
         out = self.residual.close(h)
         state.commit(step)
         return self.head(out if logits == "all" else out[step.last()])
@@ -220,6 +223,11 @@ class Composition:
                 continue
             for spec in declare(layers):
                 yield name, layers, spec
+        declare = getattr(self.residual, "cache_specs", None)       # the residual form's own state, on every layer
+        if declare is not None:
+            layers = list(range(len(self.plan.layers)))
+            for spec in declare(layers):
+                yield "residual", layers, spec
 
 
 __all__ = ["SITES", "Segment", "Step", "State", "Residual", "Feature", "Layer", "Plan", "Composition"]
