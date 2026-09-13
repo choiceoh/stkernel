@@ -1,0 +1,11 @@
+{
+  "session": "st-kda-serving0914v2",
+  "launch_id": "b6d58d2192b842a8bb7a659b433cb8d2",
+  "pid": 2296927,
+  "disposition": "started",
+  "state": "queued",
+  "accepted": true,
+  "startup_log": "/home/choiceoh/glm53-logs/fleet/launches/70f360e2159c97f1a0939198b611a5c2c3edd3dba0ae7b90f84f6747c53a4b23.b6d58d2192b842a8bb7a659b433cb8d2.log",
+  "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/5b0179cd03aeee074a4eb69a2a39d1f09685df4bd4e05e57d0d5e2e8aaa05c50.log",
+  "ticket": "17893129132296927"
+}

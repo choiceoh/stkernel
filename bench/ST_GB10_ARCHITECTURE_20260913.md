@@ -73,7 +73,7 @@ flowchart LR
 | 기존 deferred 8칸 링 | 272 MiB | 6.375 MiB / 활성 검증 행 |
 | 새 확정·경계 레코드 | 68 MiB | 6.375 MiB / 활성 검증 행 |
 
-**상태 본체 204 MiB, 75% 감소**는 형상에서 직접 계산되는 값이다. 표는 conv·indexer·drafter·KV·null slot·정렬 padding·offset metadata를 제외하며 엔진 전체 메모리 절감률이 아니다. factor는 요청 영구 캐시가 아니라 검증 shape 소유의 workspace다. 기존 서빙의 별도 boundary stage도 이 표에 포함하지 않았다. 최종 통합에서는 새 경계 레코드가 그 stage의 recurrent 필드를 대신하고 conv staging은 별도로 유지해야 한다.
+**상태 본체 204 MiB, 75% 감소**는 형상에서 직접 계산되는 값이다. 표는 conv·indexer·drafter·KV·null slot·정렬 padding·offset metadata를 제외하며 엔진 전체 메모리 절감률이 아니다. factor는 요청 영구 캐시가 아니라 검증 shape 소유의 workspace다. 기존 서빙의 별도 boundary stage도 이 표에 포함하지 않았다. 서빙 통합에서는 새 경계 레코드가 그 stage의 recurrent 필드를 대신하고 conv staging만 별도로 유지한다.
 
 정확도 검증 코드는 [test_engine_kda_compact.py](../tests/test_engine_kda_compact.py)에 있다. C=1/C=4, 검증 폭 6/7/8, 모든 수락 개수, 경계·거절·슬롯 재바인딩·prefix 복원 모사, 한 graph의 4회 commit, 큰 int64 위치, padding과 주소 겹침을 검사한다. 비교 대상은 기존 FP32 전체 링이다.
 
@@ -123,11 +123,11 @@ flowchart LR
 
 Python dispatch 제거, 모든 연산의 단일 persistent kernel화, 작은 batch의 무조건 EP 전환은 현재 우선 변경이 아니다. CUDA graph가 이미 가리는 비용과 register pressure·통신·부하 불균형을 포함해 판단한다.
 
-현재 CPU 검사: admission 26개와 기존 state publication 계약 5개 통과. CUDA 관련 10개 테스트는 이 Mac에서 건너뛰었다. Python 구문과 diff 공백 검사 통과. GPU 접근을 제거한 CPU 컨테이너에서 SM121 8개 형상의 컴파일도 통과했다. 같은 arena 주소·정렬 정보를 사용하도록 바꾼 뒤 새 commit의 레지스터가 64→56개, compiler shared metadata가 2,048→512 bytes로 줄었다. [컴파일 원본과 실행 환경](../measurements/kda_compact_20260913/README.md)
+서빙 연결의 리베이스 후 CPU 검사: engine 112개와 fleet 39개 통과, CUDA 관련 54개 테스트는 이 Mac에서 건너뛰었다. GPU 접근을 제거한 Linux 컨테이너에서는 engine 114개 통과·43개 건너뜀이며, SM121 10개 형상의 컴파일도 통과했다. 같은 arena 주소·정렬 정보를 사용하도록 바꾼 뒤 compact commit의 레지스터가 64→56개, compiler shared metadata가 2,048→512 bytes로 줄었다. 추가한 경계 위치 게시 형상은 기존 conv stage와 같은 36개 레지스터를 사용하고 `LOCAL:0`, `STACK:0`이다. [검증 원본과 실행 환경](../measurements/kda_compact_20260913/README.md)
 
 **새 커널의 GPU 정확도·시간 및 서빙 성능은 미검증**이다. 네 대를 점유한 다른 세션의 재양자화 작업을 우회하지 않고 정식 큐에서 실행한다.
 
-컨트롤러의 고정 checkout에서 실행할 명령:
+이전 component 예약의 명령과 checkout은 그대로 고정한다:
 
 ```bash
 ST_IMAGE=sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc \
@@ -138,3 +138,13 @@ bash bench/fleet.sh run --gpu --fleet --detach st-kda-compact0913v3 5 \
 ```
 
 이 명령은 모델을 부팅하지 않는 kernel probe다. 네 대를 독점 점유한 기존 세션의 GPU 사용이 끝난 뒤 실행하도록 fleet 예약을 사용한다. 등록 결과 `accepted=true`, 상태 `queued`, ticket `17893082511214606`을 확인했다. [등록 원본](../measurements/kda_compact_20260913/admission.json)
+
+서빙 연결 검증은 별도 checkout `9499b683`으로 다음 예약을 등록했다. `accepted=true`, 상태 `queued`, ticket `17893129132296927`이며 이전 제출의 소스를 바꾸지 않는다. [서빙 검증 등록 원본](../measurements/kda_compact_20260913/serving_admission.json)
+
+```bash
+ST_IMAGE=sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc \
+bash bench/fleet.sh run --gpu --fleet --detach st-kda-serving0914v2 5 \
+  'Compact FP32 serving cache: exact current/boundary, clipped commits and graph restore' -- \
+  bash probes/run_engine_probe.sh probes/engine_kda_deferred_check.py \
+  --serving-only --samples 8 --output /cache/kda-serving0914v2.json
+```
