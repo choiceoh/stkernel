@@ -42,6 +42,10 @@ if [ -n "${ST_KV_GIB:-}" ]; then
   KV_ARG="--kv-gib $ST_KV_GIB"
 fi
 PRODUCTION_ARG=""
+case "${ST_RECLAIM_FILE_CACHE:-0}" in
+  0|1) ;;
+  *) echo "ST_RECLAIM_FILE_CACHE must be 0 or 1" >&2; exit 2 ;;
+esac
 case "${ST_PRODUCTION:-0}" in
   0) ;;
   1) PRODUCTION_ARG="--production" ;;
@@ -242,6 +246,17 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+
+# An explicit preparation for a cache-heavy UMA host with strict overcommit.
+# The existing fleet preflight returns file cache without a giant anonymous
+# mapping. Run only after this launch owns the lease and all nodes are idle;
+# failure stops before containers start. Its GMU output is for vLLM, so discard
+# that number: ST still enforces its actual arena/workspace/OS byte budget.
+if [ "${ST_RECLAIM_FILE_CACHE:-0}" = 1 ]; then
+  echo "memory preparation: returning clean file cache on the reserved fleet"
+  bash "$REPO/launchers/memfree-preflight.sh" 10 "${NODES[@]}" > "$stage/memfree.txt" \
+    || { echo "ABORT: file-cache memory preparation failed" >&2; exit 1; }
+fi
 
 
 # TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC bounds a process whose NCCL watchdog thread stopped answering

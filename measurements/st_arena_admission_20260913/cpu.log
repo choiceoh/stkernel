@@ -1,0 +1,732 @@
+test_a_fault_that_would_cross_the_boxs_kill_line_is_still_refused (tests.test_engine_arena_admission.ArenaAdmissionTests.test_a_fault_that_would_cross_the_boxs_kill_line_is_still_refused)
+Loosening the bound is not removing it: below the SIGTERM line the box starts killing, ... ok
+test_a_pump_that_did_not_free_enough_still_fails_closed (tests.test_engine_arena_admission.ArenaAdmissionTests.test_a_pump_that_did_not_free_enough_still_fails_closed) ... ok
+test_clean_model_cache_satisfies_admission_without_a_large_temporary_allocation (tests.test_engine_arena_admission.ArenaAdmissionTests.test_clean_model_cache_satisfies_admission_without_a_large_temporary_allocation) ... ok
+test_failed_anonymous_reservation_records_commit_limits_without_retrying (tests.test_engine_arena_admission.ArenaAdmissionTests.test_failed_anonymous_reservation_records_commit_limits_without_retrying) ... ok
+test_large_available_value_cannot_hide_low_immediately_free_memory (tests.test_engine_arena_admission.ArenaAdmissionTests.test_large_available_value_cannot_hide_low_immediately_free_memory) ... ok
+test_reclaim_faults_the_desired_extent_instead_of_reusing_free_pages (tests.test_engine_arena_admission.ArenaAdmissionTests.test_reclaim_faults_the_desired_extent_instead_of_reusing_free_pages) ... ok
+test_reclaim_is_refused_when_it_would_starve_the_box (tests.test_engine_arena_admission.ArenaAdmissionTests.test_reclaim_is_refused_when_it_would_starve_the_box) ... ok
+test_reclaim_preserves_weight_bytes_and_device_free_also_limits_admission (tests.test_engine_arena_admission.ArenaAdmissionTests.test_reclaim_preserves_weight_bytes_and_device_free_also_limits_admission) ... ok
+test_the_transient_fault_is_bounded_by_the_box_not_by_the_engines_headroom (tests.test_engine_arena_admission.ArenaAdmissionTests.test_the_transient_fault_is_bounded_by_the_box_not_by_the_engines_headroom)
+The reclaim faults `need` for an instant and gives it back; the workspace and the OS ... ok
+test_touch_pages_rounds_to_pages_and_returns_the_memory (tests.test_engine_arena_admission.ArenaAdmissionTests.test_touch_pages_rounds_to_pages_and_returns_the_memory) ... ok
+test_unrelated_mapping_error_is_preserved (tests.test_engine_arena_admission.ArenaAdmissionTests.test_unrelated_mapping_error_is_preserved) ... ok
+test_a_door_that_is_simply_down_still_reads_as_a_launch (tests.test_engine_fleet_ops.FleetOps.test_a_door_that_is_simply_down_still_reads_as_a_launch) ... ok
+test_atomic_acquisition_preserves_race_winner (tests.test_engine_fleet_ops.FleetOps.test_atomic_acquisition_preserves_race_winner) ... ok
+test_foreign_work_or_invalid_option_never_reclaims_memory (tests.test_engine_fleet_ops.FleetOps.test_foreign_work_or_invalid_option_never_reclaims_memory) ... ok
+test_json_foreign_lease_is_preserved (tests.test_engine_fleet_ops.FleetOps.test_json_foreign_lease_is_preserved) ... ok
+test_json_lease_is_owned_by_its_container_for_stop_and_supervision (tests.test_engine_fleet_ops.FleetOps.test_json_lease_is_owned_by_its_container_for_stop_and_supervision) ... ok
+test_memory_preparation_failure_stops_before_launch (tests.test_engine_fleet_ops.FleetOps.test_memory_preparation_failure_stops_before_launch) ... ok
+test_memory_preparation_is_explicit_and_runs_only_with_our_lease (tests.test_engine_fleet_ops.FleetOps.test_memory_preparation_is_explicit_and_runs_only_with_our_lease) ... ok
+test_metadata_failure_releases_only_our_lock (tests.test_engine_fleet_ops.FleetOps.test_metadata_failure_releases_only_our_lock) ... ok
+test_stop_preserves_foreign_owner_and_containers (tests.test_engine_fleet_ops.FleetOps.test_stop_preserves_foreign_owner_and_containers) ... ok
+test_stop_releases_production_fleet (tests.test_engine_fleet_ops.FleetOps.test_stop_releases_production_fleet) ... ok
+test_supervisor_adopts_healthy_production (tests.test_engine_fleet_ops.FleetOps.test_supervisor_adopts_healthy_production) ... ok
+test_supervisor_dumps_no_forensics_while_the_fleet_is_someone_elses (tests.test_engine_fleet_ops.FleetOps.test_supervisor_dumps_no_forensics_while_the_fleet_is_someone_elses)
+The forensics ring keeps ten dumps. A dump every 30 s while a session's tickets held the ... ok
+test_supervisor_preserves_unreachable_fleet (tests.test_engine_fleet_ops.FleetOps.test_supervisor_preserves_unreachable_fleet) ... ok
+test_supervisor_waits_for_foreign_lock (tests.test_engine_fleet_ops.FleetOps.test_supervisor_waits_for_foreign_lock) ... ok
+test_supervisor_waits_for_other_st_container (tests.test_engine_fleet_ops.FleetOps.test_supervisor_waits_for_other_st_container) ... ok
+test_supervisor_waits_through_a_deliberate_handover (tests.test_engine_fleet_ops.FleetOps.test_supervisor_waits_through_a_deliberate_handover)
+A drain is not a dead engine. It refuses new work on purpose while it parks what it ... ok
+test_a_failed_check_says_which_probe_failed (tests.test_engine_fleet_ops.SupervisorLoopTests.test_a_failed_check_says_which_probe_failed) ... ok
+test_a_fleet_taken_while_launching_is_not_a_failed_attempt (tests.test_engine_fleet_ops.SupervisorLoopTests.test_a_fleet_taken_while_launching_is_not_a_failed_attempt)
+05:30 and 06:25 on 2026-09-13: the launcher's stop let the lease go, a waiting ticket took it, ... ok
+test_a_fleet_that_is_booting_is_adopted_not_relaunched (tests.test_engine_fleet_ops.SupervisorLoopTests.test_a_fleet_that_is_booting_is_adopted_not_relaunched) ... ok
+test_a_fleet_the_queue_just_let_go_is_not_restored_under_its_next_ticket (tests.test_engine_fleet_ops.SupervisorLoopTests.test_a_fleet_the_queue_just_let_go_is_not_restored_under_its_next_ticket) ... ok
+test_a_launch_is_done_when_a_chat_answers_and_is_not_repeated (tests.test_engine_fleet_ops.SupervisorLoopTests.test_a_launch_is_done_when_a_chat_answers_and_is_not_repeated) ... ok
+test_a_node_whose_census_stalls_is_not_a_dead_ring_when_a_chat_answers (tests.test_engine_fleet_ops.SupervisorLoopTests.test_a_node_whose_census_stalls_is_not_a_dead_ring_when_a_chat_answers)
+containers_up needs four ssh answers; a stalled one made the old loop count a failure ... ok
+test_a_taken_fleet_is_waited_for_once_with_nothing_dumped_and_no_crash (tests.test_engine_fleet_ops.SupervisorLoopTests.test_a_taken_fleet_is_waited_for_once_with_nothing_dumped_and_no_crash) ... ok
+test_the_grace_follows_the_queue_s_pace_and_an_open_window (tests.test_engine_fleet_ops.SupervisorLoopTests.test_the_grace_follows_the_queue_s_pace_and_an_open_window)
+300 s restored production into the next ticket's face 17 times in one night; the queue now ... ok
+test_a_draining_door_refuses_new_work_with_503 (tests.test_engine_fleet_lease.EngineHandoverTests.test_a_draining_door_refuses_new_work_with_503) ... ok
+test_a_draining_engine_refuses_admission_and_ends_its_loop (tests.test_engine_fleet_lease.EngineHandoverTests.test_a_draining_engine_refuses_admission_and_ends_its_loop) ... ok
+test_an_engine_without_a_lease_serves_exactly_as_before (tests.test_engine_fleet_lease.EngineHandoverTests.test_an_engine_without_a_lease_serves_exactly_as_before) ... ok
+test_the_handover_parks_under_the_conversation_key (tests.test_engine_fleet_lease.EngineHandoverTests.test_the_handover_parks_under_the_conversation_key)
+That key is what the next holder resumes by, so a turn survives the change. ... ok
+test_the_step_loop_asks_parks_and_lets_go (tests.test_engine_fleet_lease.EngineHandoverTests.test_the_step_loop_asks_parks_and_lets_go) ... ok
+test_the_launcher_takes_the_engine_lease (tests.test_engine_fleet_lease.LauncherAndQueueTests.test_the_launcher_takes_the_engine_lease) ... ok
+test_the_queue_refuses_to_answer_off_the_controller (tests.test_engine_fleet_lease.LauncherAndQueueTests.test_the_queue_refuses_to_answer_off_the_controller)
+Homes are not shared: elsewhere it would create a second, empty queue. ... ok
+test_the_runner_snapshot_pins_what_it_admits (tests.test_engine_fleet_lease.LauncherAndQueueTests.test_the_runner_snapshot_pins_what_it_admits)
+An entry admitted at queue time but absent from the pinned runner passes ... ok
+test_a_container_is_attached_as_evidence_later (tests.test_engine_fleet_lease.LeaseTests.test_a_container_is_attached_as_evidence_later) ... ok
+test_a_fresh_heartbeat_holds_a_boot_that_has_no_container_yet (tests.test_engine_fleet_lease.LeaseTests.test_a_fresh_heartbeat_holds_a_boot_that_has_no_container_yet) ... ok
+test_a_handover_is_a_transfer (tests.test_engine_fleet_lease.LeaseTests.test_a_handover_is_a_transfer)
+Released, the fleet reads as free for a moment and the production supervisor relaunches ... ok
+test_a_lease_owner_is_one_line (tests.test_engine_fleet_lease.LeaseTests.test_a_lease_owner_is_one_line) ... ok
+test_a_stale_lease_is_reclaimed_once_and_recorded_to_the_new_owner (tests.test_engine_fleet_lease.LeaseTests.test_a_stale_lease_is_reclaimed_once_and_recorded_to_the_new_owner) ... ok
+test_an_older_plain_text_lock_is_a_lease_we_honour (tests.test_engine_fleet_lease.LeaseTests.test_an_older_plain_text_lock_is_a_lease_we_honour)
+The launcher wrote `echo user@host ... > lock` until 2026-09-12. That record ... ok
+test_every_lease_has_a_kind_and_a_dead_queue_holder_is_free (tests.test_engine_fleet_lease.LeaseTests.test_every_lease_has_a_kind_and_a_dead_queue_holder_is_free)
+The queue's supervisor on the head IS the holder of a `queue` lease: gone means free, ... ok
+test_evidence_comes_before_the_heartbeat (tests.test_engine_fleet_lease.LeaseTests.test_evidence_comes_before_the_heartbeat) ... ok
+test_one_owner_at_a_time (tests.test_engine_fleet_lease.LeaseTests.test_one_owner_at_a_time) ... ok
+test_only_the_owner_releases_or_renews (tests.test_engine_fleet_lease.LeaseTests.test_only_the_owner_releases_or_renews) ... ok
+test_taken_is_judged_by_kind_and_liveness (tests.test_engine_fleet_lease.LeaseTests.test_taken_is_judged_by_kind_and_liveness) ... ok
+test_the_asker_can_take_its_request_back (tests.test_engine_fleet_lease.LeaseTests.test_the_asker_can_take_its_request_back)
+A cancelled ticket must not leave production draining for nobody. ... ok
+test_the_quiet_gate_reads_the_door_like_deploy_watch (tests.test_engine_fleet_lease.LeaseTests.test_the_quiet_gate_reads_the_door_like_deploy_watch)
+One definition of quiet: the queue asks production to hand over by the rule ... ok
+test_a_boot_holder_lives_by_the_lease (tests.test_engine_fleet_lease.OneRecordTests.test_a_boot_holder_lives_by_the_lease) ... ok
+test_a_lease_from_before_kinds_is_judged_by_its_container (tests.test_engine_fleet_lease.OneRecordTests.test_a_lease_from_before_kinds_is_judged_by_its_container)
+The production lease running on 2026-09-12 names no kind. The supervisor of that era ... ok
+test_deploy_watch_defers_to_a_granted_window_without_recording_a_rejection (tests.test_engine_fleet_lease.OneRecordTests.test_deploy_watch_defers_to_a_granted_window_without_recording_a_rejection) ... ok
+test_only_the_holder_stops_its_boot (tests.test_engine_fleet_lease.OneRecordTests.test_only_the_holder_stops_its_boot)
+Every boot is named st-glm53: a stop resolved by container name alone let the production ... ok
+test_production_is_asked_only_through_the_quiet_gate_and_a_session_never (tests.test_engine_fleet_lease.OneRecordTests.test_production_is_asked_only_through_the_quiet_gate_and_a_session_never) ... ok
+test_the_launcher_verifies_a_ticket_s_lease_and_refuses_a_bare_boot (tests.test_engine_fleet_lease.OneRecordTests.test_the_launcher_verifies_a_ticket_s_lease_and_refuses_a_bare_boot) ... ok
+test_the_lease_goes_ticket_to_ticket_and_back_to_production_when_nobody_waits (tests.test_engine_fleet_lease.OneRecordTests.test_the_lease_goes_ticket_to_ticket_and_back_to_production_when_nobody_waits) ... ok
+test_the_queue_takes_the_lease_at_go_from_its_pinned_module (tests.test_engine_fleet_lease.OneRecordTests.test_the_queue_takes_the_lease_at_go_from_its_pinned_module) ... ok
+test_the_supervisor_hands_the_ticket_s_owner_to_the_payload (tests.test_engine_fleet_lease.OneRecordTests.test_the_supervisor_hands_the_ticket_s_owner_to_the_payload) ... ok
+test_the_supervisor_reads_the_one_lease_file_by_kind (tests.test_engine_fleet_lease.OneRecordTests.test_the_supervisor_reads_the_one_lease_file_by_kind) ... ok
+test_the_boot_hands_the_lease_to_the_engine (tests.test_engine_fleet_lease.ProbeLeaseTests.test_the_boot_hands_the_lease_to_the_engine) ... ok
+test_the_launcher_can_ask_and_can_report (tests.test_engine_fleet_lease.ProbeLeaseTests.test_the_launcher_can_ask_and_can_report) ... ok
+test_the_probe_runner_verifies_the_ticket_s_lease (tests.test_engine_fleet_lease.ProbeLeaseTests.test_the_probe_runner_verifies_the_ticket_s_lease)
+A probe takes the same GPUs as a boot, so it runs under the queue's lease: the ticket hands ... ERROR
+test_a_remote_holder_is_judged_by_evidence (tests.test_engine_fleet_lease.QueueMaintenanceTests.test_a_remote_holder_is_judged_by_evidence)
+Blind trust for 3x the estimate meant a crashed holder blocked the fleet for two ... ok
+test_a_stale_pin_is_reported_where_people_look (tests.test_engine_fleet_lease.QueueMaintenanceTests.test_a_stale_pin_is_reported_where_people_look) ... ok
+test_the_audit_pins_are_current (tests.test_engine_fleet_lease.QueueMaintenanceTests.test_the_audit_pins_are_current)
+One stale hash turns off CPU reuse and contract narrowing for everyone, and the ... ok
+test_the_queue_can_prune_its_own_debris (tests.test_engine_fleet_lease.QueueMaintenanceTests.test_the_queue_can_prune_its_own_debris) ... ok
+test_a_rank_that_can_read_the_lock_must_still_agree_with_it (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_a_rank_that_can_read_the_lock_must_still_agree_with_it) ... ERROR
+test_an_empty_lock_is_not_a_reservation (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_an_empty_lock_is_not_a_reservation) ... ERROR
+test_another_owner_s_reservation_is_not_this_boot_s (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_another_owner_s_reservation_is_not_this_boot_s) ... ERROR
+test_no_environment_means_no_boot (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_no_environment_means_no_boot) ... ERROR
+test_the_boot_that_holds_it_proceeds (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_the_boot_that_holds_it_proceeds) ... ERROR
+test_the_ranks_that_have_no_copy_of_the_lock_still_boot (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_the_ranks_that_have_no_copy_of_the_lock_still_boot)
+The lock is ONE file on the head node -- homes are not shared between the Sparks, which is ... ERROR
+test_a_copy_answering_by_older_rules_says_so (tests.test_engine_fleet_lease.SmoothnessTests.test_a_copy_answering_by_older_rules_says_so)
+2026-09-12: `cd ~/stkernel && bash bench/fleet.sh status` on the controller said ... ERROR
+test_a_cpu_only_probe_reserves_nothing (tests.test_engine_fleet_lease.SmoothnessTests.test_a_cpu_only_probe_reserves_nothing)
+Taking four Sparks for an import check is the opposite of smooth. ... ERROR
+test_a_handover_counts_what_it_saved_and_what_it_lost (tests.test_engine_fleet_lease.SmoothnessTests.test_a_handover_counts_what_it_saved_and_what_it_lost) ... ERROR
+test_a_heartbeat_cannot_resurrect_a_released_lease (tests.test_engine_fleet_lease.SmoothnessTests.test_a_heartbeat_cannot_resurrect_a_released_lease) ... ERROR
+test_a_killed_probe_leaks_nothing (tests.test_engine_fleet_lease.SmoothnessTests.test_a_killed_probe_leaks_nothing)
+SIGKILL runs no trap. The lease is the queue's, so there is nothing here to leak: the ... ERROR
+test_a_session_on_the_older_lock_path_still_blocks_us (tests.test_engine_fleet_lease.SmoothnessTests.test_a_session_on_the_older_lock_path_still_blocks_us)
+Moving the path must not split the lock: an older launcher writes the old one. ... ERROR
+test_a_sourced_helper_keeps_its_defaults (tests.test_engine_fleet_lease.SmoothnessTests.test_a_sourced_helper_keeps_its_defaults)
+Assignment prefixes on `.` are temporary in bash: the helper's own defaults are ... ERROR
+test_a_ticket_s_probe_needs_no_heartbeat (tests.test_engine_fleet_lease.SmoothnessTests.test_a_ticket_s_probe_needs_no_heartbeat)
+The head node's docker cannot see a probe container on another node. A probe used to beat ... ERROR
+test_an_ask_that_could_not_be_made_is_said (tests.test_engine_fleet_lease.SmoothnessTests.test_an_ask_that_could_not_be_made_is_said)
+A runner runs out of a snapshot of bench/, engine/ and probes/. The ask used to go through ... ERROR
+test_an_opaque_lock_naming_a_dead_pid_is_not_a_dead_hand (tests.test_engine_fleet_lease.SmoothnessTests.test_an_opaque_lock_naming_a_dead_pid_is_not_a_dead_hand)
+Treating every unparseable record as permanently held made a departed session ... ERROR
+test_every_caller_uses_one_lease_file_on_the_head_node (tests.test_engine_fleet_lease.SmoothnessTests.test_every_caller_uses_one_lease_file_on_the_head_node)
+The probe took $HOME/st-fleet.lock on whatever node it ran on while a boot took ... ERROR
+test_free_is_never_an_answer_from_ignorance (tests.test_engine_fleet_lease.SmoothnessTests.test_free_is_never_an_answer_from_ignorance)
+A missing lease helper and an unreadable lease both used to fall through to ... ERROR
+test_heartbeat_pid_capture_returns_while_renewal_is_running (tests.test_engine_fleet_lease.SmoothnessTests.test_heartbeat_pid_capture_returns_while_renewal_is_running) ... ERROR
+test_occupancy_is_a_fleet_fact_not_this_node_s_fact (tests.test_engine_fleet_lease.SmoothnessTests.test_occupancy_is_a_fleet_fact_not_this_node_s_fact)
+`docker ps` here answers for one of four nodes. A fleet whose rank 0 had gone ... ERROR
+test_preflight_cannot_move_the_shared_entry_backwards (tests.test_engine_fleet_lease.SmoothnessTests.test_preflight_cannot_move_the_shared_entry_backwards)
+That sync copies whatever $REPO the caller ran from over $LOGD/fleet.sh, so the ... ERROR
+test_release_takes_the_same_lock_as_publish (tests.test_engine_fleet_lease.SmoothnessTests.test_release_takes_the_same_lock_as_publish)
+Without it a holder's next heartbeat, landing between the read and the unlink, ... ERROR
+test_the_handover_reports_through_the_lease_before_letting_go (tests.test_engine_fleet_lease.SmoothnessTests.test_the_handover_reports_through_the_lease_before_letting_go) ... ERROR
+test_the_handover_transfers_the_lease_to_the_requester (tests.test_engine_fleet_lease.SmoothnessTests.test_the_handover_transfers_the_lease_to_the_requester)
+Released, the fleet read as free for a moment and the production supervisor could relaunch ... ERROR
+test_the_head_node_runs_the_lease_locally (tests.test_engine_fleet_lease.SmoothnessTests.test_the_head_node_runs_the_lease_locally)
+A node cannot ssh to itself here, and the head is where the queue's controller ... ERROR
+test_the_launcher_defines_what_its_subcommands_use (tests.test_engine_fleet_lease.SmoothnessTests.test_the_launcher_defines_what_its_subcommands_use) ... ERROR
+test_the_lease_lives_where_a_container_can_read_it (tests.test_engine_fleet_lease.SmoothnessTests.test_the_lease_lives_where_a_container_can_read_it)
+The engine must READ its lease to notice a yield request. ~/st-fleet.lock is not ... ERROR
+test_the_probe_waits_for_the_fleet_instead_of_losing_its_turn (tests.test_engine_fleet_lease.SmoothnessTests.test_the_probe_waits_for_the_fleet_instead_of_losing_its_turn)
+The previous holder's handover lands as a transfer to this ticket; a probe the queue ... ERROR
+test_the_queue_asks_instead_of_only_refusing (tests.test_engine_fleet_lease.SmoothnessTests.test_the_queue_asks_instead_of_only_refusing)
+Otherwise a queued session waits for a human to go and ask -- and whom it may ask is ... ERROR
+test_the_queue_reads_the_lease_not_only_containers (tests.test_engine_fleet_lease.SmoothnessTests.test_the_queue_reads_the_lease_not_only_containers)
+They disagreed once and the queue granted while the lease was still held. ... ERROR
+test_the_taken_line_always_names_its_evidence (tests.test_engine_fleet_lease.SmoothnessTests.test_the_taken_line_always_names_its_evidence)
+With the containers already gone and the lease still held, the status line read ... ERROR
+test_yield_waits_for_the_handover (tests.test_engine_fleet_lease.SmoothnessTests.test_yield_waits_for_the_handover)
+Asking and leaving the caller to poll is not a handover. ... ERROR
+test_a_free_fleet_has_nobody_to_ask (tests.test_engine_fleet_lease.YieldProtocolTests.test_a_free_fleet_has_nobody_to_ask) ... ok
+test_a_holder_that_predates_the_protocol_cannot_be_asked (tests.test_engine_fleet_lease.YieldProtocolTests.test_a_holder_that_predates_the_protocol_cannot_be_asked) ... ok
+test_asking_and_publishing_do_not_drop_each_other (tests.test_engine_fleet_lease.YieldProtocolTests.test_asking_and_publishing_do_not_drop_each_other)
+Both sides write the same record: the holder must not erase the request, and ... ok
+test_asking_is_not_taking (tests.test_engine_fleet_lease.YieldProtocolTests.test_asking_is_not_taking) ... ok
+test_the_holder_clears_the_request_when_it_has_let_go (tests.test_engine_fleet_lease.YieldProtocolTests.test_the_holder_clears_the_request_when_it_has_let_go) ... ok
+test_the_holder_publishes_what_it_is_doing (tests.test_engine_fleet_lease.YieldProtocolTests.test_the_holder_publishes_what_it_is_doing) ... ok
+
+======================================================================
+ERROR: test_the_probe_runner_verifies_the_ticket_s_lease (tests.test_engine_fleet_lease.ProbeLeaseTests.test_the_probe_runner_verifies_the_ticket_s_lease)
+A probe takes the same GPUs as a boot, so it runs under the queue's lease: the ticket hands
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 589, in test_the_probe_runner_verifies_the_ticket_s_lease
+    runner = (ROOT / "probes/run_engine_probe.sh").read_text()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_a_rank_that_can_read_the_lock_must_still_agree_with_it (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_a_rank_that_can_read_the_lock_must_still_agree_with_it)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 702, in test_a_rank_that_can_read_the_lock_must_still_agree_with_it
+    boot = self.boot()
+           ^^^^^^^^^^^
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 671, in boot
+    return importlib.import_module("engine.profiles.glm53.boot")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/engine/profiles/glm53/boot.py", line 28, in <module>
+    import torch                                                     # noqa: E402
+    ^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'torch'
+
+======================================================================
+ERROR: test_an_empty_lock_is_not_a_reservation (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_an_empty_lock_is_not_a_reservation)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 713, in test_an_empty_lock_is_not_a_reservation
+    boot = self.boot()
+           ^^^^^^^^^^^
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 671, in boot
+    return importlib.import_module("engine.profiles.glm53.boot")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/engine/profiles/glm53/boot.py", line 28, in <module>
+    import torch                                                     # noqa: E402
+    ^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'torch'
+
+======================================================================
+ERROR: test_another_owner_s_reservation_is_not_this_boot_s (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_another_owner_s_reservation_is_not_this_boot_s)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 722, in test_another_owner_s_reservation_is_not_this_boot_s
+    boot = self.boot()
+           ^^^^^^^^^^^
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 671, in boot
+    return importlib.import_module("engine.profiles.glm53.boot")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/engine/profiles/glm53/boot.py", line 28, in <module>
+    import torch                                                     # noqa: E402
+    ^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'torch'
+
+======================================================================
+ERROR: test_no_environment_means_no_boot (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_no_environment_means_no_boot)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 674, in test_no_environment_means_no_boot
+    boot = self.boot()
+           ^^^^^^^^^^^
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 671, in boot
+    return importlib.import_module("engine.profiles.glm53.boot")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/engine/profiles/glm53/boot.py", line 28, in <module>
+    import torch                                                     # noqa: E402
+    ^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'torch'
+
+======================================================================
+ERROR: test_the_boot_that_holds_it_proceeds (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_the_boot_that_holds_it_proceeds)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 733, in test_the_boot_that_holds_it_proceeds
+    boot = self.boot()
+           ^^^^^^^^^^^
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 671, in boot
+    return importlib.import_module("engine.profiles.glm53.boot")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/engine/profiles/glm53/boot.py", line 28, in <module>
+    import torch                                                     # noqa: E402
+    ^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'torch'
+
+======================================================================
+ERROR: test_the_ranks_that_have_no_copy_of_the_lock_still_boot (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_the_ranks_that_have_no_copy_of_the_lock_still_boot)
+The lock is ONE file on the head node -- homes are not shared between the Sparks, which is
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 687, in test_the_ranks_that_have_no_copy_of_the_lock_still_boot
+    boot = self.boot()
+           ^^^^^^^^^^^
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 671, in boot
+    return importlib.import_module("engine.profiles.glm53.boot")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 995, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/engine/profiles/glm53/boot.py", line 28, in <module>
+    import torch                                                     # noqa: E402
+    ^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'torch'
+
+======================================================================
+ERROR: test_a_copy_answering_by_older_rules_says_so (tests.test_engine_fleet_lease.SmoothnessTests.test_a_copy_answering_by_older_rules_says_so)
+2026-09-12: `cd ~/stkernel && bash bench/fleet.sh status` on the controller said
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_a_cpu_only_probe_reserves_nothing (tests.test_engine_fleet_lease.SmoothnessTests.test_a_cpu_only_probe_reserves_nothing)
+Taking four Sparks for an import check is the opposite of smooth.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_a_handover_counts_what_it_saved_and_what_it_lost (tests.test_engine_fleet_lease.SmoothnessTests.test_a_handover_counts_what_it_saved_and_what_it_lost)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_a_heartbeat_cannot_resurrect_a_released_lease (tests.test_engine_fleet_lease.SmoothnessTests.test_a_heartbeat_cannot_resurrect_a_released_lease)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_a_killed_probe_leaks_nothing (tests.test_engine_fleet_lease.SmoothnessTests.test_a_killed_probe_leaks_nothing)
+SIGKILL runs no trap. The lease is the queue's, so there is nothing here to leak: the
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_a_session_on_the_older_lock_path_still_blocks_us (tests.test_engine_fleet_lease.SmoothnessTests.test_a_session_on_the_older_lock_path_still_blocks_us)
+Moving the path must not split the lock: an older launcher writes the old one.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_a_sourced_helper_keeps_its_defaults (tests.test_engine_fleet_lease.SmoothnessTests.test_a_sourced_helper_keeps_its_defaults)
+Assignment prefixes on `.` are temporary in bash: the helper's own defaults are
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_a_ticket_s_probe_needs_no_heartbeat (tests.test_engine_fleet_lease.SmoothnessTests.test_a_ticket_s_probe_needs_no_heartbeat)
+The head node's docker cannot see a probe container on another node. A probe used to beat
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_an_ask_that_could_not_be_made_is_said (tests.test_engine_fleet_lease.SmoothnessTests.test_an_ask_that_could_not_be_made_is_said)
+A runner runs out of a snapshot of bench/, engine/ and probes/. The ask used to go through
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_an_opaque_lock_naming_a_dead_pid_is_not_a_dead_hand (tests.test_engine_fleet_lease.SmoothnessTests.test_an_opaque_lock_naming_a_dead_pid_is_not_a_dead_hand)
+Treating every unparseable record as permanently held made a departed session
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_every_caller_uses_one_lease_file_on_the_head_node (tests.test_engine_fleet_lease.SmoothnessTests.test_every_caller_uses_one_lease_file_on_the_head_node)
+The probe took $HOME/st-fleet.lock on whatever node it ran on while a boot took
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_free_is_never_an_answer_from_ignorance (tests.test_engine_fleet_lease.SmoothnessTests.test_free_is_never_an_answer_from_ignorance)
+A missing lease helper and an unreadable lease both used to fall through to
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_heartbeat_pid_capture_returns_while_renewal_is_running (tests.test_engine_fleet_lease.SmoothnessTests.test_heartbeat_pid_capture_returns_while_renewal_is_running)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_occupancy_is_a_fleet_fact_not_this_node_s_fact (tests.test_engine_fleet_lease.SmoothnessTests.test_occupancy_is_a_fleet_fact_not_this_node_s_fact)
+`docker ps` here answers for one of four nodes. A fleet whose rank 0 had gone
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_preflight_cannot_move_the_shared_entry_backwards (tests.test_engine_fleet_lease.SmoothnessTests.test_preflight_cannot_move_the_shared_entry_backwards)
+That sync copies whatever $REPO the caller ran from over $LOGD/fleet.sh, so the
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_release_takes_the_same_lock_as_publish (tests.test_engine_fleet_lease.SmoothnessTests.test_release_takes_the_same_lock_as_publish)
+Without it a holder's next heartbeat, landing between the read and the unlink,
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_the_handover_reports_through_the_lease_before_letting_go (tests.test_engine_fleet_lease.SmoothnessTests.test_the_handover_reports_through_the_lease_before_letting_go)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_the_handover_transfers_the_lease_to_the_requester (tests.test_engine_fleet_lease.SmoothnessTests.test_the_handover_transfers_the_lease_to_the_requester)
+Released, the fleet read as free for a moment and the production supervisor could relaunch
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_the_head_node_runs_the_lease_locally (tests.test_engine_fleet_lease.SmoothnessTests.test_the_head_node_runs_the_lease_locally)
+A node cannot ssh to itself here, and the head is where the queue's controller
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_the_launcher_defines_what_its_subcommands_use (tests.test_engine_fleet_lease.SmoothnessTests.test_the_launcher_defines_what_its_subcommands_use)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_the_lease_lives_where_a_container_can_read_it (tests.test_engine_fleet_lease.SmoothnessTests.test_the_lease_lives_where_a_container_can_read_it)
+The engine must READ its lease to notice a yield request. ~/st-fleet.lock is not
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_the_probe_waits_for_the_fleet_instead_of_losing_its_turn (tests.test_engine_fleet_lease.SmoothnessTests.test_the_probe_waits_for_the_fleet_instead_of_losing_its_turn)
+The previous holder's handover lands as a transfer to this ticket; a probe the queue
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_the_queue_asks_instead_of_only_refusing (tests.test_engine_fleet_lease.SmoothnessTests.test_the_queue_asks_instead_of_only_refusing)
+Otherwise a queued session waits for a human to go and ask -- and whom it may ask is
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_the_queue_reads_the_lease_not_only_containers (tests.test_engine_fleet_lease.SmoothnessTests.test_the_queue_reads_the_lease_not_only_containers)
+They disagreed once and the queue granted while the lease was still held.
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_the_taken_line_always_names_its_evidence (tests.test_engine_fleet_lease.SmoothnessTests.test_the_taken_line_always_names_its_evidence)
+With the containers already gone and the lease still held, the status line read
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+======================================================================
+ERROR: test_yield_waits_for_the_handover (tests.test_engine_fleet_lease.SmoothnessTests.test_yield_waits_for_the_handover)
+Asking and leaving the caller to poll is not a handover.
+  fleet_prune: keeps the holder, the queue, the paused and every runner they name; removes only what is both unreferenced and old; dry by default OK
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/stkernel-cpu/st-arena-cache-0913/tests/test_engine_fleet_lease.py", line 328, in setUp
+    self.probe = (ROOT / "probes/run_engine_probe.sh").read_text()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1029, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/stkernel-cpu/st-arena-cache-0913/probes/run_engine_probe.sh'
+
+----------------------------------------------------------------------
+Ran 111 tests in 20.142s
+
+FAILED (errors=33)
