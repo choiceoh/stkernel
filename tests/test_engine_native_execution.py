@@ -31,10 +31,11 @@ class NativeQualificationTests(unittest.TestCase):
             net.prefill_transport.executed = (required - {missing}) | {'fp8_tiled_projection'}
             with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, 'proof is incomplete'):
                 native_execution_report(net, drafter)
-        net.prefill_transport.executed = required
         net.prefill_transport.project_tiles = True
-        with self.assertRaisesRegex(RuntimeError, 'proof is incomplete'):
-            native_execution_report(net, drafter)
+        for missing in ('fp8_tiled_projection', 'fp8_packet_projection'):
+            net.prefill_transport.executed = required | ({'fp8_tiled_projection', 'fp8_packet_projection'} - {missing})
+            with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, 'proof is incomplete'):
+                native_execution_report(net, drafter)
         net.prefill_transport.executed = required | {'fp8_tiled_projection', 'fp8_packet_projection'}
         native_execution_report(net, drafter)
         for obj, field, value in ((net.dense['a'], 'executed', 1),      # the decode lane alone: no prefill row ran
