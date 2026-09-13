@@ -53,8 +53,9 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 
 Qwen3.8 은 이 길로 실제로 돈다. `engine/profiles/qwen38/weights.py` 가 srv2 의 체크포인트(206 샤드, `model.language_model.` 이름)를
 조립의 `tensor(name)` 으로 읽는다 — bf16 은 한 번 읽어 쥐고, NVFP4 전문가(modelopt 네 텐서)는 `modules/moe.dequant_nvfp4` 로 요구 시
-역양자화해 유계 캐시에, PLE 표(128 샤드 × [2,500,012, 160] e4m3)는 행 번호로 샤드에서 바로 모은다; safetensors 라이브러리 없이 헤더와
-numpy memmap 뿐이다. `python3 -m engine.profiles.qwen38.boot --ckpt DIR --chat --prompt ... --max-new N` 이 토크나이저·챗 템플릿·조립·
+역양자화해 유계 캐시에, PLE 표(128 샤드 × [2,500,012, 160] e4m3)는 행 번호로 샤드에서 바로 모아 표의 스칼라 `weight_scale` 을 곱한다(그 스칼라를
+빼먹으면 행이 수십 배 커져 답이 헛소리가 된다 — 실가중치가 찾은 버그, `tests/test_engine_qwen38_weights.py` 가 합성 체크포인트로 지킨다);
+safetensors 라이브러리 없이 헤더와 numpy memmap 뿐이다. `python3 -m engine.profiles.qwen38.boot --ckpt DIR --chat --prompt ... --max-new N` 이 토크나이저·챗 템플릿·조립·
 저장소·러너·도어를 잇고(`--tiny` 는 합성 체크포인트로 배관만, `--serve` 는 문을 연 채로), 요청이 문으로 들어가 같은 러너·스케줄러·
 블록 풀·슬롯 풀·prefix 캐시를 지나 토큰이 나온다. 참조 레인이다: 특징은 torch 수식을 부르고 저장소는 커널 대신 행을 모아 준다. 서빙
 레인(커널·글루·캡처 그래프)을 같은 특징 뒤에 묶는 것과 MTP 가 다음이다. GLM 의 net.py 는 그대로다.
