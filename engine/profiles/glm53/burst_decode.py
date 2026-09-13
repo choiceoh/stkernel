@@ -6,6 +6,7 @@ before another iteration can overwrite its staged recurrent checkpoint.
 """
 from __future__ import annotations
 
+import math
 import torch
 import threading
 import time
@@ -90,6 +91,18 @@ class BurstDecode(AsyncDecode):
         except BaseException as exc:
             cleanup_after_error(exc, self.close, "close bounded decode")
             raise
+
+    def _rows(self, key, n):
+        """The readback of `key` for an n-row burst: the leading [4, n, ...] of its buffer, contiguous.
+
+        A column slice `[:, :n]` of the [4, max_seqs, ...] buffer is contiguous only at max_seqs rows. A device copy into
+        a non-contiguous host tensor goes through a pageable temporary and waits for the stream: below max_seqs rows the
+        launch of every burst blocked until the burst had run, so the host streamed and retired its results while the
+        GPU waited for the next launch (2026-09-14: 9.3 ms a C=1 iteration outside the device body, 3.0 before #862).
+        """
+        buffer = self.readback[key]
+        shape = (buffer.shape[0], n, *buffer.shape[2:])
+        return buffer.view(-1)[:math.prod(shape)].view(shape)
 
     def reserve_steps(self, seq):
         e = self.e
@@ -263,7 +276,7 @@ class BurstDecode(AsyncDecode):
                     self._queue_rows = ()
             raise
         for key, value in self.logs[n].items():
-            self.readback[key][:, :n].copy_(value, non_blocking=True)
+            self._rows(key, n).copy_(value, non_blocking=True)
         self.readback["iterations"].copy_(controls["count"], non_blocking=True)
         self.readback["timings"].copy_(loop.timings, non_blocking=True)
         self.readback["stages"].copy_(controls["stages"], non_blocking=True)
@@ -342,17 +355,18 @@ class BurstDecode(AsyncDecode):
         if any(t < 0 for t in pending.iteration_seconds):
             raise RuntimeError("invalid bounded decode device timestamps")
         if self.queue is None:
+            rows = {k: self._rows(k, n) for k in ("count", "done", "accepted", "tokens", "before")}
             for j in range(iterations):
-                self._apply_outcome(pending, {k: host[k][j, :n].tolist()
-                    for k in ("count", "done", "accepted", "tokens", "before")})
+                self._apply_outcome(pending, {k: v[j].tolist() for k, v in rows.items()})
         if len(pending.outcomes) != iterations:
             raise RuntimeError("shared decode publication count differs from the retired graph")
         stages = host["stages"][:iterations].tolist()
         pending.iteration_records = []
+        rejection = self._rows('rejection', n) if 'rejection' in host else None
         for j in range(iterations):
             result = pending.outcomes[j]
-            if 'rejection' in host:
-                e.draft_diagnostics.note(pending.seqs, result['before'], host['rejection'][j, :n].tolist())
+            if rejection is not None:
+                e.draft_diagnostics.note(pending.seqs, result['before'], rejection[j].tolist())
             stage_us = {name: (stages[j][2*k+1]-stages[j][2*k])*1e-3
                         for k, name in enumerate(DeviceStages.NAMES) if stages[j][2*k] >= 0}
             for name, us in stage_us.items():
