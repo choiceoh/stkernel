@@ -58,24 +58,32 @@ def generation_defaults(ckpt: Path) -> dict:
 
 
 def build(composition, cfg: dict, ends, *, kv_gib: float, max_seqs: int, block_tokens: int, chunk: int, token_budget: int,
-          snapshots: int, max_new: int, temperature: float, device="cpu"):
-    """The engine's pieces around a composition: store, pools, model, contract, prefix cache, runner."""
+          snapshots: int, max_new: int, temperature: float, device="cpu", heads=(), k: int = 0):
+    """The engine's pieces around a composition: store, pools, model, contract, prefix cache, runner. With MTP `heads`
+    and `k`, the model drafts k tokens a step through them (engine/modules/mtp) and verifies them by position."""
     from engine.base.composed import ComposedModel, store_for
     from engine.base.prefix import PrefixCache
     from engine.base.record import Ring
     from engine.base.runner import STEP_RECORD, Runner
     from engine.base.scheduler import Contract
-    store, pool, slots, plan = store_for(composition, kv_gib, max_seqs, block_tokens, snapshots=snapshots, device=device)
+    k = k if heads else 0
+    store, pool, slots, plan = store_for(composition, kv_gib, max_seqs, block_tokens, snapshots=snapshots, device=device,
+                                         ring=k + 1 if k else 0, also=tuple(heads) if k else ())
+    drafter = None
+    if k:
+        from engine.modules.mtp import MTPDrafter
+        drafter = MTPDrafter(heads, store, k=k, vocab=cfg["vocab_size"])
     model = ComposedModel(composition, store, vocab=cfg["vocab_size"], eos_ids=ends, max_new=max_new, temperature=temperature,
-                          max_context=cfg.get("max_position_embeddings", 2 ** 31 - 1))
-    contract = Contract(chunk_align=chunk, token_budget=token_budget, draft_slots=0, max_wait_s=0.0, max_running=max_seqs)
+                          max_context=cfg.get("max_position_embeddings", 2 ** 31 - 1), drafter=drafter)
+    contract = Contract(chunk_align=chunk, token_budget=token_budget, draft_slots=k, max_wait_s=0.0, max_running=max_seqs)
     prefix = PrefixCache(block_tokens, chunk, snapshots) if snapshots else None
     runner = Runner(model, contract, pool, slots, Ring(4096, STEP_RECORD.size), keep_idle=True, prefix=prefix)
     return model, runner, plan
 
 
-def tiny(seed: int = 0):
-    """A synthetic checkpoint for the plumbing: the tiny config tests use, random weights, no tokenizer."""
+def tiny(seed: int = 0, mtp: bool = False):
+    """A synthetic checkpoint for the plumbing: the tiny config tests use, random weights, no tokenizer; with `mtp`, a
+    random MTP head too -> (composition, cfg, heads)."""
     from engine.profiles.qwen38 import composition as qc
     from engine.profiles.qwen38.weights import random_weights
     cfg = {"hidden_size": 64, "num_hidden_layers": 4, "num_attention_heads": 4, "num_key_value_heads": 2, "head_dim": 32,
@@ -89,8 +97,11 @@ def tiny(seed: int = 0):
            "rope_parameters": {"rope_type": "default", "rope_theta": 10000000.0, "partial_rotary_factor": 0.25,
                                "mrope_section": [2, 1, 1], "mrope_interleaved": True},
            "layer_types": ["linear_attention", "linear_attention", "linear_attention", "full_attention"]}
+    if mtp:
+        cfg["mtp_num_hidden_layers"] = 1
     weights = random_weights(cfg, seed)
-    return qc.build(cfg, weights.__getitem__), cfg
+    heads = qc.build_mtp(cfg, weights.__getitem__) if mtp else []
+    return qc.build(cfg, weights.__getitem__), cfg, heads
 
 
 def main(argv=None) -> int:
@@ -114,14 +125,16 @@ def main(argv=None) -> int:
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--expert-cache", type=int, default=256)
     ap.add_argument("--threads", type=int, default=None)
+    ap.add_argument("--mtp", type=int, default=0, metavar="K", help="draft K tokens a step with the checkpoint's MTP head")
     a = ap.parse_args(argv)
     import torch
     if a.threads:
         torch.set_num_threads(a.threads)
     t0 = time.perf_counter()
     tok = chat = None
+    heads = []
     if a.tiny:
-        composition, cfg = tiny()
+        composition, cfg, heads = tiny(mtp=a.mtp > 0)
         ends = [cfg["eos_token_id"]]
     else:
         from engine.profiles.qwen38.weights import Weights
@@ -133,13 +146,15 @@ def main(argv=None) -> int:
                        ple_layer_ids=[i for i in cfg.get("ple_layer_ids") or () if i <= a.layers])
             weights.config = cfg
         composition = weights.composition()
+        if a.mtp:
+            heads = weights.mtp_heads()
         ends = eos_ids(ckpt, cfg)
         tok = tokenizer(ckpt)
         if a.chat:
             chat = chat_renderer(ckpt)
     model, runner, plan = build(composition, cfg, ends, kv_gib=a.kv_gib, max_seqs=a.max_seqs, block_tokens=a.block_tokens,
                                 chunk=a.chunk, token_budget=a.token_budget, snapshots=a.snapshots, max_new=a.max_new,
-                                temperature=a.temperature)
+                                temperature=a.temperature, heads=heads, k=a.mtp)
     print(f"  {'tiny' if a.tiny else a.ckpt}: {len(cfg['layer_types'])} layers, vocab {cfg['vocab_size']}, {'float32' if a.tiny else a.dtype}; "
           f"kv {plan.num_blocks} blocks x {plan.block_tokens} tokens ({plan.paged_gib:.3f} GiB), {plan.num_slots - 1} slots "
           f"of {plan.slot_bytes / 2**20:.1f} MiB; built in {time.perf_counter() - t0:.1f} s", flush=True)
@@ -171,6 +186,10 @@ def main(argv=None) -> int:
     out = server.take_result(request)
     secs = time.perf_counter() - t1
     print(f"  prompt {len(ids)} tokens -> {len(out)} tokens in {secs:.1f} s ({runner.steps} steps): {out}")
+    if model.k:
+        rounds = max(model.drafts_total, 1)
+        print(f"  mtp k={model.k}: {model.drafts_total} rounds, {model.drafted_total} drafted, {model.accepted_total} accepted "
+              f"({model.accepted_total / max(model.drafted_total, 1):.0%} of drafts, {1 + model.accepted_total / rounds:.2f} tokens a round)")
     if tok is not None:
         print("  text: " + repr(tok.decode(out, skip_special_tokens=False)))
     return 0

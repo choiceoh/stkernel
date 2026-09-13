@@ -35,38 +35,75 @@ def _eos(cfg: dict) -> int:
     return eos[0] if isinstance(eos, list) else eos
 
 
+def _names(tensor, base: str):
+    """(layer, part, name) -> tensor under `base(layer)`: a module's matrix is "<name>.weight"; a bare parameter (dt_bias,
+    A_log, the fused experts) is "<name>"."""
+    def layer_name(layer, part, name):
+        full = f"{base(layer)}.{part}.{name}"
+        try:
+            return tensor(f"{full}.weight")
+        except KeyError:
+            return tensor(full)
+    return layer_name
+
+
+def _dtype(cfg: dict, dtype: "str | None") -> str:
+    return dtype or str(cfg.get("dtype") or cfg.get("torch_dtype") or "bfloat16").replace("torch.", "")
+
+
+def _attention(cfg: dict, layer_name, dtype: str):
+    from engine.modules.attention import QSA, Attention
+    from engine.modules.attention import named as attention_named
+    rope = cfg.get("rope_parameters") or {}
+    rotary = int(cfg["head_dim"] * rope.get("partial_rotary_factor", cfg.get("partial_rotary_factor", 1.0)))
+    section = rope.get("mrope_section")
+    return Attention(
+        form="gqa", heads=cfg["num_attention_heads"], kv_heads=cfg["num_key_value_heads"], head_dim=cfg["head_dim"],
+        rotary_dim=rotary, theta=rope.get("rope_theta", cfg.get("rope_theta")), eps=cfg["rms_norm_eps"],
+        qk_norm="rms_unit_offset", gate="channel", mrope_section=tuple(section) if section else None,
+        select=QSA(index_heads=cfg["indexer_n_heads"], index_head_dim=cfg["indexer_head_dim"],
+                   budget=cfg["indexer_budget"], ratio=cfg["indexer_compress_ratio"]),
+        weights=lambda layer, name: attention_named("qwen4_exp", lambda hf: layer_name(layer, "self_attn", hf),
+                                                    heads=cfg["num_attention_heads"], head_dim=cfg["head_dim"])(name),
+        dtype=dtype)
+
+
+def _moe(cfg: dict, layer_name, expert):
+    from engine.modules.moe import MoE, shared_of
+    from engine.modules.moe import named as moe_named
+    if expert is None:
+        expert = lambda layer, e: (layer_name(layer, "mlp", "experts.gate_up_proj")[e],
+                                   layer_name(layer, "mlp", "experts.down_proj")[e])
+    return MoE(
+        experts=cfg["num_experts"], topk=cfg["num_experts_per_tok"], score="softmax", normalize=cfg.get("norm_topk_prob", True),
+        router_fp32=False, shared=1, shared_mode="sigmoid", activation=cfg["hidden_act"],
+        weights=lambda layer, name: moe_named("qwen4_exp", lambda hf: layer_name(layer, "mlp", hf))(name),
+        expert=expert, shared_expert=lambda layer, i: shared_of("qwen4_exp", lambda hf: layer_name(layer, "mlp", hf))(i))
+
+
+def _streams(cfg: dict, layer_name, final):
+    from engine.modules.hyper_connection import GatedResidualStreams
+    return GatedResidualStreams(
+        cfg["hc_count"], cfg["rms_norm_eps"], weights=lambda layer, site, name: layer_name(
+            layer, "attn_hyper_connection" if site == "mixer" else "mlp_hyper_connection", name),
+        final=final)
+
+
 def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None, dtype: "str | None" = None, table=None) -> Composition:
     """The composition for text config `cfg` over `tensor(name)`. `prefix` is where the text model's names start
     ("model." in transformers' Qwen4ExpForCausalLM). `expert(layer, e)` -> (gate_up [2I, H], down [H, I]); by default
     the transformers fused tensors `mlp.experts.gate_up_proj` [E, 2I, H] and `mlp.experts.down_proj` [E, H, I].
     `dtype` is the activations' (the cache rows a store keeps): the config's `dtype`, else bfloat16. `table(name,
     rows)` -> [..., heads, width] gathers PLE rows by index; by default the whole table tensor is indexed."""
-    from engine.modules.hyper_connection import GatedResidualStreams
     from engine.modules.linear_attention import VARIANTS, GatedDeltaNet, named
-    from engine.modules.moe import MoE, shared_of
-    from engine.modules.moe import named as moe_named
     from engine.modules.ngram_embedding import NGramHash, NGramInjection
     from engine.modules.ngram_embedding import VARIANTS as NGRAM_VARIANTS
     from engine.modules.ngram_embedding import named as ngram_named
-    from engine.modules.attention import QSA, Attention
-    from engine.modules.attention import named as attention_named
 
-    def layer_name(layer, part, name):
-        # a module's matrix is "<name>.weight"; a bare parameter (dt_bias, A_log, the fused experts) is "<name>"
-        full = f"{prefix}layers.{layer}.{part}.{name}"
-        try:
-            return tensor(f"{full}.weight")
-        except KeyError:
-            return tensor(full)
+    layer_name = _names(tensor, lambda layer: f"{prefix}layers.{layer}")
     eps, hc, hidden = cfg["rms_norm_eps"], cfg["hc_count"], cfg["hidden_size"]
-    dtype = dtype or str(cfg.get("dtype") or cfg.get("torch_dtype") or "bfloat16").replace("torch.", "")
-    rope = cfg.get("rope_parameters") or {}
-    rotary = int(cfg["head_dim"] * rope.get("partial_rotary_factor", cfg.get("partial_rotary_factor", 1.0)))
-    section = rope.get("mrope_section")
+    dtype = _dtype(cfg, dtype)
     ple_layers = list(cfg.get("ple_layer_ids") or ())
-    if expert is None:
-        expert = lambda layer, e: (layer_name(layer, "mlp", "experts.gate_up_proj")[e],
-                                   layer_name(layer, "mlp", "experts.down_proj")[e])
     features = {
         "linear_attention": GatedDeltaNet(
             k_heads=cfg["linear_num_key_heads"], v_heads=cfg["linear_num_value_heads"], k_dim=cfg["linear_key_head_dim"],
@@ -74,20 +111,8 @@ def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None, dtype: "str
             gate_activation=cfg.get("output_gate_type") or cfg["hidden_act"], activation=cfg["hidden_act"],
             weights=lambda layer, name: named("qwen4_exp", lambda hf: layer_name(layer, "linear_attn", hf))(name),
             dtype=dtype),
-        "sparse_attention": Attention(
-            form="gqa", heads=cfg["num_attention_heads"], kv_heads=cfg["num_key_value_heads"], head_dim=cfg["head_dim"],
-            rotary_dim=rotary, theta=rope.get("rope_theta", cfg.get("rope_theta")), eps=eps, qk_norm="rms_unit_offset",
-            gate="channel", mrope_section=tuple(section) if section else None,
-            select=QSA(index_heads=cfg["indexer_n_heads"], index_head_dim=cfg["indexer_head_dim"],
-                       budget=cfg["indexer_budget"], ratio=cfg["indexer_compress_ratio"]),
-            weights=lambda layer, name: attention_named("qwen4_exp", lambda hf: layer_name(layer, "self_attn", hf),
-                                                        heads=cfg["num_attention_heads"], head_dim=cfg["head_dim"])(name),
-            dtype=dtype),
-        "moe": MoE(
-            experts=cfg["num_experts"], topk=cfg["num_experts_per_tok"], score="softmax", normalize=cfg.get("norm_topk_prob", True),
-            router_fp32=False, shared=1, shared_mode="sigmoid", activation=cfg["hidden_act"],
-            weights=lambda layer, name: moe_named("qwen4_exp", lambda hf: layer_name(layer, "mlp", hf))(name),
-            expert=expert, shared_expert=lambda layer, i: shared_of("qwen4_exp", lambda hf: layer_name(layer, "mlp", hf))(i)),
+        "sparse_attention": _attention(cfg, layer_name, dtype),
+        "moe": _moe(cfg, layer_name, expert),
     }
     if ple_layers:
         features["ple"] = NGramInjection(
@@ -101,13 +126,40 @@ def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None, dtype: "str
             table=(lambda layer, rows: layer_name(layer, "ple", "ple_embedding.ngram_embedding.weight")[rows]) if table is None
             else (lambda layer, rows: table(f"{prefix}layers.{layer}.ple.ple_embedding.ngram_embedding", rows)),
             dtype=dtype)
-    residual = GatedResidualStreams(
-        hc, eps, weights=lambda layer, site, name: layer_name(
-            layer, "attn_hyper_connection" if site == "mixer" else "mlp_hyper_connection", name),
-        final=lambda name: tensor(f"{prefix}hyper_connection_mixer.{name}.weight"))
+    residual = _streams(cfg, layer_name, final=lambda name: tensor(f"{prefix}hyper_connection_mixer.{name}.weight"))
     # weights are read when a step runs, never at construction: cache_specs() needs only the config
     return Composition(plan(cfg), embed=lambda ids: tensor(f"{prefix}embed_tokens.weight")[ids], residual=residual,
                        features=features, head=lambda h: h @ tensor("lm_head.weight").T)
 
 
-__all__ = ["plan", "build"]
+MTP_FUSE = {"embed_norm": "pre_fc_norm_embedding", "embed_proj": "fc_embedding", "hidden_norm": "pre_fc_norm_hidden",
+            "hidden_proj": "fc_hidden"}
+
+
+def build_mtp(cfg: dict, tensor, *, prefix: str = "model.", mtp: str = "mtp.", expert=None,
+              dtype: "str | None" = None) -> "list[Composition]":
+    """Qwen3.8's MTP head as compositions (engine/modules/mtp: fuse_streams), one per `mtp_num_hidden_layers`, at model
+    layers num_hidden_layers + i: each a full-attention layer (QSA + MoE under gated streams, no PLE) named
+    `{mtp}layers.i.*`, closing through `{mtp}hyper_connection_mixer`, the target's embed_tokens and lm_head shared
+    (`mtp_use_dedicated_embeddings` false; vLLM remaps the head to lm_head)."""
+    from engine.modules.mtp import fuse_streams
+    count = int(cfg.get("mtp_num_hidden_layers") or 0)
+    if count <= 0:
+        raise ValueError("the config declares no MTP layers (mtp_num_hidden_layers)")
+    offset = len(cfg["layer_types"])
+    layer_name = _names(tensor, lambda layer: f"{mtp}layers.{layer - offset}")
+    dtype = _dtype(cfg, dtype)
+    eps, hc, hidden = cfg["rms_norm_eps"], cfg["hc_count"], cfg["hidden_size"]
+    fused = lambda name: tensor(f"{mtp}{MTP_FUSE[name]}.weight")
+    heads = []
+    for i in range(count):
+        heads.append(Composition(
+            Plan((Layer("sparse_attention", "moe"),)), embed=lambda ids: tensor(f"{prefix}embed_tokens.weight")[ids],
+            residual=_streams(cfg, layer_name, final=lambda name: tensor(f"{mtp}hyper_connection_mixer.{name}.weight")),
+            features={"sparse_attention": _attention(cfg, layer_name, dtype), "moe": _moe(cfg, layer_name, expert)},
+            head=lambda h: h @ tensor("lm_head.weight").T, offset=offset + i,
+            fuse=lambda embeddings, given, step: fuse_streams(embeddings, given, fused, hc=hc, hidden=hidden, eps=eps)))
+    return heads
+
+
+__all__ = ["plan", "build", "build_mtp", "MTP_FUSE"]

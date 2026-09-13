@@ -82,7 +82,7 @@ class Weights:
         self.dtype = getattr(torch, dtype)
         self.prefix = prefix
         index = json.loads((self.root / "model.safetensors.index.json").read_text())["weight_map"]
-        self.where = {name: file for name, file in index.items() if name.startswith((prefix, "lm_head."))}
+        self.where = {name: file for name, file in index.items() if name.startswith((prefix, "lm_head.", "mtp."))}
         self.shards: dict = {}
         self.tables: dict = {}                       # ngram table name -> (shard rows, [ordered shard tensor names])
         for name in self.where:
@@ -108,8 +108,9 @@ class Weights:
         return as_torch(array, stored)
 
     def _name(self, name: str) -> str:
-        """A composition name (`model.` + the transformers path) -> the checkpoint's (`model.language_model.` + it)."""
-        return name if name.startswith("lm_head.") else self.prefix + name[len("model."):]
+        """A composition name (`model.` + the transformers path) -> the checkpoint's (`model.language_model.` + it); the
+        head and the MTP head's names are the checkpoint's already."""
+        return name if name.startswith(("lm_head.", "mtp.")) else self.prefix + name[len("model."):]
 
     def __call__(self, name: str) -> torch.Tensor:
         """The composition's `tensor(name)`: kept floating tensors in `dtype`, integers as stored; a KeyError for a
@@ -177,6 +178,12 @@ class Weights:
         cfg = dict(self.config, dtype=str(self.dtype).replace("torch.", ""))
         return qc.build(cfg, self, expert=self.expert, table=self.table_rows)
 
+    def mtp_heads(self):
+        """The checkpoint's MTP head (bf16, fused experts: read whole, converted to `dtype`)."""
+        from engine.profiles.qwen38 import composition as qc
+        cfg = dict(self.config, dtype=str(self.dtype).replace("torch.", ""))
+        return qc.build_mtp(cfg, self)
+
 
 def random_weights(cfg: dict, seed: int = 0, prefix: str = "model.") -> dict:
     """A synthetic checkpoint: every tensor engine/profiles/qwen38/composition.build reads, by its transformers name,
@@ -196,7 +203,37 @@ def random_weights(cfg: dict, seed: int = 0, prefix: str = "model.") -> dict:
         w[f"{base}.hc_norm.weight"] = r(hc * H, scale=0.3)
         w[f"{base}.input_mix_weight_down.weight"] = r(cfg["hc_lowrank"], hc * H, scale=0.1)
         w[f"{base}.input_mix_weight_up.weight"] = r(hc * H, cfg["hc_lowrank"], scale=0.1)
+    def full_attention(sa):
+        w[f"{sa}.q_proj.weight"] = r(heads * hd * 2, H, scale=0.1)
+        w[f"{sa}.k_proj.weight"] = r(kvh * hd, H, scale=0.1)
+        w[f"{sa}.v_proj.weight"] = r(kvh * hd, H, scale=0.1)
+        w[f"{sa}.o_proj.weight"] = r(H, heads * hd, scale=0.1)
+        w[f"{sa}.q_norm.weight"] = r(hd, scale=0.3)
+        w[f"{sa}.k_norm.weight"] = r(hd, scale=0.3)
+        w[f"{sa}.indexer.index_qk_proj.weight"] = r((ih + 1) * ihd, H, scale=0.1)
+        w[f"{sa}.indexer.q_layernorm.weight"] = r(ihd, scale=0.3)
+        w[f"{sa}.indexer.k_layernorm.weight"] = r(ihd, scale=0.3)
+    def moe(mlp):
+        w[f"{mlp}.gate.weight"] = r(E, H, scale=0.1)
+        w[f"{mlp}.experts.gate_up_proj"] = r(E, 2 * I, H, scale=0.1)
+        w[f"{mlp}.experts.down_proj"] = r(E, H, I, scale=0.1)
+        for name, shape in (("gate_proj", (S, H)), ("up_proj", (S, H)), ("down_proj", (H, S))):
+            w[f"{mlp}.shared_expert.{name}.weight"] = r(*shape, scale=0.1)
+        w[f"{mlp}.shared_expert_gate.weight"] = r(1, H, scale=0.1)
     hyper(f"{prefix}hyper_connection_mixer")
+    for i in range(int(cfg.get("mtp_num_hidden_layers") or 0)):     # Qwen3.8's MTP head, bf16 in the checkpoint
+        base = f"mtp.layers.{i}"
+        for site in ("attn_hyper_connection", "mlp_hyper_connection"):
+            hyper(f"{base}.{site}")
+            w[f"{base}.{site}.block_inject_weight.weight"] = r(hc, hc * H, scale=0.1)
+        full_attention(f"{base}.self_attn")
+        moe(f"{base}.mlp")
+    if cfg.get("mtp_num_hidden_layers"):
+        hyper("mtp.hyper_connection_mixer")
+        w["mtp.pre_fc_norm_embedding.weight"] = r(H, scale=0.3)
+        w["mtp.pre_fc_norm_hidden.weight"] = r(hc * H, scale=0.3)
+        w["mtp.fc_embedding.weight"] = r(H, H, scale=H ** -0.5)
+        w["mtp.fc_hidden.weight"] = r(H, H, scale=H ** -0.5)
     for L, kind in enumerate(cfg["layer_types"]):
         base = f"{prefix}layers.{L}"
         for site in ("attn_hyper_connection", "mlp_hyper_connection"):
@@ -214,22 +251,8 @@ def random_weights(cfg: dict, seed: int = 0, prefix: str = "model.") -> dict:
             w[f"{la}.dt_bias"] = torch.ones(nv, dtype=torch.float32)
             w[f"{la}.A_log"] = torch.empty(nv, dtype=torch.float32).uniform_(0.01, 16, generator=g).log()
         else:
-            sa = f"{base}.self_attn"
-            w[f"{sa}.q_proj.weight"] = r(heads * hd * 2, H, scale=0.1)
-            w[f"{sa}.k_proj.weight"] = r(kvh * hd, H, scale=0.1)
-            w[f"{sa}.v_proj.weight"] = r(kvh * hd, H, scale=0.1)
-            w[f"{sa}.o_proj.weight"] = r(H, heads * hd, scale=0.1)
-            w[f"{sa}.q_norm.weight"] = r(hd, scale=0.3)
-            w[f"{sa}.k_norm.weight"] = r(hd, scale=0.3)
-            w[f"{sa}.indexer.index_qk_proj.weight"] = r((ih + 1) * ihd, H, scale=0.1)
-            w[f"{sa}.indexer.q_layernorm.weight"] = r(ihd, scale=0.3)
-            w[f"{sa}.indexer.k_layernorm.weight"] = r(ihd, scale=0.3)
-        w[f"{base}.mlp.gate.weight"] = r(E, H, scale=0.1)
-        w[f"{base}.mlp.experts.gate_up_proj"] = r(E, 2 * I, H, scale=0.1)
-        w[f"{base}.mlp.experts.down_proj"] = r(E, H, I, scale=0.1)
-        for name, shape in (("gate_proj", (S, H)), ("up_proj", (S, H)), ("down_proj", (H, S))):
-            w[f"{base}.mlp.shared_expert.{name}.weight"] = r(*shape, scale=0.1)
-        w[f"{base}.mlp.shared_expert_gate.weight"] = r(1, H, scale=0.1)
+            full_attention(f"{base}.self_attn")
+        moe(f"{base}.mlp")
         if L + 1 in cfg["ple_layer_ids"]:
             ple = f"{base}.ple"
             heads_n = (cfg["ngram_size"] - 1) * cfg["heads_per_ngram"]

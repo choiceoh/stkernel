@@ -101,6 +101,17 @@ next_ids, hidden)`(타깃이 닫는 믹스 전의 잔차 상태, `forward(hidden
 수락 == n 개 공급(참조 State·PositionStore), 러너를 지난 실행이 드래프트 없는 실행과 토큰 단위로 같다 — 완벽·일부·무작위 드래프트, 탐욕·샘플,
 두 행, 수락 구간 안의 끝 토큰과 min_tokens, 두 번째 턴, prefix 입양, 경계 체크포인트.
 
+**MTP 헤드도 조립이다(modules/mtp).** 일곱 모델이 모두 싣는 드래프터 — 타깃의 한 위치 상태와 그 다음 토큰을 읽어 그 다음을 맞히는
+작은 헤드 — 는 같은 특징으로 된 `Composition` 이다: 층은 타깃의 층 뒤 `offset` 에 두어 행이 같은 블록에 살고(`store_for(also=...)`,
+`merged_specs`), 헤드는 대개 타깃의 것, 드래프트 헤드를 만드는 건 `fuse` — (다음 토큰의 임베딩, 타깃의 상태)에서 여는 법이다. Qwen3.8 은
+`fuse_streams`(vLLM 이미지의 qwen3_8_flash_next MTP: 최종 믹서 전의 멀티 스트림을 hc·H 전체로 (1+w) 노름해 스트림마다 한 행렬로 투영,
+노름·투영한 임베딩을 모든 스트림에 더함; 층은 QSA + MoE 한 층, 믹서로 닫고 lm_head 공유), DeepSeek 계열은 `fuse_concat`(검증 안 됨).
+`MTPDrafter` 가 base/composed 의 Drafter 다: 타깃이 확정한 위치들을 같은 위치에서 다음 토큰과 함께 한 번 돌려(`observe`) 행을 쓰고, 마지막
+예측이 드래프트 1, 이후는 헤드 자신의 믹서 전 상태와 직전 드래프트로 한 칸씩 — 이 사슬의 행은 잠정이라 저장소의 lane(`PositionStore.lane`,
+같은 블록·자기 문맥)을 타깃 문맥으로 되돌린다(`place`). `tests/test_engine_mtp.py`: fuse == vLLM 전방 계산 전사, 제안 == 참조 State
+위에서 처음부터 다시 굴린 결과(프리필 조각·수락된 드래프트의 여러 위치 관측 후에도), 헤드를 붙인 실행 == 붙이지 않은 실행, 층 두 개 사슬,
+prefix 입양. `boot.py --mtp K` 가 체크포인트의 헤드로 드래프트한다.
+
 Qwen3.8 은 이 길로 실제로 돈다. `engine/profiles/qwen38/weights.py` 가 srv2 의 체크포인트(206 샤드, `model.language_model.` 이름)를
 조립의 `tensor(name)` 으로 읽는다 — bf16 은 한 번 읽어 쥐고, NVFP4 전문가(modelopt 네 텐서)는 `modules/moe.dequant_nvfp4` 로 요구 시
 역양자화해 유계 캐시에, PLE 표(128 샤드 × [2,500,012, 160] e4m3)는 행 번호로 샤드에서 바로 모아 표의 스칼라 `weight_scale` 을 곱한다(그 스칼라를

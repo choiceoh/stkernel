@@ -84,6 +84,32 @@ class Layout:
                     (left // block_bytes) * block_bytes / (1 << 30), slots_bytes / (1 << 30))
 
 
+def merged_specs(compositions) -> "tuple[list[PagedSpec], list[SlotSpec], dict]":
+    """One layout's specs for several compositions over the same sequences -- a target and its drafter's heads: a key
+    two of them keep is one spec whose layers are both's (the same element layout required), and no model layer is
+    claimed twice (a head takes an `offset` past the target's layers)."""
+    import dataclasses
+    tables, layers = ({}, {}), {}
+    for composition in compositions:
+        for table, specs in zip(tables, composition.cache_specs()):
+            for spec in specs:
+                held = table.get(spec.key)
+                if held is None:
+                    table[spec.key] = spec
+                    continue
+                size = "bytes_per_token" if isinstance(spec, PagedSpec) else "bytes_per_seq"
+                if (held.dtype, tuple(held.shape), getattr(held, size)) != (spec.dtype, tuple(spec.shape), getattr(spec, size)):
+                    raise ValueError(f"{spec.key}: two compositions keep it with different element layouts")
+                table[spec.key] = dataclasses.replace(held, layers=held.layers + spec.layers)
+        for key, kept in composition.spec_layers().items():
+            layers.setdefault(key, []).extend(kept)
+    for key, kept in layers.items():
+        if len(set(kept)) != len(kept):
+            raise ValueError(f"{key}: two compositions claim the same model layer (give the drafter's heads an offset)")
+        layers[key] = sorted(kept)
+    return list(tables[0].values()), list(tables[1].values()), layers
+
+
 class PositionStore:
     """The served State (engine/base/composition.State's protocol): rows by position in blocks, values in slots."""
 
@@ -106,6 +132,28 @@ class PositionStore:
         self._verifying: dict = {}                   # seq -> (ctx, length) of a verify step awaiting accept
         self._kept: dict = {}                        # seq -> {(layer, key)} the verify step wrote to the ring
         self._accepted: dict = {}                    # seq -> (ctx, n, kept) of its last accepted verify step
+
+    def lane(self) -> "PositionStore":
+        """Another State over the same memory -- the same blocks, slots, snapshots and rings, the same open sequences --
+        with contexts of its own: a drafter's heads write their layers' rows at positions the target has already
+        passed, and step back after a provisional chain (`place`)."""
+        import copy
+        view = copy.copy(self)
+        view.contexts, view._step, view._verifying, view._kept, view._accepted = {}, {}, {}, {}, {}
+        return view
+
+    def place(self, seq: int, position: int) -> None:
+        """The sequence stands at `position` in this state: rows past it are the next step's to overwrite, rows before
+        it are the ones already written there (by this lane, or in blocks the row adopted). A lane whose features keep
+        no per-sequence values is the only one this is right for -- values past `position` would stay."""
+        if seq not in self.slot_of:
+            raise ValueError(f"sequence {seq} is not open")
+        if seq in self._verifying:
+            raise ValueError(f"sequence {seq} has a verify step waiting for accept")
+        if position < 0:
+            raise ValueError("a position is nonnegative")
+        self.contexts[seq] = position
+        self._accepted.pop(seq, None)
 
     # -- rows and slots ------------------------------------------------------------------------------------------
     def open(self, seq: int, slot: int) -> None:
@@ -291,12 +339,13 @@ class PositionStore:
 
 
 def store_for(composition: Composition, kv_gib: float, max_seqs: int, block_tokens: int, *, snapshots: int = 0,
-              device="cpu", ring: int = 0) -> "tuple[PositionStore, BlockPool, SlotPool, Plan]":
+              device="cpu", ring: int = 0, also=()) -> "tuple[PositionStore, BlockPool, SlotPool, Plan]":
     """A store, its pools and the plan behind them, sized from the composition's cache specs on `device` -- the
     reference lane's arena: plain tensors (a profile's boot carves the same regions out of base/arena). `ring`: the
-    longest verify segment it keeps per-token values for (a drafter's k + 1)."""
-    paged, slots = composition.cache_specs()
-    layout = Layout(paged, slots, block_tokens, composition.spec_layers())
+    longest verify segment it keeps per-token values for (a drafter's k + 1). `also`: compositions whose rows live in
+    the same blocks (a drafter's heads, `merged_specs`)."""
+    paged, slots, layers = merged_specs((composition, *also))
+    layout = Layout(paged, slots, block_tokens, layers)
     plan = layout.plan(kv_gib, max_seqs)
     pool = BlockPool(plan.num_blocks, block_tokens, max_seqs=plan.num_slots, max_blocks_per_seq=plan.num_blocks)
     pool.attach_storage(torch.zeros(plan.num_blocks * plan.block_bytes, dtype=torch.uint8, device=device), plan.block_bytes)
@@ -609,4 +658,4 @@ class ComposedModel:
         return finished
 
 
-__all__ = ["ALIGN", "DTYPES", "Layout", "PositionStore", "store_for", "Drafter", "ComposedModel", "REFUSED_OPTIONS"]
+__all__ = ["ALIGN", "DTYPES", "Layout", "merged_specs", "PositionStore", "store_for", "Drafter", "ComposedModel", "REFUSED_OPTIONS"]
