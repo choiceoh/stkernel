@@ -1,0 +1,40 @@
+test_qwen38_gets_its_table_before_any_boot (tests.test_engine_kernel_shape.CellTests.test_qwen38_gets_its_table_before_any_boot) ... ok
+test_the_measured_cell_is_admitted_on_every_lane (tests.test_engine_kernel_shape.CellTests.test_the_measured_cell_is_admitted_on_every_lane) ... ok
+test_the_wrappers_refuse_against_the_cells (tests.test_engine_kernel_shape.CellTests.test_the_wrappers_refuse_against_the_cells) ... ok
+test_binding_is_once_per_process (tests.test_engine_kernel_shape.DescriptorTests.test_binding_is_once_per_process) ... ok
+test_dsv41_declares_no_linear_attention_and_its_own_expert_encoding (tests.test_engine_kernel_shape.DescriptorTests.test_dsv41_declares_no_linear_attention_and_its_own_expert_encoding) ... ok
+test_impossible_shapes_are_refused_at_construction (tests.test_engine_kernel_shape.DescriptorTests.test_impossible_shapes_are_refused_at_construction) ... ok
+test_qwen38_declares_a_different_cell_through_the_same_descriptor (tests.test_engine_kernel_shape.DescriptorTests.test_qwen38_declares_a_different_cell_through_the_same_descriptor) ... ok
+test_the_glm_checkpoint_derives_the_measured_cell (tests.test_engine_kernel_shape.DescriptorTests.test_the_glm_checkpoint_derives_the_measured_cell)
+Model geometry is unchanged; operator-selected draft width is recorded separately. ... ok
+test_the_tiny_test_facts_still_derive_a_valid_shape (tests.test_engine_kernel_shape.DescriptorTests.test_the_tiny_test_facts_still_derive_a_valid_shape) ... ok
+test_unbound_means_the_measured_cell (tests.test_engine_kernel_shape.DescriptorTests.test_unbound_means_the_measured_cell) ... ok
+test_q0_and_scatter_gates_take_the_cell (tests.test_engine_kernel_shape.DispatchGateTests.test_q0_and_scatter_gates_take_the_cell) ... ok
+test_the_admission_gate_is_the_bound_cell (tests.test_engine_kernel_shape.DispatchGateTests.test_the_admission_gate_is_the_bound_cell) ... ok
+test_a_recipe_names_its_kind_cost_and_every_field (tests.test_engine_kernel_shape.RecipeTests.test_a_recipe_names_its_kind_cost_and_every_field) ... ok
+test_a_recipe_rides_on_every_verdict_that_is_not_admitted (tests.test_engine_kernel_shape.RecipeTests.test_a_recipe_rides_on_every_verdict_that_is_not_admitted) ... ok
+test_the_plan_is_cheapest_first_with_refusals_first_at_equal_cost (tests.test_engine_kernel_shape.RecipeTests.test_the_plan_is_cheapest_first_with_refusals_first_at_equal_cost) ... ok
+test_the_recipes_name_files_that_exist (tests.test_engine_kernel_shape.RecipeTests.test_the_recipes_name_files_that_exist) ... ok
+test_the_record_and_the_json_carry_the_work (tests.test_engine_kernel_shape.RecipeTests.test_the_record_and_the_json_carry_the_work) ... ok
+test_a_record_binds_while_it_still_describes_the_config (tests.test_engine_kernel_shape.RecordTests.test_a_record_binds_while_it_still_describes_the_config) ... ok
+test_pins_are_part_of_the_recorded_shape (tests.test_engine_kernel_shape.RecordTests.test_pins_are_part_of_the_recorded_shape) ... ok
+test_the_wizard_judges_a_checkpoint_and_records_it (tests.test_engine_kernel_shape.RecordTests.test_the_wizard_judges_a_checkpoint_and_records_it) ... ok
+test_a_model_without_a_dense_mlp_is_judged_on_its_projections (tests.test_engine_kernel_shape.ServeTests.test_a_model_without_a_dense_mlp_is_judged_on_its_projections) ... ok
+test_a_serve_is_validated (tests.test_engine_kernel_shape.ServeTests.test_a_serve_is_validated) ... ok
+test_every_layer_names_what_serves_it_and_an_oracle_never_does (tests.test_engine_kernel_shape.ServeTests.test_every_layer_names_what_serves_it_and_an_oracle_never_does) ... ok
+test_glm_is_served_by_its_own_lanes (tests.test_engine_kernel_shape.ServeTests.test_glm_is_served_by_its_own_lanes) ... ok
+test_the_glue_rules_are_the_adapters_rules (tests.test_engine_kernel_shape.ServeTests.test_the_glue_rules_are_the_adapters_rules) ... ok
+test_the_second_models_name_their_fastest_kernels (tests.test_engine_kernel_shape.ServeTests.test_the_second_models_name_their_fastest_kernels) ... ok
+test_the_tier_follows_the_refusal (tests.test_engine_kernel_shape.ServeTests.test_the_tier_follows_the_refusal) ... ok
+test_the_v41_seam_gets_its_own_instance_recipe (tests.test_engine_kernel_shape.ServeTests.test_the_v41_seam_gets_its_own_instance_recipe)
+A split-sinkhorn model at a width the seam is not compiled for asks for a V4.1 instance, judged by the V4.1 ... ok
+test_a_per_head_decay_reaches_the_kernels_as_a_stride_zero_channel_axis (tests.test_engine_kernel_shape.WrapperTests.test_a_per_head_decay_reaches_the_kernels_as_a_stride_zero_channel_axis) ... ok
+test_mk_mhc_geometry_follows_the_shape_and_refuses_uncompiled_widths (tests.test_engine_kernel_shape.WrapperTests.test_mk_mhc_geometry_follows_the_shape_and_refuses_uncompiled_widths) ... ok
+test_oneshot_takes_its_row_width_from_the_shape (tests.test_engine_kernel_shape.WrapperTests.test_oneshot_takes_its_row_width_from_the_shape) ... ok
+test_prefill_collectives_take_their_width_and_world_from_the_shape (tests.test_engine_kernel_shape.WrapperTests.test_prefill_collectives_take_their_width_and_world_from_the_shape) ... ok
+test_the_boot_binds_the_checkpoint_shape_before_the_lanes (tests.test_engine_kernel_shape.WrapperTests.test_the_boot_binds_the_checkpoint_shape_before_the_lanes) ... ok
+
+----------------------------------------------------------------------
+Ran 33 tests in 0.176s
+
+OK

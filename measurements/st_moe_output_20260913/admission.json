@@ -1,0 +1,27 @@
+{
+  "current": {
+    "session": "st-decode-output-bundle0913v2",
+    "state": "queued",
+    "ticket": "17893109571846042",
+    "enqueued_at": "1789303400",
+    "revision": 1,
+    "cwd": "/home/choiceoh/stkernel-worktrees/codex-st-moe-output-0913",
+    "estimate_min": 15,
+    "prepare_manifest": "/home/choiceoh/glm53-logs/fleet/preparations/b7de89fb4cd647e78cef469a0392646a.json",
+    "command": [
+      "bash",
+      "probes/run_engine_probe.sh",
+      "probes/engine_kernel_check.py",
+      "--lanes",
+      "k7_output_bundle",
+      "--ranks",
+      "/home/choiceoh/models/st-glm53-nvidia-tp4-9391"
+    ]
+  },
+  "previous": {
+    "session": "st-decode-k7-bundle0913",
+    "state": "cancelled",
+    "ticket": "17893081281193891",
+    "enqueued_at": "1789303400"
+  }
+}

@@ -38,12 +38,20 @@ Expert weight streaming, router selection and network payload size are unchanged
   `cpu-tests.log` is the raw result.
 - `compile.json` and `compile.log` record five SM121 Triton variants plus full
   native OneShot and producer-oracle extension builds with CUDA inaccessible.
-  All contributing source hashes match this candidate. No CUDA context was
-  initialized, and these results do not establish GPU execution.
+  No CUDA context was initialized. `integration.json` verifies that all compiled
+  inputs remain unchanged after main integration; the two Python composition
+  files received main's separate prefill changes. These results do not establish
+  GPU execution.
 - `cpu-partial-tree.log` retains an initial wider-suite attempt: 13 modules
   lacked launcher/overlay/template fixtures in the CPU copy, and one exposed
   the already-fixed main #896 `fc_bias` reference default. The complete fixture
   copy and #896 are included for final validation; none is a speed measurement.
+- The wider pre-integration pass covers 1,541 tests, with 269 GPU skips. Its one
+  remaining failure was missing recipe-evidence directories in the CPU copy;
+  all 33 shape tests pass after copying those actual directories. Both raw logs
+  are retained. The additional 27 dispatch/transport checks pass.
+- After integrating main `f7b2cbe2`, all 27 related CPU tests pass with one GPU
+  skip (`integration-check.log`). The native/Triton source is unchanged.
 
 `tests/test_engine_moe_output.py` checks rounding ties and cancellation,
 unchanged inputs, output guards, shared-stream join/failure order, packet
@@ -70,6 +78,15 @@ bash probes/run_engine_probe.sh probes/engine_kernel_check.py \
   --lanes k7_output_bundle \
   --ranks /home/choiceoh/models/st-glm53-nvidia-tp4-9391
 ```
+
+Accepted reservation: `st-decode-output-bundle0913v2`, ticket
+`17893109571846042`, frozen source `12c9ce9a7` in the dedicated controller
+checkout. The official replacement preserves the original `enqueued_at`
+`1789303400` (21:43 KST). Estimate/cap is three 5-minute components; the foreign
+fleet owner is untouched. `admission.json` records both the queued replacement
+and the cancelled predecessor. The initial preparation was refused before any
+GPU hold because newer relevant main changes were missing; integration resolved
+that refusal.
 
 Oracle #875 is used with K=7, FP32 state, 32K/128K and C=1/C=4. New source lacks
 paired pricing, so the total time delta is unknown. Its `--acc 0` scenario is

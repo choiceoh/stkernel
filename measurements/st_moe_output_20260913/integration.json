@@ -1,0 +1,28 @@
+{
+  "source": "12c9ce9a75b875684c836a9c7f86e2de91043514",
+  "integrated_main": "f7b2cbe2c05758ef2246598b5e1128541ad85520",
+  "compile_proof": "compile.json",
+  "unchanged_compiled_inputs": true,
+  "changed_python_context": [
+    "engine/profiles/glm53/lanes.py",
+    "engine/profiles/glm53/net.py"
+  ],
+  "source_sha256": {
+    "engine/kernels/moe_output.py": "642e7b7adb1dfd1dedb7380f71047a3df83d8fcc2376b81cadc1d6ceb309308d",
+    "engine/kernels/b12x/b12x_moe.py": "650e49b201baa7823065056ece90606184ddd331f1f4301fe7afd1eff06afce6",
+    "engine/kernels/b12x/moe_dispatch.py": "b0c66b782da7de2e4892e1c1c03e0fec472efbbadad38eea9cdcc966ee0cf739",
+    "engine/profiles/glm53/lanes.py": "d1864a0070ff38318a0686268f28126d6d3d9433b2d08fb8c029b0056d655b0a",
+    "engine/kernels/dense/shared_mlp.py": "3fe4eaee2ba200365040dc33a833d9775e8307d469e132f08cc21bc629504415",
+    "engine/profiles/glm53/net.py": "5c71fb4b95051f8822b5114fb109d15042fc395a56428e41e72f77399312b3cf",
+    "engine/profiles/glm53/direct_mhc.py": "5305c15eac072b3d44a7687fc960d390aebd5c074cf39876d1d4ccb02185d6d6",
+    "engine/kernels/oneshot/__init__.py": "51677d529887bedfd0b2a23d897a43ac06480477f93a527f8931105a2cda9342",
+    "engine/kernels/oneshot/dsv4_oneshot_ar.cu": "a3c798a597fffdadb3fec3df5fa53abc5b1bcec3caa09f4b6940a9edb94ea74e",
+    "probes/oneshot_producer_oracle.cu": "eeec354e4cd742513a3dfe394224086878b33e60eee5b26e0757f0d0b0f6b3fc"
+  },
+  "integration_cpu": {
+    "tests": 28,
+    "passed": 27,
+    "skipped": 1
+  },
+  "scope": "reuse unchanged CUDA/Triton compilation; related Python composition tests after main integration"
+}
