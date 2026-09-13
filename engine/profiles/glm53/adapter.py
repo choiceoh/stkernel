@@ -378,6 +378,14 @@ class Glm53Engine:
             caches.slots.give(slot)
             caches.reset()
         if self.memory is not None:
+            # Preparation can leave a large inactive allocator cache before
+            # graphs exist: the 2026-09-13 boot retained 9.42 GiB and failed
+            # the OS reserve by 0.85 GiB. Return unused blocks at this empty
+            # request boundary; live weights/workspaces and peak evidence stay.
+            reserved = torch.cuda.memory_reserved()
+            torch.cuda.empty_cache()
+            returned = reserved - torch.cuda.memory_reserved()
+            print(f"  kernel warmup returned {returned / (1 << 30):.2f} GiB of inactive allocator cache", flush=True)
             self.memory.checkpoint(f"warm kernels {widths}")
 
     def close_decode(self):
