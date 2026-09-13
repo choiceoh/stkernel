@@ -1,0 +1,71 @@
+{
+  "scope": "per rank per DSA layer; source work, not TTFT",
+  "chunk": 32256,
+  "cases": [
+    {
+      "tokens": 2000,
+      "bypassed_query_rows": 2000,
+      "old_projected_rows": 2000,
+      "new_projected_rows": 0,
+      "old_scored_rows": 2000,
+      "new_scored_rows": 0,
+      "score_row_reduction": 1.0,
+      "old_selection_passes": 2,
+      "new_selection_passes": 0,
+      "cache_write_rows": 2000,
+      "dsa_layers": 11
+    },
+    {
+      "tokens": 2052,
+      "bypassed_query_rows": 2051,
+      "old_projected_rows": 2052,
+      "new_projected_rows": 64,
+      "old_scored_rows": 2052,
+      "new_scored_rows": 1,
+      "score_row_reduction": 0.9995126705653021,
+      "old_selection_passes": 3,
+      "new_selection_passes": 1,
+      "cache_write_rows": 2052,
+      "dsa_layers": 11
+    },
+    {
+      "tokens": 2672,
+      "bypassed_query_rows": 2051,
+      "old_projected_rows": 2672,
+      "new_projected_rows": 621,
+      "old_scored_rows": 2672,
+      "new_scored_rows": 621,
+      "score_row_reduction": 0.7675898203592815,
+      "old_selection_passes": 3,
+      "new_selection_passes": 1,
+      "cache_write_rows": 2672,
+      "dsa_layers": 11
+    },
+    {
+      "tokens": 32000,
+      "bypassed_query_rows": 2051,
+      "old_projected_rows": 32000,
+      "new_projected_rows": 29949,
+      "old_scored_rows": 32000,
+      "new_scored_rows": 29949,
+      "score_row_reduction": 0.06409375,
+      "old_selection_passes": 32,
+      "new_selection_passes": 30,
+      "cache_write_rows": 32000,
+      "dsa_layers": 11
+    },
+    {
+      "tokens": 128000,
+      "bypassed_query_rows": 2051,
+      "old_projected_rows": 128000,
+      "new_projected_rows": 125949,
+      "old_scored_rows": 128000,
+      "new_scored_rows": 125949,
+      "score_row_reduction": 0.0160234375,
+      "old_selection_passes": 127,
+      "new_selection_passes": 125,
+      "cache_write_rows": 128000,
+      "dsa_layers": 11
+    }
+  ]
+}

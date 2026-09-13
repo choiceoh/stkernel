@@ -1,0 +1,11 @@
+revision=066b74f6fc24cb42021a17a4628bb926a61dd97f
+test_indexer_avoids_only_covered_queries_and_preserves_every_cache_write (tests.test_engine_prefill_covered_queries.CoveredQueriesTests.test_indexer_avoids_only_covered_queries_and_preserves_every_cache_write) ... ok
+test_owned_pool_destination_and_short_query_padding (tests.test_engine_prefill_covered_queries.CoveredQueriesTests.test_owned_pool_destination_and_short_query_padding) ... ok
+test_scored_shard_skips_discarded_fill_and_initializes_wire_padding (tests.test_engine_prefill_covered_queries.CoveredQueriesTests.test_scored_shard_skips_discarded_fill_and_initializes_wire_padding) ... ok
+test_select_pools_writes_destination_in_single_and_multiple_passes (tests.test_engine_prefill_covered_queries.CoveredQueriesTests.test_select_pools_writes_destination_in_single_and_multiple_passes) ... ok
+test_tp4_model_and_following_decode_match_with_independent_and_combined_lanes (tests.test_engine_prefill_covered_queries.CoveredQueriesTests.test_tp4_model_and_following_decode_match_with_independent_and_combined_lanes) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 8.218s
+
+OK
