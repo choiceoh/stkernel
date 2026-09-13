@@ -35,10 +35,12 @@ def _eos(cfg: dict) -> int:
     return eos[0] if isinstance(eos, list) else eos
 
 
-def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None) -> Composition:
+def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None, dtype: "str | None" = None, table=None) -> Composition:
     """The composition for text config `cfg` over `tensor(name)`. `prefix` is where the text model's names start
     ("model." in transformers' Qwen4ExpForCausalLM). `expert(layer, e)` -> (gate_up [2I, H], down [H, I]); by default
-    the transformers fused tensors `mlp.experts.gate_up_proj` [E, 2I, H] and `mlp.experts.down_proj` [E, H, I]."""
+    the transformers fused tensors `mlp.experts.gate_up_proj` [E, 2I, H] and `mlp.experts.down_proj` [E, H, I].
+    `dtype` is the activations' (the cache rows a store keeps): the config's `dtype`, else bfloat16. `table(name,
+    rows)` -> [..., heads, width] gathers PLE rows by index; by default the whole table tensor is indexed."""
     from engine.modules.hyper_connection import GatedResidualStreams
     from engine.modules.linear_attention import GatedDeltaNet
     from engine.modules.moe import SharedExpertMoE
@@ -53,6 +55,7 @@ def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None) -> Composit
         except KeyError:
             return tensor(full)
     eps, hc, hidden = cfg["rms_norm_eps"], cfg["hc_count"], cfg["hidden_size"]
+    dtype = dtype or str(cfg.get("dtype") or cfg.get("torch_dtype") or "bfloat16").replace("torch.", "")
     rope = cfg.get("rope_parameters") or {}
     rotary = int(cfg["head_dim"] * rope.get("partial_rotary_factor", cfg.get("partial_rotary_factor", 1.0)))
     section = rope.get("mrope_section")
@@ -65,13 +68,13 @@ def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None) -> Composit
             k_heads=cfg["linear_num_key_heads"], v_heads=cfg["linear_num_value_heads"], k_dim=cfg["linear_key_head_dim"],
             v_dim=cfg["linear_value_head_dim"], conv=cfg["linear_conv_kernel_dim"], eps=eps,
             gate_activation=cfg.get("output_gate_type") or cfg["hidden_act"], activation=cfg["hidden_act"],
-            weights=lambda layer, name: layer_name(layer, "linear_attn", name)),
+            weights=lambda layer, name: layer_name(layer, "linear_attn", name), dtype=dtype),
         "sparse_attention": GatedSparseAttention(
             heads=cfg["num_attention_heads"], kv_heads=cfg["num_key_value_heads"], head_dim=cfg["head_dim"],
             rotary_dim=rotary, theta=rope.get("rope_theta", cfg.get("rope_theta")), eps=eps,
             index_heads=cfg["indexer_n_heads"], index_head_dim=cfg["indexer_head_dim"], budget=cfg["indexer_budget"],
             ratio=cfg["indexer_compress_ratio"], mrope_section=tuple(section) if section else None,
-            weights=lambda layer, name: layer_name(layer, "self_attn", name)),
+            weights=lambda layer, name: layer_name(layer, "self_attn", name), dtype=dtype),
         "moe": SharedExpertMoE(
             experts=cfg["num_experts"], topk=cfg["num_experts_per_tok"], normalize=cfg.get("norm_topk_prob", True),
             activation=cfg["hidden_act"], weights=lambda layer, name: layer_name(layer, "mlp", name), expert=expert),
@@ -83,7 +86,9 @@ def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None) -> Composit
             eos=_eos(cfg), conv=cfg["ple_conv_kernel_size"], eps=eps,
             table_index=lambda layer: ple_layers.index(layer + 1),
             weights=lambda layer, name: layer_name(layer, "ple", name),
-            table=lambda layer, rows: layer_name(layer, "ple", "ple_embedding.ngram_embedding.weight")[rows])
+            table=(lambda layer, rows: layer_name(layer, "ple", "ple_embedding.ngram_embedding.weight")[rows]) if table is None
+            else (lambda layer, rows: table(f"{prefix}layers.{layer}.ple.ple_embedding.ngram_embedding", rows)),
+            dtype=dtype)
     residual = GatedResidualStreams(
         hc, eps, weights=lambda layer, site, name: layer_name(
             layer, "attn_hyper_connection" if site == "mixer" else "mlp_hyper_connection", name),

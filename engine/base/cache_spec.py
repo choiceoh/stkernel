@@ -29,6 +29,14 @@ class PagedSpec:
     layers: int
     bytes_per_token: int          # per layer
     source: str
+    # the layout a store carves (base/composed.PositionStore): the state key a feature reads it by, the element dtype
+    # and the per-token shape; empty for a profile that lays its caches out itself (glm53)
+    key: str = ""
+    dtype: str = ""
+    shape: tuple = ()
+
+    def __post_init__(self):
+        _layout(self, self.bytes_per_token)
 
 
 @dataclass(frozen=True)
@@ -37,6 +45,29 @@ class SlotSpec:
     layers: int
     bytes_per_seq: int            # per layer
     source: str
+    key: str = ""
+    dtype: str = ""
+    shape: tuple = ()
+
+    def __post_init__(self):
+        _layout(self, self.bytes_per_seq)
+
+
+_ITEMSIZE = {"float32": 4, "float16": 2, "bfloat16": 2, "float8_e4m3fn": 1, "int64": 8, "int32": 4, "uint8": 1}
+
+
+def _layout(spec, nbytes: int) -> None:
+    """A spec that names a key also names a dtype and a shape whose bytes are its declared bytes."""
+    if not spec.key:
+        return
+    if spec.dtype not in _ITEMSIZE or not spec.shape or any(type(n) is not int or n <= 0 for n in spec.shape):
+        raise ValueError(f"{spec.name}: a keyed spec names a dtype in {sorted(_ITEMSIZE)} and a positive shape")
+    numel = 1
+    for n in spec.shape:
+        numel *= n
+    if numel * _ITEMSIZE[spec.dtype] != nbytes:
+        raise ValueError(f"{spec.name}: shape {spec.shape} x {spec.dtype} is {numel * _ITEMSIZE[spec.dtype]} bytes, "
+                         f"the spec says {nbytes}")
 
 
 @dataclass(frozen=True)

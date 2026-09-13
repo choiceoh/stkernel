@@ -111,10 +111,12 @@ class NGramInjection:
     `table(layer, rows)`: rows int64 [..., heads] -> [..., heads, head_width] -- `ple_embedding.ngram_embedding` rows."""
 
     def __init__(self, *, hidden: int, hc: int, ngram_size: int, heads_per_ngram: int, unigram_vocab: int,
-                 ngram_vocab_base: int, seed: int, eos: int, conv: int, eps: float, table_index, weights, table):
+                 ngram_vocab_base: int, seed: int, eos: int, conv: int, eps: float, table_index, weights, table,
+                 dtype: str = "bfloat16"):
         self.hidden, self.hc, self.ngram_size, self.heads_per_ngram = hidden, hc, ngram_size, heads_per_ngram
         self.unigram_vocab, self.ngram_vocab_base, self.seed, self.eos = unigram_vocab, ngram_vocab_base, seed, eos
         self.conv, self.eps, self.table_index, self.weights, self.table = conv, eps, table_index, weights, table
+        self.dtype = dtype
         self._hashes = {}
 
     def hashes(self, layer: int):
@@ -159,7 +161,10 @@ class NGramInjection:
         return out
 
     def cache_specs(self, layers):
-        from engine.base.cache_spec import SlotSpec
-        return [SlotSpec("ple token context", len(layers), (self.ngram_size - 1) * 8, "[ngram_size-1] int64 token ids"),
-                SlotSpec("ple conv state", len(layers), self.hc * self.hidden * (self.conv - 1) * self.ngram_size * 2,
-                         "[hc*H, (kernel-1)*ngram_size] bf16: the dilated conv's last inputs")]
+        from engine.base.cache_spec import SlotSpec, _ITEMSIZE
+        span = (self.conv - 1) * self.ngram_size
+        return [SlotSpec("ple token context", len(layers), (self.ngram_size - 1) * 8, "[ngram_size-1] int64 token ids",
+                         key="ngram_context", dtype="int64", shape=(self.ngram_size - 1,)),
+                SlotSpec("ple conv state", len(layers), self.hc * self.hidden * span * _ITEMSIZE[self.dtype],
+                         f"[hc*H, (kernel-1)*ngram_size] {self.dtype}: the dilated conv's last inputs",
+                         key="ngram_conv", dtype=self.dtype, shape=(self.hc * self.hidden, span))]

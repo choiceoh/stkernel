@@ -41,8 +41,24 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 `tests/test_engine_composition.py` 가 그 조립을 transformers 5.16.1 의 `Qwen4ExpForCausalLM`(plan.py 가 sha 로 핀한
 오라클)과 CPU 에서 대조한다: prefill 전 토큰·증분 디코드·청크 prefill·EOS 가 섞인 두 시퀀스 한 step 모두 FP32 에서
 최대 5e-8, BF16 상대오차 5e-3. 캐시 명세 합은 `qwen38/plan.state_bytes` 와 같다(QSA 키만 원시 키라 압축 비율배).
-지금은 참조 레인이다: 특징이 modules 의 torch 수식을 직접 부르고 상태는 시퀀스별 텐서다. 서빙 레인(커널·글루)을 특징
-뒤에 묶는 것, base/kv 블록·슬롯 상태, 실제 체크포인트(NVFP4 전문가·fp8 PLE 표) 로딩이 다음이다. GLM 의 net.py 는 그대로다.
+**조립이 서빙된다(base/composed).** `PositionStore` 는 같은 State 계약을 엔진의 메모리 위에서 답한다: 특징의 토큰별 행
+(`put_rows`/`rows`)은 BlockPool 의 블록에 **위치**로 산다 — 블록은 위치 // 블록 토큰, 행은 위치 % 블록 토큰 — 그래서 시퀀스의
+이력은 그 블록표이고 캐시된 prefix 의 블록은 복사 없이 입양된다(base/prefix). 시퀀스별 값(`get`/`put`)은 고정 슬롯에 살고, 슬롯의
+바이트는 하나의 연속 영역이라 티어가 옮기고(base/tiered_kv) prefix 경계의 상태는 그 영역을 스냅샷에 한 번 복사한 것이다. 특징이
+선언한 캐시 명세(base/cache_spec: key·dtype·shape)가 그 배치를 정한다. `ComposedModel` 은 어떤 조립이든 러너의 Model 계약과
+도어(base/serve)의 엔진 면에 답한다: 행별 토큰과 한도, prefix 캐시의 표시에서 나누는 prefill, 디코드 스텝당 토큰 하나(드래프터
+없음, horizon = context + 1), base/sampler 와 base/draws(GLM 과 같은 키)로 샘플링, 슬롯 바이트 옆의 호스트 기록으로 파킹.
+`tests/test_engine_composed.py`: 저장소 == 참조 State(같은 로짓), 경계 checkpoint/restore 와 블록 입양, 러너를 지난 탐욕 생성 ==
+참조 루프, 끝 토큰과 min_tokens, 두 번째 턴, prefix 재사용(8토큰 입양), 파킹 기록·슬롯 바이트로 재개, world 1 도어로 요청 하나.
+
+Qwen3.8 은 이 길로 실제로 돈다. `engine/profiles/qwen38/weights.py` 가 srv2 의 체크포인트(206 샤드, `model.language_model.` 이름)를
+조립의 `tensor(name)` 으로 읽는다 — bf16 은 한 번 읽어 쥐고, NVFP4 전문가(modelopt 네 텐서)는 `modules/moe.dequant_nvfp4` 로 요구 시
+역양자화해 유계 캐시에, PLE 표(128 샤드 × [2,500,012, 160] e4m3)는 행 번호로 샤드에서 바로 모아 표의 스칼라 `weight_scale` 을 곱한다(그 스칼라를
+빼먹으면 행이 수십 배 커져 답이 헛소리가 된다 — 실가중치가 찾은 버그, `tests/test_engine_qwen38_weights.py` 가 합성 체크포인트로 지킨다);
+safetensors 라이브러리 없이 헤더와 numpy memmap 뿐이다. `python3 -m engine.profiles.qwen38.boot --ckpt DIR --chat --prompt ... --max-new N` 이 토크나이저·챗 템플릿·조립·
+저장소·러너·도어를 잇고(`--tiny` 는 합성 체크포인트로 배관만, `--serve` 는 문을 연 채로), 요청이 문으로 들어가 같은 러너·스케줄러·
+블록 풀·슬롯 풀·prefix 캐시를 지나 토큰이 나온다. 참조 레인이다: 특징은 torch 수식을 부르고 저장소는 커널 대신 행을 모아 준다. 서빙
+레인(커널·글루·캡처 그래프)을 같은 특징 뒤에 묶는 것과 MTP 가 다음이다. GLM 의 net.py 는 그대로다.
 
 빠른 확인(GLM-5.3, 실가중치, 한 노드, TP=4 스레드; 랭크 파일은 `profiles/glm53/preshard.py` 가 한 번 자른다):
 
