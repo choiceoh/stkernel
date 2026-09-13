@@ -118,6 +118,33 @@ class DeferredBatchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "integer vectors"):
             batch.commit(slots, contexts, torch.zeros(8, device="cuda", dtype=torch.int64)[::2])
 
+    def test_materialization_matches_flat_reference_at_large_contexts_and_every_boundary(self):
+        # Test the changed commit directly: large contexts exercise int64
+        # cursor setup without asking the unchanged verifier to consume them.
+        for h, k, v, width, block in ((16, 128, 128, 7, 768), (2, 33, 17, 7, 4),
+                                     (1, 5, 9, 1, 1), (2, 17, 33, 8, 3)):
+            with self.subTest(shape=(h, k, v), width=width, block=block):
+                _, original, rings = fixture(4, width, layers=2, h=h, k=k, v=v, width=width)
+                storage = [original.clone(), original.clone()]
+                owners = [self.Batch(views(x, rings), 4, width, block=block, tiled=bool(i))
+                          for i, x in enumerate(storage)]
+                for dst, src in zip(owners[1].factors, owners[0].factors):
+                    src.normal_(0, .2)
+                    dst.copy_(src)
+                slots = torch.tensor([4, 1, 3, 2], device="cuda")
+                contexts = torch.tensor([0, block-1, (1 << 32)+block-1, (1 << 48)+width-1], device="cuda")
+                for count in range(width+1):
+                    counts = (torch.arange(4, device="cuda")+count) % (width+1)
+                    for x, owner in zip(storage, owners):
+                        x.copy_(original)
+                        owner.commit(slots, contexts, counts)
+                    self.exact(storage[1], storage[0])
+                for invalid in (-1, width+1):
+                    counts.fill_(invalid)
+                    storage[1].copy_(original)
+                    owners[1].commit(slots, contexts, counts)
+                    self.exact(storage[1], original)
+
     def test_four_iteration_conditional_graph_commits_before_reusing_factors(self):
         from engine.kernels.bounded_graph import BoundedGraph
         for rows in (1, 4):
