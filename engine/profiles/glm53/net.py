@@ -379,6 +379,13 @@ class Glm53Net:
     # -- KDA ------------------------------------------------------------------------
     @operation("hc_post_pre", layer_arg=1)
     def _hc_post_pre(self, L, x, res, post, comb, side):
+        if self.mhc is not None and 64 < x.shape[0] <= 32768:
+            n, F, p = f"L{L}.", self.F, self.p
+            result = self.mhc.prefill(n+f"hc.{side}_fn",x,res,post,comb,p[n+f"hc.{side}_scale"],
+                                     p[n+f"hc.{side}_base"],p[n+("in_norm" if side=="attn" else "post_norm")],
+                                     F.rms_eps,F.hc_eps,F.post_mult,F.sinkhorn)
+            if result is not None:
+                return result
         if self.mhc is None or x.shape[0] > 64:
             res = self.lanes.mhc_post(x, res, post, comb)
             post, comb, x = self._hc_pre(L, res, side)

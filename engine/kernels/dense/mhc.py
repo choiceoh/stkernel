@@ -61,6 +61,14 @@ class MHC:
         self.workspace = [torch.zeros(size, device=device, dtype=dtype)
                           for size, dtype in workspace_sizes(self.hidden, self.hc, self.nout, nchunk)]
 
+    def prefill(self,key,x,res,post,comb,scale,base,norm,eps,hc_eps,post_mult,sinkhorn):
+        """Reuse the already-proven-lossless pack; unsupported weights stay on the original lane."""
+        packed = self.weights[key][1]
+        if packed is None or not 64 < x.shape[0] <= 32768:
+            return None
+        from engine.kernels.prefill_mhc import post_pre
+        return post_pre(x,res,post,comb,packed,scale,base,norm,eps,hc_eps,post_mult,sinkhorn)
+
     def __call__(self,key,x,res,post,comb,scale,base,norm,eps,hc_eps,post_mult,sinkhorn,*,packets=None):
         n = x.shape[0]
         if not 1 <= n <= 64 or res.shape != (n, self.hc, self.hidden):
@@ -199,4 +207,3 @@ class MHCV41:
         self.ext.run_mhc_v41([t.data_ptr() for t in tensors], [float(v) for v in scalars], [x.shape[0], sinkhorn],
                              self.hidden)
         self.executed.add(key)
-

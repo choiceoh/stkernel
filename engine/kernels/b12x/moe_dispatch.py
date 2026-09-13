@@ -4133,6 +4133,7 @@ def _get_dynamic_kernel(
     _tp_sf6_q0_override: bool | None = None,
     _prefill_scale_expansion: bool = False,
     _prefill_tile64: bool = False,
+    _prefill_n128: bool = False,
 ):
     """Compile (or retrieve cached) the SM120 dynamic MoE kernel.
 
@@ -4251,6 +4252,8 @@ def _get_dynamic_kernel(
 
     if type(_prefill_scale_expansion) is not bool:
         raise TypeError("prefill scale expansion override must be bool")
+    if type(_prefill_n128) is not bool or (_prefill_n128 and not _prefill_scale_expansion):
+        raise ValueError('private N128 requires the exact expanded-scale prefill contract')
     if _prefill_scale_expansion and (reform_sf_pack or ep_local_cls is not None
             or (m <= 8192 and not tp_sf6_q0)
             or not _prefill_scale_expansion_eligible(
@@ -4300,6 +4303,8 @@ def _get_dynamic_kernel(
         cache_key = (*cache_key, 'short_prefill_q0_words_v1')
     if _prefill_scale_expansion:
         cache_key = (*cache_key, 'temporary_prefill_raw_scales_v1')
+    if _prefill_n128:
+        cache_key = (*cache_key, 'private_prefill_n128_tiled_v1')
     if _prefill_tile64:
         cache_key = (*cache_key, 'private_prefill_m64_fp32_v1')
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
@@ -4337,7 +4342,7 @@ def _get_dynamic_kernel(
                 "tiled expert weights (static v2 cell t) and the prefill-reuse lane "
                 "cannot combine yet: turn one of them off"
             )
-        if not _prefill_tile64 and not isinstance(kernel, MoEGatedDynamicKernel):
+        if not (_prefill_tile64 or _prefill_n128) and not isinstance(kernel, MoEGatedDynamicKernel):
             raise ValueError(
                 "tiled expert weights (static v2 cell t) need the gated dynamic "
                 f"kernel for prefill; the dispatcher selected {type(kernel).__name__}"
@@ -4346,6 +4351,9 @@ def _get_dynamic_kernel(
         if _prefill_scale_expansion and not tp_sf6_q0:
             from .moe_dynamic_prefill_raw_route import MoEGatedDynamicKernelPrefillRawRoute
             tiled_cls = MoEGatedDynamicKernelPrefillRawRoute
+        if _prefill_n128:
+            from .moe_dynamic_prefill_n128_tiled import MoEGatedPrefillN128TiledQ0, MoEGatedPrefillN128TiledLong
+            tiled_cls = MoEGatedPrefillN128TiledQ0 if tp_sf6_q0 else MoEGatedPrefillN128TiledLong
         tiled_kwargs = {}
         if reform_sf_pack:
             from .moe_dynamic_gated_sf6 import MoEGatedDynamicKernelSF6
@@ -4575,6 +4583,8 @@ def _get_dynamic_kernel(
             options="--opt-level 2 --enable-tvm-ffi",
         ),
         extra_key_files=_kernel_source_files() + (
+            (os.path.join(os.path.dirname(__file__), 'moe_dynamic_prefill_n128_tiled.py'),)
+            if _prefill_n128 else ()) + (
             tuple(os.path.join(os.path.dirname(__file__), name) for name in
                   ('moe_dynamic_prefill_m64.py', '_prefill_m64_bodies.py'))
             if _prefill_tile64 else ()) + (
@@ -4677,6 +4687,7 @@ def launch_sm120_dynamic_moe(
     _tp_sf6_q0_override: bool | None = None,
     _prefill_scale_expansion: bool | None = None,
     _prefill_tile64: bool | None = None,
+    _prefill_n128: bool = False,
 ) -> torch.Tensor:
     """Launch the SM120 dynamic MoE kernel."""
     global _TP_SF6_Q0_LAUNCH_LOGGED
@@ -4699,6 +4710,10 @@ def launch_sm120_dynamic_moe(
     if direct_sf6:
         from .moe_dynamic_gated_sf6 import stock_contract_matches
         direct_sf6 = bool(stock_contract_matches())
+    if _prefill_n128:
+        if _prefill_tile64 is True or _prefill_scale_expansion is False:
+            raise ValueError('private N128 cannot combine with M64 or disabled scale expansion')
+        _prefill_tile64, _prefill_scale_expansion = False, True
     if _prefill_tile64 is None:
         # This private branch's short-prefill candidate. Explicit controls,
         # graph capture and every non-native/fallback geometry retain M128.
@@ -4801,6 +4816,7 @@ def launch_sm120_dynamic_moe(
         _tp_sf6_q0_override=_tp_sf6_q0_override,
         _prefill_scale_expansion=_prefill_scale_expansion,
         _prefill_tile64=_prefill_tile64,
+        _prefill_n128=_prefill_n128,
     )
 
     # Dynamic kernel: runtime-shaped args are DataPointer (pass data_ptr()),
