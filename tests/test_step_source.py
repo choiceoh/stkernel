@@ -38,11 +38,26 @@ class SourcePredictionTests(unittest.TestCase):
 
     def test_actual_boot_contract_and_layout_not_historical_constants(self):
         p = self.base.inspect()
+        k = int(re.search(r'(?m)^SPEC_K\s*=\s*(\d+)', self.base.files[source.FACTS_PATH].decode())[1])
+        self.assertEqual(p['facts']['spec_k'], k)
         self.assertEqual(p['prefill_chunk'], 32256)
-        self.assertEqual(p['contract']['decode_token_budget'], 2310)
+        self.assertEqual(p['contract']['decode_token_budget'], 2304 + k)
         self.assertEqual(p['execution']['decode_iterations'], 4)
-        self.assertEqual(p['memory']['state_fields_bytes']['rec'], 34 * 7 * 16 * 128 * 128 * 4)
+        self.assertEqual(p['memory']['state_fields_bytes']['rec'], 34 * (k + 1) * 16 * 128 * 128 * 4)
         self.assertEqual(p['memory']['resident_slots_bytes'], 5 * p['memory']['slot_bytes'])
+
+    def test_declaration_follows_imported_policy_from_each_source(self):
+        policy = 'engine/profiles/glm53/draft_policy.py'
+        old = constant(self.base, policy, 'SERVING_POLICY', None)
+        old = edit(old, policy, 'SERVING_POLICY = None', "SERVING_POLICY = DraftPolicy('w4', 'shared', False)")
+        candidate = edit(old, policy, "DraftPolicy('w4', 'shared', False)", "DraftPolicy('fp8', 'auto', True)")
+        result = self.compare(candidate, base=old)
+        self.assertEqual(result['base']['settings']['draft_fc_precision'], 'w4')
+        self.assertEqual(result['candidate']['settings']['draft_fc_precision'], 'fp8')
+        self.assertEqual(result['candidate']['settings']['draft_fc_calibration'], 'auto')
+        self.assertEqual(result['candidate']['settings']['draft_diagnostics'], 1)
+        self.assertNotEqual(result['base']['fingerprint'], result['candidate']['fingerprint'])
+        self.assertIsNone(result['forecasts'][0]['decode']['delta'])
 
     def test_equal_code_across_refs_has_equal_fingerprint_and_zero_model_delta(self):
         other = source.Source('working-tree', 'another-commit-name', dict(self.base.files), True)
@@ -98,7 +113,7 @@ class SourcePredictionTests(unittest.TestCase):
                 self.base.inspect(settings)
 
     def test_comments_do_not_create_a_kernel_cost_change(self):
-        candidate = edit(self.base, source.FACTS_PATH, 'SPEC_K = 6', '# oracle comment\nSPEC_K = 6')
+        candidate = edit(self.base, source.FACTS_PATH, 'SPEC_K =', '# oracle comment\nSPEC_K =')
         result = self.compare(candidate)
         self.assertEqual(result['changed_files'][0]['handling'], 'cosmetic')
         self.assertEqual(result['forecasts'][0]['decode']['delta'], 0)

@@ -46,7 +46,7 @@ def probe(root: Path, settings: dict, config=None) -> dict:
     sys.path.insert(0, str(root))
     from engine.base import scheduler as sched
     from engine.base.kernel_shape import MEASURED
-    from engine.profiles.glm53 import facts
+    from engine.profiles.glm53 import draft_policy, facts
     from engine.profiles.glm53.caches import layout, snapshot_layout, stage_bytes
     from engine.profiles.glm53.execution import ExecutionPlan
 
@@ -55,6 +55,13 @@ def probe(root: Path, settings: dict, config=None) -> dict:
     for name in ('TOKEN_BUDGET', 'MAX_SEQS', 'MAX_WAIT_S'):
         env[name] = expression(assignment(ast.Module(body=boot.body, type_ignores=[]), name), env)
     declared = next(n for n in boot.body if isinstance(n, ast.FunctionDef) and n.name == 'declared')
+    # Serving defaults can move into the pure policy module. Resolve the names
+    # imported by this snapshot's declaration, including aliases; older boot
+    # sources with inline defaults need no SERVING_POLICY symbol.
+    for node in ast.walk(declared):
+        if isinstance(node, ast.ImportFrom) and node.module == draft_policy.__name__:
+            for alias in node.names:
+                env[alias.asname or alias.name] = getattr(draft_policy, alias.name)
     env['gb10_defaults'] = expression(assignment(declared, 'gb10_defaults'), env)
     cfg = expression(assignment(declared, 'defaults'), env)
     unknown = settings.keys() - cfg.keys()
@@ -65,8 +72,7 @@ def probe(root: Path, settings: dict, config=None) -> dict:
                  'nvme_mapped_staging', 'deferred_kda', 'terminal_mhc', 'draft_diagnostics'):
         if cfg[name] not in (0, 1):
             raise ValueError(f'{name} must be 0 or 1')
-    from engine.profiles.glm53.draft_policy import DraftPolicy
-    DraftPolicy(cfg['draft_fc_precision'], cfg['draft_fc_calibration'], bool(cfg['draft_diagnostics']))
+    draft_policy.DraftPolicy(cfg['draft_fc_precision'], cfg['draft_fc_calibration'], bool(cfg['draft_diagnostics']))
     env['cfg'] = cfg
     plans = [n for n in ast.walk(boot) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
              and n.func.id == 'ExecutionPlan']

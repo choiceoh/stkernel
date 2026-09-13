@@ -25,7 +25,7 @@ python3 bench/storacle.py compare --base HEAD --set prefill_tiles=2
 - K·청크·검증 폭은 같은 오라클 시간 모형에 넣고, 캐시/상태 바이트는 실제 layout 함수로 다시 계산한다. 시간 계수는 양쪽 모두 동일한 #838 계측값을 출발점으로 쓴다.
 - 기본 geometry는 GLM53의 기존 참조 토폴로지(45층, DSA 11층)와 해당 소스의 `kernel_shape.MEASURED`다. `--config config.json`을 주면 해당 소스의 `facts.architecture`로 실제 체크포인트 형상을 검증한다. drafter geometry는 소스의 참조값이며 drafter 체크포인트는 로드하지 않는다.
 
-현재 기본값에서 청크는 32,256토큰, decode reservation은 2,310토큰이다. 이는 과거
+현재 기본값에서 청크는 32,256토큰이며 decode reservation은 소스의 `CHUNK_ALIGN + K`를 따른다. 이는 과거
 오라클의 9,216토큰 prefill 형상과 다르다. `TOKEN_BUDGET`을 바꾸거나 `chunk_for`의
 계산을 수정하면 변경된 코드가 구한 청크와 prefill 예상 시간이 다음 호출에 반영된다.
 상태 layout을 바꾸면 슬롯/스냅샷/경계 stage 바이트도 바뀐다. 할당 바이트를 줄인 비율을
