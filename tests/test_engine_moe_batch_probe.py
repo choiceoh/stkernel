@@ -43,6 +43,15 @@ class BatchReformConfigTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.ns['_parse_glm53_static_v2']('t,r,sf6,' + suffix, probe=True)
 
+    def test_shared_epilogue_is_seven_row_probe_only_and_changes_cache_key(self):
+        choose, key = (self.ns[name] for name in ('_static_v2_decode_config', '_static_v2_cache_key'))
+        config = dict(self.base, probe_shared_epilogue=True, fc1=3, fc2=1)
+        self.assertTrue(choose(config, 7)['probe_shared_epilogue'])
+        self.assertNotEqual(key(config, m=7), key(dict(config, probe_shared_epilogue=False), m=7))
+        for rows in (0, 1, 6, 8, 14, 21, 28):
+            with self.assertRaisesRegex(ValueError, 'seven tokens'):
+                choose(config, rows)
+
 
 if __name__ == '__main__':
     unittest.main()

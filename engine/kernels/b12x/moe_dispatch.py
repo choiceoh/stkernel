@@ -2151,6 +2151,8 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         cfg += ("probe_even_waves_v1",)
     if config.get("probe_batch_reform", False):
         cfg += ("probe_batch_reform_v1",)
+    if config.get("probe_shared_epilogue", False):
+        cfg += ("probe_shared_epilogue_v1",)
     return cfg + _static_kernel_cache_key(**fields)
 
 
@@ -2162,6 +2164,9 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                             and not config.get("even")):
         raise ValueError("batch-reform probe requires packed t,r,sf6 at 14/21/28 tokens")
     reform = bool(config.get("decode_reform", False)) and (1 <= m <= 8 or batch_probe)
+    if config.get("probe_shared_epilogue", False) and not (
+            reform and m == 7 and config.get("tiled") and config.get("reform_sf_pack")):
+        raise ValueError("shared-epilogue probe requires packed t,r,sf6 at seven tokens")
     if config.get("even", False) and not (reform and config.get("tiled")
                                          and config.get("reform_sf_pack")):
         raise ValueError("even-wave probe requires packed t,r,sf6 with 1..8 tokens")
@@ -2253,6 +2258,7 @@ def _get_static_kernel_v2(
     kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4
     kernel: Any = kernel_cls(
         scatter_fp32=scatter_fp32,
+        shared_epilogue=bool(config.get("probe_shared_epilogue", False)),
         even=bool(config.get("even", False)),
         a_ring=bool(config.get("a_ring", False)),
         sf_pack=bool(config.get("sf_pack", False)),

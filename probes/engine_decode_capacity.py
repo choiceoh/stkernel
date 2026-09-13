@@ -32,12 +32,13 @@ def moe_check(report, ranks, lane_name):
     if lane_name == 'moe_batch':
         row_cases, candidate = (14, 21, 28), dict(base, probe_batch_reform=True)
     elif lane_name == 'moe_stage_fc1':
-        row_cases, candidate = (7,), dict(base, fc1=3, fc2=1)
+        row_cases, candidate = (7,), dict(base, fc1=3, fc2=1, probe_shared_epilogue=True)
     elif lane_name == 'moe_stage_fc2':
         row_cases, candidate = (7,), dict(base, fc1=1, fc2=3)
     else:
         raise ValueError(lane_name)
     torch.manual_seed(91713)
+    expert_order = torch.randperm(weights[0].shape[0], device='cuda')
     trash = torch.empty(64 * 1024**2 // 4, device='cuda')
     cases, graphs, resources = [], [], []
     try:
@@ -45,7 +46,7 @@ def moe_check(report, ranks, lane_name):
         for rows in row_cases:
             x = torch.randn(rows, 4096, device='cuda', dtype=torch.bfloat16) * .5
             linear = torch.arange(rows * 8, device='cuda').reshape(rows, 8)
-            sel = (linear % 8).int()
+            sel = expert_order[linear % 8].int()
             route = torch.ones(rows, 8, device='cuda') / 8
             pair, outputs = [], []
             for config in (base, candidate):
@@ -57,7 +58,7 @@ def moe_check(report, ranks, lane_name):
             unique_cases = sorted({8, 16, min(32, rows * 8), min(40, rows * 8),
                                    min(56, rows * 8), min(112, rows * 8), rows * 8})
             for unique in unique_cases + [8]:
-                sel.copy_((linear % unique).int())
+                sel.copy_(expert_order[linear % unique].int())
                 x.normal_().mul_(.5)
                 route.uniform_(.05, 1.)
                 route[0, 0] = 0.
@@ -91,7 +92,7 @@ def moe_check(report, ranks, lane_name):
             cases.append((rows, unique_cases, linear, sel, pair, x, route, outputs))
         for rows, unique_cases, linear, sel, pair, x, route, outputs in cases:
             for unique in unique_cases:
-                sel.copy_((linear % unique).int())
+                sel.copy_(expert_order[linear % unique].int())
                 samples = {name: [] for name in ('warm', 'evicted')}
                 for regime in samples:
                     for _ in range(4):

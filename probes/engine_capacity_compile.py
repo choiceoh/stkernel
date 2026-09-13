@@ -35,6 +35,7 @@ def main():
             return build()
         cases = [('served-m7', 7, base),
                  ('moe_stage_fc1', 7, dict(base, fc1=3, fc2=1)),
+                 ('moe_stage_fc1_shared', 7, dict(base, fc1=3, fc2=1, probe_shared_epilogue=True)),
                  ('moe_stage_fc2', 7, dict(base, fc1=1, fc2=3))]
         cases += [('moe_batch', m, dict(base, probe_batch_reform=True)) for m in (14, 21, 28)]
         with patch.object(md, 'get_num_sm', return_value=48), \
@@ -54,7 +55,8 @@ def main():
                         raise RuntimeError('same configuration did not reuse its handle')
                     kernel = instances[-1]
                     row.update(status='PASS', smem_bytes=kernel.smem_bytes,
-                               tile_m=kernel.tile_m, fc1=kernel.fc1_stages, fc2=kernel.fc2_stages)
+                               tile_m=kernel.tile_m, fc1=kernel.fc1_stages, fc2=kernel.fc2_stages,
+                               shared_epilogue=kernel.shared_epilogue)
                 except Exception as exc:
                     row.update(status='FAIL', error=str(exc))
                 rows.append(row)
