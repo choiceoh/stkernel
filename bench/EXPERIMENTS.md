@@ -91,10 +91,13 @@ new name lost it 19 times in a day), and a one-GPU check that says `--fleet` is
 told what the four Sparks cost it. The supervisor adopts a
 fleet that is booting -- deploy-watch's, or its own -- and calls a launch done
 only when a chat answers, not when the door listens. A boot whose ranks disagree
-on what their NVMe tiers hold drops it all and boots (`engine/base/serve.py`,
-`_agree_on_parked`): the skew a rank crash leaves behind -- survivors park on the
-way down, the dead rank parked nothing -- is not a reason for production to stay
-down, and what is dropped could not have been resumed without every rank's part.
+on what their NVMe tiers hold reconciles them and boots (`engine/base/serve.py`,
+`_reconcile_parked`, run before the capture and again in the server): every rank
+keeps the parked conversations and prefix boundaries every rank lists with the same
+record, and drops the rest. The skew a split fleet leaves behind -- the ranks that
+finished a turn parked it, the others had nothing to park -- is not a reason for
+production to stay down, and what is dropped could not have been resumed without
+every rank's part.
 
 ## The ST bracket
 

@@ -1127,52 +1127,74 @@ class Server:
         return forget
 
     @staticmethod
-    def _agree_on_parked(comm, parked, *, forget=None, what="conversations") -> int:
-        """Every rank's tier must hold the same conversations before the first request (D3).
+    def _parked_entries(tier, keys, rank: int = 0) -> "list[tuple[int, str]]":
+        """(key, digest) for every parked entry this rank's tier lists, in key order.
 
-        The tier is per rank and per node, so one node's leftovers are invisible to the others:
-        that rank starts numbering conversations after them, hands the same turn a different row,
-        and the collectives then mix two different states -- the answer is garbage and nothing
-        raises until a retire hits a key that rank already parked. 45th 21: srv4 still carried a
-        local run's seq-0/seq-1, rank 3 died with "conversation 0 is already parked" and the other
-        three spun at 96% GPU in the next all-reduce.
-
-        With `forget`, disagreement no longer kills the boot: every rank drops everything it holds
-        -- the same decision on every rank, off the same vote -- and boots empty. A rank that
-        crashed parked nothing while the survivors parked their rows on the way down (2026-09-13
-        05:24, rank 2's CUDA fault), and until this the next boot died on that skew every time:
-        production stayed down, five launches in a row, for want of one parked chat probe. What
-        is dropped could not have been resumed anyway -- resuming needs every rank's part.
-        Without `forget` the old contract holds: disagreement kills the boot on every rank.
-        Returns how many this rank dropped.
+        The digest is what every rank must hold alike for a parked entry to be resumable: its host record
+        (context, pending, the whole token list, limits, options, pictures) and the blocks it will need
+        back. A park taken in lockstep writes the same record on every rank; a rank's leftover, a torn
+        write or another run's entry under the same key does not. The per-rank file names and write times
+        are not part of it. An entry this rank cannot read gets a digest no peer can match, so it goes too.
         """
-        if int(getattr(comm, "world_size", 1)) <= 1:
+        import hashlib
+        out = []
+        for key in keys:
+            try:
+                record = tier.record(key) if tier is not None else None
+                blocks = int(tier.blocks(key)) if tier is not None else 0
+                body = json.dumps([record, blocks], sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+                digest = hashlib.sha256(body.encode()).hexdigest()[:24]
+            except Exception as exc:                                  # noqa: BLE001 -- unreadable is a reason to drop, not to stop
+                digest = f"unreadable on rank {rank}: {type(exc).__name__}"
+            out.append((int(key), digest))
+        return sorted(out)
+
+    @staticmethod
+    def _reconcile_parked(comm, entries, *, forget, what="conversations") -> int:
+        """Every rank keeps exactly the parked entries every rank holds alike; each drops the rest (D3).
+
+        The tier is per rank and per node, so one node's state is invisible to the others, and a
+        conversation can only be resumed with every rank's part. Two ways the tiers come apart, both seen:
+        a node's leftovers from another run (45th 21: srv4 carried a local run's seq-0/seq-1, rank 3 died
+        with "conversation 0 is already parked" while the other three spun in the next all-reduce), and a
+        fleet that split mid-step, where the ranks that finished a turn parked it on the way down and the
+        ranks that did not had nothing to park (2026-09-13 13:01:47: conversation 2 on ranks 0 and 1 only,
+        then six production launches in a row died on the skew).
+
+        So the ranks do not vote on a count and act on the whole; they exchange their (key, digest) lists
+        on the host group and keep the intersection: a key every rank lists with the same digest stays
+        everywhere, any other key goes from the ranks that have it. The table is the same on every rank,
+        so the decision is too, and what survives numbers conversations alike. Returns how many this rank
+        dropped. A drop that fails is reported and does not stop the boot: the entry is out of every
+        rank's books either way.
+        """
+        world = int(getattr(comm, "world_size", 1) or 1)
+        mine = dict(entries)
+        if world <= 1:
             return 0
-        import torch
-        checksum = 0
-        for key in parked:
-            checksum = (checksum * 1000003 + int(key) + 1) % (1 << 40)
-        device = "cuda" if torch.cuda.is_available() else "cpu"      # the same channel _votes uses
-        mine = torch.tensor([len(parked), int(parked[-1]) if parked else -1, checksum],
-                            dtype=torch.int64, device=device)
-        highest = comm.all_reduce_max(mine.clone())
-        disagree = torch.tensor([0 if bool(torch.equal(highest, mine)) else 1], dtype=torch.int64, device=device)
-        if int(comm.all_reduce_max(disagree).item()):
-            message = (f"the ranks' NVMe tiers hold different {what}: this rank has {len(parked)} "
-                       f"{parked[:8]}{'...' if len(parked) > 8 else ''}, the fleet's highest is "
-                       f"{[int(x) for x in highest.tolist()]} (count, last key, checksum).")
-            if forget is None:
-                raise RuntimeError(message + " Clear glm53-logs/st-tier on every node, or fan the same tier "
-                                   "out -- a boot cannot start with the ranks numbering conversations differently.")
-            for key in list(parked):
-                try:
-                    forget(key)
-                except Exception as exc:                  # noqa: BLE001 -- a stale disk copy must not stop the boot either
-                    print(f"  tier skew: could not drop {what} {key}: {exc}", flush=True)
-            print(f"  tier skew: {message} Dropped all {len(parked)} {what} on this rank (every rank does) so the "
-                  f"boot can start; they could not have been resumed unless every rank held them.", flush=True)
-            return len(parked)
-        return 0
+        table = [dict(rows) for rows in comm.gather_objects(sorted(mine.items()))]
+        if len(table) != world:
+            raise RuntimeError(f"tier reconcile: {len(table)} ranks answered for a world of {world}")
+        kept = {key for key, digest in table[0].items() if all(rows.get(key) == digest for rows in table[1:])}
+        drop = sorted(key for key in mine if key not in kept)
+        if not drop:
+            return 0
+        rank = int(getattr(comm, "rank", 0) or 0)
+        for key in drop:
+            try:
+                forget(key)
+            except Exception as exc:                                  # noqa: BLE001 -- a stale disk copy must not stop the boot
+                print(f"  tier reconcile: rank {rank} could not drop {what} {key}: {exc}", flush=True)
+
+        def why(key):
+            holders = [r for r, rows in enumerate(table) if key in rows]
+            if len(holders) < world:
+                return f"{key} (only rank {','.join(map(str, holders))})"
+            return f"{key} (records differ)"
+        reasons = ", ".join(why(key) for key in drop[:8]) + (f", ... {len(drop) - 8} more" if len(drop) > 8 else "")
+        print(f"  tier reconcile: rank {rank} dropped {len(drop)} {what} the other ranks do not hold alike: {reasons}; "
+              f"kept the {len(kept)} every rank holds alike", flush=True)
+        return len(drop)
 
     def __init__(self, engine, runner, comm, port: int = 8000, tokenizer=None,
                  host: str = "0.0.0.0", max_pending: int = 64, chat=None, model_name: str = "st",
@@ -1269,14 +1291,17 @@ class Server:
         self.generation_characters_total = 0
         self.arrivals = queue.Queue()
         self.pending, self.results = {}, {}
-        # conversation ids are request ids; parked conversations from an earlier boot keep theirs
+        # conversation ids are request ids; parked conversations from an earlier boot keep theirs --
+        # the ones every rank holds alike; the rest are dropped on the ranks that have them
         parked = sorted(runner.parked_keys())
-        if self._agree_on_parked(comm, parked, forget=runner.forget_parked):
-            parked = sorted(runner.parked_keys())                        # dropped on every rank: empty now
+        if self._reconcile_parked(comm, self._parked_entries(getattr(runner, "tiered", None), parked, comm.rank),
+                                  forget=runner.forget_parked):
+            parked = sorted(runner.parked_keys())                        # what every rank holds alike
         if getattr(runner, "load_prefix_tier", None) is not None:
             runner.load_prefix_tier()                                    # boundaries an earlier boot left on the prefix tier
-            self._agree_on_parked(comm, runner.prefix_tier_keys(),         # ... which every rank must hold alike (45차 §23 A)
-                                  forget=self._forget_prefix_boundary(runner), what="prefix boundaries")
+            self._reconcile_parked(comm, self._parked_entries(getattr(runner, "prefix_tier", None),   # ... kept where every
+                                                              runner.prefix_tier_keys(), comm.rank),   # rank holds them alike
+                                   forget=self._forget_prefix_boundary(runner), what="prefix boundaries")
         self.next_seq, self.served = 1 + max(parked, default=-1), 0
         self._last_request_at = time.monotonic()   # a request arrived or was answered: the quiet gate reads its age (st:idle_seconds)
         self.alive = True
