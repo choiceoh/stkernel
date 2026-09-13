@@ -144,7 +144,7 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "c33297334bd816e107f6ffe69fd0a71c3394c49454485a61957263fbdc9b9006",
+      "local_sha256": "5b69050ec11706240fb8e0649d3914017ae20cef931c6b2a2800bcc0e316b8d9",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
@@ -161,7 +161,7 @@
         "2026-09-13 kernel shape descriptor: the exact-shape gates (_is_admitted_tp_geometry, ex _is_glm53_b12x_tp_geometry; _tp_sf6_q0_eligible; _glm_tp_scatter_shape/_fp32), the Q0 launch line and the dynamic tile pin read engine/base/kernel_shape.bound().moe instead of GLM literals; the measured GB10 TP4 cell is the unbound default, so the served GLM path is unchanged.",
         "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged.",
         "2026-09-13 phase 2: short-prefill Q0 word-scale producer; actual-weight GPU gates passed on 3c7bcc0a. Consumer quality and absolute targets remain failed.",
-        "2026-09-13 private experiment: expand SF6 into one-layer temporary raw planes for eager prefill only; default off; numerical and consumer proof pending."
+        "2026-09-13 private FIFO candidate: one-layer temporary SF6 expansion for exact eager prefill; decode, capture, raw fallback and Q0 controls retain existing readers. Numerical and consumer qualification pending."
       ]
     },
     "b12x/moe_dynamic_kernel.py": {

@@ -4610,7 +4610,7 @@ def launch_sm120_dynamic_moe(
     activation_precision: str = "fp4",
     quant_mode: str = "nvfp4",
     _tp_sf6_q0_override: bool | None = None,
-    _prefill_scale_expansion: bool = False,
+    _prefill_scale_expansion: bool | None = None,
 ) -> torch.Tensor:
     """Launch the SM120 dynamic MoE kernel."""
     global _TP_SF6_Q0_LAUNCH_LOGGED
@@ -4633,6 +4633,19 @@ def launch_sm120_dynamic_moe(
     if direct_sf6:
         from .moe_dynamic_gated_sf6 import stock_contract_matches
         direct_sf6 = bool(stock_contract_matches())
+    if _prefill_scale_expansion is None:
+        # Candidate-only eager prefill path. Decode, graph capture and raw
+        # fallback layers retain their existing readers. The private bool
+        # override is a same-weight numerical control in the FIFO gate.
+        _prefill_scale_expansion = bool(direct_sf6 and _TP_SF6_Q0_ENABLED
+            and _tp_sf6_q0_override is None
+            and _prefill_scale_expansion_eligible(
+                m=num_tokens, E=num_experts, k=k, n=n, num_topk=top_k,
+                tile_m=workspace.tile_m, quant_mode=quant_mode,
+                tiled=bool(getattr(weights, "tiled", False)), activation=activation,
+                swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+                swiglu_limit=swiglu_limit, share_input_across_experts=input_gs_is_shared)
+            and not torch.cuda.is_current_stream_capturing())
     if type(_prefill_scale_expansion) is not bool:
         raise TypeError("prefill scale expansion override must be bool")
     expanded_scales = None

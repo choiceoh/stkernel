@@ -1,8 +1,8 @@
-"""Bounded, lossless SF6 expansion for an offline prefill experiment.
+"""Bounded, lossless SF6 expansion for an eager prefill candidate.
 
 The packed model remains sealed. Returned raw planes belong to one launch,
 not the model or a process-wide cache; decode keeps its packed-scale reader.
-No production dispatcher enables this experiment by default.
+Consumer qualification is required before this candidate can be promoted.
 """
 from .moe_reform_sf_pack import REFORM_SF_BLOCK, REFORM_SF_STAGE, stage_shape
 

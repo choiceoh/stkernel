@@ -126,6 +126,39 @@ class ScaleExpansionCpuTests(unittest.TestCase):
                         {'share_input_across_experts': True}, {'swiglu_limit': 0.}):
             self.assertFalse(select(**dict(args, **changed)), changed)
 
+    def test_automatic_launch_preserves_decode_capture_and_q0_controls(self):
+        tree = ast.parse((ROOT / 'engine/kernels/b12x/moe_dispatch.py').read_text())
+        select = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+                      and n.name == '_prefill_scale_expansion_eligible')
+        launch = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+                      and n.name == 'launch_sm120_dynamic_moe')
+        branch = next(n for n in launch.body if isinstance(n, ast.If)
+                      and ast.unparse(n.test) == '_prefill_scale_expansion is None')
+        code = compile(ast.Module(body=[select, branch], type_ignores=[]), '<actual-launch-selector>', 'exec')
+        def selected(**changes):
+            capture_queries = []
+            ns = dict(_prefill_scale_expansion=None, direct_sf6=True,
+                      _TP_SF6_Q0_ENABLED=True, _tp_sf6_q0_override=None,
+                      num_tokens=2672, num_experts=288, k=4096, n=512, top_k=8,
+                      workspace=SimpleNamespace(tile_m=128), quant_mode='nvfp4',
+                      weights=SimpleNamespace(tiled=True), activation='swigluoai_uninterleave',
+                      swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10., input_gs_is_shared=False)
+            capturing = changes.pop('capturing', False)
+            ns['torch'] = SimpleNamespace(cuda=SimpleNamespace(is_current_stream_capturing=
+                lambda: capture_queries.append(True) or capturing))
+            ns.update(changes)
+            exec(code, ns)
+            return ns['_prefill_scale_expansion'], capture_queries
+        for rows in (2672, 2675, 8192, 32256):
+            self.assertEqual(selected(num_tokens=rows), (True, [True]))
+        for rows in (1, 7, 14, 21, 28, 64, 32769):
+            self.assertEqual(selected(num_tokens=rows), (False, []))
+        for change in ({'direct_sf6': False}, {'_TP_SF6_Q0_ENABLED': False},
+                       {'_tp_sf6_q0_override': False}, {'_tp_sf6_q0_override': True},
+                       {'_prefill_scale_expansion': False}):
+            self.assertEqual(selected(**change), (False, []))
+        self.assertEqual(selected(capturing=True), (False, [True]))
+
 
 torch = None
 if importlib.util.find_spec('torch'):
