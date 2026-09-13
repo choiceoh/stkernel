@@ -5,7 +5,8 @@ The profile proves every visible pool is selected before calling this lane.
 There is no union discovery, membership scratch, cache rewrite or collective.
 BF16 queries, exact FP8-to-BF16 keys and BF16 probability operands follow the
 served attention precision. MMA and online-softmax ordering still need GPU
-numerical and consumer qualification; the execution option defaults off.
+numerical and consumer qualification. Serving enables this lane by explicit
+operator choice; the experimental boot retains an off override.
 """
 import math
 

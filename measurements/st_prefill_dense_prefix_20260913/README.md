@@ -2,11 +2,17 @@
 
 This follows merged PR #881 (`9f0b72f1`). It contains two changes:
 
+**Operator enablement, 2026-09-13:** after PR #887 merged, the operator requested
+the new kernel be turned on. Production and experimental boots now default to
+`prefill_dense_prefix=1`; experimental rollback is `STK_prefill_dense_prefix=0`.
+The CPU/compiler/Oracle records below remain pinned to the stated implementation
+revisions. Default enablement does not constitute GPU performance/quality proof.
+
 1. **Remove a redundant TP4 prefill output copy.** The served MLA wrapper receives one fresh output
    tensor at 16 heads/rank, then formerly concatenated that single tensor. Eager prefill now returns
    it directly. Decode/capture retains its previous path. The kernel, values and output lifetime are
    unchanged: consecutive calls still own distinct output storage.
-2. **Default-off dense-prefix MLA.** `STK_prefill_dense_prefix=1` enables a new Triton kernel for the
+2. **Dense-prefix MLA, enabled by default in serving.** The new Triton kernel handles the
    causal prefix where every complete kpool pool fits the selection width. In this checkpoint that
    is through length 2,051, including partial tails. Two adjacent queries (32 query/head rows) reuse
    each FP8 KV tile. The kernel follows each rank's page table directly and masks future positions.
@@ -16,7 +22,7 @@ The dense prefix and remaining sparse queries write into disjoint views of one f
 There is no full-output concatenation or additional full-chunk output allocation for the split. The
 indexer still completes every key pool and tail update, so this composes with #881's query partitioning.
 Steps under 128 rows, prefixes under 128 rows, multi-segment steps, probes and captured decode retain
-their existing attention path. The new option is declared off in production and production overrides
+their existing attention path. The option is declared on in production and production overrides
 are refused. Runtime proof requires its execution on every DSA layer when enabled.
 
 ## CPU and compiler evidence

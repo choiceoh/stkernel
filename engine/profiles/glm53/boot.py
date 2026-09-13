@@ -231,10 +231,11 @@ def declared(a, comm_world: int) -> Config:
     fixed = dict(moe_static=lane_tables.MOE_STATIC_PRODUCTION,
                  lanes="served", decode_eager=0, execution="native")
     facts_ += [Fact(k, v, "native TP4 execution") for k, v in fixed.items()]
-    # One serving recipe in both modes. These four were enabled by operator
-    # request; their component gates are not full-model performance proof.
+    # One serving recipe in both modes, selected by operator request. Dense
+    # prefix was enabled explicitly on 2026-09-13; its GPU timing/quality gate
+    # is still pending, independently of this default selection.
     gb10_defaults = dict(direct_mhc=1, prefill_project_tiles=1,
-                         nvme_mapped_staging=1, decode_iterations=4, prefill_indexer_shards=0, prefill_dense_prefix=0)
+                         nvme_mapped_staging=1, decode_iterations=4, prefill_indexer_shards=0, prefill_dense_prefix=1)
     if getattr(a, "production", False):
         # tile32 passed the full GPU numerical/graph and matched 2K/32K/128K
         # serving brackets. Keep it in the production contract so a stale
@@ -246,8 +247,8 @@ def declared(a, comm_world: int) -> Config:
                         draft_diagnostics=int(SERVING_POLICY.diagnostics), draft_tuning='', **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
-        Knob("prefill_dense_prefix", 0, _dt.date(2026, 9, 30),
-             "Unqualified prefill candidate: share KV tiles across fully covered causal queries",
+        Knob("prefill_dense_prefix", gb10_defaults["prefill_dense_prefix"], _dt.date(2026, 9, 30),
+             "Operator-enabled causal-prefix KV sharing; GPU timing and quality qualification pending",
              "STK_prefill_dense_prefix=0", int),
         Knob("prefill_indexer_shards", 0, _dt.date(2026, 9, 30),
              "Unqualified prefill candidate: shard replicated indexer queries and bypass fully covered selections",
