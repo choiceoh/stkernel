@@ -33,7 +33,7 @@ from engine.base.instruments import Recorder
 from engine.profiles.glm53 import facts
 from engine.profiles.glm53.boot import build
 from engine.profiles.glm53.decode_graphs import Glm53DecodeGraphs
-from engine.profiles.glm53.lanes import served
+from engine.profiles.glm53.lanes import MOE_STATIC_PRODUCTION, served
 from engine.profiles.glm53.net import Step
 from probes.engine_graph_profile import lane_of
 
@@ -113,6 +113,8 @@ def main():
     ap.add_argument("--chunk", default="2304,4608,6912,9216", help="chunk sizes, tokens, comma separated")
     ap.add_argument("--seed", type=int, default=13)
     ap.add_argument("--samples", type=int, default=16, help="decode replays timed per row count")
+    ap.add_argument("--moe-static", default=MOE_STATIC_PRODUCTION,
+                    help="the b12x lane cell (lanes.parse_moe_static): production 't,r,sf6,q0'; 't,r' reads raw scales")
     ap.add_argument("--output", default="/cache/prefill-chunk-profile.json")
     a = ap.parse_args()
 
@@ -136,7 +138,7 @@ def main():
     long_blocks = -(-a.tokens // F.block)
     blocks = max(long_blocks, rows_max * (-(-(F.chunk_align + t) // F.block))) + 8
     kv_gib = ((rows_max + 1) * shape.slot_bytes + blocks * (shape.block_bytes + rows_max * 4) + (64 << 20)) / 2**30
-    _, net, caches, _, _ = build(comm, layers, served(), a.ranks, kv_gib, rows_max, False,
+    _, net, caches, _, _ = build(comm, layers, served(moe_static=a.moe_static), a.ranks, kv_gib, rows_max, False,
                                  Recorder("profile"), ckpt_meta=a.ckpt_meta, execution="native")
     for layer in net.dense.values():                 # calibration observers off: this asks about the target kernels
         layer.observer = None
@@ -149,6 +151,7 @@ def main():
     print(f"weights loaded: rank {rank}, {len(layers)} layers, prompt {a.tokens} tokens, chunks {chunks}, "
           f"{kv_gib:.2f} GiB of KV ({blocks} blocks)", flush=True)
     result = dict(rank=rank, layers=len(layers), tokens=a.tokens, chunks=chunks, spec_k=F.spec_k, seed=a.seed,
+                  moe_static=a.moe_static,
                   scope="one rank, identity collectives, no SP transport, no drafter, no prefix marks, synthetic routing")
 
     # -- 2. decode by rows: capture first (capture needs no live slots), then real contexts --------------------
