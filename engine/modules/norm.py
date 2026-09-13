@@ -46,6 +46,33 @@ class FusedRMSNormGated(RMSNorm):
         return (normed * gate).to(x.dtype)
 
 
+def rmsnorm_unit_offset(x: torch.Tensor, weight: torch.Tensor, eps: float, group: "int | None" = None) -> torch.Tensor:
+    """x * rsqrt(mean(x^2) + eps) * (1 + weight), in fp32, back to x's dtype. `group`: normalise each `group`-wide slice
+    of the last axis on its own (Qwen3.8's hyper-connection and PLE norms over hc streams; transformers qwen4_exp
+    Qwen4ExpTextRMSNorm, cast for cast)."""
+    xf = x.float()
+    if group is not None:
+        xf = xf.reshape(*xf.shape[:-1], -1, group)
+    out = xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + eps)
+    if group is not None:
+        out = out.flatten(-2)
+    return (out * (1.0 + weight.float())).type_as(x)
+
+
+def rmsnorm_gated(x: torch.Tensor, gate: torch.Tensor, weight: torch.Tensor, eps: float, activation: str) -> torch.Tensor:
+    """weight * rmsnorm(x) * act(gate), act "silu" or "sigmoid" -- a linear-attention output norm (Qwen3.8's GDN:
+    transformers qwen4_exp Qwen4ExpTextRMSNormGated, cast for cast: the norm rounds to x's dtype before the weight, the
+    gate is applied in fp32, the product rounds once)."""
+    if activation not in ("silu", "swish", "sigmoid"):
+        raise ValueError(f"rmsnorm_gated takes a silu or sigmoid gate, not {activation!r}")
+    dtype = x.dtype
+    xf = x.to(torch.float32)
+    normed = xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + eps)
+    out = weight * normed.to(dtype)
+    g = gate.to(torch.float32)
+    return (out * (torch.nn.functional.silu(g) if activation != "sigmoid" else torch.sigmoid(g))).to(dtype)
+
+
 def _selfcheck() -> None:
     torch.manual_seed(0); dev = "cuda" if torch.cuda.is_available() else "cpu"
     torch.set_default_dtype(torch.bfloat16)

@@ -210,3 +210,55 @@ def _selfcheck_moe() -> None:
 
 if __name__ == "__main__":
     _selfcheck_moe()
+
+
+def route_softmax_topk(logits: torch.Tensor, k: int, normalize: bool) -> "tuple[torch.Tensor, torch.Tensor]":
+    """The softmax top-k router (Qwen3-Next's, Qwen3.8's: transformers qwen4_exp Qwen4ExpTextTopKRouter): probabilities
+    in fp32 over every expert, the k largest, renormalised to sum to one when `normalize` -> (ids [N, k], weights [N, k]
+    in the logits' dtype)."""
+    probs = torch.nn.functional.softmax(logits, dtype=torch.float, dim=-1)
+    top, ids = torch.topk(probs, k, dim=-1)
+    if normalize:
+        top = top / top.sum(dim=-1, keepdim=True)
+    return ids, top.to(logits.dtype)
+
+
+class SharedExpertMoE:
+    """A routed MoE with one sigmoid-gated shared expert, as a channel mixer (engine/base/composition.Feature): Qwen3.8's
+    MLP (transformers qwen4_exp Qwen4ExpTextSparseMoeBlock).
+
+    out = sum_k w_k * expert_k(x) + sigmoid(shared_expert_gate(x)) * shared_expert(x), every expert and the shared one a
+    gated MLP act(gate(x)) * up(x) -> down, the router `route_softmax_topk`. Experts add their tokens in ascending expert
+    id, as the reference loop does.
+
+    `weights(layer, name)`: gate (the router), shared_expert.gate_proj, shared_expert.up_proj, shared_expert.down_proj,
+    shared_expert_gate. `expert(layer, e)` -> (gate_up [2I, H], down [H, I]) as floats: the transformers fused tensors
+    sliced, or a checkpoint's NVFP4 experts dequantised (`dequant_nvfp4`), whichever the profile holds."""
+
+    def __init__(self, *, experts: int, topk: int, normalize: bool, weights, expert, activation: str = "silu"):
+        if not 0 < topk <= experts:
+            raise ValueError(f"top-{topk} of {experts} experts")
+        self.experts, self.topk, self.normalize, self.weights, self.expert = experts, topk, normalize, weights, expert
+        self.activation = activation
+
+    def _act(self, x):
+        if self.activation != "silu":
+            raise ValueError(f"SharedExpertMoE computes a silu-gated MLP, not {self.activation!r}")
+        return torch.nn.functional.silu(x)
+
+    def __call__(self, layer, x, step=None, state=None):
+        linear = torch.nn.functional.linear
+        w = lambda name: self.weights(layer, name)
+        shared = linear(self._act(linear(x, w("shared_expert.gate_proj"))) * linear(x, w("shared_expert.up_proj")),
+                        w("shared_expert.down_proj"))
+        ids, weights = route_softmax_topk(linear(x, w("gate")), self.topk, self.normalize)
+        out = torch.zeros_like(x)
+        mask = torch.nn.functional.one_hot(ids, num_classes=self.experts).permute(2, 1, 0)
+        for e in torch.greater(mask.sum(dim=(-1, -2)), 0).nonzero():
+            e = int(e[0])
+            slot, tokens = torch.where(mask[e])
+            gate_up, down = self.expert(layer, e)
+            g, u = linear(x[tokens], gate_up).chunk(2, dim=-1)
+            y = linear(self._act(g) * u, down) * weights[tokens, slot, None]
+            out.index_add_(0, tokens, y.to(out.dtype))
+        return out + torch.sigmoid(linear(x, w("shared_expert_gate"))) * shared

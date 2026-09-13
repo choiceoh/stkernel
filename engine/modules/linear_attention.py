@@ -97,3 +97,74 @@ def gated_delta_rule(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
         state = state + torch.einsum("bhk,bhv->bhkv", k_i, u)
         out[:, i] = torch.einsum("bhk,bhkv->bhv", q_i, state) * scale
     return out.to(query.dtype), state
+
+
+def gdn_decay(a: torch.Tensor, A_log: torch.Tensor, dt_bias: torch.Tensor) -> torch.Tensor:
+    """GDN's per-head log-decay: -exp(A_log) * softplus(a + dt_bias), in fp32 (transformers qwen4_exp
+    Qwen4ExpTextGatedDeltaNet: "if the model is loaded in fp16, without the .float() here, A might be -inf")."""
+    return -A_log.float().exp() * torch.nn.functional.softplus(a.float() + dt_bias)
+
+
+class GatedDeltaNet:
+    """Gated DeltaNet as a token mixer (engine/base/composition.Feature): Qwen3.8's linear-attention layer
+    (transformers qwen4_exp Qwen4ExpTextGatedDeltaNet).
+
+    x -> in_proj_qkv -> causal conv (kernel `conv`, silu) -> q, k, v heads; beta = sigmoid(in_proj_b(x)); decay per head
+    = gdn_decay(in_proj_a(x)); key heads repeated to the value heads; the gated delta rule (`gated_delta_rule`, q/k
+    l2-normalised, scale Dk^-0.5); a gated RMS norm with z = in_proj_z(x); out_proj. Per sequence it carries the conv's
+    last kernel-1 inputs and the fp32 recurrent state [HV, Dk, Dv].
+
+    `weights(layer, name)`: in_proj_qkv, in_proj_z, in_proj_b, in_proj_a, conv1d ([C, K] or [C, 1, K]), dt_bias, A_log,
+    norm, out_proj -- the transformers names under `linear_attn.`."""
+
+    def __init__(self, *, k_heads: int, v_heads: int, k_dim: int, v_dim: int, conv: int, eps: float,
+                 gate_activation: str, weights, activation: str = "silu"):
+        if v_heads % k_heads:
+            raise ValueError(f"{v_heads} value heads are not a multiple of {k_heads} key heads")
+        self.k_heads, self.v_heads, self.k_dim, self.v_dim, self.conv = k_heads, v_heads, k_dim, v_dim, conv
+        self.eps, self.gate_activation, self.activation, self.weights = eps, gate_activation, activation, weights
+
+    @property
+    def conv_dim(self) -> int:
+        return 2 * self.k_heads * self.k_dim + self.v_heads * self.v_dim
+
+    def __call__(self, layer, x, step, state):
+        from engine.modules.causal_conv import causal_conv1d
+        from engine.modules.norm import rmsnorm_gated
+        w = lambda name: self.weights(layer, name)
+        out = None
+        for s in step.segments:
+            xs = x[s.start:s.start + s.length]
+            t = xs.shape[0]
+            qkv = torch.nn.functional.linear(xs, w("in_proj_qkv"))
+            z = torch.nn.functional.linear(xs, w("in_proj_z")).reshape(t, self.v_heads, self.v_dim)
+            beta = torch.nn.functional.linear(xs, w("in_proj_b")).sigmoid()
+            g = gdn_decay(torch.nn.functional.linear(xs, w("in_proj_a")), w("A_log"), w("dt_bias"))
+            conv_w = w("conv1d")
+            qkv, conv_state = causal_conv1d(qkv, conv_w.reshape(conv_w.shape[0], -1), None,
+                                            state.get(layer, "gdn_conv", s.seq), self.activation)
+            q, k, v = torch.split(qkv, [self.k_heads * self.k_dim, self.k_heads * self.k_dim, self.v_heads * self.v_dim], -1)
+            q = q.reshape(1, t, self.k_heads, self.k_dim)
+            k = k.reshape(1, t, self.k_heads, self.k_dim)
+            v = v.reshape(1, t, self.v_heads, self.v_dim)
+            if self.v_heads != self.k_heads:
+                q = q.repeat_interleave(self.v_heads // self.k_heads, dim=2)
+                k = k.repeat_interleave(self.v_heads // self.k_heads, dim=2)
+            core, recurrent = gated_delta_rule(q, k, v, g[None], beta[None], state.get(layer, "gdn_state", s.seq),
+                                               scale=self.k_dim ** -0.5, qk_l2norm=True)
+            core = rmsnorm_gated(core.reshape(-1, self.v_dim), z.reshape(-1, self.v_dim), w("norm"), self.eps,
+                                 self.gate_activation).reshape(t, -1)
+            ys = torch.nn.functional.linear(core, w("out_proj"))
+            if out is None:
+                out = xs.new_empty(x.shape[0], ys.shape[-1])
+            out[s.start:s.start + s.length] = ys
+            state.put(layer, "gdn_conv", s.seq, conv_state)
+            state.put(layer, "gdn_state", s.seq, recurrent)
+        return out
+
+    def cache_specs(self, layers):
+        from engine.base.cache_spec import SlotSpec
+        return [SlotSpec("gdn conv state", len(layers), self.conv_dim * (self.conv - 1) * 2,
+                         "[conv_dim, kernel-1] bf16: the conv's last inputs (modules/causal_conv)"),
+                SlotSpec("gdn recurrent state", len(layers), self.v_heads * self.k_dim * self.v_dim * 4,
+                         "[HV, Dk, Dv] fp32 (mamba_ssm_dtype float32)")]

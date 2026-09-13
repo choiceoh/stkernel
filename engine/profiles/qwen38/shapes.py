@@ -54,22 +54,24 @@ def kernel_shape(c: "dict | None" = None, tp: int = 4, spec_k: int = 1) -> "Kern
     hidden = c["hidden_size"]
     return KernelShape(
         comm=Comm(world=tp, hidden=hidden), hidden=hidden, hc=c["hc_count"], tp=tp,
+        # No sink: the attention is a softmax over the selected positions times a sigmoid output gate
+        # (transformers qwen4_exp Qwen4ExpTextAttention), and the served QSA op refuses sinks outright
+        # (vllm qwen3_8_flash_next nvidia/qsa.py: "QSA does not support ALiBi or attention sinks").
         attention=Attention(kind="gqa", heads=c["num_attention_heads"] // tp, head_dim=c["head_dim"],
-                            kv_heads=max(1, c["num_key_value_heads"] // tp), sink=None),
+                            kv_heads=max(1, c["num_key_value_heads"] // tp), sink=False),
         linear=LinearAttention(heads=c["linear_num_key_heads"] // tp, v_heads=c["linear_num_value_heads"] // tp,
                                k_dim=c["linear_key_head_dim"], v_dim=c["linear_value_head_dim"],
                                conv=c["linear_conv_kernel_dim"], decay="head"),
-        indexer=Indexer(heads=c["indexer_kv_heads"], head_dim=c["indexer_head_dim"],
+        indexer=Indexer(heads=c["indexer_n_heads"], head_dim=c["indexer_head_dim"],
                         pool=c["indexer_compress_ratio"], topk=c["indexer_budget"], compress="qsa"),
         moe=MoE(experts=c["num_experts"], experts_local=c["num_experts"] // tp, hidden=hidden,
                 inter=c["moe_intermediate_size"], inter_local=c["moe_intermediate_size"],
                 topk=c["num_experts_per_tok"], quant="nvfp4", activation=c.get("hidden_act", "silu"),
                 swiglu_limit=None, dense_inter_local=c.get("shared_expert_intermediate_size", 0) // tp),
         spec_k=spec_k,
-        # Not established: the checkpoint is not on the fleet (2026-09-13) and nothing in the repo reads its
-        # attention sink or hyper-connection form. The wizard refuses those lanes until someone reads the pinned
-        # HF modeling file (plan.HF_PIN) and states them here.
-        hc_variant=None)
+        # Read off the pinned HF modeling file (plan.py, 77fec77d87f2a0eb): Qwen4ExpTextGatedResidual mixes the
+        # streams -- engine/modules/hyper_connection.gated_residual, held to it in tests/test_engine_composition.py.
+        hc_variant="gated_residual")
 
 
 def kernel_shape_of(ckpt, tp: int = 4) -> "KernelShape":
