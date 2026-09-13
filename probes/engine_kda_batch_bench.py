@@ -10,8 +10,9 @@ def measure_commit(samples=12):
     from engine.profiles.glm53.facts import SPEC_K
     from tests.test_engine_kda_deferred_batch import fixture, views
     tokens = SPEC_K+1
-    variants = (dict(name="flat", tiled=False, cells=1024, hoist_final=False),
-                dict(name="tiled-v1", tiled=True, cells=1024, hoist_final=False),
+    variants = (dict(name="flat", tiled=False, cells=1024, hoist_final=False, vectorize=False),
+                dict(name="tiled-v1", tiled=True, cells=1024, hoist_final=False, vectorize=False),
+                dict(name="hoisted-scalar-1024", tiled=True, cells=1024, hoist_final=True, vectorize=False),
                 *(dict(name=f"hoisted-{cells}", tiled=True, cells=cells, hoist_final=True)
                   for cells in (1024, 2048, 4096)),
                 dict(name="hoisted-4096-w8", tiled=True, cells=4096, hoist_final=True, warps=8))

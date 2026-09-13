@@ -60,7 +60,10 @@ def main():
                               **{p: "*i64" for p in ("OFFSETS", "SLOT", "CONTEXT", "COUNT")}},
                              dict(T=t, ROWS=rows, H=16, K=128, V=128, R=width,
                                   SLOT_STRIDE=34*(width*16*128*128+64)+64, BLOCK=768, B=cells,
-                                  TILED=tiled, HOIST_FINAL=hoist)))
+                                  TILED=tiled, HOIST_FINAL=hoist, OFFSET_ALIGNMENT=4 if hoist else 1)))
+                if tiled and hoist and cells == 1024:
+                    name, fn, signature, constants = variants[-1]
+                    variants.append((name+"-scalar", fn, signature, {**constants, "OFFSET_ALIGNMENT": 1}))
                 if tiled and hoist and cells == 4096:
                     name, fn, signature, constants = variants[-1]
                     variants.append((name+"-w8", fn, signature, constants))
@@ -76,7 +79,12 @@ def main():
                   triton=triton.__version__, variants=[])
     for name, fn, signature, constants in variants:
         print("compile " + name, flush=True)
-        kernel = triton.compile(ASTSource(fn, signature, constexprs=constants),
+        # Match the pointer specialization of the actual Batch allocation.
+        # Without this, offline compilation hides vector loads/stores that
+        # runtime JIT can emit, making register/layout comparisons misleading.
+        attrs = {(fn.arg_names.index(p),): [("tt.divisibility", 16)] for p in signature}
+        kernel = triton.compile(ASTSource(fn, signature, constexprs=constants,
+                                         attrs=attrs if fn is _commit_layers else None),
                                 target=GPUTarget("cuda", 121, 32),
                                 options=dict(num_warps=8 if name.endswith("-w8") else 4, num_stages=1)
                                 if fn is _commit_layers else dict(num_warps=1, num_stages=3))

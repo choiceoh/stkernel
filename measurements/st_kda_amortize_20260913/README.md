@@ -15,6 +15,13 @@ arena bytes remain part of the gate. Increasing the cell tile shares the
 metadata cost across more state values. No runtime acceptance-dependent
 kernel selection is introduced.
 
+The owner also proves the alignment of every layer offset, slot stride and
+ring position before capture. Passing that guarantee to the compiler enables
+128-bit state loads/stores in the candidate; odd shapes retain their actual
+smaller alignment. Flat and first-tile probe references disable this new hint.
+The old scalar state writes are a concrete improvement opportunity, while
+their share of the earlier ~2% regression still needs the GPU ablation.
+
 The operator requested draft K=7 during this work. `facts.SPEC_K` is now 7;
 the drafter, graph token width, state ring, and planning budget derive from
 that fact. The measured kernel-shape descriptor remains a historical K=6
@@ -23,17 +30,23 @@ record rather than being relabeled as new evidence. New GPU timing uses K=7
 timing as if only the implementation changed.
 
 CPU validation: 28 layout, shape, deferred-state binding, execution-plan and
-state-budget tests passed in 4.314 seconds. Thirty-six SM121 commit configurations
-compiled without a CUDA context. At the 1024-cell tile, final-store hoisting
-reduces physical registers from 48 to 40; the 2048/4096-cell variants use
-64/128 registers; a separate eight-warp 4096-cell configuration uses 106.
-All have zero local memory, stack and shared-memory usage.
-The latter is a resource cost, not an assumed speedup. `compile.json` and
-`cpu.log` preserve these results.
+state-budget tests passed in 4.314 seconds. Six execution-order tests then
+passed in 4.069 seconds after changing their decode rows to eight tokens,
+including the four-rank CPU arithmetic oracle (not NIC/GPU proof).
+Forty-two SM121 commit configurations compiled without a CUDA context.
+Offline compilation now includes the same 16-byte pointer specialization as
+the Batch allocation. Earlier resource figures without that specialization
+are superseded: at eight tokens the flat/first-tile variants use 48/38
+registers; aligned hoisted 1024/2048/4096-cell variants use 40/48/80 registers
+and 1024 bytes of shared memory. The eight-warp 4096-cell variant uses 56
+registers and no shared memory. All have zero stack/local memory. These are
+resource costs, not assumed speedups. `compile.json`, `cpu.log`, and
+`cpu-k7-execution.log` preserve the results.
 
-The short GPU gate compares six implementations at identical addresses,
+The short GPU gate compares seven implementations at identical addresses,
 FP32 factors and initial state: flat, the first tiled implementation, and
-hoisted 1024/2048/4096-cell tiles, plus eight warps at 4096 cells.
+hoisted 1024/2048/4096-cell tiles, plus eight warps at 4096 cells and a scalar
+1024-cell hoisted control to separate loop changes from alignment effects.
 It covers C=1/C=4, accepted counts 1/3/8,
 boundary/no-boundary and warm/64MiB-evicted cache. Order rotates and reverses;
 restoring the entire initial arena is outside the timed region. Each variant

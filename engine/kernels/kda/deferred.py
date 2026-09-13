@@ -7,6 +7,8 @@ before another verification, snapshot, or consumer of this slot. This is a
 kernel experiment with an explicit decode execution binding; the ordinary
 ring remains the production default until the component and fleet gates pass.
 """
+from math import gcd
+
 import torch
 import triton
 import triton.language as tl
@@ -32,7 +34,8 @@ def _commit_layers(KEY, DECAY, UPDATE, RING, OFFSETS, SLOT, CONTEXT, COUNT,
                    T: tl.constexpr, ROWS: tl.constexpr, H: tl.constexpr,
                    K: tl.constexpr, V: tl.constexpr, R: tl.constexpr,
                    SLOT_STRIDE: tl.constexpr, BLOCK: tl.constexpr, B: tl.constexpr,
-                   TILED: tl.constexpr = True, HOIST_FINAL: tl.constexpr = True):
+                   TILED: tl.constexpr = True, HOIST_FINAL: tl.constexpr = True,
+                   OFFSET_ALIGNMENT: tl.constexpr = 1):
     # Every CTA owns contiguous state cells. No reduction is needed during
     # materialization, so coalesce the full K,V matrix instead of the
     # verifier's strided value tiles. All layers commit in this one launch.
@@ -57,7 +60,12 @@ def _commit_layers(KEY, DECAY, UPDATE, RING, OFFSETS, SLOT, CONTEXT, COUNT,
         cell = tile * B + tl.arange(0, B)
         mask = cell < H*K*V
         head, key, value = cell // (K*V), cell // V % K, cell % V
-    base = tl.load(OFFSETS + layer) + slot * SLOT_STRIDE + cell
+    offset = tl.load(OFFSETS + layer)
+    if TILED:
+        # The owner proves alignment for every layer, slot and ring position
+        # before capture. Odd dimensions retain their smaller actual alignment.
+        offset = tl.multiple_of(offset, OFFSET_ALIGNMENT)
+    base = offset + slot * SLOT_STRIDE + cell
     if TILED and HOIST_FINAL:
         # One modulo locates both the initial state and all accepted writes.
         # count <= T <= R means each write wraps at most once from this cursor.
@@ -118,7 +126,8 @@ class Batch:
     across target and sampler graphs; a commit must precede its next verify.
     Different context-capacity graphs may share it when replay is serialized.
     """
-    def __init__(self, rings, rows, tokens, *, block, tiled=True, cells=2048, hoist_final=True, warps=4):
+    def __init__(self, rings, rows, tokens, *, block, tiled=True, cells=2048, hoist_final=True, warps=4,
+                 vectorize=True):
         self.rings = tuple(rings)
         if not self.rings or type(rows) is not int or rows <= 0 or type(tokens) is not int:
             raise ValueError("deferred batch needs layers, positive rows and an integer token width")
@@ -142,7 +151,7 @@ class Batch:
         ordered = sorted(offsets)
         if any(b-a < width*h*k*v for a, b in zip(ordered, ordered[1:])) or ordered[-1]-ordered[0]+width*h*k*v > ring.stride(0):
             raise ValueError("deferred layer rings overlap within their slot")
-        if type(tiled) is not bool or type(hoist_final) is not bool:
+        if any(type(x) is not bool for x in (tiled, hoist_final, vectorize)):
             raise ValueError("deferred materialization choices must be booleans")
         if type(cells) is not int or cells not in (1024, 2048, 4096):
             raise ValueError("deferred materialization needs a declared power-of-two cell tile")
@@ -151,6 +160,7 @@ class Batch:
         self.rows, self.tokens, self.block, self.tiled = rows, tokens, block, tiled
         # Internal component-probe controls; serving binds one layout at boot.
         self.cells, self.hoist_final, self.warps = cells, hoist_final, warps
+        self.offset_alignment = gcd(4, ring.data_ptr()//4, h*k*v, ring.stride(0), *offsets) if vectorize else 1
         self.offsets = torch.tensor(offsets, dtype=torch.int64, device=ring.device)
         self.factors = tuple(torch.empty((len(rings), rows*tokens, h, d), dtype=torch.float32, device=ring.device)
                              for d in (k, k, v))
@@ -176,7 +186,7 @@ class Batch:
         tiles = h*triton.cdiv(k, max(1, cells//triton.next_power_of_2(v))) if self.tiled else triton.cdiv(h*k*v, cells)
         _commit_layers[(tiles, len(self.rings), self.rows)](
             *self.factors, ring, self.offsets, slots, contexts, counts, self.tokens, self.rows,
-            h, k, v, width, ring.stride(0), self.block, cells, self.tiled, self.hoist_final,
+            h, k, v, width, ring.stride(0), self.block, cells, self.tiled, self.hoist_final, self.offset_alignment,
             num_warps=self.warps if self.tiled else 4, num_stages=1)
 
 
