@@ -123,8 +123,6 @@ class GraphPoolSeparationTests(unittest.TestCase):
     def test_the_base_class_gives_every_instance_its_own_pool(self):
         source = (ROOT / "engine/base/graphs.py").read_text()
         self.assertIn("self.pool = pool = torch.cuda.graph_pool_handle()", source)
-        # and publishes a graph only once its capture returned
-        self.assertIn("except BaseException:\n                        g.reset()\n                        raise", source)
 
 
 class ReplayStagingTests(unittest.TestCase):
@@ -361,6 +359,55 @@ class AllocatorFlushTests(unittest.TestCase):
             module.DecodeGraphs(lambda inp: inp, lambda *shape: shape,
                                 [(1, 6), (2, 6), (4, 6), (8, 6)], warmup=1)
         self.assertEqual(cuda.flushes, 1)
+
+    def test_capture_failure_survives_end_reset_and_close_failures(self):
+        from engine.base import graphs as module
+        original = ValueError("candidate gather refused")
+        calls, cleaned = [], []
+
+        class BrokenGraph(_Graph):
+            def capture_end(self):
+                cleaned.append('end')
+                raise RuntimeError("stream capture invalidated")
+            def reset(self):
+                cleaned.append('reset')
+                raise RuntimeError("context unavailable")
+
+        def step(inp):
+            calls.append(inp)
+            if len(calls) > 1:
+                raise original
+            return inp
+
+        cuda = _Cuda()
+        cuda.CUDAGraph = BrokenGraph
+        graphs = module.DecodeGraphs.__new__(module.DecodeGraphs)
+        with unittest.mock.patch.object(module, "torch", SimpleNamespace(cuda=cuda)), \
+                unittest.mock.patch.object(module, 'label_capture', lambda *args: contextlib.nullcontext()), \
+                unittest.mock.patch.object(module.DecodeGraphs, 'close', side_effect=RuntimeError('close failed')):
+            with self.assertRaises(ValueError) as raised:
+                graphs.__init__(step, lambda *shape: shape, [(1, 6)])
+        self.assertIs(raised.exception, original)
+        self.assertEqual(cleaned, ['end', 'reset'])
+        self.assertFalse(graphs.graphs, 'a failed graph must not be published')
+        self.assertEqual(len(original.__notes__), 3)
+        self.assertIn('capture_end also failed', original.__notes__[0])
+
+    def test_capture_end_failure_is_not_suppressed_after_a_successful_body(self):
+        from engine.base import graphs as module
+        cleaned = []
+
+        class BrokenEnd(_Graph):
+            def capture_end(self): raise RuntimeError('instantiate refused')
+            def reset(self): cleaned.append(True)
+
+        cuda = _Cuda()
+        cuda.CUDAGraph = BrokenEnd
+        with unittest.mock.patch.object(module, 'torch', SimpleNamespace(cuda=cuda)), \
+                unittest.mock.patch.object(module, 'label_capture', lambda *args: contextlib.nullcontext()):
+            with self.assertRaisesRegex(RuntimeError, 'instantiate refused'):
+                module.DecodeGraphs(lambda inp: inp, lambda *shape: shape, [(1, 6)])
+        self.assertEqual(cleaned, [True])
 
     def test_a_capture_that_raises_still_ends_its_capture(self):
         from engine.base import graphs as module

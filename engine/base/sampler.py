@@ -1,11 +1,12 @@
-"""Sampling over flat logits (base): greedy, temperature, top-k, top-p -- and a
-seed that makes a step replayable (D12).
+"""Sampling over flat logits (base): greedy, temperature, top-k, top-p -- and
+uniforms that make a step replayable (D12).
 
 Inputs are flat: logits [N, vocab] for the N sequences of a decode step, and
 per-row arrays for temperature, top-k and top-p. No per-request objects
-(CHARTER I2). The generator is explicit so a recorded step can be re-run
-with the same seed and produce the same tokens -- that is what makes the
-death dump a replay and not a log.
+(CHARTER I2). The uniforms are explicit inputs (base/draws: a hash of what
+each draw is for, never a stream) so a recorded step can be re-run alone and
+produce the same tokens -- that is what makes the death dump a replay and not
+a log, and what keeps four ranks on one draw whatever came before.
 
 **One sampler, one shape.** Every path -- the captured decode sampler, the
 device pipeline, and the rich rows with options -- hands its whole block of
@@ -39,7 +40,7 @@ def rows(logits: torch.Tensor, temperature: torch.Tensor, top_k: torch.Tensor, t
 
     `temperature` (0 = greedy), `top_k` (0 = off) and `top_p` (1 = off) are per row, so a mixed
     batch is one call and no policy is decided by a host predicate. `uniform` is one draw a row,
-    made by the caller from the row's generator -- that is where seeds and rank agreement live; a
+    made by the caller (base/draws) -- that is where seeds and rank agreement live; a
     caller that wants only `probs` passes None and gets None. `probs`, when given, receives each
     row's sampling distribution (the speculative path picks with those, not from them).
     """
@@ -95,17 +96,19 @@ def _rows_by_sorting(logits, temperature, top_k, top_p, uniform, valid, probs):
 
 
 def sample(logits: torch.Tensor, temperature: torch.Tensor, top_p: torch.Tensor,
-           generator: "torch.Generator | None" = None, *, top_k: "torch.Tensor | None" = None,
+           uniform: torch.Tensor, *, top_k: "torch.Tensor | None" = None,
            valid: "int | None" = None) -> torch.Tensor:
     """[N] token ids. temperature 0 means greedy for that row.
 
-    One uniform a row comes off `generator`, in row order, on every rank alike -- greedy rows draw
-    one too, so a row's stream does not shift when its neighbour's temperature does.
+    `uniform` is one draw a row, the caller's (base/draws): the same number on every rank
+    whatever came before, so a greedy neighbour or a shorter step shifts nothing.
     """
     n = logits.shape[0]
     if top_k is None:
         top_k = torch.zeros(n, dtype=torch.int32, device=logits.device)
-    u = torch.rand(n, generator=generator, device=logits.device)
+    u = torch.as_tensor(uniform, dtype=torch.float32, device=logits.device).reshape(-1)
+    if u.numel() != n:
+        raise ValueError(f"one uniform a row: {n} rows, {u.numel()} uniforms")
     return rows(logits, temperature, top_k, top_p, u, valid)
 
 
@@ -115,26 +118,25 @@ def _selfcheck() -> None:
     logits = torch.randn(6, 1000, device=dev) * 3
     t = torch.tensor([0.0, 0.0, 1.0, 1.0, 0.7, 0.7], device=dev)
     p = torch.tensor([1.0, 0.5, 1.0, 0.9, 1.0, 0.1], device=dev)
-    g = torch.Generator(device=dev).manual_seed(1234)
-    a = sample(logits, t, p, g)
-    g2 = torch.Generator(device=dev).manual_seed(1234)
-    b = sample(logits, t, p, g2)
-    assert torch.equal(a, b), "same seed, same tokens: the replay property"
+    u = torch.rand(6, generator=torch.Generator(device=dev).manual_seed(1234), device=dev)
+    a = sample(logits, t, p, u)
+    b = sample(logits, t, p, u.clone())
+    assert torch.equal(a, b), "same uniforms, same tokens: the replay property"
     assert (a[:2] == logits[:2].argmax(-1)).all(), "temperature 0 is greedy regardless of top_p"
     # top-p 0.1 on a peaked row must land inside the nucleus: check over many draws
     row = logits[5:6]; tt = t[5:6]; pp = p[5:6]
     srt, idx = torch.softmax(row / 0.7, -1).sort(descending=True)
     nucleus = set(idx[0, :int(((srt.cumsum(-1) - srt) < 0.1).sum())].tolist())
-    draws = {sample(row, tt, pp, torch.Generator(device=dev).manual_seed(s)).item() for s in range(64)}
+    draws = {sample(row, tt, pp, torch.tensor([s / 64.0], device=dev)).item() for s in range(64)}
     assert draws <= nucleus, (draws - nucleus)
     # temperature 1, top-p 1 must reproduce the softmax itself: the draw's law, not one draw of it
     row = logits[2:3].expand(20000, -1).contiguous()
-    g3 = torch.Generator(device=dev).manual_seed(7)
-    got = sample(row, t[2:3].expand(20000).contiguous(), p[2:3].expand(20000).contiguous(), g3)
+    u3 = torch.rand(20000, generator=torch.Generator(device=dev).manual_seed(7), device=dev)
+    got = sample(row, t[2:3].expand(20000).contiguous(), p[2:3].expand(20000).contiguous(), u3)
     seen = torch.bincount(got, minlength=1000).float() / 20000
     want = torch.softmax(logits[2].float(), -1)
     assert float((seen - want).abs().max()) < 0.01, float((seen - want).abs().max())
-    print("  sampler: replayable by seed, greedy at T=0, nucleus respected, draws the softmax OK")
+    print("  sampler: replayable by uniforms, greedy at T=0, nucleus respected, draws the softmax OK")
 
 
 if __name__ == "__main__":
@@ -143,7 +145,7 @@ if __name__ == "__main__":
 
 # ---- the OpenAI-dialect options a row may carry (45차 §23 A3/A4/B4) ----------------------------------------------
 # A row with any of these leaves the captured sampler: its logits are gathered whole and processed here, on every
-# rank identically (same generator seeds, same order), so the picks agree without a message.
+# rank identically (the same keyed uniforms, base/draws), so the picks agree without a message.
 
 OPTION_KEYS = ("top_p", "top_k", "seed", "presence_penalty", "frequency_penalty", "repetition_penalty",
                "logit_bias", "stop_token_ids", "logprobs", "grammar", "grammar_after",
@@ -207,7 +209,7 @@ def needs_rich_sampler(options: dict, temperature: float, drafts: bool) -> bool:
     top-k and top-p are NOT on this list: the captured sampler takes both as per-row tensors now,
     so a plain `temperature + top_p` request -- the common one -- stays on the fast path and can
     run ahead of the host. What is left needs something the captured sampler cannot be handed:
-    logits rewritten per row (penalties, bias, grammar), a draw from a generator that is not the
+    logits rewritten per row (penalties, bias, grammar), draws keyed by a seed that is not the
     engine's (seed), the raw logits kept for logprobs, or the probabilities themselves (a
     stochastic row with drafts, for the rejection sampling).
     """
@@ -351,24 +353,38 @@ def _inverse_cdf(probs: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
         .squeeze(1).clamp_max(flat.shape[-1] - 1)
 
 
-def draw(probs: torch.Tensor, generator: "torch.Generator | None") -> int:
-    u = torch.rand(1, generator=generator, device=probs.device)
+def draw(probs: torch.Tensor, uniform) -> int:
+    """One pick from `probs` at `uniform` (a float in [0, 1), or a tensor holding one)."""
+    u = torch.as_tensor(uniform, dtype=torch.float32, device=probs.device).reshape(1)
     return int(_inverse_cdf(probs.reshape(1, -1), u)[0])
 
 
-def pick_each(dists, temperature: float, generator: "torch.Generator | None") -> "list[int]":
-    """One pick per row of `dists`: the argmax at temperature zero, a draw otherwise.
+def pick_each(dists, temperature: float, uniforms) -> "list[int]":
+    """One pick per row of `dists`: the argmax at temperature zero, a draw at `uniforms[i]` otherwise.
 
-    The uniforms are drawn together and the walk runs over the whole block, so the crossing to the
-    host is one for the step rather than one per draft position per sequence.
+    The walk runs over the whole block, so the crossing to the host is one for the step rather
+    than one per draft position per sequence.
     """
     if temperature <= 0:
         return torch.stack([d.argmax() for d in dists]).tolist()
     block = torch.stack(dists)
-    return _inverse_cdf(block, torch.rand(len(dists), generator=generator, device=block.device)).tolist()
+    u = torch.as_tensor(list(uniforms) if not torch.is_tensor(uniforms) else uniforms,
+                        dtype=torch.float32, device=block.device).reshape(-1)
+    if u.numel() != len(dists):
+        raise ValueError(f"one uniform a row: {len(dists)} rows, {u.numel()} uniforms")
+    return _inverse_cdf(block, u).tolist()
 
 
-def speculative_pick(target_probs, draft_ids, draft_probs, generator) -> "tuple[int, list[int]]":
+def _positional(uniforms, k: int) -> "list[float]":
+    """K + 1 uniforms as floats: one a draft position, then the one for the draw that follows the accepted
+    prefix (the correction, or the bonus token). The caller keys them (base/draws); nothing here draws."""
+    us = [float(u) for u in (uniforms.tolist() if torch.is_tensor(uniforms) else uniforms)]
+    if len(us) < k + 1:
+        raise ValueError(f"verification of {k} drafts needs {k + 1} uniforms, got {len(us)}")
+    return us
+
+
+def speculative_pick(target_probs, draft_ids, draft_probs, uniforms) -> "tuple[int, list[int]]":
     """Rejection sampling over K drafts (Leviathan/Chen; vLLM's rejection_sample): returns (accepted count, the
     committed tokens = accepted drafts + one recovered or bonus token).
 
@@ -378,17 +394,16 @@ def speculative_pick(target_probs, draft_ids, draft_probs, generator) -> "tuple[
 
     target_probs: K+1 rows [V] -- the target's distribution at each draft position and the bonus position.
     draft_ids: the K proposed tokens; draft_probs: K rows [V] -- the drafter's distribution each was drawn from
-    (zero outside its candidates). u ~ U(0,1) per position from `generator`, identical on every rank."""
+    (zero outside its candidates). `uniforms`: K + 1 in [0, 1), one a position then one for the draw that
+    follows -- the caller's (base/draws), identical on every rank."""
     k = len(draft_ids)
+    us = _positional(uniforms, k)
     accepted = 0
-    # Everything the K comparisons need crosses to the host once: the two probabilities and the K
-    # uniforms, in one list. Drawing them all up front is what `speculative_pick_batch` does, so
-    # the scalar path and the batch path advance the generator the same way for the same row.
+    # Everything the K comparisons need crosses to the host once: the two probabilities in one list.
     chosen = torch.tensor(list(draft_ids), device=target_probs.device, dtype=torch.int64)
     at = iota(k, target_probs.device)
-    gathered = torch.cat([target_probs[at, chosen], draft_probs[at, chosen],
-                          torch.rand(k, generator=generator, device=target_probs.device)]).tolist()
-    ps, qs, us = gathered[:k], gathered[k:2 * k], gathered[2 * k:]
+    gathered = torch.cat([target_probs[at, chosen], draft_probs[at, chosen]]).tolist()
+    ps, qs = gathered[:k], gathered[k:2 * k]
     for i, d in enumerate(draft_ids):
         p, q, u = ps[i], qs[i], us[i]
         if q > 0 and u < min(1.0, p / q):
@@ -399,11 +414,11 @@ def speculative_pick(target_probs, draft_ids, draft_probs, generator) -> "tuple[
         if total <= 0:
             recovered = target_probs[i]
             total = float(recovered.sum())
-        return accepted, list(draft_ids[:accepted]) + [draw(recovered / total, generator)]
-    return accepted, list(draft_ids) + [draw(target_probs[k], generator)]
+        return accepted, list(draft_ids[:accepted]) + [draw(recovered / total, us[k])]
+    return accepted, list(draft_ids) + [draw(target_probs[k], us[k])]
 
 
-def block_verify(target_probs, draft_ids, draft_probs, generator) -> "tuple[int, list[int]]":
+def block_verify(target_probs, draft_ids, draft_probs, uniforms) -> "tuple[int, list[int]]":
     """Block verification (Sun et al. 2024, arXiv 2403.10444): the same output distribution as
     `speculative_pick`, accepting a longer prefix on average.
 
@@ -425,11 +440,13 @@ def block_verify(target_probs, draft_ids, draft_probs, generator) -> "tuple[int,
     it is drawn from the residual max(P_{L-1} * p_L(x) - q_L(x), 0), or from the target itself when
     every draft was accepted and the extra token is the bonus.
 
-    target_probs: K+1 rows [V]; draft_ids: the K proposals; draft_probs: K rows [V].
+    target_probs: K+1 rows [V]; draft_ids: the K proposals; draft_probs: K rows [V]; `uniforms`: K + 1, one a
+    position then one for the draw that follows the accepted prefix (base/draws).
     """
     k = len(draft_ids)
+    us = _positional(uniforms, k)
     if k == 0:
-        return 0, [draw(target_probs[0], generator)]
+        return 0, [draw(target_probs[0], us[0])]
     device = target_probs.device
     chosen = torch.tensor(list(draft_ids), device=device, dtype=torch.int64)
     at = iota(k, device)
@@ -446,31 +463,40 @@ def block_verify(target_probs, draft_ids, draft_probs, generator) -> "tuple[int,
         for i, mass in enumerate(residual):
             denominator = mass + 1.0 - carried[i]
             thresholds[i] = mass / denominator if denominator > 0 else 1.0
-    uniform = torch.rand(k, generator=generator, device=device).tolist()
+    uniform = us[:k]
     accepted = 0
     for i in range(k):
         if uniform[i] <= thresholds[i]:
             accepted = i + 1
     if accepted == k:
-        return accepted, list(draft_ids) + [draw(target_probs[k], generator)]
+        return accepted, list(draft_ids) + [draw(target_probs[k], us[k])]
     before = carried[accepted - 1] if accepted else 1.0
     rest = (before * target_probs[accepted] - draft_probs[accepted]).clamp_min(0)
     total = float(rest.sum())
     if total <= 0:
         rest, total = target_probs[accepted], float(target_probs[accepted].sum())
-    return accepted, list(draft_ids[:accepted]) + [draw(rest / total, generator)]
+    return accepted, list(draft_ids[:accepted]) + [draw(rest / total, us[k])]
 
 
-def speculative_pick_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_probs: torch.Tensor, generator):
+def _positional_batch(uniforms, n: int, K: int, device):
+    """[n, K + 1] float32 on `device`: K a row for the positions, then one a row for the draw that follows."""
+    u = torch.as_tensor(uniforms, dtype=torch.float32, device=device)
+    if tuple(u.shape) != (n, K + 1):
+        raise ValueError(f"verification of {n} rows of {K} drafts needs uniforms [{n}, {K + 1}], got {tuple(u.shape)}")
+    return u
+
+
+def speculative_pick_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_probs: torch.Tensor, uniforms):
     """`speculative_pick` for a whole decode batch on the device, with no host round trip (45차 §23 B3): rows run
-    ahead of the host, so their picks must be tensors. target_probs [n, K+1, V]; drafts [n, K]; draft_probs [n, K, V].
-    Returns (accepted [n], tokens [n, K+1] with the committed ones first, count [n] = accepted + 1). Draws K uniforms
-    per row then one more per row from `generator`, in that order, identically on every rank."""
+    ahead of the host, so their picks must be tensors. target_probs [n, K+1, V]; drafts [n, K]; draft_probs [n, K, V];
+    `uniforms` [n, K+1]: K a row for the positions, then one a row for the draw that follows (base/draws).
+    Returns (accepted [n], tokens [n, K+1] with the committed ones first, count [n] = accepted + 1)."""
     n, k1, V = target_probs.shape
     K = k1 - 1
     device = target_probs.device
     rows = torch.arange(n, device=device)
-    u = torch.rand(n, K, generator=generator, device=device)
+    uniforms = _positional_batch(uniforms, n, K, device)
+    u = uniforms[:, :K]
     p_d = target_probs[:, :K].gather(2, drafts.unsqueeze(2)).squeeze(2)                 # the target's mass on each draft
     q_d = draft_probs.gather(2, drafts.unsqueeze(2)).squeeze(2)                          # the drafter's
     accept = (q_d > 0) & (u < (p_d / q_d.clamp_min(1e-30)).clamp_max(1.0))
@@ -481,21 +507,21 @@ def speculative_pick_batch(target_probs: torch.Tensor, drafts: torch.Tensor, dra
     recovered = (row_p - row_q).clamp_min(0)
     total = recovered.sum(1, keepdim=True)
     recovered = torch.where(total > 0, recovered / total.clamp_min(1e-30), row_p / row_p.sum(1, keepdim=True).clamp_min(1e-30))
-    fresh = _inverse_cdf(recovered, torch.rand(n, generator=generator, device=device))
+    fresh = _inverse_cdf(recovered, uniforms[:, K])
     tokens = torch.cat([drafts, torch.zeros(n, 1, dtype=drafts.dtype, device=device)], 1)
     tokens.scatter_(1, at.unsqueeze(1), fresh.unsqueeze(1))
     return accepted, tokens, accepted + 1
 
 
 def block_verify_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_cand: torch.Tensor,
-                       draft_probs: torch.Tensor, generator):
+                       draft_probs: torch.Tensor, uniforms):
     """`block_verify` for a whole decode batch on the device, with no host round trip.
 
     target_probs [n, K+1, V]; drafts [n, K]; the draft distribution as the candidates it could have drawn
     (`draft_cand` [n, K, C] int64, distinct within a position -- it is a top-k) and the mass it put on each
-    (`draft_probs` [n, K, C]). Returns (accepted [n], tokens [n, K+1] with the committed ones first,
-    count [n] = accepted + 1). Draws K uniforms per row then one more per row, in that order, identically on
-    every rank, so the ranks stay in step.
+    (`draft_probs` [n, K, C]); `uniforms` [n, K+1]: K a row for the positions, then one a row for the draw
+    that follows (base/draws -- keyed, not drawn, so the ranks hold the same numbers whatever came before).
+    Returns (accepted [n], tokens [n, K+1] with the committed ones first, count [n] = accepted + 1).
 
     On CUDA the middle of this is one kernel (engine/kernels/block_verify): written as torch operations it issued
     about 180 device ops per call and spent 2,425 us of wall on 397 us of work at the shape production runs,
@@ -511,31 +537,27 @@ def block_verify_batch(target_probs: torch.Tensor, drafts: torch.Tensor, draft_c
     n, k1, _ = target_probs.shape
     K = k1 - 1
     device = target_probs.device
+    uniforms = _positional_batch(uniforms, n, K, device)
     if target_probs.is_cuda:
-        # One launch instead of about 180. The uniforms are still drawn here, in this order, so the stream every
-        # rank walks is unchanged; the correction draw stays in torch because `_inverse_cdf`'s cumsum is a
-        # parallel scan and a sequential one differs in the last bits (engine/kernels/block_verify).
+        # One launch instead of about 180; the correction draw stays in torch because `_inverse_cdf`'s cumsum
+        # is a parallel scan and a sequential one differs in the last bits (engine/kernels/block_verify).
         from engine.kernels.block_verify import verify_rows
-        # Still two draws, K per row and then one per row. Folding them into rand(n, K+1) would save a launch
-        # and change every number: Philox does not hand out the same stream for one call of n*(K+1) as for a
-        # call of n*K followed by a call of n. The tokens are what a recorded step replays (D12).
-        u = torch.rand(n, K, generator=generator, device=device)
-        accepted, at, tokens, rest = verify_rows(target_probs, drafts, draft_cand, draft_probs, u)
-        fresh = _inverse_cdf(rest, torch.rand(n, generator=generator, device=device))
+        accepted, at, tokens, rest = verify_rows(target_probs, drafts, draft_cand, draft_probs, uniforms[:, :K].contiguous())
+        fresh = _inverse_cdf(rest, uniforms[:, K])
         tokens.scatter_(1, at.unsqueeze(1), fresh.unsqueeze(1))
         return accepted, tokens, accepted + 1
-    return _block_verify_by_torch(target_probs, drafts, draft_cand, draft_probs, generator)
+    return _block_verify_by_torch(target_probs, drafts, draft_cand, draft_probs, uniforms)
 
 
-def _block_verify_by_torch(target_probs, drafts, draft_cand, draft_probs, generator):
+def _block_verify_by_torch(target_probs, drafts, draft_cand, draft_probs, uniforms):
     """`block_verify_batch` written the obvious way: the reference the kernel is judged against.
 
-    It runs wherever it is given tensors, CUDA included, so the two can be compared on one device from one
-    generator -- a CPU generator and a CUDA generator do NOT agree at the same seed, and comparing across them
-    reads as a kernel bug when it is only two different streams of uniforms."""
+    It runs wherever it is given tensors, CUDA included, so the two can be compared on one device from the
+    same uniforms."""
     n, k1, _ = target_probs.shape
     K = k1 - 1
     device = target_probs.device
+    uniforms = _positional_batch(uniforms, n, K, device)
     rows = iota(n, device)
     on_draft = target_probs[:, :K].gather(2, drafts.unsqueeze(2)).squeeze(2)
     # q at the drafted token: it is one of that position's own candidates, so a masked sum finds it without
@@ -559,7 +581,7 @@ def _block_verify_by_torch(target_probs, drafts, draft_cand, draft_probs, genera
         denominator = mass + 1.0 - carried[:, : K - 1]
         thresholds[:, : K - 1] = torch.where(denominator > 0, mass / denominator.clamp_min(1e-30),
                                              torch.ones_like(mass))
-    u = torch.rand(n, K, generator=generator, device=device)
+    u = uniforms[:, :K]
     reach = iota(K, device).add(1).expand(n, K)
     accepted = torch.where(u <= thresholds, reach, torch.zeros_like(reach)).max(1).values
     at = accepted.clamp_max(K)
@@ -576,7 +598,7 @@ def _block_verify_by_torch(target_probs, drafts, draft_cand, draft_probs, genera
     total = rest.sum(1, keepdim=True)
     rest = torch.where(total > 0, rest / total.clamp_min(1e-30),
                        row_p / row_p.sum(1, keepdim=True).clamp_min(1e-30))
-    fresh = _inverse_cdf(rest, torch.rand(n, generator=generator, device=device))
+    fresh = _inverse_cdf(rest, uniforms[:, K])
     tokens = torch.cat([drafts, torch.zeros(n, 1, dtype=drafts.dtype, device=device)], 1)
     tokens.scatter_(1, at.unsqueeze(1), fresh.unsqueeze(1))
     return accepted, tokens, accepted + 1

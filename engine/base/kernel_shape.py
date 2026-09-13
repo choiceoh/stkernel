@@ -318,14 +318,17 @@ def config_sha256(path) -> str:
 
 
 def write_record(ranks_dir, shape: KernelShape, *, profile: str, config_sha256: str, admission=None) -> Path:
-    """The model's record beside its rank files: the shape (with its pins), the config it was derived from, and the
-    admission table the wizard printed. Written on the host at preshard time; containers mount the rank files read-only."""
+    """The model's record beside its rank files: the shape (with its pins), the config it was derived from, the
+    admission table the wizard printed (each refused or unmeasured lane with its recipe), and the work plan -- those
+    lanes in the order to do them. Written on the host at preshard time; containers mount the rank files read-only."""
+    from engine.kernels import cells
     if not isinstance(shape, KernelShape):
         raise TypeError("write_record takes a KernelShape")
+    admission = list(admission or [])
     path = Path(ranks_dir) / RECORD
     record = {"version": RECORD_VERSION, "profile": profile, "config_sha256": config_sha256,
               "written": _dt.date.today().isoformat(), "shape": to_dict(shape),
-              "admission": [asdict(v) for v in (admission or [])]}
+              "admission": cells.to_dicts(admission), "plan": [v.lane for v in cells.plan(admission)]}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(record, indent=2) + "\n")
     return path
@@ -374,8 +377,9 @@ def _pin_value(raw: str):
 
 
 def wizard(profile: str, ckpt, *, ranks=None, pins=(), write=False) -> dict:
-    """Judge a checkpoint before any boot: derive its shape, apply measured pins, table every lane's admission, and
-    (with write) record it beside the rank files. Returns {"shape", "admission", "path"}."""
+    """Judge a checkpoint before any boot: derive its shape, apply measured pins, table every lane's admission, order
+    the work its refused and unmeasured lanes ask for, and (with write) record it beside the rank files.
+    Returns {"shape", "admission", "plan", "path"}."""
     from engine.kernels import cells
     shape = derive_for(profile, ckpt)
     for raw in pins:
@@ -388,40 +392,59 @@ def wizard(profile: str, ckpt, *, ranks=None, pins=(), write=False) -> dict:
     if write:
         path = write_record(ranks if ranks is not None else ckpt, shape, profile=profile,
                             config_sha256=config_sha256(Path(ckpt) / "config.json"), admission=verdicts)
-    return {"shape": shape, "admission": verdicts, "path": path}
+    return {"shape": shape, "admission": verdicts, "plan": cells.plan(verdicts), "path": path}
+
+
+def report(profile: str, source, shape: KernelShape, verdicts, path=None) -> dict:
+    """The machine-readable form of a wizard run or a record: what an agent reads instead of the tables."""
+    from engine.kernels import cells
+    return {"profile": profile, "source": str(source), "shape": to_dict(shape), "describe": shape.describe(),
+            "counts": cells.counts(verdicts), "admission": cells.to_dicts(verdicts),
+            "plan": [v.lane for v in cells.plan(verdicts)], "record": None if path is None else str(path)}
 
 
 def main(argv=None) -> int:
     import argparse
     from engine.kernels import cells
     ap = argparse.ArgumentParser(prog="python3 -m engine.base.kernel_shape",
-                                 description="the shape wizard: judge a checkpoint's kernel shape before any boot and "
-                                             "record it beside its rank files")
+                                 description="the shape wizard: judge a checkpoint's kernel shape before any boot, order "
+                                             "the work it asks for, and record it beside its rank files")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    w = sub.add_parser("wizard", help="derive, judge and (with --write) record")
+    w = sub.add_parser("wizard", help="derive, judge, plan and (with --write) record")
     w.add_argument("--profile", required=True, choices=sorted(PROFILES))
     w.add_argument("--ckpt", required=True, help="the checkpoint directory (config.json)")
     w.add_argument("--ranks", help="the rank-file directory to record into (default: the checkpoint directory)")
     w.add_argument("--pin", action="append", default=[], metavar="PART.FIELD=VALUE",
                    help="a measured pin, e.g. moe.dynamic_tile_m=32 (repeatable)")
     w.add_argument("--write", action="store_true", help=f"write {RECORD}")
+    w.add_argument("--json", action="store_true", help="print one JSON document (shape, admission with recipes, plan)")
     s = sub.add_parser("show", help="print an existing record")
     s.add_argument("--ranks", required=True)
+    s.add_argument("--json", action="store_true", help="print the record as one JSON document")
     a = ap.parse_args(argv)
     if a.cmd == "show":
         record = read_record(a.ranks)
         if record is None:
             print(f"  no {RECORD} under {a.ranks}")
             return 1
-        shape = from_dict(record["shape"])
+        shape, verdicts = from_dict(record["shape"]), [cells.from_dict(v) for v in record["admission"]]
+        if a.json:
+            print(json.dumps(dict(report(record["profile"], Path(a.ranks) / RECORD, shape, verdicts),
+                                  written=record["written"], config_sha256=record["config_sha256"]), indent=2))
+            return 0
         print(f"  {record['profile']} recorded {record['written']} for config {record['config_sha256'][:12]}")
         print(f"  shape: {shape.describe()}")
-        print(cells.table([cells.Verdict(**v) for v in record["admission"]]))
+        print(cells.table(verdicts))
+        print(cells.work_table(verdicts))
         return 0
     result = wizard(a.profile, a.ckpt, ranks=a.ranks, pins=a.pin, write=a.write)
+    if a.json:
+        print(json.dumps(report(a.profile, a.ckpt, result["shape"], result["admission"], result["path"]), indent=2))
+        return 0
     print(f"  {a.profile} @ {a.ckpt}")
     print(f"  shape: {result['shape'].describe()}")
     print(cells.table(result["admission"]))
+    print(cells.work_table(result["admission"]))
     if result["path"] is not None:
         print(f"  recorded -> {result['path']}")
     return 0
@@ -430,7 +453,7 @@ def main(argv=None) -> int:
 __all__ = ["Device", "Comm", "Attention", "LinearAttention", "Indexer", "MoE", "Drafter", "KernelShape",
            "MEASURED", "bind", "bound", "is_bound", "bind_drafter", "drafter", "reset", "replace", "fields_of",
            "RECORD", "to_dict", "from_dict", "pin", "config_sha256", "write_record", "read_record", "bind_recorded",
-           "derive_for", "wizard", "main"]
+           "derive_for", "wizard", "report", "main"]
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ sees it finish one step late and drops that ghost's result).
 Which rows may run ahead: greedy rows and rows with only a temperature / top_p (the batch's device rejection
 sampling, base/sampler.block_verify_batch); rows with penalties, logit_bias, seeds, logprobs, grammars or a
 pending min_tokens keep the synchronous path, and the runner drains this one before them (adapter.async_ready).
-Every device-side draw comes from the engine's generator in the same order on every rank.
+Every device-side draw is a keyed uniform (base/draws): the same on every rank whatever came before.
 """
 from __future__ import annotations
 
@@ -127,6 +127,7 @@ class AsyncDecode:
             generated=self._upload([e._generated_count(s) for s in seqs], torch.int64),
             limit=self._upload([e.limits[s][0] for s in seqs], torch.int64),
             ends=self._upload([x + [-1] * (width - len(x)) for x in ends], torch.int64),
+            nonce=self._upload([e.nonces[s] for s in seqs], torch.int64),      # the draws' key, with `generated` (base/draws)
             temps=self._upload(temps, torch.float32),
             top_k=self._upload([int(e.options.get(s, {}).get("top_k") or 0) for s in seqs], torch.int32),
             top_p=self._upload(top_p, torch.float32),
@@ -140,6 +141,8 @@ class AsyncDecode:
         # the draft distribution is its candidates and their mass, not a vocabulary-wide row (base/sampler)
         b["qcand"] = torch.zeros(n, K, e.drafter.F.sel_top_k, dtype=torch.int64, device=dev) if b["stochastic"] else None
         b["qprob"] = torch.zeros(n, K, e.drafter.F.sel_top_k, dtype=torch.float32, device=dev) if b["stochastic"] else None
+        # the K+1 uniforms the verification of the current proposals takes: keyed with them (base/draws.step_block)
+        b["draws"] = torch.zeros(n, K + 1, dtype=torch.float32, device=dev) if b["stochastic"] else None
         self._propose_rows(b)
         return b
 
@@ -178,6 +181,12 @@ class AsyncDecode:
                         rows["qprob"] = torch.zeros((*rows["drafts"].shape, c), dtype=torch.float32,
                                                     device=self.e.caches.device)
                         rows["qprob"][..., 0] = 1.0
+                    if rows.get("draws") is None:
+                        # their verification's uniforms, keyed as the proposals they already hold would have been:
+                        # the generation count has not moved since (a row at temperature 0 decides without them)
+                        from engine.base import draws
+                        rows["draws"] = draws.step_block(self.e.seed, rows["nonce"], rows["generated"],
+                                                         self.e.drafter.k)[:, self.e.drafter.k:].contiguous()
             for name in b:
                 if name == "stochastic":
                     continue
@@ -203,17 +212,17 @@ class AsyncDecode:
         else:
             idx = torch.tensor(keep, dtype=torch.int64, device=dev)
         b = self.buf
-        for name in ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "ends", "temps", "top_k", "top_p",
+        for name in ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "ends", "nonce", "temps", "top_k", "top_p",
                      "alive", "anchor", "drafts"):
             b[name] = b[name].index_select(0, idx)
         b["ids"] = b["ids"].view(-1, self.t).index_select(0, idx).reshape(-1)
-        for name in ("qcand", "qprob"):
-            if b[name] is not None:
+        for name in ("qcand", "qprob", "draws"):
+            if b.get(name) is not None:
                 b[name] = b[name].index_select(0, idx)
         if "stochastic" in b:
             b["stochastic"] = any(self.e.limits[s][1] > 0 for s in seqs)
             if not b["stochastic"]:
-                b["qcand"] = b["qprob"] = None
+                b["qcand"] = b["qprob"] = b["draws"] = None
         # nothing else to re-index: the truncations ride in `top_k` and `top_p` above, and the list of
         # which rows to sort went away with the sort (45차 §32)
         self.batch = tuple(seqs)
@@ -225,13 +234,23 @@ class AsyncDecode:
         n = b["ctx"].shape[0]
         graphs = e.drafter.decode_graphs
         if b["stochastic"]:
+            # Everything these proposals draw, keyed by the rows' nonce and how many tokens they have generated
+            # (base/draws.step_block): the walk's K now, the verification's K+1 at the next step, when the count
+            # has not moved. Device state in, device tensors out -- the chain stays ahead of the host, and in
+            # the captured graph the hash is part of the replay, not a kernel launch each.
             if graphs is not None:
-                drafts, qcand, qprob = graphs.propose_rows_sampled(b["anchor"], b["ctx"], b["real_slot"], b["temps"], b["alive"])
+                drafts, qcand, qprob, verify = graphs.propose_rows_sampled(b["anchor"], b["ctx"], b["real_slot"], b["temps"],
+                                                                           b["alive"], b["nonce"], b["generated"])
             else:
+                from engine.base import draws
+                K = e.drafter.k
+                block = draws.step_block(e.seed, b["nonce"], b["generated"], K)
                 drafts, qcand, qprob = e.drafter.propose_rows(e.caches.draft_field(), b["real_slot"], b["anchor"], b["ctx"],
-                                                              temps=b["temps"], generator=e.gen, vocab=e.F.vocab, alive=b["alive"])
+                                                              temps=b["temps"], uniforms=block[:, :K], vocab=e.F.vocab, alive=b["alive"])
+                verify = block[:, K:]
             b["qcand"].copy_(qcand)
             b["qprob"].copy_(qprob)
+            b["draws"].copy_(verify)
         elif graphs is not None:
             drafts = graphs.propose_rows(b["anchor"], b["ctx"], b["real_slot"], b["alive"])
         else:
@@ -266,7 +285,7 @@ class AsyncDecode:
                                            self._dists(n * t, full.shape[-1])).view(n, t, -1)
             e.note_ceilings(probs, b["qprob"], b["qcand"])
             with mark("verify"):
-                accepted, picks, _ = block_verify_batch(probs, b["drafts"], b["qcand"], b["qprob"], e.gen)
+                accepted, picks, _ = block_verify_batch(probs, b["drafts"], b["qcand"], b["qprob"], b["draws"])
         else:
             with mark("sample"):
                 picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)

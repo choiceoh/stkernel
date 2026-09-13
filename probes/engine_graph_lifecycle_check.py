@@ -63,7 +63,7 @@ def main():
                              lambda n, t: torch.zeros(t, width, device="cuda", dtype=torch.bfloat16), [(1, tokens)])
         families.append(draft)
         stage("draft captured")
-        sampler = SamplingGraphs(target, torch.Generator(device="cuda").manual_seed(15), vocab*4, 1.)
+        sampler = SamplingGraphs(target, vocab*4, 1.)
         families.extend((sampler.greedy, sampler.stochastic))
         stage("samplers captured")
         for i in range(args.steps):

@@ -2156,3 +2156,66 @@ nvidia-cutover; 증거 `step_tools_nofleet_20260912/sim_validate_native_5.txt`).
 테스트: `test_fleet_waitwork` 6(계획 4분기·CLI 경계 왕복·실행 중 stop), `test_step_tools`
 27(큐 대기·밸브·closed-loop 0·pick_last). `test_fleet_coalescing` 2 실패는 clean main
 재현 확인(이 PR 밖). D17 그대로 — 시뮬레이션은 판정이 아니다.
+
+### 45차 — 난수는 스트림이 아니라 키다: 드래프트·샘플·검증의 모든 균일난수를 (시드, nonce, 생성 수, 용도, 위치)의 해시로 (2026-09-13, 맥 + srv4 CPU, 운영자 "시작해")
+
+**기록.** §97(9/12 22:31)의 7행 대 6행은 원인이 두 갈래로 남아 있었다: 문법 matcher 의 span, 또는 그 span 을 계산한 대상인 드래프트
+(`propose_sampled` 가 랭크마다 생성기에서 뽑는다). #750·#752 가 둘을 가르는 투표를 넣었고 #823 이 멈추지 않고 말하게 했지만 원인은
+그대로였다. 엔진의 난수는 랭크마다 Philox 스트림 하나(`self.gen`, 시드 0, 합의 없음)였고, 그 스트림을 **데이터 의존 횟수만큼**
+전진시켰다: rich 행은 문법 span 만큼 `rand(count)`, walk 는 `rand(K)`, 검증은 `rand(n,K)`+`rand(n)`, 캡처 그래프 안의 `multinomial`
+×K, 그리고 스텝이 동기 경로냐 체인이냐로 뽑는 모양 자체가 달랐다. 스텝 t 의 스트림 위치는 프로세스 전체 이력의 함수였고, 한 번의
+차이(한 ULP 로 span 이 하나 달라지는 것)가 플릿이 서 있는 내내 두 스트림으로 남았다. 비교하는 곳은 없었다 — 토큰이 조용히 달랐다.
+
+**한 것** (`engine/base/draws.py`).
+- **행 키** = splitmix64(시드, 행의 입장 nonce, 스텝 시작 시점 생성 수). nonce 는 `add`·`extend`·`resume` 마다 1 씩 느는 입장
+  순번이라 네 랭크가 같은 순서로 같은 값을 갖는다(시드를 가진 요청은 그 시드만 — 같은 시드는 어느 행·어느 부팅에서든 같은 토큰).
+  **난수** = 키 ^ (용도<<32 | 위치)를 한 번 더 섞은 상위 53비트/2^53 을 float32 로. 용도: `DRAFT`·`PICK`·`VERIFY`·`FRESH`·`RICH`.
+  파이썬 정수 구현과 int64 텐서 구현이 비트 단위로 같다(부호 있는 시프트는 마스크로 논리 시프트).
+- `sampler`: `sample`·`draw`·`pick_each`·`speculative_pick(_batch)`·`block_verify(_batch)` 가 생성기 대신 균일난수를 받는다(검증은
+  K+1: 위치 K 개, 뒤따르는 뽑기 1 개). `drafter.propose_rows`·`propose_sampled(_tensor)`: `multinomial(generator)` 대신 받은 균일난수로
+  누적 walk.
+- **체인**: 한 스텝이 한 행에 쓰는 전부(walk K, 검증 K, 보정 1)를 `step_block` 해시 한 번으로 — **드래프트 캡처 그래프 안에서**
+  `b["nonce"]`·`b["generated"]` 를 입력으로 계산한다. walk 가 앞 K 를 쓰고 뒤 K+1 은 `b["draws"]` 로 남아 다음 스텝 검증이 쓴다(그 사이
+  생성 수는 그대로). 해시는 eager 로 55 개 연산이지만 그래프 안에서는 재생의 일부다: 체인의 순증가는 입력 복사 2 + 출력 복사 1 −
+  검증 `rand` 2 = **스텝당 런치 +1**(확률 행이 있을 때만; greedy 스텝·버스트는 0). greedy 생존 행이 확률 배치에 합류하는 드문 병합만
+  eager 해시 한 번.
+- **동기 경로**: 같은 워드를 호스트에서 계산해 캡처 샘플러엔 온도처럼 pinned 입력으로(`SamplingGraphs.run(..., uniforms)`), rich 행·
+  walk 엔 텐서로. 캡처 그래프에 생성기 상태가 없다(`register_generator_state` 제거). `burst_decode` 의 행 스키마에 `nonce`·`draws`.
+- 프로브 다섯(`engine_tp_vocab_check`·`engine_graph_lifecycle_check`·`block_verify_bench`·`decode_middle_cost`·`decode_middle_capture`)을
+  새 API 로.
+
+**검증.** srv4 CPU `tools/check.py --list`: 130 파일 1,275 테스트 전부 ok(main 0cd1ca66 위로 리베이스 후). 해시 호스트·텐서 비트 일치(무작위 300 키, 7 위치씩), 단계 블록 = 호스트 경로의 DRAFT·VERIFY·FRESH, 키 성분마다
+분리, 균일성(20,000 개, 10 칸 ±10%), 호스트 검증과 배치 검증이 같은 키에서 같은 결정, 서빙 모듈에 생성기·`multinomial`·
+`register_generator_state` 없음(소스 핀). 기존 샘플링·드래프터·파이프라인·버스트·문법·릴리스 테스트를 새 API 로. **GPU 실측 없음**:
+CUDA 에서의 비트 일치(테스트 `test_the_device_agrees_with_the_host_on_cuda_too` 는 CUDA 에서만 돈다)와 캡처 그래프 안의 해시는 다음
+GPU 판정이 답한다. 하나 더: 같은 시드의 이전 부팅과 토큰이 달라진다(스트림에서 키로) — 기준선 비교는 greedy(onepass 기본)만 유효.
+
+### 834차 — 시뮬레이터가 못 담던 디테일을 흡수한다: 문 앞면·JIT 꼬리·컨텍스트별 decode — 11개 기록 폴드아웃에서 9개 전 행 ±10% (2026-09-13, 맥·CPU, PR #834)
+
+828차까지의 시뮬레이터에 남아 있던 이름붙은 잔여가 셋이었다: warm 2K TTFT 의 −6~−9%(서빙
+앞면), 아예 범위 밖이던 cold TTFT(JIT 꼬리), "컨텍스트 미계수(평탄)" 표시. 셋 다 새 부팅
+없이 **이미 있는 기록에서 폴딩**했다:
+
+- **앞면**(`front_ms`): 가장 짧은 컨텍스트의 warm TTFT 잔여. 요청당 한 번, 첫 프리필
+  청크 안에서 — 청크마다 내는 첫 구현은 8청크×67ms 를 32K TTFT 에 얹었고 스팟체크가
+  잡았다(+0.5s 버그). 큐 대기는 앞면을 세지 않고 TTFT 만 센다.
+- **JIT 꼬리**(`cold_extra_s`): 컨텍스트별 cold−warm, 그 길이의 **첫 요청만**. cold TTFT
+  가 예측 행이 됐다 — 전 기록에서 +0.1~3.9%.
+- **컨텍스트별 decode 계단**(`decode_ms_by_ctx`): `windows_by_ctx` 폴딩. 실측으로 밝혀진
+  사실: 대부분 부팅에서 decode 스텝 시간은 컨텍스트에 **평탄**하다(onepass-h
+  16.94/16.95/16.93 step/s) — 미계수 표시가 사실은 측정 결과였다.
+
+**11개 기록 폴드아웃**(ST 구엔진 1 + glm53 3 + ST 네이티브 5 + prefill-K 2; 증거
+`step_tools_nofleet_20260912/sim_validate_all_11.txt`): **9개 기록이 모든 예측 행
+±10% 이내**(대부분 ±6%), prefill-K1 은 13행 중 12행(2K e2e 혼합 중앙값 +28% 1행),
+NATIVE-A·CUTOVER 의 큰 잔여는 828차가 확립한 기록 자체의 채널 분열(1.87x·0.76x)이다.
+
+**정직한 상한**(도구 docstring 에 명시): "실측 불필요"의 경계 — 측정된 빌드의 상수를 한 판
+폴딩하면 그 빌드의 다른 구성 전부(컨텍스트 사다리·도착 순서·큐잉·기아 밸브·프리픽스
+재사용·JIT·앞면)를 부팅 없이 예측한다. 엔진이 바뀌면 상수가 무효 — 한 판이 다시 필요하다
+(상수의 원천이 항상 실측). 폭(C=4) 계수는 완결 기록 대기(최신 기록의 c4 팔이 비어 있음),
+품질(한국어·9/9)과 고장(랭크 갈림·OOM)은 모형의 언어 밖. D17 유지 — 부팅 수를 줄이는
+도구지 판정을 대신하지 않는다.
+
+테스트 31(신규 4: 앞면-큐대기 분리·길이별 cold 1회·컨텍스트 계단·fit_cost 폴딩),
+`tools/check.py` 1 ok.

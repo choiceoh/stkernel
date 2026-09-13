@@ -36,6 +36,14 @@ import torch
 from engine.base.graph_labels import capture as label_capture
 
 
+def cleanup_after_error(error, cleanup, label):
+    """Keep the first capture failure; attach secondary teardown failures."""
+    try:
+        cleanup()
+    except BaseException as secondary:
+        error.add_note(f"{label} also failed: {type(secondary).__name__}: {secondary}")
+
+
 @contextlib.contextmanager
 def frozen_gc():
     """No Python garbage collection while a graph is recording.
@@ -147,15 +155,18 @@ class DecodeGraphs:
                             try:
                                 with label_capture(recording, f'{label}/{shape}'):
                                     out = step_fn(inp)
-                            finally:
+                            except BaseException as exc:
+                                cleanup_after_error(exc, g.capture_end, "capture_end")
+                                raise
+                            else:
                                 g.capture_end()
                         if append_child is not None:
                             g.instantiate()  # ordinary replays also remain ready before admission
                         if resources is not None:
                             for owner in resources():
                                 self.resources[id(owner)] = owner
-                    except BaseException:
-                        g.reset()
+                    except BaseException as exc:
+                        cleanup_after_error(exc, g.reset, f"reset {label}/{shape}")
                         raise
                     self.graphs[shape], self.inputs[shape], self.outputs[shape] = g, inp, out
                     mark(shape, "captured" if detail else None)
@@ -171,7 +182,7 @@ class DecodeGraphs:
                         memory.checkpoint(f"{label}/failed", failed=f"{type(exc).__name__}: {str(exc)[:300]}")
                     except BaseException:           # noqa: BLE001 -- the vote raises by design; the cause is `exc`
                         pass
-                self.close()
+                cleanup_after_error(exc, self.close, f"close {label} graphs")
                 raise
 
     def run(self, shape: "tuple[int, ...]", fill):

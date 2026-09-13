@@ -11,7 +11,7 @@ import threading
 import time
 from contextlib import contextmanager
 
-from engine.base.graphs import frozen_gc
+from engine.base.graphs import cleanup_after_error, frozen_gc
 from engine.base.graph_labels import capture as label_capture
 from engine.profiles.glm53.bounded_loop import agree_stop, stop_at_boundary
 from engine.profiles.glm53.net import Segment, Step
@@ -78,8 +78,8 @@ class BurstDecode(AsyncDecode):
                 from engine.kernels.decode_queue import SharedDecodeQueue
                 self.queue = SharedDecodeQueue(n, self.t)
             self._capture()
-        except BaseException:
-            self.close()
+        except BaseException as exc:
+            cleanup_after_error(exc, self.close, "close bounded decode")
             raise
 
     def reserve_steps(self, seq):
@@ -95,14 +95,16 @@ class BurstDecode(AsyncDecode):
 
     def _state(self, n):
         e, dev, t = self.e, self.e.caches.device, self.t
+        # the pipeline's row schema, whole: a burst is greedy and draws nothing, but the rows it hands back
+        # are re-indexed and merged by the pipeline, which carries every row's draw key (base/draws)
         b = {k: torch.zeros(n, dtype=torch.int64, device=dev) for k in
-             ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "anchor")}
+             ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "nonce", "anchor")}
         b.update(ends=torch.full((n, self.END_IDS), -1, dtype=torch.int64, device=dev),
                  temps=torch.zeros(n, device=dev), top_k=torch.zeros(n, dtype=torch.int32, device=dev),
                  top_p=torch.ones(n, device=dev), alive=torch.ones(n, dtype=torch.bool, device=dev),
                  ids=torch.zeros(n*t, dtype=torch.int64, device=dev),
                  drafts=torch.zeros(n, t-1, dtype=torch.int64, device=dev),
-                 stochastic=False, qcand=None, qprob=None)
+                 stochastic=False, qcand=None, qprob=None, draws=None)
         b["seqs"].copy_(torch.arange(n, device=dev))
         b["real_slot"].copy_(b["seqs"] + 1)
         b["slot"].copy_(b["real_slot"])
@@ -171,19 +173,25 @@ class BurstDecode(AsyncDecode):
                             try:
                                 with label_capture(recording, f"bounded/{shape}/{self.iterations}"):
                                     self._body(shape)
-                            finally:
+                            except BaseException as exc:
+                                cleanup_after_error(exc, captured.capture_end, "bounded capture_end")
+                                raise
+                            else:
                                 captured.capture_end()
                         loop = BoundedGraph(captured, controls["count"], controls["stop"], self.iterations,
                                             owners=(b, self.logs[n], controls, e.decode_graphs,
                                                     e.sampling_graphs, e.drafter.decode_graphs, self.queue))
-                    except BaseException:
-                        captured.reset()
+                    except BaseException as exc:
+                        cleanup_after_error(exc, captured.reset, f"reset bounded/{shape}/{self.iterations}")
                         raise
                     self.loops[shape] = loop
                     if e.memory is not None:
                         e.memory.checkpoint(f"bounded-decode/{shape}/{self.iterations}")
                 torch.cuda.synchronize()
-        finally:
+        except BaseException as exc:
+            cleanup_after_error(exc, e.caches.reset, "reset bounded warmup caches")
+            raise
+        else:
             e.caches.reset()  # real warmup writes happened only before admission
 
     def launch(self, seqs, slots):

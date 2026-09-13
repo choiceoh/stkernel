@@ -171,9 +171,9 @@ class OptionTests(unittest.TestCase):
     def test_picking_every_row_at_once_draws_what_picking_them_one_by_one_would(self):
         from engine.base.sampler import draw, pick_each
         rows = [torch.softmax(torch.randn(16, generator=torch.Generator().manual_seed(i)), -1) for i in range(4)]
-        one_at_a_time = torch.Generator().manual_seed(9)
-        together = torch.Generator().manual_seed(9)
-        self.assertEqual(pick_each(rows, 1.0, together), [draw(r, one_at_a_time) for r in rows])
+        uniforms = torch.rand(4, generator=torch.Generator().manual_seed(9))
+        self.assertEqual(pick_each(rows, 1.0, uniforms), [draw(r, u) for r, u in zip(rows, uniforms)])
+        self.assertEqual(pick_each(rows, 1.0, uniforms.tolist()), pick_each(rows, 1.0, uniforms))
 
     def test_a_zero_temperature_row_set_picks_every_argmax(self):
         from engine.base.sampler import pick_each
@@ -188,9 +188,11 @@ class OptionTests(unittest.TestCase):
         self.assertAlmostEqual(p.sum().item(), 1.0, places=5)
         p = distribution(logits, 1.0, None, 0.5)
         self.assertGreater(p[0].item(), 0.99)                               # the first token already carries > 0.5 mass
-        g1, g2 = torch.Generator().manual_seed(9), torch.Generator().manual_seed(9)
+        uniforms = torch.rand(20, generator=torch.Generator().manual_seed(9))
         probs = distribution(logits, 1.0, None, None)
-        self.assertEqual([draw(probs, g1) for _ in range(20)], [draw(probs, g2) for _ in range(20)])
+        self.assertEqual([draw(probs, u) for u in uniforms], [draw(probs, float(u)) for u in uniforms.clone()])
+        self.assertEqual(draw(probs, 0.0), 0)
+        self.assertEqual(draw(probs, 1.0 - 1e-7), 4, "the walk's last bin at the top of the interval")
 
     def test_rejection_sampling_reproduces_the_target_law(self):
         torch.manual_seed(0)
@@ -201,8 +203,8 @@ class OptionTests(unittest.TestCase):
         first = torch.zeros(V)
         n = 20000
         for _ in range(n):
-            drafts = [draw(draft[i], g) for i in range(K)]
-            accepted, out = speculative_pick(target, drafts, draft, g)
+            drafts = [draw(draft[i], torch.rand(1, generator=g)) for i in range(K)]
+            accepted, out = speculative_pick(target, drafts, draft, torch.rand(K + 1, generator=g))
             self.assertEqual(len(out), accepted + 1)
             first[out[0]] += 1
         self.assertLess((first / n - target[0]).abs().max().item(), 0.02)   # the first committed token follows the target
@@ -365,9 +367,9 @@ def _as_candidates(dense: torch.Tensor):
     return cand, q
 
 
-def _verify_densely(target_probs, drafts, draft_probs, generator):
+def _verify_densely(target_probs, drafts, draft_probs, uniforms):
     """block_verify_batch as it was written before the draft became its candidates: the reference the sparse
-    form is judged against, kept here so the equality is a test and not a comment."""
+    form is judged against, kept here so the equality is a test and not a comment. `uniforms` [n, K+1]."""
     from engine.base.constants import iota
     from engine.base.sampler import _inverse_cdf
     n, k1, _ = target_probs.shape
@@ -389,7 +391,7 @@ def _verify_densely(target_probs, drafts, draft_probs, generator):
         denominator = mass + 1.0 - carried[:, : K - 1]
         thresholds[:, : K - 1] = torch.where(denominator > 0, mass / denominator.clamp_min(1e-30),
                                              torch.ones_like(mass))
-    u = torch.rand(n, K, generator=generator, device=device)
+    u = uniforms[:, :K]
     reach = iota(K, device).add(1).expand(n, K)
     accepted = torch.where(u <= thresholds, reach, torch.zeros_like(reach)).max(1).values
     at = accepted.clamp_max(K)
@@ -401,7 +403,7 @@ def _verify_densely(target_probs, drafts, draft_probs, generator):
     total = rest.sum(1, keepdim=True)
     rest = torch.where(total > 0, rest / total.clamp_min(1e-30),
                        row_p / row_p.sum(1, keepdim=True).clamp_min(1e-30))
-    fresh = _inverse_cdf(rest, torch.rand(n, generator=generator, device=device))
+    fresh = _inverse_cdf(rest, uniforms[:, K])
     tokens = torch.cat([drafts, torch.zeros(n, 1, dtype=drafts.dtype, device=device)], 1)
     tokens.scatter_(1, at.unsqueeze(1), fresh.unsqueeze(1))
     return accepted, tokens, accepted + 1
@@ -410,8 +412,7 @@ def _verify_densely(target_probs, drafts, draft_probs, generator):
 class BlockVerifyKernelTests(unittest.TestCase):
     """The fused kernel must decide exactly what the torch reference decides.
 
-    Compared on ONE device from ONE generator: a CPU generator and a CUDA generator do not agree at the same
-    seed, and comparing across them reads as a kernel bug when it is two different streams of uniforms."""
+    Compared on ONE device from the SAME uniforms (they are inputs now, base/draws)."""
 
     @unittest.skipUnless(torch.cuda.is_available(), "the kernel path needs a device")
     def test_the_kernel_accepts_and_picks_what_the_reference_does(self):
@@ -424,9 +425,9 @@ class BlockVerifyKernelTests(unittest.TestCase):
             qp = torch.softmax(torch.randn(n, K, C), -1).cuda()
             pick = torch.randint(0, C, (n, K))
             drafts = cand.cpu().gather(2, pick.unsqueeze(2)).squeeze(2).cuda()
-            seed = lambda: torch.Generator(device="cuda").manual_seed(trial + 100)   # noqa: E731
-            want = _block_verify_by_torch(target, drafts, cand, qp, seed())
-            got = block_verify_batch(target, drafts, cand, qp, seed())
+            uniforms = torch.rand(n, K + 1, generator=torch.Generator(device="cuda").manual_seed(trial + 100), device="cuda")
+            want = _block_verify_by_torch(target, drafts, cand, qp, uniforms)
+            got = block_verify_batch(target, drafts, cand, qp, uniforms)
             for i, name in ((0, "accepted"), (1, "tokens"), (2, "count")):
                 self.assertTrue(torch.equal(want[i], got[i]), f"{name} differ at trial {trial}")
 
@@ -440,7 +441,7 @@ class BlockVerifyKernelTests(unittest.TestCase):
         cand = torch.stack([torch.stack([torch.randperm(V)[:C] for _ in range(K)]) for _ in range(n)])
         qp = torch.softmax(torch.randn(n, K, C), -1)
         accepted, tokens, count = _block_verify_by_torch(target, cand[:, :, 0].contiguous(), cand, qp,
-                                                         torch.Generator().manual_seed(1))
+                                                         torch.rand(n, K + 1, generator=torch.Generator().manual_seed(1)))
         self.assertEqual(tuple(tokens.shape), (n, K + 1))
         self.assertTrue(torch.equal(count, accepted + 1))
 
@@ -467,8 +468,9 @@ class SparseDraftDistributionTests(unittest.TestCase):
             target = torch.softmax(torch.randn(n, K + 1, V), -1)
             ids = torch.stack([torch.multinomial(dense[r], 1).squeeze(1) for r in range(n)])
             cand, q = _as_candidates(dense)
-            want = _verify_densely(target, ids, dense, torch.Generator().manual_seed(trial))
-            got = block_verify_batch(target, ids, cand, q, torch.Generator().manual_seed(trial))
+            uniforms = torch.rand(n, K + 1, generator=torch.Generator().manual_seed(trial))
+            want = _verify_densely(target, ids, dense, uniforms)
+            got = block_verify_batch(target, ids, cand, q, uniforms)
             self.assertTrue(torch.equal(want[0], got[0]), f"accepted differ at trial {trial}")
             self.assertTrue(torch.equal(want[1], got[1]), f"tokens differ at trial {trial}")
             self.assertTrue(torch.equal(want[2], got[2]))
@@ -483,8 +485,9 @@ class SparseDraftDistributionTests(unittest.TestCase):
         dense = torch.zeros(n, K, V).scatter_(2, ids.unsqueeze(2), 1.0)
         cand = ids.unsqueeze(2).expand(n, K, C).contiguous()
         q = torch.zeros(n, K, C); q[..., 0] = 1.0
-        want = _verify_densely(target, ids, dense, torch.Generator().manual_seed(4))
-        got = block_verify_batch(target, ids, cand, q, torch.Generator().manual_seed(4))
+        uniforms = torch.rand(n, K + 1, generator=torch.Generator().manual_seed(4))
+        want = _verify_densely(target, ids, dense, uniforms)
+        got = block_verify_batch(target, ids, cand, q, uniforms)
         self.assertTrue(torch.equal(want[0], got[0]))
         self.assertTrue(torch.equal(want[1], got[1]))
 
@@ -519,8 +522,8 @@ class BlockVerificationTests(unittest.TestCase):
         first = torch.zeros(V)
         accepted = 0
         for _ in range(rounds):
-            drafts = [draw(draft[i], gen) for i in range(K)]
-            got, new = pick(target, drafts, draft, gen)
+            drafts = [draw(draft[i], torch.rand(1, generator=gen)) for i in range(K)]
+            got, new = pick(target, drafts, draft, torch.rand(K + 1, generator=gen))
             accepted += got
             first[new[0]] += 1
         return first / first.sum(), accepted / rounds
@@ -547,9 +550,11 @@ class BlockVerificationTests(unittest.TestCase):
         draft = torch.tensor([[0.2, 0.8]])
         # with K = 1 the threshold is min(p/q, 1) = min(0.6/0.2, 1) = 1: always accepted
         for seed in range(8):
-            got, new = block_verify(target, [0], draft, torch.Generator().manual_seed(seed))
+            got, new = block_verify(target, [0], draft, torch.rand(2, generator=torch.Generator().manual_seed(seed)))
             self.assertEqual(got, 1)
             self.assertEqual(new[0], 0)
+        with self.assertRaisesRegex(ValueError, "needs 2 uniforms"):
+            block_verify(target, [0], draft, [0.5])
 
     def test_the_batch_accepts_what_the_row_by_row_rule_accepts(self):
         from engine.base.sampler import block_verify_batch
@@ -559,8 +564,9 @@ class BlockVerificationTests(unittest.TestCase):
         draft = torch.softmax(torch.randn(n, K, V), -1)
         ids = torch.stack([torch.multinomial(draft[r], 1).squeeze(1) for r in range(n)])
         cand, q = _as_candidates(draft)
-        accepted, tokens, count = block_verify_batch(target, ids, cand, q, torch.Generator().manual_seed(5))
-        uniform = torch.rand(n, K, generator=torch.Generator().manual_seed(5))
+        uniforms = torch.rand(n, K + 1, generator=torch.Generator().manual_seed(5))
+        accepted, tokens, count = block_verify_batch(target, ids, cand, q, uniforms)
+        uniform = uniforms[:, :K]
         want = []
         for r in range(n):
             carried, running = [], 1.0
@@ -608,8 +614,8 @@ class DraftCeilingTests(unittest.TestCase):
         gen = torch.Generator().manual_seed(7)
         accepted = 0
         for _ in range(rounds):
-            ids = [draw(draft[i], gen) for i in range(K)]
-            got, _ = block_verify(target, ids, draft, gen)
+            ids = [draw(draft[i], torch.rand(1, generator=gen)) for i in range(K)]
+            got, _ = block_verify(target, ids, draft, torch.rand(K + 1, generator=gen))
             accepted += got
         reachable, covered = draft_ceilings(target, draft)
         self.assertLessEqual(reachable, covered + 1e-6, "what a rule can accept sits under what the candidates cover")
@@ -692,7 +698,7 @@ class DecodeChainGateTests(unittest.TestCase):
         from engine.profiles.glm53.adapter import Glm53Engine
         e = Glm53Engine.__new__(Glm53Engine)                 # the gate, none of the boot
         e.chain_exits = {}
-        e.options, e.matchers, e.gens, e.lps, e.min_new = {}, set(), {}, {}, {}
+        e.options, e.matchers, e.seeds, e.lps, e.min_new = {}, set(), {}, {}, {}
         e.tokens, e.prompt_len = {0: [1, 2, 3]}, {0: 2}
         e.pipeline = types.SimpleNamespace(ready_for=lambda seqs, slots=None: True)
         e.decode_graphs = object()
@@ -722,8 +728,8 @@ class DecodeChainGateTests(unittest.TestCase):
             self.assertEqual(e.chain_exits, {option: 1}, option)
 
     def test_state_the_options_do_not_carry_names_itself_too(self):
-        """A grammar, a seeded generator and a logprob request live in their own maps by then, not in `options`."""
-        for state, reason in (({"matchers": {0: 1}}, "grammar"), ({"gens": {0: 1}}, "seed"), ({"lps": {0: 1}}, "logprobs")):
+        """A grammar, a request's seed and a logprob request live in their own maps by then, not in `options`."""
+        for state, reason in (({"matchers": {0: 1}}, "grammar"), ({"seeds": {0: 1}}, "seed"), ({"lps": {0: 1}}, "logprobs")):
             e = self.gate(**state)
             self.assertFalse(e.async_ready([0]))
             self.assertEqual(e.chain_exits, {reason: 1})
@@ -769,8 +775,8 @@ class VerificationPathTests(unittest.TestCase):
             target = torch.softmax(torch.randn(K + 1, V), -1)
             draft = torch.softmax(torch.randn(K, V), -1)
             ids = [int(torch.multinomial(draft[i], 1)) for i in range(K)]
-            one, _ = block_verify(target, ids, draft, torch.Generator().manual_seed(trial))
+            uniforms = torch.rand(K + 1, generator=torch.Generator().manual_seed(trial))
+            one, _ = block_verify(target, ids, draft, uniforms)
             cand, q = _as_candidates(draft.unsqueeze(0))
-            many, _, _ = block_verify_batch(target.unsqueeze(0), torch.tensor([ids]), cand, q,
-                                            torch.Generator().manual_seed(trial))
+            many, _, _ = block_verify_batch(target.unsqueeze(0), torch.tensor([ids]), cand, q, uniforms.unsqueeze(0))
             self.assertEqual(one, int(many[0]), f"trial {trial}")

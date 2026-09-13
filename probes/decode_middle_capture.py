@@ -50,10 +50,11 @@ def main():
     cand = torch.randint(0, V, (N, K, C), generator=g, device=DEV)
     qp = torch.softmax(torch.randn(N, K, C, generator=g, device=DEV), -1)
     drafts = cand[:, :, 0].contiguous()
+    uniforms = torch.rand(N, K + 1, generator=gen, device=DEV)      # an input now (base/draws), not a stream
 
     def middle():
         probs = distribution_batch(full, temps, topk, topp, None, into).view(N, T, V)
-        return block_verify_batch(probs, drafts, cand, qp, gen)
+        return block_verify_batch(probs, drafts, cand, qp, uniforms)
 
     side, rec = torch.cuda.Stream(), torch.cuda.Stream()
     side.wait_stream(torch.cuda.current_stream())
@@ -62,7 +63,6 @@ def main():
     torch.cuda.current_stream().wait_stream(side)
 
     graph = torch.cuda.CUDAGraph()
-    graph.register_generator_state(gen)
     try:
         torch.cuda.synchronize()
         with torch.cuda.stream(rec):

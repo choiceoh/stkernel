@@ -12,6 +12,7 @@ import json
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -45,6 +46,51 @@ class CostModelTest(unittest.TestCase):
         self.assertEqual(sim.pick_last(records, 1), ["d"])
         self.assertEqual(sim.pick_last(records, 3), ["b", "c", "d"])
         self.assertEqual(sim.pick_last(records, 0), records)
+
+    def test_front_is_charged_per_request_not_queue_wait(self):
+        # 문의 앞면(입장·토큰화)은 요청마다 한 번 — TTFT 에는 들지만 큐 대기는 아니다
+        cost = replace(self.FAST, front_ms=60.0)
+        out = sim.run_once([512], 64, CONTRACT, cost=cost, can_async=False)
+        (q,) = out["requests"]
+        self.assertAlmostEqual(q["ttft_s"], 0.06 + 512 / 5120.0, delta=0.05)
+        self.assertAlmostEqual(q["queue_wait_s"], 0.0, delta=0.05)
+
+    def test_cold_tail_is_charged_once_per_prompt_length(self):
+        # JIT 꼬리는 그 프롬프트 길이의 첫 요청만 낸다 — 둘째는 warm
+        cost = replace(self.FAST, cold_extra_s={512: 0.4})
+        out = sim.run_once([512, 512], 64, CONTRACT, cost=cost, can_async=False,
+                           closed_loop=True)
+        first, second = out["requests"]
+        self.assertAlmostEqual(first["ttft_s"], 0.4 + 512 / 5120.0, delta=0.06)
+        self.assertAlmostEqual(second["ttft_s"], 512 / 5120.0, delta=0.06)
+
+    def test_decode_ladder_follows_context(self):
+        # windows_by_ctx 폴딩: 컨텍스트별로 다른 decode 스텝 시간을 계단이 담는다
+        cost = sim.CostModel(k=0, acc=0.0, decode_ms=5.0,
+                             decode_ms_by_ctx={512: 5.0, 4096: 20.0},
+                             prefill_tok_s={512: 5120.0, 4096: 5120.0}, name="ladder")
+        out = sim.run_once([512, 4096], 64, CONTRACT, cost=cost, can_async=False,
+                           closed_loop=True)
+        short, long_ = out["requests"]
+        # 클라이언트 tok/s = 1 토큰/스텝 ÷ 스텝 시간 — 5ms 대 20ms 면 4배
+        self.assertAlmostEqual(short["tok_s"] / long_["tok_s"], 4.0, delta=0.5)
+
+    def test_fit_cost_folds_front_cold_and_ctx_ladder(self):
+        record = {"name": "F", "requests": [
+            {"ctx": 2000, "ttft_s": 1.5, "decode_s": 4.0, "completion_tokens": 120},
+            {"ctx": 2000, "ttft_s": 1.1, "decode_s": 4.0, "completion_tokens": 120},
+            {"ctx": 2000, "ttft_s": 1.1, "decode_s": 4.0, "completion_tokens": 120}],
+            "prefill": [{"ctx": 2000, "tok": 1000, "cold_s": 1.5, "warm_s": 1.0}],
+            "decode": {"tokens_per_step": 3.0, "windows_med": 20.0, "num_spec": 5,
+                       "acc_raw": 0.4, "fixed_pooled_step_s": 20.0,
+                       "windows_by_ctx": {"2000": [20, 20], "32000": [10, 10]}}}
+        cost = sim.fit_cost(record)
+        self.assertAlmostEqual(cost.decode_ms, 50.0)
+        self.assertAlmostEqual(cost.decode_ms_by_ctx[2000], 50.0)
+        self.assertAlmostEqual(cost.decode_ms_by_ctx[32000], 100.0)
+        # 앞면: warm 중앙값 1.1 − 프리필(1000 tok / 1000 tok/s = 1.0s) = 0.1s
+        self.assertAlmostEqual(cost.front_ms, 100.0, delta=5.0)
+        self.assertAlmostEqual(cost.cold_extra_s[1000], 0.5, places=2)
 
     def test_tokens_per_step_is_row_basis(self):
         out = sim.run_once([512, 512], 96, CONTRACT, cost=self.FAST, can_async=False)

@@ -18,6 +18,8 @@ import time
 
 import numpy as np
 import torch
+
+from engine.base import draws
 from math import isfinite
 
 from engine.base.sampler import sample
@@ -62,12 +64,13 @@ class Glm53Engine:
         if context_ceiling is not None and not 0 < int(context_ceiling) <= trained:
             raise ValueError(f"served context ceiling must be in 1..{trained}")
         self.max_context = trained if context_ceiling is None else int(context_ceiling)
-        self.gen = torch.Generator(device=caches.device).manual_seed(seed)
+        self.seed = int(seed)                               # the draws' key, with a row's nonce and generation count (base/draws)
         self.tokens, self.prompt_len, self.ctx, self.slot, self.limits = {}, {}, {}, {}, {}
         self.min_new = {}                                   # seq -> no end token before this many generated (OpenAI min_tokens)
         self.thinking = {}                                  # seq -> still inside its reasoning block (a budget watches it)
         self.options = {}                                   # seq -> the request's sampling options beyond temperature (base/sampler.OPTION_KEYS)
-        self.gens = {}                                      # seq -> its own torch.Generator when the request carries a seed
+        self.seeds = {}                                     # seq -> the request's own seed when it carries one: its draws key on it, not on the row
+        self.nonces, self.admissions = {}, 0                # seq -> its admission count; every rank admits in the same order, so it is the same everywhere
         self.ends = {}                                      # seq -> end tokens: the model's plus the request's stop_token_ids
         self._ends_tensor = {}                              # cached device end-token ids for min_tokens
         self.sampling_history = None                        # penalty tensors; history(seq) remains the token-list protocol
@@ -148,10 +151,10 @@ class Glm53Engine:
                 kwargs = {"prepared_context": True} if self.execution_plan.early_observe else {}
                 if self.execution_plan.decode_iterations > 1:
                     kwargs["append_child"] = self.decode_graphs.append_child
-                self.drafter.capture_decode(self.caches, memory=self.memory, generator=self.gen, vocab=self.F.vocab, **kwargs)
+                self.drafter.capture_decode(self.caches, memory=self.memory, draws_seed=self.seed, vocab=self.F.vocab, **kwargs)
                 self._check_graph_pools()
             from engine.profiles.glm53.decode_graphs import SamplingGraphs
-            self.sampling_graphs = SamplingGraphs(self.decode_graphs, self.gen, self.decodable, self.top_p)
+            self.sampling_graphs = SamplingGraphs(self.decode_graphs, self.decodable, self.top_p)
             if self.drafter.k:
                 from engine.profiles.glm53.pipeline import AsyncDecode
                 if self.execution_plan.decode_iterations > 1:
@@ -171,7 +174,8 @@ class Glm53Engine:
                     self.memory.checkpoint("capture_decode/failed", failed=f"{type(exc).__name__}: {str(exc)[:300]}")
                 except BaseException:                 # noqa: BLE001 -- it raises by design; `exc` is the cause
                     pass
-            self.close_decode()
+            from engine.base.graphs import cleanup_after_error
+            cleanup_after_error(exc, self.close_decode, "close decode after capture failure")
             raise
 
     def _check_graph_pools(self) -> None:
@@ -452,7 +456,7 @@ class Glm53Engine:
         self._ids_stage = self._rich_stage = None           # pinned host ids; the rich sampler's two fp32 planes
         self.sampling_history = None                        # penalty tensors
         self.grammars = None                                # xgrammar's compiled grammars and bitmask buffers
-        self._ends_tensor, self.matchers, self.embeds, self.gens = {}, {}, {}, {}
+        self._ends_tensor, self.matchers, self.embeds, self.seeds = {}, {}, {}, {}
         self.staged, self.inflight, self.lps, self.media = {}, {}, {}, {}
         if self.vision is not None:
             self.vision._rope = {}                          # one rope table per distinct picture grid this boot saw
@@ -522,9 +526,9 @@ class Glm53Engine:
         self.ends[seq] = self.eos | set(options.get("stop_token_ids") or ())
         self.thinking[seq] = options.get("reasoning_budget") is not None
         if options.get("seed") is not None:
-            self.gens[seq] = torch.Generator(device=self.caches.device).manual_seed(int(options["seed"]))
+            self.seeds[seq] = int(options["seed"])
         else:
-            self.gens.pop(seq, None)
+            self.seeds.pop(seq, None)
         if options.get("logprobs") is not None:
             self.lps[seq] = []
         else:
@@ -554,6 +558,7 @@ class Glm53Engine:
         self._forget_history(seq)                           # a row's history may not outlive the tokens it was built from
         self.limits[seq] = (max_new, temperature)
         self.min_new[seq] = min_new
+        self._admitted(seq)
         self._bind_options(seq, options)
 
     def _forget_history(self, seq: int) -> None:
@@ -596,8 +601,8 @@ class Glm53Engine:
     def forget(self, seq: int) -> None:
         if seq in self.slot:
             raise ValueError(f"seq {seq} is still live")
-        for rows in (self.tokens, self.prompt_len, self.limits, self.min_new, self.thinking, self.options, self.gens, self.ends, self.lps, self.matchers,
-                     self.media, self.embeds, self.inflight, self.staged, self._ends_tensor):
+        for rows in (self.tokens, self.prompt_len, self.limits, self.min_new, self.thinking, self.options, self.seeds, self.nonces, self.ends,
+                     self.lps, self.matchers, self.media, self.embeds, self.inflight, self.staged, self._ends_tensor):
             rows.pop(seq, None)                             # a row leaving does not move the others: the pipeline shrinks its view
         self._forget_history(seq)
 
@@ -698,6 +703,7 @@ class Glm53Engine:
         self._forget_history(seq)                           # the row now holds another conversation's tokens
         self.limits[seq] = (int(record["limits"][0]), float(record["limits"][1]))
         self.min_new[seq] = int(record.get("min_new", 0))
+        self._admitted(seq)
         options = dict(record.get("options") or {})
         if "logit_bias" in options:
             options["logit_bias"] = {int(k): float(v) for k, v in options["logit_bias"].items()}   # JSON keys come back as text
@@ -738,6 +744,7 @@ class Glm53Engine:
         self.tokens[seq] += list(ids); self.prompt_len[seq] = len(self.tokens[seq])
         self.limits[seq] = (max_new, temperature)
         self.min_new[seq] = min_new
+        self._admitted(seq)
         self._bind_options(seq, options)
         return len(self.tokens[seq]) - self.ctx[seq]
 
@@ -762,7 +769,7 @@ class Glm53Engine:
         if any(opts.get(k) is not None for k in ("seed", "presence_penalty", "frequency_penalty", "repetition_penalty",
                                                   "logit_bias", "logprobs", "grammar", "min_p")):
             return False
-        if seq in self.matchers or seq in self.gens or seq in self.lps:
+        if seq in self.matchers or self.seeds.get(seq) is not None or seq in self.lps:
             return False
         return (self.min_new.get(seq, 0) <= self._generated_count(seq)
                 and not self._reasoning_boundary(seq))
@@ -808,7 +815,7 @@ class Glm53Engine:
                 return name
         if seq in self.matchers:
             return "grammar"
-        if seq in self.gens:
+        if self.seeds.get(seq) is not None:
             return "seed"
         if seq in self.lps:
             return "logprobs"
@@ -855,6 +862,34 @@ class Glm53Engine:
     def _generated_count(self, seq: int) -> int:
         return len(self.tokens[seq]) - self.prompt_len[seq]
 
+    # -- draws (base/draws): a uniform is a hash of what it is for, never a stream -------------------------------
+    def _admitted(self, seq: int) -> None:
+        """A new turn on the row: its draws key on this admission (the same count on every rank)."""
+        self.admissions += 1
+        self.nonces[seq] = self.admissions
+
+    def _row_key(self, seq: int) -> int:
+        """The word this row's draws hang off at its current generation count: the boot seed with the row's
+        admission nonce -- or a seeded request's own seed alone, so the same seed replays the same tokens
+        whichever row and whichever boot it lands on. The chain keys the same way on the device."""
+        seed = self.seeds.get(seq)
+        if seed is None:
+            return draws.row_key(self.seed, self.nonces[seq], self._generated_count(seq))
+        return draws.row_key(seed, 0, self._generated_count(seq))
+
+    def _uniforms(self, seq: int, purpose: int, count: int) -> "list[float]":
+        return draws.uniforms(self._row_key(seq), purpose, count)
+
+    def _uniform_tensor(self, seq: int, purpose: int, count: int, device):
+        return torch.tensor(self._uniforms(seq, purpose, count), dtype=torch.float32, device=device)
+
+    def _pick_uniforms(self, segments) -> "list[float]":
+        """One uniform a position of the step, in step order: what the captured and the eager samplers take."""
+        out = []
+        for s in segments:
+            out += self._uniforms(s.seq, draws.PICK, s.length)
+        return out
+
     def _policy(self, segments) -> "tuple[list, list, list]":
         """Each row's (temperature, top_k, top_p), one entry per position the step samples.
 
@@ -869,20 +904,23 @@ class Glm53Engine:
                 ps.append(float(opts.get("top_p", self.top_p)))
         return temps, ks, ps
 
-    def _sample(self, logits: torch.Tensor, temps: "list[float]", top_k=None, top_p=None) -> torch.Tensor:
-        # Temperatures already live on the host: no device predicate or random
-        # draw is needed for an entirely greedy step. Such steps leave the RNG
-        # untouched; stochastic/mixed steps retain the base sampler's draws.
+    def _sample(self, logits: torch.Tensor, temps: "list[float]", top_k=None, top_p=None, uniforms=None) -> torch.Tensor:
+        # Temperatures already live on the host: no device predicate or draw is needed for an
+        # entirely greedy step. A stochastic/mixed step takes one uniform a row from the caller,
+        # keyed by what it is for (base/draws): nothing here holds a stream.
         if all(t <= 0 for t in temps):
             return logits[:, :self.decodable].argmax(dim=-1)
         dev, n = logits.device, logits.shape[0]
+        if uniforms is None:
+            raise ValueError("a stochastic step needs one uniform a row (base/draws)")
         t = torch.tensor(temps, dtype=torch.float32, device=dev)
         k = torch.tensor(top_k if top_k is not None else [0] * n, dtype=torch.int32, device=dev)
         p = torch.tensor(top_p, dtype=torch.float32, device=dev) if top_p is not None \
             else torch.full((n,), self.top_p, device=dev)
+        u = torch.tensor(list(uniforms), dtype=torch.float32, device=dev)
         # `valid` is the undecodable cut: the sampler stops there rather than the step first
         # copying the whole gathered block to write minus infinity into its end.
-        return sample(logits, t, p, self.gen, top_k=k, valid=self.decodable)
+        return sample(logits, t, p, u, top_k=k, valid=self.decodable)
 
     def _no_end_yet(self, seq: int, picks: "list[int]", hidden: torch.Tensor) -> "list[int]":
         """OpenAI min_tokens: while fewer than `min_new` tokens are generated, an end token cannot be
@@ -920,10 +958,10 @@ class Glm53Engine:
         # needs the same global final row as the ordinary prefill composition.
         return h[-1:], aux
 
-    def _sample_hidden(self, hidden, temps, top_k=None, top_p=None):
+    def _sample_hidden(self, hidden, temps, top_k=None, top_p=None, uniforms=None):
         if all(t <= 0 for t in temps):
             return self.net.head_tokens(hidden, self.decodable)
-        return self._sample(self.net.head(hidden), temps, top_k, top_p)
+        return self._sample(self.net.head(hidden), temps, top_k, top_p, uniforms)
 
     # -- picking tokens: the captured samplers for plain rows; rows with options (base/sampler.OPTION_KEYS) or a
     # -- stochastic row with drafts take the base sampler over their gathered logits, identically on every rank ------
@@ -970,8 +1008,8 @@ class Glm53Engine:
 
         The first occurrence (2026-09-12) said seven rows against six and nothing else, and the two
         candidates behind that number cannot be told apart after the fact: the live span a grammar
-        matcher computed, or the DRAFTS it computed it over, which are drawn per rank from a generator
-        (`propose_sampled`). So both are voted here, per sequence: a span that differs says the matchers
+        matcher computed, or the DRAFTS it computed it over, which every rank walks itself over keyed
+        uniforms (`propose_sampled`, base/draws). So both are voted here, per sequence: a span that differs says the matchers
         disagree over the same drafts, and a draft digest that differs says they never had the same
         drafts to begin with. One of those is a grammar bug and the other is an RNG bug, and the message
         names which before anybody goes looking. ONE exchange of a fixed shape: the row count that just
@@ -1097,7 +1135,7 @@ class Glm53Engine:
         spans = [masks.live(seq, int(raw.shape[0])) if masks is not None else int(raw.shape[0])
                  for seq, raw, _, _ in jobs]
         block, dists = self._rich_block(sum(spans), int(jobs[0][1].shape[-1]), device)
-        at, temps, ks, ps, draws = 0, [], [], [], []
+        at, temps, ks, ps, uniform_rows = 0, [], [], [], []
         for (seq, raw, drafts, _), count in zip(jobs, spans):
             opts = self.options.get(seq, {})
             for i in range(count):
@@ -1107,13 +1145,13 @@ class Glm53Engine:
             temps += [self.limits[seq][1]] * count
             ks += [int(opts.get("top_k") or 0)] * count
             ps += [float(opts.get("top_p", self.top_p))] * count
-            # the uniforms come off the row's OWN generator (a seeded request has one), in row order
-            draws.append(torch.rand(count, generator=self.gens.get(seq, self.gen), device=device))
+            # the uniforms are the row's own, keyed (a seeded request keys on its seed), one a live position
+            uniform_rows.append(self._uniform_tensor(seq, draws.RICH, count, device))
             at += count
         picks = sampler_rows(block, torch.tensor(temps, dtype=torch.float32, device=device),
                              torch.tensor(ks, dtype=torch.int32, device=device),
                              torch.tensor(ps, dtype=torch.float32, device=device),
-                             torch.cat(draws), None, dists).tolist()
+                             torch.cat(uniform_rows), None, dists).tolist()
         out, at = [], 0
         for (seq, _, drafts, draft_probs), count in zip(jobs, spans):
             opts = self.options.get(seq, {})
@@ -1127,8 +1165,9 @@ class Glm53Engine:
                 new = mine[: accepted + 1]
             else:
                 self.note_ceilings(dists[at: at + count], draft_probs)
+                k = len(drafts[: count - 1])
                 accepted, new = block_verify(dists[at: at + count], drafts[: count - 1], draft_probs,
-                                             self.gens.get(seq, self.gen))
+                                             self._uniforms(seq, draws.VERIFY, k) + self._uniforms(seq, draws.FRESH, 1))
             want = opts.get("logprobs")
             lps = [(tok, *top_logprobs(block[at + i], tok, want)) for i, tok in enumerate(new)] if want is not None else None
             out.append((accepted, new, lps))
@@ -1199,7 +1238,7 @@ class Glm53Engine:
             else:
                 opts = self.options.get(seq, {})
                 first = self._sample_hidden(h[-1:], [self.limits[seq][1]], [int(opts.get("top_k") or 0)],
-                                            [float(opts.get("top_p", self.top_p))])
+                                            [float(opts.get("top_p", self.top_p))], self._uniforms(seq, draws.PICK, 1))
                 self.tokens[seq].append(self._no_end_yet(seq, [int(first.item())], h[-1:])[0])
         self.steps += 1
         generated = self._generated_count(seq)
@@ -1211,8 +1250,9 @@ class Glm53Engine:
         for seq, slot in zip(seqs, slots):
             ring = self.caches.draft_ring(slot) if self.drafter.k else None
             if self.drafter.k and self._rich(seq) and self.limits[seq][1] > 0:
-                drafts[seq], draft_probs[seq] = self.drafter.propose_sampled(self.tokens[seq][-1], self.ctx[seq], ring, self.limits[seq][1],
-                                                                             self.gens.get(seq, self.gen), self.F.vocab)
+                drafts[seq], draft_probs[seq] = self.drafter.propose_sampled(
+                    self.tokens[seq][-1], self.ctx[seq], ring, self.limits[seq][1],
+                    self._uniform_tensor(seq, draws.DRAFT, self.drafter.k, ring.device), self.F.vocab)
             else:
                 drafts[seq] = self.drafter.propose(self.tokens[seq][-1], self.ctx[seq], ring)
                 draft_probs[seq] = None
@@ -1235,7 +1275,7 @@ class Glm53Engine:
         if self.decode_graphs is None:
             h, aux = self._forward(step)
             local = self.net.head_local(h)
-            sampled = self._sample_hidden(h, temps, topk, topp).tolist() if not all(rich.values()) else None
+            sampled = self._sample_hidden(h, temps, topk, topp, self._pick_uniforms(step.segments)).tolist() if not all(rich.values()) else None
         else:
             shape = self.decode_graphs.shape(step)                         # the sampler names itself from it too
             # Which captured graph this step ran: its sequence count is the batch the scheduler
@@ -1244,7 +1284,7 @@ class Glm53Engine:
             key = (shape[0], shape[2])
             self.decode_shape_counts[key] = self.decode_shape_counts.get(key, 0) + 1
             h, aux, local = self.decode_graphs.run(step, shape)
-            sampled = self.sampling_graphs.run(shape, temps, topk, topp).tolist() if not all(rich.values()) else None
+            sampled = self.sampling_graphs.run(shape, temps, topk, topp, self._pick_uniforms(step.segments)).tolist() if not all(rich.values()) else None
         picked = {}
         if any(rich.values()):
             # One collective for the step -- gathering a rich row at a time made the number of all-gathers a

@@ -400,7 +400,8 @@ class PickRichTests(unittest.TestCase):
         from engine.profiles.glm53.adapter import Glm53Engine
         g, m = fake(allow=allow, vocab=vocab, refuse=refuse)
         e = Glm53Engine.__new__(Glm53Engine)                 # the methods, none of the boot
-        e.options, e.limits, e.gens, e.gen = {r: {} for r in rows}, {r: (16, 0.0) for r in rows}, {}, torch.Generator().manual_seed(0)
+        e.options, e.limits, e.seeds, e.seed = {r: {} for r in rows}, {r: (16, 0.0) for r in rows}, {}, 0
+        e.nonces = {r: r + 1 for r in rows}                  # every admitted row has its draws' key (base/draws)
         e.matchers, e.grammars = {0: m}, g
         e.tokens, e.prompt_len, e.min_new, e.ends, e._ends_tensor = {r: [9] for r in rows}, {r: 1 for r in rows}, {}, {}, {}
         e.sampling_history, e.decodable, e._rich_stage = None, None, None
