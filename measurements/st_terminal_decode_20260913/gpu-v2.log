@@ -1,0 +1,38 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-st-terminal-write0913v2-20260913-182709.txt
+waiting: pos 1/1, the fleet's expert-capture0913e holds this box too 2026-09-13_18:27:09
+paused: st-terminal-write0913v2; edit and resume to retain this ticket
+waiting: pos 1/1, the fleet's expert-capture0913e holds this box too 2026-09-13_18:39:44
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-st-terminal-write0913v2-20260913-182709.txt
+GO st-terminal-write0913v2 2026-09-13_18:46:41
+  single GPU: probes/engine_mhc_contract_check.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 4 GiB beside production, no fleet lease)
+test_decode_and_prefill_match_the_served_consumer (tests.test_engine_mhc_contract.MhcContractTests.test_decode_and_prefill_match_the_served_consumer) ... ok
+test_direct_feature_columns_preserve_neighbours_and_input_storage (tests.test_engine_mhc_contract.MhcContractTests.test_direct_feature_columns_preserve_neighbours_and_input_storage) ... ok
+test_graph_replay_updates_each_feature_without_reallocation (tests.test_engine_mhc_contract.MhcContractTests.test_graph_replay_updates_each_feature_without_reallocation) ... ok
+test_rejects_output_alias_and_overlapping_rows (tests.test_engine_mhc_contract.MhcContractTests.test_rejects_output_alias_and_overlapping_rows) ... ok
+test_rounding_and_cancellation_are_not_folded_through_the_mean (tests.test_engine_mhc_contract.MhcContractTests.test_rounding_and_cancellation_are_not_folded_through_the_mean) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 4.318s
+
+OK
+{"local_rows": 7, "features": 1, "regime": "warm", "baseline_us": 12.480000033974648, "fused_us": 7.151999976485968, "change_pct": -42.69230803673172, "output_sha256": "007304f89f03f2cd3d0f55576ae845ed4e356218cd50c81190349cb3408f7db6"}
+{"local_rows": 7, "features": 1, "regime": "evicted", "baseline_us": 20.128000527620316, "fused_us": 8.191999979317188, "change_pct": -59.300478117158974, "output_sha256": "007304f89f03f2cd3d0f55576ae845ed4e356218cd50c81190349cb3408f7db6"}
+{"local_rows": 7, "features": 5, "regime": "warm", "baseline_us": 53.05600166320801, "fused_us": 12.06399966031313, "change_pct": -77.26176251106578, "output_sha256": "6f9aff6e2a089af2a64d9a60cb0f36fb20bf9562181afe1d61ca8d8041154f98"}
+{"local_rows": 7, "features": 5, "regime": "evicted", "baseline_us": 69.2799985408783, "fused_us": 26.27200074493885, "change_pct": -62.07852006602281, "output_sha256": "6f9aff6e2a089af2a64d9a60cb0f36fb20bf9562181afe1d61ca8d8041154f98"}
+{"local_rows": 1728, "features": 1, "regime": "warm", "baseline_us": 2255.423903465271, "fused_us": 393.16800236701965, "change_pct": -82.56788882289712, "output_sha256": "13a1258cb83fd9b1e318a2e109dddf3f679a0be2dfec30e725ab7ee1315b6bf5"}
+{"local_rows": 1728, "features": 1, "regime": "evicted", "baseline_us": 2265.247941017151, "fused_us": 436.91200017929077, "change_pct": -80.7123983088974, "output_sha256": "13a1258cb83fd9b1e318a2e109dddf3f679a0be2dfec30e725ab7ee1315b6bf5"}
+{"local_rows": 1728, "features": 5, "regime": "warm", "baseline_us": 11582.144260406494, "fused_us": 1916.4479970932007, "change_pct": -83.45342663668445, "output_sha256": "cbe5fcabe3d7789f5a103e19665148dc5c1e898005011299b0349be9c70a8374"}
+{"local_rows": 1728, "features": 5, "regime": "evicted", "baseline_us": 11883.24785232544, "fused_us": 1985.8400225639343, "change_pct": -83.28874355527876, "output_sha256": "cbe5fcabe3d7789f5a103e19665148dc5c1e898005011299b0349be9c70a8374"}
+Traceback (most recent call last):
+  File "/repo/probes/engine_mhc_contract_check.py", line 130, in <module>
+    main()
+  File "/repo/probes/engine_mhc_contract_check.py", line 123, in main
+    report["source_sha256"] = {p: hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in files}
+                                                 ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1021, in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'tests/test_engine_mhc_contract.py'

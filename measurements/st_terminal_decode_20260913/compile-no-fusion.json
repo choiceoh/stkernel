@@ -1,0 +1,1 @@
+{"status": "PASS", "gpu_used": false, "variants": [{"stride": "i32", "cubin_sha256": "df93916de84b0e7784ede10c7ba485dfd6839a2ee8b3250d1ff6815e7f223b22", "separate_product_rounding": true}, {"stride": "i64", "cubin_sha256": "83dcc04af0231dafa4496776ee4e5ff43cd38bc6258ede7b8a5914799b0259e3", "separate_product_rounding": true}]}

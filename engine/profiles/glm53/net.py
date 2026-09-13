@@ -751,7 +751,7 @@ class Glm53Net:
 
     # -- the step ---------------------------------------------------------------------------
     def forward(self, step: Step, caches: Caches, finish: bool = True, aux_layers=None, aux_ready=None,
-                *, last_hidden_only=False):
+                *, last_hidden_only=False, contract=None):
         """One step: every segment's tokens through the chain. Returns the final
         hidden states [N, hidden] (post final norm) when `finish`, else the raw
         mHC carry (res, post, comb, x) for inspection. With `aux_layers`, also
@@ -760,6 +760,8 @@ class Glm53Net:
         aux_hidden_states: hc_post then hc_contract after layer idx). Prefill may
         request only the final hidden row, which supplies its first sampled token."""
         F = self.F
+        if contract is not None and aux_layers and any(L not in self.layers for L in aux_layers):
+            raise ValueError("terminal features must name layers in this target")
         N = step.ids.shape[0]
         sp = self.prefill_transport if (finish and not self.probe and len(step.segments) == 1
                                        and N >= 128
@@ -777,7 +779,8 @@ class Glm53Net:
         res = x[:, None, :].expand(N, F.hc, F.hidden).contiguous()                   # hc_expand
         post = comb = None
         aux = {}
-        features = None
+        features = (torch.empty((N, len(aux_layers) * F.hidden), device=x.device, dtype=x.dtype)
+                    if contract is not None and aux_layers else None)
         for L in self.layers:
             if post is not None:
                 res, post, comb, x = self._hc_post_pre(L, x, res, post, comb, "attn")
@@ -799,19 +802,29 @@ class Glm53Net:
             if self.probe:
                 self.probe("moe" if F.is_moe(L) else "dense", L, x)
             if aux_layers and L in aux_layers:
-                aux[L] = self.lanes.mhc_post(x, res, post, comb).float().mean(1).to(x.dtype)
+                if contract is None:
+                    aux[L] = self.lanes.mhc_post(x, res, post, comb).float().mean(1).to(x.dtype)
+                else:
+                    for i, requested in enumerate(aux_layers):
+                        if requested == L:
+                            contract(x, res, post, comb, out=features[:, i * F.hidden:(i + 1) * F.hidden])
                 if aux_ready is not None and L == max(aux_layers):
                     if sp is not None:
                         raise ValueError("early draft observation belongs to decode, not SP prefill")
-                    features = torch.cat([aux[l] for l in aux_layers], dim=-1)
+                    if features is None:
+                        features = torch.cat([aux[l] for l in aux_layers], dim=-1)
                     aux_ready(features)
         if not finish:
             return res, post, comb, x
         if last_hidden_only:
             last = slice(sp.last_local, sp.last_local + 1) if sp else slice(-1, None)
             x, res, post, comb = x[last], res[last], post[last], comb[last]
-        res = self.lanes.mhc_post(x, res, post, comb)
-        h = self._norm(res.float().mean(1).to(x.dtype), self.p["norm"], F.rms_eps)      # hc_contract, final norm
+        if contract is None:
+            res = self.lanes.mhc_post(x, res, post, comb)
+            hidden = res.float().mean(1).to(x.dtype)
+        else:
+            hidden = contract(x, res, post, comb)
+        h = self._norm(hidden, self.p["norm"], F.rms_eps)
         if sp:
             h = self.comm.all_gather(h, dim=0) if last_hidden_only else sp.gather_result(h)
         if last_hidden_only:

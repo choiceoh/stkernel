@@ -49,6 +49,27 @@ def network(comm, *, sharded):
 
 
 class PrefillOutputTests(unittest.TestCase):
+    def test_execution_plan_binds_terminal_consumer_for_prefill(self):
+        from unittest.mock import Mock, patch
+        from engine.profiles.glm53.execution import ExecutionPlan
+        terminal = Mock()
+        for enabled in (False, True):
+            for tiled in (False, True):
+                engine = Glm53Engine.__new__(Glm53Engine)
+                engine.caches = Mock()
+                engine.drafter, engine.aux_layers = NS(k=6), (0, 1)
+                engine.execution_plan = ExecutionPlan(direct_mhc=True, terminal_mhc=enabled,
+                                                      prefill_tiles=2 if tiled else 1)
+                engine.net = NS(forward=Mock(return_value=(object(), object())))
+                step = Step.prefill(torch.arange(9217 if tiled else 129), 0, 0, 1)
+                with patch.dict('sys.modules', {'engine.kernels.mhc_contract': NS(contract=terminal)}), \
+                     patch('engine.profiles.glm53.execution.prefill_layer_major',
+                           return_value=(object(), object())) as layers:
+                    engine._forward(step, last_hidden_only=True)
+                call = layers.call_args if tiled else engine.net.forward.call_args
+                self.assertIs(call.kwargs.get('contract'), terminal if enabled else None)
+                engine.caches.prepare.assert_called_once_with(step)
+
     def test_boot_warms_interior_marks_within_the_reserved_snapshot_slots(self):
         from unittest.mock import MagicMock
         caches = MagicMock()
@@ -139,6 +160,93 @@ class PrefillOutputTests(unittest.TestCase):
             last = net.forward(step, None, last_hidden_only=True)
             torch.testing.assert_close(last, full[-1:], rtol=0, atol=0)
         LocalTP(4).run(rank)
+
+    def test_terminal_columns_keep_repeated_features_and_ragged_global_last_row(self):
+        for n, sharded in ((7, False), (128, True), (129, True), (131, True)):
+            with self.subTest(n=n, sharded=sharded):
+                def rank(comm):
+                    net = network(comm, sharded=sharded)
+                    step = Step.prefill(torch.arange(n), 768, 3, 1)
+                    layers = (1, 0, 1)
+                    expected = net.forward(step, None, aux_layers=layers, last_hidden_only=True)
+                    writes, seen = [], []
+                    def terminal(x, res, post, comb, *, out=None):
+                        value = net.lanes.mhc_post(x, res, post, comb).float().mean(1).to(x.dtype)
+                        if out is None:
+                            self.assertEqual(x.shape[0], 1)
+                            return value
+                        writes.append(out.stride())
+                        out.copy_(value)
+                        return out
+                    actual = net.forward(step, None, aux_layers=layers, last_hidden_only=True,
+                                         contract=terminal, aux_ready=None if sharded else seen.append)
+                    for got, want in zip(actual, expected):
+                        torch.testing.assert_close(got, want, rtol=0, atol=0)
+                    self.assertEqual(writes, [(3 * net.F.hidden, 1)] * 3)
+                    if not sharded:
+                        self.assertIs(seen[0], actual[1])
+                    return actual
+                results = LocalTP(4).run(rank)
+                for h, aux in results[1:]:
+                    self.assertTrue(torch.equal(h, results[0][0]))
+                    self.assertTrue(torch.equal(aux, results[0][1]))
+
+    def test_terminal_prefill_preserves_same_sp_state_snapshots_and_next_decode(self):
+        from engine.profiles.glm53.execution import prefill_layer_major
+        from tests.test_engine_execution_plans import model
+        from tests.test_engine_prefill_tiles import OraclePrefill
+        torch.set_num_threads(1)
+        for rows in (129, 130, 131):
+            with self.subTest(rows=rows):
+                def rank(comm):
+                    net, caches = model(("kda", "dsa", "kda"), comm=comm)
+                    net.prefill_transport = OraclePrefill(comm, True)
+                    slot = caches.slots.take(2)
+                    context = 64
+                    caches.pool.reserve(2, context + rows + 7)
+                    prefix = Step.prefill(torch.arange(context) % net.vp, 0, 2, slot)
+                    caches.prepare(prefix); net.forward(prefix, caches)
+                    step = Step.prefill(torch.arange(rows) % net.vp, context, 2, slot,
+                        patches=((torch.tensor([0, rows-1]), torch.full((2, net.F.hidden), .25).bfloat16()),),
+                        marks=((64, 0), (128, 1)))
+                    caches.prepare(step)
+                    before, paged_before = caches.state.clone(), caches.paged.clone()
+                    expected = net.forward(step, caches, aux_layers=(2, 0, 2))
+                    after, paged_after = caches.state.clone(), caches.paged.clone()
+                    marks = {k: v.clone() for k, v in caches._snap.items()}
+                    follow = Step.prefill(torch.arange(7) % net.vp, context + rows, 2, slot)
+                    caches.prepare(follow)
+                    next_hidden = net.forward(follow, caches)
+                    final, paged_final = caches.state.clone(), caches.paged.clone()
+                    def terminal(x, res, post, comb, *, out=None):
+                        value = net.lanes.mhc_post(x, res, post, comb).float().mean(1).to(x.dtype)
+                        if out is None:
+                            return value
+                        out.copy_(value)
+                        return out
+                    for method in ('full', 'last', 'layer-major'):
+                        caches.state.copy_(before); caches.paged.copy_(paged_before)
+                        for value in caches._snap.values():
+                            value.zero_()
+                        caches.prepare(step)
+                        if method == 'layer-major':
+                            actual = prefill_layer_major(net, step, caches,
+                                NS(tile_rows=rows, prefill_tiles=1), (2, 0, 2), contract=terminal)
+                        else:
+                            actual = net.forward(step, caches, aux_layers=(2, 0, 2),
+                                                 last_hidden_only=method == 'last', contract=terminal)
+                        want = (expected[0][-1:], expected[1]) if method == 'last' else expected
+                        for got, value in zip(actual, want):
+                            torch.testing.assert_close(got, value, rtol=0, atol=0)
+                        torch.testing.assert_close(caches.state, after, rtol=0, atol=0)
+                        torch.testing.assert_close(caches.paged, paged_after, rtol=0, atol=0)
+                        for key in marks:
+                            torch.testing.assert_close(caches._snap[key][:2], marks[key][:2], rtol=0, atol=0)
+                        caches.prepare(follow)
+                        torch.testing.assert_close(net.forward(follow, caches), next_hidden, rtol=0, atol=0)
+                        torch.testing.assert_close(caches.state, final, rtol=0, atol=0)
+                        torch.testing.assert_close(caches.paged, paged_final, rtol=0, atol=0)
+                LocalTP(4, timeout_s=60).run(rank)
 
 
 if __name__ == "__main__":
