@@ -123,6 +123,61 @@ def overlap_summary(windows, chunk, solo_decode_ms, solo_chunk_ms):
     return together
 
 
+def moe_layer(net, F, chunks, samples, dev):
+    """One MoE layer's routed experts alone, prefill widths, against the traffic model (45차, the SF6 prefill kernel).
+
+    Three chunk profiles fit `time = bytes / ~188 GB/s` with bytes = m-tiles x (expert weights + SF6 scales + the A
+    tile read once per FC1 slice-half) -- so the kernel is traffic-bound, not latency-bound, and the lever is bytes.
+    This pins that on the kernel by itself: real weights and the real router on random hidden states, the
+    call's kernels under CUPTI, and the resident CTA count swept through the dispatcher's ladder (48 = every
+    SM; if halving it barely slows the call, the pipeline is not throughput-bound)."""
+    from engine.kernels.b12x import moe_dispatch as md
+    L = next(l for l in net.layers if F.is_moe(l))
+    p = net.p
+    w13, w2 = p[f"L{L}.moe.w13"], p[f"L{L}.moe.w2"]
+    expert_bytes = (w13[0].numel() * w13.element_size() + w2[0].numel() * w2.element_size())
+    scale_bytes = (p[f"L{L}.moe.w13_sf"][0].numel() + p[f"L{L}.moe.w2_sf"][0].numel())      # raw e4m3 bytes; SF6 packs 6/8 of it
+    a_bytes_per_pass = 128 * F.hidden // 2                                                  # one M128 x K4096 FP4 tile
+    ladder = md._GLM53_B12X_DYNAMIC_MAC_LADDER
+    out = dict(layer=L, expert_bytes=expert_bytes, scale_bytes=scale_bytes, a_tile_bytes=a_bytes_per_pass, rows=[])
+    print(f"moe layer {L}: expert {expert_bytes / 2**20:.2f} MiB + scales {scale_bytes / 2**20:.2f} MiB (raw), A tile {a_bytes_per_pass / 2**10:.0f} KiB a pass", flush=True)
+    try:
+        for tokens in chunks:
+            x = torch.randn(tokens, F.hidden, device=dev, dtype=torch.bfloat16)
+            sel, w = net.route(L, x)
+            counts = torch.bincount(sel.flatten().long(), minlength=F.experts)
+            m_tiles = int(((counts + 127) // 128).sum())
+            fn = net._experts[L]
+            for mac in (48, 24, 12):
+                md._GLM53_B12X_DYNAMIC_MAC_LADDER = ((1 << 30, mac),)
+                for _ in range(2):
+                    fn(x, sel, w)
+                torch.cuda.synchronize()
+                start, end = (torch.cuda.Event(enable_timing=True) for _ in range(2))
+                times = []
+                for _ in range(samples):
+                    start.record(); fn(x, sel, w); end.record(); end.synchronize()
+                    times.append(start.elapsed_time(end))
+                with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
+                    for _ in range(4):
+                        fn(x, sel, w)
+                    torch.cuda.synchronize()
+                table = kernel_table(prof, 4)
+                kernel_ms = next((k["us"] / 1000 for k in table["kernels"] if "moe" in k["kernel"].lower() and "dynamic" in k["kernel"].lower()), None)
+                weights_mb = m_tiles * (expert_bytes + scale_bytes * 6 / 8) / 2**20
+                a_mb = m_tiles * 8 * a_bytes_per_pass / 2**20
+                row = dict(tokens=tokens, mac=mac, m_tiles=m_tiles, call_ms_median=statistics.median(times),
+                           dynamic_kernel_ms=kernel_ms, weights_mb=weights_mb, a_rereads_mb=a_mb,
+                           gbps=((weights_mb + a_mb) / 1024) / (kernel_ms / 1000) if kernel_ms else None, kernels=table["kernels"][:6])
+                out["rows"].append(row)
+                print(f"moe tokens={tokens} mac={mac}: call {row['call_ms_median']:.2f} ms, dynamic kernel "
+                      f"{kernel_ms if kernel_ms is None else round(kernel_ms, 2)} ms, m-tiles {m_tiles}, model bytes "
+                      f"{weights_mb + a_mb:.0f} MiB (weights {weights_mb:.0f} + A {a_mb:.0f}) -> {row['gbps'] if row['gbps'] is None else round(row['gbps'], 1)} GB/s", flush=True)
+    finally:
+        md._GLM53_B12X_DYNAMIC_MAC_LADDER = ladder
+    return out
+
+
 def coexist(net, caches, graphs, ids, ctx0, slots, chunk, lo, hi, samples, dev):
     """A prefill chunk on one stream beside four decoding rows replaying on another -- D9's unmeasured shape
     (45차 §80 asked it with a matmul stand-in), on the real kernels of one rank.
@@ -216,12 +271,13 @@ def main():
                     help="the b12x lane cell (lanes.parse_moe_static): production 't,r,sf6,q0'. A tiled cell without sf6 "
                          "('t,r') has no prefill kernel (the dispatcher refuses it); the row-major 'u' cell is the stock pair")
     ap.add_argument("--lanes", default="decode,prefill",
-                    help="sections: decode (rows 1..4), prefill (the chunk sweep), coexist (a chunk beside four decoding rows, two streams)")
+                    help="sections: decode (rows 1..4), prefill (the chunk sweep), coexist (a chunk beside four decoding rows, "
+                         "two streams), moe (one MoE layer's routed experts alone: tokens x resident CTAs, against the traffic model)")
     ap.add_argument("--output", default="/cache/prefill-chunk-profile.json")
     a = ap.parse_args()
     lanes = {x.strip() for x in a.lanes.split(",") if x.strip()}
-    if not lanes or lanes - {"decode", "prefill", "coexist"}:
-        raise SystemExit(f"--lanes takes decode, prefill and/or coexist: {a.lanes!r}")
+    if not lanes or lanes - {"decode", "prefill", "coexist", "moe"}:
+        raise SystemExit(f"--lanes takes decode, prefill, coexist and/or moe: {a.lanes!r}")
 
     F = facts.load(a.ckpt_meta)
     layers = list(range(F.layers))
@@ -258,6 +314,16 @@ def main():
     result = dict(rank=rank, layers=len(layers), tokens=a.tokens, chunks=chunks, spec_k=F.spec_k, seed=a.seed,
                   moe_static=a.moe_static, lanes=sorted(lanes),
                   scope="one rank, identity collectives, no SP transport, no drafter, no prefix marks, synthetic routing")
+
+    if "moe" in lanes:
+        result["moe"] = moe_layer(net, F, chunks, a.samples, dev)
+        if lanes == {"moe"}:
+            out = Path(a.output)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(result, indent=1))
+            print(f"\nwrote {out}", flush=True)
+            print("RESULT " + json.dumps(dict(moe=[{k: v for k, v in r.items() if k != "kernels"} for r in result["moe"]["rows"]])), flush=True)
+            return
 
     # -- 2. decode by rows: capture first (capture needs no live slots), then real contexts --------------------
     aux_layers = tuple(L for L in (5, 14, 24, 33, 42) if L in layers)
