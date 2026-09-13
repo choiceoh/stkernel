@@ -117,7 +117,9 @@ def reclaim_preparation_pages(need, headroom, *, cache_roots=(), host_reclaim=No
     if memory['MemFree'] < need and cache_roots:
         release_model_cache(cache_roots)
         memory = _meminfo()
-    if memory['MemFree'] < need and host_reclaim is not None and host_reclaim() is not None:
+    # only when what is reclaimable covers the shortfall: a node that is short of memory, not of cache, has nothing
+    # for the host to drop, and asking at every checkpoint would drop the box's cache for nothing
+    if memory['MemFree'] < need <= memory['MemAvailable'] and host_reclaim is not None and host_reclaim() is not None:
         memory = _meminfo()
     if memory['MemFree'] >= need or need > memory['MemAvailable'] - headroom:
         return 0
