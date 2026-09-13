@@ -2026,6 +2026,14 @@ ITL 정지 1.2 → 3.4 s, D10 금지); 2K 는 어느 것도 못 바꾼다. **두
 스텝 1.7 ms 였다. 곱은 양쪽 다 정확(BF16 피연산자를 FP32 로)하고 합 순서만 다르다; GPU 검사(`test_engine_decode_seven.RouterTensorCoreTests`)가
 동점 전문가에서 1·7·28·2,304 행의 선택 일치를 박고, CPU 검사(`test_engine_router_widths.py`)가 폭별 경로를 박는다. **미실측**: 서빙
 라우팅 수치가 바뀌는 변경이라 채택은 브래킷(품질 9/9·한국어·수용률)이 답한다. 후속: 상주 FP32 라우터 사본 189 MiB/랭크는 이제 읽히지 않는다.
+(c) **캡처된 디코드 스텝의 행별 루프 접기**(운영자 "남은 레버 작업"): `net._kda` 가 세그먼트마다 띄우던 conv 링·순환 링 커널과 행 출력
+복사, `_dsa` 의 행별 latent 흩뿌림을 층당 한 번으로. 두 링 커널에 행 축을 더했다(순환: 프로그램 i_n 이 자기 행의 slot/context 를 읽고
+토큰 구간 `[i_n·T, (i_n+1)·T)` 를 맡는다; conv: grid 셋째 축이 행; `RING_INDEX_STRIDE`). 프로그램별 산술은 한 행 런치와 같아 출력과 링
+쓰기가 바이트 단위로 같다 — `tests/test_engine_kda_ring.py`·`test_engine_conv_ring.py` 의 rows 검사(캡처 재생 포함, `engine_kernel_check
+--lanes kda_ring` 이 둘 다 돌린다), `GraphCaches.token_rows` 는 모은 블록표에서 모든 행의 latent 슬롯을 한 번에, `Glm53Net._ring_rows` 가
+어느 스텝이 접히는지 정한다(CPU 검사 `test_engine_decode_rows.py`). 4행 재생에서 런치 ~1,200 개와 행 복사가 사라진다 — 기대 2~4 ms(3~5%).
+(d) `probes/engine_decode_graph_check.py` 는 큐가 admit 하되 srv4 에서 돌 수 없던 검사였다(없는 Red Hat 메타 디렉터리, #732 이후 틀린 검증 폭 6,
+랭크 0 의 어휘 조각) — 서빙 체크포인트·노드의 랭크·`spec_k+1` 로 고쳤다.
 
 **7. 레버 순위** (2K / 32K / 128K 비에 대한 추정): dynamic MoE 프리필 커널의 읽기 효율 165 → 200+ GB/s (0 / +2 / +8%, 커널 작업) ·
 라우터 TC 전폭 (+1.5 / +2 / +2, 이 PR) · 배치가 클 때 K 축소 (+3~10 / 0 / 0, 캡처 폭·링·파이프라인 전부 K 고정) · 디코드 정적 MoE 207 → 240 GB/s
