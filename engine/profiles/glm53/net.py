@@ -791,17 +791,25 @@ class Glm53Net:
         return sel.to(torch.int32), w / w.sum(-1, keepdim=True) * F.routed_scale
 
     @operation("moe", layer_arg=1)
-    def _moe(self, L: int, x: torch.Tensor, reduce=None, *, reduce_pair=None) -> torch.Tensor:
+    def _moe(self, L: int, x: torch.Tensor, reduce=None, *, reduce_pair=None, finalize=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.moe."
         # GPU component gate: C=1 wins; C=4 with reused routes regresses.
         # Keep the established shared chain for wider captured batches.
         if self.shared_overlap is not None and x.shape[0] <= F.spec_k + 1:
-            def routed():
+            def routed(consume=None):
                 sel, w = self.route(L, x)
-                return self._experts[L](x, sel, w)
-            joined = self.shared_overlap(self.shared_mlp[L], x, routed)
-            return (reduce or self.comm.all_reduce)(joined)
+                return (self._experts[L](x, sel, w) if consume is None else
+                        self._experts[L](x, sel, w, finalize=consume))
+            joined = (self.shared_overlap(self.shared_mlp[L], x, routed) if finalize is None else
+                      self.shared_overlap(self.shared_mlp[L], x, routed, finish=finalize))
+            return joined if finalize is not None else (reduce or self.comm.all_reduce)(joined)
         sel, w = self.route(L, x)
+        if finalize is not None:
+            def consume(acc):
+                g, u = self.linear(x, n + "sh_gate_up").chunk(2, dim=-1)
+                shared = self.linear(self._activation(g, u, F.swiglu_limit), n + "sh_down")
+                return finalize(acc, shared)
+            return self._experts[L](x, sel, w, finalize=consume)
         out = self._experts[L](x, sel, w)
         g, u = self.linear(x, n + "sh_gate_up").chunk(2, dim=-1)
         shared = self.linear(self._activation(g, u, F.swiglu_limit), n + "sh_down")

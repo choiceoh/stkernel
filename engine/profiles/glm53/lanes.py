@@ -442,12 +442,14 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                 _prepare_dense_w4a16(w13, w13_sf, w2, w2_sf, scales)
             views_for(w13, w13_sf, w2, w2_sf, top_k, limit, in_place=True, scales=scales)
 
-        def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit, *, scales=None):
+        def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit, *, scales=None, finalize=None):
             """Packed b12x MoE with prepared ModelOpt scales.
             Red Hat uses unit scales; ModelOpt passes a for quantization and
             a*w for each GEMM. The clamped activation is common to both. The
             dense one-expert form can use the W4A16 guard for long prefill."""
             E = w13.shape[0]
+            if finalize is not None and (sel.shape[1] != 8 or not 1 <= x.shape[0] <= 32):
+                raise ValueError('MoE finalizer is only an explicit routed decode consumer')
 
             # A dense layer is the fixed one-expert form used by
             # Glm53Net._dense_nvfp4.  W4A16 is an accuracy guard for long
@@ -506,14 +508,17 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                 w13, w13_sf, w2, w2_sf, sel.shape[1], limit, in_place=False, scales=scales)
             # The ST caller owns the output allocation, including the graph
             # memory pool during capture; the b12x API requires an explicit out.
-            output = torch.empty_like(x, memory_format=torch.contiguous_format)
+            # With a finalizer x is shape metadata only; the dispatcher guards
+            # the separate FP32 target before launch and never writes x.
+            output = x if finalize is not None else torch.empty_like(x, memory_format=torch.contiguous_format)
             return b12x_fused_moe(x=x.contiguous(), output=output,
                                   w1_weight=w13, w1_weight_sf=sf13, w2_weight=w2, w2_weight_sf=sf2,
                                   token_selected_experts=sel.contiguous(), token_final_scales=w.contiguous(),
                                   num_experts=E, num_local_experts=E, top_k=sel.shape[1],
                                   w1_alpha=a13, w2_alpha=a2, fc2_input_scale=q2, input_global_scale=q13,
                                   activation="swigluoai_uninterleave", swiglu_alpha=1.0, swiglu_beta=0.0, swiglu_limit=float(limit),
-                                  activation_precision="fp4", quant_mode="nvfp4", _weight_views=views)
+                                  activation_precision="fp4", quant_mode="nvfp4", _weight_views=views,
+                                  _output_finalize=finalize)
 
     def on_main(fn):
         """Served kernels run on the main thread: DeepGEMM's JIT runtime raises

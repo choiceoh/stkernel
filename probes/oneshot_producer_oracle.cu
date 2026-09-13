@@ -81,6 +81,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("reserve_packets", &py_reserve_packets);
   m.def("publish_packets", &py_publish_packets);
   m.def("oneshot_packets", &py_oneshot_packets);
+  m.def("moe_packets", &py_moe_packets);
   m.def("oneshot_max_int64", &py_oneshot_max_int64);
   m.def("oneshot_gather_int64", &py_oneshot_gather_int64);
   m.def("consume", [](at::Tensor addresses, at::Tensor out) {

@@ -266,10 +266,13 @@ __host__ __device__ constexpr int64_t osar_max_int64(int64_t a, int64_t b,
 }
 
 template <bool CONSUMER_PDL, bool COMPACT = false, bool WRAP_SAFE = false,
-          bool MAX_INT64 = false, bool PACKETS = false, bool GATHER_INT64 = false>
+          bool MAX_INT64 = false, bool PACKETS = false, bool GATHER_INT64 = false,
+          bool MOE_OUTPUT = false>
 __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
                                               bf16 *dst, int n, int nbytes,
-                                              const HintArgs h, int rank) {
+                                              const HintArgs h, int rank,
+                                              const float *routed = nullptr) {
+  static_assert(!MOE_OUTPUT || (PACKETS && !MAX_INT64 && !GATHER_INT64));
   // In a PDL chain this collective is also a consumer. Neither the input
   // nor the protocol's previous sequence may be read before its predecessor
   // has completed. No forward progress relies on concurrent residency.
@@ -341,12 +344,34 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
     // depends on, and a through-store may drain at the protocol fence for
     // free.
     uint4 val = __ldg(&src4[v]);
+    if constexpr (MOE_OUTPUT) {
+      // Keep BF16(scatter), then BF16(FP32 add). The first rounding is
+      // required even though its standalone tensor no longer exists.
+      union { uint4 vector; bf16 values[8]; } shared;
+      union { float4 vectors[2]; float values[8]; } accum;
+      shared.vector = val;
+      const float4 *acc4 = reinterpret_cast<const float4 *>(routed);
+      accum.vectors[0] = __ldg(acc4 + v * 2);
+      accum.vectors[1] = __ldg(acc4 + v * 2 + 1);
+#pragma unroll
+      for (int j = 0; j < 8; ++j) {
+        const float a = __bfloat162float(__float2bfloat16_rn(accum.values[j]));
+        shared.values[j] = __float2bfloat16_rn(__fadd_rn(a, __bfloat162float(shared.values[j])));
+      }
+      val = shared.vector;
+    }
     __stwt(&tx4[v], val);
     mine[k] = val;
   }
   for (int i = (nv << 3) + blockIdx.x * blockDim.x + threadIdx.x; i < n;
-       i += gridDim.x * blockDim.x)
-    c->tx[slot][i] = src[i];
+       i += gridDim.x * blockDim.x) {
+    if constexpr (MOE_OUTPUT) {
+      const float a = __bfloat162float(__float2bfloat16_rn(routed[i]));
+      c->tx[slot][i] = __float2bfloat16_rn(__fadd_rn(a, __bfloat162float(src[i])));
+    } else {
+      c->tx[slot][i] = src[i];
+    }
+  }
   // tx[slot] must be RDMA-readable before the last block publishes tx_seq.
   // Every WRITING block fences its own copy, and each fence precedes that
   // block's counter increment, so when the counter wraps this launch's ARGRID
@@ -456,7 +481,7 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
       auto **addresses = reinterpret_cast<const bf16 **>(dst);
       int peer = 0;
       for (int r = 0; r < 4; ++r)
-        addresses[r] = r == rank ? src : c->rx[slot][peer++];
+        addresses[r] = r == rank ? (MOE_OUTPUT ? c->tx[slot] : src) : c->rx[slot][peer++];
     }
     return;
   }
@@ -543,6 +568,13 @@ __global__ void k_oneshot_packets(Ctrl *c, const bf16 *src, bf16 *addresses,
                                 int n, int rank) {
   const HintArgs hints{};
   k_oneshot_impl<true, false, true, false, true>(c, src, addresses, n, n * 2, hints, rank);
+}
+
+__global__ void k_oneshot_moe_packets(Ctrl *c, const float *routed,
+                                    const bf16 *shared, bf16 *addresses, int n, int rank) {
+  const HintArgs hints{};
+  k_oneshot_impl<true, false, true, false, true, false, true>(
+      c, shared, addresses, n, n * 2, hints, rank, routed);
 }
 
 __global__ void k_oneshot_max_int64(Ctrl *c, const bf16 *src, bf16 *dst, int n,
@@ -1044,6 +1076,29 @@ static at::Tensor py_reserve_packets(at::Tensor input) {
   return reservation;
 }
 
+static at::Tensor py_moe_packets(at::Tensor routed, at::Tensor shared) {
+  check_producer_template(shared);
+  TORCH_CHECK(routed.is_cuda() && routed.scalar_type() == at::kFloat &&
+              routed.device() == shared.device() && routed.sizes() == shared.sizes() &&
+              routed.is_contiguous() && (reinterpret_cast<uintptr_t>(routed.data_ptr()) & 15) == 0,
+              "MoE packets require matching aligned FP32 scatter and BF16 shared output");
+  auto addresses = torch::empty({4}, shared.options().dtype(at::kLong));
+  cudaLaunchConfig_t cfg{};
+  cfg.gridDim = dim3(ARGRID);
+  cfg.blockDim = dim3(ARTHREADS);
+  cfg.stream = c10::cuda::getCurrentCUDAStream();
+  cudaLaunchAttribute attr{};
+  attr.id = cudaLaunchAttributeProgrammaticStreamSerialization;
+  attr.val.programmaticStreamSerializationAllowed = 1;
+  cfg.attrs = &attr;
+  cfg.numAttrs = 1;
+  auto err = cudaLaunchKernelEx(&cfg, k_oneshot_moe_packets, g_ctrl, routed.data_ptr<float>(),
+      reinterpret_cast<const bf16 *>(shared.data_ptr()),
+      reinterpret_cast<bf16 *>(addresses.data_ptr()), int(shared.numel()), g_rank);
+  TORCH_CHECK(err == cudaSuccess, "one-shot MoE packet launch: ", cudaGetErrorString(err));
+  return addresses;
+}
+
 static at::Tensor py_publish_packets(at::Tensor input, at::Tensor reservation) {
   check_producer_template(input);
   TORCH_CHECK(reservation.device() == input.device() && reservation.scalar_type() == at::kLong &&
@@ -1122,6 +1177,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("oneshot_ar", &py_oneshot);
   m.def("oneshot_ar_consumer", &py_oneshot_consumer);
   m.def("oneshot_packets", &py_oneshot_packets);
+  m.def("moe_packets", &py_moe_packets);
   m.def("reserve_packets", &py_reserve_packets);
   m.def("publish_packets", &py_publish_packets);
   m.def("oneshot_max_int64", &py_oneshot_max_int64);
