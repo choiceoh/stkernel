@@ -2162,12 +2162,21 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         cfg += ("probe_batch_reform_v1",)
     if config.get("probe_shared_epilogue", False):
         cfg += ("probe_shared_epilogue_v1",)
+    if config.get("probe_route_scatter", False):
+        cfg += ("probe_route_scatter_v1",)
+    if config.get("probe_direct_scatter", False):
+        cfg += ("probe_direct_scatter_v1",)
     return cfg + _static_kernel_cache_key(**fields)
 
 
 def _static_v2_decode_config(config: dict, m: int) -> dict:
     """Specialize the integrated tile geometry only for C=1 decode rows."""
     batch_probe = bool(config.get("probe_batch_reform", False))
+    if config.get("probe_route_scatter") or config.get("probe_direct_scatter"):
+        if not (m in (7, 14, 21, 28) and config.get("tiled")
+                and config.get("reform_sf_pack") and config.get("decode_reform")
+                and not any(config.get(k) for k in ("split", "skip_a", "skip_sf", "even"))):
+            raise ValueError("scatter probe requires packed t,r,sf6 at 7/14/21/28 tokens")
     if batch_probe and not (m in (14, 21, 28) and config.get("decode_reform")
                             and config.get("tiled") and config.get("reform_sf_pack")
                             and not config.get("even")):
@@ -2252,6 +2261,10 @@ def _get_static_kernel_v2(
         state_E=state_E,weight_E=weight_E,k=k,n=n,num_topk=num_topk,
         quant_mode=quant_mode,activation=activation,swiglu_alpha=swiglu_alpha,
         swiglu_beta=swiglu_beta,swiglu_limit=swiglu_limit)
+    if (config.get("probe_route_scatter") or config.get("probe_direct_scatter")) and not (
+            scatter_fp32 and state_E == weight_E == 288 and k == 4096
+            and n == 512 and num_topk == 8):
+        raise ValueError("scatter probe requires the GLM TP4 FP32 output contract")
     cache_key = (*cache_key,"tp_scatter_fp32_v1",scatter_fp32)
     cached = _STATIC_V2_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -2268,6 +2281,8 @@ def _get_static_kernel_v2(
     kernel: Any = kernel_cls(
         scatter_fp32=scatter_fp32,
         shared_epilogue=bool(config.get("probe_shared_epilogue", False)),
+        route_scatter=bool(config.get("probe_route_scatter", False)),
+        direct_scatter=bool(config.get("probe_direct_scatter", False)),
         even=bool(config.get("even", False)),
         a_ring=bool(config.get("a_ring", False)),
         sf_pack=bool(config.get("sf_pack", False)),
@@ -2373,7 +2388,9 @@ def _get_static_kernel_v2(
         alpha_dtype, (weight_E,), assumed_align=16
     )
     scatter_fake = cute.runtime.make_fake_compact_tensor(
-        cutlass.Float32 if scatter_fp32 else a_dtype, (m, k), stride_order=(1, 0), assumed_align=16
+        cutlass.Float32 if scatter_fp32 else a_dtype,
+        (m * num_topk * output_tile_count_n if config.get("probe_route_scatter") else m, k),
+        stride_order=(1, 0), assumed_align=16
     )
     token_map_fake = cute.runtime.make_fake_compact_tensor(
         cutlass.Int32, (state_E, max_rows), stride_order=(1, 0), assumed_align=4

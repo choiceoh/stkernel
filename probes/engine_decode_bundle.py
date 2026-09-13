@@ -6,13 +6,16 @@ import sys
 import time
 
 
-def check(ranks, *, capacity=False):
+def check(ranks, *, bundle="capacity_bundle"):
     rows = []
     root = Path(__file__).resolve().parents[1]
-    lanes = ([('moe_batch', 240), ('moe_stage_fc1_shared', 180), ('moe_stage_fc2', 180),
-              ('router_batch', 120), ('mhc_batch', 180), ('moe_raw_scale', 180)]
-             if capacity else [('mhc_single', 240), ('moe_waves', 300),
-                               ('input_pack', 180), ('short_gemm', 180), ('shared_direct', 180)])
+    bundles = {
+        'capacity_bundle': [('moe_batch', 240), ('moe_stage_fc1_shared', 180), ('moe_stage_fc2', 180),
+                            ('router_batch', 120), ('mhc_batch', 180), ('moe_raw_scale', 180)],
+        'scatter_bundle': [('moe_route_scatter', 300), ('moe_direct_scatter', 300),
+                           ('moe_route_direct', 300), ('paired_projection', 180), ('shared_serial', 180)],
+    }
+    lanes = bundles[bundle]
     for lane, seconds in lanes:
         command = [sys.executable, '-u', str(root/'probes/engine_kernel_check.py'), '--lanes', lane]
         if ranks:

@@ -1,5 +1,6 @@
 """Bounded same-pack MoE and router candidates; no serving dispatch changes."""
 from pathlib import Path
+from contextlib import nullcontext
 from unittest.mock import patch
 
 import torch
@@ -42,12 +43,17 @@ def moe_check(report, ranks, lane_name):
         # tile-major weight copy. Never reuse the packed-only SF6 owner.
         with patch.object(md, '_STATIC_V2_OVERRIDE', candidate):
             lane.moe_prepare(*raw_weights, 8, 10.)
+    elif lane_name in ('moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct'):
+        row_cases = (7, 14, 21, 28)
+        candidate = dict(base,
+                         probe_route_scatter=lane_name != 'moe_direct_scatter',
+                         probe_direct_scatter=lane_name != 'moe_route_scatter')
     else:
         raise ValueError(lane_name)
     torch.manual_seed(91713)
     expert_order = torch.randperm(weights[0].shape[0], device='cuda')
     trash = torch.empty(64 * 1024**2 // 4, device='cuda')
-    cases, graphs, resources = [], [], []
+    cases, graphs, resources, scatter_owners = [], [], [], []
     try:
         # Every numerical routing/shape precedes every performance sample.
         for rows in row_cases:
@@ -57,7 +63,9 @@ def moe_check(report, ranks, lane_name):
             route = torch.ones(rows, 8, device='cuda') / 8
             pair, outputs = [], []
             for config, pack in ((base, weights), (candidate, raw_weights or weights)):
-                with patch.object(md, '_STATIC_V2_OVERRIDE', config):
+                from probes.engine_moe_scatter import route_scatter_owner
+                owner = route_scatter_owner(md, scatter_owners) if config.get('probe_route_scatter') else nullcontext()
+                with patch.object(md, '_STATIC_V2_OVERRIDE', config), owner:
                     graph, output = _capture(lambda: lane.moe(x, sel, route, *pack, 10.))
                     pair.append(graph); outputs.append(output)
                     graphs.append(graph)
@@ -72,6 +80,10 @@ def moe_check(report, ranks, lane_name):
                 route.div_(route.sum(-1, keepdim=True))
                 initial, spreads, errors = None, [0., 0.], []
                 for repeat in range(8):
+                    # Every route/part must overwrite its own cell on changed
+                    # routing, including zero weights and partially filled tiles.
+                    for owner in scatter_owners:
+                        owner.scratch.fill_(float('nan'))
                     for index in ((0, 1) if repeat % 2 == 0 else (1, 0)):
                         outputs[index].fill_(float('nan'))
                         pair[index].replay()
@@ -87,10 +99,12 @@ def moe_check(report, ranks, lane_name):
                 report('capacity_moe_numerics', candidate=lane_name, rows=rows,
                        unique_experts=unique, max_expert_rows=(rows*8+unique-1)//unique,
                        relative_max=max(errors), repeat_relative=spreads,
-                       changed_routing_replay=True, tile_m=16,
+                       changed_routing_replay=True, tile_m=16 if rows == 7 or candidate.get('probe_batch_reform') else 32,
                        fc1_stages=candidate['fc1'], fc2_stages=candidate['fc2'],
                        shared_epilogue=bool(candidate.get('probe_shared_epilogue')))
             route.zero_()
+            for owner in scatter_owners:
+                owner.scratch.fill_(float('nan'))
             for graph in pair:
                 graph.replay()
             if any(value.count_nonzero().item() for value in outputs):
@@ -117,6 +131,7 @@ def moe_check(report, ranks, lane_name):
                        scope='same real L3 TP4 pack, component only, no collective or engine speed')
         report('capacity_moe_complete', candidate=lane_name, passed=True,
                gpu=torch.cuda.get_device_name(), rank_file=str(path),
+               route_scratch_bytes=sum(o.scratch.numel() * o.scratch.element_size() for o in scatter_owners),
                max_allocated_bytes=torch.cuda.max_memory_allocated())
     finally:
         for graph in graphs:
@@ -140,7 +155,6 @@ class PackedMhc:
 
 def mhc_check(report):
     from engine.kernels.dense.mhc import MHC
-    from tests.test_engine_mhc_single import SingleTokenMhcTests
     torch.manual_seed(91715)
     weights = {str(i): (torch.randn(24, 16384, device='cuda')*.006).bfloat16().float()
                for i in range(89)}
@@ -149,7 +163,11 @@ def mhc_check(report):
     graphs, cases = [], []
     try:
         for rows in (14, 21, 28):
-            _, values = SingleTokenMhcTests.inputs(rows)
+            values = [torch.randn(rows, 4096, device='cuda', dtype=torch.bfloat16),
+                      torch.randn(rows, 4, 4096, device='cuda', dtype=torch.bfloat16),
+                      torch.rand(rows, 4, 1, device='cuda'), torch.rand(rows, 4, 4, device='cuda'),
+                      torch.tensor([.2, .3, .4], device='cuda'), torch.randn(24, device='cuda') * .1,
+                      torch.randn(4096, device='cuda', dtype=torch.bfloat16)]
             pair, outputs = [], []
             for adapter in (extension, packed):
                 owner.ext = adapter

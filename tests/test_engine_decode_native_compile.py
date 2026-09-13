@@ -1,7 +1,7 @@
 """Resource evidence follows the CUDA tool's actual function header formats."""
 import unittest
 
-from probes.engine_mhc_single_compile import mhc_resources
+from probes.engine_decode_native_compile import mhc_resources
 
 
 class MhcResourceTests(unittest.TestCase):
