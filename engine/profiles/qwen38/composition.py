@@ -45,7 +45,9 @@ def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None, dtype: "str
     from engine.modules.linear_attention import VARIANTS, GatedDeltaNet, named
     from engine.modules.moe import MoE, shared_of
     from engine.modules.moe import named as moe_named
-    from engine.modules.ngram_embedding import NGramInjection
+    from engine.modules.ngram_embedding import NGramHash, NGramInjection
+    from engine.modules.ngram_embedding import VARIANTS as NGRAM_VARIANTS
+    from engine.modules.ngram_embedding import named as ngram_named
     from engine.modules.attention import QSA, Attention
     from engine.modules.attention import named as attention_named
 
@@ -89,11 +91,13 @@ def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None, dtype: "str
     }
     if ple_layers:
         features["ple"] = NGramInjection(
-            hidden=hidden, hc=hc, ngram_size=cfg["ngram_size"], heads_per_ngram=cfg["heads_per_ngram"],
-            unigram_vocab=cfg["vocab_size"], ngram_vocab_base=cfg["ngram_vocab_size_base"], seed=cfg.get("seed", 1234),
-            eos=_eos(cfg), conv=cfg["ple_conv_kernel_size"], eps=eps,
-            table_index=lambda layer: ple_layers.index(layer + 1),
-            weights=lambda layer, name: layer_name(layer, "ple", name),
+            hidden=hidden, hc=hc, ngram_size=cfg["ngram_size"], conv=cfg["ple_conv_kernel_size"], eps=eps,
+            **NGRAM_VARIANTS["ple"],
+            hash=lambda layer: NGramHash.splitmix(
+                ngram_size=cfg["ngram_size"], heads=cfg["heads_per_ngram"], unigram_vocab=cfg["vocab_size"],
+                base=cfg["ngram_vocab_size_base"], table_index=ple_layers.index(layer + 1), seed=cfg.get("seed", 1234),
+                eos=_eos(cfg)),
+            weights=lambda layer, name: ngram_named("qwen4_exp", lambda hf: layer_name(layer, "ple", hf))(name),
             table=(lambda layer, rows: layer_name(layer, "ple", "ple_embedding.ngram_embedding.weight")[rows]) if table is None
             else (lambda layer, rows: table(f"{prefix}layers.{layer}.ple.ple_embedding.ngram_embedding", rows)),
             dtype=dtype)
