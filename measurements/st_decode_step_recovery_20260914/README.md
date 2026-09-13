@@ -113,3 +113,18 @@ python3 -m unittest -v tests.test_engine_decode_fastpaths \
 python3 probes/engine_decode_native_compile.py --output /out/native-compile.json --build-root /out/build
 python3 probes/engine_decode_projection_compile.py --k7 --output /out/triton-compile.json
 ```
+
+## CI fixture repair
+
+The first full PR check reached 1,645 tests and found two stale test doubles
+outside the initial focused slice. The pair-owner fixture replaced the whole
+projection module and omitted the new row declaration helper; it now mocks
+only the CUDA owner and keeps real row validation/dispatch. The drafter W4
+fixture now accepts the explicit `bound_input` argument and asserts it is
+false, preserving its target/drafter isolation check.
+
+Both failures were reproduced in the same CPU-only image. The repaired pair,
+drafter acceptance and bound-fastpath modules then ran 21 tests: 20 passed,
+one GPU-only skip, no failures (`cpu-ci-fix.log`). Engine/kernel source and
+serving defaults did not change, so the existing compiler and Oracle source
+receipts remain applicable.
