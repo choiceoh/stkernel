@@ -275,8 +275,8 @@
       "source": "overlay/modules/glm53_moe/moe_dynamic_prefill_n128.py",
       "sha256": "da2bbd00c245056b509fc85f39a97a4820d89c45b7329a56e7955b145a8d27b4",
       "origin": "repository",
-      "local_sha256": "c0b4d6805d6fe804c3630023de7686d38975e85c9bcfc5e6bcd53eb13948f5c6",
-      "local_modifications": " Private CPU resource experiment keeps FC1 K loops rolled to bound live operands."
+      "local_sha256": "c666fe6fbe584e354c65cb879c266ef31704297561f283ef75877565e1cc8361",
+      "local_modifications": "FC1 loop unrolling restored after CPU r3 increased private N128 stack from 528 to 784 bytes."
     },
     "b12x/moe_reform_sf_pack.py": {
       "source": "overlay/modules/glm53_moe/moe_reform_sf_pack.py",

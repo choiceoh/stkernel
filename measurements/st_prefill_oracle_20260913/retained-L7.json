@@ -1,0 +1,485 @@
+{
+  "evidence": "retained L7 profiler-off C1 requests; new consumer performance remains unmeasured",
+  "boot_id": "b862190728a64bd7aa4f1d3051b2344c",
+  "source_server_sha256": "15c4e2fedead75074eb0de16d552f9f05b9be9fb8363d5a0a3e3279b5fa05dc7",
+  "source_client_rows_sha256": "af8b41f84c70dd3b4dac6032f84ffe432a2b62668f543ddff9b3230bbf5452f9",
+  "source_archive_sha256": "7b55e97aeba0ddcda785533673c00114146a1e23c05cfe7246e931c716add669",
+  "candidate_commit": "34b5852e537129f8ab2a586a434921e7afcf6d53",
+  "candidate_boot_sha256": "5727cac8c0afcf54280b9f85f322e3ddd2f509f473b5eec90f6174a1aab35672",
+  "candidate_scheduler_sha256": "e8f6e1a37f784fb8e804f423152266d56ee8bf2ed89ee3e9be20f60473741740",
+  "rows": [
+    {
+      "request_id": 8,
+      "context": 2000,
+      "question": 0,
+      "prompt_tokens": 2672,
+      "client_ttft_ms": 1107.012108026538,
+      "client_prefill_tok_s": 2413.704403616103,
+      "rank0_prefill_host_ms": 1087.9184580116998,
+      "host_scope": "runner host work; includes waits inside runner, not an exclusive GPU kernel sum",
+      "request_operations": [
+        {
+          "operation": "template",
+          "duration_us": 171.60101560875773
+        },
+        {
+          "operation": "tokenize",
+          "duration_us": 3570.2299792319536
+        },
+        {
+          "operation": "admit"
+        },
+        {
+          "operation": "queue",
+          "duration_us": 13317.158998688683
+        }
+      ],
+      "chunks": [
+        {
+          "step": 1,
+          "request_id": 8,
+          "tokens": 2672,
+          "position": 0,
+          "rank_ms": {
+            "0": 1087.9184580116998,
+            "1": 1088.2977330184076,
+            "2": 1087.973362999037,
+            "3": 1087.87499499158
+          }
+        }
+      ],
+      "candidate_scheduler_chunks": [
+        2672
+      ],
+      "candidate_scheduler_scope": "CPU replay of frozen production contract; no GPU timing prediction"
+    },
+    {
+      "request_id": 9,
+      "context": 2000,
+      "question": 1,
+      "prompt_tokens": 2632,
+      "client_ttft_ms": 1106.5866830176674,
+      "client_prefill_tok_s": 2378.4851565559447,
+      "rank0_prefill_host_ms": 1084.3729009793606,
+      "host_scope": "runner host work; includes waits inside runner, not an exclusive GPU kernel sum",
+      "request_operations": [
+        {
+          "operation": "template",
+          "duration_us": 197.69600476138294
+        },
+        {
+          "operation": "tokenize",
+          "duration_us": 3003.493999131024
+        },
+        {
+          "operation": "admit"
+        },
+        {
+          "operation": "queue",
+          "duration_us": 17223.77401893027
+        }
+      ],
+      "chunks": [
+        {
+          "step": 130,
+          "request_id": 9,
+          "tokens": 2632,
+          "position": 0,
+          "rank_ms": {
+            "0": 1084.3729009793606,
+            "1": 1084.6803369931877,
+            "2": 1085.1612219994422,
+            "3": 1084.5268279954325
+          }
+        }
+      ],
+      "candidate_scheduler_chunks": [
+        2632
+      ],
+      "candidate_scheduler_scope": "CPU replay of frozen production contract; no GPU timing prediction"
+    },
+    {
+      "request_id": 10,
+      "context": 2000,
+      "question": 2,
+      "prompt_tokens": 2618,
+      "client_ttft_ms": 1504.0356910030823,
+      "client_prefill_tok_s": 1740.6501824793695,
+      "rank0_prefill_host_ms": 1431.4408459758852,
+      "host_scope": "runner host work; includes waits inside runner, not an exclusive GPU kernel sum",
+      "request_operations": [
+        {
+          "operation": "template",
+          "duration_us": 175.39298278279603
+        },
+        {
+          "operation": "tokenize",
+          "duration_us": 3096.5649930294603
+        },
+        {
+          "operation": "admit"
+        },
+        {
+          "operation": "queue",
+          "duration_us": 11860.883998451754
+        }
+      ],
+      "chunks": [
+        {
+          "step": 361,
+          "request_id": 10,
+          "tokens": 2304,
+          "position": 0,
+          "rank_ms": {
+            "0": 982.6078769983724,
+            "1": 982.9275219817646,
+            "2": 986.5782139822841,
+            "3": 983.1881699792575
+          }
+        },
+        {
+          "step": 362,
+          "request_id": 10,
+          "tokens": 314,
+          "position": 2304,
+          "rank_ms": {
+            "0": 448.8329689775128,
+            "1": 448.4697960142512,
+            "2": 447.4858100002166,
+            "3": 447.62716299737804
+          }
+        }
+      ],
+      "candidate_scheduler_chunks": [
+        2618
+      ],
+      "candidate_scheduler_scope": "CPU replay of frozen production contract; no GPU timing prediction"
+    },
+    {
+      "request_id": 11,
+      "context": 32000,
+      "question": "all",
+      "prompt_tokens": 33817,
+      "client_ttft_ms": 9985.236831009388,
+      "client_prefill_tok_s": 3386.699842209101,
+      "rank0_prefill_host_ms": 9916.794296965236,
+      "host_scope": "runner host work; includes waits inside runner, not an exclusive GPU kernel sum",
+      "request_operations": [
+        {
+          "operation": "template",
+          "duration_us": 123.66499868221581
+        },
+        {
+          "operation": "tokenize",
+          "duration_us": 22008.27799970284
+        },
+        {
+          "operation": "admit"
+        },
+        {
+          "operation": "queue",
+          "duration_us": 21858.310006791726
+        }
+      ],
+      "chunks": [
+        {
+          "step": 588,
+          "request_id": 11,
+          "tokens": 32256,
+          "position": 0,
+          "rank_ms": {
+            "0": 9072.370675974526,
+            "1": 9067.381325992756,
+            "2": 9072.553373000119,
+            "3": 9074.103715014644
+          }
+        },
+        {
+          "step": 589,
+          "request_id": 11,
+          "tokens": 1561,
+          "position": 32256,
+          "rank_ms": {
+            "0": 844.4236209907103,
+            "1": 843.0685719940811,
+            "2": 842.3709349881392,
+            "3": 842.5231070141308
+          }
+        }
+      ],
+      "candidate_scheduler_chunks": [
+        32256,
+        1561
+      ],
+      "candidate_scheduler_scope": "CPU replay of frozen production contract; no GPU timing prediction"
+    },
+    {
+      "request_id": 12,
+      "context": 128000,
+      "question": "all",
+      "prompt_tokens": 129775,
+      "client_ttft_ms": 39257.811443996616,
+      "client_prefill_tok_s": 3305.7115317070343,
+      "rank0_prefill_host_ms": 39068.766270997,
+      "host_scope": "runner host work; includes waits inside runner, not an exclusive GPU kernel sum",
+      "request_operations": [
+        {
+          "operation": "template",
+          "duration_us": 143.04000069387257
+        },
+        {
+          "operation": "tokenize",
+          "duration_us": 112837.43297099136
+        },
+        {
+          "operation": "admit"
+        },
+        {
+          "operation": "queue",
+          "duration_us": 29656.753002200276
+        }
+      ],
+      "chunks": [
+        {
+          "step": 1809,
+          "request_id": 12,
+          "tokens": 32256,
+          "position": 0,
+          "rank_ms": {
+            "0": 9122.98562299111,
+            "1": 9119.790477008792,
+            "2": 9119.608327979222,
+            "3": 9122.043531009695
+          }
+        },
+        {
+          "step": 1810,
+          "request_id": 12,
+          "tokens": 32256,
+          "position": 32256,
+          "rank_ms": {
+            "0": 9592.037912021624,
+            "1": 9590.68405101425,
+            "2": 9592.9024030047,
+            "3": 9593.081688974053
+          }
+        },
+        {
+          "step": 1811,
+          "request_id": 12,
+          "tokens": 32256,
+          "position": 64512,
+          "rank_ms": {
+            "0": 9719.201736996183,
+            "1": 9717.12082499289,
+            "2": 9719.273746013641,
+            "3": 9720.194535999326
+          }
+        },
+        {
+          "step": 1812,
+          "request_id": 12,
+          "tokens": 32256,
+          "position": 96768,
+          "rank_ms": {
+            "0": 10055.288479983574,
+            "1": 10054.444398992928,
+            "2": 10055.776813998818,
+            "3": 10057.341172010638
+          }
+        },
+        {
+          "step": 1813,
+          "request_id": 12,
+          "tokens": 751,
+          "position": 129024,
+          "rank_ms": {
+            "0": 579.2525190045126,
+            "1": 578.8758179987781,
+            "2": 578.9810550049879,
+            "3": 578.7933490064461
+          }
+        }
+      ],
+      "candidate_scheduler_chunks": [
+        32256,
+        32256,
+        32256,
+        32256,
+        751
+      ],
+      "candidate_scheduler_scope": "CPU replay of frozen production contract; no GPU timing prediction"
+    },
+    {
+      "request_id": 13,
+      "context": 2000,
+      "question": "fixed-all",
+      "prompt_tokens": 3422,
+      "client_ttft_ms": 1699.1242600197438,
+      "client_prefill_tok_s": 2013.9786597833854,
+      "rank0_prefill_host_ms": 1658.3188159565907,
+      "host_scope": "runner host work; includes waits inside runner, not an exclusive GPU kernel sum",
+      "request_operations": [
+        {
+          "operation": "template",
+          "duration_us": 177.00900207273662
+        },
+        {
+          "operation": "tokenize",
+          "duration_us": 4051.430005347356
+        },
+        {
+          "operation": "admit"
+        },
+        {
+          "operation": "queue",
+          "duration_us": 22502.42099398747
+        }
+      ],
+      "chunks": [
+        {
+          "step": 2481,
+          "request_id": 13,
+          "tokens": 2304,
+          "position": 0,
+          "rank_ms": {
+            "0": 984.6658389724325,
+            "1": 987.0132849900983,
+            "2": 988.2830110145733,
+            "3": 988.3187600062229
+          }
+        },
+        {
+          "step": 2482,
+          "request_id": 13,
+          "tokens": 1118,
+          "position": 2304,
+          "rank_ms": {
+            "0": 673.6529769841582,
+            "1": 674.9472259834874,
+            "2": 674.4163240073249,
+            "3": 674.4116749905515
+          }
+        }
+      ],
+      "candidate_scheduler_chunks": [
+        3422
+      ],
+      "candidate_scheduler_scope": "CPU replay of frozen production contract; no GPU timing prediction"
+    },
+    {
+      "request_id": 14,
+      "context": 2000,
+      "question": "fixed-all",
+      "prompt_tokens": 3422,
+      "client_ttft_ms": 1703.932092001196,
+      "client_prefill_tok_s": 2008.2959972782753,
+      "rank0_prefill_host_ms": 1661.1752059834544,
+      "host_scope": "runner host work; includes waits inside runner, not an exclusive GPU kernel sum",
+      "request_operations": [
+        {
+          "operation": "template",
+          "duration_us": 126.86400441452861
+        },
+        {
+          "operation": "tokenize",
+          "duration_us": 2452.148008160293
+        },
+        {
+          "operation": "admit"
+        },
+        {
+          "operation": "queue",
+          "duration_us": 20780.994003871456
+        }
+      ],
+      "chunks": [
+        {
+          "step": 2693,
+          "request_id": 14,
+          "tokens": 2304,
+          "position": 0,
+          "rank_ms": {
+            "0": 980.0110959913582,
+            "1": 980.6941650167573,
+            "2": 980.4239530058112,
+            "3": 980.1903319894336
+          }
+        },
+        {
+          "step": 2694,
+          "request_id": 14,
+          "tokens": 1118,
+          "position": 2304,
+          "rank_ms": {
+            "0": 681.1641099920962,
+            "1": 681.5272380190436,
+            "2": 680.8411339879967,
+            "3": 680.8174269972369
+          }
+        }
+      ],
+      "candidate_scheduler_chunks": [
+        3422
+      ],
+      "candidate_scheduler_scope": "CPU replay of frozen production contract; no GPU timing prediction"
+    },
+    {
+      "request_id": 15,
+      "context": 2000,
+      "question": "fixed-all",
+      "prompt_tokens": 3422,
+      "client_ttft_ms": 1690.1845970132854,
+      "client_prefill_tok_s": 2024.6309225909376,
+      "rank0_prefill_host_ms": 1659.3824500159826,
+      "host_scope": "runner host work; includes waits inside runner, not an exclusive GPU kernel sum",
+      "request_operations": [
+        {
+          "operation": "template",
+          "duration_us": 172.5449983496219
+        },
+        {
+          "operation": "tokenize",
+          "duration_us": 4206.407000310719
+        },
+        {
+          "operation": "admit"
+        },
+        {
+          "operation": "queue",
+          "duration_us": 13514.086982468143
+        }
+      ],
+      "chunks": [
+        {
+          "step": 2905,
+          "request_id": 15,
+          "tokens": 2304,
+          "position": 0,
+          "rank_ms": {
+            "0": 985.2337120100856,
+            "1": 987.6808660046663,
+            "2": 988.130760990316,
+            "3": 987.5076840107795
+          }
+        },
+        {
+          "step": 2906,
+          "request_id": 15,
+          "tokens": 1118,
+          "position": 2304,
+          "rank_ms": {
+            "0": 674.148738005897,
+            "1": 675.4340140032582,
+            "2": 674.0367460006382,
+            "3": 674.5818850176875
+          }
+        }
+      ],
+      "candidate_scheduler_chunks": [
+        3422
+      ],
+      "candidate_scheduler_scope": "CPU replay of frozen production contract; no GPU timing prediction"
+    }
+  ]
+}

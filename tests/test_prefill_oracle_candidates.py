@@ -54,7 +54,7 @@ class MhcCpuTests(unittest.TestCase):
     def test_real_fused_body_preserves_rounded_residual_and_packed_weight_coordinates(self):
         run, program = kernel()
         generator = torch.Generator().manual_seed(93)
-        for m, h, splits in ((65, 256, 1), (97, 512, 3)):
+        for m, h, splits in ((65, 256, 1), (97, 512, 3), (667, 256, 2)):
             rand = lambda *shape: torch.randn(*shape, generator=generator)
             residual, x = rand(m,4,h).bfloat16(), rand(m,h).bfloat16()
             post, comb, fn = rand(m,4), rand(m,4,4), rand(24,4*h).bfloat16()
@@ -63,9 +63,9 @@ class MhcCpuTests(unittest.TestCase):
             mul, sqr = torch.full((splits,m,24), float('nan')), torch.full((splits,m), float('nan'))
             for split in range(splits):
                 program[1] = split
-                for tile in range((m+31)//32):
+                for tile in range((m+15)//16):
                     program[0] = tile
-                    run(*(Pointer(v) for v in (comb,residual,post,x,packed,out,mul,sqr)),m,h,splits,32,128,32)
+                    run(*(Pointer(v) for v in (comb,residual,post,x,packed,out,mul,sqr)),m,h,splits,16,64,32)
             reference = []
             for channel in range(4):
                 r = post[:,channel,None]*x.float()
@@ -86,9 +86,12 @@ class MhcCpuTests(unittest.TestCase):
         scope = {}
         exec(compile(ast.Module(body=[node],type_ignores=[]),'<real-MHC-prefill>','exec'),scope)
         for count, packed in ((7,object()), (64,object()), (32769,object()), (668,None)):
-            result = scope['prefill'](NS(weights={'f':(None,packed)}),'f',NS(shape=(count,4096)),
+            result = scope['prefill'](NS(prefill_enabled=True,weights={'f':(None,packed)}),'f',NS(shape=(count,4096)),
                                       *([None]*6), 1e-6,1e-6,2.,20)
             self.assertIsNone(result)
+        result = scope['prefill'](NS(prefill_enabled=False),'f',NS(shape=(668,4096)),
+                                  *([None]*6),1e-6,1e-6,2.,20)
+        self.assertIsNone(result)
 
 
 if __name__ == '__main__':

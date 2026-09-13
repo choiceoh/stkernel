@@ -1,0 +1,279 @@
+{
+  "scope": "ST Oracle CPU scenario analysis, not repaired-build performance or numerical proof",
+  "gpu_used": false,
+  "queue_submitted": false,
+  "candidate_commit": "53ec6ff22ab500c4dec4ca9dbc57b0ff479036a3",
+  "inputs": {
+    "/Users/ost/.codex/worktrees/6d11/stkernel2/measurements/st_prefill_l7_ttft_20260913/result.json": "59ad21b81010a4e42b5eb2c4b762e2fa9ed523a32b53e40337a56adb576a4444",
+    "/Users/ost/.codex/worktrees/st-prefill-phase2-reviewed/stkernel2/overlay/modules/glm53_moe/glm53_tp_sf6_q0_selftest.py": "09b2cc2f8c469f67ba4feaad8acdac93b8ebe94ddc860811cc80b4ded738e727",
+    "/Users/ost/.codex/worktrees/st-prefill-phase2-reviewed/stkernel2/measurements/st_prefill_phase2_20260913/gpu-L8-scale-qualification/scale-expansion.json": "799d8ed7ee2a413e23c32fa73451edf7ac4bb73b51fc8bce6dba426258691d32",
+    "/Users/ost/.codex/worktrees/st-prefill-phase2-reviewed/stkernel2/bench/step_sim.py": "383ca73bfc3bac569b29240167038b05716f5d9031910b8ca86b1e7e95332fa4",
+    "/Users/ost/.codex/worktrees/st-prefill-phase2-reviewed/stkernel2/engine/base/scheduler.py": "e8f6e1a37f784fb8e804f423152266d56ee8bf2ed89ee3e9be20f60473741740"
+  },
+  "short_host_fit": {
+    "ms_per_token": 0.2670716070686442,
+    "fixed_ms_per_chunk": 372.5110287558473,
+    "points": 10,
+    "max_chunk_residual_ms": 10.067024533504764
+  },
+  "requests": [
+    {
+      "request_id": 8,
+      "tokens": 2672,
+      "measured_ttft_ms": 1107.012108026538,
+      "measured_tok_s": 2413.704403616103,
+      "old_chunks": [
+        2672
+      ],
+      "candidate_chunks": [
+        2672
+      ],
+      "modeled_schedule_only_ttft_ms": 1107.0121080265378,
+      "modeled_schedule_only_tok_s": 2413.7044036161037,
+      "host_fit_residual_ms": -1.792095168435253,
+      "target_tok_s": 3300,
+      "target_ttft_ms": 809.6969696969697,
+      "required_time_reduction_fraction": 0.2685744231466354,
+      "required_ms": 297.3151383295683
+    },
+    {
+      "request_id": 9,
+      "tokens": 2632,
+      "measured_ttft_ms": 1106.5866830176674,
+      "measured_tok_s": 2378.4851565559447,
+      "old_chunks": [
+        2632
+      ],
+      "candidate_chunks": [
+        2632
+      ],
+      "modeled_schedule_only_ttft_ms": 1106.5866830176674,
+      "modeled_schedule_only_tok_s": 2378.4851565559447,
+      "host_fit_residual_ms": -8.929402418841619,
+      "target_tok_s": 3300,
+      "target_ttft_ms": 797.5757575757576,
+      "required_time_reduction_fraction": 0.2792469222557743,
+      "required_ms": 309.01092544190976
+    },
+    {
+      "request_id": 10,
+      "tokens": 2618,
+      "measured_ttft_ms": 1504.0356910030823,
+      "measured_tok_s": 1740.6501824793695,
+      "old_chunks": [
+        2304,
+        314
+      ],
+      "candidate_chunks": [
+        2618
+      ],
+      "modeled_schedule_only_ttft_ms": 1131.5246622472348,
+      "modeled_schedule_only_tok_s": 2313.6923898773803,
+      "host_fit_residual_ms": 12.774678841519972,
+      "target_tok_s": 3300,
+      "target_ttft_ms": 793.3333333333334,
+      "required_time_reduction_fraction": 0.47253024773352437,
+      "required_ms": 710.702357669749
+    },
+    {
+      "request_id": 11,
+      "tokens": 33817,
+      "measured_ttft_ms": 9985.236831009388,
+      "measured_tok_s": 3386.699842209101,
+      "old_chunks": [
+        32256,
+        1561
+      ],
+      "candidate_chunks": [
+        32256,
+        1561
+      ]
+    },
+    {
+      "request_id": 12,
+      "tokens": 129775,
+      "measured_ttft_ms": 39257.811443996616,
+      "measured_tok_s": 3305.7115317070343,
+      "old_chunks": [
+        32256,
+        32256,
+        32256,
+        32256,
+        751
+      ],
+      "candidate_chunks": [
+        32256,
+        32256,
+        32256,
+        32256,
+        751
+      ],
+      "target_tok_s": 4000,
+      "target_ttft_ms": 32443.75,
+      "required_time_reduction_fraction": 0.17357211707324138,
+      "required_ms": 6814.061443996616
+    },
+    {
+      "request_id": 13,
+      "tokens": 3422,
+      "measured_ttft_ms": 1699.1242600197438,
+      "measured_tok_s": 2013.9786597833854,
+      "old_chunks": [
+        2304,
+        1118
+      ],
+      "candidate_chunks": [
+        3422
+      ],
+      "modeled_schedule_only_ttft_ms": 1326.6132312638965,
+      "modeled_schedule_only_tok_s": 2579.500881910983,
+      "host_fit_residual_ms": 0.6222809440041601
+    },
+    {
+      "request_id": 14,
+      "tokens": 3422,
+      "measured_ttft_ms": 1703.932092001196,
+      "measured_tok_s": 2008.2959972782753,
+      "old_chunks": [
+        2304,
+        1118
+      ],
+      "candidate_chunks": [
+        3422
+      ],
+      "modeled_schedule_only_ttft_ms": 1331.4210632453487,
+      "modeled_schedule_only_tok_s": 2570.186167596635,
+      "host_fit_residual_ms": -2.2341090828595043
+    },
+    {
+      "request_id": 15,
+      "tokens": 3422,
+      "measured_ttft_ms": 1690.1845970132854,
+      "measured_tok_s": 2024.6309225909376,
+      "old_chunks": [
+        2304,
+        1118
+      ],
+      "candidate_chunks": [
+        3422
+      ],
+      "modeled_schedule_only_ttft_ms": 1317.673568257438,
+      "modeled_schedule_only_tok_s": 2597.0013229645606,
+      "host_fit_residual_ms": -0.4413531153877557
+    }
+  ],
+  "actual_gate_route_geometry": [
+    {
+      "tokens": 2672,
+      "routing": "balanced",
+      "active_experts": 288,
+      "min_rows": 74,
+      "max_rows": 76,
+      "tiles": {
+        "64": 576,
+        "128": 288
+      },
+      "padded_rows": {
+        "64": 36864,
+        "128": 36864
+      },
+      "padded_work_ratio": 1.0,
+      "tile_count_ratio": 2.0
+    },
+    {
+      "tokens": 2675,
+      "routing": "zeros",
+      "active_experts": 288,
+      "min_rows": 74,
+      "max_rows": 76,
+      "tiles": {
+        "64": 576,
+        "128": 288
+      },
+      "padded_rows": {
+        "64": 36864,
+        "128": 36864
+      },
+      "padded_work_ratio": 1.0,
+      "tile_count_ratio": 2.0
+    },
+    {
+      "tokens": 2121,
+      "routing": "concentrated",
+      "active_experts": 8,
+      "min_rows": 2121,
+      "max_rows": 2121,
+      "tiles": {
+        "64": 272,
+        "128": 136
+      },
+      "padded_rows": {
+        "64": 17408,
+        "128": 17408
+      },
+      "padded_work_ratio": 1.0,
+      "tile_count_ratio": 2.0
+    },
+    {
+      "tokens": 8192,
+      "routing": "duplicate",
+      "active_experts": 1,
+      "min_rows": 65536,
+      "max_rows": 65536,
+      "tiles": {
+        "64": 1024,
+        "128": 512
+      },
+      "padded_rows": {
+        "64": 65536,
+        "128": 65536
+      },
+      "padded_work_ratio": 1.0,
+      "tile_count_ratio": 2.0
+    },
+    {
+      "tokens": 65,
+      "routing": "balanced",
+      "active_experts": 288,
+      "min_rows": 1,
+      "max_rows": 3,
+      "tiles": {
+        "64": 288,
+        "128": 288
+      },
+      "padded_rows": {
+        "64": 18432,
+        "128": 36864
+      },
+      "padded_work_ratio": 0.5,
+      "tile_count_ratio": 1.0
+    }
+  ],
+  "long_scale_sensitivity": [
+    {
+      "assumed_affected_time_fraction": 0.25,
+      "measured_L8_component_speedup": 1.0881175754109627,
+      "hypothetical_128k_tok_s": 3374.0199723738106,
+      "component_speedup_required_for_4000": 3.271057504491872
+    },
+    {
+      "assumed_affected_time_fraction": 0.5,
+      "measured_L8_component_speedup": 1.0881175754109627,
+      "hypothetical_128k_tok_s": 3445.2109969728995,
+      "component_speedup_required_for_4000": 1.5317318959305513
+    },
+    {
+      "assumed_affected_time_fraction": 0.75,
+      "measured_L8_component_speedup": 1.0881175754109627,
+      "hypothetical_128k_tok_s": 3519.4710039889446,
+      "component_speedup_required_for_4000": 1.3011167957246363
+    }
+  ],
+  "limitations": [
+    "Measured L7 source differs from the repaired candidate.",
+    "Short host fit is not extrapolated to long contexts.",
+    "M64 tile counts do not model occupancy, cache reuse, synchronization or arithmetic correctness.",
+    "L8 component gain and assumed affected fractions do not predict full-model speed.",
+    "The oracle cannot validate output quality, acceptance or GPU numerics."
+  ]
+}

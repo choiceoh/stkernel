@@ -44,7 +44,10 @@ def workspace_sizes(hidden: int, hc: int, nout: int, nchunk: int) -> "list[tuple
 
 
 class MHC:
-    def __init__(self, weights):
+    def __init__(self, weights, *, prefill=False):
+        if type(prefill) is not bool:
+            raise ValueError("private MHC prefill selection must be a boolean")
+        self.prefill_enabled = prefill
         self.ext = extension()
         self.hidden, self.hc, self.nout, nchunk = geometry()
         device = next(iter(weights.values())).device
@@ -63,6 +66,8 @@ class MHC:
 
     def prefill(self,key,x,res,post,comb,scale,base,norm,eps,hc_eps,post_mult,sinkhorn):
         """Reuse the already-proven-lossless pack; unsupported weights stay on the original lane."""
+        if not self.prefill_enabled:
+            return None
         packed = self.weights[key][1]
         if packed is None or not 64 < x.shape[0] <= 32768:
             return None

@@ -1,0 +1,18 @@
+mhc-bm16-bk64-s1 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _post_prenorm:
+  REG:214 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:984 TEXTURE:0 SURFACE:0 SAMPLER:0
+mhc-bm16-bk64-s2 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _post_prenorm:
+  REG:214 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:984 TEXTURE:0 SURFACE:0 SAMPLER:0
+mhc-bm16-bk64-s4 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _post_prenorm:
+  REG:214 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:984 TEXTURE:0 SURFACE:0 SAMPLER:0
+compiled N128 2672
+compiled N128 32256
+{"status": "PASS", "cuda_initialized": false, "elapsed_s": 13.159106578998035}
