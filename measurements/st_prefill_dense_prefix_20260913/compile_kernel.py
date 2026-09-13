@@ -27,7 +27,7 @@ def main():
     started = time.monotonic()
     report = dict(status='RUNNING', gpu_used=False, variants=[])
     try:
-        for bm, bn, warps in ((32, 32, 8), (32, 32, 4), (64, 32, 8), (32, 64, 8)):
+        for bm, bn, warps in ((32, 32, 8), (32, 32, 4), (64, 32, 8), (32, 64, 8), (32, 32, 16)):
             constants = dict(SCALE=0.08838834764831845, KV_SCALE=1., BLOCK=256,
                              STRIDE=12288, OFFSET=768, IDENTITY=False,
                              HEADS=16, DIM=512, BM=bm, BN=bn)

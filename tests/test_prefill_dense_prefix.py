@@ -48,7 +48,7 @@ class PrefixGeometryTests(unittest.TestCase):
         for rows, context in ((131, 0), (132, 0), (2672, 0), (131, 3), (131, 4), (7, 0), (32769, 0)):
             for enabled in (False, True):
                 for captured in (False, True):
-                    step = Step.prefill(torch.zeros(rows, dtype=torch.int64), context, 2, 0)
+                    step = Step.prefill(torch.zeros(rows, dtype=torch.int64), context, 2, 1)
                     if captured:
                         step = NS(segments=step.segments, captured=True)
                     dense = Mock(side_effect=lambda q, *args: torch.full_like(q, 2))
