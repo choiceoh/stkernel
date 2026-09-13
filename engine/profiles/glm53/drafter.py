@@ -181,6 +181,7 @@ class Drafter:
         self.tuning = DraftTuning()
         self.selector_alpha = self.tuning.alphas(F.k)
         self.request_boundaries = False
+        self.fc_bias = None
 
     def capture_decode(self, caches, memory=None, draws_seed=None, vocab=None, prepared_context=False,
                        append_child=None):
@@ -292,6 +293,8 @@ class Drafter:
                                           prefill=needs_fp8(F, max_seqs, name), **options)
         self.context_kv = torch.cat(context)
         self.context_norm = torch.stack([p[f"layers.{L}.self_attn.k_norm.weight"] for L in range(F.layers)])
+        from .draft_fc_bias import prepare_bias
+        self.fc_bias = prepare_bias(self)
         if compact_into is not None:
             compact(self, compact_into, max_seqs, policy=policy)
         if consume_weights:
@@ -318,6 +321,17 @@ class Drafter:
         return layer(x)
 
     # -- context: verified tokens' target states -> K/V rings -------------------------------
+    def selector_projection(self, h):
+        from engine.modules.draft_projection import project
+        return project(h, self.p['candidate_selector.hidden_projection.weight'],
+                       fp32=self.tuning.selector_projection_fp32)
+
+    def context_normed(self, projected, *, decode):
+        bias = self.fc_bias if decode else None
+        if bias is None:
+            return norm(projected, self.p['hidden_norm.weight'], self.F.rms_eps)
+        return norm(projected, self.p['hidden_norm.weight'], self.F.rms_eps, bias=bias)
+
     def context_linear(self, aux, keep=None, *, decode=False, observe=True):
         """Phase is explicit: row count cannot distinguish a short prompt."""
         layer = self.dense.get('fc.weight')
@@ -334,13 +348,13 @@ class Drafter:
     def observe_committed(self, ring, positions, aux):
         """Synchronous decode has already clipped its rows; mark them explicitly."""
         valid = positions.numel() if self.decode_calibration else None
-        self._observe(ring, positions, aux, valid)
+        self._observe(ring, positions, aux, valid, decode=True)
 
     def observe_masked(self, ring, positions, aux, valid):
         """Commit a device-counted accepted prefix using the same TP context projection."""
         self._observe(ring, positions, aux, valid)
 
-    def _observe(self, ring, positions, aux, valid=None):
+    def _observe(self, ring, positions, aux, valid=None, *, decode=False):
         F, p = self.F, self.p
         if positions.numel() == 0:
             return
@@ -349,7 +363,8 @@ class Drafter:
         # defined last-writer order.
         positions, aux = positions[-F.window:], aux[-F.window:]
         keep = (torch.arange(len(positions), device=positions.device) < valid) if valid is not None else None
-        c = norm(self.context_linear(aux, keep, decode=valid is not None), p["hidden_norm.weight"], F.rms_eps)
+        decode = decode or valid is not None
+        c = self.context_normed(self.context_linear(aux, keep, decode=decode), decode=decode)
         idx = positions % F.window
         context = (Fn.linear(c,self.context_kv).reshape(-1,F.layers,2,self.local_kv_heads,F.head_dim)
                    if self.context_kv is not None else None)
@@ -451,7 +466,7 @@ class Drafter:
         n, t = positions.shape
         keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t) if observe else None
         projected = self.context_linear(aux, keep, decode=True, observe=observe)
-        c = norm(projected, p["hidden_norm.weight"], F.rms_eps)
+        c = self.context_normed(projected, decode=True)
         return Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)
 
     def observe_kv(self, positions: torch.Tensor, aux: torch.Tensor, valid: torch.Tensor):
@@ -504,7 +519,7 @@ class Drafter:
             return
         n, t = positions.shape
         keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)
-        c = norm(self.context_linear(aux, keep, decode=True), p["hidden_norm.weight"], F.rms_eps)
+        c = self.context_normed(self.context_linear(aux, keep, decode=True), decode=True)
         flat = positions.reshape(-1)
         idx = positions % F.window
         rows = slots.view(n, 1)
@@ -619,7 +634,7 @@ class Drafter:
         unary, cand = unary.view(n, K, F.sel_top_k), cand.view(n, K, F.sel_top_k)
         if self.diagnostics is not None:
             self.diagnostics.support.index_copy_(0, slots, cand)
-        proj = self.linear(h, "candidate_selector.hidden_projection.weight").float().view(n, K, -1)
+        proj = self.selector_projection(h).view(n, K, -1)
         if temps is None:
             # the scores never exist: a step reads one codebook row against this step's candidates
             from engine.modules.draft_agreement import agree_walk
@@ -692,7 +707,7 @@ class Drafter:
             if support_slot is None:
                 support_slot = ring[1] if isinstance(ring, tuple) else self.diagnostics.slot(ring)
             self.diagnostics.support.index_copy_(0, support_slot.reshape(1), cand.unsqueeze(0))
-        proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float()        # [K, 256]
+        proj = self.selector_projection(h)        # [K, 256]
         from engine.modules.draft_agreement import agree_walk
         drafts = walk_scores(unary.unsqueeze(0), cand.unsqueeze(0), anchor.reshape(1), proj.unsqueeze(0),
                              p["candidate_selector.predecessor_codebook"],
@@ -738,7 +753,7 @@ class Drafter:
             mask_ends(local, self.target.rank * self.target.vp, boundary)
         unary, cand = topk(local, self.target.comm, self.target.rank * self.target.vp,
                            F.sel_top_k, self.decodable, workspace=self.candidate_buffer)
-        proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float()
+        proj = self.selector_projection(h)
         if boundary is not None:
             from engine.modules.draft_boundary import sampled
             from engine.modules.draft_agreement import agree_walk

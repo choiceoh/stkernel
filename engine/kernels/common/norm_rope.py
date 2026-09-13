@@ -61,11 +61,13 @@ def _add_norm(A, B, W, SUM, OUT, sA, sB, sS, sO, EPS, D: tl.constexpr, BD: tl.co
 
 
 @triton.jit
-def _norm(X, W, OUT, sX, sO, EPS, D: tl.constexpr, BD: tl.constexpr):
+def _norm(X, W, OUT, BIAS, sX, sO, EPS, D: tl.constexpr, BD: tl.constexpr, BIASED: tl.constexpr):
     r = tl.program_id(0)
     d = tl.arange(0, BD)
     m = d < D
     x = tl.load(X + r * sX + d, mask=m, other=0.0).to(tl.float32)
+    if BIASED:
+        x += tl.load(BIAS + d, mask=m, other=0.0)
     scale = tl.rsqrt(tl.sum(x * x) / D + EPS)
     w = tl.load(W + d, mask=m, other=0.0).to(tl.float32)
     tl.store(OUT + r * sO + d, (x * scale).to(OUT.dtype.element_ty) * w.to(OUT.dtype.element_ty), mask=m)
@@ -93,18 +95,26 @@ def _norm_rope(X, W, POS, INV, OUT, sXr, sXh, sO, EPS, D: tl.constexpr, H: tl.co
     tl.store(out + H + i, (lo * sin + hi * cos).to(OUT.dtype.element_ty), mask=m)
 
 
-def norm(x: torch.Tensor, w: torch.Tensor, eps: float) -> torch.Tensor:
-    """RMS norm over the last dimension, `w` applied in the input's dtype exactly as the torch form does."""
+def norm(x: torch.Tensor, w: torch.Tensor, eps: float, *, bias=None) -> torch.Tensor:
+    """RMS norm, with an optional FP32 bias before its reduction in the same launch.
+
+    The bias sum stays FP32 until normalization; normalized values and the
+    weight multiplication retain the original input-dtype rounding boundaries.
+    """
     if w.ndim != 1 or x.shape[-1] != w.shape[0]:
         raise ValueError("rms norm weight must be one row matching the input's last dimension")
+    if bias is not None and (bias.shape != w.shape or bias.dtype != torch.float32
+                             or bias.device != x.device or not bias.is_contiguous()):
+        raise ValueError('rms norm bias must be a contiguous FP32 vector on the input device')
     if not x.is_cuda:
-        return _norm_by_torch(x, w, eps)
+        return _norm_by_torch(x, w, eps, bias=bias)
     flat = x.reshape(-1, x.shape[-1])
     out = torch.empty_like(flat)
     D = flat.shape[1]
     if flat.shape[0]:
-        _norm[(flat.shape[0],)](flat, w, out, flat.stride(0), out.stride(0), eps,
-                                D=D, BD=triton.next_power_of_2(D), num_warps=4 if D <= 1024 else 8)
+        _norm[(flat.shape[0],)](flat, w, out, bias, flat.stride(0), out.stride(0), eps,
+                                D=D, BD=triton.next_power_of_2(D), BIASED=bias is not None,
+                                num_warps=4 if D <= 1024 else 8)
     return out.view_as(x)
 
 
@@ -147,8 +157,10 @@ def norm_rope(x: torch.Tensor, w: torch.Tensor, eps: float, positions: torch.Ten
 
 
 # -- the torch forms, kept for the CPU tests and as the reference the kernel is judged against ------------
-def _norm_by_torch(x, w, eps):
+def _norm_by_torch(x, w, eps, *, bias=None):
     xf = x.float()
+    if bias is not None:
+        xf = xf + bias
     return (xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + eps)).to(x.dtype) * w
 
 

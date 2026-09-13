@@ -386,6 +386,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             tuning = load_agreed(draft_tuning_path, D, drafter_mod.dense_shapes(D, comm.world_size), comm)
             prepare_store(tuning, store, draft_policy, D, comm)
             recorder.gauge('draft_tuning', tuning.digest)
+            recorder.gauge('draft_selector_projection_fp32', tuning.selector_projection_fp32)
+            recorder.gauge('draft_fc_bias_ranks', len(tuning.fc_bias))
             recorder.gauge('draft_policy', draft_policy.label())
             for key, (_rows, cols) in drafter_mod.dense_shapes(D, comm.world_size).items():
                 name = drafter_mod.store_name(key)
@@ -1131,6 +1133,8 @@ def fleet(a) -> int:
                             "execution_plan": plan.label(), "draft_policy": engine.draft_policy.label(),
                             "draft_policy_requested": draft_policy.label(),
                             "draft_tuning": getattr(getattr(engine.drafter, 'tuning', None), 'digest', 'baseline'),
+                            "draft_selector_projection_fp32": str(getattr(getattr(engine.drafter, 'tuning', None), 'selector_projection_fp32', False)),
+                            "draft_fc_bias": str(getattr(engine.drafter, 'fc_bias', None) is not None),
                             "draft_selector_trace_every": str(getattr(getattr(engine.drafter, 'tuning', None), 'trace_every', 0)),
                             "nvme_mapped_staging": str(cfg["nvme_mapped_staging"]),
                             "kda_state_dtype": F.kda_state_dtype,
