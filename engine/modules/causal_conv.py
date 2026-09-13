@@ -36,6 +36,15 @@ def causal_conv1d(x: torch.Tensor, weight: torch.Tensor, bias: "torch.Tensor | N
     return y.T.to(x.dtype), padded[:, t:].contiguous()                 # last K-1 inputs
 
 
+def conv_states(x: torch.Tensor, initial_state: "torch.Tensor | None", span: int) -> torch.Tensor:
+    """[T, C, span] float32: the conv's state after each token of x [T, C] -- the last `span` inputs up to it, the
+    slices `causal_conv1d` would return had the tokens come one step each (a verify step keeps all of them)."""
+    t, c = x.shape
+    hist = torch.zeros(c, span, device=x.device) if initial_state is None else initial_state.float()
+    padded = torch.cat([hist, x.float().T], dim=1)
+    return torch.stack([padded[:, j + 1:j + 1 + span] for j in range(t)])
+
+
 def causal_conv1d_update(x: torch.Tensor, state: torch.Tensor, weight: torch.Tensor,
                          bias: "torch.Tensor | None" = None, activation: "str | None" = "silu"):
     """One token: x [C], state [C, K-1] (shifted in place semantics returned) -> (y [C], new state)."""

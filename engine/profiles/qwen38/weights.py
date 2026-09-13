@@ -184,7 +184,7 @@ def random_weights(cfg: dict, seed: int = 0, prefix: str = "model.") -> dict:
     (`experts.gate_up_proj` [E, 2I, H], `experts.down_proj` [E, H, I]) and the whole PLE table as one tensor."""
     from engine.modules.ngram_embedding import head_tables
     g = torch.Generator().manual_seed(seed)
-    r = lambda *shape, scale=1.0: torch.randn(*shape, generator=g) * scale
+    r = lambda *shape, scale=1.0: torch.randn(*shape, generator=g, dtype=torch.float32) * scale   # not the global default
     H, hc = cfg["hidden_size"], cfg["hc_count"]
     kd, vd, nk, nv = cfg["linear_key_head_dim"], cfg["linear_value_head_dim"], cfg["linear_num_key_heads"], cfg["linear_num_value_heads"]
     conv_dim = 2 * nk * kd + nv * vd
@@ -211,8 +211,8 @@ def random_weights(cfg: dict, seed: int = 0, prefix: str = "model.") -> dict:
             w[f"{la}.out_proj.weight"] = r(H, nv * vd, scale=0.1)
             w[f"{la}.norm.weight"] = 1 + r(vd, scale=0.1)
             w[f"{la}.conv1d.weight"] = r(conv_dim, 1, cfg["linear_conv_kernel_dim"], scale=0.3)
-            w[f"{la}.dt_bias"] = torch.ones(nv)
-            w[f"{la}.A_log"] = torch.empty(nv).uniform_(0.01, 16, generator=g).log()
+            w[f"{la}.dt_bias"] = torch.ones(nv, dtype=torch.float32)
+            w[f"{la}.A_log"] = torch.empty(nv, dtype=torch.float32).uniform_(0.01, 16, generator=g).log()
         else:
             sa = f"{base}.self_attn"
             w[f"{sa}.q_proj.weight"] = r(heads * hd * 2, H, scale=0.1)

@@ -125,11 +125,11 @@ def gdn_decay(a: torch.Tensor, A_log: torch.Tensor, dt_bias: torch.Tensor) -> to
 def gated_delta_rule(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor,
                      g: torch.Tensor, beta: torch.Tensor, initial_state=None,
                      scale: "float | None" = None, qk_l2norm: bool = True,
-                     decay_per_channel: bool = False):
+                     decay_per_channel: bool = False, all_states: bool = False):
     """[B, T, H, Dk] q/k, [B, T, H, Dv] v, [B, T, H] g (log decay) and beta.
 
-    Returns (o [B, T, H, Dv], final state [B, H, Dk, Dv]). Pure recurrence,
-    fp32 inside, the caller's dtype outside.
+    Returns (o [B, T, H, Dv], final state [B, H, Dk, Dv]) -- and with `all_states` also the state after every
+    token [B, T, H, Dk, Dv] (a verify step keeps them). Pure recurrence, fp32 inside, the caller's dtype outside.
     """
     b, t, h, dk = query.shape
     dv = value.shape[-1]
@@ -142,6 +142,7 @@ def gated_delta_rule(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
     state = (torch.zeros(b, h, dk, dv, dtype=torch.float32, device=q.device)
              if initial_state is None else initial_state.float().clone())
     out = torch.empty(b, t, h, dv, dtype=torch.float32, device=q.device)
+    kept = []
     for i in range(t):
         decay = torch.exp(g[:, i])                              # [B, H] or [B, H, Dk] per channel
         state = state * (decay.unsqueeze(-1) if decay_per_channel else decay[..., None, None])
@@ -150,6 +151,10 @@ def gated_delta_rule(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
         u = (v_i - pred) * beta[:, i].unsqueeze(-1)
         state = state + torch.einsum("bhk,bhv->bhkv", k_i, u)
         out[:, i] = torch.einsum("bhk,bhkv->bhv", q_i, state) * scale
+        if all_states:
+            kept.append(state)
+    if all_states:
+        return out.to(query.dtype), state, torch.stack(kept, dim=1)
     return out.to(query.dtype), state
 
 
@@ -247,7 +252,8 @@ class GatedDeltaNet:
             return None
 
     def __call__(self, layer, x, step, state):
-        from engine.modules.causal_conv import causal_conv1d
+        from engine.base.composition import put_state
+        from engine.modules.causal_conv import causal_conv1d, conv_states
         w = lambda name: self.weights(layer, name)
         per_channel = self.decay == "channel"
         out = None
@@ -262,8 +268,10 @@ class GatedDeltaNet:
                 raw = raw.reshape(t, self.v_heads, self.k_dim)
             g = log_decay(raw, w("A_log"), w("dt_bias"), self.lower_bound, per_channel)
             conv_w = w("conv")
+            held_conv = state.get(layer, "linear_conv", s.seq)
+            conv_each = conv_states(qkv, held_conv, self.conv - 1) if s.verify else None
             qkv, conv_state = causal_conv1d(qkv, conv_w.reshape(conv_w.shape[0], -1), self._optional(w, "conv_bias"),
-                                            state.get(layer, "linear_conv", s.seq), self.activation)
+                                            held_conv, self.activation)
             q, k, v = torch.split(qkv, [self.k_heads * self.k_dim, self.k_heads * self.k_dim, self.v_heads * self.v_dim], -1)
             q = q.reshape(1, t, self.k_heads, self.k_dim)
             k = k.reshape(1, t, self.k_heads, self.k_dim)
@@ -271,16 +279,19 @@ class GatedDeltaNet:
             if self.v_heads != self.k_heads:
                 q = q.repeat_interleave(self.v_heads // self.k_heads, dim=2)
                 k = k.repeat_interleave(self.v_heads // self.k_heads, dim=2)
-            core, recurrent = gated_delta_rule(q, k, v, g[None], beta[None], state.get(layer, "linear_state", s.seq),
-                                               scale=self.k_dim ** -0.5, qk_l2norm=True, decay_per_channel=per_channel)
+            ran = gated_delta_rule(q, k, v, g[None], beta[None], state.get(layer, "linear_state", s.seq),
+                                   scale=self.k_dim ** -0.5, qk_l2norm=True, decay_per_channel=per_channel,
+                                   all_states=s.verify)
+            core, recurrent = ran[0], ran[1]
+            state_each = ran[2].transpose(0, 1) if s.verify else None          # [T, 1, HV, Dk, Dv]
             core = output_norm(core.reshape(-1, self.v_dim), gate.reshape(-1, self.v_dim), w("norm"), self.eps,
                                self.gate_activation, self.norm_cast).reshape(t, -1)
             ys = torch.nn.functional.linear(core, w("out"))
             if out is None:
                 out = xs.new_empty(x.shape[0], ys.shape[-1])
             out[s.start:s.start + s.length] = ys
-            state.put(layer, "linear_conv", s.seq, conv_state)
-            state.put(layer, "linear_state", s.seq, recurrent)
+            put_state(state, layer, "linear_conv", s, conv_state, conv_each)
+            put_state(state, layer, "linear_state", s, recurrent, state_each)
         return out
 
     def cache_specs(self, layers):

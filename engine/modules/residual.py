@@ -71,15 +71,17 @@ class PreNorm:
     def _conv(self, layer, site, out, step, state):
         """Inkling's short conv on a sublayer's output: fp32 depthwise causal conv (no activation) plus the output,
         rounded once; the conv's last inputs kept per sequence."""
-        from engine.modules.causal_conv import causal_conv1d
+        from engine.base.composition import put_state
+        from engine.modules.causal_conv import causal_conv1d, conv_states
         weight = self.weights(layer, site, "conv")
         weight = weight.reshape(weight.shape[0], -1).float()
         key = f"residual_{site}_conv"
         result = torch.empty_like(out)
         for s in step.segments:
             xs = out[s.start:s.start + s.length].float()
-            y, held = causal_conv1d(xs, weight, None, state.get(layer, key, s.seq), None)
-            state.put(layer, key, s.seq, held)
+            before = state.get(layer, key, s.seq)
+            y, held = causal_conv1d(xs, weight, None, before, None)
+            put_state(state, layer, key, s, held, conv_states(xs, before, self.out_conv - 1) if s.verify else None)
             result[s.start:s.start + s.length] = (y.float() + xs).to(out.dtype)
         return result
 
