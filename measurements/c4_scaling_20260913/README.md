@@ -231,8 +231,16 @@ D9 의 근거는 **혼합 배치**(한 forward 에 디코더와 프리필 청크
 캡처 그래프 재생 포함). `GraphCaches.token_rows` 가 모은 블록표에서 모든 행의 latent 슬롯을 한 번에 만든다. eager 스텝·프리필 청크·
 참조 표는 세그먼트 루프를 그대로 쓴다(`Glm53Net._ring_rows`, CPU 검사 `tests/test_engine_decode_rows.py`).
 
-기대: 4행 스텝에서 런치 ~1,200 개와 행 복사 제거 → 2~4 ms(§6 의 76.3 ms 재생 기준 3~5%). 실측은 단일 레인 티켓
-`c4-rows-ring-tests`(커널 패리티), `c4-rows-graph-check`(eager 대 재생), `c4-rows-decode-profile`(행 1..4 재생 시간)이 답한다 — 아래에 적는다.
+실측 (단일 레인, 커밋 086a4553, 원본 `chunk-profile-rank3-rowfold.json`):
+
+- `c4-rows-ring-tests` (`engine_kernel_check --lanes kda_ring`): **18 검사 OK** — 두 rows 검사 모두 한 행 런치 셋과 출력·링 저장이 바이트 단위로
+  같고, 캡처 그래프가 새 slot/context 벡터로 재생된다.
+- `c4-rows-decode-profile` (같은 합성 라우팅, 재생 중앙값): 행 1 / 2 / 3 / 4 = **36.8 / 53.3 / 64.3 / 73.0 ms** (접기 전 36.9 / 55.6 / 67.1 / 76.3)
+  — 4행 **−3.3 ms(−4.3%)**, 3행 −2.8, 2행 −2.3. 4행 커널 표: 순환 링 34 런치 5.97 ms(전 136 런치 6.2), conv 34 런치 0.39(전 136, 0.75),
+  elementwise 1,782 런치 4.47(전 2,143, 5.33), other 508(전 644), dense GEMM 12.75(전 14.07 — 라우터가 TC 경로 `nvjet splitK` 1.17 ms 로,
+  SIMT SGEMM 2.45 ms 대신). 커널 합 74.99 ms(전 77.89).
+- `c4-rows-graph-check2` (eager 대 재생, 층 0·3, 두 행, 폭 1·7): 플릿 부팅 뒤 대기 중 — 결과는 원장에 덧붙인다. 원래 admit 된 검사는
+  srv4 에서 돌 수 없었다(없는 Red Hat 메타 디렉터리, #732 이후 틀린 검증 폭 6, 랭크 0 의 어휘 조각) — 이 브랜치가 고쳤다.
 
 **dynamic MoE 프리필 커널 (레버 1).** 디스패처 노브로는 움직일 수 없다: SF6 셀은 tile_m 을 128 로 못박고(`_dynamic_workspace_tile_m`),
 MAC 은 SM 수(48)에서 잘린다. 커널 안에서 청크당 231 ms 를 만드는 후보는 producer 워프의 SF6 전개다 — k 타일마다 `_sf6_expand_dynamic_tile`

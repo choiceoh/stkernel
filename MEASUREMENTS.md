@@ -2031,7 +2031,9 @@ ITL 정지 1.2 → 3.4 s, D10 금지); 2K 는 어느 것도 못 바꾼다. **두
 토큰 구간 `[i_n·T, (i_n+1)·T)` 를 맡는다; conv: grid 셋째 축이 행; `RING_INDEX_STRIDE`). 프로그램별 산술은 한 행 런치와 같아 출력과 링
 쓰기가 바이트 단위로 같다 — `tests/test_engine_kda_ring.py`·`test_engine_conv_ring.py` 의 rows 검사(캡처 재생 포함, `engine_kernel_check
 --lanes kda_ring` 이 둘 다 돌린다), `GraphCaches.token_rows` 는 모은 블록표에서 모든 행의 latent 슬롯을 한 번에, `Glm53Net._ring_rows` 가
-어느 스텝이 접히는지 정한다(CPU 검사 `test_engine_decode_rows.py`). 4행 재생에서 런치 ~1,200 개와 행 복사가 사라진다 — 기대 2~4 ms(3~5%).
+어느 스텝이 접히는지 정한다(CPU 검사 `test_engine_decode_rows.py`). 단일 레인 실측: `engine_kernel_check --lanes kda_ring` 18 검사 OK(rows 패리티
+둘 포함), 재생 행 1/2/3/4 = 36.8 / 53.3 / 64.3 / 73.0 ms(전 36.9 / 55.6 / 67.1 / 76.3) — **4행 −3.3 ms(−4.3%)**; 순환 링 136 → 34 런치, conv
+136 → 34, elementwise 2,143 → 1,782, 라우터 SIMT SGEMM 2.45 → TC 1.17 ms. eager 대 재생 검사(`engine_decode_graph_check`)는 플릿 부팅 뒤 대기.
 (d) `probes/engine_decode_graph_check.py` 는 큐가 admit 하되 srv4 에서 돌 수 없던 검사였다(없는 Red Hat 메타 디렉터리, #732 이후 틀린 검증 폭 6,
 랭크 0 의 어휘 조각) — 서빙 체크포인트·노드의 랭크·`spec_k+1` 로 고쳤다.
 
