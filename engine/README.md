@@ -27,7 +27,7 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
     base/       모델 이름이 없는 것: 아레나, 로더(사전샤딩된 랭크 파일의 범위 읽기), KV 블록/슬롯, NVMe 티어, 스케줄러,
                 스텝 메타, 러너, 기록/사망 덤프, 설정(사실+만료 노브), 증명·판정, 그래프, comm(플릿 / LocalTP),
                 조합 틀(composition: 층 계획 + 잔차 형식 + 특징, 한 step 루프)
-    modules/    특징 모듈: 선형 어텐션(KDA·GDN), 희소 인덱서(kpool·QSA)·희소 MLA·게이트 희소 GQA, NVFP4 선형·MoE(공유 전문가
+    modules/    특징 모듈: 선형 순환 가족(GDN·KDA 한 특징, 여섯 축), 희소 인덱서(kpool·QSA)·희소 MLA·게이트 희소 GQA, NVFP4 선형·MoE(공유 전문가
                 게이트 포함)·양자화, 하이퍼커넥션(mhc·split-sinkhorn·게이트 잔차), n-gram PLE, 노름, 회전, 로짓
     profiles/   모델별: 사실·가중치 지도(specs)·사전샤딩·레인 표·조합(net)·검증(check). glm53 이 첫 대상.
                 qwen38 은 base/composition 위에 계획과 가중치 이름만 선언한다(composition.py).
@@ -41,6 +41,14 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 `tests/test_engine_composition.py` 가 그 조립을 transformers 5.16.1 의 `Qwen4ExpForCausalLM`(plan.py 가 sha 로 핀한
 오라클)과 CPU 에서 대조한다: prefill 전 토큰·증분 디코드·청크 prefill·EOS 가 섞인 두 시퀀스 한 step 모두 FP32 에서
 최대 5e-8, BF16 상대오차 5e-3. 캐시 명세 합은 `qwen38/plan.state_bytes` 와 같다(QSA 키만 원시 키라 압축 비율배).
+**특징은 가족이다(modules/linear_attention, 2026-09-13).** 새 모델의 조립 시간을 줄이는 쪽은 모델별 구현을 나란히 두는 게 아니라
+가족 하나에 변형 축을 다는 것이다. Qwen3.8(GDN)·GLM-5.3(KDA)·Kimi K3·Ling-3.0-flash 의 선형 어텐션은 되풀이 하나(`gated_delta_rule`)에
+여섯 축이다: decay 가 헤드별이냐 채널별이냐, safe gate 의 lower_bound 냐 softplus 냐, decay·게이트 투영이 저랭크 쌍이냐 한 행렬이냐,
+게이트 활성(silu|sigmoid), 노름의 반올림 위치(qwen4_exp 는 가중치 전에, glm5_next 는 끝에 한 번). `GatedDeltaNet` 이 그 특징이고
+`VARIANTS` 가 네 모델을 축의 값으로 이름 짓는다(gdn·kda·kda_full_gate·kda_full); fused/separate 투영과 conv 는 축이 아니라 가중치 배치라
+`named(scheme, source)` 가 이어 붙인다. GLM 의 레인이 임포트하는 `kda_gate`·`kda_output_norm` 은 이 위의 래퍼로 그대로다.
+`tests/test_engine_linear_family.py` 가 KDA 변형을 transformers 5.16.1 의 `Glm5NextTextLinearAttention` 에 두 decay 형 모두 FP32 2e-6 으로
+붙잡고(GDN 변형은 조립 테스트가 qwen4_exp 에), 조각 prefill·디코드 == 통짜, 분리 가중치 == fused, full-rank == 저랭크 쌍을 본다.
 **조립이 서빙된다(base/composed).** `PositionStore` 는 같은 State 계약을 엔진의 메모리 위에서 답한다: 특징의 토큰별 행
 (`put_rows`/`rows`)은 BlockPool 의 블록에 **위치**로 산다 — 블록은 위치 // 블록 토큰, 행은 위치 % 블록 토큰 — 그래서 시퀀스의
 이력은 그 블록표이고 캐시된 prefix 의 블록은 복사 없이 입양된다(base/prefix). 시퀀스별 값(`get`/`put`)은 고정 슬롯에 살고, 슬롯의
