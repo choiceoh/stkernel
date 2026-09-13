@@ -347,7 +347,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
       "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
       "origin": "repository",
-      "local_sha256": "ccbc0a6ccdbc5f318baa634f10a6bfb80378f10b4b1c02e084b7ef2f41028337",
+      "local_sha256": "489f3690e6eca9b893b640c0dcb3b560d4654fd889bb885df3cf9b1a8c7bbd73",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; tile32 large-M MLA prefill is qualified and selected by the production boot default; configure_prefill (STK_mla_prefill), mla_decode(splits=, probe=), PAIR_STATS, ENABLE_MLA_CLUSTER baked on",
         "2026-09-13 native build cache: stage content-addressed source inputs so identical checkout paths and timestamps do not trigger NVCC; keep Torch/Ninja build validation.",
@@ -356,7 +356,8 @@
         "2026-09-13 shape wizard: MLA_H/MLA_D are imported from engine/kernels/cells.py, the one place the compiled cells are stated, so the wizard's admission table and maybe_arm's refusal read the same numbers.",
         "2026-09-13 common kernels: the native build cache moved to engine/kernels/common/native_cache.py; _build imports it from there. Build flags, sources and the cache key are unchanged.",
         "2026-09-13 operation variants: _check_cell also refuses a bound attention whose sink is not cells.MLA_SINK (the compiled softmax has no sink term).",
-        "2026-09-13 phase 2: short-prefill tile32 admission; short MLA GPU gates passed on 3c7bcc0a. Retain current bound-shape and sink guards; later integration has no new consumer result."
+        "2026-09-13 phase 2: short-prefill tile32 admission; short MLA GPU gates passed on 3c7bcc0a. Retain current bound-shape and sink guards; later integration has no new consumer result.",
+        "2026-09-13 kernel glue: maybe_arm(check=None) takes the admission check -- _check_cell by default, engine/kernels/mla/glue.check for the cells the glue's exact adapters put on the compiled one; the build, the device check and the self-test at the compiled cell are unchanged."
       ]
     }
   }

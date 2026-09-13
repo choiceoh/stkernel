@@ -463,13 +463,21 @@ def main(argv=None) -> int:
         if record is None:
             print(f"  no {RECORD} under {a.ranks}")
             return 1
-        shape, verdicts = from_dict(record["shape"]), [cells.from_dict(v) for v in record["admission"]]
+        # The table is a function of the shape and today's cells: judge the recorded shape again rather than replay a
+        # table written against older cells (a record from before the serving column or the glue carries neither).
+        shape = from_dict(record["shape"])
+        verdicts = cells.admission(shape)
+        current = record["admission"] == cells.to_dicts(verdicts)
         if a.json:
             print(json.dumps(dict(report(record["profile"], Path(a.ranks) / RECORD, shape, verdicts),
-                                  written=record["written"], config_sha256=record["config_sha256"]), indent=2))
+                                  written=record["written"], config_sha256=record["config_sha256"],
+                                  recorded_table_current=current), indent=2))
             return 0
         print(f"  {record['profile']} recorded {record['written']} for config {record['config_sha256'][:12]}")
         print(f"  shape: {shape.describe()}")
+        if not current:
+            print("  the recorded table was judged against older cells; below is today's judgment of the recorded shape "
+                  "(rerun the wizard with --write to record it)")
         print(cells.table(verdicts))
         print(cells.work_table(verdicts))
         return 0
