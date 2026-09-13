@@ -19,6 +19,15 @@ class IsolatedRank:
     def all_gather(self,x,dim=-1): return x
     def wait_prepared(self,phase,**kwargs): pass  # single-rank arithmetic diagnostic; no peers
 
+
+def rank_on_this_node(ranks):
+    """The rank whose file this node holds (one per Spark): the isolated rank is that one."""
+    from pathlib import Path
+    files=sorted(Path(ranks).glob(f'rank*of{facts.TP}.safetensors'))
+    if not files:
+        raise FileNotFoundError(f'no rank file under {ranks}')
+    return int(files[0].name[len('rank'):].split('of')[0])
+
 def main():
     import argparse
     from engine.base.comm import Comm
@@ -27,9 +36,13 @@ def main():
     # (bench/fleet_onepass.ST_FLAGS admits a handful and --drafter-dir and --tier-dir are not among
     # them), so a required argument here is a check the queue can start and never run (45차 §95).
     ap.add_argument('--ranks',default=str(facts.RANKS))
-    ap.add_argument('--ckpt-meta',default='/home/choiceoh/models/glm53-redhat-nvfp4')
+    # the served checkpoint's metadata, like every other admitted check: the Red Hat directory this named
+    # is not on the single-GPU lane's box (srv4), so the check the queue started there could never run
+    ap.add_argument('--ckpt-meta',default=str(facts.CKPT))
     ap.add_argument('--distributed',action='store_true')
     a=ap.parse_args()
+    if not a.distributed:
+        IsolatedRank.rank=rank_on_this_node(a.ranks)   # srv4 holds rank3of4 only
     comm=Comm.init(world=4) if a.distributed else IsolatedRank()
     try:
         return check(comm,a)
@@ -42,7 +55,8 @@ def check(comm,a):
     F,net,caches,engine,runner=build(comm,[0,3],served(),a.ranks,.25,2,False,Recorder('graph'),
         ckpt_meta=a.ckpt_meta)
     print('weights loaded; rank',comm.rank,'distributed',a.distributed,flush=True)
-    for t in [1,6]:
+    lo=comm.rank*F.vocab_local                  # ids this rank embeds; another rank's are zero rows here (net.embed)
+    for t in [1,F.spec_k+1]:                     # the target width and the verify width -- the two the capture accepts
         g=Glm53DecodeGraphs(net,caches,2,t)
         print('captured',t,flush=True)
         slots=[caches.slots.take(i) for i in range(2)]
@@ -51,7 +65,7 @@ def check(comm,a):
             caches.reset()
             ids=[]
             for i,ctx in enumerate(contexts):
-                values=torch.randint(0,30000,(ctx+t,),device='cuda')
+                values=torch.randint(lo,lo+30000,(ctx+t,),device='cuda')
                 ids.append(values[-t:])
                 if ctx:
                     st=Step.prefill(values[:ctx],0,i,slots[i]); caches.prepare(st); net.forward(st,caches)
@@ -72,7 +86,7 @@ def check(comm,a):
                 # The preceding replay wrote all six speculative positions.
                 # Accept only the anchor and overwrite the five rejected rows;
                 # do not clear those future writes before this comparison.
-                retry=Step.decode([(torch.randint(0,30000,(t,),device='cuda'),
+                retry=Step.decode([(torch.randint(lo,lo+30000,(t,),device='cuda'),
                                     contexts[i]+1,i,slots[i]) for i in [0,1]])
                 state,paged=caches.state.clone(),caches.paged.clone()
                 caches.prepare(retry); eager=net.forward(retry,caches)

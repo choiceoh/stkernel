@@ -1,0 +1,36 @@
+{"columns": 511, "rows": 129, "kind": "random", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 511, "rows": 129, "kind": "ties", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 511, "rows": 129, "kind": "narrow", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 511, "rows": 129, "kind": "special", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 512, "rows": 129, "kind": "random", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 512, "rows": 129, "kind": "ties", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 512, "rows": 129, "kind": "narrow", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 512, "rows": 129, "kind": "special", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 513, "rows": 129, "kind": "random", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 513, "rows": 129, "kind": "ties", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 513, "rows": 129, "kind": "narrow", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 513, "rows": 129, "kind": "special", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 8064, "rows": 129, "kind": "random", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 8064, "rows": 129, "kind": "ties", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 8064, "rows": 129, "kind": "narrow", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 8064, "rows": 129, "kind": "special", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 32256, "rows": 129, "kind": "random", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 32256, "rows": 129, "kind": "ties", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 32256, "rows": 129, "kind": "narrow", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 32256, "rows": 129, "kind": "special", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 32768, "rows": 129, "kind": "random", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 32768, "rows": 129, "kind": "ties", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 32768, "rows": 129, "kind": "narrow", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 32768, "rows": 129, "kind": "special", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 262144, "rows": 129, "kind": "random", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 262144, "rows": 129, "kind": "ties", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 262144, "rows": 129, "kind": "narrow", "changed_tied_sets": 0, "score_multiset_exact": true}
+{"columns": 262144, "rows": 129, "kind": "special", "changed_tied_sets": 0, "score_multiset_exact": true}
+/usr/local/lib/python3.12/dist-packages/torch/cuda/graphs.py:169: UserWarning: The CUDA Graph is empty. This usually means that the graph was attempted to be captured on wrong device or stream. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/cuda/CUDAGraph.cpp:210.)
+  super().capture_end()
+{"component": "selection", "rows": 1024, "columns": 8064, "torch_ms": 1.2901439666748047, "candidate_ms": 0.3187519907951355}
+{"component": "selection", "rows": 1024, "columns": 32256, "torch_ms": 5.230463981628418, "candidate_ms": 0.9557759761810303}
+{"component": "gram", "rows": 289, "width": 512, "original_ms": 0.07529599964618683, "candidate_ms": 0.07519999891519547, "max_error_over_max_diagonal": 0.0}
+{"component": "gram", "rows": 8192, "width": 1024, "original_ms": 0.49116799235343933, "candidate_ms": 0.3017599880695343, "max_error_over_max_diagonal": 0.0}
+{"component": "gram", "rows": 32256, "width": 4096, "original_ms": 39.85184097290039, "candidate_ms": 16.52560043334961, "max_error_over_max_diagonal": 0.0}
+{"passed": true, "seconds": 49.806128694006475, "cases": 28}

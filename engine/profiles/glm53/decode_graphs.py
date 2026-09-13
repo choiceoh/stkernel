@@ -143,6 +143,11 @@ class GraphCaches:
     def kda_rings(self, layer, slot):
         return self.real._fields["conv", layer], self.real._fields["rec", layer], self.slots[slot:slot+1]
 
+    def kda_rings_rows(self, layer):
+        """Every segment's rings at once: the conv and recurrent fields whole, and the step's physical slots in
+        segment order -- what net._kda hands the row lanes (one launch per kernel for the whole step)."""
+        return self.real._fields["conv", layer], self.real._fields["rec", layer], self.slots
+
     def write_conv(self, layer, slot, context, inputs):
         from engine.kernels.state import write_conv
         write_conv(inputs, self.real._fields["conv", layer], self.slots[slot:slot+1], context)
@@ -175,6 +180,14 @@ class GraphCaches:
     def token_slots(self, layer, seq, positions):
         from engine.profiles.glm53.caches import Glm53Caches
         return Glm53Caches.token_slots(self, layer, seq, positions)
+
+    def token_rows(self, layer, positions):
+        """token_slots for every segment at once: row i of `positions` [rows, t] is segment i's positions, read
+        against row i of the gathered block table -- what token_slots(layer, i, ...) does one row at a time."""
+        F, p = self.F, self.layout
+        blocks = torch.gather(self.block_table, 1, (positions // F.block).long())
+        return (blocks * (p.block_bytes // F.kv_lora)
+                + p.token_offsets[layer] // F.kv_lora + positions % F.block).to(blocks.dtype)
 
     def token_map(self, layer, seq):
         from engine.profiles.glm53.caches import Glm53Caches

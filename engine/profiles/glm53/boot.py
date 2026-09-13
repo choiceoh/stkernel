@@ -54,14 +54,12 @@ from engine.profiles.glm53 import vision as vision_mod           # noqa: E402
 
 GIB = 1 << 30
 KV_GIB = 24.0                       # production parity (vLLM's 24.02 GiB/rank, 28차 §8); the ST budget table leaves 41.6 GiB, 45차 §23
-TOKEN_BUDGET = 10240                # MAX_BATCHED: the chunk law follows (shapes.py). 8192 gave a 6,912 chunk, which
-                                    # is where vLLM's APC align mode pinned it -- ST computes the chunk from this
-                                    # budget instead, and 45차 §23 조사 19차 measured what the pin cost: the routed
-                                    # expert lane is ONE fused kernel and at 6,912 rows it is half empty (35.9
-                                    # TFLOP/s, 2.83 ms a thousand tokens). 9,216 rows take it to 1.73 (-39%), which
-                                    # is 87% of everything a 13,824 chunk would give, at 1.33x the prefill
-                                    # activation peak instead of 2x -- and that peak is what the 12 GiB workspace
-                                    # ceiling (budget.WORKSPACE_GIB) has to hold.
+TOKEN_BUDGET = 32768                # fourteen aligned blocks -> 32,256 prefill tokens after draft reservation
+# The previous KV2 consumer measured <=4.23 GiB of prefill workspace.
+# The unchanged 12 GiB ceiling must qualify this larger expert batch; that
+# earlier measurement is not proof that the new allocation fits.
+# Boot must qualify the new largest shape at both ends of the actual KV pool;
+# throughput and answer quality still require the candidate consumer gate.
 MAX_WAIT_S = 0.0                    # admit into a free decode row at the next chunk boundary
 MAX_SEQS = 4
 """Resident decode rows: state slots, captured decode widths and the context ceiling follow.
@@ -492,7 +490,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             token_budget = plan.tile_rows * plan.prefill_tiles + drafter.k if plan.prefill_tiles > 1 else TOKEN_BUDGET
             contract = sched.Contract(chunk_align=F.chunk_align, token_budget=token_budget, draft_slots=drafter.k,
                                       max_wait_s=MAX_WAIT_S, max_running=max_seqs,
-                                      decode_token_budget=F.chunk_align + drafter.k)
+                                      decode_token_budget=F.chunk_align + drafter.k,
+                                      prefill_tail_multiple=facts.TP)
             engine.memory = memory
             engine.budget = redeclare           # printed once from guesses at boot, once from this boot's ledger
             engine.arena = arena                # every device tensor is a view of it: `release` needs the last reference

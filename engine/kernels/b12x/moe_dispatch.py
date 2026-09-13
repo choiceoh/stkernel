@@ -112,6 +112,8 @@ def _tp_sf6_q0_eligible(*, enabled, E, m, k, n, num_topk, tile_m,
                          share_input_across_experts):
     # The recipe's FP32 sum must survive a layer failing lossless SF6
     # compression. Its raw-scale subclass uses the same Q0 and epilogue.
+    # Long native chunks retain their original tiled SF6 path. Extending Q0
+    # to those chunks passed numerics but did not improve the consumer run.
     return (enabled and type(m) is int and 1 <= m <= 8192
             and (E,k,n,num_topk,tile_m) == (288,4096,512,8,128)
             and quant_mode == "nvfp4" and tiled
@@ -1912,12 +1914,18 @@ def _get_static_kernel(
         state_E=state_E, weight_E=weight_E, k=k, n=n, num_topk=num_topk,
         quant_mode=quant_mode, activation=activation, swiglu_alpha=swiglu_alpha,
         swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit)
+    # The native dense/shared expert uses one route per row. Its kernel body
+    # already reads the token extent at runtime; bind that extent dynamically
+    # so arbitrary prefill tails share the boot-prepared capacity artifact.
+    # Routed experts and <=64-row decode retain their existing compilers.
+    dynamic_m = (65 <= m <= 16384 and scatter_fp32
+                 and (state_E, weight_E, k, n, num_topk) == (1, 1, 4096, 3072, 1))
     cache_key = _static_kernel_cache_key(
         activation_precision=activation_precision,
         quant_mode=quant_mode,
         state_E=state_E,
         weight_E=weight_E,
-        m=m,
+        m=0 if dynamic_m else m,
         k=k,
         n=n,
         num_topk=num_topk,
@@ -1932,7 +1940,7 @@ def _get_static_kernel(
         swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit,
     )
-    cache_key = (*cache_key, scatter_fp32)
+    cache_key = (*cache_key, scatter_fp32, "runtime_dense_m_v1") if dynamic_m else (*cache_key, scatter_fp32)
     cached = _STATIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -1963,9 +1971,10 @@ def _get_static_kernel(
     cols_pad_k = _align_up(k // sf_vec_size, 4)
 
     # Build fake tensors for compilation
+    token_extent = cute.sym_int32() if dynamic_m else m
     a_input_fake = cute.runtime.make_fake_compact_tensor(
         a_dtype,
-        (m, k),
+        (token_extent, k),
         stride_order=(1, 0),
         assumed_align=16,
     )
@@ -1975,12 +1984,12 @@ def _get_static_kernel(
     topk_ids_align = 4 if topk_ids_dtype == torch.int32 else 8
     topk_ids_fake = cute.runtime.make_fake_compact_tensor(
         topk_ids_cutlass_dtype,
-        (m * num_topk,),
+        (token_extent * num_topk,),
         assumed_align=topk_ids_align,
     )
     topk_weights_fake = cute.runtime.make_fake_compact_tensor(
         cutlass.Float32,
-        (m * num_topk,),
+        (token_extent * num_topk,),
         assumed_align=4,
     )
     packed_a_fake = cute.runtime.make_fake_compact_tensor(
@@ -2066,7 +2075,7 @@ def _get_static_kernel(
     )
     scatter_fake = cute.runtime.make_fake_compact_tensor(
         cutlass.Float32 if scatter_fp32 else a_dtype,
-        (m, k),
+        (token_extent, k),
         stride_order=(1, 0),
         assumed_align=16,
     )
@@ -2085,7 +2094,7 @@ def _get_static_kernel(
     stream_fake = cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True)
     compiled = build_and_load_cute_dsl_kernel(
         _CUTE_DSL_MODULE,
-        _disk_kernel_name(f"static_m{m}_k{k}_n{n}_t{num_topk}_r{max_rows}", cache_key),
+        _disk_kernel_name(f"static_m{'dyn' if dynamic_m else m}_k{k}_n{n}_t{num_topk}_r{max_rows}", cache_key),
         lambda: cute.compile(
             kernel,
             a_input_fake,
@@ -3998,6 +4007,19 @@ class _DynamicMoELaunch:
 _DYNAMIC_KERNEL_CACHE: Dict[Tuple, Tuple] = {}
 
 
+def _long_prefill_sf6_word_unpack(*, m, E, k, n, num_topk, tile_m,
+                                 quant_mode, tiled, reform_sf_pack,
+                                 activation, swiglu_alpha, swiglu_beta,
+                                 swiglu_limit, ep_local, tp_sf6_q0,
+                                 share_input_across_experts):
+    return (type(m) is int and 8192 < m <= 32768
+            and (E, k, n, num_topk, tile_m) == (288, 4096, 512, 8, 128)
+            and quant_mode == 'nvfp4' and tiled and reform_sf_pack
+            and activation == 'swigluoai_uninterleave'
+            and (swiglu_alpha, swiglu_beta, swiglu_limit) == (1.0, 0.0, 10.0)
+            and not ep_local and not tp_sf6_q0 and not share_input_across_experts)
+
+
 def _get_dynamic_kernel(
     E: int,
     m: int,
@@ -4151,6 +4173,14 @@ def _get_dynamic_kernel(
         tp_sf6_q0=tp_sf6_q0,
     )
     cache_key = (*cache_key, "tp_prefill_scatter_fp32_v1", tp_sf6_q0)
+    prefill_word_unpack = _long_prefill_sf6_word_unpack(
+        m=m, E=E, k=k, n=n, num_topk=num_topk, tile_m=tile_m,
+        quant_mode=quant_mode, tiled=tiled, reform_sf_pack=reform_sf_pack,
+        activation=activation, swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+        swiglu_limit=swiglu_limit, ep_local=ep_local_cls is not None,
+        tp_sf6_q0=tp_sf6_q0, share_input_across_experts=share_input_across_experts)
+    if prefill_word_unpack:
+        cache_key = (*cache_key, 'long_prefill_sf6_route_words_v1')
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -4196,6 +4226,9 @@ def _get_dynamic_kernel(
         if reform_sf_pack:
             from .moe_dynamic_gated_sf6 import MoEGatedDynamicKernelSF6
             tiled_cls = MoEGatedDynamicKernelSF6Q0 if tp_sf6_q0 else MoEGatedDynamicKernelSF6
+            if prefill_word_unpack:
+                from .moe_dynamic_gated_sf6_prefill import MoEGatedDynamicKernelSF6Prefill
+                tiled_cls = MoEGatedDynamicKernelSF6Prefill
             tiled_kwargs = dict(reform_sf_pack=True)
         kernel = tiled_cls(
             sf_vec_size=sf_vec_size,
@@ -4411,6 +4444,9 @@ def _get_dynamic_kernel(
             options="--opt-level 2 --enable-tvm-ffi",
         ),
         extra_key_files=_kernel_source_files() + (
+            tuple(os.path.join(os.path.dirname(__file__), name) for name in
+                  ("moe_dynamic_gated_sf6_words.py", "moe_dynamic_gated_sf6_prefill.py"))
+            if prefill_word_unpack else ()) + (
             (os.path.join(os.path.dirname(__file__), "moe_dynamic_gated_sf6_q0.py"),)
             if tp_sf6_q0 else ()) + (
             (os.path.join(os.path.dirname(__file__), "moe_dynamic_gated_raw_q0.py"),)

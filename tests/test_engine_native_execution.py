@@ -37,19 +37,19 @@ class NativeQualificationTests(unittest.TestCase):
         for failure in ('hidden', 'aux', 'head'):
             with self.subTest(failure=failure):
                 caches = MagicMock()
-                caches.device = 'cpu'
+                caches.device, caches.snapshots = 'cpu', 2
                 caches.pool.rows_in_use = 0
                 caches.pool.num_blocks = 8
                 caches.slots.owner = [-1, -1]
                 caches.slots.take.return_value = 1
-                h = torch.ones(4, 8)
+                h = torch.ones(1, 8)
                 aux = torch.ones(4, 16)
                 logits = torch.ones(1, 32)
                 {'hidden': h, 'aux': aux, 'head': logits}[failure].flatten()[0] = float('nan')
                 engine = NS(caches=caches, F=NS(block=1), prefill_chunk=4,
                             memory=MagicMock(), drafter=MagicMock(),
                             net=NS(comm=Comm(), head=lambda x: logits),
-                            _forward=lambda step: (h, aux))
+                            _prefill_forward=lambda step: (h, aux))
                 with self.assertRaisesRegex(FloatingPointError, 'non-finite model output'):
                     Glm53Engine._warmup_prefill_memory(engine)
                 caches.pool.release.assert_called_once_with(0)

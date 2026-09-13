@@ -48,7 +48,10 @@ def lane_of(name: str) -> str:
 
 
 class IsolatedRank:
-    """Rank 0 alone: every collective is the identity, so what is measured is this rank's arithmetic."""
+    """One rank alone: every collective is the identity, so what is measured is this rank's arithmetic.
+
+    Which rank is the one whose file this node holds (`rank_on_this_node`): rank 0 on the head, rank 3 on
+    srv4 -- where the queue's single-GPU lane runs this, and where rank0of4.safetensors does not exist."""
     rank = 0
     world_size = 4
 
@@ -65,16 +68,27 @@ class IsolatedRank:
         pass  # This diagnostic deliberately has no peers; it is not a fleet boot.
 
 
+def rank_on_this_node(ranks: str) -> int:
+    """The rank whose file this node holds: rank files are one per Spark (fanout-st-ranks.sh), so a node has
+    exactly one, and an isolated-rank diagnostic runs as that rank -- 3 on srv4, the single-GPU lane's box."""
+    from pathlib import Path
+    files = sorted(Path(ranks).glob(f"rank*of{facts.TP}.safetensors"))
+    if not files:
+        raise FileNotFoundError(f"no rank file under {ranks}")
+    return int(files[0].name[len("rank"):].split("of")[0])
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    # The queue invokes this with no arguments (bench/fleet_onepass.ST_FLAGS admits --ranks, --ckpt-meta and
-    # --layers and nothing else), so every one of them has to have a default that works on a node.
+    # The queue invokes this with no arguments (bench/fleet_onepass.ST_FLAGS admits --ranks, --ckpt-meta,
+    # --layers, --seqs and --steps), so every one of them has to have a default that works on a node.
     ap.add_argument("--ranks", default=str(facts.RANKS))
     ap.add_argument("--ckpt-meta", default=str(facts.CKPT))
     ap.add_argument("--layers", default="", help="a slice like 0-4; the whole model by default")
-    ap.add_argument("--seqs", type=int, default=1, help="rows in the step: production serves one")
+    ap.add_argument("--seqs", type=int, default=1, help="rows in the step: production serves up to four")
     ap.add_argument("--steps", type=int, default=16)
     a = ap.parse_args()
+    IsolatedRank.rank = rank_on_this_node(a.ranks)
 
     F = facts.load(a.ckpt_meta)
     if a.layers:
@@ -107,7 +121,10 @@ def main():
     slots = [caches.slots.take(i) for i in range(a.seqs)]
     for i in range(a.seqs):
         caches.pool.reserve(i, 4352)
-    ids = [torch.randint(0, 30000, (t,), device="cuda") for _ in range(a.seqs)]
+    # ids inside THIS rank's vocabulary shard: a token another rank embeds is a zero row here (net.embed masks
+    # it), and a step of zero rows routes every token to the bias's eight experts -- a profile of the wrong bytes
+    lo = IsolatedRank.rank * F.vocab_local
+    ids = [torch.randint(lo, lo + min(F.vocab_local, 30000), (t,), device="cuda") for _ in range(a.seqs)]
     step = Step.decode([(ids[i], 2048, i, slots[i]) for i in range(a.seqs)])
     caches.prepare(step)
     for _ in range(4):
