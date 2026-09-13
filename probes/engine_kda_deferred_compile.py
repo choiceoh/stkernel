@@ -63,7 +63,7 @@ def main():
                              dict(T=t, ROWS=rows, H=16, K=128, V=128, R=width,
                                   SLOT_STRIDE=34*(width*16*128*128+64)+64, BLOCK=768, B=cells,
                                   TILED=tiled, HOIST_FINAL=hoist, OFFSET_ALIGNMENT=4 if hoist else 1,
-                                  BOUNDARY=None, BOUNDARY_OFFSETS=None, COMPACT=False)))
+                                  BOUNDARY_OFFSETS=None, COMPACT=False)))
                 if tiled and hoist and cells == 1024:
                     name, fn, signature, constants = variants[-1]
                     variants.append((name+"-scalar", fn, signature, {**constants, "OFFSET_ALIGNMENT": 1}))
@@ -92,8 +92,8 @@ def main():
             if v[0] == f"batch-commit-c{rows}-t8-tiled1-hoist1-b2048")
         variants.append((f"compact-commit-c{rows}-abi0", fn, dict(signature), dict(constants)))
         signature, constants = dict(signature), dict(constants)
-        signature.update(BOUNDARY="*fp32", BOUNDARY_OFFSETS="*i64")
-        del constants["BOUNDARY"], constants["BOUNDARY_OFFSETS"]
+        signature.update(BOUNDARY_OFFSETS="*i64")
+        del constants["BOUNDARY_OFFSETS"]
         constants.update(COMPACT=True, R=1, SLOT_STRIDE=34*(2*16*128*128+64)+64)
         variants.append((f"compact-commit-c{rows}-abi1", fn, signature, constants))
     if args.commit_only:

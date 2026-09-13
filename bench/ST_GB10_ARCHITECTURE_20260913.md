@@ -1,6 +1,6 @@
 # GB10 × 4 전용 ST 실행 형상
 
-검토 기준: `e0b5c184`의 엔진과 2026-09-13 공식 문서. 목표는 **C=1의 품질을 유지하면서 토큰당 가중치 읽기, 상태 쓰기, 중간 텐서 이동을 줄이는 것**이다. 첫 구현은 FP32 KDA의 물리적 저장 형상을 바꾸는 커널 실험이다. 서빙 연결과 처리량 검증은 아직 완료하지 않았다.
+검토 기준: `e0b5c184`에서 분석을 시작하고 `15bd6e3a`에 리베이스한 엔진 및 2026-09-13 공식 문서. 목표는 **C=1의 품질을 유지하면서 토큰당 가중치 읽기, 상태 쓰기, 중간 텐서 이동을 줄이는 것**이다. 첫 구현은 FP32 KDA의 물리적 저장 형상을 바꾸는 커널 실험이다. 서빙 연결과 처리량 검증은 아직 완료하지 않았다.
 
 ## 하드웨어가 정해 주는 방향
 
@@ -69,7 +69,7 @@ flowchart LR
 | 기존 deferred 8칸 링 | 272 MiB | 6.375 MiB / 활성 검증 행 |
 | 새 확정·경계 레코드 | 68 MiB | 6.375 MiB / 활성 검증 행 |
 
-**상태 본체 204 MiB, 75% 감소**는 형상에서 직접 계산되는 값이다. 표는 conv·indexer·drafter·KV·null slot·정렬 padding·offset metadata를 제외하며 엔진 전체 메모리 절감률이 아니다. factor는 요청 영구 캐시가 아니라 검증 shape 소유의 workspace다. 기존 서빙의 별도 boundary stage도 이 표에 포함하지 않았다. 최종 통합에서는 새 경계 레코드가 그 stage를 대신해야 한다.
+**상태 본체 204 MiB, 75% 감소**는 형상에서 직접 계산되는 값이다. 표는 conv·indexer·drafter·KV·null slot·정렬 padding·offset metadata를 제외하며 엔진 전체 메모리 절감률이 아니다. factor는 요청 영구 캐시가 아니라 검증 shape 소유의 workspace다. 기존 서빙의 별도 boundary stage도 이 표에 포함하지 않았다. 최종 통합에서는 새 경계 레코드가 그 stage의 recurrent 필드를 대신하고 conv staging은 별도로 유지해야 한다.
 
 정확도 검증 코드는 [test_engine_kda_compact.py](../tests/test_engine_kda_compact.py)에 있다. C=1/C=4, 검증 폭 6/7/8, 모든 수락 개수, 경계·거절·슬롯 재바인딩·prefix 복원 모사, 한 graph의 4회 commit, 큰 int64 위치, padding과 주소 겹침을 검사한다. 비교 대상은 기존 FP32 전체 링이다.
 

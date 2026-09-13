@@ -31,7 +31,7 @@ def verify_rows(q, k, v, g, beta, a_log, g_bias, ring, slots, contexts, lower_bo
 
 @triton.jit
 def _commit_layers(KEY, DECAY, UPDATE, RING, OFFSETS, SLOT, CONTEXT, COUNT,
-                   BOUNDARY, BOUNDARY_OFFSETS,
+                   BOUNDARY_OFFSETS,
                    T: tl.constexpr, ROWS: tl.constexpr, H: tl.constexpr,
                    K: tl.constexpr, V: tl.constexpr, R: tl.constexpr,
                    SLOT_STRIDE: tl.constexpr, BLOCK: tl.constexpr, B: tl.constexpr,
@@ -74,6 +74,8 @@ def _commit_layers(KEY, DECAY, UPDATE, RING, OFFSETS, SLOT, CONTEXT, COUNT,
         state = tl.load(RING + base, mask & (context > 0), other=0)
         boundary = BLOCK - context % BLOCK
         boundary_offset = tl.load(BOUNDARY_OFFSETS + layer)
+        if TILED:
+            boundary_offset = tl.multiple_of(boundary_offset, OFFSET_ALIGNMENT)
         boundary_base = boundary_offset + slot * SLOT_STRIDE + cell
         count = count.to(tl.int32)
     elif TILED and HOIST_FINAL:
@@ -107,7 +109,7 @@ def _commit_layers(KEY, DECAY, UPDATE, RING, OFFSETS, SLOT, CONTEXT, COUNT,
         state = tl.fma(update, k, state)
         if COMPACT:
             if i+1 == boundary:
-                tl.store(BOUNDARY + boundary_base, state, mask)
+                tl.store(RING + boundary_base, state, mask)
         elif TILED and HOIST_FINAL:
             # Final materialization is unconditional after the loop. Only
             # intermediate prefix snapshots need a store in the recurrence.
@@ -201,7 +203,7 @@ class Batch:
         self.rows, self.tokens, self.block, self.tiled = rows, tokens, block, tiled
         # Internal component-probe controls; serving binds one layout at boot.
         self.cells, self.hoist_final, self.warps = cells, hoist_final, warps
-        self.offset_alignment = gcd(4, ring.data_ptr()//4, h*k*v, ring.stride(0), *offsets) if vectorize else 1
+        self.offset_alignment = gcd(4, ring.data_ptr()//4, h*k*v, ring.stride(0), *offsets, *boundary_offsets) if vectorize else 1
         self.offsets = torch.tensor(offsets, dtype=torch.int64, device=ring.device)
         self.boundary_offsets = (torch.tensor(boundary_offsets, dtype=torch.int64, device=ring.device)
                                  if self.compact else None)
@@ -232,7 +234,7 @@ class Batch:
         tiles = h*triton.cdiv(k, max(1, cells//triton.next_power_of_2(v))) if self.tiled else triton.cdiv(h*k*v, cells)
         _commit_layers[(tiles, len(self.rings), self.rows)](
             *self.factors, ring, self.offsets, slots, contexts, counts,
-            ring if self.compact else None, self.boundary_offsets, self.tokens, self.rows,
+            self.boundary_offsets, self.tokens, self.rows,
             h, k, v, width, ring.stride(0), self.block, cells, self.tiled, self.hoist_final, self.offset_alignment,
             self.compact,
             num_warps=self.warps if self.tiled else 4, num_stages=1)
