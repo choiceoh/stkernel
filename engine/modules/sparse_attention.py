@@ -108,13 +108,14 @@ class GatedSparseAttention:
     indexer.q_layernorm, indexer.k_layernorm -- the transformers names under `self_attn.`."""
 
     def __init__(self, *, heads: int, kv_heads: int, head_dim: int, rotary_dim: int, theta: float, eps: float,
-                 index_heads: int, index_head_dim: int, budget: int, ratio: int, weights, mrope_section=None):
+                 index_heads: int, index_head_dim: int, budget: int, ratio: int, weights, mrope_section=None,
+                 dtype: str = "bfloat16"):
         if heads % kv_heads or budget % ratio or rotary_dim > min(head_dim, index_head_dim):
             raise ValueError("gated sparse attention: heads a multiple of kv_heads, budget of whole blocks, "
                              "rotary_dim within both head widths")
         self.heads, self.kv_heads, self.head_dim, self.rotary_dim, self.theta = heads, kv_heads, head_dim, rotary_dim, theta
         self.eps, self.index_heads, self.index_head_dim, self.budget, self.ratio = eps, index_heads, index_head_dim, budget, ratio
-        self.weights, self.mrope_section = weights, mrope_section
+        self.weights, self.mrope_section, self.dtype = weights, mrope_section, dtype
 
     def __call__(self, layer, x, step, state):
         from engine.modules.norm import rmsnorm_unit_offset
@@ -134,8 +135,8 @@ class GatedSparseAttention:
                                  [self.index_heads * self.index_head_dim, self.index_head_dim], dim=-1)
             iq = apply_rope(rmsnorm_unit_offset(iq.reshape(t, self.index_heads, self.index_head_dim),
                                                 w("indexer.q_layernorm"), self.eps), cos, sin)
-            previous = state.get(layer, "qsa_raw_keys", s.seq)
-            raw_keys = ik if previous is None else torch.cat([previous, ik])
+            state.put_rows(layer, "qsa_raw_keys", s.seq, ik)
+            raw_keys = state.rows(layer, "qsa_raw_keys", s.seq, total)
             allowed = torch.zeros(t, total, dtype=torch.bool, device=xs.device)
             for j in range(t):
                 allowed[j, qsa_select(iq[j], raw_keys, s.ctx + j, self.ratio, self.budget // self.ratio, cos_all,
@@ -147,9 +148,9 @@ class GatedSparseAttention:
             key = apply_rope(rmsnorm_unit_offset(linear(xs, w("k_proj")).view(t, self.kv_heads, self.head_dim),
                                                  w("k_norm"), self.eps), cos, sin)
             value = linear(xs, w("v_proj")).view(t, self.kv_heads, self.head_dim)
-            past_k, past_v = state.get(layer, "attention_k", s.seq), state.get(layer, "attention_v", s.seq)
-            key = key if past_k is None else torch.cat([past_k, key])
-            value = value if past_v is None else torch.cat([past_v, value])
+            state.put_rows(layer, "attention_kv", s.seq, torch.stack([key, value], dim=1))       # [t, 2, G, D]
+            kv = state.rows(layer, "attention_kv", s.seq, total)
+            key, value = kv[:, 0], kv[:, 1]
             groups = self.heads // self.kv_heads
             k_all = key.repeat_interleave(groups, dim=1).transpose(0, 1)        # [heads, total, D]
             v_all = value.repeat_interleave(groups, dim=1).transpose(0, 1)
@@ -161,17 +162,17 @@ class GatedSparseAttention:
             if out is None:
                 out = xs.new_empty(x.shape[0], ys.shape[-1])
             out[s.start:s.start + s.length] = ys
-            state.put(layer, "qsa_raw_keys", s.seq, raw_keys)
-            state.put(layer, "attention_k", s.seq, key)
-            state.put(layer, "attention_v", s.seq, value)
         return out
 
     def cache_specs(self, layers):
-        from engine.base.cache_spec import PagedSpec
-        return [PagedSpec("attention kv", len(layers), self.kv_heads * self.head_dim * 2 * 2,
-                          "[kv_heads, head_dim] x k,v bf16 per position"),
-                PagedSpec("qsa raw keys", len(layers), self.index_head_dim * 2,
-                          "[index_head_dim] bf16 per position, pooled per block at selection")]
+        from engine.base.cache_spec import PagedSpec, _ITEMSIZE
+        size = _ITEMSIZE[self.dtype]
+        return [PagedSpec("attention kv", len(layers), 2 * self.kv_heads * self.head_dim * size,
+                          f"[2, kv_heads, head_dim] k and v {self.dtype} per position",
+                          key="attention_kv", dtype=self.dtype, shape=(2, self.kv_heads, self.head_dim)),
+                PagedSpec("qsa raw keys", len(layers), self.index_head_dim * size,
+                          f"[index_head_dim] {self.dtype} per position, pooled per block at selection",
+                          key="qsa_raw_keys", dtype=self.dtype, shape=(self.index_head_dim,))]
 
 
 def _selfcheck_mla() -> None:

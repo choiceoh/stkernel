@@ -118,11 +118,12 @@ class GatedDeltaNet:
     norm, out_proj -- the transformers names under `linear_attn.`."""
 
     def __init__(self, *, k_heads: int, v_heads: int, k_dim: int, v_dim: int, conv: int, eps: float,
-                 gate_activation: str, weights, activation: str = "silu"):
+                 gate_activation: str, weights, activation: str = "silu", dtype: str = "bfloat16"):
         if v_heads % k_heads:
             raise ValueError(f"{v_heads} value heads are not a multiple of {k_heads} key heads")
         self.k_heads, self.v_heads, self.k_dim, self.v_dim, self.conv = k_heads, v_heads, k_dim, v_dim, conv
         self.eps, self.gate_activation, self.activation, self.weights = eps, gate_activation, activation, weights
+        self.dtype = dtype
 
     @property
     def conv_dim(self) -> int:
@@ -163,8 +164,10 @@ class GatedDeltaNet:
         return out
 
     def cache_specs(self, layers):
-        from engine.base.cache_spec import SlotSpec
-        return [SlotSpec("gdn conv state", len(layers), self.conv_dim * (self.conv - 1) * 2,
-                         "[conv_dim, kernel-1] bf16: the conv's last inputs (modules/causal_conv)"),
+        from engine.base.cache_spec import SlotSpec, _ITEMSIZE
+        return [SlotSpec("gdn conv state", len(layers), self.conv_dim * (self.conv - 1) * _ITEMSIZE[self.dtype],
+                         f"[conv_dim, kernel-1] {self.dtype}: the conv's last inputs (modules/causal_conv)",
+                         key="gdn_conv", dtype=self.dtype, shape=(self.conv_dim, self.conv - 1)),
                 SlotSpec("gdn recurrent state", len(layers), self.v_heads * self.k_dim * self.v_dim * 4,
-                         "[HV, Dk, Dv] fp32 (mamba_ssm_dtype float32)")]
+                         "[HV, Dk, Dv] fp32 (mamba_ssm_dtype float32)",
+                         key="gdn_state", dtype="float32", shape=(1, self.v_heads, self.k_dim, self.v_dim))]
