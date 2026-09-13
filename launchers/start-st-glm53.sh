@@ -10,7 +10,8 @@
 #
 # Each node returns its clean file cache from the host the moment before its container starts
 # (launchers/st-return-file-cache.sh): on this UMA box the engine's admission cannot evict another
-# workload's cache itself (2026-09-13). ST_RECLAIM_FILE_CACHE=0 skips it.
+# workload's cache itself (2026-09-13). A broker per rank then serves the boot's own requests
+# (launchers/st-reclaim-broker.sh, ST_RECLAIM_DIR). ST_RECLAIM_FILE_CACHE=0 skips both.
 #
 # Every boot holds the fleet LEASE (engine/base/fleet_lease.py), and who may start one is decided
 # by how it got the lease:
@@ -55,6 +56,7 @@ if [ -n "${ST_WORKSPACE_GIB:-}" ]; then
 fi
 PRODUCTION_ARG=""
 RECLAIM_FILE_CACHE=${ST_RECLAIM_FILE_CACHE:-1}
+RECLAIM_ROOT=/home/choiceoh/glm53-logs/st-reclaim           # one broker directory per rank, on that rank's node
 case "$RECLAIM_FILE_CACHE" in
   0|1) ;;
   *) echo "ST_RECLAIM_FILE_CACHE must be 0 or 1" >&2; exit 2 ;;
@@ -151,6 +153,8 @@ case "${1:-start}" in
     # container rather than from $held_owner: a rank orphaned by a lost lease file must still
     # be stoppable, and the lease check that guards this line already happened.
     for ip in "${NODES[@]}"; do node_sh "$ip" "ST_FLEET_OK=\$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' $NAME 2>/dev/null | sed -n 's/^ST_LEASE_OWNER=//p' | head -1) docker rm -f $NAME >/dev/null 2>&1 && echo '$ip: stopped' || echo '$ip: none'"; done
+    # the brokers end on their own once their container is gone; this ends them now (any release's script reads the same pids)
+    for ip in "${NODES[@]}"; do node_sh "$ip" "bash $ENGINE_DIR/launchers/st-reclaim-broker.sh stop-all $RECLAIM_ROOT >/dev/null 2>&1 || true"; done
     use_lease
     # A ticket's lease is the queue's to pass on or let go at the ticket's end, not this
     # script's to release: released here, the next waiting ticket could not be handed it and
@@ -318,12 +322,21 @@ start_rank() {
   # its container it sees only its own checkpoint, and the anonymous fault it falls back on was refused
   # by srv2's strict overcommit and by srv4's SIGTERM line in every boot of 2026-09-13 19:29-19:48.
   # A node that cannot (no passwordless sudo) says so and starts anyway: admission still decides.
+  local reclaim_env=""
   if [ "$RECLAIM_FILE_CACHE" = 1 ]; then
     local returned
     if returned=$(node_script "$ip" "$REPO/launchers/st-return-file-cache.sh" 2>&1); then
       echo "$ip: $returned"
     else
       echo "$ip: ${returned:-the file cache return did not answer} -- starting anyway, the engine's admission decides"
+    fi
+    # And for the rest of the boot a broker on the host: what the boot reads refills the cache, and admission and
+    # warmup ask the broker the moment they are short. The host's drop needs no commit room, which srv2's strict
+    # overcommit (CommitLimit 75.8 GiB) never gave the engine's own anonymous reclaim.
+    if node_sh "$ip" "bash $ENGINE_DIR/launchers/st-reclaim-broker.sh start $RECLAIM_ROOT/rank$r $NAME"; then
+      reclaim_env="-e ST_RECLAIM_DIR=$RECLAIM_ROOT/rank$r"
+    else
+      echo "$ip: the reclaim broker did not start -- admission falls back to its own reclaim"
     fi
   fi
   node_sh "$ip" "docker run -d --name $NAME --gpus all --restart no \
@@ -332,7 +345,7 @@ start_rank() {
     -e RANK=$r -e WORLD_SIZE=4 -e MASTER_ADDR=10.10.10.2 -e MASTER_PORT=29555 -e LOCAL_RANK=0 $NCCL_ENV \
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
-    -e ST_LEASE_OWNER="$LEASE_OWNER" -e ST_LEASE_PATH="$LOCK" -e ST_RELEASE="$(basename "$ENGINE_DIR")" \
+    -e ST_LEASE_OWNER="$LEASE_OWNER" -e ST_LEASE_PATH="$LOCK" -e ST_RELEASE="$(basename "$ENGINE_DIR")" $reclaim_env \
     --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py $PRODUCTION_ARG $KV_ARG $WORKSPACE_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER --tier-dir $TIER_DIR --dump-dir $DUMP_DIR' >/dev/null && echo '$ip: started'"
 }
 
