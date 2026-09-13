@@ -34,6 +34,7 @@ DEFAULT_URL = "http://10.10.10.2:8000"          # 플릿 헤드 (bench/fleet.sh 
 # 두 스크랩 사이 증분으로 읽는 계열. 히스토그램은 이름만 적는다(_bucket/_sum/_count).
 STEP = "vllm:iteration_tokens_total_count"
 COUNTERS = (STEP, "st:steps_prefill_total", "st:steps_decode_total",
+            "st:spec_accepted_per_step_total",  # 라벨 계열(accepted="0..k"): 수용률의 실측 분포 — step_sim --acc-hist-from 이 소비한다
             "st:decode_row_steps_total", "st:generation_tokens_committed_total",
             "vllm:generation_tokens_total", "vllm:prompt_tokens_total",
             "vllm:request_success_total",
@@ -213,6 +214,26 @@ def _line(w: dict) -> str:
             f" wait {num(g.get('vllm:num_requests_waiting'), '{:g}')}")
 
 
+def acc_hist_from_scrapes(a: dict, b: dict) -> "list | None":
+    """두 스크랩 사이의 수용률 실측 분포: st:spec_accepted_per_step_total{accepted="i"}
+    라벨 계열의 증분을 [i=0..k] 개수 리스트로. 계열이 없으면 None — 없는 것은 0 이 아니다.
+    소비: step_sim --acc-hist-from (기하 추첨을 이 분포로 바꾼다)."""
+    deltas = {}
+    for key, value in b.items():
+        if not key.startswith("st:spec_accepted_per_step_total{"):
+            continue
+        for part in key[key.index("{") + 1:-1].split(","):
+            k, _, v = part.partition("=")
+            if k.strip() == "accepted":
+                i = int(v.strip().strip('"'))
+                a0 = a.get(key)
+                if a0 is not None and value >= a0:
+                    deltas[i] = value - a0
+    if not deltas:
+        return None
+    return [deltas.get(i, 0) for i in range(max(deltas) + 1)]
+
+
 def summarize(samples: "list[tuple[float, dict]]") -> dict:
     """관측 전체의 요약: 창별 캐던스의 중앙값/사분위 + 전체 누적 히스토그램 차."""
     rates = []
@@ -288,6 +309,9 @@ def main() -> int:
     print(f"== {s['windows']}창, 캐던스 중앙값 {s['step_s_med']} step/s {s['step_s_q']}")
     if "pooled" in s:
         print(f"   전체: {_line(s['pooled'])}")
+    hist = acc_hist_from_scrapes(samples[0][1], samples[-1][1]) if samples else None
+    if hist:
+        print(f"   수용률 분포(스텝당 accepted): {hist} — step_sim --acc-hist-from 로 소비")
     if args.out:
         print(f"   샘플: {args.out} (step_replay 로 재분석)")
     return 0

@@ -504,6 +504,42 @@ def _fmt(out: dict, meta: bool) -> str:
     return "\n".join(lines)
 
 
+def acc_hist_from_peek(path) -> "list | None":
+    """step_peek 이 저장한 스크랩 jsonl 에서 수용률 실측 분포를 뽑는다(첫·끝 스크랩 차)."""
+    import step_peek as _peek
+    samples = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+            if "series" in rec:
+                samples.append(rec["series"])
+    if len(samples) < 2:
+        return None
+    return _peek.acc_hist_from_scrapes(samples[0], samples[-1])
+
+
+def fold_width_from_records(records: list) -> "dict | None":
+    """C=1 기록과 C=4 기록(같은 빌드)에서 폭 계수를 폴딩한다: decode_ms(w) = base +
+    per_row×(w−1). 요청의 concurrency 로 팔을 알아본다. 완결 C=4 기록이 아직 없어
+    None 을 돌려주는 것이 지금의 정답이다 — 데이터가 쌓이는 즉시 이 함수가 못박는다."""
+    arms = {}
+    for r in records:
+        concs = {q.get("concurrency") or 1 for q in r.get("requests") or []}
+        d = r.get("decode") or {}
+        rate = d.get("fixed_pooled_step_s") or d.get("windows_med")
+        if not rate or len(concs) != 1:
+            continue
+        arms[next(iter(concs))] = 1000.0 / rate
+    if 1 not in arms or 4 not in arms:
+        return None
+    return {"decode_ms": round(arms[1], 3),
+            "decode_ms_per_row": round((arms[4] - arms[1]) / 3.0, 3),
+            "width4_ms": round(arms[4], 3)}
+
+
 def pick_last(records: list, n: int) -> list:
     """`--last N`: 끝의 N개 기록(0 은 전부). 원장은 줄이 append 되므로 '최근'이 끝이다."""
     return records[-n:] if n > 0 else records
@@ -674,6 +710,10 @@ def main() -> int:
     ap.add_argument("--max-running", type=int, default=8)
     ap.add_argument("--meta", action="store_true", help="StepMeta 구축 비용을 별도로 같이 잰다")
     ap.add_argument("--no-calib", action="store_true", help="장치 0 캘리브레이션 스텝을 건너뛴다")
+    ap.add_argument("--acc-hist-from", type=Path, dest="acc_hist_from",
+                    help="step_peek 스크랩 jsonl — 수용률을 실측 분포로 뽑는다(기하 추첨 대신)")
+    ap.add_argument("--fold-width", type=Path, nargs=2, dest="fold_width", metavar=("C1", "C4"),
+                    help="C=1·C=4 기록 두 파일에서 폭 계수를 폴딩해 인쇄한다(완결 C=4 대기 중)")
     ap.add_argument("--closed-loop", action="store_true", dest="closed_loop",
                     help="onepass 하네스 의미로 돈다: 앞 요청이 끝나야 다음(가상 벤치마크의 표준 자세)")
     ap.add_argument("--out-dir", help="steps-sim-*.ring 덤프를 이 디렉터리에 쓴다 (step_replay 가 읽는다)")
@@ -743,6 +783,18 @@ def main() -> int:
         print("D17: 이 숫자는 시뮬레이션이다 — 속도 주장은 플릿 onepass 두 번으로 끝난다.")
         return 0
 
+    if args.fold_width:
+        recs = []
+        for f in args.fold_width:
+            with open(f, encoding="utf-8") as fh:
+                recs.append(json.loads(next(l for l in fh if l.strip())))
+        folded = fold_width_from_records(recs)
+        if folded:
+            print(f"[폭 폴딩] {folded} — decode_ms(w) = {folded['decode_ms']} + "
+                  f"{folded['decode_ms_per_row']}×(w−1) ms")
+        else:
+            print("[폭 폴딩] 완결 C=1/C=4 짝이 없다 — 조립 예측(step_kernels --width) 이 그 자리를 지킨다")
+        return 0
     prompts = [int(x) for x in args.prompts.split(",")]
     arrive = [float(x) for x in args.arrive_ms.split(",")] if args.arrive_ms else None
     gen: "int | list" = args.gen
@@ -756,6 +808,13 @@ def main() -> int:
             cost = replace(cost, **loaded)
             cost.name = loaded.get("name", cost.name + "+json")
         cost = overrides(cost)
+    if args.acc_hist_from and args.acc_hist_from.exists():
+        hist = acc_hist_from_peek(args.acc_hist_from)
+        if hist:
+            cost = replace(cost, acc_hist=[float(x) for x in hist])
+            print(f"[수용률] 실측 분포 {hist} — 기하 추첨을 이 분포로 바꾼다")
+        else:
+            print(f"[수용률] {args.acc_hist_from} 에 분포 계열이 없다 — 기하 추첨 그대로")
     out = run_once(prompts, gen, contract, cost=cost, arrive_ms=arrive,
                    can_async=True, with_meta=args.meta, closed_loop=args.closed_loop,
                    host_med_ms=(calib or {}).get("host_med_decode_ms"))
