@@ -377,6 +377,15 @@ NVMe 스테이징 — 남는 것이 KV 자리이고, 전체 모델 부팅은 ran
 익명 페이지를 잠깐 잡았다 놓아(`touch_pages`) 캐시를 회수한 뒤 다시 잰다. 회수한 양과 아레나 매핑 방식은 부팅 표에
 `boot_reclaimed_GiB`·`arena_expandable` 로 찍힌다. 할당 모양의 실측은 `probes/engine_alloc_shape_check.py`.
 
+그 익명 회수는 컨테이너 안에서 할 수 있는 마지막 수단일 뿐이다. 2026-09-13 19:29~19:48 의 프로덕션 부팅은 전부 입장에서
+멈췄다. srv2 는 `overcommit_memory=2` 에 CommitLimit 75.8 GiB 라 아레나 + 헤드룸 76.47 GiB 의 회수 매핑 자체를 거절했고,
+srv4 는 캐시 12 GiB 를 비우려는 폴트가 SIGTERM 선을 넘는다고 거절했다. 캐시는 엔진 것이 아니었다(로더와 티어는 O_DIRECT).
+그래서 런처가 노드마다 **컨테이너를 띄우기 직전에 호스트에서** 깨끗한 파일 캐시를 버린다
+(`launchers/st-return-file-cache.sh`, rsync·이미지 빌드 뒤, 리스를 쥐고 노드가 비어 있을 때; `ST_RECLAIM_FILE_CACHE=0` 이면 끈다).
+할당도 커밋 차지도 없다. `sudo -n` 이 안 되는 노드는 그렇다고 말하고 그대로 띄운다 — 판정은 여전히 입장이 한다.
+입장이 시작될 때의 파일 캐시와 `MemAvailable` 은 `boot_file_cache_GiB`·`boot_available_GiB` 로 찍혀, 호스트의 반납이 랭크에
+닿았는지 다음 부팅이 스스로 말한다.
+
 사전샤딩은 `RankWriter`가 모든 실제 가중치의 데이터 오프셋을 256바이트 경계에 맞춘다.
 작은 스케일 뒤의 행렬도 TMA 정렬을 유지하도록 safetensors의 명시적 U8 패딩 텐서를 사용한다.
 표준 safetensors 리더로 읽을 수 있고, 로더는 패딩을 포함한 연속 범위를 한 번 업로드한 뒤 뷰를 만든다.

@@ -8,6 +8,10 @@
 #   bash launchers/start-st-glm53.sh            # start all four (rank 0=srv2, rank 1=srv1, then srv3/srv4)
 #   bash launchers/start-st-glm53.sh stop       # docker rm -f st-glm53 on every node
 #
+# Each node returns its clean file cache from the host the moment before its container starts
+# (launchers/st-return-file-cache.sh): on this UMA box the engine's admission cannot evict another
+# workload's cache itself (2026-09-13). ST_RECLAIM_FILE_CACHE=0 skips it.
+#
 # Every boot holds the fleet LEASE (engine/base/fleet_lease.py), and who may start one is decided
 # by how it got the lease:
 #   ST_LEASE_OWNER=queue/<s>  a ticket's boot: bench/fleet.sh took the lease at GO and hands the
@@ -42,7 +46,8 @@ if [ -n "${ST_KV_GIB:-}" ]; then
   KV_ARG="--kv-gib $ST_KV_GIB"
 fi
 PRODUCTION_ARG=""
-case "${ST_RECLAIM_FILE_CACHE:-0}" in
+RECLAIM_FILE_CACHE=${ST_RECLAIM_FILE_CACHE:-1}
+case "$RECLAIM_FILE_CACHE" in
   0|1) ;;
   *) echo "ST_RECLAIM_FILE_CACHE must be 0 or 1" >&2; exit 2 ;;
 esac
@@ -73,6 +78,8 @@ LEGACY_LOCK=/home/choiceoh/st-fleet.lock                   # older launchers sti
 SELF_IPS=" $(hostname -I 2>/dev/null) "
 is_self() { [[ "$SELF_IPS" == *" $1 "* ]]; }
 node_sh() { local ip=$1; shift; if is_self "$ip"; then bash -c "$*"; else ssh $SSHOPT "choiceoh@$ip" "$@"; fi; }
+# a script from this tree, run on the node through stdin: it needs nothing rsynced first
+node_script() { local ip=$1 script=$2; if is_self "$ip"; then bash "$script"; else ssh $SSHOPT "choiceoh@$ip" "bash -s" < "$script"; fi; }
 push_tree() {
   local ip=$1
   if is_self "$ip"; then
@@ -247,17 +254,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# An explicit preparation for a cache-heavy UMA host with strict overcommit.
-# The existing fleet preflight returns file cache without a giant anonymous
-# mapping. Run only after this launch owns the lease and all nodes are idle;
-# failure stops before containers start. Its GMU output is for vLLM, so discard
-# that number: ST still enforces its actual arena/workspace/OS byte budget.
-if [ "${ST_RECLAIM_FILE_CACHE:-0}" = 1 ]; then
-  echo "memory preparation: returning clean file cache on the reserved fleet"
-  bash "$REPO/launchers/memfree-preflight.sh" 10 "${NODES[@]}" > "$stage/memfree.txt" \
-    || { echo "ABORT: file-cache memory preparation failed" >&2; exit 1; }
-fi
-
 
 # TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC bounds a process whose NCCL watchdog thread stopped answering
 # (stuck in ncclCommAbort or a wedged CUDA call): the monitor thread kills it after this many
@@ -307,7 +303,22 @@ start_rank() {
   node_sh "$ip" "test -s $RANKS_DIR/rank${r}of4.safetensors" || { echo "ABORT: $ip lacks rank${r}of4.safetensors (fanout-st-ranks.sh)" >&2; return 1; }
   node_sh "$ip" "test -s $RANKS_DIR/vision.safetensors" || { echo "ABORT: $ip lacks vision.safetensors (preshard.py --vision --out $RANKS_DIR, once per node)" >&2; return 1; }
   node_sh "$ip" "test -s $DRAFTER/model.safetensors" || { echo "ABORT: $ip lacks the DFlash2 drafter at $DRAFTER" >&2; return 1; }
-  node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 || true; docker run -d --name $NAME --gpus all --restart no \
+  node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 || true"
+  # The node's clean file cache goes back from the host now -- after the rsync and the image build, the
+  # moment before the container starts, so nothing refills it before the engine's admission. It runs
+  # only here, with the lease held and every node checked idle. The engine cannot do this itself: from
+  # its container it sees only its own checkpoint, and the anonymous fault it falls back on was refused
+  # by srv2's strict overcommit and by srv4's SIGTERM line in every boot of 2026-09-13 19:29-19:48.
+  # A node that cannot (no passwordless sudo) says so and starts anyway: admission still decides.
+  if [ "$RECLAIM_FILE_CACHE" = 1 ]; then
+    local returned
+    if returned=$(node_script "$ip" "$REPO/launchers/st-return-file-cache.sh" 2>&1); then
+      echo "$ip: $returned"
+    else
+      echo "$ip: ${returned:-the file cache return did not answer} -- starting anyway, the engine's admission decides"
+    fi
+  fi
+  node_sh "$ip" "docker run -d --name $NAME --gpus all --restart no \
     --network host --ipc host --shm-size 32g --ulimit memlock=-1:-1 --ulimit nofile=524288:524288 --cap-add IPC_LOCK \
     --device /dev/infiniband:/dev/infiniband \
     -e RANK=$r -e WORLD_SIZE=4 -e MASTER_ADDR=10.10.10.2 -e MASTER_PORT=29555 -e LOCAL_RANK=0 $NCCL_ENV \
