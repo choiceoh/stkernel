@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""스텝 루프와 서빙 형상을, 플릿 없이 시뮬레이션한다.
+"""ST 오라클(ST Oracle) — 시뮬레이터: 스텝 루프와 서빙 형상을, 플릿 없이.
 
 D17 은 "속도 주장은 플릿 onepass 두 번"이고 이 도구는 그것을 대신하지 않는다.
 대신 4박스를 잡지 못한 상태에서 답할 수 있는 질문의 범위를 최대한 넓힌다:
@@ -97,7 +97,8 @@ class CostModel:
                                           # 둘 다 DRAM 벽이라 한 일의 합은 같고 청크는 1.27× 느리게 끝난다
     front_ms: float = 0.0             # 문의 앞면(입장·토큰화) — 요청마다 한 번
     cold_extra_s: dict = field(default_factory=dict)       # {프롬프트 토큰: 초} — 그 길이의 첫 요청만
-    acc_hist: list = field(default_factory=list)            # accepted=0..k 개수 — 실측 분포(st:spec_accepted_per_step_total). 비면 기하 추첨
+    acc_hist: list = field(default_factory=list)            # accepted=0..k 개수
+    confidence: float = 100.0     # ST 오라클 신뢰도(%) — 결측을 구간으로 둘러싼 --partial 결과에만 <100 — 실측 분포(st:spec_accepted_per_step_total). 비면 기하 추첨
     seed: int = 7                     # 수용률 추첨의 시드 — 재현 가능해야 시뮬레이션이다
 
     def __post_init__(self):
@@ -439,7 +440,7 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
                     ("name", "k", "acc", "decode_ms", "decode_ms_per_row", "decode_ms_per_1k_ctx",
                      "decode_ms_by_ctx", "prefill_tok_s", "prefill_flat_ms", "front_ms",
                      "cold_extra_s", "acc_hist", "prefill_ms_per_token",
-                     "prefill_fixed_ms_per_chunk")},
+                     "prefill_fixed_ms_per_chunk", "confidence")},
            "steps": kinds, "wall_s": round(wall, 3), "step_s": cadence,
            "decode_step_s_wall": decode_rate,
            "decode_step_s_phase": round(1.0 / cost.decode_delay(1, 0), 2) if cost.decode_ms > 0 else None,
@@ -522,13 +523,22 @@ def _fmt(out: dict, meta: bool) -> str:
 
 
 def composed_cost(routing: str = "measured", prefill_profile: "str | None" = None,
-                  acc: float = 0.45) -> "CostModel":
+                  acc: float = 0.45, model: str = "glm53", partial: bool = False) -> "CostModel":
     """조립 모형(step_kernels) 전부를 CostModel 로 — 형상은 facts.py, 라우팅은 아티팩트/
     역산, 프리필은 청크 구조(아티팩트 폴딩), **폭 계수까지** 4행 조립에서 푼다. 손으로
     쥐는 것은 수용률 하나(실측 분포가 오면 --acc-hist-from 이 대신한다)."""
     import step_kernels as kern
-    facts = kern.load_engine_facts()
-    b = kern.EngineBytes()
+    facts = kern.load_engine_facts("glm53")   # facts.py 는 glm53 만 있다 — 다른 모델은 조용히 이관하지 않는다
+    b = kern.EngineBytes.for_model(model)
+    confidence = 100.0
+    miss = b.missing()
+    if miss:
+        if not partial:
+            raise ValueError("ST 오라클: 이 모델의 바이트가 덜 있다 — " + ", ".join(miss)
+                             + " (--partial 로 구간·신뢰도와 함께 값을 얻는다)")
+        rng = kern.decode_range(b, model, 32000, 1)
+        b, confidence = kern.EngineBytes.fill(b, model, "mid"), rng["confidence"]
+        globals()["_LAST_PARTIAL"] = rng
     if facts:
         b.spec_k, b.tp = facts["spec_k"], facts["tp"]
     if routing == "artifact":
@@ -547,6 +557,7 @@ def composed_cost(routing: str = "measured", prefill_profile: "str | None" = Non
                      decode_ms_per_row=per_row,
                      prefill_tok_s={})
     cost._composed_row_crosscheck = round(composed_row, 3)   # 참고용: 조립이 말한 폭
+    cost.confidence = confidence
     profile = prefill_profile or "measurements/c4_scaling_20260913/chunk-profile-rank3-sf6.json"
     fold = kern.fold_prefill_from_profile(profile) if Path(profile).exists() else {}
     if fold:
@@ -784,6 +795,10 @@ def main() -> int:
                     help="step_peek 스크랩 jsonl — 수용률을 실측 분포로 뽑는다(기하 추첨 대신)")
     ap.add_argument("--fold-width", type=Path, nargs=2, dest="fold_width", metavar=("C1", "C4"),
                     help="C=1·C=4 기록 두 파일에서 폭 계수를 폴딩해 인쇄한다(완결 C=4 대기 중)")
+    ap.add_argument("--model", default="glm53",
+                    help="ST 오라클의 대상 모델(기본 glm53; --compose 시 step_kernels 레지스트리)")
+    ap.add_argument("--partial", action="store_true",
+                    help="--compose 시 결측 모델도 구간·신뢰도와 함께 계산한다(중간값으로 시뮬레이션)")
     ap.add_argument("--compose", action="store_true",
                     help="cost 를 조립 모형에서 한 번에: facts.py 형상 + 아티팩트 라우팅·프리필 + 폭 계수(4행 조립)")
     ap.add_argument("--routing", choices=("measured", "artifact"), default="measured",
@@ -878,7 +893,12 @@ def main() -> int:
     arrive = [0.0] * len(prompts)
     gen: "int | list" = args.gen
     if args.compose:
-        cost = composed_cost(routing=args.routing)
+        cost = composed_cost(routing=args.routing, model=args.model, partial=args.partial)
+        if getattr(cost, "confidence", 100.0) < 100.0:
+            rng = globals().get("_LAST_PARTIAL", {})
+            print(f"[신뢰도] {cost.confidence:.0f}% — 스텝 {rng.get('lo_ms', 0):.1f}~{rng.get('hi_ms', 0):.1f} ms"
+                  f" · 가정: {', '.join(rng.get('assumed', []))}"
+                  + ("" if args.model == "glm53" else " · 이관: 비MoE·통신 상수·k 는 glm53 실측"))
         # 계약도 엔진의 실제 값으로: 청크 정렬 2304, 혼자 프리필 9216, 디코더 옆 2304(#838 §4)
         args.chunk_align = 2304
         args.token_budget = 9216
@@ -915,7 +935,7 @@ def main() -> int:
     if args.json:
         print(json.dumps({"calib": _drop_ring(calib), "run": _drop_ring(out)}, ensure_ascii=False))
         return 0
-    print(f"== step_sim: prompts {prompts} gen {gen if isinstance(gen, list) else args.gen},"
+    print(f"== ST-Oracle({args.model}) · step_sim: prompts {prompts} gen {gen if isinstance(gen, list) else args.gen},"
           f" rows {args.max_running}"
           + (f", 도착 {arrive}ms" if arrive else ""))
     if calib:
