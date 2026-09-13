@@ -43,6 +43,27 @@ OSAR_HD constexpr bool osar_publication_last(uint64_t old, unsigned weight,
 
 #undef OSAR_HD
 
+// Host-only, monotonic-time watchdog. Two calls during the same proxy time
+// slice are healthy; an unchanged beat must persist for the whole deadline.
+struct OsarProxyHealth {
+  static constexpr uint64_t stale_ns = 2000000000ULL;
+  uint64_t last_beat = 0, changed_ns = 0;
+  bool observed = false;
+
+  bool check(bool running, uint64_t beat, uint64_t now_ns) {
+    if (!running) {
+      observed = false;
+      return false;
+    }
+    if (!observed || beat != last_beat) {
+      last_beat = beat;
+      changed_ns = now_ns;
+      observed = true;
+    }
+    return now_ns - changed_ns < stale_ns;
+  }
+};
+
 // Include verbs.h before this header (the CPU oracle supplies mock verbs).
 // Only flag is inline. Payload and flag remain two writes on the same RC QP,
 // in that order, with only the flag signaled. Thus a flag CQE still retires

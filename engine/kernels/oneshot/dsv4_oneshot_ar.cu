@@ -19,6 +19,8 @@
 #include <pthread.h>
 #include <sched.h>
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -135,6 +137,8 @@ static Info g_local[NPEER], g_remote[NPEER];
 static int g_rank = -1, g_world = 0, g_sgid = -1, g_peers[NPEER];
 static pthread_t g_proxy;
 static bool g_started = false;
+static std::atomic<bool> g_proxy_running{false};
+static OsarProxyHealth g_proxy_health;
 static unsigned g_inline_cap[NPEER] = {};
 static const char *DEVNAME = "rocep1s0f0";
 
@@ -561,6 +565,9 @@ __global__ void k_oneshot_compact_mode(Ctrl *c, const bf16 *src, bf16 *dst,
 
 // ---------------- proxy ----------------
 static void *proxy_fn(void *) {
+  struct Exit {
+    ~Exit() { g_proxy_running.store(false, std::memory_order_release); }
+  } exit;
   cpu_set_t set;
   CPU_ZERO(&set);
   CPU_SET(PROXY_CORE, &set);
@@ -582,9 +589,9 @@ static void *proxy_fn(void *) {
     }
   }
 #endif
-  uint64_t sent = 0, done[64] = {0};
+  uint64_t sent = 0, done[64] = {0}, beat = 0;
   while (!g_ctrl->stop) {
-    g_ctrl->proxy_beat++;
+    __atomic_store_n(&g_ctrl->proxy_beat, ++beat, __ATOMIC_RELAXED);
     uint64_t s = g_ctrl->tx_seq;
     while (sent < s) {
       sent++;
@@ -848,7 +855,11 @@ static void py_connect(std::vector<std::string> all) {
                                           : g_remote[s].mtu);
     to_rts(g_qp[s], &g_remote[s], g_local[s].psn, mtu);
   }
-  pthread_create(&g_proxy, nullptr, proxy_fn, nullptr);
+  g_proxy_health = {};
+  g_proxy_running.store(true, std::memory_order_release);
+  const int created = pthread_create(&g_proxy, nullptr, proxy_fn, nullptr);
+  if (created != 0) g_proxy_running.store(false, std::memory_order_release);
+  TORCH_CHECK(created == 0, "one-shot proxy thread creation failed: ", created);
   g_started = true;
 }
 static at::Tensor py_oneshot_impl(at::Tensor input,
@@ -1081,11 +1092,10 @@ static std::vector<int64_t> py_phase_counters() {
 }
 static bool py_healthy() {
   if (!g_started) return false;
-  static uint64_t last = 0;
-  uint64_t b = g_ctrl->proxy_beat;
-  bool ok = b != last || b == 0;
-  last = b;
-  return ok;
+  const auto now = std::chrono::steady_clock::now().time_since_epoch();
+  return g_proxy_health.check(g_proxy_running.load(std::memory_order_acquire),
+      __atomic_load_n(&g_ctrl->proxy_beat, __ATOMIC_RELAXED),
+      std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
 }
 static void py_shutdown() {
   if (!g_started) return;
