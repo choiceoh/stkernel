@@ -1,0 +1,159 @@
+{
+  "head": "fe6e827525d8534a7a1327546621fc3f99537986",
+  "session": "st-decode-scatter0913v1",
+  "start_kst": "2026-09-13 11:59:59",
+  "end_kst": "2026-09-13 12:01:00",
+  "original_log_sha256": "f0687ff7d4a9e2226bcc65520872f80cf6c1a53b43fd0cf750e37faf0359701c",
+  "records_sha256": "c4c596c25808fef6dad51b3d0fd14e97a74b130fec509321536e29f2c57a7a72",
+  "bundle": [
+    {
+      "bundle_lane": "moe_route_scatter",
+      "exit_code": 1,
+      "elapsed_s": 11.519824281975161
+    },
+    {
+      "bundle_lane": "moe_direct_scatter",
+      "exit_code": 1,
+      "elapsed_s": 17.186464001017157
+    },
+    {
+      "bundle_lane": "moe_route_direct",
+      "exit_code": 1,
+      "elapsed_s": 11.805669516004855
+    },
+    {
+      "bundle_lane": "paired_projection",
+      "exit_code": 0,
+      "elapsed_s": 9.498105545004364
+    },
+    {
+      "bundle_lane": "shared_serial",
+      "exit_code": 0,
+      "elapsed_s": 8.79858876398066
+    }
+  ],
+  "timings": [
+    {
+      "candidate": "kda_pair",
+      "rows": 1,
+      "baseline_ms": 0.337715744972229,
+      "candidate_ms": 0.21631575375795364,
+      "latency_change_pct": -35.9473886016947
+    },
+    {
+      "candidate": "kda_pair",
+      "rows": 6,
+      "baseline_ms": 0.35485824942588806,
+      "candidate_ms": 0.23144400119781494,
+      "latency_change_pct": -34.77846391558895
+    },
+    {
+      "candidate": "kda_pair",
+      "rows": 7,
+      "baseline_ms": 0.34842848777770996,
+      "candidate_ms": 0.21724925190210342,
+      "latency_change_pct": -37.64882622321517
+    },
+    {
+      "candidate": "kda_pair",
+      "rows": 14,
+      "baseline_ms": 0.36264824867248535,
+      "candidate_ms": 0.24381449818611145,
+      "latency_change_pct": -32.768323277825885
+    },
+    {
+      "candidate": "kda_pair",
+      "rows": 21,
+      "baseline_ms": 0.34219150245189667,
+      "candidate_ms": 0.2660147398710251,
+      "latency_change_pct": -22.261441922152958
+    },
+    {
+      "candidate": "kda_pair",
+      "rows": 28,
+      "baseline_ms": 0.36902424693107605,
+      "candidate_ms": 0.2763044983148575,
+      "latency_change_pct": -25.12565214543644
+    },
+    {
+      "candidate": "indexer_pair",
+      "rows": 1,
+      "baseline_ms": 0.1277570053935051,
+      "candidate_ms": 0.0834369994699955,
+      "latency_change_pct": -34.69086159854741
+    },
+    {
+      "candidate": "indexer_pair",
+      "rows": 6,
+      "baseline_ms": 0.19583674520254135,
+      "candidate_ms": 0.11708375066518784,
+      "latency_change_pct": -40.21359446916071
+    },
+    {
+      "candidate": "indexer_pair",
+      "rows": 7,
+      "baseline_ms": 0.1964614987373352,
+      "candidate_ms": 0.11709875240921974,
+      "latency_change_pct": -40.396081083664
+    },
+    {
+      "candidate": "indexer_pair",
+      "rows": 14,
+      "baseline_ms": 0.19921550154685974,
+      "candidate_ms": 0.11882849782705307,
+      "latency_change_pct": -40.351781410392874
+    },
+    {
+      "candidate": "indexer_pair",
+      "rows": 21,
+      "baseline_ms": 0.18682574480772018,
+      "candidate_ms": 0.14145924896001816,
+      "latency_change_pct": -24.282786023089553
+    },
+    {
+      "candidate": "indexer_pair",
+      "rows": 28,
+      "baseline_ms": 0.18568500131368637,
+      "candidate_ms": 0.14170300215482712,
+      "latency_change_pct": -23.686349919322993
+    },
+    {
+      "candidate": "shared_serial",
+      "rows": 14,
+      "baseline_ms": 1.453777015209198,
+      "candidate_ms": 1.5492262840270996,
+      "latency_change_pct": 6.565605854221501
+    },
+    {
+      "candidate": "shared_serial",
+      "rows": 21,
+      "baseline_ms": 1.6672322154045105,
+      "candidate_ms": 1.7742830514907837,
+      "latency_change_pct": 6.420871375754933
+    },
+    {
+      "candidate": "shared_serial",
+      "rows": 28,
+      "baseline_ms": 1.7673659920692444,
+      "candidate_ms": 1.9306047558784485,
+      "latency_change_pct": 9.236273898089609
+    }
+  ],
+  "scope": "component only; no model speed or acceptance measurement",
+  "failures": [
+    {
+      "candidate": "moe_route_scatter",
+      "reason": "missing saturated BF16 rounding after route multiplication",
+      "relative_error": 0.0051282052882015705
+    },
+    {
+      "candidate": "moe_route_direct",
+      "reason": "missing saturated BF16 rounding after route multiplication",
+      "relative_error": 0.0051282052882015705
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "reason": "M7 numerical checks exact, then second shape normalization rejected M14 before execution"
+    }
+  ]
+}

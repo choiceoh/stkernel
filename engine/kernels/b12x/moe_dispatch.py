@@ -2186,7 +2186,7 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
     """Specialize the integrated tile geometry only for C=1 decode rows."""
     if config.get("probe_route_scatter") or config.get("probe_direct_scatter"):
         if not (m in (7, 14, 21, 28) and config.get("tiled")
-                and config.get("reform_sf_pack") and config.get("decode_reform")
+                and config.get("reform_sf_pack") and (m != 7 or config.get("decode_reform"))
                 and not any(config.get(k) for k in ("split", "skip_a", "skip_sf", "even"))):
             raise ValueError("scatter probe requires packed t,r,sf6 at 7/14/21/28 tokens")
     reform = bool(config.get("decode_reform", False)) and 1 <= m <= 8

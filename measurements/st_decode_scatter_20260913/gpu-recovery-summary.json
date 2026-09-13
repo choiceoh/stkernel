@@ -1,0 +1,1407 @@
+{
+  "head": "fdc5fd92152866b56ddec0bfdf78667be3e74fa1",
+  "receipt": {
+    "session": "st-decode-scatter0913v3",
+    "ticket": "1789270446942355",
+    "kind": "single",
+    "revision": 1,
+    "enqueued_at": "1789269735",
+    "started_at": 1789270511.3601558,
+    "finished_at": 1789270629.1656039,
+    "state": "succeeded",
+    "payload_seconds": 117.6,
+    "wait_seconds": 776.4,
+    "payload_returncode": 0,
+    "returncode": 0,
+    "command": [
+      "bash",
+      "probes/run_engine_probe.sh",
+      "probes/engine_kernel_check.py",
+      "--lanes",
+      "scatter_bundle",
+      "--ranks",
+      "st-glm53-9391-up-gate-full"
+    ],
+    "cwd": "/home/choiceoh/stkernel-worktrees/codex-st-decode-next-bundle",
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/3780d4ca0edb1317ce68bc1a48df784bf70994185519dd2d8ad30f30150fc1cf.log"
+  },
+  "original_log_sha256": "7972fe42a2530d6f129ed6d6ea3b3d98604b26d3a6faca7c56d23571f5a26aa7",
+  "records_sha256": "ff12b85c193a42373708970408cee19d13c934cf2b3d0a79eea1652cc551e803",
+  "bundle": [
+    {
+      "bundle_lane": "moe_route_scatter",
+      "exit_code": 0,
+      "elapsed_s": 49.681036138994386
+    },
+    {
+      "bundle_lane": "moe_direct_scatter",
+      "exit_code": 0,
+      "elapsed_s": 33.88154179099365
+    },
+    {
+      "bundle_lane": "moe_route_direct",
+      "exit_code": 0,
+      "elapsed_s": 30.959398748003878
+    }
+  ],
+  "numerical_cases": 87,
+  "maximum_relative_error": 0.0,
+  "timings": [
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 7,
+      "unique_experts": 8,
+      "regime": "warm",
+      "baseline_us": 128.33600491285324,
+      "candidate_us": 140.06399363279343,
+      "latency_change_pct": 9.138502268248171
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 7,
+      "unique_experts": 8,
+      "regime": "evicted",
+      "baseline_us": 209.07199382781982,
+      "candidate_us": 206.52800053358078,
+      "latency_change_pct": -1.2168025222613732
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 7,
+      "unique_experts": 16,
+      "regime": "warm",
+      "baseline_us": 259.2639923095703,
+      "candidate_us": 279.34399247169495,
+      "latency_change_pct": 7.745001526532236
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 7,
+      "unique_experts": 16,
+      "regime": "evicted",
+      "baseline_us": 323.96799325942993,
+      "candidate_us": 329.4079899787903,
+      "latency_change_pct": 1.6791772127328741
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 7,
+      "unique_experts": 32,
+      "regime": "warm",
+      "baseline_us": 489.23200368881226,
+      "candidate_us": 514.5120024681091,
+      "latency_change_pct": 5.167282309555699
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 7,
+      "unique_experts": 32,
+      "regime": "evicted",
+      "baseline_us": 550.4800081253052,
+      "candidate_us": 571.5679824352264,
+      "latency_change_pct": 3.8308338175145895
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 7,
+      "unique_experts": 40,
+      "regime": "warm",
+      "baseline_us": 607.4880063533783,
+      "candidate_us": 631.6480040550232,
+      "latency_change_pct": 3.9770328712614766
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 7,
+      "unique_experts": 40,
+      "regime": "evicted",
+      "baseline_us": 666.3039922714233,
+      "candidate_us": 692.4160122871399,
+      "latency_change_pct": 3.9189349484010982
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 7,
+      "unique_experts": 56,
+      "regime": "warm",
+      "baseline_us": 838.4640216827393,
+      "candidate_us": 866.0799860954285,
+      "latency_change_pct": 3.2936373772205263
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 7,
+      "unique_experts": 56,
+      "regime": "evicted",
+      "baseline_us": 903.4880101680756,
+      "candidate_us": 927.9040098190308,
+      "latency_change_pct": 2.702415458331653
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 14,
+      "unique_experts": 8,
+      "regime": "warm",
+      "baseline_us": 153.951995074749,
+      "candidate_us": 178.46400290727615,
+      "latency_change_pct": 15.921851367126315
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 14,
+      "unique_experts": 8,
+      "regime": "evicted",
+      "baseline_us": 231.59999400377274,
+      "candidate_us": 216.24000370502472,
+      "latency_change_pct": -6.632120335243963
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 14,
+      "unique_experts": 16,
+      "regime": "warm",
+      "baseline_us": 273.45599234104156,
+      "candidate_us": 313.168004155159,
+      "latency_change_pct": 14.522267906490228
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 14,
+      "unique_experts": 16,
+      "regime": "evicted",
+      "baseline_us": 342.19199419021606,
+      "candidate_us": 355.5999994277954,
+      "latency_change_pct": 3.9182697039154446
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 14,
+      "unique_experts": 32,
+      "regime": "warm",
+      "baseline_us": 502.591997385025,
+      "candidate_us": 550.6720244884491,
+      "latency_change_pct": 9.566413184766853
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 14,
+      "unique_experts": 32,
+      "regime": "evicted",
+      "baseline_us": 567.4239993095398,
+      "candidate_us": 610.1439893245697,
+      "latency_change_pct": 7.528759810479113
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 14,
+      "unique_experts": 40,
+      "regime": "warm",
+      "baseline_us": 633.1680119037628,
+      "candidate_us": 677.2319972515106,
+      "latency_change_pct": 6.9592879803354935
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 14,
+      "unique_experts": 40,
+      "regime": "evicted",
+      "baseline_us": 689.8559927940369,
+      "candidate_us": 732.8000068664551,
+      "latency_change_pct": 6.225069365344993
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 14,
+      "unique_experts": 56,
+      "regime": "warm",
+      "baseline_us": 854.7199964523315,
+      "candidate_us": 911.5040004253387,
+      "latency_change_pct": 6.64357967623308
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 14,
+      "unique_experts": 56,
+      "regime": "evicted",
+      "baseline_us": 917.824000120163,
+      "candidate_us": 969.1200256347656,
+      "latency_change_pct": 5.588873848132847
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 14,
+      "unique_experts": 112,
+      "regime": "warm",
+      "baseline_us": 1686.847984790802,
+      "candidate_us": 1744.7039484977722,
+      "latency_change_pct": 3.429826767356592
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 14,
+      "unique_experts": 112,
+      "regime": "evicted",
+      "baseline_us": 1750.175952911377,
+      "candidate_us": 1830.3200006484985,
+      "latency_change_pct": 4.5791994572776495
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 21,
+      "unique_experts": 8,
+      "regime": "warm",
+      "baseline_us": 187.71199882030487,
+      "candidate_us": 211.5039974451065,
+      "latency_change_pct": 12.674735112472767
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 21,
+      "unique_experts": 8,
+      "regime": "evicted",
+      "baseline_us": 262.703999876976,
+      "candidate_us": 235.167995095253,
+      "latency_change_pct": -10.481760762918757
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 21,
+      "unique_experts": 16,
+      "regime": "warm",
+      "baseline_us": 308.6240142583847,
+      "candidate_us": 336.87999844551086,
+      "latency_change_pct": 9.155471668341985
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 21,
+      "unique_experts": 16,
+      "regime": "evicted",
+      "baseline_us": 376.47999823093414,
+      "candidate_us": 382.03200697898865,
+      "latency_change_pct": 1.4747154627452241
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 21,
+      "unique_experts": 32,
+      "regime": "warm",
+      "baseline_us": 512.3039782047272,
+      "candidate_us": 590.1439785957336,
+      "latency_change_pct": 15.194104223781757
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 21,
+      "unique_experts": 32,
+      "regime": "evicted",
+      "baseline_us": 577.2000253200531,
+      "candidate_us": 637.7919912338257,
+      "latency_change_pct": 10.497568131632494
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 21,
+      "unique_experts": 40,
+      "regime": "warm",
+      "baseline_us": 635.7759833335876,
+      "candidate_us": 712.0160162448883,
+      "latency_change_pct": 11.99165034695846
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 21,
+      "unique_experts": 40,
+      "regime": "evicted",
+      "baseline_us": 698.0479955673218,
+      "candidate_us": 762.0320022106171,
+      "latency_change_pct": 9.166132851838338
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 21,
+      "unique_experts": 56,
+      "regime": "warm",
+      "baseline_us": 863.7439906597137,
+      "candidate_us": 949.5840072631836,
+      "latency_change_pct": 9.938131845977495
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 21,
+      "unique_experts": 56,
+      "regime": "evicted",
+      "baseline_us": 927.0879924297333,
+      "candidate_us": 1000.624030828476,
+      "latency_change_pct": 7.931937313309145
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 21,
+      "unique_experts": 112,
+      "regime": "warm",
+      "baseline_us": 1691.055953502655,
+      "candidate_us": 1782.800018787384,
+      "latency_change_pct": 5.42525308489652
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 21,
+      "unique_experts": 112,
+      "regime": "evicted",
+      "baseline_us": 1752.240002155304,
+      "candidate_us": 1840.0160074234009,
+      "latency_change_pct": 5.009359742965014
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 21,
+      "unique_experts": 168,
+      "regime": "warm",
+      "baseline_us": 2512.0959281921387,
+      "candidate_us": 2611.5200519561768,
+      "latency_change_pct": 3.9578155693914985
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 21,
+      "unique_experts": 168,
+      "regime": "evicted",
+      "baseline_us": 2574.0000009536743,
+      "candidate_us": 2663.696050643921,
+      "latency_change_pct": 3.4846950138700095
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 28,
+      "unique_experts": 8,
+      "regime": "warm",
+      "baseline_us": 219.2159965634346,
+      "candidate_us": 234.99200493097305,
+      "latency_change_pct": 7.196558925832464
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 28,
+      "unique_experts": 8,
+      "regime": "evicted",
+      "baseline_us": 293.5999929904938,
+      "candidate_us": 257.7280104160309,
+      "latency_change_pct": -12.217978007793873
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 28,
+      "unique_experts": 16,
+      "regime": "warm",
+      "baseline_us": 348.7839996814728,
+      "candidate_us": 371.5360015630722,
+      "latency_change_pct": 6.523235556211793
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 28,
+      "unique_experts": 16,
+      "regime": "evicted",
+      "baseline_us": 413.02400827407837,
+      "candidate_us": 407.74399042129517,
+      "latency_change_pct": -1.2783803718449782
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 28,
+      "unique_experts": 32,
+      "regime": "warm",
+      "baseline_us": 553.9040267467499,
+      "candidate_us": 629.535973072052,
+      "latency_change_pct": 13.654341307015216
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 28,
+      "unique_experts": 32,
+      "regime": "evicted",
+      "baseline_us": 618.2719767093658,
+      "candidate_us": 670.8640158176422,
+      "latency_change_pct": 8.506295140237064
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 28,
+      "unique_experts": 40,
+      "regime": "warm",
+      "baseline_us": 654.5279920101166,
+      "candidate_us": 755.5199861526489,
+      "latency_change_pct": 15.429744086632024
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 28,
+      "unique_experts": 40,
+      "regime": "evicted",
+      "baseline_us": 712.5599980354309,
+      "candidate_us": 798.5279858112335,
+      "latency_change_pct": 12.064666556194759
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 28,
+      "unique_experts": 56,
+      "regime": "warm",
+      "baseline_us": 881.0400068759918,
+      "candidate_us": 988.1280064582825,
+      "latency_change_pct": 12.154726090362832
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 28,
+      "unique_experts": 56,
+      "regime": "evicted",
+      "baseline_us": 936.0480010509491,
+      "candidate_us": 1031.440019607544,
+      "latency_change_pct": 10.190932350637283
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 28,
+      "unique_experts": 112,
+      "regime": "warm",
+      "baseline_us": 1701.6479969024658,
+      "candidate_us": 1829.1040062904358,
+      "latency_change_pct": 7.490151289807301
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 28,
+      "unique_experts": 112,
+      "regime": "evicted",
+      "baseline_us": 1758.8639855384827,
+      "candidate_us": 1870.959997177124,
+      "latency_change_pct": 6.373205237033885
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 28,
+      "unique_experts": 224,
+      "regime": "warm",
+      "baseline_us": 3342.8640365600586,
+      "candidate_us": 3514.6559476852417,
+      "latency_change_pct": 5.139063666554744
+    },
+    {
+      "candidate": "moe_route_scatter",
+      "rows": 28,
+      "unique_experts": 224,
+      "regime": "evicted",
+      "baseline_us": 3528.0638933181763,
+      "candidate_us": 3636.415958404541,
+      "latency_change_pct": 3.0711480393417423
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 7,
+      "unique_experts": 8,
+      "regime": "warm",
+      "baseline_us": 111.79199814796448,
+      "candidate_us": 100.0480018556118,
+      "latency_change_pct": -10.505220844884333
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 7,
+      "unique_experts": 8,
+      "regime": "evicted",
+      "baseline_us": 201.4240026473999,
+      "candidate_us": 202.43200659751892,
+      "latency_change_pct": 0.5004388438668794
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 7,
+      "unique_experts": 16,
+      "regime": "warm",
+      "baseline_us": 259.2639923095703,
+      "candidate_us": 264.0639990568161,
+      "latency_change_pct": 1.8513973747323886
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 7,
+      "unique_experts": 16,
+      "regime": "evicted",
+      "baseline_us": 322.2559988498688,
+      "candidate_us": 327.39201188087463,
+      "latency_change_pct": 1.593768013422947
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 7,
+      "unique_experts": 32,
+      "regime": "warm",
+      "baseline_us": 500.0,
+      "candidate_us": 499.04000759124756,
+      "latency_change_pct": -0.19199848175048828
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 7,
+      "unique_experts": 32,
+      "regime": "evicted",
+      "baseline_us": 554.6559989452362,
+      "candidate_us": 555.8879971504211,
+      "latency_change_pct": 0.22211933297895392
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 7,
+      "unique_experts": 40,
+      "regime": "warm",
+      "baseline_us": 611.9360029697418,
+      "candidate_us": 616.0320043563843,
+      "latency_change_pct": 0.6693512665972401
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 7,
+      "unique_experts": 40,
+      "regime": "evicted",
+      "baseline_us": 673.4879910945892,
+      "candidate_us": 678.5920262336731,
+      "latency_change_pct": 0.7578509500649755
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 7,
+      "unique_experts": 56,
+      "regime": "warm",
+      "baseline_us": 845.2480137348175,
+      "candidate_us": 850.5279719829559,
+      "latency_change_pct": 0.6246637865267912
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 7,
+      "unique_experts": 56,
+      "regime": "evicted",
+      "baseline_us": 904.4319987297058,
+      "candidate_us": 906.5759778022766,
+      "latency_change_pct": 0.23705254519765795
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 14,
+      "unique_experts": 8,
+      "regime": "warm",
+      "baseline_us": 159.68000143766403,
+      "candidate_us": 124.33599680662155,
+      "latency_change_pct": -22.13427123799225
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 14,
+      "unique_experts": 8,
+      "regime": "evicted",
+      "baseline_us": 249.58398938179016,
+      "candidate_us": 210.62400192022324,
+      "latency_change_pct": -15.609970638769454
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 14,
+      "unique_experts": 16,
+      "regime": "warm",
+      "baseline_us": 276.7999917268753,
+      "candidate_us": 284.5599949359894,
+      "latency_change_pct": 2.803469451245877
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 14,
+      "unique_experts": 16,
+      "regime": "evicted",
+      "baseline_us": 345.10400891304016,
+      "candidate_us": 350.3360003232956,
+      "latency_change_pct": 1.5160621943322017
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 14,
+      "unique_experts": 32,
+      "regime": "warm",
+      "baseline_us": 504.67199087142944,
+      "candidate_us": 509.16799902915955,
+      "latency_change_pct": 0.8908772904093087
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 14,
+      "unique_experts": 32,
+      "regime": "evicted",
+      "baseline_us": 565.423995256424,
+      "candidate_us": 570.063978433609,
+      "latency_change_pct": 0.8206201392427337
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 14,
+      "unique_experts": 40,
+      "regime": "warm",
+      "baseline_us": 634.0799927711487,
+      "candidate_us": 650.0639915466309,
+      "latency_change_pct": 2.5208173980741044
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 14,
+      "unique_experts": 40,
+      "regime": "evicted",
+      "baseline_us": 695.4399943351746,
+      "candidate_us": 707.9520225524902,
+      "latency_change_pct": 1.799152812497784
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 14,
+      "unique_experts": 56,
+      "regime": "warm",
+      "baseline_us": 860.0160181522369,
+      "candidate_us": 870.0160086154938,
+      "latency_change_pct": 1.162767931316222
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 14,
+      "unique_experts": 56,
+      "regime": "evicted",
+      "baseline_us": 922.8159785270691,
+      "candidate_us": 926.4000058174133,
+      "latency_change_pct": 0.3883794140696173
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 14,
+      "unique_experts": 112,
+      "regime": "warm",
+      "baseline_us": 1697.3599791526794,
+      "candidate_us": 1705.6639790534973,
+      "latency_change_pct": 0.489230334331503
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 14,
+      "unique_experts": 112,
+      "regime": "evicted",
+      "baseline_us": 1753.8719773292542,
+      "candidate_us": 1769.152045249939,
+      "latency_change_pct": 0.8712191150891613
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 21,
+      "unique_experts": 8,
+      "regime": "warm",
+      "baseline_us": 192.55999475717545,
+      "candidate_us": 129.92000579833984,
+      "latency_change_pct": -32.53011563374143
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 21,
+      "unique_experts": 8,
+      "regime": "evicted",
+      "baseline_us": 278.7359952926636,
+      "candidate_us": 219.83999758958817,
+      "latency_change_pct": -21.12967061941051
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 21,
+      "unique_experts": 16,
+      "regime": "warm",
+      "baseline_us": 344.39998865127563,
+      "candidate_us": 298.784002661705,
+      "latency_change_pct": -13.245060247594653
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 21,
+      "unique_experts": 16,
+      "regime": "evicted",
+      "baseline_us": 384.320005774498,
+      "candidate_us": 360.6719970703125,
+      "latency_change_pct": -6.153207834322605
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 21,
+      "unique_experts": 32,
+      "regime": "warm",
+      "baseline_us": 553.2320141792297,
+      "candidate_us": 515.392005443573,
+      "latency_change_pct": -6.839808211713105
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 21,
+      "unique_experts": 32,
+      "regime": "evicted",
+      "baseline_us": 601.967990398407,
+      "candidate_us": 576.1760175228119,
+      "latency_change_pct": -4.284608697968295
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 21,
+      "unique_experts": 40,
+      "regime": "warm",
+      "baseline_us": 630.5440068244934,
+      "candidate_us": 649.5359838008881,
+      "latency_change_pct": 3.011998650505121
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 21,
+      "unique_experts": 40,
+      "regime": "evicted",
+      "baseline_us": 703.4080028533936,
+      "candidate_us": 716.0159945487976,
+      "latency_change_pct": 1.792415162218708
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 21,
+      "unique_experts": 56,
+      "regime": "warm",
+      "baseline_us": 873.3440041542053,
+      "candidate_us": 882.5120031833649,
+      "latency_change_pct": 1.0497580547356389
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 21,
+      "unique_experts": 56,
+      "regime": "evicted",
+      "baseline_us": 931.0399889945984,
+      "candidate_us": 936.6399943828583,
+      "latency_change_pct": 0.6014785030133085
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 21,
+      "unique_experts": 112,
+      "regime": "warm",
+      "baseline_us": 1705.456018447876,
+      "candidate_us": 1721.4080095291138,
+      "latency_change_pct": 0.9353504815536429
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 21,
+      "unique_experts": 112,
+      "regime": "evicted",
+      "baseline_us": 1765.0879621505737,
+      "candidate_us": 1780.4960012435913,
+      "latency_change_pct": 0.8729332148548874
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 21,
+      "unique_experts": 168,
+      "regime": "warm",
+      "baseline_us": 2524.399995803833,
+      "candidate_us": 2539.631962776184,
+      "latency_change_pct": 0.6033895974358439
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 21,
+      "unique_experts": 168,
+      "regime": "evicted",
+      "baseline_us": 2587.8559350967407,
+      "candidate_us": 2598.6239910125732,
+      "latency_change_pct": 0.41609951194714334
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 28,
+      "unique_experts": 8,
+      "regime": "warm",
+      "baseline_us": 215.96799790859222,
+      "candidate_us": 137.984000146389,
+      "latency_change_pct": -36.10905250657076
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 28,
+      "unique_experts": 8,
+      "regime": "evicted",
+      "baseline_us": 298.19199442863464,
+      "candidate_us": 221.3120013475418,
+      "latency_change_pct": -25.78204462812709
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 28,
+      "unique_experts": 16,
+      "regime": "warm",
+      "baseline_us": 347.4240005016327,
+      "candidate_us": 309.7599893808365,
+      "latency_change_pct": -10.840935302804223
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 28,
+      "unique_experts": 16,
+      "regime": "evicted",
+      "baseline_us": 408.7519943714142,
+      "candidate_us": 370.33599615097046,
+      "latency_change_pct": -9.398363494108574
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 28,
+      "unique_experts": 32,
+      "regime": "warm",
+      "baseline_us": 528.8800001144409,
+      "candidate_us": 526.384025812149,
+      "latency_change_pct": -0.4719358458916578
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 28,
+      "unique_experts": 32,
+      "regime": "evicted",
+      "baseline_us": 589.5040035247803,
+      "candidate_us": 584.1439962387085,
+      "latency_change_pct": -0.9092401839551623
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 28,
+      "unique_experts": 40,
+      "regime": "warm",
+      "baseline_us": 672.0640063285828,
+      "candidate_us": 665.9359931945801,
+      "latency_change_pct": -0.9118198677949385
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 28,
+      "unique_experts": 40,
+      "regime": "evicted",
+      "baseline_us": 728.4959852695465,
+      "candidate_us": 724.8480021953583,
+      "latency_change_pct": -0.5007554122399838
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 28,
+      "unique_experts": 56,
+      "regime": "warm",
+      "baseline_us": 912.1440052986145,
+      "candidate_us": 881.8559944629669,
+      "latency_change_pct": -3.3205295062737394
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 28,
+      "unique_experts": 56,
+      "regime": "evicted",
+      "baseline_us": 972.1919894218445,
+      "candidate_us": 942.7520036697388,
+      "latency_change_pct": -3.028206987141857
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 28,
+      "unique_experts": 112,
+      "regime": "warm",
+      "baseline_us": 1718.5919880867004,
+      "candidate_us": 1736.5919947624207,
+      "latency_change_pct": 1.0473694047508975
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 28,
+      "unique_experts": 112,
+      "regime": "evicted",
+      "baseline_us": 1781.4239859580994,
+      "candidate_us": 1805.5039644241333,
+      "latency_change_pct": 1.3517264085272318
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 28,
+      "unique_experts": 224,
+      "regime": "warm",
+      "baseline_us": 3375.424027442932,
+      "candidate_us": 3378.2559633255005,
+      "latency_change_pct": 0.08389867049425348
+    },
+    {
+      "candidate": "moe_direct_scatter",
+      "rows": 28,
+      "unique_experts": 224,
+      "regime": "evicted",
+      "baseline_us": 3436.735987663269,
+      "candidate_us": 3445.456027984619,
+      "latency_change_pct": 0.2537302938792063
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 7,
+      "unique_experts": 8,
+      "regime": "warm",
+      "baseline_us": 135.6480047106743,
+      "candidate_us": 138.09599727392197,
+      "latency_change_pct": 1.8046653678902569
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 7,
+      "unique_experts": 8,
+      "regime": "evicted",
+      "baseline_us": 212.65599876642227,
+      "candidate_us": 209.08799767494202,
+      "latency_change_pct": -1.6778276240395629
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 7,
+      "unique_experts": 16,
+      "regime": "warm",
+      "baseline_us": 255.8079957962036,
+      "candidate_us": 282.49600529670715,
+      "latency_change_pct": 10.432828503830383
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 7,
+      "unique_experts": 16,
+      "regime": "evicted",
+      "baseline_us": 320.3200101852417,
+      "candidate_us": 332.44800567626953,
+      "latency_change_pct": 3.786212258177124
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 7,
+      "unique_experts": 32,
+      "regime": "warm",
+      "baseline_us": 501.7920136451721,
+      "candidate_us": 523.0880081653595,
+      "latency_change_pct": 4.243988334028415
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 7,
+      "unique_experts": 32,
+      "regime": "evicted",
+      "baseline_us": 557.3279857635498,
+      "candidate_us": 580.7839930057526,
+      "latency_change_pct": 4.208654121337108
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 7,
+      "unique_experts": 40,
+      "regime": "warm",
+      "baseline_us": 611.6160154342651,
+      "candidate_us": 645.5360054969788,
+      "latency_change_pct": 5.545961715641057
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 7,
+      "unique_experts": 40,
+      "regime": "evicted",
+      "baseline_us": 675.4560172557831,
+      "candidate_us": 710.3679776191711,
+      "latency_change_pct": 5.16865043341046
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 7,
+      "unique_experts": 56,
+      "regime": "warm",
+      "baseline_us": 855.1999926567078,
+      "candidate_us": 894.8319852352142,
+      "latency_change_pct": 4.6342367772231
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 7,
+      "unique_experts": 56,
+      "regime": "evicted",
+      "baseline_us": 909.9839925765991,
+      "candidate_us": 938.1439983844757,
+      "latency_change_pct": 3.0945605678339705
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 14,
+      "unique_experts": 8,
+      "regime": "warm",
+      "baseline_us": 171.36000096797943,
+      "candidate_us": 177.98399925231934,
+      "latency_change_pct": 3.8655451954494824
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 14,
+      "unique_experts": 8,
+      "regime": "evicted",
+      "baseline_us": 245.13600021600723,
+      "candidate_us": 220.65600007772446,
+      "latency_change_pct": -9.986293370501132
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 14,
+      "unique_experts": 16,
+      "regime": "warm",
+      "baseline_us": 290.0959998369217,
+      "candidate_us": 325.0240087509155,
+      "latency_change_pct": 12.04015530501239
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 14,
+      "unique_experts": 16,
+      "regime": "evicted",
+      "baseline_us": 351.8880009651184,
+      "candidate_us": 365.4719889163971,
+      "latency_change_pct": 3.8603157578610325
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 14,
+      "unique_experts": 32,
+      "regime": "warm",
+      "baseline_us": 521.5359926223755,
+      "candidate_us": 570.2399909496307,
+      "latency_change_pct": 9.338568960957595
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 14,
+      "unique_experts": 32,
+      "regime": "evicted",
+      "baseline_us": 575.1360058784485,
+      "candidate_us": 623.8079965114594,
+      "latency_change_pct": 8.462692325908282
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 14,
+      "unique_experts": 40,
+      "regime": "warm",
+      "baseline_us": 634.0160071849823,
+      "candidate_us": 698.6720263957977,
+      "latency_change_pct": 10.197852810986085
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 14,
+      "unique_experts": 40,
+      "regime": "evicted",
+      "baseline_us": 694.4319903850555,
+      "candidate_us": 755.376011133194,
+      "latency_change_pct": 8.776096376888631
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 14,
+      "unique_experts": 56,
+      "regime": "warm",
+      "baseline_us": 860.0639998912811,
+      "candidate_us": 927.951991558075,
+      "latency_change_pct": 7.893365107175221
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 14,
+      "unique_experts": 56,
+      "regime": "evicted",
+      "baseline_us": 920.527994632721,
+      "candidate_us": 978.0960083007812,
+      "latency_change_pct": 6.253803686983916
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 14,
+      "unique_experts": 112,
+      "regime": "warm",
+      "baseline_us": 1717.9200053215027,
+      "candidate_us": 1792.6719784736633,
+      "latency_change_pct": 4.351306982898251
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 14,
+      "unique_experts": 112,
+      "regime": "evicted",
+      "baseline_us": 1779.8720002174377,
+      "candidate_us": 1848.4639525413513,
+      "latency_change_pct": 3.8537575913062394
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 21,
+      "unique_experts": 8,
+      "regime": "warm",
+      "baseline_us": 189.85600024461746,
+      "candidate_us": 211.71199530363083,
+      "latency_change_pct": 11.511880072714732
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 21,
+      "unique_experts": 8,
+      "regime": "evicted",
+      "baseline_us": 260.2880001068115,
+      "candidate_us": 238.78400027751923,
+      "latency_change_pct": -8.261617831197722
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 21,
+      "unique_experts": 16,
+      "regime": "warm",
+      "baseline_us": 327.5040090084076,
+      "candidate_us": 359.3119978904724,
+      "latency_change_pct": 9.712244127444647
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 21,
+      "unique_experts": 16,
+      "regime": "evicted",
+      "baseline_us": 380.0640106201172,
+      "candidate_us": 394.9120044708252,
+      "latency_change_pct": 3.9067087216392515
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 21,
+      "unique_experts": 32,
+      "regime": "warm",
+      "baseline_us": 548.0960011482239,
+      "candidate_us": 602.4640202522278,
+      "latency_change_pct": 9.919433637557407
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 21,
+      "unique_experts": 32,
+      "regime": "evicted",
+      "baseline_us": 607.4880063533783,
+      "candidate_us": 641.2000060081482,
+      "latency_change_pct": 5.54940991463122
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 21,
+      "unique_experts": 40,
+      "regime": "warm",
+      "baseline_us": 643.1200206279755,
+      "candidate_us": 741.3120269775391,
+      "latency_change_pct": 15.268068665267776
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 21,
+      "unique_experts": 40,
+      "regime": "evicted",
+      "baseline_us": 699.7119784355164,
+      "candidate_us": 781.9840013980865,
+      "latency_change_pct": 11.757984070320182
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 21,
+      "unique_experts": 56,
+      "regime": "warm",
+      "baseline_us": 873.8079965114594,
+      "candidate_us": 972.6560115814209,
+      "latency_change_pct": 11.312326674120254
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 21,
+      "unique_experts": 56,
+      "regime": "evicted",
+      "baseline_us": 944.320023059845,
+      "candidate_us": 1026.2399911880493,
+      "latency_change_pct": 8.675021828168173
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 21,
+      "unique_experts": 112,
+      "regime": "warm",
+      "baseline_us": 1705.8719992637634,
+      "candidate_us": 1829.2800188064575,
+      "latency_change_pct": 7.234307122454431
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 21,
+      "unique_experts": 112,
+      "regime": "evicted",
+      "baseline_us": 1762.3679637908936,
+      "candidate_us": 1877.1519660949707,
+      "latency_change_pct": 6.513055426698422
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 21,
+      "unique_experts": 168,
+      "regime": "warm",
+      "baseline_us": 2533.9200496673584,
+      "candidate_us": 2648.9440202713013,
+      "latency_change_pct": 4.5393685810664275
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 21,
+      "unique_experts": 168,
+      "regime": "evicted",
+      "baseline_us": 2585.15202999115,
+      "candidate_us": 2698.3999013900757,
+      "latency_change_pct": 4.38070450345287
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 28,
+      "unique_experts": 8,
+      "regime": "warm",
+      "baseline_us": 225.6160005927086,
+      "candidate_us": 235.664002597332,
+      "latency_change_pct": 4.453585728949472
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 28,
+      "unique_experts": 8,
+      "regime": "evicted",
+      "baseline_us": 297.775998711586,
+      "candidate_us": 268.95999908447266,
+      "latency_change_pct": -9.677072615588255
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 28,
+      "unique_experts": 16,
+      "regime": "warm",
+      "baseline_us": 347.7120101451874,
+      "candidate_us": 391.88800752162933,
+      "latency_change_pct": 12.704766038422498
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 28,
+      "unique_experts": 16,
+      "regime": "evicted",
+      "baseline_us": 407.20000863075256,
+      "candidate_us": 427.42399871349335,
+      "latency_change_pct": 4.966598638036834
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 28,
+      "unique_experts": 32,
+      "regime": "warm",
+      "baseline_us": 520.687997341156,
+      "candidate_us": 640.3200030326843,
+      "latency_change_pct": 22.975756365120347
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 28,
+      "unique_experts": 32,
+      "regime": "evicted",
+      "baseline_us": 579.7599852085114,
+      "candidate_us": 676.4799952507019,
+      "latency_change_pct": 16.682767439944147
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 28,
+      "unique_experts": 40,
+      "regime": "warm",
+      "baseline_us": 654.367983341217,
+      "candidate_us": 775.0720083713531,
+      "latency_change_pct": 18.445894069238953
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 28,
+      "unique_experts": 40,
+      "regime": "evicted",
+      "baseline_us": 715.5359983444214,
+      "candidate_us": 813.2320046424866,
+      "latency_change_pct": 13.653541753889442
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 28,
+      "unique_experts": 56,
+      "regime": "warm",
+      "baseline_us": 908.3839952945709,
+      "candidate_us": 1005.0880312919617,
+      "latency_change_pct": 10.645722128341939
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 28,
+      "unique_experts": 56,
+      "regime": "evicted",
+      "baseline_us": 964.352011680603,
+      "candidate_us": 1046.1919903755188,
+      "latency_change_pct": 8.486525428851532
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 28,
+      "unique_experts": 112,
+      "regime": "warm",
+      "baseline_us": 1712.4639749526978,
+      "candidate_us": 1859.0400218963623,
+      "latency_change_pct": 8.559365282280652
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 28,
+      "unique_experts": 112,
+      "regime": "evicted",
+      "baseline_us": 1764.4800543785095,
+      "candidate_us": 1908.9279770851135,
+      "latency_change_pct": 8.18642989747378
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 28,
+      "unique_experts": 224,
+      "regime": "warm",
+      "baseline_us": 3372.447967529297,
+      "candidate_us": 3520.624041557312,
+      "latency_change_pct": 4.393724542370658
+    },
+    {
+      "candidate": "moe_route_direct",
+      "rows": 28,
+      "unique_experts": 224,
+      "regime": "evicted",
+      "baseline_us": 3419.824004173279,
+      "candidate_us": 3572.624087333679,
+      "latency_change_pct": 4.468068619143417
+    }
+  ],
+  "selection": {
+    "moe_route_scatter": "reject: general scatter plus separate reduction regresses most shapes and routes",
+    "moe_route_direct": "reject: combined route output also regresses most shapes and routes",
+    "moe_direct_scatter": "retain as unselected measured candidate only: concentrated C4 routes improve, but C1 and spread routes regress"
+  },
+  "scope": "component numerical and B/A/A/B timing evidence; no engine step rate, acceptance or consumer speedup"
+}

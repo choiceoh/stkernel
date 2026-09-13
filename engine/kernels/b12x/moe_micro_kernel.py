@@ -387,6 +387,33 @@ def scatter_add_bf16x2_to_f32(addr: Int64, val0_f32, val1_f32, *, loc=None, ip=N
     )
 
 
+@dsl_user_op
+def scatter_store_bf16x2_to_f32(addr: Int64, val0_f32, val1_f32, *, loc=None, ip=None):
+    """Private route output: identical saturated BF16 contribution, no atomic.
+
+    The separate FP32 reducer retains the global RED's FTZ addition semantics.
+    """
+    llvm.inline_asm(
+        None,
+        [
+            Int64(addr).ir_value(loc=loc, ip=ip),
+            val0_f32.ir_value(loc=loc, ip=ip),
+            val1_f32.ir_value(loc=loc, ip=ip),
+        ],
+        "{ .reg .b32 packed; .reg .b16 h0,h1; .reg .f32 v0,v1;"
+        " cvt.rn.satfinite.bf16x2.f32 packed, $2, $1;"
+        " mov.b32 {h0,h1}, packed;"
+        " cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1;"
+        " st.global.v2.f32 [$0], {v0,v1}; }",
+        "l,f,f",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
+    )
+
+
 class MoEMicroKernel:
     """Compact micro MoE kernel with precompacted routing ids for decode."""
 

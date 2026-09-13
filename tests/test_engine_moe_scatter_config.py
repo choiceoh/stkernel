@@ -37,6 +37,12 @@ class ScatterConfigTests(unittest.TestCase):
         for rows in (7, 14, 21, 28):
             chosen = ns['_static_v2_decode_config'](config, rows)
             self.assertEqual(chosen['decode_reform'], rows == 7)
+            # The actual launch normalizes once; the compiler normalizes again.
+            # Wide rows intentionally have decode_reform=False after pass one.
+            twice = ns['_static_v2_decode_config'](chosen, rows)
+            self.assertEqual(twice, chosen)
+            self.assertEqual(ns['_static_v2_cache_key'](twice, m=rows),
+                             ns['_static_v2_cache_key'](chosen, m=rows))
         for rows in (0, 1, 6, 8, 29, 128):
             with self.assertRaises(ValueError):
                 ns['_static_v2_decode_config'](config, rows)

@@ -1,0 +1,120 @@
+{
+  "srv2": {
+    "image": "sha256:a13be2698a579983329b82a1fc2a98d6462346a323981ba17e97f27c3b7fbd7b",
+    "weights": {
+      "L3.moe.w13": {
+        "dtype": "U8",
+        "shape": [
+          288,
+          1024,
+          2048
+        ],
+        "bytes": 603979776,
+        "sha256": "e3d4063435505fb66c9616045b86bffaecb36dd5ed0b9c4bf6881d87e6a8838d"
+      },
+      "L3.moe.w13_sf": {
+        "dtype": "F8_E4M3",
+        "shape": [
+          288,
+          262144
+        ],
+        "bytes": 75497472,
+        "sha256": "6b025c0964bcc920bb7cc6a7fa32bc94dd7c20026bb242a3a4facbdee64bcc1f"
+      },
+      "L3.moe.w2": {
+        "dtype": "U8",
+        "shape": [
+          288,
+          4096,
+          256
+        ],
+        "bytes": 301989888,
+        "sha256": "49d4e1d4fbffe6a88300d689fe5176a6d7558142d1cfae412c4ccc9d2fc63370"
+      },
+      "L3.moe.w2_sf": {
+        "dtype": "F8_E4M3",
+        "shape": [
+          288,
+          131072
+        ],
+        "bytes": 37748736,
+        "sha256": "f8a4bf0fb96cd7c83a3c459b5370a1d22cbf887a93fca3a82c8e3bbcd50a0264"
+      }
+    },
+    "runtime": {
+      "cuda": "13.0",
+      "deep_gemm_files": 879,
+      "engine_source_sha256": "be771c1e1819dcba27c486deac685bedc5f59bc80b9ce041d13d0304cd67567d",
+      "packages": {
+        "flashinfer-python": "0.6.18.dev20260819",
+        "nvidia-cutlass-dsl": "4.6.2",
+        "tilelang": "0.1.12",
+        "torch": "2.13.0+cu130",
+        "triton": "3.7.1"
+      },
+      "passed": true,
+      "python": "3.12.3",
+      "seed_image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "vllm_present": false
+    }
+  },
+  "srv4": {
+    "image": "sha256:5a568eb759e8303848fae8b2c52f4a9a1f15cf5ad49f8c03f75ddf380c7682c0",
+    "weights": {
+      "L3.moe.w13": {
+        "dtype": "U8",
+        "shape": [
+          288,
+          1024,
+          2048
+        ],
+        "bytes": 603979776,
+        "sha256": "e3d4063435505fb66c9616045b86bffaecb36dd5ed0b9c4bf6881d87e6a8838d"
+      },
+      "L3.moe.w13_sf": {
+        "dtype": "F8_E4M3",
+        "shape": [
+          288,
+          262144
+        ],
+        "bytes": 75497472,
+        "sha256": "6b025c0964bcc920bb7cc6a7fa32bc94dd7c20026bb242a3a4facbdee64bcc1f"
+      },
+      "L3.moe.w2": {
+        "dtype": "U8",
+        "shape": [
+          288,
+          4096,
+          256
+        ],
+        "bytes": 301989888,
+        "sha256": "49d4e1d4fbffe6a88300d689fe5176a6d7558142d1cfae412c4ccc9d2fc63370"
+      },
+      "L3.moe.w2_sf": {
+        "dtype": "F8_E4M3",
+        "shape": [
+          288,
+          131072
+        ],
+        "bytes": 37748736,
+        "sha256": "f8a4bf0fb96cd7c83a3c459b5370a1d22cbf887a93fca3a82c8e3bbcd50a0264"
+      }
+    },
+    "runtime": {
+      "cuda": "13.0",
+      "deep_gemm_files": 879,
+      "engine_source_sha256": "be771c1e1819dcba27c486deac685bedc5f59bc80b9ce041d13d0304cd67567d",
+      "packages": {
+        "flashinfer-python": "0.6.18.dev20260819",
+        "nvidia-cutlass-dsl": "4.6.2",
+        "tilelang": "0.1.12",
+        "torch": "2.13.0+cu130",
+        "triton": "3.7.1"
+      },
+      "passed": true,
+      "python": "3.12.3",
+      "seed_image": "sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211",
+      "vllm_present": false
+    }
+  }
+}

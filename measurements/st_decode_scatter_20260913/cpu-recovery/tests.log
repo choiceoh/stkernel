@@ -1,0 +1,23 @@
+test_cuda_translation_unit_and_pinned_dynamic_helpers_match_provenance (tests.test_engine_kernels.KernelPackageTests.test_cuda_translation_unit_and_pinned_dynamic_helpers_match_provenance) ... ok
+test_deep_gemm_initializes_on_execution_and_forwards_the_library_contract (tests.test_engine_kernels.KernelPackageTests.test_deep_gemm_initializes_on_execution_and_forwards_the_library_contract) ... ok
+test_engine_never_imports_vllm_or_mounted_moe_kernels (tests.test_engine_kernels.KernelPackageTests.test_engine_never_imports_vllm_or_mounted_moe_kernels) ... ok
+test_glm_rank_rejects_ambiguous_expert_layout_before_loading (tests.test_engine_kernels.KernelPackageTests.test_glm_rank_rejects_ambiguous_expert_layout_before_loading) ... ok
+test_kernels_read_no_environment_knobs (tests.test_engine_kernels.KernelPackageTests.test_kernels_read_no_environment_knobs)
+D11 (2026-09-12): the kernel package has no env knob. The only os.environ read left is the ... ok
+test_ported_functions_have_their_module_globals (tests.test_engine_kernels.KernelPackageTests.test_ported_functions_have_their_module_globals) ... ok
+test_relative_imports_resolve_inside_the_vendored_package (tests.test_engine_kernels.KernelPackageTests.test_relative_imports_resolve_inside_the_vendored_package) ... ok
+test_strided_kda_guard_tracks_the_ported_norm_source (tests.test_engine_kernels.KernelPackageTests.test_strided_kda_guard_tracks_the_ported_norm_source) ... ok
+test_tile_major_layout_contract_is_shared_with_the_reference_module (tests.test_engine_kernels.KernelPackageTests.test_tile_major_layout_contract_is_shared_with_the_reference_module)
+The served bind re-lays expert bytes in place; the reference lane reads them back through ... ok
+test_cache_abi_and_parser_isolation (tests.test_engine_moe_scatter_config.ScatterConfigTests.test_cache_abi_and_parser_isolation) ... ok
+test_padded_batch_geometry_is_retained_without_explicit_reform (tests.test_engine_moe_scatter_config.ScatterConfigTests.test_padded_batch_geometry_is_retained_without_explicit_reform) ... ok
+test_capture_misses_fail_before_allocating_and_existing_owner_is_reused (tests.test_engine_moe_scatter_owner.ScatterOwnerTests.test_capture_misses_fail_before_allocating_and_existing_owner_is_reused) ... ok
+test_owned_buffer_replaces_only_scatter_argument_and_reduces_each_call (tests.test_engine_moe_scatter_owner.ScatterOwnerTests.test_owned_buffer_replaces_only_scatter_argument_and_reduces_each_call) ... ok
+test_cuda13_resource_dump_retains_candidate_and_packed_consumer (tests.test_engine_decode_native_compile.MhcResourceTests.test_cuda13_resource_dump_retains_candidate_and_packed_consumer) ... ok
+test_older_header_and_absent_symbol (tests.test_engine_decode_native_compile.MhcResourceTests.test_older_header_and_absent_symbol) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 3.376s
+
+OK
+  expert_layout: tile-major bytes read back row-major per expert OK

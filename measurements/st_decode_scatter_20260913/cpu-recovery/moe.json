@@ -1,0 +1,140 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "kernels": [
+    {
+      "rows": 7,
+      "route_scatter": false,
+      "direct_scatter": false,
+      "kernel": "static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256sf6v1_81e029e76c52a235",
+      "status": "PASS",
+      "seconds": 4.843150774977403
+    },
+    {
+      "rows": 7,
+      "route_scatter": true,
+      "direct_scatter": false,
+      "kernel": "static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256sf6v1_f2a0cc06924a2ece",
+      "status": "PASS",
+      "seconds": 4.533296573004918
+    },
+    {
+      "rows": 7,
+      "route_scatter": false,
+      "direct_scatter": true,
+      "kernel": "static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256sf6v1_416284ac0b2e8360",
+      "status": "PASS",
+      "seconds": 5.886911988985958
+    },
+    {
+      "rows": 7,
+      "route_scatter": true,
+      "direct_scatter": true,
+      "kernel": "static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256sf6v1_910ef6cd49ffdfa8",
+      "status": "PASS",
+      "seconds": 5.9131692459923215
+    },
+    {
+      "rows": 14,
+      "route_scatter": false,
+      "direct_scatter": false,
+      "kernel": "static2_m14_k4096_n512_t8_r112_tm32f2g2a32wutsf6v1_0a3cd126ec01898c",
+      "status": "PASS",
+      "seconds": 4.633879005006747
+    },
+    {
+      "rows": 14,
+      "route_scatter": true,
+      "direct_scatter": false,
+      "kernel": "static2_m14_k4096_n512_t8_r112_tm32f2g2a32wutsf6v1_bc8ffd09182e7405",
+      "status": "PASS",
+      "seconds": 4.701524806994712
+    },
+    {
+      "rows": 14,
+      "route_scatter": false,
+      "direct_scatter": true,
+      "kernel": "static2_m14_k4096_n512_t8_r112_tm32f2g2a32wutsf6v1_4dcc47381aacb901",
+      "status": "PASS",
+      "seconds": 6.045816414989531
+    },
+    {
+      "rows": 14,
+      "route_scatter": true,
+      "direct_scatter": true,
+      "kernel": "static2_m14_k4096_n512_t8_r112_tm32f2g2a32wutsf6v1_ff53a641155a6217",
+      "status": "PASS",
+      "seconds": 6.1502010929980315
+    },
+    {
+      "rows": 21,
+      "route_scatter": false,
+      "direct_scatter": false,
+      "kernel": "static2_m21_k4096_n512_t8_r168_tm32f2g2a32wutsf6v1_afdd5ddb42b89bee",
+      "status": "PASS",
+      "seconds": 4.91238088402315
+    },
+    {
+      "rows": 21,
+      "route_scatter": true,
+      "direct_scatter": false,
+      "kernel": "static2_m21_k4096_n512_t8_r168_tm32f2g2a32wutsf6v1_269f0c50348674a8",
+      "status": "PASS",
+      "seconds": 4.688391491014045
+    },
+    {
+      "rows": 21,
+      "route_scatter": false,
+      "direct_scatter": true,
+      "kernel": "static2_m21_k4096_n512_t8_r168_tm32f2g2a32wutsf6v1_814e51b207e18bec",
+      "status": "PASS",
+      "seconds": 6.10097691800911
+    },
+    {
+      "rows": 21,
+      "route_scatter": true,
+      "direct_scatter": true,
+      "kernel": "static2_m21_k4096_n512_t8_r168_tm32f2g2a32wutsf6v1_3c9688fabd27cbbc",
+      "status": "PASS",
+      "seconds": 6.341363569023088
+    },
+    {
+      "rows": 28,
+      "route_scatter": false,
+      "direct_scatter": false,
+      "kernel": "static2_m28_k4096_n512_t8_r224_tm32f2g2a32wutsf6v1_bcc48b7ca53175d9",
+      "status": "PASS",
+      "seconds": 4.88767508501769
+    },
+    {
+      "rows": 28,
+      "route_scatter": true,
+      "direct_scatter": false,
+      "kernel": "static2_m28_k4096_n512_t8_r224_tm32f2g2a32wutsf6v1_ce374babd7ca700d",
+      "status": "PASS",
+      "seconds": 4.866049963020487
+    },
+    {
+      "rows": 28,
+      "route_scatter": false,
+      "direct_scatter": true,
+      "kernel": "static2_m28_k4096_n512_t8_r224_tm32f2g2a32wutsf6v1_ef449419b5a00898",
+      "status": "PASS",
+      "seconds": 6.3483286690025125
+    },
+    {
+      "rows": 28,
+      "route_scatter": true,
+      "direct_scatter": true,
+      "kernel": "static2_m28_k4096_n512_t8_r224_tm32f2g2a32wutsf6v1_a8f3a05f38e83d5d",
+      "status": "PASS",
+      "seconds": 6.4033808349922765
+    }
+  ],
+  "scope": "native compile and static output coordinate coverage; numerics/timing pending",
+  "source_sha256": {
+    "engine/kernels/b12x/moe_dispatch.py": "8391325f7675cd4819b35c411c37588de46dea0c3f9e55267a3bc8a815ca1c64",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "a12ced6fe865237ac1ba5a409d8a53eb2b3235fa46f4348840b9a8c2d8249c74",
+    "engine/kernels/b12x/moe_micro_kernel.py": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914"
+  }
+}

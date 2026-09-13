@@ -28,7 +28,7 @@ import cutlass.utils.blockscaled_layout as blockscaled_utils
 
 from cutlass.cutlass_dsl import Int32, Int64, Uint8, Uint64
 from cutlass.cute.nvgpu import cpasync
-from .moe_micro_kernel import scatter_add_bf16x2_to_f32
+from .moe_micro_kernel import scatter_add_bf16x2_to_f32, scatter_store_bf16x2_to_f32
 
 from flashinfer.cute_dsl.utils import (
     sm120_make_smem_layout_sfa,
@@ -1887,8 +1887,7 @@ class MoEStaticKernelV4:
                                 ep_ptr = get_ptr_as_int64(
                                     scatter_output, ep_tok * scatter_N + tile_n_base_cur + Int32(ep_coord[1]))
                                 if cutlass.const_expr(self.route_scatter):
-                                    st_global_f32(ep_ptr, ep_weight * ep_v0)
-                                    st_global_f32(ep_ptr + Int64(4), ep_weight * ep_v1)
+                                    scatter_store_bf16x2_to_f32(ep_ptr, ep_weight * ep_v0, ep_weight * ep_v1)
                                 else:
                                     scatter_add_bf16x2_to_f32(ep_ptr, ep_weight * ep_v0, ep_weight * ep_v1)
                     else:
@@ -1940,14 +1939,10 @@ class MoEStaticKernelV4:
                             if cutlass.const_expr(self.route_scatter):
                                 route_row = tok * Int32(self.output_tile_count_n) + Int32(tile_coord[1])
                                 out_ptr = get_ptr_as_int64(scatter_output, route_row * scatter_N + global_col)
-                                st_global_f32(out_ptr + Int64(0), wv * sc_v0)
-                                st_global_f32(out_ptr + Int64(4), wv * sc_v1)
-                                st_global_f32(out_ptr + Int64(8), wv * sc_v2)
-                                st_global_f32(out_ptr + Int64(12), wv * sc_v3)
-                                st_global_f32(out_ptr + Int64(16), wv * sc_v4)
-                                st_global_f32(out_ptr + Int64(20), wv * sc_v5)
-                                st_global_f32(out_ptr + Int64(24), wv * sc_v6)
-                                st_global_f32(out_ptr + Int64(28), wv * sc_v7)
+                                scatter_store_bf16x2_to_f32(out_ptr + Int64(0), wv * sc_v0, wv * sc_v1)
+                                scatter_store_bf16x2_to_f32(out_ptr + Int64(8), wv * sc_v2, wv * sc_v3)
+                                scatter_store_bf16x2_to_f32(out_ptr + Int64(16), wv * sc_v4, wv * sc_v5)
+                                scatter_store_bf16x2_to_f32(out_ptr + Int64(24), wv * sc_v6, wv * sc_v7)
                             elif cutlass.const_expr(self.scatter_fp32):
                                 scatter_add_bf16x2_to_f32(
                                     get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(0)),
