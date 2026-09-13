@@ -201,10 +201,12 @@ config 해시가 맞으면 그것을 바인딩하며(낡은 기록은 사망: "�
 전문가의 FP8 활성값)는 수식이 달라 글루가 아니다. MLA 무장은 `glue.arm()` 이 `mla.maybe_arm(check=glue.check)` 로 하고,
 커널 자기 판정은 여전히 컴파일된 16×512 셀에서 돈다.
 
-판정 상태: 어댑터 산술은 `tests/test_engine_kernel_glue.py` 가 CPU 에서 커널의 torch 쌍둥이를 끼워 오라클
-(`modules/sparse_attention.mla_sparse_mqa`·`gqa_sparse`, `probes/mk_mhc_geometry_bench.py` 의 V4.1 참조, torch 선형 곱)에 대조한다.
-같은 파일의 GPU 사례(무장한 실제 커널)는 아직 GPU 에서 돌지 않았으므로 판정표의 글루는 전부 unjudged 다. 어느 프로파일도 아직 글루를
-바인딩하지 않는다 — 판정표의 wire 레시피가 그 작업이다.
+판정 상태: `tests/test_engine_kernel_glue.py` 가 네이티브 어댑터(MLA·V4.1 mHC·dense)의 산술을 CPU 에서 커널의 torch 쌍둥이를 끼워
+오라클(`modules/sparse_attention.mla_sparse_mqa`·`gqa_sparse`, `probes/mk_mhc_geometry_bench.py` 의 V4.1 참조, torch 선형 곱)에 대조한다.
+KDA 글루는 실제 Triton 커널이 CPU 에서 Triton 인터프리터로 돈다(`docker exec -e TRITON_INTERPRET=1 ... tests.test_engine_kernel_glue`):
+링 decay 진입점은 기능 레인과 바이트 동일하고 오라클과 1e-5 안, 청크 decay 진입점(`states_at` 포함)도 오라클과 1e-5 안이다.
+인터프리터는 커널 산술을 판정하지만 GB10 컴파일 결과는 아니고, 네이티브 어댑터의 GPU 사례도 아직 돌지 않았으므로 판정표의 글루는 전부
+unjudged 다. 어느 프로파일도 아직 글루를 바인딩하지 않는다 — 판정표의 wire 레시피가 그 작업이다.
 
 ## 런타임 이미지
 

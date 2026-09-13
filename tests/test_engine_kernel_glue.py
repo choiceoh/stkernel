@@ -1,11 +1,18 @@
 """The kernel glue (engine/kernels/cells.GLUE): exact adapters that put other cells on the compiled kernels.
 
 On the CPU every adapter is held to its oracle with the kernel's torch twin injected, and its refusals and argument
-contracts are pinned before any kernel launches. The GPU cases run the armed kernels against the same oracles; they
-skip where there is no CUDA or no ST image, and they are the judgment the wizard's table still marks as pending.
+contracts are pinned before any kernel launches. The KDA glue runs its real Triton kernels against the oracle on a GPU
+or on the CPU under TRITON_INTERPRET=1 (Triton's interpreter executes the same kernels). The native cases -- the MLA
+megakernel, the V4.1 mHC seam, the packed dense lane -- need CUDA and the ST image; they are the judgment the wizard's
+table still marks as pending.
+
+    docker exec -e TRITON_INTERPRET=1 -w <repo> stk-test python3 -m unittest tests.test_engine_kernel_glue
 """
+import builtins
+import contextlib
 import importlib.util
 import math
+import os
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -22,6 +29,63 @@ if importlib.util.find_spec("torch") is not None:
 TRITON = importlib.util.find_spec("triton") is not None
 GPU = torch is not None and torch.cuda.is_available() and PRESENT
 GPU_REASON = "requires CUDA; " + REASON
+INTERPRET = os.environ.get("TRITON_INTERPRET") == "1"
+KDA_DEVICE = "cpu" if INTERPRET else "cuda"
+KDA_RUNS = torch is not None and TRITON and (INTERPRET or (torch.cuda.is_available() and PRESENT))
+
+if TRITON:
+    import triton
+    import triton.language as tl
+
+    # the interpreter patches `tl` inside a kernel but not a builtin bound under another name (kda/op.py: exp = tl.exp);
+    # these stand in for those names under TRITON_INTERPRET=1 only (see `kda_kernels`)
+    @triton.jit
+    def _interpreted_exp(x):
+        return tl.exp(x)
+
+    @triton.jit
+    def _interpreted_exp2(x):
+        return tl.exp2(x)
+
+    @triton.jit
+    def _interpreted_log(x):
+        return tl.log(x)
+
+
+@contextlib.contextmanager
+def kda_kernels():
+    """The KDA kernels as they run here. On a GPU: untouched. Under TRITON_INTERPRET=1, four test-only accommodations
+    for what the interpreter does differently from a compiled kernel -- none changes a kernel's arithmetic:
+
+    - a `tl` builtin bound under another name (kda/op.py: `exp = tl.exp`) is not patched by the interpreter, so those
+      names get @triton.jit wrappers that call the builtin;
+    - a kernel loop variable is a Python int where the compiled one is a tl.int32 (chunk_delta_h.py: `i_t.to(...)`),
+      so that module's `range` yields int32 tensors;
+    - autotuning benchmarks through a device driver, so every config times equal and the first one runs;
+    - the wrappers' CUDA-only argument checks see these CPU tensors as the interpreter's device."""
+    if not INTERPRET:
+        yield
+        return
+    import numpy as np
+    from triton.runtime.autotuner import Autotuner
+    from triton.runtime.interpreter import TensorHandle
+    from engine.kernels.kda import chunk_delta_h, cumsum, fused_recurrent, kda, l2norm, solve_tril
+
+    def int32_range(*bounds):
+        ints = [int(b.handle.data.item()) if hasattr(b, "handle") else int(b) for b in bounds]
+        for i in builtins.range(*ints):
+            yield tl.core.tensor(TensorHandle(np.array([i], dtype=np.int32), tl.int32), tl.int32)
+
+    wrappers = {"exp": _interpreted_exp, "exp2": _interpreted_exp2, "log": _interpreted_log}
+    with contextlib.ExitStack() as stack:
+        for module in (chunk_delta_h, cumsum, fused_recurrent, kda, l2norm, solve_tril):
+            for name, wrapper in wrappers.items():
+                if hasattr(module, name):
+                    stack.enter_context(patch.object(module, name, wrapper))
+        stack.enter_context(patch.object(chunk_delta_h, "range", int32_range, create=True))
+        stack.enter_context(patch.object(Autotuner, "_bench", lambda self, *args, config, **meta: [0.0, 0.0, 0.0]))
+        stack.enter_context(patch.object(torch.Tensor, "is_cuda", property(lambda tensor: True)))
+        yield
 
 GQA_QWEN = Attention("gqa", heads=6, head_dim=256, kv_heads=1, sink=False)      # Qwen3.8 per rank, the sink read as absent
 HEAD_DECAY = replace(MEASURED, attention=GQA_QWEN,
@@ -321,6 +385,127 @@ class KdaDecayGlueTests(unittest.TestCase):
         self.assertTrue(torch.equal(torch.arange(4).repeat_interleave(3), torch.arange(12) // 3))
 
 
+@unittest.skipUnless(KDA_RUNS, "requires CUDA and the ST image, or TRITON_INTERPRET=1 with Triton")
+class KdaDecayKernelTests(unittest.TestCase):
+    """The KDA decay glue's real Triton kernels against modules/linear_attention and against the fused lanes: GDN's
+    per-head decay, value heads a multiple of the key heads."""
+
+    def setUp(self):
+        torch.manual_seed(129613)
+        ks.reset()
+        self.addCleanup(ks.reset)
+        # the interpreter is slow: small widths there, Qwen3.8's per-rank cell on a GPU
+        self.h, self.hv, self.kd = (2, 4, 16) if INTERPRET else (4, 12, 128)
+        ks.bind(replace(HEAD_DECAY, linear=LinearAttention(heads=self.h, v_heads=self.hv, k_dim=self.kd, v_dim=self.kd,
+                                                          conv=4, decay="head")))
+
+    @staticmethod
+    def rel(a, b):
+        return float((a.float() - b.float()).norm() / b.float().norm().clamp_min(1e-30))
+
+    def step(self, t, dtype):
+        g = lambda *shape: torch.randn(*shape, device=KDA_DEVICE, dtype=dtype)
+        decay = -torch.nn.functional.softplus(torch.randn(1, t, self.hv, device=KDA_DEVICE)) * .5
+        return g(1, t, self.h, self.kd), g(1, t, self.h, self.kd), g(1, t, self.hv, self.kd), decay, g(1, t, self.hv)
+
+    def oracle(self, q, k, v, decay, beta, state=None):
+        from engine.modules.linear_attention import gated_delta_rule
+        group = self.hv // self.h
+        return gated_delta_rule(q.repeat_interleave(group, 2), k.repeat_interleave(group, 2), v, decay, beta, state,
+                                scale=self.kd ** -0.5, qk_l2norm=True)
+
+    def test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane(self):
+        from engine.kernels.kda import fused_recurrent_kda
+        from engine.kernels.kda.ring import recurrent_decay_ring
+        from engine.kernels.linear_decay import per_channel
+        dtype = torch.float32 if INTERPRET else torch.bfloat16
+        cells_ = 6
+        for t in ((1, 3) if INTERPRET else (1, 3, 7)):
+            q, k, v, decay, beta = self.step(t, dtype)
+            ring = torch.randn(3, cells_, self.hv, self.kd, self.kd, device=KDA_DEVICE) * .1
+            for slot, context in ((0, 0), (1, 1), (2, cells_ + 2)):
+                with self.subTest(tokens=t, slot=slot, context=context):
+                    initial = (ring[slot, (context - 1) % cells_][None].clone() if context
+                               else torch.zeros(1, self.hv, self.kd, self.kd, device=KDA_DEVICE))
+                    expected = ring.clone()
+                    wide = ring.clone()
+                    with kda_kernels():
+                        out_ref, states = fused_recurrent_kda(q, k, v, per_channel(decay, self.kd), beta,
+                                                              scale=self.kd ** -0.5, initial_state=initial,
+                                                              inplace_final_state=False, use_qk_l2norm_in_kernel=True,
+                                                              sigmoid_beta=True, compute_gate=False, state_layout="kv")
+                        out = recurrent_decay_ring(q, k, v, decay, beta, ring, slot, context)
+                        out_wide = recurrent_decay_ring(q, k, v, per_channel(decay, self.kd).contiguous(), beta, wide,
+                                                        slot, context)
+                    for i, state in enumerate(states):
+                        expected[slot, (context + i) % cells_].copy_(state)
+                    self.assertTrue(torch.equal(out, out_ref))                 # the functional lane, byte for byte
+                    self.assertTrue(torch.equal(ring, expected))              # its states, written in the ring
+                    self.assertTrue(torch.equal(out_wide, out) and torch.equal(wide, ring))   # stride 0 == contiguous
+                    oracle, final = self.oracle(q, k, v, decay, torch.sigmoid(beta.float()), initial)
+                    self.assertLessEqual(self.rel(out, oracle), 1e-5 if INTERPRET else 1e-2)
+                    self.assertLessEqual(self.rel(ring[slot, (context + t - 1) % cells_], final[0]),
+                                         1e-5 if INTERPRET else 1e-2)
+
+    def test_the_decay_entry_with_kda_s_gate_is_the_fused_entry(self):
+        """Hand the decay entry the per-channel decay KDA's fused gate computes and it is the fused ring entry."""
+        from engine.kernels.kda.ring import recurrent_decay_ring, recurrent_kda_ring
+        from engine.modules.linear_attention import kda_gate
+        h, kd, t = self.h, self.kd, 3
+        ks.reset()
+        ks.bind(replace(MEASURED, linear=LinearAttention(heads=h, v_heads=h, k_dim=kd, v_dim=kd, conv=4)))
+        g = lambda *shape: torch.randn(*shape, device=KDA_DEVICE)
+        q, k, v, raw, beta = g(1, t, h, kd), g(1, t, h, kd), g(1, t, h, kd), g(1, t, h, kd), g(1, t, h)
+        a_log, bias = g(h) * .2, g(h * kd) * .1
+        fused, direct = (torch.randn(2, 4, h, kd, kd, device=KDA_DEVICE) * .1 for _ in range(2))
+        direct.copy_(fused)
+        decay = kda_gate(raw, a_log, bias, -5.0, safe_gate=True)
+        with kda_kernels():
+            out_fused = recurrent_kda_ring(q, k, v, raw, beta, a_log, bias, fused, 1, 3, -5.0)
+            out = recurrent_decay_ring(q, k, v, decay, beta, direct, 1, 3)
+        self.assertLessEqual(self.rel(out, out_fused), 1e-5)
+        self.assertLessEqual(self.rel(direct, fused), 1e-5)
+
+    def test_the_rows_fold_is_the_one_row_launches(self):
+        from engine.kernels.kda.ring import recurrent_decay_ring, recurrent_decay_ring_rows
+        rows, t = 2, 2
+        q, k, v, decay, beta = self.step(rows * t, torch.float32 if INTERPRET else torch.bfloat16)
+        ring = torch.randn(3, 6, self.hv, self.kd, self.kd, device=KDA_DEVICE) * .1
+        one = ring.clone()
+        slots = torch.tensor([2, 0], device=KDA_DEVICE, dtype=torch.int32)
+        contexts = torch.tensor([5, 0], device=KDA_DEVICE, dtype=torch.int32)
+        with kda_kernels():
+            folded = recurrent_decay_ring_rows(q, k, v, decay, beta, ring, slots, contexts)
+            parts = [recurrent_decay_ring(*(x[:, i * t:(i + 1) * t] for x in (q, k, v, decay, beta)), one,
+                                          int(slots[i]), int(contexts[i])) for i in range(rows)]
+        self.assertTrue(torch.equal(folded, torch.cat(parts, 1)))
+        self.assertTrue(torch.equal(ring, one))
+
+    def test_the_chunk_decay_entry_is_the_recurrence(self):
+        from engine.kernels.kda.chunk_decay import chunk_kda_with_decay
+        from engine.kernels.kda.index import single_sequence_bounds
+        t = 130 if INTERPRET else 300                                   # three 64-token chunks either way
+        dtype = torch.float32 if INTERPRET else torch.bfloat16
+        q, k, v, decay, _ = self.step(t, dtype)
+        decay = decay * .2
+        beta = torch.sigmoid(torch.randn(1, t, self.hv, device=KDA_DEVICE))
+        bounds = single_sequence_bounds(t, q.device)
+        # without `out` the pipeline writes its output over v's storage (as the fused entry does): hand it a copy
+        run = lambda d, **kw: chunk_kda_with_decay(q, k, v.clone(), d, beta, use_qk_l2norm_in_kernel=True, cu_seqlens=bounds,
+                                                   out=None if INTERPRET else torch.empty_like(v), **kw)
+        with kda_kernels():
+            o, state, marks = run(decay, output_final_state=True, states_at=[1, 2])
+            wide, _ = run(decay.unsqueeze(-1).expand(1, t, self.hv, self.kd))
+        tolerance = 1e-5 if INTERPRET else 1e-2
+        oracle, final = self.oracle(q, k, v, decay, beta)
+        self.assertLessEqual(self.rel(o, oracle), tolerance)
+        self.assertLessEqual(self.rel(state.transpose(-1, -2), final), tolerance)
+        for n, chunk in enumerate((1, 2)):
+            _, at = self.oracle(*(x[:, :64 * chunk] for x in (q, k, v, decay, beta)))
+            self.assertLessEqual(self.rel(marks[n].transpose(-1, -2), at[0]), tolerance)
+        self.assertLessEqual(self.rel(wide, o), 1e-5 if INTERPRET else 1e-3)       # per channel: the same decay
+
+
 @unittest.skipUnless(torch is not None, "requires torch")
 class DenseGlueTests(unittest.TestCase):
     """engine/kernels/dense.PaddedDenseLinear: zero columns in, zero-extended input, the same product."""
@@ -402,83 +587,6 @@ class GlueOnTheGpuTests(unittest.TestCase):
         got = glue.grouped(q, glue.pad_rows(latent.float()).to(torch.float8_e4m3fn).view(torch.uint8), slots, lens,
                            256 ** -0.5, 1.0)
         self.assertLessEqual(self.rel(got, mla_sparse_mqa(q, latent, slots, lens, 256 ** -0.5)), 2e-2)
-
-    def test_the_ring_decay_entry_writes_what_the_functional_lane_computes(self):
-        from engine.kernels.kda import fused_recurrent_kda
-        from engine.kernels.kda.ring import recurrent_decay_ring, recurrent_decay_ring_rows
-        from engine.kernels.linear_decay import per_channel
-        from engine.modules.linear_attention import gated_delta_rule
-        ks.bind(HEAD_DECAY)
-        h, hv, kd, cells_ = 4, 12, 128, 8
-        for t in (1, 3, 7):
-            q = torch.randn(1, t, h, kd, device="cuda", dtype=torch.bfloat16)
-            k = torch.randn(1, t, h, kd, device="cuda", dtype=torch.bfloat16)
-            v = torch.randn(1, t, hv, kd, device="cuda", dtype=torch.bfloat16)
-            decay = -torch.nn.functional.softplus(torch.randn(1, t, hv, device="cuda"))
-            beta = torch.randn(1, t, hv, device="cuda", dtype=torch.bfloat16)
-            ring = torch.randn(3, cells_, hv, kd, kd, device="cuda") * .1
-            for slot, context in ((0, 0), (1, 1), (2, cells_ + 2)):
-                with self.subTest(tokens=t, slot=slot, context=context):
-                    expected = ring.clone()
-                    initial = (ring[slot, (context - 1) % cells_][None].clone() if context
-                               else torch.zeros(1, hv, kd, kd, device="cuda"))
-                    out_ref, states = fused_recurrent_kda(q, k, v, per_channel(decay, kd), beta, scale=kd ** -0.5,
-                                                          initial_state=initial, inplace_final_state=False,
-                                                          use_qk_l2norm_in_kernel=True, sigmoid_beta=True,
-                                                          compute_gate=False, state_layout="kv")
-                    for i, state in enumerate(states):
-                        expected[slot, (context + i) % cells_].copy_(state)
-                    out = recurrent_decay_ring(q, k, v, decay, beta, ring, slot, context)
-                    self.assertTrue(torch.equal(out, out_ref))
-                    self.assertTrue(torch.equal(ring, expected))
-                    group = hv // h
-                    oracle, _ = gated_delta_rule(q.repeat_interleave(group, 2), k.repeat_interleave(group, 2), v, decay,
-                                                 torch.sigmoid(beta.float()), initial, scale=kd ** -0.5, qk_l2norm=True)
-                    self.assertLessEqual(self.rel(out, oracle), 1e-2)
-        rows = 2
-        q, k = (torch.randn(1, rows * 2, h, kd, device="cuda", dtype=torch.bfloat16) for _ in range(2))
-        v = torch.randn(1, rows * 2, hv, kd, device="cuda", dtype=torch.bfloat16)
-        decay = -torch.rand(1, rows * 2, hv, device="cuda")
-        beta = torch.randn(1, rows * 2, hv, device="cuda", dtype=torch.bfloat16)
-        ring = torch.randn(3, cells_, hv, kd, kd, device="cuda") * .1
-        one = ring.clone()
-        slots = torch.tensor([2, 0], device="cuda", dtype=torch.int32)
-        contexts = torch.tensor([5, 0], device="cuda", dtype=torch.int32)
-        folded = recurrent_decay_ring_rows(q, k, v, decay, beta, ring, slots, contexts)
-        parts = [recurrent_decay_ring(q[:, 2 * i:2 * i + 2], k[:, 2 * i:2 * i + 2], v[:, 2 * i:2 * i + 2],
-                                      decay[:, 2 * i:2 * i + 2], beta[:, 2 * i:2 * i + 2], one,
-                                      int(slots[i]), int(contexts[i])) for i in range(rows)]
-        self.assertTrue(torch.equal(folded, torch.cat(parts, 1)))
-        self.assertTrue(torch.equal(ring, one))
-
-    def test_the_chunk_decay_entry_is_the_recurrence(self):
-        from engine.kernels.kda.chunk_decay import chunk_kda_with_decay
-        from engine.kernels.kda.index import single_sequence_bounds
-        from engine.modules.linear_attention import gated_delta_rule
-        t, h, hv, kd = 300, 4, 12, 128
-        q = torch.randn(1, t, h, kd, device="cuda", dtype=torch.bfloat16)
-        k = torch.randn(1, t, h, kd, device="cuda", dtype=torch.bfloat16)
-        v = torch.randn(1, t, hv, kd, device="cuda", dtype=torch.bfloat16)
-        decay = -torch.nn.functional.softplus(torch.randn(1, t, hv, device="cuda")) * .1
-        beta = torch.sigmoid(torch.randn(1, t, hv, device="cuda"))
-        # without `out` the pipeline writes its output over v's storage, as the fused entry does
-        o, state, marks = chunk_kda_with_decay(q, k, v, decay, beta, output_final_state=True, use_qk_l2norm_in_kernel=True,
-                                               cu_seqlens=single_sequence_bounds(t, q.device), out=torch.empty_like(v),
-                                               states_at=[1, 3])
-        rep = hv // h
-        oracle, oracle_state = gated_delta_rule(q.repeat_interleave(rep, 2), k.repeat_interleave(rep, 2), v, decay, beta,
-                                                scale=kd ** -0.5, qk_l2norm=True)
-        self.assertLessEqual(self.rel(o, oracle), 1e-2)
-        self.assertLessEqual(self.rel(state.transpose(-1, -2), oracle_state), 1e-2)
-        for n, chunk in enumerate((1, 3)):
-            _, at = gated_delta_rule(q[:, :64 * chunk].repeat_interleave(rep, 2), k[:, :64 * chunk].repeat_interleave(rep, 2),
-                                     v[:, :64 * chunk], decay[:, :64 * chunk], beta[:, :64 * chunk],
-                                     scale=kd ** -0.5, qk_l2norm=True)
-            self.assertLessEqual(self.rel(marks[n].transpose(-1, -2), at[0]), 1e-2)
-        wide, _ = chunk_kda_with_decay(q, k, v, decay.unsqueeze(-1).expand(1, t, hv, kd), beta,
-                                       use_qk_l2norm_in_kernel=True, cu_seqlens=single_sequence_bounds(t, q.device),
-                                       out=torch.empty_like(v))
-        self.assertLessEqual(self.rel(wide, o), 1e-3)                                   # per channel, the same decay
 
     def test_mhc_v41_on_the_megakernel(self):
         from engine.kernels.dense import mhc

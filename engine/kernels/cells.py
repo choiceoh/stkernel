@@ -423,7 +423,7 @@ def _recipe_kda_ring():
                   "launch and in-kernel ring writes with the gate computed outside the kernel (COMPUTE_GATE off), the "
                   "per-head decay read through a stride-0 channel axis (linear_decay.per_channel)",
                   f"{_GLUE_TEST} on {_GPU} (ring storage byte-identical to fused_recurrent_kda(compute_gate=False) with "
-                  "its states copied in) and " + _KDA_JUDGE,
+                  "its states copied in; the same cases pass on the CPU under TRITON_INTERPRET=1) and " + _KDA_JUDGE,
                   "the decode step replays byte-identically across rows (the tests/test_engine_kda_ring.py pattern)", "hours")
 
 
@@ -432,7 +432,7 @@ def _recipe_kda_chunk():
                   "bind engine/kernels/kda/chunk_decay.chunk_kda_with_decay: chunk_kda_with_fused_gate's pipeline, "
                   "states_at and out included, with the decay computed outside the kernel -- a per-head decay summed per "
                   "chunk and widened per channel, fewer key heads repeated to the value heads",
-                  f"{_GLUE_TEST} on {_GPU} and " + _KDA_JUDGE,
+                  f"{_GLUE_TEST} on {_GPU} (it passes on the CPU under TRITON_INTERPRET=1) and " + _KDA_JUDGE,
                   "the prefill lane binds it and chunked == recurrent on the oracle", "hours")
 
 
@@ -706,7 +706,8 @@ def admission(shape) -> "list[Verdict]":
             "; the per-head decay is widened by linear_decay.per_channel (compute_gate=False)" if per_head else "")
         recurrent_serve = (_serve(GLUE, "engine/kernels/kda (fused_recurrent_kda(compute_gate=False) over "
                                   "linear_decay.per_channel(decay))", False,
-                                  "the per-head decay read through a stride-0 channel axis; unjudged at a per-head decay")
+                                  "the per-head decay read through a stride-0 channel axis; held to modules/linear_attention "
+                                  "under Triton's CPU interpreter (tests/test_engine_kernel_glue.py), unjudged on a GPU")
                            if per_head else
                            _serve(SPECIALIZED, "engine/kernels/kda (fused_recurrent_kda)", True,
                                   "tests/test_engine_kda_state.py" + ("" if measured_cell else f", at {_KDA_CELLS_TEXT}")))
@@ -719,12 +720,15 @@ def admission(shape) -> "list[Verdict]":
             refuse("kda_ring", "the ring lane fuses KDA's per-channel gate; a head-decay cell cannot run it", _recipe_kda_ring(),
                    _serve(GLUE, "engine/kernels/kda/ring.recurrent_decay_ring and recurrent_decay_ring_rows (the ring "
                           "kernel with its gate computed outside it)", False,
-                          "the fused entry's launch and in-kernel ring writes, COMPUTE_GATE off; unjudged on a GPU"))
+                          "the fused entry's launch and in-kernel ring writes, COMPUTE_GATE off; byte-identical to the "
+                          "functional lane and held to modules/linear_attention under Triton's CPU interpreter, unjudged on "
+                          "a GPU"))
             refuse("kda_chunk", "the chunk lane fuses KDA's gate; a head-decay prefill runs the pipeline on a decay computed "
                                 "outside it", _recipe_kda_chunk(),
                    _serve(GLUE, "engine/kernels/kda/chunk_decay.chunk_kda_with_decay (chunk_kda_with_fused_gate's pipeline "
                           "on a precomputed decay)", False,
-                          "the per-head decay summed per chunk and widened per channel; unjudged on a GPU"))
+                          "the per-head decay summed per chunk and widened per channel; held to modules/linear_attention "
+                          "(states_at included) under Triton's CPU interpreter, unjudged on a GPU"))
         elif measured_cell:
             admit("kda_ring", "the ring lane's fused per-channel KDA gate",
                   _serve(SPECIALIZED, "engine/kernels/kda/ring.py", True, "tests/test_engine_kda_ring.py"))
