@@ -40,7 +40,9 @@ def main():
                  'tests.test_engine_kernel_glue', 'tests.test_engine_turn_retention',
                  'tests.test_engine_fleet_lease', 'tests.test_engine_direct_mhc',
                  'tests.test_engine_knobs', 'tests.test_engine_mhc_contract',
-                 'tests.test_engine_prefill_outputs']
+                 'tests.test_engine_prefill_outputs', 'tests.test_engine_draft_acceptance',
+                 'tests.test_engine_native_execution', 'tests.test_onepass_draft_rejections',
+                 'tests.test_engine_composition']
         if args.include_m64:
             tests.append('tests.test_moe_prefill_m64')
         with (output/'cpu-tests.log').open('w') as log:
