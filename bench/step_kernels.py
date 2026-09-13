@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""디코드 스텝을 바이트로 분해한다 — 시뮬레이터의 장치 상수가 *왜* 그 값인지.
+"""ST 오라클(ST Oracle) — 커널 층: 디코드 스텝을 바이트로 분해한다.
+
+시뮬레이터의 장치 상수가 *왜* 그 값인지.
 
 step_sim 은 장치 시간을 실측 상수로 폴딩한다(한 판이 상수의 원천). 이 모듈은 그 밑의
 한 층을 흉내 낸다: **스텝이 움직이는 바이트**를 모델 형상에서 계산하고, 대역폭·효율로
@@ -46,6 +48,43 @@ MIB = 1 << 20
 KIB = 1 << 10
 
 
+# ---- ST 오라클 모델 레지스트리 — 각 모델의 바이트가 어디서 왔고 무엇이 비었는지 ----
+# glm53: 전부 실측/계산(아레나 표·#838). qwen38/dsv4: 리포 문서의 구조·실측 사실만;
+# 비어 있으면 for_model 이 이름붙여 거부한다 — 한 번의 체크포인트 읽기나 프로브가 채운다.
+MODEL_REGISTRY = {
+    "glm53": {},
+    "qwen38": {   # profiles/qwen38.env · engine/profiles/qwen38 · kv.py · 원장 아카이브
+        "experts": 512, "topk": 10,
+        "expert_mb": 3 * 2560 * 640 * 0.5625 / 1e6,   # 구조: hidden 2560 × inter 640 × 3, NVFP4(EP: 랭크마다 전체 전문가 128개)
+        "moe_layers": None,                           # 결측: 체크포인트 config 의 MoE 층 수
+        "state_ring_bytes": 27.5 * MIB,               # 실측(원장 아카이브: GDN 36층 × (conv 15KiB + recurrent 0.75MiB))
+        "kv_bytes_per_token": None,                   # 결측: 이 모델의 KV/토큰(블록 바이트 ÷ 블록 토큰)
+        "static_weights": None, "drafter_weights": 0.0, "drafter_ms": 0.0,  # 스펙 드래프터 없음(결측 명시)
+    },
+    "dsv4": {     # 원장 아카이브(프로덕션 하이브리드 스택 실측)
+        "kv_bytes_per_token": (12 + 0.75) * KIB,      # 실측: full-attn KV 12 KiB/토큰 + 인덱서 0.75 KiB
+        "state_ring_bytes": 27.5 * MIB,               # 실측: GDN 상태/시퀀스(컨텍스트 무관)
+        "experts": None, "topk": None, "moe_layers": None, "expert_mb": None, "static_weights": None,
+    },
+}
+
+# 결측 필드의 근거 있는 상하한 — 이 구간이 신뢰구간과 신뢰도가 된다. 근거 없는 구간은 없다.
+MODEL_BOUNDS = {
+    "qwen38": {
+        "moe_layers": (32, 47, "총 48층(qwen38.env), 하이브리드는 일부 dense 유지(glm53 3/45)"),
+        "static_weights": (1.5 * GIB, 4.0 * GIB, "GDN 48층 in/out proj ≈1.5GiB 하한; glm53 정적 4.63GiB 아래(hidden 2560<4096)"),
+        "kv_bytes_per_token": (4 * KIB, 12.75 * KIB, "glm53 실측 5.9 · dsv4 실측 12.75 KiB/토큰 사이"),
+    },
+    "dsv4": {
+        "experts": (128, 512, "하이브리드 MoE 의 일반 범위(qwen38 512, glm53 288)"),
+        "topk": (4, 10, "같은 범위의 top-k 관례"),
+        "moe_layers": (24, 56, "GDN 36층 실측 + full-attn — 총 60급에서 MoE 몫"),
+        "expert_mb": (2.0, 8.0, "hidden 4~7k × inter ~1k × 3 × NVFP4 의 범위"),
+        "static_weights": (2.0 * GIB, 6.0 * GIB, "hidden 규모 대비 glm53(4.63) 전후"),
+    },
+}
+
+
 @dataclass
 class EngineBytes:
     """랭크당·행당·스텝당 바이트 — 전부 리포 문서의 실측/계산 값이고, 각주가 출처다."""
@@ -77,13 +116,54 @@ class EngineBytes:
     comms_per_row_ms: float = 1.9
     drafter_ms: float = 3.4                    # propose+observe 실측(§3 표; forward 와 별개) — W4 드래프터
 
+    @classmethod
+    def for_model(cls, model: str = "glm53") -> "EngineBytes":
+        """레지스트리에서 그 모델의 바이트를 만든다. 결측 필드는 None/0 으로 들어가고
+        decode_step 이 이름붙여 거부한다 — 모르는 것을 0 이라고 말하지 않는다."""
+        if model not in MODEL_REGISTRY:
+            raise ValueError(f"ST 오라클: 알 수 없는 모델 {model!r} — 레지스트리: {sorted(MODEL_REGISTRY)}")
+        base = cls()
+        for k, v in MODEL_REGISTRY[model].items():
+            setattr(base, k, v)
+        return base
 
-def load_engine_facts() -> dict:
-    """엔진 자신의 사실 원천을 읽는다 — engine/profiles/glm53/facts.py 의 모듈 상수
-    (체크포인트 없이도 import 된다). 엔진이 바뀌면(SPEC_K·TP·청크 정렬) 시뮬레이터가
-    손으로 고칠 것 없이 따라간다. 없으면 빈 dict — 문서 폴백이 그 자리를 지킨다."""
+    @classmethod
+    def bounds_for(cls, model: str) -> dict:
+        return MODEL_BOUNDS.get(model, {})
+
+    @classmethod
+    def fill(cls, b: "EngineBytes", model: str, which: str = "mid") -> "EngineBytes":
+        """결측을 구간의 lo/hi/중간 으로 채운 사본. 구간 없는 결측은 그대로 None —
+        채우지 못한 것을 조용히 0 으로 만들지 않는다."""
+        import copy
+        out = copy.copy(b)
+        for field, (lo, hi, _basis) in cls.bounds_for(model).items():
+            if getattr(out, field, None) in (None, 0, 0.0):
+                v = {"lo": lo, "hi": hi}.get(which, (lo + hi) / 2)
+                setattr(out, field, v)
+        return out
+
+    def missing(self) -> "list[str]":
+        """조립에 필요한데 비어 있는 것들 — 0 이 아니라 이름으로 말한다."""
+        out = []
+        if not self.experts or not self.topk or self.moe_layers in (None, 0):
+            out.append("전문가 수·top-k·MoE 층수(체크포인트 config.json)")
+        if not self.expert_mb:
+            out.append("전문가 바이트/랭크(가중치 manifest 또는 3×hidden×inter×0.5625B)")
+        if not self.static_weights:
+            out.append("정적 가중치 GiB/랭크(랭크 파일 크기)")
+        return out
+
+
+def load_engine_facts(model: str = "glm53") -> dict:
+    """엔진 자신의 사실 원천을 읽는다 — engine/profiles/<model>/facts.py 의 모듈 상수
+    (체크포인트 없이도 import 된다; 지금은 glm53 만 있다). 엔진이 바뀌면(SPEC_K·TP·청크
+    정렬) 시뮬레이터가 손으로 고칠 것 없이 따라간다. 없으면 빈 dict — 문서 폴백이 지키고,
+    다른 모델이면 glm53 의 facts 를 조용히 입히지 않는다."""
     try:
         from engine.profiles.glm53 import facts
+        if model != "glm53":
+            return {}
         return {"tp": facts.TP, "spec_k": facts.SPEC_K, "chunk_align": facts.CHUNK_ALIGN,
                 "block": facts.BLOCK, "kv_dtype": facts.KV_DTYPE,
                 "kda_state_dtype": facts.KDA_STATE_DTYPE,
@@ -199,6 +279,41 @@ class StepBudget:
         return "\n".join(lines)
 
 
+_NEED = ("experts", "topk", "moe_layers", "expert_mb", "static_weights")   # 조립에 필요한 것들
+
+
+def decode_range(b: EngineBytes, model: str, ctx: int, width: int = 1,
+                 k: int | None = None, routing: str = "measured") -> dict:
+    """결측이 있어도 값을 준다 — 구간과 신뢰도와 함께. 순수 함수.
+
+    결측 필드를 MODEL_BOUNDS 의 lo/hi 로 각각 채워 스텝을 두 번 조립하고, 그 벌어짐으로
+    신뢰도를 말한다: 신뢰도% = 100×(1−spread/2), spread=(hi−lo)/중간. 구간조차 없는 결측은
+    여전히 거부한다(0 이라고 말하는 것보다 나으니까)."""
+    if not b.missing():
+        t = decode_step(b, ctx, width, k=k, routing=routing).total()
+        return {"lo_ms": t, "hi_ms": t, "mid_ms": t, "confidence": 100.0, "assumed": []}
+    bounds = EngineBytes.bounds_for(model)
+    uncovered = [f for f in _NEED if getattr(b, f, None) in (None, 0, 0.0) and f not in bounds]
+    if uncovered:
+        raise ValueError("ST 오라클: 구간조차 없는 결측 — " + ", ".join(uncovered))
+    lo = decode_step(EngineBytes.fill(b, model, "lo"), ctx, width, k=k, routing=routing).total()
+    hi = decode_step(EngineBytes.fill(b, model, "hi"), ctx, width, k=k, routing=routing).total()
+    mid = (lo + hi) / 2
+    spread = (hi - lo) / mid if mid > 0 else 1.0
+    def _human(v):
+        if v >= GIB:
+            return f"{v / GIB:.2f}GiB"
+        if v >= MIB:
+            return f"{v / MIB:.1f}MiB"
+        if v >= KIB:
+            return f"{v / KIB:.2f}KiB"
+        return f"{v:g}"
+    return {"lo_ms": lo, "hi_ms": hi, "mid_ms": mid,
+            "confidence": max(5.0, round(100 * (1 - spread / 2), 1)),
+            "assumed": [f"{f}[{_human(bounds[f][0])}..{_human(bounds[f][1])}]" for f in bounds
+                        if getattr(b, f, None) in (None, 0, 0.0)]}
+
+
 def decode_step(b: EngineBytes, ctx: int, width: int = 1, k: int | None = None,
                 routing: str = "measured") -> StepBudget:
     """검증 스텝 하나의 예산 → ms. 순수 함수.
@@ -207,6 +322,10 @@ def decode_step(b: EngineBytes, ctx: int, width: int = 1, k: int | None = None,
     를 정적 커널의 207 GB/s 로, 비MoE 는 22 ms + 4.33 ms/행(정적·dense·KDA 링 쓰기·
     글루), 컨텍스트 항은 31.7 µs/1K-토큰/행(인덱서 logits + 희소 MLA), 집단통신은
     잔여 1 + 1.9×행 ms. routing="uniform" 은 라우팅 몰림을 무시한 상한 쪽 값이다."""
+    miss = b.missing()
+    if miss:
+        raise ValueError("ST 오라클: 이 모델의 바이트가 덜 있다 — " + ", ".join(miss)
+                         + "; 한 번의 체크포인트 읽기/프로브가 채우면 조립한다")
     k = b.spec_k if k is None else k
     tokens = width * (1 + k)                    # 검증은 폭×(1+k) 토큰을 한 번에 본다
     # artifact 폴딩은 이미 b 의 gamma/scale 에 적혀 들어온다 — uniform 만 균등 가정으로 뺀다
@@ -226,6 +345,10 @@ def main() -> int:
     ap.add_argument("--ctx", default="2000,32000,128000")
     ap.add_argument("--width", default="1", help="행 수(폭) — C=4 예측은 --width 1,4")
     ap.add_argument("--k", type=int, help="드래프트 k (기본 6)")
+    ap.add_argument("--model", default="glm53", choices=sorted(MODEL_REGISTRY),
+                    help="ST 오라클의 대상 모델(기본 glm53) — 레지스트리에 없으면 거부")
+    ap.add_argument("--partial", action="store_true",
+                    help="결측이 있어도 값을 준다 — 구간과 신뢰도와 함께(결측은 구간으로 둘러싼다)")
     ap.add_argument("--routing", choices=("measured", "uniform", "artifact"), default="measured",
                     help="고유 전문가 수: measured=#838 역산 멱법칙(기본) / uniform=균등(상한) / artifact=--timeline 아티팩트에서 폴딩")
     ap.add_argument("--timeline", type=Path,
@@ -240,15 +363,17 @@ def main() -> int:
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
-    b = EngineBytes()
+    b = EngineBytes.for_model(args.model)
     if args.drafter_ms is not None:
         b.drafter_ms = args.drafter_ms
     # 엔진 자신의 사실 원천: 형상은 facts.py 에서, 라우팅은 (요청 시) 아티팩트에서.
-    facts = load_engine_facts()
+    facts = load_engine_facts(args.model)
     if facts:
         b.spec_k = facts["spec_k"]
         b.tp = facts["tp"]
-    provenance = [f"형상: {facts.get('source', '문서 폴백(288 전문가·42층·k=6·TP=4)')}"
+    fallback = ("문서 폴백(288 전문가·42층·k=6·TP=4)" if args.model == "glm53"
+                else f"facts.py 없음 — 레지스트리+구간({args.model})")
+    provenance = [f"ST-Oracle · 모델: {args.model} · 형상: {facts.get('source', fallback)}"
                   + (f" [k={b.spec_k}, TP={b.tp}, 청크 {facts['chunk_align']} 정렬]" if facts else "")]
     if args.routing == "artifact":
         folded = fold_routing_from_timeline(args.timeline) if args.timeline.exists() else {}
@@ -286,10 +411,18 @@ def main() -> int:
                   f"{fold['fixed_ms_per_chunk']:.1f}ms/청크")
 
     rows = []
+    ranges = []
     for width in widths:
         for ctx in ctxs:
-            budget = decode_step(b, ctx, width, k=args.k, routing=args.routing)
-            rows.append((width, ctx, budget))
+            if args.partial:
+                rng = decode_range(b, args.model, ctx, width, k=args.k, routing=args.routing)
+                ranges.append((width, ctx, rng))
+                filled = EngineBytes.fill(b, args.model, "mid")
+                budget = decode_step(filled, ctx, width, k=args.k, routing=args.routing)
+                rows.append((width, ctx, budget))
+            else:
+                budget = decode_step(b, ctx, width, k=args.k, routing=args.routing)
+                rows.append((width, ctx, budget))
             if not args.json:
                 if width == widths[0] and ctx == ctxs[0]:
                     for line in provenance:
@@ -297,6 +430,12 @@ def main() -> int:
                 print(f"== decode 스텝 — ctx {ctx//1000}K, 폭 {width}, k={args.k or b.spec_k}, "
                       f"routing={args.routing}:")
                 print(budget.rows())
+                if args.partial:
+                    w7, c7, rng = next((w, c, r) for w, c, r in ranges if w == width and c == ctx)
+                    assumed = ", ".join(rng["assumed"]) or "없음"
+                    transfer = "" if args.model == "glm53" else " · 이관: 비MoE·통신 상수·k·TP 는 glm53 실측"
+                    print(f"신뢰도 {rng['confidence']:.0f}% · 스텝 {rng['lo_ms']:.1f}~{rng['hi_ms']:.1f} ms"
+                          f" (중간 {rng['mid_ms']:.1f}) · 가정: {assumed}{transfer}")
                 print()
     if len(ctxs) > 1 and not args.json:
         base = next(t for w, _c, t in rows if w == widths[0])

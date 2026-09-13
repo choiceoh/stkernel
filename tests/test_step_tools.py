@@ -9,13 +9,15 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bench"))
 
 import step_peek as peek                     # noqa: E402
@@ -621,3 +623,67 @@ class KernelBudgetTests(unittest.TestCase):
         self.assertLess(abs(cost._composed_row_crosscheck - cost.decode_ms_per_row)
                         / cost.decode_ms_per_row, 0.05)
         self.assertEqual(folded["decode_ms"], 47.7)
+
+    def test_st_oracle_model_registry(self):
+        # glm53 은 전부 실측 — 조립 가능
+        glm = kern.EngineBytes.for_model("glm53")
+        self.assertEqual(glm.missing(), [])
+        # qwen38: 구조(512×top10)·실측(상태 27.5MiB)은 있으나 MoE 층수·정적 가중치가 없다 —
+        # 모르는 것을 0 이라고 말하지 않고 이름으로 거부한다
+        q38 = kern.EngineBytes.for_model("qwen38")
+        self.assertEqual(q38.experts, 512)
+        self.assertAlmostEqual(q38.state_ring_bytes / (1 << 20), 27.5, delta=0.01)
+        self.assertIn("MoE 층수", " ".join(q38.missing()))
+        with self.assertRaises(ValueError) as ctx:
+            kern.decode_step(q38, 32000)
+        self.assertIn("ST 오라클", str(ctx.exception))
+        # dsv4: 실측 KV 는 있으나 전문가 형상이 없다
+        dsv4 = kern.EngineBytes.for_model("dsv4")
+        self.assertAlmostEqual(dsv4.kv_bytes_per_token / 1024, 12.75, delta=0.01)
+        self.assertTrue(dsv4.missing())
+        with self.assertRaises(ValueError):
+            kern.EngineBytes.for_model("nope")
+
+    def test_st_oracle_facade_forwards_and_reports(self):
+        out = subprocess.run([sys.executable, str(ROOT / "bench" / "storacle.py"), "models"],
+                             capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.returncode, 0)
+        self.assertIn("ST-Oracle", out.stdout)
+        self.assertIn("glm53", out.stdout)
+        self.assertIn("qwen38", out.stdout)
+        # step_sim 배너가 브랜드를 말한다
+        sim_out = subprocess.run([sys.executable, str(ROOT / "bench" / "step_sim.py"),
+                                  "--prompts", "512", "--gen", "8", "--no-calib"],
+                                 capture_output=True, text=True, timeout=120)
+        self.assertIn("ST-Oracle", sim_out.stdout)
+
+    def test_partial_gives_values_with_confidence(self):
+        # 결측이 있어도 값을 준다 — 구간과 신뢰도와 함께(모르는 것을 0 이라고 말하지 않는다)
+        q38 = kern.EngineBytes.for_model("qwen38")
+        rng = kern.decode_range(q38, "qwen38", 32000)
+        self.assertGreater(rng["confidence"], 80.0)      # 구간이 좁혀진 결측: 높은 신뢰도
+        self.assertLess(rng["hi_ms"], rng["lo_ms"] * 1.3)
+        self.assertTrue(any("moe_layers" in a for a in rng["assumed"]))
+        # dsv4 는 구간이 넓다 — 신뢰도가 그대로 낮게 말한다
+        d = kern.EngineBytes.for_model("dsv4")
+        rng_d = kern.decode_range(d, "dsv4", 32000)
+        self.assertLess(rng_d["confidence"], rng["confidence"])
+        self.assertGreater(rng_d["hi_ms"], rng_d["lo_ms"] * 1.5)
+        # glm53 은 결측이 없다: 구간 없음, 신뢰도 100
+        rng_g = kern.decode_range(kern.EngineBytes(), "glm53", 32000)
+        self.assertEqual(rng_g["confidence"], 100.0)
+        self.assertEqual(rng_g["lo_ms"], rng_g["hi_ms"])
+        # fill 은 구간의 중간을 채우고, 구간 없는 결측(decode_range)은 여전히 거부
+        filled = kern.EngineBytes.fill(q38, "qwen38")
+        self.assertEqual(filled.missing(), [])
+        with self.assertRaises(ValueError):
+            kern.decode_range(kern.EngineBytes.for_model("dsv4"), "glm53", 32000)  # 모델 불일치 → 구간 없는 결측
+
+    def test_composed_partial_carries_confidence(self):
+        cost = sim.composed_cost(model="qwen38", partial=True)
+        self.assertGreater(cost.confidence, 80.0)
+        self.assertLess(cost.confidence, 100.0)
+        strict = sim.composed_cost()                       # glm53: 신뢰도 100
+        self.assertEqual(strict.confidence, 100.0)
+        with self.assertRaises(ValueError):
+            sim.composed_cost(model="qwen38")              # --partial 없이는 여전히 거부
