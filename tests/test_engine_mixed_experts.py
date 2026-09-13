@@ -149,6 +149,37 @@ class MixedExpertTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'changed'):
                 owner.run(IDENTITY)
 
+    def test_run_uses_frozen_arguments_and_publishes_only_after_body(self):
+        import runpy
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import torch
+        path = Path(__file__).resolve().parents[1]/'engine/kernels/b12x/moe_mixed.py'
+        cls = runpy.run_path(str(path))['PreparedMixedExperts']
+        owner = cls.__new__(cls)
+        owner.plan = SimpleNamespace(identity=IDENTITY, sources=(1, 2))
+        owner.decode = torch.ones(1)
+        owner._owned, owner._versions = (owner.decode,), (owner.decode._version,)
+        owner.stream, calls = 'original', []
+        owner.partials = torch.full((12, 4096), float('nan'))
+        owner._producer_args, owner._compute_args = (object(),), (object(),)
+        owner.producer = lambda *args: calls.append(('producer', args))
+        def compute(*args):
+            calls.append(('body', args))
+            owner.partials[:8].fill_(3.)
+        owner.compiled = compute
+        owner.last_reader = SimpleNamespace(record=lambda stream: calls.append(('event', stream)))
+        # Replacing this high-level object cannot replace the frozen arguments.
+        owner.weights = object()
+        with patch.object(torch.cuda, 'is_current_stream_capturing', return_value=False), \
+                patch.object(torch.cuda, 'current_stream', return_value='original'):
+            result = owner.run(IDENTITY)
+        self.assertEqual(calls, [('producer', owner._producer_args), ('body', owner._compute_args), ('event', 'original')])
+        self.assertEqual(result.shape, (2, 4, 4096))
+        self.assertEqual(result.data_ptr(), owner.partials.data_ptr())
+        self.assertTrue(bool((result == 3.).all()))
+        self.assertTrue(bool(owner.partials[8:].isnan().all()))
+
 
 if __name__ == '__main__':
     unittest.main()

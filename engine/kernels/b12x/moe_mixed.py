@@ -78,6 +78,18 @@ class PreparedMixedExperts:
         self.partials = torch.empty((self.CAPACITY * 4, 4096), dtype=torch.float32, device=device)
         self.stamps = torch.zeros((mac, md._STATIC_V2_STAMP_SLOTS), dtype=torch.int64, device=device)
         self.counter = torch.zeros(1, dtype=torch.int32, device=device)
+        self._producer_args = (decode, prefill, decode_routes, prefill_routes,
+            self.sources, ws.weight_expert_ids, input_scale, ws.packed_a_flat, ws.scale_flat,
+            ws.token_map, ws.token_weights)
+        sf1, sf2 = md._scale_runtime_addresses(weights, direct_sf6=True)
+        # Freeze the actual tensors/pointers once. Rebinding a mutable weight
+        # view object later cannot replace a resource behind this invocation.
+        self._compute_args = (decode, decode_ids.reshape(-1), decode_routes.reshape(-1),
+            ws.packed_a_view, ws.packed_input_scale.data_ptr(), ws.packed_a_flat, ws.scale_flat,
+            ws.barrier_count, ws.barrier_epoch, weights.w13_fp4, sf1, weights.down_fp4, sf2,
+            ws.row_counts, ws.active_expert_count, ws.weight_expert_ids, ws.global_to_local_expert,
+            input_scale, weights.w1_alpha, weights.w2_alpha, down_scale, self.partials,
+            ws.token_map, ws.token_weights, self.stamps, self.counter, weights.sfb1_packed, weights.sfb2_packed)
         self._owned = (decode, prefill, decode_ids, prefill_ids, decode_routes, prefill_routes,
                        input_scale, down_scale, weights.w1_alpha, weights.w2_alpha, *weight_tensors,
                        weights.w13_fp4, weights.down_fp4, self.sources,
@@ -94,18 +106,8 @@ class PreparedMixedExperts:
             raise RuntimeError('prepared mixed routes require their original eager stream')
         if tuple(t._version for t in self._owned) != self._versions:
             raise RuntimeError('prepared source or weights changed; prepare a new invocation')
-        from . import moe_dispatch as md
-        ws, weights = self.workspace, self.weights
-        self.producer(self.decode, self.prefill, self.route_weights, self.prefill_routes,
-            self.sources, ws.weight_expert_ids, self.input_scale, ws.packed_a_flat, ws.scale_flat,
-            ws.token_map, ws.token_weights)
-        sf1, sf2 = md._scale_runtime_addresses(weights, direct_sf6=True)
-        self.compiled(self.decode, self.ids.reshape(-1), self.route_weights.reshape(-1),
-            ws.packed_a_view, ws.packed_input_scale.data_ptr(), ws.packed_a_flat, ws.scale_flat,
-            ws.barrier_count, ws.barrier_epoch, weights.w13_fp4, sf1, weights.down_fp4, sf2,
-            ws.row_counts, ws.active_expert_count, ws.weight_expert_ids, ws.global_to_local_expert,
-            self.input_scale, weights.w1_alpha, weights.w2_alpha, self.down_scale, self.partials,
-            ws.token_map, ws.token_weights, self.stamps, self.counter, weights.sfb1_packed, weights.sfb2_packed)
+        self.producer(*self._producer_args)
+        self.compiled(*self._compute_args)
         self.last_reader.record(self.stream)
         # Borrowed only until the next run. Every route owns four BF16-rounded
         # weighted FC2 partials in FP32 storage, including zero-weight routes.
