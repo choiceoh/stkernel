@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bench"))
 
 import step_peek as peek                     # noqa: E402
 import step_replay as replay                 # noqa: E402
+import step_kernels as kern                 # noqa: E402
 import step_sim as sim                       # noqa: E402
 from engine.base import scheduler as sched   # noqa: E402
 from engine.base.record import DeathDump     # noqa: E402
@@ -74,6 +75,14 @@ class CostModelTest(unittest.TestCase):
         short, long_ = out["requests"]
         # 클라이언트 tok/s = 1 토큰/스텝 ÷ 스텝 시간 — 5ms 대 20ms 면 4배
         self.assertAlmostEqual(short["tok_s"] / long_["tok_s"], 4.0, delta=0.5)
+
+    def test_acc_hist_samples_the_measured_shape(self):
+        # 실측 accepted 분포(쌍봉 0/k)를 주면 쌍봉으로 나온다 — 기하 추첨은 평균만 맞춘다
+        cost = sim.CostModel(k=5, acc=0.5, decode_ms=1.0, prefill_tok_s={512: 5120},
+                             acc_hist=[1, 0, 0, 0, 0, 1], name="hist")
+        self.assertAlmostEqual(cost.tokens_per_step_mean(), 3.5)
+        out = sim.run_once([512], 400, CONTRACT, cost=cost, can_async=False)
+        self.assertAlmostEqual(out["tokens_per_step"], 3.5, delta=0.3)
 
     def test_fit_cost_folds_front_cold_and_ctx_ladder(self):
         record = {"name": "F", "requests": [
@@ -435,3 +444,37 @@ class StepReplayTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class KernelBudgetTests(unittest.TestCase):
+    """바이트 예산 조립(step_kernels) — 흉내 낼 수 있는 층의 산술."""
+
+    def test_distinct_experts_expectation(self):
+        # 7 토큰(1+k) × top-8: 288×(1−(1−8/288)^7)+1 ≈ 52.6 — 상한(무작위 라우팅) 쪽
+        self.assertAlmostEqual(kern.distinct_experts(7), 52.6, delta=0.5)
+        self.assertEqual(kern.distinct_experts(0), 0.0)
+        self.assertLess(kern.distinct_experts(7), 7 * 8)          # 중복은 당연히 절약된다
+
+    def test_composition_explains_measured_flatness(self):
+        b = kern.EngineBytes()
+        lo = kern.decode_step(b, 2000, eff=0.85, ar_ms=0.041)
+        hi = kern.decode_step(b, 128000, eff=0.85, ar_ms=0.041)
+        # 어텐션 KV 만 컨텍스트에 자란다: 2K→128K 잔여가 스텝의 ~5% 이내 (실측: 평탄)
+        self.assertLess(hi.total() - lo.total(), 0.05 * hi.total())
+        self.assertAlmostEqual(lo.ms["어텐션 KV"], 0.05, delta=0.02)
+
+    def test_knobs_move_the_step_by_their_bytes(self):
+        b = kern.EngineBytes()
+        base = kern.decode_step(b, 32000, eff=0.85, ar_ms=0.041).total()
+        w4 = replace(b, drafter_weights=0.55 * kern.GIB)
+        got = kern.decode_step(w4, 32000, eff=0.85, ar_ms=0.041).total()
+        # 드래프터 bf16→W4: (2.03−0.55)GiB ÷ 273GB/s × 0.85 역수 ≈ 6.85ms 절약
+        self.assertAlmostEqual(base - got, (2.03 - 0.55) * kern.GIB / (273e9 * 0.85) * 1e3, delta=0.05)
+
+    def test_width_prediction_is_sublinear(self):
+        b = kern.EngineBytes()
+        one = kern.decode_step(b, 32000, width=1, eff=0.85, ar_ms=0.041).total()
+        four = kern.decode_step(b, 32000, width=4, eff=0.85, ar_ms=0.041).total()
+        # MoE·드래프터는 스텝에 한 번, KV·상태만 행마다 — 4행이 4배보다 싸다
+        self.assertLess(four / one, 4.0)
+        self.assertGreater(four / one, 2.0)
