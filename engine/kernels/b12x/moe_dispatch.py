@@ -4134,6 +4134,7 @@ def _get_dynamic_kernel(
     _prefill_scale_expansion: bool = False,
     _prefill_tile64: bool = False,
     _prefill_n128: bool = False,
+    _prefill_q0_batch8: bool = False,
 ):
     """Compile (or retrieve cached) the SM120 dynamic MoE kernel.
 
@@ -4250,6 +4251,11 @@ def _get_dynamic_kernel(
         if torch.cuda.get_device_capability() != (12,1) or not stock_contract_matches():
             raise RuntimeError("TP SF6 Q0 requires pinned SM121 source")
 
+    if type(_prefill_q0_batch8) is not bool:
+        raise TypeError('private Q0 batch8 override must be bool')
+    if _prefill_q0_batch8 and (not tp_sf6_q0 or _prefill_tile64 or not 64 < m <= 8192):
+        raise ValueError('private Q0 batch8 requires exact M128 short-prefill FP32 scatter')
+
     if type(_prefill_scale_expansion) is not bool:
         raise TypeError("prefill scale expansion override must be bool")
     if type(_prefill_n128) is not bool or (_prefill_n128 and not _prefill_scale_expansion):
@@ -4305,6 +4311,8 @@ def _get_dynamic_kernel(
         cache_key = (*cache_key, 'temporary_prefill_raw_scales_v1')
     if _prefill_n128:
         cache_key = (*cache_key, 'private_prefill_n128_tiled_v1')
+    if _prefill_q0_batch8:
+        cache_key = (*cache_key, 'private_prefill_q0_batch8_v1')
     if _prefill_tile64:
         cache_key = (*cache_key, 'private_prefill_m64_fp32_v1')
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
@@ -4368,6 +4376,10 @@ def _get_dynamic_kernel(
                 from .moe_dynamic_prefill_m64 import MoEGatedDynamicKernelPrefillM64
                 tiled_cls = MoEGatedDynamicKernelPrefillM64
             tiled_kwargs = dict(reform_sf_pack=True)
+        if _prefill_q0_batch8:
+            from .moe_prefill_q0_batch8 import PrefillQ0Batch8Packed, PrefillQ0Batch8Raw, PrefillQ0Batch8N128
+            tiled_cls = (PrefillQ0Batch8N128 if _prefill_n128 else
+                         PrefillQ0Batch8Packed if reform_sf_pack else PrefillQ0Batch8Raw)
         kernel = tiled_cls(
             sf_vec_size=sf_vec_size,
             mma_tiler_mn=mma_tiler_mn,
@@ -4583,6 +4595,9 @@ def _get_dynamic_kernel(
             options="--opt-level 2 --enable-tvm-ffi",
         ),
         extra_key_files=_kernel_source_files() + (
+            tuple(os.path.join(os.path.dirname(__file__), name) for name in
+                  ('moe_prefill_q0_batch8.py', '_prefill_q0_batch8.py'))
+            if _prefill_q0_batch8 else ()) + (
             (os.path.join(os.path.dirname(__file__), 'moe_dynamic_prefill_n128_tiled.py'),)
             if _prefill_n128 else ()) + (
             tuple(os.path.join(os.path.dirname(__file__), name) for name in
@@ -4688,6 +4703,7 @@ def launch_sm120_dynamic_moe(
     _prefill_scale_expansion: bool | None = None,
     _prefill_tile64: bool | None = None,
     _prefill_n128: bool = False,
+    _prefill_q0_batch8: bool = False,
 ) -> torch.Tensor:
     """Launch the SM120 dynamic MoE kernel."""
     global _TP_SF6_Q0_LAUNCH_LOGGED
@@ -4714,6 +4730,16 @@ def launch_sm120_dynamic_moe(
         if _prefill_tile64 is True or _prefill_scale_expansion is False:
             raise ValueError('private N128 cannot combine with M64 or disabled scale expansion')
         _prefill_tile64, _prefill_scale_expansion = False, True
+    if type(_prefill_q0_batch8) is not bool:
+        raise TypeError('private Q0 batch8 override must be bool')
+    if _prefill_q0_batch8:
+        if _prefill_tile64 is True or not 64 < num_tokens <= 8192 or workspace.tile_m != 128:
+            raise ValueError('private Q0 batch8 requires a short M128 workspace')
+        if torch.cuda.is_current_stream_capturing():
+            raise RuntimeError('private Q0 batch8 is eager-only pending GPU qualification')
+        _prefill_tile64 = False
+        if _prefill_scale_expansion is None:
+            _prefill_scale_expansion = False
     if _prefill_tile64 is None:
         # This private branch's short-prefill candidate. Explicit controls,
         # graph capture and every non-native/fallback geometry retain M128.
@@ -4817,6 +4843,7 @@ def launch_sm120_dynamic_moe(
         _prefill_scale_expansion=_prefill_scale_expansion,
         _prefill_tile64=_prefill_tile64,
         _prefill_n128=_prefill_n128,
+        _prefill_q0_batch8=_prefill_q0_batch8,
     )
 
     # Dynamic kernel: runtime-shaped args are DataPointer (pass data_ptr()),

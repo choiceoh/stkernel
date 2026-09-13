@@ -68,6 +68,21 @@ def main():
                 tiled=True,reform_sf_pack=False,_prefill_scale_expansion=True,_prefill_n128=True)
             report['variants'].append(dict(kind='moe_n128',rows=rows,key=repr(list(md._DYNAMIC_KERNEL_CACHE)[-1])))
             print('compiled N128',rows,flush=True)
+        from engine.kernels.b12x import moe_prefill_q0_batch8 as q8
+        original_check = q8.check_layout
+        def check_layout(kernel, hidden):
+            layout = original_check(kernel, hidden)
+            report.setdefault('q0_batch8_layouts', []).append(dict(kind=type(kernel).__name__, **layout))
+            return layout
+        q8.check_layout = check_layout
+        for kind, packed, n128 in (('packed',True,False), ('raw',False,False), ('n128',False,True)):
+            md._get_dynamic_kernel(288,2672,4096,512,8,2672,
+                activation='swigluoai_uninterleave',swiglu_alpha=1.,swiglu_beta=0.,swiglu_limit=10.,
+                tiled=True,reform_sf_pack=packed,_prefill_scale_expansion=n128,
+                _prefill_n128=n128,_prefill_q0_batch8=True)
+            report['variants'].append(dict(kind='q0_batch8_'+kind,rows=2672,
+                key=repr(list(md._DYNAMIC_KERNEL_CACHE)[-1])))
+            print('compiled Q0 batch8',kind,flush=True)
         for cubin in sorted((output/'cute').rglob('*.cubin')):
             usage = subprocess.check_output(['/usr/local/cuda/bin/cuobjdump','--dump-resource-usage',str(cubin)],text=True)
             report.setdefault('cute_resources',[]).append(dict(path=str(cubin.relative_to(output)),resources=usage))

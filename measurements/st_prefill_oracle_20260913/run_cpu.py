@@ -30,7 +30,7 @@ def main():
                '-v', str(output)+':/evidence', '-w', '/repo', '--entrypoint=python3', IMAGE]
     compile_args = ['measurements/st_prefill_oracle_20260913/compile_candidates.py', '--output', '/evidence']
     try:
-        tests = ['tests.test_prefill_oracle_candidates', 'tests.test_moe_prefill_m64',
+        tests = ['tests.test_prefill_q0_batch8', 'tests.test_prefill_oracle_candidates', 'tests.test_moe_prefill_m64',
                  'tests.test_moe_prefill_scale_expansion', 'tests.test_engine_mhc_contract',
                  'tests.test_engine_direct_mhc']
         with (output/'cpu-tests.log').open('w') as log:
