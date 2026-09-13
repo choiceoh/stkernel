@@ -39,7 +39,7 @@ class DraftDiagnostics:
         self.sink = None
         self.selector_trace = None
         self.trace_every = 0
-        self.trace_steps = Counter()
+        self.trace_steps = {}         # slot -> (current sequence, sampled-step index); bounded by arena slots
         self.trace_digest = None
         self.trace_rank = 0
 
@@ -77,8 +77,10 @@ class DraftDiagnostics:
                 and not policy_modified and trace_eligible):
             count = min(self.k, accepted + 1, remaining,
                         next((i + 1 for i, token in enumerate(new) if token in ends), len(new)))
-            step = self.trace_steps[seq]
-            self.trace_steps[seq] += 1
+            owner, step = self.trace_steps.get(slot, (seq, 0))
+            if owner != seq:
+                step = 0
+            self.trace_steps[slot] = (seq, step + 1)
             if count > 0 and step % self.trace_every == 0:
                 # Synchronous only: each slot still holds THIS proposal. Rows
                 # after the first mismatch are never treated as teacher labels.
