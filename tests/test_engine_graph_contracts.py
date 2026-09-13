@@ -437,9 +437,12 @@ class BatchedPoolTests(unittest.TestCase):
         caches.pool_keys = lambda layer: torch.zeros(capacity, self.D, dtype=torch.uint8)
         caches.pool_scales = lambda layer: torch.zeros(capacity)
         caches.write_tails = lambda layer, ctxs, keys, gates: written.append((ctxs.tolist(), keys, gates))
+        from engine.modules import sparse_indexer as si
+        from engine.profiles.glm53.lanes import DecodeRows
+        glue = DecodeRows(si.row_lengths, si.latent_write_rows, si.gather_candidates, si.pool_window, si.pool_addresses)
         net = SimpleNamespace(
             F=SimpleNamespace(kpool=self.KP, idx_dim=self.D), p={"L0.idx.ape": None},
-            lanes=SimpleNamespace(kpool_compress=lambda kw, gw, ape: (
+            lanes=SimpleNamespace(decode_rows=glue, kpool_compress=lambda kw, gw, ape: (
                 seen.update(kw=kw.clone(), gw=gw.clone()),
                 (torch.zeros(kw.shape[0], self.D, dtype=torch.uint8), torch.zeros(kw.shape[0], 1)))[1]))
         calls = []
@@ -498,17 +501,27 @@ class KeptConstantTests(unittest.TestCase):
             self.assertIs(self.constants.iota(12, "cpu"), kept)
 
     def test_the_captured_decode_path_builds_no_index_of_its_own(self):
-        # complete_pools runs only under capture, so both of its indices are bounded.
+        # complete_pools runs only under capture: its window and its addresses are the glue lanes' kernels now
+        # (engine/kernels/indexer.py computes every index in-program), so it builds no index at all -- neither a
+        # fresh arange nor a kept iota. The torch compositions of the same glue live in the reference lane only.
         source = DECODE_GRAPHS.read_text()
         body = source[source.index("def complete_pools"):source.index("@dataclass")]
         self.assertNotIn("torch.arange", body)
-        self.assertEqual(body.count("iota("), 3)      # the window, the pool ids, the segment rows
+        self.assertEqual(body.count("iota("), 0)
+        served = (ROOT / "engine/kernels/indexer.py").read_text()
+        glue = served[served.index("def _row_lengths"):]
+        self.assertNotIn("torch.arange", glue)
+        self.assertNotIn("iota(", glue)
         net = (ROOT / "engine/profiles/glm53/net.py").read_text()
         for loop in ("_indexer", "_dsa"):
             chunk = net[net.index(f"def {loop}("):]
             chunk = chunk[:chunk.index("\n    def ", 10)]
             self.assertIn("index = iota if", chunk, loop)
             self.assertNotIn("torch.arange(s.length", chunk, loop)
+        select = net[net.index("def _select_rows("):]
+        select = select[:select.index("\n    def ", 10)]
+        self.assertNotIn("torch.arange", select)
+        self.assertEqual(select.count("iota("), 1)    # the horizon mask's column index, kept
 
 
 class DeviceStepTests(unittest.TestCase):

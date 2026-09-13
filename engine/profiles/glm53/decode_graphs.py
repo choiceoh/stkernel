@@ -66,31 +66,25 @@ def complete_pools(net, layer, contexts, length, tails, k, gate, caches):
 
     The cache writes are one launch each as well (45차, the C=4 question: three launches
     a segment a layer were three a layer): `scatter_rows` and `write_ring_rows` carry the
-    segment on a grid axis, and each program does what the one-segment launch's did.
+    segment on a grid axis, and each program does what the one-segment launch's did. The
+    window and the addresses are one launch each too (`lanes.decode_rows`, the third fold):
+    the window is a byte copy and the addresses are integers, so the served kernels and the
+    torch references agree byte for byte.
     """
     F = net.F
     kp, d = F.kpool, F.idx_dim
     n, tail_width = tails.shape[0], tails.shape[1]
     max_pools = (kp - 1 + length) // kp
-    lead = contexts % kp                                                  # [n] the half-built pool
-    counts = (lead + length) // kp                                        # [n] complete pools this step
-    relative = iota(max_pools * kp, k.device) - lead[:, None]             # [n, pools*kpool]
-    current = relative.clamp(0, length - 1)
-    previous = (contexts[:, None] + relative) % tail_width
-    rows = iota(n, k.device)[:, None]
-    earlier = (relative < 0)[..., None]                                   # before this step: from the ring
-    kw = torch.where(earlier, tails[rows, previous, 0], k[rows, current])
-    gw = torch.where(earlier, tails[rows, previous, 1], gate[rows, current])
-    pk, ps = net.lanes.kpool_compress(kw.view(n * max_pools, kp, d),
-                                      gw.view(n * max_pools, kp, d), net.p[f"L{layer}.idx.ape"])
+    glue = net.lanes.decode_rows
+    kw, gw = glue.window(tails, k, gate, contexts, kp, max_pools)         # [n*pools, kpool, d] each
+    pk, ps = net.lanes.kpool_compress(kw, gw, net.p[f"L{layer}.idx.ape"])
     # Padded pids at the final context boundary are not read by scatter_rows.
-    pids = (contexts[:, None] // kp + iota(max_pools, k.device)).clamp_max(caches.candidate_capacity - 1)
-    slots = caches.pool_rows(layer, pids).long()                          # [n, pools]
+    counts, slots = glue.addresses(contexts, *caches.pool_maps(layer), kp, length, max_pools, caches.candidate_capacity)
     keys, scales = caches.pool_keys(layer).view(torch.uint8), caches.pool_scales(layer).unsqueeze(-1)
     pk8 = pk.view(torch.uint8).view(n, max_pools, -1)
     ps1 = ps.view(n, max_pools, 1)
-    scatter_rows(pk8, keys, slots, counts.contiguous())
-    scatter_rows(ps1, scales, slots, counts.contiguous())
+    scatter_rows(pk8, keys, slots, counts)
+    scatter_rows(ps1, scales, slots, counts)
     caches.write_tails(layer, contexts, k, gate)
     return caches.candidate_capacity
 
@@ -231,6 +225,13 @@ class GraphCaches:
         row's context), so the ids are one kept constant and the block-table read is one gather."""
         ids = iota(n_cand, self.block_table.device)[None, :].expand(self.block_table.shape[0], n_cand)
         return self.pool_rows(layer, ids).long()
+
+    def pool_maps(self, layer):
+        """pool_slots' arithmetic for every segment at once: the gathered block table whole, pools per block, records
+        per block and this layer's first record -- what `pool_rows` reads, for the lanes that address pools themselves."""
+        F, p = self.F, self.layout
+        per, record = F.block // F.kpool, F.idx_dim + 4
+        return self.block_table, per, p.block_bytes // record, p.pool_offsets[layer] // record
 
     def pool_rows(self, layer, pool_ids):
         """pool_slots for every segment at once: row i of `pool_ids` reads row i of the
