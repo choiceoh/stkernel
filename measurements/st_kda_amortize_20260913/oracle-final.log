@@ -1,0 +1,29 @@
+test_acc_hist_roundtrip_from_peek_scrapes (tests.test_step_tools.KernelBudgetTests.test_acc_hist_roundtrip_from_peek_scrapes) ... ok
+test_chunk_structural_prefill (tests.test_step_tools.KernelBudgetTests.test_chunk_structural_prefill) ... ok
+test_coexist_penalty_only_beside_live_decoders (tests.test_step_tools.KernelBudgetTests.test_coexist_penalty_only_beside_live_decoders) ... ok
+test_composed_cli_applies_overrides_and_reports_the_executed_contract (tests.test_step_tools.KernelBudgetTests.test_composed_cli_applies_overrides_and_reports_the_executed_contract) ... ok
+test_composed_cost_has_every_coefficient (tests.test_step_tools.KernelBudgetTests.test_composed_cost_has_every_coefficient) ... ok
+test_composed_k_changes_the_byte_cost_before_constructing_the_ladder (tests.test_step_tools.KernelBudgetTests.test_composed_k_changes_the_byte_cost_before_constructing_the_ladder) ... ok
+test_composed_partial_carries_confidence (tests.test_step_tools.KernelBudgetTests.test_composed_partial_carries_confidence) ... ok
+test_composed_width_does_not_reuse_a_different_draft_width_measurement (tests.test_step_tools.KernelBudgetTests.test_composed_width_does_not_reuse_a_different_draft_width_measurement) ... ok
+test_composition_explains_measured_flatness (tests.test_step_tools.KernelBudgetTests.test_composition_explains_measured_flatness) ... ok
+test_composition_reproduces_the_measured_step_table (tests.test_step_tools.KernelBudgetTests.test_composition_reproduces_the_measured_step_table) ... ok
+test_conc_mode_runs_rows_together (tests.test_step_tools.KernelBudgetTests.test_conc_mode_runs_rows_together) ... ok
+test_distinct_experts_uniform_and_measured (tests.test_step_tools.KernelBudgetTests.test_distinct_experts_uniform_and_measured) ... ok
+test_fold_width_waits_for_a_completed_c4_pair (tests.test_step_tools.KernelBudgetTests.test_fold_width_waits_for_a_completed_c4_pair) ... ok
+test_folds_routing_from_timeline_artifact (tests.test_step_tools.KernelBudgetTests.test_folds_routing_from_timeline_artifact) ... ok
+test_generic_tier_widens_interval_and_lowers_confidence (tests.test_step_tools.KernelBudgetTests.test_generic_tier_widens_interval_and_lowers_confidence) ... ok
+test_kernel_table_and_prefill_fold_from_artifacts (tests.test_step_tools.KernelBudgetTests.test_kernel_table_and_prefill_fold_from_artifacts) ... ok
+test_knob_moves_the_step_by_its_bytes (tests.test_step_tools.KernelBudgetTests.test_knob_moves_the_step_by_its_bytes) ... ok
+test_partial_gives_values_with_confidence (tests.test_step_tools.KernelBudgetTests.test_partial_gives_values_with_confidence) ... ok
+test_reads_engine_facts_module (tests.test_step_tools.KernelBudgetTests.test_reads_engine_facts_module) ... ok
+test_st_oracle_facade_forwards_and_reports (tests.test_step_tools.KernelBudgetTests.test_st_oracle_facade_forwards_and_reports) ... ok
+test_st_oracle_model_registry (tests.test_step_tools.KernelBudgetTests.test_st_oracle_model_registry) ... ok
+test_st_oracle_predict_joins_wizard_and_speed (tests.test_step_tools.KernelBudgetTests.test_st_oracle_predict_joins_wizard_and_speed) ... ok
+test_width_from_fleet_stage_table (tests.test_step_tools.KernelBudgetTests.test_width_from_fleet_stage_table) ... ok
+test_width_prediction_is_sublinear (tests.test_step_tools.KernelBudgetTests.test_width_prediction_is_sublinear) ... ok
+
+----------------------------------------------------------------------
+Ran 24 tests in 5.283s
+
+OK

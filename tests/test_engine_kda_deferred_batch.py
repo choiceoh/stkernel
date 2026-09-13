@@ -48,8 +48,8 @@ class DeferredBatchTests(unittest.TestCase):
         return expected
 
     def test_all_counts_and_distinct_rows_keep_exact_outputs_states_and_padding(self):
-        for rows, tokens in ((1, 6), (1, 7), (4, 7)):
-            args, storage, rings = fixture(rows, tokens)
+        for rows, tokens in ((1, 6), (1, 7), (4, 7), (1, 8), (4, 8)):
+            args, storage, rings = fixture(rows, tokens, width=max(7, tokens))
             original = storage.clone()
             batch = self.Batch(rings, rows, tokens, block=768)
             slots = torch.arange(rows, 0, -1, device="cuda")
@@ -68,8 +68,8 @@ class DeferredBatchTests(unittest.TestCase):
 
     def test_replay_rebinds_slots_and_counts_after_rollback_and_ring_wrap(self):
         for rows in (1, 4):
-            args, storage, rings = fixture(rows, 7, h=2, k=33, v=17)
-            batch = self.Batch(rings, rows, 7, block=4)
+            args, storage, rings = fixture(rows, 8, h=2, k=33, v=17, width=8)
+            batch = self.Batch(rings, rows, 8, block=4)
             slots = torch.arange(1, rows+1, device="cuda")
             contexts = torch.zeros(rows, dtype=torch.int64, device="cuda")
             counts = torch.ones_like(contexts)
@@ -85,7 +85,7 @@ class DeferredBatchTests(unittest.TestCase):
                 for trial in range(24):
                     slots.copy_(slots.roll(1))
                     contexts.add_(counts)
-                    counts.copy_((torch.arange(rows, device="cuda")+trial) % 8)
+                    counts.copy_((torch.arange(rows, device="cuda")+trial) % 9)
                     if trial == 3:
                         contexts.fill_(767)
                     if trial == 9:
@@ -121,16 +121,20 @@ class DeferredBatchTests(unittest.TestCase):
     def test_materialization_matches_flat_reference_at_large_contexts_and_every_boundary(self):
         # Test the changed commit directly: large contexts exercise int64
         # cursor setup without asking the unchanged verifier to consume them.
-        for h, k, v, width, block in ((16, 128, 128, 7, 768), (2, 33, 17, 7, 4),
+        for h, k, v, width, block in ((16, 128, 128, 7, 768), (16, 128, 128, 8, 768), (2, 33, 17, 7, 4),
                                      (1, 5, 9, 1, 1), (2, 17, 33, 8, 3)):
             with self.subTest(shape=(h, k, v), width=width, block=block):
                 _, original, rings = fixture(4, width, layers=2, h=h, k=k, v=v, width=width)
-                storage = [original.clone(), original.clone()]
-                owners = [self.Batch(views(x, rings), 4, width, block=block, tiled=bool(i))
-                          for i, x in enumerate(storage)]
-                for dst, src in zip(owners[1].factors, owners[0].factors):
+                storage = [original.clone() for _ in range(5)]
+                owners = [self.Batch(views(storage[0], rings), 4, width, block=block, tiled=False)]
+                owners += [self.Batch(views(x, rings), 4, width, block=block, cells=cells)
+                           for x, cells in zip(storage[1:], (1024, 2048, 4096))]
+                owners.append(self.Batch(views(storage[4], rings), 4, width, block=block, cells=4096, warps=8))
+                for src in owners[0].factors:
                     src.normal_(0, .2)
-                    dst.copy_(src)
+                for owner in owners[1:]:
+                    for dst, src in zip(owner.factors, owners[0].factors):
+                        dst.copy_(src)
                 slots = torch.tensor([4, 1, 3, 2], device="cuda")
                 contexts = torch.tensor([0, block-1, (1 << 32)+block-1, (1 << 48)+width-1], device="cuda")
                 for count in range(width+1):
@@ -138,24 +142,26 @@ class DeferredBatchTests(unittest.TestCase):
                     for x, owner in zip(storage, owners):
                         x.copy_(original)
                         owner.commit(slots, contexts, counts)
-                    self.exact(storage[1], storage[0])
+                    for x in storage[1:]:
+                        self.exact(x, storage[0])
                 for invalid in (-1, width+1):
                     counts.fill_(invalid)
-                    storage[1].copy_(original)
-                    owners[1].commit(slots, contexts, counts)
-                    self.exact(storage[1], original)
+                    for x, owner in zip(storage[1:], owners[1:]):
+                        x.copy_(original)
+                        owner.commit(slots, contexts, counts)
+                        self.exact(x, original)
 
     def test_four_iteration_conditional_graph_commits_before_reusing_factors(self):
         from engine.kernels.bounded_graph import BoundedGraph
         for rows in (1, 4):
-            args, storage, rings = fixture(rows, 7, h=2, k=33, v=17)
-            batch = self.Batch(rings, rows, 7, block=4)
+            args, storage, rings = fixture(rows, 8, h=2, k=33, v=17, width=8)
+            batch = self.Batch(rings, rows, 8, block=4)
             slots = torch.arange(1, rows+1, device="cuda")
             contexts = torch.full((rows,), 767, dtype=torch.int64, device="cuda")
-            program = (torch.arange(4*rows, device="cuda").view(4, rows)*3+1) % 8
+            program = (torch.arange(4*rows, device="cuda").view(4, rows)*3+1) % 9
             counter = torch.zeros(1, device="cuda", dtype=torch.int64)
             stop = torch.zeros_like(counter)
-            log = torch.empty((4, len(args), 1, rows*7, 2, 17), device="cuda", dtype=torch.bfloat16)
+            log = torch.empty((4, len(args), 1, rows*8, 2, 17), device="cuda", dtype=torch.bfloat16)
             initial = storage.clone()
             expected_outputs = []
             for i in range(4):

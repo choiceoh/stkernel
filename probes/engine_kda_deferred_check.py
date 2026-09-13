@@ -23,6 +23,7 @@ def main():
     torch.cuda.set_per_process_memory_fraction((6 << 30) / torch.cuda.get_device_properties(0).total_memory)
     root = Path(__file__).resolve().parents[1]
     files = ("engine/kernels/kda/deferred.py", "engine/kernels/kda/ring.py",
+             "engine/profiles/glm53/facts.py",
              "engine/kernels/kda/fused_recurrent.py", "engine/base/graph_labels.py",
              "engine/profiles/glm53/net.py", "engine/profiles/glm53/decode_graphs.py",
              "engine/profiles/glm53/pipeline.py", "engine/profiles/glm53/adapter.py",

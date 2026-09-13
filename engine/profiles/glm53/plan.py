@@ -20,6 +20,8 @@ import re
 import struct
 from pathlib import Path
 
+from engine.profiles.glm53.facts import SPEC_K
+
 GIB = 1 << 30
 CKPT = Path("/home/choiceoh/models/st-glm53-nvidia-tp4-9391")
 TP = 4
@@ -92,10 +94,10 @@ def text_config(ckpt=CKPT) -> dict:
     c = json.loads((Path(ckpt) / "config.json").read_text()); return c.get("text_config", c)
 
 
-def state_bytes(cfg: dict, tp: int = TP, kv_bytes: int = 1, spec_k: int = 6):
+def state_bytes(cfg: dict, tp: int = TP, kv_bytes: int = 1, spec_k: int = SPEC_K):
     """(KDA state per sequence, MLA KV per token [fp8 -> 1 B], indexer cache per token).
 
-    With DFlash2 verifying K=6 drafts a step, a sequence keeps K+1 recurrent
+    With DFlash2 verifying K drafts a step, a sequence keeps K+1 recurrent
     states (one per draft position, so a rejection rolls back by index) and a
     conv window of K + kernel-1 inputs -- the served kda_state_shape(num_spec)
     and the engine's position rings alike. 34.8 MiB/seq was the K=0 number."""
