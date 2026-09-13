@@ -246,6 +246,7 @@ class Glm53Engine:
         if caches.pool.rows_in_use or any(owner >= 0 for owner in caches.slots.owner[1:]):
             raise ValueError("warmup requires empty request and state slots")
         paid = {}
+        admissions = self.admissions
         capacity = caches.pool.num_blocks * self.F.block
         try:
             for length in sorted({min(n, self.prefill_chunk or n, capacity) for n in lengths}):
@@ -268,6 +269,7 @@ class Glm53Engine:
                         caches.pool.reserve(r, 8 + self.drafter.k)
                         self.tokens[r] = [1] * 4; self.prompt_len[r] = 4; self.ctx[r] = 4; self.slot[r] = slots[r - rows[0]]
                         self.limits[r] = (8, 0.0); self.min_new[r] = 0; self._bind_options(r, None)
+                        self._admitted(r)
                     t0 = time.perf_counter()
                     try:
                         self.decode(rows, [caches.pool.row(r) for r in rows], slots)
@@ -293,6 +295,9 @@ class Glm53Engine:
                             caches.slots.give(s)
                         caches.reset()
         finally:
+            # Synthetic rows use the served draw-key contract without consuming
+            # admission nonces for the first real request, even on warmup failure.
+            self.admissions = admissions
             self.accepted_total = self.drafted_total = 0
             self.decode_shape_counts = {}
             self.accepted_per_step = [0] * len(self.accepted_per_step)

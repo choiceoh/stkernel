@@ -1,0 +1,7 @@
+# Decode warmup draw keys
+
+The prior prefill candidate failed in `Glm53Engine.warmup_shapes()` with `KeyError: 0`: synthetic rows populated token and sampling options but did not admit a nonce before the served sampler requested `_pick_uniforms()`. This was introduced by main PR #832. The PR #830 candidate consumer `st-decode-native-consumer0913v3` had started on source `31990373`; it was stopped with its own release launcher at 15:25 KST after this identical failure was observed in the preceding candidate. No requests or speed sample ran. The official stop removed all four owned containers and the canonical bracket released its lease.
+
+Warmup now uses `_admitted()` for each synthetic decode row. It restores the pre-warmup admission counter on success and failure, and the existing close/forget lifecycle removes row nonces. The first real request therefore keeps its original admission identity.
+
+The two CPU regressions call the actual warmup and sampling-key methods with GPU work replaced by a host callback. They cover C=1/C=4 keys, exact uniform values, row cleanup, the first later admission, and an injected decode failure. Both fail the prior implementation with the observed KeyError. With the fix, 67 CPU tests pass and 2 GPU-only tests skip across warmup, draw-key and sampling-option suites. Raw output is retained alongside this file. This is boot lifecycle qualification, not full-model performance evidence.

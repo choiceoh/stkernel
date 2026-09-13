@@ -1,0 +1,51 @@
+test_all_warmup_widths_get_keys_and_preserve_real_admission_sequence (tests.test_engine_warmup_draws.WarmupDrawTests.test_all_warmup_widths_get_keys_and_preserve_real_admission_sequence) ... ERROR
+test_failed_warmup_also_restores_nonce_sequence_and_rows (tests.test_engine_warmup_draws.WarmupDrawTests.test_failed_warmup_also_restores_nonce_sequence_and_rows) ... ERROR
+
+======================================================================
+ERROR: test_all_warmup_widths_get_keys_and_preserve_real_admission_sequence (tests.test_engine_warmup_draws.WarmupDrawTests.test_all_warmup_widths_get_keys_and_preserve_real_admission_sequence)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_warmup_draws.py", line 42, in test_all_warmup_widths_get_keys_and_preserve_real_admission_sequence
+    paid = engine.warmup_shapes(lengths=(), widths=(1, 4))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/adapter.py", line 273, in warmup_shapes
+    self.decode(rows, [caches.pool.row(r) for r in rows], slots)
+  File "/repo/tests/test_engine_warmup_draws.py", line 33, in decode
+    values = engine._pick_uniforms([NS(seq=r, length=2) for r in rows])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/adapter.py", line 890, in _pick_uniforms
+    out += self._uniforms(s.seq, draws.PICK, s.length)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/adapter.py", line 881, in _uniforms
+    return draws.uniforms(self._row_key(seq), purpose, count)
+                          ^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/adapter.py", line 877, in _row_key
+    return draws.row_key(self.seed, self.nonces[seq], self._generated_count(seq))
+                                    ~~~~~~~~~~~^^^^^
+KeyError: 0
+
+======================================================================
+ERROR: test_failed_warmup_also_restores_nonce_sequence_and_rows (tests.test_engine_warmup_draws.WarmupDrawTests.test_failed_warmup_also_restores_nonce_sequence_and_rows)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_warmup_draws.py", line 60, in test_failed_warmup_also_restores_nonce_sequence_and_rows
+    engine.warmup_shapes(lengths=(), widths=(4,))
+  File "/repo/engine/profiles/glm53/adapter.py", line 273, in warmup_shapes
+    self.decode(rows, [caches.pool.row(r) for r in rows], slots)
+  File "/repo/tests/test_engine_warmup_draws.py", line 55, in fail
+    engine._pick_uniforms([NS(seq=r, length=1) for r in rows])
+  File "/repo/engine/profiles/glm53/adapter.py", line 890, in _pick_uniforms
+    out += self._uniforms(s.seq, draws.PICK, s.length)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/adapter.py", line 881, in _uniforms
+    return draws.uniforms(self._row_key(seq), purpose, count)
+                          ^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/adapter.py", line 877, in _row_key
+    return draws.row_key(self.seed, self.nonces[seq], self._generated_count(seq))
+                                    ~~~~~~~~~~~^^^^^
+KeyError: 0
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.005s
+
+FAILED (errors=2)
