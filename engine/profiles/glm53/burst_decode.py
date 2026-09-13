@@ -193,7 +193,10 @@ class BurstDecode(AsyncDecode):
                 continue
             if key == "ends" and source.shape != target.shape:
                 target.fill_(-1)
-                target[:, :source.shape[1]].copy_(source)
+                # A survivor can retain padding from a departed rich-stop
+                # row. Eligibility checked every live row's complete set.
+                width = min(source.shape[1], self.END_IDS)
+                target[:, :width].copy_(source[:, :width])
             else:
                 target.copy_(source)
         # Separate the mapping from the captured mapping: shrink/merge may

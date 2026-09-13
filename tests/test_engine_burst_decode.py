@@ -165,6 +165,21 @@ class ServedBurstTests(unittest.TestCase):
         self.assertEqual(e.ctx[1], 3)
         p.close()
 
+    def test_survivor_returns_to_bursts_after_a_large_stop_set_leaves(self):
+        e, ref = engine(2), engine(2)
+        e.ends[2] = ref.ends[2] = set(range(100, 120))
+        p, base = CpuBurst(e, 4), AsyncDecode(ref)
+        p.launch([1, 2], [1, 2]).resolve()
+        base.launch([1, 2], [1, 2]).resolve()
+        pending = p.launch([1], [1])
+        self.assertIsInstance(pending, BurstPending)
+        pending.resolve()
+        for _ in range(4):
+            base.launch([1], [1]).resolve()
+        self.assertEqual(e.tokens, ref.tokens)
+        self.assertEqual(e.ctx, ref.ctx)
+        p.close()
+
     def test_whole_burst_horizon_and_reasoning_cap_cover_every_iteration(self):
         e = engine(1)
         e.pipeline = CpuBurst(e, 4)

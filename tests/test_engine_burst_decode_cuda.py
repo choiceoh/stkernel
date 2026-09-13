@@ -50,7 +50,7 @@ def toy_engine():
 @unittest.skipUnless(torch.cuda.is_available(), 'requires admitted GB10')
 class ServedBurstCudaTests(unittest.TestCase):
     def test_boot_capture_rebinding_and_shared_chain_match_ordinary_serving(self):
-        from engine.profiles.glm53.burst_decode import BurstDecode
+        from engine.profiles.glm53.burst_decode import BurstDecode, BurstPending
         from engine.profiles.glm53.pipeline import AsyncDecode
         for limit in (2, 4):
             e, ref = toy_engine(), toy_engine()
@@ -76,6 +76,22 @@ class ServedBurstCudaTests(unittest.TestCase):
                         for record in pending.iteration_records:
                             self.assertEqual(set(record['stages_us']), {'forward', 'sample', 'commit', 'boundaries', 'observe', 'propose'})
                             self.assertTrue(all(t > 0 for t in record['stages_us'].values()))
+                e.ends[2] = ref.ends[2] = set(range(1000000, 1000020))
+                p.invalidate([2]); normal.invalidate([2])
+                pending = p.launch([1, 2], [1, 2])
+                self.assertNotIsInstance(pending, BurstPending)
+                pending.resolve(); normal.launch([1, 2], [1, 2]).resolve()
+                pending = p.launch([1], [1])
+                self.assertIsInstance(pending, BurstPending)
+                for _ in range(limit):
+                    before = ref.ctx[1]
+                    done = normal.launch([1], [1]).resolve()
+                    if any(done) or ref.ctx[1] // ref.F.block != before // ref.F.block:
+                        break
+                pending.resolve()
+                self.assertEqual(e.tokens, ref.tokens)
+                self.assertEqual(e.ctx, ref.ctx)
+                torch.testing.assert_close(e.observed, ref.observed, rtol=0, atol=0)
             finally:
                 if p is not None:
                     p.close()
