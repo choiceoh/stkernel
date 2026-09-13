@@ -31,14 +31,19 @@ class TiledProjection:
         from .kernels import _pack_rs_payload, _unpack_gather
         owner = self.owner
         owner.check(x)
-        if x.shape[0] <= self.TILE_ROWS:
+        pieces = min(4, x.shape[0] // self.TILE_ROWS)
+        if pieces <= 1:
             return project(owner.all_gather(x))
+        # At most four messages even after the main profile's 32K chunk
+        # increase. Balanced, 32-aligned tiles also avoid a tiny tail falling
+        # into the <=32-row W4 decode GEMM instead of the FP8 prefill GEMM.
+        tile_rows = ((x.shape[0] + pieces * 32 - 1) // (pieces * 32)) * 32
         # This decision belongs to the original full operation, not each tile.
         fp8 = x.shape[0] * 4 >= FP8_MIN_ROWS
         parent = torch.cuda.current_stream(x.device)
         self.stream.wait_stream(parent)
         x.record_stream(self.stream)
-        limit = self.TILE_ROWS * 4096
+        limit = tile_rows * 4096
         packet_limit = ((limit + 4 * (limit // BLOCK) + 127) // 128) * 128
         slots = []
         with torch.cuda.stream(self.stream):
@@ -46,7 +51,7 @@ class TiledProjection:
                 slots.append(dict(
                     payload=torch.empty(packet_limit, device=x.device, dtype=torch.uint8) if fp8 else None,
                     received=torch.empty(packet_limit * 4, device=x.device, dtype=torch.uint8) if fp8 else None,
-                    value=torch.empty((self.TILE_ROWS * 4, 4096), device=x.device, dtype=x.dtype),
+                    value=torch.empty((tile_rows * 4, 4096), device=x.device, dtype=x.dtype),
                     ready=torch.cuda.Event(), released=torch.cuda.Event(), used=False))
         output = None
 
@@ -94,7 +99,7 @@ class TiledProjection:
             slot["used"] = True
 
         try:
-            tile_pipeline(x.shape[0], self.TILE_ROWS, launch, consume)
+            tile_pipeline(x.shape[0], tile_rows, launch, consume)
         finally:
             # Includes exceptions: queued transfers cannot outlive their input
             # owner on the caller stream. No fallback after an issued collective.

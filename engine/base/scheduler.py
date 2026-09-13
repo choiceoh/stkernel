@@ -36,6 +36,7 @@ class Contract:
     max_wait_s: float         # D10's one starvation valve
     max_running: int          # decode batch width the kernels support
     decode_token_budget: int | None = None  # smaller prefill budget while decoders are live
+    prefill_tail_multiple: int = 0  # preserve a profile's fast row-sharded path before the true tail
 
     def __post_init__(self):
         for name in ("chunk_align", "token_budget", "max_running"):
@@ -47,6 +48,9 @@ class Contract:
             raise ValueError("max_wait_s must be finite and nonnegative")
         if chunk_for(self.chunk_align, self.token_budget, self.draft_slots) == 0:
             raise ValueError("token budget must hold an aligned chunk after reserving drafts")
+        if (type(self.prefill_tail_multiple) is not int or self.prefill_tail_multiple < 0
+                or (self.prefill_tail_multiple and self.chunk_align % self.prefill_tail_multiple)):
+            raise ValueError("prefill tail multiple must divide the chunk alignment, or be zero")
         if self.decode_token_budget is not None:
             if (type(self.decode_token_budget) is not int or self.decode_token_budget > self.token_budget
                     or self.decode_token_budget <= self.draft_slots
@@ -84,6 +88,11 @@ def _prefill(state: State, c: Contract, reason: str) -> Step:
     remaining = state.prompt_len[seq] - state.computed.get(seq, 0)
     budget = c.decode_token_budget if state.running and c.decode_token_budget is not None else c.token_budget
     chunk = min(remaining, chunk_for(c.chunk_align, budget, c.draft_slots))
+    if c.prefill_tail_multiple and chunk > c.chunk_align and chunk % c.prefill_tail_multiple:
+        # Keep the full aligned blocks on the profile's row-sharded path. Only
+        # the final sub-alignment remainder needs the general unsharded path.
+        # Every token is still computed, and the usual decode interleave stays.
+        chunk = chunk // c.chunk_align * c.chunk_align
     return Step(PREFILL, (seq,), chunk, reason)
 
 

@@ -1,0 +1,1111 @@
+{
+  "host": "srv4",
+  "rank": 3,
+  "calibration": [
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.fc.k0.pt",
+      "size": 67110597,
+      "sha256": "9d0271638c019f0393a20352c7a56a694ec8471f9b1692437aa0b8131a7a90d1"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.fc.k1.pt",
+      "size": 67110597,
+      "sha256": "647f1f9318c6d9509706e3881001a2c06d216c77f6478c7f39eba8566b9402aa"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.fc.k2.pt",
+      "size": 67110597,
+      "sha256": "c753dae2b868ade435e4ff68d1fd7cfe7857313a4f94f11e0196982be6bdbc6e"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.fc.k3.pt",
+      "size": 67110597,
+      "sha256": "aa8a9f0dda08be3b6175ebd5a384987608115203293a33a3ed34dfa2b403ecd4"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.fc.k4.pt",
+      "size": 67110597,
+      "sha256": "add90faaefce2023fe7bfd4ab2dd16b8aedb76bfe6708c1b83c5cb4cbdb4f9fa"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.fc.pt",
+      "size": 1677805437,
+      "sha256": "53b9b4b4b02129d94bd4f2e671b78bf383a4f0d177c7f1262c07229b2c856748"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.0.attention_conv.kernel_projection.pt",
+      "size": 67127669,
+      "sha256": "c070f6ade244c4fc1d5fce83c1b634bb8f5a58765afe588a1bccdc19d5d05b4e"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.0.mlp.down_proj.pt",
+      "size": 37763229,
+      "sha256": "2686e44ad63f47e298e6c16f30c9690913cd743ba76041bc98faac66ea44608a"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.0.mlp.gate_up_proj.pt",
+      "size": 67127477,
+      "sha256": "ee9f99014ae731305ee314a834906dc1f82911527cc2f0415c4ff2dbb6e18f66"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.0.mlp_conv.kernel_projection.pt",
+      "size": 67127557,
+      "sha256": "e396fe4e1b7aa13bbcfb49a9685f6c5bf531dffdd56277b5a1b6b95c7889833d"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.0.self_attn.o_proj.pt",
+      "size": 4200629,
+      "sha256": "880d8e70ad445ede0fa801b14e3ad98ea25a8fd4448ab5d3d346e7bf32ff90c6"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.0.self_attn.qkv_proj.pt",
+      "size": 67127493,
+      "sha256": "3d54d604cb73d1b6f3231584f2195aeba9560f08d75a3d87af33a87b68d18d46"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.1.attention_conv.kernel_projection.pt",
+      "size": 67127669,
+      "sha256": "ae8490682829c1faf643cb454c94395d7c201143ae1bfe33e3c106b06d223bef"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.1.mlp.down_proj.pt",
+      "size": 37763229,
+      "sha256": "1d650e276e76e13fde01a3493f3bdd0f477fe246c95f41013eadaefca5c1f471"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.1.mlp.gate_up_proj.pt",
+      "size": 67127477,
+      "sha256": "efa12f57cfece5b95159c73a8ec8b02467faf968ec66ce8dd6882e1344f9656e"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.1.mlp_conv.kernel_projection.pt",
+      "size": 67127557,
+      "sha256": "562acadd379d6130e052c0e376691ed9768544ce272e5abb9a15461353ad236b"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.1.self_attn.o_proj.pt",
+      "size": 4200629,
+      "sha256": "4120f681262fed4cdbf892f919616bfbef0eb2c2c66509a230f9f5015a388205"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.1.self_attn.qkv_proj.pt",
+      "size": 67127493,
+      "sha256": "dadc0eaebd5764dcf34ed3e509822a1971e4c2c07a92522163346c3687304699"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.2.attention_conv.kernel_projection.pt",
+      "size": 67127669,
+      "sha256": "f54cd36af70752ec2fb4bf86d90c34dd850f934097c0636b4cb6d49d49f3c185"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.2.mlp.down_proj.pt",
+      "size": 37763229,
+      "sha256": "498a8acdcc1b73da2997564ddbab7d862b9599b3fb2e669348a9e48ff9e95bbd"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.2.mlp.gate_up_proj.pt",
+      "size": 67127477,
+      "sha256": "009f84bba91092b90db94f7829cdd180fe5e5059fb029310e2eb1b28e5892602"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.2.mlp_conv.kernel_projection.pt",
+      "size": 67127557,
+      "sha256": "8d5879c17402eb2f7a364904ca062a8d3c9c2eb4034fb548e50f024c141e4f2b"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.2.self_attn.o_proj.pt",
+      "size": 4200629,
+      "sha256": "d5581fe41be2de6c1fc752e21067de67362444601f26cb625ba6273e054d0e5b"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.2.self_attn.qkv_proj.pt",
+      "size": 67127493,
+      "sha256": "94d93fe94e607754b2579ee87596ae7d9f6719fff8f6c274168b0eaaed6956ec"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.3.attention_conv.kernel_projection.pt",
+      "size": 67127669,
+      "sha256": "bbfe44f54e75712407bb30791db9585ff12ad6935fc1575a3f967c29bf427e46"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.3.mlp.down_proj.pt",
+      "size": 37763229,
+      "sha256": "ff4e052276340e1fea353c38e390368b232917adb51adaf06576e8237892a687"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.3.mlp.gate_up_proj.pt",
+      "size": 67127477,
+      "sha256": "5ce4f510e36078a00c8f3e2f749d0fb5ce8163c7bfbf7f31b15b71688fa29c90"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.3.mlp_conv.kernel_projection.pt",
+      "size": 67127557,
+      "sha256": "9029ea55d30b9184514c7bdcaba97b2f43f45ee1e1125fd6f9349178e3d8a824"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.3.self_attn.o_proj.pt",
+      "size": 4200629,
+      "sha256": "10c1d5b62713a9ea2dce89ba6210688572a65578e45b4f952962cd878401113a"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.3.self_attn.qkv_proj.pt",
+      "size": 67127493,
+      "sha256": "6c5aaa8a4a76fe62e2b81cf72b4bf56900a03c469ee0bc8eb4bae204754c19eb"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.4.attention_conv.kernel_projection.pt",
+      "size": 67127669,
+      "sha256": "17ee2e7cad6367944ef6f4a7e89af7d8564cd501df77dcc763041587613834ba"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.4.mlp.down_proj.pt",
+      "size": 37763229,
+      "sha256": "54e59617f05ad52e9c2d68720a0768804a1255ce6adb9ef25c96ff59b4608906"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.4.mlp.gate_up_proj.pt",
+      "size": 67127477,
+      "sha256": "d215cf5aeb481eae5337b3310c518d65486d59fcd4f5d8fc03a6c7bc66af811a"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.4.mlp_conv.kernel_projection.pt",
+      "size": 67127557,
+      "sha256": "e2f188de0a3ab843f028c828315f09f02fe04276c0c1a2fe887112d9ba672c5b"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.4.self_attn.o_proj.pt",
+      "size": 4200629,
+      "sha256": "aefb377a608ac215c6e1ed94b05182c6c733615446f56aa2d6a680b000804da7"
+    },
+    {
+      "path": "mkcalib/rank3/DFlash2Qwen3ForCausalLM/model.layers.4.self_attn.qkv_proj.pt",
+      "size": 67127493,
+      "sha256": "da89e9998236768f5b3922496d40e80e30962d867226cd8424c1e919e95b5de1"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.0.mlp.down_proj.pt",
+      "size": 37763229,
+      "sha256": "aabf452aa61bd520a68b6213e5655a9f914bafcbd2994d87f5aa99e294e731fb"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.0.mlp.gate_up_proj.pt",
+      "size": 67127477,
+      "sha256": "87ad3ecdb3e8a29b1c59d59bc29835a2e24a2d860d26309ce5656f3e0b0ebb1b"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.0.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67127557,
+      "sha256": "bf2c8c36c18a81d47ef591be0018480fd3eb9c86657994f02fe4d151ead820a8"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.0.self_attn.o_proj.pt",
+      "size": 16787637,
+      "sha256": "e719245e87591d5aaaf083cbcf95b230952ffa76a9784065b61b559960bfc8fc"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.1.mlp.down_proj.pt",
+      "size": 37763229,
+      "sha256": "fb7aaf72473ff03f20862c97d47cb889ee71a94e3230c23664fdb32d44bc3fdc"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.1.mlp.gate_up_proj.pt",
+      "size": 67127477,
+      "sha256": "618cb0173fe1af84f6035dd83af936b7a9f70acb0c38d865cf4e1884d9e1c9f6"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.1.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67127557,
+      "sha256": "d1e7af0f5ab70db154f7c5ee23d7f454bfb89958f26a36abc8ff97639e982312"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.1.self_attn.o_proj.pt",
+      "size": 16787637,
+      "sha256": "ad111dc3488d783562f3be3e4d54f6a716322f445cd032e6b8f1dfdaab442bc2"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.10.mlp.shared_experts.down_proj.pt",
+      "size": 1052957,
+      "sha256": "2b62de26cb74a6b3e9edf2932473018185ef3f4569b6fb0d7108130f4844b433"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.10.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67127669,
+      "sha256": "0abaaa7a7a9035e31eaf895567bc1b8ee0a6e3f850e8f9c04dddf74d8488dacc"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.10.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67127565,
+      "sha256": "349a5ac0b12bfd36ac066be5728243ca78e8c523c16049309bd7020507d17191"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.10.self_attn.o_proj.pt",
+      "size": 16787645,
+      "sha256": "a39cbe2fb2e1d9f0141ce7418da66e98341df9fad686233a9d2522be07cffe37"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.11.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "a55ddfcd4ac216c707d51240532484d52de0a0ac8e455fd4b9781538341027f5"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.11.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "f53ea2f16f1054bfe551007be71ad24e020a0b63a028dbc91ae50e469e98d571"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.11.self_attn.fused_qkv_a_proj.pt",
+      "size": 67127565,
+      "sha256": "d9013fd8513c3d3c0bba9abfa67e85e6723f7c3a4bac7a292c5b7b995bb9ff0a"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.11.self_attn.o_proj.pt",
+      "size": 67110808,
+      "sha256": "61d76daa99286afc3b8b4c32a66aa832ea00a92a300c16c960325d9b27d12e58"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.11.self_attn.q_b_proj.pt",
+      "size": 9445581,
+      "sha256": "62ca21f8ed96f12bb19ad1e3d9aa3039973af3d426c7412a387e2aca475b0aef"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.12.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "dc78c345afc04d9311a28bed9c75bc205d35679f29dad765272beba4106f743a"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.12.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "34d31cc39a8cd791dd8b0e9e7d660d162cca74ed9f17662f48a83300ed31fb00"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.12.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "c39afce5c8ad892f642ea61c1f647dc318071d930abb849b08e91efa80419474"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.12.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "5c60a1fd8b614b0d79cf30c25f7ff02239e9368955d531c62c63c68f73cab823"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.13.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "abd9de2774e1859a7e7c0c7979d2f5f40d8bb97178219f35072d200070a0283d"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.13.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "900de1c31019f0c2b41291fba2f355e230759d8de5ba96770c1255186fc9f8cb"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.13.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "3bb5546981be652959794587582438969eaecb264cf6242ccee4978fd11929bc"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.13.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "1a9741c5a8b5676dbf528f6371f2f7f4217d68130fd643900ef893a68323b151"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.14.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "c914bc612e660a98b8b3bc84e00a5828f4c7ccf9898d58c4becfe89a46b00a58"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.14.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "278f200d0e499bcabbcfde3b576b8c4b33c2a041fd3a6825486e8aa708b633af"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.14.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "36224ef6f9654ccf8ceb0e957d7b5430a4c6ebd69aa177831c80e4f46aaa695a"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.14.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "3b7aeae76836a0f109647423757fa1c5d86f0fee2f5afaab3af6bea278bf2623"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.15.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "9e539dfb6d1d607396ff3e5f32a50916d3529fad974bf6ca945042dd603c76f3"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.15.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "56bf932b2ee13f89a9bb26acec90af04109a7577c0b3d2189e62f9f2f8127f9a"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.15.self_attn.fused_qkv_a_proj.pt",
+      "size": 67110942,
+      "sha256": "c1ca34a502c40fcc8f519e525bcdf860d1ff4d108cb2271e02839ac6568d063a"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.15.self_attn.o_proj.pt",
+      "size": 67110808,
+      "sha256": "b3d8d7b14d020b0f4f283d8a8549bb262849eb326568e5c62ecbdda4ca570d94"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.16.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "9b0cbeeb69bcc0c60b6954f26b1ee1dc5bd458a7158177b1919ba2699c94e8ef"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.16.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "e2fee1deff8756646cc22e7e65269fb474f5f07f944c5a3d6248b92c4cc7fb07"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.16.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "d7316db878eefd406d991cc225b5802fb04032f068eda15873a79d0e162a466a"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.16.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "6b3126e7fca63586b360ddd37ae1152a7b0a994fb49c77158405611d74f5df2b"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.17.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "f98ffdbd345e877c30ec01669fb5a9896f8dc34c3ed72fc1cbe00a6bba11bac7"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.17.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "ed9aad8994ab0798beab648ce2e48eea763807ec10639bdd5e5a008426fd40b7"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.17.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "dfee79ccd7656b3d6f8c507c9db3c7a32b44f3f791f7633b77db3de219b91dc8"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.17.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "40b57754a672f7ce4cef3ca3dc601078b6b303cdbb2820f21a016eaf76f1cb80"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.18.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "a0eeeb5b1c19f06ef794df20597e16d5a30c85c78fded6b435101f1b774f7ea6"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.18.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "0a522711f554e7a6e856fcb89d093d14288524a4268cbb7e3c6b63e1feda38d0"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.18.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "694ea941ac55d54a2341eb0da0c6429e2a0170e48d72bcc9a86aae18de8b533b"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.18.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "fa38dbb55290ec1329b1f9e39af3b989a31610309ed82a077e91da5138c4bc42"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.19.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "165aac02566491d0526a02d7bceebea3de9c47ce87784bb1104a4781eacb6217"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.19.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "7ec05d70a609297952a4f1c45fe6a7518ec34f1c08139926913fccf6e31ef13d"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.19.self_attn.fused_qkv_a_proj.pt",
+      "size": 67110942,
+      "sha256": "0d4d3b2cdbfa8cc1dfd41e254ddf814272d915bb4d0650fd2853f82e1e82f548"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.19.self_attn.o_proj.pt",
+      "size": 67110808,
+      "sha256": "9bac932c0e171a2678ce721376e9a86380b2244c0dd2f19e3624ce0238fc8962"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.2.mlp.down_proj.pt",
+      "size": 37763229,
+      "sha256": "c1fce2983dd368a1a90d6fb6bfc6e64afead7e69a7a1ecf3a79245d92c2f0124"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.2.mlp.gate_up_proj.pt",
+      "size": 67127477,
+      "sha256": "552818f173c51205c82247a1f5885ca9bc82521a9527834615d7fe6f2373ebc7"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.2.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67127557,
+      "sha256": "78b5d92a9b39f7b98272d4532da30db5d20d3360d65dc1603ca003cc5ad1de02"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.2.self_attn.o_proj.pt",
+      "size": 16787637,
+      "sha256": "3cb256ab91265809a30641143fb9dafab207eb25ab1eae0f4a790aececcf3804"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.20.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "c4d0da55de4837031294e07131a7dd3db1957eed5278e11a2cedbb66dc63fb88"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.20.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "0a135883cc3d75d2d139741d918254a0816a74383e59688eaa15e253cd013984"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.20.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "185f4c1abdc782fe7746e688e8b6344202d6618ac41644c2ec6d7e21cb97fc07"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.20.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "e98947158b89fc530dfcda7f3be2da0763ffdf2aa37f48c3a6f1c4d6c0e395a8"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.21.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "860b54bffe3a99829bfda2edc50886829fb965a2ea2337f0ef281f79582e99c7"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.21.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "3b41ab678b5107cb8b419921aa1d0b8265d2239a6913fa1b71ad4f3f74ff774f"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.21.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "723fba0c9866f36ee54182d51d344e8718dbec02ddc8752bbd5949fcd0ec0d9c"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.21.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "ffbf57487f216347a7389b7799627fe2a0d0e1848112fd5e46f0f052816df0d7"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.22.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "082af5182e96867f2b6b01d44d04c59b60582ad32314746a29d592c69fa46a6f"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.22.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "b01d1c1ded32e1a2681666721f7c9a8d20599cc8f116b3759412e6d3bcba08b2"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.22.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "4fdb8c410d2edfcc45f02807dff034f08a7a9928eb4b0f52047980f8ef8df27f"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.22.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "28865554d594070e4cf90cb71fd4dc3efa87f0c9a1df64982e93731b525b45fa"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.23.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "9a2749582aa8bc4f247a9522ffcced1bc39f8452c22277becbb98c6386ec8220"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.23.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "391757826bae555e7a38df3dffe6833ea80eacab32d87621f750f64c9f29bf3d"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.23.self_attn.fused_qkv_a_proj.pt",
+      "size": 67110942,
+      "sha256": "26e62fcee7f692468eb234cd748f55bf0ff6e0800ca4ebdeb02fedb5284b2783"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.23.self_attn.o_proj.pt",
+      "size": 67110808,
+      "sha256": "5db05cce56a64c2334c15cf899a7cd39e43d4a842a57587083b1d5d6cdedde0b"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.24.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "6ee145602659028474203e8309cbe88f0a9cf6f28e4d8fbdb63cf5374e63a519"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.24.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "27b71cca1f463e874c53847b6d63f37446a58a7d439ece03fc74ec96ebd6cd06"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.24.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "afcc439be5e1de5a9c7235db7939af3a541c017faa9a8256aaff6f9fbc2fcd0e"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.24.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "50437e26e1010d26e2c29752b59b502a6ca9055c9cd6856c218c47d9b779ac2b"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.25.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "e8782adcb46e6f92132d7528d9e1814bc53353804ccf3462e173723b5cd21749"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.25.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "6f0688316eaf739da31982d0f2237d4350f24dcd8783508e218edd3e9cdb6a1a"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.25.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "e891fe27cea813cc7747fc43a05f4946fb30b1acc4be3560ce06d6859e02d653"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.25.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "d17476edcaddffcb880244ecd449d0a9dfc0601750007a7f5fbafc95fe3e2dbe"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.26.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "228aa560b56978df2504f05431e57d4e8cc92fcf157f6beb3694afe6b214e6f7"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.26.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "692a485af770d92eac7fa0b49e509212f1a14e042ffe5574e15de367ec701b57"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.26.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "285351ad7f9e7b93b100ac92e0a338021520038b7ab96a98ef6f67bb37ea22e7"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.26.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "00e863a383eb78ee3d2e1fa769326f03f57071356715f432741d1fe656f47739"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.27.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "023ee962e9f6be487c8f2ba8e9abfe8dedaf8703f9581c414772d91ea6d08a58"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.27.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "e59f3f60c914e1326e353e9f0fa629b63760225dcce0561ba9380cceac26daf8"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.27.self_attn.fused_qkv_a_proj.pt",
+      "size": 67110942,
+      "sha256": "053f5478195b0a33be002e84b3df865baa2e8faeab0af58aeef6384ecaac7551"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.27.self_attn.o_proj.pt",
+      "size": 67110808,
+      "sha256": "8869154bafe5fcf6c91e43c2d0a43f9dad7465a57d166f4f9126a7f6db914366"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.28.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "f9aa28bf96891d0d113331ee51d6234c19380cd0248ad79c3ddd5c3f2383da9b"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.28.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "691a2dc74994094d3eaa3e9a160516250f00daf4024f5e9112812f3f1dffb8b9"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.28.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "1cbaacc8de7945d9263eeadc34441f1b78290c59f597d96da1390d606f251fba"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.28.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "579bee0dea230c7f31c4d6cb5ef529d45f1996194c7dd626d602686bdf6031c8"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.29.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "f9ca051c9d4420018d11e75cc2d0c927f749c8a19df9698c2485c6a0d351af0b"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.29.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "db1fb1c1600740877c83d5e083359950d31aed621f2f67663ab0dc6c0dd44791"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.29.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "0dd834a5f12163fadff39d03263b27b54d46fad73d1285746e0cdcddde4ad406"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.29.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "894f1a2c962a0b770a956bded0dbe6d0b6ecce084f39db89b0092ac30554f530"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.3.mlp.shared_experts.down_proj.pt",
+      "size": 1052949,
+      "sha256": "e3cd53e59d659a0abad69b6cf891b06d9cc07b5c2b4840bcffb830e97ade858f"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.3.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67127597,
+      "sha256": "a725b030c034b1c6315156ac4c8726c50d644134f5d03a436224ee8a43b50ab9"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.3.self_attn.fused_qkv_a_proj.pt",
+      "size": 67127557,
+      "sha256": "375ddd3055e5fecffcae892e35e5a69ad7bc9122f29e5628978e1294d5284605"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.3.self_attn.indexer.wq_b.pt",
+      "size": 9445605,
+      "sha256": "52f38b505c40cd65ea07a8e47267bb8256b0176570831e1daf68708e9788a11b"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.3.self_attn.o_proj.pt",
+      "size": 67127477,
+      "sha256": "a730594c0f9cf2ad4adccfeb4ed4733dd72597dca750462cec4e127b57a4d18f"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.3.self_attn.q_b_proj.pt",
+      "size": 9445573,
+      "sha256": "db8dc63b52ecad811cb2d6aeaa308c0d60f2d10cc024dfb26e840e76ac12d950"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.30.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "77a1357334209475e33e3655764ac2bb72d70302bef2cf2b8453ca746ab98567"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.30.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "281bcf1b30a7feda69bbe6b4ee08c852d5ae34802ef4f0cffb8cd0bd916b0db0"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.30.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "a3019e8cd41edd100aeb7b0e6cac409073c306b9a0f62b2a41f82377113c6af1"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.30.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "0886190ff01e361c93009bd0c011622c0f1291a39354352c32f51604b891a3c3"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.31.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "c755ac5e3291d24ad66ecaa85b4eb5554df868e2989aefa400959c05cdbb7879"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.31.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "5cee8ff7118eab4ed3401a1534c60406dd00ad8fc252c8963d2d9724647ba5ff"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.31.self_attn.fused_qkv_a_proj.pt",
+      "size": 67110942,
+      "sha256": "d3579b6591a610185a197c0cef9807a295cbe3434ef0b73123523160143fdbd5"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.31.self_attn.o_proj.pt",
+      "size": 67110808,
+      "sha256": "19a63a1591933188ae203769139af6be9900e6e72ab4e971f98e1ab3d66c1986"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.32.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "0ba1a16048dbcea55ae4998bc883eb50f335a03fdbad502b8e808a9db197f1e9"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.32.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "3fbe1df2319ad2dea9d528d618bfba2f431d7c276c191448af582bae52634bb7"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.32.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "59f7b41f9b1a37363a08c38e8545c7082b116d7f5a7521cfedb7eb15fb36cf0e"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.32.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "d3fefc176e29747e9ae905c3a9fc993df6edec2b3e6f64c80b2a1237e55d0d26"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.33.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "19cfebe851d54a2d1ed562ced68ddfe69bfd9bee3dbeb95c53c565dd7bcd9d76"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.33.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "06f128e4ca64bcce9c7f81511631766a7997b8805f0c5d142d43f057b23b51fd"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.33.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "e68c3a9832b68b92c755e312e914a9d5ff58d746ce01c63152c5af9e51609e2c"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.33.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "ca4d60537f63409b7121cf0a872363ef67373f88495d493d43f3278ca7e2f5c0"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.34.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "0e60b981c6559323aa5e23db76fbba27a8d2889f9d482b8923b68ddb86274648"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.34.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "49282e4768832301308011a0b5e21720646c94fec0dcb5f9422ed656c0cdb074"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.34.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "b5e27ce4c661dbd29b2b2270eb91f6b5f52eaa99fba60f0e5e4a9bbf717741e9"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.34.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "12e5520baac1fc984fff24cd0c6e6963413530d610aabb0d900431ae1fbba47c"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.35.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "0918a1b6a3c417fd4bdff78c1d2afeb9f23794352c9b8cf08920ef5c0b61b6ed"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.35.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "d4b5dceb040214a3be70f88a1fbd5582b81bc7364e472342aa83378a0ff2e90a"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.35.self_attn.fused_qkv_a_proj.pt",
+      "size": 67110942,
+      "sha256": "bf3e63e11222d3ea71ebffd873681141e3bc90f0c12abd1dccf464de5136599e"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.35.self_attn.o_proj.pt",
+      "size": 67110808,
+      "sha256": "0c113a56de27f20388a79b70e9f6153ea51936557ca01a0354c2df299235eb5f"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.36.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "4d10a81fab573fdc0977a72e01e6b92b9de1156b763126361ac49bfd5f9d7921"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.36.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "0fa7db152577d301ff95b6285c2902a75477baf487d5e634087334994dbf1601"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.36.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "d0b46067218d51783bbdae9cb9db4c0e34043eb4634238e44ed76c81407af453"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.36.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "9b1132f78550a25fb19d4e3e39eb3be37b25437cfb27d3882c533385eae62b87"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.37.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "e5f4c31dd446131086d661feaf3ba3689391fb253edea9ff698f6ae3b76e1fb6"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.37.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "f8a6d849449e679b0de3b2a92c5e63cbd8f9a4da9f4c9c5e99c473bdb6c2de2e"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.37.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "789ad614559e57183657b9af82d5cc0072816534557c311474e41dc894396f27"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.37.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "34b335cb80a9d1ba708316c9d5d81da21b4fbe75467a020046fb78f6cd4dadca"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.38.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "9a2b0c45dc818e4ff1d4f3b6c6d1520324ad509fc37cdeeadde8294246205e19"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.38.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "6c22724085f43697769bea85b67b598f9ff27c69ff187679288b8495ffaf67f7"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.38.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "9d21f6757bf28ba3042de78194846390b92183ca2f75f7b47f072e36548067a5"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.38.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "3fb2fe465c094c2eef94764892215e53b33e1e40de73d4314cc962e4b95d048a"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.39.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "8d600a904209b786cd52d10e11849ad82e9bdc4e42daa6b3917df4a1159cc2fb"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.39.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "ad8b62b70d3082c8c8e8d82efe5e96ead2604d5c85c4ac3d6ede10198f32a5d7"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.39.self_attn.fused_qkv_a_proj.pt",
+      "size": 67110942,
+      "sha256": "df891f243fc04d41e31aebf6bd95b182827e694fd005c3b06f8a58cf9b24eae4"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.39.self_attn.o_proj.pt",
+      "size": 67110808,
+      "sha256": "aeb1ec140d1f55faa5b5d8896323813a2e3529e8561e40ccc23a1cc9529f4867"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.4.mlp.shared_experts.down_proj.pt",
+      "size": 1052949,
+      "sha256": "0d272aafe1205e4e738d69a0c7077f27d51794073d16a4641c8d56ceb8bc6c94"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.4.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67127597,
+      "sha256": "bda2a5cc708338cf100c5ebff215cf84436d3293f335995d7349e02b95737c79"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.4.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67127557,
+      "sha256": "78ddeb8c83ba935a5cb14974b8cc3d73494e885efab6180726422536d919c4e7"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.4.self_attn.o_proj.pt",
+      "size": 16787637,
+      "sha256": "2185f46598914be25f5d8383c39da62a3738858c35d9fa00c7648f540a1093d7"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.40.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "1499f756ed9bcbe58e81631df1f8cab37e575757a4dbd5396a7a060355612c41"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.40.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "79cb313d176b24895aa5bc0c92f021f357c07abcdd1aafda1620a113bbfd269b"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.40.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "46d845865dc69395f76079b79da1ab26d5c033b94ff007c569df94899557e1b5"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.40.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "5111a102df4bfa0dafbd771e281aa53b388b46803f35758d6e276935213791e5"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.41.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "5aff08ac95b03775bba803fdd8634a8d6f58a64b6e9a19e8ec014da621fc1934"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.41.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "08b19ce56d5c060e8723861e1147c681786ffff9af571147b881b23dd8081477"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.41.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "4178249876cbdb171a9bbf272368a41f84f997ee293b588593704c0683fb7b5e"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.41.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "a34f24f69385dd8329694fcea8db016c50aa8db1c64ed9bc39065e8886c5dcfa"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.42.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "3d34f99c4b0649056441814b0635ee7cfb433792399c0734039601e85d8e56b0"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.42.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "12242f28c9f92c49ab7d904d4b451ea56bb87413bde37a29b4075da96ec398ab"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.42.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "b169245fe3ef6f289b952194818e6f86a1eeda79c539537b516174bed8bc2f44"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.42.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "08f65225746169e40a934e26fa5150e00bdf4963d699ede0971b297d977a78bb"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.43.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "eb06b4aceaeb109943e1dc0e3adf49469887237ba78eff343ef6e3ef959116aa"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.43.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "030f32caea608a89d62f978a4415c322fbfb48a384f27b006e53060a928989f9"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.43.self_attn.fused_qkv_a_proj.pt",
+      "size": 67110942,
+      "sha256": "9b4a37bb731fd67b987428e502dec2d59f43bd87718e390684488b2b0341d16c"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.43.self_attn.o_proj.pt",
+      "size": 67110808,
+      "sha256": "770453359301fb59408aed8cc8d8da3902436c39fbb0b1148508e310ceb9a23c"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.44.mlp.shared_experts.down_proj.pt",
+      "size": 1050668,
+      "sha256": "9c54075bc820e3c64367f59b0ceb49b32d7a82347dc9b1f87b69f9bdcd2525f6"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.44.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67110977,
+      "sha256": "1fbd8ab573181432c71868cfd547cb26b6e5c5b68cfe27988ea7565c349b8b31"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.44.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67110942,
+      "sha256": "1e72f904651c14ae5b7eb83cc2d2c965952b1558983a211a14f33e4afffabda8"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.44.self_attn.o_proj.pt",
+      "size": 16779160,
+      "sha256": "f981f7652d38a34e0610014f3956fa09eb994a178adb8f1eddcb23c9ea8bb768"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.5.mlp.shared_experts.down_proj.pt",
+      "size": 1052949,
+      "sha256": "88b4af2fe73f4b97bc77f18d8feee2ac9a03fc94780ca70d554606d99b8c0bce"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.5.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67127597,
+      "sha256": "b76aba1fb22282da30b80cfbdcb1aa2e5b5768fc36d4ab648c0ba52d1c32db20"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.5.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67127557,
+      "sha256": "95301553ca8837797099ef885c059271914f1d74c19ae438d4dff3afc4be7072"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.5.self_attn.o_proj.pt",
+      "size": 16787637,
+      "sha256": "c47cd0ca0874ae74c25a7e32d2eb30c01c0713b7f0f4635c6734a94b815d4964"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.6.mlp.shared_experts.down_proj.pt",
+      "size": 1052949,
+      "sha256": "c4b34a23bbb8f4d6120f56cb262b59b71be8f01cb802b7eb069ed5ca9c61145b"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.6.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67127597,
+      "sha256": "657ff56e6cb64c46caa9ae2fa035777e2258276cd28a93d3f7c3614edd127ce3"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.6.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67127557,
+      "sha256": "b35be29c2e1276da69c433af73649b374181598ba6008b1094bd27f8ed42e40b"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.6.self_attn.o_proj.pt",
+      "size": 16787637,
+      "sha256": "5a6fe8c19ce3b1d0c5c56febc10bfd22cba1583fea5d4d1c51f51f8f1ae0d4ae"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.7.mlp.shared_experts.down_proj.pt",
+      "size": 1052949,
+      "sha256": "0331e1da40c6d2cb9d30700a4ce46d433fd4f43e1eb4ca742a9460d98fb9760f"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.7.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67127597,
+      "sha256": "1eb68b45baf6c03710259f4a5e012d9b7bcfa2785a4344961e0a9a2df5257be6"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.7.self_attn.fused_qkv_a_proj.pt",
+      "size": 67127557,
+      "sha256": "bfad4963da83379ee457ccc20cfa6e20303eeda72f8ed62ddc07fee053020d73"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.7.self_attn.indexer.wq_b.pt",
+      "size": 9445605,
+      "sha256": "e6f621bb183a13a395a5e8b99e1115c9ce773a85d1fdae018eec6ddbec38eefa"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.7.self_attn.o_proj.pt",
+      "size": 67127477,
+      "sha256": "74330e8b28cae3c22900eda6697eb4bdc602c112e8806813c8fffd08ce7b04eb"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.7.self_attn.q_b_proj.pt",
+      "size": 9445573,
+      "sha256": "a7f10ebf81115cbd7f6112fd12c5900cbc6167993406681eebe0cea2f9d13676"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.8.mlp.shared_experts.down_proj.pt",
+      "size": 1052949,
+      "sha256": "20d990878970ae99eedaef9dff353da66f58676d6b0d0bbadb0f89a676c3683c"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.8.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67127597,
+      "sha256": "5902ccdfe8adcf52995962bbe1724a950eb4f991aa7d1e1ebf031bfdb53ab7da"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.8.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67127557,
+      "sha256": "41a9a4d124f915981fe45001cce29e27b5e35e108474fdb0e90cf7ffaba5e7b6"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.8.self_attn.o_proj.pt",
+      "size": 16787637,
+      "sha256": "ad38b9c2905f594c678d4a18ecc83981a40c8dcc57df0dc1a384c240b9368bbd"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.9.mlp.shared_experts.down_proj.pt",
+      "size": 1052949,
+      "sha256": "b8c18a8cbbf0350f39f78c16c2eaebb416562a58a5a0e1e4b8c832ca84a8f942"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.9.mlp.shared_experts.gate_up_proj.pt",
+      "size": 67127597,
+      "sha256": "b5a33846b406a49ce982a7319ebc91369eed340b06dc436dd6eba9cfc339b43d"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.9.self_attn.in_proj_qkvbfg_a.pt",
+      "size": 67127557,
+      "sha256": "618abadfc31096c1be045526f32cb334e3971281f26add0ef4c74ee46a67ba51"
+    },
+    {
+      "path": "mkcalib/rank3/Glm5NextForCausalLM/model.layers.9.self_attn.o_proj.pt",
+      "size": 16787637,
+      "sha256": "efb2fb28738e152af2914f34aef8c7b4bd55af5bde2f2496825d75b9cdf0a352"
+    }
+  ]
+}

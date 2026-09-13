@@ -1,0 +1,10 @@
+{
+  "engine_revision": "2c2ee77f",
+  "files": {
+    "engine/kernels/prefill_topk.cu": "e46acfa5314f8f0b5292531015fcd3ab955b037cd75dea79e8eeb6bd6147a838",
+    "engine/kernels/prefill_topk.py": "4a335efdf72fbeabd71593ef219f7c256632106638a596a87e1490d2ffabb1ee",
+    "engine/kernels/prefill_router.py": "5e6bcd5fb8086616b1135e2f017b81be40aa7f0257f750719d6720146beb1464",
+    "engine/kernels/dense/calibration_prefill.py": "3ae0f92aade653c8abfd426265dcc66268685ee34239215a43bb8e4cbac35728",
+    "engine/profiles/glm53/net.py": "1abde11aeac95d44036e4e63c49fccb856b2f878ebde260035db15d4d03d0d9b"
+  }
+}

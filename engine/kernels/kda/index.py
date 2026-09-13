@@ -7,11 +7,29 @@
 # the following copyright notice:
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
 # ruff: noqa: E501
+from functools import lru_cache
+
 import torch
 
 import triton
 
 from .utils import tensor_cache
+
+
+@lru_cache(maxsize=8)
+def single_sequence_bounds(tokens: int, device: torch.device) -> torch.Tensor:
+    """Immutable bounds reused across layers, including the tensor-cache identity.
+
+    Recreating [0, T] on every layer misses prepare_chunk_indices' cache and
+    forces its GPU-to-CPU tolist() every time. Keep only eight recent shapes.
+    """
+    return torch.tensor([0, tokens], dtype=torch.int32, device=device)
+
+
+@lru_cache(maxsize=8)
+def chunk_mark_indices(marks: tuple[int, ...], device: torch.device) -> torch.Tensor:
+    """Read-only chunk marks shared by all KDA layers at these boundaries."""
+    return torch.tensor(marks, dtype=torch.int32, device=device)
 
 
 @tensor_cache

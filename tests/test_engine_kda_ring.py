@@ -103,6 +103,45 @@ class KdaRingTests(unittest.TestCase):
                           torch.tensor(0,device='cuda',dtype=torch.int32),-5.)
         self.equal(actual,out);self.equal(backing,expected)
 
+    def test_rows_fold_matches_one_row_launches_and_replays(self):
+        """net._kda folds a captured step's rows into one launch (45차, the C=4 question): its output and its
+        ring writes are byte-equal to the one-row kernel run on each row in turn, and a captured graph
+        replays it with whatever the slot and context vectors hold."""
+        from engine.kernels.kda.ring import recurrent_kda_ring_rows
+        rows = 3
+        for t in (1, 6, 7):
+            args, backing, ring = self.inputs(t * rows, cells=max(6, t))
+            core, params = args[:5], args[5:]
+
+            def one_by_one(slots, contexts):
+                expected = backing.clone()
+                view = expected.as_strided(ring.shape, ring.stride(), ring.storage_offset())
+                outs = [self.run(*(x[:, i * t:(i + 1) * t] for x in core), *params, view, slots[i], contexts[i], -5.)
+                        for i in range(rows)]
+                return torch.cat(outs, dim=1), expected
+
+            slots, contexts = [1, 0, 2], [0, t + 3, 32768]
+            out, expected = one_by_one(slots, contexts)
+            dev = tuple(torch.tensor(v, device='cuda', dtype=torch.int64) for v in (slots, contexts))
+            actual = recurrent_kda_ring_rows(*args, ring, *dev, -5.)
+            self.equal(actual, out, f't={t}'); self.equal(backing, expected, f't={t} ring')
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph):
+                actual = recurrent_kda_ring_rows(*args, ring, *dev, -5.)
+            try:
+                for slots, contexts in (([2, 1, 0], [5, 0, 4095]), ([0, 1, 2], [t, t + 1, 1])):
+                    for x in core:
+                        x.normal_()
+                    dev[0].copy_(torch.tensor(slots, device='cuda')); dev[1].copy_(torch.tensor(contexts, device='cuda'))
+                    out, expected = one_by_one(slots, contexts)
+                    graph.replay()
+                    self.equal(actual, out, f't={t} replay'); self.equal(backing, expected, f't={t} replay ring')
+            finally:
+                graph.reset()
+        with self.assertRaises(ValueError):
+            args, backing, ring = self.inputs(7)
+            recurrent_kda_ring_rows(*args, ring, torch.tensor([0, 1], device='cuda'), torch.tensor([0, 0], device='cuda'), -5.)
+
     def test_disjoint_slots_on_two_cuda_streams(self):
         args,backing,ring = self.inputs(6)
         other,_,_ = self.inputs(6)

@@ -299,8 +299,13 @@ class Glm53Engine:
                 caches.reset_slot(slot)
                 self.memory.checkpoint(f"prefill/{length}/{context}/before")
                 ids = torch.zeros(length, device=caches.device, dtype=torch.int64)
-                step = Step.prefill(ids, context, 0, slot)
-                h, aux = self._forward(step)
+                # Prefix-enabled serving requests save interior block boundaries.
+                # Qualify those kernels and their side-output memory before opening
+                # the door, using only the already reserved snapshot slots.
+                cuts = tuple((p, i) for i, p in enumerate(range(self.F.block, length, self.F.block))
+                             if i < caches.snapshots)
+                step = Step.prefill(ids, context, 0, slot, marks=cuts)
+                h, aux = self._prefill_forward(step)
                 logits = self.net.head(h[-1:])
                 valid = torch.isfinite(h).all() & torch.isfinite(logits).all()
                 if aux is not None:
@@ -309,8 +314,7 @@ class Glm53Engine:
                 if self.net.comm.all_reduce_max(bad).item():
                     raise FloatingPointError(f"prefill/{length}/{context}: non-finite model output during qualification")
                 if aux is not None:
-                    self.drafter.observe(caches.draft_ring(slot),
-                                         torch.arange(context, context+length, device=caches.device), aux)
+                    self._observe_prefill(slot, context, aux, cuts)
                 del h, aux, logits, valid, bad, step, ids
                 self.memory.checkpoint(f"prefill/{length}/{context}/prepared")
         finally:
@@ -318,7 +322,7 @@ class Glm53Engine:
             caches.slots.give(slot)
             caches.reset()
 
-    WARM_PREFILL_TOKENS = (1, 8, 64, 512)
+    WARM_PREFILL_TOKENS = (1, 8, 64, 512, 4095)
     """Prompt widths run once before the door opens, so no request compiles a kernel.
 
     A kernel that has not been compiled for a token count compiles on the first
@@ -329,11 +333,11 @@ class Glm53Engine:
     warmup above only ever runs the full chunk, so every prompt shorter than one
     arrived at a cold kernel.
 
-    These four cover the short end, where first prompts live, at a few hundred
-    tokens of work. They are not a guarantee: a width not on this list still
-    compiles when it first arrives, and the honest fix for that is a kernel-side
-    registry of the shapes each lane wants, which is vLLM's answer
-    (model_executor/warmup) and is the kernel owners' to build.
+    The first four cover the short end. The 4095-row pass prepares the largest
+    native E1 NVFP4 capacity immediately below the W4A16 guard. Its runtime
+    token extent then covers other short-prefill tails without another build
+    when that shared workspace grows. Other kernel families still own their
+    compilation keys; this is not a guarantee for arbitrary profile shapes.
     """
 
     def _warmup_serving_kernels(self) -> None:
@@ -855,7 +859,7 @@ class Glm53Engine:
                 fixed[i] = int(row.argmax().item())
         return fixed
 
-    def _forward(self, step: Step):
+    def _forward(self, step: Step, **kwargs):
         self.caches.prepare(step)
         if self.execution_plan.prefill_tiles > 1 and step.ids.numel() > self.execution_plan.tile_rows:
             from engine.profiles.glm53.execution import prefill_layer_major
@@ -863,8 +867,14 @@ class Glm53Engine:
                                         self.aux_layers if self.drafter.k else ())
             return result if self.drafter.k else (result, None)
         if self.drafter.k:
-            return self.net.forward(step, self.caches, aux_layers=self.aux_layers)
-        return self.net.forward(step, self.caches), None
+            return self.net.forward(step, self.caches, aux_layers=self.aux_layers, **kwargs)
+        return self.net.forward(step, self.caches, **kwargs), None
+
+    def _prefill_forward(self, step: Step):
+        h, aux = self._forward(step, last_hidden_only=True)
+        # Layer-major experimental execution returns full rows. Its caller
+        # needs the same global final row as the ordinary prefill composition.
+        return h[-1:], aux
 
     def _sample_hidden(self, hidden, temps, top_k=None, top_p=None):
         if all(t <= 0 for t in temps):
@@ -1095,21 +1105,37 @@ class Glm53Engine:
         if self.pipeline is not None:
             self.pipeline.invalidate(seqs)
 
+    def _observe_prefill(self, slot: int, start: int, aux, cuts) -> None:
+        """Advance the drafter once across a chunk, copying its ring at each mark.
+
+        Reobserving aux[:mark] for every snapshot projected the same sliding window
+        up to three times with 768-token blocks. The context projection is row-local:
+        a snapshot needs the preceding ring plus only the rows since the last mark.
+        Keep the original <=32/FP8 dispatch when a short head or tail crosses that
+        boundary; carrying a W4 projection into an FP8 snapshot would change its state.
+        """
+        ring = self.caches.draft_ring(slot)
+        observe = self.drafter.observe
+        lo = 0
+        for hi, snap in (*cuts, (aux.shape[0], None)):
+            begin = 0 if hi > 32 and (lo <= 32 or hi - lo <= 32) else lo
+            observe(ring, torch.arange(start + begin, start + hi, device=aux.device), aux[begin:hi])
+            if snap is not None:
+                self.caches.mark_draft(snap, slot)
+            lo = hi
+
     def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int, marks=None) -> bool:
         """`marks`: {absolute position: snapshot} for the block boundaries inside this step that the prefix cache keeps
-        (base/runner): the KDA states are taken by the forward at those cuts; the drafter's context ring at a mark is the
-        ring before this step plus the step's positions before the mark, observed into the snapshot here."""
+        (base/runner): the KDA states are taken by the forward at those cuts; the drafter advances through the same
+        boundaries and copies its context ring there."""
         self._moved((seq,))
         ids = torch.tensor(self.tokens[seq][start: start + tokens], dtype=torch.int64, device=self.caches.device)
         patches = self._patches(seq, start, start + tokens) if seq in self.media else ()
         cuts = tuple(sorted((int(p) - start, int(snap)) for p, snap in (marks or {}).items()))
-        h, aux = self._forward(Step.prefill(ids, start, seq, slot, patches, cuts))
+        h, aux = self._prefill_forward(Step.prefill(ids, start, seq, slot, patches, cuts))
         self.ctx[seq] = start + tokens
-        if aux is not None:                                                 # every prompt token is context for the drafter
-            for rel, snap in cuts:                                          # the marks' rings first: the step's observe below overwrites cells
-                self.caches.mark_draft(snap, slot)
-                self.drafter.observe(self.caches.snapshot_draft_ring(snap), torch.arange(start, start + rel, device=ids.device), aux[:rel])
-            self.drafter.observe(self.caches.draft_ring(slot), torch.arange(start, start + tokens, device=ids.device), aux)
+        if aux is not None:
+            self._observe_prefill(slot, start, aux, cuts)
         if self.ctx[seq] == self.prompt_len[seq]:                         # the prompt is in: the first token comes from its last position
             if self._rich(seq):
                 gathered = self._gather(self.net.head_local(h[-1:]))

@@ -186,6 +186,10 @@ def mhc_pre_tilelang(
 
     _bf = _deneb_bigfuse_hblk(num_tokens, hidden_size)
     _bf_kw = {"h_blk": _bf} if _bf else {}
+    # Prefill tails change split-K even though the row dimension is dynamic.
+    # Infer the split extent from the input tensor so one compiled pre-map
+    # serves every tail. Small decode keeps its existing specialization.
+    fused_splits = 0 if num_tokens > 64 else n_splits
     if norm_weight is None:
         mhc_pre_big_fuse_tilelang(
             gemm_out_mul,
@@ -202,7 +206,7 @@ def mhc_pre_tilelang(
             hc_sinkhorn_eps,
             hc_post_mult_value,
             sinkhorn_repeat,
-            n_splits,
+            fused_splits,
             hc_mult,
             **_bf_kw,
         )
@@ -224,7 +228,7 @@ def mhc_pre_tilelang(
             hc_post_mult_value,
             sinkhorn_repeat,
             norm_eps,
-            n_splits,
+            fused_splits,
             hc_mult,
             **_bf_kw,
         )
@@ -269,4 +273,3 @@ def mhc_post_tilelang(
 # D11 (2026-09-12, ST): the dsv4-era big-fuse override (ST_GLM53_MHC_BIGFUSE) was
 # never adopted for GLM (production unset = stock); nothing here reads the env.
 _DENEB_BIGFUSE = None
-
