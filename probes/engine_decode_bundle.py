@@ -21,6 +21,7 @@ def check(ranks, *, bundle="scatter_bundle"):
     rows = []
     root = Path(__file__).resolve().parents[1]
     bundles = {
+        'k7_commit_bundle': [('kda_commit', 300), ('decode_k7', 300)],
         'batch_fusions': [('paired_projection', 180), ('indexer_boundary', 180), ('wide_input', 480)],
         'batch_integration': [('paired_projection', 180), ('indexer_boundary', 180), ('wide_input', 480),
                               ('direct_producer', 240)],
@@ -30,8 +31,12 @@ def check(ranks, *, bundle="scatter_bundle"):
     }
     lanes = bundles[bundle]
     for lane, seconds in lanes:
-        command = [sys.executable, '-u', str(root/'probes/engine_kernel_check.py'), '--lanes', lane]
-        if ranks:
+        if lane == 'kda_commit':
+            command = [sys.executable, '-u', str(root/'probes/engine_kda_deferred_check.py'),
+                       '--commit-only', '--samples', '12', '--output', '/cache/k7-commit-bundle.json']
+        else:
+            command = [sys.executable, '-u', str(root/'probes/engine_kernel_check.py'), '--lanes', lane]
+        if ranks and lane != 'kda_commit':
             command += ['--ranks', ranks]
         start = time.monotonic()
         print(json.dumps(dict(bundle_lane=lane, status='starting', timeout_s=seconds)), flush=True)

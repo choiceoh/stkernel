@@ -1,4 +1,4 @@
-"""Current C=1 verification width must retain every output of the W4 lane."""
+"""Qualified C=1 rows and the K=7 candidate must retain every W4 output."""
 import unittest
 
 import torch
@@ -8,6 +8,46 @@ from tests.image_kernels import PRESENT, REASON
 
 @unittest.skipUnless(torch.cuda.is_available() and PRESENT, 'requires CUDA; ' + REASON)
 class SevenRowDenseTests(unittest.TestCase):
+    def test_eight_row_direct_output_resolves_changed_addresses_and_private_workspace(self):
+        from engine.kernels.dense import DenseLinear, extension
+        from probes.engine_decode_fusions import _capture
+        ext = extension()
+        before, cta_mode, state = ext.gemm_input_mode(), ext.gemm_input_cta_mode(), ext.probe_state()
+        torch.manual_seed(91409)
+        layer = DenseLinear(torch.randn(4096, 4096, device='cuda', dtype=torch.bfloat16) * .02, prefill=False)
+        try:
+            ext.set_input_cta(4)
+            ext.set_gemm2(0)
+            for private in (False, True):
+                layer.workspace = None
+                if private:
+                    layer.isolate_workspace()
+                parent = torch.randn(8, 4104, device='cuda', dtype=torch.bfloat16)
+                x = parent[:, 4:4100]
+                guarded = torch.full((2, 10, 4096), -123., device='cuda', dtype=torch.bfloat16)
+                address = torch.tensor([guarded[0, 1].data_ptr()], device='cuda', dtype=torch.int64)
+                ext.set_gemm_input(2)
+                graph, _ = _capture(lambda: layer._write_slot(x, address))
+                try:
+                    for iteration, magnitude in enumerate((0., .001, 1., 50., 1.)):
+                        x.normal_().mul_(magnitude)
+                        ext.set_gemm_input(1)
+                        expected = layer(x)
+                        target = iteration % 2
+                        guarded.fill_(-123.)
+                        address.fill_(guarded[target, 1].data_ptr())
+                        graph.replay()
+                        torch.testing.assert_close(guarded[target, 1:-1], expected, rtol=0, atol=0)
+                        self.assertTrue(guarded[target, 0].eq(-123.).all().item())
+                        self.assertTrue(guarded[target, -1].eq(-123.).all().item())
+                        self.assertTrue(guarded[1-target].eq(-123.).all().item())
+                finally:
+                    graph.reset()
+        finally:
+            ext.set_gemm_input(before)
+            ext.set_input_cta(cta_mode)
+            ext.restore_probe_state(state)
+
     def test_input_reuse_reads_strided_tiles_and_preserves_wide_pack_folding(self):
         from engine.kernels.dense import DenseLinear, extension
         ext = extension()
@@ -18,13 +58,13 @@ class SevenRowDenseTests(unittest.TestCase):
             ext.set_gemm2(0)
             for n in (6416, 4096, 6144):
                 layer = DenseLinear((torch.randn(n, 4096, device='cuda') * .02).bfloat16(), prefill=False)
-                for rows in (6, 7):
+                for rows in (6, 7, 8):
                     for stride, offset in ((20480, 0), (20480, 4096), (20480, 16384), (4104, 4)):
                         parent = torch.full((rows, stride), float('nan'), device='cuda', dtype=torch.bfloat16)
                         x = parent[:, offset:offset+4096]
                         x.normal_()
                         self.assertFalse(x.is_contiguous())
-                        ext.set_gemm_input(1)
+                        ext.set_gemm_input(2 if rows == 8 else 1)
                         layer(x)
                         graph = torch.cuda.CUDAGraph()
                         with torch.cuda.graph(graph):
@@ -45,9 +85,9 @@ class SevenRowDenseTests(unittest.TestCase):
                 weight[:, tile*4096:(tile+1)*4096].mul_(2.**tile)
             wide = DenseLinear(weight, prefill=False)
             self.assertEqual(len(wide.packs), 5)
-            for rows in (6, 7):
+            for rows in (6, 7, 8):
                 x = torch.randn(rows, 20480, device='cuda', dtype=torch.bfloat16)
-                ext.set_gemm_input(1)
+                ext.set_gemm_input(2 if rows == 8 else 1)
                 wide(x)
                 graph = torch.cuda.CUDAGraph()
                 with torch.cuda.graph(graph):
@@ -77,9 +117,9 @@ class SevenRowDenseTests(unittest.TestCase):
             ext.set_gemm2(0)
             for n in (6416, 4096, 6144):
                 layer = DenseLinear((torch.randn(n, 4096, device='cuda') * .02).bfloat16(), prefill=False)
-                for rows in (6, 7):
+                for rows in (6, 7, 8):
                     x = torch.randn(rows, 4096, device='cuda', dtype=torch.bfloat16)
-                    ext.set_gemm_input(1)
+                    ext.set_gemm_input(2 if rows == 8 else 1)
                     plan = ext.gemm_input_plan(rows, n, 4096, False, False)
                     self.assertTrue(plan[0], (rows, n, plan))
                     self.assertEqual(plan[1], ext.gemm2_plan(rows, n, 4096)[0])
@@ -101,6 +141,12 @@ class SevenRowDenseTests(unittest.TestCase):
                 ext.set_gemm_input(1)
                 for rows in (1, 5, 8, 14, 28, 32):
                     self.assertFalse(ext.gemm_input_plan(rows, n, 4096, False, False)[0])
+                ext.set_gemm_input(2)
+                for rows in (1, 5, 9, 16, 24, 32):
+                    self.assertFalse(ext.gemm_input_plan(rows, n, 4096, False, False)[0])
+            for invalid_mode in (-1, 3):
+                with self.assertRaisesRegex(RuntimeError, 'input reuse mode'):
+                    ext.set_gemm_input(invalid_mode)
         finally:
             ext.set_gemm_input(before)
             ext.set_input_cta(mode)

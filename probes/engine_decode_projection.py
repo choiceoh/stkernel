@@ -21,12 +21,13 @@ def _timing(report, name, rows, packs, graphs, **extra):
            scope='real rank weights; captured component chain, not engine speed or acceptance')
 
 
-def paired_check(report, ranks):
+def paired_check(report, ranks, *, row_cases=(1, 6, 7, 14, 21, 28), run_tests=True):
     import unittest
-    suite = unittest.defaultTestLoader.loadTestsFromName('tests.test_engine_decode_projection')
-    result = unittest.TextTestRunner(verbosity=2).run(suite)
-    if not result.wasSuccessful() or result.skipped or result.testsRun != 2:
-        raise RuntimeError('projection and route-reduction numerical gates did not pass')
+    if run_tests:
+        suite = unittest.defaultTestLoader.loadTestsFromName('tests.test_engine_decode_projection')
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        if not result.wasSuccessful() or result.skipped or result.testsRun != 2:
+            raise RuntimeError('projection and route-reduction numerical gates did not pass')
     from engine.profiles.glm53.weights import rank_loader
     from engine.kernels.decode_projection import KdaPair, IndexerPair
     path = rank_path(ranks)
@@ -44,7 +45,7 @@ def paired_check(report, ranks):
         owners = [cls(*pair) for pair in weights]
         cases, graphs = [], []
         try:
-            for rows in (1, 6, 7, 14, 21, 28):
+            for rows in row_cases:
                 parent = torch.randn(rows, 6416, device='cuda', dtype=torch.bfloat16)
                 if family == 'kda_pair':
                     inputs = (parent[:, 6160:6288], parent[:, 6288:6416])
