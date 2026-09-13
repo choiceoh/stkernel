@@ -1,5 +1,6 @@
 """Ragged TP prefill preserves real rows, final token and recurrent/KV state."""
 from types import SimpleNamespace as NS
+from dataclasses import replace
 import unittest
 from unittest.mock import Mock
 import torch
@@ -51,6 +52,17 @@ class TokenShardTests(unittest.TestCase):
             with self.subTest(rows=rows):
                 def rank(comm):
                     net, caches = model(("kda", "dsa", "kda"), comm=comm)
+                    # ARM BLAS changes the FP32 mHC GEMM reduction order at
+                    # different batch sizes. A ~1e-7 coefficient difference
+                    # can cross BF16/attention thresholds later in the model.
+                    # This test judges row placement and state, so evaluate
+                    # the same real reference formula one row at a time on
+                    # both sides. Keep all exact output/state assertions.
+                    pre = net.lanes.mhc_pre
+                    def rowwise_pre(res, *args):
+                        values = [pre(row[None], *args) for row in res]
+                        return tuple(torch.cat(parts) for parts in zip(*values))
+                    net.lanes = replace(net.lanes, mhc_pre=rowwise_pre)
                     slot = caches.slots.take(2)
                     context = 64
                     caches.pool.reserve(2, context + rows + 7)
