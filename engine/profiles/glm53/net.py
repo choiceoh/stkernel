@@ -560,15 +560,22 @@ class Glm53Net:
     @operation("route", layer_arg=1)
     def route(self, L: int, x: torch.Tensor):
         """noaux_tc: sigmoid scores fp32, select by score + bias, weight by the
-        raw scores renormalised, times routed_scaling_factor."""
+        raw scores renormalised, times routed_scaling_factor.
+
+        Native execution projects every width on the tensor cores (BF16 checkpoint operands, FP32
+        accumulation and output -- the products are exact either way, only the summation order differs
+        from the FP32 SGEMM, and tests/test_engine_decode_seven pins the selection equal on tied experts
+        at 1..2,304 rows). PR #789 opened this path for the seven-row decode step alone; the 09-13 chunk
+        profile (measurements/c4_scaling_20260913) found the FP32 path it left behind costing 13 µs a
+        token in prefill (`magma_sgemmEx` 121 ms + the `x.float()` copy per 9,216-token chunk) and 1.7 ms
+        of a four-row decode step (cuBLAS SIMT SGEMM at M=28)."""
         F, p, n = self.F, self.p, f"L{L}.moe."
-        if self._router_weights and x.shape[0] <= F.spec_k + 1:
+        if self._router_weights:
             from engine.kernels.glm_pointwise import router_logits
             logits = router_logits(x, p[n + "gate"])
             self._router_tensorcore.add(L)
         else:
-            gate = self._router_weights.get(L, p[n + "gate"])
-            logits = x.float() @ gate.float().T
+            logits = x.float() @ p[n + "gate"].float().T
         if self.lanes.route_weights is not None:
             return self.lanes.route_weights(logits, p[n + "bias"], F.topk_experts, F.routed_scale)
         s = torch.sigmoid(logits)

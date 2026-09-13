@@ -213,7 +213,8 @@ def main():
     ap.add_argument("--seed", type=int, default=13)
     ap.add_argument("--samples", type=int, default=16, help="decode replays timed per row count")
     ap.add_argument("--moe-static", default=MOE_STATIC_PRODUCTION,
-                    help="the b12x lane cell (lanes.parse_moe_static): production 't,r,sf6,q0'; 't,r' reads raw scales")
+                    help="the b12x lane cell (lanes.parse_moe_static): production 't,r,sf6,q0'. A tiled cell without sf6 "
+                         "('t,r') has no prefill kernel (the dispatcher refuses it); the row-major 'u' cell is the stock pair")
     ap.add_argument("--lanes", default="decode,prefill",
                     help="sections: decode (rows 1..4), prefill (the chunk sweep), coexist (a chunk beside four decoding rows, two streams)")
     ap.add_argument("--output", default="/cache/prefill-chunk-profile.json")
