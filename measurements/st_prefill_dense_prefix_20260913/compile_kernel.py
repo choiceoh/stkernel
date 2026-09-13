@@ -49,6 +49,7 @@ def main():
     finally:
         report.update(cuda_initialized=torch.cuda.is_initialized(), elapsed_s=time.monotonic()-started)
         paths = ['engine/kernels/mla/prefill_dense.py', 'engine/modules/prefill_attention.py',
+                 'engine/modules/sparse_attention.py',
                  'engine/profiles/glm53/net.py', 'engine/profiles/glm53/lanes.py',
                  'engine/profiles/glm53/execution.py', 'engine/profiles/glm53/boot.py']
         report['source_sha256'] = {p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in paths}

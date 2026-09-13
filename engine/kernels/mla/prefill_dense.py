@@ -53,7 +53,7 @@ def _dense_prefix(Q, KV, Blocks, Out, ROWS, CONTEXT, SCALE: tl.constexpr,
 
 
 def mla_dense_prefix(q, latent, block_table, block_size, block_stride,
-                     layer_offset, context, scale, ckv_scale):
+                     layer_offset, context, scale, ckv_scale, *, out=None):
     """Explicit eager GLM TP4 lane; the caller establishes top-k coverage."""
     rows, heads, dim = q.shape
     if (not 1 <= rows <= 2051 or context < 0 or context + rows > 2051
@@ -70,9 +70,15 @@ def mla_dense_prefix(q, latent, block_table, block_size, block_stride,
     if block_table is not None and (block_table.ndim != 1 or block_table.dtype != torch.int32
             or block_table.numel() < triton.cdiv(context + rows, block_size)):
         raise ValueError('dense prefix requires a complete int32 page table')
+    if block_table is None and latent.shape[0] < context + rows:
+        raise ValueError('identity cache does not contain the visible prefix')
+    if out is not None and (out.shape != q.shape or out.dtype != q.dtype
+            or out.device != q.device or not out.is_contiguous()):
+        raise ValueError('dense prefix output must match the contiguous query geometry')
     if not q.is_cuda or torch.cuda.is_current_stream_capturing():
         raise ValueError('unqualified dense prefix is eager CUDA only')
-    out = torch.empty_like(q)
+    if out is None:
+        out = torch.empty_like(q)
     _dense_prefix[(triton.cdiv(rows, 2),)](
         q, latent, q if block_table is None else block_table, out, rows, context,
         scale, ckv_scale, block_size, block_stride, layer_offset, block_table is None,

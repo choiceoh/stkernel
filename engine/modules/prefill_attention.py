@@ -12,7 +12,7 @@ def covered_prefix(rows: int, context: int, topk: int, pool: int) -> int:
 
 
 def mla_dense_prefix_ref(q, latent, block_table, block_size, block_stride,
-                         layer_offset, context, scale, ckv_scale):
+                         layer_offset, context, scale, ckv_scale, *, out=None):
     """CPU semantic oracle: the exact descending slots of a covered prefix.
 
     Chunk the reference gather to bound memory. This is not a GPU kernel or
@@ -20,7 +20,8 @@ def mla_dense_prefix_ref(q, latent, block_table, block_size, block_stride,
     """
     import torch
     from engine.modules.sparse_attention import mla_sparse_mqa
-    out = torch.empty_like(q)
+    if out is None:
+        out = torch.empty_like(q)
     width = context + len(q)
     for begin in range(0, len(q), 32):
         end = min(begin + 32, len(q))

@@ -68,7 +68,7 @@ class Lanes:
                               #  step hands in for the keys' start) -> [T,N] f32, garbage past ke
     kpool_compress: object    # (k [P,kp,128] bf16, score [P,kp,128] bf16, ape [kp,128] f32) -> (fp8 [P,128], scale [P,1] f32)
     mla_sparse: object        # (q_abs [T,H,512] bf16, latent [S,512] e4m3, slots [T,W] int32 (valid prefix), valid [T] int32,
-                              #  scale, ckv_scale) -> [T,H,512] bf16
+                              #  scale, ckv_scale, *, out=None) -> [T,H,512] bf16; optional contiguous destination
     moe: object               # (x [T,H] bf16, sel [T,k] int32, w [T,k] f32, w13 [E,2I,H/2] u8 [up|gate], w13_sf [E, 2I*H/16] e4m3 (interleaved),
                               #  w2 [E,H,I/2] u8, w2_sf [E, H*I/16] e4m3, limit, *, scales=None) -> [T,H] bf16: this rank's routed partial
                               #  scales=None: folded Red Hat; ModelOptScales: separate NVIDIA multipliers. E=1/k=1 also serves dense MLPs.
@@ -356,15 +356,25 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                                   torch.zeros(t, device=q8.device, dtype=torch.int32) if ks is None else ks,
                                   ke.contiguous(), clean_logits=False)
 
-    def mla(q_abs, latent, slots, valid, scale, ckv_scale):
+    def mla(q_abs, latent, slots, valid, scale, ckv_scale, *, out=None):
+        if out is not None and (out.shape != q_abs.shape or out.dtype != q_abs.dtype
+                or out.device != q_abs.device or not out.is_contiguous()):
+            raise ValueError('MLA output must match the contiguous query geometry')
         mk.maybe_arm()
         if not mk._ARMED.get("mla"):
             raise RuntimeError("ST MLA lane did not pass its boot self-test")
         cache = latent.view(torch.uint8)
+        if out is not None and q_abs.shape[1] == mk.MLA_H:
+            return mk.mla_decode(q_abs, cache, slots, valid, scale, ckv_scale, out=out)
         # the lane is built for this fleet's 16 heads per rank; at world 1 the 64 heads go through in fours (MQA: heads are independent)
         parts = [mk.mla_decode(q_abs[:, i:i + mk.MLA_H].contiguous(), cache, slots, valid, scale, ckv_scale)
                  for i in range(0, q_abs.shape[1], mk.MLA_H)]
-        return torch.cat(parts, dim=1)
+        # TP4 already returns one fresh, contiguous output tensor. Concatenating
+        # it alone rereads and rewrites T*16*512 BF16 values for no change.
+        # Keep the established decode/capture path; this is eager prefill only.
+        if len(parts) == 1 and q_abs.shape[0] >= 128 and not torch.cuda.is_current_stream_capturing():
+            return parts[0]
+        return torch.cat(parts, dim=1, out=out)
 
     if "kda_recurrent" in reference_for:
         kda_recurrent = ref.kda_recurrent

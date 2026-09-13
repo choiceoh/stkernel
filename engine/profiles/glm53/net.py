@@ -723,13 +723,14 @@ class Glm53Net:
             prefix = covered_prefix(len(q), s.ctx, self.F.topk, self.F.kpool)
         if prefix < 128:
             return self.lanes.mla_sparse(q, latent, slots, valid, self.F.mla_scale, 1.0)
-        dense = self.lanes.mla_dense_prefix(q[:prefix], latent, *caches.token_map(L, s.seq),
-                                             s.ctx, self.F.mla_scale, 1.0)
+        out = torch.empty_like(q)
+        self.lanes.mla_dense_prefix(q[:prefix], latent, *caches.token_map(L, s.seq),
+                                   s.ctx, self.F.mla_scale, 1.0, out=out[:prefix])
         self.prefill_dense_prefix_executed.add(L)
-        if prefix == len(q):
-            return dense
-        sparse = self.lanes.mla_sparse(q[prefix:], latent, slots[prefix:], valid[prefix:], self.F.mla_scale, 1.0)
-        return torch.cat((dense, sparse), dim=0)
+        if prefix < len(q):
+            self.lanes.mla_sparse(q[prefix:], latent, slots[prefix:], valid[prefix:], self.F.mla_scale, 1.0,
+                                  out=out[prefix:])
+        return out
 
     # -- MLPs -----------------------------------------------------------------------------
     @operation("dense", layer_arg=1)

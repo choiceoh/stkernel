@@ -51,8 +51,12 @@ class PrefixGeometryTests(unittest.TestCase):
                     step = Step.prefill(torch.zeros(rows, dtype=torch.int64), context, 2, 1)
                     if captured:
                         step = NS(segments=step.segments, captured=True)
-                    dense = Mock(side_effect=lambda q, *args: torch.full_like(q, 2))
-                    sparse = Mock(side_effect=lambda q, *args: torch.full_like(q, 3))
+                    def fill(value):
+                        def call(q, *args, out=None):
+                            result = torch.empty_like(q) if out is None else out
+                            return result.fill_(value)
+                        return call
+                    dense, sparse = Mock(side_effect=fill(2)), Mock(side_effect=fill(3))
                     net = NS(prefill_dense_prefix=enabled, probe=False, F=NS(topk=128, kpool=4, mla_scale=.1),
                              lanes=NS(mla_dense_prefix=dense, mla_sparse=sparse), prefill_dense_prefix_executed=set())
                     cache = NS(token_map=Mock(return_value=(None, 64, 128, 32)))
@@ -68,6 +72,9 @@ class PrefixGeometryTests(unittest.TestCase):
                     self.assertEqual(net.prefill_dense_prefix_executed, {1} if prefix else set())
                     if prefix:
                         cache.token_map.assert_called_once_with(1, 2)
+                        self.assertEqual(dense.call_args.kwargs['out'].data_ptr(), result.data_ptr())
+                    if prefix and prefix != rows:
+                        self.assertEqual(sparse.call_args.kwargs['out'].data_ptr(), result[prefix:].data_ptr())
 
     def test_runtime_marker_requires_every_dsa_layer(self):
         from engine.profiles.glm53.boot import native_execution_report
@@ -87,6 +94,51 @@ class PrefixGeometryTests(unittest.TestCase):
 
 
 class PrefixKernelTests(unittest.TestCase):
+    def test_actual_served_mla_skips_only_redundant_prefill_copy_and_writes_owned_output(self):
+        source = ROOT/'engine/profiles/glm53/lanes.py'
+        node = copy.deepcopy(next(n for n in ast.walk(ast.parse(source.read_text()))
+                                  if isinstance(n, ast.FunctionDef) and n.name == 'mla'))
+        capturing = [False]
+        parts = []
+        def decode(q, *args, out=None):
+            result = (q.float()+1).bfloat16()
+            if out is not None:
+                out.copy_(result)
+                result = out
+            parts.append(result)
+            return result
+        concatenate = Mock(wraps=torch.cat)
+        scope = dict(torch=NS(uint8=torch.uint8, cat=concatenate,
+                              cuda=NS(is_current_stream_capturing=lambda: capturing[0])),
+                     mk=NS(MLA_H=16, _ARMED={'mla': True}, maybe_arm=lambda: None, mla_decode=decode))
+        exec(compile(ast.Module(body=[node], type_ignores=[]), str(source), 'exec'), scope)
+        lane = scope['mla']
+        for rows, heads, captured in ((131, 16, False), (131, 64, False), (7, 16, False), (131, 16, True)):
+            capturing[0] = captured
+            q = torch.zeros(rows, heads, 32).bfloat16()
+            parts.clear()
+            concatenate.reset_mock()
+            result = lane(q, torch.zeros(1, 32, dtype=torch.uint8), None, None, .1, 1.)
+            self.assertTrue(bool((result == 1).all()))
+            self.assertEqual(concatenate.call_count, int(heads != 16 or rows < 128 or captured))
+            if heads == 16 and rows >= 128 and not captured:
+                self.assertIs(result, parts[0])
+                self.assertNotEqual(result.data_ptr(), q.data_ptr())
+                again = lane(q, torch.zeros(1, 32, dtype=torch.uint8), None, None, .1, 1.)
+                self.assertNotEqual(result.data_ptr(), again.data_ptr())
+        capturing[0] = False
+        q = torch.zeros(131, 16, 32).bfloat16()
+        owner = torch.full((133, 16, 32), -7, dtype=torch.bfloat16)
+        destination = owner[1:132]
+        concatenate.reset_mock()
+        result = lane(q, torch.zeros(1, 32, dtype=torch.uint8), None, None, .1, 1., out=destination)
+        self.assertIs(result, destination)
+        self.assertEqual(concatenate.call_count, 0)
+        self.assertTrue(bool((owner[0] == -7).all() & (owner[-1] == -7).all()))
+        for bad in (q.float(), q[:1], q.transpose(0, 1)):
+            with self.assertRaises(ValueError):
+                lane(q, torch.zeros(1, 32, dtype=torch.uint8), None, None, .1, 1., out=bad)
+
     def test_actual_kernel_body_masks_pages_and_matches_independent_attention(self):
         # Execute the real Triton body with checked CPU loads/stores. Dot uses
         # exact BF16 operands and FP32 accumulation; GPU MMA lowering is separate.
