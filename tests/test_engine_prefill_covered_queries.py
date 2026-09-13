@@ -60,14 +60,14 @@ class CoveredQueriesTests(unittest.TestCase):
             lengths = torch.full((rows,), 9, dtype=torch.int32)
             storage = torch.full((rows+2, 4), -19, dtype=torch.int32)
             with patch('engine.profiles.glm53.net.SELECT_ROWS', 5):
-                expected = Glm53Net._select_pools(net, x, None, None, None, lengths, 9, 4)
-                actual = Glm53Net._select_pools(net, x, None, None, None, lengths, 9, 4, out=storage[1:-1])
+                expected = Glm53Net._select_pools(net, x, torch.ones(rows, 1), None, None, lengths, 9, 4)
+                actual = Glm53Net._select_pools(net, x, torch.ones(rows, 1), None, None, lengths, 9, 4, out=storage[1:-1])
             self.assertEqual(actual.data_ptr(), storage[1].data_ptr())
             torch.testing.assert_close(actual, expected, rtol=0, atol=0)
             self.assertTrue(bool((storage[0] == -19).all() & (storage[-1] == -19).all()))
             lane.reset_mock()
             with self.assertRaises(ValueError):
-                Glm53Net._select_pools(net, x, None, None, None, lengths, 9, 4, out=storage.long())
+                Glm53Net._select_pools(net, x, torch.ones(rows, 1), None, None, lengths, 9, 4, out=storage.long())
             lane.assert_not_called()
 
     def test_indexer_avoids_only_covered_queries_and_preserves_every_cache_write(self):

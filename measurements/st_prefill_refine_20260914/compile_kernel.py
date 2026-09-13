@@ -60,6 +60,9 @@ def main():
                                            shared_bytes=compiled.metadata.shared, resources=usage))
             print(name, usage.strip(), flush=True)
         report['status'] = 'PASS'
+    except BaseException as exc:
+        report.update(status='FAIL', error=repr(exc))
+        raise
     finally:
         paths = ['engine/kernels/mla/prefill_absorb.py', 'engine/kernels/mla/prefill_dense.py',
                  'engine/modules/prefill_indexer.py', 'engine/profiles/glm53/net.py', 'engine/profiles/glm53/boot.py']
