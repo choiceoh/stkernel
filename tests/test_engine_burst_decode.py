@@ -127,6 +127,44 @@ class ServedBurstTests(unittest.TestCase):
             self.assertEqual(e.accepted_per_step, [0, sum(pos-1 for pos in e.ctx.values()) // 2, 0])
         p.close()
 
+    def test_logs_reach_the_host_through_contiguous_copies_below_max_seqs(self):
+        """A device copy into a non-contiguous host tensor stages a pageable temporary and waits for the stream: below
+        max_seqs rows every launch blocked until its whole burst had run (2026-09-14). Each row read back is the row
+        the burst wrote."""
+        class Watch(torch.Tensor):
+            destinations = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                if func is torch.Tensor.copy_:
+                    cls.destinations.append(args[0].is_contiguous())
+                return super().__torch_function__(func, types, args, kwargs or {})
+
+        class Diagnostics:
+            def __init__(self):
+                self.notes = []
+
+            def classify(self, picks, b):
+                return torch.stack((b['ctx'], torch.zeros_like(b['ctx'])), 1)
+
+            def note(self, seqs, contexts, results):
+                self.notes.append((list(contexts), [prefix for prefix, _ in results]))
+
+        for n in (1, 3, 4):
+            e = engine(n)
+            e.draft_diagnostics = Diagnostics()
+            p = CpuBurst(e, 4)
+            p.readback = {k: v.as_subclass(Watch) for k, v in p.readback.items()}
+            rows = list(range(1, n+1))
+            Watch.destinations.clear()
+            p.launch(rows, rows).resolve()
+            self.assertTrue(Watch.destinations)
+            self.assertTrue(all(Watch.destinations), f'{n} rows: a launch copied into a non-contiguous host view')
+            self.assertEqual(len(e.draft_diagnostics.notes), 4)
+            for contexts, prefixes in e.draft_diagnostics.notes:
+                self.assertEqual(prefixes, contexts)
+            p.close()
+
     def test_every_iteration_matches_the_existing_pipeline_at_c1_and_c4(self):
         for n in (1, 4):
             for limit in (2, 4):
