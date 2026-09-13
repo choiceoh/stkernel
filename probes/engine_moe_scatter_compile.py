@@ -40,7 +40,10 @@ def main():
                 selected.update(rows=rows, route_scatter=route, direct_scatter=direct)
                 config = dict(base, probe_route_scatter=route, probe_direct_scatter=direct)
                 try:
-                    md._get_static_kernel_v2(288, 288, rows, 4096, 512, 8, 128,
+                    # Mirror the real launch's first normalization and routed-row
+                    # workspace extent; the compiler normalizes a second time.
+                    config = md._static_v2_decode_config(config, rows)
+                    md._get_static_kernel_v2(288, 288, rows, 4096, 512, 8, rows * 8,
                         config=config, mac_override=48, activation='swigluoai_uninterleave',
                         swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.)
                 except Exception as exc:
@@ -53,7 +56,8 @@ def main():
     report = dict(status='PASS' if passed else 'FAIL', gpu_used=False, kernels=records,
                   scope='native compile and static output coordinate coverage; numerics/timing pending',
                   source_sha256={name: hashlib.sha256((root/name).read_bytes()).hexdigest()
-                      for name in ('engine/kernels/b12x/moe_dispatch.py', 'engine/kernels/b12x/moe_static_kernel_v4.py')})
+                      for name in ('engine/kernels/b12x/moe_dispatch.py', 'engine/kernels/b12x/moe_static_kernel_v4.py',
+                                   'engine/kernels/b12x/moe_micro_kernel.py')})
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')
     if not passed:
