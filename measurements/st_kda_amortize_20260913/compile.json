@@ -8,181 +8,217 @@
       "name": "batch-commit-c1-t1-tiled0-hoist0-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:52 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "041526d460062bd5cfadeef228b2d3279ed2248337f11df359041a3863bb13db"
+      "cubin_sha256": "6c8d00872f86d4434a5ec98ea7e9f0a7089342657aae7f0bd05b870740c606cf"
     },
     {
       "name": "batch-commit-c1-t1-tiled1-hoist0-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:40 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "913d3ac98771ac518af5d7c46cb2cbf017f747a738a24b9d3d5e861cc506717d"
+      "cubin_sha256": "9799ccd64c8763b027cad5c06ee2f888d4f3839b4a04d7ceab9f8dafbd3a2322"
     },
     {
       "name": "batch-commit-c1-t1-tiled1-hoist1-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:40 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "70ce704d752c65b2c682f56fc8069fc633a9081851d1d36c99c31ee60fa46655"
+      "cubin_sha256": "98640b84d9ad7c7dcfde47d737f02bc3c2233323a83f0def825df1734ca2fbb2"
     },
     {
       "name": "batch-commit-c1-t1-tiled1-hoist1-b2048",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:64 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "7f0ea29aca65e97900d2fe8f7158a0fbf73189185a12874a53095bcc1d67c3a2"
+      "cubin_sha256": "b73873ccd23c0e64996024cc194206685d804d06ab3f92a7f3f9ccc46d0e4d04"
     },
     {
       "name": "batch-commit-c1-t1-tiled1-hoist1-b4096",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:128 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "5fc67b6977a333ee0589068a990f195533d0eb776dd92dbcbbf7503187973ef1"
+      "cubin_sha256": "6e6ed0157c37071a1b702dd18f997d4526dce50bfea9a4e26888af97081f75d1"
+    },
+    {
+      "name": "batch-commit-c1-t1-tiled1-hoist1-b4096-w8",
+      "shared_bytes": 0,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:64 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "64693d6008d6f6afaeecd85e1f5eb22dd4b213525ccec5a88b59cd9082b81f70"
     },
     {
       "name": "batch-commit-c1-t7-tiled0-hoist0-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:72 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "ee5e24a74df15850d80e9dbcf3672a3edc53cf4a4bad1fd33946f6ecef3c9814"
+      "cubin_sha256": "1881782b2bb615457d22bf08bf7ffa721d27b0ed3f8c1c60d2ec882213140c7c"
     },
     {
       "name": "batch-commit-c1-t7-tiled1-hoist0-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:48 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "bc76904c2f0a5c9fabd245098e0331a27f5f902daf1c7961f2817aafb764be38"
+      "cubin_sha256": "9aa5a5e299c99db296a0fa4d4538920c71e9de98348b29a1a275cd5c6c1d37c0"
     },
     {
       "name": "batch-commit-c1-t7-tiled1-hoist1-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:40 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "c83b81f5c32c7dcc497ae722ee232042da2416b77c84f71c36de99b6d01067dc"
+      "cubin_sha256": "ab30aed761f54ac7d93854b0f1605172e5235db25fd99dc65c383e59b8986cee"
     },
     {
       "name": "batch-commit-c1-t7-tiled1-hoist1-b2048",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:64 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "659dbffc0943d83ed160af0ebac1bd84834a7783e5f5d0c8dbfb2b8a6d8eeac1"
+      "cubin_sha256": "536bd26e1093442d54cb73bbb0e6e3bd31e48471c832852d113ef0764fbaed30"
     },
     {
       "name": "batch-commit-c1-t7-tiled1-hoist1-b4096",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:128 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "e498d00c80bfe8100a2b5e3e84c9c21cbefe75baa7ccb345a513881ec11e00be"
+      "cubin_sha256": "8cfb09470ecd59147332a29a1257f1de938136f324467d6c31258b4be5722389"
+    },
+    {
+      "name": "batch-commit-c1-t7-tiled1-hoist1-b4096-w8",
+      "shared_bytes": 0,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:106 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "c862d919b59f794557206daf5f38193e04620516995bff3221e2d8346baf2e1f"
     },
     {
       "name": "batch-commit-c1-t8-tiled0-hoist0-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:72 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "12a067ca8f7d8d0c84eb220ff1c80a83b509c1d89c111c153b4240217dbc52e4"
+      "cubin_sha256": "34500a831b539c284d21934903488365574b662530703edcd68344cf648877b5"
     },
     {
       "name": "batch-commit-c1-t8-tiled1-hoist0-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:48 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "7d4b283a5e2f396fc506856fff5a6fcce9dbe75e73545b1acb34f0061d8d219a"
+      "cubin_sha256": "332c984e450b6fa43863accb1862e83a3c27d8ea02d32cce56ccaee367472963"
     },
     {
       "name": "batch-commit-c1-t8-tiled1-hoist1-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:40 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "8538147f4f04846d22efe51dc664e4481b23e35b34882aa34bd57c5123610be0"
+      "cubin_sha256": "43cf8e2a6b3c5b2dff7800fdae7e0ece402f5bcde1d961a2e232fcc9ab7d162f"
     },
     {
       "name": "batch-commit-c1-t8-tiled1-hoist1-b2048",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:64 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "9bca7cd9f76b66b932c6e29aeca67440870498df0807ef1a631ce2b7122cc162"
+      "cubin_sha256": "873b46b6d1009a564ba216f3cd4541c701226b1421e297fe26df382c0d018b0d"
     },
     {
       "name": "batch-commit-c1-t8-tiled1-hoist1-b4096",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:128 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "c8dfc9c5847d5b9159dc635e7e6b682c1dc8bb853d1501944e5ef126280a78c4"
+      "cubin_sha256": "a81bbc154541add7c888d8fdc0483802b29c211f685092775bec504541a8f8bd"
+    },
+    {
+      "name": "batch-commit-c1-t8-tiled1-hoist1-b4096-w8",
+      "shared_bytes": 0,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:106 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "bde160cc50ee5c38167139479a18152d44efddc19a57b867ff64949dfce0307b"
     },
     {
       "name": "batch-commit-c4-t1-tiled0-hoist0-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:52 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "3b8e114c6b2a4af4ed2439e22a7cafcc71da2aef04a6a231ccac049a0e53094e"
+      "cubin_sha256": "f64a4527cd4f4224632cb2977d9448303975f5cdb1779a22669e2ab0c611624c"
     },
     {
       "name": "batch-commit-c4-t1-tiled1-hoist0-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:40 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "df3c6f384232653f2c1670de42fd5057a7df4304e1164935e13d27a0d7451bd9"
+      "cubin_sha256": "10f6a32070434178ca30ae7013329c06963e285608dd3b8c2d06330c1e3b62bc"
     },
     {
       "name": "batch-commit-c4-t1-tiled1-hoist1-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:40 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "bfd913a5c0e376d1a5ad7d988dbb463b14e4887d84f252181e3250dd182ab57a"
+      "cubin_sha256": "acb73aaf14ae1ec7199992992fae5219d2332aa4a3d62e3b89a118cea4cd61f5"
     },
     {
       "name": "batch-commit-c4-t1-tiled1-hoist1-b2048",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:64 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "2fef893e13b5f337fcaf4f2dec86c197edb79820c8ddcf884edf7e41382c1695"
+      "cubin_sha256": "76c4abe25a8c7d2cef35f1513ac5a2fe8e2fccae0b8711b20161d293d3285326"
     },
     {
       "name": "batch-commit-c4-t1-tiled1-hoist1-b4096",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:128 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "109631024cb0646e5d39947f3c8fe30eb5eba79298886b1dfa4a3df7a0544022"
+      "cubin_sha256": "73568b169a6a7b5ec99b397a257fe895f6223f674fa0a71c298fa44991273642"
+    },
+    {
+      "name": "batch-commit-c4-t1-tiled1-hoist1-b4096-w8",
+      "shared_bytes": 0,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:64 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "4bcf277a94d090529b01e7f6d0ac5e714adb1bff61c92c07197e694753e87d11"
     },
     {
       "name": "batch-commit-c4-t7-tiled0-hoist0-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:72 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "65063aae145e35117b64232e9aec7e52c2cb6536c2bd3dd0125587ae32eeb4be"
+      "cubin_sha256": "78f73d48e8c7b1d290caf52eb5319ae0779b9f85b6149079f7859debc29e008e"
     },
     {
       "name": "batch-commit-c4-t7-tiled1-hoist0-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:48 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "6824f54250703aaeebec5a3ffe6ce4d7004349d632cdae0554074a0272628db1"
+      "cubin_sha256": "9a8fe0f0761e09c61986a3f133b7b5425558b6b7a2e02cf6bf97e7df62d7eed5"
     },
     {
       "name": "batch-commit-c4-t7-tiled1-hoist1-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:40 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "7455ca3fecc437071f75f417a1729bf7d5d050aadf8a46d774a55202409f9606"
+      "cubin_sha256": "92e117750d0f0e287ab7e28466043378c40219c26fddd566bd6bf57e6ec2a095"
     },
     {
       "name": "batch-commit-c4-t7-tiled1-hoist1-b2048",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:64 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "3f98ebb05ebb0e736821805db260aedc986edf30550152a106065933791ff6f8"
+      "cubin_sha256": "1b00ca7d13e6a8db8789601f0fab22188624aab6f02fe507f0bfaceca57a8240"
     },
     {
       "name": "batch-commit-c4-t7-tiled1-hoist1-b4096",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:128 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "8f8216b709aceff7673633840175e72a11fb110afe3b7c4e2ef94b85e939e406"
+      "cubin_sha256": "18b32947053c2b1e603ba9d21bbda3d887fd1f66edac69e38bbe1a38366cea28"
+    },
+    {
+      "name": "batch-commit-c4-t7-tiled1-hoist1-b4096-w8",
+      "shared_bytes": 0,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:106 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "c22bc19ae1712b6d43031690701cc926874e849921504de0a63dfad878eef262"
     },
     {
       "name": "batch-commit-c4-t8-tiled0-hoist0-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:72 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "ad51e64dffb8264ca46c28418cbf7ea030988bbc3751ddadf76a7ea0b9155cc4"
+      "cubin_sha256": "540baba6faf0d4b7612a3433c8fdd4a7bad1a7c4a871c32f7858943224f11c11"
     },
     {
       "name": "batch-commit-c4-t8-tiled1-hoist0-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:48 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "445a359308a39b89a267515037af07723d1f29c90d647872108be881da715761"
+      "cubin_sha256": "e549da313339c237a550d829abc663a757e48e10b425faadf19126d0a3a142c3"
     },
     {
       "name": "batch-commit-c4-t8-tiled1-hoist1-b1024",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:40 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "4e6d6112310092f7b770e1ec0713f6749b823d8589f0b58ae3927824eed5e04d"
+      "cubin_sha256": "d36e7ae39682ea17f7e4196a5f7f60c902e734a4581a99af4a3726e71246f577"
     },
     {
       "name": "batch-commit-c4-t8-tiled1-hoist1-b2048",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:64 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "246a479cec208827229b55a75cf55827bf7686ad31dda2016e4760278aa91045"
+      "cubin_sha256": "d556a46506afaa49a0814b8758d8313c65cd1f415697ce1ea6428b040979bc3a"
     },
     {
       "name": "batch-commit-c4-t8-tiled1-hoist1-b4096",
       "shared_bytes": 0,
       "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:128 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
-      "cubin_sha256": "a9c2e3aee37027fba5ef75b55f5ee0d319ed729346a17be6c17290703eed78f2"
+      "cubin_sha256": "227227adb57a1b78df6f04f7681d3b4d1cf0f0c8e7975403935a7d6584b3b8e8"
+    },
+    {
+      "name": "batch-commit-c4-t8-tiled1-hoist1-b4096-w8",
+      "shared_bytes": 0,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:106 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "d479670d59bb974131c20fd7919a8576d95e3ed49b93705be51ffc1e8c3f3bdb"
     }
   ],
   "status": "PASS"

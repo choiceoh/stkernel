@@ -118,7 +118,7 @@ class Batch:
     across target and sampler graphs; a commit must precede its next verify.
     Different context-capacity graphs may share it when replay is serialized.
     """
-    def __init__(self, rings, rows, tokens, *, block, tiled=True, cells=2048, hoist_final=True):
+    def __init__(self, rings, rows, tokens, *, block, tiled=True, cells=2048, hoist_final=True, warps=4):
         self.rings = tuple(rings)
         if not self.rings or type(rows) is not int or rows <= 0 or type(tokens) is not int:
             raise ValueError("deferred batch needs layers, positive rows and an integer token width")
@@ -146,9 +146,11 @@ class Batch:
             raise ValueError("deferred materialization choices must be booleans")
         if type(cells) is not int or cells not in (1024, 2048, 4096):
             raise ValueError("deferred materialization needs a declared power-of-two cell tile")
+        if type(warps) is not int or warps not in (4, 8):
+            raise ValueError("deferred materialization needs four or eight warps")
         self.rows, self.tokens, self.block, self.tiled = rows, tokens, block, tiled
         # Internal component-probe controls; serving binds one layout at boot.
-        self.cells, self.hoist_final = cells, hoist_final
+        self.cells, self.hoist_final, self.warps = cells, hoist_final, warps
         self.offsets = torch.tensor(offsets, dtype=torch.int64, device=ring.device)
         self.factors = tuple(torch.empty((len(rings), rows*tokens, h, d), dtype=torch.float32, device=ring.device)
                              for d in (k, k, v))
@@ -175,7 +177,7 @@ class Batch:
         _commit_layers[(tiles, len(self.rings), self.rows)](
             *self.factors, ring, self.offsets, slots, contexts, counts, self.tokens, self.rows,
             h, k, v, width, ring.stride(0), self.block, cells, self.tiled, self.hoist_final,
-            num_warps=4, num_stages=1)
+            num_warps=self.warps if self.tiled else 4, num_stages=1)
 
 
 @triton.jit

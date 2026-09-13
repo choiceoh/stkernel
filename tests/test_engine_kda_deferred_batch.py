@@ -125,10 +125,11 @@ class DeferredBatchTests(unittest.TestCase):
                                      (1, 5, 9, 1, 1), (2, 17, 33, 8, 3)):
             with self.subTest(shape=(h, k, v), width=width, block=block):
                 _, original, rings = fixture(4, width, layers=2, h=h, k=k, v=v, width=width)
-                storage = [original.clone() for _ in range(4)]
+                storage = [original.clone() for _ in range(5)]
                 owners = [self.Batch(views(storage[0], rings), 4, width, block=block, tiled=False)]
                 owners += [self.Batch(views(x, rings), 4, width, block=block, cells=cells)
                            for x, cells in zip(storage[1:], (1024, 2048, 4096))]
+                owners.append(self.Batch(views(storage[4], rings), 4, width, block=block, cells=4096, warps=8))
                 for src in owners[0].factors:
                     src.normal_(0, .2)
                 for owner in owners[1:]:

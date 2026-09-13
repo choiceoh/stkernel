@@ -61,6 +61,9 @@ def main():
                              dict(T=t, ROWS=rows, H=16, K=128, V=128, R=width,
                                   SLOT_STRIDE=34*(width*16*128*128+64)+64, BLOCK=768, B=cells,
                                   TILED=tiled, HOIST_FINAL=hoist)))
+                if tiled and hoist and cells == 4096:
+                    name, fn, signature, constants = variants[-1]
+                    variants.append((name+"-w8", fn, signature, constants))
     # Compile the real batched verifier, including per-row factor offsets.
     _, fn, signature, constants = next(v for v in variants if v[0] == "verify-t7-deferred1")
     signature, constants = dict(signature), dict(constants)
@@ -75,7 +78,8 @@ def main():
         print("compile " + name, flush=True)
         kernel = triton.compile(ASTSource(fn, signature, constexprs=constants),
                                 target=GPUTarget("cuda", 121, 32),
-                                options=dict(num_warps=4, num_stages=1) if fn is _commit_layers else dict(num_warps=1, num_stages=3))
+                                options=dict(num_warps=8 if name.endswith("-w8") else 4, num_stages=1)
+                                if fn is _commit_layers else dict(num_warps=1, num_stages=3))
         (args.output/(name+".ptx")).write_text(kernel.asm["ptx"])
         (args.output/(name+".ttgir")).write_text(kernel.asm["ttgir"])
         cubin = args.output/(name+".cubin")

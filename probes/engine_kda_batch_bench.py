@@ -13,7 +13,8 @@ def measure_commit(samples=12):
     variants = (dict(name="flat", tiled=False, cells=1024, hoist_final=False),
                 dict(name="tiled-v1", tiled=True, cells=1024, hoist_final=False),
                 *(dict(name=f"hoisted-{cells}", tiled=True, cells=cells, hoist_final=True)
-                  for cells in (1024, 2048, 4096)))
+                  for cells in (1024, 2048, 4096)),
+                dict(name="hoisted-4096-w8", tiled=True, cells=4096, hoist_final=True, warps=8))
 
     def one_width(rows):
         torch.manual_seed(91331+rows)

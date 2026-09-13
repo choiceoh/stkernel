@@ -10,6 +10,7 @@ from engine.base.comm import Comm, LocalTP
 from engine.profiles.glm53.caches import Glm53Caches, layout, snapshot_layout
 from engine.profiles.glm53.execution import ExecutionPlan, SerialStreams, decode_overlap, prefill_layer_major, prefill_steps
 from engine.profiles.glm53.lanes import reference
+from engine.profiles.glm53.facts import SPEC_K
 from engine.profiles.glm53.net import Glm53Net, Segment, Step
 from tests.test_engine_glm53 import tiny_facts
 
@@ -36,7 +37,7 @@ class EagerCaches:
 
 
 def model(kinds=("kda", "kda", "kda"), snapshots=4, comm=None):
-    f = replace(tiny_facts(), kinds=kinds, block=64, spec_k=6)
+    f = replace(tiny_facts(), kinds=kinds, block=64, spec_k=SPEC_K)
     net = Glm53Net(f, comm or Comm(4, 0), reference())
     if comm is None:
         net.comm = Comm()  # CPU rank-arithmetic oracle, not a TP performance claim
@@ -130,14 +131,15 @@ class ExecutionPlanTests(unittest.TestCase):
     def check_decode_order(self, kinds, comm=None):
         torch.set_num_threads(1)
         net, cache = model(kinds, comm=comm)
+        tokens = net.F.spec_k+1
         chunks = []
         for seq, ctx in zip((2, 0, 3, 1), (0, 3, 9, 15)):
             slot = cache.slots.take(seq)
-            cache.pool.reserve(seq, ctx + 7)
+            cache.pool.reserve(seq, ctx + tokens)
             if ctx:
                 pre = Step.prefill(torch.arange(ctx) % net.vp, 0, seq, slot)
                 cache.prepare(pre); net.forward(pre, cache)
-            chunks.append(((torch.arange(7) + seq) % net.vp, ctx, seq, slot))
+            chunks.append(((torch.arange(tokens) + seq) % net.vp, ctx, seq, slot))
         raw = Step.decode(chunks)
         step = EagerStep(raw.ids, raw.segments)
         cache.prepare(step)
