@@ -1,14 +1,19 @@
 {
   "scope": "SM121a conditional graph compilation only; no CUDA context",
   "result": {
-    "module": "st_bounded_graph_f00812871cceffad62a11097"
+    "module": "st_bounded_graph_74707240463666c312eeec60"
   },
-  "seconds": 46.8759225269896,
+  "seconds": 55.25249312201049,
   "source_sha256": {
-    "engine/kernels/bounded_graph/loop.cu": "03106d0d85688038827c2ded69d900f09d62e9d0d0185b902967a59ab5dad4ec",
-    "engine/kernels/bounded_graph/__init__.py": "fc31994f14224fcc5ff215c699b7feb58ce31c1f87d797f4072c0ab014f92f1e",
-    "engine/profiles/glm53/bounded_loop.py": "ac5072a5e373bf68bb08ff3f13153a98a7008a9aa34ab31e94fd37ca41f39cc1",
+    "engine/kernels/bounded_graph/loop.cu": "cade4becb4924a4f4a9dd032c1ee820fe2187985051a479d501cef3971696888",
+    "engine/kernels/bounded_graph/__init__.py": "8bce20395c6a5b69bdbe387baddee71066b7d7c4893d481b0e7633bd2142000a",
+    "engine/profiles/glm53/bounded_loop.py": "68e7ee0cdabe45616afaada92d45e3cf9fce0af7d96ba186a22cae559762e240",
     "engine/kernels/decode_commit.py": "1cd3c0baa43b662cf08823064c2703a7d74a9e9d37023445b3926a3cab01d2bc",
-    "tests/test_engine_bounded_loop_cuda.py": "7caa14f4779f55de017c47e6065e36a5b872e8f9d615ce58fc956270b85134b1"
+    "engine/profiles/glm53/burst_decode.py": "5a5302f3d9da085aac05000fba182a6f2c8e8f1af4002b4481d471f73345f18a",
+    "engine/profiles/glm53/pipeline.py": "d04497e665a906b46870b6c58d2306713fbe52b3ad9e9251dce30dfa04a2caf4",
+    "engine/profiles/glm53/adapter.py": "7ab8fbc2f7fc9793fc1a53615f0d7ffa8ff511989e55f5ea72775ad2572c8aba",
+    "engine/base/runner.py": "1abe445657c3ff95cf639d748d7773565e0c1b99d4fe403fe7ccfa8055633baa",
+    "tests/test_engine_bounded_loop_cuda.py": "7caa14f4779f55de017c47e6065e36a5b872e8f9d615ce58fc956270b85134b1",
+    "tests/test_engine_burst_decode_cuda.py": "6b05ad233fcdecf084df8895ae99f174e758bd5053b313b0af71e452ca5fea84"
   }
 }

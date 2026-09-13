@@ -1,66 +1,96 @@
-# GB10 bounded graph experiment
+# GB10 serving connections
 
-An experimental executor wraps a deterministic retained CUDA graph in a
-conditional WHILE node, executing at most 1, 2 or 4 iterations per launch. It
-is not connected to serving and introduces no boot flag or precision change.
-KDA state remains FP32.
+The serving boot now selects a bounded greedy decode pipeline with
+`decode_iterations=2` or `4` (default `1`). It reuses the existing target,
+sampling, token-commit, observation and proposal chain. KDA state stays FP32.
+Direct MHC and tiled prefill are already connected to the same profile;
+`nvme_mapped_staging` connects the two NVMe tiers to shared mapped storage.
+These options are experiments, off in the qualified production defaults.
 
-The native executor resets its device iteration index on every replay, keeps
-the captured graph/pool and caller allocations alive through completion, and
-requires replay on the construction stream. The body must preserve each
-iteration's output using the device index and write a stop vote after committing
-that iteration. The first iteration must already be authorized by the caller.
-Host callbacks, explicit event/semaphore nodes, allocations and nested
-conditions are rejected. CUDA instantiation enforces the remaining conditional
-body restrictions. Cross-stream capture can encode dependency edges rather
-than event nodes; those edges are not categorically rejected.
+| Option | Serving consumer |
+| --- | --- |
+| `direct_mhc=1` | Captured target decode consumes rank packets at immediate MHC boundaries |
+| `prefill_project_tiles=1` | KDA prefill projects arrived tiles before the full gather finishes |
+| `nvme_mapped_staging=1` | Conversation and prefix NVMe tiers share one CPU/GPU staging allocation |
+| `decode_iterations=2/4` | Greedy requests use the boot-captured bounded pipeline |
 
-The GLM policy stops after any row finishes, crosses a prefix block, cannot
-fit another full speculative step in its reserved KV or fixed context bucket,
-or sees an ordered interrupt. TP4 MAX consensus is required before a rank
-branches; the helper refuses a fallback transport. Concurrent raw CPU writes
-to CUDA memory are not a cancellation interface. Captured stochastic RNG is
-not supported by this experiment.
+The four options above can coexist. Direct MHC still excludes the separate
+2+2 reduction-overlap experiment; they have different collective ownership.
+The receiver optimization does not implement producer GEMM writes into a send ring.
 
-Validation on 2026-09-13:
+## Bounded serving contract
 
-- SM121a native compilation passed in 46.88 seconds without a CUDA context;
-  exact source hashes are in compile.json.
-- 69 ST-image tests ran: 66 passed and 3 unrelated CUDA tests were skipped.
-  Coverage includes package boundaries, stop conditions, real LocalTP MAX
-  agreement, existing pipeline and graph contracts.
-- 27 local tests passed for the CPU stop policy and fleet probe admission.
-- The GPU gate is `probes/engine_bounded_loop_check.py`: actual served token
-  commit inside a conditional graph, C=1/C=4, limits 1/2/4, changing inputs,
-  EOS, generation limit, prefix, KV reservation, bucket and interruption exits,
-  per-iteration log equality, owner lifetime and stream rejection. This is
-  single-GPU correctness, not real TP4 collective or serving proof. Pending.
+- Capture the finite existing target shapes at boot, using retained child
+  graphs and a private pool. No request causes a new capture. Every loop keeps
+  the borrowed graph/pool and caller allocation owners until its last launch ends.
+- Reserve the whole burst before publishing block mappings. The first
+  iteration must fit; later ones stop before exceeding the reservation or
+  captured context bucket. Replay uses the construction stream.
+- Only one burst may be pending. Any row's EOS, generation limit or prefix
+  crossing stops every rank after TP4 MAX agreement. The staged prefix state
+  cannot be overwritten by another iteration in that burst.
+- Copy every iteration's tokens, count, acceptance and original contexts into
+  separate log rows; resolve them in order before admitting the next burst.
+  Zero progress without completion fails instead of scheduling indefinitely.
+- Existing runner cancellation drains the finite burst before releasing its
+  rows. Prefill, row changes and slot reuse follow the same drain/identity
+  contracts. There is no concurrent raw CPU write to CUDA memory.
+- Stochastic requests keep their existing draws and async pipeline. Rich
+  sampling/min-token/reasoning constraints retain the existing scheduler gate,
+  with the thinking-cap horizon enlarged for a possible burst. More than eight
+  stop-token IDs use the ordinary path without truncating the set.
+
+## Timing and records
+
+The CUDA global timer records each iteration and its forward, sample, commit,
+boundary, observation and proposal stages. The host stores these as separate
+`gpu_iteration` latency rows (including positions, committed counts and accepted
+counts), and feeds stage seconds to the existing metrics. Runner step/batch
+counters count actual iterations. The death ring retains one launch-to-resolution
+wall record per burst with its full token budget; it does not invent individual
+host timings by dividing the burst time.
+
+Native conditional-body validation rejects host callbacks, explicit event or
+semaphore nodes, allocations and nested conditions. CUDA instantiation enforces
+remaining body restrictions. Cross-stream captures encoded as dependencies are
+not categorically rejected. All native and serving paths are still experimental.
+
+## Validation
+
+CPU tests cover C=1/C=4 equality with the existing pipeline, the full reservation,
+prefix/EOS/bucket exits, row and slot reuse, reasoning caps, ordered result
+retirement, zero-progress rejection, record counts and nanosecond/unit conversion.
+The existing pipeline, runner, graph, boot, release, tier and package checks also run.
+The combined ST-image suite ran 156 tests: 151 passed and 5 unrelated GPU tests
+were skipped. `compile.json` records the final SM121a compilation (55.25 seconds)
+with no CUDA context.
+
+`probes/engine_bounded_loop_check.py` tests actual conditional graphs, native
+commit, changing inputs and owner lifetime, plus the real serving adapter with
+small deterministic GPU target/sampling child graphs. This single-GPU toy target
+is not a real TP4 transport or model-quality qualification. Full real-weight,
+matched C=1/C=4 onepass acceptance, quality, length, tok/s and TTFT remain required
+before changing production defaults.
+
+The earlier execution-order bracket `st-gb10-orders0913v4` failed in baseline
+C=1 preparation (stream timeout; last contexts repeated at 129775), before
+candidate arms were measured. It supplies no performance comparison. The direct
+MHC consumer's separate GPU gate passed 96 changing-input/address replays;
+that is native arithmetic proof, not a full TP4 serving result.
 
 ## PR760 simulation
 
-`simulate.py` uses the current scheduler constants with C=1/C=4,
-2K/32K/128K, 512 generated positions, fixed seed 7 and 3 repeats. Device cost
-is zero: the model is deliberately synchronous and generates no language.
-Measured Runner median host cost on this macOS host was 3 us at C=1 and
-4-6 us for C=4 workloads. The 128K C=4 workload never reached width 4; its
-observed widths are preserved in simulation.json.
+`simulate.py` uses C=1/C=4, 2K/32K/128K, 512 generated positions, seed 7 and
+three repeats. Device cost is zero; the model is synchronous and generates no
+language. This host measured 3 us Runner median at C=1 and 4-6 us in C=4
+workloads. The 128K C=4 workload never reached width 4; observed widths are kept.
 
-Hypothetically amortizing *all* this work over four steps would save at most
-2.25 us/step at C=1 and 3-4.5 us/step in these C=4 workloads. This is an
-optimistic ceiling for the modeled work only. Torch/kernel submission is
-absent, existing async hiding is unmeasured, the extra TP4 stop collective
-costs time, and per-iteration result consumption still requires host work.
-These numbers neither prove a GPU win nor bound the full serving opportunity.
+Hypothetically amortizing all modeled host work over four steps saves at most
+2.25 us/step at C=1 and 3-4.5 us in these C=4 workloads. Torch submission,
+existing async hiding, the new stop collective and real kernel time are absent;
+result consumption still costs host work. This is neither a GPU win nor an
+upper bound on the full serving opportunity. See simulation.json for the frozen
+source hashes; the later serving connection is not simulated by those records.
 
-## Serving integration still required
-
-The current AsyncDecode has two pending slots and one prefix staging area per
-row. Before connecting this executor, reserve the entire burst, allocate and
-retain every iteration's token/acceptance/boundary result, resolve them in order,
-and preserve cancellation and streaming semantics. Capture and validate the
-actual target/drafter/transport body, including rank-agreed loop termination.
-A matched C=1/C=4 onepass with 2K/32K/128K, acceptance, length, quality, tok/s,
-TTFT and detailed timing is required before any default decision.
-
-CUDA constraints and handle reset semantics:
+CUDA handle/conditional constraints:
 [Conditional graph nodes](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cuda-graphs.html#conditional-graph-nodes).
