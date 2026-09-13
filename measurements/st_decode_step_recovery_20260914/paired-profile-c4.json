@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "base": "e776e5b815a6808206754f8f6f2086f91401a6567e9fa978bf2fe322762e4854",
+  "candidate": "7dffc637238571466064ccaf3f1d0cb1c046afa98b8ab7cf334c5e63bd59ba41",
+  "inputs": {
+    "base": {
+      "ref": "613dfa0f",
+      "commit": "613dfa0fa01f4aabd75efe1fc3e2e05cd9252da0",
+      "sha256": "047f3920ed89494b98de91c97bf0ec1d5ea88665480763393741f718a55da1b1",
+      "dirty": false,
+      "files": 256,
+      "scope": "engine source; external libraries belong to the profile runtime"
+    },
+    "candidate": {
+      "ref": "c4059295",
+      "commit": "c40592954b83958e2c17a52d988eaf4a8197439f",
+      "sha256": "6b755db003e45e911e359edf92236600db5f08ed99fdfe45ff906789dc2833c6",
+      "dirty": false,
+      "files": 256,
+      "scope": "engine source; external libraries belong to the profile runtime"
+    }
+  },
+  "runtime": "",
+  "evidence": "",
+  "rows": [
+    {
+      "phase": "decode",
+      "ctx": 32000,
+      "width": 4,
+      "components": {
+        "attention": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "communication": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "drafter": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "moe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "nonmoe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    }
+  ]
+}

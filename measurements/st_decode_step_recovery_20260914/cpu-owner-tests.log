@@ -1,0 +1,11 @@
+test_bound_ordinary_and_direct_graphs_follow_changed_inputs_and_addresses (tests.test_engine_decode_fastpaths.BoundDecodeGpuTests.test_bound_ordinary_and_direct_graphs_follow_changed_inputs_and_addresses) ... skipped 'requires CUDA; not exercised by the CPU gate'
+test_binding_preserves_old_rows_and_cannot_affect_another_model (tests.test_engine_decode_fastpaths.BoundDecodeTests.test_binding_preserves_old_rows_and_cannot_affect_another_model) ... ok
+test_candidate_is_explicit_and_production_keeps_its_defaults (tests.test_engine_decode_fastpaths.BoundDecodeTests.test_candidate_is_explicit_and_production_keeps_its_defaults) ... ok
+test_indexer_owner_freezes_rows_and_preserves_both_projections (tests.test_engine_decode_fastpaths.BoundDecodeTests.test_indexer_owner_freezes_rows_and_preserves_both_projections) ... ok
+test_proof_requires_every_candidate_layer_and_capture_width (tests.test_engine_decode_fastpaths.BoundDecodeTests.test_proof_requires_every_candidate_layer_and_capture_width) ... ok
+test_same_bound_pack_routes_ordinary_private_and_direct_outputs (tests.test_engine_decode_fastpaths.BoundDecodeTests.test_same_bound_pack_routes_ordinary_private_and_direct_outputs) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 2.621s
+
+OK (skipped=1)
