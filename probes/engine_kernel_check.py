@@ -63,15 +63,17 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "mhc_single", "indexer", "kpool", "mla", "moe", "moe_waves", "moe_batch", "moe_stage_fc1_shared", "moe_stage_fc2", "router_batch", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "input_pack", "short_gemm", "shared_direct"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "mhc_single", "indexer", "kpool", "mla", "moe", "moe_waves", "moe_batch", "moe_stage_fc1_shared", "moe_stage_fc2", "moe_raw_scale", "router_batch", "mhc_batch", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "input_pack", "short_gemm", "shared_direct"}, selected
 
-    if selected & {'moe_batch', 'moe_stage_fc1_shared', 'moe_stage_fc2', 'router_batch'}:
-        from probes.engine_decode_capacity import moe_check, router_check
-        for lane in ('moe_batch', 'moe_stage_fc1_shared', 'moe_stage_fc2'):
+    if selected & {'moe_batch', 'moe_stage_fc1_shared', 'moe_stage_fc2', 'moe_raw_scale', 'router_batch', 'mhc_batch'}:
+        from probes.engine_decode_capacity import moe_check, router_check, mhc_check
+        for lane in ('moe_batch', 'moe_stage_fc1_shared', 'moe_stage_fc2', 'moe_raw_scale'):
             if lane in selected:
                 moe_check(report, args.ranks, lane)
         if 'router_batch' in selected:
             router_check(report, args.ranks)
+        if 'mhc_batch' in selected:
+            mhc_check(report)
 
     if selected & {'input_pack', 'short_gemm', 'shared_direct'}:
         from probes.engine_decode_batch import dense_check, shared_check

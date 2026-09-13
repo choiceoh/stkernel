@@ -11,6 +11,7 @@ from unittest.mock import patch
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--candidate', help='compile only the named candidate')
     args = parser.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '':
         raise RuntimeError('CPU compilation requires CUDA_VISIBLE_DEVICES=')
@@ -37,12 +38,15 @@ def main():
                  ('moe_stage_fc1', 7, dict(base, fc1=3, fc2=1)),
                  ('moe_stage_fc1_shared', 7, dict(base, fc1=3, fc2=1, probe_shared_epilogue=True)),
                  ('moe_stage_fc2', 7, dict(base, fc1=1, fc2=3))]
+        cases += [('moe_raw_scale', 7, dict(base, reform_sf_pack=False))]
         cases += [('moe_batch', m, dict(base, probe_batch_reform=True)) for m in (14, 21, 28)]
         with patch.object(md, 'get_num_sm', return_value=48), \
                 patch.object(md, 'get_max_active_clusters', return_value=48), \
                 patch.object(md, 'MoEStaticKernelV5', constructor), \
                 patch.object(md, 'build_and_load_cute_dsl_kernel', builder):
             for name, m, config in cases:
+                if args.candidate and name != args.candidate:
+                    continue
                 row = dict(candidate=name, rows=m, status='RUNNING')
                 try:
                     handle = md._get_static_kernel_v2(288, 288, m, 4096, 512, 8, m*8,
@@ -64,6 +68,8 @@ def main():
                 print(json.dumps(row), flush=True)
     if torch.cuda.is_initialized():
         raise RuntimeError('CPU compile opened a CUDA device')
+    if not rows:
+        raise RuntimeError('no declared compile candidate selected')
     report.update(status='PASS' if all(row['status']=='PASS' for row in rows) else 'PARTIAL',
                   source_sha256={name: hashlib.sha256((root/name).read_bytes()).hexdigest()
                                  for name in ('engine/kernels/b12x/moe_dispatch.py',

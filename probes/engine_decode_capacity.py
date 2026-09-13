@@ -26,6 +26,7 @@ def moe_check(report, ranks, lane_name):
     keys = ['L3.moe.' + name for name in ('w13', 'w13_sf', 'w2', 'w2_sf')]
     loaded = rank_loader(path).load(keys, device='cuda')
     weights = [loaded[key] for key in keys]
+    raw_weights = [value.clone() for value in weights] if lane_name == 'moe_raw_scale' else None
     lane = served(moe_static='t,r,sf6')
     lane.moe_prepare(*weights, 8, 10.)
     base = md._parse_glm53_static_v2('t,r,sf6')
@@ -35,6 +36,12 @@ def moe_check(report, ranks, lane_name):
         row_cases, candidate = (7,), dict(base, fc1=3, fc2=1, probe_shared_epilogue=True)
     elif lane_name == 'moe_stage_fc2':
         row_cases, candidate = (7,), dict(base, fc1=1, fc2=3)
+    elif lane_name == 'moe_raw_scale':
+        row_cases, candidate = (7,), dict(base, reform_sf_pack=False)
+        # A separate owner keeps the raw scale storage and receives its own
+        # tile-major weight copy. Never reuse the packed-only SF6 owner.
+        with patch.object(md, '_STATIC_V2_OVERRIDE', candidate):
+            lane.moe_prepare(*raw_weights, 8, 10.)
     else:
         raise ValueError(lane_name)
     torch.manual_seed(91713)
@@ -49,9 +56,9 @@ def moe_check(report, ranks, lane_name):
             sel = expert_order[linear % 8].int()
             route = torch.ones(rows, 8, device='cuda') / 8
             pair, outputs = [], []
-            for config in (base, candidate):
+            for config, pack in ((base, weights), (candidate, raw_weights or weights)):
                 with patch.object(md, '_STATIC_V2_OVERRIDE', config):
-                    graph, output = _capture(lambda: lane.moe(x, sel, route, *weights, 10.))
+                    graph, output = _capture(lambda: lane.moe(x, sel, route, *pack, 10.))
                     pair.append(graph); outputs.append(output)
                     graphs.append(graph)
                     resources.extend(lane.graph_resources())
@@ -112,6 +119,63 @@ def moe_check(report, ranks, lane_name):
                gpu=torch.cuda.get_device_name(), rank_file=str(path),
                max_allocated_bytes=torch.cuda.max_memory_allocated())
     finally:
+        for graph in graphs:
+            graph.reset()
+
+
+class PackedMhc:
+    def __init__(self, owner):
+        self.extension = owner.ext
+        if any(packed is None for _, packed in owner.weights.values()):
+            raise RuntimeError('wider packed mHC needs lossless BF16-origin coefficients')
+        self.pointers = {fp32.data_ptr(): packed.data_ptr() for fp32, packed in owner.weights.values()}
+
+    def run_mhc(self, ptrs, scalars, ints, bf16, ar_consumer):
+        if ints[0] not in (14, 21, 28) or bf16 or ar_consumer:
+            raise RuntimeError('wider packed mHC probe requires the ordinary M14/21/28 path')
+        ptrs = list(ptrs)
+        ptrs[4] = self.pointers[ptrs[4]]
+        return self.extension.run_mhc(ptrs, scalars, ints, True, False)
+
+
+def mhc_check(report):
+    from engine.kernels.dense.mhc import MHC
+    from tests.test_engine_mhc_single import SingleTokenMhcTests
+    torch.manual_seed(91715)
+    weights = {str(i): (torch.randn(24, 16384, device='cuda')*.006).bfloat16().float()
+               for i in range(89)}
+    owner = MHC(weights)
+    extension, packed = owner.ext, PackedMhc(owner)
+    graphs, cases = [], []
+    try:
+        for rows in (14, 21, 28):
+            _, values = SingleTokenMhcTests.inputs(rows)
+            pair, outputs = [], []
+            for adapter in (extension, packed):
+                owner.ext = adapter
+                graph, output = _capture(lambda: [owner(key, *values, 1e-5, 1e-6, 2., 20) for key in weights])
+                graphs.append(graph); pair.append(graph); outputs.append(output)
+            for scale in (0., .001, 1., 32., 1.):
+                for value in values[:4]:
+                    value.normal_().mul_(scale)
+                for order in ((0, 1), (1, 0)):
+                    for index in order:
+                        pair[index].replay()
+                    for actual, expected in zip(outputs[1], outputs[0]):
+                        for a, b in zip(actual, expected):
+                            torch.testing.assert_close(a, b, rtol=0, atol=0)
+            report('capacity_mhc_numerics', rows=rows, exact=True, distinct_packs=89,
+                   ar_consumer=False, changed_input_replay=True)
+            cases.append((rows, pair, values, outputs))
+        for rows, pair, values, outputs in cases:
+            measurements = [dict(arm=arm, ms=_time(pair[index], iterations=64))
+                            for _ in range(2)
+                            for arm, index in (('B', 0), ('A', 1), ('A', 1), ('B', 0))]
+            report('capacity_mhc_timing', rows=rows, distinct_packs=89, measurements=measurements,
+                   scope='89 complete post/pre MHC calls, no RDMA or PDL consumer change')
+        report('capacity_mhc_complete', passed=True, gpu=torch.cuda.get_device_name())
+    finally:
+        owner.ext = extension
         for graph in graphs:
             graph.reset()
 
