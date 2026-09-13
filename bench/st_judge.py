@@ -60,6 +60,8 @@ def same(sha, rec, tree=None) -> bool:
 def errors(rec) -> list:
     """Why this record cannot be evidence (empty when it can)."""
     out = list(rec.get("evidence_issues") or [])
+    if not full_evidence(rec):
+        out.append('screen only; full validation pending')
     if rec.get("engine") != "st":
         out.append("not an ST record")
     q, k, d = (rec.get(key) or {} for key in ("quality", "korean", "decode"))
@@ -73,6 +75,11 @@ def errors(rec) -> list:
     if (rec.get("traffic") or {}).get("issues"):
         out.append("traffic during the run")
     return out
+
+
+def full_evidence(rec) -> bool:
+    """Legacy onepass rows were full; explicitly scoped screening can never become a baseline."""
+    return rec.get('evidence_scope', 'full') == 'full' and rec.get('adoption_eligible') is not False
 
 
 def warm(rec) -> bool:
@@ -100,6 +107,7 @@ def colds(rows, sha, *, allow_rehearsal=False, tree=None):
     """The cold column is a BOOT's run 1 (TTFT with the compile tail). A probe on the live door
     marks its run 1 cold=reset -- after a prefix reset, not a boot -- and stays out of it."""
     return [rec for rec in rows if same(sha, rec, tree) and rec.get("run_index") == 1
+            and full_evidence(rec)
             and rec.get("cold", "boot") == "boot" and (allow_rehearsal or not rec.get("rehearsal"))]
 
 

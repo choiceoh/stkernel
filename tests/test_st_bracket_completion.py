@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SHA = '0123456789abcdef0123456789abcdef01234567'
 CONSUMER = '''
 import json, os, pathlib, sys
+assert pathlib.Path(sys.argv[0]).name == os.environ['EXPECTED_CONSUMER']
 run = int(os.environ['ONEPASS_RUN_INDEX'])
 case = json.loads(os.environ['CASES'])[run - 1]
 with open(os.environ['EVENTS'], 'a') as stream:
@@ -51,11 +52,12 @@ class CompletionTests(unittest.TestCase):
                                             timeout=20, env=env)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def execute(self, cases, *, verb='leg', stale=False):
+    def execute(self, cases, *, verb='leg', stale=False, validation='full'):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / 'bench').mkdir()
             (root / 'bench/onepass.py').write_text(CONSUMER)
+            (root / 'bench/st_screen.py').write_text(CONSUMER)
             source = (ROOT / 'bench/st_bracket.sh').read_text().rsplit('\ncase "${1:-}" in', 1)[0]
             source += '''
 sha_of() { echo "$1"; }
@@ -65,7 +67,8 @@ reset_prefix() { echo reset >> "$EVENTS"; }
 door_up() { return 0; }
 docker() { echo "$EXPECTED_SHA"; }
 '''
-            source += '\nleg candidate "$EXPECTED_SHA"\n' if verb == 'leg' else '\nprobe "$EXPECTED_SHA"\n'
+            source += ('\nleg candidate "$EXPECTED_SHA"\n' if verb == 'leg'
+                       else '\n' + verb + ' "$EXPECTED_SHA"\n')
             script = root / 'runner.sh'
             script.write_text(source)
             ledger = root / 'records.jsonl'
@@ -77,8 +80,14 @@ docker() { echo "$EXPECTED_SHA"; }
             env = dict(os.environ, REPO=str(root), LOGD=str(root / 'logs'),
                        ONEPASS_JSONL=str(ledger), EVENTS=str(events),
                        CASES=json.dumps(cases), EXPECTED_SHA=SHA,
+                       EXPECTED_CONSUMER=('onepass.py' if verb == 'probe' or validation == 'full' else 'st_screen.py'),
                        FLEET_SESSION='test', FLEET_REHEARSE='0', ST_BRACKET_RUNS='2',
                        ST_PROBE_RUNS='2')
+            if validation is None:
+                env.pop('ST_BRACKET_VALIDATION', None)
+                env.pop('ST_BRACKET_RUNS', None)
+            else:
+                env['ST_BRACKET_VALIDATION'] = validation
             result = subprocess.run(['bash', str(script)], text=True, capture_output=True,
                                     timeout=20, env=env)
             return result, events.read_text().splitlines()
@@ -132,6 +141,24 @@ docker() { echo "$EXPECTED_SHA"; }
         result, events = self.execute([{}, {}])
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(events, ['boot', 'measure 1', 'reset', 'measure 2', 'stop'])
+
+    def test_default_pair_screens_once_without_a_deployed_base_or_judge(self):
+        result, events = self.execute([{}], verb='pair', validation=None)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(events, ['boot', 'measure 1', 'stop'])
+        self.assertIn('full baseline comparison pending', result.stdout)
+
+    def test_default_screen_runtime_failure_still_stops_the_arm_and_fails(self):
+        result, events = self.execute([dict(rc=1)], verb='pair', validation=None)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(events, ['boot', 'measure 1', 'stop'])
+
+    def test_production_probe_uses_full_onepass_even_with_screen_default(self):
+        # The consumer's basename is checked inside the fixture, so selecting
+        # a screen cannot silently pass this production-baseline test.
+        result, events = self.execute([{}, {}], verb='probe', validation=None)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(events, ['reset', 'measure 1', 'reset', 'measure 2'])
 
 
 if __name__ == '__main__':

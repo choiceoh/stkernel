@@ -1144,7 +1144,8 @@ case "$cmd" in
     [ "${FLEET_REHEARSE:-0}" = 1 ] && lane=--cpu || lane=--gpu
     exec bash "$0" run $lane "$s" "$est" "$note" -- bash "$REPO/bench/pair.sh" "$name" "$knobs";;
   # ---- the ST engine's bracket (bench/st_bracket.sh): one committed sha per arm, production
-  # shape, two onepass runs per boot (D17). A boot ticket like pair/chain: it takes the fleet
+  # shape, short C=1/C=4 screening by default (ST_BRACKET_VALIDATION=full for adoption).
+  # A boot ticket like pair/chain: it takes the fleet
   # lease at GO and the release's own launcher verifies it.
   st-pair)   # fleet.sh st-pair s <sha> [--base <sha>] [est] [note]
     s=${1:?session}; sha=${2:?candidate sha}; shift 2; base=()
