@@ -617,7 +617,7 @@ def _main() -> int:
     if os.environ.get("ST_BRACKET_TREE"):
         rec["arm_tree"] = os.environ["ST_BRACKET_TREE"]            # the engine/ tree at that commit: the sample's real identity
     if os.environ.get("ST_BRACKET_COLD"):
-        rec["cold"] = os.environ["ST_BRACKET_COLD"]                # what run 1 followed: a boot, or only a prefix reset
+        rec["cold"] = os.environ["ST_BRACKET_COLD"]                # what run 1 followed: a boot, or none (live: a D17 probe)
     run = _RUN = Run(rec, args.out, bd.URL)
     items = workload_requests(args, cq)
     fixed_item = None
