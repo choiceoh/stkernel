@@ -1,6 +1,21 @@
 """Private larger-output kernels must never alias a served graph handle."""
 import unittest
-from tests.test_engine_moe_waves import namespace
+import ast
+from pathlib import Path
+
+
+def namespace():
+    path = Path(__file__).resolve().parents[1] / 'engine/kernels/b12x/moe_dispatch.py'
+    tree = ast.parse(path.read_text())
+    names = {'_parse_glm53_static_v2', '_static_v2_decode_config', '_static_v2_cache_key'}
+    constants = {'_STATIC_V2_DEFAULT', '_STATIC_SUNSET_TOKENS', '_GLM53_B12X_STATIC_V2_ENV'}
+    nodes = [node for node in tree.body
+             if (isinstance(node, ast.FunctionDef) and node.name in names)
+             or (isinstance(node, ast.Assign) and any(
+                 isinstance(target, ast.Name) and target.id in constants for target in node.targets))]
+    ns = dict(Tuple=tuple, _static_kernel_cache_key=lambda **fields: tuple(sorted(fields.items())))
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), 'exec'), ns)
+    return ns
 
 
 class ScatterConfigTests(unittest.TestCase):

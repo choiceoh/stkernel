@@ -1,4 +1,5 @@
 """Use one admitted GPU hold for all candidates, isolating failed processes."""
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import subprocess
@@ -6,12 +7,20 @@ import sys
 import time
 
 
-def check(ranks, *, bundle="capacity_bundle"):
+# D11: these private candidates expire after this qualification campaign.
+EXPIRES = datetime(2026, 9, 16, tzinfo=timezone.utc)
+
+
+def require_current_probe():
+    if datetime.now(timezone.utc) >= EXPIRES:
+        raise RuntimeError('decode scatter campaign expired; promote or remove the measured candidates')
+
+
+def check(ranks, *, bundle="scatter_bundle"):
+    require_current_probe()
     rows = []
     root = Path(__file__).resolve().parents[1]
     bundles = {
-        'capacity_bundle': [('moe_batch', 240), ('moe_stage_fc1_shared', 180), ('moe_stage_fc2', 180),
-                            ('router_batch', 120), ('mhc_batch', 180), ('moe_raw_scale', 180)],
         'scatter_bundle': [('moe_route_scatter', 300), ('moe_direct_scatter', 300),
                            ('moe_route_direct', 300), ('paired_projection', 180), ('shared_serial', 180)],
     }

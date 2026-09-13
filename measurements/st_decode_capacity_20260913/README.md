@@ -1,5 +1,24 @@
 # Decode capacity candidates after the five-lane component result
 
+Completed 2026-09-13 11:31 KST on frozen source `2b3a74b9`. No new serving candidate
+was promoted. `gpu-summary.json` and `gpu-records.jsonl.gz` retain the results and
+original remote-log hash. The six child processes took 86.525 seconds in total;
+this was a component hold, with no consumer-model baseline boot.
+
+- Wider M16 reform: mostly 0.4–3.5% lower latency for spread routes, but M21/M28
+  with eight reused experts regressed 9.2–20.1%. Retain ordinary wider geometry.
+- FC1 3/FC2 1 with aliased epilogues: no consistent win. FC1 1/FC2 3: mixed,
+  including a 10.36% cold regression. Retain 2/2 and separate epilogues.
+- Raw scales: generally 0.7–7.3% slower and a second scale owner. Retain SF6.
+- Wider packed mHC: the exact gate failed at M14 (post output: 56/56 differ,
+  maximum absolute 0.000341952); timing did not run. Retain its served geometry.
+- Router: the already-served TC path passed all real gates; M28 chain time was
+  about 1.596 ms versus 3.068 ms for the FP32 reference. This is not a new gain.
+
+The later scatter branch removes the losing private hooks and probe entry points.
+Reproduce this completed bundle from `2b3a74b9`, not the later branch.
+
+
 The previous five-lane reservation is complete. It produced no material M7
 winner, so those results do not justify a fresh model boot. The full log,
 numerical results and rejected timings remain in `../st_decode_bundle_20260913/`.

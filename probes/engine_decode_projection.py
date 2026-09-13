@@ -2,7 +2,7 @@
 import torch
 import torch.nn.functional as F
 
-from probes.engine_decode_capacity import rank_path
+from probes.engine_decode_scatter_check import rank_path
 from probes.engine_decode_fusions import _capture, _time
 
 

@@ -35,7 +35,7 @@ def main():
     parser.add_argument("--moe-static", default="stock", help="served b12x static-lane spec (STK_moe_static): stock | t,r,sf6[,q0]")
     parser.add_argument("--mla-prefill", default="stock", help="served MLA prefill mode (STK_mla_prefill): stock | tile32 | pair | pair4")
     args = parser.parse_args()
-    if args.lanes in ('capacity_bundle', 'scatter_bundle'):
+    if args.lanes == 'scatter_bundle':
         from probes.engine_decode_bundle import check as decode_bundle
         decode_bundle(args.ranks, bundle=args.lanes)
         return
@@ -63,21 +63,16 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_waves", "moe_batch", "moe_stage_fc1_shared", "moe_stage_fc2", "moe_raw_scale", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "paired_projection", "shared_serial", "router_batch", "mhc_batch", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "paired_projection", "shared_serial", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7"}, selected
 
-    if selected & {'moe_batch', 'moe_stage_fc1_shared', 'moe_stage_fc2', 'moe_raw_scale', 'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'router_batch', 'mhc_batch'}:
-        from probes.engine_decode_capacity import moe_check, router_check, mhc_check
-        for lane in ('moe_batch', 'moe_stage_fc1_shared', 'moe_stage_fc2', 'moe_raw_scale', 'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct'):
+    if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'paired_projection', 'shared_serial'}:
+        from probes.engine_decode_bundle import require_current_probe
+        require_current_probe()
+    if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct'}:
+        from probes.engine_decode_scatter_check import moe_check
+        for lane in ('moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct'):
             if lane in selected:
                 moe_check(report, args.ranks, lane)
-        if 'router_batch' in selected:
-            router_check(report, args.ranks)
-        if 'mhc_batch' in selected:
-            mhc_check(report)
-
-    if "moe_waves" in selected:
-        from probes.engine_moe_waves import check as check_waves
-        check_waves(report, args.ranks)
 
     if selected & {'paired_projection', 'shared_serial'}:
         from probes.engine_decode_projection import paired_check, shared_check
