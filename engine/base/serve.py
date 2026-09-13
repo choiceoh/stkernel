@@ -1266,6 +1266,7 @@ class Server:
             self._agree_on_parked(comm, runner.prefix_tier_keys(),         # ... which every rank must hold alike (45차 §23 A)
                                   forget=self._forget_prefix_boundary(runner), what="prefix boundaries")
         self.next_seq, self.served = 1 + max(parked, default=-1), 0
+        self._last_request_at = time.monotonic()   # a request arrived or was answered: the quiet gate reads its age (st:idle_seconds)
         self.alive = True
         self._lock = threading.Lock()
         self._waiting = deque()                    # request id, tokens, limit, temperature, promised blocks
@@ -1423,6 +1424,7 @@ class Server:
             now = self.clock()
             self._deadline[request] = now + self.request_timeout_s
             self._arrived[request] = now                       # latency is owed from here, not from the step that serves it
+            self._last_request_at = time.monotonic()
             self.prompt_tokens_total += len(ids)
             if options.get("stop_token_ids"):
                 self._stop_ids[request] = set(options["stop_token_ids"])
@@ -1625,6 +1627,7 @@ class Server:
         return out, []
 
     def _answer(self, request, result):
+        self._last_request_at = time.monotonic()
         if self.comm.rank == 0:
             with self._lock:
                 event = self.pending.pop(request, None)
@@ -2372,6 +2375,8 @@ class Server:
         used_blocks = kv.num_blocks - free_blocks
         rows = [
             ("counter", "vllm:request_success_total", "requests answered", self.served),
+            ("gauge", "st:idle_seconds", "seconds since a request last arrived or was answered (since boot when none has)",
+             int(time.monotonic() - self._last_request_at)),
             ("gauge", "vllm:num_requests_running", "requests in the model's step", len(runner.state.running)),
             ("gauge", "vllm:num_requests_waiting", "admitted or queued, not yet stepping",
              len(runner.state.waiting) + len(self._waiting) + len(self.pending) - len(self._active)),

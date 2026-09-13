@@ -8,6 +8,7 @@ the real fleet_handoff / fleet_priority / fleet_pause / fleet_idle helpers under
 
 Linux only: fleet.sh needs flock and GNU date/stat/find. On a Mac, run it in a container.
 """
+import json
 import os
 import shutil
 import socket
@@ -216,6 +217,47 @@ class LeaseQueueTests(unittest.TestCase):
         self.enqueue("p2", pid2, kind="probe")
         self.assertEqual(self.try_hold("p2", pid2, kind="probe"), 1)
         self.assertIn("p2 waits (a session holder is not asked)", self.log())
+
+    def test_the_gate_opens_at_once_for_a_production_nobody_has_used(self):
+        """Tickets waited a median 13 minutes at the quiet gate on 2026-09-13, mostly for a production
+        that had booted for no one. An engine that served nobody since boot, or whose last request is
+        older than the gate already, is quiet now."""
+        self.lease_cmd("acquire", "--owner", "production/srv2/1", "--kind", "production", "--container", "st-glm53")
+        self.env["FAKE_DOCKER_PS"] = "st-glm53"
+        self.env["FLEET_QUIET_S"] = "600"                                   # the old way would wait ten minutes
+        pid = self.sleeper()
+        self.enqueue("g1", pid)
+        self.metrics.write_text(QUIET + "vllm:request_success_total 0\n")
+        self.assertEqual(self.try_hold("g1", pid), 1)
+        self.assertIn("served nobody since it booted, asked it to hand over to g1", self.log())
+        pid2 = self.sleeper()
+        self.enqueue("g2", pid2)
+        self.metrics.write_text(QUIET + "vllm:request_success_total 5\nst:idle_seconds 30\n")
+        self.assertEqual(self.try_hold("g2", pid2), 1)
+        self.assertIn("g2 waits for 600s of quiet before asking", self.log(), "a recently used production keeps its gate")
+        self.metrics.write_text(QUIET + "vllm:request_success_total 5\nst:idle_seconds 700\n")
+        self.assertEqual(self.try_hold("g2", pid2), 1)
+        self.assertIn("idle for 700s already, asked it to hand over to g2", self.log())
+
+    def test_a_release_records_the_queue_s_pace_for_the_restorer(self):
+        pid = self.sleeper()
+        self.enqueue("r1", pid)
+        self.assertEqual(self.try_hold("r1", pid), 0)
+        self.sh("with_lock _release r1")
+        pace = json.loads((self.fleet_dir / "restore-grace.json").read_text())
+        self.assertGreaterEqual(pace["seconds"], 300)
+        self.assertIn("basis", pace)
+
+    def test_a_replacing_ticket_keeps_the_place_of_the_one_it_replaces(self):
+        pid = self.sleeper()
+        self.sh(f"with_lock _enqueue old 10 note boot {pid} 1700000000")
+        row = [l for l in (self.fleet_dir / "queue").read_text().splitlines() if "|old|" in l][0]
+        self.assertEqual(row.split("|")[2], "1700000000", "the enqueue time is the inherited one")
+        self.assertIn("(keeps the place of the ticket it replaces)", self.log())
+        fleet = (ROOT / "bench/fleet.sh").read_text()
+        self.assertIn("--replaces) replaces=${2:?the session this ticket replaces}", fleet)
+        self.assertIn('inherited=$(grep "^[0-9]*|$replaces|" "$Q" | head -1 | cut -d\'|\' -f3)', fleet)
+        self.assertIn("note: this check needs one GPU; --fleet takes the four Sparks", fleet, "a --fleet on a one-GPU check is told what it costs")
 
     def test_status_names_the_lease(self):
         self.lease_cmd("acquire", "--owner", "production/srv2/1", "--kind", "production", "--container", "st-glm53")

@@ -30,7 +30,7 @@ LAUNCH_BACKOFF_MAX=1800
 LAUNCH_HOLD_AFTER=5
 FORENSICS=${ST_FORENSICS:-/home/choiceoh/glm53-logs/st-forensics}
 FLEET_DIR=${FLEET_DIR:-/home/choiceoh/glm53-logs/fleet}   # the queue's files; its activity clock lives here (bench/fleet_idle.py)
-RESTORE_GRACE=${ST_RESTORE_GRACE_S:-300}   # a free fleet is not restored while the queue was active this recently: its next ticket is on its way
+RESTORE_GRACE=${ST_RESTORE_GRACE_S:-}      # set: a constant grace. Unset: the queue's own pace (restore-grace.json + window.json), floor 300
 LOOP_SLEEP=${ST_SUPERVISOR_SLEEP:-30}; BOOT_POLL=${ST_BOOT_POLL:-15}; MAX_LOOPS=${ST_SUPERVISOR_LOOPS:-0}   # tests shorten and bound the loop
 log(){ echo "$(date '+%F %T') $*"; }
 SELF_IPS=" $(hostname -I 2>/dev/null) "                 # this loop runs on rank 0's node, which cannot ssh to itself
@@ -93,6 +93,23 @@ except Exception:
     print("")
 PY
 }
+queue_grace(){  # how long a free fleet waits before production returns: the queue's pace (bench/fleet_pace.py), a window, or the constant
+  [ -z "$RESTORE_GRACE" ] || { echo "$RESTORE_GRACE"; return; }
+  python3 - "$FLEET_DIR" <<'PY'
+import json, sys, time
+from pathlib import Path
+d, now, grace, window = Path(sys.argv[1]), time.time(), 300, 0
+try:
+    grace = int(json.loads((d / "restore-grace.json").read_text()).get("seconds", 300))
+except Exception:
+    pass
+try:
+    w = json.loads((d / "window.json").read_text()); window = max(0, int(w.get("until", 0) - now))
+except Exception:
+    pass
+print(max(grace, window, 300))
+PY
+}
 wait_for_health(){  # <what>: the door, then a real chat -- a listening door is not health (the file's first line)
   local what=$1 waited=0 door_seen=0
   while [ "$waited" -lt "$BOOT_GRACE" ]; do
@@ -111,9 +128,9 @@ wait_reason(){  # key<TAB>text: why not to launch right now; 1 when there is no 
   if taken=$(fleet_taken); then printf 'taken:%s\t%s\n' "${taken%% since *}" "fleet taken ($taken)"; return 0; fi
   if handing_over; then printf 'handover\tengine is handing the fleet over\n'; return 0; fi
   if booting_fleet; then printf 'booting\ta fleet is booting\n'; return 0; fi
-  ago=$(queue_active_ago)
-  if [ -n "$ago" ] && [ "$ago" -lt "$RESTORE_GRACE" ]; then
-    printf 'grace\tfleet free, but the queue was active %ss ago: %ss of quiet queue before production is restored (its next ticket takes the fleet as it is)\n' "$ago" "$RESTORE_GRACE"; return 0
+  ago=$(queue_active_ago); local grace; grace=$(queue_grace)
+  if [ -n "$ago" ] && [ "$ago" -lt "$grace" ]; then
+    printf 'grace\tfleet free, but the queue was active %ss ago: %ss of quiet queue before production is restored (its next ticket takes the fleet as it is)\n' "$ago" "$grace"; return 0
   fi
   return 1
 }
@@ -204,7 +221,7 @@ if [ "${ST_SUPERVISOR_ONCE:-0}" = 1 ]; then
   elif handing_over; then echo "handing over: waiting"
   elif health; then echo "healthy"
   elif booting_fleet; then echo "booting: would adopt (head container $(head_age || echo '?')s old, no door yet)"
-  elif ago=$(queue_active_ago) && [ -n "$ago" ] && [ "$ago" -lt "$RESTORE_GRACE" ]; then echo "fleet free, queue active ${ago}s ago: would wait (grace ${RESTORE_GRACE}s)"
+  elif ago=$(queue_active_ago) && [ -n "$ago" ] && [ "$ago" -lt "$(queue_grace)" ]; then echo "fleet free, queue active ${ago}s ago: would wait (grace $(queue_grace)s)"
   else echo "would launch (containers_up=$(containers_up && echo yes || echo no) door_up=$(door_up && echo yes || echo no))"; fi
   exit 0
 fi

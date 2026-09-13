@@ -490,6 +490,19 @@ class QueueGraceTests(unittest.TestCase):
         (self.fleet / "queue").unlink()
         self.assertIsNone(watch.boot_ticket_waiting(self.fleet))
 
+    def test_the_deploy_waits_as_long_as_production_would(self):
+        import json as _json
+        import time
+        self.assertEqual(watch.pace_grace(self.fleet), 300, "no record: the floor")
+        (self.fleet / "restore-grace.json").write_text(_json.dumps({"seconds": 900}))
+        self.assertEqual(watch.pace_grace(self.fleet), 900)
+        (self.fleet / "window.json").write_text(_json.dumps({"session": "s", "until": time.time() + 1200}))
+        self.assertIn(watch.pace_grace(self.fleet), (1199, 1200))
+        (self.fleet / "window.json").write_text(_json.dumps({"session": "s", "until": time.time() - 5}))
+        self.assertEqual(watch.pace_grace(self.fleet), 900, "an expired window is no window")
+        self.clock(ago=600)
+        self.assertIsNotNone(watch.queue_active_within(None, self.fleet), "None means: the queue's pace (900 s here)")
+
     def test_the_cycle_asks_after_the_lease_and_before_the_deploy(self):
         source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
         body = source[source.index("def cycle("):source.index("def cycle(") + source[source.index("def cycle("):].index("\n\n\n")]
