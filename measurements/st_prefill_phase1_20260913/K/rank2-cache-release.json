@@ -1,0 +1,1 @@
+{"before": {"MemFree": 79962021888, "MemAvailable": 102969323520, "CommitLimit": 81405870080, "Committed_AS": 11048206336}, "after": {"MemFree": 100148158464, "MemAvailable": 103004160000, "CommitLimit": 81405870080, "Committed_AS": 11050803200}, "files_advised": 111634, "ready": true, "required_free": 85899345920, "orphan_batons": []}

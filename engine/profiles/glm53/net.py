@@ -363,6 +363,7 @@ class Glm53Net:
         beta_all = b_all                                                             # raw logits: each lane sigmoids as its kernel wants
         wc, wr = self.conv_ring, self.rec_ring
         captured = getattr(step, "captured", False)
+        single_chunk = not captured and len(step.segments) == 1 and N > wr
         rows = self._ring_rows(step, wc, wr)
         if rows:
             # a captured decode step: every row's conv and recurrence in one launch each, and the output lands in
@@ -375,7 +376,7 @@ class Glm53Net:
                                                    rec_ring, slots, step.contexts, F.lower_bound)
             core = o[0]
         else:
-            core = torch.empty(N, Hl, D, dtype=x.dtype, device=x.device)
+            core = None if single_chunk else torch.empty(N, Hl, D, dtype=x.dtype, device=x.device)
         for s in (() if rows else step.segments):
             sl = slice(s.start, s.start + s.length)
             direct_ring = self.lanes.kda_recurrent_ring is not None and s.length <= wr
@@ -435,7 +436,10 @@ class Glm53Net:
                 else:
                     for i in range(s.length):
                         rec_ring[(s.ctx + i) % wr] = states[i]
-            core[sl] = o[0]
+            if single_chunk:
+                core = o[0].contiguous()
+            else:
+                core[sl] = o[0]
         out = self.lanes.kda_output_norm(core, g_out, p[n + "o_norm"], O_NORM_EPS)
         return (reduce or self.comm.all_reduce)(self.linear(out.reshape(N, Hl * D), n + "o_proj"))
 
@@ -533,14 +537,22 @@ class Glm53Net:
         """Top-k complete pools per query, in passes of SELECT_ROWS rows: every row's
         selection is independent, so the passes are exact and the transient is bounded."""
         rows = q8.shape[0]
+        def select(logits, lengths):
+            values = logits[:, :n_cand].float()
+            if rows > 64 and values.is_cuda:
+                from engine.kernels.prefill_topk import select as native_select
+                selected = native_select(values, lengths, k)
+                if selected is not None:
+                    return selected
+            return topk_positions(values, k, valid=lengths, inplace=True)
         if rows <= SELECT_ROWS:
             logits = self.lanes.indexer_logits(q8, keys, scales, w_eff, ke)
-            return topk_positions(logits[:, :n_cand].float(), k, valid=ke, inplace=True)
+            return select(logits, ke)
         out = torch.empty((rows, k), dtype=torch.int32, device=q8.device)
         for r0 in range(0, rows, SELECT_ROWS):
             r1 = min(rows, r0 + SELECT_ROWS)
             logits = self.lanes.indexer_logits(q8[r0:r1], keys, scales, w_eff[r0:r1], ke[r0:r1])
-            out[r0:r1] = topk_positions(logits[:, :n_cand].float(), k, valid=ke[r0:r1], inplace=True)
+            out[r0:r1] = select(logits, ke[r0:r1])
         return out
 
     @operation("dsa", layer_arg=1)
@@ -602,12 +614,18 @@ class Glm53Net:
         token in prefill (`magma_sgemmEx` 121 ms + the `x.float()` copy per 9,216-token chunk) and 1.7 ms
         of a four-row decode step (cuBLAS SIMT SGEMM at M=28)."""
         F, p, n = self.F, self.p, f"L{L}.moe."
-        if self._router_weights:
-            from engine.kernels.glm_pointwise import router_logits
+        logits = None
+        if 8192 < x.shape[0] <= 32768:
+            from engine.kernels.prefill_router import router_logits
             logits = router_logits(x, p[n + "gate"])
-            self._router_tensorcore.add(L)
-        else:
-            logits = x.float() @ p[n + "gate"].float().T
+        if logits is None:
+            if self._router_weights:
+                from engine.kernels.glm_pointwise import router_logits
+                logits = router_logits(x, p[n + "gate"])
+                self._router_tensorcore.add(L)
+            else:
+                gate = self._router_weights.get(L, p[n + "gate"])
+                logits = x.float() @ gate.float().T
         if self.lanes.route_weights is not None:
             return self.lanes.route_weights(logits, p[n + "bias"], F.topk_experts, F.routed_scale)
         s = torch.sigmoid(logits)
@@ -635,13 +653,15 @@ class Glm53Net:
         return (reduce or self.comm.all_reduce)(out + shared)
 
     # -- the step ---------------------------------------------------------------------------
-    def forward(self, step: Step, caches: Caches, finish: bool = True, aux_layers=None, aux_ready=None):
+    def forward(self, step: Step, caches: Caches, finish: bool = True, aux_layers=None, aux_ready=None,
+                *, last_hidden_only=False):
         """One step: every segment's tokens through the chain. Returns the final
         hidden states [N, hidden] (post final norm) when `finish`, else the raw
         mHC carry (res, post, comb, x) for inspection. With `aux_layers`, also
         the contracted residual after each of those layers, concatenated
         [N, len * hidden] -- what the drafter reads (the served model's
-        aux_hidden_states: hc_post then hc_contract after layer idx)."""
+        aux_hidden_states: hc_post then hc_contract after layer idx). Prefill may
+        request only the final hidden row, which supplies its first sampled token."""
         F = self.F
         N = step.ids.shape[0]
         sp = self.prefill_transport if (finish and not self.probe and len(step.segments) == 1
@@ -683,10 +703,14 @@ class Glm53Net:
                     aux_ready(features)
         if not finish:
             return res, post, comb, x
+        if last_hidden_only:
+            x, res, post, comb = x[-1:], res[-1:], post[-1:], comb[-1:]
         res = self.lanes.mhc_post(x, res, post, comb)
         h = self._norm(res.float().mean(1).to(x.dtype), self.p["norm"], F.rms_eps)      # hc_contract, final norm
         if sp:
             h = self.comm.all_gather(h, dim=0)
+        if last_hidden_only:
+            h = h[-1:]  # the last SP rank owns the global last token
         if aux_layers:
             if features is None:
                 features = torch.cat([aux[L] for L in aux_layers], dim=-1)

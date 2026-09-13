@@ -1,0 +1,413 @@
+/usr/local/lib/python3.12/dist-packages/triton/language/core.py:2284: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+  warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+/usr/local/lib/python3.12/dist-packages/triton/language/core.py:2284: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+  warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+{"kda": [{"tokens": 130, "heads": 2, "dim": 64, "marks": 0, "bit_exact": true}, {"tokens": 130, "heads": 2, "dim": 64, "marks": 1, "bit_exact": true}, {"tokens": 130, "heads": 2, "dim": 64, "marks": 2, "bit_exact": true}, {"tokens": 130, "heads": 2, "dim": 64, "marks": 3, "bit_exact": true}, {"tokens": 1024, "heads": 4, "dim": 192, "marks": 0, "bit_exact": true}, {"tokens": 1024, "heads": 4, "dim": 192, "marks": 1, "bit_exact": true}, {"tokens": 1024, "heads": 4, "dim": 192, "marks": 2, "bit_exact": true}, {"tokens": 1024, "heads": 4, "dim": 192, "marks": 3, "bit_exact": true}, {"tokens": 1024, "heads": 4, "dim": 192, "marks": 6, "bit_exact": true}, {"tokens": 1024, "heads": 4, "dim": 192, "marks": 11, "bit_exact": true}, {"tokens": 1024, "heads": 4, "dim": 192, "marks": 16, "bit_exact": true}, {"tokens": 9216, "heads": 16, "dim": 128, "marks": 0, "bit_exact": true}, {"tokens": 9216, "heads": 16, "dim": 128, "marks": 1, "bit_exact": true}, {"tokens": 9216, "heads": 16, "dim": 128, "marks": 2, "bit_exact": true}, {"tokens": 9216, "heads": 16, "dim": 128, "marks": 3, "bit_exact": true}, {"tokens": 9216, "heads": 16, "dim": 128, "marks": 6, "bit_exact": true}, {"tokens": 9216, "heads": 16, "dim": 128, "marks": 11, "bit_exact": true}, {"tokens": 9216, "heads": 16, "dim": 128, "marks": 17, "bit_exact": true}, {"tokens": 9216, "heads": 16, "dim": 128, "marks": 21, "bit_exact": true}, {"tokens": 9216, "heads": 16, "dim": 128, "marks": 41, "bit_exact": true}, {"tokens": 13824, "heads": 16, "dim": 128, "marks": 0, "bit_exact": true}, {"tokens": 13824, "heads": 16, "dim": 128, "marks": 1, "bit_exact": true}, {"tokens": 13824, "heads": 16, "dim": 128, "marks": 2, "bit_exact": true}, {"tokens": 13824, "heads": 16, "dim": 128, "marks": 3, "bit_exact": true}, {"tokens": 13824, "heads": 16, "dim": 128, "marks": 6, "bit_exact": true}, {"tokens": 13824, "heads": 16, "dim": 128, "marks": 11, "bit_exact": true}, {"tokens": 13824, "heads": 16, "dim": 128, "marks": 17, "bit_exact": true}, {"tokens": 13824, "heads": 16, "dim": 128, "marks": 21, "bit_exact": true}, {"tokens": 13824, "heads": 16, "dim": 128, "marks": 41, "bit_exact": true}, {"tokens": 16128, "heads": 16, "dim": 128, "marks": 0, "bit_exact": true}, {"tokens": 16128, "heads": 16, "dim": 128, "marks": 1, "bit_exact": true}, {"tokens": 16128, "heads": 16, "dim": 128, "marks": 2, "bit_exact": true}, {"tokens": 16128, "heads": 16, "dim": 128, "marks": 3, "bit_exact": true}, {"tokens": 16128, "heads": 16, "dim": 128, "marks": 6, "bit_exact": true}, {"tokens": 16128, "heads": 16, "dim": 128, "marks": 11, "bit_exact": true}, {"tokens": 16128, "heads": 16, "dim": 128, "marks": 17, "bit_exact": true}, {"tokens": 16128, "heads": 16, "dim": 128, "marks": 21, "bit_exact": true}, {"tokens": 16128, "heads": 16, "dim": 128, "marks": 41, "bit_exact": true}, {"tokens": 32256, "heads": 16, "dim": 128, "marks": 0, "bit_exact": true}, {"tokens": 32256, "heads": 16, "dim": 128, "marks": 1, "bit_exact": true}, {"tokens": 32256, "heads": 16, "dim": 128, "marks": 2, "bit_exact": true}, {"tokens": 32256, "heads": 16, "dim": 128, "marks": 3, "bit_exact": true}, {"tokens": 32256, "heads": 16, "dim": 128, "marks": 6, "bit_exact": true}, {"tokens": 32256, "heads": 16, "dim": 128, "marks": 11, "bit_exact": true}, {"tokens": 32256, "heads": 16, "dim": 128, "marks": 17, "bit_exact": true}, {"tokens": 32256, "heads": 16, "dim": 128, "marks": 21, "bit_exact": true}, {"tokens": 32256, "heads": 16, "dim": 128, "marks": 41, "bit_exact": true}], "kda_passed": true}
+{
+  "kda": [
+    {
+      "tokens": 130,
+      "heads": 2,
+      "dim": 64,
+      "marks": 0,
+      "bit_exact": true
+    },
+    {
+      "tokens": 130,
+      "heads": 2,
+      "dim": 64,
+      "marks": 1,
+      "bit_exact": true
+    },
+    {
+      "tokens": 130,
+      "heads": 2,
+      "dim": 64,
+      "marks": 2,
+      "bit_exact": true
+    },
+    {
+      "tokens": 130,
+      "heads": 2,
+      "dim": 64,
+      "marks": 3,
+      "bit_exact": true
+    },
+    {
+      "tokens": 1024,
+      "heads": 4,
+      "dim": 192,
+      "marks": 0,
+      "bit_exact": true
+    },
+    {
+      "tokens": 1024,
+      "heads": 4,
+      "dim": 192,
+      "marks": 1,
+      "bit_exact": true
+    },
+    {
+      "tokens": 1024,
+      "heads": 4,
+      "dim": 192,
+      "marks": 2,
+      "bit_exact": true
+    },
+    {
+      "tokens": 1024,
+      "heads": 4,
+      "dim": 192,
+      "marks": 3,
+      "bit_exact": true
+    },
+    {
+      "tokens": 1024,
+      "heads": 4,
+      "dim": 192,
+      "marks": 6,
+      "bit_exact": true
+    },
+    {
+      "tokens": 1024,
+      "heads": 4,
+      "dim": 192,
+      "marks": 11,
+      "bit_exact": true
+    },
+    {
+      "tokens": 1024,
+      "heads": 4,
+      "dim": 192,
+      "marks": 16,
+      "bit_exact": true
+    },
+    {
+      "tokens": 9216,
+      "heads": 16,
+      "dim": 128,
+      "marks": 0,
+      "bit_exact": true
+    },
+    {
+      "tokens": 9216,
+      "heads": 16,
+      "dim": 128,
+      "marks": 1,
+      "bit_exact": true
+    },
+    {
+      "tokens": 9216,
+      "heads": 16,
+      "dim": 128,
+      "marks": 2,
+      "bit_exact": true
+    },
+    {
+      "tokens": 9216,
+      "heads": 16,
+      "dim": 128,
+      "marks": 3,
+      "bit_exact": true
+    },
+    {
+      "tokens": 9216,
+      "heads": 16,
+      "dim": 128,
+      "marks": 6,
+      "bit_exact": true
+    },
+    {
+      "tokens": 9216,
+      "heads": 16,
+      "dim": 128,
+      "marks": 11,
+      "bit_exact": true
+    },
+    {
+      "tokens": 9216,
+      "heads": 16,
+      "dim": 128,
+      "marks": 17,
+      "bit_exact": true
+    },
+    {
+      "tokens": 9216,
+      "heads": 16,
+      "dim": 128,
+      "marks": 21,
+      "bit_exact": true
+    },
+    {
+      "tokens": 9216,
+      "heads": 16,
+      "dim": 128,
+      "marks": 41,
+      "bit_exact": true
+    },
+    {
+      "tokens": 13824,
+      "heads": 16,
+      "dim": 128,
+      "marks": 0,
+      "bit_exact": true
+    },
+    {
+      "tokens": 13824,
+      "heads": 16,
+      "dim": 128,
+      "marks": 1,
+      "bit_exact": true
+    },
+    {
+      "tokens": 13824,
+      "heads": 16,
+      "dim": 128,
+      "marks": 2,
+      "bit_exact": true
+    },
+    {
+      "tokens": 13824,
+      "heads": 16,
+      "dim": 128,
+      "marks": 3,
+      "bit_exact": true
+    },
+    {
+      "tokens": 13824,
+      "heads": 16,
+      "dim": 128,
+      "marks": 6,
+      "bit_exact": true
+    },
+    {
+      "tokens": 13824,
+      "heads": 16,
+      "dim": 128,
+      "marks": 11,
+      "bit_exact": true
+    },
+    {
+      "tokens": 13824,
+      "heads": 16,
+      "dim": 128,
+      "marks": 17,
+      "bit_exact": true
+    },
+    {
+      "tokens": 13824,
+      "heads": 16,
+      "dim": 128,
+      "marks": 21,
+      "bit_exact": true
+    },
+    {
+      "tokens": 13824,
+      "heads": 16,
+      "dim": 128,
+      "marks": 41,
+      "bit_exact": true
+    },
+    {
+      "tokens": 16128,
+      "heads": 16,
+      "dim": 128,
+      "marks": 0,
+      "bit_exact": true
+    },
+    {
+      "tokens": 16128,
+      "heads": 16,
+      "dim": 128,
+      "marks": 1,
+      "bit_exact": true
+    },
+    {
+      "tokens": 16128,
+      "heads": 16,
+      "dim": 128,
+      "marks": 2,
+      "bit_exact": true
+    },
+    {
+      "tokens": 16128,
+      "heads": 16,
+      "dim": 128,
+      "marks": 3,
+      "bit_exact": true
+    },
+    {
+      "tokens": 16128,
+      "heads": 16,
+      "dim": 128,
+      "marks": 6,
+      "bit_exact": true
+    },
+    {
+      "tokens": 16128,
+      "heads": 16,
+      "dim": 128,
+      "marks": 11,
+      "bit_exact": true
+    },
+    {
+      "tokens": 16128,
+      "heads": 16,
+      "dim": 128,
+      "marks": 17,
+      "bit_exact": true
+    },
+    {
+      "tokens": 16128,
+      "heads": 16,
+      "dim": 128,
+      "marks": 21,
+      "bit_exact": true
+    },
+    {
+      "tokens": 16128,
+      "heads": 16,
+      "dim": 128,
+      "marks": 41,
+      "bit_exact": true
+    },
+    {
+      "tokens": 32256,
+      "heads": 16,
+      "dim": 128,
+      "marks": 0,
+      "bit_exact": true
+    },
+    {
+      "tokens": 32256,
+      "heads": 16,
+      "dim": 128,
+      "marks": 1,
+      "bit_exact": true
+    },
+    {
+      "tokens": 32256,
+      "heads": 16,
+      "dim": 128,
+      "marks": 2,
+      "bit_exact": true
+    },
+    {
+      "tokens": 32256,
+      "heads": 16,
+      "dim": 128,
+      "marks": 3,
+      "bit_exact": true
+    },
+    {
+      "tokens": 32256,
+      "heads": 16,
+      "dim": 128,
+      "marks": 6,
+      "bit_exact": true
+    },
+    {
+      "tokens": 32256,
+      "heads": 16,
+      "dim": 128,
+      "marks": 11,
+      "bit_exact": true
+    },
+    {
+      "tokens": 32256,
+      "heads": 16,
+      "dim": 128,
+      "marks": 17,
+      "bit_exact": true
+    },
+    {
+      "tokens": 32256,
+      "heads": 16,
+      "dim": 128,
+      "marks": 21,
+      "bit_exact": true
+    },
+    {
+      "tokens": 32256,
+      "heads": 16,
+      "dim": 128,
+      "marks": 41,
+      "bit_exact": true
+    }
+  ],
+  "calibration": [
+    {
+      "tokens": 33,
+      "width": 65,
+      "max_error_over_max_diagonal": 7.352349484790466e-08,
+      "peaks_bit_exact": true,
+      "rows_exact": true
+    },
+    {
+      "tokens": 1024,
+      "width": 256,
+      "max_error_over_max_diagonal": 5.064426886747242e-07,
+      "peaks_bit_exact": true,
+      "rows_exact": true
+    },
+    {
+      "tokens": 9216,
+      "width": 512,
+      "max_error_over_max_diagonal": 6.141228823253186e-07,
+      "peaks_bit_exact": true,
+      "rows_exact": true
+    },
+    {
+      "tokens": 9216,
+      "width": 4096,
+      "max_error_over_max_diagonal": 4.0084412944452197e-07,
+      "peaks_bit_exact": true,
+      "rows_exact": true
+    },
+    {
+      "tokens": 13824,
+      "width": 4096,
+      "max_error_over_max_diagonal": 4.737947563171474e-07,
+      "peaks_bit_exact": true,
+      "rows_exact": true
+    },
+    {
+      "tokens": 16128,
+      "width": 4096,
+      "max_error_over_max_diagonal": 4.6577468992836657e-07,
+      "peaks_bit_exact": true,
+      "rows_exact": true
+    },
+    {
+      "tokens": 32256,
+      "width": 4096,
+      "max_error_over_max_diagonal": 6.475546001638577e-07,
+      "peaks_bit_exact": true,
+      "rows_exact": true
+    }
+  ],
+  "peak_tails": {
+    "lengths": [
+      33,
+      257,
+      2121,
+      2128,
+      4096,
+      4897,
+      8751,
+      9216,
+      13824,
+      16128,
+      16384,
+      32256,
+      32768
+    ],
+    "binaries": 1,
+    "peaks_bit_exact": true
+  },
+  "passed": true,
+  "seconds": 36.85291928099468,
+  "device": "NVIDIA GB10",
+  "torch": "2.13.0+cu130",
+  "triton": "3.7.1"
+}

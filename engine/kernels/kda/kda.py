@@ -102,7 +102,7 @@ def _glm53_qk_l2norm_strided(q, k):
         or q.dtype != torch.bfloat16 or k.dtype != q.dtype
         or q.ndim != 4 or k.ndim != 4
         or tuple(q.shape) != tuple(k.shape)
-        or q.shape[0] != 1 or not 0 < q.shape[1] <= 8192
+        or q.shape[0] != 1 or not 0 < q.shape[1] <= 32768
         or tuple(q.shape[2:]) != (16, 128)
         or any(stride <= 0 for stride in (*q.stride(), *k.stride()))
         or not _glm53_l2norm_source_matches(l2norm_fwd)
@@ -123,6 +123,9 @@ def _glm53_qk_l2norm_strided(q, k):
     # length (1..8192), so every positive-stride layout takes it. Its loads
     # on the conv layout are strided by T (uncoalesced but L2-friendly); the
     # copy saving stands, the strided-access cost is the bracket's to measure.
+    # The scheduler can emit 32,256 rows. Normalization is row-local; keep
+    # the same reduction tree and extend only the launch grid so the larger
+    # chunk does not silently restore both contiguous input copies.
     rows = q.shape[1] * 16
     _glm53_qk_l2norm_strided_kernel[(triton.cdiv(rows, 32), 2)](
         q, k, q_out, k_out, 1e-6, rows,

@@ -3722,7 +3722,7 @@ void mk_run_mla_prefill32(std::vector<int64_t> ptrs, std::vector<double> scalars
   // 8192 was the old prefill chunk's ceiling; the served chunk is 9,216 now
   // (45차 §23 GPU 판정 20차) and falling out of this kernel costs the MLA lane
   // 19% a token (조사 21차), so the bound follows the chunk law instead.
-  TORCH_CHECK(ints[0] >= 128 && ints[0] <= 16384 && ints[1] > 0 && ints[1] <= 2176,
+  TORCH_CHECK(ints[0] >= 128 && ints[0] <= 32768 && ints[1] > 0 && ints[1] <= 2176,
               "mla prefill32 requires bounded prefill T and W");
   TORCH_CHECK((ptrs[0] & 15) == 0 && (ptrs[1] & 15) == 0 && (ptrs[4] & 3) == 0,
               "mla prefill32 requires aligned Q, FP8 cache and BF16 output");

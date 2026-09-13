@@ -39,10 +39,10 @@ _CHUNK_DELTA_H_NUM_STAGES = [2, 3] if torch.version.hip else [2, 3, 4]
         for num_stages in _CHUNK_DELTA_H_NUM_STAGES
         for BV in [32, 64]
     ],
-    key=["H", "K", "V", "BT", "AUTOTUNE_REGIME"],
+    key=["H", "K", "V", "BT", "AUTOTUNE_REGIME", "HAS_MARKS"],
     use_cuda_graph=use_cuda_graph,
 )
-@triton.jit(do_not_specialize=["T", "AUTOTUNE_REGIME"])
+@triton.jit(do_not_specialize=["T", "AUTOTUNE_REGIME", "N_AT"])
 def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
     k,
     v,
@@ -59,7 +59,8 @@ def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
     chunk_offsets,
     T,
     AUTOTUNE_REGIME,
-    N_AT: tl.constexpr,
+    N_AT,
+    HAS_MARKS: tl.constexpr,
     H: tl.constexpr,
     Hg: tl.constexpr,
     K: tl.constexpr,
@@ -134,26 +135,30 @@ def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
             )
             b_h4 += tl.load(p_h0_4, boundary_check=(0, 1)).to(tl.float32)
 
+    # Sorted marks need one cursor, independent of the number of snapshots.
+    # N_AT stays a runtime stride: a new prefix shape reuses the same binary.
+    if HAS_MARKS:
+        mark = 0
+        next_at = tl.load(at)
     # main recurrence
     for i_t in range(NT):
-        if N_AT > 0:
-            # ST engine (45차 §23): the fp32 state at the start of a requested chunk -- the position state a prefix
-            # snapshot keeps at a block boundary inside this prefill chunk -- out of the very accumulator the
-            # recurrence carries, so it is the uncut computation's state, not a cut one's (and `h` below is bf16).
-            for j in tl.static_range(N_AT):
-                if tl.load(at + j) == i_t:
-                    hs_j = hs + ((i_n * N_AT + j) * H + i_h).to(tl.int64) * V * K
-                    p_s = tl.make_block_ptr(hs_j, (V, K), (K, 1), (i_v * BV, 0), (BV, 64), (1, 0))
-                    tl.store(p_s, b_h1.to(p_s.dtype.element_ty), boundary_check=(0, 1))
-                    if K > 64:
-                        p_s = tl.make_block_ptr(hs_j, (V, K), (K, 1), (i_v * BV, 64), (BV, 64), (1, 0))
-                        tl.store(p_s, b_h2.to(p_s.dtype.element_ty), boundary_check=(0, 1))
-                    if K > 128:
-                        p_s = tl.make_block_ptr(hs_j, (V, K), (K, 1), (i_v * BV, 128), (BV, 64), (1, 0))
-                        tl.store(p_s, b_h3.to(p_s.dtype.element_ty), boundary_check=(0, 1))
-                    if K > 192:
-                        p_s = tl.make_block_ptr(hs_j, (V, K), (K, 1), (i_v * BV, 192), (BV, 64), (1, 0))
-                        tl.store(p_s, b_h4.to(p_s.dtype.element_ty), boundary_check=(0, 1))
+        if HAS_MARKS:
+            if i_t == next_at:
+                # Save the uncut recurrence's FP32 accumulator before this chunk.
+                hs_j = hs + ((i_n * N_AT + mark) * H + i_h).to(tl.int64) * V * K
+                p_s = tl.make_block_ptr(hs_j, (V, K), (K, 1), (i_v * BV, 0), (BV, 64), (1, 0))
+                tl.store(p_s, b_h1.to(p_s.dtype.element_ty), boundary_check=(0, 1))
+                if K > 64:
+                    p_s = tl.make_block_ptr(hs_j, (V, K), (K, 1), (i_v * BV, 64), (BV, 64), (1, 0))
+                    tl.store(p_s, b_h2.to(p_s.dtype.element_ty), boundary_check=(0, 1))
+                if K > 128:
+                    p_s = tl.make_block_ptr(hs_j, (V, K), (K, 1), (i_v * BV, 128), (BV, 64), (1, 0))
+                    tl.store(p_s, b_h3.to(p_s.dtype.element_ty), boundary_check=(0, 1))
+                if K > 192:
+                    p_s = tl.make_block_ptr(hs_j, (V, K), (K, 1), (i_v * BV, 192), (BV, 64), (1, 0))
+                    tl.store(p_s, b_h4.to(p_s.dtype.element_ty), boundary_check=(0, 1))
+                mark += 1
+                next_at = tl.load(at + mark, mask=mark < N_AT, other=-1)
         p_h1 = tl.make_block_ptr(
             h + i_t.to(tl.int64) * stride_h,
             (V, K),
@@ -387,11 +392,12 @@ def chunk_gated_delta_rule_fwd_h(
     if n_at:
         if states_out is None or tuple(states_out.shape) != (N, n_at, H, V, K) or states_out.dtype != torch.float32:
             raise ValueError("states_out must be fp32 [N, len(states_at), H, V, K]")
-        at = torch.tensor([int(c) for c in states_at], dtype=torch.int32, device=k.device)
         if any(c < 0 or c >= NT for c in states_at) or list(states_at) != sorted(set(states_at)):
             raise ValueError("states_at are ascending chunk indices inside the sequence")
+        from .index import chunk_mark_indices
+        at = chunk_mark_indices(tuple(int(c) for c in states_at), k.device)
     else:
-        at = torch.zeros(1, dtype=torch.int32, device=k.device)          # unused: N_AT == 0 compiles the side output away
+        at = torch.zeros(1, dtype=torch.int32, device=k.device)          # unused: HAS_MARKS=False removes the side output
         states_out = at
 
     def grid(meta):
@@ -414,6 +420,7 @@ def chunk_gated_delta_rule_fwd_h(
         T=T,
         AUTOTUNE_REGIME=autotune_regime,
         N_AT=n_at,
+        HAS_MARKS=bool(n_at),
         H=H,
         Hg=Hg,
         K=K,
