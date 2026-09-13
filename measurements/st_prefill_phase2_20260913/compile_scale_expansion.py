@@ -61,6 +61,7 @@ def main():
         md.get_num_sm = lambda *a: 48
         md.get_max_active_clusters = lambda *a: 48
         md.build_and_load_cute_dsl_kernel = lambda module, name, build, **kw: build()
+        md.configure_static_v2('t,r,sf6')
         md.configure_tp_sf6_q0(True)
         for rows in (2672, 32256):
             for expansion in (False, True):
