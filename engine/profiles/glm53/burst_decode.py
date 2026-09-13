@@ -74,6 +74,8 @@ class BurstDecode(AsyncDecode):
         self.readback = dict(iterations=torch.empty(1, dtype=torch.int64, pin_memory=pin),
                              timings=torch.empty(4, 2, dtype=torch.int64, pin_memory=pin),
                              stages=torch.empty(4, 2*len(DeviceStages.NAMES), dtype=torch.int64, pin_memory=pin))
+        if getattr(engine, 'draft_diagnostics', None) is not None:
+            self.readback['rejection'] = torch.empty(4, n, 2, dtype=torch.int64, pin_memory=pin)
         if not pin:
             self.readback.update(tokens=torch.empty(4, n, self.t, dtype=torch.int64),
                                  count=torch.empty(4, n, dtype=torch.int64),
@@ -122,6 +124,8 @@ class BurstDecode(AsyncDecode):
                     for k in ("count", "accepted", "before")}
             logs["tokens"] = torch.empty(4, n, t, dtype=torch.int64, device=dev)
             logs["done"] = torch.empty(4, n, dtype=torch.bool, device=dev)
+        if getattr(e, 'draft_diagnostics', None) is not None:
+            logs['rejection'] = torch.empty(4, n, 2, dtype=torch.int64, device=dev)
         controls = dict(count=torch.zeros(1, dtype=torch.int64, device=dev),
                         stop=torch.zeros(1, dtype=torch.int64, device=dev),
                         interrupt=torch.zeros(1, dtype=torch.int64, device=dev),
@@ -133,8 +137,8 @@ class BurstDecode(AsyncDecode):
         n = shape[0]
         b, log, control = self.states[n], self.logs[n], self.controls[n]
         result = self.iterate(shape, b, stage_clock=DeviceStages(control["stages"], control["count"]))
-        if self.queue is None:
-            for key, value in result.items():
+        for key, value in result.items():
+            if key in log:
                 log[key].index_copy_(0, control["count"], value.unsqueeze(0))
         if self.queue is not None:
             self.queue.read_interrupt(control["interrupt"])
@@ -258,9 +262,8 @@ class BurstDecode(AsyncDecode):
                 with self._queue_lock:
                     self._queue_rows = ()
             raise
-        if self.queue is None:
-            for key, value in self.logs[n].items():
-                self.readback[key][:, :n].copy_(value, non_blocking=True)
+        for key, value in self.logs[n].items():
+            self.readback[key][:, :n].copy_(value, non_blocking=True)
         self.readback["iterations"].copy_(controls["count"], non_blocking=True)
         self.readback["timings"].copy_(loop.timings, non_blocking=True)
         self.readback["stages"].copy_(controls["stages"], non_blocking=True)
@@ -347,6 +350,8 @@ class BurstDecode(AsyncDecode):
         pending.iteration_records = []
         for j in range(iterations):
             result = pending.outcomes[j]
+            if 'rejection' in host:
+                e.draft_diagnostics.note(pending.seqs, result['before'], host['rejection'][j, :n].tolist())
             stage_us = {name: (stages[j][2*k+1]-stages[j][2*k])*1e-3
                         for k, name in enumerate(DeviceStages.NAMES) if stages[j][2*k] >= 0}
             for name, us in stage_us.items():

@@ -40,7 +40,8 @@ class KnobDeclarationTests(unittest.TestCase):
         cfg = self._declared({"STK_mla_prefill":"stock", "STK_context_ceiling":"131072"})
         self.assertEqual(set(cfg.knobs), {"mla_prefill", "context_ceiling", "kda_state_dtype",
                                           "execution_overlap", "early_observe", "prefill_tiles", "direct_mhc", "prefill_project_tiles",
-                                          "nvme_mapped_staging", "decode_iterations", "deferred_kda", "terminal_mhc"})
+                                          "nvme_mapped_staging", "decode_iterations", "deferred_kda", "terminal_mhc",
+                                          "draft_fc_precision", "draft_fc_calibration", "draft_diagnostics"})
         self.assertEqual((cfg["mla_prefill"], cfg["context_ceiling"]), ("stock", 131072))
         self.assertEqual((cfg["execution"], cfg["moe_static"]), ("native", "t,r,sf6,q0"))
         from engine.base.config import ConfigError
@@ -62,6 +63,19 @@ class KnobDeclarationTests(unittest.TestCase):
         for key in ("execution_overlap", "early_observe", "prefill_tiles", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "decode_iterations"):
             with self.subTest(key=key), self.assertRaises(ConfigError):
                 self._declared({"STK_"+key:"1"}, production=True)
+
+    def test_acceptance_experiments_remain_off_and_cannot_override_production(self):
+        from engine.base.config import ConfigError
+        defaults = {'draft_fc_precision': 'w4', 'draft_fc_calibration': 'shared', 'draft_diagnostics': 0}
+        choices = {'draft_fc_precision': 'fp8', 'draft_fc_calibration': 'collect', 'draft_diagnostics': 1}
+        for production in (False, True):
+            cfg = self._declared({}, production=production)
+            self.assertEqual({key: cfg[key] for key in defaults}, defaults)
+        cfg = self._declared({'STK_' + key: str(value) for key, value in choices.items()})
+        self.assertEqual({key: cfg[key] for key in choices}, choices)
+        for key, value in choices.items():
+            with self.subTest(key=key), self.assertRaises(ConfigError):
+                self._declared({'STK_' + key: str(value)}, production=True)
 
 
 class MoeStaticSpecTests(unittest.TestCase):

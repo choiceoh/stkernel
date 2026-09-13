@@ -151,6 +151,8 @@ class Run:
         directory = self.path / self.phase
         directory.mkdir(exist_ok=True)
         write(directory / 'server.json', report)
+        from draft_rejections import summarize as summarize_rejections
+        write(directory / 'draft-rejections.json', summarize_rejections(report))
         # Different ranks and profiled steps have different clocks. Never union
         # them together, or add CPU launch and GPU device durations.
         unions = []

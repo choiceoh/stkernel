@@ -38,6 +38,7 @@ class Calibration:
         self.staging = {}                                  # key -> (declared-input row buffer, device cursor); CUDA small-row Hessians only
         self.amax, self.unsmooth = {}, {}                   # blob key -> channel peaks [width]; layer name -> the s its input was divided by
         self.deferred = []                                  # (layer name, key) that did not fit this boot's budget
+        self.input_scopes = {}
         self.armed = torch.zeros((), dtype=torch.float32, device=self.device)
         self.filed = None                                   # the paths written, once
 
@@ -50,12 +51,14 @@ class Calibration:
         for tile in missing:
             yield tile[0], tile[1], tile[2], (bool(tile[3]) if len(tile) > 3 else True)
 
-    def attach(self, name: str, layer, missing, small_rows: bool, unsmooth=None) -> bool:
+    def attach(self, name: str, layer, missing, small_rows: bool, unsmooth=None, *, decode_only=False) -> bool:
         """Sum `layer`'s input over the tiles in `missing` (store.Need); `small_rows`: its calls of <= max_decode_rows
         rows are real (with the caller's mask) -- False for a layer whose decode rows may be ghosts. `unsmooth` [K]:
         the factor this boot divided the input by (smoothing folded into its norm) -- the sums are filed in the
         unsmoothed domain so every boot derives its own factors from scratch. Returns whether the tiles fit the
         budget (all or nothing per layer)."""
+        if decode_only and not small_rows:
+            raise ValueError('decode-only calibration requires committed small rows')
         decode_rows = self.max_decode_rows if small_rows and self.device.type == "cuda" else 0
         input_dtype = getattr(layer, 'input_dtype', torch.float32)
         need = self.nbytes(missing, max_decode_rows=decode_rows, input_dtype=input_dtype)
@@ -79,9 +82,17 @@ class Calibration:
             self.amax[key] = torch.zeros(width, dtype=torch.float32, device=self.device)
         self.used += need
         self.tiles[name] = [(key, start, width, hessian) for key, start, width, hessian in self._needs(missing)]
+        if decode_only:
+            self.input_scopes.update({key: 'committed_decode_v1' for key, *_ in self.tiles[name]})
         if unsmooth is not None:
             self.unsmooth[name] = unsmooth.detach().float().to(self.device)
-        layer.observer = lambda flat, rows_ok, name=name, small=small_rows: self.observe(name, flat, rows_ok, small)
+        def observer(flat, rows_ok):
+            # A short prompt is not decode. Only explicit committed-row masks
+            # from observe/observe_prepared identify the decode input domain.
+            if decode_only and (rows_ok is None or flat.shape[0] > self.max_decode_rows):
+                return
+            self.observe(name, flat, rows_ok, small_rows)
+        layer.observer = observer
         return True
 
     @staticmethod
@@ -187,7 +198,10 @@ class Calibration:
             path.parent.mkdir(parents=True, exist_ok=True)
             temporary = path.with_suffix(f".{os.getpid()}.tmp")            # a boot that dies mid-write leaves the old blob, not a truncated one
             try:
-                torch.save({"H": H.cpu().contiguous(), "amax": amax.cpu().contiguous(), "ntok": ntok, "name": key}, temporary)
+                blob = {"H": H.cpu().contiguous(), "amax": amax.cpu().contiguous(), "ntok": ntok, "name": key}
+                if key in self.input_scopes:
+                    blob['input_scope'] = self.input_scopes[key]
+                torch.save(blob, temporary)
                 os.replace(temporary, path)
             finally:
                 temporary.unlink(missing_ok=True)
