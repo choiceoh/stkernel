@@ -59,8 +59,8 @@ def padded_columns(cols: int) -> int:
     return -(-cols // DENSE_ALIGN) * DENSE_ALIGN
 
 
-def packed_nbytes(rows, cols, *, prefill=True, decode_fp8=False):
-    """Aligned resident bound for W4 tiles (folded or not) plus optional FP8.
+def packed_nbytes(rows, cols, *, prefill=True, decode_fp8=False, decode_w4=True):
+    """Aligned resident bound for the selected W4 and FP8 readers.
 
     Calibration may fold tiles and share their row scale, so declare the larger
     unmerged form. This does not reserve the BF16 source or packing scratch.
@@ -71,7 +71,7 @@ def packed_nbytes(rows, cols, *, prefill=True, decode_fp8=False):
     def add(size):
         nonlocal end
         end = (end + 255) // 256 * 256 + size
-    for start in range(0, cols, TILE):
+    for start in range(0, cols if decode_w4 else 0, TILE):
         width = min(TILE, cols - start)
         add(padded * width // 2)  # two W4 values per byte
         add(padded * width // 16)  # one E4M3 scale per group
@@ -230,7 +230,9 @@ class DenseLinear:
         self.executed = 0  # boot proof: W4=1, FP8=2
         self.workspace = None  # optional private W4 scratch for independent execution
         packs = []
-        if self.cols > TILE and store is not None and store.calibrated(w4_name):
+        if decode_precision == 'fp8':
+            pass  # No W4 invocation exists: skip its packing, factorisation and resident bytes.
+        elif self.cols > TILE and store is not None and store.calibrated(w4_name):
             packs = list(store.pack_wide(weight, w4_name, smooth=smooth))   # one GPTQ over the whole K, from the full Hessian
         elif self.cols > TILE and hessians is not None and hessians.shape == (self.cols, self.cols):
             packs = pack_w4_wide(weight, hessians)
@@ -242,7 +244,7 @@ class DenseLinear:
                              pack_w4(w, hessian=None if hessians is None else hessians[start//TILE]))
         self.packs = tuple(_fold(packs))
         packs.clear()                     # the folded copy is the pack now; the tiles are 42 MiB of nothing
-        self.calibrated = all(p.calibrated for p in self.packs)
+        self.calibrated = bool(self.packs) and all(p.calibrated for p in self.packs)
         if prefill:
             # the FP8 lane's weights: GPTQ on the fp8 grid from the same calibration, else round-to-nearest
             fp8 = store.pack_fp8(weight, name, smooth=smooth) if (store is not None and store.calibrated(name)) else None
@@ -279,6 +281,8 @@ class DenseLinear:
         One owner, one stream at a time. Counter words start at zero and are
         rearmed by every completed GEMM. Packs and arithmetic are unchanged.
         """
+        if not self.packs:
+            raise ValueError('a private W4 workspace requires a prepared W4 lane')
         if self.workspace is None:
             self.workspace = torch.zeros(extension().gemm_workspace_elements(), dtype=torch.float32,
                                          device=self.packs[0].data.device)

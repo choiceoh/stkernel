@@ -26,7 +26,9 @@ each row above. Do not present an environment override as a bracket arm.
 
 1. **FC FP8** changes only the drafter's FC projection of target context states.
    Its existing FP8 pack is reused for small calls, retaining W4 packs for the
-   other draft layers. It introduces no new full-precision weight copy. A higher
+   other draft layers. The unused FC W4 pack is neither built nor reserved,
+   saving about 45 MiB per rank and avoiding its GPTQ packing work. It introduces
+   no new full-precision weight copy. A higher
    acceptance rate can still lose tok/s through more expensive FC compute.
 2. **Decode GPTQ** collects only explicitly committed decode rows. Prefill,
    short prompts, capture/warmup, ghost rows and rejected suffixes do not enter
@@ -36,13 +38,20 @@ each row above. Do not present an environment override as a bracket arm.
    stays within the existing 2 GiB calibration budget. Consume on a subsequent
    boot. Missing, incomplete or foreign calibration fails before serving.
    With W4 decode, only the FC W4 pack uses it. With FP8 decode, a separate
-   FP8 pack is GPTQ-calibrated on the FP8 grid using this Hessian; shared W4
-   and prefill FP8 packs retain their identities. The context call explicitly
+   FP8 pack is GPTQ-calibrated on the FP8 grid using this Hessian; the shared
+   prefill FP8 pack retains its identity. The context call explicitly
    identifies decode, including early projection and synchronous commits;
    small prefill calls never select the decode pack. The extra FP8 pack
-   occupies 80.02 MiB per rank for the current FC, declared in both the boot
-   arena and budget table, and compacted into arena-owned storage. Native
+   occupies 80.02 MiB per rank for the current FC; after removing the unused W4
+   reservation, the combined arm adds about 35 MiB over the baseline. Both the
+   boot arena and budget table declare these readers, compacted into arena-owned storage. Native
    qualification refuses a prepared but unexecuted decode FP8 pack.
+   Validation checks the blob's scope, name, row count, FP32 statistics, shapes
+   and finite nonempty signal before arena admission. Hessian validation uses
+   bounded chunks, and returns its clean file pages before the large allocation.
+   Excluded rows are selected away before arithmetic (and not loaded by the
+   CUDA observer): NaN/Inf verifier scratch cannot enter statistics through
+   `0 * NaN`. Nonfinite committed rows remain visible as errors.
 3. **First-rejection attribution** reads the actual global top-16 support and
    the first mismatching target greedy pick. `candidate_miss` means the target
    token was absent; `selector_miss` means it was present but not selected.

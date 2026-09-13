@@ -91,6 +91,9 @@ class Calibration:
             # from observe/observe_prepared identify the decode input domain.
             if decode_only and (rows_ok is None or flat.shape[0] > self.max_decode_rows):
                 return
+            if decode_only and (rows_ok.dtype != torch.bool or rows_ok.shape != (flat.shape[0],)
+                                or rows_ok.device != flat.device):
+                raise ValueError('decode calibration requires a boolean committed-row mask matching the input')
             self.observe(name, flat, rows_ok, small_rows)
         layer.observer = observer
         return True
@@ -132,6 +135,12 @@ class Calibration:
             observe(flat, self.armed, self.tiles[name], self.H, self.amax, self.rows, ROWS_TARGET)
             return
         xf = flat.float()
+        # Multiplying rejected/warmup NaN or Inf by zero still produces NaN.
+        # Select them away before arithmetic; never conceal a live-row error.
+        live = self.armed != 0
+        if rows_ok is not None:
+            live = live & (rows_ok != 0).view(-1, 1)
+        xf = torch.where(live, xf, 0.)
         if rows_ok is not None:
             xf = xf * rows_ok.to(xf.dtype).view(-1, 1)
         xf = xf * self.armed

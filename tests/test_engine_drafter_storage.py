@@ -107,21 +107,23 @@ class DrafterStorageTests(unittest.TestCase):
 
     def test_combined_fp8_is_declared_and_both_packs_are_sent_to_compaction(self):
         import torch
-        from engine.kernels.dense import DenseLinear, W4Pack, packed_nbytes
+        from engine.kernels.dense import DenseLinear, packed_nbytes
         from engine.profiles.glm53.draft_policy import DraftPolicy
         from engine.profiles.glm53.drafter_storage import nbytes
         F = self.facts()
         extra = nbytes(F, 4, 4, policy=DraftPolicy('fp8', 'decode', True)) - nbytes(F, 4, 4)
-        self.assertEqual(extra, 4096 * 20480 + (4096 // 128) * (20480 // 128) * 4)
+        fp8_bytes = 4096 * 20480 + (4096 // 128) * (20480 // 128) * 4
+        w4_bytes = 4096 * 20480 // 2 + 4096 * 20480 // 16 + 5 * 4096 * 4
+        self.assertEqual(extra, fp8_bytes - w4_bytes)
+        self.assertEqual(nbytes(F, 4, 4) - nbytes(F, 4, 4, policy=DraftPolicy('fp8')), w4_bytes)
         layer = DenseLinear.__new__(DenseLinear)
-        layer.packs = (W4Pack(torch.ones(8192, dtype=torch.uint8), torch.ones(1024, dtype=torch.uint8),
-                            torch.ones(128), 128, 128),)
+        layer.packs = ()
         def fp8():
             return SimpleNamespace(weight=(torch.ones(128, 128, dtype=torch.uint8), torch.ones(1, 1)))
         layer.fp8, layer.decode_fp8 = fp8(), fp8()
         sources = tuple(t for p in layer.packs for t in (p.data, p.scale, p.rowscale)) + layer.fp8.weight + layer.decode_fp8.weight
         destinations = tuple(torch.zeros_like(t) for t in sources)
-        storage = torch.empty(packed_nbytes(128, 128, decode_fp8=True), dtype=torch.uint8)
+        storage = torch.empty(packed_nbytes(128, 128, decode_fp8=True, decode_w4=False), dtype=torch.uint8)
         # The allocator itself requires CUDA. This CPU contract checks the
         # complete handoff and rebinding without weakening that guard.
         with patch('engine.modules.packed_storage.consume', return_value=destinations) as consume:

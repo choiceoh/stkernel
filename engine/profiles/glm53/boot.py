@@ -409,6 +409,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     memory = None
     redeclare = None                    # the same table, re-runnable once a ledger exists (45차 §51)
     if len(net.layers) == F.layers:
+        if store is not None:
+            store.release_pages()  # decode calibration validation read H before allocating the arena
         # Fixed byte ceilings, not a measured workspace claim. Preparation
         # records peaks for the largest prefill and every declared graph.
         # One source, not two: the same literals lived here and in budget.py, and the budget
