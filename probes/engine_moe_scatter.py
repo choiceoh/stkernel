@@ -23,6 +23,8 @@ def _reduce_routes(Partial, Out, K: tl.constexpr, PARTS: tl.constexpr, BLOCK: tl
 
 
 class RouteScatter:
+    owns_route_scatter = True
+
     def __init__(self, compiled, rows, width=4096, routes=8, partials=4):
         if rows not in (7, 14, 21, 28) or (width, routes, partials) != (4096, 8, 4):
             raise ValueError('route scatter owns only GLM TP4 decode output')

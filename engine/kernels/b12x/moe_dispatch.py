@@ -3490,6 +3490,8 @@ def launch_sm120_static_moe(
                 activation_precision=activation_precision,
                 quant_mode=quant_mode,
             )
+            if static_v2_config.get("probe_route_scatter") and not getattr(compiled, "owns_route_scatter", False):
+                raise RuntimeError("route-scatter probe requires its prewarmed output owner and reduction")
             static_v2_stamps = _static_v2_stamps_tensor(mac, a.device)
             static_v2_counter = _static_v2_counter_tensor(a.device)
         else:
