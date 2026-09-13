@@ -63,7 +63,7 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench"}, selected
 
     if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'paired_projection', 'indexer_boundary', 'wide_input', 'direct_producer'}:
         from probes.engine_decode_bundle import require_current_probe
@@ -92,6 +92,11 @@ def main():
         from probes.engine_decode_projection import paired_check
         if 'paired_projection' in selected:
             paired_check(report, args.ranks)
+
+    if "kda_ring_bench" in selected:
+        # timing only: the KDA ring launch at 1..4 rows, FP32 vs FP16 storage, cold and warm -- bytes or programs?
+        from probes.engine_kda_ring_bench import bench
+        bench(report)
 
     if "decode_rows" in selected:
         import unittest

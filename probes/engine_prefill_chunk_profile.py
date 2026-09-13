@@ -102,6 +102,150 @@ def fit_fixed_cost(points):
     return float(F), float(v)
 
 
+def trace_kernels(path):
+    """A chrome trace's device events (kernels, memcpy, memset) as (name, stream, start_us, end_us)."""
+    trace = json.loads(Path(path).read_text())
+    out = []
+    for e in trace.get("traceEvents", []):
+        if e.get("cat") in ("kernel", "gpu_memcpy", "gpu_memset") and "dur" in e:
+            args = e.get("args", {})
+            out.append((e.get("name", "?"), int(args.get("stream", -1)), float(e["ts"]), float(e["ts"]) + float(e["dur"])))
+    return out
+
+
+def _merge(intervals):
+    """Sorted, merged (start, end) intervals."""
+    merged = []
+    for s, e in sorted(intervals):
+        if merged and s <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+        else:
+            merged.append((s, e))
+    return merged
+
+
+def _covered(s, e, merged):
+    """How much of [s, e) lies inside the merged intervals."""
+    import bisect
+    total = 0.0
+    i = max(bisect.bisect_right(merged, (s, float("inf"))) - 1, 0)
+    while i < len(merged) and merged[i][0] < e:
+        a, b = merged[i]
+        total += max(0.0, min(b, e) - max(a, s))
+        i += 1
+    return total
+
+
+def trace_exposure(events, steps: int):
+    """What a step's kernels cost on the critical path, not in their sum (45차, the kernel-efficiency question:
+    ledger 30차 found the shared expert's GEMMs beside MoE reading 135 us where alone they take 18).
+
+    `events`: (name, stream, start_us, end_us) over `steps` replays. Per lane and per kernel: the raw device
+    time and the EXPOSED time -- the part of a kernel not covered by any kernel on another stream, i.e. what
+    the wall clock actually waited on. Also the wall span, the union of all kernels (GPU busy) and the gaps."""
+    if not events:
+        return dict(wall_ms=0.0, busy_ms=0.0, idle_ms=0.0, streams=[], lanes={}, kernels=[])
+    by_stream = {}
+    for name, stream, s, e in events:
+        by_stream.setdefault(stream, []).append((s, e))
+    others = {st: _merge([iv for o, ivs in by_stream.items() if o != st for iv in ivs]) for st in by_stream}
+    lanes, kernels = {}, {}
+    for name, stream, s, e in events:
+        raw = e - s
+        exposed = raw - _covered(s, e, others[stream])
+        lane = lanes.setdefault(lane_of(name), [0.0, 0.0, 0])
+        lane[0] += raw; lane[1] += exposed; lane[2] += 1
+        k = kernels.setdefault(name, [0.0, 0.0, 0])
+        k[0] += raw; k[1] += exposed; k[2] += 1
+    union = _merge([(s, e) for _, _, s, e in events])
+    busy = sum(e - s for s, e in union)
+    wall = max(e for _, _, _, e in events) - min(s for _, _, s, _ in events)
+    top = sorted(kernels.items(), key=lambda kv: -kv[1][1])[:30]
+    return dict(wall_ms=wall / steps / 1000, busy_ms=busy / steps / 1000, idle_ms=(wall - busy) / steps / 1000,
+                streams=sorted(by_stream),
+                lanes={lane: dict(raw_ms=v[0] / steps / 1000, exposed_ms=v[1] / steps / 1000, launches=v[2] / steps)
+                       for lane, v in sorted(lanes.items(), key=lambda kv: -kv[1][1])},
+                kernels=[dict(kernel=name[:100], raw_us=v[0] / steps, exposed_us=v[1] / steps, launches=v[2] / steps) for name, v in top])
+
+
+def print_exposure(title, ex):
+    print(f"\n  {title}: wall {ex['wall_ms']:.2f} ms, kernels busy {ex['busy_ms']:.2f} ms, gaps {ex['idle_ms']:.2f} ms, streams {ex.get('streams')}")
+    print(f"  {'lane':22s}{'raw ms':>9s}{'exposed':>9s}{'hidden':>8s}{'launches':>10s}")
+    for lane, v in ex["lanes"].items():
+        print(f"  {lane:22s}{v['raw_ms']:9.2f}{v['exposed_ms']:9.2f}{v['raw_ms'] - v['exposed_ms']:8.2f}{v['launches']:10.1f}")
+    for k in ex["kernels"][:14]:
+        print(f"      {k['exposed_us'] / 1000:8.3f} ms exposed of {k['raw_us'] / 1000:8.3f} x{k['launches']:6.1f}  {k['kernel'][:72]}")
+
+
+def _pack_bytes(net, key):
+    """Bytes a dense lane streams for one call: the W4 packs (data + scales + row scales), else the bf16 weight."""
+    layer = net.dense.get(key)
+    if layer is not None:
+        return sum(t.numel() * t.element_size() for p in layer.packs for t in (p.data, p.scale, p.rowscale))
+    w = net.p[key]
+    return w.numel() * w.element_size()
+
+
+def isolated_kernels(net, F, dev, rows_list, samples):
+    """Each kernel class of the decode step by itself, at the step's widths: dense projections (bytes from their
+    packs), the shared expert pair, the routed experts (bytes from the unique experts the router picked), the
+    router, the fused mHC post+pre. Minimum of `samples` CUDA-event timings after warmup, and the achieved GB/s
+    against the bytes -- the per-kernel floor the timeline's exposed times are read against."""
+    out = []
+    kda = next(l for l in net.layers if not F.is_dsa(l) and F.is_moe(l))
+    dsa = next(l for l in net.layers if F.is_dsa(l))
+    moe = next(l for l in net.layers if F.is_moe(l))
+    start, end = (torch.cuda.Event(enable_timing=True) for _ in range(2))
+
+    def timed(label, fn, nbytes, rows, extra=None):
+        for _ in range(3):
+            fn()
+        torch.cuda.synchronize()
+        times = []
+        for _ in range(samples):
+            start.record(); fn(); end.record(); end.synchronize()
+            times.append(start.elapsed_time(end) * 1000)
+        us = min(times)
+        row = dict(kernel=label, rows=rows, us=us, median_us=statistics.median(times), mb=nbytes / 2**20,
+                   gbps=nbytes / us / 1000 if us else None, floor_us_273=nbytes / 273e3, floor_us_245=nbytes / 245e3)
+        if extra:
+            row.update(extra)
+        out.append(row)
+        print(f"  isolated rows={rows:2d} {label:30s} {us:8.1f} us  {nbytes / 2**20:7.2f} MiB  {row['gbps']:6.0f} GB/s"
+              f"  (floor {row['floor_us_273']:.1f} us at 273)", flush=True)
+
+    def width(key):
+        return net.dense[key].cols if key in net.dense else net.p[key].shape[1]
+
+    for rows in rows_list:
+        x = torch.randn(rows, F.hidden, device=dev, dtype=torch.bfloat16)
+        for L, names in ((kda, ("kda.in_proj", "kda.o_proj", "kda.f_b", "kda.g_b")),
+                         (dsa, ("mla.qkv_a", "mla.q_b", "mla.o_proj", "idx.wq_b", "idx.wk", "idx.gate")),
+                         (moe, ("moe.sh_gate_up", "moe.sh_down"))):
+            for name in names:
+                key = f"L{L}.{name}"
+                xi = torch.randn(rows, width(key), device=dev, dtype=torch.bfloat16)
+                timed(name, lambda xi=xi, key=key: net.linear(xi, key), _pack_bytes(net, key), rows)
+        shared = net.shared_mlp[moe]
+        timed("shared_mlp (pair)", lambda: shared(x),
+              _pack_bytes(net, f"L{moe}.moe.sh_gate_up") + _pack_bytes(net, f"L{moe}.moe.sh_down"), rows)
+        sel, w = net.route(moe, x)
+        unique = int(torch.unique(sel).numel())
+        p = net.p
+        w13, w2 = p[f"L{moe}.moe.w13"], p[f"L{moe}.moe.w2"]
+        expert_bytes = (w13[0].numel() * w13.element_size() + w2[0].numel() * w2.element_size()
+                        + (p[f"L{moe}.moe.w13_sf"][0].numel() + p[f"L{moe}.moe.w2_sf"][0].numel()) * 6 // 8)
+        timed("moe experts (static)", lambda: net._experts[moe](x, sel, w), unique * expert_bytes, rows,
+              extra=dict(unique_experts=unique, expert_bytes=expert_bytes))
+        timed("router (logits + weights)", lambda: net.route(moe, x), _pack_bytes(net, f"L{moe}.moe.gate"), rows)
+        res = torch.randn(rows, F.hc, F.hidden, device=dev, dtype=torch.bfloat16)
+        post, comb, x1 = net._hc_pre(kda, res, "attn")
+        fn_bytes = sum(net.p[f"L{kda}.hc.{s}"].numel() * net.p[f"L{kda}.hc.{s}"].element_size()
+                       for s in ("ffn_fn", "ffn_scale", "ffn_base"))
+        timed("mhc post+pre (fused)", lambda: net._hc_post_pre(kda, x1, res, post, comb, "ffn"), fn_bytes, rows)
+    return out
+
+
 def overlap_summary(windows, chunk, solo_decode_ms, solo_chunk_ms):
     """Pure arithmetic over the two streams' event times (ms from one origin).
 
@@ -272,12 +416,16 @@ def main():
                          "('t,r') has no prefill kernel (the dispatcher refuses it); the row-major 'u' cell is the stock pair")
     ap.add_argument("--lanes", default="decode,prefill",
                     help="sections: decode (rows 1..4), prefill (the chunk sweep), coexist (a chunk beside four decoding rows, "
-                         "two streams), moe (one MoE layer's routed experts alone: tokens x resident CTAs, against the traffic model)")
+                         "two streams), moe (one MoE layer's routed experts alone: tokens x resident CTAs, against the traffic model), "
+                         "timeline (with decode: the 1- and 4-row replays' chrome traces read for exposed vs hidden time per lane, "
+                         "and every kernel class alone at 7 and 28 rows against its bytes)")
     ap.add_argument("--output", default="/cache/prefill-chunk-profile.json")
     a = ap.parse_args()
     lanes = {x.strip() for x in a.lanes.split(",") if x.strip()}
-    if not lanes or lanes - {"decode", "prefill", "coexist", "moe"}:
-        raise SystemExit(f"--lanes takes decode, prefill, coexist and/or moe: {a.lanes!r}")
+    if not lanes or lanes - {"decode", "prefill", "coexist", "moe", "timeline"}:
+        raise SystemExit(f"--lanes takes decode, prefill, coexist, moe and/or timeline: {a.lanes!r}")
+    if "timeline" in lanes:
+        lanes.add("decode")                          # the timeline reads the decode replays
 
     F = facts.load(a.ckpt_meta)
     layers = list(range(F.layers))
@@ -376,15 +524,26 @@ def main():
                     graphs.run(step)
                 torch.cuda.synchronize()
             table = kernel_table(prof, a.samples)
+            if "timeline" in lanes:
+                # the same replays as a timeline: which kernels the wall clock waited on, and which ran under another
+                # stream's (45차 kernel efficiency: the shared expert's GEMMs beside the MoE kernel, 30차)
+                trace = Path(a.output).with_name(f"decode-timeline-rows{n}.json")
+                trace.parent.mkdir(parents=True, exist_ok=True)
+                prof.export_chrome_trace(str(trace))
+                exposure = trace_exposure(trace_kernels(trace), a.samples)
+                print_exposure(f"decode rows={n} timeline", exposure)
         row = dict(rows=n, tokens=n * t, replay_ms_median=statistics.median(times), replay_ms_min=min(times),
                    unique_experts_mean=statistics.mean(unique.values()) if unique else None,
-                   unique_experts=unique, kernels=table)
+                   unique_experts=unique, kernels=table, timeline=exposure if (table and "timeline" in lanes) else None)
         decode.append(row)
         print(f"decode rows={n}: {row['replay_ms_median']:.2f} ms/step (min {row['replay_ms_min']:.2f}), "
               f"unique experts/layer {row['unique_experts_mean']:.1f}", flush=True)
         if table:
             print_table(f"decode rows={n} kernels", table)
     result["decode"] = decode
+    if "timeline" in lanes:
+        print("\n  kernel classes alone (min of samples; floor = bytes / 273 GB/s):", flush=True)
+        result["isolated"] = isolated_kernels(net, F, dev, (t, rows_max * t), a.samples)
     if "coexist" in lanes:
         result["coexist"] = coexist(net, caches, graphs, ids, ctx0, slots, chunks[0], lo, hi, a.samples, dev)
     graphs.graphs.close()                            # its pools go back to the allocator before the long prefills
@@ -455,11 +614,17 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=1))
     print(f"\nwrote {out}", flush=True)
-    print("RESULT " + json.dumps(dict(decode=[{k: v for k, v in r.items() if k not in ("kernels", "unique_experts")} for r in decode],
+    def brief(r):
+        r = {k: v for k, v in r.items() if k not in ("kernels", "unique_experts")}
+        if r.get("timeline"):
+            r["timeline"] = {k: v for k, v in r["timeline"].items() if k != "kernels"}
+        return r
+    print("RESULT " + json.dumps(dict(decode=[brief(r) for r in decode],
                                       prefill=[{k: v for k, v in p.items() if k not in ("steps", "first_chunk_kernels")} for p in prefill],
                                       fit=fit,
                                       coexist={k: v for k, v in result["coexist"].items() if k not in ("windows",)}
-                                      if "coexist" in result else None)), flush=True)
+                                      if "coexist" in result else None,
+                                      isolated=result.get("isolated"))), flush=True)
 
 
 if __name__ == "__main__":

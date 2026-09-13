@@ -70,3 +70,40 @@ class HelperTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExposureTests(unittest.TestCase):
+    """The timeline arm's arithmetic: a kernel's exposed time is the part no other stream's kernel covers."""
+
+    def test_exposed_time_subtracts_only_other_streams(self):
+        import importlib
+        probe = importlib.import_module("probes.engine_prefill_chunk_profile")
+        events = [
+            ("moe_static_kernel", 7, 0.0, 100.0),        # stream 7: 0..100
+            ("mk_gemm2_kernel", 9, 10.0, 40.0),          # stream 9: inside the MoE kernel -> hidden entirely
+            ("mk_gemm2_kernel", 9, 90.0, 130.0),         # stream 9: 90..130 -> 10 hidden, 30 exposed
+            ("mk_mhc_ar_kernel", 7, 130.0, 150.0),       # stream 7 alone -> exposed
+            ("mk_gemm2_kernel", 7, 20.0, 30.0),          # same stream as MoE: never subtracted by its own stream
+        ]
+        ex = probe.trace_exposure(events, steps=1)
+        lanes = ex["lanes"]
+        self.assertAlmostEqual(lanes["MoE"]["raw_ms"], 0.100)
+        self.assertAlmostEqual(lanes["MoE"]["exposed_ms"], 0.100 - 0.030 - 0.010)   # covered by stream 9's 10..40 and 90..100
+        self.assertAlmostEqual(lanes["dense GEMM"]["raw_ms"], 0.080)
+        self.assertAlmostEqual(lanes["dense GEMM"]["exposed_ms"], 0.030)             # 10..40 hidden, 20..30 (stream 7) hidden by 9's 10..40, 100..130 exposed
+        self.assertAlmostEqual(lanes["mHC"]["exposed_ms"], 0.020)
+        self.assertAlmostEqual(ex["wall_ms"], 0.150)
+        self.assertAlmostEqual(ex["busy_ms"], 0.150)
+        self.assertAlmostEqual(ex["idle_ms"], 0.0)
+        self.assertEqual(ex["streams"], [7, 9])
+
+    def test_gaps_and_steps_divide(self):
+        import importlib
+        probe = importlib.import_module("probes.engine_prefill_chunk_profile")
+        events = [("a_kernel", 1, 0.0, 10.0), ("a_kernel", 1, 20.0, 30.0)]
+        ex = probe.trace_exposure(events, steps=2)
+        self.assertAlmostEqual(ex["wall_ms"], 0.015)
+        self.assertAlmostEqual(ex["busy_ms"], 0.010)
+        self.assertAlmostEqual(ex["idle_ms"], 0.005)
+        self.assertEqual(ex["lanes"]["other"]["launches"], 1.0)
+        self.assertEqual(probe.trace_exposure([], 1)["lanes"], {})
