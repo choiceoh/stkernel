@@ -607,7 +607,7 @@ class ProbeLeaseTests(unittest.TestCase):
         self.assertIn("def fleet_lease_of()", boot)
         # the reservation is now taken at the top of fleet() -- before the 67 GiB, not after -- and carried
         self.assertIn("lease = fleet_lease_of()", boot)
-        self.assertIn("lease=lease)", boot)
+        self.assertIn("lease=lease, park_min_tokens=PARK_MIN_TOKENS)", boot)
         self.assertIn("serving = True\n        server.loop()", boot, "and the loop runs once the door is built")
 
 

@@ -165,6 +165,10 @@ CHAT_TEMPLATE = "chat_template_mm_v2.jinja"     # what production serves with (l
 REASONING_EFFORT_ALIASES = {"max": "high"}       # accept existing clients while capping this model at high
 REASONING_END = "</think>"                       # the model closes its reasoning with this token; the door splits content there
 REQUEST_TIMEOUT_S = 3600.0                       # a request older than this is cancelled (the production probe's long-ingest bound x12)
+# A finished turn shorter than this is released, not parked. A GLM-5.3 slot's recurrent state is ~256 MiB a rank
+# whatever the length, so parking a 17-token health ping wrote that to NVMe every thirty seconds and pushed real
+# conversations out of the tier's LRU (2026-09-13); prefilling 128 tokens again costs less than reading it back.
+PARK_MIN_TOKENS = 128
 
 
 def chat_renderer(ckpt=facts.CKPT):
@@ -1143,7 +1147,7 @@ def fleet(a) -> int:
                tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_grammar=tool_grammar,
                         tool_call_start=tool_call_token(tok), generation=generation_defaults(a.ckpt_meta),
                vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 else None,
-               latency_root=Path(a.dump_dir) / 'onepass-latency', lease=lease)
+               latency_root=Path(a.dump_dir) / 'onepass-latency', lease=lease, park_min_tokens=PARK_MIN_TOKENS)
         serving = True
         server.loop()
     except BaseException as exc:
