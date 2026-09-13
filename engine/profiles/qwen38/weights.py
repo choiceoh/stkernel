@@ -58,8 +58,9 @@ class Shard:
 
 
 def as_torch(array: np.ndarray, stored: str) -> torch.Tensor:
-    """A stored array as a torch tensor of its real dtype (bf16 and e4m3 travel as 16- and 8-bit integers)."""
-    t = torch.from_numpy(np.ascontiguousarray(array))
+    """A stored array as a torch tensor of its real dtype (bf16 and e4m3 travel as 16- and 8-bit integers): a copy,
+    off the read-only map."""
+    t = torch.from_numpy(np.array(array, copy=True))
     if stored == "BF16":
         return t.view(torch.bfloat16)
     if stored == "F8_E4M3":

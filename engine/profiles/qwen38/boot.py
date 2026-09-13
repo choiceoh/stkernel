@@ -140,7 +140,7 @@ def main(argv=None) -> int:
     model, runner, plan = build(composition, cfg, ends, kv_gib=a.kv_gib, max_seqs=a.max_seqs, block_tokens=a.block_tokens,
                                 chunk=a.chunk, token_budget=a.token_budget, snapshots=a.snapshots, max_new=a.max_new,
                                 temperature=a.temperature)
-    print(f"  {'tiny' if a.tiny else a.ckpt}: {len(cfg['layer_types'])} layers, vocab {cfg['vocab_size']}, {cfg.get('dtype', a.dtype)}; "
+    print(f"  {'tiny' if a.tiny else a.ckpt}: {len(cfg['layer_types'])} layers, vocab {cfg['vocab_size']}, {'float32' if a.tiny else a.dtype}; "
           f"kv {plan.num_blocks} blocks x {plan.block_tokens} tokens ({plan.paged_gib:.3f} GiB), {plan.num_slots - 1} slots "
           f"of {plan.slot_bytes / 2**20:.1f} MiB; built in {time.perf_counter() - t0:.1f} s", flush=True)
     from engine.base.comm import Comm
