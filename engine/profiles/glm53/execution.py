@@ -20,9 +20,10 @@ class ExecutionPlan:
     deferred_kda: bool = False
     terminal_mhc: bool = False
     prefill_indexer_shards: bool = False
+    prefill_dense_prefix: bool = False
 
     def __post_init__(self):
-        if any(type(v) is not bool for v in (self.overlap, self.early_observe, self.direct_mhc, self.prefill_project_tiles, self.deferred_kda, self.terminal_mhc, self.prefill_indexer_shards)):
+        if any(type(v) is not bool for v in (self.overlap, self.early_observe, self.direct_mhc, self.prefill_project_tiles, self.deferred_kda, self.terminal_mhc, self.prefill_indexer_shards, self.prefill_dense_prefix)):
             raise ValueError("execution switches must be booleans")
         if self.direct_mhc and self.overlap:
             raise ValueError("direct MHC packets require unsplit same-stream collectives")
@@ -41,7 +42,7 @@ class ExecutionPlan:
     def active(self):
         return (self.overlap or self.early_observe or self.prefill_tiles != 1 or self.direct_mhc
                 or self.prefill_project_tiles or self.decode_iterations != 1 or self.deferred_kda or self.terminal_mhc
-                or self.prefill_indexer_shards)
+                or self.prefill_indexer_shards or self.prefill_dense_prefix)
 
     def groups(self, sequences):
         if sequences <= 0:
@@ -54,7 +55,8 @@ class ExecutionPlan:
                 f"prefill_tiles={self.prefill_tiles},direct_mhc={int(self.direct_mhc)},"
                 f"prefill_project_tiles={int(self.prefill_project_tiles)},decode_iterations={self.decode_iterations},"
                 f"deferred_kda={int(self.deferred_kda)},terminal_mhc={int(self.terminal_mhc)},"
-                f"prefill_indexer_shards={int(self.prefill_indexer_shards)}")
+                f"prefill_indexer_shards={int(self.prefill_indexer_shards)},"
+                f"prefill_dense_prefix={int(self.prefill_dense_prefix)}")
 
 
 @dataclass
