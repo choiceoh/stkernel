@@ -2,10 +2,12 @@ test_combined_hold_retains_a_failed_commit_result_and_checks_dense (tests.test_e
 test_projection_override_retains_old_cells_and_unwinds_on_failure (tests.test_engine_decode_k7.K7ProbeTests.test_projection_override_retains_old_cells_and_unwinds_on_failure) ... ok
 test_real_weight_selection_follows_the_declared_mlp_layout (tests.test_engine_decode_k7.K7ProbeTests.test_real_weight_selection_follows_the_declared_mlp_layout) ... ok
 test_scope_rejects_stale_draft_depth (tests.test_engine_decode_k7.K7ProbeTests.test_scope_rejects_stale_draft_depth) ... ok
+test_bytes_and_rates_match_the_timeline_s_accounting (tests.test_engine_kda_ring_bench.RingBenchTests.test_bytes_and_rates_match_the_timeline_s_accounting) ... ok
+test_the_kernel_check_admits_and_dispatches_the_lane (tests.test_engine_kda_ring_bench.RingBenchTests.test_the_kernel_check_admits_and_dispatches_the_lane) ... ok
 test_cuda13_resource_dump_retains_candidate_and_packed_consumer (tests.test_engine_decode_native_compile.MhcResourceTests.test_cuda13_resource_dump_retains_candidate_and_packed_consumer) ... ok
 test_older_header_and_absent_symbol (tests.test_engine_decode_native_compile.MhcResourceTests.test_older_header_and_absent_symbol) ... ok
 
 ----------------------------------------------------------------------
-Ran 6 tests in 0.001s
+Ran 8 tests in 0.578s
 
 OK
