@@ -140,6 +140,20 @@ After adding the captured commit writer and exact subgroup-capacity checks,
 77 focused tests pass (5 CUDA skips). `arms.json` names the same-code baseline
 and one-fact-only measurement branches; `make_arms.py` reproduces those trees
 without modifying the current checkout. They are experimental arm commits,
-not production-default changes. The private-workspace fleet gate is queued
-as `st-gb10-scratch0913v2`; no GPU correctness or consumer speed verdict has
-been recorded yet.
+not production-default changes.
+
+`st-gb10-scratch0913v2` passed the native private-workspace GPU comparison:
+40 changed-input graph replays, exact outputs and rearmed counters. The
+payload subsequently exited 1 while reading relative source paths for its
+JSON report. `gpu-scratch.log` preserves that complete result and
+`gpu-scratch-recovery.json` explicitly records the distinction. The report
+now resolves paths from `__file__`, checked on CPU from another directory;
+the numerical test was not repeated for this reporting-only fix. This
+qualifies private W4 scratch, not the full target/drafter execution order.
+
+The first full-bracket admission stopped before taking GPUs because overlay
+composition changed the stale tracked `build/glm53/glm53_chat.py`. Regenerating
+it with `launchers/compose-overlays.sh glm53` incorporates main's existing
+max-to-high normalization and makes the controller checkout reproducible.
+The replacement arm set includes that generated-file correction. No full
+onepass or serving speed verdict exists yet.

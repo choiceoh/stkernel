@@ -1,0 +1,18 @@
+{
+  "scope": "Recovered numerical verdict from the original fleet log; the original payload exited 1 during JSON source-path reporting",
+  "session": "st-gb10-scratch0913v2",
+  "source_commit": "ccec5bd84f664b253dd427e182512b5b60dfb0a2",
+  "original_payload_exit": 1,
+  "numerical_test": "passed",
+  "test_count": 1,
+  "replays": 40,
+  "reporting_fix": "Resolve source hashes relative to __file__, CPU-checked from /tmp. No repeat GPU work.",
+  "log_sha256": "3e71165e71adb79752f32b5ae7db4d0ce1df3cc04fc0fd461f65a864320be23c",
+  "source_sha256": {
+    "engine/profiles/glm53/execution.py": "c089d0b2f4c2155dfd92b9d0ae9eed08caaa11aea8ddb027e0ebbcac5891f6ae",
+    "engine/kernels/dense/kernels.cu": "457668a025fc3eec0a31075ff3d42c8e1cb37d0962d2c914a39dc63ad93728dc",
+    "engine/profiles/glm53/decode_graphs.py": "52b41f7d604cb67384f26ef91409f6e09b2a13444aa05e8dbc88e1582c0a34dc",
+    "engine/profiles/glm53/pipeline.py": "08e6d3df9f89ac5c0ebca4cb625a92aacf02d1598bd3ceeb0f52bab0be480223",
+    "tests/test_engine_execution_plan_cuda.py": "f821a397ff9c8f1656b653da98eb59ae9251e31f5dbdd73772e3bf6a4a8db207"
+  }
+}

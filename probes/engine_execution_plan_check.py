@@ -9,12 +9,14 @@ from pathlib import Path
 import time
 import unittest
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 def compile_dense():
     import torch
     from torch.utils.cpp_extension import load
     from engine.kernels.native_cache import prepare_sources
-    source = Path("engine/kernels/dense/kernels.cu").resolve()
+    source = ROOT / "engine/kernels/dense/kernels.cu"
     flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a",
              "-DMK_GRID_DEF=96", "-DMK_MHC_GRID_DEF=144", "-DMK_NBUF2_DEF=3",
              "-DMK_FP8_PACK2_DEF=1", "-DMK_GEMM_TRANSPOSE_M8_DEF=1",
@@ -52,7 +54,7 @@ def main():
              "engine/profiles/glm53/decode_graphs.py", "engine/profiles/glm53/pipeline.py")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps({"scope": scope, "result": result, "seconds": time.monotonic()-start,
-        "source_sha256": {p: hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in files}}, indent=2)+"\n")
+        "source_sha256": {p: hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in files}}, indent=2)+"\n")
 
 
 if __name__ == "__main__":
