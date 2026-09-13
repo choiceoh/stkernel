@@ -2487,3 +2487,43 @@ identity 가 바뀌어 이번에는 두지 않았다.
 프로브 소스. 맥: `test_fleet*`·`test_onepass*`·`test_st_*` 를 main 사본과 대조해 새 실패 없음(`test_docs_status` 는 main 의
 `docs/GLM53_DRAFT_ACCEPTANCE.md` 배너 누락). srv4 CPU: 새 테스트·`test_engine_turn_retention`·`test_engine_prefix` 61 개 ok.
 **GPU·플릿 실측 없음.** 남은 것: 이미 티어에 스필된 옛 프로브 경계는 남아 있다(솔트가 고유해 아무도 복원하지 않고, 티어 LRU 로 밀려난다).
+
+### PR차 — 부팅 메모리 입장: 파일 캐시를 컨테이너 직전에 호스트에서 반납한다 (2026-09-13, srv2 로그 읽기 + 맥·srv4 CPU, PR #TBD, 운영자 "캐시 회수나 메모리 관리나 메모리 최적화가 제일 중요")
+
+**기록.** 이날 프로덕션은 13:00 이후 정상 부팅하지 못했다. 랭크 로그가 남은 프로덕션 부팅 아홉 번(19:29~19:48)은 전부 아레나
+입장에서 멈췄고, 같은 날 브래킷 부팅의 사망 기록 12 건 중 8 건도 메모리 입장이었다. 원인은 둘이다.
+- **srv2 랭크 0(여섯 번): `[Errno 12] Cannot allocate memory`.** srv2 는 `overcommit_memory=2`·`overcommit_ratio=50` 이라 CommitLimit 가
+  75.8 GiB 다. 입장의 캐시 회수(`touch_pages`)는 아레나 55.47 + 헤드룸 21.00 = 76.47 GiB 를 익명 매핑 하나로 잡으므로, 캐시가 아무리
+  깨끗해도 매핑 자체가 거절된다. 실패 직후 free: 여유 34 GiB, 버퍼/캐시 75 GiB.
+- **srv4 랭크 3(세 번): SIGTERM 선.** MemFree 71.02·68.74 GiB, MemAvailable 82.94·83.02 GiB 에서 76.47 GiB 를 폴트하면 SIGTERM 선 +
+  여유(8 GiB) 아래로 내려가 거절됐다. srv4 에는 다른 서비스가 익명 메모리 약 27 GiB 를 쥐고 있다(21:57 기준).
+- 캐시는 엔진 것이 아니다. 로더와 두 티어는 O_DIRECT 이고, 컨테이너에는 ST 체크포인트와 드래프터만 마운트되어
+  `release_model_cache` 의 fadvise 도 다른 작업의 캐시에 닿지 못한다.
+- 노드 설정은 제각각이다. srv1 은 `overcommit_memory=2`·ratio 95(CommitLimit 131.6 GiB), srv3·srv4 는 0, `min_free_kbytes` 는 srv4 만
+  45 MB(나머지 4 GiB). 네 노드 모두 `sudo -n` 이 된다.
+- 같은 날 srv2 에서 뜬 부팅들의 메모리 원장(`memory-rank0.json` 열네 개): 작업 공간 최고치 5.07~7.48 GiB(상한 12 GiB, 실패한 실험
+  하나는 10.56), 준비 중 최소 즉시 가용 9.35~30.89 GiB.
+- PR #866 의 `ST_RECLAIM_FILE_CACHE=1` 은 기본값이 꺼져 있었고, 켜도 vLLM 용 GMU 계산(`memfree-preflight.sh`)을 거쳐 rsync·이미지
+  빌드 전에 한 번 돌았다.
+
+**한 것.**
+- `launchers/st-return-file-cache.sh`: 노드에서 `sync`(60 s 한도) 뒤 `sudo -n` 으로 `drop_caches` 3. 전후의 MemFree·MemAvailable·Cached 를
+  한 줄로 말하고, 못 하면 exit 3.
+- `launchers/start-st-glm53.sh`: 노드마다 rsync·이미지 빌드 뒤, 옛 컨테이너를 지운 다음 `docker run` 직전에 그 스크립트를 stdin 으로
+  돌린다. **기본 켜짐**(`ST_RECLAIM_FILE_CACHE=0` 이면 끔). 리스를 쥐고 노드가 비어 있음을 확인한 뒤에만 닿는다. 반납하지 못한 노드는
+  그렇다고 말하고 그대로 띄운다 — 판정은 엔진의 입장이 한다. #866 의 사전 단계는 뺐다. 감독자의 프로덕션 부팅과 브래킷 부팅이 모두
+  이 런처를 쓴다.
+- 엔진: `prepare_allocation` 보고에 입장이 시작될 때의 파일 캐시(`file_cache`), 두 거절 문구에 그 양, ENOMEM 문구에 Cached 와 이
+  스크립트. 부팅 게이지 `boot_file_cache_GiB`·`boot_available_GiB` 로 호스트의 반납이 랭크에 닿았는지 다음 부팅이 말한다.
+
+**검증.** `tests/test_engine_fleet_ops.py` 의 가짜 플릿이 실제 런처를 `docker run` 까지 돌린다: 네 노드 모두 제거 → 반납 → 시작,
+sudo 거절이면 네 노드가 경고 후 계속, 0 이면 반납 없음, 남의 컨테이너나 잘못된 값이면 아무것도 안 함, 반납이 트리·이미지 뒤라는 소스
+순서, 스크립트 단독(성공·exit 3·meminfo 없음). 변이 네 개(기본값 0, `docker run` 뒤로 옮김, 실패 시 중단, sudo 무시)가 모두 잡힌다.
+입장 테스트 둘(보고·거절 문구의 파일 캐시, 게이지 핀). 맥: 런처·메모리 관련 14 모듈과 fleet 스위트를 main 사본과 대조해 새 실패
+없음. srv4 CPU: 리눅스에서만 도는 입장·감독자 테스트를 포함한 9 모듈 187 테스트 ok. **GPU·플릿 부팅 실측 없음** — 재양자화 세션이
+플릿을 쥐고 있다.
+
+**남은 것.** (1) 프로덕션은 배포된 릴리스의 런처를 쓰므로 배포가 필요한데, 배포 감시는 문이 답하지 않으면 배포하지 않는다(프로덕션이
+죽어 있으면 교착). (2) srv4 는 다른 서비스 몫 때문에 캐시를 다 비워도 여유가 몇 GiB 뿐이다. (3) 작업 공간 상한 12 GiB 는 실측 최고치
+7.48 GiB 보다 4.5 GiB 크다 — 낮추면 입장 필요량이 그만큼 준다(부팅으로 검증할 일). (4) srv2 의 `overcommit_ratio=50` 은 설정 문제라
+운영자 결정이다.

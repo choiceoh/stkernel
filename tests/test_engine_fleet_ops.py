@@ -71,45 +71,157 @@ elif a and a[0] == 'ps':
 
 
 
-class FleetOps(FleetHarness):
-    def memory_prepare_fixture(self):
-        (self.repo / 'launchers/memfree-preflight.sh').write_text('''#!/bin/bash
-test -s "$FAKE_HOME/fleet.lock" || exit 42
-echo prepare >> "$FAKE_HOME/events"
-exit "${FAKE_MEMORY_FAIL:-0}"
+class FileCacheReturnTests(FleetHarness):
+    """Each node returns its clean file cache from the host the moment before its container starts (2026-09-13).
+
+    No production boot came up from 19:29 to 19:48 on 2026-09-13. srv2's strict overcommit refused the
+    engine's 76.47 GiB reclaim mapping outright, and on srv4 the same fault would have crossed the box's
+    SIGTERM line. Inside its container the engine sees only its own checkpoint. So the launcher drops each
+    node's cache from the host, after the rsync and the image build and right before `docker run`, with
+    the lease held and the fleet idle. The fake fleet runs the real launcher all the way to `docker run`.
+    """
+    NODES = ("10.10.10.2", "10.10.10.1", "10.10.10.3", "10.10.10.4")
+
+    def setUp(self):
+        super().setUp()
+        models = self.home / "models"
+        ckpt, ranks, drafter = models / "ckpt", models / "ranks", models / "drafter"
+        for d in (ckpt, ranks, drafter):
+            d.mkdir(parents=True)
+        for name in ("config.json", "tokenizer.json", "tokenizer_config.json", "generation_config.json",
+                     "processor_config.json"):
+            (ckpt / name).write_text("{}")
+        for name in [f"rank{r}of4.safetensors" for r in range(4)] + ["vision.safetensors"]:
+            (ranks / name).write_bytes(b"x")
+        (drafter / "model.safetensors").write_bytes(b"x")
+        engine_dir = self.home / "st-engine"
+        (engine_dir / "engine/runtime").mkdir(parents=True)
+        (engine_dir / "engine/runtime/build.sh").write_text("exit 0\n")
+        meminfo = self.home / "meminfo"
+        meminfo.write_text("MemTotal: 125000000 kB\nMemFree: 35000000 kB\nMemAvailable: 110000000 kB\n"
+                           "Cached: 75000000 kB\n")
+        self.env.update(CKPT=str(ckpt), RANKS_DIR=str(ranks), DRAFTER=str(drafter), ST_ENGINE_DIR=str(engine_dir),
+                        ST_MEMINFO=str(meminfo))
+        # ssh tells the stubs which node a command ran on; the tree push and the flush do nothing here
+        self.script("ssh", '''#!/usr/bin/env python3
+import os, pathlib, subprocess, sys
+h = pathlib.Path(os.environ['FAKE_HOME'])
+node = next((a.split('@', 1)[1] for a in sys.argv[1:] if a.startswith('choiceoh@')), 'local')
+cmd = sys.argv[-1].replace('/home/choiceoh/glm53-logs/st-fleet.lock', str(h / 'fleet.lock'))
+cmd = cmd.replace('/home/choiceoh/st-fleet.lock', str(h / 'fleet.lock'))
+sys.exit(subprocess.call(['/bin/bash', '-c', cmd], env=dict(os.environ, FAKE_NODE=node)))
 ''')
+        self.script("docker", '''#!/usr/bin/env python3
+import os, pathlib, sys
+a = sys.argv[1:]
+def note(what):
+    with (pathlib.Path(os.environ['FAKE_HOME']) / 'events').open('a') as f:
+        f.write(os.environ.get('FAKE_NODE', '?') + ' ' + what + '\\n')
+if a[:2] == ['rm', '-f']:
+    note('rm')
+elif a[:1] == ['run']:
+    note('run')
+elif a and a[0] == 'ps':
+    print(os.environ.get('FAKE_CONTAINERS', ''))
+''')
+        self.script("sudo", '#!/bin/sh\necho "${FAKE_NODE:-?} reclaim" >> "$FAKE_HOME/events"\nexit "${FAKE_SUDO_FAIL:-0}"\n')
+        self.script("rsync", "#!/bin/sh\nexit 0\n")
+        self.script("sync", "#!/bin/sh\nexit 0\n")
+        self.script("timeout", '#!/bin/sh\nshift\nexec "$@"\n')
 
-    def test_memory_preparation_is_explicit_and_runs_only_with_our_lease(self):
-        self.memory_prepare_fixture()
-        for enabled in ('0', '1'):
-            with self.subTest(enabled=enabled):
-                self.events.unlink(missing_ok=True)
-                self.env['ST_RECLAIM_FILE_CACHE'] = enabled
-                result = self.run_script('start-st-glm53.sh')
-                self.assertNotEqual(result.returncode, 0)  # no checkpoint in the fixture
-                self.assertFalse(self.lock.exists())
-                events = self.events.read_text().splitlines() if self.events.exists() else []
-                self.assertEqual(events, ['prepare'] if enabled == '1' else [])
+    def launch(self):
+        result = self.run_script("start-st-glm53.sh")
+        steps = {}
+        for line in (self.events.read_text().splitlines() if self.events.exists() else []):
+            node, what = line.split(" ", 1)
+            steps.setdefault(node, []).append(what)
+        return result, steps
 
-    def test_memory_preparation_failure_stops_before_launch(self):
-        self.memory_prepare_fixture()
-        self.env.update(ST_RECLAIM_FILE_CACHE='1', FAKE_MEMORY_FAIL='1')
-        result = self.run_script('start-st-glm53.sh')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('file-cache memory preparation failed', result.stderr)
-        self.assertFalse(self.lock.exists())
-        self.assertEqual(self.events.read_text().splitlines(), ['prepare'])
+    def test_every_node_returns_its_cache_after_the_old_container_goes_and_before_the_new_one_starts(self):
+        result, steps = self.launch()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(steps, {ip: ["rm", "reclaim", "run"] for ip in self.NODES})
+        for ip in self.NODES:
+            self.assertIn(f"{ip}: file cache returned: MemFree 33.4 GiB, MemAvailable 104.9 GiB, Cached 71.5 GiB -> ",
+                          result.stdout)
+            self.assertIn(f"{ip}: started", result.stdout)
+        self.assertTrue(self.lock.exists(), "the boot went on to hold its lease")
 
-    def test_foreign_work_or_invalid_option_never_reclaims_memory(self):
-        self.memory_prepare_fixture()
-        for setting, busy in (('1', 'st-other'), ('typo', '')):
+    def test_a_node_that_cannot_return_it_says_so_and_the_boot_goes_on(self):
+        self.env["FAKE_SUDO_FAIL"] = "1"
+        result, steps = self.launch()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(steps, {ip: ["rm", "reclaim", "run"] for ip in self.NODES})
+        self.assertEqual(result.stdout.count("file cache NOT returned (sudo -n refused): MemFree 33.4 GiB"), 4)
+        self.assertEqual(result.stdout.count("starting anyway, the engine's admission decides"), 4)
+
+    def test_zero_turns_it_off(self):
+        self.env["ST_RECLAIM_FILE_CACHE"] = "0"
+        result, steps = self.launch()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(steps, {ip: ["rm", "run"] for ip in self.NODES})
+        self.assertNotIn("file cache", result.stdout)
+
+    def test_a_foreign_container_or_a_typo_returns_nothing_and_starts_nothing(self):
+        for setting, busy in (("1", "st-other"), ("typo", "")):
             with self.subTest(setting=setting, busy=busy):
                 self.env.update(ST_RECLAIM_FILE_CACHE=setting, FAKE_CONTAINERS=busy)
-                result = self.run_script('start-st-glm53.sh')
+                result, steps = self.launch()
                 self.assertNotEqual(result.returncode, 0)
-                self.assertFalse(self.events.exists())
+                self.assertEqual(steps, {})
                 self.assertFalse(self.lock.exists())
 
+    def test_the_return_comes_after_the_tree_and_the_image_so_nothing_refills_it_first(self):
+        text = (ROOT / "launchers/start-st-glm53.sh").read_text()
+        rank = text[text.index("start_rank() {"):text.index("pids=()")]
+        self.assertLess(rank.index("push_tree"), rank.index("st-return-file-cache.sh"))
+        self.assertLess(rank.index("engine/runtime/build.sh"), rank.index("st-return-file-cache.sh"))
+        self.assertLess(rank.index('docker rm -f $NAME >/dev/null 2>&1 || true"'), rank.index("st-return-file-cache.sh"))
+        self.assertLess(rank.index("st-return-file-cache.sh"), rank.index("docker run -d --name $NAME"))
+        self.assertNotIn("memfree-preflight.sh", text, "the vLLM sizing preflight no longer gates an ST boot")
+
+
+class ReturnScriptTests(unittest.TestCase):
+    """launchers/st-return-file-cache.sh on its own: one line, exit 0 when returned, 3 when it could not be."""
+
+    def run_return(self, *, sudo_exit=0, meminfo="MemFree: 1048576 kB\nMemAvailable: 3145728 kB\nCached: 2097152 kB\n"):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / "bin").mkdir()
+            for name, body in (("sudo", f'#!/bin/sh\necho "$*" > "{home}/sudo"\nexit {sudo_exit}\n'),
+                               ("sync", "#!/bin/sh\nexit 0\n"), ("timeout", '#!/bin/sh\nshift\nexec "$@"\n')):
+                (home / "bin" / name).write_text(body)
+                (home / "bin" / name).chmod(0o755)
+            info = home / "meminfo"
+            if meminfo is not None:
+                info.write_text(meminfo)
+            env = dict(os.environ, PATH=f"{home / 'bin'}:{os.environ['PATH']}", ST_MEMINFO=str(info))
+            result = subprocess.run(["bash", str(ROOT / "launchers/st-return-file-cache.sh")], env=env, text=True,
+                                    capture_output=True, timeout=15)
+            asked = (home / "sudo").read_text().strip() if (home / "sudo").exists() else None
+        return result, asked
+
+    def test_it_drops_the_clean_cache_and_says_what_was_there(self):
+        result, asked = self.run_return()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(asked, "-n sh -c echo 3 > /proc/sys/vm/drop_caches")
+        self.assertEqual(result.stdout.strip(), "file cache returned: MemFree 1.0 GiB, MemAvailable 3.0 GiB, "
+                                                "Cached 2.0 GiB -> MemFree 1.0 GiB, MemAvailable 3.0 GiB, Cached 2.0 GiB")
+
+    def test_without_passwordless_sudo_it_says_so_and_exits_three(self):
+        result, _ = self.run_return(sudo_exit=1)
+        self.assertEqual(result.returncode, 3)
+        self.assertEqual(result.stdout.strip(), "file cache NOT returned (sudo -n refused): MemFree 1.0 GiB, "
+                                                "MemAvailable 3.0 GiB, Cached 2.0 GiB")
+
+    def test_an_unreadable_meminfo_does_not_stop_the_return(self):
+        result, asked = self.run_return(meminfo=None)
+        self.assertEqual(result.returncode, 0)
+        self.assertIsNotNone(asked)
+        self.assertTrue(result.stdout.startswith("file cache returned: meminfo unreadable -> "), result.stdout)
+
+
+class FleetOps(FleetHarness):
     def test_stop_preserves_foreign_owner_and_containers(self):
         self.lock.write_text("st-replay-other-session")
         result = self.run_script("start-st-glm53.sh", "stop")

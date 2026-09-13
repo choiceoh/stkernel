@@ -119,6 +119,25 @@ class ArenaAdmissionTests(unittest.TestCase):
             with self.assertRaisesRegex(MemoryError, 'after reclaiming'):
                 prepare_allocation(int(55.4 * GIB), [], 16 * GIB, lambda: 120 * GIB, reclaim=pump)
 
+    def test_the_report_and_a_refusal_say_how_much_was_file_cache_when_admission_began(self):
+        """2026-09-13 19:39: srv4 refused with 12 GiB of its 83 GiB available being cache, and nothing on the rank
+        said so -- the forensics' free(1) was taken after the boot died. The launcher now returns the cache from the
+        host before the container starts; these numbers are how the next boot shows whether it reached the rank."""
+        info = lambda free, available, cached: (f'MemFree: {free * GIB // 1024} kB\nMemAvailable: {available * GIB // 1024} kB\n'
+                                                f'Cached: {cached * GIB // 1024} kB\n')
+        with patch.object(Path, 'read_text', return_value=info(80, 83, 3)):
+            report = prepare_allocation(55 * GIB, [], 21 * GIB, lambda: 120 * GIB, reclaim=None)
+        self.assertEqual((report['file_cache'], report['available']), (3 * GIB, 83 * GIB))
+        with patch('engine.base.runtime_memory.oom_floor', return_value=(6 * GIB, 9 * GIB // 2)), \
+             patch.object(Path, 'read_text', return_value=info(71, 83, 12)):
+            with self.assertRaisesRegex(MemoryError, r'cannot be reclaimed.*file cache 12\.00 GiB when admission began'):
+                prepare_allocation(int(55.47 * GIB), [], 21 * GIB, lambda: 120 * GIB, reclaim=lambda n: n)
+
+    def test_the_boot_records_what_admission_found(self):
+        boot = (Path(__file__).resolve().parents[1] / 'engine/profiles/glm53/boot.py').read_text()
+        self.assertIn('recorder.gauge("boot_file_cache_GiB", round(report["file_cache"] / GIB, 3))', boot)
+        self.assertIn('recorder.gauge("boot_available_GiB", round(report["available"] / GIB, 3))', boot)
+
     def test_touch_pages_rounds_to_pages_and_returns_the_memory(self):
         self.assertEqual(touch_pages(0), 0)
         self.assertEqual(touch_pages(1), touch_pages(4096))
@@ -134,6 +153,7 @@ class ArenaAdmissionTests(unittest.TestCase):
             with self.assertRaisesRegex(MemoryError, r'mmap\(81.00 GiB\).*overcommit_memory=2') as caught:
                 touch_pages(81*GIB)
         self.assertIn('MemAvailable=94.00 GiB', str(caught.exception))
+        self.assertIn('launchers/st-return-file-cache.sh', str(caught.exception), 'and it names the remedy that works')
         self.assertIn('CommitLimit=76.00 GiB', str(caught.exception))
         self.assertIn('Committed_AS=3.00 GiB', str(caught.exception))
         self.assertIs(caught.exception.__cause__, error)

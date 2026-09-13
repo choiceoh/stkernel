@@ -71,11 +71,12 @@ def touch_pages(nbytes: int) -> int:
         except OSError:
             policy = "unknown"
         counters = ", ".join(f"{key}={memory[key]/GIB:.2f} GiB"
-                             for key in ("MemFree", "MemAvailable", "CommitLimit", "Committed_AS")
+                             for key in ("MemFree", "MemAvailable", "Cached", "CommitLimit", "Committed_AS")
                              if key in memory)
         raise MemoryError(f"anonymous cache reclaim: mmap({n/GIB:.2f} GiB) refused; "
                           f"overcommit_memory={policy}, {counters}. "
-                          "Prepare physical file-cache headroom before boot; the arena budget is unchanged") from exc
+                          "Return the file cache from the host before boot (launchers/st-return-file-cache.sh, "
+                          "which start-st-glm53.sh runs unless ST_RECLAIM_FILE_CACHE=0); the arena budget is unchanged") from exc
     try:
         if not getattr(mmap, "MAP_POPULATE", 0):
             for off in range(0, n, page):                 # no MAP_POPULATE: fault every page by hand
@@ -144,6 +145,7 @@ def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=t
         with Path(path).open("rb") as stream:
             os.posix_fadvise(stream.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
     memory = _meminfo()
+    file_cache = memory.get("Cached", 0)            # what was cache when admission began: whether the host's return reached it
     need = nbytes + headroom
     free = min(memory["MemFree"], device_free())
     reclaimed = 0
@@ -168,7 +170,7 @@ def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=t
             raise MemoryError(f"arena admission: allocation {nbytes/GIB:.2f} GiB plus headroom {headroom/GIB:.2f} GiB "
                               f"exceeds immediately free memory {free/GIB:.2f} GiB and cannot be reclaimed without "
                               f"crossing this box's SIGTERM line plus margin ({floor/GIB:.2f} GiB): MemAvailable "
-                              f"{memory['MemAvailable']/GIB:.2f} GiB")
+                              f"{memory['MemAvailable']/GIB:.2f} GiB, file cache {file_cache/GIB:.2f} GiB when admission began")
         reclaimed = reclaim(need) if reclaim is not None else 0
         memory = _meminfo()
         free = min(memory["MemFree"], device_free())
@@ -176,9 +178,10 @@ def prepare_allocation(nbytes: int, files, headroom: int, device_free, reclaim=t
         raise MemoryError(f"arena admission: allocation {nbytes/GIB:.2f} GiB plus "
                           f"headroom {headroom/GIB:.2f} GiB exceeds immediately free "
                           f"memory {free/GIB:.2f} GiB after reclaiming {reclaimed/GIB:.2f} GiB; MemAvailable "
-                          f"{memory['MemAvailable']/GIB:.2f} GiB includes reclaimable pages")
+                          f"{memory['MemAvailable']/GIB:.2f} GiB includes reclaimable pages "
+                          f"(file cache {file_cache/GIB:.2f} GiB when admission began)")
     return dict(allocation=nbytes, headroom=headroom, immediately_free=free,
-                available=memory["MemAvailable"], reclaimed=reclaimed, cache_files=cache_files)
+                available=memory["MemAvailable"], reclaimed=reclaimed, cache_files=cache_files, file_cache=file_cache)
 
 
 def expandable_segments() -> bool:
