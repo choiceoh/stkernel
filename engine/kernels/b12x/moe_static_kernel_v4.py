@@ -106,6 +106,7 @@ class MoEStaticKernelV4:
         *,
         scatter_fp32: bool = False,
         route_scatter: bool = False,
+        prepared_routes: bool = False,
         direct_scatter: bool = False,
         fc1_stages: int = 2,
         fc2_stages: int = 2,
@@ -138,6 +139,9 @@ class MoEStaticKernelV4:
         self.acc_dtype = cutlass.Float32
         self.scatter_fp32 = bool(scatter_fp32)
         self.route_scatter = bool(route_scatter)
+        self.prepared_routes = bool(prepared_routes)
+        if self.prepared_routes and (not route_scatter or even or split or stamps):
+            raise ValueError("prepared routes require private output and fixed unsplit scheduling")
         self.direct_scatter = bool(direct_scatter)
         if (self.route_scatter or self.direct_scatter) and not (
                 scatter_fp32 and reform_sf_pack and not split):
@@ -1079,156 +1083,159 @@ class MoEStaticKernelV4:
         # ------------------------------------------------------------------
         # Phase 0 / Phase 1 (stock frontend)
         # ------------------------------------------------------------------
-        i = flat_tid
-        while i < num_experts:
-            row_counts[i] = Int32(0)
-            i += flat_stride
-        i = flat_tid
-        while i < num_global_experts:
-            global_to_local_expert[i] = Int32(-1)
-            i += flat_stride
-        if flat_tid == Int32(0):
-            active_expert_count[Int32(0)] = Int32(0)
-            if cutlass.const_expr(self.even or self.split):
-                next_item[Int32(0)] = Int32(0)
-        # Each route/128-wide intermediate part owns a complete output row.
-        # All routes, including zero weights, are computed below. The private
-        # reduction runs after this kernel, so no clear/atomic scatter is needed.
-        scatter_total = Int32(0) if cutlass.const_expr(self.route_scatter) else num_tokens * cols
-        j = flat_tid
-        while j < scatter_total:
-            if cutlass.const_expr(self.scatter_fp32):
-                scatter_output[j // cols, j % cols] = cutlass.Float32(0.0)
-            else:
-                scatter_output[j // cols, j % cols] = cutlass.BFloat16(0.0)
-            j += flat_stride
-        cute.arch.sync_threads()
-        self._resident_grid_barrier(
-            barrier_count, barrier_epoch, Int32(gdim_z), is_cta_leader
-        )
-        if cutlass.const_expr(self.stamps):
-            if Int32(tidx) == Int32(0):
-                _st_global_i64(
-                    get_ptr_as_int64(stamps, stamp_row + Int32(STAMP_BARRIER1)),
-                    cute.arch.globaltimer(),
-                )
+        # A separate same-stream producer owns every route/scale/map cell on
+        # the private mixed lane. It must not be reset or re-routed here.
+        if cutlass.const_expr(not self.prepared_routes):
+            i = flat_tid
+            while i < num_experts:
+                row_counts[i] = Int32(0)
+                i += flat_stride
+            i = flat_tid
+            while i < num_global_experts:
+                global_to_local_expert[i] = Int32(-1)
+                i += flat_stride
+            if flat_tid == Int32(0):
+                active_expert_count[Int32(0)] = Int32(0)
+                if cutlass.const_expr(self.even or self.split):
+                    next_item[Int32(0)] = Int32(0)
+            # Each route/128-wide intermediate part owns a complete output row.
+            # All routes, including zero weights, are computed below. The private
+            # reduction runs after this kernel, so no clear/atomic scatter is needed.
+            scatter_total = Int32(0) if cutlass.const_expr(self.route_scatter) else num_tokens * cols
+            j = flat_tid
+            while j < scatter_total:
+                if cutlass.const_expr(self.scatter_fp32):
+                    scatter_output[j // cols, j % cols] = cutlass.Float32(0.0)
+                else:
+                    scatter_output[j // cols, j % cols] = cutlass.BFloat16(0.0)
+                j += flat_stride
+            cute.arch.sync_threads()
+            self._resident_grid_barrier(
+                barrier_count, barrier_epoch, Int32(gdim_z), is_cta_leader
+            )
+            if cutlass.const_expr(self.stamps):
+                if Int32(tidx) == Int32(0):
+                    _st_global_i64(
+                        get_ptr_as_int64(stamps, stamp_row + Int32(STAMP_BARRIER1)),
+                        cute.arch.globaltimer(),
+                    )
 
-        pair_idx = Int32(bidz)
-        while pair_idx < total_pairs:
-            expert_id = topk_ids[pair_idx].to(Int32)
-            token_idx = pair_idx // num_topk
-            weight = topk_weights[pair_idx].to(cutlass.Float32)
-            local_expert_id = Int32(0)
-            row = Int32(0)
-            if is_cta_leader > Int32(0):
-                prior_local_expert_id = _atomic_cas_global_i32(
-                    get_ptr_as_int64(global_to_local_expert, expert_id),
-                    Int32(-1),
-                    Int32(-2),
-                )
-                if prior_local_expert_id == Int32(-1):
-                    local_expert_id = atomic_add_global_i32(
-                        get_ptr_as_int64(active_expert_count, Int32(0)),
+            pair_idx = Int32(bidz)
+            while pair_idx < total_pairs:
+                expert_id = topk_ids[pair_idx].to(Int32)
+                token_idx = pair_idx // num_topk
+                weight = topk_weights[pair_idx].to(cutlass.Float32)
+                local_expert_id = Int32(0)
+                row = Int32(0)
+                if is_cta_leader > Int32(0):
+                    prior_local_expert_id = _atomic_cas_global_i32(
+                        get_ptr_as_int64(global_to_local_expert, expert_id),
+                        Int32(-1),
+                        Int32(-2),
+                    )
+                    if prior_local_expert_id == Int32(-1):
+                        local_expert_id = atomic_add_global_i32(
+                            get_ptr_as_int64(active_expert_count, Int32(0)),
+                            Int32(1),
+                        )
+                        weight_expert_ids[local_expert_id] = expert_id
+                        _st_global_release_i32(
+                            get_ptr_as_int64(global_to_local_expert, expert_id),
+                            local_expert_id,
+                        )
+                    else:
+                        if prior_local_expert_id == Int32(-2):
+                            _spin_wait_global_eq_i32(
+                                get_ptr_as_int64(global_to_local_expert, expert_id),
+                                Int32(-2),
+                            )
+                            prior_local_expert_id = _ld_global_acquire_i32(
+                                get_ptr_as_int64(global_to_local_expert, expert_id),
+                            )
+                        local_expert_id = prior_local_expert_id
+                    row = atomic_add_global_i32(
+                        get_ptr_as_int64(row_counts, local_expert_id),
                         Int32(1),
                     )
-                    weight_expert_ids[local_expert_id] = expert_id
-                    _st_global_release_i32(
-                        get_ptr_as_int64(global_to_local_expert, expert_id),
-                        local_expert_id,
-                    )
-                else:
-                    if prior_local_expert_id == Int32(-2):
-                        _spin_wait_global_eq_i32(
-                            get_ptr_as_int64(global_to_local_expert, expert_id),
-                            Int32(-2),
-                        )
-                        prior_local_expert_id = _ld_global_acquire_i32(
-                            get_ptr_as_int64(global_to_local_expert, expert_id),
-                        )
-                    local_expert_id = prior_local_expert_id
-                row = atomic_add_global_i32(
-                    get_ptr_as_int64(row_counts, local_expert_id),
-                    Int32(1),
-                )
-                if cutlass.const_expr(self.even or self.split):
-                    if row % Int32(self.tile_m) == Int32(0):
-                        atomic_add_global_i32(
-                            get_ptr_as_int64(next_item, Int32(0)),
-                            Int32(self.output_tile_count_n),
-                        )
-                map_idx = local_expert_id * max_rows + row
-                scatter_row = pair_idx if cutlass.const_expr(self.route_scatter) else token_idx
-                st_global_i32(get_ptr_as_int64(token_map, map_idx), scatter_row)
-                st_global_f32(get_ptr_as_int64(token_weights, map_idx), weight)
-                _st_shared_i32(ctrl_base_addr + Int32(0), local_expert_id)
-                _st_shared_i32(ctrl_base_addr + Int32(4), row)
-            cute.arch.sync_threads()
-            local_expert_id = _ld_shared_i32(ctrl_base_addr + Int32(0))
-            row = _ld_shared_i32(ctrl_base_addr + Int32(4))
+                    if cutlass.const_expr(self.even or self.split):
+                        if row % Int32(self.tile_m) == Int32(0):
+                            atomic_add_global_i32(
+                                get_ptr_as_int64(next_item, Int32(0)),
+                                Int32(self.output_tile_count_n),
+                            )
+                    map_idx = local_expert_id * max_rows + row
+                    scatter_row = pair_idx if cutlass.const_expr(self.route_scatter) else token_idx
+                    st_global_i32(get_ptr_as_int64(token_map, map_idx), scatter_row)
+                    st_global_f32(get_ptr_as_int64(token_weights, map_idx), weight)
+                    _st_shared_i32(ctrl_base_addr + Int32(0), local_expert_id)
+                    _st_shared_i32(ctrl_base_addr + Int32(4), row)
+                cute.arch.sync_threads()
+                local_expert_id = _ld_shared_i32(ctrl_base_addr + Int32(0))
+                row = _ld_shared_i32(ctrl_base_addr + Int32(4))
 
-            gs_value = input_global_scale[expert_id].to(cutlass.Float32)
-            if self.input_scales_are_reciprocal and gs_value != cutlass.Float32(0.0):
-                if self.fast_math:
-                    gs_value = rcp_approx_ftz(gs_value)
-                else:
-                    gs_value = cutlass.Float32(1.0) / gs_value
-            sf_idx = Int32(tidx)
-            while sf_idx < sf_blocks_per_row:
-                block_start = sf_idx * Int32(self.sf_vec_size)
-                values = cute.make_rmem_tensor((self.sf_vec_size,), cutlass.Float32)
-                block_max = cutlass.Float32(0.0)
-                for elem_idx in cutlass.range_constexpr(self.sf_vec_size):
-                    value = cutlass.Float32(
-                        a_input[token_idx, block_start + Int32(elem_idx)]
+                gs_value = input_global_scale[expert_id].to(cutlass.Float32)
+                if self.input_scales_are_reciprocal and gs_value != cutlass.Float32(0.0):
+                    if self.fast_math:
+                        gs_value = rcp_approx_ftz(gs_value)
+                    else:
+                        gs_value = cutlass.Float32(1.0) / gs_value
+                sf_idx = Int32(tidx)
+                while sf_idx < sf_blocks_per_row:
+                    block_start = sf_idx * Int32(self.sf_vec_size)
+                    values = cute.make_rmem_tensor((self.sf_vec_size,), cutlass.Float32)
+                    block_max = cutlass.Float32(0.0)
+                    for elem_idx in cutlass.range_constexpr(self.sf_vec_size):
+                        value = cutlass.Float32(
+                            a_input[token_idx, block_start + Int32(elem_idx)]
+                        )
+                        values[elem_idx] = value
+                        block_max = fmax_f32(block_max, fabs_f32(value))
+                    scale_byte = Uint8(0)
+                    packed_lo = Uint64(0)
+                    if self.fast_math:
+                        packed_lo, scale_byte = quantize_block_fp4_fast(
+                            values, block_max, gs_value
+                        )
+                    else:
+                        packed_lo, scale_byte = quantize_block_fp4(
+                            values, block_max, gs_value
+                        )
+                    output_offset = (
+                        local_expert_id * max_rows * output_bytes_per_row
+                        + row * output_bytes_per_row
+                        + sf_idx * Int32(self.sf_vec_size // 2)
                     )
-                    values[elem_idx] = value
-                    block_max = fmax_f32(block_max, fabs_f32(value))
-                scale_byte = Uint8(0)
-                packed_lo = Uint64(0)
-                if self.fast_math:
-                    packed_lo, scale_byte = quantize_block_fp4_fast(
-                        values, block_max, gs_value
+                    st_global_u64(
+                        get_ptr_as_int64(packed_a_storage, output_offset), packed_lo
                     )
-                else:
-                    packed_lo, scale_byte = quantize_block_fp4(
-                        values, block_max, gs_value
+                    m_tile_idx = row // Int32(32 * 4)
+                    k_tile_idx = sf_idx // Int32(4)
+                    outer_m_idx = row % Int32(32)
+                    inner_m_idx = (row % Int32(32 * 4)) // Int32(32)
+                    inner_k_idx = sf_idx % Int32(4)
+                    scale_offset = (
+                        local_expert_id * expert_scale_stride
+                        + m_tile_idx * num_k_tiles * Int32(32 * 4 * 4)
+                        + k_tile_idx * Int32(32 * 4 * 4)
+                        + outer_m_idx * Int32(4 * 4)
+                        + inner_m_idx * Int32(4)
+                        + inner_k_idx
                     )
-                output_offset = (
-                    local_expert_id * max_rows * output_bytes_per_row
-                    + row * output_bytes_per_row
-                    + sf_idx * Int32(self.sf_vec_size // 2)
-                )
-                st_global_u64(
-                    get_ptr_as_int64(packed_a_storage, output_offset), packed_lo
-                )
-                m_tile_idx = row // Int32(32 * 4)
-                k_tile_idx = sf_idx // Int32(4)
-                outer_m_idx = row % Int32(32)
-                inner_m_idx = (row % Int32(32 * 4)) // Int32(32)
-                inner_k_idx = sf_idx % Int32(4)
-                scale_offset = (
-                    local_expert_id * expert_scale_stride
-                    + m_tile_idx * num_k_tiles * Int32(32 * 4 * 4)
-                    + k_tile_idx * Int32(32 * 4 * 4)
-                    + outer_m_idx * Int32(4 * 4)
-                    + inner_m_idx * Int32(4)
-                    + inner_k_idx
-                )
-                scale_storage[scale_offset] = scale_byte
-                sf_idx += Int32(self.threads_per_cta)
+                    scale_storage[scale_offset] = scale_byte
+                    sf_idx += Int32(self.threads_per_cta)
 
-            cute.arch.sync_threads()
-            pair_idx += Int32(gdim_z)
+                cute.arch.sync_threads()
+                pair_idx += Int32(gdim_z)
 
-        self._resident_grid_barrier(
-            barrier_count, barrier_epoch, Int32(gdim_z), is_cta_leader
-        )
-        if cutlass.const_expr(self.stamps):
-            if Int32(tidx) == Int32(0):
-                _st_global_i64(
-                    get_ptr_as_int64(stamps, stamp_row + Int32(1)),
-                    cute.arch.globaltimer(),
-                )
+            self._resident_grid_barrier(
+                barrier_count, barrier_epoch, Int32(gdim_z), is_cta_leader
+            )
+            if cutlass.const_expr(self.stamps):
+                if Int32(tidx) == Int32(0):
+                    _st_global_i64(
+                        get_ptr_as_int64(stamps, stamp_row + Int32(1)),
+                        cute.arch.globaltimer(),
+                    )
         # Item striding: n_active CTAs, the rest exit after the frontend. With
         # `even`, the candidate leaving the fewest empty slots in its last
         # wave wins (ties: the largest); every candidate still saturates DRAM

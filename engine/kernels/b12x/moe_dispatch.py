@@ -2178,6 +2178,8 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("packed_activation_store", False)),
     )
     # Expanded output and register scatter never alias a served handle.
+    if config.get("probe_prepared_routes"):
+        cfg += ("probe_prepared_routes_v1", int(config["probe_prepared_routes"]))
     if config.get("probe_route_scatter", False):
         cfg += ("probe_route_scatter_v1",)
     if config.get("probe_direct_scatter", False):
@@ -2187,6 +2189,14 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
 
 def _static_v2_decode_config(config: dict, m: int) -> dict:
     """Specialize the integrated tile geometry only for C=1 decode rows."""
+    if config.get("probe_prepared_routes"):
+        capacity = config["probe_prepared_routes"]
+        if not (type(capacity) is int and m * 8 <= capacity <= 384 and 1 <= m <= 32
+                and config.get("tiled") and config.get("reform_sf_pack")
+                and (m > 8 or config.get("decode_reform"))
+                and not any(config.get(k) for k in ("split", "even", "stamps", "skip_a", "skip_sf",
+                                                    "a_ring", "sf_pack", "probe_route_scatter", "probe_direct_scatter"))):
+            raise ValueError("prepared routes require the bounded GLM TP4 decode geometry")
     if config.get("probe_route_scatter") or config.get("probe_direct_scatter"):
         if not (m in (7, 14, 21, 28) and config.get("tiled")
                 and config.get("reform_sf_pack") and (m != 7 or config.get("decode_reform"))
@@ -2271,10 +2281,13 @@ def _get_static_kernel_v2(
         state_E=state_E,weight_E=weight_E,k=k,n=n,num_topk=num_topk,
         quant_mode=quant_mode,activation=activation,swiglu_alpha=swiglu_alpha,
         swiglu_beta=swiglu_beta,swiglu_limit=swiglu_limit)
-    if (config.get("probe_route_scatter") or config.get("probe_direct_scatter")) and not (
+    if (config.get("probe_route_scatter") or config.get("probe_direct_scatter")
+            or config.get("probe_prepared_routes")) and not (
             scatter_fp32 and state_E == weight_E == 288 and k == 4096
             and n == 512 and num_topk == 8):
         raise ValueError("scatter probe requires the GLM TP4 FP32 output contract")
+    if config.get("probe_prepared_routes") and max_rows != 32:
+        raise ValueError("prepared route workspace has exactly 32 rows per expert")
     cache_key = (*cache_key,"tp_scatter_fp32_v1",scatter_fp32)
     cached = _STATIC_V2_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -2290,7 +2303,8 @@ def _get_static_kernel_v2(
     kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4
     kernel: Any = kernel_cls(
         scatter_fp32=scatter_fp32,
-        route_scatter=bool(config.get("probe_route_scatter", False)),
+        route_scatter=bool(config.get("probe_route_scatter") or config.get("probe_prepared_routes")),
+        prepared_routes=bool(config.get("probe_prepared_routes")),
         direct_scatter=bool(config.get("probe_direct_scatter", False)),
         a_ring=bool(config.get("a_ring", False)),
         sf_pack=bool(config.get("sf_pack", False)),
@@ -2400,7 +2414,9 @@ def _get_static_kernel_v2(
     )
     scatter_fake = cute.runtime.make_fake_compact_tensor(
         cutlass.Float32 if scatter_fp32 else a_dtype,
-        (m * num_topk * output_tile_count_n if config.get("probe_route_scatter") else m, k),
+        ((config["probe_prepared_routes"] if config.get("probe_prepared_routes")
+          else m * num_topk) * output_tile_count_n
+         if config.get("probe_route_scatter") or config.get("probe_prepared_routes") else m, k),
         stride_order=(1, 0), assumed_align=16
     )
     token_map_fake = cute.runtime.make_fake_compact_tensor(
@@ -3492,6 +3508,8 @@ def launch_sm120_static_moe(
                 f"lane tiled={want_tiled}"
             )
         if static_v2_config is not None:
+            if static_v2_config.get("probe_prepared_routes"):
+                raise ValueError("prepared routes require the explicit mixed-expert owner")
             static_v2_config = _static_v2_decode_config(static_v2_config, num_tokens)
             if static_v2_config.get("reform_sf_pack"):
                 if weights.reform_scales is None:

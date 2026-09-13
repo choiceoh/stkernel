@@ -1,0 +1,113 @@
+"""Admission, complete route accounting, and isolation of prepared expert work."""
+import ast
+import hashlib
+from pathlib import Path
+import random
+import unittest
+
+from engine.modules.mixed_experts import ExpertInvocation, plan_experts
+
+
+IDENTITY = ExpertInvocation(3, 1, 2, 3)
+
+
+class MixedExpertTests(unittest.TestCase):
+    def test_actual_c1_tile_and_only_useful_prefill_tails(self):
+        decode = [list(range(8)) for _ in range(2)]
+        for rows, hot, saved in ((100, 0, 0), (128, 0, 0), (140, 96, 8), (143, 0, 0)):
+            plan = plan_experts(decode, [list(range(8))]*rows, identity=IDENTITY)
+            work = plan.work()
+            self.assertEqual((work['decode_tile_m'], plan.hot_routes, work['removed_prefill_tiles']), (16, hot, saved))
+            self.assertEqual(work['mixed_tiles'], work['decode_tiles'])
+        plan = plan_experts([list(range(8))]*32, [list(range(8))]*140, identity=IDENTITY)
+        self.assertEqual((plan.tile_m, plan.hot_routes), (32, 0))
+
+    def test_quota_prefers_smallest_tail_with_deterministic_ties(self):
+        plan = plan_experts([list(range(8))]*2, [list(range(8))]*140,
+                            identity=IDENTITY, hot_route_quota=25)
+        self.assertEqual(plan.hot_counts, (12, 12) + (0,)*286)
+        self.assertEqual(plan.work()['removed_prefill_tiles'], 2)
+
+    def test_every_route_exactly_once_and_decode_order_unchanged(self):
+        rng = random.Random(895)
+        for count in (1, 7, 8, 9, 16, 24, 32):
+            decode = [rng.sample(range(288), 8) for _ in range(count)]
+            prefill = [rng.sample(range(288), 8) for _ in range(300)]
+            plan = plan_experts(decode, prefill, identity=IDENTITY)
+            self.assertEqual([(s[2], s[3], s[4]) for s in plan.sources[:count*8]],
+                             [(0, r, s) for r in range(count) for s in range(8)])
+            covered = [(s[3], s[4]) for s in plan.sources[count*8:]] + list(plan.cold_routes)
+            self.assertEqual(sorted(covered), [(r, s) for r in range(300) for s in range(8)])
+            positions = set()
+            for local, row, kind, token, slot in plan.sources:
+                self.assertNotIn((local, row), positions)
+                positions.add((local, row))
+                self.assertLess(row, 32)
+                expert = (decode, prefill)[kind][token][slot]
+                self.assertEqual(plan.experts[local], expert)
+            work = plan.work()
+            self.assertEqual(work['decode_tiles'], work['mixed_tiles'])
+            self.assertLessEqual(plan.hot_routes, 128)
+            self.assertEqual(work['removed_prefill_tiles'], sum(bool(h) for h in plan.hot_counts))
+
+    def test_immutable_plan_and_no_hot_work_outside_decode_experts(self):
+        decode, prefill = [list(range(8))], [list(range(8, 16))]
+        plan = plan_experts(decode, prefill, identity=IDENTITY)
+        decode[0][0] = 100
+        self.assertEqual(plan.decode[0][0], 0)
+        self.assertEqual(plan.hot_routes, 0)
+        with self.assertRaises(AttributeError):
+            plan.quota = 999
+
+    def test_invalid_routes_and_generation_fail_before_work(self):
+        valid = [list(range(8))]
+        for value in ([], [[0]*8], [[True]+list(range(1, 8))], [list(range(7))],
+                      [[288]+list(range(1, 8))], valid*33):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                plan_experts(value, valid, identity=IDENTITY)
+        for value in (-1, 129, True, 1.5):
+            with self.assertRaises(ValueError):
+                plan_experts(valid, valid, identity=IDENTITY, hot_route_quota=value)
+        for value in (-1, True, 1.5):
+            with self.assertRaises(ValueError):
+                ExpertInvocation(3, value, 1, 1)
+
+    def test_normal_kernel_body_retains_every_statement(self):
+        # Remove only the private frontend conditional and compare the whole
+        # ordinary @cute.kernel AST, so future body changes require review.
+        path = Path(__file__).resolve().parents[1]/'engine/kernels/b12x/moe_static_kernel_v4.py'
+        tree = ast.parse(path.read_text())
+        node = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == 'kernel')
+        class Ordinary(ast.NodeTransformer):
+            def visit_If(self, n):
+                if ast.unparse(n.test) == 'cutlass.const_expr(not self.prepared_routes)':
+                    return n.body
+                return self.generic_visit(n)
+        dump = ast.dump(Ordinary().visit(node), include_attributes=False)
+        self.assertEqual(hashlib.sha256(dump.encode()).hexdigest(), 'f520984ed22c1b7bdf3214ce62ff801d1f4c06c03540a6062f8ba04c94896fde')
+
+    def test_prepared_config_is_bounded_and_keeps_decode_geometry(self):
+        path = Path(__file__).resolve().parents[1]/'engine/kernels/b12x/moe_dispatch.py'
+        tree = ast.parse(path.read_text())
+        node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == '_static_v2_decode_config')
+        namespace = {}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), 'exec'), namespace)
+        normalize = namespace[node.name]
+        config = dict(tiled=True, reform_sf_pack=True, decode_reform=True, probe_prepared_routes=384)
+        for rows in (1, 8, 9, 16, 24, 32):
+            once = normalize(config, rows)
+            self.assertEqual(once['decode_reform'], rows <= 8)
+            self.assertEqual(normalize(once, rows), once)
+        for field, value in (('split', True), ('even', True), ('stamps', True), ('skip_a', True),
+                             ('a_ring', True), ('sf_pack', True), ('probe_route_scatter', True),
+                             ('probe_prepared_routes', 385), ('probe_prepared_routes', True),
+                             ('probe_prepared_routes', 10), ('tiled', False), ('decode_reform', False)):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                normalize(dict(config, **{field: value}), 8)
+        for rows in (0, 33):
+            with self.assertRaises(ValueError):
+                normalize(config, rows)
+
+
+if __name__ == '__main__':
+    unittest.main()
