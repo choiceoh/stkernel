@@ -10,7 +10,7 @@ At 32,256 rows, the removed BF16 intermediate is 252 MiB/rank; the received pack
 
 ## Validation
 
-The implementation was rebased on `91280525` (main's fused MoE decode output). Its prior drafter lazy import regression is repaired: public aliases bind the actual common-lane functions, and the single-row proposal imports its walk selector. Optional compact mode remains compatible with lightweight test models.
+The implementation was rebased on `70038de0`, retaining main's fused MoE decode output and covered-query prefill refinement. Its prior drafter lazy import regression is repaired: public aliases bind the actual common-lane functions, and the single-row proposal imports its walk selector. Optional compact mode remains compatible with lightweight test models.
 
 - Eleven new CPU cases cover geometry, rank agreement, observer fallback, one full all-gather, three-reader ownership, real-row shared GEMM shape, real forward/auxiliary ordering and the inherited producer AST. The frontend evidence test also permutes physical route rows while preserving expert/token identity.
 - Existing integration and CI regression modules were exercised on Mac and the pinned Linux image. Exact final counts and source fingerprints are retained in `cpu.json`.
