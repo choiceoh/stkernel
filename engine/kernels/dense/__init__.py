@@ -155,6 +155,18 @@ def _fold(packs):
                    first.rowscale, first.rows, sum(p.cols for p in packs), first.calibrated)]
 
 
+def wide_input_cell(rows, n, k):
+    """Same-pack GPU-qualified wide decode cells; keep M14's two regressions out.
+
+    The pack is invocation-owned, and its MMA/reduction is the ordinary W4
+    program. Private-workspace shared-expert overlap retains its own route.
+    See measurements/st_decode_batch_20260913 for warm and evicted B/A/A/B.
+    """
+    return rows in (14, 21, 28) and (
+        (n, k) in ((4096, 2048), (2048, 4096), (4096, 4096), (6144, 4096), (4096, 3072))
+        or (rows in (21, 28) and (n, k) in ((6416, 4096), (4096, 1536))))
+
+
 def w4_gemm(x, pack, workspace=None):
     if (x.ndim != 2 or not 1 <= x.shape[0] <= 32 or x.shape[1] != pack.cols or x.shape[1] > KMAX
             or x.dtype != torch.bfloat16 or x.device != pack.data.device):
@@ -163,8 +175,9 @@ def w4_gemm(x, pack, workspace=None):
     # f_a/g_a are columns of the fused KDA projection: preserve their wider
     # row stride instead of launching a copy for each of the 68 products.
     if workspace is None:
-        extension().run_gemm(x, pack.data, pack.scale, out, pack.rows,
-                             1., 0, pack.rowscale.data_ptr(), 0, 0, 0)
+        ext = extension()
+        run = ext.run_gemm_wide_input if wide_input_cell(x.shape[0], pack.rows, pack.cols) else ext.run_gemm
+        run(x, pack.data, pack.scale, out, pack.rows, 1., 0, pack.rowscale.data_ptr(), 0, 0, 0)
     else:
         extension().run_gemm_private(x, pack.data, pack.scale, out, pack.rows,
                                     pack.rowscale.data_ptr(), workspace)

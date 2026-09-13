@@ -1,0 +1,39 @@
+{
+  "status": "PASS",
+  "scope": "full CUDA/Torch build and resources only; GPU numerics and timing pending",
+  "gpu_used": false,
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "flags": [
+    "-O2",
+    "-gencode",
+    "arch=compute_121a,code=sm_121a",
+    "-DMK_GRID_DEF=96",
+    "-DMK_MHC_GRID_DEF=144",
+    "-DMK_NBUF2_DEF=3",
+    "-DMK_FP8_PACK2_DEF=1",
+    "-DMK_GEMM_TRANSPOSE_M8_DEF=1",
+    "-DMK_GEMM_COMPACT_M8_DEF=1",
+    "-DMK_M8_FASTPATH_DEF=1"
+  ],
+  "extension_sha256": "a09351c06f2e4e8958392b4e86804322c6554fe7e98dfb786263df4e930fa092",
+  "source_sha256": "bd21949b0dd9fafe30e1819949fd17dfaa9fa79288574bb09531e4466daff25a",
+  "mhc_resources": [
+    {
+      "kernel": "_ZN43_GLOBAL__N__7012db52_10_kernels_cu_d64ed85316mk_mhc_ar_kernelILb0ELi4096EEEvNS_9MKMhcArgsE",
+      "usage": "REG:160 STACK:16 SHARED:28736 LOCAL:0 CONSTANT[0]:1080 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "kernel": "_ZN43_GLOBAL__N__7012db52_10_kernels_cu_d64ed85316mk_mhc_ar_kernelILb1ELi4096EEEvNS_9MKMhcArgsE",
+      "usage": "REG:128 STACK:16 SHARED:28736 LOCAL:0 CONSTANT[0]:1080 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "kernel": "_ZN43_GLOBAL__N__7012db52_10_kernels_cu_d64ed85316mk_mhc_ar_kernelILb0ELi5120EEEvNS_9MKMhcArgsE",
+      "usage": "REG:160 STACK:16 SHARED:28736 LOCAL:0 CONSTANT[0]:1080 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "kernel": "_ZN43_GLOBAL__N__7012db52_10_kernels_cu_d64ed85316mk_mhc_ar_kernelILb1ELi5120EEEvNS_9MKMhcArgsE",
+      "usage": "REG:128 STACK:16 SHARED:28736 LOCAL:0 CONSTANT[0]:1080 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    }
+  ]
+}

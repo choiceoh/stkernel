@@ -158,6 +158,7 @@ class Glm53Net:
         self.shared_overlap = None
         self._router_weights = {}
         self._router_tensorcore = set()
+        self._decode_pairs = {}
         self.prefill_transport = None
         self.mhc = None
         from engine.profiles.glm53.weights import WEIGHT_LAYOUT, MODELOPT_WEIGHT_LAYOUT
@@ -220,6 +221,33 @@ class Glm53Net:
                 resident = arena.carve(weight.numel() * 4, f'router/{layer}').view(F32).view_as(weight)
                 resident.copy_(weight)
                 self._router_weights[layer] = resident
+
+    def decode_projection_nbytes(self):
+        """Joined indexer matrices; KDA pairs retain their original weight views."""
+        return sum(2 * self.F.idx_dim * self.F.hidden * 2 for L in self.layers if self.F.is_dsa(L))
+
+    def prepare_decode_projections(self, arena):
+        """Copy pairs after smoothing, before capture, into the declared arena."""
+        if self._decode_pairs or not self.dense:
+            raise RuntimeError('prepare decode pairs once, after prepare_dense/input smoothing')
+        from engine.kernels.decode_projection import KdaPair, IndexerPair
+        for L in self.layers:
+            if self.F.is_dsa(L):
+                n = f'L{L}.idx.'
+                wk, gate = self.p[n + 'wk'], self.p[n + 'gate']
+                storage = arena.carve((wk.numel() + gate.numel()) * 2, f'indexer-pair/{L}')
+                self._decode_pairs[L] = IndexerPair(wk, gate, storage=storage.view(BF16).view(2 * self.F.idx_dim, self.F.hidden))
+            else:
+                n = f'L{L}.kda.'
+                self._decode_pairs[L] = KdaPair(self.p[n + 'f_b'], self.p[n + 'g_b'])
+
+    def _decode_pair(self, L, step, rows):
+        # Explicit measured cells: other graph widths and prefill keep their
+        # existing projection form. No exception-driven kernel fallback.
+        if not self._decode_pairs or not getattr(step, 'captured', False):
+            return None
+        from engine.kernels.decode_projection import DECODE_ROWS
+        return self._decode_pairs.get(L) if rows in DECODE_ROWS else None
 
     @staticmethod
     def dense_weight_names(keys):
@@ -366,8 +394,13 @@ class Glm53Net:
         proj = self.linear(x, n + "in_proj") if projection is None else projection
         N = proj.shape[0]; Hl, D, K = self.Hk, F.kda_dim, F.conv
         qkv_all, b_all, f_a, g_a = proj.split([3 * Hl * D, Hl, D, D], dim=-1)
-        g_raw_all = self.linear(f_a, n + "f_b").view(N, Hl, D)
-        g_out = self.linear(g_a, n + "g_b").view(N, Hl, D)
+        pair = self._decode_pair(L, step, N)
+        if pair is not None:
+            g_raw_all, g_out = pair(f_a, g_a)
+            g_raw_all, g_out = g_raw_all.view(N, Hl, D), g_out.view(N, Hl, D)
+        else:
+            g_raw_all = self.linear(f_a, n + "f_b").view(N, Hl, D)
+            g_out = self.linear(g_a, n + "g_b").view(N, Hl, D)
         beta_all = b_all                                                             # raw logits: each lane sigmoids as its kernel wants
         wc, wr = self.conv_ring, self.rec_ring
         captured = getattr(step, "captured", False)
@@ -473,16 +506,22 @@ class Glm53Net:
         F, p, n = self.F, self.p, f"L{L}.idx."
         N = x.shape[0]; kp, nh, d = F.kpool, F.idx_heads, F.idx_dim
         q = self.linear(qr, n + "wq_b").view(N, nh, d)
-        k = self.linear(x, n + "wk")
-        if self.lanes.layernorm is None:
-            k = Fn.layer_norm(k.float(), (d,), p[n + "k_norm_w"], p[n + "k_norm_b"], K_NORM_EPS).to(x.dtype)
-        else:
-            k = self.lanes.layernorm(k, p[n + "k_norm_w"], p[n + "k_norm_b"], K_NORM_EPS)
+        pair = self._decode_pair(L, step, N)
         w = x.float() @ p[n + "w_heads"].T                                           # fp32 head gate, as served
-        gate = self.linear(x, n + "gate")                                           # [N, 128] per-channel pool score
-        q8, qs = self.lanes.indexer_quant(q.reshape(-1, d))
-        q8 = q8.view(N, nh, d)
-        w_eff = self.lanes.head_gate(w, qs.view(N, nh), F.idx_scale)                 # q's scale folds into the head gate, as served
+        if pair is not None:
+            from engine.kernels.decode_projection import indexer_boundary
+            k, gate = pair(x)
+            q8, k, w_eff = indexer_boundary(q, k, w, p[n + "k_norm_w"], p[n + "k_norm_b"], F.idx_scale)
+        else:
+            k = self.linear(x, n + "wk")
+            if self.lanes.layernorm is None:
+                k = Fn.layer_norm(k.float(), (d,), p[n + "k_norm_w"], p[n + "k_norm_b"], K_NORM_EPS).to(x.dtype)
+            else:
+                k = self.lanes.layernorm(k, p[n + "k_norm_w"], p[n + "k_norm_b"], K_NORM_EPS)
+            gate = self.linear(x, n + "gate")
+            q8, qs = self.lanes.indexer_quant(q.reshape(-1, d))
+            q8 = q8.view(N, nh, d)
+            w_eff = self.lanes.head_gate(w, qs.view(N, nh), F.idx_scale)
         width = F.topk + kp - 1
         slots_out = torch.empty((N, width), dtype=torch.int32, device=x.device)
         valid_out = torch.empty(N, dtype=torch.int32, device=x.device)

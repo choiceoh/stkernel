@@ -1,0 +1,12 @@
+{
+  "source": "c07f7641",
+  "runtime_image": "sha256:5a568eb759e8303848fae8b2c52f4a9a1f15cf5ad49f8c03f75ddf380c7682c0",
+  "session": "st-decode-batch0913v3",
+  "kind": "single",
+  "wait_seconds": 1.1,
+  "payload_seconds": 36.6,
+  "numerical_cells": 66,
+  "scope": "real rank0 weights; component proof; consumer proof pending",
+  "native_source_sha256": "bd21949b0dd9fafe30e1819949fd17dfaa9fa79288574bb09531e4466daff25a",
+  "decode_projection_sha256": "c1327ed7a6f2f7f24acee531ae1f951fcb5539a0b26ad5385d6c24a5831a4d64"
+}

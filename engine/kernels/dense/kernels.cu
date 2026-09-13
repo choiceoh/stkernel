@@ -602,7 +602,7 @@ __device__ __forceinline__ void mk2_lr_partial(const MKGemm2Ctx& c,
 // LR: the low-rank-correction instantiation (33차 lever 4). The plain one
 // carries none of its code, scratch or waits -- the production path must
 // not pay for a lever that is off.
-template <int RQ, bool LR, bool COMPACT = false, bool DIRECT = false>
+template <int RQ, bool LR, bool COMPACT = false, bool DIRECT = false, bool PACKED_INPUT = false>
 __global__ void __launch_bounds__(MK_THREADS, (MK_COMPACT_M8 && COMPACT) ? 3 : 2)
 mk_gemm2_kernel(MKGemm2Ctx c) {
   static_assert(RQ == 1 || RQ == 2 || RQ == 4, "rows per warp");
@@ -701,6 +701,13 @@ mk_gemm2_kernel(MKGemm2Ctx c) {
   uint4 areg = make_uint4(0u, 0u, 0u, 0u);
   float asc = 1.0f;
   auto load_x = [&](int kb) {
+    if constexpr (PACKED_INPUT) {
+      if (arow < c.m) {
+        areg = *(const uint4*)(c.input_q + ((size_t)kb * 32 + arow) * KSTEP + achunk * 16);
+        if (achunk == 0) asc = c.input_s[kb * 32 + arow];
+      }
+      return;
+    }
     if (c.a_ready) {
       if (arow < c.m) {
         areg = *(const uint4*)(g_mk2_aq + ((size_t)kb * 32 + arow) * KSTEP + achunk * 16);
@@ -715,6 +722,14 @@ mk_gemm2_kernel(MKGemm2Ctx c) {
     }
   };
   auto quant_x = [&](int buf) {
+    if constexpr (PACKED_INPUT) {
+      if (arow < c.m) {
+        uint8_t* dst = saq + buf * (A_ROWS * SMEM_A_PITCH) + arow * SMEM_A_PITCH;
+        *(uint4*)(dst + mk_swz(arow & 15, achunk * 16)) = areg;
+        if (achunk == 0) sxs[buf * 32 + arow] = asc * c.wgs;
+      }
+      return;
+    }
     if (c.a_ready) {  // stage the published group; nothing to quantize
       if (arow < c.m) {
         uint8_t* dst = saq + buf * (A_ROWS * SMEM_A_PITCH) +
@@ -1154,6 +1169,28 @@ struct MKInputPackCtx {
   int m, k;
   int64_t x_stride;
 };
+// Wide decode keeps the ordinary MMA geometry and split-K reduction order.
+// Only its repeated input quantization moves to this invocation-owned pack.
+__global__ void mk_wide_input_pack_kernel(MKInputPackCtx c) {
+  asm volatile("griddepcontrol.launch_dependents;");
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  const int blocks = c.k / KSTEP, kb = blockIdx.x % blocks;
+  const int row = 8 * (blockIdx.x / blocks) + (threadIdx.x >> 5), lane = threadIdx.x & 31;
+  float v[4] = {}, mx = 0;
+  if (row < c.m) {
+    const uint2 raw = *(const uint2*)(c.x + (size_t)row * c.x_stride + kb * KSTEP + lane * 4);
+    const __nv_bfloat16* bf = (const __nv_bfloat16*)&raw;
+#pragma unroll
+    for (int j = 0; j < 4; ++j) { v[j] = __bfloat162float(bf[j]); mx = fmaxf(mx, fabsf(v[j])); }
+  }
+  mx = __uint_as_float(__reduce_max_sync(0xffffffffu, __float_as_uint(mx)));
+  if (row < c.m) {
+    const float scale = mk_act_scale(mx), inv = mk_act_rcp(scale);
+    *(uint32_t*)(c.aq + ((size_t)kb * 32 + row) * KSTEP + lane * 4) =
+        mk_f32x4_to_e4m3(v[0] * inv, v[1] * inv, v[2] * inv, v[3] * inv);
+    if (lane == 0) c.scales[kb * 32 + row] = scale;
+  }
+}
 __global__ void mk_input_pack_kernel(MKInputPackCtx c) {
   asm volatile("griddepcontrol.launch_dependents;");
   asm volatile("griddepcontrol.wait;" ::: "memory");
@@ -2946,6 +2983,10 @@ void set_kernel_attrs() {
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_gemm2_kernel<4, false>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
+      mk_gemm2_kernel<2, false, false, false, true>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
+  MK_CHECK_CUDA(cudaFuncSetAttribute(
+      mk_gemm2_kernel<4, false, false, false, true>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
+  MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_gemm2_kernel<1, true>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_gemm2_kernel<2, true>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
@@ -3224,7 +3265,8 @@ template <bool DIRECT = false>
 void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                  torch::Tensor out, int64_t n_orig, double wgs, int64_t bg,
                  int64_t rgs_ptr, int64_t lr_a_ptr, int64_t lr_b_ptr,
-                 int64_t lr_r, float* private_partial = nullptr, unsigned int* private_arrive = nullptr, const int64_t* out_address = nullptr) {
+                 int64_t lr_r, float* private_partial = nullptr, unsigned int* private_arrive = nullptr,
+                 const int64_t* out_address = nullptr, bool wide_input = false) {
   set_kernel_attrs();
   if constexpr (DIRECT) set_direct_kernel_attrs();
   MKGemm2Ctx c2{};
@@ -3280,7 +3322,23 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                   && (c2.ksr == 1
                       || (size_t)c2.m * c2.n * c2.ksr <= (size_t)MK2_PART_ELEMS),
               "gemm2 plan out of contract");
-  if (input_reuse) {
+  if (wide_input) {
+    TORCH_CHECK(c2.m > 8 && c2.m <= 32 && !bg && !lr_r,
+                "wide input candidate requires 9..32 ordinary decode rows");
+    const int qbytes = (c2.k / KSTEP) * 32 * KSTEP;
+    const int sbytes = (c2.k / KSTEP) * 32 * sizeof(float);
+    auto packed = torch::empty({qbytes + sbytes}, x.options().dtype(torch::kUInt8));
+    c2.input_q = packed.data_ptr<uint8_t>();
+    c2.input_s = reinterpret_cast<float*>(packed.data_ptr<uint8_t>() + qbytes);
+    mk_launch(mk_wide_input_pack_kernel, (c2.k / KSTEP) * ((c2.m + 7) / 8), 0, stream,
+              MKInputPackCtx{c2.x, packed.data_ptr<uint8_t>(),
+                            reinterpret_cast<float*>(packed.data_ptr<uint8_t>() + qbytes),
+                            c2.m, c2.k, c2.x_stride});
+    if (c2.m <= 16)
+      mk_launch(mk_gemm2_kernel<2, false, false, false, true>, nblk * c2.ksr, GEMM2_SMEM, stream, c2);
+    else
+      mk_launch(mk_gemm2_kernel<4, false, false, false, true>, nblk * c2.ksr, GEMM2_SMEM, stream, c2);
+  } else if (input_reuse) {
     const int qbytes = (c2.k / KSTEP) * 1024;
     const int sbytes = (c2.k / KSTEP) * 8 * sizeof(float);
     // PyTorch owns this allocation on the current stream. CUDA graph capture
@@ -3315,6 +3373,13 @@ void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                  torch::Tensor out, int64_t n_orig, double wgs, int64_t bg,
                  int64_t rgs_ptr, int64_t lr_a_ptr, int64_t lr_b_ptr, int64_t lr_r) {
   mk_run_gemm_impl(x, wq4, ws4, out, n_orig, wgs, bg, rgs_ptr, lr_a_ptr, lr_b_ptr, lr_r);
+}
+
+void mk_run_gemm_wide_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
+                           torch::Tensor out, int64_t n_orig, double wgs, int64_t bg,
+                           int64_t rgs_ptr, int64_t lr_a_ptr, int64_t lr_b_ptr, int64_t lr_r) {
+  mk_run_gemm_impl(x, wq4, ws4, out, n_orig, wgs, bg, rgs_ptr, lr_a_ptr, lr_b_ptr, lr_r,
+                   nullptr, nullptr, nullptr, true);
 }
 
 void mk_run_gemm_private(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
@@ -4193,6 +4258,7 @@ void mk_run_prep(std::vector<int64_t> ptrs, std::vector<int64_t> ints) {
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  m.def("run_gemm_wide_input", &mk_run_gemm_wide_input, "private wide-row input reuse qualification");
   m.def("probe_device", &mk_probe_device, "device geometry probe");
   m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");
   m.def("read_mhc_ts", &mk_read_mhc_ts, "mhc phase timestamps");

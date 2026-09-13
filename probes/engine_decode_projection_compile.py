@@ -19,13 +19,21 @@ def main():
     import triton
     from triton.backends.compiler import GPUTarget
     from triton.compiler import ASTSource
-    from engine.kernels.decode_projection import _kda_pair
+    from engine.kernels.decode_projection import _kda_pair, _indexer_boundary
     from probes.engine_moe_scatter import _reduce_routes
     records = []
+    for stride in (128, 256):
+        source = ASTSource(fn=_indexer_boundary,
+                          signature=dict(Q='*bf16', K='*bf16', W='*fp32', NW='*fp32', NB='*fp32',
+                                         Q8='*fp8e4nv', KO='*bf16', WE='*fp32'),
+                          constexprs=dict(NH=64, KS=stride, SCALE=128 ** -.5 * 64 ** -.5))
+        kernel = triton.compile(source, target=GPUTarget('cuda', 121, 32),
+                                options=dict(num_warps=1, enable_fp_fusion=False))
+        records.append(dict(kernel='indexer_boundary', key_stride=stride, shared_bytes=kernel.metadata.shared, status='PASS'))
     for rows in (1, 6, 7, 14, 21, 28):
         for stride0, stride1 in ((6416, 6416), (128, 6416)):
             source = ASTSource(fn=_kda_pair, signature={name: '*bf16' for name in ('X0', 'X1', 'W0', 'W1', 'Y')},
-                               constexprs=dict(M=rows, XS0=stride0, XS1=stride1, BM=16, BN=64))
+                               constexprs=dict(M=rows, XS0=stride0, XS1=stride1, BM=16, BN=64, K=128, N=2048))
             kernel = triton.compile(source, target=GPUTarget('cuda', 121, 32), options=dict(num_warps=4))
             records.append(dict(kernel='kda_pair', rows=rows, strides=[stride0, stride1],
                                 shared_bytes=kernel.metadata.shared, status='PASS'))

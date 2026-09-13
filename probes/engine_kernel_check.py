@@ -35,7 +35,7 @@ def main():
     parser.add_argument("--moe-static", default="stock", help="served b12x static-lane spec (STK_moe_static): stock | t,r,sf6[,q0]")
     parser.add_argument("--mla-prefill", default="stock", help="served MLA prefill mode (STK_mla_prefill): stock | tile32 | pair | pair4")
     args = parser.parse_args()
-    if args.lanes == 'scatter_bundle':
+    if args.lanes in ('scatter_bundle', 'batch_fusions', 'batch_boundaries', 'batch_integration'):
         from probes.engine_decode_bundle import check as decode_bundle
         decode_bundle(args.ranks, bundle=args.lanes)
         return
@@ -63,11 +63,25 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "paired_projection", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows"}, selected
 
-    if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'paired_projection'}:
+    if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'paired_projection', 'indexer_boundary', 'wide_input', 'direct_producer'}:
         from probes.engine_decode_bundle import require_current_probe
         require_current_probe()
+    if 'direct_producer' in selected:
+        import unittest
+        suite = unittest.defaultTestLoader.loadTestsFromNames(('tests.test_engine_direct_mhc_cuda',
+                                                               'tests.test_engine_direct_producer_cuda'))
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        if not result.wasSuccessful() or result.skipped:
+            raise RuntimeError('merged direct producer/MHC gates failed or skipped')
+        report('direct_producer', passed=True, tests=result.testsRun)
+    if 'indexer_boundary' in selected:
+        from probes.engine_decode_batch import indexer_check
+        indexer_check(report, args.ranks)
+    if 'wide_input' in selected:
+        from probes.engine_decode_batch import wide_check
+        wide_check(report, args.ranks)
     if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct'}:
         from probes.engine_decode_scatter_check import moe_check
         for lane in ('moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct'):

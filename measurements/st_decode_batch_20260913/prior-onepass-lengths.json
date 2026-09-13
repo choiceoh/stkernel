@@ -1,0 +1,751 @@
+{
+  "source_paths": [
+    "/home/choiceoh/glm53-logs/onepass-runs/20260912T213057-9725b41d901c/record.json",
+    "/home/choiceoh/glm53-logs/onepass-runs/20260912T232937-6373a6373feb/record.json"
+  ],
+  "runs": [
+    {
+      "run_id": "20260912T213057-9725b41d901c",
+      "source": "8c8b031b94bb80175cfccd49cfb6329d18cdecae",
+      "generation_budget": {
+        "individual_max_tokens": 8192,
+        "individual_reasoning_budget": 4096,
+        "combined_max_tokens": 24576,
+        "combined_reasoning_budget": 12288
+      },
+      "requests": [
+        {
+          "ctx": 2000,
+          "question": 0,
+          "completion_tokens": 4250,
+          "reasoning_budget": 4096,
+          "finish_reason": "stop",
+          "channel_diagnostics": {
+            "schema": 1,
+            "scope": "diagnostic-only; existing combined-text gate",
+            "precedence": [
+              "content",
+              "reasoning_content",
+              "reasoning"
+            ],
+            "channels": {
+              "content": {
+                "raw_chars": 412,
+                "raw_pieces": 26,
+                "selected_chars": 412,
+                "selected_pieces": 26,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning_content": {
+                "raw_chars": 11929,
+                "raw_pieces": 1263,
+                "selected_chars": 11929,
+                "selected_pieces": 1263,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning": {
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              }
+            },
+            "combined_chars": 12341,
+            "combined_gated_counts": {
+              "replacement": 0,
+              "lone_jamo": 0,
+              "cjk_mixed": 0,
+              "control": 0
+            },
+            "first_offending_channel": null,
+            "offenses": [],
+            "snippet_scope": "combined-selected-text",
+            "unlocated_kinds": []
+          },
+          "reasoning_retokenized": 4096,
+          "content_retokenized": 152
+        },
+        {
+          "ctx": 2000,
+          "question": 1,
+          "completion_tokens": 4715,
+          "reasoning_budget": 4096,
+          "finish_reason": "stop",
+          "channel_diagnostics": {
+            "schema": 1,
+            "scope": "diagnostic-only; existing combined-text gate",
+            "precedence": [
+              "content",
+              "reasoning_content",
+              "reasoning"
+            ],
+            "channels": {
+              "content": {
+                "raw_chars": 2220,
+                "raw_pieces": 92,
+                "selected_chars": 2220,
+                "selected_pieces": 92,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning_content": {
+                "raw_chars": 11930,
+                "raw_pieces": 1203,
+                "selected_chars": 11930,
+                "selected_pieces": 1203,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning": {
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              }
+            },
+            "combined_chars": 14150,
+            "combined_gated_counts": {
+              "replacement": 0,
+              "lone_jamo": 0,
+              "cjk_mixed": 0,
+              "control": 0
+            },
+            "first_offending_channel": null,
+            "offenses": [],
+            "snippet_scope": "combined-selected-text",
+            "unlocated_kinds": []
+          },
+          "reasoning_retokenized": 4096,
+          "content_retokenized": 617
+        },
+        {
+          "ctx": 2000,
+          "question": 2,
+          "completion_tokens": 4573,
+          "reasoning_budget": 4096,
+          "finish_reason": "stop",
+          "channel_diagnostics": {
+            "schema": 1,
+            "scope": "diagnostic-only; existing combined-text gate",
+            "precedence": [
+              "content",
+              "reasoning_content",
+              "reasoning"
+            ],
+            "channels": {
+              "content": {
+                "raw_chars": 1110,
+                "raw_pieces": 112,
+                "selected_chars": 1110,
+                "selected_pieces": 112,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning_content": {
+                "raw_chars": 10998,
+                "raw_pieces": 1244,
+                "selected_chars": 10998,
+                "selected_pieces": 1244,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning": {
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              }
+            },
+            "combined_chars": 12108,
+            "combined_gated_counts": {
+              "replacement": 0,
+              "lone_jamo": 0,
+              "cjk_mixed": 0,
+              "control": 0
+            },
+            "first_offending_channel": null,
+            "offenses": [],
+            "snippet_scope": "combined-selected-text",
+            "unlocated_kinds": []
+          },
+          "reasoning_retokenized": 4096,
+          "content_retokenized": 475
+        },
+        {
+          "ctx": 32000,
+          "question": "all",
+          "completion_tokens": 13865,
+          "reasoning_budget": 12288,
+          "finish_reason": "stop",
+          "channel_diagnostics": {
+            "schema": 1,
+            "scope": "diagnostic-only; existing combined-text gate",
+            "precedence": [
+              "content",
+              "reasoning_content",
+              "reasoning"
+            ],
+            "channels": {
+              "content": {
+                "raw_chars": 3615,
+                "raw_pieces": 359,
+                "selected_chars": 3615,
+                "selected_pieces": 359,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning_content": {
+                "raw_chars": 34543,
+                "raw_pieces": 3228,
+                "selected_chars": 34543,
+                "selected_pieces": 3228,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 1,
+                  "control": 0
+                }
+              },
+              "reasoning": {
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              }
+            },
+            "combined_chars": 38158,
+            "combined_gated_counts": {
+              "replacement": 0,
+              "lone_jamo": 0,
+              "cjk_mixed": 1,
+              "control": 0
+            },
+            "first_offending_channel": "reasoning_content",
+            "offenses": [
+              {
+                "kind": "cjk_mixed",
+                "channel": "reasoning_content",
+                "combined_offset": 6731,
+                "selected_channel_offset": 6731,
+                "snippet_start": 6691,
+                "snippet": "s a counter... Actually in Korean, \"갑\" (甲) can mean \"case/box\" (like a pack of cigarettes). \"병\" "
+              }
+            ],
+            "snippet_scope": "combined-selected-text",
+            "unlocated_kinds": []
+          },
+          "reasoning_retokenized": 12288,
+          "content_retokenized": 1575
+        },
+        {
+          "ctx": 128000,
+          "question": "all",
+          "completion_tokens": 13976,
+          "reasoning_budget": 12288,
+          "finish_reason": "stop",
+          "channel_diagnostics": {
+            "schema": 1,
+            "scope": "diagnostic-only; existing combined-text gate",
+            "precedence": [
+              "content",
+              "reasoning_content",
+              "reasoning"
+            ],
+            "channels": {
+              "content": {
+                "raw_chars": 3173,
+                "raw_pieces": 409,
+                "selected_chars": 3173,
+                "selected_pieces": 409,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning_content": {
+                "raw_chars": 36392,
+                "raw_pieces": 3331,
+                "selected_chars": 36392,
+                "selected_pieces": 3331,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning": {
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              }
+            },
+            "combined_chars": 39565,
+            "combined_gated_counts": {
+              "replacement": 0,
+              "lone_jamo": 0,
+              "cjk_mixed": 0,
+              "control": 0
+            },
+            "first_offending_channel": null,
+            "offenses": [],
+            "snippet_scope": "combined-selected-text",
+            "unlocated_kinds": []
+          },
+          "reasoning_retokenized": 12288,
+          "content_retokenized": 1686
+        }
+      ]
+    },
+    {
+      "run_id": "20260912T232937-6373a6373feb",
+      "source": "8c8b031b94bb80175cfccd49cfb6329d18cdecae",
+      "generation_budget": {
+        "individual_max_tokens": 8192,
+        "individual_reasoning_budget": 4096,
+        "combined_max_tokens": 24576,
+        "combined_reasoning_budget": 12288
+      },
+      "requests": [
+        {
+          "ctx": 2000,
+          "question": 0,
+          "completion_tokens": 4358,
+          "reasoning_budget": 4096,
+          "finish_reason": "stop",
+          "channel_diagnostics": {
+            "schema": 1,
+            "scope": "diagnostic-only; existing combined-text gate",
+            "precedence": [
+              "content",
+              "reasoning_content",
+              "reasoning"
+            ],
+            "channels": {
+              "content": {
+                "raw_chars": 769,
+                "raw_pieces": 44,
+                "selected_chars": 769,
+                "selected_pieces": 44,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning_content": {
+                "raw_chars": 12582,
+                "raw_pieces": 1275,
+                "selected_chars": 12582,
+                "selected_pieces": 1275,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 1,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning": {
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              }
+            },
+            "combined_chars": 13351,
+            "combined_gated_counts": {
+              "replacement": 1,
+              "lone_jamo": 0,
+              "cjk_mixed": 0,
+              "control": 0
+            },
+            "first_offending_channel": "reasoning_content",
+            "offenses": [
+              {
+                "kind": "replacement",
+                "channel": "reasoning_content",
+                "combined_offset": 13350,
+                "selected_channel_offset": 12581,
+                "snippet_start": 13310,
+                "snippet": " 0,\n      \"decision\": \"전량승인\"\n    }\n  }\n}�"
+              }
+            ],
+            "snippet_scope": "combined-selected-text",
+            "unlocated_kinds": []
+          },
+          "reasoning_retokenized": 4095,
+          "content_retokenized": 260
+        },
+        {
+          "ctx": 2000,
+          "question": 1,
+          "completion_tokens": 4419,
+          "reasoning_budget": 4096,
+          "finish_reason": "stop",
+          "channel_diagnostics": {
+            "schema": 1,
+            "scope": "diagnostic-only; existing combined-text gate",
+            "precedence": [
+              "content",
+              "reasoning_content",
+              "reasoning"
+            ],
+            "channels": {
+              "content": {
+                "raw_chars": 991,
+                "raw_pieces": 51,
+                "selected_chars": 991,
+                "selected_pieces": 51,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning_content": {
+                "raw_chars": 12028,
+                "raw_pieces": 1173,
+                "selected_chars": 12028,
+                "selected_pieces": 1173,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning": {
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              }
+            },
+            "combined_chars": 13019,
+            "combined_gated_counts": {
+              "replacement": 0,
+              "lone_jamo": 0,
+              "cjk_mixed": 0,
+              "control": 0
+            },
+            "first_offending_channel": null,
+            "offenses": [],
+            "snippet_scope": "combined-selected-text",
+            "unlocated_kinds": []
+          },
+          "reasoning_retokenized": 4096,
+          "content_retokenized": 321
+        },
+        {
+          "ctx": 2000,
+          "question": 2,
+          "completion_tokens": 4575,
+          "reasoning_budget": 4096,
+          "finish_reason": "stop",
+          "channel_diagnostics": {
+            "schema": 1,
+            "scope": "diagnostic-only; existing combined-text gate",
+            "precedence": [
+              "content",
+              "reasoning_content",
+              "reasoning"
+            ],
+            "channels": {
+              "content": {
+                "raw_chars": 1135,
+                "raw_pieces": 113,
+                "selected_chars": 1135,
+                "selected_pieces": 113,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning_content": {
+                "raw_chars": 10921,
+                "raw_pieces": 1234,
+                "selected_chars": 10921,
+                "selected_pieces": 1234,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning": {
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              }
+            },
+            "combined_chars": 12056,
+            "combined_gated_counts": {
+              "replacement": 0,
+              "lone_jamo": 0,
+              "cjk_mixed": 0,
+              "control": 0
+            },
+            "first_offending_channel": null,
+            "offenses": [],
+            "snippet_scope": "combined-selected-text",
+            "unlocated_kinds": []
+          },
+          "reasoning_retokenized": 4096,
+          "content_retokenized": 477
+        },
+        {
+          "ctx": 32000,
+          "question": "all",
+          "completion_tokens": 14065,
+          "reasoning_budget": 12288,
+          "finish_reason": "stop",
+          "channel_diagnostics": {
+            "schema": 1,
+            "scope": "diagnostic-only; existing combined-text gate",
+            "precedence": [
+              "content",
+              "reasoning_content",
+              "reasoning"
+            ],
+            "channels": {
+              "content": {
+                "raw_chars": 3335,
+                "raw_pieces": 444,
+                "selected_chars": 3335,
+                "selected_pieces": 444,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning_content": {
+                "raw_chars": 33879,
+                "raw_pieces": 3226,
+                "selected_chars": 33879,
+                "selected_pieces": 3226,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning": {
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              }
+            },
+            "combined_chars": 37214,
+            "combined_gated_counts": {
+              "replacement": 0,
+              "lone_jamo": 0,
+              "cjk_mixed": 0,
+              "control": 0
+            },
+            "first_offending_channel": null,
+            "offenses": [],
+            "snippet_scope": "combined-selected-text",
+            "unlocated_kinds": []
+          },
+          "reasoning_retokenized": 12288,
+          "content_retokenized": 1775
+        },
+        {
+          "ctx": 128000,
+          "question": "all",
+          "completion_tokens": 14048,
+          "reasoning_budget": 12288,
+          "finish_reason": "stop",
+          "channel_diagnostics": {
+            "schema": 1,
+            "scope": "diagnostic-only; existing combined-text gate",
+            "precedence": [
+              "content",
+              "reasoning_content",
+              "reasoning"
+            ],
+            "channels": {
+              "content": {
+                "raw_chars": 3340,
+                "raw_pieces": 463,
+                "selected_chars": 3340,
+                "selected_pieces": 463,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning_content": {
+                "raw_chars": 33076,
+                "raw_pieces": 3209,
+                "selected_chars": 33076,
+                "selected_pieces": 3209,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              },
+              "reasoning": {
+                "raw_chars": 0,
+                "raw_pieces": 0,
+                "selected_chars": 0,
+                "selected_pieces": 0,
+                "non_text_fields": 0,
+                "gated_counts": {
+                  "replacement": 0,
+                  "lone_jamo": 0,
+                  "cjk_mixed": 0,
+                  "control": 0
+                }
+              }
+            },
+            "combined_chars": 36416,
+            "combined_gated_counts": {
+              "replacement": 0,
+              "lone_jamo": 0,
+              "cjk_mixed": 0,
+              "control": 0
+            },
+            "first_offending_channel": null,
+            "offenses": [],
+            "snippet_scope": "combined-selected-text",
+            "unlocated_kinds": []
+          },
+          "reasoning_retokenized": 12288,
+          "content_retokenized": 1758
+        }
+      ]
+    }
+  ],
+  "tokenization_method": "SSE channels concatenated separately; tokenizers.Tokenizer from served st-glm53-nvidia-tp4-9391/tokenizer.json, no padding/truncation/add_special_tokens. Total completion_tokens is server usage, including control tokens."
+}
