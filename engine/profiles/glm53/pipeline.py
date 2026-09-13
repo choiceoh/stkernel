@@ -304,6 +304,9 @@ class AsyncDecode:
             b["alive"] = b["alive"] & ~done
             b["slot"] = torch.where(b["alive"], b["real_slot"], torch.zeros_like(b["real_slot"]))
         with mark("boundaries"):
+            materialize = getattr(e.decode_graphs, "materialize", None)
+            if materialize is not None:
+                materialize(shape, b["real_slot"], ctx_before, count)
             e.caches.stage_boundaries(b["real_slot"], ctx_before, count)   # a block boundary crossed: parked for the host
         if aux is not None:
             positions = ctx_before.view(n, 1) + torch.arange(t, device=aux.device)

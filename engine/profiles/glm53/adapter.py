@@ -147,6 +147,9 @@ class Glm53Engine:
                                                   self.drafter.k + 1, self.aux_layers, memory=self.memory,
                                                   ceiling=self.max_context, execution_plan=self.execution_plan,
                                                   drafter=self.drafter)
+            if self.execution_plan.deferred_kda:
+                self.lane_info["deferred_kda_workspace_bytes"] = str(sum(
+                    state.nbytes for state in self.decode_graphs.deferred_states.values()))
             if self.drafter.k:
                 kwargs = {"prepared_context": True} if self.execution_plan.early_observe else {}
                 if self.execution_plan.decode_iterations > 1:
@@ -1326,7 +1329,7 @@ class Glm53Engine:
             jobs = [(s.seq, full[o: o + live], drafts[s.seq], draft_probs[s.seq])
                     for s, o, live in zip(wanted, starts, spans)]
             picked = {s.seq: answer for s, answer in zip(wanted, self._pick_rich(jobs, masks))}
-        finished = []
+        finished, committed_counts = [], []
         for s in step.segments:
             rows = slice(s.start, s.start + s.length)
             if rich[s.seq]:
@@ -1341,6 +1344,7 @@ class Glm53Engine:
                 new, lps = picks[: accepted + 1], None                     # the accepted drafts' confirmations, then the correction
             new, done = self._commit(s.seq, accepted, new, lps, len(drafts[s.seq]))
             committed = len(new)                                           # clipped tokens must not enter the next turn's context
+            committed_counts.append(committed)
             if aux is not None:
                 prepared = getattr(self.decode_graphs, "observations", {}).get(shape) if self.decode_graphs is not None else None
                 if prepared is not None:
@@ -1354,5 +1358,13 @@ class Glm53Engine:
                     observe(self.caches.draft_ring(s.slot), torch.arange(s.ctx, s.ctx + committed, device=h.device), aux[s.start: s.start + committed])
             self.ctx[s.seq] += committed
             finished.append(done)
+        if self.execution_plan.deferred_kda and self.decode_graphs is not None:
+            # Rich sampling (including a reasoning-budget drain) decides on the
+            # host. Publish precisely its clipped counts before decode returns
+            # and the runner can snapshot or replay another target graph.
+            device = self.caches.device
+            self.decode_graphs.materialize(shape, torch.tensor([s.slot for s in step.segments], device=device),
+                                            torch.tensor([s.ctx for s in step.segments], device=device),
+                                            torch.tensor(committed_counts, device=device))
         self.steps += 1
         return finished

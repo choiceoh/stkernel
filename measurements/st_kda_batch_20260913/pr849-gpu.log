@@ -1,0 +1,93 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-st-decode-agreement0913v3-20260913-162730.txt
+waiting: pos 1/1, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_16:27:31
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.5 GiB, this check's budget 8.0 GiB, floor 16.0: 15.5 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_16:47:31
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.6 GiB, this check's budget 8.0 GiB, floor 16.0: 15.6 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_16:47:52
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.5 GiB, this check's budget 8.0 GiB, floor 16.0: 15.5 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_16:48:13
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.6 GiB, this check's budget 8.0 GiB, floor 16.0: 15.6 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_16:48:55
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.5 GiB, this check's budget 8.0 GiB, floor 16.0: 15.5 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_16:49:16
+waiting: pos 1/1, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_16:49:58
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.9 GiB, this check's budget 8.0 GiB, floor 16.0: 15.9 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_16:53:08
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.7 GiB, this check's budget 8.0 GiB, floor 16.0: 15.7 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_16:53:29
+waiting: pos 1/1, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_16:53:50
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.9 GiB, this check's budget 8.0 GiB, floor 16.0: 15.9 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_16:54:11
+waiting: pos 1/1, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_16:54:32
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.5 GiB, this check's budget 8.0 GiB, floor 16.0: 15.5 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_16:59:06
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.6 GiB, this check's budget 8.0 GiB, floor 16.0: 15.6 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_16:59:27
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.5 GiB, this check's budget 8.0 GiB, floor 16.0: 15.5 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_17:00:09
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.6 GiB, this check's budget 8.0 GiB, floor 16.0: 15.6 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_17:00:30
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.8 GiB, this check's budget 8.0 GiB, floor 16.0: 15.8 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_17:00:51
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.7 GiB, this check's budget 8.0 GiB, floor 16.0: 15.7 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_17:01:33
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 22.6 GiB, this check's budget 8.0 GiB, floor 16.0: 14.6 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_17:01:54
+waiting: pos 1/1, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_17:02:15
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.6 GiB, this check's budget 8.0 GiB, floor 16.0: 15.6 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_17:04:00
+waiting: pos 1/1, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_17:04:42
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.9 GiB, this check's budget 8.0 GiB, floor 16.0: 15.9 GiB would be left, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_17:08:11
+waiting: pos 1/1, the fleet's st-prefill-phase2-L7r2 holds this box too 2026-09-13_17:08:32
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-st-decode-agreement0913v3-20260913-162730.txt
+GO st-decode-agreement0913v3 2026-09-13_17:11:07
+  single GPU: probes/engine_bounded_loop_check.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 8 GiB beside production, no fleet lease)
+test_changing_inputs_limits_and_every_exit_preserve_each_commit (tests.test_engine_bounded_loop_cuda.BoundedLoopCudaTests.test_changing_inputs_limits_and_every_exit_preserve_each_commit) ... ok
+test_native_owner_survives_wrapper_reference_release (tests.test_engine_bounded_loop_cuda.BoundedLoopCudaTests.test_native_owner_survives_wrapper_reference_release) ... ok
+test_boot_capture_rebinding_and_shared_chain_match_ordinary_serving (tests.test_engine_burst_decode_cuda.ServedBurstCudaTests.test_boot_capture_rebinding_and_shared_chain_match_ordinary_serving) ... ERROR
+test_progress_can_cancel_before_the_four_iteration_burst_retires (tests.test_engine_burst_decode_cuda.ServedBurstCudaTests.test_progress_can_cancel_before_the_four_iteration_burst_retires) ... ERROR
+test_cpu_reads_each_immutable_iteration_before_the_burst_retires (tests.test_engine_decode_queue_cuda.DecodeQueueCudaTests.test_cpu_reads_each_immutable_iteration_before_the_burst_retires) ... ok
+test_system_atomic_cancellation_and_capture_replay_reset (tests.test_engine_decode_queue_cuda.DecodeQueueCudaTests.test_system_atomic_cancellation_and_capture_replay_reset) ... ok
+test_actual_vocab_topk_inside_bounded_graph_preserves_ties_and_each_iteration (tests.test_engine_oneshot_gather_cuda.IntegerGatherCudaTests.test_actual_vocab_topk_inside_bounded_graph_preserves_ties_and_each_iteration) ... ok
+test_distinct_signed_peers_tails_replays_and_mixed_ticket_wrap (tests.test_engine_oneshot_gather_cuda.IntegerGatherCudaTests.test_distinct_signed_peers_tails_replays_and_mixed_ticket_wrap) ... ok
+test_forbidden_event_node_reports_its_location (tests.test_engine_oneshot_gather_cuda.IntegerGatherCudaTests.test_forbidden_event_node_reports_its_location) ... ok
+test_max_tails_with_changing_peers_inside_four_iteration_graphs (tests.test_engine_decode_agreement_cuda.DecodeAgreementTests.test_max_tails_with_changing_peers_inside_four_iteration_graphs) ... ok
+test_production_vocab_merge_is_identical_across_replays_and_rank_allocations (tests.test_engine_decode_agreement_cuda.DecodeAgreementTests.test_production_vocab_merge_is_identical_across_replays_and_rank_allocations) ... ok
+test_changing_packets_replay_with_one_owner_across_batch_shapes (tests.test_engine_vocab_packet.CandidatePacketTests.test_changing_packets_replay_with_one_owner_across_batch_shapes) ... ok
+test_fused_packets_preserve_exact_keys_order_and_masks (tests.test_engine_vocab_packet.CandidatePacketTests.test_fused_packets_preserve_exact_keys_order_and_masks) ... ok
+test_reused_dense_rows_clear_old_candidates_before_overlapping_new_ones (tests.test_engine_vocab_packet.CandidatePacketTests.test_reused_dense_rows_clear_old_candidates_before_overlapping_new_ones) ... ok
+
+======================================================================
+ERROR: test_boot_capture_rebinding_and_shared_chain_match_ordinary_serving (tests.test_engine_burst_decode_cuda.ServedBurstCudaTests.test_boot_capture_rebinding_and_shared_chain_match_ordinary_serving)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_burst_decode_cuda.py", line 88, in test_boot_capture_rebinding_and_shared_chain_match_ordinary_serving
+    e, ref = toy_engine(), toy_engine()
+             ^^^^^^^^^^^^
+  File "/repo/tests/test_engine_burst_decode_cuda.py", line 45, in toy_engine
+    greedy = DecodeGraphs(lambda b: b.clone(), lambda n, t: buffers[n, t], [(n, 2) for n in range(4, 0, -1)],
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/base/graphs.py", line 139, in __init__
+    step_fn(inp)
+  File "/repo/tests/test_engine_burst_decode_cuda.py", line 45, in <lambda>
+    greedy = DecodeGraphs(lambda b: b.clone(), lambda n, t: buffers[n, t], [(n, 2) for n in range(4, 0, -1)],
+                                    ^^^^^^^^^
+torch.AcceleratorError: CUDA error: invalid argument
+Search for `cudaErrorInvalidValue' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+For more detailed error information, run with CUDA_LOG_FILE=stderr
+
+
+======================================================================
+ERROR: test_progress_can_cancel_before_the_four_iteration_burst_retires (tests.test_engine_burst_decode_cuda.ServedBurstCudaTests.test_progress_can_cancel_before_the_four_iteration_burst_retires)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_burst_decode_cuda.py", line 60, in test_progress_can_cancel_before_the_four_iteration_burst_retires
+    e, p = toy_engine(), None
+           ^^^^^^^^^^^^
+  File "/repo/tests/test_engine_burst_decode_cuda.py", line 45, in toy_engine
+    greedy = DecodeGraphs(lambda b: b.clone(), lambda n, t: buffers[n, t], [(n, 2) for n in range(4, 0, -1)],
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/base/graphs.py", line 139, in __init__
+    step_fn(inp)
+  File "/repo/tests/test_engine_burst_decode_cuda.py", line 45, in <lambda>
+    greedy = DecodeGraphs(lambda b: b.clone(), lambda n, t: buffers[n, t], [(n, 2) for n in range(4, 0, -1)],
+                                    ^^^^^^^^^
+torch.AcceleratorError: CUDA error: invalid argument
+Search for `cudaErrorInvalidValue' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+For more detailed error information, run with CUDA_LOG_FILE=stderr
+
+
+----------------------------------------------------------------------
+Ran 14 tests in 180.990s
+
+FAILED (errors=2)
+Traceback (most recent call last):
+  File "/repo/probes/engine_bounded_loop_check.py", line 63, in <module>
+    main()
+  File "/repo/probes/engine_bounded_loop_check.py", line 36, in main
+    raise RuntimeError("bounded loop gate failed or skipped")
+RuntimeError: bounded loop gate failed or skipped
