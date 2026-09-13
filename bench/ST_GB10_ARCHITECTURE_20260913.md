@@ -2,6 +2,8 @@
 
 검토 기준: `e0b5c184`에서 분석을 시작하고 GPU 등록 전에 `71306bda`에 리베이스한 엔진 및 2026-09-13 공식 문서. 목표는 **C=1의 품질을 유지하면서 토큰당 가중치 읽기, 상태 쓰기, 중간 텐서 이동을 줄이는 것**이다. 첫 구현은 FP32 KDA의 물리적 저장 형상을 바꾸는 커널 실험이다. 서빙 연결과 처리량 검증은 아직 완료하지 않았다.
 
+구체적인 cache 수명, packet 입력 ABI, expert 타일 선택식, 구현 순서와 인수 조건은 [후속 설계](ST_GB10_FOLLOWUP_DESIGN_20260913.md)에 정리했다. 후속 설계의 API와 scheduler는 아직 구현되지 않았다.
+
 ## 하드웨어가 정해 주는 방향
 
 각 GB10의 메모리는 CPU와 GPU가 공유하는 128 GB LPDDR5x이며 대역폭은 273 GB/s다. 따라서 CPU의 큰 복사·초기화도 GPU와 같은 메모리 자원을 사용한다. 네 노드의 로컬 메모리 용량을 하나의 GPU 주소 공간으로 취급하지 않는다. [NVIDIA 하드웨어 명세](https://docs.nvidia.com/dgx/dgx-spark/hardware.html)
@@ -91,15 +93,15 @@ flowchart LR
 
 구현 목표는 `packet → 전체 BF16 hidden → router/pack`에서 전체 hidden 저장·재읽기를 제거하는 것이다. router의 FP32 누산, 기존 FP8 roundtrip의 BF16 반올림, expert 입력의 양자화 경계를 각각 유지해야 한다. 선형 연산의 위치를 바꾸거나 FP8을 그대로 곱해도 자동으로 같은 값이 되는 것은 아니다.
 
-예를 들어 32,256×4,096 BF16 hidden 한 장은 252 MiB다. 이 한 장의 저장·재읽기만 없애도 해당 경계의 로컬 메모리 트래픽은 504 MiB 줄어든다. 실제로 전체 hidden을 소비하던 모든 경로를 packet consumer로 교체했을 때의 바이트 계산이며, 한 소비자만 바꿨을 때의 절감량이나 속도 예측이 아니다. 네트워크 패킷 자체의 크기는 그대로다.
+예를 들어 32,256×4,096 BF16 hidden 한 장은 252 MiB다. 이 한 장의 저장·재읽기 1회는 504 MiB에 해당한다. 전체 hidden을 소비하던 모든 경로를 packet consumer로 교체했을 때 제거할 수 있는 연산의 바이트 계산이며, 추가 packet 읽기·양자화 비용까지 반영한 전체 트래픽 순감소나 속도 예측이 아니다. 네트워크 패킷 자체의 크기는 그대로다.
 
-첫 실험은 이미 구현된 KDA consumer 방식에 맞춰 **router + routed-expert activation pack**을 붙이는 것이다. shared expert나 다른 소비자가 전체 hidden을 계속 요구한다면 전체 materialization을 제거했다고 기록하지 않는다.
+첫 실험은 **전체 all-gather 한 번을 유지하면서 router + routed-expert activation pack + shared expert gate/up**이 같은 패킷을 소비하게 한다. shared projector는 기존 KDA consumer를 재사용하되 expert pack은 expert별 scale을 유지한다. 작은 통신 tile을 여러 번 보내는 변경은 다음 실험으로 분리한다. 어떤 소비자라도 전체 hidden을 계속 요구한다면 전체 materialization을 제거했다고 기록하지 않는다.
 
 ## 3. MoE: 프리필과 디코드가 같은 가중치 읽기를 사용
 
 [C=4 분석 기록](../measurements/c4_scaling_20260913/README.md)의 #838 계열 측정에서는 MoE 비중이 약 60–65%, 정적 MoE 실효 대역폭이 약 207 GB/s로 해석됐다. 이는 과거 K=6 런타임의 구성요소 분석이며 현재 HEAD의 실측 비중이 아니다. 같은 기록의 두 스트림 프리필/디코드 중첩도 대역폭 경쟁으로 유의미한 이득을 보이지 않았다.
 
-따라서 큰 C=1 개선을 목표로 할 다음 연구는 **한 번 읽은 expert 가중치에 더 많은 유효 토큰을 태우는 것**이다. 디코드가 선택한 expert 타일의 여유 행에 이미 해당 층까지 도달한 프리필 토큰을 붙이고, 디코드 결과를 먼저 확정하는 실행을 검토한다. 실제 decode kernel의 지원 M 형상과 반올림 경계부터 확인해야 한다.
+따라서 큰 C=1 개선을 목표로 할 다음 연구는 **한 번 읽은 expert 가중치에 더 많은 유효 토큰을 태우는 것**이다. 디코드의 기존 M32 타일 수를 늘리지 않는 범위에서 같은 층의 준비된 프리필 route를 붙인다. 다만 빈 행을 채워도 남은 M128 프리필 타일 수가 줄지 않으면 별도 가중치 읽기는 남는다. 후속 설계는 실제로 프리필 타일을 제거하는 후보부터 선택하며, BF16 atomic 합산 순서 변화와 cold expert 완료 비용까지 검증하도록 구체화했다.
 
 필수 제약은 다음과 같다.
 
