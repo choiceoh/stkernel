@@ -237,7 +237,7 @@ def declared(a, comm_world: int) -> Config:
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
                         execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0,
-                        draft_fc_precision="w4", draft_fc_calibration="shared", draft_diagnostics=0, **gb10_defaults)
+                        draft_fc_precision="w4", draft_fc_calibration="shared", draft_diagnostics=1, **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
         Knob("draft_fc_precision", "w4", _dt.date(2026, 9, 30),
