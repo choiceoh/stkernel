@@ -93,6 +93,8 @@ class CostModel:
     prefill_flat_ms: float = 0.0      # >0 이면 처리량 테이블 대신 청크당 상수(수동 비교용)
     prefill_ms_per_token: float = 0.0     # 청크 구조 모형: total = v·토큰 + F·청크 (#838 §4)
     prefill_fixed_ms_per_chunk: float = 0.0  # F — v·F 둘 다 있으면 사다리를 대신한다
+    coexist_factor: float = 1.27          # 디코더 옆 청크의 공존 벌(#838 공존 팔: 883→1122ms) —
+                                          # 둘 다 DRAM 벽이라 한 일의 합은 같고 청크는 1.27× 느리게 끝난다
     front_ms: float = 0.0             # 문의 앞면(입장·토큰화) — 요청마다 한 번
     cold_extra_s: dict = field(default_factory=dict)       # {프롬프트 토큰: 초} — 그 길이의 첫 요청만
     acc_hist: list = field(default_factory=list)            # accepted=0..k 개수 — 실측 분포(st:spec_accepted_per_step_total). 비면 기하 추첨
@@ -217,6 +219,7 @@ class NullModel:
         self.done: dict = {}
         self.gen_tokens = 0
         self._warmed: set = set()                        # 이미 한 번 prefilled 된 프롬프트 길이(JIT 꼬리는 첫 요청만)
+        self._decoders_live = None                       # run_once 가 건넨다: 이 프리필 동안 디코더가 살아있는가
         self._dev = threading.Lock()                     # 장치는 하나: 스텝은 백그라운드에서도 줄을 선다
 
     def open(self, seq, slot):
@@ -244,7 +247,10 @@ class NullModel:
             if self.prompt[seq] not in self._warmed:
                 self._warmed.add(self.prompt[seq])
                 _delay(self.cost.cold_extra_s.get(self.prompt[seq], 0.0))
-        _delay(self.cost.prefill_delay(self.prompt[seq], tokens))
+        # 디코더 옆의 청크는 공존 벌을 낸다(#838 공존 팔 실측 1.27×) — 혼자 프리필할 때는 안 낸다.
+        # 문 앞면·JIT 꼬리는 장치와 무관하므로 벌 밖에 둔다.
+        live = bool(self._decoders_live()) if self._decoders_live else False
+        _delay(self.cost.prefill_delay(self.prompt[seq], tokens) * (self.cost.coexist_factor if live else 1.0))
         self.ctx[seq] = start + tokens
         if start + tokens >= self.prompt[seq]:
             # 첫 토큰은 프리필 끝에서 뽑힌다 — TTFT 는 여기서 잰다(원장/onepass 규약)
@@ -346,6 +352,7 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
     rec = Recorder("sim")
     ring = Ring(ring_capacity, STEP_RECORD.size)
     r = Runner(model, contract, kv, slots, ring, recorder=rec)
+    model._decoders_live = lambda: bool(r.state.running or r.inflight)   # 이 프리필이 디코더 옆인지
     meta_us = []
     arrivals = sorted(zip((m / 1e3 for m in arrive_ms), range(1, len(prompts) + 1), prompts))
     pending = list(arrivals)
@@ -530,11 +537,16 @@ def composed_cost(routing: str = "measured", prefill_profile: "str | None" = Non
         if folded:
             b.routing_gamma, b.routing_scale = folded["routing_gamma"], folded["routing_scale"]
     ladder = {c: round(kern.decode_step(b, c, 1).total(), 2) for c in (2000, 32000, 128000)}
-    per_row = round((kern.decode_step(b, 2000, 4).total() - ladder[2000]) / 3.0, 3)
+    composed_row = (kern.decode_step(b, 2000, 4).total() - ladder[2000]) / 3.0
+    # 폭 계수: 조립 예측이 아니라 플릿 실측(#838 §3 스테이지 표)으로 못박는다 —
+    # 조립값과의 차가 교차검증이다(측정 계보에서 1.5% 안).
+    stage = fold_width_from_stage(STAGE_WIDTH_2K)
+    per_row = round(stage["decode_ms_per_row"], 3)
     cost = CostModel(name=f"composed-{routing}", k=b.spec_k, acc=acc,
                      decode_ms=ladder[32000], decode_ms_by_ctx=ladder,
                      decode_ms_per_row=per_row,
                      prefill_tok_s={})
+    cost._composed_row_crosscheck = round(composed_row, 3)   # 참고용: 조립이 말한 폭
     profile = prefill_profile or "measurements/c4_scaling_20260913/chunk-profile-rank3-sf6.json"
     fold = kern.fold_prefill_from_profile(profile) if Path(profile).exists() else {}
     if fold:
@@ -562,6 +574,21 @@ def acc_hist_from_peek(path) -> "list | None":
     if len(samples) < 2:
         return None
     return _peek.acc_hist_from_scrapes(samples[0], samples[-1])
+
+
+# #838 §3 의 스테이지 표(CUDA 이벤트, 랭크 0, 2K) — 폭의 플릿 실측. 조립(step_kernels)이
+# 같은 값을 20.7 로 예측한다(1.5% 안): 폭 계수의 두 독립 출처가 일치한다.
+STAGE_WIDTH_2K = {1: 47.7, 2: 73.7, 3: 95.6, 4: 110.8}
+
+
+def fold_width_from_stage(stage: dict) -> dict:
+    """스테이지 표(행별 forward ms)에서 폭 계수를 푼다: decode_ms(w) = base + per_row×(w−1).
+    순수 함수 — 최소제곱이 아니라 양끝(1행·최대행)으로 풀고 중간 행은 검증에 쓴다."""
+    if 1 not in stage or len(stage) < 2:
+        return {}
+    wmax = max(stage)
+    per_row = (stage[wmax] - stage[1]) / (wmax - 1)
+    return {"decode_ms": stage[1], "decode_ms_per_row": per_row, "width4_ms": stage.get(4)}
 
 
 def fold_width_from_records(records: list) -> "dict | None":
