@@ -102,6 +102,105 @@ def fit_fixed_cost(points):
     return float(F), float(v)
 
 
+def overlap_summary(windows, chunk, solo_decode_ms, solo_chunk_ms):
+    """Pure arithmetic over the two streams' event times (ms from one origin).
+
+    `windows`: the decode replays' (start, end); `chunk`: the prefill chunk's (start, end). A replay is
+    'inside' when it ran wholly while the chunk ran, 'outside' when wholly before or after. The sequential
+    time of the inside replays plus the chunk is what one stream would have taken for the same work."""
+    inside = [e - s for s, e in windows if s >= chunk[0] and e <= chunk[1]]
+    outside = [e - s for s, e in windows if e <= chunk[0] or s >= chunk[1]]
+    chunk_ms = chunk[1] - chunk[0]
+    together = dict(chunk_ms=chunk_ms, chunk_stretch=chunk_ms / solo_chunk_ms if solo_chunk_ms else None,
+                    replays_inside=len(inside), replays_outside=len(outside),
+                    decode_inside_ms=statistics.median(inside) if inside else None,
+                    decode_outside_ms=statistics.median(outside) if outside else None,
+                    decode_stretch=(statistics.median(inside) / solo_decode_ms) if inside and solo_decode_ms else None)
+    if inside:
+        sequential = len(inside) * solo_decode_ms + solo_chunk_ms
+        together["sequential_ms_for_the_same_work"] = sequential
+        together["overlap_gain"] = sequential / chunk_ms       # >1: the two streams did more than one would have
+    return together
+
+
+def coexist(net, caches, graphs, ids, ctx0, slots, chunk, lo, hi, samples, dev):
+    """A prefill chunk on one stream beside four decoding rows replaying on another -- D9's unmeasured shape
+    (45차 §80 asked it with a matmul stand-in), on the real kernels of one rank.
+
+    The decode stream is queued deep first (its replays are one graph launch each), then the chunk's ~2,000
+    eager launches stream in beside it. Rows 0..3 decode; the last row holds the chunk. Module-level device
+    workspaces that a captured graph and an eager call would otherwise share are renewed for the eager side
+    before each chunk (the graph keeps the addresses it captured): the MLA barrier/split workspaces and the
+    b12x static kernel's claim counter -- two streams must never share a grid barrier."""
+    from engine.kernels import mla as mk
+    from engine.kernels.b12x import moe_dispatch as md
+    dec = list(range(4))
+    row_p, slot_p = len(slots) - 1, slots[-1]
+    caches.pool.release(row_p)
+    caches.reset_slot(slot_p)
+    caches.pool.reserve(row_p, chunk)
+    prompt = torch.randint(lo, hi, (chunk,), device=dev)
+    step = Step.decode([(ids[i], ctx0, i, slots[i]) for i in dec])
+    pf = Step.prefill(prompt, 0, row_p, slot_p)
+    caches.prepare(step)
+    caches.prepare(pf)
+    torch.cuda.synchronize()
+    A, B = torch.cuda.Stream(), torch.cuda.Stream()
+
+    def prefill_once():
+        mk._WS = None
+        mk._MLA_WS = None
+        md._STATIC_V2_COUNTERS.clear()
+        md._STATIC_V2_STAMPS.clear()
+        net.forward(pf, caches)
+
+    def event():
+        return torch.cuda.Event(enable_timing=True)
+
+    for _ in range(2):                                   # warm: this chunk width's kernels, both streams
+        with torch.cuda.stream(A):
+            graphs.run(step)
+        with torch.cuda.stream(B):
+            prefill_once()
+        torch.cuda.synchronize()
+    solo_dec, solo_pf = [], []
+    with torch.cuda.stream(A):
+        for _ in range(samples):
+            s, e = event(), event()
+            s.record(A); graphs.run(step); e.record(A); e.synchronize()
+            solo_dec.append(s.elapsed_time(e))
+    with torch.cuda.stream(B):
+        for _ in range(3):
+            s, e = event(), event()
+            s.record(B); prefill_once(); e.record(B); e.synchronize()
+            solo_pf.append(s.elapsed_time(e))
+    torch.cuda.synchronize()
+    solo_decode_ms, solo_chunk_ms = statistics.median(solo_dec), min(solo_pf)
+    n_rep = max(samples, int(3 * solo_chunk_ms / solo_decode_ms) + 4)
+    origin, b0, b1 = event(), event(), event()
+    marks = [(event(), event()) for _ in range(n_rep)]
+    origin.record(A)
+    with torch.cuda.stream(A):
+        for s, e in marks:
+            s.record(A); graphs.run(step); e.record(A)
+    with torch.cuda.stream(B):
+        b0.record(B); prefill_once(); b1.record(B)
+    torch.cuda.synchronize()
+    windows = [(origin.elapsed_time(s), origin.elapsed_time(e)) for s, e in marks]
+    chunk_w = (origin.elapsed_time(b0), origin.elapsed_time(b1))
+    together = overlap_summary(windows, chunk_w, solo_decode_ms, solo_chunk_ms)
+    out = dict(decode_rows=len(dec), chunk_tokens=chunk, solo_decode_ms=solo_decode_ms, solo_chunk_ms=solo_chunk_ms,
+               replays=n_rep, together=together, windows=windows, chunk_window=chunk_w)
+    print(f"coexist: solo decode rows=4 {solo_decode_ms:.1f} ms/step, solo chunk {chunk} tokens {solo_chunk_ms:.0f} ms; together: "
+          f"chunk {together['chunk_ms']:.0f} ms ({together['chunk_stretch']:.2f}x), decode inside the chunk "
+          f"{together['decode_inside_ms'] if together['decode_inside_ms'] is None else round(together['decode_inside_ms'], 1)} ms "
+          f"({together['decode_stretch'] if together['decode_stretch'] is None else round(together['decode_stretch'], 2)}x), "
+          f"{together['replays_inside']} replays inside, overlap gain {together.get('overlap_gain')}", flush=True)
+    caches.pool.release(row_p)
+    caches.reset_slot(slot_p)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     # The queue invokes this with no arguments (bench/fleet_onepass.ST_FLAGS admits --ranks, --ckpt-meta,
@@ -115,8 +214,13 @@ def main():
     ap.add_argument("--samples", type=int, default=16, help="decode replays timed per row count")
     ap.add_argument("--moe-static", default=MOE_STATIC_PRODUCTION,
                     help="the b12x lane cell (lanes.parse_moe_static): production 't,r,sf6,q0'; 't,r' reads raw scales")
+    ap.add_argument("--lanes", default="decode,prefill",
+                    help="sections: decode (rows 1..4), prefill (the chunk sweep), coexist (a chunk beside four decoding rows, two streams)")
     ap.add_argument("--output", default="/cache/prefill-chunk-profile.json")
     a = ap.parse_args()
+    lanes = {x.strip() for x in a.lanes.split(",") if x.strip()}
+    if not lanes or lanes - {"decode", "prefill", "coexist"}:
+        raise SystemExit(f"--lanes takes decode, prefill and/or coexist: {a.lanes!r}")
 
     F = facts.load(a.ckpt_meta)
     layers = list(range(F.layers))
@@ -132,11 +236,11 @@ def main():
     comm = IsolatedRank(rank)
     torch.manual_seed(a.seed)
 
-    rows_max, t = 4, F.spec_k + 1
+    rows_max, t = (5 if "coexist" in lanes else 4), F.spec_k + 1        # coexist: four decoding rows and one for the chunk
     from engine.profiles.glm53.caches import layout
     shape = layout(F, layers)
     long_blocks = -(-a.tokens // F.block)
-    blocks = max(long_blocks, rows_max * (-(-(F.chunk_align + t) // F.block))) + 8
+    blocks = max(long_blocks, rows_max * (-(-(F.chunk_align + t) // F.block)) + -(-chunks[0] // F.block)) + 8
     kv_gib = ((rows_max + 1) * shape.slot_bytes + blocks * (shape.block_bytes + rows_max * 4) + (64 << 20)) / 2**30
     _, net, caches, _, _ = build(comm, layers, served(moe_static=a.moe_static), a.ranks, kv_gib, rows_max, False,
                                  Recorder("profile"), ckpt_meta=a.ckpt_meta, execution="native")
@@ -151,7 +255,7 @@ def main():
     print(f"weights loaded: rank {rank}, {len(layers)} layers, prompt {a.tokens} tokens, chunks {chunks}, "
           f"{kv_gib:.2f} GiB of KV ({blocks} blocks)", flush=True)
     result = dict(rank=rank, layers=len(layers), tokens=a.tokens, chunks=chunks, spec_k=F.spec_k, seed=a.seed,
-                  moe_static=a.moe_static,
+                  moe_static=a.moe_static, lanes=sorted(lanes),
                   scope="one rank, identity collectives, no SP transport, no drafter, no prefix marks, synthetic routing")
 
     # -- 2. decode by rows: capture first (capture needs no live slots), then real contexts --------------------
@@ -199,7 +303,7 @@ def main():
         finally:
             net.route = original
         table = None
-        if n in (1, rows_max):
+        if n in (1, 4):
             with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
                 for _ in range(a.samples):
                     graphs.run(step)
@@ -214,6 +318,8 @@ def main():
         if table:
             print_table(f"decode rows={n} kernels", table)
     result["decode"] = decode
+    if "coexist" in lanes:
+        result["coexist"] = coexist(net, caches, graphs, ids, ctx0, slots, chunks[0], lo, hi, a.samples, dev)
     graphs.graphs.close()                            # its pools go back to the allocator before the long prefills
     for i in range(rows_max):
         caches.pool.release(i)
@@ -225,7 +331,7 @@ def main():
     prompt = torch.randint(lo, hi, (a.tokens,), device=dev)
     prefill = []
     tables = {}
-    for pass_ in ("warm", "measure"):
+    for pass_ in (("warm", "measure") if "prefill" in lanes else ()):
         for chunk in chunks:
             caches.reset_slot(slot)
             caches.pool.release(0)
@@ -265,9 +371,13 @@ def main():
     result["prefill"] = prefill
     result["prefill_fit"] = fit
     if len(tables) == 2:
+        import re
         small, big = (tables[c] for c in (chunks[0], chunks[-1]))
-        by = {k["kernel"]: k["us"] for k in small["kernels"]}
-        pairs = [(k["kernel"], by.get(k["kernel"], 0.0), k["us"]) for k in big["kernels"] if k["kernel"] in by]
+        # the same lane can pick a differently named specialization per width (the dynamic MoE's Q0 cell at
+        # 2,304 rows, plain at 9,216): pair by the name with the cell suffix dropped
+        family = lambda name: re.sub(r"_q0(?=MoE)", "", name)
+        by = {family(k["kernel"]): k["us"] for k in small["kernels"]}
+        pairs = [(family(k["kernel"]), by[family(k["kernel"])], k["us"]) for k in big["kernels"] if family(k["kernel"]) in by]
         ratio = chunks[-1] / chunks[0]
         print(f"\n  first-chunk kernels, {chunks[0]} vs {chunks[-1]} tokens (a kernel proportional to tokens grows {ratio:.1f}x):")
         for name, s, b in sorted(pairs, key=lambda p: -p[2])[:12]:
@@ -280,7 +390,9 @@ def main():
     print(f"\nwrote {out}", flush=True)
     print("RESULT " + json.dumps(dict(decode=[{k: v for k, v in r.items() if k not in ("kernels", "unique_experts")} for r in decode],
                                       prefill=[{k: v for k, v in p.items() if k not in ("steps", "first_chunk_kernels")} for p in prefill],
-                                      fit=fit)), flush=True)
+                                      fit=fit,
+                                      coexist={k: v for k, v in result["coexist"].items() if k not in ("windows",)}
+                                      if "coexist" in result else None)), flush=True)
 
 
 if __name__ == "__main__":
