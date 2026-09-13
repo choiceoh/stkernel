@@ -17,11 +17,8 @@ DEVICE = "cpu" if INTERPRET else "cuda"
 class PoolSlotTests(unittest.TestCase):
     def setUp(self):
         from engine.kernels.indexer import pool_slots
-        from engine.modules.sparse_indexer import indexer_slots, select_with_tail
-        self.fused = pool_slots
-        def reference(ids, lengths, pool, *args):
-            indexer_slots(select_with_tail(ids, lengths, pool), *args)
-        self.reference = reference
+        from engine.modules.sparse_indexer import pool_slots as reference   # the expanded-token oracle, 2-D tables included
+        self.fused, self.reference = pool_slots, reference
 
     def compare(self, ids, lengths, pool, table=None, block=16, stride=3072, offset=512):
         rows, groups = ids.shape

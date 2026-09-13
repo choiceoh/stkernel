@@ -86,7 +86,8 @@ def main():
         # every kernel a captured decode step folds over its rows (45차, the C=4 question) against its one-row
         # launches, byte for byte: the KDA rings, the conv ring, the pool/tail writers and the slot finalizer
         suite = unittest.defaultTestLoader.loadTestsFromNames(["tests.test_engine_kda_ring", "tests.test_engine_conv_ring",
-                                                               "tests.test_engine_state", "tests.test_engine_pool_slots"])
+                                                               "tests.test_engine_state", "tests.test_engine_pool_slots",
+                                                               "tests.test_engine_indexer_rows"])
         result = unittest.TextTestRunner(verbosity=2).run(suite)
         assert result.wasSuccessful() and not result.skipped, "decode row-fold checks did not pass"
         report("decode_rows", passed=True, tests=result.testsRun)

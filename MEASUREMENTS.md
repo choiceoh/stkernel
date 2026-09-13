@@ -2070,4 +2070,12 @@ logits 커널과 `torch.topk` 만 행마다 그대로 둔다(같은 텐서·같�
 행 너머 배치는 동점 처리가 달라질 수 있다). 프로그램별 산술은 한 행 런치와 같다(축 하나면 seg 0·스트라이드 0). CPU 검사 `test_engine_decode_rows`
 (결정·행별 주소 대조·`_select_rows` 대 루프 선택) + `test_engine_graph_contracts` 갱신, GPU 검사 `test_engine_state`(rows 쓰기·재생)·
 `test_engine_pool_slots`(2-D 블록표) 는 `engine_kernel_check --lanes decode_rows` 에 두었고 GPU 창은 기다리지 않는다. 기대 4행 스텝
-**−790 런치 ≈ −2 ms(−2.7%)**; 시간 티켓도 운영자 지시("바이트 동등이니까 큐 잡지 말고")로 큐에서 뺐다 — 실측은 다음 onepass 의 스텝 열.
+**−790 런치 ≈ −2 ms(−2.7%)**; 시간 티켓도 운영자 지시("바이트 동등이니까 큐 잡지 말고")로 큐에서 뺐다 — 실측은 다음 onepass 의 스텝 열. PR #815.
+
+**셋째 접기 (운영자 "추가로 접기와 융합 작업", 같은 날 오후, README §9).** 둘째 접기 뒤 DSA 층에 층당 남은 62 런치(+행당 3)는 정수 주소
+산술과 gather 였다 — latent 쓰기의 `token_rows` + index_put, `complete_pools` 의 창 구성 11 과 주소 13, 선택의 `candidate_rows` 8 + gather 2 + 길이 3
++ id 정리 3. 다섯 Triton 커널로 접었다(`row_lengths`·`latent_write_rows`·`gather_candidates`·`pool_window`·`pool_addresses`, 레인 묶음
+`Lanes.decode_rows`; 참조 표는 접기 전 torch 합성) → 층당 14 + 행당 3, 스텝당 **−528 런치 ≈ −1.3 ms**(1행 −3.6%, 4행 −1.9%). 전부 바이트 복사
+아니면 정수라 서빙과 참조가 바이트 동일하고, **컨테이너의 Triton 인터프리터(`TRITON_INTERPRET=1`, CPU)** 가 다섯 커널을 참조와 바이트 대조로
+박았다(`test_engine_indexer_rows`) — #815 의 `_pool_slots` 2-D 블록표도 같은 길로 CPU 에서 박혔다. 선택의 `masked_fill_(ids ≥ ke, -1)` 은 뺐다
+(`_pool_slots`·오라클이 같은 조건을 스스로 -1 로 다룬다; CPU 검사가 출력 동일을 박는다). GPU 티켓 없음.
