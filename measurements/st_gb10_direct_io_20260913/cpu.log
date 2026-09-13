@@ -1,0 +1,11 @@
+.........................................................[serve] death rank=0 kind=local phase='step 2': RuntimeError: kernel failed
+..................[serve] death rank=0 kind=local phase='step 2': RuntimeError: kernel failed
+..........................................  prefix reset: 2 boundaries and 0 faded, 0 off the tier
+..............  prefix reset: 0 boundaries and 0 faded, 0 off the tier
+.............s.................................[serve] death rank=0 kind=local phase='step 3': RuntimeError: kernel failed
+.....[serve] death rank=0 kind=local phase='settling transfers': RuntimeError: open failed
+.....................................
+----------------------------------------------------------------------
+Ran 220 tests in 50.601s
+
+OK (skipped=1)
