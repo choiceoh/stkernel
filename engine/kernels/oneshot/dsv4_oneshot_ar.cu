@@ -257,7 +257,7 @@ __host__ __device__ constexpr int64_t osar_max_int64(int64_t a, int64_t b,
 }
 
 template <bool CONSUMER_PDL, bool COMPACT = false, bool WRAP_SAFE = false,
-          bool MAX_INT64 = false>
+          bool MAX_INT64 = false, bool PACKETS = false>
 __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
                                               bf16 *dst, int n, int nbytes,
                                               const HintArgs h, int rank) {
@@ -422,6 +422,18 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
   __syncthreads();
   if (owns)
     __threadfence_system();
+  if constexpr (PACKETS) {
+    // The immediate same-stream MHC consumer owns these addresses until it
+    // completes. It folds ranks 0,1,2,3 and rounds to BF16 at its input load.
+    // No collective may be enqueued between exchange and that consumer.
+    if (timer) {
+      auto **addresses = reinterpret_cast<const bf16 **>(dst);
+      int peer = 0;
+      for (int r = 0; r < 4; ++r)
+        addresses[r] = r == rank ? src : c->rx[slot][peer++];
+    }
+    return;
+  }
   // Reduce on the same 16B lanes: own values come from the registers filled
   // during the copy (identical mapping), peers' from the rx ring read with
   // __ldcs -- each rx line is consumed exactly once per collective and
@@ -499,6 +511,12 @@ __global__ void k_oneshot(Ctrl *c, const bf16 *src, bf16 *dst, int n,
 __global__ void k_oneshot_consumer(Ctrl *c, const bf16 *src, bf16 *dst, int n,
                                    int nbytes, const HintArgs h, int rank) {
   k_oneshot_impl<true>(c, src, dst, n, nbytes, h, rank);
+}
+
+__global__ void k_oneshot_packets(Ctrl *c, const bf16 *src, bf16 *addresses,
+                                int n, int rank) {
+  const HintArgs hints{};
+  k_oneshot_impl<true, false, true, false, true>(c, src, addresses, n, n * 2, hints, rank);
 }
 
 __global__ void k_oneshot_max_int64(Ctrl *c, const bf16 *src, bf16 *dst, int n,
@@ -894,6 +912,29 @@ static at::Tensor py_oneshot_consumer(at::Tensor input) {
   return py_oneshot_impl(input, {}, {}, true);
 }
 
+static at::Tensor py_oneshot_packets(at::Tensor input) {
+  TORCH_CHECK(g_started && input.is_cuda() && input.scalar_type() == at::kBFloat16 &&
+              input.is_contiguous() && input.dim() == 2 && input.size(1) == 4096 &&
+              input.size(0) > 0 && input.size(0) <= 64 && input.numel() <= MAXEL &&
+              (reinterpret_cast<uintptr_t>(input.data_ptr()) & 15) == 0,
+              "one-shot packets require a live TP4 transport and aligned BF16 [1..64,4096]");
+  auto addresses = torch::empty({4}, input.options().dtype(at::kLong));
+  cudaLaunchConfig_t cfg{};
+  cfg.gridDim = dim3(ARGRID);
+  cfg.blockDim = dim3(ARTHREADS);
+  cfg.stream = c10::cuda::getCurrentCUDAStream();
+  cudaLaunchAttribute attr{};
+  attr.id = cudaLaunchAttributeProgrammaticStreamSerialization;
+  attr.val.programmaticStreamSerializationAllowed = 1;
+  cfg.attrs = &attr;
+  cfg.numAttrs = 1;
+  auto err = cudaLaunchKernelEx(&cfg, k_oneshot_packets, g_ctrl,
+      reinterpret_cast<const bf16 *>(input.data_ptr()),
+      reinterpret_cast<bf16 *>(addresses.data_ptr()), (int)input.numel(), g_rank);
+  TORCH_CHECK(err == cudaSuccess, "one-shot packet launch: ", cudaGetErrorString(err));
+  return addresses;
+}
+
 static at::Tensor py_oneshot_max_int64(at::Tensor input) {
   TORCH_CHECK(input.is_cuda() && input.scalar_type() == at::kLong && input.is_contiguous(),
               "oneshot MAX requires contiguous CUDA int64");
@@ -935,6 +976,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("connect", &py_connect);
   m.def("oneshot_ar", &py_oneshot);
   m.def("oneshot_ar_consumer", &py_oneshot_consumer);
+  m.def("oneshot_packets", &py_oneshot_packets);
   m.def("oneshot_max_int64", &py_oneshot_max_int64);
   m.def("oneshot_ar_hint", &py_oneshot_hint);
   m.def("phase_counters", &py_phase_counters);

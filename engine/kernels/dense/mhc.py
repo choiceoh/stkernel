@@ -24,7 +24,7 @@ class MHC:
             (16*128*24,torch.float32),(16*128,torch.float32),(16*128,torch.float32),
             (128*4,torch.float32),(128*4096,torch.bfloat16),(8,torch.int32))]
 
-    def __call__(self,key,x,res,post,comb,scale,base,norm,eps,hc_eps,post_mult,sinkhorn):
+    def __call__(self,key,x,res,post,comb,scale,base,norm,eps,hc_eps,post_mult,sinkhorn,*,packets=None):
         n = x.shape[0]
         if not 1 <= n <= 64 or res.shape != (n,4,4096):
             raise ValueError("MK MHC decode geometry mismatch")
@@ -36,8 +36,13 @@ class MHC:
         cm = torch.empty((n,4,4),device=x.device,dtype=torch.float32)
         li = torch.empty_like(x)
         tensors = [x,res,post,comb,weight,scale,base,norm,rc,pm,cm,li,*self.workspace]
-        self.ext.run_mhc([t.data_ptr() for t in tensors],
-                         [eps,hc_eps,hc_eps,post_mult,eps],[n,sinkhorn,4096],
-                         weight is packed,small)
+        args = ([t.data_ptr() for t in tensors], [eps,hc_eps,hc_eps,post_mult,eps],[n,sinkhorn,4096])
+        if packets is None:
+            self.ext.run_mhc(*args,weight is packed,small)
+        else:
+            if (packets.device != x.device or packets.dtype != torch.int64 or
+                    packets.shape != (4,) or not packets.is_contiguous()):
+                raise ValueError("MHC needs a same-device contiguous int64[4] rank descriptor")
+            self.ext.run_mhc_packets(*args,packets,weight is packed)
         self.executed.add(key)
         return rc,pm,cm,li

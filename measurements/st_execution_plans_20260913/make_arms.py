@@ -24,7 +24,7 @@ def main():
     base = git("rev-parse", args.base + "^{commit}")
     path = "engine/profiles/glm53/boot.py"
     source = git("show", f"{base}:{path}") + "\n"
-    old = "execution_overlap=0, early_observe=0, prefill_tiles=1)"
+    old = "execution_overlap=0, early_observe=0, prefill_tiles=1"
     if source.count(old) != 1:
         raise ValueError("base must keep exactly one default-off production contract")
     arms = {"baseline": dict(sha=base, values=[0, 0, 1])}
@@ -35,7 +35,7 @@ def main():
         for name, (overlap, early, tiles) in variants.items():
             branch = f"{args.prefix}-{name}"
             git("check-ref-format", "refs/heads/" + branch)
-            replacement = f"execution_overlap={overlap}, early_observe={early}, prefill_tiles={tiles})"
+            replacement = f"execution_overlap={overlap}, early_observe={early}, prefill_tiles={tiles}"
             blob = git("hash-object", "-w", "--stdin", input=source.replace(old, replacement))
             git("read-tree", base, env=env)
             git("update-index", "--cacheinfo", "100644", blob, path, env=env)
