@@ -9,7 +9,7 @@ import triton
 from triton.backends.compiler import GPUTarget
 from triton.compiler import ASTSource
 
-from engine.kernels.kda.deferred import _commit
+from engine.kernels.kda.deferred import _commit, _commit_layers
 from engine.kernels.kda.fused_recurrent import fused_recurrent_gated_delta_rule_fwd_kernel
 
 
@@ -34,7 +34,7 @@ def main():
                              IS_SPEC_DECODING=False, IS_KDA=True, SIGMOID_BETA=True, COMPUTE_GATE=True,
                              SAFE_GATE=True, LOWER_BOUND=-5., STATE_KV=True, INPUT_STRIDES=None,
                              RING_SIZE=8, RING_SLOT_STRIDE=8*16*128*128, RING_DEVICE_INDICES=True,
-                             DEFERRED_STATE=deferred)
+                             RING_INDEX_STRIDE=0, DEFERRED_STATE=deferred)
             for p in ("deferred_keys", "deferred_decay", "deferred_updates"):
                 if deferred:
                     signature[p] = "*fp32"
@@ -47,11 +47,27 @@ def main():
                           **{p:"*i64" for p in ("SLOT", "CONTEXT", "COUNT")}},
                          dict(T=t, H=16, K=128, V=128, R=8, SLOT_STRIDE=8*16*128*128,
                               BK=128, BV=bv, BLOCK=768)))
+    # Same row addressing and strided projection views used by C=1/C=4.
+    for rows in (1, 4):
+        for t in (1, 6, 7):
+            variants.append((f"batch-commit-c{rows}-t{t}", _commit_layers,
+                             {**{p: "*fp32" for p in ("KEY", "DECAY", "UPDATE", "RING")},
+                              **{p: "*i64" for p in ("OFFSETS", "SLOT", "CONTEXT", "COUNT")}},
+                             dict(T=t, ROWS=rows, H=16, K=128, V=128, R=7,
+                                  SLOT_STRIDE=34*(7*16*128*128+64)+64, BLOCK=768, B=256)))
+    # Compile the real batched verifier, including per-row factor offsets.
+    _, fn, signature, constants = next(v for v in variants if v[0] == "verify-t7-deferred1")
+    signature, constants = dict(signature), dict(constants)
+    constants.update(RING_INDEX_STRIDE=1, RING_SIZE=7,
+                     INPUT_STRIDES=((6144, 128, 1),)*3+((2048, 128, 1), (6416, 1)))
+    variants.append(("verify-batched-strided", fn, signature, constants))
     report = dict(scope="SM121 compilation only", gpu_used=False, torch=torch.__version__,
                   triton=triton.__version__, variants=[])
     for name, fn, signature, constants in variants:
+        print("compile " + name, flush=True)
         kernel = triton.compile(ASTSource(fn, signature, constexprs=constants),
-                                target=GPUTarget("cuda", 121, 32), options=dict(num_warps=1, num_stages=3))
+                                target=GPUTarget("cuda", 121, 32),
+                                options=dict(num_warps=4, num_stages=1) if fn is _commit_layers else dict(num_warps=1, num_stages=3))
         (args.output/(name+".ptx")).write_text(kernel.asm["ptx"])
         report["variants"].append(dict(name=name, shared_bytes=kernel.metadata.shared,
                                        cubin_sha256=hashlib.sha256(kernel.asm["cubin"]).hexdigest()))

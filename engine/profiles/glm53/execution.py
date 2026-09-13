@@ -17,12 +17,15 @@ class ExecutionPlan:
     direct_mhc: bool = False
     prefill_project_tiles: bool = False
     decode_iterations: int = 1
+    deferred_kda: bool = False
 
     def __post_init__(self):
-        if any(type(v) is not bool for v in (self.overlap, self.early_observe, self.direct_mhc, self.prefill_project_tiles)):
+        if any(type(v) is not bool for v in (self.overlap, self.early_observe, self.direct_mhc, self.prefill_project_tiles, self.deferred_kda)):
             raise ValueError("execution switches must be booleans")
         if self.direct_mhc and self.overlap:
             raise ValueError("direct MHC packets require unsplit same-stream collectives")
+        if self.deferred_kda and self.overlap:
+            raise ValueError("deferred KDA requires unsplit target rows and a single accepted-state commit")
         if type(self.prefill_tiles) is not int or self.prefill_tiles not in (1, 2, 4):
             raise ValueError("prefill_tiles must be 1, 2 or 4")
         if type(self.decode_iterations) is not int or self.decode_iterations not in (1, 2, 4):
@@ -33,7 +36,7 @@ class ExecutionPlan:
     @property
     def active(self):
         return (self.overlap or self.early_observe or self.prefill_tiles != 1 or self.direct_mhc
-                or self.prefill_project_tiles or self.decode_iterations != 1)
+                or self.prefill_project_tiles or self.decode_iterations != 1 or self.deferred_kda)
 
     def groups(self, sequences):
         if sequences <= 0:
@@ -44,7 +47,8 @@ class ExecutionPlan:
     def label(self):
         return (f"tp_overlap={int(self.overlap)},early_observe={int(self.early_observe)},"
                 f"prefill_tiles={self.prefill_tiles},direct_mhc={int(self.direct_mhc)},"
-                f"prefill_project_tiles={int(self.prefill_project_tiles)},decode_iterations={self.decode_iterations}")
+                f"prefill_project_tiles={int(self.prefill_project_tiles)},decode_iterations={self.decode_iterations},"
+                f"deferred_kda={int(self.deferred_kda)}")
 
 
 @dataclass

@@ -16,6 +16,28 @@ ABI = {
 }
 
 
+class LazyCaptureTests(unittest.TestCase):
+    def test_unscoped_body_refreshes_the_initial_empty_frontier(self):
+        from unittest.mock import Mock
+        api = SimpleNamespace(frontier=Mock(side_effect=[(None, ()), (123, (7,))]),
+                              topology=Mock(return_value=({7: "node7"}, {7: []})))
+        with patch.object(labels, "_api", api), patch.object(labels, "ERRORS", []), patch.object(labels, "NODE_LABELS", {}):
+            with labels.capture(42, "toy"):
+                pass
+            api.topology.assert_called_once_with(123)
+            self.assertEqual(labels.ERRORS, [])
+            self.assertEqual(labels.NODE_LABELS, {"node7": "toy/unmapped"})
+
+    def test_empty_capture_does_not_query_a_null_graph(self):
+        from unittest.mock import Mock
+        api = SimpleNamespace(frontier=Mock(return_value=(None, ())), topology=Mock())
+        with patch.object(labels, "_api", api), patch.object(labels, "ERRORS", []):
+            with labels.capture(42, "empty"):
+                pass
+            api.topology.assert_not_called()
+            self.assertEqual(labels.ERRORS, [])
+
+
 class Function:
     def __init__(self, arity, fn):
         self.arity, self.fn = arity, fn

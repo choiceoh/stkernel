@@ -236,9 +236,12 @@ def declared(a, comm_world: int) -> Config:
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
-                        execution_overlap=0, early_observe=0, prefill_tiles=1, **gb10_defaults)
+                        execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0, **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
+        Knob("deferred_kda", 0, _dt.date(2026, 9, 30),
+             "FP32 KDA: verify into update factors, commit accepted states across all layers in one launch",
+             "STK_deferred_kda=0", int),
         Knob("decode_iterations", gb10_defaults["decode_iterations"], _dt.date(2026, 9, 30),
              "Bounded greedy TP4 decode: reserve/read back 2 or 4 iterations with rank-agreed exits",
              "STK_decode_iterations=1", int),
@@ -1045,12 +1048,12 @@ def fleet(a) -> int:
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
                                        consume_scales=True)
         from engine.profiles.glm53.execution import ExecutionPlan
-        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging")):
+        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda")):
             raise ValueError("execution switches must be 0 or 1")
         plan = ExecutionPlan(bool(cfg["execution_overlap"]), bool(cfg["early_observe"]), cfg["prefill_tiles"],
                              sched.chunk_for(facts.CHUNK_ALIGN, TOKEN_BUDGET, facts.SPEC_K),
                              direct_mhc=bool(cfg["direct_mhc"]), prefill_project_tiles=bool(cfg["prefill_project_tiles"]),
-                             decode_iterations=cfg["decode_iterations"])
+                             decode_iterations=cfg["decode_iterations"], deferred_kda=bool(cfg["deferred_kda"]))
         F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir,
