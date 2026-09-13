@@ -116,7 +116,7 @@ node_sh() {
     def test_live_probe_keeps_both_runs_without_boot_or_stop(self):
         result, events = self.execute([dict(rc=2), dict(rc=0)], verb='probe')
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-        self.assertEqual(events, ['reset', 'measure 1', 'reset', 'measure 2'])
+        self.assertEqual(events, ['measure 1', 'measure 2'], "a live door's prefix cache is production's: never reset")
 
     def test_unrecorded_or_incomplete_exit_two_stops_after_first_run(self):
         for case in (dict(append=False), dict(record={'recording': {'status': 'incomplete'}}),
@@ -198,7 +198,7 @@ node_sh() {
         # a screen cannot silently pass this production-baseline test.
         result, events = self.execute([{}, {}], verb='probe', validation=None)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(events, ['reset', 'measure 1', 'reset', 'measure 2'])
+        self.assertEqual(events, ['measure 1', 'measure 2'])
 
 
 if __name__ == '__main__':

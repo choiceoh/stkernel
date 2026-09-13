@@ -322,8 +322,12 @@ hold() {  # sha [minutes]: boot and keep, for a session's window; ended by the m
 probe() {  # [sha]: one full onepass on the LIVE production door -- no boot, no lease. The queue's
   # probe lane runs it beside production when the door is idle (fleet.sh st-probe); deploy-watch
   # queues one after every deploy, so the deployed commit always has a warm sample and st-pair
-  # never has to boot the base. Run 1 follows a prefix reset, not a boot: it is marked cold=reset
-  # and st_judge keeps it out of the cold column, which is a boot's.
+  # never has to boot the base. The run is marked cold=live -- no boot before it -- and st_judge
+  # keeps it out of the cold column, which is a boot's. It does NOT reset the prefix cache: that
+  # emptied production's memory cache and its prefix tier after every deploy (2026-09-13). It needs
+  # no reset -- every request carries a unique cache_salt, so nothing it sends can hit what the cache
+  # holds, and its requests say retain false, so the boundaries they make leave with their rows and
+  # are never written to the tier (engine: runner.transient).
   local sha=${1:-} run rc=0 VALIDATION=full
   if [ -z "$sha" ]; then
     sha=$(python3 "$REPO/launchers/st_release.py" deployed --state "$STATE") \
@@ -332,7 +336,7 @@ probe() {  # [sha]: one full onepass on the LIVE production door -- no boot, no 
   ARM_SHA=$(sha_of "$sha"); ARM_TREE=$(tree_of "$sha"); ARM="d17-${ARM_SHA:0:12}"; PORT=${ST_PROBE_PORT:-8000}; RELEASE=""
   DUMPS=$LOGD/st-bracket-dumps/$S-$ARM
   # One run: to the judge a boot is one sample however many runs it carries, and on a live door
-  # every run after a reset is warm. The second run bought nothing (ST_PROBE_RUNS=2 to have it).
+  # every run is warm. The second run bought nothing (ST_PROBE_RUNS=2 to have it).
   local runs=${ST_PROBE_RUNS:-1}
   say "probe: $runs run(s) on the live door $(door) for ${ARM_SHA:0:12} (no boot, no lease; session $S, rehearse=$REHEARSE)"
   [ "$REHEARSE" = 1 ] || door_up || { say "ABORT: no engine answers on $(door)"; return 1; }
@@ -346,9 +350,8 @@ probe() {  # [sha]: one full onepass on the LIVE production door -- no boot, no 
     [ -n "$served" ] || say "the door does not name its release (a boot older than PR #775?): trusting ${ARM_SHA:0:12}"
   fi
   for run in $(seq 1 "$runs"); do
-    [ "$REHEARSE" = 1 ] || reset_prefix
-    say "onepass run $run/$runs (after a reset: warm)"
-    ST_BRACKET_COLD=reset measure "$run" || {
+    say "onepass run $run/$runs (live door, no boot, cache left as production has it: warm)"
+    ST_BRACKET_COLD=live measure "$run" || {
       rc=$?
       if [ "$rc" = 2 ] && [ "$MEASURE_RECORDED" = 1 ]; then
         say "onepass run $run recorded issues (rc=2); retaining this boot for the remaining runs"

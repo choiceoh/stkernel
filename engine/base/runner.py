@@ -104,6 +104,12 @@ class Runner:
         self.reused_tokens = 0                              # prompt tokens served from the cache (memory or tier)
         self.prefix_spills = self.prefix_restores = self.dedup_waits = 0
         self.snapshot_self_evicts = 0                        # checkpoints a prefill threw away to make room for its own later ones
+        # Rows whose turn will not be retained (the server marks them from the request's `retain: false`). Their
+        # boundaries are cached for the turn as any prompt's are -- the prefill does the same work -- but they are
+        # never written to the prefix tier, and they leave with the row unless another prompt adopted one. A D17
+        # probe on the live door used to reset the whole cache instead, memory and prefix tier (2026-09-13).
+        self.transient = set()
+        self.transient_dropped = 0                          # boundaries such rows left, dropped when the row went
         self.depth = 2                                      # steps the device may hold before the host reads the oldest back
         self.async_steps = 0
         self.decode_batches = [0] * (contract.max_running + 1)
@@ -366,12 +372,28 @@ class Runner:
         self._release(seq)
 
     def _release(self, seq: int) -> None:
+        if seq in self.transient:
+            self._drop_transient(seq)
+            self.transient.discard(seq)
         self._chain.pop(seq, None)
         self._salts.pop(seq, None)
         if self.kv.tokens[seq]:
             self.kv.release(seq)
         self.slots.give(self.slot_of.pop(seq))
         self.model.close(seq)
+
+    def _drop_transient(self, seq: int) -> None:
+        """The boundaries a transient row made, out of the cache as the row goes: only its own (still marked), only
+        ones nobody adopted, never a pinned one or one being written. Forgetting a name takes no blocks from a row."""
+        prefix = self.prefix
+        if prefix is None:
+            return
+        for h in set(self._chain.get(seq, {}).values()):
+            entry = prefix.entries.get(h) or prefix.faded.get(h)
+            if entry is None or not entry.transient or entry.hits or entry.pinned or entry.spilling:
+                continue
+            prefix.drop(h)
+            self.transient_dropped += 1
 
     def cancel(self, seq: int) -> None:
         """Release a live or idle row (a transfer in flight is settled first, which waits).
@@ -430,6 +452,7 @@ class Runner:
             self.idle[seq] = True
             raise
         self.slots.give(self.slot_of.pop(seq))
+        self.transient.discard(seq)                          # the row is free: its next turn is somebody else's
         self.parked[key] = record
         return wrote
 
@@ -778,7 +801,7 @@ class Runner:
 
     def _insert(self, seq: int, position: int, h: bytes, snap: int) -> None:
         blocks = tuple(self.kv.row(seq)[: position // self.kv.block_size])
-        self.prefix.insert(h, blocks, position, snap)
+        self.prefix.insert(h, blocks, position, snap, transient=seq in self.transient)
 
     def _marks(self, seq: int, start: int, end: int) -> dict:
         """{position: snapshot} for the uncached block boundaries strictly inside a prefill step [start, end): the
