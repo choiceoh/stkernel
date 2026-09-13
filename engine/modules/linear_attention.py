@@ -1,24 +1,42 @@
-"""The gated delta rule (module): the linear attention GLM-5.3 (KDA) and
-Qwen3.8 (GDN) share, as a torch reference.
+"""The gated delta rule (module): the linear-attention family GLM-5.3 (KDA), Qwen3.8 (GDN), Kimi K3 (KDA, full-rank
+gate) and Ling-3.0 (KDA without LoRA) share -- one recurrence, one feature, and the axes the four differ on.
 
 One recurrence, written once, in the form every kernel in this family
 implements (fla's fused_recurrent_gated_delta_rule; vLLM's vendored copy;
 this repo's KDA Triton):
 
-    h_t  = h_{t-1} * exp(g_t)                    per-head scalar decay, g <= 0
+    h_t  = h_{t-1} * exp(g_t)                    log-decay g <= 0, per head or per key channel
     u_t  = beta_t * (v_t - k_t^T h_{t-1}')        the delta: what the state got wrong
     h_t  = h_t + k_t u_t^T                        rank-1 correction
     o_t  = q_t h_t * scale
 
-KDA differs from GDN in where the decay lives (per channel vs per head) and
-in how g and beta are produced; those are the profile's projections, not
-this recurrence. `decay_per_channel` covers the KDA shape when it is needed.
+Around it the four models are one layer (`GatedDeltaNet`, the feature) with six axes; `VARIANTS` names the four:
+
+    decay          "head"     GDN: one log-decay per value head, -exp(A_log) * softplus(a + dt_bias)
+                   "channel"  KDA: one per key channel; A_log per head, dt_bias per channel
+    lower_bound    None       the softplus form above (GDN; KDA with safe_gate off)
+                   -5.0       KDA's safe gate: lower_bound * sigmoid(exp(A_log) * (f + dt_bias)), in (lower_bound, 0)
+    lowrank_decay  the decay projection as a rank-Dk pair f_a, f_b (GLM-5.3, Kimi Linear, Kimi K3) or one matrix
+                   (GDN's in_proj_a; Ling-3.0's no_kda_lora)
+    lowrank_gate   the output-gate projection as a pair g_a, g_b (GLM-5.3, Kimi Linear) or one matrix (GDN's
+                   in_proj_z; Kimi K3's use_full_rank_gate; Ling-3.0)
+    gate_activation  "silu" | "sigmoid" on the output gate inside the gated RMS norm (GDN: config output_gate_type;
+                   every KDA: sigmoid)
+    norm_cast      "rounded"  the norm rounds to the activation dtype before the weight (transformers qwen4_exp)
+                   "strict"   weight and gate in fp32, one rounding at the end (glm5_next; fla's FusedRMSNormGated)
+
+What is NOT an axis: q and k l2-normalised, scale Dk^-0.5, beta = sigmoid(b(x)), a depthwise causal conv (silu) over
+q|k|v, key heads repeated to the value heads -- all four do these. Nor is the weight layout: fused or separate q/k/v
+projections and convs are the same arithmetic on concatenated weights, so `named(scheme, source)` maps the family's
+canonical names onto each checkpoint's names and concatenates. The conv and recurrent states are the same two slots for
+every variant (`cache_specs`: linear_conv, linear_state).
 
 This file is the ORACLE for the family (CHARTER D4/D14): slow, exact, and the
-thing the Triton lanes are judged against. Its own judge is HF's torch
-implementation (transformers 5.16.1, modeling_qwen4_exp.py), which
-probes/linear_attention_check.py holds it to. The convention that matched,
-found by grid rather than assumed (2026-09-11):
+thing the Triton lanes are judged against. Its own judges are the HF torch
+implementations: the GDN variant is held to transformers qwen4_exp
+(tests/test_engine_composition.py, probes/linear_attention_check.py), the KDA
+variant to transformers glm5_next (tests/test_engine_linear_family.py). The
+convention that matched, found by grid rather than assumed (2026-09-11):
 
     q, k l2-normalised before the recurrence   (use_qk_l2norm_in_kernel=True)
     scale = Dk ** -0.5, applied to q            (scale=1.0 misses by 0.98)
@@ -39,12 +57,48 @@ def l2norm(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     return x * torch.rsqrt((x * x).sum(-1, keepdim=True) + eps)
 
 
+def output_norm(core: torch.Tensor, gate: torch.Tensor, weight: torch.Tensor, eps: float,
+                activation: str = "sigmoid", cast: str = "strict") -> torch.Tensor:
+    """weight * rmsnorm(core) * act(gate) over the last dim -- the family's gated output norm, rounding as `cast` says
+    (the two conventions in the module docstring)."""
+    if cast == "rounded":
+        from engine.modules.norm import rmsnorm_gated
+        return rmsnorm_gated(core, gate, weight, eps, activation)
+    if cast != "strict":
+        raise ValueError(f"norm_cast is 'strict' or 'rounded', not {cast!r}")
+    if activation not in ("silu", "swish", "sigmoid"):
+        raise ValueError(f"the output gate is silu or sigmoid, not {activation!r}")
+    x = core.float()
+    g = gate.float()
+    act = torch.sigmoid(g) if activation == "sigmoid" else torch.nn.functional.silu(g)
+    return (x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps) * weight.float() * act).to(core.dtype)
+
+
 def kda_output_norm(core: torch.Tensor, gate: torch.Tensor, weight: torch.Tensor,
                     eps: float = 1e-6) -> torch.Tensor:
-    """Per-head RMS norm, weight and sigmoid gate; round to BF16 only at output."""
-    x = core.float()
-    return (x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps) * weight.float()
-            * torch.sigmoid(gate.float())).to(core.dtype)
+    """Per-head RMS norm, weight and sigmoid gate; round to BF16 only at output (GLM-5.3's o_norm)."""
+    return output_norm(core, gate, weight, eps, "sigmoid", "strict")
+
+
+def log_decay(raw: torch.Tensor, A_log: torch.Tensor, dt_bias: "torch.Tensor | None",
+              lower_bound: "float | None" = None, per_channel: bool = False) -> torch.Tensor:
+    """The family's log-decay, fp32: raw [..., H] (per head) or [..., H, Dk] (per channel), A_log [H] per head in
+    both, dt_bias [H] or [H*Dk] to match.
+
+        lower_bound None:  -exp(A_log) * softplus(raw + dt_bias)              (GDN; transformers: "if the model is
+                                                                              loaded in fp16, without the .float()
+                                                                              here, A might be -inf")
+        lower_bound b:     b * sigmoid(exp(A_log) * (raw + dt_bias))          in (b, 0): KDA's safe gate
+    """
+    g = raw.float()
+    if dt_bias is not None:
+        g = g + dt_bias.float().reshape(raw.shape[-2:] if per_channel else raw.shape[-1:])
+    a = A_log.float().exp()
+    if per_channel:
+        a = a.view(-1, 1)
+    if lower_bound is None:
+        return -a * torch.nn.functional.softplus(g)
+    return lower_bound * torch.sigmoid(a * g)
 
 
 def kda_gate(raw_g: torch.Tensor, A_log: torch.Tensor, g_bias: "torch.Tensor | None",
@@ -59,13 +113,13 @@ def kda_gate(raw_g: torch.Tensor, A_log: torch.Tensor, g_bias: "torch.Tensor | N
     GLM-5.3 checkpoints take the safe branch (linear_attn_config has no
     safe_gate key and the model defaults it True, lower bound -5.0).
     """
-    g = raw_g.float()
-    if g_bias is not None:
-        g = g + g_bias.float().view(1, 1, *raw_g.shape[-2:])
-    a = torch.exp(A_log.float()).view(1, 1, -1, 1)
-    if safe_gate:
-        return lower_bound * torch.sigmoid(a * g)
-    return -a * torch.nn.functional.softplus(g)
+    return log_decay(raw_g, A_log, g_bias, lower_bound if safe_gate else None, per_channel=True)
+
+
+def gdn_decay(a: torch.Tensor, A_log: torch.Tensor, dt_bias: torch.Tensor) -> torch.Tensor:
+    """GDN's per-head log-decay: -exp(A_log) * softplus(a + dt_bias), in fp32 (transformers qwen4_exp
+    Qwen4ExpTextGatedDeltaNet)."""
+    return log_decay(a, A_log, dt_bias, None, per_channel=False)
 
 
 def gated_delta_rule(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor,
@@ -99,51 +153,117 @@ def gated_delta_rule(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
     return out.to(query.dtype), state
 
 
-def gdn_decay(a: torch.Tensor, A_log: torch.Tensor, dt_bias: torch.Tensor) -> torch.Tensor:
-    """GDN's per-head log-decay: -exp(A_log) * softplus(a + dt_bias), in fp32 (transformers qwen4_exp
-    Qwen4ExpTextGatedDeltaNet: "if the model is loaded in fp16, without the .float() here, A might be -inf")."""
-    return -A_log.float().exp() * torch.nn.functional.softplus(a.float() + dt_bias)
+# The four models as settings of the axes (gate_activation comes with the model's config where it is one).
+_KDA = dict(decay="channel", lower_bound=-5.0, lowrank_decay=True, lowrank_gate=True, gate_activation="sigmoid",
+            norm_cast="strict")
+VARIANTS = {
+    "gdn": dict(decay="head", lower_bound=None, lowrank_decay=False, lowrank_gate=False, norm_cast="rounded"),   # Qwen3.8
+    "kda": dict(_KDA),                                                                # GLM-5.3, Kimi Linear
+    "kda_full_gate": dict(_KDA, lowrank_gate=False),                                  # Kimi K3 (use_full_rank_gate)
+    "kda_full": dict(_KDA, lowrank_decay=False, lowrank_gate=False),                  # Ling-3.0 (no_kda_lora)
+}
+
+# The family's canonical weight names on each checkpoint's: a tuple is concatenated along dim 0 (separate projections
+# or convs are the fused one). The feature asks only for what its axes need (decay or decay_a/decay_b, gate or
+# gate_a/gate_b; conv_bias when the checkpoint has one).
+SCHEMES = {
+    "qwen4_exp": {"qkv": "in_proj_qkv", "conv": "conv1d", "conv_bias": "conv1d.bias", "beta": "in_proj_b",
+                  "decay": "in_proj_a", "A_log": "A_log", "dt_bias": "dt_bias", "gate": "in_proj_z", "norm": "norm",
+                  "out": "out_proj"},
+    "glm5_next": {"qkv": ("q_proj", "k_proj", "v_proj"), "conv": "conv1d", "conv_bias": "conv1d.bias", "beta": "b_proj",
+                  "decay_a": "forget_gate.f_a_proj", "decay_b": "forget_gate.f_b_proj", "A_log": "forget_gate.A_log",
+                  "dt_bias": "forget_gate.dt_bias", "gate_a": "g_a_proj", "gate_b": "g_b_proj", "norm": "o_norm",
+                  "out": "o_proj"},
+    "kimi": {"qkv": ("q_proj", "k_proj", "v_proj"), "conv": ("q_conv1d", "k_conv1d", "v_conv1d"),
+             "conv_bias": ("q_conv1d.bias", "k_conv1d.bias", "v_conv1d.bias"), "beta": "b_proj", "decay": "f_proj",
+             "decay_a": "f_a_proj", "decay_b": "f_b_proj", "A_log": "A_log", "dt_bias": "dt_bias", "gate": "g_proj",
+             "gate_a": "g_a_proj", "gate_b": "g_b_proj", "norm": "o_norm", "out": "o_proj"},    # Kimi Linear/K3, Ling-3.0
+}
+
+
+def named(scheme: str, source):
+    """canonical name -> tensor over `source(checkpoint name)` (a module's matrix by its module name, a bare parameter
+    by its own); KeyError for a name the scheme or the checkpoint lacks."""
+    table = SCHEMES[scheme]
+
+    def get(name: str) -> torch.Tensor:
+        if name not in table:
+            raise KeyError(name)
+        at = table[name]
+        if isinstance(at, tuple):
+            return torch.cat([source(n) for n in at], dim=0)
+        return source(at)
+    return get
 
 
 class GatedDeltaNet:
-    """Gated DeltaNet as a token mixer (engine/base/composition.Feature): Qwen3.8's linear-attention layer
-    (transformers qwen4_exp Qwen4ExpTextGatedDeltaNet).
+    """The family's layer as a token mixer (engine/base/composition.Feature): the six axes of the module docstring
+    over one recurrence.
 
-    x -> in_proj_qkv -> causal conv (kernel `conv`, silu) -> q, k, v heads; beta = sigmoid(in_proj_b(x)); decay per head
-    = gdn_decay(in_proj_a(x)); key heads repeated to the value heads; the gated delta rule (`gated_delta_rule`, q/k
-    l2-normalised, scale Dk^-0.5); a gated RMS norm with z = in_proj_z(x); out_proj. Per sequence it carries the conv's
-    last kernel-1 inputs and the fp32 recurrent state [HV, Dk, Dv].
+    x -> qkv -> causal conv (kernel `conv`, silu) -> q, k, v heads; beta = sigmoid(beta(x)); the log-decay from
+    decay(x) (or decay_b(decay_a(x))) with A_log and dt_bias; key heads repeated to the value heads; the gated delta
+    rule (`gated_delta_rule`, q/k l2-normalised, scale Dk^-0.5); a gated RMS norm with the gate from gate(x) (or
+    gate_b(gate_a(x))); out. Per sequence it carries the conv's last kernel-1 inputs and the fp32 recurrent state
+    [HV, Dk, Dv].
 
-    `weights(layer, name)`: in_proj_qkv, in_proj_z, in_proj_b, in_proj_a, conv1d ([C, K] or [C, 1, K]), dt_bias, A_log,
-    norm, out_proj -- the transformers names under `linear_attn.`."""
+    `weights(layer, name)` answers the canonical names (`named` maps a checkpoint's): qkv, conv, conv_bias (optional),
+    beta, decay | decay_a, decay_b, A_log, dt_bias, gate | gate_a, gate_b, norm, out."""
 
-    def __init__(self, *, k_heads: int, v_heads: int, k_dim: int, v_dim: int, conv: int, eps: float,
-                 gate_activation: str, weights, activation: str = "silu", dtype: str = "bfloat16"):
+    def __init__(self, *, k_heads: int, v_heads: int, k_dim: int, v_dim: int, conv: int, eps: float, weights,
+                 decay: str = "head", lower_bound: "float | None" = None, lowrank_decay: bool = False,
+                 lowrank_gate: bool = False, gate_activation: str = "silu", norm_cast: str = "rounded",
+                 activation: str = "silu", dtype: str = "bfloat16"):
         if v_heads % k_heads:
             raise ValueError(f"{v_heads} value heads are not a multiple of {k_heads} key heads")
+        if decay not in ("head", "channel"):
+            raise ValueError(f"decay is 'head' or 'channel', not {decay!r}")
+        if lower_bound is not None and lower_bound >= 0:
+            raise ValueError(f"the safe gate's lower bound is negative, not {lower_bound}")
+        if norm_cast not in ("strict", "rounded"):
+            raise ValueError(f"norm_cast is 'strict' or 'rounded', not {norm_cast!r}")
+        if gate_activation not in ("silu", "swish", "sigmoid"):
+            raise ValueError(f"the output gate is silu or sigmoid, not {gate_activation!r}")
         self.k_heads, self.v_heads, self.k_dim, self.v_dim, self.conv = k_heads, v_heads, k_dim, v_dim, conv
-        self.eps, self.gate_activation, self.activation, self.weights = eps, gate_activation, activation, weights
-        self.dtype = dtype
+        self.eps, self.weights, self.activation, self.dtype = eps, weights, activation, dtype
+        self.decay, self.lower_bound = decay, lower_bound
+        self.lowrank_decay, self.lowrank_gate = lowrank_decay, lowrank_gate
+        self.gate_activation, self.norm_cast = gate_activation, norm_cast
 
     @property
     def conv_dim(self) -> int:
         return 2 * self.k_heads * self.k_dim + self.v_heads * self.v_dim
 
+    @staticmethod
+    def _proj(xs, w, name: str, lowrank: bool) -> torch.Tensor:
+        if lowrank:
+            return torch.nn.functional.linear(torch.nn.functional.linear(xs, w(f"{name}_a")), w(f"{name}_b"))
+        return torch.nn.functional.linear(xs, w(name))
+
+    @staticmethod
+    def _optional(w, name: str):
+        try:
+            return w(name)
+        except KeyError:
+            return None
+
     def __call__(self, layer, x, step, state):
         from engine.modules.causal_conv import causal_conv1d
-        from engine.modules.norm import rmsnorm_gated
         w = lambda name: self.weights(layer, name)
+        per_channel = self.decay == "channel"
         out = None
         for s in step.segments:
             xs = x[s.start:s.start + s.length]
             t = xs.shape[0]
-            qkv = torch.nn.functional.linear(xs, w("in_proj_qkv"))
-            z = torch.nn.functional.linear(xs, w("in_proj_z")).reshape(t, self.v_heads, self.v_dim)
-            beta = torch.nn.functional.linear(xs, w("in_proj_b")).sigmoid()
-            g = gdn_decay(torch.nn.functional.linear(xs, w("in_proj_a")), w("A_log"), w("dt_bias"))
-            conv_w = w("conv1d")
-            qkv, conv_state = causal_conv1d(qkv, conv_w.reshape(conv_w.shape[0], -1), None,
-                                            state.get(layer, "gdn_conv", s.seq), self.activation)
+            qkv = torch.nn.functional.linear(xs, w("qkv"))
+            gate = self._proj(xs, w, "gate", self.lowrank_gate).reshape(t, self.v_heads, self.v_dim)
+            beta = torch.nn.functional.linear(xs, w("beta")).sigmoid()                      # [T, HV]
+            raw = self._proj(xs, w, "decay", self.lowrank_decay)                              # [T, HV] or [T, HV*Dk]
+            if per_channel:
+                raw = raw.reshape(t, self.v_heads, self.k_dim)
+            g = log_decay(raw, w("A_log"), w("dt_bias"), self.lower_bound, per_channel)
+            conv_w = w("conv")
+            qkv, conv_state = causal_conv1d(qkv, conv_w.reshape(conv_w.shape[0], -1), self._optional(w, "conv_bias"),
+                                            state.get(layer, "linear_conv", s.seq), self.activation)
             q, k, v = torch.split(qkv, [self.k_heads * self.k_dim, self.k_heads * self.k_dim, self.v_heads * self.v_dim], -1)
             q = q.reshape(1, t, self.k_heads, self.k_dim)
             k = k.reshape(1, t, self.k_heads, self.k_dim)
@@ -151,23 +271,23 @@ class GatedDeltaNet:
             if self.v_heads != self.k_heads:
                 q = q.repeat_interleave(self.v_heads // self.k_heads, dim=2)
                 k = k.repeat_interleave(self.v_heads // self.k_heads, dim=2)
-            core, recurrent = gated_delta_rule(q, k, v, g[None], beta[None], state.get(layer, "gdn_state", s.seq),
-                                               scale=self.k_dim ** -0.5, qk_l2norm=True)
-            core = rmsnorm_gated(core.reshape(-1, self.v_dim), z.reshape(-1, self.v_dim), w("norm"), self.eps,
-                                 self.gate_activation).reshape(t, -1)
-            ys = torch.nn.functional.linear(core, w("out_proj"))
+            core, recurrent = gated_delta_rule(q, k, v, g[None], beta[None], state.get(layer, "linear_state", s.seq),
+                                               scale=self.k_dim ** -0.5, qk_l2norm=True, decay_per_channel=per_channel)
+            core = output_norm(core.reshape(-1, self.v_dim), gate.reshape(-1, self.v_dim), w("norm"), self.eps,
+                               self.gate_activation, self.norm_cast).reshape(t, -1)
+            ys = torch.nn.functional.linear(core, w("out"))
             if out is None:
                 out = xs.new_empty(x.shape[0], ys.shape[-1])
             out[s.start:s.start + s.length] = ys
-            state.put(layer, "gdn_conv", s.seq, conv_state)
-            state.put(layer, "gdn_state", s.seq, recurrent)
+            state.put(layer, "linear_conv", s.seq, conv_state)
+            state.put(layer, "linear_state", s.seq, recurrent)
         return out
 
     def cache_specs(self, layers):
         from engine.base.cache_spec import SlotSpec, _ITEMSIZE
-        return [SlotSpec("gdn conv state", len(layers), self.conv_dim * (self.conv - 1) * _ITEMSIZE[self.dtype],
+        return [SlotSpec("linear conv state", len(layers), self.conv_dim * (self.conv - 1) * _ITEMSIZE[self.dtype],
                          f"[conv_dim, kernel-1] {self.dtype}: the conv's last inputs (modules/causal_conv)",
-                         key="gdn_conv", dtype=self.dtype, shape=(self.conv_dim, self.conv - 1)),
-                SlotSpec("gdn recurrent state", len(layers), self.v_heads * self.k_dim * self.v_dim * 4,
+                         key="linear_conv", dtype=self.dtype, shape=(self.conv_dim, self.conv - 1)),
+                SlotSpec("linear recurrent state", len(layers), self.v_heads * self.k_dim * self.v_dim * 4,
                          "[HV, Dk, Dv] fp32 (mamba_ssm_dtype float32)",
-                         key="gdn_state", dtype="float32", shape=(1, self.v_heads, self.k_dim, self.v_dim))]
+                         key="linear_state", dtype="float32", shape=(1, self.v_heads, self.k_dim, self.v_dim))]

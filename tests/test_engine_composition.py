@@ -132,7 +132,7 @@ class Qwen38PlanTests(unittest.TestCase):
         per_seq, kv_tok, idx_tok = state_bytes(QWEN38_TEXT, tp=1)
         by_name = lambda specs: {s.name: s for s in specs}
         slot, page = by_name(slots), by_name(paged)
-        gdn = slot["gdn conv state"], slot["gdn recurrent state"]
+        gdn = slot["linear conv state"], slot["linear recurrent state"]
         self.assertEqual({s.layers for s in gdn}, {36})
         self.assertEqual(sum(s.layers * s.bytes_per_seq for s in gdn), per_seq)
         self.assertEqual(page["attention kv"].layers * page["attention kv"].bytes_per_token, kv_tok)
