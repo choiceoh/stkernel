@@ -14,6 +14,32 @@ import torch.distributed as dist
 MAX_ELEMENTS = 64 * 4096
 
 
+class RankPackets:
+    """One exchange, consumed immediately on its stream before another collective.
+
+    The source stays alive while the descriptor references it. The same-stream
+    GPU order is recorded in graphs; this host owner checks construction order.
+    Peers cannot reach a ring overwrite without this rank's next collective.
+    """
+    def __init__(self, owner, source, descriptor):
+        self.owner, self.source, self.descriptor = owner, source, descriptor
+        self.stream = torch.cuda.current_stream(source.device).cuda_stream
+
+    def consume(self, consumer):
+        if self.owner.pending is not self:
+            raise RuntimeError("rank packets are stale or already consumed")
+        if torch.cuda.current_stream(self.source.device).cuda_stream != self.stream:
+            raise RuntimeError("rank packets must be consumed on their exchange stream")
+        try:
+            result = consumer(self.source, self.descriptor)
+        except BaseException:
+            self.owner.packet_failed = True
+            raise
+        finally:
+            self.owner.pending = None
+        return result
+
+
 def build():
     from torch.utils.cpp_extension import load
     from engine.kernels.native_cache import prepare_sources
@@ -34,6 +60,8 @@ class OneShot:
         self.ext = None
         self.control = dist.new_group(backend='gloo')
         self.closed = False
+        self.pending = None
+        self.packet_failed = False
         try:
             error = None
             try:
@@ -126,11 +154,25 @@ class OneShot:
                 and 0 < t.numel() <= MAX_ELEMENTS and t.numel()%8 == 0 and t.data_ptr()%16 == 0)
 
     def reduce(self,t):
+        self.assert_consumed()
         if self.closed or not self.eligible(t):
             raise ValueError('unavailable one-shot transport or unsupported tensor')
         if not self.ext.healthy():
             raise RuntimeError('one-shot proxy stopped progressing')
         return (self.ext.oneshot_ar_consumer if t.numel() <= 8*4096 else self.ext.oneshot_ar)(t)
+
+    def assert_consumed(self):
+        if self.pending is not None or self.packet_failed:
+            raise RuntimeError('the previous rank-packet consumer did not complete')
+
+    def exchange(self, t):
+        self.assert_consumed()
+        if self.closed or not self.eligible(t) or t.ndim != 2 or t.shape[1] != 4096:
+            raise ValueError('rank packets require live TP4 BF16 [1..64,4096]')
+        if not self.ext.healthy():
+            raise RuntimeError('one-shot proxy stopped progressing')
+        self.pending = RankPackets(self, t, self.ext.oneshot_packets(t))
+        return self.pending
 
     @staticmethod
     def eligible_max(t):
@@ -138,6 +180,7 @@ class OneShot:
                 and 0 < t.numel() <= 64 and t.data_ptr() % 16 == 0)
 
     def reduce_max(self, t):
+        self.assert_consumed()
         if self.closed or not self.eligible_max(t):
             raise ValueError('unavailable one-shot transport or unsupported MAX tensor')
         if not self.ext.healthy():

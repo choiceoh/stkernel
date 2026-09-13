@@ -292,7 +292,10 @@ class Glm53DecodeGraphs:
                 prepared = (positions, context)
             try:
                 hook = observe if self.observe_stream is not None else None
-                if self.streams is not None:
+                if self.execution_plan.direct_mhc:
+                    from engine.profiles.glm53.direct_mhc import decode_direct
+                    result = decode_direct(net, step, scratch, self.aux_layers, hook)
+                elif self.streams is not None:
                     from engine.profiles.glm53.execution import decode_overlap
                     result = decode_overlap(net, step, scratch, self.execution_plan, self.streams,
                                             self.aux_layers, hook)

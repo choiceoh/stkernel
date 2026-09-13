@@ -39,7 +39,7 @@ class KnobDeclarationTests(unittest.TestCase):
     def test_only_declared_precision_mla_context_and_execution_experiments_remain(self):
         cfg = self._declared({"STK_mla_prefill":"stock", "STK_context_ceiling":"131072"})
         self.assertEqual(set(cfg.knobs), {"mla_prefill", "context_ceiling", "kda_state_dtype",
-                                          "execution_overlap", "early_observe", "prefill_tiles"})
+                                          "execution_overlap", "early_observe", "prefill_tiles", "direct_mhc"})
         self.assertEqual((cfg["mla_prefill"], cfg["context_ceiling"]), ("stock", 131072))
         self.assertEqual((cfg["execution"], cfg["moe_static"]), ("native", "t,r,sf6,q0"))
         from engine.base.config import ConfigError
@@ -50,8 +50,8 @@ class KnobDeclarationTests(unittest.TestCase):
         from engine.base.config import ConfigError
         for production in (False, True):
             cfg = self._declared({}, production=production)
-            self.assertEqual([cfg[k] for k in ("execution_overlap", "early_observe", "prefill_tiles")], [0, 0, 1])
-        for key in ("execution_overlap", "early_observe", "prefill_tiles"):
+            self.assertEqual([cfg[k] for k in ("execution_overlap", "early_observe", "prefill_tiles", "direct_mhc")], [0, 0, 1, 0])
+        for key in ("execution_overlap", "early_observe", "prefill_tiles", "direct_mhc"):
             with self.subTest(key=key), self.assertRaises(ConfigError):
                 self._declared({"STK_"+key:"1"}, production=True)
 

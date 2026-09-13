@@ -14,10 +14,13 @@ class ExecutionPlan:
     early_observe: bool = False
     prefill_tiles: int = 1
     tile_rows: int = 9216
+    direct_mhc: bool = False
 
     def __post_init__(self):
-        if type(self.overlap) is not bool or type(self.early_observe) is not bool:
+        if any(type(v) is not bool for v in (self.overlap, self.early_observe, self.direct_mhc)):
             raise ValueError("execution switches must be booleans")
+        if self.direct_mhc and self.overlap:
+            raise ValueError("direct MHC packets require unsplit same-stream collectives")
         if type(self.prefill_tiles) is not int or self.prefill_tiles not in (1, 2, 4):
             raise ValueError("prefill_tiles must be 1, 2 or 4")
         if type(self.tile_rows) is not int or self.tile_rows <= 0 or self.tile_rows % 2304:
@@ -25,7 +28,7 @@ class ExecutionPlan:
 
     @property
     def active(self):
-        return self.overlap or self.early_observe or self.prefill_tiles != 1
+        return self.overlap or self.early_observe or self.prefill_tiles != 1 or self.direct_mhc
 
     def groups(self, sequences):
         if sequences <= 0:
@@ -34,7 +37,8 @@ class ExecutionPlan:
         return ((0, 2), (2, 4)) if self.overlap and sequences == 4 else ((0, sequences),)
 
     def label(self):
-        return f"tp_overlap={int(self.overlap)},early_observe={int(self.early_observe)},prefill_tiles={self.prefill_tiles}"
+        return (f"tp_overlap={int(self.overlap)},early_observe={int(self.early_observe)},"
+                f"prefill_tiles={self.prefill_tiles},direct_mhc={int(self.direct_mhc)}")
 
 
 @dataclass
