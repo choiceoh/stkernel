@@ -1974,3 +1974,10 @@ begin 실패 → 503 에 랭크는 삶; 소스 핀. 엔진·플릿 스위트 실
 (두 커밋의 `engine/` 트리가 같음)이면 릴리스를 자르고 `deployed` 를 그 sha 로 기록하고(`same_engine_as` 에 이전 sha) 컨트롤러를 옮긴다.
 문은 건드리지 않고 정숙 게이트도 묻지 않는다. 검증: 트리 비교 단위 테스트와 사이클 안의 자리(정숙 대기 앞) 핀. 실측: 다음 플릿 쪽 병합에서
 `recorded as deployed without a boot` 한 줄.
+
+
+### ST prefill phase 1 — measured K campaign, reconciled landing (2026-09-13)
+
+Campaign source `2c2ee77f`, controller `de67dc0e`, GLM-5.3-Flash / 4 GB10 / C=1 / KV 2 GiB per rank / FP32 KDA / spec 6 / harness 40. Profiler off and prefix reuse 0 for both stages. Actual tokens / TTFT: 32K 2695.852 first, 3412.559 later; 128K 3318.997 first, 3360.426 later. First-pass quality 18/18, Korean 0/8; later long requests 6/6, 0/2. Fixed 1024 decode pooled 49.951264 tok/s, with different trajectories from J4 so no decode nonregression claim.
+
+C=4 omitted and the later two long requests are not a second full C=1 pass. No baseline engine rerun, as directed by the user. The port retains newer main behavior and therefore has a different engine identity: these are K campaign results, not measured results of the merged runtime. See [scope, full raw evidence and limitations](measurements/st_prefill_phase1_20260913/README.md). Phase 2 targets C=1 2K >= 3300 and 128K >= 4000 tok/s under the same no-cache, unprofiled metric.
