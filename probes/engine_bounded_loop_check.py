@@ -15,7 +15,8 @@ def main():
     start = time.monotonic()
     if args.compile_only:
         from engine.kernels.bounded_graph import build
-        result = dict(module=build().__name__)
+        from engine.kernels.decode_queue import build as queue_build
+        result = dict(module=build().__name__, queue=queue_build().__name__)
         assert not torch.cuda.is_initialized()
         scope = "SM121a conditional graph compilation only; no CUDA context"
     else:
@@ -23,7 +24,8 @@ def main():
             raise RuntimeError("requires an admitted GB10")
         run = unittest.TextTestRunner(verbosity=2).run(
             unittest.defaultTestLoader.loadTestsFromNames(("tests.test_engine_bounded_loop_cuda",
-                                                          "tests.test_engine_burst_decode_cuda")))
+                                                          "tests.test_engine_burst_decode_cuda",
+                                                          "tests.test_engine_decode_queue_cuda")))
         if not run.wasSuccessful() or run.skipped:
             raise RuntimeError("bounded loop gate failed or skipped")
         result = dict(tests=run.testsRun, skipped=0)
@@ -35,6 +37,8 @@ def main():
              "engine/profiles/glm53/adapter.py", "engine/base/runner.py",
              "engine/base/graphs.py", "engine/profiles/glm53/decode_graphs.py",
              "engine/profiles/glm53/drafter.py",
+             "engine/kernels/decode_queue/queue.cu", "engine/kernels/decode_queue/__init__.py",
+             "engine/base/serve.py", "tests/test_engine_decode_queue_cuda.py",
              "tests/test_engine_bounded_loop_cuda.py", "tests/test_engine_burst_decode_cuda.py")
     report = dict(scope=scope, result=result, seconds=time.monotonic()-start,
                   source_sha256={p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in files})

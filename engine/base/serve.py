@@ -1323,6 +1323,9 @@ class Server:
         self._free_rows = list(range(min(runner.kv.max_seqs, runner.c.max_running, runner.slots.available)))
         if not self._free_rows:
             raise ValueError("the server needs at least one request row and state slot")
+        progress = getattr(engine, "set_decode_progress_callback", None)
+        if progress is not None:
+            progress(self._publish_tokens)
 
     def room_for(self, prompt_tokens: int) -> int:
         """The largest `max_new` this prompt could still be given, both limits together.
@@ -1543,6 +1546,43 @@ class Server:
         applies it in the same iteration. Reasons: "client closed", "timeout", "stop"."""
         with self._lock:
             self._cancels.add((int(request), str(reason)))
+            interrupt = getattr(self.engine, "interrupt_decode", None)
+            if interrupt is not None:
+                interrupt()  # shorten an in-flight burst; the loop still retires the request
+
+    def _publish_tokens(self, now=None):
+        """Runner-thread delivery, also called after each shared-queue publication.
+
+        `_sent` makes the ordinary after-step call idempotent. HTTP threads
+        only consume queues; they never read or mutate the engine's state.
+        """
+        now = self.clock() if now is None else now
+        for row, (request, _) in self._active.items():
+            sent = self._sent.get(row, 0)
+            count = self.engine.generated_count(row)
+            fresh = count - sent
+            if fresh > 0:
+                self.generation_tokens_committed_total += fresh
+                last = self._token_at.get(row)
+                if last is None:
+                    arrived = self._arrived.get(request)
+                    if arrived is not None:
+                        self.ttft.observe(now - arrived)
+                    fresh -= 1
+                    last = now
+                if fresh > 0:
+                    self.step_gap.observe(now - last)
+                    each = (now - last) / fresh
+                    for _ in range(fresh):
+                        self.itl.observe(each)
+                self._token_at[row] = now
+                stream = self._streams.get(request)
+                if stream is not None:
+                    lp = getattr(self.engine, "logprobs", None)
+                    entries = lp(row) if lp is not None else None
+                    stream.put(("tokens", (self.engine.generated_since(row, sent), list(entries[sent:]) if entries else None)))
+                    self._wake.set()
+                self._sent[row] = count
 
     def _expire(self) -> None:
         """Rank 0: requests past their deadline are cancelled as timeouts."""
@@ -2702,32 +2742,7 @@ class Server:
             # request's time to first token, each later one an inter-token interval. A step
             # that lands several (the drafter's accepted run) shares its elapsed time across
             # them, which is how the vLLM counters these names belong to define it.
-            for row, (request, _) in self._active.items():
-                sent = self._sent.get(row, 0)
-                count = self.engine.generated_count(row)     # the row's whole output is never copied to count it
-                fresh = count - sent
-                if fresh > 0:
-                    self.generation_tokens_committed_total += fresh
-                    last = self._token_at.get(row)
-                    if last is None:
-                        arrived = self._arrived.get(request)
-                        if arrived is not None:
-                            self.ttft.observe(now - arrived)
-                        fresh -= 1                                  # the first token is the TTFT, not an interval
-                        last = now
-                    if fresh > 0:
-                        self.step_gap.observe(now - last)     # one sample per step, however many tokens it carried
-                        each = (now - last) / fresh
-                        for _ in range(fresh):
-                            self.itl.observe(each)
-                    self._token_at[row] = now
-                    stream = self._streams.get(request)
-                    if stream is not None:                          # rank 0: hand it the new tokens
-                        lp = getattr(self.engine, "logprobs", None)
-                        entries = lp(row) if lp is not None else None
-                        stream.put(("tokens", (self.engine.generated_since(row, sent), list(entries[sent:]) if entries else None)))
-                        self._wake.set()
-                    self._sent[row] = count
+            self._publish_tokens(now)
             if self.draining is not None and not self.drained and self._quiet():
                 self.drained = True
                 self._hand_over()

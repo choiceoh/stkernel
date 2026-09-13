@@ -15,6 +15,23 @@ class Event:
         pass
     def synchronize(self):
         pass
+    def query(self):
+        return True
+
+
+class CpuQueue:
+    def begin(self):
+        self.results, self.cancelled = [], False
+    def publish(self, result, index):
+        assert int(index) == len(self.results)
+        self.results.append({k: v.tolist() for k, v in result.items()
+                             if k in ('tokens', 'count', 'done', 'accepted', 'before')})
+    def read_interrupt(self, into):
+        into.fill_(int(self.cancelled))
+    def take(self, index, rows):
+        return self.results[index] if index < len(self.results) else None
+    def cancel(self):
+        self.cancelled = True
 
 
 class CpuLoop:
@@ -73,6 +90,28 @@ def engine(rows=4):
 
 
 class ServedBurstTests(unittest.TestCase):
+    def test_shared_results_publish_in_order_and_hold_rows_until_retirement(self):
+        e = engine(4)
+        p = CpuBurst(e, 4)
+        p.queue = CpuQueue()
+        snapshots = []
+        e.on_decode_progress = lambda: snapshots.append((dict(e.ctx), dict(e.inflight)))
+        for run in range(2):
+            before = dict(e.ctx)
+            pending = p.launch([1, 2, 3, 4], [1, 2, 3, 4])
+            p.signal_cancel()
+            self.assertTrue(p.queue.cancelled)
+            self.assertEqual(e.ctx, before)
+            pending.resolve()
+            current = snapshots[-len(pending.outcomes):]
+            self.assertEqual(len(current), len(pending.iteration_seconds))
+            for j, (contexts, held) in enumerate(current, 1):
+                self.assertEqual(contexts, {s: pos+2*j for s, pos in before.items()})
+                self.assertEqual(list(held.values()), [4]*4)
+            self.assertTrue(all(v == 0 for v in e.inflight.values()))
+            self.assertEqual(p._queue_rows, ())
+        p.close()
+
     def test_every_iteration_matches_the_existing_pipeline_at_c1_and_c4(self):
         for n in (1, 4):
             for limit in (2, 4):
