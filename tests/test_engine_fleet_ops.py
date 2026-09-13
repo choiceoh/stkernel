@@ -295,7 +295,12 @@ print('{}')
         self.assertIn("of quiet queue", out.stdout)
         self.assertEqual(self.launches(), [], "a window keeps production down between a session's tickets")
         (self.fleet_dir / "window.json").unlink()
-        out = self.loop(FAKE_DOOR_DOWN_CALLS=99, ST_RESTORE_GRACE_S=100)   # the operator's constant wins
+        # This case tests when restoration starts. Make the fake door healthy
+        # when its launcher runs, instead of spending 99 zero-delay polls on it.
+        self.script("curl", '#!/bin/sh\n[ -f "$FAKE_HOME/containers-up" ] || exit 22\n'
+                            'echo \'{"data":[{"id":"glm-5.3-flash"}],"choices":[{}]}\'\n')
+        out = self.loop(ST_RESTORE_GRACE_S=100)   # the operator's constant wins
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
         self.assertEqual(self.launches(), ["launch stop", "launch "])
 
     def test_a_fleet_taken_while_launching_is_not_a_failed_attempt(self):
