@@ -108,6 +108,7 @@ class MoEStaticKernelV4:
         fc2_stages: int = 2,
         stamps: bool = False,
         decode_reform: bool = False,
+        shared_epilogue: bool = False,
         even: bool = False,
         split: bool = False,
         skip_sf: bool = False,
@@ -144,6 +145,9 @@ class MoEStaticKernelV4:
         self.fc2_stages = int(fc2_stages)
         self.stamps = bool(stamps)
         self.decode_reform = bool(decode_reform)
+        self.shared_epilogue = bool(shared_epilogue)
+        if self.shared_epilogue and not (self.decode_reform and reform_sf_pack):
+            raise ValueError("shared epilogue probe requires the packed decode tile")
         # One integrated C=1 tile: halve padded M work, consume both FC1
         # halves together, and double FC2 output width. Keep weight storage
         # and the 128-wide intermediate/rounding boundary unchanged.
@@ -405,9 +409,13 @@ class MoEStaticKernelV4:
             cute.size_in_bytes(self.sf_dtype, self.sfb2_smem_layout_staged),
             cute.size_in_bytes(self.a_dtype, self.a2_smem_layout),
             cute.size_in_bytes(self.sf_dtype, self.sfa2_smem_layout),
-            cute.size_in_bytes(cutlass.BFloat16, self.epi1_smem_layout_staged),
-            cute.size_in_bytes(cutlass.BFloat16, self.epi_smem_layout_staged),
         ]
+        epilogues = [cute.size_in_bytes(cutlass.BFloat16, layout)
+                     for layout in (self.epi1_smem_layout_staged, self.epi_smem_layout_staged)]
+        # Both sizes are multiples of the existing 1024-byte alignment, so
+        # the separate-storage layout retains its exact old byte offsets.
+        assert all(size % self.buffer_align_bytes == 0 for size in epilogues)
+        buffers += [max(epilogues) if self.shared_epilogue else sum(epilogues)]
         for size in buffers:
             offset = _align_up(offset, self.buffer_align_bytes) + size
         return offset
@@ -866,12 +874,10 @@ class MoEStaticKernelV4:
                 cute.struct.MemRange[self.sf_dtype, cute.cosize(sfa2_smem_layout)],
                 self.buffer_align_bytes,
             ]
-            sC1: cute.struct.Align[
-                cute.struct.MemRange[cutlass.BFloat16, cute.cosize(epi1_smem_staged)],
-                self.buffer_align_bytes,
-            ]
-            sC: cute.struct.Align[
-                cute.struct.MemRange[cutlass.BFloat16, cute.cosize(epi_smem_staged)],
+            sEpilogue: cute.struct.Align[
+                cute.struct.MemRange[cutlass.BFloat16,
+                    max(cute.cosize(epi1_smem_staged), cute.cosize(epi_smem_staged))
+                    if self.shared_epilogue else cute.cosize(epi1_smem_staged) + cute.cosize(epi_smem_staged)],
                 self.buffer_align_bytes,
             ]
 
@@ -926,12 +932,17 @@ class MoEStaticKernelV4:
         cute.recast_tensor(sSFB1, cutlass.Uint8)
         cute.recast_tensor(sSFB2, cutlass.Uint8)
         cute.recast_tensor(sSFA2, cutlass.Uint8)
-        sC1 = storage.sC1.get_tensor(
+        sC1 = storage.sEpilogue.get_tensor(
             epi1_smem_staged.outer, swizzle=epi1_smem_staged.inner
         )
-        sC = storage.sC.get_tensor(
-            epi_smem_staged.outer, swizzle=epi_smem_staged.inner
-        )
+        # The MMA group finishes reading FC1's BF16 activation at its named
+        # barrier before any FC2 epilogue write. FC2's final scatter-read
+        # barrier likewise precedes the next item's FC1 epilogue. The DMA
+        # warp never touches either epilogue. Their rounding stays unchanged.
+        epi_offset = 0 if self.shared_epilogue else cute.cosize(epi1_smem_staged)
+        sC = cute.make_tensor(cute.recast_ptr(storage.sEpilogue.data_ptr() + epi_offset,
+                                            epi_smem_staged.inner),
+                             epi_smem_staged.outer)
         sfa2_base_addr = shared_ptr_to_u32(storage.sSFA2.data_ptr())
         a2_base_addr = shared_ptr_to_u32(storage.sA2.data_ptr())
         sfb1_base_addr = shared_ptr_to_u32(storage.sSFB1.data_ptr())

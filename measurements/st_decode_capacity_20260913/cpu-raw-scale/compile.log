@@ -1,0 +1,4 @@
+DECODE_REFORM_LAYOUT_PASS 1024
+[b12x static v2] lane serving: static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256 (mac=48, m=7, routed=56, smem=98304 B)
+{"candidate": "moe_raw_scale", "rows": 7, "status": "PASS", "smem_bytes": 98304, "tile_m": 16, "fc1": 2, "fc2": 2, "shared_epilogue": false}
+{"gpu_used": false, "torch": "2.13.0+cu130", "cases": [{"candidate": "moe_raw_scale", "rows": 7, "status": "PASS", "smem_bytes": 98304, "tile_m": 16, "fc1": 2, "fc2": 2, "shared_epilogue": false}], "scope": "native CuTe compilation and shared-memory feasibility only", "status": "PASS", "source_sha256": {"engine/kernels/b12x/moe_dispatch.py": "2fc2d8bc832f5e500f689fa09474da0fd5654d18d606e8d543ec3d149f2d21f4", "engine/kernels/b12x/moe_static_kernel_v4.py": "bcdc25568974426f9626c2a59f545dfc9f49a688d2f1cb56071d094c40df0cd2", "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e"}}

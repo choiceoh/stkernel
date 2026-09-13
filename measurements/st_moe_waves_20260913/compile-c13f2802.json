@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "scope": "two native SM121 compile handles only",
+  "torch": "2.13.0+cu130",
+  "kernels": [
+    {
+      "name": "static2_m7_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_8ef59f439d8eddd2",
+      "even": false
+    },
+    {
+      "name": "static2_m7_k4096_n512_t8_r128_tm32f2g2a32weutr16n128k256d256sf6v1_7c36fa7b4cf825b4",
+      "even": true
+    }
+  ],
+  "source_sha256": {
+    "engine/kernels/b12x/moe_dispatch.py": "e1628c534f5df689cf7e108f07b265bd9c9bb6be274f05dbfb59ee4afef63bfd",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "2d3d5243aaddbb955a0b10c5397407483f1f9550d1b0d6fcaf8c528b03763dbf",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e"
+  }
+}

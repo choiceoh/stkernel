@@ -26,6 +26,42 @@ def _time(graph, iterations=256, flush=None):
     return start.elapsed_time(end) / iterations
 
 
+def mhc_single(report):
+    from engine.kernels.dense.mhc import MHC
+    from tests.test_engine_mhc_single import SingleTokenMhcTests, SingleGrid
+    torch.manual_seed(91614)
+    # 89 distinct lossless BF16 coefficient packs exceed the 24-MB L2.
+    coefficients = {str(i): (torch.randn(24, 16384, device='cuda') * .006).bfloat16().float()
+                    for i in range(89)}
+    owner = MHC(coefficients)
+    _, values = SingleTokenMhcTests.inputs(7)
+    graphs, outputs = [], []
+    extension = owner.ext
+    try:
+        for single in (False, True):
+            owner.ext = SingleGrid(extension) if single else extension
+            graph, output = _capture(lambda: [owner(key, *values, 1e-5, 1e-6, 2., 20)
+                                              for key in coefficients])
+            graphs.append(graph)
+            outputs.append(output)
+        for _ in range(3):
+            values[0].normal_(); values[1].normal_()
+            for graph in graphs:
+                graph.replay()
+            for actual, expected in zip(outputs[1], outputs[0]):
+                for a, b in zip(actual, expected):
+                    torch.testing.assert_close(a, b, rtol=0, atol=0)
+        measurements = [dict(arm=label, ms=_time(graphs[index], iterations=64))
+                        for label, index in (('B', 0), ('A', 1), ('A', 1), ('B', 0))]
+        report('mhc_single_timing', rows=7, distinct_packs=len(coefficients),
+               exact=True, measurements=measurements,
+               scope='same-source 89 packed mHC calls; no model or RDMA overlap; default off')
+    finally:
+        owner.ext = extension
+        for graph in graphs:
+            graph.reset()
+
+
 def seven_row_dense(report):
     from engine.kernels.dense import DenseLinear, W4Pack, w4_gemm, extension
     ext = extension()

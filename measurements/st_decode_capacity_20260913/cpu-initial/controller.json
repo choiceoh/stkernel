@@ -1,0 +1,9 @@
+{
+  "head": "b0879ccda2f93b166d21e499c14af7a4523ad12c",
+  "image": "sha256:a13be2698a579983329b82a1fc2a98d6462346a323981ba17e97f27c3b7fbd7b",
+  "exit_code": 0,
+  "elapsed_s": 30.10565710067749,
+  "gpu_used": false,
+  "cpus": 2,
+  "memory_gib": 8
+}

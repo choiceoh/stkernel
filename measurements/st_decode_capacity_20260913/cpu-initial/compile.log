@@ -1,0 +1,24 @@
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+[b12x static v2] lane serving: static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=7, routed=56, smem=98304 B)
+{"candidate": "served-m7", "rows": 7, "status": "PASS", "smem_bytes": 98304, "tile_m": 16, "fc1": 2, "fc2": 2}
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+{"candidate": "moe_stage_fc1", "rows": 7, "status": "FAIL", "error": "v4 smem 102400 B exceeds 101376 B (fc1 3 x fc2 1 stages)"}
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+[b12x static v2] lane serving: static2_m7_k4096_n512_t8_r56_tm32f1g3a32wutr16n128k256d256sf6v1 (mac=48, m=7, routed=56, smem=94208 B)
+{"candidate": "moe_stage_fc2", "rows": 7, "status": "PASS", "smem_bytes": 94208, "tile_m": 16, "fc1": 1, "fc2": 3}
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+[b12x static v2] lane serving: static2_m14_k4096_n512_t8_r112_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=14, routed=112, smem=98304 B)
+{"candidate": "moe_batch", "rows": 14, "status": "PASS", "smem_bytes": 98304, "tile_m": 16, "fc1": 2, "fc2": 2}
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+[b12x static v2] lane serving: static2_m21_k4096_n512_t8_r168_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=21, routed=168, smem=98304 B)
+{"candidate": "moe_batch", "rows": 21, "status": "PASS", "smem_bytes": 98304, "tile_m": 16, "fc1": 2, "fc2": 2}
+DECODE_REFORM_LAYOUT_PASS 1024
+REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+[b12x static v2] lane serving: static2_m28_k4096_n512_t8_r224_tm32f2g2a32wutr16n128k256d256sf6v1 (mac=48, m=28, routed=224, smem=98304 B)
+{"candidate": "moe_batch", "rows": 28, "status": "PASS", "smem_bytes": 98304, "tile_m": 16, "fc1": 2, "fc2": 2}
+{"gpu_used": false, "torch": "2.13.0+cu130", "cases": [{"candidate": "served-m7", "rows": 7, "status": "PASS", "smem_bytes": 98304, "tile_m": 16, "fc1": 2, "fc2": 2}, {"candidate": "moe_stage_fc1", "rows": 7, "status": "FAIL", "error": "v4 smem 102400 B exceeds 101376 B (fc1 3 x fc2 1 stages)"}, {"candidate": "moe_stage_fc2", "rows": 7, "status": "PASS", "smem_bytes": 94208, "tile_m": 16, "fc1": 1, "fc2": 3}, {"candidate": "moe_batch", "rows": 14, "status": "PASS", "smem_bytes": 98304, "tile_m": 16, "fc1": 2, "fc2": 2}, {"candidate": "moe_batch", "rows": 21, "status": "PASS", "smem_bytes": 98304, "tile_m": 16, "fc1": 2, "fc2": 2}, {"candidate": "moe_batch", "rows": 28, "status": "PASS", "smem_bytes": 98304, "tile_m": 16, "fc1": 2, "fc2": 2}], "scope": "native CuTe compilation and shared-memory feasibility only", "status": "PARTIAL", "source_sha256": {"engine/kernels/b12x/moe_dispatch.py": "68ab52d41196b5b6e2570fda466cd871b5d31afed248fcff1d5efc52e6b00819", "engine/kernels/b12x/moe_static_kernel_v4.py": "2d3d5243aaddbb955a0b10c5397407483f1f9550d1b0d6fcaf8c528b03763dbf", "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e"}}
