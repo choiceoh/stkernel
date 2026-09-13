@@ -1,0 +1,58 @@
+.....EE...  kernel warmup returned 0.00 GiB of inactive allocator cache
+............................sssssss......
+======================================================================
+ERROR: test_model_prefill_and_next_decode_keep_hidden_aux_kda_and_kv (tests.test_engine_token_shards.TokenShardTests.test_model_prefill_and_next_decode_keep_hidden_aux_kda_and_kv) (rows=130)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/engine/base/comm.py", line 394, in body
+    run.results[r] = fn(self.rank(r), *args)
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/tests/test_engine_token_shards.py", line 87, in rank
+    torch.testing.assert_close(a, b, rtol=0, atol=0)
+  File "/usr/local/lib/python3.12/dist-packages/torch/testing/_comparison.py", line 1631, in assert_close
+    raise error_metas[0].to_error(msg)
+AssertionError: Tensor-likes are not equal!
+
+Mismatched elements: 1657 / 16640 (10.0%)
+Greatest absolute difference: 0.58984375 at index (81, 49)
+Greatest relative difference: 31.875 at index (83, 115)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_token_shards.py", line 97, in test_model_prefill_and_next_decode_keep_hidden_aux_kda_and_kv
+    LocalTP(4, timeout_s=60).run(rank)
+  File "/repo/engine/base/comm.py", line 424, in run
+    raise RuntimeError(f"rank {r} failed") from e
+RuntimeError: rank 0 failed
+
+======================================================================
+ERROR: test_model_prefill_and_next_decode_keep_hidden_aux_kda_and_kv (tests.test_engine_token_shards.TokenShardTests.test_model_prefill_and_next_decode_keep_hidden_aux_kda_and_kv) (rows=131)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/engine/base/comm.py", line 394, in body
+    run.results[r] = fn(self.rank(r), *args)
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/tests/test_engine_token_shards.py", line 87, in rank
+    torch.testing.assert_close(a, b, rtol=0, atol=0)
+  File "/usr/local/lib/python3.12/dist-packages/torch/testing/_comparison.py", line 1631, in assert_close
+    raise error_metas[0].to_error(msg)
+AssertionError: Tensor-likes are not equal!
+
+Mismatched elements: 1657 / 16768 (9.9%)
+Greatest absolute difference: 0.58984375 at index (81, 49)
+Greatest relative difference: 31.875 at index (83, 115)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_token_shards.py", line 97, in test_model_prefill_and_next_decode_keep_hidden_aux_kda_and_kv
+    LocalTP(4, timeout_s=60).run(rank)
+  File "/repo/engine/base/comm.py", line 424, in run
+    raise RuntimeError(f"rank {r} failed") from e
+RuntimeError: rank 0 failed
+
+----------------------------------------------------------------------
+Ran 50 tests in 20.352s
+
+FAILED (errors=2, skipped=7)
