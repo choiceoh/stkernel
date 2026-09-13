@@ -303,11 +303,17 @@ HTTP 요청 번호는 내부 KV 행 번호와 분리한다. `Server`는 기본 6
 회귀검사와 구성요소 측정은
 [`measurements/st_engine_cache_20260911`](../measurements/st_engine_cache_20260911/README.md)에 있다.
 
-예산은 `profiles/glm53/budget.py`가 선언한다(D1): OS 예비 = 이 박스의 earlyoom SIGTERM 선 + 2 GiB(`budget.os_reserve_gib`, 여기선 8.00 — 2×5% 는 dsv41 프로필의 식이고 glm53 은 4.0 을 박아 두고 있었다), 런타임 바닥(원장, 그리고 그중 우리 기동분이 아닌 몫은 "already on this box before us" 로 따로 선다), 가중치·드래프터(랭크 파일), 상태 슬롯·prefix 스냅샷(레이아웃),
+예산은 `profiles/glm53/budget.py`가 선언한다(D1): OS 예비 = 이 박스의 earlyoom SIGTERM 선 + 1 GiB(`budget.os_reserve_gib`, 여기선 7.00 GiB), 런타임 바닥(원장, 그리고 그중 우리 기동분이 아닌 몫은 "already on this box before us" 로 따로 선다), 가중치·드래프터(랭크 파일), 상태 슬롯·prefix 스냅샷(레이아웃),
 아레나 밖 작업공간 상한 12 GiB(`base/runtime_memory`가 강제; 부팅 원장 `memory-rankN.json`을 주면 실측 피크를 줄에 적는다),
 NVMe 스테이징 — 남는 것이 KV 자리이고, 전체 모델 부팅은 rank 0 에서 그 표와 "선언한 KV 가 남기는 양"을 찍는다
 (`python3 engine/profiles/glm53/budget.py [--ledger …]`). 프리필 인덱서 선택은 질의 1,024 행씩 나눠(`net.SELECT_ROWS`) 로짓 과도를
 행×후보×4 B 로 묶고, 디코드 그래프의 용량 사다리는 `facts.max_position`에서 끝난다.
+
+프리필 메모리 검증은 KV 용량과 실제 서빙 문맥 상한(`engine.max_context`) 중 작은 범위의 양 끝을 실행한다.
+프리필·커널 워밍업과 최종 준비 완료 시점에는 가드 검사 전에 비활성 CUDA 예약 블록을 반환한다.
+다른 부팅 단계도 즉시 여유가 OS 예비 아래면 반환 후 다시 검사한다. 생존 텐서·그래프 소유 메모리와 누적 피크는 유지한다.
+각 `memory-rankN.json` 행에는 반환 전 예약량·즉시 여유, 실제 반환량(`allocator_reclaimed_bytes`),
+반환 후 host/device free와 실패 이유가 남는다. 호스트 종료 기준(6/4.5 GiB)과 작업공간 상한(12 GiB)은 별도다.
 
 로더의 읽기는 **O_DIRECT** 다(티어가 자기 읽기에 대해 대는 것과 같은 이유: 페이지 캐시는 이 상자에서 아레나와 같은 풀이다).
 44.5 GiB 랭크 파일을 버퍼드로 읽으면 엔진이 드라이버에 아레나를 달라고 하는 바로 그 순간 44.5 GiB 의 클린 페이지가 남는다 —

@@ -15,6 +15,7 @@ class Cuda:
         self.reserved = self.allocated = self.peak_reserved = self.peak_allocated = 10
         self.free, self.total = 900, 1000
         self.backend = "native"
+        self.empty_cache_calls = 0
     def memory_reserved(self): return self.reserved
     def memory_allocated(self): return self.allocated
     def max_memory_reserved(self): return self.peak_reserved
@@ -25,6 +26,10 @@ class Cuda:
     def get_allocator_backend(self): return self.backend
     def reset_peak_memory_stats(self): pass
     def synchronize(self): pass
+    def empty_cache(self):
+        self.empty_cache_calls += 1
+        self.free += self.reserved - self.allocated
+        self.reserved = self.allocated
 
 
 class OomFloorTests(unittest.TestCase):
@@ -77,10 +82,18 @@ class OomFloorTests(unittest.TestCase):
         sigterm, _ = oom_floor()
         self.assertGreater(os_reserve_gib(), sigterm / (1 << 30))
 
+    def test_profile_margin_is_one_gib_and_follows_the_host_floor(self):
+        from engine.profiles.glm53.budget import os_reserve_gib
+        for term in (6, 9):
+            with self.subTest(term=term), patch('engine.base.runtime_memory.oom_floor',
+                                               return_value=(term << 30, 9 << 29)):
+                self.assertEqual(os_reserve_gib(), term + 1)
+
 
 class RuntimeMemoryTests(unittest.TestCase):
     def budget(self, cuda=None, host_free=lambda: 800):
-        return RuntimeMemory(400, 200, 100, cuda=cuda or Cuda(), host_free=host_free)
+        return RuntimeMemory(400, 200, 100, cuda=cuda or Cuda(), host_free=host_free,
+                             host_available=lambda: 800, floor=(60, 45))
 
     def test_a_reading_that_fails_still_reaches_the_vote_and_says_why(self):
         """A rank that raised between `synchronize` and the MAX used to leave its peers at the
@@ -209,6 +222,94 @@ class RuntimeMemoryTests(unittest.TestCase):
             memory.checkpoint("external CUDA allocation")
         memory.close()
 
+    def test_warmup_returns_inactive_blocks_before_grading_without_erasing_peak(self):
+        cuda = Cuda()
+        memory = RuntimeMemory(400, 200, 100, cuda=cuda, host_free=lambda: cuda.free,
+                               host_available=lambda: 700, floor=(60, 45))
+        cuda.allocated, cuda.reserved, cuda.peak_reserved, cuda.free = 420, 600, 610, 80
+        row = memory.checkpoint('prefill/32/0/prepared', release_cache=True)
+        self.assertEqual(cuda.empty_cache_calls, 1)
+        self.assertEqual((row['reserved_before_reclaim_bytes'], row['reserved_bytes']), (600, 420))
+        self.assertEqual(row['allocator_reclaimed_bytes'], 180)
+        self.assertEqual((row['immediately_free_before_reclaim_bytes'], row['immediately_free_bytes']), (80, 260))
+        self.assertEqual((row['host_free_bytes'], row['device_free_bytes']), (260, 260))
+        self.assertEqual((row['allocated_bytes'], row['peak_reserved_bytes']), (420, 610))
+        self.assertTrue(row['passed'])
+        self.assertIsNone(row['failure_reason'])
+        # Returning blocks cannot turn an earlier allocator overflow into a pass.
+        cuda.reserved, cuda.peak_reserved, cuda.free = 600, 611, 80
+        with self.assertRaisesRegex(MemoryError, 'byte ceiling'):
+            memory.checkpoint('prefill/32/32/prepared', release_cache=True)
+        self.assertEqual(memory.phases[-1]['allocator_reclaimed_bytes'], 180)
+        memory.close()
+
+    def test_other_checkpoints_reclaim_only_when_the_physical_floor_is_threatened(self):
+        cuda = Cuda()
+        memory = RuntimeMemory(400, 200, 100, cuda=cuda, host_free=lambda: cuda.free,
+                               host_available=lambda: 700, floor=(60, 45))
+        cuda.allocated, cuda.reserved, cuda.peak_reserved = 500, 600, 600
+        memory.checkpoint('target/1/captured')
+        self.assertEqual(cuda.empty_cache_calls, 0)
+        cuda.free = 70
+        row = memory.checkpoint('target/4/captured')
+        self.assertEqual((cuda.empty_cache_calls, row['immediately_free_bytes']), (1, 170))
+        memory.close()
+
+    def test_live_or_graph_owned_blocks_still_refuse_and_record_the_reason(self):
+        cuda = Cuda()
+        memory = RuntimeMemory(400, 200, 100, cuda=cuda, host_free=lambda: cuda.free,
+                               host_available=lambda: 700, floor=(60, 45))
+        cuda.allocated, cuda.reserved, cuda.peak_reserved, cuda.free = 420, 600, 600, 80
+        cuda.empty_cache = lambda: None             # the remaining blocks are still owned
+        with self.assertRaisesRegex(MemoryError, 'OS memory reserve'):
+            memory.checkpoint('warm kernels', release_cache=True)
+        row = memory.phases[-1]
+        self.assertEqual(row['allocator_reclaimed_bytes'], 0)
+        self.assertEqual(row['failure_reason'], 'preparation consumed the OS memory reserve')
+        memory.close()
+
+    def test_cache_release_failure_still_votes_with_the_other_ranks(self):
+        from types import SimpleNamespace as NS
+        cuda = Cuda()
+        memory = self.budget(cuda)
+        votes = []
+        memory.status = NS(fill_=votes.append)
+        memory.comm = NS(all_reduce_max=lambda _: NS(item=lambda: votes[-1]))
+        cuda.reserved = cuda.peak_reserved = 500
+        def fail():
+            raise RuntimeError('cache release failed')
+        cuda.empty_cache = fail
+        with self.assertRaisesRegex(MemoryError, 'cache release failed'):
+            memory.checkpoint('warm kernels', release_cache=True)
+        self.assertEqual(votes, [1])
+        self.assertIn('cache release failed', memory.phases[-1]['failure_reason'])
+        memory.close()
+
+    def test_recorded_rank3_headroom_passes_the_lower_margin_without_assumed_reclamation(self):
+        # st-decode-batch-consumer0913v2, 2461caa1: no request was reached.
+        # Replay the measured row; do not assume that all reserved-minus-live bytes return.
+        from engine.profiles.glm53.budget import OS_RESERVE_GIB
+        for reserve, expected in ((8, False), (OS_RESERVE_GIB, True)):
+            with self.subTest(reserve=reserve):
+                cuda = Cuda()
+                cuda.free = cuda.total = 120 << 30
+                cuda.reserved = cuda.allocated = cuda.peak_reserved = 6291456
+                memory = RuntimeMemory(59579886664, 12 << 30, int(reserve * (1 << 30)), cuda=cuda,
+                                       host_free=lambda: cuda.free, host_available=lambda: 26714361856,
+                                       host_budget_bytes=1077936128, floor=(6 << 30, 9 << 29))
+                cuda.allocated = 60817019392
+                cuda.reserved = cuda.peak_reserved = 70929874944
+                cuda.free = 7672946688
+                cuda.empty_cache = lambda: None
+                if expected:
+                    memory.checkpoint('warm kernels [1, 8, 64, 512, 4095]', release_cache=True)
+                else:
+                    with self.assertRaisesRegex(MemoryError, 'OS memory reserve'):
+                        memory.checkpoint('warm kernels [1, 8, 64, 512, 4095]', release_cache=True)
+                self.assertEqual(memory.phases[-1]['passed'], expected)
+                self.assertEqual(memory.phases[-1]['allocator_reclaimed_bytes'], 0)
+                memory.close()
+
     def test_reclaim_covers_remaining_workspace_without_relaxing_either_limit(self):
         free = [800]
         calls = []
@@ -217,8 +318,9 @@ class RuntimeMemoryTests(unittest.TestCase):
             calls.append((need, headroom))
             free[0] = need
             return need
-        memory = RuntimeMemory(400, 200, 100, cuda=cuda, host_free=lambda: free[0], reclaim=reclaim)
-        cuda.reserved = cuda.peak_reserved = 510
+        memory = RuntimeMemory(400, 200, 100, cuda=cuda, host_free=lambda: free[0], reclaim=reclaim,
+                               host_available=lambda: 800, floor=(60, 45))
+        cuda.allocated = cuda.reserved = cuda.peak_reserved = 510
         free[0] = 99
         row = memory.checkpoint('cache refilled during preparation')
         self.assertEqual(calls, [(200, 300)])
@@ -232,7 +334,7 @@ class RuntimeMemoryTests(unittest.TestCase):
     def test_reclaim_failure_still_refuses_readiness(self):
         free = [800]
         memory = RuntimeMemory(400, 200, 100, cuda=Cuda(), host_free=lambda: free[0],
-                               reclaim=lambda *_: 0)
+                               reclaim=lambda *_: 0, host_available=lambda: 800, floor=(60, 45))
         free[0] = 99
         with self.assertRaisesRegex(MemoryError, 'OS memory reserve'):
             memory.checkpoint('unreclaimable allocation')

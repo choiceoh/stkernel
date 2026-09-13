@@ -211,7 +211,7 @@ class ContractTests(unittest.TestCase):
 
     def test_a_rank_that_fails_before_a_boot_vote_still_casts_it(self):
         memory = (ROOT / "engine/base/runtime_memory.py").read_text()
-        self.assertIn('def checkpoint(self, phase, failed: "str | None" = None):', memory)
+        self.assertIn('def checkpoint(self, phase, failed: "str | None" = None, *, release_cache: bool = False):', memory)
         self.assertIn("except Exception as exc:                    # noqa: BLE001 -- the vote below must still be cast", memory)
         graphs = (ROOT / "engine/base/graphs.py").read_text()
         self.assertIn('memory.checkpoint(f"{label}/failed", failed=f"{type(exc).__name__}: {str(exc)[:300]}")', graphs)

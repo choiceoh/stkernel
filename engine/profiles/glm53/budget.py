@@ -26,17 +26,16 @@ from engine.profiles.glm53.caches import layout, snapshot_layout, stage_bytes, c
 
 RUNTIME_FLOOR_GIB = 5.54            # ledger 40th boot table (vLLM): CUDA context + NCCL 16 channels -- re-measure on ST
 WORKSPACE_GIB = 12.0                # base/runtime_memory's enforced ceiling for everything outside the arena (#549)
-OS_RESERVE_MARGIN_GIB = 2.0        # above the box's own SIGTERM line, so the engine notices first
+OS_RESERVE_MARGIN_GIB = 1.0        # 7 GiB on the fleet: one GiB above its SIGTERM line
 
 
 def os_reserve_gib() -> float:
-    """What to keep free for the box, derived from the box's kill line rather than declared.
+    """Immediate host/device headroom, still above the host's termination line.
 
-    It used to be a flat 4.0 GiB. earlyoom on these nodes SIGTERMs at 6 GiB and SIGKILLs at
-    4.5, `--prefer python3`, the engine first on purpose -- so the engine's own reserve sat
-    BELOW both and its "preparation consumed the OS memory reserve" check could not fire
-    first. Fourteen recorded boots reached 1.48-15.74 GiB of free memory and every one of
-    them reported healthy; six were under the SIGTERM line (2026-09-12, 45차).
+    The operator lowered the margin from 2 to 1 GiB after a boot stopped at
+    7.15 GiB immediately free with 24.88 GiB MemAvailable (2026-09-13).
+    Warmup checkpoints reclaim inactive CUDA blocks before applying this floor;
+    earlyoom's 6/4.5 GiB limits and the allocator ceiling stay independent.
     """
     from engine.base.runtime_memory import oom_floor
     sigterm, _sigkill = oom_floor()

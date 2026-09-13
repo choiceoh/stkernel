@@ -96,8 +96,8 @@ def release_model_cache(roots) -> int:
 TRANSIENT_MARGIN = 2 << 30
 """How far above the box's SIGTERM line the momentary reclaim fault must stay.
 
-The same margin profiles/glm53/budget.os_reserve_gib keeps above the same line, and for the same
-reason: MemAvailable is an estimate and earlyoom samples rather than watches. What differs is which
+This transient fault keeps two GiB even when a profile's steady reserve uses a smaller margin:
+MemAvailable is an estimate and earlyoom samples rather than watches. What differs is which
 line applies. The engine's full `headroom` -- workspace ceiling plus OS reserve -- is a POST-BOOT
 requirement, and the check after the reclaim enforces it. During the fault nothing is allocated and
 nothing is serving, so the only line with a consequence is the box's.
