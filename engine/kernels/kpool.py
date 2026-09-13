@@ -22,7 +22,7 @@ import triton.language as tl
 # the kernel shape (engine/base/kernel_shape); a width that is not this one is
 # refused by name on the lane's first call, not run through the wrong butterfly.
 # The number itself is stated once in engine/kernels/cells.py.
-from engine.kernels.cells import INDEXER_HEAD_DIM as INDEX_HEAD_DIM   # noqa: E402
+from engine.kernels.cells import INDEXER_HEAD_DIM as INDEX_HEAD_DIM, INDEXER_KEY_COMPRESS   # noqa: E402
 _CELL_SEEN = None
 
 
@@ -34,6 +34,9 @@ def _indexer_cell() -> int:
     if shape is not _CELL_SEEN:
         if shape.indexer is None:
             raise ValueError("the bound kernel shape declares no sparse indexer; the indexer lanes do not apply")
+        if shape.indexer.compress != INDEXER_KEY_COMPRESS:
+            raise ValueError(f"the indexer lanes compress keys by {INDEXER_KEY_COMPRESS}; the bound kernel shape "
+                             f"compresses by {shape.indexer.compress}")
         if shape.indexer.head_dim != INDEX_HEAD_DIM:
             raise ValueError(f"the indexer lanes are written for head_dim {INDEX_HEAD_DIM} (Hadamard-{INDEX_HEAD_DIM}); "
                              f"the bound kernel shape asks for {shape.indexer.head_dim}")

@@ -12,7 +12,7 @@ import torch
 from engine.kernels.dense import extension
 # The compiled cell, stated once in engine/kernels/cells.py: MHC_MAX_TOK_DEF rows, HCHUNK, the HIDDEN/HIDDEN_V41
 # instances mk_run_mhc accepts, HC.
-from engine.kernels.cells import (MHC_HC as COMPILED_HC, MHC_HCHUNK as HCHUNK, MHC_HIDDEN as COMPILED_HIDDEN,
+from engine.kernels.cells import (MHC_HC as COMPILED_HC, MHC_HCHUNK as HCHUNK, MHC_HIDDEN as COMPILED_HIDDEN, MHC_VARIANT,
                                   MHC_MAX_TOK)
 
 
@@ -21,6 +21,8 @@ def geometry(shape=None) -> "tuple[int, int, int, int]":
     if shape is None:
         from engine.base.kernel_shape import bound
         shape = bound()
+    if shape.hc_variant != MHC_VARIANT:
+        raise ValueError(f"MK MHC computes the {MHC_VARIANT} form; the bound kernel shape mixes by {shape.hc_variant}")
     if shape.hidden not in COMPILED_HIDDEN or shape.hc != COMPILED_HC:
         raise ValueError(f"MK MHC is compiled for hidden {COMPILED_HIDDEN} at hc {COMPILED_HC}; "
                          f"the bound kernel shape asks for hidden {shape.hidden} hc {shape.hc}")

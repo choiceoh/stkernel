@@ -129,15 +129,18 @@ class Facts:
         from engine.base.kernel_shape import Attention, Comm, Device, Indexer, KernelShape, LinearAttention, MoE
         return KernelShape(
             comm=Comm(world=TP, hidden=self.hidden), hidden=self.hidden, hc=self.hc, tp=TP,
-            attention=Attention(kind="mla", heads=self.heads_local, head_dim=self.kv_lora, kv_heads=1),
+            attention=Attention(kind="mla", heads=self.heads_local, head_dim=self.kv_lora, kv_heads=1,
+                                sink=False),                   # mla_sparse_mqa: "No sink"
             linear=LinearAttention(heads=self.kda_heads_local, v_heads=self.kda_heads_local, k_dim=self.kda_dim,
                                    v_dim=self.kda_dim, conv=self.conv, decay="channel"),
-            indexer=Indexer(heads=self.idx_heads, head_dim=self.idx_dim, pool=self.kpool, topk=self.topk),
+            indexer=Indexer(heads=self.idx_heads, head_dim=self.idx_dim, pool=self.kpool, topk=self.topk,
+                            compress="kpool"),                 # index_kpool_compress, asserted in architecture()
             moe=MoE(experts=self.experts, experts_local=self.experts, hidden=self.hidden, inter=self.moe_inter,
                     inter_local=self.moe_inter_local, topk=self.topk_experts, quant="nvfp4",
                     activation="swigluoai_uninterleave", swiglu_limit=self.swiglu_limit,
                     dense_inter_local=self.dense_inter_local),
-            spec_k=self.spec_k, device=Device(capability=BOX["capability"], sms=BOX["sms"]))
+            spec_k=self.spec_k, device=Device(capability=BOX["capability"], sms=BOX["sms"]),
+            hc_variant="mhc")                                  # config "mhc": true, asserted in architecture()
 
 
 def kernel_shape_of(ckpt: "str | Path" = CKPT) -> "KernelShape":

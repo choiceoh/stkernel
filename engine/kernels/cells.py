@@ -8,6 +8,10 @@ with the wrappers. A compiled cell changes in the kernel and in this file togeth
 HIDDEN instance of the mHC segment, a wider Hadamard); the tests pin the wrappers to these
 names.
 
+A cell is geometry AND math: two models can share 16 x 512 and still differ in the softmax (a sink term),
+the key compression, or the hyper-connection form. The shape declares those operation variants
+(engine/base/kernel_shape) and a lane is admitted only when they match what it computes.
+
 Three verdicts. `admitted`: inside the compiled cell and inside a measured one. `unmeasured`:
 the wrapper serves it, but the lane's measured dispatch choices (split points, tiles, the BF16/FP8
 switch) were taken at another cell -- it runs by declaration. `refused`: the wrapper dies by name.
@@ -28,11 +32,14 @@ from dataclasses import asdict, dataclass, replace
 # mla/glm53_megakernel.cu: MLA_H query heads per rank over an MLA_D latent (kv_lora_rank)
 MLA_HEADS = 16
 MLA_LATENT = 512
+MLA_SINK = False              # its online softmax has no sink term (modules/sparse_attention.mla_sparse_mqa)
 # kpool.py: the Hadamard-128 rotation and the one-warp pooling lane
 INDEXER_HEAD_DIM = 128
+INDEXER_KEY_COMPRESS = "kpool"  # per-channel softmax pooling with APE, Hadamard-128, FP8 keys (modules/sparse_indexer)
 # dense/kernels.cu: the HIDDEN and HIDDEN_V41 instances of the mHC segment at HC; MHC_MAX_TOK_DEF rows; HCHUNK
 MHC_HIDDEN = (4096, 5120)
 MHC_HC = 4
+MHC_VARIANT = "mhc"           # the MK segment and the TileLang mixes compute GLM-5.3's mhc_pre/mhc_post
 MHC_MAX_TOK = 128
 MHC_HCHUNK = 256
 # oneshot/dsv4_oneshot_ar.cu: NPEER 3 (four ranks), MAXEL elements, the 12-CTA PDL consumer's element bound
@@ -63,13 +70,13 @@ DRAFT_MEASURED_HEAD = (128,)
 ADMITTED, REFUSED, UNMEASURED = "admitted", "refused", "unmeasured"
 _KDA_CELLS_TEXT = ", ".join(f"{h}/{hv} x {k} x {v}" for h, hv, k, v in KDA_MEASURED_CELLS)
 COSTS = ("minutes", "hours", "days")          # the cost classes, cheapest first
-KINDS = ("measure", "instance", "kernel", "wire", "convert", "rewrite")
+KINDS = ("establish", "measure", "instance", "kernel", "wire", "convert", "rewrite")
 
 
 @dataclass(frozen=True)
 class Recipe:
     """What to do about a verdict, as data an agent can act on."""
-    kind: str           # measure | instance | kernel | wire | convert | rewrite
+    kind: str           # establish | measure | instance | kernel | wire | convert | rewrite
     where: str          # the files, constants and hooks the work lands in
     how: str            # the options, cheapest first
     judge: str          # the probe / oracle / tolerance that decides
@@ -139,6 +146,50 @@ def _recipe_mla(a):
                   "occupancy was measured at 512, so a new latent is a re-derived, re-measured instance; a head count that "
                   "is not a multiple of 16 can instead pad zero-query heads at the lane and drop their outputs",
                   _MLA_JUDGE, "the self-test passes on the new cell and cells.py names it", "days")
+
+
+def _recipe_establish(fact, where, judge):
+    return Recipe("establish", where,
+                  f"the model's {fact} is not established: read it off the pinned reference (engine/profiles/qwen38/plan.py "
+                  "HF_PIN for Qwen3.8), state it in the profile's kernel_shape, and rerun the wizard -- the lane can be "
+                  "chosen only after the math is known",
+                  judge, f"the profile declares the {fact} and the wizard judges the lane on it", "hours")
+
+
+def _recipe_mla_sink():
+    return Recipe("kernel", "engine/kernels/mla/glm53_megakernel.cu (the MLA segment's online softmax, the cluster and "
+                  "prefill32 paths) and cells.MLA_SINK",
+                  "add the per-head sink to the softmax denominator: exp(sink - running max) joins the partial sums in "
+                  "the split summation order the self-test holds; the dense decode rows and the prefill32 tiles need it too",
+                  "modules/sparse_attention.sparse_attn (the -1 sentinel, the -1e30 seed) at rel <= 2e-2 in the arm-time self-test",
+                  "a sink cell in cells.py and the self-test passes with sinks", "days")
+
+
+def _recipe_indexer_compress(i):
+    if i.compress == "qsa":
+        how = ("the engine has no QSA module yet (engine/profiles/qwen38/budget.py): write its compression reference "
+               "first, then a key-compression lane against it; the MQA logits formula is the shared part")
+    else:
+        how = (f"{i.compress} compresses keys its own way (engine/profiles/dsv41/shapes.py: Compressor.kv_state, the packed "
+               "E2M1 score path): write that compression and score path as a lane; the MQA logits formula is the shared part")
+    return Recipe("kernel", "a key-compression lane beside engine/kernels/kpool.py (kpool is GLM-5.3's) and "
+                  "cells.INDEXER_KEY_COMPRESS", how,
+                  "the model's compression reference, then modules/sparse_indexer.indexer_logits for the shared scoring",
+                  "cells.py names the compression and the indexer wrapper admits it", "days")
+
+
+def _recipe_mhc_variant(shape, lane):
+    if lane == "mhc_decode":
+        return Recipe("wire", "engine/kernels/dense/kernels.cu (run_mhc_v41) and engine/kernels/dense/mhc.py",
+                      "the megakernel's V4.1 contract (run_mhc_v41, 'Experimental HF V4.1 MHC seam') is the candidate for the "
+                      "split-sinkhorn form and its GPU probe never ran (measurements/dsv41_mhc_20260910): judge it against "
+                      f"hc_split_sinkhorn on {_GPU}, then give engine/kernels/dense/mhc.py an entry for it",
+                      "modules/hyper_connection.hc_split_sinkhorn, pooled and worst-token rel <= 1e-3 (probes/mk_mhc_geometry_bench.py)",
+                      "cells.py admits split_sinkhorn for decode and the wrapper binds the V4.1 entry", "hours")
+    return Recipe("kernel", "engine/kernels/mhc/__init__.py (mhc_pre_tilelang, mhc_post_tilelang)",
+                  "the TileLang mixes compute GLM-5.3's mhc_pre/mhc_post; the split-sinkhorn form (sigmoid gates, its RMS "
+                  "normalisation placement and pre-mix epsilon) needs its own mixes",
+                  "modules/hyper_connection.hc_split_sinkhorn", "the prefill lane binds the new mixes and cells.py names the variant", "days")
 
 
 def _recipe_indexer(i):
@@ -314,20 +365,37 @@ def admission(shape) -> "list[Verdict]":
         refuse("device", f"every lane is built for GB10 sm_121a with {MEASURED.device.sms} SMs; asked "
                          f"SM{d.capability[0]}{d.capability[1]}/{d.sms}", _recipe_device(d))
 
-    if (a.kind, a.heads, a.head_dim) == ("mla", MLA_HEADS, MLA_LATENT):
-        admit("mla", f"the compiled {MLA_HEADS} heads x {MLA_LATENT} latent cell")
-    else:
+    if a.kind != "mla" or (a.heads, a.head_dim) != (MLA_HEADS, MLA_LATENT):
         refuse("mla", f"compiled for the {MLA_HEADS} heads x {MLA_LATENT} latent MLA cell; asked {a.kind} {a.heads}x{a.head_dim}"
                       + (" -- a GQA attention has no ST lane yet" if a.kind != "mla" else ""), _recipe_mla(a))
+    elif a.sink is None:
+        refuse("mla", "the attention sink is not established; the lane's math depends on it",
+               _recipe_establish("attention sink", "the profile's kernel_shape (Attention.sink)",
+                                 "modules/sparse_attention: sparse_attn carries the sink, mla_sparse_mqa does not"))
+    elif a.sink != MLA_SINK:
+        refuse("mla", f"the {MLA_HEADS} x {MLA_LATENT} geometry matches, but this attention's softmax carries a sink term "
+                      "and the compiled MLA softmax has none", _recipe_mla_sink())
+    else:
+        admit("mla", f"the compiled {MLA_HEADS} heads x {MLA_LATENT} latent cell, no sink")
 
     if i is not None:                                  # a model without a sparse indexer has no indexer lane to judge
-        if i.head_dim == INDEXER_HEAD_DIM:
-            admit("indexer", f"Hadamard-{INDEXER_HEAD_DIM} keys, pool {i.pool}, top {i.topk} at launch")
+        if i.compress != INDEXER_KEY_COMPRESS:
+            refuse("indexer", f"the indexer lane compresses keys by {INDEXER_KEY_COMPRESS}; this model compresses by "
+                              f"{i.compress} (only the MQA scoring formula is shared)", _recipe_indexer_compress(i))
+        elif i.head_dim == INDEXER_HEAD_DIM:
+            admit("indexer", f"{INDEXER_KEY_COMPRESS} keys at Hadamard-{INDEXER_HEAD_DIM}, pool {i.pool}, top {i.topk} at launch")
         else:
             refuse("indexer", f"the indexer lanes are written for head_dim {INDEXER_HEAD_DIM}; asked {i.head_dim}",
                    _recipe_indexer(i))
 
-    if shape.hidden not in MHC_HIDDEN or shape.hc != MHC_HC:
+    hc_unknown = _recipe_establish("hyper-connection form", "the profile's kernel_shape (hc_variant)",
+                                   "modules/hyper_connection: mhc_pre/mhc_post or hc_split_sinkhorn reproduces the reference")
+    if shape.hc_variant is None:
+        refuse("mhc_decode", "the hyper-connection form is not established; the segment's math depends on it", hc_unknown)
+    elif shape.hc_variant != MHC_VARIANT:
+        refuse("mhc_decode", f"the MK mHC segment computes {MHC_VARIANT}; this model mixes by {shape.hc_variant}",
+               _recipe_mhc_variant(shape, "mhc_decode"))
+    elif shape.hidden not in MHC_HIDDEN or shape.hc != MHC_HC:
         refuse("mhc_decode", f"MK mHC is compiled for hidden {MHC_HIDDEN} at hc {MHC_HC}; asked hidden {shape.hidden} "
                              f"hc {shape.hc}", _recipe_mhc(shape))
     elif shape.hidden not in MHC_MEASURED_HIDDEN:
@@ -335,7 +403,13 @@ def admission(shape) -> "list[Verdict]":
                    _recipe_mhc_measure(shape))
     else:
         admit("mhc_decode", f"MK mHC instance for hidden {shape.hidden} at hc {shape.hc}")
-    admit("mhc_prefill", "TileLang mixes take hidden and hc from the tensors")
+    if shape.hc_variant is None:
+        refuse("mhc_prefill", "the hyper-connection form is not established; the mixes' math depends on it", hc_unknown)
+    elif shape.hc_variant != MHC_VARIANT:
+        refuse("mhc_prefill", f"the TileLang mixes compute {MHC_VARIANT}; this model mixes by {shape.hc_variant}",
+               _recipe_mhc_variant(shape, "mhc_prefill"))
+    else:
+        admit("mhc_prefill", "TileLang mixes take hidden and hc from the tensors")
 
     if c.world != ONESHOT_WORLD or c.hidden % 8 or c.hidden > ONESHOT_MAX_ELEMENTS:
         refuse("oneshot", f"one-shot is compiled for {ONESHOT_WORLD} ranks and rows of 8-element multiples within "

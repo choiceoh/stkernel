@@ -100,7 +100,8 @@ class DescriptorTests(unittest.TestCase):
         """The proof that the served path did not move: GLM's derivation IS the cell the kernels
         were compiled for, field by field (the drafter is bound later, when it loads)."""
         self.assertEqual(glm_shape(), replace(MEASURED, drafter=None))
-        self.assertEqual(MEASURED.describe().split(" | ")[0], "hidden 4096 hc 4 tp 4")
+        self.assertEqual(MEASURED.describe().split(" | ")[0], "hidden 4096 hc 4 mhc tp 4")
+        self.assertEqual(MEASURED.describe().split(" | ")[1], "mla 16x512 no sink")
         self.assertEqual(MEASURED.device, Device(capability=(12, 1), sms=48))
 
     def test_unbound_means_the_measured_cell(self):
@@ -136,9 +137,9 @@ class DescriptorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             LinearAttention(heads=2, v_heads=2, k_dim=128, v_dim=128, conv=4, decay="token")
         with self.assertRaises(ValueError):
-            Attention(kind="mqa", heads=1, head_dim=128)
+            Attention(kind="mqa", heads=1, head_dim=128, sink=False)
         with self.assertRaises(ValueError):
-            Indexer(heads=1, head_dim=128, pool=4, topk=2050)
+            Indexer(heads=1, head_dim=128, pool=4, topk=2050, compress="kpool")
         with self.assertRaises(ValueError):
             replace(MEASURED.moe, dynamic_tile_m=48)
         with self.assertRaises(ValueError):
@@ -149,13 +150,25 @@ class DescriptorTests(unittest.TestCase):
             replace(MEASURED, moe=replace(MEASURED.moe, inter_local=1024))
         with self.assertRaises(ValueError):
             Device(capability=(12,), sms=48)
+        # the operation variants: part of the math, validated, and never defaulted
+        with self.assertRaises(ValueError):
+            Attention(kind="mla", heads=16, head_dim=512, sink="yes")
+        with self.assertRaises(ValueError):
+            Indexer(heads=32, head_dim=128, pool=4, topk=2048, compress="lsh")
+        with self.assertRaises(ValueError):
+            replace(MEASURED, hc_variant="hyper")
+        with self.assertRaises(TypeError):
+            Attention("mla", 16, 512)
+        with self.assertRaises(TypeError):
+            Indexer(32, 128, 4, 2048)
 
     def test_qwen38_declares_a_different_cell_through_the_same_descriptor(self):
         q = qwen_shape()
         self.assertEqual((q.hidden, q.hc, q.tp, q.comm), (2560, 4, 4, Comm(4, 2560)))
-        self.assertEqual(q.attention, Attention("gqa", heads=6, head_dim=256, kv_heads=1))
+        self.assertEqual(q.attention, Attention("gqa", heads=6, head_dim=256, kv_heads=1, sink=None))
         self.assertEqual(q.linear, LinearAttention(heads=4, v_heads=12, k_dim=128, v_dim=128, conv=4, decay="head"))
-        self.assertEqual(q.indexer, Indexer(heads=1, head_dim=128, pool=4, topk=2048))
+        self.assertEqual(q.indexer, Indexer(heads=1, head_dim=128, pool=4, topk=2048, compress="qsa"))
+        self.assertIsNone(q.hc_variant)                                    # not established: no reference in the repo
         self.assertEqual(q.moe, MoE(experts=512, experts_local=128, hidden=2560, inter=512, inter_local=512, topk=10,
                                     quant="nvfp4", activation="silu", swiglu_limit=None, dense_inter_local=512))
         self.assertEqual((q.spec_k, q.drafter), (1, None))
@@ -168,22 +181,29 @@ class DescriptorTests(unittest.TestCase):
         from engine.kernels import cells
         s = dsv41_shape()
         self.assertEqual((s.hidden, s.hc, s.tp, s.spec_k, s.linear, s.drafter), (5120, 4, 4, 3, None, None))
-        self.assertEqual(s.attention, Attention("mla", heads=16, head_dim=512, kv_heads=1))
-        self.assertEqual(s.indexer, Indexer(heads=32, head_dim=128, pool=2, topk=512))
+        self.assertEqual(s.attention, Attention("mla", heads=16, head_dim=512, kv_heads=1, sink=True))
+        self.assertEqual(s.indexer, Indexer(heads=32, head_dim=128, pool=2, topk=512, compress="ced"))
+        self.assertEqual(s.hc_variant, "split_sinkhorn")
         self.assertEqual(s.moe, MoE(experts=384, experts_local=96, hidden=5120, inter=2304, inter_local=2304, topk=6,
                                     quant="fp4-block32", activation="silu", swiglu_limit=10.0, dense_inter_local=0))
         self.assertEqual(ks.from_dict(json.loads(json.dumps(ks.to_dict(s)))), s)      # None survives the record
         self.assertIn("linear none", s.describe())
         verdicts = {v.lane: v for v in cells.admission(s)}
         status = {lane: v.status for lane, v in verdicts.items()}
-        admitted = ("device", "mla", "indexer", "mhc_prefill", "universal")
-        unmeasured = ("mhc_decode", "oneshot", "prefill_collectives", "dense")      # compiled for 5120, measured at 4096
+        admitted = ("device", "universal")
+        unmeasured = ("oneshot", "prefill_collectives", "dense")                    # math-free transports, measured at 4096
+        refused = ("mla", "indexer", "mhc_decode", "mhc_prefill", "moe")            # same geometry, different math
         self.assertEqual({k: status[k] for k in admitted}, dict.fromkeys(admitted, cells.ADMITTED))
         self.assertEqual({k: status[k] for k in unmeasured}, dict.fromkeys(unmeasured, cells.UNMEASURED))
-        self.assertEqual(status["moe"], cells.REFUSED)                              # FP4 [32,32] blocks, not NVFP4
+        self.assertEqual({k: status[k] for k in refused}, dict.fromkeys(refused, cells.REFUSED))
         self.assertFalse({"kda_recurrent", "kda_ring", "kda_chunk", "draft"} & set(status))
-        self.assertIn("hidden 5120", verdicts["mhc_decode"].why)                    # the HIDDEN_V41 instance
-        self.assertIn("dsv41_mhc_20260910", verdicts["mhc_decode"].recipe.how)     # whose GPU probe is pending
+        self.assertIn("sink term", verdicts["mla"].why)                             # 16 x 512 matches, the softmax does not
+        self.assertEqual(verdicts["mla"].recipe.kind, "kernel")
+        self.assertIn("ced", verdicts["indexer"].why)
+        self.assertIn("split_sinkhorn", verdicts["mhc_decode"].why)
+        self.assertIn("run_mhc_v41", verdicts["mhc_decode"].recipe.how)            # the candidate, its GPU probe pending
+        self.assertIn("dsv41_mhc_20260910", verdicts["mhc_decode"].recipe.how)
+        self.assertEqual(verdicts["mhc_prefill"].recipe.kind, "kernel")
         self.assertIn("every 2 rows", verdicts["prefill_collectives"].why)
         self.assertEqual(verdicts["oneshot"].recipe.kind, "measure")
         ks.bind(s)
@@ -259,9 +279,12 @@ class WrapperTests(unittest.TestCase):
                           (128 * 4, torch.float32), (128 * 4096, torch.bfloat16), (8, torch.int32)])
         v41 = replace(MEASURED, hidden=5120, comm=Comm(4, 5120), moe=replace(MEASURED.moe, hidden=5120))
         self.assertEqual(mhc.geometry(v41), (5120, 4, 24, 20))
+        with self.assertRaisesRegex(ValueError, "mixes by None"):
+            mhc.geometry(qwen_shape())                                  # Qwen3.8's form is not established
+        wide = replace(MEASURED, hidden=2560, comm=Comm(4, 2560), moe=replace(MEASURED.moe, hidden=2560))
         with self.assertRaisesRegex(ValueError, "2560"):
-            mhc.geometry(qwen_shape())
-        ks.bind(qwen_shape())
+            mhc.geometry(wide)
+        ks.bind(wide)
         with self.assertRaisesRegex(ValueError, "hidden 2560"):
             mhc.geometry()
 
@@ -343,14 +366,16 @@ class CellTests(unittest.TestCase):
     def test_qwen38_gets_its_table_before_any_boot(self):
         from engine.kernels import cells
         status = {v.lane: v.status for v in cells.admission(qwen_shape())}
-        refused = ("mla", "mhc_decode", "kda_ring", "kda_chunk")
-        admitted = ("device", "indexer", "mhc_prefill", "universal")
+        refused = ("mla", "indexer", "mhc_decode", "mhc_prefill", "kda_ring", "kda_chunk")
+        admitted = ("device", "universal")
         unmeasured = ("oneshot", "prefill_collectives", "dense", "kda_recurrent", "moe")
         self.assertEqual({k: status[k] for k in refused}, dict.fromkeys(refused, cells.REFUSED))
         self.assertEqual({k: status[k] for k in admitted}, dict.fromkeys(admitted, cells.ADMITTED))
         self.assertEqual({k: status[k] for k in unmeasured}, dict.fromkeys(unmeasured, cells.UNMEASURED))
         self.assertEqual(len(status), 13)
         self.assertNotIn("draft", status)                                  # no drafter declared
+        kinds = {v.lane: v.recipe.kind for v in cells.admission(qwen_shape()) if v.recipe}
+        self.assertEqual((kinds["mhc_decode"], kinds["mhc_prefill"]), ("establish", "establish"))   # read the reference first
         pinned = {v.lane: v for v in cells.admission(ks.pin(qwen_shape(), "moe.dynamic_tile_m", 32))}
         self.assertEqual(pinned["moe"].status, cells.UNMEASURED)          # a pin is not a measurement
         mx = {v.lane: v for v in cells.admission(replace(MEASURED, moe=replace(MEASURED.moe, quant="mxfp4")))}
@@ -359,14 +384,33 @@ class CellTests(unittest.TestCase):
     def test_the_wrappers_refuse_against_the_cells(self):
         from engine.kernels import cells, mla, oneshot
         from engine.kernels.dense import mhc
-        self.assertEqual((mla.MLA_H, mla.MLA_D), (cells.MLA_HEADS, cells.MLA_LATENT))
+        self.assertEqual((mla.MLA_H, mla.MLA_D, mla.MLA_SINK), (cells.MLA_HEADS, cells.MLA_LATENT, cells.MLA_SINK))
+        self.assertEqual(mhc.MHC_VARIANT, cells.MHC_VARIANT)
+        ks.reset()
+        self.addCleanup(ks.reset)
+        ks.bind(replace(MEASURED, attention=replace(MEASURED.attention, sink=True)))
+        with self.assertRaisesRegex(RuntimeError, "sink"):
+            mla._check_cell()
+        with self.assertRaisesRegex(ValueError, "split_sinkhorn"):
+            mhc.geometry(replace(MEASURED, hc_variant="split_sinkhorn"))
+        ks.reset()
+        # the TileLang mixes check the variant before any work, in both entries
+        tree = ast.parse((ROOT / "engine/kernels/mhc/__init__.py").read_text())
+        for name in ("mhc_pre_tilelang", "mhc_post_tilelang"):
+            fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name)
+            body = [b for b in fn.body if not (isinstance(b, ast.Expr) and isinstance(b.value, ast.Constant))]
+            self.assertEqual(ast.unparse(body[0]), "_check_variant()", name)
         self.assertEqual((mhc.COMPILED_HIDDEN, mhc.COMPILED_HC, mhc.MHC_MAX_TOK, mhc.HCHUNK),
                          (cells.MHC_HIDDEN, cells.MHC_HC, cells.MHC_MAX_TOK, cells.MHC_HCHUNK))
         self.assertEqual((oneshot.COMPILED_WORLD, oneshot.MAX_ELEMENTS, oneshot.CONSUMER_MAX_ELEMENTS),
                          (cells.ONESHOT_WORLD, cells.ONESHOT_MAX_ELEMENTS, cells.ONESHOT_CONSUMER_MAX_ELEMENTS))
         if importlib.util.find_spec("triton") is not None:
             from engine.kernels import kpool, prefill_collectives
-            self.assertEqual(kpool.INDEX_HEAD_DIM, cells.INDEXER_HEAD_DIM)
+            self.assertEqual((kpool.INDEX_HEAD_DIM, kpool.INDEXER_KEY_COMPRESS), (cells.INDEXER_HEAD_DIM, cells.INDEXER_KEY_COMPRESS))
+            ks.bind(replace(MEASURED, indexer=replace(MEASURED.indexer, compress="ced")))
+            with self.assertRaisesRegex(ValueError, "ced"):
+                kpool._indexer_cell()
+            ks.reset()
             self.assertEqual(prefill_collectives.BLOCK, cells.PREFILL_BLOCK)
         source = (ROOT / "engine/kernels/decode_projection.py").read_text()   # #816's candidates read the shape
         self.assertNotIn("2048", source)
@@ -455,7 +499,8 @@ class RecordTests(unittest.TestCase):
             result = ks.wizard("dsv41", dckpt, ranks=Path(d) / "dranks", write=True)
             self.assertEqual(result["shape"], dsv41_shape())
             self.assertEqual(ks.from_dict(ks.read_record(Path(d) / "dranks")["shape"]), dsv41_shape())
-            self.assertEqual({v.lane for v in result["admission"] if v.status == "refused"}, {"moe"})
+            self.assertEqual({v.lane for v in result["admission"] if v.status == "refused"},
+                             {"mla", "indexer", "mhc_decode", "mhc_prefill", "moe"})
             with self.assertRaises(ValueError):
                 ks.wizard("glm53", ckpt, pins=["moe.dynamic_tile_m"])
             with self.assertRaises(ValueError):
@@ -468,12 +513,19 @@ class RecipeTests(unittest.TestCase):
 
     SHAPES = {
         "glm": MEASURED, "qwen38": None, "dsv41": None,
-        "mla32": replace(MEASURED, attention=Attention("mla", heads=32, head_dim=512)),
-        "mla_latent256": replace(MEASURED, attention=Attention("mla", heads=16, head_dim=256)),
+        "mla32": replace(MEASURED, attention=Attention("mla", heads=32, head_dim=512, sink=False)),
+        "mla_latent256": replace(MEASURED, attention=Attention("mla", heads=16, head_dim=256, sink=False)),
+        "sink": replace(MEASURED, attention=replace(MEASURED.attention, sink=True)),
+        "sink_unknown": replace(MEASURED, attention=replace(MEASURED.attention, sink=None)),
+        "ced": replace(MEASURED, indexer=replace(MEASURED.indexer, compress="ced")),
+        "hc_split": replace(MEASURED, hc_variant="split_sinkhorn"),
+        "hc_unknown": replace(MEASURED, hc_variant=None),
+        "hidden2560": replace(MEASURED, hidden=2560, comm=Comm(4, 2560), moe=replace(MEASURED.moe, hidden=2560)),
+        "hidden5120": replace(MEASURED, hidden=5120, comm=Comm(4, 5120), moe=replace(MEASURED.moe, hidden=5120)),
         "hc8": replace(MEASURED, hc=8),
         "hidden4000": replace(MEASURED, hidden=4000, comm=Comm(4, 4000), moe=replace(MEASURED.moe, hidden=4000)),
         "tp2": replace(MEASURED, tp=2, comm=Comm(2, 4096), moe=replace(MEASURED.moe, inter_local=1024)),
-        "index64": replace(MEASURED, indexer=Indexer(heads=32, head_dim=64, pool=4, topk=2048)),
+        "index64": replace(MEASURED, indexer=Indexer(heads=32, head_dim=64, pool=4, topk=2048, compress="kpool")),
         "draft64": replace(MEASURED, drafter=Drafter(head_dim=64, kv_heads=8, layers=5, window=2048)),
         "kda32": replace(MEASURED, linear=LinearAttention(heads=32, v_heads=32, k_dim=128, v_dim=128, conv=4)),
         "device": replace(MEASURED, device=Device(capability=(12, 0), sms=16)),
@@ -503,7 +555,10 @@ class RecipeTests(unittest.TestCase):
                          ("kda_recurrent", "unmeasured", "measure"), ("kda_ring", "refused", "wire"),
                          ("kda_ring", "unmeasured", "measure"), ("kda_chunk", "refused", "kernel"),
                          ("kda_chunk", "unmeasured", "measure"), ("moe", "refused", "convert"),
-                         ("moe", "unmeasured", "measure"), ("device", "refused", "rewrite")} <= seen, seen)
+                         ("moe", "unmeasured", "measure"), ("device", "refused", "rewrite"),
+                         ("mla", "refused", "establish"), ("mhc_decode", "refused", "establish"),
+                         ("mhc_prefill", "refused", "establish"), ("mhc_decode", "refused", "wire"),
+                         ("mhc_prefill", "refused", "kernel")} <= seen, seen)
 
     def test_the_plan_is_cheapest_first_with_refusals_first_at_equal_cost(self):
         from engine.kernels import cells
@@ -511,17 +566,17 @@ class RecipeTests(unittest.TestCase):
         self.assertIn("work: none", cells.work_table(cells.admission(MEASURED)))
         qwen = cells.plan(cells.admission(qwen_shape()))
         self.assertEqual([(v.lane, v.status, v.recipe.cost) for v in qwen], [
-            ("kda_ring", "refused", "hours"), ("mhc_decode", "refused", "hours"),
+            ("kda_ring", "refused", "hours"), ("mhc_decode", "refused", "hours"), ("mhc_prefill", "refused", "hours"),
             ("dense", "unmeasured", "hours"), ("kda_recurrent", "unmeasured", "hours"), ("moe", "unmeasured", "hours"),
             ("oneshot", "unmeasured", "hours"), ("prefill_collectives", "unmeasured", "hours"),
-            ("kda_chunk", "refused", "days"), ("mla", "refused", "days")])
+            ("indexer", "refused", "days"), ("kda_chunk", "refused", "days"), ("mla", "refused", "days")])
         self.assertEqual([v.lane for v in cells.plan(cells.admission(dsv41_shape()))],
-                         ["dense", "mhc_decode", "oneshot", "prefill_collectives", "moe"])
+                         ["mhc_decode", "dense", "oneshot", "prefill_collectives", "indexer", "mhc_prefill", "mla", "moe"])
         text = cells.work_table(cells.admission(qwen_shape()))
-        self.assertIn("work (9)", text)
+        self.assertIn("work (11)", text)
         self.assertIn("1. kda_ring [refused] wire, hours", text)
         for field in ("how:", "where:", "judge:", "done:"):
-            self.assertEqual(text.count(field), 9, field)
+            self.assertEqual(text.count(field), 11, field)
 
     def test_the_recipes_name_files_that_exist(self):
         import re
@@ -564,7 +619,7 @@ class RecipeTests(unittest.TestCase):
             doc = json.loads(out.getvalue())
             expected = [v.lane for v in cells.plan(cells.admission(qwen_shape()))]
             self.assertEqual(doc["plan"], expected)
-            self.assertEqual(doc["counts"], {"admitted": 4, "unmeasured": 5, "refused": 4})
+            self.assertEqual(doc["counts"], {"admitted": 2, "unmeasured": 5, "refused": 6})
             self.assertEqual(ks.from_dict(doc["shape"]), qwen_shape())
             self.assertEqual(doc["record"], str(ranks / ks.RECORD))
             by_lane = {entry["lane"]: entry for entry in doc["admission"]}
@@ -581,7 +636,7 @@ class RecipeTests(unittest.TestCase):
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 self.assertEqual(ks.main(["show", "--ranks", str(ranks)]), 0)
-            self.assertIn("work (9)", out.getvalue())
+            self.assertIn("work (11)", out.getvalue())
             # a record written before recipes existed still reads: its verdicts simply carry none
             old = dict(record, admission=[{k: v for k, v in entry.items() if k != "recipe"} for entry in record["admission"]])
             old.pop("plan")
