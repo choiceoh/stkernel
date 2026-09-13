@@ -378,7 +378,10 @@ class ContractAndTimingTests(unittest.TestCase):
             lines=['1|long|100|30|long|boot|','2|short|101|30|short|boot|']
             rank=fixtures.fleet_priority.rank(lines,{},102,estimates={'short':{'minutes':1,'source':'observed-p90'}})
             self.assertEqual(rank[0]['session'],'short')
-            self.assertEqual(fixtures.fleet_priority.rank(lines,{},2000,estimates={'short':{'minutes':1}})[0]['session'],'long')
+            # aged 30 minutes the long job still yields to a one-minute ticket (the small batch); starved, it goes first
+            self.assertEqual(fixtures.fleet_priority.rank(lines,{},2000,estimates={'short':{'minutes':1}})[0]['session'],'short')
+            starved=100+fixtures.fleet_priority.STARVE_S
+            self.assertEqual(fixtures.fleet_priority.rank(lines,{},starved,estimates={'short':{'minutes':1}})[0]['session'],'long')
 
     def test_phase_failures_do_not_become_successful_duration_samples(self):
         with tempfile.TemporaryDirectory() as directory:

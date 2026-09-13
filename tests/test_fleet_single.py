@@ -206,7 +206,35 @@ class ContractTests(unittest.TestCase):
         self.assertIn('if [ "$kind" = boot ] && single_on_fleet && [ -s "$HS" ] && holder_alive "$HS"; then return 1; fi', self.fleet)
         self.assertIn('holds this box too', self.fleet)
         self.assertIn('single_refused "$s" "$why"; return 1', self.fleet)
-        self.assertIn('FLEET_RULES=4', self.fleet)
+        self.assertIn('FLEET_RULES=5', self.fleet)
+        # a single check's results come back to the controller when it releases -- off the queue lock
+        self.assertIn('logit "release $1 [single]"; _collect_single "$1" "${t0:-0}"; return 0', self.fleet)
+        self.assertIn('fi ) 9>&- >/dev/null 2>&1 &', self.fleet)
+        # no estimate given: the ledger's history; no budget given: the probe's own
+        self.assertIn('if [ -z "$est" ]; then est=$(expected_min "$s" 30)', self.fleet)
+        self.assertIn('export ST_PROBE_GIB=$budget', self.fleet)
+
+    def test_collect_copies_only_the_cache_files_find_listed(self):
+        calls = []
+
+        def run(argv, **kwargs):
+            calls.append(argv)
+            if argv[0] == 'ssh':
+                return Done(0, '.cache/st/decode-timeline-rows1.json\n.cache/st/prefill-chunk-profile.json\n'
+                               'MemAvailable:   41943040 kB\n../../etc/passwd\n.cache/st/sub/dir.json\n')
+            return Done(0 if 'decode-timeline' in argv[-2] else 1)
+        with tempfile.TemporaryDirectory() as directory:
+            copied = single.collect('srv4', 1789000000.7, directory, run=run)
+        self.assertEqual(copied, ['decode-timeline-rows1.json'])            # the second scp failed: not claimed
+        listing = calls[0]
+        self.assertEqual(listing[:len(single.SSH)], list(single.SSH))
+        self.assertIn('-newermt @1789000000', listing[-1])
+        self.assertIn('-maxdepth 1', listing[-1])
+        scps = [c for c in calls[1:]]
+        self.assertEqual([c[-2] for c in scps], ['srv4:.cache/st/decode-timeline-rows1.json', 'srv4:.cache/st/prefill-chunk-profile.json'])
+        # a host that cannot list says so; it never reads as "nothing to collect"
+        with self.assertRaisesRegex(OSError, 'could not list'):
+            single.collect('srv4', 0, '/tmp/unused', run=lambda argv, **kw: Done(255, '', 'ssh: connect refused'))
 
     def test_the_runner_waits_for_room_uses_the_production_image_and_takes_no_lease_there(self):
         self.assertIn('probe_host=${ST_PROBE_HOST:-}', self.runner)
@@ -315,6 +343,18 @@ class LaneAdmissionTests(unittest.TestCase):
 
     def queue(self, *rows):
         (self.fleet / 'queue').write_text(''.join('|'.join(map(str, row)) + '\n' for row in rows))
+
+    def test_the_expected_minutes_are_the_ledger_s_by_session_then_family_as_the_ranking_reads_them(self):
+        rows = [('kern-timeline', 9), ('kern-timeline', 11), ('c4-rows-decode-profile', 30), ('c4-rows-decode-profile', 2),
+                ('c4-rows-decode-profile', 3), ('c4-rows-decode-profile', 2), ('c4-rows-decode-profile', 2),
+                ('c4-rows-decode-profile', 2), ('zero', 0)]
+        (self.fleet / 'ledger.tsv').write_text(''.join(f'2026-09-13_12:00:00\t{s}\tsingle\tnote\t{m}\t0\t0\t0\n' for s, m in rows))
+        result = self.run_fleet('for s in kern-timeline c4-rows2-decode-profile zero new; do echo "$s=$(expected_min "$s" 30)"; done')
+        self.assertEqual(result.stdout.split(), ['kern-timeline=9', 'c4-rows2-decode-profile=2', 'zero=30', 'new=30'])
+        sys.path.insert(0, str(ROOT / 'bench'))
+        import fleet_priority
+        python = fleet_priority.history_estimates(self.fleet / 'ledger.tsv', ['kern-timeline', 'c4-rows2-decode-profile'])
+        self.assertEqual({s: int(v['minutes']) for s, v in python.items()}, {'kern-timeline': 9, 'c4-rows2-decode-profile': 2})
 
     def test_on_a_box_of_its_own_the_lanes_never_wait_for_each_other(self):
         now, pid = int(time.time()), os.getpid()

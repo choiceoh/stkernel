@@ -209,10 +209,54 @@ class PriorityTests(unittest.TestCase):
     def test_short_unlocking_job_wins_then_aging_protects_long_job(self):
         lines = ["1|long|100|30|long|boot|", "2|short|200|5|short|probe|"]
         self.assertEqual(fleet_priority.rank(lines, {"short": 4}, 300)[0]["session"], "short")
-        self.assertEqual(fleet_priority.rank(lines, {"short": 100}, 1900)[0]["session"], "long")
+        # aged 30 minutes the long job no longer blocks the small batch; the batch's allowance ends at 45
+        self.assertEqual(fleet_priority.rank(lines, {"short": 100}, 1900)[0]["session"], "short")
+        self.assertEqual(fleet_priority.rank(lines, {"short": 100}, 100 + fleet_priority.STARVE_S)[0]["session"], "long")
         self.assertEqual(fleet_priority.rank(lines, {"short": 100}, 300, front="long")[0]["session"], "long")
         self.assertEqual(fleet_priority.rank(lines, {}, 1900, front="long", yielded="short")[0]["session"], "short")
         self.assertEqual(fleet_priority.rank(lines, {"short":100}, 300, probes_ready=False)[0]["session"], "long")
+
+    def test_small_tickets_go_as_a_batch_oldest_first_up_to_the_cap_in_each_lane(self):
+        """A CPU pipeline drains the short instructions queued behind a long one (operator, 2026-09-13): the
+        lane's small tickets run ahead of anything larger, oldest first, as far as the cap lets them."""
+        self.assertEqual((fleet_priority.SMALL_MAX_MIN, fleet_priority.BATCH_CAP_MIN), (5, 15))
+        lines = ["1|big|100|30|a long check|single|",
+                 "2|s1|200|5|small|single|", "3|s2|300|5|small|single|", "4|s3|400|5|small|single|",
+                 "5|s4|500|2|small, past the cap|single|",
+                 "6|boot|150|40|a boot|boot|", "7|f1|250|3|a small boot-lane ticket|probe|"]
+        rows = fleet_priority.rank(lines, {}, 1000)
+        single = [r["session"] for r in rows if r["lane"] == "single"]
+        fleet = [r["session"] for r in rows if r["lane"] == "fleet"]
+        self.assertEqual(single[:3], ["s1", "s2", "s3"])                      # 15 minutes of small work: the batch
+        self.assertEqual({r["session"]: r["batch"] for r in rows if r["lane"] == "single"},
+                         dict(big=False, s1=True, s2=True, s3=True, s4=False))  # a fourth would make 17
+        self.assertEqual(single[3:], ["s4", "big"])                           # past the cap: the score (shorter first)
+        self.assertEqual(fleet, ["f1", "boot"])                               # the other lane has its own batch
+        # a ticket starved of its turn is passed by nothing but the explicit front and a yielded probe
+        starved = fleet_priority.rank(lines, {}, 100 + fleet_priority.STARVE_S)
+        self.assertEqual([r["session"] for r in starved if r["lane"] == "single"][0], "big")
+        fronted = fleet_priority.rank(lines, {}, 100 + fleet_priority.STARVE_S, front="s4")
+        self.assertEqual(fronted[0]["session"], "s4")
+
+    def test_history_estimates_come_from_the_ledger_by_session_then_family(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "ledger.tsv"
+            rows = [("kern-timeline", 9), ("kern-timeline", 11), ("c4-rows-decode-profile", 30),
+                    ("c4-rows-decode-profile", 2), ("c4-rows-decode-profile", 3), ("c4-rows-decode-profile", 2),
+                    ("c4-rows-decode-profile", 2), ("c4-rows-decode-profile", 2), ("zero", 0)]
+            ledger.write_text("".join(f"2026-09-13_12:00:00\t{s}\tsingle\tnote\t{m}\t0\t0\t0\n" for s, m in rows)
+                              + "a malformed line\n")
+            got = fleet_priority.history_estimates(ledger, ["kern-timeline", "c4-rows2-decode-profile", "zero", "new"])
+            self.assertEqual(got["kern-timeline"], dict(minutes=9, source="history"))       # the lower median
+            self.assertEqual(got["c4-rows2-decode-profile"], dict(minutes=2, source="family"))  # last five of the family
+            self.assertNotIn("zero", got)                                                    # a zero hold says nothing
+            self.assertNotIn("new", got)
+            self.assertEqual(fleet_priority.history_estimates(Path(directory) / "absent.tsv", ["new"]), {})
+            # a ticket declared at 45 minutes that history knows takes 2 goes with the small batch
+            lines = ["1|big|100|20|a long check|single|", "2|c4-rows2-decode-profile|200|45|declared long|single|"]
+            ranked = fleet_priority.rank(lines, {}, 300, estimates=got)
+            self.assertEqual(ranked[0]["session"], "c4-rows2-decode-profile")
+            self.assertEqual((ranked[0]["estimate_min"], ranked[0]["estimate_source"], ranked[0]["batch"]), (2, "family", True))
 
     def test_downstream_counts_unique_pending_jobs_including_shared_baseline(self):
         with tempfile.TemporaryDirectory() as directory:
