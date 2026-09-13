@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "tests": 2,
+  "suite": "tests.test_engine_native_execution",
+  "runtime": "st-engine:glm53 CPU only, CUDA_VISIBLE_DEVICES empty, workdir /repo",
+  "source": "8f13003d",
+  "seconds": 0.004,
+  "gpu_used": false
+}

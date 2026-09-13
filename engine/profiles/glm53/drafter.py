@@ -174,12 +174,16 @@ class Drafter:
         self.local_heads, self.local_kv_heads = F.heads, F.kv_heads
         self.context_kv = None
         self.max_block_rows = None
+        self.candidate_buffer = None
 
     def capture_decode(self, caches, memory=None, draws_seed=None, vocab=None, prepared_context=False,
                        append_child=None):
         """`draws_seed`: capture the walk at each row's temperature too, its uniforms keyed inside the graph from
         the rows' nonces and generation counts (base/draws.step_block)."""
         from engine.profiles.glm53.decode_graphs import DrafterDecodeGraphs
+        from engine.modules.vocab import CandidateBuffer
+        self.candidate_buffer = CandidateBuffer(caches.pool.max_seqs * self.k,
+            self.target.vp * self.target.comm.world_size, self.F.sel_top_k * self.target.comm.world_size, caches.device)
         # The rotary table is a constant of the model; built here it belongs to the arena, not to whichever graph
         # happened to run first and would free it on close (kernels/norm_rope.warm).
         warm_rotary(caches.device, self.F.head_dim, self.F.rope_theta)
@@ -573,7 +577,8 @@ class Drafter:
         pos = (positions.view(n, 1) + torch.arange(t, device=dev)).reshape(-1)
         h = self.block_rows(ids, pos, slots, positions, field, n, t, alive).view(n, t, -1)[:, 1:].reshape(n * K, -1)
         from engine.modules.vocab import topk
-        unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp, F.sel_top_k, self.decodable)
+        unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp,
+                           F.sel_top_k, self.decodable, workspace=self.candidate_buffer)
         unary, cand = unary.view(n, K, F.sel_top_k), cand.view(n, K, F.sel_top_k)
         proj = self.linear(h, "candidate_selector.hidden_projection.weight").float().view(n, K, -1)
         if temps is None:
@@ -629,7 +634,8 @@ class Drafter:
         h = self.block(ids, positions, ring, position)[1:]                                   # the K mask positions
         from engine.modules.vocab import topk
         unary, cand = topk(self.target.head_local(h), self.target.comm,
-                           self.target.rank * self.target.vp, F.sel_top_k, self.decodable)  # [K, 16]
+                           self.target.rank * self.target.vp, F.sel_top_k, self.decodable,
+                           workspace=self.candidate_buffer)  # [K, 16]
         proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float()        # [K, 256]
         return walk_scores(unary.unsqueeze(0), cand.unsqueeze(0), anchor.reshape(1), proj.unsqueeze(0),
                            p["candidate_selector.predecessor_codebook"],
@@ -665,7 +671,8 @@ class Drafter:
         positions = position + torch.arange(K + 1, device=dev)
         h = self.block(ids, positions, ring, position)[1:]
         from engine.modules.vocab import topk
-        unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp, F.sel_top_k, self.decodable)
+        unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp,
+                           F.sel_top_k, self.decodable, workspace=self.candidate_buffer)
         proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float()
         pred_ids = torch.cat([anchor.reshape(1, 1).expand(1, F.sel_top_k), cand[:-1]])
         pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()

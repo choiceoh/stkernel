@@ -32,7 +32,27 @@ def argmax(local_logits, comm, start: int, decodable: int | None = None):
     return 0xffffffff - (key & 0xffffffff)
 
 
-def topk(local_logits, comm, start: int, k: int, decodable: int | None = None):
+class CandidateBuffer:
+    """A drafter-owned dense merge with only the previously touched columns cleared.
+
+    Allocate before capture; every use on the serving stream completes its
+    top-k before the next use. Inactive rows keep their own last packet, so a
+    shrink followed by growth cannot leave stale candidates in the vocabulary.
+    """
+    def __init__(self, rows, vocab, count, device):
+        self.dense = torch.full((rows, vocab), float('-inf'), dtype=torch.float32, device=device)
+        self.previous = torch.full((rows, count), -(2**63), dtype=torch.int64, device=device)
+
+    def restore(self, gathered, vocab):
+        if (gathered.ndim != 2 or gathered.dtype != torch.int64 or gathered.device != self.dense.device
+                or gathered.shape[0] > self.dense.shape[0] or gathered.shape[1] != self.previous.shape[1]
+                or vocab != self.dense.shape[1] or not gathered.is_contiguous()):
+            raise ValueError('candidate buffer requires its declared row, vocabulary and packet geometry')
+        from engine.kernels.common.vocab_candidates import restore_reuse
+        return restore_reuse(gathered, self.dense, self.previous)
+
+
+def topk(local_logits, comm, start: int, k: int, decodable: int | None = None, *, workspace=None):
     """Exchange k packed candidates per rank, then retain CUDA topk ordering.
 
     Each int64 carries an ordered FP32 score and its global token id. Local
@@ -66,8 +86,8 @@ def topk(local_logits, comm, start: int, k: int, decodable: int | None = None):
         if fused:
             # the k largest of a rank's shard, as a set: `sorted=False` says the order here is not the answer,
             # and the merge below decides that. The keys are unique, so the set is one (kernels/vocab_candidates)
-            from engine.kernels.common.vocab_candidates import pack, select
-            packet = select(pack(local_logits, start, valid), local_k)
+            from engine.kernels.common.vocab_candidates import select_logits
+            packet = select_logits(local_logits, start, valid, local_k)
             key = None
         else:
             value = local_logits[..., :valid].float().contiguous()
@@ -87,7 +107,8 @@ def topk(local_logits, comm, start: int, k: int, decodable: int | None = None):
     gathered = comm.all_gather(packet, dim=-1)
     if fused:
         from engine.kernels.common.vocab_candidates import restore
-        return restore(gathered, vocab).topk(k, dim=-1)
+        dense = restore(gathered, vocab) if workspace is None else workspace.restore(gathered, vocab)
+        return dense.topk(k, dim=-1)
     ids = 0xffffffff - (gathered & 0xffffffff)
     ordered = gathered >> 32
     bits = torch.where(ordered < 0, ordered ^ 0x7fffffff, ordered).to(torch.int32)

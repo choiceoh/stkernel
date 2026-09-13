@@ -29,10 +29,14 @@ def main():
             unittest.defaultTestLoader.loadTestsFromNames(("tests.test_engine_bounded_loop_cuda",
                                                           "tests.test_engine_burst_decode_cuda",
                                                           "tests.test_engine_decode_queue_cuda",
-                                                          "tests.test_engine_oneshot_gather_cuda")))
+                                                          "tests.test_engine_oneshot_gather_cuda",
+                                                          "tests.test_engine_decode_agreement_cuda",
+                                                          "tests.test_engine_vocab_packet")))
         if not run.wasSuccessful() or run.skipped:
             raise RuntimeError("bounded loop gate failed or skipped")
         result = dict(tests=run.testsRun, skipped=0)
+        from probes.engine_candidate_packet_bench import measure
+        result['candidate_packet_timing'] = measure()
         scope = "single GB10 conditional graph, native integer gather with proxy oracle, and toy serving adapter; not real NIC/model proof"
     root = Path(__file__).resolve().parents[1]
     files = ("engine/kernels/bounded_graph/loop.cu", "engine/kernels/bounded_graph/__init__.py",
@@ -46,7 +50,9 @@ def main():
              "tests/test_engine_bounded_loop_cuda.py", "tests/test_engine_burst_decode_cuda.py",
              "engine/base/comm.py", "engine/kernels/oneshot/dsv4_oneshot_ar.cu",
              "engine/kernels/oneshot/__init__.py", "probes/oneshot_producer_oracle.cu",
-             "tests/test_engine_oneshot_gather_cuda.py")
+             "tests/test_engine_oneshot_gather_cuda.py", "tests/test_engine_decode_agreement_cuda.py",
+             "engine/modules/vocab.py", "engine/kernels/common/vocab_candidates.py",
+             "tests/test_engine_vocab_packet.py", "probes/engine_candidate_packet_bench.py")
     report = dict(scope=scope, result=result, seconds=time.monotonic()-start,
                   source_sha256={p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in files})
     Path("/cache/bounded-loop.json").write_text(json.dumps(report, indent=2)+"\n")

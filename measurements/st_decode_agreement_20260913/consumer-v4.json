@@ -1,0 +1,253 @@
+{
+  "source": "4ff6c3729fa58f9551e8928f41f92fe57106efd3",
+  "session": "st-decode-native-consumer0913v4",
+  "run_id": "20260913T063818-ea98e032869c",
+  "phase": "prepare-c1",
+  "context": 32000,
+  "status": "INCOMPLETE",
+  "verdict": "No completed consumer performance verdict; rank state diverged before reasoning-cap control timeout.",
+  "ranks": [
+    {
+      "rank": 0,
+      "iterations": 453,
+      "device_seconds": 21.99119584,
+      "device_steps_per_second": 20.599152647080423,
+      "median_iteration_ms": 48.479616,
+      "accepted": 1575,
+      "drafted": 2718,
+      "committed": 2028,
+      "deaths": [
+        {
+          "rank": 0,
+          "kind": "local",
+          "phase": "the step's broadcast",
+          "calls": [
+            975,
+            "step"
+          ],
+          "t": "2026-09-13 06:40:52",
+          "pid": 1,
+          "error": "RuntimeError: [/__w/pytorch/pytorch/third_party/gloo/gloo/transport/tcp/unbound_buffer.cc:129] Timed out waiting 120000ms for send operation to complete",
+          "meaning": "this rank's own failure; peers will report peer-left"
+        }
+      ],
+      "artifact_sha256": "6c9b8b457984e40b1155bb4ae219de89473779a76d7c20e18af2af9e1d45653e"
+    },
+    {
+      "rank": 1,
+      "iterations": 453,
+      "device_seconds": 22.040557248,
+      "device_steps_per_second": 20.553019368015573,
+      "median_iteration_ms": 48.56467200000001,
+      "accepted": 1574,
+      "drafted": 2718,
+      "committed": 2027,
+      "deaths": [
+        {
+          "rank": 1,
+          "kind": "local",
+          "phase": "step 461",
+          "calls": [
+            975,
+            "gather:rows"
+          ],
+          "t": "2026-09-13 06:40:52",
+          "pid": 1,
+          "error": "RuntimeError: [/__w/pytorch/pytorch/third_party/gloo/gloo/transport/tcp/unbound_buffer.cc:129] Timed out waiting 120000ms for send operation to complete",
+          "meaning": "this rank's own failure; peers will report peer-left"
+        }
+      ],
+      "artifact_sha256": "9a324f7ccaa88429b4384a2fdd6acf2663d6acec7b12e7d2003b0f597c166705"
+    },
+    {
+      "rank": 2,
+      "iterations": 453,
+      "device_seconds": 22.05163968,
+      "device_steps_per_second": 20.542690093510544,
+      "median_iteration_ms": 48.602208,
+      "accepted": 1574,
+      "drafted": 2718,
+      "committed": 2027,
+      "deaths": [
+        {
+          "rank": 2,
+          "kind": "local",
+          "phase": "step 461",
+          "calls": [
+            975,
+            "gather:rows"
+          ],
+          "t": "2026-09-13 06:40:52",
+          "pid": 1,
+          "error": "RuntimeError: [/__w/pytorch/pytorch/third_party/gloo/gloo/transport/tcp/unbound_buffer.cc:78] Timed out waiting 120000ms for recv operation to complete",
+          "meaning": "this rank's own failure; peers will report peer-left"
+        }
+      ],
+      "artifact_sha256": "b2f51b4b46b19e44845de1fc90b39c2d867c900cae31f2153465ff3d559246cd"
+    },
+    {
+      "rank": 3,
+      "iterations": 453,
+      "device_seconds": 22.025924096,
+      "device_steps_per_second": 20.566673980424127,
+      "median_iteration_ms": 48.53260800000001,
+      "accepted": 1574,
+      "drafted": 2718,
+      "committed": 2027,
+      "deaths": [
+        {
+          "rank": 3,
+          "kind": "local",
+          "phase": "step 461",
+          "calls": [
+            975,
+            "gather:rows"
+          ],
+          "t": "2026-09-13 06:40:52",
+          "pid": 1,
+          "error": "RuntimeError: [/__w/pytorch/pytorch/third_party/gloo/gloo/transport/tcp/unbound_buffer.cc:78] Timed out waiting 120000ms for recv operation to complete",
+          "meaning": "this rank's own failure; peers will report peer-left"
+        }
+      ],
+      "artifact_sha256": "d3e66614519139ba8b39413fa25c7f8016da810f5ef835928caafb8925b79dfb"
+    }
+  ],
+  "first_difference_iteration": 59,
+  "disagreements": [
+    {
+      "iteration_zero_based": 59,
+      "positions": [
+        [
+          34036
+        ],
+        [
+          34036
+        ],
+        [
+          34036
+        ],
+        [
+          34036
+        ]
+      ],
+      "accepted": [
+        [
+          5
+        ],
+        [
+          6
+        ],
+        [
+          5
+        ],
+        [
+          5
+        ]
+      ],
+      "committed": [
+        [
+          6
+        ],
+        [
+          7
+        ],
+        [
+          6
+        ],
+        [
+          6
+        ]
+      ]
+    },
+    {
+      "iteration_zero_based": 220,
+      "positions": [
+        [
+          34897
+        ],
+        [
+          34898
+        ],
+        [
+          34897
+        ],
+        [
+          34897
+        ]
+      ],
+      "accepted": [
+        [
+          1
+        ],
+        [
+          0
+        ],
+        [
+          1
+        ],
+        [
+          1
+        ]
+      ],
+      "committed": [
+        [
+          2
+        ],
+        [
+          1
+        ],
+        [
+          2
+        ],
+        [
+          2
+        ]
+      ]
+    },
+    {
+      "iteration_zero_based": 418,
+      "positions": [
+        [
+          35722
+        ],
+        [
+          35722
+        ],
+        [
+          35722
+        ],
+        [
+          35722
+        ]
+      ],
+      "accepted": [
+        [
+          2
+        ],
+        [
+          1
+        ],
+        [
+          1
+        ],
+        [
+          1
+        ]
+      ],
+      "committed": [
+        [
+          3
+        ],
+        [
+          2
+        ],
+        [
+          2
+        ],
+        [
+          2
+        ]
+      ]
+    }
+  ]
+}

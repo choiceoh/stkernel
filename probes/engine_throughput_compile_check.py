@@ -17,7 +17,7 @@ def main():
     from triton.compiler import ASTSource
     from triton.backends.compiler import GPUTarget
     from engine.kernels.common.decode_commit import _advance
-    from engine.kernels.common.vocab_candidates import _argmax_partials, _argmax_finish
+    from engine.kernels.common.vocab_candidates import _argmax_partials, _argmax_finish, _select_logits, _restore_reuse
     variants = []
     for k in (0, 1, 5, 8):
         for accepted in (False, True):
@@ -30,6 +30,13 @@ def main():
         variants.append((f'argmax-{dtype}', _argmax_partials, {'X': '*'+dtype, 'OUT': '*i64'},
                          dict(ROW_STRIDE=38720, COL_STRIDE=1, VALID=38720, START=3*38720, PARTS=38, BLOCK=1024)))
     variants.append(('argmax-finish', _argmax_finish, {'PARTIALS':'*i64', 'OUT':'*i64'}, dict(PARTS=38, BLOCK=64)))
+    for dtype in ('bf16', 'fp16', 'fp32'):
+        variants.append((f'candidate-select-{dtype}', _select_logits, {'X': '*'+dtype, 'OUT': '*i64'},
+                         dict(ROW_STRIDE=38720, COL_STRIDE=1, VALID=38720, START=3*38720,
+                              K=16, SEGS=19, BLOCK=2048)))
+    variants.append(('candidate-restore-reuse', _restore_reuse,
+                     {'PACKET':'*i64', 'PREVIOUS':'*i64', 'OUT':'*fp32'},
+                     dict(COUNT=64, VOCAB=154880, BLOCK=64)))
     report = dict(evidence='device compilation only', gpu_used=False, triton=triton.__version__, variants=[])
     args.output.mkdir(parents=True, exist_ok=True)
     for name, fn, signature, constants in variants:

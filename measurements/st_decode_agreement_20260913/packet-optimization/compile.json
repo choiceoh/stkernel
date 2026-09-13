@@ -1,0 +1,92 @@
+{
+  "evidence": "device compilation only",
+  "gpu_used": false,
+  "triton": "3.7.1",
+  "variants": [
+    {
+      "name": "commit-0-0",
+      "shared_bytes": 0,
+      "cubin_sha256": "20683f38ff6ab3c10efb67832f4f2a875fb47e43ba2770ebac6ee9794f65ff54"
+    },
+    {
+      "name": "commit-0-1",
+      "shared_bytes": 0,
+      "cubin_sha256": "dd32b7259cb674173fc79297a45187b864f6ef25b7042ea6e3fa8606df7efade"
+    },
+    {
+      "name": "commit-1-0",
+      "shared_bytes": 0,
+      "cubin_sha256": "b75e52c37ac04a4841972a3b2f9a45b49344ae694cfdb6936774325e9d288abb"
+    },
+    {
+      "name": "commit-1-1",
+      "shared_bytes": 0,
+      "cubin_sha256": "888ca21379ff18faf4ce26e5651d8a4f33c597fba1a9596d3618380b1499a921"
+    },
+    {
+      "name": "commit-5-0",
+      "shared_bytes": 0,
+      "cubin_sha256": "e6bb957e3aa55284e9f228e085fa7b2279e389faf0ba70730c08df7f3152817c"
+    },
+    {
+      "name": "commit-5-1",
+      "shared_bytes": 0,
+      "cubin_sha256": "49667f48a0dc8dd9b4851793274e8e3d0286ae458488e89544720f1800fdb78a"
+    },
+    {
+      "name": "commit-8-0",
+      "shared_bytes": 64,
+      "cubin_sha256": "856ee21673953af40050469f6b0f093687bb950bf9b839bf66119be213542091"
+    },
+    {
+      "name": "commit-8-1",
+      "shared_bytes": 64,
+      "cubin_sha256": "6c3e4d2784b570ae01aff5dc49b5abf1963c40fdd0600a96c6c2e19968d8975c"
+    },
+    {
+      "name": "argmax-bf16",
+      "shared_bytes": 32,
+      "cubin_sha256": "caf344be70015abdf97275a2698e61bb7b395b9ddedaf7998e6f550f1c51ff9b"
+    },
+    {
+      "name": "argmax-fp16",
+      "shared_bytes": 32,
+      "cubin_sha256": "0f3bfd3fac6c8b5df64d1e80cccc0202c8be91875ef7bb9a8b156ac751c322b4"
+    },
+    {
+      "name": "argmax-fp32",
+      "shared_bytes": 32,
+      "cubin_sha256": "9f746523310741ce0000ce54e68093fbb26745804ae424c34d97a07bbb339849"
+    },
+    {
+      "name": "argmax-finish",
+      "shared_bytes": 16,
+      "cubin_sha256": "0ae5fb87fc578655aff823582deca40bd2b4dfe188cd2c29ce4c79d291f1902d"
+    },
+    {
+      "name": "candidate-select-bf16",
+      "shared_bytes": 32,
+      "cubin_sha256": "ecf447471c49c2dbfd27fdf790d307b11bf52ba046638b83c849f74d647025f6"
+    },
+    {
+      "name": "candidate-select-fp16",
+      "shared_bytes": 32,
+      "cubin_sha256": "939dd8c68472519f91cf6c12c03b7cecc94d6d575ce671987de34302c5d490ca"
+    },
+    {
+      "name": "candidate-select-fp32",
+      "shared_bytes": 32,
+      "cubin_sha256": "6df229fea04679f2aea6d1c4ee0b998a04c217a2dd683e6fd4c2bc74b9f5b418"
+    },
+    {
+      "name": "candidate-restore-reuse",
+      "shared_bytes": 0,
+      "cubin_sha256": "c1e9f712a00700870f702e0edc24d8ab8de02857044ff6a608fb6160c20f4666"
+    }
+  ],
+  "source_sha256": {
+    "engine/kernels/common/decode_commit.py": "1cd3c0baa43b662cf08823064c2703a7d74a9e9d37023445b3926a3cab01d2bc",
+    "engine/kernels/common/vocab_candidates.py": "0692207b663c57af3b8580cf0bde946cb93a9b490ad8e9e33d2e9cd2276fe512"
+  },
+  "status": "PASS"
+}
