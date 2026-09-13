@@ -51,20 +51,24 @@ class RowFoldDecisionTests(unittest.TestCase):
 
 
 class IndexerRowsDecisionTests(unittest.TestCase):
+    def net(self, glue=True):
+        return NS(lanes=NS(decode_rows=object() if glue else None))
+
     def caches(self, graph=True):
-        return NS(candidate_rows=object(), token_maps=object()) if graph else NS()
+        return NS(pool_maps=object(), token_maps=object()) if graph else NS()
 
     def test_a_captured_step_on_graph_caches_folds_every_row(self):
         for lengths in ((7,), (7, 7), (1, 1, 1, 1), (7, 7, 7, 7)):
-            self.assertEqual(Glm53Net._indexer_rows(None, step(lengths, tokens=lengths[0]), self.caches()), len(lengths))
+            self.assertEqual(Glm53Net._indexer_rows(self.net(), step(lengths, tokens=lengths[0]), self.caches()), len(lengths))
 
     def test_what_keeps_the_per_segment_loop(self):
-        fold = Glm53Net._indexer_rows
-        self.assertEqual(fold(None, step((7, 7), captured=False, tokens=7), self.caches()), 0)   # eager
-        self.assertEqual(fold(None, step((7, 7), contexts=False, tokens=7), self.caches()), 0)   # no device contexts
-        self.assertEqual(fold(None, step((7, 7), tokens=7), self.caches(graph=False)), 0)         # the eager caches
-        self.assertEqual(fold(None, step((7, 6), tokens=7), self.caches()), 0)                    # uneven rows
-        self.assertEqual(fold(None, step((7, 7)), self.caches()), 0)                              # no step width
+        fold, net = Glm53Net._indexer_rows, self.net()
+        self.assertEqual(fold(net, step((7, 7), captured=False, tokens=7), self.caches()), 0)   # eager
+        self.assertEqual(fold(net, step((7, 7), contexts=False, tokens=7), self.caches()), 0)   # no device contexts
+        self.assertEqual(fold(net, step((7, 7), tokens=7), self.caches(graph=False)), 0)         # the eager caches
+        self.assertEqual(fold(net, step((7, 6), tokens=7), self.caches()), 0)                    # uneven rows
+        self.assertEqual(fold(net, step((7, 7)), self.caches()), 0)                              # no step width
+        self.assertEqual(fold(self.net(glue=False), step((7, 7), tokens=7), self.caches()), 0)   # a table without the glue
 
 
 def graph_caches(rows=4):
@@ -111,6 +115,65 @@ class TokenRowsTests(unittest.TestCase):
                 self.assertTrue(torch.equal(table[i], row))
                 self.assertEqual((block, stride, offset), (b, s, o))
 
+    def test_pool_maps_is_pool_slots_arithmetic(self):
+        caches = graph_caches()
+        for layer in (3, 7):
+            table, per, stride, offset = caches.pool_maps(layer)
+            ids = torch.tensor([[0, 1, 191, 192, 1000]] * 4)
+            want = caches.pool_rows(layer, ids)
+            got = torch.gather(table, 1, (ids // per).long()) * stride + offset + ids % per
+            self.assertTrue(torch.equal(got.to(want.dtype), want))
+
+
+class GlueReferenceTests(unittest.TestCase):
+    """The reference lane's glue (engine/modules/sparse_indexer.py) is the composition it replaced, piece by piece:
+    the lengths, the latent write, the candidate gather and the pool addresses against `token_rows`,
+    `candidate_rows`, `pool_rows` and the plain torch ops (the window is pinned by test_engine_graph_contracts)."""
+
+    def setUp(self):
+        from engine.modules import sparse_indexer as si
+        self.si = si
+        self.caches = graph_caches()
+        self.contexts = torch.tensor([2000, 0, 767, 5000])
+
+    def test_row_lengths(self):
+        for t, kp in ((1, 4), (7, 4), (7, 8)):
+            positions = self.contexts[:, None] + torch.arange(t)
+            seq, ke = self.si.row_lengths(self.contexts, t, kp)
+            want = (positions.reshape(-1) + 1).to(torch.int32)
+            self.assertTrue(torch.equal(seq, want) and torch.equal(ke, want // kp))
+            self.assertEqual((seq.dtype, ke.dtype), (torch.int32, torch.int32))
+
+    def test_latent_write_rows(self):
+        caches, t = self.caches, 7
+        for layer in (3, 7):
+            table, block, stride, offset = caches.token_maps(layer)
+            values = torch.randn(4 * t, 512).to(torch.bfloat16)
+            want = torch.zeros(40 * stride + 2 * block, 512, dtype=torch.bfloat16)
+            got = want.clone()
+            positions = self.contexts[:, None] + torch.arange(t)
+            want[caches.token_rows(layer, positions).flatten().long()] = values
+            self.si.latent_write_rows(values, got, table, block, stride, offset, self.contexts, t)
+            self.assertTrue(torch.equal(got, want))
+
+    def test_gather_candidates(self):
+        caches = self.caches
+        keys, scales = torch.randn(40 * 2994 + 4096, 16), torch.rand(40 * 2994 + 4096)
+        for layer, n_cand in ((3, 1), (3, 700), (7, 1024)):
+            cand = caches.candidate_rows(layer, n_cand)
+            got_k, got_s = self.si.gather_candidates(keys, scales, *caches.pool_maps(layer), n_cand)
+            self.assertTrue(torch.equal(got_k, keys[cand]) and torch.equal(got_s, scales[cand]))
+
+    def test_pool_addresses(self):
+        caches, kp = self.caches, 4
+        for layer, t in ((3, 1), (3, 7), (7, 7)):
+            max_pools = (kp - 1 + t) // kp
+            counts, slots = self.si.pool_addresses(self.contexts, *caches.pool_maps(layer), kp, t, max_pools, caches.candidate_capacity)
+            pids = (self.contexts[:, None] // kp + torch.arange(max_pools)).clamp_max(caches.candidate_capacity - 1)
+            self.assertTrue(torch.equal(counts, (self.contexts % kp + t) // kp))
+            self.assertTrue(torch.equal(slots, caches.pool_rows(layer, pids).long()))
+            self.assertEqual((counts.dtype, slots.dtype), (torch.int64, torch.int64))
+
 
 class SelectRowsTests(unittest.TestCase):
     """`_select_rows` against the segment loop's selection, row by row: the same lane calls on the same
@@ -140,8 +203,10 @@ class SelectRowsTests(unittest.TestCase):
             self.calls.append((q8.shape[0], keys.shape[0], None if ks is None else ks.clone()))
             return (q8.float().sum((-1, -2))[:, None] * 0.001 + (keys.float().sum(-1) * scales)[None, :] * 0.37).sin()
 
-        from engine.modules.sparse_indexer import pool_slots
-        self.net = NS(F=F, lanes=NS(indexer_logits=indexer_logits, pool_slots=pool_slots))
+        from engine.modules import sparse_indexer as si
+        from engine.profiles.glm53.lanes import DecodeRows
+        glue = DecodeRows(si.row_lengths, si.latent_write_rows, si.gather_candidates, si.pool_window, si.pool_addresses)
+        self.net = NS(F=F, lanes=NS(indexer_logits=indexer_logits, pool_slots=si.pool_slots, decode_rows=glue))
 
     def tearDown(self):
         from engine.base import constants
@@ -170,8 +235,7 @@ class SelectRowsTests(unittest.TestCase):
         self.calls.clear()
         slots = torch.full((rows * t, self.TOPK + kp - 1), -7, dtype=torch.int32)
         valid = torch.full((rows * t,), -7, dtype=torch.int32)
-        positions = self.contexts[:, None] + iota(t, "cpu")
-        Glm53Net._select_rows(self.net, 0, self.q8, self.w, self.keys, self.scales, self.N_CAND, positions,
+        Glm53Net._select_rows(self.net, 0, self.q8, self.w, self.keys, self.scales, self.N_CAND, self.contexts, t,
                               self.caches, slots, valid)
         self.assertTrue(torch.equal(slots, want[0]))
         self.assertTrue(torch.equal(valid, want[1]))
@@ -180,11 +244,21 @@ class SelectRowsTests(unittest.TestCase):
         for _, _, ks in self.calls:
             self.assertTrue(torch.equal(ks, torch.zeros(t, dtype=torch.int32)))
 
+    def test_rows_short_of_the_selection_width_finalize_like_the_loop(self):
+        """Contexts with fewer complete pools than the top-k width: the loop pads the misses with -1 before the
+        finalize, the fold leaves them to it -- the slots and counts written are the same."""
+        self.contexts = torch.tensor([0, 1, 5, 9])                                  # 0, 0, 1, 2 complete pools before the first query
+        want = self.loop()
+        slots = torch.full_like(want[0], -7)
+        valid = torch.full_like(want[1], -7)
+        Glm53Net._select_rows(self.net, 0, self.q8, self.w, self.keys, self.scales, self.N_CAND, self.contexts, self.T,
+                              self.caches, slots, valid)
+        self.assertTrue(torch.equal(slots, want[0]) and torch.equal(valid, want[1]))
+
     def test_a_capacity_below_the_selection_width_is_refused(self):
-        positions = self.contexts[:, None] + iota(self.T, "cpu")
         with self.assertRaisesRegex(ValueError, "candidate capacity"):
-            Glm53Net._select_rows(self.net, 0, self.q8, self.w, self.keys, self.scales, self.TOPK // self.KP - 1, positions,
-                                  self.caches, torch.empty(0, dtype=torch.int32), torch.empty(0, dtype=torch.int32))
+            Glm53Net._select_rows(self.net, 0, self.q8, self.w, self.keys, self.scales, self.TOPK // self.KP - 1, self.contexts,
+                                  self.T, self.caches, torch.empty(0, dtype=torch.int32), torch.empty(0, dtype=torch.int32))
 
 
 if __name__ == "__main__":

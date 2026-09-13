@@ -148,3 +148,154 @@ def indexer_slots(tokens, block_table, block_size, block_stride, layer_offset, o
         *tokens.stride(), block_table.stride(0) if block_table is not None else 0,
         *out.stride(), counts.stride(0), block_size, block_stride, layer_offset,
         MAPPED=block_table is not None, BLOCK=size, num_warps=8 if size > 1024 else 4)
+
+
+# -- a captured decode step's DSA-layer glue, one launch apiece (45차, the C=4 question, third fold) -------------------
+# Every kernel here moves bytes or computes integers: the same values the torch composition in
+# engine/modules/sparse_indexer.py (the reference lane) produces, byte for byte.
+
+@triton.jit
+def _row_lengths(CTX, SEQ, KE, T: tl.constexpr, KP: tl.constexpr, BLOCK: tl.constexpr):
+    seg = tl.program_id(0)
+    j = tl.arange(0, BLOCK)
+    seq = (tl.load(CTX + seg) + j + 1).to(tl.int32)
+    tl.store(SEQ + seg * T + j, seq, j < T)
+    tl.store(KE + seg * T + j, seq // KP, j < T)
+
+
+def row_lengths(contexts, tokens: int, pool_size: int):
+    """For every row's tokens: the sequence length at each query (position + 1) and the complete pools before
+    it (length // pool_size), int32 [rows * tokens] each -- the segment loop's `seq_lens` and `ke`."""
+    rows = contexts.shape[0]
+    assert contexts.ndim == 1 and contexts.stride(0) == 1 and tokens > 0
+    seq = torch.empty(rows * tokens, dtype=torch.int32, device=contexts.device)
+    ke = torch.empty_like(seq)
+    if rows:
+        _row_lengths[(rows,)](contexts, seq, ke, tokens, pool_size, triton.next_power_of_2(tokens))
+    return seq, ke
+
+
+@triton.jit
+def _latent_write_rows(SRC, LAT, TABLE, CTX, T: tl.constexpr, BLOCK_TOKENS: tl.constexpr, table_s0, table_s1,
+                       block_stride, layer_offset, src_s0, lat_s0, DB: tl.constexpr):
+    r = tl.program_id(0)
+    seg = r // T
+    pos = tl.load(CTX + seg) + r % T
+    page = tl.load(TABLE + seg * table_s0 + (pos // BLOCK_TOKENS) * table_s1)
+    slot = page.to(tl.int64) * block_stride + layer_offset + pos % BLOCK_TOKENS
+    d = tl.arange(0, DB)
+    tl.store(LAT + slot * lat_s0 + d, tl.load(SRC + r * src_s0 + d))
+
+
+def latent_write_rows(values, latent, block_table, block_size, block_stride, layer_offset, contexts, tokens: int):
+    """latent[slot(row i, contexts[i] + j)] = values[i * tokens + j] for every row at once: `token_rows`' slot
+    arithmetic (row i's block row, `block_stride` latent rows per block, this layer at `layer_offset`) and the
+    scatter in one launch. Bytes are copied as they are; the caller converts to the cache dtype first."""
+    rows = block_table.shape[0]
+    assert values.ndim == 2 and values.shape[0] == rows * tokens and values.stride(1) == 1
+    assert latent.ndim == 2 and latent.stride(1) == 1 and values.element_size() == latent.element_size()
+    assert values.shape[1] == latent.shape[1] and contexts.shape == (rows,) and contexts.stride(0) == 1
+    width = values.shape[1] * values.element_size()
+    assert width & (width - 1) == 0, "a latent row is a power-of-two byte count"
+    src, lat = values.view(torch.uint8), latent.view(torch.uint8)
+    if rows:
+        _latent_write_rows[(rows * tokens,)](src, lat, block_table, contexts, tokens, block_size, block_table.stride(0),
+                                             block_table.stride(1), block_stride, layer_offset, src.stride(0), lat.stride(0), width)
+
+
+@triton.jit
+def _gather_candidates(KEYS, SCALES, TABLE, OUT_K, OUT_S, n_cand, key_s0, scale_s0, table_s0, table_s1,
+                       PER: tl.constexpr, block_stride, layer_offset, DB: tl.constexpr, BLOCK_P: tl.constexpr):
+    row = tl.program_id(0)
+    p = tl.program_id(1) * BLOCK_P + tl.arange(0, BLOCK_P)
+    live = p < n_cand
+    page = tl.load(TABLE + row * table_s0 + (p // PER) * table_s1, live, other=0)
+    rec = page.to(tl.int64) * block_stride + layer_offset + p % PER
+    d = tl.arange(0, DB)
+    keys = tl.load(KEYS + rec[:, None] * key_s0 + d[None, :], live[:, None], other=0)
+    tl.store(OUT_K + (row * n_cand + p)[:, None] * DB + d[None, :], keys, live[:, None])
+    tl.store(OUT_S + row * n_cand + p, tl.load(SCALES + rec * scale_s0, live, other=0.), live)
+
+
+def gather_candidates(keys, scales, block_table, per, block_stride, layer_offset, n_cand: int):
+    """Every row's candidate pool keys and scales, contiguous: keys [rows, n_cand, d] and scales [rows, n_cand],
+    pool p of row i read from record `block_row[p // per] * block_stride + layer_offset + p % per` -- the slot
+    arithmetic of `pool_rows` and the two gathers `keys[cand]`, `scales[cand]` in one launch."""
+    rows = block_table.shape[0]
+    assert keys.ndim == 2 and keys.stride(1) == 1 and keys.element_size() == 1 and scales.ndim == 1
+    out_k = torch.empty((rows, n_cand, keys.shape[1]), dtype=keys.dtype, device=keys.device)
+    out_s = torch.empty((rows, n_cand), dtype=scales.dtype, device=keys.device)
+    width = keys.shape[1]
+    assert width & (width - 1) == 0, "a key record is a power-of-two byte count"
+    if rows and n_cand:
+        block_p = 64
+        _gather_candidates[(rows, triton.cdiv(n_cand, block_p))](
+            keys.view(torch.uint8), scales, block_table, out_k.view(torch.uint8), out_s, n_cand, keys.stride(0), scales.stride(0),
+            block_table.stride(0), block_table.stride(1), per, block_stride, layer_offset, width, block_p)
+    return out_k, out_s
+
+
+@triton.jit
+def _pool_window(TAILS, K, GATE, CTX, OUT_K, OUT_G, T: tl.constexpr, KP: tl.constexpr, W: tl.constexpr, NPOS: tl.constexpr,
+                 tail_s0, tail_s1, tail_s2, k_s0, k_s1, gate_s0, gate_s1, D: tl.constexpr):
+    seg = tl.program_id(0)
+    i = tl.program_id(1)
+    ctx = tl.load(CTX + seg)
+    rel = i - ctx % KP                                        # this window position relative to the step's first token
+    earlier = rel < 0                                         # before this step: from the tail ring
+    prev = (ctx + rel) % W
+    cur = tl.minimum(tl.maximum(rel, 0), T - 1)
+    d = tl.arange(0, D)
+    ring = TAILS + seg * tail_s0 + prev * tail_s1
+    k_ring = tl.load(ring + d, earlier & (d < D), other=0)
+    g_ring = tl.load(ring + tail_s2 + d, earlier & (d < D), other=0)
+    k_cur = tl.load(K + seg * k_s0 + cur * k_s1 + d)
+    g_cur = tl.load(GATE + seg * gate_s0 + cur * gate_s1 + d)
+    out = (seg * NPOS + i) * D + d
+    tl.store(OUT_K + out, tl.where(earlier, k_ring, k_cur))
+    tl.store(OUT_G + out, tl.where(earlier, g_ring, g_cur))
+
+
+def pool_window(tails, keys, gates, contexts, pool_size: int, max_pools: int):
+    """The window each row pools this step -- the tail ring's earlier tokens of the half-built pool, then this
+    step's -- as (keys, gates) [rows * max_pools, pool_size, d]: `complete_pools`' window in one launch."""
+    n, w, two, d = tails.shape
+    t = keys.shape[1]
+    assert two == 2 and keys.shape == (n, t, d) == gates.shape and tails.stride(3) == 1
+    assert keys.stride(2) == 1 and gates.stride(2) == 1 and contexts.shape == (n,) and contexts.stride(0) == 1
+    assert d & (d - 1) == 0
+    npos = max_pools * pool_size
+    out_k = torch.empty((n * npos, d), dtype=keys.dtype, device=keys.device)
+    out_g = torch.empty((n * npos, d), dtype=gates.dtype, device=keys.device)
+    if n and npos:
+        _pool_window[(n, npos)](tails, keys, gates, contexts, out_k, out_g, t, pool_size, w, npos,
+                                tails.stride(0), tails.stride(1), tails.stride(2), keys.stride(0), keys.stride(1),
+                                gates.stride(0), gates.stride(1), d)
+    return out_k.view(n * max_pools, pool_size, d), out_g.view(n * max_pools, pool_size, d)
+
+
+@triton.jit
+def _pool_addresses(CTX, TABLE, COUNTS, SLOTS, T: tl.constexpr, KP: tl.constexpr, MAXP: tl.constexpr, PER: tl.constexpr,
+                    table_s0, table_s1, block_stride, layer_offset, cap, BLOCK: tl.constexpr):
+    seg = tl.program_id(0)
+    ctx = tl.load(CTX + seg)
+    tl.store(COUNTS + seg, (ctx % KP + T) // KP)
+    j = tl.arange(0, BLOCK)
+    pid = tl.minimum(ctx // KP + j, cap - 1)
+    page = tl.load(TABLE + seg * table_s0 + (pid // PER) * table_s1, j < MAXP, other=0)
+    tl.store(SLOTS + seg * MAXP + j, page.to(tl.int64) * block_stride + layer_offset + pid % PER, j < MAXP)
+
+
+def pool_addresses(contexts, block_table, per, block_stride, layer_offset, pool_size: int, tokens: int, max_pools: int, capacity: int):
+    """Per row: how many pools this step completes ((context % pool_size + tokens) // pool_size) and the record
+    slots of its `max_pools` pools from context // pool_size on, ids clamped to the candidate capacity -- the
+    `counts` and `pool_rows(pids)` of `complete_pools` in one launch. int64 [rows] and [rows, max_pools]."""
+    n = contexts.shape[0]
+    assert contexts.ndim == 1 and contexts.stride(0) == 1 and block_table.shape[0] == n and max_pools > 0
+    counts = torch.empty(n, dtype=torch.int64, device=contexts.device)
+    slots = torch.empty((n, max_pools), dtype=torch.int64, device=contexts.device)
+    if n:
+        _pool_addresses[(n,)](contexts, block_table, counts, slots, tokens, pool_size, max_pools, per,
+                              block_table.stride(0), block_table.stride(1), block_stride, layer_offset, capacity,
+                              triton.next_power_of_2(max_pools))
+    return counts, slots

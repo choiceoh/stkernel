@@ -201,3 +201,53 @@ def _selfcheck_pool() -> None:
 
 if __name__ == "__main__":
     _selfcheck_pool()
+
+
+# -- the captured decode step's DSA-layer glue, as torch (the reference lane; engine/kernels/indexer.py fuses each) ----
+
+def row_lengths(contexts, tokens: int, pool_size: int):
+    """(position + 1) and its complete-pool count for every row's tokens, int32 [rows * tokens] each."""
+    positions = contexts[:, None] + torch.arange(tokens, device=contexts.device)
+    seq = (positions.reshape(-1) + 1).to(torch.int32)
+    return seq, seq // pool_size
+
+
+def latent_write_rows(values, latent, block_table, block_size, block_stride, layer_offset, contexts, tokens: int):
+    """latent[slot(row i, contexts[i] + j)] = values[i * tokens + j]: token_rows' arithmetic, then the scatter."""
+    positions = contexts[:, None] + torch.arange(tokens, device=contexts.device)
+    blocks = torch.gather(block_table, 1, (positions // block_size).long())
+    slots = (blocks * block_stride + layer_offset + positions % block_size).to(blocks.dtype)
+    latent[slots.flatten().long()] = values
+
+
+def gather_candidates(keys, scales, block_table, per, block_stride, layer_offset, n_cand: int):
+    """Every row's candidate keys [rows, n_cand, d] and scales [rows, n_cand]: pool_rows over 0..n_cand-1, then two gathers."""
+    rows = block_table.shape[0]
+    ids = torch.arange(n_cand, device=block_table.device)[None, :].expand(rows, n_cand)
+    blocks = torch.gather(block_table, 1, (ids // per).long())
+    cand = (blocks * block_stride + layer_offset + ids % per).to(blocks.dtype).long()
+    return keys[cand], scales[cand]
+
+
+def pool_window(tails, keys, gates, contexts, pool_size: int, max_pools: int):
+    """The window each row pools this step: the tail ring's earlier tokens of the half-built pool, then this step's."""
+    n, tail_width = tails.shape[0], tails.shape[1]
+    t, d = keys.shape[1], keys.shape[2]
+    lead = contexts % pool_size
+    relative = torch.arange(max_pools * pool_size, device=keys.device) - lead[:, None]
+    current = relative.clamp(0, t - 1)
+    previous = (contexts[:, None] + relative) % tail_width
+    rows = torch.arange(n, device=keys.device)[:, None]
+    earlier = (relative < 0)[..., None]
+    kw = torch.where(earlier, tails[rows, previous, 0], keys[rows, current])
+    gw = torch.where(earlier, tails[rows, previous, 1], gates[rows, current])
+    return kw.reshape(n * max_pools, pool_size, d), gw.reshape(n * max_pools, pool_size, d)
+
+
+def pool_addresses(contexts, block_table, per, block_stride, layer_offset, pool_size: int, tokens: int, max_pools: int, capacity: int):
+    """Per row, the pools this step completes and the record slots of its max_pools pools from context // pool_size on."""
+    counts = (contexts % pool_size + tokens) // pool_size
+    pids = (contexts[:, None] // pool_size + torch.arange(max_pools, device=contexts.device)).clamp_max(capacity - 1)
+    blocks = torch.gather(block_table, 1, (pids // per).long())
+    slots = (blocks * block_stride + layer_offset + pids % per).to(blocks.dtype).long()
+    return counts, slots

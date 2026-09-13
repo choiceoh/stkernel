@@ -299,6 +299,23 @@ logits 커널(44 런치 0.38 ms), 마스크·top-k·id 정리(~7: `gatherTopK` 4
 GPU 창을 기다리지 않고 올린다. 기대치(첫 접기의 런치당 ~2.5 µs 로): 4행 스텝 **−790 런치 ≈ −2.0 ms(−2.7%)**, 1행 −33 런치 ≈ −0.1 ms.
 시간 티켓(`c4-rows2-decode-profile`)도 운영자 지시("바이트 동등이니까 큐 잡지 말고")로 큐에서 뺐다 — 실측은 다음 onepass 의 스텝 열이 답한다.
 
+**셋째 접기 — DSA 층의 접착 런치를 커널 하나씩으로 (운영자 "추가로 접기와 융합 작업", 2026-09-13 오후, PR #815 뒤).** 둘째 접기 뒤
+DSA 층에 층당 남은 것은 정수 주소 산술과 gather 였다(1행 재생 표의 `BUnaryFunctor<long>` 111 런치·`index_elementwise` 88·`direct_copy` 55 가
+그것이다): latent 쓰기의 `token_rows`(7) + flatten/long + index_put, `complete_pools` 의 창 구성(lead·relative·current·previous·earlier + index 4 +
+where 2 = 11)과 주소(counts 2 + pids 3 + `pool_rows` 8), 선택의 `candidate_rows`(8) + 키·스케일 gather 2 + 길이 산술 3 + id 정리 3 — 행 수와 무관하게
+**층당 62 런치 + 행당 3**. 각각을 Triton 커널 하나로 접었다(`engine/kernels/indexer.py`): `row_lengths`, `latent_write_rows`, `gather_candidates`,
+`pool_window`, `pool_addresses`. 레인 묶음 `Lanes.decode_rows` 로 묶었고 참조 표는 같은 이름의 torch 합성(`engine/modules/sparse_indexer.py`, 곧
+접기 전의 코드)을 묶는다 — 합성(`_dsa`·`_select_rows`·`complete_pools`)은 어느 쪽인지 모른다. 층당 **14 + 행당 3** 으로: 스텝당 **−528 런치 ≈ −1.3 ms**
+(1행 36.8 ms 의 −3.6%, 4행 −1.9%; 런치당 2.5 µs 는 §6 표의 elementwise 평균).
+
+바이트 동일의 근거는 셋째도 같다: 다섯 커널은 바이트 복사(창·latent·후보 키)거나 정수(길이·주소)다. 검증은 **컨테이너의 Triton 인터프리터**
+(`TRITON_INTERPRET=1`, CPU torch 2.14 + triton 3.8)로 했다 — 다섯 커널 모두 참조 합성과 바이트 대조 OK(`tests/test_engine_indexer_rows.py`,
+strided 입력·e4m3/bf16/f32·비-2의 거듭제곱 후보 수 포함), 같은 방법으로 #815 의 `_pool_slots` 2-D 블록표도 CPU 에서 오라클과 바이트 동일
+(`test_engine_pool_slots`, 인터프리터 96 s). 참조 합성 자체는 `test_engine_decode_rows.GlueReferenceTests` 가 접기 전 함수(`token_rows`·
+`candidate_rows`·`pool_rows`)와 행별 대조한다. 한 가지 더 뺀 것: 선택의 `masked_fill_(ids ≥ ke, -1)` — `_pool_slots` 와 오라클 `select_with_tail`
+둘 다 `id ≥ length // pool` 을 스스로 -1 로 다루므로 슬롯·카운트 출력이 같다(`test_rows_short_of_the_selection_width_finalize_like_the_loop`,
+완전한 풀이 top-k 폭보다 적은 컨텍스트로). GPU 티켓은 이번에도 없다.
+
 ## 10. SF6 dynamic 프리필 커널 (운영자 "sf6 다이내믹 프리필 커널 진행", 2026-09-13)
 
 **모델을 먼저 고친다.** §6·§9 의 세 커널 실측이 한 식에 맞는다: `시간 = 바이트 / ~188 GB/s`, 바이트 = m 타일 수 × (전문가 가중치 3.1 MB + SF6
