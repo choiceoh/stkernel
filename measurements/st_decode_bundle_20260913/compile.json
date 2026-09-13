@@ -1,0 +1,77 @@
+{
+  "status": "PASS",
+  "scope": "full CUDA/Torch build and resources only; GPU numerics and timing pending",
+  "gpu_used": false,
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "flags": [
+    "-O2",
+    "-gencode",
+    "arch=compute_121a,code=sm_121a",
+    "-DMK_GRID_DEF=96",
+    "-DMK_MHC_GRID_DEF=144",
+    "-DMK_NBUF2_DEF=3",
+    "-DMK_FP8_PACK2_DEF=1",
+    "-DMK_GEMM_TRANSPOSE_M8_DEF=1",
+    "-DMK_GEMM_COMPACT_M8_DEF=1",
+    "-DMK_M8_FASTPATH_DEF=1"
+  ],
+  "extension_sha256": "cfe3e2a99684162daeef6f23abca38c4b898af98cb571644bb7b385cb70eaa2b",
+  "source_sha256": "9d821198854b13bf7c9d5f4b53351a6dbeb4184a7b2a3dc57c311a3e5d50a471",
+  "mhc_resources": [
+    {
+      "kernel": "_ZN43_GLOBAL__N__68d973fa_10_kernels_cu_d64ed85316mk_mhc_ar_kernelILb0ELi4096EEEvNS_9MKMhcArgsE",
+      "usage": "REG:160 STACK:16 SHARED:28736 LOCAL:0 CONSTANT[0]:1080 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "kernel": "_ZN43_GLOBAL__N__68d973fa_10_kernels_cu_d64ed85316mk_mhc_ar_kernelILb1ELi4096EEEvNS_9MKMhcArgsE",
+      "usage": "REG:128 STACK:16 SHARED:28736 LOCAL:0 CONSTANT[0]:1080 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "kernel": "_ZN43_GLOBAL__N__68d973fa_10_kernels_cu_d64ed85316mk_mhc_ar_kernelILb0ELi5120EEEvNS_9MKMhcArgsE",
+      "usage": "REG:160 STACK:16 SHARED:28736 LOCAL:0 CONSTANT[0]:1080 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "kernel": "_ZN43_GLOBAL__N__68d973fa_10_kernels_cu_d64ed85316mk_mhc_ar_kernelILb1ELi5120EEEvNS_9MKMhcArgsE",
+      "usage": "REG:128 STACK:16 SHARED:28736 LOCAL:0 CONSTANT[0]:1080 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "kernel": "_ZN43_GLOBAL__N__68d973fa_10_kernels_cu_d64ed85323mk_mhc_ar_single_kernelENS_9MKMhcArgsE",
+      "usage": "REG:80 STACK:16 SHARED:28736 LOCAL:0 CONSTANT[0]:1080 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    }
+  ],
+  "decode_resources": [
+    {
+      "kernel": "_ZN43_GLOBAL__N__68d973fa_10_kernels_cu_d64ed85325mk_gemm_input_cta3_kernelILi2ELi2ELi1ELi4ELb1EEEvNS_10MKGemm2CtxE",
+      "usage": "REG:79 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1048 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "kernel": "_ZN43_GLOBAL__N__68d973fa_10_kernels_cu_d64ed85325mk_gemm_input_cta3_kernelILi2ELi2ELi4ELi16ELb0EEEvNS_10MKGemm2CtxE",
+      "usage": "REG:73 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1048 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "kernel": "_ZN43_GLOBAL__N__68d973fa_10_kernels_cu_d64ed85325mk_gemm_input_cta3_kernelILi2ELi2ELi3ELi16ELb0EEEvNS_10MKGemm2CtxE",
+      "usage": "REG:76 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1048 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "kernel": "_ZN43_GLOBAL__N__68d973fa_10_kernels_cu_d64ed85320mk_input_pack_kernelILi8EEEvNS_14MKInputPackCtxE",
+      "usage": "REG:21 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:936 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "kernel": "_ZN43_GLOBAL__N__68d973fa_10_kernels_cu_d64ed85320mk_input_pack_kernelILi4EEEvNS_14MKInputPackCtxE",
+      "usage": "REG:21 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:936 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "kernel": "_ZN43_GLOBAL__N__68d973fa_10_kernels_cu_d64ed85320mk_input_pack_kernelILi2EEEvNS_14MKInputPackCtxE",
+      "usage": "REG:21 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:936 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "kernel": "_ZN43_GLOBAL__N__68d973fa_10_kernels_cu_d64ed85325mk_gemm_input_cta3_kernelILi2ELi2ELi3ELi32ELb0EEEvNS_10MKGemm2CtxE",
+      "usage": "REG:76 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1048 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    },
+    {
+      "kernel": "_ZN43_GLOBAL__N__68d973fa_10_kernels_cu_d64ed85325mk_gemm_input_cta3_kernelILi2ELi2ELi2ELi32ELb0EEEvNS_10MKGemm2CtxE",
+      "usage": "REG:73 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1048 TEXTURE:0 SURFACE:0 SAMPLER:0"
+    }
+  ]
+}

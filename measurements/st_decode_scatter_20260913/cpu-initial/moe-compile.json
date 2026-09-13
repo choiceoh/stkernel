@@ -1,0 +1,139 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "kernels": [
+    {
+      "rows": 7,
+      "route_scatter": false,
+      "direct_scatter": false,
+      "kernel": "static2_m7_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_8ef59f439d8eddd2",
+      "status": "PASS",
+      "seconds": 4.845601275010267
+    },
+    {
+      "rows": 7,
+      "route_scatter": true,
+      "direct_scatter": false,
+      "kernel": "static2_m7_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_b55852eb0ae3b7e1",
+      "status": "PASS",
+      "seconds": 4.490117309993366
+    },
+    {
+      "rows": 7,
+      "route_scatter": false,
+      "direct_scatter": true,
+      "kernel": "static2_m7_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_8d2f863027523d8f",
+      "status": "PASS",
+      "seconds": 5.8386486469826195
+    },
+    {
+      "rows": 7,
+      "route_scatter": true,
+      "direct_scatter": true,
+      "kernel": "static2_m7_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1_823766c014cb7166",
+      "status": "PASS",
+      "seconds": 5.885921610984951
+    },
+    {
+      "rows": 14,
+      "route_scatter": false,
+      "direct_scatter": false,
+      "kernel": "static2_m14_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_fe56e47302a59303",
+      "status": "PASS",
+      "seconds": 4.577715977007756
+    },
+    {
+      "rows": 14,
+      "route_scatter": true,
+      "direct_scatter": false,
+      "kernel": "static2_m14_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_5c2c39cf8117dfc2",
+      "status": "PASS",
+      "seconds": 4.619488144002389
+    },
+    {
+      "rows": 14,
+      "route_scatter": false,
+      "direct_scatter": true,
+      "kernel": "static2_m14_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_f8fdfa068975ff4e",
+      "status": "PASS",
+      "seconds": 5.960923932987498
+    },
+    {
+      "rows": 14,
+      "route_scatter": true,
+      "direct_scatter": true,
+      "kernel": "static2_m14_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_7b981a91bcf50c6c",
+      "status": "PASS",
+      "seconds": 5.990495342994109
+    },
+    {
+      "rows": 21,
+      "route_scatter": false,
+      "direct_scatter": false,
+      "kernel": "static2_m21_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_f5b76423fb4a4b2d",
+      "status": "PASS",
+      "seconds": 4.752900116989622
+    },
+    {
+      "rows": 21,
+      "route_scatter": true,
+      "direct_scatter": false,
+      "kernel": "static2_m21_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_4838df8d251f5453",
+      "status": "PASS",
+      "seconds": 4.6535633860039525
+    },
+    {
+      "rows": 21,
+      "route_scatter": false,
+      "direct_scatter": true,
+      "kernel": "static2_m21_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_c5d88a958c31ffac",
+      "status": "PASS",
+      "seconds": 5.893963497976074
+    },
+    {
+      "rows": 21,
+      "route_scatter": true,
+      "direct_scatter": true,
+      "kernel": "static2_m21_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_4097bbbe4208749a",
+      "status": "PASS",
+      "seconds": 5.9427628129778896
+    },
+    {
+      "rows": 28,
+      "route_scatter": false,
+      "direct_scatter": false,
+      "kernel": "static2_m28_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_d652d052086303f8",
+      "status": "PASS",
+      "seconds": 4.622673670004588
+    },
+    {
+      "rows": 28,
+      "route_scatter": true,
+      "direct_scatter": false,
+      "kernel": "static2_m28_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_8506f03afa76aea1",
+      "status": "PASS",
+      "seconds": 4.659999910014449
+    },
+    {
+      "rows": 28,
+      "route_scatter": false,
+      "direct_scatter": true,
+      "kernel": "static2_m28_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_d6edd39843365f9a",
+      "status": "PASS",
+      "seconds": 6.016460939019453
+    },
+    {
+      "rows": 28,
+      "route_scatter": true,
+      "direct_scatter": true,
+      "kernel": "static2_m28_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_51f7f986c0e46794",
+      "status": "PASS",
+      "seconds": 5.946487859997433
+    }
+  ],
+  "scope": "native compile and static output coordinate coverage; numerics/timing pending",
+  "source_sha256": {
+    "engine/kernels/b12x/moe_dispatch.py": "70b7ffd84ec40ae223de3d15f9c374eb0b46d37be1930280c404227cbe00acfd",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "36369360fe9a62469e53205a7231a1d1da04cd24a0e81af866ccdba87641e7fe"
+  }
+}

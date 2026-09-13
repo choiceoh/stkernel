@@ -1,0 +1,29 @@
+{
+  "head": "e40b06620477e61744f3fbf31f40153b31257c3b",
+  "checks": [
+    {
+      "check": "projection",
+      "exit_code": 0,
+      "elapsed_s": 4.42877721786499,
+      "gpu_used": false
+    },
+    {
+      "check": "native",
+      "exit_code": 0,
+      "elapsed_s": 49.536957025527954,
+      "gpu_used": false
+    },
+    {
+      "check": "tests",
+      "exit_code": 0,
+      "elapsed_s": 5.126694917678833,
+      "gpu_used": false
+    },
+    {
+      "check": "imports",
+      "exit_code": 0,
+      "elapsed_s": 6.779779434204102,
+      "gpu_used": false
+    }
+  ]
+}

@@ -2153,11 +2153,21 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("decode_reform", False)),
         bool(config.get("reform_sf_pack", False)),
     )
+    # Expanded output and register scatter never alias a served handle.
+    if config.get("probe_route_scatter", False):
+        cfg += ("probe_route_scatter_v1",)
+    if config.get("probe_direct_scatter", False):
+        cfg += ("probe_direct_scatter_v1",)
     return cfg + _static_kernel_cache_key(**fields)
 
 
 def _static_v2_decode_config(config: dict, m: int) -> dict:
     """Specialize the integrated tile geometry only for C=1 decode rows."""
+    if config.get("probe_route_scatter") or config.get("probe_direct_scatter"):
+        if not (m in (7, 14, 21, 28) and config.get("tiled")
+                and config.get("reform_sf_pack") and config.get("decode_reform")
+                and not any(config.get(k) for k in ("split", "skip_a", "skip_sf", "even"))):
+            raise ValueError("scatter probe requires packed t,r,sf6 at 7/14/21/28 tokens")
     reform = bool(config.get("decode_reform", False)) and 1 <= m <= 8
     return dict(config, decode_reform=reform)
 
@@ -2232,6 +2242,10 @@ def _get_static_kernel_v2(
         state_E=state_E,weight_E=weight_E,k=k,n=n,num_topk=num_topk,
         quant_mode=quant_mode,activation=activation,swiglu_alpha=swiglu_alpha,
         swiglu_beta=swiglu_beta,swiglu_limit=swiglu_limit)
+    if (config.get("probe_route_scatter") or config.get("probe_direct_scatter")) and not (
+            scatter_fp32 and state_E == weight_E == 288 and k == 4096
+            and n == 512 and num_topk == 8):
+        raise ValueError("scatter probe requires the GLM TP4 FP32 output contract")
     cache_key = (*cache_key,"tp_scatter_fp32_v1",scatter_fp32)
     cached = _STATIC_V2_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -2247,6 +2261,8 @@ def _get_static_kernel_v2(
     kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4
     kernel: Any = kernel_cls(
         scatter_fp32=scatter_fp32,
+        route_scatter=bool(config.get("probe_route_scatter", False)),
+        direct_scatter=bool(config.get("probe_direct_scatter", False)),
         a_ring=bool(config.get("a_ring", False)),
         sf_pack=bool(config.get("sf_pack", False)),
         decode_reform=reform,
@@ -2351,7 +2367,9 @@ def _get_static_kernel_v2(
         alpha_dtype, (weight_E,), assumed_align=16
     )
     scatter_fake = cute.runtime.make_fake_compact_tensor(
-        cutlass.Float32 if scatter_fp32 else a_dtype, (m, k), stride_order=(1, 0), assumed_align=16
+        cutlass.Float32 if scatter_fp32 else a_dtype,
+        (m * num_topk * output_tile_count_n if config.get("probe_route_scatter") else m, k),
+        stride_order=(1, 0), assumed_align=16
     )
     token_map_fake = cute.runtime.make_fake_compact_tensor(
         cutlass.Int32, (state_E, max_rows), stride_order=(1, 0), assumed_align=4
@@ -3451,6 +3469,8 @@ def launch_sm120_static_moe(
                 activation_precision=activation_precision,
                 quant_mode=quant_mode,
             )
+            if static_v2_config.get("probe_route_scatter") and not getattr(compiled, "owns_route_scatter", False):
+                raise RuntimeError("route-scatter probe requires its prewarmed output owner and reduction")
             static_v2_stamps = _static_v2_stamps_tensor(mac, a.device)
             static_v2_counter = _static_v2_counter_tensor(a.device)
         else:

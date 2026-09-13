@@ -1,0 +1,64 @@
+{
+  "gpu_used": false,
+  "torch": "2.13.0+cu130",
+  "cases": [
+    {
+      "candidate": "served-m7",
+      "rows": 7,
+      "status": "PASS",
+      "smem_bytes": 98304,
+      "tile_m": 16,
+      "fc1": 2,
+      "fc2": 2
+    },
+    {
+      "candidate": "moe_stage_fc1",
+      "rows": 7,
+      "status": "FAIL",
+      "error": "v4 smem 102400 B exceeds 101376 B (fc1 3 x fc2 1 stages)"
+    },
+    {
+      "candidate": "moe_stage_fc2",
+      "rows": 7,
+      "status": "PASS",
+      "smem_bytes": 94208,
+      "tile_m": 16,
+      "fc1": 1,
+      "fc2": 3
+    },
+    {
+      "candidate": "moe_batch",
+      "rows": 14,
+      "status": "PASS",
+      "smem_bytes": 98304,
+      "tile_m": 16,
+      "fc1": 2,
+      "fc2": 2
+    },
+    {
+      "candidate": "moe_batch",
+      "rows": 21,
+      "status": "PASS",
+      "smem_bytes": 98304,
+      "tile_m": 16,
+      "fc1": 2,
+      "fc2": 2
+    },
+    {
+      "candidate": "moe_batch",
+      "rows": 28,
+      "status": "PASS",
+      "smem_bytes": 98304,
+      "tile_m": 16,
+      "fc1": 2,
+      "fc2": 2
+    }
+  ],
+  "scope": "native CuTe compilation and shared-memory feasibility only",
+  "status": "PARTIAL",
+  "source_sha256": {
+    "engine/kernels/b12x/moe_dispatch.py": "68ab52d41196b5b6e2570fda466cd871b5d31afed248fcff1d5efc52e6b00819",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "2d3d5243aaddbb955a0b10c5397407483f1f9550d1b0d6fcaf8c528b03763dbf",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e"
+  }
+}

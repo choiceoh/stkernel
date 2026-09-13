@@ -1,0 +1,13 @@
+{
+  "source": "a606f65d5bad34ddbc66c0cd5ca65afecebd4be5",
+  "started": "2026-09-13T09:16:39.347770",
+  "image": "sha256:a13be2698a579983329b82a1fc2a98d6462346a323981ba17e97f27c3b7fbd7b",
+  "runtime": "runc",
+  "gpu_used": false,
+  "cpus": 2,
+  "cpuset": "16-19",
+  "memory_gib": 8,
+  "exit_code": 0,
+  "status": "PASS",
+  "ended": "2026-09-13T09:17:10.484749"
+}

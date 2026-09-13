@@ -104,6 +104,8 @@ class MoEStaticKernelV4:
         output_tile_count_n: int,
         *,
         scatter_fp32: bool = False,
+        route_scatter: bool = False,
+        direct_scatter: bool = False,
         fc1_stages: int = 2,
         fc2_stages: int = 2,
         stamps: bool = False,
@@ -131,6 +133,11 @@ class MoEStaticKernelV4:
         self._dense_cls = DenseGemmKernel
         self.acc_dtype = cutlass.Float32
         self.scatter_fp32 = bool(scatter_fp32)
+        self.route_scatter = bool(route_scatter)
+        self.direct_scatter = bool(direct_scatter)
+        if (self.route_scatter or self.direct_scatter) and not (
+                scatter_fp32 and reform_sf_pack and not split):
+            raise ValueError("private scatter requires packed FP32 output without split work")
         self.sf_vec_size = sf_vec_size
         self.input_scales_are_reciprocal = input_scales_are_reciprocal
         self.activation = activation
@@ -432,6 +439,35 @@ class MoEStaticKernelV4:
             permutation_mnk=permutation_mnk,
         )
 
+    def _validate_direct_scatter_layout(self):
+        """Bind register pairs to the actual copy layout before native compile."""
+        atom = cute.make_copy_atom(cute.nvgpu.CopyUniversalOp(), cutlass.BFloat16)
+        st = cute.make_copy_atom(
+            cute.nvgpu.warp.StMatrix8x8x16bOp(self.c_layout.is_m_major_c(), 2), cutlass.BFloat16)
+        copy = cute.make_tiled_copy_S(atom, cute.make_tiled_copy_C_atom(st, self.tiled_mma))
+        identity = cute.make_identity_tensor((*self.epi_tile, 1))
+        staged = cute.make_identity_tensor(cute.shape(self.epi_smem_layout_staged.outer))
+        seen = set()
+        for tid in range(128):
+            thread = copy.get_slice(tid)
+            if cute.size(thread.partition_D(staged), mode=[3]) != 1:
+                raise ValueError("direct scatter requires one output tile buffer")
+            coords = thread.partition_D(identity)[None, None, None, 0]
+            registers = cute.make_layout(cute.shape(thread.partition_S(staged))[:3])
+            if cute.size(coords) != cute.size(registers) or cute.size(coords) % 2:
+                raise ValueError("direct scatter register/coordinate size mismatch")
+            for pair in range(cute.size(coords) // 2):
+                a, b = tuple(coords[2 * pair]), tuple(coords[2 * pair + 1])
+                if not (a[0] == b[0] and a[1] % 2 == 0 and b[1] == a[1] + 1
+                        and a[2] == b[2] == 0):
+                    raise ValueError("direct scatter needs adjacent BF16 register pairs")
+                for point in (a, b):
+                    if point in seen:
+                        raise ValueError("direct scatter duplicate output coordinate")
+                    seen.add(point)
+        if seen != {(r, c, 0) for r in range(self.epi_tile[0]) for c in range(self.epi_tile[1])}:
+            raise ValueError("direct scatter incomplete output coverage")
+
     def _setup_attributes(self, hidden_size: int):
         self._hidden_size = hidden_size
         mma_op, self.tiled_mma1 = self._make_tiled_mma(self.fc1_tile_shape_mnk)
@@ -464,6 +500,8 @@ class MoEStaticKernelV4:
             self.tile_shape_mnk, self.epi_tile, self.tiled_mma, self.fc2_stages
         )
         self.a2_smem_layout = self._make_a_smem_layout(self.tile_m, self.fc2_tile_k, 1)
+        if self.direct_scatter:
+            self._validate_direct_scatter_layout()
         self.sfa2_smem_layout = sm120_make_smem_layout_sfa(
             self.tiled_mma,
             self.tile_shape_mnk,
@@ -972,7 +1010,10 @@ class MoEStaticKernelV4:
             active_expert_count[Int32(0)] = Int32(0)
             if cutlass.const_expr(self.even or self.split):
                 next_item[Int32(0)] = Int32(0)
-        scatter_total = num_tokens * cols
+        # Each route/128-wide intermediate part owns a complete output row.
+        # All routes, including zero weights, are computed below. The private
+        # reduction runs after this kernel, so no clear/atomic scatter is needed.
+        scatter_total = Int32(0) if cutlass.const_expr(self.route_scatter) else num_tokens * cols
         j = flat_tid
         while j < scatter_total:
             if cutlass.const_expr(self.scatter_fp32):
@@ -1035,7 +1076,8 @@ class MoEStaticKernelV4:
                             Int32(self.output_tile_count_n),
                         )
                 map_idx = local_expert_id * max_rows + row
-                st_global_i32(get_ptr_as_int64(token_map, map_idx), token_idx)
+                scatter_row = pair_idx if cutlass.const_expr(self.route_scatter) else token_idx
+                st_global_i32(get_ptr_as_int64(token_map, map_idx), scatter_row)
                 st_global_f32(get_ptr_as_int64(token_weights, map_idx), weight)
                 _st_shared_i32(ctrl_base_addr + Int32(0), local_expert_id)
                 _st_shared_i32(ctrl_base_addr + Int32(4), row)
@@ -1385,6 +1427,9 @@ class MoEStaticKernelV4:
             tiled_copy_r2s = cute.make_tiled_copy_S(copy_atom_r2s, tiled_copy_C_Atom)
             thr_copy_r2s = tiled_copy_r2s.get_slice(tidx)
             tRS_sD = thr_copy_r2s.partition_D(sC)
+            if cutlass.const_expr(self.direct_scatter):
+                ep_identity = cute.make_identity_tensor((*self.epi_tile, 1))
+                ep_tRS_coords = thr_copy_r2s.partition_D(ep_identity)
             down_acc = cute.make_rmem_tensor(acc_shape, self.acc_dtype)
             tRS_rDown = tiled_copy_r2s.retile(down_acc)
             rD_shape = cute.shape(thr_copy_r2s.partition_S(sC))
@@ -1827,73 +1872,104 @@ class MoEStaticKernelV4:
                     acc_vec = tRS_rD.load()
                     acc_vec = acc_vec.to(cutlass.BFloat16)
                     tRS_rD_out.store(acc_vec)
-                    cute.copy(tiled_copy_r2s, tRS_rD_out, tRS_sD[(None, None, None, 0)])
-                    cute.arch.fence_proxy("async.shared", space="cta")
-                    self.epilog_sync_barrier.arrive_and_wait()
+                    if cutlass.const_expr(self.direct_scatter):
+                        ep_coords = ep_tRS_coords[None, None, None, 0]
+                        for ep_pair in cutlass.range_constexpr(cute.size(tRS_rD_out) // 2):
+                            ep_coord = ep_coords[2 * ep_pair]
+                            ep_row = Int32(ep_coord[0])
+                            if ep_row < valid_tile_rows:
+                                ep_tok = ld_shared_i32_relaxed(scatter_tok_base_addr + ep_row * Int32(4))
+                                ep_weight = _ld_shared_f32(scatter_weight_base_addr + ep_row * Int32(4))
+                                ep_v0 = cutlass.Float32(tRS_rD_out[2 * ep_pair])
+                                ep_v1 = cutlass.Float32(tRS_rD_out[2 * ep_pair + 1])
+                                if cutlass.const_expr(self.route_scatter):
+                                    ep_tok = ep_tok * Int32(self.output_tile_count_n) + Int32(tile_coord[1])
+                                ep_ptr = get_ptr_as_int64(
+                                    scatter_output, ep_tok * scatter_N + tile_n_base_cur + Int32(ep_coord[1]))
+                                if cutlass.const_expr(self.route_scatter):
+                                    st_global_f32(ep_ptr, ep_weight * ep_v0)
+                                    st_global_f32(ep_ptr + Int64(4), ep_weight * ep_v1)
+                                else:
+                                    scatter_add_bf16x2_to_f32(ep_ptr, ep_weight * ep_v0, ep_weight * ep_v1)
+                    else:
+                        cute.copy(tiled_copy_r2s, tRS_rD_out, tRS_sD[(None, None, None, 0)])
+                        cute.arch.fence_proxy("async.shared", space="cta")
+                        self.epilog_sync_barrier.arrive_and_wait()
 
-                    warp_epi_rows = valid_tile_rows - warp_m_base
-                    if warp_epi_rows > Int32(64):
-                        warp_epi_rows = Int32(64)
-                    if warp_epi_rows < Int32(0):
-                        warp_epi_rows = Int32(0)
-                    tile_vec_cols = Int32(64) // Int32(8)
-                    vec_idx = lane_id
-                    while vec_idx < warp_epi_rows * tile_vec_cols:
-                        local_row = vec_idx // tile_vec_cols
-                        local_vec_col = vec_idx - local_row * tile_vec_cols
-                        local_col = warp_n_base + local_vec_col * Int32(8)
-                        global_col = tile_n_base_cur + local_col
-                        cached_row = warp_m_base + local_row
-                        tok = ld_shared_i32_relaxed(
-                            scatter_tok_base_addr + cached_row * Int32(4)
-                        )
-                        wv = _ld_shared_f32(
-                            scatter_weight_base_addr + cached_row * Int32(4)
-                        )
-                        sc_v0 = cutlass.Float32(sC[warp_m_base + local_row, local_col, 0])
-                        sc_v1 = cutlass.Float32(
-                            sC[warp_m_base + local_row, local_col + Int32(1), 0]
-                        )
-                        sc_v2 = cutlass.Float32(
-                            sC[warp_m_base + local_row, local_col + Int32(2), 0]
-                        )
-                        sc_v3 = cutlass.Float32(
-                            sC[warp_m_base + local_row, local_col + Int32(3), 0]
-                        )
-                        sc_v4 = cutlass.Float32(
-                            sC[warp_m_base + local_row, local_col + Int32(4), 0]
-                        )
-                        sc_v5 = cutlass.Float32(
-                            sC[warp_m_base + local_row, local_col + Int32(5), 0]
-                        )
-                        sc_v6 = cutlass.Float32(
-                            sC[warp_m_base + local_row, local_col + Int32(6), 0]
-                        )
-                        sc_v7 = cutlass.Float32(
-                            sC[warp_m_base + local_row, local_col + Int32(7), 0]
-                        )
-                        if cutlass.const_expr(self.scatter_fp32):
-                            scatter_add_bf16x2_to_f32(
-                                get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(0)),
-                                wv * sc_v0, wv * sc_v1)
-                            scatter_add_bf16x2_to_f32(
-                                get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(2)),
-                                wv * sc_v2, wv * sc_v3)
-                            scatter_add_bf16x2_to_f32(
-                                get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(4)),
-                                wv * sc_v4, wv * sc_v5)
-                            scatter_add_bf16x2_to_f32(
-                                get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(6)),
-                                wv * sc_v6, wv * sc_v7)
-                        else:
-                            scatter_add_v4_bf16x2(
-                                get_ptr_as_int64(
-                                    scatter_output, tok * scatter_N + global_col
-                                ),
-                                wv * sc_v0, wv * sc_v1, wv * sc_v2, wv * sc_v3,
-                                wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7,
+                        warp_epi_rows = valid_tile_rows - warp_m_base
+                        if warp_epi_rows > Int32(64):
+                            warp_epi_rows = Int32(64)
+                        if warp_epi_rows < Int32(0):
+                            warp_epi_rows = Int32(0)
+                        tile_vec_cols = Int32(64) // Int32(8)
+                        vec_idx = lane_id
+                        while vec_idx < warp_epi_rows * tile_vec_cols:
+                            local_row = vec_idx // tile_vec_cols
+                            local_vec_col = vec_idx - local_row * tile_vec_cols
+                            local_col = warp_n_base + local_vec_col * Int32(8)
+                            global_col = tile_n_base_cur + local_col
+                            cached_row = warp_m_base + local_row
+                            tok = ld_shared_i32_relaxed(
+                                scatter_tok_base_addr + cached_row * Int32(4)
                             )
-                        vec_idx += Int32(self.num_threads_per_warp)
+                            wv = _ld_shared_f32(
+                                scatter_weight_base_addr + cached_row * Int32(4)
+                            )
+                            sc_v0 = cutlass.Float32(sC[warp_m_base + local_row, local_col, 0])
+                            sc_v1 = cutlass.Float32(
+                                sC[warp_m_base + local_row, local_col + Int32(1), 0]
+                            )
+                            sc_v2 = cutlass.Float32(
+                                sC[warp_m_base + local_row, local_col + Int32(2), 0]
+                            )
+                            sc_v3 = cutlass.Float32(
+                                sC[warp_m_base + local_row, local_col + Int32(3), 0]
+                            )
+                            sc_v4 = cutlass.Float32(
+                                sC[warp_m_base + local_row, local_col + Int32(4), 0]
+                            )
+                            sc_v5 = cutlass.Float32(
+                                sC[warp_m_base + local_row, local_col + Int32(5), 0]
+                            )
+                            sc_v6 = cutlass.Float32(
+                                sC[warp_m_base + local_row, local_col + Int32(6), 0]
+                            )
+                            sc_v7 = cutlass.Float32(
+                                sC[warp_m_base + local_row, local_col + Int32(7), 0]
+                            )
+                            if cutlass.const_expr(self.route_scatter):
+                                route_row = tok * Int32(self.output_tile_count_n) + Int32(tile_coord[1])
+                                out_ptr = get_ptr_as_int64(scatter_output, route_row * scatter_N + global_col)
+                                st_global_f32(out_ptr + Int64(0), wv * sc_v0)
+                                st_global_f32(out_ptr + Int64(4), wv * sc_v1)
+                                st_global_f32(out_ptr + Int64(8), wv * sc_v2)
+                                st_global_f32(out_ptr + Int64(12), wv * sc_v3)
+                                st_global_f32(out_ptr + Int64(16), wv * sc_v4)
+                                st_global_f32(out_ptr + Int64(20), wv * sc_v5)
+                                st_global_f32(out_ptr + Int64(24), wv * sc_v6)
+                                st_global_f32(out_ptr + Int64(28), wv * sc_v7)
+                            elif cutlass.const_expr(self.scatter_fp32):
+                                scatter_add_bf16x2_to_f32(
+                                    get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(0)),
+                                    wv * sc_v0, wv * sc_v1)
+                                scatter_add_bf16x2_to_f32(
+                                    get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(2)),
+                                    wv * sc_v2, wv * sc_v3)
+                                scatter_add_bf16x2_to_f32(
+                                    get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(4)),
+                                    wv * sc_v4, wv * sc_v5)
+                                scatter_add_bf16x2_to_f32(
+                                    get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(6)),
+                                    wv * sc_v6, wv * sc_v7)
+                            else:
+                                scatter_add_v4_bf16x2(
+                                    get_ptr_as_int64(
+                                        scatter_output, tok * scatter_N + global_col
+                                    ),
+                                    wv * sc_v0, wv * sc_v1, wv * sc_v2, wv * sc_v3,
+                                    wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7,
+                                )
+                            vec_idx += Int32(self.num_threads_per_warp)
                     self.epilog_sync_barrier.arrive_and_wait()
 
                 if cutlass.const_expr(self.stamps):

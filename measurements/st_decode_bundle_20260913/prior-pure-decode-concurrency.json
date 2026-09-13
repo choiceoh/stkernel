@@ -1,0 +1,177 @@
+{
+  "source_record": "measurements/st_oneshot_rank_sum_20260913/consumer-pass1/record.json.gz",
+  "run_id": "20260912T213057-9725b41d901c",
+  "scope": "1Hz counters inside all-live request interval; zero prefill steps; six drafts times concurrency per decode step; produced token rate inferred as accepted + proposal rounds, not client stream throughput; row-step and proposal-round counters absent from this observer",
+  "rows": [
+    {
+      "concurrency": 1,
+      "ctx": 2000,
+      "question": 0,
+      "windows": 58,
+      "discarded": 7,
+      "seconds": 58.28288628501468,
+      "steps_per_s": 19.645561038290495,
+      "acceptance": 0.372197962154294,
+      "produced_token_rate_from_counters": 63.51778774126761,
+      "counts": {
+        "steps": 1145.0,
+        "prefill": 0.0,
+        "accepted": 2557.0,
+        "drafted": 6870.0
+      }
+    },
+    {
+      "concurrency": 1,
+      "ctx": 2000,
+      "question": 1,
+      "windows": 60,
+      "discarded": 5,
+      "seconds": 60.279659941006685,
+      "steps_per_s": 19.923801845852665,
+      "acceptance": 0.4315847904524008,
+      "produced_token_rate_from_counters": 71.51666091379754,
+      "counts": {
+        "steps": 1201.0,
+        "prefill": 0.0,
+        "accepted": 3110.0,
+        "drafted": 7206.0
+      }
+    },
+    {
+      "concurrency": 1,
+      "ctx": 2000,
+      "question": 2,
+      "windows": 57,
+      "discarded": 11,
+      "seconds": 57.28775328001939,
+      "steps_per_s": 19.75989518155558,
+      "acceptance": 0.3832449941107185,
+      "produced_token_rate_from_counters": 65.19718065645768,
+      "counts": {
+        "steps": 1132.0,
+        "prefill": 0.0,
+        "accepted": 2603.0,
+        "drafted": 6792.0
+      }
+    },
+    {
+      "concurrency": 1,
+      "ctx": 32000,
+      "question": "all",
+      "windows": 180,
+      "discarded": 2,
+      "seconds": 180.8851280430099,
+      "steps_per_s": 19.603601680049955,
+      "acceptance": 0.4742902801278436,
+      "produced_token_rate_from_counters": 75.39038807412331,
+      "counts": {
+        "steps": 3546.0,
+        "prefill": 0.0,
+        "accepted": 10091.0,
+        "drafted": 21276.0
+      }
+    },
+    {
+      "concurrency": 1,
+      "ctx": 128000,
+      "question": "all",
+      "windows": 181,
+      "discarded": 18,
+      "seconds": 181.85289396400913,
+      "steps_per_s": 18.65793788616592,
+      "acceptance": 0.45014245014245013,
+      "produced_token_rate_from_counters": 69.05031713427218,
+      "counts": {
+        "steps": 3393.0,
+        "prefill": 0.0,
+        "accepted": 9164.0,
+        "drafted": 20358.0
+      }
+    },
+    {
+      "concurrency": 4,
+      "ctx": 2000,
+      "question": 0,
+      "windows": 134,
+      "discarded": 8,
+      "seconds": 134.71025807099068,
+      "steps_per_s": 8.692730730148977,
+      "acceptance": 0.36717193282095073,
+      "produced_token_rate_from_counters": 111.3723647689369,
+      "counts": {
+        "steps": 1171.0,
+        "prefill": 0.0,
+        "accepted": 10319.0,
+        "drafted": 28104.0
+      }
+    },
+    {
+      "concurrency": 4,
+      "ctx": 2000,
+      "question": 1,
+      "windows": 129,
+      "discarded": 13,
+      "seconds": 129.6761522120214,
+      "steps_per_s": 8.737150051672856,
+      "acceptance": 0.41850544277728746,
+      "produced_token_rate_from_counters": 122.70567663037819,
+      "counts": {
+        "steps": 1133.0,
+        "prefill": 0.0,
+        "accepted": 11380.0,
+        "drafted": 27192.0
+      }
+    },
+    {
+      "concurrency": 4,
+      "ctx": 2000,
+      "question": 2,
+      "windows": 133,
+      "discarded": 11,
+      "seconds": 133.71179787999426,
+      "steps_per_s": 8.71276894388618,
+      "acceptance": 0.3703862660944206,
+      "produced_token_rate_from_counters": 112.30123473081106,
+      "counts": {
+        "steps": 1165.0,
+        "prefill": 0.0,
+        "accepted": 10356.0,
+        "drafted": 27960.0
+      }
+    },
+    {
+      "concurrency": 4,
+      "ctx": 32000,
+      "question": "all",
+      "windows": 407,
+      "discarded": 8,
+      "seconds": 409.0919683640095,
+      "steps_per_s": 7.99331263597519,
+      "acceptance": 0.4667176350662589,
+      "produced_token_rate_from_counters": 121.5081298192828,
+      "counts": {
+        "steps": 3270.0,
+        "prefill": 0.0,
+        "accepted": 36628.0,
+        "drafted": 78480.0
+      }
+    },
+    {
+      "concurrency": 4,
+      "ctx": 128000,
+      "question": "all",
+      "windows": 379,
+      "discarded": 28,
+      "seconds": 380.98019762305194,
+      "steps_per_s": 7.5673224434947866,
+      "acceptance": 0.5189328246040005,
+      "produced_token_rate_from_counters": 124.51565802098706,
+      "counts": {
+        "steps": 2883.0,
+        "prefill": 0.0,
+        "accepted": 35906.0,
+        "drafted": 69192.0
+      }
+    }
+  ]
+}
