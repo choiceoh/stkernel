@@ -25,6 +25,7 @@ class KnobDeclarationTests(unittest.TestCase):
     def test_production_remains_restartable_after_experiment_expiry(self):
         cfg = self._declared({}, production=True, today=datetime.date(2040, 1, 1))
         self.assertFalse(cfg.knobs)
+        self.assertEqual(cfg['decode_fastpaths'], 1)
         self.assertEqual([cfg[k] for k in ("moe_static", "mla_prefill", "context_ceiling", "lanes", "decode_eager", "execution")],
                          ["t,r,sf6,q0", "tile32", 0, "served", 0, "native"])
 

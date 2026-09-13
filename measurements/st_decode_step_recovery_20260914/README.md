@@ -1,9 +1,12 @@
 # K=7 decode step recovery candidate
 
-The serving K=7 verification widths are 8/16/24/32 rows. The current default
-selects several previously qualified fastpaths only at K=6 widths. Commit
-`c4059295` binds the missing widths to the model before capture, behind
-experimental `STK_decode_fastpaths=1` (default 0; expires 2026-09-30).
+The serving K=7 verification widths are 8/16/24/32 rows. The original recipe
+selected several previously qualified fastpaths only at K=6 widths. Commit
+`c4059295` bound the missing widths to the model before capture. On 2026-09-14
+the operator explicitly requested ON: both production and experimental serving
+now default to `decode_fastpaths=1`. The experimental rollback is
+`STK_decode_fastpaths=0` (expires 2026-09-30); production has a fixed default
+without an expiry. Bare `ExecutionPlan()` remains neutral like its other lanes.
 Base: `613dfa0fa01f` (PR #908). No performance gain has been measured for
 this candidate. The unchanged FP32 KDA state, K=7 and enabled prefill
 settings remain part of the candidate.
@@ -128,3 +131,19 @@ drafter acceptance and bound-fastpath modules then ran 21 tests: 20 passed,
 one GPU-only skip, no failures (`cpu-ci-fix.log`). Engine/kernel source and
 serving defaults did not change, so the existing compiler and Oracle source
 receipts remain applicable.
+
+## Operator-enabled default
+
+The 2026-09-14 ON request sets the shared serving default to 1 in both boot
+modes. Experimental `STK_decode_fastpaths=0` remains an explicit rollback;
+production refuses environment overrides and remains restartable after the
+experimental expiry. No kernel or model execution code changed in this step.
+
+`cpu-default-on.log` records 45 tests across defaults, ownership, drafter
+acceptance and execution: 44 passed, one GPU-only skip. The production expiry,
+experimental rollback and neutral bare-plan checks passed.
+`default-on/oracle-{c1,c4}.json` and their new source-bound templates read the
+enabled default without `--set`; contexts remain C1 2K/32K/128K and C4 32K.
+They leave the timing delta unknown. The earlier Oracle records above remain
+historical records of `c4059295`, not receipts for the changed boot source.
+This default change did not restart an engine or submit GPU work.

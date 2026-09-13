@@ -234,22 +234,23 @@ def declared(a, comm_world: int) -> Config:
     # One serving recipe in both modes, selected by operator request. Dense
     # prefix and token-major absorption were enabled on 2026-09-13; their
     # GPU timing/quality gates remain pending independently of this choice.
+    # K=7 decode fastpaths were explicitly enabled on 2026-09-14.
     gb10_defaults = dict(direct_mhc=1, prefill_project_tiles=1,
                          nvme_mapped_staging=1, decode_iterations=4, prefill_indexer_shards=0, prefill_dense_prefix=1,
-                         prefill_absorb_tiles=1)
+                         prefill_absorb_tiles=1, decode_fastpaths=1)
     if getattr(a, "production", False):
         # tile32 passed the full GPU numerical/graph and matched 2K/32K/128K
         # serving brackets. Keep it in the production contract so a stale
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
-                        execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0, terminal_mhc=0, decode_fastpaths=0,
+                        execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0, terminal_mhc=0,
                         draft_fc_precision=SERVING_POLICY.fc_precision, draft_fc_calibration=SERVING_POLICY.fc_calibration,
                         draft_diagnostics=int(SERVING_POLICY.diagnostics), draft_tuning='', **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
-        Knob("decode_fastpaths", 0, _dt.date(2026, 9, 30),
-             "K=7 bound input reuse, paired KDA/indexer projections and direct TX outputs; GPU qualification pending",
+        Knob("decode_fastpaths", gb10_defaults["decode_fastpaths"], _dt.date(2026, 9, 30),
+             "Operator-enabled K=7 input reuse, paired projections and direct TX outputs; GPU qualification pending",
              "STK_decode_fastpaths=0", int),
         Knob("prefill_absorb_tiles", gb10_defaults["prefill_absorb_tiles"], _dt.date(2026, 9, 30),
              "Operator-enabled token-major MLA contractions; GPU timing and quality qualification pending",

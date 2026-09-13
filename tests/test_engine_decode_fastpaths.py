@@ -13,7 +13,7 @@ ROWS = (8, 16, 24, 32)
 
 
 class BoundDecodeTests(unittest.TestCase):
-    def test_candidate_is_explicit_and_production_keeps_its_defaults(self):
+    def test_serving_default_on_with_experimental_rollback_and_neutral_bare_plan(self):
         from engine.base.config import ConfigError
         from engine.profiles.glm53.execution import ExecutionPlan
         from tests.test_engine_knobs import KnobDeclarationTests
@@ -25,13 +25,15 @@ class BoundDecodeTests(unittest.TestCase):
             ExecutionPlan(decode_fastpaths=1)
         for production in (False, True):
             cfg = declared({}, production=production)
-            self.assertEqual(cfg['decode_fastpaths'], 0)
+            self.assertEqual(cfg['decode_fastpaths'], 1)
             self.assertEqual(cfg['kda_state_dtype'], 'fp32')
             self.assertEqual(cfg['prefill_dense_prefix'], 1)
             self.assertEqual(cfg['prefill_absorb_tiles'], 1)
         self.assertEqual(declared({'STK_decode_fastpaths': '1'})['decode_fastpaths'], 1)
-        with self.assertRaises(ConfigError):
-            declared({'STK_decode_fastpaths': '1'}, production=True)
+        self.assertEqual(declared({'STK_decode_fastpaths': '0'})['decode_fastpaths'], 0)
+        for value in ('0', '1'):
+            with self.assertRaises(ConfigError):
+                declared({'STK_decode_fastpaths': value}, production=True)
 
     @staticmethod
     def model(k=7):
