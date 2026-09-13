@@ -19,4 +19,12 @@ The prior merged projection bundle was requalified on source `71eb3634`: 66 nume
 
 ## Consumer
 
-The candidate combines this change, merged PR #825's projection/wide-input improvements and main's PR #829 memory reclamation. Candidate-only C=1 twice and C=4 once on one boot, at 32K/128K, is pending. KV is explicitly 5 GiB. Completion/reasoning ceilings of 3072/2048 bound the speed sample and do not establish natural completion length. Raw answer grades are retained, while the requested decision uses decode step/s and speculative acceptance.
+The candidate combines this change, merged PR #825's projection/wide-input improvements and main's PR #829 memory reclamation. Candidate-only C=1 twice and C=4 once on one boot, at 32K/128K, remains pending after the boot failure below. KV is explicitly 5 GiB. Completion/reasoning ceilings of 3072/2048 bound the speed sample and do not establish natural completion length. Raw answer grades are retained, while the requested decision uses decode step/s and speculative acceptance.
+
+## Host watchdog follow-up
+
+`st-decode-native-consumer0913` on `a0af5cda` passed transport initialization (including native integer gather versus real TP4 NCCL) and warmup memory qualification, but rank 2 failed in `OneShot.produce` during target graph capture with `one-shot proxy stopped progressing`. No consumer requests ran. The previous health predicate rejected any two consecutive equal nonzero heartbeat reads, even within the same CPU scheduling interval. This is not a valid elapsed-time watchdog.
+
+Source `770b3ca4` replaces that predicate with a two-second monotonic no-progress deadline, immediate native thread-exit detection, explicit state reset and checked thread creation. Host heartbeat reads/writes use atomic operations. No GPU collective or producer code changed (`health/device-source.json`). Full Torch/CUDA extension compilation and 7 CPU tests passed; the watchdog test covers 10,000 rapid equal-beat polls, exact expiry, restored progress, thread exit, restart, zero beat and counter wrap.
+
+Replacement canonical ticket `st-decode-native-consumer0913v2` retains KV 5 GiB and the same bounded candidate-only consumer workload. The failed boot and the queued replacement are not speed or acceptance results.
