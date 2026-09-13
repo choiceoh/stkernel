@@ -19,6 +19,8 @@
 #include <pthread.h>
 #include <sched.h>
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -135,8 +137,15 @@ static Info g_local[NPEER], g_remote[NPEER];
 static int g_rank = -1, g_world = 0, g_sgid = -1, g_peers[NPEER];
 static pthread_t g_proxy;
 static bool g_started = false;
+static std::atomic<bool> g_proxy_running{false};
+static std::atomic<uint64_t> g_proxy_heartbeat_ns{0};
 static unsigned g_inline_cap[NPEER] = {};
 static const char *DEVNAME = "rocep1s0f0";
+
+static uint64_t proxy_now_ns() {
+  const auto now = std::chrono::steady_clock::now().time_since_epoch();
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(now).count();
+}
 
 // ---------------- kernels (device-side slot from tx_seq) ----------------
 // One launch per collective. #89 folded the guard into k_copy_in and the wait
@@ -257,7 +266,7 @@ __host__ __device__ constexpr int64_t osar_max_int64(int64_t a, int64_t b,
 }
 
 template <bool CONSUMER_PDL, bool COMPACT = false, bool WRAP_SAFE = false,
-          bool MAX_INT64 = false, bool PACKETS = false>
+          bool MAX_INT64 = false, bool PACKETS = false, bool GATHER_INT64 = false>
 __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
                                               bf16 *dst, int n, int nbytes,
                                               const HintArgs h, int rank) {
@@ -354,7 +363,7 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
   __shared__ bool last;
   if (threadIdx.x == 0) {
     if constexpr (WRAP_SAFE || MAX_INT64) {
-      // The <=512-byte MAX packet fits one CTA. It contributes the same
+      // Small integer packets fit one CTA. It contributes the same
       // 48 tickets as a whole BF16 grid, after every writer has fenced.
       constexpr unsigned weight = MAX_INT64 ? ARGRID : (COMPACT ? ARGRID / OSAR_COMPACT_GRID : 1);
       const auto old = atomicAdd((unsigned long long *)&c->done_ctr,
@@ -422,6 +431,23 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
   __syncthreads();
   if (owns)
     __threadfence_system();
+  if constexpr (GATHER_INT64) {
+    // Preserve candidate bits and canonical rank order. Rank-major rows may
+    // begin at an odd int64 offset, so the output uses aligned 8-byte stores.
+    // The same CTA publishes all 48 tickets and consumes peers before the
+    // next collective can reuse a slot; no NCCL event enters a bounded body.
+    auto* output = reinterpret_cast<int64_t*>(dst);
+    const int keys = n / 4;
+    for (int i = threadIdx.x; i < keys; i += blockDim.x) {
+      int peer = 0;
+      for (int r = 0; r < 4; ++r) {
+        output[r * keys + i] = r == rank
+            ? reinterpret_cast<const int64_t*>(src)[i]
+            : __ldcs(reinterpret_cast<const long long*>(c->rx[slot][peer++]) + i);
+      }
+    }
+    return;
+  }
   if constexpr (PACKETS) {
     // The immediate same-stream MHC consumer owns these addresses until it
     // completes. It folds ranks 0,1,2,3 and rounds to BF16 at its input load.
@@ -524,6 +550,13 @@ __global__ void k_oneshot_max_int64(Ctrl *c, const bf16 *src, bf16 *dst, int n,
   k_oneshot_impl<false, false, OSAR_COMPACT_CTA != 0, true>(c, src, dst, n, nbytes, h, rank);
 }
 
+__global__ void k_oneshot_gather_int64(Ctrl* c, const bf16* src, bf16* dst,
+                                       int keys, int rank) {
+  const HintArgs hints{};
+  k_oneshot_impl<false, false, true, true, false, true>(
+      c, src, dst, keys * 4, keys * 8, hints, rank);
+}
+
 #if OSAR_COMPACT_CTA
 // Keep the disabled mode's entry points and generated instructions unchanged.
 // The companion contributes one ticket per CTA but uses the same wrap-safe
@@ -537,6 +570,9 @@ __global__ void k_oneshot_compact_mode(Ctrl *c, const bf16 *src, bf16 *dst,
 
 // ---------------- proxy ----------------
 static void *proxy_fn(void *) {
+  struct Exit {
+    ~Exit() { g_proxy_running.store(false, std::memory_order_release); }
+  } exit;
   cpu_set_t set;
   CPU_ZERO(&set);
   CPU_SET(PROXY_CORE, &set);
@@ -558,9 +594,14 @@ static void *proxy_fn(void *) {
     }
   }
 #endif
-  uint64_t sent = 0, done[64] = {0};
+  uint64_t sent = 0, done[64] = {0}, beat = 0;
   while (!g_ctrl->stop) {
-    g_ctrl->proxy_beat++;
+    __atomic_store_n(&g_ctrl->proxy_beat, ++beat, __ATOMIC_RELAXED);
+    // Timestamp the first loop and every 256 polls. This amortizes clock reads
+    // in the busy proxy while preserving the actual publication time across
+    // request gaps; healthy() cannot extend a stalled proxy's deadline.
+    if ((beat & 255u) == 1u)
+      g_proxy_heartbeat_ns.store(proxy_now_ns(), std::memory_order_release);
     uint64_t s = g_ctrl->tx_seq;
     while (sent < s) {
       sent++;
@@ -824,7 +865,12 @@ static void py_connect(std::vector<std::string> all) {
                                           : g_remote[s].mtu);
     to_rts(g_qp[s], &g_remote[s], g_local[s].psn, mtu);
   }
-  pthread_create(&g_proxy, nullptr, proxy_fn, nullptr);
+  // Startup grace begins at thread creation, not the first health query.
+  g_proxy_heartbeat_ns.store(proxy_now_ns(), std::memory_order_release);
+  g_proxy_running.store(true, std::memory_order_release);
+  const int created = pthread_create(&g_proxy, nullptr, proxy_fn, nullptr);
+  if (created != 0) g_proxy_running.store(false, std::memory_order_release);
+  TORCH_CHECK(created == 0, "one-shot proxy thread creation failed: ", created);
   g_started = true;
 }
 static at::Tensor py_oneshot_impl(at::Tensor input,
@@ -1031,6 +1077,22 @@ static at::Tensor py_oneshot_max_int64(at::Tensor input) {
       g_ctrl, data, data, (int)input.numel() * 4, (int)input.numel() * 8, hints, g_rank);
   return input;
 }
+
+static at::Tensor py_oneshot_gather_int64(at::Tensor input) {
+  TORCH_CHECK(g_ctrl && g_started && input.is_cuda() && input.scalar_type() == at::kLong &&
+              input.is_contiguous() && input.numel() > 0 && input.numel() <= 512 &&
+              (reinterpret_cast<uintptr_t>(input.data_ptr()) & 15) == 0,
+              "oneshot gather requires live TP4 and 1..512 aligned CUDA int64 keys");
+  // <=4096 bytes means at most one uint4 per thread in the shared publisher.
+  std::vector<int64_t> shape{4};
+  shape.insert(shape.end(), input.sizes().begin(), input.sizes().end());
+  auto output = torch::empty(shape, input.options());
+  k_oneshot_gather_int64<<<1, ARTHREADS, 0, c10::cuda::getCurrentCUDAStream()>>>(
+      g_ctrl, reinterpret_cast<const bf16*>(input.data_ptr()),
+      reinterpret_cast<bf16*>(output.data_ptr()), int(input.numel()), g_rank);
+  TORCH_CHECK(cudaGetLastError() == cudaSuccess, "one-shot int64 gather launch failed");
+  return output;
+}
 // The phase counters (SM cycles, monotonic) for a probe that wants the wait
 // per collective with and without hints: [guard, copy, wait, reduce, calls].
 static std::vector<int64_t> py_phase_counters() {
@@ -1041,11 +1103,9 @@ static std::vector<int64_t> py_phase_counters() {
 }
 static bool py_healthy() {
   if (!g_started) return false;
-  static uint64_t last = 0;
-  uint64_t b = g_ctrl->proxy_beat;
-  bool ok = b != last || b == 0;
-  last = b;
-  return ok;
+  const bool running = g_proxy_running.load(std::memory_order_acquire);
+  const uint64_t heartbeat = g_proxy_heartbeat_ns.load(std::memory_order_acquire);
+  return OsarProxyHealth::check(running, heartbeat, proxy_now_ns());
 }
 static void py_shutdown() {
   if (!g_started) return;
@@ -1065,6 +1125,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("reserve_packets", &py_reserve_packets);
   m.def("publish_packets", &py_publish_packets);
   m.def("oneshot_max_int64", &py_oneshot_max_int64);
+  m.def("oneshot_gather_int64", &py_oneshot_gather_int64);
   m.def("oneshot_ar_hint", &py_oneshot_hint);
   m.def("phase_counters", &py_phase_counters);
   m.def("transport_modes", []() {

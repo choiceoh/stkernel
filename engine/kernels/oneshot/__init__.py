@@ -1,7 +1,7 @@
 """Owned TP4 one-shot transport; all ranks prepare, connect and qualify together.
 
 This transport serves aligned BF16 decode sums and small exact int64 MAX
-packets for vocabulary selection. Other shapes use NCCL. A failure cannot
+and gather packets for vocabulary selection. Other shapes use NCCL. A failure cannot
 change the selected collective on one rank.
 Graph owners must be destroyed before close(), just like the NCCL group.
 """
@@ -121,6 +121,15 @@ class OneShot:
                 torch.cuda.synchronize()
                 self.agree(None if torch.equal(keys, reference) else 'MAX differs from NCCL',
                            f'{rows}-key int64 self-test')
+            for keys in (1, 3, 96, 384, 512):
+                packet = torch.arange(keys, device='cuda', dtype=torch.int64) + comm.rank * (1 << 40)
+                packet[0] = -(2**63) + comm.rank
+                expected = torch.empty((self.world, keys), device='cuda', dtype=torch.int64)
+                dist.all_gather_into_tensor(expected.flatten(), packet, group=comm.group)
+                actual = self.ext.oneshot_gather_int64(packet)
+                torch.cuda.synchronize()
+                self.agree(None if torch.equal(actual, expected) else 'gather differs from NCCL',
+                           f'{keys}-key int64 gather self-test')
         except BaseException:
             self.close()
             raise
@@ -230,6 +239,19 @@ class OneShot:
         if not self.ext.healthy():
             raise RuntimeError('one-shot proxy stopped progressing')
         return self.ext.oneshot_max_int64(t)
+
+    @staticmethod
+    def eligible_gather(t):
+        return (t.is_cuda and t.dtype == torch.int64 and t.is_contiguous()
+                and 0 < t.numel() <= 512 and t.data_ptr() % 16 == 0)
+
+    def gather(self, t):
+        self.assert_consumed()
+        if self.closed or not self.eligible_gather(t):
+            raise ValueError('unavailable one-shot transport or unsupported integer gather')
+        if not self.ext.healthy():
+            raise RuntimeError('one-shot proxy stopped progressing')
+        return self.ext.oneshot_gather_int64(t)
 
     def close(self):
         if self.closed:

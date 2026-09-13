@@ -16,7 +16,10 @@ def main():
     if args.compile_only:
         from engine.kernels.bounded_graph import build
         from engine.kernels.decode_queue import build as queue_build
-        result = dict(module=build().__name__, queue=queue_build().__name__)
+        from engine.kernels.oneshot import build as oneshot_build
+        from tests.test_engine_direct_producer_cuda import build_oracle
+        result = dict(module=build().__name__, queue=queue_build().__name__,
+                      oneshot=oneshot_build().__name__, proxy_oracle=build_oracle().__name__)
         assert not torch.cuda.is_initialized()
         scope = "SM121a conditional graph compilation only; no CUDA context"
     else:
@@ -25,11 +28,12 @@ def main():
         run = unittest.TextTestRunner(verbosity=2).run(
             unittest.defaultTestLoader.loadTestsFromNames(("tests.test_engine_bounded_loop_cuda",
                                                           "tests.test_engine_burst_decode_cuda",
-                                                          "tests.test_engine_decode_queue_cuda")))
+                                                          "tests.test_engine_decode_queue_cuda",
+                                                          "tests.test_engine_oneshot_gather_cuda")))
         if not run.wasSuccessful() or run.skipped:
             raise RuntimeError("bounded loop gate failed or skipped")
         result = dict(tests=run.testsRun, skipped=0)
-        scope = "single GB10 conditional graph and serving adapter with toy target; not real TP4 or model-quality proof"
+        scope = "single GB10 conditional graph, native integer gather with proxy oracle, and toy serving adapter; not real NIC/model proof"
     root = Path(__file__).resolve().parents[1]
     files = ("engine/kernels/bounded_graph/loop.cu", "engine/kernels/bounded_graph/__init__.py",
              "engine/profiles/glm53/bounded_loop.py", "engine/kernels/common/decode_commit.py",
@@ -39,7 +43,10 @@ def main():
              "engine/profiles/glm53/drafter.py",
              "engine/kernels/decode_queue/queue.cu", "engine/kernels/decode_queue/__init__.py",
              "engine/base/serve.py", "tests/test_engine_decode_queue_cuda.py",
-             "tests/test_engine_bounded_loop_cuda.py", "tests/test_engine_burst_decode_cuda.py")
+             "tests/test_engine_bounded_loop_cuda.py", "tests/test_engine_burst_decode_cuda.py",
+             "engine/base/comm.py", "engine/kernels/oneshot/dsv4_oneshot_ar.cu",
+             "engine/kernels/oneshot/__init__.py", "probes/oneshot_producer_oracle.cu",
+             "tests/test_engine_oneshot_gather_cuda.py")
     report = dict(scope=scope, result=result, seconds=time.monotonic()-start,
                   source_sha256={p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in files})
     Path("/cache/bounded-loop.json").write_text(json.dumps(report, indent=2)+"\n")

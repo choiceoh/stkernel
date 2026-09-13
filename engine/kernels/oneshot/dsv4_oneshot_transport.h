@@ -43,6 +43,16 @@ OSAR_HD constexpr bool osar_publication_last(uint64_t old, unsigned weight,
 
 #undef OSAR_HD
 
+// Host-only watchdog. The proxy publishes its own monotonic timestamp; callers
+// must not grant fresh grace when they first observe progress after an idle gap.
+struct OsarProxyHealth {
+  static constexpr uint64_t stale_ns = 2000000000ULL;
+  static bool check(bool running, uint64_t heartbeat_ns, uint64_t now_ns) {
+    return running && heartbeat_ns != 0 && now_ns >= heartbeat_ns &&
+           now_ns - heartbeat_ns < stale_ns;
+  }
+};
+
 // Include verbs.h before this header (the CPU oracle supplies mock verbs).
 // Only flag is inline. Payload and flag remain two writes on the same RC QP,
 // in that order, with only the flag signaled. Thus a flag CQE still retires

@@ -659,6 +659,9 @@ def native_execution_report(net, drafter):
     target = [layer for name, layer in net.dense.items() if name != 'head']
     draft = list(drafter.dense.values())
     expected_mhc = 2*len(net.layers)-1  # first attn pre has no preceding post
+    required_prefill = {'fp8_all_gather', 'fp8_reduce_scatter'}
+    if net.prefill_transport.project_tiles:
+        required_prefill.add('fp8_tiled_projection')
     proof = dict(target_w4=sum(bool(p.executed & 1) for p in target),
                  target_fp8=sum(bool(p.executed & 2) for p in target),
                  head_fp8=net.dense['head'].executed,
@@ -675,7 +678,7 @@ def native_execution_report(net, drafter):
             or proof['shared_mlp'] != len(net.shared_mlp)
             or (net.shared_mlp and not proof['shared_overlap'])
             or net._router_tensorcore != set(net._router_weights)
-            or len(proof['prefill_collectives']) != 2):
+            or not required_prefill.issubset(net.prefill_transport.executed)):
         raise RuntimeError(f'native execution proof is incomplete: {proof}')
     return proof
 

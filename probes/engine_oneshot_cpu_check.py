@@ -19,6 +19,7 @@ def main():
     spec.loader.exec_module(module)
     extension = module.build()
     assert hasattr(extension, 'oneshot_max_int64')
+    assert hasattr(extension, 'oneshot_gather_int64')
     assert not torch.cuda.is_initialized()
     report = dict(status='PASS', evidence='full Torch extension compile/load only', gpu_used=False,
                   torch=torch.__version__, cuda=torch.version.cuda, max_elements=module.MAX_ELEMENTS,

@@ -35,23 +35,26 @@ __global__ void next_iteration(cudaGraphConditionalHandle handle, int64_t* count
   cudaGraphSetConditional(handle, done < limit && *stop == 0);
 }
 
-static void validate_body(cudaGraph_t graph) {
+static void validate_body(cudaGraph_t graph, const std::string& path = "body") {
   size_t size = 0;
   C10_CUDA_CHECK(cudaGraphGetNodes(graph, nullptr, &size));
   TORCH_CHECK(size > 0, "bounded graph body is empty");
   std::vector<cudaGraphNode_t> nodes(size);
   C10_CUDA_CHECK(cudaGraphGetNodes(graph, nodes.data(), &size));
-  for (auto node : nodes) {
+  for (size_t i = 0; i < nodes.size(); ++i) {
+    auto node = nodes[i];
+    const auto location = path + "/" + std::to_string(i);
     cudaGraphNodeType type;
     C10_CUDA_CHECK(cudaGraphNodeGetType(node, &type));
     if (type == cudaGraphNodeTypeGraph) {
       cudaGraph_t child = nullptr;
       C10_CUDA_CHECK(cudaGraphChildGraphNodeGetGraph(node, &child));
-      validate_body(child);
+      validate_body(child, location);
     } else {
       TORCH_CHECK(type == cudaGraphNodeTypeKernel || type == cudaGraphNodeTypeEmpty ||
                   type == cudaGraphNodeTypeMemcpy || type == cudaGraphNodeTypeMemset,
-                  "bounded graph rejects host callbacks, event/semaphore nodes, allocation and nested conditions");
+                  "bounded graph rejects node type ", static_cast<int>(type), " at ", location,
+                  ": host callbacks, event/semaphore nodes, allocation and nested conditions are forbidden");
     }
   }
   // CUDA instantiation checks device accessibility, mapped-copy operands,
