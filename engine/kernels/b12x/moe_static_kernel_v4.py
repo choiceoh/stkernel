@@ -941,7 +941,7 @@ class MoEStaticKernelV4:
         # warp never touches either epilogue. Their rounding stays unchanged.
         epi_offset = 0 if self.shared_epilogue else cute.cosize(epi1_smem_staged)
         sC = cute.make_tensor(cute.recast_ptr(storage.sEpilogue.data_ptr() + epi_offset,
-                                            swizzle=epi_smem_staged.inner),
+                                            epi_smem_staged.inner),
                              epi_smem_staged.outer)
         sfa2_base_addr = shared_ptr_to_u32(storage.sSFA2.data_ptr())
         a2_base_addr = shared_ptr_to_u32(storage.sA2.data_ptr())

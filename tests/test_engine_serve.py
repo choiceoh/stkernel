@@ -172,6 +172,45 @@ def server(*, rows=2, blocks=16, comm=None, max_pending=64, keep_idle=False, tie
 
 
 class ServeTests(unittest.TestCase):
+    def test_live_counter_counts_a_multi_token_readback_in_full(self):
+        s = server(rows=1)
+        decode = s.engine.decode
+        def burst(seqs, blocks, slots):
+            done = decode(seqs, blocks, slots)
+            for seq in seqs:
+                s.engine.output[seq] += [s.engine.tokens[seq][-1]] * 2
+            return done
+        s.engine.decode = burst
+        request, _ = s.submit([3], 8, 0)
+        s.once()
+        s.once()
+        self.assertEqual(s.generation_tokens_committed_total, 4)
+        self.assertEqual(s.generation_tokens_total, 0)
+        s.cancel(request)
+        self.drain(s)
+        self.assertEqual(s.generation_tokens_committed_total, 4)
+
+    def test_live_generation_count_survives_cancellation_and_row_reuse(self):
+        s = server(rows=1)
+        first, event = s.submit([3], 4, 0)
+        s.once()  # prefill emits one ID
+        s.once()  # decode emits one more; no request completed
+        self.assertFalse(event.is_set())
+        self.assertEqual(s.generation_tokens_total, 0)
+        self.assertEqual(s.generation_tokens_committed_total, 2)
+        self.assertIn('st:generation_tokens_committed_total{engine="st"} 2\n', s.metrics())
+        s.cancel(first)
+        self.drain(s)
+        self.assertEqual(s.generation_tokens_committed_total, 2)
+        second, _ = s.submit([9], 3, 0)
+        self.drain(s)
+        self.assertEqual(s.take_result(second), [9, 9, 9])
+        self.assertEqual(s.generation_tokens_total, 3)
+        self.assertEqual(s.generation_tokens_committed_total, 5)
+        for _ in range(3):
+            s.once()
+        self.assertEqual(s.generation_tokens_committed_total, 5)
+
     def drain(self, s, retained=False):
         for _ in range(500):
             ran = s.once()

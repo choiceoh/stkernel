@@ -34,10 +34,11 @@ DEFAULT_URL = "http://10.10.10.2:8000"          # 플릿 헤드 (bench/fleet.sh 
 # 두 스크랩 사이 증분으로 읽는 계열. 히스토그램은 이름만 적는다(_bucket/_sum/_count).
 STEP = "vllm:iteration_tokens_total_count"
 COUNTERS = (STEP, "st:steps_prefill_total", "st:steps_decode_total",
+            "st:decode_row_steps_total", "st:generation_tokens_committed_total",
             "vllm:generation_tokens_total", "vllm:prompt_tokens_total",
             "vllm:request_success_total",
             "vllm:spec_decode_num_accepted_tokens_total",
-            "vllm:spec_decode_num_draft_tokens_total")
+            "vllm:spec_decode_num_draft_tokens_total", "vllm:spec_decode_num_drafts_total")
 GAUGES = ("vllm:num_requests_running", "vllm:num_requests_waiting")
 HISTOGRAMS = ("st:step_seconds",                      # kind="prefill"/"decode" 라벨
               "vllm:time_to_first_token_seconds",
@@ -143,6 +144,14 @@ def window(a: dict, b: dict, dt: float) -> dict:
     out["prefill_share"] = pre / steps if None not in (pre, steps) and steps else None
     gen = d("vllm:generation_tokens_total")
     out["gen_tok_s"] = gen / dt if gen is not None and dt > 0 else None
+    # ST's legacy vLLM generation counter advances at request completion.
+    # This optional counter counts actual IDs as the host observes each step;
+    # it is usable while all requests are still live, without an acceptance
+    # formula. Neither rate is a measurement of client network delivery time.
+    committed = d("st:generation_tokens_committed_total")
+    out["committed_tok_s"] = committed / dt if committed is not None and committed >= 0 and dt > 0 else None
+    row_steps, decode = d("st:decode_row_steps_total"), d("st:steps_decode_total")
+    out["mean_decode_rows"] = row_steps / decode if None not in (row_steps, decode) and row_steps >= 0 and decode > 0 else None
     acc, draft = d("vllm:spec_decode_num_accepted_tokens_total"), d("vllm:spec_decode_num_draft_tokens_total")
     out["acc_raw"] = acc / draft if None not in (acc, draft) and draft else None
     req = d("vllm:request_success_total")
@@ -194,7 +203,8 @@ def _line(w: dict) -> str:
     g = w["gauges"]
     return (f"steps {num(w['step_s'])}/s"
             + (f" (prefill {w['prefill_share']:.0%})" if w["prefill_share"] is not None else "")
-            + f"  gen {num(w['gen_tok_s'])} tok/s"
+            + f"  committed {num(w.get('committed_tok_s'))} tok/s"
+            + f"  completed {num(w['gen_tok_s'])} tok/s"
             + (f"  acc {w['acc_raw']:.1%}" if w["acc_raw"] is not None else "")
             + f"  step_ms [{_fmt_ms(w['step_ms'])}]"
             + f"  ttft [{_fmt_s(w['ttft'])}]"

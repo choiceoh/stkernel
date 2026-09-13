@@ -266,7 +266,7 @@
       "source": "overlay/modules/glm53_moe/moe_static_kernel_v4.py",
       "sha256": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
       "origin": "repository",
-      "local_sha256": "1bee7409e726ef5e27adb10e7cc2ae092c7541be55865e49fe94d8aae66a4aff",
+      "local_sha256": "bcdc25568974426f9626c2a59f545dfc9f49a688d2f1cb56071d094c40df0cd2",
       "local_modifications": [
         "2026-09-12 ST native execution: tiled static v2 preserves BF16 contribution rounding with FP32 route scatter; owned SF6 scales may reuse retired arena storage before capture",
         "2026-09-13: opt-in epilogue lifetime alias saves 4 KiB for the three-stage FC1 probe; separate-storage offsets and named barriers are preserved."
