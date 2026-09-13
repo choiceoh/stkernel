@@ -18,14 +18,17 @@ class ExecutionPlan:
     prefill_project_tiles: bool = False
     decode_iterations: int = 1
     deferred_kda: bool = False
+    terminal_mhc: bool = False
 
     def __post_init__(self):
-        if any(type(v) is not bool for v in (self.overlap, self.early_observe, self.direct_mhc, self.prefill_project_tiles, self.deferred_kda)):
+        if any(type(v) is not bool for v in (self.overlap, self.early_observe, self.direct_mhc, self.prefill_project_tiles, self.deferred_kda, self.terminal_mhc)):
             raise ValueError("execution switches must be booleans")
         if self.direct_mhc and self.overlap:
             raise ValueError("direct MHC packets require unsplit same-stream collectives")
         if self.deferred_kda and self.overlap:
             raise ValueError("deferred KDA requires unsplit target rows and a single accepted-state commit")
+        if self.terminal_mhc and not self.direct_mhc:
+            raise ValueError("terminal MHC requires the direct decode execution path")
         if type(self.prefill_tiles) is not int or self.prefill_tiles not in (1, 2, 4):
             raise ValueError("prefill_tiles must be 1, 2 or 4")
         if type(self.decode_iterations) is not int or self.decode_iterations not in (1, 2, 4):
@@ -36,7 +39,7 @@ class ExecutionPlan:
     @property
     def active(self):
         return (self.overlap or self.early_observe or self.prefill_tiles != 1 or self.direct_mhc
-                or self.prefill_project_tiles or self.decode_iterations != 1 or self.deferred_kda)
+                or self.prefill_project_tiles or self.decode_iterations != 1 or self.deferred_kda or self.terminal_mhc)
 
     def groups(self, sequences):
         if sequences <= 0:
@@ -48,7 +51,7 @@ class ExecutionPlan:
         return (f"tp_overlap={int(self.overlap)},early_observe={int(self.early_observe)},"
                 f"prefill_tiles={self.prefill_tiles},direct_mhc={int(self.direct_mhc)},"
                 f"prefill_project_tiles={int(self.prefill_project_tiles)},decode_iterations={self.decode_iterations},"
-                f"deferred_kda={int(self.deferred_kda)}")
+                f"deferred_kda={int(self.deferred_kda)},terminal_mhc={int(self.terminal_mhc)}")
 
 
 @dataclass
@@ -108,9 +111,13 @@ def auxiliary(net, carry):
     return net.lanes.mhc_post(carry.x, carry.res, carry.post, carry.comb).float().mean(1).to(carry.x.dtype)
 
 
-def finish(net, carry):
-    res = net.lanes.mhc_post(carry.x, carry.res, carry.post, carry.comb)
-    h = net._norm(res.float().mean(1).to(carry.x.dtype), net.p["norm"], net.F.rms_eps)
+def finish(net, carry, *, contract=None):
+    if contract is None:
+        res = net.lanes.mhc_post(carry.x, carry.res, carry.post, carry.comb)
+        hidden = res.float().mean(1).to(carry.x.dtype)
+    else:
+        hidden = contract(carry.x, carry.res, carry.post, carry.comb)
+    h = net._norm(hidden, net.p["norm"], net.F.rms_eps)
     return carry.sp.gather_result(h) if carry.sp is not None else h
 
 

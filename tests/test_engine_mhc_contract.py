@@ -32,7 +32,7 @@ class MhcContractTests(unittest.TestCase):
 
     def test_decode_and_prefill_match_the_served_consumer(self):
         from engine.kernels.mhc_contract import contract
-        for rows in (1, 6, 7, 8, 65, 1728, 6912):
+        for rows in (1, 6, 7, 8, 28, 65, 1728, 6912):
             with self.subTest(rows=rows):
                 values = self.inputs(rows)
                 self.exact(contract(*values), self.baseline(*values))

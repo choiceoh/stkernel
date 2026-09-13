@@ -32,7 +32,7 @@ def exchange_local(net, layer, carry, side):
     return local(net, layer, carry, side, project=project)
 
 
-def decode_direct(net, step, caches, aux_layers=(), aux_ready=None, *, consumer=consume):
+def decode_direct(net, step, caches, aux_layers=(), aux_ready=None, *, consumer=consume, contract=None):
     import torch
     transport = net.comm.transport
     if transport is None or not hasattr(transport, "exchange") or (consumer is consume and net.mhc is None):
@@ -40,10 +40,15 @@ def decode_direct(net, step, caches, aux_layers=(), aux_ready=None, *, consumer=
     if (net.probe or step.patches or step.marks or not 1 <= step.ids.numel() <= 64 or
             any(s.length > net.F.spec_k + 1 for s in step.segments)):
         raise ValueError("direct MHC requires 1..64 unpatched decode rows without probes")
+    if any(layer not in net.layers for layer in aux_layers):
+        raise ValueError("direct MHC features must name layers in this target")
     transport.assert_consumed()
     c = begin(net, step, caches)
     packet, features = None, None
     aux = {}
+    if contract is not None and aux_layers:
+        features = torch.empty((c.x.shape[0], len(aux_layers) * net.F.hidden),
+                               device=c.x.device, dtype=c.x.dtype)
     for layer in net.layers:
         if packet is None:
             prepare(net, layer, c, "attn")
@@ -58,12 +63,22 @@ def decode_direct(net, step, caches, aux_layers=(), aux_ready=None, *, consumer=
         else:
             packet = exchange_local(net, layer, c, "ffn")
         if layer in aux_layers:
-            aux[layer] = auxiliary(net, c)
+            if contract is None:
+                aux[layer] = auxiliary(net, c)
+            else:
+                # Each feature has its final column address before capture.
+                # Preserve caller order and repeated layers in truncated probes;
+                # these are read-only consumers of the continuing residual carry.
+                for i, requested in enumerate(aux_layers):
+                    if requested == layer:
+                        contract(c.x, c.res, c.post, c.comb,
+                                 out=features[:, i * net.F.hidden:(i + 1) * net.F.hidden])
             if aux_ready is not None and layer == max(aux_layers):
-                features = torch.cat([aux[l] for l in aux_layers], dim=-1)
+                if features is None:
+                    features = torch.cat([aux[l] for l in aux_layers], dim=-1)
                 aux_ready(features)
     transport.assert_consumed()
-    h = finish(net, c)
+    h = finish(net, c, contract=contract)
     if aux_layers:
         return h, features if features is not None else torch.cat([aux[l] for l in aux_layers], dim=-1)
     return h

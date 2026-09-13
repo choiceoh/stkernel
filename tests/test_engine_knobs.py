@@ -40,7 +40,7 @@ class KnobDeclarationTests(unittest.TestCase):
         cfg = self._declared({"STK_mla_prefill":"stock", "STK_context_ceiling":"131072"})
         self.assertEqual(set(cfg.knobs), {"mla_prefill", "context_ceiling", "kda_state_dtype",
                                           "execution_overlap", "early_observe", "prefill_tiles", "direct_mhc", "prefill_project_tiles",
-                                          "nvme_mapped_staging", "decode_iterations", "deferred_kda"})
+                                          "nvme_mapped_staging", "decode_iterations", "deferred_kda", "terminal_mhc"})
         self.assertEqual((cfg["mla_prefill"], cfg["context_ceiling"]), ("stock", 131072))
         self.assertEqual((cfg["execution"], cfg["moe_static"]), ("native", "t,r,sf6,q0"))
         from engine.base.config import ConfigError
@@ -54,6 +54,7 @@ class KnobDeclarationTests(unittest.TestCase):
             self.assertEqual([cfg[k] for k in ("execution_overlap", "early_observe", "prefill_tiles", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "decode_iterations")], [0, 0, 1, 1, 1, 1, 4])
             self.assertEqual(cfg["kda_state_dtype"], "fp32")
             self.assertEqual(cfg["deferred_kda"], 0)
+            self.assertEqual(cfg["terminal_mhc"], 0)
         rollback = {"direct_mhc": 0, "prefill_project_tiles": 0,
                     "nvme_mapped_staging": 0, "decode_iterations": 1}
         cfg = self._declared({"STK_"+key: str(value) for key, value in rollback.items()})
