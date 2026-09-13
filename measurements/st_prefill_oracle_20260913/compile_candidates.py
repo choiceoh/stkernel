@@ -28,7 +28,7 @@ def main():
     started = time.monotonic()
     report = dict(status='RUNNING', gpu_used=False, variants=[])
     try:
-        for bm, bk, splits in ((32,128,1), (16,128,1), (16,64,4)):
+        for bm, bk, splits in ((32,128,1), (16,128,1), (16,64,4), (16,32,4)):
             signature = {name: dtype for name,dtype in zip(
                 ('Comb','Residual','Post','X','Fn','ResidualOut','GemmOut','Sqrsum','M'),
                 ('*fp32','*bf16','*fp32','*bf16','*bf16','*bf16','*fp32','*fp32','i32'))}

@@ -27,8 +27,7 @@ def _post_prenorm(
     # 64-bit row addressing: at m = 131072 the residual offset
     # (row * 16384 + 3 * 4096 + 4095) already equals INT32_MAX, so 32-bit
     # addressing has zero margin at the 128K rung and wraps past it into
-    # negative offsets. The dispatcher gate bounds splits and the lower m,
-    # never an upper m.
+    # negative offsets. The private dispatcher additionally bounds m at 32768.
     row = (tl.program_id(0) * BM + tl.arange(0, BM)).to(tl.int64)
     split = tl.program_id(1)
     col = tl.arange(0, BN)
@@ -48,7 +47,7 @@ def _post_prenorm(
         r3 = tl.load(Residual + residual_base + 3 * HIDDEN, mask, other=0).to(tl.float32)
         x = tl.load(X + row[:, None] * HIDDEN + h[None, :], mask, other=0).to(tl.float32)
 
-        for hc in tl.static_range(4):
+        for hc in range(4):
             p = tl.load(Post + row * 4 + hc, row < M, other=0)
             c0 = tl.load(Comb + row * 16 + hc, row < M, other=0)
             c1 = tl.load(Comb + row * 16 + 4 + hc, row < M, other=0)
@@ -87,7 +86,8 @@ def post_pre(x, residual, post, comb, packed_fn, scale, base, norm,
             or post.numel() != m * 4 or comb.numel() != m * 16
             or post.dtype != torch.float32 or comb.dtype != torch.float32
             or scale.shape != (3,) or base.shape != (24,) or norm.shape != (hidden,)
-            or norm.dtype != torch.bfloat16):
+            or norm.dtype != torch.bfloat16 or scale.dtype != torch.float32
+            or base.dtype != torch.float32):
         raise ValueError('prefill MHC requires exact GLM BF16-origin coefficient geometry')
     tensors = (x, residual, post, comb, packed_fn, scale, base, norm)
     if any(t.device != x.device or not t.is_contiguous() for t in tensors):
