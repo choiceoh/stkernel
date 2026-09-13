@@ -11,7 +11,7 @@ import torch
 @cache
 def build_oracle():
     from torch.utils.cpp_extension import load
-    from engine.kernels.native_cache import prepare_sources
+    from engine.kernels.common.native_cache import prepare_sources
     root = Path(__file__).resolve().parents[1]
     files = [root/'probes/oneshot_producer_oracle.cu',
              root/'engine/kernels/oneshot/dsv4_oneshot_ar.cu',

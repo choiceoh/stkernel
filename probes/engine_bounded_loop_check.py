@@ -36,7 +36,7 @@ def main():
         scope = "single GB10 conditional graph, native integer gather with proxy oracle, and toy serving adapter; not real NIC/model proof"
     root = Path(__file__).resolve().parents[1]
     files = ("engine/kernels/bounded_graph/loop.cu", "engine/kernels/bounded_graph/__init__.py",
-             "engine/profiles/glm53/bounded_loop.py", "engine/kernels/decode_commit.py",
+             "engine/profiles/glm53/bounded_loop.py", "engine/kernels/common/decode_commit.py",
              "engine/profiles/glm53/burst_decode.py", "engine/profiles/glm53/pipeline.py",
              "engine/profiles/glm53/adapter.py", "engine/base/runner.py",
              "engine/base/graphs.py", "engine/profiles/glm53/decode_graphs.py",

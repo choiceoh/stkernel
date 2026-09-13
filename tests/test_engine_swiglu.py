@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import torch  # noqa: E402
 import torch.nn.functional as Fn  # noqa: E402
 
-from engine.kernels.swiglu import swiglu  # noqa: E402
+from engine.kernels.common.swiglu import swiglu  # noqa: E402
 
 CUDA = torch.cuda.is_available()
 

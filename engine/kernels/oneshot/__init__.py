@@ -57,7 +57,7 @@ class RankPackets:
 
 def build():
     from torch.utils.cpp_extension import load
-    from engine.kernels.native_cache import prepare_sources
+    from engine.kernels.common.native_cache import prepare_sources
     root = Path(__file__).parent
     sources = [root/'dsv4_oneshot_ar.cu', root/'dsv4_oneshot_transport.h']
     flags = ['-O2', '-gencode', 'arch=compute_121a,code=sm_121a', f'-DMAXEL={MAX_ELEMENTS}']

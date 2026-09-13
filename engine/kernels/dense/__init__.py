@@ -15,7 +15,7 @@ import torch
 @cache
 def extension():
     from torch.utils.cpp_extension import load
-    from engine.kernels.native_cache import prepare_sources
+    from engine.kernels.common.native_cache import prepare_sources
     source = Path(__file__).with_name("kernels.cu")
     flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a",
              "-DMK_GRID_DEF=96", "-DMK_MHC_GRID_DEF=144", "-DMK_NBUF2_DEF=3",

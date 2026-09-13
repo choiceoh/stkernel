@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def compile_dense():
     import torch
     from torch.utils.cpp_extension import load
-    from engine.kernels.native_cache import prepare_sources
+    from engine.kernels.common.native_cache import prepare_sources
     source = ROOT / "engine/kernels/dense/kernels.cu"
     flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a",
              "-DMK_GRID_DEF=96", "-DMK_MHC_GRID_DEF=144", "-DMK_NBUF2_DEF=3",

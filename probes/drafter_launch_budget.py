@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import torch
 
 from engine.kernels.draft_conv import _by_torch as conv_by_torch, tap_mix
-from engine.kernels.norm_rope import norm, norm_rope
+from engine.kernels.common.norm_rope import norm, norm_rope
 from engine.profiles.glm53.drafter import rmsnorm, rope
 
 ROWS, LAYERS, KV, HEADS, D, HIDDEN, THETA, EPS = 6, 5, 2, 8, 128, 4096, 10000.0, 1e-5

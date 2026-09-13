@@ -106,6 +106,16 @@ dispatch도 다른 레인과 같이 적용한다. 실제 가중치·반올림·�
 MLA는 필수 레인이므로 이전 `VLLM_GLM53_MEGAKERNEL`/`VLLM_GLM53_MK_MLA` 활성화 변수가 필요하지 않다.
 `SOURCES.json` 의 `sha256` 은 이식 전 바이트, `local_sha256`/`local_modifications` 가 서빙되는 ST 사본과 그 편집 내역이다.
 
+## 공통 커널 (2026-09-13)
+
+인자가 곧 형상인 커널 — 모델 상수·형상 기술자·환경 변수를 읽지 않는 것 — 은 `common/` 한 패키지에 있다.
+샘플러, 블록 검증, 후보 키, decode commit, norm+RoPE, SwiGLU, 네이티브 빌드 캐시다. 엔진 기본 계층의
+`engine/base/lanes.py` 가 이들을 기본 레인으로 한 번 바인딩하고, 프로파일은 그 표를 상속한 뒤 모델이 다르게
+계산하는 레인만 바꾼다(GLM 대상 MLP 의 클램프 활성화는 프로파일 것이고, 드래프터의 일반 SwiGLU 는 기본 레인이다).
+샘플러·블록 검증은 `engine/base/sampler.py`, 후보 키는 `engine/modules/vocab.py` 가 모든 프로파일에 대해 이미 부른다.
+`common/` 은 모델 쪽 커널 패키지나 프로파일을 임포트하지 않으며, 옛 경로가 남지 않았는지와 함께
+`tests/test_engine_kernel_common.py` 가 강제한다. 모델 상수가 필요한 커널은 여기 오지 않고 자기 레인에 남아 형상 기술자를 읽는다.
+
 ## 형상 기술자 (2026-09-13)
 
 커널이 기대는 모델 상수는 프로파일이 `engine/base/kernel_shape.KernelShape` 하나로 선언하고, 레인은
