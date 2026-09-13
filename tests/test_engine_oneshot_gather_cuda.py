@@ -93,7 +93,7 @@ class IntegerGatherCudaTests(unittest.TestCase):
         from engine.base.comm import Comm
         from engine.kernels.bounded_graph import BoundedGraph
         from engine.kernels.oneshot import OneShot
-        from engine.kernels.vocab_candidates import pack, select
+        from engine.kernels.common.vocab_candidates import pack, select
         from engine.modules.vocab import topk
         torch.manual_seed(913)
         width, k = 256, 16
@@ -110,7 +110,7 @@ class IntegerGatherCudaTests(unittest.TestCase):
                                  torch.empty(4, rows, k, device='cuda', dtype=torch.int64))
                     # Compile the actual selection kernels before entering capture.
                     packets_local = select(pack(local.zero_(), rank*width, width), k)
-                    from engine.kernels.vocab_candidates import restore
+                    from engine.kernels.common.vocab_candidates import restore
                     restore(packets_local.repeat(1, 4), width*4).topk(k, dim=-1)
                     for limit in (1, 2, 4):
                         graph = torch.cuda.CUDAGraph(keep_graph=True)
