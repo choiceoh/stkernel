@@ -97,16 +97,16 @@ def post_pre(x, residual, post, comb, packed_fn, scale, base, norm,
     from engine.kernels.mhc.tilelang_kernels import mhc_pre_big_fuse_with_norm_tilelang
     # Static bounded split policy, without per-call device property queries.
     # Each split covers disjoint H tiles and all four residual channels.
-    splits = max(1, min(8, 48 // triton.cdiv(m, 32)))
+    splits = max(1, min(8, 96 // triton.cdiv(m, 16)))
     updated = torch.empty_like(residual)
     mul = torch.empty((splits, m, 24), device=x.device, dtype=torch.float32)
     sqr = torch.empty((splits, m), device=x.device, dtype=torch.float32)
     next_post = torch.empty((m, 4, 1), device=x.device, dtype=torch.float32)
     next_comb = torch.empty((m, 4, 4), device=x.device, dtype=torch.float32)
     layer_input = torch.empty_like(x)
-    _post_prenorm[(triton.cdiv(m, 32), splits)](
+    _post_prenorm[(triton.cdiv(m, 16), splits)](
         comb, residual, post, x, packed_fn, updated, mul, sqr,
-        m, hidden, splits, 32, 128, 32, num_warps=4)
+        m, hidden, splits, 16, 64, 32, num_warps=4)
     mhc_pre_big_fuse_with_norm_tilelang(
         mul, sqr, scale, base, updated, next_post.view(m, 4), next_comb.view(m, 16), layer_input, norm,
         hidden, rms_eps, hc_eps, hc_eps, post_mult, sinkhorn, rms_eps, 0, 4)

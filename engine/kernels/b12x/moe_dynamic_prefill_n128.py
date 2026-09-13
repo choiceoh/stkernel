@@ -217,7 +217,7 @@ class MoEGatedPrefillN128Kernel(MoEGatedPrefillReuseKernel):
                 fz_csSFB_up_p[None, None, 0],
                 fz_crSFB_up_fc1_half[None, None, 0],
             )
-            for _k_tile in range(0, fc1_k_tile_cnt - 1, 1, unroll=4):  # type: ignore[call-overload]
+            for _k_tile in range(0, fc1_k_tile_cnt - 1, 1, unroll=1):  # type: ignore[call-overload]
                 for k_block_idx in cutlass.range_constexpr(fc1_num_k_blocks):
                     k_next = (
                         0 if k_block_idx + 1 == fc1_num_k_blocks else k_block_idx + 1
@@ -631,7 +631,7 @@ class MoEGatedPrefillN128Kernel(MoEGatedPrefillReuseKernel):
                 fz_csSFB_up_p[None, None, 0],
                 fz_crSFB_up_fc1_half[None, None, 0],
             )
-            for _k_tile in range(0, fc1_k_tile_cnt - 1, 1, unroll=4):  # type: ignore[call-overload]
+            for _k_tile in range(0, fc1_k_tile_cnt - 1, 1, unroll=1):  # type: ignore[call-overload]
                 for k_block_idx in cutlass.range_constexpr(fc1_num_k_blocks):
                     k_next = (
                         0 if k_block_idx + 1 == fc1_num_k_blocks else k_block_idx + 1
@@ -964,7 +964,7 @@ class MoEGatedPrefillN128Kernel(MoEGatedPrefillReuseKernel):
             ]
 
             # ---- Branch-paired Gate/Up N128 ----
-            for k_tile in range(0, fc1_k_tile_cnt, 1, unroll=4):  # type: ignore[call-overload]
+            for k_tile in range(0, fc1_k_tile_cnt, 1, unroll=1):  # type: ignore[call-overload]
                 # Up uses sC starting at Stage0. Wait before either of
                 # the next slice's stages can overwrite its prior Q1 input.
                 if gate_wait_pending > Int32(0):
