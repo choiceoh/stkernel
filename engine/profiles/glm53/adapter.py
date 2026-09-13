@@ -43,13 +43,22 @@ class NullDrafter:
 class Glm53Engine:
     def __init__(self, net: Glm53Net, caches: Glm53Caches, F: Facts, drafter=None, max_new: int = 256,
                  eos_ids=(), temperature: float = 0.0, top_p: float = 1.0, seed: int = 0, decodable: "int | None" = None,
-                 aux_layers=None, context_ceiling: "int | None" = None, execution_plan=None):
+                 aux_layers=None, context_ceiling: "int | None" = None, execution_plan=None, draft_policy=None):
         self.net, self.caches, self.F = net, caches, F
         from engine.profiles.glm53.execution import ExecutionPlan
         self.execution_plan = execution_plan or ExecutionPlan()
         if self.execution_plan.active and getattr(F, "kda_state_dtype", "fp32") != "fp32":
             raise ValueError("GB10 execution experiments require FP32 KDA state")
         self.drafter = drafter or NullDrafter()
+        from engine.profiles.glm53.draft_policy import DraftPolicy
+        self.draft_policy = draft_policy or DraftPolicy()
+        self.draft_diagnostics = None
+        if self.draft_policy.diagnostics:
+            if not self.drafter.k:
+                raise ValueError('draft diagnostics require proposals')
+            from engine.profiles.glm53.draft_diagnostics import DraftDiagnostics
+            self.draft_diagnostics = DraftDiagnostics(caches.draft_field(), self.drafter.k, self.drafter.F.sel_top_k)
+            self.drafter.diagnostics = self.draft_diagnostics
         if self.execution_plan.decode_iterations > 1 and not self.drafter.k:
             raise ValueError("bounded decode requires a speculative drafter")
         if self.drafter.k > F.spec_k:
@@ -141,7 +150,8 @@ class Glm53Engine:
                     raise ValueError("early context calibration requires the declared unsmoothed FC input")
                 if max_seqs * (self.drafter.k + 1) > 32:
                     raise ValueError("early observation is declared only for the W4 decode row domain")
-                private_bytes = projection.isolate_workspace()
+                private_bytes = (projection.isolate_workspace()
+                                 if getattr(projection, 'decode_precision', 'w4') == 'w4' else 0)
                 self.lane_info["early_observe_workspace_bytes"] = str(private_bytes)
             self.decode_graphs = Glm53DecodeGraphs(self.net, self.caches, max_seqs,
                                                   self.drafter.k + 1, self.aux_layers, memory=self.memory,
@@ -461,6 +471,10 @@ class Glm53Engine:
             self.close(seq)                                 # the slot first: `forget` refuses a row that still holds one
             self.forget(seq)
         self.close_decode()                                 # graphs and their pool, before what they point at
+        if getattr(self, 'draft_diagnostics', None) is not None:
+            self.draft_diagnostics.close()
+            self.draft_diagnostics = None
+            self.drafter.diagnostics = None
         self._ids_stage = self._rich_stage = None           # pinned host ids; the rich sampler's two fp32 planes
         self.sampling_history = None                        # penalty tensors
         self.grammars = None                                # xgrammar's compiled grammars and bitmask buffers
@@ -1342,6 +1356,10 @@ class Glm53Engine:
                         break
                     accepted += 1
                 new, lps = picks[: accepted + 1], None                     # the accepted drafts' confirmations, then the correction
+            if self.draft_diagnostics is not None and self.limits[s.seq][1] <= 0:
+                self.draft_diagnostics.note_sync(s.seq, s.ctx, s.slot, accepted, new,
+                    self.limits[s.seq][0] - self._generated_count(s.seq), self.ends.get(s.seq, self.eos),
+                    policy_modified=rich[s.seq])
             new, done = self._commit(s.seq, accepted, new, lps, len(drafts[s.seq]))
             committed = len(new)                                           # clipped tokens must not enter the next turn's context
             committed_counts.append(committed)
@@ -1354,7 +1372,8 @@ class Glm53Engine:
                         torch.tensor([s.slot], device=h.device), positions[row:row+1], context[row:row+1],
                         torch.tensor([committed], device=h.device), aux[rows])
                 else:
-                    observe = self.drafter.observe_decode if self.decode_graphs is not None else self.drafter.observe
+                    observe = (self.drafter.observe_decode if self.decode_graphs is not None else
+                               getattr(self.drafter, 'observe_committed', self.drafter.observe))
                     observe(self.caches.draft_ring(s.slot), torch.arange(s.ctx, s.ctx + committed, device=h.device), aux[s.start: s.start + committed])
             self.ctx[s.seq] += committed
             finished.append(done)

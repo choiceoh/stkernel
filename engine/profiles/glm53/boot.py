@@ -236,9 +236,18 @@ def declared(a, comm_world: int) -> Config:
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
-                        execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0, **gb10_defaults)
+                        execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0,
+                        draft_fc_precision="w4", draft_fc_calibration="shared", draft_diagnostics=0, **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
+        Knob("draft_fc_precision", "w4", _dt.date(2026, 9, 30),
+             "DFlash FC decode precision; reuse the existing FP8 pack", "STK_draft_fc_precision=w4"),
+        Knob("draft_fc_calibration", "shared", _dt.date(2026, 9, 30),
+             "shared baseline, collect committed decode inputs, or consume their isolated W4 GPTQ calibration",
+             "STK_draft_fc_calibration=shared"),
+        Knob("draft_diagnostics", 0, _dt.date(2026, 9, 30),
+             "Record greedy first rejection as candidate miss, selector miss or output boundary",
+             "STK_draft_diagnostics=0", int),
         Knob("deferred_kda", 0, _dt.date(2026, 9, 30),
              "FP32 KDA: verify into update factors, commit accepted states across all layers in one launch",
              "STK_deferred_kda=0", int),
@@ -290,9 +299,13 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
           context_ceiling: "int | None" = None, execution: str = "stock",
           ckpt_meta: "str | Path" = facts.CKPT, drafter_dir: "str | Path" = drafter_mod.DRAFTER,
           lease_owner: "str | None" = None, kda_state_dtype: "str | None" = None, execution_plan=None,
-          nvme_mapped_staging=False):
+          nvme_mapped_staging=False, draft_policy=None):
     """`ckpt_meta`: where config.json / tokenizer.json / generation_config.json are -- the HF checkpoint dir, or a
     copy of just those files: a node needs its rank file, the drafter and this, not the 185 GB checkpoint."""
+    from engine.profiles.glm53.draft_policy import DraftPolicy, decode_name, require_decode_calibration
+    draft_policy = draft_policy or DraftPolicy()
+    if draft_policy.active and (execution != "native" or not use_drafter):
+        raise ValueError("draft acceptance experiments require the native drafter")
     F = facts.load(ckpt_meta)
     if kda_state_dtype is not None:
         from dataclasses import replace
@@ -350,7 +363,12 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         calib_plan = []                                                   # (module, weight key, store name, missing tiles, small rows)
         if D:
             for key, (_rows, cols) in drafter_mod.dense_shapes(D, comm.world_size).items():
-                missing = store.missing_calibration(drafter_mod.store_name(key), cols)
+                name = drafter_mod.store_name(key)
+                if key == "fc.weight" and draft_policy.fc_calibration == "decode":
+                    require_decode_calibration(store, name, cols)
+                if key == "fc.weight" and draft_policy.fc_calibration != "shared":
+                    name = decode_name(name)
+                missing = store.missing_calibration(name, cols)
                 if missing:
                     calib_plan.append(("drafter", key, missing, True))
         shapes = {sp.name: sp.shape for sp in specs}
@@ -472,7 +490,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 if D:
                     # Do not overlap the temporary checkpoint with target packing.
                     drafter = load_drafter()
-                    drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena)
+                    drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena, policy=draft_policy)
                     recorder.gauge("drafter_block_fp8_packs", sum(
                         layer.fp8 is not None for name, layer in drafter.dense.items() if name != "fc.weight"))
             if calib_plan:                                            # this boot sums what the store lacked, within the budget
@@ -480,7 +498,10 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                                           max_decode_rows=max_seqs * (1 + drafter.k))
                 for module, key, missing, small in calib_plan:
                     layer = (drafter if module == "drafter" else net).dense[key]
-                    calibration.attach(layer.name, layer, missing, small, unsmooth=getattr(layer, "smooth", None))
+                    decode_only = module == "drafter" and key == "fc.weight" and draft_policy.fc_calibration != "shared"
+                    name = decode_name(layer.name) if decode_only else layer.name
+                    calibration.attach(name, layer, missing, small, unsmooth=getattr(layer, "smooth", None),
+                                       decode_only=decode_only)
                 recorder.gauge("calibration_blobs", len(calibration.rows))
                 recorder.gauge("calibration_hessians", len(calibration.H))
                 recorder.gauge("calibration_deferred", len(calibration.deferred))
@@ -512,7 +533,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             aux = [min(L, net.layers[-1]) for L in drafter.aux_layers] if D else None
             engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(ckpt_meta), temperature=temperature, seed=seed,
                                  decodable=decodable, aux_layers=aux, context_ceiling=context_ceiling,
-                                 execution_plan=execution_plan)
+                                 execution_plan=execution_plan, draft_policy=draft_policy)
             plan = engine.execution_plan
             token_budget = plan.tile_rows * plan.prefill_tiles + drafter.k if plan.prefill_tiles > 1 else TOKEN_BUDGET
             # TokenShards pads communication rows and crops to the real length.
@@ -662,6 +683,7 @@ def native_execution_report(net, drafter):
     """Reject a prepared but unused lane before the full-model door opens."""
     target = [layer for name, layer in net.dense.items() if name != 'head']
     draft = list(drafter.dense.values())
+    required_draft_w4 = sum(getattr(p, 'decode_precision', 'w4') == 'w4' for p in draft)
     expected_mhc = 2*len(net.layers)-1  # first attn pre has no preceding post
     required_prefill = {'fp8_all_gather', 'fp8_reduce_scatter'}
     if net.prefill_transport.project_tiles:
@@ -677,7 +699,7 @@ def native_execution_report(net, drafter):
                  router_tensorcore=len(net._router_tensorcore),
                  prefill_collectives=sorted(net.prefill_transport.executed))
     if (proof['target_w4'] != len(target) or proof['target_fp8'] != len(target)
-            or proof['drafter_w4'] != len(draft) or not proof['head_fp8']
+            or proof['drafter_w4'] != required_draft_w4 or not proof['head_fp8']
             or not proof['drafter_context_fp8'] or proof['mhc'] != expected_mhc
             or proof['shared_mlp'] != len(net.shared_mlp)
             or (net.shared_mlp and not proof['shared_overlap'])
@@ -1055,18 +1077,22 @@ def fleet(a) -> int:
                              sched.chunk_for(facts.CHUNK_ALIGN, TOKEN_BUDGET, facts.SPEC_K),
                              direct_mhc=bool(cfg["direct_mhc"]), prefill_project_tiles=bool(cfg["prefill_project_tiles"]),
                              decode_iterations=cfg["decode_iterations"], deferred_kda=bool(cfg["deferred_kda"]))
+        from engine.profiles.glm53.draft_policy import DraftPolicy
+        if cfg["draft_diagnostics"] not in (0, 1):
+            raise ValueError("draft diagnostics must be 0 or 1")
+        draft_policy = DraftPolicy(cfg["draft_fc_precision"], cfg["draft_fc_calibration"], bool(cfg["draft_diagnostics"]))
         F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir,
                                                context_ceiling=cfg["context_ceiling"] or None,
                                                execution=cfg["execution"], lease_owner=lease["owner"],
                                                kda_state_dtype=cfg["kda_state_dtype"], execution_plan=plan,
-                                               nvme_mapped_staging=bool(cfg["nvme_mapped_staging"]))
+                                               nvme_mapped_staging=bool(cfg["nvme_mapped_staging"]), draft_policy=draft_policy)
 
         # "무장 != 서빙": which lanes and kernel cells this process actually bound, readable at
         # scrape time instead of inferred from a boot log nobody kept (45차 §17 lesson).
         engine.lane_info = {"lanes": lanes.name, "moe_static": cfg["moe_static"],
-                            "execution_plan": plan.label(),
+                            "execution_plan": plan.label(), "draft_policy": draft_policy.label(),
                             "nvme_mapped_staging": str(cfg["nvme_mapped_staging"]),
                             "kda_state_dtype": F.kda_state_dtype,
                             "mla_prefill": cfg["mla_prefill"], "spec_k": str(engine.drafter.k),

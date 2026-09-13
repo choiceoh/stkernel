@@ -200,7 +200,8 @@ class DenseLinear:
     """
     input_dtype = torch.bfloat16  # __call__ enforces this before invoking its calibration observer
 
-    def __init__(self, weight, *, prefill=True, hessians=None, store=None, name=None, smooth=None):
+    def __init__(self, weight, *, prefill=True, hessians=None, store=None, name=None, smooth=None,
+                 decode_precision='w4', decode_name=None):
         """`smooth` [K]: the factor `weight` was multiplied by, its input divided by (kernels/dense/smoothing) -- the
         store scales the calibration Hessian alike; the calibration files its sums in the unsmoothed domain."""
         if (weight.ndim != 2 or not weight.is_cuda or weight.dtype != torch.bfloat16
@@ -208,20 +209,24 @@ class DenseLinear:
             raise ValueError("dense weights must be CUDA BF16 with K aligned to 128")
         extension()
         self.rows, self.cols = weight.shape
+        if decode_precision not in ('w4', 'fp8') or (decode_precision == 'fp8' and not prefill):
+            raise ValueError('FP8 decode requires a prepared FP8 pack')
+        self.decode_precision = decode_precision
         self.name = name
+        w4_name = decode_name or name
         self.smooth = smooth
         self.observer = None  # calibration.Calibration sums this layer's inputs through it (X^T X for the GPTQ packs)
         self.executed = 0  # boot proof: W4=1, FP8=2
         self.workspace = None  # optional private W4 scratch for independent execution
         packs = []
-        if self.cols > TILE and store is not None and store.calibrated(name):
-            packs = list(store.pack_wide(weight, name, smooth=smooth))   # one GPTQ over the whole K, from the full Hessian
+        if self.cols > TILE and store is not None and store.calibrated(w4_name):
+            packs = list(store.pack_wide(weight, w4_name, smooth=smooth))   # one GPTQ over the whole K, from the full Hessian
         elif self.cols > TILE and hessians is not None and hessians.shape == (self.cols, self.cols):
             packs = pack_w4_wide(weight, hessians)
         else:
             for start in range(0, self.cols, TILE):
                 w = weight[:, start:start+TILE].contiguous()
-                key = name if self.cols <= TILE else f'{name}.k{start//TILE}'
+                key = w4_name if self.cols <= TILE else f'{w4_name}.k{start//TILE}'
                 packs.append(store.pack(w, key, smooth=None if smooth is None else smooth[start:start+TILE]) if store is not None else
                              pack_w4(w, hessian=None if hessians is None else hessians[start//TILE]))
         self.packs = tuple(_fold(packs))
@@ -265,7 +270,7 @@ class DenseLinear:
         flat = x.reshape(-1, self.cols)
         if observe and self.observer is not None:
             self.observer(flat, rows_ok)
-        if flat.shape[0] <= 32:
+        if flat.shape[0] <= 32 and getattr(self, 'decode_precision', 'w4') == 'w4':
             self.executed |= 1
             if len(self.packs) == 1:
                 out = w4_gemm(flat, self.packs[0], self.workspace)

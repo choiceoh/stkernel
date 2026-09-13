@@ -481,7 +481,7 @@ class DrafterDecodeGraphs:
         def propose(inputs):
             ring = ((self.field,inputs["slot"]) if drafter.fast_attention
                     else self.field.index_select(0, inputs["slot"])[0])
-            return drafter.propose_tensor(inputs["anchor"], inputs["position"], ring)
+            return drafter.propose_tensor(inputs["anchor"], inputs["position"], ring, support_slot=inputs["slot"])
 
         def observe_inputs(n, t):
             return dict(positions=torch.arange(t, device=device, dtype=torch.int64),
@@ -491,10 +491,10 @@ class DrafterDecodeGraphs:
 
         def observe(inputs):
             if drafter.fast_attention:
-                drafter.observe((self.field,inputs["slot"]), inputs["positions"], inputs["aux"])
+                drafter.observe_committed((self.field,inputs["slot"]), inputs["positions"], inputs["aux"])
                 return
             rings = self.field.index_select(0, inputs["slot"])
-            drafter.observe(rings[0], inputs["positions"], inputs["aux"])
+            drafter.observe_committed(rings[0], inputs["positions"], inputs["aux"])
             self.field.index_copy_(0, inputs["slot"], rings)
 
         def masked_inputs(n, t):

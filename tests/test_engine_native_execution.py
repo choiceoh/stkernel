@@ -20,6 +20,13 @@ class NativeQualificationTests(unittest.TestCase):
                  prefill_transport=NS(executed={'fp8_all_gather', 'fp8_reduce_scatter'}, project_tiles=False))
         drafter = NS(dense={'fc.weight': NS(executed=3), 'q': NS(executed=1)})
         self.assertEqual(native_execution_report(net, drafter)['target_fp8'], 1)
+        fc = drafter.dense['fc.weight']
+        fc.decode_precision, fc.executed = 'fp8', 2
+        self.assertEqual(native_execution_report(net, drafter)['drafter_w4'], 1)
+        fc.executed = 0
+        with self.assertRaisesRegex(RuntimeError, 'proof is incomplete'):
+            native_execution_report(net, drafter)
+        fc.decode_precision, fc.executed = 'w4', 3
         required = {'fp8_all_gather', 'fp8_reduce_scatter'}
         for extra in (set(), {'fp8_tiled_projection'}, {'fp8_tiled_projection', 'fp8_packet_projection'}):
             net.prefill_transport.executed = required | extra

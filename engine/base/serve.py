@@ -1215,6 +1215,9 @@ class Server:
         from engine.base.latency import Recorder
         from pathlib import Path
         self.latency = Recorder(comm.rank, latency_root or Path.home() / 'glm53-logs' / 'onepass-latency')
+        diagnostics = getattr(self.engine, 'draft_diagnostics', None)
+        if diagnostics is not None:
+            diagnostics.sink = self.latency.row
         runner.latency = self.latency
         # A step that never returns is bounded from beside the loop (base/stall): a note in the
         # log after a minute, the ring written and the rank killed after five. The notes go next
@@ -2634,6 +2637,12 @@ class Server:
             labelled.append(("vllm:request_success_by_reason_total", "counter",
                              "requests answered, by why they stopped",
                              [(f'finished_reason="{reason}"', count) for reason, count in sorted(self.by_reason.items())]))
+        diagnostics = getattr(engine, 'draft_diagnostics', None)
+        if diagnostics is not None:
+            labelled.append(('st:spec_greedy_first_rejection_total', 'counter',
+                             'Greedy rows by first rejection cause and accepted prefix; output/policy boundaries separate',
+                             [(f'reason="{row["reason"]}",accepted_prefix="{row["accepted_prefix"]}"', row['count'])
+                              for row in diagnostics.snapshot()]))
         positions = getattr(engine, "ceiling_positions", 0)
         if positions:
             # Acceptance has three ceilings; these say which one to lift next (base/sampler.draft_ceilings).
