@@ -41,11 +41,15 @@ def _write_conv(SRC, DST, SLOT, CTX, SS: tl.constexpr, DS: tl.constexpr,
 @triton.jit
 def _write_ring(SRC, DST, SLOT, CTX, SS: tl.constexpr, DS: tl.constexpr,
                 RS: tl.constexpr, WIDTH: tl.constexpr, RING: tl.constexpr,
-                FIRST: tl.constexpr, BLOCK: tl.constexpr):
+                FIRST: tl.constexpr, BLOCK: tl.constexpr, SEG: tl.constexpr = 0):
+    # Grid axis 2 is the row of a captured decode step (write_ring_rows): program `seg` reads its own slot
+    # and context and its own source rows at SEG. A one-row launch has one program there, at seg 0 and
+    # SEG 0 -- the same loads and stores as before the axis existed.
     row = tl.program_id(0)
     col = tl.program_id(1) * BLOCK + tl.arange(0, BLOCK)
-    slot, ctx = tl.load(SLOT), tl.load(CTX)
-    value = tl.load(SRC + (FIRST + row) * SS + col, col < WIDTH, other=0)
+    seg = tl.program_id(2)
+    slot, ctx = tl.load(SLOT + seg), tl.load(CTX + seg)
+    value = tl.load(SRC + seg * SEG + (FIRST + row) * SS + col, col < WIDTH, other=0)
     tl.store(DST + slot * DS + ((ctx + FIRST + row) % RING) * RS + col, value, col < WIDTH)
 
 
@@ -84,6 +88,21 @@ def write_ring(src, dst, slot, context):
     _write_ring[(length-first, triton.cdiv(width, 256))](
         flat, dst, slot, context, flat.stride(0), dst.stride(0), dst.stride(1),
         width, dst.shape[1], first, 256)
+
+
+def write_ring_rows(src, dst, slots, contexts):
+    """write_ring for every row of a captured decode step in one launch: row i of `src` [rows, length, ...]
+    goes to ring slot `slots[i]` from position `contexts[i]`. Grid axis 2 is the row; each program does what
+    the one-row launch does for that row, so the ring bytes are the same as `rows` one-row launches."""
+    rows = src.shape[0]
+    flat = src.reshape(rows, src.shape[1], -1)
+    length, width = flat.shape[1], flat.shape[2]
+    first = max(0, length - dst.shape[1])
+    if slots.shape != (rows,) or contexts.shape != (rows,) or slots.stride(0) != 1 or contexts.stride(0) != 1:
+        raise ValueError("write_ring_rows takes one contiguous slot and context per source row")
+    _write_ring[(length-first, triton.cdiv(width, 256), rows)](
+        flat, dst, slots, contexts, flat.stride(1), dst.stride(0), dst.stride(1),
+        width, dst.shape[1], first, 256, SEG=flat.stride(0))
 
 
 # -- boundaries crossed by a decode step ahead of the host (45차 §23; profiles/glm53/caches.stage_boundaries) --------------

@@ -436,7 +436,7 @@ class BatchedPoolTests(unittest.TestCase):
         seen, written = {}, []
         caches.pool_keys = lambda layer: torch.zeros(capacity, self.D, dtype=torch.uint8)
         caches.pool_scales = lambda layer: torch.zeros(capacity)
-        caches.write_tail = lambda layer, i, ctx, keys, gates: written.append((i, int(ctx)))
+        caches.write_tails = lambda layer, ctxs, keys, gates: written.append((ctxs.tolist(), keys, gates))
         net = SimpleNamespace(
             F=SimpleNamespace(kpool=self.KP, idx_dim=self.D), p={"L0.idx.ape": None},
             lanes=SimpleNamespace(kpool_compress=lambda kw, gw, ape: (
@@ -444,18 +444,26 @@ class BatchedPoolTests(unittest.TestCase):
                 (torch.zeros(kw.shape[0], self.D, dtype=torch.uint8), torch.zeros(kw.shape[0], 1)))[1]))
         calls = []
         with unittest.mock.patch.object(module, "scatter_rows",
-                                        lambda src, dst, idx, valid: calls.append((idx.clone(), int(valid)))):
+                                        lambda src, dst, idx, valid: calls.append((tuple(src.shape), idx.clone(), valid.clone()))):
             got = module.complete_pools(net, 0, contexts, self.LENGTH, tails, k, gate, caches)
         self.assertEqual(got, caches.candidate_capacity)
         want = self.windows(contexts, tails, k, gate)
         self.assertTrue(torch.equal(seen["kw"], torch.cat([w[0] for w in want])), "pooled keys")
         self.assertTrue(torch.equal(seen["gw"], torch.cat([w[1] for w in want])), "pooled scores")
-        # two scatters per segment, each with that segment's rows and its own count
-        self.assertEqual([c[1] for c in calls], [w[2] for w in want for _ in range(2)])
-        for i, ctx in enumerate(contexts.tolist()):
-            ids = (ctx // self.KP + torch.arange(pools)).clamp_max(caches.candidate_capacity - 1)
-            self.assertTrue(torch.equal(calls[2 * i][0], caches.pool_slots(0, i, ids).long()), i)
-        self.assertEqual(written, [(0, 0), (1, 7), (2, 30)])
+        # two scatters (keys, scales), each over every segment at once: [n, pools, ...] sources, every
+        # segment's own rows in its row of the indices, and its own count (45차: the writes fold with the rows)
+        self.assertEqual(len(calls), 2)
+        for shape, idx, valid in calls:
+            self.assertEqual(shape[:2], (n, pools))
+            self.assertEqual(valid.tolist(), [w[2] for w in want])
+            for i, ctx in enumerate(contexts.tolist()):
+                ids = (ctx // self.KP + torch.arange(pools)).clamp_max(caches.candidate_capacity - 1)
+                self.assertTrue(torch.equal(idx[i], caches.pool_slots(0, i, ids).long()), i)
+        # one tail write for every segment, from each segment's own context, with the step's raw keys and gates
+        self.assertEqual(len(written), 1)
+        self.assertEqual(written[0][0], [0, 7, 30])
+        self.assertIs(written[0][1], k)
+        self.assertIs(written[0][2], gate)
 
 
 class KeptConstantTests(unittest.TestCase):

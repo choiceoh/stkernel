@@ -45,6 +45,26 @@ def fresh(n: int, device, dtype=torch.int64) -> torch.Tensor:
     return torch.arange(n, device=device, dtype=dtype)
 
 
+_ZEROS: "dict[tuple, torch.Tensor]" = {}
+
+
+def zeros(n: int, device, dtype=torch.int32) -> torch.Tensor:
+    """n zeros on `device`, built once and kept, under the same rule as `iota`: the indexer logits
+    kernel takes each query's first key as a vector that a decode step hands over as all zeros,
+    one fill launch per row per layer when built at the call. Never write to what this returns."""
+    key = (int(n), str(device), dtype)
+    kept = _ZEROS.get(key)
+    if kept is None:
+        if str(device).startswith("cuda") and torch.cuda.is_current_stream_capturing():
+            raise RuntimeError(
+                f"zeros({n}) was first asked for while a graph was recording: a constant built "
+                f"inside a capture lives in that graph's pool, which the next capture takes "
+                f"back. The shape's warmup pass is where it should have been built.")
+        kept = _ZEROS[key] = torch.zeros(n, device=device, dtype=dtype)
+    return kept
+
+
 def forget() -> None:
     """Drop every kept constant. Tests only -- a live capture recorded their addresses."""
     _IOTA.clear()
+    _ZEROS.clear()
