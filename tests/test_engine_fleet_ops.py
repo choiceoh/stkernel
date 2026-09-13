@@ -26,12 +26,14 @@ class FleetHarness(unittest.TestCase):
         shutil.copy2(ROOT / 'engine/base/fleet_lease.py', self.repo / 'engine/base/fleet_lease.py')
         self.lock = self.home / "fleet.lock"
         self.events = self.home / "events"
+        self.fleet_dir = self.home / "fleet"
+        self.fleet_dir.mkdir()
         # A boot says what it is (2026-09-12): these are a session's own boots by hand. The
         # supervisor overrides this with production for its own.
         self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
                         FAKE_HOME=str(self.home), ST_FORENSICS=str(self.home / "forensics"),
                         ST_REPO=str(self.repo), ST_SUPERVISOR_ONCE="1", ST_LEASE_KIND="session",
-                        CKPT=str(self.home / "missing-checkpoint"))
+                        CKPT=str(self.home / "missing-checkpoint"), FLEET_DIR=str(self.fleet_dir))
         self.script("hostname", "#!/bin/sh\necho 192.0.2.1\n")
         self.script("ssh", '''#!/usr/bin/env python3
 import os, pathlib, subprocess, sys
@@ -187,8 +189,6 @@ class SupervisorLoopTests(FleetHarness):
 
     def setUp(self):
         super().setUp()
-        self.fleet_dir = self.home / "fleet"
-        self.fleet_dir.mkdir()
         launcher = self.home / "launcher.sh"
         launcher.write_text('#!/bin/sh\necho "launch $*" >> "$FAKE_HOME/events"\ntouch "$FAKE_HOME/containers-up"\nexit 0\n')
         self.script("docker", '''#!/usr/bin/env python3
