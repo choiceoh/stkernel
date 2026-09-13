@@ -164,6 +164,8 @@ class Glm53Net:
         self.prefill_indexer_executed = set()
         self.prefill_dense_prefix = False
         self.prefill_dense_prefix_executed = set()
+        self.prefill_absorb_tiles = False
+        self.prefill_absorb_tiles_executed = set()
         self.mhc = None
         from engine.profiles.glm53.weights import WEIGHT_LAYOUT, MODELOPT_WEIGHT_LAYOUT
         self.weight_layout = getattr(F, 'weight_layout', WEIGHT_LAYOUT)
@@ -708,10 +710,19 @@ class Glm53Net:
         slots, valid = self._indexer(L, x, qr, step, caches)
         kv_b = p[n + "kv_b"].view(Hl, F.qk_nope + F.v_dim, F.kv_lora)
         w_uk, w_uv = kv_b[:, : F.qk_nope, :], kv_b[:, F.qk_nope:, :]
-        q_abs = torch.einsum("thd,hdc->thc", q, w_uk)                                # absorb W_UK: MQA over the latent
+        q_abs = self._mla_absorb(L, q, w_uk, step)  # absorb W_UK: MQA over the latent
         ctx_lat = self._mla_context(L, q_abs.contiguous(), latent, slots, valid, step, caches)
-        o = torch.einsum("thc,hvc->thv", ctx_lat, w_uv)                              # un-absorb W_UV
+        o = self._mla_absorb(L, ctx_lat, w_uv, step, transpose=True)  # un-absorb W_UV
         return (reduce or self.comm.all_reduce)((project or self.linear)(o.reshape(N, Hl * F.v_dim), n + "o_proj"))
+
+    def _mla_absorb(self, L, x, weight, step, *, transpose=False):
+        if (self.prefill_absorb_tiles and self.lanes.mla_absorb is not None
+                and not self.probe and not getattr(step, "captured", False)
+                and len(step.segments) == 1 and 128 <= len(x) <= 32768):
+            out = self.lanes.mla_absorb(x, weight, transpose=transpose)
+            self.prefill_absorb_tiles_executed.add((L, "output" if transpose else "query"))
+            return out
+        return torch.einsum("thc,hvc->thv" if transpose else "thd,hdc->thc", x, weight)
 
     def _mla_context(self, L, q, latent, slots, valid, step, caches):
         prefix = 0

@@ -94,6 +94,7 @@ class Lanes:
     swiglu: object = None     # (gate, up [T,I], limit) -> BF16; FP32 clamped activation
     route_weights: object = None  # (FP32 logits [T,E], bias [E], topk, scale) -> int32 ids, FP32 weights
     layernorm: object = None  # (x [T,D], weight, bias, eps) -> input dtype
+    mla_absorb: object = None  # (x [T,H,D] BF16, kv_b slice, *, transpose=False) -> fresh token-major BF16
     mla_dense_prefix: object = None  # q, latent, token_map scalars, context, scales; explicit covered-prefix prefill only
 
 
@@ -216,9 +217,11 @@ def reference() -> Lanes:
 
     from engine.modules.sparse_indexer import head_gate
     from engine.modules.prefill_attention import mla_dense_prefix_ref
+    from engine.modules.mla_absorb import mla_prefill_absorb_ref
     return Lanes("reference", conv_prefill, kda_chunk, kda_recurrent, pre, mhc_post, logits, kpool_compress,
                  mla_sparse_mqa, moe, fwht128_quant, pool_slots, kda_output_norm,
-                 decode_rows=reference_decode_rows(), head_gate=head_gate, mla_dense_prefix=mla_dense_prefix_ref)
+                 decode_rows=reference_decode_rows(), head_gate=head_gate, mla_dense_prefix=mla_dense_prefix_ref,
+                 mla_absorb=mla_prefill_absorb_ref)
 
 
 MOE_STATIC_STOCK = "stock"          # the §15~18 judged default of STK_moe_static
@@ -527,6 +530,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     from engine.base.lanes import served as common_lanes
     from engine.kernels.glm_pointwise import swiglu_clamped as activation, route_weights, layernorm
     from engine.kernels.mla.prefill_dense import mla_dense_prefix
+    from engine.kernels.mla.prefill_absorb import mla_prefill_absorb
     norm = common_lanes().rmsnorm          # the engine's default RMS norm; the clamped activation is GLM's own
     table = Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, compress_pool_keys, mla, moe,
                                             fwht128_quant_fp8, pool_slots, kda_output_norm)),
@@ -541,7 +545,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                   head_gate=on_main(head_gate),
                   rmsnorm=on_main(norm), swiglu=on_main(activation),
                   route_weights=on_main(route_weights), layernorm=on_main(layernorm),
-                  mla_dense_prefix=on_main(mla_dense_prefix))
+                  mla_dense_prefix=on_main(mla_dense_prefix), mla_absorb=on_main(mla_prefill_absorb))
     # 45차 §21 bisect: any other lane named in `reference_for` runs on the torch reference in this table
     # (the served output is garbage while every self-consistency judge passes -- which lane, if any, is found by
     # swapping them one at a time; "expert" and "kda_recurrent" are the two the kernels already know how to declare).
