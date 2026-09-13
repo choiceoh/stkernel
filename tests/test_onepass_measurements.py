@@ -8,11 +8,54 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bench"))
 import onepass
+import st_judge
 from window_metrics import decode_windows, exclusive_errors, traffic_state
 
 
 def state(n, running=0, waiting=0):
     return dict(finished=n, running=running, waiting=waiting)
+
+
+class PrefillSummaryTests(unittest.TestCase):
+    def test_unequal_questions_keep_tokens_paired_with_their_own_ttft(self):
+        result = onepass.prefill_summary([(1000, 1.), (2000, 4.), (3000, 2.)], 3000)
+        self.assertEqual(result['tok'], 1000)
+        self.assertEqual(result['prompt_tokens_samples'], [1000, 2000, 3000])
+        self.assertEqual(result['prefill_tok_s_samples'], [1000., 500., 1500.])
+        self.assertEqual(result['cold_tok_s'], 1000.)
+        self.assertEqual(result['warm_tok_s'], 1000.)
+        self.assertEqual((result['first_s'], result['median_s']), (1., 2.))
+        self.assertEqual((result['total_prompt_tokens'], result['reused_frac']), (6000, .5))
+        self.assertTrue(result['cache_hit'])
+
+    def test_single_combined_request_retains_the_existing_fields(self):
+        result = onepass.prefill_summary([(32000, 10.)], 320)
+        self.assertEqual(result['cold_tok_s'], 3200.)
+        self.assertEqual(result['warm_tok_s'], 3200.)
+        self.assertEqual((result['cold_s'], result['warm_s']), (10., 10.))
+        self.assertEqual(result['reused_frac'], .01)
+        self.assertFalse(result['cache_hit'])
+
+    def test_missing_or_invalid_usage_cannot_borrow_another_requests_tokens(self):
+        invalid = ([], [(0, 1.)], [(True, 1.)], [(1000, 0.)], [(1000, float('nan'))],
+                   [(1000, float('inf'))], [(1000, 1.), (0, 2.)], [(1000., 1.)])
+        for samples in invalid:
+            with self.subTest(samples=samples), self.assertRaises(ValueError):
+                onepass.prefill_summary(samples, 0)
+
+    def test_judge_repairs_old_summary_from_requests_and_excludes_fixed_decode(self):
+        row = dict(ctx=2000, tok=3000, cold_tok_s=3000., warm_tok_s=1500.,
+                   ttft_samples_s=[1., 4., 2.], combined=False)
+        record = dict(prefill=[row], requests=[
+            dict(ctx=2000, prompt_tokens=t, ttft_s=s)
+            for t, s in ((1000, 1.), (2000, 4.), (3000, 2.))])
+        record['requests'].append(dict(ctx=2000, prompt_tokens=99999, ttft_s=.01, fixed_decode=True))
+        self.assertEqual(st_judge.prefill(record, 2000, 'cold_tok_s'), 1000.)
+        self.assertEqual(st_judge.prefill(record, 2000, 'warm_tok_s'), 1000.)
+        record['requests'][1]['prompt_tokens'] = 0
+        self.assertIsNone(st_judge.prefill(record, 2000, 'warm_tok_s'))
+        record['requests'] = []
+        self.assertIsNone(st_judge.prefill(record, 2000, 'cold_tok_s'))
 
 
 class TrafficTests(unittest.TestCase):

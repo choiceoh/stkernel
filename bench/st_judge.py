@@ -114,6 +114,25 @@ def colds(rows, sha, *, allow_rehearsal=False, tree=None):
 def prefill(rec, ctx, key):
     for row in rec.get("prefill") or []:
         if int(row.get("ctx") or 0) == ctx:
+            if key in ('cold_tok_s', 'warm_tok_s'):
+                # Normalize retained records too: old context summaries could
+                # divide the final question's token count by the first TTFT.
+                # Fixed-decode requests are a separate workload at ctx=2000.
+                requests = [r for r in rec.get('requests', [])
+                            if r.get('ctx') == ctx and not r.get('fixed_decode')]
+                if requests:
+                    rates = []
+                    for request in requests:
+                        tokens, seconds = request.get('prompt_tokens'), request.get('ttft_s')
+                        if (type(tokens) is not int or tokens <= 0
+                                or type(seconds) not in (int, float)
+                                or not math.isfinite(seconds) or seconds <= 0):
+                            return None
+                        rates.append(tokens / seconds)
+                    return rates[0] if key == 'cold_tok_s' else statistics.median(rates)
+                if (row.get('prefill_metric') != 'per-request-tokens-over-ttft-v2'
+                        and (row.get('combined') is False or len(row.get('ttft_samples_s', [])) > 1)):
+                    return None  # No per-request numerators to repair this legacy summary.
             return row.get(key)
     return None
 

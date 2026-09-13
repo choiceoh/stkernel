@@ -84,6 +84,31 @@ between, so the number is recorded either way and this only decides what gets ca
 """
 
 
+def prefill_summary(samples, reused):
+    """Summarize paired (actual prompt tokens, client TTFT) measurements.
+
+    Canonical questions can have different rendered lengths. A context's
+    first rate and median rate therefore come from individual request rates,
+    not a token count borrowed from another question.
+    """
+    if not samples or any(type(tokens) is not int or tokens <= 0
+            or type(seconds) not in (int, float) or not math.isfinite(seconds) or seconds <= 0
+            for tokens, seconds in samples):
+        raise ValueError('prefill summary requires positive actual prompt tokens and TTFT for every request')
+    tokens, ttfts = map(list, zip(*samples))
+    rates = [count / seconds for count, seconds in samples]
+    total = sum(tokens)
+    share = reused / total
+    return {"tok": tokens[0], "prompt_tokens_samples": tokens, "total_prompt_tokens": total,
+            "ttft_samples_s": ttfts, "prefill_tok_s_samples": rates,
+            "cold_s": ttfts[0], "warm_s": median(ttfts),
+            "first_s": ttfts[0], "median_s": median(ttfts),
+            "cold_tok_s": rates[0], "warm_tok_s": median(rates),
+            "prefill_metric": "per-request-tokens-over-ttft-v2",
+            "reused_tok": int(reused), "reused_frac": round(share, 4),
+            "cache_hit": share >= CACHE_HIT_FRACTION}
+
+
 def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=None,
                channel_trace=None, reasoning_budget=None):
     """(text, ttft_s, prompt_tokens, completion_tokens, finish_reason) of one
@@ -667,14 +692,14 @@ def _main() -> int:
     if args.require_exclusive and (before_traffic["running"] != 0 or before_traffic["waiting"] != 0):
         raise RuntimeError("exclusive onepass requires an idle server before sending requests")
     m0 = bd._parse_spec_metrics(metrics_before)
-    print(f"{'ctx':>7} {'tok':>7} {'first tok/s':>11} {'median tok/s':>11} {'first TTFT':>10} {'median TTFT':>10} {'reuse':>6} quality"
+    print(f"{'ctx':>7} {'first tok':>9} {'first tok/s':>11} {'median tok/s':>11} {'first TTFT':>10} {'median TTFT':>10} {'reuse':>6} quality"
           "   (* = the cache carried it: not a prefill, CHARTER D17)", flush=True)
     t_dec0 = time.time()
     # Keep the established 1 s window and 0.5 s edge margins; harder questions
     # change the workload, not the timing definition.
     with br._StepWindows(bd, period=1.0) as sw:
         for ctx in (int(c) for c in args.ctx.split(",")):
-            ttfts, tok = [], 0
+            samples = []
             reused_before = _st_counter(_metrics_text(bd.METRICS), "prefix_reused_tokens_total")
             ctx_items = [item for item in items if item['ctx'] == ctx]
             combined = len(ctx_items) == 1
@@ -687,27 +712,21 @@ def _main() -> int:
                 phases.append((ctx, t_req + ttft, time.monotonic()))
                 rec["requests"].append(timing)
                 pending_quality.append((item, timing, finish))
-                tok = ptok or tok
+                samples.append((ptok, ttft))
                 gen_tokens += ctok
-                ttfts.append(ttft)
                 texts.append((f"ctx{ctx // 1000}K q{item['question']}", text, finish))
-            cold, warm = ttfts[0], median(ttfts)
-            # What this bracket took from the prefix cache instead of computing. Without it the
-            # first column cannot be read: it is prompt tokens over the first TTFT either way.
+            # The counter spans all questions in this context, so its reuse
+            # denominator is their total input, not one question's length.
             reused = max(0.0, _st_counter(_metrics_text(bd.METRICS), "prefix_reused_tokens_total") - reused_before)
-            share = reused / tok if tok else 0.0
-            rec["prefill"].append({"ctx": ctx, "tok": tok, "cold_s": cold, "warm_s": warm,
-                                   "cold_tok_s": tok / cold if cold > 0 else 0.0,
-                                   "warm_tok_s": tok / warm if warm > 0 else 0.0,
-                                   "ttft_samples_s": ttfts, "first_s": cold, "median_s": warm,
-                                   "state": "prepared fresh-prefix; see steady_state validity",
-                                   "reused_tok": int(reused), "reused_frac": round(share, 4),
-                                   "cache_hit": share >= CACHE_HIT_FRACTION,
-                                   "combined": combined})
-            warm_col = f"{tok / warm:>11.0f}" if not combined else f"{'(1 req)':>11}"
+            summary = prefill_summary(samples, reused)
+            rec["prefill"].append(dict(summary, ctx=ctx, combined=combined,
+                state="prepared fresh-prefix; see steady_state validity"))
+            tok, cold, warm = summary['tok'], summary['first_s'], summary['median_s']
+            warm_col = f"{summary['warm_tok_s']:>11.0f}" if not combined else f"{'(1 req)':>11}"
             warm_t = f"{warm:>9.2f}s" if not combined else f"{'-':>10}"
-            reuse_col = f"{share * 100:>5.0f}%" + ("*" if share >= CACHE_HIT_FRACTION else " ")
-            print(f"{ctx:>7} {tok:>7} {tok / cold:>11.0f} {warm_col} {cold:>9.2f}s {warm_t} {reuse_col} quality deferred", flush=True)
+            share = summary['reused_frac']
+            reuse_col = f"{share * 100:>5.0f}%" + ("*" if summary['cache_hit'] else " ")
+            print(f"{ctx:>7} {tok:>9} {summary['cold_tok_s']:>11.0f} {warm_col} {cold:>9.2f}s {warm_t} {reuse_col} quality deferred", flush=True)
         if args.fixed_decode_tokens:
             for rep in range(args.fixed_decode_reps):
                 timing = {"ctx": 2000, "question": "fixed-all", "rep": rep, "fixed_decode": True}
