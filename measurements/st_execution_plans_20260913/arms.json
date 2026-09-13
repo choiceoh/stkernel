@@ -1,0 +1,65 @@
+{
+  "scope": "isolated measurement commits; unqualified, never merge these arm-only commits",
+  "base": "7fede9678eced51f45709e27691d933e6e1c03e2",
+  "changed_path": "engine/profiles/glm53/boot.py",
+  "value_order": [
+    "execution_overlap",
+    "early_observe",
+    "prefill_tiles"
+  ],
+  "arms": {
+    "baseline": {
+      "sha": "7fede9678eced51f45709e27691d933e6e1c03e2",
+      "values": [
+        0,
+        0,
+        1
+      ]
+    },
+    "tp": {
+      "sha": "d111bd1ef550bc27ed2d859cff612d9267d39ca8",
+      "branch": "codex/gb10-execution-r2-tp",
+      "values": [
+        1,
+        0,
+        1
+      ]
+    },
+    "early": {
+      "sha": "c0e550f5e38486ae76ab83c4c59b4a7ae35a100b",
+      "branch": "codex/gb10-execution-r2-early",
+      "values": [
+        0,
+        1,
+        1
+      ]
+    },
+    "prefill2": {
+      "sha": "5f59841fe382e7dd69d6009829e04d01a32f6d2f",
+      "branch": "codex/gb10-execution-r2-prefill2",
+      "values": [
+        0,
+        0,
+        2
+      ]
+    },
+    "prefill4": {
+      "sha": "1145019ec2e87cb3d87091620a81f4e4c131f0fc",
+      "branch": "codex/gb10-execution-r2-prefill4",
+      "values": [
+        0,
+        0,
+        4
+      ]
+    },
+    "combined": {
+      "sha": "0affa0d7e7a55ae98528524d20b51406efd1db61",
+      "branch": "codex/gb10-execution-r2-combined",
+      "values": [
+        1,
+        1,
+        2
+      ]
+    }
+  }
+}

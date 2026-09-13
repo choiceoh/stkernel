@@ -63,9 +63,10 @@ release_of() {  # sha -> its release directory, cut if it is not yet; a rehearsa
   python3 "$REPO/launchers/st_release.py" cut "$1" --source "$SOURCE" --releases "$RELEASES"
 }
 shape() {  # production's shape, minus what an arm decides for itself (tree, image, port, tier, dumps)
+  local bracket_port=$PORT
   if [ -f "$PROD_ENV" ]; then set -a; . "$PROD_ENV"; set +a; fi
   local v; for v in $(compgen -v STK_ || true); do unset "$v"; done   # a sha is the arm; --production refuses knobs anyway
-  export ST_PRODUCTION=1 PORT
+  export ST_PRODUCTION=1 PORT=$bracket_port
 }
 door() { echo "http://127.0.0.1:$PORT"; }
 door_up() { curl -fsS --max-time 5 "$(door)/v1/models" 2>/dev/null | grep -q "\"$MODEL\""; }
