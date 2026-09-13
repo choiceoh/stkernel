@@ -2,7 +2,7 @@
 
 Nothing here computes. The layer loop is engine/base/composition's; the math is the features' (engine/modules:
 hyper_connection.GatedResidualStreams, linear_attention.GatedDeltaNet, attention.Attention (+ attention.QSA),
-ngram_embedding.NGramInjection, moe.SharedExpertMoE). What is Qwen3.8's -- and so lives here -- is which layer runs
+ngram_embedding.NGramInjection, moe.MoE). What is Qwen3.8's -- and so lives here -- is which layer runs
 which feature (config `layer_types`, `ple_layer_ids`), the hyperparameters read off its text config, and the
 checkpoint names the features' weights sit under (transformers qwen4_exp, pinned in plan.py).
 
@@ -43,7 +43,8 @@ def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None, dtype: "str
     rows)` -> [..., heads, width] gathers PLE rows by index; by default the whole table tensor is indexed."""
     from engine.modules.hyper_connection import GatedResidualStreams
     from engine.modules.linear_attention import VARIANTS, GatedDeltaNet, named
-    from engine.modules.moe import SharedExpertMoE
+    from engine.modules.moe import MoE, shared_of
+    from engine.modules.moe import named as moe_named
     from engine.modules.ngram_embedding import NGramInjection
     from engine.modules.attention import QSA, Attention
     from engine.modules.attention import named as attention_named
@@ -80,9 +81,11 @@ def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None, dtype: "str
             weights=lambda layer, name: attention_named("qwen4_exp", lambda hf: layer_name(layer, "self_attn", hf),
                                                         heads=cfg["num_attention_heads"], head_dim=cfg["head_dim"])(name),
             dtype=dtype),
-        "moe": SharedExpertMoE(
-            experts=cfg["num_experts"], topk=cfg["num_experts_per_tok"], normalize=cfg.get("norm_topk_prob", True),
-            activation=cfg["hidden_act"], weights=lambda layer, name: layer_name(layer, "mlp", name), expert=expert),
+        "moe": MoE(
+            experts=cfg["num_experts"], topk=cfg["num_experts_per_tok"], score="softmax", normalize=cfg.get("norm_topk_prob", True),
+            router_fp32=False, shared=1, shared_mode="sigmoid", activation=cfg["hidden_act"],
+            weights=lambda layer, name: moe_named("qwen4_exp", lambda hf: layer_name(layer, "mlp", hf))(name),
+            expert=expert, shared_expert=lambda layer, i: shared_of("qwen4_exp", lambda hf: layer_name(layer, "mlp", hf))(i)),
     }
     if ple_layers:
         features["ple"] = NGramInjection(
