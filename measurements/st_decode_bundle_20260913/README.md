@@ -30,8 +30,34 @@ CUDA source has the same SHA-256. All new emitted kernels have zero local bytes;
 single-token mHC uses 80 registers versus 128 for the packed baseline. Eleven
 focused CPU tests and Python syntax/whitespace checks passed after integration.
 The integrated Linux fleet/onepass suite also passed all 48 tests in 21.616 s.
-GPU numerical results and timings remain pending; all five serving defaults
-remain unchanged until those results select a candidate.
+The GPU reservation finished on GB10 at 10:03:58 KST, 2026-09-13. All five
+numerical lanes passed. `gpu.log.gz` retains the full log and `gpu-summary.json`
+recomputes every timing comparison from its individual samples. Serving defaults
+remain unchanged: this bundle did not produce a material M7 winner.
+
+| Candidate | Measured latency change | Decision |
+|---|---|---|
+| Single-token mHC | +30.08% at M7 | Reject |
+| Resident MoE waves | Evicted: -0.19% to +0.04% at U8/16/28; -1.14% to -1.35% at U40/56 | Too small and routing-dependent to promote |
+| Input packing | -0.60% to +0.58% across shapes | No material complete-projection gain |
+| Short input GEMM | M6 -5.69% to -10.25%; M7 +0.54% to +0.59% | M6-only result; do not promote for the primary M7 path |
+| Direct shared down | M6 +1.73%; M7 +0.73% | Reject |
+
+These are component latencies, not engine speed changes. The reservation used
+one probe container, not a model boot. A full consumer run would not establish
+the missing M7 gain, so improve the candidate bundle before spending that boot.
+
+`prior-pure-decode-concurrency.json` further filters the previous consumer's
+1-Hz counter trace to windows where every request is past TTFT and still live,
+prefill steps are zero, and draft increments equal six times concurrency times
+decode steps. Accepted tokens plus one bonus per proposal round imply C4/C1
+token-production ratios of 1.72–1.75 at 2K, 1.61 at 32K and 1.80 at 128K.
+This is an inferred live rate, not measured client-stream tok/s. The completed-
+request generation counter cannot provide that live rate. Raw filtered samples
+are preserved in `prior-filtered-counters.jsonl.gz`; row-step and proposal-round
+counters were absent from that observer. Against a target of 2.4x, C4 aggregate
+output would need another 33–49% at fixed C1 performance. No universal 2.4x
+industry average is established by this record.
 
 The cancelled two-lane ticket never reached a GPU: its controller added
 `ST_LEASE_OWNER` and `ST_LEASE_PATH` after preparation. `queue-environment.json`
