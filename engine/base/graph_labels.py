@@ -19,6 +19,10 @@ ERRORS = []
 CAPTURES = 0
 _api = None
 
+# cudaGraphEdgeData is eight bytes. Attribution needs the endpoints, but must
+# still provide storage for non-default (e.g. programmatic) dependency data.
+_EdgeData = C.c_ubyte * 8
+
 
 class CUDA:
     def __init__(self):
@@ -36,10 +40,23 @@ class CUDA:
                         pass
             raise RuntimeError(f'{name} is unavailable for graph attribution')
         self.rt, self.cupti = library('cudart'), library('cupti')
-        self.rt.cudaStreamGetCaptureInfo_v2.argtypes = [C.c_void_p, C.POINTER(C.c_int), C.POINTER(C.c_ulonglong),
-            C.POINTER(C.c_void_p), C.POINTER(C.POINTER(C.c_void_p)), C.POINTER(C.c_size_t)]
+        self.rt.cudaRuntimeGetVersion.argtypes = [C.POINTER(C.c_int)]
+        version = C.c_int()
+        self.check(self.rt.cudaRuntimeGetVersion(C.byref(version)))
+        # CUDA 13 moved the edge-data signatures to the unversioned symbols.
+        # The CUDA 12 unversioned APIs have fewer arguments: do not alias them.
+        self.edge_data = version.value >= 12030
+        capture_name = ('cudaStreamGetCaptureInfo' if version.value >= 13000 else
+                        'cudaStreamGetCaptureInfo_v3' if self.edge_data else 'cudaStreamGetCaptureInfo_v2')
+        edges_name = 'cudaGraphGetEdges_v2' if 12030 <= version.value < 13000 else 'cudaGraphGetEdges'
+        self.capture_info = getattr(self.rt, capture_name)
+        self.get_edges = getattr(self.rt, edges_name)
+        self.capture_info.argtypes = [C.c_void_p, C.POINTER(C.c_int), C.POINTER(C.c_ulonglong),
+            C.POINTER(C.c_void_p), C.POINTER(C.POINTER(C.c_void_p)),
+            *([C.POINTER(C.POINTER(_EdgeData))] if self.edge_data else []), C.POINTER(C.c_size_t)]
+        self.get_edges.argtypes = [C.c_void_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p),
+            *([C.POINTER(_EdgeData)] if self.edge_data else []), C.POINTER(C.c_size_t)]
         self.rt.cudaGraphGetNodes.argtypes = [C.c_void_p, C.POINTER(C.c_void_p), C.POINTER(C.c_size_t)]
-        self.rt.cudaGraphGetEdges.argtypes = [C.c_void_p, C.POINTER(C.c_void_p), C.POINTER(C.c_void_p), C.POINTER(C.c_size_t)]
         self.cupti.cuptiGetGraphNodeId.argtypes = [C.c_void_p, C.POINTER(C.c_ulonglong)]
 
     @staticmethod
@@ -50,8 +67,9 @@ class CUDA:
     def frontier(self, stream):
         status, ident, graph = C.c_int(), C.c_ulonglong(), C.c_void_p()
         deps, n = C.POINTER(C.c_void_p)(), C.c_size_t()
-        self.check(self.rt.cudaStreamGetCaptureInfo_v2(stream, C.byref(status), C.byref(ident),
-                                                     C.byref(graph), C.byref(deps), C.byref(n)))
+        edges = C.POINTER(_EdgeData)()
+        self.check(self.capture_info(stream, C.byref(status), C.byref(ident), C.byref(graph), C.byref(deps),
+                                     *([C.byref(edges)] if self.edge_data else []), C.byref(n)))
         if status.value != 1:
             raise RuntimeError('semantic boundary is outside an active CUDA capture')
         return graph.value, tuple(deps[i] for i in range(n.value))
@@ -69,11 +87,12 @@ class CUDA:
             self.check(self.cupti.cuptiGetGraphNodeId(node, C.byref(ident)))
             ids[node] = str(ident.value)
         n = C.c_size_t()
-        self.check(self.rt.cudaGraphGetEdges(graph, None, None, C.byref(n)))
+        self.check(self.get_edges(graph, None, None, *([None] if self.edge_data else []), C.byref(n)))
         a, b = (C.c_void_p * n.value)(), (C.c_void_p * n.value)()
-        self.check(self.rt.cudaGraphGetEdges(graph, a, b, C.byref(n)))
+        edges = (_EdgeData * n.value)()
+        self.check(self.get_edges(graph, a, b, *([edges] if self.edge_data else []), C.byref(n)))
         parents = {node: [] for node in ids}
-        for source, target in zip(a, b):
+        for source, target in zip(a[:n.value], b[:n.value]):
             parents[target].append(source)
         return ids, parents
 
@@ -126,13 +145,18 @@ class Capture:
 def capture(stream, label):
     global _api, CAPTURES
     CAPTURES += 1
+    available = False
     try:
         stream = stream if isinstance(stream, int) else stream.cuda_stream
         if _api is None:
             _api = CUDA()
+        available = True
     except Exception as exc:
         if not ERRORS:
             ERRORS.append(dict(graph=label, error=str(exc)))
+    if not available:
+        # Yield outside the handler: a model failure must not inherit this
+        # optional attribution error as its misleading exception context.
         yield
         return
     held = getattr(_local, 'capture', None)
