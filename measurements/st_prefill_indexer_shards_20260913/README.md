@@ -44,6 +44,18 @@ KDA/KV state and next decode also matched exactly in ordinary and layer-major ex
 rows, partial pools, nonzero context, no-query ranks and the unchanged small-step path. The earlier uncompressed
 candidate passed 40 tests (`cpu-r1.log`); `cpu-r2.log` includes the two transport checks.
 
+### Main conflict resolution
+
+Merge `f576e4dc` incorporates main `e9a7c31e`. Both additive conflicts in `boot.py` and
+`test_engine_knobs.py` retain the indexer option and main's `draft_tuning` declaration and checks.
+The six suites above plus `tests.test_engine_draft_tuning` and
+`tests.test_engine_draft_tuning_integration` ran on that merge in the same CPU-only ST image:
+**64 passed, one CUDA-only selector test skipped**, 14.300 seconds (`cpu-main-merge.log`).
+Both experiments keep their production defaults and override restrictions. No GPU queue was used.
+The Oracle artifacts below remain explicitly bound to their recorded pre-merge source revisions.
+
+### Source-bound Oracle comparison
+
 The upgraded Oracle from **PR #875, `e2bfbb9a`** ran against this candidate with its explicit execution setting:
 
 ```sh
