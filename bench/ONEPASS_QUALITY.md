@@ -40,9 +40,13 @@ they are source-coverage checks, not free-form semantic citation grading.
 **fully passed cases**. Every check must pass for a case to pass. This strict
 quality gate continues to invalidate performance acceptance; a higher partial
 score alone is not an accepted speed improvement. C=1 and C=4 summaries remain
-separate (`quality`, `quality_c4`). Default coverage is 9 and 36 case results,
-respectively, excluding preparation/diagnostic replays. Optional fixed-decode
-repetitions add three cases each to C=1.
+separate (`quality`, `quality_c4`). Standalone runs and `ONEPASS_RUN_INDEX=1`
+cover 9 and 36 case results, respectively, excluding preparation/diagnostic
+replays. On the same boot, run 2 repeats C=1 only: C=4 preparation, measurement
+and diagnostic requests are omitted. `concurrency_coverage` records that omission,
+`c4` is empty and `quality_c4` is null, rather than a passing 0/0 result. This
+implements the operator's 2026-09-13 policy: C=1 twice, C=4 once. Optional
+fixed-decode repetitions add three cases each to C=1.
 
 Regular answers require `finish_reason=stop`. A length-truncated answer fails the
 completion check even if some facts are correct. Explicit fixed-length requests
