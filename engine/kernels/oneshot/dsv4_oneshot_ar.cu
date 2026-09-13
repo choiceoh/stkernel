@@ -257,7 +257,7 @@ __host__ __device__ constexpr int64_t osar_max_int64(int64_t a, int64_t b,
 }
 
 template <bool CONSUMER_PDL, bool COMPACT = false, bool WRAP_SAFE = false,
-          bool MAX_INT64 = false, bool PACKETS = false>
+          bool MAX_INT64 = false, bool PACKETS = false, bool GATHER_INT64 = false>
 __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
                                               bf16 *dst, int n, int nbytes,
                                               const HintArgs h, int rank) {
@@ -354,7 +354,7 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
   __shared__ bool last;
   if (threadIdx.x == 0) {
     if constexpr (WRAP_SAFE || MAX_INT64) {
-      // The <=512-byte MAX packet fits one CTA. It contributes the same
+      // Small integer packets fit one CTA. It contributes the same
       // 48 tickets as a whole BF16 grid, after every writer has fenced.
       constexpr unsigned weight = MAX_INT64 ? ARGRID : (COMPACT ? ARGRID / OSAR_COMPACT_GRID : 1);
       const auto old = atomicAdd((unsigned long long *)&c->done_ctr,
@@ -422,6 +422,23 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
   __syncthreads();
   if (owns)
     __threadfence_system();
+  if constexpr (GATHER_INT64) {
+    // Preserve candidate bits and canonical rank order. Rank-major rows may
+    // begin at an odd int64 offset, so the output uses aligned 8-byte stores.
+    // The same CTA publishes all 48 tickets and consumes peers before the
+    // next collective can reuse a slot; no NCCL event enters a bounded body.
+    auto* output = reinterpret_cast<int64_t*>(dst);
+    const int keys = n / 4;
+    for (int i = threadIdx.x; i < keys; i += blockDim.x) {
+      int peer = 0;
+      for (int r = 0; r < 4; ++r) {
+        output[r * keys + i] = r == rank
+            ? reinterpret_cast<const int64_t*>(src)[i]
+            : __ldcs(reinterpret_cast<const long long*>(c->rx[slot][peer++]) + i);
+      }
+    }
+    return;
+  }
   if constexpr (PACKETS) {
     // The immediate same-stream MHC consumer owns these addresses until it
     // completes. It folds ranks 0,1,2,3 and rounds to BF16 at its input load.
@@ -522,6 +539,13 @@ __global__ void k_oneshot_packets(Ctrl *c, const bf16 *src, bf16 *addresses,
 __global__ void k_oneshot_max_int64(Ctrl *c, const bf16 *src, bf16 *dst, int n,
                                    int nbytes, const HintArgs h, int rank) {
   k_oneshot_impl<false, false, OSAR_COMPACT_CTA != 0, true>(c, src, dst, n, nbytes, h, rank);
+}
+
+__global__ void k_oneshot_gather_int64(Ctrl* c, const bf16* src, bf16* dst,
+                                       int keys, int rank) {
+  const HintArgs hints{};
+  k_oneshot_impl<false, false, true, true, false, true>(
+      c, src, dst, keys * 4, keys * 8, hints, rank);
 }
 
 #if OSAR_COMPACT_CTA
@@ -1031,6 +1055,22 @@ static at::Tensor py_oneshot_max_int64(at::Tensor input) {
       g_ctrl, data, data, (int)input.numel() * 4, (int)input.numel() * 8, hints, g_rank);
   return input;
 }
+
+static at::Tensor py_oneshot_gather_int64(at::Tensor input) {
+  TORCH_CHECK(g_ctrl && g_started && input.is_cuda() && input.scalar_type() == at::kLong &&
+              input.is_contiguous() && input.numel() > 0 && input.numel() <= 512 &&
+              (reinterpret_cast<uintptr_t>(input.data_ptr()) & 15) == 0,
+              "oneshot gather requires live TP4 and 1..512 aligned CUDA int64 keys");
+  // <=4096 bytes means at most one uint4 per thread in the shared publisher.
+  std::vector<int64_t> shape{4};
+  shape.insert(shape.end(), input.sizes().begin(), input.sizes().end());
+  auto output = torch::empty(shape, input.options());
+  k_oneshot_gather_int64<<<1, ARTHREADS, 0, c10::cuda::getCurrentCUDAStream()>>>(
+      g_ctrl, reinterpret_cast<const bf16*>(input.data_ptr()),
+      reinterpret_cast<bf16*>(output.data_ptr()), int(input.numel()), g_rank);
+  TORCH_CHECK(cudaGetLastError() == cudaSuccess, "one-shot int64 gather launch failed");
+  return output;
+}
 // The phase counters (SM cycles, monotonic) for a probe that wants the wait
 // per collective with and without hints: [guard, copy, wait, reduce, calls].
 static std::vector<int64_t> py_phase_counters() {
@@ -1065,6 +1105,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("reserve_packets", &py_reserve_packets);
   m.def("publish_packets", &py_publish_packets);
   m.def("oneshot_max_int64", &py_oneshot_max_int64);
+  m.def("oneshot_gather_int64", &py_oneshot_gather_int64);
   m.def("oneshot_ar_hint", &py_oneshot_hint);
   m.def("phase_counters", &py_phase_counters);
   m.def("transport_modes", []() {

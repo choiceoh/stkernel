@@ -26,6 +26,21 @@ def _gather_worker(rank, rendezvous):
 
 
 class GatherTests(unittest.TestCase):
+    def test_integer_packets_use_native_gather_after_layout_normalization(self):
+        for shape in ((7,), (6, 16), (2, 3, 16)):
+            parts = [(torch.arange(2 * torch.tensor(shape).prod()).reshape(*shape[:-1], shape[-1]*2)
+                      + 10000*r)[..., 1::2] for r in range(4)]
+            def gather(value):
+                self.assertTrue(value.is_contiguous())
+                self.assertEqual(value.data_ptr() % 16, 0)
+                torch.testing.assert_close(value, parts[2], rtol=0, atol=0)
+                return torch.stack(parts)
+            transport = SimpleNamespace(eligible_gather=lambda t: t.dtype == torch.int64, gather=gather)
+            comm = Comm(4, 2, None, transport=transport)
+            with patch('torch.distributed.all_gather_into_tensor', side_effect=AssertionError('NCCL used')):
+                for dim in range(-len(shape), len(shape)):
+                    torch.testing.assert_close(comm.all_gather(parts[2], dim), torch.cat(parts, dim), rtol=0, atol=0)
+
     def test_real_two_process_gloo_with_strided_inputs(self):
         import torch.multiprocessing as mp
         with tempfile.TemporaryDirectory() as temp:

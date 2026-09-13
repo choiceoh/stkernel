@@ -162,6 +162,11 @@ class Comm:
         if t.ndim == 0 or not -t.ndim <= dim < t.ndim:
             raise IndexError('all_gather dimension is outside the tensor rank')
         dim = dim % t.ndim
+        if self.transport is not None:
+            t = self._settled(t)
+            if self.transport.eligible_gather(t):
+                gathered = self.transport.gather(t)
+                return gathered.movedim(0, dim).flatten(dim, dim + 1)
         # NCCL writes directly into one rank-major allocation. The list API
         # otherwise creates per-rank outputs before torch.cat copies them again.
         gathered = torch.empty((self.world_size, *t.shape), device=t.device, dtype=t.dtype)
