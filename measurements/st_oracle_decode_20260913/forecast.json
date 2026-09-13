@@ -1,0 +1,109 @@
+{
+  "scope": "CPU ST Oracle sensitivity calculation; no new engine measurement",
+  "gpu_used": false,
+  "source": {
+    "partial_c1": {
+      "path": "measurements/st_decode_agreement_20260913/consumer-v4.json",
+      "sha256": "9b5a4bd4c9b64c4415627c416a2ace2da1f0f65e8e61acf67a9e7affab678557"
+    },
+    "stages": {
+      "path": "measurements/st_draft_agreement_20260913/prior-device-stages.json",
+      "sha256": "3db6d13697e43f18591c9b651e1066c0bfe2d03a88295eb9205b0e616fcdf126"
+    },
+    "kda": {
+      "path": "measurements/st_kda_batch_20260913/gpu-v4.json",
+      "sha256": "366824fd765047593d4f60b9e9e82ee1eb12eb5cdf1383694c0ebd99f2ada054"
+    },
+    "mhc": {
+      "path": "measurements/st_terminal_decode_20260913/gpu-v2-recovered.json",
+      "sha256": "da4e0d2bd41a07d08651071410c502eee0a22fa98f03fffc660be986edf82af0"
+    },
+    "routing": {
+      "path": "measurements/c4_scaling_20260913/decode-timeline-rank3.json",
+      "sha256": "510dbfca6557ca09c6f89df198dd3ebd80535bf9ee7728ff61b598943d8479e5"
+    }
+  },
+  "baseline_status": "INCOMPLETE",
+  "baseline_source": "4ff6c3729fa58f9551e8928f41f92fe57106efd3",
+  "context": 32000,
+  "observed_acceptance": 0.5794701986754967,
+  "component_saved_ms": 0.6308160228654742,
+  "scenarios": [
+    {
+      "name": "observed_partial_prepare_c1",
+      "step_ms": 48.545686181015455,
+      "steps_per_second": 20.599152647080423,
+      "extra_ms_to_remove": 3.0911407264700017
+    },
+    {
+      "name": "known_component_savings_transfer_fully",
+      "step_ms": 47.91487015814998,
+      "steps_per_second": 20.870347695806228,
+      "extra_ms_to_remove": 2.4603247036045275
+    },
+    {
+      "name": "impossible_upper_bound_remove_all_remaining_kda",
+      "step_ms": 46.85040618510463,
+      "steps_per_second": 21.344532127406286,
+      "extra_ms_to_remove": 1.3958607305591784
+    },
+    {
+      "name": "target",
+      "step_ms": 45.45454545454545,
+      "steps_per_second": 22.0,
+      "extra_ms_to_remove": 0
+    }
+  ],
+  "structural_budgets": [
+    {
+      "ctx": 32000,
+      "c1_ms": 49.733914688772806,
+      "c4_ms": 95.36048952102867,
+      "c1_components": {
+        "MoE 전문가": 20.482914688772805,
+        "비MoE(정적·dense·KDA·글루)": 22.0,
+        "어텐션·인덱서(컨텍스트)": 0.951,
+        "집합통신": 2.9,
+        "드래프터(W4)": 3.4
+      },
+      "c4_components": {
+        "MoE 전문가": 44.566489521028664,
+        "비MoE(정적·dense·KDA·글루)": 34.99,
+        "어텐션·인덱서(컨텍스트)": 3.804,
+        "집합통신": 8.6,
+        "드래프터(W4)": 3.4
+      },
+      "aggregate_gain_if_acceptance_equal": 2.0861434306209428,
+      "c4_ms_to_remove_for_2_4x": 12.470631706407318
+    },
+    {
+      "ctx": 128000,
+      "c1_ms": 52.777114688772805,
+      "c4_ms": 107.53328952102866,
+      "c1_components": {
+        "MoE 전문가": 20.482914688772805,
+        "비MoE(정적·dense·KDA·글루)": 22.0,
+        "어텐션·인덱서(컨텍스트)": 3.9941999999999998,
+        "집합통신": 2.9,
+        "드래프터(W4)": 3.4
+      },
+      "c4_components": {
+        "MoE 전문가": 44.566489521028664,
+        "비MoE(정적·dense·KDA·글루)": 34.99,
+        "어텐션·인덱서(컨텍스트)": 15.976799999999999,
+        "집합통신": 8.6,
+        "드래프터(W4)": 3.4
+      },
+      "aggregate_gain_if_acceptance_equal": 1.96319167483301,
+      "c4_ms_to_remove_for_2_4x": 19.571431706407324
+    }
+  ],
+  "constraints": [
+    "The timing seed is incomplete prepare-c1, not a qualified consumer baseline.",
+    "Full transfer of component savings is assumed; input shapes and sources differ.",
+    "No latency saving is assigned to the new tiled commit before its GPU result.",
+    "Removing all remaining KDA is an unattainable upper bound, not a candidate prediction.",
+    "C4/context comparisons use historical #838 coefficients and equal acceptance, not current C4 evidence.",
+    "No predicted acceptance change, precision change, or speculative-k change is applied."
+  ]
+}

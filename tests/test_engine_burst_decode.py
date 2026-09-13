@@ -124,6 +124,7 @@ class ServedBurstTests(unittest.TestCase):
                 self.assertEqual(list(held.values()), [4]*4)
             self.assertTrue(all(v == 0 for v in e.inflight.values()))
             self.assertEqual(p._queue_rows, ())
+            self.assertEqual(e.accepted_per_step, [0, sum(pos-1 for pos in e.ctx.values()) // 2, 0])
         p.close()
 
     def test_every_iteration_matches_the_existing_pipeline_at_c1_and_c4(self):
@@ -145,6 +146,9 @@ class ServedBurstTests(unittest.TestCase):
                     self.assertEqual(e.ctx, ref.ctx)
                     self.assertEqual((e.accepted_total, e.drafted_total, e.steps),
                                      (ref.accepted_total, ref.drafted_total, ref.steps))
+                    self.assertEqual(e.accepted_per_step, ref.accepted_per_step)
+                    self.assertEqual(sum(e.accepted_per_step), e.drafted_total // e.drafter.k)
+                    self.assertGreater(sum(e.accepted_per_step), 0)
                     self.assertEqual(len(pending.iteration_seconds), limit)
                     self.assertTrue(all(value == 0 for value in e.inflight.values()))
                 p.close()

@@ -428,6 +428,7 @@ class AsyncDecode:
                 e.ctx[seq] += c
                 e.accepted_total += accepted[i]
                 e.drafted_total += K
+                e.accepted_per_step[accepted[i]] += 1  # same host readback as the totals; no extra device work
                 boundary = (e.ctx[seq] // e.F.block) * e.F.block
                 if boundary > before:
                     e.staged[seq] = boundary                                  # the runner may checkpoint it from the stage

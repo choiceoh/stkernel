@@ -657,6 +657,32 @@ class KernelBudgetTests(unittest.TestCase):
                                  capture_output=True, text=True, timeout=120)
         self.assertIn("ST-Oracle", sim_out.stdout)
 
+    def test_composed_cli_applies_overrides_and_reports_the_executed_contract(self):
+        for k in (0, 6):
+            with self.subTest(k=k):
+                out = subprocess.run([sys.executable, str(ROOT / "bench" / "storacle.py"), "sim",
+                                      "--compose", "--prompts", "200", "--gen", "2", "--no-calib",
+                                      "--k", str(k), "--acc", "0", "--decode-ms", "0.01", "--json"],
+                                     cwd=ROOT, capture_output=True, text=True, timeout=30)
+                self.assertEqual(out.returncode, 0, out.stderr)
+                row = json.loads(out.stdout)["run"]
+                self.assertEqual((row["cost"]["k"], row["cost"]["acc"]), (k, 0))
+                self.assertEqual(row["cost"]["decode_ms"], .01)
+                self.assertFalse(row["cost"]["decode_ms_by_ctx"])
+                contract = sim.sched.Contract(**row["contract"])
+                self.assertEqual(sim.sched.chunk_for(contract.chunk_align, contract.token_budget,
+                                                    contract.draft_slots), 9216)
+                self.assertEqual(sim.sched.chunk_for(contract.chunk_align, contract.decode_token_budget,
+                                                    contract.draft_slots), 2304)
+                self.assertEqual(contract.draft_slots, k)
+
+    def test_composed_k_changes_the_byte_cost_before_constructing_the_ladder(self):
+        single = sim.composed_cost(k=0)
+        speculative = sim.composed_cost(k=6)
+        self.assertEqual((single.k, speculative.k), (0, 6))
+        for context in (2000, 32000, 128000):
+            self.assertLess(single.decode_ms_by_ctx[context], speculative.decode_ms_by_ctx[context])
+
     def test_partial_gives_values_with_confidence(self):
         # 결측이 있어도 값을 준다 — 구간과 신뢰도와 함께(모르는 것을 0 이라고 말하지 않는다)
         q38 = kern.EngineBytes.for_model("qwen38")

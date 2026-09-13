@@ -59,8 +59,8 @@ def padded_columns(cols: int) -> int:
     return -(-cols // DENSE_ALIGN) * DENSE_ALIGN
 
 
-def packed_nbytes(rows, cols, *, prefill=True):
-    """Aligned resident bound for W4 tiles (folded or not) plus optional FP8.
+def packed_nbytes(rows, cols, *, prefill=True, decode_fp8=False, decode_w4=True):
+    """Aligned resident bound for the selected W4 and FP8 readers.
 
     Calibration may fold tiles and share their row scale, so declare the larger
     unmerged form. This does not reserve the BF16 source or packing scratch.
@@ -71,12 +71,12 @@ def packed_nbytes(rows, cols, *, prefill=True):
     def add(size):
         nonlocal end
         end = (end + 255) // 256 * 256 + size
-    for start in range(0, cols, TILE):
+    for start in range(0, cols if decode_w4 else 0, TILE):
         width = min(TILE, cols - start)
         add(padded * width // 2)  # two W4 values per byte
         add(padded * width // 16)  # one E4M3 scale per group
         add(padded * 4)  # FP32 row scales
-    if prefill:
+    for _ in range(int(prefill) + int(decode_fp8)):
         add(padded * cols)
         add((padded // 128) * (cols // 128) * 4)
     return (end + 255) // 256 * 256
@@ -224,13 +224,15 @@ class DenseLinear:
             raise ValueError('FP8 decode requires a prepared FP8 pack')
         self.decode_precision = decode_precision
         self.name = name
-        w4_name = decode_name or name
+        w4_name = decode_name if decode_name and decode_precision == 'w4' else name
         self.smooth = smooth
         self.observer = None  # calibration.Calibration sums this layer's inputs through it (X^T X for the GPTQ packs)
         self.executed = 0  # boot proof: W4=1, FP8=2
         self.workspace = None  # optional private W4 scratch for independent execution
         packs = []
-        if self.cols > TILE and store is not None and store.calibrated(w4_name):
+        if decode_precision == 'fp8':
+            pass  # No W4 invocation exists: skip its packing, factorisation and resident bytes.
+        elif self.cols > TILE and store is not None and store.calibrated(w4_name):
             packs = list(store.pack_wide(weight, w4_name, smooth=smooth))   # one GPTQ over the whole K, from the full Hessian
         elif self.cols > TILE and hessians is not None and hessians.shape == (self.cols, self.cols):
             packs = pack_w4_wide(weight, hessians)
@@ -242,13 +244,21 @@ class DenseLinear:
                              pack_w4(w, hessian=None if hessians is None else hessians[start//TILE]))
         self.packs = tuple(_fold(packs))
         packs.clear()                     # the folded copy is the pack now; the tiles are 42 MiB of nothing
-        self.calibrated = all(p.calibrated for p in self.packs)
+        self.calibrated = bool(self.packs) and all(p.calibrated for p in self.packs)
         if prefill:
             # the FP8 lane's weights: GPTQ on the fp8 grid from the same calibration, else round-to-nearest
             fp8 = store.pack_fp8(weight, name, smooth=smooth) if (store is not None and store.calibrated(name)) else None
             self.fp8 = FP8Linear(weight, quantized=fp8, name=name)
         else:
             self.fp8 = None
+        self.decode_fp8 = None
+        if decode_name is not None and decode_precision == 'fp8':
+            # Decode GPTQ must affect the executed FP8 grid, while even a
+            # one-token prefill retains the shared pack. No raw BF16 reader.
+            fp8 = store.pack_fp8(weight, decode_name, smooth=smooth) if store is not None else None
+            if fp8 is None:
+                raise ValueError('FP8 decode requires its completed decode calibration')
+            self.decode_fp8 = FP8Linear(weight, quantized=fp8, name=decode_name)
 
     def consume_weight(self, storage):
         """Retire the source arena region into W4/FP8 views before capture."""
@@ -256,10 +266,14 @@ class DenseLinear:
         tensors=[t for p in self.packs for t in (p.data,p.scale,p.rowscale)]
         if self.fp8 is not None:
             tensors.extend(self.fp8.weight)
+        if getattr(self, 'decode_fp8', None) is not None:
+            tensors.extend(self.decode_fp8.weight)
         owned=iter(consume(storage,tensors))
         self.packs=tuple(W4Pack(next(owned),next(owned),next(owned),p.rows,p.cols,p.calibrated) for p in self.packs)
         if self.fp8 is not None:
             self.fp8.weight=next(owned),next(owned)
+        if getattr(self, 'decode_fp8', None) is not None:
+            self.decode_fp8.weight=next(owned),next(owned)
 
     def isolate_workspace(self):
         """Before capture: permit this layer to overlap another W4 GEMM.
@@ -267,12 +281,14 @@ class DenseLinear:
         One owner, one stream at a time. Counter words start at zero and are
         rearmed by every completed GEMM. Packs and arithmetic are unchanged.
         """
+        if not self.packs:
+            raise ValueError('a private W4 workspace requires a prepared W4 lane')
         if self.workspace is None:
             self.workspace = torch.zeros(extension().gemm_workspace_elements(), dtype=torch.float32,
                                          device=self.packs[0].data.device)
         return self.workspace.numel() * self.workspace.element_size()
 
-    def __call__(self, x, rows_ok=None, *, observe=True):
+    def __call__(self, x, rows_ok=None, *, observe=True, decode=False):
         """`rows_ok` [rows] bool: which rows are real -- only a calibration run reads it (the pipeline's ghost rows,
         a masked observation's positions past the committed count); the product itself covers every row."""
         if x.shape[-1] != self.cols or x.dtype != torch.bfloat16:
@@ -298,7 +314,8 @@ class DenseLinear:
         else:
             if self.fp8 is None:
                 raise ValueError("large-M dense call without a prepared prefill lane")
-            out = self.fp8(flat)
+            lane = self.decode_fp8 if decode and getattr(self, 'decode_fp8', None) is not None else self.fp8
+            out = lane(flat)
             self.executed |= 2
         return out.reshape(*shape, self.rows)
 

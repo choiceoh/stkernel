@@ -242,6 +242,10 @@ class Drafter:
         from engine.kernels.dense import DenseLinear
         from .draft_policy import DraftPolicy, require_decode_calibration
         policy = policy or DraftPolicy()
+        if policy.fc_calibration == 'auto':
+            raise ValueError('resolve automatic draft calibration across ranks before preparing packs')
+        if consume_weights and policy.separate_decode_fp8:
+            raise ValueError('separate decode FP8 needs the declared compact arena, not the source BF16 region')
         self.decode_calibration = policy.fc_calibration != 'shared'
         from .drafter_storage import block_rows, needs_fp8, compact
         if compact_into is not None and (consume_weights or max_seqs is None):
@@ -280,7 +284,7 @@ class Drafter:
         self.context_kv = torch.cat(context)
         self.context_norm = torch.stack([p[f"layers.{L}.self_attn.k_norm.weight"] for L in range(F.layers)])
         if compact_into is not None:
-            compact(self, compact_into, max_seqs)
+            compact(self, compact_into, max_seqs, policy=policy)
         if consume_weights:
             for name, layer in self.dense.items():
                 source = (name.replace("self_attn.qkv","self_attn.q_proj.weight")
@@ -305,6 +309,15 @@ class Drafter:
         return layer(x)
 
     # -- context: verified tokens' target states -> K/V rings -------------------------------
+    def context_linear(self, aux, keep=None, *, decode=False, observe=True):
+        """Phase is explicit: row count cannot distinguish a short prompt."""
+        layer = self.dense.get('fc.weight')
+        if layer is not None and getattr(layer, 'decode_fp8', None) is not None:
+            return layer(aux, keep, decode=decode, observe=observe)
+        if not observe:
+            return layer(aux, observe=False)
+        return self.linear(aux, 'fc.weight', keep)
+
     def observe(self, ring: torch.Tensor, positions: torch.Tensor, aux: torch.Tensor) -> None:
         """ring [L, 2, window, kv_heads, D] bf16 (a slot's); positions [n]; aux [n, 5*4096] target states."""
         self._observe(ring, positions, aux)
@@ -327,7 +340,7 @@ class Drafter:
         # defined last-writer order.
         positions, aux = positions[-F.window:], aux[-F.window:]
         keep = (torch.arange(len(positions), device=positions.device) < valid) if valid is not None else None
-        c = norm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)          # context states, normed once for every layer
+        c = norm(self.context_linear(aux, keep, decode=valid is not None), p["hidden_norm.weight"], F.rms_eps)
         idx = positions % F.window
         context = (Fn.linear(c,self.context_kv).reshape(-1,F.layers,2,self.local_kv_heads,F.head_dim)
                    if self.context_kv is not None else None)
@@ -428,7 +441,7 @@ class Drafter:
         F, p = self.F, self.p
         n, t = positions.shape
         keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t) if observe else None
-        projected = self.linear(aux, "fc.weight", keep) if observe else self.dense["fc.weight"](aux, observe=False)
+        projected = self.context_linear(aux, keep, decode=True, observe=observe)
         c = norm(projected, p["hidden_norm.weight"], F.rms_eps)
         return Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)
 
@@ -482,7 +495,7 @@ class Drafter:
             return
         n, t = positions.shape
         keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)
-        c = norm(self.linear(aux, "fc.weight", keep), p["hidden_norm.weight"], F.rms_eps)
+        c = norm(self.context_linear(aux, keep, decode=True), p["hidden_norm.weight"], F.rms_eps)
         flat = positions.reshape(-1)
         idx = positions % F.window
         rows = slots.view(n, 1)

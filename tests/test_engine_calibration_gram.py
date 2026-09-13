@@ -75,6 +75,7 @@ class BufferedGramTests(unittest.TestCase):
                     # FP32 inputs exercise tf32x3, not only exactly representable BF16.
                     x = torch.randn(n, width, generator=gen, device="cuda", dtype=dtype)
                     mask = torch.arange(n, device="cuda") % 3 != step % 3
+                    x[~mask] = float('nan') if step % 2 else float('inf')
                     inputs[n].copy_(x)
                     masks[n].copy_(mask)
                     graphs[n].replay()

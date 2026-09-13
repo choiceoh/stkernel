@@ -21,6 +21,31 @@ class FakeLayer:
 
 
 class CalibrationTests(unittest.TestCase):
+    def test_nonfinite_excluded_rows_and_disarmed_inputs_do_not_poison_statistics(self):
+        for dtype in (torch.float32, torch.bfloat16):
+            with self.subTest(dtype=dtype):
+                c = Calibration('cpu', budget_bytes=1 << 20)
+                layer = FakeLayer(16)
+                c.attach(layer.name, layer, PackStore.tiles(layer.name, 16), small_rows=True)
+                layer(torch.full((7, 16), float('nan'), dtype=dtype))
+                self.assertEqual(c.progress(), 0)
+                self.assertTrue(torch.equal(c.H[layer.name], torch.zeros(16, 16)))
+                c.arm()
+                x = torch.arange(7 * 16, dtype=torch.float32).view(7, 16).to(dtype)
+                keep = torch.tensor([True, False, True, False, False, True, False])
+                x[1] = float('nan')
+                x[3:] = float('inf')
+                x[5] = 3
+                layer(x, keep)
+                expected = x[keep].float()
+                torch.testing.assert_close(c.H[layer.name], expected.T @ expected)
+                torch.testing.assert_close(c.amax[layer.name], expected.abs().amax(0))
+                self.assertEqual(c.progress(), 3)
+                # A nonfinite committed row is a real problem, not something
+                # the observer should silently replace with a good sample.
+                layer(torch.full((1, 16), float('nan'), dtype=dtype), torch.ones(1, dtype=torch.bool))
+                self.assertFalse(torch.isfinite(c.H[layer.name]).all())
+
     def test_filing_stops_future_observation_and_a_failed_save_remains_live(self):
         c = Calibration('cpu', budget_bytes=1 << 20)
         layer = FakeLayer(32)

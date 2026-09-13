@@ -64,10 +64,10 @@ class KnobDeclarationTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ConfigError):
                 self._declared({"STK_"+key:"1"}, production=True)
 
-    def test_acceptance_experiments_remain_off_and_cannot_override_production(self):
+    def test_acceptance_defaults_are_on_and_cannot_override_production(self):
         from engine.base.config import ConfigError
-        defaults = {'draft_fc_precision': 'w4', 'draft_fc_calibration': 'shared', 'draft_diagnostics': 0}
-        choices = {'draft_fc_precision': 'fp8', 'draft_fc_calibration': 'collect', 'draft_diagnostics': 1}
+        defaults = {'draft_fc_precision': 'fp8', 'draft_fc_calibration': 'auto', 'draft_diagnostics': 1}
+        choices = {'draft_fc_precision': 'w4', 'draft_fc_calibration': 'shared', 'draft_diagnostics': 0}
         for production in (False, True):
             cfg = self._declared({}, production=production)
             self.assertEqual({key: cfg[key] for key in defaults}, defaults)

@@ -11,20 +11,45 @@ following three experiments. FP32 KDA state remains the default.
 
 | Arm | `STK_draft_fc_precision` | `STK_draft_fc_calibration` | `STK_draft_diagnostics` |
 |---|---|---|---|
+| Serving default | `fp8` | `auto` | `1` |
 | A: shared W4 baseline | `w4` | `shared` | `1` |
 | B: FC FP8 | `fp8` | `shared` | `1` |
 | Collection, excluded from timing verdict | `w4` | `collect` | `1` |
 | C: decode GPTQ | `w4` | `decode` | `1` |
+| Combined collection | `fp8` | `collect` | `1` |
+| Combined measurement | `fp8` | `decode` | `1` |
 
-Production defaults are `w4/shared/0`. These are experimental knobs in a
-non-production boot. `bench/st_bracket.sh` runs immutable commits in production
+Production and ordinary serving default to `fp8/auto/1`, enabled by operator
+request; this is not a measured acceptance or throughput verdict. `auto` resolves
+before arena sizing: if every rank has valid committed-decode statistics, all
+consume `fp8/decode/1`. Otherwise all use `fp8/collect/1`, keeping any already
+complete files intact and collecting the missing ones within the existing
+2 GiB calibration budget. This collection boot uses the shared FP8 pack;
+it does not claim to have activated decode GPTQ yet. Completed statistics are
+consumed on a subsequent boot, never by changing weights inside captured graphs.
+For the current FC and C=4 capacity, its missing full Hessian plus staging
+reserves about 1.57 GiB per collecting rank and adds Gram-update work. This
+bootstrap cost must stay outside timing comparisons. No GPU job is queued by
+changing the defaults.
+
+Readiness and invalid-file errors are agreed over the host preparation/control
+groups before allocation. Corrupt, incompatible or incomplete existing files
+remain explicit errors on every rank; `auto` only bootstraps absent files. An
+explicit `decode` arm still fails if any rank lacks completed statistics.
+Boot records and lane information distinguish `draft_policy_requested` from
+the resolved `draft_policy` (`collect` or `decode`). FP32 KDA state is unchanged.
+
+Fixed arms remain available in a non-production boot.
+`bench/st_bracket.sh` runs immutable commits in production
 shape and clears knobs: create arm commits from the same implementation commit,
 changing only the three corresponding production facts in `boot.declared` for
 each row above. Do not present an environment override as a bracket arm.
 
 1. **FC FP8** changes only the drafter's FC projection of target context states.
    Its existing FP8 pack is reused for small calls, retaining W4 packs for the
-   other draft layers. It introduces no new full-precision weight copy. A higher
+   other draft layers. The unused FC W4 pack is neither built nor reserved,
+   saving about 45 MiB per rank and avoiding its GPTQ packing work. It introduces
+   no new full-precision weight copy. A higher
    acceptance rate can still lose tok/s through more expensive FC compute.
 2. **Decode GPTQ** collects only explicitly committed decode rows. Prefill,
    short prompts, capture/warmup, ghost rows and rejected suffixes do not enter
@@ -32,10 +57,23 @@ each row above. Do not present an environment override as a bracket arm.
    `input_scope=committed_decode_v1`; shared calibration is not overwritten.
    At least 4,096 rows are required; automatic filing targets 32,768. Collection
    stays within the existing 2 GiB calibration budget. Consume on a subsequent
-   boot. Missing, incomplete or foreign calibration fails before serving.
-   Only the FC W4 pack uses it; FC smoothing and its prefill FP8 pack retain
-   their shared calibration. `fp8/decode` is rejected because the changed W4
-   pack would not execute.
+   boot. Explicit `decode` requires completed calibration before serving;
+   `auto` handles absent files as described above.
+   With W4 decode, only the FC W4 pack uses it. With FP8 decode, a separate
+   FP8 pack is GPTQ-calibrated on the FP8 grid using this Hessian; the shared
+   prefill FP8 pack retains its identity. The context call explicitly
+   identifies decode, including early projection and synchronous commits;
+   small prefill calls never select the decode pack. The extra FP8 pack
+   occupies 80.02 MiB per rank for the current FC; after removing the unused W4
+   reservation, the combined arm adds about 35 MiB over the baseline. Both the
+   boot arena and budget table declare these readers, compacted into arena-owned storage. Native
+   qualification refuses a prepared but unexecuted decode FP8 pack.
+   Validation checks the blob's scope, name, row count, FP32 statistics, shapes
+   and finite nonempty signal before arena admission. Hessian validation uses
+   bounded chunks, and returns its clean file pages before the large allocation.
+   Excluded rows are selected away before arithmetic (and not loaded by the
+   CUDA observer): NaN/Inf verifier scratch cannot enter statistics through
+   `0 * NaN`. Nonfinite committed rows remain visible as errors.
 3. **First-rejection attribution** reads the actual global top-16 support and
    the first mismatching target greedy pick. `candidate_miss` means the target
    token was absent; `selector_miss` means it was present but not selected.
@@ -70,7 +108,7 @@ matching shared files, with C additionally reading the completed decode blob.
 Run full onepass with the existing coverage: C=1 at 2K/32K/128K and C=4 at
 2K/32K once; C=4 128K remains excluded. Keep the same questions, K, temperature,
 token limits, checkpoint, tokenizer and target packs. Use A/B/A and A/C/A warm
-comparisons, retaining cold runs separately and resetting prefix reuse. Record
+comparisons (or A/combined/A for the combined experiment), retaining cold runs separately and resetting prefix reuse. Record
 per-question acceptance, first-rejection histogram, quality/logic checks, finish
 reason, output length/hash, TTFT, decode tok/s and FC/observe latency. A valid
 greedy draft-only change should preserve the target output; higher acceptance
@@ -78,6 +116,11 @@ with different/repetitive output is not a win. Do not derive improvement from
 the pooled average or from a simulator alone.
 
 ## Validation status
+
+Combined testing first collects with `fp8/collect/1`, then boots
+`fp8/decode/1` using completed per-rank blobs. Collection is preparation, not a
+measured combined result. The baseline uses the same diagnostic recording and
+shared calibration. Freeze calibration before either measured arm.
 
 CPU tests cover dispatch, isolated W4/FP8 calibration identities, committed-row
 selection, output boundaries, cache-slot ownership, async/burst/shared-queue
