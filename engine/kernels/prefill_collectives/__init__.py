@@ -20,7 +20,7 @@ FP8_MIN_ROWS = 2048
 
 
 class PrefillCollectives:
-    def __init__(self, comm, *, project_tiles=False):
+    def __init__(self, comm, *, project_tiles=False, fuse_sum=False):
         from engine.base.kernel_shape import bound
         cell = bound().comm
         if comm.world_size != cell.world:
@@ -32,6 +32,39 @@ class PrefillCollectives:
             raise ValueError("project_tiles must be a boolean")
         self.project_tiles = project_tiles
         self.projector = None
+        if type(fuse_sum) is not bool:
+            raise ValueError("private fused-sum selection must be a boolean")
+        self.fuse_sum = fuse_sum
+
+    def reduce_scatter_pair(self, x, y, *, padded_rows):
+        """Private prefill sum/pack fusion with transport-only row padding."""
+        self.check(x)
+        self.check(y)
+        if (x.shape != y.shape or x.device != y.device or type(padded_rows) is not int
+                or padded_rows != ((x.shape[0]+self.world-1)//self.world)*self.world):
+            raise ValueError('fused prefill sum requires matching inputs and exact transport padding')
+        if not self.fuse_sum or padded_rows < FP8_MIN_ROWS:
+            summed = x+y
+            if padded_rows != x.shape[0]:
+                summed = torch.cat((summed, summed.new_zeros((padded_rows-x.shape[0],self.hidden))))
+            return self.reduce_scatter(summed)
+        from .sum_pack import _pack_sum_rs_payload
+        local = padded_rows*self.hidden//self.world
+        if local % BLOCK:
+            raise ValueError('fused sum packets require whole blocks per destination')
+        stride = ((local+4*(local//BLOCK)+127)//128)*128
+        payload = torch.empty(stride*self.world,device=x.device,dtype=torch.uint8)
+        _pack_sum_rs_payload[(padded_rows*self.hidden//BLOCK,)](
+            x,y,payload.view(torch.float8_e4m3fn),payload.view(torch.float32),
+            x.numel(),local,stride,BLOCK=BLOCK)
+        received = torch.empty_like(payload)
+        dist.all_to_all_single(received,payload,group=self.comm.group)
+        out = torch.empty((padded_rows//self.world,self.hidden),device=x.device,dtype=x.dtype)
+        _unpack_sum_payload[(local//BLOCK,)](
+            received.view(torch.float8_e4m3fn),received.view(torch.float32),out,
+            local,stride,TP=self.world,BLOCK=BLOCK)
+        self.executed.add('fp8_reduce_scatter_sum')
+        return out
 
     def gather_project(self, x, project, *, packet_project=None):
         if not self.project_tiles:

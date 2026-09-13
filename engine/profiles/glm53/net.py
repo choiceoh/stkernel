@@ -738,7 +738,7 @@ class Glm53Net:
         return sel.to(torch.int32), w / w.sum(-1, keepdim=True) * F.routed_scale
 
     @operation("moe", layer_arg=1)
-    def _moe(self, L: int, x: torch.Tensor, reduce=None) -> torch.Tensor:
+    def _moe(self, L: int, x: torch.Tensor, reduce=None, *, reduce_pair=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.moe."
         # GPU component gate: C=1 wins; C=4 with reused routes regresses.
         # Keep the established shared chain for wider captured batches.
@@ -754,6 +754,8 @@ class Glm53Net:
         shared = self.linear(self._activation(g, u, F.swiglu_limit), n + "sh_down")
         # Both lanes return BF16. Its add accumulates in FP32 and rounds once,
         # just like the former float() + float() followed by to(BF16).
+        if reduce_pair is not None:
+            return reduce_pair(out, shared)
         return (reduce or self.comm.all_reduce)(out + shared)
 
     # -- the step ---------------------------------------------------------------------------
@@ -805,7 +807,10 @@ class Glm53Net:
             res, post, comb, x = self._hc_post_pre(L, x, res, post, comb, "ffn")
             if sp:
                 x = sp.all_gather(x.contiguous())
-            x = self._moe(L, x, reduce) if F.is_moe(L) else self._dense(L, x, reduce)
+            if F.is_moe(L) and sp and sp.fuse_sum:
+                x = self._moe(L, x, reduce, reduce_pair=sp.reduce_scatter_pair)
+            else:
+                x = self._moe(L, x, reduce) if F.is_moe(L) else self._dense(L, x, reduce)
             if self.probe:
                 self.probe("moe" if F.is_moe(L) else "dense", L, x)
             if aux_layers and L in aux_layers:

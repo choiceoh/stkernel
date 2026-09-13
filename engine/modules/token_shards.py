@@ -18,6 +18,7 @@ class TokenShards:
             raise ValueError("prefill shards cannot leave a rank without a real token")
         self.padded_rows = self.local_rows * world
         self.project_tiles = owner.project_tiles
+        self.fuse_sum = getattr(owner, 'fuse_sum', False)
 
     @property
     def last_local(self):
@@ -44,6 +45,11 @@ class TokenShards:
 
     def reduce_scatter(self, x):
         return self.owner.reduce_scatter(self.pad(x))
+
+    def reduce_scatter_pair(self, x, y):
+        if x.shape[0] != self.rows or y.shape[0] != self.rows:
+            raise ValueError('prefill sum inputs must contain exactly the real token rows')
+        return self.owner.reduce_scatter_pair(x,y,padded_rows=self.padded_rows)
 
     def gather_result(self, x):
         """Final hidden/auxiliary rows use lossless communication as before."""

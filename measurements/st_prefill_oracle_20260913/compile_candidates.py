@@ -41,6 +41,17 @@ def main():
             usage = subprocess.check_output(['/usr/local/cuda/bin/cuobjdump','--dump-resource-usage',str(output/(name+'.cubin'))],text=True)
             report['variants'].append(dict(kind=name,shared_bytes=compiled.metadata.shared,resources=usage))
             print(name,usage.strip(),flush=True)
+        from engine.kernels.prefill_collectives.sum_pack import _pack_sum_rs_payload
+        signature = dict(X='*bf16',Y='*bf16',Packed='*fp8e4nv',Scales='*fp32',
+                         N='i32',LOCAL_N='i32',PAYLOAD_BYTES='i32')
+        compiled = triton.compile(ASTSource(_pack_sum_rs_payload,signature,constexprs=dict(BLOCK=2048)),
+                                  target=GPUTarget('cuda',121,32),options=dict(num_warps=4))
+        path=output/'sum-pack.cubin'
+        path.write_bytes(compiled.asm['cubin'])
+        (output/'sum-pack.ptx').write_text(compiled.asm['ptx'])
+        usage=subprocess.check_output(['/usr/local/cuda/bin/cuobjdump','--dump-resource-usage',str(path)],text=True)
+        report['variants'].append(dict(kind='prefill_sum_pack',shared_bytes=compiled.metadata.shared,resources=usage))
+        print('compiled fused sum/pack',usage.strip(),flush=True)
         assert not torch.cuda.is_initialized()
         torch.cuda.is_available = lambda: True
         torch.cuda.get_device_capability = lambda *a,**k: (12,1)
@@ -93,7 +104,9 @@ def main():
     finally:
         report.update(cuda_initialized=torch.cuda.is_initialized(),elapsed_s=time.monotonic()-started)
         files = [*root.glob('engine/kernels/b12x/**/*.py'),root/'engine/kernels/prefill_mhc.py',
-                 root/'engine/kernels/dense/mhc.py',root/'engine/profiles/glm53/net.py']
+                 root/'engine/kernels/dense/mhc.py',root/'engine/profiles/glm53/net.py',
+                 root/'engine/kernels/prefill_collectives/sum_pack.py',
+                 root/'engine/kernels/prefill_collectives/__init__.py',root/'engine/modules/token_shards.py']
         report['source_sha256']={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
         (output/'result.json').write_text(json.dumps(report,indent=2)+'\n')
         print(json.dumps({k:report[k] for k in ('status','cuda_initialized','elapsed_s')}),flush=True)
