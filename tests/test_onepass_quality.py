@@ -73,7 +73,8 @@ class OracleTests(unittest.TestCase):
                 if 'B' in keys and 'A' not in keys: violations.append('dependency')
                 if 'C' in keys and 'E' in keys: violations.append('conflict')
                 rows.append(dict(ids=keys, cost=sum(costs), staff=sum(people),
-                                 score=min(sum(high), sum(low)) - sum(risks) * 2, violations=violations))
+                                 score=None if violations else min(sum(high), sum(low)) - sum(risks) * 2,
+                                 violations=violations))
             self.assertEqual(sorted(rows, key=lambda x: x['ids']), expected['derivation']['candidates'])
             ranked = sorted((r for r in rows if not r['violations']), key=lambda r: (-r['score'], r['ids']))
             self.assertEqual(expected['result'], dict(best=ranked[0]['ids'], score=ranked[0]['score'],
@@ -142,7 +143,7 @@ class GraderTests(unittest.TestCase):
 
     def test_correct_answer_with_false_derivation_or_false_citation_fails(self):
         self.answer['ledger']['derivation']['selected'][0] = 'L12'  # recorded after cutoff
-        self.answer['portfolio']['derivation']['candidates'][0]['score'] += 1
+        next(r for r in self.answer['portfolio']['derivation']['candidates'] if not r['violations'])['score'] += 1
         self.answer['logic']['evidence']['constraints'].append('U99')
         rows = self.grade()
         self.assertTrue(all(r['checks']['result'] for r in rows))
@@ -169,7 +170,8 @@ class GraderTests(unittest.TestCase):
 
     def test_malformed_duplicate_extra_nonfinite_and_truncated_answers_fail_closed(self):
         valid = json.dumps(self.answer)
-        for text in ('', valid[:-3], '[1]', valid + valid, valid.replace('287', 'NaN'),
+        available = str(self.answer['ledger']['result']['available'])
+        for text in ('', valid[:-3], '[1]', valid + valid, valid.replace(available, 'NaN', 1),
                      '{"ledger":{},"ledger":{},"portfolio":{},"logic":{}}', valid[:-1] + ',"extra":{}}'):
             with self.subTest(text=text[:60]):
                 self.assertFalse(any(r['passed'] for r in self.grade(text)))
@@ -178,6 +180,14 @@ class GraderTests(unittest.TestCase):
         self.assertFalse(any(r['passed'] for r in self.grade(valid[:-1], finish='length', fixed=True)))
         self.answer['logic']['counterfactual']['consistent'] = 0
         self.assertFalse(self.grade()[2]['passed'])
+
+    def test_scored_infeasible_candidate_and_unscored_feasible_candidate_fail(self):
+        rows = self.answer['portfolio']['derivation']['candidates']
+        next(r for r in rows if r['violations'])['score'] = 0
+        self.assertFalse(self.grade()[1]['checks']['derivation'])
+        self.answer = {c['id']: copy.deepcopy(c['answer']) for c in self.cases}
+        next(r for r in self.answer['portfolio']['derivation']['candidates'] if not r['violations'])['score'] = None
+        self.assertFalse(self.grade()[1]['checks']['derivation'])
 
     def test_query_order_matters_and_duplicate_worlds_do_not_count_as_coverage(self):
         self.answer['logic']['result']['statuses'].reverse()
@@ -241,9 +251,35 @@ class IntegrationTests(unittest.TestCase):
     def test_default_reasoning_budgets_leave_room_for_complete_certificates(self):
         items = onepass.workload_requests(self.fixture(), SimpleNamespace(filler=lambda n, r: ''))
         self.assertEqual([(i['max_tokens'], i['reasoning_budget']) for i in items],
-                         [(8192, 4096)] * 3 + [(24576, 12288)] * 2)
+                         [(16384, 8192)] * 3 + [(49152, 24576)] * 2)
         self.assertTrue(all(i['max_tokens'] - i['reasoning_budget'] >= i['reasoning_budget']
                             for i in items))
+
+    def test_prompt_spells_out_choices_record_ids_and_null_scores_for_infeasible_candidates(self):
+        items = onepass.workload_requests(self.fixture(), SimpleNamespace(filler=lambda n, r: ''))
+        for item in items:
+            self.assertIn('JSON 밖에는 표·설명·문장을 쓰지 않는다', item['content'])
+            schema = json.loads(item['content'].rsplit('\n', 1)[1])
+            self.assertEqual(set(schema), {c['id'] for c in item['quality_cases']})
+            for case in item['quality_cases']:
+                shape = schema[case['id']]
+                self.assertEqual(set(shape), set(case['answer']))
+                self.assertTrue(all(group == ['기록 ID'] for group in shape['evidence'].values()))
+            if 'ledger' in schema:
+                self.assertEqual(schema['ledger']['result']['decision'], '전량승인|보류')
+                self.assertEqual(schema['ledger']['counterfactual']['decision'], '전량승인|보류')
+            if 'portfolio' in schema:
+                self.assertEqual(schema['portfolio']['derivation']['candidates'][0]['score'], 'integer|null')
+                self.assertEqual(schema['portfolio']['derivation']['candidates'][0]['violations'],
+                                 ['budget|staff|dependency|conflict'])
+            if 'logic' in schema:
+                self.assertEqual(schema['logic']['result']['statuses'], ['참|거짓|판단불가'])
+                self.assertEqual(schema['logic']['witnesses'], [{'true': '6자리 비트열|null', 'false': '6자리 비트열|null'}])
+        for seed in range(10):
+            rows = q.cases(seed)[1]['answer']['derivation']['candidates']
+            self.assertTrue(all((r['score'] is None) == bool(r['violations']) for r in rows))
+            self.assertTrue(any(r['violations'] for r in rows) and any(not r['violations'] for r in rows))
+            self.assertIn(re.search(r'손실률 (\d+)%', q.cases(seed)[0]['evidence']['L3'])[1], {'5', '10', '15'})
 
     def test_diagnostic_copy_does_not_shorten_quality_or_prefill_workloads(self):
         items = onepass.workload_requests(self.fixture(), SimpleNamespace(filler=lambda n, r: ''))
@@ -268,7 +304,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertGreater(grade.lineno, windows.end_lineno)
         self.assertGreater(grade.lineno, end.end_lineno)
 
-    def test_canonical_main_records_all_nine_c1_and_36_c4_cases(self):
+    def _check_canonical_coverage(self, run_index=None):
         self.addCleanup(setattr, onepass, '_RUN', None)
         from tests.test_onepass_channel_diagnostics import scanner
         cq = SimpleNamespace(MODEL='fixture', filler=lambda n, r: '')
@@ -298,7 +334,9 @@ class IntegrationTests(unittest.TestCase):
                                                    _parse_spec_metrics=lambda x: {}),
                    'bracket.py': SimpleNamespace(_git_sha=lambda: 'fixture', _StepWindows=Windows,
                        _spec_delta=lambda a, b: (0, 0), spec_k_eff=lambda a, b: 6)}
-        with TemporaryDirectory() as root, patch.dict(os.environ, {}, clear=True), \
+        environment = {'ONEPASS_RUN_INDEX': str(run_index)} if run_index is not None else {}
+        include_c4 = run_index in (None, 1)
+        with TemporaryDirectory() as root, patch.dict(os.environ, environment, clear=True), \
              patch.object(sys, 'argv', ['onepass.py', '--out', str(Path(root) / 'ledger.jsonl')]), \
              patch.object(onepass, '_load', side_effect=lambda name, module: modules[name]), \
              patch.object(onepass, '_served_build', return_value={}), \
@@ -309,23 +347,43 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(onepass.main(), 2)
             record = json.loads((Path(root) / 'ledger.jsonl').read_text())
             self.assertEqual((record['quality']['ok'], record['quality']['total']), (9, 9))
-            self.assertEqual((record['quality_c4']['ok'], record['quality_c4']['total']), (36, 36))
+            if include_c4:
+                self.assertEqual((record['quality_c4']['ok'], record['quality_c4']['total']), (36, 36))
+            else:
+                self.assertIsNone(record['quality_c4'])
+                self.assertEqual(record['c4'], [])
+            self.assertEqual(record['concurrency_coverage'], dict(policy='c1-twice-c4-once-v1',
+                included=[1, 4] if include_c4 else [1],
+                c4_status='measured' if include_c4 else 'omitted_after_run_1'))
             grades = [json.loads(s) for s in (Path(record['artifacts']) / 'quality.jsonl').read_text().splitlines()]
-            self.assertEqual(len(grades), 25)
-            self.assertEqual({r['phase'] for r in grades}, {'measure-c1'} | {
-                f"measure-c4-{item['ctx']}-q{item['question']}" for item in items})
+            self.assertEqual(len(grades), 25 if include_c4 else 5)
+            expected_phases = {'measure-c1'}
+            if include_c4:
+                expected_phases |= {f"measure-c4-{item['ctx']}-q{item['question']}" for item in items}
+            self.assertEqual({r['phase'] for r in grades}, expected_phases)
             self.assertEqual(record['recording']['status'], 'complete')
             self.assertFalse(record['steady_state']['valid'])
             requests = [json.loads(s) for s in (Path(record['artifacts']) / 'requests.jsonl').read_text().splitlines()]
             diagnostics = [r for r in requests if r['phase'].startswith('diagnostic-')]
-            self.assertEqual(len(diagnostics), 15)
+            self.assertEqual(len(diagnostics), 15 if include_c4 else 3)
+            self.assertEqual({r['concurrency'] for r in requests}, {1, 4} if include_c4 else {1})
+            if not include_c4:
+                self.assertFalse(any('c4' in r['phase'] for r in requests))
             self.assertEqual({(r['max_tokens'], r['min_tokens'], r['reasoning_budget']) for r in diagnostics},
                              {(64, 64, 32)})
             measured = [r for r in requests if not r['phase'].startswith('diagnostic-')]
-            self.assertEqual(len(measured), 50)
+            self.assertEqual(len(measured), 50 if include_c4 else 10)
             self.assertEqual({(r['max_tokens'], r['reasoning_budget']) for r in measured},
-                             {(8192, 4096), (24576, 12288)})
+                             {(16384, 8192), (49152, 24576)})
         onepass._RUN = None
+
+    def test_canonical_main_records_all_nine_c1_and_36_c4_cases(self):
+        for run_index in (None, 1):
+            with self.subTest(run_index=run_index):
+                self._check_canonical_coverage(run_index)
+
+    def test_second_run_keeps_all_c1_work_without_any_c4_requests(self):
+        self._check_canonical_coverage(2)
 
     def test_changed_quality_protocol_cannot_reuse_a_baseline(self):
         import judge

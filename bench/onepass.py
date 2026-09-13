@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Canonical Korean consumer test, harness 42: C=1 and C=4 at 2K/32K/128K.
+"""Canonical Korean consumer test, harness 44: C=1 and C=4 at 2K/32K/128K.
 
 Every invocation prepares each workload with a full replay, measures with the
 profiler off and a unique prefix salt, then runs separate bounded GPU diagnostic
@@ -12,7 +12,8 @@ C=4 sends four independent requests simultaneously for each canonical question;
 its aggregate output rate includes prefill and remains separate from C=1 decode.
 The legacy cold_s/warm_s fields are aliases for first/median prepared fresh-prefix
 TTFT, not claims about compiler or cache warmth. Harness 41 is incompatible:
-42 uses seeded reasoning dossiers and visible-answer proof certificates.
+42 uses seeded reasoning dossiers and visible-answer proof certificates, 43 and
+44 doubled the completion budgets, and 44 asks the ko-reasoning-v2 questions.
 
     python3 bench/onepass.py --name RUN [--ctx 2000,32000,128000]
 
@@ -582,6 +583,11 @@ def _main() -> int:
         # D17 (45차 §93): two runs on one boot. Run 1 carries the cold column (TTFT, the compile
         # tail); run 2 the warm one. bench/st_judge.py judges warm against warm.
         rec["run_index"] = int(os.environ["ONEPASS_RUN_INDEX"])
+    # Operator policy (2026-09-13): retain C=1 repeats, pay for C=4 once.
+    # A standalone invocation still includes both concurrency levels.
+    concurrencies = (1, 4) if rec.get('run_index', 1) == 1 else (1,)
+    rec['concurrency_coverage'] = dict(policy='c1-twice-c4-once-v1', included=list(concurrencies),
+        c4_status='scheduled' if 4 in concurrencies else 'omitted_after_run_1')
     if os.environ.get("ST_BRACKET_SHA"):
         rec["arm_sha"] = os.environ["ST_BRACKET_SHA"]              # the commit the bracket named for this arm
     if os.environ.get("ST_BRACKET_COLD"):
@@ -834,7 +840,7 @@ def _main() -> int:
         pass
 
     # C=4 and profiler replays have their own counters, requests and artifacts.
-    c4_items = items
+    c4_items = items if 4 in concurrencies else []
     rec['c4'] = []
     for item in c4_items:
         ctx = item['ctx']
@@ -857,14 +863,17 @@ def _main() -> int:
         issues.extend(f'C=4 ctx={ctx}: {e}' for e in errors)
         print(f"C=4 ctx={ctx}: {result['aggregate_output_tok_s']:.2f} total tok/s; valid={not errors}", flush=True)
         run.checkpoint()
-    rec['quality_c4'] = quality.summarize([q for result in rec['c4'] for r in result['requests'] for q in r['quality']])
+    if c4_items:
+        rec['concurrency_coverage']['c4_status'] = 'measured'
+    rec['quality_c4'] = (quality.summarize([q for result in rec['c4'] for r in result['requests'] for q in r['quality']])
+                         if c4_items else None)
     rec['diagnostics'] = []
     diagnostic_items = [diagnostic_request(next(item for item in items if item['ctx'] == ctx), k_eff)
                         for ctx in map(int, args.ctx.split(','))]
     rec['diagnostic_budget'] = dict(version=1, max_tokens=diagnostic_items[0]['max_tokens'],
         min_tokens=diagnostic_items[0]['min_tokens'], reasoning_budget=diagnostic_items[0]['reasoning_budget'],
         scope='diagnostic replay only; consumer generation_budget and quality workloads unchanged')
-    for concurrency in (1, 4):
+    for concurrency in concurrencies:
         for item in diagnostic_items:
             phase = f"diagnostic-c{concurrency}-{item['ctx']}"
             print(phase, flush=True)

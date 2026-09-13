@@ -279,6 +279,30 @@ print('{}')
         self.assertIn("health check failed (1/3): containers=yes door=yes chat=no", out.stdout)
         self.assertIn("health check failed (2/3): containers=yes door=yes chat=no", out.stdout)
 
+    def test_the_grace_follows_the_queue_s_pace_and_an_open_window(self):
+        """300 s restored production into the next ticket's face 17 times in one night; the queue now
+        writes what its record says (bench/fleet_pace.py) and a session can hold a window open."""
+        import time
+        self.activity(ago=400)                                        # past the old constant
+        (self.fleet_dir / "restore-grace.json").write_text(json.dumps({"seconds": 900}))
+        out = self.loop(FAKE_DOOR_DOWN_CALLS=99)
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("900s of quiet queue", out.stdout)
+        self.assertEqual(self.launches(), [])
+        (self.fleet_dir / "restore-grace.json").write_text(json.dumps({"seconds": 300}))
+        (self.fleet_dir / "window.json").write_text(json.dumps({"session": "campaign", "until": time.time() + 1800}))
+        out = self.loop(FAKE_DOOR_DOWN_CALLS=99)
+        self.assertIn("of quiet queue", out.stdout)
+        self.assertEqual(self.launches(), [], "a window keeps production down between a session's tickets")
+        (self.fleet_dir / "window.json").unlink()
+        # This case tests when restoration starts. Make the fake door healthy
+        # when its launcher runs, instead of spending 99 zero-delay polls on it.
+        self.script("curl", '#!/bin/sh\n[ -f "$FAKE_HOME/containers-up" ] || exit 22\n'
+                            'echo \'{"data":[{"id":"glm-5.3-flash"}],"choices":[{}]}\'\n')
+        out = self.loop(ST_RESTORE_GRACE_S=100)   # the operator's constant wins
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual(self.launches(), ["launch stop", "launch "])
+
     def test_a_fleet_taken_while_launching_is_not_a_failed_attempt(self):
         """05:30 and 06:25 on 2026-09-13: the launcher's stop let the lease go, a waiting ticket took it,
         the launcher's start was refused -- and the loop counted attempts 1 and 5 and HELD production."""

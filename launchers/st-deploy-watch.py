@@ -112,11 +112,30 @@ def fleet_taken_by_another(log) -> bool:
     return False
 
 
-def queue_active_within(seconds: float, fleet_dir: "Path | None" = None) -> "int | None":
+def pace_grace(fleet_dir: "Path | None" = None, now: "float | None" = None) -> int:
+    """The queue's own grace (bench/fleet_pace.py writes restore-grace.json after every release; a
+    session's `fleet.sh window` writes window.json), floor 300 s: the same number the production
+    supervisor waits for, so a deploy is never quicker to take the fleet than production is."""
+    d, now = Path(fleet_dir or FLEET), time.time() if now is None else now
+    grace, window = 300, 0
+    try:
+        grace = int(json.loads((d / "restore-grace.json").read_text()).get("seconds", 300))
+    except (OSError, ValueError, TypeError):
+        pass
+    try:
+        window = max(0, int(json.loads((d / "window.json").read_text()).get("until", 0) - now))
+    except (OSError, ValueError, TypeError):
+        pass
+    return max(grace, window, 300)
+
+
+def queue_active_within(seconds: "float | None", fleet_dir: "Path | None" = None) -> "int | None":
     """Seconds since the queue's activity clock moved (bench/fleet_idle.py: enqueue, grant, release)
     when that is under `seconds`, else None. A queue that just released a ticket is likely to have
     its next one on its way; a deploy in that window takes the fleet from it, and the supervisor
     keeps the same grace before restoring production (ST_RESTORE_GRACE_S)."""
+    if seconds is None:
+        seconds = pace_grace(fleet_dir)
     try:
         stamp = json.loads((Path(fleet_dir or FLEET) / "idle-recovery.json").read_text()).get("updated_at")
         ago = int(time.time() - float(stamp))
@@ -292,7 +311,7 @@ def cycle(a, log) -> int:
         return 0                                       # deferred, not rejected: main has not moved past it
     ago = queue_active_within(a.queue_grace)
     if ago is not None:
-        log(f"  the queue was active {ago}s ago: deferring the deploy until it has been quiet for {a.queue_grace}s")
+        log(f"  the queue was active {ago}s ago: deferring the deploy until it has been quiet for {a.queue_grace or pace_grace()}s")
         return 0
     waiting = boot_ticket_waiting()
     if waiting:
@@ -489,7 +508,7 @@ def main(argv=None) -> int:
     ap.add_argument("--no-probe", dest="probe", action="store_false", help="queue no D17 probe ticket after a deploy")
     ap.add_argument("--probe-attempts", type=int, default=3, help="probe tickets per deployed sha before giving up")
     ap.add_argument("--probe-gap", type=int, default=1800, help="seconds between two probe tickets for the same sha")
-    ap.add_argument("--queue-grace", type=int, default=300, help="seconds of quiet queue before a deploy takes the fleet")
+    ap.add_argument("--queue-grace", type=int, default=None, help="seconds of quiet queue before a deploy takes the fleet (default: the queue's own pace, floor 300)")
     a = ap.parse_args(argv)
 
     def log(line):

@@ -163,6 +163,7 @@ def grammars(ckpt, vocab: int, device=None, stop_token_ids=None):
 
 
 CHAT_TEMPLATE = "chat_template_mm_v2.jinja"     # what production serves with (launchers/lib/glm53-chat.sh); honours the `thinking` kwarg
+REASONING_EFFORT_ALIASES = {"max": "high"}       # accept existing clients while capping this model at high
 REASONING_END = "</think>"                       # the model closes its reasoning with this token; the door splits content there
 REQUEST_TIMEOUT_S = 3600.0                       # a request older than this is cancelled (the production probe's long-ingest bound x12)
 
@@ -185,6 +186,11 @@ def chat_renderer(ckpt=facts.CKPT):
         one, which is what a caller wants when it is handing back a partial answer to extend.
         It is passed only when asked for, so a template engine without it keeps working."""
         resume = {"continue_final_message": True} if continue_final else {}
+        # Keep the profile default even if the checkpoint has an older template.
+        if kwargs.get("reasoning_effort") in (None, "max"):
+            kwargs = {**kwargs, "reasoning_effort": "high"}
+        elif kwargs["reasoning_effort"] not in ("low", "high"):
+            raise ValueError("GLM-5.3-Flash reasoning_effort must be low, high, or max")
         return t.apply_chat_template(messages, add_generation_prompt=generation_prompt,
                                      tokenize=False, **resume, **kwargs)
     return render
@@ -816,6 +822,7 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
         from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls, tool_call_token, tool_grammar
         engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device, engine.eos)
         server = Server(engine, runner, comm, port=port, tokenizer=tok, chat=chat_renderer(a.ckpt_meta) if comm.rank == 0 else None,
+                        reasoning_effort_aliases=REASONING_EFFORT_ALIASES,
                         model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
                         tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_grammar=tool_grammar,
                         tool_call_start=tool_call_token(tok), generation=generation_defaults(a.ckpt_meta),
@@ -1044,6 +1051,7 @@ def fleet(a) -> int:
                   f"({len(engine.calibration.deferred)} deferred) -> {engine.calibration_root}/mkcalib/rank{comm.rank}/ "
                   "(filed on its own at 32K rows, at shutdown, or on POST /v1/engine/calibration; the next boot packs GPTQ from them)", flush=True)
         Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=renderer,
+               reasoning_effort_aliases=REASONING_EFFORT_ALIASES,
                model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
                tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_grammar=tool_grammar,
                         tool_call_start=tool_call_token(tok), generation=generation_defaults(a.ckpt_meta),
