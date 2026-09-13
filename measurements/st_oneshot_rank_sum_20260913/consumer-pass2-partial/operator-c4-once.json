@@ -1,0 +1,26 @@
+{
+  "timestamp": "2026-09-13T09:13:03.451286",
+  "reason": "Operator requested C=4 only once going forward; preserve completed pass-1 C=4 and both C=1 passes, stop duplicate pass-2 C=4.",
+  "policy": {
+    "c1_passes": 2,
+    "c4_passes": 1
+  },
+  "source": "8c8b031b94bb80175cfccd49cfb6329d18cdecae",
+  "boot_id": "8f055b03662995db50df27977fd51996737a1a4962c835838e39c38988d997e0|2026-09-12T21:25:52.266002699Z",
+  "pass2_run": "20260912T232937-6373a6373feb",
+  "interrupted_phase": "prepare-c4-32000-qall",
+  "consumer_pid": 2103366,
+  "consumer_start": "12991733",
+  "controller_pid": 1648269,
+  "action": "SIGTERM exact owned onepass client only; existing controller requests canonical hold stop",
+  "full_onepasses_complete": 1,
+  "c1_passes_complete": 2,
+  "c4_passes_complete": 1,
+  "full_pass2_status": "operator-stopped partial; not a complete second full onepass",
+  "consumer_exited": true,
+  "retained_sha256": {
+    "record.json": "5f5680d17fab926897c3b569d8717a61491fed5317af435984277e7d9be2e899",
+    "requests.jsonl": "906a60a48df09c2f72c4f37306050f01d20d9ecad0576c4cca8eab3c526a5783"
+  },
+  "canonical_stop_requested": true
+}

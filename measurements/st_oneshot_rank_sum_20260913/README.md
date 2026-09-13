@@ -6,7 +6,18 @@ remain intact. `c1-two-pass-metrics.json` retains both completed C=1 measurement
 on the same `8c8b031b` boot: window medians **19.896 / 19.891 step/s**, acceptance
 **44.260% / 44.549%**, and **3.656 / 3.673 tokens per step** (six draft tokens).
 This is a repeat on one candidate, **no baseline on this build**, and below 22 step/s.
-The first full onepass is complete; pass 2 is continuing through C=4 and diagnostics.
+The first full onepass and both C=1 repeats are complete. At 09:12 KST the
+operator changed the ongoing scope to **C=1 twice, C=4 once**. Only the exact
+second onepass client was stopped during duplicate C=4 32K preparation; the
+controller requested its own canonical hold's stop and the fleet was released.
+`consumer-pass2-partial/` preserves the stop receipt, original partial record,
+completed streams and grades. Exit -15 and the controller's `incomplete` status
+record this operator stop, not an engine crash or a completed second full onepass.
+
+The first C=4 run's aggregate throughput includes prefill and runs from first
+request start to final completion. Against each corresponding C=1 end-to-end
+rate, it scales **1.66–1.71x at 2K, 1.50x at 32K and 1.41x at 128K**.
+These are concurrency comparisons on one boot, not candidate/baseline gains.
 
 Fresh-prefix C=1 prefill (input tokens / TTFT) is **2,795 / 2,844 tok/s** at 32K
 and **2,672 / 2,688 tok/s** at 128K for passes 1 / 2. Pass 2 TTFT is 11.760 s
