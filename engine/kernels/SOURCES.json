@@ -33,12 +33,13 @@
       "source": "vllm/third_party/flash_linear_attention/ops/fused_recurrent.py",
       "sha256": "371e7d733e90a7147fbca8dbfe67e62503ba663bd1570424bc0efa22c54f3e2b",
       "origin": "image",
-      "local_sha256": "7acf9efa5c1ad1ed1699ffea6156ad2b66fb89fc8da5005ff4ab26cec8e0fd75",
+      "local_sha256": "31748d1848baba7c51dc3faf30422746fb9fcbe3bd7a0fb99d4d56b9c192fab7",
       "local_modifications": [
         "2026-09-11 GB10 recurrent: direct canonical K,V state addressing and masked gate loads at padded K boundaries",
         "2026-09-12 GB10 recurrent: constexpr token/head/channel strides for canonical KDA inputs; preserve legacy dense addressing and recurrence arithmetic.",
         "2026-09-12 GB10 recurrent: optional direct canonical ring state loads and per-token writes with runtime slot/context; no staging states.",
-        "2026-09-12 GB10 recurrent: experimental deferred state writes record FP32 key, decay and value-update factors; the default ring and recurrence arithmetic are unchanged."
+        "2026-09-12 GB10 recurrent: experimental deferred state writes record FP32 key, decay and value-update factors; the default ring and recurrence arithmetic are unchanged.",
+        "2026-09-13 (C=4 row fold): a row axis for the captured decode step -- RING_INDEX_STRIDE selects each row's slot/context entry; the row's token span follows from its program id; the arithmetic per program is unchanged"
       ]
     },
     "kda/index.py": {
@@ -91,10 +92,11 @@
       "source": "engine/kernels/causal_conv.py @ b7a6e44c",
       "sha256": "5a768e68031ffe92f79fe1fbe4e1cd7615f6305ecc8d145e9125c382b716dd65",
       "origin": "repository",
-      "local_sha256": "bc1e742c128ebae0bef9e6874dd6d91cd026499cb4d7e4115ac4265153744d1d",
+      "local_sha256": "64be6258557e7ca594c7be602f0235238630af58aff68ce12f1241a1ddbcbf62",
       "local_modifications": [
         "2026-09-12 GB10: specialize the forward recurrence for one sequence; remove batching metadata and mutable state table; use 128 channels and eight tokens per CTA; preserve arithmetic order and rounded history.",
-        "2026-09-12 GB10 short conv: optional direct raw-input ring history loads and writes; one time tile, no history buffers."
+        "2026-09-12 GB10 short conv: optional direct raw-input ring history loads and writes; one time tile, no history buffers.",
+        "2026-09-13 (C=4 row fold): a row axis for the captured decode step -- RING_INDEX_STRIDE selects each row's slot/context entry; the row's token span follows from its program id; the arithmetic per program is unchanged"
       ]
     },
     "kpool.py": {
