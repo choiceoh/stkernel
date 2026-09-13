@@ -21,6 +21,7 @@ def check(ranks, *, bundle="scatter_bundle"):
     rows = []
     root = Path(__file__).resolve().parents[1]
     bundles = {
+        'batch_fusions': [('paired_projection', 180), ('indexer_boundary', 180), ('wide_input', 480)],
         'scatter_bundle': [('moe_route_scatter', 240), ('moe_direct_scatter', 240),
                            ('moe_route_direct', 240)],
     }
