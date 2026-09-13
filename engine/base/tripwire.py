@@ -17,12 +17,14 @@ still complete the same all-reduce instead of pairing mismatched buffers; per-ra
 every rank reads the same table and every rank raises the same `CollectiveDivergence`, or
 none does. The sequence counts every tagged collective this process has made; a rank that
 skipped or added one meets the others one call out of step and the tags say which call and
-where. The step broadcast is stamped the same way by rank 0 and checked by the followers.
+where. The step broadcast first meets the same fixed all-reduce, then carries
+rank 0's stamp for followers to check; mismatched collective types never meet.
 
 Cost: 80 int64 on the control group per vote, the same all-reduce the vote already was.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -36,6 +38,10 @@ STEP = "step"         # the broadcast's site
 
 class CollectiveDivergence(RuntimeError):
     """The ranks reached different collectives. Raised on every rank alike, naming each rank's site."""
+
+    def __init__(self, message, *, details=None):
+        super().__init__(message)
+        self.details = details
 
 
 SEQ_WRAP = 1 << 20    # the sequence rides the wire modulo this: every tag stays below 2^24, exact even where a
@@ -101,7 +107,7 @@ def classify(exc: BaseException) -> str:
     if isinstance(exc, CollectiveDivergence):
         return "divergence"
     text = f"{type(exc).__name__}: {exc}"
-    if type(exc).__name__ == "RankLeft" or any(mark in text for mark in PEER_LEFT):
+    if type(exc).__name__ == "RankLeft" or any(mark.lower() in text.lower() for mark in PEER_LEFT):
         return "peer-left"
     return "local"
 
@@ -115,6 +121,9 @@ def death_note(directory, rank: int, exc: BaseException, *, phase=None, calls=No
                 meaning={"divergence": "this rank and its peers reached different collectives; every rank has this note",
                          "peer-left": "a peer died or stalled first; the cause is in that rank's log and note",
                          "local": "this rank's own failure; peers will report peer-left"}[kind])
+    if isinstance(exc, CollectiveDivergence) and exc.details is not None:
+        # Keep the complete differing rows even when the exception summary is truncated.
+        note["divergence"] = exc.details
     say(f"[serve] death rank={rank} kind={kind} phase={phase!r}: {note['error'].splitlines()[0][:300]}", flush=True)
     if directory is None:
         return note
@@ -180,6 +189,37 @@ class Tripwire:
             raise CollectiveDivergence(
                 f"the ranks disagree at {site!r}: " + ", ".join(f"rank{r}={row}" for r, row in enumerate(rows)))
         return rows[0]
+
+    def agree_payload(self, site: str, payload) -> None:
+        """Check a small host result without variable-sized collectives on the normal path.
+
+        Sixteen 16-bit SHA256 words fit the TP4 exchange and stay exact in test
+        transports that sum through FP32. Only a mismatch gathers the actual
+        rows, which the death note preserves for every rank.
+        """
+        if self.world <= 1:
+            return
+        raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+        digest = hashlib.sha256(raw).digest()
+        words = [int.from_bytes(digest[i:i+2], "big") for i in range(0, len(digest), 2)]
+        rows = self.exchange(site, words)
+        if any(row != rows[0] for row in rows):
+            gather = getattr(self.comm, "gather_objects", None)
+            details = dict(site=site, fingerprints=rows)
+            if callable(gather):
+                details["ranks"] = gather(payload)
+            else:
+                details.update(rank=self.rank, local=payload)
+            raise CollectiveDivergence(f"the ranks disagree at {site!r}; rank results are in the death note",
+                                      details=details)
+
+    def before_broadcast(self, site: str = STEP) -> None:
+        """Meet the same fixed all-reduce as a peer's vote BEFORE entering a broadcast.
+
+        A stamp checked after broadcast cannot detect broadcast-vs-gather: the
+        two different collectives never complete. This preflight can.
+        """
+        self.exchange(site + ":broadcast", [])
 
     def stamp(self, site: str = STEP) -> "tuple[int, int]":
         """rank 0's side of a broadcast: the (sequence, site) it is at, sent with the payload."""

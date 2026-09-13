@@ -52,7 +52,7 @@ class CompletionTests(unittest.TestCase):
                                             timeout=20, env=env)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def execute(self, cases, *, verb='leg', stale=False, validation='full'):
+    def execute(self, cases, *, verb='leg', stale=False, validation='full', logs_fail=False):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / 'bench').mkdir()
@@ -61,11 +61,19 @@ class CompletionTests(unittest.TestCase):
             source = (ROOT / 'bench/st_bracket.sh').read_text().rsplit('\ncase "${1:-}" in', 1)[0]
             source += '''
 sha_of() { echo "$1"; }
-boot_arm() { ARM=$1; RELEASE=/fixture; echo boot >> "$EVENTS"; }
-stop_arm() { echo stop >> "$EVENTS"; }
+boot_arm() { ARM=$1; RELEASE=/fixture; DUMPS=$LOGD/dumps; echo boot >> "$EVENTS"; }
+stop_arm() { echo stop >> "$EVENTS"; echo stop >> "$FORENSIC_EVENTS"; }
 reset_prefix() { echo reset >> "$EVENTS"; }
 door_up() { return 0; }
 docker() { echo "$EXPECTED_SHA"; }
+node_sh() {
+  echo "collect $1" >> "$FORENSIC_EVENTS"
+  case "$2" in
+    *inspect*) echo '{"Running":false,"ExitCode":1,"OOMKilled":false}';;
+    *logs*) echo 'RuntimeError: ranks disagree at decode:outcome';;
+  esac
+  [ "$LOGS_FAIL" != 1 ]
+}
 '''
             source += ('\nleg candidate "$EXPECTED_SHA"\n' if verb == 'leg'
                        else '\n' + verb + ' "$EXPECTED_SHA"\n')
@@ -79,6 +87,7 @@ docker() { echo "$EXPECTED_SHA"; }
             events = root / 'events'
             env = dict(os.environ, REPO=str(root), LOGD=str(root / 'logs'),
                        ONEPASS_JSONL=str(ledger), EVENTS=str(events),
+                       FORENSIC_EVENTS=str(root / 'forensic-events'), LOGS_FAIL=str(int(logs_fail)),
                        CASES=json.dumps(cases), EXPECTED_SHA=SHA,
                        EXPECTED_CONSUMER=('onepass.py' if verb == 'probe' or validation == 'full' else 'st_screen.py'),
                        FLEET_SESSION='test', FLEET_REHEARSE='0', ST_BRACKET_RUNS='2',
@@ -90,6 +99,10 @@ docker() { echo "$EXPECTED_SHA"; }
                 env['ST_BRACKET_VALIDATION'] = validation
             result = subprocess.run(['bash', str(script)], text=True, capture_output=True,
                                     timeout=20, env=env)
+            order = root / 'forensic-events'
+            self.forensic_events = order.read_text().splitlines() if order.exists() else []
+            self.forensics = {str(p.relative_to(root / 'logs')): p.read_text()
+                              for p in (root / 'logs').rglob('rank*') if p.is_file()}
             return result, events.read_text().splitlines()
 
     def test_recorded_quality_failure_keeps_one_boot_and_preserves_failure(self):
@@ -131,6 +144,33 @@ docker() { echo "$EXPECTED_SHA"; }
         result, events = self.execute([dict(rc=1), {}])
         self.assertEqual(result.returncode, 1)
         self.assertEqual(events, ['boot', 'measure 1', 'stop'])
+
+    def test_runtime_failure_saves_all_rank_logs_and_exit_states_before_stop(self):
+        result, _ = self.execute([dict(rc=1), {}])
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(len(self.forensics), 8)
+        self.assertEqual(len(self.forensic_events), 9)
+        self.assertEqual(self.forensic_events[-1], 'stop')
+        self.assertTrue(all(e.startswith('collect ') for e in self.forensic_events[:-1]))
+        for path, contents in self.forensics.items():
+            self.assertIn('run-1/', path)
+            if path.endswith('.state.json'):
+                self.assertEqual(json.loads(contents)['ExitCode'], 1)
+            else:
+                self.assertIn('decode:outcome', contents)
+
+    def test_failed_log_collection_does_not_hide_failure_or_prevent_stop(self):
+        result, events = self.execute([dict(rc=1), {}], logs_fail=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(events, ['boot', 'measure 1', 'stop'])
+        self.assertEqual(self.forensic_events[-1], 'stop')
+
+    def test_live_probe_keeps_failed_run_logs_without_stopping_production(self):
+        result, _ = self.execute([dict(rc=1), {}], verb='probe')
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(len(self.forensics), 8)
+        self.assertNotIn('stop', self.forensic_events)
+        self.assertTrue(all('test-d17-' + SHA[:12] in path for path in self.forensics))
 
     def test_second_pass_runtime_failure_remains_the_terminal_error(self):
         result, events = self.execute([dict(rc=2), dict(rc=1)])
