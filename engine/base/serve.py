@@ -228,6 +228,14 @@ def sampling_options(req: dict, defaults: "dict | None" = None) -> "tuple[float,
         if not isinstance(stop_ids, list) or any(type(t) is not int or t < 0 for t in stop_ids):
             raise RequestError("stop_token_ids must be a list of token ids")
         options["stop_token_ids"] = list(stop_ids)
+    # `retain: false` (ST): nobody will continue this turn -- a health check, a probe -- so it is not kept
+    # when it finishes: no idle row, no park to the NVMe tier. It rides the options so every rank sees it.
+    retain = req.get("retain")
+    if retain is not None:
+        if type(retain) is not bool:
+            raise RequestError("retain must be a boolean")
+        if not retain:
+            options["_transient"] = True
     return float(temperature), options
 
 
@@ -1202,7 +1210,7 @@ class Server:
                  generation: "dict | None" = None, max_choices: int = 4, vision=None, tool_stream=None,
                  tool_grammar=None, tool_call_start: "int | None" = None,
                  lease: "dict | None" = None, latency_root=None, reasoning_effort_aliases: "dict | None" = None,
-                 step_watch=None):
+                 step_watch=None, park_min_tokens: int = 0):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
         if type(request_timeout_s) not in (int, float) or not request_timeout_s > 0:
@@ -1248,6 +1256,13 @@ class Server:
         self.max_choices = int(max_choices)        # n / best_of ceiling: one row each, never more than the decode width
         self._stop_ids = {}                        # request id -> stop_token_ids: an end by one of them is finish_reason "stop"
         self.max_pending = max_pending
+        # A finished turn shorter than this is not kept (0: every turn is): prefilling a short history again costs
+        # less than a slot's state written to the tier and read back. `retain: false` asks for the same per request.
+        if type(park_min_tokens) is not int or park_min_tokens < 0:
+            raise ValueError("park_min_tokens must be a nonnegative integer")
+        self.park_min_tokens = park_min_tokens
+        self._transient = set()                    # request ids whose turn is not kept when it finishes (every rank alike)
+        self.turns_not_retained = {}               # reason -> finished turns released instead of kept
         self.max_context = int(getattr(engine, "max_context", 2**31 - 1))   # the model's trained positions; the door refuses beyond
         self.request_timeout_s = float(request_timeout_s)
         self.clock = time.monotonic                # injectable for tests
@@ -1708,6 +1723,7 @@ class Server:
 
     def _answer(self, request, result):
         self._last_request_at = time.monotonic()
+        self._transient.discard(request)
         if self.comm.rank == 0:
             with self._lock:
                 event = self.pending.pop(request, None)
@@ -2291,7 +2307,7 @@ class Server:
                 elif all_ok == world:                         # the client left while its conversation was coming back: park it again
                     self._conversations[conversation] = row
                     self._conversation_of[row] = conversation
-                    self._retire(row)
+                    self._retire(row, request)
                 else:                                         # a rank could not read it back: the conversation is gone everywhere
                     if ok:
                         self.runner.evict(row)
@@ -2382,11 +2398,32 @@ class Server:
                 pass
         self.alive = False                        # `once` returns False and `loop` ends
 
-    def _retire(self, row):
-        """A finished turn leaves its row: parked with a tier, resident idle without, released otherwise."""
+    def _retire(self, row, request=None):
+        """A finished turn leaves its row: parked with a tier, resident idle without, released otherwise.
+
+        Released too when nobody will continue it: the request said `retain: false` (a health check, a probe),
+        or its history is shorter than `park_min_tokens`. A four-token ping was parking a slot's whole state --
+        256 MiB a rank -- every thirty seconds (2026-09-13), and those parks pushed real conversations out of
+        the tier's LRU. Both inputs are replicated (the options rode the broadcast, the context is the row's),
+        so every rank releases or keeps the same turn.
+        """
         if not self.runner.keep_idle:
             self.engine.forget(row)
             heapq.heappush(self._free_rows, row)
+            return
+        reason = ("asked" if request is not None and request in self._transient
+                  else "short" if self.park_min_tokens and self.engine.context(row) < self.park_min_tokens else None)
+        if reason is not None:
+            conversation = self._conversation_of.pop(row, None)
+            if conversation is not None:
+                self._conversations.pop(conversation, None)
+            self._idle_order.pop(row, None)
+            try:
+                self.runner.evict(row)
+            finally:
+                self.engine.forget(row)
+            heapq.heappush(self._free_rows, row)
+            self.turns_not_retained[reason] = self.turns_not_retained.get(reason, 0) + 1
             return
         if self.runner.tiered is None:
             self._idle_order[row] = None
@@ -2422,6 +2459,7 @@ class Server:
         self._retiring.clear()
         self._resuming.clear()
         self._idle_order.clear()
+        self._transient.clear()
         self._conversations.clear()
         self._conversation_of.clear()
         if error is not None:
@@ -2633,6 +2671,10 @@ class Server:
             labelled.append(("st:reuse_path_total", "counter",
                              "prompts by how they found their KV: a conversation they extend, or blocks they share",
                              [(f'path="{path}"', count) for path, count in sorted(self.reuse_paths.items())]))
+        if self.turns_not_retained:
+            labelled.append(("st:turns_not_retained_total", "counter",
+                             "finished turns released instead of kept or parked: asked (retain false) or short (park_min_tokens)",
+                             [(f'reason="{reason}"', count) for reason, count in sorted(self.turns_not_retained.items())]))
         if self.by_reason:
             labelled.append(("vllm:request_success_by_reason_total", "counter",
                              "requests answered, by why they stopped",
@@ -2747,6 +2789,9 @@ class Server:
                 self._fail_pending()
                 return False
             self._waiting.extend(arrivals)
+            for entry in arrivals:                   # the options came with the broadcast, so this set is every rank's
+                if entry[7] and entry[7].get("_transient"):
+                    self._transient.add(entry[0])
             for request, reason in cancels:
                 self._cancel(request, reason)
             for control in controls:
@@ -2794,7 +2839,7 @@ class Server:
                     admitted = self._admitted.pop(request, None)
                     if admitted is not None:
                         self.inference.observe(now - admitted)
-                    self._retire(row)
+                    self._retire(row, request)
                     self.served += 1
                     reason = self.finish_reason(result, request)
                     self.by_reason[reason] = self.by_reason.get(reason, 0) + 1

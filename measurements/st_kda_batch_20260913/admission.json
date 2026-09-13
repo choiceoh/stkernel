@@ -1,0 +1,29 @@
+{
+  "candidate": "b9658a5c44dd947a8ee9c2d014b68a0f6e6058d6",
+  "production_enabled": false,
+  "state_dtype": "fp32",
+  "state_policy": "accepted final state and crossed prefix boundaries",
+  "cpu": {
+    "initial": {
+      "tests": 142,
+      "passed": 129,
+      "skipped": 13
+    },
+    "merged_prefill": {
+      "passed": 39
+    },
+    "registry_and_contracts": {
+      "passed": 31
+    },
+    "sm121_compile_cases": 19
+  },
+  "source_sha256": {
+    "engine/kernels/kda/deferred.py": "102df50518b0a7de1358ba8366c77b6e0e05aea8e0fd8f1e2476929aedc5ddb4",
+    "engine/kernels/kda/ring.py": "a5bff224a11c69c36e0e2f1a23bd97976b1b55153a4eee8c22600ae4f728419e",
+    "engine/kernels/kda/fused_recurrent.py": "84c833a20ccf4e8c673802381987552aa035f582f3ffa65d3354ddf75d46be15",
+    "engine/base/graph_labels.py": "46b8c68f548e1b2fb583b9cb9a402f18cccdca842401f402f7cf72140e4c7461",
+    "engine/profiles/glm53/decode_graphs.py": "f0807bd82ace901817138662e7711737c0addb3a12388ed68e8bda2e126a0681",
+    "engine/profiles/glm53/pipeline.py": "72a25c471877ca5f1ccbadb4f3ee2b9d6f83aa2114605b961bf57e7884c81ca7",
+    "engine/profiles/glm53/adapter.py": "673469e4e9ef078eb2394de2a6abec240891a282b5e90fecc006e314a4a71701"
+  }
+}

@@ -25,7 +25,7 @@ def main():
              "engine/profiles/glm53/net.py", "engine/profiles/glm53/decode_graphs.py",
              "engine/profiles/glm53/pipeline.py", "engine/profiles/glm53/adapter.py",
              "tests/test_engine_kda_deferred.py", "tests/test_engine_kda_deferred_batch.py",
-             "tests/test_engine_burst_decode_cuda.py", "probes/engine_kda_deferred_check.py",
+             "tests/test_engine_burst_decode_cuda.py", "tests/test_engine_graph_labels.py", "probes/engine_kda_deferred_check.py",
              "probes/engine_kda_batch_bench.py", "probes/engine_candidate_packet_bench.py",
              "engine/kernels/common/vocab_candidates.py", "engine/modules/vocab.py")
     report = dict(scope="single GB10 component and graph gate; no NIC or model throughput claim",
@@ -34,19 +34,28 @@ def main():
     started = time.monotonic()
     try:
         suite = unittest.defaultTestLoader.loadTestsFromNames(("tests.test_engine_kda_deferred",
-                   "tests.test_engine_kda_deferred_batch", "tests.test_engine_burst_decode_cuda"))
+                   "tests.test_engine_kda_deferred_batch"))
         result = unittest.TextTestRunner(verbosity=2).run(suite)
         report["correctness"] = dict(tests=result.testsRun, skips=len(result.skipped),
                                       errors=result.errors, failures=result.failures)
-        from engine.base import graph_labels
-        report["graph_label_errors"] = list(graph_labels.ERRORS)
         if not result.wasSuccessful() or result.skipped:
-            raise RuntimeError("deferred-state/graph gate failed or skipped")
+            raise RuntimeError("deferred-state gate failed or skipped")
         from probes.engine_kda_batch_bench import measure
         from probes.engine_candidate_packet_bench import measure as packets
         with torch.inference_mode():
             report["kda"] = measure(args.samples)
             report["candidate_packets"] = packets()
+        # Keep valid component timings even when an independent attribution
+        # or toy serving-graph check fails afterwards.
+        suite = unittest.defaultTestLoader.loadTestsFromNames(("tests.test_engine_burst_decode_cuda",
+                                                               "tests.test_engine_graph_labels"))
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        report["graph_correctness"] = dict(tests=result.testsRun, skips=len(result.skipped),
+                                          errors=result.errors, failures=result.failures)
+        from engine.base import graph_labels
+        report["graph_label_errors"] = list(graph_labels.ERRORS)
+        if not result.wasSuccessful() or result.skipped:
+            raise RuntimeError("serving graph gate failed or skipped")
         report["status"] = "PASS"
     except BaseException as exc:
         report.update(status="FAIL", error=f"{type(exc).__name__}: {exc}")
