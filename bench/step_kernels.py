@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -214,22 +215,66 @@ def fold_prefill_from_profile(path) -> dict:
     단일 랭크(집합통신 항등·드래프터 없음) 값이다: 플릿은 청크당 NCCL 90 회·드래프터
     관측·prefix 마크 로 ~110 ms/청크 가 더 붙는다(#838 §4)."""
     d = json.loads(Path(path).read_text(encoding="utf-8"))
+    def duration(value):
+        if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+            raise ValueError('prefill costs must be finite nonnegative milliseconds')
+        return value
+
+    def count(value):
+        if type(value) is not int or value <= 0:
+            raise ValueError('prefill tokens/chunks must be positive integers')
+        return value
+
     fit = d.get("prefill_fit")
     if fit:
-        return {"ms_per_token": fit["ms_per_token"],
-                "fixed_ms_per_chunk": fit["fixed_ms_per_chunk"], "source": str(path)}
+        v, fixed = duration(fit['ms_per_token']), duration(fit['fixed_ms_per_chunk'])
+        if not v + fixed:
+            raise ValueError('prefill coefficients cannot both be zero')
+        return {"ms_per_token": v, "fixed_ms_per_chunk": fixed, "source": str(path)}
     rows = d.get("prefill") or []
     if len(rows) < 2:
         return {}
-    # total = v·tokens + F·chunks 최소제곱
-    import statistics
-    xs = [(r["chunks"], r["chunk"]) for r in rows]      # (chunks, tokens)
-    ys = [r["total_ms"] for r in rows]
-    n = len(rows)
-    sx = sum(c + t for c, t in xs); sy = sum(ys)
-    sxx = sum((c + t) ** 2 for c, t in xs); sxy = sum((c + t) * y for (c, t), y in zip(xs, ys))
-    v = (n * sxy - sx * sy) / (n * sxx - sx * sx)
-    return {"ms_per_token": v, "fixed_ms_per_chunk": (sy - v * sx) / n, "source": str(path)}
+    # total_ms = v * TOTAL tokens + F * chunks, two independent regressors.
+    # `chunk` is a chunk size, not the whole prompt. Prefer step counts (which
+    # retain a partial tail), then explicit row/profile totals. Legacy rows
+    # without either describe full chunks, hence chunk * chunks.
+    xs, ys = [], []
+    for row in rows:
+        chunks = count(row['chunks'])
+        tokens = row.get('tokens', d.get('tokens'))
+        if 'steps' in row:
+            if len(row['steps']) != chunks:
+                raise ValueError('prefill steps do not cover the recorded chunk count')
+            actual = sum(count(step['tokens']) for step in row['steps'])
+            if tokens is not None and count(tokens) != actual:
+                raise ValueError('prefill total tokens disagree with its steps')
+            tokens = actual
+        if tokens is None:
+            tokens = count(row['chunk']) * chunks
+        xs.append((count(tokens), chunks))
+        ms = duration(row['total_ms'])
+        if not ms:
+            raise ValueError('prefill total duration must be positive')
+        ys.append(ms)
+    # Normalize columns before the 2x2 solve; refuse profiles that cannot
+    # distinguish per-token work from per-chunk work (e.g. one chunk size).
+    ts, cs = max(t for t, _ in xs), max(c for _, c in xs)
+    normalized = [(t / ts, c / cs) for t, c in xs]
+    tt = math.fsum(t*t for t, _ in normalized)
+    cc = math.fsum(c*c for _, c in normalized)
+    tc = math.fsum(t*c for t, c in normalized)
+    ty = math.fsum(t*y for (t, _), y in zip(normalized, ys))
+    cy = math.fsum(c*y for (_, c), y in zip(normalized, ys))
+    det = tt * cc - tc * tc
+    if det <= 1e-12 * tt * cc:
+        raise ValueError('prefill profile cannot separate token and chunk costs; vary chunk size')
+    v, fixed = (ty*cc - cy*tc) / det / ts, (cy*tt - ty*tc) / det / cs
+    # Tiny round-off at a true zero coefficient is not a negative cost.
+    v = 0.0 if -1e-12 < v < 0 else duration(v)
+    fixed = 0.0 if -1e-9 < fixed < 0 else duration(fixed)
+    return {"ms_per_token": v, "fixed_ms_per_chunk": fixed, "source": str(path),
+            "fit_rows": len(rows),
+            "max_relative_residual": max(abs(v*t + fixed*c - y) / y for (t, c), y in zip(xs, ys))}
 
 
 def prefill_ms(tokens: int, chunk: int, fold: dict, fleet: bool = True) -> float:

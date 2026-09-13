@@ -133,6 +133,10 @@ def profile(data: dict) -> dict:
     k, hist = data["k"], data["histogram"]
     if k is None:
         raise ValueError("spec_k is missing; supply --k for older scrapes")
+    if type(k) is not int or k < 1 or not isinstance(hist, list) or len(hist) != k + 1:
+        raise ValueError("acceptance histogram must cover positions 0 through K")
+    if any(type(count) is not int or count < 0 for count in hist):
+        raise ValueError("acceptance histogram needs nonnegative integer counts")
     n = sum(hist)
     if not n:
         raise ValueError("no observed decode rows in this interval")
@@ -147,6 +151,79 @@ def profile(data: dict) -> dict:
     return {**data, "rows": n, "accepted_tokens": accepted, "raw_acceptance": accepted / (n*k),
             "positions": positions,
             "basis": "engine accepted-token counters; bonus excluded, terminal prefixes censored"}
+
+
+def load_profile(path: Path, k: int | None = None) -> dict:
+    """Consume validated scrape intervals, never a fitted average or summary."""
+    samples = []
+    for line in path.read_text().splitlines():
+        if line.strip():
+            record = json.loads(line)
+            if not isinstance(record, dict):
+                raise ValueError("peek records must be objects")
+            if 'series' in record:
+                if not isinstance(record['series'], dict):
+                    raise ValueError("peek series must be a metrics object")
+                samples.append(record['series'])
+    return profile(histogram_from_samples(samples, k))
+
+
+def yield_bounds(k: int, *, observed: dict | None = None,
+                 reference_k: int = 6, raw_acceptance: float = .45) -> tuple[float, float]:
+    """Tokens/row under a transferred prefix distribution and one bonus token.
+
+    For observed prefixes E[min(X,K)] = sum(P(X>=i), i=1..K). Unobserved
+    positions have no point estimate: their survival is between 0 and the last
+    observed survival. An average alone bounds, but cannot identify, a new K.
+    These are scenario bounds, not sampling confidence intervals or GPU proof.
+    """
+    if type(k) is not int or k < 0:
+        raise ValueError('candidate K must be a nonnegative integer')
+    if observed is not None:
+        data = profile(observed)
+        survival = [row['cumulative'] for row in data['positions']]
+        known = 1 + math.fsum(survival[:k])
+        return known, known + max(0, k - data['k']) * survival[-1]
+    if (type(reference_k) is not int or reference_k < 0
+            or not math.isfinite(raw_acceptance) or not 0 <= raw_acceptance <= 1):
+        raise ValueError('invalid reference K or raw acceptance')
+    if reference_k == 0:
+        return 1.0, 1.0 + k  # no draft observations, including no tail probability
+    accepted = reference_k * raw_acceptance
+    if k <= reference_k:
+        return 1 + k * raw_acceptance, 1 + min(k, accepted)
+    return 1 + accepted, 1 + accepted + (k - reference_k) * raw_acceptance
+
+
+def economics(data: dict) -> dict:
+    """Marginal value of each draft position; no constant/geometric tail fit."""
+    data = profile(data)
+    rows, before = [], 1.0
+    for row in data['positions']:
+        marginal = row['cumulative']
+        after = before + marginal
+        rows.append(dict(k=row['position'], cumulative=marginal, tokens_per_row=after,
+                         max_relative_step_increase=marginal / before))
+        before = after
+    tail = data['positions'][-1]['cumulative']
+    return dict(rows=rows,
+                next_position=dict(k=data['k'] + 1, cumulative_range=[0.0, tail],
+                                   max_relative_step_increase_range=[0.0, tail / before]),
+                basis='same prefix distribution and one bonus token per row; terminal censoring retained; not a live K comparison')
+
+
+def format_economics(data: dict) -> str:
+    value = economics(data)
+    lines = ['K 증가 손익분기 · 관측된 prefix 분포와 보너스 1토큰을 유지하는 가정',
+             '     K    해당 위치 누적    기대 토큰/행    허용 스텝 시간 증가(미만)']
+    for row in value['rows']:
+        lines.append(f"  {row['k']:>4}    {row['cumulative']:>12.1%}    {row['tokens_per_row']:>12.3f}"
+                     f"    {row['max_relative_step_increase']:>12.2%}")
+    row = value['next_position']
+    lines.append(f"  K={row['k']}: 미관측 · 누적 0–{row['cumulative_range'][1]:.1%},"
+                 f" 허용 증가 0–{row['max_relative_step_increase_range'][1]:.2%} 범위만 식별")
+    lines.append('  표본 오차의 신뢰구간이 아님; K 변경에 따른 prefix 분포 변화와 실제 스텝 시간은 별도 계측')
+    return '\n'.join(lines)
 
 
 def format_profile(data: dict) -> str:
@@ -166,25 +243,28 @@ def main() -> int:
     ap.add_argument("--before", type=Path, help="first Prometheus metrics text")
     ap.add_argument("--after", type=Path, help="last Prometheus metrics text")
     ap.add_argument("--k", type=int, help="draft count if older scrapes lack st:lane_info")
+    ap.add_argument("--economics", action="store_true", help="marginal K value and break-even step-time overhead")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
     if bool(args.scrapes) == bool(args.before or args.after) or bool(args.before) != bool(args.after):
         ap.error("supply a scrape JSONL or both --before and --after")
     try:
         if args.scrapes:
-            samples = [rec["series"] for line in args.scrapes.read_text().splitlines() if line.strip()
-                       for rec in [json.loads(line)] if "series" in rec]
+            result = load_profile(args.scrapes, args.k)
         else:
             from step_peek import parse_metrics
             samples = [parse_metrics(p.read_text()) for p in (args.before, args.after)]
-        result = profile(histogram_from_samples(samples, args.k))
+            result = profile(histogram_from_samples(samples, args.k))
+        if args.economics:
+            result['economics'] = economics(result)
     except (OSError, ValueError) as exc:
         if args.json:
             print(json.dumps({"error": str(exc)}, ensure_ascii=False))
         else:
             print(f"수락률 확인 불가: {exc}", file=sys.stderr)
         return 1
-    print(json.dumps(result, ensure_ascii=False) if args.json else format_profile(result))
+    print(json.dumps(result, ensure_ascii=False) if args.json else format_profile(result)
+          + ('\n' + format_economics(result) if args.economics else ''))
     return 0
 
 

@@ -102,6 +102,41 @@ class SourcePredictionTests(unittest.TestCase):
         self.assertLess(result['forecasts'][0]['decode']['modeled_delta'], 0)
         self.assertIn('drafter', result['forecasts'][0]['decode']['unpriced_components'])
 
+    def test_prefix_histogram_bounds_new_depth_instead_of_assuming_equal_raw_rate(self):
+        base = constant(self.base, source.FACTS_PATH, 'SPEC_K', 6)
+        candidate = constant(base, source.FACTS_PATH, 'SPEC_K', 7)
+        observed = dict(k=6, histogram=[20, 10, 10, 10, 10, 20, 20])
+        result = self.compare(candidate, base=base, acceptance_profile=observed)
+        rates = result['forecasts'][0]['decode']['output_rate_assumption']
+        self.assertAlmostEqual(rates['base']['tokens_per_row'], 4.2)
+        self.assertIsNone(rates['candidate']['tokens_per_row'])
+        self.assertIsNone(rates['candidate']['per_request_tok_s'])
+        self.assertAlmostEqual(rates['candidate']['tokens_per_row_range'][0], 4.2)
+        self.assertAlmostEqual(rates['candidate']['tokens_per_row_range'][1], 4.4)
+        self.assertEqual(result['acceptance_scenario']['rows'], 100)
+        self.assertIn('미계측', source.format_comparison(result))
+        mean_only = self.compare(candidate, base=base)['forecasts'][0]['decode']['output_rate_assumption']
+        self.assertIsNone(mean_only['candidate']['per_request_tok_s'])
+        self.assertAlmostEqual(mean_only['candidate']['tokens_per_row_range'][0], 3.7)
+        self.assertAlmostEqual(mean_only['candidate']['tokens_per_row_range'][1], 4.15)
+
+    def test_source_cli_acceptance_input_is_a_validated_explicit_scenario(self):
+        from test_step_economics import write_peek
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'peek.jsonl'
+            write_peek(path)
+            command = [sys.executable, str(ROOT / 'bench/storacle.py'), 'predict', '--base', 'HEAD',
+                       '--ctx', '32000', '--width', '1', '--acceptance-from', str(path), '--json']
+            run = subprocess.run(command, capture_output=True, text=True, timeout=30)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            data = json.loads(run.stdout)
+            self.assertEqual(data['acceptance_scenario']['k'], 6)
+            self.assertIn('explicit scenario', data['acceptance_scenario']['receipt']['usage'])
+            path.write_text('{}\n')
+            run = subprocess.run(command, capture_output=True, text=True, timeout=30)
+            self.assertEqual(run.returncode, 1, run.stderr)
+            self.assertIn('error', json.loads(run.stdout))
+
     def test_recipe_override_follows_boot_plan_and_changes_fingerprint(self):
         result = self.compare(self.base, settings={'prefill_tiles': 2})
         self.assertEqual(result['candidate']['prefill_chunk'], 64512)
