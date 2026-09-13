@@ -50,7 +50,8 @@ each row above. Do not present an environment override as a bracket arm.
 Every recorded onepass phase writes `draft-rejections.json` beside `server.json`
 and `latency.jsonl`. Counts and first-rejection positions are grouped by request
 ID and sequence; ranks remain separate. `recorded=false` means no diagnostics
-were observed, not zero rejections. Raw records carry the context position.
+were observed, not zero rejections. Recording errors and `complete` are retained
+so a truncated phase cannot masquerade as complete evidence. Raw records carry the context position.
 Metrics expose `st:spec_greedy_first_rejection_total` by reason and accepted
 prefix. Boot lane information reports the selected `draft_policy`.
 

@@ -22,6 +22,8 @@ def summarize(report):
             values.append(dict(request_id=item['request_id'], seq=item['seq'], reasons=dict(item['reasons']),
                 first_rejection_positions=[dict(position=p, reason=r, count=count)
                                            for (p, r), count in sorted(item['positions'].items())]))
-        ranks.append(dict(rank=rank['rank'], requests=values))
+        ranks.append(dict(rank=rank['rank'], requests=values, complete=rank.get('complete') is True,
+                          errors=list(rank.get('errors', []))))
     return dict(schema=1, scope='greedy; policy-modified and output-boundary rows are separate; ranks are not pooled',
-                recorded=any(r['requests'] for r in ranks), ranks=ranks)
+                recorded=any(r['requests'] for r in ranks),
+                complete=bool(ranks) and all(r['complete'] and not r['errors'] for r in ranks), ranks=ranks)

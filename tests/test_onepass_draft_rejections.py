@@ -27,6 +27,16 @@ class DraftRejectionRecordingTests(unittest.TestCase):
         self.assertFalse(result['recorded'])
         self.assertEqual(result['ranks'][0]['requests'], [])
 
+    def test_partial_recording_keeps_counts_but_never_claims_complete_evidence(self):
+        rank = dict(rank=0, complete=True, rows=[
+            dict(kind='draft_rejection', seq=0, accepted_prefix=0, reason='candidate_miss')])
+        self.assertTrue(summarize(dict(ranks=[rank]))['complete'])
+        rank.update(complete=False, errors=['100000-row recording limit reached'])
+        result = summarize(dict(ranks=[rank]))
+        self.assertTrue(result['recorded'])
+        self.assertFalse(result['complete'])
+        self.assertEqual(result['ranks'][0]['errors'], rank['errors'])
+
 
 if __name__ == '__main__':
     unittest.main()
