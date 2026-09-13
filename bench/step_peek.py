@@ -204,7 +204,8 @@ def _line(w: dict) -> str:
     return (f"steps {num(w['step_s'])}/s"
             + (f" (prefill {w['prefill_share']:.0%})" if w["prefill_share"] is not None else "")
             + f"  committed {num(w.get('committed_tok_s'))} tok/s"
-            + f"  completed {num(w['gen_tok_s'])} tok/s"
+            + f"  gen {num(w['gen_tok_s'])} tok/s"
+            + f"  decode rows {num(w.get('mean_decode_rows'))}"
             + (f"  acc {w['acc_raw']:.1%}" if w["acc_raw"] is not None else "")
             + f"  step_ms [{_fmt_ms(w['step_ms'])}]"
             + f"  ttft [{_fmt_s(w['ttft'])}]"

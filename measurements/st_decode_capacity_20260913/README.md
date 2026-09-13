@@ -34,6 +34,10 @@ on source `f961997b`. The baseline, aliased 3/1, 1/3 and all three wider shapes
 compile. The deliberately retained unaliased control fails its memory guard,
 so the raw report says `PARTIAL`; that control is not a GPU lane. Compilation
 does not establish GPU numerics or throughput.
+The additional raw-scale M7 handle also compiles at 98304 shared bytes;
+`cpu-raw-scale/` retains that separate CPU result. The wider mHC probe uses
+the already-built native coefficient-storage entry point with an explicit
+M14/21/28 adapter; its new shape numerics remain a GPU gate.
 
 The Linux serving/step-observer/probe suite passed 200 tests in 49.354 s, with
 one GPU-only test skipped. The new counter checks cover multi-token readbacks,
