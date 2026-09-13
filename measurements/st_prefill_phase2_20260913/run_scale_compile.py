@@ -30,6 +30,12 @@ def main():
                '-v', str(output)+':/evidence', '-w', '/repo', '--entrypoint=python3', IMAGE,
                'measurements/st_prefill_phase2_20260913/compile_scale_expansion.py', '--output', '/evidence']
     try:
+        tests = ['tests.test_moe_prefill_scale_expansion', 'tests.test_moe_sf6_dispatch',
+                 'tests.test_glm53_tp_sf6_q0', 'tests.test_engine_prefill_sf6_words',
+                 'tests.test_glm53_tp_sf6_q0_selftest', 'tests.test_moe_sf6_owner']
+        with (output/'cpu-tests.log').open('w') as log:
+            subprocess.run(command[:-3] + ['-m', 'unittest', *tests], stdout=log,
+                           stderr=subprocess.STDOUT, timeout=240, check=True)
         with (output/'compile.log').open('w') as log:
             completed = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=840)
         report = json.loads((output/'result.json').read_text())
