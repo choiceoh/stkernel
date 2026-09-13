@@ -348,7 +348,6 @@ class DrafterTests(unittest.TestCase):
         self.assertIn("propose_sampled_tensor(", body)
 
 
-@unittest.skipUnless(torch.cuda.is_available(), "observe's write phase is a device kernel")
 @unittest.skipUnless(torch is not None, "requires PyTorch")
 class CommittedCountTests(unittest.TestCase):
     """A calibrating boot's synchronous decode marks its committed rows with a Python count (observe_committed);
@@ -385,6 +384,8 @@ class CommittedCountTests(unittest.TestCase):
             self.assertEqual((valid.dtype, valid.numel(), int(valid), valid.device), (torch.int64, 1, 5, positions.device))
 
 
+@unittest.skipUnless(torch is not None and torch.cuda.is_available(),
+                     "observe's write phase is a device kernel")
 class ObserveOverlapTests(unittest.TestCase):
     """observe splits into a compute phase and a write phase so the compute can overlap the target's tail
     (45차 §96). The split has to be free -- byte-for-byte the single call -- and the compute has to be

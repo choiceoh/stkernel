@@ -1,0 +1,84 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "kernels": [
+    {
+      "rows": 1,
+      "requested_separate": true,
+      "smem_bytes": 100352,
+      "smem_capacity": 101376,
+      "separate": true,
+      "kernel": "static2_m1_k4096_n512_t8_r8_tm32f2g2a32wutr16n128k256d256sf6v1fc1sep_6dbf4cbede8233fc",
+      "status": "PASS",
+      "seconds": 3.407560027000727,
+      "native_binary_sha256": "146cb62ef66fbbe38b0c09c7ec35a6d8cffa0f0dc6877fa45ad81124d8812186",
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o1409640961_tensorptri32gmemo81_tensorptrf32gmemo81_tensorptri8gmemalign16o_0:\n  REG:126 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "rows": 7,
+      "requested_separate": true,
+      "smem_bytes": 100352,
+      "smem_capacity": 101376,
+      "separate": true,
+      "kernel": "static2_m7_k4096_n512_t8_r56_tm32f2g2a32wutr16n128k256d256sf6v1fc1sep_3377cd58d5514b7c",
+      "status": "PASS",
+      "seconds": 2.0040720910183154,
+      "native_binary_sha256": "75b4ae3dde219e522afd0afc8d5bec790721dc2fa4f9e143a6390699d6fb54a3",
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o7409640961_tensorptri32gmemo561_tensorptrf32gmemo561_tensorptri8gmemalign1_0:\n  REG:126 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "rows": 8,
+      "requested_separate": true,
+      "smem_bytes": 100352,
+      "smem_capacity": 101376,
+      "separate": true,
+      "kernel": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sep_1855ae935df534bd",
+      "status": "PASS",
+      "seconds": 1.9859959019813687,
+      "native_binary_sha256": "868c8419780369e8166e1145af5c178f20d58d37e979db80c9668b07aa0aa500",
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0:\n  REG:126 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "rows": 8,
+      "requested_separate": false,
+      "smem_bytes": 98304,
+      "smem_capacity": 101376,
+      "separate": false,
+      "kernel": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1_bc54528f22d711b0",
+      "status": "PASS",
+      "seconds": 1.997276080015581,
+      "native_binary_sha256": "6cb6b050d65299d27278d8c0a47c13413cbdfe92e91f17c027e0f1af5062a5e0",
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0:\n  REG:126 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "rows": 16,
+      "requested_separate": true,
+      "smem_bytes": 101376,
+      "smem_capacity": 101376,
+      "separate": false,
+      "kernel": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutsf6v1_c8142b14516ae45d",
+      "status": "PASS",
+      "seconds": 2.00575489300536,
+      "native_binary_sha256": "4bb8f0cb465d788fb432c8273820623a2d3c1de74c113b066b6f2d427edf5ec6",
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf32gmemo1281_tensorptri8gmemali_0:\n  REG:117 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "rows": 32,
+      "requested_separate": true,
+      "smem_bytes": 101376,
+      "smem_capacity": 101376,
+      "separate": false,
+      "kernel": "static2_m32_k4096_n512_t8_r256_tm32f2g2a32wutsf6v1_1e08b887a4af4d64",
+      "status": "PASS",
+      "seconds": 1.9974233609973453,
+      "native_binary_sha256": "f79608eb6771ee8b896245f262c248ddc3f14ec5aa8be91dd0ce9cdb4f8d888f",
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o32409640961_tensorptri32gmemo2561_tensorptrf32gmemo2561_tensorptri8gmemali_0:\n  REG:117 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1896 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    }
+  ],
+  "scope": "native compile and layout checks; GPU numerics/replay/timing pending",
+  "source_sha256": {
+    "engine/kernels/b12x/moe_dispatch.py": "41793e34eb9612c212c2842f0970d4d59b966bf91ae1faed72673287703476dc",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "a9e17f960a4175620815b6f069b46ca4986c0456dbc555e2e1b18f001922b513",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e"
+  }
+}
