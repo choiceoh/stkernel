@@ -51,7 +51,7 @@ def timing(report, name, rows, base, candidate, functions, **extra):
             graph.reset()
 
 
-def indexer_check(report, ranks):
+def indexer_check(report, ranks, *, row_cases=None):
     from engine.kernels.decode_projection import IndexerPair, indexer_boundary, DECODE_ROWS
     from engine.kernels.glm_pointwise import layernorm
     from engine.kernels.indexer import head_gate
@@ -67,7 +67,7 @@ def indexer_check(report, ranks):
     owners = [IndexerPair(a, b) for a, b, *_ in cells]
     heads = cells[0][2].shape[0]
     scale = 128 ** -.5 * heads ** -.5
-    for rows in DECODE_ROWS:
+    for rows in DECODE_ROWS if row_cases is None else row_cases:
         parent = torch.full((rows, 6416), float('nan'), dtype=torch.bfloat16, device='cuda')
         x = parent[:, :4096]
         q = torch.randn(rows, heads, 128, dtype=torch.bfloat16, device='cuda')
@@ -123,23 +123,26 @@ def indexer_check(report, ranks):
     gc.collect()
 
 
-def wide_check(report, ranks):
+def wide_check(report, ranks, *, row_cases=(9, 14, 16, 21, 28, 32),
+               timing_rows=(14, 21, 28)):
     from engine.kernels.dense import DenseLinear, W4Pack, extension
     from engine.profiles.glm53.weights import rank_loader
     path = rank_path(ranks)
     loader = rank_loader(path)
     ext = extension()
     # Cover target W4 projection families once each, with actual rank weights.
-    suffixes = ('.kda.in_proj', '.kda.o_proj', '.mla.qkv_a', '.mla.q_b', '.mla.o_proj',
-                '.idx.wq_b', '.mlp.gate_up', '.mlp.down')
-    keys = [next(k for k in sorted(loader.keys()) if k.endswith(s)) for s in suffixes]
+    from probes.engine_decode_k7 import w4_projection_keys
+    keys, packed_mlp = w4_projection_keys(loader)
+    report('decode_batch_weight_contract', rank_file=str(path), w4_keys=keys,
+           dense_mlp='packed_nvfp4_separate_lane' if packed_mlp else 'w4a8',
+           scope='packed dense MLP cells are not W4 input-reuse candidates')
     for key in keys:
         weight = loader.load([key], device='cuda')[key]
         layer = DenseLinear(weight, prefill=False)
         for tile, p in enumerate(layer.packs):
             packs = [W4Pack(p.data.clone(), p.scale.clone(), p.rowscale.clone(), p.rows, p.cols)
                      for _ in range(4)]
-            for rows in (9, 14, 16, 21, 28, 32):
+            for rows in row_cases:
                 backing = torch.full((rows, p.cols + 8), float('nan'), device='cuda', dtype=torch.bfloat16)
                 x = backing[:, 4:4+p.cols]
                 x.normal_()
@@ -168,7 +171,7 @@ def wide_check(report, ranks):
                                 torch.testing.assert_close(got, want, rtol=0, atol=0)
                     report('decode_batch_numerics', candidate='wide_input', key=key, tile=tile,
                            rows=rows, n=p.rows, k=p.cols, exact=True, poisoned_replay=True, rank_file=str(path))
-                    if rows in (14, 21, 28):
+                    if rows in timing_rows:
                         timing(report, 'wide_input', rows, *graphs, (base, candidate), key=key, tile=tile, n=p.rows, k=p.cols,
                                packs=len(packs), plan=ext.gemm2_plan(rows, p.rows, p.cols))
                 finally:

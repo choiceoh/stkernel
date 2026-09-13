@@ -3123,7 +3123,9 @@ int mk_gemm_input_mode() {
 }
 bool mk_input_shape(int m, int n, int k, bool bg, bool lr) {
   // n is the logical output width; the real KDA projection pads 6416 to 6528.
-  return !bg && !lr && (m == 6 || m == 7) && k == 4096 &&
+  // Mode 2 qualifies K=7's eight verification rows with the existing pack/MMA.
+  // Mode 1 remains the measured serving set until the paired GPU gate wins.
+  return !bg && !lr && (m == 6 || m == 7 || (m == 8 && mk_gemm_input_mode() == 2)) && k == 4096 &&
       (n == 6416 || (mk_gemm_input_cta_mode()==4 && (n==4096 || n==6144)));
 }
 int g_probe_ksr2 = -1;  // 0 = the rule below; > 0 forces the slice count
@@ -4264,9 +4266,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("read_mhc_ts", &mk_read_mhc_ts, "mhc phase timestamps");
   m.def("gemm_input_mode", &mk_gemm_input_mode);
   m.def("set_gemm_input", [](int mode) {
-    TORCH_CHECK(mode == 0 || mode == 1, "input reuse mode must be 0 or 1");
+    TORCH_CHECK(mode >= 0 && mode <= 2, "input reuse mode must be 0, 1, or probe-only 2 (eight rows)");
     g_input_reuse_mode = mode;
-  }, "boot/probe override; existing captured graphs retain their route");
+  }, "probe override; 2 qualifies eight rows; existing captured graphs retain their route");
   m.def("gemm_input_plan", &mk_gemm_input_plan);
   m.def("gemm_input_cta_mode", &mk_gemm_input_cta_mode);
   m.def("gemm_input_cta_plan", &mk_gemm_input_cta_plan);
