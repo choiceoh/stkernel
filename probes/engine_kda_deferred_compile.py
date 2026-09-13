@@ -50,11 +50,13 @@ def main():
     # Same row addressing and strided projection views used by C=1/C=4.
     for rows in (1, 4):
         for t in (1, 6, 7):
-            variants.append((f"batch-commit-c{rows}-t{t}", _commit_layers,
+            for tiled in (False, True):
+                variants.append((f"batch-commit-c{rows}-t{t}-tiled{int(tiled)}", _commit_layers,
                              {**{p: "*fp32" for p in ("KEY", "DECAY", "UPDATE", "RING")},
                               **{p: "*i64" for p in ("OFFSETS", "SLOT", "CONTEXT", "COUNT")}},
                              dict(T=t, ROWS=rows, H=16, K=128, V=128, R=7,
-                                  SLOT_STRIDE=34*(7*16*128*128+64)+64, BLOCK=768, B=1024)))
+                                  SLOT_STRIDE=34*(7*16*128*128+64)+64, BLOCK=768, B=1024,
+                                  TILED=tiled)))
     # Compile the real batched verifier, including per-row factor offsets.
     _, fn, signature, constants = next(v for v in variants if v[0] == "verify-t7-deferred1")
     signature, constants = dict(signature), dict(constants)

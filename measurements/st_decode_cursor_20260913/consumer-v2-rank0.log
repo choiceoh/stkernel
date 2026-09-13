@@ -1,0 +1,65 @@
+  fleet reserved by queue/st-terminal-prefill-consumer0913v2
+  box: GB10 (DGX Spark): SM121, unified 120 GiB (17 free)
+[W913 10:17:10.152398153 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+  facts
+    model                    /repo/st-glm53-meta              [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+    ranks                    /home/choiceoh/models/st-glm53-9391-up-gate-full [preshard output]
+    world                    4                                [facts.TP: four Sparks]
+    block                    768                              [launcher --block-size]
+    spec_k                   6                                [launcher SPEC_K with DFlash2]
+    kv_gib                   5.0                              [--kv-gib (local)]
+    port                     8001                             [--port]
+    max_seqs                 4                                [resident rows, state slots and captured decode widths]
+    prefix_snapshot_gib      2.125                            [tiered raw block-boundary checkpoints; count follows the shape]
+    prefix_untiered_snapshot_gib 4.25                             [raw checkpoints when no prefix tier is configured]
+    prefix_compressed_bytes  1073741824                       [prefix tier's bounded lossless RAM cache; codec workspace declared separately]
+    moe_static               t,r,sf6,q0                       [native TP4 execution]
+    lanes                    served                           [native TP4 execution]
+    decode_eager             0                                [native TP4 execution]
+    execution                native                           [native TP4 execution]
+    mla_prefill              tile32                           [production default]
+    context_ceiling          0                                [production default]
+    kda_state_dtype          fp32                             [production default]
+    execution_overlap        0                                [production default]
+    early_observe            0                                [production default]
+    prefill_tiles            1                                [production default]
+    deferred_kda             1                                [production default]
+    terminal_mhc             1                                [production default]
+    direct_mhc               1                                [production default]
+    prefill_project_tiles    1                                [production default]
+    nvme_mapped_staging      1                                [production default]
+    decode_iterations        4                                [production default]
+  knobs (every one expires)
+  kernel shape (derived): hidden 4096 hc 4 mhc tp 4 | mla 16x512 no sink | linear 16/16x128x128 conv 4 decay/channel | indexer kpool 32x128 pool 4 top 2048 | moe 288(288 local) I2048/512 top8 nvfp4 swigluoai_uninterleave | spec 6
+NCCL version 2.29.7+cuda13.2
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+boot rendezvous arena-admission: rank 0 prepared; waiting for 4 ranks (deadline 1800s)
+[serve] death rank=0 kind=local phase='boot': MemoryError: TP arena admission failed: [Errno 12] Cannot allocate memory
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 409, in build
+[rank0]:     report = prepare_allocation(arena_bytes, files, workspace_bytes + os_reserve_bytes + host_budget_bytes,
+[rank0]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/base/arena.py", line 150, in prepare_allocation
+[rank0]:     reclaimed = reclaim(need) if reclaim is not None else 0
+[rank0]:                 ^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/base/arena.py", line 56, in touch_pages
+[rank0]:     region = mmap.mmap(-1, n, flags=flags)
+[rank0]:              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]: OSError: [Errno 12] Cannot allocate memory
+
+[rank0]: The above exception was the direct cause of the following exception:
+
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 1236, in <module>
+[rank0]:     raise SystemExit(main())
+[rank0]:                      ^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 1232, in main
+[rank0]:     return fleet(a)
+[rank0]:            ^^^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 1066, in fleet
+[rank0]:     F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
+[rank0]:                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 425, in build
+[rank0]:     raise MemoryError(f"TP arena admission failed: {failure or 'a peer has insufficient immediately free memory'}") from failure
+[rank0]: MemoryError: TP arena admission failed: [Errno 12] Cannot allocate memory
