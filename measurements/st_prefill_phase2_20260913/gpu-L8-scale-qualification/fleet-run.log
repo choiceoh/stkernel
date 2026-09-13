@@ -1,0 +1,23 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-st-prefill-scale-L8r2-20260913-180753.txt
+waiting: pos 2/2, held by expert-capture0913b [boot] (pid 3089166@srv2, since 18:02, est 50m, expert capture: routed-expert inputs, KV latent and head precision (hold, corpus fed from srv2)), legacy busy (0 procs, 0 reqs, booting), lease: queue queue/expert-capture0913b on srv2 since 2026-09-13 18:02:22 (expert capture: routed-expert inputs, KV latent and h 2026-09-13_18:07:54
+waiting: pos 2/2, held by expert-capture0913b [boot] (pid 3089166@srv2, since 18:02, est 50m, expert capture: routed-expert inputs, KV latent and head precision (hold, corpus fed from srv2)), lease: queue queue/expert-capture0913b on srv2 since 2026-09-13 18:02:22 (expert capture: routed-expert inputs, KV latent and h 2026-09-13_18:14:38
+waiting: pos 1/1, lease: free, a single check holds srv4 2026-09-13_18:15:01
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "423edcca2eab409499844454882748d4", "phase": "waiting", "reason": "dequeue", "since": 165131.342642366, "updated_at": 1789290991.450449, "version": 1}
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-st-prefill-scale-L8r2-20260913-180753.txt
+GO st-prefill-scale-L8r2 2026-09-13_18:16:31
+  node 10.10.10.1: gpu=ok stray=3 ram=91G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=95G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=100G path=ok 
+2026-09-13T18:16:34 actual-weight lossless scale expansion gate before the improved engine boot
+2026-09-13T18:16:34 GPU numerical gate: scale-expansion
+2026-09-13T18:17:14 scale-expansion passed
+Traceback (most recent call last):
+  File "/home/choiceoh/st-prefill-scale-controller/measurements/st_prefill_phase2_20260913/run_bracket.py", line 272, in <module>
+    main()
+  File "/home/choiceoh/st-prefill-scale-controller/measurements/st_prefill_phase2_20260913/run_bracket.py", line 195, in main
+    qualified_component(numerical)
+  File "/home/choiceoh/st-prefill-scale-controller/measurements/st_prefill_phase2_20260913/run_bracket.py", line 128, in qualified_component
+    raise RuntimeError('scale expansion has no component win at both target sizes; preserve results and decline boot')
+RuntimeError: scale expansion has no component win at both target sizes; preserve results and decline boot
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "2fe6bc4ba04d4c1f9936d87ba834d635", "phase": "waiting", "reason": "release", "since": 165174.938090357, "updated_at": 1789291035.0459025, "version": 1}

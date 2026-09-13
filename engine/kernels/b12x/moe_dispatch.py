@@ -4634,11 +4634,13 @@ def launch_sm120_dynamic_moe(
         from .moe_dynamic_gated_sf6 import stock_contract_matches
         direct_sf6 = bool(stock_contract_matches())
     if _prefill_scale_expansion is None:
-        # Candidate-only eager prefill path. Decode, graph capture and raw
-        # fallback layers retain their existing readers. The private bool
-        # override is a same-weight numerical control in the FIFO gate.
+        # Candidate-only long prefill path. L8 measured expansion slower at
+        # 2672 rows and only 1.5% faster at 8192; keep the short packed reader.
+        # Decode, graph capture and raw fallback layers retain their readers.
+        # The private bool override preserves the measured numerical control.
         _prefill_scale_expansion = bool(direct_sf6 and _TP_SF6_Q0_ENABLED
             and _tp_sf6_q0_override is None
+            and type(num_tokens) is int and num_tokens > 8192
             and _prefill_scale_expansion_eligible(
                 m=num_tokens, E=num_experts, k=k, n=n, num_topk=top_k,
                 tile_m=workspace.tile_m, quant_mode=quant_mode,

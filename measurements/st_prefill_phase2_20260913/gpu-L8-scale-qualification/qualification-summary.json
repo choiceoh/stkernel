@@ -1,0 +1,63 @@
+{
+  "session": "st-prefill-scale-L8r2",
+  "ticket": "17892904733181700",
+  "candidate": "975f1fb963f127945fe3a6eb82071c659f2666d8",
+  "supervisor_pid": 3181700,
+  "supervisor_start": "16432126",
+  "terminal_state": "finished",
+  "returncode": 1,
+  "lease_released": true,
+  "numerical_gate": "PASS",
+  "component_gate": "FAIL_SHORT_PREFILL_REGRESSION",
+  "engine_booted": false,
+  "consumer_measurement": false,
+  "scope": "actual rank0 layer 3; eager component numerics and event timing",
+  "cases": [
+    {
+      "layer": 3,
+      "rows": 2672,
+      "routes": "balanced",
+      "packed_median_ms": 12.056976318359375,
+      "expanded_median_ms": 13.011600017547607,
+      "throughput_ratio": 0.9266328739047608,
+      "duration_change_pct": 7.91760449702974,
+      "numerics": "PASS"
+    },
+    {
+      "layer": 3,
+      "rows": 2675,
+      "routes": "zeros",
+      "packed_median_ms": 11.982671737670898,
+      "expanded_median_ms": 12.960095882415771,
+      "throughput_ratio": 0.9245820282802815,
+      "duration_change_pct": 8.156980063737084,
+      "numerics": "PASS"
+    },
+    {
+      "layer": 3,
+      "rows": 8192,
+      "routes": "duplicate",
+      "packed_median_ms": 11.483727931976318,
+      "expanded_median_ms": 11.318895816802979,
+      "throughput_ratio": 1.0145625613877147,
+      "duration_change_pct": -1.435353712224119,
+      "numerics": "PASS"
+    },
+    {
+      "layer": 3,
+      "rows": 32256,
+      "routes": "concentrated",
+      "packed_median_ms": 41.68172836303711,
+      "expanded_median_ms": 38.30627250671387,
+      "throughput_ratio": 1.0881175754109627,
+      "duration_change_pct": -8.098166724095247,
+      "numerics": "PASS"
+    }
+  ],
+  "decision": "Reject automatic expansion at <=8192 rows. Retain long path as a private candidate only; no new queue admission until the next candidate is prepared.",
+  "artifacts": {
+    "fleet-run.log": "58455325a5a19f60a2b5964f0dee3ba907324f50bfe73efec30d90209104b56c",
+    "scale-expansion-gate.log": "b90e2489328f7fd71ed6753d8a58a720223c5758b868d5b514ddec99f6eeee71",
+    "scale-expansion.json": "799d8ed7ee2a413e23c32fa73451edf7ac4bb73b51fc8bce6dba426258691d32"
+  }
+}
