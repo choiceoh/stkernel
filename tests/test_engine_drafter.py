@@ -349,6 +349,42 @@ class DrafterTests(unittest.TestCase):
 
 
 @unittest.skipUnless(torch.cuda.is_available(), "observe's write phase is a device kernel")
+@unittest.skipUnless(torch is not None, "requires PyTorch")
+class CommittedCountTests(unittest.TestCase):
+    """A calibrating boot's synchronous decode marks its committed rows with a Python count (observe_committed);
+    the direct DFlash ring write takes the accepted count as an int64 device scalar (draft_attention.write_draft_kv).
+    With decode calibration on by default, every boot died capturing the drafter's decode graphs on that int."""
+
+    def test_committed_count_reaches_the_direct_ring_write_as_a_device_scalar(self):
+        from unittest import mock
+        from engine.profiles.glm53 import drafter as drafter_mod
+        from engine.profiles.glm53.drafter import Drafter, DrafterFacts
+        F = DrafterFacts(layers=2, hidden=16, heads=2, kv_heads=1, head_dim=4, inter=16, rms_eps=1e-6,
+                         rope_theta=10000., window=8, block=4, mask_id=20, conv_taps=2, conv_group=4,
+                         sel_rank=4, sel_top_k=3, target_layers=(1,), k=3)
+        d = Drafter(F, SimpleNamespace(), 21)
+        d.decode_calibration = True
+        d.fast_attention = True
+        d.p = {f"layers.{L}.self_attn.k_norm.weight": torch.ones(F.head_dim) for L in range(F.layers)}
+        d.context_linear = lambda aux, keep=None, *, decode=False, observe=True: aux
+        d.context_normed = lambda projected, *, decode: projected
+        d.linear = lambda x, name, keep=None: torch.zeros(x.shape[0], F.kv_heads * F.head_dim)
+        seen = []
+
+        def write(field, slot, layer, positions, k, v, *, valid=None):
+            seen.append(valid)
+
+        positions = torch.arange(5, dtype=torch.int64)
+        ring = (torch.zeros(1), torch.zeros(1, dtype=torch.int64))
+        with mock.patch.object(drafter_mod, "norm_rope", lambda k, w, eps, pos, theta: k), \
+                mock.patch("engine.kernels.draft_attention.write_draft_kv", write):
+            d.observe_committed(ring, positions, torch.zeros(5, 16))
+        self.assertEqual(len(seen), F.layers)
+        for valid in seen:
+            self.assertTrue(torch.is_tensor(valid))
+            self.assertEqual((valid.dtype, valid.numel(), int(valid), valid.device), (torch.int64, 1, 5, positions.device))
+
+
 class ObserveOverlapTests(unittest.TestCase):
     """observe splits into a compute phase and a write phase so the compute can overlap the target's tail
     (45차 §96). The split has to be free -- byte-for-byte the single call -- and the compute has to be
