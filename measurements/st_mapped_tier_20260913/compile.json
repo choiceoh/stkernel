@@ -3,11 +3,11 @@
   "result": {
     "module": "st_mapped_staging_c6cdd53267cbd1be6eed198e"
   },
-  "seconds": 42.55884624898317,
+  "seconds": 0.22212568699615076,
   "source_sha256": {
     "engine/kernels/mapped_staging/buffer.cu": "1098aa35ec573494b71af8ceb572ce6b5b03633e338b39213e3b2c815e899713",
     "engine/kernels/mapped_staging/__init__.py": "7b3d19f726ac397d10552c5ffaecd3cd397f1e6c23af13c7dbad4f33a888f0ba",
-    "engine/base/kv_tier.py": "8c6e5f7effbc09fbd3c753f37effeb822fb87e34f04d44ee9110f3285815a96a",
+    "engine/base/kv_tier.py": "3f0ce566c604d81a0b583677396f057b40318a2fceb3540febf54d951fb9a5c2",
     "tests/test_engine_mapped_tier_cuda.py": "704512236f7f6615e48f988935ac8ad6cecc8fdb2f6f9ffdf63598399e9ecba5"
   }
 }
