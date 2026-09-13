@@ -13,16 +13,27 @@ D17 은 "속도 주장은 플릿 onepass 두 번"이고 이 도구는 그것을 
      진짜 스텝 수·TTFT·큐잉이 모형에 반응한다 — 요청별 **큐 대기**(도착→첫 프리필
      청크: D10 밸브와 직렬 프리필이 실제로 미루는 만큼)가 잡히고, 도착 시각
      (`--arrive-ms`)과 기아 밸브(`--max-wait-s`, D10)까지 실험된다.
-  3. **정확도 검증** — `--against <onepass result.jsonl>`: 기록된 플릿 숫자와
-     시뮬레이션 결과를 나란히 놓고 델타를 낸다. 상수를 그 기록에서 폈으면 일치는
-     자명하다 — 검증의 의미는 **스케줄러·러너 층이 실측 형상을 재현한다**는 것과,
-     어느 계수가 아직 미계수(평탄 가정)인지 드러내는 것이다.
+  3. **정확도 검증** — `--against <onepass result.jsonl...>`: 기록된 플릿 숫자와
+     시뮬레이션 결과를 나란히 놓고 델타를 낸다. 폴딩은 이제 디테일까지 담는다 —
+     문의 앞면(입장·토큰화, 요청마다), 컨텍스트 첫 요청의 JIT 꼬리(cold−warm),
+     컨텍스트별 decode 스텝 시간(windows_by_ctx 계단; 실측으로 밝혀진 사실:
+     대부분 부팅에서 컨텍스트에 평탄하다). 그래서 TTFT(cold) 도 예측 행이다.
+     상수를 그 기록에서 폈으면 일치는 자명하다 — 검증의 의미는 **스케줄러·러너
+     층이 실측 형상을 재현한다**는 것과, 어느 계수가 아직 미계수인지 드러내는 것이다.
 
 기본 비용 상수는 실측 증거에서 왔다(measurements/st_onepass_20260912_0746,
 2026-09-12 ST 엔진 onepass): decode 창 중앙값 10.963 step/s → 스텝당 91.2 ms,
 tokens/step 3.309·수용률 46.2% → k=5, prefill 2K 2009 / 32K 12150 / 128K 1996
-tok/s. **decode 의 폭·컨텍스트 의존은 아직 미계수다**(평탄) — 플릿이 C=2/4 창을
-더 주면 `--cost-json` 으로 폴딩한다.
+tok/s.
+
+**정직한 상한 — "실측이 필요없다"가 성립하는 경계.** 측정된 빌드의 상수를 한 판
+폴딩하면 그 빌드의 다른 구성(컨텍스트 사다리·도착 순서·큐잉·기아 밸브·프리픽스
+재사용)은 예측한다 — 부팅 없이 답하는 질문의 폭이 그만큼 넓은 것이다. 그러나
+엔진이 바뀌면(커널·노브·하드웨어) 상수가 무효가 되고 한 판이 다시 필요하다: 상수의
+원천이 항상 실측이기 때문이다. 폭(C>1) 계수는 아직 미폴딩(완결 C=4 기록이 채울
+자리), 품질(한국어·리트리벌 9/9)과 고장(랭크 갈림·OOM·멎음)은 이 모형의 언어
+밖이다. D17 은 그래서 사라지지 않는다 — 이 도구는 부팅 수를 줄이고, 판정을 대신하지
+않는다.
 
     python3 bench/step_sim.py                                  # 실측 상수, 2K/32K/128K
     python3 bench/step_sim.py --prompts 2000 --gen 64          # 빠른 한 수
@@ -62,22 +73,33 @@ class CostModel:
     """장치 비용의 전부. 어느 숫자가 실측이고 어느 것이 가정인지가 이 모형의 정직함이다.
 
     측정 출처는 name 이 말한다. prefill_tok_s 는 컨텍스트 길이→tok/s 계단이고 사이는
-    선형 보간한다. decode_ms_per_row / decode_ms_per_1k_ctx 는 미계수(0 = 평탄) — 플릿이
-    C=2/4 창을 주면 채워지는 자리다."""
+    선형 보간한다. front_ms 는 문(입장·토큰화)의 앞면 — 요청마다 한 번, 가장 짧은
+    컨텍스트의 TTFT 잔여에서 폴딩한다. cold_extra_s 는 컨텍스트별 **첫 요청**의
+    cold−warm 차(JIT 꼬리) — 같은 컨텍스트의 둘째부터는 내지 않는다.
+    decode_ms_by_ctx 는 windows_by_ctx(컨텍스트별 스텝 캐던스)에서 폴딩한 계단 —
+    비어 있으면 decode_ms 평탄. 실측으로 밝혀진 사실: 이 엔진의 decode 스텝 시간은
+    대부분 부팅에서 컨텍스트에 평탄하다(onepass-h 16.94/16.95/16.93). decode_ms_per_row
+    는 미계수(0 = 폭 무의존) — C=4 완결 기록이 쌓이면 채워지는 자리고, 폭 계수가 있는
+    동안 per_1k_ctx 는 by-ctx 계단에 흡수된다."""
     name: str = "st-20260912"
     k: int = 5                        # 스펙 디코드 드래프트 토큰 수
     acc: float = 0.462                # raw 수용률 (1 + k×acc = tokens/step 기댓값)
     decode_ms: float = 91.2           # decode 스텝 장치 시간 (1000/10.963)
-    decode_ms_per_row: float = 0.0    # 미계수: 스텝당 행 수 의존
-    decode_ms_per_1k_ctx: float = 0.0 # 미계수: 컨텍스트 의존
+    decode_ms_per_row: float = 0.0    # 미계수: 스텝당 행 수 의존 (C=4 기록이 채울 자리)
+    decode_ms_per_1k_ctx: float = 0.0 # 예비 계수 — by-ctx 계단이 있으면 보통 쓰이지 않는다
+    decode_ms_by_ctx: dict = field(default_factory=dict)   # {ctx: ms} — windows_by_ctx 폴딩
     prefill_tok_s: dict = field(default_factory=lambda: {2000: 2009.0, 32000: 12150.0,
                                                          128000: 1996.0})
     prefill_flat_ms: float = 0.0      # >0 이면 처리량 테이블 대신 청크당 상수(수동 비교용)
+    front_ms: float = 0.0             # 문의 앞면(입장·토큰화) — 요청마다 한 번
+    cold_extra_s: dict = field(default_factory=dict)       # {프롬프트 토큰: 초} — 그 길이의 첫 요청만
     seed: int = 7                     # 수용률 추첨의 시드 — 재현 가능해야 시뮬레이션이다
 
     def __post_init__(self):
         # JSON 에서 오면 키가 문자열이다("512") — 계단은 항상 int:float 로 정규화한다
         self.prefill_tok_s = {int(c): float(v) for c, v in self.prefill_tok_s.items()}
+        self.decode_ms_by_ctx = {int(c): float(v) for c, v in self.decode_ms_by_ctx.items()}
+        self.cold_extra_s = {int(c): float(v) for c, v in self.cold_extra_s.items()}
 
     def tokens_per_step_mean(self) -> float:
         return 1.0 + self.k * self.acc
@@ -100,9 +122,20 @@ class CostModel:
                 hi = q
         return (lo + hi) / 2
 
+    def decode_ms_for_ctx(self, max_ctx: int) -> float:
+        """그 스텝이 내다보는 최장 컨텍스트의 decode 스텝 ms — by-ctx 계단(사이 선형),
+        계단이 없으면 decode_ms 평탄. 실측: 대부분 부팅에서 이 값이 컨텍스트에 무관하다."""
+        if not self.decode_ms_by_ctx:
+            return self.decode_ms
+        table = sorted(self.decode_ms_by_ctx.items())
+        ctx = min(max(int(max_ctx), table[0][0]), table[-1][0])
+        for (c0, v0), (c1, v1) in zip(table, table[1:]):
+            if c0 <= ctx <= c1:
+                return v0 if c1 == c0 else v0 + (v1 - v0) * (ctx - c0) / (c1 - c0)
+        return table[-1][1]
+
     def decode_delay(self, width: int, max_ctx: int) -> float:
-        ms = (self.decode_ms + self.decode_ms_per_row * max(0, width - 1)
-              + self.decode_ms_per_1k_ctx * max_ctx / 1000.0)
+        ms = (self.decode_ms_for_ctx(max_ctx) + self.decode_ms_per_row * max(0, width - 1))
         return ms / 1e3
 
     def prefill_delay(self, prompt_len: int, chunk_tokens: int) -> float:
@@ -123,12 +156,18 @@ class CostModel:
     def summary(self) -> str:
         fitted = [f"decode {self.decode_ms:g} ms", f"k={self.k}", f"acc={self.acc:.1%}",
                   "prefill " + " ".join(f"{c//1000}K:{v:.0f}" for c, v in sorted(self.prefill_tok_s.items()))]
+        if self.decode_ms_by_ctx:
+            fitted.append("decode/by-ctx " + " ".join(f"{c//1000}K:{v:.1f}" for c, v in sorted(self.decode_ms_by_ctx.items())))
+        if self.front_ms:
+            fitted.append(f"front {self.front_ms:g} ms")
+        if self.cold_extra_s:
+            fitted.append("cold " + " ".join(f"{c//1000}K:+{v:.1f}s" for c, v in sorted(self.cold_extra_s.items())))
         unfitted = []
         if not self.decode_ms_per_row:
-            unfitted.append("폭")
-        if not self.decode_ms_per_1k_ctx:
-            unfitted.append("컨텍스트")
-        note = ("미계수(평탄 가정): " + ", ".join(unfitted)) if unfitted else "전 계수 폴딩됨"
+            unfitted.append("폭(C=4 기록 대기)")
+        if not self.decode_ms_by_ctx and not self.decode_ms_per_1k_ctx:
+            unfitted.append("컨텍스트(평탄)")
+        note = ("미계수: " + ", ".join(unfitted)) if unfitted else "전 계수 폴딩됨"
         return f"{self.name} [{', '.join(fitted)}] — {note}"
 
 
@@ -165,6 +204,7 @@ class NullModel:
         self.prefill_done: dict = {}
         self.done: dict = {}
         self.gen_tokens = 0
+        self._warmed: set = set()                        # 이미 한 번 prefilled 된 프롬프트 길이(JIT 꼬리는 첫 요청만)
         self._dev = threading.Lock()                     # 장치는 하나: 스텝은 백그라운드에서도 줄을 선다
 
     def open(self, seq, slot):
@@ -182,10 +222,16 @@ class NullModel:
         return self.ctx[seq]
 
     def prefill(self, seq, start, tokens, blocks, slot):
-        # 큐 대기의 끝: 이 요청의 첫 청크가 실제로 시작된 시각(D10 밸브·직렬 프리필이
-        # 미뤄도 실제로 돌기 시작한 쪽에서 잰다)
         if seq not in self.prefill_start:
-            self.prefill_start[seq] = time.monotonic()
+            self.prefill_start[seq] = time.monotonic()   # 큐 대기의 끝 = 프리필 스텝 입장
+            # 문의 앞면(입장·토큰화)은 요청마다 한 번 — 첫 청크에서만 낸다(청크마다가
+            # 아니라: 8청크 × 67ms 가 32K TTFT 를 +0.5s 부풀리는 버그였다). 실제로는
+            # 스텝 밖의 문 일이지만 계기는 이 스텝 안에 흘린다: 큐 대기에서 빼고 TTFT 에 넣는다.
+            _delay(self.cost.front_ms / 1e3)
+            # 그 프롬프트 길이의 첫 요청만 JIT 꼬리(cold−warm)를 낸다 — 둘째부터는 warm 이다
+            if self.prompt[seq] not in self._warmed:
+                self._warmed.add(self.prompt[seq])
+                _delay(self.cost.cold_extra_s.get(self.prompt[seq], 0.0))
         _delay(self.cost.prefill_delay(self.prompt[seq], tokens))
         self.ctx[seq] = start + tokens
         if start + tokens >= self.prompt[seq]:
@@ -364,7 +410,8 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
     decode_rate = round(kinds["decode"] / wall, 2) if wall > 0 and kinds["decode"] else None
     out = {"cost": {f: getattr(cost, f) for f in
                     ("name", "k", "acc", "decode_ms", "decode_ms_per_row", "decode_ms_per_1k_ctx",
-                     "prefill_tok_s", "prefill_flat_ms")},
+                     "decode_ms_by_ctx", "prefill_tok_s", "prefill_flat_ms", "front_ms",
+                     "cold_extra_s")},
            "steps": kinds, "wall_s": round(wall, 3), "step_s": cadence,
            "decode_step_s_wall": decode_rate,
            "decode_step_s_phase": round(1.0 / cost.decode_delay(1, 0), 2) if cost.decode_ms > 0 else None,
@@ -502,20 +549,54 @@ def fit_cost(record: dict, channel: str = "windows") -> "CostModel | None":
         if isinstance(tok, (int, float)) and isinstance(warm, (int, float)) and warm > 0:
             table[int(tok)] = tok / warm
     name = record.get("name") or "fitted"
+    reqs = record.get("requests") or []
+    # decode 컨텍스트 계단 — windows_by_ctx 의 컨텍스트별 중앙값. 값이 사실상 하나면
+    # (대부분 부팅: 16.94/16.95/16.93) 계단을 만들지 않는다: 평탄은 계단이 아니라 실측이다.
+    by_ctx = {}
+    for ctx, wins in (dec.get("windows_by_ctx") or {}).items():
+        if wins:
+            try:
+                by_ctx[int(ctx)] = 1000.0 / statistics.median(wins)
+            except (TypeError, ValueError):
+                continue
+    if len({round(v, 3) for v in by_ctx.values()}) < 2:
+        by_ctx = {}
+    # 문의 앞면 — 가장 짧은 컨텍스트의 warm 요청 TTFT 에서 프리필 처리량을 뺀 나머지.
+    # 짧은 컨텍스트에서만 잡힌다(긴 컨텍스트는 프리필이 지배해 앞면이 묻힌다).
+    front_ms = 0.0
+    by_ctx_reqs = {}
+    for q in reqs:
+        by_ctx_reqs.setdefault(q.get("ctx"), []).append(q)
+    for ctx, group in sorted(by_ctx_reqs.items()):
+        tok = next((r.get("tok") for r in record.get("prefill", []) if r.get("ctx") == ctx), None)
+        if tok not in table or len(group) < 2:
+            continue
+        warm = statistics.median([q["ttft_s"] for q in group[1:]])
+        front_ms = max(0.0, (warm - tok / table[tok]) * 1e3)
+        break
+    # JIT 꼬리 — 그 컨텍스트 첫 요청의 cold−warm(warm 이 cold 보다 빠른 성분만)
+    cold = {}
+    for row in record.get("prefill", []):
+        tok, warm_s, cold_s = row.get("tok"), row.get("warm_s"), row.get("cold_s")
+        if all(isinstance(v, (int, float)) for v in (tok, warm_s, cold_s)) and cold_s - warm_s > 0.005:
+            cold[int(tok)] = cold_s - warm_s
     return CostModel(name=f"fit:{name}",
                      k=int(dec.get("num_spec") or 5),
                      acc=dec.get("acc_raw") or 0.45,
                      decode_ms=1000.0 / rate,
-                     prefill_tok_s=table)
+                     decode_ms_by_ctx=by_ctx,
+                     prefill_tok_s=table,
+                     front_ms=round(front_ms, 1),
+                     cold_extra_s={t: round(v, 3) for t, v in cold.items()})
 
 
 def validate_against(record: dict, sim: dict) -> list:
     """onepass 기록 한 줄과 시뮬레이션 결과의 나란히 비교. 순수 함수.
 
     각 행이 어느 쪽인지 표시한다: [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,
-    [예측] 폼에 얹히지 않은 값 — 클라이언트 tok/s·TPOT·e2e·TTFT(warm, 큐잉 포함)이
-    따라 오는 것이 검증의 주장이다. TTFT cold 는 비교에서 뺀다(JIT 꼬리는 모형의
-    범위가 아니다)."""
+    [예측] 폼에 얹히지 않은 값 — 클라이언트 tok/s·TPOT·e2e·TTFT(cold, JIT 꼬리 포함)·
+    TTFT(warm, 큐잉 포함)이 따라 오는 것이 검증의 주장이다. cold 는 이제 비교에 들어간다:
+    문의 앞면과 컨텍스트별 첫 요청의 cold−warm 이 폴딩되어 있기 때문이다."""
     dec = record.get("decode") or {}
     reqs = record.get("requests") or []
     simreq = sim["requests"]
@@ -537,6 +618,10 @@ def validate_against(record: dict, sim: dict) -> list:
         s_group = [q for q in simreq if q.get("ctx") == ctx]
         s = _med([q["ttft_s"] for q in s_group])
         add(f"TTFT(warm) ctx{ctx // 1000}K", "입력+큐", _med(warm), s)
+        cold_row = next((r for r in record.get("prefill", []) if r.get("ctx") == ctx), None)
+        if s_group and isinstance(cold_row.get("cold_s"), (int, float)):
+            # 그 컨텍스트의 첫 요청(순차 도착이라 시뮬의 첫 행)이 JIT 꼬리를 실은 채 재현된다
+            add(f"TTFT(cold) ctx{ctx // 1000}K", "예측", cold_row["cold_s"], s_group[0]["ttft_s"])
         add(f"e2e med ctx{ctx // 1000}K", "예측",
             _med([q["ttft_s"] + q["decode_s"] for q in group]),
             _med([q["e2e_s"] for q in s_group]))
