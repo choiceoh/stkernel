@@ -75,15 +75,17 @@ def kernel_shape(cfg: dict, tp: int = 4, spec_k: "int | None" = None) -> "Kernel
     return KernelShape(
         comm=Comm(world=tp, hidden=hidden), hidden=hidden, hc=cfg["hc_mult"], tp=tp,
         attention=Attention(kind="mla", heads=cfg["num_attention_heads"] // tp, head_dim=cfg["head_dim"],
-                            kv_heads=max(1, cfg["num_key_value_heads"] // tp)),
+                            kv_heads=max(1, cfg["num_key_value_heads"] // tp),
+                            sink=True),                        # modules/sparse_attention.sparse_attn: attn_sink
         linear=None,
         indexer=Indexer(heads=cfg["index_n_heads"], head_dim=cfg["index_head_dim"],
-                        pool=max(ratios) if ratios else 1, topk=cfg["index_topk"]),
+                        pool=max(ratios) if ratios else 1, topk=cfg["index_topk"], compress="ced"),
         moe=MoE(experts=cfg["n_routed_experts"], experts_local=cfg["n_routed_experts"] // tp, hidden=hidden,
                 inter=cfg["moe_intermediate_size"], inter_local=cfg["moe_intermediate_size"],
                 topk=cfg["num_experts_per_tok"], quant="fp4-block32", activation=cfg.get("hidden_act", "silu"),
                 swiglu_limit=cfg.get("swiglu_limit"), dense_inter_local=dense // tp),
-        spec_k=cfg["num_nextn_predict_layers"] if spec_k is None else spec_k)
+        spec_k=cfg["num_nextn_predict_layers"] if spec_k is None else spec_k,
+        hc_variant="split_sinkhorn")                           # modules/hyper_connection.hc_split_sinkhorn
 
 
 def kernel_shape_of(ckpt: "str | Path", tp: int = 4) -> "KernelShape":

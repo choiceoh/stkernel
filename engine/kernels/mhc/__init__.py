@@ -5,6 +5,21 @@ import torch
 from . import tilelang_kernels  # Required compiler dependency, checked when the lane binds.
 
 _HC_PRENORM_MIN_M = 8
+_VARIANT_SEEN = None
+
+
+def _check_variant():
+    """These mixes compute GLM-5.3's mhc_pre/mhc_post (engine/kernels/cells.MHC_VARIANT). A bound kernel shape that
+    mixes by another form is refused by name, checked once per bound shape (a Python compare, never in a replay)."""
+    global _VARIANT_SEEN
+    from engine.base.kernel_shape import bound
+    from engine.kernels.cells import MHC_VARIANT
+    shape = bound()
+    if shape is not _VARIANT_SEEN:
+        if shape.hc_variant != MHC_VARIANT:
+            raise ValueError(f"the TileLang mHC mixes compute the {MHC_VARIANT} form; the bound kernel shape mixes by "
+                             f"{shape.hc_variant}")
+        _VARIANT_SEEN = shape
 
 def _deneb_hc_prenorm_gemm(x, fn, out_mul, out_sqrsum, n_splits):
     """37차: deep_gemm's tf32 prenorm GEMM, with M padded to 8 rows when it is
@@ -124,6 +139,7 @@ def mhc_pre_tilelang(
         comb_mix: shape (..., hc_mult, hc_mult), dtype torch.float32
         layer_input: shape (..., hidden_size), dtype torch.bfloat16
     """
+    _check_variant()
     from .tilelang_kernels import (
         compute_num_split,
         mhc_pre_big_fuse_tilelang,
@@ -247,6 +263,7 @@ def mhc_post_tilelang(
     post_layer_mix: torch.Tensor,
     comb_res_mix: torch.Tensor,
 ) -> torch.Tensor:
+    _check_variant()
     from .tilelang_kernels import (
         mhc_post_tilelang as _mhc_post_kernel,
     )

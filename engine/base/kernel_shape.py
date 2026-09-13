@@ -31,8 +31,14 @@ import datetime as _dt
 import hashlib
 import importlib
 import json
-from dataclasses import asdict, dataclass, fields, replace
+from dataclasses import KW_ONLY, asdict, dataclass, fields, replace
 from pathlib import Path
+
+
+# The operation variants a shape declares. A lane is compiled for one of each; the wizard admits a lane only
+# when the variant matches (engine/kernels/cells), because two models can share a geometry and differ in math.
+INDEXER_COMPRESS = ("kpool", "ced", "qsa")
+HC_VARIANTS = ("mhc", "split_sinkhorn")
 
 
 def _positive(owner: str, **values) -> None:
@@ -73,11 +79,18 @@ class Comm:
 @dataclass(frozen=True)
 class Attention:
     """The full-attention lane. `kind` "mla": `heads` query heads per rank over one shared latent of
-    `head_dim` (kv_lora_rank); "gqa": `heads` query heads and `kv_heads` KV heads per rank at `head_dim`."""
+    `head_dim` (kv_lora_rank); "gqa": `heads` query heads and `kv_heads` KV heads per rank at `head_dim`.
+
+    `sink` is part of the math, not the geometry: True when the softmax denominator carries a learned
+    per-head sink term (DeepSeek-V4.1's sparse_attn, engine/modules/sparse_attention.sparse_attn), False
+    when it does not (GLM-5.3's MLA, mla_sparse_mqa), None when the model's reference has not been read
+    yet. It is keyword-only and has no default: a profile states it or the shape does not build."""
     kind: str
     heads: int
     head_dim: int
     kv_heads: int = 1
+    _: KW_ONLY
+    sink: "bool | None"
 
     def __post_init__(self):
         if self.kind not in ("mla", "gqa"):
@@ -85,6 +98,8 @@ class Attention:
         _positive("Attention", heads=self.heads, head_dim=self.head_dim, kv_heads=self.kv_heads)
         if self.heads % self.kv_heads:
             raise ValueError("Attention.heads must be a multiple of kv_heads")
+        if self.sink not in (True, False, None):
+            raise ValueError(f"Attention.sink must be True, False or None (not established), got {self.sink!r}")
 
 
 @dataclass(frozen=True)
@@ -110,18 +125,27 @@ class LinearAttention:
 
 @dataclass(frozen=True)
 class Indexer:
-    """The sparse indexer: `heads` index heads (replicated), `head_dim` per head (the FP8 key
-    width), `pool` tokens per compressed key, `topk` positions a query may attend to."""
+    """The sparse indexer: `heads` index heads (replicated), `head_dim` per head (the key width), `pool`
+    tokens per compressed key, `topk` positions a query may attend to.
+
+    `compress` is how the keys are compressed, which differs per model even where the scoring formula is
+    shared (engine/modules/sparse_indexer): "kpool" is GLM-5.3's per-channel softmax pooling with APE,
+    rotated by Hadamard-128 into FP8 keys; "ced" is DeepSeek-V4.1's compressor; "qsa" is Qwen3.8's.
+    Keyword-only, no default."""
     heads: int
     head_dim: int
     pool: int
     topk: int
+    _: KW_ONLY
+    compress: str
 
     def __post_init__(self):
         _positive("Indexer", heads=self.heads, pool=self.pool, topk=self.topk)
         _power_of_two("Indexer", head_dim=self.head_dim)
         if self.topk % self.pool:
             raise ValueError("Indexer.topk must be whole pools")
+        if self.compress not in INDEXER_COMPRESS:
+            raise ValueError(f"Indexer.compress must be one of {INDEXER_COMPRESS}, got {self.compress!r}")
 
 
 @dataclass(frozen=True)
@@ -180,9 +204,17 @@ class KernelShape:
     spec_k: int                 # draft tokens verified per decode step (1 for an MTP head)
     device: Device = Device()
     drafter: "Drafter | None" = None
+    _: KW_ONLY
+    # Which hyper-connection math mixes the residual streams (engine/modules/hyper_connection): "mhc" is
+    # GLM-5.3's mhc_pre/mhc_post, "split_sinkhorn" is DeepSeek-V4.1's hc_split_sinkhorn -- they differ in
+    # where the RMS normalisation sits and in the pre-mix epsilon -- and None means the model's reference
+    # has not been read yet. Keyword-only, no default.
+    hc_variant: "str | None"
 
     def __post_init__(self):
         _positive("KernelShape", hidden=self.hidden, hc=self.hc, tp=self.tp, spec_k=self.spec_k)
+        if self.hc_variant is not None and self.hc_variant not in HC_VARIANTS:
+            raise ValueError(f"KernelShape.hc_variant must be one of {HC_VARIANTS} or None, got {self.hc_variant!r}")
         if self.comm.hidden != self.hidden or self.moe.hidden != self.hidden:
             raise ValueError("KernelShape: comm.hidden and moe.hidden must equal hidden")
         if self.comm.world != self.tp:
@@ -194,8 +226,10 @@ class KernelShape:
         m, a, l, i = self.moe, self.attention, self.linear, self.indexer
         linear = (f"linear {l.heads}/{l.v_heads}x{l.k_dim}x{l.v_dim} conv {l.conv} decay/{l.decay}" if l
                   else "linear none")
-        indexer = f"indexer {i.heads}x{i.head_dim} pool {i.pool} top {i.topk}" if i else "indexer none"
-        return (f"hidden {self.hidden} hc {self.hc} tp {self.tp} | {a.kind} {a.heads}x{a.head_dim} | {linear} | {indexer} | "
+        indexer = f"indexer {i.compress} {i.heads}x{i.head_dim} pool {i.pool} top {i.topk}" if i else "indexer none"
+        sink = {True: "sink", False: "no sink", None: "sink ?"}[a.sink]
+        return (f"hidden {self.hidden} hc {self.hc} {self.hc_variant or 'form ?'} tp {self.tp} | {a.kind} {a.heads}x{a.head_dim} "
+                f"{sink} | {linear} | {indexer} | "
                 f"moe {m.experts}({m.experts_local} local) I{m.inter}/{m.inter_local} top{m.topk} {m.quant} {m.activation} | "
                 f"spec {self.spec_k}" + (f" | drafter {self.drafter.head_dim}" if self.drafter else ""))
 
@@ -207,14 +241,15 @@ class KernelShape:
 MEASURED = KernelShape(
     comm=Comm(world=4, hidden=4096),
     hidden=4096, hc=4, tp=4,
-    attention=Attention(kind="mla", heads=16, head_dim=512, kv_heads=1),
+    attention=Attention(kind="mla", heads=16, head_dim=512, kv_heads=1, sink=False),
     linear=LinearAttention(heads=16, v_heads=16, k_dim=128, v_dim=128, conv=4, decay="channel"),
-    indexer=Indexer(heads=32, head_dim=128, pool=4, topk=2048),
+    indexer=Indexer(heads=32, head_dim=128, pool=4, topk=2048, compress="kpool"),
     moe=MoE(experts=288, experts_local=288, hidden=4096, inter=2048, inter_local=512, topk=8,
             quant="nvfp4", activation="swigluoai_uninterleave", swiglu_limit=10.0, dense_inter_local=3072),
     spec_k=6,
     device=Device(capability=(12, 1), sms=48),
     drafter=Drafter(head_dim=128, kv_heads=8, layers=5, window=2048),
+    hc_variant="mhc",
 )
 
 _BOUND: "KernelShape | None" = None
@@ -282,7 +317,7 @@ def fields_of(shape) -> dict:
 # hash still matches the checkpoint (a stale record dies, D3: rerun the wizard), and derives as before when none is.
 
 RECORD = "kernel_shape.json"
-RECORD_VERSION = 1
+RECORD_VERSION = 2            # 2: the shape carries its operation variants (sink, compress, hc_variant)
 PROFILES = {"glm53": "engine.profiles.glm53.facts", "qwen38": "engine.profiles.qwen38.shapes",
             "dsv41": "engine.profiles.dsv41.shapes"}                                             # kernel_shape_of(ckpt)
 
@@ -299,7 +334,8 @@ def from_dict(d: dict) -> KernelShape:
         indexer=Indexer(**d["indexer"]) if d.get("indexer") else None,
         moe=MoE(**d["moe"]), spec_k=d["spec_k"],
         device=Device(capability=tuple(d["device"]["capability"]), sms=d["device"]["sms"]),
-        drafter=Drafter(**d["drafter"]) if d.get("drafter") else None)
+        drafter=Drafter(**d["drafter"]) if d.get("drafter") else None,
+        hc_variant=d["hc_variant"])
 
 
 def pin(shape: KernelShape, key: str, value) -> KernelShape:
