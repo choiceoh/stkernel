@@ -1,0 +1,26 @@
+{
+  "scope": "CPU integration only; CUDA hidden in ST image",
+  "base": "54367b032aedc07675cdd1f9224598499a3d4e92",
+  "tests": 80,
+  "passed": 75,
+  "skipped": 5,
+  "seconds": 10.082,
+  "exit_code": 0,
+  "modules": [
+    "tests.test_engine_comm_layout",
+    "tests.test_engine_draft_agreement",
+    "tests.test_engine_drafter",
+    "tests.test_engine_drafter_storage",
+    "tests.test_engine_graph_contracts",
+    "tests.test_engine_decode_consensus",
+    "tests.test_engine_burst_decode",
+    "tests.test_engine_native_execution"
+  ],
+  "source_sha256": {
+    "engine/base/comm.py": "d8d191a88647e101958b7217702627b6cb2c5209ab06ded864d2833ec036ed47",
+    "engine/modules/draft_agreement.py": "45beeadf55164d13b7958f5da56734cf4a5f96d726824624502d3b4da5940acc",
+    "engine/profiles/glm53/drafter.py": "498e2997405fbad56781f6ddebabfa1014109f89a2b957fb03b2b6009524b502",
+    "tests/test_engine_comm_layout.py": "cb80b3de8465254f3cb83b1041c4dc89ea6aff1c387e1224ecffd2658407369d",
+    "tests/test_engine_draft_agreement.py": "2d9700b1cd49912580e81e7e5b445569ca4ad4da3434f69b83b3c3de9aaf68be"
+  }
+}

@@ -184,6 +184,30 @@ class Comm:
             dist.all_reduce(t, op=dist.ReduceOp.MAX, group=self.group)
         return t
 
+    def broadcast_tensor(self, t):
+        """Rank 0's tensor on every rank, in place and on the device group.
+
+        Unlike broadcast_object, this operation is retained by CUDA capture.
+        It establishes one proposal before every rank feeds the target model.
+        """
+        self._check_packets()
+        if self.world_size > 1:
+            import torch
+            import torch.distributed as dist
+            value = self._settled(t)
+            if self.transport is not None and self.transport.eligible_max(value):
+                # Only rank 0 contributes: signed MAX preserves every int64 bit,
+                # including INT64_MIN. The native kernel adds no NCCL events to
+                # deterministic bounded decode graphs (six IDs per request).
+                if self.rank != 0:
+                    value.fill_(torch.iinfo(torch.int64).min)
+                value = self.transport.reduce_max(value)
+            else:
+                dist.broadcast(value, src=0, group=self.group)
+            if value is not t:
+                t.copy_(value)
+        return t
+
     def barrier(self):
         self._check_packets()
         if self.world_size > 1:
@@ -430,6 +454,15 @@ class _LocalRank:
 
     def all_reduce_max(self, t):
         return self._reduce(t, maximum=True)
+
+    def broadcast_tensor(self, t):
+        run = self._state()
+        run.slots[self.rank] = t
+        run.meet()
+        value = run.slots[0].clone()
+        run.meet()
+        t.copy_(value)
+        return t
 
     def _reduce(self, t, maximum):
         import torch

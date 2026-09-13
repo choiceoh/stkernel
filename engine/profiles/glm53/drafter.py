@@ -583,8 +583,10 @@ class Drafter:
         proj = self.linear(h, "candidate_selector.hidden_projection.weight").float().view(n, K, -1)
         if temps is None:
             # the scores never exist: a step reads one codebook row against this step's candidates
-            return walk_scores(unary, cand, anchors, proj, p["candidate_selector.predecessor_codebook"],
-                               p["candidate_selector.successor_codebook"])
+            from engine.modules.draft_agreement import agree_walk
+            drafts = walk_scores(unary, cand, anchors, proj, p["candidate_selector.predecessor_codebook"],
+                                 p["candidate_selector.successor_codebook"])
+            return agree_walk(self.target.comm, drafts)
         pred_ids = torch.cat([anchors.view(n, 1, 1).expand(n, 1, F.sel_top_k), cand[:, :-1]], 1)         # [n, K, 16]
         pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()                              # [n, K, 16, 256]
         succ = p["candidate_selector.successor_codebook"][cand].float()
@@ -615,7 +617,8 @@ class Drafter:
             qprob[:, s] = probs
             out.append(cand[rows, s, pick])
             prev = pick
-        return torch.stack(out, 1), qcand, qprob
+        from engine.modules.draft_agreement import agree_walk
+        return agree_walk(self.target.comm, torch.stack(out, 1), qcand, qprob)
 
     def propose(self, anchor: int, position: int, ring: torch.Tensor) -> "list[int]":
         """K drafts for the block [anchor at `position`, K masks after it]; the ring holds the context up to position-1."""
@@ -637,9 +640,11 @@ class Drafter:
                            self.target.rank * self.target.vp, F.sel_top_k, self.decodable,
                            workspace=self.candidate_buffer)  # [K, 16]
         proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float()        # [K, 256]
-        return walk_scores(unary.unsqueeze(0), cand.unsqueeze(0), anchor.reshape(1), proj.unsqueeze(0),
-                           p["candidate_selector.predecessor_codebook"],
-                           p["candidate_selector.successor_codebook"]).reshape(K)   # the served kernel at temperature 0
+        from engine.modules.draft_agreement import agree_walk
+        drafts = walk_scores(unary.unsqueeze(0), cand.unsqueeze(0), anchor.reshape(1), proj.unsqueeze(0),
+                             p["candidate_selector.predecessor_codebook"],
+                             p["candidate_selector.successor_codebook"]).reshape(K)
+        return agree_walk(self.target.comm, drafts)
 
     def propose_sampled(self, anchor: int, position: int, ring: torch.Tensor, temperature: float, uniforms,
                         vocab: int) -> "tuple[list[int], torch.Tensor]":
@@ -684,17 +689,22 @@ class Drafter:
         u = torch.as_tensor(uniforms, dtype=torch.float32, device=dev).reshape(-1)
         if u.numel() != K:
             raise ValueError(f"the sampled walk needs {K} uniforms, one a position, got {u.numel()}")
-        drafts, dists = [], torch.zeros(K, vocab, device=dev, dtype=torch.float32)
+        drafts, probabilities = [], []
         prev = torch.zeros(1, dtype=torch.int64, device=dev)
         for s in range(K):
             probs = torch.softmax(scores[s].index_select(0, prev)[0].float() / max(temperature, 1e-5), dim=-1)   # over the 16 candidates
             walk = probs.cumsum(0)
             pick = torch.searchsorted(walk.contiguous(), (u[s] * walk[-1]).reshape(1), right=True) \
                 .clamp_max(probs.numel() - 1)
-            dists[s].index_add_(0, cand[s], probs)
+            probabilities.append(probs)
             drafts.append(cand[s].index_select(0, pick))
             prev = pick
-        return torch.cat(drafts), dists
+        from engine.modules.draft_agreement import agree_walk
+        tokens, support, probabilities = agree_walk(
+            self.target.comm, torch.cat(drafts), cand, torch.stack(probabilities))
+        dists = torch.zeros(K, vocab, device=dev, dtype=torch.float32)
+        dists.scatter_add_(1, support, probabilities)
+        return tokens, dists
 
 
 def ring_cells(F: DrafterFacts) -> int:
