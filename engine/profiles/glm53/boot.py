@@ -245,9 +245,9 @@ def declared(a, comm_world: int) -> Config:
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
         Knob("draft_fc_precision", "w4", _dt.date(2026, 9, 30),
-             "DFlash FC decode precision; reuse the existing FP8 pack", "STK_draft_fc_precision=w4"),
+             "DFlash FC decode precision; shared or committed-decode FP8 pack", "STK_draft_fc_precision=w4"),
         Knob("draft_fc_calibration", "shared", _dt.date(2026, 9, 30),
-             "shared baseline, collect committed decode inputs, or consume their isolated W4 GPTQ calibration",
+             "shared baseline, collect committed decode inputs, or consume their isolated GPTQ calibration",
              "STK_draft_fc_calibration=shared"),
         Knob("draft_diagnostics", 0, _dt.date(2026, 9, 30),
              "Record greedy first rejection as candidate miss, selector miss or output boundary",
@@ -400,7 +400,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     draft_bytes = total_bytes(dspecs)
     if D and execution == "native":
         from engine.profiles.glm53.drafter_storage import nbytes as draft_resident_bytes
-        draft_bytes = draft_resident_bytes(D, comm.world_size, max_seqs)
+        draft_bytes = draft_resident_bytes(D, comm.world_size, max_seqs, policy=draft_policy)
         recorder.gauge("drafter_source_bytes", total_bytes(dspecs))
         recorder.gauge("drafter_resident_bytes", draft_bytes)
         recorder.gauge("drafter_arena_saved_bytes", total_bytes(dspecs) - draft_bytes)
@@ -409,6 +409,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     memory = None
     redeclare = None                    # the same table, re-runnable once a ledger exists (45차 §51)
     if len(net.layers) == F.layers:
+        if store is not None:
+            store.release_pages()  # decode calibration validation read H before allocating the arena
         # Fixed byte ceilings, not a measured workspace claim. Preparation
         # records peaks for the largest prefill and every declared graph.
         # One source, not two: the same literals lived here and in budget.py, and the budget
@@ -451,7 +453,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                             ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None,
                             snapshots=snapshots, tier_enabled=bool(tier_dir), kda_state_dtype=F.kda_state_dtype,
                             draft_tp=comm.world_size if execution == "native" else 1,
-                            draft_native=execution == "native", router_bytes=router_bytes, projection_bytes=projection_bytes)
+                            draft_native=execution == "native", router_bytes=router_bytes, projection_bytes=projection_bytes,
+                            draft_policy=draft_policy)
         # With THIS boot's floor, not vLLM's 40th-boot constant. RuntimeMemory measured it
         # seconds ago in __init__, and this print is the moment anyone decides how much KV to
         # ask for: without it the first table said 42.77 GiB of KV remained on a box that had
@@ -690,6 +693,7 @@ def native_execution_report(net, drafter):
     """Reject a prepared but unused lane before the full-model door opens."""
     target = [layer for name, layer in net.dense.items() if name != 'head']
     draft = list(drafter.dense.values())
+    decode_fp8 = getattr(drafter.dense['fc.weight'], 'decode_fp8', None)
     required_draft_w4 = sum(getattr(p, 'decode_precision', 'w4') == 'w4' for p in draft)
     expected_mhc = 2*len(net.layers)-1  # first attn pre has no preceding post
     required_prefill = {'fp8_all_gather', 'fp8_reduce_scatter'}
@@ -700,6 +704,7 @@ def native_execution_report(net, drafter):
                  head_fp8=net.dense['head'].executed,
                  drafter_w4=sum(bool(p.executed & 1) for p in draft),
                  drafter_context_fp8=bool(drafter.dense['fc.weight'].executed & 2),
+                 drafter_decode_fp8=bool(decode_fp8 is not None and decode_fp8.executed),
                  mhc=len(net.mhc.executed),
                  shared_mlp=sum(p.executed for p in net.shared_mlp.values()),
                  shared_overlap=bool(net.shared_overlap and net.shared_overlap.executed),
@@ -708,6 +713,7 @@ def native_execution_report(net, drafter):
     if (proof['target_w4'] != len(target) or proof['target_fp8'] != len(target)
             or proof['drafter_w4'] != required_draft_w4 or not proof['head_fp8']
             or not proof['drafter_context_fp8'] or proof['mhc'] != expected_mhc
+            or (decode_fp8 is not None and not proof['drafter_decode_fp8'])
             or proof['shared_mlp'] != len(net.shared_mlp)
             or (net.shared_mlp and not proof['shared_overlap'])
             or net._router_tensorcore != set(net._router_weights)

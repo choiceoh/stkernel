@@ -26,7 +26,9 @@ def _observe(X, Mask, Buffer, Cursor, Armed, Count, Peaks,
             weight = tl.load(Mask + r, r < M, 0).to(tl.float32)
         else:
             weight = (r < M).to(tl.float32)
-        x = tl.load(X + r[:, None] * SX + c[None, :], live, 0).to(tl.float32)
+        # Excluded rows may contain nonfinite verifier scratch. Do not read
+        # them: NaN * 0 would otherwise poison both the Gram and the peaks.
+        x = tl.load(X + r[:, None] * SX + c[None, :], live & (weight[:, None] != 0), 0).to(tl.float32)
         x = x * weight[:, None]
         if STAGE:
             offset = tl.load(Cursor)
