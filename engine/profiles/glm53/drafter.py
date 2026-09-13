@@ -169,12 +169,13 @@ class Drafter:
         self.context_kv = None
         self.max_block_rows = None
 
-    def capture_decode(self, caches, memory=None, generator=None, vocab=None):
+    def capture_decode(self, caches, memory=None, generator=None, vocab=None, prepared_context=False):
         from engine.profiles.glm53.decode_graphs import DrafterDecodeGraphs
         # The rotary table is a constant of the model; built here it belongs to the arena, not to whichever graph
         # happened to run first and would free it on close (kernels/norm_rope.warm).
         warm_rotary(caches.device, self.F.head_dim, self.F.rope_theta)
-        self.decode_graphs = DrafterDecodeGraphs(self, caches, memory=memory, generator=generator, vocab=vocab)
+        self.decode_graphs = DrafterDecodeGraphs(self, caches, memory=memory, generator=generator, vocab=vocab,
+                                                 prepared_context=prepared_context)
 
     def observe_decode(self, ring, positions, aux):
         if self.decode_graphs is None:
@@ -398,7 +399,7 @@ class Drafter:
         """The shared context projection; calibration sees only committed rows."""
         F, p = self.F, self.p
         n, t = positions.shape
-        keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)
+        keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t) if observe else None
         projected = self.linear(aux, "fc.weight", keep) if observe else self.dense["fc.weight"](aux, observe=False)
         c = norm(projected, p["hidden_norm.weight"], F.rms_eps)
         return Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)

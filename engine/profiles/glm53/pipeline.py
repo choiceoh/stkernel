@@ -304,7 +304,7 @@ class AsyncDecode:
                 prepared = getattr(e.decode_graphs, "observations", {}).get(shape)
                 if prepared is not None:
                     positions, context = prepared
-                    e.drafter.observe_prepared(e.caches.draft_field(), b["real_slot"], positions, context, count, aux)
+                    e.drafter.decode_graphs.observe_prepared_rows(b["real_slot"], positions, context, count, aux)
                 elif e.drafter.decode_graphs is not None:
                     e.drafter.decode_graphs.observe_rows(b["real_slot"], positions, aux, count)
                 else:

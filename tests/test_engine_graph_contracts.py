@@ -115,6 +115,10 @@ class GraphPoolSeparationTests(unittest.TestCase):
         for shared in (("target", "b"), ("a", "target")):
             with self.assertRaisesRegex(ValueError, "share the target graphs"):
                 self._engine("target", shared)._check_graph_pools()
+        early = self._engine("target", ("a", "b"))
+        early.drafter.decode_graphs.rows_prepared = SimpleNamespace(pool="target")
+        with self.assertRaisesRegex(ValueError, "rows_prepared graphs share"):
+            early._check_graph_pools()
 
     def test_the_base_class_gives_every_instance_its_own_pool(self):
         source = (ROOT / "engine/base/graphs.py").read_text()

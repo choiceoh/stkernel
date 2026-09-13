@@ -134,7 +134,8 @@ class Glm53Engine:
                                                   ceiling=self.max_context, execution_plan=self.execution_plan,
                                                   drafter=self.drafter)
             if self.drafter.k:
-                self.drafter.capture_decode(self.caches, memory=self.memory, generator=self.gen, vocab=self.F.vocab)
+                kwargs = {"prepared_context": True} if self.execution_plan.early_observe else {}
+                self.drafter.capture_decode(self.caches, memory=self.memory, generator=self.gen, vocab=self.F.vocab, **kwargs)
                 self._check_graph_pools()
             from engine.profiles.glm53.decode_graphs import SamplingGraphs
             self.sampling_graphs = SamplingGraphs(self.decode_graphs, self.gen, self.decodable, self.top_p)
@@ -156,7 +157,7 @@ class Glm53Engine:
         separation is what makes the loop correct, so it is asserted, not assumed."""
         target = self.decode_graphs.graphs.pool
         drafter = self.drafter.decode_graphs
-        for name in ("proposals", "observations", "masked", "rows_masked", "rows_propose", "rows_sampled"):
+        for name in ("proposals", "observations", "masked", "rows_masked", "rows_prepared", "rows_propose", "rows_sampled"):
             other = getattr(drafter, name, None)
             if other is not None and other.pool == target:
                 raise ValueError(f"the drafter's {name} graphs share the target graphs' memory pool: "
@@ -1203,7 +1204,7 @@ class Glm53Engine:
                 if prepared is not None:
                     row = s.start // s.length
                     positions, context = prepared
-                    self.drafter.observe_prepared(self.caches.draft_field(),
+                    self.drafter.decode_graphs.observe_prepared_rows(
                         torch.tensor([s.slot], device=h.device), positions[row:row+1], context[row:row+1],
                         torch.tensor([committed], device=h.device), aux[rows])
                 else:

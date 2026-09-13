@@ -21,6 +21,20 @@ class Projection:
 
 
 class EarlyObserveTests(unittest.TestCase):
+    def test_subgroups_preserve_slot_mapping_and_unrounded_capacity(self):
+        from engine.profiles.glm53.decode_graphs import DeviceStep, GraphCaches
+        real = NS(F=NS(kpool=4), layout=object(), block_table=torch.arange(24).reshape(4, 6))
+        caches = GraphCaches(real, torch.tensor([3, 1, 2, 0]), torch.tensor([2, 4, 1, 3]), 4095)
+        caches.gather()
+        child = caches.subset(2, 4)
+        self.assertEqual(child.capacity, 4095)
+        self.assertEqual(child.sequence_ids.tolist(), [2, 0])
+        self.assertEqual(child.slots.tolist(), [1, 3])
+        self.assertTrue(torch.equal(child.block_table, real.block_table[[2, 0]]))
+        step = DeviceStep(torch.arange(28), torch.tensor([12, 0, 4096, 91]), 7).subset(2, 4)
+        self.assertEqual(step.ids.tolist(), list(range(14, 28)))
+        self.assertEqual(step.positions.tolist(), list(range(4096, 4103)) + list(range(91, 98)))
+
     def test_projection_is_identical_and_only_final_retained_rows_calibrate(self):
         torch.manual_seed(41)
         d = Drafter.__new__(Drafter)

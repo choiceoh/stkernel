@@ -378,7 +378,7 @@ class DrafterDecodeGraphs:
     """One proposal graph and the finite accepted-prefix context updates, per row (the synchronous step), and the
     same over every row of a step at once (the pipeline, 45차 §23 GPU 판정 4차): one replay a step instead of one
     a row, the weights read once, the rings never copied."""
-    def __init__(self, drafter, caches, memory=None, generator=None, vocab=None):
+    def __init__(self, drafter, caches, memory=None, generator=None, vocab=None, prepared_context=False):
         self.field = caches._fields["draft", -1]
         self.drafter = drafter
         device = caches.device
@@ -393,6 +393,16 @@ class DrafterDecodeGraphs:
 
         def rows_masked(inputs):
             drafter.observe_rows(self.field, inputs["slots"], inputs["positions"], inputs["aux"], inputs["valid"])
+
+        def prepared_inputs(n, t):
+            inputs = rows_masked_inputs(n, t)
+            inputs["context"] = torch.zeros(n, t, drafter.F.layers, 2, drafter.local_kv_heads,
+                                            drafter.F.head_dim, device=device, dtype=torch.bfloat16)
+            return inputs
+
+        def prepared(inputs):
+            drafter.observe_prepared(self.field, inputs["slots"], inputs["positions"], inputs["context"],
+                                     inputs["valid"], inputs["aux"])
 
         def rows_propose_inputs(n, t):
             return dict(anchors=torch.zeros(n, device=device, dtype=torch.int64),
@@ -464,6 +474,11 @@ class DrafterDecodeGraphs:
                                        memory=memory, label="drafter/observe_masked")
             self.rows_masked = DecodeGraphs(rows_masked, rows_masked_inputs, rows_shapes,
                                             memory=memory, label="drafter/observe_rows")
+            if prepared_context:
+                # Commit/calibration stays captured too. Moving FC into target
+                # must not replace the remaining stage with eager dispatch.
+                self.rows_prepared = DecodeGraphs(prepared, prepared_inputs, rows_shapes,
+                                                   memory=memory, label="drafter/commit_prepared")
             self.rows_propose = DecodeGraphs(rows_propose, rows_propose_inputs, rows_shapes,
                                              memory=memory, label="drafter/propose_rows")
             if generator is not None and vocab is not None:
@@ -478,7 +493,7 @@ class DrafterDecodeGraphs:
             caches.reset()
 
     def close(self):
-        for name in ("proposals", "observations", "masked", "rows_masked", "rows_propose", "rows_sampled"):
+        for name in ("proposals", "observations", "masked", "rows_masked", "rows_prepared", "rows_propose", "rows_sampled"):
             graphs = getattr(self, name, None)
             if graphs is not None:
                 graphs.close()
@@ -526,6 +541,13 @@ class DrafterDecodeGraphs:
         return self.proposals.run((1, self.drafter.k + 1), fill)
 
     # -- every row of a step at once ---------------------------------------------------------------------
+    def observe_prepared_rows(self, slots, positions, context, valid, aux):
+        def fill(inputs):
+            for key, value in (("slots", slots), ("positions", positions), ("context", context),
+                               ("valid", valid), ("aux", aux)):
+                inputs[key].copy_(value)
+        self.rows_prepared.run(tuple(positions.shape), fill)
+
     def observe_rows(self, slots, positions, aux, valid):
         """`observe_masked` for the rows [n]: positions [n, t], aux [n*t, A], valid [n] -- all device tensors."""
         def fill(inputs):

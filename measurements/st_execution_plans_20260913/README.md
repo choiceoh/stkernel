@@ -41,6 +41,8 @@ tentative projection never updates calibration or the drafter ring.
 
 The target graph rejoins the observation stream before returning. Prepared
 context lives in the target graph pool and is consumed before its next replay.
+The commit/calibration writer has a separate captured graph pool, so moving
+the projection does not introduce eager compute dispatch after sampling.
 Synchronous rich sampling also consumes the prepared context.
 
 ## Layer-major prefill
@@ -82,8 +84,54 @@ W4 GEMMs with distinct inputs and repeated changed-input graph replay.
 
 The canonical fleet gate is a committed-arm `st-chain` with a same-code
 baseline and each experiment separately, followed by the combined arm only
-when individual arms qualify. Each boot runs full onepass twice at C=1/C=4,
-2K/32K/128K with prepared kernels, fresh prefixes and separate diagnostics.
+when individual arms qualify. Following current D17, each boot runs C=1 twice
+and C=4 once over 2K/32K/128K, with prepared kernels, fresh prefixes and
+separate diagnostics. Keep a same-code baseline even if a historical floor
+can be borrowed: this change also modifies the default W4 kernel ABI layout.
 Judge actual per-request TTFT/ITL, output tok/s, acceptance, quality, verbosity
 and workspace peaks. Do not infer an engine win from compilation or the
 focused scratch test.
+
+## PR760 simulation and CPU results
+
+`python3 measurements/st_execution_plans_20260913/simulate.py` reuses the real
+`bench.step_sim` Runner with the production alignment (2,304), baseline token
+budget (10,240), K=6, four resident rows and the live-decoder prefill budget.
+`simulation.json` retains 54 host-only runs: C=1/C=4, 2K/32K/128K, 512 generated
+positions, three alternating-order repetitions. Acceptance 0.5 is an explicit
+workload assumption; no language is generated. GPU cost is zero.
+
+| Prompt | C=1 prefill steps, 1/2/4 tiles | C=4 prefill steps, 1/2/4 tiles |
+| --- | --- | --- |
+| 2K | 1 / 1 / 1 | 4 / 4 / 4 |
+| 32K | 4 / 2 / 1 | 46 / 44 / 43 |
+| 128K | 14 / 7 / 4 | 182 / 175 / 172 |
+
+The smaller live-decoder budget dominates C=4 after the first prompt enters
+decode. At 128K/512 generation, four submitted requests never produce a width-4
+decode step in this simulation: earlier requests finish before all prompts
+enter decode. The overlap arm must therefore be judged against actual width-4
+step counts, not the client's concurrency label. Host-only medians are
+0.003--0.006 ms/decode step here; these omit CUDA dispatch and network work.
+Fewer prefill steps do not by themselves establish faster GPU prefill.
+
+`historical-replay.txt` re-derives PR760's saved ST record. `historical-fit.txt`
+runs the existing fit-and-validate path against that same old record, preserving
+its K=5. The six unfitted prediction rows have at most 5.9% residual in this
+run. Fitted step rate and prefill throughput are inputs, not independent
+predictions. This older record lacks a git revision and verified prefix-cache
+control; it is a simulator exercise, not the baseline for these candidates.
+Neither PR760's model nor this harness predicts subgroup GEMM latency, stream
+contention or L2 reuse; those fields remain explicitly unmodeled.
+
+The PR760 tool suite passes 23 tests. Reference execution tests include real
+four-rank LocalTP reductions, row remapping, mixed KDA/DSA, resumed prefixes,
+patched embeddings and byte-exact state/KV/snapshot comparisons. SM121a CUDA
+compilation passes without creating a device context (`compile.json`), with a
+3,343,616-byte private workspace.
+
+The initial 1,095-test CPU pass (`cpu-full.txt`, ccec5bd84) found a supervisor
+fixture timeout unrelated to these engine changes. Main subsequently fixed
+the fixture; after merging that fix and the rank-consistent one-shot sums,
+the 124-test integration slice passes (5 CUDA skips). Subsequent focused
+results and fleet qualification are recorded separately below.
