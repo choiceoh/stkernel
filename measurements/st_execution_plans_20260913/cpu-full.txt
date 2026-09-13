@@ -1,0 +1,103 @@
+Commit: ccec5bd84
+Image: st-engine:glm53 (srv4)
+Command: python3 tools/check.py --list --jobs 2
+GPU devices not passed to container; tools/check.py disables CUDA.
+
+  ok          tests.test_engine_arena_admission            9 tests
+  ok          tests.test_engine_async_sampling             6 tests
+  ok          tests.test_engine_boot_readiness             6 tests
+  ok          tests.test_engine_bootpaths                  5 tests
+  ok          tests.test_engine_boundary_stage             3 tests, 1 skipped
+  ok          tests.test_engine_budget                     10 tests, 10 skipped
+  ok          tests.test_engine_calibration_gram           6 tests, 5 skipped
+  ok          tests.test_engine_causal_conv                6 tests, 6 skipped
+  ok          tests.test_engine_ceiling_gauge              4 tests
+  ok          tests.test_engine_charter                    3 tests
+  ok          tests.test_engine_comm_layout                3 tests
+  ok          tests.test_engine_compressed_snapshots       11 tests
+  ok          tests.test_engine_conv_ring                  7 tests, 7 skipped
+  ok          tests.test_engine_decode_fusion              1 tests, 1 skipped
+  ok          tests.test_engine_decode_residency           2 tests, 1 skipped
+  ok          tests.test_engine_decode_seven               3 tests, 3 skipped
+  ok          tests.test_engine_dense                      7 tests, 7 skipped
+  ok          tests.test_engine_dense_calibration          12 tests
+  ok          tests.test_engine_dense_smoothing            4 tests
+  ok          tests.test_engine_direct_micro_cache         5 tests
+  ok          tests.test_engine_docker_guard               11 tests
+  ok          tests.test_engine_draft_attention            9 tests, 8 skipped
+  ok          tests.test_engine_draft_conv                 6 tests, 4 skipped
+  ok          tests.test_engine_draft_select               6 tests, 4 skipped
+  ok          tests.test_engine_drafter                    12 tests, 2 skipped
+  ok          tests.test_engine_drafter_storage            5 tests
+  ok          tests.test_engine_early_observe              1 tests
+  ok          tests.test_engine_execution                  13 tests, 2 skipped
+  ok          tests.test_engine_execution_plan_cuda        1 tests, 1 skipped
+  ok          tests.test_engine_execution_plans            5 tests
+  ok          tests.test_engine_fleet_lease                76 tests
+  FAILED      tests.test_engine_fleet_ops                  21 tests  1 errors -- test_the_grace_follows_the_queue_s_pace_and_an_open_window
+  ok          tests.test_engine_fleet_queue                10 tests
+  ok          tests.test_engine_fp4_instructions           4 tests, 3 skipped
+  ok          tests.test_engine_gather_agreement           5 tests
+  ok          tests.test_engine_glm53                      37 tests, 30 skipped
+  ok          tests.test_engine_glm53_chat                 2 tests
+  ok          tests.test_engine_glm_pointwise              4 tests, 4 skipped
+  ok          tests.test_engine_grammar                    31 tests
+  ok          tests.test_engine_graph_contracts            33 tests, 3 skipped
+  ok          tests.test_engine_graph_profile              6 tests
+  ok          tests.test_engine_graph_resources            3 tests
+  ok          tests.test_engine_idle_gauge                 1 tests
+  ok          tests.test_engine_indexer_quant              5 tests, 4 skipped
+  ok          tests.test_engine_indexer_select             3 tests
+  ok          tests.test_engine_indexer_slots              4 tests, 4 skipped
+  ok          tests.test_engine_kda_deferred               3 tests, 3 skipped
+  ok          tests.test_engine_kda_marks                  3 tests
+  ok          tests.test_engine_kda_norm                   6 tests, 5 skipped
+  ok          tests.test_engine_kda_ring                   9 tests, 9 skipped
+  ok          tests.test_engine_kda_state                  5 tests, 5 skipped
+  ok          tests.test_engine_kda_storage                7 tests
+  ok          tests.test_engine_kda_strides                5 tests, 5 skipped
+  ok          tests.test_engine_kernels                    9 tests
+  ok          tests.test_engine_knobs                      13 tests
+  ok          tests.test_engine_kpool_compress             4 tests, 4 skipped
+  ok          tests.test_engine_latency                    7 tests
+  ok          tests.test_engine_loader                     12 tests, 1 skipped
+  ok          tests.test_engine_metrics                    19 tests
+  ok          tests.test_engine_mhc_contract               5 tests, 5 skipped
+  ok          tests.test_engine_mk_mhc                     1 tests, 1 skipped
+  ok          tests.test_engine_mla_hardware               4 tests
+  ok          tests.test_engine_native_cache               8 tests
+  ok          tests.test_engine_native_compile             4 tests
+  ok          tests.test_engine_native_execution           2 tests
+  ok          tests.test_engine_norm_rope                  8 tests, 6 skipped
+  ok          tests.test_engine_oneshot_integer            1 tests
+  ok          tests.test_engine_pipeline                   23 tests
+  ok          tests.test_engine_pool_slots                 4 tests, 4 skipped
+  ok          tests.test_engine_prefill_fp8_consumer       2 tests, 2 skipped
+  ok          tests.test_engine_prefix                     38 tests
+  ok          tests.test_engine_queue_lease_shell          2 tests
+  ok          tests.test_engine_readiness_wait             6 tests
+  ok          tests.test_engine_release                    19 tests, 2 skipped
+  ok          tests.test_engine_runner_async               8 tests
+  ok          tests.test_engine_runtime                    37 tests
+  ok          tests.test_engine_runtime_memory             22 tests, 1 skipped
+  ok          tests.test_engine_sampler_kernel             18 tests, 14 skipped
+  ok          tests.test_engine_sampling                   7 tests, 3 skipped
+  ok          tests.test_engine_sampling_options           55 tests, 1 skipped
+  ok          tests.test_engine_selfchecks                 3 tests, 3 skipped
+  ok          tests.test_engine_serve                      167 tests, 1 skipped
+  ok          tests.test_engine_settle_symmetry            5 tests
+  ok          tests.test_engine_shared_mlp                 5 tests, 5 skipped
+  ok          tests.test_engine_sparse_nvfp4               7 tests, 4 skipped
+  ok          tests.test_engine_state                      3 tests, 3 skipped
+  ok          tests.test_engine_swiglu                     3 tests, 2 skipped
+  ok          tests.test_engine_tenancy                    10 tests
+  ok          tests.test_engine_test_boot                  11 tests
+  ok          tests.test_engine_tier                       30 tests
+  ok          tests.test_engine_tier_agreement             7 tests
+  ok          tests.test_engine_tokenizer                  1 tests
+  ok          tests.test_engine_tools                      13 tests
+  ok          tests.test_engine_vision                     16 tests, 1 skipped
+  ok          tests.test_engine_vocab                      3 tests, 1 skipped
+  ok          tests.test_engine_vocab_topk                 8 tests, 5 skipped
+  96 files, 1095 tests: 95 ok, 1 failed, 0 cannot run, 206 skipped
+

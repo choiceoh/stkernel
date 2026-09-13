@@ -6,7 +6,7 @@ import unittest
 import torch
 
 from engine.base.arena import Arena
-from engine.base.comm import Comm
+from engine.base.comm import Comm, LocalTP
 from engine.profiles.glm53.caches import Glm53Caches, layout, snapshot_layout
 from engine.profiles.glm53.execution import ExecutionPlan, SerialStreams, decode_overlap, prefill_layer_major, prefill_steps
 from engine.profiles.glm53.lanes import reference
@@ -35,10 +35,11 @@ class EagerCaches:
         return self
 
 
-def model(kinds=("kda", "kda", "kda"), snapshots=4):
+def model(kinds=("kda", "kda", "kda"), snapshots=4, comm=None):
     f = replace(tiny_facts(), kinds=kinds, block=64, spec_k=6)
-    net = Glm53Net(f, Comm(4, 0), reference())
-    net.comm = Comm()  # CPU rank-arithmetic oracle, not a TP performance claim
+    net = Glm53Net(f, comm or Comm(4, 0), reference())
+    if comm is None:
+        net.comm = Comm()  # CPU rank-arithmetic oracle, not a TP performance claim
     gen = torch.Generator().manual_seed(213)
     net.p = {s.name: (torch.randn(s.shape, generator=gen) * .04).to(s.dtype) for s in net.specs()}
     for key, value in net.p.items():
@@ -118,9 +119,17 @@ class ExecutionPlanTests(unittest.TestCase):
             with self.subTest(kinds=kinds):
                 self.check_decode_order(kinds)
 
-    def check_decode_order(self, kinds):
+    def test_four_ranks_keep_collective_order_and_reduced_outputs(self):
         torch.set_num_threads(1)
-        net, cache = model(kinds)
+        def rank(comm):
+            return self.check_decode_order(("kda", "dsa", "kda"), comm=comm)
+        results = LocalTP(4, timeout_s=15).run(rank)
+        for result in results[1:]:
+            torch.testing.assert_close(result, results[0], rtol=0, atol=0)
+
+    def check_decode_order(self, kinds, comm=None):
+        torch.set_num_threads(1)
+        net, cache = model(kinds, comm=comm)
         chunks = []
         for seq, ctx in zip((2, 0, 3, 1), (0, 3, 9, 15)):
             slot = cache.slots.take(seq)
@@ -148,6 +157,7 @@ class ExecutionPlanTests(unittest.TestCase):
         torch.testing.assert_close(cache.paged, paged_after, rtol=0, atol=0)
         self.assertEqual(len(seen), 1)
         torch.testing.assert_close(seen[0], a1, rtol=0, atol=0)
+        return h1
 
     def test_oversized_window_refuses_before_mutating_state(self):
         net, cache = model()
