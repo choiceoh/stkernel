@@ -61,6 +61,8 @@ flowchart LR
 - `tokens <= prefix block`을 요구해 한 commit에서 경계를 최대 한 번 통과하도록 한다.
 - 경계 레코드는 다음 경계 통과 전에 소비해야 한다. 같은 슬롯에서 factor를 다시 쓰기 전에 이전 commit을 끝내야 한다.
 
+이 형상에서는 검증 폭 K를 바꿔도 요청의 영구 상태 배치가 바뀌지 않는다. 각 검증 graph의 factor workspace만 달라진다. 따라서 후속으로 수락률과 실제 검증 비용에 따라 유한한 K graph를 선택할 때, 살아 있는 요청의 recurrent ring을 재배치하는 비용을 없앨 수 있다. 이번 변경은 동적 K 선택 자체를 구현하지 않는다.
+
 34층, rank당 16헤드, 128×128 FP32에서 한 상태는 요청·rank당 34 MiB다.
 
 | K=7, 요청·rank당 | 상태 본체 | factor 작업 공간 |
@@ -119,15 +121,18 @@ flowchart LR
 
 Python dispatch 제거, 모든 연산의 단일 persistent kernel화, 작은 batch의 무조건 EP 전환은 현재 우선 변경이 아니다. CUDA graph가 이미 가리는 비용과 register pressure·통신·부하 불균형을 포함해 판단한다.
 
-현재 CPU 검사: admission 26개와 기존 state publication 계약 5개 통과. CUDA 관련 10개 테스트는 이 Mac에서 건너뛰었다. Python 구문과 diff 공백 검사 통과. **새 커널의 GPU 정확도·시간 및 서빙 성능은 미검증**이다. 네 대를 점유한 다른 세션의 재양자화 작업을 우회하지 않고 정식 큐에서 실행한다.
+현재 CPU 검사: admission 26개와 기존 state publication 계약 5개 통과. CUDA 관련 10개 테스트는 이 Mac에서 건너뛰었다. Python 구문과 diff 공백 검사 통과. GPU 접근을 제거한 CPU 컨테이너에서 SM121 8개 형상의 컴파일도 통과했다. 같은 arena 주소·정렬 정보를 사용하도록 바꾼 뒤 새 commit의 레지스터가 64→56개, compiler shared metadata가 2,048→512 bytes로 줄었다. [컴파일 원본과 실행 환경](../measurements/kda_compact_20260913/README.md)
+
+**새 커널의 GPU 정확도·시간 및 서빙 성능은 미검증**이다. 네 대를 점유한 다른 세션의 재양자화 작업을 우회하지 않고 정식 큐에서 실행한다.
 
 컨트롤러의 고정 checkout에서 실행할 명령:
 
 ```bash
-bash bench/fleet.sh run --gpu --fleet --detach st-kda-compact0913 5 \
+ST_IMAGE=sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc \
+bash bench/fleet.sh run --gpu --fleet --detach st-kda-compact0913v2 5 \
   'K7 compact FP32 state: exact recurrence and three-layout component comparison' -- \
   bash probes/run_engine_probe.sh probes/engine_kda_deferred_check.py \
-  --compact-only --samples 8 --output /cache/kda-compact0913.json
+  --compact-only --samples 8 --output /cache/kda-compact0913v2.json
 ```
 
 이 명령은 모델을 부팅하지 않는 kernel probe다. 현재 단일 GPU 별도 호스트는 접근 불가로 보고되어, 기존 세션의 GPU 사용이 끝난 뒤 fleet 예약을 받아 실행하는 형태다.

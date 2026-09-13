@@ -1,0 +1,63 @@
+{
+  "scope": "SM121 compilation only",
+  "gpu_used": false,
+  "torch": "2.13.0+cu130",
+  "triton": "3.7.1",
+  "variants": [
+    {
+      "name": "compact-verify-t1-abi0",
+      "shared_bytes": 512,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:28 CONSTANT[4]:16\n Function fused_recurrent_gated_delta_rule_fwd_kernel:\n  REG:254 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1048 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "0d87a53547121d54a58beca25e99f7dc4fef55464efdc08551e83bf798e97373"
+    },
+    {
+      "name": "compact-verify-t1-abi1",
+      "shared_bytes": 512,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:28 CONSTANT[4]:16\n Function fused_recurrent_gated_delta_rule_fwd_kernel:\n  REG:254 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1048 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "6782317b79a0a6ecc56f2317ba5f0c11c537759c48df6f20285b6b02424ed57a"
+    },
+    {
+      "name": "compact-verify-t8-abi0",
+      "shared_bytes": 512,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:28 CONSTANT[4]:16\n Function fused_recurrent_gated_delta_rule_fwd_kernel:\n  REG:130 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1048 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "e680690a16b6a2f230a3df6a9c62cfc0a9d560a49602ad065e7452936fe25c8b"
+    },
+    {
+      "name": "compact-verify-t8-abi1",
+      "shared_bytes": 512,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:28 CONSTANT[4]:16\n Function fused_recurrent_gated_delta_rule_fwd_kernel:\n  REG:130 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1048 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "9a704c3d0e0778b95fd799c4d3e382dc4c723c2230f741a9aa23a2f782d69d51"
+    },
+    {
+      "name": "compact-commit-c1-abi0",
+      "shared_bytes": 512,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:48 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "272465c2c2bc00e5fe61e07308bc96665aea246636aa9983e75a9bb165b096c5"
+    },
+    {
+      "name": "compact-commit-c1-abi1",
+      "shared_bytes": 2048,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:64 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:992 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "d4f013603fc5e2a5dbfdd01d456e586d142d7bf7187442ab3fb639689c4d15a1"
+    },
+    {
+      "name": "compact-commit-c4-abi0",
+      "shared_bytes": 512,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:48 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "6eab6e034d059b65ffdedf5565def34fe895e102a2d21d7aca4ee91ff3e37656"
+    },
+    {
+      "name": "compact-commit-c4-abi1",
+      "shared_bytes": 2048,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:64 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:992 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "0197b917667f30baf2f7b820a75487ff6409092e0734d402592bcc3b13cff68f"
+    }
+  ],
+  "source_sha256": {
+    "engine/kernels/kda/deferred.py": "3c43443c36ea3b2e37d76a788d57276d1866d86f9bc6fd5aa7a647c64d12c575",
+    "engine/kernels/kda/ring.py": "0b6ed44df945d4dcb485861acbed170f784b686074e2b1f25765ce3ce30ba48b",
+    "engine/kernels/kda/fused_recurrent.py": "84c833a20ccf4e8c673802381987552aa035f582f3ffa65d3354ddf75d46be15",
+    "probes/engine_kda_deferred_compile.py": "779b4289d08bc26dfe76de5174a1b02ea57bbec99f7b3152de31ca6a5fad5b8d"
+  },
+  "status": "PASS"
+}
