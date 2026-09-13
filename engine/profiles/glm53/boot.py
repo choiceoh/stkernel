@@ -232,9 +232,16 @@ def declared(a, comm_world: int) -> Config:
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
-                        execution_overlap=0, early_observe=0, prefill_tiles=1, direct_mhc=0, prefill_project_tiles=0)
+                        execution_overlap=0, early_observe=0, prefill_tiles=1, direct_mhc=0, prefill_project_tiles=0,
+                        nvme_mapped_staging=0, decode_iterations=1)
         return Config(facts_ + [Fact(k, v, "qualified production default") for k, v in defaults.items()], knobs=[])
     knobs = [
+        Knob("decode_iterations", 1, _dt.date(2026, 9, 30),
+             "Bounded greedy TP4 decode: reserve/read back 2 or 4 iterations with rank-agreed exits",
+             "STK_decode_iterations=1", int),
+        Knob("nvme_mapped_staging", 0, _dt.date(2026, 9, 30),
+             "One mapped GB10 staging allocation for NVMe host I/O and GPU gather/scatter",
+             "STK_nvme_mapped_staging=0", int),
         Knob("prefill_project_tiles", 0, _dt.date(2026, 9, 30),
              "Overlap TP4 prefill tile arrival with independent KDA input projection",
              "STK_prefill_project_tiles=0", int),
@@ -276,7 +283,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
           max_new: int = 256, temperature: float = 0.0, seed: int = 0, tier_dir: "str | None" = None,
           context_ceiling: "int | None" = None, execution: str = "stock",
           ckpt_meta: "str | Path" = facts.CKPT, drafter_dir: "str | Path" = drafter_mod.DRAFTER,
-          lease_owner: "str | None" = None, kda_state_dtype: "str | None" = None, execution_plan=None):
+          lease_owner: "str | None" = None, kda_state_dtype: "str | None" = None, execution_plan=None,
+          nvme_mapped_staging=False):
     """`ckpt_meta`: where config.json / tokenizer.json / generation_config.json are -- the HF checkpoint dir, or a
     copy of just those files: a node needs its rank file, the drafter and this, not the 185 GB checkpoint."""
     F = facts.load(ckpt_meta)
@@ -285,6 +293,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         F = replace(F, kda_state_dtype=state_dtype(kda_state_dtype))
     if execution not in ("stock", "native"):
         raise ValueError("execution must be stock or native")
+    if type(nvme_mapped_staging) is not bool or (nvme_mapped_staging and execution != "native"):
+        raise ValueError("mapped NVMe staging requires the native GB10 profile")
     net = Glm53Net(F, comm, lanes, layers)
     specs = net.specs()
     drafter_dir = Path(drafter_dir)
@@ -534,7 +544,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 state_format = "glm53-kda-fp16-v1" if F.kda_state_dtype == "fp16" else ""
                 tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes,  # a block is one NVMe unit (block-major)
                                 capacity_bytes=int(TIER_GIB * GIB), reserve_bytes=int(TIER_RESERVE_GIB * GIB),
-                                state_format=state_format)
+                                state_format=state_format, mapped_staging=nvme_mapped_staging)
                 tiered = TieredKV(caches.pool, tier)
                 # the prefix tier (45차 §23 A): evicted leaf boundaries -- their blocks and snapshot -- live on beside the parked
                 # conversations, in their own directory and keyspace (a boundary's key is 56 bits of its hash)
@@ -543,7 +553,11 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                                                              capacity_bytes=int(PREFIX_TIER_GIB * GIB),
                                                              reserve_bytes=int(TIER_RESERVE_GIB * GIB),
                                                              snapshot_cache_bytes=PREFIX_COMPRESSED_BYTES,
-                                                             state_format=state_format))
+                                                             state_format=state_format, mapped_staging=nvme_mapped_staging))
+                recorder.gauge("nvme_mapped_staging", int(nvme_mapped_staging))
+                recorder.gauge("nvme_staging_saved_bytes", (tier.stage_bytes + prefix_tier.tier.stage_bytes
+                               - tier.staging_padding_bytes - prefix_tier.tier.staging_padding_bytes)
+                               if nvme_mapped_staging else 0)
             prefix = PrefixCache(F.block, engine.prefill_chunk, snapshots)      # boundaries = every 768 block (base/prefix.py)
             # Reducing hot slots must not also halve the metadata budget for
             # cold boundaries whose KV blocks remain reusable.
@@ -1008,22 +1022,25 @@ def fleet(a) -> int:
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
                                        consume_scales=True)
         from engine.profiles.glm53.execution import ExecutionPlan
-        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles")):
+        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging")):
             raise ValueError("execution switches must be 0 or 1")
         plan = ExecutionPlan(bool(cfg["execution_overlap"]), bool(cfg["early_observe"]), cfg["prefill_tiles"],
                              sched.chunk_for(facts.CHUNK_ALIGN, TOKEN_BUDGET, facts.SPEC_K),
-                             direct_mhc=bool(cfg["direct_mhc"]), prefill_project_tiles=bool(cfg["prefill_project_tiles"]))
+                             direct_mhc=bool(cfg["direct_mhc"]), prefill_project_tiles=bool(cfg["prefill_project_tiles"]),
+                             decode_iterations=cfg["decode_iterations"])
         F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir,
                                                context_ceiling=cfg["context_ceiling"] or None,
                                                execution=cfg["execution"], lease_owner=lease["owner"],
-                                               kda_state_dtype=cfg["kda_state_dtype"], execution_plan=plan)
+                                               kda_state_dtype=cfg["kda_state_dtype"], execution_plan=plan,
+                                               nvme_mapped_staging=bool(cfg["nvme_mapped_staging"]))
 
         # "무장 != 서빙": which lanes and kernel cells this process actually bound, readable at
         # scrape time instead of inferred from a boot log nobody kept (45차 §17 lesson).
         engine.lane_info = {"lanes": lanes.name, "moe_static": cfg["moe_static"],
                             "execution_plan": plan.label(),
+                            "nvme_mapped_staging": str(cfg["nvme_mapped_staging"]),
                             "kda_state_dtype": F.kda_state_dtype,
                             "mla_prefill": cfg["mla_prefill"], "spec_k": str(engine.drafter.k),
                             "context_ceiling": str(engine.max_context),

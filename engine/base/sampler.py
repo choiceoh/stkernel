@@ -147,7 +147,7 @@ if __name__ == "__main__":
 
 OPTION_KEYS = ("top_p", "top_k", "seed", "presence_penalty", "frequency_penalty", "repetition_penalty",
                "logit_bias", "stop_token_ids", "logprobs", "grammar", "grammar_after",
-               "reasoning_budget", "reasoning_end")
+               "reasoning_budget", "reasoning_end", "_host_stop")
 
 
 def validate_options(options: dict) -> None:
@@ -155,6 +155,8 @@ def validate_options(options: dict) -> None:
     unknown = sorted(set(options) - set(OPTION_KEYS))
     if unknown:
         raise ValueError(f"unknown sampling options {unknown}")
+    if "_host_stop" in options and type(options["_host_stop"]) is not bool:
+        raise ValueError("the internal host-stop marker must be boolean")
     p = options.get("top_p")
     if p is not None and (type(p) not in (int, float) or not 0 < p <= 1):
         raise ValueError("top_p must be in (0, 1]")

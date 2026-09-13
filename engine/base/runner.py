@@ -531,13 +531,38 @@ class Runner:
                         duration_us=(time.perf_counter() - resolve_start) * 1e6)
         if len(done) != len(step.seqs):
             raise ValueError("decode must return one completion flag per sequence")
+        iteration_seconds = getattr(pending, "iteration_seconds", None)
+        if iteration_seconds is not None:
+            # One launch may contain a finite device loop. Count actual
+            # iterations and retain their measured spans; never divide the
+            # host wait into invented per-step timings.
+            extra = len(iteration_seconds) - 1
+            if extra < 0:
+                raise ValueError("a decode burst must execute at least once")
+            self.steps += extra
+            self.async_steps += extra
+            self.decode_batches[len(step.seqs)] += extra
+            self.rec.count(f"{step.kind}_steps", extra)
+            self.rec.count(f"{step.kind}_tokens", step.tokens * extra)
+            if latency is not None and latency.active:
+                for index, (seconds, record) in enumerate(zip(iteration_seconds, pending.iteration_records)):
+                    latency.row(kind='gpu_iteration', operation='bounded_decode', phase='decode',
+                                rows=list(step.seqs), iteration=index, duration_us=seconds * 1e6,
+                                timing_scope='device body and TP4 stop agreement; globaltimer', **record)
         for seq, finished in zip(step.seqs, done):
             if seq in before and seq in self.slot_of and seq in self.state.running:
                 self._generated_boundaries(seq, before[seq], self.model.context(seq))
             if finished and seq in self.state.running:
                 self._finish(seq)
-        self.ring.push(STEP_RECORD.pack(self.steps, time.perf_counter() - launched, KIND[step.kind],
-                                        len(step.seqs), step.tokens, step.seqs[0]))
+        if iteration_seconds is None:
+            self.ring.push(STEP_RECORD.pack(self.steps, time.perf_counter() - launched, KIND[step.kind],
+                                            len(step.seqs), step.tokens, step.seqs[0]))
+        else:
+            # The legacy ring's wall field is launch-to-resolution elapsed
+            # time. Preserve that meaning once per burst; exact per-iteration
+            # device times live in latency rows, not this host-time ring.
+            self.ring.push(STEP_RECORD.pack(self.steps, time.perf_counter() - launched, KIND[step.kind],
+                                            len(step.seqs), step.tokens * len(iteration_seconds), step.seqs[0]))
 
     def drain(self) -> None:
         while self.inflight:

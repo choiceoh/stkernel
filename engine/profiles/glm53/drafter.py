@@ -169,13 +169,14 @@ class Drafter:
         self.context_kv = None
         self.max_block_rows = None
 
-    def capture_decode(self, caches, memory=None, generator=None, vocab=None, prepared_context=False):
+    def capture_decode(self, caches, memory=None, generator=None, vocab=None, prepared_context=False,
+                       append_child=None):
         from engine.profiles.glm53.decode_graphs import DrafterDecodeGraphs
         # The rotary table is a constant of the model; built here it belongs to the arena, not to whichever graph
         # happened to run first and would free it on close (kernels/norm_rope.warm).
         warm_rotary(caches.device, self.F.head_dim, self.F.rope_theta)
         self.decode_graphs = DrafterDecodeGraphs(self, caches, memory=memory, generator=generator, vocab=vocab,
-                                                 prepared_context=prepared_context)
+                                                 prepared_context=prepared_context, append_child=append_child)
 
     def observe_decode(self, ring, positions, aux):
         if self.decode_graphs is None:

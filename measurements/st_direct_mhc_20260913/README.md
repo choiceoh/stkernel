@@ -1,8 +1,8 @@
 # GB10 TP4 direct MHC consumer
 
-Status: implemented, default off; CPU arithmetic and SM121a compilation pass.
-Native numerical, real TP4 ring replay, quality and onepass performance are
-not yet qualified. `compile.json` is a compile-only record, not GPU proof.
+Status: connected to serving, default off; CPU arithmetic, SM121a compilation
+and the native consumer GPU gate pass. Real TP4 ring replay, quality and
+onepass performance are not yet qualified.
 
 The receiver passes four canonical rank pointers to the immediate MHC
 consumer instead of materializing an all-reduced tensor. MHC sums in FP32
@@ -34,6 +34,8 @@ Validation on 2026-09-13:
 - `probes/engine_direct_mhc_check.py` provides an admitted GPU gate: two
   coefficient layouts, rows 1/7/28/64, 96 changing-input/address graph
   replays against ordinary rank sum + existing MHC, exact comparison.
+  This gate passed on `st-direct-mhc0913r1`; `gpu-consumer.json` preserves
+  the native source hashes and explicitly excludes real NIC transport proof.
 
 Before promotion, a same-build baseline/candidate bracket must include full
 onepass C=1 twice and C=4 once per boot, 2K/32K/128K, output quality, actual
@@ -42,8 +44,11 @@ tok/s and TTFT, acceptance, length and per-step timing. No speedup is claimed.
 ## Requested sequence
 
 1. Direct communication into MHC: receiver implemented here; producer extension pending.
-2. Tile-ready prefill: next; begin with KDA input projection, preserving full
+2. Tile-ready prefill: connected through KDA input projection, preserving full
    recurrent token order and the existing FP8/BF16 transport boundary.
-3. UMA NVMe staging: next; one mapped pinned allocation, lossless I/O.
-4. Bounded GPU decode iterations: next; quantify available host savings and
-   preserve stop, admission, prefix and context boundaries before integration.
+3. UMA NVMe staging: connected; one mapped pinned allocation, lossless I/O.
+4. Bounded GPU decode iterations: connected through reserved, boot-captured
+   greedy bursts; stop, admission, prefix and context boundaries remain enforced.
+
+The combined serving contract and qualification status are in
+`../st_bounded_loop_20260913/README.md`.

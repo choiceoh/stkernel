@@ -24,6 +24,11 @@ lossless RAM cache of its snapshot payloads. It compresses existing staging
 windows on this worker and retains no raw host copy. The disk format stays
 unchanged; a RAM eviction loses only an I/O shortcut.
 
+The explicit GB10 mapped-staging experiment makes the scratch a CUDA alias
+of the same cudaHostAlloc window. Gather/scatter access it directly, omitting
+the intermediate device/host copy. Both aliases share allocation ownership;
+the stream/I/O synchronization and durable disk format remain unchanged.
+
 A parked conversation is more than its paged blocks: the state slot (KDA
 rings, indexer tails, the drafter ring -- 247 MiB on GLM-5.3) and a small
 host record (token history, context) go with it. The file holds three
@@ -68,7 +73,7 @@ class TierFull(MemoryError):
 class NvmeTier:
     def __init__(self, directory: "str | Path", block_bytes: int, stage_bytes: int = 64 << 20,
                  capacity_bytes: "int | None" = None, reserve_bytes: int = 1 << 30,
-                 snapshot_cache_bytes: int = 0, state_format: str = ""):
+                 snapshot_cache_bytes: int = 0, state_format: str = "", mapped_staging: bool = False):
         if not isinstance(block_bytes, int) or block_bytes <= 0 or block_bytes % SECTOR:
             raise ValueError(f"block_bytes {block_bytes} must be a positive multiple of {SECTOR} for O_DIRECT")
         if not isinstance(stage_bytes, int) or stage_bytes < block_bytes:
@@ -81,6 +86,10 @@ class NvmeTier:
             raise ValueError("snapshot cache must be nonnegative bytes")
         if not isinstance(state_format, str):
             raise ValueError("state_format must be a string")
+        if type(mapped_staging) is not bool:
+            raise ValueError("mapped_staging must be a boolean")
+        self.mapped_staging = mapped_staging
+        self.staging_padding_bytes = SECTOR - 1 if mapped_staging else 0
         self.state_format = state_format
         from engine.base.compressed_snapshots import CompressedSnapshots
         self.snapshot_cache = CompressedSnapshots(snapshot_cache_bytes) if snapshot_cache_bytes else None
@@ -90,11 +99,16 @@ class NvmeTier:
         self.block_bytes, self.stage_bytes = block_bytes, stage_bytes
         self.capacity_bytes, self.reserve_bytes = capacity_bytes, reserve_bytes
         self.per = stage_bytes // block_bytes
-        # pinned host staging (cudaHostAlloc is page-aligned, which O_DIRECT needs)
-        self.stage_t = torch.empty(stage_bytes, dtype=torch.uint8, pin_memory=True)
+        # Pinned host staging; the mapped helper explicitly aligns the O_DIRECT payload.
+        if mapped_staging:
+            from engine.kernels.mapped_staging import allocate
+            self.stage_t, self.scratch = allocate(stage_bytes)
+        else:
+            self.stage_t = torch.empty(stage_bytes, dtype=torch.uint8, pin_memory=True)
+            self.scratch = torch.empty(stage_bytes, dtype=torch.uint8, device="cuda")
         self.stage = memoryview(self.stage_t.numpy())
-        # device scratch for one window's gather, and the tier's own stream
-        self.scratch = torch.empty(stage_bytes, dtype=torch.uint8, device="cuda")
+        # Mapped mode gathers/scatters directly through the GPU alias of this
+        # pinned window. Stream completion still precedes every CPU I/O/reuse.
         self.stream = torch.cuda.Stream()
         self.manifest = self.dir / "manifest.json"
         self.index = json.loads(self.manifest.read_text()) if self.manifest.exists() else {}
@@ -249,7 +263,8 @@ class NvmeTier:
                 with torch.cuda.stream(self.stream):
                     torch.index_select(table, 0, ids[i:i + n_blk],
                                        out=self.scratch[:n].view(n_blk, self.block_bytes))
-                    self.stage_t[:n].copy_(self.scratch[:n], non_blocking=True)
+                    if not getattr(self, "mapped_staging", False):
+                        self.stage_t[:n].copy_(self.scratch[:n], non_blocking=True)
                 self.stream.synchronize()
                 written += self._write_window(fd, n, written)
             for off in range(0, extra_bytes, self.stage_bytes):
@@ -361,7 +376,8 @@ class NvmeTier:
                 n_blk = min(self.per, len(block_ids) - i); n = n_blk * self.block_bytes
                 self._read_window(fd, n, at)
                 with torch.cuda.stream(self.stream):
-                    self.scratch[:n].copy_(self.stage_t[:n], non_blocking=True)
+                    if not getattr(self, "mapped_staging", False):
+                        self.scratch[:n].copy_(self.stage_t[:n], non_blocking=True)
                     table.index_copy_(0, ids[i:i + n_blk], self.scratch[:n].view(n_blk, self.block_bytes))
                 self.stream.synchronize()
                 at += n; read += n
@@ -454,11 +470,18 @@ class NvmeTier:
         if stage is not None:
             stage.release()                       # the memoryview holds the pinned pages open
             self.stage = None
+        sizes = []
         for name in ("stage_t", "scratch"):
             buf = getattr(self, name, None)
             if buf is not None:
-                given += buf.numel() * buf.element_size()
+                sizes.append(buf.numel() * buf.element_size())
                 setattr(self, name, None)
+        if getattr(self, "mapped_staging", False):
+            given += max(sizes, default=0)
+            if sizes:
+                given += self.staging_padding_bytes
+        else:
+            given += sum(sizes)
         self.stream = None
         cache = getattr(self, "snapshot_cache", None)
         if cache is not None:

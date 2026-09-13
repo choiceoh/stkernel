@@ -16,6 +16,7 @@ class ExecutionPlan:
     tile_rows: int = 9216
     direct_mhc: bool = False
     prefill_project_tiles: bool = False
+    decode_iterations: int = 1
 
     def __post_init__(self):
         if any(type(v) is not bool for v in (self.overlap, self.early_observe, self.direct_mhc, self.prefill_project_tiles)):
@@ -24,12 +25,15 @@ class ExecutionPlan:
             raise ValueError("direct MHC packets require unsplit same-stream collectives")
         if type(self.prefill_tiles) is not int or self.prefill_tiles not in (1, 2, 4):
             raise ValueError("prefill_tiles must be 1, 2 or 4")
+        if type(self.decode_iterations) is not int or self.decode_iterations not in (1, 2, 4):
+            raise ValueError("decode_iterations must be 1, 2 or 4")
         if type(self.tile_rows) is not int or self.tile_rows <= 0 or self.tile_rows % 2304:
             raise ValueError("prefill tile rows must be a positive multiple of 2304")
 
     @property
     def active(self):
-        return self.overlap or self.early_observe or self.prefill_tiles != 1 or self.direct_mhc or self.prefill_project_tiles
+        return (self.overlap or self.early_observe or self.prefill_tiles != 1 or self.direct_mhc
+                or self.prefill_project_tiles or self.decode_iterations != 1)
 
     def groups(self, sequences):
         if sequences <= 0:
@@ -40,7 +44,7 @@ class ExecutionPlan:
     def label(self):
         return (f"tp_overlap={int(self.overlap)},early_observe={int(self.early_observe)},"
                 f"prefill_tiles={self.prefill_tiles},direct_mhc={int(self.direct_mhc)},"
-                f"prefill_project_tiles={int(self.prefill_project_tiles)}")
+                f"prefill_project_tiles={int(self.prefill_project_tiles)},decode_iterations={self.decode_iterations}")
 
 
 @dataclass

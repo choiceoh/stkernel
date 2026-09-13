@@ -1,0 +1,25 @@
+{
+  "scope": "queue admission only, not GPU execution or performance proof",
+  "session": "st-bounded-decode0913r2",
+  "ticket": "1789269607645442",
+  "source_commit": "625fae4789b9e0cc3a597147e92ee50b07a9d483",
+  "host": "srv2",
+  "worktree": "/home/choiceoh/st-worktrees/codex-serving-r4-f336",
+  "probe": "probes/engine_bounded_loop_check.py",
+  "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/6b34fc5dcfa12e917bb01c707fcccbc39a38e9f820d6cbcbd526084bfb24c959.log",
+  "replaces": "st-bounded-decode0913r1",
+  "replacement_reason": "include rich-stop row departure in the served GPU test; retain queue position",
+  "execution": {
+    "session": "st-bounded-decode0913r4",
+    "ticket": "1789270671967597",
+    "source_commit": "2a7a18e9772c4bd45445fdab51eede224f74dbbe",
+    "host": "srv4",
+    "controller": "srv2",
+    "lane": "single",
+    "result": "3 tests passed, zero skips; toy target, not real TP4 or model-quality proof",
+    "seconds_including_preparation": 49.51564032700844,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/efe55653b337659fb83d5a37850116ab6876a52e69e418170e85e83cd461d734.log",
+    "prior_single_attempt": "st-bounded-decode0913r3",
+    "prior_result": "native tests passed; serving capture rejected nested ordinary replay; see capture-failure.log"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "scope": "direct MHC rank fold and descriptor replay only; TP4 transport and onepass pending",
+  "result": {
+    "tests": 1,
+    "skipped": 0,
+    "cases": 8,
+    "changed_replays": 96
+  },
+  "seconds": 56.780728704994544,
+  "source_sha256": {
+    "engine/kernels/dense/kernels.cu": "1685075d01f2ab44a70eb177c66d6037ae2307b7cfd63dd11d66391e9c8387ef",
+    "engine/kernels/dense/mhc.py": "b8d8697b4a7c86f296fda71f9923656ce43eefcfc011b352c7718fb2fabdfa3a",
+    "engine/kernels/oneshot/dsv4_oneshot_ar.cu": "1daee4e70a801162f4464efbfbe32b32eb28b2bd1bc3fe3a566d9af1c6cae68d",
+    "engine/kernels/oneshot/__init__.py": "73c7b7474b255fd724cf66d88a8cf45b30836fa0c5eed5b02e5caa4624329ef1",
+    "engine/profiles/glm53/direct_mhc.py": "49d3095bef1b1444aa56343543a3266dd18538702cf7f0d95deeda50b83d70b3",
+    "tests/test_engine_direct_mhc_cuda.py": "664803e6a3be8f13e9da036a884c60d045f0f4c2a1e4d6d3539d9704b1bde7e5"
+  }
+}

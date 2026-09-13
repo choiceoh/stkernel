@@ -1,0 +1,25 @@
+{
+  "scope": "queue admission only, not GPU execution or performance proof",
+  "session": "st-mapped-tier0913r2",
+  "ticket": "1789269409573185",
+  "source_commit": "a346045bb04af76f2de8347c92ae90e87480eaae",
+  "host": "srv2",
+  "worktree": "/home/choiceoh/st-worktrees/codex-serving-r3-f336",
+  "probe": "probes/engine_mapped_tier_check.py",
+  "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/4b26c8171570f20007fdaa7e8c44d176d06b088f89fa03dc1b8e3000be139ff8.log",
+  "prior_session": "st-mapped-tier0913r1",
+  "prior_source_commit": "9f59bb9dd84c92f65f792850a3c20b2b50af2699",
+  "prior_result": "visibility/lifetime passed, O_DIRECT test failed at allocation: host staging is not page aligned",
+  "prior_log_path": "/home/choiceoh/glm53-logs/fleet/launches/96b40b97e3fbf19f46e56bbd87a1c12658d0f78cd2445cc08d162b5056ae26a0.21a7faf220c646efb96eb1210b333929.log",
+  "execution": {
+    "session": "st-mapped-tier0913r3",
+    "ticket": "1789270260901963",
+    "source_commit": "625fae4789b9e0cc3a597147e92ee50b07a9d483",
+    "host": "srv4",
+    "controller": "srv2",
+    "lane": "single",
+    "result": "2 tests passed, zero skips; lossless mapped I/O, not serving performance proof",
+    "seconds_including_preparation": 52.93558794001001,
+    "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/497032587ba0a28051294969b35ebd42db2e226e6cdd473acaaaca47369d3985.log"
+  }
+}

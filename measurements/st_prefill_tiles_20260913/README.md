@@ -29,6 +29,9 @@ Validation:
 - The registered `probes/engine_prefill_tiles_check.py` tests real CUDA stream
   readiness/reuse, delayed synthetic peers, the precision threshold and exact
   FP8 projection against the ordinary full gather. This is not NIC proof.
+- That CUDA gate passed on the admitted `st-prefill-tiles0913r3` ticket at
+  source `9f59bb9dd84c92f65f792850a3c20b2b50af2699` (5.625 seconds).
+  `gpu-consumer.json` retains the source hashes and limited synthetic-peer scope.
 - Real TP4 and full onepass C=1/C=4 quality, tok/s, TTFT and per-item latency
   remain pending. Extra NCCL launches can offset overlap; keep default off.
 

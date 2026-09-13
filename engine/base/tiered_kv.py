@@ -54,7 +54,11 @@ class TieredKV:
             try:
                 entry[3].result(timeout=timeout)
             except BaseException:                  # noqa: BLE001 -- a shutdown never fails a shutdown
-                pass
+                if not entry[3].done():
+                    # A timeout is not completion. The worker still owns the
+                    # pinned allocation (and both aliases in mapped mode).
+                    # Retain it and its future so shutdown can be retried.
+                    raise TimeoutError("tier transfer still owns staging; retry close after it finishes")
         self.inflight.clear()
         close = getattr(self.tier, "close", None)
         return close() if close is not None else 0

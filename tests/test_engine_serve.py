@@ -2128,7 +2128,7 @@ class OpenAIDialectTests(unittest.TestCase):
         # told to end on them itself; the request's own id stays in the set
         self.assertEqual(opts, {"top_p": 0.9, "top_k": 40, "presence_penalty": 0.5, "frequency_penalty": -0.5,
                                 "repetition_penalty": 1.1, "seed": 7, "logit_bias": {98: -5.0},
-                                "stop_token_ids": [3] + [ord(c) for c in "123456"]})
+                                "stop_token_ids": [3] + [ord(c) for c in "123456"], "_host_stop": True})
         for bad in ({"top_p": 1.5}, {"top_k": -2}, {"presence_penalty": 3}, {"logit_bias": {"x": 1}}, {"seed": -1}, {"n": 9},
                     {"tool_choice": "required"}, {"response_format": {"type": "xml"}}):
             with self.assertRaises(urllib.error.HTTPError) as err:
