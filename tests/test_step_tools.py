@@ -39,6 +39,13 @@ class CostModelTest(unittest.TestCase):
         self.assertTrue(0.70 < q < 0.80, q)
         self.assertAlmostEqual(cost.tokens_per_step_mean(), 1 + 5 * 0.462, places=6)
 
+    def test_pick_last_takes_the_tail_and_zero_takes_all(self):
+        # 원장은 append 이므로 '최근 기록'은 끝의 줄 — 대기 작업 재검증의 선택 규칙
+        records = ["a", "b", "c", "d"]
+        self.assertEqual(sim.pick_last(records, 1), ["d"])
+        self.assertEqual(sim.pick_last(records, 3), ["b", "c", "d"])
+        self.assertEqual(sim.pick_last(records, 0), records)
+
     def test_tokens_per_step_is_row_basis(self):
         out = sim.run_once([512, 512], 96, CONTRACT, cost=self.FAST, can_async=False)
         # 행-스텝 기준: 폭 2 스텝이 많아도 토큰/행-스텝 은 기댓값 1+k×acc=2.0 근처
@@ -76,6 +83,34 @@ class CostModelTest(unittest.TestCase):
         self.assertGreater(second["e2e_s"], 0.0)
         widths = out["decode_widths"]
         self.assertTrue(all(int(n) == 1 for n in widths), widths)   # 폭 1 만 허용
+        # 줄이 없으니 큐 대기도 없다
+        self.assertEqual(out["queue_wait"]["max_s"], 0.0)
+
+    def test_queue_wait_behind_a_running_prefill(self):
+        # 프리필은 한 번에 하나(D10 직렬): 첫 청크(2s) 도중 도착한 요청은 그 청크가
+        # 끝나기를 기다린다 — 1.5s 대기가 잡혀야 계산이라고 할 수 있다.
+        cost = sim.CostModel(k=0, acc=0.0, decode_ms=1.0, prefill_tok_s={4096: 2048.0}, name="q")
+        c2 = sched.Contract(16, 1024, 0, 0.0, 8)
+        out = sim.run_once([4096, 4096], 16, c2, cost=cost, can_async=False,
+                           arrive_ms=[0.0, 500.0])
+        first, second = out["requests"]
+        self.assertLess(first["queue_wait_s"], 0.05)
+        self.assertAlmostEqual(second["queue_wait_s"], 1.5, delta=0.4)
+        self.assertAlmostEqual(second["ttft_s"],
+                               second["queue_wait_s"] + second["prefill_s"], delta=0.02)
+        self.assertEqual(out["queue_wait"]["max_s"], second["queue_wait_s"])
+
+    def test_queue_wait_is_the_starvation_valve(self):
+        # D10: 살아있는 디코더는 max_wait_s 만큼 보호된다 — 두번째 요청의 큐 대기가
+        # 곧 밸브 시간(2s)이 된다.
+        cost = sim.CostModel(k=2, acc=0.5, decode_ms=10.0, prefill_tok_s={512: 5120.0}, name="v")
+        c2 = sched.Contract(16, 1024, 3, 2.0, 8)
+        out = sim.run_once([512, 512], 600, c2, cost=cost, can_async=False,
+                           arrive_ms=[0.0, 200.0])
+        first, second = out["requests"]
+        self.assertLess(first["queue_wait_s"], 0.1)
+        self.assertAlmostEqual(second["queue_wait_s"], 2.0, delta=0.4)
+        self.assertGreater(second["queue_wait_s"], first["queue_wait_s"])
 
     def test_arrivals_from_record_and_validation(self):
         record = {"requests": [

@@ -2130,3 +2130,29 @@ failed"·"timed out" 은 전부 **먼저 죽은 다른 랭크**를 기다리던 
 표(읽기 예외도 표), 소스 핀(serve·adapter·comm·graphs·runtime_memory·boot·런처·브래킷). LocalTP 4랭크 락스텝 테스트가 첫 판에
 잡은 것: 꼬리표를 float32 로 합치면 지점 id 가 깨진다 → 2^24 아래로. **GPU·플릿 실측 없음**: 다음 부팅·다음 사고가 답한다 —
 사고가 나면 이제 `death-rank*.json` 과 브래킷의 `rank{r}-<ip>.log` 가 원인을 말해야 한다.
+
+### 828차 — 큐의 대기가 밥값을 한다: 기다리는 동안 CPU 작업이 자동으로 돈다 + 시뮬레이터의 최신 부팅 5개 폴드아웃 (2026-09-13, 맥·CPU, PR #828)
+
+운영자 규칙 "gpu 없이 할수 있는 작업 같으면 병렬로"가 분류 레인에서 끝났다. 네 박스를
+기다리는 티켓은 컨트롤러에 앉아 CPU 가 한가한데, 대기는 `waiting: pos 2/3` 를 1초마다
+찍기만 했다. 이제 `fleet.sh wait`(모든 대기 경로 — 감독자가 부르는 유일한 명령)가
+`bench/fleet_waitwork.py` 의 `start` 로 작업을 자동 시작한다: **기본은 step_sim 재검증** —
+onepass 원장의 최근 기록 3개로 비용 상수를 다시 폴딩해 예측 표를 다시 낸다
+(`~/glm53-logs/wait-sim/`). GO 에도 끝나지 않았으면 두고 가고(컨트롤러 CPU, 플릿·리스
+무접촉), 포기하는 끝남(TIMEOUT·실패·부모 사망)만 EXIT 트랩이 끊는다. `FLEET_WAIT_WORK`
+교체·`off` 해제. 시뮬레이터에는 요청별 **큐 대기**(도착→첫 프리필 청크) 측정이 들어갔다:
+D10 밸브 2s 실험에서 두번째 요청의 대기 2.025s 가 잡힌다 — 밸브와 직렬 프리필이 미루는
+만큼이 이제 측정값이다.
+
+**최신 부팅 5개 폴드아웃**(09-12 ST 네이티브: onepass-a/h·ab-kv7·redhat-tile32-control·
+nvidia-cutover; 증거 `step_tools_nofleet_20260912/sim_validate_native_5.txt`). 세 부팅은
+전 예측 행 ±7.6%(대부분 ±5%), **프리픽스 캐시 적중 부팅**(32K TTFT 0.8s·128K 1.0s)도
+폴딩 사다리가 그대로 재현, 수용률 5.4% 극단에서 tokens/step +1.3%(773차 q-매핑의 검증).
+두 기록의 큰 잔여는 **기록 안의 채널 불일치**다 — 카운터(step/s×tokens/step)와 요청별
+실측이 스스로 1.87x·0.76x, 2K warm 이 1.93x·4.40x 로 갈라지고, 시뮬레이터는 다섯 부팅
+전부에서 카운터 채널에 −4.3% 이내로 앉는다. 시뮬을 나란히 놓으면 이 갈림이 바로
+보인다 — 대기 작업이 매번 최신 기록으로 이 표를 다시 만드는 이유.
+
+테스트: `test_fleet_waitwork` 6(계획 4분기·CLI 경계 왕복·실행 중 stop), `test_step_tools`
+27(큐 대기·밸브·closed-loop 0·pick_last). `test_fleet_coalescing` 2 실패는 clean main
+재현 확인(이 PR 밖). D17 그대로 — 시뮬레이션은 판정이 아니다.

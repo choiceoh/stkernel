@@ -811,6 +811,11 @@ _yield_requeue() {
   _enqueue "$1" "$2" "$3" boot "${FLEET_PID:-$PPID}"; _front "$1"
   echo "$4" > "$FLEET_DIR/priority-yield"
 }   # the yielding holder resumes immediately after its chosen probe
+_wait_work_stop() {  # the wait ended WITHOUT GO (timeout/failure): its CPU work was for this wait
+  [ "${WW_ARMED:-0}" = 1 ] && [ "${WW_GO:-0}" != 1 ] && \
+    python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_waitwork.py" stop "$FLEET_DIR" "${WW_SESSION:-}" >/dev/null 2>&1 || true
+  return 0
+}
 # The fleet goes ticket to ticket and returns to production only when nobody waits (operator,
 # 2026-09-12: "대기 예약이 없을 때만 되돌리면 되지"). Let go, the production supervisor relaunches
 # within 30 s and the next ticket would wait for a whole quiet window again. A waiting PROBE
@@ -896,6 +901,20 @@ case "$cmd" in
     est=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f4); note=$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f5)
     kind=$(kind_of "$(grep "^[0-9]*|$s|" "$Q" | head -1 | cut -d'|' -f6)")
     [ -n "$est" ] || { with_lock _enqueue "$s" 30 "" "$kind" "$pid" || exit 6; est=30; note=""; }
+    # 큐에서 기다리는 동안 CPU 작업이 자동으로 돈다(운영자: "gpu 없이 할수 있는 작업
+    # 같으면 병렬로"). 기본은 step_sim 재검증 — onepass 원장의 최근 기록으로 비용 상수를
+    # 다시 폴딩한다(bench/fleet_waitwork.py). GO 에도 끝나지 않았으면 두고 가고(컨트롤러
+    # CPU, 플릿와 무관), 포기하는 끝남(TIMEOUT·실패)에서만 끊는다. FLEET_WAIT_WORK 로
+    # 바꾸거나 off 로 끈다.
+    WW_ARMED=0; WW_GO=0; WW_SESSION=$s
+    if python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_waitwork.py" start \
+        --session "$s" --repo "${FLEET_RUNNER_REPO:-$REPO}" --jsonl "$JSONL" \
+        --logd "$LOGD" --fleet-dir "$FLEET_DIR"; then
+      WW_ARMED=1
+    else
+      echo "wait work: 시작 실패 — 대기만 한다" >&2
+    fi
+    trap _wait_work_stop EXIT
     t_end=$(( $(now) + tmo * 60 )); last=""; prep_at=$(( $(now) + 30 ))
     while [ "$(now)" -lt "$t_end" ]; do
       if [ -n "${FLEET_EXPERIMENT_ID:-}" ] && [ "$s" = "exp-$FLEET_EXPERIMENT_ID" ]; then
@@ -919,7 +938,11 @@ case "$cmd" in
         prep_at=$(( $(now) + 30 ))
       fi
       with_lock _try_hold "$s" "$pid" "$est" "$note" "$kind"; admission_rc=$?
-      if [ "$admission_rc" = 0 ]; then echo "GO $s $(ts)"; exit 0; fi
+      if [ "$admission_rc" = 0 ]; then
+        WW_GO=1
+        python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_waitwork.py" note "$FLEET_DIR" "$s"
+        echo "GO $s $(ts)"; exit 0
+      fi
       if [ "$admission_rc" = 3 ]; then exit 3; fi
       [ "$admission_rc" != 4 ] || continue
       why="pos $(_position "$s")/$(grep -c . "$Q")"; hf=$(holder_file "$kind"); [ -s "$hf" ] && why="$why, held by $(holder_line "$hf")"
