@@ -79,7 +79,7 @@ class DirectMhcTests(unittest.TestCase):
     def test_four_rank_c1_c4_outputs_aux_and_state(self):
         torch.set_num_threads(1)
         def rank(comm):
-            for count in (1, 4):
+            for count, producer in ((1, False), (4, False), (1, True), (4, True)):
                 net, cache = model(("kda", "dsa", "kda"), comm=comm)
                 chunks = []
                 for seq in (2, 0, 3, 1)[:count]:
@@ -93,6 +93,23 @@ class DirectMhcTests(unittest.TestCase):
                 after, paged_after = cache.state.clone(), cache.paged.clone()
                 cache.state.copy_(state); cache.paged.copy_(paged)
                 transport = OracleTransport(comm)
+                if producer:
+                    class Linear:
+                        def __init__(self, weight):
+                            self.weight = weight
+                        def __call__(self, x):
+                            return torch.nn.functional.linear(x, self.weight)
+                        def slot_writer(self, rows):
+                            return lambda x, slot: setattr(slot, 'value', self(x))
+                    for name, weight in net.p.items():
+                        if name.endswith('o_proj') or name.endswith('mlp.down'):
+                            net.dense[name] = Linear(weight)
+                    def produce(template, writer):
+                        slot = NS(value=None)
+                        writer(slot)
+                        self.assertEqual(slot.value.shape, template.shape)
+                        return transport.exchange(slot.value)
+                    transport.produce = produce
                 comm.transport = transport
                 seen = []
                 try:

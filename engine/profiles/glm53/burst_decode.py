@@ -64,14 +64,15 @@ class BurstDecode(AsyncDecode):
         self._queue_rows = ()
         pin = engine.caches.device.type == "cuda"
         n = engine.caches.pool.max_seqs
-        self.readback = dict(tokens=torch.empty(4, n, self.t, dtype=torch.int64, pin_memory=pin),
-                             count=torch.empty(4, n, dtype=torch.int64, pin_memory=pin),
-                             done=torch.empty(4, n, dtype=torch.bool, pin_memory=pin),
-                             accepted=torch.empty(4, n, dtype=torch.int64, pin_memory=pin),
-                             before=torch.empty(4, n, dtype=torch.int64, pin_memory=pin),
-                             iterations=torch.empty(1, dtype=torch.int64, pin_memory=pin),
+        self.readback = dict(iterations=torch.empty(1, dtype=torch.int64, pin_memory=pin),
                              timings=torch.empty(4, 2, dtype=torch.int64, pin_memory=pin),
                              stages=torch.empty(4, 2*len(DeviceStages.NAMES), dtype=torch.int64, pin_memory=pin))
+        if not pin:
+            self.readback.update(tokens=torch.empty(4, n, self.t, dtype=torch.int64),
+                                 count=torch.empty(4, n, dtype=torch.int64),
+                                 done=torch.empty(4, n, dtype=torch.bool),
+                                 accepted=torch.empty(4, n, dtype=torch.int64),
+                                 before=torch.empty(4, n, dtype=torch.int64))
         try:
             if pin:
                 from engine.kernels.decode_queue import SharedDecodeQueue
@@ -106,10 +107,12 @@ class BurstDecode(AsyncDecode):
         b["real_slot"].copy_(b["seqs"] + 1)
         b["slot"].copy_(b["real_slot"])
         b["limit"].fill_(128)
-        logs = {k: torch.empty(4, n, dtype=torch.int64, device=dev)
-                for k in ("count", "accepted", "before")}
-        logs["tokens"] = torch.empty(4, n, t, dtype=torch.int64, device=dev)
-        logs["done"] = torch.empty(4, n, dtype=torch.bool, device=dev)
+        logs = {}
+        if self.queue is None:
+            logs = {k: torch.empty(4, n, dtype=torch.int64, device=dev)
+                    for k in ("count", "accepted", "before")}
+            logs["tokens"] = torch.empty(4, n, t, dtype=torch.int64, device=dev)
+            logs["done"] = torch.empty(4, n, dtype=torch.bool, device=dev)
         controls = dict(count=torch.zeros(1, dtype=torch.int64, device=dev),
                         stop=torch.zeros(1, dtype=torch.int64, device=dev),
                         interrupt=torch.zeros(1, dtype=torch.int64, device=dev),
@@ -121,8 +124,9 @@ class BurstDecode(AsyncDecode):
         n = shape[0]
         b, log, control = self.states[n], self.logs[n], self.controls[n]
         result = self.iterate(shape, b, stage_clock=DeviceStages(control["stages"], control["count"]))
-        for key, value in result.items():
-            log[key].index_copy_(0, control["count"], value.unsqueeze(0))
+        if self.queue is None:
+            for key, value in result.items():
+                log[key].index_copy_(0, control["count"], value.unsqueeze(0))
         if self.queue is not None:
             self.queue.read_interrupt(control["interrupt"])
         vote = stop_at_boundary(result["before"], b["ctx"], b["alive"], control["reserved"], shape[2],
