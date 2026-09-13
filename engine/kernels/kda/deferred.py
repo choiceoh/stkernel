@@ -21,21 +21,22 @@ def verify(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound):
                       lower_bound, deferred=True)
 
 
-def verify_rows(q, k, v, g, beta, a_log, g_bias, ring, slots, contexts, lower_bound, *, factors=None):
+def verify_rows(q, k, v, g, beta, a_log, g_bias, ring, slots, contexts, lower_bound, *, factors=None, compact=False):
     """Verify equal-width rows, recording each row's factors in distinct storage."""
     if not isinstance(slots, torch.Tensor) or not isinstance(contexts, torch.Tensor) or slots.numel() != contexts.numel():
         raise ValueError("deferred rows require one device slot and context per row")
     return _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slots, contexts,
-                      lower_bound, deferred=True, rows=slots.numel(), factors=factors)
+                      lower_bound, deferred=True, rows=slots.numel(), factors=factors, compact=compact)
 
 
 @triton.jit
 def _commit_layers(KEY, DECAY, UPDATE, RING, OFFSETS, SLOT, CONTEXT, COUNT,
+                   BOUNDARY, BOUNDARY_OFFSETS,
                    T: tl.constexpr, ROWS: tl.constexpr, H: tl.constexpr,
                    K: tl.constexpr, V: tl.constexpr, R: tl.constexpr,
                    SLOT_STRIDE: tl.constexpr, BLOCK: tl.constexpr, B: tl.constexpr,
                    TILED: tl.constexpr = True, HOIST_FINAL: tl.constexpr = True,
-                   OFFSET_ALIGNMENT: tl.constexpr = 1):
+                   OFFSET_ALIGNMENT: tl.constexpr = 1, COMPACT: tl.constexpr = False):
     # Every CTA owns contiguous state cells. No reduction is needed during
     # materialization, so coalesce the full K,V matrix instead of the
     # verifier's strided value tiles. All layers commit in this one launch.
@@ -66,7 +67,16 @@ def _commit_layers(KEY, DECAY, UPDATE, RING, OFFSETS, SLOT, CONTEXT, COUNT,
         # before capture. Odd dimensions retain their smaller actual alignment.
         offset = tl.multiple_of(offset, OFFSET_ALIGNMENT)
     base = offset + slot * SLOT_STRIDE + cell
-    if TILED and HOIST_FINAL:
+    if COMPACT:
+        # Current and boundary are separate physical records, never modulo
+        # aliases. A final position and a crossed boundary may have the same
+        # parity, so shrinking an ordinary ring to two cells is incorrect.
+        state = tl.load(RING + base, mask & (context > 0), other=0)
+        boundary = BLOCK - context % BLOCK
+        boundary_offset = tl.load(BOUNDARY_OFFSETS + layer)
+        boundary_base = boundary_offset + slot * SLOT_STRIDE + cell
+        count = count.to(tl.int32)
+    elif TILED and HOIST_FINAL:
         # One modulo locates both the initial state and all accepted writes.
         # count <= T <= R means each write wraps at most once from this cursor.
         cursor = context % R
@@ -77,7 +87,7 @@ def _commit_layers(KEY, DECAY, UPDATE, RING, OFFSETS, SLOT, CONTEXT, COUNT,
     else:
         state = tl.load(RING + base + (tl.maximum(context-1, 0) % R) * H*K*V,
                         mask & (context > 0), other=0)
-    if TILED and not HOIST_FINAL:
+    if TILED and not HOIST_FINAL and not COMPACT:
         # Modulo only at entry; accepted tokens advance bounded ring and
         # prefix cursors. Keep context in int64 until after the modulo.
         cursor = (context % R).to(tl.int32)
@@ -95,7 +105,10 @@ def _commit_layers(KEY, DECAY, UPDATE, RING, OFFSETS, SLOT, CONTEXT, COUNT,
         state = tl.inline_asm_elementwise("mul.rn.f32 $0, $1, $2;", constraints="=f,f,f",
                                          args=[state, decay], dtype=tl.float32, is_pure=True, pack=1)
         state = tl.fma(update, k, state)
-        if TILED and HOIST_FINAL:
+        if COMPACT:
+            if i+1 == boundary:
+                tl.store(BOUNDARY + boundary_base, state, mask)
+        elif TILED and HOIST_FINAL:
             # Final materialization is unconditional after the loop. Only
             # intermediate prefix snapshots need a store in the recurrence.
             if i+1 == boundary and i+1 < count:
@@ -113,7 +126,9 @@ def _commit_layers(KEY, DECAY, UPDATE, RING, OFFSETS, SLOT, CONTEXT, COUNT,
             position = context + i
             if i == count-1 or (position+1) % BLOCK == 0:
                 tl.store(RING + base + (position % R) * H*K*V, state, mask)
-    if TILED and HOIST_FINAL:
+    if COMPACT:
+        tl.store(RING + base, state, mask)
+    elif TILED and HOIST_FINAL:
         at = cursor+count-1
         at = tl.where(at >= R, at-R, at)
         tl.store(RING + base + at*H*K*V, state, mask)
@@ -125,17 +140,31 @@ class Batch:
     Ring views must share the arena and slot stride. This owner is retained
     across target and sampler graphs; a commit must precede its next verify.
     Different context-capacity graphs may share it when replay is serialized.
+
+    Supplying `boundaries` selects the experimental compact ABI: `rings`
+    have one committed FP32 cell per slot, and each boundary view is
+    [slots,H,K,V] in the same slot-major arena. The two records and their
+    lifetime belong to the caller and can be shared across graph shapes.
+    Verify writes only factors. Commit updates current state and, on a
+    crossing, the boundary record in the same launch. Counts are the actual
+    accepted counts after EOS/length clipping, not the verifier's raw count.
+    A commit spans at most one block; snapshots must consume a boundary
+    before a later crossing replaces it. No serving cache uses this ABI yet.
     """
     def __init__(self, rings, rows, tokens, *, block, tiled=True, cells=2048, hoist_final=True, warps=4,
-                 vectorize=True):
+                 vectorize=True, boundaries=None):
         self.rings = tuple(rings)
+        self.compact = boundaries is not None
+        self.boundaries = tuple(boundaries) if self.compact else ()
         if not self.rings or type(rows) is not int or rows <= 0 or type(tokens) is not int:
             raise ValueError("deferred batch needs layers, positive rows and an integer token width")
         ring = self.rings[0]
         if ring.ndim != 5 or not ring.is_cuda or ring.dtype != torch.float32:
             raise ValueError("deferred batch requires CUDA FP32 rings")
         slots, width, h, k, v = ring.shape
-        if (min(slots, h, k, v) <= 0 or not 1 <= tokens <= min(width, 2147483647)
+        width_ok = (width == 1 and 1 <= tokens <= 2147483647) if self.compact else (
+            1 <= tokens <= min(width, 2147483647))
+        if (min(slots, h, k, v) <= 0 or not width_ok
                 or type(block) is not int or block <= 0 or rows > slots
                 or ring.stride()[1:] != (h*k*v, k*v, v, 1)
                 or ring.stride(0) < width*h*k*v):
@@ -147,8 +176,20 @@ class Batch:
                     or value.untyped_storage().data_ptr() != storage):
                 raise ValueError("deferred layers must share an arena and the same slot geometry")
         offsets = [(value.data_ptr()-ring.data_ptr()) // 4 for value in self.rings]
+        boundary_offsets = []
+        if self.compact:
+            if tokens > block:
+                raise ValueError("compact commit may cross at most one prefix boundary: tokens <= block")
+            if len(self.boundaries) != len(self.rings):
+                raise ValueError("compact state requires one boundary view per layer")
+            for value in self.boundaries:
+                if (value.shape != (slots, h, k, v) or value.stride() != (ring.stride(0), k*v, v, 1)
+                        or value.device != ring.device or value.dtype != ring.dtype
+                        or value.untyped_storage().data_ptr() != storage):
+                    raise ValueError("compact boundaries must share the FP32 arena and slot geometry")
+            boundary_offsets = [(value.data_ptr()-ring.data_ptr()) // 4 for value in self.boundaries]
         # Compare within a slot; an overlapping layer would race another CTA.
-        ordered = sorted(offsets)
+        ordered = sorted(offsets + boundary_offsets)
         if any(b-a < width*h*k*v for a, b in zip(ordered, ordered[1:])) or ordered[-1]-ordered[0]+width*h*k*v > ring.stride(0):
             raise ValueError("deferred layer rings overlap within their slot")
         if any(type(x) is not bool for x in (tiled, hoist_final, vectorize)):
@@ -162,17 +203,22 @@ class Batch:
         self.cells, self.hoist_final, self.warps = cells, hoist_final, warps
         self.offset_alignment = gcd(4, ring.data_ptr()//4, h*k*v, ring.stride(0), *offsets) if vectorize else 1
         self.offsets = torch.tensor(offsets, dtype=torch.int64, device=ring.device)
+        self.boundary_offsets = (torch.tensor(boundary_offsets, dtype=torch.int64, device=ring.device)
+                                 if self.compact else None)
         self.factors = tuple(torch.empty((len(rings), rows*tokens, h, d), dtype=torch.float32, device=ring.device)
                              for d in (k, k, v))
         self.layer_factors = tuple(tuple(f[i] for f in self.factors) for i in range(len(rings)))
 
     @property
     def nbytes(self):
-        return sum(x.numel()*x.element_size() for x in (*self.factors, self.offsets))
+        # Current and boundary views are caller-owned arena state, not
+        # additional per-graph workspace. Include only allocations made here.
+        return sum(x.numel()*x.element_size() for x in (*self.factors, self.offsets)
+                   + (() if self.boundary_offsets is None else (self.boundary_offsets,)))
 
     def verify(self, layer, q, k, v, g, beta, a_log, g_bias, slots, contexts, lower_bound):
         out, _ = verify_rows(q, k, v, g, beta, a_log, g_bias, self.rings[layer], slots, contexts,
-                             lower_bound, factors=self.layer_factors[layer])
+                             lower_bound, factors=self.layer_factors[layer], compact=self.compact)
         return out
 
     def commit(self, slots, contexts, counts):
@@ -185,8 +231,10 @@ class Batch:
         cells = self.cells if self.tiled else 1024
         tiles = h*triton.cdiv(k, max(1, cells//triton.next_power_of_2(v))) if self.tiled else triton.cdiv(h*k*v, cells)
         _commit_layers[(tiles, len(self.rings), self.rows)](
-            *self.factors, ring, self.offsets, slots, contexts, counts, self.tokens, self.rows,
+            *self.factors, ring, self.offsets, slots, contexts, counts,
+            ring if self.compact else None, self.boundary_offsets, self.tokens, self.rows,
             h, k, v, width, ring.stride(0), self.block, cells, self.tiled, self.hoist_final, self.offset_alignment,
+            self.compact,
             num_warps=self.warps if self.tiled else 4, num_stages=1)
 
 
