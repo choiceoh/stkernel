@@ -168,14 +168,16 @@ class Glm53Net:
         self.prefill_absorb_tiles = False
         self.prefill_absorb_tiles_executed = set()
         self.mhc = None
-        from engine.profiles.glm53.weights import WEIGHT_LAYOUT, MODELOPT_WEIGHT_LAYOUT
+        from engine.profiles.glm53.weights import WEIGHT_LAYOUT, MODELOPT_LAYOUTS, MODELOPT_BF16_DENSE_LAYOUT
         self.weight_layout = getattr(F, 'weight_layout', WEIGHT_LAYOUT)
-        if self.weight_layout not in (WEIGHT_LAYOUT, MODELOPT_WEIGHT_LAYOUT):
+        if self.weight_layout not in (WEIGHT_LAYOUT, *MODELOPT_LAYOUTS):
             raise ValueError('unsupported GLM weight layout')
-        self.modelopt = self.weight_layout == MODELOPT_WEIGHT_LAYOUT
+        self.modelopt = self.weight_layout in MODELOPT_LAYOUTS
+        # The dense MLPs as one-expert NVFP4 (ModelOpt's own layout); BF16 dense MLPs take the packed dense path.
+        self.dense_nvfp4 = self.modelopt and self.weight_layout != MODELOPT_BF16_DENSE_LAYOUT
         self._experts = {}
         self._quant_scales = {}
-        if self.modelopt:
+        if self.dense_nvfp4:
             self._dense = self._dense_nvfp4
         self.probe = None                            # probe(block, layer, out) after every block, for judges
 
@@ -194,7 +196,7 @@ class Glm53Net:
         # Bind scales and weight views before capture. The served t cell may
         # relayout arena bytes in place; the reference can read that layout.
         for L in self.layers:
-            if not F.is_moe(L) and not self.modelopt:
+            if not F.is_moe(L) and not self.dense_nvfp4:
                 continue
             n = f"L{L}." + ('moe.' if F.is_moe(L) else 'mlp.')
             kw = {}

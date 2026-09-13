@@ -128,8 +128,8 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     if kda_state_dtype is not None:
         from dataclasses import replace
         F = replace(F, kda_state_dtype=state_dtype(kda_state_dtype))
-    from engine.profiles.glm53.weights import MODELOPT_WEIGHT_LAYOUT
-    if F.weight_layout == MODELOPT_WEIGHT_LAYOUT:
+    from engine.profiles.glm53.weights import MODELOPT_LAYOUTS
+    if F.weight_layout in MODELOPT_LAYOUTS:
         from engine.profiles.glm53.modelopt_weights import all_specs
         weight_specs = all_specs(F)
     else:

@@ -2,9 +2,13 @@
 
 Packed bytes and E4M3 block scales are split/reordered without arithmetic.
 FP32 weight_scale_2 multipliers and input_scale values remain separate. The
-first three dense MLPs remain NVFP4. The layout marker selects this contract
-at boot; net.bind and modelopt_scales prepare the b12x serving multipliers.
+first three dense MLPs remain NVFP4, unless the checkpoint's config excludes
+them from quantization: then they are BF16 rank tensors the engine packs from
+calibration, as for Red Hat's ranks (MODELOPT_BF16_DENSE_LAYOUT). The layout
+marker selects this contract at boot; net.bind and modelopt_scales prepare the
+b12x serving multipliers.
 """
+from fnmatch import fnmatch
 from pathlib import Path
 from dataclasses import replace
 import json
@@ -16,7 +20,20 @@ from engine.modules.nvfp4_sf import swizzle_sf
 from engine.profiles.glm53 import facts, specs
 
 
-from engine.profiles.glm53.weights import MODELOPT_WEIGHT_LAYOUT as WEIGHT_LAYOUT
+from engine.profiles.glm53.weights import MODELOPT_WEIGHT_LAYOUT as WEIGHT_LAYOUT, MODELOPT_BF16_DENSE_LAYOUT
+
+
+def dense_excluded(config, F):
+    """Whether the config leaves every dense MLP out of NVFP4 (its exclude list names all three projections of
+    each). All of them or none: a checkpoint excluding some has no serving layout."""
+    q = config['quantization_config']
+    patterns = list(q.get('exclude_modules') or q.get('ignore') or [])
+    excluded = [all(any(fnmatch(f'model.language_model.layers.{layer}.mlp.{proj}_proj', p) for p in patterns)
+                    for proj in ('gate', 'up', 'down'))
+                for layer in range(F.layers) if not F.is_moe(layer)]
+    if any(excluded) and not all(excluded):
+        raise ValueError('the dense MLPs must be all NVFP4 or all excluded from quantization')
+    return bool(excluded) and all(excluded)
 
 
 def load_facts(path):
@@ -31,7 +48,8 @@ def load_facts(path):
         scheme = groups['group_0'][side]
         if scheme['num_bits'] != 4 or scheme['type'] != 'float' or scheme['group_size'] != 16:
             raise ValueError('requires NVFP4 group 16 for weights and activations')
-    return replace(facts.architecture(config), weight_layout=WEIGHT_LAYOUT)
+    F = facts.architecture(config)
+    return replace(F, weight_layout=MODELOPT_BF16_DENSE_LAYOUT if dense_excluded(config, F) else WEIGHT_LAYOUT)
 
 
 def quant_specs(F, layer):
@@ -97,6 +115,8 @@ def quant_specs(F, layer):
 
 def layer_specs(F, layer):
     ordinary = specs.layer_specs(F,layer)
+    if not F.is_moe(layer) and F.weight_layout == MODELOPT_BF16_DENSE_LAYOUT:
+        return ordinary                                  # BF16 gate_up/down, packed from calibration like Red Hat's
     replaced = (f'L{layer}.moe.w13',f'L{layer}.moe.w13_sf',f'L{layer}.moe.w2',f'L{layer}.moe.w2_sf') if F.is_moe(layer) else (f'L{layer}.mlp.gate_up',f'L{layer}.mlp.down')
     return [s for s in ordinary if s.name not in replaced]+quant_specs(F,layer)
 

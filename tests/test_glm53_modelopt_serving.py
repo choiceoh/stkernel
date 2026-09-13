@@ -14,7 +14,7 @@ from engine.profiles.glm53.facts import Facts
 from engine.profiles.glm53 import lanes
 from engine.profiles.glm53.modelopt_scales import ModelOptScales
 from engine.profiles.glm53.net import Glm53Net
-from engine.profiles.glm53.weights import MODELOPT_WEIGHT_LAYOUT, WEIGHT_LAYOUT, rank_loader
+from engine.profiles.glm53.weights import MODELOPT_BF16_DENSE_LAYOUT, MODELOPT_WEIGHT_LAYOUT, WEIGHT_LAYOUT, rank_loader
 
 
 def small_facts():
@@ -142,6 +142,79 @@ class ModelOptServingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'layout mismatch'):rank_loader(p,expected_layout=WEIGHT_LAYOUT)
             write([s for s in contracts if not s.name.endswith('a2_scale')])
             with self.assertRaisesRegex(ValueError,'ModelOpt scale'):rank_loader(p)
+
+
+class ModelOptBf16DenseTests(unittest.TestCase):
+    """ModelOpt routed experts with BF16 dense MLPs: the config excludes the dense MLPs from NVFP4, the dense layers
+    take the packed BF16 path Red Hat's ranks use, the MoE layers keep ModelOpt's separate scales."""
+
+    def config(self, patterns):
+        return {'quantization_config': {'quant_method': 'modelopt', 'exclude_modules': patterns}}
+
+    def test_the_config_selects_it_all_or_nothing(self):
+        from engine.profiles.glm53.modelopt_weights import dense_excluded
+        F = small_facts()
+        prefix = 'model.language_model.layers.'
+        self.assertFalse(dense_excluded(self.config(['lm_head', prefix + '3.mlp.gate']), F))
+        self.assertTrue(dense_excluded(self.config([prefix + f'{layer}.mlp*' for layer in (0, 1, 2)]), F))
+        self.assertTrue(dense_excluded(self.config([prefix + f'{layer}.mlp.{p}_proj' for layer in (0, 1, 2)
+                                                    for p in ('gate', 'up', 'down')]), F))
+        with self.assertRaisesRegex(ValueError, 'all NVFP4 or all excluded'):
+            dense_excluded(self.config([prefix + '0.mlp*']), F)
+
+    def test_dense_layers_are_bf16_and_moe_layers_keep_modelopt_scales(self):
+        F = replace(small_facts(), weight_layout=MODELOPT_BF16_DENSE_LAYOUT)
+        comm = SimpleNamespace(world_size=4, rank=0, all_reduce=lambda x: x)
+        net = Glm53Net(F, comm, lanes.reference(), layers=[0, 3])
+        self.assertTrue(net.modelopt)
+        self.assertFalse(net.dense_nvfp4)
+        self.assertEqual(net._dense.__func__, Glm53Net._dense)
+        by_name = {s.name: s for s in net.specs()}
+        self.assertEqual(by_name['L0.mlp.gate_up'].dtype, torch.bfloat16)
+        self.assertNotIn('L0.mlp.w13', by_name)
+        self.assertNotIn('L0.mlp.a13_scale', by_name)
+        for suffix in ('w13', 'w13_sf', 'w13_alpha', 'a13_scale', 'w2', 'w2_sf', 'w2_alpha', 'a2_scale'):
+            self.assertIn('L3.moe.' + suffix, by_name)
+        self.assertIn('L0.mlp.gate_up', Glm53Net.dense_weight_names(by_name))
+
+    def test_bind_prepares_experts_for_moe_layers_only(self):
+        calls = []
+        table = replace(lanes.reference(), moe=lambda x, ids, w, **kw: (calls.append(kw) or torch.zeros_like(x)),
+                        moe_prepare=Mock())
+        F = replace(small_facts(), weight_layout=MODELOPT_BF16_DENSE_LAYOUT)
+        comm = SimpleNamespace(world_size=4, rank=0, all_reduce=Mock(side_effect=lambda x: x))
+        net = Glm53Net(F, comm, table, layers=[0, 3])
+        views = {}
+        for spec in net.specs():
+            views[spec.name] = torch.full(spec.shape, 0x12 if spec.dtype == torch.uint8 else 1., dtype=spec.dtype)
+            if spec.name.endswith(('_alpha', '_scale')) and spec.dtype == torch.float32:
+                views[spec.name].fill_(.125 if spec.name.endswith('_alpha') else 1.)
+        net.bind(views)
+        self.assertEqual(sorted(net._experts), [3])
+        self.assertEqual(sorted(net._quant_scales), [3])
+        self.assertEqual(table.moe_prepare.call_count, 1)
+
+    def test_rank_marker_is_checked_and_moe_scales_are_still_required(self):
+        F = replace(small_facts(), weight_layout=MODELOPT_BF16_DENSE_LAYOUT)
+        comm = SimpleNamespace(world_size=4, rank=0, all_reduce=lambda x: x)
+        net = Glm53Net(F, comm, lanes.reference(), layers=[0, 3])
+        contracts = [s for s in net.specs() if s.name.startswith(('L0.mlp.', 'L3.moe.'))]
+        views = {s.name: torch.ones(s.shape, dtype=s.dtype) for s in contracts}
+        with tempfile.TemporaryDirectory() as temp:
+            p = Path(temp) / 'rank.safetensors'
+
+            def write(specs):
+                writer = RankWriter(p, specs, {'weight_layout': MODELOPT_BF16_DENSE_LAYOUT, 'rank': 0, 'world': 4})
+                for spec in specs:
+                    writer.put(spec.name, views[spec.name])
+                writer.close()
+            write(contracts)
+            rank_loader(p, expected_layout=MODELOPT_BF16_DENSE_LAYOUT)
+            with self.assertRaisesRegex(ValueError, 'layout mismatch'):
+                rank_loader(p, expected_layout=MODELOPT_WEIGHT_LAYOUT)
+            write([s for s in contracts if not s.name.endswith('L3.moe.a2_scale')])
+            with self.assertRaisesRegex(ValueError, 'ModelOpt scale'):
+                rank_loader(p)
 
 
 if __name__=='__main__':unittest.main()
