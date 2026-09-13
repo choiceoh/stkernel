@@ -178,14 +178,26 @@ def wide_input_cell(rows, n, k):
         or (rows in (21, 28) and (n, k) in ((6416, 4096), (4096, 1536))))
 
 
-def w4_gemm(x, pack, workspace=None):
+def bound_input_cell(rows, n, k):
+    """Candidate K=7 input reuse, explicitly bound before graph capture."""
+    if rows == 8:
+        return k == 4096 and n in (4096, 6144, 6416)
+    return rows in (16, 24, 32) and (
+        (n, k) in ((4096, 2048), (2048, 4096), (4096, 4096), (6144, 4096), (4096, 3072))
+        or (rows in (24, 32) and (n, k) in ((6416, 4096), (4096, 1536))))
+
+
+def w4_gemm(x, pack, workspace=None, *, bound_input=False):
     if (x.ndim != 2 or not 1 <= x.shape[0] <= 32 or x.shape[1] != pack.cols or x.shape[1] > KMAX
             or x.dtype != torch.bfloat16 or x.device != pack.data.device):
         raise ValueError("W4 decode requires 1..32 BF16 rows matching the bound pack, K at most 20480")
     out = torch.empty(x.shape[0], pack.rows, dtype=x.dtype, device=x.device)
     # f_a/g_a are columns of the fused KDA projection: preserve their wider
     # row stride instead of launching a copy for each of the 68 products.
-    if workspace is None:
+    if bound_input:
+        extension().run_gemm_bound_input(x, pack.data, pack.scale, out, pack.rows,
+                                         pack.rowscale.data_ptr(), workspace, None)
+    elif workspace is None:
         ext = extension()
         run = ext.run_gemm_wide_input if wide_input_cell(x.shape[0], pack.rows, pack.cols) else ext.run_gemm
         run(x, pack.data, pack.scale, out, pack.rows, 1., 0, pack.rowscale.data_ptr(), 0, 0, 0)
@@ -229,6 +241,8 @@ class DenseLinear:
         self.observer = None  # calibration.Calibration sums this layer's inputs through it (X^T X for the GPTQ packs)
         self.executed = 0  # boot proof: W4=1, FP8=2
         self.workspace = None  # optional private W4 scratch for independent execution
+        self.decode_input_rows = ()  # immutable candidate cells bound before capture
+        self.bound_input_executed = set()
         packs = []
         if decode_precision == 'fp8':
             pass  # No W4 invocation exists: skip its packing, factorisation and resident bytes.
@@ -300,7 +314,10 @@ class DenseLinear:
         if flat.shape[0] <= 32 and getattr(self, 'decode_precision', 'w4') == 'w4':
             self.executed |= 1
             if len(self.packs) == 1:
-                out = w4_gemm(flat, self.packs[0], self.workspace)
+                bound_input = self._bound_input(flat.shape[0], self.packs[0])
+                out = w4_gemm(flat, self.packs[0], self.workspace, bound_input=bound_input)
+                if bound_input:
+                    self.bound_input_executed.add(flat.shape[0])
             else:
                 # tiles whose row shifts disagree cannot be one pack (see `_fold`), so they are still summed
                 # here -- and each addend has already been rounded to bf16 by its own launch
@@ -319,6 +336,9 @@ class DenseLinear:
             self.executed |= 2
         return out.reshape(*shape, self.rows)
 
+    def _bound_input(self, rows, pack):
+        return rows in getattr(self, 'decode_input_rows', ()) and bound_input_cell(rows, pack.rows, pack.cols)
+
     def packet_projector(self):
         """The prefill transport may bypass BF16 storage only without observers."""
         if (self.cols != 4096 or self.fp8 is None or self.observer is not None
@@ -336,7 +356,12 @@ class DenseLinear:
         if self.slot_writer(x.shape[0]) is None or x.ndim != 2 or x.shape[1] != self.cols:
             raise ValueError("unsupported direct W4 producer")
         p = self.packs[0]
-        extension().run_gemm_to_slot(x, p.data, p.scale, address, p.rows, p.rowscale.data_ptr(), self.workspace)
+        if self._bound_input(x.shape[0], p):
+            extension().run_gemm_bound_input(x, p.data, p.scale, address, p.rows,
+                                             p.rowscale.data_ptr(), self.workspace, address)
+            self.bound_input_executed.add(x.shape[0])
+        else:
+            extension().run_gemm_to_slot(x, p.data, p.scale, address, p.rows, p.rowscale.data_ptr(), self.workspace)
         self.executed |= 1
 
     def _project_packets(self, received, local_rows):

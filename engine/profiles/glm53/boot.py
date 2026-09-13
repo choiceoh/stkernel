@@ -243,11 +243,14 @@ def declared(a, comm_world: int) -> Config:
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
-                        execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0, terminal_mhc=0,
+                        execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0, terminal_mhc=0, decode_fastpaths=0,
                         draft_fc_precision=SERVING_POLICY.fc_precision, draft_fc_calibration=SERVING_POLICY.fc_calibration,
                         draft_diagnostics=int(SERVING_POLICY.diagnostics), draft_tuning='', **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
+        Knob("decode_fastpaths", 0, _dt.date(2026, 9, 30),
+             "K=7 bound input reuse, paired KDA/indexer projections and direct TX outputs; GPU qualification pending",
+             "STK_decode_fastpaths=0", int),
         Knob("prefill_absorb_tiles", gb10_defaults["prefill_absorb_tiles"], _dt.date(2026, 9, 30),
              "Operator-enabled token-major MLA contractions; GPU timing and quality qualification pending",
              "STK_prefill_absorb_tiles=0", int),
@@ -535,7 +538,9 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 net.prepare_routers(arena)
                 recorder.gauge('router_resident_bytes', router_bytes)
                 net.prepare_dense(store, consume_weights=True)
-                net.prepare_decode_projections(arena)
+                capture_rows = (tuple(8 * n for n in range(1, max_seqs + 1))
+                                if execution_plan is not None and execution_plan.decode_fastpaths else None)
+                net.prepare_decode_projections(arena, capture_rows=capture_rows)
                 recorder.gauge('decode_projection_resident_bytes', projection_bytes)
                 net.prefill_transport = PrefillCollectives(comm, project_tiles=bool(
                     execution_plan is not None and execution_plan.prefill_project_tiles))
@@ -736,6 +741,30 @@ def run_prompts(engine: Glm53Engine, runner: Runner, prompts: "dict[int, list[in
     return out
 
 
+def decode_fastpath_report(net):
+    """Each bound layer/width must reach its candidate during preparation."""
+    from engine.kernels.dense import bound_input_cell
+    rows = getattr(net, 'decode_fastpath_rows', ())
+    if not rows:
+        return {}
+    expected_pairs = {(L, m) for L in net.layers for m in rows}
+    pairs = expected_pairs.intersection(net.decode_pairs_executed)
+    dense = {}
+    missing = []
+    for name, layer in net.dense.items():
+        packs = getattr(layer, 'packs', ())
+        if len(packs) != 1:
+            continue
+        expected = {m for m in rows if bound_input_cell(m, packs[0].rows, packs[0].cols)}
+        if expected:
+            actual = expected.intersection(layer.bound_input_executed)
+            dense[name] = sorted(actual)
+            missing.extend((name, m) for m in sorted(expected - actual))
+    if pairs != expected_pairs or missing or not dense:
+        raise RuntimeError(f'bound decode fastpaths were not executed: pairs={sorted(expected_pairs - pairs)}, dense={missing}')
+    return dict(rows=list(rows), pairs=sorted(pairs), dense=dense)
+
+
 def native_execution_report(net, drafter):
     """Reject a prepared but unused lane before the full-model door opens."""
     target = [layer for name, layer in net.dense.items() if name != 'head']
@@ -746,7 +775,8 @@ def native_execution_report(net, drafter):
     required_prefill = {'fp8_all_gather', 'fp8_reduce_scatter'}
     if net.prefill_transport.project_tiles:
         required_prefill.update(('fp8_tiled_projection', 'fp8_packet_projection'))
-    proof = dict(target_w4=sum(bool(p.executed & 1) for p in target),
+    proof = dict(decode_fastpaths=decode_fastpath_report(net),
+                 target_w4=sum(bool(p.executed & 1) for p in target),
                  target_fp8=sum(bool(p.executed & 2) for p in target),
                  head_fp8=net.dense['head'].executed,
                  drafter_w4=sum(bool(p.executed & 1) for p in draft),
@@ -1150,7 +1180,7 @@ def fleet(a) -> int:
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
                                        consume_scales=True)
         from engine.profiles.glm53.execution import ExecutionPlan
-        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles")):
+        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths")):
             raise ValueError("execution switches must be 0 or 1")
         plan = ExecutionPlan(bool(cfg["execution_overlap"]), bool(cfg["early_observe"]), cfg["prefill_tiles"],
                              sched.chunk_for(facts.CHUNK_ALIGN, TOKEN_BUDGET, facts.SPEC_K),
@@ -1158,7 +1188,8 @@ def fleet(a) -> int:
                              decode_iterations=cfg["decode_iterations"], deferred_kda=bool(cfg["deferred_kda"]),
                              terminal_mhc=bool(cfg["terminal_mhc"]), prefill_indexer_shards=bool(cfg["prefill_indexer_shards"]),
                              prefill_dense_prefix=bool(cfg["prefill_dense_prefix"]),
-                             prefill_absorb_tiles=bool(cfg["prefill_absorb_tiles"]))
+                             prefill_absorb_tiles=bool(cfg["prefill_absorb_tiles"]),
+                             decode_fastpaths=bool(cfg["decode_fastpaths"]))
         from engine.profiles.glm53.draft_policy import DraftPolicy
         if cfg["draft_diagnostics"] not in (0, 1):
             raise ValueError("draft diagnostics must be 0 or 1")
