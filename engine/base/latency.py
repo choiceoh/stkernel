@@ -80,7 +80,7 @@ class Recorder:
         self.lock = threading.Lock()
         self.step_index = 0
 
-    def begin(self, token, diagnostic=False, concurrency=1):
+    def begin(self, token, diagnostic=False, concurrency=1, *, instrumentation=None):
         global _OBSERVER
         if type(concurrency) is not int or concurrency not in (1, 4):
             raise ValueError('latency concurrency must be 1 or 4')
@@ -94,10 +94,11 @@ class Recorder:
         self.active = dict(token=token, diagnostic=bool(diagnostic), directory=directory,
                            started=time.monotonic(), before=preparation(), profiles=[], rows=[], errors=[],
                            kinds={'prefill': 0, 'decode': 0}, selected={'prefill': 0, 'decode': 0},
-                           concurrency=concurrency, row_count=0)
+                           concurrency=concurrency, row_count=0, instrumentation=dict(instrumentation or {}))
         self.file = (directory / 'latency.jsonl').open('x')
         _write(directory / 'manifest.json', dict(schema=SCHEMA, token=token, rank=self.rank,
-               status='running', diagnostic=bool(diagnostic), preparation_before=self.active['before']))
+               status='running', diagnostic=bool(diagnostic), preparation_before=self.active['before'],
+               instrumentation=self.active['instrumentation']))
         self.step_index = 0
         _OBSERVER = self
         return dict(rank=self.rank, token=token, status='recording', preparation=self.active['before'])
@@ -211,7 +212,7 @@ class Recorder:
                       preparation_before=run['before'], preparation_after=after,
                       preparation_changed=any(run['before'][k] != after[k] for k in ('specializations', 'graph_captures')),
                       rows=run['rows'], row_count=run['row_count'], steps=run['kinds'], traces=run['profiles'],
-                      concurrency=run['concurrency'],
+                      concurrency=run['concurrency'], instrumentation=run['instrumentation'],
                       graph_attribution_errors=list(graph_labels.ERRORS), errors=run['errors'],
                       server_directory=str(run['directory']), complete=not run['errors'])
         _write(run['directory'] / 'manifest.json', {k: v for k, v in result.items() if k != 'traces'} |

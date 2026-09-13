@@ -92,6 +92,13 @@ class EvidenceTests(unittest.TestCase):
         report['ranks'][0]['preparation_changed'] = True
         self.assertTrue(steady_errors(report, [req] * 4, 4))
 
+    def test_selector_trace_collection_never_counts_as_a_steady_performance_measurement(self):
+        report = self.report()
+        report['ranks'][0]['instrumentation'] = {'draft_selector_trace_every': 8}
+        req = dict(cached_tokens=0, completion_tokens=20, finish_reason='length')
+        self.assertEqual(steady_errors(report, [req] * 4, 4),
+                         ['rank 0: selector calibration trace forces synchronous decode'])
+
     def test_concurrent_clients_and_aggregate_denominator(self):
         lock, active, maximum = threading.Lock(), 0, 0
         def ask(url, model, content, limit, timing, **kwargs):
