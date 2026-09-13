@@ -115,8 +115,23 @@ and dump directory of its own. STK_ knobs are not arms. The leg per arm is fixed
 boot, onepass (the cold column), `POST /v1/prefix/reset`, onepass (the warm
 column), stop; `bench/st_judge.py` judges warm against warm with the base's
 run-to-run spread as the floor and prints the cold column beside it. `st-pair`
-boots the base only when its sha has no warm sample yet. `FLEET_REHEARSE=1`
+boots the base only when it has no warm sample yet. `FLEET_REHEARSE=1`
 boots nothing and fabricates records, so the flow can be checked without GPUs.
+
+The base is measured as little as possible (the operator's rule, 2026-09-13): a
+candidate that is adopted brings its own measurement along as the next baseline,
+and one that is not leaves the baseline as it was. A sample's identity is the
+engine tree (`arm_tree`, `launchers/st_release.py tree`), not only the commit: the
+squash main makes of a measured branch, or a fleet-side merge that left `engine/`
+alone, is the same engine and the same sample. When the base has one boot, the
+judge borrows the floor -- the median run-to-run spread of every commit with two
+boots in the records -- and says so ("pooled floor"). A D17 probe on the live
+door runs once (one run after a reset is a warm sample; a boot is one sample
+however many runs it carries), deploy-watch keeps the deployed engine at one
+sample (`--probe-samples`), and `st-chain --reuse` boots no arm that already has
+a sample. deploy-watch applies the same identity to deploys: a main that moved
+without touching `engine/` is recorded as deployed, cut and followed by the
+controller, and not booted -- the engine that serves is already that commit's.
 
 `fleet.sh st-probe SESSION [SHA] [EST] [NOTE]` is the verb that boots nothing:
 two onepass runs on the LIVE production door (`POST /v1/prefix/reset` before

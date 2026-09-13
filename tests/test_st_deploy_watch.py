@@ -345,14 +345,17 @@ class ProbeSelfHealTests(unittest.TestCase):
     def log(self, line):
         self.lines.append(line)
 
-    def ensure(self, held=None, sha=None, a=None):
+    def ensure(self, held=None, sha=None, a=None, boot="live|now", tree=""):
         return watch.ensure_probe(self.SHA if sha is None else sha, held or {}, a or self.a, self.log,
-                                  controller=self.controller, fleet_dir=self.fleet, jsonl=self.jsonl, state=self.state)
+                                  controller=self.controller, fleet_dir=self.fleet, jsonl=self.jsonl, state=self.state,
+                                  boot=boot, tree=tree)
 
-    def sample(self, sha=None, run_index=2):
+    def sample(self, sha=None, run_index=2, boot="b|1", tree=None):
         import json as _json
-        row = {"engine": "st", "arm_sha": sha or self.SHA, "run_index": run_index, "boot_id": "b|1", "quality": {"ok": 9, "total": 9},
+        row = {"engine": "st", "arm_sha": sha or self.SHA, "run_index": run_index, "boot_id": boot, "quality": {"ok": 9, "total": 9},
                "korean": {"dirty": 0, "n": 5}, "decode": {"windows_med": 12.0}, "traffic": {"issues": []}}
+        if tree:
+            row["arm_tree"] = tree
         with self.jsonl.open("a") as fh:
             fh.write(_json.dumps(row) + "\n")
 
@@ -365,15 +368,34 @@ class ProbeSelfHealTests(unittest.TestCase):
         self.assertEqual(argv[:3], ["st-probe", "--detach", "d17-0123abcdef01"])
         tally = watch.state_of(self.state)["probe"]
         self.assertEqual((tally["sha"], tally["attempts"], tally["queued"]), (self.SHA, 1, True))
-        self.assertIn("no warm sample and no probe ticket on its way (attempt 1/3)", "\n".join(self.lines))
+        self.assertIn("has 0 of 1 warm samples and no probe ticket on its way (attempt 1/3 on this boot)", "\n".join(self.lines))
 
     def test_a_warm_sample_is_enough(self):
         self.sample()
         self.assertFalse(self.ensure())
         self.assertFalse(self.queued())
         self.jsonl.unlink()
-        self.sample(run_index=1)                                     # a cold run is not the sample
+        self.sample(run_index=1)                                     # a boot's cold run is not the sample
         self.assertTrue(self.ensure())
+
+    def test_the_adopted_candidate_s_sample_spares_the_deployed_commit_a_probe(self):
+        """The operator's rule: a candidate the bracket measured and main adopted needs no probe --
+        its measurement is the baseline. The squash has another sha; the engine tree is the same."""
+        self.sample(sha="dddd" * 10, tree="0d3c61aa802d")
+        self.assertFalse(self.ensure(tree="0d3c61aa802d"))
+        self.assertFalse(self.queued())
+        self.assertTrue(self.ensure(tree="ffffffffffff"), "another engine tree: no sample of its own")
+
+    def test_a_boot_that_gave_its_sample_is_not_probed_again_and_nothing_serving_is_not_probed(self):
+        from types import SimpleNamespace
+        two = SimpleNamespace(dry_run=False, probe=True, controller=str(self.controller), probe_attempts=3, probe_gap=0, probe_samples=2)
+        self.sample(boot="live|now")
+        self.assertFalse(self.ensure(a=two, boot="live|now"), "this boot already gave its sample")
+        self.assertTrue(self.ensure(a=two, boot="next|later"), "the next production boot gives the next")
+        (self.tmp / "argv").unlink()
+        self.assertFalse(self.ensure(a=two, boot=None), "nothing serves: nothing to sample")
+        held = {"probe": {"sha": self.SHA, "boot": "old|1", "attempts": 3, "last_at": 0}}
+        self.assertTrue(self.ensure(held, a=two, boot="next|later"), "a new boot starts its own count")
 
     def test_a_sample_of_another_commit_is_not_this_one_s(self):
         self.sample(sha="deadbeef00" * 4)
@@ -399,13 +421,13 @@ class ProbeSelfHealTests(unittest.TestCase):
         cannot be queued again under its own name (srv2, 2026-09-13 02:51: rc=143 replayed)."""
         self.assertEqual(watch.probe_session(self.SHA), "d17-0123abcdef01")
         self.assertEqual(watch.probe_session(self.SHA, 2), "d17-0123abcdef01-2")
-        held = {"probe": {"sha": self.SHA, "attempts": 1, "last_at": 0}}
+        held = {"probe": {"sha": self.SHA, "boot": "live|now", "attempts": 1, "last_at": 0}}
         self.assertTrue(self.ensure(held))
         self.assertEqual((self.tmp / "argv").read_text().splitlines()[2], "d17-0123abcdef01-2")
         self.assertEqual(watch.state_of(self.state)["probe"]["attempts"], 2)
 
     def test_the_tally_bounds_it(self):
-        held = {"probe": {"sha": self.SHA, "attempts": 3, "last_at": 0}}
+        held = {"probe": {"sha": self.SHA, "boot": "live|now", "attempts": 3, "last_at": 0}}
         self.assertFalse(self.ensure(held))
         self.assertFalse(self.queued())
         self.assertIn("queuing no more", "\n".join(self.lines))
@@ -413,12 +435,12 @@ class ProbeSelfHealTests(unittest.TestCase):
         n = len(self.lines)
         self.assertFalse(self.ensure(watch.state_of(self.state)))
         self.assertEqual(len(self.lines), n, "said once")
-        self.assertTrue(self.ensure({"probe": {"sha": "f" * 40, "attempts": 3, "last_at": 0}}), "another sha starts afresh")
+        self.assertTrue(self.ensure({"probe": {"sha": "f" * 40, "boot": "live|now", "attempts": 3, "last_at": 0}}), "another sha starts afresh")
 
     def test_the_gap_between_two_tickets_is_kept(self):
         import time
         from types import SimpleNamespace
-        held = {"probe": {"sha": self.SHA, "attempts": 1, "last_at": time.time()}}
+        held = {"probe": {"sha": self.SHA, "boot": "live|now", "attempts": 1, "last_at": time.time()}}
         slow = SimpleNamespace(dry_run=False, probe=True, controller=str(self.controller), probe_attempts=3, probe_gap=1800)
         self.assertFalse(self.ensure(held, a=slow))
         held["probe"]["last_at"] = time.time() - 3600
@@ -451,6 +473,26 @@ class ProbeSelfHealTests(unittest.TestCase):
         self.assertIn("fleet_busy_with_tickets()", wait, "the quiet wait yields to the queue instead of polling a door it does not own")
         for flag in ("--probe-attempts", "--probe-gap"):
             self.assertIn(flag, source)
+
+
+class SameEngineTests(unittest.TestCase):
+    """A main that moved without touching engine/ is deployed by bookkeeping, not by a boot."""
+
+    def test_the_same_engine_tree_under_another_commit_is_no_deploy(self):
+        from unittest import mock
+        with mock.patch.object(watch, "engine_tree", side_effect=lambda sha: {"a" * 40: "t1", "b" * 40: "t1", "c" * 40: "t2"}.get(sha, "")):
+            self.assertTrue(watch.same_engine("b" * 40, "a" * 40))
+            self.assertFalse(watch.same_engine("c" * 40, "a" * 40))
+            self.assertFalse(watch.same_engine("a" * 40, "a" * 40), "the same commit is 'nothing to deploy', not this")
+            self.assertFalse(watch.same_engine("d" * 40, "a" * 40), "no tree, no claim")
+
+    def test_the_cycle_records_it_before_waiting_for_quiet(self):
+        source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
+        body = source[source.index("def cycle("):source.index("    log(f\"  waiting for {a.quiet}s of quiet\")")]
+        self.assertIn("if same_engine(head, held.get(\"deployed\") or \"\"):", body)
+        self.assertIn("recorded as deployed without a boot", body)
+        self.assertIn('"same_engine_as": held.get("deployed")', body)
+        self.assertLess(body.index("same_engine("), body.index("since < a.min_gap") if "since < a.min_gap" in body else len(body))
 
 
 class QueueGraceTests(unittest.TestCase):
