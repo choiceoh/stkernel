@@ -1,6 +1,6 @@
 # GB10 × 4 전용 ST 실행 형상
 
-검토 기준: `e0b5c184`에서 분석을 시작하고 `15bd6e3a`에 리베이스한 엔진 및 2026-09-13 공식 문서. 목표는 **C=1의 품질을 유지하면서 토큰당 가중치 읽기, 상태 쓰기, 중간 텐서 이동을 줄이는 것**이다. 첫 구현은 FP32 KDA의 물리적 저장 형상을 바꾸는 커널 실험이다. 서빙 연결과 처리량 검증은 아직 완료하지 않았다.
+검토 기준: `e0b5c184`에서 분석을 시작하고 GPU 등록 전에 `71306bda`에 리베이스한 엔진 및 2026-09-13 공식 문서. 목표는 **C=1의 품질을 유지하면서 토큰당 가중치 읽기, 상태 쓰기, 중간 텐서 이동을 줄이는 것**이다. 첫 구현은 FP32 KDA의 물리적 저장 형상을 바꾸는 커널 실험이다. 서빙 연결과 처리량 검증은 아직 완료하지 않았다.
 
 ## 하드웨어가 정해 주는 방향
 
@@ -129,10 +129,10 @@ Python dispatch 제거, 모든 연산의 단일 persistent kernel화, 작은 bat
 
 ```bash
 ST_IMAGE=sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc \
-bash bench/fleet.sh run --gpu --fleet --detach st-kda-compact0913v2 5 \
+bash bench/fleet.sh run --gpu --fleet --detach st-kda-compact0913v3 5 \
   'K7 compact FP32 state: exact recurrence and three-layout component comparison' -- \
   bash probes/run_engine_probe.sh probes/engine_kda_deferred_check.py \
-  --compact-only --samples 8 --output /cache/kda-compact0913v2.json
+  --compact-only --samples 8 --output /cache/kda-compact0913v3.json
 ```
 
-이 명령은 모델을 부팅하지 않는 kernel probe다. 현재 단일 GPU 별도 호스트는 접근 불가로 보고되어, 기존 세션의 GPU 사용이 끝난 뒤 fleet 예약을 받아 실행하는 형태다.
+이 명령은 모델을 부팅하지 않는 kernel probe다. 네 대를 독점 점유한 기존 세션의 GPU 사용이 끝난 뒤 실행하도록 fleet 예약을 사용한다. 등록 결과 `accepted=true`, 상태 `queued`, ticket `17893082511214606`을 확인했다. [등록 원본](../measurements/kda_compact_20260913/admission.json)
