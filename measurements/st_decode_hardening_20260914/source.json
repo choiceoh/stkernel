@@ -20,6 +20,8 @@
     "pr_head": "b30c6a49d9d9514496abe84a1bc3f39e4bcc070e",
     "sha256": "ada7b03a6896f7bb71cb0910657596a5e502bccc85673a22d5a1ae8f15cfdf4c",
     "running_rank0_sha256": "ada7b03a6896f7bb71cb0910657596a5e502bccc85673a22d5a1ae8f15cfdf4c",
-    "boot_complete": false
+    "boot_complete": true,
+    "boot_observation": "boot-recovery.json",
+    "scope": "shared draft-count repair only; new packet failure guards were not in that boot"
   }
 }

@@ -1,0 +1,607 @@
+{
+  "observed_at": "2026-09-13T16:28:21.609114+00:00",
+  "scope": "read-only observation of another session boot with the same draft count fix; not a PR908 performance verdict",
+  "ranks": [
+    {
+      "rank": 0,
+      "node": "10.10.10.2",
+      "container_id": "dc7b01d9da05054d5bb55baef00208fd7c360facfa9fe8d4d50e7598812d8ea6",
+      "image": "sha256:fb2121b3067ef886d566c91d53693f66decc96fe5c4aeb0ef08686161d86d790",
+      "started_at": "2026-09-13T16:18:43.80781298Z",
+      "state": "running",
+      "repo_mount": [
+        "/home/choiceoh/st-releases/8dd9fd0f4b88"
+      ],
+      "drafter_sha256": "ada7b03a6896f7bb71cb0910657596a5e502bccc85673a22d5a1ae8f15cfdf4c",
+      "proof": {
+        "rank": 0,
+        "target_w4": 202,
+        "target_fp8": 202,
+        "head_fp8": true,
+        "drafter_w4": 30,
+        "drafter_context_fp8": true,
+        "drafter_decode_fp8": false,
+        "mhc": 89,
+        "shared_mlp": 42,
+        "shared_overlap": true,
+        "router_tensorcore": 42,
+        "prefill_collectives": [
+          "fp8_all_gather",
+          "fp8_packet_projection",
+          "fp8_reduce_scatter",
+          "fp8_tiled_projection"
+        ],
+        "prefill_indexer_shards": [],
+        "prefill_dense_prefix": [
+          3,
+          7,
+          11,
+          15,
+          19,
+          23,
+          27,
+          31,
+          35,
+          39,
+          43
+        ],
+        "prefill_covered_queries": [
+          3,
+          7,
+          11,
+          15,
+          19,
+          23,
+          27,
+          31,
+          35,
+          39,
+          43
+        ],
+        "prefill_absorb_tiles": [
+          [
+            3,
+            "output"
+          ],
+          [
+            3,
+            "query"
+          ],
+          [
+            7,
+            "output"
+          ],
+          [
+            7,
+            "query"
+          ],
+          [
+            11,
+            "output"
+          ],
+          [
+            11,
+            "query"
+          ],
+          [
+            15,
+            "output"
+          ],
+          [
+            15,
+            "query"
+          ],
+          [
+            19,
+            "output"
+          ],
+          [
+            19,
+            "query"
+          ],
+          [
+            23,
+            "output"
+          ],
+          [
+            23,
+            "query"
+          ],
+          [
+            27,
+            "output"
+          ],
+          [
+            27,
+            "query"
+          ],
+          [
+            31,
+            "output"
+          ],
+          [
+            31,
+            "query"
+          ],
+          [
+            35,
+            "output"
+          ],
+          [
+            35,
+            "query"
+          ],
+          [
+            39,
+            "output"
+          ],
+          [
+            39,
+            "query"
+          ],
+          [
+            43,
+            "output"
+          ],
+          [
+            43,
+            "query"
+          ]
+        ]
+      },
+      "milestones": [
+        "capture decode                             309.488     +6.14  ",
+        "warmup shapes                                6.356     +0.46  ",
+        "  ST engine: GLM-5.3, TP=4, lanes=served, KV 7.0 GiB, serving on :8001"
+      ]
+    },
+    {
+      "rank": 1,
+      "node": "10.10.10.1",
+      "container_id": "11d0c3882abda8800a459e022607b37be017e062eaaa6defb75d340c635916d8",
+      "image": "sha256:11f625e3528131dc09602b7cc58772274e9993be417d522001b8b42ef7946eeb",
+      "started_at": "2026-09-13T16:18:46.39523681Z",
+      "state": "running",
+      "repo_mount": [
+        "/home/choiceoh/st-releases/8dd9fd0f4b88"
+      ],
+      "drafter_sha256": "ada7b03a6896f7bb71cb0910657596a5e502bccc85673a22d5a1ae8f15cfdf4c",
+      "proof": {
+        "rank": 1,
+        "target_w4": 202,
+        "target_fp8": 202,
+        "head_fp8": true,
+        "drafter_w4": 30,
+        "drafter_context_fp8": true,
+        "drafter_decode_fp8": false,
+        "mhc": 89,
+        "shared_mlp": 42,
+        "shared_overlap": true,
+        "router_tensorcore": 42,
+        "prefill_collectives": [
+          "fp8_all_gather",
+          "fp8_packet_projection",
+          "fp8_reduce_scatter",
+          "fp8_tiled_projection"
+        ],
+        "prefill_indexer_shards": [],
+        "prefill_dense_prefix": [
+          3,
+          7,
+          11,
+          15,
+          19,
+          23,
+          27,
+          31,
+          35,
+          39,
+          43
+        ],
+        "prefill_covered_queries": [
+          3,
+          7,
+          11,
+          15,
+          19,
+          23,
+          27,
+          31,
+          35,
+          39,
+          43
+        ],
+        "prefill_absorb_tiles": [
+          [
+            3,
+            "output"
+          ],
+          [
+            3,
+            "query"
+          ],
+          [
+            7,
+            "output"
+          ],
+          [
+            7,
+            "query"
+          ],
+          [
+            11,
+            "output"
+          ],
+          [
+            11,
+            "query"
+          ],
+          [
+            15,
+            "output"
+          ],
+          [
+            15,
+            "query"
+          ],
+          [
+            19,
+            "output"
+          ],
+          [
+            19,
+            "query"
+          ],
+          [
+            23,
+            "output"
+          ],
+          [
+            23,
+            "query"
+          ],
+          [
+            27,
+            "output"
+          ],
+          [
+            27,
+            "query"
+          ],
+          [
+            31,
+            "output"
+          ],
+          [
+            31,
+            "query"
+          ],
+          [
+            35,
+            "output"
+          ],
+          [
+            35,
+            "query"
+          ],
+          [
+            39,
+            "output"
+          ],
+          [
+            39,
+            "query"
+          ],
+          [
+            43,
+            "output"
+          ],
+          [
+            43,
+            "query"
+          ]
+        ]
+      },
+      "milestones": []
+    },
+    {
+      "rank": 2,
+      "node": "10.10.10.3",
+      "container_id": "fb05aea30c82e1f6c9ebf6e8e45292e7cc6ec0816e23163925095463be780492",
+      "image": "sha256:6fc801e8893fdf582089f04e44df4cc8bf1fe9744984ae6497ae4f0f50e6364e",
+      "started_at": "2026-09-13T16:18:45.918050128Z",
+      "state": "running",
+      "repo_mount": [
+        "/home/choiceoh/st-releases/8dd9fd0f4b88"
+      ],
+      "drafter_sha256": "ada7b03a6896f7bb71cb0910657596a5e502bccc85673a22d5a1ae8f15cfdf4c",
+      "proof": {
+        "rank": 2,
+        "target_w4": 202,
+        "target_fp8": 202,
+        "head_fp8": true,
+        "drafter_w4": 30,
+        "drafter_context_fp8": true,
+        "drafter_decode_fp8": false,
+        "mhc": 89,
+        "shared_mlp": 42,
+        "shared_overlap": true,
+        "router_tensorcore": 42,
+        "prefill_collectives": [
+          "fp8_all_gather",
+          "fp8_packet_projection",
+          "fp8_reduce_scatter",
+          "fp8_tiled_projection"
+        ],
+        "prefill_indexer_shards": [],
+        "prefill_dense_prefix": [
+          3,
+          7,
+          11,
+          15,
+          19,
+          23,
+          27,
+          31,
+          35,
+          39,
+          43
+        ],
+        "prefill_covered_queries": [
+          3,
+          7,
+          11,
+          15,
+          19,
+          23,
+          27,
+          31,
+          35,
+          39,
+          43
+        ],
+        "prefill_absorb_tiles": [
+          [
+            3,
+            "output"
+          ],
+          [
+            3,
+            "query"
+          ],
+          [
+            7,
+            "output"
+          ],
+          [
+            7,
+            "query"
+          ],
+          [
+            11,
+            "output"
+          ],
+          [
+            11,
+            "query"
+          ],
+          [
+            15,
+            "output"
+          ],
+          [
+            15,
+            "query"
+          ],
+          [
+            19,
+            "output"
+          ],
+          [
+            19,
+            "query"
+          ],
+          [
+            23,
+            "output"
+          ],
+          [
+            23,
+            "query"
+          ],
+          [
+            27,
+            "output"
+          ],
+          [
+            27,
+            "query"
+          ],
+          [
+            31,
+            "output"
+          ],
+          [
+            31,
+            "query"
+          ],
+          [
+            35,
+            "output"
+          ],
+          [
+            35,
+            "query"
+          ],
+          [
+            39,
+            "output"
+          ],
+          [
+            39,
+            "query"
+          ],
+          [
+            43,
+            "output"
+          ],
+          [
+            43,
+            "query"
+          ]
+        ]
+      },
+      "milestones": []
+    },
+    {
+      "rank": 3,
+      "node": "10.10.10.4",
+      "container_id": "7f748ea72d8f8de891bc7a6bc5272a0e718ce19bdef4240241a52c361447e921",
+      "image": "sha256:ab195b5903b6c9a34cf5695d4aff87106e4eef75f55c6a113fb88b808354dca9",
+      "started_at": "2026-09-13T16:18:48.038357598Z",
+      "state": "running",
+      "repo_mount": [
+        "/home/choiceoh/st-releases/8dd9fd0f4b88"
+      ],
+      "drafter_sha256": "ada7b03a6896f7bb71cb0910657596a5e502bccc85673a22d5a1ae8f15cfdf4c",
+      "proof": {
+        "rank": 3,
+        "target_w4": 202,
+        "target_fp8": 202,
+        "head_fp8": true,
+        "drafter_w4": 30,
+        "drafter_context_fp8": true,
+        "drafter_decode_fp8": false,
+        "mhc": 89,
+        "shared_mlp": 42,
+        "shared_overlap": true,
+        "router_tensorcore": 42,
+        "prefill_collectives": [
+          "fp8_all_gather",
+          "fp8_packet_projection",
+          "fp8_reduce_scatter",
+          "fp8_tiled_projection"
+        ],
+        "prefill_indexer_shards": [],
+        "prefill_dense_prefix": [
+          3,
+          7,
+          11,
+          15,
+          19,
+          23,
+          27,
+          31,
+          35,
+          39,
+          43
+        ],
+        "prefill_covered_queries": [
+          3,
+          7,
+          11,
+          15,
+          19,
+          23,
+          27,
+          31,
+          35,
+          39,
+          43
+        ],
+        "prefill_absorb_tiles": [
+          [
+            3,
+            "output"
+          ],
+          [
+            3,
+            "query"
+          ],
+          [
+            7,
+            "output"
+          ],
+          [
+            7,
+            "query"
+          ],
+          [
+            11,
+            "output"
+          ],
+          [
+            11,
+            "query"
+          ],
+          [
+            15,
+            "output"
+          ],
+          [
+            15,
+            "query"
+          ],
+          [
+            19,
+            "output"
+          ],
+          [
+            19,
+            "query"
+          ],
+          [
+            23,
+            "output"
+          ],
+          [
+            23,
+            "query"
+          ],
+          [
+            27,
+            "output"
+          ],
+          [
+            27,
+            "query"
+          ],
+          [
+            31,
+            "output"
+          ],
+          [
+            31,
+            "query"
+          ],
+          [
+            35,
+            "output"
+          ],
+          [
+            35,
+            "query"
+          ],
+          [
+            39,
+            "output"
+          ],
+          [
+            39,
+            "query"
+          ],
+          [
+            43,
+            "output"
+          ],
+          [
+            43,
+            "query"
+          ]
+        ]
+      },
+      "milestones": []
+    }
+  ],
+  "health": "{\"status\": \"ok\"}\n200"
+}
