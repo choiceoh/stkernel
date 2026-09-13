@@ -81,13 +81,22 @@ def main():
     partial = a.out / (name + ".partial")
     sources = {"nvidia": 0, "redhat": 0, "patch": 0, "unit": 0}
     expected = {}
-    with safe_open(str(nv_path), framework="pt") as nv, safe_open(str(rh_path), framework="pt") as rh:
+    # Only the dense MLPs come from Red Hat's rank: read those and close it before NVIDIA's is mapped -- under strict
+    # overcommit (srv2) two whole 44 GiB copy-on-write maps do not fit the commit limit.
+    dense_names = [s.name for s in specs if s.name.partition(".")[0].startswith("L")
+                   and not F.is_moe(int(s.name.partition(".")[0][1:])) and s.name.endswith((".mlp.gate_up", ".mlp.down"))]
+    with safe_open(str(rh_path), framework="pt") as rh:
+        if (rh.metadata() or {}).get("weight_layout") != "st-glm53-b12x-up-gate-v1":
+            raise SystemExit(f"{rh_path}: not a Red Hat b12x rank file")
+        missing_dense = [n for n in dense_names if n not in set(rh.keys())]
+        if missing_dense:
+            raise SystemExit(f"{rh_path} lacks {missing_dense}")
+        redhat_dense = {n: rh.get_tensor(n).clone() for n in dense_names}
+    with safe_open(str(nv_path), framework="pt") as nv:
         nv_meta = dict(nv.metadata() or {})
         if nv_meta.get("weight_layout") != modelopt_weights.WEIGHT_LAYOUT:
             raise SystemExit(f"{nv_path}: not a ModelOpt rank file ({nv_meta.get('weight_layout')})")
-        if (rh.metadata() or {}).get("weight_layout") != "st-glm53-b12x-up-gate-v1":
-            raise SystemExit(f"{rh_path}: not a Red Hat b12x rank file")
-        nv_keys, rh_keys = set(nv.keys()), set(rh.keys())
+        nv_keys = set(nv.keys())
         metadata = dict(nv_meta, weight_layout=MODELOPT_BF16_DENSE_LAYOUT,
                         hybrid=json.dumps(dict(nvidia=str(nv_path), redhat=str(rh_path),
                                                patch=str(a.patch) if a.patch else None,
@@ -108,9 +117,7 @@ def main():
                     t = torch.ones(spec.shape, dtype=spec.dtype)
                     sources["unit"] += 1
                 elif dense_layer and suffix in ("mlp.gate_up", "mlp.down"):
-                    if spec.name not in rh_keys:
-                        raise SystemExit(f"{rh_path} lacks {spec.name}")
-                    t = rh.get_tensor(spec.name)
+                    t = redhat_dense.pop(spec.name)
                     sources["redhat"] += 1
                 else:
                     if spec.name not in nv_keys:
