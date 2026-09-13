@@ -117,6 +117,7 @@ class MoEStaticKernelV4:
         a_ring: bool = False,
         sf_pack: bool = False,
         reform_sf_pack: bool = False,
+        sf6_separate: bool = True,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -199,6 +200,13 @@ class MoEStaticKernelV4:
         self.reform_sf_pack = bool(reform_sf_pack)
         if self.reform_sf_pack and any((self.sf_pack, self.split, self.a_ring)):
             raise ValueError("sf6 requires the unmodified t or t,r geometry")
+        # C=1 keeps FC1 packed input disjoint from expanded MMA scales.
+        # Each pipeline slot owns both buffers until
+        # consumer_release; expansion then needs only its publication barrier.
+        self.sf6_separate = bool(sf6_separate and self.reform_sf_pack and self.decode_reform)
+        # Scatter only consumes rows in this M16 tile. Avoid initializing
+        # 112 unused token/weight entries per item and reclaim their storage.
+        self.scatter_cache_rows = self.tile_m if self.sf6_separate else _COMPACT_STATIC_TILE_M
         # skip_sf / skip_a are compile-time omissions of a TMA issue, not a layout: the branches below are
         # `const_expr(not self.skip_*)` around the box descriptors alone, so they compose with any scale
         # geometry. They stayed excluded here only because nothing had asked -- and what asks is the one
@@ -210,6 +218,7 @@ class MoEStaticKernelV4:
         self.sf1_block_bytes = 2048 if self.reform_sf_pack and self.decode_reform else _SF_BLOCK_BYTES
         self.sf1_packed_blocks = self.fc1_tile_k // 256
         self.sf1_stage_bytes = 1552 if self.reform_sf_pack else _SF_STAGE_BYTES
+        self.sf6_packed_bytes = self.fc1_stages * self.sf1_stage_bytes if self.sf6_separate else 0
         self.sf2_block_bytes = 2048 if self.decode_reform else 1024
         # Gather just one N128 row half in its existing 1024-byte stage:
         # low512 + high256 + base/alignment16. No extra shared/global buffer.
@@ -331,13 +340,15 @@ class MoEStaticKernelV4:
         )
         return b_smem_staged, sfa_smem_staged, sfb_smem_staged, epi_smem_staged
 
-    def _sf_expand_stage(self, stage_addr, tidx, block_bytes=4096):
+    def _sf_expand_stage(self, stage_addr, tidx, block_bytes=4096, *, packed_addr=None):
         """Exact MMA-stage expansion shared by q, sf6 and the device gate.
 
         The 1024-byte form expands the selected FC2 row half gathered as
         low512 + high256 + base/tail16, with the original full-stage base.
 
-        Volatile reads cannot sink across the read-before-write barrier.
+        A separate packed_addr must name storage disjoint from the entire
+        expanded stage. Only that form can omit the read-before-write barrier.
+        Volatile reads cannot sink across the in-place read-before-write barrier.
         The post-write barrier publishes every owner's bytes before peers
         load MMA fragments (39-sf-pack-kernel correctness fixes).
         """
@@ -346,24 +357,26 @@ class MoEStaticKernelV4:
         per_thread = block_bytes // 128
         plane_a = block_bytes // 2
         base_offset = block_bytes * 3 // 4
+        source_addr = stage_addr if packed_addr is None else packed_addr
         a = []
         for w in range(per_thread // 8):
             a.append(_ld_shared_i32_volatile(
-                stage_addr + Int32(per_thread // 2) * tidx + Int32(4 * w)))
+                source_addr + Int32(per_thread // 2) * tidx + Int32(4 * w)))
         b = []
         if per_thread == 8:
             # Two adjacent threads share an aligned high-plane word, but
             # each keeps only its own two bytes before in-place expansion.
             b.append(_ld_shared_i32_volatile(
-                stage_addr + Int32(plane_a) + (tidx // Int32(2)) * Int32(4))
+                source_addr + Int32(plane_a) + (tidx // Int32(2)) * Int32(4))
                 >> ((tidx & Int32(1)) * Int32(16)))
         else:
             for w in range(per_thread // 16):
                 b.append(_ld_shared_i32_volatile(
-                    stage_addr + Int32(plane_a) + Int32(per_thread // 4) * tidx
+                    source_addr + Int32(plane_a) + Int32(per_thread // 4) * tidx
                     + Int32(4 * w)))
-        base = _ld_shared_i32_volatile(stage_addr + Int32(base_offset)) & Int32(0xFF)
-        self.sf_expand_barrier.arrive_and_wait()
+        base = _ld_shared_i32_volatile(source_addr + Int32(base_offset)) & Int32(0xFF)
+        if packed_addr is None:
+            self.sf_expand_barrier.arrive_and_wait()
         for j in range(per_thread // 4):
             word = Int32(0)
             for m in range(4):
@@ -400,9 +413,13 @@ class MoEStaticKernelV4:
             2 * 4
             + (self.fc1_stages + self.fc2_stages) * 2 * 8
             + self.fc1_stages * 2 * 8          # a_bars (always allocated)
-            + _COMPACT_STATIC_TILE_M * 4
-            + _COMPACT_STATIC_TILE_M * 4
+            + self.scatter_cache_rows * 4
+            + self.scatter_cache_rows * 4
         )
+        # Placing FC1 packed input in the header also consumes existing
+        # padding before the first 1024-byte-aligned tensor. A separate
+        # allocation after Storage would lose this padding reuse.
+        offset = _align_up(offset, 16) + self.sf6_packed_bytes
         buffers = [
             cute.size_in_bytes(self.a_dtype, self.a1_smem_layout_staged),
             cute.size_in_bytes(self.b_dtype, self.b1_smem_layout_staged),
@@ -867,10 +884,16 @@ class MoEStaticKernelV4:
             fc2_bars: cute.struct.MemRange[cutlass.Int64, self.fc2_stages * 2]
             a_bars: cute.struct.MemRange[cutlass.Int64, self.fc1_stages * 2]
             scatter_tok_cache: cute.struct.MemRange[
-                cutlass.Int32, _COMPACT_STATIC_TILE_M
+                cutlass.Int32, self.scatter_cache_rows
             ]
             scatter_weight_cache: cute.struct.MemRange[
-                cutlass.Float32, _COMPACT_STATIC_TILE_M
+                cutlass.Float32, self.scatter_cache_rows
+            ]
+            # Zero elements in the unchanged lanes; native compile checks
+            # those layouts too. Smaller scatter caches and header padding
+            # hold the 3104-byte ring within a 2048-byte total increase.
+            packed_fc1: cute.struct.Align[
+                cute.struct.MemRange[cutlass.Uint8, self.sf6_packed_bytes], 16
             ]
             sA1: cute.struct.Align[
                 cute.struct.MemRange[self.a_dtype, cute.cosize(a1_smem_staged)],
@@ -914,6 +937,10 @@ class MoEStaticKernelV4:
             ]
 
         storage = smem.allocate(Storage)
+        if cutlass.const_expr(self.sf6_separate):
+            sf1_input_base_addr = shared_ptr_to_u32(storage.packed_fc1.data_ptr())
+        else:
+            sf1_input_base_addr = shared_ptr_to_u32(storage.sSFB1.data_ptr())
 
         prod_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
         cons_group = pipeline.CooperativeGroup(
@@ -1526,7 +1553,7 @@ class MoEStaticKernelV4:
                     valid_tile_rows = Int32(0)
 
                 cache_row = Int32(tidx)
-                if cache_row < Int32(_COMPACT_STATIC_TILE_M):
+                if cache_row < Int32(self.scatter_cache_rows):
                     tok = Int32(0)
                     wv = cutlass.Float32(0.0)
                     if cache_row < valid_tile_rows:
@@ -1585,11 +1612,15 @@ class MoEStaticKernelV4:
                                 fc1_pipeline.consumer_wait(fc1_cons_state, peek)
                                 if cutlass.const_expr(self.reform_sf_pack):
                                     for sf_block in cutlass.range_constexpr(self.sf1_packed_blocks):
-                                        self._sf_expand_stage(
-                                            sfb1_base_addr
+                                        sf1_dest = (sfb1_base_addr
                                             + fc1_cons_state.index * Int32(self.sf1_block_bytes)
-                                            + Int32(sf_block * 2048), Int32(tidx), 2048,
-                                        )
+                                            + Int32(sf_block * 2048))
+                                        if cutlass.const_expr(self.sf6_separate):
+                                            self._sf_expand_stage(sf1_dest, Int32(tidx), 2048,
+                                                packed_addr=sf1_input_base_addr
+                                                    + fc1_cons_state.index * Int32(self.sf1_stage_bytes))
+                                        else:
+                                            self._sf_expand_stage(sf1_dest, Int32(tidx), 2048)
                                 elif cutlass.const_expr(self.sf_pack):
                                     self._sf_expand_stage(
                                         sfb1_base_addr
@@ -2142,10 +2173,15 @@ class MoEStaticKernelV4:
                                             # Their shared destinations are
                                             # disjoint even after expansion.
                                             for sf_block in cutlass.range_constexpr(self.sf1_packed_blocks):
+                                                if cutlass.const_expr(self.sf6_separate):
+                                                    sf1_dest = (sf1_input_base_addr
+                                                        + fc1_prod_state.index * Int32(self.sf1_stage_bytes))
+                                                else:
+                                                    sf1_dest = (sfb1_base_addr
+                                                        + fc1_prod_state.index * Int32(self.sf1_block_bytes)
+                                                        + Int32(sf_block * 2048))
                                                 _bulk_g2s(
-                                                    sfb1_base_addr
-                                                    + fc1_prod_state.index * Int32(self.sf1_block_bytes)
-                                                    + Int32(sf_block * 2048),
+                                                    sf1_dest,
                                                     sfb1_packed_base
                                                     + (Int64(weight_expert_idx) * sf_blocks_per_expert
                                                        + (Int64(sfb_blk) * Int64(k_tile_cnt1)
