@@ -475,6 +475,26 @@ class ProbeSelfHealTests(unittest.TestCase):
             self.assertIn(flag, source)
 
 
+class SameEngineTests(unittest.TestCase):
+    """A main that moved without touching engine/ is deployed by bookkeeping, not by a boot."""
+
+    def test_the_same_engine_tree_under_another_commit_is_no_deploy(self):
+        from unittest import mock
+        with mock.patch.object(watch, "engine_tree", side_effect=lambda sha: {"a" * 40: "t1", "b" * 40: "t1", "c" * 40: "t2"}.get(sha, "")):
+            self.assertTrue(watch.same_engine("b" * 40, "a" * 40))
+            self.assertFalse(watch.same_engine("c" * 40, "a" * 40))
+            self.assertFalse(watch.same_engine("a" * 40, "a" * 40), "the same commit is 'nothing to deploy', not this")
+            self.assertFalse(watch.same_engine("d" * 40, "a" * 40), "no tree, no claim")
+
+    def test_the_cycle_records_it_before_waiting_for_quiet(self):
+        source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
+        body = source[source.index("def cycle("):source.index("    log(f\"  waiting for {a.quiet}s of quiet\")")]
+        self.assertIn("if same_engine(head, held.get(\"deployed\") or \"\"):", body)
+        self.assertIn("recorded as deployed without a boot", body)
+        self.assertIn('"same_engine_as": held.get("deployed")', body)
+        self.assertLess(body.index("same_engine("), body.index("since < a.min_gap") if "since < a.min_gap" in body else len(body))
+
+
 class QueueGraceTests(unittest.TestCase):
     """A deploy right after a ticket ended takes the fleet from the next one (srv2, 2026-09-13)."""
 

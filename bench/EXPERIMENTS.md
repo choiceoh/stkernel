@@ -129,7 +129,9 @@ boots in the records -- and says so ("pooled floor"). A D17 probe on the live
 door runs once (one run after a reset is a warm sample; a boot is one sample
 however many runs it carries), deploy-watch keeps the deployed engine at one
 sample (`--probe-samples`), and `st-chain --reuse` boots no arm that already has
-a sample.
+a sample. deploy-watch applies the same identity to deploys: a main that moved
+without touching `engine/` is recorded as deployed, cut and followed by the
+controller, and not booted -- the engine that serves is already that commit's.
 
 `fleet.sh st-probe SESSION [SHA] [EST] [NOTE]` is the verb that boots nothing:
 two onepass runs on the LIVE production door (`POST /v1/prefix/reset` before

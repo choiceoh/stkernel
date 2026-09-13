@@ -92,6 +92,14 @@ def wanted(head: str, held: dict) -> "str | None":
 # not get an answer to -- including one too old to publish `st:quiet`, which `unsupported` names.
 
 
+def same_engine(head: str, deployed: str) -> bool:
+    """Whether `head` serves the engine already deployed: the same engine/ tree under another commit."""
+    if not head or not deployed or head == deployed:
+        return False
+    a, b = engine_tree(head), engine_tree(deployed)
+    return bool(a) and a == b
+
+
 def fleet_taken_by_another(log) -> bool:
     """A live fleet lease of any kind but production is a window somebody was granted.
 
@@ -237,6 +245,22 @@ def cycle(a, log) -> int:
         log(f"nothing to deploy (main {head[:12]}, deployed {str(held.get('deployed'))[:12]})")
         return 0
     log(f"candidate: {why}")
+    if same_engine(head, held.get("deployed") or ""):
+        # main moved but engine/ did not (a bench, launcher or docs merge): the engine that serves IS
+        # this commit's. Recorded as deployed, the release cut, the controller moved -- and no boot:
+        # a restart here costs the fleet three minutes and the door a drain for nothing, and the
+        # deployed engine's samples carry over by tree (the operator's baseline rule, 2026-09-13).
+        log(f"  {head[:12]} has the deployed engine tree ({engine_tree(head)}): recorded as deployed without a boot")
+        if a.dry_run:
+            return 0
+        release = cut(head, log)
+        if release is None:
+            return 1
+        STATE.write_text(json.dumps({**held, "deployed": head, "release": str(release), "deployed_at": held.get("deployed_at", time.time()),
+                                     "same_engine_as": held.get("deployed"), "recorded_at": time.time()}, indent=1))
+        if getattr(a, "follow", True):
+            follow_controller(head, log, Path(getattr(a, "controller", CONTROLLER)))
+        return 0
 
     since = time.time() - held.get("deployed_at", 0)
     if since < a.min_gap:
