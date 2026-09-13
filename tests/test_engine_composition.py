@@ -46,8 +46,8 @@ class LoopContractTests(unittest.TestCase):
 
         class Streams:                                          # a plain residual: h + f(h)
             def open(self, x): return x
-            def enter(self, layer, site, h): calls.append(("enter", layer, site)); return h, h
-            def leave(self, layer, site, out, carry): return carry + out
+            def enter(self, layer, site, h, step, state): calls.append(("enter", layer, site)); return h, h
+            def leave(self, layer, site, out, carry, step, state): return carry + out
             def close(self, h): return h
 
         class Feature:
