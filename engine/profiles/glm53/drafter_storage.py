@@ -38,6 +38,8 @@ def retained_specs(F):
 
 def layout(F, world, max_seqs, *, policy=None):
     from .drafter import dense_shapes
+    if policy is not None and policy.fc_calibration == 'auto':
+        raise ValueError('resolve automatic draft calibration before sizing its resident packs')
     block_rows(F, max_seqs)
     if world <= 0 or any(n % world for n in (F.heads, F.kv_heads, F.inter)):
         raise ValueError('drafter storage requires evenly sharded TP dimensions')

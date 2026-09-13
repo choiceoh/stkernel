@@ -242,6 +242,8 @@ class Drafter:
         from engine.kernels.dense import DenseLinear
         from .draft_policy import DraftPolicy, require_decode_calibration
         policy = policy or DraftPolicy()
+        if policy.fc_calibration == 'auto':
+            raise ValueError('resolve automatic draft calibration across ranks before preparing packs')
         if consume_weights and policy.separate_decode_fp8:
             raise ValueError('separate decode FP8 needs the declared compact arena, not the source BF16 region')
         self.decode_calibration = policy.fc_calibration != 'shared'

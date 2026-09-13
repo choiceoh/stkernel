@@ -39,8 +39,11 @@ def fold(norm_w: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
     up to the weights' own bf16 rounding -- the reciprocal of a rounded quotient is not the quotient."""
     old = norm_w.detach().float().clone()
     new = (old / s.to(old.device)).to(norm_w.dtype)
-    s_eff = torch.where(new.float() != 0, old / new.float().clamp_min(torch.finfo(torch.float32).tiny), torch.ones_like(old))
-    s_eff = torch.where(new.float() != 0, s_eff, torch.ones_like(old))
+    nonzero = new != 0
+    # RMSNorm weights can be negative. Only zero needs a safe denominator;
+    # clamping a negative value to tiny would destroy the reader's scale.
+    denominator = torch.where(nonzero, new.float(), torch.ones_like(old))
+    s_eff = torch.where(nonzero, old / denominator, torch.ones_like(old))
     norm_w.copy_(new)
     return s_eff
 
