@@ -2054,3 +2054,20 @@ ITL 정지 1.2 → 3.4 s, D10 금지); 2K 는 어느 것도 못 바꾼다. **두
 **검증.** 컨테이너 CPU: `test_engine_router_widths` 3, `test_engine_prefill_chunk_profile` 5, `test_engine_graph_profile`·`test_fleet_onepass`·
 `test_fleet_single`·`test_engine_decode_seven`·`test_engine_decode_residency`·`test_engine_native_execution` 모두 OK(GPU 검사는 skip).
 srv4 단일 레인: `c4-chunk-profile` 완주(위 수치), `c4-chunk-profile-raw` 디스패처 거부, `c4-coexist2` 완주(§5).
+
+**같은 날 오후 — SF6 프리필 커널은 Q0 가 돈다, 그리고 둘째 접기 (운영자 "sf6 다이내믹 프리필 커널 진행" → "바이트 투 바이트 동일 접기 또는 융합
+작업만 하면 굳이 gpu 검증 필요없잖아", README §9·§10, 브랜치 `c4-throughput`, 미푸시).** SF6 dynamic 프리필 커널의 세 실측은 한 식
+`시간 = 바이트 / ~188 GB/s`(바이트 = m 타일 × (가중치 3.1 MB + SF6 0.3 MB + FC1 반쪽마다 다시 읽는 A 타일 2 MB))에 맞는다 — SF6 전개가 아니라
+**트래픽**이 주범이고, 레버는 M64 타일(2,304 토큰에서 −20%)과 FC1 A 공유(−20%)다. 그런데 M64 팔 티켓 `c4-moe-lane` 은 첫 호출에서
+`TP SF6 Q0 requires pinned SM121 source` 로 죽었다: 플릿의 프리필 MoE 는 `moe_dynamic_gated_sf6.py` 가 아니라 서브클래스
+**`moe_dynamic_gated_sf6_q0.py`** 가 돌고(18차의 "여기를 보라"), 그것은 `tile_m == 128` 을 요구하며 부모 파일의 sha256 을 핀한다 — M64 를 위해
+부모의 형상 검사를 완화한 순간 핀이 깨졌다. M64 는 Q0 에필로그(M128 공유메모리 배치 전제) 재작성 + 핀 갱신 + 스캐터 원자합 순서가 바뀌는
+수치 검증이 필요한 일이라 **바이트 동일이 아니다**; 운영자 방침대로 훅을 브랜치에서 빼고 두 후보를 보류했다(`--lanes moe` MAC 스윕만 남김).
+바이트 동일한 접기는 디코드 스텝에 남아 있었다: 첫 접기 뒤 4행 재생에 행마다 남은 DSA **인덱서 선택**(후보 주소·gather·마스크·top-k·id 정리·
+`_pool_slots`, 행·층당 ~20 런치)과 **풀·테일 쓰기**(`_scatter_rows` 둘 + stack + `_write_ring`)를 층당 한 벌로 접었다 — `_select_rows`·
+`candidate_rows`·`token_maps`, `_pool_slots` 의 행 그룹 블록표(`table_s1`·`TOKENS`), `_scatter_rows` 세그먼트 축, `write_ring_rows`, kept `zeros`.
+logits 커널과 `torch.topk` 만 행마다 그대로 둔다(같은 텐서·같은 슬라이스 크기 → 같은 알고리즘; torch 는 슬라이스 수로 top-k 알고리즘을 골라
+행 너머 배치는 동점 처리가 달라질 수 있다). 프로그램별 산술은 한 행 런치와 같다(축 하나면 seg 0·스트라이드 0). CPU 검사 `test_engine_decode_rows`
+(결정·행별 주소 대조·`_select_rows` 대 루프 선택) + `test_engine_graph_contracts` 갱신, GPU 검사 `test_engine_state`(rows 쓰기·재생)·
+`test_engine_pool_slots`(2-D 블록표) 는 `engine_kernel_check --lanes decode_rows` 에 두었고 GPU 창은 기다리지 않는다. 기대 4행 스텝
+**−790 런치 ≈ −2 ms(−2.7%)**; 시간 티켓도 운영자 지시("바이트 동등이니까 큐 잡지 말고")로 큐에서 뺐다 — 실측은 다음 onepass 의 스텝 열.
