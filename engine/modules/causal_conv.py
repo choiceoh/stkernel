@@ -18,15 +18,17 @@ import torch
 
 
 def causal_conv1d(x: torch.Tensor, weight: torch.Tensor, bias: "torch.Tensor | None" = None,
-                  initial_state: "torch.Tensor | None" = None, activation: "str | None" = "silu"):
-    """x [T, C], weight [C, K], initial_state [C, K-1] -> (y [T, C], final_state [C, K-1])."""
+                  initial_state: "torch.Tensor | None" = None, activation: "str | None" = "silu", dilation: int = 1):
+    """x [T, C], weight [C, K], initial_state [C, (K-1)*dilation] -> (y [T, C], final_state [C, (K-1)*dilation]).
+    `dilation` spaces the taps: y[t] reads x[t - (K-1-i)*dilation] (Qwen3.8's PLE short conv, kernel 4 at dilation 3)."""
     t, c = x.shape; k = weight.shape[1]
+    span = (k - 1) * dilation
     xf = x.float().T                                                  # [C, T]
-    hist = torch.zeros(c, k - 1, device=x.device) if initial_state is None else initial_state.float()
-    padded = torch.cat([hist, xf], dim=1)                             # [C, K-1+T]
+    hist = torch.zeros(c, span, device=x.device) if initial_state is None else initial_state.float()
+    padded = torch.cat([hist, xf], dim=1)                             # [C, span+T]
     y = torch.zeros(c, t, device=x.device, dtype=torch.float32)
     for i in range(k):
-        y += weight[:, i:i + 1].float() * padded[:, i:i + t]
+        y += weight[:, i:i + 1].float() * padded[:, i * dilation:i * dilation + t]
     if bias is not None:
         y += bias.float()[:, None]
     if activation == "silu":

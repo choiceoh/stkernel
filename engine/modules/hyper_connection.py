@@ -61,3 +61,58 @@ def mhc_post(x: torch.Tensor, residual: torch.Tensor, post_layer_mix: torch.Tens
     """residual_new[j] = sum_i comb[i, j] * residual[i] + post[j] * x."""
     mixed = torch.einsum("...ij,...ih->...jh", comb_res_mix.float(), residual.float())
     return (mixed + post_layer_mix.float() * x.unsqueeze(-2).float()).to(residual.dtype)
+
+
+def gated_residual(hyper: torch.Tensor, norm_weight: torch.Tensor, down: torch.Tensor, up: torch.Tensor,
+                   inject: "torch.Tensor | None", hc: int, eps: float):
+    """Qwen3.8's gated residual hyper-connection (transformers qwen4_exp Qwen4ExpTextGatedResidual, op for op).
+
+    hyper [N, hc*H] (the hc streams laid end to end); the streams are RMS-normalised one by one (unit-offset weight),
+    a low-rank mixer (down [r, hc*H], silu over down/hc, up [hc*H, r], sigmoid) weights every channel of every stream,
+    and the sublayer input is the streams' weighted mean [N, H]. With `inject` [hc, hc*H] it also returns the injection
+    weights 2*sigmoid(inject(normed)/hc) [N, hc] the sublayer's output is added back with; without, the mixed input only
+    (the final mixer, before the head)."""
+    from engine.modules.norm import rmsnorm_unit_offset
+    n, width = hyper.shape
+    if width % hc:
+        raise ValueError(f"{width} hyper-connection features are not {hc} streams")
+    hidden = width // hc
+    normed = rmsnorm_unit_offset(hyper, norm_weight, eps, group=hidden)
+    mix = torch.nn.functional.silu(torch.nn.functional.linear(normed, down) / hc)
+    mix = torch.sigmoid(torch.nn.functional.linear(mix, up)).unflatten(-1, (hc, hidden))
+    mixed = (mix * normed.unflatten(-1, (hc, hidden))).mean(dim=-2)
+    if inject is None:
+        return mixed
+    return mixed, 2 * torch.sigmoid(torch.nn.functional.linear(normed, inject) / hc)
+
+
+class GatedResidualStreams:
+    """The gated residual hyper-connection as a residual form (engine/base/composition.Residual): the embedding copied
+    into hc streams; each sublayer reads the gated mix of the streams and writes its output into every stream with that
+    stream's injection weight, h + (out x inject) (transformers qwen4_exp Qwen4ExpTextDecoderLayer); the final mixer,
+    without injection, is the hidden state the head reads.
+
+    `weights(layer, site, name)` returns "hc_norm", "input_mix_weight_down", "input_mix_weight_up" and
+    "block_inject_weight" for site "mixer" or "mlp"; `final(name)` the same names but the last for the closing mixer."""
+
+    def __init__(self, hc: int, eps: float, weights, final):
+        if type(hc) is not int or hc <= 1:
+            raise ValueError("gated residual streams need hc > 1")
+        self.hc, self.eps, self.weights, self.final = hc, eps, weights, final
+
+    def open(self, x: torch.Tensor) -> torch.Tensor:
+        return x.repeat(1, self.hc)
+
+    def enter(self, layer: int, site: str, h: torch.Tensor):
+        w = lambda name: self.weights(layer, site, name)
+        mixed, inject = gated_residual(h, w("hc_norm"), w("input_mix_weight_down"), w("input_mix_weight_up"),
+                                       w("block_inject_weight"), self.hc, self.eps)
+        return mixed, (h, inject)
+
+    def leave(self, layer: int, site: str, out: torch.Tensor, carry) -> torch.Tensor:
+        h, inject = carry
+        return h + (out.unsqueeze(-2) * inject.unsqueeze(-1)).flatten(-2)
+
+    def close(self, h: torch.Tensor) -> torch.Tensor:
+        return gated_residual(h, self.final("hc_norm"), self.final("input_mix_weight_down"),
+                              self.final("input_mix_weight_up"), None, self.hc, self.eps)

@@ -196,6 +196,7 @@ _MOE_JUDGE = ("probes/engine_kernel_check.py --lanes moe vs modules/moe.expert_g
 _KDA_JUDGE = ("probes/linear_attention_check.py vs modules/linear_attention (max |o-HF| 9.8e-4, |state-HF| 2.3e-3 "
               "at bf16, T=96; chunked == recurrent)")
 _GLUE_TEST = "tests/test_engine_kernel_glue.py"     # each adapter against its oracle; the GPU cases run the armed kernel
+_COMPOSITION_TEST = "tests/test_engine_composition.py"   # the features against transformers' model on the CPU
 
 
 def _recipe_device(d):
@@ -284,8 +285,26 @@ def _recipe_indexer_compress(i):
                   "cells.py names the compression and the indexer wrapper admits it", "days")
 
 
+GATED_RESIDUAL_VARIANT = "gated_residual"   # Qwen3.8's form: its reference is engine/modules/hyper_connection.gated_residual
+
+
+def _recipe_gated_residual(lane):
+    """The work for the gated residual form: no compiled segment computes it, and every piece already has a fast kernel."""
+    return Recipe("wire", "engine/profiles/<profile>/lanes.py (the residual form's enter/leave/close)",
+                  "compose the gated residual from pieces that are already fast: the grouped unit-offset RMS norm as "
+                  "engine/kernels/common rmsnorm over [N*hc, H] rows, the low-rank mixer and the injection as BF16 GEMMs "
+                  "(the checkpoint keeps hyper_connection weights unquantised), silu and sigmoid elementwise, the weighted "
+                  "mean and the injection add in one pass; a fused " + ("decode" if lane == "mhc_decode" else "prefill")
+                  + " kernel over the whole enter (days) is the option when its launches matter",
+                  f"{_COMPOSITION_TEST} (engine/modules/hyper_connection.gated_residual against transformers qwen4_exp on the "
+                  f"CPU), then the lane against that reference on {_GPU}",
+                  "the profile's lanes bind the composed form and it matches the reference", "hours")
+
+
 def _recipe_mhc_variant(shape, lane):
     """The work for a hyper-connection form the MK segment and the TileLang mixes do not compute."""
+    if shape.hc_variant == GATED_RESIDUAL_VARIANT:
+        return _recipe_gated_residual(lane)
     if mhc_v41_refusal(shape) is not None:
         return _recipe_mhc(shape, seam="v41")             # the V4.1 seam lacks the width or hc, not the form
     seam = ("engine/kernels/dense/mhc.MHCV41 wraps the megakernel's V4.1 seam (run_mhc_v41): the previous sublayer's "
@@ -548,6 +567,11 @@ def _serve_attention(a, i):
 
 def _serve_mhc_variant(shape, lane):
     """The fastest kernel for a hyper-connection form the MK segment and the TileLang mixes do not compute."""
+    if shape.hc_variant == GATED_RESIDUAL_VARIANT:
+        return _serve(GENERIC, "engine/kernels/common rmsnorm over [N*hc, H] rows with BF16 GEMMs and elementwise silu/sigmoid "
+                      "(the gated residual composed from fast pieces)", False,
+                      "the reference is engine/modules/hyper_connection.gated_residual, held to transformers on the CPU; the "
+                      "composed lane is unjudged on a GPU")
     why = mhc_v41_refusal(shape)
     if why is not None:
         return _nothing(why)

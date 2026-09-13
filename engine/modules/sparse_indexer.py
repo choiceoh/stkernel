@@ -285,3 +285,33 @@ def mask_horizon(logits, ke):
     """logits[r, c] = -inf for c >= ke[r], in place."""
     n = logits.shape[1]
     return logits.masked_fill_(torch.arange(n, device=logits.device)[None, :] >= ke[:, None], float("-inf"))
+
+
+def qsa_select(q: torch.Tensor, raw_keys: torch.Tensor, position: int, ratio: int, block_topk: int,
+               cos: torch.Tensor, sin: torch.Tensor, k_norm_weight: torch.Tensor, eps: float) -> torch.Tensor:
+    """The positions one query attends under QSA (Qwen3.8's indexer; transformers qwen4_exp Qwen4ExpTextQSAIndexer, op
+    for op): every complete block of `ratio` visible positions pools its raw keys (fp32 mean), is RMS-normalised
+    (unit-offset weight) and rotated at its first position; a block scores sum_heads relu(q . key) / sqrt(D); the top
+    `block_topk` blocks' positions, then the tail of an incomplete block, in that order.
+
+    q [heads, D] (normalised and rotated at `position`), raw_keys [P, D] for positions 0..P-1 >= position, cos/sin
+    [P, rotary] -> int64 positions [n]."""
+    import math
+    from engine.modules.norm import rmsnorm_unit_offset
+    from engine.modules.rotary import apply_rope
+    visible = torch.arange(position + 1, device=raw_keys.device)
+    blocks = visible.numel() // ratio
+    if blocks > 0:
+        tokens = visible[:blocks * ratio].view(blocks, ratio)
+        pooled = raw_keys.index_select(0, tokens.flatten()).view(blocks, ratio, raw_keys.shape[-1])
+        pooled = rmsnorm_unit_offset(pooled.float().mean(dim=1).to(raw_keys.dtype), k_norm_weight, eps)
+        starts = tokens[:, 0]
+        keys = apply_rope(pooled.unsqueeze(1), cos.index_select(0, starts), sin.index_select(0, starts)).squeeze(1)
+        scores = torch.matmul(q.float(), keys.float().transpose(-1, -2)).transpose(-1, -2)
+        scores = torch.relu(scores).sum(dim=-1) / math.sqrt(raw_keys.shape[-1])
+        chosen = scores.topk(min(block_topk, blocks), dim=0).indices
+        selected = tokens.index_select(0, chosen).flatten()
+    else:
+        selected = visible[:0]
+    return torch.cat([selected, visible[blocks * ratio:]])
+

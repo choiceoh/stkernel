@@ -25,10 +25,24 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 설계 원칙은 `CHARTER.md`(D1~D16). 세 조합 계층(D15)과 실행 커널:
 
     base/       모델 이름이 없는 것: 아레나, 로더(사전샤딩된 랭크 파일의 범위 읽기), KV 블록/슬롯, NVMe 티어, 스케줄러,
-                스텝 메타, 러너, 기록/사망 덤프, 설정(사실+만료 노브), 증명·판정, 그래프, comm(플릿 / LocalTP)
-    modules/    특징 모듈: 선형 어텐션(KDA), 희소 인덱서·희소 MLA, NVFP4 선형·MoE·양자화, 하이퍼커넥션, 노름, 회전, 로짓
+                스텝 메타, 러너, 기록/사망 덤프, 설정(사실+만료 노브), 증명·판정, 그래프, comm(플릿 / LocalTP),
+                조합 틀(composition: 층 계획 + 잔차 형식 + 특징, 한 step 루프)
+    modules/    특징 모듈: 선형 어텐션(KDA·GDN), 희소 인덱서(kpool·QSA)·희소 MLA·게이트 희소 GQA, NVFP4 선형·MoE(공유 전문가
+                게이트 포함)·양자화, 하이퍼커넥션(mhc·split-sinkhorn·게이트 잔차), n-gram PLE, 노름, 회전, 로짓
     profiles/   모델별: 사실·가중치 지도(specs)·사전샤딩·레인 표·조합(net)·검증(check). glm53 이 첫 대상.
+                qwen38 은 base/composition 위에 계획과 가중치 이름만 선언한다(composition.py).
     kernels/    ST가 소유하는 Triton·TileLang·CuTe DSL·CUDA 커널과 필요한 보조 코드
+
+**조합 틀(base/composition, 2026-09-13).** 모델은 파일이 아니라 세 가지 선언이다: 층마다 어떤 토큰 믹서·채널
+믹서·잔차 주입을 돌리는지(계획), 서브층이 잔차를 읽고 쓰는 방식(잔차 형식: 평범한 pre-norm, GLM 의 mhc, Qwen3.8 의
+게이트 잔차 스트림, DeepSeek-V4.1 의 split-sinkhorn), 그리고 계획이 부르는 특징(modules, 이름은 모델이 아니라 특징).
+루프·세그먼트 step·상태 계약·캐시 명세 집계만 base 에 있고 모델 이름은 없다(CHARTER D6 정정판). Qwen3.8 은
+`profiles/qwen38/composition.py` 가 config 에서 계획을 유도하고 체크포인트 이름으로 특징에 가중치를 묶는다.
+`tests/test_engine_composition.py` 가 그 조립을 transformers 5.16.1 의 `Qwen4ExpForCausalLM`(plan.py 가 sha 로 핀한
+오라클)과 CPU 에서 대조한다: prefill 전 토큰·증분 디코드·청크 prefill·EOS 가 섞인 두 시퀀스 한 step 모두 FP32 에서
+최대 5e-8, BF16 상대오차 5e-3. 캐시 명세 합은 `qwen38/plan.state_bytes` 와 같다(QSA 키만 원시 키라 압축 비율배).
+지금은 참조 레인이다: 특징이 modules 의 torch 수식을 직접 부르고 상태는 시퀀스별 텐서다. 서빙 레인(커널·글루)을 특징
+뒤에 묶는 것, base/kv 블록·슬롯 상태, 실제 체크포인트(NVFP4 전문가·fp8 PLE 표) 로딩이 다음이다. GLM 의 net.py 는 그대로다.
 
 빠른 확인(GLM-5.3, 실가중치, 한 노드, TP=4 스레드; 랭크 파일은 `profiles/glm53/preshard.py` 가 한 번 자른다):
 
