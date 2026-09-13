@@ -1,6 +1,7 @@
 """Admission, complete route accounting, and isolation of prepared expert work."""
 import ast
 import hashlib
+import json
 from pathlib import Path
 import random
 import unittest
@@ -9,6 +10,17 @@ from engine.modules.mixed_experts import ExpertInvocation, plan_experts
 
 
 IDENTITY = ExpertInvocation(3, 1, 2, 3)
+
+
+def canonical_ast(node):
+    # ast.dump's empty-field formatting and FunctionDef.type_params differ
+    # across Python 3.9/3.12/3.14. Only ignore the absent/empty generic field.
+    if isinstance(node, ast.AST):
+        return [type(node).__name__, [[name, canonical_ast(value)] for name, value in ast.iter_fields(node)
+                if not (name == 'type_params' and not value)]]
+    if isinstance(node, list):
+        return [canonical_ast(value) for value in node]
+    return node
 
 
 class MixedExpertTests(unittest.TestCase):
@@ -83,8 +95,8 @@ class MixedExpertTests(unittest.TestCase):
                 if ast.unparse(n.test) == 'cutlass.const_expr(not self.prepared_routes)':
                     return n.body
                 return self.generic_visit(n)
-        dump = ast.dump(Ordinary().visit(node), include_attributes=False)
-        self.assertEqual(hashlib.sha256(dump.encode()).hexdigest(), 'f520984ed22c1b7bdf3214ce62ff801d1f4c06c03540a6062f8ba04c94896fde')
+        dump = json.dumps(canonical_ast(Ordinary().visit(node)), separators=(',', ':'))
+        self.assertEqual(hashlib.sha256(dump.encode()).hexdigest(), 'e75b95b017d35f1adbd0e76f2d3a8ba397ec02b660743b27d2407c52c1c77e93')
 
     def test_prepared_config_is_bounded_and_keeps_decode_geometry(self):
         path = Path(__file__).resolve().parents[1]/'engine/kernels/b12x/moe_dispatch.py'
@@ -107,6 +119,35 @@ class MixedExpertTests(unittest.TestCase):
         for rows in (0, 33):
             with self.assertRaises(ValueError):
                 normalize(config, rows)
+
+    def test_stale_identity_mutation_and_foreign_stream_never_launch(self):
+        from dataclasses import replace
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import runpy
+        import torch
+        # The owner's guards have no GPU dependency. Load that actual file
+        # without b12x/__init__ eagerly importing FlashInfer/CuTe on CPU CI.
+        path = Path(__file__).resolve().parents[1]/'engine/kernels/b12x/moe_mixed.py'
+        PreparedMixedExperts = runpy.run_path(str(path))['PreparedMixedExperts']
+        owner = PreparedMixedExperts.__new__(PreparedMixedExperts)
+        owner.plan = SimpleNamespace(identity=IDENTITY)
+        for field in ('layer', 'epoch', 'slot_generation', 'source_generation'):
+            with self.assertRaisesRegex(ValueError, 'stale'):
+                owner.run(replace(IDENTITY, **{field: getattr(IDENTITY, field)+1}))
+        owner.decode = torch.zeros(1)
+        owner._owned = (owner.decode,)
+        owner._versions = tuple(t._version for t in owner._owned)
+        owner.stream = 'original'
+        with patch.object(torch.cuda, 'is_current_stream_capturing', return_value=False), \
+                patch.object(torch.cuda, 'current_stream', return_value='foreign'):
+            with self.assertRaisesRegex(RuntimeError, 'original eager stream'):
+                owner.run(IDENTITY)
+        owner.decode.add_(0.)
+        with patch.object(torch.cuda, 'is_current_stream_capturing', return_value=False), \
+                patch.object(torch.cuda, 'current_stream', return_value='original'):
+            with self.assertRaisesRegex(RuntimeError, 'changed'):
+                owner.run(IDENTITY)
 
 
 if __name__ == '__main__':

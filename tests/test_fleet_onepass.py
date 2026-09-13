@@ -118,6 +118,20 @@ class OnepassPolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.validate(command, kind='single')
 
+    def test_mixed_experts_probe_requires_reviewed_bytes_and_literal_arguments(self):
+        command = ['bash', 'probes/run_engine_probe.sh', 'probes/engine_mixed_experts_check.py',
+                   '--ranks', '/models/st-ranks', '--ckpt-meta', '/models/st-ranks',
+                   '--samples', '8', '--output', '/cache/mixed.json']
+        self.assertEqual(self.validate(command, kind='single')['gpus'], 1)
+        self.assertEqual(policy.probe_budget_gib(command[2]), 8)
+        with self.assertRaises(ValueError):
+            self.validate(command+['--commit-only'], kind='single')
+        with self.assertRaises(ValueError):
+            self.validate(command[:-1]+['/cache/$(id)'], kind='single')
+        (self.repo/command[2]).write_text('# unreviewed replacement\n')
+        with self.assertRaises(ValueError):
+            self.validate(command, kind='single')
+
     def test_the_contract_counts_gpus_and_the_single_lane_takes_only_one_gpu_checks(self):
         """A check that needs one GPU goes to the 5050 on ost-97x, not the four Sparks
         (2026-09-12). The lane follows from `gpus`, and naming the lane can never move a

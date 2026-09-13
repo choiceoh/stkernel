@@ -52,6 +52,7 @@ ST_PROBES = ('probes/engine_kernel_check.py', 'probes/engine_decode_graph_check.
              'probes/engine_graph_profile.py', 'probes/engine_kda_deferred_check.py',
              'probes/engine_prefill_fp8_consumer_check.py',
              'probes/engine_ffn_packets_check.py',
+             'probes/engine_mixed_experts_check.py',
              'probes/engine_mhc_contract_check.py',
              'probes/engine_execution_plan_check.py',
              'probes/engine_direct_mhc_check.py',

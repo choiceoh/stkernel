@@ -148,15 +148,23 @@ P1 이후에만 통신 tile 소비를 검토한다. 기존 `TiledProjection`의 
 
 ## M. 디코드 타일에 프리필 route를 함께 계산
 
+2026-09-14 구현 상태: M0 admission과 **M1a hot component**를 추가했다.
+`engine/modules/mixed_experts.py`가 M16/M32의 기존 타일 안에 들어가면서 M128 tail 하나를 제거할 수 있는 route만 고른다. expert별 최소 tail 길이, expert ID 순으로 선택하며 추가 route는 전체 128개로 제한한다. decode route 순서와 모든 cold route의 원래 `(row, slot)`은 보존한다.
+
+`PreparedMixedExperts`는 서로 다른 BF16 입력 두 개, immutable invocation identity, per-expert scales를 소유하고 명시적인 source map을 별도 CuTe producer에 전달한다. producer는 runtime row extent를 사용한다. prepared V5는 기존 frontend 초기화/재라우팅을 건너뛰고 동일한 MMA body를 실행한다. 전체 ordinary kernel AST가 조건문 삽입 전과 같음을 검사한다. source/weight mutation, 다른 stream/capture, stale layer/epoch/slot/source generation은 실행 전에 거부한다. route-owned FP32 partial은 BF16 down 및 weighted rounding을 유지하며, probe의 최종 reducer 비용/오차는 별도로 기록한다.
+
+**M1 전체 및 서빙은 아직 구현하지 않았다.** 현재 component는 decode와 선택된 hot route만 반환한다. cold M128 재묶기·실행, shared 완료 합산, 취소/slot 회수, TP4 합의와 scheduler/graph 연결은 남아 있다. 따라서 `removed_prefill_tiles`는 잔여 route를 M128로 다시 묶을 때의 조건부 work accounting이며 실제 제거/속도 측정이 아니다. CPU planning·metadata allocation 비용도 별도 기록하며 이것을 decode hot path에 넣지 않는다. 실행 knob나 기본 selector는 추가하지 않았다. [M evidence](../measurements/mixed_experts_20260914/README.md)에 범위와 검증을 남긴다.
+
 ### M1. 빈 행과 실제 절감되는 타일을 구분
 
-현재 [static V5](../engine/kernels/b12x/moe_static_kernel_v5.py)는 [V4](../engine/kernels/b12x/moe_static_kernel_v4.py)의 M32 계산을 사용하고, 대상 SF6 dynamic prefill은 M128 형상을 사용한다. 따라서 단순히 두 입력을 concat한 기존 launch 호출로는 원하는 스케줄이 되지 않는다. 동일한 층의 FFN 입력과 route가 이미 준비된 프리필만 후보가 된다.
+현재 [static V5](../engine/kernels/b12x/moe_static_kernel_v5.py)는 [V4](../engine/kernels/b12x/moe_static_kernel_v4.py)의 계산을 사용한다. 현재 `t,r,sf6`는 전체 decode 1..8행에서 M16, 9..32행에서 M32이며, 대상 SF6 dynamic prefill은 M128 형상이다. 따라서 단순히 두 입력을 concat한 기존 launch 호출로는 원하는 스케줄이 되지 않는다. 동일한 층의 FFN 입력과 route가 이미 준비된 프리필만 후보가 된다.
 
-expert e의 decode route 수를 `d_e`, 준비된 prefill route 수를 `p_e`라 하자. 첫 실험에서는 decode가 방문한 expert의 **기존 M32 타일 수를 늘리지 않는다**.
+expert e의 decode route 수를 `d_e`, 준비된 prefill route 수를 `p_e`라 하자. 첫 실험에서는 decode가 방문한 expert의 **실제 M16/M32 타일 수를 늘리지 않는다**.
 
 ```text
-a_e = ceil(d_e / 32)
-spare_e = 32*a_e - d_e                  (d_e > 0, 그 외 0)
+m = 16 (decode rows <= 8), otherwise 32
+a_e = ceil(d_e / m)
+spare_e = m*a_e - d_e                  (d_e > 0, 그 외 0)
 0 <= h_e <= min(p_e, spare_e)           # 함께 계산할 prefill route 수
 removed_prefill_tiles_e = ceil(p_e/128) - ceil((p_e-h_e)/128)
 ```
@@ -166,10 +174,10 @@ removed_prefill_tiles_e = ceil(p_e/128) - ceil((p_e-h_e)/128)
 | d_e | p_e | h_e | decode M32 타일 | 잔여 prefill M128 타일 | 제거한 prefill 타일 |
 | ---: | ---: | ---: | ---: | ---: | ---: |
 | 2 | 100 | 30 | 1 → 1 | 1 → 1 | 0 |
-| 2 | 140 | 30 | 1 → 1 | 2 → 1 | 1 |
+| 2 | 140 | 12 | 1 → 1 | 2 → 1 | 1 |
 | 32 | 140 | 0 | 1 → 1 | 2 → 2 | 0 |
 
-첫 행처럼 빈 행을 채워도 다른 prefill 타일이 사라지지 않으면 가중치 읽기 절감 없이 pack/scatter 비용만 늘 수 있다. 따라서 첫 admission은 `removed_prefill_tiles_e > 0`인 후보를 우선하며, 이후 여러 decode 방문을 묶을 때도 **최종 cold work까지 포함한 전체 비용**으로 결정한다. 입력 pack·추가 metadata·partial output·cold 재묶기 비용이 절감보다 크면 그 후보를 실행하지 않는다.
+첫 행처럼 빈 행을 채워도 다른 prefill 타일이 사라지지 않으면 가중치 읽기 절감 없이 pack/scatter 비용만 늘 수 있다. 따라서 구현된 첫 admission은 `removed_prefill_tiles_e > 0`인 후보만 선택하며, 이후 여러 decode 방문을 묶을 때도 **최종 cold work까지 포함한 전체 비용**으로 결정한다. 입력 pack·추가 metadata·partial output·cold 재묶기 비용이 절감보다 크면 그 후보를 실행하지 않는다.
 
 ### M2. 입력·완료 상태를 명시적으로 소유
 
@@ -198,7 +206,7 @@ PrefillLayerTicket:
 
 ### M3. 반올림과 우선권은 별도 문제
 
-현재 static frontend는 expert별 행을 atomic으로 배치하고, 기본 scatter에는 BF16 atomic 합산이 있다. prefill 행 추가는 atomic 실행 순서와 work 순서를 바꿀 수 있다. MMA의 행별 계산이 같아도 최종 decode 출력이 byte-exact라고 가정하지 않는다. dynamic Q0의 FP32 accumulator를 static 경로에 그대로 적용하는 것도 기존 반올림과 다른 변경이다.
+현재 static frontend는 expert별 행을 atomic으로 배치한다. 고정 GLM TP4 경로는 BF16 down/weighted partial을 FP32 accumulator에 atomic 합산하고 마지막에 BF16으로 변환한다. prefill 행 추가는 atomic 실행 순서와 work 순서를 바꿀 수 있다. MMA의 행별 계산이 같아도 최종 decode 출력이 byte-exact라고 가정하지 않는다. M1a의 route-owned partial과 별도 reducer도 기본 atomic 합산과 구별해 검증한다.
 
 검증은 route별 기여 값, 최종 합산 순서, 실제 생성 품질을 구분한다. 동일한 prepared route를 사용한 분리 실행/혼합 실행에서 먼저 route 기여를 비교한다. 최종 출력은 baseline 반복 간 변동도 기록한다. 정확한 합산 순서 보존이 불가능하면 route/part별 임시 출력과 결정적인 reducer를 독립 후보로 설계하고 **그 메모리·시간·수치 변경 전체를** 비교한다. 오차 tolerance만으로 디코드 품질 통과를 대신하지 않는다.
 

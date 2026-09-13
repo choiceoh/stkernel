@@ -56,11 +56,16 @@ class MixedExpertPlan:
     def hot_routes(self):
         return len(self.sources) - self.decode_routes
 
-    def work(self):
-        prefill_counts = [0] * 288
+    @property
+    def prefill_counts(self):
+        counts = [0] * 288
         for row in self.prefill:
             for expert in row:
-                prefill_counts[expert] += 1
+                counts[expert] += 1
+        return tuple(counts)
+
+    def work(self):
+        prefill_counts = self.prefill_counts
         before = sum((p + 127) // 128 for p in prefill_counts)
         after = sum((p - h + 127) // 128 for p, h in zip(prefill_counts, self.hot_counts))
         decode_before = sum((d + self.tile_m - 1) // self.tile_m for d in self.decode_counts)

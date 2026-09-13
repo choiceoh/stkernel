@@ -29,8 +29,10 @@ class PreparedMixedExperts:
         device = decode.device
         if device.type != 'cuda' or torch.cuda.get_device_capability(device) != (12, 1):
             raise ValueError('mixed experts require a GB10 CUDA source')
-        for x, ids, routes in ((decode, decode_ids, decode_routes), (prefill, prefill_ids, prefill_routes)):
+        for x, ids, routes, maximum in ((decode, decode_ids, decode_routes, 32),
+                                       (prefill, prefill_ids, prefill_routes, 32768)):
             if (x.ndim != 2 or x.shape[1] != 4096 or x.dtype != torch.bfloat16
+                    or not 1 <= x.shape[0] <= maximum
                     or ids.shape != (x.shape[0], 8) or ids.dtype != torch.int32
                     or routes.shape != ids.shape or routes.dtype != torch.float32
                     or any(t.device != device or not t.is_contiguous() for t in (x, ids, routes))):
@@ -77,7 +79,9 @@ class PreparedMixedExperts:
         self.stamps = torch.zeros((mac, md._STATIC_V2_STAMP_SLOTS), dtype=torch.int64, device=device)
         self.counter = torch.zeros(1, dtype=torch.int32, device=device)
         self._owned = (decode, prefill, decode_ids, prefill_ids, decode_routes, prefill_routes,
-                       input_scale, down_scale, weights.w1_alpha, weights.w2_alpha, *weight_tensors)
+                       input_scale, down_scale, weights.w1_alpha, weights.w2_alpha, *weight_tensors,
+                       weights.w13_fp4, weights.down_fp4, self.sources,
+                       ws.row_counts, ws.weight_expert_ids, ws.active_expert_count)
         self._versions = tuple(t._version for t in self._owned)
         self.stream = torch.cuda.current_stream(device)
         self.last_reader = torch.cuda.Event()
