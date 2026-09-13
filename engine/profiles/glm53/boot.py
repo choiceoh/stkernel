@@ -236,7 +236,7 @@ def declared(a, comm_world: int) -> Config:
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
-                        execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0, terminal_mhc=0, **gb10_defaults)
+                        execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=1, terminal_mhc=1, **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
         Knob("terminal_mhc", 0, _dt.date(2026, 9, 30),
