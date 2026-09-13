@@ -376,7 +376,10 @@ class Drafter:
             v = context[:,L,1] if context is not None else self.linear(c, q + "v_proj.weight").view(-1, F.kv_heads, F.head_dim)
             if isinstance(ring, tuple):
                 from engine.kernels.draft_attention import write_draft_kv
-                write_draft_kv(ring[0],ring[1],L,positions,k,v,valid=valid)
+                # observe_committed marks a synchronous decode's rows with a Python count; the direct ring write
+                # takes the accepted count as an int64 device scalar (a constant fill inside a captured graph).
+                count = valid if valid is None or torch.is_tensor(valid) else positions.new_full((), int(valid))
+                write_draft_kv(ring[0],ring[1],L,positions,k,v,valid=count)
             else:
                 if valid is not None:
                     keep = (torch.arange(len(positions), device=positions.device) < valid)[:, None, None]
