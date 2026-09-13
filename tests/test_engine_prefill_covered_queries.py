@@ -10,6 +10,23 @@ from engine.modules.prefill_indexer import covered_pool_ids, project_query_rows
 
 
 class CoveredQueriesTests(unittest.TestCase):
+    def test_scored_shard_skips_discarded_fill_and_initializes_wire_padding(self):
+        from engine.modules.prefill_indexer import QueryShard
+        shard = QueryShard(131, 100, 3, 4, 4, 4)
+        scored = torch.arange(shard.score_rows*4, dtype=torch.int32).reshape(-1, 4)%16
+        packets = []
+
+        def gather(packet, **kwargs):
+            packets.append(packet.clone())
+            return torch.cat((torch.zeros_like(packet),)*3 + (packet,))
+
+        comm = NS(world_size=4, rank=3, all_gather=gather)
+        complete = (100+torch.arange(131, dtype=torch.int32)+1)//4
+        with patch('engine.modules.prefill_indexer.covered_pool_ids', side_effect=AssertionError('discarded initialization')):
+            actual = shard.collect(scored, complete, comm)
+        torch.testing.assert_close(actual[shard.begin:], scored, rtol=0, atol=0)
+        self.assertTrue(bool((packets[0][-1] == -1).all()))
+
     def test_owned_pool_destination_and_short_query_padding(self):
         complete = torch.tensor([0, 1, 3, 4], dtype=torch.int32)
         storage = torch.full((6, 4), -19, dtype=torch.int32)

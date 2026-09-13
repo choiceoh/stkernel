@@ -100,14 +100,18 @@ class QueryShard:
                 raise ValueError('covered queries must not be scored')
             return covered_pool_ids(complete, self.topk_pools)
         owned = self.end - self.begin
-        local = torch.full((self.capacity, self.topk_pools), -1, dtype=torch.int32, device=complete.device)
-        covered_pool_ids(complete[self.begin:self.end], self.topk_pools, out=local[:owned])
+        covered = self.score_begin - self.begin
+        local = torch.empty((self.capacity, self.topk_pools), dtype=torch.int32, device=complete.device)
+        if covered:
+            covered_pool_ids(complete[self.begin:self.score_begin], self.topk_pools, out=local[:covered])
         if self.score_rows:
             if scored is None or scored.shape != (self.score_rows, self.topk_pools):
                 raise ValueError('missing scored query rows')
             local[self.score_begin-self.begin:owned].copy_(scored)
         elif scored is not None:
             raise ValueError('covered queries must not be scored')
+        if owned < self.capacity:
+            local[owned:].fill_(-1)
         if self.wire_bits == 32:
             return comm.all_gather(local, dim=0)[:self.rows]
         packet = local.to(torch.int16).view(torch.int32)
