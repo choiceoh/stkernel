@@ -100,3 +100,19 @@ delta is **null** for every context. The unchanged modeled subtotal is not
 unknown because both files contain shared dispatch/kernel code, although
 the new branch is restricted to M≤8. No improvement percentage is assigned
 from the barrier/store count or from the older profiled MoE duration.
+
+## Complete-suite follow-through
+
+The initial CPU image scan ran 172 files/1654 tests and exposed two issues:
+`ObserveOverlapTests` had lost its CUDA-only class guard when a new CPU
+committed-count class was inserted before it, and the reduced test copy
+omitted measurement fixtures required by kernel-shape/onepass tests.
+The GPU guard is restored to the overlap class with a safe PyTorch check;
+the committed-count regression now runs on CPU instead of being skipped.
+This only repairs test admission, not the drafter's runtime implementation.
+
+After supplying the existing repository fixtures, `repaired-tests.log`
+records 46 passing drafter/shape tests with two GPU-only skips;
+`onepass-check.log` records all 115 tests passing. The final SF6/cache source
+also passed the eight focused tests and the native checks recorded above.
+The complete final-head CI result is attached to PR #913.
