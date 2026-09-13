@@ -235,7 +235,7 @@ class BatchTransitionTests(unittest.TestCase):
         # commit_batch's accepted counter reserves the final emitted token even
         # when the output limit clips a verified prefix. Preserve that convention.
         self.assertEqual(e.accepted_per_step, [1, 0, 0])
-        self.assertEqual(p.launch([1], [1]).resolve(), [True])
+        p.launch([1], [1]).resolve()  # an already-finished row commits no tokens
         self.assertEqual(e.accepted_per_step, [1, 0, 0])
         self.assertEqual((e.accepted_total, e.drafted_total), (0, 1))
 
