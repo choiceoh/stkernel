@@ -31,8 +31,8 @@ class PairOwnerTests(unittest.TestCase):
         with patch.dict('sys.modules', {'engine.kernels.decode_projection': module}):
             net.prepare_decode_projections(arena)
             owner = net._decode_pair(layer, SimpleNamespace(captured=True), 28)
-            torch.testing.assert_close(owner.weight[:128], weights[0], rtol=0, atol=0)
-            torch.testing.assert_close(owner.weight[128:], weights[1], rtol=0, atol=0)
+            self.assertTrue(torch.equal(owner.weight[:128], weights[0]))
+            self.assertTrue(torch.equal(owner.weight[128:], weights[1]))
             self.assertIsNone(net._decode_pair(layer, SimpleNamespace(captured=False), 28))
             self.assertIsNone(net._decode_pair(layer, SimpleNamespace(captured=True), 8))
             self.assertNotEqual(owner.weight.data_ptr(), weights[0].data_ptr())
