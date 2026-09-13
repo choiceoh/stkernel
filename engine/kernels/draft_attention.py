@@ -99,8 +99,20 @@ def _combine(ACC, MAX, DEN, O, B: tl.constexpr, H: tl.constexpr, HK: tl.constexp
     tl.store(O + ((row * B + pos) * H + head) * D + d, total / tl.sum(tl.load(DEN + at, live, other=0.0) * weight, 0))
 
 
+def _draft_head() -> int:
+    """The drafter's head width from the bound kernel shape (engine/base/kernel_shape); the kernels
+    take D as a constexpr from the tensors, this is the width the wrappers admit."""
+    from engine.base.kernel_shape import drafter
+    return drafter().head_dim
+
+
+def _sms() -> int:
+    from engine.base.kernel_shape import bound
+    return bound().device.sms
+
+
 def draft_attention(q, k, v, ring, position, *, slot=None, layer=0):
-    """One block: BF16 [B,H,128], [B,HK,128], ring [2,W,HK,128] or the arena field with a slot -> [B,H,128]."""
+    """One block: BF16 [B,H,D], [B,HK,D], ring [2,W,HK,D] or the arena field with a slot -> [B,H,D]."""
     if isinstance(position, int):
         if position < 0:
             raise ValueError("negative DFlash position")
@@ -128,8 +140,9 @@ def attend_rows(q, k, v, ring, positions, *, slot=None, layer=0):
             raise ValueError("a bare ring belongs to one row; the arena field carries the rest")
         geometry = ring.shape
         stride, offset = 0, 0
+    head = _draft_head()
     if (q.ndim != 4 or k.ndim != 4 or k.shape != v.shape or len(geometry) != 4
-            or q.shape[:2] != k.shape[:2] or q.shape[3] != 128 or k.shape[3] != 128
+            or q.shape[:2] != k.shape[:2] or q.shape[3] != head or k.shape[3] != head
             or geometry[0] != 2 or geometry[2] < k.shape[2] or geometry[3] != k.shape[3]
             or q.shape[2] % k.shape[2] or not 1 <= q.shape[1] <= 32
             or not all(t.is_cuda and t.device == q.device and t.dtype == torch.bfloat16
@@ -144,7 +157,7 @@ def attend_rows(q, k, v, ring, positions, *, slot=None, layer=0):
     out = torch.empty_like(q)
     n, b, h, d = q.shape
     hk, cells = k.shape[2], geometry[1]
-    BN, SMS = 32, 48
+    BN, SMS = 32, _sms()
     # Cut the window so that (rows x KV heads x slices) fills the machine: below that the slices are wider,
     # above it they are one block each and the combine grows for nothing.
     parts = max(1, min(triton.cdiv(cells + b, BN), SMS // (n * hk)))

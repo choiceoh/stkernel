@@ -32,7 +32,11 @@ class BootPathTests(unittest.TestCase):
                             f"{path.parts[-5]} serves a width this repo no longer defaults to")
 
     def test_local_http_and_fleet_forward_both_model_directories(self):
+        from engine.base import kernel_shape
         from engine.profiles.glm53 import boot
+        from tests.test_engine_glm53 import tiny_facts
+        kernel_shape.reset()                         # every mode binds the checkpoint's shape once per process
+        self.addCleanup(kernel_shape.reset)
         args = SimpleNamespace(ckpt_meta="/alternate/config", drafter_dir="/alternate/draft",
                                ranks="/alternate/ranks", layers="0-0", seed=0, prompt=1,
                                seqs=1, kv_gib=.25, park=False, drafter=True, max_new=1,
@@ -45,6 +49,7 @@ class BootPathTests(unittest.TestCase):
             with self.subTest(mode=mode), \
                  patch.object(boot, "fleet_lease_of", return_value={"owner": "test", "path": "/unused"}), \
                  patch.object(boot.facts, "check_box", return_value="test"), \
+                 patch.object(boot.facts, "load", return_value=tiny_facts()) as facts_load, \
                  patch.object(boot, "declared") as declared, \
                  patch.object(boot, "LocalTP", return_value=tp), \
                  patch.object(boot.Comm, "init", return_value=comm), \
@@ -59,10 +64,15 @@ class BootPathTests(unittest.TestCase):
                     (boot.fleet if mode == "fleet" else boot.local)(args)
                 self.assertEqual(build.call_args.kwargs["ckpt_meta"], args.ckpt_meta)
                 self.assertEqual(build.call_args.kwargs["drafter_dir"], args.drafter_dir)
+                facts_load.assert_called_with(args.ckpt_meta)        # the kernel shape comes from the selected config
+                self.assertTrue(kernel_shape.is_bound())
         comm.close.assert_called_once_with()
 
     def test_build_reads_drafter_facts_from_the_selected_directory(self):
+        from engine.base import kernel_shape
         from engine.profiles.glm53 import boot
+        kernel_shape.reset()                         # build binds the drafter's geometry from what it loaded
+        self.addCleanup(kernel_shape.reset)
         draft = SimpleNamespace(layers=1, window=8, block=8, kv_heads=1, head_dim=8)
         cache = SimpleNamespace(block_bytes=4096, slot_bytes=4096)
         with patch.object(boot.facts, "load") as model_load, \
@@ -77,6 +87,7 @@ class BootPathTests(unittest.TestCase):
                            ckpt_meta="/alternate/config", drafter_dir="/alternate/draft")
             model_load.assert_called_once_with("/alternate/config")
             draft_load.assert_called_once_with(Path("/alternate/draft"))
+            self.assertEqual(kernel_shape.drafter().head_dim, 8)     # the draft kernels admit what was loaded
 
 
 class LauncherTests(unittest.TestCase):

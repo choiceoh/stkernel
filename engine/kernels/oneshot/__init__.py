@@ -11,7 +11,21 @@ from pathlib import Path
 import torch
 import torch.distributed as dist
 
-MAX_ELEMENTS = 64 * 4096
+MAX_ELEMENTS = 64 * 4096            # the transport's element cap, compiled in as MAXEL (64 rows of the measured hidden)
+CONSUMER_MAX_ELEMENTS = 8 * 4096    # the PDL consumer kernel's bound: 1..32768 elements run on its 12-CTA form
+COMPILED_WORLD = 4                  # dsv4_oneshot_ar.cu NPEER 3: the rank table is four wide
+
+
+def _cell():
+    """The bound kernel shape's collective geometry (world, hidden); the transport takes its
+    row width from it instead of a literal, and refuses a world the kernel is not compiled for."""
+    from engine.base.kernel_shape import bound
+    comm = bound().comm
+    if comm.world != COMPILED_WORLD:
+        raise ValueError(f"one-shot is compiled for {COMPILED_WORLD} ranks; the bound kernel shape asks for {comm.world}")
+    if comm.hidden > MAX_ELEMENTS or comm.hidden % 8:
+        raise ValueError(f"one-shot rows must be a multiple of 8 elements within {MAX_ELEMENTS}, got hidden {comm.hidden}")
+    return comm
 
 
 class RankPackets:
@@ -55,8 +69,10 @@ def build():
 
 class OneShot:
     def __init__(self, comm, addresses):
-        if comm.world_size != 4 or len(addresses) != 4:
-            raise ValueError('one-shot requires the explicit four-rank address table')
+        cell = _cell()
+        if comm.world_size != cell.world or len(addresses) != cell.world:
+            raise ValueError(f'one-shot requires the explicit {cell.world}-rank address table')
+        self.world, self.hidden = cell.world, cell.hidden
         self.ext = None
         self.control = dist.new_group(backend='gloo')
         self.closed = False
@@ -70,12 +86,12 @@ class OneShot:
             except Exception as exc:
                 error = repr(exc)
             self.agree(error, 'local preparation')
-            signatures = [None]*4
-            signature = (self.ext.__name__, tuple(addresses), MAX_ELEMENTS, comm.world_size)
+            signatures = [None]*self.world
+            signature = (self.ext.__name__, tuple(addresses), MAX_ELEMENTS, comm.world_size, self.hidden)
             dist.all_gather_object(signatures, signature, group=self.control)
             if any(other != signature for other in signatures):
                 raise RuntimeError(f'one-shot binary or rank table differs: {signatures}')
-            infos = [None]*4
+            infos = [None]*self.world
             dist.all_gather_object(infos,self.ext.local_infos(),group=self.control)
             error = None
             try:
@@ -84,7 +100,7 @@ class OneShot:
                 error = repr(exc)
             self.agree(error,'connection')
             for rows in (1,6,24,32,48,64):
-                x = torch.full((rows,4096),comm.rank+1,device='cuda',dtype=torch.bfloat16)
+                x = torch.full((rows,self.hidden),comm.rank+1,device='cuda',dtype=torch.bfloat16)
                 ref = x.clone()
                 dist.all_reduce(ref,group=comm.group)
                 reducers = [self.ext.oneshot_ar]
@@ -143,7 +159,7 @@ class OneShot:
                 x.copy_(row.unsqueeze(0).expand_as(x))
 
     def agree(self, error, stage):
-        errors = [None]*4
+        errors = [None]*self.world
         dist.all_gather_object(errors,error,group=self.control)
         if any(e is not None for e in errors):
             raise RuntimeError(f'one-shot {stage} failed: {errors}')
@@ -159,7 +175,7 @@ class OneShot:
             raise ValueError('unavailable one-shot transport or unsupported tensor')
         if not self.ext.healthy():
             raise RuntimeError('one-shot proxy stopped progressing')
-        return (self.ext.oneshot_ar_consumer if t.numel() <= 8*4096 else self.ext.oneshot_ar)(t)
+        return (self.ext.oneshot_ar_consumer if t.numel() <= CONSUMER_MAX_ELEMENTS else self.ext.oneshot_ar)(t)
 
     def assert_consumed(self):
         if self.pending is not None or self.packet_failed:
@@ -167,8 +183,8 @@ class OneShot:
 
     def exchange(self, t):
         self.assert_consumed()
-        if self.closed or not self.eligible(t) or t.ndim != 2 or t.shape[1] != 4096:
-            raise ValueError('rank packets require live TP4 BF16 [1..64,4096]')
+        if self.closed or not self.eligible(t) or t.ndim != 2 or t.shape[1] != self.hidden:
+            raise ValueError(f'rank packets require live TP{self.world} BF16 [1..{MAX_ELEMENTS // self.hidden},{self.hidden}]')
         if not self.ext.healthy():
             raise RuntimeError('one-shot proxy stopped progressing')
         self.pending = RankPackets(self, t, self.ext.oneshot_packets(t))

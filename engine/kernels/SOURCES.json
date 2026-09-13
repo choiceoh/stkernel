@@ -144,7 +144,7 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "dd8d3d77d0afe8a1874f15f57049f8ead125b77886d8ba8933d2a643c6ef022d",
+      "local_sha256": "56aa88f05d99cd6b5b0c1f68b5878fd4a48dc15774957f04d0461860b98c1d2d",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
@@ -157,7 +157,8 @@
         "2026-09-13 prototype: select a separately keyed long TP SF6 word-decoder subclass only for unshared-scale 8193..32768-row prefill; preserve the pinned parent and all Q0/decode sources.",
         "2026-09-13 prototype batch: retain BF16 long-prefill scatter while combining Q0 route metadata reuse and word scale decoding in a separately keyed subclass; preserve short Q0/decode.",
         "2026-09-13 private decode: independently keyed route-owned FP32 partials and direct register scatter; serving defaults unchanged.",
-        "2026-09-13: retire measured resident-wave/batch/stage probe hooks and restore separate epilogue storage; retain only the new private output candidates."
+        "2026-09-13: retire measured resident-wave/batch/stage probe hooks and restore separate epilogue storage; retain only the new private output candidates.",
+        "2026-09-13 kernel shape descriptor: the exact-shape gates (_is_admitted_tp_geometry, ex _is_glm53_b12x_tp_geometry; _tp_sf6_q0_eligible; _glm_tp_scatter_shape/_fp32), the Q0 launch line and the dynamic tile pin read engine/base/kernel_shape.bound().moe instead of GLM literals; the measured GB10 TP4 cell is the unbound default, so the served GLM path is unchanged."
       ]
     },
     "b12x/moe_dynamic_kernel.py": {
@@ -335,11 +336,12 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
       "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
       "origin": "repository",
-      "local_sha256": "a70bd84630d2b2eb11b0b9107c02df2fd17cbc0fdf80f0393db512119a5bbbb9",
+      "local_sha256": "38547507a79d254c7770d8817932660ac8dd100a21efffd4397250d3cb58227a",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; tile32 large-M MLA prefill is qualified and selected by the production boot default; configure_prefill (STK_mla_prefill), mla_decode(splits=, probe=), PAIR_STATS, ENABLE_MLA_CLUSTER baked on",
         "2026-09-13 native build cache: stage content-addressed source inputs so identical checkout paths and timestamps do not trigger NVCC; keep Torch/Ninja build validation.",
-        "2026-09-13 wide prefill: extend the existing row-local path to 32768 rows for 32256-token chunks; preserve kernel arithmetic and small decode."
+        "2026-09-13 wide prefill: extend the existing row-local path to 32768 rows for 32256-token chunks; preserve kernel arithmetic and small decode.",
+        "2026-09-13 kernel shape descriptor: maybe_arm checks the bound kernel shape against the compiled 16x512 MLA cell and the device it declares (engine/base/kernel_shape) instead of a (12, 1, 48) literal; refuses another attention cell by name before arming."
       ]
     }
   }

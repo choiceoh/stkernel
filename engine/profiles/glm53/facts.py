@@ -23,7 +23,7 @@ from pathlib import Path
 CKPT = Path("/home/choiceoh/models/st-glm53-nvidia-tp4-9391")
 RANKS = CKPT                                                         # preshard output and metadata, one file per rank
 TP = 4                                                                # four Sparks: the only world this profile has
-BOX = {"name": "GB10 (DGX Spark)", "capability": (12, 1), "devices": 1, "unified": True}
+BOX = {"name": "GB10 (DGX Spark)", "capability": (12, 1), "sms": 48, "devices": 1, "unified": True}
 CHUNK_ALIGN = 2304                                                    # the prefill chunk's alignment: launcher --block-size (shapes.py's 6,912 law)
 BLOCK = 768                                                           # the paged KV / prefix-reuse block: a third of the chunk alignment (45차 §23:
                                                                       # production reuses whole 2,304 blocks; three per chunk alignment lets a shared
@@ -120,6 +120,24 @@ class Facts:
     @property
     def idx_scale(self) -> float:
         return self.idx_dim ** -0.5 * self.idx_heads ** -0.5   # softmax_scale * n_head**-0.5, folded once
+
+    def kernel_shape(self) -> "KernelShape":
+        """This checkpoint's kernel shape (engine/base/kernel_shape), per rank at TP=4: what every
+        kernel lane is admitted for. The production checkpoint's equals the kernels' MEASURED cell
+        (tests/test_engine_kernel_shape pins it, so the served code is what it was); the drafter's
+        geometry is bound separately when the drafter loads (boot.build)."""
+        from engine.base.kernel_shape import Attention, Comm, Device, Indexer, KernelShape, LinearAttention, MoE
+        return KernelShape(
+            comm=Comm(world=TP, hidden=self.hidden), hidden=self.hidden, hc=self.hc, tp=TP,
+            attention=Attention(kind="mla", heads=self.heads_local, head_dim=self.kv_lora, kv_heads=1),
+            linear=LinearAttention(heads=self.kda_heads_local, v_heads=self.kda_heads_local, k_dim=self.kda_dim,
+                                   v_dim=self.kda_dim, conv=self.conv, decay="channel"),
+            indexer=Indexer(heads=self.idx_heads, head_dim=self.idx_dim, pool=self.kpool, topk=self.topk),
+            moe=MoE(experts=self.experts, experts_local=self.experts, hidden=self.hidden, inter=self.moe_inter,
+                    inter_local=self.moe_inter_local, topk=self.topk_experts, quant="nvfp4",
+                    activation="swigluoai_uninterleave", swiglu_limit=self.swiglu_limit,
+                    dense_inter_local=self.dense_inter_local),
+            spec_k=self.spec_k, device=Device(capability=BOX["capability"], sms=BOX["sms"]))
 
 
 def load(ckpt: "str | Path" = CKPT) -> Facts:

@@ -1,4 +1,4 @@
-"""Two-slot rank-major prefill input projection; eager and TP4 only."""
+"""Two-slot rank-major prefill input projection; eager only, the owner's world and row width."""
 from collections import deque
 
 
@@ -30,6 +30,7 @@ class TiledProjection:
         from engine.kernels.prefill_collectives import BLOCK, FP8_MIN_ROWS
         from .kernels import _pack_rs_payload, _unpack_gather
         owner = self.owner
+        world, hidden = owner.world, owner.hidden
         owner.check(x)
         pieces = min(4, x.shape[0] // self.TILE_ROWS)
         if pieces <= 1:
@@ -39,19 +40,19 @@ class TiledProjection:
         # into the <=32-row W4 decode GEMM instead of the FP8 prefill GEMM.
         tile_rows = ((x.shape[0] + pieces * 32 - 1) // (pieces * 32)) * 32
         # This decision belongs to the original full operation, not each tile.
-        fp8 = x.shape[0] * 4 >= FP8_MIN_ROWS
+        fp8 = x.shape[0] * world >= FP8_MIN_ROWS
         parent = torch.cuda.current_stream(x.device)
         self.stream.wait_stream(parent)
         x.record_stream(self.stream)
-        limit = tile_rows * 4096
-        packet_limit = ((limit + 4 * (limit // BLOCK) + 127) // 128) * 128
+        limit = tile_rows * hidden
+        packet_limit = ((limit + 4 * (limit // BLOCK) + 127) // 128) * 128     # 4: the FP32 scale of every block
         slots = []
         with torch.cuda.stream(self.stream):
             for _ in range(2):
                 slots.append(dict(
                     payload=torch.empty(packet_limit, device=x.device, dtype=torch.uint8) if fp8 else None,
-                    received=torch.empty(packet_limit * 4, device=x.device, dtype=torch.uint8) if fp8 else None,
-                    value=torch.empty((tile_rows * 4, 4096), device=x.device, dtype=x.dtype),
+                    received=torch.empty(packet_limit * world, device=x.device, dtype=torch.uint8) if fp8 else None,
+                    value=torch.empty((tile_rows * world, hidden), device=x.device, dtype=x.dtype),
                     ready=torch.cuda.Event(), released=torch.cuda.Event(), used=False))
         output = None
 
@@ -61,18 +62,18 @@ class TiledProjection:
             with torch.cuda.stream(self.stream):
                 if slot["used"]:
                     self.stream.wait_event(slot["released"])
-                value = slot["value"][:rows * 4]
+                value = slot["value"][:rows * world]
                 source = x[start:end]
                 if fp8:
-                    local = rows * 4096
+                    local = rows * hidden
                     stride = ((local + 4 * (local // BLOCK) + 127) // 128) * 128
-                    payload, received = slot["payload"][:stride], slot["received"][:stride * 4]
+                    payload, received = slot["payload"][:stride], slot["received"][:stride * world]
                     _pack_rs_payload[(local // BLOCK,)](
                         source, payload.view(torch.float8_e4m3fn), payload.view(torch.float32),
                         local, local, stride, BLOCK=BLOCK)
                     work = dist.all_gather_into_tensor(received, payload, group=owner.comm.group, async_op=True)
                     work.wait()  # orders the current CUDA stream, not a host polling loop
-                    _unpack_gather[(local * 4 // BLOCK,)](
+                    _unpack_gather[(local * world // BLOCK,)](
                         received.view(torch.float8_e4m3fn), received.view(torch.float32), value,
                         local, stride, BLOCK=BLOCK)
                 else:
@@ -87,14 +88,14 @@ class TiledProjection:
             parent.wait_event(slot["ready"])
             value.record_stream(parent)
             projected = project(value)
-            if projected.ndim != 2 or projected.shape[0] != (end-start)*4:
+            if projected.ndim != 2 or projected.shape[0] != (end-start)*world:
                 raise ValueError("tile projection must preserve rows")
             if output is None:
-                output = torch.empty((4, x.shape[0], projected.shape[1]),
+                output = torch.empty((world, x.shape[0], projected.shape[1]),
                                      device=projected.device, dtype=projected.dtype)
             # Gather orders ranks within each tile; restore the original
             # rank-major token order before any recurrent kernel sees it.
-            output[:, start:end].copy_(projected.view(4, end-start, -1))
+            output[:, start:end].copy_(projected.view(world, end-start, -1))
             slot["released"].record(parent)
             slot["used"] = True
 
