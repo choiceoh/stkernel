@@ -227,6 +227,24 @@ class OneShot:
             self.pending = None
             raise
 
+    def exchange_moe(self, routed, shared):
+        """Explicit decode candidate: finalize and publish in the existing packet grid.
+
+        The local descriptor points to TX, so no intermediate BF16 output must
+        survive. The next same-stream MHC must consume it before another exchange.
+        """
+        self.assert_consumed()
+        if (self.closed or not self.eligible(shared) or shared.ndim != 2
+                or shared.shape[1] != self.hidden or shared.shape[0] > 32
+                or routed.dtype != torch.float32 or routed.device != shared.device
+                or routed.shape != shared.shape or not routed.is_contiguous()
+                or routed.data_ptr() % 16):
+            raise ValueError('MoE packets need matching FP32/BF16 [1..32,4096] on live TP4')
+        if not self.ext.healthy():
+            raise RuntimeError('one-shot proxy stopped progressing')
+        self.pending = RankPackets(self, shared, self.ext.moe_packets(routed, shared))
+        return self.pending
+
     @staticmethod
     def eligible_max(t):
         return (t.is_cuda and t.dtype == torch.int64 and t.is_contiguous()

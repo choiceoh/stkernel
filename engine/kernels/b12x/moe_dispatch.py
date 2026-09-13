@@ -3107,6 +3107,7 @@ def launch_sm120_static_moe(
     activation_precision: str = "fp4",
     quant_mode: str = "nvfp4",
     _ep_short_output: torch.Tensor | None = None,
+    _output_finalize=None,
 ) -> torch.Tensor:
     """Launch the SM120 static, micro, or direct micro MoE kernel.
 
@@ -3147,6 +3148,16 @@ def launch_sm120_static_moe(
             swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
             swiglu_limit=swiglu_limit, forced_backend=forced_backend,
         )
+
+    if _output_finalize is not None:
+        from engine.kernels.moe_output import validate_finalizer
+        validate_finalizer(_output_finalize, rows=num_tokens, experts=num_experts,
+                           local_experts=workspace.state_E, hidden=k, intermediate=n,
+                           topk=top_k, quant_mode=quant_mode, activation=activation,
+                           limit=swiglu_limit, alpha=swiglu_alpha, beta=swiglu_beta,
+                           tiled=bool(getattr(weights, 'tiled', False)))
+        if _ep_short_output is not None or forced_backend not in (None, 'static'):
+            raise ValueError('MoE finalizer cannot use an EP output or another forced backend')
 
     # Flatten routing tensors
     flat_ids = topk_ids.view(-1).to(torch.int32)
@@ -3566,7 +3577,14 @@ def launch_sm120_static_moe(
     if (_ep_short_output is not None
             and kernel_scatter_output is not workspace.ep_micro_scatter_fp32):
         raise RuntimeError("direct T6 output lost its FP32 kernel target")
+    if _output_finalize is not None and (kernel_scatter_output.dtype != torch.float32
+            or kernel_scatter_output is scatter_output):
+        raise RuntimeError('MoE finalizer lost its separate FP32 scatter owner')
     compiled(*runtime_args)
+    if _output_finalize is not None:
+        # The callback consumes the borrowed accumulator on this stream before
+        # another MoE launch may reuse it. No BF16 output tensor is written.
+        return _output_finalize(kernel_scatter_output)
     if _ep_short_output is not None:
         # Keep the physical M8 kernel, zeroing, source address and stream.
         # BF16(FP32[:6]) is exactly the previous BF16(FP32)[:6]; the omitted
@@ -5680,6 +5698,7 @@ def launch_sm120_moe(
     _weight_views=None,
     _prepared_weights=None,
     _ep_short_output: torch.Tensor | None = None,
+    _output_finalize=None,
 ) -> torch.Tensor:
     """Unified SM120 MoE dispatch — selects static or dynamic by token count.
 
@@ -5710,6 +5729,14 @@ def launch_sm120_moe(
     n = intermediate_size
     if quant_mode == "mxfp4" and k % 128 != 0:
         raise ValueError(f"MXFP4 b12x hidden_size ({k}) must be a multiple of 128.")
+
+    if _output_finalize is not None:
+        from engine.kernels.moe_output import validate_finalizer
+        validate_finalizer(_output_finalize, rows=num_tokens, experts=num_experts,
+                           local_experts=num_local_experts, hidden=k, intermediate=n,
+                           topk=top_k, quant_mode=quant_mode, activation=activation,
+                           limit=swiglu_limit, alpha=swiglu_alpha, beta=swiglu_beta,
+                           tiled=bool(getattr(_weight_views, 'tiled', False)))
 
     # W4A4 kernels need a tile-aligned gate/up split.
     if quant_mode != "w4a16" and n % _LEVEL_TILE_N != 0 and _weight_views is None:
@@ -5907,6 +5934,8 @@ def launch_sm120_moe(
             "tiled expert weights (STK_moe_static cell t) reached the "
             f"{backend} backend, which reads the row-major layout"
         )
+    if _output_finalize is not None and backend != 'static':
+        raise ValueError('MoE finalizer requires the static FP32 scatter backend')
     if backend == "dynamic":
         return launch_sm120_dynamic_moe(
             workspace=workspace,
@@ -5955,4 +5984,5 @@ def launch_sm120_moe(
             activation_precision=activation_precision,
             quant_mode=quant_mode,
             _ep_short_output=_ep_short_output,
+            _output_finalize=_output_finalize,
         )

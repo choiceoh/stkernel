@@ -67,18 +67,33 @@ class SharedOverlap:
         self.stream = torch.cuda.Stream(device=device)
         self.executed = False
 
-    def __call__(self, shared, x, routed):
+    def __call__(self, shared, x, routed, *, finish=None):
         parent = torch.cuda.current_stream(x.device)
         if parent == self.stream:
             raise ValueError("shared overlap requires a distinct parent stream")
         self.stream.wait_stream(parent)
+        joined = False
         try:
             with torch.cuda.stream(self.stream):
                 partial = shared(x)
                 x.record_stream(self.stream)
-            output = routed()
+            if finish is None:
+                output = routed()
+            else:
+                def consume(acc):
+                    nonlocal joined
+                    if joined:
+                        raise RuntimeError('MoE finalizer must consume exactly once')
+                    parent.wait_stream(self.stream)
+                    joined = True
+                    partial.record_stream(parent)
+                    return finish(acc, partial)
+                output = routed(consume)
+                if not joined:
+                    raise RuntimeError('MoE finalizer did not consume the accumulator')
         finally:
-            parent.wait_stream(self.stream)
+            if not joined:
+                parent.wait_stream(self.stream)
         partial.record_stream(parent)
         self.executed = True
-        return output + partial
+        return output + partial if finish is None else output

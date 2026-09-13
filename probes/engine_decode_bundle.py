@@ -22,6 +22,7 @@ def check(ranks, *, bundle="scatter_bundle"):
     root = Path(__file__).resolve().parents[1]
     bundles = {
         'k7_commit_bundle': [('kda_commit', 300), ('decode_k7', 300)],
+        'k7_output_bundle': [('kda_commit', 300), ('decode_k7', 300), ('moe_output', 300)],
         'batch_fusions': [('paired_projection', 180), ('indexer_boundary', 180), ('wide_input', 480)],
         'batch_integration': [('paired_projection', 180), ('indexer_boundary', 180), ('wide_input', 480),
                               ('direct_producer', 240)],

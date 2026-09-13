@@ -7,6 +7,19 @@ from probes.engine_decode_k7 import candidate_projections, verification_rows, w4
 
 
 class K7ProbeTests(unittest.TestCase):
+    def test_output_extension_keeps_three_independently_bounded_components(self):
+        from probes import engine_decode_bundle as bundle
+        commands = []
+        def execute(command, **kwargs):
+            commands.append((command, kwargs))
+            return SimpleNamespace(returncode=1 if len(commands) == 2 else 0)
+        with patch.object(bundle, 'require_current_probe'), patch.object(bundle.subprocess, 'run', side_effect=execute), \
+                patch('builtins.print'), self.assertRaises(RuntimeError):
+            bundle.check('/immutable/ranks', bundle='k7_output_bundle')
+        self.assertEqual(len(commands), 3)
+        self.assertEqual(commands[-1][0][-4:], ['--lanes', 'moe_output', '--ranks', '/immutable/ranks'])
+        self.assertEqual([kw['timeout'] for _, kw in commands], [300, 300, 300])
+
     def test_combined_hold_retains_a_failed_commit_result_and_checks_dense(self):
         from probes import engine_decode_bundle as bundle
         commands = []

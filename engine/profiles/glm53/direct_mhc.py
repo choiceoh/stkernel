@@ -17,8 +17,10 @@ def consume(net, layer, carry, side, packet):
     carry.res, carry.post, carry.comb, carry.x = packet.consume(mhc)
 
 
-def exchange_local(net, layer, carry, side):
+def exchange_local(net, layer, carry, side, *, moe_output=False):
     transport = net.comm.transport
+    if moe_output and side == "ffn" and net.F.is_moe(layer):
+        return net._moe(layer, carry.x, finalize=transport.exchange_moe)
     if not hasattr(transport, "produce") or (side == "ffn" and (net.F.is_moe(layer) or getattr(net, "modelopt", False))):
         return transport.exchange(local(net, layer, carry, side))
     def project(x, name):
@@ -32,7 +34,8 @@ def exchange_local(net, layer, carry, side):
     return local(net, layer, carry, side, project=project)
 
 
-def decode_direct(net, step, caches, aux_layers=(), aux_ready=None, *, consumer=consume, contract=None):
+def decode_direct(net, step, caches, aux_layers=(), aux_ready=None, *, consumer=consume, contract=None,
+                  moe_output=False):
     import torch
     transport = net.comm.transport
     if transport is None or not hasattr(transport, "exchange") or (consumer is consume and net.mhc is None):
@@ -42,6 +45,8 @@ def decode_direct(net, step, caches, aux_layers=(), aux_ready=None, *, consumer=
         raise ValueError("direct MHC requires 1..64 unpatched decode rows without probes")
     if any(layer not in net.layers for layer in aux_layers):
         raise ValueError("direct MHC features must name layers in this target")
+    if moe_output and (not hasattr(transport, 'exchange_moe') or step.ids.numel() > 32):
+        raise ValueError('MoE output qualification requires its packet consumer and at most 32 rows')
     transport.assert_consumed()
     c = begin(net, step, caches)
     packet, features = None, None
@@ -59,9 +64,13 @@ def decode_direct(net, step, caches, aux_layers=(), aux_ready=None, *, consumer=
         consumer(net, layer, c, "ffn", packet)
         packet = None
         if layer == net.layers[-1] or layer in aux_layers:
-            c.x = net.comm.all_reduce(local(net, layer, c, "ffn"))
+            if moe_output and net.F.is_moe(layer):
+                from engine.kernels.moe_output import combine
+                c.x = net.comm.all_reduce(net._moe(layer, c.x, finalize=combine))
+            else:
+                c.x = net.comm.all_reduce(local(net, layer, c, "ffn"))
         else:
-            packet = exchange_local(net, layer, c, "ffn")
+            packet = exchange_local(net, layer, c, "ffn", moe_output=moe_output)
         if layer in aux_layers:
             if contract is None:
                 aux[layer] = auxiliary(net, c)

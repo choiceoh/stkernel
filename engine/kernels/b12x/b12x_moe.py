@@ -81,12 +81,18 @@ def b12x_fused_moe(
     quant_mode: Optional[str] = None,
     source_format: str = "modelopt",
     _weight_views=None,
+    _output_finalize=None,
 ) -> torch.Tensor:
     r"""Run fused MoE on SM120/SM121 using b12x CuTe-DSL kernels.
 
     ST: ``_weight_views`` passes weight views prepared at bind time (tile-major
     storage, packed SF6 scales) straight to the dispatcher; the raw scale
     arguments are then only lifetime anchors.
+
+    ``_output_finalize`` is an explicit qualification callback for the native
+    tiled TP4 decode path. It consumes the completed FP32 scatter on the same
+    stream before its workspace is reused; output is only shape metadata.
+    Returning or retaining the borrowed accumulator is not a supported use.
 
     The kernel takes bf16 input and runs routing, FC1, activation, FC2, and
     scatter through the selected backend.  Automatically selects the micro
@@ -234,6 +240,7 @@ def b12x_fused_moe(
         quant_mode=quant_mode,
         source_format=source_format,
         _weight_views=_weight_views,
+        _output_finalize=_output_finalize,
     )
 
 
