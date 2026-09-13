@@ -35,9 +35,9 @@ def main():
     parser.add_argument("--moe-static", default="stock", help="served b12x static-lane spec (STK_moe_static): stock | t,r,sf6[,q0]")
     parser.add_argument("--mla-prefill", default="stock", help="served MLA prefill mode (STK_mla_prefill): stock | tile32 | pair | pair4")
     args = parser.parse_args()
-    if args.lanes == 'decode_bundle':
+    if args.lanes in ('decode_bundle', 'capacity_bundle'):
         from probes.engine_decode_bundle import check as decode_bundle
-        decode_bundle(args.ranks)
+        decode_bundle(args.ranks, capacity=args.lanes == 'capacity_bundle')
         return
     sys.meta_path.insert(0, ForbidVllm())
     assert not any(n == "vllm" or n.startswith("vllm.") for n in sys.modules)
@@ -63,7 +63,15 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "mhc_single", "indexer", "kpool", "mla", "moe", "moe_waves", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "input_pack", "short_gemm", "shared_direct"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "mhc_single", "indexer", "kpool", "mla", "moe", "moe_waves", "moe_batch", "moe_stage_fc1", "moe_stage_fc2", "router_batch", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "input_pack", "short_gemm", "shared_direct"}, selected
+
+    if selected & {'moe_batch', 'moe_stage_fc1', 'moe_stage_fc2', 'router_batch'}:
+        from probes.engine_decode_capacity import moe_check, router_check
+        for lane in ('moe_batch', 'moe_stage_fc1', 'moe_stage_fc2'):
+            if lane in selected:
+                moe_check(report, args.ranks, lane)
+        if 'router_batch' in selected:
+            router_check(report, args.ranks)
 
     if selected & {'input_pack', 'short_gemm', 'shared_direct'}:
         from probes.engine_decode_batch import dense_check, shared_check

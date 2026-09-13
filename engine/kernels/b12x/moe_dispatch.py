@@ -2149,12 +2149,19 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
     # The default tuple stays byte-for-byte the same.
     if config.get("even", False):
         cfg += ("probe_even_waves_v1",)
+    if config.get("probe_batch_reform", False):
+        cfg += ("probe_batch_reform_v1",)
     return cfg + _static_kernel_cache_key(**fields)
 
 
 def _static_v2_decode_config(config: dict, m: int) -> dict:
     """Specialize the integrated tile geometry only for C=1 decode rows."""
-    reform = bool(config.get("decode_reform", False)) and 1 <= m <= 8
+    batch_probe = bool(config.get("probe_batch_reform", False))
+    if batch_probe and not (m in (14, 21, 28) and config.get("decode_reform")
+                            and config.get("tiled") and config.get("reform_sf_pack")
+                            and not config.get("even")):
+        raise ValueError("batch-reform probe requires packed t,r,sf6 at 14/21/28 tokens")
+    reform = bool(config.get("decode_reform", False)) and (1 <= m <= 8 or batch_probe)
     if config.get("even", False) and not (reform and config.get("tiled")
                                          and config.get("reform_sf_pack")):
         raise ValueError("even-wave probe requires packed t,r,sf6 with 1..8 tokens")
