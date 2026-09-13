@@ -26,22 +26,25 @@ class PrefixGeometryTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 covered_prefix(*args)
 
-    def test_config_is_explicit_and_production_cannot_override(self):
+    def test_serving_defaults_on_with_experimental_rollback_and_fixed_production(self):
         from tests.test_engine_knobs import KnobDeclarationTests
         from engine.base.config import ConfigError
         from engine.profiles.glm53.execution import ExecutionPlan
         declared = KnobDeclarationTests()._declared
+        # A bare plan remains neutral; boot fills it from the serving declaration.
         self.assertFalse(ExecutionPlan().prefill_dense_prefix)
         self.assertTrue(ExecutionPlan(prefill_dense_prefix=True).active)
         self.assertIn('prefill_dense_prefix=1', ExecutionPlan(prefill_dense_prefix=True).label())
         with self.assertRaises(ValueError):
             ExecutionPlan(prefill_dense_prefix=1)
         for production in (False, True):
-            self.assertEqual(declared({}, production=production)['prefill_dense_prefix'], 0)
+            self.assertEqual(declared({}, production=production)['prefill_dense_prefix'], 1)
+        self.assertEqual(declared({'STK_prefill_dense_prefix': '0'})['prefill_dense_prefix'], 0)
         cfg = declared({'STK_prefill_dense_prefix': '1', 'STK_prefill_indexer_shards': '1'})
         self.assertEqual((cfg['prefill_dense_prefix'], cfg['prefill_indexer_shards']), (1, 1))
-        with self.assertRaises(ConfigError):
-            declared({'STK_prefill_dense_prefix': '1'}, production=True)
+        for value in ('0', '1'):
+            with self.subTest(value=value), self.assertRaises(ConfigError):
+                declared({'STK_prefill_dense_prefix': value}, production=True)
 
     def test_actual_model_dispatch_splits_at_coverage_and_falls_back_outside_contract(self):
         from engine.profiles.glm53.net import Glm53Net, Step
