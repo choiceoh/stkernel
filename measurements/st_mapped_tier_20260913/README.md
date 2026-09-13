@@ -28,11 +28,14 @@ Validation on 2026-09-13:
 - The first admitted GPU gate passed alias visibility/lifetime, but its next
   allocation exposed sub-page alignment from cudaHostAlloc. The allocator now
   reserves 4095 extra bytes and aligns both aliases with the same offset, while
-  their shared owner frees the original allocation. The repeated-allocation
-  gate and O_DIRECT round trip must pass on this corrected source.
+  their shared owner frees the original allocation.
 - `probes/engine_mapped_tier_check.py` is the admitted real-GPU gate for
   host/device visibility, both alias lifetimes and lossless NVMe round trips.
-  GPU qualification and serving interference/performance remain pending.
+  Both tests passed on the corrected source through the single-GB10 ticket
+  `st-mapped-tier0913r3` (52.94 seconds including native preparation). The gate
+  covers repeated aligned allocations, alias lifetimes, permuted blocks,
+  extra-state tails and compressed restoration. `gpu-consumer.json` preserves
+  the exact source hashes. Serving interference/performance remain pending.
 
 This is a memory and cold-state transfer experiment. No normal decode tok/s
 improvement is inferred from removed storage.

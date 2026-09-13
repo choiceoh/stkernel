@@ -1,0 +1,23 @@
+{
+  "scope": "single GB10 conditional graph and serving adapter with toy target; not real TP4 or model-quality proof",
+  "result": {
+    "tests": 3,
+    "skipped": 0
+  },
+  "seconds": 49.51564032700844,
+  "source_sha256": {
+    "engine/kernels/bounded_graph/loop.cu": "1c002e899628b2c42676f806fb28c20d0021e56b45b6f23af342668b73c034aa",
+    "engine/kernels/bounded_graph/__init__.py": "0f4ad733b9b2126201dc476e74a1210392efacf8586e25c8faf3b53e9e49ba03",
+    "engine/profiles/glm53/bounded_loop.py": "68e7ee0cdabe45616afaada92d45e3cf9fce0af7d96ba186a22cae559762e240",
+    "engine/kernels/decode_commit.py": "1cd3c0baa43b662cf08823064c2703a7d74a9e9d37023445b3926a3cab01d2bc",
+    "engine/profiles/glm53/burst_decode.py": "53a621822c017cf0b8829653478a4318223c95d38313173bf565a7b9472c1bd5",
+    "engine/profiles/glm53/pipeline.py": "d04497e665a906b46870b6c58d2306713fbe52b3ad9e9251dce30dfa04a2caf4",
+    "engine/profiles/glm53/adapter.py": "f721128f5823f98708be551d29dc0c599093ab5ca70da43370d52a74390a6e88",
+    "engine/base/runner.py": "1abe445657c3ff95cf639d748d7773565e0c1b99d4fe403fe7ccfa8055633baa",
+    "engine/base/graphs.py": "2f9f1e30ca36a87fd53bd4d8f7d4ed30a3d007adfa3a772d3d3339b10494034d",
+    "engine/profiles/glm53/decode_graphs.py": "a581e756a9d16161846079f22666a7694e2e2a5a83bb3a3aaaa8422bea8e73ca",
+    "engine/profiles/glm53/drafter.py": "0ddc6378fc631482d7902cf61866e1cf3a17bcc2fdbd7f5679d5311893568041",
+    "tests/test_engine_bounded_loop_cuda.py": "7caa14f4779f55de017c47e6065e36a5b872e8f9d615ce58fc956270b85134b1",
+    "tests/test_engine_burst_decode_cuda.py": "4e1eb4008d7e407e6e5f307e82d0aa0e8b8e6bf774464f26ca7a9b5244f94c95"
+  }
+}

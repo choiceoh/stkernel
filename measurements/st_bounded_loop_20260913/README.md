@@ -23,6 +23,10 @@ The receiver optimization does not implement producer GEMM writes into a send ri
 - Capture the finite existing target shapes at boot, using retained child
   graphs and a private pool. No request causes a new capture. Every loop keeps
   the borrowed graph/pool and caller allocation owners until its last launch ends.
+  Child graphs are appended to the active capture with explicit dependencies;
+  CUDA rejects calling ordinary graph replay while a stream is capturing.
+  Only the deterministic graphs used by this option retain their raw templates,
+  and each is instantiated at boot for ordinary fallback replays too.
 - Reserve the whole burst before publishing block mappings. The first
   iteration must fit; later ones stop before exceeding the reservation or
   captured context bucket. Replay uses the construction stream.
@@ -67,8 +71,10 @@ retirement, zero-progress rejection, record counts and nanosecond/unit conversio
 The existing pipeline, runner, graph, boot, release, tier and package checks also run.
 The combined ST-image suite ran 165 tests: 160 passed and 5 unrelated GPU tests
 were skipped. A separate HTTP/sampling/burst suite ran 232 tests: 230 passed and
-2 were skipped. `compile.json` records the final SM121a compilation (55.25 seconds)
-with no CUDA context.
+2 were skipped. `compile.json` records the original conditional executor build;
+`compile-composed.json` records the child-graph composition build (41.71 seconds),
+both without a CUDA context. After composition, 112 focused engine tests ran:
+107 passed and 5 GPU-only checks were skipped.
 The later host-stop/row-departure guards passed the focused 34-test
 pipeline/burst suite. Mapped alignment and allocation accounting passed all
 38 tier/boot tests. These are overlapping suites, not additive coverage totals.
@@ -76,7 +82,12 @@ pipeline/burst suite. Mapped alignment and allocation accounting passed all
 `probes/engine_bounded_loop_check.py` tests actual conditional graphs, native
 commit, changing inputs and owner lifetime, plus the real serving adapter with
 small deterministic GPU target/sampling child graphs. This single-GPU toy target
-is not a real TP4 transport or model-quality qualification. Full real-weight,
+is not a real TP4 transport or model-quality qualification. All three GPU tests
+passed on `st-bounded-decode0913r4`, source `2a7a18e9772c4bd45445fdab51eede224f74dbbe`
+(49.52 seconds including preparation); `gpu-consumer.json` retains source hashes.
+The prior attempt passed both native tests but rejected ordinary nested replay;
+`capture-failure.log` records that failure before explicit child composition.
+Full real-weight,
 matched C=1/C=4 onepass acceptance, quality, length, tok/s and TTFT remain required
 before changing production defaults.
 Explicit seeds and an unmet min_tokens constraint retain the ordinary
@@ -107,3 +118,7 @@ source hashes; the later serving connection is not simulated by those records.
 
 CUDA handle/conditional constraints:
 [Conditional graph nodes](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cuda-graphs.html#conditional-graph-nodes).
+Graph-template retention follows
+[PyTorch CUDAGraph](https://docs.pytorch.org/docs/main/generated/torch.cuda.CUDAGraph.html);
+explicit capture dependencies use the
+[CUDA stream API](https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__STREAM.html).

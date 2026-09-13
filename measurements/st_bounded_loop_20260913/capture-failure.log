@@ -1,0 +1,83 @@
+needs one GPU, not four: single-GPU lane (GB10 on srv4 beside production); say --fleet to take the four Sparks instead
+preflight st-bounded-decode0913r3 [single]:
+{"entry": "probes/run_engine_probe.sh", "gpus": 1, "kind": "single", "policy": "onepass-only"}
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax probes/run_engine_probe.sh
+  SKIP declared-knob check (single: no launcher in the path)
+  -> PASS
+replaces st-bounded-decode0913r2: keeps its place in line (queued 12:16)
+GO st-bounded-decode0913r3 2026-09-13_12:30:46
+  single GPU: probes/engine_bounded_loop_check.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 8 GiB beside production, no fleet lease)
+test_changing_inputs_limits_and_every_exit_preserve_each_commit (tests.test_engine_bounded_loop_cuda.BoundedLoopCudaTests.test_changing_inputs_limits_and_every_exit_preserve_each_commit) ... ok
+test_native_owner_survives_wrapper_reference_release (tests.test_engine_bounded_loop_cuda.BoundedLoopCudaTests.test_native_owner_survives_wrapper_reference_release) ... ok
+test_boot_capture_rebinding_and_shared_chain_match_ordinary_serving (tests.test_engine_burst_decode_cuda.ServedBurstCudaTests.test_boot_capture_rebinding_and_shared_chain_match_ordinary_serving) ... ERROR
+
+======================================================================
+ERROR: test_boot_capture_rebinding_and_shared_chain_match_ordinary_serving (tests.test_engine_burst_decode_cuda.ServedBurstCudaTests.test_boot_capture_rebinding_and_shared_chain_match_ordinary_serving)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/engine/base/graph_labels.py", line 132, in capture
+    _api = CUDA()
+           ^^^^^^
+  File "/repo/engine/base/graph_labels.py", line 39, in __init__
+    self.rt.cudaStreamGetCaptureInfo_v2.argtypes = [C.c_void_p, C.POINTER(C.c_int), C.POINTER(C.c_ulonglong),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/ctypes/__init__.py", line 392, in __getattr__
+    func = self.__getitem__(name)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/ctypes/__init__.py", line 397, in __getitem__
+    func = self._FuncPtr((name_or_ordinal, self))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: /usr/local/lib/python3.12/dist-packages/torch/lib/../../nvidia/cu13/lib/libcudart.so.13: undefined symbol: cudaStreamGetCaptureInfo_v2
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/repo/engine/profiles/glm53/burst_decode.py", line 148, in _capture
+    self._body(shape)
+  File "/repo/engine/profiles/glm53/burst_decode.py", line 113, in _body
+    result = self.iterate(shape, b, stage_clock=DeviceStages(control["stages"], control["count"]))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/pipeline.py", line 255, in iterate
+    h, aux, local = e.decode_graphs.run_inputs(shape, b["ids"], b["ctx"], b["seqs"], b["slot"])
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/tests/test_engine_burst_decode_cuda.py", line 41, in run_inputs
+    return graphs.run(shape, fill)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/base/graphs.py", line 168, in run
+    self.graphs[shape].replay()
+  File "/usr/local/lib/python3.12/dist-packages/torch/cuda/graphs.py", line 186, in replay
+    super().replay()
+torch.AcceleratorError: CUDA error: operation not permitted when stream is capturing
+Search for `cudaErrorStreamCaptureUnsupported' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+For more detailed error information, run with CUDA_LOG_FILE=stderr
+
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_burst_decode_cuda.py", line 59, in test_boot_capture_rebinding_and_shared_chain_match_ordinary_serving
+    p, normal = BurstDecode(e, limit), AsyncDecode(ref)
+                ^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/glm53/burst_decode.py", line 69, in __init__
+    self._capture()
+  File "/repo/engine/profiles/glm53/burst_decode.py", line 150, in _capture
+    captured.capture_end()
+  File "/usr/local/lib/python3.12/dist-packages/torch/cuda/graphs.py", line 169, in capture_end
+    super().capture_end()
+torch.AcceleratorError: CUDA error: operation failed due to a previous error during capture
+Search for `cudaErrorStreamCaptureInvalidated' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+For more detailed error information, run with CUDA_LOG_FILE=stderr
+
+
+----------------------------------------------------------------------
+Ran 3 tests in 50.484s
+
+FAILED (errors=1)
+Traceback (most recent call last):
+  File "/repo/probes/engine_bounded_loop_check.py", line 44, in <module>
+    main()
+  File "/repo/probes/engine_bounded_loop_check.py", line 28, in main
+    raise RuntimeError("bounded loop gate failed or skipped")
+RuntimeError: bounded loop gate failed or skipped
