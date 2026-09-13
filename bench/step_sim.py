@@ -553,14 +553,22 @@ def composed_cost(routing: str = "measured", prefill_profile: "str | None" = Non
         if folded:
             b.routing_gamma, b.routing_scale = folded["routing_gamma"], folded["routing_scale"]
     ladder = {c: round(kern.decode_step(b, c, 1).total(), 2) for c in (2000, 32000, 128000)}
-    composed_row = (kern.decode_step(b, 2000, 4).total() - ladder[2000]) / 3.0
+    composed_row = (kern.decode_step(b, 2000, 4).total() - kern.decode_step(b, 2000, 1).total()) / 3.0
     # The fleet width table measured K=6. A different draft width must not
     # inherit that coefficient while its C=1 ladder changes underneath it.
     stage = fold_width_from_stage(STAGE_WIDTH_2K)
-    measured_width = model == "glm53" and b.spec_k == STAGE_WIDTH_SPEC_K
-    per_row = round(stage["decode_ms_per_row"] if measured_width else composed_row, 3)
-    width_basis = ("fleet #838 at 2K, K=6" if measured_width else
-                   f"component estimate at 2K, K={b.spec_k}; not a fleet measurement")
+    if model == "glm53":
+        anchor = replace(b, spec_k=STAGE_WIDTH_SPEC_K)
+        anchor_row = (kern.decode_step(anchor, 2000, 4).total() - kern.decode_step(anchor, 2000, 1).total())/3.0
+        # Keep the unmodeled width overhead at its measured K=6 value. Use
+        # only the modeled marginal change; switching to an uncalibrated
+        # total at K=7 would create a fictitious discontinuous speedup.
+        per_row = round(stage["decode_ms_per_row"] + composed_row-anchor_row, 3)
+        width_basis = ("fleet #838 at 2K, K=6" if b.spec_k == STAGE_WIDTH_SPEC_K else
+                       f"K=6 fleet anchor plus component delta at K={b.spec_k}; not a fleet measurement")
+    else:
+        per_row = round(composed_row, 3)
+        width_basis = f"component estimate at 2K, K={b.spec_k}; not a fleet measurement"
     cost = CostModel(name=f"composed-{routing}", k=b.spec_k, acc=acc,
                      decode_ms=ladder[32000], decode_ms_by_ctx=ladder,
                      decode_ms_per_row=per_row, decode_ms_per_row_basis=width_basis,

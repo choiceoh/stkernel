@@ -630,10 +630,15 @@ class KernelBudgetTests(unittest.TestCase):
                 cost = sim.composed_cost(routing="measured", k=k)
                 model = kern.EngineBytes.for_model("glm53")
                 model.spec_k = k
-                expected = (kern.decode_step(model, 2000, 4).total()
+                marginal = (kern.decode_step(model, 2000, 4).total()
                             - kern.decode_step(model, 2000, 1).total())/3
+                model.spec_k = 6
+                anchor = (kern.decode_step(model, 2000, 4).total()
+                          - kern.decode_step(model, 2000, 1).total())/3
+                expected = (sim.STAGE_WIDTH_2K[4]-sim.STAGE_WIDTH_2K[1])/3 + marginal-anchor
                 self.assertAlmostEqual(cost.decode_ms_per_row, expected, delta=.01)
                 self.assertIn("not a fleet measurement", cost.decode_ms_per_row_basis)
+                self.assertEqual(cost.decode_ms_per_row > sim.composed_cost(k=6).decode_ms_per_row, k > 6)
 
     def test_st_oracle_model_registry(self):
         # glm53 은 전부 실측 — 조립 가능
