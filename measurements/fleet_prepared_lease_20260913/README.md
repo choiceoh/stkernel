@@ -24,3 +24,11 @@ CUDA_VISIBLE_DEVICES= nice -n 19 python3 -m unittest \
 ```
 
 Raw successful output: `cpu.log`.
+
+CI follow-through: refreshed only the three changed fleet test audit pins after
+reviewing their unchanged dependency closure. The full engine check also caught
+an existing HTTP test's assumption that two completion choices occupy rows 0 and
+1. A completed row may legitimately be reused. The test now checks each actual
+admission's seed and retains response/index/token assertions, with explicit one-
+and two-row cases. No serving code changed. Five focused audit/HTTP checks pass
+on Linux (`cpu-ci-repair.log`).
