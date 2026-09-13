@@ -1,0 +1,251 @@
+{
+  "captured_at": "2026-09-13T08:58:35.379674",
+  "criterion": "User requested decode step/s and speculative acceptance; answer grading is retained in raw records but excluded from this performance summary.",
+  "comparison": "same-boot repeat; no baseline on this build",
+  "runs": [
+    {
+      "run_id": "20260912T213057-9725b41d901c",
+      "source": "8c8b031b94bb80175cfccd49cfb6329d18cdecae",
+      "boot_id": "8f055b03662995db50df27977fd51996737a1a4962c835838e39c38988d997e0|2026-09-12T21:25:52.266002699Z",
+      "kda_state_dtype": "fp16",
+      "record_sha256": "e2a5609346484e600741162b488c87f36e043cec87fe895c68a8aed6ae556054",
+      "record_path": "/home/choiceoh/glm53-logs/onepass-runs/20260912T213057-9725b41d901c/record.json",
+      "recording_status": "complete",
+      "recording_phase": "diagnostic-c4-128000",
+      "completed_measured_c1_requests": 5,
+      "decode": {
+        "window_median_step_s": 19.895941055215808,
+        "accepted_draft_ratio": 0.4425988101549155,
+        "tokens_per_step": 3.655592860929493,
+        "draft_tokens_per_step": 6
+      },
+      "prefill": [
+        {
+          "ctx": 2000,
+          "tok": 2498,
+          "cold_s": 1.2788646859989967,
+          "warm_s": 1.2788646859989967,
+          "cold_tok_s": 1953.2950024721847,
+          "warm_tok_s": 1953.2950024721847,
+          "ttft_samples_s": [
+            1.2788646859989967,
+            1.299577852987568,
+            1.2780752230028156
+          ],
+          "first_s": 1.2788646859989967,
+          "median_s": 1.2788646859989967,
+          "state": "prepared fresh-prefix; see steady_state validity",
+          "reused_tok": 0,
+          "reused_frac": 0.0,
+          "cache_hit": false,
+          "combined": false
+        },
+        {
+          "ctx": 32000,
+          "tok": 33442,
+          "cold_s": 11.966994169997633,
+          "warm_s": 11.966994169997633,
+          "cold_tok_s": 2794.5196199595553,
+          "warm_tok_s": 2794.5196199595553,
+          "ttft_samples_s": [
+            11.966994169997633
+          ],
+          "first_s": 11.966994169997633,
+          "median_s": 11.966994169997633,
+          "state": "prepared fresh-prefix; see steady_state validity",
+          "reused_tok": 0,
+          "reused_frac": 0.0,
+          "cache_hit": false,
+          "combined": true
+        },
+        {
+          "ctx": 128000,
+          "tok": 129295,
+          "cold_s": 48.39508021099027,
+          "warm_s": 48.39508021099027,
+          "cold_tok_s": 2671.655867420957,
+          "warm_tok_s": 2671.655867420957,
+          "ttft_samples_s": [
+            48.39508021099027
+          ],
+          "first_s": 48.39508021099027,
+          "median_s": 48.39508021099027,
+          "state": "prepared fresh-prefix; see steady_state validity",
+          "reused_tok": 0,
+          "reused_frac": 0.0,
+          "cache_hit": false,
+          "combined": true
+        }
+      ],
+      "c1_requests": [
+        {
+          "ctx": 2000,
+          "question": 0,
+          "prompt_tokens": 2465,
+          "cached_tokens": 0,
+          "ttft_s": 1.2788646859989967,
+          "completion_tokens": 4250,
+          "decode_tok_s": 64.41339012831436
+        },
+        {
+          "ctx": 2000,
+          "question": 1,
+          "prompt_tokens": 2493,
+          "cached_tokens": 0,
+          "ttft_s": 1.299577852987568,
+          "completion_tokens": 4715,
+          "decode_tok_s": 71.81293509180338
+        },
+        {
+          "ctx": 2000,
+          "question": 2,
+          "prompt_tokens": 2498,
+          "cached_tokens": 0,
+          "ttft_s": 1.2780752230028156,
+          "completion_tokens": 4573,
+          "decode_tok_s": 66.41946971761176
+        },
+        {
+          "ctx": 32000,
+          "question": "all",
+          "prompt_tokens": 33442,
+          "cached_tokens": 0,
+          "ttft_s": 11.966994169997633,
+          "completion_tokens": 13865,
+          "decode_tok_s": 75.42580198406506
+        },
+        {
+          "ctx": 128000,
+          "question": "all",
+          "prompt_tokens": 129295,
+          "cached_tokens": 0,
+          "ttft_s": 48.39508021099027,
+          "completion_tokens": 13976,
+          "decode_tok_s": 69.43726655092382
+        }
+      ]
+    },
+    {
+      "run_id": "20260912T232937-6373a6373feb",
+      "source": "8c8b031b94bb80175cfccd49cfb6329d18cdecae",
+      "boot_id": "8f055b03662995db50df27977fd51996737a1a4962c835838e39c38988d997e0|2026-09-12T21:25:52.266002699Z",
+      "kda_state_dtype": "fp16",
+      "record_sha256": "fe411084bb52c466aae24c2dccee0e33a1000d7241743a0ff79bf1d105bd45ce",
+      "record_path": "/home/choiceoh/glm53-logs/onepass-runs/20260912T232937-6373a6373feb/record.json",
+      "recording_status": "running",
+      "recording_phase": "prepare-c4-2000-q1",
+      "completed_measured_c1_requests": 5,
+      "decode": {
+        "window_median_step_s": 19.89125336417847,
+        "accepted_draft_ratio": 0.44548783368769196,
+        "tokens_per_step": 3.6729270021261518,
+        "draft_tokens_per_step": 6
+      },
+      "prefill": [
+        {
+          "ctx": 2000,
+          "tok": 2498,
+          "cold_s": 1.3103720729995985,
+          "warm_s": 1.2987172249995638,
+          "cold_tok_s": 1906.3287836116494,
+          "warm_tok_s": 1923.4364124190615,
+          "ttft_samples_s": [
+            1.3103720729995985,
+            1.2987172249995638,
+            1.2961334769934183
+          ],
+          "first_s": 1.3103720729995985,
+          "median_s": 1.2987172249995638,
+          "state": "prepared fresh-prefix; see steady_state validity",
+          "reused_tok": 0,
+          "reused_frac": 0.0,
+          "cache_hit": false,
+          "combined": false
+        },
+        {
+          "ctx": 32000,
+          "tok": 33442,
+          "cold_s": 11.759929713996826,
+          "warm_s": 11.759929713996826,
+          "cold_tok_s": 2843.7244790839936,
+          "warm_tok_s": 2843.7244790839936,
+          "ttft_samples_s": [
+            11.759929713996826
+          ],
+          "first_s": 11.759929713996826,
+          "median_s": 11.759929713996826,
+          "state": "prepared fresh-prefix; see steady_state validity",
+          "reused_tok": 0,
+          "reused_frac": 0.0,
+          "cache_hit": false,
+          "combined": true
+        },
+        {
+          "ctx": 128000,
+          "tok": 129295,
+          "cold_s": 48.092612334003206,
+          "warm_s": 48.092612334003206,
+          "cold_tok_s": 2688.458657684182,
+          "warm_tok_s": 2688.458657684182,
+          "ttft_samples_s": [
+            48.092612334003206
+          ],
+          "first_s": 48.092612334003206,
+          "median_s": 48.092612334003206,
+          "state": "prepared fresh-prefix; see steady_state validity",
+          "reused_tok": 0,
+          "reused_frac": 0.0,
+          "cache_hit": false,
+          "combined": true
+        }
+      ],
+      "c1_requests": [
+        {
+          "ctx": 2000,
+          "question": 0,
+          "prompt_tokens": 2465,
+          "cached_tokens": 0,
+          "ttft_s": 1.3103720729995985,
+          "completion_tokens": 4358,
+          "decode_tok_s": 62.690644379958705
+        },
+        {
+          "ctx": 2000,
+          "question": 1,
+          "prompt_tokens": 2493,
+          "cached_tokens": 0,
+          "ttft_s": 1.2987172249995638,
+          "completion_tokens": 4419,
+          "decode_tok_s": 71.18785133670512
+        },
+        {
+          "ctx": 2000,
+          "question": 2,
+          "prompt_tokens": 2498,
+          "cached_tokens": 0,
+          "ttft_s": 1.2961334769934183,
+          "completion_tokens": 4575,
+          "decode_tok_s": 67.45985777575439
+        },
+        {
+          "ctx": 32000,
+          "question": "all",
+          "prompt_tokens": 33442,
+          "cached_tokens": 0,
+          "ttft_s": 11.759929713996826,
+          "completion_tokens": 14065,
+          "decode_tok_s": 74.19950149933341
+        },
+        {
+          "ctx": 128000,
+          "question": "all",
+          "prompt_tokens": 129295,
+          "cached_tokens": 0,
+          "ttft_s": 48.092612334003206,
+          "completion_tokens": 14048,
+          "decode_tok_s": 71.55529317297415
+        }
+      ]
+    }
+  ]
+}

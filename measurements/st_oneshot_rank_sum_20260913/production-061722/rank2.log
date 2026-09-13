@@ -1,0 +1,62 @@
+  fleet reserved by production/srv2/554527
+  box: GB10 (DGX Spark): SM121, unified 120 GiB (83 free)
+boot rendezvous arena-admission: rank 2 prepared; waiting for 4 ranks (deadline 1800s)
+boot rendezvous weights-loaded: rank 2 prepared; waiting for 4 ranks (deadline 1800s)
+  calibration: rank 2 not filed -- collecting 0/32768 rows over 162 blobs (143 for their channel peaks alone) (fewer than 4096 rows)
+  released: rank 2 gave back 55.80 GiB of 55.69 GiB arena plus 189 MiB of tier memory; 0.07 GiB reserved and 71 MiB allocated still
+  released: rank 2 did NOT come back clean -- 71 MiB is still held by live tensors, largest blocks 1 MiB, 1 MiB, 1 MiB, 1 MiB, 1 MiB, 1 MiB
+[W912 21:15:47.313908364 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[b12x sf6] prepared FC1+FC2; packed bytes=85819392
+[rank2]: Traceback (most recent call last):
+[rank2]:   File "/repo/engine/profiles/glm53/boot.py", line 1110, in <module>
+[rank2]:     raise SystemExit(main())
+[rank2]:                      ^^^^^^
+[rank2]:   File "/repo/engine/profiles/glm53/boot.py", line 1106, in main
+[rank2]:     return fleet(a)
+[rank2]:            ^^^^^^^^
+[rank2]:   File "/repo/engine/profiles/glm53/boot.py", line 987, in fleet
+[rank2]:     Server._agree_on_parked(comm, sorted(runner.parked_keys()))
+[rank2]:   File "/repo/engine/base/serve.py", line 1139, in _agree_on_parked
+[rank2]:     raise RuntimeError(
+[rank2]: RuntimeError: the ranks' NVMe tiers hold different conversations: this rank has 0 [], the fleet's highest is [1, 0, 1] (count, last key, checksum). Clear glm53-logs/st-tier on every node, or fan the same tier out -- a boot cannot start with the ranks numbering conversations differently.

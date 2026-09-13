@@ -21,6 +21,17 @@ OSAR_HD constexpr bool osar_compact_eligible(uint64_t n) {
   return n > 0 && n <= OSAR_COMPACT_MAXEL;
 }
 
+// Peers are stored in ascending rank order with this rank omitted. Always
+// fold rank 0, 1, 2, 3: local-first addition lets replicated hidden states
+// disagree after cancellation, despite receiving exactly the same bytes.
+OSAR_HD constexpr float osar_sum_rank_order(float mine, float p0, float p1,
+                                            float p2, int rank) {
+  return rank == 0 ? ((mine + p0) + p1) + p2
+       : rank == 1 ? ((p0 + mine) + p1) + p2
+       : rank == 2 ? ((p0 + p1) + mine) + p2
+                   : ((p0 + p1) + p2) + mine;
+}
+
 // Every launch contributes 48 tickets, whether 12 CTAs contribute four each
 // or 48 CTAs contribute one each. Sequence multiplication and addition wrap
 // in uint64_t together. Unlike old % 48 this remains correct across 2^64:

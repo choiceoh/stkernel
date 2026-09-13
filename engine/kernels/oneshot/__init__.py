@@ -66,6 +66,7 @@ class OneShot:
                     actual = reduce(x)
                     torch.cuda.synchronize()
                     self.agree(None if torch.equal(actual,ref) else 'sum differs from NCCL',f'{rows}-row self-test')
+            self._check_sum_order(comm.rank)
             for rows in (1, 3, 6, 24, 48, 64):
                 keys = torch.arange(rows, device='cuda', dtype=torch.int64) * (1 << 40) - comm.rank
                 keys[0] = -(2**63) if comm.rank != 2 else 2**63 - 1
@@ -78,6 +79,40 @@ class OneShot:
         except BaseException:
             self.close()
             raise
+
+    def _check_sum_order(self, rank):
+        # Every input and expected result is exactly representable in BF16.
+        # Local-first FP32 summation produces [2, 2, 1, 1] for the first
+        # column; positive-only fixtures cannot reveal this rank divergence.
+        values = ((2.**24, 256., 1., -1.), (-2.**24, -256., 2., 1.),
+                  (1., 2.**-16, 3., 2.**-24), (1., 2.**-16, 4., -2.**-24))
+        row = torch.tensor(values[rank], device='cuda', dtype=torch.bfloat16).repeat(1024)
+        expected_row = torch.tensor((2., 2.**-15, 10., 0.), device='cuda', dtype=torch.bfloat16).repeat(1024)
+        for rows in (1, 7, 24, 64):
+            x, expected = row.repeat(rows, 1), expected_row.repeat(rows, 1)
+            reducers = [self.ext.oneshot_ar]
+            if rows <= 8:
+                reducers.append(self.ext.oneshot_ar_consumer)
+            for reduce in reducers:
+                actual = reduce(x)
+                torch.cuda.synchronize()
+                self.agree(None if torch.equal(actual, expected) else 'rank-ordered sum differs',
+                           f'{rows}-row cancellation self-test')
+                if rows != 7:
+                    continue
+                graph = torch.cuda.CUDAGraph()
+                try:
+                    with torch.cuda.graph(graph):
+                        actual = reduce(x)
+                    for factor in (0., 2.**-8, 2.**8):
+                        x.copy_(row.unsqueeze(0).expand_as(x) * factor)
+                        graph.replay()
+                        torch.cuda.synchronize()
+                        self.agree(None if torch.equal(actual, expected * factor) else 'captured rank-ordered sum differs',
+                                   f'7-row cancellation replay at scale {factor:g}')
+                finally:
+                    graph.reset()
+                x.copy_(row.unsqueeze(0).expand_as(x))
 
     def agree(self, error, stage):
         errors = [None]*4

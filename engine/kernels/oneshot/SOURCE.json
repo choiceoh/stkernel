@@ -4,6 +4,6 @@
     "build/glm53/dsv4_oneshot_ar.cu": "9f0c0a88dea9fc7f70ba639cdc5f3f19e09e48037a4af4da82941632d0f0d0d3",
     "build/glm53/dsv4_oneshot_transport.h": "98af9423143e50dbdba51d3c473ca62c712332d33bf5881f4a03fbf509672cc6"
   },
-  "changes": "Owned lockstep native binding; removed steady-state phase counters and periodic tracing, retaining stall watchdog and failure reports",
-  "local_cuda_sha256": "e13b46ae48f5f1d37d7c08f93af4cd2d854ccb46e06602e9e9665e22cc425ec5"
+  "changes": "Owned lockstep native binding; removed steady-state phase counters and periodic tracing, retaining stall watchdog and failure reports; BF16 sums fold global ranks in canonical order in both vector lanes and scalar tails",
+  "local_cuda_sha256": "30315a872b3d4d2209f30f0b9c76d5fdf32bd9aa33267a1b6ebd307048f54351"
 }

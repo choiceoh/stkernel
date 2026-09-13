@@ -1,0 +1,32 @@
+{
+  "run_id": "20260912T213057-9725b41d901c",
+  "canonical_complete": true,
+  "quality_valid": false,
+  "remote_directory": "/home/choiceoh/glm53-logs/onepass-runs/20260912T213057-9725b41d901c",
+  "files": [
+    {
+      "name": "record.json",
+      "sha256": "e2a5609346484e600741162b488c87f36e043cec87fe895c68a8aed6ae556054",
+      "bytes": 1263004,
+      "gzip_bytes": 519388
+    },
+    {
+      "name": "requests.jsonl",
+      "sha256": "3317fa61229003c1182716bbac82ca3831141494fbc6100e432e5890362b207c",
+      "bytes": 11003964,
+      "gzip_bytes": 2872931
+    },
+    {
+      "name": "quality.jsonl",
+      "sha256": "f8d82b747cfeecc9c7dbfa98d39f8c26fe713b2c65cd5f727444cb77cb807187",
+      "bytes": 88115,
+      "gzip_bytes": 13865
+    },
+    {
+      "name": "workloads.json",
+      "sha256": "5fc24ef18564e70366eb8279279cdbd11979c7bd13642f27a6459d2ec8239103",
+      "bytes": 508695,
+      "gzip_bytes": 195776
+    }
+  ]
+}
