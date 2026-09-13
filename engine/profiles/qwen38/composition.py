@@ -1,7 +1,7 @@
 """Qwen3.8-Flash-Next as a composition (profile): the plan, the residual form and the features, bound by name.
 
 Nothing here computes. The layer loop is engine/base/composition's; the math is the features' (engine/modules:
-hyper_connection.GatedResidualStreams, linear_attention.GatedDeltaNet, sparse_attention.GatedSparseAttention,
+hyper_connection.GatedResidualStreams, linear_attention.GatedDeltaNet, attention.Attention (+ attention.QSA),
 ngram_embedding.NGramInjection, moe.SharedExpertMoE). What is Qwen3.8's -- and so lives here -- is which layer runs
 which feature (config `layer_types`, `ple_layer_ids`), the hyperparameters read off its text config, and the
 checkpoint names the features' weights sit under (transformers qwen4_exp, pinned in plan.py).
@@ -45,7 +45,8 @@ def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None, dtype: "str
     from engine.modules.linear_attention import VARIANTS, GatedDeltaNet, named
     from engine.modules.moe import SharedExpertMoE
     from engine.modules.ngram_embedding import NGramInjection
-    from engine.modules.sparse_attention import GatedSparseAttention
+    from engine.modules.attention import QSA, Attention
+    from engine.modules.attention import named as attention_named
 
     def layer_name(layer, part, name):
         # a module's matrix is "<name>.weight"; a bare parameter (dt_bias, A_log, the fused experts) is "<name>"
@@ -70,12 +71,15 @@ def build(cfg: dict, tensor, *, prefix: str = "model.", expert=None, dtype: "str
             gate_activation=cfg.get("output_gate_type") or cfg["hidden_act"], activation=cfg["hidden_act"],
             weights=lambda layer, name: named("qwen4_exp", lambda hf: layer_name(layer, "linear_attn", hf))(name),
             dtype=dtype),
-        "sparse_attention": GatedSparseAttention(
-            heads=cfg["num_attention_heads"], kv_heads=cfg["num_key_value_heads"], head_dim=cfg["head_dim"],
-            rotary_dim=rotary, theta=rope.get("rope_theta", cfg.get("rope_theta")), eps=eps,
-            index_heads=cfg["indexer_n_heads"], index_head_dim=cfg["indexer_head_dim"], budget=cfg["indexer_budget"],
-            ratio=cfg["indexer_compress_ratio"], mrope_section=tuple(section) if section else None,
-            weights=lambda layer, name: layer_name(layer, "self_attn", name), dtype=dtype),
+        "sparse_attention": Attention(
+            form="gqa", heads=cfg["num_attention_heads"], kv_heads=cfg["num_key_value_heads"], head_dim=cfg["head_dim"],
+            rotary_dim=rotary, theta=rope.get("rope_theta", cfg.get("rope_theta")), eps=eps, qk_norm="rms_unit_offset",
+            gate="channel", mrope_section=tuple(section) if section else None,
+            select=QSA(index_heads=cfg["indexer_n_heads"], index_head_dim=cfg["indexer_head_dim"],
+                       budget=cfg["indexer_budget"], ratio=cfg["indexer_compress_ratio"]),
+            weights=lambda layer, name: attention_named("qwen4_exp", lambda hf: layer_name(layer, "self_attn", hf),
+                                                        heads=cfg["num_attention_heads"], head_dim=cfg["head_dim"])(name),
+            dtype=dtype),
         "moe": SharedExpertMoE(
             experts=cfg["num_experts"], topk=cfg["num_experts_per_tok"], normalize=cfg.get("norm_topk_prob", True),
             activation=cfg["hidden_act"], weights=lambda layer, name: layer_name(layer, "mlp", name), expert=expert),

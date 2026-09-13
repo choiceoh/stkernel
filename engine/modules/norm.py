@@ -46,6 +46,13 @@ class FusedRMSNormGated(RMSNorm):
         return (normed * gate).to(x.dtype)
 
 
+def rmsnorm(x: torch.Tensor, weight: torch.Tensor, eps: float) -> torch.Tensor:
+    """weight * (x * rsqrt(mean(x^2) + eps)): the norm in fp32, rounded to x's dtype BEFORE the weight (T5LayerNorm as
+    transformers writes it for glm5_next, deepseek_v3 and inkling, cast for cast)."""
+    xf = x.float()
+    return weight * (xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + eps)).to(x.dtype)
+
+
 def rmsnorm_unit_offset(x: torch.Tensor, weight: torch.Tensor, eps: float, group: "int | None" = None) -> torch.Tensor:
     """x * rsqrt(mean(x^2) + eps) * (1 + weight), in fp32, back to x's dtype. `group`: normalise each `group`-wide slice
     of the last axis on its own (Qwen3.8's hyper-connection and PLE norms over hc streams; transformers qwen4_exp
