@@ -6,6 +6,36 @@ Queries whose complete pool count fits top-k require no score or projection.
 from dataclasses import dataclass
 
 
+def project_query_rows(x, begin, end):
+    """Slice real queries, padding only short projection inputs to the FP8 lane."""
+    if not 0 <= begin < end <= x.shape[0]:
+        raise ValueError('project a nonempty range of real query rows')
+    value = x[begin:end]
+    if len(value) < 64:
+        # DenseLinear switches to its decode W4 lane at <=32 rows. Padding
+        # never reaches a cache writer or the subsequent query selection.
+        padded = value.new_zeros((64, *value.shape[1:]))
+        padded[:len(value)].copy_(value)
+        return padded
+    return value
+
+
+def covered_pool_ids(complete, topk_pools, *, out=None):
+    """Every visible pool, in a caller-owned destination when provided."""
+    import torch
+    shape = (complete.numel(), topk_pools)
+    if complete.ndim != 1 or topk_pools <= 0:
+        raise ValueError('covered selection requires row counts and a positive width')
+    if out is None:
+        out = torch.empty(shape, dtype=torch.int32, device=complete.device)
+    elif (out.shape != shape or out.dtype != torch.int32
+          or out.device != complete.device or not out.is_contiguous()):
+        raise ValueError('covered selection destination must match contiguous int32 rows')
+    ids = torch.arange(topk_pools, device=complete.device, dtype=torch.int32)
+    out.copy_(ids.expand(shape))
+    return out.masked_fill_(out >= complete[:, None], -1)
+
+
 @dataclass(frozen=True)
 class QueryShard:
     rows: int
@@ -58,11 +88,7 @@ class QueryShard:
         """Keep small tails on DenseLinear's FP8 prefill lane (>32 rows)."""
         if x.shape[0] != self.rows or not self.score_rows:
             raise ValueError('project only nonempty owned query rows')
-        import torch
-        value = x[self.score_begin:self.end]
-        if len(value) < 64:
-            value = torch.cat((value, value.new_zeros((64-len(value), *value.shape[1:]))))
-        return value
+        return project_query_rows(x, self.score_begin, self.end)
 
     def collect(self, scored, complete, comm):
         import torch
@@ -72,21 +98,16 @@ class QueryShard:
         if self.all_covered:
             if scored is not None:
                 raise ValueError('covered queries must not be scored')
-            ids = torch.arange(self.topk_pools, device=complete.device, dtype=torch.int32)
-            full = ids.expand(self.rows, -1).contiguous()
-            return full.masked_fill_(full >= complete[:,None], -1)
+            return covered_pool_ids(complete, self.topk_pools)
         owned = self.end - self.begin
-        ids = torch.arange(self.topk_pools, device=complete.device, dtype=torch.int32)
-        local = ids.expand(owned, -1).contiguous()
-        local.masked_fill_(local >= complete[self.begin:self.end, None], -1)
+        local = torch.full((self.capacity, self.topk_pools), -1, dtype=torch.int32, device=complete.device)
+        covered_pool_ids(complete[self.begin:self.end], self.topk_pools, out=local[:owned])
         if self.score_rows:
             if scored is None or scored.shape != (self.score_rows, self.topk_pools):
                 raise ValueError('missing scored query rows')
-            local[self.score_begin-self.begin:].copy_(scored)
+            local[self.score_begin-self.begin:owned].copy_(scored)
         elif scored is not None:
             raise ValueError('covered queries must not be scored')
-        if owned < self.capacity:
-            local = torch.cat((local, local.new_full((self.capacity-owned, self.topk_pools), -1)))
         if self.wire_bits == 32:
             return comm.all_gather(local, dim=0)[:self.rows]
         packet = local.to(torch.int16).view(torch.int32)

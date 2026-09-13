@@ -164,6 +164,7 @@ class Glm53Net:
         self.prefill_indexer_executed = set()
         self.prefill_dense_prefix = False
         self.prefill_dense_prefix_executed = set()
+        self.prefill_covered_queries_executed = set()
         self.prefill_absorb_tiles = False
         self.prefill_absorb_tiles_executed = set()
         self.mhc = None
@@ -522,13 +523,21 @@ class Glm53Net:
         in-progress tail, as latent slots (valid prefix first) and counts."""
         F, p, n = self.F, self.p, f"L{L}.idx."
         N = x.shape[0]; kp, nh, d = F.kpool, F.idx_heads, F.idx_dim
+        prefix = self._mla_prefix(N, step)
         shard = None
         if (self.prefill_indexer_shards and N >= 128 and len(step.segments) == 1
                 and not getattr(step, "captured", False) and not self.probe):
             from engine.modules.prefill_indexer import QueryShard
             shard = QueryShard(N, step.segments[0].ctx, self.rank, self.comm.world_size, F.topk // kp, kp)
-        query_x = x if shard is None else (shard.project_input(x) if shard.score_rows else None)
-        query_qr = qr if shard is None else (shard.project_input(qr) if shard.score_rows else None)
+        if shard is not None:
+            query_x = shard.project_input(x) if shard.score_rows else None
+            query_qr = shard.project_input(qr) if shard.score_rows else None
+        elif prefix:
+            from engine.modules.prefill_indexer import project_query_rows
+            query_x = project_query_rows(x, prefix, N) if prefix < N else None
+            query_qr = project_query_rows(qr, prefix, N) if prefix < N else None
+        else:
+            query_x, query_qr = x, qr
         q = self.linear(query_qr, n + "wq_b").view(-1, nh, d) if query_qr is not None else None
         pair = self._decode_pair(L, step, N)
         w = query_x.float() @ p[n + "w_heads"].T if query_x is not None else None    # fp32 head gate, as served
@@ -548,8 +557,9 @@ class Glm53Net:
                 q8, qs = self.lanes.indexer_quant(q.reshape(-1, d))
                 q8 = q8.view(q.shape[0], nh, d)
                 w_eff = self.lanes.head_gate(w, qs.view(q.shape[0], nh), F.idx_scale)
-                if shard is not None:
-                    q8, w_eff = q8[:shard.score_rows], w_eff[:shard.score_rows]
+                if shard is not None or prefix:
+                    query_rows = shard.score_rows if shard is not None else N-prefix
+                    q8, w_eff = q8[:query_rows], w_eff[:query_rows]
         width = F.topk + kp - 1
         slots_out = torch.empty((N, width), dtype=torch.int32, device=x.device)
         valid_out = torch.empty(N, dtype=torch.int32, device=x.device)
@@ -611,6 +621,14 @@ class Glm53Net:
                         seq_lens[shard.score_begin:shard.end] // kp, n_cand, F.topk // kp)
                 pool_ids = shard.collect(selected, seq_lens // kp, self.comm)
                 self.prefill_indexer_executed.add(L)
+            elif prefix:
+                from engine.modules.prefill_indexer import covered_pool_ids
+                pool_ids = torch.empty((s.length, F.topk // kp), dtype=torch.int32, device=x.device)
+                covered_pool_ids(seq_lens[:prefix] // kp, F.topk // kp, out=pool_ids[:prefix])
+                if prefix < s.length:
+                    cand = caches.pool_slots(L, s.seq, index(n_cand, x.device)).long()
+                    self._select_pools(q8, w_eff, keys[cand], scales[cand], seq_lens[prefix:] // kp,
+                                       n_cand, F.topk // kp, out=pool_ids[prefix:])
             elif n_cand:
                 cand = caches.pool_slots(L, s.seq, index(n_cand, x.device)).long()
                 pool_ids = self._select_pools(q8[sl], w_eff[sl], keys[cand], scales[cand], seq_lens // kp, n_cand, F.topk // kp)
@@ -618,6 +636,8 @@ class Glm53Net:
                 pool_ids = torch.full((s.length, F.topk // kp), -1, dtype=torch.int32, device=x.device)
             self.lanes.pool_slots(pool_ids, seq_lens, kp, *caches.token_map(L, s.seq),
                                   slots_out[sl], valid_out[sl])
+        if prefix:
+            self.prefill_covered_queries_executed.add(L)
         return slots_out.contiguous(), valid_out
 
     def _indexer_rows(self, step, caches) -> int:
@@ -664,10 +684,13 @@ class Glm53Net:
             torch.topk(logits, k, dim=-1, sorted=False, out=(values[sl], winners[sl]))
         self.lanes.pool_slots(winners.to(torch.int32), seq_lens, kp, *caches.token_maps(L), slots_out, valid_out, tokens=t)
 
-    def _select_pools(self, q8, w_eff, keys, scales, ke, n_cand: int, k: int) -> torch.Tensor:
+    def _select_pools(self, q8, w_eff, keys, scales, ke, n_cand: int, k: int, *, out=None) -> torch.Tensor:
         """Top-k complete pools per query, in passes of SELECT_ROWS rows: every row's
         selection is independent, so the passes are exact and the transient is bounded."""
         rows = q8.shape[0]
+        if out is not None and (out.shape != (rows, k) or out.dtype != torch.int32
+                or out.device != q8.device or not out.is_contiguous()):
+            raise ValueError('pool selection destination must match contiguous int32 query rows')
         def select(logits, lengths):
             values = logits[:, :n_cand].float()
             if rows > 64 and values.is_cuda:
@@ -678,8 +701,10 @@ class Glm53Net:
             return topk_positions(values, k, valid=lengths, inplace=True)
         if rows <= SELECT_ROWS:
             logits = self.lanes.indexer_logits(q8, keys, scales, w_eff, ke)
-            return select(logits, ke)
-        out = torch.empty((rows, k), dtype=torch.int32, device=q8.device)
+            selected = select(logits, ke)
+            return selected if out is None else out.copy_(selected)
+        if out is None:
+            out = torch.empty((rows, k), dtype=torch.int32, device=q8.device)
         for r0 in range(0, rows, SELECT_ROWS):
             r1 = min(rows, r0 + SELECT_ROWS)
             logits = self.lanes.indexer_logits(q8[r0:r1], keys, scales, w_eff[r0:r1], ke[r0:r1])
@@ -724,16 +749,20 @@ class Glm53Net:
             return out
         return torch.einsum("thc,hvc->thv" if transpose else "thd,hdc->thc", x, weight)
 
-    def _mla_context(self, L, q, latent, slots, valid, step, caches):
-        prefix = 0
+    def _mla_prefix(self, rows, step):
         if (self.prefill_dense_prefix and self.lanes.mla_dense_prefix is not None
-                and 128 <= len(q) <= 32768 and len(step.segments) == 1
+                and 128 <= rows <= 32768 and len(step.segments) == 1
                 and not getattr(step, 'captured', False) and not self.probe):
             from engine.modules.prefill_attention import covered_prefix
-            s = step.segments[0]
-            prefix = covered_prefix(len(q), s.ctx, self.F.topk, self.F.kpool)
-        if prefix < 128:
+            prefix = covered_prefix(rows, step.segments[0].ctx, self.F.topk, self.F.kpool)
+            return prefix if prefix >= 128 else 0
+        return 0
+
+    def _mla_context(self, L, q, latent, slots, valid, step, caches):
+        prefix = self._mla_prefix(len(q), step)
+        if not prefix:
             return self.lanes.mla_sparse(q, latent, slots, valid, self.F.mla_scale, 1.0)
+        s = step.segments[0]
         out = torch.empty_like(q)
         self.lanes.mla_dense_prefix(q[:prefix], latent, *caches.token_map(L, s.seq),
                                    s.ctx, self.F.mla_scale, 1.0, out=out[:prefix])
