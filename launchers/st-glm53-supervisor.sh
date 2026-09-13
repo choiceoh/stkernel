@@ -48,7 +48,7 @@ door_up(){ curl -fsS --max-time 5 "$BASE/v1/models" 2>/dev/null | grep -q "\"$MO
 handing_over(){ curl -sS --max-time 5 "$BASE/v1/models" 2>/dev/null | grep -q '"status": *"draining"'; }
 chat_ok(){
   curl -fsS --max-time "$CHAT_TIMEOUT" "$BASE/v1/chat/completions" -H 'Content-Type: application/json' \
-    -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":4,\"chat_template_kwargs\":{\"thinking\":false}}" \
+    -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":4,\"retain\":false,\"chat_template_kwargs\":{\"thinking\":false}}" \
     2>/dev/null | grep -q '"choices"'
 }
 containers_up(){
