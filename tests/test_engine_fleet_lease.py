@@ -281,7 +281,7 @@ class EngineHandoverTests(unittest.TestCase):
         self.assertIn("def _quiet(self)", self.serve)
         self.assertIn("def _hand_over(self)", self.serve)
         # the decision travels with the step's other decisions, so every rank drains together
-        self.assertIn("self._yield_asked()) if self.comm.rank == 0 else None)", self.serve)
+        self.assertIn("self._yield_asked(), self.tripwire.stamp()) if self.comm.rank == 0 else None)", self.serve)
         self.assertIn("self.draining = draining", self.serve)
         # and it is visible to anyone scraping, not only to the lease
         self.assertIn('"st:handing_over"', self.serve)
@@ -607,7 +607,8 @@ class ProbeLeaseTests(unittest.TestCase):
         self.assertIn("def fleet_lease_of()", boot)
         # the reservation is now taken at the top of fleet() -- before the 67 GiB, not after -- and carried
         self.assertIn("lease = fleet_lease_of()", boot)
-        self.assertIn("lease=lease).loop()", boot)
+        self.assertIn("lease=lease)", boot)
+        self.assertIn("serving = True\n        server.loop()", boot, "and the loop runs once the door is built")
 
 
 class QueueMaintenanceTests(unittest.TestCase):

@@ -153,7 +153,15 @@ class Glm53Engine:
             if self.memory is not None:
                 self.memory.checkpoint("ready")
                 self.memory.ready = True
-        except BaseException:
+        except BaseException as exc:
+            # The peers are at a ledger vote of this phase (a warm-up's, a capture's, "ready"); a rank
+            # that leaves without casting one is heard of only when NCCL's deadline runs out on them.
+            # The failed vote pairs with their next row and every rank stops now, naming a peer.
+            if self.memory is not None and not self.memory.ready:
+                try:
+                    self.memory.checkpoint("capture_decode/failed", failed=f"{type(exc).__name__}: {str(exc)[:300]}")
+                except BaseException:                 # noqa: BLE001 -- it raises by design; `exc` is the cause
+                    pass
             self.close_decode()
             raise
 
@@ -936,12 +944,13 @@ class Glm53Engine:
         comm = self.net.comm
         rows = int(local.shape[0])
         if comm.world_size > 1:
-            votes = [0] * comm.world_size
-            votes[comm.rank] = rows
-            counts = comm.all_reduce_host(votes)
+            from engine.base.tripwire import Tripwire
+            counts = [row[0] for row in Tripwire.of(comm).exchange("gather:rows", [rows])]
             if len(set(counts)) > 1:
                 raise RuntimeError(self._gather_divergence(counts, detail))
         return comm.all_gather(local, dim=-1)
+
+    DETAIL_ROWS = 5                                       # rows a divergence report carries: the decode width is 4, and 5 x 3 values fit a rank's 16-value exchange block
 
     def _gather_divergence(self, counts, detail) -> str:
         """Why the counts differ, not only that they do -- one more vote, taken only on the bad step.
@@ -952,15 +961,25 @@ class Glm53Engine:
         (`propose_sampled`). So both are voted here, per sequence: a span that differs says the matchers
         disagree over the same drafts, and a draft digest that differs says they never had the same
         drafts to begin with. One of those is a grammar bug and the other is an RNG bug, and the message
-        names which before anybody goes looking.
+        names which before anybody goes looking. ONE exchange of a fixed shape: the row count that just
+        diverged is the last thing a report about it may depend on.
         """
+        from engine.base.tripwire import Tripwire
         lines = ["the ranks disagree about how many rows this step gathers: "
                  + ", ".join(f"rank{r}={n}" for r, n in enumerate(counts)),
                  "  the count is the rich rows and their live grammar spans, over drafts drawn per rank"]
         comm = self.net.comm
-        for seq, span, digest in (detail or ()):
-            spans = comm.all_reduce_host([span if r == comm.rank else 0 for r in range(comm.world_size)])
-            digests = comm.all_reduce_host([digest if r == comm.rank else 0 for r in range(comm.world_size)])
+        mine = [(int(seq), int(span), int(digest)) for seq, span, digest in list(detail or ())[: self.DETAIL_ROWS]]
+        flat = [v for row in mine for v in row] + [-1, 0, 0] * (self.DETAIL_ROWS - len(mine))
+        table = Tripwire.of(comm).exchange("gather:detail", flat)
+        by_rank = [[tuple(row[i: i + 3]) for i in range(0, len(row), 3) if row[i] >= 0] for row in table]
+        for seq in sorted({seq for rows in by_rank for seq, _, _ in rows}):
+            found = [next(((s, d) for q, s, d in rows if q == seq), None) for rows in by_rank]
+            if any(f is None for f in found):
+                lines.append(f"  seq {seq}: gathered by " + ", ".join(f"rank{r}" for r, f in enumerate(found) if f)
+                             + " only -- the ranks do not agree which rows are rich")
+                continue
+            spans, digests = [s for s, _ in found], [d for _, d in found]
             if len(set(spans)) > 1 or len(set(digests)) > 1:
                 what = "live spans" if len(set(spans)) > 1 else "drafts"
                 lines.append(f"  seq {seq}: {what} differ -- "

@@ -261,6 +261,7 @@ HTTP 요청 번호는 내부 KV 행 번호와 분리한다. `Server`는 기본 6
 적용한다(락스텝): 모두 성공이면 행이 비거나 턴이 입장하고, 한 랭크라도 실패면 그 대화는 모든 랭크에서 버린다(복원 실패는 503),
 전송이 한 랭크에서 **시작조차 못 해도**(`park_begin`·`resume_begin`·`restore_begin` 의 예외) 그 행은 서버의 장부에 남아 그 랭크가
 "done, not ok" 로 투표한다 — 혼자 폴백하거나 혼자 죽는 랭크는 없다(45차: 그 분기가 나머지 랭크를 원샷 all-reduce 의 스톨 트랩으로 보냈다),
+입장의 세 가지 랭크-지역 입력(접두사 캐시의 경계와 진행 중 판정, `kv.available`)도 한 번의 교환으로 합의한 뒤 분기한다(`admit:prefix`·`admit:fits`·`admit:reorder`),
 모두 `TierFull` 이면 가장 오래 전에 파킹된 대화부터 잊고 다시 쓴다(잊을 것이 없으면 보존하지 않음). 파킹이 진행 중인 대화의
 이어가기는 그 파킹이 끝날 때까지 줄에서 기다린다. 대화 ID는 부팅을 넘겨 유효하다: 새 서버의 요청 번호는 티어에 남은 가장 큰
 대화 ID 위에서 시작하고, 엔진이 죽어도 파킹된 대화는 디스크에 남는다(정지 때 진행 중이던 전송은 기다려서 마무리한다).
@@ -268,6 +269,17 @@ HTTP 요청 번호는 내부 KV 행 번호와 분리한다. `Server`는 기본 6
 문맥은 400 이다. 누적 요청 수와 보존 대화 수는 KV 행 수에 제한되지 않는다.
 잘못된 입력은 400, 대기열 초과와 종료된 엔진은 503으로 응답한다. 종료 신호는 모든 랭크로
 전달하며, 실행·대기 중 요청의 자원을 정리하고 기다리는 HTTP 호출을 깨운다.
+
+**갈라진 랭크는 기다리지 않고 말하며 죽는다**(`base/tripwire`, `base/stall`, 45차 2026-09-13). 호스트 투표와 교환은 전부 고정 길이(80 int64)
+벡터에 랭크마다 (순번, 지점, 개수, 방식) 꼬리표를 싣고 간다: 지점이 다른 두 랭크도 같은 all-reduce 를 완주하고, 네 랭크가 같은 표를
+읽어 **같은** `CollectiveDivergence` 를 던진다("rank2: #5518 'admit:fits' 대 rank0: #5518 'settle:done'"). 스텝 브로드캐스트도 rank 0 이
+같은 꼬리표를 찍고 나머지가 대조한다. 지점: `settle:done`·`settle:outcome`·`admit:restore`·`admit:fits`·`admit:prefix`·`admit:reorder`·
+`gather:rows`·`gather:detail`·`boot:seed`. 부팅 단계의 투표(`RuntimeMemory.checkpoint`)는 읽기가 실패해도 그 실패를 표로 던지고, 캡처·
+자격 단계에서 죽는 랭크는 나머지가 기다리는 다음 표에 `failed` 를 던지며, `weights-loaded` 랑데부 전에 죽는 랭크는 `failed:` 단계로
+랑데부에 합류해 1800 s 대신 지금 모두를 세운다. 원샷 레인 선택은 포인터 정렬이 아니라 dtype·형상으로 정한다(`Comm._settled`). 살아서
+멎은 스텝은 옆의 스레드가 60 s 에 기록하고 300 s 에 링을 쓴 뒤 SIGKILL 한다(`ST_STEP_STALL_NOTE_S`/`ST_STEP_STALL_TRAP_S`). 어떤 죽음이든
+덤프 디렉터리에 `death-rank{r}-*.json`(divergence / peer-left / local)과 `stall-rank{r}-*.json` 이 남고, 브래킷은 네 랭크의 `docker logs`
+를 정지 전에 남긴다(`st-bracket-dumps/<session>-<arm>/rank{r}-<ip>.log`).
 
 `NvmeTier`는 완성된 새 파일의 이름을 manifest에 원자적으로 게시한다. 이전 세대는 그때까지
 보존하며, 삭제 실패는 manifest의 `retired` 또는 `deleting` 기록으로 남긴다. 재시작 후 또는

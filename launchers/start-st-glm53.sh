@@ -244,7 +244,13 @@ cleanup() {
 trap cleanup EXIT
 
 
-NCCL_ENV="-e NCCL_P2P_LEVEL=SYS -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200 \
+# TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC bounds a process whose NCCL watchdog thread stopped answering
+# (stuck in ncclCommAbort or a wedged CUDA call): the monitor thread kills it after this many
+# seconds. 7200 was copied from the vLLM launcher; with it a fleet whose four ranks sat in
+# mismatched collectives (2026-09-12 22:31, GPUs at 0%, requests queued) would have stood for two
+# hours. Collectives captured into a CUDA graph are never watched, so boot-time capture cannot trip
+# it; a serving step is milliseconds, a prefill chunk seconds. ST_NCCL_HEARTBEAT_S overrides per boot.
+NCCL_ENV="-e NCCL_P2P_LEVEL=SYS -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=${ST_NCCL_HEARTBEAT_S:-300} \
 -e NCCL_NET=IB -e NCCL_IB_DISABLE=0 -e NCCL_IB_HCA=rocep1s0f0,roceP2p1s0f0 \
 -e NCCL_SOCKET_IFNAME=enp1s0f0np0 -e GLOO_SOCKET_IFNAME=${GLOO_IFNAME:-enP2p1s0f0np0} \
 -e NCCL_CROSS_NIC=1 -e NCCL_PROTO=LL,LL128,Simple -e NCCL_CUMEM_ENABLE=0 \

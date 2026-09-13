@@ -572,7 +572,15 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         recorder.gauge("prefix_compressed_budget_bytes", host_budget_bytes)
         recorder.gauge("prefix_snapshots", snapshots); recorder.gauge("snapshot_MiB", round(snapshot_bytes / 2**20, 1))
         return F, net, caches, engine, runner
-    except BaseException:
+    except BaseException as exc:
+        # The peers wait at "weights-loaded" for up to 1800 s, and what ends their wait is the
+        # deadline. A rank that failed on the way meets them there instead, with a phase that says
+        # so: the rendezvous compares phases and every rank raises now, naming this one's error.
+        if getattr(comm, "preparation", None) is not None:
+            try:
+                comm.wait_prepared(f"failed: rank {comm.rank}: {type(exc).__name__}: {str(exc)[:200]}", timeout_s=60., final=True)
+            except BaseException:                     # noqa: BLE001 -- it raises by design; `exc` is the cause
+                pass
         if memory is not None:
             memory.close()
         raise
@@ -1015,6 +1023,7 @@ def fleet(a) -> int:
         comm = Comm.init()
     rec.root.name = f"rank{comm.rank}"
     engine = dump = runner = None
+    serving = False                                     # the door is open: from here the loop keeps its own books
     try:
         if comm.rank == 0:
             print(cfg.table())
@@ -1054,6 +1063,10 @@ def fleet(a) -> int:
                             "dense_w4a16_guard_rows": str(lane_tables.dense_w4a16_guard_rows())}
         # a stale tier under one rank diverges the ranks (45th 21): find it in seconds, not after the capture
         Server._agree_on_parked(comm, sorted(runner.parked_keys()))
+        # and the seed the drafts and samples are drawn from: nothing checked it, and a rank booted by
+        # hand with another one would have sampled its own tokens for as long as the fleet stood
+        from engine.base.tripwire import Tripwire
+        Tripwire.of(comm).agree("boot:seed", [int(a.seed)])
         with rec.phase("capture decode"):
             engine.capture_decode(MAX_SEQS)
         with rec.phase("warmup shapes"):
@@ -1106,13 +1119,32 @@ def fleet(a) -> int:
             print(f"  calibration: rank {comm.rank} summing the inputs of {len(engine.calibration.rows)} uncalibrated pack tiles "
                   f"({len(engine.calibration.deferred)} deferred) -> {engine.calibration_root}/mkcalib/rank{comm.rank}/ "
                   "(filed on its own at 32K rows, at shutdown, or on POST /v1/engine/calibration; the next boot packs GPTQ from them)", flush=True)
-        Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=renderer,
+        from engine.base.stall import StepWatch
+        server = Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=renderer,
                reasoning_effort_aliases=REASONING_EFFORT_ALIASES,
+               step_watch=StepWatch(comm.rank, notes_dir=a.dump_dir, dump=dump.write_now),
                model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
                tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_grammar=tool_grammar,
                         tool_call_start=tool_call_token(tok), generation=generation_defaults(a.ckpt_meta),
                vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 else None,
-               latency_root=Path(a.dump_dir) / 'onepass-latency', lease=lease).loop()
+               latency_root=Path(a.dump_dir) / 'onepass-latency', lease=lease)
+        serving = True
+        server.loop()
+    except BaseException as exc:
+        # Before the door opens every peer is at a ledger vote (a capture's, a qualification's,
+        # "production/ready"): a rank that dies here without voting is heard of at NCCL's deadline.
+        # One failed vote pairs with their next row and stops every rank now, naming a peer.
+        # After the door opens the loop keeps its own books (base/tripwire, base/stall).
+        memory = getattr(engine, "memory", None)
+        if not serving and memory is not None:
+            try:
+                memory.checkpoint("boot/failed", failed=f"rank {comm.rank}: {type(exc).__name__}: {str(exc)[:300]}")
+            except BaseException:                     # noqa: BLE001 -- it raises by design; `exc` is the cause
+                pass
+        if not serving:
+            from engine.base.tripwire import death_note
+            death_note(getattr(a, "dump_dir", None), comm.rank, exc, phase="boot")
+        raise
     finally:
         try:
             if dump is not None:

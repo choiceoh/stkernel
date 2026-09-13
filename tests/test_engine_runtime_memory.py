@@ -82,6 +82,24 @@ class RuntimeMemoryTests(unittest.TestCase):
     def budget(self, cuda=None, host_free=lambda: 800):
         return RuntimeMemory(400, 200, 100, cuda=cuda or Cuda(), host_free=host_free)
 
+    def test_a_reading_that_fails_still_reaches_the_vote_and_says_why(self):
+        """A rank that raised between `synchronize` and the MAX used to leave its peers at the
+        collective until NCCL's deadline; the reading's failure is now the flag the vote carries."""
+        cuda = Cuda()
+        memory = self.budget(cuda)
+        calls = []
+        cuda.synchronize = lambda: (calls.append(1), (_ for _ in ()).throw(RuntimeError("CUDA error: an illegal memory access")))[1]
+        with self.assertRaises(MemoryError) as caught:
+            memory.checkpoint("target/4/6")
+        self.assertIn("RuntimeError: CUDA error: an illegal memory access", str(caught.exception))
+        self.assertEqual(memory.phases[-1]["phase"], "target/4/6")
+        self.assertIn("illegal memory access", memory.phases[-1]["read_error"])
+        self.assertFalse(memory.phases[-1]["passed"])
+        self.assertFalse(memory.ready)
+        with self.assertRaises(MemoryError) as caught:
+            self.budget(Cuda()).checkpoint("capture_decode/failed", failed="ValueError: no dense rows")
+        self.assertEqual(str(caught.exception), "capture_decode/failed: ValueError: no dense rows")
+
     def test_byte_ceiling_includes_existing_allocator_and_restores_previous_limit(self):
         cuda = Cuda()
         memory = self.budget(cuda)
