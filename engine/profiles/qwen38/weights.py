@@ -9,8 +9,11 @@ The checkpoint on srv2 (/home/choiceoh/models/qwen38-flash-next-nvfp4, 206 safet
   kernels use): dequantised by engine/modules/moe.dequant_nvfp4 into (gate_up [2I, H], down [H, I]) on demand and
   kept in a bounded cache -- the reference lane's form; the served lane reads the packed bytes themselves;
 - the PLE table (`model-plefp8-*`: 128 shards of [2,500,012, 160] e4m3 rows, the concatenated hashed n-gram
-  vocabulary in row order): a row's shard is row // shard_rows, and rows are gathered by index straight off the
-  mapped file (engine/modules/lookup_table's engram reader does the same over NVMe), never loaded whole.
+  vocabulary in row order, and ONE scalar `weight_scale` for the whole table): a row's shard is row // shard_rows,
+  rows are gathered by index straight off the mapped file (engine/modules/lookup_table's engram reader does the same
+  over NVMe), never loaded whole, and every row is the e4m3 value times the scale -- the checkpoint's
+  qualification-notes.md: "loaders that only upcast the FP8 bytes will serve wrong PLE embeddings silently" (they did:
+  rows of std 39 where 0.02 belongs, and a garbage answer, 2026-09-13).
 
 Every read goes through the safetensors header (8 bytes, JSON, data): no safetensors library, one numpy memmap per
 shard. Nothing here computes.
@@ -122,21 +125,30 @@ class Weights:
         self._kept[name] = t
         return t
 
+    def table_scale(self, full: str) -> "torch.Tensor | None":
+        """The table's scalar `weight_scale` (a quantised table), or None (a table stored as it is read)."""
+        name = f"{full}.weight_scale"
+        return self.raw(name).float().reshape(()) if name in self.where else None
+
     def table_rows(self, name: str, rows: torch.Tensor) -> torch.Tensor:
-        """PLE rows by index [..., heads] -> [..., heads, width] in `dtype`, gathered shard by shard off the map."""
+        """PLE rows by index [..., heads] -> [..., heads, width] in `dtype`: gathered shard by shard off the map, times
+        the table's scale when it carries one."""
         full = self._name(name)
         shards = self.tables[full]
         first, stored = self.shard(self.where[shards[0]]).view(shards[0])
         per = first.shape[0]
         flat = rows.reshape(-1).to(torch.int64)
-        out = torch.empty(flat.numel(), first.shape[1], dtype=self.dtype)
+        out = torch.empty(flat.numel(), first.shape[1], dtype=torch.float32)
         which = flat // per
         for s in torch.unique(which).tolist():
             sel = (which == s).nonzero().reshape(-1)
             array, _ = self.shard(self.where[shards[s]]).view(shards[s])
             picked = np.ascontiguousarray(array[(flat[sel] % per).numpy()])
-            out[sel] = as_torch(picked, stored).to(self.dtype)
-        return out.reshape(*rows.shape, first.shape[1])
+            out[sel] = as_torch(picked, stored).float()
+        scale = self.table_scale(full)
+        if scale is not None:
+            out = out * scale
+        return out.to(self.dtype).reshape(*rows.shape, first.shape[1])
 
     def expert(self, layer: int, e: int) -> "tuple[torch.Tensor, torch.Tensor]":
         """(gate_up [2I, H], down [H, I]) in `dtype`: the expert's NVFP4 tensors dequantised, cached bounded."""
