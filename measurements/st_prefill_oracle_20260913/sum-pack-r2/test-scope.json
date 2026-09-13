@@ -1,0 +1,12 @@
+[
+  "tests.test_prefill_sum_pack",
+  "tests.test_prefill_q0_batch8",
+  "tests.test_prefill_oracle_candidates",
+  "tests.test_moe_prefill_m64",
+  "tests.test_moe_prefill_scale_expansion",
+  "tests.test_engine_mhc_contract",
+  "tests.test_engine_direct_mhc",
+  "tests.test_engine_prefill_outputs",
+  "tests.test_engine_token_shards.TokenShardTests.test_communication_roundtrip_crops_padding_and_keeps_last_token",
+  "tests.test_engine_token_shards.TokenShardTests.test_packet_projection_callback_survives_padding_and_result_is_cropped"
+]

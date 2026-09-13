@@ -7,6 +7,18 @@
 
 ## 이번에 준비한 후보
 
+- `engine/kernels/b12x/moe_prefill_q0_batch8.py`: 짧은 프리필의 Q0 입력 준비를 4행에서 8행으로 늘린다.
+  288개 전문가의 누적 위치 계산은 lane 0 직렬 루프에서 9개 워프의 병렬 prefix로,
+  토큰별 top8 예약은 lane 0 루프에서 8개 lane의 동시 예약으로 바꿨다. 중복 전문가와 0·음수 가중치도 보존한다.
+  입력이 기존 sC뿐 아니라 sA도 사용하므로, sA에 있던 라우팅 메타데이터를 sB로 옮겼다.
+  실제 컴파일 레이아웃에서 65,536 B 입력 영역과 3,456 B 메타데이터 영역의 비중첩을 확인했다.
+  `_prefill_q0_batch8=True` 명시 호출 전용이며, M128·65~8,192행의 eager 경로만 허용한다.
+  packed SF6·raw scale·N128 조합을 각각 준비했고 기존 FP32 scatter와 BF16 반올림은 유지했다.
+- `engine/kernels/prefill_collectives/sum_pack.py`: routed/shared MoE의 BF16 합산을 FP8 통신 패킹에 합친다.
+  FP8 양자화 전에 기존 합산과 같은 BF16 반올림을 수행하고, 패딩은 통신 패킷에서만 만든다.
+  `PrefillCollectives(comm, fuse_sum=True)`로 선택하며 일반 실행과 layer-major 실행에 모두 연결했다.
+  FP8_MIN_ROWS 미만은 기존 합산·통신을 사용한다. 32,256×4,096 BF16 기준 MoE 층당 rank마다
+  252 MiB 중간 텐서 한 개와 그 텐서의 쓰기·재읽기 504 MiB를 제거한다. 지속 상주 메모리나 통신량 감소는 아니다.
 - `engine/kernels/prefill_mhc.py`: 잔차 post와 다음 prenorm을 합친다. 기존 BF16 반올림을 유지하고,
   이미 손실 없는 것으로 확인한 BF16 계수 팩을 재사용한다. FP32 누산 순서는 달라 GPU 수치·품질 검증이 필요하다.
   `MHC(weights, prefill=True)`로만 선택한다. 기본값은 OFF다.
@@ -28,6 +40,9 @@ CPU 2개, 메모리 4 GiB, runc, 네트워크 없음, NVIDIA 장치 없음. CUDA
 | mHC BM32/BK128 → BM16/BK64 | REG 255 / STACK 1,136 B | REG 214 / STACK 0 B | r3에서 splits 1·2·4 확인 |
 | N128 FC2 네 조각 유지 → 재읽기 | STACK 912 B | STACK 528 B | r2 유지, 속도 이득 미검증 |
 | N128 FC1 unroll 4 → 1 | STACK 528 B | STACK 784 B | r3 기각, r2 소스로 원복 |
+| Q0 batch8 packed / raw | 공유 메모리 주소의 IR 지역성 오류 | REG 168 / STACK 112 B | 정적 레이아웃 오프셋으로 수정; 두 변형 컴파일 통과 |
+| Q0 batch8 + N128 | — | REG 168 / STACK 528 B | 조합 컴파일 통과 |
+| BF16 합산·FP8 패킹 융합 | — | REG 40 / STACK 0 B | 컴파일 통과, GPU 수치·속도 미검증 |
 
 `cpu-r1`, `cpu-r2`, `cpu-r3`에는 실제 컴파일 로그·자원 보고·소스 해시를 남겼다.
 STACK은 컴파일러 자원 지표이며 실행 시간이나 실제 spill 트래픽 측정값이 아니다.
@@ -35,6 +50,26 @@ mHC 최종 커널은 r3, N128 최종 커널은 r2 결과에 대응한다.
 각 실행의 CPU 검증은 30개 중 23 통과·7 생략. 수정한 오라클 검증은 55개 통과.
 최종 CPU 검증은 BF16 반올림, packed 좌표, 꼬리 행, split 3의 비정렬 H 범위와 667행을 포함한다.
 CPU shim의 FMA·dot은 GPU 연산 순서/수치 오차를 증명하지 않는다.
+
+추가 Q0 후보는 `q0-batch8-r1`의 실패와 `q0-batch8-r2`의 수정 결과를 함께 보존한다.
+최신 `sum-pack-r2`는 소스 `eb58d244`에서 **49개 검증 중 42 통과·7 생략**, 9개 변형 컴파일 통과
+(36.38초, CUDA 미초기화)다. 각 커널의 소스 해시는 `result.json`, 실제 선택한 검증은 `test-scope.json`에 있다.
+실제 Q0 본문의 prefix·예약·입력 staging을 CPU에서 실행했고,
+합산·패킹 본문은 독립적인 BF16 합산 후 패킹 결과와 바이트 단위로 비교했다.
+TP4 CPU 모델에서는 새 합산 전달을 켜기 전후의 hidden·KDA 상태·KV 페이지가 일반/층별 실행 모두 정확히 일치했다.
+이는 같은 실행 배치 안에서 새 합산 전달의 동등성을 확인한 것이며 모든 SP 상태 검증의 통과는 아니다.
+
+### 별도로 남은 기존 검증 실패
+
+`tests.test_engine_token_shards.TokenShardTests.test_model_prefill_and_next_decode_keep_hidden_aux_kda_and_kv`
+의 130·131행이 unsharded와 SP 비교에서 실패했다. 새 합산 융합 이전 소스 `8fcd20a1`을
+**동일 CPU 이미지에서 이 테스트만 실행**해도 두 경우 모두 같은 1,657개 원소 불일치와
+최대 절대 오차 0.58984375가 재현됐다. 원인은 아직 확정하지 않았다.
+`sum-pack-r1/cpu-tests.log`와 `sum-pack-before-tests.log`에 두 결과를 남겼다.
+기준 엔진 부팅이나 실제 GLM 가중치·GPU 실행은 아니며, 이 실패를 완화하거나 성공으로 집계하지 않았다.
+
+`run_cpu.py`의 기본 전체 검증에는 해당 테스트를 그대로 유지했다. 최신 결과는 `--tests`로 새 후보와
+영향 범위를 명시한 집중 검증이며 전체 상태 검증 통과나 GPU 품질 통과를 뜻하지 않는다.
 
 ## 오라클에서 말할 수 있는 범위
 

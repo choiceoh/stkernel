@@ -1,0 +1,156 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "variants": [
+    {
+      "kind": "mhc-bm16-bk64-s1",
+      "shared_bytes": 4736,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _post_prenorm:\n  REG:214 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:984 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "kind": "mhc-bm16-bk64-s2",
+      "shared_bytes": 4736,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _post_prenorm:\n  REG:214 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:984 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "kind": "mhc-bm16-bk64-s4",
+      "shared_bytes": 4736,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _post_prenorm:\n  REG:214 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:984 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "kind": "prefill_sum_pack",
+      "shared_bytes": 16,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:11 CONSTANT[4]:8\n Function _pack_sum_rs_payload:\n  REG:40 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:960 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "kind": "moe_n128",
+      "rows": 2672,
+      "key": "('dynamic', 'fp4', 'nvfp4', 288, 4096, 512, 8, 48, (128, 128), torch.int32, False, True, 'swigluoai_uninterleave', 1.0, 0.0, 10.0, False, True, 'tp_prefill_scatter_fp32_v1', True, 'temporary_prefill_raw_scales_v1', 'private_prefill_n128_tiled_v1')"
+    },
+    {
+      "kind": "moe_n128",
+      "rows": 32256,
+      "key": "('dynamic', 'fp4', 'nvfp4', 288, 4096, 512, 8, 48, (128, 128), torch.int32, False, True, 'swigluoai_uninterleave', 1.0, 0.0, 10.0, False, True, 'tp_prefill_scatter_fp32_v1', False, 'temporary_prefill_raw_scales_v1', 'private_prefill_n128_tiled_v1')"
+    },
+    {
+      "kind": "q0_batch8_packed",
+      "rows": 2672,
+      "key": "('dynamic', 'fp4', 'nvfp4', 288, 4096, 512, 8, 48, (128, 128), torch.int32, False, True, 'swigluoai_uninterleave', 1.0, 0.0, 10.0, False, True, 'sf6_direct_prefill_v1', 'glm53_tp_sf6_q0_v1', 'tp_prefill_scatter_fp32_v1', True, 'short_prefill_q0_words_v1', 'private_prefill_q0_batch8_v1')"
+    },
+    {
+      "kind": "q0_batch8_raw",
+      "rows": 2672,
+      "key": "('dynamic', 'fp4', 'nvfp4', 288, 4096, 512, 8, 48, (128, 128), torch.int32, False, True, 'swigluoai_uninterleave', 1.0, 0.0, 10.0, False, True, 'tp_prefill_scatter_fp32_v1', True, 'private_prefill_q0_batch8_v1')"
+    },
+    {
+      "kind": "q0_batch8_n128",
+      "rows": 2672,
+      "key": "('dynamic', 'fp4', 'nvfp4', 288, 4096, 512, 8, 48, (128, 128), torch.int32, False, True, 'swigluoai_uninterleave', 1.0, 0.0, 10.0, False, True, 'tp_prefill_scatter_fp32_v1', True, 'temporary_prefill_raw_scales_v1', 'private_prefill_n128_tiled_v1', 'private_prefill_q0_batch8_v1')"
+    }
+  ],
+  "q0_batch8_layouts": [
+    {
+      "kind": "PrefillQ0Batch8Packed",
+      "route_bytes": 3456,
+      "b_bytes": 16384,
+      "c_bytes": 32768,
+      "a_bytes": 40960,
+      "input_bytes": 65536,
+      "producer_warps": 8
+    },
+    {
+      "kind": "PrefillQ0Batch8Raw",
+      "route_bytes": 3456,
+      "b_bytes": 16384,
+      "c_bytes": 32768,
+      "a_bytes": 40960,
+      "input_bytes": 65536,
+      "producer_warps": 8
+    },
+    {
+      "kind": "PrefillQ0Batch8N128",
+      "route_bytes": 3456,
+      "b_bytes": 16384,
+      "c_bytes": 32768,
+      "a_bytes": 40960,
+      "input_bytes": 65536,
+      "producer_warps": 8
+    }
+  ],
+  "cute_resources": [
+    {
+      "path": "cute/dynamic_e288_k4096_n512_t8_tiled_0526512586d6f190/cutlass___call___enginekernelsb12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTensorInt3211_FakeTensorInt.sm_121a.cubin",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_dynamic_prefill_n128_tiledMoEGatedPrefillN128TiledQ0_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmemo1_tensorp_0:\n  REG:168 STACK:528 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "path": "cute/dynamic_e288_k4096_n512_t8_tiled_09ac7ec366ef24cb/cutlass___call___enginekernelsb12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTensorInt3211_FakeTensorInt.sm_121a.cubin",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_dynamic_prefill_n128_tiledMoEGatedPrefillN128TiledLong_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmemo1_tenso_0:\n  REG:168 STACK:528 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "path": "cute/dynamic_e288_k4096_n512_t8_tiled_43e544c1eabdeb10/cutlass___call___enginekernelsb12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTensorInt3211_FakeTensorInt.sm_121a.cubin",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_prefill_q0_batch8PrefillQ0Batch8Raw_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmemo1_tensorptri8gmemalign16o1_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "path": "cute/dynamic_e288_k4096_n512_t8_tiled_74a4344e2cc91200/cutlass___call___enginekernelsb12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTensorInt3211_FakeTensorInt.sm_121a.cubin",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_prefill_q0_batch8PrefillQ0Batch8N128_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmemo1_tensorptri8gmemalign16o_0:\n  REG:168 STACK:528 SHARED:1024 LOCAL:0 CONSTANT[0]:2160 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "path": "cute/dynamic_e288_k4096_n512_t8_tiled_e979c770c1fca231/cutlass___call___enginekernelsb12xmoe_dispatch_DynamicMoELaunch_object_at__Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_Ptrgmem_FakeTensorInt3211_FakeTensorInt3211_FakeTensorInt.sm_121a.cubin",
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_prefill_q0_batch8PrefillQ0Batch8Packed_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmemo1_tensorptri8gmemalign1_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:1976 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    }
+  ],
+  "cuda_initialized": false,
+  "elapsed_s": 36.38162894899142,
+  "source_sha256": {
+    "engine/kernels/b12x/moe_dynamic_prefill.py": "21b25effb54dafad14439594fac302ccf0dc921199bce4ed65b128ee2bf41977",
+    "engine/kernels/b12x/moe_dynamic_gated_tiled.py": "a4c1c8ea8e72f8d1f1f143b8115a6b9d8b2c96066ffa6ed1465a49ad87a83d4d",
+    "engine/kernels/b12x/moe_static_kernel.py": "dc24b0e1b73076fc4d3abeace44fa2c6a4c99a077f7687616d9c561a897c4de4",
+    "engine/kernels/b12x/moe_w4a16_compiler.py": "83e0e32a82f99dcdd28a9bfdacecf34cd868a3f4f8fbb3f6da4f63b765a0018f",
+    "engine/kernels/b12x/moe_sf6_prefill_scales_kernel.py": "320c708aa6f0def156a41e9d6468e9b51a4ff294ca9b1ad6c9cb96e8c999d519",
+    "engine/kernels/b12x/moe_w4a16_kernel.py": "1e3e587333d03afe598a454573cb6c9bbb63ed6af3bfe76cdd77af67ba8d839d",
+    "engine/kernels/b12x/moe_w4a16_route_pack.py": "ecf89b722084ab65b8877f7f7c3f6072de659b29c9436707edc05f86f47d1b24",
+    "engine/kernels/b12x/moe_static_common.py": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
+    "engine/kernels/b12x/moe_activation.py": "ce4c28f512c7d8cff08e7dfe8a2717713bde112752a137ef09acddd77f420b2b",
+    "engine/kernels/b12x/moe_w4a16_fp4_helpers.py": "3115cf3e73064cbf2c339d5fd2cec1c49206f34283c281faef2d1c2d290a6c73",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+    "engine/kernels/b12x/moe_dynamic_prefill_n128_tiled.py": "bdfd78ffa8fba68c67aa2bf066f65d0f63defd57022491a98c7f8439c99a9a74",
+    "engine/kernels/b12x/moe_w4a16_prepare.py": "85d8a930939705db01a748380753283cdeff187e87a5febaad7363e5dd24c8e4",
+    "engine/kernels/b12x/moe_dynamic_kernel.py": "7532e1338df8e80c4b8f0bd6473c2ffeda9a5028018c77775c4e9fe2fa47b072",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_direct_micro_kernel.py": "b14b207487fb1c81a2c2d664e87919fd0b4042f76b157b6540add758d0c43474",
+    "engine/kernels/b12x/moe_reform_sf_pack.py": "c001d21dd13cb0258528ddf3e4aa6c95798e6d813827dda2c91cc3268a162631",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_q0_words.py": "7e6662a438dab421a0ddb38bb857eb9a553fb8bab81d3865a02e6b6e338da755",
+    "engine/kernels/b12x/__init__.py": "38e6bec5ca137908ed7eeeb8eb2c4b28337de1b7932a718e13667372f9175511",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_words.py": "368dee876092745be60e079a73cf73c4e2c91dd73f699c6f0a315da0ed05e3e9",
+    "engine/kernels/b12x/moe_dynamic_ep_local.py": "89bab8e22514d4ce036e4cc6755a5dcfaeb8b12277766394dcdd101db8751595",
+    "engine/kernels/b12x/moe_sf6_prefill_scales.py": "60314cd1c2967a83cb22ada53b388a0c7214ca0d4e098a99f47a2ddad305423b",
+    "engine/kernels/b12x/moe_w4a16_host.py": "49622d643b9acc602715bfbfbfa4ffc75b000fbc26ffcb8247326554edec0e43",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_q0.py": "759a519145c3edecac42ea917abbd8003b142f02ba4d41f86fc2d58e939a51ba",
+    "engine/kernels/b12x/triton_compact.py": "bbcb7762850773f1608729cb1e651029c489930b7ea0973452896a337c17ee2a",
+    "engine/kernels/b12x/fp4_quant.py": "b96d40ed26bfb5b897bee9ecd88fb00acb65744363df6ba8c439675af6c8d537",
+    "engine/kernels/b12x/moe_micro_kernel.py": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914",
+    "engine/kernels/b12x/moe_w4a16_activations.py": "d95ae610cd28d8ceba67f259e842d42d284fa9657e9a24721cc8f72358a9e7e8",
+    "engine/kernels/b12x/moe_dynamic_prefill_raw_route.py": "465b60cd1c78e9d53cdfd90dc99e557b70245e930fdffddfe7de6e5a7d9c564b",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "a12ced6fe865237ac1ba5a409d8a53eb2b3235fa46f4348840b9a8c2d8249c74",
+    "engine/kernels/b12x/_prefill_m64_bodies.py": "43940b6108f8ba8573bdd06e05842d7506c19547bc42578e9de13df18029a984",
+    "engine/kernels/b12x/moe_dynamic_prefill_m64.py": "af11a43ec191aa6f4c476219cc33502a6a139b3de6ae3e85bf82aff3c6eea162",
+    "engine/kernels/b12x/moe_sf_pack.py": "f4e35373febda33ef343077eaf5dc1178b09d81ebdbf1337327ca8fa7f84a03a",
+    "engine/kernels/b12x/moe_dynamic_gated_raw_q0.py": "adc6d8b545288aba6fb5d35fd62ef7ebb13e7a0200296ede5343563504659f34",
+    "engine/kernels/b12x/moe_prefill_q0_batch8.py": "ad0ebe9dd0e747b17c2a6d68befa76b7ce7023baba2b9502efdfe9fdae68efd6",
+    "engine/kernels/b12x/moe_dispatch.py": "62b6b1f742647b898de51c492ca136d556ac8afc8397340d21476bde4dca9a0d",
+    "engine/kernels/b12x/_prefill_q0_batch8.py": "140c9c639eccf9c973de0cd19da2942d1eda981bf15f410f4ffc992b17c6fe37",
+    "engine/kernels/b12x/moe_dynamic_prefill_n128.py": "c666fe6fbe584e354c65cb879c266ef31704297561f283ef75877565e1cc8361",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "engine/kernels/b12x/b12x_moe.py": "348cbd7bf9d8462ca8b5dff3d2b3f7f237e4bef78a2d0403b62b6d0b5eaf991c",
+    "engine/kernels/b12x/_moe_dynamic/generic.py": "38b112ffe5ca00789b1fa84b7f606431385305d9c835e4adbf2e94ade60655da",
+    "engine/kernels/b12x/_moe_dynamic/__init__.py": "a2c19aa9794c30cbcf3029d145e11801575db53f7d9cf24c12e83424d0cdc2fd",
+    "engine/kernels/b12x/_moe_dynamic/gated.py": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+    "engine/kernels/prefill_mhc.py": "e4f15f1e23ceec6aefe9403258493d4c861e07c0bfb2d419fba3382cf96d4bc9",
+    "engine/kernels/dense/mhc.py": "dd52b6190b2706a1cbf9dcffbe8267e42d4c5da3563f5ca67c7910d15c375e9e",
+    "engine/profiles/glm53/net.py": "2cfec94136559d1f6d2f28cf3b91e5b545f96810decdcc67cef8e08f51caf790",
+    "engine/kernels/prefill_collectives/sum_pack.py": "3167ddc0fba7d72884c799b309c11e4a5372b6bea9b3c826b3b1ba989104cb65",
+    "engine/kernels/prefill_collectives/__init__.py": "8f7cf7fbd948c5e894d6c71022e68ecbdc3915772b7be8fecdca25e699570ef5",
+    "engine/modules/token_shards.py": "1338471c39b8f7e3e493980215ff68b2b61593f0a5111471e4875d2c8415ebec",
+    "engine/profiles/glm53/execution.py": "02cb0ab330e37b6f2ea06bebd394bf8932a7188e44439aa2464ed6650889ef01"
+  }
+}
