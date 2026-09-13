@@ -37,6 +37,16 @@ class DraftDiagnostics:
         self.support = torch.empty(field.shape[0], k, candidates, device=field.device, dtype=torch.int64)
         self.counts = Counter()
         self.sink = None
+        self.selector_trace = None
+        self.trace_every = 0
+        self.trace_steps = {}         # slot -> (current sequence, sampled-step index); bounded by arena slots
+        self.trace_digest = None
+        self.trace_rank = 0
+
+    def enable_selector_trace(self, every, digest, rank=0):
+        self.trace_every, self.trace_digest = every, digest
+        self.trace_rank = rank
+        self.selector_trace = tuple(torch.empty_like(self.support, dtype=torch.float32) for _ in range(2))
 
     def slot(self, ring):
         stride = self.field[0].numel() * self.field.element_size()
@@ -60,7 +70,25 @@ class DraftDiagnostics:
                           seq=int(seq), context=int(context), accepted_prefix=int(prefix),
                           reason=reason, draft_width=self.k)
 
-    def note_sync(self, seq, context, slot, accepted, new, remaining, ends, *, policy_modified=False):
+    def note_sync(self, seq, context, slot, accepted, new, remaining, ends, *, policy_modified=False, trace_eligible=True):
+        # agree_walk broadcasts rank zero's actual predecessor path. Other
+        # ranks' private paths and constrained target labels cannot fit it.
+        if (self.selector_trace is not None and self.sink is not None and self.trace_rank == 0
+                and not policy_modified and trace_eligible):
+            count = min(self.k, accepted + 1, remaining,
+                        next((i + 1 for i, token in enumerate(new) if token in ends), len(new)))
+            owner, step = self.trace_steps.get(slot, (seq, 0))
+            if owner != seq:
+                step = 0
+            self.trace_steps[slot] = (seq, step + 1)
+            if count > 0 and step % self.trace_every == 0:
+                # Synchronous only: each slot still holds THIS proposal. Rows
+                # after the first mismatch are never treated as teacher labels.
+                self.sink(kind='draft_selector', operation='selector_calibration', phase='decode',
+                    seq=int(seq), context=int(context), tuning=self.trace_digest, policy_modified=bool(policy_modified),
+                    target=list(map(int, new[:count])), candidates=self.support[slot, :count].tolist(),
+                    unary=self.selector_trace[0][slot, :count].tolist(),
+                    edge=self.selector_trace[1][slot, :count].tolist(), draft_width=self.k)
         if policy_modified:
             code, prefix = 4, -1
         else:
@@ -81,4 +109,5 @@ class DraftDiagnostics:
 
     def close(self):
         # The support is outside the arena; stop holding it after graph teardown.
-        self.support = self.field = self.sink = None
+        self.support = self.field = self.sink = self.selector_trace = None
+        self.trace_steps.clear()

@@ -41,6 +41,8 @@ def steady_errors(report, requests, concurrency):
     for rank in ranks:
         if not rank.get('complete') or rank.get('diagnostic'):
             errors.append(f"rank {rank.get('rank')}: incomplete or profiled measurement")
+        if rank.get('instrumentation', {}).get('draft_selector_trace_every', 0):
+            errors.append(f"rank {rank.get('rank')}: selector calibration trace forces synchronous decode")
         if rank.get('preparation_changed') is not False:
             errors.append(f"rank {rank.get('rank')}: preparation changed or unknown")
         if 'triton.runtime.jit._do_compile' not in rank.get('preparation_after', {}).get('observers', []):

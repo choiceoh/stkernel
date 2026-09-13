@@ -244,6 +244,12 @@ def supervisor_environment(value, directory):
         raise ValueError('original supervisor changed while reading its environment; reservation retained')
     environment.update(value.get('validation_env', {}))
     environment.update(REPO=value['repo'], FLEET_DIR=str(directory), FLEET_SESSION=value['session'])
+    # /proc exposes the supervisor's initial environment, before Supervisor
+    # binds the queue lease in its child environment. Edits and resume must
+    # prepare the same owner/path that the existing waiter actually uses.
+    if value['kind'] == 'boot':
+        environment.update(ST_LEASE_OWNER='queue/' + value['session'],
+                           ST_LEASE_PATH=environment.get('FLEET_LEASE_PATH', '/home/choiceoh/glm53-logs/st-fleet.lock'))
     return environment
 
 
@@ -339,7 +345,8 @@ def edit(directory, session, *, command=None, cwd=None, estimate=None, note=None
                         path = fleet_prepare.prepare(directory,session,updated['command'],updated['cwd'],
                                                       prepared=old_path,**args)
                     except ValueError:
-                        path = fleet_prepare.prepare(directory,session,updated['command'],updated['cwd'],**args)
+                        path = fleet_prepare.prepare(directory,session,updated['command'],updated['cwd'],
+                                                     prior_approval=old_path if original.get('prepare_receipt_required') else None,**args)
                 updated['prepare_manifest'] = str(path)
                 updated['prepare_receipt_required'] = True
                 if updated.get('validation_env', {}).get('FLEET_VALIDATION_REQUIRED') == '1' and updated['kind'] == 'boot':

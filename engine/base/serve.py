@@ -1925,7 +1925,10 @@ class Server:
                     if self._active or self._waiting or self._profiling is not None:
                         raise ValueError('latency recording requires idle serving and no other profiler')
                     self.runner.drain()  # finish retired asynchronous rows before the measurement boundary
-                    mine = self.latency.begin(token, payload.get('diagnostic', False), payload.get('concurrency', 1))
+                    tuning = getattr(getattr(self.engine, 'drafter', None), 'tuning', None)
+                    trace_every = getattr(tuning, 'trace_every', 0)
+                    recording = {'instrumentation': {'draft_selector_trace_every': trace_every}} if trace_every else {}
+                    mine = self.latency.begin(token, payload.get('diagnostic', False), payload.get('concurrency', 1), **recording)
                 elif operation in ('end', 'abort'):
                     if self.latency.active is None or self.latency.active['token'] != token:
                         raise ValueError('latency token does not own the active recording')

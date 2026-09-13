@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Bind managed deployment to the candidate and main accepted before queueing."""
 import argparse
+import copy
 import json
 import os
 from pathlib import Path
@@ -53,6 +54,29 @@ def freeze(value):
             fetched.add((repo, check['fetch']))
         check['accepted_ref'] = commit(repo, check['ref'])
     value['deployment_approvals'] = approvals
+
+
+def retain(directory, manifest, value):
+    """Keep a signed source approval when only preparation environment changes.
+
+    CPU preparation still runs afresh. Source, command, specification, image
+    identity, and targets must match; this never grants approval to a new tree.
+    """
+    previous = fleet_prepared.read(directory, manifest)
+    bound = ('session', 'command', 'cwd', 'spec_path', 'spec_digest', 'files',
+             'head', 'source_identity', 'arms', 'executable', 'required_paths',
+             'absent_paths', 'required_files', 'images', 'image_ids',
+             'deployment_targets', 'deployment_sources', 'deployment_source_scopes',
+             'protected_paths')
+    if not previous.get('deployment_approvals') or any(previous.get(k) != value.get(k) for k in bound):
+        return False
+    checks = [{k:v for k,v in check.items() if k != 'accepted_ref'} for check in previous['checks']]
+    if checks != value['checks']:
+        return False
+    validate(previous)
+    value['deployment_approvals'] = copy.deepcopy(previous['deployment_approvals'])
+    value['checks'] = copy.deepcopy(previous['checks'])
+    return True
 
 
 def validate_approval(approval, protected_paths=()):

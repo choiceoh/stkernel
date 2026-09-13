@@ -177,6 +177,10 @@ class Drafter:
         self.candidate_buffer = None
         self.diagnostics = None
         self.decode_calibration = False
+        from .draft_tuning import DraftTuning
+        self.tuning = DraftTuning()
+        self.selector_alpha = self.tuning.alphas(F.k)
+        self.request_boundaries = False
 
     def capture_decode(self, caches, memory=None, draws_seed=None, vocab=None, prepared_context=False,
                        append_child=None):
@@ -226,13 +230,14 @@ class Drafter:
                 amax = amax_of(store_name(dense_name))
                 if amax is None or any(p.get(k) is None for k in readers + [norm]):
                     continue
-                s_eff = fold(p[norm], scales(amax, [p[k] for k in readers]))
+                alpha = self.tuning.smoothing_alpha.get(norm, 0.5)
+                s_eff = fold(p[norm], scales(amax, [p[k] for k in readers], alpha=alpha))
                 factors[norm] = s_eff
                 for k in readers:
                     weights[k] = smooth_weight(p[k], s_eff)
         return weights, factors
 
-    def prepare_fast(self, store=None, *, consume_weights=False, max_seqs=None, compact_into=None, policy=None):
+    def prepare_fast(self, store=None, *, consume_weights=False, max_seqs=None, compact_into=None, policy=None, tuning=None):
         """TP-shard dense compute and bind calibrated packs before capture.
 
         Only this rank's heads/MLP shard are read by decode; row-parallel
@@ -242,6 +247,10 @@ class Drafter:
         from engine.kernels.dense import DenseLinear
         from .draft_policy import DraftPolicy, require_decode_calibration
         policy = policy or DraftPolicy()
+        if tuning is not None:
+            self.tuning = tuning
+            self.selector_alpha = tuning.alphas(self.k)
+            self.request_boundaries = tuning.request_boundaries
         if policy.fc_calibration == 'auto':
             raise ValueError('resolve automatic draft calibration across ranks before preparing packs')
         if consume_weights and policy.separate_decode_fp8:
@@ -615,12 +624,15 @@ class Drafter:
             # the scores never exist: a step reads one codebook row against this step's candidates
             from engine.modules.draft_agreement import agree_walk
             drafts = walk_scores(unary, cand, anchors, proj, p["candidate_selector.predecessor_codebook"],
-                                 p["candidate_selector.successor_codebook"])
+                                 p["candidate_selector.successor_codebook"], alpha=self.selector_alpha)
             return agree_walk(self.target.comm, drafts)
         pred_ids = torch.cat([anchors.view(n, 1, 1).expand(n, 1, F.sel_top_k), cand[:, :-1]], 1)         # [n, K, 16]
         pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()                              # [n, K, 16, 256]
         succ = p["candidate_selector.successor_codebook"][cand].float()
-        scores = unary[:, :, None, :] + torch.einsum("nkpr,nkcr->nkpc", pred * proj[:, :, None, :], succ)   # [n, K, prev, cur]
+        edge = torch.einsum("nkpr,nkcr->nkpc", pred * proj[:, :, None, :], succ)
+        if any(a != 1. for a in self.selector_alpha):
+            edge *= torch.tensor(self.selector_alpha, device=dev).view(1, K, 1, 1)
+        scores = unary[:, :, None, :] + edge   # [n, K, prev, cur]
         rows = torch.arange(n, device=dev)
         prev = torch.zeros(n, dtype=torch.int64, device=dev)
         # The walk puts mass on `sel_top_k` candidates a position and nothing else. Handing that back as
@@ -650,14 +662,16 @@ class Drafter:
         from engine.modules.draft_agreement import agree_walk
         return agree_walk(self.target.comm, torch.stack(out, 1), qcand, qprob)
 
-    def propose(self, anchor: int, position: int, ring: torch.Tensor) -> "list[int]":
+    def propose(self, anchor: int, position: int, ring: torch.Tensor, *, boundary=None) -> "list[int]":
         """K drafts for the block [anchor at `position`, K masks after it]; the ring holds the context up to position-1."""
         if self.decode_graphs is not None:
+            if boundary is not None:
+                return self.decode_graphs.propose(anchor, position, ring, boundary=boundary).tolist()
             return self.decode_graphs.propose(anchor, position, ring).tolist()
         anchor = torch.full((1,), anchor, dtype=torch.int64, device=ring.device)
-        return self.propose_tensor(anchor, position, ring).tolist()
+        return self.propose_tensor(anchor, position, ring, boundary=boundary).tolist()
 
-    def propose_tensor(self, anchor: torch.Tensor, position, ring: torch.Tensor, support_slot=None) -> torch.Tensor:
+    def propose_tensor(self, anchor: torch.Tensor, position, ring: torch.Tensor, support_slot=None, *, boundary=None) -> torch.Tensor:
         """The same greedy walk, with every selection remaining on device."""
         F, p = self.F, self.p
         K = self.k
@@ -666,7 +680,12 @@ class Drafter:
         positions = position + torch.arange(K + 1, device=dev)
         h = self.block(ids, positions, ring, position)[1:]                                   # the K mask positions
         from engine.modules.vocab import topk
-        unary, cand = topk(self.target.head_local(h), self.target.comm,
+        local = self.target.head_local(h)
+        if boundary is not None:
+            from engine.modules.draft_boundary import tensor, mask_ends
+            boundary = tensor(boundary, dev)
+            mask_ends(local, self.target.rank * self.target.vp, boundary)
+        unary, cand = topk(local, self.target.comm,
                            self.target.rank * self.target.vp, F.sel_top_k, self.decodable,
                            workspace=self.candidate_buffer)  # [K, 16]
         if self.diagnostics is not None:
@@ -677,11 +696,13 @@ class Drafter:
         from engine.modules.draft_agreement import agree_walk
         drafts = walk_scores(unary.unsqueeze(0), cand.unsqueeze(0), anchor.reshape(1), proj.unsqueeze(0),
                              p["candidate_selector.predecessor_codebook"],
-                             p["candidate_selector.successor_codebook"]).reshape(K)
+                             p["candidate_selector.successor_codebook"], alpha=self.selector_alpha, boundary=boundary,
+                             trace=getattr(self.diagnostics, 'selector_trace', None),
+                             trace_slots=support_slot).reshape(K)
         return agree_walk(self.target.comm, drafts)
 
     def propose_sampled(self, anchor: int, position: int, ring: torch.Tensor, temperature: float, uniforms,
-                        vocab: int) -> "tuple[list[int], torch.Tensor]":
+                        vocab: int, *, boundary=None) -> "tuple[list[int], torch.Tensor]":
         """The same walk drawn at `temperature` instead of argmax (production's DRAFT_SAMPLE=probabilistic): returns the K
         draft ids and the distribution each was drawn from, [K, vocab] fp32 (zero outside the 16 candidates).
 
@@ -695,11 +716,11 @@ class Drafter:
         """
         drafts, dists = self.propose_sampled_tensor(
             torch.full((1,), anchor, dtype=torch.int64, device=ring.device),
-            position, ring, temperature, uniforms, vocab)
+            position, ring, temperature, uniforms, vocab, boundary=boundary)
         return drafts.tolist(), dists
 
     def propose_sampled_tensor(self, anchor: torch.Tensor, position, ring: torch.Tensor, temperature: float, uniforms,
-                               vocab: int) -> "tuple[torch.Tensor, torch.Tensor]":
+                               vocab: int, *, boundary=None) -> "tuple[torch.Tensor, torch.Tensor]":
         """`propose_sampled` with every pick a tensor (45차 §23 B3: a row ahead of the host cannot read its drafts back).
         anchor [1] int64 on device; position a device scalar or int; `uniforms` [K], one a position (base/draws).
         Returns (drafts [K], dists [K, vocab] fp32)."""
@@ -710,13 +731,31 @@ class Drafter:
         positions = position + torch.arange(K + 1, device=dev)
         h = self.block(ids, positions, ring, position)[1:]
         from engine.modules.vocab import topk
-        unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp,
+        local = self.target.head_local(h)
+        if boundary is not None:
+            from engine.modules.draft_boundary import tensor, mask_ends
+            boundary = tensor(boundary, dev)
+            mask_ends(local, self.target.rank * self.target.vp, boundary)
+        unary, cand = topk(local, self.target.comm, self.target.rank * self.target.vp,
                            F.sel_top_k, self.decodable, workspace=self.candidate_buffer)
         proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float()
+        if boundary is not None:
+            from engine.modules.draft_boundary import sampled
+            from engine.modules.draft_agreement import agree_walk
+            tokens, support, probabilities = sampled(unary, cand, anchor, proj,
+                p["candidate_selector.predecessor_codebook"], p["candidate_selector.successor_codebook"],
+                self.selector_alpha, temperature, torch.as_tensor(uniforms, device=dev).reshape(K), boundary)
+            tokens, support, probabilities = agree_walk(self.target.comm, tokens, support, probabilities)
+            dists = torch.zeros(K, vocab, device=dev, dtype=torch.float32)
+            dists.scatter_add_(1, support, probabilities)
+            return tokens, dists
         pred_ids = torch.cat([anchor.reshape(1, 1).expand(1, F.sel_top_k), cand[:-1]])
         pred = p["candidate_selector.predecessor_codebook"][pred_ids].float()
         succ = p["candidate_selector.successor_codebook"][cand].float()
-        scores = unary[:, None, :] + torch.einsum("kpr,kcr->kpc", pred * proj[:, None, :], succ)
+        edge = torch.einsum("kpr,kcr->kpc", pred * proj[:, None, :], succ)
+        if any(a != 1. for a in self.selector_alpha):
+            edge *= torch.tensor(self.selector_alpha, device=dev).view(K, 1, 1)
+        scores = unary[:, None, :] + edge
         # Each step picks from the sixteen candidates the last one opened, so the walk cannot be batched --
         # but its uniforms arrive together (keyed, base/draws), and over sixteen candidates the cumulative walk
         # is the whole of a draw. `multinomial` was a kernel a position to do that.

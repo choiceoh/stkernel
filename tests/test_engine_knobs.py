@@ -41,7 +41,7 @@ class KnobDeclarationTests(unittest.TestCase):
         self.assertEqual(set(cfg.knobs), {"mla_prefill", "context_ceiling", "kda_state_dtype",
                                           "execution_overlap", "early_observe", "prefill_tiles", "direct_mhc", "prefill_project_tiles",
                                           "nvme_mapped_staging", "decode_iterations", "deferred_kda", "terminal_mhc", "prefill_indexer_shards",
-                                          "draft_fc_precision", "draft_fc_calibration", "draft_diagnostics"})
+                                          "draft_fc_precision", "draft_fc_calibration", "draft_diagnostics", "draft_tuning"})
         self.assertEqual((cfg["mla_prefill"], cfg["context_ceiling"]), ("stock", 131072))
         self.assertEqual((cfg["execution"], cfg["moe_static"]), ("native", "t,r,sf6,q0"))
         from engine.base.config import ConfigError
@@ -84,6 +84,14 @@ class KnobDeclarationTests(unittest.TestCase):
         for key, value in choices.items():
             with self.subTest(key=key), self.assertRaises(ConfigError):
                 self._declared({'STK_' + key: str(value)}, production=True)
+
+    def test_unqualified_tuning_requires_an_explicit_profile(self):
+        from engine.base.config import ConfigError
+        for production in (False, True):
+            self.assertEqual(self._declared({}, production=production)['draft_tuning'], '')
+        self.assertEqual(self._declared({'STK_draft_tuning': '/tmp/fit.json'})['draft_tuning'], '/tmp/fit.json')
+        with self.assertRaises(ConfigError):
+            self._declared({'STK_draft_tuning': '/tmp/fit.json'}, production=True)
 
 
 class MoeStaticSpecTests(unittest.TestCase):

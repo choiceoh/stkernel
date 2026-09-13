@@ -477,14 +477,19 @@ class DrafterDecodeGraphs:
             return (*proposed, block[:, drafter.k:])
 
         def propose_inputs(n, t):
-            return dict(anchor=torch.zeros(1, device=device, dtype=torch.int64),
+            inputs = dict(anchor=torch.zeros(1, device=device, dtype=torch.int64),
                         position=torch.zeros((), device=device, dtype=torch.int64),
                         slot=torch.zeros(1, device=device, dtype=torch.int64))
+            if getattr(drafter, 'request_boundaries', False):
+                from engine.modules.draft_boundary import tensor
+                inputs['boundary'] = tensor(None, device)
+            return inputs
 
         def propose(inputs):
             ring = ((self.field,inputs["slot"]) if drafter.fast_attention
                     else self.field.index_select(0, inputs["slot"])[0])
-            return drafter.propose_tensor(inputs["anchor"], inputs["position"], ring, support_slot=inputs["slot"])
+            options = {'boundary': inputs['boundary']} if 'boundary' in inputs else {}
+            return drafter.propose_tensor(inputs["anchor"], inputs["position"], ring, support_slot=inputs["slot"], **options)
 
         def observe_inputs(n, t):
             return dict(positions=torch.arange(t, device=device, dtype=torch.int64),
@@ -558,12 +563,17 @@ class DrafterDecodeGraphs:
             raise ValueError("drafter ring must belong to a real arena state slot")
         return delta // stride
 
-    def propose(self, anchor, position, ring):
+    def propose(self, anchor, position, ring, *, boundary=None):
         slot = self.slot(ring)
         def fill(inputs):
             inputs["anchor"].fill_(anchor)
             inputs["position"].fill_(position)
             inputs["slot"].fill_(slot)
+            if 'boundary' in inputs:
+                from engine.modules.draft_boundary import tensor
+                inputs['boundary'].copy_(tensor(boundary, inputs['boundary'].device))
+            elif boundary is not None:
+                raise ValueError('request boundaries were not enabled before proposal capture')
         return self.proposals.run((1, self.drafter.k + 1), fill)
 
     def observe(self, ring, positions, aux):
@@ -590,6 +600,9 @@ class DrafterDecodeGraphs:
             inputs["anchor"].copy_(anchor.reshape(1))
             inputs["position"].copy_(position.reshape(()))
             inputs["slot"].copy_(slot.reshape(1))
+            if 'boundary' in inputs:
+                from engine.modules.draft_boundary import tensor
+                inputs['boundary'].copy_(tensor(None, inputs['boundary'].device))
         return self.proposals.run((1, self.drafter.k + 1), fill)
 
     # -- every row of a step at once ---------------------------------------------------------------------
