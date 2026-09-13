@@ -1,0 +1,36 @@
+test_the_classifier_calls_the_st_runners_gpu (tests.test_fleet_onepass.FleetOccupancyTests.test_the_classifier_calls_the_st_runners_gpu) ... ok
+test_the_launcher_verifies_the_queue_s_lease (tests.test_fleet_onepass.FleetOccupancyTests.test_the_launcher_verifies_the_queue_s_lease)
+One record. The launcher used to read the queue's holder file as a second one, and ... ok
+test_the_queue_resolves_its_own_checkout (tests.test_fleet_onepass.FleetOccupancyTests.test_the_queue_resolves_its_own_checkout)
+It hardcoded /home/choiceoh/stkernel, which is whatever branch another session ... ok
+test_the_queue_sees_st_containers (tests.test_fleet_onepass.FleetOccupancyTests.test_the_queue_sees_st_containers) ... ok
+test_a_modified_st_runner_or_probe_is_refused (tests.test_fleet_onepass.OnepassPolicyTests.test_a_modified_st_runner_or_probe_is_refused) ... ok
+test_admitting_the_st_runner_never_admits_an_arbitrary_probe (tests.test_fleet_onepass.OnepassPolicyTests.test_admitting_the_st_runner_never_admits_an_arbitrary_probe)
+The runner is `docker run --gpus all <probe>`; the probe is named, not supplied. ... ok
+test_after_and_boot_only_legs_fail_before_execution (tests.test_fleet_onepass.OnepassPolicyTests.test_after_and_boot_only_legs_fail_before_execution) ... ok
+test_arm_grammar_rejects_hidden_control_commands_and_duplicates (tests.test_fleet_onepass.OnepassPolicyTests.test_arm_grammar_rejects_hidden_control_commands_and_duplicates) ... ok
+test_canonical_pair_chain_arm_and_live_onepass (tests.test_fleet_onepass.OnepassPolicyTests.test_canonical_pair_chain_arm_and_live_onepass) ... ok
+test_commit_only_is_scoped_to_the_pinned_kda_probe (tests.test_fleet_onepass.OnepassPolicyTests.test_commit_only_is_scoped_to_the_pinned_kda_probe) ... ok
+test_custom_gpu_program_and_code_strings_are_rejected (tests.test_fleet_onepass.OnepassPolicyTests.test_custom_gpu_program_and_code_strings_are_rejected) ... ok
+test_env_prefixes_use_effective_values_and_verify_overrides (tests.test_fleet_onepass.OnepassPolicyTests.test_env_prefixes_use_effective_values_and_verify_overrides) ... ok
+test_familiar_filename_cannot_hide_modified_source (tests.test_fleet_onepass.OnepassPolicyTests.test_familiar_filename_cannot_hide_modified_source) ... ok
+test_live_lane_never_allows_boots (tests.test_fleet_onepass.OnepassPolicyTests.test_live_lane_never_allows_boots) ... ok
+test_onepass_accepts_public_arguments_and_rejects_custom_hooks (tests.test_fleet_onepass.OnepassPolicyTests.test_onepass_accepts_public_arguments_and_rejects_custom_hooks) ... ok
+test_only_documented_ar_campaign_arguments_are_allowed (tests.test_fleet_onepass.OnepassPolicyTests.test_only_documented_ar_campaign_arguments_are_allowed) ... ok
+test_only_fabricating_helpers_receive_cpu_rehearsal_exemption (tests.test_fleet_onepass.OnepassPolicyTests.test_only_fabricating_helpers_receive_cpu_rehearsal_exemption) ... ok
+test_recorded_custom_probe_wrong_repo_and_missing_job_are_rejected (tests.test_fleet_onepass.OnepassPolicyTests.test_recorded_custom_probe_wrong_repo_and_missing_job_are_rejected) ... ok
+test_recorded_pair_and_baseline_are_admitted_read_only (tests.test_fleet_onepass.OnepassPolicyTests.test_recorded_pair_and_baseline_are_admitted_read_only) ... ok
+test_st_checks_take_literal_flags_only (tests.test_fleet_onepass.OnepassPolicyTests.test_st_checks_take_literal_flags_only) ... ok
+test_the_contract_carries_the_probe_s_own_memory_budget (tests.test_fleet_onepass.OnepassPolicyTests.test_the_contract_carries_the_probe_s_own_memory_budget)
+The queue exports it as ST_PROBE_GIB when the submitter set none (2026-09-13): a full-model probe asks ... ok
+test_the_contract_counts_gpus_and_the_single_lane_takes_only_one_gpu_checks (tests.test_fleet_onepass.OnepassPolicyTests.test_the_contract_counts_gpus_and_the_single_lane_takes_only_one_gpu_checks)
+A check that needs one GPU goes to the 5050 on ost-97x, not the four Sparks ... ok
+test_the_st_engine_checks_queue_like_everything_else (tests.test_fleet_onepass.OnepassPolicyTests.test_the_st_engine_checks_queue_like_everything_else)
+They take the same four nodes, so they belong in this queue and not behind a ... ok
+test_transitive_onepass_or_lever_change_is_rejected (tests.test_fleet_onepass.OnepassPolicyTests.test_transitive_onepass_or_lever_change_is_rejected) ... ok
+test_wait_requires_live_registered_supervisor_ancestry (tests.test_fleet_onepass.OnepassPolicyTests.test_wait_requires_live_registered_supervisor_ancestry) ... ok
+
+----------------------------------------------------------------------
+Ran 25 tests in 0.147s
+
+OK

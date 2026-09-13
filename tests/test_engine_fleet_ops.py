@@ -72,6 +72,44 @@ elif a and a[0] == 'ps':
 
 
 class FleetOps(FleetHarness):
+    def memory_prepare_fixture(self):
+        (self.repo / 'launchers/memfree-preflight.sh').write_text('''#!/bin/bash
+test -s "$FAKE_HOME/fleet.lock" || exit 42
+echo prepare >> "$FAKE_HOME/events"
+exit "${FAKE_MEMORY_FAIL:-0}"
+''')
+
+    def test_memory_preparation_is_explicit_and_runs_only_with_our_lease(self):
+        self.memory_prepare_fixture()
+        for enabled in ('0', '1'):
+            with self.subTest(enabled=enabled):
+                self.events.unlink(missing_ok=True)
+                self.env['ST_RECLAIM_FILE_CACHE'] = enabled
+                result = self.run_script('start-st-glm53.sh')
+                self.assertNotEqual(result.returncode, 0)  # no checkpoint in the fixture
+                self.assertFalse(self.lock.exists())
+                events = self.events.read_text().splitlines() if self.events.exists() else []
+                self.assertEqual(events, ['prepare'] if enabled == '1' else [])
+
+    def test_memory_preparation_failure_stops_before_launch(self):
+        self.memory_prepare_fixture()
+        self.env.update(ST_RECLAIM_FILE_CACHE='1', FAKE_MEMORY_FAIL='1')
+        result = self.run_script('start-st-glm53.sh')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('file-cache memory preparation failed', result.stderr)
+        self.assertFalse(self.lock.exists())
+        self.assertEqual(self.events.read_text().splitlines(), ['prepare'])
+
+    def test_foreign_work_or_invalid_option_never_reclaims_memory(self):
+        self.memory_prepare_fixture()
+        for setting, busy in (('1', 'st-other'), ('typo', '')):
+            with self.subTest(setting=setting, busy=busy):
+                self.env.update(ST_RECLAIM_FILE_CACHE=setting, FAKE_CONTAINERS=busy)
+                result = self.run_script('start-st-glm53.sh')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.events.exists())
+                self.assertFalse(self.lock.exists())
+
     def test_stop_preserves_foreign_owner_and_containers(self):
         self.lock.write_text("st-replay-other-session")
         result = self.run_script("start-st-glm53.sh", "stop")

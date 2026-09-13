@@ -92,6 +92,7 @@ def gpus_needed(relative, args):
 
 def _st_args(relative, args, cwd, repo):
     """Which ST check, and literal flags only. No probe path the caller invented."""
+    switches = set(ST_SWITCHES)
     if relative == 'probes/run_engine_probe.sh':
         if not args:
             raise ValueError(POLICY + '; the ST probe runner needs one of ' + ', '.join(ST_PROBES))
@@ -99,17 +100,19 @@ def _st_args(relative, args, cwd, repo):
         if probe not in ST_PROBES:
             raise ValueError(POLICY + '; ' + probe + ' is not a canonical ST check')
         _same(_path(probe, cwd), probe, repo)
+        if probe == 'probes/engine_kda_deferred_check.py':
+            switches.add('--commit-only')
     while args:
         token = args[0]
-        if token in ST_SWITCHES:
+        if token in switches:
             args = args[1:]
         elif token in ST_FLAGS and len(args) > 1 and not args[1].startswith('--'):
-            if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.,:/=-]{0,255}', args[1]):
+            if not re.fullmatch(r'[A-Za-z0-9/][A-Za-z0-9_.,:/=-]{0,255}', args[1]):
                 raise ValueError(POLICY + '; ' + token + ' takes a literal value')
             args = args[2:]
         else:
             raise ValueError(POLICY + '; the ST checks accept only ' +
-                             ', '.join(sorted(ST_SWITCHES | ST_FLAGS)))
+                             ', '.join(sorted(switches | ST_FLAGS)))
 
 
 def _st_bracket_args(args):
