@@ -90,6 +90,17 @@ fp32 쓰기도 비트 동일; bf16 서빙 경로는 반올림 두 번 거리 안
 `tests/test_engine_composed.py`: 저장소 == 참조 State(같은 로짓), 경계 checkpoint/restore 와 블록 입양, 러너를 지난 탐욕 생성 ==
 참조 루프, 끝 토큰과 min_tokens, 두 번째 턴, prefix 재사용(8토큰 입양), 파킹 기록·슬롯 바이트로 재개, world 1 도어로 요청 하나.
 
+**드래프터는 조립 위에서 검증된다(base/composed, 2026-09-13).** `ComposedModel(drafter=...)` 는 GLM-5.3 의 위치 검증을 어떤 조립에든
+준다: 디코드 스텝이 [마지막 토큰] + 행의 드래프트를 verify 세그먼트로 넣고, 각 위치를 드래프트가 없었을 때 같은 생성 번호가 뽑았을
+균등수로 샘플해, 샘플이 드래프트와 같은 동안 수락하고, 수락 + 1 개를 붙인다 — 드래프터는 한 스텝이 내는 토큰 수만 바꾸고 어떤 토큰인지는
+못 바꾼다. 틀(base/composition)의 계약: verify 세그먼트에서 시퀀스별 값을 드는 특징(GDN 순환·conv, n-gram 문맥·conv, 잔차·k/v conv)은
+각 토큰 뒤의 값을 `put(..., at=j)`(`put_state`) 로 남기고, `accept(seq, n)` 이 토큰 n-1 뒤의 값을 현재로 만든다. `PositionStore` 는 그
+값들을 슬롯의 링(`ring` 부)에 두고 수락 때 복사해 온다; 거절된 위치의 행은 다음 스텝이 덮어쓴다. 되감기는 위치를 고르는 일이지 다시 계산이
+아니다. 디코드 스텝이 블록 경계를 넘으면 러너의 prefix 체크포인트는 그 경계의 값을 링에서 읽는다. 드래프터 프로토콜은 `observe(seq, ctx,
+next_ids, hidden)`(타깃이 닫는 믹스 전의 잔차 상태, `forward(hidden=True)`) 와 `propose(seqs)`. `tests/test_engine_speculative.py`: n 개
+수락 == n 개 공급(참조 State·PositionStore), 러너를 지난 실행이 드래프트 없는 실행과 토큰 단위로 같다 — 완벽·일부·무작위 드래프트, 탐욕·샘플,
+두 행, 수락 구간 안의 끝 토큰과 min_tokens, 두 번째 턴, prefix 입양, 경계 체크포인트.
+
 Qwen3.8 은 이 길로 실제로 돈다. `engine/profiles/qwen38/weights.py` 가 srv2 의 체크포인트(206 샤드, `model.language_model.` 이름)를
 조립의 `tensor(name)` 으로 읽는다 — bf16 은 한 번 읽어 쥐고, NVFP4 전문가(modelopt 네 텐서)는 `modules/moe.dequant_nvfp4` 로 요구 시
 역양자화해 유계 캐시에, PLE 표(128 샤드 × [2,500,012, 160] e4m3)는 행 번호로 샤드에서 바로 모아 표의 스칼라 `weight_scale` 을 곱한다(그 스칼라를

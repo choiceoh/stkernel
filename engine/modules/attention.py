@@ -321,12 +321,14 @@ class Attention:
     def _rotate(self, x, cos, sin):
         return apply_rope_interleaved(x, cos, sin) if self.interleaved else apply_rope(x, cos, sin)
 
-    def _conv(self, layer, seq, key, x, weight, state):
+    def _conv(self, layer, segment, key, x, weight, state):
         """Inkling's short conv: fp32 depthwise causal conv (no activation) plus its input, rounded once."""
-        from engine.modules.causal_conv import causal_conv1d
+        from engine.base.composition import put_state
+        from engine.modules.causal_conv import causal_conv1d, conv_states
         xf = x.float()
-        y, held = causal_conv1d(xf, weight.reshape(weight.shape[0], -1).float(), None, state.get(layer, key, seq), None)
-        state.put(layer, key, seq, held)
+        before = state.get(layer, key, segment.seq)
+        y, held = causal_conv1d(xf, weight.reshape(weight.shape[0], -1).float(), None, before, None)
+        put_state(state, layer, key, segment, held, conv_states(xf, before, self.kv_conv - 1) if segment.verify else None)
         return (y.float() + xf).to(x.dtype)
 
     def _relative_bias(self, xs, w, pos_q, total):
@@ -369,8 +371,8 @@ class Attention:
                 q = linear(xs, w("q")).view(t, H, D)
                 k, v = linear(xs, w("k")), linear(xs, w("v"))
                 if self.kv_conv:
-                    k = self._conv(layer, s.seq, "attention_k_conv", k, w("k_conv"), state)
-                    v = self._conv(layer, s.seq, "attention_v_conv", v, w("v_conv"), state)
+                    k = self._conv(layer, s, "attention_k_conv", k, w("k_conv"), state)
+                    v = self._conv(layer, s, "attention_v_conv", v, w("v_conv"), state)
                 k, v = k.view(t, G, D), v.view(t, G, D)
                 if self.qk_norm:
                     q, k = _norm(self.qk_norm, q, w("q_norm"), eps), _norm(self.qk_norm, k, w("k_norm"), eps)

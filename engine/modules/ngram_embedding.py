@@ -345,7 +345,8 @@ class NGramInjection:
 
     # -- the feature --------------------------------------------------------------------------------------------------
     def __call__(self, layer, h, step, state):
-        from engine.modules.causal_conv import causal_conv1d
+        from engine.base.composition import put_state
+        from engine.modules.causal_conv import causal_conv1d, conv_states
         w = lambda name: self.weights(layer, name)
         made = self.hashes(layer)
         context = self.ngram_size - 1
@@ -362,12 +363,16 @@ class NGramInjection:
             if self.conv:
                 normed = self._norm(gated, w("conv_norm"))
                 conv_w = w("conv")
+                held_conv = state.get(layer, "ngram_conv", s.seq)
+                span = (self.conv - 1) * self.ngram_size
                 local, conv_state = causal_conv1d(normed, conv_w.reshape(conv_w.shape[0], -1), None,
-                                                  state.get(layer, "ngram_conv", s.seq), "silu", dilation=self.ngram_size)
+                                                  held_conv, "silu", dilation=self.ngram_size)
                 gated = gated + local
-                state.put(layer, "ngram_conv", s.seq, conv_state)
+                put_state(state, layer, "ngram_conv", s, conv_state,
+                          conv_states(normed, held_conv, span) if s.verify else None)
             out[s.start:s.start + s.length] = gated
-            state.put(layer, "ngram_context", s.seq, history[-context:])
+            put_state(state, layer, "ngram_context", s, history[-context:],
+                      torch.stack([history[j + 1:j + 1 + context] for j in range(s.length)]) if s.verify else None)
         return out
 
     def cache_specs(self, layers):
