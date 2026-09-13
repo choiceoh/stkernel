@@ -63,6 +63,24 @@ def qwen_shape():
     return shapes.kernel_shape(QWEN38_TEXT_CONFIG)
 
 
+# DeepSeek-V4.1-Flash, read off srv4 on 2026-09-13 (/home/choiceoh/models/DeepSeek-V4.1-Flash/config.json):
+# the second real checkpoint on the fleet, outside the engine's scope (D5) -- the wizard's second model.
+DSV41_TEXT_CONFIG = {
+    "model_type": "deepseek_v41_text", "hidden_size": 5120, "num_hidden_layers": 40, "num_attention_heads": 64,
+    "num_key_value_heads": 1, "head_dim": 512, "q_lora_rank": 1280, "qk_rope_head_dim": 64,
+    "index_n_heads": 32, "index_head_dim": 128, "index_topk": 512,
+    "compress_ratios": [0, 0] + [2] * 18 + [1] * 20 + [0, 0, 0], "candidate_block_size": 8,
+    "n_routed_experts": 384, "num_experts_per_tok": 6, "moe_intermediate_size": 2304, "intermediate_size": None,
+    "n_shared_experts": 1, "hidden_act": "silu", "swiglu_limit": 10.0, "hc_mult": 4, "hc_sinkhorn_iters": 20,
+    "hc_eps": 1e-06, "dspark_block_size": 5, "num_nextn_predict_layers": 3, "sliding_window": 128,
+}
+
+
+def dsv41_shape():
+    from engine.profiles.dsv41 import shapes
+    return shapes.kernel_shape(DSV41_TEXT_CONFIG)
+
+
 def load_dispatch(names, cell):
     """The dispatcher's gate functions from their source, with the admitted cell injected."""
     tree = ast.parse(DISPATCH.read_text())
@@ -145,6 +163,28 @@ class DescriptorTests(unittest.TestCase):
         self.assertIn("decay/head", q.describe())
         ks.bind(q)
         self.assertIs(ks.bound(), q)
+
+    def test_dsv41_declares_no_linear_attention_and_its_own_expert_encoding(self):
+        from engine.kernels import cells
+        s = dsv41_shape()
+        self.assertEqual((s.hidden, s.hc, s.tp, s.spec_k, s.linear, s.drafter), (5120, 4, 4, 3, None, None))
+        self.assertEqual(s.attention, Attention("mla", heads=16, head_dim=512, kv_heads=1))
+        self.assertEqual(s.indexer, Indexer(heads=32, head_dim=128, pool=2, topk=512))
+        self.assertEqual(s.moe, MoE(experts=384, experts_local=96, hidden=5120, inter=2304, inter_local=2304, topk=6,
+                                    quant="fp4-block32", activation="silu", swiglu_limit=10.0, dense_inter_local=0))
+        self.assertEqual(ks.from_dict(json.loads(json.dumps(ks.to_dict(s)))), s)      # None survives the record
+        self.assertIn("linear none", s.describe())
+        verdicts = {v.lane: v for v in cells.admission(s)}
+        status = {lane: v.status for lane, v in verdicts.items()}
+        admitted = ("device", "mla", "mhc_decode", "indexer", "oneshot", "prefill_collectives", "dense")
+        self.assertEqual({k: status[k] for k in admitted}, dict.fromkeys(admitted, cells.ADMITTED))
+        self.assertEqual(status["moe"], cells.REFUSED)                              # FP4 [32,32] blocks, not NVFP4
+        self.assertFalse({"kda_recurrent", "kda_ring", "kda_chunk", "draft"} & set(status))
+        self.assertIn("hidden 5120", verdicts["mhc_decode"].why)                    # the HIDDEN_V41 instance
+        self.assertIn("every 2 rows", verdicts["prefill_collectives"].why)
+        self.assertIn("unmeasured", verdicts["oneshot"].why)
+        ks.bind(s)
+        self.assertIs(ks.bound(), s)
 
     def test_the_tiny_test_facts_still_derive_a_valid_shape(self):
         from tests.test_engine_glm53 import tiny_facts
@@ -403,10 +443,17 @@ class RecordTests(unittest.TestCase):
             self.assertEqual(result["shape"], qwen_shape())
             self.assertIsNone(result["path"])
             self.assertIn("refused", {v.status for v in result["admission"]})
+            dckpt = Path(d) / "dsv41"
+            dckpt.mkdir()
+            (dckpt / "config.json").write_text(json.dumps({"text_config": DSV41_TEXT_CONFIG}))
+            result = ks.wizard("dsv41", dckpt, ranks=Path(d) / "dranks", write=True)
+            self.assertEqual(result["shape"], dsv41_shape())
+            self.assertEqual(ks.from_dict(ks.read_record(Path(d) / "dranks")["shape"]), dsv41_shape())
+            self.assertEqual({v.lane for v in result["admission"] if v.status == "refused"}, {"moe"})
             with self.assertRaises(ValueError):
                 ks.wizard("glm53", ckpt, pins=["moe.dynamic_tile_m"])
             with self.assertRaises(ValueError):
-                ks.derive_for("dsv41", ckpt)
+                ks.derive_for("dsv4", ckpt)                                    # not a profile this engine knows
 
 
 if __name__ == "__main__":

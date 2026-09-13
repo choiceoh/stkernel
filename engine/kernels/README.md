@@ -138,8 +138,10 @@ one-shot world 4·MAXEL, prefill 블록 2048, 융합 게이트의 per-channel de
 낸다. 모델을 들이는 단계(`preshard.py`, `preshard_modelopt.py`)가 마법사를 돌려 rank 파일 옆에 `kernel_shape.json`
 (형상 + 측정 핀 + 판정표 + 유도한 config.json 의 sha256)을 쓰고, 부팅(`kernel_shape.bind_recorded`)은 그 기록이 있고
 config 해시가 맞으면 그것을 바인딩하며(낡은 기록은 사망: "마법사를 다시 돌려라"), 없으면 예전처럼 config 에서 유도한다.
-수동 실행: `python3 -m engine.base.kernel_shape wizard --profile glm53|qwen38 --ckpt DIR [--ranks DIR] [--pin moe.dynamic_tile_m=32] [--write]`,
+수동 실행: `python3 -m engine.base.kernel_shape wizard --profile glm53|qwen38|dsv41 --ckpt DIR [--ranks DIR] [--pin moe.dynamic_tile_m=32] [--write]`,
 기록 열람: `... show --ranks DIR`. 측정 핀(`MoE.dynamic_tile_m` 등)은 config 에서 나오지 않는 모델별 결정이라 이 기록이 그 자리다.
+선형 어텐션이나 희소 인덱서가 없는 모델은 `linear`/`indexer` 를 `None` 으로 선언하고, 그 레인은 판정표에서 빠지며 래퍼는 이름을 대고 거부한다
+(dsv41: 2026-09-13 srv4 의 DeepSeek-V4.1-Flash config 로 마법사 실행 — MLA 16×512·mHC 5120·인덱서 128·one-shot·prefill·dense 통과, MoE 는 FP4 [32,32] 블록이라 거부, KDA 레인 없음).
 
 ## 런타임 이미지
 

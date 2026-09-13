@@ -47,6 +47,8 @@ def _kda_widths():
     """(output width, input width) of the paired KDA low-rank projection: heads x k_dim <- k_dim."""
     from engine.base.kernel_shape import bound
     linear = bound().linear
+    if linear is None:
+        raise ValueError('the bound kernel shape declares no linear attention; the paired KDA projection does not apply')
     return linear.heads * linear.k_dim, linear.k_dim
 
 
@@ -54,6 +56,8 @@ def _indexer_widths():
     """(output width, input width) of the paired indexer projection: the index head <- hidden."""
     from engine.base.kernel_shape import bound
     shape = bound()
+    if shape.indexer is None:
+        raise ValueError('the bound kernel shape declares no sparse indexer; the paired indexer projection does not apply')
     return shape.indexer.head_dim, shape.hidden
 
 

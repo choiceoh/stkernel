@@ -60,9 +60,10 @@ def admission(shape) -> "list[Verdict]":
             f"the compiled {MLA_HEADS} heads x {MLA_LATENT} latent cell",
             f"compiled for the {MLA_HEADS} heads x {MLA_LATENT} latent MLA cell; asked {a.kind} {a.heads}x{a.head_dim}"
             + (" -- a GQA attention has no ST lane yet" if a.kind != "mla" else ""))
-    verdict("indexer", i.head_dim == INDEXER_HEAD_DIM,
-            f"Hadamard-{INDEXER_HEAD_DIM} keys, pool {i.pool}, top {i.topk} at launch",
-            f"the indexer lanes are written for head_dim {INDEXER_HEAD_DIM}; asked {i.head_dim}")
+    if i is not None:                                  # a model without a sparse indexer has no indexer lane to judge
+        verdict("indexer", i.head_dim == INDEXER_HEAD_DIM,
+                f"Hadamard-{INDEXER_HEAD_DIM} keys, pool {i.pool}, top {i.topk} at launch",
+                f"the indexer lanes are written for head_dim {INDEXER_HEAD_DIM}; asked {i.head_dim}")
     verdict("mhc_decode", shape.hidden in MHC_HIDDEN and shape.hc == MHC_HC,
             f"MK mHC instance for hidden {shape.hidden} at hc {shape.hc}",
             f"MK mHC is compiled for hidden {MHC_HIDDEN} at hc {MHC_HC}; asked hidden {shape.hidden} hc {shape.hc} "
@@ -81,16 +82,17 @@ def admission(shape) -> "list[Verdict]":
             f"dense W4 tiles need {DENSE_ALIGN}-aligned widths; asked hidden {shape.hidden}, dense intermediate {m.dense_inter_local}")
     if shape.drafter is not None:
         verdict("draft", True, f"DFlash kernels at head {shape.drafter.head_dim} (a constexpr)", "")
-    verdict("kda_recurrent", True,
-            "fused_recurrent_kda over [B,T,HV,K] decays" + (
-                "" if l.decay == FUSED_GATE_DECAY else "; the per-head decay is widened by linear_decay.per_channel (compute_gate=False)"), "")
-    verdict("kda_ring", l.decay == FUSED_GATE_DECAY,
-            "the ring lane's fused per-channel KDA gate",
-            "the ring lane fuses KDA's per-channel gate; a head-decay cell runs fused_recurrent_kda(compute_gate=False) "
-            "and writes its ring with state.write_ring")
-    verdict("kda_chunk", l.decay == FUSED_GATE_DECAY,
-            "chunk_kda_with_fused_gate over the prefill",
-            "the chunk lane fuses KDA's gate; a GDN prefill needs the chunk kernel without it (not written)")
+    if l is not None:                                  # a model without linear attention has no KDA lane to judge
+        verdict("kda_recurrent", True,
+                "fused_recurrent_kda over [B,T,HV,K] decays" + (
+                    "" if l.decay == FUSED_GATE_DECAY else "; the per-head decay is widened by linear_decay.per_channel (compute_gate=False)"), "")
+        verdict("kda_ring", l.decay == FUSED_GATE_DECAY,
+                "the ring lane's fused per-channel KDA gate",
+                "the ring lane fuses KDA's per-channel gate; a head-decay cell runs fused_recurrent_kda(compute_gate=False) "
+                "and writes its ring with state.write_ring")
+        verdict("kda_chunk", l.decay == FUSED_GATE_DECAY,
+                "chunk_kda_with_fused_gate over the prefill",
+                "the chunk lane fuses KDA's gate; a GDN prefill needs the chunk kernel without it (not written)")
     measured = replace(MEASURED.moe, dynamic_tile_m=None)
     if m.quant != measured.quant:
         verdict("moe", False, "", f"the b12x lane is {measured.quant} only (D5); asked {m.quant}")

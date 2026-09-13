@@ -32,6 +32,8 @@ def _indexer_cell() -> int:
     from engine.base.kernel_shape import bound
     shape = bound()
     if shape is not _CELL_SEEN:
+        if shape.indexer is None:
+            raise ValueError("the bound kernel shape declares no sparse indexer; the indexer lanes do not apply")
         if shape.indexer.head_dim != INDEX_HEAD_DIM:
             raise ValueError(f"the indexer lanes are written for head_dim {INDEX_HEAD_DIM} (Hadamard-{INDEX_HEAD_DIM}); "
                              f"the bound kernel shape asks for {shape.indexer.head_dim}")

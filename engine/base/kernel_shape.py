@@ -174,8 +174,8 @@ class KernelShape:
     hc: int                     # residual streams of the hyper-connection ([T, hc, hidden])
     tp: int
     attention: Attention
-    linear: LinearAttention
-    indexer: Indexer
+    linear: "LinearAttention | None"     # None: the model has no linear attention; the KDA lanes do not apply
+    indexer: "Indexer | None"            # None: no sparse indexer; the indexer lanes do not apply
     moe: MoE
     spec_k: int                 # draft tokens verified per decode step (1 for an MTP head)
     device: Device = Device()
@@ -192,9 +192,10 @@ class KernelShape:
 
     def describe(self) -> str:
         m, a, l, i = self.moe, self.attention, self.linear, self.indexer
-        return (f"hidden {self.hidden} hc {self.hc} tp {self.tp} | {a.kind} {a.heads}x{a.head_dim} | "
-                f"linear {l.heads}/{l.v_heads}x{l.k_dim}x{l.v_dim} conv {l.conv} decay/{l.decay} | "
-                f"indexer {i.heads}x{i.head_dim} pool {i.pool} top {i.topk} | "
+        linear = (f"linear {l.heads}/{l.v_heads}x{l.k_dim}x{l.v_dim} conv {l.conv} decay/{l.decay}" if l
+                  else "linear none")
+        indexer = f"indexer {i.heads}x{i.head_dim} pool {i.pool} top {i.topk}" if i else "indexer none"
+        return (f"hidden {self.hidden} hc {self.hc} tp {self.tp} | {a.kind} {a.heads}x{a.head_dim} | {linear} | {indexer} | "
                 f"moe {m.experts}({m.experts_local} local) I{m.inter}/{m.inter_local} top{m.topk} {m.quant} {m.activation} | "
                 f"spec {self.spec_k}" + (f" | drafter {self.drafter.head_dim}" if self.drafter else ""))
 
@@ -282,7 +283,8 @@ def fields_of(shape) -> dict:
 
 RECORD = "kernel_shape.json"
 RECORD_VERSION = 1
-PROFILES = {"glm53": "engine.profiles.glm53.facts", "qwen38": "engine.profiles.qwen38.shapes"}   # kernel_shape_of(ckpt)
+PROFILES = {"glm53": "engine.profiles.glm53.facts", "qwen38": "engine.profiles.qwen38.shapes",
+            "dsv41": "engine.profiles.dsv41.shapes"}                                             # kernel_shape_of(ckpt)
 
 
 def to_dict(shape: KernelShape) -> dict:
@@ -292,8 +294,10 @@ def to_dict(shape: KernelShape) -> dict:
 def from_dict(d: dict) -> KernelShape:
     return KernelShape(
         comm=Comm(**d["comm"]), hidden=d["hidden"], hc=d["hc"], tp=d["tp"],
-        attention=Attention(**d["attention"]), linear=LinearAttention(**d["linear"]),
-        indexer=Indexer(**d["indexer"]), moe=MoE(**d["moe"]), spec_k=d["spec_k"],
+        attention=Attention(**d["attention"]),
+        linear=LinearAttention(**d["linear"]) if d.get("linear") else None,
+        indexer=Indexer(**d["indexer"]) if d.get("indexer") else None,
+        moe=MoE(**d["moe"]), spec_k=d["spec_k"],
         device=Device(capability=tuple(d["device"]["capability"]), sms=d["device"]["sms"]),
         drafter=Drafter(**d["drafter"]) if d.get("drafter") else None)
 

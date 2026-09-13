@@ -16,6 +16,8 @@ def _check_cell() -> None:
     from engine.kernels.cells import FUSED_GATE_DECAY
     shape = bound()
     if shape is not _CELL_SEEN:
+        if shape.linear is None:
+            raise ValueError("the bound kernel shape declares no linear attention; the ring KDA lane does not apply")
         if shape.linear.decay != FUSED_GATE_DECAY:
             raise ValueError("the ring KDA lane fuses KDA's per-channel gate; a per-head decay cell "
                              "(linear.decay == 'head') runs fused_recurrent_kda(compute_gate=False) "
