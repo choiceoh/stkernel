@@ -69,6 +69,10 @@ class AsyncDecode:
                           count=torch.empty(n_max, dtype=torch.int64, pin_memory=pin),
                           done=torch.empty(n_max, dtype=torch.bool, pin_memory=pin),
                           accepted=torch.empty(n_max, dtype=torch.int64, pin_memory=pin)) for _ in range(depth)]
+        if getattr(engine, 'draft_diagnostics', None) is not None:
+            for host in self.host:
+                host['rejection'] = torch.empty(n_max, 2, dtype=torch.int64, pin_memory=pin)
+                host['context'] = torch.empty(n_max, dtype=torch.int64, pin_memory=pin)
         self.free = list(range(depth))
         self._zeros = {}                                 # n -> the host step's placeholder ids (prepare reads segments, never these)
         self._staged = []                                # pinned index tensors of recent shrinks, alive until their copies land
@@ -290,6 +294,10 @@ class AsyncDecode:
             with mark("sample"):
                 picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)
             accepted = None
+        diagnostics = getattr(e, 'draft_diagnostics', None)
+        rejection = diagnostics.classify(picks, b) if diagnostics is not None and not b['stochastic'] else None
+        if diagnostics is not None and rejection is None:
+            rejection = torch.full((n, 2), -1, device=picks.device, dtype=torch.int64)
         if picks.is_cuda:
             from engine.base.lanes import served as common_lanes
             with mark("commit"):
@@ -321,7 +329,10 @@ class AsyncDecode:
                     e.drafter.observe_rows(e.caches.draft_field(), b["real_slot"], positions, aux, count)
         with mark("propose"):
             self._propose_rows(b)
-        return dict(tokens=tokens, count=count, done=done, accepted=accepted, before=ctx_before)
+        result = dict(tokens=tokens, count=count, done=done, accepted=accepted, before=ctx_before)
+        if rejection is not None:
+            result['rejection'] = rejection
+        return result
 
     # -- one step ---------------------------------------------------------------------------------------
     def launch(self, seqs, slots) -> Pending:
@@ -356,6 +367,9 @@ class AsyncDecode:
         host["count"][:n].copy_(count, non_blocking=True)
         host["done"][:n].copy_(done, non_blocking=True)
         host["accepted"][:n].copy_(accepted, non_blocking=True)
+        if 'rejection' in result:
+            host['rejection'][:n].copy_(result['rejection'], non_blocking=True)
+            host['context'][:n].copy_(result['before'], non_blocking=True)
         event = torch.cuda.Event() if tokens.is_cuda else None
         if event is not None:
             event.record()
@@ -401,6 +415,8 @@ class AsyncDecode:
         counts, dones, accepted = host["count"][:n].tolist(), host["done"][:n].tolist(), host["accepted"][:n].tolist()
         tokens = host["tokens"][:n].tolist()
         self._agree_outcome(pending.seqs, dict(count=counts, done=dones, accepted=accepted, tokens=tokens))
+        if 'rejection' in host:
+            e.draft_diagnostics.note(pending.seqs, host['context'][:n].tolist(), host['rejection'][:n].tolist())
         for i, seq in enumerate(pending.seqs):
             e.inflight[seq] = max(0, e.inflight.get(seq, 0) - 1)
             if seq not in e.tokens:                                        # released meanwhile: nothing to apply

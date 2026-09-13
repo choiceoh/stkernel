@@ -175,6 +175,8 @@ class Drafter:
         self.context_kv = None
         self.max_block_rows = None
         self.candidate_buffer = None
+        self.diagnostics = None
+        self.decode_calibration = False
 
     def capture_decode(self, caches, memory=None, draws_seed=None, vocab=None, prepared_context=False,
                        append_child=None):
@@ -230,7 +232,7 @@ class Drafter:
                     weights[k] = smooth_weight(p[k], s_eff)
         return weights, factors
 
-    def prepare_fast(self, store=None, *, consume_weights=False, max_seqs=None, compact_into=None):
+    def prepare_fast(self, store=None, *, consume_weights=False, max_seqs=None, compact_into=None, policy=None):
         """TP-shard dense compute and bind calibrated packs before capture.
 
         Only this rank's heads/MLP shard are read by decode; row-parallel
@@ -238,6 +240,9 @@ class Drafter:
         source BF16 regions into packs after every source consumer is prepared.
         """
         from engine.kernels.dense import DenseLinear
+        from .draft_policy import DraftPolicy, require_decode_calibration
+        policy = policy or DraftPolicy()
+        self.decode_calibration = policy.fc_calibration != 'shared'
         from .drafter_storage import block_rows, needs_fp8, compact
         if compact_into is not None and (consume_weights or max_seqs is None):
             raise ValueError('compact drafter storage needs a sequence capacity and independent source weights')
@@ -265,8 +270,13 @@ class Drafter:
             context.extend(shard(p[n+"self_attn."+s+"_proj.weight"],0) for s in ("k", "v"))   # unsmoothed: its input is not divided
         self.dense = {}
         for name, w in weights.items():
+            options = {}
+            if name == "fc.weight":
+                options['decode_precision'] = policy.fc_precision
+                if policy.fc_calibration == 'decode':
+                    options['decode_name'] = require_decode_calibration(store, store_name(name), w.shape[1])
             self.dense[name] = DenseLinear(w,store=store,name=store_name(name),smooth=smooth.get(name),
-                                          prefill=needs_fp8(F, max_seqs, name))
+                                          prefill=needs_fp8(F, max_seqs, name), **options)
         self.context_kv = torch.cat(context)
         self.context_norm = torch.stack([p[f"layers.{L}.self_attn.k_norm.weight"] for L in range(F.layers)])
         if compact_into is not None:
@@ -298,6 +308,11 @@ class Drafter:
     def observe(self, ring: torch.Tensor, positions: torch.Tensor, aux: torch.Tensor) -> None:
         """ring [L, 2, window, kv_heads, D] bf16 (a slot's); positions [n]; aux [n, 5*4096] target states."""
         self._observe(ring, positions, aux)
+
+    def observe_committed(self, ring, positions, aux):
+        """Synchronous decode has already clipped its rows; mark them explicitly."""
+        valid = positions.numel() if self.decode_calibration else None
+        self._observe(ring, positions, aux, valid)
 
     def observe_masked(self, ring, positions, aux, valid):
         """Commit a device-counted accepted prefix using the same TP context projection."""
@@ -580,6 +595,8 @@ class Drafter:
         unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp,
                            F.sel_top_k, self.decodable, workspace=self.candidate_buffer)
         unary, cand = unary.view(n, K, F.sel_top_k), cand.view(n, K, F.sel_top_k)
+        if self.diagnostics is not None:
+            self.diagnostics.support.index_copy_(0, slots, cand)
         proj = self.linear(h, "candidate_selector.hidden_projection.weight").float().view(n, K, -1)
         if temps is None:
             # the scores never exist: a step reads one codebook row against this step's candidates
@@ -627,7 +644,7 @@ class Drafter:
         anchor = torch.full((1,), anchor, dtype=torch.int64, device=ring.device)
         return self.propose_tensor(anchor, position, ring).tolist()
 
-    def propose_tensor(self, anchor: torch.Tensor, position, ring: torch.Tensor) -> torch.Tensor:
+    def propose_tensor(self, anchor: torch.Tensor, position, ring: torch.Tensor, support_slot=None) -> torch.Tensor:
         """The same greedy walk, with every selection remaining on device."""
         F, p = self.F, self.p
         K = self.k
@@ -639,6 +656,10 @@ class Drafter:
         unary, cand = topk(self.target.head_local(h), self.target.comm,
                            self.target.rank * self.target.vp, F.sel_top_k, self.decodable,
                            workspace=self.candidate_buffer)  # [K, 16]
+        if self.diagnostics is not None:
+            if support_slot is None:
+                support_slot = ring[1] if isinstance(ring, tuple) else self.diagnostics.slot(ring)
+            self.diagnostics.support.index_copy_(0, support_slot.reshape(1), cand.unsqueeze(0))
         proj = Fn.linear(h, p["candidate_selector.hidden_projection.weight"]).float()        # [K, 256]
         from engine.modules.draft_agreement import agree_walk
         drafts = walk_scores(unary.unsqueeze(0), cand.unsqueeze(0), anchor.reshape(1), proj.unsqueeze(0),

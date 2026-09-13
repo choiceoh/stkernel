@@ -43,14 +43,14 @@ GLM53_TEXT_CONFIG = {
         "kda_layers": [i for i in range(45) if i % 4 != 3], "num_heads": 64, "short_conv_kernel_size": 4},
 }
 
-# Qwen3.8-Flash-Next as the profile documents it (plan.py, shapes.py, the b12x tile comment): the
-# checkpoint is not on the fleet yet (2026-09-13), so these are the documented widths, not a config read.
+# Qwen3.8-Flash-Next's text config as the checkpoint on srv2 states it (/home/choiceoh/models/qwen38-flash-next-nvfp4/config.json,
+# read 2026-09-13): the fields the shape derivation reads.
 QWEN38_TEXT_CONFIG = {
     "hidden_size": 2560, "hc_count": 4, "num_attention_heads": 24, "num_key_value_heads": 2, "head_dim": 256,
     "linear_num_key_heads": 16, "linear_num_value_heads": 48, "linear_key_head_dim": 128, "linear_value_head_dim": 128,
-    "linear_conv_kernel_dim": 4, "indexer_kv_heads": 1, "indexer_head_dim": 128, "indexer_compress_ratio": 4,
-    "indexer_budget": 2048, "num_experts": 512, "moe_intermediate_size": 512, "num_experts_per_tok": 10,
-    "hidden_act": "silu", "shared_expert_intermediate_size": 2048,
+    "linear_conv_kernel_dim": 4, "indexer_n_heads": 4, "indexer_kv_heads": 1, "indexer_head_dim": 128, "indexer_compress_ratio": 4,
+    "indexer_budget": 2048, "num_experts": 512, "moe_intermediate_size": 640, "num_experts_per_tok": 10,
+    "hidden_act": "silu", "shared_expert_intermediate_size": 640,
 }
 
 
@@ -166,12 +166,13 @@ class DescriptorTests(unittest.TestCase):
     def test_qwen38_declares_a_different_cell_through_the_same_descriptor(self):
         q = qwen_shape()
         self.assertEqual((q.hidden, q.hc, q.tp, q.comm), (2560, 4, 4, Comm(4, 2560)))
-        self.assertEqual(q.attention, Attention("gqa", heads=6, head_dim=256, kv_heads=1, sink=None))
+        # no sink (a sigmoid output gate instead) and the gated residual form, both read off the pinned HF file
+        self.assertEqual(q.attention, Attention("gqa", heads=6, head_dim=256, kv_heads=1, sink=False))
         self.assertEqual(q.linear, LinearAttention(heads=4, v_heads=12, k_dim=128, v_dim=128, conv=4, decay="head"))
-        self.assertEqual(q.indexer, Indexer(heads=1, head_dim=128, pool=4, topk=2048, compress="qsa"))
-        self.assertIsNone(q.hc_variant)                                    # not established: no reference in the repo
-        self.assertEqual(q.moe, MoE(experts=512, experts_local=128, hidden=2560, inter=512, inter_local=512, topk=10,
-                                    quant="nvfp4", activation="silu", swiglu_limit=None, dense_inter_local=512))
+        self.assertEqual(q.indexer, Indexer(heads=4, head_dim=128, pool=4, topk=2048, compress="qsa"))   # 4 index heads
+        self.assertEqual(q.hc_variant, "gated_residual")
+        self.assertEqual(q.moe, MoE(experts=512, experts_local=128, hidden=2560, inter=640, inter_local=640, topk=10,
+                                    quant="nvfp4", activation="silu", swiglu_limit=None, dense_inter_local=160))
         self.assertEqual((q.spec_k, q.drafter), (1, None))
         self.assertNotEqual(q, MEASURED)
         self.assertIn("decay/head", q.describe())
@@ -237,7 +238,7 @@ class DispatchGateTests(unittest.TestCase):
                 self.assertFalse(gate(**dict(self.GLM, **change)))
         gate = load_dispatch({"_is_admitted_tp_geometry"}, qwen_shape().moe)["_is_admitted_tp_geometry"]
         self.assertFalse(gate(**self.GLM))
-        self.assertTrue(gate(num_experts=512, num_local_experts=128, hidden_size=2560, intermediate_size=512,
+        self.assertTrue(gate(num_experts=512, num_local_experts=128, hidden_size=2560, intermediate_size=640,
                              num_topk=10, quant_mode="nvfp4", activation="silu", swiglu_limit=None))
 
     def test_q0_and_scatter_gates_take_the_cell(self):
@@ -248,15 +249,15 @@ class DispatchGateTests(unittest.TestCase):
         self.assertTrue(q0(**self.Q0, cell=MEASURED.moe))
         self.assertFalse(q0(**self.Q0, cell=qwen))
         # E at the launch is the weights' expert count -- this rank's 128 of Qwen's 512 (EP), all 288 of GLM's (TP)
-        self.assertTrue(q0(**dict(self.Q0, E=128, k=2560, num_topk=10, activation="silu", swiglu_limit=None), cell=qwen))
-        self.assertFalse(q0(**dict(self.Q0, E=512, k=2560, num_topk=10, activation="silu", swiglu_limit=None), cell=qwen))
+        self.assertTrue(q0(**dict(self.Q0, E=128, k=2560, n=640, num_topk=10, activation="silu", swiglu_limit=None), cell=qwen))
+        self.assertFalse(q0(**dict(self.Q0, E=512, k=2560, n=640, num_topk=10, activation="silu", swiglu_limit=None), cell=qwen))
         self.assertFalse(q0(**dict(self.Q0, tile_m=64), cell=qwen))      # the Q0 kernel's own tile stays 128
         self.assertTrue(shape(288, 288, 4096, 512, 8))
         self.assertTrue(shape(1, 1, 4096, 3072, 1))                      # the dense/shared MLP through the E=1 lane
         self.assertFalse(shape(1, 1, 4096, 512, 1))
-        self.assertTrue(shape(1, 1, 2560, 512, 1, qwen))
-        self.assertTrue(shape(128, 128, 2560, 512, 10, qwen))
-        self.assertFalse(shape(512, 512, 2560, 512, 10, qwen))
+        self.assertTrue(shape(1, 1, 2560, 160, 1, qwen))                    # the shared expert, 640 over four ranks
+        self.assertTrue(shape(128, 128, 2560, 640, 10, qwen))
+        self.assertFalse(shape(512, 512, 2560, 640, 10, qwen))
         self.assertFalse(shape(288, 288, 4096, 512, 8, qwen))
         args = dict(state_E=288, weight_E=288, k=4096, n=512, num_topk=8, quant_mode="nvfp4",
                     activation="swigluoai_uninterleave", swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.)
@@ -282,8 +283,8 @@ class WrapperTests(unittest.TestCase):
                           (128 * 4, torch.float32), (128 * 4096, torch.bfloat16), (8, torch.int32)])
         v41 = replace(MEASURED, hidden=5120, comm=Comm(4, 5120), moe=replace(MEASURED.moe, hidden=5120))
         self.assertEqual(mhc.geometry(v41), (5120, 4, 24, 20))
-        with self.assertRaisesRegex(ValueError, "mixes by None"):
-            mhc.geometry(qwen_shape())                                  # Qwen3.8's form is not established
+        with self.assertRaisesRegex(ValueError, "mixes by gated_residual"):
+            mhc.geometry(qwen_shape())                                  # Qwen3.8's form is not the segment's
         wide = replace(MEASURED, hidden=2560, comm=Comm(4, 2560), moe=replace(MEASURED.moe, hidden=2560))
         with self.assertRaisesRegex(ValueError, "2560"):
             mhc.geometry(wide)
@@ -369,16 +370,17 @@ class CellTests(unittest.TestCase):
     def test_qwen38_gets_its_table_before_any_boot(self):
         from engine.kernels import cells
         status = {v.lane: v.status for v in cells.admission(qwen_shape())}
-        refused = ("mla", "indexer", "mhc_decode", "mhc_prefill", "kda_ring", "kda_chunk")
+        refused = ("mla", "indexer", "mhc_decode", "mhc_prefill", "kda_ring", "kda_chunk", "dense")   # dense: 160 columns
         admitted = ("device", "universal")
-        unmeasured = ("oneshot", "prefill_collectives", "dense", "kda_recurrent", "moe")
+        unmeasured = ("oneshot", "prefill_collectives", "kda_recurrent", "moe")
         self.assertEqual({k: status[k] for k in refused}, dict.fromkeys(refused, cells.REFUSED))
         self.assertEqual({k: status[k] for k in admitted}, dict.fromkeys(admitted, cells.ADMITTED))
         self.assertEqual({k: status[k] for k in unmeasured}, dict.fromkeys(unmeasured, cells.UNMEASURED))
         self.assertEqual(len(status), 13)
         self.assertNotIn("draft", status)                                  # no drafter declared
         kinds = {v.lane: v.recipe.kind for v in cells.admission(qwen_shape()) if v.recipe}
-        self.assertEqual((kinds["mhc_decode"], kinds["mhc_prefill"]), ("establish", "establish"))   # read the reference first
+        self.assertEqual((kinds["mhc_decode"], kinds["mhc_prefill"], kinds["mla"]), ("wire", "wire", "wire"))
+        self.assertNotIn("establish", kinds.values())                      # every variant is read off the reference
         pinned = {v.lane: v for v in cells.admission(ks.pin(qwen_shape(), "moe.dynamic_tile_m", 32))}
         self.assertEqual(pinned["moe"].status, cells.UNMEASURED)          # a pin is not a measurement
         mx = {v.lane: v for v in cells.admission(replace(MEASURED, moe=replace(MEASURED.moe, quant="mxfp4")))}
@@ -421,7 +423,10 @@ class CellTests(unittest.TestCase):
             glue.check(replace(MEASURED.attention, sink=True))
         glue.check(Attention("gqa", heads=6, head_dim=256, kv_heads=1, sink=False))
         ks.bind(qwen_shape())
-        with self.assertRaisesRegex(RuntimeError, "not established"):          # Qwen3.8's sink is still unread
+        glue.check()                                                           # Qwen3.8: no sink, 256 + 256 fit the latent
+        ks.reset()
+        ks.bind(replace(qwen_shape(), attention=replace(qwen_shape().attention, sink=None)))
+        with self.assertRaisesRegex(RuntimeError, "not established"):
             glue.check()
         ks.reset()
         self.assertEqual(mhc.geometry_v41(dsv41_shape()), (5120, 4, 24, 20))
@@ -595,17 +600,17 @@ class RecipeTests(unittest.TestCase):
         self.assertIn("work: none", cells.work_table(cells.admission(MEASURED)))
         qwen = cells.plan(cells.admission(qwen_shape()))
         self.assertEqual([(v.lane, v.status, v.recipe.kind, v.recipe.cost) for v in qwen], [
-            ("kda_chunk", "refused", "wire", "hours"), ("kda_ring", "refused", "wire", "hours"),
-            ("mhc_decode", "refused", "establish", "hours"), ("mhc_prefill", "refused", "establish", "hours"),
-            ("mla", "refused", "establish", "hours"),               # the sink decides whether the GQA glue computes it
-            ("dense", "unmeasured", "measure", "hours"), ("kda_recurrent", "unmeasured", "measure", "hours"),
-            ("moe", "unmeasured", "measure", "hours"), ("oneshot", "unmeasured", "measure", "hours"),
-            ("prefill_collectives", "unmeasured", "measure", "hours"), ("indexer", "refused", "kernel", "days")])
+            ("dense", "refused", "wire", "hours"), ("kda_chunk", "refused", "wire", "hours"),
+            ("kda_ring", "refused", "wire", "hours"), ("mhc_decode", "refused", "wire", "hours"),
+            ("mhc_prefill", "refused", "wire", "hours"), ("mla", "refused", "wire", "hours"),
+            ("kda_recurrent", "unmeasured", "measure", "hours"), ("moe", "unmeasured", "measure", "hours"),
+            ("oneshot", "unmeasured", "measure", "hours"), ("prefill_collectives", "unmeasured", "measure", "hours"),
+            ("indexer", "refused", "kernel", "days")])
         self.assertEqual([v.lane for v in cells.plan(cells.admission(dsv41_shape()))],
                          ["dense", "mhc_decode", "mhc_prefill", "oneshot", "prefill_collectives", "indexer", "mla", "moe"])
         text = cells.work_table(cells.admission(qwen_shape()))
         self.assertIn("work (11)", text)
-        self.assertIn("1. kda_chunk [refused] wire, hours", text)
+        self.assertIn("1. dense [refused] wire, hours", text)
         for field in ("how:", "where:", "judge:", "done:"):
             self.assertEqual(text.count(field), 11, field)
 
@@ -670,8 +675,8 @@ class RecipeTests(unittest.TestCase):
             doc = json.loads(out.getvalue())
             expected = [v.lane for v in cells.plan(cells.admission(qwen_shape()))]
             self.assertEqual(doc["plan"], expected)
-            self.assertEqual(doc["counts"], {"admitted": 2, "unmeasured": 5, "refused": 6})
-            self.assertEqual(doc["serving"], {"specialized": 4, "glue": 3, "generic": 2, "none": 3, "glue_judged": 0,
+            self.assertEqual(doc["counts"], {"admitted": 2, "unmeasured": 4, "refused": 7})
+            self.assertEqual(doc["serving"], {"specialized": 3, "glue": 5, "generic": 4, "none": 0, "glue_judged": 0,
                                               "generic_judged": 1})
             self.assertEqual(ks.from_dict(doc["shape"]), qwen_shape())
             self.assertEqual(doc["record"], str(ranks / ks.RECORD))
@@ -679,7 +684,7 @@ class RecipeTests(unittest.TestCase):
             self.assertEqual(set(by_lane["mhc_decode"]["recipe"]), {"kind", "where", "how", "judge", "done", "cost"})
             self.assertIsNone(by_lane["device"]["recipe"])
             self.assertIsNone(by_lane["device"]["serve"])
-            self.assertEqual((by_lane["mla"]["serve"]["tier"], by_lane["mla"]["serve"]["judged"]), ("none", False))
+            self.assertEqual((by_lane["mla"]["serve"]["tier"], by_lane["mla"]["serve"]["judged"]), ("glue", False))
             record = ks.read_record(ranks)
             self.assertEqual(record["plan"], expected)
             self.assertEqual([cells.from_dict(v) for v in record["admission"]], cells.admission(qwen_shape()))
@@ -710,7 +715,7 @@ class RecipeTests(unittest.TestCase):
             with contextlib.redirect_stdout(out):
                 self.assertEqual(ks.main(["show", "--ranks", str(ranks)]), 0)
             self.assertIn("older cells", out.getvalue())
-            self.assertIn("serving: 4 specialized, 3 glue", out.getvalue())
+            self.assertIn("serving: 3 specialized, 5 glue", out.getvalue())
 
 
 class ServeTests(unittest.TestCase):
@@ -768,22 +773,21 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(cells.serving(list(d.values())), {"specialized": 2, "glue": 3, "generic": 3, "none": 1,
                                                             "glue_judged": 0, "generic_judged": 1})
         qwen = {lane: (v.serve.tier, v.serve.judged) for lane, v in self.verdicts(qwen_shape()).items() if v.serve}
-        self.assertEqual(qwen, {"mla": (N, False), "indexer": (G, False), "mhc_decode": (N, False), "mhc_prefill": (N, False),
-                                "oneshot": (S, True), "prefill_collectives": (S, False), "dense": (S, True),
+        self.assertEqual(qwen, {"mla": (L, False), "indexer": (G, False), "mhc_decode": (G, False), "mhc_prefill": (G, False),
+                                "oneshot": (S, True), "prefill_collectives": (S, False), "dense": (L, False),
                                 "kda_recurrent": (L, False), "kda_ring": (L, False), "kda_chunk": (L, False),
                                 "moe": (S, False), "universal": (G, True)})
         q = self.verdicts(qwen_shape())
-        # its sink is not established, so nothing serves the attention yet; the note names the glue that will
-        self.assertIn("establish it first", q["mla"].serve.note)
-        self.assertIn("engine/kernels/mla/glue.gqa", q["mla"].serve.note)               # 256 + 256 fill the 512 latent
-        established = self.verdicts(replace(qwen_shape(), attention=replace(qwen_shape().attention, sink=False)))
-        self.assertEqual(established["mla"].serve.tier, L)
-        self.assertIn("glue.gqa", established["mla"].serve.kernel)
-        self.assertIn("qsa_sparse_paged_attention", established["mla"].serve.note)      # the BF16-KV alternative, named
+        self.assertIn("glue.gqa", q["mla"].serve.kernel)                                 # 256 + 256 fill the 512 latent
+        self.assertIn("qsa_sparse_paged_attention", q["mla"].serve.note)                 # the BF16-KV alternative, named
+        self.assertIn("gated_residual", q["mhc_decode"].serve.note)                       # composed from fast pieces
+        self.assertIn("PaddedDenseLinear", q["dense"].serve.kernel)                       # the shared expert's 160 columns
         self.assertIn("recurrent_decay_ring", q["kda_ring"].serve.kernel)
         self.assertIn("chunk_kda_with_decay", q["kda_chunk"].serve.kernel)
-        self.assertEqual(cells.serving(list(q.values())), {"specialized": 4, "glue": 3, "generic": 2, "none": 3,
+        self.assertEqual(cells.serving(list(q.values())), {"specialized": 3, "glue": 5, "generic": 4, "none": 0,
                                                             "glue_judged": 0, "generic_judged": 1})
+        unread = self.verdicts(replace(qwen_shape(), attention=replace(qwen_shape().attention, sink=None)))
+        self.assertEqual(unread["mla"].serve.tier, N)                                     # an unread sink serves nothing
 
     def test_the_tier_follows_the_refusal(self):
         from engine.kernels import cells

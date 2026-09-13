@@ -37,6 +37,34 @@ class RotaryEmbedding(nn.Module):
         return self._apply(q, cos, sin), self._apply(k, cos, sin)
 
 
+def rope_tables(positions: torch.Tensor, rotary_dim: int, theta: float, dtype=torch.float32,
+                mrope_section: "tuple[int, int, int] | None" = None, interleaved: bool = False):
+    """(cos, sin) [N, rotary_dim] for text positions [N]: the neox tables cat(freqs, freqs). A text token carries the
+    same position on the three mrope axes, so the interleaved mrope layout (transformers qwen4_exp
+    apply_interleaved_mrope) reorders nothing and the tables are the plain ones; `mrope_section` is checked, not
+    applied. Vision positions are not this function's."""
+    if rotary_dim <= 0 or rotary_dim % 2:
+        raise ValueError(f"a rotary width is positive and even, not {rotary_dim}")
+    if mrope_section is not None and 2 * sum(mrope_section) != rotary_dim:
+        raise ValueError(f"mrope sections {tuple(mrope_section)} do not cover rotary_dim {rotary_dim}")
+    inv = 1.0 / (theta ** (torch.arange(0, rotary_dim, 2, dtype=torch.float, device=positions.device) / rotary_dim))
+    freqs = positions.float()[:, None] * inv[None, :]
+    emb = torch.cat((freqs, freqs), dim=-1)
+    return emb.cos().to(dtype), emb.sin().to(dtype)
+
+
+def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
+    """Neox rotation of the first cos.shape[-1] channels of x [N, heads, D] (or [N, D]); the rest pass through --
+    transformers qwen4_exp apply_rotary_pos_emb, op for op."""
+    rotary = cos.shape[-1]
+    if x.ndim == 3:
+        cos, sin = cos[:, None, :], sin[:, None, :]
+    head, rest = x[..., :rotary], x[..., rotary:]
+    half = rotary // 2
+    rotated = torch.cat((-head[..., half:], head[..., :half]), dim=-1)
+    return torch.cat([(head * cos) + (rotated * sin), rest], dim=-1)
+
+
 def get_rope(head_size, max_position, rope_parameters=None, is_neox_style=True, rotary_dim=None):
     if head_size == 0:
         return None                                                 # GLM-5.3 served: no rope

@@ -38,7 +38,7 @@ from pathlib import Path
 # The operation variants a shape declares. A lane is compiled for one of each; the wizard admits a lane only
 # when the variant matches (engine/kernels/cells), because two models can share a geometry and differ in math.
 INDEXER_COMPRESS = ("kpool", "ced", "qsa")
-HC_VARIANTS = ("mhc", "split_sinkhorn")
+HC_VARIANTS = ("mhc", "split_sinkhorn", "gated_residual")
 
 
 def _positive(owner: str, **values) -> None:
@@ -207,8 +207,9 @@ class KernelShape:
     _: KW_ONLY
     # Which hyper-connection math mixes the residual streams (engine/modules/hyper_connection): "mhc" is
     # GLM-5.3's mhc_pre/mhc_post, "split_sinkhorn" is DeepSeek-V4.1's hc_split_sinkhorn -- they differ in
-    # where the RMS normalisation sits and in the pre-mix epsilon -- and None means the model's reference
-    # has not been read yet. Keyword-only, no default.
+    # where the RMS normalisation sits and in the pre-mix epsilon -- "gated_residual" is Qwen3.8's
+    # low-rank sigmoid-gated mean with per-stream injection (gated_residual), and None means the model's
+    # reference has not been read yet. Keyword-only, no default.
     hc_variant: "str | None"
 
     def __post_init__(self):
