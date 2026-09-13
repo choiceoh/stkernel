@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # st_bracket.sh -- the ST engine's bracket on the four Sparks: one COMMITTED sha per arm, in
-# production shape, measured the way D17 asks (two onepass runs on one boot).
+# production shape. Screening is short; ST_BRACKET_VALIDATION=full selects D17 adoption proof.
 #
 #   bash bench/st_bracket.sh pair  <sha> [--base <sha>]          fleet.sh st-pair  s <sha> [--base <sha>] [est] [note]
 #   bash bench/st_bracket.sh chain A=<sha> B=<sha> [A B ...]     fleet.sh st-chain s [est] [note] -- A=<sha> B=<sha> A B
@@ -16,7 +16,9 @@
 # is. An arm's tree must carry the ticket-mode launcher (PR #770 or later): the release's own
 # launcher is what boots it, and an older one would try to take a lease the queue already holds.
 #
-# The leg per arm is FIXED: boot -> onepass run 1 (the cold column: TTFT, the compile tail) ->
+# The default screening leg is boot -> short C=1/C=4 -> stop. It records observations, never a
+# speed win. Pair screens the candidate without booting a base; chain screens each requested arm.
+# ST_BRACKET_VALIDATION=full: boot -> onepass run 1 (the cold column: TTFT, the compile tail) ->
 # POST /v1/prefix/reset -> onepass run 2 (the warm column: decode step/s, warm prefill) -> stop.
 # Both runs --require-exclusive. bench/st_judge.py compares warm against warm and prints the
 # cold column beside it (45차 §93's table); a chain's first arm is its base.
@@ -37,7 +39,12 @@ RELEASES=${ST_RELEASES:-/home/choiceoh/st-releases}
 STATE=${ST_DEPLOY_STATE:-$RELEASES/deploy-state.json}
 PROD_ENV=${ST_PRODUCTION_ENV:-/home/choiceoh/.config/st-glm53.env}
 PORT=${ST_BRACKET_PORT:-8001}
-RUNS=${ST_BRACKET_RUNS:-2}
+VALIDATION=${ST_BRACKET_VALIDATION:-screen}
+case "$VALIDATION" in
+  screen) RUNS=${ST_BRACKET_RUNS:-1};;
+  full) RUNS=${ST_BRACKET_RUNS:-2};;
+  *) echo 'ST_BRACKET_VALIDATION must be screen or full' >&2; exit 2;;
+esac
 BOOT_WAIT=${ST_BRACKET_BOOT_WAIT:-1800}
 JSONL=${ONEPASS_JSONL:-$LOGD/bracket-onepass.jsonl}
 FLOOR_N=${ST_PAIR_FLOOR_N:-1}
@@ -143,7 +150,8 @@ rehearse_record() {  # run-index: a record shaped like the last real ST one, or 
 import json, os, sys, time
 name, sha, run, path = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
 rows = [json.loads(l) for l in open(path, encoding="utf-8") if l.strip()] if os.path.exists(path) else []
-real = [r for r in rows if r.get("engine") == "st" and not r.get("rehearsal")]
+real = [r for r in rows if r.get("engine") == "st" and not r.get("rehearsal")
+        and r.get('evidence_scope', 'full') == 'full']
 rec = dict(real[-1]) if real else {
     "decode": {"windows_med": 12.0, "tokens_per_step": 3.4, "acc_raw": 0.6}, "quality": {"ok": 9, "total": 9},
     "korean": {"dirty": 0, "n": 5}, "traffic": {"issues": []}, "harness": 42,
@@ -152,6 +160,8 @@ rec.update({"name": name, "t": time.strftime("%F %T"), "rehearsal": True, "engin
             **({"arm_tree": os.environ["ST_BRACKET_TREE"]} if os.environ.get("ST_BRACKET_TREE") else {}),
             "run_index": run, "cold": os.environ.get("ST_BRACKET_COLD", "boot"),
             "session": os.environ.get("FLEET_SESSION", ""), "knobs": {}})
+rec['evidence_scope'] = os.environ['ST_BRACKET_VALIDATION']
+rec['adoption_eligible'] = rec['evidence_scope'] == 'full'
 rec.pop("boot_id", None); rec.pop("run_id", None)
 os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 with open(path, "a", encoding="utf-8") as fh:
@@ -160,13 +170,14 @@ print(f"   rehearsal record {name} run {run} appended (shaped like {real[-1]['na
 PY
 }
 MEASURE_RECORDED=0
-measure() {  # run-index -> one onepass on the candidate's door, exclusive
-  local run=$1 offset=0 rc
+measure() {  # run-index -> one canonical consumer on the candidate's door, exclusive
+  local run=$1 offset=0 rc consumer=onepass.py
+  [ "$VALIDATION" != screen ] || consumer=st_screen.py
   MEASURE_RECORDED=0
-  [ "$REHEARSE" != 1 ] || { ST_BRACKET_TREE=$ARM_TREE rehearse_record "$run"; return; }
+  [ "$REHEARSE" != 1 ] || { ST_BRACKET_TREE=$ARM_TREE ST_BRACKET_VALIDATION=$VALIDATION rehearse_record "$run"; return; }
   [ ! -f "$JSONL" ] || offset=$(wc -c < "$JSONL")
   GLM53_API_PORT=$PORT BENCH_MODEL=$MODEL ONEPASS_RUN_INDEX=$run ST_BRACKET_SHA=$ARM_SHA ST_BRACKET_TREE=$ARM_TREE ST_BRACKET_COLD=${ST_BRACKET_COLD:-boot} \
-    python3 "$REPO/bench/onepass.py" --name "$ARM" --require-exclusive 2>&1 | tail -40
+    python3 "$REPO/bench/$consumer" --name "$ARM" --require-exclusive 2>&1 | tail -40
   rc=${PIPESTATUS[0]}
   # onepass returns 2 after recording quality/evidence issues, but argparse
   # also returns 2 before any request. Only a NEW complete record from this
@@ -206,7 +217,7 @@ leg() {  # name sha -> the fixed leg; 0 when every run recorded
   boot_arm "$name" "$sha" || return 1
   for run in $(seq 1 "$RUNS"); do
     if [ "$run" != 1 ] && [ "$REHEARSE" != 1 ]; then reset_prefix; fi
-    say "onepass run $run/$RUNS on $name ($( [ "$run" = 1 ] && echo cold || echo warm ) column)"
+    say "$VALIDATION run $run/$RUNS on $name ($( [ "$run" = 1 ] && echo cold || echo warm ) column)"
     measure "$run" || {
       rc=$?
       if [ "$rc" = 2 ] && [ "$MEASURE_RECORDED" = 1 ]; then
@@ -229,6 +240,11 @@ pair() {
   while [ $# -gt 0 ]; do
     case "$1" in --base) base=${2:?--base needs a sha}; shift 2;; *) echo "usage: st_bracket.sh pair <sha> [--base <sha>]" >&2; return 2;; esac
   done
+  if [ "$VALIDATION" = screen ]; then
+    say "screen: candidate ${cand:0:12} only; full baseline comparison pending (session $S)"
+    leg "ST-${cand:0:12}" "$cand"
+    return $?
+  fi
   if [ -z "$base" ]; then
     base=$(python3 "$REPO/launchers/st_release.py" deployed --state "$STATE") \
       || { say "ABORT: no --base and nothing recorded as deployed in $STATE"; return 2; }
@@ -264,7 +280,7 @@ chain() {  # [--reuse] NAME=<sha> ... [NAME ...]: a repeated name is another boo
   base=${shas[$first]}
   say "chain: ${order[*]} (base = $first = ${base:0:12}, session $S, rehearse=$REHEARSE${reuse:+, reuse=$reuse})"
   for name in "${order[@]}"; do
-    if [ "$reuse" = 1 ]; then
+    if [ "$reuse" = 1 ] && [ "$VALIDATION" = full ]; then
       # --reuse: an arm whose commit already has a warm sample is not booted again; the judge takes
       # the samples that exist (and a pooled floor when the base has one boot). A B A B without
       # --reuse still alternates the boots, the way §93 asked, when the spread itself is the question.
@@ -273,6 +289,10 @@ chain() {  # [--reuse] NAME=<sha> ... [NAME ...]: a repeated name is another boo
     fi
     leg "$name" "${shas[$name]}" || return $?
   done
+  if [ "$VALIDATION" = screen ]; then
+    say 'chain screening complete; observations saved, full comparison pending (--reuse applies only to full evidence)'
+    return 0
+  fi
   local judged=" "
   for name in "${order[@]}"; do
     sha=${shas[$name]}; [ "$sha" != "$base" ] || continue
@@ -295,12 +315,12 @@ hold() {  # sha [minutes]: boot and keep, for a session's window; ended by the m
   rm -f "$OUT/stop"
   say "hold over after $(( ($(date +%s) - t0) / 60 ))m"; stop_arm
 }
-probe() {  # [sha]: two onepass runs on the LIVE production door -- no boot, no lease. The queue's
+probe() {  # [sha]: one full onepass on the LIVE production door -- no boot, no lease. The queue's
   # probe lane runs it beside production when the door is idle (fleet.sh st-probe); deploy-watch
   # queues one after every deploy, so the deployed commit always has a warm sample and st-pair
   # never has to boot the base. Run 1 follows a prefix reset, not a boot: it is marked cold=reset
   # and st_judge keeps it out of the cold column, which is a boot's.
-  local sha=${1:-} run rc=0
+  local sha=${1:-} run rc=0 VALIDATION=full
   if [ -z "$sha" ]; then
     sha=$(python3 "$REPO/launchers/st_release.py" deployed --state "$STATE") \
       || { say "ABORT: no sha and nothing recorded as deployed in $STATE"; return 2; }

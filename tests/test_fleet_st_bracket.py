@@ -54,6 +54,7 @@ class AdmissionTests(unittest.TestCase):
         for command in (['bash', 'bench/st_bracket.sh', 'pair', CAND],
                         ['bash', 'bench/st_bracket.sh', 'pair', CAND[:8], '--base', BASE],
                         ['bash', 'bench/st_bracket.sh', 'chain', 'A=' + BASE, 'B=' + CAND, 'A', 'B'],
+                        ['bash', 'bench/st_bracket.sh', 'chain', '--reuse', 'A=' + BASE, 'B=' + CAND],
                         ['bash', 'bench/st_bracket.sh', 'hold', CAND],
                         ['bash', 'bench/st_bracket.sh', 'hold', CAND, '45']):
             with self.subTest(command=command):
@@ -124,8 +125,15 @@ class AdmissionTests(unittest.TestCase):
 
     def test_the_runner_snapshot_carries_what_the_bracket_needs(self):
         pinned = set(fleet_pin.source_files(ROOT))
-        for relative in ('bench/st_bracket.sh', 'bench/st_judge.py', 'bench/onepass.py', 'launchers/st_release.py'):
+        for relative in ('bench/st_bracket.sh', *policy.ST_BRACKET_DEPENDENCIES):
             self.assertIn(relative, pinned, relative)
+
+    def test_validation_mode_is_checked_before_queueing(self):
+        command = ['bash', 'bench/st_bracket.sh', 'pair', CAND]
+        for mode in ('screen', 'full'):
+            self.validate(['env', 'ST_BRACKET_VALIDATION=' + mode, *command])
+        with self.assertRaisesRegex(ValueError, 'screen or full'):
+            self.validate(['env', 'ST_BRACKET_VALIDATION=typo', *command])
 
     def test_fleet_sh_dispatches_the_three_verbs_as_boot_tickets(self):
         fleet = (ROOT / 'bench/fleet.sh').read_text()
@@ -214,6 +222,17 @@ def record(sha, name, windows, *, run_index=2, boot='b', quality=(9, 9), dirty=0
 
 
 class JudgeTests(unittest.TestCase):
+    def test_screen_cannot_supply_adoption_samples_cold_columns_or_noise_floors(self):
+        for tag in ({'evidence_scope': 'screen'}, {'adoption_eligible': False}):
+            with self.subTest(tag=tag):
+                rows = [dict(record(CAND, 'C', 99.0, boot='c1'), **tag),
+                        dict(record(CAND, 'C', 9.0, boot='c2'), **tag),
+                        dict(record(CAND, 'C', 99.0, run_index=1), **tag)]
+                self.assertEqual(st_judge.samples(rows, CAND), [])
+                self.assertEqual(st_judge.colds(rows, CAND), [])
+                self.assertEqual(st_judge.pooled_floor(rows), (None, 0))
+                self.assertIn('NO EVIDENCE', st_judge.judge(rows, CAND, BASE)['verdict'])
+
     def test_warm_against_warm_with_the_base_s_spread_as_the_floor(self):
         rows = [record(BASE, 'B', 12.0, boot='b1'), record(BASE, 'B', 12.0, run_index=1, boot='b1'),
                 record(BASE, 'B', 12.4, boot='b2'), record(CAND, 'C', 13.5, boot='c1'), record(CAND, 'C', 9.0, run_index=1, boot='c1')]
@@ -342,7 +361,7 @@ class RehearsalTests(unittest.TestCase):
         self.env = dict(os.environ, FLEET_REHEARSE='1', REPO=str(ROOT), LOGD=str(self.tmp / 'logs'),
                         ONEPASS_JSONL=str(self.jsonl), ONEPASS_VERDICTS=str(self.tmp / 'verdicts.jsonl'),
                         ST_RELEASES=str(self.tmp / 'releases'), ST_SOURCE=str(ROOT), FLEET_SESSION='rehearse',
-                        ST_DEPLOY_STATE=str(self.tmp / 'deploy-state.json'))
+                        ST_DEPLOY_STATE=str(self.tmp / 'deploy-state.json'), ST_BRACKET_VALIDATION='full')
         head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
         self.cand, self.base = head, CAND        # one commit the source has, one it does not: both rehearse
 
@@ -366,6 +385,19 @@ class RehearsalTests(unittest.TestCase):
         self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
         self.assertIn('reused', again.stdout)
         self.assertEqual(len(self.records()), 6, 'the base was not booted again')
+
+    def test_default_screen_pair_and_chain_never_judge_or_supply_a_baseline(self):
+        del self.env['ST_BRACKET_VALIDATION']
+        out = self.run_bracket('pair', self.cand)
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual(len(self.records()), 1, 'one candidate run, no deployed base required')
+        out = self.run_bracket('chain', 'A=' + self.base, 'B=' + self.cand)
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual(len(self.records()), 3, 'one screen per requested chain arm')
+        self.assertTrue(all(r['evidence_scope'] == 'screen' and not r['adoption_eligible']
+                            for r in self.records()))
+        self.assertFalse((self.tmp / 'verdicts.jsonl').exists())
+        self.assertEqual(st_judge.samples(self.records(), self.cand, allow_rehearsal=True), [])
 
     def test_pair_takes_the_deployed_commit_as_the_base_by_default(self):
         (self.tmp / 'deploy-state.json').write_text(json.dumps({'deployed': self.base}))

@@ -31,12 +31,14 @@ SHELL_ENTRIES = ('bench/pair.sh', 'bench/chain.sh', 'bench/ab-lever.sh',
                  'probes/run_engine_probe.sh', 'probes/run_engine_check.sh',
                  'bench/st_bracket.sh')
 PYTHON_ENTRIES = ('bench/onepass.py', 'bench/experiments.py')
-# The ST engine's bracket: one committed sha per arm in production shape, two onepass runs per
-# boot (D17). It is admitted like pair/chain -- byte-pinned with what it executes -- and its
+# The ST engine's bracket: one committed sha per arm in production shape; short screening by
+# default, full onepass for adoption. It is byte-pinned with what it executes, and its
 # grammar is shas and literal arm names only: a sha is a thing origin has, so the arm is
 # citable and the runner cuts it from git itself (launchers/st_release.py).
 ST_BRACKET = 'bench/st_bracket.sh'
-ST_BRACKET_DEPENDENCIES = ('bench/onepass.py', 'bench/st_judge.py', 'launchers/st_release.py')
+ST_BRACKET_DEPENDENCIES = ('bench/onepass.py', 'bench/st_screen.py', 'bench/st_judge.py',
+                          'bench/onepass_recording.py', 'bench/onepass_quality.py',
+                          'engine/base/latency_trace.py', 'launchers/st_release.py')
 SHA = re.compile(r'[0-9a-f]{7,40}')
 # The ST engine's canonical checks. They are not onepass -- they judge kernels and
 # replay, not tokens/s -- but they take the same four nodes, so they belong in the same
@@ -127,6 +129,8 @@ def _st_bracket_args(args):
         if rest:
             raise ValueError(usage + ' (unexpected: ' + ' '.join(rest) + ')')
     elif verb == 'chain':
+        if rest[:1] == ['--reuse']:
+            rest = rest[1:]
         if not rest:
             raise ValueError(usage + ' (a chain needs at least one NAME=<sha>)')
         named = set()
@@ -328,6 +332,8 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
     elif relative in ST_ENTRIES:
         _st_args(relative, args, cwd, repo)
     elif relative == ST_BRACKET:
+        if effective.get('ST_BRACKET_VALIDATION', 'screen') not in ('screen', 'full'):
+            raise ValueError('ST_BRACKET_VALIDATION must be screen or full')
         _st_bracket_args(args)
     else:
         while args:

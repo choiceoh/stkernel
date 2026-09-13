@@ -407,7 +407,7 @@ def _served_speculation(boot_id, *, preparation=False):
 
 def build_record(args, revision):
     from measurement_contract import from_args, metadata
-    return dict(name=args.name, t=time.strftime("%F %T"), git=revision,
+    return dict(name=args.name, t=time.strftime("%F %T"), git=revision, evidence_scope='full',
                 prefill=[], quality={}, decode={}, korean={}, **metadata(from_args(args)))
 
 

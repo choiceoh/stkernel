@@ -4,12 +4,34 @@
 
 Optimize the time from an agent's question to usable evidence. Submit once,
 continue independent implementation, and read the shared result. `fleet.sh`
-owns GPU admission and fast source preflight. GPU experiments run only the standard
-onepass workload; separate GPU probes, sanitizer runs and custom measurements are
-not admission stages. The central idle controller owns production recovery after
+owns GPU admission and fast source preflight. ST candidate experiments default to
+short screening; full onepass is selected for adoption. Canonical ST path checks
+are available when device execution changes; they are not mandatory admission
+stages for every change. The central idle controller owns production recovery after
 at least five idle minutes.
 Submissions never deploy or interrupt another holder. Waiting GPU jobs are
 ranked at the next free fleet boundary by downstream benefit, duration and age.
+
+## Validation by change risk (2026-09-13 operator policy)
+
+| Change or decision | Required work |
+|---|---|
+| Logging, queue policy, host exception handling without device execution changes | Code review and relevant CPU tests; use `run --cpu`, without a GPU ticket |
+| Kernel, CUDA graph execution, or communication changes | Relevant CPU checks and a short canonical check of the changed path; communication changes include distributed TP4 |
+| Initial ST performance experiment | Default `st-pair`: one candidate boot, short C=1/C=4 screening, durable observations |
+| Final performance adoption | `ST_BRACKET_VALIDATION=full`: full onepass including 32K/128K, quality/acceptance, and a comparable baseline |
+
+Select the path from what the diff does, not merely its filename. Do not attach a
+full engine/numerics campaign to a host-only repair. Reuse existing numerical
+evidence only when its relevant source, weights, configuration, runtime and
+hardware match; changes to the tested path require new evidence for that path.
+The existing CPU receipt cache remains in use. A queued ticket keeps its frozen
+approval; advancing main alone is not a reason to repeat its CPU or GPU checks.
+
+Runtime failures (OOM, nonfinite state, token-order or communication errors) stay
+failures. A speed target miss is a recorded experimental result. Screening
+quality under the short generation cap is an observation, not a passed quality
+gate. It cannot satisfy final adoption or seed the next production baseline.
 
 For a direct measurement, use `fleet.sh onepass SESSION NAME`: it waits for idle
 serving and runs onepass once, without a boot. The checkout must describe that
@@ -101,8 +123,8 @@ every rank's part.
 
 ## The ST bracket
 
-`fleet.sh st-pair SESSION SHA [--base SHA] [EST] [NOTE]` measures one committed
-ST commit against the deployed one (or `--base`), `fleet.sh st-chain SESSION
+`fleet.sh st-pair SESSION SHA [--base SHA] [EST] [NOTE]` screens one committed
+ST candidate, `fleet.sh st-chain SESSION
 [EST] [NOTE] -- A=SHA B=SHA A B` runs arms in order (a repeated name is another
 boot of the same commit: `A B A B` alternates, the way 45차 §93 asked), and
 `fleet.sh st-hold SESSION SHA [EST]` boots a commit and keeps it for a session's
@@ -114,11 +136,37 @@ cuts it into `~/st-releases/<sha12>` with `launchers/st_release.py` -- the same
 cut deploy-watch makes, so a winner is promoted by pointing production at that
 directory -- pushes it to the four nodes, and boots it in production shape
 (`~/.config/st-glm53.env`: KV, rows, `ST_PRODUCTION=1`) on port 8001 with a tier
-and dump directory of its own. STK_ knobs are not arms. The leg per arm is fixed:
-boot, onepass (the cold column), `POST /v1/prefix/reset`, onepass (the warm
-column), stop; `bench/st_judge.py` judges warm against warm with the base's
-run-to-run spread as the floor and prints the cold column beside it. `st-pair`
-boots the base only when it has no warm sample yet. `FLEET_REHEARSE=1`
+and dump directory of its own. STK_ knobs are not arms.
+
+The default `ST_BRACKET_VALIDATION=screen` leg is one boot, one short run of
+`bench/st_screen.py`, then stop. It uses the onepass streaming client, a
+deterministic hard question with a 2K document, and C=1/C=4. Each concurrency
+first prepares for 64 tokens, then measures up to 512 tokens (minimum 128,
+reasoning budget 256). Actual prompt tokens, TTFT, output tok/s, completion
+time, acceptance, raw answers and per-request/chunk/host-stage latency are
+retained in the usual ledger and `onepass-runs/` artifacts. Preparation has its
+own artifacts. Additional compilation or cache reuse makes timing unverified;
+it does not trigger another run or hide the observation. No profiler replay is
+scheduled. Screening does not provide per-kernel GPU durations.
+
+In screen mode, `st-pair` runs only the candidate; `--base` does not schedule a
+baseline boot or a comparison. A deployed baseline is not required. `st-chain`
+screens every requested arm, including repeated names. Its `--reuse` applies
+only in full mode. These records carry `evidence_scope=screen` and
+`adoption_eligible=false`; the judge excludes them from warm samples, cold
+columns and noise floors, even if a short answer happens to pass its checks.
+
+For adoption, set `ST_BRACKET_VALIDATION=full` when submitting the ticket:
+
+```bash
+ST_BRACKET_VALIDATION=full bash bench/fleet.sh st-pair SESSION SHA --base BASE_SHA
+```
+
+Full mode retains boot, onepass (the cold column), `POST /v1/prefix/reset`,
+onepass (the warm column), stop; C=4 is measured on the first run only.
+`bench/st_judge.py` judges warm against warm with the base's run-to-run spread
+as the floor and prints the cold column beside it. Full `st-pair` boots the
+base only when it has no warm sample yet. `FLEET_REHEARSE=1`
 boots nothing and fabricates records, so the flow can be checked without GPUs.
 
 The base is measured as little as possible (the operator's rule, 2026-09-13): a
@@ -131,14 +179,14 @@ judge borrows the floor -- the median run-to-run spread of every commit with two
 boots in the records -- and says so ("pooled floor"). A D17 probe on the live
 door runs once (one run after a reset is a warm sample; a boot is one sample
 however many runs it carries), deploy-watch keeps the deployed engine at one
-sample (`--probe-samples`), and `st-chain --reuse` boots no arm that already has
+sample (`--probe-samples`), and full `st-chain --reuse` boots no arm that already has
 a sample. deploy-watch applies the same identity to deploys: a main that moved
 without touching `engine/` is recorded as deployed, cut and followed by the
 controller, and not booted -- the engine that serves is already that commit's.
 
 `fleet.sh st-probe SESSION [SHA] [EST] [NOTE]` is the verb that boots nothing:
-two onepass runs on the LIVE production door (`POST /v1/prefix/reset` before
-each) as a probe ticket, so it runs beside production when the door is idle and
+one **full** onepass run on the LIVE production door (`POST /v1/prefix/reset`
+first) as a probe ticket, regardless of `ST_BRACKET_VALIDATION`, so it runs beside production when the door is idle and
 takes no lease. Its first run is `cold=reset`, which `st_judge` keeps out of the
 cold column (a boot's). deploy-watch queues one after every deploy
 (`d17-<sha12>`; `--no-probe` to stop it), so the deployed commit always has a
