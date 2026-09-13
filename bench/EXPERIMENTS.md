@@ -72,11 +72,23 @@ only when none waits. A bare `bash launchers/start-st-glm53.sh` or
 the quiet gate's own reading -- and takes no lease; behind a `session` or a
 ticket's boot it waits like everything else, and when nothing serves at all it
 waits for a door (a probe measures one). Production comes back by its own
-supervisor only after the queue has been quiet for `ST_RESTORE_GRACE_S` (300 s),
-and deploy-watch takes the fleet for a deploy only after `--queue-grace` (300 s)
-of quiet queue: a ticket that just ended is likely to have the next one on its
-way, and a production boot in that window is paid for twice (2026-09-13 03:08,
-03:48: restored, asked to hand over within minutes). The supervisor adopts a
+supervisor only after the queue has been quiet for a grace, and deploy-watch
+takes the fleet for a deploy only after the same grace: a ticket that just ended
+is likely to have the next one on its way, and a production boot in that window
+is paid for twice (2026-09-13: 17 of 46 production boots were followed by a
+ticket within 15 minutes). The grace is the queue's own pace, not a constant --
+`bench/fleet_pace.py` rewrites `restore-grace.json` after every release with the
+75th percentile of the last six hours' gaps from one ticket's end to the next
+boot request, clamped to 5..20 minutes -- and a session in a campaign holds it
+up with `fleet.sh window SESSION MINUTES` (`off` to close; `status` shows the
+pace line). `ST_RESTORE_GRACE_S` / `--queue-grace` still set a constant. The
+quiet gate itself opens at once for a production that has served nobody since
+it booted, or whose last request is already older than the gate
+(`vllm:request_success_total`, `st:idle_seconds`): tickets waited a median 13
+minutes at that gate for a production booted for no one. `fleet.sh run ...
+--replaces OLD` gives a fresh ticket OLD's place in line (a cancel followed by a
+new name lost it 19 times in a day), and a one-GPU check that says `--fleet` is
+told what the four Sparks cost it. The supervisor adopts a
 fleet that is booting -- deploy-watch's, or its own -- and calls a launch done
 only when a chat answers, not when the door listens. A boot whose ranks disagree
 on what their NVMe tiers hold drops it all and boots (`engine/base/serve.py`,

@@ -143,7 +143,7 @@ BODYLESS = ("/v1/prefix/reset",)
 EFFORT_RUNGS = {"low": "low", "medium": "high", "high": "high", "max": "max"}
 """OpenAI's rungs onto GLM-5.3's two, mapped on purpose instead of by falling through.
 
-The template reads `reasoning_effort in ['low', 'high']` and turns EVERYTHING ELSE into 'max'.
+The official template reads `reasoning_effort in ['low', 'high']` and turns EVERYTHING ELSE into 'max'.
 So an ordinary OpenAI `"medium"` silently buys the deepest setting there is -- the opposite of
 what the caller asked for. Refusing it was wrong the other way: `medium` is a standard value of
 the API this door claims to speak, and the Deneb gateway sends it whenever its thinking budget
@@ -1179,7 +1179,7 @@ class Server:
                  reasoning_end: "int | None" = None, request_timeout_s: float = 3600.0, tool_parser=None,
                  generation: "dict | None" = None, max_choices: int = 4, vision=None, tool_stream=None,
                  tool_grammar=None, tool_call_start: "int | None" = None,
-                 lease: "dict | None" = None, latency_root=None):
+                 lease: "dict | None" = None, latency_root=None, reasoning_effort_aliases: "dict | None" = None):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
         if type(request_timeout_s) not in (int, float) or not request_timeout_s > 0:
@@ -1202,6 +1202,7 @@ class Server:
         self._prompt_tokens = None                 # built from `tok` on first use (see the property)
         self.detok_repairs = new_repairs()         # this door's, so a scrape names who repaired
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
+        self.reasoning_effort_aliases = dict(reasoning_effort_aliases or {})
         self.tool_parser = tool_parser             # text -> [(name, arguments json)] or None (the profile knows the model's format)
         self.tool_stream = tool_stream             # the same format, read while it is still arriving (streamed deltas)
         self.tool_grammar = tool_grammar           # tools -> an EBNF grammar for calls of them, or None
@@ -1265,6 +1266,7 @@ class Server:
             self._agree_on_parked(comm, runner.prefix_tier_keys(),         # ... which every rank must hold alike (45차 §23 A)
                                   forget=self._forget_prefix_boundary(runner), what="prefix boundaries")
         self.next_seq, self.served = 1 + max(parked, default=-1), 0
+        self._last_request_at = time.monotonic()   # a request arrived or was answered: the quiet gate reads its age (st:idle_seconds)
         self.alive = True
         self._lock = threading.Lock()
         self._waiting = deque()                    # request id, tokens, limit, temperature, promised blocks
@@ -1422,6 +1424,7 @@ class Server:
             now = self.clock()
             self._deadline[request] = now + self.request_timeout_s
             self._arrived[request] = now                       # latency is owed from here, not from the step that serves it
+            self._last_request_at = time.monotonic()
             self.prompt_tokens_total += len(ids)
             if options.get("stop_token_ids"):
                 self._stop_ids[request] = set(options["stop_token_ids"])
@@ -1624,6 +1627,7 @@ class Server:
         return out, []
 
     def _answer(self, request, result):
+        self._last_request_at = time.monotonic()
         if self.comm.rank == 0:
             with self._lock:
                 event = self.pending.pop(request, None)
@@ -2371,6 +2375,8 @@ class Server:
         used_blocks = kv.num_blocks - free_blocks
         rows = [
             ("counter", "vllm:request_success_total", "requests answered", self.served),
+            ("gauge", "st:idle_seconds", "seconds since a request last arrived or was answered (since boot when none has)",
+             int(time.monotonic() - self._last_request_at)),
             ("gauge", "vllm:num_requests_running", "requests in the model's step", len(runner.state.running)),
             ("gauge", "vllm:num_requests_waiting", "admitted or queued, not yet stepping",
              len(runner.state.waiting) + len(self._waiting) + len(self.pending) - len(self._active)),
@@ -2908,19 +2914,24 @@ class Server:
                     raise RequestError("chat_template_kwargs must be an object")
                 kwargs = dict(kwargs)
                 # the production middleware's contract (glm53_chat.py): thinking/enable_thinking agree, and the
-                # top-level reasoning_effort reaches the template (which otherwise defaults to max)
+                # top-level reasoning_effort reaches the template (the GLM profile defaults to high)
                 if "thinking" in kwargs and "enable_thinking" in kwargs and kwargs["thinking"] != kwargs["enable_thinking"]:
                     raise RequestError("thinking and enable_thinking must agree")
                 if "enable_thinking" in kwargs and "thinking" not in kwargs:
                     kwargs["thinking"] = kwargs["enable_thinking"]
                 effort = req.get("reasoning_effort")
-                if effort is None and "reasoning_effort" in kwargs:
-                    effort = kwargs["reasoning_effort"]       # a caller that only spoke to the template
-                if effort is not None:
-                    if effort not in EFFORT_RUNGS:
+                template_effort = kwargs.get("reasoning_effort")
+                for value in (effort, template_effort):
+                    if value is not None and value not in EFFORT_RUNGS:
                         raise RequestError("reasoning_effort must be low, medium, high, or max")
-                    if kwargs.get("reasoning_effort", effort) != effort:
-                        raise RequestError("top-level and template reasoning_effort must agree")
+                # Compare the profile's effective values: GLM's max and high are the same request.
+                effort = server.reasoning_effort_aliases.get(effort, effort)
+                template_effort = server.reasoning_effort_aliases.get(template_effort, template_effort)
+                if effort is not None and template_effort is not None and effort != template_effort:
+                    raise RequestError("top-level and template reasoning_effort must agree")
+                if effort is None:
+                    effort = template_effort
+                if effort is not None:
                     kwargs["reasoning_effort"] = EFFORT_RUNGS[effort]
                 server.note_reasoning(kwargs)             # the shape the template will render (45차 §81)
                 options_stream = req.get("stream_options")

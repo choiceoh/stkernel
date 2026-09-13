@@ -1,4 +1,4 @@
-# Onepass reasoning quality — harness 43 / ko-reasoning-v1
+# Onepass reasoning quality — harness 44 / ko-reasoning-v2
 
 > 살아 있는 참조 — **원패스가 무엇을 묻고 어떻게 채점하는지. 하니스가 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
 
@@ -11,7 +11,7 @@ score or a subjective assessment of prose style**. No external judge model is us
 | Case | Required reasoning | Certificate checked |
 | --- | --- | --- |
 | `ledger` | Both effective and recording cutoffs; replacement revisions; cancellation; unit conversion; one final rounding; reservation and decision threshold | Selected transaction rows, received units, net/after-loss/available quantities, decision, changed reservation and shortage |
-| `portfolio` | Exactly three of five projects; budget, staff, directional dependency, incompatibility; worst aggregate scenario; risk penalty; tie-breaking | All ten candidate rows including every violation, optimal/runner-up choices and margin, changed-budget feasible set and optimum |
+| `portfolio` | Exactly three of five projects; budget, staff, directional dependency, incompatibility; worst aggregate scenario; risk penalty; tie-breaking | All ten candidate rows with cost, staff and every violation, scores for the feasible rows (an infeasible row's score is `null`), optimal/runner-up choices and margin, changed-budget feasible set and optimum |
 | `logic` | Implication across five Boolean constraints; universal truth versus underdetermination; counterexamples; contradiction minimality | All possible worlds, four ordered truth statuses and valid witnesses, all minimal unsatisfiable rule sets after a new observation |
 
 Numbers, variable roles, query order and evidence placement vary deterministically
@@ -22,10 +22,31 @@ approximate **document** size: question/schema/template overhead is additional.
 The server's actual `prompt_tokens` is the measurement denominator. Small context
 overrides never remove evidence to meet a nominal size.
 
+ko-reasoning-v2 (harness 44) lowers the load a little without dropping a skill or
+a certificate dimension. Harness 43's answers showed where the reasoning went:
+the 2K ledger answer appended a Markdown table and a paragraph after its JSON
+("설명 대신 계산표·반례 증명서를 작성한다" read as an invitation) and failed to parse;
+three combined answers wrote explanations instead of record IDs into `evidence`;
+`received` was read three different ways; one logic answer wrote `unknown`/`true`
+instead of `판단불가`/`참`; the 128K stream solved the wrong worlds because the
+shuffled variable names and the alphabetical bit order were only stated, never
+shown. So: the answer instruction now forbids anything outside the JSON, the
+schema spells out enumerated choices (`전량승인|보류`, `참|거짓|판단불가`, `6자리
+비트열|null`, `integer|null`) and marks every evidence array as `기록 ID`; each
+ledger derivation field is defined by its formula and the L5 scope is explicit;
+the ledger loss rate is 5/10/15% instead of 7/9/13%; the portfolio scores only
+feasible combinations (infeasible rows still list cost, staff and violations,
+with `score: null`); the logic domain record carries an encoding example, and
+each case names which record groups belong in which evidence field. Unchanged:
+both cutoffs, revision replacement and cancellation; all ten candidate rows and
+the four violation kinds; all worlds, ordered statuses, witnesses and every
+minimal core; and every grading rule below.
+
 The model submits one JSON object in **visible final content**, with the requested
 case IDs and structured calculations, evidence references and witnesses. A single
-JSON code fence is accepted. Set order is immaterial; query statuses/witnesses
-retain Q1–Q4 order. Any valid witness is accepted, not just the first oracle witness.
+JSON code fence is accepted; anything after the JSON fails parsing. Set order is
+immaterial; query statuses/witnesses retain Q1–Q4 order. Any valid witness is
+accepted, not just the first oracle witness.
 Missing/extra case IDs, extra fields, duplicate JSON keys, wrong types, nonfinite
 values, incomplete candidate/world coverage, incorrect citations and invalid
 witnesses fail the relevant checks. Correct text in `reasoning` or
@@ -49,15 +70,19 @@ completion check even if some facts are correct. Explicit fixed-length requests
 may end with `length`, but still need a complete, correct JSON certificate. Small
 user-supplied fixed budgets can fail; no fallback silently restores easy questions.
 
-Default total completion budgets are **8,192 individual / 24,576 combined** tokens;
-reasoning caps are half the individual budget (**4,096**) / **12,288** combined.
+Default total completion budgets are **16,384 individual / 49,152 combined** tokens;
+reasoning caps are half the individual budget (**8,192**) / **24,576** combined.
 Explicit fixed-length requests also reserve half their budget for visible content.
-Harness 42's three observed 2K preparation requests all reached their 800-token
-reasoning cap mid-sentence, before completing the calculations. The larger budget
-addresses that limit; it does not change the questions, oracles or grading rules.
-Thinking remains enabled. A budget change changes the performance workload, so
-harness 43 cannot reuse a harness 42 baseline. Higher-budget quality has not yet
-been measured; this change makes no GPU speed or quality claim.
+Harness 43 (8,192/4,096 and 24,576/12,288) ended every measured reasoning stream
+at its cap mid-sentence (`measurements/st_decode_forward_20260913/consumer-v5-incomplete`):
+the three 2K answers used 4,336–4,598 completion tokens against a 4,096 reasoning
+cap, the combined answers 14,022–14,294 against 12,288, and the 128K stream was
+still on the ledger case when the cap closed it, so two cases were answered with
+no reasoning at all. One of nine cases passed. Harness 44 doubles both budgets
+and asks the ko-reasoning-v2 questions above. Thinking remains enabled. A budget
+or question change changes the performance workload, so harness 44 cannot reuse
+a harness 43 baseline. Quality at the new budget has not yet been measured; this
+change makes no GPU speed or quality claim.
 
 Before preparation, `workloads.json` stores exact prompts, schemas, evidence,
 oracles and valid witness sets. **Only prompts are sent to the model**. The record's

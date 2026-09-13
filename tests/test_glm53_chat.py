@@ -57,7 +57,8 @@ class TemplateTests(unittest.TestCase):
                 options = dict(tools=tools, reasoning_effort=effort, clear_thinking=clear)
                 with self.subTest(effort=effort, clear=clear):
                     actual = render(messages, **options)
-                    self.assertEqual(actual, render(messages, template_path=reference, **options))
+                    expected = dict(options, reasoning_effort="high" if effort == "max" else effort)
+                    self.assertEqual(actual, render(messages, template_path=reference, **expected))
                     for marker in ("<|image|>", "<|video|>", "<|begin_of_audio|>", "tool result"):
                         self.assertEqual(actual.count(marker), 1)
 
@@ -115,10 +116,14 @@ class TemplateTests(unittest.TestCase):
 
     def test_default_on_and_compatibility_off(self):
         self.assertTrue(render([]).endswith("<|assistant|><think>"))
+        for kwargs in ({}, {"reasoning_effort": None}):
+            self.assertIn("Reasoning Effort: High", render([], **kwargs))
         for key in ("thinking", "enable_thinking"):
             self.assertTrue(render([], **{key: False}).endswith("<|assistant|><think></think>"))
-        for effort in ("low", "high", "max"):
+        for effort in ("low", "high"):
             self.assertIn("Reasoning Effort: " + effort.capitalize(), render([], reasoning_effort=effort))
+        for kwargs in ({"reasoning_effort": "max"}, {"reasoning_effort": "max", "thinking": False}):
+            self.assertEqual(render([], **kwargs), render([], **dict(kwargs, reasoning_effort="high")))
 
     def test_direct_template_users_get_option_validation(self):
         for kwargs in ({"thinking": "false"}, {"enable_thinking": None},
@@ -172,8 +177,24 @@ class OptionTests(unittest.TestCase):
         self.assertEqual(chat.normalize_chat_options({"chat_template_kwargs": None}),
                          {"chat_template_kwargs": None})
 
+    def test_max_is_normalized_before_conflict_checks(self):
+        cases = [{"reasoning_effort": "max"}, {"chat_template_kwargs": {"reasoning_effort": "max"}},
+                 {"reasoning_effort": None, "chat_template_kwargs": {"reasoning_effort": "max"}},
+                 {"reasoning_effort": "max", "chat_template_kwargs": {"reasoning_effort": None}},
+                 {"reasoning_effort": "max", "chat_template_kwargs": {"reasoning_effort": "high"}},
+                 {"reasoning_effort": "high", "chat_template_kwargs": {"reasoning_effort": "max"}}]
+        for body in cases:
+            with self.subTest(body=body):
+                original = copy.deepcopy(body)
+                result = chat.normalize_chat_options(body)
+                self.assertEqual(result["reasoning_effort"], "high")
+                self.assertEqual(result["chat_template_kwargs"]["reasoning_effort"], "high")
+                self.assertEqual(body, original)
+
     def test_bad_types_conflicts_and_efforts_are_rejected(self):
         cases = [{"chat_template_kwargs": []}, {"reasoning_effort": "medium"},
+                 {"reasoning_effort": "max", "chat_template_kwargs": {"reasoning_effort": "low"}},
+                 {"reasoning_effort": "low", "chat_template_kwargs": {"reasoning_effort": "max"}},
                  {"reasoning_effort": "low", "chat_template_kwargs": {"reasoning_effort": "high"}},
                  {"chat_template_kwargs": {"thinking": False, "enable_thinking": True}}]
         for key in ("thinking", "enable_thinking", "clear_thinking", "legacy_reasoning_content"):
@@ -186,7 +207,9 @@ class OptionTests(unittest.TestCase):
 class MiddlewareTests(unittest.IsolatedAsyncioTestCase):
     async def test_chunked_input_and_streamed_output_and_disconnect(self):
         body = json.dumps({"messages": [{"role": "user", "content": "서울"}],
-                           "chat_template_kwargs": {"thinking": False}}, ensure_ascii=False).encode()
+                           "reasoning_effort": "max",
+                           "chat_template_kwargs": {"thinking": False, "reasoning_effort": "high"}},
+                          ensure_ascii=False).encode()
         messages = iter([{"type": "http.request", "body": body[:17], "more_body": True},
                          {"type": "http.request", "body": body[17:], "more_body": False},
                          {"type": "http.disconnect"}])
@@ -202,6 +225,8 @@ class MiddlewareTests(unittest.IsolatedAsyncioTestCase):
             normalized = (await recv())["body"]
             self.assertEqual(int(dict(scope["headers"])[b"content-length"]), len(normalized))
             self.assertFalse(json.loads(normalized)["chat_template_kwargs"]["enable_thinking"])
+            self.assertEqual(json.loads(normalized)["reasoning_effort"], "high")
+            self.assertEqual(json.loads(normalized)["chat_template_kwargs"]["reasoning_effort"], "high")
             self.assertEqual((await recv())["type"], "http.disconnect")
             for message in response:
                 await emit(message)

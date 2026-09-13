@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'bench'))
 import fleet_onepass as policy
+from measurement_contract import COMBINED_MAX_TOKENS
 
 
 class OnepassPolicyTests(unittest.TestCase):
@@ -179,7 +180,7 @@ class OnepassPolicyTests(unittest.TestCase):
                        '--require-exclusive', '--out', str(self.root / 'records.jsonl')])
         for args in (['--after', 'gpu-check'], ['--ctx', '0'], ['--num-spec', '-1'],
                      ['--combined-max-tokens', '1199'],
-                     ['--combined-max-tokens', '7200', '--combined-reasoning-budget', '7200'],
+                     ['--combined-reasoning-budget', str(COMBINED_MAX_TOKENS)],
                      ['--fixed-decode-tokens', '1', '--fixed-decode-reps', '0']):
             with self.subTest(args=args), self.assertRaises(ValueError):
                 self.validate(['python3', 'bench/onepass.py', *args])
