@@ -31,7 +31,7 @@ for n, K in ((1, 5), (4, 5)):
     cand = torch.randint(0, V, (n, K, C), generator=g, device=DEV)
     qp = torch.softmax(torch.randn(n, K, C, generator=g, device=DEV), -1)
     drafts = cand[:, :, 0].contiguous()
-    gen = torch.Generator(device=DEV).manual_seed(5)
+    gen = torch.rand(n, T, generator=torch.Generator(device=DEV).manual_seed(5), device=DEV)   # the uniforms: an input (base/draws)
     a_med, a_min = timed(lambda: _block_verify_by_torch(target, drafts, cand, qp, gen))
     b_med, b_min = timed(lambda: block_verify_batch(target, drafts, cand, qp, gen))
     print(f"  n={n} K={K} {a_med:>10.1f}us {b_med:>11.1f}us {a_med/b_med:>9.1f}x   (min {a_min:.0f} -> {b_min:.0f})")

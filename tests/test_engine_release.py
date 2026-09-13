@@ -76,7 +76,7 @@ class Stub:
         self.forgotten = []
         self.sampling_history, self.grammars = object(), object()
         self._ids_stage, self._rich_stage = object(), object()
-        for name in ("_ends_tensor", "matchers", "embeds", "gens", "staged", "inflight", "lps", "media"):
+        for name in ("_ends_tensor", "matchers", "embeds", "seeds", "staged", "inflight", "lps", "media"):
             setattr(self, name, {seq: object() for seq in live} or {0: object()})
 
     def close(self, seq):
@@ -124,7 +124,7 @@ class EngineReleaseTests(unittest.TestCase):
         self.assertIsNone(stub.caches._id_ring)             # 16 pinned host buffers
         self.assertEqual(stub.vision._rope, {})             # rope tables, one per picture grid
         self.assertIsNone(stub.arena)
-        for name in ("_ends_tensor", "matchers", "embeds", "gens", "staged", "inflight", "lps", "media"):
+        for name in ("_ends_tensor", "matchers", "embeds", "seeds", "staged", "inflight", "lps", "media"):
             self.assertEqual(getattr(stub, name), {}, name)
 
     def test_release_without_an_arena_still_closes_the_graphs_and_says_nothing_came_back(self):

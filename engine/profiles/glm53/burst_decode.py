@@ -95,14 +95,16 @@ class BurstDecode(AsyncDecode):
 
     def _state(self, n):
         e, dev, t = self.e, self.e.caches.device, self.t
+        # the pipeline's row schema, whole: a burst is greedy and draws nothing, but the rows it hands back
+        # are re-indexed and merged by the pipeline, which carries every row's draw key (base/draws)
         b = {k: torch.zeros(n, dtype=torch.int64, device=dev) for k in
-             ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "anchor")}
+             ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "nonce", "anchor")}
         b.update(ends=torch.full((n, self.END_IDS), -1, dtype=torch.int64, device=dev),
                  temps=torch.zeros(n, device=dev), top_k=torch.zeros(n, dtype=torch.int32, device=dev),
                  top_p=torch.ones(n, device=dev), alive=torch.ones(n, dtype=torch.bool, device=dev),
                  ids=torch.zeros(n*t, dtype=torch.int64, device=dev),
                  drafts=torch.zeros(n, t-1, dtype=torch.int64, device=dev),
-                 stochastic=False, qcand=None, qprob=None)
+                 stochastic=False, qcand=None, qprob=None, draws=None)
         b["seqs"].copy_(torch.arange(n, device=dev))
         b["real_slot"].copy_(b["seqs"] + 1)
         b["slot"].copy_(b["real_slot"])

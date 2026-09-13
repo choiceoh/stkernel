@@ -64,9 +64,8 @@ def main():
                         device="cuda", dtype=torch.bfloat16)) for shape in ((4, 1), (1, 6))}
             target = SimpleNamespace(tokens=1, graphs=SimpleNamespace(outputs=outputs),
                                      net=SimpleNamespace(comm=comm, rank=comm.rank, vp=width))
-            generator = torch.Generator(device="cuda").manual_seed(77)
             reference = torch.Generator(device="cuda").manual_seed(77)
-            graphs = SamplingGraphs(target, generator, 4*width-1000, top_p)
+            graphs = SamplingGraphs(target, 4*width-1000, top_p)
             try:
                 for shape, temps in (((4, 1), [0.]*4), ((4, 1), [0., .7, 1., 0.]),
                                      ((1, 6), [1.]*6), ((1, 6), [0.]*6)):
@@ -74,14 +73,15 @@ def main():
                     local.normal_()
                     full = comm.all_gather(local, dim=-1)
                     full[:, 4*width-1000:] = float("-inf")
+                    uniforms = torch.rand(len(temps), generator=reference, device="cuda")   # the same on every rank: seeded alike
                     if all(t == 0 for t in temps):
                         expected = full.argmax(-1)
                     else:
                         expected = sample(full, torch.tensor(temps, device="cuda"),
-                                          torch.full((len(temps),), top_p, device="cuda"), reference)
-                    actual = graphs.run(shape, temps)
-                    if not torch.equal(actual, expected) or not torch.equal(generator.get_state(), reference.get_state()):
-                        raise AssertionError((comm.rank, shape, temps, "sampling or RNG"))
+                                          torch.full((len(temps),), top_p, device="cuda"), uniforms)
+                    actual = graphs.run(shape, temps, uniforms=uniforms.tolist())
+                    if not torch.equal(actual, expected):
+                        raise AssertionError((comm.rank, shape, temps, "sampling"))
                     sampling_cases += 1
             finally:
                 graphs.close()

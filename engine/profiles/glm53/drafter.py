@@ -169,13 +169,15 @@ class Drafter:
         self.context_kv = None
         self.max_block_rows = None
 
-    def capture_decode(self, caches, memory=None, generator=None, vocab=None, prepared_context=False,
+    def capture_decode(self, caches, memory=None, draws_seed=None, vocab=None, prepared_context=False,
                        append_child=None):
+        """`draws_seed`: capture the walk at each row's temperature too, its uniforms keyed inside the graph from
+        the rows' nonces and generation counts (base/draws.step_block)."""
         from engine.profiles.glm53.decode_graphs import DrafterDecodeGraphs
         # The rotary table is a constant of the model; built here it belongs to the arena, not to whichever graph
         # happened to run first and would free it on close (kernels/norm_rope.warm).
         warm_rotary(caches.device, self.F.head_dim, self.F.rope_theta)
-        self.decode_graphs = DrafterDecodeGraphs(self, caches, memory=memory, generator=generator, vocab=vocab,
+        self.decode_graphs = DrafterDecodeGraphs(self, caches, memory=memory, draws_seed=draws_seed, vocab=vocab,
                                                  prepared_context=prepared_context, append_child=append_child)
 
     def observe_decode(self, ring, positions, aux):
@@ -549,11 +551,13 @@ class Drafter:
             raise ValueError(f'drafter block has {rows} rows, above prepared capacity {self.max_block_rows}')
 
     def propose_rows(self, field: torch.Tensor, slots: torch.Tensor, anchors: torch.Tensor, positions: torch.Tensor,
-                     temps: "torch.Tensor | None" = None, generator=None, vocab: "int | None" = None, alive=None):
+                     temps: "torch.Tensor | None" = None, uniforms: "torch.Tensor | None" = None,
+                     vocab: "int | None" = None, alive=None):
         """Every row's K drafts at once: anchors [n], positions [n] (each row's context: the anchor's position), slots [n],
         all on the device. Greedy walk, [n, K]; with `temps` [n] the sampled walk at each row's temperature (rows at 0
-        stay greedy), plus the candidates each pick was drawn from and their mass -- [n, K, sel_top_k] each, which
-        is the whole distribution: the walk puts nothing anywhere else."""
+        stay greedy) over `uniforms` [n, K] (one a position, the caller's: base/draws), plus the candidates each pick
+        was drawn from and their mass -- [n, K, sel_top_k] each, which is the whole distribution: the walk puts
+        nothing anywhere else."""
         F, p = self.F, self.p
         K = self.k
         t = K + 1
@@ -581,9 +585,13 @@ class Drafter:
         # 320 numbers, and the verifier then read it twice. The candidates and their mass are the same fact.
         qprob = torch.zeros(n, K, F.sel_top_k, dtype=torch.float32, device=dev)
         qcand = cand.clone()                                                          # the candidates are the walk's, position by position
-        # The sampled walk stays a loop: its draw is the engine's generator, and moving that into a kernel
-        # would put rank agreement and D12's replay in there with it. What does not change along the walk --
-        # which rows sample, and their temperatures -- is computed once (45차, the C=4 question: launches).
+        # The sampled walk stays a loop: each position picks among the sixteen the last one opened. Its draw
+        # is the cumulative walk over the caller's uniform for that position -- keyed, not drawn, so four ranks
+        # hold the same number whatever came before (base/draws) and a recorded step replays alone (D12). What
+        # does not change along the walk -- which rows sample, and their temperatures -- is computed once.
+        if uniforms is None or tuple(uniforms.shape) != (n, K):
+            raise ValueError(f"the sampled walk needs uniforms [{n}, {K}], one a position")
+        from engine.base.sampler import _inverse_cdf
         stochastic = (temps > 0).view(n, 1)
         heat = temps.clamp_min(1e-5).view(n, 1)
         out = []
@@ -592,7 +600,7 @@ class Drafter:
             best = sel.argmax(-1)
             probs = torch.softmax(sel / heat, dim=-1)
             probs = torch.where(stochastic, probs, torch.zeros_like(probs).scatter_(1, best.view(n, 1), 1.0))
-            pick = torch.where(stochastic.view(n), torch.multinomial(probs, 1, generator=generator).view(n), best)
+            pick = torch.where(stochastic.view(n), _inverse_cdf(probs, uniforms[:, s]), best)
             qprob[:, s] = probs
             out.append(cand[rows, s, pick])
             prev = pick
@@ -621,7 +629,7 @@ class Drafter:
                            p["candidate_selector.predecessor_codebook"],
                            p["candidate_selector.successor_codebook"]).reshape(K)   # the served kernel at temperature 0
 
-    def propose_sampled(self, anchor: int, position: int, ring: torch.Tensor, temperature: float, generator,
+    def propose_sampled(self, anchor: int, position: int, ring: torch.Tensor, temperature: float, uniforms,
                         vocab: int) -> "tuple[list[int], torch.Tensor]":
         """The same walk drawn at `temperature` instead of argmax (production's DRAFT_SAMPLE=probabilistic): returns the K
         draft ids and the distribution each was drawn from, [K, vocab] fp32 (zero outside the 16 candidates).
@@ -636,13 +644,14 @@ class Drafter:
         """
         drafts, dists = self.propose_sampled_tensor(
             torch.full((1,), anchor, dtype=torch.int64, device=ring.device),
-            position, ring, temperature, generator, vocab)
+            position, ring, temperature, uniforms, vocab)
         return drafts.tolist(), dists
 
-    def propose_sampled_tensor(self, anchor: torch.Tensor, position, ring: torch.Tensor, temperature: float, generator,
+    def propose_sampled_tensor(self, anchor: torch.Tensor, position, ring: torch.Tensor, temperature: float, uniforms,
                                vocab: int) -> "tuple[torch.Tensor, torch.Tensor]":
         """`propose_sampled` with every pick a tensor (45차 §23 B3: a row ahead of the host cannot read its drafts back).
-        anchor [1] int64 on device; position a device scalar or int. Returns (drafts [K], dists [K, vocab] fp32)."""
+        anchor [1] int64 on device; position a device scalar or int; `uniforms` [K], one a position (base/draws).
+        Returns (drafts [K], dists [K, vocab] fp32)."""
         F, p = self.F, self.p
         K = self.k
         dev = ring.device
@@ -657,9 +666,11 @@ class Drafter:
         succ = p["candidate_selector.successor_codebook"][cand].float()
         scores = unary[:, None, :] + torch.einsum("kpr,kcr->kpc", pred * proj[:, None, :], succ)
         # Each step picks from the sixteen candidates the last one opened, so the walk cannot be batched --
-        # but its uniforms can be drawn in one call, and over sixteen candidates the cumulative walk is the
-        # whole of a draw. `multinomial` was a kernel a position to do that.
-        u = torch.rand(K, generator=generator, device=dev)
+        # but its uniforms arrive together (keyed, base/draws), and over sixteen candidates the cumulative walk
+        # is the whole of a draw. `multinomial` was a kernel a position to do that.
+        u = torch.as_tensor(uniforms, dtype=torch.float32, device=dev).reshape(-1)
+        if u.numel() != K:
+            raise ValueError(f"the sampled walk needs {K} uniforms, one a position, got {u.numel()}")
         drafts, dists = [], torch.zeros(K, vocab, device=dev, dtype=torch.float32)
         prev = torch.zeros(1, dtype=torch.int64, device=dev)
         for s in range(K):

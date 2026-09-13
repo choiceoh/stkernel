@@ -49,7 +49,7 @@ def main():
     cand = torch.randint(0, V, (N, T - 1, C), generator=g, device=DEV)
     qp = torch.softmax(torch.randn(N, T - 1, C, generator=g, device=DEV), -1)
     drafts = cand[:, :, 0].contiguous()
-    gen = torch.Generator(device=DEV).manual_seed(5)
+    gen = torch.rand(N, T, generator=torch.Generator(device=DEV).manual_seed(5), device=DEV)   # the uniforms: an input (base/draws)
 
     print(f"  n={N} t={T} V={V:,} C={C}\n")
     print(f"  {'stage':<36} {'median':>10} {'min':>10}")
