@@ -317,7 +317,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
           context_ceiling: "int | None" = None, execution: str = "stock",
           ckpt_meta: "str | Path" = facts.CKPT, drafter_dir: "str | Path" = drafter_mod.DRAFTER,
           lease_owner: "str | None" = None, kda_state_dtype: "str | None" = None, execution_plan=None,
-          nvme_mapped_staging=False, draft_policy=None, draft_tuning_path=''):
+          nvme_mapped_staging=False, draft_policy=None, draft_tuning_path='', workspace_gib: "float | None" = None):
     """`ckpt_meta`: where config.json / tokenizer.json / generation_config.json are -- the HF checkpoint dir, or a
     copy of just those files: a node needs its rank file, the drafter and this, not the 185 GB checkpoint."""
     from engine.profiles.glm53.draft_policy import DraftPolicy, decode_name, resolve_calibration
@@ -436,7 +436,10 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         # table is what anyone reads to decide whether a boot fits. The reserve is the box's
         # own kill line plus a margin (budget.os_reserve_gib), not a number we picked.
         from engine.profiles.glm53 import budget as _budget_mod
-        workspace_bytes = int(_budget_mod.WORKSPACE_GIB * GIB)
+        workspace_gib = _budget_mod.WORKSPACE_GIB if workspace_gib is None else float(workspace_gib)
+        if not workspace_gib > 0:
+            raise ValueError(f"--workspace-gib must be a positive GiB ceiling, not {workspace_gib}")
+        workspace_bytes = int(workspace_gib * GIB)
         os_reserve_bytes = int(_budget_mod.OS_RESERVE_GIB * GIB)
         files = sorted(Path(ranks_dir).glob("rank*of4.safetensors"))
         if D:
@@ -477,7 +480,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                             snapshots=snapshots, tier_enabled=bool(tier_dir), kda_state_dtype=F.kda_state_dtype,
                             draft_tp=comm.world_size if execution == "native" else 1,
                             draft_native=execution == "native", router_bytes=router_bytes, projection_bytes=projection_bytes,
-                            draft_policy=draft_policy)
+                            draft_policy=draft_policy, workspace_gib=workspace_gib)
         # With THIS boot's floor, not vLLM's 40th-boot constant. RuntimeMemory measured it
         # seconds ago in __init__, and this print is the moment anyone decides how much KV to
         # ask for: without it the first table said 42.77 GiB of KV remained on a box that had
@@ -850,6 +853,7 @@ def local(a) -> int:
     def rank_main(comm):
         rec = Recorder(f"rank{comm.rank}")
         F, net, caches, engine, runner = build(comm, layers, lanes, a.ranks, a.kv_gib, MAX_SEQS, a.drafter, rec,
+                                               workspace_gib=getattr(a, "workspace_gib", None),
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed,
                                                tier_dir=a.tier_dir if a.park else None,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
@@ -943,6 +947,7 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
     def rank_main(comm):
         rec = Recorder(f"rank{comm.rank}")
         F, net, caches, engine, runner = build(comm, layers, lanes, a.ranks, a.kv_gib, MAX_SEQS, a.drafter, rec,
+                                               workspace_gib=getattr(a, "workspace_gib", None),
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed,
                                                tier_dir=a.tier_dir if a.park else None,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir)
@@ -1130,6 +1135,7 @@ def fleet(a) -> int:
             raise ValueError("draft diagnostics must be 0 or 1")
         draft_policy = DraftPolicy(cfg["draft_fc_precision"], cfg["draft_fc_calibration"], bool(cfg["draft_diagnostics"]))
         F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
+                                               workspace_gib=getattr(a, "workspace_gib", None),
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir,
                                                context_ceiling=cfg["context_ceiling"] or None,
@@ -1279,6 +1285,9 @@ def main(argv=None) -> int:
     ap.add_argument("--layers", default="0-4")
     ap.add_argument("--ranks", default=str(facts.RANKS))
     ap.add_argument("--kv-gib", type=float, default=KV_GIB)
+    ap.add_argument("--workspace-gib", type=float, default=None,
+                    help="the runtime workspace ceiling outside the arena (default: budget.WORKSPACE_GIB); a shape that "
+                         "spends more says so here, with its ledger")
     ap.add_argument("--prompt", type=int, default=300)
     ap.add_argument("--seqs", type=int, default=2)
     ap.add_argument("--max-new", type=int, default=8)

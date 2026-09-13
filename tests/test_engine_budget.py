@@ -55,7 +55,7 @@ class BudgetTests(unittest.TestCase):
         floor = next(l for l in b.lines if l.name.startswith("runtime floor"))
         self.assertEqual(floor.gib, 4.0)
         self.assertEqual(floor.source, MEASURED)
-        self.assertIn("+7.00 GiB of the ceiling unspent", budget.report(b))
+        self.assertIn(f"+{budget.WORKSPACE_GIB - 5:.2f} GiB of the ceiling unspent", budget.report(b))
 
     def test_the_report_dict_itself_is_a_ledger_so_boot_need_not_reread_what_it_just_wrote(self):
         from engine.profiles.glm53 import budget
@@ -87,6 +87,25 @@ class BudgetTests(unittest.TestCase):
         # and it is the KV that pays for them, which is the whole point of showing it
         self.assertAlmostEqual(plain.kv_gib - with_floor.kv_gib, tenants.gib, places=2)
         self.assertNotIn("already on this box", [l.name for l in plain.lines])
+
+    def test_a_boot_that_raises_the_ceiling_is_declared_with_the_ceiling_it_enforces(self):
+        """--workspace-gib is a declared line like the profile's own: the table carries what the allocator will
+        hand out, says where the number came from, and the KV remainder pays for the difference."""
+        from engine.base.budget import DECLARED
+        from engine.profiles.glm53 import budget
+        plain = budget.budget(8.73, 4, box_gib=121.6, drafter_dir=None)
+        raised = budget.budget(8.73, 4, box_gib=121.6, drafter_dir=None, workspace_gib=10.5,
+                               ledger={"arena_bytes": 0, "baseline_reserved_bytes": 0,
+                                       "measured": {"peak_workspace_bytes": 5 << 30, "prefill_peak_bytes": 5 << 30,
+                                                    "graph_bytes": 0, "at_phase": "production/ready"}})
+        line = lambda b: next(l for l in b.lines if l.name.startswith("workspace"))      # noqa: E731
+        self.assertEqual((line(plain).gib, plain.workspace_gib), (budget.WORKSPACE_GIB, budget.WORKSPACE_GIB))
+        self.assertEqual((line(raised).gib, line(raised).source, raised.workspace_gib), (10.5, DECLARED, 10.5))
+        self.assertIn(f"--workspace-gib 10.5 (profile {budget.WORKSPACE_GIB:g})", line(raised).evidence)
+        self.assertNotIn("--workspace-gib", line(plain).evidence)
+        self.assertIn("workspace: ceiling 10.50 GiB enforced, this boot peaked at 5.00", budget.report(raised))
+        self.assertIn("+5.50 GiB of the ceiling unspent", budget.report(raised))
+        self.assertAlmostEqual(plain.kv_gib - raised.kv_gib, 10.5 - budget.WORKSPACE_GIB, places=6)
 
     def test_a_floor_measured_before_any_phase_still_reaches_the_table(self):
         """RuntimeMemory takes the floor in __init__, and boot prints the table right after --
@@ -156,6 +175,33 @@ class BudgetTests(unittest.TestCase):
         self.assertEqual(snapshots(replicated) - snapshots(native), 96 * saved_per_ring / (1 << 30))
         self.assertEqual(replicated.slot_bytes - native.slot_bytes, saved_per_ring)
         self.assertGreater(native.paged_gib, replicated.paged_gib)
+
+
+class WorkspaceCeilingSourceTests(unittest.TestCase):
+    """The ceiling admission asks every node for, and the one way to raise it (2026-09-13). Runs without torch."""
+    ROOT = Path(__file__).resolve().parents[1]
+
+    def test_the_profile_ceiling_is_the_measured_peak_plus_a_margin_and_says_so(self):
+        text = (self.ROOT / "engine/profiles/glm53/budget.py").read_text()
+        self.assertIn("\nWORKSPACE_GIB = 9.0 ", text)
+        for evidence in ("36 of them", "largest reserved peak is 7.48 GiB", "prefill/32256/0/prepared",
+                         "largest allocated peak 6.67 GiB", "`--workspace-gib` / ST_WORKSPACE_GIB"):
+            self.assertIn(evidence, text)
+        self.assertGreaterEqual(9.0 - 7.48, 1.5, "the margin the evidence claims")
+
+    def test_the_boot_enforces_the_ceiling_it_was_given_everywhere_it_builds(self):
+        boot = (self.ROOT / "engine/profiles/glm53/boot.py").read_text()
+        self.assertIn('ap.add_argument("--workspace-gib", type=float, default=None,', boot)
+        self.assertIn('draft_tuning_path=\'\', workspace_gib: "float | None" = None):', boot)
+        admission = boot[boot.index("from engine.profiles.glm53 import budget as _budget_mod"):boot.index("files = sorted(Path(ranks_dir)")]
+        self.assertIn("workspace_gib = _budget_mod.WORKSPACE_GIB if workspace_gib is None else float(workspace_gib)", admission)
+        self.assertIn("if not workspace_gib > 0:", admission)
+        self.assertIn("workspace_bytes = int(workspace_gib * GIB)", admission)
+        self.assertNotIn("_budget_mod.WORKSPACE_GIB * GIB", boot, "no second path reads the constant past the flag")
+        self.assertIn("draft_policy=draft_policy, workspace_gib=workspace_gib)", boot, "the declared table shows the same ceiling")
+        self.assertEqual(boot.count('workspace_gib=getattr(a, "workspace_gib", None)'), 3, "the fleet boot and both local boots")
+        launcher = (self.ROOT / "launchers/start-st-glm53.sh").read_text()
+        self.assertIn("boot.py $PRODUCTION_ARG $KV_ARG $WORKSPACE_ARG --port $PORT", launcher)
 
 
 if __name__ == "__main__":

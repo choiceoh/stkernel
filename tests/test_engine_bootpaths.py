@@ -76,7 +76,26 @@ class BootPathTests(unittest.TestCase):
                     self.assertNotIn("execution_plan", build.call_args.kwargs)
                 facts_load.assert_called_with(args.ckpt_meta)        # the kernel shape comes from the selected config
                 self.assertTrue(kernel_shape.is_bound())
+                # no --workspace-gib: build takes the profile's ceiling (budget.WORKSPACE_GIB)
+                self.assertIsNone(build.call_args.kwargs["workspace_gib"])
         self.assertEqual(comm.close.call_args_list, [unittest.mock.call(), unittest.mock.call()])
+        args.workspace_gib = 10.5                                   # a shape that spends more says so, and every mode passes it on
+        for mode in ("local", "fleet"):
+            args.serve, args.production = False, False
+            with self.subTest(mode=mode, workspace_gib=10.5), \
+                 patch.object(boot, "fleet_lease_of", return_value={"owner": "test", "path": "/unused"}), \
+                 patch.object(boot.facts, "check_box", return_value="test"), \
+                 patch.object(boot.facts, "load", return_value=tiny_facts()), \
+                 patch.object(boot, "Config", side_effect=lambda facts, knobs: Config(
+                     facts, knobs, env={}, today=datetime.date(2026, 9, 13))), \
+                 patch.object(boot, "LocalTP", return_value=tp), \
+                 patch.object(boot.Comm, "init", return_value=comm), \
+                 patch.object(boot.lane_tables, "reference"), \
+                 patch.object(boot.lane_tables, "served"), \
+                 patch.object(boot, "build", side_effect=StopAtBuild) as build:
+                with self.assertRaises(StopAtBuild):
+                    (boot.fleet if mode == "fleet" else boot.local)(args)
+                self.assertEqual(build.call_args.kwargs["workspace_gib"], 10.5)
 
     def test_build_reads_drafter_facts_from_the_selected_directory(self):
         from engine.base import kernel_shape

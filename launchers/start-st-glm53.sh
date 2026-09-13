@@ -45,6 +45,14 @@ if [ -n "${ST_KV_GIB:-}" ]; then
   [[ "$ST_KV_GIB" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "ST_KV_GIB must be a positive GiB byte budget" >&2; exit 2; }
   KV_ARG="--kv-gib $ST_KV_GIB"
 fi
+# The runtime workspace ceiling (engine/profiles/glm53/budget.WORKSPACE_GIB) is what admission asks each node for on
+# top of the arena. A shape that spends more than the profile's ceiling raises it here, and says so in its ledger.
+WORKSPACE_ARG=""
+if [ -n "${ST_WORKSPACE_GIB:-}" ]; then
+  [[ "$ST_WORKSPACE_GIB" =~ ^[0-9]+([.][0-9]+)?$ ]] && awk -v w="$ST_WORKSPACE_GIB" 'BEGIN { exit !(w > 0) }' \
+    || { echo "ST_WORKSPACE_GIB must be a positive GiB ceiling" >&2; exit 2; }
+  WORKSPACE_ARG="--workspace-gib $ST_WORKSPACE_GIB"
+fi
 PRODUCTION_ARG=""
 RECLAIM_FILE_CACHE=${ST_RECLAIM_FILE_CACHE:-1}
 case "$RECLAIM_FILE_CACHE" in
@@ -325,7 +333,7 @@ start_rank() {
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
     -e ST_LEASE_OWNER="$LEASE_OWNER" -e ST_LEASE_PATH="$LOCK" -e ST_RELEASE="$(basename "$ENGINE_DIR")" \
-    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py $PRODUCTION_ARG $KV_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER --tier-dir $TIER_DIR --dump-dir $DUMP_DIR' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py $PRODUCTION_ARG $KV_ARG $WORKSPACE_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER --tier-dir $TIER_DIR --dump-dir $DUMP_DIR' >/dev/null && echo '$ip: started'"
 }
 
 pids=()

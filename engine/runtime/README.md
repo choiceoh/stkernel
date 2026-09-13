@@ -35,10 +35,13 @@ metadata directory containing config, tokenizer and generation configuration.
 srv2, srv1, srv3, srv4 for ranks 0, 1, 2, 3.
 
 Full-model admission releases clean pages of the selected rank/draft files,
-then requires the arena plus a **12 GiB workspace ceiling** and **4 GiB OS
-reserve** in immediately free host/device memory. Every rank must pass before
-any rank allocates its arena. These are byte limits, not measured workspace
-claims. KV remains an explicit budget. The native PyTorch allocator is capped
+then requires the arena plus the **workspace ceiling** (`budget.WORKSPACE_GIB`,
+9 GiB), the **OS reserve** (the box's SIGTERM line plus 1 GiB) and the prefix
+tier's host cache in immediately free host/device memory. Every rank must pass
+before any rank allocates its arena. The ceiling is a byte limit set from the
+measured peaks: 7.48 GiB reserved at the largest prefill chunk on all four ranks
+(2026-09-13). A shape that spends more raises it with `--workspace-gib`
+(`ST_WORKSPACE_GIB` in the launcher). KV remains an explicit budget. The native PyTorch allocator is capped
 at its existing reserved bytes plus the arena and workspace ceiling. Its
 fraction API only enforces that byte limit; it never chooses KV capacity.
 Direct CUDA allocations such as NCCL are outside that allocator, so boot also

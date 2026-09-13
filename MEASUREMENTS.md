@@ -2527,3 +2527,32 @@ sudo 거절이면 네 노드가 경고 후 계속, 0 이면 반납 없음, 남�
 죽어 있으면 교착). (2) srv4 는 다른 서비스 몫 때문에 캐시를 다 비워도 여유가 몇 GiB 뿐이다. (3) 작업 공간 상한 12 GiB 는 실측 최고치
 7.48 GiB 보다 4.5 GiB 크다 — 낮추면 입장 필요량이 그만큼 준다(부팅으로 검증할 일). (4) srv2 의 `overcommit_ratio=50` 은 설정 문제라
 운영자 결정이다.
+
+### PR차 — 작업 공간 상한 12 → 9 GiB: 네 랭크 실측 최고치 7.48 GiB 위로 1.52 GiB, 입장 필요량이 노드마다 3 GiB 준다 (2026-09-13, srv1~4 원장 읽기 + 맥·srv4 CPU, PR #TBD, 운영자 "2~3번 작업")
+
+**기록.**
+- 상한(`budget.WORKSPACE_GIB`)은 #549 이후 12 GiB 였다. 입장은 아레나 + 상한 + OS 여유 + 접두사 티어 호스트 캐시를 즉시 가용으로
+  요구하므로, 상한 중 어느 단계도 쓰지 않는 부분까지 부팅을 거절할 이유가 된다. 같은 날 srv4 는 약 1.5 GiB 모자라 프로덕션을 거절했다(PR #885).
+- 2026-09-13 준비 완료 부팅 아홉 번이 네 랭크 모두에 남긴 원장 36 개: 예약 최고치 5.07~7.48 GiB, 할당 최고치 4.48~6.67 GiB. 32,256 토큰
+  청크를 쓰는 트리의 최고치는 모두 가장 큰 프리필 청크(`prefill/32256/…/prepared`)에서 나고, 한 트리의 네 랭크는 0.04 GiB 안에서 같다.
+- 넓은 디코드 배치를 데운 실험 부팅 둘(둘 다 실패)은 7.74·10.56 GiB 였다.
+- srv2 의 `/etc/sysctl.d/99-overcommit.conf` 는 `vm.overcommit_memory=2` 만 켜고 비율은 기본값 50 이라 CommitLimit 가 75.8 GiB 다. srv1 은
+  `99-deneb-vibevoice.conf` 에서 95 로 올려 두었다(2026-06-01, 이력 50 → 80 → 90 → 95).
+
+**한 것.**
+- `WORKSPACE_GIB = 9.0`: 예약 최고치보다 1.52 GiB, 할당 최고치보다 2.33 GiB 위. 할당자는 한도에 닿으면 캐시 블록을 먼저 돌려준다.
+  프로덕션 형상의 입장 필요량이 76.47 → 73.47 GiB.
+- `boot.py --workspace-gib`, 런처 `ST_WORKSPACE_GIB`(양수만): 더 쓰는 형상이 자기 원장과 함께 올린다. 세 부팅 모드가 모두 넘기고,
+  예산표의 상한 줄·근거·"unspent" 줄이 실제 강제 상한을 쓴다.
+- `st-return-file-cache.sh` 가 반납 줄에 노드의 `overcommit_memory`·CommitLimit·Committed_AS 를 붙인다. 엄격 모드 노드의 커밋 여유가
+  부팅마다 로그에 남는다.
+- srv2 의 비율은 시스템 설정이라 세션이 바꾸지 않았다. 운영자가 srv2 에서 실행할 명령:
+  `echo 'vm.overcommit_ratio = 95' | sudo tee /etc/sysctl.d/99-overcommit-ratio.conf` 뒤 `sudo sysctl -p /etc/sysctl.d/99-overcommit-ratio.conf`.
+  기대값: CommitLimit 약 129.7 GiB(스왑 16 GiB + 119.7 GiB × 0.95). 한도만 올리고 모드 2 와 `min_free_kbytes` 는 그대로다.
+
+**검증.** 가짜 플릿: `ST_WORKSPACE_GIB` 가 없으면 부팅 명령에 플래그가 없고, 10.5 면 네 랭크 모두 `--workspace-gib 10.5`, `0`·`0.0`·음수·
+문자·지수 표기면 exit 2 로 아무것도 띄우지 않는다; 반납 줄의 커밋 상태. 예산(srv4, GLM 설정 있음): 올린 상한이 줄·근거·KV 나머지에 반영.
+부팅 경로: 인자가 없으면 `build` 가 None(프로필 값)을, 10.5 면 local·fleet 모두 10.5 를 받는다. 소스 핀: 상수와 근거, 입장이 플래그 값을
+쓰고 상수를 직접 곱하는 경로가 남지 않음, 세 `build` 호출. srv4 CPU 8 모듈 187 테스트 ok. **GPU 부팅 없음** — 9 GiB 로 가장 큰 프리필
+청크와 그래프 캡처를 통과하는지는 재양자화 뒤 첫 부팅의 원장이 말한다. 넘치면 감독자 환경에 `ST_WORKSPACE_GIB=12` 를 두면 코드 변경
+없이 되돌아간다.

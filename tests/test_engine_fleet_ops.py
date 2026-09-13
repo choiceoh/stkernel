@@ -71,15 +71,8 @@ elif a and a[0] == 'ps':
 
 
 
-class FileCacheReturnTests(FleetHarness):
-    """Each node returns its clean file cache from the host the moment before its container starts (2026-09-13).
-
-    No production boot came up from 19:29 to 19:48 on 2026-09-13. srv2's strict overcommit refused the
-    engine's 76.47 GiB reclaim mapping outright, and on srv4 the same fault would have crossed the box's
-    SIGTERM line. Inside its container the engine sees only its own checkpoint. So the launcher drops each
-    node's cache from the host, after the rsync and the image build and right before `docker run`, with
-    the lease held and the fleet idle. The fake fleet runs the real launcher all the way to `docker run`.
-    """
+class LaunchHarness(FleetHarness):
+    """The fake fleet with everything the real launcher needs to reach `docker run` on all four nodes."""
     NODES = ("10.10.10.2", "10.10.10.1", "10.10.10.3", "10.10.10.4")
 
     def setUp(self):
@@ -99,9 +92,11 @@ class FileCacheReturnTests(FleetHarness):
         (engine_dir / "engine/runtime/build.sh").write_text("exit 0\n")
         meminfo = self.home / "meminfo"
         meminfo.write_text("MemTotal: 125000000 kB\nMemFree: 35000000 kB\nMemAvailable: 110000000 kB\n"
-                           "Cached: 75000000 kB\n")
+                           "Cached: 75000000 kB\nCommitLimit: 79477760 kB\nCommitted_AS: 4718592 kB\n")
+        overcommit = self.home / "overcommit_memory"
+        overcommit.write_text("2\n")
         self.env.update(CKPT=str(ckpt), RANKS_DIR=str(ranks), DRAFTER=str(drafter), ST_ENGINE_DIR=str(engine_dir),
-                        ST_MEMINFO=str(meminfo))
+                        ST_MEMINFO=str(meminfo), ST_OVERCOMMIT=str(overcommit))
         # ssh tells the stubs which node a command ran on; the tree push and the flush do nothing here
         self.script("ssh", '''#!/usr/bin/env python3
 import os, pathlib, subprocess, sys
@@ -114,13 +109,15 @@ sys.exit(subprocess.call(['/bin/bash', '-c', cmd], env=dict(os.environ, FAKE_NOD
         self.script("docker", '''#!/usr/bin/env python3
 import os, pathlib, sys
 a = sys.argv[1:]
-def note(what):
-    with (pathlib.Path(os.environ['FAKE_HOME']) / 'events').open('a') as f:
+h = pathlib.Path(os.environ['FAKE_HOME'])
+def note(what, path='events'):
+    with (h / path).open('a') as f:
         f.write(os.environ.get('FAKE_NODE', '?') + ' ' + what + '\\n')
 if a[:2] == ['rm', '-f']:
     note('rm')
 elif a[:1] == ['run']:
     note('run')
+    note(' '.join(a), 'runs')
 elif a and a[0] == 'ps':
     print(os.environ.get('FAKE_CONTAINERS', ''))
 ''')
@@ -137,6 +134,21 @@ elif a and a[0] == 'ps':
             steps.setdefault(node, []).append(what)
         return result, steps
 
+    def boot_commands(self):
+        runs = self.home / "runs"
+        return runs.read_text().splitlines() if runs.exists() else []
+
+
+class FileCacheReturnTests(LaunchHarness):
+    """Each node returns its clean file cache from the host the moment before its container starts (2026-09-13).
+
+    No production boot came up from 19:29 to 19:48 on 2026-09-13. srv2's strict overcommit refused the
+    engine's 76.47 GiB reclaim mapping outright, and on srv4 the same fault would have crossed the box's
+    SIGTERM line. Inside its container the engine sees only its own checkpoint. So the launcher drops each
+    node's cache from the host, after the rsync and the image build and right before `docker run`, with
+    the lease held and the fleet idle. The fake fleet runs the real launcher all the way to `docker run`.
+    """
+
     def test_every_node_returns_its_cache_after_the_old_container_goes_and_before_the_new_one_starts(self):
         result, steps = self.launch()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -145,6 +157,8 @@ elif a and a[0] == 'ps':
             self.assertIn(f"{ip}: file cache returned: MemFree 33.4 GiB, MemAvailable 104.9 GiB, Cached 71.5 GiB -> ",
                           result.stdout)
             self.assertIn(f"{ip}: started", result.stdout)
+        self.assertEqual(result.stdout.count("; commit: overcommit_memory 2, CommitLimit 75.8 GiB, Committed_AS 4.5 GiB"), 4,
+                         "every node says how much commit room a strict node has")
         self.assertTrue(self.lock.exists(), "the boot went on to hold its lease")
 
     def test_a_node_that_cannot_return_it_says_so_and_the_boot_goes_on(self):
@@ -181,10 +195,40 @@ elif a and a[0] == 'ps':
         self.assertNotIn("memfree-preflight.sh", text, "the vLLM sizing preflight no longer gates an ST boot")
 
 
+class WorkspaceCeilingLaunchTests(LaunchHarness):
+    """ST_WORKSPACE_GIB: a shape that spends more than the profile's ceiling raises it for every rank (2026-09-13)."""
+
+    def test_the_profile_ceiling_is_the_default_and_the_variable_reaches_every_rank(self):
+        result, _ = self.launch()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(len(self.boot_commands()), 4)
+        self.assertFalse([c for c in self.boot_commands() if "--workspace-gib" in c], "no flag: budget.WORKSPACE_GIB")
+        (self.home / "runs").unlink()
+        self.events.unlink()
+        self.lock.unlink()
+        self.env["ST_WORKSPACE_GIB"] = "10.5"
+        result, _ = self.launch()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        commands = self.boot_commands()
+        self.assertEqual(len(commands), 4)
+        self.assertTrue(all("--kv-gib" not in c and "--workspace-gib 10.5 --port" in c for c in commands), commands)
+
+    def test_a_ceiling_that_is_not_a_positive_number_starts_nothing(self):
+        for bad in ("0", "0.0", "-1", "ten", "1e3", "10.5GiB"):
+            with self.subTest(bad=bad):
+                self.env["ST_WORKSPACE_GIB"] = bad
+                result, steps = self.launch()
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn("ST_WORKSPACE_GIB must be a positive GiB ceiling", result.stderr)
+                self.assertEqual((steps, self.boot_commands()), ({}, []))
+                self.assertFalse(self.lock.exists())
+
+
 class ReturnScriptTests(unittest.TestCase):
     """launchers/st-return-file-cache.sh on its own: one line, exit 0 when returned, 3 when it could not be."""
 
-    def run_return(self, *, sudo_exit=0, meminfo="MemFree: 1048576 kB\nMemAvailable: 3145728 kB\nCached: 2097152 kB\n"):
+    def run_return(self, *, sudo_exit=0, meminfo="MemFree: 1048576 kB\nMemAvailable: 3145728 kB\nCached: 2097152 kB\n"
+                   "CommitLimit: 79477760 kB\nCommitted_AS: 4718592 kB\n"):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             (home / "bin").mkdir()
@@ -195,7 +239,9 @@ class ReturnScriptTests(unittest.TestCase):
             info = home / "meminfo"
             if meminfo is not None:
                 info.write_text(meminfo)
-            env = dict(os.environ, PATH=f"{home / 'bin'}:{os.environ['PATH']}", ST_MEMINFO=str(info))
+            (home / "overcommit_memory").write_text("2\n")
+            env = dict(os.environ, PATH=f"{home / 'bin'}:{os.environ['PATH']}", ST_MEMINFO=str(info),
+                       ST_OVERCOMMIT=str(home / "overcommit_memory"))
             result = subprocess.run(["bash", str(ROOT / "launchers/st-return-file-cache.sh")], env=env, text=True,
                                     capture_output=True, timeout=15)
             asked = (home / "sudo").read_text().strip() if (home / "sudo").exists() else None
@@ -206,13 +252,20 @@ class ReturnScriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(asked, "-n sh -c echo 3 > /proc/sys/vm/drop_caches")
         self.assertEqual(result.stdout.strip(), "file cache returned: MemFree 1.0 GiB, MemAvailable 3.0 GiB, "
-                                                "Cached 2.0 GiB -> MemFree 1.0 GiB, MemAvailable 3.0 GiB, Cached 2.0 GiB")
+                                                "Cached 2.0 GiB -> MemFree 1.0 GiB, MemAvailable 3.0 GiB, Cached 2.0 GiB; "
+                                                "commit: overcommit_memory 2, CommitLimit 75.8 GiB, Committed_AS 4.5 GiB")
 
     def test_without_passwordless_sudo_it_says_so_and_exits_three(self):
         result, _ = self.run_return(sudo_exit=1)
         self.assertEqual(result.returncode, 3)
         self.assertEqual(result.stdout.strip(), "file cache NOT returned (sudo -n refused): MemFree 1.0 GiB, "
-                                                "MemAvailable 3.0 GiB, Cached 2.0 GiB")
+                                                "MemAvailable 3.0 GiB, Cached 2.0 GiB; commit: overcommit_memory 2, "
+                                                "CommitLimit 75.8 GiB, Committed_AS 4.5 GiB")
+
+    def test_a_meminfo_without_commit_counters_says_nothing_of_commit(self):
+        result, _ = self.run_return(meminfo="MemFree: 1048576 kB\nMemAvailable: 3145728 kB\nCached: 2097152 kB\n")
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn("commit", result.stdout)
 
     def test_an_unreadable_meminfo_does_not_stop_the_return(self):
         result, asked = self.run_return(meminfo=None)

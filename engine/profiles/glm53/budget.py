@@ -25,7 +25,14 @@ from engine.profiles.glm53 import drafter as drafter_mod
 from engine.profiles.glm53.caches import layout, snapshot_layout, stage_bytes, cache_capacity, state_dtype
 
 RUNTIME_FLOOR_GIB = 5.54            # ledger 40th boot table (vLLM): CUDA context + NCCL 16 channels -- re-measure on ST
-WORKSPACE_GIB = 12.0                # base/runtime_memory's enforced ceiling for everything outside the arena (#549)
+WORKSPACE_GIB = 9.0                 # base/runtime_memory's enforced ceiling for everything outside the arena (#549)
+"""The ceiling is what admission asks the box for on top of the arena, so every GiB of it that no phase spends is a GiB a
+boot can be refused over. It was 12 from #549 on, with vLLM's activation slope under it. On 2026-09-13 nine ready boots
+wrote ledgers on all four ranks (36 of them): the largest reserved peak is 7.48 GiB, at the largest prefill chunk
+(prefill/32256/0/prepared), and the largest allocated peak 6.67 GiB; one tree's four ranks agree to 0.04 GiB. 9 GiB
+keeps 1.52 GiB above the reserved peak -- the allocator returns its cached blocks before it refuses -- and gives the
+box 3 GiB back: the same day srv4 refused production about 1.5 GiB short. A shape that needs more (a wider decode batch
+warmed 10.56 GiB in an experiment) raises it with `--workspace-gib` / ST_WORKSPACE_GIB and its own ledger."""
 OS_RESERVE_MARGIN_GIB = 1.0        # 7 GiB on the fleet: one GiB above its SIGTERM line
 
 
@@ -110,8 +117,10 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
            drafter_dir: "str | Path | None" = drafter_mod.DRAFTER, ledger: "str | Path | None" = None,
            snapshots: "int | None" = None, draft_tp: int = 1, draft_native: "bool | None" = None,
            router_bytes: int = 0, projection_bytes: int = 0, tier_enabled: bool = True, kda_state_dtype: "str | None" = None,
-           draft_policy=None) -> Budget:
-    """The box, one rank of TP=4. `kv_gib`/`max_seqs` are boot.py's declared values; the table says what they leave."""
+           draft_policy=None, workspace_gib: "float | None" = None) -> Budget:
+    """The box, one rank of TP=4. `kv_gib`/`max_seqs` are boot.py's declared values; the table says what they leave.
+    `workspace_gib`: the ceiling this boot enforces when it is not WORKSPACE_GIB (boot.py --workspace-gib)."""
+    ceiling = WORKSPACE_GIB if workspace_gib is None else float(workspace_gib)
     host_total, _ = host_box()
     if box_gib is None:
         box_gib = host_total                                             # GB10: device total == MemTotal (facts.check_box)
@@ -167,7 +176,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     m = ledger_measured(ledger)
     ledger_name = Path(ledger).name if isinstance(ledger, (str, Path)) and ledger else "this boot"
     workspace_evidence = ("base/runtime_memory ceiling: activations, graph pools, kernel scratch; the allocator refuses "
-                          "beyond it")
+                          "beyond it" + ("" if workspace_gib is None else f"; --workspace-gib {ceiling:g} (profile {WORKSPACE_GIB:g})"))
     if m and m.get("peak_workspace_bytes"):
         # The LINE stays the enforced ceiling, because that is what the box must be able to
         # absorb: the allocator will hand out every byte of it. What the ledger changes is that
@@ -219,7 +228,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
              "prefix tier: bounded lossless RAM copies plus chunk workspace, outside the raw arena; compression ratio unmeasured"),
         Line("generated-boundary staging", stage_bytes(F, range(F.layers), max_seqs) / GIB, READ,
              "caches.stage_bytes: per-slot recurrent state and convolution history"),
-        Line("workspace ceiling (outside the arena)", WORKSPACE_GIB, DECLARED, workspace_evidence),
+        Line("workspace ceiling (outside the arena)", ceiling, DECLARED, workspace_evidence),
         Line("NVMe tier staging", NVME_STAGING_BYTES / GIB, DECLARED, "kv_tier: pinned staging + device scratch, conversations and prefix tiers"),
     ]
     b = Budget(box_gib, lines, label=f"GLM-5.3-Flash on ST, one rank of TP={facts.TP}, chunk {chunk:,}, kv_gib {kv_gib} -> {blocks_at_kv:,} blocks")
@@ -228,6 +237,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     b.paged_gib = blocks_at_kv * lay.block_bytes / GIB
     b.block_bytes, b.slot_bytes, b.block_tokens, b.max_position = lay.block_bytes, lay.slot_bytes, F.block, F.max_position
     b.measured = m
+    b.workspace_gib = ceiling
     return b
 
 
@@ -242,8 +252,9 @@ def report(b: Budget) -> str:
     if m and m.get("peak_workspace_bytes"):
         # The one line this table could never write from declarations: what the ceiling costs
         # in KV over what the boot actually spends under it (45차 §51).
-        headroom = (WORKSPACE_GIB * GIB - m["peak_workspace_bytes"]) / GIB
-        out.append(f"  workspace: ceiling {WORKSPACE_GIB:.2f} GiB enforced, this boot peaked at "
+        ceiling = getattr(b, "workspace_gib", WORKSPACE_GIB)
+        headroom = (ceiling * GIB - m["peak_workspace_bytes"]) / GIB
+        out.append(f"  workspace: ceiling {ceiling:.2f} GiB enforced, this boot peaked at "
                    f"{m['peak_workspace_bytes'] / GIB:.2f} (prefill activations {m['prefill_peak_bytes'] / GIB:.2f}, "
                    f"graphs and scratch +{m['graph_bytes'] / GIB:.2f} retained) -- {headroom:+.2f} GiB of the ceiling "
                    f"unspent, which is what a lower ceiling would return to KV")
