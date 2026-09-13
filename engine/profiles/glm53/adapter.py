@@ -842,6 +842,22 @@ class Glm53Engine:
             return self._chain_exit(blocked)
         return True
 
+    def agree_step(self, step, asynchronous, pending, depth):
+        """Every rank drains, launches or runs synchronously at the same boundary."""
+        from engine.base.tripwire import Tripwire
+        wire = Tripwire.of(self.net.comm)
+        if wire.world <= 1:
+            return asynchronous
+        seqs = sorted({s for rows in pending for s in rows} | set(step.seqs if step is not None else ()))
+        wire.agree_payload("runner:plan", dict(
+            step=None if step is None else [step.kind, list(step.seqs), step.tokens],
+            pending=pending, depth=depth,
+            rows=[[s, self.ctx.get(s), len(self.tokens[s]) if s in self.tokens else None,
+                   self.inflight.get(s, 0)] for s in seqs]))
+        # Readiness can differ transiently. One rank needing host sampling is
+        # enough to drain the shared pipeline and take that path on all ranks.
+        return wire.vote("runner:async", [int(asynchronous)])[0] == wire.world
+
     def decode_async(self, seqs, blocks, slots):
         return self.pipeline.launch(seqs, slots)
 

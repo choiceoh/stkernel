@@ -102,6 +102,7 @@ first_error() {  # a rank's own last word: its last exception line, else its las
 forensics() {  # <dir>: the four ranks' last 400 lines, pulled before a stop erases them (the supervisor keeps the same)
   local d=$1 r ip; mkdir -p "$d" 2>/dev/null || return 0
   for r in "${!NODES[@]}"; do ip=${NODES[$r]}
+    node_sh "$ip" "docker inspect --format '{{json .State}}' st-glm53" > "$d/rank$r-$ip.state.json" 2>&1 || true
     node_sh "$ip" "docker logs --tail=400 st-glm53" > "$d/rank$r-$ip.log" 2>&1 || true
   done
   say "forensics: $d"
@@ -179,6 +180,9 @@ measure() {  # run-index -> one canonical consumer on the candidate's door, excl
   GLM53_API_PORT=$PORT BENCH_MODEL=$MODEL ONEPASS_RUN_INDEX=$run ST_BRACKET_SHA=$ARM_SHA ST_BRACKET_TREE=$ARM_TREE ST_BRACKET_COLD=${ST_BRACKET_COLD:-boot} \
     python3 "$REPO/bench/$consumer" --name "$ARM" --require-exclusive 2>&1 | tail -40
   rc=${PIPESTATUS[0]}
+  # A measurement can kill a healthy boot. Preserve each failed run before
+  # leg's stop removes the containers; boot-only forensics miss this case.
+  if [ "$rc" != 0 ]; then forensics "$DUMPS/run-$run"; fi
   # onepass returns 2 after recording quality/evidence issues, but argparse
   # also returns 2 before any request. Only a NEW complete record from this
   # invocation allows the remaining run on the same boot. Failed checks
@@ -326,6 +330,7 @@ probe() {  # [sha]: one full onepass on the LIVE production door -- no boot, no 
       || { say "ABORT: no sha and nothing recorded as deployed in $STATE"; return 2; }
   fi
   ARM_SHA=$(sha_of "$sha"); ARM_TREE=$(tree_of "$sha"); ARM="d17-${ARM_SHA:0:12}"; PORT=${ST_PROBE_PORT:-8000}; RELEASE=""
+  DUMPS=$LOGD/st-bracket-dumps/$S-$ARM
   # One run: to the judge a boot is one sample however many runs it carries, and on a live door
   # every run after a reset is warm. The second run bought nothing (ST_PROBE_RUNS=2 to have it).
   local runs=${ST_PROBE_RUNS:-1}

@@ -137,6 +137,39 @@ class TripwireTests(unittest.TestCase):
         with self.assertRaises(CollectiveDivergence):
             Tripwire.of(Rank(Board(1), 1)).expect(None)
 
+    def test_broadcast_vs_gather_fails_before_entering_different_collective_types(self):
+        entered = []
+        def body(wire, rank):
+            wire.calls = 974
+            if rank == 0:
+                wire.before_broadcast()
+                entered.append("broadcast")
+            else:
+                wire.exchange("gather:rows", [7])
+                entered.append("gather")
+        for status, exc in run(4, body):
+            self.assertEqual(status, "raised")
+            self.assertIsInstance(exc, CollectiveDivergence)
+            self.assertIn("rank0: #975 'step:broadcast'", str(exc))
+            self.assertIn("rank1: #975 'gather:rows'", str(exc))
+        self.assertEqual(entered, [])
+
+    def test_payload_consensus_is_order_independent_and_names_actual_differences(self):
+        def equal(wire, rank):
+            payload = dict(tokens=[1, 2], count=2) if rank else dict(count=2, tokens=[1, 2])
+            wire.agree_payload("decode:outcome", payload)
+        self.assertTrue(all(status == "ok" for status, _ in run(4, equal)))
+        def different(wire, rank):
+            wire.agree_payload("decode:outcome", dict(count=6 if rank != 1 else 7, tokens=list(range(7))))
+        for status, exc in run(4, different):
+            self.assertEqual(status, "raised")
+            self.assertIsInstance(exc, CollectiveDivergence)
+            self.assertEqual([r['count'] for r in exc.details['ranks']], [6, 7, 6, 6])
+            with tempfile.TemporaryDirectory() as tmp:
+                note = death_note(tmp, 0, exc, say=lambda *a, **k: None)
+                saved = json.loads(Path(note['path']).read_text())
+                self.assertEqual(saved['divergence'], exc.details)
+
     def test_world_one_costs_nothing_and_a_fixed_shape_has_a_limit(self):
         wire = Tripwire.of(Rank(Board(1), 0))
         self.assertEqual(wire.vote("x", [1, 0, 1]), [1, 0, 1])
@@ -174,6 +207,7 @@ class DeathNoteTests(unittest.TestCase):
         self.assertEqual(classify(CollectiveDivergence("x")), "divergence")
         self.assertEqual(classify(RuntimeError("[c10d] recvValue failed ... Connection closed by peer")), "peer-left")
         self.assertEqual(classify(RuntimeError("NCCL error: unhandled system error")), "peer-left")
+        self.assertEqual(classify(RuntimeError("Timed out waiting 120000ms for send operation")), "peer-left")
         self.assertEqual(classify(ValueError("checkpoint/rank weight layout mismatch")), "local")
         said = []
         with tempfile.TemporaryDirectory() as tmp:

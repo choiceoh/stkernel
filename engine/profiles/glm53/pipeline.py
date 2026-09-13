@@ -363,6 +363,28 @@ class AsyncDecode:
         self.pending.append(pending)
         return pending
 
+    def _agree_outcome(self, seqs, result, *, iteration=None):
+        """Verify readback before host state, callbacks or HTTP see any tokens.
+
+        A burst's device stop vote only agrees when to stop; it does not agree
+        on accepted tokens. Keep its per-iteration publication order, using
+        the independent host control group while the finite GPU loop runs.
+        """
+        from engine.base.tripwire import Tripwire
+        e = self.e
+        wire = Tripwire.of(getattr(getattr(e, "net", None), "comm", None))
+        if wire.world <= 1:
+            return
+        rows = []
+        for i, seq in enumerate(seqs):
+            count = result["count"][i]
+            rows.append(dict(seq=seq, context=e.ctx.get(seq),
+                             history=len(e.tokens[seq]) if seq in e.tokens else None,
+                             before=result.get("before", [None] * len(seqs))[i],
+                             count=count, done=bool(result["done"][i]), accepted=result["accepted"][i],
+                             tokens=result["tokens"][i][:max(0, count)]))
+        wire.agree_payload("decode:outcome", dict(iteration=iteration, rows=rows))
+
     def resolve(self, pending: Pending) -> "list[bool]":
         if not self.pending or self.pending[0] is not pending:
             raise RuntimeError("decode steps resolve in launch order")
@@ -375,6 +397,7 @@ class AsyncDecode:
         n = len(pending.seqs)
         counts, dones, accepted = host["count"][:n].tolist(), host["done"][:n].tolist(), host["accepted"][:n].tolist()
         tokens = host["tokens"][:n].tolist()
+        self._agree_outcome(pending.seqs, dict(count=counts, done=dones, accepted=accepted, tokens=tokens))
         for i, seq in enumerate(pending.seqs):
             e.inflight[seq] = max(0, e.inflight.get(seq, 0) - 1)
             if seq not in e.tokens:                                        # released meanwhile: nothing to apply

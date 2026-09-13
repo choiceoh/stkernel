@@ -42,9 +42,16 @@ class BurstPending:
         self.iteration_seconds = None
         self.outcomes = []
         self.finished = [False] * len(seqs)
+        self.failure = None
 
     def resolve(self):
-        return self.pipeline.resolve_burst(self)
+        if self.failure is not None:
+            raise self.failure  # teardown must not re-enter a failed control collective
+        try:
+            return self.pipeline.resolve_burst(self)
+        except BaseException as exc:
+            self.failure = exc
+            raise
 
 
 class BurstDecode(AsyncDecode):
@@ -268,6 +275,7 @@ class BurstDecode(AsyncDecode):
 
     def _apply_outcome(self, pending, result):
         e = self.e
+        self._agree_outcome(pending.seqs, result, iteration=len(pending.outcomes))
         active = [i for i, seq in enumerate(pending.seqs) if seq in e.tokens]
         if active and not any(result["count"][i] > 0 or result["done"][i] for i in active):
             raise RuntimeError("bounded decode made no progress")
