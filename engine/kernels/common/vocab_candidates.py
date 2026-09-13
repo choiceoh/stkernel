@@ -61,15 +61,20 @@ def argmax_key(local_logits, start, valid):
 
 
 @triton.jit
+def _key(value, ids):
+    bits = value.to(tl.float32).to(tl.int32, bitcast=True).to(tl.int64)
+    ordered = tl.where(bits < 0, bits ^ 0x7fffffff, bits)
+    ordered = tl.where(value != value, 0x7fffffff, ordered)
+    return (ordered << 32) | (0xffffffff - ids.to(tl.int64))
+
+
+@triton.jit
 def _pack(X, OUT, ROW_STRIDE: tl.constexpr, COL_STRIDE: tl.constexpr,
           VALID: tl.constexpr, START: tl.constexpr, BLOCK: tl.constexpr):
     row = tl.program_id(0)
     col = tl.program_id(1) * BLOCK + tl.arange(0, BLOCK)
     value = tl.load(X + row * ROW_STRIDE + col * COL_STRIDE, col < VALID, other=0).to(tl.float32)
-    bits = value.to(tl.int32, bitcast=True).to(tl.int64)
-    ordered = tl.where(bits < 0, bits ^ 0x7fffffff, bits)
-    ordered = tl.where(value != value, 0x7fffffff, ordered)
-    key = (ordered << 32) | (0xffffffff - (START + col.to(tl.int64)))
+    key = _key(value, START + col.to(tl.int64))
     tl.store(OUT + row * VALID + col, key, col < VALID)
 
 
@@ -120,7 +125,64 @@ def select(keys, k):
     return out if segs == 1 else select(out, k)
 
 
+@triton.jit
+def _select_logits(X, OUT, ROW_STRIDE: tl.constexpr, COL_STRIDE: tl.constexpr,
+                   VALID: tl.constexpr, START: tl.constexpr, K: tl.constexpr,
+                   SEGS: tl.constexpr, BLOCK: tl.constexpr):
+    row, seg = tl.program_id(0), tl.program_id(1)
+    col = seg * BLOCK + tl.arange(0, BLOCK)
+    value = tl.load(X + row * ROW_STRIDE + col * COL_STRIDE, col < VALID, other=0).to(tl.float32)
+    keys = tl.where(col < VALID, _key(value, START + col.to(tl.int64)), MIN_KEY)
+    limit = 0x7fffffffffffffff
+    for i in tl.static_range(K):
+        live = keys <= limit if i == 0 else keys < limit
+        limit = tl.max(tl.where(live, keys, MIN_KEY), 0)
+        tl.store(OUT + row * SEGS * K + seg * K + i, limit)
+
+
+def select_logits(local_logits, start, valid, k):
+    """The exact packet from select(pack(...)), without writing a vocabulary of keys.
+
+    Encoding stays in the first selection's registers. Only each segment's k
+    winners leave the kernel; subsequent reductions and the final dense merge
+    retain their existing order, including tied logits and nonfinite values.
+    """
+    rows = local_logits.shape[0]
+    block = min(2048, max(16, triton.next_power_of_2(valid)))
+    segs = triton.cdiv(valid, block)
+    out = torch.empty((rows, segs * k), dtype=torch.int64, device=local_logits.device)
+    _select_logits[(rows, segs)](local_logits, out, local_logits.stride(0), local_logits.stride(1),
+                                valid, start, k, segs, block)
+    return out if segs == 1 else select(out, k)
+
+
 def restore(gathered, vocab):
     dense = torch.full((gathered.shape[0], vocab), float('-inf'), dtype=torch.float32, device=gathered.device)
     _restore[(gathered.shape[0], triton.cdiv(gathered.shape[1], 128))](gathered, dense, gathered.shape[1], vocab, 128)
     return dense
+
+
+@triton.jit
+def _restore_reuse(PACKET, PREVIOUS, OUT, COUNT: tl.constexpr, VOCAB: tl.constexpr, BLOCK: tl.constexpr):
+    row = tl.program_id(0)
+    col = tl.arange(0, BLOCK)
+    old = tl.load(PREVIOUS + row * COUNT + col, col < COUNT, other=MIN_KEY)
+    old_id = 0xffffffff - (old & 0xffffffff)
+    tl.store(OUT + row * VOCAB + old_id, -float('inf'), (col < COUNT) & (old != MIN_KEY))
+    # A token may occur in both packets, on different lanes. All old entries
+    # must be cleared before any current entry is restored (one CTA per row).
+    tl.debug_barrier()
+    key = tl.load(PACKET + row * COUNT + col, col < COUNT, other=MIN_KEY)
+    ids = 0xffffffff - (key & 0xffffffff)
+    ordered = key >> 32
+    bits = tl.where(ordered < 0, ordered ^ 0x7fffffff, ordered).to(tl.int32)
+    tl.store(OUT + row * VOCAB + ids, bits.to(tl.float32, bitcast=True),
+             (col < COUNT) & (key != MIN_KEY))
+    tl.store(PREVIOUS + row * COUNT + col, key, col < COUNT)
+
+
+def restore_reuse(gathered, dense, previous):
+    rows, count = gathered.shape
+    _restore_reuse[(rows,)](gathered, previous, dense, count, dense.shape[1],
+                            triton.next_power_of_2(count), num_warps=4)
+    return dense[:rows]

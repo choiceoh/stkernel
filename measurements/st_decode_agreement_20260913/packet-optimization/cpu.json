@@ -1,0 +1,32 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "interpreter": {
+    "suite": "tests.test_engine_vocab_packet",
+    "passed": 2,
+    "skipped": 1,
+    "seconds": 42.923
+  },
+  "regression": {
+    "tests_discovered": 82,
+    "passed": 71,
+    "skipped": 11,
+    "seconds": 6.63,
+    "suites": [
+      "vocab",
+      "vocab_topk",
+      "drafter",
+      "drafter_storage",
+      "graph_contracts",
+      "native_execution",
+      "bounded_loop",
+      "burst_decode"
+    ]
+  },
+  "source_sha256": {
+    "engine/kernels/common/vocab_candidates.py": "0692207b663c57af3b8580cf0bde946cb93a9b490ad8e9e33d2e9cd2276fe512",
+    "engine/modules/vocab.py": "e757b852b01f31dcc0c420c4eb0a5b174135c30baf047ce2b8a8e0128a5994c5",
+    "engine/profiles/glm53/drafter.py": "005bbdaea5f4d896c8a839593f9ce63905638765f048432459660412b779e10f",
+    "tests/test_engine_vocab_packet.py": "c8990652aa3eaba015814f673ae40cbcecae1a03d18c88d06f151987b9faa59a"
+  }
+}
