@@ -8,6 +8,19 @@ from engine.modules.draft_agreement import agree_walk
 
 
 class DraftAgreementTests(unittest.TestCase):
+    def test_isolated_probe_comms_keep_their_local_proposal(self):
+        from probes.engine_decode_graph_check import IsolatedRank as Replay
+        from probes.engine_graph_profile import IsolatedRank as Profile
+        from probes.engine_prefill_chunk_profile import IsolatedRank as Prefill
+        for comm in (Replay(), Profile(), Prefill(3)):
+            tokens = torch.tensor([[7, 11, 13]])
+            self.assertIs(agree_walk(comm, tokens), tokens)
+            support = tokens.unsqueeze(-1)
+            probabilities = torch.ones_like(support, dtype=torch.float32)
+            for got, expected in zip(agree_walk(comm, tokens, support, probabilities),
+                                     (tokens, support, probabilities)):
+                torch.testing.assert_close(got, expected, rtol=0, atol=0)
+
     def test_different_local_drafts_cannot_split_committed_context(self):
         picks = torch.tensor([[1, 2, 3, 4]])
         def commit(drafts):

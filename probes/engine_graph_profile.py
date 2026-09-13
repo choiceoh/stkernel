@@ -61,6 +61,9 @@ class IsolatedRank:
     def all_reduce_max(self, x):
         return x
 
+    def broadcast_tensor(self, x):
+        return x  # isolated arithmetic, not a TP agreement test
+
     def all_gather(self, x, dim=-1):
         return x
 

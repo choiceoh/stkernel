@@ -1,0 +1,13 @@
+{
+  "scope": "CPU-only isolated probe interface follow-up",
+  "tests": 9,
+  "passed": 9,
+  "skipped": 0,
+  "source_sha256": {
+    "probes/engine_decode_graph_check.py": "969a08ea43a88298540c60f19b059e2ebbb856bacfa4238b84e2a3e34d722fd7",
+    "probes/engine_graph_profile.py": "31f0e686c41f3c91495fd6d95a28386ea0a65da2d64e6ddfc4f16e63287a8ede",
+    "probes/engine_prefill_chunk_profile.py": "cc2d0943c4284d60c31571f9d1fabe5714c704bbe9d9584d1936c9d062d37316",
+    "tests/test_engine_draft_agreement.py": "cf58711c13d4e31ed930b0d9af1d2a03d81f5c3a4f8389fc1628773e3a25b582"
+  },
+  "initial_snapshot_error": "The first graph-profile test invocation lacked bench/fleet_onepass.py in its CPU snapshot. Restored the same source bench tree and reran the affected nine tests."
+}

@@ -23,6 +23,11 @@ commit/dispatch consensus remains the guard for disagreements elsewhere.
   image with CUDA hidden. Includes the divergent-commit reproducer, sampled
   rejection distribution, actual two-process Gloo, strided/native int64
   broadcast, drafter, graph ownership and consensus integration.
+- The isolated-rank probe fixtures also implement the new identity broadcast;
+  `cpu-probe-interfaces.json` records nine passing follow-up tests covering
+  their local proposals, sampled probabilities and canonical probe interfaces.
+  The first run lacked the bench tree in its CPU snapshot; restoring it fixed
+  the fixture errors, without a production-code change.
 - `reused-tp4/`: all four rank logs and the immutable source manifest from the
   admitted `st-prefill-phase2-L7r2` gate, completed in about 77 seconds before
   its consumer boot. That gate covers actual NIC/NCCL/native collectives,
