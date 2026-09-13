@@ -33,6 +33,24 @@ sys.exit(case.get('rc', 0))
 
 
 class CompletionTests(unittest.TestCase):
+    def test_production_shape_keeps_the_selected_bracket_port(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            production = root / 'production.env'
+            production.write_text('PORT=8000\nST_KV_GIB=24\nSTK_execution_overlap=1\n')
+            source = (ROOT / 'bench/st_bracket.sh').read_text().rsplit('\ncase "${1:-}" in', 1)[0]
+            source += '\nshape\n[ "$PORT" = "$EXPECTED_PORT" ] && [ "$ST_KV_GIB" = 24 ] && [ "$ST_PRODUCTION" = 1 ] && [ -z "${STK_execution_overlap+x}" ]\n'
+            script = root / 'runner.sh'
+            script.write_text(source)
+            for port in ('8001', '8017'):
+                with self.subTest(port=port):
+                    env = dict(os.environ, REPO=str(root), LOGD=str(root / 'logs'),
+                               ST_PRODUCTION_ENV=str(production), ST_BRACKET_PORT=port,
+                               EXPECTED_PORT=port)
+                    result = subprocess.run(['bash', str(script)], text=True, capture_output=True,
+                                            timeout=20, env=env)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def execute(self, cases, *, verb='leg', stale=False):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -59,7 +77,8 @@ docker() { echo "$EXPECTED_SHA"; }
             env = dict(os.environ, REPO=str(root), LOGD=str(root / 'logs'),
                        ONEPASS_JSONL=str(ledger), EVENTS=str(events),
                        CASES=json.dumps(cases), EXPECTED_SHA=SHA,
-                       FLEET_SESSION='test', FLEET_REHEARSE='0', ST_BRACKET_RUNS='2')
+                       FLEET_SESSION='test', FLEET_REHEARSE='0', ST_BRACKET_RUNS='2',
+                       ST_PROBE_RUNS='2')
             result = subprocess.run(['bash', str(script)], text=True, capture_output=True,
                                     timeout=20, env=env)
             return result, events.read_text().splitlines()

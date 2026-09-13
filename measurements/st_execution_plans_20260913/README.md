@@ -157,3 +157,13 @@ it with `launchers/compose-overlays.sh glm53` incorporates main's existing
 max-to-high normalization and makes the controller checkout reproducible.
 The replacement arm set includes that generated-file correction. No full
 onepass or serving speed verdict exists yet.
+
+CI at `0e58a1f2` passed all 97 engine test files (1,096 tests, 248 optional/GPU
+skips) and 110 onepass contracts. The first admitted bracket, session
+`st-gb10-orders0913v3`, was stopped through its own launcher before measurement:
+the submitted chain mistakenly duplicated its arm definitions in the order.
+The boot also exposed production's `PORT=8000` overriding the bracket's 8001
+inside `shape()`. The runner now preserves its selected port while importing
+production shape, with a CPU regression test. This interrupted boot provides
+no numerical or timing verdict. Replacement order is exactly `B P T E B`;
+chain definitions themselves count as executions.
