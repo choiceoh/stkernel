@@ -137,7 +137,7 @@ class Qwen38PlanTests(unittest.TestCase):
         self.assertEqual(sum(s.layers * s.bytes_per_seq for s in gdn), per_seq)
         self.assertEqual(page["attention kv"].layers * page["attention kv"].bytes_per_token, kv_tok)
         self.assertEqual(page["qsa raw keys"].layers * page["qsa raw keys"].bytes_per_token, idx_tok * QWEN38_TEXT["indexer_compress_ratio"])
-        self.assertEqual((slot["ple token context"].layers, slot["ple conv state"].bytes_per_seq), (1, 4 * 2560 * 3 * 3 * 2))
+        self.assertEqual((slot["ngram token context"].layers, slot["ngram conv state"].bytes_per_seq), (1, 4 * 2560 * 3 * 3 * 2))
 
 
 def tiny_oracle(dtype="float32", seed=0):

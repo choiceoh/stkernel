@@ -27,8 +27,8 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
     base/       모델 이름이 없는 것: 아레나, 로더(사전샤딩된 랭크 파일의 범위 읽기), KV 블록/슬롯, NVMe 티어, 스케줄러,
                 스텝 메타, 러너, 기록/사망 덤프, 설정(사실+만료 노브), 증명·판정, 그래프, comm(플릿 / LocalTP),
                 조합 틀(composition: 층 계획 + 잔차 형식 + 특징, 한 step 루프)
-    modules/    특징 모듈: 선형 순환 가족(GDN·KDA 한 특징, 여섯 축), 어텐션 가족(GQA|MLA × 회전 × 노름 × 게이트 × 선택 QSA|DSA|MSA|윈도 × 싱크·상대 편향), MoE 가족(라우터 softmax|sigmoid × 보정 편향 × 그룹 × 활성 silu|clamped|swigluoai × 공유 전문가 plain|sigmoid|sink), 잔차 형식 가족(pre-norm(+출력 conv)·게이트 스트림·mHC 스트림·AttnRes), 희소 커널 참조(kpool·QSA·MLA·GQA), NVFP4 선형·MoE(공유 전문가
-                게이트 포함)·양자화, 하이퍼커넥션(mhc·split-sinkhorn·게이트 잔차), n-gram PLE, 노름, 회전, 로짓
+    modules/    특징 모듈: 선형 순환 가족(GDN·KDA 한 특징, 여섯 축), 어텐션 가족(GQA|MLA × 회전 × 노름 × 게이트 × 선택 QSA|DSA|MSA|윈도 × 싱크·상대 편향), MoE 가족(라우터 softmax|sigmoid × 보정 편향 × 그룹 × 활성 silu|clamped|swigluoai × 공유 전문가 plain|sigmoid|sink), 잔차 형식 가족(pre-norm(+출력 conv)·게이트 스트림·mHC 스트림·AttnRes), 해시 n-gram 메모리 가족(Qwen PLE·DSv4.1 engram), 희소 커널 참조(kpool·QSA·MLA·GQA), NVFP4 선형·MoE(공유 전문가
+                게이트 포함)·양자화, 하이퍼커넥션(mhc·split-sinkhorn·게이트 잔차), 노름, 회전, 로짓
     profiles/   모델별: 사실·가중치 지도(specs)·사전샤딩·레인 표·조합(net)·검증(check). glm53 이 첫 대상.
                 qwen38 은 base/composition 위에 계획과 가중치 이름만 선언한다(composition.py).
     kernels/    ST가 소유하는 Triton·TileLang·CuTe DSL·CUDA 커널과 필요한 보조 코드
@@ -71,6 +71,15 @@ conv 를 더한 뒤 — 잔차 형식이 시퀀스별 상태를 들고 `cache_sp
 collapse), `AttnRes`(Kimi K3: 잔차는 현재 블록의 합, 블록 경계마다 저장, 서브층 입력은 깊이 방향 softmax 혼합 — modeling 코드 인용, 로컬
 오라클 없음). Residual 프로토콜의 enter/leave 가 step·state 를 받는다. `tests/test_engine_residual_family.py`: HyperStreams 를 glm5_next 디코더
 층(서브층은 HF 모듈 그대로, 잔차 형식만 우리 것)과 deepseek_v4 헤드에, PreNorm 을 deepseek_v3 층과 inkling 층(출력 conv 포함)에, 조각 == 통짜.
+**해시 n-gram 메모리도 가족이다(modules/ngram_embedding).** Qwen3.8 의 PLE 와 DeepSeek-V4.1 의 engram 은 해시 하나와 게이트-쓰기 하나다.
+해시(`NGramHash`): 창의 규칙(시퀀스 시작·dead(이미지) 토큰에서 멈춤, Qwen 은 한 칸 이상 뒤의 EOS 에서도), 키(토큰 id | 정규화해 겹치는
+토큰 맵 — `normalized_token_map`), 곱수(splitmix | numpy rng), 버킷(둘 다 base 이상의 연속 소수, 표 t·차수 o·헤드 h 순). 게이트-쓰기
+(`NGramInjection`): key·value 투영(둘 | wkv 하나), 노름 순서(separate: 따로 노름해 반올림 뒤 내적 | joint: fp32 곱 × rsqrt 두 개의 곱),
+(1+w) | w, 부호 붙은 sqrt 의 0 처리(sign | copysign), 팽창 conv(Qwen) 유무. 표의 역양자화는 `table` 호출의 일(DSv4.1 은
+`block_fp8_rows`). `tests/test_engine_ngram_family.py`: PLE 를 qwen4_exp 의 해시 id·층에, engram 을 **벤더 DeepSeek-V4.1 추론 코드**
+(srv4 체크포인트의 inference/engram.py·model.py, MIT, model.py 는 profiles/dsv41/caches.py 가 핀한 sha; git 제외 .oracle-site/dsv41) 에 —
+실제 config 의 소수·곱수(합 == 표 높이 384,006,168 / 384,016,682), 토큰 맵, 이미지 스팬과 청크를 넘는 해시 id, 조회는 torch.equal,
+fp32 쓰기도 비트 동일; bf16 서빙 경로는 반올림 두 번 거리 안.
 **조립이 서빙된다(base/composed).** `PositionStore` 는 같은 State 계약을 엔진의 메모리 위에서 답한다: 특징의 토큰별 행
 (`put_rows`/`rows`)은 BlockPool 의 블록에 **위치**로 산다 — 블록은 위치 // 블록 토큰, 행은 위치 % 블록 토큰 — 그래서 시퀀스의
 이력은 그 블록표이고 캐시된 prefix 의 블록은 복사 없이 입양된다(base/prefix). 시퀀스별 값(`get`/`put`)은 고정 슬롯에 살고, 슬롯의
