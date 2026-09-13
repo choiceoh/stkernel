@@ -32,6 +32,8 @@ The receiver optimization does not implement producer GEMM writes into a send ri
 - Copy every iteration's tokens, count, acceptance and original contexts into
   separate log rows; resolve them in order before admitting the next burst.
   Zero progress without completion fails instead of scheduling indefinitely.
+  Streaming sees tokens when the burst retires, so inter-chunk delivery latency
+  must be measured alongside throughput before promotion.
 - Existing runner cancellation drains the finite burst before releasing its
   rows. Prefill, row changes and slot reuse follow the same drain/identity
   contracts. There is no concurrent raw CPU write to CUDA memory.
@@ -67,6 +69,9 @@ The combined ST-image suite ran 165 tests: 160 passed and 5 unrelated GPU tests
 were skipped. A separate HTTP/sampling/burst suite ran 232 tests: 230 passed and
 2 were skipped. `compile.json` records the final SM121a compilation (55.25 seconds)
 with no CUDA context.
+The later host-stop/row-departure guards passed the focused 34-test
+pipeline/burst suite. Mapped alignment and allocation accounting passed all
+38 tier/boot tests. These are overlapping suites, not additive coverage totals.
 
 `probes/engine_bounded_loop_check.py` tests actual conditional graphs, native
 commit, changing inputs and owner lifetime, plus the real serving adapter with
@@ -74,6 +79,11 @@ small deterministic GPU target/sampling child graphs. This single-GPU toy target
 is not a real TP4 transport or model-quality qualification. Full real-weight,
 matched C=1/C=4 onepass acceptance, quality, length, tok/s and TTFT remain required
 before changing production defaults.
+Explicit seeds and an unmet min_tokens constraint retain the ordinary
+scheduler path, including onepass's seeded fixed-length decode phase. A
+bounded-decode performance verdict must additionally attest actual
+`gpu_iteration` records on eligible greedy requests; an enabled option alone
+does not prove that this pipeline executed.
 
 The earlier execution-order bracket `st-gb10-orders0913v4` failed in baseline
 C=1 preparation (stream timeout; last contexts repeated at 129775), before

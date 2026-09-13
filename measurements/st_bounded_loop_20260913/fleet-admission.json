@@ -1,0 +1,12 @@
+{
+  "scope": "queue admission only, not GPU execution or performance proof",
+  "session": "st-bounded-decode0913r2",
+  "ticket": "1789269607645442",
+  "source_commit": "625fae4789b9e0cc3a597147e92ee50b07a9d483",
+  "host": "srv2",
+  "worktree": "/home/choiceoh/st-worktrees/codex-serving-r4-f336",
+  "probe": "probes/engine_bounded_loop_check.py",
+  "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/6b34fc5dcfa12e917bb01c707fcccbc39a38e9f820d6cbcbd526084bfb24c959.log",
+  "replaces": "st-bounded-decode0913r1",
+  "replacement_reason": "include rich-stop row departure in the served GPU test; retain queue position"
+}
