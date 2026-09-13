@@ -107,17 +107,18 @@ class WiringTests(unittest.TestCase):
         target = SimpleNamespace(comm=Comm(), rank=0, vp=8,
             head_local=lambda h: torch.tensor([[0., 1., 2., 3., 4., 5., 6., 7.]] * len(h)))
         d = Drafter(facts, target, 8)
-        d.tuning = DraftTuning(selector_projection_fp32=True)
         d.block = d.block_rows = lambda *args: torch.zeros(4, 16).bfloat16()
         d.p = {'candidate_selector.hidden_projection.weight': torch.zeros(4, 16).bfloat16(),
                'candidate_selector.predecessor_codebook': torch.zeros(8, 4).bfloat16(),
                'candidate_selector.successor_codebook': torch.zeros(8, 4).bfloat16()}
-        with patch('engine.modules.draft_projection.project', wraps=project) as projection:
-            d.propose(0, 5, torch.zeros(2))
-            d.propose_sampled_tensor(torch.tensor([0]), 5, torch.zeros(2), 1., torch.full((3,), .5), 8)
-            d.propose_rows(torch.zeros(2), torch.tensor([0]), torch.tensor([0]), torch.tensor([5]))
-        self.assertEqual(projection.call_count, 3)
-        self.assertTrue(all(call.kwargs['fp32'] for call in projection.call_args_list))
+        for enabled in (True, False):
+            with patch('engine.modules.draft_projection.project', wraps=project) as projection:
+                d.propose(0, 5, torch.zeros(2))
+                d.propose_sampled_tensor(torch.tensor([0]), 5, torch.zeros(2), 1., torch.full((3,), .5), 8)
+                d.propose_rows(torch.zeros(2), torch.tensor([0]), torch.tensor([0]), torch.tensor([5]))
+            self.assertEqual(projection.call_count, 3)
+            self.assertTrue(all(call.kwargs['fp32'] is enabled for call in projection.call_args_list))
+            d.tuning = DraftTuning(selector_projection_fp32=False)
 
     def test_fc_bias_follows_decode_phase_even_with_shared_calibration(self):
         facts = DrafterFacts(layers=1, hidden=4, heads=1, kv_heads=1, head_dim=4,
