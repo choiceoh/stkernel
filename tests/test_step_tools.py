@@ -687,3 +687,26 @@ class KernelBudgetTests(unittest.TestCase):
         self.assertEqual(strict.confidence, 100.0)
         with self.assertRaises(ValueError):
             sim.composed_cost(model="qwen38")              # --partial 없이는 여전히 거부
+
+    def test_st_oracle_predict_joins_wizard_and_speed(self):
+        # glm53: 마법사 14레인 전부 admitted + 속도 + 신뢰도 100 — 한 장에
+        out = subprocess.run([sys.executable, str(ROOT / "bench" / "storacle.py"),
+                              "predict", "--model", "glm53"],
+                             capture_output=True, text=True, timeout=120)
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("admitted", out.stdout)
+        self.assertIn("신뢰도 100%", out.stdout)
+        self.assertIn("예상 속도", out.stdout)
+        # qwen38 --partial: 형상 미완 고지 + 구간 신뢰도로 속도
+        out2 = subprocess.run([sys.executable, str(ROOT / "bench" / "storacle.py"),
+                               "predict", "--model", "qwen38", "--partial"],
+                              capture_output=True, text=True, timeout=120)
+        self.assertEqual(out2.returncode, 0, out2.stdout + out2.stderr)
+        self.assertIn("형상 미완", out2.stdout)
+        self.assertIn("신뢰도 92%", out2.stdout)
+        # --partial 없으면 결측 거부
+        out3 = subprocess.run([sys.executable, str(ROOT / "bench" / "storacle.py"),
+                               "predict", "--model", "qwen38"],
+                              capture_output=True, text=True, timeout=120)
+        self.assertEqual(out3.returncode, 1)
+        self.assertIn("--partial", out3.stdout)
