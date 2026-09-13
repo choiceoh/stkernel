@@ -1,0 +1,69 @@
+  fleet reserved by session/expert-requant0913
+  box: GB10 (DGX Spark): SM121, unified 120 GiB (105 free)
+[W913 16:07:46.314706972 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+  facts
+    model                    /repo/st-glm53-meta              [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+    ranks                    /home/choiceoh/models/st-glm53-9391-up-gate-full [preshard output]
+    world                    4                                [facts.TP: four Sparks]
+    block                    768                              [launcher --block-size]
+    spec_k                   7                                [launcher SPEC_K with DFlash2]
+    kv_gib                   7.0                              [--kv-gib (local)]
+    port                     8001                             [--port]
+    max_seqs                 4                                [resident rows, state slots and captured decode widths]
+    prefix_snapshot_gib      2.125                            [tiered raw block-boundary checkpoints; count follows the shape]
+    prefix_untiered_snapshot_gib 4.25                             [raw checkpoints when no prefix tier is configured]
+    prefix_compressed_bytes  1073741824                       [prefix tier's bounded lossless RAM cache; codec workspace declared separately]
+    moe_static               t,r,sf6,q0                       [native TP4 execution]
+    lanes                    served                           [native TP4 execution]
+    decode_eager             0                                [native TP4 execution]
+    execution                native                           [native TP4 execution]
+    mla_prefill              tile32                           [production default]
+    context_ceiling          0                                [production default]
+    kda_state_dtype          fp32                             [production default]
+    execution_overlap        0                                [production default]
+    early_observe            0                                [production default]
+    prefill_tiles            1                                [production default]
+    deferred_kda             0                                [production default]
+    terminal_mhc             0                                [production default]
+    draft_fc_precision       fp8                              [production default]
+    draft_fc_calibration     auto                             [production default]
+    draft_diagnostics        1                                [production default]
+    draft_tuning                                              [production default]
+    direct_mhc               1                                [production default]
+    prefill_project_tiles    1                                [production default]
+    nvme_mapped_staging      1                                [production default]
+    decode_iterations        4                                [production default]
+    prefill_indexer_shards   0                                [production default]
+    prefill_dense_prefix     1                                [production default]
+    prefill_absorb_tiles     1                                [production default]
+  knobs (every one expires)
+  kernel shape (derived): hidden 4096 hc 4 mhc tp 4 | mla 16x512 no sink | linear 16/16x128x128 conv 4 decay/channel | indexer kpool 32x128 pool 4 top 2048 | moe 288(288 local) I2048/512 top8 nvfp4 swigluoai_uninterleave | spec 7
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 1344, in <module>
+[rank0]:     raise SystemExit(main())
+[rank0]:                      ^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 1340, in main
+[rank0]:     return fleet(a)
+[rank0]:            ^^^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 1203, in fleet
+[rank0]:     engine.capture_decode(MAX_SEQS)
+[rank0]:   File "/repo/engine/profiles/glm53/adapter.py", line 171, in capture_decode
+[rank0]:     self.drafter.capture_decode(self.caches, memory=self.memory, draws_seed=self.seed, vocab=self.F.vocab, **kwargs)
+[rank0]:   File "/repo/engine/profiles/glm53/drafter.py", line 198, in capture_decode
+[rank0]:     self.decode_graphs = DrafterDecodeGraphs(self, caches, memory=memory, draws_seed=draws_seed, vocab=vocab,
+[rank0]:                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 529, in __init__
+[rank0]:     self.observations = DecodeGraphs(observe, observe_inputs,
+[rank0]:                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/base/graphs.py", line 139, in __init__
+[rank0]:     step_fn(inp)
+[rank0]:   File "/repo/engine/profiles/glm53/decode_graphs.py", line 504, in observe
+[rank0]:     drafter.observe_committed((self.field,inputs["slot"]), inputs["positions"], inputs["aux"])
+[rank0]:   File "/repo/engine/profiles/glm53/drafter.py", line 352, in observe_committed
+[rank0]:     self._observe(ring, positions, aux, valid, decode=True)
+[rank0]:   File "/repo/engine/profiles/glm53/drafter.py", line 379, in _observe
+[rank0]:     write_draft_kv(ring[0],ring[1],L,positions,k,v,valid=valid)
+[rank0]:   File "/repo/engine/kernels/draft_attention.py", line 246, in write_draft_kv
+[rank0]:     if valid is not None and (valid.numel()!=1 or valid.dtype!=torch.int64 or valid.device!=field.device):
+[rank0]:                               ^^^^^^^^^^^
+[rank0]: AttributeError: 'int' object has no attribute 'numel'

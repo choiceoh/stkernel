@@ -1,6 +1,6 @@
 {
   "base": "91280525b1484537dc45933698922b20e61274d3",
-  "scope": "host ownership and component process cleanup; no kernel arithmetic or normal CUDA launch change",
+  "scope": "host ownership, component process cleanup, and committed-observation count contract; MoE kernel arithmetic and packet launch order unchanged",
   "unchanged_sha256": {
     "engine/kernels/oneshot/dsv4_oneshot_ar.cu": "a3c798a597fffdadb3fec3df5fa53abc5b1bcec3caa09f4b6940a9edb94ea74e",
     "engine/kernels/oneshot/dsv4_oneshot_transport.h": "dc9943e1c59ed623feb602fbfbf970d40da9800051d437d06a22092e6bb47099",

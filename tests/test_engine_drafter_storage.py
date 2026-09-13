@@ -163,7 +163,8 @@ class DrafterStorageTests(unittest.TestCase):
         d.decode_calibration = True
         with patch.object(d, '_observe') as observe:
             d.observe_committed(None, torch.arange(3), x[:3])
-        self.assertEqual(observe.call_args.args[-1], 3)
+        self.assertEqual(len(observe.call_args.args), 3)
+        self.assertEqual(observe.call_args.kwargs, {'decode': True})
 
 
 if __name__ == '__main__':

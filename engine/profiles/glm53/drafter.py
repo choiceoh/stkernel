@@ -347,9 +347,8 @@ class Drafter:
         self._observe(ring, positions, aux)
 
     def observe_committed(self, ring, positions, aux):
-        """Synchronous decode has already clipped its rows; mark them explicitly."""
-        valid = positions.numel() if self.decode_calibration else None
-        self._observe(ring, positions, aux, valid, decode=True)
+        """Synchronous decode has already clipped its rows; every KV cell is valid."""
+        self._observe(ring, positions, aux, decode=True)
 
     def observe_masked(self, ring, positions, aux, valid):
         """Commit a device-counted accepted prefix using the same TP context projection."""
@@ -364,6 +363,11 @@ class Drafter:
         # defined last-writer order.
         positions, aux = positions[-F.window:], aux[-F.window:]
         keep = (torch.arange(len(positions), device=positions.device) < valid) if valid is not None else None
+        if valid is None and decode and self.decode_calibration:
+            # The collector needs an explicit committed-row mask. The KV
+            # writer needs no count for this already-clipped observation;
+            # only observe_masked supplies its device-owned scalar there.
+            keep = torch.ones(len(positions), device=positions.device, dtype=torch.bool)
         decode = decode or valid is not None
         c = self.context_normed(self.context_linear(aux, keep, decode=decode), decode=decode)
         idx = positions % F.window

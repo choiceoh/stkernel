@@ -1,0 +1,135 @@
+test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) ... 
+  test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) (calibration=True, tokens=1) ... ERROR
+  test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) (calibration=True, tokens=2) ... ERROR
+  test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) (calibration=True, tokens=3) ... ERROR
+  test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) (calibration=True, tokens=4) ... ERROR
+  test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) (calibration=True, tokens=5) ... ERROR
+  test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) (calibration=True, tokens=6) ... ERROR
+  test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) (calibration=True, tokens=7) ... ERROR
+  test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) (calibration=True, tokens=8) ... ERROR
+test_masked_native_ring_keeps_the_device_count_and_calibration_prefix (tests.test_engine_draft_commit.DraftCommitTests.test_masked_native_ring_keeps_the_device_count_and_calibration_prefix) ... ok
+
+======================================================================
+ERROR: test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) (calibration=True, tokens=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_draft_commit.py", line 58, in test_committed_native_ring_and_calibration_cover_every_k7_capture_length
+    d.observe_committed((field, slot), positions, aux)
+  File "/repo/engine/profiles/glm53/drafter.py", line 352, in observe_committed
+    self._observe(ring, positions, aux, valid, decode=True)
+  File "/repo/engine/profiles/glm53/drafter.py", line 379, in _observe
+    write_draft_kv(ring[0],ring[1],L,positions,k,v,valid=valid)
+  File "/repo/engine/kernels/draft_attention.py", line 246, in write_draft_kv
+    if valid is not None and (valid.numel()!=1 or valid.dtype!=torch.int64 or valid.device!=field.device):
+                              ^^^^^^^^^^^
+AttributeError: 'int' object has no attribute 'numel'
+
+======================================================================
+ERROR: test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) (calibration=True, tokens=2)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_draft_commit.py", line 58, in test_committed_native_ring_and_calibration_cover_every_k7_capture_length
+    d.observe_committed((field, slot), positions, aux)
+  File "/repo/engine/profiles/glm53/drafter.py", line 352, in observe_committed
+    self._observe(ring, positions, aux, valid, decode=True)
+  File "/repo/engine/profiles/glm53/drafter.py", line 379, in _observe
+    write_draft_kv(ring[0],ring[1],L,positions,k,v,valid=valid)
+  File "/repo/engine/kernels/draft_attention.py", line 246, in write_draft_kv
+    if valid is not None and (valid.numel()!=1 or valid.dtype!=torch.int64 or valid.device!=field.device):
+                              ^^^^^^^^^^^
+AttributeError: 'int' object has no attribute 'numel'
+
+======================================================================
+ERROR: test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) (calibration=True, tokens=3)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_draft_commit.py", line 58, in test_committed_native_ring_and_calibration_cover_every_k7_capture_length
+    d.observe_committed((field, slot), positions, aux)
+  File "/repo/engine/profiles/glm53/drafter.py", line 352, in observe_committed
+    self._observe(ring, positions, aux, valid, decode=True)
+  File "/repo/engine/profiles/glm53/drafter.py", line 379, in _observe
+    write_draft_kv(ring[0],ring[1],L,positions,k,v,valid=valid)
+  File "/repo/engine/kernels/draft_attention.py", line 246, in write_draft_kv
+    if valid is not None and (valid.numel()!=1 or valid.dtype!=torch.int64 or valid.device!=field.device):
+                              ^^^^^^^^^^^
+AttributeError: 'int' object has no attribute 'numel'
+
+======================================================================
+ERROR: test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) (calibration=True, tokens=4)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_draft_commit.py", line 58, in test_committed_native_ring_and_calibration_cover_every_k7_capture_length
+    d.observe_committed((field, slot), positions, aux)
+  File "/repo/engine/profiles/glm53/drafter.py", line 352, in observe_committed
+    self._observe(ring, positions, aux, valid, decode=True)
+  File "/repo/engine/profiles/glm53/drafter.py", line 379, in _observe
+    write_draft_kv(ring[0],ring[1],L,positions,k,v,valid=valid)
+  File "/repo/engine/kernels/draft_attention.py", line 246, in write_draft_kv
+    if valid is not None and (valid.numel()!=1 or valid.dtype!=torch.int64 or valid.device!=field.device):
+                              ^^^^^^^^^^^
+AttributeError: 'int' object has no attribute 'numel'
+
+======================================================================
+ERROR: test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) (calibration=True, tokens=5)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_draft_commit.py", line 58, in test_committed_native_ring_and_calibration_cover_every_k7_capture_length
+    d.observe_committed((field, slot), positions, aux)
+  File "/repo/engine/profiles/glm53/drafter.py", line 352, in observe_committed
+    self._observe(ring, positions, aux, valid, decode=True)
+  File "/repo/engine/profiles/glm53/drafter.py", line 379, in _observe
+    write_draft_kv(ring[0],ring[1],L,positions,k,v,valid=valid)
+  File "/repo/engine/kernels/draft_attention.py", line 246, in write_draft_kv
+    if valid is not None and (valid.numel()!=1 or valid.dtype!=torch.int64 or valid.device!=field.device):
+                              ^^^^^^^^^^^
+AttributeError: 'int' object has no attribute 'numel'
+
+======================================================================
+ERROR: test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) (calibration=True, tokens=6)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_draft_commit.py", line 58, in test_committed_native_ring_and_calibration_cover_every_k7_capture_length
+    d.observe_committed((field, slot), positions, aux)
+  File "/repo/engine/profiles/glm53/drafter.py", line 352, in observe_committed
+    self._observe(ring, positions, aux, valid, decode=True)
+  File "/repo/engine/profiles/glm53/drafter.py", line 379, in _observe
+    write_draft_kv(ring[0],ring[1],L,positions,k,v,valid=valid)
+  File "/repo/engine/kernels/draft_attention.py", line 246, in write_draft_kv
+    if valid is not None and (valid.numel()!=1 or valid.dtype!=torch.int64 or valid.device!=field.device):
+                              ^^^^^^^^^^^
+AttributeError: 'int' object has no attribute 'numel'
+
+======================================================================
+ERROR: test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) (calibration=True, tokens=7)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_draft_commit.py", line 58, in test_committed_native_ring_and_calibration_cover_every_k7_capture_length
+    d.observe_committed((field, slot), positions, aux)
+  File "/repo/engine/profiles/glm53/drafter.py", line 352, in observe_committed
+    self._observe(ring, positions, aux, valid, decode=True)
+  File "/repo/engine/profiles/glm53/drafter.py", line 379, in _observe
+    write_draft_kv(ring[0],ring[1],L,positions,k,v,valid=valid)
+  File "/repo/engine/kernels/draft_attention.py", line 246, in write_draft_kv
+    if valid is not None and (valid.numel()!=1 or valid.dtype!=torch.int64 or valid.device!=field.device):
+                              ^^^^^^^^^^^
+AttributeError: 'int' object has no attribute 'numel'
+
+======================================================================
+ERROR: test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) (calibration=True, tokens=8)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_draft_commit.py", line 58, in test_committed_native_ring_and_calibration_cover_every_k7_capture_length
+    d.observe_committed((field, slot), positions, aux)
+  File "/repo/engine/profiles/glm53/drafter.py", line 352, in observe_committed
+    self._observe(ring, positions, aux, valid, decode=True)
+  File "/repo/engine/profiles/glm53/drafter.py", line 379, in _observe
+    write_draft_kv(ring[0],ring[1],L,positions,k,v,valid=valid)
+  File "/repo/engine/kernels/draft_attention.py", line 246, in write_draft_kv
+    if valid is not None and (valid.numel()!=1 or valid.dtype!=torch.int64 or valid.device!=field.device):
+                              ^^^^^^^^^^^
+AttributeError: 'int' object has no attribute 'numel'
+
+----------------------------------------------------------------------
+Ran 2 tests in 2.308s
+
+FAILED (errors=8)
