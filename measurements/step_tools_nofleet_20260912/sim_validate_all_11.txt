@@ -1,0 +1,317 @@
+== result.jsonl · ST-PROD-5734-20260912-0746 · git None · 요청 5개
+fit:ST-PROD-5734-20260912-0746 [decode 91.2201 ms, k=5, acc=46.2%, prefill 2K:2030 32K:12150 128K:1996, decode/by-ctx 2K:91.2 32K:91.2 128K:91.3, front 0.6 ms, cold 2K:+0.0s] — 미계수: 폭(C=4 기록 대기)
+cost fit:ST-PROD-5734-20260912-0746: k=5 acc=46.2% decode 91.2201 ms prefill 2K:2030 32K:12150 128K:1996 [폭·컨텍스트 미계수: 평탄]
+steps: 43 prefill, 995 decode, async 995 (동기 drain 0), tokens/step 3.347
+  prefill n=43    med 2045.849 ms  p95 2048.613  max 2049.335  (in-flight, launch→readback)
+  decode  n=995   med  185.739 ms  p95  189.058  max  267.886  (in-flight, launch→readback)
+  TTFT ctx2K: n=3 med 1.053s p95 1.061s
+  TTFT ctx32K: n=1 med 2.705s p95 2.705s
+  TTFT ctx128K: n=1 med 64.509s p95 64.509s
+  큐 대기: med 0.001s p95 0.005s max 0.005s (도착→첫 프리필 청크; TTFT = 대기 + 프리필)
+  클라이언트 decode: med 35.1 tok/s [34.5, 37.6] (첫 토큰 이후)
+decode 스텝: 벽 기준 6.09 step/s (prefill 포함), 모형 내재 10.97 step/s (1000/decode_ms)
+디코드 폭: 1×995 (스텝이 실은 행 수 × 스텝 수)
+-- 검증 (result.jsonl): [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,
+   [예측] 폼에 얹히지 않은 값이 따라 오는 것이 주장이다:
+   [입력  ] decode step/s            기록      10.96  시뮬      10.97 (+0.1%)
+   [예측  ] tokens/step              기록      3.309  시뮬      3.347 (+1.1%)
+   [입력+큐] TTFT(warm) ctx2K         기록      1.049  시뮬      1.053 (+0.4%)
+   [예측  ] TTFT(cold) ctx2K         기록      1.059  시뮬      1.061 (+0.2%)
+   [예측  ] e2e med ctx2K            기록       12.1  시뮬      12.42 (+2.6%)
+   [입력+큐] TTFT(warm) ctx32K        기록      2.679  시뮬      2.705 (+1.0%)
+   [예측  ] TTFT(cold) ctx32K        기록      2.679  시뮬      2.705 (+1.0%)
+   [예측  ] e2e med ctx32K           기록      36.36  시뮬      36.99 (+1.7%)
+   [입력+큐] TTFT(warm) ctx128K       기록      64.41  시뮬      64.51 (+0.1%)
+   [예측  ] TTFT(cold) ctx128K       기록      64.41  시뮬      64.51 (+0.1%)
+   [예측  ] e2e med ctx128K          기록      91.78  시뮬      89.12 (-2.9%)
+   [예측  ] 클라이언트 tok/s              기록       35.6  시뮬      35.09 (-1.4%)
+   [예측  ] TPOT ms                  기록      28.09  시뮬       28.5 (+1.5%)
+
+== onepass.jsonl · EPTILEDWORD4A · git 549fd553 · 요청 8개
+fit:EPTILEDWORD4A [decode 54.907 ms, k=5, acc=50.8%, prefill 2K:2805 32K:3290 128K:3262, decode/by-ctx 2K:55.9 32K:55.9 128K:56.0, front 43.4 ms, cold 2K:+1.1s] — 미계수: 폭(C=4 기록 대기)
+cost fit:EPTILEDWORD4A: k=5 acc=50.8% decode 54.907 ms prefill 2K:2805 32K:3290 128K:3262 [폭·컨텍스트 미계수: 평탄]
+steps: 46 prefill, 1690 decode, async 1690 (동기 drain 0), tokens/step 3.521
+  prefill n=46    med 1253.554 ms  p95 1287.538  max 1923.452  (in-flight, launch→readback)
+  decode  n=1690  med  114.887 ms  p95  118.167  max  123.688  (in-flight, launch→readback)
+  TTFT ctx2K: n=6 med 0.808s p95 1.923s
+  TTFT ctx32K: n=1 med 9.961s p95 9.961s
+  TTFT ctx128K: n=1 med 39.565s p95 39.565s
+  큐 대기: med 0.001s p95 0.007s max 0.007s (도착→첫 프리필 청크; TTFT = 대기 + 프리필)
+  클라이언트 decode: med 60.6 tok/s [58.5, 64.5] (첫 토큰 이후)
+decode 스텝: 벽 기준 11.02 step/s (prefill 포함), 모형 내재 17.88 step/s (1000/decode_ms)
+디코드 폭: 1×1690 (스텝이 실은 행 수 × 스텝 수)
+-- 검증 (onepass.jsonl): [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,
+   [예측] 폼에 얹히지 않은 값이 따라 오는 것이 주장이다:
+   [입력  ] decode step/s            기록      18.21  시뮬      17.88 (-1.8%)
+   [예측  ] tokens/step              기록      3.541  시뮬      3.521 (-0.6%)
+   [입력+큐] TTFT(warm) ctx2K         기록     0.8021  시뮬     0.8075 (+0.7%)
+   [예측  ] TTFT(cold) ctx2K         기록      1.874  시뮬      1.923 (+2.6%)
+   [예측  ] e2e med ctx2K            기록      12.49  시뮬      13.07 (+4.6%)
+   [입력+큐] TTFT(warm) ctx32K        기록      9.891  시뮬      9.961 (+0.7%)
+   [예측  ] TTFT(cold) ctx32K        기록      9.891  시뮬      9.961 (+0.7%)
+   [예측  ] e2e med ctx32K           기록      29.56  시뮬      29.77 (+0.7%)
+   [입력+큐] TTFT(warm) ctx128K       기록      39.41  시뮬      39.56 (+0.4%)
+   [예측  ] TTFT(cold) ctx128K       기록      39.41  시뮬      39.56 (+0.4%)
+   [예측  ] e2e med ctx128K          기록      46.08  시뮬      46.93 (+1.8%)
+   [예측  ] 클라이언트 tok/s              기록      67.17  시뮬      60.56 (-9.8%)
+   [예측  ] TPOT ms                  기록       14.9  시뮬      16.51 (+10.8%)
+
+== onepass.jsonl · EPONEPASS25B3 · git 055914ae · 요청 8개
+fit:EPONEPASS25B3 [decode 48.8381 ms, k=5, acc=48.3%, prefill 2K:2441 32K:3027 128K:3121, decode/by-ctx 2K:48.0 32K:49.2 128K:48.0, front 17.5 ms, cold 2K:+1.1s] — 미계수: 폭(C=4 기록 대기)
+cost fit:EPONEPASS25B3: k=5 acc=48.3% decode 48.8381 ms prefill 2K:2441 32K:3027 128K:3121 [폭·컨텍스트 미계수: 평탄]
+steps: 46 prefill, 1694 decode, async 1694 (동기 drain 0), tokens/step 3.39
+  prefill n=46    med 1310.503 ms  p95 1352.007  max 1944.079  (in-flight, launch→readback)
+  decode  n=1694  med   99.075 ms  p95  102.570  max  108.880  (in-flight, launch→readback)
+  TTFT ctx2K: n=6 med 0.894s p95 1.944s
+  TTFT ctx32K: n=1 med 10.797s p95 10.797s
+  TTFT ctx128K: n=1 med 41.301s p95 41.301s
+  큐 대기: med 0.001s p95 0.008s max 0.008s (도착→첫 프리필 청크; TTFT = 대기 + 프리필)
+  클라이언트 decode: med 67.4 tok/s [65.8, 70.5] (첫 토큰 이후)
+decode 스텝: 벽 기준 11.82 step/s (prefill 포함), 모형 내재 20.82 step/s (1000/decode_ms)
+디코드 폭: 1×1694 (스텝이 실은 행 수 × 스텝 수)
+-- 검증 (onepass.jsonl): [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,
+   [예측] 폼에 얹히지 않은 값이 따라 오는 것이 주장이다:
+   [입력  ] decode step/s            기록      20.48  시뮬      20.82 (+1.7%)
+   [예측  ] tokens/step              기록      3.416  시뮬       3.39 (-0.8%)
+   [입력+큐] TTFT(warm) ctx2K         기록     0.8893  시뮬      0.894 (+0.5%)
+   [예측  ] TTFT(cold) ctx2K         기록      1.922  시뮬      1.944 (+1.1%)
+   [예측  ] e2e med ctx2K            기록      10.44  시뮬      11.27 (+7.9%)
+   [입력+큐] TTFT(warm) ctx32K        기록      10.75  시뮬       10.8 (+0.4%)
+   [예측  ] TTFT(cold) ctx32K        기록      10.75  시뮬       10.8 (+0.4%)
+   [예측  ] e2e med ctx32K           기록      22.83  시뮬      21.57 (-5.5%)
+   [입력+큐] TTFT(warm) ctx128K       기록      41.19  시뮬       41.3 (+0.3%)
+   [예측  ] TTFT(cold) ctx128K       기록      41.19  시뮬       41.3 (+0.3%)
+   [예측  ] e2e med ctx128K          기록      53.76  시뮬      53.03 (-1.4%)
+   [예측  ] 클라이언트 tok/s              기록      66.69  시뮬      67.42 (+1.1%)
+   [예측  ] TPOT ms                  기록      15.01  시뮬      14.84 (-1.2%)
+
+== onepass.jsonl · MLAPREF50907B2 · git 6e8d1a9 · 요청 5개
+fit:MLAPREF50907B2 [decode 45.7388 ms, k=5, acc=46.2%, prefill 2K:2436 32K:3106 128K:3106, decode/by-ctx 2K:45.7 32K:45.7 128K:45.7, front 11.6 ms] — 미계수: 폭(C=4 기록 대기)
+cost fit:MLAPREF50907B2: k=5 acc=46.2% decode 45.7388 ms prefill 2K:2436 32K:3106 128K:3106 [폭·컨텍스트 미계수: 평탄]
+steps: 43 prefill, 1028 decode, async 1028 (동기 drain 0), tokens/step 3.358
+  prefill n=43    med 1316.636 ms  p95 1317.910  max 1329.176  (in-flight, launch→readback)
+  decode  n=1028  med   94.492 ms  p95   97.735  max  103.764  (in-flight, launch→readback)
+  TTFT ctx2K: n=3 med 0.889s p95 0.890s
+  TTFT ctx32K: n=1 med 10.513s p95 10.513s
+  TTFT ctx128K: n=1 med 41.507s p95 41.507s
+  큐 대기: med 0.001s p95 0.008s max 0.008s (도착→첫 프리필 청크; TTFT = 대기 + 프리필)
+  클라이언트 decode: med 69.1 tok/s [67.4, 73.8] (첫 토큰 이후)
+decode 스텝: 벽 기준 9.91 step/s (prefill 포함), 모형 내재 21.87 step/s (1000/decode_ms)
+디코드 폭: 1×1028 (스텝이 실은 행 수 × 스텝 수)
+-- 검증 (onepass.jsonl): [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,
+   [예측] 폼에 얹히지 않은 값이 따라 오는 것이 주장이다:
+   [입력  ] decode step/s            기록      21.86  시뮬      21.87 (+0.0%)
+   [예측  ] tokens/step              기록      3.311  시뮬      3.358 (+1.4%)
+   [입력+큐] TTFT(warm) ctx2K         기록     0.8851  시뮬      0.889 (+0.4%)
+   [예측  ] TTFT(cold) ctx2K         기록     0.8749  시뮬      0.887 (+1.4%)
+   [예측  ] e2e med ctx2K            기록       6.27  시뮬      6.665 (+6.3%)
+   [입력+큐] TTFT(warm) ctx32K        기록      10.48  시뮬      10.51 (+0.3%)
+   [예측  ] TTFT(cold) ctx32K        기록      10.48  시뮬      10.51 (+0.3%)
+   [예측  ] e2e med ctx32K           기록      25.45  시뮬       27.9 (+9.6%)
+   [입력+큐] TTFT(warm) ctx128K       기록      41.39  시뮬      41.51 (+0.3%)
+   [예측  ] TTFT(cold) ctx128K       기록      41.39  시뮬      41.51 (+0.3%)
+   [예측  ] e2e med ctx128K          기록      58.55  시뮬      55.76 (-4.8%)
+   [예측  ] 클라이언트 tok/s              기록      73.95  시뮬      69.07 (-6.6%)
+   [예측  ] TPOT ms                  기록      13.52  시뮬      14.48 (+7.1%)
+
+== result.jsonl · ST-NATIVE-F4D7-20260912A · git None · 요청 5개
+fit:ST-NATIVE-F4D7-20260912A [decode 41.7851 ms, k=5, acc=5.4%, prefill 2K:2076 32K:2785 128K:2576, decode/by-ctx 2K:55.7 32K:41.8 128K:41.8, front 957.1 ms, cold 2K:+9.7s] — 미계수: 폭(C=4 기록 대기)
+cost fit:ST-NATIVE-F4D7-20260912A: k=5 acc=5.4% decode 41.7851 ms prefill 2K:2076 32K:2785 128K:2576 [폭·컨텍스트 미계수: 평탄]
+steps: 43 prefill, 2689 decode, async 2689 (동기 drain 0), tokens/step 1.287
+  prefill n=43    med 1585.205 ms  p95 2429.045  max 11707.248  (in-flight, launch→readback)
+  decode  n=2689  med   87.331 ms  p95  116.413  max  120.960  (in-flight, launch→readback)
+  TTFT ctx2K: n=3 med 1.986s p95 11.707s
+  TTFT ctx32K: n=1 med 12.667s p95 12.667s
+  TTFT ctx128K: n=1 med 50.934s p95 50.934s
+  큐 대기: med 0.001s p95 0.005s max 0.005s (도착→첫 프리필 청크; TTFT = 대기 + 프리필)
+  클라이언트 decode: med 23.1 tok/s [22.1, 29.7] (첫 토큰 이후)
+decode 스텝: 벽 기준 12.95 step/s (prefill 포함), 모형 내재 17.95 step/s (1000/decode_ms)
+디코드 폭: 1×2689 (스텝이 실은 행 수 × 스텝 수)
+-- 검증 (result.jsonl): [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,
+   [예측] 폼에 얹히지 않은 값이 따라 오는 것이 주장이다:
+   [입력  ] decode step/s            기록      23.93  시뮬      17.95 (-25.0%)
+   [예측  ] tokens/step              기록      1.271  시뮬      1.287 (+1.3%)
+   [입력+큐] TTFT(warm) ctx2K         기록      1.982  시뮬      1.986 (+0.2%)
+   [예측  ] TTFT(cold) ctx2K         기록      10.74  시뮬      11.71 (+9.0%)
+   [예측  ] e2e med ctx2K            기록      9.702  시뮬      20.05 (+106.6%)
+   [입력+큐] TTFT(warm) ctx32K        기록      11.68  시뮬      12.67 (+8.4%)
+   [예측  ] TTFT(cold) ctx32K        기록      11.68  시뮬      12.67 (+8.4%)
+   [예측  ] e2e med ctx32K           기록      62.11  시뮬      53.76 (-13.4%)
+   [입력+큐] TTFT(warm) ctx128K       기록       49.9  시뮬      50.93 (+2.1%)
+   [예측  ] TTFT(cold) ctx128K       기록       49.9  시뮬      50.93 (+2.1%)
+   [예측  ] e2e med ctx128K          기록      100.9  시뮬      91.29 (-9.5%)
+   [예측  ] 클라이언트 tok/s              기록      56.93  시뮬      23.09 (-59.4%)
+   [예측  ] TPOT ms                  기록      17.57  시뮬      43.31 (+146.6%)
+
+== result.jsonl · ST-NATIVE-F4D7-20260912H · git None · 요청 5개
+fit:ST-NATIVE-F4D7-20260912H [decode 59.0433 ms, k=5, acc=49.5%, prefill 2K:3390 32K:2048 128K:1979, decode/by-ctx 2K:59.0 32K:59.0 128K:59.1, front 67.8 ms, cold 2K:+1.0s] — 미계수: 폭(C=4 기록 대기)
+cost fit:ST-NATIVE-F4D7-20260912H: k=5 acc=49.5% decode 59.0433 ms prefill 2K:3390 32K:2048 128K:1979 [폭·컨텍스트 미계수: 평탄]
+steps: 43 prefill, 901 decode, async 901 (동기 drain 0), tokens/step 3.479
+  prefill n=43    med 2062.587 ms  p95 2067.088  max 2132.068  (in-flight, launch→readback)
+  decode  n=901   med  120.422 ms  p95  124.100  max  130.339  (in-flight, launch→readback)
+  TTFT ctx2K: n=3 med 0.702s p95 1.650s
+  TTFT ctx32K: n=1 med 15.979s p95 15.979s
+  TTFT ctx128K: n=1 med 65.118s p95 65.118s
+  큐 대기: med 0.001s p95 0.008s max 0.008s (도착→첫 프리필 청크; TTFT = 대기 + 프리필)
+  클라이언트 decode: med 57.0 tok/s [53.9, 59.4] (첫 토큰 이후)
+decode 스텝: 벽 기준 6.49 step/s (prefill 포함), 모형 내재 16.94 step/s (1000/decode_ms)
+디코드 폭: 1×901 (스텝이 실은 행 수 × 스텝 수)
+-- 검증 (result.jsonl): [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,
+   [예측] 폼에 얹히지 않은 값이 따라 오는 것이 주장이다:
+   [입력  ] decode step/s            기록      16.94  시뮬      16.94 (+0.0%)
+   [예측  ] tokens/step              기록      3.476  시뮬      3.479 (+0.1%)
+   [입력+큐] TTFT(warm) ctx2K         기록     0.6956  시뮬      0.702 (+0.9%)
+   [예측  ] TTFT(cold) ctx2K         기록      1.579  시뮬       1.65 (+4.5%)
+   [예측  ] e2e med ctx2K            기록      7.328  시뮬      7.701 (+5.1%)
+   [입력+큐] TTFT(warm) ctx32K        기록      15.89  시뮬      15.98 (+0.5%)
+   [예측  ] TTFT(cold) ctx32K        기록      15.89  시뮬      15.98 (+0.5%)
+   [예측  ] e2e med ctx32K           기록      29.19  시뮬      28.96 (-0.8%)
+   [입력+큐] TTFT(warm) ctx128K       기록      64.97  시뮬      65.12 (+0.2%)
+   [예측  ] TTFT(cold) ctx128K       기록      64.97  시뮬      65.12 (+0.2%)
+   [예측  ] e2e med ctx128K          기록      83.97  시뮬      85.34 (+1.6%)
+   [예측  ] 클라이언트 tok/s              기록      59.77  시뮬      56.97 (-4.7%)
+   [예측  ] TPOT ms                  기록      16.73  시뮬      17.55 (+4.9%)
+
+== result.jsonl · ST-AB-KV7-9391-redhat · git None · 요청 5개
+fit:ST-AB-KV7-9391-redhat [decode 55.7267 ms, k=5, acc=47.9%, prefill 2K:3341 32K:2176 128K:2208, decode/by-ctx 2K:55.7 32K:55.7, front 67.2 ms, cold 2K:+1.8s] — 미계수: 폭(C=4 기록 대기)
+cost fit:ST-AB-KV7-9391-redhat: k=5 acc=47.9% decode 55.7267 ms prefill 2K:3341 32K:2176 128K:2208 [폭·컨텍스트 미계수: 평탄]
+steps: 43 prefill, 745 decode, async 745 (동기 drain 0), tokens/step 3.368
+  prefill n=43    med 1849.898 ms  p95 1916.971  max 2476.770  (in-flight, launch→readback)
+  decode  n=745   med  114.391 ms  p95  117.956  max  123.192  (in-flight, launch→readback)
+  TTFT ctx2K: n=3 med 0.709s p95 2.476s
+  TTFT ctx32K: n=1 med 15.036s p95 15.036s
+  TTFT ctx128K: n=1 med 58.365s p95 58.365s
+  큐 대기: med 0.002s p95 0.009s max 0.009s (도착→첫 프리필 청크; TTFT = 대기 + 프리필)
+  클라이언트 decode: med 59.3 tok/s [56.3, 65.0] (첫 토큰 이후)
+decode 스텝: 벽 기준 6.2 step/s (prefill 포함), 모형 내재 17.95 step/s (1000/decode_ms)
+디코드 폭: 1×745 (스텝이 실은 행 수 × 스텝 수)
+-- 검증 (result.jsonl): [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,
+   [예측] 폼에 얹히지 않은 값이 따라 오는 것이 주장이다:
+   [입력  ] decode step/s            기록      17.94  시뮬      17.95 (+0.0%)
+   [예측  ] tokens/step              기록      3.393  시뮬      3.368 (-0.8%)
+   [입력+큐] TTFT(warm) ctx2K         기록     0.7043  시뮬      0.709 (+0.7%)
+   [예측  ] TTFT(cold) ctx2K         기록      2.404  시뮬      2.476 (+3.0%)
+   [예측  ] e2e med ctx2K            기록      6.996  시뮬      7.429 (+6.2%)
+   [입력+큐] TTFT(warm) ctx32K        기록      14.95  시뮬      15.04 (+0.5%)
+   [예측  ] TTFT(cold) ctx32K        기록      14.95  시뮬      15.04 (+0.5%)
+   [예측  ] e2e med ctx32K           기록      34.99  시뮬       35.8 (+2.3%)
+   [입력+큐] TTFT(warm) ctx128K       기록      58.22  시뮬      58.37 (+0.2%)
+   [예측  ] TTFT(cold) ctx128K       기록      58.22  시뮬      58.37 (+0.2%)
+   [예측  ] e2e med ctx128K          기록      60.07  시뮬      59.98 (-0.1%)
+   [예측  ] 클라이언트 tok/s              기록      60.61  시뮬      59.34 (-2.1%)
+   [예측  ] TPOT ms                  기록       16.5  시뮬      16.85 (+2.1%)
+
+== result.jsonl · ST-REDHAT-TILE32-CONTROL-b627103b · git None · 요청 5개
+fit:ST-REDHAT-TILE32-CONTROL-b627103b [decode 55.7106 ms, k=5, acc=46.7%, prefill 2K:3553 32K:39924 128K:125446, decode/by-ctx 2K:52.8 32K:55.7 128K:55.7, front 8.5 ms, cold 2K:+0.2s] — 미계수: 폭(C=4 기록 대기)
+cost fit:ST-REDHAT-TILE32-CONTROL-b627103b: k=5 acc=46.7% decode 55.7106 ms prefill 2K:3553 32K:39924 128K:125446 [폭·컨텍스트 미계수: 평탄]
+steps: 43 prefill, 956 decode, async 956 (동기 drain 0), tokens/step 3.355
+  prefill n=43    med   34.765 ms  p95  607.850  max  841.650  (in-flight, launch→readback)
+  decode  n=956   med  112.425 ms  p95  117.111  max  120.748  (in-flight, launch→readback)
+  TTFT ctx2K: n=3 med 0.610s p95 0.841s
+  TTFT ctx32K: n=1 med 0.837s p95 0.837s
+  TTFT ctx128K: n=1 med 1.109s p95 1.109s
+  큐 대기: med 0.000s p95 0.008s max 0.008s (도착→첫 프리필 청크; TTFT = 대기 + 프리필)
+  클라이언트 decode: med 61.0 tok/s [57.5, 64.4] (첫 토큰 이후)
+decode 스텝: 벽 기준 16.54 step/s (prefill 포함), 모형 내재 18.94 step/s (1000/decode_ms)
+디코드 폭: 1×956 (스텝이 실은 행 수 × 스텝 수)
+-- 검증 (result.jsonl): [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,
+   [예측] 폼에 얹히지 않은 값이 따라 오는 것이 주장이다:
+   [입력  ] decode step/s            기록      17.95  시뮬      18.94 (+5.5%)
+   [예측  ] tokens/step              기록      3.334  시뮬      3.355 (+0.6%)
+   [입력+큐] TTFT(warm) ctx2K         기록     0.6074  시뮬       0.61 (+0.4%)
+   [예측  ] TTFT(cold) ctx2K         기록     0.8308  시뮬      0.841 (+1.2%)
+   [예측  ] e2e med ctx2K            기록      7.291  시뮬      7.144 (-2.0%)
+   [입력+큐] TTFT(warm) ctx32K        기록     0.8152  시뮬      0.837 (+2.7%)
+   [예측  ] TTFT(cold) ctx32K        기록     0.8152  시뮬      0.837 (+2.7%)
+   [예측  ] e2e med ctx32K           기록      21.37  시뮬      21.69 (+1.5%)
+   [입력+큐] TTFT(warm) ctx128K       기록      1.025  시뮬      1.109 (+8.2%)
+   [예측  ] TTFT(cold) ctx128K       기록      1.025  시뮬      1.109 (+8.2%)
+   [예측  ] e2e med ctx128K          기록      13.62  시뮬      14.29 (+4.9%)
+   [예측  ] 클라이언트 tok/s              기록      61.76  시뮬      61.05 (-1.2%)
+   [예측  ] TPOT ms                  기록      16.19  시뮬      16.38 (+1.2%)
+
+== result.jsonl · ST-NVIDIA-CUTOVER-4f393351 · git None · 요청 5개
+fit:ST-NVIDIA-CUTOVER-4f393351 [decode 62.6958 ms, k=5, acc=54.4%, prefill 2K:2915 32K:1520 128K:1683, decode/by-ctx 2K:66.8 32K:62.7 128K:54.2, front 2482.2 ms, cold 2K:+5.9s] — 미계수: 폭(C=4 기록 대기)
+cost fit:ST-NVIDIA-CUTOVER-4f393351: k=5 acc=54.4% decode 62.6958 ms prefill 2K:2915 32K:1520 128K:1683 [폭·컨텍스트 미계수: 평탄]
+steps: 43 prefill, 739 decode, async 739 (동기 drain 0), tokens/step 3.687
+  prefill n=43    med 2429.952 ms  p95 4924.541  max 9135.921  (in-flight, launch→readback)
+  decode  n=739   med  130.080 ms  p95  145.716  max  155.862  (in-flight, launch→readback)
+  TTFT ctx2K: n=3 med 3.220s p95 9.136s
+  TTFT ctx32K: n=1 med 23.919s p95 23.919s
+  TTFT ctx128K: n=1 med 79.011s p95 79.011s
+  큐 대기: med 0.001s p95 0.007s max 0.007s (도착→첫 프리필 청크; TTFT = 대기 + 프리필)
+  클라이언트 decode: med 52.4 tok/s [50.7, 62.8] (첫 토큰 이후)
+decode 스텝: 벽 기준 4.45 step/s (prefill 포함), 모형 내재 14.96 step/s (1000/decode_ms)
+디코드 폭: 1×739 (스텝이 실은 행 수 × 스텝 수)
+-- 검증 (result.jsonl): [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,
+   [예측] 폼에 얹히지 않은 값이 따라 오는 것이 주장이다:
+   [입력  ] decode step/s            기록      15.95  시뮬      14.96 (-6.2%)
+   [예측  ] tokens/step              기록      3.718  시뮬      3.687 (-0.8%)
+   [입력+큐] TTFT(warm) ctx2K         기록      3.212  시뮬       3.22 (+0.2%)
+   [예측  ] TTFT(cold) ctx2K         기록      6.652  시뮬      9.136 (+37.3%)
+   [예측  ] e2e med ctx2K            기록      13.23  시뮬      11.09 (-16.2%)
+   [입력+큐] TTFT(warm) ctx32K        기록      21.41  시뮬      23.92 (+11.7%)
+   [예측  ] TTFT(cold) ctx32K        기록      21.41  시뮬      23.92 (+11.7%)
+   [예측  ] e2e med ctx32K           기록      29.85  시뮬      29.06 (-2.6%)
+   [입력+큐] TTFT(warm) ctx128K       기록      76.38  시뮬      79.01 (+3.4%)
+   [예측  ] TTFT(cold) ctx128K       기록      76.38  시뮬      79.01 (+3.4%)
+   [예측  ] e2e med ctx128K          기록      90.03  시뮬      98.09 (+9.0%)
+   [예측  ] 클라이언트 tok/s              기록      45.08  시뮬      52.42 (+16.3%)
+   [예측  ] TPOT ms                  기록      22.18  시뮬      19.08 (-14.0%)
+
+== result.jsonl · prefill3000-K1 · git de67dc0e8 · 요청 8개
+fit:prefill3000-K1 [decode 73.1165 ms, k=6, acc=41.9%, prefill 2K:1920 32K:2696 128K:3319, decode/by-ctx 2K:71.8 32K:71.7 128K:71.7, front 46.6 ms, cold 2K:+0.4s] — 미계수: 폭(C=4 기록 대기)
+cost fit:prefill3000-K1: k=6 acc=41.9% decode 73.1165 ms prefill 2K:1920 32K:2696 128K:3319 [폭·컨텍스트 미계수: 평탄]
+steps: 46 prefill, 1830 decode, async 1830 (동기 drain 0), tokens/step 3.504
+  prefill n=46    med 1235.499 ms  p95 1522.171  max 1608.257  (in-flight, launch→readback)
+  decode  n=1830  med  151.075 ms  p95  158.703  max  336.552  (in-flight, launch→readback)
+  TTFT ctx2K: n=6 med 1.168s p95 1.608s
+  TTFT ctx32K: n=1 med 12.168s p95 12.168s
+  TTFT ctx128K: n=1 med 38.962s p95 38.962s
+  큐 대기: med 0.001s p95 0.006s max 0.006s (도착→첫 프리필 청크; TTFT = 대기 + 프리필)
+  클라이언트 decode: med 45.4 tok/s [43.7, 50.0] (첫 토큰 이후)
+decode 스텝: 벽 기준 9.24 step/s (prefill 포함), 모형 내재 13.94 step/s (1000/decode_ms)
+디코드 폭: 1×1830 (스텝이 실은 행 수 × 스텝 수)
+-- 검증 (result.jsonl): [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,
+   [예측] 폼에 얹히지 않은 값이 따라 오는 것이 주장이다:
+   [입력  ] decode step/s            기록      13.68  시뮬      13.94 (+1.9%)
+   [예측  ] tokens/step              기록      3.514  시뮬      3.504 (-0.3%)
+   [입력+큐] TTFT(warm) ctx2K         기록      1.155  시뮬      1.168 (+1.2%)
+   [예측  ] TTFT(cold) ctx2K         기록      1.548  시뮬      1.608 (+3.9%)
+   [예측  ] e2e med ctx2K            기록      12.88  시뮬       16.5 (+28.1%)
+   [입력+큐] TTFT(warm) ctx32K        기록      12.07  시뮬      12.17 (+0.8%)
+   [예측  ] TTFT(cold) ctx32K        기록      12.07  시뮬      12.17 (+0.8%)
+   [예측  ] e2e med ctx32K           기록      37.09  시뮬      39.43 (+6.3%)
+   [입력+큐] TTFT(warm) ctx128K       기록      38.73  시뮬      38.96 (+0.6%)
+   [예측  ] TTFT(cold) ctx128K       기록      38.73  시뮬      38.96 (+0.6%)
+   [예측  ] e2e med ctx128K          기록      61.02  시뮬      57.83 (-5.2%)
+   [예측  ] 클라이언트 tok/s              기록      48.25  시뮬      45.44 (-5.8%)
+   [예측  ] TPOT ms                  기록      20.74  시뮬      22.01 (+6.1%)
+
+== result.jsonl · prefill3300-K-steady · git de67dc0e8 · 요청 2개
+fit:prefill3300-K-steady [decode 71.7289 ms, k=6, acc=48.7%, prefill 32K:3413 128K:3360, decode/by-ctx 32K:71.7 128K:71.7] — 미계수: 폭(C=4 기록 대기)
+cost fit:prefill3300-K-steady: k=6 acc=48.7% decode 71.7289 ms prefill 32K:3413 128K:3360 [폭·컨텍스트 미계수: 평탄]
+steps: 40 prefill, 913 decode, async 913 (동기 drain 0), tokens/step 3.947
+  prefill n=40    med 1217.230 ms  p95 1223.265  max 1223.338  (in-flight, launch→readback)
+  decode  n=913   med  151.649 ms  p95  158.392  max  161.189  (in-flight, launch→readback)
+  TTFT ctx32K: n=1 med 9.583s p95 9.583s
+  TTFT ctx128K: n=1 med 38.428s p95 38.428s
+  큐 대기: med 0.005s p95 0.008s max 0.008s (도착→첫 프리필 청크; TTFT = 대기 + 프리필)
+  클라이언트 decode: med 51.8 tok/s [51.4, 52.1] (첫 토큰 이후)
+decode 스텝: 벽 기준 7.77 step/s (prefill 포함), 모형 내재 13.95 step/s (1000/decode_ms)
+디코드 폭: 1×913 (스텝이 실은 행 수 × 스텝 수)
+-- 검증 (result.jsonl): [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,
+   [예측] 폼에 얹히지 않은 값이 따라 오는 것이 주장이다:
+   [입력  ] decode step/s            기록      13.94  시뮬      13.95 (+0.1%)
+   [예측  ] tokens/step              기록      3.921  시뮬      3.947 (+0.7%)
+   [입력+큐] TTFT(warm) ctx32K        기록      9.537  시뮬      9.583 (+0.5%)
+   [예측  ] TTFT(cold) ctx32K        기록      9.537  시뮬      9.583 (+0.5%)
+   [예측  ] e2e med ctx32K           기록      39.52  시뮬       39.5 (-0.0%)
+   [입력+큐] TTFT(warm) ctx128K       기록      38.26  시뮬      38.43 (+0.4%)
+   [예측  ] TTFT(cold) ctx128K       기록      38.26  시뮬      38.43 (+0.4%)
+   [예측  ] e2e med ctx128K          기록      84.72  시뮬      77.81 (-8.2%)
+   [예측  ] 클라이언트 tok/s              기록      47.76  시뮬      51.79 (+8.4%)
+   [예측  ] TPOT ms                  기록      21.05  시뮬      19.31 (-8.3%)
+
+-- 예측 행 최대 잔여: TPOT ms +146.6% (result.jsonl), 예측 97행 중 |잔여|>10% 는 11행
+D17: 이 숫자는 시뮬레이션이다 — 속도 주장은 플릿 onepass 두 번으로 끝난다.
