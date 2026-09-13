@@ -4,7 +4,7 @@ Only a terminal consumer may discard the four post-map channels. Intermediate
 layers still need that residual carry. Each channel is rounded to BF16 before
 the FP32 mean, just as in the served TileLang post -> float -> mean -> BF16
 path. A column view of the final five-layer feature tensor avoids its concat.
-This probe is not bound into serving until the same-runtime GPU gate passes.
+Serving selects this path only through the default-off terminal_mhc experiment.
 """
 import torch
 import triton
@@ -29,9 +29,11 @@ def _contract(X, Residual, Post, Comb, Out, OUT_STRIDE,
         c1 = tl.load(Comb + row * 16 + 4 + channel)
         c2 = tl.load(Comb + row * 16 + 8 + channel)
         c3 = tl.load(Comb + row * 16 + 12 + channel)
-        # Match the existing post kernel's product then four ordered FMAs.
-        value = post * x
-        value = tl.fma(c0, r0, value)
+        # Match the served TileLang kernel's compiled PTX: its first rounded
+        # product is comb[0] * residual[0], followed by post * x in the FMA.
+        # Swapping the first two products changes rare BF16 rounding ties.
+        value = c0 * r0
+        value = tl.fma(post, x, value)
         value = tl.fma(c1, r1, value)
         value = tl.fma(c2, r2, value)
         value = tl.fma(c3, r3, value)

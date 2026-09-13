@@ -55,8 +55,9 @@ class MhcContractTests(unittest.TestCase):
         for row, col in (actual != expected).nonzero()[:3].tolist():
             channels = []
             for channel in range(4):
-                value = C.c_float(float(post[row, channel, 0]) * float(x[row, col])).value
-                for source in range(4):
+                value = C.c_float(float(comb[row, 0, channel]) * float(residual[row, 0, col])).value
+                value = fma(float(post[row, channel, 0]), float(x[row, col]), value)
+                for source in range(1, 4):
                     value = fma(float(comb[row, source, channel]), float(residual[row, source, col]), value)
                 channels.append(torch.tensor(value).bfloat16().float().item())
             total = 0.
@@ -70,6 +71,18 @@ class MhcContractTests(unittest.TestCase):
     def test_rounding_and_cancellation_are_not_folded_through_the_mean(self):
         from engine.kernels.mhc_contract import contract
         from engine.kernels.mhc import mhc_post_tilelang
+        values = self.inputs(8)
+        x, residual, post, comb = values
+        # The served PTX rounds comb[0] * residual[0] before adding post * x
+        # with FMA. Rounding post * x first instead produces 8.67843628e-5.
+        # Reproduce this rare random failure deterministically at every cell.
+        x.fill_(-1.8671875)
+        residual.zero_(); residual[:, 0].fill_(1.21875)
+        post.fill_(0.8058584332466125)
+        comb.zero_(); comb[:, 0, :].fill_(1.2346874475479126)
+        served = self.baseline(*values)
+        self.assertTrue(torch.all(served == 8.630752563476562e-5).item())
+        self.exact(contract(*values), served)
         values = self.inputs(8)
         x, residual, post, comb = values
         # Identity mix with a small, different post contribution per channel:
