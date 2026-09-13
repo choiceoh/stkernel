@@ -35,7 +35,10 @@ def main():
     try:
         tests = ['tests.test_moe_prefill_scale_expansion', 'tests.test_moe_sf6_dispatch',
                  'tests.test_glm53_tp_sf6_q0', 'tests.test_engine_prefill_sf6_words',
-                 'tests.test_glm53_tp_sf6_q0_selftest', 'tests.test_moe_sf6_owner']
+                 'tests.test_glm53_tp_sf6_q0_selftest', 'tests.test_moe_sf6_owner',
+                 'tests.test_engine_graph_labels', 'tests.test_engine_kernel_shape',
+                 'tests.test_engine_kernel_glue', 'tests.test_engine_turn_retention',
+                 'tests.test_engine_fleet_lease']
         if args.include_m64:
             tests.append('tests.test_moe_prefill_m64')
         with (output/'cpu-tests.log').open('w') as log:
