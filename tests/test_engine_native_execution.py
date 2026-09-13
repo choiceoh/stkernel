@@ -23,6 +23,12 @@ class NativeQualificationTests(unittest.TestCase):
         fc = drafter.dense['fc.weight']
         fc.decode_precision, fc.executed = 'fp8', 2
         self.assertEqual(native_execution_report(net, drafter)['drafter_w4'], 1)
+        fc.decode_fp8 = NS(executed=False)
+        with self.assertRaisesRegex(RuntimeError, 'proof is incomplete'):
+            native_execution_report(net, drafter)
+        fc.decode_fp8.executed = True
+        self.assertTrue(native_execution_report(net, drafter)['drafter_decode_fp8'])
+        fc.decode_fp8 = None
         fc.executed = 0
         with self.assertRaisesRegex(RuntimeError, 'proof is incomplete'):
             native_execution_report(net, drafter)

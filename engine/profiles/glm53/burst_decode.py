@@ -296,6 +296,7 @@ class BurstDecode(AsyncDecode):
                 e.ctx[seq] += count
                 e.accepted_total += result["accepted"][i]
                 e.drafted_total += e.drafter.k
+                e.accepted_per_step[result["accepted"][i]] += 1
                 boundary = (e.ctx[seq] // e.F.block) * e.F.block
                 if boundary > result["before"][i]:
                     e.staged[seq] = boundary

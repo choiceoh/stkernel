@@ -85,12 +85,15 @@ class Step:
 
 
 class State:
-    """What features carry between steps: {(layer, key, seq): value} -- the reference store (see the module docstring).
-    A feature owns its keys. `check` refuses a step that does not continue its sequences; `commit` records where they
-    now are."""
+    """What features carry between steps -- the reference store (see the module docstring). Two kinds of key, the two
+    of base/cache_spec: a whole value per sequence (`get`/`put`: a slot -- a recurrent state, a conv history) and rows
+    per token (`put_rows`/`rows`: paged -- keys and values, indexer keys). A feature owns its keys. `check` refuses a
+    step that does not continue its sequences; `commit` records where they now are. base/composed.PositionStore is the
+    same protocol over blocks and slots."""
 
     def __init__(self):
         self._values: dict = {}
+        self._rows: dict = {}
         self.contexts: dict = {}
 
     def get(self, layer: int, key: str, seq: int, default=None):
@@ -98,6 +101,18 @@ class State:
 
     def put(self, layer: int, key: str, seq: int, value) -> None:
         self._values[(layer, key, seq)] = value
+
+    def put_rows(self, layer: int, key: str, seq: int, rows) -> None:
+        """This step's rows for `seq`, appended after the rows of the positions before it."""
+        held = self._rows.get((layer, key, seq))
+        self._rows[(layer, key, seq)] = rows if held is None else torch.cat([held, rows])
+
+    def rows(self, layer: int, key: str, seq: int, count: int):
+        """The rows of positions [0, count): what the sequence holds so far, this step's included once put."""
+        held = self._rows.get((layer, key, seq))
+        if held is None or held.shape[0] < count:
+            raise ValueError(f"sequence {seq} holds {0 if held is None else held.shape[0]} rows of {key}, asked {count}")
+        return held[:count]
 
     def check(self, step: Step) -> None:
         """Refuse a step whose segments do not continue their sequences from where the state left them."""
@@ -111,6 +126,7 @@ class State:
 
     def drop(self, seq: int) -> None:
         self._values = {k: v for k, v in self._values.items() if k[2] != seq}
+        self._rows = {k: v for k, v in self._rows.items() if k[2] != seq}
         self.contexts.pop(seq, None)
 
 
@@ -187,14 +203,23 @@ class Composition:
         """What the features cache, per kind: every feature that declares `cache_specs(layers)` for the layers the plan
         runs it on. base/cache_spec.plan turns these into blocks and slots."""
         paged, slots = [], []
+        for _, _, spec in self._specs():
+            (paged if isinstance(spec, PagedSpec) else slots).append(spec)
+        return paged, slots
+
+    def spec_layers(self) -> "dict[str, list[int]]":
+        """For every keyed spec, the model layers it is kept for, in order: a store indexes a spec's per-layer regions
+        by a layer's rank in this list (the plan's third GDN layer is the GDN feature's third region)."""
+        return {spec.key: layers for _, layers, spec in self._specs() if spec.key}
+
+    def _specs(self):
         for name, feature in self.features.items():
             declare = getattr(feature, "cache_specs", None)
             layers = self.plan.layers_of(name)
             if declare is None or not layers:
                 continue
             for spec in declare(layers):
-                (paged if isinstance(spec, PagedSpec) else slots).append(spec)
-        return paged, slots
+                yield name, layers, spec
 
 
 __all__ = ["SITES", "Segment", "Step", "State", "Residual", "Feature", "Layer", "Plan", "Composition"]

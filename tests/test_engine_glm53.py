@@ -48,6 +48,19 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(fields["conv", 0].shape[-1], F.conv - 1 + F.spec_k)
         self.assertEqual(fields["rec", 0].shape[0], F.spec_k + 1)
 
+    def test_profile_draft_width_reaches_the_live_rings_and_budget(self):
+        from math import prod
+        from engine.profiles.glm53 import facts, plan
+        from tests.test_engine_kernel_shape import GLM53_TEXT_CONFIG
+        F = facts.architecture(GLM53_TEXT_CONFIG)
+        fields = layout(F, range(F.layers)).fields
+        self.assertEqual({f.shape[0] for f in fields if f.name == "rec"}, {8})
+        actual_bytes = sum(prod(f.shape)*{"f32": 4, "bf16": 2}[f.dtype]
+                           for f in fields if f.name in ("rec", "conv", "tail"))
+        self.assertEqual(plan.state_bytes(GLM53_TEXT_CONFIG)[0], actual_bytes)
+        prior_bytes = plan.state_bytes(GLM53_TEXT_CONFIG, spec_k=6)[0]
+        self.assertGreater(actual_bytes, prior_bytes)
+
     def test_invalid_layers_and_partial_pools_fail_before_allocation(self):
         F = tiny_facts()
         for layers in ([], [0, 0], [-1], [F.layers]):

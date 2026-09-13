@@ -1,0 +1,11 @@
+test_c4_overlap_keeps_rows_state_and_auxiliary_order (tests.test_engine_execution_plans.ExecutionPlanTests.test_c4_overlap_keeps_rows_state_and_auxiliary_order) ... ok
+test_four_ranks_keep_collective_order_and_reduced_outputs (tests.test_engine_execution_plans.ExecutionPlanTests.test_four_ranks_keep_collective_order_and_reduced_outputs) ... ok
+test_layer_order_matches_chunk_order_and_all_prefix_states (tests.test_engine_execution_plans.ExecutionPlanTests.test_layer_order_matches_chunk_order_and_all_prefix_states) ... ok
+test_only_c4_splits_and_invalid_budgets_fail (tests.test_engine_execution_plans.ExecutionPlanTests.test_only_c4_splits_and_invalid_budgets_fail) ... ok
+test_oversized_window_refuses_before_mutating_state (tests.test_engine_execution_plans.ExecutionPlanTests.test_oversized_window_refuses_before_mutating_state) ... ok
+test_tiles_rebase_patches_and_keep_only_internal_marks (tests.test_engine_execution_plans.ExecutionPlanTests.test_tiles_rebase_patches_and_keep_only_internal_marks) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 4.069s
+
+OK

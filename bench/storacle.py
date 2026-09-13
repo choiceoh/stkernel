@@ -12,6 +12,7 @@
     python3 bench/storacle.py sim --compose ...      # step_sim 으로
     python3 bench/storacle.py kernels --model ...    # step_kernels 로
     python3 bench/storacle.py peek|replay ...        # 관측·재분석으로
+    python3 bench/storacle.py acceptance peek.jsonl  # 위치별 누적 수락률 실측
 
 D17 그대로: 오라클은 부팅 수를 줄이지, 판정을 대신하지 않는다.
 """
@@ -23,7 +24,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 TOOLS = {"sim": "step_sim.py", "kernels": "step_kernels.py",
-         "peek": "step_peek.py", "replay": "step_replay.py"}
+         "peek": "step_peek.py", "replay": "step_replay.py", "acceptance": "step_acceptance.py"}
 
 
 def cmd_models() -> int:
@@ -126,7 +127,7 @@ def main() -> int:
         return cmd_predict(a.model, a.partial, a.ctx,
                            [x.strip() for x in a.generic.split(",") if x.strip()])
     if sub not in TOOLS:
-        print(f"알 수 없는 하위 명령 {sub!r} — models | sim | kernels | peek | replay", file=sys.stderr)
+        print(f"알 수 없는 하위 명령 {sub!r} — models | predict | {' | '.join(TOOLS)}", file=sys.stderr)
         return 2
     return subprocess.run([sys.executable, str(HERE / TOOLS[sub]), *sys.argv[2:]]).returncode
 

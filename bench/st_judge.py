@@ -84,9 +84,9 @@ def full_evidence(rec) -> bool:
 
 def warm(rec) -> bool:
     """The judged column. Run 1 of a bracket is the cold one (a boot's compile tail); a record that
-    names no run, or whose run 1 followed a prefix reset on a live door (cold=reset: a D17 probe),
-    is warm by construction -- the engine had been serving."""
-    return rec.get("run_index") != 1 or rec.get("cold") == "reset"
+    names no run, or whose run 1 ran on a live door (cold=live: a D17 probe; cold=reset: a probe from
+    before probes stopped resetting the cache), is warm by construction -- the engine had been serving."""
+    return rec.get("run_index") != 1 or rec.get("cold") in ("reset", "live")
 
 
 def samples(rows, sha, *, allow_rehearsal=False, tree=None):
@@ -105,7 +105,7 @@ def samples(rows, sha, *, allow_rehearsal=False, tree=None):
 
 def colds(rows, sha, *, allow_rehearsal=False, tree=None):
     """The cold column is a BOOT's run 1 (TTFT with the compile tail). A probe on the live door
-    marks its run 1 cold=reset -- after a prefix reset, not a boot -- and stays out of it."""
+    marks its run 1 cold=live (cold=reset before 2026-09-13) -- no boot before it -- and stays out of it."""
     return [rec for rec in rows if same(sha, rec, tree) and rec.get("run_index") == 1
             and full_evidence(rec)
             and rec.get("cold", "boot") == "boot" and (allow_rehearsal or not rec.get("rehearsal"))]

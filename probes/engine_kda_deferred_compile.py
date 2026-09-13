@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 import torch
@@ -16,6 +17,7 @@ from engine.kernels.kda.fused_recurrent import fused_recurrent_gated_delta_rule_
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--commit-only", action="store_true")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     variants = []
@@ -49,27 +51,51 @@ def main():
                               BK=128, BV=bv, BLOCK=768)))
     # Same row addressing and strided projection views used by C=1/C=4.
     for rows in (1, 4):
-        for t in (1, 6, 7):
-            variants.append((f"batch-commit-c{rows}-t{t}", _commit_layers,
+        for t in (1, 7, 8):
+            for tiled, hoist, cells in ((False, False, 1024), (True, False, 1024),
+                                       (True, True, 1024), (True, True, 2048), (True, True, 4096)):
+                width = max(7, t)
+                variants.append((f"batch-commit-c{rows}-t{t}-tiled{int(tiled)}-hoist{int(hoist)}-b{cells}", _commit_layers,
                              {**{p: "*fp32" for p in ("KEY", "DECAY", "UPDATE", "RING")},
                               **{p: "*i64" for p in ("OFFSETS", "SLOT", "CONTEXT", "COUNT")}},
-                             dict(T=t, ROWS=rows, H=16, K=128, V=128, R=7,
-                                  SLOT_STRIDE=34*(7*16*128*128+64)+64, BLOCK=768, B=1024)))
+                             dict(T=t, ROWS=rows, H=16, K=128, V=128, R=width,
+                                  SLOT_STRIDE=34*(width*16*128*128+64)+64, BLOCK=768, B=cells,
+                                  TILED=tiled, HOIST_FINAL=hoist, OFFSET_ALIGNMENT=4 if hoist else 1)))
+                if tiled and hoist and cells == 1024:
+                    name, fn, signature, constants = variants[-1]
+                    variants.append((name+"-scalar", fn, signature, {**constants, "OFFSET_ALIGNMENT": 1}))
+                if tiled and hoist and cells == 4096:
+                    name, fn, signature, constants = variants[-1]
+                    variants.append((name+"-w8", fn, signature, constants))
     # Compile the real batched verifier, including per-row factor offsets.
     _, fn, signature, constants = next(v for v in variants if v[0] == "verify-t7-deferred1")
     signature, constants = dict(signature), dict(constants)
     constants.update(RING_INDEX_STRIDE=1, RING_SIZE=7,
                      INPUT_STRIDES=((6144, 128, 1),)*3+((2048, 128, 1), (6416, 1)))
     variants.append(("verify-batched-strided", fn, signature, constants))
+    if args.commit_only:
+        variants = [v for v in variants if v[1] is _commit_layers]
     report = dict(scope="SM121 compilation only", gpu_used=False, torch=torch.__version__,
                   triton=triton.__version__, variants=[])
     for name, fn, signature, constants in variants:
         print("compile " + name, flush=True)
-        kernel = triton.compile(ASTSource(fn, signature, constexprs=constants),
+        # Match the pointer specialization of the actual Batch allocation.
+        # Without this, offline compilation hides vector loads/stores that
+        # runtime JIT can emit, making register/layout comparisons misleading.
+        attrs = {(fn.arg_names.index(p),): [("tt.divisibility", 16)] for p in signature}
+        kernel = triton.compile(ASTSource(fn, signature, constexprs=constants,
+                                         attrs=attrs if fn is _commit_layers else None),
                                 target=GPUTarget("cuda", 121, 32),
-                                options=dict(num_warps=4, num_stages=1) if fn is _commit_layers else dict(num_warps=1, num_stages=3))
+                                options=dict(num_warps=8 if name.endswith("-w8") else 4, num_stages=1)
+                                if fn is _commit_layers else dict(num_warps=1, num_stages=3))
         (args.output/(name+".ptx")).write_text(kernel.asm["ptx"])
+        (args.output/(name+".ttgir")).write_text(kernel.asm["ttgir"])
+        cubin = args.output/(name+".cubin")
+        cubin.write_bytes(kernel.asm["cubin"])
+        resources = subprocess.run(["/usr/local/cuda/bin/cuobjdump", "--dump-resource-usage", str(cubin)],
+                                   check=True, text=True, capture_output=True).stdout
         report["variants"].append(dict(name=name, shared_bytes=kernel.metadata.shared,
+                                       resources=resources,
                                        cubin_sha256=hashlib.sha256(kernel.asm["cubin"]).hexdigest()))
     assert not torch.cuda.is_initialized()
     report["status"] = "PASS"

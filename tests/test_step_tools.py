@@ -500,7 +500,7 @@ class KernelBudgetTests(unittest.TestCase):
         # 시뮬레이터가 엔진 자신의 사실 원천을 읽는다 — 엔진이 바뀌면 따라간다
         facts = kern.load_engine_facts()
         self.assertEqual(facts.get("tp"), 4)
-        self.assertEqual(facts.get("spec_k"), 6)
+        self.assertEqual(facts.get("spec_k"), 7)
         self.assertEqual(facts.get("chunk_align"), 2304)
         self.assertIn("facts.py", facts.get("source", ""))
 
@@ -607,7 +607,7 @@ class KernelBudgetTests(unittest.TestCase):
                                0.2879 * 2304 + 379.5, delta=1.0)
 
     def test_composed_cost_has_every_coefficient(self):
-        cost = sim.composed_cost(routing="measured")
+        cost = sim.composed_cost(routing="measured", k=6)
         self.assertAlmostEqual(cost.decode_ms_by_ctx[2000], 51.4, delta=0.2)
         self.assertAlmostEqual(cost.decode_ms_by_ctx[128000], 55.4, delta=0.2)
         # 폭 계수는 플릿 실측(#838 §3)으로 못박고 조립값과 5% 안에서 일치한다
@@ -616,7 +616,7 @@ class KernelBudgetTests(unittest.TestCase):
                         / cost.decode_ms_per_row, 0.05)
         self.assertAlmostEqual(cost.prefill_ms_per_token, 0.2879, delta=0.0005)
         self.assertAlmostEqual(cost.prefill_fixed_ms_per_chunk, 269.5 + 110.0, delta=1.0)
-        art = sim.composed_cost(routing="artifact")
+        art = sim.composed_cost(routing="artifact", k=6)
         self.assertLess(art.decode_ms_by_ctx[2000], cost.decode_ms_by_ctx[2000])  # U(7)=29.3 < 33
 
     def test_conc_mode_runs_rows_together(self):
@@ -648,12 +648,28 @@ class KernelBudgetTests(unittest.TestCase):
         folded = sim.fold_width_from_stage(sim.STAGE_WIDTH_2K)
         self.assertAlmostEqual(folded["decode_ms_per_row"], (110.8 - 47.7) / 3, delta=0.01)
         # 조립(composed)의 폭은 플릿 실측으로 못박고, 조립값과의 차가 교차검증이다
-        cost = sim.composed_cost(routing="measured")
+        cost = sim.composed_cost(routing="measured", k=6)
         self.assertAlmostEqual(cost.decode_ms_per_row, 21.03, delta=0.05)
         self.assertAlmostEqual(cost._composed_row_crosscheck, 20.7, delta=0.6)
         self.assertLess(abs(cost._composed_row_crosscheck - cost.decode_ms_per_row)
                         / cost.decode_ms_per_row, 0.05)
         self.assertEqual(folded["decode_ms"], 47.7)
+
+    def test_composed_width_does_not_reuse_a_different_draft_width_measurement(self):
+        for k in (0, 7, 8):
+            with self.subTest(k=k):
+                cost = sim.composed_cost(routing="measured", k=k)
+                model = kern.EngineBytes.for_model("glm53")
+                model.spec_k = k
+                marginal = (kern.decode_step(model, 2000, 4).total()
+                            - kern.decode_step(model, 2000, 1).total())/3
+                model.spec_k = 6
+                anchor = (kern.decode_step(model, 2000, 4).total()
+                          - kern.decode_step(model, 2000, 1).total())/3
+                expected = (sim.STAGE_WIDTH_2K[4]-sim.STAGE_WIDTH_2K[1])/3 + marginal-anchor
+                self.assertAlmostEqual(cost.decode_ms_per_row, expected, delta=.01)
+                self.assertIn("not a fleet measurement", cost.decode_ms_per_row_basis)
+                self.assertEqual(cost.decode_ms_per_row > sim.composed_cost(k=6).decode_ms_per_row, k > 6)
 
     def test_st_oracle_model_registry(self):
         # glm53 은 전부 실측 — 조립 가능
@@ -687,6 +703,32 @@ class KernelBudgetTests(unittest.TestCase):
                                   "--prompts", "512", "--gen", "8", "--no-calib"],
                                  capture_output=True, text=True, timeout=120)
         self.assertIn("ST-Oracle", sim_out.stdout)
+
+    def test_composed_cli_applies_overrides_and_reports_the_executed_contract(self):
+        for k in (0, 6):
+            with self.subTest(k=k):
+                out = subprocess.run([sys.executable, str(ROOT / "bench" / "storacle.py"), "sim",
+                                      "--compose", "--prompts", "200", "--gen", "2", "--no-calib",
+                                      "--k", str(k), "--acc", "0", "--decode-ms", "0.01", "--json"],
+                                     cwd=ROOT, capture_output=True, text=True, timeout=30)
+                self.assertEqual(out.returncode, 0, out.stderr)
+                row = json.loads(out.stdout)["run"]
+                self.assertEqual((row["cost"]["k"], row["cost"]["acc"]), (k, 0))
+                self.assertEqual(row["cost"]["decode_ms"], .01)
+                self.assertFalse(row["cost"]["decode_ms_by_ctx"])
+                contract = sim.sched.Contract(**row["contract"])
+                self.assertEqual(sim.sched.chunk_for(contract.chunk_align, contract.token_budget,
+                                                    contract.draft_slots), 9216)
+                self.assertEqual(sim.sched.chunk_for(contract.chunk_align, contract.decode_token_budget,
+                                                    contract.draft_slots), 2304)
+                self.assertEqual(contract.draft_slots, k)
+
+    def test_composed_k_changes_the_byte_cost_before_constructing_the_ladder(self):
+        single = sim.composed_cost(k=0)
+        speculative = sim.composed_cost(k=6)
+        self.assertEqual((single.k, speculative.k), (0, 6))
+        for context in (2000, 32000, 128000):
+            self.assertLess(single.decode_ms_by_ctx[context], speculative.decode_ms_by_ctx[context])
 
     def test_partial_gives_values_with_confidence(self):
         # 결측이 있어도 값을 준다 — 구간과 신뢰도와 함께(모르는 것을 0 이라고 말하지 않는다)

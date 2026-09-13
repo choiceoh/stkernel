@@ -177,7 +177,7 @@ squash main makes of a measured branch, or a fleet-side merge that left `engine/
 alone, is the same engine and the same sample. When the base has one boot, the
 judge borrows the floor -- the median run-to-run spread of every commit with two
 boots in the records -- and says so ("pooled floor"). A D17 probe on the live
-door runs once (one run after a reset is a warm sample; a boot is one sample
+door runs once (a run on a door that has been serving is a warm sample; a boot is one sample
 however many runs it carries), deploy-watch keeps the deployed engine at one
 sample (`--probe-samples`), and full `st-chain --reuse` boots no arm that already has
 a sample. deploy-watch applies the same identity to deploys: a main that moved
@@ -185,10 +185,16 @@ without touching `engine/` is recorded as deployed, cut and followed by the
 controller, and not booted -- the engine that serves is already that commit's.
 
 `fleet.sh st-probe SESSION [SHA] [EST] [NOTE]` is the verb that boots nothing:
-one **full** onepass run on the LIVE production door (`POST /v1/prefix/reset`
-first) as a probe ticket, regardless of `ST_BRACKET_VALIDATION`, so it runs beside production when the door is idle and
-takes no lease. Its first run is `cold=reset`, which `st_judge` keeps out of the
-cold column (a boot's). deploy-watch queues one after every deploy
+one **full** onepass run on the LIVE production door as a probe ticket, regardless of
+`ST_BRACKET_VALIDATION`, so it runs beside production when the door is idle and
+takes no lease. It resets nothing: production's prefix cache and prefix tier are
+production's (until 2026-09-13 it POSTed `/v1/prefix/reset` first and emptied both
+after every deploy). Its requests carry unique cache salts, so they cannot hit what
+production cached, and say `retain: false`, so the engine caches their boundaries
+for the turn only -- never on the prefix tier, first to give up a snapshot, dropped
+with the row (`st:prefix_transient_dropped_total`). Its run is `cold=live`
+(`cold=reset` on older records), which `st_judge` keeps out of the cold column (a
+boot's). deploy-watch queues one after every deploy
 (`d17-<sha12>`; `--no-probe` to stop it), so the deployed commit always has a
 warm sample and `st-pair` never has to boot the base; it also moves the queue's
 own checkout, `~/fleet-controller` (`--controller`, `FLEET_CONTROLLER_REPO`;

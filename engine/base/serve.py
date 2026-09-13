@@ -2599,6 +2599,9 @@ class Server:
                 ("counter", "st:prefix_snapshot_self_evicts_total",
                  "checkpoints a prefill displaced to make room for its own later ones: state copies computed and thrown away",
                  getattr(runner, "snapshot_self_evicts", 0)),
+                ("counter", "st:prefix_transient_dropped_total",
+                 "boundaries a turn that was not retained (retain false) made, dropped with its row instead of kept or spilled",
+                 getattr(runner, "transient_dropped", 0)),
             ]
         # The prefix tier's OWN bytes, keyed on that tier and not on the cache above it. The pair
         # under `tiered` below is the CONVERSATION tier, so everything the boundary tier moved was
@@ -2799,6 +2802,10 @@ class Server:
             self.watch.enter("settling transfers")
             self._settle()
             self._admit()
+            if self._transient:                      # the rows those turns took: their boundaries stay out of the tier
+                for row, (request, _) in self._active.items():
+                    if request in self._transient:
+                        self.runner.transient.add(row)
             began = self.clock()
             self.watch.enter(f"step {self.runner.steps + 1}")
             step = self.runner.step()

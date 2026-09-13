@@ -98,9 +98,10 @@ class DescriptorTests(unittest.TestCase):
         self.addCleanup(ks.reset)
 
     def test_the_glm_checkpoint_derives_the_measured_cell(self):
-        """The proof that the served path did not move: GLM's derivation IS the cell the kernels
-        were compiled for, field by field (the drafter is bound later, when it loads)."""
-        self.assertEqual(glm_shape(), replace(MEASURED, drafter=None))
+        """Model geometry is unchanged; operator-selected draft width is recorded separately."""
+        from engine.profiles.glm53.facts import SPEC_K
+        self.assertEqual(SPEC_K, 7)
+        self.assertEqual(glm_shape(), replace(MEASURED, drafter=None, spec_k=SPEC_K))
         self.assertEqual(MEASURED.describe().split(" | ")[0], "hidden 4096 hc 4 mhc tp 4")
         self.assertEqual(MEASURED.describe().split(" | ")[1], "mla 16x512 no sink")
         self.assertEqual(MEASURED.device, Device(capability=(12, 1), sms=48))

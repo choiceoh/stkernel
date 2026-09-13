@@ -85,6 +85,8 @@ class Entry:
     spilling: bool = False          # the copy is being written: the snapshot and blocks must stay as they are
     spill_failed: bool = False      # the tier refused it for good (not room: an error)
     children: int = 0               # cached boundaries one block longer that extend this one: zero means a leaf
+    transient: bool = False         # made by a turn that will not be retained (retain false: a probe, a health check):
+                                    # never written to the tier, dropped with its row unless something adopted it
 
 
 class PrefixCache:
@@ -169,6 +171,7 @@ class PrefixCache:
                 self.tick += 1
                 entry.used = self.tick
                 entry.hits += 1
+                entry.transient = False                 # something adopted it: it has served, and lives as any other
                 self.hits += 1
                 return tokens, entry, chain[tokens]
         self.misses += 1
@@ -217,7 +220,7 @@ class PrefixCache:
         out = []
         for h in order:
             e = self.entries[h]
-            if e.spilled or e.spilling or e.spill_failed or not self.is_leaf(h):
+            if e.spilled or e.spilling or e.spill_failed or e.transient or not self.is_leaf(h):
                 continue
             out.append(h)
             if len(out) >= count:
@@ -251,6 +254,7 @@ class PrefixCache:
             if h in self.entries and not self.entries[h].pinned:
                 e = self.entries[h]
                 e.pinned = True
+                e.transient = False                     # an operator wants it: it stays and may reach the tier
                 self.pool.disclaim(e.blocks, CACHED)
                 self.pool.claim(e.blocks, PINNED)
                 n += 1
@@ -274,12 +278,16 @@ class PrefixCache:
         every boundary has served, the least recently used -- so one long prompt's forty fresh boundaries cannot flush
         the system prompt every conversation shares (45차 §23: the cache is tolerant of churn, not just of size).
         Within a class, one whose copy is already on the tier goes first (its state can come back); a pinned boundary
-        goes last of all; one whose copy is being written cannot go at all (the write reads its snapshot)."""
+        goes last of all; one whose copy is being written cannot go at all (the write reads its snapshot).
+        Before every class, a TRANSIENT boundary (a turn that will not be retained made it): it leaves with its row
+        anyway. A D17 probe's prompt still takes production's snapshots for the boundaries of its FIRST step -- they are
+        asked for before the step, while the row holds none of its own, and a 32K step asks for dozens -- but every
+        later step, and every other probe row, gives up the probe's own first (2026-09-13)."""
         movable = [h for h, e in self.entries.items() if not e.spilling]
         if not movable:
             return None
-        return min(movable, key=lambda h: (self.entries[h].pinned, self.entries[h].hits > 0, not self.entries[h].spilled,
-                                           self.entries[h].used))
+        return min(movable, key=lambda h: (not self.entries[h].transient, self.entries[h].pinned, self.entries[h].hits > 0,
+                                           not self.entries[h].spilled, self.entries[h].used))
 
     def take_snapshot(self) -> "int | None":
         """A free snapshot slot, taking one from a boundary if none is free (`_victim`). The boundary keeps its blocks
@@ -305,7 +313,7 @@ class PrefixCache:
         """A slot whose contents belong to nobody (an aborted checkpoint, a boundary that is gone)."""
         self.free_snaps.append(snap)
 
-    def insert(self, h: bytes, blocks, tokens: int, snap: int) -> None:
+    def insert(self, h: bytes, blocks, tokens: int, snap: int, transient: bool = False) -> None:
         if h in self.entries or tokens % self.block_size or len(blocks) != tokens // self.block_size:
             raise ValueError("a prefix entry is one whole-block boundary with exactly its blocks")
         if h in self.faded:
@@ -314,7 +322,7 @@ class PrefixCache:
         self.version += 1
         blocks = tuple(blocks)
         self.pool.claim(blocks, CACHED)
-        self.entries[h] = Entry(blocks, tokens, snap, self.tick)
+        self.entries[h] = Entry(blocks, tokens, snap, self.tick, transient=bool(transient))
         self._index(h, blocks)
 
     def _watch(self, h: bytes, blocks: tuple) -> None:

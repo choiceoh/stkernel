@@ -83,6 +83,19 @@ class OnepassPolicyTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(self.validate(command)['entry'], command[1])
 
+    def test_commit_only_is_scoped_to_the_pinned_kda_probe(self):
+        command = ['bash', 'probes/run_engine_probe.sh', 'probes/engine_kda_deferred_check.py',
+                   '--commit-only', '--samples', '20', '--output', '/cache/kda-commit.json']
+        self.assertEqual(self.validate(command, kind='single')['gpus'], 1)
+        for other in ('probes/engine_kernel_check.py', 'probes/engine_full_check.py'):
+            with self.subTest(probe=other), self.assertRaises(ValueError):
+                self.validate(command[:2]+[other]+command[3:])
+        with self.assertRaises(ValueError):
+            self.validate(['bash', 'probes/run_engine_check.sh', '--commit-only'])
+        for unsafe in ('/cache/a;echo', '/cache/$(id)', '/cache/a b'):
+            with self.subTest(output=unsafe), self.assertRaises(ValueError):
+                self.validate(command[:-1]+[unsafe])
+
     def test_the_contract_counts_gpus_and_the_single_lane_takes_only_one_gpu_checks(self):
         """A check that needs one GPU goes to the 5050 on ost-97x, not the four Sparks
         (2026-09-12). The lane follows from `gpus`, and naming the lane can never move a

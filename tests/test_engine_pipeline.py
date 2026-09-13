@@ -61,10 +61,21 @@ class ShrinkTests(unittest.TestCase):
 
 
 class ResolveTests(unittest.TestCase):
+    def test_prefill_is_not_a_rejected_draft_and_terminal_prefix_is_clipped(self):
+        from engine.profiles.glm53.adapter import Glm53Engine
+        e = SimpleNamespace(limits={1: (20, 0)}, ends={}, eos={9}, lps={}, matchers={},
+                            tokens={1: [5]}, accepted_total=0, drafted_total=0, accepted_per_step=[0]*8)
+        e._generated_count = lambda seq: len(e.tokens[seq]) - 1
+        Glm53Engine._commit(e, 1, 0, [6], None, 0)  # rich prefill's first token has no drafts
+        self.assertEqual(e.accepted_per_step, [0]*8)
+        self.assertEqual(Glm53Engine._commit(e, 1, 6, [7, 9, 8, 8, 8, 8, 8], None, 6), ([7, 9], True))
+        self.assertEqual(e.accepted_per_step, [0, 0, 1, 0, 0, 0, 0, 0])
+        self.assertEqual((e.accepted_total, e.drafted_total), (2, 6))
+
     def test_resolve_applies_counts_in_launch_order_and_ignores_released_rows(self):
         e = SimpleNamespace(drafter=SimpleNamespace(k=2), caches=SimpleNamespace(pool=SimpleNamespace(max_seqs=4), device=torch.device("cpu")),
                             tokens={1: [5], 2: [6]}, ctx={1: 1, 2: 1}, inflight={1: 1, 2: 1}, accepted_total=0, drafted_total=0, steps=0,
-                            F=SimpleNamespace(block=2), staged={})
+                            F=SimpleNamespace(block=2), staged={}, accepted_per_step=[0]*4)
         p = AsyncDecode(e)
         lane = p.free.pop(0)
         p.host[lane]["tokens"][:2] = torch.tensor([[7, 8, 9], [1, 2, 3]])
@@ -83,6 +94,7 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual((e.ctx[1], e.inflight[1], e.inflight[2]), (3, 0, 0))
         self.assertEqual(e.staged, {1: 2})                                            # 1 -> 3 crossed the block boundary at 2
         self.assertEqual((e.accepted_total, e.drafted_total, e.steps), (1, 2, 1))
+        self.assertEqual(e.accepted_per_step, [0, 1, 0, 0])
         self.assertIn(lane, p.free)
 
 
@@ -206,7 +218,7 @@ class BatchTransitionTests(unittest.TestCase):
                                    draft_field=lambda: torch.zeros(1), stage_boundaries=lambda *args: None),
             F=SimpleNamespace(vocab=32, block=16), tokens={1: [5], 2: [6]}, ctx={1: 1, 2: 1},
             limits={1: (10, 0.0), 2: (10, 0.0)}, options={}, ends={}, eos={31}, top_p=1.0,
-            inflight={}, staged={}, accepted_total=0, drafted_total=0, steps=0,
+            inflight={}, staged={}, accepted_total=0, drafted_total=0, steps=0, accepted_per_step=[0]*3,
             seed=1, nonces={1: 1, 2: 2})
         e._generated_count = lambda seq: len(e.tokens[seq]) - 1
         e.decode_graphs = SimpleNamespace(shape_for=lambda n, end: (n, 2, 64),
@@ -214,6 +226,18 @@ class BatchTransitionTests(unittest.TestCase):
         e.sampling_graphs = SimpleNamespace(greedy=SimpleNamespace(
             run=lambda shape, fill: torch.tensor([7, 8] * shape[0])))
         return e
+
+    def test_finished_rows_do_not_add_rejection_buckets(self):
+        e = self.engine()
+        e.limits[1] = (1, 0.0)
+        p = AsyncDecode(e)
+        self.assertEqual(p.launch([1], [1]).resolve(), [True])
+        # commit_batch's accepted counter reserves the final emitted token even
+        # when the output limit clips a verified prefix. Preserve that convention.
+        self.assertEqual(e.accepted_per_step, [1, 0, 0])
+        p.launch([1], [1]).resolve()  # an already-finished row commits no tokens
+        self.assertEqual(e.accepted_per_step, [1, 0, 0])
+        self.assertEqual((e.accepted_total, e.drafted_total), (0, 1))
 
     def test_first_sampled_request_uses_the_real_drafter_candidate_width(self):
         from tests.test_engine_glm53 import tiny_facts

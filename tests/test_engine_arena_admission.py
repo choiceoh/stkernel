@@ -1,5 +1,6 @@
 """UMA admission must not treat reclaimable cache as immediately free DRAM."""
 from pathlib import Path
+import errno
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -122,6 +123,30 @@ class ArenaAdmissionTests(unittest.TestCase):
         self.assertEqual(touch_pages(0), 0)
         self.assertEqual(touch_pages(1), touch_pages(4096))
         self.assertEqual(touch_pages(3 << 20), 3 << 20)
+
+    def test_failed_anonymous_reservation_records_commit_limits_without_retrying(self):
+        error = OSError(errno.ENOMEM, "Cannot allocate memory")
+        with patch('engine.base.arena.mmap.mmap', side_effect=error) as allocate, \
+             patch('engine.base.arena._meminfo', return_value={
+                 'MemFree': 17*GIB, 'MemAvailable': 94*GIB,
+                 'CommitLimit': 76*GIB, 'Committed_AS': 3*GIB}), \
+             patch.object(Path, 'read_text', return_value='2\n'):
+            with self.assertRaisesRegex(MemoryError, r'mmap\(81.00 GiB\).*overcommit_memory=2') as caught:
+                touch_pages(81*GIB)
+        self.assertIn('MemAvailable=94.00 GiB', str(caught.exception))
+        self.assertIn('CommitLimit=76.00 GiB', str(caught.exception))
+        self.assertIn('Committed_AS=3.00 GiB', str(caught.exception))
+        self.assertIs(caught.exception.__cause__, error)
+        allocate.assert_called_once()
+
+    def test_unrelated_mapping_error_is_preserved(self):
+        error = OSError(errno.EPERM, "not permitted")
+        with patch('engine.base.arena.mmap.mmap', side_effect=error), \
+             patch('engine.base.arena._meminfo') as read:
+            with self.assertRaises(OSError) as caught:
+                touch_pages(4096)
+        self.assertIs(caught.exception, error)
+        read.assert_not_called()
 
 
 if __name__ == '__main__':

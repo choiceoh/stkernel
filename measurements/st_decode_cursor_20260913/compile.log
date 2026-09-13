@@ -1,0 +1,26 @@
+compile verify-t1-deferred0
+compile verify-t1-deferred1
+compile commit-t1
+compile verify-t6-deferred0
+compile verify-t6-deferred1
+compile commit-t6
+compile verify-t7-deferred0
+compile verify-t7-deferred1
+compile commit-t7
+compile verify-t8-deferred0
+compile verify-t8-deferred1
+compile commit-t8
+compile batch-commit-c1-t1-tiled0
+compile batch-commit-c1-t1-tiled1
+compile batch-commit-c1-t6-tiled0
+compile batch-commit-c1-t6-tiled1
+compile batch-commit-c1-t7-tiled0
+compile batch-commit-c1-t7-tiled1
+compile batch-commit-c4-t1-tiled0
+compile batch-commit-c4-t1-tiled1
+compile batch-commit-c4-t6-tiled0
+compile batch-commit-c4-t6-tiled1
+compile batch-commit-c4-t7-tiled0
+compile batch-commit-c4-t7-tiled1
+compile verify-batched-strided
+{"scope": "SM121 compilation only", "gpu_used": false, "torch": "2.13.0+cu130", "triton": "3.7.1", "variants": [{"name": "verify-t1-deferred0", "shared_bytes": 512, "cubin_sha256": "5f974afc8cca37e101e4ca0982ed4116733c8d77995c31d2d6487461d7fcc67a"}, {"name": "verify-t1-deferred1", "shared_bytes": 512, "cubin_sha256": "f3399ad34e32e3e437c73d2fdca40299dcc26d2f410ca3a6e289d913ffce0361"}, {"name": "commit-t1", "shared_bytes": 512, "cubin_sha256": "b7d3a2aac580a7cdcb5e5478977b34a1cfcdc6c8f9f7664908f3ba76edfc9ef8"}, {"name": "verify-t6-deferred0", "shared_bytes": 512, "cubin_sha256": "5f974afc8cca37e101e4ca0982ed4116733c8d77995c31d2d6487461d7fcc67a"}, {"name": "verify-t6-deferred1", "shared_bytes": 512, "cubin_sha256": "f3399ad34e32e3e437c73d2fdca40299dcc26d2f410ca3a6e289d913ffce0361"}, {"name": "commit-t6", "shared_bytes": 512, "cubin_sha256": "d12aa986742c9bdfa65ef69e66965b204d58a3c5850ed0aa2d839ec357e81b57"}, {"name": "verify-t7-deferred0", "shared_bytes": 512, "cubin_sha256": "23acba9e5ff8be71352cbe595e48bccdbe79ea3f3076163c677e9a6b6c9eb99e"}, {"name": "verify-t7-deferred1", "shared_bytes": 512, "cubin_sha256": "6d4aef2ac9ef7789e121d4517ac7b73a60ec1f284999459e6be524b3691e02d9"}, {"name": "commit-t7", "shared_bytes": 512, "cubin_sha256": "3a48320bb7a74dbb98ce609e448b58e189e73ac3c1bc0c50a5532421d6f7b20d"}, {"name": "verify-t8-deferred0", "shared_bytes": 512, "cubin_sha256": "23acba9e5ff8be71352cbe595e48bccdbe79ea3f3076163c677e9a6b6c9eb99e"}, {"name": "verify-t8-deferred1", "shared_bytes": 512, "cubin_sha256": "6d4aef2ac9ef7789e121d4517ac7b73a60ec1f284999459e6be524b3691e02d9"}, {"name": "commit-t8", "shared_bytes": 512, "cubin_sha256": "a7007b753f320d0da09bc9fa6beece7f0a49e002f97700eab390139677ba2789"}, {"name": "batch-commit-c1-t1-tiled0", "shared_bytes": 0, "cubin_sha256": "2bf1c39b9838e567d2c0a4795a489b0f54252dd656d4d410563b5520a2d7624e"}, {"name": "batch-commit-c1-t1-tiled1", "shared_bytes": 0, "cubin_sha256": "f3eb9ad5db69ccbac5e9b876b4850a98a191159c361cc4996ead04c1a632d3f8"}, {"name": "batch-commit-c1-t6-tiled0", "shared_bytes": 0, "cubin_sha256": "3aabadb6191889126ab7103ec7e2ec2e69a58b8da5efe5ae653fbf300723a542"}, {"name": "batch-commit-c1-t6-tiled1", "shared_bytes": 0, "cubin_sha256": "adcd8bbbe8e4467693e68875fc3535388879b58da9e9ec9f9b7526ab3705b39d"}, {"name": "batch-commit-c1-t7-tiled0", "shared_bytes": 0, "cubin_sha256": "855344f16788d111c03f79a588ff5f97a1c655a96e567813a9fc5572626305a1"}, {"name": "batch-commit-c1-t7-tiled1", "shared_bytes": 0, "cubin_sha256": "81e6a62889767dfbaae76c370401b8e16f54c6a2f6304e0482f3e5a0cfde6d91"}, {"name": "batch-commit-c4-t1-tiled0", "shared_bytes": 0, "cubin_sha256": "1f3ac40bb46ed5ebb60d611eee1f5fed472bf4702809c63752e6aeccdc63b67f"}, {"name": "batch-commit-c4-t1-tiled1", "shared_bytes": 0, "cubin_sha256": "d7083eec285ad7a5e8124bcf7c039d775108be7c344edc5d8ad09ca2bac3c4f5"}, {"name": "batch-commit-c4-t6-tiled0", "shared_bytes": 0, "cubin_sha256": "b46e976cc399b4049a834111d075dc42503b87f0a0f04013d62a0e0458a580e5"}, {"name": "batch-commit-c4-t6-tiled1", "shared_bytes": 0, "cubin_sha256": "3eca9f8969ae2f260004b6e93b278fd9513d7fdca0232d1e202fd5f64cedc79b"}, {"name": "batch-commit-c4-t7-tiled0", "shared_bytes": 0, "cubin_sha256": "b1300ee137dbcf66d054b550e129fa4b2311f7e66766d0103f1958802a278979"}, {"name": "batch-commit-c4-t7-tiled1", "shared_bytes": 0, "cubin_sha256": "720bf3aee1dc69c4d7bb2130d07fe42a4cfbb247be2296fc6d0462815eecb158"}, {"name": "verify-batched-strided", "shared_bytes": 512, "cubin_sha256": "a8b22eebaa7c638221fed987a10edba7cc51e72f4ea243278d79b10732d56957"}], "status": "PASS"}

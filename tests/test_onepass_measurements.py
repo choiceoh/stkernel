@@ -82,6 +82,7 @@ class StreamTests(unittest.TestCase):
                                         timing, min_tokens=1536, seed=7)
         payload = json.loads(urlopen.call_args.args[0].data)
         self.assertEqual((payload["min_tokens"], payload["max_tokens"], payload["seed"]), (1536, 1536, 7))
+        self.assertIs(payload["retain"], False, "harness 45: a measurement request is released, not parked")
         self.assertEqual(result, ("근거답변", 2, 2000, 1536, "length"))
         self.assertEqual((timing["min_tokens"], timing["max_tokens"], timing["seed"], timing["prompt_tokens"]),
                          (1536, 1536, 7, 2000))

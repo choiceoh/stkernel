@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Canonical Korean consumer test, harness 44: C=1 2K/32K/128K; C=4 2K/32K.
+"""Canonical Korean consumer test, harness 45: C=1 2K/32K/128K; C=4 2K/32K.
 
 Every invocation prepares full prompts with bounded output, measures with the
 profiler off and a unique prefix salt, then runs separate bounded GPU diagnostic
@@ -97,7 +97,13 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
                 # was measured with reasoning in the stream; the v2 template honours
                 # the kwarg and thinking=false gives answers too short for the 2 s
                 # decode windows (TPL1: no windows). Keep the condition constant.
-                "chat_template_kwargs": {"thinking": True}}
+                "chat_template_kwargs": {"thinking": True},
+                # Harness 45: a measurement request is nobody's conversation. Kept, each one parked its
+                # whole slot state and KV (0.25-0.5 GiB a rank) to the tier after it finished: on a bracket
+                # boot that write overlapped the next request, and on the live door a D17 probe filled
+                # production's tier with conversations no one would continue (engine: PR #858; an engine
+                # older than that ignores the field and parks as before).
+                "retain": False}
     if reasoning_budget is not None:
         body_obj["reasoning_budget"] = reasoning_budget
     identity = hashlib.sha256(json.dumps(body_obj).encode()).hexdigest()
@@ -611,7 +617,7 @@ def _main() -> int:
     if os.environ.get("ST_BRACKET_TREE"):
         rec["arm_tree"] = os.environ["ST_BRACKET_TREE"]            # the engine/ tree at that commit: the sample's real identity
     if os.environ.get("ST_BRACKET_COLD"):
-        rec["cold"] = os.environ["ST_BRACKET_COLD"]                # what run 1 followed: a boot, or only a prefix reset
+        rec["cold"] = os.environ["ST_BRACKET_COLD"]                # what run 1 followed: a boot, or none (live: a D17 probe)
     run = _RUN = Run(rec, args.out, bd.URL)
     items = workload_requests(args, cq)
     fixed_item = None

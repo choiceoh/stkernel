@@ -253,6 +253,10 @@ def main() -> int:
                   f"{payload['step_s_med']} step/s {payload['step_s_q']}")
             if "pooled" in payload:
                 print(f"   전체: {peek._line(payload['pooled'])}")
+            if "acceptance" in payload:
+                print(peek.acceptance.format_profile(payload["acceptance"]))
+            elif "acceptance_error" in payload:
+                print(f"   위치별 수락률 확인 불가: {payload['acceptance_error']}")
 
     if len(onepass_recs) >= 2:
         base = next((s for s in onepass_recs if args.base and s.get("name") == args.base),

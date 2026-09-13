@@ -427,8 +427,8 @@ class RehearsalTests(unittest.TestCase):
         out = self.run_bracket('probe', self.cand)
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
         recs = self.records()
-        self.assertEqual([(r['run_index'], r['cold'], r['name']) for r in recs], [(1, 'reset', 'd17-' + self.cand[:12])],
-                         'one run: a boot is one sample, and after a reset it is warm')
+        self.assertEqual([(r['run_index'], r['cold'], r['name']) for r in recs], [(1, 'live', 'd17-' + self.cand[:12])],
+                         'one run: a boot is one sample, and a run on the live door is warm (no reset before it)')
         self.assertEqual(recs[0]['arm_tree'], subprocess.run(['git', 'rev-parse', self.cand + ':engine'], cwd=ROOT,
                                                              capture_output=True, text=True).stdout.strip()[:12])
         self.assertIn('no boot, no lease', out.stdout)

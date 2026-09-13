@@ -1232,7 +1232,7 @@ class Glm53Engine:
         committed = min(accepted, len(new))
         self.accepted_total += committed
         self.drafted_total += drafted
-        if committed < len(self.accepted_per_step):
+        if drafted and committed < len(self.accepted_per_step):
             self.accepted_per_step[committed] += 1   # the shape of acceptance, not only its mean: what prices spec_k
         done = any(t in self.ends.get(seq, self.eos) for t in new) or self._generated_count(seq) >= self.limits[seq][0]
         return new, done

@@ -1,4 +1,4 @@
-# Onepass reasoning quality — harness 44 / ko-reasoning-v2
+# Onepass reasoning quality — harness 45 / ko-reasoning-v2
 
 > 살아 있는 참조 — **원패스가 무엇을 묻고 어떻게 채점하는지. 하니스가 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
 
@@ -87,6 +87,15 @@ and asks the ko-reasoning-v2 questions above. Thinking remains enabled. A budget
 or question change changes the performance workload, so harness 44 cannot reuse
 a harness 43 baseline. Quality at the new budget has not yet been measured; this
 change makes no GPU speed or quality claim.
+
+Harness 45 keeps these questions and budgets and changes what the server does
+after each request: every onepass request says `retain: false`, so the finished
+request is released instead of parked to the NVMe tier (engine PR #858). A park
+wrote the slot's state and KV, 0.25-0.5 GiB a rank, and overlapped the next
+request on a bracket boot; on the live door a D17 probe filled production's tier
+with conversations nobody would continue. The served work differs, so harness 45
+cannot reuse a harness 44 baseline. An engine older than #858 ignores the field
+and still parks.
 
 Before preparation, `workloads.json` stores exact prompts, schemas, evidence,
 oracles and valid witness sets. **Only prompts are sent to the model**. The record's

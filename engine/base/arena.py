@@ -24,6 +24,7 @@ Accounting is unchanged: `memory_allocated` still moves by exactly nbytes.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import errno
 import mmap
 import os
 from pathlib import Path
@@ -53,7 +54,28 @@ def touch_pages(nbytes: int) -> int:
     if n <= 0:
         return 0
     flags = mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS | getattr(mmap, "MAP_POPULATE", 0)
-    region = mmap.mmap(-1, n, flags=flags)
+    try:
+        region = mmap.mmap(-1, n, flags=flags)
+    except OSError as exc:
+        if exc.errno != errno.ENOMEM:
+            raise
+        # MemAvailable is a physical estimate; strict overcommit separately
+        # limits anonymous reservations before a single page can be faulted.
+        # Retain both facts so another boot does not repeat the same request.
+        try:
+            memory = _meminfo()
+        except OSError:
+            memory = {}
+        try:
+            policy = Path("/proc/sys/vm/overcommit_memory").read_text().strip()
+        except OSError:
+            policy = "unknown"
+        counters = ", ".join(f"{key}={memory[key]/GIB:.2f} GiB"
+                             for key in ("MemFree", "MemAvailable", "CommitLimit", "Committed_AS")
+                             if key in memory)
+        raise MemoryError(f"anonymous cache reclaim: mmap({n/GIB:.2f} GiB) refused; "
+                          f"overcommit_memory={policy}, {counters}. "
+                          "Prepare physical file-cache headroom before boot; the arena budget is unchanged") from exc
     try:
         if not getattr(mmap, "MAP_POPULATE", 0):
             for off in range(0, n, page):                 # no MAP_POPULATE: fault every page by hand

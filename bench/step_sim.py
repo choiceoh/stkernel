@@ -55,7 +55,7 @@ import statistics
 import sys
 import threading
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -86,6 +86,7 @@ class CostModel:
     acc: float = 0.462                # raw 수용률 (1 + k×acc = tokens/step 기댓값)
     decode_ms: float = 91.2           # decode 스텝 장치 시간 (1000/10.963)
     decode_ms_per_row: float = 0.0    # 미계수: 스텝당 행 수 의존 (C=4 기록이 채울 자리)
+    decode_ms_per_row_basis: str = "manual or fitted"
     decode_ms_per_1k_ctx: float = 0.0 # 예비 계수 — by-ctx 계단이 있으면 보통 쓰이지 않는다
     decode_ms_by_ctx: dict = field(default_factory=dict)   # {ctx: ms} — windows_by_ctx 폴딩
     prefill_tok_s: dict = field(default_factory=lambda: {2000: 2009.0, 32000: 12150.0,
@@ -436,8 +437,8 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
     row_steps = sum(n * c for n, c in enumerate(r.decode_batches))
     cadence = round(sum(kinds.values()) / wall, 2) if wall > 0 else None
     decode_rate = round(kinds["decode"] / wall, 2) if wall > 0 and kinds["decode"] else None
-    out = {"cost": {f: getattr(cost, f) for f in
-                    ("name", "k", "acc", "decode_ms", "decode_ms_per_row", "decode_ms_per_1k_ctx",
+    out = {"contract": asdict(contract), "cost": {f: getattr(cost, f) for f in
+                     ("name", "k", "acc", "decode_ms", "decode_ms_per_row", "decode_ms_per_row_basis", "decode_ms_per_1k_ctx",
                      "decode_ms_by_ctx", "prefill_tok_s", "prefill_flat_ms", "front_ms",
                      "cold_extra_s", "acc_hist", "prefill_ms_per_token",
                      "prefill_fixed_ms_per_chunk", "confidence")},
@@ -462,7 +463,9 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
     return out
 
 
-def _drop_ring(out: dict) -> dict:
+def _drop_ring(out: "dict | None") -> "dict | None":
+    if out is None:
+        return None
     o = dict(out)
     o.pop("ring", None)
     return o
@@ -523,7 +526,8 @@ def _fmt(out: dict, meta: bool) -> str:
 
 
 def composed_cost(routing: str = "measured", prefill_profile: "str | None" = None,
-                  acc: float = 0.45, model: str = "glm53", partial: bool = False) -> "CostModel":
+                  acc: float = 0.45, model: str = "glm53", partial: bool = False,
+                  k: "int | None" = None) -> "CostModel":
     """조립 모형(step_kernels) 전부를 CostModel 로 — 형상은 facts.py, 라우팅은 아티팩트/
     역산, 프리필은 청크 구조(아티팩트 폴딩), **폭 계수까지** 4행 조립에서 푼다. 손으로
     쥐는 것은 수용률 하나(실측 분포가 오면 --acc-hist-from 이 대신한다)."""
@@ -541,20 +545,33 @@ def composed_cost(routing: str = "measured", prefill_profile: "str | None" = Non
         globals()["_LAST_PARTIAL"] = rng
     if facts:
         b.spec_k, b.tp = facts["spec_k"], facts["tp"]
+    if k is not None:
+        b.spec_k = k
     if routing == "artifact":
         folded = kern.fold_routing_from_timeline(
             "measurements/c4_scaling_20260913/decode-timeline-rank3.json")
         if folded:
             b.routing_gamma, b.routing_scale = folded["routing_gamma"], folded["routing_scale"]
     ladder = {c: round(kern.decode_step(b, c, 1).total(), 2) for c in (2000, 32000, 128000)}
-    composed_row = (kern.decode_step(b, 2000, 4).total() - ladder[2000]) / 3.0
-    # 폭 계수: 조립 예측이 아니라 플릿 실측(#838 §3 스테이지 표)으로 못박는다 —
-    # 조립값과의 차가 교차검증이다(측정 계보에서 1.5% 안).
+    composed_row = (kern.decode_step(b, 2000, 4).total() - kern.decode_step(b, 2000, 1).total()) / 3.0
+    # The fleet width table measured K=6. A different draft width must not
+    # inherit that coefficient while its C=1 ladder changes underneath it.
     stage = fold_width_from_stage(STAGE_WIDTH_2K)
-    per_row = round(stage["decode_ms_per_row"], 3)
+    if model == "glm53":
+        anchor = replace(b, spec_k=STAGE_WIDTH_SPEC_K)
+        anchor_row = (kern.decode_step(anchor, 2000, 4).total() - kern.decode_step(anchor, 2000, 1).total())/3.0
+        # Keep the unmodeled width overhead at its measured K=6 value. Use
+        # only the modeled marginal change; switching to an uncalibrated
+        # total at K=7 would create a fictitious discontinuous speedup.
+        per_row = round(stage["decode_ms_per_row"] + composed_row-anchor_row, 3)
+        width_basis = ("fleet #838 at 2K, K=6" if b.spec_k == STAGE_WIDTH_SPEC_K else
+                       f"K=6 fleet anchor plus component delta at K={b.spec_k}; not a fleet measurement")
+    else:
+        per_row = round(composed_row, 3)
+        width_basis = f"component estimate at 2K, K={b.spec_k}; not a fleet measurement"
     cost = CostModel(name=f"composed-{routing}", k=b.spec_k, acc=acc,
                      decode_ms=ladder[32000], decode_ms_by_ctx=ladder,
-                     decode_ms_per_row=per_row,
+                     decode_ms_per_row=per_row, decode_ms_per_row_basis=width_basis,
                      prefill_tok_s={})
     cost._composed_row_crosscheck = round(composed_row, 3)   # 참고용: 조립이 말한 폭
     cost.confidence = confidence
@@ -570,8 +587,8 @@ def composed_cost(routing: str = "measured", prefill_profile: "str | None" = Non
     return cost
 
 
-def acc_hist_from_peek(path) -> "list | None":
-    """step_peek 이 저장한 스크랩 jsonl 에서 수용률 실측 분포를 뽑는다(첫·끝 스크랩 차)."""
+def acc_hist_from_peek(path, k=None) -> "list | None":
+    """step_peek 스크랩의 분포. 중간 reset과 엔진/시뮬레이터 K 불일치도 거른다."""
     import step_peek as _peek
     samples = []
     with open(path, encoding="utf-8") as f:
@@ -584,12 +601,13 @@ def acc_hist_from_peek(path) -> "list | None":
                 samples.append(rec["series"])
     if len(samples) < 2:
         return None
-    return _peek.acc_hist_from_scrapes(samples[0], samples[-1])
+    return _peek.acc_hist_from_samples(samples, k)
 
 
 # #838 §3 의 스테이지 표(CUDA 이벤트, 랭크 0, 2K) — 폭의 플릿 실측. 조립(step_kernels)이
 # 같은 값을 20.7 로 예측한다(1.5% 안): 폭 계수의 두 독립 출처가 일치한다.
 STAGE_WIDTH_2K = {1: 47.7, 2: 73.7, 3: 95.6, 4: 110.8}
+STAGE_WIDTH_SPEC_K = 6
 
 
 def fold_width_from_stage(stage: dict) -> dict:
@@ -787,7 +805,8 @@ def main() -> int:
                     help="폴딩이 맞출 decode 채널: windows=판정 채널(기본), client=요청별 실측")
     ap.add_argument("--chunk-align", type=int, default=16)
     ap.add_argument("--token-budget", type=int, default=4096)
-    ap.add_argument("--draft-slots", type=int, default=3)
+    ap.add_argument("--draft-slots", type=int,
+                    help="예약 드래프트 슬롯 (compose: k, 수동: 3)")
     ap.add_argument("--max-running", type=int, default=8)
     ap.add_argument("--meta", action="store_true", help="StepMeta 구축 비용을 별도로 같이 잰다")
     ap.add_argument("--no-calib", action="store_true", help="장치 0 캘리브레이션 스텝을 건너뛴다")
@@ -811,18 +830,32 @@ def main() -> int:
     ap.add_argument("--json", action="store_true", help="결과를 JSON 한 줄로")
     args = ap.parse_args()
 
-    args = ap.parse_args()
-
     def overrides(cost):
         for flag, attr in ((args.k, "k"), (args.acc, "acc"), (args.decode_ms, "decode_ms")):
             if flag is not None:
                 cost = replace(cost, **{attr: flag})
+        if args.decode_ms is not None:
+            # An explicit flat step time must not be shadowed by a fitted
+            # context ladder. Width cost remains separately visible.
+            cost = replace(cost, decode_ms_by_ctx={}, decode_ms_per_1k_ctx=0.0)
+        if args.acc is not None:
+            cost = replace(cost, acc_hist=[])
         return cost
 
+    if args.compose:
+        # Configure the contract before constructing it (and calibrating).
+        # These are the chunk shapes of the source #838 component profile.
+        args.chunk_align = 2304
+        if args.draft_slots is None:
+            import step_kernels as kern
+            args.draft_slots = args.k if args.k is not None else kern.load_engine_facts(args.model).get("spec_k", 6)
+        args.token_budget = 9216 + args.draft_slots
+    elif args.draft_slots is None:
+        args.draft_slots = 3
     contract = sched.Contract(chunk_align=args.chunk_align, token_budget=args.token_budget,
                               draft_slots=args.draft_slots, max_wait_s=args.max_wait_s,
                               max_running=args.max_running,
-                              **({"decode_token_budget": 2304} if args.compose else {}))
+                              **({"decode_token_budget": 2304 + args.draft_slots} if args.compose else {}))
     calib = None
     if not args.no_calib:
         calib = run_once([512], 300, contract)            # 장치 0, 동기 — 숙주 전용 캘리브레이션
@@ -893,16 +926,12 @@ def main() -> int:
     arrive = [0.0] * len(prompts)
     gen: "int | list" = args.gen
     if args.compose:
-        cost = composed_cost(routing=args.routing, model=args.model, partial=args.partial)
+        cost = composed_cost(routing=args.routing, model=args.model, partial=args.partial, k=args.k)
         if getattr(cost, "confidence", 100.0) < 100.0:
             rng = globals().get("_LAST_PARTIAL", {})
             print(f"[신뢰도] {cost.confidence:.0f}% — 스텝 {rng.get('lo_ms', 0):.1f}~{rng.get('hi_ms', 0):.1f} ms"
                   f" · 가정: {', '.join(rng.get('assumed', []))}"
                   + ("" if args.model == "glm53" else " · 이관: 비MoE·통신 상수·k 는 glm53 실측"))
-        # 계약도 엔진의 실제 값으로: 청크 정렬 2304, 혼자 프리필 9216, 디코더 옆 2304(#838 §4)
-        args.chunk_align = 2304
-        args.token_budget = 9216
-        args.max_wait_s = args.max_wait_s or 0.0
     elif args.device_ms or args.prefill_device_ms:
         cost = CostModel(decode_ms=args.device_ms, prefill_flat_ms=args.prefill_device_ms,
                          k=0, acc=0.0, prefill_tok_s={}, name="manual")
@@ -912,14 +941,14 @@ def main() -> int:
             loaded = json.loads(Path(args.cost_json).read_text(encoding="utf-8"))
             cost = replace(cost, **loaded)
             cost.name = loaded.get("name", cost.name + "+json")
-        cost = overrides(cost)
+    cost = overrides(cost)
     if args.acc_hist_from and args.acc_hist_from.exists():
-        hist = acc_hist_from_peek(args.acc_hist_from)
+        hist = acc_hist_from_peek(args.acc_hist_from, cost.k)
         if hist:
             cost = replace(cost, acc_hist=[float(x) for x in hist])
             print(f"[수용률] 실측 분포 {hist} — 기하 추첨을 이 분포로 바꾼다")
         else:
-            print(f"[수용률] {args.acc_hist_from} 에 분포 계열이 없다 — 기하 추첨 그대로")
+            print(f"[수용률] {args.acc_hist_from} 에 유효한 분포가 없다 (결측/불일치/빈 창) — 기하 추첨 그대로")
     out = run_once(prompts, gen, contract, cost=cost, arrive_ms=arrive,
                    can_async=True, with_meta=args.meta, closed_loop=args.closed_loop,
                    host_med_ms=(calib or {}).get("host_med_decode_ms"))

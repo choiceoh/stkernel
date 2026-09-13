@@ -109,7 +109,8 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
            ckpt: "str | Path" = facts.CKPT, ranks_dir: "str | Path | None" = None, rank: int = 0,
            drafter_dir: "str | Path | None" = drafter_mod.DRAFTER, ledger: "str | Path | None" = None,
            snapshots: "int | None" = None, draft_tp: int = 1, draft_native: "bool | None" = None,
-           router_bytes: int = 0, projection_bytes: int = 0, tier_enabled: bool = True, kda_state_dtype: "str | None" = None) -> Budget:
+           router_bytes: int = 0, projection_bytes: int = 0, tier_enabled: bool = True, kda_state_dtype: "str | None" = None,
+           draft_policy=None) -> Budget:
     """The box, one rank of TP=4. `kv_gib`/`max_seqs` are boot.py's declared values; the table says what they leave."""
     host_total, _ = host_box()
     if box_gib is None:
@@ -149,7 +150,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
         draft_shape = (D.layers, cells, D.kv_heads // draft_tp, D.head_dim)
         if native:
             from engine.profiles.glm53.drafter_storage import nbytes as draft_resident_bytes
-            drafter_gib = draft_resident_bytes(D, draft_tp, max_seqs) / GIB
+            drafter_gib = draft_resident_bytes(D, draft_tp, max_seqs, policy=draft_policy) / GIB
             draft_evidence = f"drafter_storage: live packed readers; compute/KV TP={draft_tp}"
         else:
             drafter_gib = sum(s.nbytes() for s in drafter_mod.specs(D)) / GIB
