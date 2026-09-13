@@ -596,7 +596,7 @@ class Glm53Net:
         return (reduce or self.comm.all_reduce)(out + shared)
 
     # -- the step ---------------------------------------------------------------------------
-    def forward(self, step: Step, caches: Caches, finish: bool = True, aux_layers=None):
+    def forward(self, step: Step, caches: Caches, finish: bool = True, aux_layers=None, aux_ready=None):
         """One step: every segment's tokens through the chain. Returns the final
         hidden states [N, hidden] (post final norm) when `finish`, else the raw
         mHC carry (res, post, comb, x) for inspection. With `aux_layers`, also
@@ -618,6 +618,7 @@ class Glm53Net:
         res = x[:, None, :].expand(N, F.hc, F.hidden).contiguous()                   # hc_expand
         post = comb = None
         aux = {}
+        features = None
         for L in self.layers:
             if post is not None:
                 res, post, comb, x = self._hc_post_pre(L, x, res, post, comb, "attn")
@@ -636,6 +637,11 @@ class Glm53Net:
                 self.probe("moe" if F.is_moe(L) else "dense", L, x)
             if aux_layers and L in aux_layers:
                 aux[L] = self.lanes.mhc_post(x, res, post, comb).float().mean(1).to(x.dtype)
+                if aux_ready is not None and L == max(aux_layers):
+                    if sp is not None:
+                        raise ValueError("early draft observation belongs to decode, not SP prefill")
+                    features = torch.cat([aux[l] for l in aux_layers], dim=-1)
+                    aux_ready(features)
         if not finish:
             return res, post, comb, x
         res = self.lanes.mhc_post(x, res, post, comb)
@@ -643,7 +649,8 @@ class Glm53Net:
         if sp:
             h = self.comm.all_gather(h, dim=0)
         if aux_layers:
-            features = torch.cat([aux[L] for L in aux_layers], dim=-1)
+            if features is None:
+                features = torch.cat([aux[L] for L in aux_layers], dim=-1)
             return h, self.comm.all_gather(features, dim=0) if sp else features
         return h
 

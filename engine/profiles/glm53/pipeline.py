@@ -301,7 +301,11 @@ class AsyncDecode:
         if aux is not None:
             positions = ctx_before.view(n, 1) + torch.arange(t, device=aux.device)
             with self.clock.mark("observe"):
-                if e.drafter.decode_graphs is not None:
+                prepared = getattr(e.decode_graphs, "observations", {}).get(shape)
+                if prepared is not None:
+                    positions, context = prepared
+                    e.drafter.observe_prepared(e.caches.draft_field(), b["real_slot"], positions, context, count, aux)
+                elif e.drafter.decode_graphs is not None:
                     e.drafter.decode_graphs.observe_rows(b["real_slot"], positions, aux, count)
                 else:
                     e.drafter.observe_rows(e.caches.draft_field(), b["real_slot"], positions, aux, count)

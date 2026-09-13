@@ -226,9 +226,19 @@ def declared(a, comm_world: int) -> Config:
         # serving brackets. Keep it in the production contract so a stale
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
-        defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE)
+        defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
+                        execution_overlap=0, early_observe=0, prefill_tiles=1)
         return Config(facts_ + [Fact(k, v, "qualified production default") for k, v in defaults.items()], knobs=[])
     knobs = [
+        Knob("execution_overlap", 0, _dt.date(2026, 9, 30),
+             "GB10 C=4 ordered TP/compute overlap: matched onepass C=1/C=4 latency and acceptance",
+             "STK_execution_overlap=0", int),
+        Knob("early_observe", 0, _dt.date(2026, 9, 30),
+             "DFlash2 context preparation overlaps target tail using private W4 scratch; FP32 state unchanged",
+             "STK_early_observe=0", int),
+        Knob("prefill_tiles", 1, _dt.date(2026, 9, 30),
+             "layer-major prefill windows of 1/2/4 native tiles, separate from decoding; 32K/128K TTFT and memory",
+             "STK_prefill_tiles=1", int),
         Knob("kda_state_dtype", facts.KDA_STATE_DTYPE, _dt.date(2026, 9, 30),
              "FP16 recurrent storage with FP32 arithmetic: matched C=1/C=4 onepass quality, latency and memory",
              "STK_kda_state_dtype=fp32", state_dtype),
@@ -255,7 +265,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
           max_new: int = 256, temperature: float = 0.0, seed: int = 0, tier_dir: "str | None" = None,
           context_ceiling: "int | None" = None, execution: str = "stock",
           ckpt_meta: "str | Path" = facts.CKPT, drafter_dir: "str | Path" = drafter_mod.DRAFTER,
-          lease_owner: "str | None" = None, kda_state_dtype: "str | None" = None):
+          lease_owner: "str | None" = None, kda_state_dtype: "str | None" = None, execution_plan=None):
     """`ckpt_meta`: where config.json / tokenizer.json / generation_config.json are -- the HF checkpoint dir, or a
     copy of just those files: a node needs its rank file, the drafter and this, not the 185 GB checkpoint."""
     F = facts.load(ckpt_meta)
@@ -467,8 +477,11 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             # the aux layers must lie inside the chain: a layer subset (the local smoke) clips them to its last layer -- plumbing only
             aux = [min(L, net.layers[-1]) for L in drafter.aux_layers] if D else None
             engine = Glm53Engine(net, caches, F, drafter, max_new=max_new, eos_ids=eos_ids(ckpt_meta), temperature=temperature, seed=seed,
-                                 decodable=decodable, aux_layers=aux, context_ceiling=context_ceiling)
-            contract = sched.Contract(chunk_align=F.chunk_align, token_budget=TOKEN_BUDGET, draft_slots=drafter.k,
+                                 decodable=decodable, aux_layers=aux, context_ceiling=context_ceiling,
+                                 execution_plan=execution_plan)
+            plan = engine.execution_plan
+            token_budget = plan.tile_rows * plan.prefill_tiles + drafter.k if plan.prefill_tiles > 1 else TOKEN_BUDGET
+            contract = sched.Contract(chunk_align=F.chunk_align, token_budget=token_budget, draft_slots=drafter.k,
                                       max_wait_s=MAX_WAIT_S, max_running=max_seqs,
                                       decode_token_budget=F.chunk_align + drafter.k)
             engine.memory = memory
@@ -971,16 +984,22 @@ def fleet(a) -> int:
         with rec.phase("lanes"):
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
                                        consume_scales=True)
+        from engine.profiles.glm53.execution import ExecutionPlan
+        if cfg["execution_overlap"] not in (0, 1) or cfg["early_observe"] not in (0, 1):
+            raise ValueError("execution_overlap and early_observe must be 0 or 1")
+        plan = ExecutionPlan(bool(cfg["execution_overlap"]), bool(cfg["early_observe"]), cfg["prefill_tiles"],
+                             sched.chunk_for(facts.CHUNK_ALIGN, TOKEN_BUDGET, facts.SPEC_K))
         F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
                                                ckpt_meta=a.ckpt_meta, drafter_dir=a.drafter_dir,
                                                context_ceiling=cfg["context_ceiling"] or None,
                                                execution=cfg["execution"], lease_owner=lease["owner"],
-                                               kda_state_dtype=cfg["kda_state_dtype"])
+                                               kda_state_dtype=cfg["kda_state_dtype"], execution_plan=plan)
 
         # "무장 != 서빙": which lanes and kernel cells this process actually bound, readable at
         # scrape time instead of inferred from a boot log nobody kept (45차 §17 lesson).
         engine.lane_info = {"lanes": lanes.name, "moe_static": cfg["moe_static"],
+                            "execution_plan": plan.label(),
                             "kda_state_dtype": F.kda_state_dtype,
                             "mla_prefill": cfg["mla_prefill"], "spec_k": str(engine.drafter.k),
                             "context_ceiling": str(engine.max_context),

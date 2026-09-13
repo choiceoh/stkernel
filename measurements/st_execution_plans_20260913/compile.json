@@ -1,0 +1,15 @@
+{
+  "scope": "SM121a compilation only; no numerical or performance verdict",
+  "result": {
+    "module": "st_dense_c19170a76c8115fc6c4dfb81",
+    "workspace_bytes": 3343616,
+    "cuda_initialized": false
+  },
+  "seconds": 45.487980736012105,
+  "source_sha256": {
+    "engine/profiles/glm53/execution.py": "c089d0b2f4c2155dfd92b9d0ae9eed08caaa11aea8ddb027e0ebbcac5891f6ae",
+    "engine/kernels/dense/kernels.cu": "457668a025fc3eec0a31075ff3d42c8e1cb37d0962d2c914a39dc63ad93728dc",
+    "engine/profiles/glm53/decode_graphs.py": "73eaafb2ebdfa2a94b791cf2a72b5c997186fe71e26ce9ddc41d1988777e0190",
+    "engine/profiles/glm53/pipeline.py": "76e8784ea179c90e9d2e42c13f4903070633e88e08aca251f478493ec380be8a"
+  }
+}

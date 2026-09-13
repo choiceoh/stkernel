@@ -107,17 +107,27 @@ class DeviceStep:
     def positions(self):
         return (self.contexts[:, None] + torch.arange(self.tokens, device=self.ids.device)).flatten()
 
+    def subset(self, start, end):
+        return DeviceStep(self.ids[start * self.tokens:end * self.tokens], self.contexts[start:end], self.tokens)
+
 
 class GraphCaches:
     def __init__(self, real, sequence_ids, slots, capacity):
         self.real, self.sequence_ids, self.slots = real, sequence_ids, slots
         self.F, self.layout = real.F, real.layout
+        self.capacity = capacity
         self.candidate_capacity = capacity // real.F.kpool
 
     def gather(self):
         # Unreserved pages are masked out of attention by valid pool counts.
         # Translate them to a readable page so padded gathers stay in bounds.
         self.block_table = self.real.block_table.index_select(0, self.sequence_ids).clamp_min(0)
+
+    def subset(self, start, end):
+        child = GraphCaches(self.real, self.sequence_ids[start:end], self.slots[start:end],
+                            self.capacity)
+        child.block_table = self.block_table[start:end]
+        return child
 
     def kda_history(self, layer, slot, context):
         from engine.kernels.state import kda_history
@@ -206,7 +216,7 @@ def capacity_ladder(pool_tokens: int, max_position: int, ceiling: "int | None") 
 
 class Glm53DecodeGraphs:
     def __init__(self, net, caches, max_seqs, tokens, aux_layers=(), memory=None, ceiling=None,
-                 detail=False):
+                 detail=False, execution_plan=None, drafter=None):
         if any(owner >= 0 for owner in caches.slots.owner[1:]):
             raise ValueError("capture requires no live state slots")
         if tokens not in (1, net.F.spec_k + 1):
@@ -219,6 +229,13 @@ class Glm53DecodeGraphs:
         self.net, self.caches, self.tokens = net, caches, tokens
         self.memory = memory
         self.aux_layers = tuple(aux_layers)
+        from engine.profiles.glm53.execution import ExecutionPlan, CudaStreams
+        self.execution_plan = execution_plan or ExecutionPlan()
+        self.observations = {}
+        self.streams = CudaStreams() if self.execution_plan.overlap else None
+        self.observe_stream = torch.cuda.Stream() if self.execution_plan.early_observe else None
+        if self.observe_stream is not None and (drafter is None or not drafter.fast_attention or not self.aux_layers):
+            raise ValueError("early observation requires the native DFlash2 context projection")
         # The ladder ends where the door stops admitting. `ceiling` is that one served
         # number (adapter.max_context, which serve.py refuses past); unset means the
         # model's trained positions. Capping it is the only lever on the graph count:
@@ -257,12 +274,38 @@ class Glm53DecodeGraphs:
         def forward(inputs):
             step, _, _, scratch, logits = inputs
             scratch.gather()
+            prepared = None
+            def observe(aux):
+                nonlocal prepared
+                # Both the projection and the existing fused context writer
+                # retain their numerical boundaries. No tentative cache write.
+                positions = step.positions.view(-1, tokens)
+                valid = torch.full_like(step.contexts, tokens)
+                ready = torch.cuda.Event()
+                ready.record()
+                positions.record_stream(self.observe_stream)
+                valid.record_stream(self.observe_stream)
+                aux.record_stream(self.observe_stream)
+                with torch.cuda.stream(self.observe_stream):
+                    self.observe_stream.wait_event(ready)
+                    context = drafter._project_context(positions, aux, valid, observe=False)
+                prepared = (positions, context)
             try:
-                result = net.forward(step, scratch, aux_layers=self.aux_layers)
+                hook = observe if self.observe_stream is not None else None
+                if self.streams is not None:
+                    from engine.profiles.glm53.execution import decode_overlap
+                    result = decode_overlap(net, step, scratch, self.execution_plan, self.streams,
+                                            self.aux_layers, hook)
+                else:
+                    result = net.forward(step, scratch, aux_layers=self.aux_layers, aux_ready=hook)
                 h, aux = result if self.aux_layers else (result, None)
                 logits.copy_(net.head_local(h))
+                if prepared is not None:
+                    self.observations[(step.contexts.numel(), tokens, scratch.capacity)] = prepared
                 return h, aux, logits
             finally:
+                if self.observe_stream is not None:
+                    torch.cuda.current_stream().wait_stream(self.observe_stream)
                 del scratch.block_table
 
         try:
