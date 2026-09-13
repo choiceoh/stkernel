@@ -87,10 +87,28 @@ class Lanes:
     kda_recurrent_ring_rows: object = None  # the same over every row of a captured decode step at once: inputs [1,rows*T,...],
                                           # (ring, slots [rows], contexts [rows], lower_bound) -> [1,rows*T,H,D]; None keeps the row loop
     conv_ring_rows: object = None  # (x [rows*T,C], w, ring, slots [rows], contexts [rows]) -> y [rows*T,C]; None keeps the row loop
+    decode_rows: object = None  # DecodeRows: a captured step's DSA glue, one launch apiece (byte copies and integer addressing;
+                              #  the reference table binds the torch compositions they replace); None keeps the per-segment loops
     rmsnorm: object = None    # None declares net.py's torch composition; served binds native pointwise lanes
     swiglu: object = None     # (gate, up [T,I], limit) -> BF16; FP32 clamped activation
     route_weights: object = None  # (FP32 logits [T,E], bias [E], topk, scale) -> int32 ids, FP32 weights
     layernorm: object = None  # (x [T,D], weight, bias, eps) -> input dtype
+
+
+@dataclass(frozen=True)
+class DecodeRows:
+    """The captured decode step's DSA-layer glue, every piece one launch over all rows (45차, the C=4 question,
+    third fold). Each is a byte copy or integer addressing, so the served kernels and the torch references produce
+    the same bytes; the composition (net._dsa, net._select_rows, decode_graphs.complete_pools) does not know which."""
+    lengths: object       # (contexts [rows] i64, tokens, pool) -> (seq_lens [rows*tokens] i32, ke [rows*tokens] i32)
+    latent_write: object  # (values [rows*tokens, D] cache dtype, latent [S, D], block rows [rows, blocks] i32, block, block stride,
+                          #  layer offset, contexts, tokens) -> None: values scattered to each row's token slots
+    candidates: object    # (pool keys [P, d] e4m3 (record-strided), scales [P] f32, block rows, per, block stride, layer offset,
+                          #  n_cand) -> (keys [rows, n_cand, d] contiguous, scales [rows, n_cand])
+    window: object        # (tails [rows, W, 2, d] bf16, k [rows, t, d], gate [rows, t, d], contexts, pool, max_pools)
+                          #  -> (kw, gw) [rows*max_pools, pool, d]: each row's window (ring's earlier tokens, then this step's)
+    addresses: object     # (contexts, block rows, per, block stride, layer offset, pool, tokens, max_pools, capacity)
+                          #  -> (counts [rows] i64: pools completed this step, slots [rows, max_pools] i64: their records)
 
 
 def swiglu_clamped(g: torch.Tensor, u: torch.Tensor, limit: float) -> torch.Tensor:
@@ -181,8 +199,10 @@ def reference() -> Lanes:
             out.index_add_(0, rows, y.float() * w[rows, k][:, None])
         return out.to(x.dtype)
 
+    from engine.modules import sparse_indexer as si
     return Lanes("reference", conv_prefill, kda_chunk, kda_recurrent, pre, mhc_post, logits, kpool_compress,
-                 mla_sparse_mqa, moe, fwht128_quant, pool_slots, kda_output_norm)
+                 mla_sparse_mqa, moe, fwht128_quant, pool_slots, kda_output_norm,
+                 decode_rows=DecodeRows(si.row_lengths, si.latent_write_rows, si.gather_candidates, si.pool_window, si.pool_addresses))
 
 
 MOE_STATIC_STOCK = "stock"          # the §15~18 judged default of STK_moe_static
@@ -229,7 +249,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     from engine.kernels.deep_gemm import fp8_fp4_mqa_logits
     from engine.kernels.kpool import compress_pool_keys, fwht128_quant_fp8
     from engine.kernels import mla as mk
-    from engine.kernels.indexer import pool_slots
+    from engine.kernels.indexer import pool_slots, row_lengths, latent_write_rows, gather_candidates, pool_window, pool_addresses
     mk.configure_prefill(mla_prefill)
     ref = reference()
     # ModelOpt keeps the first three dense MLPs in packed NVFP4.  Above the
@@ -487,6 +507,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                   conv_ring=None if "conv_prefill" in reference_for else on_main(causal_conv1d_ring),
                   kda_recurrent_ring_rows=None if recurrent_kda_ring_rows is None else on_main(recurrent_kda_ring_rows),
                   conv_ring_rows=None if "conv_prefill" in reference_for else on_main(causal_conv1d_ring_rows),
+                  decode_rows=DecodeRows(*(on_main(f) for f in (row_lengths, latent_write_rows, gather_candidates, pool_window, pool_addresses))),
                   rmsnorm=on_main(norm), swiglu=on_main(activation),
                   route_weights=on_main(route_weights), layernorm=on_main(layernorm))
     # 45차 §21 bisect: any other lane named in `reference_for` runs on the torch reference in this table

@@ -25,8 +25,11 @@ def extension():
     key, directory, sources = prepare_sources(root, [source], (flags, torch.__version__, torch.version.cuda))
     ext = load(name="st_dense_"+key, sources=list(sources), extra_cuda_cflags=flags,
                build_directory=str(directory), verbose=False)
-    if tuple(ext.probe_device())[:3] != (12, 1, 48):
-        raise RuntimeError("native dense lane requires GB10 SM121 with 48 SMs")
+    from engine.base.kernel_shape import bound
+    device = bound().device
+    if tuple(ext.probe_device())[:3] != (*device.capability, device.sms):
+        raise RuntimeError(f"native dense lane requires GB10 SM{device.capability[0]}{device.capability[1]} "
+                           f"with {device.sms} SMs")
     return ext
 
 

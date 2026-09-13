@@ -41,12 +41,17 @@ def _write_context(C, Weights, Inv, Positions, Slots, Valid, Field,
         tl.store(dest + W * FIELD_HK * D + d, value)
 
 
+def _draft_head() -> int:
+    from engine.base.kernel_shape import drafter
+    return drafter().head_dim
+
+
 def write_context(field, slots, positions, context, weights, valid, eps, theta):
-    """context [n,t,layers,2,local_kv,128] -> field [slots,layers,2,window,kv,128]."""
+    """context [n,t,layers,2,local_kv,D] -> field [slots,layers,2,window,kv,D], D the bound drafter's head."""
     if context.ndim != 6 or positions.ndim != 2 or field.ndim != 6:
         raise ValueError('draft context and field must be six-dimensional with [n,t] positions')
     n, t, layers, planes, heads, dim = context.shape
-    if (planes != 2 or dim != 128 or field.shape[1:3] != (layers, 2) or field.shape[-1] != dim
+    if (planes != 2 or dim != _draft_head() or field.shape[1:3] != (layers, 2) or field.shape[-1] != dim
             or heads > field.shape[-2] or t > field.shape[3] or positions.shape != (n, t)
             or slots.shape != (n,) or valid.shape != (n,) or weights.shape != (layers, dim)
             or any(x.dtype != torch.int64 for x in (slots, positions, valid))

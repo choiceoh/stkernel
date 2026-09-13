@@ -39,6 +39,35 @@ def chunk_for(token_budget: int, draft_slots: int = 0) -> int:
     return base_chunk_for(align, token_budget, draft_slots)
 
 
+def kernel_shape(c: "dict | None" = None, tp: int = 4, spec_k: int = 1) -> "KernelShape":
+    """Qwen3.8-Flash-Next's kernel shape (engine/base/kernel_shape) from its text config.
+
+    Per rank at TP=4 the way plan.py places it: query heads and GDN heads split by heads, KV heads
+    replicated when fewer than tp, routed experts EXPERT-parallel (a rank holds `experts // tp`
+    whole experts, so `inter_local` is the model's `inter`), the shared expert TP-sharded. GDN's
+    decay is per head; the checkpoint is NVFP4 (D5) with a plain gated SiLU, so the MoE lane is
+    admitted for `silu` without a clamp. `spec_k` is the MTP head's one draft. A width the config
+    lacks (the shared expert's) counts as 0: that lane is not served for this model.
+    """
+    from engine.base.kernel_shape import Attention, Comm, Indexer, KernelShape, LinearAttention, MoE
+    c = text_config() if c is None else c
+    hidden = c["hidden_size"]
+    return KernelShape(
+        comm=Comm(world=tp, hidden=hidden), hidden=hidden, hc=c["hc_count"], tp=tp,
+        attention=Attention(kind="gqa", heads=c["num_attention_heads"] // tp, head_dim=c["head_dim"],
+                            kv_heads=max(1, c["num_key_value_heads"] // tp)),
+        linear=LinearAttention(heads=c["linear_num_key_heads"] // tp, v_heads=c["linear_num_value_heads"] // tp,
+                               k_dim=c["linear_key_head_dim"], v_dim=c["linear_value_head_dim"],
+                               conv=c["linear_conv_kernel_dim"], decay="head"),
+        indexer=Indexer(heads=c["indexer_kv_heads"], head_dim=c["indexer_head_dim"],
+                        pool=c["indexer_compress_ratio"], topk=c["indexer_budget"]),
+        moe=MoE(experts=c["num_experts"], experts_local=c["num_experts"] // tp, hidden=hidden,
+                inter=c["moe_intermediate_size"], inter_local=c["moe_intermediate_size"],
+                topk=c["num_experts_per_tok"], quant="nvfp4", activation=c.get("hidden_act", "silu"),
+                swiglu_limit=None, dense_inter_local=c.get("shared_expert_intermediate_size", 0) // tp),
+        spec_k=spec_k)
+
+
 if __name__ == "__main__":
     cs = constraints(); w = max(len(k.name) for k in cs)
     for k in cs:

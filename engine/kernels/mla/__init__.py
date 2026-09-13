@@ -48,6 +48,20 @@ def configure_prefill(mode: str) -> None:
     ENABLE_MLA_PREFILL32 = want
 
 
+def _bound():
+    from engine.base.kernel_shape import bound
+    return bound()
+
+
+def _check_cell():
+    """The kernel is compiled for one attention cell (MLA_H heads over an MLA_D latent per rank);
+    a bound kernel shape that differs is refused by name before anything is armed (D3)."""
+    a = _bound().attention
+    if (a.kind, a.heads, a.head_dim) != ("mla", MLA_H, MLA_D):
+        raise RuntimeError(f"ST MLA is compiled for the {MLA_H} heads x {MLA_D} latent MLA cell; "
+                           f"the bound kernel shape asks for {a}")
+
+
 def _build():
     global _EXT
     if _EXT is not None:
@@ -81,10 +95,13 @@ def maybe_arm():
     import torch
     if torch.cuda.is_current_stream_capturing():
         raise RuntimeError("ST MLA must be warmed before CUDA graph capture")
+    _check_cell()
     ext = _build()
     major, minor, sms, _ = ext.probe_device()
-    if (major, minor, sms) != (12, 1, 48):
-        raise RuntimeError(f"ST MLA requires GB10 SM121/48 SMs, got {major}.{minor}/{sms}")
+    device = _bound().device
+    if (major, minor) != device.capability or sms != device.sms:
+        raise RuntimeError(f"ST MLA requires GB10 SM{device.capability[0]}{device.capability[1]}/{device.sms} SMs, "
+                           f"got {major}.{minor}/{sms}")
     _MLA_CLUSTER_MAX = int(ext.mla_cluster_max()) if ENABLE_MLA_CLUSTER else 0
     if not _selftest_mla():
         raise RuntimeError("ST MLA numerical self-test failed")
