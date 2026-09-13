@@ -124,7 +124,7 @@ def indexer_check(report, ranks):
 
 
 def wide_check(report, ranks):
-    from engine.kernels.dense import DenseLinear, W4Pack, w4_gemm, extension
+    from engine.kernels.dense import DenseLinear, W4Pack, extension
     from engine.profiles.glm53.weights import rank_loader
     path = rank_path(ranks)
     loader = rank_loader(path)
@@ -143,16 +143,16 @@ def wide_check(report, ranks):
                 backing = torch.full((rows, p.cols + 8), float('nan'), device='cuda', dtype=torch.bfloat16)
                 x = backing[:, 4:4+p.cols]
                 x.normal_()
-                def candidate():
+                def run_component(optimized):
                     outputs = []
                     for pack in packs:
                         y = torch.empty(rows, pack.rows, dtype=x.dtype, device=x.device)
-                        ext.run_gemm_wide_input(x, pack.data, pack.scale, y, pack.rows,
-                                                1., 0, pack.rowscale.data_ptr(), 0, 0, 0)
+                        run = ext.run_gemm_wide_input if optimized else ext.run_gemm
+                        run(x, pack.data, pack.scale, y, pack.rows, 1., 0, pack.rowscale.data_ptr(), 0, 0, 0)
                         outputs.append(y)
                     return outputs
                 graphs, outputs = [], []
-                base = lambda: [w4_gemm(x, pack) for pack in packs]
+                base, candidate = lambda: run_component(False), lambda: run_component(True)
                 try:
                     for fn in (base, candidate):
                         graph, output = _capture(fn)
