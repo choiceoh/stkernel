@@ -29,6 +29,7 @@ build and load from `a606f65d`, with no GPU initialized or opened. The integrate
 CUDA source has the same SHA-256. All new emitted kernels have zero local bytes;
 single-token mHC uses 80 registers versus 128 for the packed baseline. Eleven
 focused CPU tests and Python syntax/whitespace checks passed after integration.
+The integrated Linux fleet/onepass suite also passed all 48 tests in 21.616 s.
 GPU numerical results and timings remain pending; all five serving defaults
 remain unchanged until those results select a candidate.
 
