@@ -4071,6 +4071,17 @@ def _short_prefill_q0_word_unpack(*, m, tp_sf6_q0, reform_sf_pack, ep_local):
             and reform_sf_pack and not ep_local)
 
 
+def _prefill_scale_expansion_eligible(*, m, E, k, n, num_topk, tile_m,
+                                     quant_mode, tiled, activation,
+                                     swiglu_alpha, swiglu_beta, swiglu_limit,
+                                     share_input_across_experts):
+    return (type(m) is int and 64 < m <= 32768
+            and (E, k, n, num_topk, tile_m) == (288, 4096, 512, 8, 128)
+            and quant_mode == 'nvfp4' and tiled and not share_input_across_experts
+            and (activation, swiglu_alpha, swiglu_beta, swiglu_limit)
+                == ('swigluoai_uninterleave', 1., 0., 10.))
+
+
 def _get_dynamic_kernel(
     E: int,
     m: int,
@@ -4093,6 +4104,7 @@ def _get_dynamic_kernel(
     tiled: bool = False,
     reform_sf_pack: bool = False,
     _tp_sf6_q0_override: bool | None = None,
+    _prefill_scale_expansion: bool = False,
 ):
     """Compile (or retrieve cached) the SM120 dynamic MoE kernel.
 
@@ -4199,6 +4211,17 @@ def _get_dynamic_kernel(
         if torch.cuda.get_device_capability() != (12,1) or not stock_contract_matches():
             raise RuntimeError("TP SF6 Q0 requires pinned SM121 source")
 
+    if type(_prefill_scale_expansion) is not bool:
+        raise TypeError("prefill scale expansion override must be bool")
+    if _prefill_scale_expansion and (reform_sf_pack or ep_local_cls is not None
+            or (m <= 8192 and not tp_sf6_q0)
+            or not _prefill_scale_expansion_eligible(
+                m=m, E=E, k=k, n=n, num_topk=num_topk, tile_m=tile_m,
+                quant_mode=quant_mode, tiled=tiled, activation=activation,
+                swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+                swiglu_limit=swiglu_limit, share_input_across_experts=share_input_across_experts)):
+        raise ValueError("expanded scales require the exact eager GLM prefill arithmetic")
+
     cache_key = _dynamic_kernel_cache_key(
         activation_precision=activation_precision,
         quant_mode=quant_mode,
@@ -4237,6 +4260,8 @@ def _get_dynamic_kernel(
         ep_local=ep_local_cls is not None)
     if short_word_unpack:
         cache_key = (*cache_key, 'short_prefill_q0_words_v1')
+    if _prefill_scale_expansion:
+        cache_key = (*cache_key, 'temporary_prefill_raw_scales_v1')
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -4278,6 +4303,9 @@ def _get_dynamic_kernel(
                 f"kernel for prefill; the dispatcher selected {type(kernel).__name__}"
             )
         tiled_cls = MoEGatedDynamicKernelRawQ0 if tp_sf6_q0 else MoEGatedDynamicKernelTiled
+        if _prefill_scale_expansion and not tp_sf6_q0:
+            from .moe_dynamic_prefill_raw_route import MoEGatedDynamicKernelPrefillRawRoute
+            tiled_cls = MoEGatedDynamicKernelPrefillRawRoute
         tiled_kwargs = {}
         if reform_sf_pack:
             from .moe_dynamic_gated_sf6 import MoEGatedDynamicKernelSF6
@@ -4504,6 +4532,10 @@ def _get_dynamic_kernel(
         ),
         extra_key_files=_kernel_source_files() + (
             tuple(os.path.join(os.path.dirname(__file__), name) for name in
+                  ("moe_dynamic_prefill_raw_route.py", "moe_dynamic_gated_sf6_prefill.py",
+                   "moe_dynamic_gated_raw_q0.py", "moe_dynamic_gated_sf6_q0.py"))
+            if _prefill_scale_expansion else ()) + (
+            tuple(os.path.join(os.path.dirname(__file__), name) for name in
                   ("moe_dynamic_gated_sf6_words.py", "moe_dynamic_gated_sf6_prefill.py"))
             if prefill_word_unpack else ()) + (
             tuple(os.path.join(os.path.dirname(__file__), name) for name in
@@ -4578,6 +4610,7 @@ def launch_sm120_dynamic_moe(
     activation_precision: str = "fp4",
     quant_mode: str = "nvfp4",
     _tp_sf6_q0_override: bool | None = None,
+    _prefill_scale_expansion: bool = False,
 ) -> torch.Tensor:
     """Launch the SM120 dynamic MoE kernel."""
     global _TP_SF6_Q0_LAUNCH_LOGGED
@@ -4600,7 +4633,26 @@ def launch_sm120_dynamic_moe(
     if direct_sf6:
         from .moe_dynamic_gated_sf6 import stock_contract_matches
         direct_sf6 = bool(stock_contract_matches())
-    sf1_address, sf2_address = _scale_runtime_addresses(weights, direct_sf6=direct_sf6)
+    if type(_prefill_scale_expansion) is not bool:
+        raise TypeError("prefill scale expansion override must be bool")
+    expanded_scales = None
+    if _prefill_scale_expansion:
+        if not direct_sf6 or not _prefill_scale_expansion_eligible(
+                m=num_tokens, E=num_experts, k=k, n=n, num_topk=top_k,
+                tile_m=workspace.tile_m, quant_mode=quant_mode,
+                tiled=bool(getattr(weights, "tiled", False)), activation=activation,
+                swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+                swiglu_limit=swiglu_limit, share_input_across_experts=input_gs_is_shared):
+            raise ValueError("temporary expansion requires exact packed GLM prefill weights")
+        from .moe_sf6_prefill_scales import expand_scales
+        # Keep both owners through submission. They are produced and consumed
+        # on the same execution stream; no aliases are installed on weights.
+        expanded_scales = expand_scales(weights.reform_scales, experts=num_experts,
+                                       hidden=k, intermediate=n)
+        sf1_address, sf2_address = (v.data_ptr() for v in expanded_scales)
+        direct_sf6 = False
+    else:
+        sf1_address, sf2_address = _scale_runtime_addresses(weights, direct_sf6=direct_sf6)
     ep_local = _ep_local_prefill_kernel(
         E=num_experts, m=num_tokens, k=k, n=n, num_topk=top_k,
         tile_m=workspace.tile_m, activation=activation, swiglu_alpha=swiglu_alpha,
@@ -4636,6 +4688,7 @@ def launch_sm120_dynamic_moe(
         tiled=bool(getattr(weights, "tiled", False)),
         reform_sf_pack=direct_sf6,
         _tp_sf6_q0_override=_tp_sf6_q0_override,
+        _prefill_scale_expansion=_prefill_scale_expansion,
     )
 
     # Dynamic kernel: runtime-shaped args are DataPointer (pass data_ptr()),
