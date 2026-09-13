@@ -9,7 +9,7 @@ import time
 def check(ranks, *, capacity=False):
     rows = []
     root = Path(__file__).resolve().parents[1]
-    lanes = ([('moe_batch', 240), ('moe_stage_fc1', 180), ('moe_stage_fc2', 180), ('router_batch', 120)]
+    lanes = ([('moe_batch', 240), ('moe_stage_fc1_shared', 180), ('moe_stage_fc2', 180), ('router_batch', 120)]
              if capacity else [('mhc_single', 240), ('moe_waves', 300),
                                ('input_pack', 180), ('short_gemm', 180), ('shared_direct', 180)])
     for lane, seconds in lanes:

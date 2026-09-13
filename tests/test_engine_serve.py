@@ -964,6 +964,17 @@ class CancelTests(unittest.TestCase):
                 threading.Event().wait(0.001)
             self.assertTrue(s._active)
             sock.close()                                              # the client leaves mid-generation
+            # A CPU fake can finish all 40 steps before the HTTP thread's
+            # next disconnect poll, especially under a container CPU quota.
+            # Keep the row live until the real socket watcher posts its
+            # cancellation; the step loop must then apply that request.
+            for _ in range(2000):
+                with s._lock:
+                    detected = bool(s._cancels)
+                if detected:
+                    break
+                threading.Event().wait(0.001)
+            self.assertTrue(detected, "the HTTP watcher did not detect the closed socket")
             for _ in range(4000):
                 s.once()
                 if not s._active:

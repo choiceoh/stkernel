@@ -31,7 +31,7 @@ def moe_check(report, ranks, lane_name):
     base = md._parse_glm53_static_v2('t,r,sf6')
     if lane_name == 'moe_batch':
         row_cases, candidate = (14, 21, 28), dict(base, probe_batch_reform=True)
-    elif lane_name == 'moe_stage_fc1':
+    elif lane_name == 'moe_stage_fc1_shared':
         row_cases, candidate = (7,), dict(base, fc1=3, fc2=1, probe_shared_epilogue=True)
     elif lane_name == 'moe_stage_fc2':
         row_cases, candidate = (7,), dict(base, fc1=1, fc2=3)
@@ -81,7 +81,8 @@ def moe_check(report, ranks, lane_name):
                        unique_experts=unique, max_expert_rows=(rows*8+unique-1)//unique,
                        relative_max=max(errors), repeat_relative=spreads,
                        changed_routing_replay=True, tile_m=16,
-                       fc1_stages=candidate['fc1'], fc2_stages=candidate['fc2'])
+                       fc1_stages=candidate['fc1'], fc2_stages=candidate['fc2'],
+                       shared_epilogue=bool(candidate.get('probe_shared_epilogue')))
             route.zero_()
             for graph in pair:
                 graph.replay()
