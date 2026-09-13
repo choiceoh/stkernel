@@ -304,7 +304,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertGreater(grade.lineno, windows.end_lineno)
         self.assertGreater(grade.lineno, end.end_lineno)
 
-    def test_canonical_main_records_all_nine_c1_and_36_c4_cases(self):
+    def _check_canonical_coverage(self, run_index=None):
         self.addCleanup(setattr, onepass, '_RUN', None)
         from tests.test_onepass_channel_diagnostics import scanner
         cq = SimpleNamespace(MODEL='fixture', filler=lambda n, r: '')
@@ -334,7 +334,9 @@ class IntegrationTests(unittest.TestCase):
                                                    _parse_spec_metrics=lambda x: {}),
                    'bracket.py': SimpleNamespace(_git_sha=lambda: 'fixture', _StepWindows=Windows,
                        _spec_delta=lambda a, b: (0, 0), spec_k_eff=lambda a, b: 6)}
-        with TemporaryDirectory() as root, patch.dict(os.environ, {}, clear=True), \
+        environment = {'ONEPASS_RUN_INDEX': str(run_index)} if run_index is not None else {}
+        include_c4 = run_index in (None, 1)
+        with TemporaryDirectory() as root, patch.dict(os.environ, environment, clear=True), \
              patch.object(sys, 'argv', ['onepass.py', '--out', str(Path(root) / 'ledger.jsonl')]), \
              patch.object(onepass, '_load', side_effect=lambda name, module: modules[name]), \
              patch.object(onepass, '_served_build', return_value={}), \
@@ -345,23 +347,43 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(onepass.main(), 2)
             record = json.loads((Path(root) / 'ledger.jsonl').read_text())
             self.assertEqual((record['quality']['ok'], record['quality']['total']), (9, 9))
-            self.assertEqual((record['quality_c4']['ok'], record['quality_c4']['total']), (36, 36))
+            if include_c4:
+                self.assertEqual((record['quality_c4']['ok'], record['quality_c4']['total']), (36, 36))
+            else:
+                self.assertIsNone(record['quality_c4'])
+                self.assertEqual(record['c4'], [])
+            self.assertEqual(record['concurrency_coverage'], dict(policy='c1-twice-c4-once-v1',
+                included=[1, 4] if include_c4 else [1],
+                c4_status='measured' if include_c4 else 'omitted_after_run_1'))
             grades = [json.loads(s) for s in (Path(record['artifacts']) / 'quality.jsonl').read_text().splitlines()]
-            self.assertEqual(len(grades), 25)
-            self.assertEqual({r['phase'] for r in grades}, {'measure-c1'} | {
-                f"measure-c4-{item['ctx']}-q{item['question']}" for item in items})
+            self.assertEqual(len(grades), 25 if include_c4 else 5)
+            expected_phases = {'measure-c1'}
+            if include_c4:
+                expected_phases |= {f"measure-c4-{item['ctx']}-q{item['question']}" for item in items}
+            self.assertEqual({r['phase'] for r in grades}, expected_phases)
             self.assertEqual(record['recording']['status'], 'complete')
             self.assertFalse(record['steady_state']['valid'])
             requests = [json.loads(s) for s in (Path(record['artifacts']) / 'requests.jsonl').read_text().splitlines()]
             diagnostics = [r for r in requests if r['phase'].startswith('diagnostic-')]
-            self.assertEqual(len(diagnostics), 15)
+            self.assertEqual(len(diagnostics), 15 if include_c4 else 3)
+            self.assertEqual({r['concurrency'] for r in requests}, {1, 4} if include_c4 else {1})
+            if not include_c4:
+                self.assertFalse(any('c4' in r['phase'] for r in requests))
             self.assertEqual({(r['max_tokens'], r['min_tokens'], r['reasoning_budget']) for r in diagnostics},
                              {(64, 64, 32)})
             measured = [r for r in requests if not r['phase'].startswith('diagnostic-')]
-            self.assertEqual(len(measured), 50)
+            self.assertEqual(len(measured), 50 if include_c4 else 10)
             self.assertEqual({(r['max_tokens'], r['reasoning_budget']) for r in measured},
                              {(16384, 8192), (49152, 24576)})
         onepass._RUN = None
+
+    def test_canonical_main_records_all_nine_c1_and_36_c4_cases(self):
+        for run_index in (None, 1):
+            with self.subTest(run_index=run_index):
+                self._check_canonical_coverage(run_index)
+
+    def test_second_run_keeps_all_c1_work_without_any_c4_requests(self):
+        self._check_canonical_coverage(2)
 
     def test_changed_quality_protocol_cannot_reuse_a_baseline(self):
         import judge
