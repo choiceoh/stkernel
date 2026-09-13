@@ -60,38 +60,42 @@ class CUDA:
         self.cupti.cuptiGetGraphNodeId.argtypes = [C.c_void_p, C.POINTER(C.c_ulonglong)]
 
     @staticmethod
-    def check(code):
+    def check(code, operation='CUDA graph inspection'):
         if code:
-            raise RuntimeError(f'CUDA graph inspection returned {code}')
+            raise RuntimeError(f'{operation} returned {code}')
 
     def frontier(self, stream):
         status, ident, graph = C.c_int(), C.c_ulonglong(), C.c_void_p()
         deps, n = C.POINTER(C.c_void_p)(), C.c_size_t()
         edges = C.POINTER(_EdgeData)()
         self.check(self.capture_info(stream, C.byref(status), C.byref(ident), C.byref(graph), C.byref(deps),
-                                     *([C.byref(edges)] if self.edge_data else []), C.byref(n)))
+                                     *([C.byref(edges)] if self.edge_data else []), C.byref(n)), 'cudaStreamGetCaptureInfo')
         if status.value != 1:
             raise RuntimeError('semantic boundary is outside an active CUDA capture')
         return graph.value, tuple(deps[i] for i in range(n.value))
 
     def topology(self, graph):
         n = C.c_size_t()
-        self.check(self.rt.cudaGraphGetNodes(graph, None, C.byref(n)))
+        self.check(self.rt.cudaGraphGetNodes(graph, None, C.byref(n)), 'cudaGraphGetNodes(size)')
         if n.value > 50000:
             raise RuntimeError('graph exceeds 50000-node attribution bound')
+        if not n.value:
+            return {}, {}
         nodes = (C.c_void_p * n.value)()
-        self.check(self.rt.cudaGraphGetNodes(graph, nodes, C.byref(n)))
+        self.check(self.rt.cudaGraphGetNodes(graph, nodes, C.byref(n)), 'cudaGraphGetNodes(data)')
         ids = {}
         for node in nodes:
             ident = C.c_ulonglong()
-            self.check(self.cupti.cuptiGetGraphNodeId(node, C.byref(ident)))
+            self.check(self.cupti.cuptiGetGraphNodeId(node, C.byref(ident)), 'cuptiGetGraphNodeId')
             ids[node] = str(ident.value)
         n = C.c_size_t()
-        self.check(self.get_edges(graph, None, None, *([None] if self.edge_data else []), C.byref(n)))
+        self.check(self.get_edges(graph, None, None, *([None] if self.edge_data else []), C.byref(n)), 'cudaGraphGetEdges(size)')
+        parents = {node: [] for node in ids}
+        if not n.value:
+            return ids, parents  # CUDA refuses non-null output arrays with zero capacity.
         a, b = (C.c_void_p * n.value)(), (C.c_void_p * n.value)()
         edges = (_EdgeData * n.value)()
-        self.check(self.get_edges(graph, a, b, *([edges] if self.edge_data else []), C.byref(n)))
-        parents = {node: [] for node in ids}
+        self.check(self.get_edges(graph, a, b, *([edges] if self.edge_data else []), C.byref(n)), 'cudaGraphGetEdges(data)')
         for source, target in zip(a[:n.value], b[:n.value]):
             parents[target].append(source)
         return ids, parents
