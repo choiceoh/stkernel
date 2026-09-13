@@ -577,8 +577,10 @@ class KernelBudgetTests(unittest.TestCase):
         cost = sim.composed_cost(routing="measured")
         self.assertAlmostEqual(cost.decode_ms_by_ctx[2000], 51.4, delta=0.2)
         self.assertAlmostEqual(cost.decode_ms_by_ctx[128000], 55.4, delta=0.2)
-        # 폭 계수는 4행 조립에서 풀린다 — "폭 미계수" 상태가 아니다
-        self.assertAlmostEqual(cost.decode_ms_per_row, (113.5 - 51.4) / 3, delta=0.3)
+        # 폭 계수는 플릿 실측(#838 §3)으로 못박고 조립값과 5% 안에서 일치한다
+        self.assertAlmostEqual(cost.decode_ms_per_row, 21.03, delta=0.1)
+        self.assertLess(abs(cost._composed_row_crosscheck - cost.decode_ms_per_row)
+                        / cost.decode_ms_per_row, 0.05)
         self.assertAlmostEqual(cost.prefill_ms_per_token, 0.2879, delta=0.0005)
         self.assertAlmostEqual(cost.prefill_fixed_ms_per_chunk, 269.5 + 110.0, delta=1.0)
         art = sim.composed_cost(routing="artifact")
@@ -592,3 +594,30 @@ class KernelBudgetTests(unittest.TestCase):
         self.assertIn(3, widths)                       # 세 행이 한 스텝에 함께 디코드
         waits = [q["queue_wait_s"] for q in out["requests"]]
         self.assertGreater(max(waits), 0.0)            # 동시 도착: 직렬 프리필 뒤에 줄이 선다
+
+    def test_coexist_penalty_only_beside_live_decoders(self):
+        # 혼자 프리필(하네스 순차)에는 벌이 없다 — 11개 기록 폴드아웃이 지키던 불변
+        cost = sim.CostModel(k=0, acc=0.0, decode_ms=5.0,
+                             prefill_ms_per_token=0.1, prefill_fixed_ms_per_chunk=100.0,
+                             prefill_tok_s={}, name="co")
+        out = sim.run_once([512, 512], 64, CONTRACT, cost=cost, can_async=False,
+                           closed_loop=True)
+        first, second = out["requests"]
+        self.assertAlmostEqual(second["ttft_s"], (0.1 * 512 + 100.0) / 1e3, delta=0.03)
+        # 동시 도착: 둘째의 프리필은 디코더 옆 — 공존 벌 1.27× 이상
+        out2 = sim.run_once([512, 512], 256, CONTRACT, cost=cost, can_async=False)
+        a, b = sorted(out2["requests"], key=lambda q: q["seq"])
+        solo = (0.1 * 512 + 100.0) / 1e3
+        self.assertGreaterEqual(b["ttft_s"], solo * 1.2)
+
+    def test_width_from_fleet_stage_table(self):
+        # #838 §3 CUDA 이벤트 스테이지 표(2K): rows1 47.7 → rows4 110.8 → per_row 21.0
+        folded = sim.fold_width_from_stage(sim.STAGE_WIDTH_2K)
+        self.assertAlmostEqual(folded["decode_ms_per_row"], (110.8 - 47.7) / 3, delta=0.01)
+        # 조립(composed)의 폭은 플릿 실측으로 못박고, 조립값과의 차가 교차검증이다
+        cost = sim.composed_cost(routing="measured")
+        self.assertAlmostEqual(cost.decode_ms_per_row, 21.03, delta=0.05)
+        self.assertAlmostEqual(cost._composed_row_crosscheck, 20.7, delta=0.6)
+        self.assertLess(abs(cost._composed_row_crosscheck - cost.decode_ms_per_row)
+                        / cost.decode_ms_per_row, 0.05)
+        self.assertEqual(folded["decode_ms"], 47.7)
