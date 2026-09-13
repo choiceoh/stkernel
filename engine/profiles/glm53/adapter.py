@@ -48,6 +48,8 @@ class Glm53Engine:
         if self.execution_plan.active and getattr(F, "kda_state_dtype", "fp32") != "fp32":
             raise ValueError("GB10 execution experiments require FP32 KDA state")
         self.drafter = drafter or NullDrafter()
+        if self.execution_plan.decode_iterations > 1 and not self.drafter.k:
+            raise ValueError("bounded decode requires a speculative drafter")
         if self.drafter.k > F.spec_k:
             raise ValueError(f"drafter proposes {self.drafter.k} > spec_k {F.spec_k}: the rings are sized for {F.spec_k}")
         self.aux_layers = list(aux_layers) if aux_layers is not None else list(self.drafter.aux_layers)
@@ -141,7 +143,11 @@ class Glm53Engine:
             self.sampling_graphs = SamplingGraphs(self.decode_graphs, self.gen, self.decodable, self.top_p)
             if self.drafter.k:
                 from engine.profiles.glm53.pipeline import AsyncDecode
-                self.pipeline = AsyncDecode(self)
+                if self.execution_plan.decode_iterations > 1:
+                    from engine.profiles.glm53.burst_decode import BurstDecode
+                    self.pipeline = BurstDecode(self, self.execution_plan.decode_iterations)
+                else:
+                    self.pipeline = AsyncDecode(self)
             if self.memory is not None:
                 self.memory.checkpoint("ready")
                 self.memory.ready = True
@@ -247,7 +253,7 @@ class Glm53Engine:
                         if self.async_ready(rows):
                             t0 = time.perf_counter()
                             pending = []
-                            for _ in range(self.pipeline.depth):
+                            for _ in range(1 if hasattr(self.pipeline, "reserve_steps") else self.pipeline.depth):
                                 caches.pool.reserve_to(rows, [self.horizon(r) for r in rows])
                                 pending.append(self.decode_async(rows, [caches.pool.row(r) for r in rows], slots))
                             for step in pending:
@@ -365,6 +371,14 @@ class Glm53Engine:
             self.memory.checkpoint(f"warm kernels {widths}")
 
     def close_decode(self):
+        pipeline = getattr(self, "pipeline", None)
+        if pipeline is not None:
+            if hasattr(pipeline, "close"):
+                pipeline.close()
+            else:
+                while pipeline.pending:
+                    pipeline.pending[0].resolve()
+        self.pipeline = None
         if self.sampling_graphs is not None:
             self.sampling_graphs.close()
             self.sampling_graphs = None
@@ -710,7 +724,12 @@ class Glm53Engine:
 
     def horizon(self, seq: int) -> int:
         """The exclusive end of the row's next decode writes -- and of every step launched ahead of the host (B3)."""
-        return self.ctx[seq] + (1 + self.drafter.k) * (1 + self.inflight.get(seq, 0))
+        pipeline = getattr(self, "pipeline", None)
+        span = pipeline.reserve_steps(seq) if hasattr(pipeline, "reserve_steps") else 1
+        base = self.ctx[seq] + (1 + self.drafter.k) * (1 + self.inflight.get(seq, 0))
+        if span == 1:
+            return base
+        return max(base, min(self.max_context, base + (span - 1) * (1 + self.drafter.k)))
 
     # -- decode steps ahead of the host (pipeline.py, 45차 §23 B3) ------------------------------------------------
     def _plain_ahead(self, seq: int) -> bool:
@@ -736,7 +755,9 @@ class Glm53Engine:
         budget = opts.get("reasoning_budget")
         if budget is None or not self.thinking.get(seq, False):
             return False
-        ahead = (self.inflight.get(seq, 0) + 1) * (self.drafter.k + 1)
+        pipeline = getattr(self, "pipeline", None)
+        span = pipeline.reserve_steps(seq) if hasattr(pipeline, "reserve_steps") else 1
+        ahead = (self.inflight.get(seq, 0) + span) * (self.drafter.k + 1)
         if self._generated_count(seq) + ahead < budget:
             return False
         if opts["reasoning_end"] in self.tokens[seq][self.prompt_len[seq]:]:

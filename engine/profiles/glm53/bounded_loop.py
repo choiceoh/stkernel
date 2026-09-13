@@ -1,9 +1,4 @@
-"""Stop policy for a deterministic, already-reserved GB10 decode burst.
-
-The serving Runner still resolves each step separately. A production adapter
-must reserve the whole burst and retain per-iteration tokens/boundaries before
-it can use this executor; this module deliberately introduces no boot knob.
-"""
+"""Rank-agreed stop policy for the serving burst's pre-reserved decode steps."""
 import torch
 
 

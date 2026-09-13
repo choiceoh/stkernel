@@ -378,6 +378,10 @@ class Glm53DecodeGraphs:
         step's commit, not the host's view). `host_step` carries the segments the block tables are prepared from --
         its contexts may lag the device's; the reservation covers the lag."""
         self.caches.prepare(host_step)
+        return self.run_inputs(shape, ids, contexts, seqs, slots)
+
+    def run_inputs(self, shape, ids, contexts, seqs, slots):
+        """Device-only fill/replay; the caller already published reserved block mappings."""
 
         def fill(inputs):
             target, seqs_in, slots_in, _, _ = inputs

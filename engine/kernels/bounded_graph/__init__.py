@@ -22,15 +22,17 @@ class BoundedGraph:
     The caller must authorize the first iteration, preserve outputs for every
     iteration (using count as the log index), and publish a rank-agreed stop in
     the body. Only deterministic bodies are supported: captured RNG offsets
-    cannot be reused this way. This primitive is not connected to serving yet.
+    cannot be reused this way. Timings include the body and its stop agreement.
     """
     def __init__(self, body, count, stop, limit, *, owners=()):
         if type(limit) is not int or limit not in (1, 2, 4):
             raise ValueError("bounded graph supports 1, 2 or 4 iterations")
         self.body, self.owners = body, tuple(owners)
         self.count, self.stop = count, stop
+        import torch
+        self.timings = torch.empty(4, 2, dtype=torch.int64, device=count.device)
         self.native = build().BoundedGraph(body.raw_cuda_graph(), count, stop, limit,
-                                          (body, *self.owners))
+                                          self.timings, (body, *self.owners))
 
     def replay(self):
         if self.native is None:

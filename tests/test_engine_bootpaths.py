@@ -53,7 +53,7 @@ class BootPathTests(unittest.TestCase):
                  patch.object(boot, "build", side_effect=StopAtBuild) as build:
                 declared.return_value.__getitem__.side_effect = lambda k: {
                     "execution_overlap": 0, "early_observe": 0, "prefill_tiles": 1, "direct_mhc": 0, "prefill_project_tiles": 0,
-                    "nvme_mapped_staging": 0,
+                    "nvme_mapped_staging": 0, "decode_iterations": 1,
                     "moe_static": "t,r,sf6,q0", "mla_prefill": "tile32", "context_ceiling": 0,
                     "execution": "native", "kda_state_dtype": "fp32"}[k]
                 with self.assertRaises(StopAtBuild):

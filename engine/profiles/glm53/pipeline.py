@@ -241,6 +241,66 @@ class AsyncDecode:
         ids[:, 0] = b["anchor"]
         ids[:, 1:] = b["drafts"]
 
+    def iterate(self, shape, b, host_step=None, *, measured=False, stage_clock=None):
+        """One shared target/commit/observe/propose chain; no host readback.
+
+        With no host_step, block mappings were already published before launch.
+        Bounded capture calls the same chain with stage events disabled.
+        """
+        from contextlib import nullcontext
+        e, t, n = self.e, self.t, len(b["ctx"])
+        mark = stage_clock.mark if stage_clock is not None else self.clock.mark if measured else lambda name: nullcontext()
+        with mark("forward"):
+            if host_step is None:
+                h, aux, local = e.decode_graphs.run_inputs(shape, b["ids"], b["ctx"], b["seqs"], b["slot"])
+            else:
+                h, aux, local = e.decode_graphs.run_device(shape, host_step, b["ids"], b["ctx"], b["seqs"], b["slot"])
+        if b["stochastic"]:
+            # the model's dtype, not fp32: the sampler converts as it reads, and the undecodable tail
+            # is a width it stops at rather than a copy of the block with minus infinity in its end
+            with mark("all_gather"):
+                full = e.net.comm.all_gather(local, dim=-1)
+            with mark("sample"):
+                probs = distribution_batch(full, b["temps"].repeat_interleave(t), b["top_k"].repeat_interleave(t),
+                                           b["top_p"].repeat_interleave(t), e.decodable,
+                                           self._dists(n * t, full.shape[-1])).view(n, t, -1)
+            e.note_ceilings(probs, b["qprob"], b["qcand"])
+            with mark("verify"):
+                accepted, picks, _ = block_verify_batch(probs, b["drafts"], b["qcand"], b["qprob"], e.gen)
+        else:
+            with mark("sample"):
+                picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)
+            accepted = None
+        if picks.is_cuda:
+            from engine.kernels.decode_commit import advance
+            with mark("commit"):
+                count, done, accepted, tokens, ctx_before = advance(picks, b, accepted)
+        else:
+            ctx_before = b["ctx"].clone()
+            count, done, accepted, tokens = commit_batch(picks, b["drafts"], b["alive"], b["generated"], b["limit"], b["ends"], accepted)
+            b["generated"] += count
+            b["ctx"] += count
+            last = tokens.gather(1, (count - 1).clamp_min(0).unsqueeze(1)).squeeze(1)
+            b["anchor"] = torch.where(count > 0, last, b["anchor"])
+            b["alive"] = b["alive"] & ~done
+            b["slot"] = torch.where(b["alive"], b["real_slot"], torch.zeros_like(b["real_slot"]))
+        with mark("boundaries"):
+            e.caches.stage_boundaries(b["real_slot"], ctx_before, count)   # a block boundary crossed: parked for the host
+        if aux is not None:
+            positions = ctx_before.view(n, 1) + torch.arange(t, device=aux.device)
+            with mark("observe"):
+                prepared = getattr(e.decode_graphs, "observations", {}).get(shape)
+                if prepared is not None:
+                    positions, context = prepared
+                    e.drafter.decode_graphs.observe_prepared_rows(b["real_slot"], positions, context, count, aux)
+                elif e.drafter.decode_graphs is not None:
+                    e.drafter.decode_graphs.observe_rows(b["real_slot"], positions, aux, count)
+                else:
+                    e.drafter.observe_rows(e.caches.draft_field(), b["real_slot"], positions, aux, count)
+        with mark("propose"):
+            self._propose_rows(b)
+        return dict(tokens=tokens, count=count, done=done, accepted=accepted, before=ctx_before)
+
     # -- one step ---------------------------------------------------------------------------------------
     def launch(self, seqs, slots) -> Pending:
         e, K, t = self.e, self.e.drafter.k, self.t
@@ -265,52 +325,8 @@ class AsyncDecode:
         end = max(e.ctx[s] + t * ahead for s in seqs)
         shape = e.decode_graphs.shape_for(n, end)
         self.clock.step()
-        with self.clock.mark("forward"):
-            h, aux, local = e.decode_graphs.run_device(shape, host_step, b["ids"], b["ctx"], b["seqs"], b["slot"])
-        if b["stochastic"]:
-            # the model's dtype, not fp32: the sampler converts as it reads, and the undecodable tail
-            # is a width it stops at rather than a copy of the block with minus infinity in its end
-            with self.clock.mark("all_gather"):
-                full = e.net.comm.all_gather(local, dim=-1)
-            with self.clock.mark("sample"):
-                probs = distribution_batch(full, b["temps"].repeat_interleave(t), b["top_k"].repeat_interleave(t),
-                                           b["top_p"].repeat_interleave(t), e.decodable,
-                                           self._dists(n * t, full.shape[-1])).view(n, t, -1)
-            e.note_ceilings(probs, b["qprob"], b["qcand"])
-            with self.clock.mark("verify"):
-                accepted, picks, _ = block_verify_batch(probs, b["drafts"], b["qcand"], b["qprob"], e.gen)
-        else:
-            with self.clock.mark("sample"):
-                picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)
-            accepted = None
-        if picks.is_cuda:
-            from engine.kernels.decode_commit import advance
-            with self.clock.mark("commit"):
-                count, done, accepted, tokens, ctx_before = advance(picks, b, accepted)
-        else:
-            ctx_before = b["ctx"].clone()
-            count, done, accepted, tokens = commit_batch(picks, b["drafts"], b["alive"], b["generated"], b["limit"], b["ends"], accepted)
-            b["generated"] += count
-            b["ctx"] += count
-            last = tokens.gather(1, (count - 1).clamp_min(0).unsqueeze(1)).squeeze(1)
-            b["anchor"] = torch.where(count > 0, last, b["anchor"])
-            b["alive"] = b["alive"] & ~done
-            b["slot"] = torch.where(b["alive"], b["real_slot"], torch.zeros_like(b["real_slot"]))
-        with self.clock.mark("boundaries"):
-            e.caches.stage_boundaries(b["real_slot"], ctx_before, count)   # a block boundary crossed: parked for the host
-        if aux is not None:
-            positions = ctx_before.view(n, 1) + torch.arange(t, device=aux.device)
-            with self.clock.mark("observe"):
-                prepared = getattr(e.decode_graphs, "observations", {}).get(shape)
-                if prepared is not None:
-                    positions, context = prepared
-                    e.drafter.decode_graphs.observe_prepared_rows(b["real_slot"], positions, context, count, aux)
-                elif e.drafter.decode_graphs is not None:
-                    e.drafter.decode_graphs.observe_rows(b["real_slot"], positions, aux, count)
-                else:
-                    e.drafter.observe_rows(e.caches.draft_field(), b["real_slot"], positions, aux, count)
-        with self.clock.mark("propose"):
-            self._propose_rows()
+        result = self.iterate(shape, b, host_step, measured=True)
+        tokens, count, done, accepted = (result[k] for k in ("tokens", "count", "done", "accepted"))
         # the outcome crosses to the host behind an event; the next step is already queued when it is read
         lane = self.free.pop(0)
         host = self.host[lane]
