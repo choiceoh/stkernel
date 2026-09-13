@@ -17,6 +17,17 @@ from engine.kernels.kpool import _fwht_stage
 DECODE_ROWS = (1, 6, 7, 14, 21, 28)
 
 
+def declared_rows(rows):
+    # None retains the legacy/probe declaration; an owner captures a concrete
+    # immutable set so another model's preparation cannot change its graph.
+    if rows is None:
+        return None
+    rows = tuple(rows)
+    if not rows or any(type(r) is not int or not 1 <= r <= 32 for r in rows) or len(set(rows)) != len(rows):
+        raise ValueError('decode projection rows must be distinct integers in 1..32')
+    return rows
+
+
 @tr.jit
 def _kda_pair(X0, X1, W0, W1, Y, M: tl.constexpr, XS0: tl.constexpr, XS1: tl.constexpr,
               BM: tl.constexpr, BN: tl.constexpr, K: tl.constexpr, N: tl.constexpr):
@@ -39,8 +50,8 @@ def _weights(a, b, shape):
         raise ValueError(f'paired projection requires matching contiguous CUDA BF16 weights {shape}')
 
 
-def _input(x, width, device):
-    if (x.ndim != 2 or x.shape[0] not in DECODE_ROWS
+def _input(x, width, device, rows=None):
+    if (x.ndim != 2 or x.shape[0] not in (DECODE_ROWS if rows is None else rows)
             or x.shape[1] != width or x.stride(-1) != 1
             or x.dtype != torch.bfloat16 or x.device != device):
         raise ValueError(f'paired projection requires declared BF16 decode rows of width {width}')
@@ -67,7 +78,8 @@ def _indexer_widths():
 class KdaPair:
     BM, BN = 16, 64
 
-    def __init__(self, f_b, g_b):
+    def __init__(self, f_b, g_b, *, rows=None):
+        self.rows = declared_rows(rows)
         self.n, self.k = _kda_widths()
         if self.n % self.BN or self.k & (self.k - 1):
             raise ValueError(f'paired KDA projection needs an output width in {self.BN}-column tiles and a power-of-two input width')
@@ -75,8 +87,8 @@ class KdaPair:
         self.f_b, self.g_b = f_b, g_b
 
     def __call__(self, f_a, g_a):
-        _input(f_a, self.k, self.f_b.device)
-        _input(g_a, self.k, self.g_b.device)
+        _input(f_a, self.k, self.f_b.device, self.rows)
+        _input(g_a, self.k, self.g_b.device, self.rows)
         if f_a.shape != g_a.shape:
             raise ValueError('paired KDA inputs must have equal rows')
         rows = f_a.shape[0]
@@ -88,7 +100,8 @@ class KdaPair:
 
 
 class IndexerPair:
-    def __init__(self, wk, gate, *, storage=None):
+    def __init__(self, wk, gate, *, storage=None, rows=None):
+        self.rows = declared_rows(rows)
         self.head, self.hidden = _indexer_widths()
         _weights(wk, gate, (self.head, self.hidden))
         if torch.cuda.is_current_stream_capturing():
@@ -103,7 +116,7 @@ class IndexerPair:
         self.weight = storage
 
     def __call__(self, x):
-        _input(x, self.hidden, self.weight.device)
+        _input(x, self.hidden, self.weight.device, self.rows)
         return F.linear(x, self.weight).chunk(2, dim=-1)
 
 
@@ -140,7 +153,7 @@ def _indexer_boundary(Q, K, W, NW, NB, Q8, KO, WE,
         tl.store(WE + index, (w * scale) * SCALE)
 
 
-def indexer_boundary(q, k, weights, norm_weight, norm_bias, scale):
+def indexer_boundary(q, k, weights, norm_weight, norm_bias, scale, *, rows=None):
     """Fold three post-projection launches and the temporary scale matrix.
 
     Head weights retain the original FP32 GEMM. K and the FWHT result retain
@@ -148,7 +161,7 @@ def indexer_boundary(q, k, weights, norm_weight, norm_bias, scale):
     """
     from engine.kernels.kpool import _indexer_cell
     width = _indexer_cell()
-    if (q.ndim != 3 or q.shape[0] not in DECODE_ROWS or q.shape[2] != width
+    if (q.ndim != 3 or q.shape[0] not in (DECODE_ROWS if rows is None else rows) or q.shape[2] != width
             or q.shape[1] <= 0 or not q.is_contiguous() or q.dtype != torch.bfloat16 or not q.is_cuda):
         raise ValueError('indexer boundary needs declared contiguous BF16 decode queries [M,H,128]')
     rows, heads, _ = q.shape

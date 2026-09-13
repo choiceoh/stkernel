@@ -43,7 +43,7 @@ def main():
                                           (flags, torch.__version__, torch.version.cuda))
     extension = load(name='st_dense_' + key, sources=list(sources), extra_cuda_cflags=flags,
                      build_directory=str(build), verbose=False)
-    for name in ('run_mhc', 'run_gemm', 'run_smlp2'):
+    for name in ('run_mhc', 'run_gemm', 'run_smlp2', 'run_gemm_bound_input'):
         if not callable(getattr(extension, name, None)):
             raise RuntimeError(f'the full extension did not bind {name}')
     if torch.cuda.is_initialized():

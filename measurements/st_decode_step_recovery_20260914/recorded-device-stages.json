@@ -1,0 +1,197 @@
+[
+  {
+    "source": "/home/choiceoh/expert-capture/onepass-runs/20260913T162639-6736029f6e40/measure-c1/latency.jsonl",
+    "sha256": "0db289eda6cb8cb596b8ad587bd5fcb45fa78c459c4f61dc938d1cee15bdc0f3",
+    "rank": 0,
+    "scope": "recorded device body and TP4 stop agreement; excludes client/tokenizer/HTTP time",
+    "iteration": {
+      "samples": 5346,
+      "sum_us": 284515891.13600004,
+      "mean_us": 53220.33130115975,
+      "median_us": 52546.8,
+      "min_us": 44034.176,
+      "max_us": 85529.856
+    },
+    "device_step_s": 18.789811629342648,
+    "stages": {
+      "forward": {
+        "samples": 5346,
+        "sum_us": 259137525.088,
+        "mean_us": 48473.16219378975,
+        "median_us": 48468.08,
+        "min_us": 40037.216,
+        "max_us": 64920.352
+      },
+      "sample": {
+        "samples": 5346,
+        "sum_us": 144192.736,
+        "mean_us": 26.972079311634868,
+        "median_us": 24.608,
+        "min_us": 21.472,
+        "max_us": 587.168
+      },
+      "commit": {
+        "samples": 5346,
+        "sum_us": 22239.392,
+        "mean_us": 4.160005985783764,
+        "median_us": 4.128,
+        "min_us": 4.032,
+        "max_us": 28.256
+      },
+      "boundaries": {
+        "samples": 5346,
+        "sum_us": 178403.488,
+        "mean_us": 33.37139693228582,
+        "median_us": 31.584,
+        "min_us": 31.328,
+        "max_us": 345.024
+      },
+      "observe": {
+        "samples": 5346,
+        "sum_us": 7618723.776000001,
+        "mean_us": 1425.1260336700336,
+        "median_us": 688.096,
+        "min_us": 667.552,
+        "max_us": 32064.608
+      },
+      "propose": {
+        "samples": 5346,
+        "sum_us": 16503720.864,
+        "mean_us": 3087.1157620650956,
+        "median_us": 3062.6240000000003,
+        "min_us": 3011.04,
+        "max_us": 8110.464
+      }
+    }
+  },
+  {
+    "source": "/home/choiceoh/expert-capture/onepass-runs/20260913T200625-a26e0e6f0ea4/measure-c1/latency.jsonl",
+    "sha256": "3aef233dd8c14c28af35e6198a101be8e34caaab3197a818ca9db74c52597e03",
+    "rank": 0,
+    "scope": "recorded device body and TP4 stop agreement; excludes client/tokenizer/HTTP time",
+    "iteration": {
+      "samples": 6336,
+      "sum_us": 312645026.496,
+      "mean_us": 49344.22766666667,
+      "median_us": 49314.464,
+      "min_us": 39821.856,
+      "max_us": 302292.224
+    },
+    "device_step_s": 20.265794952861864,
+    "stages": {
+      "forward": {
+        "samples": 6336,
+        "sum_us": 287720896.96,
+        "mean_us": 45410.4951010101,
+        "median_us": 45399.072,
+        "min_us": 35938.208,
+        "max_us": 298406.56
+      },
+      "sample": {
+        "samples": 6336,
+        "sum_us": 183577.984,
+        "mean_us": 28.973797979797983,
+        "median_us": 25.728,
+        "min_us": 22.432000000000002,
+        "max_us": 2586.656
+      },
+      "commit": {
+        "samples": 6336,
+        "sum_us": 26318.112,
+        "mean_us": 4.153742424242425,
+        "median_us": 4.096,
+        "min_us": 4.032,
+        "max_us": 33.472
+      },
+      "boundaries": {
+        "samples": 6336,
+        "sum_us": 214766.20799999998,
+        "mean_us": 33.896181818181816,
+        "median_us": 31.52,
+        "min_us": 28.832,
+        "max_us": 371.296
+      },
+      "observe": {
+        "samples": 6336,
+        "sum_us": 4169826.528,
+        "mean_us": 658.1165606060606,
+        "median_us": 655.472,
+        "min_us": 638.88,
+        "max_us": 1213.3120000000001
+      },
+      "propose": {
+        "samples": 6336,
+        "sum_us": 19238125.056,
+        "mean_us": 3036.3202424242427,
+        "median_us": 3015.52,
+        "min_us": 2938.592,
+        "max_us": 8199.744
+      }
+    }
+  },
+  {
+    "source": "/home/choiceoh/expert-capture/onepass-runs/20260913T210200-c8f601d49a66/measure-c1/latency.jsonl",
+    "sha256": "f9beb417a031070bdfbcc8f1dbbea857e860f1f78f2f54e94ddb5875dfa981d8",
+    "rank": 0,
+    "scope": "recorded device body and TP4 stop agreement; excludes client/tokenizer/HTTP time",
+    "iteration": {
+      "samples": 5023,
+      "sum_us": 265322529.95200002,
+      "mean_us": 52821.52696635477,
+      "median_us": 52755.36,
+      "min_us": 44096.352000000006,
+      "max_us": 312366.24
+    },
+    "device_step_s": 18.93167534965357,
+    "stages": {
+      "forward": {
+        "samples": 5023,
+        "sum_us": 245368481.344,
+        "mean_us": 48848.99091061119,
+        "median_us": 48796.48,
+        "min_us": 40158.496,
+        "max_us": 308421.696
+      },
+      "sample": {
+        "samples": 5023,
+        "sum_us": 128304.512,
+        "mean_us": 25.543402747362133,
+        "median_us": 22.432000000000002,
+        "min_us": 19.776,
+        "max_us": 583.744
+      },
+      "commit": {
+        "samples": 5023,
+        "sum_us": 20702.656,
+        "mean_us": 4.121571968942863,
+        "median_us": 4.096,
+        "min_us": 4.032,
+        "max_us": 27.424
+      },
+      "boundaries": {
+        "samples": 5023,
+        "sum_us": 163873.216,
+        "mean_us": 32.62457017718495,
+        "median_us": 30.752,
+        "min_us": 28.736,
+        "max_us": 347.232
+      },
+      "observe": {
+        "samples": 5023,
+        "sum_us": 3346825.344,
+        "mean_us": 666.3000883933904,
+        "median_us": 663.6800000000001,
+        "min_us": 644.5120000000001,
+        "max_us": 1126.848
+      },
+      "propose": {
+        "samples": 5023,
+        "sum_us": 15420081.696,
+        "mean_us": 3069.894823014135,
+        "median_us": 3053.92,
+        "min_us": 3001.248,
+        "max_us": 4660.8640000000005
+      }
+    }
+  }
+]

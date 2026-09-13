@@ -3030,6 +3030,8 @@ void set_direct_kernel_attrs() {
   set(mk_gemm2_kernel<1,false,false,true>, GEMM2_SMEM);
   set(mk_gemm2_kernel<2,false,false,true>, GEMM2_SMEM);
   set(mk_gemm2_kernel<4,false,false,true>, GEMM2_SMEM);
+  set(mk_gemm2_kernel<2,false,false,true,true>, GEMM2_SMEM);
+  set(mk_gemm2_kernel<4,false,false,true,true>, GEMM2_SMEM);
   set(mk_gemm2_kernel<1,false,true,true>, GEMM2_M8_SMEM);
   set(mk_gemm_input_kernel<true>, GEMM_INPUT_SMEM);
   set(mk_gemm_input_cta_kernel<0,true>, INPUT_CTA_SMEM);
@@ -3268,7 +3270,7 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                  torch::Tensor out, int64_t n_orig, double wgs, int64_t bg,
                  int64_t rgs_ptr, int64_t lr_a_ptr, int64_t lr_b_ptr,
                  int64_t lr_r, float* private_partial = nullptr, unsigned int* private_arrive = nullptr,
-                 const int64_t* out_address = nullptr, bool wide_input = false) {
+                 const int64_t* out_address = nullptr, bool wide_input = false, bool bound_input = false) {
   set_kernel_attrs();
   if constexpr (DIRECT) set_direct_kernel_attrs();
   MKGemm2Ctx c2{};
@@ -3313,9 +3315,13 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   c2.lr_slot = bg != 0 ? 1 : 0;
   const int nblk = c2.n / SMEM_W_ROWS;
   c2.ksr = mk_choose_ksr2(c2.m, c2.n, c2.k, c2.lr_r > 0);
-  const bool input_reuse = mk_gemm_input_mode() &&
+  const bool bound_c1 = bound_input && c2.m == 8;
+  TORCH_CHECK(!bound_c1 || (c2.k == 4096 && (c2.n_orig == 6416 ||
+              ((c2.n_orig == 4096 || c2.n_orig == 6144) && (c2.ksr == 2 || c2.ksr == 3)))),
+              "bound C1 input plan is outside the declared reduction geometry");
+  const bool input_reuse = bound_c1 || (mk_gemm_input_mode() &&
       mk_input_shape(c2.m, c2.n_orig, c2.k, bg != 0, c2.lr_r != 0) &&
-      (c2.n_orig==6416 || c2.ksr==2 || c2.ksr==3);
+      (c2.n_orig==6416 || c2.ksr==2 || c2.ksr==3));
   // one slice per tile stores bf16 straight from the accumulators (no
   // partial is read or written), so the partial bound is a split's
   // contract only: m = 32 on the head (32 x 38,784 floats) is served whole
@@ -3337,9 +3343,9 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                             reinterpret_cast<float*>(packed.data_ptr<uint8_t>() + qbytes),
                             c2.m, c2.k, c2.x_stride});
     if (c2.m <= 16)
-      mk_launch(mk_gemm2_kernel<2, false, false, false, true>, nblk * c2.ksr, GEMM2_SMEM, stream, c2);
+      mk_launch(mk_gemm2_kernel<2, false, false, DIRECT, true>, nblk * c2.ksr, GEMM2_SMEM, stream, c2);
     else
-      mk_launch(mk_gemm2_kernel<4, false, false, false, true>, nblk * c2.ksr, GEMM2_SMEM, stream, c2);
+      mk_launch(mk_gemm2_kernel<4, false, false, DIRECT, true>, nblk * c2.ksr, GEMM2_SMEM, stream, c2);
   } else if (input_reuse) {
     const int qbytes = (c2.k / KSTEP) * 1024;
     const int sbytes = (c2.k / KSTEP) * 8 * sizeof(float);
@@ -3351,7 +3357,7 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
     c2.input_q = q; c2.input_s = scales;
     mk_launch(mk_input_pack_kernel, c2.k / KSTEP, 0, stream,
               MKInputPackCtx{c2.x, q, scales, c2.m, c2.k, c2.x_stride});
-    const int cta=mk_gemm_input_cta_mode();
+    const int cta=bound_c1 ? 4 : mk_gemm_input_cta_mode();
     if (cta==4 && c2.ksr==2 && (c2.n_orig==4096 || c2.n_orig==6144)) {
       mk_launch<128>(mk_gemm_input_cta3_kernel<2,2,2,DIRECT>,c2.n_orig/32,INPUT_CTA2_SMEM,stream,c2);
     } else if (cta==4 && c2.ksr==3 && (c2.n_orig==4096 || c2.n_orig==6144)) {
@@ -3424,6 +3430,50 @@ void mk_run_gemm_to_slot(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   // 'address' is metadata only; DIRECT replaces c.out before any output access.
   mk_run_gemm_impl<true>(x, wq4, ws4, address, n_orig, 1., 0, rgs_ptr, 0, 0, 0,
                          partial, arrive, address.data_ptr<int64_t>());
+}
+
+// A model-owned declaration reaches this entry point directly; no process-wide
+// probe setter changes neighboring models, ordinary GEMMs or already captured graphs.
+void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
+                            torch::Tensor out, int64_t n_orig, int64_t rgs_ptr,
+                            c10::optional<torch::Tensor> workspace,
+                            c10::optional<torch::Tensor> address) {
+  TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2,
+              "bound input requires CUDA BF16 matrix rows");
+  const int64_t m = x.size(0), k = x.size(1), n = n_orig;
+  const bool c1 = m == 8 && k == 4096 && (n == 4096 || n == 6144 || n == 6416);
+  const bool wide = (m == 16 || m == 24 || m == 32) &&
+      ((n == 4096 && (k == 2048 || k == 4096 || k == 3072)) ||
+       ((n == 2048 || n == 6144) && k == 4096) ||
+       ((m == 24 || m == 32) && ((n == 6416 && k == 4096) || (n == 4096 && k == 1536))));
+  TORCH_CHECK((c1 || wide) && rgs_ptr && wq4.device() == x.device() && ws4.device() == x.device() &&
+              wq4.scalar_type() == torch::kUInt8 && ws4.scalar_type() == torch::kInt8,
+              "bound input requires a declared W4 cell and row scales");
+  TORCH_CHECK(wq4.dim() == 4 && wq4.size(0) == (n + 127) / 128,
+              "bound input pack rows must match the declared output");
+  float* partial = nullptr;
+  unsigned int* arrive = nullptr;
+  if (workspace.has_value()) {
+    auto w = *workspace;
+    TORCH_CHECK(w.device() == x.device() && w.scalar_type() == torch::kFloat32 &&
+                w.is_contiguous() && w.numel() == MK2_PART_ELEMS + MK2_TILES_MAX,
+                "bound input workspace does not own its partials and counters");
+    partial = w.data_ptr<float>();
+    arrive = reinterpret_cast<unsigned int*>(partial + MK2_PART_ELEMS);
+  }
+  if (address.has_value()) {
+    auto a = *address;
+    TORCH_CHECK(n == 4096 && a.device() == x.device() && a.scalar_type() == torch::kInt64 &&
+                a.is_contiguous() && a.numel() >= 1, "bound input requires its reserved TX descriptor");
+    mk_run_gemm_impl<true>(x, wq4, ws4, a, n, 1., 0, rgs_ptr, 0, 0, 0,
+                           partial, arrive, a.data_ptr<int64_t>(), wide, true);
+  } else {
+    TORCH_CHECK(out.device() == x.device() && out.scalar_type() == torch::kBFloat16 &&
+                out.dim() == 2 && out.size(0) == m && out.size(1) == n && out.is_contiguous(),
+                "bound input output must match its BF16 matrix");
+    mk_run_gemm_impl(x, wq4, ws4, out, n, 1., 0, rgs_ptr, 0, 0, 0,
+                     partial, arrive, nullptr, wide, true);
+  }
 }
 
 // ptrs: x, res_in, pm_in, cm_in, fn, hc_scale, hc_base, norm_w, res_out,
@@ -4260,6 +4310,7 @@ void mk_run_prep(std::vector<int64_t> ptrs, std::vector<int64_t> ints) {
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  m.def("run_gemm_bound_input", &mk_run_gemm_bound_input, "bound K=7 input reuse with owned scratch and optional TX output");
   m.def("run_gemm_wide_input", &mk_run_gemm_wide_input, "private wide-row input reuse qualification");
   m.def("probe_device", &mk_probe_device, "device geometry probe");
   m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");

@@ -22,13 +22,15 @@ class PairOwnerTests(unittest.TestCase):
         net.dense['prepared'] = True
         self.assertEqual(net.decode_projection_nbytes(), 2 << 20)
         arena = Arena(net.decode_projection_nbytes(), device='cpu', expandable=False)
-        def pair(wk, gate, *, storage):
+        def pair(wk, gate, *, storage, rows=None):
+            self.assertIsNone(rows)  # the default owner retains the legacy decode cells
             storage[:128].copy_(wk); storage[128:].copy_(gate)
-            return SimpleNamespace(weight=storage)
+            return SimpleNamespace(weight=storage, rows=rows)
         # Simulate the BF16 readers changed by smooth_inputs, before preparation.
         weights[0].mul_(2); weights[1].mul_(.5)
-        module = SimpleNamespace(IndexerPair=pair, KdaPair=None, DECODE_ROWS=(1, 6, 7, 14, 21, 28))
-        with patch.dict('sys.modules', {'engine.kernels.decode_projection': module}):
+        # Replace only the CUDA owner: row validation and dispatch use the real
+        # module so this fixture cannot hide new declaration helpers.
+        with patch('engine.kernels.decode_projection.IndexerPair', side_effect=pair):
             net.prepare_decode_projections(arena)
             owner = net._decode_pair(layer, SimpleNamespace(captured=True), 28)
             self.assertTrue(torch.equal(owner.weight[:128], weights[0]))

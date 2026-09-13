@@ -25,6 +25,7 @@ class KnobDeclarationTests(unittest.TestCase):
     def test_production_remains_restartable_after_experiment_expiry(self):
         cfg = self._declared({}, production=True, today=datetime.date(2040, 1, 1))
         self.assertFalse(cfg.knobs)
+        self.assertEqual(cfg['decode_fastpaths'], 1)
         self.assertEqual([cfg[k] for k in ("moe_static", "mla_prefill", "context_ceiling", "lanes", "decode_eager", "execution")],
                          ["t,r,sf6,q0", "tile32", 0, "served", 0, "native"])
 
@@ -41,7 +42,7 @@ class KnobDeclarationTests(unittest.TestCase):
         self.assertEqual(set(cfg.knobs), {"mla_prefill", "context_ceiling", "kda_state_dtype",
                                           "execution_overlap", "early_observe", "prefill_tiles", "direct_mhc", "prefill_project_tiles",
                                           "nvme_mapped_staging", "decode_iterations", "deferred_kda", "terminal_mhc", "prefill_indexer_shards",
-                                          "draft_fc_precision", "draft_fc_calibration", "draft_diagnostics", "draft_tuning", "prefill_dense_prefix", "prefill_absorb_tiles"})
+                                          "draft_fc_precision", "draft_fc_calibration", "draft_diagnostics", "draft_tuning", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths"})
         self.assertEqual((cfg["mla_prefill"], cfg["context_ceiling"]), ("stock", 131072))
         self.assertEqual((cfg["execution"], cfg["moe_static"]), ("native", "t,r,sf6,q0"))
         from engine.base.config import ConfigError

@@ -100,7 +100,8 @@ class DraftAcceptanceTests(unittest.TestCase):
         layer.fp8 = lambda x: fp8_calls.append(len(x)) or x[:, :8] + 2
         x = torch.ones(7, 128, dtype=torch.bfloat16)
         mask = torch.arange(7) < 3
-        def w4(x, pack, workspace):
+        def w4(x, pack, workspace, *, bound_input=False):
+            self.assertFalse(bound_input)  # target-model fastpaths do not opt the drafter in
             w4_calls.append(len(x))
             return x[:, :8] + 1
         with patch('engine.kernels.dense.w4_gemm', side_effect=w4):

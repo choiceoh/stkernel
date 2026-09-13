@@ -159,6 +159,8 @@ class Glm53Net:
         self._router_weights = {}
         self._router_tensorcore = set()
         self._decode_pairs = {}
+        self.decode_fastpath_rows = ()
+        self.decode_pairs_executed = set()
         self.prefill_transport = None
         self.prefill_indexer_shards = False
         self.prefill_indexer_executed = set()
@@ -235,28 +237,43 @@ class Glm53Net:
         """Joined indexer matrices; KDA pairs retain their original weight views."""
         return sum(2 * self.F.idx_dim * self.F.hidden * 2 for L in self.layers if self.F.is_dsa(L))
 
-    def prepare_decode_projections(self, arena):
+    def prepare_decode_projections(self, arena, *, capture_rows=None):
         """Copy pairs after smoothing, before capture, into the declared arena."""
         if self._decode_pairs or not self.dense:
             raise RuntimeError('prepare decode pairs once, after prepare_dense/input smoothing')
-        from engine.kernels.decode_projection import KdaPair, IndexerPair
+        from engine.kernels.decode_projection import KdaPair, IndexerPair, declared_rows, DECODE_ROWS
+        rows = declared_rows(capture_rows)
+        if rows is not None:
+            if self.F.spec_k != 7 or rows != tuple(8 * n for n in range(1, len(rows) + 1)):
+                raise ValueError('bound decode fastpaths require K=7 and contiguous C=1..4 capture widths')
+            self.decode_fastpath_rows = rows
+            for dense in self.dense.values():
+                if hasattr(dense, 'packs'):
+                    dense.decode_input_rows = rows
+        pair_rows = tuple(sorted(set(DECODE_ROWS).union(rows))) if rows is not None else None
         for L in self.layers:
             if self.F.is_dsa(L):
                 n = f'L{L}.idx.'
                 wk, gate = self.p[n + 'wk'], self.p[n + 'gate']
                 storage = arena.carve((wk.numel() + gate.numel()) * 2, f'indexer-pair/{L}')
-                self._decode_pairs[L] = IndexerPair(wk, gate, storage=storage.view(BF16).view(2 * self.F.idx_dim, self.F.hidden))
+                self._decode_pairs[L] = IndexerPair(wk, gate, rows=pair_rows, storage=storage.view(BF16).view(2 * self.F.idx_dim, self.F.hidden))
             else:
                 n = f'L{L}.kda.'
-                self._decode_pairs[L] = KdaPair(self.p[n + 'f_b'], self.p[n + 'g_b'])
+                self._decode_pairs[L] = KdaPair(self.p[n + 'f_b'], self.p[n + 'g_b'], rows=pair_rows)
 
     def _decode_pair(self, L, step, rows):
-        # Explicit measured cells: other graph widths and prefill keep their
+        # Explicit owner cells: other graph widths and prefill keep their
         # existing projection form. No exception-driven kernel fallback.
         if not self._decode_pairs or not getattr(step, 'captured', False):
             return None
         from engine.kernels.decode_projection import DECODE_ROWS
-        return self._decode_pairs.get(L) if rows in DECODE_ROWS else None
+        pair = self._decode_pairs.get(L)
+        allowed = getattr(pair, 'rows', None) or DECODE_ROWS
+        if rows not in allowed:
+            return None
+        if getattr(self, 'decode_fastpath_rows', ()):
+            self.decode_pairs_executed.add((L, rows))
+        return pair
 
     @staticmethod
     def dense_weight_names(keys):
@@ -546,7 +563,8 @@ class Glm53Net:
         if pair is not None:
             from engine.kernels.decode_projection import indexer_boundary
             k, gate = pair(x)
-            q8, k, w_eff = indexer_boundary(q, k, w, p[n + "k_norm_w"], p[n + "k_norm_b"], F.idx_scale)
+            q8, k, w_eff = indexer_boundary(q, k, w, p[n + "k_norm_w"], p[n + "k_norm_b"], F.idx_scale,
+                                            rows=getattr(pair, 'rows', None))
         else:
             k = self.linear(x, n + "wk")
             if self.lanes.layernorm is None:
