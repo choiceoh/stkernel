@@ -24,18 +24,30 @@ def main():
     from triton.compiler import ASTSource
     from triton.backends.compiler import GPUTarget
     from engine.kernels.mla.prefill_dense import _dense_prefix
+    from engine.profiles.glm53.facts import architecture
+    from engine.profiles.glm53.caches import layout
+    config_path = Path(__file__).with_name('model-config.json')
+    facts = architecture(json.loads(config_path.read_text()))
+    cache = layout(facts, range(facts.layers))
+    offsets = {L: offset//facts.kv_lora for L, offset in cache.token_offsets.items()}
+    last_layer = max(offsets)
     started = time.monotonic()
-    report = dict(status='RUNNING', gpu_used=False, variants=[])
+    report = dict(status='RUNNING', gpu_used=False, variants=[],
+                  model_config_sha256=hashlib.sha256(config_path.read_bytes()).hexdigest(),
+                  geometry=dict(block=facts.block, stride=cache.block_bytes//facts.kv_lora,
+                                token_offsets=offsets, scale=facts.mla_scale))
     try:
-        for bm, bn, warps in ((32, 32, 8), (32, 32, 4), (64, 32, 8), (32, 64, 8), (32, 32, 16)):
-            constants = dict(SCALE=0.08838834764831845, KV_SCALE=1., BLOCK=256,
-                             STRIDE=12288, OFFSET=768, IDENTITY=False,
+        geometries = [(last_layer, *g) for g in ((32,32,8), (32,32,4), (64,32,8), (32,64,8), (32,32,16))]
+        geometries += [(L, 32, 32, 8) for L in offsets if L != last_layer]
+        for layer, bm, bn, warps in geometries:
+            constants = dict(SCALE=facts.mla_scale, KV_SCALE=1., BLOCK=facts.block,
+                             STRIDE=cache.block_bytes//facts.kv_lora, OFFSET=offsets[layer], IDENTITY=False,
                              HEADS=16, DIM=512, BM=bm, BN=bn)
             signature = dict(Q='*bf16', KV='*fp8e4nv', Blocks='*i32', Out='*bf16', ROWS='i32', CONTEXT='i32')
             compiled = triton.compile(ASTSource(_dense_prefix, signature, constexprs=constants),
                                       target=GPUTarget('cuda', 121, 32),
                                       options=dict(num_warps=warps, num_stages=1))
-            name = f'm{bm}-n{bn}-w{warps}'
+            name = f'L{layer}-m{bm}-n{bn}-w{warps}'
             cubin = output / (name + '.cubin')
             cubin.write_bytes(compiled.asm['cubin'])
             (output / (name + '.ptx')).write_text(compiled.asm['ptx'])

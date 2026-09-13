@@ -177,10 +177,11 @@ class PrefixKernelTests(unittest.TestCase):
         exec(compile(ast.Module(body=[node], type_ignores=[]), str(source), 'exec'), scope)
         run = scope['_dense_prefix']
         generator = torch.Generator().manual_seed(8821)
-        for rows, context, dim in ((1, 0, 512), (3, 3, 512), (5, 31, 512), (3, 2048, 512), (131, 0, 32)):
+        for rows, context, dim, block in ((1, 0, 512, 16), (3, 3, 512, 16), (5, 31, 512, 16),
+                                         (3, 2048, 512, 768), (5, 766, 512, 768), (131, 0, 32, 24)):
             for bm in (32, 64):
                 for identity in (False, True):
-                    heads, block, stride, offset = 16, 16, 48, 16
+                    heads, stride, offset = 16, block*3, block
                     nblocks = (context+rows+block-1)//block
                     blocks = torch.randperm(nblocks, generator=generator).to(torch.int32)
                     latent = torch.randn(nblocks*stride, dim, generator=generator).to(torch.float8_e4m3fn)

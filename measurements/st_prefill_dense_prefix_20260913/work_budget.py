@@ -8,9 +8,10 @@ from engine.modules.prefill_attention import covered_prefix
 
 
 def budget(rows, *, chunk=32256, topk=2048, pool=4, queries=2):
-    before = after = dense_queries = 0
+    before = after = dense_queries = copy_rows = 0
     for context in range(0, rows, chunk):
         count = min(chunk, rows-context)
+        copy_rows += count if count >= 128 else 0
         prefix = covered_prefix(count, context, topk, pool) if 128 <= count <= 32768 else 0
         if prefix < 128:
             prefix = 0
@@ -23,7 +24,7 @@ def budget(rows, *, chunk=32256, topk=2048, pool=4, queries=2):
                 new_kv_rows=after, requested_load_reduction=1-after/before,
                 old_requested_bytes_per_rank_dsa_layer=before*512,
                 new_requested_bytes_per_rank_dsa_layer=after*512,
-                redundant_output_copy_read_write_bytes_removed_per_rank_dsa_layer=rows*16*512*2*2,
+                redundant_output_copy_read_write_bytes_removed_per_rank_dsa_layer=copy_rows*16*512*2*2,
                 new_collectives=0, new_persistent_bytes=0)
 
 
