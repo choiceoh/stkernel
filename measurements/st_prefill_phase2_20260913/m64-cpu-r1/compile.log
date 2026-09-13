@@ -1,0 +1,34 @@
+compiled rows=2672 expanded_scales=False
+compiled rows=2672 expanded_scales=True
+compiled rows=32256 expanded_scales=False
+compiled rows=32256 expanded_scales=True
+Traceback (most recent call last):
+  File "/repo/measurements/st_prefill_phase2_20260913/compile_scale_expansion.py", line 133, in <module>
+    main()
+  File "/repo/measurements/st_prefill_phase2_20260913/compile_scale_expansion.py", line 99, in main
+{"status": "FAIL", "cuda_initialized": false, "elapsed_s": 12.964018433005549}
+    md._get_dynamic_kernel(288, 2672, 4096, 512, 8, 2672,
+  File "/repo/engine/kernels/b12x/moe_dispatch.py", line 4517, in _get_dynamic_kernel
+    compiled = build_and_load_cute_dsl_kernel(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/measurements/st_prefill_phase2_20260913/compile_scale_expansion.py", line 78, in build_reader
+    compiled = build()
+               ^^^^^^^
+  File "/repo/engine/kernels/b12x/moe_dispatch.py", line 4520, in <lambda>
+    lambda: cute.compile(
+            ^^^^^^^^^^^^^
+  File "/repo/measurements/st_prefill_phase2_20260913/compile_scale_expansion.py", line 74, in compile_with_artifacts
+    return compile_reader(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/kernels/b12x/moe_dispatch.py", line 4016, in __call__
+    self._kernel(
+  File "/repo/engine/kernels/b12x/moe_dynamic_gated_sf6.py", line 332, in __call__
+    tma_sfa, gSFA = self._dense_cls._make_tma_atoms_and_tensors(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/flashinfer/gemm/kernels/dense_blockscaled_gemm_sm120_b12x.py", line 2441, in _make_tma_atoms_and_tensors
+    tma_atom, tma_tensor = cpasync.make_tiled_tma_atom(
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/nvidia_cutlass_dsl/dsl_packages/cutlass/_mlir/dialects/_cute_nvgpu_ops_gen.py", line 2069, in __init__
+    super().__init__(self.OPERATION_NAME, self._ODS_REGIONS, self._ODS_OPERAND_SEGMENTS, self._ODS_RESULT_SEGMENTS, attributes=attributes, results=results, operands=operands, successors=_ods_successors, regions=regions, loc=loc, ip=ip)
+cutlass._mlir._mlir_libs._site_initialize.<locals>.MLIRError: Operation creation failed:
+error: unknown: expected top-level shape equivalence between the SMEM layout and the CTA V-map, but got '!cute.layout<"(((32,4),1),((16,4),1,2)):(((16,4),512),((0,1),4,512))">' and '!cute.layout<"((32,2),(16,4,2)):((1@0@0@0,1@1@0@0),(1@0@0@1,1@1@0@1,1@1@1))">'

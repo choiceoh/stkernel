@@ -1,6 +1,7 @@
 """Private M64 selection and scatter coverage; GPU proof remains separate."""
 import ast
 import copy
+import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -18,6 +19,29 @@ def functions(path, names):
 
 
 class M64ContractTests(unittest.TestCase):
+    def test_static_fork_is_reproducible_from_the_pinned_sources(self):
+        path = ROOT / 'measurements/st_prefill_phase2_20260913/generate_m64_bodies.py'
+        spec = importlib.util.spec_from_file_location('_m64_source_generator', path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(module.build(), (ROOT / 'engine/kernels/b12x/_prefill_m64_bodies.py').read_text())
+
+    def test_actual_q0_address_uses_separate_physical_atoms_for_m64_tiles(self):
+        tree = ast.parse((ROOT / 'engine/kernels/b12x/_prefill_m64_bodies.py').read_text())
+        assignment = next(n for n in ast.walk(tree) if isinstance(n, ast.Assign)
+                          and any(isinstance(t, ast.Name) and t.id == 'route_scale_row_base' for t in n.targets))
+        expression = compile(ast.Expression(assignment.value), '<actual-m64-q0-address>', 'eval')
+        seen = set()
+        for physical in range(193):
+            base = eval(expression, dict(Int32=int, Uint32=int, phys_row=physical, num_k_tiles=64))
+            atom, row = divmod(physical, 64)
+            for block in range(256):
+                address = base + (block // 4) * 512 + block % 4
+                expected = atom * 32768 + (row % 32) * 16 + (row // 32) * 4 + (block // 4) * 512 + block % 4
+                self.assertEqual(address, expected)
+                self.assertNotIn(address, seen)
+                seen.add(address)
+
     def test_eight_warps_cover_each_live_output_element_exactly_once(self):
         tree = ast.parse((ROOT / 'engine/kernels/b12x/moe_dynamic_prefill_m64.py').read_text())
         cls = next(n for n in tree.body if isinstance(n, ast.ClassDef))

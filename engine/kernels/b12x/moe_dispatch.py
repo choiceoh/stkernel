@@ -3819,6 +3819,7 @@ def allocate_sm120_dynamic_workspace(
     activation: str = "silu",
     quant_mode: str = "nvfp4",
     tile_m: int | None = None,
+    _prefill_tile64: bool = False,
 ) -> Sm120DynamicMoEWorkspace:
     """Allocate workspace buffers for the SM120 dynamic MoE kernel."""
     activation_precision = _normalize_activation_precision(activation_precision)
@@ -3843,6 +3844,15 @@ def allocate_sm120_dynamic_workspace(
     # The kernel addresses activation scales in 128-row SF atoms regardless of
     # tile_m, so the scale plane must cover the last partial atom.
     scale_rows = _align_up(rows_padded, 128)
+    if type(_prefill_tile64) is not bool:
+        raise TypeError('private prefill tile64 allocation override must be bool')
+    if _prefill_tile64:
+        if ((state_E, weight_E, k, n, num_topk, tile_m) != (288, 288, 4096, 512, 8, 64)
+                or quant_mode != 'nvfp4' or activation != 'swigluoai_uninterleave'):
+            raise ValueError('private M64 scale allocation requires exact native geometry')
+        # One complete physical SFA atom per logical M64 tile. Different
+        # experts never share an atom; the lower 64 rows hold their scales.
+        scale_rows = physical_tiles * 128
     cols_pad_k = _align_up(k // sf_vec_size, 4)
     _check_memref_limit("dynamic packed_input", rows_padded * (k // 2))
     _check_memref_limit("dynamic packed_input_scale", scale_rows * cols_pad_k)
@@ -4558,7 +4568,8 @@ def _get_dynamic_kernel(
             options="--opt-level 2 --enable-tvm-ffi",
         ),
         extra_key_files=_kernel_source_files() + (
-            (os.path.join(os.path.dirname(__file__), 'moe_dynamic_prefill_m64.py'),)
+            tuple(os.path.join(os.path.dirname(__file__), name) for name in
+                  ('moe_dynamic_prefill_m64.py', '_prefill_m64_bodies.py'))
             if _prefill_tile64 else ()) + (
             tuple(os.path.join(os.path.dirname(__file__), name) for name in
                   ("moe_dynamic_prefill_raw_route.py", "moe_dynamic_gated_sf6_prefill.py",
@@ -4666,6 +4677,9 @@ def launch_sm120_dynamic_moe(
     if type(_prefill_tile64) is not bool:
         raise TypeError('private prefill tile64 override must be bool')
     if _prefill_tile64:
+        required_scale_bytes = workspace.physical_tiles_capacity * 128 * (k // 16)
+        if workspace.scale_flat.numel() < required_scale_bytes:
+            raise ValueError('private M64 workspace lacks a physical SFA atom per logical tile')
         if not _prefill_m64_eligible(
                 m=num_tokens, E=num_experts, k=k, n=n, num_topk=top_k,
                 tile_m=workspace.tile_m, quant_mode=quant_mode,

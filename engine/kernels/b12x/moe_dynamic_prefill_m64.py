@@ -16,9 +16,10 @@ from ._moe_dynamic.gated import MoEGatedDynamicKernel, load_shared_i32_f32_pair
 from .moe_dynamic_ep_local import scatter_add_weighted_bf16x8_to_f32
 from .moe_dynamic_gated_sf6_q0_words import MoEGatedDynamicKernelSF6Q0Words
 from .moe_dynamic_gated_sf6_q0 import stock_contract_matches
+from ._prefill_m64_bodies import M64Bodies
 
 
-class MoEGatedDynamicKernelPrefillM64(MoEGatedDynamicKernelSF6Q0Words):
+class MoEGatedDynamicKernelPrefillM64(M64Bodies, MoEGatedDynamicKernelSF6Q0Words):
     def __init__(self, *args, mma_tiler_mn=(64, 128), **kwargs):
         if args or mma_tiler_mn != (64, 128):
             raise ValueError('private TP prefill requires explicit M64/N128')

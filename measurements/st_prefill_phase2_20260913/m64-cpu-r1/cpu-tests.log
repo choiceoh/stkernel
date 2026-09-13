@@ -1,0 +1,13 @@
+.....ss[b12x sf6] prepared FC1+FC2; packed bytes=37248
+.[b12x sf6] prepared FC1+FC2; packed bytes=37248
+.[b12x sf6] prepared FC1+FC2; packed bytes=37248
+...[b12x sf6] raw fallback: fc2 stage spans 256 byte codes (limit 64); packed bytes=0
+..........................[b12x sf6] packed-only owners finalised: layers=1 raw_bytes_released=24576; decode and prefill read immutable packed scales
+..[b12x sf6] packed-only owners finalised: layers=1 raw_bytes_released=24576; decode and prefill read immutable packed scales
+..[b12x sf6] packed-only owners finalised: layers=2 raw_bytes_released=49152; decode and prefill read immutable packed scales
+..[b12x sf6] packed-only owners finalised: layers=1 raw_bytes_released=24576; decode and prefill read immutable packed scales
+........
+----------------------------------------------------------------------
+Ran 52 tests in 68.953s
+
+OK (skipped=2)
