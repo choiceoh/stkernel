@@ -16,6 +16,7 @@ import sys
 import time
 
 import onepass as op
+from measurement_contract import HARNESS
 from onepass_recording import CURRENT, Run, group, steady_errors
 from window_metrics import exclusive_errors, traffic_state
 
@@ -122,7 +123,7 @@ def main(argv=None):
     scanner = op._load('korean-corruption.py', 'screen_korean')
     bracket = op._load('bracket.py', 'screen_bracket')
     record = dict(name=args.name, t=time.strftime('%F %T'), git=bracket._git_sha(),
-                  evidence_scope='screen', adoption_eligible=False, harness=44, screening_protocol=1,
+                  evidence_scope='screen', adoption_eligible=False, harness=HARNESS, screening_protocol=1,
                   session=os.environ.get('FLEET_SESSION', ''),
                   run_index=int(os.environ.get('ONEPASS_RUN_INDEX', '1')),
                   arm_sha=os.environ.get('ST_BRACKET_SHA', ''),
