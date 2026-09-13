@@ -38,6 +38,64 @@ def oracle_consume(net, layer, carry, side, packet):
 
 
 class DirectMhcTests(unittest.TestCase):
+    def test_exchange_failure_poisons_every_packet_publisher(self):
+        """A native call may enqueue a collective before reporting an error."""
+        for method, native in (("exchange", "oneshot_packets"), ("exchange_moe", "moe_packets")):
+            with self.subTest(method=method):
+                owner = OneShot.__new__(OneShot)
+                owner.pending, owner.packet_failed, owner.closed = None, False, False
+                owner.hidden, owner.world = 4096, 4
+                owner.eligible = lambda t: True
+                calls = []
+                def publish(*args):
+                    calls.append('enqueued')
+                    raise RuntimeError('native launch failed')
+                owner.ext = NS(healthy=lambda: True, **{native: publish})
+                shared, acc = torch.empty(8, 4096).bfloat16(), torch.empty(8, 4096)
+                args = (shared,) if method == 'exchange' else (acc, shared)
+                with patch('torch.cuda.current_stream', return_value=NS(cuda_stream=19)):
+                    with self.assertRaisesRegex(RuntimeError, 'native launch failed'):
+                        getattr(owner, method)(*args)
+                    self.assertTrue(owner.packet_failed)
+                    self.assertIsNone(owner.pending)
+                    with self.assertRaisesRegex(RuntimeError, 'previous rank-packet'):
+                        getattr(owner, method)(*args)
+                self.assertEqual(calls, ['enqueued'])
+
+    def test_packet_consumer_cannot_reenter_or_change_the_exchange_stream(self):
+        for violation in ('reenter', 'stream'):
+            with self.subTest(violation=violation):
+                owner = NS(pending=None, packet_failed=False)
+                with patch('torch.cuda.current_stream', return_value=NS(cuda_stream=19)) as stream:
+                    packet = RankPackets(owner, torch.ones(4), torch.arange(4))
+                    owner.pending = packet
+                    def consume(source, descriptor):
+                        if violation == 'reenter':
+                            return packet.consume(lambda x, d: x)
+                        stream.return_value = NS(cuda_stream=20)
+                        return source
+                    with self.assertRaises(RuntimeError):
+                        packet.consume(consume)
+                    self.assertTrue(owner.packet_failed)
+                    self.assertIsNone(owner.pending)
+
+    def test_descriptor_construction_failure_keeps_the_enqueued_ring_poisoned(self):
+        owner = OneShot.__new__(OneShot)
+        owner.pending, owner.packet_failed, owner.closed = None, False, False
+        owner.hidden, owner.world = 4096, 4
+        owner.eligible = lambda t: True
+        def publish(source):
+            with self.assertRaisesRegex(RuntimeError, 'previous rank-packet'):
+                owner.assert_consumed()
+            return torch.arange(4)
+        owner.ext = NS(healthy=lambda: True, oneshot_packets=publish)
+        with patch('torch.cuda.current_stream', return_value=NS(cuda_stream=19)), \
+                patch('engine.kernels.oneshot.RankPackets', side_effect=RuntimeError('descriptor failed')):
+            with self.assertRaisesRegex(RuntimeError, 'descriptor failed'):
+                owner.exchange(torch.empty(8, 4096).bfloat16())
+        self.assertTrue(owner.packet_failed)
+        self.assertIsNone(owner.pending)
+
     def test_producer_reserves_before_writing_and_poison_prevents_fallback(self):
         events = []
         owner = OneShot.__new__(OneShot)

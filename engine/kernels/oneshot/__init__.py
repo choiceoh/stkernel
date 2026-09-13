@@ -45,8 +45,11 @@ class RankPackets:
             raise RuntimeError("rank packets are stale or already consumed")
         if torch.cuda.current_stream(self.source.device).cuda_stream != self.stream:
             raise RuntimeError("rank packets must be consumed on their exchange stream")
+        self.owner.pending = object()  # the callback cannot consume this descriptor twice
         try:
             result = consumer(self.source, self.descriptor)
+            if torch.cuda.current_stream(self.source.device).cuda_stream != self.stream:
+                raise RuntimeError("rank-packet consumer changed its exchange stream")
         except BaseException:
             self.owner.packet_failed = True
             raise
@@ -191,14 +194,30 @@ class OneShot:
         if self.pending is not None or self.packet_failed:
             raise RuntimeError('the previous rank-packet consumer did not complete')
 
+    def _packet(self, source, publish):
+        """Claim prevalidated inputs before enqueue; every failed publication poisons the ring."""
+        if not self.ext.healthy():
+            raise RuntimeError('one-shot proxy stopped progressing')
+        stream = torch.cuda.current_stream(source.device).cuda_stream
+        self.pending = object()
+        try:
+            descriptor = publish()
+            if torch.cuda.current_stream(source.device).cuda_stream != stream:
+                raise RuntimeError('rank-packet publisher changed its exchange stream')
+            self.pending = RankPackets(self, source, descriptor)
+            return self.pending
+        except BaseException:
+            # The native call can fail after enqueue or advance the sequence
+            # before descriptor construction fails. Never retry on this ring.
+            self.packet_failed = True
+            self.pending = None
+            raise
+
     def exchange(self, t):
         self.assert_consumed()
         if self.closed or not self.eligible(t) or t.ndim != 2 or t.shape[1] != self.hidden:
             raise ValueError(f'rank packets require live TP{self.world} BF16 [1..{MAX_ELEMENTS // self.hidden},{self.hidden}]')
-        if not self.ext.healthy():
-            raise RuntimeError('one-shot proxy stopped progressing')
-        self.pending = RankPackets(self, t, self.ext.oneshot_packets(t))
-        return self.pending
+        return self._packet(t, lambda: self.ext.oneshot_packets(t))
 
     def produce(self, template, producer):
         """Reserve -> GEMM -> publish, on one stream. Template is shape metadata.
@@ -210,22 +229,14 @@ class OneShot:
         if (self.closed or not self.eligible(template) or template.ndim != 2
                 or template.shape[1] != self.hidden or template.shape[0] > 32):
             raise ValueError('direct producer requires live BF16 [1..32,4096] metadata')
-        if not self.ext.healthy():
-            raise RuntimeError('one-shot proxy stopped progressing')
         stream = torch.cuda.current_stream(template.device).cuda_stream
-        self.pending = object()  # no collective is legal while the producer owns its slot
-        try:
+        def publish():
             reservation = self.ext.reserve_packets(template)
             producer(reservation)
             if torch.cuda.current_stream(template.device).cuda_stream != stream:
                 raise RuntimeError('direct producer changed its reservation stream')
-            descriptor = self.ext.publish_packets(template, reservation)
-            self.pending = RankPackets(self, template, descriptor)
-            return self.pending
-        except BaseException:
-            self.packet_failed = True  # a reserved slot cannot fall back to another collective
-            self.pending = None
-            raise
+            return self.ext.publish_packets(template, reservation)
+        return self._packet(template, publish)
 
     def exchange_moe(self, routed, shared):
         """Finalize decode MoE output and publish in the existing packet grid.
@@ -240,10 +251,7 @@ class OneShot:
                 or routed.shape != shared.shape or not routed.is_contiguous()
                 or routed.data_ptr() % 16):
             raise ValueError('MoE packets need matching FP32/BF16 [1..32,4096] on live TP4')
-        if not self.ext.healthy():
-            raise RuntimeError('one-shot proxy stopped progressing')
-        self.pending = RankPackets(self, shared, self.ext.moe_packets(routed, shared))
-        return self.pending
+        return self._packet(shared, lambda: self.ext.moe_packets(routed, shared))
 
     @staticmethod
     def eligible_max(t):

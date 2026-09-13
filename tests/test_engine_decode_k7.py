@@ -12,8 +12,8 @@ class K7ProbeTests(unittest.TestCase):
         commands = []
         def execute(command, **kwargs):
             commands.append((command, kwargs))
-            return SimpleNamespace(returncode=1 if len(commands) == 2 else 0)
-        with patch.object(bundle, 'require_current_probe'), patch.object(bundle.subprocess, 'run', side_effect=execute), \
+            return 1 if len(commands) == 2 else 0
+        with patch.object(bundle, 'require_current_probe'), patch.object(bundle, 'run_component', side_effect=execute), \
                 patch('builtins.print'), self.assertRaises(RuntimeError):
             bundle.check('/immutable/ranks', bundle='k7_output_bundle')
         self.assertEqual(len(commands), 3)
@@ -25,8 +25,8 @@ class K7ProbeTests(unittest.TestCase):
         commands = []
         def execute(command, **kwargs):
             commands.append((command, kwargs))
-            return SimpleNamespace(returncode=1 if len(commands) == 1 else 0)
-        with patch.object(bundle, 'require_current_probe'), patch.object(bundle.subprocess, 'run', side_effect=execute), \
+            return 1 if len(commands) == 1 else 0
+        with patch.object(bundle, 'require_current_probe'), patch.object(bundle, 'run_component', side_effect=execute), \
                 patch('builtins.print'):
             with self.assertRaisesRegex(RuntimeError, 'one or more decode candidates failed'):
                 bundle.check('/immutable/ranks', bundle='k7_commit_bundle')
@@ -35,6 +35,27 @@ class K7ProbeTests(unittest.TestCase):
         self.assertNotIn('--ranks', commands[0][0])
         self.assertEqual(commands[1][0][-4:], ['--lanes', 'decode_k7', '--ranks', '/immutable/ranks'])
         self.assertEqual([kwargs['timeout'] for _, kwargs in commands], [300, 300])
+
+    def test_launch_failure_is_recorded_without_discarding_later_components(self):
+        import json
+        from probes import engine_decode_bundle as bundle
+        with patch.object(bundle, 'require_current_probe'), \
+                patch.object(bundle, 'run_component', side_effect=[bundle.ComponentStartError('cannot launch'), 124, 0]) as run, \
+                patch('builtins.print') as output, self.assertRaises(RuntimeError):
+            bundle.check('/immutable/ranks', bundle='k7_output_bundle')
+        self.assertEqual(run.call_count, 3)
+        summary = json.loads(output.call_args.args[0])
+        self.assertFalse(summary['passed'])
+        self.assertEqual([row['exit_code'] for row in summary['decode_bundle']], [127, 124, 0])
+        self.assertEqual(summary['decode_bundle'][0]['error'], 'cannot launch')
+
+    def test_cleanup_failure_cannot_start_another_component(self):
+        from probes import engine_decode_bundle as bundle
+        with patch.object(bundle, 'require_current_probe'), \
+                patch.object(bundle, 'run_component', side_effect=PermissionError('cannot stop child')) as run, \
+                patch('builtins.print'), self.assertRaises(PermissionError):
+            bundle.check('/immutable/ranks', bundle='k7_output_bundle')
+        self.assertEqual(run.call_count, 1)
 
     def test_real_weight_selection_follows_the_declared_mlp_layout(self):
         common = ['L0.kda.in_proj', 'L0.kda.o_proj', 'L3.mla.qkv_a',

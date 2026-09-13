@@ -281,8 +281,14 @@ class BrokerScriptTests(unittest.TestCase):
     def test_a_container_that_never_runs_does_not_keep_a_broker(self):
         self.running.write_text("\n")
         self.env["ST_RECLAIM_UNSEEN_S"] = "1"
-        self.assertEqual(self.broker("start", str(self.dir), "st-glm53").returncode, 0)
-        self.assertTrue(self.wait_gone(self.pid()))
+        self.dir.mkdir(parents=True)
+        # Exercise termination directly: a one-second wall-clock deadline
+        # can expire before the detached start's heartbeat poll sees it.
+        ended = self.broker("serve", str(self.dir), "st-glm53")
+        self.assertEqual(ended.returncode, 0, ended.stdout + ended.stderr)
+        self.assertIn("st-glm53 never ran: done", ended.stdout)
+        self.assertFalse((self.dir / "broker.pid").exists())
+        self.assertFalse((self.dir / "heartbeat").exists())
 
 
 class WiringTests(unittest.TestCase):

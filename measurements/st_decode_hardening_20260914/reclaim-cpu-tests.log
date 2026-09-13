@@ -1,0 +1,25 @@
+test_a_node_short_of_memory_rather_than_of_cache_is_not_asked (tests.test_engine_host_reclaim.AdmissionTests.test_a_node_short_of_memory_rather_than_of_cache_is_not_asked)
+MemAvailable under the need: dropping every clean page still would not cover it. ... ok
+test_no_broker_is_the_admission_it_always_was (tests.test_engine_host_reclaim.AdmissionTests.test_no_broker_is_the_admission_it_always_was) ... ok
+test_the_host_is_asked_only_when_admission_is_short (tests.test_engine_host_reclaim.AdmissionTests.test_the_host_is_asked_only_when_admission_is_short) ... ok
+test_warmup_asks_only_when_the_cache_covers_the_shortfall (tests.test_engine_host_reclaim.AdmissionTests.test_warmup_asks_only_when_the_cache_covers_the_shortfall)
+Checkpoints run by the hundred: a node short of memory, not of cache, must not drop the box's cache at each. ... ok
+test_warmup_reclaim_asks_the_host_before_it_faults (tests.test_engine_host_reclaim.AdmissionTests.test_warmup_reclaim_asks_the_host_before_it_faults) ... ok
+test_when_the_host_drop_is_enough_nothing_is_mapped (tests.test_engine_host_reclaim.AdmissionTests.test_when_the_host_drop_is_enough_nothing_is_mapped) ... ok
+test_when_the_host_is_not_enough_the_old_fault_still_runs_and_the_refusal_says_what_the_host_said (tests.test_engine_host_reclaim.AdmissionTests.test_when_the_host_is_not_enough_the_old_fault_still_runs_and_the_refusal_says_what_the_host_said) ... ok
+test_a_container_that_never_runs_does_not_keep_a_broker (tests.test_engine_host_reclaim.BrokerScriptTests.test_a_container_that_never_runs_does_not_keep_a_broker) ... ok
+test_a_new_boot_replaces_the_old_broker_and_stop_all_ends_it (tests.test_engine_host_reclaim.BrokerScriptTests.test_a_new_boot_replaces_the_old_broker_and_stop_all_ends_it) ... ok
+test_a_request_left_from_an_earlier_boot_is_not_served (tests.test_engine_host_reclaim.BrokerScriptTests.test_a_request_left_from_an_earlier_boot_is_not_served) ... ok
+test_it_answers_the_engine_and_ends_when_its_container_is_gone (tests.test_engine_host_reclaim.BrokerScriptTests.test_it_answers_the_engine_and_ends_when_its_container_is_gone) ... ok
+test_a_host_that_could_not_drop_it_says_so (tests.test_engine_host_reclaim.ClientTests.test_a_host_that_could_not_drop_it_says_so) ... ok
+test_a_rank_asks_at_most_once_in_the_gap (tests.test_engine_host_reclaim.ClientTests.test_a_rank_asks_at_most_once_in_the_gap) ... ok
+test_a_serving_broker_answers_this_question_with_its_report (tests.test_engine_host_reclaim.ClientTests.test_a_serving_broker_answers_this_question_with_its_report) ... ok
+test_an_answer_to_another_question_is_not_this_ones (tests.test_engine_host_reclaim.ClientTests.test_an_answer_to_another_question_is_not_this_ones) ... ok
+test_nobody_to_ask_means_no_question_and_no_wait (tests.test_engine_host_reclaim.ClientTests.test_nobody_to_ask_means_no_question_and_no_wait) ... ok
+test_the_boot_asks_the_host_at_admission_and_at_warmup (tests.test_engine_host_reclaim.WiringTests.test_the_boot_asks_the_host_at_admission_and_at_warmup) ... ok
+test_the_launcher_starts_the_broker_before_the_container_and_names_its_directory (tests.test_engine_host_reclaim.WiringTests.test_the_launcher_starts_the_broker_before_the_container_and_names_its_directory) ... ok
+
+----------------------------------------------------------------------
+Ran 18 tests in 4.566s
+
+OK
