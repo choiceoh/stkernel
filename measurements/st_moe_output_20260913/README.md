@@ -34,6 +34,17 @@ Expert weight streaming, router selection and network payload size are unchanged
 
 ## Qualification
 
+- The focused Linux CPU suite passes 22 tests; two GPU-only tests are skipped.
+  `cpu-tests.log` is the raw result.
+- `compile.json` and `compile.log` record five SM121 Triton variants plus full
+  native OneShot and producer-oracle extension builds with CUDA inaccessible.
+  All contributing source hashes match this candidate. No CUDA context was
+  initialized, and these results do not establish GPU execution.
+- `cpu-partial-tree.log` retains an initial wider-suite attempt: 13 modules
+  lacked launcher/overlay/template fixtures in the CPU copy, and one exposed
+  the already-fixed main #896 `fc_bias` reference default. The complete fixture
+  copy and #896 are included for final validation; none is a speed measurement.
+
 `tests/test_engine_moe_output.py` checks rounding ties and cancellation,
 unchanged inputs, output guards, shared-stream join/failure order, packet
 ownership, and CPU four-rank C=1/C=4 state and auxiliary-feature ordering.
