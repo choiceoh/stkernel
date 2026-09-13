@@ -51,7 +51,8 @@ def synthetic_checkpoint(root: Path, seed: int = 0) -> dict:
     # bf16 matrices and a bf16 vector under layer 0
     bf16 = {f"{P}layers.0.linear_attn.in_proj_qkv.weight": (torch.randn(2 * H, H, generator=g) * 0.1).to(torch.bfloat16),
             f"{P}layers.0.linear_attn.A_log": torch.empty(4).uniform_(0.01, 16, generator=g).log().to(torch.bfloat16),
-            "lm_head.weight": (torch.randn(32, H, generator=g) * 0.1).to(torch.bfloat16)}
+            "lm_head.weight": (torch.randn(32, H, generator=g) * 0.1).to(torch.bfloat16),
+            "mtp.pre_fc_norm_embedding.weight": (torch.randn(H, generator=g) * 0.3).to(torch.bfloat16)}   # the MTP head's names are top-level
     files["model-bf16-00001.safetensors"] = bf16
     # NVFP4 experts: packed nibbles, e4m3 block scales, a global scale, an input scale -- the modelopt four tensors
     experts = {}
@@ -97,6 +98,8 @@ class WeightsTests(unittest.TestCase):
         self.assertTrue(torch.equal(got, want.float()))
         self.assertTrue(torch.equal(w("model.layers.0.linear_attn.A_log"), self.meta["written"]["model.language_model.layers.0.linear_attn.A_log"].float()))
         self.assertTrue(torch.equal(w("lm_head.weight"), self.meta["written"]["lm_head.weight"].float()))
+        self.assertTrue(torch.equal(w("mtp.pre_fc_norm_embedding.weight"),
+                                    self.meta["written"]["mtp.pre_fc_norm_embedding.weight"].float()))
         self.assertIs(w("lm_head.weight"), w("lm_head.weight"))                    # kept, not re-read
         with self.assertRaises(KeyError):
             w("model.layers.0.linear_attn.nothing.weight")

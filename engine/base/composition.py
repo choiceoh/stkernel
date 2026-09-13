@@ -236,6 +236,9 @@ class Composition:
     residual: Residual
     features: dict = field(default_factory=dict)
     head: Callable = None           # [M, H] -> logits [M, V]
+    offset: int = 0                 # the model layer the plan's first layer is: a drafter's layers follow the target's
+    fuse: Callable = None           # (embeddings [N, H], given [N, ...], step) -> residual state: a head that opens
+                                    # from another model's state (an MTP head reads the target's; engine/modules/mtp)
 
     def __post_init__(self):
         missing = sorted({name for layer in self.plan.layers for name in layer.names()} - set(self.features))
@@ -244,16 +247,25 @@ class Composition:
         if self.head is None:
             raise ValueError("a composition needs a head")
 
-    def forward(self, step: Step, state: State, *, logits: str = "last", hidden: bool = False):
+    def forward(self, step: Step, state: State, *, logits: str = "last", hidden: bool = False, given=None):
         """Run one step: logits for each segment's last token ("last") or for every token ("all"). The state advances
         past the step's tokens (a verify segment's, once accepted). With `hidden`, also the residual state before the
         closing mix for every token -- what a drafter reads (Qwen3.8's MTP takes the multi-stream state) -- as
-        (logits, hidden)."""
+        (logits, hidden). `given` [N, ...]: the state a fusing head opens from (`fuse`) instead of the residual's open.
+        Features and the residual see model layer `offset + i` for plan layer i."""
         if logits not in ("last", "all"):
             raise ValueError("logits are 'last' or 'all'")
+        if given is not None and self.fuse is None:
+            raise ValueError("this composition opens from its embeddings; it has no fuse for a given state")
         state.check(step)
-        h = self.residual.open(self.embed(step.ids))
-        for layer_index, layer in enumerate(self.plan.layers):
+        if given is None:
+            h = self.residual.open(self.embed(step.ids))
+        else:
+            if given.shape[0] != step.ids.numel():
+                raise ValueError(f"a given state holds {given.shape[0]} rows for a step of {step.ids.numel()} tokens")
+            h = self.fuse(self.embed(step.ids), given, step)
+        for plan_index, layer in enumerate(self.plan.layers):
+            layer_index = self.offset + plan_index
             for name in layer.inject:
                 h = h + self.features[name](layer_index, h, step, state)
             for site, name in zip(SITES, (layer.mixer, layer.mlp)):
@@ -281,14 +293,14 @@ class Composition:
     def _specs(self):
         for name, feature in self.features.items():
             declare = getattr(feature, "cache_specs", None)
-            layers = self.plan.layers_of(name)
+            layers = [self.offset + i for i in self.plan.layers_of(name)]
             if declare is None or not layers:
                 continue
             for spec in declare(layers):
                 yield name, layers, spec
         declare = getattr(self.residual, "cache_specs", None)       # the residual form's own state, on every layer
         if declare is not None:
-            layers = list(range(len(self.plan.layers)))
+            layers = [self.offset + i for i in range(len(self.plan.layers))]
             for spec in declare(layers):
                 yield "residual", layers, spec
 
