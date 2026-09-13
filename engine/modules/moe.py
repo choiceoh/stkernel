@@ -15,7 +15,7 @@ so a weight element is  e2m1(nibble) * weight_scale[row, k//16] * weight_scale_2
 weight_global_scale is the reciprocal -- see modules/nvfp4_linear.py.)
 The nibble order is the same as DSv4.1's fp4 (modules/quant.py): even element
 low, odd element high -- and unlike DSv4.1 the scale is per ROW x 16-group,
-not per [32, 32] block, which is exactly the shape difference the b12x lane's
+not per 32-group under an E8M0 scale (modules/quant.fp4_gemm), which is exactly the shape difference the b12x lane's
 dispatch has to get right (its IMA lives there).
 
 This is the oracle for the MoE lane (D4/D14), slow on purpose.
