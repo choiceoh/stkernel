@@ -1,4 +1,5 @@
 """Alternate model/drafter paths must reach every boot mode before allocation."""
+import datetime
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
@@ -33,6 +34,7 @@ class BootPathTests(unittest.TestCase):
 
     def test_local_http_and_fleet_forward_both_model_directories(self):
         from engine.base import kernel_shape
+        from engine.base.config import Config
         from engine.profiles.glm53 import boot
         from tests.test_engine_glm53 import tiny_facts
         kernel_shape.reset()                         # every mode binds the checkpoint's shape once per process
@@ -43,31 +45,38 @@ class BootPathTests(unittest.TestCase):
                                temperature=0., tier_dir="/unused", port=8000, lanes="reference")
         comm = SimpleNamespace(rank=0, world_size=4, close=Mock(), prepare_oneshot=Mock())
         tp = SimpleNamespace(run=lambda fn: fn(comm))
-        for mode in ("local", "http", "fleet"):
+        for mode, production in (("local", False), ("http", False), ("fleet", False), ("fleet", True)):
             args.serve = mode == "http"
+            args.production = production
             # the fleet path refuses to boot without a reservation (fleet_lease_of), so this one holds it
-            with self.subTest(mode=mode), \
+            with self.subTest(mode=mode, production=production), \
                  patch.object(boot, "fleet_lease_of", return_value={"owner": "test", "path": "/unused"}), \
                  patch.object(boot.facts, "check_box", return_value="test"), \
                  patch.object(boot.facts, "load", return_value=tiny_facts()) as facts_load, \
-                 patch.object(boot, "declared") as declared, \
+                 patch.object(boot, "Config", side_effect=lambda facts, knobs: Config(
+                     facts, knobs, env={}, today=datetime.date(2026, 9, 13))), \
                  patch.object(boot, "LocalTP", return_value=tp), \
                  patch.object(boot.Comm, "init", return_value=comm), \
                  patch.object(boot.lane_tables, "reference"), \
                  patch.object(boot.lane_tables, "served"), \
                  patch.object(boot, "build", side_effect=StopAtBuild) as build:
-                declared.return_value.__getitem__.side_effect = lambda k: {
-                    "execution_overlap": 0, "early_observe": 0, "prefill_tiles": 1, "direct_mhc": 0, "prefill_project_tiles": 0,
-                    "nvme_mapped_staging": 0, "decode_iterations": 1,
-                    "moe_static": "t,r,sf6,q0", "mla_prefill": "tile32", "context_ceiling": 0,
-                    "execution": "native", "kda_state_dtype": "fp32"}[k]
                 with self.assertRaises(StopAtBuild):
                     (boot.fleet if mode == "fleet" else boot.local)(args)
                 self.assertEqual(build.call_args.kwargs["ckpt_meta"], args.ckpt_meta)
                 self.assertEqual(build.call_args.kwargs["drafter_dir"], args.drafter_dir)
+                if mode == "fleet":
+                    plan = build.call_args.kwargs["execution_plan"]
+                    self.assertEqual((plan.direct_mhc, plan.prefill_project_tiles, plan.decode_iterations),
+                                     (True, True, 4))
+                    self.assertEqual((plan.overlap, plan.early_observe, plan.prefill_tiles), (False, False, 1))
+                    self.assertTrue(build.call_args.kwargs["nvme_mapped_staging"])
+                    self.assertEqual(build.call_args.kwargs["kda_state_dtype"], "fp32")
+                else:
+                    # LocalTP/reference builds do not own the real TP4 transport.
+                    self.assertNotIn("execution_plan", build.call_args.kwargs)
                 facts_load.assert_called_with(args.ckpt_meta)        # the kernel shape comes from the selected config
                 self.assertTrue(kernel_shape.is_bound())
-        comm.close.assert_called_once_with()
+        self.assertEqual(comm.close.call_args_list, [unittest.mock.call(), unittest.mock.call()])
 
     def test_build_reads_drafter_facts_from_the_selected_directory(self):
         from engine.base import kernel_shape

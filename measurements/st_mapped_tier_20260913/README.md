@@ -1,8 +1,8 @@
 # GB10 mapped NVMe staging
 
-Implemented, default off (`nvme_mapped_staging=0`). A CUDA host-mapped pinned
-allocation supplies both the CPU O_DIRECT I/O window and the GPU gather/scatter
-window. Either tensor alias keeps the allocation alive. Ordinary cudaMalloc
+Implemented, default on (`nvme_mapped_staging=1`) as requested on 2026-09-13.
+A CUDA host-mapped pinned allocation supplies both the CPU O_DIRECT I/O window
+and the GPU gather/scatter window. Either tensor alias keeps the allocation alive. Ordinary cudaMalloc
 memory is never treated as CPU-readable or NIC-registerable.
 
 Paged block demotion now gathers directly into the mapped window; restoration

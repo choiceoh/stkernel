@@ -1,7 +1,8 @@
 # GB10 TP4 direct MHC consumer
 
-Status: connected to serving, default off; CPU arithmetic, SM121a compilation
-and the native consumer GPU gate pass. Real TP4 ring replay, quality and
+Status: connected to serving, default on (`direct_mhc=1`) as requested on
+2026-09-13. CPU arithmetic, SM121a compilation and the native consumer GPU
+gate pass. Real TP4 ring replay, quality and
 onepass performance are not yet qualified.
 
 The receiver passes four canonical rank pointers to the immediate MHC
@@ -37,8 +38,8 @@ Validation on 2026-09-13:
   This gate passed on `st-direct-mhc0913r1`; `gpu-consumer.json` preserves
   the native source hashes and explicitly excludes real NIC transport proof.
 
-Before promotion, a same-build baseline/candidate bracket must include full
-onepass C=1 twice and C=4 once per boot, 2K/32K/128K, output quality, actual
+Performance qualification still requires a same-build baseline/candidate bracket
+with full onepass C=1 twice and C=4 once per boot, 2K/32K/128K, output quality, actual
 tok/s and TTFT, acceptance, length and per-step timing. No speedup is claimed.
 
 ## Requested sequence

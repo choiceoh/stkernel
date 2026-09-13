@@ -1,7 +1,8 @@
 # Tile-ready KDA input projection on GB10 TP4
 
-Implemented, default off (`prefill_project_tiles=0`). No serving speedup is
-claimed. This is the second experiment after the direct MHC receiver.
+Implemented, default on (`prefill_project_tiles=1`) as requested on 2026-09-13.
+No serving speedup is claimed. This is the second experiment after the direct
+MHC receiver.
 
 Prefill's local token shard is exchanged in at most four balanced tiles.
 Two explicitly owned slots hold packed payload, receive bytes and BF16
@@ -33,7 +34,8 @@ Validation:
   source `9f59bb9dd84c92f65f792850a3c20b2b50af2699` (5.625 seconds).
   `gpu-consumer.json` retains the source hashes and limited synthetic-peer scope.
 - Real TP4 and full onepass C=1/C=4 quality, tok/s, TTFT and per-item latency
-  remain pending. Extra NCCL launches can offset overlap; keep default off.
+  remain pending. Extra NCCL launches can offset overlap; the requested default
+  change does not establish a performance gain.
 
 Stream synchronization follows [PyTorch's CUDA collective contract](https://docs.pytorch.org/docs/stable/distributed):
 `Work.wait()` orders the active CUDA stream; an explicit event orders the
