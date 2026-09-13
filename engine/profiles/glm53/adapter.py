@@ -299,7 +299,7 @@ class Glm53Engine:
         return paid
 
     def _warmup_prefill_memory(self):
-        """Exercise the largest legal prefill at both ends of the KV capacity.
+        """Exercise the largest legal prefill at both ends of the served context.
 
         Inputs are synthetic; this qualifies memory preparation, not quality.
         Unseen tail shapes remain subject to the same allocator byte ceiling.
@@ -309,7 +309,7 @@ class Glm53Engine:
         caches = self.caches
         if caches.pool.rows_in_use or any(owner >= 0 for owner in caches.slots.owner[1:]):
             raise ValueError("memory preparation requires empty request and state slots")
-        capacity = caches.pool.num_blocks * self.F.block
+        capacity = min(caches.pool.num_blocks * self.F.block, self.max_context)
         largest = min(self.prefill_chunk, capacity)
         shapes = [(largest, context) for context in sorted({0, capacity-largest})]
         if getattr(self.net, 'dense', None):
@@ -341,7 +341,7 @@ class Glm53Engine:
                 if aux is not None:
                     self._observe_prefill(slot, context, aux, cuts)
                 del h, aux, logits, valid, bad, step, ids
-                self.memory.checkpoint(f"prefill/{length}/{context}/prepared")
+                self.memory.checkpoint(f"prefill/{length}/{context}/prepared", release_cache=True)
         finally:
             caches.pool.release(0)
             caches.slots.give(slot)
@@ -371,7 +371,7 @@ class Glm53Engine:
         if caches.pool.rows_in_use or any(owner >= 0 for owner in caches.slots.owner[1:]):
             raise ValueError("kernel warmup requires empty request and state slots")
         widths = [w for w in self.WARM_PREFILL_TOKENS
-                  if w <= min(self.prefill_chunk or w, caches.pool.num_blocks * F.block)]
+                  if w <= min(self.prefill_chunk or w, caches.pool.num_blocks * F.block, self.max_context)]
         if not widths:
             return
         slot = caches.slots.take(0)
@@ -387,15 +387,11 @@ class Glm53Engine:
             caches.slots.give(slot)
             caches.reset()
         if self.memory is not None:
-            # Preparation can leave a large inactive allocator cache before
-            # graphs exist: the 2026-09-13 boot retained 9.42 GiB and failed
-            # the OS reserve by 0.85 GiB. Return unused blocks at this empty
-            # request boundary; live weights/workspaces and peak evidence stay.
-            reserved = torch.cuda.memory_reserved()
-            torch.cuda.empty_cache()
-            returned = reserved - torch.cuda.memory_reserved()
+            # Reclaim inside the checkpoint so the same row records what
+            # returned before every rank votes on the remaining headroom.
+            row = self.memory.checkpoint(f"warm kernels {widths}", release_cache=True)
+            returned = row["allocator_reclaimed_bytes"]
             print(f"  kernel warmup returned {returned / (1 << 30):.2f} GiB of inactive allocator cache", flush=True)
-            self.memory.checkpoint(f"warm kernels {widths}")
 
     def close_decode(self):
         pipeline = getattr(self, "pipeline", None)
