@@ -29,6 +29,8 @@ import sys
 import time
 import urllib.request
 
+import step_acceptance as acceptance
+
 DEFAULT_URL = "http://10.10.10.2:8000"          # 플릿 헤드 (bench/fleet.sh HEAD_URL 계열)
 
 # 두 스크랩 사이 증분으로 읽는 계열. 히스토그램은 이름만 적는다(_bucket/_sum/_count).
@@ -171,7 +173,7 @@ def fetch(url: str, timeout: float = 5.0) -> dict:
 
 def track(metrics: dict) -> dict:
     """저장/재분석에 쓸 계열만 남긴다."""
-    names = set(COUNTERS) | set(GAUGES)
+    names = set(COUNTERS) | set(GAUGES) | {acceptance.LANE}
     keep = {}
     for key, value in metrics.items():
         base = key.split("{", 1)[0]
@@ -215,23 +217,16 @@ def _line(w: dict) -> str:
 
 
 def acc_hist_from_scrapes(a: dict, b: dict) -> "list | None":
-    """두 스크랩 사이의 수용률 실측 분포: st:spec_accepted_per_step_total{accepted="i"}
-    라벨 계열의 증분을 [i=0..k] 개수 리스트로. 계열이 없으면 None — 없는 것은 0 이 아니다.
-    소비: step_sim --acc-hist-from (기하 추첨을 이 분포로 바꾼다)."""
-    deltas = {}
-    for key, value in b.items():
-        if not key.startswith("st:spec_accepted_per_step_total{"):
-            continue
-        for part in key[key.index("{") + 1:-1].split(","):
-            k, _, v = part.partition("=")
-            if k.strip() == "accepted":
-                i = int(v.strip().strip('"'))
-                a0 = a.get(key)
-                if a0 is not None and value >= a0:
-                    deltas[i] = value - a0
-    if not deltas:
+    """검증된 행별 accepted 분포. 결측·카운터 불일치·빈 창은 None, 0%가 아니다."""
+    return acc_hist_from_samples([a, b])
+
+
+def acc_hist_from_samples(samples: list[dict], k: int | None = None) -> "list | None":
+    try:
+        hist = acceptance.histogram_from_samples(samples, k)["histogram"]
+    except ValueError:
         return None
-    return [deltas.get(i, 0) for i in range(max(deltas) + 1)]
+    return hist if sum(hist) else None
 
 
 def summarize(samples: "list[tuple[float, dict]]") -> dict:
@@ -251,6 +246,10 @@ def summarize(samples: "list[tuple[float, dict]]") -> dict:
         total_dt = samples[-1][0] - samples[0][0]
         pooled = window(samples[0][1], samples[-1][1], total_dt)
         out["pooled"] = pooled
+        try:
+            out["acceptance"] = acceptance.profile(acceptance.histogram_from_samples([s for _, s in samples]))
+        except ValueError as exc:
+            out["acceptance_error"] = str(exc)
     return out
 
 
@@ -309,9 +308,10 @@ def main() -> int:
     print(f"== {s['windows']}창, 캐던스 중앙값 {s['step_s_med']} step/s {s['step_s_q']}")
     if "pooled" in s:
         print(f"   전체: {_line(s['pooled'])}")
-    hist = acc_hist_from_scrapes(samples[0][1], samples[-1][1]) if samples else None
-    if hist:
-        print(f"   수용률 분포(스텝당 accepted): {hist} — step_sim --acc-hist-from 로 소비")
+    if "acceptance" in s:
+        print(acceptance.format_profile(s["acceptance"]))
+    elif "acceptance_error" in s:
+        print(f"   위치별 수락률 확인 불가: {s['acceptance_error']}")
     if args.out:
         print(f"   샘플: {args.out} (step_replay 로 재분석)")
     return 0
