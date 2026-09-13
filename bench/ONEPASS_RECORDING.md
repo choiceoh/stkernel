@@ -1,4 +1,4 @@
-# Onepass recording (harness 42)
+# Onepass recording (harness 45)
 
 > 살아 있는 참조 — **원패스가 무엇을 기록하는지. 하니스가 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
 
@@ -11,7 +11,8 @@ reconciliation, constrained optimization and possible-world/contradiction proofs
 Only the final content channel is graded. C=1 and C=4 reuse identical prompts.
 
 Each arm first replays its complete workload to exercise the actual shapes and
-generation path. Every request uses a different `cache_salt`, leaving the model
+generation path. Every request says `retain: false` (harness 45: a finished request
+is released, not parked to the NVMe tier) and uses a different `cache_salt`, leaving the model
 prompt unchanged. The measured arm must show zero reused prompt tokens, no
 observed new Triton/CuTe/C++ specialization or ST graph capture, complete
 traffic counters, and the requested decode width on every rank. These are

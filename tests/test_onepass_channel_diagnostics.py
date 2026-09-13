@@ -84,9 +84,18 @@ LEGACY_STREAM_SOURCE = r'''def ask_stream(url, model, content, max_tokens, timin
 '''
 
 
+# The one change to the request since the oracle was preserved, made on purpose: harness 45 asks the
+# server not to retain a measurement request (`retain: false`, PR #858). Applied to the oracle here, in
+# the open, so everything else about the request must still match it byte for byte.
+HARNESS_45_REQUEST = ('"chat_template_kwargs": {"thinking": True}}).encode()',
+                      '"chat_template_kwargs": {"thinking": True}, "retain": False}).encode()')
+
+
 def legacy_stream():
     namespace = dict(onepass.__dict__)
-    exec(compile(LEGACY_STREAM_SOURCE, '<original-onepass-ask-stream>', 'exec'), namespace)
+    assert LEGACY_STREAM_SOURCE.count(HARNESS_45_REQUEST[0]) == 1
+    source = LEGACY_STREAM_SOURCE.replace(*HARNESS_45_REQUEST)
+    exec(compile(source, '<original-onepass-ask-stream>', 'exec'), namespace)
     return namespace['ask_stream']
 
 

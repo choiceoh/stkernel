@@ -3,7 +3,10 @@
 import json
 import math
 
-HARNESS = 44
+HARNESS = 45
+# Harness 45: onepass requests say `retain: false`, so the server no longer parks each finished
+# request to the NVMe tier (the park overlapped the next request; on the live door a D17 probe filled
+# production's tier). The questions and budgets are harness 44's.
 # Harness 43 (8192/4096 individual, 24576/12288 combined) ended every measured
 # reasoning stream at its cap mid-sentence; the 128K combined request spent the
 # whole cap on the first of its three cases. Keep half the doubled budget for answers.
