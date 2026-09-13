@@ -18,14 +18,21 @@ def _single_conv(X, W, S, Y, F, T: tl.constexpr, C: tl.constexpr,
                  SS: tl.constexpr, SC: tl.constexpr, K: tl.constexpr,
                  HAS_STATE: tl.constexpr, BC: tl.constexpr, BT: tl.constexpr,
                  ring_slot=None, ring_context=None, RING_SIZE: tl.constexpr = 0,
-                 RING_SLOT_STRIDE: tl.constexpr = 0, RING_DEVICE_INDICES: tl.constexpr = False):
+                 RING_SLOT_STRIDE: tl.constexpr = 0, RING_DEVICE_INDICES: tl.constexpr = False,
+                 RING_INDEX_STRIDE: tl.constexpr = 0):
     c = tl.program_id(0) * BC + tl.arange(0, BC)
     start = tl.program_id(1) * BT
+    # The third grid axis is the row of a batched ring step: row r's T tokens follow row r-1's in X and Y,
+    # and it reads its own slot/context entry (RING_INDEX_STRIDE 1). One row launches with the axis at 1.
+    row = tl.program_id(2)
+    X += row * T * XS
+    Y += row * T * C
     if RING_SIZE:
         # The ring wrapper launches one time tile. A CTA owns each channel's
         # complete initial history and every current token, including writes.
         if RING_DEVICE_INDICES:
-            slot, context = tl.load(ring_slot).to(tl.int64), tl.load(ring_context).to(tl.int64)
+            slot = tl.load(ring_slot + row * RING_INDEX_STRIDE).to(tl.int64)
+            context = tl.load(ring_context + row * RING_INDEX_STRIDE).to(tl.int64)
         else:
             slot, context = ring_slot.to(tl.int64), ring_context.to(tl.int64)
         ring_base = S + slot * RING_SLOT_STRIDE + c * SS

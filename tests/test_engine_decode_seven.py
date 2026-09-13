@@ -112,7 +112,7 @@ class RouterTensorCoreTests(unittest.TestCase):
     def test_fp32_logits_and_selection_on_random_repeated_and_tied_experts(self):
         from engine.kernels.glm_pointwise import router_logits, route_weights
         torch.manual_seed(91507)
-        for rows in (1, 7, 28):
+        for rows in (1, 7, 28, 2304):                    # a decode row, the seven-row step, four rows, a prefill chunk
             x = torch.randn(rows, 4096, device='cuda', dtype=torch.bfloat16)
             gate = (torch.randn(288, 4096, device='cuda') * .02).bfloat16()
             bias = torch.randn(288, device='cuda') * .1

@@ -72,6 +72,7 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
     RING_SIZE: tl.constexpr = 0,
     RING_SLOT_STRIDE: tl.constexpr = 0,
     RING_DEVICE_INDICES: tl.constexpr = False,
+    RING_INDEX_STRIDE: tl.constexpr = 0,  # device indices per sequence: sequence i_n reads ring_slot[i_n * stride]
     deferred_keys=None,
     deferred_decay=None,
     deferred_updates=None,
@@ -142,7 +143,8 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
     b_h = tl.zeros([BV, BK], dtype=tl.float32)
     if RING_SIZE:
         if RING_DEVICE_INDICES:
-            slot, context = tl.load(ring_slot).to(tl.int64), tl.load(ring_context).to(tl.int64)
+            slot = tl.load(ring_slot + i_n * RING_INDEX_STRIDE).to(tl.int64)
+            context = tl.load(ring_context + i_n * RING_INDEX_STRIDE).to(tl.int64)
         else:
             slot, context = ring_slot.to(tl.int64), ring_context.to(tl.int64)
         ring_base = slot * RING_SLOT_STRIDE + i_hv * V * K + state_offsets

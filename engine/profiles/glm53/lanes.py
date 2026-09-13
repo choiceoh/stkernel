@@ -82,6 +82,9 @@ class Lanes:
     kda_recurrent_ring: object = None  # inputs, then (ring [slots,R,H,K,V] f32/f16, slot, context, lower_bound)
                                      # -> output only; writes each token state into the selected ring. None uses the functional lane.
     conv_ring: object = None  # (x [T,C], w [C,K], ring [slots,C,R], slot, context) -> y; writes raw inputs into ring, T<=8
+    kda_recurrent_ring_rows: object = None  # the same over every row of a captured decode step at once: inputs [1,rows*T,...],
+                                          # (ring, slots [rows], contexts [rows], lower_bound) -> [1,rows*T,H,D]; None keeps the row loop
+    conv_ring_rows: object = None  # (x [rows*T,C], w, ring, slots [rows], contexts [rows]) -> y [rows*T,C]; None keeps the row loop
     rmsnorm: object = None    # None declares net.py's torch composition; served binds native pointwise lanes
     swiglu: object = None     # (gate, up [T,I], limit) -> BF16; FP32 clamped activation
     route_weights: object = None  # (FP32 logits [T,E], bias [E], topk, scale) -> int32 ids, FP32 weights
@@ -217,9 +220,9 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     expert_lane = "reference" if "expert" in reference_for else "b12x"
     from engine.kernels.kda import chunk_kda_with_fused_gate, fused_recurrent_kda
     from engine.kernels.kda.output import kda_output_norm
-    from engine.kernels.kda.ring import recurrent_kda_ring
+    from engine.kernels.kda.ring import recurrent_kda_ring, recurrent_kda_ring_rows
     from engine.kernels.causal_conv_single import causal_conv1d_single as conv_prefill
-    from engine.kernels.causal_conv_ring import causal_conv1d_ring
+    from engine.kernels.causal_conv_ring import causal_conv1d_ring, causal_conv1d_ring_rows
     from engine.kernels.mhc import mhc_pre_tilelang, mhc_post_tilelang
     from engine.kernels.deep_gemm import fp8_fp4_mqa_logits
     from engine.kernels.kpool import compress_pool_keys, fwht128_quant_fp8
@@ -322,7 +325,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
 
     if "kda_recurrent" in reference_for:
         kda_recurrent = ref.kda_recurrent
-        recurrent_kda_ring = None
+        recurrent_kda_ring = recurrent_kda_ring_rows = None
     moe_prepare = None
     graph_resources = None
     if expert_lane == "reference":
@@ -476,6 +479,8 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                   graph_resources=graph_resources,
                   kda_recurrent_ring=None if recurrent_kda_ring is None else on_main(recurrent_kda_ring),
                   conv_ring=None if "conv_prefill" in reference_for else on_main(causal_conv1d_ring),
+                  kda_recurrent_ring_rows=None if recurrent_kda_ring_rows is None else on_main(recurrent_kda_ring_rows),
+                  conv_ring_rows=None if "conv_prefill" in reference_for else on_main(causal_conv1d_ring_rows),
                   rmsnorm=on_main(norm), swiglu=on_main(activation),
                   route_weights=on_main(route_weights), layernorm=on_main(layernorm))
     # 45차 §21 bisect: any other lane named in `reference_for` runs on the torch reference in this table
