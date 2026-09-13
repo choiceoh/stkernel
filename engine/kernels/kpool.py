@@ -21,7 +21,8 @@ import triton.language as tl
 # below is the hard-coded H128 transform. A profile declares its own width in
 # the kernel shape (engine/base/kernel_shape); a width that is not this one is
 # refused by name on the lane's first call, not run through the wrong butterfly.
-INDEX_HEAD_DIM = 128
+# The number itself is stated once in engine/kernels/cells.py.
+from engine.kernels.cells import INDEXER_HEAD_DIM as INDEX_HEAD_DIM   # noqa: E402
 _CELL_SEEN = None
 
 
@@ -31,6 +32,8 @@ def _indexer_cell() -> int:
     from engine.base.kernel_shape import bound
     shape = bound()
     if shape is not _CELL_SEEN:
+        if shape.indexer is None:
+            raise ValueError("the bound kernel shape declares no sparse indexer; the indexer lanes do not apply")
         if shape.indexer.head_dim != INDEX_HEAD_DIM:
             raise ValueError(f"the indexer lanes are written for head_dim {INDEX_HEAD_DIM} (Hadamard-{INDEX_HEAD_DIM}); "
                              f"the bound kernel shape asks for {shape.indexer.head_dim}")

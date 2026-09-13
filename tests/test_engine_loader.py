@@ -12,6 +12,10 @@ from unittest.mock import patch
 
 from engine.base.loader import RankLoader
 
+# The reference reader the range reader is held to. It is in the fleet image and not a serving
+# dependency; where it is absent (a CPU test container) the comparison tests skip instead of erroring.
+SAFETENSORS = importlib.util.find_spec("safetensors") is not None
+
 torch = None
 if importlib.util.find_spec("torch") is not None:
     import torch
@@ -164,6 +168,7 @@ class CheckpointTests(unittest.TestCase):
         (root / "model.safetensors.index.json").write_text(json.dumps({"weight_map": weight_map}))
         return shards
 
+    @unittest.skipUnless(SAFETENSORS, "the reference safetensors reader is not installed")
     def test_layers_are_read_as_ranges_and_match_the_reference_reader(self):
         from engine.base.checkpoint import Checkpoint
         from safetensors import safe_open
@@ -233,6 +238,7 @@ class CheckpointTests(unittest.TestCase):
 
 @unittest.skipUnless(torch is not None, "requires PyTorch")
 class AlignedRankTests(unittest.TestCase):
+    @unittest.skipUnless(SAFETENSORS, "the reference safetensors reader is not installed")
     def test_scalar_then_matrix_stays_aligned_in_one_upload(self):
         from engine.base.arena import ALIGN, Arena
         from engine.base.params import Spec

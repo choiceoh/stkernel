@@ -12,8 +12,8 @@ import torch
 import torch.distributed as dist
 
 from .kernels import _pack_rs_payload, _unpack_gather, _unpack_sum_payload
+from engine.kernels.cells import PREFILL_BLOCK as BLOCK     # the packet block, stated once (cells.py)
 
-BLOCK = 2048
 FP8_MIN_ROWS = 4096
 
 
