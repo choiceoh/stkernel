@@ -13,6 +13,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--output", type=Path, default=Path("/cache/kda-deferred.json"))
     ap.add_argument("--samples", type=int, default=12)
+    ap.add_argument("--commit-only", action="store_true",
+                    help="check batched commit and replay, then compare flat/tiled commit on identical factors")
     args = ap.parse_args()
     if args.samples < 4:
         ap.error("at least four timing samples are required")
@@ -33,13 +35,20 @@ def main():
                   torch=torch.__version__, cuda=torch.version.cuda, status="RUNNING")
     started = time.monotonic()
     try:
-        suite = unittest.defaultTestLoader.loadTestsFromNames(("tests.test_engine_kda_deferred",
-                   "tests.test_engine_kda_deferred_batch"))
+        names = ("tests.test_engine_kda_deferred_batch",) if args.commit_only else (
+            "tests.test_engine_kda_deferred", "tests.test_engine_kda_deferred_batch")
+        suite = unittest.defaultTestLoader.loadTestsFromNames(names)
         result = unittest.TextTestRunner(verbosity=2).run(suite)
         report["correctness"] = dict(tests=result.testsRun, skips=len(result.skipped),
                                       errors=result.errors, failures=result.failures)
         if not result.wasSuccessful() or result.skipped:
             raise RuntimeError("deferred-state gate failed or skipped")
+        if args.commit_only:
+            from probes.engine_kda_batch_bench import measure_commit
+            with torch.inference_mode():
+                report["commit"] = measure_commit(args.samples)
+            report["status"] = "PASS"
+            return
         from probes.engine_kda_batch_bench import measure
         from probes.engine_candidate_packet_bench import measure as packets
         with torch.inference_mode():

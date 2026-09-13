@@ -1,0 +1,21 @@
+{
+  "reference_instructions_identical": true,
+  "tiled0-h16-k128-v128": {
+    "static_global_loads": 36,
+    "mul_hi_u64": 1,
+    "register_declarations": [
+      ".reg .pred \t%p<9>;",
+      ".reg .b32 \t%r<131>;",
+      ".reg .b64 \t%rd<121>;"
+    ]
+  },
+  "tiled1-h16-k128-v128": {
+    "static_global_loads": 29,
+    "mul_hi_u64": 1,
+    "register_declarations": [
+      ".reg .pred \t%p<10>;",
+      ".reg .b32 \t%r<74>;",
+      ".reg .b64 \t%rd<108>;"
+    ]
+  }
+}
