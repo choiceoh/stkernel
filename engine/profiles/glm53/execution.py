@@ -54,6 +54,7 @@ class ExecutionPlan:
     def label(self):
         return (f"tp_overlap={int(self.overlap)},early_observe={int(self.early_observe)},"
                 f"prefill_tiles={self.prefill_tiles},direct_mhc={int(self.direct_mhc)},"
+                f"moe_output={int(self.direct_mhc)},"
                 f"prefill_project_tiles={int(self.prefill_project_tiles)},decode_iterations={self.decode_iterations},"
                 f"deferred_kda={int(self.deferred_kda)},terminal_mhc={int(self.terminal_mhc)},"
                 f"prefill_indexer_shards={int(self.prefill_indexer_shards)},"

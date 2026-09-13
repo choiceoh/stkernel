@@ -3,6 +3,7 @@
 Auxiliary feature layers and the last FFN retain ordinary reduced tensors.
 Every packet is consumed before the next collective; no communication side
 stream or split batch may share this transport while the step runs.
+MoE output finalization is enabled for the served K=7, C<=4 decode shapes.
 """
 from .execution import begin, prepare, local, auxiliary, finish
 
@@ -35,7 +36,7 @@ def exchange_local(net, layer, carry, side, *, moe_output=False):
 
 
 def decode_direct(net, step, caches, aux_layers=(), aux_ready=None, *, consumer=consume, contract=None,
-                  moe_output=False):
+                  moe_output=True):
     import torch
     transport = net.comm.transport
     if transport is None or not hasattr(transport, "exchange") or (consumer is consume and net.mhc is None):
@@ -46,7 +47,7 @@ def decode_direct(net, step, caches, aux_layers=(), aux_ready=None, *, consumer=
     if any(layer not in net.layers for layer in aux_layers):
         raise ValueError("direct MHC features must name layers in this target")
     if moe_output and (not hasattr(transport, 'exchange_moe') or step.ids.numel() > 32):
-        raise ValueError('MoE output qualification requires its packet consumer and at most 32 rows')
+        raise ValueError('MoE output requires its packet consumer and at most 32 rows')
     transport.assert_consumed()
     c = begin(net, step, caches)
     packet, features = None, None

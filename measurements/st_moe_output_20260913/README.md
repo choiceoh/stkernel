@@ -1,8 +1,10 @@
 # Decode MoE output finalization
 
-Explicit candidate; serving selection remains unchanged. GPU timing and TP4
-consumer qualification are pending. This work does not modify KDA state storage,
-draft depth, projection precision or correction bias. It is independent of #895.
+Enabled for captured TP4 decode by operator instruction on 2026-09-14. GPU
+timing and TP4 consumer qualification are still pending; this is a default
+selection decision, not a measured speed or acceptance result. KDA state
+storage, draft depth, projection precision and correction bias are unchanged.
+This work is independent of #895.
 
 The routed expert currently accumulates in FP32, copies into a BF16 tensor,
 adds the BF16 shared expert into another BF16 tensor, then exchanges that tensor.
@@ -21,9 +23,14 @@ The candidate consumes the completed FP32 accumulator before workspace reuse:
   preserve the stream and borrowed-workspace lifetime. Wider batches keep their
   existing sequential shared-expert computation.
 
-The packet candidate is selected only by `decode_direct(..., moe_output=True)`;
-no serving caller supplies that option. The lower-level finalizer refuses any
-geometry outside the explicitly prepared tiled TP4 NVFP4 decode contract.
+`decode_direct` now defaults to `moe_output=True`, including the existing
+production and experimental native graph calls. The execution-plan record
+reports `moe_output=1` when direct MHC is selected. No new boot knob is added;
+the existing experimental `STK_direct_mhc=0` selects the ordinary decode path,
+and lower-level comparison probes can still pass `moe_output=False` explicitly.
+Capture refuses more than 32 rows before allocating device resources. The
+served K=7, C=1..4 graph shapes are within this contract. The lower-level
+finalizer continues to refuse incompatible tiled TP4 NVFP4 layouts.
 The admitted probe uses the existing D11 campaign expiry of 2026-09-16.
 
 For the current five auxiliary layers, 36 MoE boundaries use packets and six
@@ -33,6 +40,16 @@ C=4). These are operation/byte counts, not elapsed-time or arena savings.
 Expert weight streaming, router selection and network payload size are unchanged.
 
 ## Qualification
+
+Default-on selection (2026-09-14): `default-on/compile-reuse.json` verifies
+that the native CUDA inputs and executable Python kernel/transport code are
+unchanged from the frozen queued source; only two kernel-module docstrings
+were updated. The existing compilation proof is reused. The default-path CPU
+test now covers C=1/2/3/4 at both one-token decode and eight-token K=7 verify,
+checking the packet and terminal finalizers, auxiliary output and recurrent
+state against the ordinary four-rank fold. This does not establish NIC
+execution or speed. The focused run passes 71 tests with five GPU-only skips
+(76 total); the raw result is `default-on/cpu-tests.log`.
 
 - The focused Linux CPU suite passes 22 tests; two GPU-only tests are skipped.
   `cpu-tests.log` is the raw result.
@@ -87,11 +104,16 @@ fleet owner is untouched. `admission.json` records both the queued replacement
 and the cancelled predecessor. The initial preparation was refused before any
 GPU hold because newer relevant main changes were missing; integration resolved
 that refusal.
+The frozen component checkout remains unchanged: it already selects the fused
+kernels explicitly. Its default-off metadata describes that original source;
+the default-on serving change is recorded separately here. No queue restart
+or new model boot is needed for the same component gate.
 
 Oracle #875 is used with K=7, FP32 state, 32K/128K and C=1/C=4. New source lacks
 paired pricing, so the total time delta is unknown. Its `--acc 0` scenario is
 explicitly timing-only; it is not measured acceptance. Default cache allocation
-is unchanged, and the Oracle does not activate this explicit candidate.
+is unchanged. The saved Oracle report predates the default-on selection and
+does not price the fused output path.
 
 The later candidate consumer retains the operator's one-boot workload: C=1 twice,
 C=4 once, decode step/s, actual output tok/s and acceptance, with answer grades

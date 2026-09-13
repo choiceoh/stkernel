@@ -29,7 +29,7 @@ class MoeOutputContractTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 owner.exchange_moe(shared, shared)
 
-    def test_opt_in_preserves_four_rank_aux_and_recurrent_state(self):
+    def test_default_preserves_four_rank_aux_and_recurrent_state(self):
         from dataclasses import replace
         from types import MethodType
         from engine.base.comm import LocalTP
@@ -39,20 +39,23 @@ class MoeOutputContractTests(unittest.TestCase):
         from tests.test_engine_execution_plans import model
         torch.set_num_threads(1)
         def rank(comm):
-            for count in (1, 4):
+            for count, tokens in ((c, t) for c in (1, 2, 3, 4) for t in (1, 8)):
                 net, cache = model(('kda', 'dsa', 'kda'), comm=comm)
                 net.F = replace(net.F, dense=())
+                finalized = []
                 def moe(self, layer, x, reduce=None, *, finalize=None):
                     acc = x.float() * (layer+1) * .01
                     shared = (x.float() * .03).bfloat16()
+                    if finalize is not None:
+                        finalized.append(layer)
                     return (finalize(acc, shared) if finalize else
                             (reduce or self.comm.all_reduce)(acc.bfloat16()+shared))
                 net._moe = MethodType(moe, net)
                 chunks = []
                 for seq in range(count):
                     slot = cache.slots.take(seq)
-                    cache.pool.reserve(seq, 8)
-                    chunks.append(((torch.arange(8)+seq) % net.vp, 0, seq, slot))
+                    cache.pool.reserve(seq, tokens)
+                    chunks.append(((torch.arange(tokens)+seq) % net.vp, 0, seq, slot))
                 step = Step.decode(chunks)
                 cache.prepare(step)
                 state, paged = cache.state.clone(), cache.paged.clone()
@@ -63,9 +66,10 @@ class MoeOutputContractTests(unittest.TestCase):
                 transport.exchange_moe = lambda a, s: transport.exchange(a.bfloat16()+s)
                 comm.transport = transport
                 try:
-                    actual = decode_direct(net, step, cache, [0, 2], consumer=oracle_consume, moe_output=True)
+                    actual = decode_direct(net, step, cache, [0, 2], consumer=oracle_consume)
                 finally:
                     comm.transport = None
+                self.assertEqual(finalized, [0, 1, 2])  # tensor, packet, final tensor
                 for a, b in zip(actual, expected):
                     torch.testing.assert_close(a, b, rtol=0, atol=0)
                 self.assertTrue(torch.equal(cache.state, after))

@@ -122,7 +122,7 @@ def check(report, ranks):
                 timing(report, 'moe_output_tensor', rows, *graphs, (base, cand), unique_experts=unique,
                        includes='real routed and shared experts, overlap/join, output cast/add',
                        excludes='router selection, packet exchange/NIC, remaining model layers')
-        report('moe_output_complete', passed=True, default_enabled=False,
+        report('moe_output_complete', passed=True, default_enabled=True,
                max_allocated_bytes=torch.cuda.max_memory_allocated(),
                scope='component only; TP4 onepass decode/acceptance pending')
     finally:
