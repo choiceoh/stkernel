@@ -18,7 +18,7 @@ SOURCES = {
 
 def build():
     imports = ['from ._moe_dynamic.gated import load_shared_bf16x8_to_f32x8',
-               'from flashinfer.cute_dsl.fp4_common import st_shared_u8']
+               'from flashinfer.cute_dsl.fp4_common import st_shared_u8, get_smem_ptr_as_int32']
     methods = []
     for name, expected in SOURCES.items():
         source = (ROOT / 'engine/kernels/b12x' / name).read_text()

@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from ._moe_dynamic.gated import load_shared_bf16x8_to_f32x8
-from flashinfer.cute_dsl.fp4_common import st_shared_u8
+from flashinfer.cute_dsl.fp4_common import st_shared_u8, get_smem_ptr_as_int32
 from functools import lru_cache
 import hashlib
 from pathlib import Path

@@ -1,11 +1,13 @@
 """Private M64 selection and scatter coverage; GPU proof remains separate."""
 import ast
+import builtins
 from collections import Counter
 import copy
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 import struct
+import symtable
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +23,20 @@ def functions(path, names):
 
 
 class M64ContractTests(unittest.TestCase):
+    def test_generated_jit_bodies_have_no_unbound_globals(self):
+        path = ROOT / 'engine/kernels/b12x/_prefill_m64_bodies.py'
+        table = symtable.symtable(path.read_text(), str(path), 'exec')
+        available = set(table.get_identifiers()) | set(dir(builtins))
+        pending = [table]
+        missing = []
+        while pending:
+            scope = pending.pop()
+            pending.extend(scope.get_children())
+            missing.extend((scope.get_name(), symbol.get_name()) for symbol in scope.get_symbols()
+                           if symbol.is_global() and symbol.is_referenced()
+                           and symbol.get_name() not in available)
+        self.assertEqual(missing, [])
+
     def test_q1_immediate_and_deferred_stores_match_m128_bytes_without_aliasing(self):
         wanted = ('dst_pcol', 'xor_bits', 'row_high', 'dst_row', 'dst_flat')
 
