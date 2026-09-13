@@ -1,0 +1,159 @@
+{
+  "schema": 1,
+  "base": "88d92517f72d35172a7b822605623f8ab79054e0167b3651e9c9df128ebf7bdf",
+  "candidate": "2f88c22afca2e7f2e29500904564db18ba5514fece2c76f39aaff3d1c6655cb6",
+  "inputs": {
+    "base": {
+      "ref": "6e08213f",
+      "commit": "6e08213f14654f915bc5b678d3b6db18c10f6fe8",
+      "sha256": "524f18f9fde527a5d73ebc26c3c5a7cac72adf175da2c51d3ecaa802c25090f0",
+      "dirty": false,
+      "files": 250,
+      "scope": "engine source; external libraries belong to the profile runtime"
+    },
+    "candidate": {
+      "ref": "9193d7c2",
+      "commit": "9193d7c2d9ff98e4eb8c78ca8770246645ddb85a",
+      "sha256": "e34076049966cabd81cb8f73ada8c765ce5442e59557a2d33c107b70f6086239",
+      "dirty": false,
+      "files": 252,
+      "scope": "engine source; external libraries belong to the profile runtime"
+    }
+  },
+  "runtime": "",
+  "evidence": "",
+  "rows": [
+    {
+      "phase": "decode",
+      "ctx": 2000,
+      "width": 1,
+      "components": {
+        "attention": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "communication": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "drafter": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "moe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "nonmoe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    },
+    {
+      "phase": "prefill",
+      "ctx": 2000,
+      "width": 1,
+      "components": {
+        "prefill": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    },
+    {
+      "phase": "decode",
+      "ctx": 32000,
+      "width": 1,
+      "components": {
+        "attention": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "communication": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "drafter": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "moe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "nonmoe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    },
+    {
+      "phase": "prefill",
+      "ctx": 32000,
+      "width": 1,
+      "components": {
+        "prefill": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    },
+    {
+      "phase": "decode",
+      "ctx": 128000,
+      "width": 1,
+      "components": {
+        "attention": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "communication": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "drafter": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "moe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "nonmoe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    },
+    {
+      "phase": "prefill",
+      "ctx": 128000,
+      "width": 1,
+      "components": {
+        "prefill": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    }
+  ]
+}

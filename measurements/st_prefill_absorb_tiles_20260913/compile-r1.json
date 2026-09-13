@@ -1,0 +1,63 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "variants": [
+    {
+      "name": "query-m64-n64-k32-w4-s2",
+      "shared_bytes": 8192,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _absorb:\n  REG:128 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "query-m64-n64-k64-w4-s2",
+      "shared_bytes": 16384,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _absorb:\n  REG:255 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "query-m32-n64-k64-w4-s2",
+      "shared_bytes": 12288,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _absorb:\n  REG:121 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "query-m64-n128-k32-w4-s2",
+      "shared_bytes": 12288,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _absorb:\n  REG:182 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "output-m64-n64-k32-w4-s2",
+      "shared_bytes": 8192,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _absorb:\n  REG:151 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "output-m64-n64-k64-w4-s2",
+      "shared_bytes": 16384,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _absorb:\n  REG:255 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "output-m32-n64-k64-w4-s2",
+      "shared_bytes": 12288,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _absorb:\n  REG:254 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "name": "output-m64-n128-k32-w4-s2",
+      "shared_bytes": 12288,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _absorb:\n  REG:238 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    }
+  ],
+  "model_config_sha256": "e23c5d98f53e861d49a51bd3c68591621c5482ce829e42c31724152322fba03d",
+  "geometry": {
+    "heads": 16,
+    "qk_nope": 256,
+    "v_dim": 256,
+    "kv_lora": 512
+  },
+  "cuda_initialized": false,
+  "elapsed_s": 2.2086091069795657,
+  "source_sha256": {
+    "engine/kernels/mla/prefill_absorb.py": "d6cc027cfea623dcda908d115724a11171f1f48cf4d243b344aa7be3b94b6747",
+    "engine/modules/mla_absorb.py": "cf1e223d4bbf7606aef4cd6ca3cef8ef92395259d46252cac42c127983f8d30a",
+    "engine/profiles/glm53/net.py": "0eaaa623eef74495d3954ff05134f08b8cdf3b65f2db3b1651fe412aba1501f7",
+    "engine/profiles/glm53/lanes.py": "778f7a247481f90451435788b69ef40aaeddd1614431bb5df8f7fe8ba3efe879",
+    "engine/profiles/glm53/execution.py": "fb5e6a00385300bd6d360c38e3bc911432f33087a3e8078fbe9aa42365ae3287",
+    "engine/profiles/glm53/boot.py": "df441386a362156ffddbb8a3233c38bd9e2b2a4a59f80ee0e2897efcb20e6bfb"
+  }
+}

@@ -1,0 +1,41 @@
+query-m64-n64-k32-w4-s2 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _absorb:
+  REG:128 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0
+query-m64-n64-k64-w4-s2 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _absorb:
+  REG:255 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0
+query-m32-n64-k64-w4-s2 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _absorb:
+  REG:121 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0
+query-m64-n128-k32-w4-s2 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _absorb:
+  REG:182 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0
+output-m64-n64-k32-w4-s2 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _absorb:
+  REG:151 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0
+output-m64-n64-k64-w4-s2 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _absorb:
+  REG:255 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0
+output-m32-n64-k64-w4-s2 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _absorb:
+  REG:254 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0
+output-m64-n128-k32-w4-s2 Resource usage:
+ Common:
+  GLOBAL:0
+ Function _absorb:
+  REG:238 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:944 TEXTURE:0 SURFACE:0 SAMPLER:0
+{"status": "PASS", "cuda_initialized": false, "elapsed_s": 2.2086091069795657}
