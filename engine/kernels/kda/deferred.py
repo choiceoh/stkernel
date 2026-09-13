@@ -113,9 +113,9 @@ class Batch:
                     or x.shape != (self.rows,) or not x.is_contiguous()):
                 raise ValueError("deferred commit requires contiguous integer vectors, one entry per row")
         _, width, h, k, v = ring.shape
-        _commit_layers[(triton.cdiv(h*k*v, 256), len(self.rings), self.rows)](
+        _commit_layers[(triton.cdiv(h*k*v, 1024), len(self.rings), self.rows)](
             *self.factors, ring, self.offsets, slots, contexts, counts, self.tokens, self.rows,
-            h, k, v, width, ring.stride(0), self.block, 256, num_warps=4, num_stages=1)
+            h, k, v, width, ring.stride(0), self.block, 1024, num_warps=4, num_stages=1)
 
 
 @triton.jit
