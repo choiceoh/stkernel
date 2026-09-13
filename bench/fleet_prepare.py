@@ -480,7 +480,7 @@ def reuse(directory, session, command, cwd, prepared, *, spec_path=None):
     return Path(prepared).resolve()
 
 
-def prepare(directory, session, command, cwd, *, spec_path=None, fleet=None, execute_cpu=True, prepared=None, approve_deploy=False):
+def prepare(directory, session, command, cwd, *, spec_path=None, fleet=None, execute_cpu=True, prepared=None, approve_deploy=False, prior_approval=None):
     if not isinstance(command, (list, tuple)) or not command or not command[0] or not all(isinstance(x, str) and '\0' not in x for x in command):
         raise ValueError('prepare requires a command argv')
     command = list(command)
@@ -587,6 +587,8 @@ def prepare(directory, session, command, cwd, *, spec_path=None, fleet=None, exe
             value['cpu_result']['reason'] = str(exc)
     if approve_deploy:
         import fleet_approval
+        if prior_approval:
+            fleet_approval.retain(directory, prior_approval, value)
         fleet_approval.freeze(value)
     validate(value, refresh=True)
     for path in files:

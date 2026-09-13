@@ -287,6 +287,43 @@ class ApprovalTests(unittest.TestCase):
         self.assertEqual(counter.read_text(), 'run\n')
         self.assertNotIn('deployment_approvals', prepared.read(self.directory, original))
 
+    def test_environment_reprepare_keeps_fixed_approval_but_reruns_cpu(self):
+        counter, command, kwargs, identity = self.cpu_fixture()
+        with mock.patch.object(prepared, 'cpu_identity', side_effect=identity):
+            original = prep.prepare(self.directory, self.session, command, self.repo,
+                                    approve_deploy=True, **kwargs)
+            old = prepared.read(self.directory, original)
+            self.advance_main()
+            self.git(self.repo, 'remote', 'set-url', 'origin', str(self.root/'offline.git'))
+            with mock.patch.dict(os.environ, ST_LEASE_OWNER='queue/'+self.session):
+                refreshed = prep.prepare(self.directory, self.session, command, self.repo,
+                                         prior_approval=original, approve_deploy=True, **kwargs)
+                new = prepared.read(self.directory, refreshed)
+                prep.validate(new, refresh=True, directory=self.directory)
+        self.assertNotEqual(refreshed, original)
+        self.assertNotEqual(new['environment_digest'], old['environment_digest'])
+        self.assertEqual(new['deployment_approvals'], old['deployment_approvals'])
+        self.assertEqual(new['checks'], old['checks'])
+        self.assertEqual(counter.read_text(), 'run\nrun\n', 'new environment needs fresh CPU preparation')
+        self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), self.base)
+
+    def test_retain_cannot_approve_changed_source_command_or_runtime_inputs(self):
+        old = self.freeze()
+        old.update(files={'kernel.py':'source-hash'}, spec_digest='spec-hash',
+                   image_ids={'engine':'pinned-image'})
+        manifest = self.install(old)
+        for field in ('session', 'command', 'cwd', 'files', 'spec_digest', 'image_ids',
+                      'deployment_targets', 'checks', 'required_paths', 'protected_paths'):
+            with self.subTest(field=field):
+                candidate = copy.deepcopy(old)
+                candidate.pop('deployment_approvals')
+                candidate[field] = 'changed-input'
+                self.assertFalse(approval.retain(self.directory, manifest, candidate))
+                self.assertNotIn('deployment_approvals', candidate)
+        manifest.write_text(manifest.read_text().replace('source-hash', 'forged-hash'))
+        with self.assertRaisesRegex(ValueError, 'modified or forged'):
+            approval.retain(self.directory, manifest, old)
+
 
 if __name__ == '__main__':
     unittest.main()

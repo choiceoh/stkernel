@@ -32,3 +32,12 @@ an existing HTTP test's assumption that two completion choices occupy rows 0 and
 admission's seed and retains response/index/token assertions, with explicit one-
 and two-row cases. No serving code changed. Five focused audit/HTTP checks pass
 on Linux (`cpu-ci-repair.log`).
+
+Environment re-preparation also used to freeze a new main base, even though the
+accepted source and target were unchanged. That rejected this waiting kernel
+probe after unrelated prefill commits landed. Fresh preparation now retains a
+prior authenticated approval only when source/input/executable/image/target and
+command/spec identities match; it copies the already resolved source refs, never
+fetching or advancing the approval base. CPU work still executes for the new
+environment. A changed input gets no inherited approval, and a forged receipt
+is rejected. Linux validation now covers 103 tests (`cpu-retain.log`).

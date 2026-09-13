@@ -345,7 +345,8 @@ def edit(directory, session, *, command=None, cwd=None, estimate=None, note=None
                         path = fleet_prepare.prepare(directory,session,updated['command'],updated['cwd'],
                                                       prepared=old_path,**args)
                     except ValueError:
-                        path = fleet_prepare.prepare(directory,session,updated['command'],updated['cwd'],**args)
+                        path = fleet_prepare.prepare(directory,session,updated['command'],updated['cwd'],
+                                                     prior_approval=old_path if original.get('prepare_receipt_required') else None,**args)
                 updated['prepare_manifest'] = str(path)
                 updated['prepare_receipt_required'] = True
                 if updated.get('validation_env', {}).get('FLEET_VALIDATION_REQUIRED') == '1' and updated['kind'] == 'boot':
