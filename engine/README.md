@@ -27,7 +27,7 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
     base/       모델 이름이 없는 것: 아레나, 로더(사전샤딩된 랭크 파일의 범위 읽기), KV 블록/슬롯, NVMe 티어, 스케줄러,
                 스텝 메타, 러너, 기록/사망 덤프, 설정(사실+만료 노브), 증명·판정, 그래프, comm(플릿 / LocalTP),
                 조합 틀(composition: 층 계획 + 잔차 형식 + 특징, 한 step 루프)
-    modules/    특징 모듈: 선형 순환 가족(GDN·KDA 한 특징, 여섯 축), 어텐션 가족(GQA|MLA × 회전 × 노름 × 게이트 × 선택 QSA|DSA|MSA|윈도 × 싱크·상대 편향), 희소 커널 참조(kpool·QSA·MLA·GQA), NVFP4 선형·MoE(공유 전문가
+    modules/    특징 모듈: 선형 순환 가족(GDN·KDA 한 특징, 여섯 축), 어텐션 가족(GQA|MLA × 회전 × 노름 × 게이트 × 선택 QSA|DSA|MSA|윈도 × 싱크·상대 편향), MoE 가족(라우터 softmax|sigmoid × 보정 편향 × 그룹 × 활성 silu|clamped|swigluoai × 공유 전문가 plain|sigmoid|sink), 희소 커널 참조(kpool·QSA·MLA·GQA), NVFP4 선형·MoE(공유 전문가
                 게이트 포함)·양자화, 하이퍼커넥션(mhc·split-sinkhorn·게이트 잔차), n-gram PLE, 노름, 회전, 로짓
     profiles/   모델별: 사실·가중치 지도(specs)·사전샤딩·레인 표·조합(net)·검증(check). glm53 이 첫 대상.
                 qwen38 은 base/composition 위에 계획과 가중치 이름만 선언한다(composition.py).
@@ -57,6 +57,14 @@ scaling·k/v 짧은 conv. `Attention` 이 그 특징이고 `named(scheme)` 이 �
 glm5_next(MLA + DSA k-pool, 회전 없음), deepseek_v3(dense MLA, 두 회전, q_lora 유무 — K3·Ling 의 형), minimax_m3_vl(GQA + MSA),
 inkling(윈도 + 상대 편향 + k/v conv, 전역 층의 log scaling), 싱크는 `sparse_attention.sparse_attn`(DSv4.1 커널 의미)에; Qwen 의
 GQA + QSA + 게이트는 조립 테스트가 qwen4_exp 에. 참조가 커널을 따르는 곳 둘: 허용 위치가 없는 행은 0, 인덱서의 동점은 앞 풀/블록으로.
+**MoE 도 가족이다(modules/moe).** 일곱 모델의 채널 믹서는 라우터 하나 + 전문가 루프 하나에 축이다: 점수(softmax | sigmoid), 선택용 보정
+편향(가중치엔 안 들어간다), 그룹 선택(noaux_tc: n_group·topk_group), 정규화, routed scaling 이 가중치에 붙느냐 출력에 붙느냐, 라우터가 fp32 냐,
+활성(silu | GLM 의 clamped swiglu | M3 의 swigluoai), 공유 전문가의 결합(plain | Qwen 의 sigmoid 게이트 | Inkling 의 라우터 sink — 공유 전문가의
+로짓이 선택된 전문가들과 함께 정규화된다). `MoE`·`Dense` 가 특징이고 `named`/`experts_of`/`shared_of` 가 다섯 체크포인트의 이름과 공유
+전문가 배치(분리 | fused | 쌓인 [S,…])를 잇는다. `tests/test_engine_moe_family.py` 가 각 블록을 그것을 정의한 transformers 구현에 붙잡는다:
+glm5_next(그룹 없음/있음, clamped), deepseek_v3(grouped), minimax_m3_vl(swigluoai, 출력 scaling), inkling(sink, route_scale × global_scale),
+각 모델의 dense MLP; Qwen 의 softmax + sigmoid 공유는 조립 테스트가 qwen4_exp 에. 전문가의 양자화 형식(NVFP4·GPTQ·FP8·MXFP4)은 로더 쪽
+`expert(layer, e)` 의 일이라 특징의 축이 아니다.
 **조립이 서빙된다(base/composed).** `PositionStore` 는 같은 State 계약을 엔진의 메모리 위에서 답한다: 특징의 토큰별 행
 (`put_rows`/`rows`)은 BlockPool 의 블록에 **위치**로 산다 — 블록은 위치 // 블록 토큰, 행은 위치 % 블록 토큰 — 그래서 시퀀스의
 이력은 그 블록표이고 캐시된 prefix 의 블록은 복사 없이 입양된다(base/prefix). 시퀀스별 값(`get`/`put`)은 고정 슬롯에 살고, 슬롯의
