@@ -1,6 +1,6 @@
 # GB10 × 4 실행 형상의 후속 설계
 
-설계 기준: PR #895의 `56e3f3d8`와 그 기반 `71306bda`. [상위 설계](ST_GB10_ARCHITECTURE_20260913.md)의 후속 작업을 코드 경계와 검증 단위로 구체화한다. **S의 cache·eager·graph 연결은 실험 옵션으로 구현했고, P/M/I의 제안은 아직 후속 작업이다.** 커널의 GPU 검증도 예약 당시 대기 상태이며, 아래 설계를 성능 결과로 해석하지 않는다.
+설계 기준: PR #895의 `56e3f3d8`와 그 기반 `71306bda`. [상위 설계](ST_GB10_ARCHITECTURE_20260913.md)의 후속 작업을 코드 경계와 검증 단위로 구체화한다. **S의 cache·eager·graph 연결과 P의 packet-native FFN은 기본값이 꺼진 실험 옵션으로 구현했다. M/I는 후속 작업이다.** 커널의 GPU 검증도 예약 당시 대기 상태이며, 아래 설계를 성능 결과로 해석하지 않는다.
 
 S 구현: `STK_compact_kda=1` → `ExecutionPlan.compact_kda` → `Facts.kda_state_layout="committed_boundary"`. deferred 검증을 함께 선택하며 native FP32, 분할 없는 decode, `prefill_tiles=1`을 요구한다. `rec_meta[2]`에는 current/boundary의 문맥 위치를 저장하고 물리 slot과 함께 이동한다. eager transaction이 미확정인 동안 재검증·snapshot·restore·slot 재사용을 거부한다. graph 수명과 slot 재사용의 stream fence는 기존 runner가 소유한다. [compact_state.py](../engine/profiles/glm53/compact_state.py), [CPU 검증](../measurements/kda_compact_20260913/serving_cpu.json). 아래 상세 설계의 이름은 구현 API와 다를 수 있다.
 
@@ -70,6 +70,12 @@ S 검증은 기존 compact 커널 검사에 실제 cache 객체의 prefill → c
 
 ## P. 전체 FFN이 FP8 패킷을 직접 소비
 
+구현 상태 (2026-09-14): `STK_prefill_ffn_packets=1`은 native, `prefill_tiles=1`, eager TP4의 `8192 < N <= 32768`에서 동작한다. `PacketGeometry`/`PacketBatch` → `TokenShards.all_gather_packets()` → `Glm53Net._moe_packets()`에 연결했다. prefill step마다 한 번 control-group vote로 모든 층의 세 reader 가용성을 합의하며, 데이터 all-gather 횟수는 FFN당 한 번을 유지한다. shared calibration observer나 지원되지 않는 expert pack이 있으면 해당 층은 모든 rank에서 기존 경로를 쓴다.
+
+실제 expert selector는 현재 main의 M128 `MoEGatedDynamicKernelSF6Prefill`이다. 그 전체 producer의 소스 해시와 입력 복사 외 AST를 고정하고, 기존 32 KiB/CTA BF16 stage에 packet을 역양자화하는 입력 variant만 추가했다. histogram, expert별 group-16 양자화, task publication, MMA, BF16 atomic scatter는 그대로 상속한다. baseline과 같은 eager workspace를 쓴다. shared GEMM에는 패딩을 제외한 N행 Q/S를 전달한다.
+
+첫 구현은 별도 side stream이나 packet buffer 재사용이 없다. invocation마다 새 tensor owner를 만들고 producer와 모든 reader를 같은 current stream에 제출한다. 아래 event/epoch descriptor는 향후 buffer 재사용·side stream 도입 시의 설계이며 현재 구현 API가 아니다. 현재 상태와 실제 수행한 검증은 [P 구현 증거](../measurements/ffn_packets_20260914/README.md)를 기준으로 본다.
+
 ### P1. 첫 버전은 통신 한 번을 유지
 
 현재 [TokenShards.all_gather()](../engine/modules/token_shards.py)는 [PrefillCollectives.all_gather()](../engine/kernels/prefill_collectives/__init__.py)의 FP8 패킷을 전체 BF16 hidden으로 풀고 real rows만 반환한다. [net.forward()](../engine/profiles/glm53/net.py)의 FFN에서는 그 텐서를 router, routed expert frontend, shared expert gate/up이 읽는다. 이 세 소비자를 모두 바꿔야 전체 hidden 할당이 사라진다.
@@ -114,7 +120,7 @@ shared projector는 현재 padded rows 전체를 계산한다. FFN 버전은 `re
 
 expert frontend에는 이미 분리된 범용 `packA` API가 있는 것이 아니다. persistent kernel 내부가 accumulator 초기화, route histogram, 입력 양자화, task publication을 함께 수행한다. P에서는 선택한 body의 **입력 load만 교체**하고 이 protocol을 유지한다. [moe_dispatch.py](../engine/kernels/b12x/moe_dispatch.py), [_prefill_q0_batch8.py](../engine/kernels/b12x/_prefill_q0_batch8.py)
 
-특히 `input_gs.numel()==1`인 경우와 expert별 scale인 경우를 구분한다. 후자는 같은 토큰도 선택된 expert에 따라 packed activation이 달라질 수 있으므로 전역 scale 하나로 토큰당 한 번 pack하는 설계는 채택하지 않는다. `share_input_across_experts`를 켜면 Q0 eligibility도 달라진다. 현재 `_tp_sf6_q0_eligible()`의 범위는 `N <= 8192`이므로 P1의 큰 프리필에는 기존 non-Q0 SF6 body를 사용한다. Q0로 확장하려면 작은 N의 기존 router backend도 별도로 packet화해야 하며, 각각 실제 selector·소스 식별자를 남기고 검증한다. decode 입력 경로는 이 P 변경의 대상이 아니다.
+특히 `input_gs.numel()==1`인 경우와 expert별 scale인 경우를 구분한다. 후자는 같은 토큰도 선택된 expert에 따라 packed activation이 달라질 수 있으므로 전역 scale 하나로 토큰당 한 번 pack하는 설계는 채택하지 않는다. `share_input_across_experts`를 켜면 Q0 eligibility도 달라진다. 작은 N의 `_tp_sf6_q0_eligible()`와 별도로 현재 main에는 long-prefill M128 route-cache producer가 있다. P의 첫 구현은 그 producer의 per-expert scale 경로만 지원하며, scalar global-scale/share-input 모드는 fallback한다. 작은 N으로 확장하려면 기존 router backend도 별도로 packet화해야 하며, 각각 실제 selector·소스 식별자를 남기고 검증한다. decode 입력 경로는 이 P 변경의 대상이 아니다.
 
 ### P3. 패딩·수명·바이트의 해석
 
