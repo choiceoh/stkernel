@@ -21,6 +21,58 @@ def functions(path, names):
 
 
 class M64ContractTests(unittest.TestCase):
+    def test_q1_immediate_and_deferred_stores_match_m128_bytes_without_aliasing(self):
+        wanted = ('dst_pcol', 'xor_bits', 'row_high', 'dst_row', 'dst_flat')
+
+        def writer(path, method):
+            tree = ast.parse((ROOT / path).read_text())
+            function = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == method)
+            expressions = {n.targets[0].id: compile(ast.Expression(n.value), '<actual-Q1-store>', 'eval')
+                           for n in ast.walk(function) if isinstance(n, ast.Assign) and len(n.targets) == 1
+                           and isinstance(n.targets[0], ast.Name) and n.targets[0].id in wanted}
+            self.assertEqual(set(expressions), set(wanted))
+
+            def address(row, col):
+                ns = dict(Int32=int, row=row, src_pcol=col, packed_cols=64)
+                for name in wanted:
+                    ns[name] = eval(expressions[name], ns)
+                return ns['dst_flat']
+            return address
+
+        # Actual CuTe compiler layout, with the shared pointer's swizzle as in
+        # StorageGated.get_tensor: ((8,M/8),(64,1)):((64,512),(1,0)).
+        # The scalar index advances M first, then the packed K coordinate.
+        physical = lambda index, rows: (index % rows) * 64 + index // rows
+        for method in ('quantize_q1_sC_to_sA_sSFA', 'flush_deferred_q1_a'):
+            old = writer('engine/kernels/b12x/_moe_dynamic/gated.py', method)
+            new = writer('engine/kernels/b12x/_prefill_m64_bodies.py', method)
+            seen, rejected = set(), []
+            for row in range(64):
+                for col in range(64):
+                    address = physical(new(row, col), 64)
+                    self.assertEqual(address, physical(old(row, col), 128))
+                    self.assertTrue(0 <= address < 4096)
+                    self.assertNotIn(address, seen)
+                    seen.add(address)
+                    rejected.append(physical(old(row, col), 64))
+            self.assertEqual(seen, set(range(4096)))
+            self.assertLess(len(set(rejected)), 4096)
+            self.assertGreaterEqual(max(rejected), 4096)
+
+    def test_m64_scale_view_covers_every_allocated_physical_atom(self):
+        tree = ast.parse((ROOT / 'engine/kernels/b12x/moe_dispatch.py').read_text())
+        cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == '_DynamicMoELaunch')
+        method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == '__call__')
+        start = next(i for i, n in enumerate(method.body) if isinstance(n, ast.Assign)
+                     and isinstance(n.targets[0], ast.Name) and n.targets[0].id == 'scale_rows')
+        code = compile(ast.Module(body=method.body[start:start + 2], type_ignores=[]), '<actual-SFA-view>', 'exec')
+        for rows in (64, 128, 192, 256, 83904):
+            for small in (False, True):
+                ns = dict(rows_padded=rows, self=SimpleNamespace(_prefill_tile64=small),
+                          cutlass=SimpleNamespace(const_expr=bool))
+                exec(code, ns)
+                self.assertEqual(ns['scale_rows'], rows * 2 if small else ((rows + 127) // 128) * 128)
+
     def test_gpu_gate_checks_prefixes_routes_and_signed_zero_weights(self):
         path = ROOT / 'measurements/st_prefill_phase2_20260913/check_m64_prefill.py'
         node = next(n for n in ast.parse(path.read_text()).body
@@ -76,23 +128,28 @@ class M64ContractTests(unittest.TestCase):
         for arg in node.args.args:
             arg.annotation = None
         writes = []
+        active_tid = [0]
         ns = dict(Int32=int, load_shared_i32_f32_pair=lambda offset: ((offset // 8) * 7 % 64, offset // 8 + .5),
                   get_ptr_as_int64=lambda tensor, offset: offset,
                   get_smem_ptr_as_int32=lambda tensor, offset: offset,
-                  scatter_add_weighted_bf16x8_to_f32=lambda *args: writes.append(args))
+                  scatter_add_weighted_bf16x8_to_f32=lambda *args: writes.append((active_tid[0], args)))
         exec(compile(ast.Module(body=[node], type_ignores=[]), '<actual-m64-scatter>', 'exec'), ns)
         scatter = ns[node.name]
         shared = SimpleNamespace(layout=lambda coordinate: coordinate[0] * 128 + coordinate[1])
         for live in (0, 1, 15, 16, 17, 31, 32, 33, 63, 64):
             writes.clear()
             for tid in range(256):
+                active_tid[0] = tid
                 scatter(None, tid, 2, live, shared, None, SimpleNamespace(shape=(64, 4096)), 0, 0, .125)
             coordinates = []
-            for address, swizzled, weight, alpha in writes:
+            for tid, (address, swizzled, weight, alpha) in writes:
                 # S<3,4,3> is self-inverse. Recover the logical source vector,
                 # then independently check its permuted destination metadata.
                 offset = swizzled ^ ((swizzled & 0x1C0) >> 3)
                 row, col = divmod(offset, 128)
+                # Actual M64 MMA partition: warp & 3 selects a single M16
+                # fragment. The &2 barriers publish rows 0..31 / 32..63.
+                self.assertEqual(bool((tid // 32) & 2), row >= 32)
                 self.assertEqual(address, (row * 7 % 64) * 4096 + 256 + col)
                 self.assertEqual((weight, alpha), (row + .5, .125))
                 coordinates.extend((row, col + i) for i in range(8))

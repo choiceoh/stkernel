@@ -4,7 +4,8 @@
 The pinned M128 implementation stays intact. This subclass owns the smaller
 M tile, its two-row Q0 staging contract and its 16-row-per-warp scatter strips.
 FC1/Q1/FC2 arithmetic and the BF16-contribution/FP32-accumulation helper remain
-inherited. Route allocation and atomic order can differ: GPU numerical and
+inherited; Q1 byte coordinates match the compact M64 backing. Route allocation
+and atomic order can differ: GPU numerical and
 consumer qualification are required. The private branch selects this lane
 only for native eager 65..4096-row prefill; decode and capture retain M128.
 """
@@ -65,8 +66,11 @@ class MoEGatedDynamicKernelPrefillM64(M64Bodies, MoEGatedDynamicKernelSF6Q0Words
                           scatter_weight_base_addr: Int32, down_alpha_value):
         lane = Int32(tidx) & Int32(31)
         warp = Int32(tidx) >> Int32(5)
-        row_base = (warp >> Int32(1)) * Int32(16)
-        col_base = (warp & Int32(1)) * Int32(64)
+        # With M64 each MMA warp has one M16 fragment. The existing &2
+        # barriers cover rows 0..31 / 32..63 respectively, so each scatter
+        # strip must read only the rows owned by its synchronized group.
+        row_base = (warp & Int32(3)) * Int32(16)
+        col_base = (warp >> Int32(2)) * Int32(64)
         rows = valid_rows - row_base
         if rows > Int32(16):
             rows = Int32(16)

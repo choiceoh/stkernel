@@ -110,17 +110,24 @@ def check_case(judge, views, scales, workspaces, rows, kind, result):
         expected = judge._q0(torch, workspaces[False], ids, weights)
         expected = {key: expected[key] for key in ('row_counts', 'routes', 'payload_sample')}
         phase = dict(changed=changed, controls=[judge.check_control(a, b), judge.check_control(a, c),
-                     judge.check_control(b, c)], candidate=[])
+                     judge.check_control(b, c)], q0_reference=expected, candidate=[])
         result['phases'].append(phase)
         context = dict(result=result, third=c, inputs=x, route_ids=ids, route_weights=weights,
                        expert_map=mapping, scales=backing)
         for alternate in (False, True):
             candidate = eager(True, alternate)
-            phase['candidate'].append(dict(alternate_stream=alternate,
-                **judge.compare(candidate, a, b, failure_context=context)))
+            observation = dict(alternate_stream=alternate)
+            phase['candidate'].append(observation)
             actual_workspace = (md._prefill_m64_workspace(workspaces[False], rows)
                                 if alternate and rows <= 4096 else workspaces[True])
-            assert q0_m64(judge, actual_workspace, ids, weights) == expected
+            try:
+                observation['q0'] = q0_m64(judge, actual_workspace, ids, weights)
+                observation['q0_matches'] = observation['q0'] == expected
+                assert observation['q0_matches'], 'M64 route/Q0 payload differs from the M128 control'
+            except BaseException as error:
+                observation['q0_error'] = repr(error)
+                raise
+            observation.update(judge.compare(candidate, a, b, failure_context=context))
             zero = (weights == 0).all(dim=1)
             if bool(zero.any()):
                 assert bool((a[zero] == 0).all()) and bool((candidate[zero] == 0).all())
@@ -175,6 +182,11 @@ def main():
         report.update(status='FAIL', error=repr(error))
         raise
     finally:
+        if 'identity' in locals():
+            try:
+                report['actual_weights_preserved'] = weight_identity(views, judge) == identity
+            except BaseException as error:
+                report['weight_identity_error'] = repr(error)
         report['elapsed_s'] = time.monotonic() - started
         args.output.write_text(json.dumps(report, indent=2) + '\n')
 

@@ -3921,6 +3921,7 @@ class _DynamicMoELaunch:
         activation_precision: str = "fp4",
         sf_vec_size: int = _NVFP4_BLOCK_SIZE,
         reform_sf_pack: bool = False,
+        prefill_tile64: bool = False,
     ):
         activation_precision = _normalize_activation_precision(activation_precision)
         if activation_precision == "bf16":
@@ -3933,6 +3934,7 @@ class _DynamicMoELaunch:
         self._num_topk = num_topk
         self._cols_pad_k = _align_up(k // sf_vec_size, 4)
         self._reform_sf_pack = bool(reform_sf_pack)
+        self._prefill_tile64 = bool(prefill_tile64)
 
     @cute.jit
     def __call__(
@@ -4004,6 +4006,10 @@ class _DynamicMoELaunch:
         # Activation scales live in 128-row SF atoms; the plane is allocated
         # through the last partial atom even when rows_padded is not aligned.
         scale_rows = ((rows_padded + 127) // 128) * 128
+        if cutlass.const_expr(self._prefill_tile64):
+            # Each compact 64-row tile owns a complete physical SFA atom.
+            # Its logical view must cover the allocation, including zeroing.
+            scale_rows = rows_padded * 2
         scale_storage = cute.make_tensor(
             scale_storage_ptr,
             layout=cute.make_layout((scale_rows * self._cols_pad_k,), stride=(1,)),
@@ -4402,6 +4408,7 @@ def _get_dynamic_kernel(
         activation_precision=activation_precision,
         sf_vec_size=sf_vec_size,
         reform_sf_pack=reform_sf_pack,
+        prefill_tile64=_prefill_tile64,
     )
 
     topk_ids_cutlass_dtype = (
