@@ -40,9 +40,15 @@ from torch.nn.attention import SDPBackend, sdpa_kernel
 from engine.base.params import Spec
 from engine.kernels.draft_conv import tap_mix
 from engine.kernels.draft_select import walk_scores
-from engine.kernels.swiglu import swiglu
-from engine.kernels.norm_rope import add_norm, norm, norm_rope, warm as warm_rotary
+from engine.base.lanes import served as common_lanes
 from engine.profiles.glm53.facts import SPEC_K, TP
+
+# The model-free kernels come from the engine's default lanes (engine/base/lanes): one launch each for the
+# drafter's norms, norm+rope and gated MLP. The names stay module-level because the tests and probes take the
+# same functions the block runs from here.
+_COMMON = common_lanes()
+swiglu, add_norm, norm, norm_rope, warm_rotary = (_COMMON.swiglu, _COMMON.add_rmsnorm, _COMMON.rmsnorm,
+                                                 _COMMON.rmsnorm_rope, _COMMON.rope_table)
 
 DRAFTER = Path("/home/choiceoh/models/GLM-5.3-Flash-DFlash2")
 BF16, F32 = torch.bfloat16, torch.float32

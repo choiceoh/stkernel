@@ -19,7 +19,7 @@ python3 tools/inventory.py --write             # 아래 생성 블록 갱신
 
 | 우리 코드 | 이미지 안에 있는 것 | 상태 |
 |---|---|---|
-| `engine/kernels/sampler.py` | `flashinfer.sampling.top_k_top_p_sampling_from_probs`, `top_p_renorm_probs`, `top_k_mask_logits` | **실측 1.4~1.8× 빠름**, 정확도 무승부. `engine/TRTLLM_COMPARISON_20260912.md` §1.1 |
+| `engine/kernels/common/sampler.py` | `flashinfer.sampling.top_k_top_p_sampling_from_probs`, `top_p_renorm_probs`, `top_k_mask_logits` | **실측 1.4~1.8× 빠름**, 정확도 무승부. `engine/TRTLLM_COMPARISON_20260912.md` §1.1 |
 | `base/sampler.block_verify_batch` | `flashinfer.sampling.chain_speculative_sampling` | 같은 자리. 미대조 |
 | 구조화 출력 비트마스크 (45차 §31) | `xgrammar.allocate_token_bitmask`, `apply_token_bitmask_inplace`, `BatchGrammarMatcher` | **미대조** — 우리 쪽이 스텝 하나에 맞춰져 있으나 배치 매처는 안 봤다 |
 | b12x MoE 레인 | `flashinfer.fused_moe.B12xMoEWrapper`, `B12xNvfp4Runner`, `B12xW4A16Runner` | **미대조** — 이름이 우리 커널과 같다 |

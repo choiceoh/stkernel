@@ -45,7 +45,7 @@ def worker(args):
     import torch.utils.cpp_extension as cpp_extension
     from torch.utils.cpp_extension import load
     from unittest.mock import patch
-    from engine.kernels.native_cache import prepare_sources
+    from engine.kernels.common.native_cache import prepare_sources
     assert not torch.cuda.is_initialized()
     flags = [*FLAGS[:-1], f"-DCACHE_BONUS={args.bonus}"]
     sources = [args.input / "kernel.cu", args.input / "value.h"]
@@ -129,7 +129,7 @@ def run(args):
     expected, bonus = 41, 0
     rows = []
     steps = ("cold", "warm", "touch-source", "relocate", "touch-header", "edit-header", "edit-source", "flags")
-    tracked = [ROOT / "engine/kernels/native_cache.py", Path(__file__).resolve()]
+    tracked = [ROOT / "engine/kernels/common/native_cache.py", Path(__file__).resolve()]
     if args.fixture == "oneshot":
         tracked.extend(ROOT / "engine/kernels/oneshot" / name for name in ONESHOT_FILES)
         for path in tracked[2:]:

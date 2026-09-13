@@ -94,7 +94,7 @@ def run(output, repeats, comparison):
     report = dict(scope=__doc__, comparison=comparison, gpu_used=False, complete=False, rows=[],
                   source_sha256={str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                                  for p in (Path(__file__).resolve(), ROOT / 'probes/engine_native_cache_check.py',
-                                           ROOT / 'engine/kernels/native_cache.py',
+                                           ROOT / 'engine/kernels/common/native_cache.py',
                                            *(source / name for name in ONESHOT_FILES))},
                   variant_sha256={arm: hashlib.sha256(code.encode()).hexdigest() for arm, code in variants.items()})
     cubin_hashes = None

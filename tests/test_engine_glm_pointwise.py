@@ -53,7 +53,7 @@ class PointwiseTests(unittest.TestCase):
 
     def test_indexer_layernorm_and_target_rmsnorm(self):
         from engine.kernels.glm_pointwise import layernorm
-        from engine.kernels.norm_rope import norm
+        from engine.kernels.common.norm_rope import norm
         from engine.profiles.glm53.net import rmsnorm
         for rows, width in ((1, 128), (7, 512), (28, 1536), (257, 4096)):
             x = torch.randn(rows, width * 2, device="cuda", dtype=torch.bfloat16)[:, :width]

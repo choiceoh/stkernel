@@ -8,7 +8,7 @@ import torch
 import triton as tr
 import triton.language as tl
 
-from .norm_rope import warm
+from .common.norm_rope import warm
 
 
 @tr.jit

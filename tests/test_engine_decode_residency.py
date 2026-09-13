@@ -37,7 +37,7 @@ class DraftWriteTests(unittest.TestCase):
     def test_all_layers_match_separate_native_kernels_with_wrap_ghosts_and_graph_replay(self):
         from engine.kernels.draft_observe import write_context
         from engine.kernels.draft_attention import write_draft_kv_rows
-        from engine.kernels.norm_rope import norm_rope, warm
+        from engine.kernels.common.norm_rope import norm_rope, warm
         for n, t, heads in ((1, 1, 1), (1, 7, 2), (4, 7, 2), (4, 7, 4)):
             layers, dim, window, field_heads = 5, 128, 32, heads + 1
             shape = (5, layers, 2, window, field_heads, dim)

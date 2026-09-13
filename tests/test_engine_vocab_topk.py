@@ -117,13 +117,13 @@ class CandidateSelectionTests(unittest.TestCase):
     this module promises -- see the tests above, which compare ids against `full.topk(k)` itself.
     """
     def keys(self, rows, width, seed, span=1.0):
-        from engine.kernels.vocab_candidates import pack
+        from engine.kernels.common.vocab_candidates import pack
         gen = torch.Generator(device='cuda').manual_seed(seed)
         logits = (torch.randn(rows, width, device='cuda', generator=gen) * span).bfloat16()
         return pack(logits, 0, width)
 
     def test_it_is_the_same_set_torch_would_have_taken(self):
-        from engine.kernels.vocab_candidates import select
+        from engine.kernels.common.vocab_candidates import select
         for rows, width, k in ((5, 38_720, 16), (1, 38_720, 16), (8, 4096, 4), (5, 17, 16), (3, 16, 16),
                                (5, 38_720, 1), (2, 2048, 32)):
             with self.subTest(rows=rows, width=width, k=k):
@@ -133,12 +133,12 @@ class CandidateSelectionTests(unittest.TestCase):
                     self.assertTrue(torch.equal(want, select(keys, min(k, width)).sort(-1).values))
 
     def test_it_returns_them_in_descending_order(self):
-        from engine.kernels.vocab_candidates import select
+        from engine.kernels.common.vocab_candidates import select
         got = select(self.keys(4, 4096, 11), 16)
         self.assertTrue(bool((got[:, :-1] > got[:, 1:]).all()))       # keys are unique: strictly descending
 
     def test_a_shard_narrower_than_k_pads_with_the_sentinel(self):
-        from engine.kernels.vocab_candidates import select
+        from engine.kernels.common.vocab_candidates import select
         got = select(self.keys(2, 8, 12), 16)
         self.assertEqual(tuple(got.shape), (2, 16))
         self.assertEqual(int((got == -(2**63)).sum()), 2 * 8)

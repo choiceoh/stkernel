@@ -20,8 +20,8 @@ def main():
     sys.path.insert(0, str(root))
     import torch
     from engine.base.sampler import commit_batch
-    from engine.kernels.decode_commit import advance
-    from engine.kernels.vocab_candidates import argmax_key
+    from engine.kernels.common.decode_commit import advance
+    from engine.kernels.common.vocab_candidates import argmax_key
     torch.set_num_threads(1)
     gen = torch.Generator().manual_seed(914)
     cases = 0
@@ -85,7 +85,7 @@ def main():
                     vocab_cases += 1
             torch.testing.assert_close(argmax_key(logits, 0, 0), torch.full((7,), -(2**63)), rtol=0, atol=0)
     assert not torch.cuda.is_initialized()
-    paths = ('engine/kernels/decode_commit.py', 'engine/kernels/vocab_candidates.py')
+    paths = ('engine/kernels/common/decode_commit.py', 'engine/kernels/common/vocab_candidates.py')
     report = dict(status='PASS', evidence='Triton CPU interpreter, not GPU execution',
                   commit_cases=cases, vocab_cases=vocab_cases, cuda_initialized=False,
                   source_sha256={p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in paths})

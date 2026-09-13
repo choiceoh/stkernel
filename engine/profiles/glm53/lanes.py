@@ -512,8 +512,9 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
         return run
 
     name = "served" + (f" (reference: {', '.join(reference_for)})" if reference_for else "")
-    from engine.kernels.norm_rope import norm
+    from engine.base.lanes import served as common_lanes
     from engine.kernels.glm_pointwise import swiglu_clamped as activation, route_weights, layernorm
+    norm = common_lanes().rmsnorm          # the engine's default RMS norm; the clamped activation is GLM's own
     table = Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, compress_pool_keys, mla, moe,
                                             fwht128_quant_fp8, pool_slots, kda_output_norm)),
                   moe_prepare=None if moe_prepare is None else on_main(moe_prepare),

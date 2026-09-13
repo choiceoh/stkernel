@@ -16,8 +16,8 @@ def main():
     import triton
     from triton.compiler import ASTSource
     from triton.backends.compiler import GPUTarget
-    from engine.kernels.decode_commit import _advance
-    from engine.kernels.vocab_candidates import _argmax_partials, _argmax_finish
+    from engine.kernels.common.decode_commit import _advance
+    from engine.kernels.common.vocab_candidates import _argmax_partials, _argmax_finish
     variants = []
     for k in (0, 1, 5, 8):
         for accepted in (False, True):
@@ -41,7 +41,7 @@ def main():
                                        cubin_sha256=hashlib.sha256(kernel.asm['cubin']).hexdigest()))
     assert not torch.cuda.is_initialized()
     report['source_sha256'] = {p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in
-        ('engine/kernels/decode_commit.py', 'engine/kernels/vocab_candidates.py')}
+        ('engine/kernels/common/decode_commit.py', 'engine/kernels/common/vocab_candidates.py')}
     report['status'] = 'PASS'
     (args.output/'result.json').write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps(report), flush=True)

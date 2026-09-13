@@ -33,7 +33,7 @@ def main():
                   torch_git=torch.version.git_version, cases=[],
                   unfused_sha256=hashlib.sha256(Path(args.unfused).read_bytes()).hexdigest(),
                   source_sha256={p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in (
-                      'engine/modules/vocab.py', 'engine/kernels/vocab_candidates.py',
+                      'engine/modules/vocab.py', 'engine/kernels/common/vocab_candidates.py',
                       'probes/engine_draft_pack_check.py')})
     for rows in (1, 5, 20):
         x = torch.randn(rows, 38720, dtype=torch.bfloat16, device='cuda', generator=gen)

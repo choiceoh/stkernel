@@ -8,7 +8,7 @@ import torch
 class CommitReplayTests(unittest.TestCase):
     def test_limits_eos_ghosts_and_sampled_acceptance_survive_replay(self):
         from engine.base.sampler import commit_batch
-        from engine.kernels.decode_commit import advance
+        from engine.kernels.common.decode_commit import advance
         for n, k in ((1, 0), (4, 1), (8, 5)):
             for sampled in (False, True):
                 picks = torch.zeros(n, k+1, dtype=torch.int64, device='cuda')

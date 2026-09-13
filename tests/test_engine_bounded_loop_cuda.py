@@ -9,7 +9,7 @@ import torch
 class BoundedLoopCudaTests(unittest.TestCase):
     def test_changing_inputs_limits_and_every_exit_preserve_each_commit(self):
         from engine.kernels.bounded_graph import BoundedGraph
-        from engine.kernels.decode_commit import advance
+        from engine.kernels.common.decode_commit import advance
         from engine.profiles.glm53.bounded_loop import stop_at_boundary
         for rows in (1, 4):
             for limit in (1, 2, 4):
