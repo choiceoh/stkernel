@@ -1,0 +1,1030 @@
+{
+  "source": "71eb363489a5897ea4eb2de6622743e7aeeccea9",
+  "numeric_cells": 66,
+  "selected_wide_timings": [
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "warm",
+      "n": 6416,
+      "k": 4096,
+      "baseline_ms": 0.32339049875736237,
+      "candidate_ms": 0.31354424357414246,
+      "change_pct": -3.0446952588447873
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "evicted",
+      "n": 6416,
+      "k": 4096,
+      "baseline_ms": 0.3827439919114113,
+      "candidate_ms": 0.36931200325489044,
+      "change_pct": -3.509392424278668
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "warm",
+      "n": 6416,
+      "k": 4096,
+      "baseline_ms": 0.34984974563121796,
+      "candidate_ms": 0.3223330080509186,
+      "change_pct": -7.865301582727236
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "evicted",
+      "n": 6416,
+      "k": 4096,
+      "baseline_ms": 0.40305599570274353,
+      "candidate_ms": 0.37940799444913864,
+      "change_pct": -5.86717515822428
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "warm",
+      "n": 4096,
+      "k": 2048,
+      "baseline_ms": 0.07198049873113632,
+      "candidate_ms": 0.06550849974155426,
+      "change_pct": -8.99132279390903
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 2048,
+      "baseline_ms": 0.15352800115942955,
+      "candidate_ms": 0.1518400013446808,
+      "change_pct": -1.0994735826697077
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "warm",
+      "n": 4096,
+      "k": 2048,
+      "baseline_ms": 0.09091375023126602,
+      "candidate_ms": 0.07919349893927574,
+      "change_pct": -12.891615693089719
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 2048,
+      "baseline_ms": 0.16096000000834465,
+      "candidate_ms": 0.15721599757671356,
+      "change_pct": -2.3260452481591587
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "warm",
+      "n": 4096,
+      "k": 2048,
+      "baseline_ms": 0.1052200011909008,
+      "candidate_ms": 0.08822450041770935,
+      "change_pct": -16.15234801447729
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 2048,
+      "baseline_ms": 0.1690479964017868,
+      "candidate_ms": 0.16631200164556503,
+      "change_pct": -1.6184721584744266
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "warm",
+      "n": 2048,
+      "k": 4096,
+      "baseline_ms": 0.07647975161671638,
+      "candidate_ms": 0.06976750120520592,
+      "change_pct": -8.776506551890206
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "evicted",
+      "n": 2048,
+      "k": 4096,
+      "baseline_ms": 0.1584720015525818,
+      "candidate_ms": 0.1584160029888153,
+      "change_pct": -0.03533656621854675
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "warm",
+      "n": 2048,
+      "k": 4096,
+      "baseline_ms": 0.09802325069904327,
+      "candidate_ms": 0.08609149977564812,
+      "change_pct": -12.172368125220334
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "evicted",
+      "n": 2048,
+      "k": 4096,
+      "baseline_ms": 0.17079199850559235,
+      "candidate_ms": 0.1708799973130226,
+      "change_pct": 0.05152396376892909
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "warm",
+      "n": 2048,
+      "k": 4096,
+      "baseline_ms": 0.10964199900627136,
+      "candidate_ms": 0.09944749996066093,
+      "change_pct": -9.297987211111792
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "evicted",
+      "n": 2048,
+      "k": 4096,
+      "baseline_ms": 0.17683200165629387,
+      "candidate_ms": 0.1738560013473034,
+      "change_pct": -1.6829534705911975
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "warm",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.07423850148916245,
+      "candidate_ms": 0.06991549953818321,
+      "change_pct": -5.823126631415532
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.14123999699950218,
+      "candidate_ms": 0.1353440023958683,
+      "change_pct": -4.174451096635656
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "warm",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.08413175120949745,
+      "candidate_ms": 0.07855300232768059,
+      "change_pct": -6.63096726457667
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.14553600177168846,
+      "candidate_ms": 0.14179199561476707,
+      "change_pct": -2.57256356595178
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "warm",
+      "n": 4096,
+      "k": 4096,
+      "baseline_ms": 0.18608000129461288,
+      "candidate_ms": 0.1828327476978302,
+      "change_pct": -1.7450846808848897
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 4096,
+      "baseline_ms": 0.2476320005953312,
+      "candidate_ms": 0.24455200135707855,
+      "change_pct": -1.2437807839245418
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "warm",
+      "n": 4096,
+      "k": 4096,
+      "baseline_ms": 0.20153025537729263,
+      "candidate_ms": 0.1945274993777275,
+      "change_pct": -3.4747914085927145
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 4096,
+      "baseline_ms": 0.2537439912557602,
+      "candidate_ms": 0.24712000042200089,
+      "change_pct": -2.6105015535452414
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "warm",
+      "n": 4096,
+      "k": 4096,
+      "baseline_ms": 0.2026204988360405,
+      "candidate_ms": 0.2101150006055832,
+      "change_pct": 3.698787542521642
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 4096,
+      "baseline_ms": 0.2585279941558838,
+      "candidate_ms": 0.25279200077056885,
+      "change_pct": -2.2187126790827683
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "warm",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.07410074770450592,
+      "candidate_ms": 0.06968400254845619,
+      "change_pct": -5.960459634850834
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.1380159966647625,
+      "candidate_ms": 0.1358720026910305,
+      "change_pct": -1.553438750248426
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "warm",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.08370450139045715,
+      "candidate_ms": 0.07798350229859352,
+      "change_pct": -6.834756789454888
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.14406399428844452,
+      "candidate_ms": 0.14166399836540222,
+      "change_pct": -1.6659234910820442
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "warm",
+      "n": 6144,
+      "k": 4096,
+      "baseline_ms": 0.2720842510461807,
+      "candidate_ms": 0.2700439989566803,
+      "change_pct": -0.7498604133298947
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "evicted",
+      "n": 6144,
+      "k": 4096,
+      "baseline_ms": 0.3318159952759743,
+      "candidate_ms": 0.32419998943805695,
+      "change_pct": -2.295249760814888
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "warm",
+      "n": 6144,
+      "k": 4096,
+      "baseline_ms": 0.2783212512731552,
+      "candidate_ms": 0.28095874190330505,
+      "change_pct": 0.9476425598422322
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "evicted",
+      "n": 6144,
+      "k": 4096,
+      "baseline_ms": 0.3406880050897598,
+      "candidate_ms": 0.33111999928951263,
+      "change_pct": -2.8084363574016447
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "warm",
+      "n": 6144,
+      "k": 4096,
+      "baseline_ms": 0.29140374064445496,
+      "candidate_ms": 0.28890299797058105,
+      "change_pct": -0.8581710956569677
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "evicted",
+      "n": 6144,
+      "k": 4096,
+      "baseline_ms": 0.34992800652980804,
+      "candidate_ms": 0.34201599657535553,
+      "change_pct": -2.2610393586140587
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "warm",
+      "n": 4096,
+      "k": 3072,
+      "baseline_ms": 0.12383374944329262,
+      "candidate_ms": 0.11498074978590012,
+      "change_pct": -7.149100868860126
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 3072,
+      "baseline_ms": 0.2000799998641014,
+      "candidate_ms": 0.19807999953627586,
+      "change_pct": -0.9996003244622131
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "warm",
+      "n": 4096,
+      "k": 3072,
+      "baseline_ms": 0.13829274475574493,
+      "candidate_ms": 0.12873724848031998,
+      "change_pct": -6.909615028830352
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 3072,
+      "baseline_ms": 0.20796000212430954,
+      "candidate_ms": 0.2014240063726902,
+      "change_pct": -3.142910023492118
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "warm",
+      "n": 4096,
+      "k": 3072,
+      "baseline_ms": 0.15494374930858612,
+      "candidate_ms": 0.14187375456094742,
+      "change_pct": -8.435315916880581
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 3072,
+      "baseline_ms": 0.21224799752235413,
+      "candidate_ms": 0.20719200000166893,
+      "change_pct": -2.3821178902536877
+    }
+  ],
+  "timings": [
+    {
+      "candidate": "indexer_pair_boundary",
+      "rows": 1,
+      "cache": "warm",
+      "baseline_ms": 0.30073098838329315,
+      "candidate_ms": 0.23665150254964828,
+      "change_pct": -21.307909164310367
+    },
+    {
+      "candidate": "indexer_pair_boundary",
+      "rows": 1,
+      "cache": "evicted",
+      "baseline_ms": 0.39498400688171387,
+      "candidate_ms": 0.316040001809597,
+      "change_pct": -19.986633305828573
+    },
+    {
+      "candidate": "indexer_pair_boundary",
+      "rows": 6,
+      "cache": "warm",
+      "baseline_ms": 0.7303227484226227,
+      "candidate_ms": 0.6108124852180481,
+      "change_pct": -16.364034046960352
+    },
+    {
+      "candidate": "indexer_pair_boundary",
+      "rows": 6,
+      "cache": "evicted",
+      "baseline_ms": 0.7911919802427292,
+      "candidate_ms": 0.6765200048685074,
+      "change_pct": -14.493571501956037
+    },
+    {
+      "candidate": "indexer_pair_boundary",
+      "rows": 7,
+      "cache": "warm",
+      "baseline_ms": 0.875718504190445,
+      "candidate_ms": 0.7556627690792084,
+      "change_pct": -13.70939800138421
+    },
+    {
+      "candidate": "indexer_pair_boundary",
+      "rows": 7,
+      "cache": "evicted",
+      "baseline_ms": 0.9440480023622513,
+      "candidate_ms": 0.8258320093154907,
+      "change_pct": -12.522243863760496
+    },
+    {
+      "candidate": "indexer_pair_boundary",
+      "rows": 14,
+      "cache": "warm",
+      "baseline_ms": 0.9522277414798737,
+      "candidate_ms": 0.8608562350273132,
+      "change_pct": -9.595551827817827
+    },
+    {
+      "candidate": "indexer_pair_boundary",
+      "rows": 14,
+      "cache": "evicted",
+      "baseline_ms": 1.0412800014019012,
+      "candidate_ms": 0.9243360012769699,
+      "change_pct": -11.230792867191031
+    },
+    {
+      "candidate": "indexer_pair_boundary",
+      "rows": 21,
+      "cache": "warm",
+      "baseline_ms": 0.4896479994058609,
+      "candidate_ms": 0.38447675108909607,
+      "change_pct": -21.47894986692066
+    },
+    {
+      "candidate": "indexer_pair_boundary",
+      "rows": 21,
+      "cache": "evicted",
+      "baseline_ms": 0.5475679934024811,
+      "candidate_ms": 0.455424003303051,
+      "change_pct": -16.82786269644163
+    },
+    {
+      "candidate": "indexer_pair_boundary",
+      "rows": 28,
+      "cache": "warm",
+      "baseline_ms": 0.4964417517185211,
+      "candidate_ms": 0.3771292567253113,
+      "change_pct": -24.03353355760036
+    },
+    {
+      "candidate": "indexer_pair_boundary",
+      "rows": 28,
+      "cache": "evicted",
+      "baseline_ms": 0.5272479951381683,
+      "candidate_ms": 0.4432559981942177,
+      "change_pct": -15.930263883116346
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "warm",
+      "n": 6416,
+      "k": 4096,
+      "baseline_ms": 0.3042367547750473,
+      "candidate_ms": 0.2981735020875931,
+      "change_pct": -1.992938917566811
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "evicted",
+      "n": 6416,
+      "k": 4096,
+      "baseline_ms": 0.35706399381160736,
+      "candidate_ms": 0.3535679951310158,
+      "change_pct": -0.9790958318906084
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "warm",
+      "n": 6416,
+      "k": 4096,
+      "baseline_ms": 0.32339049875736237,
+      "candidate_ms": 0.31354424357414246,
+      "change_pct": -3.0446952588447873
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "evicted",
+      "n": 6416,
+      "k": 4096,
+      "baseline_ms": 0.3827439919114113,
+      "candidate_ms": 0.36931200325489044,
+      "change_pct": -3.509392424278668
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "warm",
+      "n": 6416,
+      "k": 4096,
+      "baseline_ms": 0.34984974563121796,
+      "candidate_ms": 0.3223330080509186,
+      "change_pct": -7.865301582727236
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "evicted",
+      "n": 6416,
+      "k": 4096,
+      "baseline_ms": 0.40305599570274353,
+      "candidate_ms": 0.37940799444913864,
+      "change_pct": -5.86717515822428
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "warm",
+      "n": 4096,
+      "k": 2048,
+      "baseline_ms": 0.07198049873113632,
+      "candidate_ms": 0.06550849974155426,
+      "change_pct": -8.99132279390903
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 2048,
+      "baseline_ms": 0.15352800115942955,
+      "candidate_ms": 0.1518400013446808,
+      "change_pct": -1.0994735826697077
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "warm",
+      "n": 4096,
+      "k": 2048,
+      "baseline_ms": 0.09091375023126602,
+      "candidate_ms": 0.07919349893927574,
+      "change_pct": -12.891615693089719
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 2048,
+      "baseline_ms": 0.16096000000834465,
+      "candidate_ms": 0.15721599757671356,
+      "change_pct": -2.3260452481591587
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "warm",
+      "n": 4096,
+      "k": 2048,
+      "baseline_ms": 0.1052200011909008,
+      "candidate_ms": 0.08822450041770935,
+      "change_pct": -16.15234801447729
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 2048,
+      "baseline_ms": 0.1690479964017868,
+      "candidate_ms": 0.16631200164556503,
+      "change_pct": -1.6184721584744266
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "warm",
+      "n": 2048,
+      "k": 4096,
+      "baseline_ms": 0.07647975161671638,
+      "candidate_ms": 0.06976750120520592,
+      "change_pct": -8.776506551890206
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "evicted",
+      "n": 2048,
+      "k": 4096,
+      "baseline_ms": 0.1584720015525818,
+      "candidate_ms": 0.1584160029888153,
+      "change_pct": -0.03533656621854675
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "warm",
+      "n": 2048,
+      "k": 4096,
+      "baseline_ms": 0.09802325069904327,
+      "candidate_ms": 0.08609149977564812,
+      "change_pct": -12.172368125220334
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "evicted",
+      "n": 2048,
+      "k": 4096,
+      "baseline_ms": 0.17079199850559235,
+      "candidate_ms": 0.1708799973130226,
+      "change_pct": 0.05152396376892909
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "warm",
+      "n": 2048,
+      "k": 4096,
+      "baseline_ms": 0.10964199900627136,
+      "candidate_ms": 0.09944749996066093,
+      "change_pct": -9.297987211111792
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "evicted",
+      "n": 2048,
+      "k": 4096,
+      "baseline_ms": 0.17683200165629387,
+      "candidate_ms": 0.1738560013473034,
+      "change_pct": -1.6829534705911975
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "warm",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.059325749054551125,
+      "candidate_ms": 0.05755775049328804,
+      "change_pct": -2.9801537939915024
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.13272799924016,
+      "candidate_ms": 0.13091200217604637,
+      "change_pct": -1.3682094769075226
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "warm",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.07423850148916245,
+      "candidate_ms": 0.06991549953818321,
+      "change_pct": -5.823126631415532
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.14123999699950218,
+      "candidate_ms": 0.1353440023958683,
+      "change_pct": -4.174451096635656
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "warm",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.08413175120949745,
+      "candidate_ms": 0.07855300232768059,
+      "change_pct": -6.63096726457667
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.14553600177168846,
+      "candidate_ms": 0.14179199561476707,
+      "change_pct": -2.57256356595178
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "warm",
+      "n": 4096,
+      "k": 4096,
+      "baseline_ms": 0.18608000129461288,
+      "candidate_ms": 0.1828327476978302,
+      "change_pct": -1.7450846808848897
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 4096,
+      "baseline_ms": 0.2476320005953312,
+      "candidate_ms": 0.24455200135707855,
+      "change_pct": -1.2437807839245418
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "warm",
+      "n": 4096,
+      "k": 4096,
+      "baseline_ms": 0.20153025537729263,
+      "candidate_ms": 0.1945274993777275,
+      "change_pct": -3.4747914085927145
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 4096,
+      "baseline_ms": 0.2537439912557602,
+      "candidate_ms": 0.24712000042200089,
+      "change_pct": -2.6105015535452414
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "warm",
+      "n": 4096,
+      "k": 4096,
+      "baseline_ms": 0.2026204988360405,
+      "candidate_ms": 0.2101150006055832,
+      "change_pct": 3.698787542521642
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 4096,
+      "baseline_ms": 0.2585279941558838,
+      "candidate_ms": 0.25279200077056885,
+      "change_pct": -2.2187126790827683
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "warm",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.05945650115609169,
+      "candidate_ms": 0.05757474899291992,
+      "change_pct": -3.1649224669840326
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.13230400159955025,
+      "candidate_ms": 0.13208000361919403,
+      "change_pct": -0.1693055218648598
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "warm",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.07410074770450592,
+      "candidate_ms": 0.06968400254845619,
+      "change_pct": -5.960459634850834
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.1380159966647625,
+      "candidate_ms": 0.1358720026910305,
+      "change_pct": -1.553438750248426
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "warm",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.08370450139045715,
+      "candidate_ms": 0.07798350229859352,
+      "change_pct": -6.834756789454888
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 1536,
+      "baseline_ms": 0.14406399428844452,
+      "candidate_ms": 0.14166399836540222,
+      "change_pct": -1.6659234910820442
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "warm",
+      "n": 6144,
+      "k": 4096,
+      "baseline_ms": 0.2720842510461807,
+      "candidate_ms": 0.2700439989566803,
+      "change_pct": -0.7498604133298947
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "evicted",
+      "n": 6144,
+      "k": 4096,
+      "baseline_ms": 0.3318159952759743,
+      "candidate_ms": 0.32419998943805695,
+      "change_pct": -2.295249760814888
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "warm",
+      "n": 6144,
+      "k": 4096,
+      "baseline_ms": 0.2783212512731552,
+      "candidate_ms": 0.28095874190330505,
+      "change_pct": 0.9476425598422322
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "evicted",
+      "n": 6144,
+      "k": 4096,
+      "baseline_ms": 0.3406880050897598,
+      "candidate_ms": 0.33111999928951263,
+      "change_pct": -2.8084363574016447
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "warm",
+      "n": 6144,
+      "k": 4096,
+      "baseline_ms": 0.29140374064445496,
+      "candidate_ms": 0.28890299797058105,
+      "change_pct": -0.8581710956569677
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "evicted",
+      "n": 6144,
+      "k": 4096,
+      "baseline_ms": 0.34992800652980804,
+      "candidate_ms": 0.34201599657535553,
+      "change_pct": -2.2610393586140587
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "warm",
+      "n": 4096,
+      "k": 3072,
+      "baseline_ms": 0.12383374944329262,
+      "candidate_ms": 0.11498074978590012,
+      "change_pct": -7.149100868860126
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 14,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 3072,
+      "baseline_ms": 0.2000799998641014,
+      "candidate_ms": 0.19807999953627586,
+      "change_pct": -0.9996003244622131
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "warm",
+      "n": 4096,
+      "k": 3072,
+      "baseline_ms": 0.13829274475574493,
+      "candidate_ms": 0.12873724848031998,
+      "change_pct": -6.909615028830352
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 21,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 3072,
+      "baseline_ms": 0.20796000212430954,
+      "candidate_ms": 0.2014240063726902,
+      "change_pct": -3.142910023492118
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "warm",
+      "n": 4096,
+      "k": 3072,
+      "baseline_ms": 0.15494374930858612,
+      "candidate_ms": 0.14187375456094742,
+      "change_pct": -8.435315916880581
+    },
+    {
+      "candidate": "wide_input",
+      "rows": 28,
+      "cache": "evicted",
+      "n": 4096,
+      "k": 3072,
+      "baseline_ms": 0.21224799752235413,
+      "candidate_ms": 0.20719200000166893,
+      "change_pct": -2.3821178902536877
+    }
+  ],
+  "bundle": {
+    "decode_bundle": [
+      {
+        "bundle_lane": "paired_projection",
+        "exit_code": 0,
+        "elapsed_s": 12.360806033015251
+      },
+      {
+        "bundle_lane": "indexer_boundary",
+        "exit_code": 0,
+        "elapsed_s": 9.050749682006426
+      },
+      {
+        "bundle_lane": "wide_input",
+        "exit_code": 0,
+        "elapsed_s": 12.81066202101647
+      },
+      {
+        "bundle_lane": "direct_producer",
+        "exit_code": 0,
+        "elapsed_s": 55.281156554992776
+      }
+    ],
+    "passed": true,
+    "scope": "component numerics and timing; no serving default enabled"
+  }
+}

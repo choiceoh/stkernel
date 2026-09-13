@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "evidence": "full Torch extension compile/load only",
+  "gpu_used": false,
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "max_elements": 262144,
+  "extension_sha256": "02dedf158533dbde0a0960a6e82bd48ff3bd9cd6ada58c88b330860e1fc9d959",
+  "source_sha256": {
+    "engine/kernels/oneshot/SOURCE.json": "72d7d906a11775766757262c5b576c77391b64428eb81071614b6da75859cb0f",
+    "engine/kernels/oneshot/__init__.py": "c598e53ee09f0ef4d8a2d2075103d605fe08a3aeb8e5e671d3f53c9aee4529be",
+    "engine/kernels/oneshot/dsv4_oneshot_ar.cu": "856a3154ed385274845fb5f2e5fad48fca97ecd9f0fa79fb08678cc79bfe8eb9",
+    "engine/kernels/oneshot/dsv4_oneshot_transport.h": "78f93a16a7108e05fe2d68c1386d858e816f8e609e59daeab6c7961bbfd68e40"
+  }
+}
