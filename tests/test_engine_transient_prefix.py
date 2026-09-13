@@ -107,7 +107,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual((r.transient_dropped, c.spill_candidates(4)), (1, [chain[8]]))
         c.check()
 
-    def test_a_long_transient_prompt_displaces_its_own_boundaries_and_not_production_s(self):
+    def test_after_its_first_step_a_long_transient_prompt_displaces_only_its_own_boundaries(self):
         r, c = runner(blocks=32, snapshots=2)
         prod = c.chain(list(range(9)))
         r.submit(0, 9, now=0, ids=list(range(9)))              # production: boundaries 4 and 8 hold both slots
@@ -115,7 +115,8 @@ class RunnerTests(unittest.TestCase):
         r.submit(1, 24, now=0, ids=list(range(100, 124)))      # a probe: six boundaries against two slots
         r.transient.add(1)
         run_to_end(r, 1)
-        # its first boundary needed a slot while it had none of its own; every later one took its own earlier one
+        # the snapshot its first step asked for (the mark at 4, before the step) came from production, while the row
+        # held nothing of its own; every later one -- the step's own end, and every step after -- came from its own
         self.assertEqual(set(c.entries), {prod[8]})
         self.assertEqual((r.snapshot_self_evicts, r.transient_dropped, len(c.free_snaps)), (5, 1, 1))
         c.check()

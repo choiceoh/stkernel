@@ -280,7 +280,9 @@ class PrefixCache:
         Within a class, one whose copy is already on the tier goes first (its state can come back); a pinned boundary
         goes last of all; one whose copy is being written cannot go at all (the write reads its snapshot).
         Before every class, a TRANSIENT boundary (a turn that will not be retained made it): it leaves with its row
-        anyway, so a D17 probe's long prompt displaces its own earlier boundaries and not production's (2026-09-13)."""
+        anyway. A D17 probe's prompt still takes production's snapshots for the boundaries of its FIRST step -- they are
+        asked for before the step, while the row holds none of its own, and a 32K step asks for dozens -- but every
+        later step, and every other probe row, gives up the probe's own first (2026-09-13)."""
         movable = [h for h, e in self.entries.items() if not e.spilling]
         if not movable:
             return None
