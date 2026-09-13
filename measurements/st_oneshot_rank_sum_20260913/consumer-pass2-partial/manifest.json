@@ -1,0 +1,34 @@
+{
+  "scope": "operator stopped duplicate C4 after both C1 passes and first full C4; second onepass partial",
+  "run_id": "20260912T232937-6373a6373feb",
+  "files": {
+    "record.json": {
+      "sha256": "5f5680d17fab926897c3b569d8717a61491fed5317af435984277e7d9be2e899",
+      "bytes": 644800,
+      "compressed_bytes": 257746
+    },
+    "requests.jsonl": {
+      "sha256": "906a60a48df09c2f72c4f37306050f01d20d9ecad0576c4cca8eab3c526a5783",
+      "bytes": 3745683,
+      "compressed_bytes": 1000708
+    },
+    "quality.jsonl": {
+      "sha256": "0a787595346ef0219015b3221d2dff9d3f10df896134f211584682b6d29adcbe",
+      "bytes": 35094,
+      "compressed_bytes": 7926
+    },
+    "workloads.json": {
+      "sha256": "5fc24ef18564e70366eb8279279cdbd11979c7bd13642f27a6459d2ec8239103",
+      "bytes": 508695,
+      "compressed_bytes": 195776
+    },
+    "operator-c4-once.json": {
+      "sha256": "f08ff0112dcbdde61ddc8dd2ab0f536ff6d82f939e022d8a94e665c7efd743e6",
+      "bytes": 1143
+    },
+    "continuation.json": {
+      "sha256": "d789a9e8010560c72d24e6f3a067ed61ffc299117b85dc15441916670bec9d5c",
+      "bytes": 5251
+    }
+  }
+}

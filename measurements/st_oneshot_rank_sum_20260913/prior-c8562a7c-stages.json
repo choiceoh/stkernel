@@ -1,0 +1,584 @@
+{
+  "scope": "actual C1 measurement; sampled CUDA-event stages, profiler off; map recorded stage.step to the canonical request prefill boundaries on each rank",
+  "run_id": "20260912T203603-8865beecf0a3",
+  "source": "c8562a7c55a49d53eefc13794ee035c4ed6dc10a",
+  "complete_onepasses": 0,
+  "rows": [
+    {
+      "rank": 0,
+      "context": 2000,
+      "operation": "forward",
+      "samples": 63,
+      "mean_ms": 46.3414563375806,
+      "median_ms": 46.2639045715332
+    },
+    {
+      "rank": 0,
+      "context": 2000,
+      "operation": "sample",
+      "samples": 63,
+      "mean_ms": 0.034408126883800065,
+      "median_ms": 0.028416000306606293
+    },
+    {
+      "rank": 0,
+      "context": 2000,
+      "operation": "commit",
+      "samples": 63,
+      "mean_ms": 0.011046095189475824,
+      "median_ms": 0.011264000087976456
+    },
+    {
+      "rank": 0,
+      "context": 2000,
+      "operation": "boundaries",
+      "samples": 63,
+      "mean_ms": 0.03495314362503233,
+      "median_ms": 0.03484800085425377
+    },
+    {
+      "rank": 0,
+      "context": 2000,
+      "operation": "observe",
+      "samples": 63,
+      "mean_ms": 0.4150816514378502,
+      "median_ms": 0.4148159921169281
+    },
+    {
+      "rank": 0,
+      "context": 2000,
+      "operation": "propose",
+      "samples": 63,
+      "mean_ms": 3.0306534540085566,
+      "median_ms": 3.0143039226531982
+    },
+    {
+      "rank": 0,
+      "context": 32000,
+      "operation": "forward",
+      "samples": 58,
+      "mean_ms": 47.47106111460719,
+      "median_ms": 47.28859329223633
+    },
+    {
+      "rank": 0,
+      "context": 32000,
+      "operation": "sample",
+      "samples": 58,
+      "mean_ms": 0.0514576551665006,
+      "median_ms": 0.027744000777602196
+    },
+    {
+      "rank": 0,
+      "context": 32000,
+      "operation": "commit",
+      "samples": 58,
+      "mean_ms": 0.01160000006122322,
+      "median_ms": 0.01142400037497282
+    },
+    {
+      "rank": 0,
+      "context": 32000,
+      "operation": "boundaries",
+      "samples": 58,
+      "mean_ms": 0.03498593171865776,
+      "median_ms": 0.03484800085425377
+    },
+    {
+      "rank": 0,
+      "context": 32000,
+      "operation": "observe",
+      "samples": 58,
+      "mean_ms": 0.4155304827566804,
+      "median_ms": 0.4136959910392761
+    },
+    {
+      "rank": 0,
+      "context": 32000,
+      "operation": "propose",
+      "samples": 58,
+      "mean_ms": 3.035817927327649,
+      "median_ms": 3.0151519775390625
+    },
+    {
+      "rank": 0,
+      "context": 128000,
+      "operation": "forward",
+      "samples": 56,
+      "mean_ms": 49.30306822913034,
+      "median_ms": 49.522159576416016
+    },
+    {
+      "rank": 0,
+      "context": 128000,
+      "operation": "sample",
+      "samples": 56,
+      "mean_ms": 0.03718400001525879,
+      "median_ms": 0.03033600002527237
+    },
+    {
+      "rank": 0,
+      "context": 128000,
+      "operation": "commit",
+      "samples": 56,
+      "mean_ms": 0.01097999994609771,
+      "median_ms": 0.011264000087976456
+    },
+    {
+      "rank": 0,
+      "context": 128000,
+      "operation": "boundaries",
+      "samples": 56,
+      "mean_ms": 0.03379828615912369,
+      "median_ms": 0.033824000507593155
+    },
+    {
+      "rank": 0,
+      "context": 128000,
+      "operation": "observe",
+      "samples": 56,
+      "mean_ms": 0.41356685757637024,
+      "median_ms": 0.412880003452301
+    },
+    {
+      "rank": 0,
+      "context": 128000,
+      "operation": "propose",
+      "samples": 56,
+      "mean_ms": 3.094665710415159,
+      "median_ms": 3.056704044342041
+    },
+    {
+      "rank": 1,
+      "context": 2000,
+      "operation": "forward",
+      "samples": 63,
+      "mean_ms": 46.29476638067336,
+      "median_ms": 46.24812698364258
+    },
+    {
+      "rank": 1,
+      "context": 2000,
+      "operation": "sample",
+      "samples": 63,
+      "mean_ms": 0.05469257142099123,
+      "median_ms": 0.05475199967622757
+    },
+    {
+      "rank": 1,
+      "context": 2000,
+      "operation": "commit",
+      "samples": 63,
+      "mean_ms": 0.01113295235804149,
+      "median_ms": 0.011359999887645245
+    },
+    {
+      "rank": 1,
+      "context": 2000,
+      "operation": "boundaries",
+      "samples": 63,
+      "mean_ms": 0.03304990522918247,
+      "median_ms": 0.03283200040459633
+    },
+    {
+      "rank": 1,
+      "context": 2000,
+      "operation": "observe",
+      "samples": 63,
+      "mean_ms": 0.40525003226976547,
+      "median_ms": 0.4026559889316559
+    },
+    {
+      "rank": 1,
+      "context": 2000,
+      "operation": "propose",
+      "samples": 63,
+      "mean_ms": 3.0320320015861877,
+      "median_ms": 3.015615940093994
+    },
+    {
+      "rank": 1,
+      "context": 32000,
+      "operation": "forward",
+      "samples": 58,
+      "mean_ms": 47.467884392573914,
+      "median_ms": 47.277503967285156
+    },
+    {
+      "rank": 1,
+      "context": 32000,
+      "operation": "sample",
+      "samples": 58,
+      "mean_ms": 0.06683696584840272,
+      "median_ms": 0.06193599849939346
+    },
+    {
+      "rank": 1,
+      "context": 32000,
+      "operation": "commit",
+      "samples": 58,
+      "mean_ms": 0.011547034445764688,
+      "median_ms": 0.011392000131309032
+    },
+    {
+      "rank": 1,
+      "context": 32000,
+      "operation": "boundaries",
+      "samples": 58,
+      "mean_ms": 0.0329682763408998,
+      "median_ms": 0.03286400064826012
+    },
+    {
+      "rank": 1,
+      "context": 32000,
+      "operation": "observe",
+      "samples": 58,
+      "mean_ms": 0.4026659290338385,
+      "median_ms": 0.39932799339294434
+    },
+    {
+      "rank": 1,
+      "context": 32000,
+      "operation": "propose",
+      "samples": 58,
+      "mean_ms": 3.0405506224467835,
+      "median_ms": 3.0188639163970947
+    },
+    {
+      "rank": 1,
+      "context": 128000,
+      "operation": "forward",
+      "samples": 56,
+      "mean_ms": 49.278429303850444,
+      "median_ms": 49.49990463256836
+    },
+    {
+      "rank": 1,
+      "context": 128000,
+      "operation": "sample",
+      "samples": 56,
+      "mean_ms": 0.05984399986586401,
+      "median_ms": 0.05595199950039387
+    },
+    {
+      "rank": 1,
+      "context": 128000,
+      "operation": "commit",
+      "samples": 56,
+      "mean_ms": 0.011259999999310821,
+      "median_ms": 0.01128000020980835
+    },
+    {
+      "rank": 1,
+      "context": 128000,
+      "operation": "boundaries",
+      "samples": 56,
+      "mean_ms": 0.03362857197810497,
+      "median_ms": 0.031936001032590866
+    },
+    {
+      "rank": 1,
+      "context": 128000,
+      "operation": "observe",
+      "samples": 56,
+      "mean_ms": 0.4079142840845244,
+      "median_ms": 0.4060000032186508
+    },
+    {
+      "rank": 1,
+      "context": 128000,
+      "operation": "propose",
+      "samples": 56,
+      "mean_ms": 3.0957000042710985,
+      "median_ms": 3.056607961654663
+    },
+    {
+      "rank": 2,
+      "context": 2000,
+      "operation": "forward",
+      "samples": 63,
+      "mean_ms": 46.295474885002015,
+      "median_ms": 46.22943878173828
+    },
+    {
+      "rank": 2,
+      "context": 2000,
+      "operation": "sample",
+      "samples": 63,
+      "mean_ms": 0.05882819070820771,
+      "median_ms": 0.05660799890756607
+    },
+    {
+      "rank": 2,
+      "context": 2000,
+      "operation": "commit",
+      "samples": 63,
+      "mean_ms": 0.013006730123408257,
+      "median_ms": 0.013311999849975109
+    },
+    {
+      "rank": 2,
+      "context": 2000,
+      "operation": "boundaries",
+      "samples": 63,
+      "mean_ms": 0.03476469904657394,
+      "median_ms": 0.03481600061058998
+    },
+    {
+      "rank": 2,
+      "context": 2000,
+      "operation": "observe",
+      "samples": 63,
+      "mean_ms": 0.4272706040314266,
+      "median_ms": 0.4260160028934479
+    },
+    {
+      "rank": 2,
+      "context": 2000,
+      "operation": "propose",
+      "samples": 63,
+      "mean_ms": 3.016969642941914,
+      "median_ms": 3.000447988510132
+    },
+    {
+      "rank": 2,
+      "context": 32000,
+      "operation": "forward",
+      "samples": 58,
+      "mean_ms": 47.44460040125353,
+      "median_ms": 47.26233673095703
+    },
+    {
+      "rank": 2,
+      "context": 32000,
+      "operation": "sample",
+      "samples": 58,
+      "mean_ms": 0.07629848249128153,
+      "median_ms": 0.060287998989224434
+    },
+    {
+      "rank": 2,
+      "context": 32000,
+      "operation": "commit",
+      "samples": 58,
+      "mean_ms": 0.013405241313037173,
+      "median_ms": 0.013376000337302685
+    },
+    {
+      "rank": 2,
+      "context": 32000,
+      "operation": "boundaries",
+      "samples": 58,
+      "mean_ms": 0.03474758693884159,
+      "median_ms": 0.03484800085425377
+    },
+    {
+      "rank": 2,
+      "context": 32000,
+      "operation": "observe",
+      "samples": 58,
+      "mean_ms": 0.42577434459636954,
+      "median_ms": 0.42499199509620667
+    },
+    {
+      "rank": 2,
+      "context": 32000,
+      "operation": "propose",
+      "samples": 58,
+      "mean_ms": 3.0278940735192137,
+      "median_ms": 3.0037440061569214
+    },
+    {
+      "rank": 2,
+      "context": 128000,
+      "operation": "forward",
+      "samples": 56,
+      "mean_ms": 49.264897210257395,
+      "median_ms": 49.48633575439453
+    },
+    {
+      "rank": 2,
+      "context": 128000,
+      "operation": "sample",
+      "samples": 56,
+      "mean_ms": 0.057061713721070974,
+      "median_ms": 0.05777600035071373
+    },
+    {
+      "rank": 2,
+      "context": 128000,
+      "operation": "commit",
+      "samples": 56,
+      "mean_ms": 0.01291428567908172,
+      "median_ms": 0.013248000293970108
+    },
+    {
+      "rank": 2,
+      "context": 128000,
+      "operation": "boundaries",
+      "samples": 56,
+      "mean_ms": 0.03449600050225854,
+      "median_ms": 0.033824000507593155
+    },
+    {
+      "rank": 2,
+      "context": 128000,
+      "operation": "observe",
+      "samples": 56,
+      "mean_ms": 0.43047371613127844,
+      "median_ms": 0.42817600071430206
+    },
+    {
+      "rank": 2,
+      "context": 128000,
+      "operation": "propose",
+      "samples": 56,
+      "mean_ms": 3.076508564608438,
+      "median_ms": 3.0433919429779053
+    },
+    {
+      "rank": 3,
+      "context": 2000,
+      "operation": "forward",
+      "samples": 63,
+      "mean_ms": 46.33778599330357,
+      "median_ms": 46.27532958984375
+    },
+    {
+      "rank": 3,
+      "context": 2000,
+      "operation": "sample",
+      "samples": 63,
+      "mean_ms": 0.039577396793497935,
+      "median_ms": 0.03702399879693985
+    },
+    {
+      "rank": 3,
+      "context": 2000,
+      "operation": "commit",
+      "samples": 63,
+      "mean_ms": 0.01162412694640576,
+      "median_ms": 0.011327999643981457
+    },
+    {
+      "rank": 3,
+      "context": 2000,
+      "operation": "boundaries",
+      "samples": 63,
+      "mean_ms": 0.03283911086027585,
+      "median_ms": 0.03276799991726875
+    },
+    {
+      "rank": 3,
+      "context": 2000,
+      "operation": "observe",
+      "samples": 63,
+      "mean_ms": 0.4243113649269891,
+      "median_ms": 0.42396798729896545
+    },
+    {
+      "rank": 3,
+      "context": 2000,
+      "operation": "propose",
+      "samples": 63,
+      "mean_ms": 3.013735608449058,
+      "median_ms": 3.0013439655303955
+    },
+    {
+      "rank": 3,
+      "context": 32000,
+      "operation": "forward",
+      "samples": 58,
+      "mean_ms": 47.46298533472521,
+      "median_ms": 47.29355049133301
+    },
+    {
+      "rank": 3,
+      "context": 32000,
+      "operation": "sample",
+      "samples": 58,
+      "mean_ms": 0.06496331053946552,
+      "median_ms": 0.045903999358415604
+    },
+    {
+      "rank": 3,
+      "context": 32000,
+      "operation": "commit",
+      "samples": 58,
+      "mean_ms": 0.012961655196830117,
+      "median_ms": 0.013248000293970108
+    },
+    {
+      "rank": 3,
+      "context": 32000,
+      "operation": "boundaries",
+      "samples": 58,
+      "mean_ms": 0.03275199979543686,
+      "median_ms": 0.03276799991726875
+    },
+    {
+      "rank": 3,
+      "context": 32000,
+      "operation": "observe",
+      "samples": 58,
+      "mean_ms": 0.42816165552057067,
+      "median_ms": 0.4267680048942566
+    },
+    {
+      "rank": 3,
+      "context": 32000,
+      "operation": "propose",
+      "samples": 58,
+      "mean_ms": 3.0145539291973775,
+      "median_ms": 2.9910560846328735
+    },
+    {
+      "rank": 3,
+      "context": 128000,
+      "operation": "forward",
+      "samples": 56,
+      "mean_ms": 49.276321751730784,
+      "median_ms": 49.5214729309082
+    },
+    {
+      "rank": 3,
+      "context": 128000,
+      "operation": "sample",
+      "samples": 56,
+      "mean_ms": 0.03712914275404598,
+      "median_ms": 0.03299199976027012
+    },
+    {
+      "rank": 3,
+      "context": 128000,
+      "operation": "commit",
+      "samples": 56,
+      "mean_ms": 0.012455428601242602,
+      "median_ms": 0.01142400037497282
+    },
+    {
+      "rank": 3,
+      "context": 128000,
+      "operation": "boundaries",
+      "samples": 56,
+      "mean_ms": 0.035047429015061686,
+      "median_ms": 0.03564799949526787
+    },
+    {
+      "rank": 3,
+      "context": 128000,
+      "operation": "observe",
+      "samples": 56,
+      "mean_ms": 0.4444091437118394,
+      "median_ms": 0.43828800320625305
+    },
+    {
+      "rank": 3,
+      "context": 128000,
+      "operation": "propose",
+      "samples": 56,
+      "mean_ms": 3.057757134948458,
+      "median_ms": 3.0309280157089233
+    }
+  ]
+}
