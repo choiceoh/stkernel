@@ -176,13 +176,16 @@ class DescriptorTests(unittest.TestCase):
         self.assertIn("linear none", s.describe())
         verdicts = {v.lane: v for v in cells.admission(s)}
         status = {lane: v.status for lane, v in verdicts.items()}
-        admitted = ("device", "mla", "mhc_decode", "indexer", "oneshot", "prefill_collectives", "dense")
+        admitted = ("device", "mla", "indexer", "mhc_prefill", "universal")
+        unmeasured = ("mhc_decode", "oneshot", "prefill_collectives", "dense")      # compiled for 5120, measured at 4096
         self.assertEqual({k: status[k] for k in admitted}, dict.fromkeys(admitted, cells.ADMITTED))
+        self.assertEqual({k: status[k] for k in unmeasured}, dict.fromkeys(unmeasured, cells.UNMEASURED))
         self.assertEqual(status["moe"], cells.REFUSED)                              # FP4 [32,32] blocks, not NVFP4
         self.assertFalse({"kda_recurrent", "kda_ring", "kda_chunk", "draft"} & set(status))
         self.assertIn("hidden 5120", verdicts["mhc_decode"].why)                    # the HIDDEN_V41 instance
+        self.assertIn("dsv41_mhc_20260910", verdicts["mhc_decode"].recipe.how)     # whose GPU probe is pending
         self.assertIn("every 2 rows", verdicts["prefill_collectives"].why)
-        self.assertIn("unmeasured", verdicts["oneshot"].why)
+        self.assertEqual(verdicts["oneshot"].recipe.kind, "measure")
         ks.bind(s)
         self.assertIs(ks.bound(), s)
 
@@ -341,10 +344,12 @@ class CellTests(unittest.TestCase):
         from engine.kernels import cells
         status = {v.lane: v.status for v in cells.admission(qwen_shape())}
         refused = ("mla", "mhc_decode", "kda_ring", "kda_chunk")
-        admitted = ("device", "indexer", "mhc_prefill", "oneshot", "prefill_collectives", "dense", "kda_recurrent", "universal")
+        admitted = ("device", "indexer", "mhc_prefill", "universal")
+        unmeasured = ("oneshot", "prefill_collectives", "dense", "kda_recurrent", "moe")
         self.assertEqual({k: status[k] for k in refused}, dict.fromkeys(refused, cells.REFUSED))
         self.assertEqual({k: status[k] for k in admitted}, dict.fromkeys(admitted, cells.ADMITTED))
-        self.assertEqual(status["moe"], cells.UNMEASURED)
+        self.assertEqual({k: status[k] for k in unmeasured}, dict.fromkeys(unmeasured, cells.UNMEASURED))
+        self.assertEqual(len(status), 13)
         self.assertNotIn("draft", status)                                  # no drafter declared
         pinned = {v.lane: v for v in cells.admission(ks.pin(qwen_shape(), "moe.dynamic_tile_m", 32))}
         self.assertEqual(pinned["moe"].status, cells.UNMEASURED)          # a pin is not a measurement
@@ -428,6 +433,7 @@ class RecordTests(unittest.TestCase):
             self.assertIn("recorded ->", text)
             self.assertIn("tile pinned at 64", text)
             self.assertIn("0 refused", text)
+            self.assertIn("work: none", text)
             record = ks.read_record(ranks)
             self.assertEqual(ks.from_dict(record["shape"]), ks.pin(glm_shape(), "moe.dynamic_tile_m", 64))
             self.assertEqual(record["config_sha256"], ks.config_sha256(ckpt / "config.json"))
@@ -454,6 +460,134 @@ class RecordTests(unittest.TestCase):
                 ks.wizard("glm53", ckpt, pins=["moe.dynamic_tile_m"])
             with self.assertRaises(ValueError):
                 ks.derive_for("dsv4", ckpt)                                    # not a profile this engine knows
+
+
+class RecipeTests(unittest.TestCase):
+    """Every verdict that asks for work says what to do, where, what judges it and what done is -- in the order to do
+    it -- and names files that exist, so the table is a work list an agent can start from."""
+
+    SHAPES = {
+        "glm": MEASURED, "qwen38": None, "dsv41": None,
+        "mla32": replace(MEASURED, attention=Attention("mla", heads=32, head_dim=512)),
+        "mla_latent256": replace(MEASURED, attention=Attention("mla", heads=16, head_dim=256)),
+        "hc8": replace(MEASURED, hc=8),
+        "hidden4000": replace(MEASURED, hidden=4000, comm=Comm(4, 4000), moe=replace(MEASURED.moe, hidden=4000)),
+        "tp2": replace(MEASURED, tp=2, comm=Comm(2, 4096), moe=replace(MEASURED.moe, inter_local=1024)),
+        "index64": replace(MEASURED, indexer=Indexer(heads=32, head_dim=64, pool=4, topk=2048)),
+        "draft64": replace(MEASURED, drafter=Drafter(head_dim=64, kv_heads=8, layers=5, window=2048)),
+        "kda32": replace(MEASURED, linear=LinearAttention(heads=32, v_heads=32, k_dim=128, v_dim=128, conv=4)),
+        "device": replace(MEASURED, device=Device(capability=(12, 0), sms=16)),
+        "mxfp4": replace(MEASURED, moe=replace(MEASURED.moe, quant="mxfp4")),
+    }
+
+    def shapes(self):
+        for name, shape in self.SHAPES.items():
+            yield name, {"qwen38": qwen_shape, "dsv41": dsv41_shape}.get(name, lambda: shape)()
+
+    def test_a_recipe_rides_on_every_verdict_that_is_not_admitted(self):
+        from engine.kernels import cells
+        seen = set()
+        for name, shape in self.shapes():
+            for v in cells.admission(shape):
+                with self.subTest(shape=name, lane=v.lane):
+                    self.assertEqual(v.recipe is None, v.status == cells.ADMITTED)
+                    if v.recipe:
+                        seen.add((v.lane, v.status, v.recipe.kind))
+        # every refusal and every measurement the table can produce is exercised by the shapes above
+        self.assertTrue({("mla", "refused", "kernel"), ("mla", "refused", "wire"), ("mla", "refused", "instance"),
+                         ("mhc_decode", "refused", "instance"), ("mhc_decode", "refused", "rewrite"),
+                         ("mhc_decode", "unmeasured", "measure"), ("oneshot", "refused", "rewrite"),
+                         ("oneshot", "unmeasured", "measure"), ("prefill_collectives", "unmeasured", "measure"),
+                         ("dense", "refused", "convert"), ("dense", "unmeasured", "measure"),
+                         ("indexer", "refused", "kernel"), ("draft", "unmeasured", "measure"),
+                         ("kda_recurrent", "unmeasured", "measure"), ("kda_ring", "refused", "wire"),
+                         ("kda_ring", "unmeasured", "measure"), ("kda_chunk", "refused", "kernel"),
+                         ("kda_chunk", "unmeasured", "measure"), ("moe", "refused", "convert"),
+                         ("moe", "unmeasured", "measure"), ("device", "refused", "rewrite")} <= seen, seen)
+
+    def test_the_plan_is_cheapest_first_with_refusals_first_at_equal_cost(self):
+        from engine.kernels import cells
+        self.assertEqual(cells.plan(cells.admission(MEASURED)), [])
+        self.assertIn("work: none", cells.work_table(cells.admission(MEASURED)))
+        qwen = cells.plan(cells.admission(qwen_shape()))
+        self.assertEqual([(v.lane, v.status, v.recipe.cost) for v in qwen], [
+            ("kda_ring", "refused", "hours"), ("mhc_decode", "refused", "hours"),
+            ("dense", "unmeasured", "hours"), ("kda_recurrent", "unmeasured", "hours"), ("moe", "unmeasured", "hours"),
+            ("oneshot", "unmeasured", "hours"), ("prefill_collectives", "unmeasured", "hours"),
+            ("kda_chunk", "refused", "days"), ("mla", "refused", "days")])
+        self.assertEqual([v.lane for v in cells.plan(cells.admission(dsv41_shape()))],
+                         ["dense", "mhc_decode", "oneshot", "prefill_collectives", "moe"])
+        text = cells.work_table(cells.admission(qwen_shape()))
+        self.assertIn("work (9)", text)
+        self.assertIn("1. kda_ring [refused] wire, hours", text)
+        for field in ("how:", "where:", "judge:", "done:"):
+            self.assertEqual(text.count(field), 9, field)
+
+    def test_the_recipes_name_files_that_exist(self):
+        import re
+        from engine.kernels import cells
+        pattern = re.compile(r"(?:engine|probes|tests|bench|measurements)/[A-Za-z0-9_./<>-]+")
+        checked = set()
+        for _, shape in self.shapes():
+            for v in cells.admission(shape):
+                if v.recipe is None:
+                    continue
+                for text in (v.recipe.where, v.recipe.how, v.recipe.judge, v.recipe.done):
+                    for token in pattern.findall(text):
+                        token = token.rstrip(".,;:)").replace("<profile>", "glm53")
+                        head, dot, tail = token.rpartition(".")
+                        candidates = [token, token + ".py"] + ([head, head + ".py"] if dot and "/" not in tail else [])
+                        with self.subTest(lane=v.lane, token=token):
+                            self.assertTrue(any((ROOT / c).exists() for c in candidates), candidates)
+                        checked.add(token)
+        self.assertIn("probes/mk_mhc_geometry_bench.py", checked)
+        self.assertIn("measurements/dsv41_mhc_20260910", checked)
+
+    def test_a_recipe_names_its_kind_cost_and_every_field(self):
+        from engine.kernels import cells
+        good = dict(kind="measure", where="w", how="h", judge="j", done="d", cost="hours")
+        self.assertEqual(cells.Recipe(**good).cost, "hours")
+        for change in (dict(kind="guess"), dict(cost="weeks"), dict(where=""), dict(judge=""), dict(done="")):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                cells.Recipe(**dict(good, **change))
+
+    def test_the_record_and_the_json_carry_the_work(self):
+        from engine.kernels import cells
+        with tempfile.TemporaryDirectory() as d:
+            qckpt, ranks = Path(d) / "qwen", Path(d) / "ranks"
+            qckpt.mkdir()
+            (qckpt / "config.json").write_text(json.dumps({"text_config": QWEN38_TEXT_CONFIG}))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(ks.main(["wizard", "--profile", "qwen38", "--ckpt", str(qckpt), "--ranks", str(ranks),
+                                          "--write", "--json"]), 0)
+            doc = json.loads(out.getvalue())
+            expected = [v.lane for v in cells.plan(cells.admission(qwen_shape()))]
+            self.assertEqual(doc["plan"], expected)
+            self.assertEqual(doc["counts"], {"admitted": 4, "unmeasured": 5, "refused": 4})
+            self.assertEqual(ks.from_dict(doc["shape"]), qwen_shape())
+            self.assertEqual(doc["record"], str(ranks / ks.RECORD))
+            by_lane = {entry["lane"]: entry for entry in doc["admission"]}
+            self.assertEqual(set(by_lane["mhc_decode"]["recipe"]), {"kind", "where", "how", "judge", "done", "cost"})
+            self.assertIsNone(by_lane["device"]["recipe"])
+            record = ks.read_record(ranks)
+            self.assertEqual(record["plan"], expected)
+            self.assertEqual([cells.from_dict(v) for v in record["admission"]], cells.admission(qwen_shape()))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(ks.main(["show", "--ranks", str(ranks), "--json"]), 0)
+            shown = json.loads(out.getvalue())
+            self.assertEqual((shown["plan"], shown["counts"]), (expected, doc["counts"]))
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(ks.main(["show", "--ranks", str(ranks)]), 0)
+            self.assertIn("work (9)", out.getvalue())
+            # a record written before recipes existed still reads: its verdicts simply carry none
+            old = dict(record, admission=[{k: v for k, v in entry.items() if k != "recipe"} for entry in record["admission"]])
+            old.pop("plan")
+            (ranks / ks.RECORD).write_text(json.dumps(old))
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(ks.main(["show", "--ranks", str(ranks)]), 0)
 
 
 if __name__ == "__main__":
