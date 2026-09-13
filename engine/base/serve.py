@@ -1251,6 +1251,7 @@ class Server:
                                                    # every streamed token, a fifth of this engine's inter-token time
         self._sent = {}                            # row -> generated tokens already handed to its stream
         self.prompt_tokens_total = self.generation_tokens_total = 0
+        self.generation_tokens_committed_total = 0
         # Tokens are what the engine spends; characters are what the reader gets, and on this
         # checkpoint one token is 5.8 characters of English and 1.3 of Korean. A deployment with
         # only the token counter reads its own throughput 4.4x too kindly (45차 §40).
@@ -2382,6 +2383,8 @@ class Server:
              len(runner.state.waiting) + len(self._waiting) + len(self.pending) - len(self._active)),
             ("counter", "vllm:prompt_tokens_total", "prompt tokens admitted", self.prompt_tokens_total),
             ("counter", "vllm:generation_tokens_total", "tokens generated", self.generation_tokens_total),
+            ("counter", "st:generation_tokens_committed_total", "generated token IDs observed from live rows, including unfinished requests",
+             self.generation_tokens_committed_total),
             ("counter", "st:generation_characters_total", "characters those tokens spelled, as the client read them",
              self.generation_characters_total),
             ("counter", "vllm:spec_decode_num_accepted_tokens_total", "drafts the target confirmed",
@@ -2680,6 +2683,7 @@ class Server:
                 count = self.engine.generated_count(row)     # the row's whole output is never copied to count it
                 fresh = count - sent
                 if fresh > 0:
+                    self.generation_tokens_committed_total += fresh
                     last = self._token_at.get(row)
                     if last is None:
                         arrived = self._arrived.get(request)

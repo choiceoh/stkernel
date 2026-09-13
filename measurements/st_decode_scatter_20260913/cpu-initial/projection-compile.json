@@ -1,0 +1,136 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "kernels": [
+    {
+      "kernel": "kda_pair",
+      "rows": 1,
+      "strides": [
+        6416,
+        6416
+      ],
+      "shared_bytes": 20480,
+      "status": "PASS"
+    },
+    {
+      "kernel": "kda_pair",
+      "rows": 1,
+      "strides": [
+        128,
+        6416
+      ],
+      "shared_bytes": 20480,
+      "status": "PASS"
+    },
+    {
+      "kernel": "kda_pair",
+      "rows": 6,
+      "strides": [
+        6416,
+        6416
+      ],
+      "shared_bytes": 20480,
+      "status": "PASS"
+    },
+    {
+      "kernel": "kda_pair",
+      "rows": 6,
+      "strides": [
+        128,
+        6416
+      ],
+      "shared_bytes": 20480,
+      "status": "PASS"
+    },
+    {
+      "kernel": "kda_pair",
+      "rows": 7,
+      "strides": [
+        6416,
+        6416
+      ],
+      "shared_bytes": 20480,
+      "status": "PASS"
+    },
+    {
+      "kernel": "kda_pair",
+      "rows": 7,
+      "strides": [
+        128,
+        6416
+      ],
+      "shared_bytes": 20480,
+      "status": "PASS"
+    },
+    {
+      "kernel": "kda_pair",
+      "rows": 14,
+      "strides": [
+        6416,
+        6416
+      ],
+      "shared_bytes": 20480,
+      "status": "PASS"
+    },
+    {
+      "kernel": "kda_pair",
+      "rows": 14,
+      "strides": [
+        128,
+        6416
+      ],
+      "shared_bytes": 20480,
+      "status": "PASS"
+    },
+    {
+      "kernel": "kda_pair",
+      "rows": 21,
+      "strides": [
+        6416,
+        6416
+      ],
+      "shared_bytes": 20480,
+      "status": "PASS"
+    },
+    {
+      "kernel": "kda_pair",
+      "rows": 21,
+      "strides": [
+        128,
+        6416
+      ],
+      "shared_bytes": 20480,
+      "status": "PASS"
+    },
+    {
+      "kernel": "kda_pair",
+      "rows": 28,
+      "strides": [
+        6416,
+        6416
+      ],
+      "shared_bytes": 20480,
+      "status": "PASS"
+    },
+    {
+      "kernel": "kda_pair",
+      "rows": 28,
+      "strides": [
+        128,
+        6416
+      ],
+      "shared_bytes": 20480,
+      "status": "PASS"
+    },
+    {
+      "kernel": "route_reduce",
+      "shared_bytes": 0,
+      "status": "PASS"
+    }
+  ],
+  "scope": "native PTXAS compile only; GPU numerics and timing pending",
+  "source_sha256": {
+    "engine/kernels/decode_projection.py": "dfacdac24df1b4fd7a5658739203eedd795b60518a709b0e8aba59b6866a5bbd",
+    "probes/engine_moe_scatter.py": "b7398ff9e6beec2829d023ee04069bb4368ef8a4c10efea9f457c3ba056bae62"
+  }
+}

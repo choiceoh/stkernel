@@ -1,0 +1,28 @@
+test_cuda_translation_unit_and_pinned_dynamic_helpers_match_provenance (tests.test_engine_kernels.KernelPackageTests.test_cuda_translation_unit_and_pinned_dynamic_helpers_match_provenance) ... ok
+test_deep_gemm_initializes_on_execution_and_forwards_the_library_contract (tests.test_engine_kernels.KernelPackageTests.test_deep_gemm_initializes_on_execution_and_forwards_the_library_contract) ... ok
+test_engine_never_imports_vllm_or_mounted_moe_kernels (tests.test_engine_kernels.KernelPackageTests.test_engine_never_imports_vllm_or_mounted_moe_kernels) ... ok
+test_glm_rank_rejects_ambiguous_expert_layout_before_loading (tests.test_engine_kernels.KernelPackageTests.test_glm_rank_rejects_ambiguous_expert_layout_before_loading) ... ok
+test_kernels_read_no_environment_knobs (tests.test_engine_kernels.KernelPackageTests.test_kernels_read_no_environment_knobs)
+D11 (2026-09-12): the kernel package has no env knob. The only os.environ read left is the ... ok
+test_ported_functions_have_their_module_globals (tests.test_engine_kernels.KernelPackageTests.test_ported_functions_have_their_module_globals) ... ok
+test_relative_imports_resolve_inside_the_vendored_package (tests.test_engine_kernels.KernelPackageTests.test_relative_imports_resolve_inside_the_vendored_package) ... ok
+test_strided_kda_guard_tracks_the_ported_norm_source (tests.test_engine_kernels.KernelPackageTests.test_strided_kda_guard_tracks_the_ported_norm_source) ... ok
+test_tile_major_layout_contract_is_shared_with_the_reference_module (tests.test_engine_kernels.KernelPackageTests.test_tile_major_layout_contract_is_shared_with_the_reference_module)
+The served bind re-lays expert bytes in place; the reference lane reads them back through ... ok
+test_cache_abi_and_parser_isolation (tests.test_engine_moe_scatter_config.ScatterConfigTests.test_cache_abi_and_parser_isolation) ... ok
+test_padded_batch_geometry_is_retained_without_explicit_reform (tests.test_engine_moe_scatter_config.ScatterConfigTests.test_padded_batch_geometry_is_retained_without_explicit_reform) ... ok
+test_independent_compilation_orders_keep_distinct_handles (tests.test_engine_moe_batch_probe.BatchReformConfigTests.test_independent_compilation_orders_keep_distinct_handles) ... ok
+test_served_wide_rows_keep_original_geometry (tests.test_engine_moe_batch_probe.BatchReformConfigTests.test_served_wide_rows_keep_original_geometry) ... ok
+test_shared_epilogue_is_seven_row_probe_only_and_changes_cache_key (tests.test_engine_moe_batch_probe.BatchReformConfigTests.test_shared_epilogue_is_seven_row_probe_only_and_changes_cache_key) ... ok
+test_unqualified_shapes_and_layouts_are_refused (tests.test_engine_moe_batch_probe.BatchReformConfigTests.test_unqualified_shapes_and_layouts_are_refused) ... ok
+test_cache_handles_stay_distinct_in_both_compile_orders (tests.test_engine_moe_waves.WaveConfigTests.test_cache_handles_stay_distinct_in_both_compile_orders) ... ok
+test_ineligible_probe_shapes_fail_before_compilation (tests.test_engine_moe_waves.WaveConfigTests.test_ineligible_probe_shapes_fail_before_compilation) ... ok
+test_served_and_legacy_parsers_do_not_admit_probe (tests.test_engine_moe_waves.WaveConfigTests.test_served_and_legacy_parsers_do_not_admit_probe) ... ok
+test_cuda13_resource_dump_retains_candidate_and_packed_consumer (tests.test_engine_decode_native_compile.MhcResourceTests.test_cuda13_resource_dump_retains_candidate_and_packed_consumer) ... ok
+test_older_header_and_absent_symbol (tests.test_engine_decode_native_compile.MhcResourceTests.test_older_header_and_absent_symbol) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 4.441s
+
+OK
+  expert_layout: tile-major bytes read back row-major per expert OK

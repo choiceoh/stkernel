@@ -207,6 +207,18 @@ METRICS_B = _rescrape(METRICS_A,
 
 
 class StepPeekTest(unittest.TestCase):
+    def test_live_token_counter_is_distinct_from_completed_requests(self):
+        names = ('st:generation_tokens_committed_total', 'st:decode_row_steps_total', 'st:steps_decode_total')
+        a, b = dict(self.a), dict(self.a)
+        for name, first, second in zip(names, (100, 40, 10), (220, 72, 18)):
+            a[name+'{engine="st"}'], b[name+'{engine="st"}'] = first, second
+        result = peek.window(peek.track(a), peek.track(b), 1.)
+        self.assertEqual(result['gen_tok_s'], 0.)
+        self.assertEqual(result['committed_tok_s'], 120.)
+        self.assertEqual(result['mean_decode_rows'], 4.)
+        self.assertIsNone(peek.window(self.a, self.b, 1.)['committed_tok_s'])
+        self.assertIsNone(peek.window(b, a, 1.)['committed_tok_s'])
+
     def setUp(self):
         self.a = peek.parse_metrics(METRICS_A)
         self.b = peek.parse_metrics(METRICS_B)

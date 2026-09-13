@@ -35,6 +35,10 @@ def main():
     parser.add_argument("--moe-static", default="stock", help="served b12x static-lane spec (STK_moe_static): stock | t,r,sf6[,q0]")
     parser.add_argument("--mla-prefill", default="stock", help="served MLA prefill mode (STK_mla_prefill): stock | tile32 | pair | pair4")
     args = parser.parse_args()
+    if args.lanes == 'scatter_bundle':
+        from probes.engine_decode_bundle import check as decode_bundle
+        decode_bundle(args.ranks, bundle=args.lanes)
+        return
     sys.meta_path.insert(0, ForbidVllm())
     assert not any(n == "vllm" or n.startswith("vllm.") for n in sys.modules)
 
@@ -59,7 +63,23 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "paired_projection", "shared_serial", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows"}, selected
+
+    if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'paired_projection', 'shared_serial'}:
+        from probes.engine_decode_bundle import require_current_probe
+        require_current_probe()
+    if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct'}:
+        from probes.engine_decode_scatter_check import moe_check
+        for lane in ('moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct'):
+            if lane in selected:
+                moe_check(report, args.ranks, lane)
+
+    if selected & {'paired_projection', 'shared_serial'}:
+        from probes.engine_decode_projection import paired_check, shared_check
+        if 'paired_projection' in selected:
+            paired_check(report, args.ranks)
+        if 'shared_serial' in selected:
+            shared_check(report, args.ranks)
 
     if "decode_rows" in selected:
         import unittest
