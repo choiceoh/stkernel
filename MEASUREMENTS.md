@@ -2738,6 +2738,9 @@ KDA 출력 34개, dense MLP 출력 3개, DSA query 22개의 W4 GEMM에서 기존
 실제 지연 감소 수치가 아니다. C1 query pack은 50,688→12,672 B다.
 
 CPU 30개 중 21통과·GPU 9skip, 실제 production-flag native 컴파일 5개 새 specialization
-통과(76/78 registers, stack/local spill 0). GPU exact/replay 및 B/A/A/B 검사는 준비했고
-기존 dsa_inputs 묶음에 포함했다. 현재 24 step/s·수용률 개선 실측은 없다.
+통과(76/78 registers, stack/local spill 0). srv4 실제 rank3 가중치의 동일 RTN pack으로
+기존 dsa_inputs 포함 10개 GPU 구성요소 검사를 92.8초에 통과했다(모델 부팅 없음).
+새 경로 8개 exact/replay 그룹이 bit-exact이며, warm/evicted B/A/A/B에서 KDA 출력
+−11.58/−6.37%, MLP 출력 −4.04/−3.57%, query pair −7.65/−5.51%였다.
+이는 구성요소 시간이며 현재 24 step/s·수용률 개선 실측은 없다.
 [구현·검증·재현 근거](measurements/st_forward_cta_20260914/README.md).

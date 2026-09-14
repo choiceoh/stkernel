@@ -1,9 +1,10 @@
 # C1 forward: reduce W4 partials inside the CUDA block
 
-Base: `4dbc0713` (#938). Target: K7 C1, 24 consumer step/s.
+Implementation base: `4dbc0713` (#938); integrated main: `2ed1f047` (#940–942).
+Target: K7 C1, 24 consumer step/s.
 This changes the forward GEMMs, enabled in the existing default-on decode
 fastpath and DSA query owners. It does not change KDA state precision, weights,
-MoE kernels or transport protocol. GPU execution and consumer timing are pending.
+MoE kernels or transport protocol. The GPU component gate passes; consumer timing is pending.
 
 The ordinary kernel splits K across three CTAs, writes FP32 partials to device
 memory, then uses arrival atomics and fences before folding them. The candidate
@@ -34,6 +35,9 @@ Validation so far:
 - `cpu-tests.log`: 30 checks, 21 passed and nine GPU-only skips. Checks include
   the real DenseLinear/slot-writer routing and boot rejection when a newly bound
   output owner has not executed its C1 path.
+- `integration-cpu-tests.log`: after including main #940–942, 256 checks ran:
+  246 passed and ten required GPUs. This includes the changed verifier, boot
+  ownership, serving adapter and chat-template integration.
 - `compile.json`: complete production-flag CUDA/Torch extension compile and
   load, with CUDA hidden. Five new native specializations; ordinary variants
   use 76 registers, direct-output variants 78, all with zero stack/local spill.
@@ -45,7 +49,7 @@ Validation so far:
   No numerical tolerance was changed.
 
 The GPU entry `engine_kernel_check.py --lanes forward_reduce --ranks RANKS`
-checks real rank-0 weights against the same native build: zero and signed
+checks real weights against the same native build: zero and signed
 changed inputs, padded strides, poisoned outputs, private scratch, both replay
 orders and alternating direct-output addresses with guards. Paired-query
 comparisons explicitly retain the previous implementation as the control,
@@ -53,6 +57,75 @@ including C4 and a return to C1. Warm/evicted B/A/A/B timings follow exact check
 This check also joins the existing `dsa_inputs` bundle, avoiding another model
 boot. A passing component check does not establish 24 step/s or acceptance.
 
+## Completed GPU gate
+
+`st-forward24-0914c` passed all ten components in the combined probe in 92.8 s,
+with no failed components and no model boot (`gpu-receipt.json`, `gpu.jsonl`).
+The measured source was `c64e1038`; native CUDA SHA is
+`4d64f731dbfa44edd3cef3af0d3975cfd93c23c879471330d7b1f6cdd9c47597`.
+The integration commit `d1300ecf` keeps the dense package and new forward probe
+identical. New main changes have their own validation and are not gains
+attributable to this PR.
+
+Runtime: srv4 NVIDIA GB10, driver 580.159.03, Torch 2.13.0+cu130, CUDA 13.0,
+image `sha256:062bb8e5d4c4ef658c8b57987e99c5e84e2b149c73c0ac721ea25263b258c93e`.
+Weights: `/home/choiceoh/models/st-glm53-hybrid-gptq-v1/rank3of4.safetensors`.
+Each tensor's SHA is in the report. Both arms use identical RTN packs of those
+real BF16 weights; this is not a consumer GPTQ-pack or acceptance measurement.
+The report's `engine_shape` is the historical measured descriptor (K6); actual
+checked rows are 8/16/24/32, corresponding to the requested K7 C1–4 widths.
+
+All eight new output/query exactness groups passed at zero tolerance, including
+private workspace, changed inputs, alternating direct TX addresses, guards,
+both replay orders, wide query rows and returning to C1. The five new native
+specializations were exercised. Arithmetic and graph replay are GPU-proven.
+
+Mean of each arm's two B/A/A/B samples, microseconds per projection or query pair:
+
+| C1 component | Warm B → A | Warm change | Evicted B → A | Evicted change |
+|---|---:|---:|---:|---:|
+| KDA output, K=2048 | 18.601 → 16.448 | −11.58% | 53.458 → 50.052 | −6.37% |
+| Dense MLP output, K=3072 | 21.406 → 20.542 | −4.04% | 71.270 → 68.722 | −3.57% |
+| DSA query pair, K=1536 | 24.463 → 22.592 | −7.65% | 75.331 → 71.184 | −5.51% |
+| Query pair after C4 | 24.417 → 22.595 | −7.46% | 76.667 → 73.364 | −4.31% |
+
+The input-pack launch is included. Eviction runs outside the event intervals.
+These are short component comparisons, not an end-to-end reduction or a
+prediction that the remaining gap to 24 step/s is closed. The older query-pack,
+latent-write, indexer gate, absorption, pool/ID, copy/length and draft-QK checks
+also passed in this run; their separate timings remain in the raw report.
+
+Two failed attempts are retained: the first named a srv2-only image ID; the
+second used a directory whose rank0 file is absent on srv4. The runner now
+accepts an explicit resident shard without copying the full rank file.
+Neither failed attempt is counted as a forward numerical pass.
+
+PR875's source Oracle comparison and unfilled paired-profile template are
+included. It correctly leaves every total speed delta `null`: changed native
+components have no complete measured step-cost profile. Memory-layout bytes
+and the partial-traffic counts above are not substituted for those costs.
+
 Final consumer validation remains K7, 32K/128K, C1 twice and C4 once. Report
 pooled/window step/s, tokens/s, tokens/step and acceptance. Answer grading does
 not decide the performance target, per the operator's instruction.
+
+## Reserved consumer observation
+
+Accepted session `st-forward24-onepass0914b`, ticket `17893676782779630`, freezes
+`d1300ecffbaed6d11ae6dac468ca50707152d7a5`. It uses the canonical ST bracket's
+single-arm chain with `ST_BRACKET_VALIDATION=full`: one candidate boot,
+`onepass.py` C1 twice and C4 once, exclusive traffic, 2K/32K/128K and K7.
+There is no additional baseline boot. The prior admission attempt requested
+an older main and was refused before taking GPUs; the integrated candidate
+was accepted. `onepass-queue-receipt.json` preserves admission separately
+from measurement completion.
+
+This is a bounded performance observation with individual output cap 2,048,
+combined cap 6,144 and combined reasoning cap 4,096. The workload is recorded
+explicitly in both runs. These are benchmark request budgets; model defaults
+are unchanged. Grading remains in raw records but cannot establish or reject
+the requested speed/acceptance result. It is not the default 16K/49K quality
+fixture or a matched consumer A/B, and must not be advertised as final quality
+adoption proof. The queue estimate is 35 minutes of work, not a waiting-time
+promise. Admission found another session's expert-requantization lease and
+the earlier KDA ticket; neither is stopped by this work.
