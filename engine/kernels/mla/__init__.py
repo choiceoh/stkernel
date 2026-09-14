@@ -16,6 +16,7 @@ _WS = None
 _EXT = None
 _MLA_CLUSTER_MAX = 0
 _ARMED = {"mla": False}
+_TREE_MLA_PREPARED = set()
 # Large-M prefill candidates (39차). tile32 is the qualified production default
 # after GPU numerical/graph/sanitizer and matched serving brackets; stock remains
 # available as a baseline. The pair/pair4 candidates read the UNION of a group's
@@ -182,7 +183,7 @@ def _mla_uses_cluster(T: int, W: int, splits: int) -> bool:
 
 
 def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
-               out=None, *, splits: "int | None" = None, probe: int = 0):
+               out=None, *, splits: "int | None" = None, probe: int = 0, branch=None):
     """Sparse MLA decode over the indexer's top-k slots.
 
     q_nope [T, H, D] bf16 (never quantised -- the sparse backend forbids it);
@@ -195,7 +196,18 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
     assert (H, D) == (MLA_H, MLA_D), f"mla: shape {(H, D)} != {(MLA_H, MLA_D)}"
     assert q_nope.is_contiguous() and slots.is_contiguous()
     assert slots.dtype == torch.int32 and lens.dtype == torch.int32
-    if (ENABLE_MLA_PREFILL32
+    if branch is not None:
+        if (not 1 <= T <= 32 or len(slots.shape) != 2 or slots.shape[0] != T
+                or not 1 <= slots.shape[1] <= 2176 or lens.shape != (T,) or probe
+                or len(ckv.shape) != 2 or ckv.shape[1] != D
+                or branch.shape != (T, D) or branch.dtype != torch.float8_e4m3fn
+                or not branch.is_cuda or branch.device != q_nope.device
+                or ckv.device != q_nope.device or slots.device != q_nope.device or lens.device != q_nope.device
+                or q_nope.dtype != torch.bfloat16 or ckv.element_size() != 1
+                or not branch.is_contiguous() or not ckv.is_contiguous() or not lens.is_contiguous()):
+            raise ValueError('tree MLA requires 1..32 BF16 queries and same-device contiguous FP8 banks')
+    extra = [] if branch is None else [branch.data_ptr()]
+    if (branch is None and ENABLE_MLA_PREFILL32
             and 128 <= T <= 32768 and 1 <= slots.shape[1] <= 2176
             and q_nope.dtype == torch.bfloat16 and ckv.is_contiguous()
             and ckv.element_size() == 1 and lens.is_contiguous()
@@ -207,15 +219,22 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
                            T, slots.shape[1])
         return result
     splits = mla_splits(T, splits)
-    if (probe == 0 and _mla_uses_cluster(T, slots.shape[1], splits)
+    clustered = (probe == 0 and _mla_uses_cluster(T, slots.shape[1], splits)
             and q_nope.dtype == torch.bfloat16 and ckv.is_contiguous()
-            and ckv.element_size() == 1 and lens.is_contiguous()):
+            and ckv.element_size() == 1 and lens.is_contiguous())
+    tree_key = (q_nope.device, clustered)
+    if (branch is not None and tree_key not in _TREE_MLA_PREPARED
+            and torch.cuda.is_current_stream_capturing()):
+        raise RuntimeError('warm the tree MLA split/cluster kernel before graph capture')
+    if clustered:
         if out is None:
             out = torch.empty_like(q_nope)
         _EXT.run_mla_cluster(
-            [q_nope.data_ptr(), ckv.data_ptr(), slots.data_ptr(), lens.data_ptr(), out.data_ptr()],
+            [q_nope.data_ptr(), ckv.data_ptr(), slots.data_ptr(), lens.data_ptr(), out.data_ptr()] + extra,
             [float(sm_scale), float(ckv_scale)], [int(T), int(slots.shape[1]), int(splits)],
         )
+        if branch is not None:
+            _TREE_MLA_PREPARED.add(tree_key)
         return out
     ws = _ensure_workspace(q_nope.device)
     assert splits == 1 or T * splits <= MLA_WS_ROWS, (T, splits)
@@ -226,10 +245,12 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
     _EXT.run_mla(
         [q_nope.data_ptr(), ckv.data_ptr(), slots.data_ptr(), lens.data_ptr(),
          out.data_ptr(), mw["part"].data_ptr(), mw["pml"].data_ptr(),
-         ws["barrier_mla"].data_ptr()],
+         ws["barrier_mla"].data_ptr()] + extra,
         [float(sm_scale), float(ckv_scale)],
         [int(T), int(slots.shape[1]), int(splits), int(probe)],
     )
+    if branch is not None:
+        _TREE_MLA_PREPARED.add(tree_key)
     return out
 
 

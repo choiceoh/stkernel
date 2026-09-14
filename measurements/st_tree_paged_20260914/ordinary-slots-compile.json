@@ -1,0 +1,15 @@
+{
+  "gpu_used": false,
+  "kernels": [
+    {
+      "dtype": "i32",
+      "shared_bytes": 2048,
+      "cubin_sha256": "eaeb2a7fe7cd210b461f5ac7b649331cdc4db0f906350c43a2ddf479adf2932c"
+    },
+    {
+      "dtype": "i64",
+      "shared_bytes": 2048,
+      "cubin_sha256": "5e885aac40575ae69d3f307c26109fdc546e3134aa4119d6bc449508fb53b66f"
+    }
+  ]
+}

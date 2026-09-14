@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 
 class Tensor:
+    is_cuda = True
     def __init__(self, shape, dtype, address, *, size=1, contiguous=True):
         self.shape, self.dtype, self.address = shape, dtype, address
         self.device, self.size, self.contiguous = "cuda:0", size, contiguous
@@ -76,6 +77,30 @@ class MlaHardwareTests(unittest.TestCase):
                         Tensor((4096,512),"u8",32),Tensor((t,2048),"i32",48),
                         Tensor((t,),"i32",64),.0625,.7)
         self.assertEqual(self.calls,[])
+
+    def test_tree_banks_pass_direct_pointers_with_same_cluster_and_split_plan(self):
+        self.mla._EXT.run_mla = lambda *args: self.calls.append(args)
+        self.mla._ensure_workspace = lambda device: {'barrier_mla': Tensor((8,), 'i32', 144)}
+        self.mla._mla_workspace = lambda *args: {'part': Tensor((8,), 'f32', 160), 'pml': Tensor((8,), 'f32', 176)}
+        torch = SimpleNamespace(int32='i32', bfloat16='bf16', float8_e4m3fn='fp8',
+                                cuda=SimpleNamespace(is_current_stream_capturing=lambda: False))
+        for rows in (8, 15, 32):
+            q, cache = Tensor((rows,16,512),'bf16',16), Tensor((4096,512),'u8',32)
+            slots, lens = Tensor((rows,2051),'i32',48), Tensor((rows,),'i32',64)
+            out, private = Tensor(q.shape,'bf16',80), Tensor((rows,512),'fp8',96)
+            with patch.dict(sys.modules, torch=torch):
+                with patch.object(torch.cuda, 'is_current_stream_capturing', return_value=True):
+                    if rows in (8, 32):
+                        with self.assertRaisesRegex(RuntimeError, 'before graph capture'):
+                            self.mla.mla_decode(q,cache,slots,lens,.0625,1.,out,branch=private)
+                self.assertIs(self.mla.mla_decode(q,cache,slots,lens,.0625,1.,out,branch=private), out)
+                ptrs, _, ints = self.calls[-1]
+                self.assertEqual(ptrs, [16,32,48,64,80,96] if rows == 32 else [16,32,48,64,80,160,176,144,96])
+                self.assertEqual(ints[:3], [rows,2051,self.mla.mla_splits(rows)])
+                for bad in (Tensor((rows,512),'bf16',96), Tensor((rows+1,512),'fp8',96),
+                            Tensor((rows,512),'fp8',96,contiguous=False)):
+                    with self.assertRaises(ValueError):
+                        self.mla.mla_decode(q,cache,slots,lens,.0625,1.,out,branch=bad)
 
 
 if __name__ == "__main__": unittest.main()

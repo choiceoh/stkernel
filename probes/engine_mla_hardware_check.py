@@ -21,7 +21,7 @@ def cuda_source(source):
                     source.index("// wait_group takes an immediate")]
     mla = source[source.index("constexpr int MLA_D = 512;"):
                  source.index("// Exact-selection prefill pair reuse")]
-    templated = "template <bool CLUSTER = false>" in mla
+    templated = "template <bool CLUSTER = false" in mla
     ordinary = "mk_mla_kernel<false>" if templated else "mk_mla_kernel"
     cluster = "mk_mla_kernel<true>" if templated else ordinary
     # A packed PV loader must also preserve the scalar-strided conversion's

@@ -7,6 +7,7 @@ import torch
 
 from engine.base.comm import LocalTP
 from engine.modules.speculative_tree import Tree
+from engine.modules import tree_attention
 from engine.modules.sparse_indexer import topk_positions
 from engine.profiles.glm53.net import Step
 from engine.profiles.glm53.tree_decode import Verification
@@ -103,13 +104,15 @@ class TreeDecodeTests(unittest.TestCase):
         for context, value in ((0, 0.), (3, 0.), (63, 0.), (129, 0.), (129, float("inf")), (129, float("-inf"))):
             net, cache, slot = self.prepare(context)
             calls, selected = [], []
-            mla, compress, slots = (getattr(net.lanes, name) for name in ("mla_sparse", "kpool_compress", "pool_slots"))
+            mla, compress, slots = net.lanes.mla_sparse, net.lanes.kpool_compress, tree_attention.pool_slots
             def score(q, keys, scales, w, ke):
                 calls.append(("indexer", len(q), len(keys)))
                 return torch.full((len(q), len(keys)), value, dtype=torch.float32)
-            def attention(*args):
+            def attention(*args, **kwargs):
                 calls.append(("mla", len(args[0])))
-                return mla(*args)
+                self.assertEqual(args[1].data_ptr(), cache.latent(1).data_ptr())
+                self.assertEqual(kwargs['branch'].shape, (len(self.tree.tokens), net.F.kv_lora))
+                return mla(*args, **kwargs)
             def pools(*args):
                 calls.append(("compress", len(args[0])))
                 return compress(*args)
@@ -117,7 +120,7 @@ class TreeDecodeTests(unittest.TestCase):
                 selected.append(args[0].clone())
                 return slots(*args)
             with patch.object(net, "lanes", replace(net.lanes, indexer_logits=score, mla_sparse=attention,
-                                                   kpool_compress=pools, pool_slots=positions)):
+                                                   kpool_compress=pools)), patch.object(tree_attention, 'pool_slots', positions):
                 with Verification(net, cache, self.tree, seq=0, slot=slot, context=context) as run:
                     run.verify()
             self.assertEqual(sum(c[0] == "mla" for c in calls), 1)

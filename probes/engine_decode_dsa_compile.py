@@ -125,7 +125,8 @@ def main():
                         signature=dict(ids='*' + dtype, lengths='*i32', table='*i32', out='*i32', counts='*i32',
                                        **{k: 'i32' for k in ('id_s0', 'id_s1', 'len_s0', 'table_s0', 'out_s0',
                                                             'out_s1', 'count_s0', 'block_stride', 'layer_offset', 'table_s1')}),
-                        constexprs=dict(groups=512, block_size=768, POOL=4, MAPPED=True, BLOCK=512, TOKENS=8))
+                        constexprs=dict(groups=512, block_size=768, POOL=4, MAPPED=True, BLOCK=512, TOKENS=8,
+                                        paths=None, context=0, PATH_WIDTH=0))
         kernel = triton.compile(src, target=GPUTarget('cuda', 121, 32), options=dict(num_warps=4))
         pool_records.append(dict(kernel='pool_slots', input_dtype=dtype, shared_bytes=kernel.metadata.shared, status='PASS'))
     if torch.cuda.is_initialized():

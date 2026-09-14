@@ -2140,6 +2140,7 @@ struct MKMlaArgs {
   float ckv_scale;
   int T, W, splits, grid;
   int probe;   // 1 = memory pipeline only (roofline), 0 = full
+  const uint8_t* branch;       // tree-only [T,D]; negative slot -(node+1)
 };
 
 // v4: tensor cores, and the e4m3 ring is the ONLY copy of the latent.
@@ -2217,7 +2218,7 @@ __device__ __forceinline__ void mla_mma_bf16(float& c0, float& c1, float& c2, fl
       : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
 }
 
-template <bool CLUSTER = false>
+template <bool CLUSTER = false, bool TREE = false>
 __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
   extern __shared__ __align__(16) char mla_smem[];
   uint8_t* ring = (uint8_t*)mla_smem;
@@ -2268,8 +2269,15 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
         const int j = j0 + ti * MLA_TILE + k;
         const int sj = (j < j1) ? j : j0;
         const int slot = a.slots[(size_t)t * a.W + sj];
+        const uint8_t* src;
+        if constexpr (TREE) {
+          src = slot < 0 ? a.branch + (size_t)(-slot-1) * MLA_D
+                         : a.ckv + (size_t)slot * MLA_D;
+        } else {
+          src = a.ckv + (size_t)slot * MLA_D;
+        }
         mk_cp_async16(dst + (size_t)k * MLA_RP + lane * 16,
-                      a.ckv + (size_t)slot * MLA_D + lane * 16);
+                      src + lane * 16);
       }
       mk_cp_commit();
     };
@@ -3487,7 +3495,7 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
                 std::vector<int64_t> ints) {
   set_kernel_attrs();
   MKMlaArgs a{};
-  TORCH_CHECK(ptrs.size() == 8 && (ints.size() == 3 || ints.size() == 4) && scalars.size() == 2,
+  TORCH_CHECK((ptrs.size() == 8 || ptrs.size() == 9) && (ints.size() == 3 || ints.size() == 4) && scalars.size() == 2,
               "run_mla arg contract (ints: T, W, splits[, probe])");
   a.q = (const __nv_bfloat16*)ptrs[0];
   a.ckv = (const uint8_t*)ptrs[1];
@@ -3509,35 +3517,51 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
   // Python driver (mla_decode(probe=)), never an environment read; serving passes 0
   a.probe = ints.size() > 3 ? (int)ints[3] : 0;
   auto stream = c10::cuda::getCurrentCUDAStream();
-  a.grid = mk_resident_grid(mk_mla_kernel<false>, g_mla_grid, MLA_SMEM, MLA_GRID_CAP);
-  mk_launch(mk_mla_kernel<false>, a.grid, MLA_SMEM, stream, a);
+  if (ptrs.size() == 9) {
+    TORCH_CHECK(ptrs[8] && (ptrs[8] & 15) == 0 && a.T >= 1 && a.T <= 32 && a.probe == 0,
+                "tree MLA requires aligned private rows and bounded exact decode");
+    a.branch = (const uint8_t*)ptrs[8];
+    static int tree_grid = 0;
+    if (!tree_grid) MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_kernel<false, true>,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_SMEM));
+    a.grid = mk_resident_grid(mk_mla_kernel<false, true>, tree_grid, MLA_SMEM, MLA_GRID_CAP);
+    mk_launch(mk_mla_kernel<false, true>, a.grid, MLA_SMEM, stream, a);
+  } else {
+    a.grid = mk_resident_grid(mk_mla_kernel<false>, g_mla_grid, MLA_SMEM, MLA_GRID_CAP);
+    mk_launch(mk_mla_kernel<false>, a.grid, MLA_SMEM, stream, a);
+  }
 }
 
-int64_t mk_mla_cluster_max() {
+template <bool TREE = false>
+int64_t mk_mla_cluster_capacity() {
   static int maximum = -1;
   if (maximum < 0) {
     int supported = 0;
     MK_CHECK_CUDA(cudaDeviceGetAttribute(&supported, cudaDevAttrClusterLaunch, 0));
     if (!supported) return maximum = 0;
-    MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_kernel<true>,
+    MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_kernel<true, TREE>,
         cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_SMEM));
     cudaLaunchConfig_t config{};
     config.gridDim = dim3(96);
     config.blockDim = dim3(MK_THREADS);
     config.dynamicSmemBytes = MLA_SMEM;
     MK_CHECK_CUDA(cudaOccupancyMaxPotentialClusterSize(
-        &maximum, mk_mla_kernel<true>, &config));
+        &maximum, mk_mla_kernel<true, TREE>, &config));
   }
   return maximum;
 }
 
+int64_t mk_mla_cluster_max() { return mk_mla_cluster_capacity<>(); }
+
 void mk_run_mla_cluster(std::vector<int64_t> ptrs, std::vector<double> scalars,
                         std::vector<int64_t> ints) {
-  TORCH_CHECK(ptrs.size() == 5 && ints.size() == 3 && scalars.size() == 2,
+  TORCH_CHECK((ptrs.size() == 5 || ptrs.size() == 6) && ints.size() == 3 && scalars.size() == 2,
               "run_mla_cluster arg contract");
   TORCH_CHECK(ints[0] >= 1 && ints[0] <= 64 && ints[1] >= 1 && ints[1] <= 2176,
               "mla cluster: bounded decode T/W required");
-  TORCH_CHECK(ints[2] >= 2 && ints[2] <= mk_mla_cluster_max(),
+  const bool tree = ptrs.size() == 6;
+  const int maximum = tree ? mk_mla_cluster_capacity<true>() : mk_mla_cluster_max();
+  TORCH_CHECK(ints[2] >= 2 && ints[2] <= maximum,
               "mla cluster: split count exceeds kernel cluster capacity");
   TORCH_CHECK((ptrs[0] & 15) == 0 && (ptrs[1] & 15) == 0,
               "mla cluster: Q and FP8 cache must be 16 B aligned");
@@ -3547,6 +3571,11 @@ void mk_run_mla_cluster(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.out = (__nv_bfloat16*)ptrs[4];
   a.sm_scale = (float)scalars[0]; a.ckv_scale = (float)scalars[1];
   a.T = (int)ints[0]; a.W = (int)ints[1]; a.splits = (int)ints[2];
+  if (tree) {
+    TORCH_CHECK(a.T <= 32 && ptrs[5] && (ptrs[5] & 15) == 0,
+                "tree MLA cluster requires aligned private rows and bounded decode");
+    a.branch = (const uint8_t*)ptrs[5];
+  }
   // Exactly one CTA per split, one cluster per row. No global partials,
   // monotonic counter or requirement for the entire grid to be resident.
   a.grid = a.T * a.splits;
@@ -3562,7 +3591,8 @@ void mk_run_mla_cluster(std::vector<int64_t> ptrs, std::vector<double> scalars,
   attributes[1].val.programmaticStreamSerializationAllowed = 1;
   config.attrs = attributes;
   config.numAttrs = mk_pdl_enabled() ? 2 : 1;
-  MK_CHECK_CUDA(cudaLaunchKernelEx(&config, mk_mla_kernel<true>, a));
+  if (tree) MK_CHECK_CUDA(cudaLaunchKernelEx(&config, mk_mla_kernel<true, true>, a));
+  else MK_CHECK_CUDA(cudaLaunchKernelEx(&config, mk_mla_kernel<true>, a));
 }
 
 // Large-M prefill: 32 slots per online-softmax tile, with Q fragments kept

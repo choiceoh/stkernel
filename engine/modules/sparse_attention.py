@@ -33,7 +33,8 @@ def sparse_attn(q: torch.Tensor, kv: torch.Tensor, attn_sink: torch.Tensor,
 
 
 def mla_sparse_mqa(q_abs: torch.Tensor, kv_c: torch.Tensor, topk_slots: torch.Tensor,
-                   valid: torch.Tensor, scale: float, ckv_scale: float = 1.0, *, out=None) -> torch.Tensor:
+                   valid: torch.Tensor, scale: float, ckv_scale: float = 1.0, *, out=None,
+                   branch=None) -> torch.Tensor:
     """GLM-5.3's sparse MLA in its MQA form, as the served lanes compute it
     (flashinfer_mla_sparse_sm90.py: `mla_decode(q, cache, slots, lens, scale,
     ckv_scale)` and the FlashInfer page_size=1 wrapper):
@@ -51,7 +52,20 @@ def mla_sparse_mqa(q_abs: torch.Tensor, kv_c: torch.Tensor, topk_slots: torch.Te
     t, h, d = q_abs.shape
     # Read selected rows before dequantizing. A paged cache can be many GiB;
     # converting all of it per layer needlessly scales work with the arena.
-    rows = kv_c[topk_slots.long().clamp_min(0)].float()                # [T, K, 512]
+    if branch is None:
+        rows = kv_c[topk_slots.long().clamp_min(0)].float()            # [T, K, 512]
+    else:
+        # Private tree rows use -(node+1); canonical slots remain nonnegative.
+        # Padding is identified ONLY by valid, so -1 can name the root node.
+        # This is a semantic oracle: the native kernel selects the source
+        # pointer on chip and never materializes these gathered rows.
+        if branch.ndim != 2 or branch.shape[1] != d or branch.dtype != kv_c.dtype or branch.device != kv_c.device:
+            raise ValueError('tree MLA branch rows must match the canonical latent')
+        active = torch.arange(topk_slots.shape[1], device=q_abs.device)[None, :] < valid[:, None]
+        ids = torch.where(active, topk_slots, 0).long()
+        prefix = kv_c[ids.clamp_min(0)].float()
+        private = branch[(-ids-1).clamp_min(0)].float()
+        rows = torch.where((ids < 0)[:, :, None], private, prefix)
     if kv_c.dtype != torch.bfloat16:
         rows = rows * ckv_scale
     active = torch.arange(topk_slots.shape[1], device=q_abs.device)[None, :] < valid[:, None]

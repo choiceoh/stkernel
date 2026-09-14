@@ -1,0 +1,16 @@
+test_contract_refuses_unsafe_geometry_before_writing (tests.test_engine_tree_attention.TreeAttentionTests.test_contract_refuses_unsafe_geometry_before_writing) ... ok
+test_native_addresses_match_independent_oracle (tests.test_engine_tree_attention.TreeAttentionTests.test_native_addresses_match_independent_oracle) ... ok
+test_reference_addresses_match_independent_ancestry_and_duplicate_sort (tests.test_engine_tree_attention.TreeAttentionTests.test_reference_addresses_match_independent_ancestry_and_duplicate_sort) ... ok
+test_two_banks_equal_copied_cache_and_ignore_poisoned_padding (tests.test_engine_tree_attention.TreeAttentionTests.test_two_banks_equal_copied_cache_and_ignore_poisoned_padding) ... ok
+test_a_block_table_per_group_of_rows_matches_one_group_launches (tests.test_engine_pool_slots.PoolSlotTests.test_a_block_table_per_group_of_rows_matches_one_group_launches)
+A captured decode step finalizes every row in one launch over the rows' own block rows (2-D table, ... ok
+test_empty_shapes_and_all_padding_overwrite (tests.test_engine_pool_slots.PoolSlotTests.test_empty_shapes_and_all_padding_overwrite) ... ok
+test_exact_duplicates_invalid_pools_tails_and_strides (tests.test_engine_pool_slots.PoolSlotTests.test_exact_duplicates_invalid_pools_tails_and_strides) ... ok
+test_graph_replay_reads_pools_lengths_and_recycled_blocks (tests.test_engine_pool_slots.PoolSlotTests.test_graph_replay_reads_pools_lengths_and_recycled_blocks) ... skipped 'graph replay needs a real GPU'
+test_int64_topk_ids_mask_before_narrowing_and_keep_duplicate_order (tests.test_engine_pool_slots.PoolSlotTests.test_int64_topk_ids_mask_before_narrowing_and_keep_duplicate_order) ... ok
+test_large_integer_positions (tests.test_engine_pool_slots.PoolSlotTests.test_large_integer_positions) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 177.536s
+
+OK (skipped=1)

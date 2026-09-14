@@ -1,0 +1,17 @@
+/usr/local/lib/python3.12/site-packages/torch/include/torch/headeronly/util/BFloat16.h(110): warning #20013-D: calling a constexpr __host__ function("bit_cast") from a __host__ __device__ function("round_to_nearest_even") is not allowed. The experimental flag '--expt-relaxed-constexpr' can be used to allow this.
+      const uint32_t U32 = c10::bit_cast<uint32_t>(src);
+                           ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+/usr/local/lib/python3.12/site-packages/torch/include/torch/headeronly/util/BFloat16.h(110): warning #20015-D: calling a constexpr __host__ function from a __host__ __device__ function is not allowed. The experimental flag '--expt-relaxed-constexpr' can be used to allow this.
+      const uint32_t U32 = c10::bit_cast<uint32_t>(src);
+                                                  ^
+
+engine/kernels/mla/glm53_megakernel.cu(133): warning #177-D: variable "<unnamed>::NCHUNK" was declared but never referenced
+  constexpr int NCHUNK = HIDDEN / HCHUNK;
+                ^
+
+engine/kernels/mla/glm53_megakernel.cu(263): warning #177-D: function "<unnamed>::mk_f32_to_e4m3" was declared but never referenced
+  __attribute__((device)) __inline__ __attribute__((always_inline)) uint8_t mk_f32_to_e4m3(float x) {
+                                                                            ^

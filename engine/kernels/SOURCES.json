@@ -345,7 +345,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
       "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
       "origin": "repository",
-      "local_sha256": "c70fade02943a0b17b93107ef4b619e40b2ceca8e3c71c3d0a480676860cfd26",
+      "local_sha256": "57af9f1e82e8ec385363c4249d76d876035bed141ba13a4661ede8f0b8fc810e",
       "local_modifications": [
         "SM121 integer warp max reduction",
         "Cluster-local MLA split reduction with reused shared memory",
@@ -355,14 +355,15 @@
         "2026-09-12 GB10: Q cp.async.ca joins the first KV group; empty splits skip Q; balanced cluster head ownership and coalesced global split reduction. Arithmetic order unchanged; GPU execution and timing pending.",
         "2026-09-12 k6 (#732): the MAX_TOK comment counts SPEC_K 6, so T = 28 of 32. Comment only -- no code, no arithmetic. This record is the hash catching up: #732 left it behind and main's check has been red on it since.",
         "2026-09-13 wide prefill: extend the existing row-local path to 32768 rows for 32256-token chunks; preserve kernel arithmetic and small decode.",
-        "2026-09-14 CUDA 13.2: packed native E4M3x2 to BF16x2 widening in decode and strided prefill; preserve query quantization and accumulation order."
+        "2026-09-14 CUDA 13.2: packed native E4M3x2 to BF16x2 widening in decode and strided prefill; preserve query quantization and accumulation order.",
+        "2026-09-14 tree MLA: optional canonical/private FP8 banks with signed node addresses; same split/cluster math and unchanged ordinary machine instructions under CUDA 13.2.86. GPU execution remains unmeasured."
       ]
     },
     "mla/__init__.py": {
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
       "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
       "origin": "repository",
-      "local_sha256": "28cb3387bcc1de0655b5584a38e0506959f95c2832b0565402dcce4bb769f267",
+      "local_sha256": "7fa3614825c894da129c0e043e47dbb3f492991fd2f071157844bd25f3bc141b",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; tile32 large-M MLA prefill is qualified and selected by the production boot default; configure_prefill (STK_mla_prefill), mla_decode(splits=, probe=), PAIR_STATS, ENABLE_MLA_CLUSTER baked on",
         "2026-09-13 native build cache: stage content-addressed source inputs so identical checkout paths and timestamps do not trigger NVCC; keep Torch/Ninja build validation.",
@@ -373,7 +374,8 @@
         "2026-09-13 operation variants: _check_cell also refuses a bound attention whose sink is not cells.MLA_SINK (the compiled softmax has no sink term).",
         "2026-09-13 phase 2: short-prefill tile32 admission; short MLA GPU gates passed on 3c7bcc0a. Retain current bound-shape and sink guards; later integration has no new consumer result.",
         "2026-09-13 kernel glue: maybe_arm(check=None) takes the admission check -- _check_cell by default, engine/kernels/mla/glue.check for the cells the glue's exact adapters put on the compiled one; the build, the device check and the self-test at the compiled cell are unchanged.",
-        "2026-09-14 CUDA 13.2 migration: compiler-aware native/cache identity; no launch arithmetic change."
+        "2026-09-14 CUDA 13.2 migration: compiler-aware native/cache identity; no launch arithmetic change.",
+        "2026-09-14 tree MLA: optional canonical/private FP8 banks with signed node addresses; same split/cluster math and unchanged ordinary machine instructions under CUDA 13.2.86. GPU execution remains unmeasured."
       ]
     }
   }

@@ -11,7 +11,7 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as Fn
 
-from engine.modules import tree_kda
+from engine.modules import tree_attention, tree_kda
 from engine.modules.speculative_tree import Tree, dflash_candidates, select
 from engine.profiles.glm53.net import K_NORM_EPS, O_NORM_EPS, Step
 
@@ -88,16 +88,19 @@ class Verification:
         self.seq, self.slot, self.context = seq, slot, context
         self.persistent_mlp = persistent_mlp
         # Conservative peak: factors, initial/commit/boundary states, raw conv,
-        # node activations, and one DSA prefix-key/selection workspace. KV is
-        # gathered at topk width, not multiplied by context * tree nodes.
+        # node activations and one DSA prefix-key/selection workspace. CUDA
+        # addresses canonical/private KV directly; the CPU numerical oracle
+        # still materializes rows when computing its reference attention.
         n, h, d = len(tree.tokens), F.kda_heads_local, F.kda_dim
         nk = sum(not F.is_dsa(L) for L in net.layers)
         nd = len(net.layers) - nk
+        from engine.modules.sparse_attention import mla_sparse_mqa
+        gathered_reference = caches.device.type != 'cuda' or net.lanes.mla_sparse is mla_sparse_mqa
         self.scratch_bound = (nk * (3*h*d*d*4 + n*h*d*(12 + 6))
             + nd*n*(F.kv_lora + 5*F.idx_dim + 4) + 16*n*F.hidden*F.hc
             + sum(F.is_moe(L) for L in net.layers)*n*F.topk_experts*8
             + (context // F.kpool + n) * (F.idx_dim + 2*n + 16) * 4
-            + n * (F.topk + F.kpool) * (F.kv_lora * 4 + 32))
+            + n * (F.topk + F.kpool) * (F.kv_lora * 12 + 32 if gathered_reference else 32))
         if type(max_scratch_bytes) is not int or self.scratch_bound > max_scratch_bytes:
             raise ValueError(f"tree scratch needs at most {self.scratch_bound} bytes; budget is {max_scratch_bytes}")
         if persistent_mlp is not None:
@@ -194,7 +197,7 @@ class Verification:
         base_ids = c.pool_slots(L, self.seq, torch.arange(ctx // F.kpool, device=x.device)).long()
         base_keys, base_scales = c.pool_keys(L)[base_ids], c.pool_scales(L)[base_ids]
         wb = p[name + "kv_b"].view(net.Hl, F.qk_nope + F.v_dim, F.kv_lora)
-        qabs = torch.einsum("nhd,hdc->nhc", q, wb[:, :F.qk_nope])
+        qabs = tree_attention.absorb(q, wb[:, :F.qk_nope])
         width = F.topk + F.kpool - 1
         keys, scales = base_keys, base_scales
         pk = torch.empty((0, F.idx_dim), dtype=torch.float8_e4m3fn, device=x.device)
@@ -228,22 +231,13 @@ class Verification:
                 pools[rows, :take] = logical[rows, :count].topk(take, dim=-1, sorted=False).indices.to(torch.int32)
         else:
             pools = torch.full((n, F.topk//F.kpool), -1, dtype=torch.int32, device=x.device)
-        positions = torch.empty((n, width), dtype=torch.int32, device=x.device)
+        slots = torch.empty((n, width), dtype=torch.int32, device=x.device)
         valid = torch.empty(n, dtype=torch.int32, device=x.device)
-        net.lanes.pool_slots(pools, self.lengths, F.kpool, None, F.block, F.block, 0, positions, valid)
-        pos = positions.long()
-        bank = torch.zeros((n, width, F.kv_lora), dtype=torch.uint8, device=x.device)
-        if ctx:
-            canonical = c.token_slots(L, self.seq, pos.clamp(0, ctx-1)).long()
-            prefix = c.latent(L).view(torch.uint8)[canonical]
-            bank = torch.where(((pos >= 0) & (pos < ctx))[..., None], prefix, bank)
-        branch_ids = self.path_nodes.gather(1, (pos-ctx).clamp(0, self.path_nodes.shape[1]-1))
-        branch = latent.view(torch.uint8)[branch_ids]
-        bank = torch.where((pos >= ctx)[..., None], branch, bank).view(torch.float8_e4m3fn)
-        slots = torch.arange(n*width, dtype=torch.int32, device=x.device).view(n, width)
-        output = net.lanes.mla_sparse(qabs.contiguous(), bank.view(-1, F.kv_lora), slots, valid, F.mla_scale, 1.)
+        tree_attention.pool_slots(pools, self.lengths, F.kpool, *c.token_map(L, self.seq),
+                                  self.path_nodes, ctx, slots, valid)
+        output = net.lanes.mla_sparse(qabs, c.latent(L), slots, valid, F.mla_scale, 1., branch=latent)
         self.dsa[L] = latent, key, gate, pk, ps
-        out = torch.einsum("nhc,hvc->nhv", output, wb[:, F.qk_nope:])
+        out = tree_attention.absorb(output, wb[:, F.qk_nope:], transpose=True)
         return net.comm.all_reduce(net.linear(out.reshape(n, net.Hl*F.v_dim), name + "o_proj"))
 
     @torch.inference_mode()
