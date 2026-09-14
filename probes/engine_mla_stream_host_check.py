@@ -44,10 +44,11 @@ constexpr int MK_THREADS = 256;
 ''' + constants + r'''
 struct Copy { uint32_t dst; const void* src; };
 struct { int x; } threadIdx;
-struct Args { const uint16_t* q; const uint8_t* ckv; const int* slots; int W, splits; };
+struct Args { const uint16_t* q; const uint8_t* ckv; const int* slots; int W, splits; const uint8_t* branch; };
 std::vector<uint8_t> memory(MLA_SMEM);
 std::vector<uint16_t> query(3*MLA_H*MLA_D);
 std::vector<uint8_t> cache(257*MLA_D);
+std::vector<uint8_t> branch(32*MLA_D);
 std::vector<int> slots(3*2304);
 std::vector<Copy> uncommitted;
 std::deque<std::vector<Copy>> groups;
@@ -61,7 +62,8 @@ bool inside(uintptr_t p, const void* base, size_t size) {
 void host_copy(uint32_t dst, const void* src) {
   auto p=reinterpret_cast<uintptr_t>(src);
   assert(dst+16<=memory.size() && dst%16==0 && p%16==0);
-  assert(inside(p,query.data(),query.size()*2) || inside(p,cache.data(),cache.size()));
+  assert(inside(p,query.data(),query.size()*2) || inside(p,cache.data(),cache.size())
+         || inside(p,branch.data(),branch.size()));
   uncommitted.push_back({dst,src}); ++copies;
 }
 void mk_cp_async16(void* dst, const void* src) { host_copy(__cvta_generic_to_shared(dst),src); }
@@ -73,8 +75,8 @@ template<int N> void mk_cp_wait() {
   }
 }
 void __syncthreads() { ++barriers; }
-void check_slice(int t, int j0, int j1) {
-  Args a{query.data(),cache.data(),slots.data(),2304,3};
+template<bool TREE> void check_slice(int t, int j0, int j1) {
+  Args a{query.data(),cache.data(),slots.data(),2304,3,branch.data()};
   for (int tid=0;tid<MK_THREADS;++tid) {
     threadIdx.x=tid; int lane=tid%32, warp=tid/32;
     auto* ring=memory.data(); auto* sq=reinterpret_cast<uint16_t*>(ring+MLA_SMEM_RING);
@@ -91,7 +93,9 @@ void check_slice(int t, int j0, int j1) {
         int position=j0+ti*MLA_TILE+row;
         int selected=slots[t*a.W+(position<j1?position:j0)];
         auto* dst=ring+(ti%MLA_NSTAGE)*MLA_TILE*MLA_RP+row*MLA_RP+lane*16;
-        assert(std::memcmp(dst,a.ckv+selected*MLA_D+lane*16,16)==0);
+        const uint8_t* reference = selected < 0 ? branch.data()+(-selected-1)*MLA_D
+                                               : cache.data()+selected*MLA_D;
+        assert(std::memcmp(dst,reference+lane*16,16)==0);
       }
     }
     assert(uncommitted.empty());
@@ -102,13 +106,21 @@ void check_slice(int t, int j0, int j1) {
 int main() {
   for (unsigned i=0;i<query.size();++i) query[i]=uint16_t(i*17+3);
   for (unsigned i=0;i<cache.size();++i) cache[i]=uint8_t((i*29)^(i>>8));
+  for (unsigned i=0;i<branch.size();++i) branch[i]=uint8_t((i*7+41)^(i>>4));
   int cases=0;
   for (int length:{0,1,2,15,16,17,31,32,33,47,48,49,63,64,65,127,128,129,2048,2176}) {
     for (int start:{0,1,17}) {
       int t=cases%3;
       std::fill(slots.begin(),slots.end(),-1);
       for (int j=start;j<start+length;++j) slots[t*2304+j]=(j*13+cases)%257;
-      check_slice(t,start,start+length); ++cases;
+      check_slice<false>(t,start,start+length); ++cases;
+      for (int mode:{0,1}) {
+        // All-private covers context zero; mixed includes root (-1), last
+        // node and canonical rows across partial async-copy tiles/splits.
+        for (int j=start;j<start+length;++j)
+          slots[t*2304+j]=(mode==0 || j%3) ? -(j%32)-1 : (j*13+cases)%257;
+        check_slice<true>(t,start,start+length); ++cases;
+      }
     }
   }
   for (int splits:{2,3,4,8}) {
@@ -157,7 +169,8 @@ def main():
         'negative control must fail because Q is not ready: ' + rejected.stderr)
     report = {'source_sha256': hashlib.sha256(source.encode()).hexdigest(),
               'harness_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-              'gpu_used': False, 'slice_cases':60, 'threads_per_case':256,
+              'gpu_used': False, 'slice_cases':180, 'threads_per_case':256,
+              'tree_banks':['private-only','mixed-canonical-private'],
               'cluster_splits':[2,3,4,8], 'three_cta_head_counts':[6,5,5],
               'reduction_dimensions':512, 'missing_wait_rejected':True}
     (args.output/'results.json').write_text(json.dumps(report,indent=2)+'\n')

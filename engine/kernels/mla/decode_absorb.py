@@ -11,6 +11,28 @@ from engine.kernels.mla.prefill_absorb import _absorb
 ROWS = (8, 16, 24, 32)
 
 
+def tree_absorb(x, weight, *, transpose=False):
+    """The same small-M contraction for the explicit tree's 1..32 rows.
+
+    Trees use their actual row count, not padding nodes that would change
+    routing or ancestry. The normal serving capture owner's ROWS is unchanged.
+    """
+    inner, outer = (512, 256) if transpose else (256, 512)
+    if (type(transpose) is not bool or x.ndim != 3 or not 1 <= len(x) <= 32
+            or x.shape[1] not in (16, 32, 64) or x.shape[2] != inner
+            or weight.shape != (x.shape[1], 256, 512)
+            or x.dtype != torch.bfloat16 or weight.dtype != torch.bfloat16
+            or not x.is_cuda or x.device != weight.device or not x.is_contiguous()
+            or weight.stride(2) != 1 or weight.stride(1) != 512 or weight.stride(0) < 256*512):
+        raise ValueError('tree absorb requires 1..32 contiguous BF16 rows and original MLA weight slices')
+    m, h, bm = len(x), x.shape[1], 16 if len(x) <= 16 else 32
+    out = torch.empty((m, h, outer), dtype=x.dtype, device=x.device)
+    _absorb[((m+bm-1)//bm, outer//64, h)](
+        x, weight, out, m, h, inner, outer, weight.stride(0), weight.stride(1),
+        transpose, bm, 64, 64, num_warps=4, num_stages=2)
+    return out
+
+
 class DecodeAbsorb:
     def __init__(self, query_weight, output_weight, *, rows):
         from engine.base.kernel_shape import bound

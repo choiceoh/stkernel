@@ -50,7 +50,14 @@ The W4A8 and W4A4 bindings explicitly refuse each other's layouts.
    canonical writes. Convolution history and DSA pools/tails are private
    to each branch. DSA compresses each newly completed pool once, scores all
    queries against a shared prefix/branch key bank in one indexer call, and
-   runs one sparse-MLA query batch over bounded branch-private latent rows.
+   runs one sparse-MLA query batch reading canonical and private latent rows
+   directly. Integer pool expansion, descending ordering and branch ancestry
+   map to two-bank slot addresses in one launch; no node-by-selection latent
+   staging buffer is built. Nonnegative slots name canonical rows and
+   `-(node+1)` names a private row. The device valid count alone masks padding;
+   `-1` is the private root. The existing split/cluster MLA arithmetic is
+   unchanged. Small-row query/output contractions reuse ST's BF16/FP32 absorb
+   kernel with token-major outputs, removing both consumer layout copies.
    Top-k groups retain each path's exact physical column count for tie
    compatibility. Commit reuses the verified pool bytes. KDA stays FP32.
 3. `w4a8_pipeline.py` replaces the W4A8 queue with two static stages. FC1
@@ -102,6 +109,35 @@ Proposal/commit metadata still synchronizes with the host; the W4A8 MLP
 has no host completion read. Capturing that component does not capture the
 full tree step or integrate it with serving.
 
+## Direct paged tree attention
+
+The two-bank path is the tree experiment's default. Canonical KV is read-only
+through verification and private rows remain owned by the transaction until
+commit/abort. Siblings cannot enter a row's ancestor map. Pool boundaries,
+duplicate selections, top-k tie sets, selected-position ordering and FP8 latent
+bytes are retained. The MLA kernel's optional tree instantiation only changes
+its KV source pointer, including async-copy padding that reuses a valid row.
+Ordinary serving instantiations contain no branch-bank selection instructions.
+
+At 8 nodes, selected width 2051 and latent width 512, the final staging buffer
+alone was 8,400,896 bytes per DSA layer. Its minimum copy read/write traffic
+was 16,801,792 bytes. Both are removed; the slot tensor is only 65,632 bytes.
+These are operation/storage counts, not measured bandwidth or tok/s. The
+small-row absorb kernel also avoids 196,608 bytes of consumer layout copies.
+It retains BF16 operands/output and FP32 accumulation; equivalence of the
+device reduction to the prior einsum remains a GPU numerical check.
+
+The native MLA copy schedule passes an extracted delayed-copy CPU model for
+canonical-only, mixed and private-only selections. Offline CUDA 13.2.86
+compilation retains identical instruction words for ordinary/cluster serving
+MLA; tree variants use three/two additional registers without spills. The
+complete translation unit is also compiled against CPU Torch headers, without
+linking or initializing CUDA. This does not qualify GPU execution. The matched
+CPU comparison includes **both verify and commit** and records exact output,
+feature, state and paged-cache equality against the prior merged experiment.
+It shows approximately unchanged CPU time, not a demonstrated serving win.
+Evidence: `measurements/st_tree_paged_20260914/`.
+
 ## Reproducible checks without a GPU queue
 
 Run from the repository root with torch CPU, numpy, safetensors and Triton
@@ -112,6 +148,12 @@ CUDA_VISIBLE_DEVICES= PYTHONPATH=. python probes/engine_tree_dataflow_mock.py --
 CUDA_VISIBLE_DEVICES= PYTHONPATH=. python probes/engine_tree_dataflow_compile.py --output /tmp/tree-compile
 CUDA_VISIBLE_DEVICES= TRITON_INTERPRET=1 PYTHONPATH=. python probes/engine_tree_dataflow_interpreter.py --output /tmp/tree-addresses.json
 CUDA_VISIBLE_DEVICES= PYTHONPATH=. python probes/engine_tree_fastpath_bench.py --iterations 20 --output /tmp/tree-cpu-ab.json
+CUDA_VISIBLE_DEVICES= PYTHONPATH=. python probes/engine_tree_paged_bench.py --iterations 20 --output /tmp/tree-paged-cpu.json
+CUDA_VISIBLE_DEVICES= TRITON_INTERPRET=1 PYTHONPATH=. python -m unittest tests.test_engine_tree_attention
+PYTHONPATH=. python probes/engine_mla_stream_host_check.py --output /tmp/tree-copy-model
+# CUDA_ROOT contains an offline CUDA 13.2 compiler, not a device reservation.
+git show c58a8eb534ee5bf712f09f1ab68891ce02edcb85:engine/kernels/mla/glm53_megakernel.cu > /tmp/tree-mla-baseline.cu
+CUDA_VISIBLE_DEVICES= PYTHONPATH=. python probes/engine_tree_paged_compile.py --cuda-root "$CUDA_ROOT" --baseline /tmp/tree-mla-baseline.cu --output /tmp/tree-paged-compile
 ```
 
 The mock records per-test CPU latency, source hashes and storage arithmetic.

@@ -1,0 +1,24 @@
+{
+  "source_sha256": "57af9f1e82e8ec385363c4249d76d876035bed141ba13a4661ede8f0b8fc810e",
+  "harness_sha256": "61862732a1e040d16dde7f73e6abdb0dea1f7727b1f20d08f46e679bc2b63b6b",
+  "gpu_used": false,
+  "slice_cases": 180,
+  "threads_per_case": 256,
+  "tree_banks": [
+    "private-only",
+    "mixed-canonical-private"
+  ],
+  "cluster_splits": [
+    2,
+    3,
+    4,
+    8
+  ],
+  "three_cta_head_counts": [
+    6,
+    5,
+    5
+  ],
+  "reduction_dimensions": 512,
+  "missing_wait_rejected": true
+}

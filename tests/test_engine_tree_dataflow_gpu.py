@@ -9,6 +9,53 @@ from engine.modules.tree_kda import verify
 
 @unittest.skipUnless(torch.cuda.is_available(), "requires an explicitly available CUDA device")
 class NativeTreeDataflowTests(unittest.TestCase):
+    def test_private_mla_banks_match_copied_cache_and_replay_changed_values(self):
+        from engine.kernels import mla
+        from engine.kernels.mla.decode_absorb import tree_absorb
+        if torch.cuda.get_device_capability() != (12, 1):
+            self.skipTest('tree MLA is an SM121 experiment')
+        mla.maybe_arm()
+        torch.manual_seed(732)
+        for rows in (1, 8, 15, 32):
+            canonical = torch.randn(256, 512, device='cuda').to(torch.float8_e4m3fn)
+            private = torch.randn(rows, 512, device='cuda').to(torch.float8_e4m3fn)
+            q = torch.randn(rows, 16, 512, device='cuda').bfloat16()
+            slots = torch.randint(0, 256, (rows, 67), device='cuda', dtype=torch.int32)
+            slots[:, ::3] = -(torch.arange(rows, device='cuda', dtype=torch.int32)[:, None]+1)
+            lens = torch.full((rows,), 67, device='cuda', dtype=torch.int32)
+            lens[0] = 1
+            # Warm the private kernel and its occupancy/attribute cache first.
+            stream = torch.cuda.Stream()
+            stream.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(stream):
+                for _ in range(3):
+                    mla.mla_decode(q, canonical, slots, lens, .0625, 1., branch=private)
+            torch.cuda.current_stream().wait_stream(stream)
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph, stream=stream):
+                got = mla.mla_decode(q, canonical, slots, lens, .0625, 1., branch=private)
+            for repeat in range(3):
+                q.normal_()
+                private.copy_(torch.randn_like(private, dtype=torch.float32).to(private.dtype))
+                canonical.copy_(torch.randn_like(canonical, dtype=torch.float32).to(canonical.dtype))
+                slots[:, ::3] = -((torch.arange(rows, device='cuda', dtype=torch.int32)[:, None]+repeat) % rows+1)
+                lens[-1] = 0 if rows > 1 and repeat == 2 else 67
+                copied = torch.where((slots < 0)[:, :, None], private.view(torch.uint8)[(-slots.long()-1).clamp_min(0)],
+                                     canonical.view(torch.uint8)[slots.long().clamp_min(0)]).view(-1, 512)
+                linear = torch.arange(rows*67, device='cuda', dtype=torch.int32).view(rows, 67)
+                expected = mla.mla_decode(q, copied, linear, lens, .0625, 1.).clone()
+                graph.replay()
+                torch.testing.assert_close(got, expected, atol=0, rtol=0)
+            graph.reset()
+            weights = torch.randn(16, 512, 512, device='cuda').bfloat16()
+            for transpose in (False, True):
+                x = torch.randn(rows, 16, 512 if transpose else 256, device='cuda').bfloat16()
+                weight = weights[:, 256:] if transpose else weights[:, :256]
+                actual = tree_absorb(x, weight, transpose=transpose)
+                expected = torch.einsum('thc,hvc->thv' if transpose else 'thd,hdc->thc', x, weight)
+                torch.testing.assert_close(actual, expected, atol=.25, rtol=.015)
+                self.assertTrue(actual.is_contiguous())
+
     def test_w4a8_pipeline_replays_with_new_inputs_and_matches_queued(self):
         if torch.cuda.get_device_capability() != (12, 1):
             self.skipTest("W4A8 pipeline is an SM121-only experiment")

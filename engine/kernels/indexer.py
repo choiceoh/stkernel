@@ -15,11 +15,25 @@ def _map_positions(pos, table, table_s0, block_size: tl.constexpr,
 
 
 @triton.jit
+def _tree_positions(pos, table, table_s0, paths, row, context,
+                    PATH_WIDTH: tl.constexpr, block_size: tl.constexpr, block_stride, layer_offset):
+    prefix = (pos >= 0) & (pos < context)
+    page = tl.load(table + (pos.to(tl.int64) // block_size) * table_s0, prefix, other=0)
+    canonical = page.to(tl.int64) * block_stride + layer_offset + pos % block_size
+    private = (pos >= context) & (pos < context + PATH_WIDTH)
+    node = tl.load(paths + row * PATH_WIDTH + pos - context, private, other=0)
+    # Padding is zero and never read (counts defines the valid prefix).
+    # -1 is the private root, not a sentinel in this two-bank contract.
+    return tl.where(prefix, canonical, tl.where(private, -node-1, 0)).to(tl.int32)
+
+
+@triton.jit
 def _pool_slots(ids, lengths, table, out, counts, groups: tl.constexpr,
                 id_s0, id_s1, len_s0, table_s0, out_s0, out_s1, count_s0,
                 block_size: tl.constexpr, block_stride, layer_offset,
                 POOL: tl.constexpr, MAPPED: tl.constexpr, BLOCK: tl.constexpr,
-                table_s1=0, TOKENS: tl.constexpr = 1):
+                table_s1=0, TOKENS: tl.constexpr = 1,
+                paths=None, context=0, PATH_WIDTH: tl.constexpr = 0):
     row = tl.program_id(0)
     # A captured decode step's rows come TOKENS to a sequence, each sequence with its own block row at
     # table_s1 apart; a one-sequence launch has table_s1 0, and reads the one row it was given.
@@ -43,6 +57,9 @@ def _pool_slots(ids, lengths, table, out, counts, groups: tl.constexpr,
     # then broadcast it to its tokens instead of gathering four copies.
     base = _map_positions(pool * POOL, table, table_s0, block_size, block_stride, layer_offset, MAPPED)
     mapped = tl.where(pool[:, None] >= 0, base[:, None] + POOL - 1 - within, -1)
+    if PATH_WIDTH:
+        mapped = _tree_positions(mapped, table, table_s0, paths, row, context,
+                                 PATH_WIDTH, block_size, block_stride, layer_offset)
     cols = tail + g[:, None] * POOL + off[None, :]
     tl.store(out + row * out_s0 + cols * out_s1, mapped, g[:, None] < groups)
     # Complete the disjoint tail prefix and padding suffix. Every output is written.
@@ -50,6 +67,9 @@ def _pool_slots(ids, lengths, table, out, counts, groups: tl.constexpr,
     tail_base = _map_positions(tl.where(tail > 0, seq - tail, -1), table, table_s0,
                                block_size, block_stride, layer_offset, MAPPED)
     extra = tl.where(off < tail, tail_base + tail - 1 - off, -1)
+    if PATH_WIDTH:
+        extra = _tree_positions(extra, table, table_s0, paths, row, context,
+                                PATH_WIDTH, block_size, block_stride, layer_offset)
     tl.store(out + row * out_s0 + extra_cols * out_s1, extra, off < POOL - 1)
     tl.store(counts + row * count_s0, tl.sum((pool >= 0).to(tl.int32), 0) * POOL + tail)
 
@@ -62,6 +82,24 @@ def _maximum(a, b):
 @triton.jit
 def _minimum(a, b):
     return tl.minimum(a, b)
+
+
+def tree_pool_slots(pool_ids, seq_lens, pool_size, block_table, block_size, block_stride,
+                    layer_offset, paths, context, out, counts):
+    """Expand/sort pools and address canonical/private KV in one integer launch.
+
+    No latent copies, temporary position tensors or host reads. Paths contain
+    each row's root-to-node ancestors, padded with that node; seq_lens bounds
+    which depths may be read. Canonical slots and -(node+1) share int32 storage.
+    """
+    from engine.modules.tree_attention import check_slots
+    check_slots(pool_ids, seq_lens, pool_size, block_table, block_size, block_stride,
+                layer_offset, paths, context, out, counts)
+    _pool_slots[(len(pool_ids),)](pool_ids, seq_lens, block_table, out, counts, pool_ids.shape[1],
+        *pool_ids.stride(), seq_lens.stride(0), block_table.stride(0), *out.stride(), counts.stride(0),
+        block_size, block_stride, layer_offset, pool_size, False,
+        triton.next_power_of_2(max(1, pool_ids.shape[1])), paths=paths, context=context,
+        PATH_WIDTH=paths.shape[1], num_warps=4)
 
 
 def pool_slots(pool_ids, seq_lens, pool_size, block_table, block_size, block_stride,
