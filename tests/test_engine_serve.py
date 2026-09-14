@@ -2450,6 +2450,62 @@ class OpenAIDialectTests(unittest.TestCase):
         self.assertEqual(c.finish_reason(), "tool_calls")
         self.assertEqual(c.tool_calls_done()[0]["function"]["arguments"], parse_tool_calls(text)[0][1])
 
+    def test_an_answer_that_ended_inside_its_own_json_gets_the_brackets_it_owes(self):
+        """GLM-5.3 closes its nesting one level short (onepass, 2026-09-14): `"]` + `}}` where `}}}` was due, or `"}}`
+        and its end token. After an answer the model ended, the door sends exactly the missing brackets -- the same
+        text streamed and whole -- and counts the repair. An answer cut at the limit is not the model's ending."""
+        from engine.base.serve import _Choice, new_repairs
+        answer = '{"ledger": {"result": {"available": 279, "decision": "보류"}, "selected": ["L11", "L13"]}'
+        for finish, expected in (("stop", answer + "}"), ("length", answer)):
+            repairs = new_repairs()
+            c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=ByteTokenizer(), stop=[], reasoning=False,
+                        repairs=repairs)
+            ids = list(answer.encode())
+            deltas = []
+            for i in range(0, len(ids), 7):
+                c.feed(ids[i:i + 7], None, None)
+                deltas.extend(c.flush())
+            deltas.extend(c.end(finish))
+            self.assertEqual("".join(d.get("content", "") for d in deltas), expected)
+            self.assertEqual(c.text["content"], expected)
+            self.assertEqual(c.finish_reason(), finish)
+            self.assertEqual(repairs["unclosed_json"], int(finish == "stop"))
+        self.assertEqual(json.loads(answer + "}")["ledger"]["result"]["decision"], "보류")
+
+    def test_an_ending_the_request_chose_is_left_as_it_is(self):
+        """A stop string of the request's own cut the answer short of its brackets: the model did not end there."""
+        from engine.base.serve import _Choice, new_repairs
+        repairs = new_repairs()
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=ByteTokenizer(), stop=["END"], reasoning=False,
+                    repairs=repairs)
+        c.feed(list('{"a": {"b": 1}END'.encode()), None, None)
+        deltas = c.end("stop")                  # the run loop retires a choice at its stop string: this flush is its last
+        self.assertEqual("".join(d.get("content", "") for d in deltas), '{"a": {"b": 1}')
+        self.assertEqual(repairs["unclosed_json"], 0)
+
+    def test_json_closers_add_only_what_brackets_alone_can_finish(self):
+        from engine.base.serve import json_closers
+        owed = {
+            '{"a": {"b": 1}': "}",
+            '{"a": [1, {"b": "}]"}': "]}",                   # brackets inside a string are text, not nesting
+            '[1, 2': "]",
+            '  {"a": {"b": 1}\n': "}",                          # what was already shown stays; the brackets follow it
+        }
+        for text, closers in owed.items():
+            with self.subTest(text=text):
+                self.assertEqual(json_closers(text), closers)
+                json.loads(text + closers)
+        for text in ('{"a": {"b": 1}}',                        # nothing owed
+                     '{"a": 1,',                               # a dangling separator: brackets alone cannot finish it
+                     '{"a": "x\\"}',                          # ended inside a string
+                     '{"a": [1}',                              # a bracket that closes the wrong thing
+                     '{"a": 1} and {"b": 2',                   # not one value
+                     'The answer: {"a": 1',                    # prose
+                     '```json\n{"a": {"b": 1}\n```',           # a fence that has already gone out
+                     '', '   '):
+            with self.subTest(text=text):
+                self.assertEqual(json_closers(text), "")
+
     def test_a_call_the_answer_was_cut_off_inside_is_not_a_call(self):
         """Its fragments went out, because the client had already read them, but a caller cannot
         make a call whose arguments never closed -- so it is not in the body and the answer ended
