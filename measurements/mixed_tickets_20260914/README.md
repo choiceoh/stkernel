@@ -1,5 +1,10 @@
 # M2: served shared readers and fence-owned layer tickets
 
+> Historical evidence: PR #895 now retains only packet FFNs. This experiment
+> and its current-tree probes were removed. Reproduce using the frozen
+> revision named in this record, not moving HEAD. See the
+> [scope decision](../../bench/ST_GB10_PACKET_ONLY_20260914.md).
+
 This directory retains the original M2 qualification and its source identities.
 The subsequent [packed-planning comparison](../mixed_plan_20260914/README.md)
 records the fresh preparation improvement on `c33370f9`; its same-build GPU

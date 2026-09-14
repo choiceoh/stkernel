@@ -52,9 +52,6 @@ ST_PROBES = ('probes/engine_kernel_check.py', 'probes/engine_decode_graph_check.
              'probes/engine_graph_profile.py', 'probes/engine_kda_deferred_check.py',
              'probes/engine_prefill_fp8_consumer_check.py',
              'probes/engine_ffn_packets_check.py',
-             'probes/engine_mixed_experts_check.py',
-             'probes/engine_mixed_completion_check.py',
-             'probes/engine_mixed_tickets_check.py',
              'probes/engine_mhc_contract_check.py',
              'probes/engine_execution_plan_check.py',
              'probes/engine_direct_mhc_check.py',
@@ -105,9 +102,7 @@ def _st_args(relative, args, cwd, repo):
             raise ValueError(POLICY + '; ' + probe + ' is not a canonical ST check')
         _same(_path(probe, cwd), probe, repo)
         if probe == 'probes/engine_kda_deferred_check.py':
-            switches.update(('--commit-only', '--compact-only', '--serving-only'))
-        if probe == 'probes/engine_mixed_tickets_check.py':
-            switches.update(('--compare-planning', '--compare-preparation', '--drain-cold', '--overlap-shared'))
+            switches.add('--commit-only')
     while args:
         token = args[0]
         if token in switches:

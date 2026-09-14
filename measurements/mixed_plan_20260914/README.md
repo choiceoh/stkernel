@@ -1,5 +1,10 @@
 # M2 preparation: immutable packed route tables
 
+> Historical evidence: PR #895 now retains only packet FFNs. This experiment
+> and its current-tree probes were removed. Reproduce using the frozen
+> revision named in this record, not moving HEAD. See the
+> [scope decision](../../bench/ST_GB10_PACKET_ONLY_20260914.md).
+
 Fresh route planning and admission no longer expand hundreds of thousands of
 routes into Python tuples, then rebuild them as JSON and GPU metadata. The
 same-build, one-GB10 comparison reduces warm mixed-FFN preparation/admission

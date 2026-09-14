@@ -96,18 +96,6 @@ class OnepassPolicyTests(unittest.TestCase):
             with self.subTest(output=unsafe), self.assertRaises(ValueError):
                 self.validate(command[:-1]+[unsafe])
 
-    def test_compact_modes_are_scoped_to_the_pinned_kda_probe(self):
-        for mode in ('--compact-only', '--serving-only'):
-            with self.subTest(mode=mode):
-                command = ['bash', 'probes/run_engine_probe.sh', 'probes/engine_kda_deferred_check.py', mode]
-                self.assertEqual(self.validate(command, kind='single')['gpus'], 1)
-                for other in policy.ST_PROBES:
-                    if other != command[2]:
-                        with self.subTest(probe=other), self.assertRaises(ValueError):
-                            self.validate(command[:2]+[other]+command[3:])
-                with self.assertRaises(ValueError):
-                    self.validate(['bash', 'probes/run_engine_check.sh', mode])
-
     def test_ffn_packets_probe_requires_the_reviewed_bytes(self):
         command = ['bash', 'probes/run_engine_probe.sh', 'probes/engine_ffn_packets_check.py',
                    '--ranks', '/models/st-ranks', '--samples', '8', '--output', '/cache/ffn.json']
@@ -118,57 +106,14 @@ class OnepassPolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.validate(command, kind='single')
 
-    def test_mixed_experts_probe_requires_reviewed_bytes_and_literal_arguments(self):
-        command = ['bash', 'probes/run_engine_probe.sh', 'probes/engine_mixed_experts_check.py',
-                   '--ranks', '/models/st-ranks', '--ckpt-meta', '/models/st-ranks',
-                   '--samples', '8', '--output', '/cache/mixed.json']
-        self.assertEqual(self.validate(command, kind='single')['gpus'], 1)
-        self.assertEqual(policy.probe_budget_gib(command[2]), 8)
-        with self.assertRaises(ValueError):
-            self.validate(command+['--commit-only'], kind='single')
-        with self.assertRaises(ValueError):
-            self.validate(command[:-1]+['/cache/$(id)'], kind='single')
-        (self.repo/command[2]).write_text('# unreviewed replacement\n')
-        with self.assertRaises(ValueError):
-            self.validate(command, kind='single')
-
-    def test_mixed_completion_probe_is_separately_pinned_and_budgeted(self):
-        command = ['bash', 'probes/run_engine_probe.sh', 'probes/engine_mixed_completion_check.py',
-                   '--ranks', '/models/st-ranks', '--ckpt-meta', '/models/st-ranks',
-                   '--samples', '8', '--output', '/cache/completion.json']
-        self.assertEqual(self.validate(command, kind='single')['gpus'], 1)
-        self.assertEqual(policy.probe_budget_gib(command[2]), 8)
-        with self.assertRaises(ValueError):
-            self.validate(command+['--commit-only'], kind='single')
-        (self.repo/command[2]).write_text('# changed completion code\n')
-        with self.assertRaises(ValueError):
-            self.validate(command, kind='single')
-
-    def test_mixed_tickets_probe_has_its_own_reviewed_bytes_and_memory_budget(self):
-        command = ['bash', 'probes/run_engine_probe.sh', 'probes/engine_mixed_tickets_check.py',
-                   '--ranks', '/models/st-ranks', '--ckpt-meta', '/models/st-ranks',
-                   '--samples', '4', '--output', '/cache/tickets.json']
-        self.assertEqual(self.validate(command, kind='single')['gpus'], 1)
-        self.assertEqual(self.validate(command+['--compare-planning'], kind='single')['gpus'], 1)
-        self.assertEqual(self.validate(command+['--compare-preparation'], kind='single')['gpus'], 1)
-        self.assertEqual(self.validate(command+['--drain-cold'], kind='single')['gpus'], 1)
-        self.assertEqual(self.validate(command+['--drain-cold', '--overlap-shared'], kind='single')['gpus'], 1)
-        with self.assertRaises(ValueError):
-            self.validate(command[:2]+['probes/engine_mixed_completion_check.py', '--compare-planning'], kind='single')
-        with self.assertRaises(ValueError):
-            self.validate(command[:2]+['probes/engine_mixed_completion_check.py', '--compare-preparation'], kind='single')
-        with self.assertRaises(ValueError):
-            self.validate(command[:2]+['probes/engine_mixed_completion_check.py', '--drain-cold'], kind='single')
-        with self.assertRaises(ValueError):
-            self.validate(command[:2]+['probes/engine_mixed_completion_check.py', '--compare-cold-n128'], kind='single')
-        with self.assertRaises(ValueError):
-            self.validate(command[:2]+['probes/engine_mixed_completion_check.py', '--overlap-shared'], kind='single')
-        self.assertEqual(policy.probe_budget_gib(command[2]), 8)
-        with self.assertRaises(ValueError):
-            self.validate(command+['--commit-only'], kind='single')
-        (self.repo/command[2]).write_text('# changed ticket code\n')
-        with self.assertRaises(ValueError):
-            self.validate(command, kind='single')
+    def test_retired_mixed_probes_are_not_admitted(self):
+        for name in ('experts', 'completion', 'tickets'):
+            probe = f'probes/engine_mixed_{name}_check.py'
+            # Even an unchanged, executable file cannot re-open a retired probe.
+            for tree in (self.repo, self.controller):
+                (tree/probe).write_text('# retired experiment\n')
+            with self.subTest(probe=probe), self.assertRaises(ValueError):
+                self.validate(['bash', 'probes/run_engine_probe.sh', probe], kind='single')
 
     def test_the_contract_counts_gpus_and_the_single_lane_takes_only_one_gpu_checks(self):
         """A check that needs one GPU goes to the 5050 on ost-97x, not the four Sparks

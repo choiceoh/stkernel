@@ -1,5 +1,13 @@
 # M2 latency/adoption gate — 2026-09-14
 
+**Retired on 2026-09-14.** Mixed kernels, planners, tickets, profile bindings and
+canonical probe entries have been removed. PR #895 now retains only the ordinary
+prefill packet FFN. The measurements below remain unchanged historical evidence.
+Reproduce from each `sources.json` revision; the last implementation is
+`3ac2b17f34a21eebd9f2947dda61461adca4bad8`.
+[The packet-only decision](../../bench/ST_GB10_PACKET_ONLY_20260914.md) supersedes
+the former M3 follow-up.
+
 **The 52 ms target is not met. M2 is still slower than the actual ordinary FFN.**
 Preparation improvements do not establish an adoption benefit. S/P stay opt-in,
 M has no serving selector, and PR #895 stays draft.
@@ -106,13 +114,13 @@ Local non-Gloo validation passes 72 tests; local Gloo connection initialization
 stalled and was stopped. The actual frozen Linux Gloo test passes. See
 `local_gloo_limit.txt`; no local multiprocess success is claimed.
 
-The remaining issue is structural: current admission waits for prefill routes,
+The rejected implementation's issue was structural: admission waits for prefill routes,
 planning and full descriptor agreement before decode can run. Reducing those
 costs does not remove that dependency. A follow-up must move preparation away
 from decode arrivals and reduce cold compute without weakening numerics.
-An exclusive same-runtime comparison is needed for the absolute 52 ms target;
-TP4 NCCL, actual arrival traces and 32K/128K C1/C4 onepass quality/acceptance are
-still required for adoption. This record does not claim TTFT or tok/s gains.
+These were requirements for a future mixed implementation, which is no longer
+planned. The ordinary-path campaign retains matched consumer timing and
+32K/128K C1/C4 quality/acceptance gates. This record does not claim TTFT or tok/s gains.
 
 `sources.json` binds each CPU/GPU record to its admitted source. Rebuild the
 tables with `python3 measurements/mixed_latency_20260914/summarize.py`; verify

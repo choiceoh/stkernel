@@ -117,7 +117,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
            drafter_dir: "str | Path | None" = drafter_mod.DRAFTER, ledger: "str | Path | None" = None,
            snapshots: "int | None" = None, draft_tp: int = 1, draft_native: "bool | None" = None,
            router_bytes: int = 0, projection_bytes: int = 0, tier_enabled: bool = True, kda_state_dtype: "str | None" = None,
-           draft_policy=None, workspace_gib: "float | None" = None, kda_state_layout: "str | None" = None,
+           draft_policy=None, workspace_gib: "float | None" = None,
            prefill_ffn_packets: bool = False) -> Budget:
     """The box, one rank of TP=4. `kv_gib`/`max_seqs` are boot.py's declared values; the table says what they leave.
     `workspace_gib`: the ceiling this boot enforces when it is not WORKSPACE_GIB (boot.py --workspace-gib)."""
@@ -125,9 +125,6 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     if box_gib is None:
         box_gib = host_box()[0]                                          # GB10: device total == MemTotal (facts.check_box)
     F = facts.load(ckpt)
-    if kda_state_layout is not None:
-        from dataclasses import replace
-        F = replace(F, kda_state_layout=kda_state_layout)
     if kda_state_dtype is not None:
         from dataclasses import replace
         F = replace(F, kda_state_dtype=state_dtype(kda_state_dtype))
@@ -234,19 +231,19 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
         Line("drafter weight reservation", drafter_gib, READ, draft_evidence),
         Line("vision tower (BF16, replicated)", vision_gib, READ, vision_evidence),
         Line(f"state slots ({max_seqs} + null) x {lay.slot_bytes / 2**20:.0f} MiB", slots_gib, READ,
-             f"caches.layout: KDA {F.kda_state_dtype} {F.kda_state_layout}, BF16 conv, indexer tails, drafter ring"),
+             f"caches.layout: KDA {F.kda_state_dtype} recurrent rings (K+1 states), BF16 conv, indexer tails, drafter ring"),
         Line(f"prefix snapshots ({snapshots} x {snapshot_bytes / 2**20:.0f} MiB)", snapshots * snapshot_bytes / GIB, READ,
              f"caches.snapshot_layout: chunk-boundary position rings for prefix reuse; the count follows "
              f"the FP32 baseline's tiered/untiered budget (sharded drafter ring: {'yes' if draft_native else 'no'})"),
         Line("compressed prefix cache and codec", boot.prefix_host_bytes(tier_enabled) / GIB, DECLARED,
              "prefix tier: bounded lossless RAM copies plus chunk workspace, outside the raw arena; compression ratio unmeasured"),
         Line("generated-boundary staging", stage_bytes(F, range(F.layers), max_seqs) / GIB, READ,
-             "caches.stage_bytes: convolution history; recurrent boundary aliases the compact slot when selected"),
+             "caches.stage_bytes: per-slot recurrent state and convolution history"),
         Line("workspace ceiling (outside the arena)", ceiling, DECLARED, workspace_evidence),
         Line("NVMe tier staging", NVME_STAGING_BYTES / GIB, DECLARED, "kv_tier: pinned staging + device scratch, conversations and prefix tiers"),
     ]
     b = Budget(box_gib, lines, label=f"GLM-5.3-Flash on ST, one rank of TP={facts.TP}, chunk {chunk:,}, kv_gib {kv_gib} -> {blocks_at_kv:,} blocks")
-    baseline_slots_gib = (max_seqs + 1) * layout(F, range(F.layers), draft_shape, state_storage="fp32", state_layout="ring").slot_bytes / GIB
+    baseline_slots_gib = (max_seqs + 1) * layout(F, range(F.layers), draft_shape, state_storage="fp32").slot_bytes / GIB
     b.kv_declared_gib = kv_gib - baseline_slots_gib                     # FP16 savings stay unassigned, not extra KV
     b.paged_gib = blocks_at_kv * lay.block_bytes / GIB
     b.block_bytes, b.slot_bytes, b.block_tokens, b.max_position = lay.block_bytes, lay.slot_bytes, F.block, F.max_position

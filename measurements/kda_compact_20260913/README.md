@@ -1,5 +1,10 @@
 # Compact KDA state: serving integration and compilation evidence
 
+> Historical evidence: PR #895 now retains only packet FFNs. This experiment
+> and its current-tree probes were removed. Reproduce using the frozen
+> revision named in this record, not moving HEAD. See the
+> [scope decision](../../bench/ST_GB10_PACKET_ONLY_20260914.md).
+
 **CPU integration tests and SM121 compilation passed; GPU correctness, component timing and serving performance are pending.** Native serving selects the compact ABI with experimental `STK_compact_kda=1`; its default remains off.
 
 The candidate stores a committed FP32 state and a separate prefix-boundary state in one slot-major arena. At GLM K=7, the recurrent payload is 68 MiB instead of 272 MiB per request per rank, excluding factor workspace, padding, the null slot and all other caches. This is layout arithmetic, not a measured engine memory or tok/s result.

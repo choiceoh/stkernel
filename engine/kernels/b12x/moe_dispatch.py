@@ -2181,8 +2181,6 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("compact_staging", False)),
     )
     # Expanded output and register scatter never alias a served handle.
-    if config.get("probe_prepared_routes"):
-        cfg += ("probe_prepared_routes_v1", int(config["probe_prepared_routes"]))
     if config.get("probe_route_scatter", False):
         cfg += ("probe_route_scatter_v1",)
     if config.get("probe_direct_scatter", False):
@@ -2192,14 +2190,6 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
 
 def _static_v2_decode_config(config: dict, m: int) -> dict:
     """Specialize the integrated tile geometry only for C=1 decode rows."""
-    if config.get("probe_prepared_routes"):
-        capacity = config["probe_prepared_routes"]
-        if not (type(capacity) is int and m * 8 <= capacity <= 384 and 1 <= m <= 32
-                and config.get("tiled") and config.get("reform_sf_pack")
-                and (m > 8 or config.get("decode_reform"))
-                and not any(config.get(k) for k in ("split", "even", "stamps", "skip_a", "skip_sf",
-                                                    "a_ring", "sf_pack", "probe_route_scatter", "probe_direct_scatter"))):
-            raise ValueError("prepared routes require the bounded GLM TP4 decode geometry")
     if config.get("probe_route_scatter") or config.get("probe_direct_scatter"):
         if not (m in (7, 14, 21, 28) and config.get("tiled")
                 and config.get("reform_sf_pack") and (m != 7 or config.get("decode_reform"))
@@ -2292,13 +2282,10 @@ def _get_static_kernel_v2(
         state_E=state_E,weight_E=weight_E,k=k,n=n,num_topk=num_topk,
         quant_mode=quant_mode,activation=activation,swiglu_alpha=swiglu_alpha,
         swiglu_beta=swiglu_beta,swiglu_limit=swiglu_limit)
-    if (config.get("probe_route_scatter") or config.get("probe_direct_scatter")
-            or config.get("probe_prepared_routes")) and not (
+    if (config.get("probe_route_scatter") or config.get("probe_direct_scatter")) and not (
             scatter_fp32 and state_E == weight_E == 288 and k == 4096
             and n == 512 and num_topk == 8):
         raise ValueError("scatter probe requires the GLM TP4 FP32 output contract")
-    if config.get("probe_prepared_routes") and max_rows != 32:
-        raise ValueError("prepared route workspace has exactly 32 rows per expert")
     cache_key = (*cache_key,"tp_scatter_fp32_v1",scatter_fp32)
     cached = _STATIC_V2_KERNEL_CACHE.get(cache_key)
     if cached is not None:
@@ -2314,8 +2301,7 @@ def _get_static_kernel_v2(
     kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4
     kernel: Any = kernel_cls(
         scatter_fp32=scatter_fp32,
-        route_scatter=bool(config.get("probe_route_scatter") or config.get("probe_prepared_routes")),
-        prepared_routes=bool(config.get("probe_prepared_routes")),
+        route_scatter=bool(config.get("probe_route_scatter", False)),
         direct_scatter=bool(config.get("probe_direct_scatter", False)),
         a_ring=bool(config.get("a_ring", False)),
         sf_pack=bool(config.get("sf_pack", False)),
@@ -2428,9 +2414,7 @@ def _get_static_kernel_v2(
     )
     scatter_fake = cute.runtime.make_fake_compact_tensor(
         cutlass.Float32 if scatter_fp32 else a_dtype,
-        ((config["probe_prepared_routes"] if config.get("probe_prepared_routes")
-          else m * num_topk) * output_tile_count_n
-         if config.get("probe_route_scatter") or config.get("probe_prepared_routes") else m, k),
+        (m * num_topk * output_tile_count_n if config.get("probe_route_scatter") else m, k),
         stride_order=(1, 0), assumed_align=16
     )
     token_map_fake = cute.runtime.make_fake_compact_tensor(
@@ -3525,8 +3509,6 @@ def launch_sm120_static_moe(
                 f"lane tiled={want_tiled}"
             )
         if static_v2_config is not None:
-            if static_v2_config.get("probe_prepared_routes"):
-                raise ValueError("prepared routes require the explicit mixed-expert owner")
             static_v2_config = _static_v2_decode_config(static_v2_config, num_tokens)
             if static_v2_config.get("reform_sf_pack"):
                 if weights.reform_scales is None:
@@ -4203,7 +4185,6 @@ def _get_dynamic_kernel(
     _prefill_n128: bool = False,
     _prefill_q0_batch8: bool = False,
     _prefill_packets: bool = False,
-    _prepared_prefill: bool = False,
 ):
     """Compile (or retrieve cached) the SM120 dynamic MoE kernel.
 
@@ -4371,15 +4352,6 @@ def _get_dynamic_kernel(
         tp_sf6_q0=tp_sf6_q0, share_input_across_experts=share_input_across_experts)
     if type(_prefill_packets) is not bool:
         raise TypeError('private FFN packet selector must be bool')
-    if type(_prepared_prefill) is not bool:
-        raise TypeError('private prepared prefill selector must be bool')
-    if _prepared_prefill:
-        if (not prefill_word_unpack or prefill_reuse or _prefill_packets
-                or _prefill_scale_expansion or _prefill_tile64 or _prefill_n128
-                or _prefill_q0_batch8 or input_scales_are_reciprocal or not fast_math
-                or topk_ids_dtype != torch.int32):
-            raise ValueError('prepared cold tasks require ordinary long-prefill SF6 M128 arithmetic')
-        cache_key = (*cache_key, 'prepared_cold_window_v1')
     if _prefill_packets:
         if (not prefill_word_unpack or prefill_reuse or _prefill_scale_expansion
                 or _prefill_tile64 or _prefill_n128 or _prefill_q0_batch8):
@@ -4457,9 +4429,6 @@ def _get_dynamic_kernel(
                 if _prefill_packets:
                     from .moe_dynamic_prefill_packets import MoEGatedDynamicKernelSF6Packets
                     tiled_cls = MoEGatedDynamicKernelSF6Packets
-                if _prepared_prefill:
-                    from .moe_prepared_prefill import PreparedPrefillKernel
-                    tiled_cls = PreparedPrefillKernel
             elif short_word_unpack:
                 from .moe_dynamic_gated_sf6_q0_words import MoEGatedDynamicKernelSF6Q0Words
                 tiled_cls = MoEGatedDynamicKernelSF6Q0Words
@@ -4686,8 +4655,6 @@ def _get_dynamic_kernel(
             options="--opt-level 2 --enable-tvm-ffi",
         ),
         extra_key_files=_kernel_source_files() + (
-            (os.path.join(os.path.dirname(__file__), 'moe_prepared_prefill.py'),)
-            if _prepared_prefill else ()) + (
             tuple(os.path.join(os.path.dirname(__file__), name) for name in
                   ('moe_dynamic_prefill_packets.py', 'moe_w4a16_fp4_helpers.py'))
             if _prefill_packets else ()) + (

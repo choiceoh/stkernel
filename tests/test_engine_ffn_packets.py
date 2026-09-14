@@ -16,6 +16,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PacketContractTests(unittest.TestCase):
+    def test_packet_plan_activity_is_boolean_and_keeps_chunk_order(self):
+        from engine.profiles.glm53.execution import ExecutionPlan
+        self.assertIs(ExecutionPlan().active, False)
+        self.assertIs(ExecutionPlan(prefill_ffn_packets=True).active, True)
+        self.assertIs(ExecutionPlan(decode_absorb_tiles=True).active, True)
+        for value in (1, None, 'on'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                ExecutionPlan(prefill_ffn_packets=value)
+        with self.assertRaises(ValueError):
+            ExecutionPlan(prefill_ffn_packets=True, prefill_tiles=2)
+
     def test_only_the_existing_long_prefill_band_is_eligible(self):
         for rows, expected in ((8192, False), (8193, True), (32768, True),
                                (32769, False), (True, False), (9216., False)):

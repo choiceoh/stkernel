@@ -1,5 +1,10 @@
 # Prepared decode-tail expert component (PR #895)
 
+> Historical evidence: PR #895 now retains only packet FFNs. This experiment
+> and its current-tree probes were removed. Reproduce using the frozen
+> revision named in this record, not moving HEAD. See the
+> [scope decision](../../bench/ST_GB10_PACKET_ONLY_20260914.md).
+
 Implemented M0 admission and M1a hot-route computation for the fixed GLM TP4 SF6 pack. There is no serving selector or new execution knob.
 
 This directory preserves the original M1a scope and frozen admission. The subsequent cold/shared completion implementation and its separate validation are recorded in [M1b evidence](../mixed_completion_20260914/README.md).

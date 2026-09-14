@@ -1,5 +1,10 @@
 # M2 preparation: one route index, value check and metadata upload
 
+> Historical evidence: PR #895 now retains only packet FFNs. This experiment
+> and its current-tree probes were removed. Reproduce using the frozen
+> revision named in this record, not moving HEAD. See the
+> [scope decision](../../bench/ST_GB10_PACKET_ONLY_20260914.md).
+
 The previous packed implementation still sorted cold routes twice, synchronized
 separate value reductions and uploaded each metadata table separately. Joining
 that work reduces warm preparation/admission medians by **52.7–73.5%**, decode

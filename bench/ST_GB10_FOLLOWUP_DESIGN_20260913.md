@@ -1,5 +1,9 @@
 # GB10 × 4 실행 형상의 후속 설계
 
+> 2026-09-14 변경: 활성 범위는 [P — 일반 프리필 패킷 직접 소비](ST_GB10_PACKET_ONLY_20260914.md)다.
+> 아래 S/M/I 단계와 M3 확장은 과거 설계이며 현재 후속 작업이 아니다. S/M 실행
+> 코드와 전용 probe/test는 제거했다. 과거 명령·소스 링크는 각 동결 revision을 기준으로 읽는다.
+
 설계 기준: PR #895의 `56e3f3d8`와 그 기반 `71306bda`. [상위 설계](ST_GB10_ARCHITECTURE_20260913.md)의 후속 작업을 코드 경계와 검증 단위로 구체화한다. **S의 cache·eager·graph 연결과 P의 packet-native FFN은 기본값이 꺼진 실험 옵션으로 구현했다. M/I는 후속 작업이다.** 커널의 GPU 검증도 예약 당시 대기 상태이며, 아래 설계를 성능 결과로 해석하지 않는다.
 
 S 구현: `STK_compact_kda=1` → `ExecutionPlan.compact_kda` → `Facts.kda_state_layout="committed_boundary"`. deferred 검증을 함께 선택하며 native FP32, 분할 없는 decode, `prefill_tiles=1`을 요구한다. `rec_meta[2]`에는 current/boundary의 문맥 위치를 저장하고 물리 slot과 함께 이동한다. eager transaction이 미확정인 동안 재검증·snapshot·restore·slot 재사용을 거부한다. graph 수명과 slot 재사용의 stream fence는 기존 runner가 소유한다. [compact_state.py](../engine/profiles/glm53/compact_state.py), [CPU 검증](../measurements/kda_compact_20260913/serving_cpu.json). 아래 상세 설계의 이름은 구현 API와 다를 수 있다.

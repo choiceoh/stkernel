@@ -46,7 +46,7 @@ from engine.base.shapes import chunk_for                         # noqa: E402
 from engine.base.tiered_kv import TieredKV                       # noqa: E402
 from engine.profiles.glm53 import facts, lanes as lane_tables    # noqa: E402
 from engine.profiles.glm53.caches import (Glm53Caches, layout, snapshot_layout, stage_bytes,
-                                        cache_capacity, state_dtype, state_format as cache_state_format)   # noqa: E402
+                                        cache_capacity, state_dtype)   # noqa: E402
 from engine.profiles.glm53 import drafter as drafter_mod           # noqa: E402
 from engine.profiles.glm53.adapter import Glm53Engine, NullDrafter             # noqa: E402
 from engine.profiles.glm53.net import Glm53Net                   # noqa: E402
@@ -238,7 +238,7 @@ def declared(a, comm_world: int) -> Config:
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
-                        execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0, compact_kda=0, terminal_mhc=0,
+                        execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0, terminal_mhc=0,
                         prefill_ffn_packets=0,
                         draft_fc_precision=SERVING_POLICY.fc_precision, draft_fc_calibration=SERVING_POLICY.fc_calibration,
                         draft_diagnostics=int(SERVING_POLICY.diagnostics), draft_tuning='', **gb10_defaults)
@@ -285,9 +285,6 @@ def declared(a, comm_world: int) -> Config:
         Knob("deferred_kda", 0, _dt.date(2026, 9, 30),
              "FP32 KDA: verify into update factors, commit accepted states across all layers in one launch",
              "STK_deferred_kda=0", int),
-        Knob("compact_kda", 0, _dt.date(2026, 9, 30),
-             "Experimental FP32 committed/boundary cache; implies deferred verification, serving GPU qualification pending",
-             "STK_compact_kda=0", int),
         Knob("decode_iterations", gb10_defaults["decode_iterations"], _dt.date(2026, 9, 30),
              "Bounded greedy TP4 decode: reserve/read back 2 or 4 iterations with rank-agreed exits",
              "STK_decode_iterations=1", int),
@@ -348,11 +345,6 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     if execution_plan is not None and execution_plan.prefill_ffn_packets and execution != 'native':
         raise ValueError('packet FFN requires native execution')
     F = facts.load(ckpt_meta)
-    if execution_plan is not None and execution_plan.compact_kda:
-        if execution != "native":
-            raise ValueError("compact KDA requires native execution")
-        from dataclasses import replace
-        F = replace(F, kda_state_layout="committed_boundary")
     if kda_state_dtype is not None:
         from dataclasses import replace
         F = replace(F, kda_state_dtype=state_dtype(kda_state_dtype))
@@ -387,10 +379,10 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     snapshot_bytes = snapshot_layout(F, net.layers, draft_shape)[0]
     reference_snapshot_bytes = snapshot_layout(F, net.layers, draft_shape, state_storage="fp32")[0]
     recorder.gauge("kda_state_dtype", F.kda_state_dtype)
-    recorder.gauge("kda_state_layout", F.kda_state_layout)
-    saved = ns * (layout(F, net.layers, draft_shape, state_storage="fp32", state_layout="ring").slot_bytes - sb)
+    saved = ns * (layout(F, net.layers, draft_shape, state_storage="fp32").slot_bytes - sb)
     saved += snapshots * (reference_snapshot_bytes - snapshot_bytes)
-    saved += ns * snapshot_layout(F, net.layers, state_storage="fp32")[0] - stage_bytes(F, net.layers, max_seqs)
+    saved += ns * (snapshot_layout(F, net.layers, state_storage="fp32")[0]
+                   - snapshot_layout(F, net.layers)[0])
     recorder.gauge("kda_state_storage_saved_bytes", saved)
     host_budget_bytes = prefix_host_bytes(bool(tier_dir))
     # the vision tower (45차 §23 A7): whole on every rank, from vision.safetensors next to the rank files (preshard.py --vision);
@@ -515,7 +507,6 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                             chunk=sched.chunk_for(F.chunk_align, TOKEN_BUDGET, D.k if D else 0), ckpt=ckpt_meta,
                             ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None,
                             snapshots=snapshots, tier_enabled=bool(tier_dir), kda_state_dtype=F.kda_state_dtype,
-                            kda_state_layout=F.kda_state_layout,
                             prefill_ffn_packets=bool(execution_plan is not None and execution_plan.prefill_ffn_packets),
                             draft_tp=comm.world_size if execution == "native" else 1,
                             draft_native=execution == "native", router_bytes=router_bytes, projection_bytes=projection_bytes,
@@ -661,7 +652,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                         print(f"  rank{comm.rank}: tenant state cleared -- the fleet changed hands from {left}")
                 # Missing format tags name historical FP32 bytes. FP16 cannot
                 # discover or restore those conversations/prefix snapshots.
-                state_format = cache_state_format(F)
+                state_format = "glm53-kda-fp16-v1" if F.kda_state_dtype == "fp16" else ""
                 tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes,  # a block is one NVMe unit (block-major)
                                 capacity_bytes=int(TIER_GIB * GIB), reserve_bytes=int(TIER_RESERVE_GIB * GIB),
                                 state_format=state_format, mapped_staging=nvme_mapped_staging)
@@ -1253,18 +1244,17 @@ def fleet(a) -> int:
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
                                        consume_scales=True)
         from engine.profiles.glm53.execution import ExecutionPlan
-        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "compact_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "prefill_ffn_packets", "decode_dsa_inputs", "decode_indexer_gate", "decode_absorb_tiles")):
+        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "prefill_ffn_packets", "decode_dsa_inputs", "decode_indexer_gate", "decode_absorb_tiles")):
             raise ValueError("execution switches must be 0 or 1")
         plan = ExecutionPlan(bool(cfg["execution_overlap"]), bool(cfg["early_observe"]), cfg["prefill_tiles"],
                              sched.chunk_for(facts.CHUNK_ALIGN, TOKEN_BUDGET, facts.SPEC_K),
                              direct_mhc=bool(cfg["direct_mhc"]), prefill_project_tiles=bool(cfg["prefill_project_tiles"]),
                              decode_iterations=cfg["decode_iterations"], deferred_kda=bool(cfg["deferred_kda"]),
-                             compact_kda=bool(cfg["compact_kda"]),
                              terminal_mhc=bool(cfg["terminal_mhc"]), prefill_indexer_shards=bool(cfg["prefill_indexer_shards"]),
                              prefill_dense_prefix=bool(cfg["prefill_dense_prefix"]),
                              prefill_absorb_tiles=bool(cfg["prefill_absorb_tiles"]),
-                             prefill_ffn_packets=bool(cfg["prefill_ffn_packets"]),
                              decode_fastpaths=bool(cfg["decode_fastpaths"]), decode_dsa_inputs=bool(cfg["decode_dsa_inputs"]),
+                             prefill_ffn_packets=bool(cfg["prefill_ffn_packets"]),
                              decode_indexer_gate=bool(cfg["decode_indexer_gate"]),
                              decode_absorb_tiles=bool(cfg["decode_absorb_tiles"]))
         from engine.profiles.glm53.draft_policy import DraftPolicy
@@ -1294,7 +1284,6 @@ def fleet(a) -> int:
                             "draft_selector_trace_every": str(getattr(getattr(engine.drafter, 'tuning', None), 'trace_every', 0)),
                             "nvme_mapped_staging": str(cfg["nvme_mapped_staging"]),
                             "kda_state_dtype": F.kda_state_dtype,
-                            "kda_state_layout": F.kda_state_layout,
                             "mla_prefill": cfg["mla_prefill"], "spec_k": str(engine.drafter.k),
                             "context_ceiling": str(engine.max_context),
                             "packs": f"gptq {engine.pack_stats.get('gptq', 0)} rtn {engine.pack_stats.get('rtn', 0)}",   # what the store built or read

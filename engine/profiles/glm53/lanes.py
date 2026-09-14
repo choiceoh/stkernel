@@ -98,7 +98,6 @@ class Lanes:
     mla_dense_prefix: object = None  # q, latent, token_map scalars, context, scales; explicit covered-prefix prefill only
     moe_packets: object = None  # packet owner and routes, same prepared weights/scales as moe; eager long prefill only
     moe_packets_supported: object = None  # rows and bound weights -> local capability, before rank agreement/transport
-    moe_mixed_prepare: object = None  # eager prepared inputs/routes -> owned mixed FFN; never selected by ordinary moe
     latent_norm_write: object = None  # BF16 KV, norm weight, FP8 latent, token maps, contexts, tokens, eps -> None
 
 
@@ -390,7 +389,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
         kda_recurrent = ref.kda_recurrent
         recurrent_kda_ring = recurrent_kda_ring_rows = None
     moe_prepare = None
-    moe_packets = moe_packets_supported = moe_mixed_prepare = None
+    moe_packets = moe_packets_supported = None
     graph_resources = None
     if expert_lane == "reference":
         moe = ref.moe
@@ -468,15 +467,6 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
             if float(limit) != 10.:
                 raise ValueError('packet MoE requires the ordinary GLM activation limit')
             return launch(batch, sel, w, *packet_views(w13, w13_sf, w2, w2_sf, limit, scales))
-
-        def moe_mixed_prepare(decode, prefill, ids, pids, routes, proutes,
-                              w13, w13_sf, w2, w2_sf, limit, *, scales=None, **options):
-            from engine.kernels.b12x.moe_mixed_completion import PreparedMixedCompletion
-            if float(limit) != 10.:
-                raise ValueError('mixed MoE requires the fixed GLM activation limit')
-            views, input_scale, down_scale = packet_views(w13, w13_sf, w2, w2_sf, limit, scales)
-            return PreparedMixedCompletion(decode, prefill, ids, pids, routes, proutes,
-                weights=views, input_scale=input_scale, down_scale=down_scale, **options)
 
         def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit, *, scales=None, finalize=None):
             """Packed b12x MoE with prepared ModelOpt scales.
@@ -594,8 +584,6 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     if moe_packets is not None:
         table = replace(table, moe_packets=on_main(moe_packets),
                         moe_packets_supported=on_main(moe_packets_supported))
-    if moe_mixed_prepare is not None:
-        table = replace(table, moe_mixed_prepare=on_main(moe_mixed_prepare))
     return _apply_reference_lanes(table, ref, reference_for)
 
 

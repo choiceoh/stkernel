@@ -20,6 +20,8 @@ SOURCES = (
     'engine/profiles/glm53/net.py', 'engine/profiles/glm53/lanes.py',
     'engine/profiles/glm53/execution.py', 'engine/profiles/glm53/boot.py',
     'probes/engine_ffn_packets_compile.py',
+    'probes/engine_ffn_packets_check.py', 'tests/test_engine_ffn_packets.py',
+    'tests/test_engine_prefill_fp8_consumer.py',
 )
 
 

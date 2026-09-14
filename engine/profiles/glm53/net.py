@@ -151,9 +151,7 @@ class Glm53Net:
         self.Hk = F.kda_heads_local                  # KDA heads on this rank (16)
         self.vp = F.vocab_local
         self.conv_ring = F.conv - 1 + F.spec_k       # conv inputs kept per slot: the window plus K drafts
-        self.verify_tokens = F.spec_k + 1
-        self.compact_kda = getattr(F, "kda_state_layout", "ring") == "committed_boundary"
-        self.rec_ring = 1 if self.compact_kda else self.verify_tokens
+        self.rec_ring = F.spec_k + 1                 # recurrent states kept per slot: one per draft position
         self.p = None
         self.dense = {}
         self.shared_mlp = {}
@@ -192,7 +190,6 @@ class Glm53Net:
         # The dense MLPs as one-expert NVFP4 (ModelOpt's own layout); BF16 dense MLPs take the packed dense path.
         self.dense_nvfp4 = self.modelopt and self.weight_layout != MODELOPT_BF16_DENSE_LAYOUT
         self._experts = {}
-        self._mixed_experts = {}
         self._packet_experts = {}
         self._packet_capabilities = {}
         self._quant_scales = {}
@@ -230,10 +227,6 @@ class Glm53Net:
                         F.topk_experts if F.is_moe(L) else 1, F.swiglu_limit, **kw)
             self._experts[L] = partial(self.lanes.moe, w13=p[n+'w13'], w13_sf=p[n+'w13_sf'],
                 w2=p[n+'w2'], w2_sf=p[n+'w2_sf'], limit=F.swiglu_limit, **kw)
-            if F.is_moe(L) and self.lanes.moe_mixed_prepare is not None:
-                self._mixed_experts[L] = partial(self.lanes.moe_mixed_prepare,
-                    w13=p[n+'w13'], w13_sf=p[n+'w13_sf'], w2=p[n+'w2'],
-                    w2_sf=p[n+'w2_sf'], limit=F.swiglu_limit, **kw)
             if F.is_moe(L) and self.lanes.moe_packets is not None and self.lanes.moe_packets_supported is not None:
                 args = dict(w13=p[n+'w13'], w13_sf=p[n+'w13_sf'], w2=p[n+'w2'],
                             w2_sf=p[n+'w2_sf'], limit=F.swiglu_limit, **kw)
@@ -510,13 +503,10 @@ class Glm53Net:
             g_raw_all = self.linear(f_a, n + "f_b").view(N, Hl, D)
             g_out = self.linear(g_a, n + "g_b").view(N, Hl, D)
         beta_all = b_all                                                             # raw logits: each lane sigmoids as its kernel wants
-        wc, wr = self.conv_ring, self.verify_tokens
+        wc, wr = self.conv_ring, self.rec_ring
         captured = getattr(step, "captured", False)
-        compact = self.compact_kda
         single_chunk = not captured and len(step.segments) == 1 and N > wr
         rows = self._ring_rows(step, wc, wr)
-        if compact and captured and (not rows or getattr(caches, "deferred_state", None) is None):
-            raise ValueError("compact captured KDA requires deferred row verification")
         if rows:
             # a captured decode step: every row's conv and recurrence in one launch each, and the output lands in
             # step order without a copy per row (45차, the C=4 question: four rows were four times the launches --
@@ -535,8 +525,8 @@ class Glm53Net:
             core = None if single_chunk else torch.empty(N, Hl, D, dtype=x.dtype, device=x.device)
         for s in (() if rows else step.segments):
             sl = slice(s.start, s.start + s.length)
-            direct_ring = not compact and self.lanes.kda_recurrent_ring is not None and s.length <= wr
-            direct_conv = (direct_ring or compact) and self.lanes.conv_ring is not None and s.length <= min(8, wc)
+            direct_ring = self.lanes.kda_recurrent_ring is not None and s.length <= wr
+            direct_conv = direct_ring and self.lanes.conv_ring is not None and s.length <= min(8, wc)
             if captured:
                 if direct_conv:
                     conv_ring, ring, physical = caches.kda_rings(L, s.slot)
@@ -546,14 +536,13 @@ class Glm53Net:
                     hist, state0 = caches.kda_history(L, s.slot, s.ctx)
             else:
                 conv_ring, rec_ring = caches.kda(L, s.slot)
-                physical = 0
                 if not direct_conv:
                     hist_pos = s.ctx + torch.arange(-(K - 1), 0, device=x.device)
                     hist = conv_ring[:, hist_pos.clamp_min(0) % wc].masked_fill((hist_pos < 0)[None, :], 0)
                 if direct_ring:
                     ring, physical = rec_ring[None], 0
                 else:
-                    state0 = rec_ring[0 if compact else (s.ctx - 1) % wr][None] if s.ctx > 0 else None
+                    state0 = rec_ring[(s.ctx - 1) % wr][None] if s.ctx > 0 else None
             if direct_conv:
                 y = self.lanes.conv_ring(qkv_all[sl], p[n + "conv"], conv_ring if captured else conv_ring[None], physical, s.ctx)
             else:
@@ -566,10 +555,7 @@ class Glm53Net:
                     conv_ring[:, pos % wc] = qkv_all[sl][-keep:].T
             q, k, v = (t.reshape(1, s.length, Hl, D) for t in y.split(Hl * D, dim=-1))
             g_raw, beta = g_raw_all[sl][None], beta_all[sl][None]
-            if compact and s.length <= wr:
-                o = caches.verify_compact(L, s, (q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"]),
-                                          self.lanes.kda_recurrent)
-            elif direct_ring:
+            if direct_ring:
                 o = self.lanes.kda_recurrent_ring(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"],
                                                   ring, physical, s.ctx, F.lower_bound)
             elif s.length > wr:                                                     # a prefill chunk: only the final state is kept --
@@ -588,9 +574,7 @@ class Glm53Net:
                         caches.mark_kda(L, snap, st, qkv_all[sl][m - (K - 1):m])
                 else:
                     o, state = self.lanes.kda_chunk(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
-                rec_ring[0 if compact else (s.ctx + s.length - 1) % wr] = state[0]
-                if compact:
-                    caches._compact_eager.complete_layer(L, s)
+                rec_ring[(s.ctx + s.length - 1) % wr] = state[0]
             else:                                                                   # a decode/verify step: one state per position
                 o, states = self.lanes.kda_recurrent(q, k, v, g_raw, beta, p[n + "A_log"], p[n + "dt_bias"], state0, F.lower_bound)
                 if captured:
@@ -950,6 +934,7 @@ class Glm53Net:
         w = s.gather(-1, sel)
         return sel.to(torch.int32), w / w.sum(-1, keepdim=True) * F.routed_scale
 
+
     def _packet_ffn_layers(self, rows):
         from engine.modules.prefill_packets import agreed_layers, ffn_packet_rows
         if not getattr(self, 'prefill_ffn_packets', False) or not ffn_packet_rows(rows):
@@ -967,6 +952,7 @@ class Glm53Net:
         self.prefill_packet_planned.update(agreed)
         return agreed
 
+
     @operation('moe', layer_arg=1)
     def _moe_packets(self, L, batch, shards):
         from engine.kernels.prefill_router import router_packet_logits
@@ -983,6 +969,7 @@ class Glm53Net:
         self.prefill_packet_peak_bytes = max(self.prefill_packet_peak_bytes, batch.geometry.nbytes)
         return (shards.reduce_scatter_pair(out, shared) if shards.fuse_sum else
                 shards.reduce_scatter(out + shared))
+
 
     @operation("moe", layer_arg=1)
     def _moe(self, L: int, x: torch.Tensor, reduce=None, *, reduce_pair=None, finalize=None) -> torch.Tensor:
@@ -1014,47 +1001,8 @@ class Glm53Net:
         return (reduce or self.comm.all_reduce)(out + shared)
 
     # -- the step ---------------------------------------------------------------------------
-    def prepare_mixed_ffn(self, L, decode, prefill, *, identity, hot_route_quota=128, cold_task_quota=48,
-                          overlap_shared=False):
-        """Explicit M2 layer boundary; ordinary forward/Step selection is unchanged.
-
-        Inputs must already be the replicated, normalized FFN inputs for L.
-        The caller admits this owner through MixedLayerScheduler before any
-        mixed execution; this method performs eager local preparation only.
-        """
-        from engine.profiles.glm53.mixed_shared import BoundMixedShared
-        if L != identity.layer or L not in self._mixed_experts:
-            raise ValueError('mixed FFN requires a bound native MoE layer and matching identity')
-        if torch.cuda.is_current_stream_capturing():
-            raise RuntimeError('mixed FFN preparation is outside captured steps')
-        shared = BoundMixedShared(self, L)
-        ids, routes = self.route(L, decode)
-        pids, proutes = self.route(L, prefill)
-        return self._mixed_experts[L](decode, prefill, ids, pids, routes, proutes,
-            identity=identity, shared_execution=shared,
-            hot_route_quota=hot_route_quota, cold_task_quota=cold_task_quota,
-            overlap_shared=overlap_shared)
-
-    def mixed_layer_scheduler(self, L):
-        from engine.modules.mixed_tickets import MixedLayerScheduler
-        if L not in self._mixed_experts:
-            raise ValueError('mixed scheduler requires a bound native MoE layer')
-        return MixedLayerScheduler(L, self.comm)
-
-    def submit_mixed_ffn(self, scheduler, decode, prefill, *, identity, request, slot,
-                         hot_route_quota=128, cold_task_quota=48, overlap_shared=False):
-        """Do not strand peers when local eager preparation fails."""
-        owner, error = None, None
-        try:
-            owner = self.prepare_mixed_ffn(scheduler.layer, decode, prefill, identity=identity,
-                hot_route_quota=hot_route_quota, cold_task_quota=cold_task_quota,
-                overlap_shared=overlap_shared)
-        except Exception as exc:
-            error = exc
-        return scheduler.admit(owner, request=request, slot=slot, preparation_error=error)
-
     def forward(self, step: Step, caches: Caches, finish: bool = True, aux_layers=None, aux_ready=None,
-                *, last_hidden_only=False, contract=None, compact_commit=True):
+                *, last_hidden_only=False, contract=None):
         """One step: every segment's tokens through the chain. Returns the final
         hidden states [N, hidden] (post final norm) when `finish`, else the raw
         mHC carry (res, post, comb, x) for inspection. With `aux_layers`, also
@@ -1063,9 +1011,6 @@ class Glm53Net:
         aux_hidden_states: hc_post then hc_contract after layer idx). Prefill may
         request only the final hidden row, which supplies its first sampled token."""
         F = self.F
-        eager_compact = getattr(self, 'compact_kda', False) and not getattr(step, "captured", False)
-        if eager_compact:
-            caches.begin_compact(step, commit_all=compact_commit)
         if contract is not None and aux_layers and any(L not in self.layers for L in aux_layers):
             raise ValueError("terminal features must name layers in this target")
         N = step.ids.shape[0]
@@ -1129,8 +1074,6 @@ class Glm53Net:
                     if features is None:
                         features = torch.cat([aux[l] for l in aux_layers], dim=-1)
                     aux_ready(features)
-        if eager_compact and compact_commit:
-            caches.commit_compact()
         if not finish:
             return res, post, comb, x
         if last_hidden_only:

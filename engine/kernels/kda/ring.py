@@ -78,7 +78,7 @@ def recurrent_decay_ring_rows(q, k, v, decay, beta, ring, slots, contexts):
 
 
 def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound, *, deferred=False, rows=1, factors=None,
-               decay=False, compact=False):
+               decay=False):
     _check_cell(decay)
     if decay:
         if a_log is not None or g_bias is not None or lower_bound is not None:
@@ -102,18 +102,11 @@ def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound
     if type(rows) is not int or rows <= 0 or t % rows:
         raise ValueError("rows must divide the token count: every row of a step holds the same tokens")
     t = t // rows                                                    # tokens per row from here on
-    if type(compact) is not bool or (compact and not deferred):
-        raise ValueError("compact state belongs only to deferred verification")
-    # A compact verifier reads one committed state and never writes it. Its
-    # verification width is independent of physical state capacity. The
-    # owner materializes accepted factors before the next invocation.
-    width_ok = (ring.ndim == 5 and ring.shape[1] == 1 and 1 <= t <= 2147483647) if compact else (
-        ring.ndim == 5 and 1 <= t <= ring.shape[1])
     if (ring.ndim != 5 or ring.shape[0] <= 0 or ring.shape[2:] != (hv, kd, vd) or
-            not width_ok or ring.device != q.device or ring.dtype not in (torch.float32, torch.float16) or
+            not 1 <= t <= ring.shape[1] or ring.device != q.device or ring.dtype not in (torch.float32, torch.float16) or
             ring.stride()[1:] != (hv*kd*vd, kd*vd, vd, 1) or
             ring.stride(0) < ring.shape[1]*hv*kd*vd):
-        raise ValueError("ring must have dense FP32/FP16 [slots,R,HV,K,V] rows; T <= R, or R=1 for compact verification")
+        raise ValueError("ring must be FP32/FP16 [slots,R,HV,K,V] with dense rows and 1 <= T <= R")
     if not decay:
         for x, size in ((a_log, h), (g_bias, h*kd)):
             if x.device != q.device or x.dtype != torch.float32 or x.numel() != size or not x.is_contiguous():

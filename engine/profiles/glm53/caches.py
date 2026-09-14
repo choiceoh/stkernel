@@ -31,28 +31,9 @@ def recurrent_field_dtype(F, override=None) -> str:
         getattr(F, "kda_state_dtype", "fp32") if override is None else override)]
 
 
-def recurrent_layout(F, override=None) -> str:
-    value = getattr(F, "kda_state_layout", "ring") if override is None else override
-    if value not in ("ring", "committed_boundary"):
-        raise ValueError("KDA state layout must be ring or committed_boundary")
-    if value == "committed_boundary" and recurrent_field_dtype(F) != "f32":
-        raise ValueError("compact KDA state requires FP32 storage")
-    return value
-
-
-def state_format(F) -> str:
-    if recurrent_layout(F) == "committed_boundary":
-        return "glm53-kda-committed-boundary-fp32-v1"
-    return "glm53-kda-fp16-v1" if recurrent_field_dtype(F) == "f16" else ""
-
-
-def dtype_bytes(name):
-    return {"f32": 4, "f16": 2, "bf16": 2, "i64": 8}[name]
-
-
 def field_dtype(name):
     import torch
-    return {"f32": torch.float32, "f16": torch.float16, "bf16": torch.bfloat16, "i64": torch.int64}[name]
+    return {"f32": torch.float32, "f16": torch.float16, "bf16": torch.bfloat16}[name]
 
 
 @dataclass(frozen=True)
@@ -78,13 +59,10 @@ class CacheLayout:
                 + max_seqs * num_blocks * 4)
 
 
-def layout(F, layers, draft=None, *, state_storage=None, state_layout=None) -> CacheLayout:
+def layout(F, layers, draft=None, *, state_storage=None) -> CacheLayout:
     """Declared byte offsets; no CUDA allocation or model execution."""
     layers = tuple(layers)
     recurrent_dtype = recurrent_field_dtype(F, state_storage)
-    compact = recurrent_layout(F, state_layout) == "committed_boundary"
-    if compact and recurrent_dtype != "f32":
-        raise ValueError("compact KDA state requires FP32 storage")
     if not layers or len(set(layers)) != len(layers) or any(not 0 <= L < F.layers for L in layers):
         raise ValueError("cache layers must be nonempty, unique and inside the model")
     if F.block <= 0 or F.kpool <= 0 or F.block % F.kpool:
@@ -98,7 +76,7 @@ def layout(F, layers, draft=None, *, state_storage=None, state_layout=None) -> C
         nonlocal state
         state = aligned(state, ALIGN)
         fields.append(StateField(name, L, shape, dtype, state))
-        state += prod(shape) * dtype_bytes(dtype)
+        state += prod(shape) * (4 if dtype == "f32" else 2)
 
     for L in layers:
         if F.is_dsa(L):
@@ -111,16 +89,7 @@ def layout(F, layers, draft=None, *, state_storage=None, state_layout=None) -> C
             field("tail", L, (F.kpool - 1 + F.spec_k, 2, F.idx_dim), "bf16")
         else:
             field("conv", L, (3 * F.kda_heads_local * F.kda_dim, F.conv - 1 + F.spec_k), "bf16")
-            shape = (F.kda_heads_local, F.kda_dim, F.kda_dim)
-            field("rec", L, (1 if compact else F.spec_k + 1, *shape), recurrent_dtype)
-            if compact:
-                field("rec_boundary", L, shape, "f32")
-    if compact:
-        if all(F.is_dsa(L) for L in layers):
-            raise ValueError("compact KDA layout requires a KDA layer")
-        # The contexts travel with a parked physical slot. Zero invalidates
-        # an old boundary; the request/stream owner fences slot reuse.
-        field("rec_meta", -1, (2,), "i64")
+            field("rec", L, (F.spec_k + 1, F.kda_heads_local, F.kda_dim, F.kda_dim), recurrent_dtype)
     if draft is not None:
         if len(draft) != 4 or any(not isinstance(n, int) or n <= 0 for n in draft):
             raise ValueError("draft cache shape must contain four positive dimensions")
@@ -131,7 +100,7 @@ def layout(F, layers, draft=None, *, state_storage=None, state_layout=None) -> C
                        token_offsets, pool_offsets, tuple(fields))
 
 
-def snapshot_layout(F, layers, draft=None, *, state_storage=None, include_rec=True):
+def snapshot_layout(F, layers, draft=None, *, state_storage=None):
     """What a prefix checkpoint at a chunk boundary P must keep (base/prefix.py), and its byte size:
     per KDA layer the conv ring's last conv-1 inputs (positions P-conv+1..P-1) and the recurrent
     state at P-1; the drafter's context ring whole (its window is position-addressed the same way).
@@ -149,8 +118,7 @@ def snapshot_layout(F, layers, draft=None, *, state_storage=None, include_rec=Tr
     for L in layers:
         if not F.is_dsa(L):
             field("conv", L, (3 * F.kda_heads_local * F.kda_dim, F.conv - 1), "bf16")
-            if include_rec:
-                field("rec", L, (F.kda_heads_local, F.kda_dim, F.kda_dim), recurrent_dtype)
+            field("rec", L, (F.kda_heads_local, F.kda_dim, F.kda_dim), recurrent_dtype)
     if draft is not None:
         dl, dw, dkv, dd = draft
         field("draft", -1, (dl, 2, dw, dkv, dd), "bf16")
@@ -164,7 +132,7 @@ def cache_capacity(F, layers, draft, kv_gib: float, max_seqs: int, snapshot_gib:
     KV or snapshots. Only the actual typed regions are allocated by the caller.
     """
     layers = tuple(layers)
-    baseline = layout(F, layers, draft, state_storage="fp32", state_layout="ring")
+    baseline = layout(F, layers, draft, state_storage="fp32")
     reference_snapshot = snapshot_layout(F, layers, draft, state_storage="fp32")[0]
     blocks = int((kv_gib * (1 << 30) - (max_seqs + 1) * baseline.slot_bytes)
                  // (baseline.block_bytes + max_seqs * 4))
@@ -175,12 +143,7 @@ def cache_capacity(F, layers, draft, kv_gib: float, max_seqs: int, snapshot_gib:
 def stage_bytes(F, layers, max_seqs: int) -> int:
     """The boundary stage: per state slot, one KDA state and conv taps (a snapshot without the drafter ring) where a
     decode step ahead of the host parks the state of a block boundary it crossed (45차 §23: boundaries while generating)."""
-    return (max_seqs + 1) * stage_layout(F, layers)[0]
-
-
-def stage_layout(F, layers):
-    # Compact commit writes the recurrent boundary in the state arena.
-    return snapshot_layout(F, layers, include_rec=recurrent_layout(F) == "ring")
+    return (max_seqs + 1) * snapshot_layout(F, layers, None)[0]
 
 
 class Glm53Caches:
@@ -188,10 +151,6 @@ class Glm53Caches:
         import torch
 
         self.F, self.layers = F, tuple(layers)
-        self.compact = recurrent_layout(F) == "committed_boundary"
-        if self.compact and not stage:
-            raise ValueError("compact KDA caches require boundary staging")
-        self._compact_eager = None
         self.layout = layout(F, self.layers, draft)
         self.snapshot_bytes_n, self._snapshot_fields = snapshot_layout(F, self.layers, draft)
         self.snapshots = snapshots
@@ -210,7 +169,7 @@ class Glm53Caches:
         self._fields = {}
         for f in p.fields:
             dtype = field_dtype(f.dtype)
-            size = dtype_bytes(f.dtype)
+            size = 4 if f.dtype == "f32" else 2
             strides = tuple(prod(f.shape[i + 1:]) for i in range(len(f.shape)))
             base = self.state.view(dtype)
             self._fields[f.name, f.layer] = base.as_strided(
@@ -228,7 +187,7 @@ class Glm53Caches:
                                                               base.storage_offset() + f.offset // size)
         self._stage = {}
         if stage:
-            self.stage_bytes, self._stage_fields = stage_layout(F, self.layers)
+            self.stage_bytes, self._stage_fields = snapshot_layout(F, self.layers, None)
             self.stage_store = arena.carve((max_seqs + 1) * self.stage_bytes, "glm53 boundary stage")
             for f in self._stage_fields:
                 dtype = field_dtype(f.dtype)
@@ -237,10 +196,6 @@ class Glm53Caches:
                 base = self.stage_store.view(dtype)
                 self._stage[f.name, f.layer] = base.as_strided((max_seqs + 1, *f.shape), (self.stage_bytes // size, *strides),
                                                                base.storage_offset() + f.offset // size)
-        if self.compact:
-            for L in self.layers:
-                if not F.is_dsa(L):
-                    self._stage["rec", L] = self._fields["rec_boundary", L]
         record = F.idx_dim + 4
         self._latent = self.paged.view(torch.float8_e4m3fn).view(-1, F.kv_lora)
         self._keys = self.paged.as_strided((self.paged.numel() // record, F.idx_dim),
@@ -257,8 +212,6 @@ class Glm53Caches:
         self.block_table.fill_(-1)
         self._table_blocks = array("i", [0]) * self.pool.max_seqs
         self._table_epochs = array("Q", self.pool.epochs)
-        if self._compact_eager is not None:
-            self._compact_eager.clear()
 
     def slot_bytes(self, slot: int):
         """A real slot's bytes as one contiguous uint8 arena view: what the tier parks and restores."""
@@ -268,37 +221,7 @@ class Glm53Caches:
         return self.state[slot * n:(slot + 1) * n]
 
     def reset_slot(self, slot: int):
-        if self._compact_eager is not None:
-            self._compact_eager.check_reusable(slot)
         self.slot_bytes(slot).zero_()
-
-    def deferred_batch(self, rows, tokens):
-        from engine.kernels.kda.deferred import Batch
-        layers = [L for L in self.layers if not self.F.is_dsa(L)]
-        boundaries = [self._fields["rec_boundary", L] for L in layers] if self.compact else None
-        return Batch([self._fields["rec", L] for L in layers], rows, tokens,
-                     block=self.F.block, boundaries=boundaries)
-
-    def begin_compact(self, step, *, commit_all=True):
-        from engine.profiles.glm53.compact_state import EagerCommit
-        if self._compact_eager is None:
-            self._compact_eager = EagerCommit(self)
-        self._compact_eager.begin(step, commit_all=commit_all)
-
-    def verify_compact(self, layer, segment, args, recurrent):
-        return self._compact_eager.verify(layer, segment, args, recurrent)
-
-    def commit_compact(self, counts=None):
-        self._compact_eager.commit(counts)
-
-    def _expect_position(self, slot, position, *, boundary=False):
-        import torch
-        actual = self._fields["rec_meta", -1][slot, int(boundary)]
-        message = "compact KDA snapshot position is not available in this slot"
-        if self.device.type == "cuda":
-            torch._assert_async(actual == position, message)
-        elif int(actual) != position:
-            raise ValueError(message)
 
     def prepare(self, step):
         """Publish changed block mappings before a step, after its reservation.
@@ -360,12 +283,8 @@ class Glm53Caches:
             raise IndexError("checkpoint needs a real state slot and a declared snapshot")
         if position <= 0 or position % F.block:
             raise ValueError("a checkpoint sits at a block boundary")
-        if self.compact:
-            if self._compact_eager is not None:
-                self._compact_eager.check_reusable(slot)
-            self._expect_position(slot, position)
         conv_cells = self._ring_cells(position, F.conv - 1, F.conv - 1 + F.spec_k)
-        rec_cell = 0 if self.compact else (position - 1) % (F.spec_k + 1)
+        rec_cell = (position - 1) % (F.spec_k + 1)
         for L in self.layers:
             if F.is_dsa(L):
                 continue
@@ -419,8 +338,6 @@ class Glm53Caches:
             slot, before, count = int(slots[i]), int(ctx_before[i]), int(counts[i])
             after = before + count
             P = (after // F.block) * F.block
-            if self.compact and count > 0:
-                self._fields["rec_meta", -1][slot, 0] = after
             if count <= 0 or P <= before:
                 continue
             conv_cells = self._ring_cells(P, F.conv - 1, F.conv - 1 + F.spec_k)
@@ -430,24 +347,15 @@ class Glm53Caches:
                     continue
                 conv_ring, rec_ring = self.kda(L, slot)
                 self._stage["conv", L][slot].copy_(conv_ring.index_select(1, conv_cells))
-                if not self.compact:
-                    self._stage["rec", L][slot].copy_(rec_ring[rec_cell])
-            if self.compact:
-                self._fields["rec_meta", -1][slot, 1] = P
+                self._stage["rec", L][slot].copy_(rec_ring[rec_cell])
 
-    def checkpoint_from_stage(self, slot: int, snap: int, *, position=None) -> None:
+    def checkpoint_from_stage(self, slot: int, snap: int) -> None:
         """The staged boundary of `slot` into snapshot `snap`. The drafter's ring is taken live: the steps since the
         boundary wrote at most a dozen positions past it, which land on the oldest cells of its 2,048 window."""
         if not 0 <= snap < self.snapshots or not 0 < slot < self.slots.num_slots:
             raise IndexError("checkpoint needs a real state slot and a declared snapshot")
         if not self._stage:
             raise RuntimeError("this cache has no boundary stage")
-        if self.compact:
-            if type(position) is not int or position <= 0 or position % self.F.block:
-                raise ValueError("compact stage checkpoint needs its boundary position")
-            if self._compact_eager is not None:
-                self._compact_eager.check_reusable(slot)
-            self._expect_position(slot, position, boundary=True)
         for L in self.layers:
             if self.F.is_dsa(L):
                 continue
@@ -463,10 +371,8 @@ class Glm53Caches:
             raise IndexError("restore needs a real state slot and a declared snapshot")
         if position <= 0 or position % F.block:
             raise ValueError("a restore sits at a block boundary")
-        if self.compact and self._compact_eager is not None:
-            self._compact_eager.check_reusable(slot)
         conv_cells = self._ring_cells(position, F.conv - 1, F.conv - 1 + F.spec_k)
-        rec_cell = 0 if self.compact else (position - 1) % (F.spec_k + 1)
+        rec_cell = (position - 1) % (F.spec_k + 1)
         for L in self.layers:
             if F.is_dsa(L):
                 continue
@@ -475,9 +381,6 @@ class Glm53Caches:
             rec_ring[rec_cell].copy_(self._snap["rec", L][snap])
         if ("draft", -1) in self._snap:
             self.draft_ring(slot).copy_(self._snap["draft", -1][snap])
-        if self.compact:
-            self._fields["rec_meta", -1][slot, 0] = position
-            self._fields["rec_meta", -1][slot, 1] = 0
 
     def kda(self, layer, slot):
         return self._fields["conv", layer][slot], self._fields["rec", layer][slot]

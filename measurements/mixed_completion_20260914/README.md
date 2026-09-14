@@ -1,5 +1,10 @@
 # Full mixed-expert component (M1b, PR #895)
 
+> Historical evidence: PR #895 now retains only packet FFNs. This experiment
+> and its current-tree probes were removed. Reproduce using the frozen
+> revision named in this record, not moving HEAD. See the
+> [scope decision](../../bench/ST_GB10_PACKET_ONLY_20260914.md).
+
 M1b completes the routed and shared FFN for one eager rank. It is not connected to serving and adds no execution knob. Earlier S/P/M1a GPU reservations keep their original source revisions.
 
 ## Implementation

@@ -47,8 +47,6 @@ class Glm53Engine:
         self.net, self.caches, self.F = net, caches, F
         from engine.profiles.glm53.execution import ExecutionPlan
         self.execution_plan = execution_plan or ExecutionPlan()
-        if self.execution_plan.compact_kda != (getattr(caches, "compact", False) is True):
-            raise ValueError("compact KDA execution plan and cache layout must agree")
         if self.execution_plan.active and getattr(F, "kda_state_dtype", "fp32") != "fp32":
             raise ValueError("GB10 execution experiments require FP32 KDA state")
         self.drafter = drafter or NullDrafter()
@@ -166,9 +164,6 @@ class Glm53Engine:
             if self.execution_plan.deferred_kda:
                 self.lane_info["deferred_kda_workspace_bytes"] = str(sum(
                     state.nbytes for state in self.decode_graphs.deferred_states.values()))
-            if self.execution_plan.compact_kda:
-                eager = self.caches._compact_eager
-                self.lane_info["compact_eager_workspace_bytes"] = str(eager.nbytes if eager is not None else 0)
             if self.drafter.k:
                 kwargs = {"prepared_context": True} if self.execution_plan.early_observe else {}
                 if self.execution_plan.decode_iterations > 1:
@@ -688,7 +683,6 @@ class Glm53Engine:
 
     def open(self, seq: int, slot: int) -> None:
         self._moved((seq,))
-        self.staged.pop(seq, None)
         self.slot[seq] = slot; self.ctx[seq] = 0
         self.caches.reset_slot(slot)
 
@@ -701,8 +695,7 @@ class Glm53Engine:
         """The runner's prefix cache keeps this sequence's state at a block boundary (base/prefix.py): out of the rings
         right after the step that reached it, or out of the caches' stage when a step ahead of the host parked it there."""
         if self.staged.get(seq) == position:
-            options = {"position": position} if getattr(self.caches, "compact", False) else {}
-            self.caches.checkpoint_from_stage(self.slot[seq], snap, **options)
+            self.caches.checkpoint_from_stage(self.slot[seq], snap)
         else:
             self.caches.checkpoint(self.slot[seq], position, snap)
 
@@ -710,7 +703,6 @@ class Glm53Engine:
         """A new sequence adopts a cached prefix: its rings take the boundary's state, its context starts there."""
         self._moved((seq,))
         self.caches.restore(self.slot[seq], position, snap)
-        self.staged.pop(seq, None)
         self.ctx[seq] = position
 
     # -- parking (D16): the host side of a conversation travels as a record, the slot's bytes with the tier --
@@ -1334,8 +1326,7 @@ class Glm53Engine:
         masks = self._prepare_masks(step.segments, drafts)   # before the forward: the device covers the fill and its transfer
         temps, topk, topp = self._policy(step.segments)
         if self.decode_graphs is None:
-            options = {"compact_commit": False} if self.execution_plan.compact_kda else {}
-            h, aux = self._forward(step, **options)
+            h, aux = self._forward(step)
             local = self.net.head_local(h)
             sampled = self._sample_hidden(h, temps, topk, topp, self._pick_uniforms(step.segments)).tolist() if not all(rich.values()) else None
         else:
@@ -1410,17 +1401,5 @@ class Glm53Engine:
             self.decode_graphs.materialize(shape, torch.tensor([s.slot for s in step.segments], device=device),
                                             torch.tensor([s.ctx for s in step.segments], device=device),
                                             torch.tensor(committed_counts, device=device))
-        if self.execution_plan.compact_kda:
-            if self.decode_graphs is None:
-                self.caches.commit_compact(committed_counts)
-            else:
-                self.caches.stage_boundaries(
-                    torch.tensor([s.slot for s in step.segments], device=self.caches.device),
-                    torch.tensor([s.ctx for s in step.segments], device=self.caches.device),
-                    torch.tensor(committed_counts, device=self.caches.device))
-            for s, count in zip(step.segments, committed_counts):
-                boundary = ((s.ctx + count) // self.F.block) * self.F.block
-                if count and boundary > s.ctx:
-                    self.staged[s.seq] = boundary
         self.steps += 1
         return finished

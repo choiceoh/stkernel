@@ -1,5 +1,11 @@
 # Packet-native FFN, PR #895
 
+**Current scope (2026-09-14): packet FFN only.** Compact KDA and mixed FFNs have
+been removed from this PR's execution code; ordinary KDA/cache/graph and static
+decode implementations match integrated main `6522564a`. See the
+[scope decision](../../bench/ST_GB10_PACKET_ONLY_20260914.md).
+Earlier CPU/compiler records below identify their own frozen revisions.
+
 The P follow-up is implemented behind `STK_prefill_ffn_packets=1`, default off. It requires native eager TP4, chunk-ordered prefill, H4096/E288/I512/top-8, tiled SF6 M128 and **8192 < real rows <= 32768**. Short prefill, decode, unsupported packs and calibration observers use the existing FFN. Production still rejects experiment overrides.
 
 `PacketBatch` owns the existing four rank-ordered FP8-v3 packets. One control-group vote per eligible prefill agrees all layers before transport; one data all-gather per FFN is retained. The router, routed expert producer and shared gate/up consume that owner on the current stream. The expert uses the same cached workspace and four-row 32 KiB shared stage as the ordinary M128 body. No whole BF16 FFN input is allocated. The packet source has a distinct compilation identity and pins its inherited producer's source and unchanged arithmetic AST.
@@ -42,3 +48,8 @@ bash bench/fleet.sh run --gpu --fleet --detach st-ffn-packets0914v2 10 \
 Both earlier compact-KDA reservations retain their original source checkouts. This separate P implementation changes neither reservation into evidence for the new FFN path. M (decode-priority expert sharing) and I (execution image) remain follow-up designs.
 
 The GPU reservation `st-ffn-packets0914v2`, ticket `17893163563368864`, was accepted at source `4e24cc3d` in the separate checkout above. [admission.json](admission.json) is a queued-state receipt, not a completed numerical or performance result. The first submission obtained no hold because main advanced to `70038de0`; rebasing retained both covered-query and FFN execution proofs before resubmission.
+
+That reservation has now finished with a **720-minute queue timeout before GPU
+execution**. It supplies no numerical or latency result. The current probe
+records the failing row/phase and component/expert byte differences, and retains
+both whole-FFN device and synchronized wall timings in each B/A/A/B arm.

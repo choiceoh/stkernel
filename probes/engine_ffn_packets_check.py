@@ -120,6 +120,7 @@ def measure(args, report):
     cases = report.setdefault('cases', [])
 
     for rows in (8193, 8194, 8195, 9216, 32768):
+        report['active_case'] = dict(rows=rows, phase='capability')
         if not lane.moe_packets_supported(rows, **bound):
             raise RuntimeError('prepared real weights refused the packet consumer; no skipped cell is a pass')
         g = PacketGeometry(rows, (rows+3)//4)
@@ -150,6 +151,7 @@ def measure(args, report):
             return original(**kw)
 
         # Warm both actual variants before comparing or timing them.
+        report['active_case']['phase'] = 'warmup'
         for arm in (False, True):
             ffn(arm)
         with patch.object(md, 'launch_sm120_dynamic_moe', capture_launch):
@@ -164,8 +166,15 @@ def measure(args, report):
             candidate, candidate_parts = ffn(True)
         if observed.get('_packet_input') is not batch or observed['workspace'] is not workspace:
             raise RuntimeError('candidate did not execute the explicit packet ABI on the same workspace')
-        if frontend(workspace, rows) != baseline_frontend or [sha_tensor(v) for v in candidate_parts] != hashes:
-            raise RuntimeError('router, routes, per-expert FP4/scales or shared consumer changed')
+        report['active_case']['phase'] = 'byte-comparison'
+        candidate_frontend = frontend(workspace, rows)
+        names = ('router_logits', 'route_ids', 'route_weights', 'shared_q', 'shared_scales', 'shared_output')
+        changed_parts = [name for name, actual, expected in zip(names, candidate_parts, hashes)
+                         if sha_tensor(actual) != expected]
+        changed_experts = [actual['expert'] for actual, expected in zip(candidate_frontend, baseline_frontend)
+                           if actual != expected]
+        if changed_parts or changed_experts:
+            raise RuntimeError(f'packet bytes changed: parts={changed_parts}, experts={changed_experts}')
         del candidate_parts
         errors = output_error(candidate, base)
         repeat, parts = ffn(False)
@@ -174,6 +183,7 @@ def measure(args, report):
 
         # Force unequal per-expert input scales even for folded checkpoint
         # packs. Both arms use the same synthetic scales and same epilogue.
+        report['active_case']['phase'] = 'unequal-scales'
         launch_args = dict(observed)
         launch_args['input_gs'] = torch.exp2(torch.arange(288, device='cuda') % 7 - 3).float()
         x = unpack()
@@ -188,26 +198,33 @@ def measure(args, report):
         unequal_error = output_error(direct[1], direct[0])
         del x, direct, front, launch_args
 
-        times = [[], []]
+        times, wall_times = [[], []], [[], []]
+        report['active_case']['phase'] = 'timing'
         for _ in range(args.samples//2):
             for arm in (False, True, True, False):  # same-build B/A/A/B
                 start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+                wall = time.perf_counter()
                 start.record()
                 outputs = ffn(arm)
                 end.record(); end.synchronize()
+                wall_times[int(arm)].append((time.perf_counter()-wall)*1000)
                 times[int(arm)].append(start.elapsed_time(end))
                 del outputs
         if sha_tensor(batch.received) != input_hash:
             raise RuntimeError('a consumer modified its packet owner')
         medians = [statistics.median(v) for v in times]
+        wall_medians = [statistics.median(v) for v in wall_times]
         cell = dict(rows=rows, real_weight_frontend_byte_exact=True, shared_byte_exact=True,
             unequal_expert_scales_byte_exact=True, errors=errors, baseline_variance=variance,
             unequal_scales_error=unequal_error, output_part_sha256=hashes,
             packet_sha256=input_hash, workspace=g.workspace(), milliseconds=times,
-            median_ms=medians, change_pct=100*(medians[1]/medians[0]-1))
+            median_ms=medians, change_pct=100*(medians[1]/medians[0]-1),
+            wall_milliseconds=wall_times, wall_median_ms=wall_medians,
+            wall_change_pct=100*(wall_medians[1]/wall_medians[0]-1))
         cases.append(cell)
         print(json.dumps(cell), flush=True)
         observed.clear()
+    report.pop('active_case', None)
     report.update(status='PASS', gpu_used=True, default_enabled=False,
                   max_allocated_bytes=torch.cuda.max_memory_allocated())
 

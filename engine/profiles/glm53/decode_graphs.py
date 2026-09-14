@@ -87,7 +87,6 @@ class GraphCaches:
     def __init__(self, real, sequence_ids, slots, capacity, deferred_state=None):
         self.real, self.sequence_ids, self.slots = real, sequence_ids, slots
         self.F, self.layout = real.F, real.layout
-        self.compact = getattr(real, "compact", False)
         self.capacity = capacity
         self.candidate_capacity = capacity // real.F.kpool
         self.deferred_state = deferred_state
@@ -300,9 +299,11 @@ class Glm53DecodeGraphs:
             step = DeviceStep(torch.zeros(n * t, device=device, dtype=torch.int64), contexts, t)
             state = None
             if self.execution_plan.deferred_kda:
+                from engine.kernels.kda.deferred import Batch
                 key = (n, t)
                 if key not in self.deferred_states:
-                    self.deferred_states[key] = caches.deferred_batch(n, t)
+                    rings = [caches._fields["rec", layer] for layer in caches.layers if not caches.F.is_dsa(layer)]
+                    self.deferred_states[key] = Batch(rings, n, t, block=caches.F.block)
                 state = self.deferred_states[key]
             return step, seqs, slots, GraphCaches(caches, seqs, slots, capacity, state), logits_for(n, t)
 
