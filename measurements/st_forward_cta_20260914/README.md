@@ -1,6 +1,6 @@
 # C1 forward: reduce W4 partials inside the CUDA block
 
-Implementation base: `4dbc0713` (#938); integrated main: `2ed1f047` (#940–942).
+Implementation base: `4dbc0713` (#938); final integrated main: `77d80b6c` (#940–945).
 Target: K7 C1, 24 consumer step/s.
 This changes the forward GEMMs, enabled in the existing default-on decode
 fastpath and DSA query owners. It does not change KDA state precision, weights,
@@ -130,6 +130,15 @@ pooled/window step/s, tokens/s, tokens/step and acceptance. Answer grading does
 not decide the performance target, per the operator's instruction.
 
 ## Reserved consumer observation
+
+Final reservation: `st-forward24-onepass0914c`, ticket `17893695583322090`,
+freezes `a0ccfd1a4dab9dcfa16b10699ae3e7b400299dc7` after including main #943/#945.
+It officially replaces the reservation below, preserving its enqueue time and
+all workload budgets (`onepass-final-queue-receipt.json`). The dense package
+and its repaired CPU test sources remain identical to the validated versions.
+Other main changes are included in this single boot, with their own evidence;
+their speed is not attributed to the local GEMM reduction. The earlier receipt
+below records the history, not a second pending model boot.
 
 Accepted session `st-forward24-onepass0914b`, ticket `17893676782779630`, freezes
 `d1300ecffbaed6d11ae6dac468ca50707152d7a5`. It uses the canonical ST bracket's
