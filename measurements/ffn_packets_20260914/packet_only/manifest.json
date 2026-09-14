@@ -1,0 +1,40 @@
+{
+  "default_enabled": false,
+  "integrated_main": "4dbc0713f159f8b2ab316776e1b34c7f1f6944df",
+  "cpu_image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+  "gpu_image": "sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed",
+  "gpu_host": "srv4",
+  "lane": "single GPU beside production, 8 GiB process allocation limit",
+  "reservations": [
+    {
+      "name": "st-ffn-packets0914v3",
+      "ticket": "17893667182597067",
+      "revision": "a61644a447fc80520a0d2daa56f1e2f977264e8f",
+      "report": "gpu-v3-failure.json"
+    },
+    {
+      "name": "st-ffn-packets0914v4",
+      "ticket": "17893674242727772",
+      "revision": "ff877806fa8ec16cb43b6b122bb373ec9986808b",
+      "report": "gpu-v4-failure.json"
+    },
+    {
+      "name": "st-ffn-packets0914v5",
+      "ticket": "17893677182791363",
+      "revision": "0641070ebdf3099fdcaffae2007477fb27f40454",
+      "report": "gpu-v5.json"
+    },
+    {
+      "name": "st-ffn-packets0914v6",
+      "ticket": "17893679352848889",
+      "revision": "fa2050ea85be171265d09773f7fcfc36fcccf3fd",
+      "report": "gpu-v6.json"
+    },
+    {
+      "name": "st-ffn-packets0914v7",
+      "ticket": "17893681522906634",
+      "revision": "57e63935df12340a0d9a18ef846588e49786a420",
+      "report": "gpu-v7.json"
+    }
+  ]
+}

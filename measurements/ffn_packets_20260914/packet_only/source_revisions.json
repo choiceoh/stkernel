@@ -1,0 +1,67 @@
+{
+  "cpu": {
+    "revision": "a61644a447fc80520a0d2daa56f1e2f977264e8f",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "cpu-postmerge": {
+    "revision": "ff877806fa8ec16cb43b6b122bb373ec9986808b",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "cpu-ci-unscoped": {
+    "revision": "98d9285c583b622380a28b36a06423a71de6f0e0",
+    "all_sources_match": true,
+    "source_count": 23
+  },
+  "cpu-ci-fix": {
+    "revision": "f218bbf7eff772aa306707f6698fa2571cc7ff09",
+    "all_sources_match": true,
+    "source_count": 23
+  },
+  "compile": {
+    "revision": "a61644a447fc80520a0d2daa56f1e2f977264e8f",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "compile-aligned": {
+    "revision": "0641070ebdf3099fdcaffae2007477fb27f40454",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "compile-vector": {
+    "revision": "fa2050ea85be171265d09773f7fcfc36fcccf3fd",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "compile-router-scale": {
+    "revision": "57e63935df12340a0d9a18ef846588e49786a420",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "gpu-v3-failure": {
+    "revision": "a61644a447fc80520a0d2daa56f1e2f977264e8f",
+    "all_sources_match": true,
+    "source_count": 23
+  },
+  "gpu-v4-failure": {
+    "revision": "ff877806fa8ec16cb43b6b122bb373ec9986808b",
+    "all_sources_match": true,
+    "source_count": 23
+  },
+  "gpu-v5": {
+    "revision": "0641070ebdf3099fdcaffae2007477fb27f40454",
+    "all_sources_match": true,
+    "source_count": 23
+  },
+  "gpu-v6": {
+    "revision": "fa2050ea85be171265d09773f7fcfc36fcccf3fd",
+    "all_sources_match": true,
+    "source_count": 23
+  },
+  "gpu-v7": {
+    "revision": "57e63935df12340a0d9a18ef846588e49786a420",
+    "all_sources_match": true,
+    "source_count": 23
+  }
+}
