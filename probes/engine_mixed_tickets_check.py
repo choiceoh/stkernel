@@ -186,7 +186,7 @@ def measure(args, report):
                         torch.cuda.synchronize(); wall = time.perf_counter()
                         key = net.submit_mixed_ffn(scheduler, x, pref, identity=identity,
                             request=f'cell-{d}-{p}-{generation}', slot=0, hot_route_quota=quota,
-                            cold_n128=arm == 'cold_n128')
+                            cold_n128=arm == 'cold_n128', overlap_shared=args.overlap_shared)
                         prepared = time.perf_counter()
                     scheduler.begin(key)
                     actual_d, decode_event = scheduler.result(key, prefill=False)
@@ -231,7 +231,8 @@ def measure(args, report):
                 generation += 1
                 key = net.submit_mixed_ffn(scheduler, x, pref,
                     identity=ExpertInvocation(3, generation, generation, generation),
-                    request='cancel-'+phase, slot=0, cold_n128=args.compare_cold_n128)
+                    request='cancel-'+phase, slot=0, cold_n128=args.compare_cold_n128,
+                    overlap_shared=args.overlap_shared)
                 if phase != 'queued': scheduler.begin(key)
                 if phase == 'cold': scheduler.advance(key)
                 scheduler.cancel(key)
@@ -254,7 +255,8 @@ def measure(args, report):
             try:
                 key = net.submit_mixed_ffn(scheduler, x, pref,
                     identity=ExpertInvocation(3, generation, generation, generation),
-                    request='preparation-profile', slot=0, cold_n128=args.compare_cold_n128)
+                    request='preparation-profile', slot=0, cold_n128=args.compare_cold_n128,
+                    overlap_shared=args.overlap_shared)
             finally:
                 profile.disable()
             # Separate attribution invocation: event overhead is not part of
@@ -308,17 +310,22 @@ def main():
         help='explicitly drain cold work in one launch after decode; no interleaved decode arrival is promised')
     parser.add_argument('--compare-cold-n128', action='store_true',
         help='alternate token-major SF6 and explicit N128 cold compute with fresh expanded scale owners')
+    parser.add_argument('--overlap-shared', action='store_true',
+        help='overlap shared prefill with one explicit cold drain, joining before any subsequent dense call')
     parser.add_argument('--output', type=Path, default=Path('/cache/mixed-tickets.json'))
     args = parser.parse_args()
     if args.samples < 2 or args.samples % 2:
         parser.error('--samples must be even and at least two')
     if sum((args.compare_planning, args.compare_preparation, args.compare_cold_n128)) > 1:
         parser.error('choose one preparation baseline')
+    if args.overlap_shared and not args.drain_cold:
+        parser.error('--overlap-shared requires --drain-cold')
     report = dict(status='FAIL', source_sha256=fingerprint(), image=os.environ.get('ST_IMAGE'),
         compare_planning=args.compare_planning,
         compare_preparation=args.compare_preparation,
         drain_cold=args.drain_cold,
         compare_cold_n128=args.compare_cold_n128,
+        overlap_shared=args.overlap_shared,
         scope='M2 eager one-rank FFN component, real served shared readers, ticket retirement and foreign-stream '
               'consumers. Includes fresh route planning/allocation/admission in wall timings. '
               'No full model, TP4 NCCL, arrival trace, graph, TTFT, tok/s, quality or acceptance verdict.')

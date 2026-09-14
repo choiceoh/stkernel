@@ -100,6 +100,30 @@ class SharedReaderTests(unittest.TestCase):
         self.assertTrue(bool((shared.decode(x, lambda: torch.full_like(x, 3.)) == 5.).all()))
         self.assertEqual(shared.up.calls, [8])
 
+    def test_prefill_fork_uses_existing_join_helper_and_does_not_add_partial_twice(self):
+        net = shared_net()
+        calls = []
+        class JoinedOverlap:
+            stream = object()
+            def __call__(self, shared, x, routed, *, finish):
+                calls.append('shared')
+                partial = shared(x)
+                def consume(value):
+                    calls.append('joined')
+                    return finish(value, partial)
+                return routed(consume)
+        net.shared_overlap = JoinedOverlap()
+        bound = BoundMixedShared(net, 3)
+        result = bound.prefill_during(torch.ones(129, 4096), lambda: calls.append('cold'))
+        self.assertTrue(bool((result == 2.).all()))
+        self.assertEqual(calls, ['shared', 'cold', 'joined'])
+        self.assertEqual(bound.up.calls, [129])
+        self.assertEqual(bound.down.calls, [129])
+        net = shared_net(); net.shared_overlap = None
+        bound = BoundMixedShared(net, 3)
+        with self.assertRaisesRegex(ValueError, 'side stream'):
+            bound.prefill_during(torch.ones(129, 4096), lambda: self.fail('unbound dispatch'))
+
 
 class ProfileBindingTests(unittest.TestCase):
     def test_prepared_factory_uses_same_bound_weights_scales_and_real_route_method(self):

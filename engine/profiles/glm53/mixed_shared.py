@@ -76,3 +76,17 @@ class BoundMixedShared:
     def prefill(self, x):
         self.validate()
         return self._sequential(x)
+
+    def prefill_during(self, x, routed):
+        """Join shared prefill around one explicit, noninterleaved cold drain.
+
+        The existing helper joins on every failure path. No next decode/dense
+        call may start inside routed: it only submits this owner's cold work.
+        """
+        self.validate()
+        if self.overlap is None:
+            raise ValueError('shared prefill overlap requires the bound side stream')
+        def dispatch(consume):
+            routed()
+            return consume(None)
+        return self.overlap(self._sequential, x, dispatch, finish=lambda _, shared: shared)

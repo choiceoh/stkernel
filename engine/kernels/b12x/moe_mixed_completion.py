@@ -28,10 +28,15 @@ class PreparedMixedCompletion:
     def __init__(self, decode, prefill, decode_ids, prefill_ids,
                  decode_routes, prefill_routes, *, weights, input_scale, down_scale,
                  identity, shared_up=None, shared_down=None, shared_execution=None,
-                 hot_route_quota=128, cold_task_quota=48, cold_n128=False):
+                 hot_route_quota=128, cold_task_quota=48, cold_n128=False, overlap_shared=False):
         if type(cold_n128) is not bool:
             raise TypeError('cold N128 experiment selector must be bool')
         self.cold_backend = 'n128' if cold_n128 else 'sf6'
+        if type(overlap_shared) is not bool:
+            raise TypeError('shared overlap experiment selector must be bool')
+        if overlap_shared and (shared_execution is None or shared_execution.overlap is None):
+            raise ValueError('cold overlap requires a bound shared side stream')
+        self.overlap_shared = overlap_shared
         if torch.cuda.is_current_stream_capturing():
             raise RuntimeError('mixed completion preparation requires eager execution')
         if not 8192 < prefill.shape[0] <= 32768:
@@ -128,6 +133,7 @@ class PreparedMixedCompletion:
             raise RuntimeError('previous prefill completion is still owed')
         self.state, self.next_window = 'running', 0
         self._prefill_output = None
+        self._prefill_shared = None
         def routed():
             partials = self.hot.run(identity)
             return partials[:self.plan.decode_routes].reshape(len(self.plan.decode), 32, 4096).sum(1).bfloat16()
@@ -151,6 +157,19 @@ class PreparedMixedCompletion:
         Use when no intervening decode dispatch is required. This may consume
         the entire invocation; it does not promise the advance() work quota.
         """
+        if self.overlap_shared:
+            self.validate(identity)
+            if self.state not in ('decode', 'cold'):
+                raise RuntimeError('cold drain requires an unfinished invocation')
+            try:
+                self._prefill_shared = self._shared_execution.prefill_during(self._producer_args[0],
+                    lambda: self._dispatch_cold(identity, len(self.cold.windows)))
+            except BaseException:
+                # SharedOverlap has joined all submitted work, but no output
+                # can be retried or published after a failed side branch.
+                self.state = 'dispatching'
+                raise
+            return True
         return self._dispatch_cold(identity, len(self.cold.windows))
 
     def _dispatch_cold(self, identity, stop_window):
@@ -187,8 +206,10 @@ class PreparedMixedCompletion:
             partials = self.hot.partials[:len(self.plan.sources)*4].view(-1, 4, 4096)
             self._hot_sum.index_add_(0, self._hot_dest, partials[self.plan.decode_routes:].sum(1))
             self._accumulator[self._hot_rows] = (self._accumulator[self._hot_rows].float() + self._hot_sum).bfloat16()
-        shared = (shared_ffn(self._producer_args[0], self._shared_weights) if self._shared_execution is None
-                  else self._shared_execution.prefill(self._producer_args[0]))
+        shared = self._prefill_shared
+        if shared is None:
+            shared = (shared_ffn(self._producer_args[0], self._shared_weights) if self._shared_execution is None
+                      else self._shared_execution.prefill(self._producer_args[0]))
         self._prefill_output = self._accumulator + shared
         self.prefill_ready.record(self.stream)
         self.state = 'complete'

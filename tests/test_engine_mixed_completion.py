@@ -150,6 +150,7 @@ class CompletionOrderingTests(unittest.TestCase):
         o._hot_sum = t.empty(1, 4096)
         o._shared_weights = (t.ones(1), t.ones(1))
         o._shared_execution = None
+        o.overlap_shared = False
         o._owned, o._versions = o._shared_weights, (0, 0)
         o.stream = 'owned'
         o.decode_ready = SimpleNamespace(record=lambda stream: self.calls.append(('decode_ready', stream)))
@@ -237,6 +238,38 @@ class CompletionOrderingTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 method(IDENTITY)
         self.assertFalse(any(c[0]=='prefill_ready' for c in self.calls))
+
+    def test_overlap_drain_retains_shared_once_and_failed_side_cannot_publish(self):
+        for failure in (False, True):
+            self.calls.clear()
+            o = self.owner()
+            o.overlap_shared = True
+            def prefill_during(x, routed):
+                self.calls.append(('shared_fork', len(x)))
+                routed()
+                self.calls.append(('shared_join', len(x)))
+                if failure:
+                    raise RuntimeError('shared side failed')
+                return self.torch.full_like(x, 6.)
+            o._shared_execution = SimpleNamespace(validate=lambda: None,
+                decode=lambda x, routed: routed(), prefill_during=prefill_during,
+                prefill=lambda x: self.fail('drained shared result was recomputed'))
+            o.begin(IDENTITY)
+            if failure:
+                with self.assertRaisesRegex(RuntimeError, 'shared side failed'):
+                    o.drain(IDENTITY)
+                with self.assertRaises(RuntimeError):
+                    o.finish(IDENTITY)
+                self.assertFalse(any(c[0] == 'prefill_ready' for c in self.calls))
+            else:
+                self.assertTrue(o.drain(IDENTITY))
+                result = o.finish(IDENTITY)
+                self.assertTrue(bool((result[1:] == 16.).all()))
+                o.begin(IDENTITY)
+                self.assertIsNone(o._prefill_shared)
+            names = [c[0] for c in self.calls]
+            self.assertLess(names.index('shared_fork'), names.index('body'))
+            self.assertLess(names.index('body'), names.index('shared_join'))
 
     def test_changed_shared_owner_blocks_every_phase(self):
         o = self.owner(); o.begin(IDENTITY)
