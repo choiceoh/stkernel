@@ -6,6 +6,10 @@ import subprocess
 
 folder = Path(__file__).resolve().parent
 revisions = {
+    'cpu-sender-main': 'adb6eb52',
+    'compile-sender-v2': '894a16f4',
+    'cpu-sender-v2': '894a16f4',
+    'gpu-sender-v2': '894a16f4',
     'compile-sender-v1': '36ba3dfa',
     'compile-sender-full-v1': '36ba3dfa',
     'cpu-sender-v1': '36ba3dfa',

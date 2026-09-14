@@ -2,7 +2,7 @@
 
 PR #895 now retains **packet FFNs only**. Mixed decode/prefill and compact KDA
 execution code have been removed. Ordinary decode, KDA state, cache and graph
-behavior retain integrated main `77d80b6c`, including its deferred FP32 KDA
+behavior retain integrated main `87304780`, including its deferred FP32 KDA
 default. The [scope decision](../../bench/ST_GB10_PACKET_ONLY_20260914.md) records
 what was retired and why. Historical S/M measurements remain at their original
 source revisions; they do not qualify this implementation.
@@ -12,7 +12,8 @@ FP8-v3 packets directly to routed expert and shared gate/up, with sender-owned r
 one all-gather and the existing reduce-scatter ordering. No mixed scheduler,
 CPU route planner, ticket or whole BF16 FFN input is introduced.
 
-The experiment remains **OFF by default** (`STK_prefill_ffn_packets=1` opts in).
+Sender-owned packet FFNs are **ON by default** in the GB10 production and
+nonproduction profiles. Nonproduction bisects can use `STK_prefill_ffn_packets=0`.
 It requires native eager TP4, chunk-ordered prefill, H4096/E288/I512/top-8,
 SF6 M128 and `8192 < real rows <= 32768`. A control-group vote agrees all
 supported layers before transport. Short prefill, decode, unsupported packs and
@@ -35,7 +36,8 @@ the ordinary 256 MiB BF16 input. Metadata adds 48 bytes/token (1.171875% of
 the FP8 values), with at most 127 alignment bytes per rank. This is a work
 and buffer accounting statement, not a measured whole-engine speedup.
 The rank control vote names the v2 routed ABI. Decode/short prefill and
-unsupported/observed FFNs retain their existing fallbacks. Default stays OFF.
+unsupported/observed FFNs retain their existing fallbacks. The operator selected
+the sender-owned path as the GB10 default after the local pipeline qualification.
 
 The new probe includes **one sender's pack, route and metadata preparation**
 in both arms' FFN timing. Other senders are prepared outside timing, and
@@ -52,7 +54,7 @@ packet kernel for v1/v2 and ragged row counts. No numerical gate is relaxed.
 [Initial failure](packet_only/gpu-sender-v1-failure.json). Its CPU sweep also
 found a stale fleet test audit hash left by the bounded router-probe test;
 the reviewed fixture-only test addition is now repinned.
-Fresh actual-weight qualification is pending for the stride correction.
+The corrected source is qualified in the sender-owned result below.
 
 The v9–v13 router tile/load experiments were numerically exact but slower
 than the established packet router at 32K. Contiguous/gathered pair loads,
@@ -60,6 +62,48 @@ explicit Gluon layouts, native MMA loads, packed conversion, prefetch and
 wide expert tiles did not establish a win. Their unused Gluon execution code
 is removed; each frozen source and raw report remains reproducible through
 [the source map](packet_only/source_revisions.json).
+
+## Sender-owned result (v2)
+
+**Numerical gates PASS; the measured local FFN pipeline is faster in all five
+cells and all 20 paired cycles.** This is not yet a four-node serving result.
+Source `894a16f4`, reservation `st-ffn-sender0914v2`, ticket
+`1789373427303446`: 20 GPU unit/transport tests passed. All five cells preserve
+sender logits, top-8 IDs/FP32 weights, expert FP4/SFA and shared outputs,
+including unequal expert scales. The existing BF16 atomic-output component
+limits were unchanged. [Raw result](packet_only/gpu-sender-v2.json).
+
+The table uses **means**, eight samples per arm and four B/A/A/B cycles.
+Each timed arm starts with its own local sender preparation and ends with
+the L3 FFN sum. Peer preparation is cached; torch.cat emulates all-gather.
+
+| Real rows | Ordinary wall ms | Sender packet wall ms | Wall change | Device change | Faster wall cycles |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 8,193 | 45.447 | 40.614 | -10.63% | -11.79% | 4/4 |
+| 8,194 | 24.772 | 22.817 | -7.89% | -7.90% | 4/4 |
+| 8,195 | 19.052 | 17.852 | -6.30% | -6.27% | 4/4 |
+| 9,216 | 20.595 | 18.734 | -9.03% | -9.01% | 4/4 |
+| 32,768 | 63.886 | 58.451 | -8.51% | -8.39% | 4/4 |
+
+At 32K, mean device time is **63.772 → 58.420 ms (-8.39%)** and synchronized
+wall time is **63.886 → 58.451 ms (-8.51%)**. The four wall cycle changes are
+-10.31%, -8.14%, -8.15% and -7.37%. Shared production load changed between
+cells, so their absolute times are not compared with each other or v8.
+Peak PyTorch allocation was **5,793,580,032 bytes**, below the 8 GiB cap.
+
+Nine SM121 compiler variants passed. The Linux CPU sweep at `894a16f4`
+passed **242 tests with 24 expected CUDA skips** across 20 modules.
+[Compiler](packet_only/compile-sender-v2.json), [CPU](packet_only/cpu-sender-v2.json).
+The merge of main `87304780` resolves the knob-list conflict and preserves
+main's C1 forward and one-shot transport changes. The sender/router/expert/
+shared implementations measured above survive that merge;
+[source continuity](packet_only/sender_runtime_continuity.json) distinguishes
+this static check from a new GPU measurement. The merged source also passed
+242 CPU tests with 24 expected CUDA skips ([merged CPU](packet_only/cpu-sender-main.json)).
+
+Full 32K/128K C1/C4 onepass with real communication, TTFT, output tok/s,
+quality and acceptance remains pending. The operator explicitly enabled the
+GB10 default with that measurement scope unchanged.
 
 ## Numerical contract and router repair
 
@@ -200,7 +244,8 @@ bodies are unchanged; only that fallback and its CPU test were added.
 The whole [main-integrated CI run](https://github.com/choiceoh/stkernel/actions/runs/34815435486)
 also passed, including engine, onepass and oracle contracts.
 
-Default adoption is still pending full-model quality and serving measurements.
+The historical v8 result did not justify default adoption. The later sender-owned
+version above is enabled by operator request; full-model serving proof remains pending.
 
 ## Reproduction
 

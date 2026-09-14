@@ -1,4 +1,24 @@
 {
+  "cpu-sender-main": {
+    "revision": "adb6eb52e78d9cb0fc1dc075c49221e2d21bab65",
+    "all_sources_match": true,
+    "source_count": 40
+  },
+  "compile-sender-v2": {
+    "revision": "894a16f45d97f33ad434e75e28cff8c43a3d66f3",
+    "all_sources_match": true,
+    "source_count": 22
+  },
+  "cpu-sender-v2": {
+    "revision": "894a16f45d97f33ad434e75e28cff8c43a3d66f3",
+    "all_sources_match": true,
+    "source_count": 40
+  },
+  "gpu-sender-v2": {
+    "revision": "894a16f45d97f33ad434e75e28cff8c43a3d66f3",
+    "all_sources_match": true,
+    "source_count": 24
+  },
   "compile-sender-v1": {
     "revision": "36ba3dfa8c3a30ce9e5dba5ec27e920485e9d971",
     "all_sources_match": true,

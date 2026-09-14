@@ -1,6 +1,6 @@
 {
-  "default_enabled": false,
-  "integrated_main": "77d80b6cc4928839ec80b2a38bcd885a73f1efa3",
+  "default_enabled": true,
+  "integrated_main": "8730478035707dc0aa613ed068149721a7dd16a3",
   "cpu_image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
   "gpu_image": "sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed",
   "gpu_host": "srv4",
@@ -83,6 +83,14 @@
       "revision": "36ba3dfa8c3a30ce9e5dba5ec27e920485e9d971",
       "report": "gpu-sender-v1-failure.json",
       "scope": "one sender preparation plus emulated all-gather and full FFN; failed expert byte gate before timing"
+    },
+    {
+      "name": "st-ffn-sender0914v2",
+      "ticket": "1789373427303446",
+      "revision": "894a16f45d97f33ad434e75e28cff8c43a3d66f3",
+      "report": "gpu-sender-v2.json",
+      "scope": "one sender preparation plus emulated all-gather and full FFN; no NIC or serving proof"
     }
-  ]
+  ],
+  "adoption_status": "GB10 default enabled at operator request; single-GPU local FFN qualified, four-rank serving pending"
 }

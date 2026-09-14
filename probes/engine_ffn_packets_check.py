@@ -196,7 +196,7 @@ def measure_router(args, report):
         report['cases'].append(cell)
         print(json.dumps(cell), flush=True)
     report.pop('active_case', None)
-    report.update(status='PASS', gpu_used=True, default_enabled=False,
+    report.update(status='PASS', gpu_used=True, default_enabled=True,
         max_allocated_bytes=torch.cuda.max_memory_allocated())
 
 
@@ -378,7 +378,7 @@ def measure(args, report):
         print(json.dumps(cell), flush=True)
         observed.clear()
     report.pop('active_case', None)
-    report.update(status='PASS', gpu_used=True, default_enabled=False,
+    report.update(status='PASS', gpu_used=True, default_enabled=True,
                   max_allocated_bytes=torch.cuda.max_memory_allocated())
 
 

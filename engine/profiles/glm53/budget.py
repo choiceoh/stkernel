@@ -180,10 +180,11 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     if prefill_ffn_packets:
         from engine.modules.prefill_packets import PacketGeometry, ffn_packet_rows
         if ffn_packet_rows(chunk):
-            packet = PacketGeometry(chunk, (chunk+3)//4).workspace()
+            packet = PacketGeometry(chunk, (chunk+3)//4, routed=True).workspace()
             workspace_evidence += (
                 f"; packet FFN: {packet['received_bytes']/2**20:.3f} MiB received owner replaces "
                 f"{packet['replaced_bf16_bytes']/2**20:.3f} MiB BF16 input; "
+                f"{packet['sender_roundtrip_bytes']/2**20:.3f} MiB sender roundtrip ends before gather; "
                 f"{packet['shared_q_scale_bytes']/2**20:.3f} MiB shared Q/scales remain; "
                 "same eager MoE workspace and 32 KiB/CTA shared input stage; ceiling unchanged pending ledger")
         else:

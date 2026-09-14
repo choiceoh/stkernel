@@ -57,14 +57,15 @@ class KnobDeclarationTests(unittest.TestCase):
         with self.assertRaises(ConfigError):
             self._declared({'STK_prefill_indexer_shards':'1'},production=True)
 
-    def test_packet_experiment_is_default_off(self):
+    def test_packet_prefill_defaults_on_with_explicit_nonproduction_opt_out(self):
         from engine.base.config import ConfigError
-        for key in ('prefill_ffn_packets',):
-            for production in (False, True):
-                self.assertEqual(self._declared({}, production=production)[key], 0)
-            self.assertEqual(self._declared({'STK_'+key: '1'})[key], 1)
+        key = 'prefill_ffn_packets'
+        for production in (False, True):
+            self.assertEqual(self._declared({}, production=production)[key], 1)
+        for value in ('0', '1'):
+            self.assertEqual(self._declared({'STK_'+key: value})[key], int(value))
             with self.assertRaises(ConfigError):
-                self._declared({'STK_'+key: '1'}, production=True)
+                self._declared({'STK_'+key: value}, production=True)
 
     def test_gb10_serving_defaults_are_on_and_production_refuses_overrides(self):
         from engine.base.config import ConfigError
