@@ -35,6 +35,10 @@ class ComponentProcessTests(unittest.TestCase):
         # Orphan grandchildren may briefly await PID 1's reap inside a container.
         try:
             return Path(f'/proc/{pid}/stat').read_text().split(') ', 1)[1].split()[0] != 'Z'
+        except ProcessLookupError:
+            # Linux procfs can return ESRCH if PID 1 reaps this task between
+            # kill(pid, 0) and the stat read. The component is already stopped.
+            return False
         except FileNotFoundError:
             return True
 
