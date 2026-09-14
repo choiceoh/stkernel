@@ -28,7 +28,9 @@ These are exact shape/operation counts; memory bandwidth and latency are unmeasu
 ## Verification
 
 - Engine CPU gate: **1,883 tests, zero failures, 372 skipped**. Final focused
-  checks: **30 tests, zero failures, 7 skipped**. CUDA tests remain skipped.
+  checks: **31 tests, zero failures, 7 skipped**. The full gate predates the
+  review correction; final focused checks cover the tree-specific cluster
+  capacity and capture admission. CUDA tests remain skipped.
 - Native Triton CPU interpreter: tree addresses across 66 pool/context/width
   combinations (1/4/8 pooling, 9/512 selected pools, contexts through 131069),
   including duplicates, future/overflow ids and paged boundaries. The unchanged
@@ -58,16 +60,16 @@ compile/interpreter job ran during the final timing.
 
 | Nodes | Context | Before ms | After ms |
 |---:|---:|---:|---:|
-| 8 | 0 | 1.811834 | 1.803000 |
-| 8 | 129 | 1.808750 | 1.821667 |
-| 8 | 1024 | 1.880542 | 1.875479 |
-| 15 | 0 | 2.277375 | 2.308771 |
-| 15 | 129 | 2.338646 | 2.365604 |
-| 15 | 1024 | 2.398063 | 2.407667 |
+| 8 | 0 | 1.860313 | 1.879521 |
+| 8 | 129 | 1.851520 | 1.855520 |
+| 8 | 1024 | 1.848291 | 1.875541 |
+| 15 | 0 | 2.364167 | 2.382042 |
+| 15 | 129 | 2.404354 | 2.415229 |
+| 15 | 1024 | 2.425584 | 2.447563 |
 
 Output, auxiliary features, canonical state, paged-cache bytes, emitted tokens
 and committed paths match exactly in all six cases. CPU time is approximately
-unchanged (0.49% faster to 1.38% slower); this does **not** demonstrate a speedup.
+unchanged (-0.22% faster to 1.47% slower); this does **not** demonstrate a speedup.
 The CPU oracle still gathers rows for its tensor attention and does not execute
 the GPU copy-free reader or native absorb kernels.
 

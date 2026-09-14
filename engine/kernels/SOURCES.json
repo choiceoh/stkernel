@@ -345,7 +345,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
       "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
       "origin": "repository",
-      "local_sha256": "57af9f1e82e8ec385363c4249d76d876035bed141ba13a4661ede8f0b8fc810e",
+      "local_sha256": "bbfc935f093dfd835c263c4006107dad8173f64803f97dbca01393cd930419b6",
       "local_modifications": [
         "SM121 integer warp max reduction",
         "Cluster-local MLA split reduction with reused shared memory",
@@ -363,7 +363,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
       "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
       "origin": "repository",
-      "local_sha256": "7fa3614825c894da129c0e043e47dbb3f492991fd2f071157844bd25f3bc141b",
+      "local_sha256": "0a025655272f0f294ffce85472dfe80b69540133d8442f0d6a955b32a6dc7b85",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; tile32 large-M MLA prefill is qualified and selected by the production boot default; configure_prefill (STK_mla_prefill), mla_decode(splits=, probe=), PAIR_STATS, ENABLE_MLA_CLUSTER baked on",
         "2026-09-13 native build cache: stage content-addressed source inputs so identical checkout paths and timestamps do not trigger NVCC; keep Torch/Ninja build validation.",

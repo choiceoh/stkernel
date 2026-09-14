@@ -29,6 +29,7 @@ class MlaHardwareTests(unittest.TestCase):
         self.calls = []
         self.mla._EXT = SimpleNamespace(
             mla_grid=lambda: 96,
+            mla_tree_cluster_max=lambda: 8,
             run_mla_cluster=lambda *args: self.calls.append(args),
         )
 
@@ -101,6 +102,25 @@ class MlaHardwareTests(unittest.TestCase):
                             Tensor((rows,512),'fp8',96,contiguous=False)):
                     with self.assertRaises(ValueError):
                         self.mla.mla_decode(q,cache,slots,lens,.0625,1.,out,branch=bad)
+
+    def test_tree_uses_own_capacity_before_selecting_cluster(self):
+        self.mla._EXT.mla_tree_cluster_max = lambda: 2
+        self.mla._EXT.run_mla = lambda *args: self.calls.append(args)
+        self.mla._ensure_workspace = lambda device: {'barrier_mla': Tensor((8,), 'i32', 144)}
+        self.mla._mla_workspace = lambda *args: {'part': Tensor((8,), 'f32', 160), 'pml': Tensor((8,), 'f32', 176)}
+        torch = SimpleNamespace(int32='i32', bfloat16='bf16', float8_e4m3fn='fp8',
+                                cuda=SimpleNamespace(is_current_stream_capturing=lambda: False))
+        q, cache = Tensor((32,16,512),'bf16',16), Tensor((4096,512),'u8',32)
+        slots, lens = Tensor((32,2051),'i32',48), Tensor((32,),'i32',64)
+        out, private = Tensor(q.shape,'bf16',80), Tensor((32,512),'fp8',96)
+        with patch.dict(sys.modules, torch=torch):
+            for capturing in (False, True):
+                with patch.object(torch.cuda, 'is_current_stream_capturing', return_value=capturing):
+                    self.mla.mla_decode(q,cache,slots,lens,.0625,1.,out,branch=private)
+                    # Ordinary capacity=8, tree capacity=2: split=3 must use
+                    # the global reduction. Never enter a rejected cluster launch.
+                    self.assertEqual(self.calls[-1][0], [16,32,48,64,80,160,176,144,96])
+                    self.assertEqual(self.calls[-1][2][:3], [32,2051,3])
 
 
 if __name__ == "__main__": unittest.main()

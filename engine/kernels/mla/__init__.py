@@ -17,6 +17,7 @@ _EXT = None
 _MLA_CLUSTER_MAX = 0
 _ARMED = {"mla": False}
 _TREE_MLA_PREPARED = set()
+_TREE_MLA_CAPACITY = {}
 # Large-M prefill candidates (39차). tile32 is the qualified production default
 # after GPU numerical/graph/sanitizer and matched serving brackets; stock remains
 # available as a baseline. The pair/pair4 candidates read the UNION of a group's
@@ -171,15 +172,16 @@ def mla_splits(T: int, forced: "int | None" = None) -> int:
 
 
 
-def _mla_uses_cluster(T: int, W: int, splits: int) -> bool:
+def _mla_uses_cluster(T: int, W: int, splits: int, *, cluster_max=None) -> bool:
     """Use only the small clusters that win on GB10, preserving split order.
 
     Larger clusters lose SM occupancy/packing efficiency. The existing split
     planner remains authoritative: this changes the reduction's storage and
     synchronization, not attention selection or floating point summation order.
     """
+    capacity = _MLA_CLUSTER_MAX if cluster_max is None else cluster_max
     return (ENABLE_MLA_CLUSTER and 32 <= T <= MLA_MAX_SPLIT_ROWS
-            and 1 <= W <= 2176 and 2 <= splits <= min(3, _MLA_CLUSTER_MAX))
+            and 1 <= W <= 2176 and 2 <= splits <= min(3, capacity))
 
 
 def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
@@ -219,7 +221,14 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
                            T, slots.shape[1])
         return result
     splits = mla_splits(T, splits)
-    clustered = (probe == 0 and _mla_uses_cluster(T, slots.shape[1], splits)
+    capacity = _MLA_CLUSTER_MAX
+    if branch is not None and ENABLE_MLA_CLUSTER:
+        if q_nope.device not in _TREE_MLA_CAPACITY:
+            if torch.cuda.is_current_stream_capturing():
+                raise RuntimeError('warm the tree MLA capacity before graph capture')
+            _TREE_MLA_CAPACITY[q_nope.device] = int(_EXT.mla_tree_cluster_max())
+        capacity = _TREE_MLA_CAPACITY[q_nope.device]
+    clustered = (probe == 0 and _mla_uses_cluster(T, slots.shape[1], splits, cluster_max=capacity)
             and q_nope.dtype == torch.bfloat16 and ckv.is_contiguous()
             and ckv.element_size() == 1 and lens.is_contiguous())
     tree_key = (q_nope.device, clustered)

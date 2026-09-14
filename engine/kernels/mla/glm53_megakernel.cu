@@ -4210,6 +4210,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_mla", &mk_run_mla, "MK_SEG_MLA (sparse MLA decode)");
   m.def("run_mla_cluster", &mk_run_mla_cluster, "SM121 cluster-local sparse MLA decode");
   m.def("mla_cluster_max", &mk_mla_cluster_max, "Maximum cluster size for the MLA kernel");
+  m.def("mla_tree_cluster_max", &mk_mla_cluster_capacity<true>, "Maximum cluster size for the tree MLA kernel");
   m.def("run_mla_prefill_pair", &mk_run_mla_prefill_pair, "MK MLA exact-selection (not bit-exact output) prefill pair reuse");
   m.def("run_mla_prefill32", &mk_run_mla_prefill32, "MK MLA register-Q prefill over 32-slot tiles");
   m.def("run_mla_prefill_group4", &mk_run_mla_prefill_group4, "MK MLA exact-selection (not bit-exact output) four-query reuse");
