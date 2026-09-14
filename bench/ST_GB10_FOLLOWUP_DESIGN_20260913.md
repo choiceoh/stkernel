@@ -173,6 +173,12 @@ main `2ac7de6f`의 C1 compact staging을 포함한 [추가 동일 빌드 비교]
 
 측정 이후 main `6522564a`의 direct decode pool reader를 통합하며 lane 충돌을 해결했다. packet/mixed reader를 바인딩한 다음 새 reference-lane helper를 적용한다. GPU manifest 41개 중 39개 파일과 compiler manifest 25개 파일은 동일하며, 변경된 net/lanes의 FFN 메서드·연결 AST는 명시적인 decode 전용 변경을 제외하고 같다. 추가 CPU 통합 124 pass/14 skip을 기록했다. 이는 기존 동결 GPU 측정과의 소스 연결 검증이며 새 GPU 실측은 아니다.
 
+**52 ms 도입 gate 재검증(2026-09-14): 목표 미달이다.** 준비 요소끼리의 개선율과 일반 FFN 대비 도입 이득을 분리하기 위해 실제 `net._moe` 완료 시간을 같은 실행에서 측정했다. [최신 동결 결과](../measurements/mixed_latency_20260914/README.md)의 32K는 D8에서 일반 137.66 ms / 혼합 154.73 ms, D32에서 일반 142.31 ms / 혼합 152.03 ms다. 다른 엔진과 공유하는 GPU의 부하 변동은 있지만 같은 실행의 일반 경로보다 느린 결과를 정당화하지 않는다. M은 실험 상태이며 일반 serving selector가 없다.
+
+현재 구현은 CPU 계획을 C++ 한 번의 호출로 만들고, cold 입력은 토큰마다 한 번 읽어 살아 있는 8개 경로에 배치하며, M128 padding만 초기화한다. 작은 host library는 기존 C++ toolchain과 소스 주소 기반 cache를 사용하고 Mojo 의존성을 추가하지 않는다. ARM64에서 동일 NumPy/네이티브 계획은 32K 기준 10.10–10.11→2.52–2.83 ms, 새 host library 최초 빌드는 200.6 ms다. GPU 패킹/패딩 바이트 비교 6개, 값 경계 260개, CPU 153 pass/3 skip과 CuTe 10종·Triton·host library 컴파일이 통과했다. 명시적인 `drain`은 남은 cold 작업을 한 번에 실행하며, 선택적인 shared prefill overlap은 오류 시에도 합류한다. `advance`의 window 경계는 유지한다.
+
+N128 cold consumer는 GPU 최대 상대 오차 2.247%로 기존 2% gate를 넘어서 제거했다. 허용치는 완화하지 않았다. 현재 admission은 prefill routing/readback·계획·전체 digest 합의 이후에 decode를 시작하므로, Python 비용만 줄여도 decode 대기가 남는다. 후속 구조에서는 준비와 decode 도착의 의존성을 끊고 cold 계산을 줄여야 한다. 독점 실행에서 52 ms를 확인하는 것과 TP4/실제 도착열/32K·128K C1·C4 serving 품질·수락률 검증은 별도의 남은 작업이다.
+
 ### M1. 빈 행과 실제 절감되는 타일을 구분
 
 현재 [static V5](../engine/kernels/b12x/moe_static_kernel_v5.py)는 [V4](../engine/kernels/b12x/moe_static_kernel_v4.py)의 계산을 사용한다. 현재 `t,r,sf6`는 전체 decode 1..8행에서 M16, 9..32행에서 M32이며, 대상 SF6 dynamic prefill은 M128 형상이다. 따라서 단순히 두 입력을 concat한 기존 launch 호출로는 원하는 스케줄이 되지 않는다. 동일한 층의 FFN 입력과 route가 이미 준비된 프리필만 후보가 된다.

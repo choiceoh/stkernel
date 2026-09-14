@@ -1,0 +1,1654 @@
+{
+  "target": "32K fresh complete FFN <= 52 ms; decode must also beat native for adoption",
+  "runs": [
+    {
+      "reservation": "st-mixed-native0914v1",
+      "revision": "fb6e4cf346eb8545b2dc403032619626ca8d3cd7",
+      "status": "PASS",
+      "cells": [
+        {
+          "decode_rows": 8,
+          "prefill_rows": 9240,
+          "hot_quota": 0,
+          "warm_samples": 3,
+          "native_decode_ms": 1.8047810008283705,
+          "native_complete_ms": 21.369882015278563,
+          "native_complete_range_ms": [
+            21.338666992960498,
+            21.37252301326953
+          ],
+          "prepare_ms": 7.992289989488199,
+          "decode_ms": 9.40278300549835,
+          "complete_ms": 29.385995992925018,
+          "complete_range_ms": [
+            29.326492978725582,
+            29.84940499300137
+          ],
+          "paired_complete_ratio_median": 1.3749427699612338,
+          "stages_ms": {
+            "value_check_ms": 1.2293100007809699,
+            "route_plan_ms": 2.738042996497825,
+            "metadata_prepare_ms": 0.32854301389306784,
+            "metadata_reads_ms": 0.09985602810047567,
+            "agreement_ms": 1.200958009576425
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.0016494177397139759
+            }
+          },
+          "target_52_ms_met": true,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 8,
+          "prefill_rows": 9240,
+          "hot_quota": 128,
+          "warm_samples": 3,
+          "native_decode_ms": 1.8047810008283705,
+          "native_complete_ms": 21.369882015278563,
+          "native_complete_range_ms": [
+            21.338666992960498,
+            21.37252301326953
+          ],
+          "prepare_ms": 8.340961008798331,
+          "decode_ms": 9.777327009942383,
+          "complete_ms": 30.073436006205156,
+          "complete_range_ms": [
+            29.998443991644308,
+            31.237785005941987
+          ],
+          "paired_complete_ratio_median": 1.4072813310201675,
+          "stages_ms": {
+            "value_check_ms": 1.4176929835230112,
+            "route_plan_ms": 2.730923006311059,
+            "metadata_prepare_ms": 0.3674080071505159,
+            "metadata_reads_ms": 0.09940797463059425,
+            "agreement_ms": 1.2314379855524749
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.002096896982664432
+            }
+          },
+          "target_52_ms_met": true,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 9240,
+          "hot_quota": 0,
+          "warm_samples": 3,
+          "native_decode_ms": 2.833546983310953,
+          "native_complete_ms": 22.014874004526064,
+          "native_complete_range_ms": [
+            21.99941800790839,
+            22.035784990293905
+          ],
+          "prepare_ms": 5.146118986885995,
+          "decode_ms": 8.15083400812,
+          "complete_ms": 28.656557988142595,
+          "complete_range_ms": [
+            28.506958013167605,
+            28.7790370057337
+          ],
+          "paired_complete_ratio_median": 1.3026052770051046,
+          "stages_ms": {
+            "value_check_ms": 1.490844995714724,
+            "route_plan_ms": 1.6717250109650195,
+            "metadata_prepare_ms": 0.1647520111873746,
+            "metadata_reads_ms": 0.018272025045007467,
+            "agreement_ms": 0.9876620024442673
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.0015318077917319574
+            }
+          },
+          "target_52_ms_met": true,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 9240,
+          "hot_quota": 128,
+          "warm_samples": 3,
+          "native_decode_ms": 2.833546983310953,
+          "native_complete_ms": 22.014874004526064,
+          "native_complete_range_ms": [
+            21.99941800790839,
+            22.035784990293905
+          ],
+          "prepare_ms": 5.3204230207484215,
+          "decode_ms": 8.341953012859449,
+          "complete_ms": 28.6531180026941,
+          "complete_range_ms": [
+            28.352702007396147,
+            28.724221017910168
+          ],
+          "paired_complete_ratio_median": 1.3015344987576705,
+          "stages_ms": {
+            "value_check_ms": 1.4933260099496692,
+            "route_plan_ms": 1.76711700623855,
+            "metadata_prepare_ms": 0.21225502132438123,
+            "metadata_reads_ms": 0.018111953977495432,
+            "agreement_ms": 1.0208470048382878
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006097560975609756,
+              "relative_rms": 0.002403910938408095
+            }
+          },
+          "target_52_ms_met": true,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 8,
+          "prefill_rows": 32768,
+          "hot_quota": 0,
+          "warm_samples": 3,
+          "native_decode_ms": 1.7814209859352559,
+          "native_complete_ms": 60.16877299407497,
+          "native_complete_range_ms": [
+            59.91664601606317,
+            60.187814000528306
+          ],
+          "prepare_ms": 19.869356998242438,
+          "decode_ms": 21.23849099734798,
+          "complete_ms": 82.97548600239679,
+          "complete_range_ms": [
+            82.96999699086882,
+            83.08326100814156
+          ],
+          "paired_complete_ratio_median": 1.380836883881994,
+          "stages_ms": {
+            "value_check_ms": 5.025079008191824,
+            "route_plan_ms": 7.6688340050168335,
+            "metadata_prepare_ms": 0.6029109936207533,
+            "metadata_reads_ms": 0.10382392792962492,
+            "agreement_ms": 3.8882970111444592
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.0011868661087832625
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 8,
+          "prefill_rows": 32768,
+          "hot_quota": 128,
+          "warm_samples": 3,
+          "native_decode_ms": 1.7814209859352559,
+          "native_complete_ms": 60.16877299407497,
+          "native_complete_range_ms": [
+            59.91664601606317,
+            60.187814000528306
+          ],
+          "prepare_ms": 19.961451995186508,
+          "decode_ms": 21.36605800478719,
+          "complete_ms": 83.2580289861653,
+          "complete_range_ms": [
+            83.20410898886621,
+            83.26015700004064
+          ],
+          "paired_complete_ratio_median": 1.3837415131328008,
+          "stages_ms": {
+            "value_check_ms": 5.046838981797919,
+            "route_plan_ms": 7.681842980673537,
+            "metadata_prepare_ms": 0.6313750054687262,
+            "metadata_reads_ms": 0.11659198207780719,
+            "agreement_ms": 3.9022970013320446
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00881057268722467,
+              "relative_rms": 0.0014302812150020752
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 32768,
+          "hot_quota": 0,
+          "warm_samples": 3,
+          "native_decode_ms": 3.3314989996142685,
+          "native_complete_ms": 61.80350700742565,
+          "native_complete_range_ms": [
+            61.62549101281911,
+            61.86131399590522
+          ],
+          "prepare_ms": 20.171757001662627,
+          "decode_ms": 23.17226299783215,
+          "complete_ms": 85.0840900093317,
+          "complete_range_ms": [
+            85.07808900321834,
+            85.18389699747786
+          ],
+          "paired_complete_ratio_median": 1.3783019948567492,
+          "stages_ms": {
+            "value_check_ms": 5.043398996349424,
+            "route_plan_ms": 7.8929619921837,
+            "metadata_prepare_ms": 0.6699030054733157,
+            "metadata_reads_ms": 0.10440003825351596,
+            "agreement_ms": 3.926217003026977
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.0011340267396734674
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 32768,
+          "hot_quota": 128,
+          "warm_samples": 3,
+          "native_decode_ms": 3.3314989996142685,
+          "native_complete_ms": 61.80350700742565,
+          "native_complete_range_ms": [
+            61.62549101281911,
+            61.86131399590522
+          ],
+          "prepare_ms": 20.622987998649478,
+          "decode_ms": 23.650341987377033,
+          "complete_ms": 85.7020239927806,
+          "complete_range_ms": [
+            85.58541600359604,
+            86.02272800635546
+          ],
+          "paired_complete_ratio_median": 1.386685451077777,
+          "stages_ms": {
+            "value_check_ms": 5.052198976045474,
+            "route_plan_ms": 8.09324998408556,
+            "metadata_prepare_ms": 0.7393739942926913,
+            "metadata_reads_ms": 0.11057601659558713,
+            "agreement_ms": 3.9636250003241003
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.0015626811308641485
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        }
+      ],
+      "peak_allocated_gib": 3.874256134033203,
+      "mixed_samples": 32,
+      "native_samples": 16
+    },
+    {
+      "reservation": "st-mixed-drain0914v1",
+      "revision": "67e14cdcbc6c5176e04228a1f088b2da6c9d2302",
+      "status": "PASS",
+      "cells": [
+        {
+          "decode_rows": 8,
+          "prefill_rows": 9240,
+          "hot_quota": 0,
+          "warm_samples": 3,
+          "native_decode_ms": 3.3524280006531626,
+          "native_complete_ms": 37.31173599953763,
+          "native_complete_range_ms": [
+            35.58220199192874,
+            48.13234799075872
+          ],
+          "prepare_ms": 10.91768400510773,
+          "decode_ms": 15.999886993085966,
+          "complete_ms": 60.446126997703686,
+          "complete_range_ms": [
+            58.264289022190496,
+            60.60391798382625
+          ],
+          "paired_complete_ratio_median": 1.62425886548343,
+          "stages_ms": {
+            "value_check_ms": 0.22710399935021996,
+            "route_plan_ms": 3.6006519803777337,
+            "value_check_wait_ms": 0.03281599492765963,
+            "metadata_prepare_ms": 0.4886399838142097,
+            "metadata_reads_ms": 0.10967900743708014,
+            "agreement_ms": 1.2537110014818609
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.0015623625030869196
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 8,
+          "prefill_rows": 9240,
+          "hot_quota": 128,
+          "warm_samples": 3,
+          "native_decode_ms": 3.3524280006531626,
+          "native_complete_ms": 37.31173599953763,
+          "native_complete_range_ms": [
+            35.58220199192874,
+            48.13234799075872
+          ],
+          "prepare_ms": 9.368598024593666,
+          "decode_ms": 10.798019997309893,
+          "complete_ms": 52.6720070047304,
+          "complete_range_ms": [
+            49.73452299600467,
+            62.30988499009982
+          ],
+          "paired_complete_ratio_median": 1.3977359525778128,
+          "stages_ms": {
+            "value_check_ms": 0.27756698545999825,
+            "route_plan_ms": 2.8460769972298294,
+            "value_check_wait_ms": 0.021504005417227745,
+            "metadata_prepare_ms": 0.33611198887228966,
+            "metadata_reads_ms": 0.1016640744637698,
+            "agreement_ms": 1.227342989295721
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007022471910112359,
+              "relative_rms": 0.0019754243466717576
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 9240,
+          "hot_quota": 0,
+          "warm_samples": 3,
+          "native_decode_ms": 7.338839990552515,
+          "native_complete_ms": 52.10499800159596,
+          "native_complete_range_ms": [
+            39.32830900885165,
+            52.18128699925728
+          ],
+          "prepare_ms": 11.048147978726774,
+          "decode_ms": 20.253161987056956,
+          "complete_ms": 65.47885600593872,
+          "complete_range_ms": [
+            52.50194200198166,
+            65.95363898668438
+          ],
+          "paired_complete_ratio_median": 1.256671308267455,
+          "stages_ms": {
+            "value_check_ms": 0.20356799359433353,
+            "route_plan_ms": 3.4576279867906123,
+            "value_check_wait_ms": 0.035567994927987456,
+            "metadata_prepare_ms": 0.5754549929406494,
+            "metadata_reads_ms": 0.10417599696666002,
+            "agreement_ms": 1.3664140133187175
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.0017887143125207305
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 9240,
+          "hot_quota": 128,
+          "warm_samples": 3,
+          "native_decode_ms": 7.338839990552515,
+          "native_complete_ms": 52.10499800159596,
+          "native_complete_range_ms": [
+            39.32830900885165,
+            52.18128699925728
+          ],
+          "prepare_ms": 9.258197998860851,
+          "decode_ms": 18.55173899093643,
+          "complete_ms": 63.01487400196493,
+          "complete_range_ms": [
+            53.83610099670477,
+            65.33541600219905
+          ],
+          "paired_complete_ratio_median": 1.2520851776447943,
+          "stages_ms": {
+            "value_check_ms": 0.22812699899077415,
+            "route_plan_ms": 3.0577400175388902,
+            "value_check_wait_ms": 0.03272001049481332,
+            "metadata_prepare_ms": 0.6165599916130304,
+            "metadata_reads_ms": 0.11201604502275586,
+            "agreement_ms": 1.364991010632366
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007317073170731708,
+              "relative_rms": 0.0023970802559586707
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 8,
+          "prefill_rows": 32768,
+          "hot_quota": 0,
+          "warm_samples": 3,
+          "native_decode_ms": 3.282508027041331,
+          "native_complete_ms": 138.86733099934645,
+          "native_complete_range_ms": [
+            60.27818800066598,
+            139.9835380143486
+          ],
+          "prepare_ms": 30.12591798324138,
+          "decode_ms": 36.77059800247662,
+          "complete_ms": 158.70911598904058,
+          "complete_range_ms": [
+            81.32832401315682,
+            179.2977819859516
+          ],
+          "paired_complete_ratio_median": 1.2808490521762153,
+          "stages_ms": {
+            "value_check_ms": 0.31115199089981616,
+            "route_plan_ms": 9.95554099790752,
+            "value_check_wait_ms": 0.0409760104957968,
+            "metadata_prepare_ms": 1.0767990024760365,
+            "metadata_reads_ms": 0.15019206330180168,
+            "agreement_ms": 4.017419996671379
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00881057268722467,
+              "relative_rms": 0.0011778549308325392
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 8,
+          "prefill_rows": 32768,
+          "hot_quota": 128,
+          "warm_samples": 3,
+          "native_decode_ms": 3.282508027041331,
+          "native_complete_ms": 138.86733099934645,
+          "native_complete_range_ms": [
+            60.27818800066598,
+            139.9835380143486
+          ],
+          "prepare_ms": 30.17031800118275,
+          "decode_ms": 36.747911013662815,
+          "complete_ms": 172.8320769907441,
+          "complete_range_ms": [
+            81.77419597632252,
+            179.28234100691043
+          ],
+          "paired_complete_ratio_median": 1.2807387464984177,
+          "stages_ms": {
+            "value_check_ms": 0.24899200070649385,
+            "route_plan_ms": 10.184291983023286,
+            "value_check_wait_ms": 0.0575039885006845,
+            "metadata_prepare_ms": 0.9266060078516603,
+            "metadata_reads_ms": 0.1296480477321893,
+            "agreement_ms": 4.054235003422946
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.0013825708463150723
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 32768,
+          "hot_quota": 0,
+          "warm_samples": 3,
+          "native_decode_ms": 7.394759013550356,
+          "native_complete_ms": 133.79179700859822,
+          "native_complete_range_ms": [
+            117.3374330101069,
+            141.90498797688633
+          ],
+          "prepare_ms": 31.34207599214278,
+          "decode_ms": 42.024767986731604,
+          "complete_ms": 177.57145999348722,
+          "complete_range_ms": [
+            174.43248600466177,
+            188.88418198912404
+          ],
+          "paired_complete_ratio_median": 1.3310609068927848,
+          "stages_ms": {
+            "value_check_ms": 0.2793760213535279,
+            "route_plan_ms": 10.906674986472353,
+            "value_check_wait_ms": 0.08873498882167041,
+            "metadata_prepare_ms": 1.1246549838688225,
+            "metadata_reads_ms": 0.13705610763281584,
+            "agreement_ms": 4.075659002410248
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00641025641025641,
+              "relative_rms": 0.0010721257139930961
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 32768,
+          "hot_quota": 128,
+          "warm_samples": 3,
+          "native_decode_ms": 7.394759013550356,
+          "native_complete_ms": 133.79179700859822,
+          "native_complete_range_ms": [
+            117.3374330101069,
+            141.90498797688633
+          ],
+          "prepare_ms": 28.647263010498136,
+          "decode_ms": 41.0187850065995,
+          "complete_ms": 175.26867799460888,
+          "complete_range_ms": [
+            161.23493399936706,
+            178.10939499759115
+          ],
+          "paired_complete_ratio_median": 1.310010642755214,
+          "stages_ms": {
+            "value_check_ms": 0.11980801355093718,
+            "route_plan_ms": 9.887508989777416,
+            "value_check_wait_ms": 0.08190399967133999,
+            "metadata_prepare_ms": 0.977182004135102,
+            "metadata_reads_ms": 0.03766402369365096,
+            "agreement_ms": 3.690732002723962
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.0015122161144780542
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        }
+      ],
+      "peak_allocated_gib": 3.874256134033203,
+      "mixed_samples": 32,
+      "native_samples": 16
+    },
+    {
+      "reservation": "st-mixed-token0914v1",
+      "revision": "b881357ae5c1b456ffb5329508051b860ad3b2ae",
+      "status": "PASS",
+      "cells": [
+        {
+          "decode_rows": 8,
+          "prefill_rows": 9240,
+          "hot_quota": 0,
+          "warm_samples": 3,
+          "native_decode_ms": 3.31980298506096,
+          "native_complete_ms": 47.95443301554769,
+          "native_complete_range_ms": [
+            44.10237597767264,
+            48.24294600985013
+          ],
+          "prepare_ms": 11.682877026032656,
+          "decode_ms": 16.443365020677447,
+          "complete_ms": 57.253938022768125,
+          "complete_range_ms": [
+            43.96655200980604,
+            59.76076700608246
+          ],
+          "paired_complete_ratio_median": 1.2461990111885368,
+          "stages_ms": {
+            "value_check_ms": 0.2614879922475666,
+            "route_plan_ms": 3.452154982369393,
+            "value_check_wait_ms": 0.034783995943143964,
+            "metadata_prepare_ms": 1.1314699950162321,
+            "metadata_reads_ms": 0.12159996549598873,
+            "agreement_ms": 1.257790019735694
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007022471910112359,
+              "relative_rms": 0.0017762629728425433
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 8,
+          "prefill_rows": 9240,
+          "hot_quota": 128,
+          "warm_samples": 3,
+          "native_decode_ms": 3.31980298506096,
+          "native_complete_ms": 47.95443301554769,
+          "native_complete_range_ms": [
+            44.10237597767264,
+            48.24294600985013
+          ],
+          "prepare_ms": 11.983499978668988,
+          "decode_ms": 16.76947600208223,
+          "complete_ms": 57.32259398791939,
+          "complete_range_ms": [
+            57.205138000426814,
+            57.59189001400955
+          ],
+          "paired_complete_ratio_median": 1.1937888287802858,
+          "stages_ms": {
+            "value_check_ms": 0.28086398378945887,
+            "route_plan_ms": 3.743162000318989,
+            "value_check_wait_ms": 0.040879996959120035,
+            "metadata_prepare_ms": 1.232654001796618,
+            "metadata_reads_ms": 0.12747198343276978,
+            "agreement_ms": 1.252942020073533
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007022471910112359,
+              "relative_rms": 0.0019422195638649426
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 9240,
+          "hot_quota": 0,
+          "warm_samples": 3,
+          "native_decode_ms": 7.3727880080696195,
+          "native_complete_ms": 51.89349898137152,
+          "native_complete_range_ms": [
+            51.77895398810506,
+            52.06455400912091
+          ],
+          "prepare_ms": 12.147355999331921,
+          "decode_ms": 20.861741999397054,
+          "complete_ms": 64.47590998141095,
+          "complete_range_ms": [
+            38.13934500794858,
+            64.68032600241713
+          ],
+          "paired_complete_ratio_median": 1.2423101903664848,
+          "stages_ms": {
+            "value_check_ms": 0.2530710189603269,
+            "route_plan_ms": 3.7311940104700625,
+            "value_check_wait_ms": 0.05015998613089323,
+            "metadata_prepare_ms": 1.2710059818346053,
+            "metadata_reads_ms": 0.1314720429945737,
+            "agreement_ms": 1.3639340177178383
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.001624384805946907
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 9240,
+          "hot_quota": 128,
+          "warm_samples": 3,
+          "native_decode_ms": 7.3727880080696195,
+          "native_complete_ms": 51.89349898137152,
+          "native_complete_range_ms": [
+            51.77895398810506,
+            52.06455400912091
+          ],
+          "prepare_ms": 12.375532009173185,
+          "decode_ms": 21.262813010253012,
+          "complete_ms": 61.94609001977369,
+          "complete_range_ms": [
+            45.14024601667188,
+            64.36946199391969
+          ],
+          "paired_complete_ratio_median": 1.1937158070996678,
+          "stages_ms": {
+            "value_check_ms": 0.26523100677877665,
+            "route_plan_ms": 3.9057859976310283,
+            "value_check_wait_ms": 0.04400001489557326,
+            "metadata_prepare_ms": 1.3355340051930398,
+            "metadata_reads_ms": 0.12524801422841847,
+            "agreement_ms": 1.3988300052005798
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.0022644612649726373
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 8,
+          "prefill_rows": 32768,
+          "hot_quota": 0,
+          "warm_samples": 3,
+          "native_decode_ms": 3.155162004986778,
+          "native_complete_ms": 137.50506698852405,
+          "native_complete_range_ms": [
+            122.52190802246332,
+            137.6651629980188
+          ],
+          "prepare_ms": 32.907625020015985,
+          "decode_ms": 39.628638012800366,
+          "complete_ms": 163.488336984301,
+          "complete_range_ms": [
+            162.00941102579236,
+            164.79251001146622
+          ],
+          "paired_complete_ratio_median": 1.1970530991478057,
+          "stages_ms": {
+            "value_check_ms": 0.2751840220298618,
+            "route_plan_ms": 10.387615009676665,
+            "value_check_wait_ms": 0.058814999647438526,
+            "metadata_prepare_ms": 3.366778022609651,
+            "metadata_reads_ms": 0.1398560416419059,
+            "agreement_ms": 4.11600898951292
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00881057268722467,
+              "relative_rms": 0.0011242051857384694
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 8,
+          "prefill_rows": 32768,
+          "hot_quota": 128,
+          "warm_samples": 3,
+          "native_decode_ms": 3.155162004986778,
+          "native_complete_ms": 137.50506698852405,
+          "native_complete_range_ms": [
+            122.52190802246332,
+            137.6651629980188
+          ],
+          "prepare_ms": 32.753929001046345,
+          "decode_ms": 39.4460630195681,
+          "complete_ms": 160.93494900269434,
+          "complete_range_ms": [
+            147.18332400661893,
+            162.10107400547713
+          ],
+          "paired_complete_ratio_median": 1.1775025029956927,
+          "stages_ms": {
+            "value_check_ms": 0.26748800883069634,
+            "route_plan_ms": 10.375646990723908,
+            "value_check_wait_ms": 0.06876801489852369,
+            "metadata_prepare_ms": 3.280682023614645,
+            "metadata_reads_ms": 0.13316795229911804,
+            "agreement_ms": 4.0684570267330855
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00881057268722467,
+              "relative_rms": 0.001211640799802202
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 32768,
+          "hot_quota": 0,
+          "warm_samples": 3,
+          "native_decode_ms": 7.42758801789023,
+          "native_complete_ms": 141.67633900069632,
+          "native_complete_range_ms": [
+            140.7002129999455,
+            141.7680510203354
+          ],
+          "prepare_ms": 29.564669996034354,
+          "decode_ms": 39.647085999604315,
+          "complete_ms": 146.28452298347838,
+          "complete_range_ms": [
+            145.7234370172955,
+            164.71036500297487
+          ],
+          "paired_complete_ratio_median": 1.0396894209643808,
+          "stages_ms": {
+            "value_check_ms": 0.10278401896357536,
+            "route_plan_ms": 9.942464006599039,
+            "value_check_wait_ms": 0.046912027755752206,
+            "metadata_prepare_ms": 2.788348007015884,
+            "metadata_reads_ms": 0.04100802470929921,
+            "agreement_ms": 4.1000249912030995
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00641025641025641,
+              "relative_rms": 0.001174166971040703
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 32768,
+          "hot_quota": 128,
+          "warm_samples": 3,
+          "native_decode_ms": 7.42758801789023,
+          "native_complete_ms": 141.67633900069632,
+          "native_complete_range_ms": [
+            140.7002129999455,
+            141.7680510203354
+          ],
+          "prepare_ms": 29.68055897508748,
+          "decode_ms": 42.338969971751794,
+          "complete_ms": 167.97192802187055,
+          "complete_range_ms": [
+            155.14887697645463,
+            168.38304698467255
+          ],
+          "paired_complete_ratio_median": 1.1877362055327927,
+          "stages_ms": {
+            "value_check_ms": 0.09499199222773314,
+            "route_plan_ms": 10.021471010986716,
+            "value_check_wait_ms": 0.07724799797870219,
+            "metadata_prepare_ms": 2.889962983317673,
+            "metadata_reads_ms": 0.04454306326806545,
+            "agreement_ms": 3.6615619901567698
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.0014883370198976336
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        }
+      ],
+      "peak_allocated_gib": 5.318692684173584,
+      "mixed_samples": 32,
+      "native_samples": 16
+    },
+    {
+      "reservation": "st-mixed-n1280914v1",
+      "revision": "38e275d6259271b45f7ae3753224cfbc5cbdd684",
+      "status": "FAIL",
+      "cells": [],
+      "error": "Traceback (most recent call last):\n  File \"/repo/probes/engine_mixed_tickets_check.py\", line 326, in main\n    measure(args, report)\n  File \"/repo/probes/engine_mixed_tickets_check.py\", line 216, in measure\n    errors = dict(decode=output_error(copy_d, ref_d), prefill=output_error(copy_p, ref_p))\n                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/repo/probes/engine_mixed_completion_check.py\", line 32, in output_error\n    raise RuntimeError(f'completion exceeded the fixed BF16 component tolerance: {result}')\nRuntimeError: completion exceeded the fixed BF16 component tolerance: {'relative_max': 0.02247191011235955, 'relative_rms': 0.002584829232376827}\n"
+    },
+    {
+      "reservation": "st-mixed-overlap0914v1",
+      "revision": "a2646be1be627339b0a40ac9a71ac13785c29fda",
+      "status": "PASS",
+      "cells": [
+        {
+          "decode_rows": 8,
+          "prefill_rows": 9240,
+          "hot_quota": 0,
+          "warm_samples": 3,
+          "native_decode_ms": 3.3447449968662113,
+          "native_complete_ms": 48.28916801488958,
+          "native_complete_range_ms": [
+            48.177567980019376,
+            48.310448008123785
+          ],
+          "prepare_ms": 11.229689000174403,
+          "decode_ms": 16.296975023578852,
+          "complete_ms": 59.76607301272452,
+          "complete_range_ms": [
+            57.004030008101836,
+            60.44802299584262
+          ],
+          "paired_complete_ratio_median": 1.2371252074225099,
+          "stages_ms": {
+            "value_check_ms": 0.21841598208993673,
+            "route_plan_ms": 3.3290020073764026,
+            "value_check_wait_ms": 0.03617600305005908,
+            "metadata_prepare_ms": 1.1674209963530302,
+            "metadata_reads_ms": 0.11659201118163764,
+            "agreement_ms": 1.2790369801223278
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.0017460612410653952
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 8,
+          "prefill_rows": 9240,
+          "hot_quota": 128,
+          "warm_samples": 3,
+          "native_decode_ms": 3.3447449968662113,
+          "native_complete_ms": 48.28916801488958,
+          "native_complete_range_ms": [
+            48.177567980019376,
+            48.310448008123785
+          ],
+          "prepare_ms": 11.614521004958078,
+          "decode_ms": 16.38004698907025,
+          "complete_ms": 59.823896997841075,
+          "complete_range_ms": [
+            57.259566005086526,
+            60.85751100908965
+          ],
+          "paired_complete_ratio_median": 1.2417375867260831,
+          "stages_ms": {
+            "value_check_ms": 0.2187990176025778,
+            "route_plan_ms": 3.4791130165103823,
+            "value_check_wait_ms": 0.03416000981815159,
+            "metadata_prepare_ms": 1.0309420176781714,
+            "metadata_reads_ms": 0.11031999019905925,
+            "agreement_ms": 1.2827820028178394
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.0018741711899776749
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 9240,
+          "hot_quota": 0,
+          "warm_samples": 3,
+          "native_decode_ms": 7.390097016468644,
+          "native_complete_ms": 52.192391973221675,
+          "native_complete_range_ms": [
+            51.93828002666123,
+            52.322135015856475
+          ],
+          "prepare_ms": 11.824199988041073,
+          "decode_ms": 20.676871004980057,
+          "complete_ms": 64.59443099447526,
+          "complete_range_ms": [
+            64.07692801440135,
+            64.69934299821034
+          ],
+          "paired_complete_ratio_median": 1.2345526606454345,
+          "stages_ms": {
+            "value_check_ms": 0.21926299086771905,
+            "route_plan_ms": 3.523656981997192,
+            "value_check_wait_ms": 0.04528000135906041,
+            "metadata_prepare_ms": 1.1706059740390629,
+            "metadata_reads_ms": 0.13225502334535122,
+            "agreement_ms": 1.3856769946869463
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.0015305720578420545
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 9240,
+          "hot_quota": 128,
+          "warm_samples": 3,
+          "native_decode_ms": 7.390097016468644,
+          "native_complete_ms": 52.192391973221675,
+          "native_complete_range_ms": [
+            51.93828002666123,
+            52.322135015856475
+          ],
+          "prepare_ms": 12.121640000259504,
+          "decode_ms": 20.90938197216019,
+          "complete_ms": 64.13662398699671,
+          "complete_range_ms": [
+            64.00824000593275,
+            64.96284701279365
+          ],
+          "paired_complete_ratio_median": 1.2323904444482123,
+          "stages_ms": {
+            "value_check_ms": 0.2628639922477305,
+            "route_plan_ms": 3.82759197964333,
+            "value_check_wait_ms": 0.025296001695096493,
+            "metadata_prepare_ms": 1.0982220119331032,
+            "metadata_reads_ms": 0.12423994485288858,
+            "agreement_ms": 1.4010050217621028
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.002155745299692738
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 8,
+          "prefill_rows": 32768,
+          "hot_quota": 0,
+          "warm_samples": 3,
+          "native_decode_ms": 3.2058340148068964,
+          "native_complete_ms": 137.9991479916498,
+          "native_complete_range_ms": [
+            137.82553302007727,
+            138.1621879991144
+          ],
+          "prepare_ms": 33.15078199375421,
+          "decode_ms": 39.745009009493515,
+          "complete_ms": 165.77595699345693,
+          "complete_range_ms": [
+            165.230229991721,
+            166.32769998977892
+          ],
+          "paired_complete_ratio_median": 1.2012824673634062,
+          "stages_ms": {
+            "value_check_ms": 0.24227198446169496,
+            "route_plan_ms": 10.8001219923608,
+            "value_check_wait_ms": 0.07860801997594535,
+            "metadata_prepare_ms": 3.3878169779200107,
+            "metadata_reads_ms": 0.14471999020315707,
+            "agreement_ms": 4.10114400438033
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.0010405610763505532
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 8,
+          "prefill_rows": 32768,
+          "hot_quota": 128,
+          "warm_samples": 3,
+          "native_decode_ms": 3.2058340148068964,
+          "native_complete_ms": 137.9991479916498,
+          "native_complete_range_ms": [
+            137.82553302007727,
+            138.1621879991144
+          ],
+          "prepare_ms": 33.13502200762741,
+          "decode_ms": 39.63360100169666,
+          "complete_ms": 165.66109299310483,
+          "complete_range_ms": [
+            163.84544802713208,
+            166.58062700298615
+          ],
+          "paired_complete_ratio_median": 1.2019622878510667,
+          "stages_ms": {
+            "value_check_ms": 0.20931201288476586,
+            "route_plan_ms": 10.152380011277273,
+            "value_check_wait_ms": 0.08972798241302371,
+            "metadata_prepare_ms": 3.656407992821187,
+            "metadata_reads_ms": 0.1348319638054818,
+            "agreement_ms": 4.079495003679767
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00881057268722467,
+              "relative_rms": 0.0012958996814519605
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 32768,
+          "hot_quota": 0,
+          "warm_samples": 3,
+          "native_decode_ms": 7.43619300192222,
+          "native_complete_ms": 138.94965799408965,
+          "native_complete_range_ms": [
+            137.63169301091693,
+            142.136851005489
+          ],
+          "prepare_ms": 29.201653989730403,
+          "decode_ms": 40.65599798923358,
+          "complete_ms": 163.16882500541396,
+          "complete_range_ms": [
+            147.09301700349897,
+            163.947608001763
+          ],
+          "paired_complete_ratio_median": 1.1534489954011413,
+          "stages_ms": {
+            "value_check_ms": 0.10443199425935745,
+            "route_plan_ms": 10.209787986241281,
+            "value_check_wait_ms": 0.06168000982142985,
+            "metadata_prepare_ms": 2.495530992746353,
+            "metadata_reads_ms": 0.0426720071118325,
+            "agreement_ms": 3.438009007368237
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00641025641025641,
+              "relative_rms": 0.001274639414615031
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 32768,
+          "hot_quota": 128,
+          "warm_samples": 3,
+          "native_decode_ms": 7.43619300192222,
+          "native_complete_ms": 138.94965799408965,
+          "native_complete_range_ms": [
+            137.63169301091693,
+            142.136851005489
+          ],
+          "prepare_ms": 31.043425988173112,
+          "decode_ms": 42.11681199376471,
+          "complete_ms": 165.71138097788207,
+          "complete_range_ms": [
+            164.45978300180286,
+            167.00918501010165
+          ],
+          "paired_complete_ratio_median": 1.1949266873347109,
+          "stages_ms": {
+            "value_check_ms": 0.1416000013705343,
+            "route_plan_ms": 10.604745999444276,
+            "value_check_wait_ms": 0.07220800034701824,
+            "metadata_prepare_ms": 3.108809993136674,
+            "metadata_reads_ms": 0.051151990192011,
+            "agreement_ms": 3.6164250050205737
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.0014226072517273727
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        }
+      ],
+      "peak_allocated_gib": 5.818692684173584,
+      "mixed_samples": 32,
+      "native_samples": 16
+    },
+    {
+      "reservation": "st-mixed-native520914v1",
+      "revision": "3ac2b17f34a21eebd9f2947dda61461adca4bad8",
+      "status": "PASS",
+      "cells": [
+        {
+          "decode_rows": 8,
+          "prefill_rows": 9240,
+          "hot_quota": 0,
+          "warm_samples": 7,
+          "native_decode_ms": 3.3810469903983176,
+          "native_complete_ms": 47.97830298775807,
+          "native_complete_range_ms": [
+            31.616970023605973,
+            48.534572997596115
+          ],
+          "prepare_ms": 8.626761002233252,
+          "decode_ms": 10.242820018902421,
+          "complete_ms": 53.94100598641671,
+          "complete_range_ms": [
+            28.154371975688264,
+            56.05727300280705
+          ],
+          "paired_complete_ratio_median": 1.1250743735662199,
+          "stages_ms": {
+            "value_check_ms": 0.06687999120913446,
+            "route_plan_ms": 0.8999489946290851,
+            "value_check_wait_ms": 1.2072290119249374,
+            "metadata_prepare_ms": 0.5617110000457615,
+            "metadata_reads_ms": 0.02054395736195147,
+            "agreement_ms": 1.0662369895726442
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.001658856488081567
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 8,
+          "prefill_rows": 9240,
+          "hot_quota": 128,
+          "warm_samples": 7,
+          "native_decode_ms": 3.3810469903983176,
+          "native_complete_ms": 47.97830298775807,
+          "native_complete_range_ms": [
+            31.616970023605973,
+            48.534572997596115
+          ],
+          "prepare_ms": 8.875351981259882,
+          "decode_ms": 10.337107989471406,
+          "complete_ms": 53.99916600435972,
+          "complete_range_ms": [
+            36.654285999247804,
+            56.14836100721732
+          ],
+          "paired_complete_ratio_median": 1.1506596955258614,
+          "stages_ms": {
+            "value_check_ms": 0.06479999865405262,
+            "route_plan_ms": 1.091212994651869,
+            "value_check_wait_ms": 1.4983160072006285,
+            "metadata_prepare_ms": 0.6067179783713073,
+            "metadata_reads_ms": 0.029040034860372543,
+            "agreement_ms": 1.0755490220617503
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.001916265428376657
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 9240,
+          "hot_quota": 0,
+          "warm_samples": 7,
+          "native_decode_ms": 7.4261080008000135,
+          "native_complete_ms": 52.43054698803462,
+          "native_complete_range_ms": [
+            52.11905998294242,
+            52.93760198401287
+          ],
+          "prepare_ms": 10.703299019951373,
+          "decode_ms": 16.665667004417628,
+          "complete_ms": 60.66537302103825,
+          "complete_range_ms": [
+            41.617456008680165,
+            63.36397401173599
+          ],
+          "paired_complete_ratio_median": 1.1571133428482514,
+          "stages_ms": {
+            "value_check_ms": 0.25716700474731624,
+            "route_plan_ms": 1.2411169882398099,
+            "value_check_wait_ms": 1.1514690122567117,
+            "metadata_prepare_ms": 1.1674209963530302,
+            "metadata_reads_ms": 0.11865596752613783,
+            "agreement_ms": 1.4134520024526864
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.0016299555289705457
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 9240,
+          "hot_quota": 128,
+          "warm_samples": 7,
+          "native_decode_ms": 7.4261080008000135,
+          "native_complete_ms": 52.43054698803462,
+          "native_complete_range_ms": [
+            52.11905998294242,
+            52.93760198401287
+          ],
+          "prepare_ms": 10.937793995253742,
+          "decode_ms": 16.74861100036651,
+          "complete_ms": 60.51383799058385,
+          "complete_range_ms": [
+            46.603698981925845,
+            63.07607001508586
+          ],
+          "paired_complete_ratio_median": 1.1561810627409905,
+          "stages_ms": {
+            "value_check_ms": 0.26875099865719676,
+            "route_plan_ms": 1.4863800024613738,
+            "value_check_wait_ms": 0.9114209969993681,
+            "metadata_prepare_ms": 1.2453729868866503,
+            "metadata_reads_ms": 0.11327906395308673,
+            "agreement_ms": 1.4191160153131932
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.002246053285208291
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 8,
+          "prefill_rows": 32768,
+          "hot_quota": 0,
+          "warm_samples": 7,
+          "native_decode_ms": 3.2139759860001504,
+          "native_complete_ms": 137.66243198188022,
+          "native_complete_range_ms": [
+            134.07340299454518,
+            137.9808470082935
+          ],
+          "prepare_ms": 25.33844398567453,
+          "decode_ms": 29.23243399709463,
+          "complete_ms": 154.75696299108677,
+          "complete_range_ms": [
+            135.6752699939534,
+            156.30371001316234
+          ],
+          "paired_complete_ratio_median": 1.1237879312549186,
+          "stages_ms": {
+            "value_check_ms": 0.2913589996751398,
+            "route_plan_ms": 3.1481199839618057,
+            "value_check_wait_ms": 0.028992013540118933,
+            "metadata_prepare_ms": 3.8140059914439917,
+            "metadata_reads_ms": 0.12849605991505086,
+            "agreement_ms": 4.159445001278073
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.001090177471838723
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 8,
+          "prefill_rows": 32768,
+          "hot_quota": 128,
+          "warm_samples": 7,
+          "native_decode_ms": 3.2139759860001504,
+          "native_complete_ms": 137.66243198188022,
+          "native_complete_range_ms": [
+            134.07340299454518,
+            137.9808470082935
+          ],
+          "prepare_ms": 26.14578598877415,
+          "decode_ms": 30.061503988690674,
+          "complete_ms": 154.7300190140959,
+          "complete_range_ms": [
+            153.1526640173979,
+            155.54889698978513
+          ],
+          "paired_complete_ratio_median": 1.1260993708569433,
+          "stages_ms": {
+            "value_check_ms": 0.29249500948935747,
+            "route_plan_ms": 3.2763909839559346,
+            "value_check_wait_ms": 0.029055983759462833,
+            "metadata_prepare_ms": 3.816341981291771,
+            "metadata_reads_ms": 0.14652698882855475,
+            "agreement_ms": 4.327091999584809
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.0011923185052858996
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 32768,
+          "hot_quota": 0,
+          "warm_samples": 7,
+          "native_decode_ms": 7.4941079947166145,
+          "native_complete_ms": 142.31107800151221,
+          "native_complete_range_ms": [
+            139.12315102061257,
+            142.9694780090358
+          ],
+          "prepare_ms": 24.194495985284448,
+          "decode_ms": 29.795601003570482,
+          "complete_ms": 151.85886100516655,
+          "complete_range_ms": [
+            134.37412399798632,
+            152.88608998525888
+          ],
+          "paired_complete_ratio_median": 1.0694732109760652,
+          "stages_ms": {
+            "value_check_ms": 0.10638398816809058,
+            "route_plan_ms": 3.851686022244394,
+            "value_check_wait_ms": 0.020975974621251225,
+            "metadata_prepare_ms": 3.1878149893600494,
+            "metadata_reads_ms": 0.03563202335499227,
+            "agreement_ms": 4.654579010093585
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00641025641025641,
+              "relative_rms": 0.0013539265287727013
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        },
+        {
+          "decode_rows": 32,
+          "prefill_rows": 32768,
+          "hot_quota": 128,
+          "warm_samples": 7,
+          "native_decode_ms": 7.4941079947166145,
+          "native_complete_ms": 142.31107800151221,
+          "native_complete_range_ms": [
+            139.12315102061257,
+            142.9694780090358
+          ],
+          "prepare_ms": 23.95337601774372,
+          "decode_ms": 29.64393701404333,
+          "complete_ms": 152.02666900586337,
+          "complete_range_ms": [
+            145.30372599256225,
+            155.0688850111328
+          ],
+          "paired_complete_ratio_median": 1.0671547609503729,
+          "stages_ms": {
+            "value_check_ms": 0.08960001287050545,
+            "route_plan_ms": 2.65432900050655,
+            "value_check_wait_ms": 0.6242069939617068,
+            "metadata_prepare_ms": 3.180664003593847,
+            "metadata_reads_ms": 0.03862296580336988,
+            "agreement_ms": 4.586964001646265
+          },
+          "maximum_errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.0015221263388171633
+            }
+          },
+          "target_52_ms_met": false,
+          "adoption_latency_gate_met": false
+        }
+      ],
+      "peak_allocated_gib": 5.318692684173584,
+      "mixed_samples": 64,
+      "native_samples": 32
+    }
+  ]
+}

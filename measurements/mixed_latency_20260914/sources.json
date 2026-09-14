@@ -1,0 +1,68 @@
+{
+  "gpu_image": "sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed",
+  "cpu_image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+  "gpu_runs": [
+    {
+      "file": "st-mixed-native0914v1.json",
+      "admission": "st-mixed-native0914v1-admission.json",
+      "reservation": "st-mixed-native0914v1",
+      "ticket": "17893583273934876",
+      "revision": "fb6e4cf346eb8545b2dc403032619626ca8d3cd7",
+      "frozen_checkout": "/home/choiceoh/st-worktrees/codex-gb10-mixed-native"
+    },
+    {
+      "file": "st-mixed-drain0914v1.json",
+      "admission": "st-mixed-drain0914v1-admission.json",
+      "reservation": "st-mixed-drain0914v1",
+      "ticket": "1789359299113547",
+      "revision": "67e14cdcbc6c5176e04228a1f088b2da6c9d2302",
+      "frozen_checkout": "/home/choiceoh/st-worktrees/codex-gb10-mixed-drain"
+    },
+    {
+      "file": "st-mixed-token0914v1.json",
+      "admission": "st-mixed-token0914v1-admission.json",
+      "reservation": "st-mixed-token0914v1",
+      "ticket": "1789359713255115",
+      "revision": "b881357ae5c1b456ffb5329508051b860ad3b2ae",
+      "frozen_checkout": "/home/choiceoh/st-worktrees/codex-gb10-mixed-token"
+    },
+    {
+      "file": "st-mixed-n1280914v1.json",
+      "admission": "st-mixed-n1280914v1-admission.json",
+      "reservation": "st-mixed-n1280914v1",
+      "ticket": "1789360015347535",
+      "revision": "38e275d6259271b45f7ae3753224cfbc5cbdd684",
+      "frozen_checkout": "/home/choiceoh/st-worktrees/codex-gb10-mixed-n128"
+    },
+    {
+      "file": "st-mixed-overlap0914v1.json",
+      "admission": "st-mixed-overlap0914v1-admission.json",
+      "reservation": "st-mixed-overlap0914v1",
+      "ticket": "1789360489491174",
+      "revision": "a2646be1be627339b0a40ac9a71ac13785c29fda",
+      "frozen_checkout": "/home/choiceoh/st-worktrees/codex-gb10-mixed-overlap"
+    },
+    {
+      "file": "st-mixed-native520914v1.json",
+      "admission": "st-mixed-native520914v1-admission.json",
+      "reservation": "st-mixed-native520914v1",
+      "ticket": "1789361160696118",
+      "revision": "3ac2b17f34a21eebd9f2947dda61461adca4bad8",
+      "frozen_checkout": "/home/choiceoh/st-worktrees/codex-gb10-mixed-native52"
+    }
+  ],
+  "cpu_runs": [
+    {
+      "file": "cpu.json",
+      "revision": "3ac2b17f34a21eebd9f2947dda61461adca4bad8"
+    },
+    {
+      "file": "compile.json",
+      "revision": "3ac2b17f34a21eebd9f2947dda61461adca4bad8"
+    },
+    {
+      "file": "native_bench.json",
+      "revision": "3ac2b17f34a21eebd9f2947dda61461adca4bad8"
+    }
+  ]
+}
