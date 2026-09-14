@@ -20,6 +20,7 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--activation-store', action='store_true', help='compare packed activation stores')
     mode.add_argument('--fc2-words', action='store_true', help='compare in-place FC2 word restoration')
+    mode.add_argument('--fc1-reuse', action='store_true', help='compare gate/up A/SFA register reuse')
     args = parser.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '':
         raise RuntimeError('compile requires CUDA_VISIBLE_DEVICES=')
@@ -36,14 +37,31 @@ def main():
             patch.object(torch.cuda, 'get_device_capability', return_value=(12, 1)):
         from engine.kernels.b12x import moe_dispatch as md
         from engine.kernels.b12x.moe_static_kernel_v4 import MoEStaticKernelV4
+        import cutlass.cute as cute
         setup = MoEStaticKernelV4._setup_attributes
+        validate_fragment = MoEStaticKernelV4._validate_fc1_reuse_fragment
+
+        def checked_fragment(owner, fragment, name):
+            counts = validate_fragment(owner, fragment, name)
+            selected.setdefault('retained_fragment_elements', {})[name] = counts
+            return counts
 
         def checked_setup(owner, hidden_size):
             setup(owner, hidden_size)
+            a_bytes = sum(cute.size_in_bytes(dtype, cute.slice_(layout, (None, None, 0)))
+                          for dtype, layout in ((owner.a_dtype, owner.a1_smem_layout_staged),
+                                                (owner.sf_dtype, owner.sfa1_smem_layout_staged)))
+            b_bytes = cute.size_in_bytes(owner.b_dtype,
+                                        cute.slice_(owner.b1_smem_layout_staged, (None, None, 0)))
+            weight_bytes = b_bytes + 1552*owner.sf1_packed_blocks
             selected.update(smem_bytes=owner.smem_bytes,
                             smem_capacity=owner.smem_capacity,
                             separate=owner.sf6_separate, word_expand=owner.sf6_word_expand,
                             fc2_word_expand=owner.sf6_fc2_word_expand,
+                            fc1_reuse_a=owner.fc1_reuse_a,
+                            fc1_a_sfa_bytes=a_bytes,
+                            fc1_gate_bytes=weight_bytes+a_bytes,
+                            fc1_up_bytes=weight_bytes+(0 if owner.fc1_reuse_a else a_bytes),
                             packed_activation_store=owner.packed_activation_store)
 
         def builder(module, name, build, **kwargs):
@@ -93,18 +111,25 @@ def main():
                      (8, True, True, True, True), (8, True, True, True, False),
                      (8, False, True, True, True), (16, True, True, True, True),
                      (32, True, True, True, True)]
+        cases = [(*case, True) for case in cases]
+        if args.fc1_reuse:
+            cases = [(1, True, True, True, True, True), (7, True, True, True, True, True),
+                     (8, True, True, True, True, True), (8, True, True, True, True, False),
+                     (16, True, True, True, True, True), (32, True, True, True, True, True)]
         with patch.object(md, 'get_num_sm', return_value=48), \
                 patch.object(md, 'get_max_active_clusters', return_value=48), \
                 patch.object(md, 'build_and_load_cute_dsl_kernel', builder), \
+                patch.object(MoEStaticKernelV4, '_validate_fc1_reuse_fragment', checked_fragment), \
                 patch.object(MoEStaticKernelV4, '_setup_attributes', checked_setup):
-            for rows, separate, word_expand, activation_store, fc2_word_expand in cases:
+            for rows, separate, word_expand, activation_store, fc2_word_expand, fc1_reuse_a in cases:
                 selected.clear()
                 selected.update(rows=rows, requested_separate=separate, requested_word_expand=word_expand,
                                 requested_activation_store=activation_store,
-                                requested_fc2_word_expand=fc2_word_expand)
+                                requested_fc2_word_expand=fc2_word_expand, requested_fc1_reuse_a=fc1_reuse_a)
                 config = dict(md._parse_glm53_static_v2('t,r,sf6'),
                               sf6_separate=separate, sf6_word_expand=word_expand,
                               sf6_fc2_word_expand=fc2_word_expand,
+                              fc1_reuse_a=fc1_reuse_a,
                               packed_activation_store=activation_store)
                 try:
                     config = md._static_v2_decode_config(config, rows)
