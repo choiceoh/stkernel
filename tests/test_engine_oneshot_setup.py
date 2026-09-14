@@ -29,7 +29,7 @@ using bf16 = uint16_t;
 struct ibv_device { int rail; };
 struct ibv_context { int rail, children = 0; };
 struct ibv_pd { ibv_context* ctx; int children = 0; };
-struct ibv_cq { ibv_context* ctx; int children = 0; };
+struct ibv_cq { ibv_context* ctx; int cqe, children = 0; };
 struct ibv_mr { ibv_pd* pd; uint32_t lkey = 7, rkey = 8; };
 struct ibv_qp { ibv_pd* pd; ibv_cq* cq; uint32_t qp_num = 9; };
 union ibv_gid { uint8_t raw[16]; };
@@ -45,7 +45,8 @@ static int acquire_step, fail_acquire, release_step, fail_release;
 static int contexts, lists, allocations, registrations, released;
 static int gid_count = 40, gid_match = 31, queries, missing_rail = -1, inactive_rail = -1;
 static unsigned inline_cap = 16;
-static bool join_fails;
+static bool join_fails, short_cq, short_sq;
+static int peer_count(int rail);
 static bool acquire_fails() { return ++acquire_step == fail_acquire; }
 static bool release_fails() { return ++release_step == fail_release; }
 static ibv_device devices[2] = {{0},{1}};
@@ -101,16 +102,20 @@ ibv_pd* ibv_alloc_pd(ibv_context* c) {
   if (acquire_fails()) return nullptr;
   ++c->children; return new ibv_pd{c};
 }
-ibv_cq* ibv_create_cq(ibv_context* c, int, void*, void*, int) {
+ibv_cq* ibv_create_cq(ibv_context* c, int entries, void*, void*, int) {
+  assert(entries == 2 * RING * peer_count(c->rail));
   if (acquire_fails()) return nullptr;
-  ++c->children; return new ibv_cq{c};
+  ++c->children; return new ibv_cq{c, entries + (short_cq ? -1 : 3)};
 }
 ibv_mr* ibv_reg_mr(ibv_pd* pd, void*, size_t, int) {
   if (acquire_fails()) return nullptr;
   assert(registrations); ++pd->children; return new ibv_mr{pd};
 }
 ibv_qp* ibv_create_qp(ibv_pd* pd, ibv_qp_init_attr* a) {
+  assert(a->cap.max_send_wr == 2 * RING && a->cap.max_recv_wr == 0);
+  assert(a->cap.max_send_sge == 1 && a->qp_type == IBV_QPT_RC);
   if (acquire_fails()) return nullptr;
+  a->cap.max_send_wr += short_sq ? -1 : 8;
   assert(a->send_cq == a->recv_cq && a->send_cq->ctx == pd->ctx);
   a->cap.max_inline_data = inline_cap;
   ++pd->children; ++a->send_cq->children; return new ibv_qp{pd, a->send_cq};
@@ -147,6 +152,12 @@ int mock_join(pthread_t, void**) { return join_fails ? 1 : 0; }
 '''
 
 CHECKS = r'''
+static int peer_count(int rail) {
+  int peers = 0;
+  for (int rank = 0; rank < 4; ++rank)
+    if (rank != g_rank && osar_pair_rail(rank, g_rank, OSAR_RAILS) == rail) ++peers;
+  return peers;
+}
 static const std::vector<std::string> ips = OSAR_RAILS == 2
     ? std::vector<std::string>{"10.10.10.1", "10.10.11.1"}
     : std::vector<std::string>{"10.10.10.1"};
@@ -175,6 +186,9 @@ int main() {
     rejects(); empty(); // every partial acquisition unwinds
   }
   fail_acquire = 0;
+  short_cq = true; rejects(); empty(); short_cq = false;
+  short_sq = true; rejects(); empty(); short_sq = false;
+  for (int rank = 1; rank < 4; ++rank) { init_ctx(rank, 4, ips); py_shutdown(); empty(); }
   for (int fault = 1; fault <= releases; ++fault) {
     acquire_step = release_step = 0; fail_release = fault;
     init_ctx(0, 4, ips); py_shutdown();
