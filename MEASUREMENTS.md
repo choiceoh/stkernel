@@ -2638,3 +2638,19 @@ M1–8 SF6 decode reform에 기본 ON이며, 더 큰 행 수와 기존 q 경로�
 그래프 helper 4개의 네이티브 컴파일이 통과했다. GPU 큐 제출·엔진 부팅은 하지 않았으며
 품질·수용률·step/s는 미측정이다. 오라클 총 개선율도 paired MoE 계수가 없어 null이다.
 [소스 해시·명령어·자원·재현 기록](measurements/st_moe_fc2_words_20260914/README.md).
+
+### 920차 — C1 FC1 gate/up 입력·스케일 재사용 (2026-09-14, srv2 CPU, PR #920)
+
+gate가 읽은 K256 입력·스케일 레지스터를 up도 쓰고, up의 중복 A/SFA DMA를 없앴다.
+기존 B/SFB 스테이지 링을 유지하며 gate 리더만 전송 전에 4096 기대 바이트를 더한다.
+실제 레지스터 레이아웃에서 네 K64 블록이 겹치지 않음을 컴파일 시 검증한다. 별도 A 링을
+추가하지 않으며 M1–8 SF6 decode reform에 기본 ON이다.
+
+H4096 작업당 A/SFA 전송 32회·65536 B가 줄고 공유 메모리→레지스터 입력 로드도 절반이다.
+같은 소스 M8 control/candidate는 레지스터 126→121, NOP 제외 정적 명령어 3540→3485,
+stack/local 0·staged shared 100352 B다. 이는 성능 개선율 주장이 아니다. 실제 생산자·소비자
+루프, 전송량, 리더 한 명의 expect_tx, 해제 버퍼 poison·반복 재사용 등을 포함한 18 CPU
+테스트와 전체 커널 6형상의 네이티브 컴파일이 통과했다. 실물 GPU 비교 레인은 준비했으나
+큐 제출·엔진 부팅·GPU 실행은 하지 않았다. 품질·수용률·step/s는 미측정이고 오라클의 총
+개선율도 paired MoE 계수가 없어 null이다.
+[소스 해시·데이터 흐름·명령어·자원·재현 기록](measurements/st_moe_fc1_reuse_20260914/README.md).
