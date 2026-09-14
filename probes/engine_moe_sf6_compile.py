@@ -21,6 +21,7 @@ def main():
     mode.add_argument('--activation-store', action='store_true', help='compare packed activation stores')
     mode.add_argument('--fc2-words', action='store_true', help='compare in-place FC2 word restoration')
     mode.add_argument('--fc1-reuse', action='store_true', help='compare gate/up A/SFA register reuse')
+    mode.add_argument('--compact-staging', action='store_true', help='compare compact FC1 inputs and disjoint FC2 scales')
     args = parser.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '':
         raise RuntimeError('compile requires CUDA_VISIBLE_DEVICES=')
@@ -59,6 +60,12 @@ def main():
                             separate=owner.sf6_separate, word_expand=owner.sf6_word_expand,
                             fc2_word_expand=owner.sf6_fc2_word_expand,
                             fc1_reuse_a=owner.fc1_reuse_a,
+                            compact_staging=owner.compact_staging,
+                            fc1_input_stages=owner.fc1_input_stages,
+                            fc1_input_bytes=sum(cute.size_in_bytes(dtype, layout) for dtype, layout in
+                                ((owner.a_dtype, owner.a1_smem_layout_staged),
+                                 (owner.sf_dtype, owner.sfa1_smem_layout_staged))),
+                            fc2_packed_bytes=owner.sf2_packed_bytes,
                             fc1_a_sfa_bytes=a_bytes,
                             fc1_gate_bytes=weight_bytes+a_bytes,
                             fc1_up_bytes=weight_bytes+(0 if owner.fc1_reuse_a else a_bytes),
@@ -99,38 +106,36 @@ def main():
             print(json.dumps(record), flush=True)
             return kernel
 
-        cases = ([(1, True, True, True), (7, True, True, True), (8, True, True, True),
-                  (8, True, True, False), (16, True, True, True), (32, True, True, True)]
-                 if args.activation_store else
-                 [(1, True, True, True), (7, True, True, True), (8, True, True, True),
-                  (8, True, False, True), (8, False, False, True),
-                  (16, True, True, True), (32, True, True, True)])
-        cases = [(*case, True) for case in cases]
-        if args.fc2_words:
-            cases = [(1, True, True, True, True), (7, True, True, True, True),
-                     (8, True, True, True, True), (8, True, True, True, False),
-                     (8, False, True, True, True), (16, True, True, True, True),
-                     (32, True, True, True, True)]
-        cases = [(*case, True) for case in cases]
-        if args.fc1_reuse:
-            cases = [(1, True, True, True, True, True), (7, True, True, True, True, True),
-                     (8, True, True, True, True, True), (8, True, True, True, True, False),
-                     (16, True, True, True, True, True), (32, True, True, True, True, True)]
+        # Each comparison changes only its named axis; in particular the
+        # earlier FC1-reuse probe must not silently include compact staging.
+        defaults = dict(sf6_separate=True, sf6_word_expand=True,
+                        packed_activation_store=True, sf6_fc2_word_expand=True,
+                        fc1_reuse_a=True, compact_staging=False)
+        if args.compact_staging:
+            defaults['compact_staging'] = True
+        cases = [(rows, {}) for rows in (1, 7, 8)]
+        if args.compact_staging:
+            cases += [(8, dict(compact_staging=False)), (8, dict(fc1_reuse_a=False))]
+        elif args.fc1_reuse:
+            cases += [(8, dict(fc1_reuse_a=False))]
+        elif args.fc2_words:
+            cases += [(8, dict(sf6_fc2_word_expand=False)), (8, dict(sf6_separate=False))]
+        elif args.activation_store:
+            cases += [(8, dict(packed_activation_store=False))]
+        else:
+            cases += [(8, dict(sf6_word_expand=False)),
+                      (8, dict(sf6_separate=False, sf6_word_expand=False))]
+        cases += [(rows, {}) for rows in (16, 32)]
         with patch.object(md, 'get_num_sm', return_value=48), \
                 patch.object(md, 'get_max_active_clusters', return_value=48), \
                 patch.object(md, 'build_and_load_cute_dsl_kernel', builder), \
                 patch.object(MoEStaticKernelV4, '_validate_fc1_reuse_fragment', checked_fragment), \
                 patch.object(MoEStaticKernelV4, '_setup_attributes', checked_setup):
-            for rows, separate, word_expand, activation_store, fc2_word_expand, fc1_reuse_a in cases:
+            for rows, overrides in cases:
                 selected.clear()
-                selected.update(rows=rows, requested_separate=separate, requested_word_expand=word_expand,
-                                requested_activation_store=activation_store,
-                                requested_fc2_word_expand=fc2_word_expand, requested_fc1_reuse_a=fc1_reuse_a)
-                config = dict(md._parse_glm53_static_v2('t,r,sf6'),
-                              sf6_separate=separate, sf6_word_expand=word_expand,
-                              sf6_fc2_word_expand=fc2_word_expand,
-                              fc1_reuse_a=fc1_reuse_a,
-                              packed_activation_store=activation_store)
+                requested = dict(defaults, **overrides)
+                selected.update(rows=rows, requested=requested)
+                config = dict(md._parse_glm53_static_v2('t,r,sf6'), **requested)
                 try:
                     config = md._static_v2_decode_config(config, rows)
                     md._get_static_kernel_v2(288, 288, rows, 4096, 512, 8, rows*8,

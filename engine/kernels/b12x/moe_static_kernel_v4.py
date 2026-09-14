@@ -124,6 +124,7 @@ class MoEStaticKernelV4:
         sf6_fc2_word_expand: bool = True,
         packed_activation_store: bool = True,
         fc1_reuse_a: bool = True,
+        compact_staging: bool = True,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -220,6 +221,14 @@ class MoEStaticKernelV4:
         # K64 block. Retain gate's slices through up; neither MMA writes them.
         # Gate alone loads A/SFA; the original B/SFB stage ring is unchanged.
         self.fc1_reuse_a = bool(fc1_reuse_a and self.decode_reform and self.reform_sf_pack)
+        # Gate always occupies an even B/SFB slot when the ring is even.
+        # Up reads registers, so only gate slots need A/SFA storage. The
+        # original gate-slot release protects reuse of its compact input.
+        # Spend part of that storage on disjoint FC2 packed scales, removing
+        # the in-place read-before-write barrier without growing the CTA.
+        self.compact_staging = bool(compact_staging and self.fc1_reuse_a
+                                    and self.sf6_separate and self.fc1_stages % 2 == 0)
+        self.fc1_input_stages = self.fc1_stages // 2 if self.compact_staging else self.fc1_stages
         # Scatter only consumes rows in this M16 tile. Avoid initializing
         # 112 unused token/weight entries per item and reclaim their storage.
         self.scatter_cache_rows = self.tile_m if self.sf6_separate else _COMPACT_STATIC_TILE_M
@@ -239,6 +248,7 @@ class MoEStaticKernelV4:
         # Gather just one N128 row half in its existing 1024-byte stage:
         # low512 + high256 + base/alignment16. No extra shared/global buffer.
         self.sf2_stage_bytes = 1552 if self.decode_reform else 784
+        self.sf2_packed_bytes = self.fc2_stages * self.sf2_stage_bytes if self.compact_staging else 0
         if self.sf_pack and self.skip_sf:
             raise ValueError("xs (skip the FC1 SFB boxes) and sf_pack are exclusive")
         if self.sf_pack and self.split:
@@ -484,6 +494,7 @@ class MoEStaticKernelV4:
         # padding before the first 1024-byte-aligned tensor. A separate
         # allocation after Storage would lose this padding reuse.
         offset = _align_up(offset, 16) + self.sf6_packed_bytes
+        offset = _align_up(offset, 16) + self.sf2_packed_bytes
         buffers = [
             cute.size_in_bytes(self.a_dtype, self.a1_smem_layout_staged),
             cute.size_in_bytes(self.b_dtype, self.b1_smem_layout_staged),
@@ -499,6 +510,11 @@ class MoEStaticKernelV4:
         for size in buffers:
             offset = _align_up(offset, self.buffer_align_bytes) + size
         return offset
+
+    def _fc1_input_slot(self, stage):
+        # An even ring starts at gate slot zero and advances in gate/up
+        # pairs, including across work items. Odd rings keep their layout.
+        return stage // Int32(2) if self.compact_staging else stage
 
     def _make_tiled_mma(self, tile_shape_mnk):
         import cutlass.utils.blackwell_helpers as sm120_utils
@@ -578,7 +594,7 @@ class MoEStaticKernelV4:
         self.num_k_blocks = self.fc2_tile_k // 64
 
         self.a1_smem_layout_staged = self._make_a_smem_layout(
-            self.tile_m, self.fc1_tile_k, self.fc1_stages
+            self.tile_m, self.fc1_tile_k, self.fc1_input_stages
         )
         (
             self.b1_smem_layout_staged,
@@ -588,6 +604,17 @@ class MoEStaticKernelV4:
         ) = self._staged_layouts(
             self.fc1_tile_shape_mnk, self.epi1_tile, self.tiled_mma1, self.fc1_stages
         )
+        if self.compact_staging:
+            original_sfa = self.sfa1_smem_layout_staged
+            self.sfa1_smem_layout_staged = sm120_make_smem_layout_sfa(
+                self.tiled_mma1, self.fc1_tile_shape_mnk, self.sf_vec_size, self.fc1_input_stages)
+            original_a = self._make_a_smem_layout(self.tile_m, self.fc1_tile_k, self.fc1_stages)
+            for original, compact in ((original_a, self.a1_smem_layout_staged),
+                                      (original_sfa, self.sfa1_smem_layout_staged)):
+                if (cute.slice_(original, (None, None, 0)) != cute.slice_(compact, (None, None, 0))
+                        or cute.cosize(original) != 2 * cute.cosize(compact)
+                        or cute.size(compact, mode=[2]) != self.fc1_input_stages):
+                    raise ValueError("compact FC1 input changed the per-stage consumer layout")
         (
             self.b2_smem_layout_staged,
             _,
@@ -980,6 +1007,9 @@ class MoEStaticKernelV4:
             packed_fc1: cute.struct.Align[
                 cute.struct.MemRange[cutlass.Uint8, self.sf6_packed_bytes], 16
             ]
+            packed_fc2: cute.struct.Align[
+                cute.struct.MemRange[cutlass.Uint8, self.sf2_packed_bytes], 16
+            ]
             sA1: cute.struct.Align[
                 cute.struct.MemRange[self.a_dtype, cute.cosize(a1_smem_staged)],
                 self.buffer_align_bytes,
@@ -1026,6 +1056,10 @@ class MoEStaticKernelV4:
             sf1_input_base_addr = shared_ptr_to_u32(storage.packed_fc1.data_ptr())
         else:
             sf1_input_base_addr = shared_ptr_to_u32(storage.sSFB1.data_ptr())
+        if cutlass.const_expr(self.compact_staging):
+            sf2_input_base_addr = shared_ptr_to_u32(storage.packed_fc2.data_ptr())
+        else:
+            sf2_input_base_addr = shared_ptr_to_u32(storage.sSFB2.data_ptr())
 
         prod_group = pipeline.CooperativeGroup(pipeline.Agent.Thread)
         cons_group = pipeline.CooperativeGroup(
@@ -1721,7 +1755,7 @@ class MoEStaticKernelV4:
                                 if cutlass.const_expr(self.a_ring):
                                     a_slot = a_cons_state.index
                                 else:
-                                    a_slot = fc1_cons_state.index
+                                    a_slot = self._fc1_input_slot(fc1_cons_state.index)
                                 csA_p = csA1[None, None, None, a_slot]
                                 csB_p = csB1[None, None, None, fc1_cons_state.index]
                                 fz_csSFA_p = cute.filter_zeros(
@@ -1926,9 +1960,14 @@ class MoEStaticKernelV4:
                     fc2_pipeline.consumer_wait(fc2_cons_state, fc2_peek)
                     if cutlass.const_expr(self.reform_sf_pack):
                         if cutlass.const_expr(self.decode_reform):
+                            sf2_packed_addr = None
+                            if cutlass.const_expr(self.compact_staging):
+                                sf2_packed_addr = (sf2_input_base_addr
+                                    + fc2_cons_state.index * Int32(self.sf2_stage_bytes))
                             self._sf_expand_stage(
                                 sfb2_base_addr + fc2_cons_state.index * Int32(2048),
                                 Int32(tidx), 2048,
+                                packed_addr=sf2_packed_addr,
                                 word_expand=self.sf6_fc2_word_expand,
                             )
                         else:
@@ -2241,7 +2280,7 @@ class MoEStaticKernelV4:
                                                       and (not self.fc1_reuse_a or gu == 0)):
                                     cute.copy(
                                         tma_a, tAgA_mk[(None, k_tile)],
-                                        tAsA[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
+                                        tAsA[(None, self._fc1_input_slot(fc1_prod_state.index))], tma_bar_ptr=bar,
                                     )
                                 if cutlass.const_expr(gu == 0):
                                     cute.copy(
@@ -2257,7 +2296,7 @@ class MoEStaticKernelV4:
                                                       and (not self.fc1_reuse_a or gu == 0)):
                                     cute.copy(
                                         tma_sfa, tAgSFA_mk[(None, k_tile)],
-                                        tAsSFA[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
+                                        tAsSFA[(None, self._fc1_input_slot(fc1_prod_state.index))], tma_bar_ptr=bar,
                                     )
                                 if cutlass.const_expr(not self.skip_sf):
                                     if cutlass.const_expr(self.reform_sf_pack):
@@ -2341,6 +2380,9 @@ class MoEStaticKernelV4:
                         if is_dma_lane0:
                             if cutlass.const_expr(self.decode_reform):
                                 sf2_dest = sfb2_base_addr + fc2_prod_state.index * Int32(2048)
+                                if cutlass.const_expr(self.compact_staging):
+                                    sf2_dest = (sf2_input_base_addr
+                                        + fc2_prod_state.index * Int32(self.sf2_stage_bytes))
                                 sf2_tile = output_tile_idx
                             else:
                                 sf2_dest = sfb2_base_addr + fc2_prod_state.index * Int32(1024)

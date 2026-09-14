@@ -39,7 +39,7 @@ def method(name, env, *, suspend=False):
 
 
 def geometry(reform=True, packed=True, separate=True, stages=2, word_expand=True,
-             fc2_word_expand=True):
+             fc2_word_expand=True, reuse=True, compact=True, fc2_stages=None):
     env = dict(cutlass=SimpleNamespace(Float32=object()), DenseGemmKernel=object(),
         utils=SimpleNamespace(get_smem_capacity_in_bytes=lambda _: 101376),
         pipeline=SimpleNamespace(NamedBarrier=lambda **kw: SimpleNamespace(**kw)),
@@ -52,8 +52,12 @@ def geometry(reform=True, packed=True, separate=True, stages=2, word_expand=True
                 pass
     owner = SimpleNamespace()
     method('__init__', env)(owner, 16, 4, decode_reform=reform,
-        reform_sf_pack=packed, sf6_separate=separate, fc1_stages=stages, fc2_stages=stages,
-        sf6_word_expand=word_expand, sf6_fc2_word_expand=fc2_word_expand)
+        reform_sf_pack=packed, sf6_separate=separate, fc1_stages=stages,
+        fc2_stages=stages if fc2_stages is None else fc2_stages,
+        sf6_word_expand=word_expand, sf6_fc2_word_expand=fc2_word_expand,
+        fc1_reuse_a=reuse, compact_staging=compact)
+    slot = method('_fc1_input_slot', dict(Int32=int))
+    owner._fc1_input_slot = lambda stage: slot(owner, stage)
     return owner
 
 
@@ -107,6 +111,7 @@ def expand(mem, dest, size, source=None, seed=0, word_expand=True, word_override
     assert sorted(stores) == list(range(dest, dest+size, 4))
     input_base = dest if source is None else source
     assert all(input_base <= addr <= input_base+size*3//4 for addr in loads)
+    return len(barriers)
 
 
 class Sf6StagingTests(unittest.TestCase):
