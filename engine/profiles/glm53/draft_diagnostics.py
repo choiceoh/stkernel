@@ -22,7 +22,13 @@ def classify(picks, drafts, support, alive, remaining, ends, temps):
     chosen = picks[:, :k].gather(1, first.clamp_max(k - 1).view(n, 1)).squeeze(1)
     candidates = support.gather(1, first.clamp_max(k - 1).view(n, 1, 1).expand(n, 1, support.shape[2])).squeeze(1)
     covered = (candidates == chosen[:, None]).any(1)
-    cause = torch.where(first == k, 0, torch.where(covered, 2, 1))
+    # debug (never merge): where the target's token and the walk's own pick sit in the drafter's candidates, which
+    # vocab.topk orders by drafter logit -- packed above the reason as reason + 256 * target rank + 65536 * draft rank
+    drafted = drafts.gather(1, first.clamp_max(k - 1).view(n, 1)).squeeze(1)
+    target_rank = (candidates == chosen[:, None]).to(torch.int64).argmax(1)
+    draft_rank = (candidates == drafted[:, None]).to(torch.int64).argmax(1)
+    cause = torch.where(first == k, 0, torch.where(covered, 2 + 256 * target_rank + 65536 * draft_rank,
+                                                   1 + 65536 * draft_rank))
     end_at = torch.arange(k + 1, device=drafts.device).view(1, k + 1)
     is_end = (picks[:, :, None] == ends[:, None, :]).any(-1)
     visible = torch.minimum(remaining, torch.where(is_end, end_at + 1, k + 1).amin(1))
@@ -65,12 +71,13 @@ class DraftDiagnostics:
         for seq, context, (prefix, code) in zip(seqs, contexts, results):
             if code < 0:
                 continue
-            reason = REASONS[code]
+            reason = REASONS[code % 256]
             self.counts[reason, prefix] += 1
             if self.sink is not None:
                 self.sink(kind='draft_rejection', operation='greedy_first_rejection', phase='decode',
                           seq=int(seq), context=int(context), accepted_prefix=int(prefix),
-                          reason=reason, draft_width=self.k)
+                          reason=reason, draft_width=self.k,
+                          target_rank=int((code // 256) % 256), draft_rank=int(code // 65536))
 
     def note_sync(self, seq, context, slot, accepted, new, remaining, ends, *, policy_modified=False, trace_eligible=True):
         # agree_walk broadcasts rank zero's actual predecessor path. Other
@@ -103,7 +110,7 @@ class DraftDiagnostics:
                 code = 0
             else:
                 candidates = self.support[slot, accepted].tolist()
-                code = 2 if new[accepted] in candidates else 1
+                code = 2 + 256 * candidates.index(new[accepted]) if new[accepted] in candidates else 1   # debug: rank
         self.note([seq], [context], [[prefix, code]])
 
     def snapshot(self):
