@@ -2612,3 +2612,16 @@ stack/local 0, 공유 메모리는 추가되지 않았다. 이것은 실행 시�
 엔진 부팅은 하지 않았고 품질·수용률·step/s는 미측정이다. 업그레이드 오라클도 새 MoE 계수가
 없어 C1 2K/32K/128K 총 개선율을 null로 남긴다.
 [소스 해시·명령어·자원·재현 기록](measurements/st_moe_sf6_word_20260914/README.md).
+
+### 916차 — C1 MoE 중간 활성값을 64비트로 직접 저장 (2026-09-14, srv2 CPU, PR #916)
+
+양자화 함수가 반환한 FP4 8바이트를 다시 쪼개지 않고 정렬된 64-bit shared store 한 번으로
+저장한다. 실제 FC2 소비자 주소·8-byte 정렬·연속성을 컴파일 시 모든 바이트에 대해 검증한다.
+양자화·스케일·BF16 반올림·게시 장벽은 유지하고, M1–8 decode reform에 기본 ON이다.
+
+같은 소스의 M8 control/candidate에서 NOP 제외 정적 명령어는 3741→3708(-33),
+바이트 저장 8개는 64-bit 저장 1개로 바뀐다. 레지스터 126·stack/local 0·staged shared
+100352 B는 동일하다. 12개 CPU 테스트, 실제 전체 커널 6형상과 반복 그래프 helper 2개의
+컴파일이 통과했다. GPU 큐 제출·엔진 부팅은 하지 않았으며, 품질·수용률·step/s는 미측정이다.
+업그레이드 오라클도 paired MoE 계수가 없어 총 개선율을 null로 남긴다.
+[소스 해시·명령어·자원·재현 기록](measurements/st_moe_activation_store_20260914/README.md).
