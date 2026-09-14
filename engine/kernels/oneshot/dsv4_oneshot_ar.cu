@@ -636,6 +636,7 @@ static void *proxy_fn(void *) {
     }
   }
   uint64_t sent = 0, acknowledged = 0, done[64] = {0}, beat = 0;
+  unsigned outstanding[OSAR_RAILS] = {};
   while (!g_ctrl->stop) {
     // The poll count stays in this thread. It used to be stored into
     // Ctrl::proxy_beat on every pass: millions of CPU writes a second into the
@@ -659,6 +660,7 @@ static void *proxy_fn(void *) {
           fprintf(stderr, "[oneshot] post_send failed; proxy exiting\n");
           return nullptr;
         }
+        ++outstanding[g_peer_rail[p]];
       }
 #if OSAR_PROXY_INLINE
       if (sent == 1) {
@@ -673,12 +675,16 @@ static void *proxy_fn(void *) {
     // poll every rail, even if no new GPU publication arrives.
     if (acknowledged != sent) {
       for (int rail = 0; rail < OSAR_RAILS; ++rail) {
+        // The other function can still be draining after this one retired
+        // every flag. Do not poll an empty rail while waiting for its peer.
+        if (outstanding[rail] == 0) continue;
         struct ibv_wc wc[16];
         int n = ibv_poll_cq(g_cq[rail], 16, wc);
         if (n < 0) {
           fprintf(stderr, "[oneshot] poll_cq failed on rail %d; proxy exiting\n", rail);
           return nullptr;
         }
+        outstanding[rail] -= n;
         for (int i = 0; i < n; i++) {
           if (wc[i].status != IBV_WC_SUCCESS) {
             fprintf(stderr, "[oneshot] WC error %d on rail %d; proxy exiting\n", wc[i].status, rail);

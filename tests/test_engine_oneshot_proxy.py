@@ -136,6 +136,7 @@ int ibv_post_send(ibv_qp* qp, ibv_send_wr* first, ibv_send_wr** bad) {
 
 int ibv_poll_cq(ibv_cq* cq, int capacity, ibv_wc* output) {
   assert(control.ack_seq.value < published);  // no empty-CQ calls while idle
+  assert(!completion[cq->rail].empty());  // or after only this rail retires
   ++polls;
   if (mode == 1) return -7;
   // One function lags for two passes, including passes with no new sends.

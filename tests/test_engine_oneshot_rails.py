@@ -57,7 +57,7 @@ int main() {
         self.assertIn('ibv_create_qp(g_pd[rail], &qia)', source)
         self.assertIn('g_mr[g_peer_rail[p]]->lkey', source)
         self.assertIn('osar_pair_rail(peer, g_rank, OSAR_RAILS) == g_peer_rail[s]', source)
-        self.assertRegex(source, r'for \(int rail = 0; rail < OSAR_RAILS; \+\+rail\) \{\s+struct ibv_wc wc\[16\];')
+        self.assertIn('ibv_poll_cq(g_cq[rail], 16, wc)', source)
 
     def test_the_proxy_keeps_its_poll_count_out_of_the_registered_header(self):
         source = SOURCE.read_text()

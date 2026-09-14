@@ -32,3 +32,29 @@ The actual one/two-rail Torch extension compile/load record is retained in
 reservation, model boot, service restart or image build was used. Existing queued
 fleet work was not modified. Consumer latency/step rate and GPU numerics remain
 unmeasured for this revision; the original fleet gate still applies.
+
+## Further refinement: per-rail work and batched measurement events
+
+- Track outstanding flag completions per rail. After one rail drains, only the
+  other rail is polled until new sends arrive. The production-proxy mock rejects
+  polls on a drained rail as well as globally idle polls, while exercising
+  delayed completion and reuse for both rail counts and flag modes.
+- Allocate and initialize every timing event before the existing warmup sync
+  and rank barrier. Reuse the same pairs across cells (72 event objects become
+  24). Enqueue all twelve graph replays, then wait only on the last
+  end event. Same-stream order makes the earlier events readable. Sample count,
+  first-sample exclusion, chain size, cells and median/p90 calculation stay the
+  same; timed-batch host synchronizations fall from 36 to 3 across three cells.
+- `oneshot_latency_method=batched-events-v1` identifies the new boot measurement
+  method. Compare transport revisions using the same method; an improvement
+  versus the former host-paced gauge alone is not transport-speed evidence.
+- The new CPU lifecycle test runs the actual sampler with fake events/graphs:
+  it verifies reducer dispatch, event creation before timing, all replays before
+  one wait per cell, first-sample exclusion, statistics and graph reset.
+
+The final focused CPU suite is 14 tests, zero failures or skips. Final native
+one/two-rail compile/load evidence is `compile-batched.json`; focused output is
+`cpu-batched.log`. The earlier refinement's evidence remains source-bound to
+its own revision. First refinement CI `34815670903` passed 1,802 engine tests
+(360 skipped), 115 onepass tests and 77 oracle tests. The further refinement
+requires its own final CI and still has no GPU/RDMA or consumer timing result.

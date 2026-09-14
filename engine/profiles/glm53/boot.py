@@ -1289,6 +1289,7 @@ def fleet(a) -> int:
                             "draft_selector_trace_every": str(getattr(getattr(engine.drafter, 'tuning', None), 'trace_every', 0)),
                             "nvme_mapped_staging": str(cfg["nvme_mapped_staging"]),
                             "oneshot_rails": str(comm.transport.rails),
+                            "oneshot_latency_method": comm.transport.LATENCY_METHOD,
                             "oneshot_latency_us": " ".join(f"{k}={v:g}" for k, v in comm.transport.latency.items()),
                             "kda_state_dtype": F.kda_state_dtype,
                             "mla_prefill": cfg["mla_prefill"], "spec_k": str(engine.drafter.k),

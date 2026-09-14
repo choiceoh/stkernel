@@ -159,6 +159,7 @@ class OneShot:
     # greedy sampler's int64 MAX. Each is a captured chain of CHAIN collectives replayed REPLAYS times.
     LATENCY_CELLS = (('sum_8rows', 8), ('sum_32rows', 32), ('max_8keys', 0))
     LATENCY_CHAIN, LATENCY_REPLAYS = 16, 12
+    LATENCY_METHOD = 'batched-events-v1'
 
     def _sample_latency(self):
         """Per-collective wall time on this rank, in µs: a captured chain amortizes the arrival skew of its
@@ -168,6 +169,13 @@ class OneShot:
         import statistics
         report, graphs = {}, []
         try:
+            events = [(torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True))
+                      for _ in range(self.LATENCY_REPLAYS)]
+            # Materialize lazy handles before the first warmup sync/barrier.
+            # Each cell finishes before the next, so these pairs can be reused.
+            for start, end in events:
+                start.record()
+                end.record()
             for name, rows in self.LATENCY_CELLS:
                 if rows:
                     x = torch.zeros((rows, self.hidden), device='cuda', dtype=torch.bfloat16)
@@ -184,15 +192,16 @@ class OneShot:
                     for _ in range(self.LATENCY_CHAIN):
                         op(x)
                 dist.barrier(group=self.control)
-                samples = []
-                for _ in range(self.LATENCY_REPLAYS):
-                    start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+                for start, end in events:
                     start.record()
                     graph.replay()
                     end.record()
-                    end.synchronize()
-                    samples.append(start.elapsed_time(end) * 1000. / self.LATENCY_CHAIN)
-                samples = sorted(samples[1:])
+                # Same-stream ordering makes every earlier event readable
+                # after the last one. Queue the whole batch before waiting:
+                # per-replay host wakeups would add skew between ranks.
+                events[-1][1].synchronize()
+                samples = sorted(start.elapsed_time(end) * 1000. / self.LATENCY_CHAIN
+                                 for start, end in events[1:])
                 report[name] = round(statistics.median(samples), 1)
                 report[name + '_p90'] = round(samples[int(len(samples) * .9)], 1)
         finally:
