@@ -45,12 +45,11 @@ def _router_gemm(X, W, Out, M, BM: tl.constexpr, BN: tl.constexpr, BK: tl.conste
                 words = tl.load(X.to(tl.pointer_type(tl.uint16))
                     + rank[:,None]*(PACKET_BYTES//2) + local_row[:,None]*2048 + word_k[None,:],
                     rows[:,None] < M, other=0)
-                low = words.to(tl.uint8).to(tl.float8e4nv, bitcast=True).to(tl.float32)
-                high = (words >> 8).to(tl.uint8).to(tl.float8e4nv, bitcast=True).to(tl.float32)
-                # Join BF16 values, not bytes: a byte-valued join again selects
-                # kWidth=4. Both independent conversions retain unpack's RN.
-                a = tl.join((low*scale[:,None]).to(tl.bfloat16),
-                            (high*scale[:,None]).to(tl.bfloat16)).reshape((BM,BK))
+                # Gather in registers instead of JoinOp: the runtime compiler
+                # widens dot kWidth for joined pairs even after a BF16 cast.
+                expanded = tl.gather(words, tl.broadcast_to((kk//2)[None,:], (BM,BK)), 1)
+                bits = ((expanded >> ((kk[None,:] & 1)*8)) & 255).to(tl.uint8)
+                a = (bits.to(tl.float8e4nv, bitcast=True).to(tl.float32)*scale[:,None]).to(tl.bfloat16)
             else:
                 offset = local_row[:,None]*4096 + k[None,:]
                 words = tl.load(X.to(tl.pointer_type(tl.uint16))
