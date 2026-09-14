@@ -145,7 +145,8 @@ class ContractTests(unittest.TestCase):
     def test_the_production_boot_sets_the_floor_and_the_supervisor_ping_asks(self):
         boot = (ROOT / "engine/profiles/glm53/boot.py").read_text()
         self.assertIn("PARK_MIN_TOKENS = 128", boot)
-        server = next(n for n in ast.walk(ast.parse(boot)) if isinstance(n, ast.Call)
+        fleet = next(n for n in ast.parse(boot).body if isinstance(n, ast.FunctionDef) and n.name == 'fleet')
+        server = next(n for n in ast.walk(fleet) if isinstance(n, ast.Call)
                       and isinstance(n.func, ast.Name) and n.func.id == 'Server')
         keywords = {k.arg: ast.unparse(k.value) for k in server.keywords}
         self.assertEqual(keywords['lease'], 'lease')

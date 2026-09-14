@@ -608,7 +608,8 @@ class ProbeLeaseTests(unittest.TestCase):
         self.assertIn("def fleet_lease_of()", boot)
         # the reservation is now taken at the top of fleet() -- before the 67 GiB, not after -- and carried
         self.assertIn("lease = fleet_lease_of()", boot)
-        server = next(n for n in ast.walk(ast.parse(boot)) if isinstance(n, ast.Call)
+        fleet = next(n for n in ast.parse(boot).body if isinstance(n, ast.FunctionDef) and n.name == 'fleet')
+        server = next(n for n in ast.walk(fleet) if isinstance(n, ast.Call)
                       and isinstance(n.func, ast.Name) and n.func.id == 'Server')
         keywords = {k.arg: ast.unparse(k.value) for k in server.keywords}
         self.assertEqual(keywords['lease'], 'lease')
