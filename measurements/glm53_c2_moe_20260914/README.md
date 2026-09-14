@@ -1,5 +1,9 @@
 # GLM53 C=2 MoE M16 specialization — 2026-09-14
 
+This records the initial tile-only candidate. The current PR955 candidate adds
+[C2 direct register scatter](../glm53_c2_direct_20260914/README.md), with stronger
+component results and the same requirement for full consumer validation.
+
 **Decision: retain an explicit candidate; do not change the production default.**
 Native resources improve and the real-weight numerical checks pass, but the
 component observations do not establish a consistent latency advantage. Full
