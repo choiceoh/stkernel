@@ -24,14 +24,21 @@ def exchange_local(net, layer, carry, side, *, moe_output=False):
         return net._moe(layer, carry.x, finalize=transport.exchange_moe)
     if not hasattr(transport, "produce") or (side == "ffn" and (net.F.is_moe(layer) or getattr(net, "dense_nvfp4", False))):
         return transport.exchange(local(net, layer, carry, side))
-    def project(x, name):
+    def project(x, name, pack=None):
         dense = net.dense.get(name)
         writer = getattr(dense, "slot_writer", lambda rows: None)(x.shape[0])
         if writer is None:
+            if pack is not None:
+                raise ValueError(f"{name}: a producer pack needs its bound direct writer")
             return transport.exchange(net.linear(x, name))
         # The previous MHC activation has the result's shape. Native MHC
         # uses it only as metadata when the descriptor supplies all ranks.
-        return transport.produce(carry.x, lambda address: writer(x, address))
+        if pack is None:
+            return transport.produce(carry.x, lambda address: writer(x, address))
+        return transport.produce(carry.x, lambda address: writer(x, address, pack=pack))
+    # x's producer may write a bound C1 writer's input pack (net._kda asks project_pack_rows first).
+    project.pack_rows = lambda name, rows: bool(getattr(net.dense.get(name), "producer_pack_rows",
+                                                        lambda rows: False)(rows))
     return local(net, layer, carry, side, project=project)
 
 
