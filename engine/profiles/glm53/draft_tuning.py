@@ -19,7 +19,7 @@ class DraftTuning:
     smoothing_alpha: dict = field(default_factory=dict)
     gptq_damping: dict = field(default_factory=dict)
     request_boundaries: bool = False
-    trace_every: int = 0
+    trace_every: int = 1              # debug (never merge): every synchronous step records its selector trace
     digest: str = 'selector-fp32-fc-bias-auto-v1'
     selector_projection_fp32: bool = True
     fc_bias: dict = field(default_factory=dict)
