@@ -1,0 +1,841 @@
+{
+  "source": "825f4f122caebb8cee6b054848b2a305346cad47",
+  "isolated": false,
+  "engine_speed_claim": false,
+  "comparisons": [
+    {
+      "artifact": "tile-v3.json",
+      "passed": true,
+      "numerical_cells": 21,
+      "worst_relative": 0.0,
+      "timings": [
+        {
+          "rows": 8,
+          "unique": 8,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.1852160021662712,
+          "candidate_ms": 0.2008880004286766,
+          "change_pct": 8.461470973947716
+        },
+        {
+          "rows": 8,
+          "unique": 8,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.24527199938893318,
+          "candidate_ms": 0.24131999909877777,
+          "change_pct": -1.6112725056269595
+        },
+        {
+          "rows": 8,
+          "unique": 16,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.2956080064177513,
+          "candidate_ms": 0.2906479984521866,
+          "change_pct": -1.6779004146982635
+        },
+        {
+          "rows": 8,
+          "unique": 16,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.34722399711608887,
+          "candidate_ms": 0.3473279997706413,
+          "change_pct": 0.029952611402506157
+        },
+        {
+          "rows": 8,
+          "unique": 32,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.5234799981117249,
+          "candidate_ms": 0.5225840061903,
+          "change_pct": -0.17116067942554158
+        },
+        {
+          "rows": 8,
+          "unique": 32,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.5711199939250946,
+          "candidate_ms": 0.5737279951572418,
+          "change_pct": 0.456646809757677
+        },
+        {
+          "rows": 8,
+          "unique": 56,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.8826079964637756,
+          "candidate_ms": 0.8864479809999466,
+          "change_pct": 0.43507248422358646
+        },
+        {
+          "rows": 8,
+          "unique": 56,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.9348640143871307,
+          "candidate_ms": 0.9580079913139343,
+          "change_pct": 2.4756517066256034
+        },
+        {
+          "rows": 8,
+          "unique": 64,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.9994399845600128,
+          "candidate_ms": 0.9979120045900345,
+          "change_pct": -0.15288361418229757
+        },
+        {
+          "rows": 8,
+          "unique": 64,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 1.0498160123825073,
+          "candidate_ms": 1.0489360094070435,
+          "change_pct": -0.08382449544341863
+        },
+        {
+          "rows": 8,
+          "unique": 55,
+          "correlated": false,
+          "cache": "warm",
+          "base_ms": 0.8697680085897446,
+          "candidate_ms": 0.868256002664566,
+          "change_pct": -0.17384014015762173
+        },
+        {
+          "rows": 8,
+          "unique": 55,
+          "correlated": false,
+          "cache": "evicted",
+          "base_ms": 0.9287039935588837,
+          "candidate_ms": 0.9344799965620041,
+          "change_pct": 0.6219423027337578
+        },
+        {
+          "rows": 8,
+          "unique": 8,
+          "correlated": true,
+          "cache": "warm",
+          "base_ms": 0.1937119998037815,
+          "candidate_ms": 0.18937600031495094,
+          "change_pct": -2.2383742324805223
+        },
+        {
+          "rows": 8,
+          "unique": 8,
+          "correlated": true,
+          "cache": "evicted",
+          "base_ms": 0.2523199990391731,
+          "candidate_ms": 0.24299199879169464,
+          "change_pct": -3.6968929466547396
+        },
+        {
+          "rows": 16,
+          "unique": 8,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.22736800089478493,
+          "candidate_ms": 0.2441440001130104,
+          "change_pct": 7.378346624065446
+        },
+        {
+          "rows": 16,
+          "unique": 8,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.29735199362039566,
+          "candidate_ms": 0.2844400033354759,
+          "change_pct": -4.342325110287771
+        },
+        {
+          "rows": 16,
+          "unique": 16,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.33401600271463394,
+          "candidate_ms": 0.329599991440773,
+          "change_pct": -1.3220957193580185
+        },
+        {
+          "rows": 16,
+          "unique": 16,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.39191199839115143,
+          "candidate_ms": 0.38308800011873245,
+          "change_pct": -2.2515254211768476
+        },
+        {
+          "rows": 16,
+          "unique": 32,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.5416159927845001,
+          "candidate_ms": 0.5374400168657303,
+          "change_pct": -0.7710215308267987
+        },
+        {
+          "rows": 16,
+          "unique": 32,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.6001680046319962,
+          "candidate_ms": 0.5929919928312302,
+          "change_pct": -1.1956671707559763
+        },
+        {
+          "rows": 16,
+          "unique": 56,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.904559999704361,
+          "candidate_ms": 0.8932240009307861,
+          "change_pct": -1.2532058434244098
+        },
+        {
+          "rows": 16,
+          "unique": 56,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.9614879935979843,
+          "candidate_ms": 0.945472002029419,
+          "change_pct": -1.665750552810541
+        },
+        {
+          "rows": 16,
+          "unique": 80,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 1.3024959862232208,
+          "candidate_ms": 1.261000007390976,
+          "change_pct": -3.1858815129686913
+        },
+        {
+          "rows": 16,
+          "unique": 80,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 1.3198720216751099,
+          "candidate_ms": 1.300976037979126,
+          "change_pct": -1.4316527197843154
+        },
+        {
+          "rows": 16,
+          "unique": 128,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 1.991864025592804,
+          "candidate_ms": 1.965855985879898,
+          "change_pct": -1.3057136119101087
+        },
+        {
+          "rows": 16,
+          "unique": 128,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 2.0667279958724976,
+          "candidate_ms": 2.0366079211235046,
+          "change_pct": -1.4573797233669028
+        },
+        {
+          "rows": 16,
+          "unique": 98,
+          "correlated": false,
+          "cache": "warm",
+          "base_ms": 1.5723440051078796,
+          "candidate_ms": 1.5611999928951263,
+          "change_pct": -0.7087515312521386
+        },
+        {
+          "rows": 16,
+          "unique": 98,
+          "correlated": false,
+          "cache": "evicted",
+          "base_ms": 1.6394800245761871,
+          "candidate_ms": 1.6136879920959473,
+          "change_pct": -1.573183698100089
+        },
+        {
+          "rows": 16,
+          "unique": 11,
+          "correlated": true,
+          "cache": "warm",
+          "base_ms": 0.26866399496793747,
+          "candidate_ms": 0.27216800302267075,
+          "change_pct": 1.3042343300044612
+        },
+        {
+          "rows": 16,
+          "unique": 11,
+          "correlated": true,
+          "cache": "evicted",
+          "base_ms": 0.3240400031208992,
+          "candidate_ms": 0.32551199942827225,
+          "change_pct": 0.45426376163311133
+        }
+      ]
+    },
+    {
+      "artifact": "shared-serial-v3.json",
+      "passed": true,
+      "numerical_cells": 21,
+      "worst_relative": 0.0,
+      "timings": [
+        {
+          "rows": 8,
+          "unique": 8,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.23361599817872047,
+          "candidate_ms": 0.24030399322509766,
+          "change_pct": 2.8628155171379843
+        },
+        {
+          "rows": 8,
+          "unique": 8,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.24860800057649612,
+          "candidate_ms": 0.24939999729394913,
+          "change_pct": 0.31857249791495956
+        },
+        {
+          "rows": 8,
+          "unique": 16,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.34593599289655685,
+          "candidate_ms": 0.35025598853826523,
+          "change_pct": 1.248784668382319
+        },
+        {
+          "rows": 8,
+          "unique": 16,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.3566640019416809,
+          "candidate_ms": 0.35816000401973724,
+          "change_pct": 0.41944296870783937
+        },
+        {
+          "rows": 8,
+          "unique": 32,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.5719759911298752,
+          "candidate_ms": 0.5749920010566711,
+          "change_pct": 0.5272965952361375
+        },
+        {
+          "rows": 8,
+          "unique": 32,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.5777279883623123,
+          "candidate_ms": 0.577023983001709,
+          "change_pct": -0.12185758259678492
+        },
+        {
+          "rows": 8,
+          "unique": 56,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.9327200055122375,
+          "candidate_ms": 0.9335200041532516,
+          "change_pct": 0.08577050307554401
+        },
+        {
+          "rows": 8,
+          "unique": 56,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.9382239878177643,
+          "candidate_ms": 0.9380000084638596,
+          "change_pct": -0.02387269530654823
+        },
+        {
+          "rows": 8,
+          "unique": 64,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 1.0492879748344421,
+          "candidate_ms": 1.0405199825763702,
+          "change_pct": -0.8356135273022036
+        },
+        {
+          "rows": 8,
+          "unique": 64,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 1.0580480098724365,
+          "candidate_ms": 1.0547200441360474,
+          "change_pct": -0.3145382539673558
+        },
+        {
+          "rows": 8,
+          "unique": 55,
+          "correlated": false,
+          "cache": "warm",
+          "base_ms": 0.9208159893751144,
+          "candidate_ms": 0.9378959983587265,
+          "change_pct": 1.8548775412993157
+        },
+        {
+          "rows": 8,
+          "unique": 55,
+          "correlated": false,
+          "cache": "evicted",
+          "base_ms": 0.9296720176935196,
+          "candidate_ms": 0.9256640076637268,
+          "change_pct": -0.4311208634348862
+        },
+        {
+          "rows": 8,
+          "unique": 8,
+          "correlated": true,
+          "cache": "warm",
+          "base_ms": 0.24314400181174278,
+          "candidate_ms": 0.2393999993801117,
+          "change_pct": -1.5398292385308099
+        },
+        {
+          "rows": 8,
+          "unique": 8,
+          "correlated": true,
+          "cache": "evicted",
+          "base_ms": 0.24781599640846252,
+          "candidate_ms": 0.24772800132632256,
+          "change_pct": -0.03550823329214747
+        },
+        {
+          "rows": 16,
+          "unique": 8,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.27619999647140503,
+          "candidate_ms": 0.2771280035376549,
+          "change_pct": 0.33599097686662915
+        },
+        {
+          "rows": 16,
+          "unique": 8,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.2914479970932007,
+          "candidate_ms": 0.29015999287366867,
+          "change_pct": -0.4419327744153767
+        },
+        {
+          "rows": 16,
+          "unique": 16,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.38837600499391556,
+          "candidate_ms": 0.37403199821710587,
+          "change_pct": -3.693329812441526
+        },
+        {
+          "rows": 16,
+          "unique": 16,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.3965520039200783,
+          "candidate_ms": 0.3888480067253113,
+          "change_pct": -1.9427457480002186
+        },
+        {
+          "rows": 16,
+          "unique": 32,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.5925280004739761,
+          "candidate_ms": 0.5853039920330048,
+          "change_pct": -1.2191843145290537
+        },
+        {
+          "rows": 16,
+          "unique": 32,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.6027279943227768,
+          "candidate_ms": 0.5953440070152283,
+          "change_pct": -1.2250944666748254
+        },
+        {
+          "rows": 16,
+          "unique": 56,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.9481039941310883,
+          "candidate_ms": 0.9428400099277496,
+          "change_pct": -0.5552116894268488
+        },
+        {
+          "rows": 16,
+          "unique": 56,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.9642719924449921,
+          "candidate_ms": 0.9536160081624985,
+          "change_pct": -1.1050807620653247
+        },
+        {
+          "rows": 16,
+          "unique": 80,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 1.3165040016174316,
+          "candidate_ms": 1.295376032590866,
+          "change_pct": -1.6048541440518371
+        },
+        {
+          "rows": 16,
+          "unique": 80,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 1.3268480002880096,
+          "candidate_ms": 1.3063680231571198,
+          "change_pct": -1.5435058971671523
+        },
+        {
+          "rows": 16,
+          "unique": 128,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 2.0417920351028442,
+          "candidate_ms": 2.0083600282669067,
+          "change_pct": -1.637385505534772
+        },
+        {
+          "rows": 16,
+          "unique": 128,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 4.61299991607666,
+          "candidate_ms": 4.568559885025024,
+          "change_pct": -0.9633650956020756
+        },
+        {
+          "rows": 16,
+          "unique": 98,
+          "correlated": false,
+          "cache": "warm",
+          "base_ms": 1.620936006307602,
+          "candidate_ms": 1.5731119811534882,
+          "change_pct": -2.9503956336347947
+        },
+        {
+          "rows": 16,
+          "unique": 98,
+          "correlated": false,
+          "cache": "evicted",
+          "base_ms": 4.18610405921936,
+          "candidate_ms": 4.129040002822876,
+          "change_pct": -1.3631781625401351
+        },
+        {
+          "rows": 16,
+          "unique": 11,
+          "correlated": true,
+          "cache": "warm",
+          "base_ms": 0.31626400351524353,
+          "candidate_ms": 0.317903995513916,
+          "change_pct": 0.5185515836276355
+        },
+        {
+          "rows": 16,
+          "unique": 11,
+          "correlated": true,
+          "cache": "evicted",
+          "base_ms": 0.32659999281167984,
+          "candidate_ms": 0.32810400426387787,
+          "change_pct": 0.4605056599205959
+        }
+      ]
+    },
+    {
+      "artifact": "shared-overlap-v3.json",
+      "passed": true,
+      "numerical_cells": 21,
+      "worst_relative": 0.0,
+      "timings": [
+        {
+          "rows": 8,
+          "unique": 8,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.2426000013947487,
+          "candidate_ms": 0.2430959977209568,
+          "change_pct": 0.20445025694828534
+        },
+        {
+          "rows": 8,
+          "unique": 8,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.2511280030012131,
+          "candidate_ms": 0.24955199658870697,
+          "change_pct": -0.6275709573091648
+        },
+        {
+          "rows": 8,
+          "unique": 16,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.3527599945664406,
+          "candidate_ms": 0.3468160033226013,
+          "change_pct": -1.6849958428944656
+        },
+        {
+          "rows": 8,
+          "unique": 16,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.3543279990553856,
+          "candidate_ms": 0.35439200699329376,
+          "change_pct": 0.01806460061830606
+        },
+        {
+          "rows": 8,
+          "unique": 32,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.6026400029659271,
+          "candidate_ms": 0.5452239960432053,
+          "change_pct": -9.52741381921972
+        },
+        {
+          "rows": 8,
+          "unique": 32,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.5801120102405548,
+          "candidate_ms": 0.5790719985961914,
+          "change_pct": -0.17927773016320758
+        },
+        {
+          "rows": 8,
+          "unique": 56,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.9109920114278793,
+          "candidate_ms": 0.9397520124912262,
+          "change_pct": 3.1569981627247
+        },
+        {
+          "rows": 8,
+          "unique": 56,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.9434079974889755,
+          "candidate_ms": 0.9382639974355698,
+          "change_pct": -0.5452572023024294
+        },
+        {
+          "rows": 8,
+          "unique": 64,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 1.0189360082149506,
+          "candidate_ms": 1.0183359682559967,
+          "change_pct": -0.05888887566207757
+        },
+        {
+          "rows": 8,
+          "unique": 64,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 1.0540480017662048,
+          "candidate_ms": 1.05486398935318,
+          "change_pct": 0.07741465147770299
+        },
+        {
+          "rows": 8,
+          "unique": 55,
+          "correlated": false,
+          "cache": "warm",
+          "base_ms": 0.8680959939956665,
+          "candidate_ms": 0.8704399913549423,
+          "change_pct": 0.270015917074673
+        },
+        {
+          "rows": 8,
+          "unique": 55,
+          "correlated": false,
+          "cache": "evicted",
+          "base_ms": 0.9300239980220795,
+          "candidate_ms": 0.9253279864788055,
+          "change_pct": -0.5049344482788709
+        },
+        {
+          "rows": 8,
+          "unique": 8,
+          "correlated": true,
+          "cache": "warm",
+          "base_ms": 0.187135998159647,
+          "candidate_ms": 0.18695200234651566,
+          "change_pct": -0.0983219770331778
+        },
+        {
+          "rows": 8,
+          "unique": 8,
+          "correlated": true,
+          "cache": "evicted",
+          "base_ms": 0.24740000069141388,
+          "candidate_ms": 0.24783200398087502,
+          "change_pct": 0.1746173355916758
+        },
+        {
+          "rows": 16,
+          "unique": 8,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.22592000663280487,
+          "candidate_ms": 0.22790399938821793,
+          "change_pct": 0.8781837363512901
+        },
+        {
+          "rows": 16,
+          "unique": 8,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.2906400039792061,
+          "candidate_ms": 0.2871999964118004,
+          "change_pct": -1.1835974127126114
+        },
+        {
+          "rows": 16,
+          "unique": 16,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.33587200194597244,
+          "candidate_ms": 0.33349601179361343,
+          "change_pct": -0.7074094114999263
+        },
+        {
+          "rows": 16,
+          "unique": 16,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.3964959979057312,
+          "candidate_ms": 0.38975200057029724,
+          "change_pct": -1.7008992199304296
+        },
+        {
+          "rows": 16,
+          "unique": 32,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.5417359918355942,
+          "candidate_ms": 0.5401920080184937,
+          "change_pct": -0.28500668967349485
+        },
+        {
+          "rows": 16,
+          "unique": 32,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.6045359969139099,
+          "candidate_ms": 0.5944799929857254,
+          "change_pct": -1.6634251689757629
+        },
+        {
+          "rows": 16,
+          "unique": 56,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 0.9044239968061447,
+          "candidate_ms": 0.8983759880065918,
+          "change_pct": -0.6687138798738945
+        },
+        {
+          "rows": 16,
+          "unique": 56,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 0.9639039933681488,
+          "candidate_ms": 0.9510879963636398,
+          "change_pct": -1.3295926868947094
+        },
+        {
+          "rows": 16,
+          "unique": 80,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 1.2677280008792877,
+          "candidate_ms": 1.2541840076446533,
+          "change_pct": -1.0683674435872925
+        },
+        {
+          "rows": 16,
+          "unique": 80,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 1.3264960050582886,
+          "candidate_ms": 1.3066640198230743,
+          "change_pct": -1.495065583280275
+        },
+        {
+          "rows": 16,
+          "unique": 128,
+          "correlated": null,
+          "cache": "warm",
+          "base_ms": 2.003872036933899,
+          "candidate_ms": 1.9720160067081451,
+          "change_pct": -1.5897237766986483
+        },
+        {
+          "rows": 16,
+          "unique": 128,
+          "correlated": null,
+          "cache": "evicted",
+          "base_ms": 2.076143980026245,
+          "candidate_ms": 2.097304046154022,
+          "change_pct": 1.019200321911673
+        },
+        {
+          "rows": 16,
+          "unique": 98,
+          "correlated": false,
+          "cache": "warm",
+          "base_ms": 1.567304015159607,
+          "candidate_ms": 1.533215969800949,
+          "change_pct": -2.174947874116595
+        },
+        {
+          "rows": 16,
+          "unique": 98,
+          "correlated": false,
+          "cache": "evicted",
+          "base_ms": 1.6243279874324799,
+          "candidate_ms": 1.5841600000858307,
+          "change_pct": -2.4728988023004717
+        },
+        {
+          "rows": 16,
+          "unique": 11,
+          "correlated": true,
+          "cache": "warm",
+          "base_ms": 0.26579200476408005,
+          "candidate_ms": 0.2719999998807907,
+          "change_pct": 2.3356590888506723
+        },
+        {
+          "rows": 16,
+          "unique": 11,
+          "correlated": true,
+          "cache": "evicted",
+          "base_ms": 0.32633599638938904,
+          "candidate_ms": 0.3250479996204376,
+          "change_pct": -0.39468424666659896
+        }
+      ]
+    }
+  ]
+}
