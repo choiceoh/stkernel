@@ -25,14 +25,20 @@ from engine.profiles.glm53 import drafter as drafter_mod
 from engine.profiles.glm53.caches import layout, snapshot_layout, stage_bytes, cache_capacity, state_dtype
 
 RUNTIME_FLOOR_GIB = 5.54            # ledger 40th boot table (vLLM): CUDA context + NCCL 16 channels -- re-measure on ST
-WORKSPACE_GIB = 9.0                 # base/runtime_memory's enforced ceiling for everything outside the arena (#549)
+WORKSPACE_GIB = 12.0                # base/runtime_memory's enforced ceiling for everything outside the arena (#549)
 """The ceiling is what admission asks the box for on top of the arena, so every GiB of it that no phase spends is a GiB a
 boot can be refused over. It was 12 from #549 on, with vLLM's activation slope under it. On 2026-09-13 nine ready boots
-wrote ledgers on all four ranks (36 of them): the largest reserved peak is 7.48 GiB, at the largest prefill chunk
-(prefill/32256/0/prepared), and the largest allocated peak 6.67 GiB; one tree's four ranks agree to 0.04 GiB. 9 GiB
-keeps 1.52 GiB above the reserved peak -- the allocator returns its cached blocks before it refuses -- and gives the
-box 3 GiB back: the same day srv4 refused production about 1.5 GiB short. A shape that needs more (a wider decode batch
-warmed 10.56 GiB in an experiment) raises it with `--workspace-gib` / ST_WORKSPACE_GIB and its own ledger."""
+wrote ledgers on all four ranks (36 of them): the largest reserved peak was 7.48 GiB, at the largest prefill chunk
+(prefill/32256/0/prepared), and the largest allocated peak 6.67 GiB; one tree's four ranks agree to 0.04 GiB. #891 set
+9 GiB, 1.52 GiB above that peak -- the allocator returns its cached blocks before it refuses -- which gave the box 3 GiB
+back: the same day srv4 refused production about 1.5 GiB short.
+
+On 2026-09-14 main after #939/#943/#944 (68f7c1d6, 87304780) spends more at the other end of the served context. The
+same chunk at context 943872 (prefill/32256/943872/prepared) reserved 9.67 GiB in a ready boot at 12 GiB, where the last
+ready boot at 9 GiB (2ed1f047) had peaked at 6.75 GiB; at 9 GiB all four ranks ran out of the allocator's 64.52 GiB in
+that warmup with 21-34 GiB of their boxes still free. What a ready boot retains did not move (2.15 GiB against 2.12)
+and its least OOM margin was 23.02 GiB. 12 GiB keeps 2.33 GiB above that peak and asks each node for 3 GiB more than
+9 did. A shape that needs more raises it with `--workspace-gib` / ST_WORKSPACE_GIB and its own ledger."""
 OS_RESERVE_MARGIN_GIB = 1.0        # 7 GiB on the fleet: one GiB above its SIGTERM line
 
 
