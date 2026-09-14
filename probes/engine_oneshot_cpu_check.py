@@ -21,15 +21,18 @@ def main():
     spec.loader.exec_module(module)
     extensions = {}
     for rails in (1, 2):
-        extension = module.build(rails)
-        assert hasattr(extension, 'oneshot_max_int64')
-        assert hasattr(extension, 'oneshot_gather_int64')
-        assert hasattr(extension, 'rails')
-        extensions[rails] = extension
-    assert extensions[1].__name__ != extensions[2].__name__
+        for inline in (False, True):
+            extension = module.build(rails, inline_flags=inline)
+            assert hasattr(extension, 'oneshot_max_int64')
+            assert hasattr(extension, 'oneshot_gather_int64')
+            assert extension.rails()[0] == rails
+            assert extension.transport_modes()[1] == int(inline)
+            extensions[f'rails{rails}_inline{int(inline)}'] = extension
+    assert len({ext.__name__ for ext in extensions.values()}) == 4
     assert not torch.cuda.is_initialized()
-    report = dict(status='PASS', evidence='full Torch extension compile/load only, one and two RoCE rails', gpu_used=False,
+    report = dict(status='PASS', evidence='full Torch extension compile/load only, rails 1/2 x inline 0/1', gpu_used=False,
                   torch=torch.__version__, cuda=torch.version.cuda, max_elements=module.MAX_ELEMENTS,
+                  extension_names={key: ext.__name__ for key, ext in extensions.items()},
                   extension_sha256={rails: hashlib.sha256(Path(ext.__file__).read_bytes()).hexdigest()
                                     for rails, ext in extensions.items()},
                   source_sha256={str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()

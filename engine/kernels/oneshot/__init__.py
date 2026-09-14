@@ -63,15 +63,17 @@ def pair_rail(a, b, rails):
     return 1 if rails == 2 and (a ^ b) == 1 and min(a, b) % 2 == 0 else 0
 
 
-def build(rails=1):
+def build(rails=1, *, inline_flags=True):
     from torch.utils.cpp_extension import load
     from engine.kernels.common.native_cache import prepare_sources
     if rails not in (1, 2):
         raise ValueError(f'one-shot serves one or two RoCE rails, not {rails}')
+    if type(inline_flags) is not bool:
+        raise ValueError('one-shot inline_flags must be a bool')
     root = Path(__file__).parent
     sources = [root/'dsv4_oneshot_ar.cu', root/'dsv4_oneshot_transport.h']
     flags = ['-O2', '-gencode', 'arch=compute_121a,code=sm_121a', f'-DMAXEL={MAX_ELEMENTS}',
-             f'-DOSAR_RAILS={rails}']
+             f'-DOSAR_RAILS={rails}', f'-DOSAR_PROXY_INLINE={int(inline_flags)}']
     root = Path(os.environ.get('ST_ONESHOT_BUILD_ROOT', str(Path.home()/'.cache/st/oneshot')))
     ldflags = ['-libverbs']
     key, directory, staged = prepare_sources(root, sources, (flags, ldflags, torch.__version__, torch.version.cuda))
@@ -80,15 +82,18 @@ def build(rails=1):
 
 
 class OneShot:
-    def __init__(self, comm, addresses, rail_addresses=()):
+    def __init__(self, comm, addresses, rail_addresses=(), *, inline_flags=True):
         """`addresses`: rank-ordered IPv4 of the first RoCE function (rocep1s0f0). `rail_addresses`: the
         same table for the second function (roceP2p1s0f0), which puts the pairs pair_rail() names there."""
         cell = _cell()
         tables = (tuple(addresses),) + tuple(tuple(t) for t in rail_addresses)
         if comm.world_size != cell.world or len(tables) > 2 or any(len(t) != cell.world for t in tables):
             raise ValueError(f'one-shot requires one or two explicit {cell.world}-rank address tables')
+        if type(inline_flags) is not bool:
+            raise ValueError('one-shot inline_flags must be a bool')
         self.world, self.hidden = cell.world, cell.hidden
         self.rails = len(tables)
+        self.inline_flags = inline_flags
         self.ext = None
         self.control = dist.new_group(backend='gloo')
         self.closed = False
@@ -98,13 +103,15 @@ class OneShot:
         try:
             error = None
             try:
-                self.ext = build(self.rails)
+                self.ext = build(self.rails, inline_flags=self.inline_flags)
                 self.ext.init(comm.rank, comm.world_size, [t[comm.rank] for t in tables])
+                if self.ext.transport_modes()[1] != int(self.inline_flags):
+                    raise RuntimeError('one-shot inline flag mode differs from the requested build')
             except Exception as exc:
                 error = repr(exc)
             self.agree(error, 'local preparation')
             signatures = [None]*self.world
-            signature = (self.ext.__name__, tables, MAX_ELEMENTS, comm.world_size, self.hidden)
+            signature = (self.ext.__name__, tables, MAX_ELEMENTS, comm.world_size, self.hidden, self.inline_flags)
             dist.all_gather_object(signatures, signature, group=self.control)
             if any(other != signature for other in signatures):
                 raise RuntimeError(f'one-shot binary or rank table differs: {signatures}')

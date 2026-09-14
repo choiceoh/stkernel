@@ -238,7 +238,7 @@ def declared(a, comm_world: int) -> Config:
     gb10_defaults = dict(direct_mhc=1, prefill_project_tiles=1,
                          nvme_mapped_staging=1, decode_iterations=4, prefill_indexer_shards=0, prefill_dense_prefix=1,
                          prefill_absorb_tiles=1, decode_fastpaths=1, decode_dsa_inputs=1,
-                         decode_indexer_gate=1, decode_absorb_tiles=1, deferred_kda=1, oneshot_rails=2)
+                         decode_indexer_gate=1, decode_absorb_tiles=1, deferred_kda=1, oneshot_rails=2, oneshot_inline=1)
     if getattr(a, "production", False):
         # tile32 passed the full GPU numerical/graph and matched 2K/32K/128K
         # serving brackets. Keep it in the production contract so a stale
@@ -299,6 +299,9 @@ def declared(a, comm_world: int) -> Config:
              "Operator-directed one-shot RDMA over both RoCE PCIe functions, pairs {0,1},{2,3} on the second; "
              "boot latency gauge and fleet onepass pending",
              "STK_oneshot_rails=1", int),
+        Knob("oneshot_inline", gb10_defaults["oneshot_inline"], _dt.date(2026, 9, 30),
+             "Inline 8-byte one-shot completion flags; fleet consumer latency and quality pending",
+             "STK_oneshot_inline=0", int),
         Knob("prefill_project_tiles", gb10_defaults["prefill_project_tiles"], _dt.date(2026, 9, 30),
              "Overlap TP4 prefill tile arrival with independent KDA input projection",
              "STK_prefill_project_tiles=0", int),
@@ -1241,7 +1244,9 @@ def fleet(a) -> int:
         with rec.phase("prepare one-shot"):
             if cfg["oneshot_rails"] not in (1, 2):
                 raise ValueError("one-shot rails must be 1 or 2")
-            comm.prepare_oneshot(rails=cfg["oneshot_rails"])
+            if cfg["oneshot_inline"] not in (0, 1):
+                raise ValueError("one-shot inline must be 0 or 1")
+            comm.prepare_oneshot(rails=cfg["oneshot_rails"], inline_flags=bool(cfg["oneshot_inline"]))
             # The transport's own cost on this rank, sampled after its self-tests (µs per collective).
             for name, value in comm.transport.latency.items():
                 rec.gauge(f"oneshot_{name}_us", value)
@@ -1289,6 +1294,7 @@ def fleet(a) -> int:
                             "draft_selector_trace_every": str(getattr(getattr(engine.drafter, 'tuning', None), 'trace_every', 0)),
                             "nvme_mapped_staging": str(cfg["nvme_mapped_staging"]),
                             "oneshot_rails": str(comm.transport.rails),
+                            "oneshot_inline": str(int(comm.transport.inline_flags)),
                             "oneshot_latency_method": comm.transport.LATENCY_METHOD,
                             "oneshot_latency_us": " ".join(f"{k}={v:g}" for k, v in comm.transport.latency.items()),
                             "kda_state_dtype": F.kda_state_dtype,

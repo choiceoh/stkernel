@@ -66,6 +66,7 @@ class BootPathTests(unittest.TestCase):
                 self.assertEqual(build.call_args.kwargs["ckpt_meta"], args.ckpt_meta)
                 self.assertEqual(build.call_args.kwargs["drafter_dir"], args.drafter_dir)
                 if mode == "fleet":
+                    comm.prepare_oneshot.assert_called_with(rails=2, inline_flags=True)
                     plan = build.call_args.kwargs["execution_plan"]
                     self.assertEqual((plan.direct_mhc, plan.prefill_project_tiles, plan.decode_iterations),
                                      (True, True, 4))

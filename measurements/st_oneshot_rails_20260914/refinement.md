@@ -86,3 +86,50 @@ requires the prior graph to be reset before the next is created.
 Current source-bound evidence is `compile-coalesced.json` and
 `cpu-coalesced.log`. Earlier files retain their historical source identities.
 This adds no GPU/queue/boot run and makes no step/s claim.
+
+## Inline completion flags and preparation rollback
+
+- Enable the existing inline mode for each 8-byte completion flag. Payloads stay
+  registered ordinary RDMA writes; payload then flag remains on the same QP.
+  Inline bytes are copied into the send request by `ibv_post_send`, avoiding the
+  NIC's separate read of the registered flag source. This is a mechanism change,
+  not a measured latency gain. The twelve reusable WR pairs remain unchanged.
+- `oneshot_inline=1` is the GB10 default. `STK_oneshot_inline=0` selects the
+  ordinary source for non-production comparison until 2026-09-30; production
+  refuses overrides. Python builders default to inline and require a boolean
+  selection. Both choices are part of the native cache identity, all-rank
+  agreement and `st:lane_info`. Preparation checks the loaded mode and rejects
+  QPs whose reported inline capability is below eight bytes.
+- Discover and validate both devices/GIDs before allocating Ctrl. Search each
+  port's reported `gid_tbl_len`, retaining the IPv4/RoCE-v2 checks instead of
+  stopping after entry 15. Always free the device-list allocation.
+- Track each acquired QP/MR/CQ/PD/context and host registration. Preparation
+  failure unwinds them in dependency order, including failures on the second
+  rail or later peer QPs. Ctrl allocation is rounded to a 4096-byte multiple,
+  while registration and wire offsets still use the actual unchanged layout.
+- Shutdown also releases preparation resources when a peer fails the pre-use
+  vote. A failed destroy/unregister/join retains the dependent resources for a
+  safe retry. Once any GPU launch or capture can reference Ctrl, shutdown only
+  stops the proxy and retains the registration/pages until process teardown;
+  it does not free memory beneath a stalled kernel or wait on a GPU barrier.
+  This deliberately does not add general GPU-active runtime teardown/restart.
+
+The setup test compiles the actual native globals, preparation, cleanup and
+shutdown functions with mock verbs/CUDA and UBSan, for rails 1/2 x inline 0/1.
+It injects all 11/16 acquisition failures and 8/12 release failures per mode,
+checks dependency lifetimes and idempotent cleanup, and exercises missing or
+inactive rails, unreadable and non-v2 GIDs, GID index 31, short/empty GID tables,
+invalid rank/world, insufficient/exact-minimum inline capacity, failed proxy
+join, repeat initialization and retention after GPU use. A launch-boundary
+check covers all seven native entry paths. Mode tests verify four distinct
+cache identities and cleanup before connect on local/remote preparation errors.
+
+The expanded focused CPU suite passes 47 tests with no skips. Its first remote
+attempt lacked the launcher file required by four existing tests; copying that
+unchanged dependency resolved those fixture errors. Current evidence is
+`cpu-inline-setup.log` and `compile-inline-setup.json` (actual four-variant
+Torch extension compile/load with CUDA hidden, source hashes included).
+Earlier evidence remains bound to its own source versions. No GPU job, queue
+change, model boot, service restart or image build was performed. Consumer
+step/s, prefill throughput and quality/acceptance for this revision still need
+matched fleet evidence.

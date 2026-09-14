@@ -75,13 +75,15 @@ class Comm:
     transport: object = None
     preparation: object = None       # boot-only Gloo group, closed after weights are ready
 
-    def prepare_oneshot(self, rails: int = 2):
+    def prepare_oneshot(self, rails: int = 2, *, inline_flags: bool = True):
         if self.transport is not None:
             raise RuntimeError("one-shot transport is already bound")
         if rails not in (1, 2):
             raise ValueError("one-shot serves one or two RoCE rails")
+        if type(inline_flags) is not bool:
+            raise ValueError("one-shot inline_flags must be a bool")
         from engine.kernels.oneshot import OneShot
-        self.transport = OneShot(self, NODES, (RAIL_NODES,) if rails == 2 else ())
+        self.transport = OneShot(self, NODES, (RAIL_NODES,) if rails == 2 else (), inline_flags=inline_flags)
 
     @classmethod
     def init(cls, rank: "int | None" = None, world: "int | None" = None, *, timeout_s: float = 120.):
