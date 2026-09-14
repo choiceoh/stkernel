@@ -1,0 +1,37 @@
+{
+  "command": [
+    "bash",
+    "bench/st_bracket.sh",
+    "chain",
+    "FORWARD24=a0ccfd1a4dab9dcfa16b10699ae3e7b400299dc7"
+  ],
+  "cwd": "/home/choiceoh/st-worktrees/codex-forward24-final-0914",
+  "enqueued_at": "1789367678",
+  "estimate_min": 35,
+  "experiment": null,
+  "fleet": "/home/choiceoh/glm53-logs/fleet/runners/4c78af75a4dba30071baf3b40c5c44ea707ddcb8b1782418b1d6548bf05e5ad8/bench/fleet.sh",
+  "history": [],
+  "host": "srv2",
+  "kind": "boot",
+  "launch_id": "cf114445dfc3496cb92e7d0bd3aded38",
+  "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/2bed381f3dbc624bd899695a0d80fe74cbd7e2b624caced07b12f916b8ceac60.log",
+  "note": "PR939 plus main PR943/945, one candidate boot, K7 C1 twice C4 once, 2K/32K/128K, bounded performance observation",
+  "pause_protocol": 1,
+  "pid": 3322090,
+  "prepare_manifest": "/home/choiceoh/glm53-logs/fleet/preparations/395c5ec116e34f42b2be89e15b3e8281.json",
+  "prepare_receipt_required": true,
+  "protocol": 2,
+  "repo": "/home/choiceoh/st-worktrees/codex-forward24-final-0914",
+  "revision": 1,
+  "session": "st-forward24-onepass0914c",
+  "start": "24369359",
+  "state": "queued",
+  "ticket": "17893695583322090",
+  "validation_env": {
+    "FLEET_VALIDATION_LEVEL": "admission",
+    "FLEET_VALIDATION_REQUIRED": "1",
+    "FLEET_VALIDATION_STORE": "/home/choiceoh/glm53-logs/fleet/validation",
+    "LOGD": "/home/choiceoh/glm53-logs",
+    "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
+  }
+}

@@ -152,14 +152,15 @@ def latent_check(report, *, timing=True):
 def check(ranks=None):
     from engine.base.kernel_shape import bound, to_dict
     root = Path(__file__).resolve().parents[1]
-    files = ('engine/kernels/dense/kernels.cu', 'engine/kernels/dense/query_pair.py',
+    files = ('engine/kernels/dense/kernels.cu', 'engine/kernels/dense/__init__.py', 'engine/kernels/dense/query_pair.py',
              'engine/kernels/mla/decode_inputs.py', 'engine/kernels/indexer_gate.py',
              'engine/kernels/mla/decode_absorb.py', 'engine/kernels/mla/prefill_absorb.py',
              'engine/kernels/decode_projection.py', 'engine/kernels/indexer.py', 'engine/kernels/kpool.py', 'engine/profiles/glm53/net.py',
              'engine/profiles/glm53/decode_graphs.py', 'engine/profiles/glm53/lanes.py',
              'probes/engine_decode_pool_cache.py', 'probes/engine_decode_no_copy.py', 'probes/engine_decode_lengths.py',
              'engine/kernels/common/norm_rope.py', 'engine/base/lanes.py', 'engine/profiles/glm53/drafter.py',
-             'probes/engine_draft_qk.py')
+             'probes/engine_draft_qk.py', 'probes/engine_forward_reduce.py',
+             'probes/engine_decode_scatter_check.py')
     def report(event, **values):
         print(json.dumps(dict(event=event, **values)), flush=True)
     report('identity', torch=torch.__version__, cuda=torch.version.cuda, gpu=torch.cuda.get_device_name(),
@@ -172,6 +173,7 @@ def check(ranks=None):
     from probes.engine_decode_no_copy import check as no_copy_check
     from probes.engine_decode_lengths import check as lengths_check
     from probes.engine_draft_qk import check as draft_qk_check
+    from probes.engine_forward_reduce import check as forward_reduce_check
     failures = []
     for name, fn in (('query_pair', lambda: query_check(report, ranks=ranks)),
                      ('latent_norm_write', lambda: latent_check(report)),
@@ -181,7 +183,8 @@ def check(ranks=None):
                      ('topk_ids_read', lambda: ids_check(report)),
                      ('output_copy_glue', lambda: no_copy_check(report)),
                      ('decode_length_reuse', lambda: lengths_check(report)),
-                     ('draft_qk_pair', lambda: draft_qk_check(report))):
+                     ('draft_qk_pair', lambda: draft_qk_check(report)),
+                     ('forward_local_reduction', lambda: forward_reduce_check(report, ranks))):
         try:
             fn()
         except Exception as exc:

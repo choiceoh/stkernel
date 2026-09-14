@@ -2730,6 +2730,21 @@ dispatch 작업량이며 GPU 속도 실측이 아니다. CPU 67개 중 32통과�
 GPU 큐·부팅·실행은 없고 실제 step/s·수용률·품질·그래프 풀 메모리는 미측정이다.
 [소스 해시·랭크 경계·비트 검증·재현 기록](measurements/st_token_embedding_20260914/README.md).
 
+### ST C1 forward CTA 내 부분합 — 기본 적용 (2026-09-14)
+
+KDA 출력 34개, dense MLP 출력 3개, DSA query 22개의 W4 GEMM에서 기존 세 K 분할을
+한 CTA 안에서 합치도록 확장했다. 기존 분할·MMA·FP32 합산·BF16 반올림 순서를 유지한다.
+전역 부분합 쓰기/읽기 44.25 MiB와 arrival atomic 5,664회를 제거하는 소스 작업량이며
+실제 지연 감소 수치가 아니다. C1 query pack은 50,688→12,672 B다.
+
+CPU 30개 중 21통과·GPU 9skip, 실제 production-flag native 컴파일 5개 새 specialization
+통과(76/78 registers, stack/local spill 0). srv4 실제 rank3 가중치의 동일 RTN pack으로
+기존 dsa_inputs 포함 10개 GPU 구성요소 검사를 92.8초에 통과했다(모델 부팅 없음).
+새 경로 8개 exact/replay 그룹이 bit-exact이며, warm/evicted B/A/A/B에서 KDA 출력
+−11.58/−6.37%, MLP 출력 −4.04/−3.57%, query pair −7.65/−5.51%였다.
+이는 구성요소 시간이며 현재 24 step/s·수용률 개선 실측은 없다.
+[구현·검증·재현 근거](measurements/st_forward_cta_20260914/README.md).
+
 ### 945차 — ST 오라클 토큰·C4 계산과 별도 기록 검증 보완 (2026-09-14, 로컬 CPU, PR #945)
 
 K=0·수용률=0을 그대로 유지하고, 첫 토큰에서 종료한 요청의 추가 디코드와 생성 한도를

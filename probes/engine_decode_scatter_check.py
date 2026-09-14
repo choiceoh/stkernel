@@ -18,6 +18,10 @@ def rank_path(ranks):
     root = Path(ranks)
     if not root.is_absolute():
         root = facts.RANKS.parent / root
+    # A single-GPU host may hold only its own TP shard. An explicit shard
+    # keeps the measured weight identity without copying an entire rank.
+    if root.suffix == '.safetensors':
+        return root
     return root / 'rank0of4.safetensors'
 
 
