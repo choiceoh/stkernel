@@ -1,0 +1,8 @@
+W0914 09:54:00.346000 7 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda-13.2'
+............verified fixture.whl
+verified fixture.whl
+....
+----------------------------------------------------------------------
+Ran 16 tests in 0.840s
+
+OK

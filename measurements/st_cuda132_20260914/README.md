@@ -48,6 +48,9 @@ CuTe/FlashInfer와 DeepGEMM의 확장 및 JIT 파일 879개를 보존했다. nvd
 CPU 컨테이너에는 `--runtime=runc`, `NVIDIA_VISIBLE_DEVICES=void`, `CUDA_VISIBLE_DEVICES=`를 사용했다.
 테스트/컴파일에 2 CPU, 메모리 4~5 GiB 한도를 두었다. GPU를 점유 중인 재양자화 세션과 임대는 건드리지 않았다.
 처음 소스 복사에서 빠졌던 bench/측정 자료, PID 1의 자식 회수 조건을 보완한 뒤 전체 CPU 검사를 통과했다.
+GitHub의 SDK 없는 CPU runner에서는 OneShot 모드 테스트가 compiler identity를 모의 처리하지 않아
+한 번 실패했다. 실제 컴파일을 모의 처리하는 기존 테스트에 명시적인 SDK/컴파일러 입력을 보완하고,
+[관련 검사](ci-fixture-fix.txt)를 다시 통과했다. 런타임의 SDK 필수 조건은 유지했다.
 
 ## 발견한 제약
 
