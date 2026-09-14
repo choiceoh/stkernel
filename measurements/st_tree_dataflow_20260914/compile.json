@@ -1,0 +1,359 @@
+{
+  "scope": "offline SM121 compilation only",
+  "gpu_used": false,
+  "torch": "2.14.0+cpu",
+  "triton": "3.8.0",
+  "variants": [
+    {
+      "name": "kda-prepare",
+      "constants": {
+        "H": 16,
+        "D": 128,
+        "LOWER": -5.0,
+        "BD": 128
+      },
+      "cubin_sha256": "0842909ffcef5b093e65628a6db6164890f89a10e8593218057b043a20099a58",
+      "shared_bytes": 16
+    },
+    {
+      "name": "kda-commit",
+      "constants": {
+        "COUNT": 8,
+        "H": 16,
+        "K": 128,
+        "V": 128,
+        "B": 1024
+      },
+      "cubin_sha256": "a21e85b834d33b2189dbce3b7a710cdecd4c495de84d60c3ff58783a0b4b4056",
+      "shared_bytes": 0
+    },
+    {
+      "name": "kda-tree-n8-d128-v128",
+      "constants": {
+        "N": 8,
+        "H": 16,
+        "KDIM": 128,
+        "VDIM": 128,
+        "WIDTH": 8,
+        "BK": 128,
+        "BV": 16
+      },
+      "cubin_sha256": "bb46b16af2ba7d5a8f2f723640b658aa849723ef759499e46b3cdd2ea45d994b",
+      "shared_bytes": 512
+    },
+    {
+      "name": "kda-tree-n16-d128-v128",
+      "constants": {
+        "N": 16,
+        "H": 16,
+        "KDIM": 128,
+        "VDIM": 128,
+        "WIDTH": 5,
+        "BK": 128,
+        "BV": 16
+      },
+      "cubin_sha256": "6a4eb6feed2a1f15c1a78262b9ce97d65e3200b6a3ea1c4f9f8cda226d90f570",
+      "shared_bytes": 512
+    },
+    {
+      "name": "kda-tree-n31-d128-v128",
+      "constants": {
+        "N": 31,
+        "H": 16,
+        "KDIM": 128,
+        "VDIM": 128,
+        "WIDTH": 5,
+        "BK": 128,
+        "BV": 16
+      },
+      "cubin_sha256": "107e8da88341d6fa2bbb9aa2b31b7043070be160a92d55944b52f85c9ab49384",
+      "shared_bytes": 512
+    },
+    {
+      "name": "kda-tree-n6-d7-v5",
+      "constants": {
+        "N": 6,
+        "H": 16,
+        "KDIM": 7,
+        "VDIM": 5,
+        "WIDTH": 4,
+        "BK": 8,
+        "BV": 16
+      },
+      "cubin_sha256": "5bf598ff619050cad38f1648b4bf8c92a53166daf45174b09e51cd14e760f078",
+      "shared_bytes": 256
+    },
+    {
+      "name": "mlp-m1-h4096-i1024",
+      "constants": {
+        "M": 1,
+        "H": 4096,
+        "I": 1024,
+        "P": 32,
+        "O": 128,
+        "BM": 16,
+        "B": 32,
+        "LIMIT": 10.0,
+        "SPINS": 1000000,
+        "S1": null,
+        "S2": null,
+        "US": null,
+        "A1": null,
+        "A2": null,
+        "ALPHA1": null,
+        "ALPHA2": null,
+        "NV4": false,
+        "TILE13": 0,
+        "TILE2": 0,
+        "SF6": false,
+        "W4A8": false
+      },
+      "cubin_sha256": "ba3718fd07cad39807997da193ecda30651b3046091d95ad3aec9757ca187631",
+      "shared_bytes": 5120
+    },
+    {
+      "name": "mlp-m4-h4096-i1024",
+      "constants": {
+        "M": 4,
+        "H": 4096,
+        "I": 1024,
+        "P": 32,
+        "O": 128,
+        "BM": 16,
+        "B": 32,
+        "LIMIT": 10.0,
+        "SPINS": 1000000,
+        "S1": null,
+        "S2": null,
+        "US": null,
+        "A1": null,
+        "A2": null,
+        "ALPHA1": null,
+        "ALPHA2": null,
+        "NV4": false,
+        "TILE13": 0,
+        "TILE2": 0,
+        "SF6": false,
+        "W4A8": false
+      },
+      "cubin_sha256": "4a043c1b73b2a0f15fd5737b7fd1c426e9370e9a4a60b7742253e9a84973b8ba",
+      "shared_bytes": 5120
+    },
+    {
+      "name": "mlp-m16-h4096-i1024",
+      "constants": {
+        "M": 16,
+        "H": 4096,
+        "I": 1024,
+        "P": 32,
+        "O": 128,
+        "BM": 16,
+        "B": 32,
+        "LIMIT": 10.0,
+        "SPINS": 1000000,
+        "S1": null,
+        "S2": null,
+        "US": null,
+        "A1": null,
+        "A2": null,
+        "ALPHA1": null,
+        "ALPHA2": null,
+        "NV4": false,
+        "TILE13": 0,
+        "TILE2": 0,
+        "SF6": false,
+        "W4A8": false
+      },
+      "cubin_sha256": "5247822d9381ee7b84cd6a28e4bd5b390e2a1d55113e0f2de8ef95704a546c38",
+      "shared_bytes": 5120
+    },
+    {
+      "name": "mlp-m17-h95-i33",
+      "constants": {
+        "M": 17,
+        "H": 95,
+        "I": 33,
+        "P": 2,
+        "O": 3,
+        "BM": 32,
+        "B": 32,
+        "LIMIT": 10.0,
+        "SPINS": 1000000,
+        "S1": null,
+        "S2": null,
+        "US": null,
+        "A1": null,
+        "A2": null,
+        "ALPHA1": null,
+        "ALPHA2": null,
+        "NV4": false,
+        "TILE13": 0,
+        "TILE2": 0,
+        "SF6": false,
+        "W4A8": false
+      },
+      "cubin_sha256": "14cac488bddb0da4e1d0773676b0b0abf26be04b58dbd6f7c00d5dd1d0aadfbb",
+      "shared_bytes": 6144
+    },
+    {
+      "name": "nvfp4-m1-tile0-sf60",
+      "constants": {
+        "M": 1,
+        "H": 4096,
+        "I": 3072,
+        "P": 48,
+        "O": 64,
+        "BM": 16,
+        "B": 64,
+        "LIMIT": 10.0,
+        "SPINS": 1000000,
+        "NV4": true,
+        "TILE13": 0,
+        "TILE2": 0,
+        "SF6": false,
+        "W4A8": false
+      },
+      "cubin_sha256": "367eb3cb69b25896a4780222f8dfc023c19df35f714b1a67b6a0368b6d4885ea",
+      "shared_bytes": 4864
+    },
+    {
+      "name": "nvfp4-m4-tile1-sf60",
+      "constants": {
+        "M": 4,
+        "H": 4096,
+        "I": 3072,
+        "P": 48,
+        "O": 64,
+        "BM": 16,
+        "B": 64,
+        "LIMIT": 10.0,
+        "SPINS": 1000000,
+        "NV4": true,
+        "TILE13": 256,
+        "TILE2": 64,
+        "SF6": false,
+        "W4A8": false
+      },
+      "cubin_sha256": "4ddfacee8d7017e11a4ada5c5b1bb02ab7f5d91d8933486c50c290e98f048fb2",
+      "shared_bytes": 4864
+    },
+    {
+      "name": "nvfp4-m16-tile1-sf61",
+      "constants": {
+        "M": 16,
+        "H": 4096,
+        "I": 3072,
+        "P": 48,
+        "O": 64,
+        "BM": 16,
+        "B": 64,
+        "LIMIT": 10.0,
+        "SPINS": 1000000,
+        "NV4": true,
+        "TILE13": 256,
+        "TILE2": 64,
+        "SF6": true,
+        "W4A8": false
+      },
+      "cubin_sha256": "d9d4d04a6da89d8673bb73ded35660a1015095c38624a1a0c1c17c4e3ec93a5c",
+      "shared_bytes": 4608
+    },
+    {
+      "name": "w4a8-m1",
+      "constants": {
+        "M": 1,
+        "H": 4096,
+        "I": 3072,
+        "P": 24,
+        "O": 32,
+        "BM": 16,
+        "B": 128,
+        "LIMIT": 10.0,
+        "SPINS": 1000000,
+        "A1": null,
+        "A2": null,
+        "NV4": false,
+        "TILE13": 0,
+        "TILE2": 0,
+        "SF6": false,
+        "W4A8": true
+      },
+      "cubin_sha256": "57bdfa56cf988693f1733580a0ed090a92d2d5c7d917f820a84c7222c680fcba",
+      "shared_bytes": 34816
+    },
+    {
+      "name": "w4a8-m4",
+      "constants": {
+        "M": 4,
+        "H": 4096,
+        "I": 3072,
+        "P": 24,
+        "O": 32,
+        "BM": 16,
+        "B": 128,
+        "LIMIT": 10.0,
+        "SPINS": 1000000,
+        "A1": null,
+        "A2": null,
+        "NV4": false,
+        "TILE13": 0,
+        "TILE2": 0,
+        "SF6": false,
+        "W4A8": true
+      },
+      "cubin_sha256": "0c1540080eefaee433894fbd9131191def23c58de9a53be13170fef52ce47f0f",
+      "shared_bytes": 34816
+    },
+    {
+      "name": "w4a8-m16",
+      "constants": {
+        "M": 16,
+        "H": 4096,
+        "I": 3072,
+        "P": 24,
+        "O": 32,
+        "BM": 16,
+        "B": 128,
+        "LIMIT": 10.0,
+        "SPINS": 1000000,
+        "A1": null,
+        "A2": null,
+        "NV4": false,
+        "TILE13": 0,
+        "TILE2": 0,
+        "SF6": false,
+        "W4A8": true
+      },
+      "cubin_sha256": "37e206ec4b065af22c36f826a02cb76487248f58472293740df4fd5ad8dfda5c",
+      "shared_bytes": 34816
+    },
+    {
+      "name": "w4a8-m32",
+      "constants": {
+        "M": 32,
+        "H": 4096,
+        "I": 3072,
+        "P": 24,
+        "O": 32,
+        "BM": 32,
+        "B": 128,
+        "LIMIT": 10.0,
+        "SPINS": 1000000,
+        "A1": null,
+        "A2": null,
+        "NV4": false,
+        "TILE13": 0,
+        "TILE2": 0,
+        "SF6": false,
+        "W4A8": true
+      },
+      "cubin_sha256": "c87199949ef05fb79a11f39e34532967222ffc291e7a54f6c0eaad9f7bd0b980",
+      "shared_bytes": 36864
+    }
+  ],
+  "source_sha256": {
+    "engine/kernels/kda/tree.py": "af60b0f5f1855deec98ebdbc19f2d765458b3cb88d39f168e07fc4c72905945b",
+    "engine/kernels/tile_dataflow.py": "5e0b7ce896185fa86f9a3d9d06f4d6138f4e32d9ac08331c613dc8f9ad5078cf"
+  },
+  "cuda_initialized": false
+}

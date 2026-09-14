@@ -192,6 +192,7 @@ class Glm53Net:
         self._experts = {}
         self._packet_experts = {}
         self._packet_capabilities = {}
+        self._expert_views = {}                    # prepared packed owners, also used by explicit dataflow experiments
         self._quant_scales = {}
         if self.dense_nvfp4:
             self._dense = self._dense_nvfp4
@@ -223,8 +224,8 @@ class Glm53Net:
                 self._quant_scales[L] = scales
                 kw['scales'] = scales
             if prepare is not None:
-                prepare(p[n + "w13"], p[n + "w13_sf"], p[n + "w2"], p[n + "w2_sf"],
-                        F.topk_experts if F.is_moe(L) else 1, F.swiglu_limit, **kw)
+                self._expert_views[L] = prepare(p[n + "w13"], p[n + "w13_sf"], p[n + "w2"], p[n + "w2_sf"],
+                                               F.topk_experts if F.is_moe(L) else 1, F.swiglu_limit, **kw)
             self._experts[L] = partial(self.lanes.moe, w13=p[n+'w13'], w13_sf=p[n+'w13_sf'],
                 w2=p[n+'w2'], w2_sf=p[n+'w2_sf'], limit=F.swiglu_limit, **kw)
             if F.is_moe(L) and self.lanes.moe_packets is not None and self.lanes.moe_packets_supported is not None:
@@ -984,19 +985,23 @@ class Glm53Net:
 
 
     @operation("moe", layer_arg=1)
-    def _moe(self, L: int, x: torch.Tensor, reduce=None, *, reduce_pair=None, finalize=None) -> torch.Tensor:
+    def _moe(self, L: int, x: torch.Tensor, reduce=None, *, reduce_pair=None, finalize=None, route_observer=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.moe."
         # GPU component gate: C=1 wins; C=4 with reused routes regresses.
         # Keep the established shared chain for wider captured batches.
         if self.shared_overlap is not None and x.shape[0] <= F.spec_k + 1:
             def routed(consume=None):
                 sel, w = self.route(L, x)
+                if route_observer is not None:
+                    route_observer(L, sel)
                 return (self._experts[L](x, sel, w) if consume is None else
                         self._experts[L](x, sel, w, finalize=consume))
             joined = (self.shared_overlap(self.shared_mlp[L], x, routed) if finalize is None else
                       self.shared_overlap(self.shared_mlp[L], x, routed, finish=finalize))
             return joined if finalize is not None else (reduce or self.comm.all_reduce)(joined)
         sel, w = self.route(L, x)
+        if route_observer is not None:
+            route_observer(L, sel)
         if finalize is not None:
             def consume(acc):
                 g, u = self.linear(x, n + "sh_gate_up").chunk(2, dim=-1)

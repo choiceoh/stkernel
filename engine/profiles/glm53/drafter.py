@@ -636,14 +636,12 @@ class Drafter:
         if self.max_block_rows is not None and rows > self.max_block_rows:
             raise ValueError(f'drafter block has {rows} rows, above prepared capacity {self.max_block_rows}')
 
-    def propose_rows(self, field: torch.Tensor, slots: torch.Tensor, anchors: torch.Tensor, positions: torch.Tensor,
-                     temps: "torch.Tensor | None" = None, uniforms: "torch.Tensor | None" = None,
-                     vocab: "int | None" = None, alive=None):
-        """Every row's K drafts at once: anchors [n], positions [n] (each row's context: the anchor's position), slots [n],
-        all on the device. Greedy walk, [n, K]; with `temps` [n] the sampled walk at each row's temperature (rows at 0
-        stay greedy) over `uniforms` [n, K] (one a position, the caller's: base/draws), plus the candidates each pick
-        was drawn from and their mass -- [n, K, sel_top_k] each, which is the whole distribution: the walk puts
-        nothing anywhere else."""
+    def candidate_rows(self, field, slots, anchors, positions, alive=None):
+        """One DFlash/head pass exposing the existing selector's bounded lattice.
+
+        Shared by the ordinary walk and the explicit experimental tree owner.
+        It does not train or run another draft model.
+        """
         F, p = self.F, self.p
         K = self.k
         t = K + 1
@@ -659,6 +657,14 @@ class Drafter:
         if self.diagnostics is not None:
             self.diagnostics.support.index_copy_(0, slots, cand)
         proj = self.selector_projection(h).view(n, K, -1)
+        return unary, cand, proj
+
+    def propose_rows(self, field: torch.Tensor, slots: torch.Tensor, anchors: torch.Tensor, positions: torch.Tensor,
+                     temps: "torch.Tensor | None" = None, uniforms: "torch.Tensor | None" = None,
+                     vocab: "int | None" = None, alive=None):
+        """Every row's K drafts; sampled mode also returns its candidate IDs/mass."""
+        F, p, K, n, dev = self.F, self.p, self.k, anchors.numel(), anchors.device
+        unary, cand, proj = self.candidate_rows(field, slots, anchors, positions, alive)
         if temps is None:
             # the scores never exist: a step reads one codebook row against this step's candidates
             from engine.modules.draft_agreement import agree_walk

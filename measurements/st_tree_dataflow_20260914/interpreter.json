@@ -1,0 +1,80 @@
+{
+  "scope": "actual Triton address functions interpreted on CPU",
+  "gpu_used": false,
+  "cuda_initialized": false,
+  "variants": [
+    {
+      "tiled": false,
+      "sf6": false,
+      "plane": "fc1",
+      "packed_bytes": 131072,
+      "scale_bytes": 16384,
+      "exact": true
+    },
+    {
+      "tiled": false,
+      "sf6": false,
+      "plane": "fc2",
+      "packed_bytes": 65536,
+      "scale_bytes": 8192,
+      "exact": true
+    },
+    {
+      "tiled": true,
+      "sf6": false,
+      "plane": "fc1",
+      "packed_bytes": 131072,
+      "scale_bytes": 16384,
+      "exact": true
+    },
+    {
+      "tiled": true,
+      "sf6": false,
+      "plane": "fc2",
+      "packed_bytes": 65536,
+      "scale_bytes": 8192,
+      "exact": true
+    },
+    {
+      "tiled": true,
+      "sf6": true,
+      "plane": "fc1",
+      "packed_bytes": 131072,
+      "scale_bytes": 16384,
+      "exact": true
+    },
+    {
+      "tiled": true,
+      "sf6": true,
+      "plane": "fc2",
+      "packed_bytes": 65536,
+      "scale_bytes": 8192,
+      "exact": true
+    },
+    {
+      "plane": "w4a8-expanded",
+      "rows": 384,
+      "columns": 256,
+      "exact": true
+    },
+    {
+      "plane": "w4a8-expanded",
+      "rows": 256,
+      "columns": 384,
+      "exact": true
+    },
+    {
+      "plane": "w4a8-expanded",
+      "rows": 129,
+      "columns": 128,
+      "exact": true
+    },
+    {
+      "plane": "w4a8-activation-scaling",
+      "rows": 17,
+      "columns": 384,
+      "exact": true,
+      "fp8_conversion": "torch CPU RTNE; device conversion not executed"
+    }
+  ]
+}

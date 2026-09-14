@@ -2783,3 +2783,18 @@ K7·2K/32K/128K·C1 두 번/C4 한 번의 단일 후보 원패스 예약을 `ec5
 기존 enqueue 시각을 보존한 `st-forward-pipeline-onepass0914`가 대기 중이다.
 운영자가 warm 개선판의 즉시 기본 머지를 지시했으며 소비자 tok/s·step/s·수용률은 미측정이다.
 [원본 표본·거부한 register 구현·컴파일·GPU·큐 기록](measurements/st_forward_register_20260914/README.md).
+
+### ST expert 비용 트리·FP32 KDA·packed persistent MLP — 실험 API (2026-09-14, 로컬 CPU, PR #947)
+
+DFlash 후보 1회 생성 → expert 비용 기반 트리 선택 → FP32 KDA factor 검증 →
+선택 경로 캐시·drafter 관찰까지 연결했다. 일반 dense는 기존 GPTQ `W4Pack`을 직접
+읽는 **W4A8**이며 activation의 group-128 FP8·BF16 반올림 경계를 유지한다.
+별도 ModelOpt 고정 1-expert dense만 원래 **W4A4 NVFP4**의 raw/tiled/SF6 경로를 쓴다.
+가중치 재양자화·상주 BF16 복원·FP16 KDA 전환은 없다. Routed MoE는 기존 레인이다.
+
+CPU **74 통과·6 스킵**, SM121 **17종 오프라인 컴파일**, 실제 packed reader/scaling
+**10종 CPU 해석 대조**를 기록했다. FP8 변환에 대한 Triton 해석기의 한계도 명시했다.
+16-node KDA의 factor 384 KiB + initial 1 MiB와 W4A8 MLP scratch 6,473,456 B는
+할당식이며 실측 메모리·속도 개선이 아니다. greedy C=1 eager API로 남기며 기본 서빙에
+켜지지 않는다. GPU·큐·부팅 없이 수행했고 실제 수용률·tok/s·품질은 미측정이다.
+[재현·해시·제약·검증 기록](measurements/st_tree_dataflow_20260914/README.md).
