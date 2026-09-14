@@ -1,0 +1,39 @@
+test_capability_and_disable_switch (tests.test_engine_mla_hardware.MlaHardwareTests.test_capability_and_disable_switch) ... ok
+test_cluster_reuses_output_without_allocating_global_scratch (tests.test_engine_mla_hardware.MlaHardwareTests.test_cluster_reuses_output_without_allocating_global_scratch) ... ok
+test_legacy_shapes_keep_workspace_path (tests.test_engine_mla_hardware.MlaHardwareTests.test_legacy_shapes_keep_workspace_path) ... ok
+test_qualified_clusters_and_shape_limits (tests.test_engine_mla_hardware.MlaHardwareTests.test_qualified_clusters_and_shape_limits) ... ok
+test_tree_banks_pass_direct_pointers_with_same_cluster_and_split_plan (tests.test_engine_mla_hardware.MlaHardwareTests.test_tree_banks_pass_direct_pointers_with_same_cluster_and_split_plan) ... ok
+test_tree_uses_own_capacity_before_selecting_cluster (tests.test_engine_mla_hardware.MlaHardwareTests.test_tree_uses_own_capacity_before_selecting_cluster) ... ok
+test_cuda_translation_unit_and_pinned_dynamic_helpers_match_provenance (tests.test_engine_kernels.KernelPackageTests.test_cuda_translation_unit_and_pinned_dynamic_helpers_match_provenance) ... ok
+test_deep_gemm_initializes_on_execution_and_forwards_the_library_contract (tests.test_engine_kernels.KernelPackageTests.test_deep_gemm_initializes_on_execution_and_forwards_the_library_contract) ... ok
+test_engine_never_imports_vllm_or_mounted_moe_kernels (tests.test_engine_kernels.KernelPackageTests.test_engine_never_imports_vllm_or_mounted_moe_kernels) ... ok
+test_glm_rank_rejects_ambiguous_expert_layout_before_loading (tests.test_engine_kernels.KernelPackageTests.test_glm_rank_rejects_ambiguous_expert_layout_before_loading) ... ok
+test_kernels_read_no_environment_knobs (tests.test_engine_kernels.KernelPackageTests.test_kernels_read_no_environment_knobs)
+D11 (2026-09-12): the kernel package has no env knob. The only os.environ read left is the ... ok
+test_ported_functions_have_their_module_globals (tests.test_engine_kernels.KernelPackageTests.test_ported_functions_have_their_module_globals) ... ok
+test_relative_imports_resolve_inside_the_vendored_package (tests.test_engine_kernels.KernelPackageTests.test_relative_imports_resolve_inside_the_vendored_package) ... ok
+test_strided_kda_guard_tracks_the_ported_norm_source (tests.test_engine_kernels.KernelPackageTests.test_strided_kda_guard_tracks_the_ported_norm_source) ... ok
+test_tile_major_layout_contract_is_shared_with_the_reference_module (tests.test_engine_kernels.KernelPackageTests.test_tile_major_layout_contract_is_shared_with_the_reference_module)
+The served bind re-lays expert bytes in place; the reference lane reads them back through ... ok
+test_contract_refuses_unsafe_geometry_before_writing (tests.test_engine_tree_attention.TreeAttentionTests.test_contract_refuses_unsafe_geometry_before_writing) ... ok
+test_native_addresses_match_independent_oracle (tests.test_engine_tree_attention.TreeAttentionTests.test_native_addresses_match_independent_oracle) ... skipped 'explicit CPU Triton interpreter check'
+test_reference_addresses_match_independent_ancestry_and_duplicate_sort (tests.test_engine_tree_attention.TreeAttentionTests.test_reference_addresses_match_independent_ancestry_and_duplicate_sort) ... ok
+test_two_banks_equal_copied_cache_and_ignore_poisoned_padding (tests.test_engine_tree_attention.TreeAttentionTests.test_two_banks_equal_copied_cache_and_ignore_poisoned_padding) ... ok
+test_commit_selected_state_boundary_and_next_step (tests.test_engine_tree_decode.TreeDecodeTests.test_commit_selected_state_boundary_and_next_step) ... ok
+test_dsa_batches_queries_once_and_keeps_linear_topk_tie_sets (tests.test_engine_tree_decode.TreeDecodeTests.test_dsa_batches_queries_once_and_keeps_linear_topk_tie_sets) ... ok
+test_every_branch_matches_linear_target_with_prefix_and_pool_boundaries (tests.test_engine_tree_decode.TreeDecodeTests.test_every_branch_matches_linear_target_with_prefix_and_pool_boundaries) ... ok
+test_four_ranks_keep_tree_collectives_and_outputs_in_agreement (tests.test_engine_tree_decode.TreeDecodeTests.test_four_ranks_keep_tree_collectives_and_outputs_in_agreement) ... ok
+test_scratch_sampling_and_reservation_fail_before_state_mutation (tests.test_engine_tree_decode.TreeDecodeTests.test_scratch_sampling_and_reservation_fail_before_state_mutation) ... ok
+test_stale_cache_and_reused_owner_refused (tests.test_engine_tree_decode.TreeDecodeTests.test_stale_cache_and_reused_owner_refused) ... ok
+test_native_tree_conv_and_carry_equal_reconstruction (tests.test_engine_tree_dataflow_gpu.NativeTreeDataflowTests.test_native_tree_conv_and_carry_equal_reconstruction) ... skipped 'requires an explicitly available CUDA device'
+test_nvfp4_workers_raw_tiled_sf6_and_repeated_invocations (tests.test_engine_tree_dataflow_gpu.NativeTreeDataflowTests.test_nvfp4_workers_raw_tiled_sf6_and_repeated_invocations) ... skipped 'requires an explicitly available CUDA device'
+test_private_mla_banks_match_copied_cache_and_replay_changed_values (tests.test_engine_tree_dataflow_gpu.NativeTreeDataflowTests.test_private_mla_banks_match_copied_cache_and_replay_changed_values) ... skipped 'requires an explicitly available CUDA device'
+test_tree_outputs_and_accepted_fp32_state (tests.test_engine_tree_dataflow_gpu.NativeTreeDataflowTests.test_tree_outputs_and_accepted_fp32_state) ... skipped 'requires an explicitly available CUDA device'
+test_w4a8_pipeline_replays_with_new_inputs_and_matches_queued (tests.test_engine_tree_dataflow_gpu.NativeTreeDataflowTests.test_w4a8_pipeline_replays_with_new_inputs_and_matches_queued) ... skipped 'requires an explicitly available CUDA device'
+test_w4a8_workers_preserve_existing_dense_lane (tests.test_engine_tree_dataflow_gpu.NativeTreeDataflowTests.test_w4a8_workers_preserve_existing_dense_lane) ... skipped 'requires an explicitly available CUDA device'
+
+----------------------------------------------------------------------
+Ran 31 tests in 2.670s
+
+OK (skipped=7)
+  expert_layout: tile-major bytes read back row-major per expert OK

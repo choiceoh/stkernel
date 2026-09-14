@@ -16,7 +16,7 @@ plain torch on views. One contract per lane, spelled in the docstrings.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import logging
 import os
 
@@ -25,6 +25,13 @@ import torch
 
 _LOGGER = logging.getLogger(__name__)
 _DENSE_W4A16_GUARD_ROWS_ENV = "STK_GLM53_DENSE_W4A16_GUARD_ROWS"
+
+
+def _mla_output(parts, out=None):
+    """Each kernel result already owns contiguous storage; one part needs no copy."""
+    if len(parts) == 1 and out is None:
+        return parts[0]
+    return torch.cat(parts, dim=1, out=out)
 
 
 def dense_w4a16_guard_rows(raw: str | None = None) -> int:
@@ -68,7 +75,8 @@ class Lanes:
                               #  step hands in for the keys' start) -> [T,N] f32, garbage past ke
     kpool_compress: object    # (k [P,kp,128] bf16, score [P,kp,128] bf16, ape [kp,128] f32) -> (fp8 [P,128], scale [P,1] f32)
     mla_sparse: object        # (q_abs [T,H,512] bf16, latent [S,512] e4m3, slots [T,W] int32 (valid prefix), valid [T] int32,
-                              #  scale, ckv_scale, *, out=None) -> [T,H,512] bf16; optional contiguous destination
+                              #  scale, ckv_scale, *, out=None, branch=None) -> [T,H,512] bf16; optional contiguous destination.
+                              #  branch: private tree FP8 [T,512]; negative valid slots encode -(node+1), never padding.
     moe: object               # (x [T,H] bf16, sel [T,k] int32, w [T,k] f32, w13 [E,2I,H/2] u8 [up|gate], w13_sf [E, 2I*H/16] e4m3 (interleaved),
                               #  w2 [E,H,I/2] u8, w2_sf [E, H*I/16] e4m3, limit, *, scales=None) -> [T,H] bf16: this rank's routed partial
                               #  scales=None: folded Red Hat; ModelOptScales: separate NVIDIA multipliers. E=1/k=1 also serves dense MLPs.
@@ -96,6 +104,8 @@ class Lanes:
     layernorm: object = None  # (x [T,D], weight, bias, eps) -> input dtype
     mla_absorb: object = None  # (x [T,H,D] BF16, kv_b slice, *, transpose=False) -> fresh token-major BF16
     mla_dense_prefix: object = None  # q, latent, token_map scalars, context, scales; explicit covered-prefix prefill only
+    moe_packets: object = None  # packet owner and routes, same prepared weights/scales as moe; eager long prefill only
+    moe_packets_supported: object = None  # rows and bound weights -> local capability, before rank agreement/transport
     latent_norm_write: object = None  # BF16 KV, norm weight, FP8 latent, token maps, contexts, tokens, eps -> None
 
 
@@ -120,6 +130,7 @@ class DecodeRows:
                           #  each row's raw keys and gates into its ring at (context + j) % W
     horizon: object       # (logits [t, n] f32, ke [t] i32) -> the same logits with -inf at columns >= ke[r], in place
     update: object = None # K=7 pool addressing/scatter + raw-tail writes; window accepts physical slots= as well
+    compress: object = None # K=7 pooling directly from the tail ring and current rows, without window tensors
 
 
 def reference_decode_rows() -> DecodeRows:
@@ -127,7 +138,7 @@ def reference_decode_rows() -> DecodeRows:
     and what a CPU test hands a composition."""
     from engine.modules import sparse_indexer as si
     return DecodeRows(si.row_lengths, si.latent_write_rows, si.gather_candidates, si.pool_window, si.pool_addresses,
-                      si.scatter_pools, si.write_tails, si.mask_horizon, si.update_pool_cache)
+                      si.scatter_pools, si.write_tails, si.mask_horizon, si.update_pool_cache, si.compress_decode_pools)
 
 
 def swiglu_clamped(g: torch.Tensor, u: torch.Tensor, limit: float) -> torch.Tensor:
@@ -269,7 +280,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     from engine.kernels.causal_conv_ring import causal_conv1d_ring, causal_conv1d_ring_rows
     from engine.kernels.mhc import mhc_pre_tilelang, mhc_post_tilelang
     from engine.kernels.deep_gemm import fp8_fp4_mqa_logits
-    from engine.kernels.kpool import compress_pool_keys, fwht128_quant_fp8
+    from engine.kernels.kpool import compress_pool_keys, fwht128_quant_fp8, compress_decode_pools
     from engine.kernels import mla as mk
     from engine.kernels.indexer import (pool_slots, row_lengths, latent_write_rows, gather_candidates, pool_window, pool_addresses,
                                         scatter_pools, write_tails, mask_horizon, head_gate)
@@ -362,7 +373,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                                   torch.zeros(t, device=q8.device, dtype=torch.int32) if ks is None else ks,
                                   ke.contiguous(), clean_logits=False)
 
-    def mla(q_abs, latent, slots, valid, scale, ckv_scale, *, out=None):
+    def mla(q_abs, latent, slots, valid, scale, ckv_scale, *, out=None, branch=None):
         if out is not None and (out.shape != q_abs.shape or out.dtype != q_abs.dtype
                 or out.device != q_abs.device or not out.is_contiguous()):
             raise ValueError('MLA output must match the contiguous query geometry')
@@ -371,21 +382,20 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
             raise RuntimeError("ST MLA lane did not pass its boot self-test")
         cache = latent.view(torch.uint8)
         if out is not None and q_abs.shape[1] == mk.MLA_H:
-            return mk.mla_decode(q_abs, cache, slots, valid, scale, ckv_scale, out=out)
+            return mk.mla_decode(q_abs, cache, slots, valid, scale, ckv_scale, out=out, branch=branch)
         # the lane is built for this fleet's 16 heads per rank; at world 1 the 64 heads go through in fours (MQA: heads are independent)
-        parts = [mk.mla_decode(q_abs[:, i:i + mk.MLA_H].contiguous(), cache, slots, valid, scale, ckv_scale)
+        parts = [mk.mla_decode(q_abs[:, i:i + mk.MLA_H].contiguous(), cache, slots, valid, scale, ckv_scale,
+                               **({} if branch is None else {'branch': branch}))
                  for i in range(0, q_abs.shape[1], mk.MLA_H)]
-        # TP4 already returns one fresh, contiguous output tensor. Concatenating
-        # it alone rereads and rewrites T*16*512 BF16 values for no change.
-        # Keep the established decode/capture path; this is eager prefill only.
-        if len(parts) == 1 and q_abs.shape[0] >= 128 and not torch.cuda.is_current_stream_capturing():
-            return parts[0]
-        return torch.cat(parts, dim=1, out=out)
+        # TP4 has one fresh result, including decode/capture. Wider head
+        # groups still concatenate, and an explicit destination stays owned.
+        return _mla_output(parts, out)
 
     if "kda_recurrent" in reference_for:
         kda_recurrent = ref.kda_recurrent
         recurrent_kda_ring = recurrent_kda_ring_rows = None
     moe_prepare = None
+    moe_packets = moe_packets_supported = None
     graph_resources = None
     if expert_lane == "reference":
         moe = ref.moe
@@ -443,7 +453,26 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
             # tile-major storage.  Routed MoE remains NVFP4-only.
             if guard_rows and top_k == 1 and scales is not None:
                 _prepare_dense_w4a16(w13, w13_sf, w2, w2_sf, scales)
-            views_for(w13, w13_sf, w2, w2_sf, top_k, limit, in_place=True, scales=scales)
+            return views_for(w13, w13_sf, w2, w2_sf, top_k, limit, in_place=True, scales=scales)[0]
+
+        def packet_views(w13, w13_sf, w2, w2_sf, limit, scales):
+            views, _, _, a13, _, q13, q2 = views_for(
+                w13, w13_sf, w2, w2_sf, 8, limit, in_place=False, scales=scales)
+            return views, a13 if q13 is None else q13, q2
+
+        def moe_packets_supported(rows, w13, w13_sf, w2, w2_sf, limit, *, scales=None):
+            from engine.modules.prefill_packets import ffn_packet_rows
+            if (not ffn_packet_rows(rows) or float(limit) != 10.
+                    or tuple(w13.shape) != (288, 1024, 2048) or tuple(w2.shape) != (288, 4096, 256)):
+                return False
+            from engine.kernels.b12x.moe_packet_input import supported
+            return supported(*packet_views(w13, w13_sf, w2, w2_sf, limit, scales), rows)
+
+        def moe_packets(batch, sel, w, w13, w13_sf, w2, w2_sf, limit, *, scales=None):
+            from engine.kernels.b12x.moe_packet_input import launch
+            if float(limit) != 10.:
+                raise ValueError('packet MoE requires the ordinary GLM activation limit')
+            return launch(batch, sel, w, *packet_views(w13, w13_sf, w2, w2_sf, limit, scales))
 
         def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit, *, scales=None, finalize=None):
             """Packed b12x MoE with prepared ModelOpt scales.
@@ -551,12 +580,20 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                   kda_recurrent_ring_rows=None if recurrent_kda_ring_rows is None else on_main(recurrent_kda_ring_rows),
                   conv_ring_rows=None if "conv_prefill" in reference_for else on_main(causal_conv1d_ring_rows),
                   decode_rows=DecodeRows(*(on_main(f) for f in (row_lengths, latent_write_rows, gather_candidates, pool_window,
-                                                                pool_addresses, scatter_pools, write_tails, mask_horizon, update_pool_cache))),
+                                                                pool_addresses, scatter_pools, write_tails, mask_horizon,
+                                                                update_pool_cache, compress_decode_pools))),
                   head_gate=on_main(head_gate),
                   rmsnorm=on_main(norm), swiglu=on_main(activation),
                   route_weights=on_main(route_weights), layernorm=on_main(layernorm),
                   mla_dense_prefix=on_main(mla_dense_prefix), mla_absorb=on_main(mla_prefill_absorb),
                   latent_norm_write=on_main(latent_norm_write))
+    if moe_packets is not None:
+        table = replace(table, moe_packets=on_main(moe_packets),
+                        moe_packets_supported=on_main(moe_packets_supported))
+    return _apply_reference_lanes(table, ref, reference_for)
+
+
+def _apply_reference_lanes(table, ref, reference_for):
     # 45차 §21 bisect: any other lane named in `reference_for` runs on the torch reference in this table
     # (the served output is garbage while every self-consistency judge passes -- which lane, if any, is found by
     # swapping them one at a time; "expert" and "kda_recurrent" are the two the kernels already know how to declare).
@@ -567,8 +604,15 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
         raise ValueError(f"reference_for names no lane: {unknown}; lanes are {sorted(fields)} (plus 'expert')")
     swapped = {n: getattr(ref, n) for n in reference_for if n in fields and n != "kda_recurrent"}
     if swapped:
-        from dataclasses import replace
         table = replace(table, **swapped)
+        if "moe" in swapped:
+            # The packet reader must not bypass an explicitly selected
+            # reference expert. Capability agreement chooses ordinary FFNs.
+            table = replace(table, moe_packets=None, moe_packets_supported=None)
+        if "kpool_compress" in swapped and table.decode_rows is not None:
+            # Selecting the pooling reference must also replace its captured
+            # direct reader; otherwise the bisect silently keeps native math.
+            table = replace(table, decode_rows=replace(table.decode_rows, compress=ref.decode_rows.compress))
     return table
 
 

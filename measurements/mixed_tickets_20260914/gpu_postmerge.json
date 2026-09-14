@@ -1,0 +1,746 @@
+{
+  "status": "PASS",
+  "source_sha256": {
+    "engine/modules/mixed_experts.py": "4cb1d9de5b348c49b135bb7f0c2290b203dba462d2a77cd8ffe1d6adbd880b62",
+    "engine/kernels/b12x/moe_mixed.py": "23205ccfe0f93824d361870d4a07afed6abbb1f2b1ccee284c3c89c850edf570",
+    "engine/kernels/b12x/moe_mixed_frontend.py": "465b8aef59b69840eb7594c799f783522b753221808bf78c39c18006605442c7",
+    "engine/kernels/b12x/moe_dispatch.py": "d915240cb87cebd58869808600e9e5b42fc07c5133638f6f8ed6c83996d3f644",
+    "engine/kernels/b12x/moe_static_common.py": "8ac18a06cfd1a0d82e615888c77dfb26df4edec0731a68227dd284d7e1f56cff",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "d8044bf09b5928182e8c2337c0096b30c0d2bea2a13f78b02379acce527289c1",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "engine/kernels/b12x/moe_micro_kernel.py": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914",
+    "probes/engine_mixed_experts_compile.py": "8462bde90dd2c36a62758ea0b4daf8821ea2e17ea4de9521f3fcc7895cf21e62",
+    "tests/test_engine_mixed_experts.py": "ef0a7de60fc7988cad0d3eafba0073a9f03d523a347bcaae0993dcc1faecda8b",
+    "engine/modules/mixed_completion.py": "2ba673cb4d3a0c1033c9e8fc6893a85618c34f1b4b273003bac41e714cc0acd8",
+    "engine/kernels/b12x/moe_mixed_completion.py": "8a595c132b38e528685ff150290fdeaa5c807e3e0278cd4690b480965884acb7",
+    "engine/kernels/b12x/moe_cold_frontend.py": "1d3876c0675722533f7b6ac75cefac32c141125def6dd6964f614843ca4fc40b",
+    "engine/kernels/b12x/moe_prepared_prefill.py": "b077a033aaa79d7bf0cc6ba387d17bccb64546abb2431ce8aefb79bd33a69306",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_words.py": "368dee876092745be60e079a73cf73c4e2c91dd73f699c6f0a315da0ed05e3e9",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+    "engine/kernels/b12x/_moe_dynamic/gated.py": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+    "probes/engine_mixed_completion_compile.py": "ef70284f6d76abbe468095a9a5b418f578eaf29ce71f67d1209145e33cfa815e",
+    "tests/test_engine_mixed_completion.py": "43cf8051bde14fa0b86546c2533321dbe92927e15d3fdb44b3df6164ec8f5eec",
+    "engine/base/comm.py": "d8d191a88647e101958b7217702627b6cb2c5209ab06ded864d2833ec036ed47",
+    "engine/modules/mixed_tickets.py": "37d43a3f51ed942a0d88614a98d855c20d479ccd473c1382643cde017c5dcf3d",
+    "engine/profiles/glm53/mixed_shared.py": "296ba5b51f0ae08b7fad101942e8098935e676a4537c867ad53905b4d37e1fbb",
+    "engine/profiles/glm53/net.py": "eef8fc59872ebbdc14a634ffb4c36981973d68942c25cb87a831652973768038",
+    "engine/profiles/glm53/lanes.py": "0700eced00cda45294f32861460177ab556c887c47f29ac9629146956823c1b8",
+    "engine/profiles/glm53/modelopt_scales.py": "5fb0fbbbc2011e0390248c696f5fb04e128e854d8544dbc113e932e8a28afbf3",
+    "engine/kernels/dense/__init__.py": "29be1221e81bcdc965b3131b33befe4a729dc544a20ded5551f046ba506be8b0",
+    "engine/kernels/dense/shared_mlp.py": "3fe4eaee2ba200365040dc33a833d9775e8307d469e132f08cc21bc629504415",
+    "engine/kernels/dense/kernels.cu": "4beb5789f2446fe88e7dd480b3fa1f3261094296e7469355702bac09e5f7a353",
+    "engine/kernels/dense/fp8.py": "fecc21c8b0f3088c765083cf7987db210de499313490559596dca7dee676c3ca",
+    "probes/engine_mixed_tickets_check.py": "bbe2cdf4bfa00b650b960090c6ef9775e8612320b23f09a60984d5c9aca057b4",
+    "probes/engine_mixed_completion_check.py": "67a22ea9e446499221ae0df1f9db706dbc65f22ca6f4b65a21a03a22ec0bb8b3",
+    "tests/test_engine_mixed_tickets.py": "d977ed04a80cdd1bee92096ef4e0d9ec464197e2aecec43be5683dcd5127c8df",
+    "tests/test_engine_mixed_shared.py": "a49811b648c2a7d4bccf43986f2db5f1e2af7b34f9ee2264b989bea35f1416a4"
+  },
+  "image": "sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed",
+  "scope": "M2 eager one-rank FFN component, real served shared readers, ticket retirement and foreign-stream consumers. Includes fresh route planning/allocation/admission in wall timings. No full model, TP4 NCCL, arrival trace, graph, TTFT, tok/s, quality or acceptance verdict.",
+  "device": "NVIDIA GB10",
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "rank_file": "/home/choiceoh/models/st-glm53-nvidia-tp4-9391/rank3of4.safetensors",
+  "memory_budget_bytes": 8589934592,
+  "weight_sha256": {
+    "L3.moe.gate": "d9b073de20e23bca95c0110f8d131a655e27b8dd1ec9370943b78734b189e86e",
+    "L3.moe.bias": "cad2f175acdabf61327e2c60bc609df9df81b21f7a8bc166d367b57ca13b78e7",
+    "L3.moe.sh_gate_up": "0b99c22a58b3c98afe1ac3c59a583e62f9db00c5c38039ba423152c3473f3b62",
+    "L3.moe.sh_down": "4f4357d6da8a9e1ebcba5b6605eb89f1bcc12c3fbfd8bc0a56223c31a5f39a91",
+    "L3.moe.w13": "478b368f40bc160de55eb6f9183b932d5c1b6ae7de6830ed6f6215f4abb962a9",
+    "L3.moe.w13_sf": "ae997725cc9d6d8b00741cef2e9de2fdc8eabb548bcf0ee38abcf342cff23e6f",
+    "L3.moe.w13_alpha": "ac67a63b66261a27f1d554f6ea56c54e99f4d7453c088d3f5d620ec61a76f945",
+    "L3.moe.a13_scale": "943fb533b85e78648717e60d599619ff59ec88b5beb1e0e0ccc8a22a75fe4972",
+    "L3.moe.w2": "a95eb1aa4a765ae6d6bb46f6b57f02ed7568eb866c8a3b686fd65aa7178b19a6",
+    "L3.moe.w2_sf": "c4cec568a6beb26956d29cd20d31747eb19f91eeba4b3a7ee0fd79854530f2b0",
+    "L3.moe.w2_alpha": "36a2911ff7f90108bc72e76e82e9f2c21878c170018359d1efb3d2fd31da523a",
+    "L3.moe.a2_scale": "cc81ef1524250ece78d606d9b2a656d86c729f26e69791801213fdc6d1ba97b7"
+  },
+  "model_config_sha256": "e23c5d98f53e861d49a51bd3c68591621c5482ce829e42c31724152322fba03d",
+  "shared_pack_sha256": [
+    "3bd817efc7f9a6c6a2b5510af013e7eecacea0d7c6e7aec45ce0cec00c998567",
+    "4ac7a885a4799ed2ca055763cea6111b6ee85ef2394fffc9d18ccb0228da38ab",
+    "cc88513514c6a050a83d02433e774deb2077b8db38176167b3f08223d130f98d",
+    "6bd3c57f55a9c135a946373dbcfcd943c010149d4c3eaeceb49b893a46f19659",
+    "a01e16045054517bbbea1711ff5bb8be4137b93b50de995d230ff35885a0f799",
+    "c0f4fe558b8df55617061b41e0458c490741821f885ce1fe780319ab45b98c63",
+    "9f99a3b70fd2c134e2c7e3d34d531addb4f2de8d2658b5cb4754ac5676e8faec",
+    "ff6c657207931b7516ef323a2777ac2efcdb51e6a074ce3623ac4c4f601e83ac",
+    "336274ff3449360d962c1f2eb6d7f7ee9b549e66c5ffabb33bdb97dda5ee9494",
+    "de59d41375e929f98b0700e117cc1999abcc2b2731219e61c0c0e36662f3cb4f"
+  ],
+  "shared_recipe": "same DenseLinear W4/FP8 packs in all arms; RTN from checkpoint BF16, no GPTQ store",
+  "communication": "world=1 identity, one real TP4 weight shard; no NCCL or four-GPU result",
+  "cases": [
+    {
+      "decode_rows": 8,
+      "prefill_rows": 9240,
+      "source_sha256": [
+        "0abb11684b017f2dd690ec1ff200a9ebd437658b3cfbfe73ea4fd2d1ccdb6a20",
+        "a327dc8b4e85ffbeb8860d50654733c55b2acdda2ff6ed413ac4b9bcf81a039b"
+      ],
+      "routing": "actual profile L3 router on synthetic activations",
+      "samples": [
+        {
+          "hot_quota": 0,
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.0019479228993314554
+            }
+          },
+          "prepare_admit_wall_ms": 12854.741585004376,
+          "decode_ready_wall_ms": 12862.955642020097,
+          "prefill_complete_wall_ms": 12913.125901017338,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.002145385018071821
+            }
+          },
+          "prepare_admit_wall_ms": 168.4383879764937,
+          "decode_ready_wall_ms": 171.8929799972102,
+          "prefill_complete_wall_ms": 245.84594200132415,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.002099961195642085
+            }
+          },
+          "prepare_admit_wall_ms": 163.98992799804546,
+          "decode_ready_wall_ms": 167.8539099812042,
+          "prefill_complete_wall_ms": 212.56478698342107,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.001991863208423551
+            }
+          },
+          "prepare_admit_wall_ms": 156.11770999385044,
+          "decode_ready_wall_ms": 159.07889601658098,
+          "prefill_complete_wall_ms": 203.6232140089851,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.0019762939894627496
+            }
+          },
+          "prepare_admit_wall_ms": 156.01259100367315,
+          "decode_ready_wall_ms": 158.9639529993292,
+          "prefill_complete_wall_ms": 203.5053580184467,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 128,
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.002100524155122744
+            }
+          },
+          "prepare_admit_wall_ms": 162.06181002780795,
+          "decode_ready_wall_ms": 165.90651200385764,
+          "prefill_complete_wall_ms": 210.164814023301,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 128,
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.0020856084777605404
+            }
+          },
+          "prepare_admit_wall_ms": 166.14774201298133,
+          "decode_ready_wall_ms": 169.714717019815,
+          "prefill_complete_wall_ms": 214.28409000509419,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.001964161742364896
+            }
+          },
+          "prepare_admit_wall_ms": 156.12583700567484,
+          "decode_ready_wall_ms": 159.0469120128546,
+          "prefill_complete_wall_ms": 203.5030690021813,
+          "includes_first_use_compile": false
+        }
+      ],
+      "native_repeat_error": {
+        "decode": {
+          "relative_max": 0.0,
+          "relative_rms": 0.0
+        },
+        "prefill": {
+          "relative_max": 0.0056179775280898875,
+          "relative_rms": 0.0015990772332018872
+        }
+      },
+      "cancellation_phases": [
+        "queued",
+        "decode",
+        "cold"
+      ]
+    },
+    {
+      "decode_rows": 32,
+      "prefill_rows": 9240,
+      "source_sha256": [
+        "9f9af37fbb19004304ab4b638bed41c875317fe0e0030069c320b16624d50fda",
+        "eefce1229c0191840b6c4bc3163c7bfcaeb2f7463cebe27dbcbdd8f009b0ea54"
+      ],
+      "routing": "actual profile L3 router on synthetic activations",
+      "samples": [
+        {
+          "hot_quota": 0,
+          "cold_windows": 16,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.001801650754258233
+            }
+          },
+          "prepare_admit_wall_ms": 5273.1179730035365,
+          "decode_ready_wall_ms": 5276.285397994798,
+          "prefill_complete_wall_ms": 5297.596449992852,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007317073170731708,
+              "relative_rms": 0.0023737395796331797
+            }
+          },
+          "prepare_admit_wall_ms": 120.33434398472309,
+          "decode_ready_wall_ms": 123.29704998410307,
+          "prefill_complete_wall_ms": 147.2102009865921,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006097560975609756,
+              "relative_rms": 0.002361184180193308
+            }
+          },
+          "prepare_admit_wall_ms": 118.81859099958092,
+          "decode_ready_wall_ms": 121.9287519925274,
+          "prefill_complete_wall_ms": 146.09950201702304,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "cold_windows": 16,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007317073170731708,
+              "relative_rms": 0.0017780413478351716
+            }
+          },
+          "prepare_admit_wall_ms": 116.39584999647923,
+          "decode_ready_wall_ms": 119.39681199146435,
+          "prefill_complete_wall_ms": 143.57589799328707,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "cold_windows": 16,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.0017938320511363245
+            }
+          },
+          "prepare_admit_wall_ms": 116.67760901036672,
+          "decode_ready_wall_ms": 119.57874801009893,
+          "prefill_complete_wall_ms": 140.83560701692477,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 128,
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006097560975609756,
+              "relative_rms": 0.002369259605814112
+            }
+          },
+          "prepare_admit_wall_ms": 118.11126599786803,
+          "decode_ready_wall_ms": 121.04064499726519,
+          "prefill_complete_wall_ms": 141.13973401254043,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 128,
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006097560975609756,
+              "relative_rms": 0.0023387140403879313
+            }
+          },
+          "prepare_admit_wall_ms": 119.67447501956485,
+          "decode_ready_wall_ms": 122.62932502198964,
+          "prefill_complete_wall_ms": 142.80535801663063,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "cold_windows": 16,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.0017693478942846293
+            }
+          },
+          "prepare_admit_wall_ms": 113.64396000863053,
+          "decode_ready_wall_ms": 116.55338600394316,
+          "prefill_complete_wall_ms": 136.90426599350758,
+          "includes_first_use_compile": false
+        }
+      ],
+      "native_repeat_error": {
+        "decode": {
+          "relative_max": 0.0,
+          "relative_rms": 0.0
+        },
+        "prefill": {
+          "relative_max": 0.007317073170731708,
+          "relative_rms": 0.0014393641890214782
+        }
+      }
+    },
+    {
+      "decode_rows": 8,
+      "prefill_rows": 32768,
+      "source_sha256": [
+        "3981a5a9a3602236332241b54b21daf47ecf21f13af65e8941ebcaeb2d37d0f7",
+        "9ea3d61ea2ee8c94e53193a8ea0d86fd72c1fac360ce02ae2fb45b4425199c01"
+      ],
+      "routing": "actual profile L3 router on synthetic activations",
+      "samples": [
+        {
+          "hot_quota": 0,
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00881057268722467,
+              "relative_rms": 0.0013221110619463525
+            }
+          },
+          "prepare_admit_wall_ms": 469.71797599690035,
+          "decode_ready_wall_ms": 471.17049698135816,
+          "prefill_complete_wall_ms": 538.6057629948482,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00881057268722467,
+              "relative_rms": 0.0015230843652516448
+            }
+          },
+          "prepare_admit_wall_ms": 605.7830629870296,
+          "decode_ready_wall_ms": 607.2192319843452,
+          "prefill_complete_wall_ms": 669.2295630055014,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.001493220471636132
+            }
+          },
+          "prepare_admit_wall_ms": 449.0386019751895,
+          "decode_ready_wall_ms": 450.5050269945059,
+          "prefill_complete_wall_ms": 513.4021699777804,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00881057268722467,
+              "relative_rms": 0.0013468715468481789
+            }
+          },
+          "prepare_admit_wall_ms": 458.72065200819634,
+          "decode_ready_wall_ms": 460.20765299908817,
+          "prefill_complete_wall_ms": 547.628889005864,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00881057268722467,
+              "relative_rms": 0.001354562634821241
+            }
+          },
+          "prepare_admit_wall_ms": 442.536824994022,
+          "decode_ready_wall_ms": 443.9857459801715,
+          "prefill_complete_wall_ms": 505.6969430006575,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 128,
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.0015174437958782778
+            }
+          },
+          "prepare_admit_wall_ms": 603.8448649924248,
+          "decode_ready_wall_ms": 605.3171459934674,
+          "prefill_complete_wall_ms": 668.1268499814905,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 128,
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00881057268722467,
+              "relative_rms": 0.0015300687571574642
+            }
+          },
+          "prepare_admit_wall_ms": 452.6892419962678,
+          "decode_ready_wall_ms": 454.1845310013741,
+          "prefill_complete_wall_ms": 516.9158350036014,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00881057268722467,
+              "relative_rms": 0.0013695977452346903
+            }
+          },
+          "prepare_admit_wall_ms": 441.16766401566565,
+          "decode_ready_wall_ms": 442.6258330058772,
+          "prefill_complete_wall_ms": 505.3017290192656,
+          "includes_first_use_compile": false
+        }
+      ],
+      "native_repeat_error": {
+        "decode": {
+          "relative_max": 0.0,
+          "relative_rms": 0.0
+        },
+        "prefill": {
+          "relative_max": 0.00881057268722467,
+          "relative_rms": 0.0011995082455777853
+        }
+      }
+    },
+    {
+      "decode_rows": 32,
+      "prefill_rows": 32768,
+      "source_sha256": [
+        "a2f4f06cf02f59731a76513da5d92fe537d1857ce3c28648ae7b2e5b10c91977",
+        "2c1ab0d4805a9e9aa783e7fb426aa1809b561b5f77512246d467defc0d499521"
+      ],
+      "routing": "actual profile L3 router on synthetic activations",
+      "samples": [
+        {
+          "hot_quota": 0,
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.0008792342227104861
+            }
+          },
+          "prepare_admit_wall_ms": 456.2615300237667,
+          "decode_ready_wall_ms": 459.2266360123176,
+          "prefill_complete_wall_ms": 522.9243990033865,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.001456112727068587
+            }
+          },
+          "prepare_admit_wall_ms": 590.5465920222923,
+          "decode_ready_wall_ms": 593.5732020006981,
+          "prefill_complete_wall_ms": 655.9249400161207,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.0014389728924137147
+            }
+          },
+          "prepare_admit_wall_ms": 280.34803800983354,
+          "decode_ready_wall_ms": 283.526710991282,
+          "prefill_complete_wall_ms": 360.6564759975299,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.0008675045442651958
+            }
+          },
+          "prepare_admit_wall_ms": 276.8078160006553,
+          "decode_ready_wall_ms": 279.84620101051405,
+          "prefill_complete_wall_ms": 364.8086650064215,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.0008645152449689167
+            }
+          },
+          "prepare_admit_wall_ms": 275.32995099318214,
+          "decode_ready_wall_ms": 278.2059689925518,
+          "prefill_complete_wall_ms": 340.07938898866996,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 128,
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.0014586091988609666
+            }
+          },
+          "prepare_admit_wall_ms": 373.15694501739927,
+          "decode_ready_wall_ms": 376.10078701982275,
+          "prefill_complete_wall_ms": 439.3544250051491,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 128,
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.0014536753273038342
+            }
+          },
+          "prepare_admit_wall_ms": 282.1875980007462,
+          "decode_ready_wall_ms": 285.1184640021529,
+          "prefill_complete_wall_ms": 348.1533990125172,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.0008907453999060563
+            }
+          },
+          "prepare_admit_wall_ms": 277.76293200440705,
+          "decode_ready_wall_ms": 280.6777819932904,
+          "prefill_complete_wall_ms": 344.3177860172,
+          "includes_first_use_compile": false
+        }
+      ],
+      "native_repeat_error": {
+        "decode": {
+          "relative_max": 0.0,
+          "relative_rms": 0.0
+        },
+        "prefill": {
+          "relative_max": 0.005341880341880342,
+          "relative_rms": 0.0008636897635107742
+        }
+      }
+    }
+  ],
+  "gpu_used": true,
+  "scratch_peak_bytes": 4159928832,
+  "default_enabled": false,
+  "serving_speedup_proven": false
+}

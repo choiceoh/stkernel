@@ -1,0 +1,22 @@
+# Build context is the verified artifact directory prepared by build-seed.sh.
+ARG ST_BOOTSTRAP_IMAGE=glm53:v13-b12x-it
+FROM ${ST_BOOTSTRAP_IMAGE}
+COPY wheels /tmp/st-cuda132/wheels
+COPY cuda132.lock.json install_cuda132.py fetch_cuda132.py promote_deep_gemm.py /tmp/st-cuda132/
+RUN python3 /tmp/st-cuda132/install_cuda132.py && rm -rf /tmp/st-cuda132
+# CUDA 13.x native cubins use minor-version compatibility on R580+. PTX JIT
+# needs a driver supporting its PTX version; ST compiles SM121a cubins ahead
+# of launch. GPU execution requires its own authorized runtime check.
+ENV CUDA_HOME=/usr/local/cuda-13.2 \
+    CUDA_PATH=/usr/local/cuda-13.2 \
+    CUDA_VERSION=13.2.1 \
+    NV_CUDA_CUDART_VERSION=13.2.75 \
+    NVIDIA_REQUIRE_CUDA="cuda>=13.0" \
+    PATH=/usr/local/cuda-13.2/bin:/usr/local/nvidia/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib64:/usr/local/nvidia/lib:/usr/local/cuda-13.2/lib64:/usr/local/cuda-13.2/nvvm/lib64 \
+    TRITON_PTXAS_PATH=/usr/local/cuda-13.2/bin/ptxas \
+    TRITON_PTXAS_BLACKWELL_PATH=/usr/local/cuda-13.2/bin/ptxas \
+    TORCH_CUDA_ARCH_LIST=12.1a \
+    CUTE_DSL_ARCH=sm_121a
+ENTRYPOINT ["python3"]
+CMD ["--version"]

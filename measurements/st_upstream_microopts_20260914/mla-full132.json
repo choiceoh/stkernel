@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "torch": "2.13.0+cu130",
+  "torch_cuda": "13.0",
+  "toolchain": [
+    [
+      "/cuda132/bin/nvcc",
+      "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Mon_Mar_02_09:52:54_PM_PST_2026\nCuda compilation tools, release 13.2, V13.2.51\nBuild cuda_13.2.r13.2/compiler.37434383_0"
+    ],
+    [
+      "/cuda132/bin/ptxas",
+      "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Mon_Mar_02_09:52:54_PM_PST_2026\nCuda compilation tools, release 13.2, V13.2.51\nBuild cuda_13.2.r13.2/compiler.37434383_0"
+    ]
+  ],
+  "extension": "/out/mla-build/776e859e0414131bcbe6d958/st_mla_776e859e0414131bcbe6d958.so",
+  "extension_sha256": "f3d6ce0ba4b223dadf5e7f39584ae65b2d5c7fe644ce384760d212ae74fe8af7",
+  "source_sha256": "0ae64a5a245aa3391c6f62def737c36241e117bf31da917be26c03ac2499c22e",
+  "scope": "full serving Torch extension compile and dlopen; no GPU execution"
+}

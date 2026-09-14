@@ -19,7 +19,7 @@ def consumer_code():
     return compile(ast.Module(body=[copy.deepcopy(loop)], type_ignores=[]), str(SOURCE), 'exec')
 
 
-def execute(reuse, stages, tid, pairs=32, compact=False):
+def execute(reuse, stages, tid, pairs=32, compact=False, direct_scales=False):
     """32 K256 pairs span two H4096 items; registers persist across both.
 
     A/SFA match between gate/up, B/SFB deliberately differ. Released shared
@@ -81,9 +81,22 @@ def execute(reuse, stages, tid, pairs=32, compact=False):
         assert values == expected, (state.cursor, values, expected)
         observed.append((state.cursor, output.kind, output.block, values))
 
-    owner = geometry(reuse=reuse, stages=stages, compact=compact)
+    owner = geometry(reuse=reuse, stages=stages, compact=compact, registers=direct_scales)
     owner.fc1_reuse_a, owner.num_m_tiles, owner.num_n_tiles1 = reuse, 1, 4
     owner._sf_expand_stage = lambda *a, **kw: None  # unchanged, separately byte-tested
+    prepared = []
+    def prepare_stage(packed_base, tidx):
+        assert packed_base == 240+state.index*1552
+        prepared.append(state.cursor)
+        return packed_base, state.cursor
+    def direct_fragment(dest, stage, kind, k_block):
+        packed_base, cursor = stage
+        assert cursor == state.cursor
+        assert kind == "fc1" and k_block == dest.block
+        assert packed_base == 240+state.index*1552
+        copy_fragment(None, View("SFB", state.index, k_block), dest)
+    owner._sf6_load_fragment = direct_fragment
+    owner._sf6_prepare_stage = prepare_stage
     env = dict(self=owner, Int32=int, tidx=tid, num_k_blocks1=4,
         cutlass=SimpleNamespace(const_expr=bool, range_constexpr=range),
         cute=SimpleNamespace(copy=copy_fragment, filter_zeros=lambda x: x, gemm=mma),
@@ -102,6 +115,7 @@ def execute(reuse, stages, tid, pairs=32, compact=False):
     code = consumer_code()
     for _ in range(pairs):
         exec(code, env)
+    assert prepared == (list(range(2*pairs)) if owner.sf6_registers else [])
     assert state.cursor == 2*pairs
     assert len(observed) == pairs*2*4*4
     return observed, loads, events

@@ -15,7 +15,9 @@ sees it finish one step late and drops that ghost's result).
 Which rows may run ahead: greedy rows and rows with only a temperature / top_p (the batch's device rejection
 sampling, base/sampler.block_verify_batch); rows with penalties, logit_bias, seeds, logprobs, grammars or a
 pending min_tokens keep the synchronous path, and the runner drains this one before them (adapter.async_ready).
-Every device-side draw is a keyed uniform (base/draws): the same on every rank whatever came before.
+Every device-side draw is a keyed uniform (base/draws): the same on every rank whatever came before. The same
+uniforms over the same distributions still do not make the same bits, so a sampled verdict is rank 0's
+(modules/draft_agreement.agree_verdict), as a greedy one is the MAX collective's.
 """
 from __future__ import annotations
 
@@ -23,6 +25,7 @@ import torch
 
 from engine.base.sampler import block_verify_batch, commit_batch, rows as sampler_rows
 from engine.base.stage_clock import StageClock
+from engine.modules.draft_agreement import agree_verdict
 from engine.profiles.glm53.net import Segment, Step
 
 
@@ -290,6 +293,9 @@ class AsyncDecode:
             e.note_ceilings(probs, b["qprob"], b["qcand"])
             with mark("verify"):
                 accepted, picks, _ = block_verify_batch(probs, b["drafts"], b["qcand"], b["qprob"], b["draws"])
+            with mark("agree"):
+                # every rank verified the same block, but not to the same bits: commit rank 0's verdict
+                accepted, picks = agree_verdict(e.net.comm, accepted, picks)
         else:
             with mark("sample"):
                 picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)

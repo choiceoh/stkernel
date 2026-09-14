@@ -51,6 +51,7 @@ ST_PROBES = ('probes/engine_kernel_check.py', 'probes/engine_decode_graph_check.
              'probes/engine_drafter_storage_check.py',
              'probes/engine_graph_profile.py', 'probes/engine_kda_deferred_check.py',
              'probes/engine_prefill_fp8_consumer_check.py',
+             'probes/engine_ffn_packets_check.py',
              'probes/engine_mhc_contract_check.py',
              'probes/engine_execution_plan_check.py',
              'probes/engine_direct_mhc_check.py',
@@ -102,6 +103,8 @@ def _st_args(relative, args, cwd, repo):
         _same(_path(probe, cwd), probe, repo)
         if probe == 'probes/engine_kda_deferred_check.py':
             switches.add('--commit-only')
+        if probe == 'probes/engine_ffn_packets_check.py':
+            switches.add('--router-only')
     while args:
         token = args[0]
         if token in switches:

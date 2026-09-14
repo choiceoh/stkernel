@@ -1,0 +1,13 @@
+{
+  "base": "6522564ad56010c8ae1c6b7140bc6341de84c884",
+  "native_or_math_source_changes": [],
+  "source_sha256": {
+    "engine/profiles/glm53/lanes.py": "1fda5587485ea5ea1bf57526ed1874f3188f59c3c7cb553367f4b8bf524d3527",
+    "engine/profiles/glm53/decode_graphs.py": "1a79c2c130523e40e4f8532c59b202057759b5e7633845ef91796ceb52fefc29",
+    "probes/engine_decode_no_copy.py": "656acfe6ef86bd076c2a4476b5828aa4935f81e81930a3662556096e52a25d66",
+    "probes/engine_decode_dsa_inputs.py": "e3d258dd8166f21a35bebcda36bcf8880c259c2b31d4f62629fb3773500cd9b5",
+    "tests/test_engine_decode_no_copy.py": "f1721093fc47078ba2909f66a8a78c41c0edd416e1ebd96227228b22da50d997",
+    "tests/test_prefill_dense_prefix.py": "07202b88c677339196a38bd5fd64d65a3db0f110e8015c0855bc24958c92e839"
+  },
+  "integrated_base": "e05096dd0a36c02c9e590946d5d3f1bc4281faf3"
+}

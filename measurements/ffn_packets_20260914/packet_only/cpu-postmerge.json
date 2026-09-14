@@ -1,0 +1,202 @@
+{
+  "status": "PASS",
+  "revision": "ff877806fa8ec16cb43b6b122bb373ec9986808b",
+  "image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+  "gpu_used": false,
+  "scope": "isolated Linux ARM64 CPU modules; CUDA hidden",
+  "source_sha256": {
+    "engine/modules/prefill_packets.py": "eeaa468b8715373c7711cb29d58c8993a824f80da91c9753693f714053cc6471",
+    "engine/modules/token_shards.py": "11d3bf3c2fe8e644a845fa49864800d5f0e021ccdc7c6eef03c9151b695aa77c",
+    "engine/kernels/prefill_collectives/__init__.py": "4fca676770574b77e9280a260c36cff406ebe0279a15fc3b5bdd0b11222e0f4c",
+    "engine/kernels/prefill_collectives/consumer.py": "d0f242b38b4d0e74afd205214067ecab57f046b5c81f8f2fa5032ce8fbcdfd7c",
+    "engine/kernels/prefill_collectives/kernels.py": "49d22265497ee41cc3ff03d455fa11a76519c450322aa993cbc5601cfc5a48a4",
+    "engine/kernels/prefill_router.py": "1be65d85e0e19899ecd163ab05ece1b92822277fd80adc1f804b80818fbc36a7",
+    "engine/kernels/dense/__init__.py": "abd41b1cfc059e60c3ab482eba8bbcd5ebdd91d47c4a535e64b01cdcda5ae875",
+    "engine/kernels/dense/fp8.py": "fecc21c8b0f3088c765083cf7987db210de499313490559596dca7dee676c3ca",
+    "engine/kernels/b12x/moe_dispatch.py": "9989e2739839cbb8914745ed45c992a7535c036331aeff3fcf304b46bb946918",
+    "engine/kernels/b12x/moe_packet_input.py": "edfb8563846ea6df2c86a42417a18d679e58bccb55a14164458e7d6ea89eef37",
+    "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "2cb221c7ddc9891dad4f6d2a83ccf981c22e70b3a2171a6795792c0c5e2fae8e",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_w4a16_fp4_helpers.py": "3115cf3e73064cbf2c339d5fd2cec1c49206f34283c281faef2d1c2d290a6c73",
+    "engine/profiles/glm53/net.py": "c8464237fed8c4d3129f8c9989d50f15de23545bf0702fddc9e4813a1c7052ab",
+    "engine/profiles/glm53/lanes.py": "3b9ac6ed5037f724eabdff56bee10c507dc05f665381a47eabb8e2460b30508d",
+    "engine/profiles/glm53/execution.py": "716111e7cc714a83a6b5af46a1641ee3efc6ce67aa3233dcabccc47c3ffa31b8",
+    "engine/profiles/glm53/boot.py": "0cc08c187db2ae8edfcecd5ce0faa29a003e8c366925e2d7552525b2f7611222",
+    "probes/engine_ffn_packets_compile.py": "bdd2b71116f5bf6fcd594a06b366f78f8ce6e95d21fb73ff7b131641fd3ff5b1",
+    "probes/engine_ffn_packets_check.py": "5641b001bccd08d68ab54e38995d8338d2eb988fd4f15db7fc21f069a04f60f2",
+    "tests/test_engine_ffn_packets.py": "1ab3640fbca124084e14e2038bd8e88e79f3c57aebaf7d4ed8a9291990747a94",
+    "tests/test_engine_prefill_fp8_consumer.py": "7b49d67453788ca0712b8978c612d03a343e16af20f0f91639f33b5aebc2f236"
+  },
+  "modules": [
+    {
+      "module": "test_engine_ffn_packets",
+      "returncode": 0,
+      "seconds": 2.508754537004279,
+      "log_sha256": "ca861660da7bde7afb553a49a8e2974f13cc5282eb99344818ea42f16c20d40d",
+      "tests": 12,
+      "skips": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "module": "test_engine_prefill_fp8_consumer",
+      "returncode": 0,
+      "seconds": 1.4151238490012474,
+      "log_sha256": "f10aef2e35f0ffb01b6be1d3d2182a2e518b1e042553cccd54a4f9daf7e1e3c6",
+      "tests": 4,
+      "skips": 4,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "module": "test_engine_router_widths",
+      "returncode": 0,
+      "seconds": 4.242184039001586,
+      "log_sha256": "90dc196c5afdf923647557646d7808bebd8a3e429dd64aba74dea243d308f0ae",
+      "tests": 3,
+      "skips": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "module": "test_engine_knobs",
+      "returncode": 0,
+      "seconds": 2.8933665950025897,
+      "log_sha256": "16cb36b39ee0fd9b2765f6456c8484129648229bd42ccebc421961fd27b87d39",
+      "tests": 17,
+      "skips": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "module": "test_engine_execution_plans",
+      "returncode": 0,
+      "seconds": 3.8811368540045805,
+      "log_sha256": "fd9a19eef4a2401012828635ecfad7aaa3a3f9fc074f701344002ecbdf4c6d96",
+      "tests": 6,
+      "skips": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "module": "test_engine_graph_contracts",
+      "returncode": 0,
+      "seconds": 0.9609763920016121,
+      "log_sha256": "146514eb92615f7adee20145705fab2a4d2e214418ad539b40252dc9fc2e2de8",
+      "tests": 36,
+      "skips": 3,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "module": "test_engine_native_execution",
+      "returncode": 0,
+      "seconds": 0.8761925130093005,
+      "log_sha256": "86c79e2c88fa961bbc1a31c2416760d1549bf9e0db83316b323188e0c0de39d1",
+      "tests": 2,
+      "skips": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "module": "test_glm53_modelopt_serving",
+      "returncode": 0,
+      "seconds": 0.7868175260082353,
+      "log_sha256": "de569eb0bb355bc9fa48523435e865014577f7ac13612fd663927e8b46dba563",
+      "tests": 12,
+      "skips": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "module": "test_glm53_modelopt_kernel_dispatch",
+      "returncode": 0,
+      "seconds": 0.2352749450074043,
+      "log_sha256": "7cfcaeb9005a3fc8c32c21bb73590cdd37dc234fdec66a0278722ffec06f663d",
+      "tests": 4,
+      "skips": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "module": "test_engine_kda_deferred_batch",
+      "returncode": 0,
+      "seconds": 0.9367071989981923,
+      "log_sha256": "9cfc4e7a4e692e96142814941d48847d87ff8b70361ea4a95a310a9a9b5780ec",
+      "tests": 5,
+      "skips": 5,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "module": "test_engine_kda_ring",
+      "returncode": 0,
+      "seconds": 0.7243811899970751,
+      "log_sha256": "b7359ea344774b6a37c089883a6f57780dc63272a7572d8859d0301a6004855e",
+      "tests": 10,
+      "skips": 10,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "module": "test_engine_early_observe",
+      "returncode": 0,
+      "seconds": 1.3181579899974167,
+      "log_sha256": "9b55fd2c2e3ca9b4f36ba16aea44a62d7ecaeeb31d521ab62ed04f4359b0efe9",
+      "tests": 2,
+      "skips": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "module": "test_engine_decode_bundle",
+      "returncode": 0,
+      "seconds": 2.1401385909994133,
+      "log_sha256": "5fcc30677bb2f13175b8adb3080b737f880da6446528fd2f216b6b314ce6d37d",
+      "tests": 3,
+      "skips": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "module": "test_engine_draft_qk",
+      "returncode": 0,
+      "seconds": 1.5120251810003538,
+      "log_sha256": "6284d7c8dd35fd6a00fa6b71a3a2774806c860ecb160da9fc809ccf80af4df2e",
+      "tests": 5,
+      "skips": 1,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "module": "test_engine_kernel_common",
+      "returncode": 0,
+      "seconds": 3.3579815659904853,
+      "log_sha256": "306201b175d8d073feb2a0f41b9cce0fe57cd1aec43fc8228b959f8394cd2852",
+      "tests": 6,
+      "skips": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "module": "test_fleet_onepass",
+      "returncode": 0,
+      "seconds": 0.29099588200915605,
+      "log_sha256": "836b7dc2bb973a727d12ed82a08dedb0297ca58dd4314bc3f04dda1bac9b3d5e",
+      "tests": 27,
+      "skips": 0,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "module": "test_fleet_onepass_integration",
+      "returncode": 0,
+      "seconds": 1.2177268950035796,
+      "log_sha256": "1f3d2f48e1ebb3e0aa74c2afbcea77d90453f1da3e54b1fc6f7a3dfaa443b5f0",
+      "tests": 15,
+      "skips": 0,
+      "failures": 0,
+      "errors": 0
+    }
+  ]
+}

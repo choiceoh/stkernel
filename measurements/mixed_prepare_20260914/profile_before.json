@@ -1,0 +1,1010 @@
+{
+  "status": "PASS",
+  "source_sha256": {
+    "engine/modules/mixed_experts.py": "da2f2561839005530c7d7db111a69be2bb5f520843e3662ad34da299bf91ddc3",
+    "engine/kernels/b12x/moe_mixed.py": "fb3e659033546344bff7fa5de961b0c9fc94094370f83edbc85a889452cb6d5b",
+    "engine/modules/route_table.py": "60e3d47e8c605cf82963f64c0d2e750b4e57093eed4c5970215b22b3d5c5a4b4",
+    "tests/test_engine_mixed_plan.py": "0b799be93ce42cb84ea5cc8d2e2cde86afbbd691932da4309f0b7cac44c1099b",
+    "engine/kernels/b12x/moe_mixed_frontend.py": "465b8aef59b69840eb7594c799f783522b753221808bf78c39c18006605442c7",
+    "engine/kernels/b12x/moe_dispatch.py": "c2fd574140ab7cda64c717a853340058be81b9261eb1a83a0efd4ba285327c1c",
+    "engine/kernels/b12x/moe_static_common.py": "8ac18a06cfd1a0d82e615888c77dfb26df4edec0731a68227dd284d7e1f56cff",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "a005205c0ba7fa3d78cb3bff2a00d86731672e45d089f3cfd650fcd2deb529d4",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "engine/kernels/b12x/moe_micro_kernel.py": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914",
+    "probes/engine_mixed_experts_compile.py": "d520ff76d83698f3367a7336f83d255009bd6c6c4e10c12cb9754f060c5ce005",
+    "tests/test_engine_mixed_experts.py": "980950e58fa6a70bd29c9c2de9616253ca7d3647d76a92b8493026efbeadca5d",
+    "engine/modules/mixed_completion.py": "c05367b3759f3da7cf7322924f8ecf3497bcc29e7f9f7f05d7ec035acf9dd837",
+    "engine/kernels/b12x/moe_mixed_completion.py": "8365eff00dd3f76100a17b3de046654ff4f0bb77998cea535b5c531bdf865f40",
+    "engine/kernels/b12x/moe_cold_frontend.py": "1d3876c0675722533f7b6ac75cefac32c141125def6dd6964f614843ca4fc40b",
+    "engine/kernels/b12x/moe_prepared_prefill.py": "b077a033aaa79d7bf0cc6ba387d17bccb64546abb2431ce8aefb79bd33a69306",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_words.py": "368dee876092745be60e079a73cf73c4e2c91dd73f699c6f0a315da0ed05e3e9",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+    "engine/kernels/b12x/_moe_dynamic/gated.py": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+    "probes/engine_mixed_completion_compile.py": "ef70284f6d76abbe468095a9a5b418f578eaf29ce71f67d1209145e33cfa815e",
+    "tests/test_engine_mixed_completion.py": "43cf8051bde14fa0b86546c2533321dbe92927e15d3fdb44b3df6164ec8f5eec",
+    "engine/base/comm.py": "d8d191a88647e101958b7217702627b6cb2c5209ab06ded864d2833ec036ed47",
+    "engine/modules/mixed_tickets.py": "046643fa3adce2a0a2cfe29ff02cb2a97bddb0366acec8ad43a097adb334a5fe",
+    "engine/profiles/glm53/mixed_shared.py": "296ba5b51f0ae08b7fad101942e8098935e676a4537c867ad53905b4d37e1fbb",
+    "engine/profiles/glm53/net.py": "e3de46313e4bd8c3cac63362b35fdea2c9d5ac2b36fb15cc28d2f5db87f39295",
+    "engine/profiles/glm53/lanes.py": "7cbbe38b7965e60a2368777aad7d1918dd5715b9373ccf3dd5cd3da709308150",
+    "engine/profiles/glm53/modelopt_scales.py": "5fb0fbbbc2011e0390248c696f5fb04e128e854d8544dbc113e932e8a28afbf3",
+    "engine/kernels/dense/__init__.py": "29be1221e81bcdc965b3131b33befe4a729dc544a20ded5551f046ba506be8b0",
+    "engine/kernels/dense/shared_mlp.py": "3fe4eaee2ba200365040dc33a833d9775e8307d469e132f08cc21bc629504415",
+    "engine/kernels/dense/kernels.cu": "4beb5789f2446fe88e7dd480b3fa1f3261094296e7469355702bac09e5f7a353",
+    "engine/kernels/dense/fp8.py": "fecc21c8b0f3088c765083cf7987db210de499313490559596dca7dee676c3ca",
+    "probes/engine_mixed_tickets_check.py": "55b0fa77634d7002e54b365284091482c190166af008eb848157825ea52a1938",
+    "probes/engine_mixed_completion_check.py": "67a22ea9e446499221ae0df1f9db706dbc65f22ca6f4b65a21a03a22ec0bb8b3",
+    "probes/engine_mixed_plan_bench.py": "678dec3d83e5c9e5065be5810aa81d5d84efad3a5458520232a6da57b7c640c4",
+    "tests/test_engine_mixed_tickets.py": "cec3ec010d70fbcead7f61c450f323ca20dfb693a3dc07efe2fbe49aee5fd704",
+    "tests/test_engine_mixed_shared.py": "a49811b648c2a7d4bccf43986f2db5f1e2af7b34f9ee2264b989bea35f1416a4"
+  },
+  "image": "sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed",
+  "compare_planning": false,
+  "scope": "M2 eager one-rank FFN component, real served shared readers, ticket retirement and foreign-stream consumers. Includes fresh route planning/allocation/admission in wall timings. No full model, TP4 NCCL, arrival trace, graph, TTFT, tok/s, quality or acceptance verdict.",
+  "device": "NVIDIA GB10",
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "rank_file": "/home/choiceoh/models/st-glm53-nvidia-tp4-9391/rank3of4.safetensors",
+  "memory_budget_bytes": 8589934592,
+  "weight_sha256": {
+    "L3.moe.gate": "d9b073de20e23bca95c0110f8d131a655e27b8dd1ec9370943b78734b189e86e",
+    "L3.moe.bias": "cad2f175acdabf61327e2c60bc609df9df81b21f7a8bc166d367b57ca13b78e7",
+    "L3.moe.sh_gate_up": "0b99c22a58b3c98afe1ac3c59a583e62f9db00c5c38039ba423152c3473f3b62",
+    "L3.moe.sh_down": "4f4357d6da8a9e1ebcba5b6605eb89f1bcc12c3fbfd8bc0a56223c31a5f39a91",
+    "L3.moe.w13": "478b368f40bc160de55eb6f9183b932d5c1b6ae7de6830ed6f6215f4abb962a9",
+    "L3.moe.w13_sf": "ae997725cc9d6d8b00741cef2e9de2fdc8eabb548bcf0ee38abcf342cff23e6f",
+    "L3.moe.w13_alpha": "ac67a63b66261a27f1d554f6ea56c54e99f4d7453c088d3f5d620ec61a76f945",
+    "L3.moe.a13_scale": "943fb533b85e78648717e60d599619ff59ec88b5beb1e0e0ccc8a22a75fe4972",
+    "L3.moe.w2": "a95eb1aa4a765ae6d6bb46f6b57f02ed7568eb866c8a3b686fd65aa7178b19a6",
+    "L3.moe.w2_sf": "c4cec568a6beb26956d29cd20d31747eb19f91eeba4b3a7ee0fd79854530f2b0",
+    "L3.moe.w2_alpha": "36a2911ff7f90108bc72e76e82e9f2c21878c170018359d1efb3d2fd31da523a",
+    "L3.moe.a2_scale": "cc81ef1524250ece78d606d9b2a656d86c729f26e69791801213fdc6d1ba97b7"
+  },
+  "model_config_sha256": "e23c5d98f53e861d49a51bd3c68591621c5482ce829e42c31724152322fba03d",
+  "shared_pack_sha256": [
+    "3bd817efc7f9a6c6a2b5510af013e7eecacea0d7c6e7aec45ce0cec00c998567",
+    "4ac7a885a4799ed2ca055763cea6111b6ee85ef2394fffc9d18ccb0228da38ab",
+    "cc88513514c6a050a83d02433e774deb2077b8db38176167b3f08223d130f98d",
+    "6bd3c57f55a9c135a946373dbcfcd943c010149d4c3eaeceb49b893a46f19659",
+    "a01e16045054517bbbea1711ff5bb8be4137b93b50de995d230ff35885a0f799",
+    "c0f4fe558b8df55617061b41e0458c490741821f885ce1fe780319ab45b98c63",
+    "9f99a3b70fd2c134e2c7e3d34d531addb4f2de8d2658b5cb4754ac5676e8faec",
+    "ff6c657207931b7516ef323a2777ac2efcdb51e6a074ce3623ac4c4f601e83ac",
+    "336274ff3449360d962c1f2eb6d7f7ee9b549e66c5ffabb33bdb97dda5ee9494",
+    "de59d41375e929f98b0700e117cc1999abcc2b2731219e61c0c0e36662f3cb4f"
+  ],
+  "shared_recipe": "same DenseLinear W4/FP8 packs in all arms; RTN from checkpoint BF16, no GPTQ store",
+  "communication": "world=1 identity, one real TP4 weight shard; no NCCL or four-GPU result",
+  "cases": [
+    {
+      "decode_rows": 8,
+      "prefill_rows": 9240,
+      "source_sha256": [
+        "0abb11684b017f2dd690ec1ff200a9ebd437658b3cfbfe73ea4fd2d1ccdb6a20",
+        "a327dc8b4e85ffbeb8860d50654733c55b2acdda2ff6ed413ac4b9bcf81a039b"
+      ],
+      "routing": "actual profile L3 router on synthetic activations",
+      "samples": [
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed",
+          "planning_stages_ms": {
+            "hot_plan_ms": 2.7245069795753807,
+            "cold_plan_ms": 8.823406998999417,
+            "agreement_ms": 1.5876710240263492
+          },
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.0015891928876617227
+            }
+          },
+          "prepare_admit_wall_ms": 13339.609454997117,
+          "decode_ready_wall_ms": 13348.063661978813,
+          "prefill_complete_wall_ms": 13399.521569983335,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed",
+          "planning_stages_ms": {
+            "hot_plan_ms": 1.7813119920901954,
+            "cold_plan_ms": 4.171129985479638,
+            "agreement_ms": 1.214292977238074
+          },
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.0020907701064924464
+            }
+          },
+          "prepare_admit_wall_ms": 65.2380510000512,
+          "decode_ready_wall_ms": 67.3127600166481,
+          "prefill_complete_wall_ms": 141.79622300434858,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed",
+          "planning_stages_ms": {
+            "hot_plan_ms": 2.530789002776146,
+            "cold_plan_ms": 6.459814991103485,
+            "agreement_ms": 1.3413919950835407
+          },
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.002072479316344309
+            }
+          },
+          "prepare_admit_wall_ms": 66.98351301020011,
+          "decode_ready_wall_ms": 69.00452799163759,
+          "prefill_complete_wall_ms": 114.39875300857238,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed",
+          "planning_stages_ms": {
+            "hot_plan_ms": 1.381214999128133,
+            "cold_plan_ms": 4.42097699851729,
+            "agreement_ms": 1.1847580026369542
+          },
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007022471910112359,
+              "relative_rms": 0.0015924041627898918
+            }
+          },
+          "prepare_admit_wall_ms": 57.50983700272627,
+          "decode_ready_wall_ms": 63.39553001453169,
+          "prefill_complete_wall_ms": 108.33602599450387,
+          "includes_first_use_compile": false
+        }
+      ],
+      "native_repeat_error": {
+        "decode": {
+          "relative_max": 0.0,
+          "relative_rms": 0.0
+        },
+        "prefill": {
+          "relative_max": 0.008426966292134831,
+          "relative_rms": 0.001228007132380069
+        }
+      },
+      "cancellation_phases": [
+        "queued",
+        "decode",
+        "cold"
+      ]
+    },
+    {
+      "decode_rows": 32,
+      "prefill_rows": 9240,
+      "source_sha256": [
+        "9f9af37fbb19004304ab4b638bed41c875317fe0e0030069c320b16624d50fda",
+        "eefce1229c0191840b6c4bc3163c7bfcaeb2f7463cebe27dbcbdd8f009b0ea54"
+      ],
+      "routing": "actual profile L3 router on synthetic activations",
+      "samples": [
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed",
+          "planning_stages_ms": {
+            "hot_plan_ms": 1.6996519989334047,
+            "cold_plan_ms": 4.561551992082968,
+            "agreement_ms": 1.3403840130195022
+          },
+          "cold_windows": 16,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.001490569005875903
+            }
+          },
+          "prepare_admit_wall_ms": 4999.236033996567,
+          "decode_ready_wall_ms": 5008.994009986054,
+          "prefill_complete_wall_ms": 5057.668472989462,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed",
+          "planning_stages_ms": {
+            "hot_plan_ms": 2.260671986732632,
+            "cold_plan_ms": 4.035730002215132,
+            "agreement_ms": 1.5448569902218878
+          },
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.002421448683467503
+            }
+          },
+          "prepare_admit_wall_ms": 65.95833401661366,
+          "decode_ready_wall_ms": 71.86302199261263,
+          "prefill_complete_wall_ms": 120.1400910213124,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed",
+          "planning_stages_ms": {
+            "hot_plan_ms": 2.385772007983178,
+            "cold_plan_ms": 4.432643996551633,
+            "agreement_ms": 1.3713749940507114
+          },
+          "cold_windows": 15,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.0024235956859338195
+            }
+          },
+          "prepare_admit_wall_ms": 65.72823002352379,
+          "decode_ready_wall_ms": 71.74485101131722,
+          "prefill_complete_wall_ms": 119.89182801335119,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed",
+          "planning_stages_ms": {
+            "hot_plan_ms": 1.75285100704059,
+            "cold_plan_ms": 4.486866004299372,
+            "agreement_ms": 1.5335300122387707
+          },
+          "cold_windows": 16,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.001513349457114038
+            }
+          },
+          "prepare_admit_wall_ms": 57.902889006072655,
+          "decode_ready_wall_ms": 64.91494600777514,
+          "prefill_complete_wall_ms": 112.8136600018479,
+          "includes_first_use_compile": false
+        }
+      ],
+      "native_repeat_error": {
+        "decode": {
+          "relative_max": 0.0,
+          "relative_rms": 0.0
+        },
+        "prefill": {
+          "relative_max": 0.00975609756097561,
+          "relative_rms": 0.0014072643670259713
+        }
+      }
+    },
+    {
+      "decode_rows": 8,
+      "prefill_rows": 32768,
+      "source_sha256": [
+        "3981a5a9a3602236332241b54b21daf47ecf21f13af65e8941ebcaeb2d37d0f7",
+        "9ea3d61ea2ee8c94e53193a8ea0d86fd72c1fac360ce02ae2fb45b4425199c01"
+      ],
+      "routing": "actual profile L3 router on synthetic activations",
+      "samples": [
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed",
+          "planning_stages_ms": {
+            "hot_plan_ms": 4.468597995582968,
+            "cold_plan_ms": 25.73634299915284,
+            "agreement_ms": 4.948340996634215
+          },
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.001175209113110041
+            }
+          },
+          "prepare_admit_wall_ms": 139.8140660021454,
+          "decode_ready_wall_ms": 142.62312100618146,
+          "prefill_complete_wall_ms": 287.5268990173936,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed",
+          "planning_stages_ms": {
+            "hot_plan_ms": 6.6396420006640255,
+            "cold_plan_ms": 18.878675997257233,
+            "agreement_ms": 4.464005003683269
+          },
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.0014302531939382513
+            }
+          },
+          "prepare_admit_wall_ms": 111.87339900061488,
+          "decode_ready_wall_ms": 114.80691400356591,
+          "prefill_complete_wall_ms": 253.6615150165744,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed",
+          "planning_stages_ms": {
+            "hot_plan_ms": 6.6155000240541995,
+            "cold_plan_ms": 16.843002988025546,
+            "agreement_ms": 4.434166999999434
+          },
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00881057268722467,
+              "relative_rms": 0.0014084798354787628
+            }
+          },
+          "prepare_admit_wall_ms": 110.01140699954703,
+          "decode_ready_wall_ms": 112.89065098389983,
+          "prefill_complete_wall_ms": 252.71068498841487,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed",
+          "planning_stages_ms": {
+            "hot_plan_ms": 4.4013040023855865,
+            "cold_plan_ms": 18.056722008623183,
+            "agreement_ms": 4.006406001280993
+          },
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.001152055056482412
+            }
+          },
+          "prepare_admit_wall_ms": 97.1948940132279,
+          "decode_ready_wall_ms": 104.85254999366589,
+          "prefill_complete_wall_ms": 244.59765900974162,
+          "includes_first_use_compile": false
+        }
+      ],
+      "native_repeat_error": {
+        "decode": {
+          "relative_max": 0.0,
+          "relative_rms": 0.0
+        },
+        "prefill": {
+          "relative_max": 0.006607929515418502,
+          "relative_rms": 0.0010144651129248053
+        }
+      }
+    },
+    {
+      "decode_rows": 32,
+      "prefill_rows": 32768,
+      "source_sha256": [
+        "a2f4f06cf02f59731a76513da5d92fe537d1857ce3c28648ae7b2e5b10c91977",
+        "2c1ab0d4805a9e9aa783e7fb426aa1809b561b5f77512246d467defc0d499521"
+      ],
+      "routing": "actual profile L3 router on synthetic activations",
+      "samples": [
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed",
+          "planning_stages_ms": {
+            "hot_plan_ms": 4.808716999832541,
+            "cold_plan_ms": 18.834798014722764,
+            "agreement_ms": 4.117395990760997
+          },
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.001059804160496303
+            }
+          },
+          "prepare_admit_wall_ms": 98.67182199377567,
+          "decode_ready_wall_ms": 110.5505540035665,
+          "prefill_complete_wall_ms": 248.36585798766464,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed",
+          "planning_stages_ms": {
+            "hot_plan_ms": 7.411971979308873,
+            "cold_plan_ms": 18.338976020459086,
+            "agreement_ms": 4.75036702118814
+          },
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.0015624333703509303
+            }
+          },
+          "prepare_admit_wall_ms": 109.97413098812103,
+          "decode_ready_wall_ms": 116.78735498571768,
+          "prefill_complete_wall_ms": 256.40862199361436,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed",
+          "planning_stages_ms": {
+            "hot_plan_ms": 6.975651020184159,
+            "cold_plan_ms": 18.255395989399403,
+            "agreement_ms": 4.5323100057430565
+          },
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.0015677526773581077
+            }
+          },
+          "prepare_admit_wall_ms": 110.06346301292069,
+          "decode_ready_wall_ms": 117.14248702628538,
+          "prefill_complete_wall_ms": 256.9687470095232,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed",
+          "planning_stages_ms": {
+            "hot_plan_ms": 4.889882024144754,
+            "cold_plan_ms": 19.401932979235426,
+            "agreement_ms": 4.06160598504357
+          },
+          "cold_windows": 46,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.005341880341880342,
+              "relative_rms": 0.0010446871022817945
+            }
+          },
+          "prepare_admit_wall_ms": 96.27300300053321,
+          "decode_ready_wall_ms": 108.20416599744931,
+          "prefill_complete_wall_ms": 248.08237599791028,
+          "includes_first_use_compile": false
+        }
+      ],
+      "native_repeat_error": {
+        "decode": {
+          "relative_max": 0.0,
+          "relative_rms": 0.0
+        },
+        "prefill": {
+          "relative_max": 0.005341880341880342,
+          "relative_rms": 0.0009808810576794505
+        }
+      }
+    }
+  ],
+  "preparation_profile": [
+    {
+      "file": "/repo/engine/profiles/glm53/net.py",
+      "line": 1041,
+      "function": "submit_mixed_ffn",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.014031000000000002,
+      "cumulative_ms": 114.31031100000001
+    },
+    {
+      "file": "/repo/engine/profiles/glm53/net.py",
+      "line": 1016,
+      "function": "prepare_mixed_ffn",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.041936,
+      "cumulative_ms": 109.388305
+    },
+    {
+      "file": "/repo/engine/profiles/glm53/lanes.py",
+      "line": 471,
+      "function": "moe_mixed_prepare",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.032878,
+      "cumulative_ms": 107.762808
+    },
+    {
+      "file": "/repo/engine/kernels/b12x/moe_mixed_completion.py",
+      "line": 31,
+      "function": "__init__",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.22583500000000004,
+      "cumulative_ms": 107.692331
+    },
+    {
+      "file": "/repo/engine/kernels/b12x/moe_mixed.py",
+      "line": 24,
+      "function": "__init__",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 50.98022100000001,
+      "cumulative_ms": 65.81249
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method torch.tensor>",
+      "primitive_calls": 10,
+      "total_calls": 10,
+      "self_ms": 26.031392,
+      "cumulative_ms": 26.031392
+    },
+    {
+      "file": "/repo/engine/modules/mixed_completion.py",
+      "line": 29,
+      "function": "plan_cold",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.022638000000000002,
+      "cumulative_ms": 19.977521000000003
+    },
+    {
+      "file": "/repo/engine/modules/mixed_completion.py",
+      "line": 56,
+      "function": "_plan_cold_packed",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 13.746938,
+      "cumulative_ms": 19.954546999999998
+    },
+    {
+      "file": "/repo/engine/kernels/b12x/moe_mixed_completion.py",
+      "line": 68,
+      "function": "copy",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "self_ms": 0.075037,
+      "cumulative_ms": 9.491113
+    },
+    {
+      "file": "/repo/engine/modules/mixed_experts.py",
+      "line": 137,
+      "function": "plan_experts_packed",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 2.422015,
+      "cumulative_ms": 7.068862
+    },
+    {
+      "file": "/repo/engine/modules/mixed_tickets.py",
+      "line": 92,
+      "function": "admit",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.049807000000000004,
+      "cumulative_ms": 4.907975
+    },
+    {
+      "file": "/repo/engine/modules/mixed_tickets.py",
+      "line": 41,
+      "function": "signature",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.084941,
+      "cumulative_ms": 4.569587
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/numpy/_core/fromnumeric.py",
+      "line": 51,
+      "function": "_wrapfunc",
+      "primitive_calls": 7,
+      "total_calls": 7,
+      "self_ms": 0.025567,
+      "cumulative_ms": 4.105041
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'update' of '_hashlib.HASH' objects>",
+      "primitive_calls": 26,
+      "total_calls": 26,
+      "self_ms": 4.061301,
+      "cumulative_ms": 4.061301
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/numpy/_core/fromnumeric.py",
+      "line": 1130,
+      "function": "argsort",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.008368,
+      "cumulative_ms": 3.700305
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'argsort' of 'numpy.ndarray' objects>",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 3.6824490000000005,
+      "cumulative_ms": 3.6824490000000005
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/numpy/lib/_shape_base_impl.py",
+      "line": 621,
+      "function": "column_stack",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 2.366687,
+      "cumulative_ms": 2.3746220000000005
+    },
+    {
+      "file": "/repo/engine/base/graph_labels.py",
+      "line": 209,
+      "function": "call",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.008976,
+      "cumulative_ms": 1.421343
+    },
+    {
+      "file": "/repo/engine/profiles/glm53/net.py",
+      "line": 916,
+      "function": "route",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.060077,
+      "cumulative_ms": 1.401423
+    },
+    {
+      "file": "/repo/engine/profiles/glm53/net.py",
+      "line": 943,
+      "function": "_select_routes",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.028592000000000003,
+      "cumulative_ms": 0.8961450000000001
+    },
+    {
+      "file": "/repo/engine/kernels/glm_pointwise.py",
+      "line": 73,
+      "function": "route_weights",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.08009200000000001,
+      "cumulative_ms": 0.867553
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'astype' of 'numpy.ndarray' objects>",
+      "primitive_calls": 7,
+      "total_calls": 7,
+      "self_ms": 0.8540500000000001,
+      "cumulative_ms": 0.8540500000000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'append' of 'list' objects>",
+      "primitive_calls": 4554,
+      "total_calls": 4554,
+      "self_ms": 0.8226430000000001,
+      "cumulative_ms": 0.8226430000000001
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/numpy/_core/fromnumeric.py",
+      "line": 969,
+      "function": "sort",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.011167,
+      "cumulative_ms": 0.781158
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method torch.isfinite>",
+      "primitive_calls": 8,
+      "total_calls": 8,
+      "self_ms": 0.709558,
+      "cumulative_ms": 0.709558
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method torch.zeros>",
+      "primitive_calls": 22,
+      "total_calls": 22,
+      "self_ms": 0.6479140000000001,
+      "cumulative_ms": 0.6479140000000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'sort' of 'numpy.ndarray' objects>",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.628619,
+      "cumulative_ms": 0.628619
+    },
+    {
+      "file": "/repo/engine/kernels/b12x/moe_dispatch.py",
+      "line": 979,
+      "function": "allocate_sm120_static_workspace",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.07884400000000001,
+      "cumulative_ms": 0.5970040000000001
+    },
+    {
+      "file": "/repo/engine/modules/route_table.py",
+      "line": 20,
+      "function": "pack",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "self_ms": 0.044015000000000006,
+      "cumulative_ms": 0.5866680000000001
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/triton/runtime/jit.py",
+      "line": 370,
+      "function": "<lambda>",
+      "primitive_calls": 5,
+      "total_calls": 5,
+      "self_ms": 0.034479,
+      "cumulative_ms": 0.561228
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/triton/runtime/jit.py",
+      "line": 708,
+      "function": "run",
+      "primitive_calls": 5,
+      "total_calls": 5,
+      "self_ms": 0.146985,
+      "cumulative_ms": 0.526749
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'tobytes' of 'numpy.ndarray' objects>",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "self_ms": 0.502591,
+      "cumulative_ms": 0.502591
+    },
+    {
+      "file": "/repo/engine/kernels/b12x/moe_dispatch.py",
+      "line": 3870,
+      "function": "allocate_sm120_dynamic_workspace",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.057263,
+      "cumulative_ms": 0.49102300000000004
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.min>",
+      "primitive_calls": 2239,
+      "total_calls": 2239,
+      "self_ms": 0.45067100000000004,
+      "cumulative_ms": 0.45067100000000004
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/numpy/lib/_function_base_impl.py",
+      "line": 1369,
+      "function": "diff",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.398579,
+      "cumulative_ms": 0.401475
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'all' of 'torch._C.TensorBase' objects>",
+      "primitive_calls": 12,
+      "total_calls": 12,
+      "self_ms": 0.32218,
+      "cumulative_ms": 0.32218
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/numpy/_core/numeric.py",
+      "line": 646,
+      "function": "flatnonzero",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.013519,
+      "cumulative_ms": 0.29015
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/numpy/_core/fromnumeric.py",
+      "line": 2018,
+      "function": "nonzero",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.001232,
+      "cumulative_ms": 0.268135
+    },
+    {
+      "file": "/repo/engine/kernels/glm_pointwise.py",
+      "line": 14,
+      "function": "router_logits",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.054015,
+      "cumulative_ms": 0.266935
+    },
+    {
+      "file": "/repo/engine/profiles/glm53/mixed_shared.py",
+      "line": 49,
+      "function": "validate",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "self_ms": 0.05027,
+      "cumulative_ms": 0.26639
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method numpy.asarray>",
+      "primitive_calls": 13,
+      "total_calls": 13,
+      "self_ms": 0.264246,
+      "cumulative_ms": 0.264246
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'nonzero' of 'numpy.ndarray' objects>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.263127,
+      "cumulative_ms": 0.263127
+    },
+    {
+      "file": "/repo/engine/profiles/glm53/mixed_shared.py",
+      "line": 15,
+      "function": "_stamp",
+      "primitive_calls": 8,
+      "total_calls": 8,
+      "self_ms": 0.062383,
+      "cumulative_ms": 0.261127
+    },
+    {
+      "file": "/repo/engine/kernels/b12x/moe_mixed_completion.py",
+      "line": 113,
+      "function": "validate",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.009359000000000001,
+      "cumulative_ms": 0.24695100000000003
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method torch.empty>",
+      "primitive_calls": 17,
+      "total_calls": 17,
+      "self_ms": 0.226473,
+      "cumulative_ms": 0.226473
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method torch.mm>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.21292000000000003,
+      "cumulative_ms": 0.21292000000000003
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/numpy/_core/fromnumeric.py",
+      "line": 2477,
+      "function": "any",
+      "primitive_calls": 6,
+      "total_calls": 6,
+      "self_ms": 0.021294,
+      "cumulative_ms": 0.18941700000000003
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'topk' of 'torch._C.TensorBase' objects>",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.184842,
+      "cumulative_ms": 0.184842
+    },
+    {
+      "file": "/repo/engine/kernels/prefill_router.py",
+      "line": 38,
+      "function": "router_logits",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.022160000000000003,
+      "cumulative_ms": 0.17714600000000003
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/driver.py",
+      "line": 313,
+      "function": "__call__",
+      "primitive_calls": 5,
+      "total_calls": 5,
+      "self_ms": 0.026304,
+      "cumulative_ms": 0.171435
+    }
+  ],
+  "gpu_used": true,
+  "scratch_peak_bytes": 4159928832,
+  "default_enabled": false,
+  "serving_speedup_proven": false
+}

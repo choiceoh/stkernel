@@ -1,0 +1,62 @@
+{
+  "scope": "SM121 compilation of both router/MoE ABIs and shared quantization; no GPU execution",
+  "gpu_used": false,
+  "torch": "2.13.0+cu130",
+  "triton": "3.7.1",
+  "source_sha256": {
+    "engine/modules/prefill_packets.py": "eeaa468b8715373c7711cb29d58c8993a824f80da91c9753693f714053cc6471",
+    "engine/modules/token_shards.py": "11d3bf3c2fe8e644a845fa49864800d5f0e021ccdc7c6eef03c9151b695aa77c",
+    "engine/kernels/prefill_collectives/__init__.py": "4fca676770574b77e9280a260c36cff406ebe0279a15fc3b5bdd0b11222e0f4c",
+    "engine/kernels/prefill_collectives/consumer.py": "d0f242b38b4d0e74afd205214067ecab57f046b5c81f8f2fa5032ce8fbcdfd7c",
+    "engine/kernels/prefill_collectives/kernels.py": "49d22265497ee41cc3ff03d455fa11a76519c450322aa993cbc5601cfc5a48a4",
+    "engine/kernels/prefill_router.py": "1be65d85e0e19899ecd163ab05ece1b92822277fd80adc1f804b80818fbc36a7",
+    "engine/kernels/dense/__init__.py": "7b6ebf80fc96aeead1145194da98929636091d12b99be29397b729e1f6131fb4",
+    "engine/kernels/dense/fp8.py": "fecc21c8b0f3088c765083cf7987db210de499313490559596dca7dee676c3ca",
+    "engine/kernels/b12x/moe_dispatch.py": "e60034892615ba05bf64441f1a7863f0df1a5440540510b25057d348009210a3",
+    "engine/kernels/b12x/moe_packet_input.py": "edfb8563846ea6df2c86a42417a18d679e58bccb55a14164458e7d6ea89eef37",
+    "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "2cb221c7ddc9891dad4f6d2a83ccf981c22e70b3a2171a6795792c0c5e2fae8e",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_w4a16_fp4_helpers.py": "3115cf3e73064cbf2c339d5fd2cec1c49206f34283c281faef2d1c2d290a6c73",
+    "engine/profiles/glm53/net.py": "56316c32734bead3f052d5fcd9e1c099fd28ed9f338d0489502f630e0663b1a2",
+    "engine/profiles/glm53/lanes.py": "26aa8fd7d7f82346703a1e2ff64cc018f36f372b2b147db43ec36f3d3649f597",
+    "engine/profiles/glm53/execution.py": "5ac5dbb0a84aee055397513e1febf586e3f5a9963ffb195cabd1d20925b6c69f",
+    "engine/profiles/glm53/boot.py": "6a950a3e7c29e47274cdd1d27b44c708c391402b657b0f64372a9efb0612a9a8",
+    "probes/engine_ffn_packets_compile.py": "3cd11c814f05dbc5cdc1daeea9a08e3d06dfa80f3d915babaebe707347ad3128"
+  },
+  "kernels": [
+    {
+      "name": "router-bf16",
+      "status": "PASS",
+      "seconds": 1.0686585009971168,
+      "shared_bytes": 16384,
+      "cubin_sha256": "bd3db95a3c4c2bb4b4cd4fb5cb520ed17f5b4e777387aaba6bdb414027be2509"
+    },
+    {
+      "name": "router-packets",
+      "status": "PASS",
+      "seconds": 0.33787902700714767,
+      "shared_bytes": 40960,
+      "cubin_sha256": "eee09564eb53f0288c818a5ad5c249d322dd2b576180d86757625e16f0b27f86"
+    },
+    {
+      "name": "shared-quantize",
+      "status": "PASS",
+      "shared_bytes": 64,
+      "cubin_sha256": "b104ce6481f48d3176c734256ba1827f7116d87fe4e0d4c675a96a8ea44cf51c"
+    },
+    {
+      "packets": false,
+      "name": "dynamic_e288_k4096_n512_t8_tiled_4e466f602bfca73d",
+      "status": "PASS",
+      "seconds": 7.026342637022026
+    },
+    {
+      "packets": true,
+      "name": "dynamic_e288_k4096_n512_t8_tiled_fef92803cbf745c6",
+      "status": "PASS",
+      "seconds": 4.512080969987437
+    }
+  ],
+  "status": "PASS",
+  "source_revision": "4e24cc3d11d7b3006cc39928d9e410eb1ea042a3"
+}

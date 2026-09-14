@@ -14,23 +14,16 @@ class StopAtBuild(Exception):
 @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "requires PyTorch")
 class BootPathTests(unittest.TestCase):
     def test_the_repo_default_width_is_the_one_production_serves(self):
-        """They disagreed, and that is how two onepass runs 27 minutes apart on one commit came
-        out incomparable: one captured widths 1-4 with a 1,035,264 ceiling, the other 1-8 with
-        364,032, and nothing in either record said so (45차 §72).
-
-        4 is not a smaller engine, it is the measured one. From two ledgers, same commit:
-        graph pool 0.60 vs 2.50 GiB, captured ceiling 1,035,264 vs 364,032, state slots 1.21 vs
-        2.17 GiB, boot 161.9 vs 208.7 s. 8 existed for kernel coverage (48 target tokens at
-        K=5) and 24 is inside the same kernels.
-        """
+        """Current declarations agree; immutable older releases keep their own width."""
         from engine.profiles.glm53 import boot
-        self.assertEqual(boot.MAX_SEQS, 4)
-        for path in sorted(Path("/home/choiceoh/st-releases").glob("*/engine/profiles/glm53/boot.py")):
-            if "prod-" not in path.parts[-5]:
-                continue                                        # only what has actually served
-            declared = [l for l in path.read_text().splitlines() if l.startswith("MAX_SEQS")]
-            self.assertTrue(declared and declared[0].split("=")[1].split("#")[0].strip() == "4",
-                            f"{path.parts[-5]} serves a width this repo no longer defaults to")
+        from engine.base.config import Config
+        self.assertEqual(boot.MAX_SEQS, 2)
+        for production in (False, True):
+            args = SimpleNamespace(production=production, ckpt_meta="/meta", ranks="/ranks", kv_gib=24., port=8000)
+            with patch.object(boot, "Config", side_effect=lambda facts, knobs: Config(
+                    facts, knobs, env={}, today=datetime.date(2026, 9, 14))):
+                cfg = boot.declared(args, 4)
+            self.assertEqual(cfg["max_seqs"], boot.MAX_SEQS)
 
     def test_local_http_and_fleet_forward_both_model_directories(self):
         from engine.base import kernel_shape
@@ -43,7 +36,8 @@ class BootPathTests(unittest.TestCase):
                                ranks="/alternate/ranks", layers="0-0", seed=0, prompt=1,
                                seqs=1, kv_gib=.25, park=False, drafter=True, max_new=1,
                                temperature=0., tier_dir="/unused", port=8000, lanes="reference")
-        comm = SimpleNamespace(rank=0, world_size=4, close=Mock(), prepare_oneshot=Mock())
+        comm = SimpleNamespace(rank=0, world_size=4, close=Mock(), prepare_oneshot=Mock(),
+                               transport=SimpleNamespace(rails=2, latency={}))
         tp = SimpleNamespace(run=lambda fn: fn(comm))
         for mode, production in (("local", False), ("http", False), ("fleet", False), ("fleet", True)):
             args.serve = mode == "http"
@@ -64,7 +58,9 @@ class BootPathTests(unittest.TestCase):
                     (boot.fleet if mode == "fleet" else boot.local)(args)
                 self.assertEqual(build.call_args.kwargs["ckpt_meta"], args.ckpt_meta)
                 self.assertEqual(build.call_args.kwargs["drafter_dir"], args.drafter_dir)
+                self.assertEqual(build.call_args.args[5], 2)
                 if mode == "fleet":
+                    comm.prepare_oneshot.assert_called_with(rails=2, inline_flags=True)
                     plan = build.call_args.kwargs["execution_plan"]
                     self.assertEqual((plan.direct_mhc, plan.prefill_project_tiles, plan.decode_iterations),
                                      (True, True, 4))

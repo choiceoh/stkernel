@@ -1,0 +1,197 @@
+{
+  "scope": "offline SM121 code generation; no device execution or speed claim",
+  "gpu_used": false,
+  "torch": "2.14.0+cpu",
+  "triton": "3.7.1",
+  "ptxas": "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Fri_Feb_21_20:22:20_PST_2025\nCuda compilation tools, release 12.8, V12.8.93\nBuild cuda_12.8.r12.8/compiler.35583870_0\n",
+  "variants": [
+    {
+      "name": "paged-key-bank",
+      "constants": {
+        "PER": 16,
+        "D": 128,
+        "B": 64
+      },
+      "shared_bytes": 0,
+      "registers": 78,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "cubin_sha256": "b2420a66540c682fade8468b0c0519c1b034301dbd2601510514b3131ab41b67"
+    },
+    {
+      "name": "conv-c193-ring0-bf16",
+      "constants": {
+        "C": 193,
+        "TAPS": 4,
+        "B": 256,
+        "RING": 0
+      },
+      "shared_bytes": 0,
+      "registers": 38,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "cubin_sha256": "b2e87a891854f5b74cad17ff613dbcf913a54e11253a14741480e39fdef470b4"
+    },
+    {
+      "name": "conv-c193-ring0-fp32",
+      "constants": {
+        "C": 193,
+        "TAPS": 4,
+        "B": 256,
+        "RING": 0
+      },
+      "shared_bytes": 0,
+      "registers": 38,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "cubin_sha256": "cdef45a9109a68c821f4ec22d0a1f173d042ef3ea7c4290ae7ae1d4d74067311"
+    },
+    {
+      "name": "conv-c193-ring10-bf16",
+      "constants": {
+        "C": 193,
+        "TAPS": 4,
+        "B": 256,
+        "RING": 10
+      },
+      "shared_bytes": 0,
+      "registers": 39,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "cubin_sha256": "052ed6f97309aa0ce9683fdde090e7fd85ca607d0ea1a58b4b9f55aa06107e07"
+    },
+    {
+      "name": "conv-c193-ring10-fp32",
+      "constants": {
+        "C": 193,
+        "TAPS": 4,
+        "B": 256,
+        "RING": 10
+      },
+      "shared_bytes": 0,
+      "registers": 38,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "cubin_sha256": "9b0613d1214cb011ed4c40a9d4a24a6a6ff0c7bb21b69e4bb095fd00145d9c29"
+    },
+    {
+      "name": "conv-c193-ring11-bf16",
+      "constants": {
+        "C": 193,
+        "TAPS": 4,
+        "B": 256,
+        "RING": 11
+      },
+      "shared_bytes": 0,
+      "registers": 39,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "cubin_sha256": "fcad00cae294a3bd99a19e0bb0e32b8167daf6a97b9b6dd9cb420c295129ea6e"
+    },
+    {
+      "name": "conv-c193-ring11-fp32",
+      "constants": {
+        "C": 193,
+        "TAPS": 4,
+        "B": 256,
+        "RING": 11
+      },
+      "shared_bytes": 0,
+      "registers": 38,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "cubin_sha256": "49ace57a822f31ea39c33d931277fb09c422bfebf3664fdd77a2a867a8bde7d6"
+    },
+    {
+      "name": "conv-c6144-ring0-bf16",
+      "constants": {
+        "C": 6144,
+        "TAPS": 4,
+        "B": 256,
+        "RING": 0
+      },
+      "shared_bytes": 0,
+      "registers": 36,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "cubin_sha256": "e649f65eba7d45dfbbc09f69232f55de8ebcc238e0a893949d1eacedca598b03"
+    },
+    {
+      "name": "conv-c6144-ring0-fp32",
+      "constants": {
+        "C": 6144,
+        "TAPS": 4,
+        "B": 256,
+        "RING": 0
+      },
+      "shared_bytes": 0,
+      "registers": 33,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "cubin_sha256": "23f87e4b1497fe75a85fdb462ec24dd9607c3d94cd5e36f7f5c48efe04f417a5"
+    },
+    {
+      "name": "conv-c6144-ring10-bf16",
+      "constants": {
+        "C": 6144,
+        "TAPS": 4,
+        "B": 256,
+        "RING": 10
+      },
+      "shared_bytes": 0,
+      "registers": 37,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "cubin_sha256": "a69d090d6425f6c6f8a8920188b8715a290d69e552a3ab16618a83e11c94e007"
+    },
+    {
+      "name": "conv-c6144-ring10-fp32",
+      "constants": {
+        "C": 6144,
+        "TAPS": 4,
+        "B": 256,
+        "RING": 10
+      },
+      "shared_bytes": 0,
+      "registers": 34,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "cubin_sha256": "76f4aa54be2a8b8afc8c233266912d7d8ad1cc9e2474774a82e8bfd815ac9f0c"
+    },
+    {
+      "name": "conv-c6144-ring11-bf16",
+      "constants": {
+        "C": 6144,
+        "TAPS": 4,
+        "B": 256,
+        "RING": 11
+      },
+      "shared_bytes": 0,
+      "registers": 37,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "cubin_sha256": "aa0e30b387e60e86fcb7ed14ea176cc66689ebd533ddfb14fbd96b8fefefb0ae"
+    },
+    {
+      "name": "conv-c6144-ring11-fp32",
+      "constants": {
+        "C": 6144,
+        "TAPS": 4,
+        "B": 256,
+        "RING": 11
+      },
+      "shared_bytes": 0,
+      "registers": 34,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "cubin_sha256": "20b4c403dbc0d9680373692547c638c7142917b774191af61281f5ddc1c95207"
+    }
+  ],
+  "source_sha256": {
+    "engine/kernels/indexer.py": "534f4ea3b3c5359f4deb5c39d8ec7dc28e2962ce1c745201e4d0dab08248e194",
+    "engine/kernels/kda/tree.py": "b40dea868e38b0cfa6daf3b75ccc446e28ad29551ab55d44fb835c27a151a48a",
+    "probes/engine_tree_bank_compile.py": "2edc32ac2c8aca8316fbc0fa0a61ef2c2e131e584bb622d0f94476a1cffbbee4",
+    "probes/engine_tree_dataflow_compile.py": "68a6755171c9356d3d71e57b676a0b9d0c821251a542b5af4f1975f0ace19ca2"
+  },
+  "cuda_initialized": false
+}

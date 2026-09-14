@@ -1,0 +1,86 @@
+{
+  "status": "PASS",
+  "mode": "compile",
+  "gpu_used": false,
+  "cases": [
+    {
+      "kernel": "draft_inputs",
+      "tokens": 1,
+      "device_position": false,
+      "shared_bytes": 0,
+      "cubin_sha256": "7000f5eb5de44b4e9cc751742256117a68fa9e5dc90743e632a3e9e798ae39b3"
+    },
+    {
+      "kernel": "draft_inputs",
+      "tokens": 1,
+      "device_position": true,
+      "shared_bytes": 0,
+      "cubin_sha256": "bebfec667f9b5423f6077bd680a0d01a3949a74febb65f8b6c608cf6f1dac3b8"
+    },
+    {
+      "kernel": "draft_inputs",
+      "tokens": 8,
+      "device_position": false,
+      "shared_bytes": 0,
+      "cubin_sha256": "c064f77a71b98800bf25efb817ff0bc5c7087628435873315334ad101b5a4ccd"
+    },
+    {
+      "kernel": "draft_inputs",
+      "tokens": 8,
+      "device_position": true,
+      "shared_bytes": 0,
+      "cubin_sha256": "767f3a9a7bc5fd6911522a19f5ceb5432964cd6b75a1bc6f90560bcef33d6091"
+    },
+    {
+      "kernel": "draft_inputs",
+      "tokens": 32,
+      "device_position": false,
+      "shared_bytes": 0,
+      "cubin_sha256": "6b6b456f478d118deb9034ea6a8445eab75a4e49ec239be278fa446ee91805fc"
+    },
+    {
+      "kernel": "draft_inputs",
+      "tokens": 32,
+      "device_position": true,
+      "shared_bytes": 0,
+      "cubin_sha256": "22569b408b70318fb5e44ac0c7c5171b05972c457fe126769be2a5199c472688"
+    },
+    {
+      "kernel": "step_block",
+      "k": 0,
+      "shared_bytes": 0,
+      "cubin_sha256": "ebcd48e63c91728c442e408cb5e3e73ca84efe1b03536627e81839be5290bacb"
+    },
+    {
+      "kernel": "step_block",
+      "k": 1,
+      "shared_bytes": 0,
+      "cubin_sha256": "dea5d4f35abbdb3628b11d31a2204388a402597c5abff80404d1a00ebc298f49"
+    },
+    {
+      "kernel": "step_block",
+      "k": 5,
+      "shared_bytes": 0,
+      "cubin_sha256": "f93fa1a5007592fc3e516b0c096554c2cfd30c946cf62e432d81eb61199017a7"
+    },
+    {
+      "kernel": "step_block",
+      "k": 7,
+      "shared_bytes": 0,
+      "cubin_sha256": "f1867e9b5666e515211353a728a52e85294af9f97d0b710d6ef026122d3f2f27"
+    },
+    {
+      "kernel": "step_block",
+      "k": 31,
+      "shared_bytes": 0,
+      "cubin_sha256": "c29fff521ab1df51e80275e8c1f5aa3cbfe72865ac71f1f1051b5c72ef7bd745"
+    }
+  ],
+  "scope": "CPU bit identity or native compilation; GPU replay and serving speed pending",
+  "source_sha256": {
+    "engine/kernels/decode_inputs.py": "0664f874be24fea86e0e030003452a04965dffea93f7c9c016202a1cee008284",
+    "engine/modules/draft_inputs.py": "eb54faa77d5dc5e2ebea6c34a232140c04f06b9e90620af7313d6d6fddeb6d77",
+    "engine/base/draws.py": "03740be5018fb6a670c47c7685c0fac45711af0df03b4fc8febd20d452492f69",
+    "probes/engine_decode_inputs_check.py": "c9875a76ae489ad67d3a50dd1101b7a63160186d18ddca5c152a6ba09606fe26"
+  }
+}

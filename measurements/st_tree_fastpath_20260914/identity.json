@@ -1,0 +1,7 @@
+{
+  "code_commit": "58644e00e703f4d4ef713d656142359741e28443",
+  "base_commit": "b8bef130be2459af421dbb970159db4c93763069",
+  "recorded_utc": "2026-09-14T09:51:06.769222+00:00",
+  "gpu_used": false,
+  "full_local_engine_check": "1871 tests before rebase onto unrelated boot/concurrency/prompt changes; final-head CI required"
+}

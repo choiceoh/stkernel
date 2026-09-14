@@ -92,6 +92,36 @@ def engine(rows=4):
 
 
 class ServedBurstTests(unittest.TestCase):
+    def test_reservation_upload_reuses_host_storage_and_cannot_overwrite_a_live_burst(self):
+        from tests.test_engine_replay_metadata import Copies
+        e = engine(4)
+        p = CpuBurst(e, 2)
+        owner = p.reserved_host.data_ptr()
+        for rows in ([1, 2, 3, 4], [1], [1, 3, 4], [1, 3]):
+            # Complete admission first so the second launch must allocate no
+            # fresh host/device upload through the pipeline's _upload helper.
+            p.launch(rows, rows).resolve()
+            e.caches.pool.tokens = [61, 47, 59, 53, 57]
+            with patch.object(p, '_upload', side_effect=AssertionError('unexpected temporary upload')):
+                with Copies() as copies:
+                    pending = p.launch(rows, rows)
+            destination = p.controls[len(rows)]['reserved']
+            transfers = [(src, async_) for dst, src, async_ in copies.calls if dst is destination]
+            self.assertEqual(len(transfers), 1)
+            source, async_ = transfers[0]
+            self.assertTrue(async_)
+            self.assertTrue(source.is_contiguous())
+            self.assertEqual(source.data_ptr(), owner)
+            self.assertEqual(destination.tolist(), [e.caches.pool.tokens[s] for s in rows])
+            before = p.reserved_host.clone()
+            e.caches.pool.tokens = [64]*5
+            with self.assertRaisesRegex(RuntimeError, 'resolve the current burst'):
+                p.launch(rows, rows)
+            torch.testing.assert_close(p.reserved_host, before, rtol=0, atol=0)
+            pending.resolve()
+        self.assertEqual(p.reserved_host.data_ptr(), owner)
+        p.close()
+
     def test_boot_failure_survives_bounded_graph_teardown_failure(self):
         original = ValueError('bounded graph rejects node type 5 at body/0')
 

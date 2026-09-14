@@ -1,4 +1,4 @@
-"""Compile C1 SF6/activation storage and controls in an existing CPU-only ST image."""
+"""Compile C1/C2 SF6 tiles and operand controls in an existing CPU-only ST image."""
 import argparse
 from collections import Counter
 import hashlib
@@ -13,6 +13,12 @@ import time
 from unittest.mock import patch
 
 
+def instruction_opcodes(sass):
+    # CUDA 13.2 spells the packed-byte opcode VIADD.U8x4 (lowercase x).
+    return re.findall(r'^\s*/\*[0-9a-f]+\*/\s+(?:@!?U?P\d+\s+)?'
+                      r'([A-Z][A-Za-z0-9_.]*)(?:\s|;)', sass, re.M)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
@@ -22,6 +28,8 @@ def main():
     mode.add_argument('--fc2-words', action='store_true', help='compare in-place FC2 word restoration')
     mode.add_argument('--fc1-reuse', action='store_true', help='compare gate/up A/SFA register reuse')
     mode.add_argument('--compact-staging', action='store_true', help='compare compact FC1 inputs and disjoint FC2 scales')
+    mode.add_argument('--register-scales', action='store_true', help='compare direct MMA scale registers')
+    mode.add_argument('--batch-reform', action='store_true', help='compare the C2 M16 tile against the served M32 tile')
     mode.add_argument('--sync-cleanup', action='store_true', help='compare batched pipeline initialization and C1 publication')
     args = parser.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '':
@@ -57,7 +65,16 @@ def main():
                                         cute.slice_(owner.b1_smem_layout_staged, (None, None, 0)))
             weight_bytes = b_bytes + 1552*owner.sf1_packed_blocks
             selected.update(smem_bytes=owner.smem_bytes,
+                            tile_m=owner.tile_m,
+                            direct_scatter=owner.direct_scatter,
+                            scatter_reuse=owner.scatter_reuse,
+                            fc2_prefetch=owner.fc2_prefetch,
+                            fc2_stages=owner.fc2_stages,
+                            scatter_row_pairs=getattr(owner, 'scatter_row_pairs', None),
+                            scatter_pair_rows=getattr(owner, 'scatter_pair_rows', None),
                             smem_capacity=owner.smem_capacity,
+                            sf6_registers=owner.sf6_registers,
+                            sf6_register_offsets=getattr(owner, "sf6_register_offsets", None),
                             separate=owner.sf6_separate, word_expand=owner.sf6_word_expand,
                             fc2_word_expand=owner.sf6_fc2_word_expand,
                             fc1_reuse_a=owner.fc1_reuse_a,
@@ -96,9 +113,7 @@ def main():
             if args.sass:
                 sass = subprocess.run(['cuobjdump', '--dump-sass', str(artifact)],
                                       check=True, capture_output=True, text=True).stdout
-                instructions = re.findall(
-                    r'^\s*/\*[0-9a-f]+\*/\s+(?:@!?U?P\d+\s+)?([A-Z][A-Z0-9_.]*)(?:\s|;)',
-                    sass, re.M)
+                instructions = instruction_opcodes(sass)
                 if not instructions:
                     raise RuntimeError('no native instructions were captured')
                 artifact.with_suffix('.sass').write_text(sass)
@@ -112,13 +127,17 @@ def main():
         # earlier FC1-reuse probe must not silently include compact staging.
         defaults = dict(sf6_separate=True, sf6_word_expand=True,
                         packed_activation_store=True, sf6_fc2_word_expand=True,
-                        fc1_reuse_a=True, compact_staging=False, sync_cleanup=False)
-        if args.compact_staging or args.sync_cleanup:
+                        fc1_reuse_a=True, compact_staging=False, sf6_registers=False, sync_cleanup=False)
+        if args.compact_staging or args.register_scales or args.sync_cleanup:
             defaults['compact_staging'] = True
+        if args.register_scales:
+            defaults['sf6_registers'] = True
         if args.sync_cleanup:
             defaults['sync_cleanup'] = True
         cases = [(rows, {}) for rows in (1, 7, 8)]
-        if args.sync_cleanup:
+        if args.register_scales:
+            cases += [(8, dict(sf6_registers=False)), (8, dict(stamps=True))]
+        elif args.sync_cleanup:
             cases += [(8, dict(sync_cleanup=False)), (8, dict(compact_staging=False)),
                       (8, dict(fc1=1)), (8, dict(stamps=True))]
         elif args.compact_staging:
@@ -133,6 +152,15 @@ def main():
             cases += [(8, dict(sf6_word_expand=False)),
                       (8, dict(sf6_separate=False, sf6_word_expand=False))]
         cases += [(rows, {}) for rows in (16, 32)]
+        if args.batch_reform:
+            # Isolate C2 tile/operand reuse from direct register scatter.
+            # C1 retains its existing compiled handle.
+            defaults = {}
+            cases = [(8, {}), (16, {}),
+                     (16, dict(batch_reform=True, c2_direct_scatter=False)),
+                     (16, dict(batch_reform=True, c2_direct_scatter=True, c2_scatter_reuse=False)),
+                     (16, dict(batch_reform=True, c2_direct_scatter=True, c2_scatter_reuse=True, c2_fc2_prefetch=False)),
+                     (16, dict(batch_reform=True, c2_direct_scatter=True, c2_scatter_reuse=True, c2_fc2_prefetch=True))]
         with patch.object(md, 'get_num_sm', return_value=48), \
                 patch.object(md, 'get_max_active_clusters', return_value=48), \
                 patch.object(md, 'build_and_load_cute_dsl_kernel', builder), \
@@ -161,6 +189,7 @@ def main():
                   scope='native compile and layout checks; GPU numerics/replay/timing pending',
                   source_sha256={name: hashlib.sha256((root/name).read_bytes()).hexdigest()
                       for name in ('engine/kernels/b12x/moe_dispatch.py',
+                                   'engine/kernels/b12x/moe_w4a16_fp4_helpers.py',
                                    'engine/kernels/b12x/moe_static_kernel_v4.py',
                                    'engine/kernels/b12x/moe_static_common.py',
                                    'engine/kernels/b12x/moe_static_kernel_v5.py')})

@@ -39,6 +39,12 @@ class TokenShards:
     def all_gather(self, x):
         return self.owner.all_gather(x)[:self.rows]
 
+    def all_gather_packets(self, x, *, route=None):
+        if x.shape[0] != self.local_rows:
+            raise ValueError('FFN packet input must contain exactly one local shard')
+        options = {} if route is None else dict(route=route)
+        return self.owner.all_gather_packets(x, rows=self.rows, **options)
+
     def gather_project(self, x, project, *, packet_project=None):
         options = {} if packet_project is None else dict(packet_project=packet_project)
         return self.owner.gather_project(x, project, **options)[:self.rows]

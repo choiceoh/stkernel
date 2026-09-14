@@ -94,18 +94,18 @@ class BudgetTests(unittest.TestCase):
         from engine.base.budget import DECLARED
         from engine.profiles.glm53 import budget
         plain = budget.budget(8.73, 4, box_gib=121.6, drafter_dir=None)
-        raised = budget.budget(8.73, 4, box_gib=121.6, drafter_dir=None, workspace_gib=10.5,
+        raised = budget.budget(8.73, 4, box_gib=121.6, drafter_dir=None, workspace_gib=13.5,
                                ledger={"arena_bytes": 0, "baseline_reserved_bytes": 0,
                                        "measured": {"peak_workspace_bytes": 5 << 30, "prefill_peak_bytes": 5 << 30,
                                                     "graph_bytes": 0, "at_phase": "production/ready"}})
         line = lambda b: next(l for l in b.lines if l.name.startswith("workspace"))      # noqa: E731
         self.assertEqual((line(plain).gib, plain.workspace_gib), (budget.WORKSPACE_GIB, budget.WORKSPACE_GIB))
-        self.assertEqual((line(raised).gib, line(raised).source, raised.workspace_gib), (10.5, DECLARED, 10.5))
-        self.assertIn(f"--workspace-gib 10.5 (profile {budget.WORKSPACE_GIB:g})", line(raised).evidence)
+        self.assertEqual((line(raised).gib, line(raised).source, raised.workspace_gib), (13.5, DECLARED, 13.5))
+        self.assertIn(f"--workspace-gib 13.5 (profile {budget.WORKSPACE_GIB:g})", line(raised).evidence)
         self.assertNotIn("--workspace-gib", line(plain).evidence)
-        self.assertIn("workspace: ceiling 10.50 GiB enforced, this boot peaked at 5.00", budget.report(raised))
-        self.assertIn("+5.50 GiB of the ceiling unspent", budget.report(raised))
-        self.assertAlmostEqual(plain.kv_gib - raised.kv_gib, 10.5 - budget.WORKSPACE_GIB, places=6)
+        self.assertIn("workspace: ceiling 13.50 GiB enforced, this boot peaked at 5.00", budget.report(raised))
+        self.assertIn("+8.50 GiB of the ceiling unspent", budget.report(raised))
+        self.assertAlmostEqual(plain.kv_gib - raised.kv_gib, 13.5 - budget.WORKSPACE_GIB, places=6)
 
     def test_a_floor_measured_before_any_phase_still_reaches_the_table(self):
         """RuntimeMemory takes the floor in __init__, and boot prints the table right after --
@@ -183,11 +183,12 @@ class WorkspaceCeilingSourceTests(unittest.TestCase):
 
     def test_the_profile_ceiling_is_the_measured_peak_plus_a_margin_and_says_so(self):
         text = (self.ROOT / "engine/profiles/glm53/budget.py").read_text()
-        self.assertIn("\nWORKSPACE_GIB = 9.0 ", text)
-        for evidence in ("36 of them", "largest reserved peak is 7.48 GiB", "prefill/32256/0/prepared",
-                         "largest allocated peak 6.67 GiB", "`--workspace-gib` / ST_WORKSPACE_GIB"):
+        self.assertIn("\nWORKSPACE_GIB = 12.0 ", text)
+        for evidence in ("36 of them", "largest reserved peak was 7.48 GiB", "prefill/32256/0/prepared",
+                         "prefill/32256/943872/prepared", "reserved 9.67 GiB", "retains did not move",
+                         "`--workspace-gib` / ST_WORKSPACE_GIB"):
             self.assertIn(evidence, text)
-        self.assertGreaterEqual(9.0 - 7.48, 1.5, "the margin the evidence claims")
+        self.assertGreaterEqual(12.0 - 9.67, 1.5, "the margin the evidence claims")
 
     def test_the_boot_enforces_the_ceiling_it_was_given_everywhere_it_builds(self):
         boot = (self.ROOT / "engine/profiles/glm53/boot.py").read_text()

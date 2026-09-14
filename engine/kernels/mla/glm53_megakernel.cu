@@ -339,6 +339,14 @@ __device__ __forceinline__ void mk_cp_wait_upto(int n) {
 // per k-block, which made the W4 expansion outweigh the DRAM time it was
 // meant to hide. The array and a uint8_t accessor around this immediate both
 // outlived that change with no callers; they are gone.
+// CUDA 13.2: __vadd4 still lowers to carry-isolation arithmetic on SM121.
+// This packed add preserves modulo-256 byte semantics and emits VIADD.U8x4.
+__device__ __forceinline__ uint32_t mk_add_u8x4(uint32_t a, uint32_t b) {
+  uint32_t out;
+  asm("add.u8x4 %0, %1, %2;" : "=r"(out) : "r"(a), "r"(b));
+  return out;
+}
+
 constexpr unsigned long long MK_E2M1_LUT64 = 0x4C484440'3C383000ULL;
 // same table with +1 on codes 3, 5, 7 (magnitude mantissa 1.5)
 constexpr unsigned long long MK_E2M1_LUT64_B = 0x4D484540'3D383000ULL;
@@ -813,10 +821,10 @@ mk_gemm2_kernel(const MKGemm2Ctx c) {
           ((ea & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64;
       const unsigned long long lb =
           ((eb & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64;
-      l0a[j] = __vadd4((uint32_t)la, ea * 0x01010100u);
-      l1a[j] = __vadd4((uint32_t)(la >> 32), ea * 0x01010101u);
-      l0b[j] = __vadd4((uint32_t)lb, eb * 0x01010100u);
-      l1b[j] = __vadd4((uint32_t)(lb >> 32), eb * 0x01010101u);
+      l0a[j] = mk_add_u8x4((uint32_t)la, ea * 0x01010100u);
+      l1a[j] = mk_add_u8x4((uint32_t)(la >> 32), ea * 0x01010101u);
+      l0b[j] = mk_add_u8x4((uint32_t)lb, eb * 0x01010100u);
+      l1b[j] = mk_add_u8x4((uint32_t)(lb >> 32), eb * 0x01010101u);
       slot[j] = nrow * W4_RAW_PITCH + ((q ^ ((nrow >> 1) & 3)) << 4);
     }
 #pragma unroll
@@ -1201,10 +1209,10 @@ mk_gemm_input_kernel(const MKGemm2Ctx c) {
       const uint32_t ea=ex&255u,eb=ex>>8;
       const unsigned long long la=((ea&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
       const unsigned long long lb=((eb&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
-      l0a[j]=__vadd4((uint32_t)la,ea*0x01010100u);
-      l1a[j]=__vadd4((uint32_t)(la>>32),ea*0x01010101u);
-      l0b[j]=__vadd4((uint32_t)lb,eb*0x01010100u);
-      l1b[j]=__vadd4((uint32_t)(lb>>32),eb*0x01010101u);
+      l0a[j]=mk_add_u8x4((uint32_t)la,ea*0x01010100u);
+      l1a[j]=mk_add_u8x4((uint32_t)(la>>32),ea*0x01010101u);
+      l0b[j]=mk_add_u8x4((uint32_t)lb,eb*0x01010100u);
+      l1b[j]=mk_add_u8x4((uint32_t)(lb>>32),eb*0x01010101u);
       slot[j]=r*W4_RAW_PITCH+((q^((r>>1)&3))<<4);
     }
     float ka[4]={};
@@ -1329,10 +1337,10 @@ mk_gemm_input_cta_kernel(const MKGemm2Ctx c) {
       const uint32_t ea=ex&255u,eb=ex>>8;
       const unsigned long long la=((ea&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
       const unsigned long long lb=((eb&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
-      l0a[j]=__vadd4((uint32_t)la,ea*0x01010100u);
-      l1a[j]=__vadd4((uint32_t)(la>>32),ea*0x01010101u);
-      l0b[j]=__vadd4((uint32_t)lb,eb*0x01010100u);
-      l1b[j]=__vadd4((uint32_t)(lb>>32),eb*0x01010101u);
+      l0a[j]=mk_add_u8x4((uint32_t)la,ea*0x01010100u);
+      l1a[j]=mk_add_u8x4((uint32_t)(la>>32),ea*0x01010101u);
+      l0b[j]=mk_add_u8x4((uint32_t)lb,eb*0x01010100u);
+      l1b[j]=mk_add_u8x4((uint32_t)(lb>>32),eb*0x01010101u);
       slot[j]=r*W4_RAW_PITCH+((q^((r>>1)&3))<<4);
     }
     float ka[4]={};
@@ -1438,10 +1446,10 @@ mk_gemm_input_cta3_kernel(const MKGemm2Ctx c) {
       const uint32_t ea=ex&255u,eb=ex>>8;
       const unsigned long long la=((ea&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
       const unsigned long long lb=((eb&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
-      l0a[j]=__vadd4((uint32_t)la,ea*0x01010100u);
-      l1a[j]=__vadd4((uint32_t)(la>>32),ea*0x01010101u);
-      l0b[j]=__vadd4((uint32_t)lb,eb*0x01010100u);
-      l1b[j]=__vadd4((uint32_t)(lb>>32),eb*0x01010101u);
+      l0a[j]=mk_add_u8x4((uint32_t)la,ea*0x01010100u);
+      l1a[j]=mk_add_u8x4((uint32_t)(la>>32),ea*0x01010101u);
+      l0b[j]=mk_add_u8x4((uint32_t)lb,eb*0x01010100u);
+      l1b[j]=mk_add_u8x4((uint32_t)(lb>>32),eb*0x01010101u);
       slot[j]=r*W4_RAW_PITCH+((q^((r>>1)&3))<<4);
     }
     float ka[4]={};
@@ -2140,6 +2148,7 @@ struct MKMlaArgs {
   float ckv_scale;
   int T, W, splits, grid;
   int probe;   // 1 = memory pipeline only (roofline), 0 = full
+  const uint8_t* branch;       // tree-only [T,D]; negative slot -(node+1)
 };
 
 // v4: tensor cores, and the e4m3 ring is the ONLY copy of the latent.
@@ -2186,6 +2195,10 @@ __device__ __forceinline__ float mla_warp_sum(float v) {
   for (int off = 16; off; off >>= 1) v += __shfl_xor_sync(0xffffffff, v, off);
   return v;
 }
+// E4M3 -> BF16 goes through the half bridge, in decode and in strided prefill. #952's direct PTX 9.2
+// `cvt.rn.bf16x2.e4m3x2` (B12X intrinsics.py at 12b4eb257441) kept the arithmetic, but on the fleet's CUDA 13.2.1
+// stack a 129,784-token prompt took 54.7 and 50.9 s to its first token with it and 38.5 and 37.3 s with this bridge
+// (2026-09-14); the fastest 2K and 32K runs did not move.
 // two adjacent e4m3 bytes -> one bf16x2 register (an mma fragment half)
 __device__ __forceinline__ uint32_t mla_e4m3x2(const uint8_t* p) {
   const __half2 h = __nv_cvt_fp8x2_to_halfraw2(*(const __nv_fp8x2_storage_t*)p, __NV_E4M3);
@@ -2215,7 +2228,7 @@ __device__ __forceinline__ void mla_mma_bf16(float& c0, float& c1, float& c2, fl
       : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
 }
 
-template <bool CLUSTER = false>
+template <bool CLUSTER = false, bool TREE = false>
 __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
   extern __shared__ __align__(16) char mla_smem[];
   uint8_t* ring = (uint8_t*)mla_smem;
@@ -2266,8 +2279,15 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
         const int j = j0 + ti * MLA_TILE + k;
         const int sj = (j < j1) ? j : j0;
         const int slot = a.slots[(size_t)t * a.W + sj];
+        const uint8_t* src;
+        if constexpr (TREE) {
+          src = slot < 0 ? a.branch + (size_t)(-slot-1) * MLA_D
+                         : a.ckv + (size_t)slot * MLA_D;
+        } else {
+          src = a.ckv + (size_t)slot * MLA_D;
+        }
         mk_cp_async16(dst + (size_t)k * MLA_RP + lane * 16,
-                      a.ckv + (size_t)slot * MLA_D + lane * 16);
+                      src + lane * 16);
       }
       mk_cp_commit();
     };
@@ -3485,7 +3505,7 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
                 std::vector<int64_t> ints) {
   set_kernel_attrs();
   MKMlaArgs a{};
-  TORCH_CHECK(ptrs.size() == 8 && (ints.size() == 3 || ints.size() == 4) && scalars.size() == 2,
+  TORCH_CHECK((ptrs.size() == 8 || ptrs.size() == 9) && (ints.size() == 3 || ints.size() == 4) && scalars.size() == 2,
               "run_mla arg contract (ints: T, W, splits[, probe])");
   a.q = (const __nv_bfloat16*)ptrs[0];
   a.ckv = (const uint8_t*)ptrs[1];
@@ -3507,35 +3527,51 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
   // Python driver (mla_decode(probe=)), never an environment read; serving passes 0
   a.probe = ints.size() > 3 ? (int)ints[3] : 0;
   auto stream = c10::cuda::getCurrentCUDAStream();
-  a.grid = mk_resident_grid(mk_mla_kernel<false>, g_mla_grid, MLA_SMEM, MLA_GRID_CAP);
-  mk_launch(mk_mla_kernel<false>, a.grid, MLA_SMEM, stream, a);
+  if (ptrs.size() == 9) {
+    TORCH_CHECK(ptrs[8] && (ptrs[8] & 15) == 0 && a.T >= 1 && a.T <= 32 && a.probe == 0,
+                "tree MLA requires aligned private rows and bounded exact decode");
+    a.branch = (const uint8_t*)ptrs[8];
+    static int tree_grid = 0;
+    if (!tree_grid) MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_kernel<false, true>,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_SMEM));
+    a.grid = mk_resident_grid(mk_mla_kernel<false, true>, tree_grid, MLA_SMEM, MLA_GRID_CAP);
+    mk_launch(mk_mla_kernel<false, true>, a.grid, MLA_SMEM, stream, a);
+  } else {
+    a.grid = mk_resident_grid(mk_mla_kernel<false>, g_mla_grid, MLA_SMEM, MLA_GRID_CAP);
+    mk_launch(mk_mla_kernel<false>, a.grid, MLA_SMEM, stream, a);
+  }
 }
 
-int64_t mk_mla_cluster_max() {
+template <bool TREE = false>
+int64_t mk_mla_cluster_capacity() {
   static int maximum = -1;
   if (maximum < 0) {
     int supported = 0;
     MK_CHECK_CUDA(cudaDeviceGetAttribute(&supported, cudaDevAttrClusterLaunch, 0));
     if (!supported) return maximum = 0;
-    MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_kernel<true>,
+    MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_kernel<true, TREE>,
         cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_SMEM));
     cudaLaunchConfig_t config{};
     config.gridDim = dim3(96);
     config.blockDim = dim3(MK_THREADS);
     config.dynamicSmemBytes = MLA_SMEM;
     MK_CHECK_CUDA(cudaOccupancyMaxPotentialClusterSize(
-        &maximum, mk_mla_kernel<true>, &config));
+        &maximum, mk_mla_kernel<true, TREE>, &config));
   }
   return maximum;
 }
 
+int64_t mk_mla_cluster_max() { return mk_mla_cluster_capacity<>(); }
+
 void mk_run_mla_cluster(std::vector<int64_t> ptrs, std::vector<double> scalars,
                         std::vector<int64_t> ints) {
-  TORCH_CHECK(ptrs.size() == 5 && ints.size() == 3 && scalars.size() == 2,
+  TORCH_CHECK((ptrs.size() == 5 || ptrs.size() == 6) && ints.size() == 3 && scalars.size() == 2,
               "run_mla_cluster arg contract");
   TORCH_CHECK(ints[0] >= 1 && ints[0] <= 64 && ints[1] >= 1 && ints[1] <= 2176,
               "mla cluster: bounded decode T/W required");
-  TORCH_CHECK(ints[2] >= 2 && ints[2] <= mk_mla_cluster_max(),
+  const bool tree = ptrs.size() == 6;
+  const int maximum = tree ? mk_mla_cluster_capacity<true>() : mk_mla_cluster_max();
+  TORCH_CHECK(ints[2] >= 2 && ints[2] <= maximum,
               "mla cluster: split count exceeds kernel cluster capacity");
   TORCH_CHECK((ptrs[0] & 15) == 0 && (ptrs[1] & 15) == 0,
               "mla cluster: Q and FP8 cache must be 16 B aligned");
@@ -3545,6 +3581,11 @@ void mk_run_mla_cluster(std::vector<int64_t> ptrs, std::vector<double> scalars,
   a.out = (__nv_bfloat16*)ptrs[4];
   a.sm_scale = (float)scalars[0]; a.ckv_scale = (float)scalars[1];
   a.T = (int)ints[0]; a.W = (int)ints[1]; a.splits = (int)ints[2];
+  if (tree) {
+    TORCH_CHECK(a.T <= 32 && ptrs[5] && (ptrs[5] & 15) == 0,
+                "tree MLA cluster requires aligned private rows and bounded decode");
+    a.branch = (const uint8_t*)ptrs[5];
+  }
   // Exactly one CTA per split, one cluster per row. No global partials,
   // monotonic counter or requirement for the entire grid to be resident.
   a.grid = a.T * a.splits;
@@ -3560,7 +3601,8 @@ void mk_run_mla_cluster(std::vector<int64_t> ptrs, std::vector<double> scalars,
   attributes[1].val.programmaticStreamSerializationAllowed = 1;
   config.attrs = attributes;
   config.numAttrs = mk_pdl_enabled() ? 2 : 1;
-  MK_CHECK_CUDA(cudaLaunchKernelEx(&config, mk_mla_kernel<true>, a));
+  if (tree) MK_CHECK_CUDA(cudaLaunchKernelEx(&config, mk_mla_kernel<true, true>, a));
+  else MK_CHECK_CUDA(cudaLaunchKernelEx(&config, mk_mla_kernel<true>, a));
 }
 
 // Large-M prefill: 32 slots per online-softmax tile, with Q fragments kept
@@ -4178,6 +4220,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_mla", &mk_run_mla, "MK_SEG_MLA (sparse MLA decode)");
   m.def("run_mla_cluster", &mk_run_mla_cluster, "SM121 cluster-local sparse MLA decode");
   m.def("mla_cluster_max", &mk_mla_cluster_max, "Maximum cluster size for the MLA kernel");
+  m.def("mla_tree_cluster_max", &mk_mla_cluster_capacity<true>, "Maximum cluster size for the tree MLA kernel");
   m.def("run_mla_prefill_pair", &mk_run_mla_prefill_pair, "MK MLA exact-selection (not bit-exact output) prefill pair reuse");
   m.def("run_mla_prefill32", &mk_run_mla_prefill32, "MK MLA register-Q prefill over 32-slot tiles");
   m.def("run_mla_prefill_group4", &mk_run_mla_prefill_group4, "MK MLA exact-selection (not bit-exact output) four-query reuse");

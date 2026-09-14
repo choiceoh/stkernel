@@ -41,8 +41,8 @@ class KnobDeclarationTests(unittest.TestCase):
         cfg = self._declared({"STK_mla_prefill":"stock", "STK_context_ceiling":"131072"})
         self.assertEqual(set(cfg.knobs), {"mla_prefill", "context_ceiling", "kda_state_dtype",
                                           "execution_overlap", "early_observe", "prefill_tiles", "direct_mhc", "prefill_project_tiles",
-                                          "nvme_mapped_staging", "decode_iterations", "deferred_kda", "terminal_mhc", "prefill_indexer_shards",
-                                          "draft_fc_precision", "draft_fc_calibration", "draft_diagnostics", "draft_tuning", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "decode_dsa_inputs", "decode_indexer_gate", "decode_absorb_tiles"})
+                                          "nvme_mapped_staging", "decode_iterations", "deferred_kda", "prefill_ffn_packets", "terminal_mhc", "prefill_indexer_shards",
+                                          "draft_fc_precision", "draft_fc_calibration", "draft_diagnostics", "draft_tuning", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "decode_dsa_inputs", "decode_indexer_gate", "decode_absorb_tiles", "oneshot_rails", "oneshot_inline"})
         self.assertEqual((cfg["mla_prefill"], cfg["context_ceiling"]), ("stock", 131072))
         self.assertEqual((cfg["execution"], cfg["moe_static"]), ("native", "t,r,sf6,q0"))
         from engine.base.config import ConfigError
@@ -57,21 +57,39 @@ class KnobDeclarationTests(unittest.TestCase):
         with self.assertRaises(ConfigError):
             self._declared({'STK_prefill_indexer_shards':'1'},production=True)
 
+    def test_packet_prefill_defaults_on_with_explicit_nonproduction_opt_out(self):
+        from engine.base.config import ConfigError
+        key = 'prefill_ffn_packets'
+        for production in (False, True):
+            self.assertEqual(self._declared({}, production=production)[key], 1)
+        for value in ('0', '1'):
+            self.assertEqual(self._declared({'STK_'+key: value})[key], int(value))
+            with self.assertRaises(ConfigError):
+                self._declared({'STK_'+key: value}, production=True)
+
     def test_gb10_serving_defaults_are_on_and_production_refuses_overrides(self):
         from engine.base.config import ConfigError
         for production in (False, True):
             cfg = self._declared({}, production=production)
             self.assertEqual([cfg[k] for k in ("execution_overlap", "early_observe", "prefill_tiles", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "decode_iterations")], [0, 0, 1, 1, 1, 1, 4])
             self.assertEqual(cfg["kda_state_dtype"], "fp32")
-            self.assertEqual(cfg["deferred_kda"], 0)
+            self.assertEqual(cfg["deferred_kda"], 1)
+            self.assertEqual(cfg["oneshot_rails"], 2)
+            self.assertEqual(cfg["oneshot_inline"], 1)
             self.assertEqual(cfg["terminal_mhc"], 0)
         rollback = {"direct_mhc": 0, "prefill_project_tiles": 0,
-                    "nvme_mapped_staging": 0, "decode_iterations": 1}
+                    "nvme_mapped_staging": 0, "decode_iterations": 1, "deferred_kda": 0, "oneshot_rails": 1, "oneshot_inline": 0}
         cfg = self._declared({"STK_"+key: str(value) for key, value in rollback.items()})
         self.assertEqual({key: cfg[key] for key in rollback}, rollback)
         for key in ("execution_overlap", "early_observe", "prefill_tiles", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "decode_iterations"):
             with self.subTest(key=key), self.assertRaises(ConfigError):
                 self._declared({"STK_"+key:"1"}, production=True)
+        with self.assertRaises(ConfigError):
+            self._declared({"STK_deferred_kda": "0"}, production=True)
+        with self.assertRaises(ConfigError):
+            self._declared({"STK_oneshot_rails": "1"}, production=True)
+        with self.assertRaises(ConfigError):
+            self._declared({"STK_oneshot_inline": "0"}, production=True)
 
     def test_acceptance_defaults_are_on_and_cannot_override_production(self):
         from engine.base.config import ConfigError

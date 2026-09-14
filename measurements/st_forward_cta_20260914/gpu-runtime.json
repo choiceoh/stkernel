@@ -1,0 +1,14 @@
+{
+  "source": "c64e10381515d8f0875b70eeb6e4ea375130a6d3",
+  "integrated_source": "d1300ecffbaed6d11ae6dac468ca50707152d7a5",
+  "host": "srv4",
+  "gpu": "NVIDIA GB10",
+  "driver": "580.159.03",
+  "gpu_uuid": "GPU-ba5006e3-90f4-6c54-e113-c0c572374037",
+  "image": "sha256:062bb8e5d4c4ef658c8b57987e99c5e84e2b149c73c0ac721ea25263b258c93e",
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "ranks": "/home/choiceoh/models/st-glm53-hybrid-gptq-v1/rank3of4.safetensors",
+  "scope": "same-build component numerics and timing; no consumer step/s or acceptance measured",
+  "model_boots": 0
+}

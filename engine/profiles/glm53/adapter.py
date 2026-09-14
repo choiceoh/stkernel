@@ -522,7 +522,7 @@ class Glm53Engine:
     def validate_options(self, options: dict) -> None:
         """The door asks before enqueueing: every option a request carries must be one this engine serves (D3)."""
         from engine.base.sampler import validate_options
-        validate_options(options)
+        validate_options(options, vocab=getattr(self.F, "vocab", None))   # an id past the logits was an engine death in the step
         if options.get("grammar") is not None and self.grammars is None:
             raise ValueError("structured output (response_format) is not served: no grammar compiler is bound")
 
@@ -1133,6 +1133,12 @@ class Glm53Engine:
             # This prefix is hypothetical until verification accepts it. A
             # rejected draft must not disable the committed row's budget.
             return None
+        matcher = self.matchers.get(seq)
+        if matcher is not None and (matcher.armed or (matcher.after is not None and matcher.after in drafts_before)):
+            # A grammar holds the row: a tool call began inside the think block (the tool grammar arms at its
+            # marker, reasoning or not). Forcing the end here leaves no token the grammar allows, and the commit
+            # that follows is outside the grammar -- an engine death. The call closes the block instead.
+            return None
         return end
 
     def _end_ids(self, seq: int, device) -> torch.Tensor:
@@ -1202,9 +1208,8 @@ class Glm53Engine:
                              torch.tensor(ks, dtype=torch.int32, device=device),
                              torch.tensor(ps, dtype=torch.float32, device=device),
                              torch.cat(uniform_rows), None, dists).tolist()
-        out, at = [], 0
+        verdicts, at = [], 0
         for (seq, _, drafts, draft_probs), count in zip(jobs, spans):
-            opts = self.options.get(seq, {})
             mine = picks[at: at + count]
             if self.limits[seq][1] <= 0 or draft_probs is None or not drafts:
                 accepted = 0
@@ -1218,10 +1223,36 @@ class Glm53Engine:
                 k = len(drafts[: count - 1])
                 accepted, new = block_verify(dists[at: at + count], drafts[: count - 1], draft_probs,
                                              self._uniforms(seq, draws.VERIFY, k) + self._uniforms(seq, draws.FRESH, 1))
-            want = opts.get("logprobs")
+            verdicts.append((accepted, new))
+            at += count
+        out, at = [], 0
+        for (seq, _, _, _), count, (accepted, new) in zip(jobs, spans, self._agree_verdicts(verdicts, spans, device)):
+            want = self.options.get(seq, {}).get("logprobs")
             lps = [(tok, *top_logprobs(block[at + i], tok, want)) for i, tok in enumerate(new)] if want is not None else None
             out.append((accepted, new, lps))
             at += count
+        return out
+
+    def _agree_verdicts(self, verdicts, spans, device):
+        """Rank 0's (accepted, tokens) for every rich row: the device chain's `agree_verdict` for the host's lists.
+
+        Block verification here draws through the same cumsum the chain's does (base/sampler.draw), so the ranks can
+        commit different tokens from one step -- and a different token at the same count is not caught later: the
+        runner's plan agreement reads counts, and the next gather's digest reads drafts `agree_walk` has already
+        made rank 0's. The ranks would serve on from different contexts. One int64 packet a step, sized by the live
+        spans every rank agreed before the gather: a row's accepted count, its committed length, then its tokens."""
+        comm = self.net.comm
+        if comm.world_size == 1:
+            return verdicts
+        packet = []
+        for (accepted, new), count in zip(verdicts, spans):
+            packet += [accepted, len(new), *new, *[0] * (count - len(new))]
+        shared = comm.broadcast_tensor(torch.tensor(packet, dtype=torch.int64, device=device)).tolist()
+        out, at = [], 0
+        for count in spans:
+            accepted, length = shared[at: at + 2]
+            out.append((accepted, shared[at + 2: at + 2 + length]))
+            at += 2 + count
         return out
 
     def _commit(self, seq: int, accepted: int, new: "list[int]", lps, drafted: int) -> "tuple[list[int], bool]":

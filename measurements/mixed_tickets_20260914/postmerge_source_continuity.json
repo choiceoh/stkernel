@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "source_revision": "ccc253c15c127f42328152977ef945f9c347a291",
+  "upstream": "b02bff42dfa788fa742e6f4d6132cb957bd7a4d8",
+  "compiler_revision": "fe940088fe34ac60325e071b3abde5c3e1b15c87",
+  "compiled_sources_unchanged": true,
+  "changed_since_first_gpu": [
+    "engine/profiles/glm53/net.py",
+    "engine/profiles/glm53/lanes.py",
+    "engine/kernels/dense/kernels.cu"
+  ],
+  "postmerge_cpu_sources_match": true,
+  "postmerge_gpu_sources_match": true,
+  "tests": 357,
+  "passed": 332,
+  "skipped": 25,
+  "gpu_cells": 4,
+  "gpu_samples": 32,
+  "scope": "Revalidate all 44 focused CPU modules and the complete one-GB10 gate after the DSA merge. All eight compiled expert-kernel inputs are unchanged; the changed native dense extension was exercised by the new GPU run."
+}

@@ -25,6 +25,12 @@ def u32(value):
     return int(value) & 0xffffffff
 
 
+def packed_add(a, b):
+    # Interpret only the PTX instruction's independent byte-lane contract.
+    return sum((((a >> shift) & 255) + ((b >> shift) & 255)) % 256 << shift
+               for shift in (0, 8, 16, 24))
+
+
 class PrefillSF6WordTests(unittest.TestCase):
     def test_pinned_parent_and_producer_publication_are_unchanged(self):
         parent = SOURCE.with_name('moe_dynamic_gated_sf6.py')
@@ -49,7 +55,7 @@ class PrefillSF6WordTests(unittest.TestCase):
 
     def word(self):
         return extract(SOURCE, {'_sf6_unpack_word'},
-                       dict(cutlass=SimpleNamespace(Uint32=u32)))['_sf6_unpack_word']
+                       dict(cutlass=SimpleNamespace(Uint32=u32), add_u8x4=packed_add))['_sf6_unpack_word']
 
     def test_bit_placement_and_all_base_delta_lanes(self):
         fn = self.word()
@@ -57,8 +63,7 @@ class PrefillSF6WordTests(unittest.TestCase):
             expected = sum(((base + ((low >> (4*i)) & 15)
                              + 16*((high >> (2*i)) & 3)) & 255) << (8*i)
                            for i in range(4))
-            self.assertEqual(u32(fn(low, high, (base & 127)*0x01010101,
-                                    (base & 128)*0x01010101)), expected)
+            self.assertEqual(u32(fn(low, high, base*0x01010101)), expected)
         for low in range(65536):
             check(low, 0, 0)
         for high in range(256):
@@ -102,7 +107,7 @@ class PrefillSF6WordTests(unittest.TestCase):
                             events.append(('write', address))
                             output[address:address+4] = u32(value).to_bytes(4, 'little')
                         ns = extract(SOURCE, {'_sf6_unpack_word', '_sf6_expand_dynamic_tile'}, dict(
-                            Int32=int, Int64=int, _sf6_ld_global_u32=load, _st_shared_i32=store,
+                            Int32=int, Int64=int, add_u8x4=packed_add, _sf6_ld_global_u32=load, _st_shared_i32=store,
                             cutlass=SimpleNamespace(Uint32=u32, const_expr=bool, range_constexpr=range),
                             cute=SimpleNamespace(make_rmem_tensor=lambda shape,dtype: [0]*shape[0])))
                         for lane in range(32):

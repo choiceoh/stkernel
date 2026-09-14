@@ -1,0 +1,35 @@
+{
+  "status": "PASS",
+  "scope": "source continuity and effective CPU coverage, not GPU qualification",
+  "image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+  "compile_and_integration_revision": "79a554e5c4c51652ba28984e9e3164a1127829a2",
+  "final_host_revision": "f8151e61a9ef22bf601922f93fd003f0b6ba5f96",
+  "effective_tests": 289,
+  "effective_passed": 272,
+  "cuda_skipped": 17,
+  "unchanged_compiled_sources": {
+    "engine/modules/mixed_experts.py": "4cb1d9de5b348c49b135bb7f0c2290b203dba462d2a77cd8ffe1d6adbd880b62",
+    "engine/kernels/b12x/moe_mixed_frontend.py": "465b8aef59b69840eb7594c799f783522b753221808bf78c39c18006605442c7",
+    "engine/kernels/b12x/moe_dispatch.py": "3c2957d505ffa651aa82554cf4e49b9abb7075840eee183d7d2d905c00488de1",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "87db391f8cacca3a6484797cc0562ad5b1346aba41294ebbafaadfe5794cf88c",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "engine/kernels/b12x/moe_micro_kernel.py": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914",
+    "probes/engine_mixed_experts_compile.py": "66e32700b9a9ba55de1bf021a1667015f68575a1862a2a6cece39bc9301fe47f"
+  },
+  "superseded_sources": {
+    "engine/kernels/b12x/moe_mixed.py": {
+      "previous": "16b966d2f9e7c717f3179765c8437cd14287ba9049018ed46c18455f8097036c",
+      "current": "d77f0fbc4a1805c04b40b9c7d14b3bb5daacb0a4edfa569bbbdfd70023007e33"
+    },
+    "tests/test_engine_mixed_experts.py": {
+      "previous": "c7f2b5a5c4e48c9fb5a60d507857bf3e14cc845d31f528cca5128e6c118a0ebf",
+      "current": "f0411d1d8ed12215c01dd8c74f139aa99387eb71b73ea9c17d243f9b30fe6ee6"
+    }
+  },
+  "host_followup": "cpu-followup.json replaces the 8-case mixed module in cpu.json with 9 passing cases",
+  "ci": {
+    "source_revision": "f8151e61a9ef22bf601922f93fd003f0b6ba5f96",
+    "status": "SUCCESS",
+    "url": "https://github.com/choiceoh/stkernel/actions/runs/34789934124/job/103812159001"
+  }
+}

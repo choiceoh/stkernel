@@ -95,7 +95,8 @@ class WiringTests(unittest.TestCase):
         from engine.profiles.glm53.decode_graphs import complete_pools
         window = (torch.empty(8, 4, 128), torch.empty(8, 4, 128))
         pk, ps = torch.empty(8, 128, dtype=torch.uint8), torch.empty(8)
-        glue = NS(window=Mock(return_value=window), update=Mock(), addresses=Mock(), pools=Mock(), tails=Mock())
+        glue = NS(window=Mock(return_value=window), compress=Mock(return_value=(pk, ps)),
+                  update=Mock(), addresses=Mock(), pools=Mock(), tails=Mock())
         net = NS(F=NS(kpool=4, idx_dim=128), lanes=NS(decode_rows=glue, kpool_compress=Mock(return_value=(pk, ps))),
                  p={'L3.idx.ape': object()}, decode_pools_executed=set())
         tails, k, gate = torch.empty(9, 10, 2, 128), torch.empty(4, 8, 128), torch.empty(4, 8, 128)
@@ -106,13 +107,13 @@ class WiringTests(unittest.TestCase):
                     pool_maps=lambda L: (table, 192, 2112, 576), candidate_capacity=32768,
                     tails=Mock(side_effect=AssertionError('must not gather')), tail_field=Mock())
         self.assertEqual(complete_pools(net, 3, contexts, 8, tails, k, gate, caches, mapped=True), 32768)
-        self.assertIs(glue.window.call_args.kwargs['slots'], slots)
-        self.assertIs(glue.window.call_args.args[0], tails)
+        self.assertIs(glue.compress.call_args.args[0], tails)
+        self.assertIs(glue.compress.call_args.args[5], slots)
         self.assertIs(glue.update.call_args.args[4], tails)
         self.assertIs(glue.update.call_args.args[5], slots)
         self.assertIs(glue.update.call_args.args[9], table)
         self.assertEqual(net.decode_pools_executed, {(3, 32)})
-        for old in (glue.addresses, glue.pools, glue.tails, caches.tails, caches.tail_field):
+        for old in (glue.window, net.lanes.kpool_compress, glue.addresses, glue.pools, glue.tails, caches.tails, caches.tail_field):
             old.assert_not_called()
 
 

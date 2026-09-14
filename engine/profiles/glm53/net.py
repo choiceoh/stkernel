@@ -170,6 +170,10 @@ class Glm53Net:
         self._decode_absorb = {}
         self.decode_absorb_rows = ()
         self.prefill_transport = None
+        self.prefill_ffn_packets = False
+        self.prefill_packet_executed = set()
+        self.prefill_packet_planned = set()
+        self.prefill_packet_peak_bytes = 0
         self.prefill_indexer_shards = False
         self.prefill_indexer_executed = set()
         self.prefill_dense_prefix = False
@@ -186,6 +190,9 @@ class Glm53Net:
         # The dense MLPs as one-expert NVFP4 (ModelOpt's own layout); BF16 dense MLPs take the packed dense path.
         self.dense_nvfp4 = self.modelopt and self.weight_layout != MODELOPT_BF16_DENSE_LAYOUT
         self._experts = {}
+        self._packet_experts = {}
+        self._packet_capabilities = {}
+        self._expert_views = {}                    # prepared packed owners, also used by explicit dataflow experiments
         self._quant_scales = {}
         if self.dense_nvfp4:
             self._dense = self._dense_nvfp4
@@ -217,10 +224,15 @@ class Glm53Net:
                 self._quant_scales[L] = scales
                 kw['scales'] = scales
             if prepare is not None:
-                prepare(p[n + "w13"], p[n + "w13_sf"], p[n + "w2"], p[n + "w2_sf"],
-                        F.topk_experts if F.is_moe(L) else 1, F.swiglu_limit, **kw)
+                self._expert_views[L] = prepare(p[n + "w13"], p[n + "w13_sf"], p[n + "w2"], p[n + "w2_sf"],
+                                               F.topk_experts if F.is_moe(L) else 1, F.swiglu_limit, **kw)
             self._experts[L] = partial(self.lanes.moe, w13=p[n+'w13'], w13_sf=p[n+'w13_sf'],
                 w2=p[n+'w2'], w2_sf=p[n+'w2_sf'], limit=F.swiglu_limit, **kw)
+            if F.is_moe(L) and self.lanes.moe_packets is not None and self.lanes.moe_packets_supported is not None:
+                args = dict(w13=p[n+'w13'], w13_sf=p[n+'w13_sf'], w2=p[n+'w2'],
+                            w2_sf=p[n+'w2_sf'], limit=F.swiglu_limit, **kw)
+                self._packet_experts[L] = partial(self.lanes.moe_packets, **args)
+                self._packet_capabilities[L] = partial(self.lanes.moe_packets_supported, **args)
 
     def router_nbytes(self):
         """FP32 routing matrices, explicitly reserved apart from BF16 rank weights."""
@@ -286,7 +298,8 @@ class Glm53Net:
     def prepare_decode_dsa_inputs(self, rows):
         """Bind existing smoothed W4 readers; no weight copy or new arena region."""
         if (self._query_pairs or self.F.spec_k != 7 or self.lanes.latent_norm_write is None
-                or self.lanes.decode_rows is None or self.lanes.decode_rows.update is None):
+                or self.lanes.decode_rows is None or self.lanes.decode_rows.update is None
+                or self.lanes.decode_rows.compress is None):
             raise ValueError('DSA inputs require one K=7 native preparation with fused latent and pool-cache lanes')
         from engine.kernels.dense.query_pair import QueryPair
         pairs = {L: QueryPair(self.dense[f'L{L}.mla.q_b'], self.dense[f'L{L}.idx.wq_b'], rows=rows)
@@ -417,8 +430,10 @@ class Glm53Net:
             self.shared_overlap = SharedOverlap(self.p["norm"].device)
 
     @operation("linear", name_arg=2)
-    def linear(self, x, name):
+    def linear(self, x, name, *, out=None):
         layer = self.dense.get(name)
+        if out is not None:
+            return layer(x, out=out) if layer is not None else torch.mm(x, self.p[name].T, out=out)
         return layer(x) if layer is not None else Fn.linear(x, self.p[name])
 
     def prefill_project(self, transport, x, name):
@@ -432,18 +447,24 @@ class Glm53Net:
     # -- embed / head -------------------------------------------------------------
     @operation("embed")
     def embed(self, ids: torch.Tensor) -> torch.Tensor:
-        start = self.rank * self.vp
-        local = ids - start
-        mask = (local < 0) | (local >= self.vp)
-        h = Fn.embedding(local.masked_fill(mask, 0), self.p["embed"]).masked_fill(mask[:, None], 0)
+        from engine.modules.token_embedding import lookup
+        h = lookup(ids, self.p["embed"], self.rank * self.vp)
         return self.comm.all_reduce(h)
 
     def head(self, h: torch.Tensor) -> torch.Tensor:
         return self.comm.all_gather(self.head_local(h), dim=-1)
 
+    def head_buffer(self, rows: int, device) -> torch.Tensor:
+        """Stable GEMM destination, including the FP8 head's padded columns."""
+        head = self.dense.get("head")
+        width = head.weight[0].shape[0] if head is not None else self.vp
+        return torch.empty(rows, width, device=device, dtype=torch.bfloat16)
+
     @operation("head_local")
-    def head_local(self, h: torch.Tensor) -> torch.Tensor:
-        return self.linear(h, "head")
+    def head_local(self, h: torch.Tensor, *, out=None) -> torch.Tensor:
+        if out is None:
+            return self.linear(h, "head")
+        return self.linear(h, "head", out=out)
 
     @operation("head_tokens")
     def head_tokens(self, h: torch.Tensor, decodable=None) -> torch.Tensor:
@@ -741,8 +762,9 @@ class Glm53Net:
 
         Per row the loop gathers the row's candidate keys and scales, scores them, masks past the row's horizon,
         takes the top-k, pads the misses with -1 and finalizes against the row's block row -- some twenty
-        launches a row a layer. Here the lengths are one launch, the candidate keys and scales one gather
-        (`lanes.decode_rows`), the horizon a mask written in place and the finalize one launch over the rows' block rows; only
+        launches a row a layer. Here the lengths are shared across this batch's layers, the candidate keys
+        and scales one gather (`lanes.decode_rows`), the horizon a mask written in place and the finalize
+        one launch over the rows' block rows; only
         the logits kernel and the top-k stay per row, on the same tensors (the row's own keys, the row's own
         queries, the row's own horizon), so every row's ids are the ones the loop computes. The loop's -1 for a
         winner past the horizon is left to the finalize, which masks `id >= length // pool` itself (kernel and
@@ -755,7 +777,7 @@ class Glm53Net:
         if n_cand < k:
             raise ValueError(f"a captured step's candidate capacity ({n_cand} pools) is below the selection width ({k})")
         glue = self.lanes.decode_rows
-        seq_lens, ke = glue.lengths(contexts, t, kp)                                   # [rows*t] i32: length at each query, pools before it
+        seq_lens, ke = caches.row_lengths(contexts, t, kp, glue.lengths)               # [rows*t] i32, read-only across this forward's DSA layers
         keys_all, scales_all = glue.candidates(keys, scales, *caches.pool_maps(L), n_cand)   # [rows, n_cand, d], [rows, n_cand]
         values = torch.empty((rows * t, k), dtype=torch.float32, device=dev)
         winners = torch.empty((rows * t, k), dtype=torch.int64, device=dev)
@@ -765,7 +787,7 @@ class Glm53Net:
             logits = self.lanes.indexer_logits(q8[sl], keys_all[r], scales_all[r], w_eff[sl], ke[sl], ks=ks)[:, :n_cand].float()
             glue.horizon(logits, ke[sl])                                                  # -inf past each query's pools, in place
             torch.topk(logits, k, dim=-1, sorted=False, out=(values[sl], winners[sl]))
-        self.lanes.pool_slots(winners.to(torch.int32), seq_lens, kp, *caches.token_maps(L), slots_out, valid_out, tokens=t)
+        self.lanes.pool_slots(winners, seq_lens, kp, *caches.token_maps(L), slots_out, valid_out, tokens=t)
 
     def _select_pools(self, q8, w_eff, keys, scales, ke, n_cand: int, k: int, *, out=None) -> torch.Tensor:
         """Top-k complete pools per query, in passes of SELECT_ROWS rows: every row's
@@ -911,6 +933,10 @@ class Glm53Net:
             else:
                 gate = self._router_weights.get(L, p[n + "gate"])
                 logits = x.float() @ gate.float().T
+        return self._select_routes(L, logits)
+
+    def _select_routes(self, L, logits):
+        F, p, n = self.F, self.p, f"L{L}.moe."
         if self.lanes.route_weights is not None:
             return self.lanes.route_weights(logits, p[n + "bias"], F.topk_experts, F.routed_scale)
         s = torch.sigmoid(logits)
@@ -918,20 +944,64 @@ class Glm53Net:
         w = s.gather(-1, sel)
         return sel.to(torch.int32), w / w.sum(-1, keepdim=True) * F.routed_scale
 
+
+    def _packet_ffn_layers(self, rows):
+        from engine.modules.prefill_packets import agreed_layers, ffn_packet_rows
+        if not getattr(self, 'prefill_ffn_packets', False) or not ffn_packet_rows(rows):
+            return frozenset()
+        supported = set()
+        for L, capable in self._packet_capabilities.items():
+            gate = self.p[f'L{L}.moe.gate']
+            shared = self.dense.get(f'L{L}.moe.sh_gate_up')
+            projector = getattr(shared, 'packet_projector', lambda: None)()
+            if (projector is not None and gate.is_cuda and gate.is_contiguous()
+                    and gate.dtype == torch.bfloat16 and tuple(gate.shape) == (288,4096)
+                    and capable(rows)):
+                supported.add(L)
+        agreed = agreed_layers(self.comm, self.layers, supported)
+        self.prefill_packet_planned.update(agreed)
+        return agreed
+
+
+    @operation('moe', layer_arg=1)
+    def _moe_packets(self, L, batch, shards):
+        from engine.kernels.prefill_collectives.routes import packet_routes
+        n = f'L{L}.moe.'
+        ids, weights = packet_routes(batch)
+        out = self._packet_experts[L](batch, ids, weights)
+        project = self.dense[n+'sh_gate_up'].packet_projector()
+        if project is None:
+            raise RuntimeError('packet FFN reader changed after the agreed plan')
+        g, u = project(batch.received, batch.geometry.local_rows, real_rows=shards.rows, routed=True).chunk(2, dim=-1)
+        shared = self.linear(self._activation(g, u, self.F.swiglu_limit), n+'sh_down')
+        self.prefill_packet_executed.add(L)
+        self.prefill_packet_peak_bytes = max(self.prefill_packet_peak_bytes, batch.geometry.nbytes)
+        return (shards.reduce_scatter_pair(out, shared) if shards.fuse_sum else
+                shards.reduce_scatter(out + shared))
+
+    def _sender_routes(self, L, roundtrip):
+        from engine.kernels.prefill_router import router_shard_logits
+        return self._select_routes(L, router_shard_logits(roundtrip, self.p[f'L{L}.moe.gate']))
+
+
     @operation("moe", layer_arg=1)
-    def _moe(self, L: int, x: torch.Tensor, reduce=None, *, reduce_pair=None, finalize=None) -> torch.Tensor:
+    def _moe(self, L: int, x: torch.Tensor, reduce=None, *, reduce_pair=None, finalize=None, route_observer=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.moe."
         # GPU component gate: C=1 wins; C=4 with reused routes regresses.
         # Keep the established shared chain for wider captured batches.
         if self.shared_overlap is not None and x.shape[0] <= F.spec_k + 1:
             def routed(consume=None):
                 sel, w = self.route(L, x)
+                if route_observer is not None:
+                    route_observer(L, sel)
                 return (self._experts[L](x, sel, w) if consume is None else
                         self._experts[L](x, sel, w, finalize=consume))
             joined = (self.shared_overlap(self.shared_mlp[L], x, routed) if finalize is None else
                       self.shared_overlap(self.shared_mlp[L], x, routed, finish=finalize))
             return joined if finalize is not None else (reduce or self.comm.all_reduce)(joined)
         sel, w = self.route(L, x)
+        if route_observer is not None:
+            route_observer(L, sel)
         if finalize is not None:
             def consume(acc):
                 g, u = self.linear(x, n + "sh_gate_up").chunk(2, dim=-1)
@@ -967,6 +1037,7 @@ class Glm53Net:
         if sp is not None:
             from engine.modules.token_shards import TokenShards
             sp = TokenShards(sp, N, self.rank)
+        packet_layers = self._packet_ffn_layers(sp.rows) if sp is not None else frozenset()
         reduce = sp.reduce_scatter if sp else self.comm.all_reduce
         x = self.embed(step.ids)
         for pos, rows in step.patches:                                               # image rows in place of their placeholders
@@ -994,12 +1065,17 @@ class Glm53Net:
             if self.probe:
                 self.probe("dsa" if F.is_dsa(L) else "kda", L, x)
             res, post, comb, x = self._hc_post_pre(L, x, res, post, comb, "ffn")
-            if sp:
-                x = sp.all_gather(x.contiguous())
-            if F.is_moe(L) and sp and sp.fuse_sum:
-                x = self._moe(L, x, reduce, reduce_pair=sp.reduce_scatter_pair)
+            if L in packet_layers:
+                packets = sp.all_gather_packets(x.contiguous(), route=lambda local: self._sender_routes(L, local))
+                x = self._moe_packets(L, packets, sp)
+                del packets  # all readers used this stream; the next FFN owns a new packet
             else:
-                x = self._moe(L, x, reduce) if F.is_moe(L) else self._dense(L, x, reduce)
+                if sp:
+                    x = sp.all_gather(x.contiguous())
+                if F.is_moe(L) and sp and sp.fuse_sum:
+                    x = self._moe(L, x, reduce, reduce_pair=sp.reduce_scatter_pair)
+                else:
+                    x = self._moe(L, x, reduce) if F.is_moe(L) else self._dense(L, x, reduce)
             if self.probe:
                 self.probe("moe" if F.is_moe(L) else "dense", L, x)
             if aux_layers and L in aux_layers:

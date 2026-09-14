@@ -404,6 +404,11 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         if token == "r":
             cfg["decode_reform"] = True
             continue
+        if token == "batch":
+            # K=7 with C=2: reuse the M16 expert tile and its packed
+            # operand pipeline. The request limit and draft width stay fixed.
+            cfg["batch_reform"] = True
+            continue
         if token == "sf6":
             cfg["reform_sf_pack"] = True
             continue
@@ -448,6 +453,8 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: r requires t with f2,g2")
     if cfg.get("reform_sf_pack") and not cfg["decode_reform"]:
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: sf6 requires t,r")
+    if cfg.get("batch_reform") and not (cfg["decode_reform"] and cfg["reform_sf_pack"]):
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: batch requires t,r,sf6")
     return cfg
 
 
@@ -1663,7 +1670,9 @@ def _kernel_source_files() -> Tuple[str, ...]:
 
     return (
         __file__,
+        os.path.join(os.path.dirname(__file__), "../../runtime/cuda132.lock.json"),
         os.path.join(os.path.dirname(__file__), "fp4_quant.py"),
+        os.path.join(os.path.dirname(__file__), "moe_w4a16_fp4_helpers.py"),
         moe_activation.__file__,
         moe_static_kernel.__file__,
         moe_static_common.__file__,
@@ -2179,6 +2188,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("packed_activation_store", False)),
         bool(config.get("fc1_reuse_a", False)),
         bool(config.get("compact_staging", False)),
+        bool(config.get("sf6_registers", False)),
         bool(config.get("sync_cleanup", False)),
     )
     # Expanded output and register scatter never alias a served handle.
@@ -2186,17 +2196,29 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         cfg += ("probe_route_scatter_v1",)
     if config.get("probe_direct_scatter", False):
         cfg += ("probe_direct_scatter_v1",)
+    if config.get("c2_direct_scatter", False):
+        cfg += ("c2_direct_scatter_v1",)
+    if config.get("c2_scatter_reuse", False):
+        cfg += ("c2_scatter_reuse_v1",)
+    if config.get("c2_fc2_prefetch", False):
+        cfg += ("c2_fc2_prefetch_v1",)
     return cfg + _static_kernel_cache_key(**fields)
 
 
 def _static_v2_decode_config(config: dict, m: int) -> dict:
-    """Specialize the integrated tile geometry only for C=1 decode rows."""
+    """Select the declared expert tile before capture, with a stable cache ABI.
+
+    `batch` extends the C1 operand pipeline to the served K7/C2 shape.
+    Expert occupancy, including counts beyond M16, remains device input to
+    the kernel's existing tile loop. No route-dependent host dispatch.
+    """
     if config.get("probe_route_scatter") or config.get("probe_direct_scatter"):
         if not (m in (7, 14, 21, 28) and config.get("tiled")
                 and config.get("reform_sf_pack") and (m != 7 or config.get("decode_reform"))
                 and not any(config.get(k) for k in ("split", "skip_a", "skip_sf", "even"))):
             raise ValueError("scatter probe requires packed t,r,sf6 at 7/14/21/28 tokens")
-    reform = bool(config.get("decode_reform", False)) and 1 <= m <= 8
+    reform = bool(config.get("decode_reform", False)) and (
+        1 <= m <= 8 or (config.get("batch_reform", False) and m == 16))
     separate = (reform and bool(config.get("reform_sf_pack", False))
                 and bool(config.get("sf6_separate", True)))
     word_expand = separate and bool(config.get("sf6_word_expand", True))
@@ -2207,12 +2229,21 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                    and bool(config.get("fc1_reuse_a", True)))
     compact_staging = (fc1_reuse_a and separate and int(config.get("fc1", 2)) % 2 == 0
                        and bool(config.get("compact_staging", True)))
+    direct_scatter = bool(reform and m == 16 and config.get("batch_reform")
+                          and config.get("c2_direct_scatter", True))
+    sf6_registers = compact_staging and bool(config.get("sf6_registers", True))
+    scatter_reuse = bool(direct_scatter and sf6_registers and config.get("c2_scatter_reuse", True))
     sync_cleanup = (reform and bool(config.get("reform_sf_pack", False))
                     and bool(config.get("sync_cleanup", True)))
     return dict(config, decode_reform=reform, sf6_separate=separate, sf6_word_expand=word_expand,
                 sf6_fc2_word_expand=fc2_word_expand,
                 packed_activation_store=packed_activation_store, fc1_reuse_a=fc1_reuse_a,
-                compact_staging=compact_staging, sync_cleanup=sync_cleanup)
+                compact_staging=compact_staging,
+                c2_direct_scatter=direct_scatter,
+                c2_scatter_reuse=scatter_reuse,
+                c2_fc2_prefetch=bool(scatter_reuse and int(config.get("fc2", 2)) == 2
+                                     and config.get("c2_fc2_prefetch", True)),
+                sf6_registers=sf6_registers, sync_cleanup=sync_cleanup)
 
 
 def _get_static_kernel_v2(
@@ -2255,8 +2286,8 @@ def _get_static_kernel_v2(
         if mac_override is not None
         else min(get_max_active_clusters(1), sm_count)
     )
-    # Only C=1 changes tile geometry. All SF6 launches read packed scales,
-    # including larger batches using the original t tile geometry.
+    # The explicit batch recipe extends the same tile to K7/C2. All SF6
+    # launches read the same packed scales; other shapes keep the t tile.
     config = _static_v2_decode_config(config, m)
     reform = config["decode_reform"]
     mma_tiler_mn = (16 if reform else int(config["tile_m"]), 128)
@@ -2285,7 +2316,8 @@ def _get_static_kernel_v2(
         state_E=state_E,weight_E=weight_E,k=k,n=n,num_topk=num_topk,
         quant_mode=quant_mode,activation=activation,swiglu_alpha=swiglu_alpha,
         swiglu_beta=swiglu_beta,swiglu_limit=swiglu_limit)
-    if (config.get("probe_route_scatter") or config.get("probe_direct_scatter")) and not (
+    if (config.get("probe_route_scatter") or config.get("probe_direct_scatter")
+            or config.get("c2_direct_scatter")) and not (
             scatter_fp32 and state_E == weight_E == 288 and k == 4096
             and n == 512 and num_topk == 8):
         raise ValueError("scatter probe requires the GLM TP4 FP32 output contract")
@@ -2305,7 +2337,9 @@ def _get_static_kernel_v2(
     kernel: Any = kernel_cls(
         scatter_fp32=scatter_fp32,
         route_scatter=bool(config.get("probe_route_scatter", False)),
-        direct_scatter=bool(config.get("probe_direct_scatter", False)),
+        direct_scatter=bool(config.get("probe_direct_scatter") or config.get("c2_direct_scatter")),
+        scatter_reuse=bool(config["c2_scatter_reuse"]),
+        fc2_prefetch=bool(config["c2_fc2_prefetch"]),
         a_ring=bool(config.get("a_ring", False)),
         sf_pack=bool(config.get("sf_pack", False)),
         decode_reform=reform,
@@ -2316,6 +2350,7 @@ def _get_static_kernel_v2(
         packed_activation_store=bool(config["packed_activation_store"]),
         fc1_reuse_a=bool(config["fc1_reuse_a"]),
         compact_staging=bool(config["compact_staging"]),
+        sf6_registers=bool(config["sf6_registers"]),
         sync_cleanup=bool(config["sync_cleanup"]),
         sf_vec_size=sf_vec_size,
         output_tile_count_n=output_tile_count_n,
@@ -2477,6 +2512,10 @@ def _get_static_kernel_v2(
         f"{'a2u64' if config.get('packed_activation_store') else ''}"
         f"{'a1reuse' if config.get('fc1_reuse_a') else ''}"
         f"{'compact' if config.get('compact_staging') else ''}"
+        f"{'sfregs' if config.get('sf6_registers') else ''}"
+        f"{'c2scatter' if config.get('c2_direct_scatter') else ''}"
+        f"{'reuse' if config.get('c2_scatter_reuse') else ''}"
+        f"{'prefetch3' if config.get('c2_fc2_prefetch') else ''}"
         f"{'sync' if config.get('sync_cleanup') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
@@ -3976,6 +4015,7 @@ class _DynamicMoELaunch:
         sf_vec_size: int = _NVFP4_BLOCK_SIZE,
         reform_sf_pack: bool = False,
         prefill_tile64: bool = False,
+        prefill_packets: bool = False,
     ):
         activation_precision = _normalize_activation_precision(activation_precision)
         if activation_precision == "bf16":
@@ -3989,6 +4029,7 @@ class _DynamicMoELaunch:
         self._cols_pad_k = _align_up(k // sf_vec_size, 4)
         self._reform_sf_pack = bool(reform_sf_pack)
         self._prefill_tile64 = bool(prefill_tile64)
+        self._prefill_packets = bool(prefill_packets)
 
     @cute.jit
     def __call__(
@@ -4027,12 +4068,18 @@ class _DynamicMoELaunch:
         max_rows: cutlass.Int32,
         rows_padded: cutlass.Int32,
         max_tasks: cutlass.Int32,
+        packet_stride: cutlass.Int32,
         max_active_clusters: cutlass.Constexpr,
         stream,
     ):
+        input_stride = self._k
+        if cutlass.const_expr(self._prefill_packets):
+            # The packet-only Q0 reader treats this layout field as the byte
+            # distance between source-rank packets, never as BF16 row storage.
+            # Carry it at runtime so v1/v2 and ragged chunks share one kernel.
+            input_stride = packet_stride
         a_input = cute.make_tensor(
-            a_ptr, layout=cute.make_layout((num_tokens, self._k), stride=(self._k, 1))
-        )
+            a_ptr, layout=cute.make_layout((num_tokens, self._k), stride=(input_stride, 1)))
         topk_ids = cute.make_tensor(
             topk_ids_ptr,
             layout=cute.make_layout((num_tokens * self._num_topk,), stride=(1,)),
@@ -4189,6 +4236,7 @@ def _get_dynamic_kernel(
     _prefill_tile64: bool = False,
     _prefill_n128: bool = False,
     _prefill_q0_batch8: bool = False,
+    _prefill_packets: bool = False,
 ):
     """Compile (or retrieve cached) the SM120 dynamic MoE kernel.
 
@@ -4354,6 +4402,13 @@ def _get_dynamic_kernel(
         activation=activation, swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit, ep_local=ep_local_cls is not None,
         tp_sf6_q0=tp_sf6_q0, share_input_across_experts=share_input_across_experts)
+    if type(_prefill_packets) is not bool:
+        raise TypeError('private FFN packet selector must be bool')
+    if _prefill_packets:
+        if (not prefill_word_unpack or prefill_reuse or _prefill_scale_expansion
+                or _prefill_tile64 or _prefill_n128 or _prefill_q0_batch8):
+            raise ValueError('FFN packets require the ordinary long-prefill SF6 M128 body')
+        cache_key = (*cache_key, 'long_prefill_fp8_packets_v2_stride')
     if prefill_word_unpack:
         cache_key = (*cache_key, 'long_prefill_sf6_route_words_v1')
     short_word_unpack = _short_prefill_q0_word_unpack(
@@ -4423,6 +4478,9 @@ def _get_dynamic_kernel(
             if prefill_word_unpack:
                 from .moe_dynamic_gated_sf6_prefill import MoEGatedDynamicKernelSF6Prefill
                 tiled_cls = MoEGatedDynamicKernelSF6Prefill
+                if _prefill_packets:
+                    from .moe_dynamic_prefill_packets import MoEGatedDynamicKernelSF6Packets
+                    tiled_cls = MoEGatedDynamicKernelSF6Packets
             elif short_word_unpack:
                 from .moe_dynamic_gated_sf6_q0_words import MoEGatedDynamicKernelSF6Q0Words
                 tiled_cls = MoEGatedDynamicKernelSF6Q0Words
@@ -4483,6 +4541,7 @@ def _get_dynamic_kernel(
         sf_vec_size=sf_vec_size,
         reform_sf_pack=reform_sf_pack,
         prefill_tile64=_prefill_tile64,
+        prefill_packets=_prefill_packets,
     )
 
     topk_ids_cutlass_dtype = (
@@ -4644,11 +4703,15 @@ def _get_dynamic_kernel(
             1,
             1,
             1,  # runtime Int32 placeholders
+            128,  # runtime packet byte stride; unused by ordinary BF16 input
             mac,
             stream_fake,
             options="--opt-level 2 --enable-tvm-ffi",
         ),
         extra_key_files=_kernel_source_files() + (
+            tuple(os.path.join(os.path.dirname(__file__), name) for name in
+                  ('moe_dynamic_prefill_packets.py', 'moe_w4a16_fp4_helpers.py'))
+            if _prefill_packets else ()) + (
             tuple(os.path.join(os.path.dirname(__file__), name) for name in
                   ('moe_prefill_q0_batch8.py', '_prefill_q0_batch8.py'))
             if _prefill_q0_batch8 else ()) + (
@@ -4734,7 +4797,7 @@ def launch_sm120_dynamic_moe(
     *,
     workspace: Sm120DynamicMoEWorkspace,
     weights: _WeightViews,
-    a: torch.Tensor,
+    a: torch.Tensor | None,
     topk_ids: torch.Tensor,
     topk_weights: torch.Tensor,
     input_gs: torch.Tensor,
@@ -4758,9 +4821,32 @@ def launch_sm120_dynamic_moe(
     _prefill_tile64: bool | None = None,
     _prefill_n128: bool = False,
     _prefill_q0_batch8: bool = False,
+    _packet_input=None,
 ) -> torch.Tensor:
     """Launch the SM120 dynamic MoE kernel."""
     global _TP_SF6_Q0_LAUNCH_LOGGED
+    if _packet_input is not None:
+        from engine.modules.prefill_packets import PacketBatch, ffn_packet_rows
+        if (a is not None or not isinstance(_packet_input, PacketBatch)
+                or not ffn_packet_rows(num_tokens)
+                or (_packet_input.geometry.rows, _packet_input.geometry.hidden) != (num_tokens, k)
+                or (num_experts, k, n, top_k, workspace.tile_m) != (288, 4096, 512, 8, 128)
+                or input_gs.numel() != num_experts
+                or _prefill_scale_expansion or _prefill_tile64 or _prefill_n128 or _prefill_q0_batch8):
+            raise ValueError('FFN packet launch requires its explicit real-row/weight/workspace contract')
+        device = _packet_input.received.device
+        if (scatter_output.device != device or workspace.device != device
+                or tuple(scatter_output.shape) != (num_tokens, k)
+                or scatter_output.dtype != torch.bfloat16 or not scatter_output.is_contiguous()
+                or tuple(topk_ids.shape) != (num_tokens, top_k) or topk_weights.shape != topk_ids.shape
+                or topk_ids.device != device or topk_weights.device != device):
+            raise ValueError('FFN packet routes and output must use exactly the real rows on one device')
+        if torch.cuda.is_current_stream_capturing():
+            raise ValueError('FFN packet MoE is eager-only')
+    else:
+        if a is None:
+            raise ValueError('dynamic MoE requires a BF16 input or an explicit packet owner')
+        device = a.device
     activation_precision = _normalize_activation_precision(activation_precision)
     if activation_precision == "bf16":
         raise ValueError(
@@ -4873,13 +4959,14 @@ def launch_sm120_dynamic_moe(
         _prefill_tile64=_prefill_tile64,
         _prefill_n128=_prefill_n128,
         _prefill_q0_batch8=_prefill_q0_batch8,
+        _prefill_packets=_packet_input is not None,
     )
 
     # Dynamic kernel: runtime-shaped args are DataPointer (pass data_ptr()),
     # fixed-shape args are Tensor (pass torch tensor directly).  No stream
     # argument -- see the note in launch_sm120_static_moe.
     runtime_args: Tuple[Any, ...] = (
-        a.data_ptr(),
+        a.data_ptr() if _packet_input is None else _packet_input.received.data_ptr(),
         flat_ids.data_ptr(),
         flat_weights.data_ptr(),
         workspace.packed_a_view.data_ptr(),
@@ -4907,12 +4994,13 @@ def launch_sm120_dynamic_moe(
         accumulator.data_ptr(),
         workspace.token_map.data_ptr(),
         workspace.token_weights.data_ptr(),
-        weights.sfb1_packed if direct_sf6 else _sf_pack_dummy(a.device),
-        weights.sfb2_packed if direct_sf6 else _sf_pack_dummy(a.device),
+        weights.sfb1_packed if direct_sf6 else _sf_pack_dummy(device),
+        weights.sfb2_packed if direct_sf6 else _sf_pack_dummy(device),
         num_tokens,
         workspace.max_rows,
         workspace.physical_tiles_capacity * workspace.tile_m,
         workspace.task_capacity,
+        _packet_input.geometry.stride if _packet_input is not None else 0,
     )
     _check_dynamic_capacity(workspace, routed_rows=num_tokens * top_k, n=n,
                             where="launch_sm120_dynamic_moe")

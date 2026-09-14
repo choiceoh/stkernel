@@ -17,14 +17,14 @@ from engine.kernels.cells import DENSE_ALIGN, DENSE_KMAX, dense_glue_refusal
 @cache
 def extension():
     from torch.utils.cpp_extension import load
-    from engine.kernels.common.native_cache import prepare_sources
+    from engine.kernels.common.native_cache import prepare_cuda_sources
     source = Path(__file__).with_name("kernels.cu")
     flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a",
              "-DMK_GRID_DEF=96", "-DMK_MHC_GRID_DEF=144", "-DMK_NBUF2_DEF=3",
              "-DMK_FP8_PACK2_DEF=1", "-DMK_GEMM_TRANSPOSE_M8_DEF=1",
              "-DMK_GEMM_COMPACT_M8_DEF=1", "-DMK_M8_FASTPATH_DEF=1"]
     root = Path(os.environ.get("ST_DENSE_BUILD_ROOT", str(Path.home()/".cache/st/dense")))
-    key, directory, sources = prepare_sources(root, [source], (flags, torch.__version__, torch.version.cuda))
+    key, directory, sources = prepare_cuda_sources(root, [source], (flags, torch.__version__, torch.version.cuda))
     ext = load(name="st_dense_"+key, sources=list(sources), extra_cuda_cflags=flags,
                build_directory=str(directory), verbose=False)
     from engine.base.kernel_shape import bound
@@ -181,7 +181,8 @@ def wide_input_cell(rows, n, k):
 def bound_input_cell(rows, n, k):
     """Candidate K=7 input reuse, explicitly bound before graph capture."""
     if rows == 8:
-        return k == 4096 and n in (4096, 6144, 6416)
+        return ((k == 4096 and n in (4096, 6144, 6416))
+                or (n == 4096 and k in (2048, 3072)))
     return rows in (16, 24, 32) and (
         (n, k) in ((4096, 2048), (2048, 4096), (4096, 4096), (6144, 4096), (4096, 3072))
         or (rows in (24, 32) and (n, k) in ((6416, 4096), (4096, 1536))))
@@ -364,11 +365,12 @@ class DenseLinear:
             extension().run_gemm_to_slot(x, p.data, p.scale, address, p.rows, p.rowscale.data_ptr(), self.workspace)
         self.executed |= 1
 
-    def _project_packets(self, received, local_rows):
+    def _project_packets(self, received, local_rows, *, real_rows=None, routed=False):
         if self.packet_projector() is None or local_rows * 4 <= 32:
             raise ValueError("packet projection requires the unobserved FP8 prefill lane")
         from engine.kernels.prefill_collectives.consumer import quantize_gather
-        out = self.fp8.project_quantized(*quantize_gather(received, local_rows))
+        options = dict(routed=True) if routed else {}
+        out = self.fp8.project_quantized(*quantize_gather(received, local_rows, real_rows=real_rows, **options))
         self.executed |= 2
         return out
 
@@ -441,17 +443,17 @@ class FP8Linear:
         from engine.modules.packed_storage import consume
         self.weight=consume(storage,self.weight)
 
-    def __call__(self, x, rows_ok=None):
+    def __call__(self, x, rows_ok=None, *, out=None):
         if self.observer is not None:
             self.observer(x.reshape(-1, self.cols), rows_ok)
         from .fp8 import quantize
         shape = x.shape[:-1]
         flat = x.reshape(-1, self.cols).contiguous()
         q, scale = quantize(flat)
-        return self.project_quantized(q, scale).reshape(*shape, self.rows)
+        return self.project_quantized(q, scale, out=out).reshape(*shape, self.rows)
 
-    def project_quantized(self, q, scale):
-        """Consume the existing 128-column FP8 recipe, including padded weight rows."""
+    def project_quantized(self, q, scale, *, out=None):
+        """Consume the existing FP8 recipe; `out` owns the full padded GEMM output."""
         from deep_gemm import fp8_gemm_nt
         from engine.kernels.deep_gemm import _initialize
         if (q.ndim != 2 or q.shape[1] != self.cols or q.dtype != torch.float8_e4m3fn
@@ -459,8 +461,13 @@ class FP8Linear:
                 or not q.is_contiguous() or not scale.is_contiguous()
                 or q.device != self.weight[0].device or scale.device != q.device):
             raise ValueError("FP8 activation bytes/scales must match the bound weight")
+        shape = (q.shape[0], self.weight[0].shape[0])
+        if out is None:
+            out = torch.empty(shape, device=q.device, dtype=torch.bfloat16)
+        elif (tuple(out.shape) != shape or out.dtype != torch.bfloat16 or out.device != q.device
+              or not out.is_contiguous() or out.data_ptr() % 16):
+            raise ValueError("FP8 output must be aligned contiguous BF16 with the full padded weight width")
         _initialize()
-        out = torch.empty((q.shape[0], self.weight[0].shape[0]), device=q.device, dtype=torch.bfloat16)
         fp8_gemm_nt((q, scale), self.weight, out)
         self.executed = True
         return out[:, :self.rows]

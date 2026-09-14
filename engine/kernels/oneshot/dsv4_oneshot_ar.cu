@@ -23,6 +23,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 #include "dsv4_oneshot_transport.h"
@@ -31,8 +32,14 @@
 #define OSAR_COMPACT_CTA 0
 #endif
 #ifndef OSAR_PROXY_INLINE
-#define OSAR_PROXY_INLINE 0
+#define OSAR_PROXY_INLINE 1
 #endif
+// RoCE rails: 1 keeps every queue pair on rocep1s0f0; 2 also opens the port's
+// second PCIe function and places the pairs osar_pair_rail() names there.
+#ifndef OSAR_RAILS
+#define OSAR_RAILS 1
+#endif
+static_assert(OSAR_RAILS == 1 || OSAR_RAILS == 2);
 
 #define NPEER 3
 #define RING 4
@@ -129,18 +136,26 @@ struct Info {
 
 static Ctrl *g_ctrl = nullptr;
 static struct ibv_qp *g_qp[NPEER];
-static struct ibv_cq *g_cq = nullptr;
-static struct ibv_mr *g_mr = nullptr;
-static struct ibv_pd *g_pd = nullptr;
-static struct ibv_context *g_ctx = nullptr;
+// One device context, protection domain, completion queue and registration of
+// the same Ctrl block per rail. A queue pair lives on its peer's rail.
+static struct ibv_cq *g_cq[OSAR_RAILS] = {};
+static struct ibv_mr *g_mr[OSAR_RAILS] = {};
+static struct ibv_pd *g_pd[OSAR_RAILS] = {};
+static struct ibv_context *g_ctx[OSAR_RAILS] = {};
+static int g_sgid[OSAR_RAILS] = {};
+static int g_peer_rail[NPEER] = {};
 static Info g_local[NPEER], g_remote[NPEER];
-static int g_rank = -1, g_world = 0, g_sgid = -1, g_peers[NPEER];
+static int g_rank = -1, g_world = 0, g_peers[NPEER];
 static pthread_t g_proxy;
 static bool g_started = false;
+static bool g_host_registered = false;
+// Once a launch (including graph capture) can reference Ctrl, shutdown must
+// retain it until process teardown: a failed collective may still be spinning.
+static bool g_device_used = false;
 static std::atomic<bool> g_proxy_running{false};
 static std::atomic<uint64_t> g_proxy_heartbeat_ns{0};
 static unsigned g_inline_cap[NPEER] = {};
-static const char *DEVNAME = "rocep1s0f0";
+static const char *const DEVNAMES[2] = {"rocep1s0f0", "roceP2p1s0f0"};
 
 static uint64_t proxy_now_ns() {
   const auto now = std::chrono::steady_clock::now().time_since_epoch();
@@ -609,30 +624,41 @@ static void *proxy_fn(void *) {
   CPU_ZERO(&set);
   CPU_SET(PROXY_CORE, &set);
   sched_setaffinity(0, sizeof(set), &set);
-#if OSAR_PROXY_INLINE
-  // Stable descriptor addresses for the life of the proxy. post_send copies
-  // the inline flag before returning; payloads remain protected by ring ACKs.
-  OsarProxyInlineWrs prepared[RING][NPEER];
+  // Build each ring/peer descriptor once. Both modes keep their flag source,
+  // payload-before-flag ordering and peer-rail keys; posts change only the
+  // sequence and payload size. Payloads remain protected by ring ACKs.
+  OsarProxyWrs<OSAR_PROXY_INLINE != 0> prepared[RING][NPEER];
   for (int slot = 0; slot < RING; ++slot) {
     for (int p = 0; p < NPEER; ++p) {
       if (!prepared[slot][p].init(
-              (uintptr_t)g_ctrl->tx[slot], g_mr->lkey,
+              (uintptr_t)g_ctrl->tx[slot], g_mr[g_peer_rail[p]]->lkey,
               g_remote[p].rx_base + (uint64_t)slot * NPEER * MAXEL * 2,
               g_remote[p].rxf_base + (uint64_t)slot * NPEER * 8,
-              g_remote[p].rkey, g_inline_cap[p])) {
-        fprintf(stderr, "[oneshot] insufficient inline capability; proxy exiting\n");
+              g_remote[p].rkey, g_inline_cap[p], (uintptr_t)&g_ctrl->flag_src[p])) {
+        fprintf(stderr, "[oneshot] invalid proxy descriptor; proxy exiting\n");
         return nullptr;
       }
     }
   }
-#endif
-  uint64_t sent = 0, done[64] = {0}, beat = 0;
+  uint64_t sent = 0, acknowledged = 0, beat = 0;
+  // Unacknowledged sequences occupy distinct ring slots; a slot is reused
+  // only after every peer's flag CQE retires it. Counts never exceed NPEER.
+  unsigned done[RING] = {};
+  unsigned outstanding[OSAR_RAILS] = {};
+  unsigned peers_per_rail[OSAR_RAILS] = {};
+  for (int p = 0; p < NPEER; ++p) ++peers_per_rail[g_peer_rail[p]];
   while (!g_ctrl->stop) {
-    __atomic_store_n(&g_ctrl->proxy_beat, ++beat, __ATOMIC_RELAXED);
+    // The poll count stays in this thread. It used to be stored into
+    // Ctrl::proxy_beat on every pass: millions of CPU writes a second into the
+    // registered header whose neighbouring lines the GPU reads and fences on
+    // every collective (tx_seq, ack_seq, done_ctr, nbytes), for a value no
+    // kernel reads. Only the stall report below prints it.
+    ++beat;
     // Timestamp the first loop and every 256 polls. This amortizes clock reads
     // in the busy proxy while preserving the actual publication time across
     // request gaps; healthy() cannot extend a stalled proxy's deadline.
-    if ((beat & 255u) == 1u)
+    const bool periodic = (beat & 255u) == 1u;
+    if (periodic)
       g_proxy_heartbeat_ns.store(proxy_now_ns(), std::memory_order_release);
     uint64_t s = g_ctrl->tx_seq;
     while (sent < s) {
@@ -640,45 +666,15 @@ static void *proxy_fn(void *) {
       int slot = (int)(sent % RING);
       uint32_t nb = (uint32_t)g_ctrl->nbytes[slot];
       for (int p = 0; p < NPEER; p++) {
-#if OSAR_PROXY_INLINE
         if (prepared[slot][p].post(g_qp[p], sent, (unsigned)p, nb)) {
-          fprintf(stderr, "[oneshot] inline post_send failed; proxy exiting\n");
-          return nullptr;
-        }
-#else
-        g_ctrl->flag_src[p] = sent;
-        struct ibv_sge sge[2];
-        struct ibv_send_wr wr[2], *bad;
-        memset(wr, 0, sizeof(wr));
-        sge[0].addr = (uintptr_t)g_ctrl->tx[slot];
-        sge[0].length = nb;
-        sge[0].lkey = g_mr->lkey;
-        wr[0].wr_id = (sent << 4) | (unsigned)p;
-        wr[0].sg_list = &sge[0];
-        wr[0].num_sge = 1;
-        wr[0].opcode = IBV_WR_RDMA_WRITE;
-        wr[0].send_flags = 0;
-        wr[0].wr.rdma.remote_addr =
-            g_remote[p].rx_base + (uint64_t)slot * NPEER * MAXEL * 2;
-        wr[0].wr.rdma.rkey = g_remote[p].rkey;
-        wr[0].next = &wr[1];
-        sge[1].addr = (uintptr_t)&g_ctrl->flag_src[p];
-        sge[1].length = 8;
-        sge[1].lkey = g_mr->lkey;
-        wr[1].wr_id = (sent << 4) | 0x8 | (unsigned)p;
-        wr[1].sg_list = &sge[1];
-        wr[1].num_sge = 1;
-        wr[1].opcode = IBV_WR_RDMA_WRITE;
-        wr[1].send_flags = IBV_SEND_SIGNALED;
-        wr[1].wr.rdma.remote_addr =
-            g_remote[p].rxf_base + (uint64_t)slot * NPEER * 8;
-        wr[1].wr.rdma.rkey = g_remote[p].rkey;
-        if (ibv_post_send(g_qp[p], wr, &bad)) {
           fprintf(stderr, "[oneshot] post_send failed; proxy exiting\n");
           return nullptr;
         }
-#endif
       }
+      // Placement is fixed for this proxy; account once per rail rather
+      // than reloading each peer's rail after every post_send call.
+      for (int rail = 0; rail < OSAR_RAILS; ++rail)
+        outstanding[rail] += peers_per_rail[rail];
 #if OSAR_PROXY_INLINE
       if (sent == 1) {
         fprintf(stderr, "[oneshot] inline proxy serving peers=%d inline_bytes=8 "
@@ -686,22 +682,46 @@ static void *proxy_fn(void *) {
       }
 #endif
     }
-    struct ibv_wc wc[16];
-    int n = ibv_poll_cq(g_cq, 16, wc);
-    for (int i = 0; i < n; i++) {
-      if (wc[i].status != IBV_WC_SUCCESS) {
-        fprintf(stderr, "[oneshot] WC error %d; proxy exiting\n", wc[i].status);
-        return nullptr;
+    // No completions can exist when every posted sequence is acknowledged.
+    // Keep that watermark in the proxy: idle passes need neither CQ polling
+    // nor an extra read of the GPU-visible ACK header. Pending sends still
+    // poll every rail, even if no new GPU publication arrives.
+    if (acknowledged != sent) {
+      const uint64_t previous_ack = acknowledged;
+      for (int rail = 0; rail < OSAR_RAILS; ++rail) {
+        // The other function can still be draining after this one retired
+        // every flag. Do not poll an empty rail while waiting for its peer.
+        if (outstanding[rail] == 0) continue;
+        struct ibv_wc wc[16];
+        int n = ibv_poll_cq(g_cq[rail], 16, wc);
+        if (n < 0) {
+          fprintf(stderr, "[oneshot] poll_cq failed on rail %d; proxy exiting\n", rail);
+          return nullptr;
+        }
+        outstanding[rail] -= n;
+        for (int i = 0; i < n; i++) {
+          if (wc[i].status != IBV_WC_SUCCESS) {
+            fprintf(stderr, "[oneshot] WC error %d on rail %d; proxy exiting\n", wc[i].status, rail);
+            return nullptr;
+          }
+          uint64_t cs = wc[i].wr_id >> 4;
+          if (++done[cs % RING] == NPEER) {
+            done[cs % RING] = 0;
+            if (cs > acknowledged) {
+              acknowledged = cs;
+            }
+          }
+        }
       }
-      uint64_t cs = wc[i].wr_id >> 4;
-      if (++done[cs % 64] == NPEER) {
-        done[cs % 64] = 0;
-        if (cs > g_ctrl->ack_seq) g_ctrl->ack_seq = cs;
-      }
+      // A drained CQ can retire several sequences. Publish their final
+      // all-peer watermark once, after this bounded polling pass, instead
+      // of repeatedly writing the header that the GPU is reading.
+      if (acknowledged != previous_ack) g_ctrl->ack_seq = acknowledged;
     }
-    {
+    if (periodic) {
       // The stall word: the kernel is spinning past OSAR_STALL_S. Say who is
-      // waited for, with the counters the kernel spins on, every 5 s.
+      // waited for, with the counters the kernel spins on, every 5 s. A stall
+      // lasts seconds, so reading the word every 256 polls loses nothing.
       static time_t last_stall = 0;
       const uint64_t sw = *(volatile uint64_t *)&g_ctrl->pad[0];
       if (sw != 0 && time(nullptr) - last_stall >= 5) {
@@ -714,7 +734,7 @@ static void *proxy_fn(void *) {
                 (unsigned long long)(sw >> 8), slot, (unsigned)((sw >> 3) & 7u),
                 (unsigned long long)g_ctrl->tx_seq, (unsigned long long)g_ctrl->ack_seq,
                 (unsigned long long)g_ctrl->rxf[slot][0], (unsigned long long)g_ctrl->rxf[slot][1],
-                (unsigned long long)g_ctrl->rxf[slot][2], (unsigned long long)g_ctrl->proxy_beat);
+                (unsigned long long)g_ctrl->rxf[slot][2], (unsigned long long)beat);
       }
 
     }
@@ -723,18 +743,64 @@ static void *proxy_fn(void *) {
 }
 
 // ---------------- setup ----------------
-static int find_gid(const char *myip, union ibv_gid *out) {
+template <typename T, typename Destroy>
+static bool release_resource(T *&resource, Destroy destroy, const char *name) {
+  if (!resource) return true;
+  const int error = destroy(resource);
+  if (error) {
+    fprintf(stderr, "[oneshot] retain resources: %s failed (%d)\n", name, error);
+    return false;
+  }
+  resource = nullptr;
+  return true;
+}
+
+static bool cleanup_prepared() {
+  if (g_started || g_device_used) return false;
+  // Stop at a failed release; keep its dependencies alive for a safe retry.
+  for (int s = 0; s < NPEER; ++s)
+    if (!release_resource(g_qp[s], ibv_destroy_qp, "destroy QP")) return false;
+  for (int rail = OSAR_RAILS - 1; rail >= 0; --rail) {
+    if (!release_resource(g_mr[rail], ibv_dereg_mr, "deregister MR") ||
+        !release_resource(g_cq[rail], ibv_destroy_cq, "destroy CQ") ||
+        !release_resource(g_pd[rail], ibv_dealloc_pd, "deallocate PD") ||
+        !release_resource(g_ctx[rail], ibv_close_device, "close device")) return false;
+  }
+  if (g_host_registered) {
+    const auto error = cudaHostUnregister(g_ctrl);
+    if (error != cudaSuccess) {
+      fprintf(stderr, "[oneshot] retain Ctrl: cudaHostUnregister failed (%d)\n", int(error));
+      return false;
+    }
+    g_host_registered = false;
+  }
+  free(g_ctrl);
+  g_ctrl = nullptr;
+  g_rank = -1;
+  g_world = 0;
+  memset(g_peers, 0, sizeof(g_peers));
+  memset(g_peer_rail, 0, sizeof(g_peer_rail));
+  for (int rail = 0; rail < OSAR_RAILS; ++rail) g_sgid[rail] = 0;
+  memset(g_local, 0, sizeof(g_local));
+  memset(g_remote, 0, sizeof(g_remote));
+  memset(g_inline_cap, 0, sizeof(g_inline_cap));
+  g_proxy_running.store(false, std::memory_order_release);
+  g_proxy_heartbeat_ns.store(0, std::memory_order_release);
+  return true;
+}
+
+static int find_gid(int rail, const char *myip, int gid_count, union ibv_gid *out) {
   unsigned a, b, c, d;
   CHK(sscanf(myip, "%u.%u.%u.%u", &a, &b, &c, &d) == 4);
-  for (int i = 0; i < 16; i++) {
+  for (int i = 0; i < gid_count; i++) {
     union ibv_gid g;
-    if (ibv_query_gid(g_ctx, 1, i, &g)) continue;
+    if (ibv_query_gid(g_ctx[rail], 1, i, &g)) continue;
     if (g.raw[10] != 0xff || g.raw[11] != 0xff) continue;
     if (g.raw[12] != a || g.raw[13] != b || g.raw[14] != c || g.raw[15] != d)
       continue;
     char path[256], buf[64] = {0};
     snprintf(path, sizeof(path),
-             "/sys/class/infiniband/%s/ports/1/gid_attrs/types/%d", DEVNAME, i);
+             "/sys/class/infiniband/%s/ports/1/gid_attrs/types/%d", DEVNAMES[rail], i);
     FILE *f = fopen(path, "r");
     if (!f) continue;
     size_t r = fread(buf, 1, sizeof(buf) - 1, f);
@@ -747,72 +813,107 @@ static int find_gid(const char *myip, union ibv_gid *out) {
   return -1;
 }
 
-static void init_ctx(int rank, int world, const std::string &myip) {
-  g_rank = rank;
-  g_world = world;
-  int np = 0;
-  for (int r = 0; r < world; r++)
-    if (r != rank) g_peers[np++] = r;
+static void init_ctx(int rank, int world, const std::vector<std::string> &myips) {
+  CHK(world == NPEER + 1 && rank >= 0 && rank < world);
+  CHK(myips.size() == (size_t)OSAR_RAILS);
+  CHK(!g_started && !g_device_used && !g_ctrl && !g_host_registered);
+  for (int rail = 0; rail < OSAR_RAILS; ++rail)
+    CHK(!g_ctx[rail] && !g_pd[rail] && !g_cq[rail] && !g_mr[rail]);
+  for (int s = 0; s < NPEER; ++s) CHK(!g_qp[s]);
+  try {
+    g_rank = rank;
+    g_world = world;
+    int np = 0;
+    for (int r = 0; r < world; r++)
+      if (r != rank) g_peers[np++] = r;
+    unsigned peers_per_rail[OSAR_RAILS] = {};
+    for (int s = 0; s < NPEER; ++s) {
+      g_peer_rail[s] = osar_pair_rail(rank, g_peers[s], OSAR_RAILS);
+      ++peers_per_rail[g_peer_rail[s]];
+    }
 
-  void *hp = aligned_alloc(4096, sizeof(Ctrl));
-  CHK(hp != nullptr);
-  memset(hp, 0, sizeof(Ctrl));
-  // host-register: RDMA-registrable + GPU reads via ATS at cache speed
-  CHK(cudaHostRegister(hp, sizeof(Ctrl), cudaHostRegisterDefault) ==
-      cudaSuccess);
-  g_ctrl = (Ctrl *)hp;
+    int nd = 0;
+    std::unique_ptr<ibv_device *, decltype(&ibv_free_device_list)> devices(
+        ibv_get_device_list(&nd), ibv_free_device_list);
+    CHK(devices != nullptr);
+    auto devs = devices.get();
+    struct ibv_port_attr pa[OSAR_RAILS];
+    union ibv_gid mygid[OSAR_RAILS];
+    for (int rail = 0; rail < OSAR_RAILS; ++rail) {
+      for (int i = 0; i < nd; i++)
+        if (!strcmp(ibv_get_device_name(devs[i]), DEVNAMES[rail])) {
+          g_ctx[rail] = ibv_open_device(devs[i]);
+          break;
+        }
+      CHK(g_ctx[rail] != nullptr);
+      CHK(ibv_query_port(g_ctx[rail], 1, &pa[rail]) == 0);
+      CHK(pa[rail].state == IBV_PORT_ACTIVE);
+      g_sgid[rail] = find_gid(rail, myips[rail].c_str(), pa[rail].gid_tbl_len, &mygid[rail]);
+      CHK(g_sgid[rail] >= 0);
+    }
+    // Validate every rail before allocating/registering shared GPU-visible pages.
+    constexpr size_t allocation_bytes = (sizeof(Ctrl) + 4095) / 4096 * 4096;
+    g_ctrl = static_cast<Ctrl *>(aligned_alloc(4096, allocation_bytes));
+    CHK(g_ctrl != nullptr);
+    memset(g_ctrl, 0, sizeof(Ctrl));
+    CHK(cudaHostRegister(g_ctrl, sizeof(Ctrl), cudaHostRegisterDefault) == cudaSuccess);
+    g_host_registered = true;
+    for (int rail = 0; rail < OSAR_RAILS; ++rail) {
+      g_pd[rail] = ibv_alloc_pd(g_ctx[rail]);
+      CHK(g_pd[rail]);
+      // At most RING sequences are unacknowledged. Every peer has two WRs
+      // per sequence. Reserve for BOTH WRs to produce CQEs during an error
+      // flush, even though normally only the flag is signaled. There are no
+      // receive WRs: plain RDMA writes do not consume a receive queue.
+      const int cq_entries = 2 * RING * peers_per_rail[rail];
+      g_cq[rail] = ibv_create_cq(g_ctx[rail], cq_entries, nullptr, nullptr, 0);
+      CHK(g_cq[rail]);
+      CHK(g_cq[rail]->cqe >= cq_entries);
+      // The same Ctrl pages, registered once per rail: each rail's queue pairs
+      // address tx/rx/rxf through their own device's keys.
+      g_mr[rail] = ibv_reg_mr(g_pd[rail], g_ctrl, sizeof(Ctrl),
+                              IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+      CHK(g_mr[rail]);
+    }
 
-  int nd = 0;
-  struct ibv_device **devs = ibv_get_device_list(&nd);
-  for (int i = 0; i < nd; i++)
-    if (!strcmp(ibv_get_device_name(devs[i]), DEVNAME))
-      g_ctx = ibv_open_device(devs[i]);
-  CHK(g_ctx != nullptr);
-  struct ibv_port_attr pa;
-  CHK(ibv_query_port(g_ctx, 1, &pa) == 0);
-  union ibv_gid mygid;
-  g_sgid = find_gid(myip.c_str(), &mygid);
-  CHK(g_sgid >= 0);
-  g_pd = ibv_alloc_pd(g_ctx);
-  CHK(g_pd);
-  g_cq = ibv_create_cq(g_ctx, 4096, nullptr, nullptr, 0);
-  CHK(g_cq);
-  g_mr = ibv_reg_mr(g_pd, hp, sizeof(Ctrl),
-                    IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
-  CHK(g_mr);
-
-  srand((unsigned)(time(nullptr) ^ (rank * 7919)));
-  for (int s = 0; s < NPEER; s++) {
-    struct ibv_qp_init_attr qia;
-    memset(&qia, 0, sizeof(qia));
-    qia.send_cq = g_cq;
-    qia.recv_cq = g_cq;
-    qia.cap.max_send_wr = 1024;
-    qia.cap.max_recv_wr = 4;
-    qia.cap.max_send_sge = 1;
-    qia.cap.max_inline_data = 16;
-    qia.qp_type = IBV_QPT_RC;
-    g_qp[s] = ibv_create_qp(g_pd, &qia);
-    CHK(g_qp[s]);
-    // ibv_create_qp returns the actual capabilities in qia.cap. An enabled
-    // mode must not silently claim inline service on an incapable QP: local
-    // setup failure participates in the shim's all-rank pre-connect vote.
-    g_inline_cap[s] = qia.cap.max_inline_data;
+    srand((unsigned)(time(nullptr) ^ (rank * 7919)));
+    for (int s = 0; s < NPEER; s++) {
+      const int rail = g_peer_rail[s];
+      struct ibv_qp_init_attr qia;
+      memset(&qia, 0, sizeof(qia));
+      qia.send_cq = g_cq[rail];
+      qia.recv_cq = g_cq[rail];
+      qia.cap.max_send_wr = 2 * RING;
+      qia.cap.max_recv_wr = 0;
+      qia.cap.max_send_sge = 1;
+      qia.cap.max_inline_data = 16;
+      qia.qp_type = IBV_QPT_RC;
+      g_qp[s] = ibv_create_qp(g_pd[rail], &qia);
+      CHK(g_qp[s]);
+      CHK(qia.cap.max_send_wr >= 2 * RING);
+      // ibv_create_qp returns the actual capabilities in qia.cap. An enabled
+      // mode must not silently claim inline service on an incapable QP: local
+      // setup failure participates in the shim's all-rank pre-connect vote.
+      g_inline_cap[s] = qia.cap.max_inline_data;
 #if OSAR_PROXY_INLINE
-    CHK(g_inline_cap[s] >= sizeof(uint64_t));
+      CHK(g_inline_cap[s] >= sizeof(uint64_t));
 #endif
-    g_local[s].qpn = g_qp[s]->qp_num;
-    g_local[s].psn = (uint32_t)(rand() & 0xffffff);
-    g_local[s].rkey = g_mr->rkey;
-    g_local[s].mtu = (uint32_t)pa.active_mtu;
-    memcpy(g_local[s].gid, mygid.raw, 16);
-    g_local[s].rx_base = (uintptr_t)&g_ctrl->rx[0][s][0];
-    g_local[s].rxf_base = (uintptr_t)&g_ctrl->rxf[0][s];
+      g_local[s].qpn = g_qp[s]->qp_num;
+      g_local[s].psn = (uint32_t)(rand() & 0xffffff);
+      g_local[s].rkey = g_mr[rail]->rkey;
+      g_local[s].mtu = (uint32_t)pa[rail].active_mtu;
+      memcpy(g_local[s].gid, mygid[rail].raw, 16);
+      g_local[s].rx_base = (uintptr_t)&g_ctrl->rx[0][s][0];
+      g_local[s].rxf_base = (uintptr_t)&g_ctrl->rxf[0][s];
+    }
+  } catch (...) {
+    cleanup_prepared();
+    throw;
   }
 }
 
 static void to_rts(struct ibv_qp *q, const Info *rem, uint32_t my_psn,
-                   enum ibv_mtu mtu) {
+                   enum ibv_mtu mtu, int sgid) {
   struct ibv_qp_attr a;
   memset(&a, 0, sizeof(a));
   a.qp_state = IBV_QPS_INIT;
@@ -831,7 +932,7 @@ static void to_rts(struct ibv_qp *q, const Info *rem, uint32_t my_psn,
   a.ah_attr.is_global = 1;
   a.ah_attr.port_num = 1;
   memcpy(a.ah_attr.grh.dgid.raw, rem->gid, 16);
-  a.ah_attr.grh.sgid_index = g_sgid;
+  a.ah_attr.grh.sgid_index = sgid;
   a.ah_attr.grh.hop_limit = 64;
   CHK(ibv_modify_qp(q, &a,
                     IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU |
@@ -861,7 +962,7 @@ static int slot_of_me(int peer) {
 }
 
 // ---------------- pybind ----------------
-static void py_init(int rank, int world, const std::string &myip) {
+static void py_init(int rank, int world, const std::vector<std::string> &myips) {
   // This fixed grid is part of the cudagraph-safe monotonic-counter protocol,
   // not a generic launch hint. Match one block to each SM on the only device
   // it was designed for. The Python bootstrap turns any throw here into a
@@ -879,7 +980,9 @@ static void py_init(int rank, int world, const std::string &myip) {
               "oneshot: expected GB10 SM121a with ", ARGRID,
               " SMs, got sm_", prop.major, prop.minor, " with ",
               prop.multiProcessorCount, " SMs");
-  init_ctx(rank, world, myip);
+  TORCH_CHECK(myips.size() == (size_t)OSAR_RAILS, "oneshot: this build serves ", OSAR_RAILS,
+              " RoCE rail(s) and needs one address per rail, got ", myips.size());
+  init_ctx(rank, world, myips);
 }
 static py::bytes py_local_infos() {
   // serialize NPEER Info blocks
@@ -895,7 +998,10 @@ static void py_connect(std::vector<std::string> all) {
     enum ibv_mtu mtu = (enum ibv_mtu)(g_local[s].mtu < g_remote[s].mtu
                                           ? g_local[s].mtu
                                           : g_remote[s].mtu);
-    to_rts(g_qp[s], &g_remote[s], g_local[s].psn, mtu);
+    // The peer chose its queue pair's rail with the same symmetric rule.
+    TORCH_CHECK(osar_pair_rail(peer, g_rank, OSAR_RAILS) == g_peer_rail[s],
+                "oneshot: rail disagreement with rank ", peer);
+    to_rts(g_qp[s], &g_remote[s], g_local[s].psn, mtu, g_sgid[g_peer_rail[s]]);
   }
   // Startup grace begins at thread creation, not the first health query.
   g_proxy_heartbeat_ns.store(proxy_now_ns(), std::memory_order_release);
@@ -943,6 +1049,7 @@ static at::Tensor py_oneshot_impl(at::Tensor input,
   // wrap-safe companion for ordinary launches. Only 1..32768-element PDL
   // consumers use 12 CTAs, each contributing four tickets. Their fixed
   // two-vector stash is independent of the optional MAXEL build override.
+  g_device_used = true;
   if (consumer_pdl) {
     cudaLaunchConfig_t cfg{};
     cfg.gridDim = dim3(ARGRID);
@@ -1006,6 +1113,7 @@ static at::Tensor py_oneshot_packets(at::Tensor input) {
   attr.val.programmaticStreamSerializationAllowed = 1;
   cfg.attrs = &attr;
   cfg.numAttrs = 1;
+  g_device_used = true;
   auto err = cudaLaunchKernelEx(&cfg, k_oneshot_packets, g_ctrl,
       reinterpret_cast<const bf16 *>(input.data_ptr()),
       reinterpret_cast<bf16 *>(addresses.data_ptr()), (int)input.numel(), g_rank);
@@ -1070,6 +1178,7 @@ static void check_producer_template(const at::Tensor& input) {
 static at::Tensor py_reserve_packets(at::Tensor input) {
   check_producer_template(input);
   auto reservation = torch::empty({2}, input.options().dtype(at::kLong));
+  g_device_used = true;
   k_reserve_packets<<<1, 1, 0, c10::cuda::getCurrentCUDAStream()>>>(g_ctrl, reservation.data_ptr<int64_t>());
   auto err = cudaGetLastError();
   TORCH_CHECK(err == cudaSuccess, "one-shot reservation: ", cudaGetErrorString(err));
@@ -1092,6 +1201,7 @@ static at::Tensor py_moe_packets(at::Tensor routed, at::Tensor shared) {
   attr.val.programmaticStreamSerializationAllowed = 1;
   cfg.attrs = &attr;
   cfg.numAttrs = 1;
+  g_device_used = true;
   auto err = cudaLaunchKernelEx(&cfg, k_oneshot_moe_packets, g_ctrl, routed.data_ptr<float>(),
       reinterpret_cast<const bf16 *>(shared.data_ptr()),
       reinterpret_cast<bf16 *>(addresses.data_ptr()), int(shared.numel()), g_rank);
@@ -1114,6 +1224,7 @@ static at::Tensor py_publish_packets(at::Tensor input, at::Tensor reservation) {
   attr.val.programmaticStreamSerializationAllowed = 1;
   cfg.attrs = &attr;
   cfg.numAttrs = 1;
+  g_device_used = true;
   auto err = cudaLaunchKernelEx(&cfg, k_publish_packets, g_ctrl, reservation.data_ptr<int64_t>(),
       addresses.data_ptr<int64_t>(), int(input.numel() * 2), g_rank);
   TORCH_CHECK(err == cudaSuccess, "one-shot publication: ", cudaGetErrorString(err));
@@ -1128,6 +1239,7 @@ static at::Tensor py_oneshot_max_int64(at::Tensor input) {
               "oneshot MAX requires 1..64 aligned keys");
   auto *data = reinterpret_cast<bf16 *>(input.data_ptr());
   HintArgs hints{};
+  g_device_used = true;
   k_oneshot_max_int64<<<1, ARTHREADS, 0, c10::cuda::getCurrentCUDAStream()>>>(
       g_ctrl, data, data, (int)input.numel() * 4, (int)input.numel() * 8, hints, g_rank);
   return input;
@@ -1142,6 +1254,7 @@ static at::Tensor py_oneshot_gather_int64(at::Tensor input) {
   std::vector<int64_t> shape{4};
   shape.insert(shape.end(), input.sizes().begin(), input.sizes().end());
   auto output = torch::empty(shape, input.options());
+  g_device_used = true;
   k_oneshot_gather_int64<<<1, ARTHREADS, 0, c10::cuda::getCurrentCUDAStream()>>>(
       g_ctrl, reinterpret_cast<const bf16*>(input.data_ptr()),
       reinterpret_cast<bf16*>(output.data_ptr()), int(input.numel()), g_rank);
@@ -1163,10 +1276,17 @@ static bool py_healthy() {
   return OsarProxyHealth::check(running, heartbeat, proxy_now_ns());
 }
 static void py_shutdown() {
-  if (!g_started) return;
-  g_ctrl->stop = 1;
-  pthread_join(g_proxy, nullptr);
-  g_started = false;
+  if (g_started) {
+    g_ctrl->stop = 1;
+    // A failed join does not prove the proxy stopped using these resources.
+    const int error = pthread_join(g_proxy, nullptr);
+    if (error) {
+      fprintf(stderr, "[oneshot] retain resources: proxy join failed (%d)\n", error);
+      return;
+    }
+    g_started = false;
+  }
+  cleanup_prepared();
 }
 
 #ifndef ST_ONESHOT_LOCAL_TEST
@@ -1188,6 +1308,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     return std::vector<int64_t>{OSAR_COMPACT_CTA, OSAR_PROXY_INLINE,
         (int64_t)g_inline_cap[0], (int64_t)g_inline_cap[1],
         (int64_t)g_inline_cap[2]};
+  });
+  // [compiled rails, rail of peer slot 0, 1, 2]: what this process connected.
+  m.def("rails", []() {
+    return std::vector<int64_t>{OSAR_RAILS, g_peer_rail[0], g_peer_rail[1], g_peer_rail[2]};
   });
   m.def("healthy", &py_healthy);
   m.def("shutdown", &py_shutdown);

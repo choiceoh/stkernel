@@ -54,6 +54,7 @@ from flashinfer.gemm.kernels.dense_blockscaled_gemm_sm120_b12x import (
     Sm120B12xBlockScaledDenseGemmKernel as DenseGemmKernel,
 )
 from .moe_activation import gated_activation_f32, is_gated_activation
+from .moe_w4a16_fp4_helpers import add_u8x4
 from .moe_static_common import (
     _bulk_g2s,
     STAMP_BARRIER1,
@@ -67,6 +68,8 @@ from .moe_static_common import (
     _ld_shared_f32,
     _ld_shared_i32,
     _ld_shared_i32_volatile,
+    _ld_shared_u8_volatile,
+    _ld_shared_u16_volatile,
     _spin_wait_global_eq_i32,
     _st_global_i64,
     _st_global_release_i32,
@@ -107,6 +110,8 @@ class MoEStaticKernelV4:
         scatter_fp32: bool = False,
         route_scatter: bool = False,
         direct_scatter: bool = False,
+        scatter_reuse: bool = False,
+        fc2_prefetch: bool = False,
         fc1_stages: int = 2,
         fc2_stages: int = 2,
         stamps: bool = False,
@@ -124,6 +129,7 @@ class MoEStaticKernelV4:
         packed_activation_store: bool = True,
         fc1_reuse_a: bool = True,
         compact_staging: bool = True,
+        sf6_registers: bool = True,
         sync_cleanup: bool = True,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
@@ -225,6 +231,21 @@ class MoEStaticKernelV4:
         # the in-place read-before-write barrier without growing the CTA.
         self.compact_staging = bool(compact_staging and self.fc1_reuse_a
                                     and self.sf6_separate and self.fc1_stages % 2 == 0)
+        # Load only the MMA lane's own scale words from the packed ring.
+        # No expanded shared writes or cross-warp publication are needed.
+        self.sf6_registers = bool(sf6_registers and self.compact_staging)
+        self.scatter_reuse = bool(scatter_reuse)
+        if self.scatter_reuse and not (self.direct_scatter and self.sf6_registers
+                                       and self.decode_reform and not self.route_scatter):
+            raise ValueError("scatter reuse requires the M16 register SF6 atomic output path")
+        self.fc2_prefetch = bool(fc2_prefetch)
+        if self.fc2_prefetch:
+            if not self.scatter_reuse or self.fc2_stages != 2:
+                raise ValueError("FC2 prefetch requires the two-stage retained scatter path")
+            # Direct scatter never reads or writes sC. Spend its 8 KiB and
+            # the remaining CTA budget on a third B/SFB pipeline slot.
+            # The existing TMA consumer release owns every slot's lifetime.
+            self.fc2_stages = 3
         self.fc1_input_stages = self.fc1_stages // 2 if self.compact_staging else self.fc1_stages
         # SF6 cannot use the legacy A ring. Initialize only the two used
         # pipelines and publish their barriers together before Phase 0.
@@ -369,19 +390,13 @@ class MoEStaticKernelV4:
         )
         return b_smem_staged, sfa_smem_staged, sfb_smem_staged, epi_smem_staged
 
-    def _sf6_expand_word(self, low, high, base7, base80):
-        """Spread four 6-bit codes to byte lanes and add the base without carries.
-
-        low holds four nibbles, high four 2-bit groups. Each code is <=63;
-        adding only the base's low seven bits gives at most 190 per byte,
-        so the 32-bit addition cannot carry into a neighboring byte. XOR
-        then applies the base's high bit with exact modulo-256 semantics.
-        """
+    def _sf6_expand_word(self, low, high, base):
+        """Spread four 6-bit codes, then add the broadcast base modulo 256."""
         low = (low | (low << Int32(8))) & Int32(0x00FF00FF)
         low = (low | (low << Int32(4))) & Int32(0x0F0F0F0F)
         high = (high | (high << Int32(12))) & Int32(0x000F000F)
         high = (high | (high << Int32(6))) & Int32(0x03030303)
-        return ((low | (high << Int32(4))) + base7) ^ base80
+        return Int32(add_u8x4(low | (high << Int32(4)), base))
 
     def _sf_expand_stage(self, stage_addr, tidx, block_bytes=4096, *, packed_addr=None,
                          word_expand=None):
@@ -426,13 +441,12 @@ class MoEStaticKernelV4:
         if word_expand is None:
             word_expand = self.sf6_word_expand and packed_addr is not None
         if word_expand:
-            base7 = (base & Int32(0x7F)) * Int32(0x01010101)
-            base80 = (base & Int32(0x80)) * Int32(0x01010101)
+            packed_base = base * Int32(0x01010101)
         for j in range(per_thread // 4):
             if word_expand:
                 word = self._sf6_expand_word(
                     (a[j // 2] >> Int32(16 * (j % 2))) & Int32(0xFFFF),
-                    (b[j // 4] >> Int32(8 * (j % 4))) & Int32(0xFF), base7, base80)
+                    (b[j // 4] >> Int32(8 * (j % 4))) & Int32(0xFF), packed_base)
             else:
                 word = Int32(0)
                 for m in range(4):
@@ -443,6 +457,84 @@ class MoEStaticKernelV4:
                     word = word | (val << Int32(8 * m))
             _st_shared_i32(stage_addr + Int32(per_thread) * tidx + Int32(4 * j), word)
         self.sf_expand_barrier.arrive_and_wait()
+
+    def _sf6_prepare_stage(self, packed_base, tidx):
+        """Keep invariant scale metadata for all K64 fragments until release."""
+        base = _ld_shared_u8_volatile(packed_base, 1536)
+        base = base * Int32(0x01010101)
+        quad_lane = Int32(tidx) & Int32(3)
+        row = ((Int32(tidx) & Int32(31)) >> Int32(2)) * Int32(16)
+        row += (Int32(tidx) & Int32(32)) * Int32(8) + (Int32(tidx) & Int32(64)) * Int32(2)
+        # Each quad member owns exactly two low-plane bytes and one high-plane
+        # byte. Select them once here instead of shifting a shared word at
+        # every K fragment. The copy-layout oracle also checks this lane map.
+        low = packed_base + (row >> Int32(1)) + quad_lane * Int32(2)
+        high = packed_base + Int32(1024) + (row >> Int32(2)) + quad_lane
+        return (low, high, base, Int32(tidx) & Int32(28))
+
+    def _sf6_load_fragment(self, dest, stage, kind, k_block):
+        """Reconstruct exact SFB operands cooperatively within each lane quad.
+
+        _verify_sf6_register_layout proves these offsets against the ordinary
+        shared-to-register copy before compiling. Pipeline wait/release owns
+        the prepared metadata and packed reads; there are no shared writes.
+        """
+        dst = cute.recast_tensor(dest, Int32)
+        offsets = self.sf6_register_offsets[kind][0][k_block]
+        assert cute.size(dst) == len(offsets) and len(offsets) % 4 == 0
+        low_base, high_base, base, quad_base = stage
+        for group in range(len(offsets) // 4):
+            # Each group is 16-byte aligned in the verified ordinary view.
+            offset = offsets[group * 4]
+            low = _ld_shared_u16_volatile(low_base, offset // 2)
+            high = _ld_shared_u8_volatile(high_base, offset // 4)
+            word = self._sf6_expand_word(low, high, base)
+            for lane in range(4):
+                dst[group * 4 + lane] = cute.arch.shuffle_sync(word, quad_base + Int32(lane))
+
+    def _verify_sf6_register_layout(self):
+        """Check each ordinary copy word against the real CuTe SFB layouts.
+
+        An arithmetic identity iterator exposes physical byte offsets without
+        allocating or reading a GPU tensor. Keep every lane, including the
+        duplicated scale owners, in the receipt used by the CPU byte oracle.
+        """
+        records = {}
+        for kind, layout, mma, tile_shape in (
+            ("fc1", self.sfb1_smem_layout_staged, self.tiled_mma1, self.fc1_tile_shape_mnk),
+            ("fc2", self.sfb2_smem_layout_staged, self.tiled_mma, self.tile_shape_mnk),
+        ):
+            identity = cute.make_identity_tensor(cute.cosize(layout))
+            physical = cute.make_tensor(identity.iterator, layout)
+            tile = cute.local_tile(physical, cute.slice_(tile_shape, (0, None, None)), (0, 0, None))
+            atom = cute.make_copy_atom(cute.nvgpu.CopyUniversalOp(), self.sf_dtype)
+            copy = cute.make_tiled_copy(atom, self._get_layoutSFB_TV(mma),
+                (cute.size(mma.permutation_mnk[1]), cute.size(mma.permutation_mnk[2])))
+            lanes = []
+            for tid in range(128):
+                source = cute.filter_zeros(copy.get_slice(tid).partition_S(tile)[None, None, None, 0])
+                blocks = []
+                for kb in range(cute.size(source, mode=[2])):
+                    block = source[None, None, kb]
+                    offsets = [int(block[i]) for i in range(cute.size(block))]
+                    assert len(offsets) % 16 == 0
+                    words = []
+                    for i in range(0, len(offsets), 4):
+                        word = offsets[i]
+                        assert word % 4 == 0 and 0 <= word <= 2044, (kind, tid, offsets)
+                        assert offsets[i:i+4] == list(range(word, word+4)), (kind, tid, offsets)
+                        words.append(word)
+                    blocks.append(words)
+                lanes.append(blocks)
+            for tid, blocks in enumerate(lanes):
+                for kb, words in enumerate(blocks):
+                    row = ((tid & 31) // 4)*16 + (tid & 32)*8 + (tid & 64)*2
+                    assert words == [b + row for b in lanes[0][kb]], (kind, tid, kb, words)
+                    for i in range(0, len(words), 4):
+                        assert words[i] % 16 == 0
+                        assert words[i:i+4] == list(range(words[i], words[i]+16, 4))
+            records[kind] = lanes
+        self.sf6_register_offsets = records
 
     def _store_packed_activation(self, base_addr, layout, row, packed_base, packed):
         """Preserve the quantizer's eight bytes and the FC2 consumer swizzle.
@@ -502,13 +594,13 @@ class MoEStaticKernelV4:
             cute.size_in_bytes(self.a_dtype, self.a1_smem_layout_staged),
             cute.size_in_bytes(self.b_dtype, self.b1_smem_layout_staged),
             cute.size_in_bytes(self.sf_dtype, self.sfa1_smem_layout_staged),
-            cute.size_in_bytes(self.sf_dtype, self.sfb1_smem_layout_staged),
+            0 if self.sf6_registers else cute.size_in_bytes(self.sf_dtype, self.sfb1_smem_layout_staged),
             cute.size_in_bytes(self.b_dtype, self.b2_smem_layout_staged),
-            cute.size_in_bytes(self.sf_dtype, self.sfb2_smem_layout_staged),
+            0 if self.sf6_registers else cute.size_in_bytes(self.sf_dtype, self.sfb2_smem_layout_staged),
             cute.size_in_bytes(self.a_dtype, self.a2_smem_layout),
             cute.size_in_bytes(self.sf_dtype, self.sfa2_smem_layout),
             cute.size_in_bytes(cutlass.BFloat16, self.epi1_smem_layout_staged),
-            cute.size_in_bytes(cutlass.BFloat16, self.epi_smem_layout_staged),
+            0 if self.fc2_prefetch else cute.size_in_bytes(cutlass.BFloat16, self.epi_smem_layout_staged),
         ]
         for size in buffers:
             offset = _align_up(offset, self.buffer_align_bytes) + size
@@ -572,15 +664,28 @@ class MoEStaticKernelV4:
             registers = cute.make_layout(cute.shape(thread.partition_S(staged))[:3])
             if cute.size(coords) != cute.size(registers) or cute.size(coords) % 2:
                 raise ValueError("direct scatter register/coordinate size mismatch")
+            rows, row_pairs, pair_rows = [], [], []
             for pair in range(cute.size(coords) // 2):
                 a, b = tuple(coords[2 * pair]), tuple(coords[2 * pair + 1])
                 if not (a[0] == b[0] and a[1] % 2 == 0 and b[1] == a[1] + 1
                         and a[2] == b[2] == 0):
                     raise ValueError("direct scatter needs adjacent BF16 register pairs")
+                if a[0] not in rows:
+                    rows.append(a[0])
+                    row_pairs.append(pair)
+                pair_rows.append(rows.index(a[0]))
                 for point in (a, b):
                     if point in seen:
                         raise ValueError("direct scatter duplicate output coordinate")
                     seen.add(point)
+            if self.scatter_reuse:
+                if len(rows) != 2:
+                    raise ValueError("M16 scatter reuse requires two output rows per lane")
+                mapping = (tuple(row_pairs), tuple(pair_rows))
+                if tid == 0:
+                    self.scatter_row_pairs, self.scatter_pair_rows = mapping
+                elif mapping != (self.scatter_row_pairs, self.scatter_pair_rows):
+                    raise ValueError("scatter row ownership differs between MMA lanes")
         if seen != {(r, c, 0) for r in range(self.epi_tile[0]) for c in range(self.epi_tile[1])}:
             raise ValueError("direct scatter incomplete output coverage")
 
@@ -671,6 +776,8 @@ class MoEStaticKernelV4:
             print('DECODE_REFORM_LAYOUT_PASS', len(seen_bytes), flush=True)
         if self.reform_sf_pack:
             self._verify_reform_sf_layout(hidden_size)
+        if self.sf6_registers:
+            self._verify_sf6_register_layout()
         self.smem_bytes = self._smem_bytes_estimate()
         if self.smem_bytes > self.smem_capacity:
             raise ValueError(
@@ -1026,7 +1133,7 @@ class MoEStaticKernelV4:
                 self.buffer_align_bytes,
             ]
             sSFB1: cute.struct.Align[
-                cute.struct.MemRange[self.sf_dtype, cute.cosize(sfb1_smem_staged)],
+                cute.struct.MemRange[self.sf_dtype, 0 if self.sf6_registers else cute.cosize(sfb1_smem_staged)],
                 self.buffer_align_bytes,
             ]
             sB2: cute.struct.Align[
@@ -1034,7 +1141,7 @@ class MoEStaticKernelV4:
                 self.buffer_align_bytes,
             ]
             sSFB2: cute.struct.Align[
-                cute.struct.MemRange[self.sf_dtype, cute.cosize(sfb2_smem_staged)],
+                cute.struct.MemRange[self.sf_dtype, 0 if self.sf6_registers else cute.cosize(sfb2_smem_staged)],
                 self.buffer_align_bytes,
             ]
             sA2: cute.struct.Align[
@@ -1050,10 +1157,14 @@ class MoEStaticKernelV4:
                 self.buffer_align_bytes,
             ]
             sC: cute.struct.Align[
-                cute.struct.MemRange[cutlass.BFloat16, cute.cosize(epi_smem_staged)],
+                cute.struct.MemRange[cutlass.BFloat16, 0 if self.fc2_prefetch else cute.cosize(epi_smem_staged)],
                 self.buffer_align_bytes,
             ]
 
+        if cutlass.const_expr(self.sf6_registers):
+            assert Storage.__sizeof__() == self.smem_bytes
+            assert cute.size_in_bytes(self.b_dtype, b1_smem_staged) >= cute.size_in_bytes(self.sf_dtype, sfb1_smem_staged)
+            assert cute.size_in_bytes(self.b_dtype, b2_smem_staged) >= cute.size_in_bytes(self.sf_dtype, sfb2_smem_staged)
         storage = smem.allocate(Storage)
         if cutlass.const_expr(self.sf6_separate):
             sf1_input_base_addr = shared_ptr_to_u32(storage.packed_fc1.data_ptr())
@@ -1113,8 +1224,15 @@ class MoEStaticKernelV4:
         cute.recast_tensor(sB2, cutlass.Uint8)
         cute.recast_tensor(sA2, cutlass.Uint8)
         sSFA1 = storage.sSFA1.get_tensor(sfa1_smem_staged)
-        sSFB1 = storage.sSFB1.get_tensor(sfb1_smem_staged)
-        sSFB2 = storage.sSFB2.get_tensor(sfb2_smem_staged)
+        if cutlass.const_expr(self.sf6_registers):
+            # Layout-only views create ordinary MMA register fragments. No
+            # pointer in either view is read or written on this route. Use
+            # existing B backing so the dead expanded-scale rings cost zero.
+            sSFB1 = cute.make_tensor(cute.recast_ptr(storage.sB1.data_ptr(), dtype=self.sf_dtype), sfb1_smem_staged)
+            sSFB2 = cute.make_tensor(cute.recast_ptr(storage.sB2.data_ptr(), dtype=self.sf_dtype), sfb2_smem_staged)
+        else:
+            sSFB1 = storage.sSFB1.get_tensor(sfb1_smem_staged)
+            sSFB2 = storage.sSFB2.get_tensor(sfb2_smem_staged)
         sSFA2 = storage.sSFA2.get_tensor(sfa2_smem_layout)
         cute.recast_tensor(sSFA1, cutlass.Uint8)
         cute.recast_tensor(sSFB1, cutlass.Uint8)
@@ -1123,9 +1241,15 @@ class MoEStaticKernelV4:
         sC1 = storage.sC1.get_tensor(
             epi1_smem_staged.outer, swizzle=epi1_smem_staged.inner
         )
-        sC = storage.sC.get_tensor(
-            epi_smem_staged.outer, swizzle=epi_smem_staged.inner
-        )
+        if cutlass.const_expr(self.fc2_prefetch):
+            # Layout-only view: direct scatter uses this solely to construct
+            # accumulator/copy fragments. No sC load/store is reachable.
+            sC = cute.make_tensor(cute.recast_ptr(storage.sB2.data_ptr(), dtype=cutlass.BFloat16),
+                                 epi_smem_staged)
+        else:
+            sC = storage.sC.get_tensor(
+                epi_smem_staged.outer, swizzle=epi_smem_staged.inner
+            )
         sfa2_base_addr = shared_ptr_to_u32(storage.sSFA2.data_ptr())
         a2_base_addr = shared_ptr_to_u32(storage.sA2.data_ptr())
         sfb1_base_addr = shared_ptr_to_u32(storage.sSFB1.data_ptr())
@@ -1587,6 +1711,7 @@ class MoEStaticKernelV4:
             if cutlass.const_expr(self.direct_scatter):
                 ep_identity = cute.make_identity_tensor((*self.epi_tile, 1))
                 ep_tRS_coords = thr_copy_r2s.partition_D(ep_identity)
+                ep_coords = ep_tRS_coords[None, None, None, 0]
             down_acc = cute.make_rmem_tensor(acc_shape, self.acc_dtype)
             tRS_rDown = tiled_copy_r2s.retile(down_acc)
             rD_shape = cute.shape(thr_copy_r2s.partition_S(sC))
@@ -1743,7 +1868,7 @@ class MoEStaticKernelV4:
                             for gu in cutlass.range_constexpr(2):
                                 peek = fc1_pipeline.consumer_try_wait(fc1_cons_state)
                                 fc1_pipeline.consumer_wait(fc1_cons_state, peek)
-                                if cutlass.const_expr(self.reform_sf_pack):
+                                if cutlass.const_expr(self.reform_sf_pack and not self.sf6_registers):
                                     for sf_block in cutlass.range_constexpr(self.sf1_packed_blocks):
                                         sf1_dest = (sfb1_base_addr
                                             + fc1_cons_state.index * Int32(self.sf1_block_bytes)
@@ -1780,10 +1905,15 @@ class MoEStaticKernelV4:
                                         smem_copy_SFA1, fz_csSFA_p[None, None, 0],
                                         fz_crSFA1_tile[None, None, 0],
                                     )
-                                cute.copy(
-                                    smem_copy_SFB1, fz_csSFB_p[None, None, 0],
-                                    fz_crSFB1[None, None, 0],
-                                )
+                                if cutlass.const_expr(self.sf6_registers):
+                                    sf1_register_stage = self._sf6_prepare_stage(
+                                        sf1_input_base_addr + fc1_cons_state.index * Int32(self.sf1_stage_bytes), tidx)
+                                    self._sf6_load_fragment(fz_crSFB1[None, None, 0], sf1_register_stage, "fc1", 0)
+                                else:
+                                    cute.copy(
+                                        smem_copy_SFB1, fz_csSFB_p[None, None, 0],
+                                        fz_crSFB1[None, None, 0],
+                                    )
                                 for k_block_idx in cutlass.range_constexpr(num_k_blocks1):
                                     k_next = (
                                         0 if k_block_idx + 1 == num_k_blocks1
@@ -1804,10 +1934,14 @@ class MoEStaticKernelV4:
                                                 smem_copy_SFA1, fz_csSFA_p[None, None, k_next],
                                                 fz_crSFA1_tile[None, None, k_next],
                                             )
-                                        cute.copy(
-                                            smem_copy_SFB1, fz_csSFB_p[None, None, k_next],
-                                            fz_crSFB1[None, None, k_next],
-                                        )
+                                        if cutlass.const_expr(self.sf6_registers):
+                                            self._sf6_load_fragment(fz_crSFB1[None, None, k_next],
+                                                sf1_register_stage, "fc1", k_next)
+                                        else:
+                                            cute.copy(
+                                                smem_copy_SFB1, fz_csSFB_p[None, None, k_next],
+                                                fz_crSFB1[None, None, k_next],
+                                            )
                                     for _mt in range(self.num_m_tiles):
                                         for _nt in range(self.num_n_tiles1):
                                             mma_atom.set(
@@ -1960,6 +2094,21 @@ class MoEStaticKernelV4:
                 # ============================================================
                 # PHASE B: FC2 sweep (v2 verbatim)
                 # ============================================================
+                if cutlass.const_expr(self.scatter_reuse):
+                    # The completed FC1 publication barrier also publishes
+                    # route metadata. Each MMA lane owns only two output
+                    # rows; retain their destination/weight for the sweep.
+                    ep_bases = cute.make_rmem_tensor((2,), Int32)
+                    ep_weights = cute.make_rmem_tensor((2,), cutlass.Float32)
+                    for row_slot in cutlass.range_constexpr(2):
+                        cached_ep_row = Int32(ep_coords[2 * self.scatter_row_pairs[row_slot]][0])
+                        ep_bases[row_slot] = Int32(0)
+                        ep_weights[row_slot] = cutlass.Float32(0.0)
+                        if cached_ep_row < valid_tile_rows:
+                            ep_bases[row_slot] = _ld_shared_i32_volatile(
+                                scatter_tok_base_addr + cached_ep_row * Int32(4)) * scatter_N
+                            ep_weights[row_slot] = _ld_shared_i32_volatile(
+                                scatter_weight_base_addr + cached_ep_row * Int32(4)).bitcast(cutlass.Float32)
                 csA2_p = csA2[None, None, None, 0]
                 fz_csSFA2_p = cute.filter_zeros(csSFA2[None, None, None, 0])
                 for _kb in cutlass.range_constexpr(num_k_blocks):
@@ -1972,7 +2121,7 @@ class MoEStaticKernelV4:
                 for output_tile_idx in range(0, output_tile_cnt, 1, unroll=4):  # type: ignore[call-overload]
                     fc2_peek = fc2_pipeline.consumer_try_wait(fc2_cons_state)
                     fc2_pipeline.consumer_wait(fc2_cons_state, fc2_peek)
-                    if cutlass.const_expr(self.reform_sf_pack):
+                    if cutlass.const_expr(self.reform_sf_pack and not self.sf6_registers):
                         if cutlass.const_expr(self.decode_reform):
                             sf2_packed_addr = None
                             if cutlass.const_expr(self.compact_staging):
@@ -1994,9 +2143,14 @@ class MoEStaticKernelV4:
                         csSFB2_full[None, None, None, fc2_cons_state.index]
                     )
                     cute.copy(smem_copy_B, csB2_p[None, None, 0], crB2[None, None, 0])
-                    cute.copy(
-                        smem_copy_SFB, fz_csSFB2_p[None, None, 0], fz_crSFB2[None, None, 0]
-                    )
+                    if cutlass.const_expr(self.sf6_registers):
+                        sf2_register_stage = self._sf6_prepare_stage(
+                            sf2_input_base_addr + fc2_cons_state.index * Int32(self.sf2_stage_bytes), tidx)
+                        self._sf6_load_fragment(fz_crSFB2[None, None, 0], sf2_register_stage, "fc2", 0)
+                    else:
+                        cute.copy(
+                            smem_copy_SFB, fz_csSFB2_p[None, None, 0], fz_crSFB2[None, None, 0]
+                        )
                     down_acc.fill(0.0)
                     for k_block_idx in cutlass.range_constexpr(num_k_blocks):
                         k_next = (
@@ -2010,10 +2164,14 @@ class MoEStaticKernelV4:
                                 smem_copy_B, csB2_p[None, None, k_next],
                                 crB2[None, None, k_next],
                             )
-                            cute.copy(
-                                smem_copy_SFB, fz_csSFB2_p[None, None, k_next],
-                                fz_crSFB2[None, None, k_next],
-                            )
+                            if cutlass.const_expr(self.sf6_registers):
+                                self._sf6_load_fragment(fz_crSFB2[None, None, k_next],
+                                    sf2_register_stage, "fc2", k_next)
+                            else:
+                                cute.copy(
+                                    smem_copy_SFB, fz_csSFB2_p[None, None, k_next],
+                                    fz_crSFB2[None, None, k_next],
+                                )
                         for _mt in range(self.num_m_tiles):
                             for _nt in range(self.num_n_tiles):
                                 mma_atom.set(
@@ -2047,19 +2205,23 @@ class MoEStaticKernelV4:
                     acc_vec = acc_vec.to(cutlass.BFloat16)
                     tRS_rD_out.store(acc_vec)
                     if cutlass.const_expr(self.direct_scatter):
-                        ep_coords = ep_tRS_coords[None, None, None, 0]
                         for ep_pair in cutlass.range_constexpr(cute.size(tRS_rD_out) // 2):
                             ep_coord = ep_coords[2 * ep_pair]
                             ep_row = Int32(ep_coord[0])
                             if ep_row < valid_tile_rows:
-                                ep_tok = ld_shared_i32_relaxed(scatter_tok_base_addr + ep_row * Int32(4))
-                                ep_weight = _ld_shared_f32(scatter_weight_base_addr + ep_row * Int32(4))
+                                if cutlass.const_expr(self.scatter_reuse):
+                                    ep_base = ep_bases[self.scatter_pair_rows[ep_pair]]
+                                    ep_weight = ep_weights[self.scatter_pair_rows[ep_pair]]
+                                else:
+                                    ep_tok = ld_shared_i32_relaxed(scatter_tok_base_addr + ep_row * Int32(4))
+                                    ep_weight = _ld_shared_f32(scatter_weight_base_addr + ep_row * Int32(4))
+                                    if cutlass.const_expr(self.route_scatter):
+                                        ep_tok = ep_tok * Int32(self.output_tile_count_n) + Int32(tile_coord[1])
+                                    ep_base = ep_tok * scatter_N
                                 ep_v0 = cutlass.Float32(tRS_rD_out[2 * ep_pair])
                                 ep_v1 = cutlass.Float32(tRS_rD_out[2 * ep_pair + 1])
-                                if cutlass.const_expr(self.route_scatter):
-                                    ep_tok = ep_tok * Int32(self.output_tile_count_n) + Int32(tile_coord[1])
                                 ep_ptr = get_ptr_as_int64(
-                                    scatter_output, ep_tok * scatter_N + tile_n_base_cur + Int32(ep_coord[1]))
+                                    scatter_output, ep_base + tile_n_base_cur + Int32(ep_coord[1]))
                                 if cutlass.const_expr(self.route_scatter):
                                     scatter_store_bf16x2_to_f32(ep_ptr, ep_weight * ep_v0, ep_weight * ep_v1)
                                 else:
@@ -2139,6 +2301,14 @@ class MoEStaticKernelV4:
                                     wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7,
                                 )
                             vec_idx += Int32(self.num_threads_per_warp)
+                    if cutlass.const_expr(not self.scatter_reuse):
+                        self.epilog_sync_barrier.arrive_and_wait()
+
+                if cutlass.const_expr(self.scatter_reuse):
+                    # B/SFB ring reuse is governed by the FC2 pipeline.
+                    # Direct output has no per-column shared epilogue. One
+                    # retirement barrier protects A2 and route metadata before
+                    # any MMA warp can begin the next work item.
                     self.epilog_sync_barrier.arrive_and_wait()
 
                 if cutlass.const_expr(self.stamps):

@@ -14,6 +14,35 @@ if importlib.util.find_spec("torch"):
 
 @unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA")
 class DraftAttentionTests(unittest.TestCase):
+    def test_packed_qkv_values_match_contiguous_on_changed_input_replay(self):
+        from engine.kernels.draft_attention import attend_rows
+        for n in (1, 2, 3, 4):
+            b, h, hk, d = 8, 8, 2, 128
+            q = torch.randn(n, b, h, d, device='cuda', dtype=torch.bfloat16)
+            k = torch.randn(n, b, hk, d, device='cuda', dtype=torch.bfloat16)
+            packed = torch.full((n, b + 2, (h + 2 * hk) * d), float('nan'), device='cuda', dtype=q.dtype)
+            v = packed[:, 1:b+1, -hk*d:].view(n, b, hk, d)
+            v.normal_()
+            ring = torch.randn(6, 2, 2, 127, hk, d, device='cuda', dtype=q.dtype)
+            slots = torch.arange(n, device='cuda') + 1
+            ctx = torch.arange(n, device='cuda') * 127
+            def call(): return attend_rows(q, k, v, ring, ctx, slot=slots, layer=1)
+            call()
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph): actual = call()
+            try:
+                for start in (0, 1, 126, 10000):
+                    q.normal_(); k.normal_(); v.normal_(); ring.normal_()
+                    ctx.copy_(torch.arange(n, device='cuda') + start)
+                    slots.copy_(torch.arange(n, device='cuda').flip(0) + 1)
+                    expected = attend_rows(q, k, v.contiguous(), ring, ctx, slot=slots, layer=1)
+                    saved = packed.clone()
+                    graph.replay()
+                    self.assertTrue(torch.equal(actual, expected))
+                    self.assertTrue(torch.allclose(packed, saved, equal_nan=True, rtol=0, atol=0))
+            finally:
+                graph.reset()
+
     def test_captured_device_count_writes_only_the_accepted_prefix(self):
         from engine.kernels.draft_attention import write_draft_kv
         storage=torch.randn(3,5*2*127*8*128+512,device='cuda',dtype=torch.bfloat16)

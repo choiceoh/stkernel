@@ -3,7 +3,8 @@
 """Short ST screening on one boot. Observations are never adoption evidence.
 
 Use the onepass stream, workload and durable latency recorder, with a bounded
-2K question at C=1/C=4. Preparation is separate; no profiler replay or long
+2K question at C=1/C=N, N being the door's admission limit capped at 4 (two for
+GLM-5.3 since #950). Preparation is separate; no profiler replay or long
 context quality campaign is scheduled. Full onepass remains the adoption gate.
 """
 from __future__ import annotations
@@ -56,10 +57,14 @@ def health_errors(report, requests, concurrency, *, require_width=True):
 def collect(run, item, bd, model, scanner, bracket):
     """Persist both concurrency arms; short-budget quality misses are observations."""
     record = run.record
-    record.update(measurement_policy=POLICY, screen=[], evidence_scope='screen',
+    # The second arm is the door's admission limit (onepass.serving_concurrency): four requests on a
+    # two-row door decode two rows beside two waiting ones, and health_errors refuses the arm.
+    many = op.serving_concurrency(record.get('engine_shape'))
+    policy = POLICY if many == POLICY['concurrency'][1] else dict(POLICY, version=2, concurrency=[1, many])
+    record.update(measurement_policy=policy, screen=[], evidence_scope='screen',
                   adoption_eligible=False, evidence_issues=['screen only; full validation pending'])
     run.workloads([item])
-    for concurrency in POLICY['concurrency']:
+    for concurrency in policy['concurrency']:
         before = traffic_state(op._metrics_text(bd.METRICS))
         if before['running'] != 0 or before['waiting'] != 0:
             raise RuntimeError('screen requires an idle server before preparation')
@@ -71,7 +76,7 @@ def collect(run, item, bd, model, scanner, bracket):
         after = traffic_state(op._metrics_text(bd.METRICS))
         report = run.end()
         # Short preparation may finish before all prefills join the decode
-        # batch. Require actual C=4 coverage in the measured arm, not here.
+        # batch. Require actual C=N coverage in the measured arm, not here.
         errors = health_errors(report, result['requests'], concurrency, require_width=False)
         errors += exclusive_errors(before, after, [], concurrency)
         if errors:
@@ -108,7 +113,8 @@ def collect(run, item, bd, model, scanner, bracket):
             raise RuntimeError('; '.join(errors))
     record['screen_status'] = ('observed' if all(r['valid'] for r in record['screen'])
                                else 'timing_unverified')
-    record['concurrency_coverage'] = dict(included=[1, 4], c4_status='measured', policy='screen-v1')
+    record['concurrency_coverage'] = dict(included=list(policy['concurrency']), c4_status='measured',
+                                          policy='screen-v1' if policy is POLICY else 'screen-v2', width=many)
     print('Screen complete; quality observations and latency saved. Full comparison pending.', flush=True)
 
 
@@ -140,7 +146,7 @@ def main(argv=None):
         if not record['boot_id']:
             raise RuntimeError('screen requires a served boot identity')
         # One deterministic hard question, with the same original prompt at
-        # C=1 and C=4. It retains raw reasoning/content and certificate results.
+        # C=1 and C=N. It retains raw reasoning/content and certificate results.
         item = op.quality.request_item(2000, 2042, op.quality.cases(2042)[:1], cq.filler,
                                       POLICY['max_tokens'], POLICY['reasoning_budget'], 'screen-ledger')
         item.update(seed=42, min_tokens=POLICY['min_tokens'])

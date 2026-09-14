@@ -1,0 +1,168 @@
+{
+  "gpu_used": false,
+  "scope": "CPU model and SM121 code generation only",
+  "nvcc": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Fri_May_08_10:52:52_AM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.86\nBuild cuda_13.2.r13.2/compiler.37953736_0\n",
+  "torch": "2.14.0+cpu",
+  "triton": "3.8.0",
+  "native": {
+    "baseline": {
+      "source_sha256": "c70fade02943a0b17b93107ef4b619e40b2ceca8e3c71c3d0a480676860cfd26",
+      "cubin_sha256": "179426ce8867c5f86d44fdfbfbb7e0188c976584954d746e6eef1b89e60bb195",
+      "kernels": {
+        "cluster": {
+          "registers": 62,
+          "spill_store_bytes": 0,
+          "spill_load_bytes": 0,
+          "instruction_words": 2992,
+          "instruction_sha256": "5b8bc1d0259c1342e34889288cea29530e3e5862ef3852e5fcbf2382273929d4"
+        },
+        "ordinary": {
+          "registers": 97,
+          "spill_store_bytes": 0,
+          "spill_load_bytes": 0,
+          "instruction_words": 2560,
+          "instruction_sha256": "2f083ba74aa46310796b2dd37ae54bb18a1484abd81205189e90fc7476edcbda"
+        }
+      }
+    },
+    "candidate": {
+      "source_sha256": "bbfc935f093dfd835c263c4006107dad8173f64803f97dbca01393cd930419b6",
+      "cubin_sha256": "bc12f81b043d23126b348b782f18a1bea2d21ae2c4e3214f9d0886d528aa35a1",
+      "kernels": {
+        "cluster-tree": {
+          "registers": 64,
+          "spill_store_bytes": 0,
+          "spill_load_bytes": 0,
+          "instruction_words": 3056,
+          "instruction_sha256": "c38e1af395a86172fdb140bced3555d96e9e9cd2dac3686a2e84c3f53f0cc2ed"
+        },
+        "ordinary-tree": {
+          "registers": 100,
+          "spill_store_bytes": 0,
+          "spill_load_bytes": 0,
+          "instruction_words": 2608,
+          "instruction_sha256": "6dfc00ec612e4e5a8b1c680731bb03154a121d444ce6e739fa8e31a6cb4e0cb7"
+        },
+        "cluster": {
+          "registers": 62,
+          "spill_store_bytes": 0,
+          "spill_load_bytes": 0,
+          "instruction_words": 2992,
+          "instruction_sha256": "5b8bc1d0259c1342e34889288cea29530e3e5862ef3852e5fcbf2382273929d4"
+        },
+        "ordinary": {
+          "registers": 97,
+          "spill_store_bytes": 0,
+          "spill_load_bytes": 0,
+          "instruction_words": 2560,
+          "instruction_sha256": "2f083ba74aa46310796b2dd37ae54bb18a1484abd81205189e90fc7476edcbda"
+        }
+      }
+    }
+  },
+  "triton_kernels": [
+    {
+      "name": "tree-slots",
+      "registers": 107,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "shared_bytes": 2048,
+      "cubin_sha256": "00711140e8d792305bee30d84007ccd0f80a5f8628a629a34833558b918699a8"
+    },
+    {
+      "name": "absorb-m1-transpose0",
+      "registers": 72,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "shared_bytes": 10240,
+      "cubin_sha256": "1cc80274954ca34d2120933f6236f39a58873981126f04841e52c8de8a80d764"
+    },
+    {
+      "name": "absorb-m1-transpose1",
+      "registers": 145,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "shared_bytes": 10240,
+      "cubin_sha256": "368a9d5d91667d84982a25e2ec03ffcb27b67c894667e83565ffdfc600a6188a"
+    },
+    {
+      "name": "absorb-m8-transpose0",
+      "registers": 72,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "shared_bytes": 10240,
+      "cubin_sha256": "1cc80274954ca34d2120933f6236f39a58873981126f04841e52c8de8a80d764"
+    },
+    {
+      "name": "absorb-m8-transpose1",
+      "registers": 145,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "shared_bytes": 10240,
+      "cubin_sha256": "368a9d5d91667d84982a25e2ec03ffcb27b67c894667e83565ffdfc600a6188a"
+    },
+    {
+      "name": "absorb-m15-transpose0",
+      "registers": 72,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "shared_bytes": 10240,
+      "cubin_sha256": "1cc80274954ca34d2120933f6236f39a58873981126f04841e52c8de8a80d764"
+    },
+    {
+      "name": "absorb-m15-transpose1",
+      "registers": 145,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "shared_bytes": 10240,
+      "cubin_sha256": "368a9d5d91667d84982a25e2ec03ffcb27b67c894667e83565ffdfc600a6188a"
+    },
+    {
+      "name": "absorb-m32-transpose0",
+      "registers": 158,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "shared_bytes": 12288,
+      "cubin_sha256": "af85036761382a0c8a33541608752a8dcf348f014c4e78fb61d94472ecc12773"
+    },
+    {
+      "name": "absorb-m32-transpose1",
+      "registers": 221,
+      "stack_bytes": 0,
+      "local_instructions": 0,
+      "shared_bytes": 12288,
+      "cubin_sha256": "b5a693053cdad97ba58236a07f2515ee5520c4e4e5306a28530b8ffd7e33b875"
+    }
+  ],
+  "ordinary_instruction_words_unchanged": true,
+  "source_sha256": {
+    "engine/kernels/mla/glm53_megakernel.cu": "bbfc935f093dfd835c263c4006107dad8173f64803f97dbca01393cd930419b6",
+    "/work/probes/engine_tree_paged_compile.py": "f1e0779a0736cc5e229df9f0945893f6d2fc2e350b43a6c62a09dc2e4e3c7edc",
+    "engine/kernels/indexer.py": "baecbf435ef436fa030e49431a7abff5ddef441b3ac2dd53a9950fcf8de7eb7a",
+    "engine/kernels/mla/decode_absorb.py": "a4aaea020d9ee8cf2323d59d92e0825e373c0d59892f7e714dc67b91b49285f6",
+    "engine/kernels/mla/prefill_absorb.py": "c6a8cdfd99e297156c8c262ad15c5af17924ad64b06363f2c69ac52fa92c6c3a",
+    "probes/engine_mla_hardware_check.py": "a3f4389213000a763fb828915d5fea99b8b48de283e2210e0f4bd867cabe552d"
+  },
+  "full_translation_unit": {
+    "command": [
+      "/toolkit/nvidia/cu13/bin/nvcc",
+      "-O2",
+      "-std=c++20",
+      "-DC10_CUDA_NO_CMAKE_CONFIGURE_FILE",
+      "-gencode",
+      "arch=compute_121a,code=sm_121a",
+      "-c",
+      "-I/usr/local/lib/python3.12/site-packages/torch/include",
+      "-I/usr/local/lib/python3.12/site-packages/torch/include/torch/csrc/api/include",
+      "-I/usr/local/include/python3.12",
+      "engine/kernels/mla/glm53_megakernel.cu",
+      "-o",
+      "/evidence/compile/full-mla.o"
+    ],
+    "exit_code": 0,
+    "object_sha256": "41191950a4298a9a1e0eccf1b2014de3f9fb654ca6cede7bba3d3bb589bd8b2b",
+    "linked": false,
+    "note": "CPU Torch headers with c10 CUDA export-header opt-out"
+  },
+  "cuda_initialized": false
+}

@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "extension": "dense",
+  "torch": "2.13.0+cu132",
+  "torch_git": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+  "cuda": "13.2",
+  "compiler": [
+    [
+      "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/nvcc",
+      "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+    ],
+    [
+      "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/ptxas",
+      "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+    ]
+  ],
+  "binary": "/out/dense-cache/f69d354f25a4ae842268014f/st_dense_f69d354f25a4ae842268014f.so",
+  "binary_sha256": "530d3f0a6ec31920970012b659738e5e94ebb50ef51d917014ce83806ceb86f2",
+  "seconds": 58.01993366004899
+}

@@ -1,0 +1,32 @@
+{
+  "status": "FAIL",
+  "scope": "one GB10, received FP8 packets through full L3 FFN output; synthetic activations, actual rank weights; excludes pack/all-gather/reduce-scatter, NIC, TTFT, generation tok/s and model quality/acceptance",
+  "source_sha256": {
+    "engine/modules/prefill_packets.py": "eeaa468b8715373c7711cb29d58c8993a824f80da91c9753693f714053cc6471",
+    "engine/modules/token_shards.py": "11d3bf3c2fe8e644a845fa49864800d5f0e021ccdc7c6eef03c9151b695aa77c",
+    "engine/kernels/prefill_collectives/__init__.py": "4fca676770574b77e9280a260c36cff406ebe0279a15fc3b5bdd0b11222e0f4c",
+    "engine/kernels/prefill_collectives/consumer.py": "d0f242b38b4d0e74afd205214067ecab57f046b5c81f8f2fa5032ce8fbcdfd7c",
+    "engine/kernels/prefill_collectives/kernels.py": "49d22265497ee41cc3ff03d455fa11a76519c450322aa993cbc5601cfc5a48a4",
+    "engine/kernels/prefill_router.py": "1be65d85e0e19899ecd163ab05ece1b92822277fd80adc1f804b80818fbc36a7",
+    "engine/kernels/dense/__init__.py": "29be1221e81bcdc965b3131b33befe4a729dc544a20ded5551f046ba506be8b0",
+    "engine/kernels/dense/fp8.py": "fecc21c8b0f3088c765083cf7987db210de499313490559596dca7dee676c3ca",
+    "engine/kernels/b12x/moe_dispatch.py": "9989e2739839cbb8914745ed45c992a7535c036331aeff3fcf304b46bb946918",
+    "engine/kernels/b12x/moe_packet_input.py": "edfb8563846ea6df2c86a42417a18d679e58bccb55a14164458e7d6ea89eef37",
+    "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "2cb221c7ddc9891dad4f6d2a83ccf981c22e70b3a2171a6795792c0c5e2fae8e",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_w4a16_fp4_helpers.py": "3115cf3e73064cbf2c339d5fd2cec1c49206f34283c281faef2d1c2d290a6c73",
+    "engine/profiles/glm53/net.py": "0fa15bac228540a7208a913e7930d409484732224c354563f402e24286fbb451",
+    "engine/profiles/glm53/lanes.py": "54eac15eb9c7199522cd31560e4380d81086bafbecf1a58e0b59802d64959665",
+    "engine/profiles/glm53/execution.py": "716111e7cc714a83a6b5af46a1641ee3efc6ce67aa3233dcabccc47c3ffa31b8",
+    "engine/profiles/glm53/boot.py": "5cc01885ce2d4793586076951a4e948edcaf9c269fa2407f4af89847234a989c",
+    "probes/engine_ffn_packets_compile.py": "bdd2b71116f5bf6fcd594a06b366f78f8ce6e95d21fb73ff7b131641fd3ff5b1",
+    "probes/engine_ffn_packets_check.py": "5641b001bccd08d68ab54e38995d8338d2eb988fd4f15db7fc21f069a04f60f2",
+    "tests/test_engine_ffn_packets.py": "1ab3640fbca124084e14e2038bd8e88e79f3c57aebaf7d4ed8a9291990747a94",
+    "tests/test_engine_prefill_fp8_consumer.py": "244f7cd38080446304b6968181353b3d3378a5facfa494243cb2aa137755cde8",
+    "engine/kernels/glm_pointwise.py": "bd9713dd4f4fd2a40f62b53f2d92c651356b54f3bd07242714e772aa52c1df5b",
+    "engine/profiles/glm53/modelopt_scales.py": "5fb0fbbbc2011e0390248c696f5fb04e128e854d8544dbc113e932e8a28afbf3"
+  },
+  "image": "sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed",
+  "started": 1789366723.5717282,
+  "error": "Traceback (most recent call last):\n  File \"/repo/probes/engine_ffn_packets_check.py\", line 254, in main\n    measure(args, report)\n  File \"/repo/probes/engine_ffn_packets_check.py\", line 86, in measure\n    raise RuntimeError('packet CPU/transport/router qualification failed or skipped')\nRuntimeError: packet CPU/transport/router qualification failed or skipped\n"
+}

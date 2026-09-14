@@ -1,0 +1,18 @@
+{
+  "status": "PASS",
+  "source_revision": "fe940088fe34ac60325e071b3abde5c3e1b15c87",
+  "upstream": "96af4dbbbbe6cade001477ae9f877152fd26e1ae",
+  "compiler_image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+  "cpu_image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+  "source_manifests_match_current": true,
+  "tests": 340,
+  "passed": 318,
+  "skipped": 22,
+  "scope": "All 41 focused CPU modules and all eight native compilations ran on the final rebased implementation. Later cleanup-test and documentation changes do not change these inputs. GPU runtime is recorded separately.",
+  "gpu_image": "sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed",
+  "gpu_source_manifests_match_current": true,
+  "gpu_revision": "fe940088fe34ac60325e071b3abde5c3e1b15c87",
+  "gpu_status": "PASS",
+  "gpu_cells": 4,
+  "gpu_samples": 32
+}

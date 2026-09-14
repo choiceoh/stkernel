@@ -271,15 +271,18 @@ class SelectRowsTests(unittest.TestCase):
         return slots, valid
 
     def test_the_fold_selects_what_the_loop_selects(self):
+        from unittest.mock import Mock
         rows, t, kp = 4, self.T, self.KP
         want = self.loop()
         self.calls.clear()
+        self.net.lanes.pool_slots = Mock(wraps=self.net.lanes.pool_slots)
         slots = torch.full((rows * t, self.TOPK + kp - 1), -7, dtype=torch.int32)
         valid = torch.full((rows * t,), -7, dtype=torch.int32)
         Glm53Net._select_rows(self.net, 0, self.q8, self.w, self.keys, self.scales, self.N_CAND, self.contexts, t,
                               self.caches, slots, valid)
         self.assertTrue(torch.equal(slots, want[0]))
         self.assertTrue(torch.equal(valid, want[1]))
+        self.assertEqual(self.net.lanes.pool_slots.call_args.args[0].dtype, torch.int64)
         # one logits call per row, over the row's own candidates, with the kept zeros as the keys' start
         self.assertEqual([c[:2] for c in self.calls], [(t, self.N_CAND)] * rows)
         for _, _, ks in self.calls:
@@ -300,6 +303,22 @@ class SelectRowsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "candidate capacity"):
             Glm53Net._select_rows(self.net, 0, self.q8, self.w, self.keys, self.scales, self.TOPK // self.KP - 1, self.contexts,
                                   self.T, self.caches, torch.empty(0, dtype=torch.int32), torch.empty(0, dtype=torch.int32))
+
+    def test_eleven_layer_selections_share_lengths_and_refresh_after_rollback(self):
+        from dataclasses import replace
+        from unittest.mock import Mock
+        make = Mock(wraps=self.net.lanes.decode_rows.lengths)
+        self.net.lanes.decode_rows = replace(self.net.lanes.decode_rows, lengths=make)
+        for phase, values in enumerate(([0, 3, 100, 248], [2, 1, 92, 239], [0, 0, 0, 0])):
+            self.contexts.copy_(torch.tensor(values))
+            self.caches.gather()
+            want = self.loop()
+            slots, valid = torch.empty_like(want[0]), torch.empty_like(want[1])
+            for _ in range(11):
+                Glm53Net._select_rows(self.net, 0, self.q8, self.w, self.keys, self.scales, self.N_CAND,
+                                     self.contexts, self.T, self.caches, slots, valid)
+                self.assertTrue(torch.equal(slots, want[0]) and torch.equal(valid, want[1]))
+            self.assertEqual(make.call_count, phase+1)
 
 
 if __name__ == "__main__":

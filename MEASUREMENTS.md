@@ -2693,6 +2693,320 @@ Mojo 1.0.0으로 bounded decode 결과의 호스트 반영을 컴파일하고 �
 실험/CPU CI 환경에만 설치한다. [재현 방법과 판정](bench/mojo_host/README.md),
 [버전·소스/바이너리 해시·쌍별 표본](measurements/mojo_host_20260914/macos_arm64.json).
 
+### ST decode V·logits 복사 제거 — CPU/컴파일 검증 (2026-09-14)
+
+드래프터 어텐션이 QKV 안의 V를 원래 stride로 읽고, target FP8 head가 문맥 버킷들이
+공유하는 패딩 포함 출력 버퍼에 직접 쓴다. 논리 어휘 view의 주소·객체 공유를 유지하며
+패딩 64열은 토큰 선택에서 제외한다. 둘 다 기본 경로에 적용한다.
+C1 K7의 일반 greedy target+proposal step에서 랭크당 복사 6회·640,000 B를 제거하는
+소스 작업량이다. 확률/상세 샘플링은 통신을 위한 논리 어휘 packing이 여전히 필요하다.
+
+CPU 37개 중 24통과·GPU 전용 13skip, 실제 Triton CPU 인터프리터 비교 15개 exact,
+SM121 네이티브 컴파일 6개 통과다. GPU 큐·부팅·실행은 없으며 step/s·수용률·품질과
+그래프 풀의 실제 메모리 감소는 미측정이다.
+[소스 해시·정확한 범위·재현 기록](measurements/st_decode_buffers_20260914/README.md).
+
+### ST draft 입력·난수 준비 통합 — CPU/컴파일 검증 (2026-09-14)
+
+anchor/mask 토큰·위치를 한 커널로 만들고, keyed SplitMix64 step draws도 기존 키·목적·
+FP64→FP32 반올림을 유지한 한 커널로 통합했다. sampled walk가 모두 덮어쓰는 확률
+버퍼의 선행 zero-fill도 제거했다. 셋 모두 CUDA 기본 경로에 적용한다.
+
+C1/C4 K7의 CPU 레퍼런스에서 결과 저장소를 만드는 텐서 연산은 입력 준비 4개,
+난수 블록 53개였으며 후보는 각 1개 CUDA 커널이다. GPU 호출 수나 속도 실측은 아니다.
+CPU 48개 중 39통과·GPU 9skip, 실제 커널 인터프리터 43개 exact, SM121 컴파일
+11개가 통과했다. GPU 큐·부팅·실행은 없고 실제 step/s·수용률·품질은 미측정이다.
+[소스 해시·비트 일치·경로별 작업량·재현 기록](measurements/st_decode_inputs_20260914/README.md).
+
+### ST rank-local 임베딩 조회 통합 — CPU/컴파일 검증 (2026-09-14)
+
+target·drafter가 공유하는 임베딩 경로의 토큰 보정·소유 랭크 판정·조회·0 마스킹을
+한 CUDA 커널로 합쳤다. BF16 값을 uint16 비트로 옮기고, 기존 TP 합산은 유지한다.
+greedy와 target prefill에도 적용되며 CUDA 기본 경로에 켠다.
+
+기존 레퍼런스는 결과 저장소를 만드는 텐서 연산 7개, 후보는 커널 1개다. 이는 CPU
+dispatch 작업량이며 GPU 속도 실측이 아니다. CPU 67개 중 32통과·GPU 35skip,
+실제 커널 인터프리터 28개 비트 일치, SM121 컴파일 8개 통과(shared 0 B)다.
+GPU 큐·부팅·실행은 없고 실제 step/s·수용률·품질·그래프 풀 메모리는 미측정이다.
+[소스 해시·랭크 경계·비트 검증·재현 기록](measurements/st_token_embedding_20260914/README.md).
+
+### ST C1 forward CTA 내 부분합 — 기본 적용 (2026-09-14)
+
+KDA 출력 34개, dense MLP 출력 3개, DSA query 22개의 W4 GEMM에서 기존 세 K 분할을
+한 CTA 안에서 합치도록 확장했다. 기존 분할·MMA·FP32 합산·BF16 반올림 순서를 유지한다.
+전역 부분합 쓰기/읽기 44.25 MiB와 arrival atomic 5,664회를 제거하는 소스 작업량이며
+실제 지연 감소 수치가 아니다. C1 query pack은 50,688→12,672 B다.
+
+CPU 30개 중 21통과·GPU 9skip, 실제 production-flag native 컴파일 5개 새 specialization
+통과(76/78 registers, stack/local spill 0). srv4 실제 rank3 가중치의 동일 RTN pack으로
+기존 dsa_inputs 포함 10개 GPU 구성요소 검사를 92.8초에 통과했다(모델 부팅 없음).
+새 경로 8개 exact/replay 그룹이 bit-exact이며, warm/evicted B/A/A/B에서 KDA 출력
+−11.58/−6.37%, MLP 출력 −4.04/−3.57%, query pair −7.65/−5.51%였다.
+이는 구성요소 시간이며 현재 24 step/s·수용률 개선 실측은 없다.
+[구현·검증·재현 근거](measurements/st_forward_cta_20260914/README.md).
+
+### 945차 — ST 오라클 토큰·C4 계산과 별도 기록 검증 보완 (2026-09-14, 로컬 CPU, PR #945)
+
+K=0·수용률=0을 그대로 유지하고, 첫 토큰에서 종료한 요청의 추가 디코드와 생성 한도를
+넘긴 토큰 집계를 없앴다. 실제 요청 토큰 수·C4 동시 파동·보정 채널·기준 폭을 보존한다.
+phase step/s는 실행한 폭과 문맥의 모형 시간 합을 쓰고, warm TTFT는 양쪽에서 같은
+요청 집합을 비교한다. CPU 시뮬레이터의 메모리 조회만 꺼 첫 요청의 torch import
+오염을 없앴으며 서빙 계측 기본값은 유지한다.
+
+이전 Git 소스를 읽은 정확한 산술 반례에서 생성 길이 2·10의 디코드 토큰 합은
+24→10(정답 10), 혼합 폭 phase step/s는 500→89.66(정답 89.655…)이었다.
+과거 C4 자료는 누락 대신 3파동·12요청을 실제 프롬프트 길이로 읽는다. 기존 도구 58개와
+새 정확도 계약 19개가 CPU에서 통과했고 두 모듈을 Linux 엔진 CI에 연결했다.
+
+`--fit-from`으로 비용을 고정하고 별도 자료의 오차·입력 해시·런타임 차이·제외 이유를
+JSON에 남긴다. onepass-a→다른 빌드 onepass-h의 2K 기록은 비교 7행의 절대 상대오차
+중앙값 약 175%, 최대 약 642%로, 소스·이미지·노브가 다른 계수 이관의 한계도 보관했다.
+동일 자료 재구성과 별도 기록 검증을 구분하며 기존 confidence는 정확도 보장이 아니다.
+GPU·큐·부팅·배포·실시간 onepass 없이 수행했고 실측 속도·품질 개선 주장은 없다.
+[사용법](bench/ORACLE_ACCURACY.md), [재현·해시·비교 결과](measurements/st_oracle_accuracy_20260914/README.md).
+
+
+### ST C1 K-block 병렬 곱·DSA query grid 통합 — 기본 적용 (2026-09-14, PR #946)
+
+기존 async W4 reader로 독립 K-block MMA 곱을 8워프에 나누고, epilogue가 원래
+slice별 FMA·합산·BF16 반올림 순서를 재현한다. C1 DSA query 두 개도 기존 reader와
+3분할 합산을 유지한 한 grid로 묶었다. 최종 실행 소스는 `ec5c6718`이며 기본 경로에 켠다.
+
+srv4 GB10, 같은 빌드·실가중치 RTN W4 pack·captured B/A/A/B warm 비교에서
+MLP gate/up **76.73→30.27 µs(-60.5%)**, query pair **24.33→17.96 µs(-26.2%)**다.
+실제 출력 주소에 직접 쓰는 MLA/KDA/MLP 출력은 각각 **-7.6/-10.5/-10.1%**였다.
+수치·재생 16개 그룹이 zero-tolerance로 통과했고, production-flag compile과 engine CI도
+통과했다. Evicted 결과는 변동과 퇴행이 있어 판정 보류다. 위 수치는 구성요소 warm 시간이며
+전체 디코드·수용률 개선이나 24 step/s 달성을 뜻하지 않는다.
+
+K7·2K/32K/128K·C1 두 번/C4 한 번의 단일 후보 원패스 예약을 `ec5c6718`로 교체했다.
+기존 enqueue 시각을 보존한 `st-forward-pipeline-onepass0914`가 대기 중이다.
+운영자가 warm 개선판의 즉시 기본 머지를 지시했으며 소비자 tok/s·step/s·수용률은 미측정이다.
+[원본 표본·거부한 register 구현·컴파일·GPU·큐 기록](measurements/st_forward_register_20260914/README.md).
+
+### ST expert 비용 트리·FP32 KDA·packed persistent MLP — 실험 API (2026-09-14, 로컬 CPU, PR #947)
+
+DFlash 후보 1회 생성 → expert 비용 기반 트리 선택 → FP32 KDA factor 검증 →
+선택 경로 캐시·drafter 관찰까지 연결했다. 일반 dense는 기존 GPTQ `W4Pack`을 직접
+읽는 **W4A8**이며 activation의 group-128 FP8·BF16 반올림 경계를 유지한다.
+별도 ModelOpt 고정 1-expert dense만 원래 **W4A4 NVFP4**의 raw/tiled/SF6 경로를 쓴다.
+가중치 재양자화·상주 BF16 복원·FP16 KDA 전환은 없다. Routed MoE는 기존 레인이다.
+
+CPU **74 통과·6 스킵**, SM121 **17종 오프라인 컴파일**, 실제 packed reader/scaling
+**10종 CPU 해석 대조**를 기록했다. FP8 변환에 대한 Triton 해석기의 한계도 명시했다.
+16-node KDA의 factor 384 KiB + initial 1 MiB와 W4A8 MLP scratch 6,473,456 B는
+할당식이며 실측 메모리·속도 개선이 아니다. greedy C=1 eager API로 남기며 기본 서빙에
+켜지지 않는다. GPU·큐·부팅 없이 수행했고 실제 수용률·tok/s·품질은 미측정이다.
+[재현·해시·제약·검증 기록](measurements/st_tree_dataflow_20260914/README.md).
+
+
+### 작업 공간 상한 9 → 12 GiB: 서빙 문맥 끝의 가장 큰 프리필이 9.67 GiB 를 쓴다 (2026-09-14, srv2 플릿 부팅 3회, 운영자 "12")
+
+**기록.**
+- main `87304780`(#946)과 `68f7c1d6`(#944)이 네 랭크 모두 부팅 중에 같은 수치로 죽었다. `_warmup_prefill_memory` 의
+  `prefill/32256/943872`(가장 큰 청크를 서빙 문맥 끝에서)에서 `torch.isfinite(aux)` 가 630 MiB 를 더 받지 못했다:
+  "64.52 GiB allowed", PyTorch 할당 63.87 GiB. 그 순간 노드에는 21.37~34.37 GiB 가 비어 있었다(가장 적은 쪽이 랭크 3 srv4).
+- 9 GiB 에서 준비 완료한 마지막 부팅(`2ed1f047` 기반, 같은 날 15:40)의 같은 행 최고치는 예약 62.28 GiB, 작업 공간 6.75 GiB 다.
+  0 문맥 32,256 청크까지의 행은 두 부팅이 0.01 GiB 안에서 같고, 늘어난 것은 944K 문맥 행뿐이다.
+- 그 사이 엔진 변경은 #943(MoE 정적 커널 저장소), #945(계측 플래그), #939(C1 디코드 GEMM), #944(one-shot 두 레일)다.
+  #946 은 무관하다(`68f7c1d6` 이 같은 수치로 죽었다). 넷 중 무엇이 늘렸는지는 가르지 않았다.
+- 같은 `87304780` 을 `ST_WORKSPACE_GIB=12` 로 띄우면 준비 완료. 랭크 0 원장: 프리필 최고치 9.67 GiB(944K 행 할당 64.49 GiB,
+  예약 65.20 GiB), 준비 뒤 남는 작업 공간 2.15 GiB(9 GiB 부팅은 2.12), OOM 여유 최소 23.02 GiB.
+
+**한 것.**
+- `WORKSPACE_GIB = 12.0`: 최고치보다 2.33 GiB 위(#891 의 9 GiB 는 당시 최고치 7.48 GiB 보다 1.52 GiB 위였다). 입장 필요량은 노드마다
+  3 GiB 늘어 #891 이전으로 돌아간다. srv4 가 그만큼 빠듯해진다.
+- 근거 문장, README 두 곳, 예산 테스트의 핀. 상한을 올린 부팅을 확인하는 테스트의 예시는 10.5 → 13.5 GiB 로 바꿨다(프로필보다 커야
+  "올린" 경우다).
+
+**검증.** 맥 CPU `tests.test_engine_budget` 13개 중 토치·GLM 설정이 필요 없는 2개 통과(11개는 그 조건으로 건너뜀). 이 브랜치로는
+GPU 부팅을 하지 않았다: 같은 값을 환경 변수로 준 위의 부팅이 근거다. #895(프리필 FP8 패킷 기본값)와 #947 은 이 측정 뒤에 머지됐으므로
+그 트리의 최고치는 다음 부팅의 원장이 말한다.
+
+
+### GLM-5.3 사고 블록 서두를 "We need to parse the problem. We have" 로 (2026-09-14, srv2 플릿, 운영자 "위 해브로 결정")
+
+**기록.** Red Hat 랭크, 운영 env, 그리디. onepass JSON 30문항을 C=4 로 돌리고 `bench/onepass_quality.assess` 로 채점했다(닫는 괄호만 빠진 답은
+괄호를 채워 채점, #931). 서두는 요청별 `reasoning_opener` kwarg 로 주었다(#942 의 도어 경로 그대로).
+
+| 서두 | 점수 | 최종답 | 완전정답 | 평균 토큰 | 수락률 | 30문항 소요 |
+|---|---|---|---|---|---|---|
+| 없음 | 175/190 | 29 | 21 | 4,390 | 38.0% | 1,163 s |
+| "Let me parse the problem." (#942 기본값) | 164 | 25 | 18 | 1,954 | 54.2% | 422 s |
+| "We need to parse the problem." | 170 | 27 | 18 | 2,601 | 51.8% | 596 s |
+| **"We need to parse the problem. We have"** | **175** | **28** | **19** | **2,442** | **52.0%** | **538 s** |
+| 같은 서두, main `87304780` 재측정 | 172 | 27 | 21 | 2,621 | 51.0% | 565 s |
+
+- 서두 없음과 같은 점수를 그 토큰의 56% 로 낸다. "Let me" 는 더 짧지만 검산을 덜 해 점수가 11점 낮다.
+- 같은 서두의 두 번은 30개 중 14개만 글자가 같았고 점수가 3점 벌어졌다. 한 번의 C=4 는 그만큼 흔들린다.
+- 다른 형태의 새 문항 62개(날짜, 경로, 배낭, 표, 좌석, 단위, 한국어 퍼즐)에서 61개가 맞았다.
+- 다른 서두 여섯(carefully, facts, each-case, first, step, given)과 "We need to parse the problem." + 최대 사고 수준은 같은 문항에서
+  이 서두보다 낫지 않아 30문항을 다 돌기 전에 멈췄다(6~24문항).
+- main `87304780` 에서 이 서두의 C=1 그리디 12문항: 19.32 step/s, 88.5 tok/s, 수락률 51.1%(서두 없음 70.1 tok/s·37.5%, "Let me" 91.2 tok/s·54.2%,
+  둘 다 이전 main). 수락률이 "Let me" 보다 낮은 몫은 대부분 검산을 길게 한 원장 문항 둘에서 나온다(그 둘을 빼면 52.5% 대 53.2%).
+- 같은 부팅의 C=4 합산 139.2 tok/s, 요청당 중앙값 36.8 tok/s. 프리필 첫 토큰(최소) 2K 1.08 s, 32K 9.83 s, 128K 38.15 s.
+
+**한 것.** `boot.REASONING_OPENER` 를 이 문장으로 바꾸고 근거를 그 옆에 적었다. 템플릿 테스트의 예시 서두도 같은 문장으로 바꿨다.
+도어와 템플릿 경로는 #942 그대로다.
+
+**검증.** 위 측정은 모두 요청별 kwarg 로 같은 템플릿 경로를 탔다(부팅마다 `/tokenize` 로 렌더 끝을 확인). CPU 테스트 컨테이너에서
+`tests.test_glm53_chat` 21개, `tests.test_engine_serve` 199개(18개 건너뜀) 통과. 이 브랜치 자체로 GPU 부팅은 하지 않았다.
+
+### ST CUDA 13.2.1 전체 런타임 이전 및 B12X 세부 이식 (2026-09-14)
+
+운영자 “13.2 전체 마이그레이션해”, “전부 가져와”, **“큐 태우지마”**.
+Torch 2.13.0+cu132, CUDA SDK/런타임 13.2.1, NVCC/PTXAS/NVRTC/NVVM/nvJitLink 13.2.78을
+34개 wheel SHA256으로 고정했다. 네 노드에서 같은 seed ID와 engine source SHA256을 확인하고
+기본 `st-engine:glm53` 이미지 태그를 이전했다. 호스트 드라이버/툴킷, 실행 중인 서비스와 GPU 임대는 유지했다.
+
+SF6는 u16/u8 공유 메모리 직접 읽기와 immediate offset, MLA는 native E4M3x2 → BF16x2 변환을 적용했다.
+같은 NVCC 13.2.78의 정적 명령 위치는 MLA decode 1,360 → 1,264, prefill32 1,112 → 936이다.
+이 수치는 **step/s나 tok/s가 아니다**. 큐·onepass·GPU 수치/그래프 검사는 하지 않았다.
+
+Linux CPU 203 files / 1,872 tests: 203 ok, 0 failed, 0 cannot run, 314 skipped.
+실제 native 확장 7종 compile/dlopen, SF6 전체 커널 7종/helper 4종/CPU operand 24,576개,
+Triton KDA 55종, TileLang MHC 컴파일 통과. #947 실험용 트리 양자화 경로는 고정된 Triton 3.7.1에서
+컴파일 제약이 있어 실패를 따로 기록했다. 기존 cu130 이미지에서도 NVFP4 실패가 재현된다.
+CuTe가 요구하는 nvdisasm 13.3.73 진단 도구 및 기존 패키지 메타데이터 제약도 숨기지 않았다.
+
+버전·이미지·원시 결과는 [런타임 이전 기록](measurements/st_cuda132_20260914/README.md),
+기준 대비 명령/레지스터와 적용 범위는 [세부 이식 기록](measurements/st_upstream_microopts_20260914/README.md)에 있다.
+
+
+### MLA 의 E4M3 → BF16 확장을 반 정밀도 다리로 되돌림: #952 뒤 128K 프리필 51~55 s, 되돌리면 37~39 s (2026-09-14, srv2 플릿 부팅 4회)
+
+**기록.** Red Hat 랭크, 운영 env, 서두 기본값. 프리필은 캐시 없이 첫 토큰까지(2K ×3, 32K ×2, 128K ×2 = 129,784 토큰),
+C=1 은 onepass JSON 12문항 그리디다. "뒤" 는 같은 부팅에서 C=1 을 돌린 다음 한 번 더 잰 값이다.
+
+| 트리 | CUDA | 128K | 128K 뒤 | 32K | 32K 뒤 | C=1 step/s | 느린 문항 |
+|---|---|---|---|---|---|---|---|
+| `87304780` (#946) | 13.0 | 38.43 / 38.15 s | – | 10.31 / 9.83 s | – | 19.32 | 없음 |
+| `b8bef130` (#949, #952 직전) | 13.0 | 39.11 / 37.46 s | 37.30 / 37.21 s | 10.26 / 9.76 s | 9.51 / 9.58 s | 19.26 | 없음 |
+| `c58a8eb5` (#952) | 13.2.1 | **54.66 / 50.95 s** | – | 12.21 / 9.56 s | – | 18.51 | 2개(14.68, 16.19) |
+| `83140b14` (c58a8eb5 + 이 커널 파일만 #952 이전) | 13.2.1 | **38.51 / 37.30 s** | 36.89 / 37.17 s | 9.96 / 9.87 s | 9.50 / 9.55 s | 19.32 | 없음 |
+
+- 2K 는 네 트리 모두 최솟값 1.08~1.11 s 다. 32K 최솟값도 움직이지 않았고, 느려진 것은 128K 뿐이다.
+- #895(프리필 FP8 패킷)는 `b8bef130` 에 들어 있고 빠르다. #951 은 실험용 트리 모듈만 바꿔 기본 경로와 무관하다.
+- 같은 CUDA 13.2.1 스택에서 `glm53_megakernel.cu` 한 파일만 #952 이전으로 되돌리자 128K 가 돌아왔다. 원인은 스택이 아니라
+  #952 가 넣은 `cvt.rn.bf16x2.e4m3x2` 한 줄 확장이다. `SOURCES.json` 기록상 이 확장은 디코드와 strided 프리필에 쓰인다. 앞 문맥이 있는
+  청크에서만 드러나는 것으로 보이지만(128K 는 32,256 청크 넷 중 뒤 셋이 풀을 읽는다), 그 기제는 재지 않았다.
+- `c58a8eb5` C=1 에서 부팅 뒤 3·4번째로 느렸던 두 문항은 `83140b14` 에서 같은 순서로 돌려도 19.39·19.42 step/s 였다. 디코드 4스텝 묶음의
+  평균도 `b8bef130` 0.194 s, `83140b14` 0.194 s, `c58a8eb5` 0.205 s 다. 문항당 한 번씩이라 디코드 쪽 원인은 확정하지 않는다.
+
+**한 것.** `glm53_megakernel.cu` 의 세 확장 함수(`mla_e4m3x2`, `mla_e4m3x2_strided`, `mla_e4m3x2_value`)를 #952 이전의 반 정밀도 다리로
+되돌리고, 확장에 딸린 CUDA 13.2 컴파일 가드를 뺐다. 다리는 13.2.1 에서 컴파일되고 돈다(`83140b14` 부팅). #954 가 같은 파일의 다른
+곳을 바꿨으므로 파일이 아니라 그 부분만 되돌렸고, 그 자리에 근거 주석을 달았다. `SOURCES.json` 해시와 기록. CUDA 13.2.1 스택과
+#952 의 나머지는 그대로다.
+
+**검증.** 위 표의 플릿 부팅. 이 브랜치의 세 함수는 `83140b14` 와 같고, 주석과 #954 가 더해졌다. 이 브랜치 자체로 GPU 부팅은 하지 않았다.
+맥 CPU `test_cuda_translation_unit_and_pinned_dynamic_helpers_match_provenance` 통과.
+
+## 2026-09-14 — 트리 W4A8: 입력 공유, packed pair, SM121 FP8 컴파일 선택
+
+명시적 트리 실험의 W4A8 실행기를 개선했다. H4096/I3072에서 입력 group128 양자화 24회 반복을
+1회 발행으로 바꾸고, packed 한 바이트의 두 가중치를 함께 읽어 스케일/LUT 결정을 공유한다.
+Triton 3.7.1은 native FP8 판정에서 SM121을 빠뜨려 이 실험의 dot을 FP16 MMA로 바꾸고 있었다.
+이 두 GEMM과 큐 수치 오라클만 consumer Blackwell lowering을 지정한다. 출력 PTX/cubin은 SM121a이며
+FP32 누적 정책과 BF16 경계, GPTQ 가중치, 일반 서빙 dense·W4A4 MoE·KDA FP32는 유지한다.
+
+8행 오프라인 컴파일: 배포 frontend인 Triton 3.7.1에서 FC1/FC2 공유메모리 각각 32,768→4,096B,
+레지스터 255→175 / 173→128. Triton 3.8.0 비교에서도 감소했다. 각 컴파일러의 후보 36개 형상 모두
+스필 0, FP8 MMA와 SM121a 타깃 확인. CPU 1,888 tests, 실패/실행불가 0, skip 374; 별도 interpreter
+10 tests 통과(65,536 packed-byte/scale 조합, 양자화 경계, 버퍼 소유권, 기존 target 수치 오라클).
+
+대가: 런치 2→3, 16행 작업공간 181,760→249,344B(+67,584B). **GPU 큐·부팅·실측은 하지 않았다.**
+컴파일 자원 감소는 serving tok/s 증명이 아니다. 추가 런치 비용·실가중치 품질·수용률·그래프 재생은 미판정이다.
+기록과 재현: `measurements/st_w4a8_shared_input_20260914/`.
+
+## 2026-09-14 — CUDA 13.2 SF6·W4A8 바이트 연산 및 cuBLAS 튜닝 검토
+
+SF6 word 복원의 split-base 덧셈과 dense/MLA W4A8 LUT의 `__vadd4`를 native `add.u8x4`로 바꿨다.
+바이트별 modulo-256 의미, 기존 FP8 값·스케일, 부동소수점 누적과 BF16 경계는 유지하며 기본 적용한다.
+MLA의 #956 half bridge도 유지한다. CuTe 캐시 지문에 공통 device helper를 포함했다.
+
+CUDA 13.2.1 이미지의 CPU-only 검증: 엔진 204개 파일, 1887 tests, 실패·실행불가 0, skip 318.
+dense/MLA 전체 native compile·dlopen 통과. SF6 static 7개와 short Q0/long prefill 2개가 컴파일됐다.
+실제 SASS의 `VIADD.U8x4`는 dense 440곳, MLA 144곳, static word 경로별 24곳, dynamic 경로별 160곳이다.
+기존 probe가 명령 이름의 소문자 `x`를 누락하던 것도 수정하고 동일 바이너리를 재집계했다.
+**이 수치는 명령 생성 증거이며 속도 개선율이 아니다. GPU·큐·부팅·원패스는 실행하지 않았다.**
+
+cuBLAS는 백엔드 추가 대신 튜닝 가능성을 검토했다. 큰 FP8 프리필과 이미 FP8인 draft FC/head가 우선 후보다.
+기존 group128 scale을 MX32 UE8M0 배치로 반복해 동일 입력값을 표현하는 CPU oracle을 만들었고 통과했다.
+양자화 생산자에 scale 배치를 합치면 별도 변환 발사를 피할 수 있다. W4를 FP8로 푸는 경우의 1.83배 payload와
+기존 융합 후처리 비용도 따졌다. 기존 DeepGEMM에도 native FP8·스케일 재사용·Split-K가 있으므로
+cuBLAS 우위는 실제 형상별 알고리즘·전체 입출력 비용에서 확인해야 한다. 개선율은 아직 미측정이다.
+기록·수치 계약·재현·상세 검토: [st_cuda132_packed_20260914](measurements/st_cuda132_packed_20260914/README.md).
+
+## 2026-09-14 — 트리 인덱서 접두사 중복 복사와 KDA 이력 준비 제거
+
+#958 이후 명시적 eager 트리 실험을 더 줄였다. paged 인덱서 접두사와 private pool을 최종 버퍼에
+한 번에 모아, 기존 gather 결과를 다시 concat하던 복사를 없앴다. private pool이 완성되는 트리에서
+DSA층당 32K/128K 접두사 임시 버퍼 1.03125/4.125MiB, 추가 concat 읽기·쓰기 2.0625/8.25MiB가
+사라진다. 형상으로 계산한 바이트 수이며 실측 대역폭이나 엔진 상주 메모리 절감량은 아니다.
+KDA 합성곱은 canonical 링에서 바로 읽어 6,144채널의 최종 이력 버퍼 36,864B와 gather/mask 준비를
+없앴다. indexer starts/ends/branch columns도 트랜잭션당 한 번만 만든다. KDA 상태는 FP32 유지.
+
+Triton 3.7.1의 SM121a 오프라인 컴파일 13종 모두 스필 0. 바이트 복사 커널은 78 registers/0 shared,
+링 합성곱은 이력 버퍼 모드보다 레지스터 1개가 늘어나는 대가가 있다. CPU interpreter 16 tests와
+#958 동일 입력·연산자 비교에서 출력, feature, canonical state, paged bytes, 토큰·커밋 경로가 전부 같다.
+Docker CPU 시간은 -15.63%~+16.10%로 흔들렸고, 맥 직접 비교는 -0.83%~+0.50%로 사실상 동일했다.
+
+**GPU 큐·부팅·실측은 하지 않았다.** 일반 서빙 기본값이나 HTTP/전체 트리 그래프 연결을 바꾸는 PR이
+아니다. 실제 GPU 수치·품질·수용률·tok/s는 미판정. 기록과 재현: `measurements/st_tree_bank_20260914/`.
+
+
+### ST 디코드 스텝이 어디서 시간을 쓰나: main `de8bfff6` C=1 K=7 커널 분해 (2026-09-14, srv2 플릿, 운영자 "vLLM 때 디코딩 한계는 24 step 정도")
+
+**기록.** 판정이 아니라 개선 후보를 고르기 위한 분해다.
+- 트리와 조건: main `de8bfff6`(#956 뒤, CUDA 13.2.1), Red Hat 랭크, 운영 env, C=1 K=7(검증 8행), 약 70 토큰 프롬프트의 긴 그리디 생성.
+- 측정 방법: 도어의 `POST /v1/engine/profile {"steps": 32}` 로 32 버스트씩 두 창을 잡았다. `/metrics` 로 반복 수와 벽시계를 구하고, 프로파일러 없는 옆 창과 대조했다.
+- 벽시계: 프로파일러 하 54.0 ms/반복, 없으면 46.8~47.8 ms. 프로파일러 비용은 6~7 ms 다.
+- 커널: 시간 합 54.89 ms(스트림이 겹쳐 벽시계를 넘는다), 호출 1,359 회/반복.
+
+| 범주 | ms/반복 | 비중 | 호출/반복 |
+|---|---|---|---|
+| MoE 전문가 (`MoEStaticKernelV5`, 층당 1회) | 25.13 | 45.8% | 40 |
+| dense GEMM (mk_gemm2 4.48, KDA 입력 CTA 3.58, input pack 1.79, cutlass bf16 1.49) | 13.65 | 24.9% | 356 |
+| TP 통신 (publish 1.81, moe_packets 1.43, consumer 1.00) | 4.43 | 8.1% | 147 |
+| mHC (`mk_mhc_packets` 80회 4.04) | 4.42 | 8.0% | 93 |
+| LM head·드래프터 fc (deep_gemm fp8×fp4 ×3, 이름은 형상 추정) | 2.21 | 4.0% | 3 |
+| MLA / DSA (torch `gatherTopK`+정렬 0.85 포함) | 1.57 | 2.9% | 168 |
+| ST 글루 커널 · KDA · norm/elementwise | 1.41 · 1.25 · 0.83 | 6.4% | 206 · 98 · 249 |
+
+- 같은 날 onepass(arm `32fb2892`, C=1 2K 프롬프트)의 장치 단계 합은 반복당 forward 46.6 ms, 드래프터 propose 3.05 ms,
+  observe 0.66 ms, `gpu_iteration` 평균 50.5 ms 다. 짧은 프롬프트의 이번 창은 그보다 3 ms 쯤 빠르다.
+- `STEP_KERNEL_MAP.md` 보충 분해 5·6(vLLM 포크, 같은 CUPTI 계열)과 대조:
+  - 스텝 전체: 09-05 프로덕션은 프로파일러 하 55.8 ms/스텝, 커널 1,166 개였다.
+  - MoE: 29.4~32.5 ms 에서 25.1 ms 로 가벼워졌다.
+  - mHC: MK MHC 89회 2.03 ms(호출당 23 µs)에서 `mk_mhc_packets` 호출당 50 µs 로 무거워 보인다. 이 커널이 TP 패킷 소비를 포함하는지는 확인하지 않았다.
+  - 그 트레이스들의 SPEC_K 는 확인하지 않았다(아카이브 09-07 onepass 는 SPEC_K=5 에서 디코드 중앙 21.4~21.9 step/s).
+- 같은 부팅의 메모리 장부: 프리필 최고치 9.89 GiB(`prefill/32256/1016320`, 상한 12), 준비 뒤 1.99 GiB, OOM 여유 최소 23.16 GiB.
+
+**못 한 것.** 한 프로세스에서 세 번째 프로파일부터 표가 비었다(13~29 µs/버스트). 그래서 C=1 셋째 창과 C=4 두 창은
+버렸고, C=4 분해는 없다. 원인은 확인하지 않았다.
+
+**다음 후보(미실측).** mHC 호출당 비용(TP 패킷 소비 포함 여부부터 확인), DSA 디코드 top-k 의 네이티브화, dense GEMM
+입력 pack 호출 접기. MoE 는 가장 크지만 8행이 층마다 약 58 전문가를 읽는 대역폭에 묶여 있다.
+원시 표·창별 수치·도구·재현: `measurements/st_decode_profile_20260914/README.md`.
+
+### ST 디코드 C=1 대 C=2 커널 분해: main `9c45086a`, K=7 (2026-09-15, srv2 플릿 보류 1회, 운영자 "st커널 c=2 최적화 개선")
+
+#950 뒤 프로덕션 디코드는 C=1(8행)과 C=2(16행)뿐인데, C=2 분해는 없었다. 같은 부팅에서 도어 프로파일 창을 C=2 → C=1 → C=2 순서로 잡았다. 셋째 창은 빈 표다.
+
+- 조건: 약 70 토큰 프롬프트, thinking 끔, 긴 그리디 생성.
+- 프로파일러 없는 스텝은 C=1 44.3 ms, C=2 55.3 ms 로 **×1.25** 다. 커널 합은 48.3 → 59.7 ms 다.
+- 증가분(ms/스텝):
+  - MoE +5.6. 16행이 층마다 약 104 전문가를 읽는다(8행은 약 58). codex C2 MoE 작업의 몫이다.
+  - TP 통신 +2.5. `k_publish_packets` 1.56 → 2.94, `k_oneshot_moe_packets` 1.30 → 2.34 가 대부분이다. 전체합이 PDL consumer(0.91)에서 일반 경로(0.98)로 바뀐 몫은 커널 시간으로 0.07 이다.
+  - mHC +1.9. 압축 계수 커널은 8행 이하 전용이라, C=2 는 FP32 커널(호출당 82 µs, C=1 은 50 µs)로 돈다.
+  - 글루 +0.7. `_commit_layers` 0.26 → 0.64, 공유 전문가 직렬 활성 호출 2.5 → 36.5 회.
+  - DSA +0.6. 인덱서 행별 루프 때문에 logits 호출이 두 배다.
+  - KDA +0.6, LM head +0.3.
+- **dense GEMM 은 C=2 가 1.1 ms 싸다.** C=2 일반 경로가 10.97 ms, C=1 특화 경로가 12.03 ms 이고, C1 입력 pack 만 1.60 ms(80.6회)다. 그러니 C1 특화를 16행으로 옮기는 것은 레버가 아닐 가능성이 크고, 8행에 C2 식 경로를 쓰는 편이 후보다(미실측).
+- 같은 main 의 서빙 처리량(09-14 23:15 보류, srv2 `~/expert-capture/c1c2.log`)은 1024 토큰 고정 C=1 66.7/65.0 → C=2 79.3/88.0 tok/s, JSON C=1 85.7 → C=2 100.7 tok/s 다.
+
+원시 표·도구·재현·옛 기록 대조(onepass 행 수별 반복 비용, C=1 대 C=4 트레이스): `measurements/st_decode_profile_c2_20260915/README.md`.
+
 ### 925차 — C1 MoE 미사용 초기화·중복 동기화 제거 (2026-09-14, srv2 CPU, PR #925)
 
 머지된 PR #923 뒤의 별도 변경이다. SF6가 사용하지 않는 A 파이프라인의 장벽·상태 생성을

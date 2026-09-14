@@ -1,0 +1,16 @@
+{
+  "status": "PASS",
+  "revision": "22c993bcb149eb060e014c24a31ef11417d4a3e1",
+  "gpu_used": false,
+  "scope": "one CPU regression test for explicit reference-expert fallback and unchanged empty reference_for",
+  "command": "uv run --with torch --with numpy python -m unittest -v tests.test_engine_ffn_packets.PacketContractTests.test_reference_expert_selection_disables_its_packet_reader",
+  "tests": 1,
+  "skips": 0,
+  "errors": 0,
+  "failures": 0,
+  "source_sha256": {
+    "engine/profiles/glm53/lanes.py": "a51d1750bc1211d83f47de147f6c47a5796b5a9cf2ba1f53bdfc883471b429fb",
+    "tests/test_engine_ffn_packets.py": "36bca19d29d8cefe4c757c92e1576abb8c479bc89bb4ffd4ec27dd5d2ce8af3c"
+  },
+  "log": "test_reference_expert_selection_disables_its_packet_reader (tests.test_engine_ffn_packets.PacketContractTests.test_reference_expert_selection_disables_its_packet_reader) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.005s\n\nOK\n"
+}

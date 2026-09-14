@@ -15,11 +15,25 @@ def _map_positions(pos, table, table_s0, block_size: tl.constexpr,
 
 
 @triton.jit
+def _tree_positions(pos, table, table_s0, paths, row, context,
+                    PATH_WIDTH: tl.constexpr, block_size: tl.constexpr, block_stride, layer_offset):
+    prefix = (pos >= 0) & (pos < context)
+    page = tl.load(table + (pos.to(tl.int64) // block_size) * table_s0, prefix, other=0)
+    canonical = page.to(tl.int64) * block_stride + layer_offset + pos % block_size
+    private = (pos >= context) & (pos < context + PATH_WIDTH)
+    node = tl.load(paths + row * PATH_WIDTH + pos - context, private, other=0)
+    # Padding is zero and never read (counts defines the valid prefix).
+    # -1 is the private root, not a sentinel in this two-bank contract.
+    return tl.where(prefix, canonical, tl.where(private, -node-1, 0)).to(tl.int32)
+
+
+@triton.jit
 def _pool_slots(ids, lengths, table, out, counts, groups: tl.constexpr,
                 id_s0, id_s1, len_s0, table_s0, out_s0, out_s1, count_s0,
                 block_size: tl.constexpr, block_stride, layer_offset,
                 POOL: tl.constexpr, MAPPED: tl.constexpr, BLOCK: tl.constexpr,
-                table_s1=0, TOKENS: tl.constexpr = 1):
+                table_s1=0, TOKENS: tl.constexpr = 1,
+                paths=None, context=0, PATH_WIDTH: tl.constexpr = 0):
     row = tl.program_id(0)
     # A captured decode step's rows come TOKENS to a sequence, each sequence with its own block row at
     # table_s1 apart; a one-sequence launch has table_s1 0, and reads the one row it was given.
@@ -28,7 +42,9 @@ def _pool_slots(ids, lengths, table, out, counts, groups: tl.constexpr,
     seq = tl.load(lengths + row * len_s0)
     tail = seq % POOL
     pool = tl.load(ids + row * id_s0 + g * id_s1, g < groups, other=-1)
-    pool = tl.sort(tl.where((pool >= 0) & (pool < seq // POOL), pool, -1), descending=True)
+    # topk returns int64. Reject invalid ids BEFORE narrowing (large ids must
+    # not wrap into a valid pool), then keep the existing int32 sort/scan.
+    pool = tl.sort(tl.where((pool >= 0) & (pool < seq // POOL), pool, -1).to(tl.int32), descending=True)
     # Sorting compressed pool IDs is 8x smaller than a padded 2051-token sort.
     # Runs also preserve the token-level order if a pool is selected twice.
     prev = tl.gather(pool, tl.maximum(g - 1, 0), 0)
@@ -41,6 +57,9 @@ def _pool_slots(ids, lengths, table, out, counts, groups: tl.constexpr,
     # then broadcast it to its tokens instead of gathering four copies.
     base = _map_positions(pool * POOL, table, table_s0, block_size, block_stride, layer_offset, MAPPED)
     mapped = tl.where(pool[:, None] >= 0, base[:, None] + POOL - 1 - within, -1)
+    if PATH_WIDTH:
+        mapped = _tree_positions(mapped, table, table_s0, paths, row, context,
+                                 PATH_WIDTH, block_size, block_stride, layer_offset)
     cols = tail + g[:, None] * POOL + off[None, :]
     tl.store(out + row * out_s0 + cols * out_s1, mapped, g[:, None] < groups)
     # Complete the disjoint tail prefix and padding suffix. Every output is written.
@@ -48,6 +67,9 @@ def _pool_slots(ids, lengths, table, out, counts, groups: tl.constexpr,
     tail_base = _map_positions(tl.where(tail > 0, seq - tail, -1), table, table_s0,
                                block_size, block_stride, layer_offset, MAPPED)
     extra = tl.where(off < tail, tail_base + tail - 1 - off, -1)
+    if PATH_WIDTH:
+        extra = _tree_positions(extra, table, table_s0, paths, row, context,
+                                PATH_WIDTH, block_size, block_stride, layer_offset)
     tl.store(out + row * out_s0 + extra_cols * out_s1, extra, off < POOL - 1)
     tl.store(counts + row * count_s0, tl.sum((pool >= 0).to(tl.int32), 0) * POOL + tail)
 
@@ -62,13 +84,32 @@ def _minimum(a, b):
     return tl.minimum(a, b)
 
 
+def tree_pool_slots(pool_ids, seq_lens, pool_size, block_table, block_size, block_stride,
+                    layer_offset, paths, context, out, counts):
+    """Expand/sort pools and address canonical/private KV in one integer launch.
+
+    No latent copies, temporary position tensors or host reads. Paths contain
+    each row's root-to-node ancestors, padded with that node; seq_lens bounds
+    which depths may be read. Canonical slots and -(node+1) share int32 storage.
+    """
+    from engine.modules.tree_attention import check_slots
+    check_slots(pool_ids, seq_lens, pool_size, block_table, block_size, block_stride,
+                layer_offset, paths, context, out, counts)
+    _pool_slots[(len(pool_ids),)](pool_ids, seq_lens, block_table, out, counts, pool_ids.shape[1],
+        *pool_ids.stride(), seq_lens.stride(0), block_table.stride(0), *out.stride(), counts.stride(0),
+        block_size, block_stride, layer_offset, pool_size, False,
+        triton.next_power_of_2(max(1, pool_ids.shape[1])), paths=paths, context=context,
+        PATH_WIDTH=paths.shape[1], num_warps=4)
+
+
 def pool_slots(pool_ids, seq_lens, pool_size, block_table, block_size, block_stride,
                layer_offset, out, counts, tokens: int = 1):
     """Expand selected complete pools directly into descending-position slots.
 
     Integer-only, no scratch allocation or device-to-host reads. Invalid pools
     are masked before sorting or addressing. Duplicate pools retain multiplicity.
-    Inputs/outputs may be strided but must not overlap. Sequence lengths are
+    Int32 ids or topk's original int64 ids are accepted; invalid int64 ids
+    are masked before narrowing. Inputs/outputs may be strided but must not overlap. Sequence lengths are
     nonnegative int32; valid token positions must fit int32 and the block row.
     Mapped KV blocks must contain a whole number of pools.
 
@@ -76,7 +117,7 @@ def pool_slots(pool_ids, seq_lens, pool_size, block_table, block_size, block_str
     `tokens` to a sequence in order, and row r reads block row r // tokens -- one
     launch whose program r is what a one-sequence launch's program does for that row.
     """
-    assert pool_ids.ndim == 2 and pool_ids.dtype == torch.int32
+    assert pool_ids.ndim == 2 and pool_ids.dtype in (torch.int32, torch.int64)
     rows, groups = pool_ids.shape
     assert pool_size > 0 and pool_size & (pool_size - 1) == 0
     assert seq_lens.shape == (rows,) and seq_lens.dtype == torch.int32
@@ -233,6 +274,39 @@ def gather_candidates(keys, scales, block_table, per, block_stride, layer_offset
             keys.view(torch.uint8), scales, block_table, out_k.view(torch.uint8), out_s, n_cand, keys.stride(0), scales.stride(0),
             block_table.stride(0), block_table.stride(1), per, block_stride, layer_offset, width, block_p)
     return out_k, out_s
+
+
+@triton.jit
+def _tree_key_bank(KEYS, SCALES, PRIVATE, PRIVATE_S, TABLE, OUT, OUT_S, prefix, total,
+                   key_s0, scale_s0, private_s0, private_scale_s0, table_s0,
+                   PER: tl.constexpr, stride, offset, D: tl.constexpr, B: tl.constexpr):
+    p = tl.program_id(0)*B+tl.arange(0, B)
+    canonical = p < prefix
+    page = tl.load(TABLE+(p//PER)*table_s0, canonical, other=0)
+    rec = page.to(tl.int64)*stride+offset+p % PER
+    d = tl.arange(0, D)
+    # Select the record address before loading: no second key tile is live.
+    key_ptr = tl.where(canonical, KEYS+rec*key_s0, PRIVATE+(p-prefix)*private_s0)
+    scale_ptr = tl.where(canonical, SCALES+rec*scale_s0, PRIVATE_S+(p-prefix)*private_scale_s0)
+    key = tl.load(key_ptr[:, None]+d[None, :], (p < total)[:, None], other=0)
+    scale = tl.load(scale_ptr, p < total, other=0)
+    tl.store(OUT+p[:, None]*D+d[None, :], key, (p < total)[:, None])
+    tl.store(OUT_S+p, scale, p < total)
+
+
+def tree_key_bank(keys, scales, private, private_scales, table, per, stride, offset, prefix):
+    """One byte-copy launch: paged canonical keys followed by private keys."""
+    from engine.modules.tree_attention import check_key_bank
+    check_key_bank(keys, scales, private, private_scales, table, per, stride, offset, prefix)
+    total, width = prefix+len(private), keys.shape[1]
+    out = torch.empty((total, width), dtype=keys.dtype, device=keys.device)
+    scale = torch.empty(total, dtype=scales.dtype, device=keys.device)
+    if total:
+        _tree_key_bank[(triton.cdiv(total, 64),)](keys.view(torch.uint8), scales.view(torch.int32),
+            private.view(torch.uint8), private_scales.view(torch.int32), table, out.view(torch.uint8), scale.view(torch.int32),
+            prefix, total, keys.stride(0), scales.stride(0), private.stride(0), private_scales.stride(0),
+            table.stride(0), per, stride, offset, width, 64, num_warps=4)
+    return out, scale
 
 
 @triton.jit

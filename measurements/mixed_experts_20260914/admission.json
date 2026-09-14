@@ -1,0 +1,25 @@
+{
+  "session": "st-mixed-experts0914v1",
+  "ticket": "1789342553296863",
+  "accepted": true,
+  "status": "queued",
+  "source_revision": "f8151e61a9ef22bf601922f93fd003f0b6ba5f96",
+  "checkout": "/home/choiceoh/st-worktrees/codex-gb10-mixed-experts",
+  "image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+  "launch_id": "94a3bf60d7ad4ad0bf211178416ee05f",
+  "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/6458687edab6437b7a31bed748598e2ad2ce8d04ab3ef73de9479c711f68273e.log",
+  "command": [
+    "bash",
+    "probes/run_engine_probe.sh",
+    "probes/engine_mixed_experts_check.py",
+    "--ranks",
+    "/home/choiceoh/models/st-glm53-nvidia-tp4-9391",
+    "--ckpt-meta",
+    "/home/choiceoh/models/st-glm53-nvidia-tp4-9391",
+    "--samples",
+    "8",
+    "--output",
+    "/cache/mixed-experts0914v1.json"
+  ],
+  "scope": "queued M0/M1a component qualification; no GPU result, cold completion or serving performance proof"
+}

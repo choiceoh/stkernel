@@ -1,0 +1,35 @@
+{
+  "base_sha": "c58a8eb534ee5bf712f09f1ab68891ce02edcb85",
+  "gpu_used": false,
+  "source_sha256": {
+    "engine/kernels/indexer.py": "baecbf435ef436fa030e49431a7abff5ddef441b3ac2dd53a9950fcf8de7eb7a",
+    "engine/kernels/mla/__init__.py": "0a025655272f0f294ffce85472dfe80b69540133d8442f0d6a955b32a6dc7b85",
+    "engine/kernels/mla/decode_absorb.py": "a4aaea020d9ee8cf2323d59d92e0825e373c0d59892f7e714dc67b91b49285f6",
+    "engine/kernels/mla/glm53_megakernel.cu": "bbfc935f093dfd835c263c4006107dad8173f64803f97dbca01393cd930419b6",
+    "engine/modules/sparse_attention.py": "85e2c91a7173cf6b125d0338699d09cc494deab4c1631817e2594e557b330765",
+    "engine/modules/tree_attention.py": "66b1829d3547809bd92c4a0d7e493b98a6eca0a0f24057282dfa29ea0351a202",
+    "engine/profiles/glm53/lanes.py": "a41d320a525513964789c608b21ed6df720bcb8f4695bf9c7a7f05f3de134da5",
+    "engine/profiles/glm53/tree_decode.py": "49a5013f2a382ae575e96d767ef6443cad9402d705d4df860d010b5996b26808",
+    "probes/engine_decode_dsa_compile.py": "1691c95e91b5ac03581c24a4e3a09ba31a2aceb6a5f211d3f5bb6507f3ab6333",
+    "probes/engine_mla_hardware_check.py": "a3f4389213000a763fb828915d5fea99b8b48de283e2210e0f4bd867cabe552d",
+    "probes/engine_mla_stream_host_check.py": "61862732a1e040d16dde7f73e6abdb0dea1f7727b1f20d08f46e679bc2b63b6b",
+    "probes/engine_tree_paged_bench.py": "5ce03119952d44f917cf1043ff6ade04d19586c59b851ecaa7a064a0ec15fdf7",
+    "probes/engine_tree_paged_compile.py": "f1e0779a0736cc5e229df9f0945893f6d2fc2e350b43a6c62a09dc2e4e3c7edc",
+    "tests/test_engine_mla_hardware.py": "7d29a541eda0bef745ec1fef1be2f92da070728787afcb5f0169f91113f78fad",
+    "tests/test_engine_tree_attention.py": "8ebb74e267de2f02a58a873a843f5aedde980ca2129ccacabfc41901b84ba9cd",
+    "tests/test_engine_tree_dataflow_gpu.py": "b9a963fe0012b2fc8750a6701420d45763c0a7929a2354eae644fc27a3edac8b",
+    "tests/test_engine_tree_decode.py": "de8a683259c69fba9ac62123693141653387018a09be21a7023a4895a47228c4"
+  },
+  "artifact_sha256": {
+    "engine-check.txt": "855d51b10be04d340ea69d4193bc597606c6af6cadf88e1369b8335ab7d654e7",
+    "cpu-ab.json": "1ce583cb1c26007acc8cecb7fe9e4ef91c407b7d9508894dbecf1096d508897a",
+    "final-focused.txt": "f75e2a3d38614b6129f63bfce68ef73c3e0e359895fc2d5bcc9f60ca4d88d6e9",
+    "full-mla.log": "13100a82ad3f72e183e5934caa015b5250072f3ff3234ed620a1cd3cb85ff60c",
+    "README.md": "73499231b6b5353ede5244a0aa2e2ec264bacd61c9bb91d7709698378dc4d937",
+    "ordinary-slots-compile.json": "d3265fdf16ba57d6ca7d640b472a4b1fa03ef68f956dcc3a508c9344864d51dc",
+    "interpreter.txt": "f1351042bc471862f662530dd6e43305695356b3569435fe7c251328471675da",
+    "compile.json": "06ded9dcd7ab0ea56d6742ef55a4d33b3b63670210eb3e2d9d4a784e23f4b304",
+    "copy-model.json": "73fa3bae39ab53093b1ddd8d9a100fc0746b3586f0a1b3fd2e08d8cf622c338c"
+  },
+  "local_full_gate_revision": "81577b5788c3c974f5aa69e31b0b32ecad173bb8"
+}

@@ -1,0 +1,14 @@
+{
+  "session": "st-ffn-packets0914v2",
+  "launch_id": "6e787da122444295b8906662d1ce94a9",
+  "pid": 3368864,
+  "disposition": "started",
+  "state": "queued",
+  "accepted": true,
+  "startup_log": "/home/choiceoh/glm53-logs/fleet/launches/2953d3e7ca8b36fc7acae442a9b3c982fc95601b7cb6c6e951480c0b51e85469.6e787da122444295b8906662d1ce94a9.log",
+  "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/84cae39b2a39a5db5ad18d758a995b4f97c60e7090c46df5783db83017c1f6c6.log",
+  "ticket": "17893163563368864",
+  "source_revision": "4e24cc3d11d7b3006cc39928d9e410eb1ea042a3",
+  "source_checkout": "/home/choiceoh/st-worktrees/codex-gb10-ffn-packets",
+  "image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc"
+}

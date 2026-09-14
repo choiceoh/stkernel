@@ -1,0 +1,36 @@
+{
+  "status": "PASS",
+  "mode": "interpreter",
+  "gpu_used": false,
+  "cases": [
+    {
+      "rows": 1,
+      "heads": 8,
+      "kv_heads": 2,
+      "exact": true,
+      "dtype": "float32"
+    },
+    {
+      "rows": 8,
+      "heads": 8,
+      "kv_heads": 2,
+      "exact": true,
+      "dtype": "float32"
+    },
+    {
+      "rows": 32,
+      "heads": 8,
+      "kv_heads": 2,
+      "exact": true,
+      "dtype": "float32"
+    },
+    {
+      "rows": 8,
+      "heads": 32,
+      "kv_heads": 8,
+      "exact": true,
+      "dtype": "float32"
+    }
+  ],
+  "scope": "FP32 CPU address/equality or SM121 compilation only; BF16 GPU/replay/acceptance pending"
+}

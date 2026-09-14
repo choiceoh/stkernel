@@ -152,8 +152,13 @@ OPTION_KEYS = ("top_p", "top_k", "seed", "presence_penalty", "frequency_penalty"
                "reasoning_budget", "reasoning_end", "_host_stop", "_transient")
 
 
-def validate_options(options: dict) -> None:
-    """The engine's verdict on a request's options: unknown keys and out-of-range values are refused (D3)."""
+def validate_options(options: dict, vocab: "int | None" = None) -> None:
+    """The engine's verdict on a request's options: unknown keys and out-of-range values are refused (D3).
+
+    `vocab`: the width of the model's logits. A token id an option names -- a logit_bias key, a stop token, the tokens
+    the reasoning budget and a grammar wait for -- must lie below it: one past it was an index into the logits row
+    inside the step (`process_logits`' bias add and min_tokens' forbidden ends), and an exception there ends the engine
+    for every request on it, so the request that named it is refused here instead."""
     unknown = sorted(set(options) - set(OPTION_KEYS))
     if unknown:
         raise ValueError(f"unknown sampling options {unknown}")
@@ -183,6 +188,13 @@ def validate_options(options: dict) -> None:
     stop = options.get("stop_token_ids")
     if stop is not None and (not isinstance(stop, list) or any(type(t) is not int or t < 0 for t in stop)):
         raise ValueError("stop_token_ids must be a list of token ids")
+    if vocab is not None:
+        named = [("logit_bias", k) for k in (bias or {})] + [("stop_token_ids", t) for t in (stop or ())]
+        named += [(key, options[key]) for key in ("reasoning_end", "grammar_after") if type(options.get(key)) is int]
+        outside = [(key, t) for key, t in named if type(t) is int and t >= vocab]
+        if outside:
+            key, t = outside[0]
+            raise ValueError(f"{key} names token {t}, outside the model vocabulary of {vocab}")
     lp = options.get("logprobs")
     if lp is not None and (type(lp) is not int or not 0 <= lp <= 20):
         raise ValueError("logprobs must be an integer between 0 and 20")

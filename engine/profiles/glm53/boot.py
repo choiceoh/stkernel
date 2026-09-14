@@ -62,27 +62,16 @@ TOKEN_BUDGET = 32768                # fourteen aligned blocks -> 32,256 prefill 
 # Boot must qualify the new largest shape at both ends of the actual KV pool;
 # throughput and answer quality still require the candidate consumer gate.
 MAX_WAIT_S = 0.0                    # admit into a free decode row at the next chunk boundary
-MAX_SEQS = 4
+MAX_SEQS = 2
 """Resident decode rows: state slots, captured decode widths and the context ceiling follow.
 
-8 was chosen for kernel coverage (48 target tokens at K=5, which mHC and one-shot reach) and
-nothing else, and no release has ever served it -- every production release pins 4. Measured
-side by side from two boot ledgers on the same commit (45차 §72, 2026-09-12):
+Operator decision (2026-09-14): focus serving on C=1 and C=2. With K=7,
+target verification captures 8 and 16 token rows. The third request waits
+for a resident row; TP remains four GB10 nodes.
 
-    width          graph pool   captured ceiling   target graphs   boot     state slots
-    1-4 (this)       0.60 GiB          1,035,264              36   161.9 s     1.21 GiB
-    1-8              2.50 GiB            364,032              64   208.7 s     2.17 GiB
-
-2.86 GiB of a box that reached 7.09 GiB free during capture, and 47 s of boot, to buy a
-concurrency nothing serves. And the rows are not free of each other: the state slots come out
-of the same `kv_gib`, so at 7.0 the pool is 1,314 blocks at four rows and 1,095 at eight
-(budget.budget, same argument). Fewer blocks is a shorter longest sequence, which is why the
-captured ladder tops out lower -- the width that was supposed to serve more requests serves
-each of them less context.
-
-Coverage still holds at 4: 24 target tokens is inside the same kernels. The repo default and
-what production serves are now one number -- they disagreed, and that is exactly how two
-onepass runs 27 minutes apart on one commit came out incomparable (45차 §72).
+Every boot mode, scheduler admission, state allocation, drafter preparation
+and graph capture uses this number. Fewer widths reduce preparation and
+resident state, but this change alone is not a measured decode-speed gain.
 """
 PREFIX_TIER_STAGE = 32 << 20        # the prefix tier's pinned staging + device scratch
 TIER_GIB = 64.0
@@ -156,6 +145,18 @@ def grammars(ckpt, vocab: int, device=None, stop_token_ids=None):
 CHAT_TEMPLATE = "chat_template_mm_v2.jinja"     # what production serves with (launchers/lib/glm53-chat.sh); honours the `thinking` kwarg
 REASONING_EFFORT_ALIASES = {"max": "high"}       # accept existing clients while capping this model at high
 REASONING_END = "</think>"                       # the model closes its reasoning with this token; the door splits content there
+# How every think block starts (base/serve.Server.opener_kwargs). Left to itself GLM-5.3 opens half of onepass's graded
+# JSON questions with "We need answer JSON only. Need parse problem." and goes on in that clipped register for thousands
+# of tokens -- the drafter's worst case. The first words set the register. The thirty onepass JSON questions at C=4,
+# greedy on the Red Hat ranks (2026-09-14), score / final answers right / fully right / tokens an answer:
+#   no opener                                  175/190  29  21  4,390   acceptance 38.0%
+#   "Let me parse the problem." (#942)         164      25  18  1,954   54.2%
+#   "We need to parse the problem."            170      27  18  2,601   51.8%
+#   these words                                175      28  19  2,442   52.0%; on main 87304780 172 27 21 2,621 51.0%
+# These words matched no opener's score at 56% of its tokens; "Let me" is shorter still and checks less. The two runs
+# of these words agreed on 14 of 30 texts and ended 3 points apart, so one run is that noisy. On 62 questions of new
+# forms (dates, paths, knapsack, tables, seating, units, Korean puzzles) 61 were right.
+REASONING_OPENER = "We need to parse the problem. We have"
 REQUEST_TIMEOUT_S = 3600.0                       # a request older than this is cancelled (the production probe's long-ingest bound x12)
 # A finished turn shorter than this is released, not parked. A GLM-5.3 slot's recurrent state is ~256 MiB a rank
 # whatever the length, so parking a 17-token health ping wrote that to NVMe every thirty seconds and pushed real
@@ -228,17 +229,19 @@ def declared(a, comm_world: int) -> Config:
     # GPU timing/quality gates remain pending independently of this choice.
     # 2026-09-14 operator: new improvements are enabled by default; keep
     # measurement status separate from the selected serving recipe.
+    # Deferred FP32 KDA state joined the recipe the same day at operator request.
     gb10_defaults = dict(direct_mhc=1, prefill_project_tiles=1,
                          nvme_mapped_staging=1, decode_iterations=4, prefill_indexer_shards=0, prefill_dense_prefix=1,
                          prefill_absorb_tiles=1, decode_fastpaths=1, decode_dsa_inputs=1,
-                         decode_indexer_gate=1, decode_absorb_tiles=1)
+                         decode_indexer_gate=1, decode_absorb_tiles=1, deferred_kda=1, oneshot_rails=2, oneshot_inline=1,
+                         prefill_ffn_packets=1)
     if getattr(a, "production", False):
         # tile32 passed the full GPU numerical/graph and matched 2K/32K/128K
         # serving brackets. Keep it in the production contract so a stale
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
-                        execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0, terminal_mhc=0,
+                        execution_overlap=0, early_observe=0, prefill_tiles=1, terminal_mhc=0,
                         draft_fc_precision=SERVING_POLICY.fc_precision, draft_fc_calibration=SERVING_POLICY.fc_calibration,
                         draft_diagnostics=int(SERVING_POLICY.diagnostics), draft_tuning='', **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
@@ -255,6 +258,9 @@ def declared(a, comm_world: int) -> Config:
         Knob("decode_fastpaths", gb10_defaults["decode_fastpaths"], _dt.date(2026, 9, 30),
              "Operator-enabled K=7 input reuse, paired projections and direct TX outputs; GPU qualification pending",
              "STK_decode_fastpaths=0", int),
+        Knob('prefill_ffn_packets', gb10_defaults['prefill_ffn_packets'], _dt.date(2026, 9, 30),
+             'Operator-enabled sender-owned routes and direct FP8 expert/shared inputs; local FFN qualified, fleet serving pending',
+             'STK_prefill_ffn_packets=0', int),
         Knob("prefill_absorb_tiles", gb10_defaults["prefill_absorb_tiles"], _dt.date(2026, 9, 30),
              "Operator-enabled token-major MLA contractions; GPU timing and quality qualification pending",
              "STK_prefill_absorb_tiles=0", int),
@@ -278,8 +284,9 @@ def declared(a, comm_world: int) -> Config:
         Knob("terminal_mhc", 0, _dt.date(2026, 9, 30),
              "Decode and prefill: preserve BF16 channel rounding while writing terminal means into final feature columns",
              "STK_terminal_mhc=0", int),
-        Knob("deferred_kda", 0, _dt.date(2026, 9, 30),
-             "FP32 KDA: verify into update factors, commit accepted states across all layers in one launch",
+        Knob("deferred_kda", gb10_defaults["deferred_kda"], _dt.date(2026, 9, 30),
+             "Operator-enabled FP32 KDA: verify into update factors, commit accepted states across all layers in one launch; "
+             "K=7 GPU exactness and paired timing pending",
              "STK_deferred_kda=0", int),
         Knob("decode_iterations", gb10_defaults["decode_iterations"], _dt.date(2026, 9, 30),
              "Bounded greedy TP4 decode: reserve/read back 2 or 4 iterations with rank-agreed exits",
@@ -287,6 +294,13 @@ def declared(a, comm_world: int) -> Config:
         Knob("nvme_mapped_staging", gb10_defaults["nvme_mapped_staging"], _dt.date(2026, 9, 30),
              "One mapped GB10 staging allocation for NVMe host I/O and GPU gather/scatter",
              "STK_nvme_mapped_staging=0", int),
+        Knob("oneshot_rails", gb10_defaults["oneshot_rails"], _dt.date(2026, 9, 30),
+             "Operator-directed one-shot RDMA over both RoCE PCIe functions, pairs {0,1},{2,3} on the second; "
+             "boot latency gauge and fleet onepass pending",
+             "STK_oneshot_rails=1", int),
+        Knob("oneshot_inline", gb10_defaults["oneshot_inline"], _dt.date(2026, 9, 30),
+             "Inline 8-byte one-shot completion flags; fleet consumer latency and quality pending",
+             "STK_oneshot_inline=0", int),
         Knob("prefill_project_tiles", gb10_defaults["prefill_project_tiles"], _dt.date(2026, 9, 30),
              "Overlap TP4 prefill tile arrival with independent KDA input projection",
              "STK_prefill_project_tiles=0", int),
@@ -311,7 +325,7 @@ def declared(a, comm_world: int) -> Config:
              "STK_mla_prefill=tile32"),
         Knob("context_ceiling", 0, _dt.date(2026, 9, 30),
              "the served context ceiling: the door refuses a longer horizon and the decode ladder captures no bucket above it. "
-             "0 = the checkpoint's trained positions (1,048,576), which is nine buckets and 36 target graphs; the boot's "
+             "0 = the checkpoint's trained positions (1,048,576); each context bucket captures the declared request widths. The boot's "
              "'target/<shape>/' memory rows carry each bucket's seconds, so a boot pair prices the cut before it is taken",
              "STK_context_ceiling=0", int),
     ]
@@ -338,6 +352,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         raise ValueError('draft tuning requires the native drafter')
     if draft_policy.active and (execution != "native" or not use_drafter):
         raise ValueError("draft acceptance experiments require the native drafter")
+    if execution_plan is not None and execution_plan.prefill_ffn_packets and execution != 'native':
+        raise ValueError('packet FFN requires native execution')
     F = facts.load(ckpt_meta)
     if kda_state_dtype is not None:
         from dataclasses import replace
@@ -501,6 +517,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                             chunk=sched.chunk_for(F.chunk_align, TOKEN_BUDGET, D.k if D else 0), ckpt=ckpt_meta,
                             ranks_dir=ranks_dir, rank=comm.rank, drafter_dir=drafter_dir if D else None,
                             snapshots=snapshots, tier_enabled=bool(tier_dir), kda_state_dtype=F.kda_state_dtype,
+                            prefill_ffn_packets=bool(execution_plan is not None and execution_plan.prefill_ffn_packets),
                             draft_tp=comm.world_size if execution == "native" else 1,
                             draft_native=execution == "native", router_bytes=router_bytes, projection_bytes=projection_bytes,
                             draft_policy=draft_policy, workspace_gib=workspace_gib)
@@ -557,6 +574,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 net.prefill_indexer_shards = bool(execution_plan is not None and execution_plan.prefill_indexer_shards)
                 net.prefill_dense_prefix = bool(execution_plan is not None and execution_plan.prefill_dense_prefix)
                 net.prefill_absorb_tiles = bool(execution_plan is not None and execution_plan.prefill_absorb_tiles)
+                net.prefill_ffn_packets = bool(execution_plan is not None and execution_plan.prefill_ffn_packets)
                 if D:
                     # Do not overlap the temporary checkpoint with target packing.
                     drafter = load_drafter()
@@ -841,7 +859,12 @@ def native_execution_report(net, drafter):
                  prefill_indexer_shards=sorted(getattr(net, 'prefill_indexer_executed', ())),
                  prefill_dense_prefix=sorted(getattr(net, 'prefill_dense_prefix_executed', ())),
                  prefill_covered_queries=sorted(getattr(net, 'prefill_covered_queries_executed', ())),
-                 prefill_absorb_tiles=sorted(getattr(net, 'prefill_absorb_tiles_executed', ())))
+                 prefill_absorb_tiles=sorted(getattr(net, 'prefill_absorb_tiles_executed', ())),
+                 prefill_ffn_packets=sorted(getattr(net, 'prefill_packet_executed', ())),
+                 prefill_ffn_packet_plan=sorted(getattr(net, 'prefill_packet_planned', ())),
+                 prefill_ffn_received_peak_bytes=getattr(net, 'prefill_packet_peak_bytes', 0))
+    if proof['prefill_ffn_packets'] != proof['prefill_ffn_packet_plan']:
+        raise RuntimeError(f'agreed packet FFN readers were not executed: {proof}')
     if (getattr(net, 'prefill_absorb_tiles', False)
             and set(proof['prefill_absorb_tiles']) != {
                 (L, side) for L in net.layers if net.F.is_dsa(L) for side in ('query', 'output')}):
@@ -977,7 +1000,7 @@ def local(a) -> int:
         if a.park:
             # D16 on the real caches: the finished conversation 0 still holds its blocks (keep_idle); park it, the arena
             # gets them back; resume into fresh blocks; wake and decode 4 more tokens -- they must equal a straight run's
-            seq, straight = 0, 2
+            seq = straight = 0
             with rec.phase("park"):
                 free_before = caches.pool.available
                 wrote = runner.park(seq)
@@ -992,6 +1015,10 @@ def local(a) -> int:
                 torch.cuda.synchronize()
             continued = engine.generated(seq)[a.max_new:]
             with rec.phase("straight"):                                          # the same prompt, max_new + 4 in one go
+                # The continuation was copied above. Reuse its completed row
+                # for the reference run; C=2 has no third cache row to borrow.
+                runner.evict(straight)
+                engine.forget(straight)
                 engine.add(straight, prompts[seq], max_new=a.max_new + 4)
                 runner.submit(straight, len(prompts[seq]), now=0.0)
                 while straight not in runner.idle and runner.step(now=0.0) is not None:
@@ -1068,7 +1095,8 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
                         model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
                         tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_grammar=tool_grammar,
                         tool_call_start=tool_call_token(tok), generation=generation_defaults(a.ckpt_meta),
-                        vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 and engine.vision is not None else None)
+                        vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 and engine.vision is not None else None,
+                        reasoning_opener=REASONING_OPENER)
         httpd = None
         if comm.rank == 0:
             httpd = server._serve_http()                       # the door opens before the loop
@@ -1226,12 +1254,20 @@ def fleet(a) -> int:
             print(cfg.table())
             print(f"  kernel shape ({shape_source}): {shape.describe()}")
         with rec.phase("prepare one-shot"):
-            comm.prepare_oneshot()
+            if cfg["oneshot_rails"] not in (1, 2):
+                raise ValueError("one-shot rails must be 1 or 2")
+            if cfg["oneshot_inline"] not in (0, 1):
+                raise ValueError("one-shot inline must be 0 or 1")
+            comm.prepare_oneshot(rails=cfg["oneshot_rails"], inline_flags=bool(cfg["oneshot_inline"]))
+            # The transport's own cost on this rank, sampled after its self-tests (µs per collective).
+            for name, value in comm.transport.latency.items():
+                rec.gauge(f"oneshot_{name}_us", value)
+            print(f"  rank{comm.rank}: one-shot rails={comm.transport.rails} latency µs {comm.transport.latency}", flush=True)
         with rec.phase("lanes"):
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
                                        consume_scales=True)
         from engine.profiles.glm53.execution import ExecutionPlan
-        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "decode_dsa_inputs", "decode_indexer_gate", "decode_absorb_tiles")):
+        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "prefill_ffn_packets", "decode_dsa_inputs", "decode_indexer_gate", "decode_absorb_tiles")):
             raise ValueError("execution switches must be 0 or 1")
         plan = ExecutionPlan(bool(cfg["execution_overlap"]), bool(cfg["early_observe"]), cfg["prefill_tiles"],
                              sched.chunk_for(facts.CHUNK_ALIGN, TOKEN_BUDGET, facts.SPEC_K),
@@ -1241,6 +1277,7 @@ def fleet(a) -> int:
                              prefill_dense_prefix=bool(cfg["prefill_dense_prefix"]),
                              prefill_absorb_tiles=bool(cfg["prefill_absorb_tiles"]),
                              decode_fastpaths=bool(cfg["decode_fastpaths"]), decode_dsa_inputs=bool(cfg["decode_dsa_inputs"]),
+                             prefill_ffn_packets=bool(cfg["prefill_ffn_packets"]),
                              decode_indexer_gate=bool(cfg["decode_indexer_gate"]),
                              decode_absorb_tiles=bool(cfg["decode_absorb_tiles"]))
         from engine.profiles.glm53.draft_policy import DraftPolicy
@@ -1269,6 +1306,10 @@ def fleet(a) -> int:
                             "draft_fc_bias_status": getattr(engine.drafter, 'fc_bias_status', 'unavailable'),
                             "draft_selector_trace_every": str(getattr(getattr(engine.drafter, 'tuning', None), 'trace_every', 0)),
                             "nvme_mapped_staging": str(cfg["nvme_mapped_staging"]),
+                            "oneshot_rails": str(comm.transport.rails),
+                            "oneshot_inline": str(int(comm.transport.inline_flags)),
+                            "oneshot_latency_method": comm.transport.LATENCY_METHOD,
+                            "oneshot_latency_us": " ".join(f"{k}={v:g}" for k, v in comm.transport.latency.items()),
                             "kda_state_dtype": F.kda_state_dtype,
                             "mla_prefill": cfg["mla_prefill"], "spec_k": str(engine.drafter.k),
                             "context_ceiling": str(engine.max_context),
@@ -1344,7 +1385,8 @@ def fleet(a) -> int:
                tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_grammar=tool_grammar,
                         tool_call_start=tool_call_token(tok), generation=generation_defaults(a.ckpt_meta),
                vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 else None,
-               latency_root=Path(a.dump_dir) / 'onepass-latency', lease=lease, park_min_tokens=PARK_MIN_TOKENS)
+               latency_root=Path(a.dump_dir) / 'onepass-latency', lease=lease, park_min_tokens=PARK_MIN_TOKENS,
+               reasoning_opener=REASONING_OPENER)
         serving = True
         server.loop()
     except BaseException as exc:
@@ -1406,7 +1448,7 @@ def main(argv=None) -> int:
                     help="the runtime workspace ceiling outside the arena (default: budget.WORKSPACE_GIB); a shape that "
                          "spends more says so here, with its ledger")
     ap.add_argument("--prompt", type=int, default=300)
-    ap.add_argument("--seqs", type=int, default=2)
+    ap.add_argument("--seqs", type=int, choices=range(1, MAX_SEQS + 1), default=MAX_SEQS)
     ap.add_argument("--max-new", type=int, default=8)
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=0)
@@ -1421,6 +1463,9 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     if a.test:
         a.local, a.lanes = True, "served"
+    if not a.local or a.lanes == 'served':
+        from engine.runtime.verify import verify
+        verify()  # Refuse old/mixed CUDA images before allocating the model.
     if a.local:
         if a.kv_gib == KV_GIB:
             a.kv_gib = 1.0                                      # a layer subset on one box

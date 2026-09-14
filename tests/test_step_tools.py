@@ -199,9 +199,9 @@ class CostModelTest(unittest.TestCase):
         rows = {label: (kind, delta) for label, kind, _r, _s, delta in
                 sim.validate_against(record, sim_out)}
         self.assertEqual(rows["decode step/s"][0], "입력")
-        self.assertEqual(rows["tokens/step"][0], "예측")
-        self.assertEqual(rows["클라이언트 tok/s"][0], "예측")
-        self.assertEqual(rows["TPOT ms"][0], "예측")
+        self.assertEqual(rows["tokens/step"][0], "입력파생")
+        self.assertEqual(rows["클라이언트 tok/s"][0], "재구성")
+        self.assertEqual(rows["TPOT ms"][0], "재구성")
         self.assertAlmostEqual(rows["클라이언트 tok/s"][1], 0.2 / 30.0, places=3)
         self.assertAlmostEqual(rows["TPOT ms"][1], (1000 / 30.2 - 33.3) / 33.3, places=3)
         self.assertAlmostEqual(rows["e2e med ctx2K"][1], (5.05 - 5.0) / 5.0, places=2)
@@ -585,8 +585,10 @@ class KernelBudgetTests(unittest.TestCase):
             self.assertEqual(sim.acc_hist_from_peek(q), hist)
 
     def test_fold_width_waits_for_a_completed_c4_pair(self):
-        c1 = {"requests": [{"ctx": 2000, "concurrency": 1}], "decode": {"fixed_pooled_step_s": 19.5}}
-        c4 = {"requests": [{"ctx": 2000, "concurrency": 4}], "decode": {"fixed_pooled_step_s": 8.8}}
+        c1 = {"git":"same", "requests": [{"ctx": 2000, "concurrency": 1}],
+              "decode": {"fixed_pooled_step_s": 19.5, "num_spec":6}}
+        c4 = {"git":"same", "requests": [{"ctx": 2000, "concurrency": 4}]*4,
+              "decode": {"fixed_pooled_step_s": 8.8, "num_spec":6}}
         folded = sim.fold_width_from_records([c1, c4])
         self.assertAlmostEqual(folded["decode_ms"], 51.3, delta=0.1)
         self.assertAlmostEqual(folded["decode_ms_per_row"], (113.6 - 51.3) / 3, delta=0.1)

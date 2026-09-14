@@ -1,0 +1,26 @@
+{
+  "status": "PASS",
+  "evidence": "full Torch extension compile/load only, rails 1/2 x inline 0/1",
+  "gpu_used": false,
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "max_elements": 262144,
+  "extension_names": {
+    "rails1_inline0": "st_oneshot_e6d30da14fe75970102565f9",
+    "rails1_inline1": "st_oneshot_4de9b2daba3ad6561923d566",
+    "rails2_inline0": "st_oneshot_d477b576e9a3516696f213cc",
+    "rails2_inline1": "st_oneshot_c542bb0fdea53f1213c59050"
+  },
+  "extension_sha256": {
+    "rails1_inline0": "b46f8f27a1b5a3706d03f80cfe3d60367997179f2ad43c4e8b1a138b487a2a4d",
+    "rails1_inline1": "eb3157451d1657758fa5f9635bf9fa80e7cbd14100d43e8f82b151edd3639a15",
+    "rails2_inline0": "47f280a9f6945d465b0dcf1f8eb34b943376c455dd766b3886c1e010952751dc",
+    "rails2_inline1": "f0f0d47d4ade65f138a2ce02a5b89685bf7a21321a6a056a99d48aeddd49f529"
+  },
+  "source_sha256": {
+    "engine/kernels/oneshot/SOURCE.json": "b9c7f40d9576b068d805d65fdd2f91013beab52173d636ce4817744e0d173159",
+    "engine/kernels/oneshot/__init__.py": "4f32e2fe55ed2f17f4ab37d0e5608595cdfe581eba186df91c971fa90e703f2c",
+    "engine/kernels/oneshot/dsv4_oneshot_ar.cu": "a0b98d4f323ac13714a1fe3394bb98b087a0d14073a9e440fe209e1a78784962",
+    "engine/kernels/oneshot/dsv4_oneshot_transport.h": "bf8b8359ed76ce31ad1eae8c80b56bd47384e1f2e02b993af1f040718450793a"
+  }
+}

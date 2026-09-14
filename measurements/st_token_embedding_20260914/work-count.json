@@ -1,0 +1,56 @@
+{
+  "status": "PASS",
+  "mode": "inventory",
+  "gpu_used": false,
+  "cases": [
+    {
+      "rows": 8,
+      "hidden": 4096,
+      "reference_materializing_tensor_ops": 7,
+      "operations": {
+        "aten.bitwise_or.Tensor": 1,
+        "aten.embedding.default": 1,
+        "aten.ge.Scalar": 1,
+        "aten.lt.Scalar": 1,
+        "aten.masked_fill.Scalar": 2,
+        "aten.sub.Tensor": 1
+      },
+      "candidate_kernel_launches": 1
+    },
+    {
+      "rows": 32,
+      "hidden": 4096,
+      "reference_materializing_tensor_ops": 7,
+      "operations": {
+        "aten.bitwise_or.Tensor": 1,
+        "aten.embedding.default": 1,
+        "aten.ge.Scalar": 1,
+        "aten.lt.Scalar": 1,
+        "aten.masked_fill.Scalar": 2,
+        "aten.sub.Tensor": 1
+      },
+      "candidate_kernel_launches": 1
+    },
+    {
+      "rows": 2304,
+      "hidden": 4096,
+      "reference_materializing_tensor_ops": 7,
+      "operations": {
+        "aten.bitwise_or.Tensor": 1,
+        "aten.embedding.default": 1,
+        "aten.ge.Scalar": 1,
+        "aten.lt.Scalar": 1,
+        "aten.masked_fill.Scalar": 2,
+        "aten.sub.Tensor": 1
+      },
+      "candidate_kernel_launches": 1
+    }
+  ],
+  "scope": "CPU byte identity, native compile or tensor-op inventory; GPU execution and speed pending",
+  "source_sha256": {
+    "engine/kernels/token_embedding.py": "a23dd2f2b04e1a7522dc96a72f61497e654c0fe313c74f1c1ee92268c113dfff",
+    "engine/modules/token_embedding.py": "fc1e074652880c7a2ca4f11f0218dc3f90a4756295432e685e4620976a162b72",
+    "engine/profiles/glm53/net.py": "99f95214c3740a10c5782803f9d29ca3e5f6b287808971558dee89e2a70389cf",
+    "probes/engine_token_embedding_check.py": "f1fb599d6184ad67da508008a99ca70c6fb9dd0985026c1f973e47cc99cb7c28"
+  }
+}

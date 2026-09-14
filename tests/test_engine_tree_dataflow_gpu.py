@@ -1,0 +1,235 @@
+"""Opt-in device numerical/worker checks. CPU CI skips; no fleet reservation here."""
+import unittest
+
+import torch
+
+from engine.modules.speculative_tree import Tree
+from engine.modules.tree_kda import verify
+
+
+@unittest.skipUnless(torch.cuda.is_available(), "requires an explicitly available CUDA device")
+class NativeTreeDataflowTests(unittest.TestCase):
+    def test_paged_key_bank_copies_exact_bits_and_replays_changed_records(self):
+        from engine.modules.tree_attention import key_bank
+        from tests.test_engine_tree_bank import bank_cases
+        def bits(t):
+            return t.view(torch.uint8 if t.element_size() == 1 else torch.int32)
+        for args, expected, expected_scales in bank_cases():
+            device = []
+            for t in args[:5]:
+                moved = torch.empty_strided(t.shape, t.stride(), dtype=t.dtype, device='cuda')
+                bits(moved).copy_(bits(t))
+                device.append(moved)
+            if not expected.numel():
+                actual, scales = key_bank(*device, *args[5:])
+                self.assertEqual((actual.numel(), scales.numel()), (0, 0))
+                continue
+            stream = torch.cuda.Stream()
+            stream.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(stream):
+                for _ in range(3):
+                    key_bank(*device, *args[5:])
+            torch.cuda.current_stream().wait_stream(stream)
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph, stream=stream):
+                actual, scales = key_bank(*device, *args[5:])
+            for repeat in range(3):
+                if repeat:
+                    for t in device[:4]:
+                        bits(t).bitwise_xor_(1)
+                    prefix, per = args[8], args[5]
+                    pages = (prefix+per-1)//per
+                    device[4][:pages].copy_(device[4][:pages].flip(0))
+                    reference = key_bank(*(t.cpu() for t in device), *args[5:])
+                    expected, expected_scales = bits(reference[0]), bits(reference[1])
+                graph.replay()
+                self.assertTrue(torch.equal(bits(actual).cpu(), expected))
+                self.assertTrue(torch.equal(bits(scales).cpu(), expected_scales))
+            graph.reset()
+
+    def test_private_mla_banks_match_copied_cache_and_replay_changed_values(self):
+        from engine.kernels import mla
+        from engine.kernels.mla.decode_absorb import tree_absorb
+        if torch.cuda.get_device_capability() != (12, 1):
+            self.skipTest('tree MLA is an SM121 experiment')
+        mla.maybe_arm()
+        torch.manual_seed(732)
+        for rows in (1, 8, 15, 32):
+            canonical = torch.randn(256, 512, device='cuda').to(torch.float8_e4m3fn)
+            private = torch.randn(rows, 512, device='cuda').to(torch.float8_e4m3fn)
+            q = torch.randn(rows, 16, 512, device='cuda').bfloat16()
+            slots = torch.randint(0, 256, (rows, 67), device='cuda', dtype=torch.int32)
+            slots[:, ::3] = -(torch.arange(rows, device='cuda', dtype=torch.int32)[:, None]+1)
+            lens = torch.full((rows,), 67, device='cuda', dtype=torch.int32)
+            lens[0] = 1
+            # Warm the private kernel and its occupancy/attribute cache first.
+            stream = torch.cuda.Stream()
+            stream.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(stream):
+                for _ in range(3):
+                    mla.mla_decode(q, canonical, slots, lens, .0625, 1., branch=private)
+            torch.cuda.current_stream().wait_stream(stream)
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph, stream=stream):
+                got = mla.mla_decode(q, canonical, slots, lens, .0625, 1., branch=private)
+            for repeat in range(3):
+                q.normal_()
+                private.copy_(torch.randn_like(private, dtype=torch.float32).to(private.dtype))
+                canonical.copy_(torch.randn_like(canonical, dtype=torch.float32).to(canonical.dtype))
+                slots[:, ::3] = -((torch.arange(rows, device='cuda', dtype=torch.int32)[:, None]+repeat) % rows+1)
+                lens[-1] = 0 if rows > 1 and repeat == 2 else 67
+                copied = torch.where((slots < 0)[:, :, None], private.view(torch.uint8)[(-slots.long()-1).clamp_min(0)],
+                                     canonical.view(torch.uint8)[slots.long().clamp_min(0)]).view(-1, 512)
+                linear = torch.arange(rows*67, device='cuda', dtype=torch.int32).view(rows, 67)
+                expected = mla.mla_decode(q, copied, linear, lens, .0625, 1.).clone()
+                graph.replay()
+                torch.testing.assert_close(got, expected, atol=0, rtol=0)
+            graph.reset()
+            weights = torch.randn(16, 512, 512, device='cuda').bfloat16()
+            for transpose in (False, True):
+                x = torch.randn(rows, 16, 512 if transpose else 256, device='cuda').bfloat16()
+                weight = weights[:, 256:] if transpose else weights[:, :256]
+                actual = tree_absorb(x, weight, transpose=transpose)
+                expected = torch.einsum('thc,hvc->thv' if transpose else 'thd,hdc->thc', x, weight)
+                torch.testing.assert_close(actual, expected, atol=.25, rtol=.015)
+                self.assertTrue(actual.is_contiguous())
+
+    def test_w4a8_pipeline_replays_with_new_inputs_and_matches_queued(self):
+        if torch.cuda.get_device_capability() != (12, 1):
+            self.skipTest("W4A8 pipeline is an SM121-only experiment")
+        from dataclasses import replace
+        from engine.kernels.tile_dataflow import execute_w4a8
+        from engine.kernels.w4a8_pipeline import execute, Workspace
+        from engine.modules.w4a8_dataflow import W4A8Plan, W4A8PipelinePlan, W4A8Weights
+        from tests.test_engine_w4a8_dataflow import packed_weights
+        w = packed_weights()
+        def move(p):
+            return replace(p, data=p.data.cuda(), scale=p.scale.cuda(), rowscale=p.rowscale.cuda())
+        weights = W4A8Weights(move(w.gate_up), move(w.down))
+        for rows in (1, 4, 8, 16, 17, 32):
+            plan = W4A8PipelinePlan(rows, w.hidden, w.intermediate)
+            workspace = Workspace((plan,), torch.device("cuda:0"))
+            x = torch.randn(rows, w.hidden, device="cuda").bfloat16()
+            stream = torch.cuda.Stream()
+            stream.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(stream):
+                for _ in range(3):
+                    execute(plan, x, weights, 10., workspace)
+            torch.cuda.current_stream().wait_stream(stream)
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph, stream=stream):
+                out = execute(plan, x, weights, 10., workspace)
+            address = out.data_ptr()
+            for _ in range(3):
+                x.normal_()
+                expected, error = execute_w4a8(W4A8Plan(rows, w.hidden, w.intermediate), x, weights, 10.)
+                self.assertEqual(error, 0)
+                graph.replay()
+                self.assertEqual(out.data_ptr(), address)
+                torch.testing.assert_close(out, expected, atol=0, rtol=0)
+            graph.reset()
+            # Reusing the borrowed output as the next input is safe: the
+            # input stage consumes it before FC2 writes the same output view.
+            expected, error = execute_w4a8(W4A8Plan(rows, w.hidden, w.intermediate), out.clone(), weights, 10.)
+            self.assertEqual(error, 0)
+            repeated = execute(plan, out, weights, 10., workspace)
+            self.assertEqual(repeated.data_ptr(), address)
+            torch.testing.assert_close(repeated, expected, atol=0, rtol=0)
+
+    def test_native_tree_conv_and_carry_equal_reconstruction(self):
+        from engine.kernels.kda.tree import verify as native, conv as native_conv
+        from engine.modules.tree_kda import Topology, conv
+        tree = Tree(tuple(range(8)), (-1, 0, 0, 1, 3, 2, 5, 6))
+        topology = Topology(tree, torch.device("cuda:0"))
+        torch.manual_seed(189)
+        for dtype in (torch.bfloat16, torch.float32):
+            raw = torch.randn(8, 193).bfloat16()
+            weight, history = torch.randn(193, 4).to(dtype), torch.randn(193, 3).bfloat16()
+            actual = native_conv(raw.cuda(), weight.cuda(), history.cuda(), topology)
+            torch.testing.assert_close(actual.cpu(), conv(tree, raw, weight, history), atol=.015, rtol=.008)
+            for context in (0, 1, 2, 3, 9, 10, 11, 131069):
+                ring = torch.full((193, 10), float('nan'), dtype=raw.dtype, device='cuda')
+                positions = torch.arange(context-3, context, device='cuda')
+                for j in range(3):
+                    if context-3+j >= 0:
+                        ring[:, (context-3+j) % 10] = history[:, j].cuda()
+                prefix = ring[:, positions.clamp_min(0) % 10].masked_fill((positions < 0)[None, :], 0)
+                expected = native_conv(raw.cuda(), weight.cuda(), prefix, topology)
+                actual = native_conv(raw.cuda(), weight.cuda(), ring, topology, context=context)
+                torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+                self.assertTrue(torch.isfinite(actual).all())
+        args = [torch.randn(8, 2, 128, device="cuda").bfloat16() for _ in range(4)]
+        args += [torch.randn(8, 2, device="cuda"), torch.randn(2, device="cuda"),
+                 torch.randn(256, device="cuda"), torch.randn(2, 128, 128, device="cuda")]
+        expected, old = native(tree, *args, -5., topology=topology, carry=False)
+        actual, new = native(tree, *args, -5., topology=topology, carry=True)
+        torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+        torch.testing.assert_close(new.update, old.update, atol=0, rtol=0)
+        for node in range(8):
+            torch.testing.assert_close(new.state(node), old.state(node), atol=0, rtol=0)
+
+    def test_w4a8_workers_preserve_existing_dense_lane(self):
+        if torch.cuda.get_device_capability() != (12, 1):
+            self.skipTest("persistent dataflow is an SM121-only experiment")
+        from dataclasses import replace
+        from engine.kernels.dense import w4_gemm
+        from engine.kernels.tile_dataflow import execute_w4a8
+        from engine.modules.w4a8_dataflow import W4A8Plan, W4A8Weights
+        from engine.kernels.glm_pointwise import swiglu_clamped
+        from tests.test_engine_w4a8_dataflow import packed_weights
+        w = packed_weights()
+        def move(p):
+            return replace(p, data=p.data.cuda(), scale=p.scale.cuda(), rowscale=p.rowscale.cuda())
+        device = W4A8Weights(move(w.gate_up), move(w.down))
+        for rows in (1, 4, 16, 32):
+            torch.manual_seed(814)
+            x = torch.randn(rows, w.hidden, device="cuda").bfloat16()
+            gate, up = w4_gemm(x, device.gate_up).chunk(2, -1)
+            expected = w4_gemm(swiglu_clamped(gate, up, 10.), device.down)
+            for workers in (1, 4, 48):
+                plan = W4A8Plan(rows, w.hidden, w.intermediate, workers=workers)
+                for _ in range(2):
+                    actual, error = execute_w4a8(plan, x, device, 10.)
+                    self.assertEqual(error, 0)
+                    torch.testing.assert_close(actual, expected, atol=3e-4, rtol=.01)
+
+    def test_tree_outputs_and_accepted_fp32_state(self):
+        torch.manual_seed(532)
+        tree = Tree((1, 2, 3, 4, 5, 6), (-1, 0, 0, 1, 2, 4))
+        q, k, v, g = [torch.randn(6, 2, 128).bfloat16() for _ in range(4)]
+        beta, a, bias, initial = torch.randn(6, 2), torch.randn(2), torch.randn(256), torch.randn(2, 128, 128)*.1
+        args = (q, k, v, g, beta, a, bias, initial)
+        expected, factors = verify(tree, *args, -5.)
+        actual, device = verify(tree, *(t.cuda() for t in args), -5.)
+        torch.testing.assert_close(actual.cpu(), expected, atol=1e-3, rtol=.01)
+        for node in range(6):
+            torch.testing.assert_close(device.state(node).cpu(), factors.state(node), atol=2e-5, rtol=1e-3)
+        self.assertEqual(device.initial.dtype, torch.float32)
+
+    def test_nvfp4_workers_raw_tiled_sf6_and_repeated_invocations(self):
+        if torch.cuda.get_device_capability() != (12, 1):
+            self.skipTest("persistent dataflow is an SM121-only experiment")
+        from dataclasses import replace
+        from engine.kernels.tile_dataflow import execute_nvfp4
+        from engine.modules.nvfp4_dataflow import NVFP4Plan, reference
+        from engine.profiles.glm53.modelopt_scales import ModelOptScales
+        from tests.test_engine_nvfp4_dataflow import packed_weights
+        torch.manual_seed(901)
+        for tiled, sf6 in ((False, False), (True, False), (True, True)):
+            w = packed_weights(tiled=tiled, sf6=sf6)
+            x = torch.randn(4, w.hidden).bfloat16()
+            expected, _ = reference(NVFP4Plan(4, w.hidden, w.intermediate), x, w, 10.)
+            s = w.scales
+            ds = ModelOptScales.bind(*(t.cuda() for t in (s.weight13, s.input13, s.weight2, s.input2)),
+                                     experts=1, device=torch.device("cuda:0"))
+            device = replace(w, w13=w.w13.cuda(), w2=w.w2.cuda(), sf13=w.sf13.cuda(), sf2=w.sf2.cuda(), scales=ds)
+            for workers in (1, 4, 48):
+                plan = NVFP4Plan(4, w.hidden, w.intermediate, workers=workers)
+                for _ in range(2):
+                    actual, error = execute_nvfp4(plan, x.cuda(), device, 10.)
+                    self.assertEqual(error, 0)
+                    torch.testing.assert_close(actual.cpu(), expected, atol=3e-4, rtol=.02)
+
+
+if __name__ == "__main__":
+    unittest.main()

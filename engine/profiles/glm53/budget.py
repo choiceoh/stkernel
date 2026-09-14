@@ -25,14 +25,20 @@ from engine.profiles.glm53 import drafter as drafter_mod
 from engine.profiles.glm53.caches import layout, snapshot_layout, stage_bytes, cache_capacity, state_dtype
 
 RUNTIME_FLOOR_GIB = 5.54            # ledger 40th boot table (vLLM): CUDA context + NCCL 16 channels -- re-measure on ST
-WORKSPACE_GIB = 9.0                 # base/runtime_memory's enforced ceiling for everything outside the arena (#549)
+WORKSPACE_GIB = 12.0                # base/runtime_memory's enforced ceiling for everything outside the arena (#549)
 """The ceiling is what admission asks the box for on top of the arena, so every GiB of it that no phase spends is a GiB a
 boot can be refused over. It was 12 from #549 on, with vLLM's activation slope under it. On 2026-09-13 nine ready boots
-wrote ledgers on all four ranks (36 of them): the largest reserved peak is 7.48 GiB, at the largest prefill chunk
-(prefill/32256/0/prepared), and the largest allocated peak 6.67 GiB; one tree's four ranks agree to 0.04 GiB. 9 GiB
-keeps 1.52 GiB above the reserved peak -- the allocator returns its cached blocks before it refuses -- and gives the
-box 3 GiB back: the same day srv4 refused production about 1.5 GiB short. A shape that needs more (a wider decode batch
-warmed 10.56 GiB in an experiment) raises it with `--workspace-gib` / ST_WORKSPACE_GIB and its own ledger."""
+wrote ledgers on all four ranks (36 of them): the largest reserved peak was 7.48 GiB, at the largest prefill chunk
+(prefill/32256/0/prepared), and the largest allocated peak 6.67 GiB; one tree's four ranks agree to 0.04 GiB. #891 set
+9 GiB, 1.52 GiB above that peak -- the allocator returns its cached blocks before it refuses -- which gave the box 3 GiB
+back: the same day srv4 refused production about 1.5 GiB short.
+
+On 2026-09-14 main after #939/#943/#944 (68f7c1d6, 87304780) spends more at the other end of the served context. The
+same chunk at context 943872 (prefill/32256/943872/prepared) reserved 9.67 GiB in a ready boot at 12 GiB, where the last
+ready boot at 9 GiB (2ed1f047) had peaked at 6.75 GiB; at 9 GiB all four ranks ran out of the allocator's 64.52 GiB in
+that warmup with 21-34 GiB of their boxes still free. What a ready boot retains did not move (2.15 GiB against 2.12)
+and its least OOM margin was 23.02 GiB. 12 GiB keeps 2.33 GiB above that peak and asks each node for 3 GiB more than
+9 did. A shape that needs more raises it with `--workspace-gib` / ST_WORKSPACE_GIB and its own ledger."""
 OS_RESERVE_MARGIN_GIB = 1.0        # 7 GiB on the fleet: one GiB above its SIGTERM line
 
 
@@ -117,13 +123,13 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
            drafter_dir: "str | Path | None" = drafter_mod.DRAFTER, ledger: "str | Path | None" = None,
            snapshots: "int | None" = None, draft_tp: int = 1, draft_native: "bool | None" = None,
            router_bytes: int = 0, projection_bytes: int = 0, tier_enabled: bool = True, kda_state_dtype: "str | None" = None,
-           draft_policy=None, workspace_gib: "float | None" = None) -> Budget:
+           draft_policy=None, workspace_gib: "float | None" = None,
+           prefill_ffn_packets: bool = False) -> Budget:
     """The box, one rank of TP=4. `kv_gib`/`max_seqs` are boot.py's declared values; the table says what they leave.
     `workspace_gib`: the ceiling this boot enforces when it is not WORKSPACE_GIB (boot.py --workspace-gib)."""
     ceiling = WORKSPACE_GIB if workspace_gib is None else float(workspace_gib)
-    host_total, _ = host_box()
     if box_gib is None:
-        box_gib = host_total                                             # GB10: device total == MemTotal (facts.check_box)
+        box_gib = host_box()[0]                                          # GB10: device total == MemTotal (facts.check_box)
     F = facts.load(ckpt)
     if kda_state_dtype is not None:
         from dataclasses import replace
@@ -177,6 +183,18 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     ledger_name = Path(ledger).name if isinstance(ledger, (str, Path)) and ledger else "this boot"
     workspace_evidence = ("base/runtime_memory ceiling: activations, graph pools, kernel scratch; the allocator refuses "
                           "beyond it" + ("" if workspace_gib is None else f"; --workspace-gib {ceiling:g} (profile {WORKSPACE_GIB:g})"))
+    if prefill_ffn_packets:
+        from engine.modules.prefill_packets import PacketGeometry, ffn_packet_rows
+        if ffn_packet_rows(chunk):
+            packet = PacketGeometry(chunk, (chunk+3)//4, routed=True).workspace()
+            workspace_evidence += (
+                f"; packet FFN: {packet['received_bytes']/2**20:.3f} MiB received owner replaces "
+                f"{packet['replaced_bf16_bytes']/2**20:.3f} MiB BF16 input; "
+                f"{packet['sender_roundtrip_bytes']/2**20:.3f} MiB sender roundtrip ends before gather; "
+                f"{packet['shared_q_scale_bytes']/2**20:.3f} MiB shared Q/scales remain; "
+                "same eager MoE workspace and 32 KiB/CTA shared input stage; ceiling unchanged pending ledger")
+        else:
+            workspace_evidence += '; packet FFN is outside its real-row range for this chunk and falls back'
     if m and m.get("peak_workspace_bytes"):
         # The LINE stays the enforced ceiling, because that is what the box must be able to
         # absorb: the allocator will hand out every byte of it. What the ledger changes is that

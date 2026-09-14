@@ -18,6 +18,10 @@ def rank_path(ranks):
     root = Path(ranks)
     if not root.is_absolute():
         root = facts.RANKS.parent / root
+    # A single-GPU host may hold only its own TP shard. An explicit shard
+    # keeps the measured weight identity without copying an entire rank.
+    if root.suffix == '.safetensors':
+        return root
     return root / 'rank0of4.safetensors'
 
 
@@ -46,12 +50,16 @@ def moe_check(report, ranks, lane_name):
                          probe_direct_scatter=lane_name != 'moe_route_scatter')
     elif lane_name == 'moe_fc1_reuse':
         row_cases = (1, 6, 7, 8)
-        base = dict(base, fc1_reuse_a=False, compact_staging=False, sync_cleanup=False)
+        base = dict(base, fc1_reuse_a=False, compact_staging=False, sf6_registers=False, sync_cleanup=False)
         candidate = dict(base, fc1_reuse_a=True)
     elif lane_name == 'moe_compact_staging':
         row_cases = (1, 6, 7, 8)
-        base = dict(base, compact_staging=False, sync_cleanup=False)
+        base = dict(base, compact_staging=False, sf6_registers=False, sync_cleanup=False)
         candidate = dict(base, compact_staging=True)
+    elif lane_name == 'moe_register_scales':
+        row_cases = (1, 6, 7, 8)
+        base = dict(base, sf6_registers=False, sync_cleanup=False)
+        candidate = dict(base, sf6_registers=True)
     elif lane_name == 'moe_sync_cleanup':
         row_cases = (1, 6, 7, 8)
         base = dict(base, sync_cleanup=False)
@@ -79,7 +87,7 @@ def moe_check(report, ranks, lane_name):
                     graphs.append(graph)
                     resources.extend(lane.graph_resources())
             unique_counts = {8, 16, 32, 40, 56, 112, rows*8}
-            if lane_name in ('moe_fc1_reuse', 'moe_compact_staging', 'moe_sync_cleanup'):
+            if lane_name in ('moe_fc1_reuse', 'moe_compact_staging', 'moe_register_scales', 'moe_sync_cleanup'):
                 unique_counts.update((1, 2, 4))  # duplicate routes span multiple M16 tiles
             unique_cases = sorted({min(u, rows*8) for u in unique_counts})
             for unique in unique_cases + [8]:

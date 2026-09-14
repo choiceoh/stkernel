@@ -1,0 +1,128 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "source_sha256": {
+    "engine/modules/mixed_experts.py": "0ed6a554a3e5e0657be82018a5b6934c70eaef2cb98786d75a52c8c75ce294ed",
+    "engine/kernels/b12x/moe_mixed.py": "850086cf450bb65ca370c74e2bb6b577890e7b5ee1c815432c58e910bf941576",
+    "engine/modules/route_table.py": "60e3d47e8c605cf82963f64c0d2e750b4e57093eed4c5970215b22b3d5c5a4b4",
+    "tests/test_engine_mixed_plan.py": "e2e960221ab8fc46a8a67c3a4c98fa5c9e478fd3259710a63e42162c458ca868",
+    "engine/modules/mixed_route_plan.py": "b74199e3be81dc140daba4edf32484bd056aa02188b34a62faf534985d804b02",
+    "engine/modules/mixed_metadata.py": "144098669e2803068b369f96e8f734af23a7394235b1126c8f46205ad599e473",
+    "engine/modules/mixed_route_native.py": "fe94eef5a69e35a6a23deb86eabfaa856bc60c9920d8e809e0803123f55186be",
+    "engine/modules/mixed_route_plan.cpp": "300d487dee00990271626f85382b0b9a7138abec6a95376dab1dda37bec1a8e5",
+    "engine/kernels/common/native_cache.py": "1e9e1e88a81f4b684b1cf13c16057a7d0a8fc20755ed07ac509c1722cf9abcf8",
+    "engine/kernels/mixed_checks.py": "8d2bbf92aa3b43d4b4c9729d63f6ac31591d775014dc5c9c9167480553926e00",
+    "engine/kernels/b12x/moe_mixed_frontend.py": "465b8aef59b69840eb7594c799f783522b753221808bf78c39c18006605442c7",
+    "engine/kernels/b12x/moe_dispatch.py": "e8b3677c0297ba3190a3ab766cef5bb697c843cda6c581c9989c1a852d934a3c",
+    "engine/kernels/b12x/moe_static_common.py": "8ac18a06cfd1a0d82e615888c77dfb26df4edec0731a68227dd284d7e1f56cff",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "f7aadf88fdcc93f837f5f2f4989ec6a107601041b47b6c1527d659c32fb3968b",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "engine/kernels/b12x/moe_micro_kernel.py": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914",
+    "probes/engine_mixed_experts_compile.py": "72f87150285d0a0c03d4aa55558ae511c109f316a0f79461cad67aab87bd27fa",
+    "tests/test_engine_mixed_experts.py": "c029bfa89934cfd32098183f34ddd0e9f1a7a3e2cbf8cbfd401e049d88dc0097",
+    "engine/modules/mixed_completion.py": "c05367b3759f3da7cf7322924f8ecf3497bcc29e7f9f7f05d7ec035acf9dd837",
+    "engine/kernels/b12x/moe_mixed_completion.py": "7338ff3595b09f49da8c1315a81ada27bc4d3c4fe732acf8dff3f08d966dcc03",
+    "engine/kernels/b12x/moe_cold_frontend.py": "6e4507be36beb4cd2edfdafad085fa3430b3da9a3f4ef4d59956a6f4016de6b3",
+    "engine/kernels/b12x/moe_prepared_prefill.py": "b077a033aaa79d7bf0cc6ba387d17bccb64546abb2431ce8aefb79bd33a69306",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_words.py": "368dee876092745be60e079a73cf73c4e2c91dd73f699c6f0a315da0ed05e3e9",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+    "engine/kernels/b12x/_moe_dynamic/gated.py": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+    "probes/engine_mixed_completion_compile.py": "9cd8bdb8804b0756e95adcf6b02b8c5e6160947dcbe34dc24ba651066e3b344b",
+    "tests/test_engine_mixed_completion.py": "59c0e7ec10142375bcc09faa1bda4f2b4188fea3847e10f0d19cb9ad12e0d48c"
+  },
+  "scope": "actual CuTe, PTXAS and TVM-FFI compilation; no GPU execution",
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "kernels": [
+    {
+      "kind": "hot_producer",
+      "runtime_row_extents": true,
+      "name": "mixed_route_producer_v1",
+      "status": "PASS",
+      "seconds": 0.4684233900043182
+    },
+    {
+      "kind": "cold_route_reference",
+      "runtime_row_extents": true,
+      "name": "cold_route_producer_v1",
+      "status": "PASS",
+      "seconds": 0.3064843740139622
+    },
+    {
+      "kind": "cold_token_producer",
+      "runtime_row_extents": true,
+      "name": "cold_token_producer_v1",
+      "status": "PASS",
+      "seconds": 0.3434340470121242
+    },
+    {
+      "kind": "cold_padding",
+      "runtime_row_extents": true,
+      "name": "cold_padding_v1",
+      "status": "PASS",
+      "seconds": 0.19681729399599135
+    },
+    {
+      "kind": "static",
+      "rows": 8,
+      "prepared": false,
+      "name": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompact_9e274ebf230505bd",
+      "status": "PASS",
+      "seconds": 5.847764843027107
+    },
+    {
+      "kind": "static",
+      "rows": 8,
+      "prepared": true,
+      "name": "static2_m8_k4096_n512_t8_r32_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompact_a99d921053f0916a",
+      "status": "PASS",
+      "seconds": 5.383520210016286
+    },
+    {
+      "kind": "static",
+      "rows": 32,
+      "prepared": false,
+      "name": "static2_m32_k4096_n512_t8_r256_tm32f2g2a32wutsf6v1_c20f019bb25330d9",
+      "status": "PASS",
+      "seconds": 5.485849759017583
+    },
+    {
+      "kind": "static",
+      "rows": 32,
+      "prepared": true,
+      "name": "static2_m32_k4096_n512_t8_r32_tm32f2g2a32wutsf6v1_1c2a260b6139890f",
+      "status": "PASS",
+      "seconds": 5.427942166978028
+    },
+    {
+      "kind": "dynamic",
+      "tile_m": 128,
+      "prepared": false,
+      "name": "dynamic_e288_k4096_n512_t8_tiled_4e466f602bfca73d",
+      "status": "PASS",
+      "seconds": 10.680720673000906
+    },
+    {
+      "kind": "dynamic",
+      "tile_m": 128,
+      "prepared": true,
+      "name": "dynamic_e288_k4096_n512_t8_tiled_f11f03cc6dbee156",
+      "status": "PASS",
+      "seconds": 8.683562249992974
+    }
+  ],
+  "host_planner": {
+    "status": "PASS",
+    "seconds": 0.20895633602049202,
+    "library_sha256": "bd6910888609b00a3418202046f6b855d99f479e833ea00abbe87e7db166d130"
+  },
+  "value_check": {
+    "status": "PASS",
+    "runtime_row_extents": true,
+    "seconds": 1.2834936490107793,
+    "shared_bytes": 32,
+    "triton": "3.7.1"
+  },
+  "dynamic_runtime_shape_reuse": true
+}

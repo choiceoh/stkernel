@@ -852,7 +852,9 @@ class ChatDoorTests(unittest.TestCase):
             self.assertEqual([c['choices'][0]['finish_reason'] for c in chunks if c['choices']][-1], 'length')
             self.assertEqual(chunks[-1]['usage'], {'prompt_tokens': 3, 'completion_tokens': 4, 'total_tokens': 7,
                                                    'prompt_tokens_details': {'cached_tokens': 0},
-                                                   'completion_tokens_details': {'reasoning_tokens': 4}})
+                                                   # a limit of 4 leaves a budget of 1, which the fake engine's 4 reasoning tokens reach
+                                                   'completion_tokens_details': {'reasoning_tokens': 4, 'reasoning_budget_reached': 1}})
+            self.assertIn('st:reasoning_budget_reached_total{engine="st"} 1\n', s.metrics())
             self.assertFalse(s._streams or s._sent or s.pending or s.results)
             # thinking off: the rendered prompt "xy" ENDS with 'y' = reasoning_end (the template closed the think block),
             # so the door starts in content mode and every generated 'y' is content (45차 §22: an answer used to land in
@@ -867,6 +869,84 @@ class ChatDoorTests(unittest.TestCase):
             self.assertEqual(s.split([1, 2]), ([1, 2], []))
         finally:
             httpd.shutdown(); httpd.server_close()
+
+    def test_a_profiles_reasoning_opener_starts_the_block_and_leads_reasoning_content(self):
+        """GLM-5.3 starts every think block with its profile's words (boot.REASONING_OPENER). The door writes them
+        through the template's `reasoning_opener` kwarg where the request left it out, and reasoning_content carries
+        them, streamed and whole alike; a request's own opener stands and an empty one turns it off."""
+        s = chat_server()
+        s.reasoning_end, s.reasoning_opener = ord('y'), "O"
+        plain = s.chat
+        rendered = []
+        def render(messages, kwargs, *, generation_prompt=True, continue_final=False):
+            text = plain(messages, kwargs, generation_prompt=generation_prompt, continue_final=continue_final)
+            if kwargs.get("thinking") and generation_prompt:
+                text += kwargs.get("reasoning_opener", "")      # the served template writes it after the block opens
+            rendered.append(text)
+            return text
+        s.chat = render
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        def post(path, body):
+            with urllib.request.urlopen(urllib.request.Request(base + path, data=json.dumps(body).encode()), timeout=5) as r:
+                return json.load(r)
+        def stream(body):
+            with urllib.request.urlopen(urllib.request.Request(base + '/v1/chat/completions', data=json.dumps(body).encode()), timeout=5) as r:
+                events = [raw.decode().strip()[5:].strip() for raw in r if raw.decode().startswith('data:')]
+            deltas = [json.loads(e)['choices'][0]['delta'] for e in events[:-1] if json.loads(e)['choices']]
+            return ''.join(d.get('reasoning_content', '') for d in deltas), ''.join(d.get('content', '') for d in deltas)
+        thinking = {"messages": [{"role": "user", "content": "xy"}], "max_tokens": 3, "chat_template_kwargs": {"thinking": True}}
+        try:
+            # the prompt ends with the opener, so the fake engine repeats 'O': reasoning is the opener, then the model's
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                message = drive(s, pool.submit(post, '/v1/chat/completions', thinking))['choices'][0]['message']
+            self.assertEqual(rendered[-1], "xy!O")
+            self.assertEqual((message.get('reasoning_content'), message.get('content')), ("OOOO", None))
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                self.assertEqual(drive(s, pool.submit(stream, dict(thinking, stream=True))), ("OOOO", ""))
+            own = dict(thinking, chat_template_kwargs={"thinking": True, "reasoning_opener": "P"})
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                message = drive(s, pool.submit(post, '/v1/chat/completions', own))['choices'][0]['message']
+            self.assertEqual((rendered[-1], message.get('reasoning_content')), ("xy!P", "PPPP"))
+            off = dict(thinking, chat_template_kwargs={"thinking": True, "reasoning_opener": ""})
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                message = drive(s, pool.submit(post, '/v1/chat/completions', off))['choices'][0]['message']
+            self.assertEqual((rendered[-1], message.get('reasoning_content')), ("xy!", "!!!"))
+            # thinking off: the template closed the block, nothing opens, nothing leads the answer
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                message = drive(s, pool.submit(post, '/v1/chat/completions', dict(thinking, chat_template_kwargs={})))['choices'][0]['message']
+            self.assertEqual((rendered[-1], message.get('reasoning_content'), message.get('content')), ("xy", None, "yyy"))
+            # a template that does not know the kwarg wrote nothing, and nothing is claimed
+            s.chat = lambda messages, kwargs, **kw: (rendered.append(plain(messages, kwargs, **kw)), rendered[-1])[1]
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                message = drive(s, pool.submit(post, '/v1/chat/completions', thinking))['choices'][0]['message']
+            self.assertEqual((rendered[-1], message.get('reasoning_content')), ("xy!", "!!!"))
+            s.chat = render
+            # /tokenize counts the prompt a request would send
+            self.assertEqual(post('/tokenize', {"messages": thinking["messages"], "chat_template_kwargs": {"thinking": True}})["count"],
+                             len("xy!O"))
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                post('/v1/chat/completions', dict(thinking, chat_template_kwargs={"thinking": True, "reasoning_opener": 3}))
+            self.assertEqual(error.exception.code, 400)
+            self.assertFalse(s.pending or s.results or s._streams)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_the_opener_leads_only_reasoning_the_model_wrote(self):
+        from engine.base.serve import _Choice
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=Tokenizer(), stop=[], reasoning=True, reasoning_prefix="Let ")
+        c.feed([ord(ch) for ch in "me"] + [ord('#')] + [ord(ch) for ch in "ok"], None, ord('#'))
+        deltas = c.flush(final=True)
+        self.assertEqual(deltas[0]["reasoning_content"], "Let me")
+        self.assertEqual((c.text["reasoning_content"], c.text["content"]), ("Let me", "ok"))
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=Tokenizer(), stop=[], reasoning=True, reasoning_prefix="Let ")
+        c.feed([ord('#')] + [ord(ch) for ch in "ok"], None, ord('#'))      # the block closed before any reasoning
+        c.flush(final=True)
+        self.assertEqual((c.text["reasoning_content"], c.text["content"]), ("", "ok"))
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=Tokenizer(), stop=[], reasoning=False, reasoning_prefix="Let ")
+        c.feed([ord(ch) for ch in "ok"], None, None)
+        c.flush(final=True)
+        self.assertEqual((c.text["reasoning_content"], c.text["content"]), ("", "ok"))
 
     def test_a_template_tail_after_the_reasoning_end_still_closes_the_block(self):
         s = chat_server()
@@ -932,6 +1012,11 @@ class ChatDoorTests(unittest.TestCase):
             self.assertEqual([c["function"]["arguments"] for c in messages[1]["tool_calls"]], [{"q": "서울", "n": 2}, {}])
             self.assertEqual(history[1]["tool_calls"][0]["function"]["arguments"], '{"q": "서울", "n": 2}')   # the request's own list
             self.assertEqual(kwargs["reasoning_effort"], "xhigh")
+            s.reasoning_end = ord("y")
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:            # reasoning answers under both names
+                out = drive(s, pool.submit(post, "/v1/chat/completions", {"messages": [{"role": "user", "content": "ab"}],
+                                                                          "max_tokens": 2, "chat_template_kwargs": {"thinking": True}}))
+            self.assertEqual(out['choices'][0]['message']['reasoning'], out['choices'][0]['message']['reasoning_content'])
             self.assertEqual(post("/tokenize", {"messages": history})["count"], len("abxy"))
             with concurrent.futures.ThreadPoolExecutor(1) as pool:            # the same request under two names
                 drive(s, pool.submit(post, "/v1/chat/completions", {"messages": history, "max_tokens": 1, "reasoning_effort": "max",
@@ -1003,6 +1088,7 @@ class TemplateMessagesTests(unittest.TestCase):
         from engine.base.serve import template_messages
         calls = [{"id": "a", "function": {"name": "f", "arguments": '{"k": [1, "둘"]}'}},
                  {"id": "b", "function": {"name": "g", "arguments": "  "}},
+                 {"id": "n", "function": {"name": "k", "arguments": None}},
                  {"id": "c", "function": {"name": "h", "arguments": "not json"}},
                  {"id": "d", "function": {"name": "i", "arguments": "[1, 2]"}},
                  {"id": "e", "function": {"name": "j", "arguments": {"already": True}}},
@@ -1013,9 +1099,107 @@ class TemplateMessagesTests(unittest.TestCase):
         self.assertIs(out[0], user)
         self.assertEqual([c["function"]["arguments"] if isinstance(c, dict) and "function" in c else c
                           for c in out[1]["tool_calls"]],
-                         [{"k": [1, "둘"]}, {}, "not json", "[1, 2]", {"already": True}, {"id": "f"}, "junk"])
+                         [{"k": [1, "둘"]}, {}, {}, "not json", "[1, 2]", {"already": True}, {"id": "f"}, "junk"])
         self.assertEqual(calls[0]["function"]["arguments"], '{"k": [1, "둘"]}')          # the caller's messages are untouched
         self.assertEqual(template_messages("not a list"), "not a list")
+
+    def test_developer_is_system_reasoning_is_reasoning_content_and_unknown_roles_are_refused(self):
+        from engine.base.serve import RequestError, template_messages
+        out = template_messages([{"role": "developer", "content": "be brief"}, {"role": "user", "content": "hi"},
+                                 {"role": "assistant", "content": "ok", "reasoning": "thought"},
+                                 {"role": "assistant", "content": "ok", "reasoning": "new", "reasoning_content": "kept"}])
+        self.assertEqual([m["role"] for m in out], ["system", "user", "assistant", "assistant"])
+        self.assertEqual((out[2]["reasoning_content"], out[3]["reasoning_content"]), ("thought", "kept"))
+        for role in ("function", "observation", None):
+            with self.subTest(role=role), self.assertRaisesRegex(RequestError, "is not served"):
+                template_messages([{"role": role, "content": "x"}])
+
+
+class DoorDecisionTests(unittest.TestCase):
+    """A full queue says when to come back; a thinking turn that named no limit gets room to think; a reasoning budget
+    that was reached is visible."""
+
+    def post(self, s, body, path="/v1/chat/completions"):
+        httpd = s._serve_http()
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{httpd.server_port}{path}", data=json.dumps(body).encode())
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, dict(r.headers), json.load(r)
+        except urllib.error.HTTPError as error:
+            return error.code, dict(error.headers), json.loads(error.read())
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_a_full_queue_answers_503_with_retry_after(self):
+        s = chat_server(max_pending=1)
+        s.submit([97, 98], 2, 0.0)                                    # the one slot, not yet served
+        status, headers, body = self.post(s, {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2})
+        self.assertEqual((status, body["error"], headers.get("Retry-After")), (503, "request queue is full", "5"))
+        for _ in range(3):
+            s.e2e.observe(30.0)                                       # typical requests take 30 s over two rows
+        self.assertEqual(s.retry_after(), 15)
+        s.e2e.observe(10_000.0); s.e2e.observe(10_000.0); s.e2e.observe(10_000.0); s.e2e.observe(10_000.0)
+        self.assertEqual(s.retry_after(), 60)                         # never more than a minute
+
+    def test_a_thinking_turn_without_a_limit_gets_room_to_think(self):
+        from engine.base.serve import DEFAULT_REASONING_TOKENS, RequestError, answer_budget
+        seen = []
+
+        def capture(ids, max_new, temperature, **kw):
+            seen.append((max_new, dict(kw.get("options") or {})))
+            raise RequestError("captured", 418)
+        for thinking in (True, False):
+            s = chat_server(blocks=8192)                              # room for the default to stand
+            s.reasoning_end = ord("y")                                # "xy" closes the block, "xy!" opens one
+            s.submit = capture
+            status, _, _ = self.post(s, {"messages": [{"role": "user", "content": "xy"}],
+                                         "chat_template_kwargs": {"thinking": thinking}})
+            self.assertEqual(status, 418)
+        answer = answer_budget(s.tok, "xy")
+        (thinking_limit, thinking_options), (plain_limit, plain_options) = seen
+        self.assertEqual(plain_limit, answer)                         # the answer's own default, as before
+        self.assertNotIn("reasoning_budget", plain_options)
+        self.assertEqual(thinking_limit, answer + DEFAULT_REASONING_TOKENS)
+        self.assertEqual(thinking_options["reasoning_budget"], thinking_limit - thinking_limit // 4)
+        self.assertGreaterEqual(thinking_limit - thinking_options["reasoning_budget"], answer)   # the answer keeps its room
+        s = chat_server()                                             # a pool that cannot hold it still backs down
+        s.reasoning_end = ord("y")
+        s.submit = capture
+        self.post(s, {"messages": [{"role": "user", "content": "xy"}], "chat_template_kwargs": {"thinking": True}})
+        self.assertLessEqual(seen[-1][0], 256)
+
+
+class AbandonTests(unittest.TestCase):
+    """A submission that fails partway leaves nothing behind: the choices already in are cancelled and their answers
+    dropped. They used to run on and keep their results, each holding a queue slot until a restart."""
+
+    def post(self, base, path, body):
+        with urllib.request.urlopen(urllib.request.Request(base + path, data=json.dumps(body).encode()), timeout=5) as r:
+            return json.load(r)
+
+    def refused(self, s, path, body, status):
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                self.post(base, path, body)
+            self.assertEqual(error.exception.code, status)
+            for _ in range(20):
+                s.once()
+            self.assertFalse(s.pending or s.results or s._streams or s._abandoned)
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:              # and the slot serves the next request
+                out = drive(s, pool.submit(self.post, base, "/v1/chat/completions",
+                                           {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2}))
+            self.assertEqual(out["choices"][0]["message"]["content"], "bb")
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_n_choices_refused_at_the_second_hold_no_slot(self):
+        self.refused(chat_server(max_pending=1), "/v1/chat/completions",
+                     {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2, "n": 2}, 503)
+
+    def test_a_later_prompt_over_the_pool_leaves_the_earlier_ones_nowhere(self):
+        self.refused(chat_server(), "/v1/completions", {"prompt": ["ab", "x" * 400], "max_tokens": 2}, 400)
 
 
 class ReasoningMarksTests(unittest.TestCase):
@@ -1215,8 +1399,9 @@ class CancelTests(unittest.TestCase):
             self.assertEqual(s.engine.min_new[0], 2)
             self.assertEqual(out['choices'][0]['finish_reason'], 'length')
             s.tok.decode = lambda ids, skip_special_tokens=True: "<tool_call>f<arg_key>a</arg_key><arg_value>1</arg_value></tool_call>"
-            with concurrent.futures.ThreadPoolExecutor(1) as pool:
-                out = drive(s, pool.submit(post, {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2}))
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:                # calls are read where tools were offered
+                out = drive(s, pool.submit(post, {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2,
+                                                  "tools": [{"type": "function", "function": {"name": "f"}}]}))
             self.assertEqual(out['choices'][0]['finish_reason'], 'tool_calls')
             self.assertEqual(out['choices'][0]['message']['tool_calls'][0]['function'], {'name': 'f', 'arguments': '{"a": 1}'})
             self.assertEqual(out['choices'][0]['message']['content'], None)
@@ -1711,8 +1896,11 @@ class KoreanWireTests(unittest.TestCase):
                      {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 10 ** 6})
         message = json.loads(err.exception.read())["error"]
         self.assertRegex(message, r"\d+ tokens")
-        self.assertIn("to generate", message)
-        self.assertIn("for the prompt", message)
+        self.assertIn("in the completion", message)
+        self.assertIn("in the messages", message)
+        # the sentence agent gateways classify as a context overflow, so they compact instead of failing the turn
+        self.assertIn("maximum context length", message)
+        self.assertIn("reduce the length", message)
 
     def test_tokenize_says_when_it_composed_what_it_was_handed(self):
         import unicodedata
@@ -2396,6 +2584,62 @@ class OpenAIDialectTests(unittest.TestCase):
         self.assertEqual(c.finish_reason(), "tool_calls")
         self.assertEqual(c.tool_calls_done()[0]["function"]["arguments"], parse_tool_calls(text)[0][1])
 
+    def test_an_answer_that_ended_inside_its_own_json_gets_the_brackets_it_owes(self):
+        """GLM-5.3 closes its nesting one level short (onepass, 2026-09-14): `"]` + `}}` where `}}}` was due, or `"}}`
+        and its end token. After an answer the model ended, the door sends exactly the missing brackets -- the same
+        text streamed and whole -- and counts the repair. An answer cut at the limit is not the model's ending."""
+        from engine.base.serve import _Choice, new_repairs
+        answer = '{"ledger": {"result": {"available": 279, "decision": "보류"}, "selected": ["L11", "L13"]}'
+        for finish, expected in (("stop", answer + "}"), ("length", answer)):
+            repairs = new_repairs()
+            c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=ByteTokenizer(), stop=[], reasoning=False,
+                        repairs=repairs)
+            ids = list(answer.encode())
+            deltas = []
+            for i in range(0, len(ids), 7):
+                c.feed(ids[i:i + 7], None, None)
+                deltas.extend(c.flush())
+            deltas.extend(c.end(finish))
+            self.assertEqual("".join(d.get("content", "") for d in deltas), expected)
+            self.assertEqual(c.text["content"], expected)
+            self.assertEqual(c.finish_reason(), finish)
+            self.assertEqual(repairs["unclosed_json"], int(finish == "stop"))
+        self.assertEqual(json.loads(answer + "}")["ledger"]["result"]["decision"], "보류")
+
+    def test_an_ending_the_request_chose_is_left_as_it_is(self):
+        """A stop string of the request's own cut the answer short of its brackets: the model did not end there."""
+        from engine.base.serve import _Choice, new_repairs
+        repairs = new_repairs()
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=ByteTokenizer(), stop=["END"], reasoning=False,
+                    repairs=repairs)
+        c.feed(list('{"a": {"b": 1}END'.encode()), None, None)
+        deltas = c.end("stop")                  # the run loop retires a choice at its stop string: this flush is its last
+        self.assertEqual("".join(d.get("content", "") for d in deltas), '{"a": {"b": 1}')
+        self.assertEqual(repairs["unclosed_json"], 0)
+
+    def test_json_closers_add_only_what_brackets_alone_can_finish(self):
+        from engine.base.serve import json_closers
+        owed = {
+            '{"a": {"b": 1}': "}",
+            '{"a": [1, {"b": "}]"}': "]}",                   # brackets inside a string are text, not nesting
+            '[1, 2': "]",
+            '  {"a": {"b": 1}\n': "}",                          # what was already shown stays; the brackets follow it
+        }
+        for text, closers in owed.items():
+            with self.subTest(text=text):
+                self.assertEqual(json_closers(text), closers)
+                json.loads(text + closers)
+        for text in ('{"a": {"b": 1}}',                        # nothing owed
+                     '{"a": 1,',                               # a dangling separator: brackets alone cannot finish it
+                     '{"a": "x\\"}',                          # ended inside a string
+                     '{"a": [1}',                              # a bracket that closes the wrong thing
+                     '{"a": 1} and {"b": 2',                   # not one value
+                     'The answer: {"a": 1',                    # prose
+                     '```json\n{"a": {"b": 1}\n```',           # a fence that has already gone out
+                     '', '   '):
+            with self.subTest(text=text):
+                self.assertEqual(json_closers(text), "")
+
     def test_a_call_the_answer_was_cut_off_inside_is_not_a_call(self):
         """Its fragments went out, because the client had already read them, but a caller cannot
         make a call whose arguments never closed -- so it is not in the body and the answer ended
@@ -2437,6 +2681,163 @@ class OpenAIDialectTests(unittest.TestCase):
         self.assertEqual(got["grammar"]["type"], "ebnf")
         self.assertIn('call0 ::= "f"', got["grammar"]["grammar"])
         self.assertEqual(got["grammar_after"], 154843)
+
+    def test_tool_choice_required_and_named_bind_the_answer_to_calls(self):
+        """vLLM served both and this door refused them. A forced choice arms the tool grammar eagerly: the answer is
+        calls from its first token -- after the think block when there is one -- to every tool or to the one named."""
+        from engine.profiles.glm53.tools import tool_grammar
+        tools = [{"type": "function", "function": {"name": "f", "parameters": {"type": "object", "properties": {"a": {}}}}},
+                 {"type": "function", "function": {"name": "g"}}]
+        body = {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1, "tools": tools}
+        s = chat_server()
+        s.tool_grammar, s.tool_call_start = tool_grammar, 154843
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions", dict(body, tool_choice="required")))
+        got = s.engine.options[0]
+        self.assertTrue(got["grammar"]["grammar"].startswith('root ::= [ \\n]* "<tool_call>" call ("<tool_call>" call)*'))
+        self.assertIn('call0 ::= "f"', got["grammar"]["grammar"])
+        self.assertIn('call1 ::= "g"', got["grammar"]["grammar"])
+        self.assertNotIn("grammar_after", got)                                # no think block: the first token is held
+        s = chat_server()
+        s.tool_grammar, s.tool_call_start, s.reasoning_end = tool_grammar, 154843, ord("y")
+        named = {"type": "function", "function": {"name": "g"}}
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               dict(body, tool_choice=named, parallel_tool_calls=False,
+                                                    chat_template_kwargs={"thinking": True})))
+        got = s.engine.options[0]
+        self.assertTrue(got["grammar"]["grammar"].startswith('root ::= [ \\n]* "<tool_call>" call\n'))
+        self.assertIn('call0 ::= "g"', got["grammar"]["grammar"])
+        self.assertNotIn('"f"', got["grammar"]["grammar"])
+        self.assertEqual(got["grammar_after"], ord("y"))                      # it waits for the think block to close
+
+    def test_a_forced_tool_choice_that_cannot_be_held_is_refused(self):
+        from engine.profiles.glm53.tools import tool_grammar
+        s = chat_server()
+        s.tool_grammar, s.tool_call_start = tool_grammar, 154843
+        tools = [{"type": "function", "function": {"name": "f"}}]
+        body = {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1}
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        cases = [(dict(body, tool_choice="required"), "needs tools"),
+                 (dict(body, tools=tools, tool_choice={"type": "function", "function": {"name": "h"}}), "not one of the tools"),
+                 (dict(body, tools=tools, tool_choice="required", response_format={"type": "json_object"}), "cannot both be enforced"),
+                 (dict(body, tools=tools, tool_choice="any"), "tool_choice must be"),
+                 (dict(body, tools=tools, parallel_tool_calls="no"), "parallel_tool_calls must be a boolean")]
+        try:
+            for request, words in cases:
+                with self.subTest(words=words), self.assertRaises(urllib.error.HTTPError) as refused:
+                    self._post(base, "/v1/chat/completions", request)
+                self.assertEqual(refused.exception.code, 400)
+                self.assertIn(words, refused.exception.read().decode())
+            s.tool_grammar = None
+            with self.assertRaises(urllib.error.HTTPError) as refused:
+                self._post(base, "/v1/chat/completions", dict(body, tools=tools, tool_choice="required"))
+            self.assertIn("no grammar to hold the answer to", refused.exception.read().decode())
+            self.assertFalse(s.pending or s.results)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_parallel_tool_calls_false_holds_one_call(self):
+        from engine.base.serve import _Choice
+        from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls, tool_grammar
+        s = chat_server()
+        s.tool_grammar, s.tool_call_start = tool_grammar, 154843
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions", {
+            "messages": [{"role": "user", "content": "ab"}], "max_tokens": 1, "parallel_tool_calls": False,
+            "tools": [{"type": "function", "function": {"name": "f"}}]}))
+        self.assertTrue(s.engine.options[0]["grammar"]["grammar"].startswith("root ::= call\n"))
+        for stream in (partial_tool_calls, None):          # held by the grammar, and by the door where there is none
+            c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=Tokenizer(), stop=[], reasoning=False,
+                        tool_parser=parse_tool_calls, tool_stream=stream, single_call=True)
+            c.feed([ord(ch) for ch in "<tool_call>f</tool_call><tool_call>g</tool_call>"], None, None)
+            c.flush(final=True)
+            self.assertEqual([call["function"]["name"] for call in c.tool_calls_done()], ["f"])
+
+    def test_without_tools_a_call_marker_is_text(self):
+        """A turn asked to answer in prose -- no tools, or tool_choice none -- is not turned into calls."""
+        s = chat_server()
+        s.tool_parser = lambda text: [("f", "{}")] if "<tool_call>" in text else None
+        s.tok.decode = lambda ids, skip_special_tokens=True: "<tool_call>f</tool_call>"
+        for extra in ({}, {"tools": [{"type": "function", "function": {"name": "f"}}], "tool_choice": "none"}):
+            with self.subTest(extra=extra):
+                out = self._serve(s, lambda base: self._post(base, "/v1/chat/completions", dict(
+                    {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2}, **extra)))
+                message = out["choices"][0]["message"]
+                self.assertEqual(message["content"], "<tool_call>f</tool_call>")
+                self.assertNotIn("tool_calls", message)
+                self.assertNotEqual(out["choices"][0]["finish_reason"], "tool_calls")
+
+    def test_a_call_opened_inside_the_think_block_is_a_call(self):
+        """It stayed in the reasoning, where no parser reads, and the turn came back empty. The marker ends the block."""
+        from engine.base.serve import _Choice
+        from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls
+
+        class Marked(Tokenizer):
+            def decode(self, ids, skip_special_tokens=True):
+                return "".join("<tool_call>" if i == 300 else chr(i) for i in ids)
+        call = [ord(ch) for ch in "f<arg_key>a</arg_key><arg_value>1</arg_value></tool_call>"]
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=Marked(), stop=[], reasoning=True,
+                    tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_start=300)
+        c.feed([ord(ch) for ch in "look it up "] + [300] + call, None, 999)
+        deltas = c.flush(final=True)
+        self.assertEqual(c.text["reasoning_content"], "look it up ")
+        self.assertEqual(c.tool_calls_done()[0]["function"], {"name": "f", "arguments": '{"a": 1}'})
+        self.assertEqual(c.finish_reason(), "tool_calls")
+        self.assertIn({"reasoning_content": "look it up ", "reasoning": "look it up "}, deltas)   # under both names
+        plain = _Choice(0, 1, threading.Event(), queue.Queue(), tok=Marked(), stop=[], reasoning=True,
+                        tool_parser=parse_tool_calls, tool_stream=partial_tool_calls)
+        plain.feed([ord(ch) for ch in "look it up "] + [300] + call, None, 999)
+        plain.flush(final=True)
+        self.assertEqual(plain.tool_calls_done(), [])                           # no marker token known: as before
+
+    def test_a_string_argument_stays_text_whatever_it_looks_like(self):
+        """The request's tools reach the parser: `code` is typed as a string, so "123" is not a number -- the way vLLM's
+        parser for this layout reads the schema. Without the schema the old reading stands."""
+        from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls
+        call = "<tool_call>run<arg_key>code</arg_key><arg_value>123</arg_value><arg_key>n</arg_key><arg_value>2</arg_value></tool_call>"
+        tools = [{"type": "function", "function": {"name": "run", "parameters": {"type": "object", "properties": {
+            "code": {"type": "string"}, "n": {"type": "integer"}}}}}]
+        s = chat_server()
+        s.tool_parser, s.tool_stream = parse_tool_calls, partial_tool_calls
+        s.tok.decode = lambda ids, skip_special_tokens=True: call
+        out = self._serve(s, lambda base: self._post(base, "/v1/chat/completions", {
+            "messages": [{"role": "user", "content": "ab"}], "max_tokens": 2, "tools": tools}))
+        self.assertEqual(json.loads(out["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]),
+                         {"code": "123", "n": 2})
+        self.assertEqual(json.loads(parse_tool_calls(call)[0][1]), {"code": 123, "n": 2})
+
+    def test_a_request_timed_out_after_submit_answers_its_own_status(self):
+        """A failure found after submit was always a 503, which a gateway retries elsewhere; it keeps its own status now
+        (an overflow found at admission is the caller's 400, a timeout 504)."""
+        s = chat_server()
+        s.request_timeout_s = 1e-6
+        with self.assertRaises(urllib.error.HTTPError) as refused:
+            self._serve(s, lambda base: self._post(base, "/v1/chat/completions", {
+                "messages": [{"role": "user", "content": "ab"}], "max_tokens": 50}))
+        self.assertEqual(refused.exception.code, 504)
+        self.assertIn("request cancelled: timeout", refused.exception.read().decode())
+
+    def test_a_model_is_retrieved_by_its_id(self):
+        s = chat_server()
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            self.assertEqual(self._get(base, f"/v1/models/{s.model_name}")["id"], s.model_name)
+            for path in ("/v1/models/other", "/v1/models/"):
+                with self.subTest(path=path), self.assertRaises(urllib.error.HTTPError) as missing:
+                    self._get(base, path)
+                self.assertEqual(missing.exception.code, 404)
+                self.assertIn("does not exist", missing.exception.read().decode())
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_a_json_schema_keeps_the_order_its_properties_were_written_in(self):
+        """The compiled grammar writes properties in schema order; a sorted schema answered before it reasoned."""
+        from engine.base.serve import response_format_grammar
+        spec = response_format_grammar({"response_format": {"type": "json_schema", "json_schema": {"name": "r", "schema": {
+            "type": "object", "properties": {"reasoning": {"type": "string"}, "answer": {"type": "string"}},
+            "required": ["reasoning", "answer"]}}}})
+        self.assertLess(spec["schema"].index('"reasoning"'), spec["schema"].index('"answer"'))
+        self.assertLess(spec["schema"].index('"type"'), spec["schema"].index('"properties"'))
 
     def test_a_response_format_wins_over_the_tool_grammar(self):
         """One grammar a row. What the caller asked for in `response_format` is what they get."""

@@ -1,0 +1,58 @@
+"""Bind each retained report to immutable repository source, without a GPU."""
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+
+folder = Path(__file__).resolve().parent
+revisions = {
+    'cpu-sender-main': 'adb6eb52',
+    'compile-sender-v2': '894a16f4',
+    'cpu-sender-v2': '894a16f4',
+    'gpu-sender-v2': '894a16f4',
+    'compile-sender-v1': '36ba3dfa',
+    'compile-sender-full-v1': '36ba3dfa',
+    'cpu-sender-v1': '36ba3dfa',
+    'gpu-sender-v1-failure': '36ba3dfa',
+    'gpu-router-v10': '1cd0507b',
+    'compile-router-native': '1bdbecdd',
+    'gpu-router-v11': '1bdbecdd',
+    'compile-router-prefetch': 'f8be63e6',
+    'gpu-router-v12': 'f8be63e6',
+    'compile-router-wide': '6e6c7e27',
+    'gpu-router-v13': '6e6c7e27',
+    'compile-router-pairs-rejected': '2b9cb76a',
+    'compile-router-pairs-bf16-rejected': '601dbe38',
+    'compile-router-gather': 'edddd7b3',
+    'gpu-router-v9': 'edddd7b3',
+    'compile-router-explicit': '1cd0507b',
+    'cpu-reference-fallback': '22c993bc',
+    'cpu-final': 'b29b4083',
+    'compile-final': 'b29b4083',
+    'gpu-v8': 'b29b4083',
+    'cpu': 'a61644a4',
+    'cpu-postmerge': 'ff877806',
+    'cpu-ci-unscoped': '98d9285c',
+    'cpu-ci-fix': 'f218bbf7',
+    'compile': 'a61644a4',
+    'compile-aligned': '0641070e',
+    'compile-vector': 'fa2050ea',
+    'compile-router-scale': '57e63935',
+    'gpu-v3-failure': 'a61644a4',
+    'gpu-v4-failure': 'ff877806',
+    'gpu-v5': '0641070e',
+    'gpu-v6': 'fa2050ea',
+    'gpu-v7': '57e63935',
+}
+records = {}
+for name, short in revisions.items():
+    revision = subprocess.check_output(['git', 'rev-parse', short], text=True).strip()
+    report = json.loads((folder / (name + '.json')).read_text())
+    for path, expected in report['source_sha256'].items():
+        source = subprocess.check_output(['git', 'show', revision + ':' + path])
+        if hashlib.sha256(source).hexdigest() != expected:
+            raise SystemExit(f'{name}: source differs at {path}')
+    records[name] = dict(revision=revision, all_sources_match=True,
+                         source_count=len(report['source_sha256']))
+(folder / 'source_revisions.json').write_text(json.dumps(records, indent=2) + '\n')
+print(f'PASS: {len(records)} reports match their frozen source revisions')

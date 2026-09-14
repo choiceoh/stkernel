@@ -207,6 +207,37 @@ def _ld_shared_i32_volatile(addr, *, loc=None, ip=None):
 
 
 @dsl_user_op
+def _ld_shared_u8_volatile(addr, byte_offset=0, *, loc=None, ip=None):
+    """Read one ring byte with a compile-time displacement, zero-extended.
+
+    The immediate-offset load follows B12X intrinsics.py at 12b4eb257441.
+    ST additionally requires volatile/side effects: another warp reuses this
+    ring, so a read must not be hoisted across the consumer wait/release.
+    """
+    offset = int(byte_offset)
+    assert offset >= 0
+    return Int32(llvm.inline_asm(
+        T.i32(), [Int32(addr).ir_value(loc=loc, ip=ip)],
+        f"ld.volatile.shared.u8 $0, [$1+{offset}];", "=r,r",
+        has_side_effects=True, is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT, loc=loc, ip=ip,
+    ))
+
+
+@dsl_user_op
+def _ld_shared_u16_volatile(addr, byte_offset=0, *, loc=None, ip=None):
+    """Read one aligned ring halfword directly into a zero-extended i32."""
+    offset = int(byte_offset)
+    assert offset >= 0 and offset % 2 == 0
+    return Int32(llvm.inline_asm(
+        T.i32(), [Int32(addr).ir_value(loc=loc, ip=ip)],
+        f"ld.volatile.shared.u16 $0, [$1+{offset}];", "=r,r",
+        has_side_effects=True, is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT, loc=loc, ip=ip,
+    ))
+
+
+@dsl_user_op
 def _st_shared_f32(addr, val, *, loc=None, ip=None):
     llvm.inline_asm(
         None,

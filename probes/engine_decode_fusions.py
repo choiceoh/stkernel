@@ -1,15 +1,23 @@
 """Bounded kernel timings after the numerical gates; never an engine speed claim."""
 import torch
 
+_CAPTURE_STREAMS = {}
+
 
 def _capture(fn):
-    stream = torch.cuda.Stream()
+    # A fresh Stream for every cell eventually cycles PyTorch's stream pool
+    # onto a live SharedOverlap stream. Reuse one warm/capture stream per
+    # device. Repeated captures no longer consume fresh pool entries.
+    device = torch.cuda.current_device()
+    if device not in _CAPTURE_STREAMS:
+        _CAPTURE_STREAMS[device] = torch.cuda.Stream(device=device)
+    stream = _CAPTURE_STREAMS[device]
     stream.wait_stream(torch.cuda.current_stream())
     with torch.cuda.stream(stream):
         fn()
     torch.cuda.current_stream().wait_stream(stream)
     graph = torch.cuda.CUDAGraph()
-    with torch.cuda.graph(graph):
+    with torch.cuda.graph(graph, stream=stream):
         output = fn()
     return graph, output
 

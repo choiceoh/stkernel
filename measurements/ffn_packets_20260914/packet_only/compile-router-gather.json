@@ -1,0 +1,142 @@
+{
+  "scope": "bounded SM121 router compilation only; no GPU or FFN proof",
+  "gpu_used": false,
+  "torch": "2.13.0+cu130",
+  "triton": "3.7.1",
+  "source_sha256": {
+    "engine/modules/prefill_packets.py": "eeaa468b8715373c7711cb29d58c8993a824f80da91c9753693f714053cc6471",
+    "engine/modules/token_shards.py": "11d3bf3c2fe8e644a845fa49864800d5f0e021ccdc7c6eef03c9151b695aa77c",
+    "engine/kernels/prefill_collectives/__init__.py": "4fca676770574b77e9280a260c36cff406ebe0279a15fc3b5bdd0b11222e0f4c",
+    "engine/kernels/prefill_collectives/consumer.py": "d0f242b38b4d0e74afd205214067ecab57f046b5c81f8f2fa5032ce8fbcdfd7c",
+    "engine/kernels/prefill_collectives/kernels.py": "49d22265497ee41cc3ff03d455fa11a76519c450322aa993cbc5601cfc5a48a4",
+    "engine/kernels/prefill_router.py": "800c38bd232776ef71c373db5207397947cd5b073d47b9228e77661a17805630",
+    "engine/kernels/dense/__init__.py": "abd41b1cfc059e60c3ab482eba8bbcd5ebdd91d47c4a535e64b01cdcda5ae875",
+    "engine/kernels/dense/fp8.py": "fecc21c8b0f3088c765083cf7987db210de499313490559596dca7dee676c3ca",
+    "engine/kernels/b12x/moe_dispatch.py": "e91e36daff076fdf976abe57072f28aa3887cc790c096e85e8ee5d3401a0b7c9",
+    "engine/kernels/b12x/moe_packet_input.py": "edfb8563846ea6df2c86a42417a18d679e58bccb55a14164458e7d6ea89eef37",
+    "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "befafbf776e54b15a6272e2a167b83d60771414b4019af2cb2afb6b7bfc00613",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_w4a16_fp4_helpers.py": "3115cf3e73064cbf2c339d5fd2cec1c49206f34283c281faef2d1c2d290a6c73",
+    "engine/profiles/glm53/net.py": "c8464237fed8c4d3129f8c9989d50f15de23545bf0702fddc9e4813a1c7052ab",
+    "engine/profiles/glm53/lanes.py": "a51d1750bc1211d83f47de147f6c47a5796b5a9cf2ba1f53bdfc883471b429fb",
+    "engine/profiles/glm53/execution.py": "716111e7cc714a83a6b5af46a1641ee3efc6ce67aa3233dcabccc47c3ffa31b8",
+    "engine/profiles/glm53/boot.py": "6e8bc17d73602377e8356b81fedd3a34d4fde8f0d755f0701f7cd4a952ecb53f",
+    "probes/engine_ffn_packets_compile.py": "bfbe8059606badf6bc57c9149bb9faf0ce48c74d4e0bc41f5563fa27c0b17a89",
+    "probes/engine_ffn_packets_check.py": "7310a33a6f6f346b984374066e5ca8562d00c1fd33efe06029798e41c10c14b3",
+    "tests/test_engine_ffn_packets.py": "50a477668405f532669799d515f6648939ea898d758c67c7b64c7880587d0ffc",
+    "tests/test_engine_prefill_fp8_consumer.py": "37b24ceb3fb912081e75cf7ddc77250b66707a34085de982a41d8199061d3dd4"
+  },
+  "kernels": [
+    {
+      "name": "router-bf16",
+      "status": "PASS",
+      "seconds": 0.7860669629881158,
+      "shared_bytes": 16384,
+      "dot_k_widths": [
+        2,
+        2
+      ],
+      "cubin_sha256": "5fdc0340f4ea35f92b38d4d2caf790ab3fdf5e646bb84aefdcd7f8394dcb2615"
+    },
+    {
+      "name": "router-current",
+      "status": "PASS",
+      "seconds": 0.5360149200132582,
+      "shared_bytes": 16384,
+      "dot_k_widths": [
+        2,
+        2
+      ],
+      "cubin_sha256": "9743152260434b531eca6d17dcee6930d15a51fb4865d2cf29d2a668cd12b213"
+    },
+    {
+      "name": "router-pairs-64x64",
+      "status": "PASS",
+      "seconds": 0.430265845003305,
+      "shared_bytes": 16384,
+      "dot_k_widths": [
+        2,
+        2
+      ],
+      "cubin_sha256": "59bdff53752d897b3ccad82ad1c0e1d6097de6b86a6b562017af13f580d68d57"
+    },
+    {
+      "name": "router-pairs-32x64",
+      "status": "PASS",
+      "seconds": 0.2956412429921329,
+      "shared_bytes": 12288,
+      "dot_k_widths": [
+        2,
+        2
+      ],
+      "cubin_sha256": "5198a07626b718085e9acc195d6bcce5354e1c8bc7a9a6d9df0ca0e0ebee3a5d"
+    },
+    {
+      "name": "router-pairs-32x128",
+      "status": "PASS",
+      "seconds": 0.3628468230017461,
+      "shared_bytes": 20480,
+      "dot_k_widths": [
+        2,
+        2
+      ],
+      "cubin_sha256": "d5c2fca9526de973ccb8d28c12651a112bdcb8c18740bc54c4135e96f977d5c0"
+    },
+    {
+      "name": "router-pairs-64x128",
+      "status": "PASS",
+      "seconds": 0.7106157219968736,
+      "shared_bytes": 24576,
+      "dot_k_widths": [
+        2,
+        2
+      ],
+      "cubin_sha256": "b0693aa5ba0e8be30e82a0af210e89f12d66309496bb68854c2eb7c39dcf7e29"
+    },
+    {
+      "name": "router-pairs-16x128",
+      "status": "PASS",
+      "seconds": 0.29306971898768097,
+      "shared_bytes": 18432,
+      "dot_k_widths": [
+        2,
+        2
+      ],
+      "cubin_sha256": "f11bb73ad7b3c3c645162947faae43f2572c3f4b9f6c12f90b6bbae9f48ff490"
+    },
+    {
+      "name": "router-pairs-32x256",
+      "status": "PASS",
+      "seconds": 0.5359631920000538,
+      "shared_bytes": 36864,
+      "dot_k_widths": [
+        2,
+        2
+      ],
+      "cubin_sha256": "bd0d6471e119b7f606fa696569661b8707c1874f118d9b3ea360efe0975982ef"
+    },
+    {
+      "name": "router-pairs-hoist-64x64",
+      "status": "PASS",
+      "seconds": 0.4710575820063241,
+      "shared_bytes": 16384,
+      "dot_k_widths": [
+        2,
+        2
+      ],
+      "cubin_sha256": "d92329d8134488333eae4e11b8ca89d5c87ebd223e28e79f463e1ce261b75a12"
+    },
+    {
+      "name": "router-pairs-hoist-32x128",
+      "status": "PASS",
+      "seconds": 0.39375126600498334,
+      "shared_bytes": 20480,
+      "dot_k_widths": [
+        2,
+        2
+      ],
+      "cubin_sha256": "c5888c0b139a35b524ebe58636c2c91a68fdbc49e5622af4a45ad036306b5425"
+    }
+  ],
+  "status": "PASS"
+}

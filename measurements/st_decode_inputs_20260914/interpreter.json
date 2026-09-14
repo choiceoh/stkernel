@@ -1,0 +1,295 @@
+{
+  "status": "PASS",
+  "mode": "interpreter",
+  "gpu_used": false,
+  "cases": [
+    {
+      "kernel": "draft_inputs",
+      "rows": 1,
+      "k": 0,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 1,
+      "k": 1,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 1,
+      "k": 5,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 1,
+      "k": 7,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 1,
+      "k": 31,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 2,
+      "k": 0,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 2,
+      "k": 1,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 2,
+      "k": 5,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 2,
+      "k": 7,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 2,
+      "k": 31,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 3,
+      "k": 0,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 3,
+      "k": 1,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 3,
+      "k": 5,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 3,
+      "k": 7,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 3,
+      "k": 31,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 4,
+      "k": 0,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 4,
+      "k": 1,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 4,
+      "k": 5,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 4,
+      "k": 7,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 4,
+      "k": 31,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 1,
+      "k": 7,
+      "host_position": 0,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 1,
+      "k": 7,
+      "host_position": 131072,
+      "exact": true
+    },
+    {
+      "kernel": "draft_inputs",
+      "rows": 1,
+      "k": 7,
+      "host_position": 9223372036854775804,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 0,
+      "seed": 0,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 1,
+      "seed": 0,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 5,
+      "seed": 0,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 7,
+      "seed": 0,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 31,
+      "seed": 0,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 0,
+      "seed": -1,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 1,
+      "seed": -1,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 5,
+      "seed": -1,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 7,
+      "seed": -1,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 31,
+      "seed": -1,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 0,
+      "seed": 19,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 1,
+      "seed": 19,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 5,
+      "seed": 19,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 7,
+      "seed": 19,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 31,
+      "seed": 19,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 0,
+      "seed": 1208925819614629174706213,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 1,
+      "seed": 1208925819614629174706213,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 5,
+      "seed": 1208925819614629174706213,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 7,
+      "seed": 1208925819614629174706213,
+      "exact": true
+    },
+    {
+      "kernel": "step_block",
+      "rows": 4,
+      "k": 31,
+      "seed": 1208925819614629174706213,
+      "exact": true
+    }
+  ],
+  "scope": "CPU bit identity or native compilation; GPU replay and serving speed pending",
+  "source_sha256": {
+    "engine/kernels/decode_inputs.py": "0664f874be24fea86e0e030003452a04965dffea93f7c9c016202a1cee008284",
+    "engine/modules/draft_inputs.py": "eb54faa77d5dc5e2ebea6c34a232140c04f06b9e90620af7313d6d6fddeb6d77",
+    "engine/base/draws.py": "03740be5018fb6a670c47c7685c0fac45711af0df03b4fc8febd20d452492f69",
+    "probes/engine_decode_inputs_check.py": "c9875a76ae489ad67d3a50dd1101b7a63160186d18ddca5c152a6ba09606fe26"
+  }
+}

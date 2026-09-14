@@ -1,12 +1,15 @@
-"""Tool-call wire formats -> OpenAI tool calls (engine/base/tool_formats): GLM's (engine/profiles/glm53/tools.py keeps
-its names), the Qwen3-Coder XML layout Qwen3.8 writes, and the detection that reads a template's layout off the template."""
+"""Tool-call wire formats -> OpenAI tool calls (engine/base/tool_formats): the arg_key/arg_value layout GLM-5.3 writes
+(engine/profiles/glm53/tools.py keeps its names), the function/parameter XML layout Qwen3.8 writes, the grammars that
+hold calls lazily, eagerly (tool_choice required or named) or to one call, and the detection that reads a template's
+layout off the template."""
 import importlib.util
 import json
 import unittest
 from pathlib import Path
 
 from engine.base import tool_formats
-from engine.base.tool_formats import GLM, QWEN_XML, detect, grammar_qwen_xml, parse_qwen_xml, partial_qwen_xml
+from engine.base.tool_formats import (ARG_PAIRS, FUNCTION_XML, detect, grammar_arg_pairs, grammar_function_xml,
+                                      parse_function_xml, partial_function_xml)
 from engine.profiles.glm53.tools import (parse_tool_calls, partial_tool_calls,
                                          tool_call_token, tool_grammar)
 
@@ -155,9 +158,9 @@ def glm_call(name, arguments):
 
 class GlmFormatTests(unittest.TestCase):
     def test_the_glm_profile_binds_the_base_format(self):
-        self.assertIs(parse_tool_calls, GLM.parse)
-        self.assertIs(partial_tool_calls, GLM.partial)
-        self.assertIs(tool_grammar, GLM.grammar)
+        self.assertIs(parse_tool_calls, ARG_PAIRS.parse)
+        self.assertIs(partial_tool_calls, ARG_PAIRS.partial)
+        self.assertIs(tool_grammar, ARG_PAIRS.grammar)
         self.assertIs(tool_call_token, tool_formats.tool_call_token)
 
 
@@ -167,25 +170,25 @@ class QwenXmlToolCallTests(unittest.TestCase):
     def test_calls_in_order_with_json_and_text_values(self):
         text = ("Let me check." + qwen_call("get_weather", {"city": "Seoul", "days": 3, "opts": {"units": "C"}})
                 + qwen_call("noop", {}, first=False))
-        calls = parse_qwen_xml(text)
+        calls = parse_function_xml(text)
         self.assertEqual([name for name, _ in calls], ["get_weather", "noop"])
         self.assertEqual(json.loads(calls[0][1]), {"city": "Seoul", "days": 3, "opts": {"units": "C"}})
         self.assertEqual(calls[1][1], "{}")
 
     def test_a_value_comes_back_exactly_as_written(self):
         """The layout newlines go, nothing else: code keeps its indentation and blank lines, Korean stays Korean."""
-        calls = parse_qwen_xml(qwen_call("write", {"code": self.CODE, "note": "  서울 날씨  ", "empty": ""}))
+        calls = parse_function_xml(qwen_call("write", {"code": self.CODE, "note": "  서울 날씨  ", "empty": ""}))
         self.assertEqual(json.loads(calls[0][1]), {"code": self.CODE, "note": "  서울 날씨  ", "empty": ""})
         self.assertNotIn("\\u", calls[0][1])
 
     def test_text_without_a_complete_call_is_not_a_call(self):
-        self.assertIsNone(parse_qwen_xml("plain answer"))
-        self.assertIsNone(parse_qwen_xml("<tool_call>\n<function=get_weather>\n<parameter=city>\nSeoul"))
-        self.assertIsNone(parse_qwen_xml("<tool_call>\n</tool_call>"))
-        self.assertIsNone(parse_qwen_xml("<tool_call>\n<function=>\n</function>\n</tool_call>"))
+        self.assertIsNone(parse_function_xml("plain answer"))
+        self.assertIsNone(parse_function_xml("<tool_call>\n<function=get_weather>\n<parameter=city>\nSeoul"))
+        self.assertIsNone(parse_function_xml("<tool_call>\n</tool_call>"))
+        self.assertIsNone(parse_function_xml("<tool_call>\n<function=>\n</function>\n</tool_call>"))
 
     def test_a_call_closed_without_its_function_tag_still_counts(self):
-        calls = parse_qwen_xml("<tool_call>\n<function=ping>\n<parameter=n>\n2\n</parameter>\n</tool_call>")
+        calls = parse_function_xml("<tool_call>\n<function=ping>\n<parameter=n>\n2\n</parameter>\n</tool_call>")
         self.assertEqual(calls, [("ping", '{"n": 2}')])
 
 
@@ -209,7 +212,7 @@ class QwenXmlPartialToolCallTests(unittest.TestCase):
             with self.subTest(label):
                 seen = {}
                 for n in range(len(text) + 1):
-                    for i, (_, args, _done) in enumerate(partial_qwen_xml(text[:n])):
+                    for i, (_, args, _done) in enumerate(partial_function_xml(text[:n])):
                         self.assertTrue(args.startswith(seen.get(i, "")),
                                         f"at {n}: {args!r} does not continue {seen.get(i, '')!r}")
                         seen[i] = args
@@ -217,36 +220,36 @@ class QwenXmlPartialToolCallTests(unittest.TestCase):
     def test_the_end_of_the_stream_is_what_the_whole_parse_says(self):
         for label, text in self.SHAPES.items():
             with self.subTest(label):
-                streamed = [(name, args) for name, args, done in partial_qwen_xml(text) if done]
-                self.assertEqual(streamed, [tuple(c) for c in (parse_qwen_xml(text) or [])])
+                streamed = [(name, args) for name, args, done in partial_function_xml(text) if done]
+                self.assertEqual(streamed, [tuple(c) for c in (parse_function_xml(text) or [])])
                 for _, args in streamed:
                     json.loads(args)
 
     def test_a_value_whose_type_is_not_settled_yet_waits(self):
         opening = "<tool_call>\n<function=f>\n<parameter=n>\n"
-        self.assertEqual(partial_qwen_xml(opening + "3")[0][1], "{")
-        self.assertEqual(partial_qwen_xml(opening + '{"a"')[0][1], "{")
-        self.assertEqual(partial_qwen_xml(opening + "   ")[0][1], "{")         # blank so far: no type yet
-        self.assertEqual(partial_qwen_xml(opening + "서울")[0][1], '{"n": "서울')
+        self.assertEqual(partial_function_xml(opening + "3")[0][1], "{")
+        self.assertEqual(partial_function_xml(opening + '{"a"')[0][1], "{")
+        self.assertEqual(partial_function_xml(opening + "   ")[0][1], "{")         # blank so far: no type yet
+        self.assertEqual(partial_function_xml(opening + "서울")[0][1], '{"n": "서울')
 
     def test_a_closing_tag_halfway_here_is_not_value_text(self):
         for layout in ("\n</parameter>", "</parameter>"):
             opening = "<tool_call>\n<function=f>\n<parameter=n>\n서울"
             for cut in range(len(layout)):
                 with self.subTest(layout=layout, cut=cut):
-                    self.assertEqual(partial_qwen_xml(opening + layout[:cut])[0][1], '{"n": "서울')
+                    self.assertEqual(partial_function_xml(opening + layout[:cut])[0][1], '{"n": "서울')
 
     def test_a_name_is_not_reported_until_it_is_whole(self):
-        self.assertEqual(partial_qwen_xml("<tool_call>\n<function=get_wea"), [])
-        self.assertEqual(partial_qwen_xml("<tool_call>\n<function=get_weather>")[0][:2], ("get_weather", "{"))
-        self.assertEqual(partial_qwen_xml(qwen_call("ping", {})), [("ping", "{}", True)])
+        self.assertEqual(partial_function_xml("<tool_call>\n<function=get_wea"), [])
+        self.assertEqual(partial_function_xml("<tool_call>\n<function=get_weather>")[0][:2], ("get_weather", "{"))
+        self.assertEqual(partial_function_xml(qwen_call("ping", {})), [("ping", "{}", True)])
 
 
 class QwenXmlGrammarTests(unittest.TestCase):
     TOOLS = ToolGrammarTests.TOOLS
 
     def test_it_binds_the_names_the_keys_and_the_layout(self):
-        text = grammar_qwen_xml(self.TOOLS)
+        text = grammar_function_xml(self.TOOLS)
         self.assertIn('call0 ::= "\\n<function=" "get_weather" ">\\n" params0 "</function>\\n</tool_call>"', text)
         self.assertIn('params0 ::= ("<parameter=" key0 ">\\n" value "\\n</parameter>\\n")*', text)
         self.assertIn('key0 ::= "city" | "days"', text)
@@ -256,7 +259,61 @@ class QwenXmlGrammarTests(unittest.TestCase):
 
     def test_nothing_to_bind_is_no_grammar(self):
         for tools in ([], None, [{"type": "function", "function": {}}], [{"type": "function"}]):
-            self.assertIsNone(grammar_qwen_xml(tools))
+            self.assertIsNone(grammar_function_xml(tools))
+
+
+class GrammarShapeTests(unittest.TestCase):
+    """Lazily a grammar begins after the marker; eagerly (tool_choice required or named) the answer is the calls from
+    its first token, blank space allowed before the marker; with parallel=False it is one call."""
+
+    TOOLS = ToolGrammarTests.TOOLS
+
+    def test_both_layouts_open_eagerly_with_the_marker_and_close_after_one_call_when_asked(self):
+        for grammar, more in ((grammar_arg_pairs, '"<tool_call>" call'), (grammar_function_xml, '"\\n<tool_call>" call')):
+            with self.subTest(grammar=grammar.__name__):
+                self.assertTrue(grammar(self.TOOLS).startswith(f"root ::= call ({more})*\n"))
+                self.assertTrue(grammar(self.TOOLS, lazy=False).startswith(f'root ::= [ \\n]* "<tool_call>" call ({more})*\n'))
+                self.assertTrue(grammar(self.TOOLS, parallel=False).startswith("root ::= call\n"))
+                self.assertTrue(grammar(self.TOOLS, lazy=False, parallel=False).startswith('root ::= [ \\n]* "<tool_call>" call\n'))
+                self.assertEqual(grammar(self.TOOLS, lazy=False).split("\n")[1:], grammar(self.TOOLS).split("\n")[1:])
+
+
+class SchemaTests(unittest.TestCase):
+    """Given the request's tools, an argument the schema types as a string is the text written, whatever it looks like;
+    and a tool whose parameters declare no properties takes any key."""
+
+    TOOLS = [{"type": "function", "function": {"name": "run", "parameters": {"type": "object", "properties": {
+        "code": {"type": "string"}, "mode": {"enum": ["1", "2"]}, "note": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "n": {"type": "integer"}}}}},
+             {"type": "function", "function": {"name": "anything", "parameters": {"type": "object"}}},
+             {"type": "function", "function": {"name": "closed", "parameters": {"type": "object", "additionalProperties": False}}},
+             {"type": "function", "function": {"name": "none"}}]
+    ARGS = {"code": "123", "mode": "2", "note": "true", "n": 7}
+
+    def test_both_layouts_read_strings_as_written_and_numbers_as_numbers(self):
+        for parse, partial, write in ((parse_tool_calls, partial_tool_calls, glm_call),
+                                      (parse_function_xml, partial_function_xml, qwen_call)):
+            with self.subTest(layout=parse.__name__):
+                text = write("run", self.ARGS)
+                self.assertEqual(json.loads(parse(text, tools=self.TOOLS)[0][1]), self.ARGS)
+                self.assertEqual(json.loads(parse(text)[0][1]), {"code": 123, "mode": 2, "note": True, "n": 7})
+                seen = ""
+                for n in range(len(text) + 1):                        # typed strings stream from their first character
+                    calls = partial(text[:n], tools=self.TOOLS)
+                    if calls:
+                        self.assertTrue(calls[0][1].startswith(seen))
+                        seen = calls[0][1]
+                self.assertEqual(json.loads(seen), self.ARGS)
+                self.assertTrue(getattr(parse, "reads_tools", False) and getattr(partial, "reads_tools", False))
+
+    def test_a_free_form_tool_takes_any_key_and_a_closed_or_bare_one_none(self):
+        for grammar, anykey in ((grammar_arg_pairs, "key1 ::= [^<]+"), (grammar_function_xml, "key1 ::= [^>\\n]+")):
+            with self.subTest(grammar=grammar.__name__):
+                text = grammar(self.TOOLS)
+                self.assertIn(anykey, text)
+                self.assertIn("key0 ::= " + " | ".join(json.dumps(k) for k in sorted(self.ARGS)), text)
+                self.assertTrue('pairs2 ::= ""' in text or 'params2 ::= ""' in text)
+                self.assertTrue('pairs3 ::= ""' in text or 'params3 ::= ""' in text)
 
 
 class DetectTests(unittest.TestCase):
@@ -277,10 +334,10 @@ class DetectTests(unittest.TestCase):
         return render
 
     def test_each_layout_finds_its_format(self):
-        self.assertIs(detect(self.template(glm_call)), GLM)
+        self.assertIs(detect(self.template(glm_call)), ARG_PAIRS)
         # Qwen3.8's tools block carries an example call; the probe's own call is what decides
         example = qwen_call("example_function_name", {"example_parameter_1": "value_1"})
-        self.assertIs(detect(self.template(qwen_call, example=example)), QWEN_XML)
+        self.assertIs(detect(self.template(qwen_call, example=example)), FUNCTION_XML)
 
     def test_a_template_that_writes_no_call_or_refuses_has_none(self):
         self.assertIsNone(detect(self.template(lambda name, arguments: "")))
@@ -301,8 +358,8 @@ class DetectTests(unittest.TestCase):
             out, _ = render_jinja_template(conversations=[messages], tools=tools, chat_template=template,
                                            add_generation_prompt=generation_prompt, **kwargs)
             return out[0]
-        self.assertIs(detect(render), GLM)
-        self.assertEqual(GLM.start_token(None), None)
+        self.assertIs(detect(render), ARG_PAIRS)
+        self.assertEqual(ARG_PAIRS.start_token(None), None)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,60 @@
+[
+  {
+    "torch_cuda": "13.0",
+    "image": "sha256:f85de49afc0a41596cce3df2dab11af992a9aa5d21129c0f50ba719c30f68781",
+    "probe": "probes/engine_tree_dataflow_compile.py",
+    "gpu_used": false,
+    "exit_code": 1,
+    "failed_at": "nvfp4-m1-tile0-sf60",
+    "log_sha256": "eeda74940bd78b64b3fe12ec9ef514ff4d2b3d45af53bdcc89f7bb3eb9e12f9b",
+    "diagnostic": [
+      "compile kda-prepare",
+      "compile kda-commit",
+      "compile kda-tree-n8-d128-v128",
+      "compile kda-tree-n16-d128-v128",
+      "compile kda-tree-n31-d128-v128",
+      "compile kda-tree-n6-d7-v5",
+      "compile mlp-m1-h4096-i1024",
+      "compile mlp-m4-h4096-i1024",
+      "compile mlp-m16-h4096-i1024",
+      "compile mlp-m17-h95-i33",
+      "compile nvfp4-m1-tile0-sf60",
+      "python3: /__w/triton/triton/llvm-project/mlir/lib/IR/BuiltinAttributes.cpp:1030: static DenseElementsAttr mlir::DenseElementsAttr::get(ShapedType, ArrayRef<APInt>): Assertion `type.getElementType().isIntOrIndex()' failed.",
+      "  File \"/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/compiler.py\", line 549, in <lambda>",
+      "    stages[\"ttgir\"] = lambda src, metadata: self.make_ttgir(src, metadata, options, capability)",
+      "                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+      "  File \"/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/compiler.py\", line 321, in make_ttgir",
+      "    pm.run(mod, 'make_ttgir')",
+      "RuntimeError: PassManager::run failed"
+    ]
+  },
+  {
+    "torch_cuda": "13.2",
+    "image": "sha256:4f5f6e884e9a9e4ef4af532546a8b2c8a8e7dd710ce5d761bfe16d1377e4fb25",
+    "probe": "probes/engine_tree_dataflow_compile.py",
+    "gpu_used": false,
+    "exit_code": 1,
+    "failed_at": "nvfp4-m1-tile0-sf60",
+    "log_sha256": "eeda74940bd78b64b3fe12ec9ef514ff4d2b3d45af53bdcc89f7bb3eb9e12f9b",
+    "diagnostic": [
+      "compile kda-prepare",
+      "compile kda-commit",
+      "compile kda-tree-n8-d128-v128",
+      "compile kda-tree-n16-d128-v128",
+      "compile kda-tree-n31-d128-v128",
+      "compile kda-tree-n6-d7-v5",
+      "compile mlp-m1-h4096-i1024",
+      "compile mlp-m4-h4096-i1024",
+      "compile mlp-m16-h4096-i1024",
+      "compile mlp-m17-h95-i33",
+      "compile nvfp4-m1-tile0-sf60",
+      "python3: /__w/triton/triton/llvm-project/mlir/lib/IR/BuiltinAttributes.cpp:1030: static DenseElementsAttr mlir::DenseElementsAttr::get(ShapedType, ArrayRef<APInt>): Assertion `type.getElementType().isIntOrIndex()' failed.",
+      "  File \"/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/compiler.py\", line 549, in <lambda>",
+      "    stages[\"ttgir\"] = lambda src, metadata: self.make_ttgir(src, metadata, options, capability)",
+      "                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+      "  File \"/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/compiler.py\", line 321, in make_ttgir",
+      "    pm.run(mod, 'make_ttgir')",
+      "RuntimeError: PassManager::run failed"
+    ]
+  }
+]

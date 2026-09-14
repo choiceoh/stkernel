@@ -1,0 +1,2 @@
+flashinfer-python 0.6.18.dev20260819 has requirement nvidia-cutlass-dsl==4.7.0, but you have nvidia-cutlass-dsl 4.6.2.
+nvidia-cusparselt-cu13 0.8.1 is not supported on this platform

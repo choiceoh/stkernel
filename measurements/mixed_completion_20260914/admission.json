@@ -1,0 +1,32 @@
+{
+  "session": "st-mixed-completion0914v1",
+  "ticket": "17893453911662551",
+  "launch_id": "69cb0809fa7b4d7e8e977a72e54f15e0",
+  "accepted": true,
+  "state": "queued",
+  "source_revision": "43d5816bd582019720530d41630d08a5a3953a7b",
+  "checkout": "/home/choiceoh/st-worktrees/codex-gb10-mixed-completion",
+  "controller": "srv2",
+  "image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+  "command": [
+    "bash",
+    "probes/run_engine_probe.sh",
+    "probes/engine_mixed_completion_check.py",
+    "--ranks",
+    "/home/choiceoh/models/st-glm53-nvidia-tp4-9391",
+    "--ckpt-meta",
+    "/home/choiceoh/models/st-glm53-nvidia-tp4-9391",
+    "--samples",
+    "8",
+    "--output",
+    "/cache/mixed-completion0914v1.json"
+  ],
+  "memory_budget_gib": 8,
+  "estimated_minutes": 20,
+  "startup_log": "/home/choiceoh/glm53-logs/fleet/launches/aca7d6c500e90d9e4c081029c94cc164e86020e028f74afc76895edf4fb37023.69cb0809fa7b4d7e8e977a72e54f15e0.log",
+  "gpu_result": null,
+  "queue_position_at_snapshot": 7,
+  "revision": 1,
+  "log_path": "/home/choiceoh/glm53-logs/fleet/run-logs/353c706d78437686465a6e5ccce0463a96cc420c4d2adaf213f0c7b16e52e822.log",
+  "waiting_for": "fleet admission checks"
+}

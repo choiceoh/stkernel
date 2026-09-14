@@ -36,6 +36,8 @@ class EarlyObserveTests(unittest.TestCase):
         self.assertEqual(step.positions.tolist(), list(range(4096, 4103)) + list(range(91, 98)))
 
     def test_projection_is_identical_and_only_final_retained_rows_calibrate(self):
+        from engine.profiles.glm53.drafter import _bind_common_lanes
+        _bind_common_lanes()  # This lightweight fixture bypasses Drafter.__init__.
         torch.manual_seed(41)
         d = Drafter.__new__(Drafter)
         d.F = NS(layers=2, head_dim=4, rms_eps=1e-6, rope_theta=10000.)

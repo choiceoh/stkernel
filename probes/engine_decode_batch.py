@@ -12,12 +12,12 @@ from probes.engine_decode_fusions import _capture, _time
 from probes.engine_decode_scatter_check import rank_path
 
 
-def timing(report, name, rows, base, candidate, functions, **extra):
+def timing(report, name, rows, base, candidate, functions, *, inside_events=False, **extra):
     graphs = [base, candidate]
     # 128 MiB exceeds GB10 L2. Events inside each captured component exclude
     # eviction bandwidth and host enqueue delays from the measured interval.
     cold = torch.empty(128 << 20, dtype=torch.uint8, device='cuda')
-    evicted = []
+    evicted, warm = [], []
     try:
         for fn in functions:
             start, end = (torch.cuda.Event(enable_timing=True, external=True) for _ in range(2))
@@ -28,13 +28,21 @@ def timing(report, name, rows, base, candidate, functions, **extra):
                 end.record()
                 return result
             evicted.append((_capture(run)[0], start, end))
+            if inside_events:
+                start, end = (torch.cuda.Event(enable_timing=True, external=True) for _ in range(2))
+                def run(fn=fn, start=start, end=end):
+                    start.record()
+                    result = fn()
+                    end.record()
+                    return result
+                warm.append((_capture(run)[0], start, end))
         for cache in ('warm', 'evicted'):
             samples = []
             for label, i in (('B', 0), ('A', 1), ('A', 1), ('B', 0)):
-                if cache == 'warm':
+                if cache == 'warm' and not inside_events:
                     ms = _time(graphs[i], iterations=64)
                 else:
-                    graph, start, end = evicted[i]
+                    graph, start, end = (warm if cache == 'warm' else evicted)[i]
                     values = []
                     for _ in range(32):
                         graph.replay()
@@ -44,10 +52,11 @@ def timing(report, name, rows, base, candidate, functions, **extra):
                 samples.append(dict(arm=label, ms=ms))
             report('decode_batch_timing', candidate=name, rows=rows, cache=cache, samples=samples,
                    eviction_bytes=cold.numel() if cache == 'evicted' else 0,
-                   timing_version=2, eviction_in_timing=False,
+                   timing_version=3 if inside_events else 2, eviction_in_timing=False,
+                   host_enqueue_in_timing=cache == 'warm' and not inside_events,
                    scope='captured same-weight components; eviction outside events; not engine speed', **extra)
     finally:
-        for graph, _, _ in evicted:
+        for graph, _, _ in evicted + warm:
             graph.reset()
 
 

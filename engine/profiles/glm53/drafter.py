@@ -38,17 +38,31 @@ from contextlib import nullcontext
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from engine.base.params import Spec
-from engine.kernels.draft_conv import tap_mix
-from engine.kernels.draft_select import walk_scores
 from engine.base.lanes import served as common_lanes
 from engine.profiles.glm53.facts import SPEC_K, TP
 
 # The model-free kernels come from the engine's default lanes (engine/base/lanes): one launch each for the
 # drafter's norms, norm+rope and gated MLP. The names stay module-level because the tests and probes take the
 # same functions the block runs from here.
-_COMMON = common_lanes()
-swiglu, add_norm, norm, norm_rope, warm_rotary = (_COMMON.swiglu, _COMMON.add_rmsnorm, _COMMON.rmsnorm,
-                                                 _COMMON.rmsnorm_rope, _COMMON.rope_table)
+_COMMON_NAMES = dict(swiglu='swiglu', add_norm='add_rmsnorm', norm='rmsnorm',
+                     norm_rope='rmsnorm_rope', warm_rotary='rope_table',
+                     norm_rope_pair='rmsnorm_rope_pair')
+
+
+def _bind_common_lanes():
+    # Fact/budget imports stay CPU-only. Constructing a drafter or importing
+    # a public kernel name binds the actual functions, preserving identity
+    # and test/diagnostic hooks without a wrapper on executed calls.
+    table = common_lanes()
+    for alias, name in _COMMON_NAMES.items():
+        globals().setdefault(alias, getattr(table, name))
+
+
+def __getattr__(name):
+    if name not in _COMMON_NAMES:
+        raise AttributeError(name)
+    _bind_common_lanes()
+    return globals()[name]
 
 DRAFTER = Path("/home/choiceoh/models/GLM-5.3-Flash-DFlash2")
 BF16, F32 = torch.bfloat16, torch.float32
@@ -165,6 +179,7 @@ def dense_shapes(F: DrafterFacts, world: int) -> "dict[str, tuple[int, int]]":
 class Drafter:
     def __init__(self, F: DrafterFacts, target, decodable: int):
         """`target` is the Glm53Net (embed/head are borrowed); `decodable` masks ids the tokenizer cannot decode."""
+        _bind_common_lanes()
         self.F, self.target, self.decodable = F, target, decodable
         self.k = F.k
         self.p = None
@@ -391,6 +406,7 @@ class Drafter:
     # -- the block ------------------------------------------------------------------------------
     def _conv(self, x, delta, base):
         """The grouped causal tap mix over one block's rows (kernels/draft_conv)."""
+        from engine.kernels.draft_conv import tap_mix
         return tap_mix(x, delta, base, self.F.conv_group)
 
     def _attn(self, L: int, x: torch.Tensor, positions: torch.Tensor, ring: torch.Tensor, ctx_len: int) -> torch.Tensor:
@@ -400,17 +416,19 @@ class Drafter:
         heads, kv_heads = self.local_heads, self.local_kv_heads
         if self.fast_attention:
             q0, k0, v0 = self.linear(x, q+"qkv").split((heads*F.head_dim, kv_heads*F.head_dim, kv_heads*F.head_dim), -1)
+            qh, kh = norm_rope_pair(q0.reshape(B, heads, F.head_dim), k0.reshape(B, kv_heads, F.head_dim),
+                                    p[q + "q_norm.weight"], p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
         else:
             q0, k0, v0 = (Fn.linear(x, p[q+s+"_proj.weight"]) for s in ("q", "k", "v"))
-        qh = norm_rope(q0.reshape(B, heads, F.head_dim), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
-        kh = norm_rope(k0.reshape(B, kv_heads, F.head_dim), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
+            qh = norm_rope(q0.reshape(B, heads, F.head_dim), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
+            kh = norm_rope(k0.reshape(B, kv_heads, F.head_dim), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
         vh = v0.reshape(B, kv_heads, F.head_dim)
         if self.fast_attention:
             from engine.kernels.draft_attention import draft_attention
             if isinstance(ring, tuple):
-                o = draft_attention(qh.contiguous(),kh.contiguous(),vh.contiguous(),ring[0],ctx_len,slot=ring[1],layer=L)
+                o = draft_attention(qh.contiguous(),kh.contiguous(),vh,ring[0],ctx_len,slot=ring[1],layer=L)
             else:
-                o = draft_attention(qh.contiguous(), kh.contiguous(), vh.contiguous(), ring[L], ctx_len)
+                o = draft_attention(qh.contiguous(), kh.contiguous(), vh, ring[L], ctx_len)
             return self.target.comm.all_reduce(self.linear(o.reshape(B, heads*F.head_dim), q+"o_proj.weight"))
         # the context window: the last min(ctx, window) verified positions, then the block itself (non-causal)
         # A fixed window keeps GEMM/reduction geometry identical in eager and
@@ -538,6 +556,7 @@ class Drafter:
 
     def _conv_rows(self, x, delta, base, t: int):
         """`_conv` over the step's blocks of t rows: the taps look back inside a block, never into the one before."""
+        from engine.kernels.draft_conv import tap_mix
         return tap_mix(x, delta, base, self.F.conv_group, block=t)
 
     def _attn_rows(self, L: int, x: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor, ctx: torch.Tensor,
@@ -553,9 +572,10 @@ class Drafter:
             from engine.kernels.draft_attention import attend_rows
             heads, kv, D = self.local_heads, self.local_kv_heads, F.head_dim
             q0, k0, v0 = self.linear(x, q + "qkv", rows_ok).split((heads*D, kv*D, kv*D), -1)
-            qh = norm_rope(q0.reshape(n*t, heads, D), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
-            kh = norm_rope(k0.reshape(n*t, kv, D), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
-            vh = v0.reshape(n*t, kv, D).contiguous()
+            qh, kh = norm_rope_pair(q0.reshape(n*t, heads, D), k0.reshape(n*t, kv, D),
+                                    p[q + "q_norm.weight"], p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
+            # Read V in the packed QKV projection; its token stride spans Q and K too.
+            vh = v0.reshape(n*t, kv, D)
             # GEMMs cover all rows once, and so does the attention: each row reads its own device-selected slot
             # at its own context length, so the rows are a grid dimension and there is nothing to concatenate.
             out = attend_rows(qh.view(n, t, heads, D), kh.view(n, t, kv, D), vh.view(n, t, kv, D),
@@ -616,21 +636,19 @@ class Drafter:
         if self.max_block_rows is not None and rows > self.max_block_rows:
             raise ValueError(f'drafter block has {rows} rows, above prepared capacity {self.max_block_rows}')
 
-    def propose_rows(self, field: torch.Tensor, slots: torch.Tensor, anchors: torch.Tensor, positions: torch.Tensor,
-                     temps: "torch.Tensor | None" = None, uniforms: "torch.Tensor | None" = None,
-                     vocab: "int | None" = None, alive=None):
-        """Every row's K drafts at once: anchors [n], positions [n] (each row's context: the anchor's position), slots [n],
-        all on the device. Greedy walk, [n, K]; with `temps` [n] the sampled walk at each row's temperature (rows at 0
-        stay greedy) over `uniforms` [n, K] (one a position, the caller's: base/draws), plus the candidates each pick
-        was drawn from and their mass -- [n, K, sel_top_k] each, which is the whole distribution: the walk puts
-        nothing anywhere else."""
+    def candidate_rows(self, field, slots, anchors, positions, alive=None):
+        """One DFlash/head pass exposing the existing selector's bounded lattice.
+
+        Shared by the ordinary walk and the explicit experimental tree owner.
+        It does not train or run another draft model.
+        """
         F, p = self.F, self.p
         K = self.k
         t = K + 1
         n = anchors.numel()
         dev = anchors.device
-        ids = torch.cat([anchors.view(n, 1), torch.full((n, K), F.mask_id, dtype=torch.int64, device=dev)], 1).reshape(-1)
-        pos = (positions.view(n, 1) + torch.arange(t, device=dev)).reshape(-1)
+        from engine.modules.draft_inputs import build
+        ids, pos = build(anchors, positions, K, F.mask_id)
         h = self.block_rows(ids, pos, slots, positions, field, n, t, alive).view(n, t, -1)[:, 1:].reshape(n * K, -1)
         from engine.modules.vocab import topk
         unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp,
@@ -639,9 +657,18 @@ class Drafter:
         if self.diagnostics is not None:
             self.diagnostics.support.index_copy_(0, slots, cand)
         proj = self.selector_projection(h).view(n, K, -1)
+        return unary, cand, proj
+
+    def propose_rows(self, field: torch.Tensor, slots: torch.Tensor, anchors: torch.Tensor, positions: torch.Tensor,
+                     temps: "torch.Tensor | None" = None, uniforms: "torch.Tensor | None" = None,
+                     vocab: "int | None" = None, alive=None):
+        """Every row's K drafts; sampled mode also returns its candidate IDs/mass."""
+        F, p, K, n, dev = self.F, self.p, self.k, anchors.numel(), anchors.device
+        unary, cand, proj = self.candidate_rows(field, slots, anchors, positions, alive)
         if temps is None:
             # the scores never exist: a step reads one codebook row against this step's candidates
             from engine.modules.draft_agreement import agree_walk
+            from engine.kernels.draft_select import walk_scores
             drafts = walk_scores(unary, cand, anchors, proj, p["candidate_selector.predecessor_codebook"],
                                  p["candidate_selector.successor_codebook"], alpha=self.selector_alpha)
             return agree_walk(self.target.comm, drafts)
@@ -657,7 +684,8 @@ class Drafter:
         # The walk puts mass on `sel_top_k` candidates a position and nothing else. Handing that back as
         # [n, K, vocab] meant allocating and zeroing 12.4 MiB every decode step (n=4, K=5, V=154,880) to carry
         # 320 numbers, and the verifier then read it twice. The candidates and their mass are the same fact.
-        qprob = torch.zeros(n, K, F.sel_top_k, dtype=torch.float32, device=dev)
+        # Every position below writes all rows/candidates before the result is returned.
+        qprob = torch.empty(n, K, F.sel_top_k, dtype=torch.float32, device=dev)
         qcand = cand.clone()                                                          # the candidates are the walk's, position by position
         # The sampled walk stays a loop: each position picks among the sixteen the last one opened. Its draw
         # is the cumulative walk over the caller's uniform for that position -- keyed, not drawn, so four ranks
@@ -695,8 +723,8 @@ class Drafter:
         F, p = self.F, self.p
         K = self.k
         dev = anchor.device
-        ids = torch.cat([anchor.reshape(1), torch.full((K,), F.mask_id, dtype=torch.int64, device=dev)])
-        positions = position + torch.arange(K + 1, device=dev)
+        from engine.modules.draft_inputs import build
+        ids, positions = build(anchor.reshape(1), position, K, F.mask_id)
         h = self.block(ids, positions, ring, position)[1:]                                   # the K mask positions
         from engine.modules.vocab import topk
         local = self.target.head_local(h)
@@ -713,6 +741,7 @@ class Drafter:
             self.diagnostics.support.index_copy_(0, support_slot.reshape(1), cand.unsqueeze(0))
         proj = self.selector_projection(h)        # [K, 256]
         from engine.modules.draft_agreement import agree_walk
+        from engine.kernels.draft_select import walk_scores
         drafts = walk_scores(unary.unsqueeze(0), cand.unsqueeze(0), anchor.reshape(1), proj.unsqueeze(0),
                              p["candidate_selector.predecessor_codebook"],
                              p["candidate_selector.successor_codebook"], alpha=self.selector_alpha, boundary=boundary,
@@ -746,8 +775,8 @@ class Drafter:
         F, p = self.F, self.p
         K = self.k
         dev = ring.device
-        ids = torch.cat([anchor.reshape(1), torch.full((K,), F.mask_id, dtype=torch.int64, device=dev)])
-        positions = position + torch.arange(K + 1, device=dev)
+        from engine.modules.draft_inputs import build
+        ids, positions = build(anchor.reshape(1), position, K, F.mask_id)
         h = self.block(ids, positions, ring, position)[1:]
         from engine.modules.vocab import topk
         local = self.target.head_local(h)

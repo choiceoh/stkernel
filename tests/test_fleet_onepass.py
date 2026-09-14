@@ -96,6 +96,35 @@ class OnepassPolicyTests(unittest.TestCase):
             with self.subTest(output=unsafe), self.assertRaises(ValueError):
                 self.validate(command[:-1]+[unsafe])
 
+    def test_ffn_packets_probe_requires_the_reviewed_bytes(self):
+        command = ['bash', 'probes/run_engine_probe.sh', 'probes/engine_ffn_packets_check.py',
+                   '--ranks', '/models/st-ranks', '--samples', '8', '--output', '/cache/ffn.json']
+        result = self.validate(command, kind='single')
+        self.assertEqual(result['gpus'], 1)
+        self.assertEqual(policy.probe_budget_gib(command[2]), 8)
+        (self.repo/command[2]).write_text('# unreviewed replacement\n')
+        with self.assertRaises(ValueError):
+            self.validate(command, kind='single')
+
+    def test_router_only_is_scoped_to_the_pinned_packet_probe(self):
+        command = ['bash', 'probes/run_engine_probe.sh', 'probes/engine_ffn_packets_check.py',
+                   '--router-only', '--samples', '8', '--output', '/cache/router.json']
+        self.assertEqual(self.validate(command, kind='single')['gpus'], 1)
+        for other in ('probes/engine_kernel_check.py', 'probes/engine_full_check.py'):
+            with self.subTest(probe=other), self.assertRaises(ValueError):
+                self.validate(command[:2]+[other]+command[3:])
+        with self.assertRaises(ValueError):
+            self.validate(['bash', 'probes/run_engine_check.sh', '--router-only'])
+
+    def test_retired_mixed_probes_are_not_admitted(self):
+        for name in ('experts', 'completion', 'tickets'):
+            probe = f'probes/engine_mixed_{name}_check.py'
+            # Even an unchanged, executable file cannot re-open a retired probe.
+            for tree in (self.repo, self.controller):
+                (tree/probe).write_text('# retired experiment\n')
+            with self.subTest(probe=probe), self.assertRaises(ValueError):
+                self.validate(['bash', 'probes/run_engine_probe.sh', probe], kind='single')
+
     def test_the_contract_counts_gpus_and_the_single_lane_takes_only_one_gpu_checks(self):
         """A check that needs one GPU goes to the 5050 on ost-97x, not the four Sparks
         (2026-09-12). The lane follows from `gpus`, and naming the lane can never move a
@@ -119,7 +148,7 @@ class OnepassPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'ST_PROBE_HOST is set by the single-GPU lane'):
             self.validate(['env', 'ST_PROBE_HOST=srv2', 'bash', 'probes/run_engine_check.sh'])
         out = io.StringIO()
-        with contextlib.redirect_stdout(out):
+        with patch.dict(os.environ, self.environment, clear=True), contextlib.redirect_stdout(out):
             self.assertEqual(policy.main(['--repo', str(self.controller), '--cwd', str(self.repo),
                                           '--kind', 'single', '--', 'bash', 'probes/run_engine_check.sh']), 0)
         self.assertEqual(json.loads(out.getvalue())['gpus'], 1)
