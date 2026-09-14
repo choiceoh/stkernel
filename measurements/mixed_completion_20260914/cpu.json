@@ -1,0 +1,435 @@
+{
+  "scope": "M1b full completion, S/P integration, rebased decode paths and fleet admission; isolated modules, no GPU exposed",
+  "source_revision": "b25b6ff17a37deac191aff12480d1b98dec8c08c",
+  "torch": "2.13.0+cu130",
+  "gpu_available": false,
+  "cuda_initialized": false,
+  "tests": 305,
+  "passed": 289,
+  "skipped": 16,
+  "modules": [
+    {
+      "tests": 9,
+      "passed": 9,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_mixed_completion"
+    },
+    {
+      "tests": 6,
+      "passed": 6,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_moe_sf6_staging"
+    },
+    {
+      "tests": 9,
+      "passed": 9,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_mixed_experts"
+    },
+    {
+      "tests": 2,
+      "passed": 2,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_moe_scatter_config"
+    },
+    {
+      "tests": 2,
+      "passed": 2,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_moe_scatter_owner"
+    },
+    {
+      "tests": 6,
+      "passed": 6,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_moe_static_sf6_direct"
+    },
+    {
+      "tests": 2,
+      "passed": 0,
+      "skipped": [
+        [
+          "test_kda_mixed_input_strides_and_declared_rows (tests.test_engine_decode_projection.ProjectionTests.test_kda_mixed_input_strides_and_declared_rows)",
+          "requires GB10 CUDA"
+        ],
+        [
+          "test_route_reduction_layout_and_replayed_zero_overwrite (tests.test_engine_decode_projection.ProjectionTests.test_route_reduction_layout_and_replayed_zero_overwrite)",
+          "requires GB10 CUDA"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_decode_projection"
+    },
+    {
+      "tests": 14,
+      "passed": 14,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_burst_decode"
+    },
+    {
+      "tests": 6,
+      "passed": 5,
+      "skipped": [
+        [
+          "test_bound_ordinary_and_direct_graphs_follow_changed_inputs_and_addresses (tests.test_engine_decode_fastpaths.BoundDecodeGpuTests.test_bound_ordinary_and_direct_graphs_follow_changed_inputs_and_addresses)",
+          "requires CUDA; not exercised by the CPU gate"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_decode_fastpaths"
+    },
+    {
+      "tests": 12,
+      "passed": 12,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_glm53_modelopt_serving"
+    },
+    {
+      "tests": 11,
+      "passed": 11,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_ffn_packets"
+    },
+    {
+      "tests": 4,
+      "passed": 0,
+      "skipped": [
+        [
+          "test_graph_replay_reads_new_packet_values_and_scales (tests.test_engine_prefill_fp8_consumer.PrefillConsumerTests.test_graph_replay_reads_new_packet_values_and_scales)",
+          "requires CUDA and Triton"
+        ],
+        [
+          "test_packet_router_preserves_logits_and_route_selection (tests.test_engine_prefill_fp8_consumer.PrefillConsumerTests.test_packet_router_preserves_logits_and_route_selection)",
+          "requires CUDA and Triton"
+        ],
+        [
+          "test_padded_packets_and_gemm_group_scales (tests.test_engine_prefill_fp8_consumer.PrefillConsumerTests.test_padded_packets_and_gemm_group_scales)",
+          "requires CUDA and Triton"
+        ],
+        [
+          "test_real_rows_are_cropped_before_shared_quantization_output (tests.test_engine_prefill_fp8_consumer.PrefillConsumerTests.test_real_rows_are_cropped_before_shared_quantization_output)",
+          "requires CUDA and Triton"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_prefill_fp8_consumer"
+    },
+    {
+      "tests": 7,
+      "passed": 7,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_compact_serving"
+    },
+    {
+      "tests": 6,
+      "passed": 6,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_execution_plans"
+    },
+    {
+      "tests": 13,
+      "passed": 11,
+      "skipped": [
+        [
+          "test_lane_tables_capture_their_executor_and_direct_table_stays_direct (tests.test_engine_execution.KernelBindingTests.test_lane_tables_capture_their_executor_and_direct_table_stays_direct)",
+          "requires CUDA PyTorch; "
+        ],
+        [
+          "test_tensor_collectives_remain_exact_across_runs_and_a_rank_failure (tests.test_engine_execution.KernelBindingTests.test_tensor_collectives_remain_exact_across_runs_and_a_rank_failure)",
+          "requires CUDA PyTorch; "
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_execution"
+    },
+    {
+      "tests": 2,
+      "passed": 2,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_prefill_route_cache"
+    },
+    {
+      "tests": 3,
+      "passed": 3,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_token_shards"
+    },
+    {
+      "tests": 8,
+      "passed": 8,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_prefill_outputs"
+    },
+    {
+      "tests": 17,
+      "passed": 17,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_knobs"
+    },
+    {
+      "tests": 36,
+      "passed": 33,
+      "skipped": [
+        [
+          "test_a_declared_count_per_shape_is_honoured_and_replays_what_eager_computes (tests.test_engine_graph_contracts.WarmupPolicyTests.test_a_declared_count_per_shape_is_honoured_and_replays_what_eager_computes)",
+          "requires CUDA"
+        ],
+        [
+          "test_a_policy_that_asks_for_no_warmup_is_refused (tests.test_engine_graph_contracts.WarmupPolicyTests.test_a_policy_that_asks_for_no_warmup_is_refused)",
+          "requires CUDA"
+        ],
+        [
+          "test_the_default_is_one_pass_per_shape (tests.test_engine_graph_contracts.WarmupPolicyTests.test_the_default_is_one_pass_per_shape)",
+          "requires CUDA"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_graph_contracts"
+    },
+    {
+      "tests": 2,
+      "passed": 2,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_warmup_draws"
+    },
+    {
+      "tests": 11,
+      "passed": 9,
+      "skipped": [
+        [
+          "test_cuda_controlled_walk_and_trace_match_cpu_and_replay_changed_packets (tests.test_engine_draft_tuning_integration.WalkTests.test_cuda_controlled_walk_and_trace_match_cpu_and_replay_changed_packets)",
+          "CUDA selector numerics; CPU CI never launches GPUs"
+        ],
+        [
+          "test_fc_bias_norm_cuda_graph_reads_the_owned_vector (tests.test_engine_draft_tuning_integration.WalkTests.test_fc_bias_norm_cuda_graph_reads_the_owned_vector)",
+          "CUDA fused norm numerics; CPU CI never launches GPUs"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_draft_tuning_integration"
+    },
+    {
+      "tests": 13,
+      "passed": 11,
+      "skipped": [
+        [
+          "test_the_compute_phase_does_not_depend_on_the_accepted_count (tests.test_engine_drafter.ObserveOverlapTests.test_the_compute_phase_does_not_depend_on_the_accepted_count)",
+          "observe's write phase is a device kernel"
+        ],
+        [
+          "test_the_split_is_byte_for_byte_the_single_pass (tests.test_engine_drafter.ObserveOverlapTests.test_the_split_is_byte_for_byte_the_single_pass)",
+          "observe's write phase is a device kernel"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_drafter"
+    },
+    {
+      "tests": 6,
+      "passed": 6,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_kernel_common"
+    },
+    {
+      "tests": 4,
+      "passed": 4,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_prefill_tiles"
+    },
+    {
+      "tests": 14,
+      "passed": 14,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_glm53_prefill_collectives"
+    },
+    {
+      "tests": 4,
+      "passed": 4,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_prefill_sum_pack"
+    },
+    {
+      "tests": 29,
+      "passed": 29,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_fleet_onepass"
+    },
+    {
+      "tests": 15,
+      "passed": 15,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_fleet_onepass_integration"
+    },
+    {
+      "tests": 2,
+      "passed": 2,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_early_observe"
+    },
+    {
+      "tests": 3,
+      "passed": 3,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_router_widths"
+    },
+    {
+      "tests": 6,
+      "passed": 6,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_graph_profile"
+    },
+    {
+      "tests": 5,
+      "passed": 5,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_prefill_covered_queries"
+    },
+    {
+      "tests": 8,
+      "passed": 8,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_prefill_absorb_tiles"
+    },
+    {
+      "tests": 8,
+      "passed": 8,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_prefill_dense_prefix"
+    }
+  ],
+  "source_sha256": {
+    "engine/modules/prefill_packets.py": "eeaa468b8715373c7711cb29d58c8993a824f80da91c9753693f714053cc6471",
+    "engine/modules/token_shards.py": "11d3bf3c2fe8e644a845fa49864800d5f0e021ccdc7c6eef03c9151b695aa77c",
+    "engine/kernels/prefill_collectives/__init__.py": "4fca676770574b77e9280a260c36cff406ebe0279a15fc3b5bdd0b11222e0f4c",
+    "engine/kernels/prefill_collectives/consumer.py": "d0f242b38b4d0e74afd205214067ecab57f046b5c81f8f2fa5032ce8fbcdfd7c",
+    "engine/kernels/prefill_collectives/kernels.py": "49d22265497ee41cc3ff03d455fa11a76519c450322aa993cbc5601cfc5a48a4",
+    "engine/kernels/prefill_router.py": "1be65d85e0e19899ecd163ab05ece1b92822277fd80adc1f804b80818fbc36a7",
+    "engine/kernels/dense/__init__.py": "29be1221e81bcdc965b3131b33befe4a729dc544a20ded5551f046ba506be8b0",
+    "engine/kernels/dense/fp8.py": "fecc21c8b0f3088c765083cf7987db210de499313490559596dca7dee676c3ca",
+    "engine/kernels/b12x/moe_dispatch.py": "b14ac83968fb06563660c14be4b5e4bc92a35de537f044c0a676d014f736c2e0",
+    "engine/kernels/b12x/moe_packet_input.py": "edfb8563846ea6df2c86a42417a18d679e58bccb55a14164458e7d6ea89eef37",
+    "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "2cb221c7ddc9891dad4f6d2a83ccf981c22e70b3a2171a6795792c0c5e2fae8e",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_w4a16_fp4_helpers.py": "3115cf3e73064cbf2c339d5fd2cec1c49206f34283c281faef2d1c2d290a6c73",
+    "engine/profiles/glm53/net.py": "7ceb9f65aa074e202e0cbdbcc0243f22d9a4b5a3073aa1b4de8fc2b26bfd2982",
+    "engine/profiles/glm53/lanes.py": "26aa8fd7d7f82346703a1e2ff64cc018f36f372b2b147db43ec36f3d3649f597",
+    "engine/profiles/glm53/execution.py": "039775c849067e19ce59f67be2794f3c36cb4b3356e81ec0d1dc18a9b2ade957",
+    "engine/profiles/glm53/boot.py": "6e96f5fd56ef6067e727902f2bb6e2ae146576e157cfcb3c567e422775ab21c4",
+    "probes/engine_ffn_packets_compile.py": "3cd11c814f05dbc5cdc1daeea9a08e3d06dfa80f3d915babaebe707347ad3128",
+    "engine/modules/mixed_experts.py": "4cb1d9de5b348c49b135bb7f0c2290b203dba462d2a77cd8ffe1d6adbd880b62",
+    "engine/kernels/b12x/moe_mixed.py": "23205ccfe0f93824d361870d4a07afed6abbb1f2b1ccee284c3c89c850edf570",
+    "engine/kernels/b12x/moe_mixed_frontend.py": "465b8aef59b69840eb7594c799f783522b753221808bf78c39c18006605442c7",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "3301395da9c715387b21c3b6f5ef5c85d7e45509168f33fb17aa6fea1f825922",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "engine/kernels/b12x/moe_micro_kernel.py": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914",
+    "probes/engine_mixed_experts_compile.py": "66e32700b9a9ba55de1bf021a1667015f68575a1862a2a6cece39bc9301fe47f",
+    "tests/test_engine_mixed_experts.py": "a0ae4ff32765556460678543518f27116cdc4483dd8822d3b5b2f5e58552dd7d",
+    "engine/modules/mixed_completion.py": "2ba673cb4d3a0c1033c9e8fc6893a85618c34f1b4b273003bac41e714cc0acd8",
+    "engine/kernels/b12x/moe_mixed_completion.py": "997232ad03fa7660414138933899f0a6ec83f0426c23dd75e0551ae2be5f17ea",
+    "engine/kernels/b12x/moe_cold_frontend.py": "1d3876c0675722533f7b6ac75cefac32c141125def6dd6964f614843ca4fc40b",
+    "engine/kernels/b12x/moe_prepared_prefill.py": "b077a033aaa79d7bf0cc6ba387d17bccb64546abb2431ce8aefb79bd33a69306",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_words.py": "368dee876092745be60e079a73cf73c4e2c91dd73f699c6f0a315da0ed05e3e9",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+    "engine/kernels/b12x/_moe_dynamic/gated.py": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+    "probes/engine_mixed_completion_compile.py": "ef70284f6d76abbe468095a9a5b418f578eaf29ce71f67d1209145e33cfa815e",
+    "tests/test_engine_mixed_completion.py": "e16cf0dd39c07bf9d7c68861fd17e759f75bade28f2f9ebace5415b529198125",
+    "probes/engine_mixed_completion_check.py": "049a6786497a220e50436cdea774b992057a050a36907ab426a487ee602caa82",
+    "tests/test_engine_moe_sf6_staging.py": "d4bb7b13300666da1b7f8c684e0c6f51ca02555e5a0037fc74e8fef285ce31bd",
+    "tests/test_engine_moe_scatter_config.py": "8ebe675fcd09b6a7bbaa02bb51167f7591fe57a49d3a9388f07ff651c9e419b3",
+    "tests/test_engine_moe_scatter_owner.py": "18bd29fbc7d51e72014e2a9918919d25e910b5652bba29efea34f65c98d2459a",
+    "tests/test_moe_static_sf6_direct.py": "a6636beeff6880f62d096eb967cd44d6c6cc773d01877f567e62d464dc27c14e",
+    "tests/test_engine_decode_projection.py": "3a65b0af1739551b329de2de1f5ad18e89b7c9e801b8e9ab0df34660399b6e86",
+    "tests/test_engine_burst_decode.py": "93c936f1672254304e37e583d4294d7d2e310bc09d4276ce1647d2adbad5dcf0",
+    "tests/test_engine_decode_fastpaths.py": "2cd4c94cb1a9d980ef3a97e6305cd7f9d4e553dd62dd10ebbf78ce525eeeef28",
+    "tests/test_glm53_modelopt_serving.py": "5397c2c9f0721bda652d51182c5d5c7242e2fd2445c51ad4fc952ee038378116",
+    "tests/test_engine_ffn_packets.py": "b2193bec8208d5cb53c8d950451bd19bbd04405cb9726f5ddea491f6ce256c67",
+    "tests/test_engine_prefill_fp8_consumer.py": "244f7cd38080446304b6968181353b3d3378a5facfa494243cb2aa137755cde8",
+    "tests/test_engine_compact_serving.py": "60107f2efef33ba95bfce918323b520c3909fc4a0e2636865ccbae4730c111ed",
+    "tests/test_engine_execution_plans.py": "75987974e410f18e2267fcb61642b8d41570022fb794cf1d4659faea6664848e",
+    "tests/test_engine_execution.py": "8f440eab3345bc275d3b546ba3c90325839ebb5bf5b25c59b926a9682903912a",
+    "tests/test_engine_prefill_route_cache.py": "d66f5d7a6ea27751c72587aef35259149167daa4f8643f2fd6f038c78cad4b59",
+    "tests/test_engine_token_shards.py": "2024e4639983b6fadda64c2bdea9151f4463f8c7c4915d47b9144a5246cbb944",
+    "tests/test_engine_prefill_outputs.py": "76582ce2a3aaecc63b4543f23f645758e5fa64e589a1465d2cbb13194758491c",
+    "tests/test_engine_knobs.py": "1601d0180c21a56eee564d9ed030716e5a1ef34746bbdc20fa17c904b0bad5c3",
+    "tests/test_engine_graph_contracts.py": "d1d1c5978f6cb72f1686ebe54c85c38308f733a1e7d8b445f3739ceb4f9f6d05",
+    "tests/test_engine_warmup_draws.py": "cdda67fae25f67b106b27140f15fb29f4ba368e53067b33cea934585fdc08a3c",
+    "tests/test_engine_draft_tuning_integration.py": "22268c4cc8b5e610905995f32464bb0f3fcb5fd8257506868e3a5afd3499b9d4",
+    "tests/test_engine_drafter.py": "709fa35f773513f294b491b0f6d95d01b03a2840a5d97e237ca45d08b80149dc",
+    "tests/test_engine_kernel_common.py": "dfd05e170e9fee4d3defe53f9844a72b95e996b74961de11de14c093c2e2c657",
+    "tests/test_engine_prefill_tiles.py": "289d027c16323105d6d2b463cc42341e40144725a120f1b1bbc8f40c775fbfcc",
+    "tests/test_glm53_prefill_collectives.py": "7e270b3eaf2a1773eb057703249eabff1c7c21b5497eba290cb9400fa8534d40",
+    "tests/test_prefill_sum_pack.py": "1dba91662db06776b303a535c843966c0d905c552371e88fc54b0f57d1f6746e",
+    "tests/test_fleet_onepass.py": "6acc76b4d598316b01762d3fe2d8b7868b6b891f19e112812fc99190220a346b",
+    "tests/test_fleet_onepass_integration.py": "871e39ffc5766ed107e4a638a2de9703136128221854f22080b130b5988d4e06",
+    "tests/test_engine_early_observe.py": "0529b7e6c1d65bf23ec54f49423e7af38fb2f218d03813c003fef2210e7714e2",
+    "tests/test_engine_router_widths.py": "8cced0830fb16417d7c52031c7ad5ac86c71f4c2688f21f70702f1cfb416dd21",
+    "tests/test_engine_graph_profile.py": "284ff4354353d7544d291c13cb1673fb9f667ec375089c4a9b11bb44ef8c34c6",
+    "tests/test_engine_prefill_covered_queries.py": "e16a1eb85a561d319af6758e585a5926a50a7ac03aae89738f46b19be8ae799b",
+    "tests/test_engine_prefill_absorb_tiles.py": "9604a253f7f0067a532ad442314a610eee1ec4c26ab07a7fa7adb478e759af00",
+    "tests/test_prefill_dense_prefix.py": "b57031e1f39c510b8aa6ca95ef0bd86fa63f7e04e186f604aad0e17794937b50"
+  },
+  "status": "PASS"
+}

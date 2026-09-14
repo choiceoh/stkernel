@@ -2,6 +2,8 @@
 
 Implemented M0 admission and M1a hot-route computation for the fixed GLM TP4 SF6 pack. There is no serving selector or new execution knob.
 
+This directory preserves the original M1a scope and frozen admission. The subsequent cold/shared completion implementation and its separate validation are recorded in [M1b evidence](../mixed_completion_20260914/README.md).
+
 - Decode 1..8 rows retain M16; 9..32 retain M32. The planner admits only complete M128 tails fitting existing decode tiles, preferring fewer added routes and bounding the total at 128. Decode order and every remaining top-8 route are retained, including zero-weight routes.
 - A separate CuTe producer reads explicit `(local expert, expert row, decode/prefill, original row, route slot)` descriptors. The two BF16 sources are never concatenated. Per-expert group-16 NVFP4 quantization and SFA addressing match the ordinary static frontend. Symbolic input/route row extents share one producer build.
 - The prepared V5 body skips initialization/routing and writes four independently owned, BF16-rounded weighted FC2 partials per route. Its compute body is unchanged. Ordinary kernel AST comparison is canonical across Python versions; baseline kernel AST was taken from the rebased main body.

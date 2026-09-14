@@ -38,4 +38,8 @@ GPU numerical and timing results are pending. No TTFT, token/s, acceptance, qual
 
 Pinned runtime: `sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc`, PyTorch `2.13.0+cu130`. CPU and compiler containers expose no GPU and use `--runtime=runc --network=none --cpus=1 --memory=3g`.
 
-The checked-in JSON files retain source revisions and individual file hashes. Admission and final validation are recorded after the gates complete.
+- `compile.json`: eight actual SM121 builds on `e2a5a9e9`, including ordinary/prepared M128; both dynamic handles are reused across 9240/32768 rows. No CUDA context was initialized.
+- `cpu.json`: 35 isolated Linux modules on `b25b6ff1`, **305 discovered / 289 passed / 16 CUDA skips**, including the new task layout, ownership, completion ordering, main's SF6 staging and existing S/P integration.
+- `cpu-followup.json`: all 10 completion tests pass on `43d5816b`, adding a chunked-metric numerical test. Replacing the earlier 9-case module yields **306 discovered / 290 passed / 16 CUDA skips**, without counting repeated cases twice.
+- `source-continuity.json`: all compiled device sources are byte-identical at the final code revision. The host owner's executable AST is unchanged; its only edit after compilation is a quota-scope docstring. The output-comparison helper and its extra test are covered by the follow-up gate.
+- `admission.json`: the canonical GPU reservation `st-mixed-completion0914v1` was accepted/queued with ticket `17893453911662551` on clean source **`43d5816b`** in its own checkout. That accepted checkout is frozen; later evidence commits do not alter it. GPU results remain pending.
