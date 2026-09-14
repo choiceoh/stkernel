@@ -49,6 +49,7 @@ from engine.profiles.glm53.facts import SPEC_K, TP
 _COMMON = common_lanes()
 swiglu, add_norm, norm, norm_rope, warm_rotary = (_COMMON.swiglu, _COMMON.add_rmsnorm, _COMMON.rmsnorm,
                                                  _COMMON.rmsnorm_rope, _COMMON.rope_table)
+norm_rope_pair = _COMMON.rmsnorm_rope_pair
 
 DRAFTER = Path("/home/choiceoh/models/GLM-5.3-Flash-DFlash2")
 BF16, F32 = torch.bfloat16, torch.float32
@@ -400,10 +401,12 @@ class Drafter:
         heads, kv_heads = self.local_heads, self.local_kv_heads
         if self.fast_attention:
             q0, k0, v0 = self.linear(x, q+"qkv").split((heads*F.head_dim, kv_heads*F.head_dim, kv_heads*F.head_dim), -1)
+            qh, kh = norm_rope_pair(q0.reshape(B, heads, F.head_dim), k0.reshape(B, kv_heads, F.head_dim),
+                                    p[q + "q_norm.weight"], p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
         else:
             q0, k0, v0 = (Fn.linear(x, p[q+s+"_proj.weight"]) for s in ("q", "k", "v"))
-        qh = norm_rope(q0.reshape(B, heads, F.head_dim), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
-        kh = norm_rope(k0.reshape(B, kv_heads, F.head_dim), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
+            qh = norm_rope(q0.reshape(B, heads, F.head_dim), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
+            kh = norm_rope(k0.reshape(B, kv_heads, F.head_dim), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
         vh = v0.reshape(B, kv_heads, F.head_dim)
         if self.fast_attention:
             from engine.kernels.draft_attention import draft_attention
@@ -553,8 +556,8 @@ class Drafter:
             from engine.kernels.draft_attention import attend_rows
             heads, kv, D = self.local_heads, self.local_kv_heads, F.head_dim
             q0, k0, v0 = self.linear(x, q + "qkv", rows_ok).split((heads*D, kv*D, kv*D), -1)
-            qh = norm_rope(q0.reshape(n*t, heads, D), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
-            kh = norm_rope(k0.reshape(n*t, kv, D), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
+            qh, kh = norm_rope_pair(q0.reshape(n*t, heads, D), k0.reshape(n*t, kv, D),
+                                    p[q + "q_norm.weight"], p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
             # Read V in the packed QKV projection; its token stride spans Q and K too.
             vh = v0.reshape(n*t, kv, D)
             # GEMMs cover all rows once, and so does the attention: each row reads its own device-selected slot

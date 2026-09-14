@@ -1,0 +1,64 @@
+test_actual_drafter_single_and_row_paths_share_qk_and_keep_v_in_place (tests.test_engine_draft_qk.PairTests.test_actual_drafter_single_and_row_paths_share_qk_and_keep_v_in_place) ... ok
+test_cpu_pair_matches_separate_norms_and_does_not_modify_packed_projection (tests.test_engine_draft_qk.PairTests.test_cpu_pair_matches_separate_norms_and_does_not_modify_packed_projection) ... ok
+test_native_wrapper_launches_one_head_grid_and_passes_original_strides (tests.test_engine_draft_qk.PairTests.test_native_wrapper_launches_one_head_grid_and_passes_original_strides) ... ok
+test_rejects_mismatched_geometry_storage_dtype_and_positions (tests.test_engine_draft_qk.PairTests.test_rejects_mismatched_geometry_storage_dtype_and_positions) ... ok
+test_bf16_matches_separate_calls_on_changed_replay (tests.test_engine_draft_qk.ReplayTests.test_bf16_matches_separate_calls_on_changed_replay) ... skipped 'requires the reserved GPU'
+test_the_shapes_must_be_the_ones_the_drafter_passes (tests.test_engine_norm_rope.ContractTests.test_the_shapes_must_be_the_ones_the_drafter_passes) ... ok
+test_the_table_is_built_once_per_device_dimension_and_theta (tests.test_engine_norm_rope.ContractTests.test_the_table_is_built_once_per_device_dimension_and_theta) ... ok
+test_a_missing_table_during_capture_is_an_error_not_an_allocation (tests.test_engine_norm_rope.KernelTests.test_a_missing_table_during_capture_is_an_error_not_an_allocation) ... skipped 'the fused kernels are the CUDA path'
+test_almost_every_element_is_exactly_the_torch_value (tests.test_engine_norm_rope.KernelTests.test_almost_every_element_is_exactly_the_torch_value)
+The tolerance above is a bound, not the behaviour: the two differ on a handful of elements in a ... skipped 'the fused kernels are the CUDA path'
+test_the_heads_are_read_where_the_projection_left_them (tests.test_engine_norm_rope.KernelTests.test_the_heads_are_read_where_the_projection_left_them)
+The block hands over one third of a fused qkv, reshaped: rows wider than the heads read here, so ... skipped 'the fused kernels are the CUDA path'
+test_the_norm_is_within_one_bf16_step_of_the_torch_form (tests.test_engine_norm_rope.KernelTests.test_the_norm_is_within_one_bf16_step_of_the_torch_form) ... skipped 'the fused kernels are the CUDA path'
+test_the_residual_join_is_the_add_and_the_norm_that_read_it (tests.test_engine_norm_rope.KernelTests.test_the_residual_join_is_the_add_and_the_norm_that_read_it)
+A block writes `res = res + x` and then normalises `res`, twice a layer. Fused it is one launch, ... skipped 'the fused kernels are the CUDA path'
+test_the_rotary_is_within_one_bf16_step_of_the_torch_form (tests.test_engine_norm_rope.KernelTests.test_the_rotary_is_within_one_bf16_step_of_the_torch_form) ... skipped 'the fused kernels are the CUDA path'
+test_committed_count_reaches_the_direct_ring_write_as_a_device_scalar (tests.test_engine_drafter.CommittedCountTests.test_committed_count_reaches_the_direct_ring_write_as_a_device_scalar) ... ok
+test_dense_shapes_name_every_prepared_weight_at_this_tp (tests.test_engine_drafter.DrafterTests.test_dense_shapes_name_every_prepared_weight_at_this_tp) ... ok
+test_device_selector_matches_the_scalar_greedy_walk (tests.test_engine_drafter.DrafterTests.test_device_selector_matches_the_scalar_greedy_walk) ... ok
+test_long_observation_retains_the_newest_window (tests.test_engine_drafter.DrafterTests.test_long_observation_retains_the_newest_window) ... ok
+test_native_rows_do_not_read_retired_weights_or_use_a_scratch_ring_tail (tests.test_engine_drafter.DrafterTests.test_native_rows_do_not_read_retired_weights_or_use_a_scratch_ring_tail)
+Exercise the merged batched interface with packed readers and no BF16 sources. ... ok
+test_rows_observe_writes_the_valid_cells_in_place (tests.test_engine_drafter.DrafterTests.test_rows_observe_writes_the_valid_cells_in_place) ... ok
+test_rows_propose_matches_the_per_row_walk (tests.test_engine_drafter.DrafterTests.test_rows_propose_matches_the_per_row_walk)
+Three rows in three slots -- two with a context shorter than the window, one longer -- at once: the same ... ok
+test_rows_sampled_walk_keeps_greedy_rows_greedy_and_hands_back_distributions (tests.test_engine_drafter.DrafterTests.test_rows_sampled_walk_keeps_greedy_rows_greedy_and_hands_back_distributions) ... ok
+test_the_host_walk_crosses_once_not_twice_a_position (tests.test_engine_drafter.DrafterTests.test_the_host_walk_crosses_once_not_twice_a_position) ... ok
+test_the_masks_of_the_batched_paths_reach_the_packs (tests.test_engine_drafter.DrafterTests.test_the_masks_of_the_batched_paths_reach_the_packs)
+A calibrating pack sums only the rows the drafter says are real: `observe_rows` passes the kept positions, ... ok
+test_the_sampled_walk_hands_back_the_distribution_it_drew_from (tests.test_engine_drafter.DrafterTests.test_the_sampled_walk_hands_back_the_distribution_it_drew_from)
+The accept test divides by this, so it has to be the one the pick came out of. ... ok
+test_the_compute_phase_does_not_depend_on_the_accepted_count (tests.test_engine_drafter.ObserveOverlapTests.test_the_compute_phase_does_not_depend_on_the_accepted_count)
+The overlap starts observe_kv before the commit decides the count. That is only correct because the ... skipped "observe's write phase is a device kernel"
+test_the_split_is_byte_for_byte_the_single_pass (tests.test_engine_drafter.ObserveOverlapTests.test_the_split_is_byte_for_byte_the_single_pass) ... skipped "observe's write phase is a device kernel"
+test_it_refuses_a_shape_it_cannot_write (tests.test_engine_draft_attention.BatchedRingWriteTests.test_it_refuses_a_shape_it_cannot_write) ... ok
+test_it_writes_what_the_per_row_form_wrote (tests.test_engine_draft_attention.BatchedRingWriteTests.test_it_writes_what_the_per_row_form_wrote) ... skipped 'the ring write is a device kernel'
+test_a_step_s_rows_are_a_grid_dimension_not_a_loop (tests.test_engine_draft_attention.DraftAttentionTests.test_a_step_s_rows_are_a_grid_dimension_not_a_loop)
+Every row reads its own slot at its own context length, so the batched form has to be the per-row ... skipped 'requires CUDA'
+test_a_whole_kv_head_of_queries_does_not_outgrow_a_cta (tests.test_engine_draft_attention.DraftAttentionTests.test_a_whole_kv_head_of_queries_does_not_outgrow_a_cta)
+One KV head can serve every query head: b * (h // hk) is 24 at TP=4 but 128 here, and an ... skipped 'requires CUDA'
+test_captured_device_count_writes_only_the_accepted_prefix (tests.test_engine_draft_attention.DraftAttentionTests.test_captured_device_count_writes_only_the_accepted_prefix) ... skipped 'requires CUDA'
+test_direct_arena_slot_changes_and_tp_head_writes (tests.test_engine_draft_attention.DraftAttentionTests.test_direct_arena_slot_changes_and_tp_head_writes) ... skipped 'requires CUDA'
+test_it_refuses_rows_it_cannot_place (tests.test_engine_draft_attention.DraftAttentionTests.test_it_refuses_rows_it_cannot_place) ... skipped 'requires CUDA'
+test_packed_qkv_values_match_contiguous_on_changed_input_replay (tests.test_engine_draft_attention.DraftAttentionTests.test_packed_qkv_values_match_contiguous_on_changed_input_replay) ... skipped 'requires CUDA'
+test_startup_wrap_graph_and_poisoned_unused_slots (tests.test_engine_draft_attention.DraftAttentionTests.test_startup_wrap_graph_and_poisoned_unused_slots) ... skipped 'requires CUDA'
+test_the_slices_combine_into_the_attention_they_were_cut_from (tests.test_engine_draft_attention.DraftAttentionTests.test_the_slices_combine_into_the_attention_they_were_cut_from) ... skipped 'requires CUDA'
+test_wrapper_passes_packed_values_and_rejects_nonpacked_heads (tests.test_engine_decode_buffers.DraftValueLayoutTests.test_wrapper_passes_packed_values_and_rejects_nonpacked_heads) ... ok
+test_fp8_equal_outputs_and_changed_input_graph_replay (tests.test_engine_decode_buffers.HeadDestinationCudaTests.test_fp8_equal_outputs_and_changed_input_graph_replay) ... skipped 'requires CUDA'
+test_fp8_writes_owned_padded_buffer_and_retains_observation (tests.test_engine_decode_buffers.HeadDestinationTests.test_fp8_writes_owned_padded_buffer_and_retains_observation) ... ok
+test_invalid_destination_is_refused_before_gemm_or_initialization (tests.test_engine_decode_buffers.HeadDestinationTests.test_invalid_destination_is_refused_before_gemm_or_initialization) ... ok
+test_reference_head_and_logical_vocabulary_exclude_padding (tests.test_engine_decode_buffers.HeadDestinationTests.test_reference_head_and_logical_vocabulary_exclude_padding) ... ok
+test_target_capacities_share_the_same_view_and_destination (tests.test_engine_decode_buffers.HeadDestinationTests.test_target_capacities_share_the_same_view_and_destination) ... ok
+test_a_common_kernel_imports_nothing_model_bound (tests.test_engine_kernel_common.CommonKernelBoundaryTests.test_a_common_kernel_imports_nothing_model_bound)
+No profile, no base (so no kernel shape), no other kernel package: the arguments are the shape. ... ok
+test_nothing_reaches_a_common_kernel_by_its_old_path (tests.test_engine_kernel_common.CommonKernelBoundaryTests.test_nothing_reaches_a_common_kernel_by_its_old_path) ... ok
+test_the_base_table_binds_the_common_kernels (tests.test_engine_kernel_common.CommonKernelBoundaryTests.test_the_base_table_binds_the_common_kernels) ... ok
+test_the_glm_profile_inherits_its_common_kernels_from_the_base_table (tests.test_engine_kernel_common.CommonKernelBoundaryTests.test_the_glm_profile_inherits_its_common_kernels_from_the_base_table) ... ok
+test_the_model_free_kernels_live_in_common_only (tests.test_engine_kernel_common.CommonKernelBoundaryTests.test_the_model_free_kernels_live_in_common_only) ... ok
+test_the_table_is_the_kernels_and_is_built_once (tests.test_engine_kernel_common.CommonKernelBoundaryTests.test_the_table_is_the_kernels_and_is_built_once) ... ok
+
+----------------------------------------------------------------------
+Ran 48 tests in 7.626s
+
+OK (skipped=19)
