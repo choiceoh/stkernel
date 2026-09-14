@@ -14,7 +14,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--build-dir', type=Path, required=True)
     ap.add_argument('--output', type=Path, required=True)
-    ap.add_argument('--register-weights', action='store_true', help='also report the register-pipeline cubins')
+    ap.add_argument('--forward-pipeline', action='store_true', help='also report the ordered-K and joined-query cubins')
     args = ap.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '' or os.environ.get('NVIDIA_VISIBLE_DEVICES') != 'void':
         raise RuntimeError('this compile requires CUDA hidden')
@@ -40,17 +40,17 @@ def main():
     if len(entries) != 5:
         raise RuntimeError(f'expected five new K-block/direct specializations; got {len(entries)}')
     registers = [b.strip() for b in re.split(r'(?m)^\s*Function(?:\s+|:)', usage)[1:]
-                 if 'mk_gemm_register_kernel' in b.splitlines()[0]] if args.register_weights else []
-    if args.register_weights and len(registers) != 11:
-        raise RuntimeError(f'expected eleven register/direct specializations; got {len(registers)}')
+                 if re.search(r'mk_gemm_input_cta_kernelILi0ELb[01]ELb1ELi(?:16|24|32)ELi[23]E', b.splitlines()[0])] if args.forward_pipeline else []
+    if args.forward_pipeline and len(registers) != 8:
+        raise RuntimeError(f'expected eight ordered/direct specializations; got {len(registers)}')
     queries = [b.strip() for b in re.split(r'(?m)^\s*Function(?:\s+|:)', usage)[1:]
-               if 'mk_query_register_kernel' in b.splitlines()[0]] if args.register_weights else []
-    if args.register_weights and len(queries) != 1:
+               if 'mk_query_pair_kernel' in b.splitlines()[0]] if args.forward_pipeline else []
+    if args.forward_pipeline and len(queries) != 1:
         raise RuntimeError(f'expected one joined-query specialization; got {len(queries)}')
     assert not torch.cuda.is_initialized()
     result = dict(status='PASS', gpu_used=False, torch=torch.__version__, cuda=torch.version.cuda,
                   cache_key=key, source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
-                  flags=flags, new_native_specializations=entries, register_specializations=registers,
+                  flags=flags, new_native_specializations=entries, ordered_specializations=registers,
                   query_specializations=queries,
                   scope='production native compile/load and resource usage; not GPU execution or timing')
     args.output.write_text(json.dumps(result, indent=2)+'\n')
