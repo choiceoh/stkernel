@@ -122,7 +122,8 @@ class IndexerPair:
 
 @tr.jit
 def _indexer_boundary(Q, K, W, NW, NB, Q8, KO, WE,
-                      NH: tl.constexpr, KS: tl.constexpr, SCALE: tl.constexpr):
+                      NH: tl.constexpr, KS: tl.constexpr, SCALE: tl.constexpr,
+                      HEAD_SPLITS: tl.constexpr = 1):
     row, head = tl.program_id(0), tl.program_id(1)
     col = tl.arange(0, 128)
     if head == NH:
@@ -149,15 +150,20 @@ def _indexer_boundary(Q, K, W, NW, NB, Q8, KO, WE,
         scale = tl.exp2(tl.ceil(tl.log2(amax * (1.0 / 448.0))))
         quant = tl.minimum(tl.maximum(x / scale, -448.0), 448.0)
         tl.store(Q8 + index * 128 + col, quant)
-        w = tl.load(W + index)
+        if HEAD_SPLITS == 1:
+            w = tl.load(W + index)
+        else:
+            parts = tl.load(W + (row * HEAD_SPLITS + col) * NH + head,
+                            col < HEAD_SPLITS, other=0.)
+            w = tl.sum(parts, 0)
         tl.store(WE + index, (w * scale) * SCALE)
 
 
-def indexer_boundary(q, k, weights, norm_weight, norm_bias, scale, *, rows=None):
+def indexer_boundary(q, k, weights, norm_weight, norm_bias, scale, *, rows=None, head_splits=1):
     """Fold three post-projection launches and the temporary scale matrix.
 
-    Head weights retain the original FP32 GEMM. K and the FWHT result retain
-    their BF16 rounding points; this changes neither KDA state nor its cast.
+    Head weights use the original FP32 GEMM, or 16 FP32 partials from the
+    separately bound K=7 head gate. K and FWHT retain their BF16 rounding.
     """
     from engine.kernels.kpool import _indexer_cell
     width = _indexer_cell()
@@ -165,8 +171,13 @@ def indexer_boundary(q, k, weights, norm_weight, norm_bias, scale, *, rows=None)
             or q.shape[1] <= 0 or not q.is_contiguous() or q.dtype != torch.bfloat16 or not q.is_cuda):
         raise ValueError('indexer boundary needs declared contiguous BF16 decode queries [M,H,128]')
     rows, heads, _ = q.shape
+    if type(head_splits) is not int or head_splits not in (1, 16):
+        raise ValueError('indexer head weights require either a full GEMM or 16 FP32 partials')
+    if head_splits == 16 and (rows not in (8, 16, 24, 32) or heads != 32):
+        raise ValueError('partial head gates require K=7 rows and 32 heads')
+    weight_shape = (rows, heads) if head_splits == 1 else (rows, head_splits, heads)
     if (k.shape != (rows, 128) or k.dtype != q.dtype or k.stride(-1) != 1
-            or weights.shape != (rows, heads) or weights.dtype != torch.float32 or not weights.is_contiguous()
+            or weights.shape != weight_shape or weights.dtype != torch.float32 or not weights.is_contiguous()
             or norm_weight.shape != (128,) or norm_bias.shape != (128,)
             or not norm_weight.is_contiguous() or not norm_bias.is_contiguous()
             or norm_weight.dtype != torch.float32 or norm_bias.dtype != torch.float32
@@ -174,7 +185,7 @@ def indexer_boundary(q, k, weights, norm_weight, norm_bias, scale, *, rows=None)
         raise ValueError('indexer boundary key/head/norm contract mismatch')
     q8 = torch.empty(q.shape, dtype=torch.float8_e4m3fn, device=q.device)
     key = torch.empty(k.shape, dtype=k.dtype, device=k.device)
-    effective = torch.empty_like(weights)
+    effective = torch.empty((rows, heads), dtype=torch.float32, device=q.device)
     _indexer_boundary[(rows, heads + 1)](q, k, weights, norm_weight, norm_bias, q8, key, effective,
-                                        heads, k.stride(0), float(scale), num_warps=1, enable_fp_fusion=False)
+                                        heads, k.stride(0), float(scale), head_splits, num_warps=1, enable_fp_fusion=False)
     return q8, key, effective

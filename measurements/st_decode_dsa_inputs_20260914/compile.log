@@ -1,0 +1,14 @@
+W0913 23:51:25.630000 1 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda'
+[1/2] /usr/local/cuda/bin/nvcc -MD -MF kernels.cuda.o.d -DTORCH_EXTENSION_NAME=st_dense_527d3941349c914d1ea68fbb -DTORCH_API_INCLUDE_EXTENSION_H -isystem /usr/local/lib/python3.12/dist-packages/torch/include -isystem /usr/local/lib/python3.12/dist-packages/torch/include/torch/csrc/api/include -isystem /usr/local/cuda/include -isystem /usr/include/python3.12 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr --compiler-options '-fPIC' -O2 -gencode arch=compute_121a,code=sm_121a -DMK_GRID_DEF=96 -DMK_MHC_GRID_DEF=144 -DMK_NBUF2_DEF=3 -DMK_FP8_PACK2_DEF=1 -DMK_GEMM_TRANSPOSE_M8_DEF=1 -DMK_GEMM_COMPACT_M8_DEF=1 -DMK_M8_FASTPATH_DEF=1 -std=c++20 -c /cache/dense/527d3941349c914d1ea68fbb/src/kernels.cu -o kernels.cuda.o
+/cache/dense/527d3941349c914d1ea68fbb/src/kernels.cu(132): warning #177-D: variable "<unnamed>::NCHUNK" was declared but never referenced
+  constexpr int NCHUNK = HIDDEN / HCHUNK;
+                ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+/cache/dense/527d3941349c914d1ea68fbb/src/kernels.cu(267): warning #177-D: function "<unnamed>::mk_f32_to_e4m3" was declared but never referenced
+                            uint8_t mk_f32_to_e4m3(float x) {
+                                    ^
+
+[2/2] c++ kernels.cuda.o -shared -L/usr/local/lib/python3.12/dist-packages/torch/lib -lc10 -lc10_cuda -ltorch_cpu -ltorch_cuda -ltorch -ltorch_python -L/usr/local/cuda/lib64 -lcudart -o st_dense_527d3941349c914d1ea68fbb.so
+{"status": "PASS", "gpu_used": false, "torch": "2.13.0+cu130", "triton": "3.7.1", "cuda": "13.0", "flags": ["-O2", "-gencode", "arch=compute_121a,code=sm_121a", "-DMK_GRID_DEF=96", "-DMK_MHC_GRID_DEF=144", "-DMK_NBUF2_DEF=3", "-DMK_FP8_PACK2_DEF=1", "-DMK_GEMM_TRANSPOSE_M8_DEF=1", "-DMK_GEMM_COMPACT_M8_DEF=1", "-DMK_M8_FASTPATH_DEF=1"], "native_cache_key": "527d3941349c914d1ea68fbb", "latent_kernels": [{"input_stride": 2048, "latent_stride": 512, "block": 768, "block_stride": 8448, "layer_offset": 0, "shared_bytes": 16, "status": "PASS"}, {"input_stride": 2056, "latent_stride": 520, "block": 768, "block_stride": 8448, "layer_offset": 7680, "shared_bytes": 16, "status": "PASS"}], "source_sha256": {"engine/kernels/dense/kernels.cu": "4beb5789f2446fe88e7dd480b3fa1f3261094296e7469355702bac09e5f7a353", "engine/kernels/dense/query_pair.py": "556ad9f0083d876a081803449082b86d686028bb97724a63fb4963d75879c8d2", "engine/kernels/mla/decode_inputs.py": "cd113998c81eec242f6c8d43f40cb976e945f723ec465898e73429c4d0c8a98d"}, "scope": "full native build and PTXAS only; GPU bytes/replay/timing pending"}
