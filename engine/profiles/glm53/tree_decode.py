@@ -81,9 +81,9 @@ class Verification:
         if any(type(v) is not int or v < 0 for v in (seq, slot, context)) or slot == 0:
             raise ValueError("tree decode needs a real sequence, slot and context")
         F = net.F
-        if (max(tree.depths) > F.spec_k or any(t >= F.vocab for t in tree.tokens)
+        if (len(tree.tokens) > 32 or max(tree.depths) > F.spec_k or any(t >= F.vocab for t in tree.tokens)
                 or getattr(F, "kda_state_dtype", "fp32") != "fp32"):
-            raise ValueError("tree exceeds the draft/vocabulary bound or requires non-FP32 state")
+            raise ValueError("tree exceeds the W4A8 row/draft/vocabulary bound or requires non-FP32 state")
         self.net, self.caches, self.tree = net, caches, tree
         self.seq, self.slot, self.context = seq, slot, context
         self.persistent_mlp = persistent_mlp

@@ -13,311 +13,311 @@
   "per_test": [
     {
       "test": "tests.test_engine_speculative_tree.TreePlanTests.test_bounded_route_learning_and_runtime_identity",
-      "cpu_seconds": 5.183415487408638e-05
+      "cpu_seconds": 5.16669824719429e-05
     },
     {
       "test": "tests.test_engine_speculative_tree.TreePlanTests.test_dflash_edges_use_each_actual_parent_and_keep_pruned_mass",
-      "cpu_seconds": 0.0007972121238708496
+      "cpu_seconds": 0.005454402882605791
     },
     {
       "test": "tests.test_engine_speculative_tree.TreePlanTests.test_greedy_bonus_eos_and_budget_commit_only_computed_inputs",
-      "cpu_seconds": 2.3583881556987762e-05
+      "cpu_seconds": 2.4792272597551346e-05
     },
     {
       "test": "tests.test_engine_speculative_tree.TreePlanTests.test_invalid_probabilities_and_costs",
-      "cpu_seconds": 3.6292243748903275e-05
+      "cpu_seconds": 3.9208680391311646e-05
     },
     {
       "test": "tests.test_engine_speculative_tree.TreePlanTests.test_invalid_topology_duplicate_siblings_and_ids",
-      "cpu_seconds": 4.858383908867836e-05
+      "cpu_seconds": 4.349974915385246e-05
     },
     {
       "test": "tests.test_engine_speculative_tree.TreePlanTests.test_unique_experts_charged_per_layer_and_shared_children_win",
-      "cpu_seconds": 5.333311855792999e-05
+      "cpu_seconds": 5.208374932408333e-05
     },
     {
       "test": "tests.test_engine_speculative_tree.TreePlanTests.test_unknown_routes_not_free_and_probability_mass_not_acceptance",
-      "cpu_seconds": 2.4499837309122086e-05
+      "cpu_seconds": 2.2833701223134995e-05
     },
     {
       "test": "tests.test_engine_speculative_tree.TreeStateTests.test_all_branches_match_independent_channelwise_kda_and_state",
-      "cpu_seconds": 0.1584561187773943
+      "cpu_seconds": 0.16602677991613746
     },
     {
       "test": "tests.test_engine_speculative_tree.TreeStateTests.test_reject_fp16_state",
-      "cpu_seconds": 0.00025025196373462677
+      "cpu_seconds": 0.00032987678423523903
     },
     {
       "test": "tests.test_engine_speculative_tree.TreeStateTests.test_sibling_poison_does_not_enter_other_branch",
-      "cpu_seconds": 0.0006775869987905025
+      "cpu_seconds": 0.0006922949105501175
     },
     {
       "test": "tests.test_engine_speculative_tree.TreeStateTests.test_tree_conv_prefix_and_sibling_history",
-      "cpu_seconds": 0.000741670373827219
+      "cpu_seconds": 0.000680919736623764
     },
     {
       "test": "tests.test_engine_tree_decode.TreeDecodeTests.test_commit_selected_state_boundary_and_next_step",
-      "cpu_seconds": 0.20037525426596403
+      "cpu_seconds": 0.22834139596670866
     },
     {
       "test": "tests.test_engine_tree_decode.TreeDecodeTests.test_every_branch_matches_linear_target_with_prefix_and_pool_boundaries",
-      "cpu_seconds": 0.3611094690859318
+      "cpu_seconds": 0.3450038777664304
     },
     {
       "test": "tests.test_engine_tree_decode.TreeDecodeTests.test_four_ranks_keep_tree_collectives_and_outputs_in_agreement",
-      "cpu_seconds": 0.042919515166431665
+      "cpu_seconds": 0.04352347692474723
     },
     {
       "test": "tests.test_engine_tree_decode.TreeDecodeTests.test_scratch_sampling_and_reservation_fail_before_state_mutation",
-      "cpu_seconds": 0.0013094646856188774
+      "cpu_seconds": 0.0013847160153090954
     },
     {
       "test": "tests.test_engine_tree_decode.TreeDecodeTests.test_stale_cache_and_reused_owner_refused",
-      "cpu_seconds": 0.016059208661317825
+      "cpu_seconds": 0.015731456223875284
     },
     {
       "test": "tests.test_engine_tile_dataflow.TileDataflowTests.test_binding_refuses_prepared_or_retired_weights_instead_of_changing_precision",
-      "cpu_seconds": 0.0013155899941921234
+      "cpu_seconds": 0.0013708816841244698
     },
     {
       "test": "tests.test_engine_tile_dataflow.TileDataflowTests.test_persistent_binding_executes_all_dense_layers_in_target_tree",
-      "cpu_seconds": 0.015028621070086956
+      "cpu_seconds": 0.017132547218352556
     },
     {
       "test": "tests.test_engine_tile_dataflow.TileDataflowTests.test_random_ready_schedules_match_full_mlp_and_cover_each_writer_once",
-      "cpu_seconds": 0.020545148756355047
+      "cpu_seconds": 0.01818901114165783
     },
     {
       "test": "tests.test_engine_tile_dataflow.TileDataflowTests.test_shapes_dtype_and_memory_budget_refuse",
-      "cpu_seconds": 0.0002017091028392315
+      "cpu_seconds": 0.00019083498045802116
     },
     {
       "test": "tests.test_engine_nvfp4_dataflow.NVFP4DataflowTests.test_binding_borrows_weight_bytes_and_uses_retired_scales_owner",
-      "cpu_seconds": 0.014281990937888622
+      "cpu_seconds": 0.019124432932585478
     },
     {
       "test": "tests.test_engine_nvfp4_dataflow.NVFP4DataflowTests.test_entire_glm_tree_executes_nvfp4_dense_binding_and_commits",
-      "cpu_seconds": 0.017359049059450626
+      "cpu_seconds": 0.018274886067956686
     },
     {
       "test": "tests.test_engine_nvfp4_dataflow.NVFP4DataflowTests.test_quantization_layout_and_memory_limits_fail_closed",
-      "cpu_seconds": 0.0007117115892469883
+      "cpu_seconds": 0.000647794920951128
     },
     {
       "test": "tests.test_engine_nvfp4_dataflow.NVFP4DataflowTests.test_tiled_weights_and_lossless_sf6_match_raw_without_changing_global_scales",
-      "cpu_seconds": 0.015465246979147196
+      "cpu_seconds": 0.015444455202668905
     },
     {
       "test": "tests.test_engine_nvfp4_dataflow.NVFP4DataflowTests.test_two_complete_dflash_cost_tree_nvfp4_steps_match_autoregressive_tokens",
-      "cpu_seconds": 0.11655552592128515
+      "cpu_seconds": 0.14571179961785674
     },
     {
       "test": "tests.test_engine_nvfp4_dataflow.NVFP4DataflowTests.test_up_gate_scales_and_activation_quantization_match_existing_nvfp4_lane",
-      "cpu_seconds": 0.011931520886719227
+      "cpu_seconds": 0.012049020733684301
     },
     {
       "test": "tests.test_engine_w4a8_dataflow.W4A8DataflowTests.test_borrow_existing_packs_and_refuse_incompatible_lane_or_observer",
-      "cpu_seconds": 0.002342221327126026
+      "cpu_seconds": 0.002457595895975828
     },
     {
       "test": "tests.test_engine_w4a8_dataflow.W4A8DataflowTests.test_full_target_tree_uses_packed_w4a8_with_retired_bf16_weights",
-      "cpu_seconds": 0.017735800240188837
+      "cpu_seconds": 0.02002135431393981
     },
     {
       "test": "tests.test_engine_w4a8_dataflow.W4A8DataflowTests.test_gptq_planes_fp8_activations_and_bf16_boundaries_match_existing_lane",
-      "cpu_seconds": 0.05058726388961077
+      "cpu_seconds": 0.05245548114180565
     },
     {
       "test": "tests.test_engine_w4a8_dataflow.W4A8DataflowTests.test_owner_replacement_and_group_or_scratch_change_are_refused",
-      "cpu_seconds": 0.002919849008321762
+      "cpu_seconds": 0.002960681915283203
     },
     {
       "test": "tests.test_engine_w4a8_dataflow.W4A8DataflowTests.test_routed_experts_stay_exact_and_observations_do_not_leak_into_recall",
-      "cpu_seconds": 0.052482231985777617
+      "cpu_seconds": 0.04976750770583749
     },
     {
       "test": "tests.test_engine_drafter.CommittedCountTests.test_committed_count_reaches_the_direct_ring_write_as_a_device_scalar",
-      "cpu_seconds": 0.0026452220045030117
+      "cpu_seconds": 0.004861567169427872
     },
     {
       "test": "tests.test_engine_drafter.DrafterTests.test_dense_shapes_name_every_prepared_weight_at_this_tp",
-      "cpu_seconds": 3.2625626772642136e-05
+      "cpu_seconds": 3.27499583363533e-05
     },
     {
       "test": "tests.test_engine_drafter.DrafterTests.test_device_selector_matches_the_scalar_greedy_walk",
-      "cpu_seconds": 0.000986337661743164
+      "cpu_seconds": 0.0015223422087728977
     },
     {
       "test": "tests.test_engine_drafter.DrafterTests.test_long_observation_retains_the_newest_window",
-      "cpu_seconds": 0.0009117140434682369
+      "cpu_seconds": 0.0007296707481145859
     },
     {
       "test": "tests.test_engine_drafter.DrafterTests.test_native_rows_do_not_read_retired_weights_or_use_a_scratch_ring_tail",
-      "cpu_seconds": 0.009406798984855413
+      "cpu_seconds": 0.009656591806560755
     },
     {
       "test": "tests.test_engine_drafter.DrafterTests.test_rows_observe_writes_the_valid_cells_in_place",
-      "cpu_seconds": 0.004797317087650299
+      "cpu_seconds": 0.005777362734079361
     },
     {
       "test": "tests.test_engine_drafter.DrafterTests.test_rows_propose_matches_the_per_row_walk",
-      "cpu_seconds": 0.014906411990523338
+      "cpu_seconds": 0.026368803344666958
     },
     {
       "test": "tests.test_engine_drafter.DrafterTests.test_rows_sampled_walk_keeps_greedy_rows_greedy_and_hands_back_distributions",
-      "cpu_seconds": 0.008651545271277428
+      "cpu_seconds": 0.01206672890111804
     },
     {
       "test": "tests.test_engine_drafter.DrafterTests.test_the_host_walk_crosses_once_not_twice_a_position",
-      "cpu_seconds": 0.0001961681991815567
+      "cpu_seconds": 0.00021266797557473183
     },
     {
       "test": "tests.test_engine_drafter.DrafterTests.test_the_masks_of_the_batched_paths_reach_the_packs",
-      "cpu_seconds": 0.010382053907960653
+      "cpu_seconds": 0.014431117102503777
     },
     {
       "test": "tests.test_engine_drafter.DrafterTests.test_the_sampled_walk_hands_back_the_distribution_it_drew_from",
-      "cpu_seconds": 0.00039312709122896194
+      "cpu_seconds": 0.0005037114024162292
     },
     {
       "test": "tests.test_engine_drafter.ObserveOverlapTests.test_the_compute_phase_does_not_depend_on_the_accepted_count",
-      "cpu_seconds": 8.999835699796677e-06
+      "cpu_seconds": 9.750016033649445e-06
     },
     {
       "test": "tests.test_engine_drafter.ObserveOverlapTests.test_the_split_is_byte_for_byte_the_single_pass",
-      "cpu_seconds": 3.708992153406143e-06
+      "cpu_seconds": 3.541354089975357e-06
     },
     {
       "test": "tests.test_engine_draft_agreement.DraftAgreementTests.test_different_local_drafts_cannot_split_committed_context",
-      "cpu_seconds": 0.021802987903356552
+      "cpu_seconds": 0.0232036211527884
     },
     {
       "test": "tests.test_engine_draft_agreement.DraftAgreementTests.test_each_rank_commits_rank_zeros_verdict_whatever_it_reached_alone",
-      "cpu_seconds": 0.0720871682278812
+      "cpu_seconds": 0.08139413176104426
     },
     {
       "test": "tests.test_engine_draft_agreement.DraftAgreementTests.test_isolated_probe_comms_keep_their_local_proposal",
-      "cpu_seconds": 0.004604065790772438
+      "cpu_seconds": 0.005338944029062986
     },
     {
       "test": "tests.test_engine_draft_agreement.DraftAgreementTests.test_rich_rows_commit_rank_zeros_verdict",
-      "cpu_seconds": 0.022044823970645666
+      "cpu_seconds": 0.020730942022055387
     },
     {
       "test": "tests.test_engine_draft_agreement.DraftAgreementTests.test_sampled_decode_chain_commits_one_verdict_when_ranks_verify_to_different_bits",
-      "cpu_seconds": 0.027579893823713064
+      "cpu_seconds": 0.025968051981180906
     },
     {
       "test": "tests.test_engine_draft_agreement.DraftAgreementTests.test_sampled_walk_keeps_the_distribution_that_generated_its_tokens",
-      "cpu_seconds": 0.024014416616410017
+      "cpu_seconds": 0.021888237912207842
     },
     {
       "test": "tests.test_engine_moe_output.MoeOutputContractTests.test_default_preserves_four_rank_aux_and_recurrent_state",
-      "cpu_seconds": 0.7271655458025634
+      "cpu_seconds": 0.7467435500584543
     },
     {
       "test": "tests.test_engine_moe_output.MoeOutputContractTests.test_explicit_finalizer_refuses_other_layouts_before_launch",
-      "cpu_seconds": 8.44169408082962e-05
+      "cpu_seconds": 8.66670161485672e-05
     },
     {
       "test": "tests.test_engine_moe_output.MoeOutputContractTests.test_packet_api_consumes_one_exchange_and_blocks_interleaving",
-      "cpu_seconds": 0.00022762594744563103
+      "cpu_seconds": 0.00022425083443522453
     },
     {
       "test": "tests.test_engine_moe_output.MoeOutputContractTests.test_shared_stream_is_joined_before_finalize_and_after_failure",
-      "cpu_seconds": 0.0009678797796368599
+      "cpu_seconds": 0.0030769319273531437
     },
     {
       "test": "tests.test_engine_moe_output.MoeOutputContractTests.test_wide_profile_consumes_before_next_expert_invocation",
-      "cpu_seconds": 5.574990063905716e-05
+      "cpu_seconds": 5.2667222917079926e-05
     },
     {
       "test": "tests.test_engine_moe_output.MoeOutputCudaTests.test_both_rounding_boundaries_are_exact_with_changed_replay",
-      "cpu_seconds": 5.499925464391708e-06
+      "cpu_seconds": 4.999805241823196e-06
     },
     {
       "test": "tests.test_engine_execution_plans.ExecutionPlanTests.test_c4_overlap_keeps_rows_state_and_auxiliary_order",
-      "cpu_seconds": 0.11445838864892721
+      "cpu_seconds": 0.12086808728054166
     },
     {
       "test": "tests.test_engine_execution_plans.ExecutionPlanTests.test_four_ranks_keep_collective_order_and_reduced_outputs",
-      "cpu_seconds": 0.18648776598274708
+      "cpu_seconds": 0.18739293282851577
     },
     {
       "test": "tests.test_engine_execution_plans.ExecutionPlanTests.test_layer_order_matches_chunk_order_and_all_prefix_states",
-      "cpu_seconds": 0.16824329504743218
+      "cpu_seconds": 0.194160426966846
     },
     {
       "test": "tests.test_engine_execution_plans.ExecutionPlanTests.test_only_c4_splits_and_invalid_budgets_fail",
-      "cpu_seconds": 5.0333328545093536e-05
+      "cpu_seconds": 4.075001925230026e-05
     },
     {
       "test": "tests.test_engine_execution_plans.ExecutionPlanTests.test_oversized_window_refuses_before_mutating_state",
-      "cpu_seconds": 0.0009477133862674236
+      "cpu_seconds": 0.0010186717845499516
     },
     {
       "test": "tests.test_engine_execution_plans.ExecutionPlanTests.test_tiles_rebase_patches_and_keep_only_internal_marks",
-      "cpu_seconds": 0.00013304268941283226
+      "cpu_seconds": 0.00014412589371204376
     },
     {
       "test": "tests.test_engine_ffn_packets.PacketContractTests.test_duplicate_or_oversized_layer_votes_are_rejected",
-      "cpu_seconds": 0.0029682242311537266
+      "cpu_seconds": 0.0006944197230041027
     },
     {
       "test": "tests.test_engine_ffn_packets.PacketContractTests.test_invalid_geometry_and_cpu_storage_fail_before_launch",
-      "cpu_seconds": 3.17087396979332e-05
+      "cpu_seconds": 2.929195761680603e-05
     },
     {
       "test": "tests.test_engine_ffn_packets.PacketContractTests.test_one_rank_missing_any_reader_falls_back_everywhere",
-      "cpu_seconds": 0.028519316110759974
+      "cpu_seconds": 0.021934614051133394
     },
     {
       "test": "tests.test_engine_ffn_packets.PacketContractTests.test_only_the_existing_long_prefill_band_is_eligible",
-      "cpu_seconds": 1.2707896530628204e-05
+      "cpu_seconds": 1.3041775673627853e-05
     },
     {
       "test": "tests.test_engine_ffn_packets.PacketContractTests.test_packet_plan_activity_is_boolean_and_keeps_chunk_order",
-      "cpu_seconds": 5.2582938224077225e-05
+      "cpu_seconds": 5.1250215619802475e-05
     },
     {
       "test": "tests.test_engine_ffn_packets.PacketContractTests.test_plan_refuses_layer_major_packet_execution",
-      "cpu_seconds": 1.7082784324884415e-05
+      "cpu_seconds": 1.591583713889122e-05
     },
     {
       "test": "tests.test_engine_ffn_packets.PacketContractTests.test_ragged_geometry_preserves_rank_order_and_scale_alignment",
-      "cpu_seconds": 0.0002444600686430931
+      "cpu_seconds": 0.0002345009706914425
     },
     {
       "test": "tests.test_engine_ffn_packets.PacketContractTests.test_reference_expert_selection_disables_its_packet_reader",
-      "cpu_seconds": 3.841659054160118e-05
+      "cpu_seconds": 3.520911559462547e-05
     },
     {
       "test": "tests.test_engine_ffn_packets.PacketContractTests.test_routed_geometry_keeps_activation_offsets_and_lossless_top8",
-      "cpu_seconds": 3.604171797633171e-05
+      "cpu_seconds": 3.454228863120079e-05
     },
     {
       "test": "tests.test_engine_ffn_packets.PacketContractTests.test_shared_projector_crops_before_the_gemm",
-      "cpu_seconds": 0.00019579241052269936
+      "cpu_seconds": 0.00020466838032007217
     },
     {
       "test": "tests.test_engine_ffn_packets.PacketContractTests.test_short_prefill_and_decode_do_not_vote",
-      "cpu_seconds": 2.5875866413116455e-05
+      "cpu_seconds": 2.8207898139953613e-05
     },
     {
       "test": "tests.test_engine_ffn_packets.PacketForwardTests.test_real_forward_routes_each_local_shard_once_and_keeps_one_exchange",
-      "cpu_seconds": 0.09338457090780139
+      "cpu_seconds": 0.08706999476999044
     },
     {
       "test": "tests.test_engine_ffn_packets.PacketProducerTests.test_frontend_evidence_uses_expert_token_identity_across_atomic_permutations",
-      "cpu_seconds": 0.03745211195200682
+      "cpu_seconds": 0.03737194510176778
     },
     {
       "test": "tests.test_engine_ffn_packets.PacketProducerTests.test_packet_producer_preserves_the_entire_route_quantize_publish_body",
-      "cpu_seconds": 0.02569463523104787
+      "cpu_seconds": 0.025505258236080408
     },
     {
       "test": "tests.test_engine_ffn_packets.PairedTimingTests.test_median_improvement_does_not_hide_slower_mean_or_paired_cycle",
-      "cpu_seconds": 7.43749551475048e-05
+      "cpu_seconds": 7.595773786306381e-05
     },
     {
       "test": "tests.test_engine_tree_dataflow_gpu.NativeTreeDataflowTests.test_nvfp4_workers_raw_tiled_sf6_and_repeated_invocations",
@@ -325,22 +325,22 @@
     },
     {
       "test": "tests.test_engine_tree_dataflow_gpu.NativeTreeDataflowTests.test_tree_outputs_and_accepted_fp32_state",
-      "cpu_seconds": 2.459157258272171e-06
+      "cpu_seconds": 2.4158507585525513e-06
     },
     {
       "test": "tests.test_engine_tree_dataflow_gpu.NativeTreeDataflowTests.test_w4a8_workers_preserve_existing_dense_lane",
-      "cpu_seconds": 1.8333084881305695e-06
+      "cpu_seconds": 1.8747523427009583e-06
     }
   ],
   "source_sha256": {
     "engine/modules/speculative_tree.py": "b3aecb34de30904c8c5c055e1ddde79be075be441e3a379a4faa6514c050c7f2",
-    "engine/modules/tree_kda.py": "8cb5532bfcd85d49de4dc3d24920668455f4d749e4a1740e741505829c0e76eb",
+    "engine/modules/tree_kda.py": "6f5716e876c62c6c41f63e579bd7199ef55748ae8dda6e91f20f2af7ffdaf56b",
     "engine/kernels/kda/tree.py": "af60b0f5f1855deec98ebdbc19f2d765458b3cb88d39f168e07fc4c72905945b",
     "engine/modules/tile_dataflow.py": "f2975f538fd80093ea29225438164a33b5a164e5ffc28e5552380357d5fc3467",
     "engine/modules/nvfp4_dataflow.py": "a11ff06aea29e7d8ddb411ec559853404d6463bd53139075be5a0b7261b5a4e2",
     "engine/modules/w4a8_dataflow.py": "593873634584fce4b694a151c043b1da4012757061ab6f37774e3a54477a5e95",
     "engine/kernels/tile_dataflow.py": "5e0b7ce896185fa86f9a3d9d06f4d6138f4e32d9ac08331c613dc8f9ad5078cf",
-    "engine/profiles/glm53/tree_decode.py": "9a828e274a55d57f437b1a2d7d320985fbac7ecb70b32f894572affc3484f7d3",
+    "engine/profiles/glm53/tree_decode.py": "6e6b50318adf13c850272600c018119b72ec4279313d61e3950c40df66fac782",
     "engine/profiles/glm53/net.py": "2ae5e3ec8c4789a38c84de187568c9a508d9dc8cb609a6cfc7eafb4f97a5666c",
     "engine/profiles/glm53/drafter.py": "b3d44826c76b453f96a547012f4635513b957282d872e06c6176ce3c332d5d0b",
     "engine/profiles/glm53/lanes.py": "ec032aefa7c8509b65df80dd92b6c25f8e124d302c4db01e8aaeaa924fe3b250"

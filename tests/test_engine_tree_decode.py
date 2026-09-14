@@ -106,6 +106,12 @@ class TreeDecodeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 Verification(net, cache, self.tree, **args)
             self.assertTrue(torch.equal(before, cache.state))
+        # A broad tree must not silently select DenseLinear's >32-row FP8
+        # prefill weight lane instead of the target's W4A8 decode packs.
+        broad = Tree(tuple(range(33)), (-1,)+(0,)*32)
+        with self.assertRaisesRegex(ValueError, "W4A8 row"):
+            Verification(net, cache, broad, seq=0, slot=slot, context=0)
+        self.assertTrue(torch.equal(before, cache.state))
 
     def test_four_ranks_keep_tree_collectives_and_outputs_in_agreement(self):
         def rank(comm):

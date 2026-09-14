@@ -79,7 +79,7 @@ outputs; the last output becomes the next anchor, not a committed input.
 EOS and output budget stop branch traversal before extra cache writes.
 The accepted target features alone enter the existing drafter ring.
 
-Limits are explicit: up to 32 rows for persistent MLPs, depth at most
+Limits are explicit: up to 32 tree rows (to preserve W4A8 decode dispatch), depth at most
 `spec_k`, single folded W4 pack per projection, no active calibration
 observers, SM121, and caller-bounded scratch. Sampled rejection, C=4 batching,
 production graph capture, prefix snapshot publication and HTTP scheduling

@@ -87,6 +87,6 @@ test_tree_outputs_and_accepted_fp32_state (tests.test_engine_tree_dataflow_gpu.N
 test_w4a8_workers_preserve_existing_dense_lane (tests.test_engine_tree_dataflow_gpu.NativeTreeDataflowTests.test_w4a8_workers_preserve_existing_dense_lane) ... skipped 'requires an explicitly available CUDA device'
 
 ----------------------------------------------------------------------
-Ran 80 tests in 2.736s
+Ran 80 tests in 2.866s
 
 OK (skipped=6)

@@ -1,5 +1,6 @@
 """FP32 KDA tree oracle: ancestor factors, no full state per speculative node."""
 from dataclasses import dataclass
+import math
 
 import torch
 
@@ -45,8 +46,10 @@ def conv(tree, raw, weight, history):
 def verify(tree, q, k, v, g_raw, beta_raw, a_log, dt_bias, initial, lower_bound):
     """[nodes,H,D] inputs; state and all saved factors stay FP32."""
     n = len(tree.tokens)
-    if (q.ndim != 3 or len(q) != n or k.shape != q.shape or g_raw.shape != q.shape
-            or v.shape[:2] != q.shape[:2] or beta_raw.shape != q.shape[:2]
+    if (q.ndim != 3 or len(q) != n or min(q.shape) <= 0 or k.shape != q.shape or g_raw.shape != q.shape
+            or v.ndim != 3 or v.shape[:2] != q.shape[:2] or v.shape[2] <= 0 or beta_raw.shape != q.shape[:2]
+            or a_log.shape != (q.shape[1],) or dt_bias.numel() != q.shape[1]*q.shape[2]
+            or not math.isfinite(lower_bound) or lower_bound >= 0
             or initial.shape != (q.shape[1], q.shape[2], v.shape[2]) or initial.dtype != torch.float32):
         raise ValueError("tree KDA geometry or FP32 state contract violated")
     if any(t.device != q.device for t in (k, v, g_raw, beta_raw, a_log, dt_bias, initial)):
