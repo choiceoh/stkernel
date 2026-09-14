@@ -96,7 +96,9 @@ class GraphCaches:
     def gather(self):
         # Unreserved pages are masked out of attention by valid pool counts.
         # Translate them to a readable page so padded gathers stay in bounds.
-        self.block_table = self.real.block_table.index_select(0, self.sequence_ids).clamp_min(0)
+        # index_select owns this copy; clamp it without allocating a second
+        # table. The real arena map, including its -1 entries, stays untouched.
+        self.block_table = self.real.block_table.index_select(0, self.sequence_ids).clamp_min_(0)
 
     def subset(self, start, end):
         if self.deferred_state is not None:

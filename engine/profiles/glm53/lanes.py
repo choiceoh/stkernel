@@ -27,6 +27,13 @@ _LOGGER = logging.getLogger(__name__)
 _DENSE_W4A16_GUARD_ROWS_ENV = "STK_GLM53_DENSE_W4A16_GUARD_ROWS"
 
 
+def _mla_output(parts, out=None):
+    """Each kernel result already owns contiguous storage; one part needs no copy."""
+    if len(parts) == 1 and out is None:
+        return parts[0]
+    return torch.cat(parts, dim=1, out=out)
+
+
 def dense_w4a16_guard_rows(raw: str | None = None) -> int:
     """Rows at which ModelOpt dense prefill leaves W4A4 for W4A16.
 
@@ -376,12 +383,9 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
         # the lane is built for this fleet's 16 heads per rank; at world 1 the 64 heads go through in fours (MQA: heads are independent)
         parts = [mk.mla_decode(q_abs[:, i:i + mk.MLA_H].contiguous(), cache, slots, valid, scale, ckv_scale)
                  for i in range(0, q_abs.shape[1], mk.MLA_H)]
-        # TP4 already returns one fresh, contiguous output tensor. Concatenating
-        # it alone rereads and rewrites T*16*512 BF16 values for no change.
-        # Keep the established decode/capture path; this is eager prefill only.
-        if len(parts) == 1 and q_abs.shape[0] >= 128 and not torch.cuda.is_current_stream_capturing():
-            return parts[0]
-        return torch.cat(parts, dim=1, out=out)
+        # TP4 has one fresh result, including decode/capture. Wider head
+        # groups still concatenate, and an explicit destination stays owned.
+        return _mla_output(parts, out)
 
     if "kda_recurrent" in reference_for:
         kda_recurrent = ref.kda_recurrent
