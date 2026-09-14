@@ -99,6 +99,7 @@ class Lanes:
     moe_packets: object = None  # packet owner and routes, same prepared weights/scales as moe; eager long prefill only
     moe_packets_supported: object = None  # rows and bound weights -> local capability, before rank agreement/transport
     moe_mixed_prepare: object = None  # eager prepared inputs/routes -> owned mixed FFN; never selected by ordinary moe
+    latent_norm_write: object = None  # BF16 KV, norm weight, FP8 latent, token maps, contexts, tokens, eps -> None
 
 
 @dataclass(frozen=True)
@@ -568,6 +569,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     from engine.kernels.glm_pointwise import swiglu_clamped as activation, route_weights, layernorm
     from engine.kernels.mla.prefill_dense import mla_dense_prefix
     from engine.kernels.mla.prefill_absorb import mla_prefill_absorb
+    from engine.kernels.mla.decode_inputs import latent_norm_write
     norm = common_lanes().rmsnorm          # the engine's default RMS norm; the clamped activation is GLM's own
     table = Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, compress_pool_keys, mla, moe,
                                             fwht128_quant_fp8, pool_slots, kda_output_norm)),
@@ -582,7 +584,8 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                   head_gate=on_main(head_gate),
                   rmsnorm=on_main(norm), swiglu=on_main(activation),
                   route_weights=on_main(route_weights), layernorm=on_main(layernorm),
-                  mla_dense_prefix=on_main(mla_dense_prefix), mla_absorb=on_main(mla_prefill_absorb))
+                  mla_dense_prefix=on_main(mla_dense_prefix), mla_absorb=on_main(mla_prefill_absorb),
+                  latent_norm_write=on_main(latent_norm_write))
     if moe_packets is not None:
         table = replace(table, moe_packets=on_main(moe_packets),
                         moe_packets_supported=on_main(moe_packets_supported))

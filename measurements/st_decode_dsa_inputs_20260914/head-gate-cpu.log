@@ -1,0 +1,6 @@
+s......ss.....................................ss............ssssssssss
+----------------------------------------------------------------------
+Ran 70 tests in 29.167s
+
+OK (skipped=15)
+  expert_layout: tile-major bytes read back row-major per expert OK

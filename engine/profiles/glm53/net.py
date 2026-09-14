@@ -163,6 +163,11 @@ class Glm53Net:
         self._decode_pairs = {}
         self.decode_fastpath_rows = ()
         self.decode_pairs_executed = set()
+        self._query_pairs = {}
+        self.decode_dsa_rows = ()
+        self.decode_latents_executed = set()
+        self._indexer_head_gates = {}
+        self.decode_indexer_gate_rows = ()
         self.prefill_transport = None
         self.prefill_ffn_packets = False
         self.prefill_packet_executed = set()
@@ -292,6 +297,37 @@ class Glm53Net:
         if getattr(self, 'decode_fastpath_rows', ()):
             self.decode_pairs_executed.add((L, rows))
         return pair
+
+    def prepare_decode_dsa_inputs(self, rows):
+        """Bind existing smoothed W4 readers; no weight copy or new arena region."""
+        if self._query_pairs or self.F.spec_k != 7 or self.lanes.latent_norm_write is None:
+            raise ValueError('DSA inputs require one K=7 native preparation with the fused latent lane')
+        from engine.kernels.dense.query_pair import QueryPair
+        pairs = {L: QueryPair(self.dense[f'L{L}.mla.q_b'], self.dense[f'L{L}.idx.wq_b'], rows=rows)
+                 for L in self.layers if self.F.is_dsa(L)}
+        if not pairs:
+            raise ValueError('DSA inputs require at least one DSA layer')
+        self._query_pairs = pairs
+        self.decode_dsa_rows = tuple(rows)
+
+    def prepare_decode_indexer_gate(self, rows):
+        """Bind the FP32 owners after smoothing and the paired boundary preparation."""
+        rows = tuple(rows)
+        if (self._indexer_head_gates or self.F.spec_k != 7 or not rows
+                or rows != self.decode_fastpath_rows):
+            raise ValueError('head gates require one K=7 preparation with matching decode fastpaths')
+        from engine.kernels.indexer_gate import IndexerHeadGate
+        layers = [L for L in self.layers if self.F.is_dsa(L)]
+        if not layers or any(L not in self._decode_pairs for L in layers):
+            raise ValueError('head gates require every paired indexer boundary')
+        self._indexer_head_gates = {L: IndexerHeadGate(self.p[f'L{L}.idx.w_heads'], rows=rows) for L in layers}
+        self.decode_indexer_gate_rows = rows
+
+    def _indexer_head_gate(self, L, x, step):
+        if (getattr(step, 'captured', False) and not self.probe
+                and x.shape[0] in getattr(self, 'decode_indexer_gate_rows', ())):
+            return self._indexer_head_gates[L](x), 16
+        return x.float() @ self.p[f'L{L}.idx.w_heads'].T, 1
 
     @staticmethod
     def dense_weight_names(keys):
@@ -562,7 +598,7 @@ class Glm53Net:
 
     # -- sparse MLA + kpool indexer ------------------------------------------------------
     @operation("indexer", layer_arg=1)
-    def _indexer(self, L: int, x: torch.Tensor, qr: torch.Tensor, step: Step, caches: Caches):
+    def _indexer(self, L: int, x: torch.Tensor, qr: torch.Tensor, step: Step, caches: Caches, *, query=None):
         """kpool indexer: per segment, complete this step's pools (pooling the
         tail ring's earlier tokens with the new ones), keep the new tail, then
         select for every query the top-k complete pools before it plus the
@@ -584,14 +620,19 @@ class Glm53Net:
             query_qr = project_query_rows(qr, prefix, N) if prefix < N else None
         else:
             query_x, query_qr = x, qr
-        q = self.linear(query_qr, n + "wq_b").view(-1, nh, d) if query_qr is not None else None
+        if query is not None and (not getattr(step, 'captured', False) or prefix or shard is not None
+                                  or query.shape != (N, nh * d)):
+            raise ValueError('a shared indexer query must cover the entire captured decode step')
+        q = (query if query is not None else self.linear(query_qr, n + "wq_b")).view(-1, nh, d) if query_qr is not None else None
         pair = self._decode_pair(L, step, N)
-        w = query_x.float() @ p[n + "w_heads"].T if query_x is not None else None    # fp32 head gate, as served
+        w, head_splits = self._indexer_head_gate(L, query_x, step) if query_x is not None else (None, 1)
+        if head_splits != 1 and (pair is None or prefix or shard is not None):
+            raise RuntimeError('bound head-gate partials require the full captured paired boundary')
         if pair is not None:
             from engine.kernels.decode_projection import indexer_boundary
             k, gate = pair(x)
             q8, k, w_eff = indexer_boundary(q, k, w, p[n + "k_norm_w"], p[n + "k_norm_b"], F.idx_scale,
-                                            rows=getattr(pair, 'rows', None))
+                                            rows=getattr(pair, 'rows', None), head_splits=head_splits)
         else:
             k = self.linear(x, n + "wk")
             if self.lanes.layernorm is None:
@@ -764,22 +805,35 @@ class Glm53Net:
         N = x.shape[0]; Hl = self.Hl
         q_a, kv_c = self.linear(x, n + "qkv_a").split([F.q_lora, F.kv_lora], dim=-1)
         qr = self._norm(q_a, p[n + "q_a_norm"], F.rms_eps)
-        q = self.linear(qr, n + "q_b").view(N, Hl, F.qk_nope)
-        kv_n = self._norm(kv_c, p[n + "kv_a_norm"], F.rms_eps)
+        folded = self._indexer_rows(step, caches)
+        shared = (folded and getattr(step, 'tokens', None) == 8
+                  and N in getattr(self, 'decode_dsa_rows', ()) and not self.probe)
+        query = None
+        if shared:
+            q, query = self._query_pairs[L](qr)
+        else:
+            q = self.linear(qr, n + "q_b")
+        q = q.view(N, Hl, F.qk_nope)
         latent = caches.latent(L)
         # A captured step asks for the same few lengths forever, so they come from the kept
         # constants; an eager prefill's follow the request and would grow that cache unbounded.
         captured = getattr(step, "captured", False)
         index = iota if captured else fresh
-        folded = self._indexer_rows(step, caches)
-        if folded:
+        if shared:
+            self.lanes.latent_norm_write(kv_c, p[n + 'kv_a_norm'], latent, *caches.token_maps(L),
+                                         step.contexts, step.tokens, F.rms_eps)
+            self.decode_latents_executed.add((L, N))
+        else:
+            kv_n = self._norm(kv_c, p[n + "kv_a_norm"], F.rms_eps)
+        if folded and not shared:
             # every row's new latents in one launch: the slot arithmetic over the gathered block table and the
             # scatter (45차, the C=4 question: three launches a row a layer became one a layer)
             self.lanes.decode_rows.latent_write(kv_n.to(E4M3), latent, *caches.token_maps(L), step.contexts, step.tokens)
         for s in (() if folded else step.segments):                                # fp8 KV, scale 1 (no kv scales in the checkpoint)
             sl = slice(s.start, s.start + s.length)
             latent[caches.token_slots(L, s.seq, (s.ctx + index(s.length, x.device))).long()] = kv_n[sl].to(E4M3)
-        slots, valid = self._indexer(L, x, qr, step, caches)
+        slots, valid = (self._indexer(L, x, qr, step, caches, query=query) if shared
+                        else self._indexer(L, x, qr, step, caches))
         kv_b = p[n + "kv_b"].view(Hl, F.qk_nope + F.v_dim, F.kv_lora)
         w_uk, w_uv = kv_b[:, : F.qk_nope, :], kv_b[:, F.qk_nope:, :]
         q_abs = self._mla_absorb(L, q, w_uk, step)  # absorb W_UK: MQA over the latent

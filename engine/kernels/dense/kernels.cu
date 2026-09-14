@@ -2983,6 +2983,8 @@ void set_kernel_attrs() {
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_gemm2_kernel<4, false>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
+      mk_gemm2_kernel<1, false, false, false, true>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
+  MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_gemm2_kernel<2, false, false, false, true>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(
       mk_gemm2_kernel<4, false, false, false, true>, cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM2_SMEM));
@@ -3270,7 +3272,8 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                  torch::Tensor out, int64_t n_orig, double wgs, int64_t bg,
                  int64_t rgs_ptr, int64_t lr_a_ptr, int64_t lr_b_ptr,
                  int64_t lr_r, float* private_partial = nullptr, unsigned int* private_arrive = nullptr,
-                 const int64_t* out_address = nullptr, bool wide_input = false, bool bound_input = false) {
+                 const int64_t* out_address = nullptr, bool wide_input = false, bool bound_input = false,
+                 const uint8_t* packed_q = nullptr, const float* packed_s = nullptr) {
   set_kernel_attrs();
   if constexpr (DIRECT) set_direct_kernel_attrs();
   MKGemm2Ctx c2{};
@@ -3330,7 +3333,20 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                   && (c2.ksr == 1
                       || (size_t)c2.m * c2.n * c2.ksr <= (size_t)MK2_PART_ELEMS),
               "gemm2 plan out of contract");
-  if (wide_input) {
+  if (packed_q) {
+    TORCH_CHECK(!DIRECT && packed_s && !bg && !lr_r && !wide_input && !bound_input,
+                "shared input is an ordinary, independently reduced W4 projection");
+    c2.input_q = packed_q;
+    c2.input_s = packed_s;
+    // Keep each weight's original N, ksr, MMA and reduction order. Joining
+    // weight rows would change ksr, even though both readers share X.
+    if (c2.m <= 8)
+      mk_launch(mk_gemm2_kernel<1, false, false, false, true>, nblk * c2.ksr, GEMM2_SMEM, stream, c2);
+    else if (c2.m <= 16)
+      mk_launch(mk_gemm2_kernel<2, false, false, false, true>, nblk * c2.ksr, GEMM2_SMEM, stream, c2);
+    else
+      mk_launch(mk_gemm2_kernel<4, false, false, false, true>, nblk * c2.ksr, GEMM2_SMEM, stream, c2);
+  } else if (wide_input) {
     TORCH_CHECK(c2.m > 8 && c2.m <= 32 && !bg && !lr_r,
                 "wide input candidate requires 9..32 ordinary decode rows");
     const int qbytes = (c2.k / KSTEP) * 32 * KSTEP;
@@ -3375,6 +3391,50 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   } else {
     mk_launch_gemm2<DIRECT>(c2, stream);
   }
+}
+
+void mk_run_query_pair(torch::Tensor x, std::vector<torch::Tensor> weights,
+                       std::vector<torch::Tensor> scales, std::vector<torch::Tensor> rowscales,
+                       std::vector<torch::Tensor> outputs) {
+  TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2
+              && (x.size(0) == 8 || x.size(0) == 16 || x.size(0) == 24 || x.size(0) == 32)
+              && x.size(1) == 1536 && x.stride(1) == 1 && x.stride(0) >= 1536
+              && x.stride(0) % 4 == 0 && ((uintptr_t)x.data_ptr() & 7) == 0,
+              "query pair requires aligned K=7 BF16 [8/16/24/32,1536]");
+  TORCH_CHECK(weights.size() == 2 && scales.size() == 2 && rowscales.size() == 2 && outputs.size() == 2,
+              "query pair requires two complete W4 owners");
+  // Validate both owners before issuing any work, including the pack launch.
+  for (int i = 0; i < 2; ++i) {
+    auto w = weights[i], s = scales[i], r = rowscales[i], y = outputs[i];
+    TORCH_CHECK(w.device() == x.device() && s.device() == x.device()
+                && r.device() == x.device() && y.device() == x.device()
+                && w.scalar_type() == torch::kUInt8 && w.dim() == 4
+                && (w.size(0) == 32 || w.size(0) == 64) && w.size(1) == 12
+                && w.size(2) == 128 && w.size(3) == 64 && w.is_contiguous()
+                && s.element_size() == 1 && s.dim() == 4 && s.size(0) == w.size(0)
+                && s.size(1) == 12 && s.size(2) == 128 && s.size(3) == 8 && s.is_contiguous()
+                && r.scalar_type() == torch::kFloat32 && r.dim() == 1
+                && r.numel() == w.size(0) * 128 && r.is_contiguous()
+                && y.scalar_type() == torch::kBFloat16 && y.dim() == 2
+                && y.size(0) == x.size(0) && y.size(1) == r.numel() && y.is_contiguous(),
+                "query pair requires same-device tile-major packs and disjoint contiguous BF16 outputs");
+  }
+  TORCH_CHECK(!outputs[0].is_alias_of(outputs[1]) && !outputs[0].is_alias_of(x)
+              && !outputs[1].is_alias_of(x), "query pair outputs must not alias");
+  constexpr int QBYTES = 12 * 32 * KSTEP;
+  constexpr int SBYTES = 12 * 32 * sizeof(float);
+  auto packed = torch::empty({QBYTES + SBYTES}, x.options().dtype(torch::kUInt8));
+  auto* q = packed.data_ptr<uint8_t>();
+  auto* s = reinterpret_cast<float*>(q + QBYTES);
+  auto stream = c10::cuda::getCurrentCUDAStream();
+  mk_launch(mk_wide_input_pack_kernel, 12 * ((x.size(0) + 7) / 8), 0, stream,
+            MKInputPackCtx{(const __nv_bfloat16*)x.data_ptr(), q, s, (int)x.size(0), 1536, x.stride(0)});
+  // Serial on the existing compute stream: each GEMM rearms its original
+  // partial/counter storage before the next. No new persistent scratch.
+  for (int i = 0; i < 2; ++i)
+    mk_run_gemm_impl(x, weights[i], scales[i], outputs[i], outputs[i].size(1), 1., 0,
+                    reinterpret_cast<int64_t>(rowscales[i].data_ptr()), 0, 0, 0,
+                    nullptr, nullptr, nullptr, false, false, q, s);
 }
 
 void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
@@ -4310,6 +4370,7 @@ void mk_run_prep(std::vector<int64_t> ptrs, std::vector<int64_t> ints) {
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  m.def("run_query_pair", &mk_run_query_pair, "two DSA W4 queries sharing invocation-owned input quantization");
   m.def("run_gemm_bound_input", &mk_run_gemm_bound_input, "bound K=7 input reuse with owned scratch and optional TX output");
   m.def("run_gemm_wide_input", &mk_run_gemm_wide_input, "private wide-row input reuse qualification");
   m.def("probe_device", &mk_probe_device, "device geometry probe");
