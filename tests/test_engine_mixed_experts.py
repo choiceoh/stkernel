@@ -96,7 +96,7 @@ class MixedExpertTests(unittest.TestCase):
                     return n.body
                 return self.generic_visit(n)
         dump = json.dumps(canonical_ast(Ordinary().visit(node)), separators=(',', ':'))
-        self.assertEqual(hashlib.sha256(dump.encode()).hexdigest(), 'e75b95b017d35f1adbd0e76f2d3a8ba397ec02b660743b27d2407c52c1c77e93')
+        self.assertEqual(hashlib.sha256(dump.encode()).hexdigest(), '8c940fa5cd79f01df314f149ac125fda33acf8f0a2583d1c01c9553487d7d602')
 
     def test_prepared_config_is_bounded_and_keeps_decode_geometry(self):
         path = Path(__file__).resolve().parents[1]/'engine/kernels/b12x/moe_dispatch.py'

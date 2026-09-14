@@ -4186,6 +4186,7 @@ def _get_dynamic_kernel(
     _prefill_n128: bool = False,
     _prefill_q0_batch8: bool = False,
     _prefill_packets: bool = False,
+    _prepared_prefill: bool = False,
 ):
     """Compile (or retrieve cached) the SM120 dynamic MoE kernel.
 
@@ -4353,6 +4354,15 @@ def _get_dynamic_kernel(
         tp_sf6_q0=tp_sf6_q0, share_input_across_experts=share_input_across_experts)
     if type(_prefill_packets) is not bool:
         raise TypeError('private FFN packet selector must be bool')
+    if type(_prepared_prefill) is not bool:
+        raise TypeError('private prepared prefill selector must be bool')
+    if _prepared_prefill:
+        if (not prefill_word_unpack or prefill_reuse or _prefill_packets
+                or _prefill_scale_expansion or _prefill_tile64 or _prefill_n128
+                or _prefill_q0_batch8 or input_scales_are_reciprocal or not fast_math
+                or topk_ids_dtype != torch.int32):
+            raise ValueError('prepared cold tasks require ordinary long-prefill SF6 M128 arithmetic')
+        cache_key = (*cache_key, 'prepared_cold_window_v1')
     if _prefill_packets:
         if (not prefill_word_unpack or prefill_reuse or _prefill_scale_expansion
                 or _prefill_tile64 or _prefill_n128 or _prefill_q0_batch8):
@@ -4430,6 +4440,9 @@ def _get_dynamic_kernel(
                 if _prefill_packets:
                     from .moe_dynamic_prefill_packets import MoEGatedDynamicKernelSF6Packets
                     tiled_cls = MoEGatedDynamicKernelSF6Packets
+                if _prepared_prefill:
+                    from .moe_prepared_prefill import PreparedPrefillKernel
+                    tiled_cls = PreparedPrefillKernel
             elif short_word_unpack:
                 from .moe_dynamic_gated_sf6_q0_words import MoEGatedDynamicKernelSF6Q0Words
                 tiled_cls = MoEGatedDynamicKernelSF6Q0Words
@@ -4656,6 +4669,8 @@ def _get_dynamic_kernel(
             options="--opt-level 2 --enable-tvm-ffi",
         ),
         extra_key_files=_kernel_source_files() + (
+            (os.path.join(os.path.dirname(__file__), 'moe_prepared_prefill.py'),)
+            if _prepared_prefill else ()) + (
             tuple(os.path.join(os.path.dirname(__file__), name) for name in
                   ('moe_dynamic_prefill_packets.py', 'moe_w4a16_fp4_helpers.py'))
             if _prefill_packets else ()) + (

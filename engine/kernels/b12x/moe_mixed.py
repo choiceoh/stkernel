@@ -99,13 +99,16 @@ class PreparedMixedExperts:
         self.last_reader = torch.cuda.Event()
         self.last_reader.record(self.stream)
 
-    def run(self, identity):
+    def validate(self, identity):
         if identity != self.plan.identity:
             raise ValueError('stale layer, epoch, slot or source generation')
         if torch.cuda.is_current_stream_capturing() or torch.cuda.current_stream(self.decode.device) != self.stream:
             raise RuntimeError('prepared mixed routes require their original eager stream')
         if tuple(t._version for t in self._owned) != self._versions:
             raise RuntimeError('prepared source or weights changed; prepare a new invocation')
+
+    def run(self, identity):
+        self.validate(identity)
         self.producer(*self._producer_args)
         self.compiled(*self._compute_args)
         self.last_reader.record(self.stream)
