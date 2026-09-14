@@ -281,8 +281,9 @@ class DoorTests(unittest.TestCase):
         self.assertTrue(event.is_set())
         self.assertEqual(s.take_result(request), reference_generate(comp, a, 4))
         self.assertEqual(s.served, 1)
-        with self.assertRaisesRegex(Exception, "not served"):
-            model.validate_options({"logprobs": 2})
+        model.validate_options({"logprobs": 2, "presence_penalty": 0.5, "logit_bias": {3: 1.0}})   # served now
+        with self.assertRaisesRegex(Exception, "no grammar compiler is bound"):
+            model.validate_options({"grammar": {"type": "json_object"}})
 
 
 if __name__ == "__main__":
