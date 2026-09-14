@@ -140,6 +140,7 @@ class CompletionOrderingTests(unittest.TestCase):
         o._hot_rows, o._hot_dest = t.tensor([0]), t.tensor([0, 0])
         o._hot_sum = t.empty(1, 4096)
         o._shared_weights = (t.ones(1), t.ones(1))
+        o._shared_execution = None
         o._owned, o._versions = o._shared_weights, (0, 0)
         o.stream = 'owned'
         o.decode_ready = SimpleNamespace(record=lambda stream: self.calls.append(('decode_ready', stream)))
@@ -147,6 +148,20 @@ class CompletionOrderingTests(unittest.TestCase):
         o.state, o.next_window = 'new', 0
         o._prefill_output = None
         return o
+
+    def test_bound_shared_decode_callback_and_prefill_execute_in_separate_phases(self):
+        o = self.owner()
+        def shared_decode(x, routed):
+            self.calls.append(('bound_decode', len(x)))
+            return routed()+7.
+        o._shared_execution = SimpleNamespace(validate=lambda: None, decode=shared_decode,
+            prefill=lambda x: (self.calls.append(('bound_prefill', len(x))) or self.torch.full_like(x, 6.)))
+        self.assertTrue(bool((o.begin(IDENTITY) == 39.).all()))
+        self.assertEqual([c[0] for c in self.calls], ['bound_decode', 'decode_ready'])
+        o.advance(IDENTITY)
+        self.assertNotIn('bound_prefill', [c[0] for c in self.calls])
+        o.finish(IDENTITY)
+        self.assertEqual([c[0] for c in self.calls][-2:], ['bound_prefill', 'prefill_ready'])
 
     def test_completion_after_all_windows_hot_routes_and_shared(self):
         o = self.owner()

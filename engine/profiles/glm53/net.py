@@ -184,6 +184,7 @@ class Glm53Net:
         # The dense MLPs as one-expert NVFP4 (ModelOpt's own layout); BF16 dense MLPs take the packed dense path.
         self.dense_nvfp4 = self.modelopt and self.weight_layout != MODELOPT_BF16_DENSE_LAYOUT
         self._experts = {}
+        self._mixed_experts = {}
         self._packet_experts = {}
         self._packet_capabilities = {}
         self._quant_scales = {}
@@ -221,6 +222,10 @@ class Glm53Net:
                         F.topk_experts if F.is_moe(L) else 1, F.swiglu_limit, **kw)
             self._experts[L] = partial(self.lanes.moe, w13=p[n+'w13'], w13_sf=p[n+'w13_sf'],
                 w2=p[n+'w2'], w2_sf=p[n+'w2_sf'], limit=F.swiglu_limit, **kw)
+            if F.is_moe(L) and self.lanes.moe_mixed_prepare is not None:
+                self._mixed_experts[L] = partial(self.lanes.moe_mixed_prepare,
+                    w13=p[n+'w13'], w13_sf=p[n+'w13_sf'], w2=p[n+'w2'],
+                    w2_sf=p[n+'w2_sf'], limit=F.swiglu_limit, **kw)
             if F.is_moe(L) and self.lanes.moe_packets is not None and self.lanes.moe_packets_supported is not None:
                 args = dict(w13=p[n+'w13'], w13_sf=p[n+'w13_sf'], w2=p[n+'w2'],
                             w2_sf=p[n+'w2_sf'], limit=F.swiglu_limit, **kw)
@@ -929,6 +934,42 @@ class Glm53Net:
         return (reduce or self.comm.all_reduce)(out + shared)
 
     # -- the step ---------------------------------------------------------------------------
+    def prepare_mixed_ffn(self, L, decode, prefill, *, identity, hot_route_quota=128, cold_task_quota=48):
+        """Explicit M2 layer boundary; ordinary forward/Step selection is unchanged.
+
+        Inputs must already be the replicated, normalized FFN inputs for L.
+        The caller admits this owner through MixedLayerScheduler before any
+        mixed execution; this method performs eager local preparation only.
+        """
+        from engine.profiles.glm53.mixed_shared import BoundMixedShared
+        if L != identity.layer or L not in self._mixed_experts:
+            raise ValueError('mixed FFN requires a bound native MoE layer and matching identity')
+        if torch.cuda.is_current_stream_capturing():
+            raise RuntimeError('mixed FFN preparation is outside captured steps')
+        shared = BoundMixedShared(self, L)
+        ids, routes = self.route(L, decode)
+        pids, proutes = self.route(L, prefill)
+        return self._mixed_experts[L](decode, prefill, ids, pids, routes, proutes,
+            identity=identity, shared_execution=shared,
+            hot_route_quota=hot_route_quota, cold_task_quota=cold_task_quota)
+
+    def mixed_layer_scheduler(self, L):
+        from engine.modules.mixed_tickets import MixedLayerScheduler
+        if L not in self._mixed_experts:
+            raise ValueError('mixed scheduler requires a bound native MoE layer')
+        return MixedLayerScheduler(L, self.comm)
+
+    def submit_mixed_ffn(self, scheduler, decode, prefill, *, identity, request, slot,
+                         hot_route_quota=128, cold_task_quota=48):
+        """Do not strand peers when local eager preparation fails."""
+        owner, error = None, None
+        try:
+            owner = self.prepare_mixed_ffn(scheduler.layer, decode, prefill, identity=identity,
+                hot_route_quota=hot_route_quota, cold_task_quota=cold_task_quota)
+        except Exception as exc:
+            error = exc
+        return scheduler.admit(owner, request=request, slot=slot, preparation_error=error)
+
     def forward(self, step: Step, caches: Caches, finish: bool = True, aux_layers=None, aux_ready=None,
                 *, last_hidden_only=False, contract=None, compact_commit=True):
         """One step: every segment's tokens through the chain. Returns the final

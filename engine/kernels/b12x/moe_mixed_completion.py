@@ -1,8 +1,8 @@
-"""M1b eager component: decode first, bounded cold work, then complete prefill.
+"""Eager component: decode first, bounded cold work, then complete prefill.
 
-All eight routes and an explicit BF16 shared-FFN reference are required.
-The shared recipe is fixed for both probe arms; it is not the served dense
-reader selection. No graph, TP collective, cancellation or serving binding.
+All eight routes and either reference or bound shared readers are required.
+MixedLayerScheduler owns TP agreement, output reductions and cancellation;
+this component only submits work on its original eager stream.
 Output events are recorded after writes, and views are borrowed until begin.
 """
 from functools import lru_cache
@@ -29,11 +29,19 @@ def shared_ffn(x, weights):
 class PreparedMixedCompletion:
     def __init__(self, decode, prefill, decode_ids, prefill_ids,
                  decode_routes, prefill_routes, *, weights, input_scale, down_scale,
-                 shared_up, shared_down, identity, hot_route_quota=128, cold_task_quota=48):
+                 identity, shared_up=None, shared_down=None, shared_execution=None,
+                 hot_route_quota=128, cold_task_quota=48):
+        if torch.cuda.is_current_stream_capturing():
+            raise RuntimeError('mixed completion preparation requires eager execution')
         if not 8192 < prefill.shape[0] <= 32768:
             raise ValueError('cold completion requires long prefill in 8193..32768')
-        for value, shape in ((shared_up, (1024, 4096)), (shared_down, (4096, 512))):
-            if (value.shape != shape or value.dtype != torch.bfloat16 or value.device != decode.device
+        if shared_execution is not None:
+            if shared_up is not None or shared_down is not None:
+                raise ValueError('choose either the reference shared weights or the bound shared execution')
+            shared_execution.validate()
+        for value, shape in (() if shared_execution is not None else
+                             ((shared_up, (1024, 4096)), (shared_down, (4096, 512)))):
+            if (value is None or value.shape != shape or value.dtype != torch.bfloat16 or value.device != decode.device
                     or not value.is_contiguous() or not bool(torch.isfinite(value).all())):
                 raise ValueError('shared expert requires finite contiguous BF16 TP4 weights')
         from .moe_mixed import PreparedMixedExperts
@@ -44,7 +52,8 @@ class PreparedMixedCompletion:
         self.plan = self.hot.plan
         self.cold = plan_cold(self.plan, task_quota=cold_task_quota)
         self.stream = self.hot.stream
-        self._shared_weights = (shared_up, shared_down)
+        self._shared_execution = shared_execution
+        self._shared_weights = (shared_up, shared_down) if shared_execution is None else ()
         device = decode.device
         self.sources = torch.tensor(self.cold.sources, dtype=torch.int32, device=device).reshape(-1, 4)
         self.workspace = md.allocate_sm120_dynamic_workspace(state_E=288, weight_E=288,
@@ -101,6 +110,8 @@ class PreparedMixedCompletion:
 
     def validate(self, identity):
         self.hot.validate(identity)
+        if self._shared_execution is not None:
+            self._shared_execution.validate()
         if tuple(t._version for t in self._owned) != self._versions:
             raise RuntimeError('prepared cold or shared ownership changed')
 
@@ -110,9 +121,11 @@ class PreparedMixedCompletion:
             raise RuntimeError('previous prefill completion is still owed')
         self.state, self.next_window = 'running', 0
         self._prefill_output = None
-        partials = self.hot.run(identity)
-        routed = partials[:self.plan.decode_routes].reshape(len(self.plan.decode), 32, 4096).sum(1).bfloat16()
-        self._decode_output = routed + shared_ffn(self._decode_source, self._shared_weights)
+        def routed():
+            partials = self.hot.run(identity)
+            return partials[:self.plan.decode_routes].reshape(len(self.plan.decode), 32, 4096).sum(1).bfloat16()
+        self._decode_output = (routed() + shared_ffn(self._decode_source, self._shared_weights)
+            if self._shared_execution is None else self._shared_execution.decode(self._decode_source, routed))
         self.decode_ready.record(self.stream)
         self.state = 'decode'
         return self._decode_output
@@ -155,7 +168,8 @@ class PreparedMixedCompletion:
             partials = self.hot.partials[:len(self.plan.sources)*4].view(-1, 4, 4096)
             self._hot_sum.index_add_(0, self._hot_dest, partials[self.plan.decode_routes:].sum(1))
             self._accumulator[self._hot_rows] = (self._accumulator[self._hot_rows].float() + self._hot_sum).bfloat16()
-        shared = shared_ffn(self._producer_args[0], self._shared_weights)
+        shared = (shared_ffn(self._producer_args[0], self._shared_weights) if self._shared_execution is None
+                  else self._shared_execution.prefill(self._producer_args[0]))
         self._prefill_output = self._accumulator + shared
         self.prefill_ready.record(self.stream)
         self.state = 'complete'
@@ -166,3 +180,15 @@ class PreparedMixedCompletion:
         if self.state != 'complete':
             raise RuntimeError('all eight routed experts and the shared expert must finish first')
         return self._prefill_output, self.prefill_ready
+
+    def reader_fence(self):
+        """Fence all submitted readers, including partial work after failure.
+
+        Do not validate source versions here: a changed source still needs
+        its outstanding readers drained. SharedOverlap joins on all exits.
+        """
+        if torch.cuda.is_current_stream_capturing() or torch.cuda.current_stream(self._decode_source.device) != self.stream:
+            raise RuntimeError('mixed reader fences require the original eager stream')
+        event = torch.cuda.Event()
+        event.record(self.stream)
+        return event

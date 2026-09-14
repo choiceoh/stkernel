@@ -148,7 +148,7 @@ P1 이후에만 통신 tile 소비를 검토한다. 기존 `TiledProjection`의 
 
 ## M. 디코드 타일에 프리필 route를 함께 계산
 
-2026-09-14 구현 상태: M0 admission, **M1a hot component**, **M1b cold/shared 완료 component**를 추가했다.
+2026-09-14 구현 상태: M0 admission, **M1a hot component**, **M1b cold/shared 완료 component**, **M2 층별 ticket과 serving shared reader 바인딩**을 추가했다.
 `engine/modules/mixed_experts.py`가 M16/M32의 기존 타일 안에 들어가면서 M128 tail 하나를 제거할 수 있는 route만 고른다. expert별 최소 tail 길이, expert ID 순으로 선택하며 추가 route는 전체 128개로 제한한다. decode route 순서와 모든 cold route의 원래 `(row, slot)`은 보존한다.
 
 `PreparedMixedExperts`는 서로 다른 BF16 입력 두 개, immutable invocation identity, per-expert scales를 소유하고 명시적인 source map을 별도 CuTe producer에 전달한다. producer는 runtime row extent를 사용한다. prepared V5는 기존 frontend 초기화/재라우팅을 건너뛰고 동일한 MMA body를 실행한다. 전체 ordinary kernel AST가 조건문 삽입 전과 같음을 검사한다. source/weight mutation, 다른 stream/capture, stale layer/epoch/slot/source generation은 실행 전에 거부한다. route-owned FP32 partial은 BF16 down 및 weighted rounding을 유지하며, probe의 최종 reducer 비용/오차는 별도로 기록한다.
@@ -157,7 +157,11 @@ P1 이후에만 통신 tile 소비를 검토한다. 기존 `TiledProjection`의 
 
 `begin`은 decode와 decode shared 출력을 합산한 후 event를 기록한다. `advance`는 최대 48개 M128 task를 처리하고 이전 합을 유지한다. 첫 `advance`에는 전체 cold route의 packing과 output 초기화도 포함되므로 48은 **MMA 작업 수 제한**이며 시간 제한이나 선점 보장이 아니다. `finish`는 모든 cold window와 hot contribution, prefill shared FFN을 합산한 후에만 결과/event를 공개한다. 중간 launch 실패는 재실행으로 중복 합산하지 못하도록 invocation을 종료 불가 상태로 남긴다. source/weight/metadata mutation, stale identity와 다른 stream은 모든 단계에서 거부한다.
 
-M1b의 shared reader는 두 팔에 동일한 **BF16 linear → clamped SwiGLU → BF16 linear reference**를 명시적으로 사용한다. 실제 serving dense reader, 취소/slot 회수, TP4 합의·collective와 scheduler/graph 연결은 남아 있다. CPU planning·metadata allocation·초기 padding 비용은 별도 기록한다. route histogram이 매번 바뀌는 serving 요청에서 이 비용을 숨기거나 재사용 가능하다고 가정하지 않는다. 실행 knob나 기본 selector는 추가하지 않았다. [M1a evidence](../measurements/mixed_experts_20260914/README.md)와 [M1b evidence](../measurements/mixed_completion_20260914/README.md)에 구분해 기록한다. GPU 실행 결과가 나오기 전에는 descriptor 수 감소만 확인했으며, 실제 시간 단축·TTFT·tok/s 판정은 없다.
+M1b의 동결된 probe는 두 팔에 동일한 **BF16 linear → clamped SwiGLU → BF16 linear reference**를 사용한다. M2의 `Glm53Net.prepare_mixed_ffn`은 실제 route 선택과 기존 ModelOpt quantizer/weight view를 재사용하며, `BoundMixedShared`가 준비된 DenseLinear W4/FP8 팩을 그대로 사용한다. C=1은 기존 SharedOverlap의 보조 스트림과 fused shared MLP를 유지하고, 넓은 decode와 prefill은 기존 순차 reader 선택을 따른다. prefill shared GEMM은 C=1 routed callback에 넣지 않는다. 팩과 reader를 보존하고 교체를 거부하며, 일반 텐서는 version도 검사한다. native inference 팩에는 version counter가 없으므로 기존 DenseLinear의 immutable-pack 계약과 storage identity를 따른다.
+
+`MixedLayerScheduler`는 동일 층의 최대 4개 ticket에 source/output/event 소유권을 부여한다. host vote로 layer·request·slot generation·serial·전체 route descriptor digest·hot/cold quota·작업 순서를 합의한 뒤 dispatch한다. decode/prefill 결과는 해당 TP 합산과 완료 event 이후 공개한다. `advance`는 cold window 하나만 실행하며, 모든 window가 끝나기 전 scheduler의 `finish`는 거부한다. 모든 ticket은 한 eager stream을 사용하고 같은 owner의 이중 대여를 거부한다. 취소는 추가 dispatch를 중단하고, 모든 랭크의 reader와 마지막 consumer fence가 끝난 뒤에만 slot을 반환한다. 부분 실행 실패로 rank별 cursor가 달라도 취소/회수는 가능하다. source를 바꾸거나 owner를 ticket 밖에서 진행시킨 경우 실행을 거부한다. 통신 프로세스 소실이나 복구 불가 CUDA 오류는 상위 communicator 복구의 책임이며 ticket 재시도로 숨기지 않는다.
+
+입력은 이미 같은 층에 도달한 복제·정규화 FFN 텐서여야 한다. 다음 단계 M3에는 실제 request scheduler의 층 경계 중단/재개, decode 후속 graph, prefix/cache/취소 전파와 TP4 NCCL ordering 연결이 남아 있다. 현재 일반 forward와 D9의 homogeneous Step 선택은 바꾸지 않았다. CPU planning·metadata allocation·초기 padding 비용은 별도 기록하며, M2 probe의 wall time에는 매번 새 준비와 admission 비용도 포함한다. 실행 knob나 기본 selector는 추가하지 않았다. [M1a evidence](../measurements/mixed_experts_20260914/README.md), [M1b evidence](../measurements/mixed_completion_20260914/README.md), [M2 evidence](../measurements/mixed_tickets_20260914/README.md)를 구분한다. 실제 시간 단축·TTFT·tok/s 판정은 아직 없다.
 
 ### M1. 빈 행과 실제 절감되는 타일을 구분
 
