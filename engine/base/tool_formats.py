@@ -2,21 +2,23 @@
 
 A format is what the door (base/serve.Server) takes for tools: `parse` (text -> [(name, arguments JSON)] or None),
 `partial` (text still arriving -> [(name, arguments so far, closed)], only ever growing), `grammar` (tools -> an EBNF
-grammar that arms at the call marker, or None) and `start_token` (the marker's token id, where that grammar arms).
-Every format here opens a call with `<tool_call>` and closes it with `</tool_call>`: the door splits content from
-calls on that marker (base/serve._Choice.flush), so a format with other markers needs the door taught first.
+grammar, or None) and `start_token` (the call marker's token id). Every format here opens a call with `<tool_call>` and
+closes it with `</tool_call>`: the door splits content from calls on that marker (base/serve._Choice.flush), so a format
+with other markers needs the door taught first. Formats are named by their layout; a profile says which one its
+template writes, or `detect` reads it off the template.
 
-    GLM        <tool_call>{name}<arg_key>{k}</arg_key><arg_value>{v}</arg_value>...</tool_call>
-               GLM-5.3's chat_template_mm_v2.jinja
-    QWEN_XML   <tool_call>\\n<function={name}>\\n<parameter={k}>\\n{v}\\n</parameter>\\n...</function>\\n</tool_call>
-               the Qwen3-Coder layout: Qwen3.8-Flash-Next's chat_template.jinja (calls after the first open with '\\n')
+    ARG_PAIRS      <tool_call>{name}<arg_key>{k}</arg_key><arg_value>{v}</arg_value>...</tool_call>
+    FUNCTION_XML   <tool_call>\\n<function={name}>\\n<parameter={k}>\\n{v}\\n</parameter>\\n...</function>\\n</tool_call>
+                   (a call after the first opens with '\\n')
 
-Both templates write a string value raw and any other value as JSON. The parsers read a value back as JSON when it is
+Both layouts write a string value raw and any other value as JSON. The parsers read a value back as JSON when it is
 one (numbers, objects, lists, booleans, null) and as text otherwise; a string that happens to read as JSON comes back
 as that JSON, which the written text cannot tell apart either.
 
-`detect(render)` picks the format a template writes without being told: it renders a conversation whose assistant turn
-made a call and keeps the format whose parser reads that call back.
+A grammar binds the declared names and argument keys in the layout, values free. Lazily (`lazy=True`, the default) it
+begins after the marker, for a door that arms it at the marker's token and leaves the prose before a call free; eagerly
+it begins with the marker, for `tool_choice` required or a named function, where the answer must be calls. With
+`parallel=False` it takes one call.
 """
 from __future__ import annotations
 
@@ -42,7 +44,7 @@ def _without_partial(text: str, tag: str) -> str:
 def tool_call_token(tok, marker: str = _OPEN) -> "int | None":
     """The id of `marker`, where a tool grammar arms -- or None if it is not one token.
 
-    A template writes the marker whole and the vocabularies here have it whole (GLM-5.3 154843, Qwen3.8 248058), which
+    A template writes the marker whole and the vocabularies that serve tools have it whole, which
     is what lets a grammar begin exactly there. A checkpoint that spelled it in pieces gets no tool grammar rather than
     one that arms in the middle of the marker.
     """
@@ -71,7 +73,7 @@ def _tools_named(tools):
     return out
 
 
-# -- GLM: <tool_call>{name}<arg_key>{k}</arg_key><arg_value>{v}</arg_value>...</tool_call> -----------------------------------
+# -- ARG_PAIRS: <tool_call>{name}<arg_key>{k}</arg_key><arg_value>{v}</arg_value>...</tool_call> -----------------------------
 _ARG = re.compile(r"<arg_key>(.*?)</arg_key>\s*<arg_value>(.*?)</arg_value>", re.S)
 # the last key whose value has begun and has not ended: everything after it is still arriving
 _ARRIVING = re.compile(r"<arg_key>(.*?)</arg_key>\s*<arg_value>((?:(?!</arg_value>).)*)$", re.S)
@@ -89,7 +91,7 @@ def _value(raw: str):
     return text
 
 
-def parse_glm(content: str):
+def parse_arg_pairs(content: str):
     calls = []
     for body in _CALL.findall(content):
         name_end = body.find("<arg_key>")
@@ -101,7 +103,7 @@ def parse_glm(content: str):
     return calls or None
 
 
-def partial_glm(content: str):
+def partial_arg_pairs(content: str):
     """Every call the text has begun, with as much of its arguments as is already certain:
     (name, arguments so far, whether the call closed), in order.
 
@@ -156,8 +158,8 @@ def partial_glm(content: str):
         return calls
 
 
-def grammar_glm(tools) -> "str | None":
-    """A grammar for this request's tool calls, to arm at `<tool_call>` (45차 §45).
+def grammar_arg_pairs(tools, *, lazy: bool = True, parallel: bool = True) -> "str | None":
+    """A grammar for this request's tool calls (45차 §45).
 
     The template teaches the model a shape, and nothing held it to it: a call could name a tool
     that was never declared, or an argument the tool does not take, and the door would hand the
@@ -170,9 +172,10 @@ def grammar_glm(tools) -> "str | None":
     character. That ambiguity with the closing tag is the point: inside a value the mask forbids
     nothing, and the model closes when it means to.
 
-    The grammar begins after the trigger token, so its root is what follows `<tool_call>`. Prose
+    Lazily the grammar begins after the trigger token, so its root is what follows `<tool_call>`. Prose
     after a call is not in it -- and costs nothing, because `_Choice.flush` already drops
-    everything from the first `<tool_call>` on.
+    everything from the first `<tool_call>` on. Eagerly (`lazy=False`) the answer itself is the calls:
+    blank space, then the marker.
     """
     named = _tools_named(tools)
     if not named:
@@ -185,11 +188,13 @@ def grammar_glm(tools) -> "str | None":
         if keys:
             rules.append(f"key{i} ::= " + " | ".join(json.dumps(k) for k in keys))
         calls.append(f"call{i}")
-    head = ['root ::= call ("<tool_call>" call)*', "call ::= " + " | ".join(calls), "value ::= [^\\u0000]*"]
+    body = 'call ("<tool_call>" call)*' if parallel else "call"
+    root = f"root ::= {body}" if lazy else f'root ::= [ \\n]* "<tool_call>" {body}'
+    head = [root, "call ::= " + " | ".join(calls), "value ::= [^\\u0000]*"]
     return "\n".join(head + rules) + "\n"
 
 
-# -- QWEN_XML: <tool_call>\n<function={name}>\n<parameter={k}>\n{v}\n</parameter>\n...</function>\n</tool_call> ------------
+# -- FUNCTION_XML: <tool_call>\n<function={name}>\n<parameter={k}>\n{v}\n</parameter>\n...</function>\n</tool_call> --------
 _FUNCTION = re.compile(r"<function=([^>\n]*)>")
 _PARAMETER = re.compile(r"<parameter=([^>\n]*)>(.*?)</parameter>", re.S)
 _PARAMETER_ARRIVING = re.compile(r"<parameter=([^>\n]*)>((?:(?!</parameter>).)*)$", re.S)
@@ -223,7 +228,7 @@ def _xml_body(body: str):
     return head.group(1).strip(), inner if stop < 0 else inner[:stop]
 
 
-def parse_qwen_xml(content: str):
+def parse_function_xml(content: str):
     calls = []
     for body in _CALL.findall(content):
         found = _xml_body(body)
@@ -235,8 +240,8 @@ def parse_qwen_xml(content: str):
     return calls or None
 
 
-def partial_qwen_xml(content: str):
-    """`partial_glm`'s contract on this layout: (name, arguments so far, closed) per call begun, the text only ever
+def partial_function_xml(content: str):
+    """`partial_arg_pairs`'s contract on this layout: (name, arguments so far, closed) per call begun, the text only ever
     growing. A string value streams once its first non-blank character says it is not JSON; while it arrives, a
     trailing piece of `</parameter>` and one trailing newline are held back, because either may turn out to be the
     closing tag and its layout newline rather than value text."""
@@ -278,9 +283,9 @@ def partial_qwen_xml(content: str):
         return calls
 
 
-def grammar_qwen_xml(tools) -> "str | None":
-    """`grammar_glm`'s binding on this layout, armed at `<tool_call>`: the declared names and argument keys in the
-    template's exact layout, values free. A call after the first opens with a newline, as the template writes it."""
+def grammar_function_xml(tools, *, lazy: bool = True, parallel: bool = True) -> "str | None":
+    """`grammar_arg_pairs`'s binding on this layout: the declared names and argument keys in the template's exact
+    layout, values free. A call after the first opens with a newline, as the template writes it."""
     named = _tools_named(tools)
     if not named:
         return None
@@ -292,7 +297,9 @@ def grammar_qwen_xml(tools) -> "str | None":
         if keys:
             rules.append(f"key{i} ::= " + " | ".join(json.dumps(k) for k in keys))
         calls.append(f"call{i}")
-    head = ['root ::= call ("\\n<tool_call>" call)*', "call ::= " + " | ".join(calls), "value ::= [^\\u0000]*"]
+    body = 'call ("\\n<tool_call>" call)*' if parallel else "call"
+    root = f"root ::= {body}" if lazy else f'root ::= [ \\n]* "<tool_call>" {body}'
+    head = [root, "call ::= " + " | ".join(calls), "value ::= [^\\u0000]*"]
     return "\n".join(head + rules) + "\n"
 
 
@@ -308,9 +315,9 @@ class ToolFormat:
         return tool_call_token(tok, self.marker)
 
 
-GLM = ToolFormat("glm", parse_glm, partial_glm, grammar_glm)
-QWEN_XML = ToolFormat("qwen_xml", parse_qwen_xml, partial_qwen_xml, grammar_qwen_xml)
-FORMATS = (GLM, QWEN_XML)
+ARG_PAIRS = ToolFormat("arg_pairs", parse_arg_pairs, partial_arg_pairs, grammar_arg_pairs)
+FUNCTION_XML = ToolFormat("function_xml", parse_function_xml, partial_function_xml, grammar_function_xml)
+FORMATS = (ARG_PAIRS, FUNCTION_XML)
 
 PROBE_TOOL = "st_probe_lookup"
 PROBE_ARGUMENTS = {"st_probe_query": "probe text", "st_probe_count": 7}
@@ -340,5 +347,6 @@ def detect(render) -> "ToolFormat | None":
     return None
 
 
-__all__ = ["ToolFormat", "GLM", "QWEN_XML", "FORMATS", "detect", "tool_call_token",
-           "parse_glm", "partial_glm", "grammar_glm", "parse_qwen_xml", "partial_qwen_xml", "grammar_qwen_xml"]
+__all__ = ["ToolFormat", "ARG_PAIRS", "FUNCTION_XML", "FORMATS", "detect", "tool_call_token",
+           "parse_arg_pairs", "partial_arg_pairs", "grammar_arg_pairs",
+           "parse_function_xml", "partial_function_xml", "grammar_function_xml"]

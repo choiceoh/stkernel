@@ -216,6 +216,27 @@ class OptionTests(unittest.TestCase):
         self.assertEqual([i for i, _ in top], [1, 2])
 
 
+class VocabularyBoundTests(unittest.TestCase):
+    """A token id past the logits was an index error inside the step, and the step loop ends the engine on any
+    exception: the request that names one is refused at submit instead."""
+
+    def test_every_option_that_names_a_token_is_bounded(self):
+        validate_options({"logit_bias": {15: 1.0}, "stop_token_ids": [15]}, vocab=16)
+        for options in ({"logit_bias": {16: 1.0}}, {"stop_token_ids": [3, 99]},
+                        {"reasoning_budget": 4, "reasoning_end": 16}, {"grammar": {"type": "json_object"}, "grammar_after": 20}):
+            with self.subTest(options=options), self.assertRaisesRegex(ValueError, "outside the model vocabulary"):
+                validate_options(options, vocab=16)
+        validate_options({"logit_bias": {10 ** 6: 1.0}})          # no vocabulary given: the shape checks only
+
+    def test_the_glm_engine_bounds_them_by_its_logits(self):
+        from types import SimpleNamespace
+        from engine.profiles.glm53.adapter import Glm53Engine
+        e = Glm53Engine(None, SimpleNamespace(device=torch.device("cpu")), SimpleNamespace(spec_k=5, vocab=16))
+        e.validate_options({"logit_bias": {15: 1.0}, "stop_token_ids": [15]})
+        with self.assertRaisesRegex(ValueError, "logit_bias names token 16, outside the model vocabulary of 16"):
+            e.validate_options({"logit_bias": {16: 1.0}})
+
+
 class ReasoningBudgetTests(unittest.TestCase):
     """A thinking block that eats the whole limit leaves no answer (45차 §46)."""
 
@@ -251,6 +272,16 @@ class ReasoningBudgetTests(unittest.TestCase):
         self.assertEqual(self.allowed(e, [5, 5, self.END, 5]), list(range(8)))
         self.assertFalse(e.thinking[0])
         self.assertEqual(self.allowed(e, [5, 5, self.END, 5, 5, 5, 5]), list(range(8)))
+
+    def test_a_call_open_under_its_grammar_is_not_forced_shut(self):
+        """A tool call that began inside the block holds the row to its grammar. Forcing the end there left no token
+        the grammar allows, and the commit after it was outside the grammar -- an engine death."""
+        e = self.engine({"reasoning_budget": 4, "reasoning_end": self.END})
+        e.matchers[0] = types.SimpleNamespace(armed=True, after=7)
+        self.assertEqual(self.allowed(e, [5, 5, 5, 5]), list(range(8)))
+        e.matchers[0] = types.SimpleNamespace(armed=False, after=7)
+        self.assertEqual(self.allowed(e, [5, 5, 5, 5]), [self.END])                    # dormant: the budget still binds
+        self.assertEqual(self.allowed(e, [5, 5, 5], drafts=[7, 5]), list(range(8)))   # this step's drafts open the call
 
     def test_unaccepted_reasoning_end_does_not_disable_the_committed_budget(self):
         e = self.engine({"reasoning_budget": 4, "reasoning_end": self.END})

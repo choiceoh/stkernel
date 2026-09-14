@@ -932,6 +932,11 @@ class ChatDoorTests(unittest.TestCase):
             self.assertEqual([c["function"]["arguments"] for c in messages[1]["tool_calls"]], [{"q": "서울", "n": 2}, {}])
             self.assertEqual(history[1]["tool_calls"][0]["function"]["arguments"], '{"q": "서울", "n": 2}')   # the request's own list
             self.assertEqual(kwargs["reasoning_effort"], "xhigh")
+            s.reasoning_end = ord("y")
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:            # reasoning answers under both names
+                out = drive(s, pool.submit(post, "/v1/chat/completions", {"messages": [{"role": "user", "content": "ab"}],
+                                                                          "max_tokens": 2, "chat_template_kwargs": {"thinking": True}}))
+            self.assertEqual(out['choices'][0]['message']['reasoning'], out['choices'][0]['message']['reasoning_content'])
             self.assertEqual(post("/tokenize", {"messages": history})["count"], len("abxy"))
             with concurrent.futures.ThreadPoolExecutor(1) as pool:            # the same request under two names
                 drive(s, pool.submit(post, "/v1/chat/completions", {"messages": history, "max_tokens": 1, "reasoning_effort": "max",
@@ -1016,6 +1021,50 @@ class TemplateMessagesTests(unittest.TestCase):
                          [{"k": [1, "둘"]}, {}, "not json", "[1, 2]", {"already": True}, {"id": "f"}, "junk"])
         self.assertEqual(calls[0]["function"]["arguments"], '{"k": [1, "둘"]}')          # the caller's messages are untouched
         self.assertEqual(template_messages("not a list"), "not a list")
+
+    def test_developer_is_system_reasoning_is_reasoning_content_and_unknown_roles_are_refused(self):
+        from engine.base.serve import RequestError, template_messages
+        out = template_messages([{"role": "developer", "content": "be brief"}, {"role": "user", "content": "hi"},
+                                 {"role": "assistant", "content": "ok", "reasoning": "thought"},
+                                 {"role": "assistant", "content": "ok", "reasoning": "new", "reasoning_content": "kept"}])
+        self.assertEqual([m["role"] for m in out], ["system", "user", "assistant", "assistant"])
+        self.assertEqual((out[2]["reasoning_content"], out[3]["reasoning_content"]), ("thought", "kept"))
+        for role in ("function", "observation", None):
+            with self.subTest(role=role), self.assertRaisesRegex(RequestError, "is not served"):
+                template_messages([{"role": role, "content": "x"}])
+
+
+class AbandonTests(unittest.TestCase):
+    """A submission that fails partway leaves nothing behind: the choices already in are cancelled and their answers
+    dropped. They used to run on and keep their results, each holding a queue slot until a restart."""
+
+    def post(self, base, path, body):
+        with urllib.request.urlopen(urllib.request.Request(base + path, data=json.dumps(body).encode()), timeout=5) as r:
+            return json.load(r)
+
+    def refused(self, s, path, body, status):
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                self.post(base, path, body)
+            self.assertEqual(error.exception.code, status)
+            for _ in range(20):
+                s.once()
+            self.assertFalse(s.pending or s.results or s._streams or s._abandoned)
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:              # and the slot serves the next request
+                out = drive(s, pool.submit(self.post, base, "/v1/chat/completions",
+                                           {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2}))
+            self.assertEqual(out["choices"][0]["message"]["content"], "bb")
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_n_choices_refused_at_the_second_hold_no_slot(self):
+        self.refused(chat_server(max_pending=1), "/v1/chat/completions",
+                     {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2, "n": 2}, 503)
+
+    def test_a_later_prompt_over_the_pool_leaves_the_earlier_ones_nowhere(self):
+        self.refused(chat_server(), "/v1/completions", {"prompt": ["ab", "x" * 400], "max_tokens": 2}, 400)
 
 
 class ReasoningMarksTests(unittest.TestCase):
@@ -1215,8 +1264,9 @@ class CancelTests(unittest.TestCase):
             self.assertEqual(s.engine.min_new[0], 2)
             self.assertEqual(out['choices'][0]['finish_reason'], 'length')
             s.tok.decode = lambda ids, skip_special_tokens=True: "<tool_call>f<arg_key>a</arg_key><arg_value>1</arg_value></tool_call>"
-            with concurrent.futures.ThreadPoolExecutor(1) as pool:
-                out = drive(s, pool.submit(post, {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2}))
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:                # calls are read where tools were offered
+                out = drive(s, pool.submit(post, {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2,
+                                                  "tools": [{"type": "function", "function": {"name": "f"}}]}))
             self.assertEqual(out['choices'][0]['finish_reason'], 'tool_calls')
             self.assertEqual(out['choices'][0]['message']['tool_calls'][0]['function'], {'name': 'f', 'arguments': '{"a": 1}'})
             self.assertEqual(out['choices'][0]['message']['content'], None)
@@ -2437,6 +2487,122 @@ class OpenAIDialectTests(unittest.TestCase):
         self.assertEqual(got["grammar"]["type"], "ebnf")
         self.assertIn('call0 ::= "f"', got["grammar"]["grammar"])
         self.assertEqual(got["grammar_after"], 154843)
+
+    def test_tool_choice_required_and_named_bind_the_answer_to_calls(self):
+        """vLLM served both and this door refused them. A forced choice arms the tool grammar eagerly: the answer is
+        calls from its first token -- after the think block when there is one -- to every tool or to the one named."""
+        from engine.profiles.glm53.tools import tool_grammar
+        tools = [{"type": "function", "function": {"name": "f", "parameters": {"type": "object", "properties": {"a": {}}}}},
+                 {"type": "function", "function": {"name": "g"}}]
+        body = {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1, "tools": tools}
+        s = chat_server()
+        s.tool_grammar, s.tool_call_start = tool_grammar, 154843
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions", dict(body, tool_choice="required")))
+        got = s.engine.options[0]
+        self.assertTrue(got["grammar"]["grammar"].startswith('root ::= [ \\n]* "<tool_call>" call ("<tool_call>" call)*'))
+        self.assertIn('call0 ::= "f"', got["grammar"]["grammar"])
+        self.assertIn('call1 ::= "g"', got["grammar"]["grammar"])
+        self.assertNotIn("grammar_after", got)                                # no think block: the first token is held
+        s = chat_server()
+        s.tool_grammar, s.tool_call_start, s.reasoning_end = tool_grammar, 154843, ord("y")
+        named = {"type": "function", "function": {"name": "g"}}
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions",
+                                               dict(body, tool_choice=named, parallel_tool_calls=False,
+                                                    chat_template_kwargs={"thinking": True})))
+        got = s.engine.options[0]
+        self.assertTrue(got["grammar"]["grammar"].startswith('root ::= [ \\n]* "<tool_call>" call\n'))
+        self.assertIn('call0 ::= "g"', got["grammar"]["grammar"])
+        self.assertNotIn('"f"', got["grammar"]["grammar"])
+        self.assertEqual(got["grammar_after"], ord("y"))                      # it waits for the think block to close
+
+    def test_a_forced_tool_choice_that_cannot_be_held_is_refused(self):
+        from engine.profiles.glm53.tools import tool_grammar
+        s = chat_server()
+        s.tool_grammar, s.tool_call_start = tool_grammar, 154843
+        tools = [{"type": "function", "function": {"name": "f"}}]
+        body = {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1}
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        cases = [(dict(body, tool_choice="required"), "needs tools"),
+                 (dict(body, tools=tools, tool_choice={"type": "function", "function": {"name": "h"}}), "not one of the tools"),
+                 (dict(body, tools=tools, tool_choice="required", response_format={"type": "json_object"}), "cannot both be enforced"),
+                 (dict(body, tools=tools, tool_choice="any"), "tool_choice must be"),
+                 (dict(body, tools=tools, parallel_tool_calls="no"), "parallel_tool_calls must be a boolean")]
+        try:
+            for request, words in cases:
+                with self.subTest(words=words), self.assertRaises(urllib.error.HTTPError) as refused:
+                    self._post(base, "/v1/chat/completions", request)
+                self.assertEqual(refused.exception.code, 400)
+                self.assertIn(words, refused.exception.read().decode())
+            s.tool_grammar = None
+            with self.assertRaises(urllib.error.HTTPError) as refused:
+                self._post(base, "/v1/chat/completions", dict(body, tools=tools, tool_choice="required"))
+            self.assertIn("no grammar to hold the answer to", refused.exception.read().decode())
+            self.assertFalse(s.pending or s.results)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_parallel_tool_calls_false_holds_one_call(self):
+        from engine.base.serve import _Choice
+        from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls, tool_grammar
+        s = chat_server()
+        s.tool_grammar, s.tool_call_start = tool_grammar, 154843
+        self._serve(s, lambda base: self._post(base, "/v1/chat/completions", {
+            "messages": [{"role": "user", "content": "ab"}], "max_tokens": 1, "parallel_tool_calls": False,
+            "tools": [{"type": "function", "function": {"name": "f"}}]}))
+        self.assertTrue(s.engine.options[0]["grammar"]["grammar"].startswith("root ::= call\n"))
+        for stream in (partial_tool_calls, None):          # held by the grammar, and by the door where there is none
+            c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=Tokenizer(), stop=[], reasoning=False,
+                        tool_parser=parse_tool_calls, tool_stream=stream, single_call=True)
+            c.feed([ord(ch) for ch in "<tool_call>f</tool_call><tool_call>g</tool_call>"], None, None)
+            c.flush(final=True)
+            self.assertEqual([call["function"]["name"] for call in c.tool_calls_done()], ["f"])
+
+    def test_without_tools_a_call_marker_is_text(self):
+        """A turn asked to answer in prose -- no tools, or tool_choice none -- is not turned into calls."""
+        s = chat_server()
+        s.tool_parser = lambda text: [("f", "{}")] if "<tool_call>" in text else None
+        s.tok.decode = lambda ids, skip_special_tokens=True: "<tool_call>f</tool_call>"
+        for extra in ({}, {"tools": [{"type": "function", "function": {"name": "f"}}], "tool_choice": "none"}):
+            with self.subTest(extra=extra):
+                out = self._serve(s, lambda base: self._post(base, "/v1/chat/completions", dict(
+                    {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2}, **extra)))
+                message = out["choices"][0]["message"]
+                self.assertEqual(message["content"], "<tool_call>f</tool_call>")
+                self.assertNotIn("tool_calls", message)
+                self.assertNotEqual(out["choices"][0]["finish_reason"], "tool_calls")
+
+    def test_a_call_opened_inside_the_think_block_is_a_call(self):
+        """It stayed in the reasoning, where no parser reads, and the turn came back empty. The marker ends the block."""
+        from engine.base.serve import _Choice
+        from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls
+
+        class Marked(Tokenizer):
+            def decode(self, ids, skip_special_tokens=True):
+                return "".join("<tool_call>" if i == 300 else chr(i) for i in ids)
+        call = [ord(ch) for ch in "f<arg_key>a</arg_key><arg_value>1</arg_value></tool_call>"]
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=Marked(), stop=[], reasoning=True,
+                    tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_start=300)
+        c.feed([ord(ch) for ch in "look it up "] + [300] + call, None, 999)
+        deltas = c.flush(final=True)
+        self.assertEqual(c.text["reasoning_content"], "look it up ")
+        self.assertEqual(c.tool_calls_done()[0]["function"], {"name": "f", "arguments": '{"a": 1}'})
+        self.assertEqual(c.finish_reason(), "tool_calls")
+        self.assertIn({"reasoning_content": "look it up ", "reasoning": "look it up "}, deltas)   # under both names
+        plain = _Choice(0, 1, threading.Event(), queue.Queue(), tok=Marked(), stop=[], reasoning=True,
+                        tool_parser=parse_tool_calls, tool_stream=partial_tool_calls)
+        plain.feed([ord(ch) for ch in "look it up "] + [300] + call, None, 999)
+        plain.flush(final=True)
+        self.assertEqual(plain.tool_calls_done(), [])                           # no marker token known: as before
+
+    def test_a_json_schema_keeps_the_order_its_properties_were_written_in(self):
+        """The compiled grammar writes properties in schema order; a sorted schema answered before it reasoned."""
+        from engine.base.serve import response_format_grammar
+        spec = response_format_grammar({"response_format": {"type": "json_schema", "json_schema": {"name": "r", "schema": {
+            "type": "object", "properties": {"reasoning": {"type": "string"}, "answer": {"type": "string"}},
+            "required": ["reasoning", "answer"]}}}})
+        self.assertLess(spec["schema"].index('"reasoning"'), spec["schema"].index('"answer"'))
+        self.assertLess(spec["schema"].index('"type"'), spec["schema"].index('"properties"'))
 
     def test_a_response_format_wins_over_the_tool_grammar(self):
         """One grammar a row. What the caller asked for in `response_format` is what they get."""

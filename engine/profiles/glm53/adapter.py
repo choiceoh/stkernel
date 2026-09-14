@@ -522,7 +522,7 @@ class Glm53Engine:
     def validate_options(self, options: dict) -> None:
         """The door asks before enqueueing: every option a request carries must be one this engine serves (D3)."""
         from engine.base.sampler import validate_options
-        validate_options(options)
+        validate_options(options, vocab=getattr(self.F, "vocab", None))   # an id past the logits was an engine death in the step
         if options.get("grammar") is not None and self.grammars is None:
             raise ValueError("structured output (response_format) is not served: no grammar compiler is bound")
 
@@ -1132,6 +1132,12 @@ class Glm53Engine:
         if end in drafts_before:
             # This prefix is hypothetical until verification accepts it. A
             # rejected draft must not disable the committed row's budget.
+            return None
+        matcher = self.matchers.get(seq)
+        if matcher is not None and (matcher.armed or (matcher.after is not None and matcher.after in drafts_before)):
+            # A grammar holds the row: a tool call began inside the think block (the tool grammar arms at its
+            # marker, reasoning or not). Forcing the end here leaves no token the grammar allows, and the commit
+            # that follows is outside the grammar -- an engine death. The call closes the block instead.
             return None
         return end
 

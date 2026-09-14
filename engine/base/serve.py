@@ -166,7 +166,7 @@ def effort_words(rungs) -> str:
 def effort_rungs_checked(render, rungs: dict) -> dict:
     """`rungs` (the door's request rung -> the template's `reasoning_effort` value) when the template renders every
     value in it, raising at boot otherwise: a rung the template refuses would otherwise surface as a 400 on the first
-    request that names it (Qwen3.8's template raises for anything but xhigh, medium and low; D3)."""
+    request that names it (a template may accept only its own few rungs and raise for the rest; D3)."""
     if not rungs or any(not isinstance(k, str) or not isinstance(v, str) for k, v in rungs.items()):
         raise ValueError("effort rungs map request rungs to template values (text to text)")
     probe = [{"role": "user", "content": "hi"}]
@@ -178,20 +178,39 @@ def effort_rungs_checked(render, rungs: dict) -> dict:
     return dict(rungs)
 
 
+CHAT_ROLES = ("system", "developer", "user", "assistant", "tool")
+
+
 def template_messages(messages):
     """The messages as a chat template reads them.
 
-    OpenAI's wire carries a tool call's `arguments` as JSON text, and the templates here iterate them as a mapping
-    (GLM-5.3's `.items()`, Qwen3.8's `|items`): a conversation that sends its own tool calls back failed to render
-    ("'str object' has no attribute 'items'"), which is every agent's second turn. Text that is a JSON object becomes
-    that object, and empty text an empty one -- what vLLM does before it renders. Anything else is left as it came, for
-    the template to judge. The caller's list is not modified.
+    - A tool call's `arguments` arrive as JSON text on OpenAI's wire, and templates iterate them as a mapping: a
+      conversation that sent its own tool calls back failed to render, which is every agent's second turn. Text that
+      is a JSON object becomes that object, and empty text an empty one -- what vLLM does before it renders.
+    - `developer` is OpenAI's system role for reasoning models; a template that knows only `system` dropped those
+      instructions without a word, so it arrives as `system`.
+    - An assistant turn's reasoning arrives as `reasoning` from current OpenAI-compatible clients and as
+      `reasoning_content` from older ones; templates render `reasoning_content`, and a turn whose reasoning went
+      missing is also a turn the next render cannot continue (45차 §85).
+    - A role no template renders is refused rather than dropped (D3).
+
+    Anything else is left as it came, for the template to judge. The caller's list is not modified.
     """
     if not isinstance(messages, list):
         return messages
     out = []
     for message in messages:
-        calls = message.get("tool_calls") if isinstance(message, dict) else None
+        if not isinstance(message, dict):
+            out.append(message)
+            continue
+        role = message.get("role")
+        if role not in CHAT_ROLES:
+            raise RequestError(f"message role {role!r} is not served ({', '.join(CHAT_ROLES)} are)")
+        if role == "developer":
+            message = dict(message, role="system")
+        if role == "assistant" and message.get("reasoning_content") is None and isinstance(message.get("reasoning"), str):
+            message = dict(message, reasoning_content=message["reasoning"])
+        calls = message.get("tool_calls")
         if not isinstance(calls, list):
             out.append(message)
             continue
@@ -603,7 +622,7 @@ def reasoning_marks(tok, render, *, start: str = "<think>", end: str = "</think>
 
     `reasoning_end` is `end`'s token id when the template's generation prompt opens a think block (ends with `start`)
     with the thinking `switch` on. `reasoning_tail` is what its thinking-off prompt writes after `end`, as the door will
-    tokenize it: GLM-5.3's ends at '</think>' (no tail), Qwen3.8's writes '</think>' and a blank line. A tail that is
+    tokenize it: a template may end the prompt at '</think>' (no tail) or write a blank line after it. A tail that is
     not whitespace is not trusted as a closed block and none is given. A template that opens no block with thinking on
     gets (None, ()): nothing is reasoning and nothing is split.
     """
@@ -640,7 +659,9 @@ def response_format_grammar(req: dict) -> "dict | None":
         if not isinstance(schema, dict):
             raise RequestError("response_format.json_schema.schema must be an object")
         try:
-            return {"type": "json_schema", "schema": json.dumps(repair_patterns(schema), sort_keys=True)}
+            # the caller's key order, not a sorted one: the compiled grammar writes properties in schema order, and a
+            # sorted schema made a {"reasoning", "answer"} object answer first (base/grammar keys its cache by the text)
+            return {"type": "json_schema", "schema": json.dumps(repair_patterns(schema))}
         except (TypeError, ValueError) as exc:
             raise RequestError(f"json_schema is not JSON: {exc}") from exc
     raise RequestError("response_format.type must be text, json_object or json_schema")
@@ -986,10 +1007,13 @@ class _Choice:
     reaches a stop string ends there; complete <tool_call> blocks become tool_calls (streamed as they complete)."""
 
     def __init__(self, index: int, request: int, event, q, *, tok, stop, reasoning: bool, tool_parser=None,
-                 want_logprobs: "int | None" = None, min_new: int = 0, repairs=None, tool_stream=None):
+                 want_logprobs: "int | None" = None, min_new: int = 0, repairs=None, tool_stream=None,
+                 tool_start: "int | None" = None, single_call: bool = False):
         self.index, self.request, self.event, self.q = index, request, event, q
         self.tok, self.stop, self.reasoning, self.tool_parser = tok, list(stop), reasoning, tool_parser
         self.tool_stream = tool_stream               # text -> [(name, arguments so far, closed)] or None
+        self.tool_start = tool_start                 # the call marker's token: a call opened inside the block ends it
+        self.single_call = single_call               # parallel_tool_calls false: the first call is the answer
         self.want_logprobs = want_logprobs
         self.min_new = min_new
         self._stop_from = 0          # a stop string may not START below the floor: min_tokens means at least
@@ -1025,6 +1049,11 @@ class _Choice:
                 self.streams[channel].extend(batch)          # the split lands inside this step
                 batch, channel, self.reasoning = [], "content", False
                 continue
+            if self.reasoning and self.tool_start is not None and t == self.tool_start:
+                # A call written before `</think>`: it stayed in the reasoning, where no parser reads, and the turn came
+                # back empty. The marker opens the answer instead, as vLLM's parser for this layout ends reasoning there.
+                self.streams[channel].extend(batch)
+                batch, channel, self.reasoning = [], "content", False
             batch.append(t)
         self.streams[channel].extend(batch)
 
@@ -1061,7 +1090,9 @@ class _Choice:
                         decoded = decoded[:start]
             delta = decoded[self.shown[channel]:]
             if delta:
-                deltas.append({channel: delta})
+                # reasoning goes out under both names: `reasoning` is what current OpenAI-compatible servers send,
+                # `reasoning_content` what this door always has
+                deltas.append({channel: delta, "reasoning": delta} if channel == "reasoning_content" else {channel: delta})
                 self.shown[channel] = len(decoded)
             self.text[channel] = decoded[:self.shown[channel]]
         return deltas
@@ -1089,6 +1120,8 @@ class _Choice:
         if self.tool_stream is None:
             blocks = _TOOL_CALL.findall(decoded)
             for body in blocks[self._tool_seen:]:
+                if self.single_call and self.tool_calls:
+                    break
                 for name, args in (self.tool_parser(f"<tool_call>{body}</tool_call>") or []):
                     call = {"index": len(self.tool_calls), "id": f"call_{self.request}_{len(self.tool_calls)}",
                             "type": "function", "function": {"name": name, "arguments": args}}
@@ -1098,6 +1131,8 @@ class _Choice:
             self._tool_seen = len(blocks)
             return out
         for i, (name, args, done) in enumerate(self.tool_stream(decoded)):
+            if self.single_call and i > 0:
+                break
             if i == len(self.tool_calls):
                 self.tool_calls.append({"index": i, "id": f"call_{self.request}_{i}", "type": "function",
                                         "function": {"name": name, "arguments": ""}})
@@ -1330,7 +1365,7 @@ class Server:
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
         self.reasoning_tail = tuple(reasoning_tail)  # what the template writes after reasoning_end when thinking is off
         self.reasoning_effort_aliases = dict(reasoning_effort_aliases or {})
-        # request rung -> what the template reads: GLM-5.3's ladder unless the profile brings its template's own
+        # request rung -> what the template reads: EFFORT_RUNGS unless the profile brings its template's own
         self.effort_rungs = dict(EFFORT_RUNGS if effort_rungs is None else effort_rungs)
         if (not self.effort_rungs or any(not isinstance(k, str) or not isinstance(v, str) for k, v in self.effort_rungs.items())
                 or any(target not in self.effort_rungs for target in self.reasoning_effort_aliases.values())):
@@ -1350,6 +1385,7 @@ class Server:
             raise ValueError("park_min_tokens must be a nonnegative integer")
         self.park_min_tokens = park_min_tokens
         self._transient = set()                    # request ids whose turn is not kept when it finishes (every rank alike)
+        self._abandoned = set()                    # rank 0: request ids nobody will read -- their answers are dropped
         self.turns_not_retained = {}               # reason -> finished turns released instead of kept
         self.max_context = int(getattr(engine, "max_context", 2**31 - 1))   # the model's trained positions; the door refuses beyond
         self.request_timeout_s = float(request_timeout_s)
@@ -1672,6 +1708,23 @@ class Server:
             out.append(dict(m, positions=[p - prefix for p in pos]))
         return out
 
+    def abandon(self, requests) -> None:
+        """Requests no reply will read: the siblings of a submission that failed partway (the second of n choices
+        refused by a full queue, a later prompt of a list over the context). Each is cancelled wherever it is, and its
+        answer is dropped when it comes. Left alone they ran on, and their results counted against `max_pending`
+        until a restart, because only `take_result` removed them -- a list of prompts with one too long a later entry
+        took a slot each time it was sent."""
+        requests = [int(r) for r in requests]
+        with self._lock:
+            for request in requests:
+                self._streams.pop(request, None)
+                if request in self.pending:
+                    self._abandoned.add(request)
+                else:
+                    self.results.pop(request, None)            # it answered already
+        for request in requests:
+            self.cancel(request, "client closed")
+
     def cancel(self, request: int, reason: str = "client closed") -> None:
         """Ask the loop to drop `request` wherever it is (waiting, prefilling, decoding); every rank
         applies it in the same iteration. Reasons: "client closed", "timeout", "stop"."""
@@ -1800,8 +1853,8 @@ class Server:
 
     def reasoning_closed(self, ids) -> bool:
         """Whether a rendered prompt already closed its think block, so everything generated is content: it ends with
-        `reasoning_end` (GLM-5.3's template with thinking off), or with it and then `reasoning_tail` (Qwen3.8's writes
-        a blank line after it; base/serve.reasoning_marks reads the tail off the template)."""
+        `reasoning_end`, or with it and then `reasoning_tail` (a template that writes a blank line after the end;
+        base/serve.reasoning_marks reads the tail off the template)."""
         end, tail = self.reasoning_end, self.reasoning_tail
         if end is None or not ids:
             return False
@@ -1826,7 +1879,10 @@ class Server:
             with self._lock:
                 event = self.pending.pop(request, None)
                 if event is not None:
-                    self.results[request] = result
+                    if request in self._abandoned:
+                        self._abandoned.discard(request)       # nobody reads it: it must not hold a queue slot
+                    else:
+                        self.results[request] = result
                     if not isinstance(result, RequestError):
                         self.generation_tokens_total += len(result)
                     event.set()
@@ -3060,21 +3116,29 @@ class Server:
 
             # ---- the OpenAI dialect ------------------------------------------------------------------------------
             def choices_for(self, ids, count, max_new, temperature, options, stop, *, reasoning, tool_parser=None,
-                            want_logprobs=None, min_new=0, continue_history=False, media=None, cache_salt=None):
+                            want_logprobs=None, min_new=0, continue_history=False, media=None, cache_salt=None,
+                            single_call=False):
                 """Submit `count` generations of one prompt; each is a _Choice fed by its own token queue.
-                With a seed, choice i draws from seed + i so the n answers differ but stay reproducible."""
+                With a seed, choice i draws from seed + i so the n answers differ but stay reproducible. All or none:
+                a submit that fails partway abandons the choices already in (`Server.abandon`) before it raises."""
                 choices = []
-                for i in range(count):
-                    opts = dict(options)
-                    if count > 1 and "seed" in opts:
-                        opts["seed"] = opts["seed"] + i
-                    request, event = server.submit(ids, max_new, temperature, stream=True, min_new=min_new,
-                                                   options=opts, continue_history=continue_history, media=media,
-                                                   cache_salt=cache_salt)
-                    choices.append(_Choice(len(choices), request, event, server._streams[request], tok=server.tok, stop=stop,
-                                           reasoning=reasoning, tool_parser=tool_parser, want_logprobs=want_logprobs,
-                                           min_new=min_new, repairs=server.detok_repairs,
-                                           tool_stream=server.tool_stream))
+                try:
+                    for i in range(count):
+                        opts = dict(options)
+                        if count > 1 and "seed" in opts:
+                            opts["seed"] = opts["seed"] + i
+                        request, event = server.submit(ids, max_new, temperature, stream=True, min_new=min_new,
+                                                       options=opts, continue_history=continue_history, media=media,
+                                                       cache_salt=cache_salt)
+                        choices.append(_Choice(len(choices), request, event, server._streams[request], tok=server.tok, stop=stop,
+                                               reasoning=reasoning, tool_parser=tool_parser, want_logprobs=want_logprobs,
+                                               min_new=min_new, repairs=server.detok_repairs,
+                                               tool_stream=server.tool_stream if tool_parser is not None else None,
+                                               tool_start=server.tool_call_start if tool_parser is not None else None,
+                                               single_call=single_call))
+                except BaseException:
+                    server.abandon([c.request for c in choices])
+                    raise
                 return choices
 
             def run_choices(self, choices, on_delta) -> bool:
@@ -3193,13 +3257,27 @@ class Server:
                     want_logprobs = top
                 stop = stop_strings(req)
                 tools = req.get("tools")
-                choice = req.get("tool_choice")
-                if choice == "none":
-                    tools = None
-                elif choice not in (None, "auto"):
-                    raise RequestError("tool_choice: only auto and none are served (required/named calls are not enforced)")
                 if tools is not None and (not isinstance(tools, list) or any(not isinstance(t, dict) for t in tools)):
                     raise RequestError("tools must be a list of objects")
+                parallel = req.get("parallel_tool_calls")
+                if parallel is not None and type(parallel) is not bool:
+                    raise RequestError("parallel_tool_calls must be a boolean")
+                choice = req.get("tool_choice")
+                forced = None                             # "required", or the one tool a named choice forces
+                if choice == "none":
+                    tools = None
+                elif choice == "required":
+                    forced = "required"
+                elif isinstance(choice, dict) and choice.get("type") == "function" and isinstance(
+                        (choice.get("function") or {}).get("name"), str):
+                    forced = choice["function"]["name"]
+                    if not any((t.get("function") or {}).get("name") == forced for t in tools or []):
+                        raise RequestError(f"tool_choice names {forced!r}, which is not one of the tools")
+                elif choice not in (None, "auto"):
+                    raise RequestError('tool_choice must be "none", "auto", "required" or {"type": "function", '
+                                       '"function": {"name": ...}}')
+                if forced is not None and not tools:
+                    raise RequestError("tool_choice required or a named function needs tools")
                 min_tokens = req.get("min_tokens", 0) or 0
                 if type(min_tokens) is not int or min_tokens < 0:
                     raise RequestError("min_tokens must be a nonnegative integer")
@@ -3222,17 +3300,32 @@ class Server:
                     options["logprobs"] = want_logprobs
                 grammar = response_format_grammar(req)
                 if grammar is not None:
+                    if forced is not None:
+                        raise RequestError("tool_choice required or a named function and response_format cannot both be "
+                                           "enforced: one grammar a row")
                     options["grammar"] = grammar
                 elif tools and server.tool_grammar is not None and server.tool_call_start is not None:
                     # Nothing held a tool call to the tools that were declared: a call could name a
                     # tool nobody offered, or an argument it does not take, and the caller would be
                     # handed something it cannot make. The grammar arms at `<tool_call>` and not
                     # before, so the answer's prose is free -- llama.cpp's lazy trigger, and our
-                    # `grammar_after` is exactly that (45차 §45).
-                    ebnf = server.tool_grammar(tools)
+                    # `grammar_after` is exactly that (45차 §45). A forced choice binds the answer
+                    # itself instead: calls from its first token (after the think block, which the
+                    # reasoning rule below waits for), to every tool or to the one named.
+                    offered = tools if forced in (None, "required") else [
+                        t for t in tools if (t.get("function") or {}).get("name") == forced]
+                    shape = {**({"lazy": False} if forced is not None else {}),
+                             **({"parallel": False} if parallel is False else {})}
+                    ebnf = server.tool_grammar(offered, **shape)
                     if ebnf is not None:
                         options["grammar"] = {"type": "ebnf", "grammar": ebnf}
-                        options["grammar_after"] = server.tool_call_start
+                        if forced is None:
+                            options["grammar_after"] = server.tool_call_start
+                    elif forced is not None:
+                        raise RequestError("tool_choice required or a named function needs tools a grammar can name")
+                elif forced is not None:
+                    raise RequestError("tool_choice required or a named function is not served here: this model's tool "
+                                       "calls have no grammar to hold the answer to")
                 parts = media_parts(messages)                            # (kind, url) in the order the template will emit them
                 items = []
                 if parts:
@@ -3285,9 +3378,12 @@ class Server:
                     if budget is not None:
                         options["reasoning_budget"] = budget
                         options["reasoning_end"] = server.reasoning_end
+                # tool calls are read only where tools were offered: without them (or with tool_choice "none") the
+                # marker is text the model wrote, and a "now answer in prose" turn is not turned into calls
                 choices = self.choices_for(ids, n, max_tokens, temperature, options, stop, reasoning=reasoning,
-                                           tool_parser=server.tool_parser, want_logprobs=want_logprobs, min_new=min_tokens,
-                                           continue_history=True, media=media, cache_salt=cache_key(req))
+                                           tool_parser=server.tool_parser if tools else None, want_logprobs=want_logprobs,
+                                           min_new=min_tokens, continue_history=True, media=media, cache_salt=cache_key(req),
+                                           single_call=parallel is False)
                 head = {"id": f"chatcmpl-{choices[0].request}", "created": int(time.time()), "model": model}
                 for c in choices:
                     server.latency.row(kind='request', operation='template', phase='http',
@@ -3343,7 +3439,7 @@ class Server:
                         for c in choices:
                             message = {"role": "assistant", "content": c.text["content"] or None}
                             if c.streams["reasoning_content"].ids:
-                                message["reasoning_content"] = c.text["reasoning_content"]
+                                message["reasoning_content"] = message["reasoning"] = c.text["reasoning_content"]
                             calls = c.tool_calls_done()
                             if calls:
                                 message["tool_calls"] = calls
@@ -3404,13 +3500,17 @@ class Server:
                     options["logprobs"] = want_logprobs if want_logprobs is not None else 0
                 lp_want = want_logprobs if want_logprobs is not None else (0 if best_of else None)
                 choices, prompt_of = [], {}
-                for ids in prompts:
-                    group = self.choices_for(ids, count, max_tokens, temperature, options, stop, reasoning=False,
-                                             want_logprobs=lp_want, cache_salt=cache_key(req))
-                    for c in group:
-                        c.index = len(choices)
-                        prompt_of[c.request] = ids
-                        choices.append(c)
+                try:
+                    for ids in prompts:
+                        group = self.choices_for(ids, count, max_tokens, temperature, options, stop, reasoning=False,
+                                                 want_logprobs=lp_want, cache_salt=cache_key(req))
+                        for c in group:
+                            c.index = len(choices)
+                            prompt_of[c.request] = ids
+                            choices.append(c)
+                except BaseException:
+                    server.abandon([c.request for c in choices])    # the prompts before the one that failed
+                    raise
                 head = {"id": f"cmpl-{choices[0].request}", "created": int(time.time()), "model": model}
 
                 def legacy_logprobs(c, ids_prompt):
