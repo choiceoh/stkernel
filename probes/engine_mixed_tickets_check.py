@@ -148,11 +148,26 @@ def measure(args, report):
         ref_d, ref_p = (t.clone() for t in native())
         torch.cuda.synchronize()
         cell = dict(decode_rows=d, prefill_rows=p, source_sha256=frozen,
-            routing='actual profile L3 router on synthetic activations', samples=[])
+            routing='actual profile L3 router on synthetic activations', samples=[], native_samples=[])
+        def measure_native(sample):
+            # The adoption baseline is the actual homogeneous FFN, including
+            # routing/shared work and the same decode-output synchronization.
+            torch.cuda.synchronize(); wall = time.perf_counter()
+            actual_d = net._moe(3, x, reduce=lambda value: value)
+            torch.cuda.synchronize(); decoded = time.perf_counter()
+            actual_p = net._moe(3, pref, reduce=lambda value: value)
+            torch.cuda.synchronize(); completed = time.perf_counter()
+            cell['native_samples'].append(dict(sample=sample,
+                decode_ready_wall_ms=(decoded-wall)*1000,
+                prefill_complete_wall_ms=(completed-wall)*1000,
+                includes_first_use_compile=sample == 0,
+                errors=dict(decode=output_error(actual_d, ref_d), prefill=output_error(actual_p, ref_p))))
         # Every mixed sample prepares fresh routes and storage. Report all host
         # planning/admission and first-use compilation, never amortize them as
         # if dynamic arrivals reused a fixed input/route histogram.
         for sample in range(args.samples):
+            if sample % 2 == 0:
+                measure_native(sample)
             for quota in (0, 128) if sample % 2 == 0 else (128, 0):
                 baseline = 'packed_v1' if args.compare_preparation else 'legacy'
                 arms = ((baseline, 'packed_v2') if sample % 2 == 0 else ('packed_v2', baseline)) \
@@ -193,6 +208,8 @@ def measure(args, report):
                         decode_ready_wall_ms=(decoded-wall)*1000, prefill_complete_wall_ms=(completed-wall)*1000,
                         includes_first_use_compile=sample == 0))
                     del actual_d, actual_p, copy_d, copy_p
+            if sample % 2:
+                measure_native(sample)
             again_d, again_p = native()
             cell['native_repeat_error'] = dict(decode=output_error(again_d, ref_d), prefill=output_error(again_p, ref_p))
             del again_d, again_p
