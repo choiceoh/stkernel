@@ -28,6 +28,11 @@ def _router_gemm(X, W, Out, M, BM: tl.constexpr, BN: tl.constexpr, BK: tl.conste
     for block in range(4096//BK):
         k = block*BK + kk
         if PACKETS:
+            if HOIST_SCALES:
+                scale = tl.where(block < 2048//BK, scale0, scale1)
+            else:
+                scale = tl.load(Scales + rank*(PACKET_BYTES//4) + LOCAL_ROWS*1024
+                                + local_row*2 + block//(2048//BK), rows < M, other=0.)
             # Read aligned byte pairs. An 8-bit source load makes Triton choose
             # kWidth=4 for *both* BF16 dot operands, changing their accumulation
             # order. A 16-bit load retains the ordinary router's kWidth=2 while
@@ -40,22 +45,20 @@ def _router_gemm(X, W, Out, M, BM: tl.constexpr, BN: tl.constexpr, BK: tl.conste
                 words = tl.load(X.to(tl.pointer_type(tl.uint16))
                     + rank[:,None]*(PACKET_BYTES//2) + local_row[:,None]*2048 + word_k[None,:],
                     rows[:,None] < M, other=0)
-                bits = tl.join(words.to(tl.uint8), (words >> 8).to(tl.uint8)).reshape((BM,BK))
+                low = words.to(tl.uint8).to(tl.float8e4nv, bitcast=True).to(tl.float32)
+                high = (words >> 8).to(tl.uint8).to(tl.float8e4nv, bitcast=True).to(tl.float32)
+                # Join BF16 values, not bytes: a byte-valued join again selects
+                # kWidth=4. Both independent conversions retain unpack's RN.
+                a = tl.join((low*scale[:,None]).to(tl.bfloat16),
+                            (high*scale[:,None]).to(tl.bfloat16)).reshape((BM,BK))
             else:
                 offset = local_row[:,None]*4096 + k[None,:]
                 words = tl.load(X.to(tl.pointer_type(tl.uint16))
                                 + rank[:,None]*(PACKET_BYTES//2) + offset//2,
                                 rows[:,None] < M, other=0)
                 bits = ((words >> ((offset & 1)*8)) & 255).to(tl.uint8)
-            v = bits.to(tl.float8e4nv, bitcast=True).to(tl.float32)
-            # BK=64 stays inside a 2048-value transport block. Load one
-            # scale per row, rather than constructing a replicated MxK load.
-            if HOIST_SCALES:
-                scale = tl.where(block < 2048//BK, scale0, scale1)
-            else:
-                scale = tl.load(Scales + rank*(PACKET_BYTES//4) + LOCAL_ROWS*1024
-                                + local_row*2 + block//(2048//BK), rows < M, other=0.)
-            a = (v*scale[:,None]).to(tl.bfloat16)
+                v = bits.to(tl.float8e4nv, bitcast=True).to(tl.float32)
+                a = (v*scale[:,None]).to(tl.bfloat16)
         else:
             a = tl.load(X + rows[:,None]*4096 + k[None,:], mask=rows[:,None] < M, other=0.)
         b = tl.load(W + cols[None,:]*4096 + k[:,None], mask=cols[None,:] < 288, other=0.)
