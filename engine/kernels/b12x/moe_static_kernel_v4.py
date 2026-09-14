@@ -1688,6 +1688,7 @@ class MoEStaticKernelV4:
             if cutlass.const_expr(self.direct_scatter):
                 ep_identity = cute.make_identity_tensor((*self.epi_tile, 1))
                 ep_tRS_coords = thr_copy_r2s.partition_D(ep_identity)
+                ep_coords = ep_tRS_coords[None, None, None, 0]
             down_acc = cute.make_rmem_tensor(acc_shape, self.acc_dtype)
             tRS_rDown = tiled_copy_r2s.retile(down_acc)
             rD_shape = cute.shape(thr_copy_r2s.partition_S(sC))
@@ -2070,7 +2071,6 @@ class MoEStaticKernelV4:
                     # rows; retain their destination/weight for the sweep.
                     ep_bases = cute.make_rmem_tensor((2,), Int32)
                     ep_weights = cute.make_rmem_tensor((2,), cutlass.Float32)
-                    ep_coords = ep_tRS_coords[None, None, None, 0]
                     for row_slot in cutlass.range_constexpr(2):
                         ep_row = Int32(ep_coords[2 * self.scatter_row_pairs[row_slot]][0])
                         ep_bases[row_slot] = Int32(0)
@@ -2176,7 +2176,6 @@ class MoEStaticKernelV4:
                     acc_vec = acc_vec.to(cutlass.BFloat16)
                     tRS_rD_out.store(acc_vec)
                     if cutlass.const_expr(self.direct_scatter):
-                        ep_coords = ep_tRS_coords[None, None, None, 0]
                         for ep_pair in cutlass.range_constexpr(cute.size(tRS_rD_out) // 2):
                             ep_coord = ep_coords[2 * ep_pair]
                             ep_row = Int32(ep_coord[0])
