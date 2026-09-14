@@ -81,6 +81,13 @@ guards were untouched, and the maximum row-relative FP64-reference error was
 Reproduce with the pinned image, GPUs hidden and `TRITON_INTERPRET=1`, running
 `python probes/engine_decode_head_gate_cpu.py`.
 
+The final combined source oracle (`head-gate-oracle.json`) compares against
+`96af4dbbbbe6cade001477ae9f877152fd26e1ae` (#915/#916). Both switches are enabled,
+K=7 and 32K/128K C=1/C=4 are retained, memory-layout deltas are zero, and every
+total decode delta is `null` because changed components are unpriced.
+`head-gate-profile-template.json` remains unmeasured. The merged MoE updates do
+not change these compiled DSA sources; the existing CPU/compile proof is reused.
+
 The short GPU gate adds all 11 real FP32 head-gate weights, C=1–4, changed
 strided inputs, poisoned partial/output buffers, both replay orders, independent
 FP64 projection comparisons and 50 deterministic replays. It checks query/key
