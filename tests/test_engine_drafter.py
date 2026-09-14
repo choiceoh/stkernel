@@ -168,7 +168,16 @@ class DrafterTests(unittest.TestCase):
         temps = torch.tensor([0.8, 0.0, 0.5], device=dev)
         greedy = d.propose_rows(field, slots, anchors, ctx)
         uniforms = torch.rand(3, F.k, generator=torch.Generator(device=dev).manual_seed(9), device=dev)
-        drafts, cand, q = d.propose_rows(field, slots, anchors, ctx, temps=temps, uniforms=uniforms, vocab=21)
+        from unittest.mock import patch
+        empty = torch.empty
+        def poisoned_empty(*shape, **kwargs):
+            out = empty(*shape, **kwargs)
+            if tuple(out.shape) == (3, F.k, F.sel_top_k) and out.dtype == torch.float32:
+                out.fill_(float('nan'))
+            return out
+        with patch('torch.empty', poisoned_empty):
+            drafts, cand, q = d.propose_rows(field, slots, anchors, ctx, temps=temps, uniforms=uniforms, vocab=21)
+        self.assertTrue(torch.isfinite(q).all(), 'every probability cell is written before verification')
         # the candidates and their mass, not a row per position: the walk puts nothing outside them, so the
         # vocabulary-wide form was 21 (154,880 in production) numbers to carry sel_top_k of them
         self.assertEqual(tuple(cand.shape), (3, F.k, F.sel_top_k))

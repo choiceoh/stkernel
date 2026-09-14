@@ -1,0 +1,25 @@
+{
+  "base_commit": "7604f2c52a9c6b0b230f3bdf9a8ba4818cafb779",
+  "image": "sha256:f85de49afc0a41596cce3df2dab11af992a9aa5d21129c0f50ba719c30f68781",
+  "gpu_used": false,
+  "source_sha256": {
+    "engine/kernels/decode_inputs.py": "0664f874be24fea86e0e030003452a04965dffea93f7c9c016202a1cee008284",
+    "engine/modules/draft_inputs.py": "eb54faa77d5dc5e2ebea6c34a232140c04f06b9e90620af7313d6d6fddeb6d77",
+    "engine/base/draws.py": "03740be5018fb6a670c47c7685c0fac45711af0df03b4fc8febd20d452492f69",
+    "engine/profiles/glm53/drafter.py": "9e1aab928ef758d6d2b20bdc97fa9cc1ab19dd1ff0b5b55dd37bd65749381a08",
+    "tests/test_engine_decode_inputs.py": "a12707b2803f99fd17be49e867d4f398024720c0fb6bd8b66c91ea0196fa3194",
+    "tests/test_engine_drafter.py": "e0872096c81a24661d5970f7f7e7ab06a1c035ab4dccdc7f59e3f1c7ea95d773",
+    "probes/engine_decode_inputs_check.py": "c9875a76ae489ad67d3a50dd1101b7a63160186d18ddca5c152a6ba09606fe26",
+    "probes/engine_decode_inputs_ops.py": "7e52251582a4ce8a01bfe70b0d783c185114b48227570ca8eb951b8bdec86369"
+  },
+  "cpu_tests": {
+    "run": 48,
+    "passed": 39,
+    "gpu_skips": 9
+  },
+  "interpreter_exact_cases": 43,
+  "native_compile_cases": 11,
+  "step_per_second": null,
+  "acceptance": null,
+  "quality": null
+}

@@ -2705,3 +2705,15 @@ CPU 37개 중 24통과·GPU 전용 13skip, 실제 Triton CPU 인터프리터 비
 SM121 네이티브 컴파일 6개 통과다. GPU 큐·부팅·실행은 없으며 step/s·수용률·품질과
 그래프 풀의 실제 메모리 감소는 미측정이다.
 [소스 해시·정확한 범위·재현 기록](measurements/st_decode_buffers_20260914/README.md).
+
+### ST draft 입력·난수 준비 통합 — CPU/컴파일 검증 (2026-09-14)
+
+anchor/mask 토큰·위치를 한 커널로 만들고, keyed SplitMix64 step draws도 기존 키·목적·
+FP64→FP32 반올림을 유지한 한 커널로 통합했다. sampled walk가 모두 덮어쓰는 확률
+버퍼의 선행 zero-fill도 제거했다. 셋 모두 CUDA 기본 경로에 적용한다.
+
+C1/C4 K7의 CPU 레퍼런스에서 결과 저장소를 만드는 텐서 연산은 입력 준비 4개,
+난수 블록 53개였으며 후보는 각 1개 CUDA 커널이다. GPU 호출 수나 속도 실측은 아니다.
+CPU 48개 중 39통과·GPU 9skip, 실제 커널 인터프리터 43개 exact, SM121 컴파일
+11개가 통과했다. GPU 큐·부팅·실행은 없고 실제 step/s·수용률·품질은 미측정이다.
+[소스 해시·비트 일치·경로별 작업량·재현 기록](measurements/st_decode_inputs_20260914/README.md).
