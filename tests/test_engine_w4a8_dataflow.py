@@ -11,7 +11,7 @@ from engine.base.comm import Comm
 from engine.kernels.dense import DenseLinear, W4Pack, _tile_pack
 from engine.kernels.dense.packing import _mk_quant_x_ref, mk_w4_dequant
 from engine.modules.speculative_tree import Tree
-from engine.modules.w4a8_dataflow import W4A8Plan, W4A8Weights, PersistentW4A8, reference
+from engine.modules.w4a8_dataflow import W4A8Plan, W4A8PipelinePlan, W4A8Weights, PersistentW4A8, reference, pipeline_reference
 from engine.profiles.glm53.caches import Glm53Caches, layout
 from engine.profiles.glm53.lanes import reference as lanes_reference, swiglu_clamped
 from engine.profiles.glm53.net import Glm53Net
@@ -92,12 +92,22 @@ class W4A8DataflowTests(unittest.TestCase):
             g, u = linear_ref(x, w.gate_up).chunk(2, -1)
             expected = linear_ref(swiglu_clamped(g, u, 10.), w.down)
             plan = W4A8Plan(rows, w.hidden, w.intermediate)
+            staged = pipeline_reference(W4A8PipelinePlan(rows, w.hidden, w.intermediate), x, w, 10.)
             for seed in (0, 8):
                 actual, order = reference(plan, x, w, 10., seed=seed)
                 torch.testing.assert_close(actual, expected, rtol=.008, atol=2e-5)
+                torch.testing.assert_close(staged, actual, rtol=0, atol=0)
                 self.assertEqual(sorted(order), list(range(len(plan.tasks))))
         for got, old in zip((t for p in (w.gate_up, w.down) for t in (p.data, p.scale, p.rowscale)), before):
             self.assertTrue(torch.equal(got, old))
+
+    def test_pipeline_admission_fits_without_the_queued_partial_plane(self):
+        queued, staged = W4A8Plan(16, 4096, 3072), W4A8PipelinePlan(16, 4096, 3072)
+        self.assertEqual(staged.scratch_bytes, 181760)
+        self.assertEqual(queued.scratch_bytes-staged.scratch_bytes, 6291456+240)
+        W4A8PipelinePlan(16, 4096, 3072, max_scratch_bytes=256 << 10)
+        with self.assertRaisesRegex(ValueError, "scratch"):
+            W4A8Plan(16, 4096, 3072, max_scratch_bytes=256 << 10)
 
     def test_borrow_existing_packs_and_refuse_incompatible_lane_or_observer(self):
         net, _ = w4a8_model()

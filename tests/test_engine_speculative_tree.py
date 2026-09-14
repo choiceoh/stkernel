@@ -4,7 +4,7 @@ import unittest
 import torch
 
 from engine.modules.speculative_tree import Candidate, RouteTable, Tree, dflash_candidates, select
-from engine.modules.tree_kda import conv, verify
+from engine.modules.tree_kda import Topology, conv, verify
 from engine.modules.linear_attention import gated_delta_rule, kda_gate
 from engine.modules.causal_conv import causal_conv1d
 
@@ -70,12 +70,34 @@ class TreePlanTests(unittest.TestCase):
         succ = -pred
         rows = dflash_candidates(1, unary, tokens, torch.ones(2, 1), pred, succ, (1., 1.), width=2)
         self.assertEqual(len(rows), 7)
-        self.assertEqual([c.parent for c in rows], [-1, 0, 0, 1, 1, 2, 2])
-        for parent, start in ((1, 3), (2, 5)):
-            probability = torch.softmax(-torch.tensor([4., 5.]) * rows[parent].token, 0)
-            self.assertAlmostEqual(rows[start].probability, float(probability[0]))
+        for i, candidate in enumerate(rows[1:], 1):
+            self.assertLess(candidate.parent, i)
+            support = [2, 3] if candidate.parent == 0 else [4, 5]
+            probability = torch.softmax(-torch.tensor(support).float() * rows[candidate.parent].token, 0)
+            self.assertAlmostEqual(candidate.probability, float(probability[support.index(candidate.token)]))
         narrow = dflash_candidates(1, unary, tokens, torch.ones(2, 1), pred, succ, (1., 1.), width=1)
         self.assertLess(narrow[1].probability, 1.)
+
+    def test_peaked_seven_step_draft_keeps_deep_path_with_same_node_budget(self):
+        tokens = torch.arange(2, 16).view(7, 2)
+        unary = torch.tensor([[5., 0.]]).expand(7, 2)
+        codes = torch.zeros(16, 1)
+        cs = dflash_candidates(1, unary, tokens, torch.zeros(7, 1), codes, codes, (1.,)*7,
+                               width=2, max_nodes=8)
+        tree = Tree(tuple(c.token for c in cs), tuple(c.parent for c in cs))
+        self.assertEqual(tree.tokens, (1, 2, 4, 6, 8, 10, 12, 14))
+        self.assertEqual(tree.depths, tuple(range(8)))
+        self.assertEqual(tree.greedy((2, 4, 6, 8, 10, 12, 14, 99), budget=8)[0],
+                         (2, 4, 6, 8, 10, 12, 14, 99))
+
+    def test_compact_edges_preserve_ties_and_reject_duplicate_support(self):
+        codes = torch.zeros(8, 1)
+        args = (1, torch.zeros(2, 3), torch.tensor([[2, 3, 4], [5, 6, 7]]), torch.zeros(2, 1), codes, codes, (1., 1.))
+        cs = dflash_candidates(*args, width=2, max_nodes=5)
+        self.assertEqual([(c.token, c.parent) for c in cs], [(1, -1), (2, 0), (3, 0), (5, 1), (6, 1)])
+        args[2][0, 1] = 2
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            dflash_candidates(*args)
 
 
 class TreeStateTests(unittest.TestCase):
@@ -119,6 +141,15 @@ class TreeStateTests(unittest.TestCase):
         for node in range(6):
             expected, _ = causal_conv1d(raw[list(self.tree.path(node))], weight, initial_state=history, activation="silu")
             torch.testing.assert_close(out[node], expected[-1], atol=0, rtol=0)
+
+    def test_dfs_carries_chains_and_conv_uses_only_last_taps(self):
+        self.assertEqual(self.tree.preorder, (0, 1, 3, 2, 4, 5))
+        self.assertEqual(self.tree.state_updates, {"reconstruct": 15, "carry": 7})
+        chain = Tree(tuple(range(8)), (-1, 0, 1, 2, 3, 4, 5, 6))
+        self.assertEqual(chain.state_updates, {"reconstruct": 36, "carry": 8})
+        topology = Topology(self.tree, "cpu")
+        self.assertEqual(topology.conv.tolist(), [[-3, -2, -1, 0], [-2, -1, 0, 1], [-2, -1, 0, 2],
+                                                [-1, 0, 1, 3], [-1, 0, 2, 4], [0, 2, 4, 5]])
 
     def test_reject_fp16_state(self):
         q = torch.zeros(6, 2, 8)

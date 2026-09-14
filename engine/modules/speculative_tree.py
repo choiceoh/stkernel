@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from collections import Counter, OrderedDict
 from dataclasses import dataclass
+import heapq
+import struct
 import math
 
 
@@ -42,6 +44,27 @@ class Tree:
     @property
     def depths(self):
         return tuple(len(self.path(i)) - 1 for i in range(len(self.tokens)))
+
+    @property
+    def preorder(self):
+        children = [[] for _ in self.tokens]
+        for node, parent in enumerate(self.parents[1:], 1):
+            children[parent].append(node)
+        order, pending = [], [0]
+        while pending:
+            node = pending.pop()
+            order.append(node)
+            pending.extend(reversed(children[node]))
+        return tuple(order)
+
+    @property
+    def state_updates(self):
+        """Full-state passes: root reconstruction versus carrying DFS state."""
+        previous, carry = -1, 0
+        for node in self.preorder:
+            carry += 1 + (self.depths[node] if self.parents[node] != previous else 0)
+            previous = node
+        return dict(reconstruct=sum(d+1 for d in self.depths), carry=carry)
 
     def greedy(self, target_tokens, *, budget: int, eos: frozenset[int] = frozenset()):
         """Emit target tokens; return the input-node path whose states to commit.
@@ -192,33 +215,57 @@ def dflash_candidates(anchor, unary, tokens, projection, predecessor, successor,
             or type(max_nodes) is not int or not 1 <= max_nodes <= 64
             or type(anchor) is not int or anchor < 0 or anchor >= len(predecessor)):
         raise ValueError("invalid DFlash tree candidate geometry")
-    if (tokens.dtype != torch.int64 or not torch.isfinite(unary).all() or not torch.isfinite(projection).all()
-            or any(not math.isfinite(a) for a in alpha) or predecessor.ndim != 2 or successor.shape != predecessor.shape
-            or projection.shape[1] != predecessor.shape[1] or torch.any((tokens < 0) | (tokens >= len(predecessor)))):
+    if (tokens.dtype != torch.int64 or any(not math.isfinite(a) for a in alpha)
+            or predecessor.ndim != 2 or successor.shape != predecessor.shape
+            or projection.shape[1] != predecessor.shape[1]
+            or any(t.device != unary.device for t in (tokens, projection, predecessor, successor))):
+        raise ValueError("candidate IDs must be int64 and selector scores finite")
+    # One validation synchronization before indexing the codebooks.
+    if not (torch.isfinite(unary).all() & torch.isfinite(projection).all()
+            & ((tokens >= 0) & (tokens < len(predecessor))).all()):
         raise ValueError("candidate IDs must be int64 and selector scores finite")
     # Construct all predecessor/candidate edges once, rather than per tree node.
     prev = torch.cat([torch.full_like(tokens[:1], anchor), tokens[:-1]], 0)
     edge = torch.einsum("kpr,kcr->kpc", predecessor[prev].float() * projection[:, None, :].float(),
                         successor[tokens].float())
     scale = torch.tensor(alpha, device=unary.device).view(-1, 1, 1)
-    probs = torch.softmax(unary[:, None, :].float() + edge * scale, -1).cpu()
-    ids = tokens.cpu().tolist()
-    if not torch.isfinite(probs).all() or any(len(set(row)) != len(row) for row in ids):
+    probs = torch.softmax(unary[:, None, :].float() + edge * scale, -1)
+    # Nonnegative FP32 bit patterns have the same order as their values.
+    # An integer secondary key preserves smaller-column tie breaking while
+    # topk avoids sorting the entire support. No probability bits are lost.
+    tie = probs.shape[-1]-1-torch.arange(probs.shape[-1], device=probs.device)
+    order_key = (probs.view(torch.int32).long() << 32) + tie
+    columns = order_key.topk(width, dim=-1, sorted=True).indices
+    values = probs.gather(-1, columns).contiguous()
+    ids = tokens[:, None, :].expand_as(probs).gather(-1, columns)
+    sorted_ids = tokens.sort(-1).values
+    valid = torch.isfinite(probs).all() & (sorted_ids[:, 1:] != sorted_ids[:, :-1]).all()
+    # Ship only retained edges, with exact FP32 probability bits and integer
+    # token/parent columns, in one bounded transfer instead of the full S*S
+    # matrix. The denominator still covers the complete candidate support.
+    packed = torch.stack((columns, ids, values.view(torch.int32).long()), -1)
+    payload = torch.cat((packed.flatten(), valid.long().reshape(1))).cpu()
+    if not payload[-1]:
         raise ValueError("invalid or duplicate selector candidate support")
+    edges = payload[:-1].view(*packed.shape).tolist()
     root_routes = predictor.predict(anchor, anchor, 0, runtime_id=runtime_id) if predictor else frozenset()
     out = [Candidate(anchor, -1, 1., root_routes)]
-    frontier = [(0, 0)]
-    for depth in range(len(ids)):
-        next_frontier = []
-        for parent, previous_column in frontier:
-            row = probs[depth, previous_column]
-            for column in sorted(range(len(row)), key=lambda j: (-float(row[j]), j))[:width]:
-                if len(out) == max_nodes:
-                    return tuple(out)
-                token = ids[depth][column]
-                routes = (predictor.predict(out[parent].token, token, depth + 1, runtime_id=runtime_id)
-                          if predictor else frozenset())
-                next_frontier.append((len(out), column))
-                out.append(Candidate(token, parent, float(row[column]), routes))
-        frontier = next_frontier
+    # Expand highest path mass first. Breadth-first truncation at 31 nodes
+    # stopped every branch at depth four even when all seven greedy drafts
+    # had near-unit probability. Node IDs remain topologically ordered.
+    frontier = []
+    def expand(parent, previous_column, depth, mass):
+        if depth == len(edges):
+            return
+        for column, token, bits in edges[depth][previous_column]:
+            probability = struct.unpack("f", struct.pack("i", bits))[0]
+            heapq.heappush(frontier, (-mass*probability, depth, parent, column, token, probability))
+    expand(0, 0, 0, 1.)
+    while frontier and len(out) < max_nodes:
+        negative_mass, depth, parent, column, token, probability = heapq.heappop(frontier)
+        routes = (predictor.predict(out[parent].token, token, depth+1, runtime_id=runtime_id)
+                  if predictor else frozenset())
+        node = len(out)
+        out.append(Candidate(token, parent, probability, routes))
+        expand(node, column, depth+1, -negative_mass)
     return tuple(out)

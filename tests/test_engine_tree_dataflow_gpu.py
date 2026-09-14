@@ -9,6 +9,61 @@ from engine.modules.tree_kda import verify
 
 @unittest.skipUnless(torch.cuda.is_available(), "requires an explicitly available CUDA device")
 class NativeTreeDataflowTests(unittest.TestCase):
+    def test_w4a8_pipeline_replays_with_new_inputs_and_matches_queued(self):
+        if torch.cuda.get_device_capability() != (12, 1):
+            self.skipTest("W4A8 pipeline is an SM121-only experiment")
+        from dataclasses import replace
+        from engine.kernels.tile_dataflow import execute_w4a8
+        from engine.kernels.w4a8_pipeline import execute, Workspace
+        from engine.modules.w4a8_dataflow import W4A8Plan, W4A8PipelinePlan, W4A8Weights
+        from tests.test_engine_w4a8_dataflow import packed_weights
+        w = packed_weights()
+        def move(p):
+            return replace(p, data=p.data.cuda(), scale=p.scale.cuda(), rowscale=p.rowscale.cuda())
+        weights = W4A8Weights(move(w.gate_up), move(w.down))
+        for rows in (1, 4, 16, 32):
+            plan = W4A8PipelinePlan(rows, w.hidden, w.intermediate)
+            workspace = Workspace((plan,), torch.device("cuda:0"))
+            x = torch.randn(rows, w.hidden, device="cuda").bfloat16()
+            stream = torch.cuda.Stream()
+            stream.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(stream):
+                for _ in range(3):
+                    execute(plan, x, weights, 10., workspace)
+            torch.cuda.current_stream().wait_stream(stream)
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph, stream=stream):
+                out = execute(plan, x, weights, 10., workspace)
+            address = out.data_ptr()
+            for _ in range(3):
+                x.normal_()
+                expected, error = execute_w4a8(W4A8Plan(rows, w.hidden, w.intermediate), x, weights, 10.)
+                self.assertEqual(error, 0)
+                graph.replay()
+                self.assertEqual(out.data_ptr(), address)
+                torch.testing.assert_close(out, expected, atol=0, rtol=0)
+
+    def test_native_tree_conv_and_carry_equal_reconstruction(self):
+        from engine.kernels.kda.tree import verify as native, conv as native_conv
+        from engine.modules.tree_kda import Topology, conv
+        tree = Tree(tuple(range(8)), (-1, 0, 0, 1, 3, 2, 5, 6))
+        topology = Topology(tree, torch.device("cuda:0"))
+        torch.manual_seed(189)
+        for dtype in (torch.bfloat16, torch.float32):
+            raw = torch.randn(8, 193).bfloat16()
+            weight, history = torch.randn(193, 4).to(dtype), torch.randn(193, 3).bfloat16()
+            actual = native_conv(raw.cuda(), weight.cuda(), history.cuda(), topology)
+            torch.testing.assert_close(actual.cpu(), conv(tree, raw, weight, history), atol=.015, rtol=.008)
+        args = [torch.randn(8, 2, 128, device="cuda").bfloat16() for _ in range(4)]
+        args += [torch.randn(8, 2, device="cuda"), torch.randn(2, device="cuda"),
+                 torch.randn(256, device="cuda"), torch.randn(2, 128, 128, device="cuda")]
+        expected, old = native(tree, *args, -5., topology=topology, carry=False)
+        actual, new = native(tree, *args, -5., topology=topology, carry=True)
+        torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+        torch.testing.assert_close(new.update, old.update, atol=0, rtol=0)
+        for node in range(8):
+            torch.testing.assert_close(new.state(node), old.state(node), atol=0, rtol=0)
+
     def test_w4a8_workers_preserve_existing_dense_lane(self):
         if torch.cuda.get_device_capability() != (12, 1):
             self.skipTest("persistent dataflow is an SM121-only experiment")

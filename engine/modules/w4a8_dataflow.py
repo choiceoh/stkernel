@@ -29,6 +29,13 @@ class W4A8Plan(MLPPlan):
                 + (4+self.producers+self.outputs)*4 + self.rows*self.hidden*2)
 
 
+class W4A8PipelinePlan(W4A8Plan):
+    """Same quantization geometry, without the queued executor's partials."""
+    @property
+    def scratch_bytes(self):
+        return self.rows*(self.intermediate + self.producers*4 + self.hidden*2)
+
+
 @dataclass(frozen=True)
 class W4A8Weights:
     gate_up: W4Pack
@@ -117,6 +124,30 @@ def reference(plan, x, weights, limit, *, seed=0):
     return out, tuple(trace)
 
 
+def pipeline_reference(plan, x, weights, limit):
+    """Sequential CPU twin without a stored [producer,row,hidden] partial plane."""
+    from engine.kernels.dense.packing import _mk_quant_x_ref, mk_w4_dequant
+    from engine.profiles.glm53.lanes import swiglu_clamped
+    weights.validate_input(plan, x)
+    if x.device.type != "cpu":
+        raise ValueError("the W4A8 pipeline oracle is CPU-only")
+    g, d = (mk_w4_dequant(p.data, p.scale, p.rows, rgs=p.rowscale) for p in (weights.gate_up, weights.down))
+    xq = _mk_quant_x_ref(x)
+    act = torch.empty((plan.rows, plan.intermediate), dtype=torch.float32)
+    for group in range(plan.producers):
+        lo, hi = group*128, (group+1)*128
+        gate = (xq @ g[lo:hi].T).bfloat16()
+        up = (xq @ g[plan.intermediate+lo:plan.intermediate+hi].T).bfloat16()
+        act[:, lo:hi] = _mk_quant_x_ref(swiglu_clamped(gate, up, limit))
+    out = torch.empty_like(x)
+    for column in range(plan.outputs):
+        acc = torch.zeros((plan.rows, 128), dtype=torch.float32)
+        for group in range(plan.producers):
+            acc += act[:, group*128:(group+1)*128] @ d[column*128:(column+1)*128, group*128:(group+1)*128].T
+        out[:, column*128:(column+1)*128] = acc.bfloat16()
+    return out
+
+
 class PersistentW4A8:
     """Explicit packed dense binding for Verification/decode_once."""
     def __init__(self, *, backend="cuda", workers=48, max_scratch_bytes=64 << 20):
@@ -124,6 +155,7 @@ class PersistentW4A8:
             raise ValueError("choose the explicit CUDA W4A8 executor or CPU oracle")
         self.backend, self.workers, self.max_scratch_bytes = backend, workers, max_scratch_bytes
         self.plans, self.weights, self.executed = {}, {}, set()
+        self.workspace = None
 
     def validate(self, net, rows):
         plans, weights = {}, {}
@@ -133,11 +165,17 @@ class PersistentW4A8:
             w = W4A8Weights.from_net(net, layer)
             if w.gate_up.data.is_cuda != (self.backend == "cuda"):
                 raise ValueError("W4A8 dataflow backend does not match the existing packs")
-            plans[layer] = W4A8Plan(rows, w.hidden, w.intermediate, workers=self.workers,
+            plans[layer] = W4A8PipelinePlan(rows, w.hidden, w.intermediate, workers=self.workers,
                                     max_scratch_bytes=self.max_scratch_bytes)
             weights[layer] = w
         if not plans:
             raise ValueError("W4A8 dataflow needs at least one prepared dense layer")
+        if self.backend == "cuda":
+            from engine.kernels.w4a8_pipeline import Workspace
+            shapes = frozenset((p.rows, p.hidden, p.intermediate) for p in plans.values())
+            device = next(iter(weights.values())).gate_up.data.device
+            if self.workspace is None or self.workspace.shapes != shapes or self.workspace.device != device:
+                self.workspace = Workspace(tuple(plans.values()), device)
         self.plans, self.weights = plans, weights
 
     def __call__(self, net, layer, x):
@@ -148,13 +186,10 @@ class PersistentW4A8:
         if current.gate_up is not weights.gate_up or current.down is not weights.down:
             raise RuntimeError("W4A8 pack owner changed after binding")
         if self.backend == "reference":
-            out, _ = reference(plan, x.contiguous(), weights, net.F.swiglu_limit)
+            out = pipeline_reference(plan, x.contiguous(), weights, net.F.swiglu_limit)
         else:
-            from engine.kernels.tile_dataflow import execute_w4a8
-            out, error = execute_w4a8(plan, x.contiguous(), weights, net.F.swiglu_limit)
-            errors = net.comm.gather_objects(error)
-            if any(errors):
-                raise RuntimeError(f"persistent W4A8 worker failure on ranks: {errors}")
+            from engine.kernels.w4a8_pipeline import execute
+            out = execute(plan, x.contiguous(), weights, net.F.swiglu_limit, self.workspace)
         self.executed.add(layer)
         for name in ("gate_up", "down"):
             net.dense[f"L{layer}.mlp.{name}"].executed |= 1

@@ -12,6 +12,10 @@ import triton
 import triton.language as tl
 
 from engine.kernels.tile_dataflow import _scale, _weight, _w4a8_weight, _w4a8_scaled_input
+from engine.kernels.kda.tree import _conv_sum
+from engine.modules.tree_kda import Topology
+from engine.modules.speculative_tree import Tree
+from engine.modules.causal_conv import causal_conv1d
 from engine.modules.expert_layout import row_major_expert, W13_K_IN_BYTES, W2_K_IN_BYTES
 from tests.test_engine_nvfp4_dataflow import packed_weights
 from tests.test_engine_w4a8_dataflow import pack
@@ -36,6 +40,14 @@ def _w4a8_addresses(W, S, O, N: tl.constexpr, K: tl.constexpr, B: tl.constexpr):
 
 
 @triton.jit
+def _conv_accumulate(X, W, HISTORY, PATH, OUT, C: tl.constexpr, TAPS: tl.constexpr, B: tl.constexpr):
+    node, block = tl.program_id(0), tl.program_id(1)
+    c = block*B+tl.arange(0, B)
+    acc = _conv_sum(X, W, HISTORY, PATH, node, c, C, TAPS)
+    tl.store(OUT+node*C+c, acc, c < C)
+
+
+@triton.jit
 def _w4a8_activation(X, O, OS, M: tl.constexpr, K: tl.constexpr):
     r = tl.arange(0, 32)
     c = tl.program_id(0)*128 + tl.arange(0, 128)
@@ -48,6 +60,18 @@ def _w4a8_activation(X, O, OS, M: tl.constexpr, K: tl.constexpr):
 def main(output):
     torch.set_num_threads(1)
     records = []
+    torch.manual_seed(742)
+    tree = Tree(tuple(range(8)), (-1, 0, 0, 1, 3, 2, 5, 6))
+    for dtype in (torch.bfloat16, torch.float32):
+        topology = Topology(tree, "cpu")
+        raw, weight, history = torch.randn(8, 193).bfloat16(), torch.randn(193, 4).to(dtype), torch.randn(193, 3).bfloat16()
+        out = torch.empty(8, 193)
+        _conv_accumulate[(8, 1)](raw, weight, history, topology.conv, out, 193, 4, 256)
+        expected = torch.stack([causal_conv1d(raw[list(tree.path(node))].float(), weight,
+            initial_state=history, activation=None)[0][-1] for node in range(8)])
+        assert torch.equal(out, expected), "tree convolution ancestry or FP32 accumulation changed"
+        records.append(dict(plane="tree-conv-accumulate", weight_dtype=str(dtype), nodes=8, channels=193, exact=True,
+                            activation="libdevice exp requires native device execution; not interpreted"))
     for tiled, sf6 in ((False, False), (True, False), (True, True)):
         weights = packed_weights(tiled=tiled, sf6=sf6)
         for second in (False, True):
