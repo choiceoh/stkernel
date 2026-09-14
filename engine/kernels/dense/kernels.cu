@@ -1643,14 +1643,13 @@ __device__ __forceinline__ void mk_register_mma(
 }
 
 template <int TILES, int SLICES, int KBLKS, bool DIRECT=false>
-__global__ void __launch_bounds__(TILES*SLICES*32,3)
-mk_gemm_register_kernel(MKGemm2Ctx c) {
+__device__ __forceinline__ void mk_gemm_register_body(MKGemm2Ctx c, int block) {
   static_assert((SLICES==3 && (KBLKS==12 || KBLKS==16 || KBLKS==24 || KBLKS==32)) ||
                 (SLICES==2 && KBLKS==32) || (TILES==1 && SLICES==8 && KBLKS==32));
   asm volatile("griddepcontrol.launch_dependents;");
   __shared__ float partial[TILES*SLICES*8*16];
   const int lane=threadIdx.x&31,warp=threadIdx.x>>5,g=lane>>2,q=lane&3;
-  const int nt=blockIdx.x*TILES+warp/SLICES,slice=warp%SLICES;
+  const int nt=block*TILES+warp/SLICES,slice=warp%SLICES;
   const int first=KBLKS*slice/SLICES,end=KBLKS*(slice+1)/SLICES;
   // Weights are immutable; activations and the TX descriptor are not.
   MKRegisterW4 current=mk_load_register_w4<KBLKS>(c,nt,first);
@@ -1672,7 +1671,7 @@ mk_gemm_register_kernel(MKGemm2Ctx c) {
   __syncthreads();
   for(int t=threadIdx.x;t<TILES*8*16;t+=TILES*SLICES*32) {
     const int tile=t/128,local=t%128,row=local/16;
-    const int col=(blockIdx.x*TILES+tile)*16+local%16;
+    const int col=(block*TILES+tile)*16+local%16;
     float value=0.f;
 #pragma unroll
     for(int s=0;s<SLICES;++s)value+=partial[(tile*SLICES+s)*128+local];
@@ -1680,6 +1679,28 @@ mk_gemm_register_kernel(MKGemm2Ctx c) {
     c.out[(size_t)row*c.n_orig+col]=__float2bfloat16(value);
   }
   if constexpr (DIRECT) __threadfence_system();
+}
+
+template <int TILES, int SLICES, int KBLKS, bool DIRECT=false>
+__global__ void __launch_bounds__(TILES*SLICES*32,3)
+mk_gemm_register_kernel(MKGemm2Ctx c) {
+  mk_gemm_register_body<TILES,SLICES,KBLKS,DIRECT>(c,blockIdx.x);
+}
+
+// The two queries already share their FP8 input. Their reductions are now
+// entirely CTA-local, so they can share a grid as well: no serialization on
+// global partial/counter storage and one producer launch for both outputs.
+struct MKQueryRegisterCtx { MKGemm2Ctx readers[2]; };
+__global__ void __launch_bounds__(192,3)
+mk_query_register_kernel(MKQueryRegisterCtx pair) {
+  const auto& first=pair.readers[0];
+  const auto& second=pair.readers[1];
+  const int first_blocks=first.n_orig/32;
+  int block=blockIdx.x;
+  if(block<first_blocks)
+    mk_gemm_register_body<2,3,12>(first,block);
+  else
+    mk_gemm_register_body<2,3,12>(second,block-first_blocks);
 }
 
 // ===========================================================================
@@ -3580,6 +3601,23 @@ void mk_run_query_pair(torch::Tensor x, std::vector<torch::Tensor> weights,
     mk_launch(mk_input_pack_kernel, 12, 0, stream, input);
   else
     mk_launch(mk_wide_input_pack_kernel, 12 * ((x.size(0) + 7) / 8), 0, stream, input);
+  if (local_query && register_weights) {
+    set_kernel_attrs();
+    MKQueryRegisterCtx pair{};
+    for(int i=0;i<2;++i) {
+      auto& c=pair.readers[i];
+      c.wq4=weights[i].data_ptr<uint8_t>();
+      c.ws4=(const int8_t*)scales[i].data_ptr();
+      c.rgs=rowscales[i].data_ptr<float>();
+      c.out=(__nv_bfloat16*)outputs[i].data_ptr();
+      c.input_q=q; c.input_s=s; c.wgs=1.f;
+      c.m=8; c.k=1536; c.n=c.n_orig=outputs[i].size(1); c.ksr=3;
+      TORCH_CHECK(mk_choose_ksr2(8,c.n,1536,false)==3,
+                  "joined query requires each owner's original three K slices");
+    }
+    mk_launch<192>(mk_query_register_kernel,(pair.readers[0].n+pair.readers[1].n)/32,0,stream,pair);
+    return;
+  }
   // Serial on the existing compute stream: each GEMM rearms its original
   // partial/counter storage before the next. No new persistent scratch.
   for (int i = 0; i < 2; ++i)

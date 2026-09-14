@@ -83,10 +83,14 @@ def check(report, ranks=None, *, timing=True):
             finally:
                 for graph in graphs:
                     graph.reset()
-    packs = [owner.packs[0] for owner in owners[5:]]
-    for m in (8, 32, 8):
+    original = [owner.packs[0] for owner in owners[5:]]
+    from types import SimpleNamespace
+    doubled = [SimpleNamespace(data=p.data.repeat(2, 1, 1, 1), scale=p.scale.repeat(2, 1, 1, 1),
+                               rowscale=p.rowscale.repeat(2), rows=8192) for p in original]
+    for m, sizes in ((8, (1, 1)), (32, (1, 1)), (8, (1, 2)), (8, (2, 1)), (8, (2, 2)), (8, (1, 1))):
+        packs = [(original if size == 1 else doubled)[i] for i, size in enumerate(sizes)]
         x = torch.randn(m, 1544, device='cuda', dtype=torch.bfloat16)[:, 4:1540]
-        outputs = [[torch.empty(m, 4096, device='cuda', dtype=torch.bfloat16) for _ in packs] for _ in (0, 1)]
+        outputs = [[torch.empty(m, p.rows, device='cuda', dtype=torch.bfloat16) for p in packs] for _ in (0, 1)]
         graphs = []
         try:
             for register in (False, True):
@@ -104,9 +108,9 @@ def check(report, ranks=None, *, timing=True):
                     for a, b in zip(outputs[1], outputs[0]):
                         assert a.isfinite().all().item()
                         torch.testing.assert_close(a, b, rtol=0, atol=0)
-            report('register_queries_exact', rows=m, k=1536, replay_orders='BA/AB',
+            report('register_queries_exact', rows=m, n=[p.rows for p in packs], k=1536, replay_orders='BA/AB',
                    control='main CTA-local reduction, same build and packs')
-            if timing:
+            if timing and sizes == (1, 1):
                 timings(report, 'register_w4_queries', m, graphs, queries=2)
         finally:
             for graph in graphs:

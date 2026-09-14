@@ -4,7 +4,7 @@
     "build/glm53/glm53_megakernel.cu": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
     "build/glm53/glm53_megakernel.py": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e"
   },
-  "cuda_changes": "Adopted fixed dispatch; native strided inputs including input-reuse packing, observer-visible shared activation, and seven-row reuse with unchanged per-shape K-slice arithmetic. Optional caller-owned W4 partial sums and arrival counters isolate early DFlash2 context preparation; arithmetic and default scratch ownership remain unchanged. Optional direct rank-packet MHC consumer preserves canonical FP32 sum and BF16 input rounding. Optional direct TX-slot output resolves its address after the producer dependency and system-fences every final writer; W4/input-reuse arithmetic is unchanged. Qualified wide-row input reuse packs each activation once without changing the ordinary MMA/reduction; the packed-input specialization remains separate from direct TX-slot production. K=7 C1 output and paired-query projections keep their original K slices inside one CTA, eliminating global partial/counter traffic; K=1536/2048/3072 specializations retain the original accumulation and rounding order. Bound K7 C1 projections load W4 vectors and scales into registers, prefetching the next K block while preserving every MMA and split reduction; static shared memory holds only the partial sums.",
+  "cuda_changes": "Adopted fixed dispatch; native strided inputs including input-reuse packing, observer-visible shared activation, and seven-row reuse with unchanged per-shape K-slice arithmetic. Optional caller-owned W4 partial sums and arrival counters isolate early DFlash2 context preparation; arithmetic and default scratch ownership remain unchanged. Optional direct rank-packet MHC consumer preserves canonical FP32 sum and BF16 input rounding. Optional direct TX-slot output resolves its address after the producer dependency and system-fences every final writer; W4/input-reuse arithmetic is unchanged. Qualified wide-row input reuse packs each activation once without changing the ordinary MMA/reduction; the packed-input specialization remains separate from direct TX-slot production. K=7 C1 output and paired-query projections keep their original K slices inside one CTA, eliminating global partial/counter traffic; K=1536/2048/3072 specializations retain the original accumulation and rounding order. Bound K7 C1 projections load W4 vectors and scales into registers, prefetching the next K block while preserving every MMA and split reduction; static shared memory holds only the partial sums. C1 DSA query readers share one grid with independent output tile ranges and the same three-slice reductions.",
   "dispatch": {
     "VLLM_GLM53_MK_PDL": "1",
     "VLLM_GLM53_MK_INPUT_CTA": "4",
@@ -22,5 +22,5 @@
     "_w4_gptq_codes",
     "_w4_quant_cols"
   ],
-  "local_cuda_sha256": "a585b7464d110e1e91ffc37db16694a5a39018de113ff07a1b4cb932023634bc"
+  "local_cuda_sha256": "b5a1751327569ffc80551bdf740c101e8ce0eeeffd2c7bd2d3f33a1ac1aca0a1"
 }
