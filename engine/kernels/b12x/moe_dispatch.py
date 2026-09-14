@@ -404,6 +404,11 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         if token == "r":
             cfg["decode_reform"] = True
             continue
+        if token == "batch":
+            # K=7 with C=2: reuse the M16 expert tile and its packed
+            # operand pipeline. The request limit and draft width stay fixed.
+            cfg["batch_reform"] = True
+            continue
         if token == "sf6":
             cfg["reform_sf_pack"] = True
             continue
@@ -448,6 +453,8 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: r requires t with f2,g2")
     if cfg.get("reform_sf_pack") and not cfg["decode_reform"]:
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: sf6 requires t,r")
+    if cfg.get("batch_reform") and not (cfg["decode_reform"] and cfg["reform_sf_pack"]):
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: batch requires t,r,sf6")
     return cfg
 
 
@@ -2187,17 +2194,27 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         cfg += ("probe_route_scatter_v1",)
     if config.get("probe_direct_scatter", False):
         cfg += ("probe_direct_scatter_v1",)
+    if config.get("c2_direct_scatter", False):
+        cfg += ("c2_direct_scatter_v1",)
+    if config.get("c2_scatter_reuse", False):
+        cfg += ("c2_scatter_reuse_v1",)
     return cfg + _static_kernel_cache_key(**fields)
 
 
 def _static_v2_decode_config(config: dict, m: int) -> dict:
-    """Specialize the integrated tile geometry only for C=1 decode rows."""
+    """Select the declared expert tile before capture, with a stable cache ABI.
+
+    `batch` extends the C1 operand pipeline to the served K7/C2 shape.
+    Expert occupancy, including counts beyond M16, remains device input to
+    the kernel's existing tile loop. No route-dependent host dispatch.
+    """
     if config.get("probe_route_scatter") or config.get("probe_direct_scatter"):
         if not (m in (7, 14, 21, 28) and config.get("tiled")
                 and config.get("reform_sf_pack") and (m != 7 or config.get("decode_reform"))
                 and not any(config.get(k) for k in ("split", "skip_a", "skip_sf", "even"))):
             raise ValueError("scatter probe requires packed t,r,sf6 at 7/14/21/28 tokens")
-    reform = bool(config.get("decode_reform", False)) and 1 <= m <= 8
+    reform = bool(config.get("decode_reform", False)) and (
+        1 <= m <= 8 or (config.get("batch_reform", False) and m == 16))
     separate = (reform and bool(config.get("reform_sf_pack", False))
                 and bool(config.get("sf6_separate", True)))
     word_expand = separate and bool(config.get("sf6_word_expand", True))
@@ -2208,11 +2225,17 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                    and bool(config.get("fc1_reuse_a", True)))
     compact_staging = (fc1_reuse_a and separate and int(config.get("fc1", 2)) % 2 == 0
                        and bool(config.get("compact_staging", True)))
+    direct_scatter = bool(reform and m == 16 and config.get("batch_reform")
+                          and config.get("c2_direct_scatter", True))
+    sf6_registers = compact_staging and bool(config.get("sf6_registers", True))
     return dict(config, decode_reform=reform, sf6_separate=separate, sf6_word_expand=word_expand,
                 sf6_fc2_word_expand=fc2_word_expand,
                 packed_activation_store=packed_activation_store, fc1_reuse_a=fc1_reuse_a,
                 compact_staging=compact_staging,
-                sf6_registers=compact_staging and bool(config.get("sf6_registers", True)))
+                c2_direct_scatter=direct_scatter,
+                c2_scatter_reuse=bool(direct_scatter and sf6_registers
+                                      and config.get("c2_scatter_reuse", True)),
+                sf6_registers=sf6_registers)
 
 
 def _get_static_kernel_v2(
@@ -2255,8 +2278,8 @@ def _get_static_kernel_v2(
         if mac_override is not None
         else min(get_max_active_clusters(1), sm_count)
     )
-    # Only C=1 changes tile geometry. All SF6 launches read packed scales,
-    # including larger batches using the original t tile geometry.
+    # The explicit batch recipe extends the same tile to K7/C2. All SF6
+    # launches read the same packed scales; other shapes keep the t tile.
     config = _static_v2_decode_config(config, m)
     reform = config["decode_reform"]
     mma_tiler_mn = (16 if reform else int(config["tile_m"]), 128)
@@ -2285,7 +2308,8 @@ def _get_static_kernel_v2(
         state_E=state_E,weight_E=weight_E,k=k,n=n,num_topk=num_topk,
         quant_mode=quant_mode,activation=activation,swiglu_alpha=swiglu_alpha,
         swiglu_beta=swiglu_beta,swiglu_limit=swiglu_limit)
-    if (config.get("probe_route_scatter") or config.get("probe_direct_scatter")) and not (
+    if (config.get("probe_route_scatter") or config.get("probe_direct_scatter")
+            or config.get("c2_direct_scatter")) and not (
             scatter_fp32 and state_E == weight_E == 288 and k == 4096
             and n == 512 and num_topk == 8):
         raise ValueError("scatter probe requires the GLM TP4 FP32 output contract")
@@ -2305,7 +2329,8 @@ def _get_static_kernel_v2(
     kernel: Any = kernel_cls(
         scatter_fp32=scatter_fp32,
         route_scatter=bool(config.get("probe_route_scatter", False)),
-        direct_scatter=bool(config.get("probe_direct_scatter", False)),
+        direct_scatter=bool(config.get("probe_direct_scatter") or config.get("c2_direct_scatter")),
+        scatter_reuse=bool(config["c2_scatter_reuse"]),
         a_ring=bool(config.get("a_ring", False)),
         sf_pack=bool(config.get("sf_pack", False)),
         decode_reform=reform,
@@ -2478,6 +2503,8 @@ def _get_static_kernel_v2(
         f"{'a1reuse' if config.get('fc1_reuse_a') else ''}"
         f"{'compact' if config.get('compact_staging') else ''}"
         f"{'sfregs' if config.get('sf6_registers') else ''}"
+        f"{'c2scatter' if config.get('c2_direct_scatter') else ''}"
+        f"{'reuse' if config.get('c2_scatter_reuse') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(

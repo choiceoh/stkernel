@@ -1,0 +1,7 @@
+{
+  "utc": "2026-09-14T13:40:56.410494+00:00",
+  "gpu": "GPU-ba5006e3-90f4-6c54-e113-c0c572374037, 0 %, 1579 MHz, 53\n",
+  "processes": "2435, /home/choiceoh/nemotron-eval/venv/bin/python, 3993 MiB\n2433, /home/choiceoh/venvs/chronos/bin/python, 699 MiB\n1323709, python3, 59987 MiB\n",
+  "st_containers": "st-glm53 st-engine:bracket-de8bfff6092c\n",
+  "image": "sha256:a0709718a4b26894d5cac5f417a0f74fde4198531e97c9b3171b0bcf513a6a9f\n"
+}
