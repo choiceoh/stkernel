@@ -68,7 +68,11 @@ class KernelPackageTests(unittest.TestCase):
         values = tuple(object() for _ in range(5))
         self.assertIs(module.fp8_fp4_mqa_logits(*values, clean_logits=False), sentinel)
         module.tf32_hc_prenorm_gemm(*values)
-        self.assertEqual(calls, [("pdl", False), ("logits", values, {"clean_logits": False}), ("prenorm", values)])
+        self.assertEqual(calls, [("pdl", False), ("logits", values, {"clean_logits": False, "max_seqlen_k": 0}), ("prenorm", values)])
+        calls.clear()
+        # a joined decode selection asks for each query's logits from its own first key (compressed layout)
+        self.assertIs(module.fp8_fp4_mqa_logits(*values, clean_logits=False, max_seqlen_k=1024), sentinel)
+        self.assertEqual(calls, [("logits", values, {"clean_logits": False, "max_seqlen_k": 1024})])
 
     def test_engine_never_imports_vllm_or_mounted_moe_kernels(self):
         for path in (ROOT / "engine").rglob("*.py"):

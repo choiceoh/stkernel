@@ -48,6 +48,11 @@ def main():
         from probes.engine_decode_dsa_inputs import check as dsa_inputs_check
         dsa_inputs_check(args.ranks)
         return
+    if args.lanes == 'select_rows':
+        # a captured step's joined C=2 indexer selection against its per-row control, then bounded timings
+        from probes.engine_decode_select_rows import run as select_rows_check
+        select_rows_check(args.output)
+        return
     if args.lanes in ('scatter_bundle', 'batch_fusions', 'batch_boundaries', 'batch_integration', 'k7_commit_bundle', 'k7_output_bundle'):
         from probes.engine_decode_bundle import check as decode_bundle
         decode_bundle(args.ranks, bundle=args.lanes)

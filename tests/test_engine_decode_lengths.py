@@ -41,10 +41,25 @@ class LengthLifetimeTests(unittest.TestCase):
         cache.gather()
         cache.row_lengths(contexts, 8, 4, make)
         for args in ((contexts.clone(), 8, 4, make), (contexts, 1, 4, make),
-                     (contexts, 8, 8, make), (contexts, 8, 4, row_lengths)):
+                     (contexts, 8, 8, make), (contexts, 8, 4, row_lengths), (contexts, 8, 4, make, 1024)):
             with self.assertRaisesRegex(ValueError, 'one gathered batch'):
                 cache.row_lengths(*args)
         self.assertEqual(make.call_count, 1)
+
+    def test_joined_windows_are_shared_like_the_lengths(self):
+        cache, make = caches(2), Mock(wraps=row_lengths)
+        contexts = torch.tensor([31997, 3])
+        cache.gather()
+        first = cache.row_lengths(contexts, 8, 4, make, width=32768)
+        for _ in range(10):
+            self.assertIs(cache.row_lengths(contexts, 8, 4, make, width=32768), first)
+        self.assertEqual((make.call_count, make.call_args.kwargs), (1, {'width': 32768}))
+        seq = (contexts[:, None]+torch.arange(8)+1).int().flatten()
+        starts = torch.tensor([0]*8 + [32768]*8, dtype=torch.int32)
+        for got, want in zip(first, (seq, seq//4, starts, starts+seq//4)):
+            self.assertTrue(torch.equal(got, want))
+        with self.assertRaisesRegex(ValueError, 'one gathered batch'):
+            cache.row_lengths(contexts, 8, 4, make)
 
     def test_split_groups_keep_independent_contexts_and_metadata(self):
         parent, make = caches(), Mock(wraps=row_lengths)

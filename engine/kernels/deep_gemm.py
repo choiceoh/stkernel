@@ -20,9 +20,9 @@ def _initialize():
     set_pdl(False)
 
 
-def fp8_fp4_mqa_logits(q, kv, weights, cu_seqlen_ks, cu_seqlen_ke, clean_logits):
+def fp8_fp4_mqa_logits(q, kv, weights, cu_seqlen_ks, cu_seqlen_ke, clean_logits, max_seqlen_k=0):
     _initialize()
-    return _mqa_logits(q, kv, weights, cu_seqlen_ks, cu_seqlen_ke, clean_logits=clean_logits)
+    return _mqa_logits(q, kv, weights, cu_seqlen_ks, cu_seqlen_ke, clean_logits=clean_logits, max_seqlen_k=max_seqlen_k)
 
 
 def tf32_hc_prenorm_gemm(x, fn, out, sqrsum, num_split):

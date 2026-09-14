@@ -15,7 +15,7 @@ import torch
 from engine.base.constants import iota
 from engine.profiles.glm53.caches import Glm53Caches
 from engine.profiles.glm53.decode_graphs import GraphCaches
-from engine.profiles.glm53.net import Glm53Net, Segment
+from engine.profiles.glm53.net import JOINED_SLICES, Glm53Net, Segment
 
 
 def step(lengths, captured=True, contexts=True, tokens=None):
@@ -143,6 +143,13 @@ class GlueReferenceTests(unittest.TestCase):
             want = (positions.reshape(-1) + 1).to(torch.int32)
             self.assertTrue(torch.equal(seq, want) and torch.equal(ke, want // kp))
             self.assertEqual((seq.dtype, ke.dtype), (torch.int32, torch.int32))
+            # with a candidate width: the same lengths, and each query's window over the rows' candidates end to end
+            for width in (1, 1024, 32768):
+                got = self.si.row_lengths(self.contexts, t, kp, width=width)
+                row = torch.tensor([i for i in range(4) for _ in range(t)], dtype=torch.int32)
+                self.assertTrue(torch.equal(got[0], seq) and torch.equal(got[1], ke))
+                self.assertTrue(torch.equal(got[2], row * width) and torch.equal(got[3], row * width + ke))
+                self.assertEqual({v.dtype for v in got}, {torch.int32})
 
     def test_latent_write_rows(self):
         caches, t = self.caches, 7
@@ -219,15 +226,21 @@ class GlueReferenceTests(unittest.TestCase):
 
 class SelectRowsTests(unittest.TestCase):
     """`_select_rows` against the segment loop's selection, row by row: the same lane calls on the same
-    tensors, the same top-k, the same finalize -- on the CPU, literally the same ops."""
+    tensors, the same top-k, the same finalize -- on the CPU, literally the same ops. Two rows join the
+    logits, the horizon and the top-k into one launch each over the rows' candidates laid end to end; one row,
+    and more query rows than a joined top-k takes (JOINED_SLICES), keep a launch a row."""
 
     KP, TOPK, T, NH, D, N_CAND = 4, 16, 7, 2, 8, 64
 
     def setUp(self):
         from engine.base import constants
         constants.forget()
+        self.build(4)
+
+    def build(self, rows, tokens=7):
         torch.manual_seed(11)
-        rows, kp, d = 4, self.KP, self.D
+        kp, d = self.KP, self.D
+        self.rows, self.T = rows, tokens
         F = NS(block=16, kpool=kp, idx_dim=d, topk=self.TOPK, kv_lora=1)
         layout = NS(block_bytes=kp * (d + 4), pool_offsets={0: 0}, token_offsets={0: 0})   # one pool record per pool slot
         table = torch.randperm(64, dtype=torch.int32)[:rows * 16].view(rows, 16)         # 16 blocks x 4 pools = the capacity
@@ -236,14 +249,17 @@ class SelectRowsTests(unittest.TestCase):
         self.caches.gather()
         self.keys = torch.randn(64 * 4 + 4, d)
         self.scales = torch.rand(64 * 4 + 4)
-        self.contexts = torch.tensor([0, 3, 100, 248])                                        # + T <= the capacity's 256 tokens
-        self.q8 = torch.randn(rows * self.T, self.NH, d)
-        self.w = torch.rand(rows * self.T, self.NH)
+        self.contexts = torch.tensor([0, 3, 100, 248])[:rows].clone()                        # + T <= the capacity's 256 tokens
+        self.q8 = torch.randn(rows * tokens, self.NH, d)
+        self.w = torch.rand(rows * tokens, self.NH)
         self.calls = []
 
-        def indexer_logits(q8, keys, scales, w, ke, ks=None):                                  # deterministic in its inputs
-            self.calls.append((q8.shape[0], keys.shape[0], None if ks is None else ks.clone()))
-            return (q8.float().sum((-1, -2))[:, None] * 0.001 + (keys.float().sum(-1) * scales)[None, :] * 0.37).sin()
+        def indexer_logits(q8, keys, scales, w, ke, ks=None, width=0):                       # deterministic in its inputs
+            self.calls.append((q8.shape[0], keys.shape[0], width, None if ks is None else ks.clone()))
+            per_key = keys.float().sum(-1) * scales
+            if width:                                                                     # each query's own window from ks
+                per_key = per_key[(ks[:, None].long() + torch.arange(width)).clamp_max(len(per_key) - 1)]
+            return (q8.float().sum((-1, -2))[:, None] * 0.001 + per_key * 0.37).sin()
 
         from engine.modules import sparse_indexer as si
         from engine.profiles.glm53.lanes import reference_decode_rows
@@ -256,7 +272,7 @@ class SelectRowsTests(unittest.TestCase):
     def loop(self):
         """The segment loop's selection (net._indexer), one row at a time."""
         from engine.modules.sparse_indexer import topk_positions, pool_slots
-        rows, t, kp, k = 4, self.T, self.KP, self.TOPK // self.KP
+        rows, t, kp, k = self.rows, self.T, self.KP, self.TOPK // self.KP
         width = self.TOPK + kp - 1
         slots = torch.empty((rows * t, width), dtype=torch.int32)
         valid = torch.empty(rows * t, dtype=torch.int32)
@@ -270,55 +286,105 @@ class SelectRowsTests(unittest.TestCase):
             pool_slots(ids, seq_lens, kp, *self.caches.token_map(0, r), slots[sl], valid[sl])
         return slots, valid
 
+    def select(self, **kw):
+        slots = torch.full((self.rows * self.T, self.TOPK + self.KP - 1), -7, dtype=torch.int32)
+        valid = torch.full((self.rows * self.T,), -7, dtype=torch.int32)
+        Glm53Net._select_rows(self.net, 0, self.q8, self.w, self.keys, self.scales, self.N_CAND, self.contexts, self.T,
+                              self.caches, slots, valid, **kw)
+        return slots, valid
+
     def test_the_fold_selects_what_the_loop_selects(self):
         from unittest.mock import Mock
-        rows, t, kp = 4, self.T, self.KP
+        rows, t = 4, self.T
+        self.assertGreater(rows * t, JOINED_SLICES)                                      # four rows of seven keep a launch a row
         want = self.loop()
         self.calls.clear()
         self.net.lanes.pool_slots = Mock(wraps=self.net.lanes.pool_slots)
-        slots = torch.full((rows * t, self.TOPK + kp - 1), -7, dtype=torch.int32)
-        valid = torch.full((rows * t,), -7, dtype=torch.int32)
-        Glm53Net._select_rows(self.net, 0, self.q8, self.w, self.keys, self.scales, self.N_CAND, self.contexts, t,
-                              self.caches, slots, valid)
+        slots, valid = self.select()
         self.assertTrue(torch.equal(slots, want[0]))
         self.assertTrue(torch.equal(valid, want[1]))
         self.assertEqual(self.net.lanes.pool_slots.call_args.args[0].dtype, torch.int64)
         # one logits call per row, over the row's own candidates, with the kept zeros as the keys' start
-        self.assertEqual([c[:2] for c in self.calls], [(t, self.N_CAND)] * rows)
-        for _, _, ks in self.calls:
+        self.assertEqual([c[:3] for c in self.calls], [(t, self.N_CAND, 0)] * rows)
+        for *_, ks in self.calls:
             self.assertTrue(torch.equal(ks, torch.zeros(t, dtype=torch.int32)))
+
+    def test_two_rows_join_the_logits_horizon_and_top_k(self):
+        from dataclasses import replace
+        from unittest.mock import Mock, patch
+        for t in (7, 8):
+            with self.subTest(tokens=t):
+                self.build(2, t)
+                want = self.loop()
+                self.calls.clear()
+                horizon = Mock(wraps=self.net.lanes.decode_rows.horizon)
+                self.net.lanes.decode_rows = replace(self.net.lanes.decode_rows, horizon=horizon)
+                with patch("torch.topk", wraps=torch.topk) as topk:
+                    slots, valid = self.select()
+                self.assertTrue(torch.equal(slots, want[0]) and torch.equal(valid, want[1]))
+                # one logits call over both rows' candidates end to end: row r's queries read the window from r * N_CAND
+                self.assertEqual([c[:3] for c in self.calls], [(2 * t, 2 * self.N_CAND, self.N_CAND)])
+                starts = torch.tensor([0] * t + [self.N_CAND] * t, dtype=torch.int32)
+                self.assertTrue(torch.equal(self.calls[0][3], starts))
+                self.assertEqual(horizon.call_count, 1)
+                self.assertEqual(horizon.call_args.args[0].shape, (2 * t, self.N_CAND))
+                self.assertEqual(topk.call_count, 1)
+                self.assertEqual(topk.call_args.args[0].shape, (2 * t, self.N_CAND))
+
+    def test_one_row_and_the_control_keep_a_launch_a_row(self):
+        for rows, kw in ((1, {}), (2, {"joined": False})):
+            with self.subTest(rows=rows, **kw):
+                self.build(rows)
+                want = self.loop()
+                self.calls.clear()
+                got = self.select(**kw)
+                self.assertTrue(torch.equal(got[0], want[0]) and torch.equal(got[1], want[1]))
+                self.assertEqual([c[:3] for c in self.calls], [(self.T, self.N_CAND, 0)] * rows)
+
+    def test_tied_scores_select_what_the_loop_selects(self):
+        """Equal logits at the selection boundary: the joined top-k takes each row's ties where its launch does."""
+        self.build(2, 8)
+        self.q8.zero_()
+        self.keys[::3] = 1.                                                              # a third of the records share the
+        self.scales[::3] = torch.pi / 2 / (8 * 0.37)                                     # best score: sin(pi/2), tied
+        self.contexts = torch.tensor([100, 200])                                         # 25..52 complete pools, 8+ tied past the top 4
+        want = self.loop()
+        self.assertTrue(torch.equal(self.select()[0], want[0]))
 
     def test_rows_short_of_the_selection_width_finalize_like_the_loop(self):
         """Contexts with fewer complete pools than the top-k width: the loop pads the misses with -1 before the
         finalize, the fold leaves them to it -- the slots and counts written are the same."""
-        self.contexts = torch.tensor([0, 1, 5, 9])                                  # 0, 0, 1, 2 complete pools before the first query
-        want = self.loop()
-        slots = torch.full_like(want[0], -7)
-        valid = torch.full_like(want[1], -7)
-        Glm53Net._select_rows(self.net, 0, self.q8, self.w, self.keys, self.scales, self.N_CAND, self.contexts, self.T,
-                              self.caches, slots, valid)
-        self.assertTrue(torch.equal(slots, want[0]) and torch.equal(valid, want[1]))
+        for rows in (4, 2):
+            with self.subTest(rows=rows):
+                self.build(rows)
+                self.contexts = torch.tensor([0, 1, 5, 9])[:rows].clone()               # 0, 0, 1, 2 complete pools before the first query
+                want = self.loop()
+                slots, valid = self.select()
+                self.assertTrue(torch.equal(slots, want[0]) and torch.equal(valid, want[1]))
 
     def test_a_capacity_below_the_selection_width_is_refused(self):
-        with self.assertRaisesRegex(ValueError, "candidate capacity"):
-            Glm53Net._select_rows(self.net, 0, self.q8, self.w, self.keys, self.scales, self.TOPK // self.KP - 1, self.contexts,
-                                  self.T, self.caches, torch.empty(0, dtype=torch.int32), torch.empty(0, dtype=torch.int32))
+        for rows in (4, 2):
+            self.build(rows)
+            with self.assertRaisesRegex(ValueError, "candidate capacity"):
+                Glm53Net._select_rows(self.net, 0, self.q8, self.w, self.keys, self.scales, self.TOPK // self.KP - 1, self.contexts,
+                                      self.T, self.caches, torch.empty(0, dtype=torch.int32), torch.empty(0, dtype=torch.int32))
 
     def test_eleven_layer_selections_share_lengths_and_refresh_after_rollback(self):
         from dataclasses import replace
         from unittest.mock import Mock
-        make = Mock(wraps=self.net.lanes.decode_rows.lengths)
-        self.net.lanes.decode_rows = replace(self.net.lanes.decode_rows, lengths=make)
-        for phase, values in enumerate(([0, 3, 100, 248], [2, 1, 92, 239], [0, 0, 0, 0])):
-            self.contexts.copy_(torch.tensor(values))
-            self.caches.gather()
-            want = self.loop()
-            slots, valid = torch.empty_like(want[0]), torch.empty_like(want[1])
-            for _ in range(11):
-                Glm53Net._select_rows(self.net, 0, self.q8, self.w, self.keys, self.scales, self.N_CAND,
-                                     self.contexts, self.T, self.caches, slots, valid)
-                self.assertTrue(torch.equal(slots, want[0]) and torch.equal(valid, want[1]))
-            self.assertEqual(make.call_count, phase+1)
+        for rows in (4, 2):
+            self.build(rows)
+            make = Mock(wraps=self.net.lanes.decode_rows.lengths)
+            self.net.lanes.decode_rows = replace(self.net.lanes.decode_rows, lengths=make)
+            for phase, values in enumerate(([0, 3, 100, 248], [2, 1, 92, 239], [0, 0, 0, 0])):
+                self.contexts.copy_(torch.tensor(values[:rows]))
+                self.caches.gather()
+                want = self.loop()
+                for _ in range(11):
+                    slots, valid = self.select()
+                    self.assertTrue(torch.equal(slots, want[0]) and torch.equal(valid, want[1]))
+                self.assertEqual(make.call_count, phase+1, rows)
+                self.assertEqual(make.call_args.kwargs, {"width": self.N_CAND} if rows == 2 else {})
 
 
 if __name__ == "__main__":
