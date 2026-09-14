@@ -72,6 +72,7 @@ from .moe_static_common import (
     _st_global_release_i32,
     _st_shared_f32,
     _st_shared_i32,
+    _st_shared_u64,
     _threadfence,
 )
 
@@ -118,6 +119,8 @@ class MoEStaticKernelV4:
         sf_pack: bool = False,
         reform_sf_pack: bool = False,
         sf6_separate: bool = True,
+        sf6_word_expand: bool = True,
+        packed_activation_store: bool = True,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -204,6 +207,8 @@ class MoEStaticKernelV4:
         # Each pipeline slot owns both buffers until
         # consumer_release; expansion then needs only its publication barrier.
         self.sf6_separate = bool(sf6_separate and self.reform_sf_pack and self.decode_reform)
+        self.sf6_word_expand = bool(sf6_word_expand and self.sf6_separate)
+        self.packed_activation_store = bool(packed_activation_store and self.decode_reform)
         # Scatter only consumes rows in this M16 tile. Avoid initializing
         # 112 unused token/weight entries per item and reclaim their storage.
         self.scatter_cache_rows = self.tile_m if self.sf6_separate else _COMPACT_STATIC_TILE_M
@@ -340,6 +345,20 @@ class MoEStaticKernelV4:
         )
         return b_smem_staged, sfa_smem_staged, sfb_smem_staged, epi_smem_staged
 
+    def _sf6_expand_word(self, low, high, base7, base80):
+        """Spread four 6-bit codes to byte lanes and add the base without carries.
+
+        low holds four nibbles, high four 2-bit groups. Each code is <=63;
+        adding only the base's low seven bits gives at most 190 per byte,
+        so the 32-bit addition cannot carry into a neighboring byte. XOR
+        then applies the base's high bit with exact modulo-256 semantics.
+        """
+        low = (low | (low << Int32(8))) & Int32(0x00FF00FF)
+        low = (low | (low << Int32(4))) & Int32(0x0F0F0F0F)
+        high = (high | (high << Int32(12))) & Int32(0x000F000F)
+        high = (high | (high << Int32(6))) & Int32(0x03030303)
+        return ((low | (high << Int32(4))) + base7) ^ base80
+
     def _sf_expand_stage(self, stage_addr, tidx, block_bytes=4096, *, packed_addr=None):
         """Exact MMA-stage expansion shared by q, sf6 and the device gate.
 
@@ -377,16 +396,46 @@ class MoEStaticKernelV4:
         base = _ld_shared_i32_volatile(source_addr + Int32(base_offset)) & Int32(0xFF)
         if packed_addr is None:
             self.sf_expand_barrier.arrive_and_wait()
+        word_expand = self.sf6_word_expand and packed_addr is not None
+        if word_expand:
+            base7 = (base & Int32(0x7F)) * Int32(0x01010101)
+            base80 = (base & Int32(0x80)) * Int32(0x01010101)
         for j in range(per_thread // 4):
-            word = Int32(0)
-            for m in range(4):
-                i = 4 * j + m
-                nib = (a[i >> 3] >> Int32(8 * ((i >> 1) & 3) + 4 * (i & 1))) & Int32(0xF)
-                hi = (b[i >> 4] >> Int32(8 * ((i >> 2) & 3) + 2 * (i & 3))) & Int32(0x3)
-                val = (base + nib + (hi << Int32(4))) & Int32(0xFF)
-                word = word | (val << Int32(8 * m))
+            if word_expand:
+                word = self._sf6_expand_word(
+                    (a[j // 2] >> Int32(16 * (j % 2))) & Int32(0xFFFF),
+                    (b[j // 4] >> Int32(8 * (j % 4))) & Int32(0xFF), base7, base80)
+            else:
+                word = Int32(0)
+                for m in range(4):
+                    i = 4 * j + m
+                    nib = (a[i >> 3] >> Int32(8 * ((i >> 1) & 3) + 4 * (i & 1))) & Int32(0xF)
+                    hi = (b[i >> 4] >> Int32(8 * ((i >> 2) & 3) + 2 * (i & 3))) & Int32(0x3)
+                    val = (base + nib + (hi << Int32(4))) & Int32(0xFF)
+                    word = word | (val << Int32(8 * m))
             _st_shared_i32(stage_addr + Int32(per_thread) * tidx + Int32(4 * j), word)
         self.sf_expand_barrier.arrive_and_wait()
+
+    def _store_packed_activation(self, base_addr, layout, row, packed_base, packed):
+        """Preserve the quantizer's eight bytes and the FC2 consumer swizzle.
+
+        The M16 layout maps each aligned eight-byte block contiguously:
+        S<2,4,3> only changes bits 4 and 5, leaving bits 0..2 intact.
+        _setup_attributes verifies this against the real consumer layout.
+        """
+        if self.packed_activation_store:
+            fp4_offset = cute.crd2idx((row, packed_base * Int32(2), 0), layout.outer)
+            byte_offset = fp4_offset // Int32(2)
+            byte_offset = byte_offset ^ ((byte_offset >> Int32(3)) & Int32(0x30))
+            _st_shared_u64(base_addr + byte_offset, packed)
+        else:
+            for byte_idx in range(self.sf_vec_size // 2):
+                src_pcol = packed_base + Int32(byte_idx)
+                byte_val = Uint8((packed >> Uint64(byte_idx * 8)) & Uint64(0xFF))
+                fp4_offset = cute.crd2idx((row, src_pcol * Int32(2), 0), layout.outer)
+                byte_offset = fp4_offset // Int32(2)
+                byte_offset = byte_offset ^ ((byte_offset >> Int32(3)) & Int32(0x30))
+                st_shared_u8(base_addr + byte_offset, byte_val)
 
     def _sf6_copy_fc2_half(self, dest_addr, source_addr, bar_addr, row_half):
         """Gather the selected SF6-v1 row half into a 784-byte shared stage.
@@ -553,6 +602,11 @@ class MoEStaticKernelV4:
                     assert byte == consumer, (row, col, byte, consumer)
                     assert byte not in seen_bytes
                     seen_bytes.add(byte)
+                    if self.packed_activation_store:
+                        block_col = col - col % self.sf_vec_size
+                        block = int(cute.crd2idx((row, block_col, 0), self.a2_smem_layout.outer)) // 2
+                        block ^= (block >> 3) & 0x30
+                        assert block % 8 == 0 and byte == block + (col - block_col) // 2
             print('DECODE_REFORM_LAYOUT_PASS', len(seen_bytes), flush=True)
         if self.reform_sf_pack:
             self._verify_reform_sf_layout(hidden_size)
@@ -1768,23 +1822,17 @@ class MoEStaticKernelV4:
                                     values, block_max, gs_value
                                 )
                             packed_base = sf_block * Int32(self.sf_vec_size // 2)
-                            xor_bits = ((row >> Int32(1)) & Int32(0x3)) << Int32(4)
-                            for byte_idx in cutlass.range_constexpr(self.sf_vec_size // 2):
-                                src_pcol = packed_base + Int32(byte_idx)
-                                dst_flat = (src_pcol ^ xor_bits) * a2_rows + row
-                                byte_val = Uint8(
-                                    (packed_lo >> Uint64(byte_idx * 8)) & Uint64(0xFF)
-                                )
-                                if cutlass.const_expr(self.decode_reform):
-                                    # Convert the outer FP4 nibble offset to
-                                    # bytes BEFORE applying the pointer swizzle.
-                                    fp4_offset = cute.crd2idx(
-                                        (row, src_pcol * Int32(2), 0), a2_smem_layout.outer
+                            if cutlass.const_expr(self.decode_reform):
+                                self._store_packed_activation(
+                                    a2_base_addr, a2_smem_layout, row, packed_base, packed_lo)
+                            else:
+                                xor_bits = ((row >> Int32(1)) & Int32(0x3)) << Int32(4)
+                                for byte_idx in cutlass.range_constexpr(self.sf_vec_size // 2):
+                                    src_pcol = packed_base + Int32(byte_idx)
+                                    dst_flat = (src_pcol ^ xor_bits) * a2_rows + row
+                                    byte_val = Uint8(
+                                        (packed_lo >> Uint64(byte_idx * 8)) & Uint64(0xFF)
                                     )
-                                    byte_offset = fp4_offset // Int32(2)
-                                    byte_offset = byte_offset ^ ((byte_offset >> Int32(3)) & Int32(0x30))
-                                    st_shared_u8(a2_base_addr + byte_offset, byte_val)
-                                else:
                                     sA2_u8[dst_flat] = byte_val
                             outer_m_idx = row % Int32(32)
                             inner_m_idx = row // Int32(32)

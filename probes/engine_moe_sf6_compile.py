@@ -1,10 +1,12 @@
-"""Compile C1 disjoint SF6 staging and controls in an existing CPU-only ST image."""
+"""Compile C1 SF6/activation storage and controls in an existing CPU-only ST image."""
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import sys
 import subprocess
 import time
@@ -14,9 +16,13 @@ from unittest.mock import patch
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--sass', action='store_true', help='also disassemble and count native instructions')
+    parser.add_argument('--activation-store', action='store_true', help='compare packed activation stores')
     args = parser.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '':
         raise RuntimeError('compile requires CUDA_VISIBLE_DEVICES=')
+    if args.sass and shutil.which('nvdisasm') is None:
+        raise RuntimeError('native instruction checks require nvdisasm on PATH')
     os.environ['CUTE_DSL_ARCH'] = 'sm_121a'
     os.environ['CUTE_DSL_KEEP'] = 'ptx,cubin'
     os.environ['CUTE_DSL_DUMP_DIR'] = str(args.output.parent / 'cute')
@@ -34,7 +40,8 @@ def main():
             setup(owner, hidden_size)
             selected.update(smem_bytes=owner.smem_bytes,
                             smem_capacity=owner.smem_capacity,
-                            separate=owner.sf6_separate)
+                            separate=owner.sf6_separate, word_expand=owner.sf6_word_expand,
+                            packed_activation_store=owner.packed_activation_store)
 
         def builder(module, name, build, **kwargs):
             start = time.monotonic()
@@ -56,19 +63,38 @@ def main():
             resources = subprocess.run(['cuobjdump', '--dump-resource-usage', str(artifact)],
                                        check=True, capture_output=True, text=True).stdout
             record.update(native_binary_sha256=hashlib.sha256(cubin).hexdigest(), resources=resources)
+            if args.sass:
+                sass = subprocess.run(['cuobjdump', '--dump-sass', str(artifact)],
+                                      check=True, capture_output=True, text=True).stdout
+                instructions = re.findall(
+                    r'^\s*/\*[0-9a-f]+\*/\s+(?:@!?U?P\d+\s+)?([A-Z][A-Z0-9_.]*)(?:\s|;)',
+                    sass, re.M)
+                if not instructions:
+                    raise RuntimeError('no native instructions were captured')
+                artifact.with_suffix('.sass').write_text(sass)
+                record.update(sass_sha256=hashlib.sha256(sass.encode()).hexdigest(),
+                    static_instructions=len(instructions), opcode_counts=dict(sorted(Counter(instructions).items())))
             records.append(record)
             print(json.dumps(record), flush=True)
             return kernel
 
-        cases = [(1, True), (7, True), (8, True), (8, False), (16, True), (32, True)]
+        cases = ([(1, True, True, True), (7, True, True, True), (8, True, True, True),
+                  (8, True, True, False), (16, True, True, True), (32, True, True, True)]
+                 if args.activation_store else
+                 [(1, True, True, True), (7, True, True, True), (8, True, True, True),
+                  (8, True, False, True), (8, False, False, True),
+                  (16, True, True, True), (32, True, True, True)])
         with patch.object(md, 'get_num_sm', return_value=48), \
                 patch.object(md, 'get_max_active_clusters', return_value=48), \
                 patch.object(md, 'build_and_load_cute_dsl_kernel', builder), \
                 patch.object(MoEStaticKernelV4, '_setup_attributes', checked_setup):
-            for rows, separate in cases:
+            for rows, separate, word_expand, activation_store in cases:
                 selected.clear()
-                selected.update(rows=rows, requested_separate=separate)
-                config = dict(md._parse_glm53_static_v2('t,r,sf6'), sf6_separate=separate)
+                selected.update(rows=rows, requested_separate=separate, requested_word_expand=word_expand,
+                                requested_activation_store=activation_store)
+                config = dict(md._parse_glm53_static_v2('t,r,sf6'),
+                              sf6_separate=separate, sf6_word_expand=word_expand,
+                              packed_activation_store=activation_store)
                 try:
                     config = md._static_v2_decode_config(config, rows)
                     md._get_static_kernel_v2(288, 288, rows, 4096, 512, 8, rows*8,
@@ -82,10 +108,13 @@ def main():
         raise RuntimeError('compile initialized CUDA')
     passed = len(records) == len(cases) and all(r['status'] == 'PASS' for r in records)
     report = dict(status='PASS' if passed else 'FAIL', gpu_used=False, kernels=records,
+                  nvdisasm_version=(subprocess.check_output(['nvdisasm', '--version'], text=True).strip()
+                                    if args.sass else None),
                   scope='native compile and layout checks; GPU numerics/replay/timing pending',
                   source_sha256={name: hashlib.sha256((root/name).read_bytes()).hexdigest()
                       for name in ('engine/kernels/b12x/moe_dispatch.py',
                                    'engine/kernels/b12x/moe_static_kernel_v4.py',
+                                   'engine/kernels/b12x/moe_static_common.py',
                                    'engine/kernels/b12x/moe_static_kernel_v5.py')})
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')

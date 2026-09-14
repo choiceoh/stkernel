@@ -138,6 +138,20 @@ def _st_shared_i32(addr, val, *, loc=None, ip=None):
 
 
 @dsl_user_op
+def _st_shared_u64(addr, val, *, loc=None, ip=None):
+    """Store an intact FP4 block at an eight-byte-aligned shared address."""
+    llvm.inline_asm(
+        None,
+        [Int32(addr).ir_value(loc=loc, ip=ip), Uint64(val).ir_value(loc=loc, ip=ip)],
+        "st.shared.u64 [$0], $1;",
+        "r,l",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+    )
+
+
+@dsl_user_op
 def _bulk_g2s(dst_smem, src_gmem, nbytes, mbar_smem, *, loc=None, ip=None):
     """1-D cp.async.bulk global -> shared (cluster-scoped smem address),
     completing nbytes of transaction on the mbarrier; one thread issues it,
