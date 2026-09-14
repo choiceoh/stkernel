@@ -16,6 +16,8 @@ Routes (ROUTES), each `(ext, owners, x, destination) -> outputs`:
   pair          QueryPair, the serving DSA query owner
   pair_generic  two DenseLinear readers with decode_input_rows=()
   pair_wide     run_query_pair(local_c1=False): wide pack + two packed mk_gemm2_kernel launches
+  pack          run_input_pack: the C1 cell's own input pack alone (8 rows), timed against the whole cell
+                to size a producer-side pack; it has no projection output, so the exactness gate skips it
   rows16        C=2 candidate run_gemm_rows16: wide pack + eight-column sixteen-row CTAs
   pair16        C=2 candidate run_query_pair16: the joined sixteen-row query grid
 
@@ -47,19 +49,19 @@ DENSE_LAYERS = (0, 1, 2)
 # name, weight keys per layer, layers, direct TX output, input width, {rows: ((control, candidate), ...)}
 CELLS = (
     ('kda.in_proj', ('kda.in_proj',), KDA_LAYERS, False, 4096,
-     {8: (('bound', 'generic'),), 16: (('generic', 'wide'),)}),
+     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('generic', 'wide'),)}),
     ('kda.o_proj', ('kda.o_proj',), KDA_LAYERS, True, 2048,
-     {8: (('bound', 'generic'),), 16: (('bound', 'generic'),)}),
+     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'generic'),)}),
     ('mla.o_proj', ('mla.o_proj',), DSA_LAYERS, True, 4096,
-     {8: (('bound', 'generic'),), 16: (('bound', 'generic'),)}),
+     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'generic'),)}),
     ('mla.query', ('mla.q_b', 'idx.wq_b'), DSA_LAYERS, False, 1536,
-     {8: (('pair', 'pair_generic'), ('pair', 'pair_wide')), 16: (('pair', 'pair_generic'),)}),
+     {8: (('pair', 'pair_generic'), ('pair', 'pair_wide'), ('pair', 'pack')), 16: (('pair', 'pair_generic'),)}),
     ('mla.qkv_a', ('mla.qkv_a',), DSA_LAYERS, False, 4096,
      {16: (('bound', 'generic'),)}),
     ('mlp.gate_up', ('mlp.gate_up',), DENSE_LAYERS, False, 4096,
-     {8: (('bound', 'generic'),), 16: (('bound', 'generic'),)}),
+     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'generic'),)}),
     ('mlp.down', ('mlp.down',), DENSE_LAYERS, True, 3072,
-     {8: (('bound', 'generic'),), 16: (('bound', 'generic'),)}),
+     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'generic'),)}),
 )
 # The C=2 prototypes against the serving route, per cell (same row plan format).
 CANDIDATES = {
@@ -106,6 +108,16 @@ def _pair_wide(ext, owners, x):
     return tuple(outputs)
 
 
+def _pack(ext, x):
+    # The cell's own pack layout: k/128 blocks of 1024 FP8 bytes, then k/128 x 8 row scales.
+    blocks = x.shape[1] // 128
+    packed = torch.empty(blocks * 1024 + blocks * 8 * 4, device=x.device, dtype=torch.uint8)
+    ext.run_input_pack(x, packed)
+    return packed
+
+
+PACK_ARMS = ('pack',)
+
 def _rows16(ext, owner, x, destination):
     p = owner.packs[0]
     if destination is not None:
@@ -130,6 +142,7 @@ ROUTES = {
     'pair': lambda ext, owners, x, d: _pair(owners, x),
     'pair_generic': lambda ext, owners, x, d: tuple(_dense(o, x, None, ()) for o in owners),
     'pair_wide': lambda ext, owners, x, d: _pair_wide(ext, owners, x),
+    'pack': lambda ext, owners, x, d: _pack(ext, x),
     'rows16': lambda ext, owners, x, d: _rows16(ext, owners[0], x, d),
     'pair16': lambda ext, owners, x, d: _pair16(ext, owners, x),
 }
@@ -198,14 +211,14 @@ def cell_check(report, ext, cell, owners, rows, *, brackets, timing=True, plan=N
                             for g, address in zip(guards[arm], addresses[arm]):
                                 g.fill_(-123.)
                                 address.fill_(g[step % 2, 1].data_ptr())
-                        else:
+                        elif arm not in PACK_ARMS:
                             for out in outputs[arm]:
                                 for y in _values(out):
                                     y.fill_(float('nan'))
                     for arm in order:
                         graphs[arm].replay()
                     torch.cuda.synchronize()
-                    for arm in arms[1:]:
+                    for arm in (a for a in arms[1:] if a not in PACK_ARMS):
                         if direct:
                             for g, want in zip(guards[arm], guards[arms[0]]):
                                 inner = g[step % 2, 1:-1]
@@ -222,7 +235,7 @@ def cell_check(report, ext, cell, owners, rows, *, brackets, timing=True, plan=N
                                         raise RuntimeError(f'{name} {arm} left a non-finite output')
                                     torch.testing.assert_close(a, b, rtol=0, atol=0)
             report('exact', cell=name, rows=rows, scope=scope, layers=list(layers[:len(group)]), arms=arms, phase=phase,
-                   reference=arms[0], magnitudes=magnitudes, replay_orders='forward/reverse', direct_output=direct,
+                   reference=arms[0], not_projections=[a for a in arms if a in PACK_ARMS], magnitudes=magnitudes, replay_orders='forward/reverse', direct_output=direct,
                    rebound_descriptor=direct, input_stride=x.stride(0),
                    plan=[ext.gemm2_plan(rows, o.rows, o.cols) for o in owners[0]])
             if timing:

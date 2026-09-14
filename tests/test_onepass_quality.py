@@ -315,7 +315,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertGreater(grade.lineno, windows.end_lineno)
         self.assertGreater(grade.lineno, end.end_lineno)
 
-    def _check_canonical_coverage(self, run_index=None):
+    def _check_canonical_coverage(self, run_index=None, width=4):
         self.addCleanup(setattr, onepass, '_RUN', None)
         from tests.test_onepass_channel_diagnostics import scanner
         cq = SimpleNamespace(MODEL='fixture', filler=lambda n, r: '')
@@ -354,7 +354,8 @@ class IntegrationTests(unittest.TestCase):
              patch.object(sys, 'argv', ['onepass.py', '--out', str(Path(root) / 'ledger.jsonl')]), \
              patch.object(onepass, '_load', side_effect=lambda name, module: modules[name]), \
              patch.object(onepass, '_served_build', return_value={}), \
-             patch.object(onepass, 'engine_shape', return_value={}), \
+             patch.object(onepass, 'engine_shape',
+                          return_value={} if width == 4 else {'max_concurrent_requests': width}), \
              patch.object(onepass, '_metrics_text', side_effect=metrics), \
              patch('urllib.request.urlopen', side_effect=serve), patch('sys.stdout', new_callable=io.StringIO):
             # Lack of real GPU/compile evidence must still invalidate acceptance.
@@ -362,50 +363,51 @@ class IntegrationTests(unittest.TestCase):
             record = json.loads((Path(root) / 'ledger.jsonl').read_text())
             self.assertEqual((record['quality']['ok'], record['quality']['total']), (9, 9))
             if include_c4:
-                self.assertEqual((record['quality_c4']['ok'], record['quality_c4']['total']), (24, 24))
+                self.assertEqual((record['quality_c4']['ok'], record['quality_c4']['total']), (6 * width, 6 * width))
             else:
                 self.assertIsNone(record['quality_c4'])
                 self.assertEqual(record['c4'], [])
-            self.assertEqual(record['concurrency_coverage'], dict(policy='c1-twice-c4-once-no-128k-v2',
-                included=[1, 4] if include_c4 else [1],
-                contexts={'1': [2000, 32000, 128000], '4': [2000, 32000] if include_c4 else []},
+            self.assertEqual(record['concurrency_coverage'], dict(
+                policy='c1-twice-c4-once-no-128k-v2' if width == 4 else f'c1-twice-c{width}-once-no-128k-v3',
+                width=width, included=[1, width] if include_c4 else [1],
+                contexts={'1': [2000, 32000, 128000], str(width): [2000, 32000] if include_c4 else []},
                 c4_excluded_contexts=[128000],
                 c4_status='measured' if include_c4 else 'omitted_after_run_1'))
             grades = [json.loads(s) for s in (Path(record['artifacts']) / 'quality.jsonl').read_text().splitlines()]
-            self.assertEqual(len(grades), 21 if include_c4 else 5)
+            self.assertEqual(len(grades), 5 + 4 * width if include_c4 else 5)
             expected_phases = {'measure-c1'}
             if include_c4:
-                expected_phases |= {f"measure-c4-{item['ctx']}-q{item['question']}" for item in items
+                expected_phases |= {f"measure-c{width}-{item['ctx']}-q{item['question']}" for item in items
                                     if item['ctx'] != 128000}
             self.assertEqual({r['phase'] for r in grades}, expected_phases)
             self.assertEqual(record['recording']['status'], 'complete')
             self.assertFalse(record['steady_state']['valid'])
             requests = [json.loads(s) for s in (Path(record['artifacts']) / 'requests.jsonl').read_text().splitlines()]
             diagnostics = [r for r in requests if r['phase'].startswith('diagnostic-')]
-            self.assertEqual(len(diagnostics), 11 if include_c4 else 3)
-            self.assertFalse(any(r['concurrency'] == 4 and r['ctx'] == 128000 for r in requests))
+            self.assertEqual(len(diagnostics), 3 + 2 * width if include_c4 else 3)
+            self.assertFalse(any(r['concurrency'] == width and r['ctx'] == 128000 for r in requests))
             self.assertEqual({r['phase'].split('-')[0] for r in requests
                               if r['concurrency'] == 1 and r['ctx'] == 128000},
                              {'prepare', 'measure', 'diagnostic'})
-            self.assertEqual({r['concurrency'] for r in requests}, {1, 4} if include_c4 else {1})
+            self.assertEqual({r['concurrency'] for r in requests}, {1, width} if include_c4 else {1})
             if not include_c4:
-                self.assertFalse(any('c4' in r['phase'] for r in requests))
+                self.assertFalse(any(f'c{width}' in r['phase'] for r in requests))
             self.assertEqual({(r['max_tokens'], r['min_tokens'], r['reasoning_budget']) for r in diagnostics},
                              {(64, 64, 32)})
             prepared = [r for r in requests if r['phase'].startswith('prepare-')]
-            self.assertEqual(len(prepared), 25 if include_c4 else 5)
+            self.assertEqual(len(prepared), 5 + 4 * width + 4 if include_c4 else 5)
             self.assertEqual({(r['max_tokens'], r['min_tokens'], r['reasoning_budget']) for r in prepared},
                              {(64, 64, 32)})
             self.assertEqual(record['preparation_budget']['max_tokens'], 64)
-            fixed = [r for r in requests if r['phase'] in ('measure-fixed-c1', 'measure-fixed-c4')]
+            fixed = [r for r in requests if r['phase'] in ('measure-fixed-c1', f'measure-fixed-c{width}')]
             measured = [r for r in requests if r['phase'].startswith('measure-') and r not in fixed]
-            self.assertEqual(len(measured), 21 if include_c4 else 5)
+            self.assertEqual(len(measured), 5 + 4 * width if include_c4 else 5)
             self.assertEqual({(r['max_tokens'], r['reasoning_budget']) for r in measured},
                              {(16384, 8192), (49152, 24576)})
             # bench-dec's multiplier rides run 1 only: four different prompts, one at a time, then together.
             self.assertEqual(len(fixed), 8 if include_c4 else 0)
             self.assertEqual({(r['phase'], r['concurrency']) for r in fixed},
-                             {('measure-fixed-c1', 1), ('measure-fixed-c4', 4)} if include_c4 else set())
+                             {('measure-fixed-c1', 1), (f'measure-fixed-c{width}', width)} if include_c4 else set())
             self.assertEqual({(r['max_tokens'], r['min_tokens'], r['reasoning_budget']) for r in fixed},
                              {(1024, 1024, 512)} if include_c4 else set())
             if include_c4:
@@ -413,7 +415,7 @@ class IntegrationTests(unittest.TestCase):
                 block = record['concurrency_fixed']
                 self.assertFalse(block['valid'])                # the fixture answers 900 tokens, not 1024
                 self.assertIn('fixed concurrency output lengths [900] != [1024]', block['issues'])
-                self.assertEqual((block['tokens'], block['clients']), (1024, 4))
+                self.assertEqual((block['tokens'], block['clients'], block['concurrency']), (1024, 4, width))
             else:
                 self.assertIsNone(record['concurrency_fixed'])
         onepass._RUN = None
@@ -425,6 +427,12 @@ class IntegrationTests(unittest.TestCase):
 
     def test_second_run_keeps_all_c1_work_without_any_c4_requests(self):
         self._check_canonical_coverage(2)
+
+    def test_a_two_row_door_is_measured_at_two(self):
+        # #950: GLM-5.3 admits two. Four requests would decode two rows beside two waiting ones and
+        # steady_errors would refuse the arm ("actual decode width 2 != 4").
+        self._check_canonical_coverage(1, width=2)
+        self._check_canonical_coverage(2, width=2)
 
     def test_changed_quality_protocol_cannot_reuse_a_baseline(self):
         import judge
