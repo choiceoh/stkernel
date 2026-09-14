@@ -152,14 +152,15 @@ def latent_check(report, *, timing=True):
 def check(ranks=None):
     from engine.base.kernel_shape import bound, to_dict
     root = Path(__file__).resolve().parents[1]
-    files = ('engine/kernels/dense/kernels.cu', 'engine/kernels/dense/query_pair.py',
+    files = ('engine/kernels/dense/kernels.cu', 'engine/kernels/dense/__init__.py', 'engine/kernels/dense/query_pair.py',
              'engine/kernels/mla/decode_inputs.py', 'engine/kernels/indexer_gate.py',
              'engine/kernels/mla/decode_absorb.py', 'engine/kernels/mla/prefill_absorb.py',
              'engine/kernels/decode_projection.py', 'engine/kernels/indexer.py', 'engine/kernels/kpool.py', 'engine/profiles/glm53/net.py',
              'engine/profiles/glm53/decode_graphs.py', 'engine/profiles/glm53/lanes.py',
              'probes/engine_decode_pool_cache.py', 'probes/engine_decode_no_copy.py', 'probes/engine_decode_lengths.py',
              'engine/kernels/common/norm_rope.py', 'engine/base/lanes.py', 'engine/profiles/glm53/drafter.py',
-             'probes/engine_draft_qk.py')
+             'probes/engine_draft_qk.py', 'probes/engine_forward_reduce.py',
+             'probes/engine_decode_scatter_check.py')
     def report(event, **values):
         print(json.dumps(dict(event=event, **values)), flush=True)
     report('identity', torch=torch.__version__, cuda=torch.version.cuda, gpu=torch.cuda.get_device_name(),
