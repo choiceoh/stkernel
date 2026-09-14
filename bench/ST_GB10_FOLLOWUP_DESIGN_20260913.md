@@ -148,12 +148,16 @@ P1 이후에만 통신 tile 소비를 검토한다. 기존 `TiledProjection`의 
 
 ## M. 디코드 타일에 프리필 route를 함께 계산
 
-2026-09-14 구현 상태: M0 admission과 **M1a hot component**를 추가했다.
+2026-09-14 구현 상태: M0 admission, **M1a hot component**, **M1b cold/shared 완료 component**를 추가했다.
 `engine/modules/mixed_experts.py`가 M16/M32의 기존 타일 안에 들어가면서 M128 tail 하나를 제거할 수 있는 route만 고른다. expert별 최소 tail 길이, expert ID 순으로 선택하며 추가 route는 전체 128개로 제한한다. decode route 순서와 모든 cold route의 원래 `(row, slot)`은 보존한다.
 
 `PreparedMixedExperts`는 서로 다른 BF16 입력 두 개, immutable invocation identity, per-expert scales를 소유하고 명시적인 source map을 별도 CuTe producer에 전달한다. producer는 runtime row extent를 사용한다. prepared V5는 기존 frontend 초기화/재라우팅을 건너뛰고 동일한 MMA body를 실행한다. 전체 ordinary kernel AST가 조건문 삽입 전과 같음을 검사한다. source/weight mutation, 다른 stream/capture, stale layer/epoch/slot/source generation은 실행 전에 거부한다. route-owned FP32 partial은 BF16 down 및 weighted rounding을 유지하며, probe의 최종 reducer 비용/오차는 별도로 기록한다.
 
-**M1 전체 및 서빙은 아직 구현하지 않았다.** 현재 component는 decode와 선택된 hot route만 반환한다. cold M128 재묶기·실행, shared 완료 합산, 취소/slot 회수, TP4 합의와 scheduler/graph 연결은 남아 있다. 따라서 `removed_prefill_tiles`는 잔여 route를 M128로 다시 묶을 때의 조건부 work accounting이며 실제 제거/속도 측정이 아니다. CPU planning·metadata allocation 비용도 별도 기록하며 이것을 decode hot path에 넣지 않는다. 실행 knob나 기본 selector는 추가하지 않았다. [M evidence](../measurements/mixed_experts_20260914/README.md)에 범위와 검증을 남긴다.
+`PreparedMixedCompletion`은 M1a 결과에 남은 route의 M128 재패킹·실행과 shared FFN 완료를 연결한다. `plan_cold`는 원래 token/slot을 보존해 cold route를 expert별로 다시 묶고, M128 tile당 중간 4개 slice를 모두 포함하는 실제 task descriptor를 만든다. 별도 CuTe producer와 prepared long-prefill subclass가 이 작업을 소비한다. 기존 long-prefill MMA/SF6/BF16 scatter body는 상속하고 Q0 초기화만 생략한다. 입력 길이와 task 수는 runtime 값이므로 9240/32768행에서 같은 컴파일 핸들을 재사용한다.
+
+`begin`은 decode와 decode shared 출력을 합산한 후 event를 기록한다. `advance`는 최대 48개 M128 task를 처리하고 이전 합을 유지한다. 첫 `advance`에는 전체 cold route의 packing과 output 초기화도 포함되므로 48은 **MMA 작업 수 제한**이며 시간 제한이나 선점 보장이 아니다. `finish`는 모든 cold window와 hot contribution, prefill shared FFN을 합산한 후에만 결과/event를 공개한다. 중간 launch 실패는 재실행으로 중복 합산하지 못하도록 invocation을 종료 불가 상태로 남긴다. source/weight/metadata mutation, stale identity와 다른 stream은 모든 단계에서 거부한다.
+
+M1b의 shared reader는 두 팔에 동일한 **BF16 linear → clamped SwiGLU → BF16 linear reference**를 명시적으로 사용한다. 실제 serving dense reader, 취소/slot 회수, TP4 합의·collective와 scheduler/graph 연결은 남아 있다. CPU planning·metadata allocation·초기 padding 비용은 별도 기록한다. route histogram이 매번 바뀌는 serving 요청에서 이 비용을 숨기거나 재사용 가능하다고 가정하지 않는다. 실행 knob나 기본 selector는 추가하지 않았다. [M1a evidence](../measurements/mixed_experts_20260914/README.md)와 [M1b evidence](../measurements/mixed_completion_20260914/README.md)에 구분해 기록한다. GPU 실행 결과가 나오기 전에는 descriptor 수 감소만 확인했으며, 실제 시간 단축·TTFT·tok/s 판정은 없다.
 
 ### M1. 빈 행과 실제 절감되는 타일을 구분
 

@@ -118,7 +118,11 @@ class PreparedMixedCompletion:
         return self._decode_output
 
     def advance(self, identity):
-        """Enqueue at most cold_task_quota tiles; never clear previous sums."""
+        """Enqueue at most cold_task_quota MMA tiles; preserve previous sums.
+
+        The first call also packs all cold routes. This is a work-count bound,
+        not a bound on launch latency or a preemptible serving quantum.
+        """
         self.validate(identity)
         if self.state not in ('decode', 'cold'):
             raise RuntimeError('cold work requires a decode result and unfinished routes')

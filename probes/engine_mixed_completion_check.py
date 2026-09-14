@@ -10,6 +10,29 @@ import traceback
 from unittest.mock import patch
 
 
+def output_error(actual, expected):
+    """Fixed BF16 component gate, with bounded scratch even for 32K rows."""
+    import math
+    import torch
+    if actual.shape != expected.shape:
+        raise RuntimeError('completion output shape changed')
+    max_delta = max_ref = sum_delta = sum_ref = 0.
+    for a, b in zip(actual.split(2048), expected.split(2048)):
+        if not bool(torch.isfinite(a).all()) or not bool(torch.isfinite(b).all()):
+            raise RuntimeError('completion output is nonfinite')
+        ref, delta = b.float(), a.float()-b.float()
+        max_delta = max(max_delta, float(delta.abs().max()))
+        max_ref = max(max_ref, float(ref.abs().max()))
+        sum_delta += float(delta.square().sum(dtype=torch.float64))
+        sum_ref += float(ref.square().sum(dtype=torch.float64))
+    count = max(1, actual.numel())
+    result = dict(relative_max=max_delta/max(max_ref, 1e-8),
+        relative_rms=math.sqrt(sum_delta/count)/max(math.sqrt(sum_ref/count), 1e-8))
+    if result['relative_max'] > .02 or result['relative_rms'] > .004:
+        raise RuntimeError(f'completion exceeded the fixed BF16 component tolerance: {result}')
+    return result
+
+
 def compare_cold_frontend(ordinary, owner):
     """Every remaining route, matched by expert and original token, byte exact."""
     import torch
@@ -54,7 +77,7 @@ def measure(args, report):
     from engine.profiles.glm53.modelopt_scales import ModelOptScales
     from engine.profiles.glm53.weights import rank_loader
     from probes.engine_graph_profile import rank_on_this_node
-    from probes.engine_ffn_packets_check import sha_tensor, output_error
+    from probes.engine_ffn_packets_check import sha_tensor
     from probes.engine_mixed_experts_check import compare_frontend
     if torch.cuda.get_device_capability() != (12, 1):
         raise RuntimeError('M1b qualification requires GB10/SM121')

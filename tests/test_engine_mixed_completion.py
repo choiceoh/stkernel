@@ -202,6 +202,20 @@ class CompletionOrderingTests(unittest.TestCase):
                 method(IDENTITY)
         self.assertFalse(any(c[0]=='body' for c in self.calls))
 
+    def test_bounded_probe_error_matches_whole_tensor_metrics_and_refuses_bad_output(self):
+        from probes.engine_mixed_completion_check import output_error
+        t = self.torch
+        # Cross the 2048-row comparison boundary without allocating H4096.
+        reference = t.linspace(.1, 2., 2100*16).reshape(2100, 16)
+        actual = reference * 1.0005
+        result = output_error(actual, reference)
+        delta = actual-reference
+        self.assertAlmostEqual(result['relative_max'], float(delta.abs().max()/reference.abs().max()), places=8)
+        self.assertAlmostEqual(result['relative_rms'], float(delta.square().mean().sqrt()/reference.square().mean().sqrt()), places=8)
+        for bad in (reference*1.1, t.full_like(reference, float('nan'))):
+            with self.assertRaises(RuntimeError):
+                output_error(bad, reference)
+
 
 if __name__ == '__main__':
     unittest.main()
