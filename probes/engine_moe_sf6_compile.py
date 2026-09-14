@@ -22,6 +22,7 @@ def main():
     mode.add_argument('--fc2-words', action='store_true', help='compare in-place FC2 word restoration')
     mode.add_argument('--fc1-reuse', action='store_true', help='compare gate/up A/SFA register reuse')
     mode.add_argument('--compact-staging', action='store_true', help='compare compact FC1 inputs and disjoint FC2 scales')
+    mode.add_argument('--register-scales', action='store_true', help='compare direct MMA scale registers')
     args = parser.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '':
         raise RuntimeError('compile requires CUDA_VISIBLE_DEVICES=')
@@ -57,6 +58,8 @@ def main():
             weight_bytes = b_bytes + 1552*owner.sf1_packed_blocks
             selected.update(smem_bytes=owner.smem_bytes,
                             smem_capacity=owner.smem_capacity,
+                            sf6_registers=owner.sf6_registers,
+                            sf6_register_offsets=getattr(owner, "sf6_register_offsets", None),
                             separate=owner.sf6_separate, word_expand=owner.sf6_word_expand,
                             fc2_word_expand=owner.sf6_fc2_word_expand,
                             fc1_reuse_a=owner.fc1_reuse_a,
@@ -110,11 +113,15 @@ def main():
         # earlier FC1-reuse probe must not silently include compact staging.
         defaults = dict(sf6_separate=True, sf6_word_expand=True,
                         packed_activation_store=True, sf6_fc2_word_expand=True,
-                        fc1_reuse_a=True, compact_staging=False)
-        if args.compact_staging:
+                        fc1_reuse_a=True, compact_staging=False, sf6_registers=False)
+        if args.compact_staging or args.register_scales:
             defaults['compact_staging'] = True
+        if args.register_scales:
+            defaults['sf6_registers'] = True
         cases = [(rows, {}) for rows in (1, 7, 8)]
-        if args.compact_staging:
+        if args.register_scales:
+            cases += [(8, dict(sf6_registers=False)), (8, dict(stamps=True))]
+        elif args.compact_staging:
             cases += [(8, dict(compact_staging=False)), (8, dict(fc1_reuse_a=False))]
         elif args.fc1_reuse:
             cases += [(8, dict(fc1_reuse_a=False))]

@@ -1,0 +1,15 @@
+{
+  "base": "4dbc0713f159f8b2ab316776e1b34c7f1f6944df",
+  "gpu_used": false,
+  "queue_submitted": false,
+  "source_sha256": {
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "f724b8506bdfd88b0f8f7496e2806dd1de474d3bb947c72bda0ac21a2a6772e0",
+    "engine/kernels/b12x/moe_dispatch.py": "d89074a36829cad82f43fa9fbad23cafc7af424056ba85ac8841655ebb9425fb",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "probes/engine_moe_register_scales.py": "a1708eaca45dbb66bd588401cf7e4eaa25874044df594abebe1b0527ef769ae0",
+    "probes/engine_moe_sf6_compile.py": "4420dcbb572c65ac39cc89a4eda37a2d553b5ab4054966d81f55898b4ff7057e",
+    "probes/engine_decode_scatter_check.py": "2b2d7c9792dc7a946b2da2ae6a3639b77215ce9bbc522b2969598e3af01f46a7",
+    "probes/engine_kernel_check.py": "f3fc39352fb2e514a4d5af8b96580299b5127ce3cc2823e64dd3e352c7ea8434",
+    "tests/test_engine_moe_register_scales.py": "b6768186fa02f7688fd9ab141a4fa22bc72fd79beda1e1d551cbb23a7490e648"
+  }
+}
