@@ -2675,3 +2675,24 @@ M1–8 SF6의 입력 재사용·별도 FC1 스케일·짝수 FC1 링에서 기�
 제출·엔진 부팅·실행은 없었으며 품질·수용률·step/s는 미측정이다. 업그레이드 오라클도
 paired MoE 계수가 없어 총 개선율을 null로 남긴다. 위 수치는 속도 개선율이 아니다.
 [소스 해시·버퍼 수명·명령어·자원·재현 기록](measurements/st_moe_compact_staging_20260914/README.md).
+
+### 925차 — C1 MoE 미사용 초기화·중복 동기화 제거 (2026-09-14, srv2 CPU, PR #925)
+
+머지된 PR #923 뒤의 별도 변경이다. SF6가 사용하지 않는 A 파이프라인의 장벽·상태 생성을
+생략하고, FC1/FC2는 실제 CuTe API의 defer_sync로 모두 초기화한 뒤 fence+CTA sync 한 번에
+게시한다. C1의 한 FC1 half에서 양자화 뒤 첫 장벽은 최종 fence+게시 장벽과 중복되므로
+일반 실행에서 제거한다. stamps 모드는 다른 워프가 끝나기 전 완료 시각을 쓰지 않도록
+이전 장벽도 유지한다. 한 FC1 half·한 CTA 클러스터 조건을 생성 시 검증하며 M1–8 SF6 기본 ON이다.
+
+초기 CTA sync 4→1회/CTA, 초기화 장벽 12→8개, 일반 실행 양자화 뒤 rendezvous 2→1회/작업이다.
+같은 소스 M8 control/candidate의 NOP 제외 정적 명령어는 3474→3456, 정적 barrier는 28→24다.
+레지스터 121·staged shared 99328 B·static shared 1024 B·stack/local 0은 동일하며 FP/MMA와
+DMA 명령 수는 변하지 않았다. 미사용 장벽 메타데이터 32 B는 정렬 전 감소량이고 총 공유
+할당은 같다. 속도 개선율로 환산하지 않는다.
+
+실제 초기화·게시 코드 실행, 128개 쓰기 스레드의 지연·stamps ON/OFF, 기존 바이트·수명 검사를
+포함한 CPU 25개와 전체 네이티브 9형상이 통과했다. 추가 native 범위는 stamped M8, FC1
+1-stage 호환성 및 compact OFF이며 기본 FC1은 2-stage로 유지한다. 이전 비교 프로브는 이번
+축을 양쪽 OFF로 고정한다. 새 이미지·기준 엔진 빌드, GPU 큐·실행·부팅·서비스 재시작은 없었다.
+품질·수용률·step/s는 미측정이고 오라클 총 개선율도 paired MoE 계수가 없어 null이다.
+[소스 해시·초기화·게시·프로파일 시각·컴파일 근거](measurements/st_moe_sync_cleanup_20260914/README.md).
