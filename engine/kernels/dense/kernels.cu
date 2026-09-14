@@ -1460,10 +1460,11 @@ mk_gemm_input_cta_kernel(MKGemm2Ctx c) {
 
 // CTA=4: keep the ordinary two or three K slices. In particular M7/N6144
 // uses 16/16 groups, while the compact M6 lane uses 10/11/11.
-template <int TILES, int NB, int SLICES=3, bool DIRECT=false>
+template <int TILES, int NB, int SLICES=3, bool DIRECT=false, int KBLKS=32>
 __global__ void __launch_bounds__(TILES*SLICES*32,TILES==1?6:3)
 mk_gemm_input_cta3_kernel(MKGemm2Ctx c) {
   static_assert(SLICES==2 || SLICES==3);
+  static_assert(KBLKS==12 || KBLKS==16 || KBLKS==24 || KBLKS==32);
   constexpr int MODE=0;
   const int m=c.m;
   constexpr int RAW_NIB=TILES*SLICES*16*64,RAW_BYTES=TILES*SLICES*16*72;
@@ -1474,8 +1475,9 @@ mk_gemm_input_cta3_kernel(MKGemm2Ctx c) {
   sraw+=(MK_SMEM_ALIGN-(sm&(MK_SMEM_ALIGN-1)))&(MK_SMEM_ALIGN-1);
   float* partial=reinterpret_cast<float*>(sraw+NB*RAW_BYTES);
   const int lane=threadIdx.x&31, warp=threadIdx.x>>5, g=lane>>2, q=lane&3;
-  const int kblk=32,nt=blockIdx.x*TILES+warp/SLICES,slice=warp%SLICES;
-  const int kb0=32*slice/SLICES,kbn=32*(slice+1)/SLICES;
+  const int kblk=KBLKS,nt=blockIdx.x*TILES+warp/SLICES,slice=warp%SLICES;
+  // Keep the ordinary split boundaries, including K=2048's 5/5/6 blocks.
+  const int kb0=KBLKS*slice/SLICES,kbn=KBLKS*(slice+1)/SLICES;
   constexpr int DIST=NB-1;
   auto stage_raw=[&](int kb,int buf) {
     const uint8_t* w=c.wq4+((size_t)(nt/8)*kblk+kb)*8192+(nt%8)*1024;
@@ -2962,6 +2964,9 @@ void set_kernel_attrs() {
   MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
       &g_input_cta2_bps,mk_gemm_input_cta3_kernel<2,2,2>,128,INPUT_CTA2_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(mk_gemm_input_cta3_kernel<2,2>,cudaFuncAttributeMaxDynamicSharedMemorySize,INPUT_CTA3_SMEM));
+  MK_CHECK_CUDA(cudaFuncSetAttribute(mk_gemm_input_cta3_kernel<2,2,3,false,12>,cudaFuncAttributeMaxDynamicSharedMemorySize,INPUT_CTA3_SMEM));
+  MK_CHECK_CUDA(cudaFuncSetAttribute(mk_gemm_input_cta3_kernel<2,2,3,false,16>,cudaFuncAttributeMaxDynamicSharedMemorySize,INPUT_CTA3_SMEM));
+  MK_CHECK_CUDA(cudaFuncSetAttribute(mk_gemm_input_cta3_kernel<2,2,3,false,24>,cudaFuncAttributeMaxDynamicSharedMemorySize,INPUT_CTA3_SMEM));
   MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
       &g_input_cta3_bps,mk_gemm_input_cta3_kernel<2,2>,192,INPUT_CTA3_SMEM));
   auto input_cta_attrs=[&](auto kernel,int mode) {
@@ -3041,6 +3046,8 @@ void set_direct_kernel_attrs() {
   set(mk_gemm_input_cta_kernel<2,true>, INPUT_CTA_SMEM);
   set(mk_gemm_input_cta3_kernel<2,2,2,true>, INPUT_CTA2_SMEM);
   set(mk_gemm_input_cta3_kernel<2,2,3,true>, INPUT_CTA3_SMEM);
+  set(mk_gemm_input_cta3_kernel<2,2,3,true,16>, INPUT_CTA3_SMEM);
+  set(mk_gemm_input_cta3_kernel<2,2,3,true,24>, INPUT_CTA3_SMEM);
   ready = true;
 }
 
@@ -3273,7 +3280,8 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                  int64_t rgs_ptr, int64_t lr_a_ptr, int64_t lr_b_ptr,
                  int64_t lr_r, float* private_partial = nullptr, unsigned int* private_arrive = nullptr,
                  const int64_t* out_address = nullptr, bool wide_input = false, bool bound_input = false,
-                 const uint8_t* packed_q = nullptr, const float* packed_s = nullptr) {
+                 const uint8_t* packed_q = nullptr, const float* packed_s = nullptr,
+                 bool local_query = false) {
   set_kernel_attrs();
   if constexpr (DIRECT) set_direct_kernel_attrs();
   MKGemm2Ctx c2{};
@@ -3319,8 +3327,9 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   const int nblk = c2.n / SMEM_W_ROWS;
   c2.ksr = mk_choose_ksr2(c2.m, c2.n, c2.k, c2.lr_r > 0);
   const bool bound_c1 = bound_input && c2.m == 8;
-  TORCH_CHECK(!bound_c1 || (c2.k == 4096 && (c2.n_orig == 6416 ||
-              ((c2.n_orig == 4096 || c2.n_orig == 6144) && (c2.ksr == 2 || c2.ksr == 3)))),
+  TORCH_CHECK(!bound_c1 || ((c2.k == 4096 && (c2.n_orig == 6416 ||
+              ((c2.n_orig == 4096 || c2.n_orig == 6144) && (c2.ksr == 2 || c2.ksr == 3)))) ||
+              (c2.n_orig == 4096 && (c2.k == 2048 || c2.k == 3072) && c2.ksr == 3)),
               "bound C1 input plan is outside the declared reduction geometry");
   const bool input_reuse = bound_c1 || (mk_gemm_input_mode() &&
       mk_input_shape(c2.m, c2.n_orig, c2.k, bg != 0, c2.lr_r != 0) &&
@@ -3338,6 +3347,16 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                 "shared input is an ordinary, independently reduced W4 projection");
     c2.input_q = packed_q;
     c2.input_s = packed_s;
+    if (local_query) {
+      TORCH_CHECK(c2.m == 8 && c2.k == 1536 && c2.ksr == 3 &&
+                  (c2.n_orig == 4096 || c2.n_orig == 8192),
+                  "local query requires the declared three-slice C1 geometry");
+      // Both readers keep their own K slices. All three partials live in
+      // this CTA: no global partials, arrival atomics or rearm dependency.
+      mk_launch<192>(mk_gemm_input_cta3_kernel<2,2,3,false,12>,
+                     c2.n_orig/32,INPUT_CTA3_SMEM,stream,c2);
+      return;
+    }
     // Keep each weight's original N, ksr, MMA and reduction order. Joining
     // weight rows would change ksr, even though both readers share X.
     if (c2.m <= 8)
@@ -3374,7 +3393,11 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
     mk_launch(mk_input_pack_kernel, c2.k / KSTEP, 0, stream,
               MKInputPackCtx{c2.x, q, scales, c2.m, c2.k, c2.x_stride});
     const int cta=bound_c1 ? 4 : mk_gemm_input_cta_mode();
-    if (cta==4 && c2.ksr==2 && (c2.n_orig==4096 || c2.n_orig==6144)) {
+    if (bound_c1 && c2.k == 2048) {
+      mk_launch<192>(mk_gemm_input_cta3_kernel<2,2,3,DIRECT,16>,c2.n_orig/32,INPUT_CTA3_SMEM,stream,c2);
+    } else if (bound_c1 && c2.k == 3072) {
+      mk_launch<192>(mk_gemm_input_cta3_kernel<2,2,3,DIRECT,24>,c2.n_orig/32,INPUT_CTA3_SMEM,stream,c2);
+    } else if (cta==4 && c2.ksr==2 && (c2.n_orig==4096 || c2.n_orig==6144)) {
       mk_launch<128>(mk_gemm_input_cta3_kernel<2,2,2,DIRECT>,c2.n_orig/32,INPUT_CTA2_SMEM,stream,c2);
     } else if (cta==4 && c2.ksr==3 && (c2.n_orig==4096 || c2.n_orig==6144)) {
       mk_launch<192>(mk_gemm_input_cta3_kernel<2,2,3,DIRECT>,c2.n_orig/32,INPUT_CTA3_SMEM,stream,c2);
@@ -3395,7 +3418,7 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
 
 void mk_run_query_pair(torch::Tensor x, std::vector<torch::Tensor> weights,
                        std::vector<torch::Tensor> scales, std::vector<torch::Tensor> rowscales,
-                       std::vector<torch::Tensor> outputs) {
+                       std::vector<torch::Tensor> outputs, bool local_c1 = true) {
   TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2
               && (x.size(0) == 8 || x.size(0) == 16 || x.size(0) == 24 || x.size(0) == 32)
               && x.size(1) == 1536 && x.stride(1) == 1 && x.stride(0) >= 1536
@@ -3421,20 +3444,25 @@ void mk_run_query_pair(torch::Tensor x, std::vector<torch::Tensor> weights,
   }
   TORCH_CHECK(!outputs[0].is_alias_of(outputs[1]) && !outputs[0].is_alias_of(x)
               && !outputs[1].is_alias_of(x), "query pair outputs must not alias");
-  constexpr int QBYTES = 12 * 32 * KSTEP;
-  constexpr int SBYTES = 12 * 32 * sizeof(float);
+  const bool local_query = local_c1 && x.size(0) == 8;
+  const int packed_rows = local_query ? 8 : 32;
+  const int QBYTES = 12 * packed_rows * KSTEP;
+  const int SBYTES = 12 * packed_rows * sizeof(float);
   auto packed = torch::empty({QBYTES + SBYTES}, x.options().dtype(torch::kUInt8));
   auto* q = packed.data_ptr<uint8_t>();
   auto* s = reinterpret_cast<float*>(q + QBYTES);
   auto stream = c10::cuda::getCurrentCUDAStream();
-  mk_launch(mk_wide_input_pack_kernel, 12 * ((x.size(0) + 7) / 8), 0, stream,
-            MKInputPackCtx{(const __nv_bfloat16*)x.data_ptr(), q, s, (int)x.size(0), 1536, x.stride(0)});
+  MKInputPackCtx input{(const __nv_bfloat16*)x.data_ptr(), q, s, (int)x.size(0), 1536, x.stride(0)};
+  if (local_query)
+    mk_launch(mk_input_pack_kernel, 12, 0, stream, input);
+  else
+    mk_launch(mk_wide_input_pack_kernel, 12 * ((x.size(0) + 7) / 8), 0, stream, input);
   // Serial on the existing compute stream: each GEMM rearms its original
   // partial/counter storage before the next. No new persistent scratch.
   for (int i = 0; i < 2; ++i)
     mk_run_gemm_impl(x, weights[i], scales[i], outputs[i], outputs[i].size(1), 1., 0,
                     reinterpret_cast<int64_t>(rowscales[i].data_ptr()), 0, 0, 0,
-                    nullptr, nullptr, nullptr, false, false, q, s);
+                    nullptr, nullptr, nullptr, false, false, q, s, local_query);
 }
 
 void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
@@ -3501,7 +3529,8 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
   TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2,
               "bound input requires CUDA BF16 matrix rows");
   const int64_t m = x.size(0), k = x.size(1), n = n_orig;
-  const bool c1 = m == 8 && k == 4096 && (n == 4096 || n == 6144 || n == 6416);
+  const bool c1 = m == 8 && ((k == 4096 && (n == 4096 || n == 6144 || n == 6416)) ||
+                            (n == 4096 && (k == 2048 || k == 3072)));
   const bool wide = (m == 16 || m == 24 || m == 32) &&
       ((n == 4096 && (k == 2048 || k == 4096 || k == 3072)) ||
        ((n == 2048 || n == 6144) && k == 4096) ||
@@ -4370,7 +4399,9 @@ void mk_run_prep(std::vector<int64_t> ptrs, std::vector<int64_t> ints) {
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  m.def("run_query_pair", &mk_run_query_pair, "two DSA W4 queries sharing invocation-owned input quantization");
+  m.def("run_query_pair", &mk_run_query_pair, "two DSA W4 queries sharing invocation-owned input quantization",
+        pybind11::arg("x"), pybind11::arg("weights"), pybind11::arg("scales"),
+        pybind11::arg("rowscales"), pybind11::arg("outputs"), pybind11::arg("local_c1")=true);
   m.def("run_gemm_bound_input", &mk_run_gemm_bound_input, "bound K=7 input reuse with owned scratch and optional TX output");
   m.def("run_gemm_wide_input", &mk_run_gemm_wide_input, "private wide-row input reuse qualification");
   m.def("probe_device", &mk_probe_device, "device geometry probe");

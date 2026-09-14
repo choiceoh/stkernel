@@ -172,6 +172,7 @@ def check(ranks=None):
     from probes.engine_decode_no_copy import check as no_copy_check
     from probes.engine_decode_lengths import check as lengths_check
     from probes.engine_draft_qk import check as draft_qk_check
+    from probes.engine_forward_reduce import check as forward_reduce_check
     failures = []
     for name, fn in (('query_pair', lambda: query_check(report, ranks=ranks)),
                      ('latent_norm_write', lambda: latent_check(report)),
@@ -181,7 +182,8 @@ def check(ranks=None):
                      ('topk_ids_read', lambda: ids_check(report)),
                      ('output_copy_glue', lambda: no_copy_check(report)),
                      ('decode_length_reuse', lambda: lengths_check(report)),
-                     ('draft_qk_pair', lambda: draft_qk_check(report))):
+                     ('draft_qk_pair', lambda: draft_qk_check(report)),
+                     ('forward_local_reduction', lambda: forward_reduce_check(report, ranks))):
         try:
             fn()
         except Exception as exc:

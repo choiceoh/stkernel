@@ -2729,3 +2729,15 @@ dispatch 작업량이며 GPU 속도 실측이 아니다. CPU 67개 중 32통과�
 실제 커널 인터프리터 28개 비트 일치, SM121 컴파일 8개 통과(shared 0 B)다.
 GPU 큐·부팅·실행은 없고 실제 step/s·수용률·품질·그래프 풀 메모리는 미측정이다.
 [소스 해시·랭크 경계·비트 검증·재현 기록](measurements/st_token_embedding_20260914/README.md).
+
+### ST C1 forward CTA 내 부분합 — 기본 적용 (2026-09-14)
+
+KDA 출력 34개, dense MLP 출력 3개, DSA query 22개의 W4 GEMM에서 기존 세 K 분할을
+한 CTA 안에서 합치도록 확장했다. 기존 분할·MMA·FP32 합산·BF16 반올림 순서를 유지한다.
+전역 부분합 쓰기/읽기 44.25 MiB와 arrival atomic 5,664회를 제거하는 소스 작업량이며
+실제 지연 감소 수치가 아니다. C1 query pack은 50,688→12,672 B다.
+
+CPU 30개 중 21통과·GPU 9skip, 실제 production-flag native 컴파일 5개 새 specialization
+통과(76/78 registers, stack/local spill 0). GPU exact/replay 및 B/A/A/B 검사는 준비했고
+기존 dsa_inputs 묶음에 포함했다. 현재 24 step/s·수용률 개선 실측은 없다.
+[구현·검증·재현 근거](measurements/st_forward_cta_20260914/README.md).
