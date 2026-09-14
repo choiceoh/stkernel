@@ -12,7 +12,7 @@ import torch
 import torch.distributed as dist
 
 # The compiled cell, stated once in engine/kernels/cells.py: the element cap compiled in as MAXEL (64 rows of the
-# measured hidden), the PDL consumer kernel's bound (1..32768 elements run its 12-CTA form), NPEER 3 (four ranks).
+# measured hidden), the largest sum dispatched to the PDL consumer (16 rows, C=2's verify step), NPEER 3 (four ranks).
 from engine.kernels.cells import (ONESHOT_CONSUMER_MAX_ELEMENTS as CONSUMER_MAX_ELEMENTS,
                                   ONESHOT_MAX_ELEMENTS as MAX_ELEMENTS, ONESHOT_WORLD as COMPILED_WORLD)
 
@@ -127,12 +127,12 @@ class OneShot:
                                        for peer in range(self.world) if peer != comm.rank]
             actual = list(self.ext.rails())
             self.agree(None if actual == expected else f'rails {actual} != {expected}', 'rail placement')
-            for rows in (1,6,24,32,48,64):
+            for rows in (1,6,16,24,32,48,64):
                 x = torch.full((rows,self.hidden),comm.rank+1,device='cuda',dtype=torch.bfloat16)
                 ref = x.clone()
                 dist.all_reduce(ref,group=comm.group)
                 reducers = [self.ext.oneshot_ar]
-                if rows <= 8:
+                if x.numel() <= CONSUMER_MAX_ELEMENTS:
                     reducers.append(self.ext.oneshot_ar_consumer)
                 for reduce in reducers:
                     actual = reduce(x)
@@ -162,9 +162,9 @@ class OneShot:
             self.close()
             raise
 
-    # What the boot samples: C=1's decode packet (8 rows), a full C=4 decode packet (32 rows) and the
-    # greedy sampler's int64 MAX. Each is a captured chain of CHAIN collectives replayed REPLAYS times.
-    LATENCY_CELLS = (('sum_8rows', 8), ('sum_32rows', 32), ('max_8keys', 0))
+    # What the boot samples: C=1's decode packet (8 rows), C=2's (16 rows), a full C=4 decode packet (32 rows) and
+    # the greedy sampler's int64 MAX. Each is a captured chain of CHAIN collectives replayed REPLAYS times.
+    LATENCY_CELLS = (('sum_8rows', 8), ('sum_16rows', 16), ('sum_32rows', 32), ('max_8keys', 0))
     LATENCY_CHAIN, LATENCY_REPLAYS = 16, 12
     LATENCY_METHOD = 'batched-events-v1'
 
@@ -227,17 +227,18 @@ class OneShot:
                   (1., 2.**-16, 3., 2.**-24), (1., 2.**-16, 4., -2.**-24))
         row = torch.tensor(values[rank], device='cuda', dtype=torch.bfloat16).repeat(1024)
         expected_row = torch.tensor((2., 2.**-15, 10., 0.), device='cuda', dtype=torch.bfloat16).repeat(1024)
-        for rows in (1, 7, 24, 64):
+        # 7 and 16 rows also replay captured; 16 is C=2's full sum, the largest the consumer serves.
+        for rows in (1, 7, 16, 24, 64):
             x, expected = row.repeat(rows, 1), expected_row.repeat(rows, 1)
             reducers = [self.ext.oneshot_ar]
-            if rows <= 8:
+            if x.numel() <= CONSUMER_MAX_ELEMENTS:
                 reducers.append(self.ext.oneshot_ar_consumer)
             for reduce in reducers:
                 actual = reduce(x)
                 torch.cuda.synchronize()
                 self.agree(None if torch.equal(actual, expected) else 'rank-ordered sum differs',
                            f'{rows}-row cancellation self-test')
-                if rows != 7:
+                if rows not in (7, 16):
                     continue
                 graph = torch.cuda.CUDAGraph()
                 try:
@@ -248,7 +249,7 @@ class OneShot:
                         graph.replay()
                         torch.cuda.synchronize()
                         self.agree(None if torch.equal(actual, expected * factor) else 'captured rank-ordered sum differs',
-                                   f'7-row cancellation replay at scale {factor:g}')
+                                   f'{rows}-row cancellation replay at scale {factor:g}')
                 finally:
                     graph.reset()
                 x.copy_(row.unsqueeze(0).expand_as(x))

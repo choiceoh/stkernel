@@ -48,6 +48,22 @@ def main():
         from probes.engine_decode_dsa_inputs import check as dsa_inputs_check
         dsa_inputs_check(args.ranks)
         return
+    if args.lanes == 'oneshot_consumer':
+        # The PDL consumer sum against the ordinary kernel at C=1/C=2 rows, and the MoE packet ring at the same
+        # rows, on the production transport source behind a CPU proxy: bytes and tickets, not NIC latency.
+        import unittest
+        suite = unittest.defaultTestLoader.loadTestsFromNames(('tests.test_engine_oneshot_consumer_cuda',
+                                                               'tests.test_engine_moe_output_transport'))
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        if not result.wasSuccessful() or result.skipped:
+            raise RuntimeError('one-shot consumer transport gates failed or skipped')
+        import torch
+        row = dict(lane='oneshot_consumer', passed=True, tests=result.testsRun, device=torch.cuda.get_device_name(),
+                   torch=torch.__version__, cuda=torch.version.cuda)
+        if args.output:
+            args.output.write_text(json.dumps(row) + '\n')
+        print(json.dumps(row), flush=True)
+        return
     if args.lanes in ('scatter_bundle', 'batch_fusions', 'batch_boundaries', 'batch_integration', 'k7_commit_bundle', 'k7_output_bundle'):
         from probes.engine_decode_bundle import check as decode_bundle
         decode_bundle(args.ranks, bundle=args.lanes)

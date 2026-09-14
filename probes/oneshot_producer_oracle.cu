@@ -57,6 +57,38 @@ static void land_peers(at::Tensor host, uint64_t sequence, at::Tensor peers) {
   __atomic_store_n(&c->ack_seq, sequence, __ATOMIC_RELEASE);
 }
 
+// A PDL neighbour on the collective's stream. As its producer it releases the next launch before a late
+// write, so a sum that read before its own dependency wait would see the previous input; as its successor it
+// launches at the sum's release, before the peers land, and copies only after its wait.
+__global__ void staged_copy(const bf16* src, bf16* dst, int n, long long cycles) {
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  asm volatile("griddepcontrol.launch_dependents;");
+  const long long start = clock64();
+  if (threadIdx.x == 0)
+    while (clock64() - start < cycles) __nanosleep(64);
+  __syncthreads();
+  for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += gridDim.x * blockDim.x) dst[i] = src[i];
+}
+
+static void launch_staged_copy(at::Tensor src, at::Tensor dst, int64_t cycles) {
+  TORCH_CHECK(src.is_cuda() && dst.is_cuda() && src.scalar_type() == at::kBFloat16 &&
+              dst.scalar_type() == at::kBFloat16 && src.is_contiguous() && dst.is_contiguous() &&
+              src.numel() == dst.numel() && src.numel() <= MAXEL && cycles >= 0,
+              "staged copy needs matching contiguous BF16 tensors within MAXEL");
+  cudaLaunchConfig_t cfg{};
+  cfg.gridDim = dim3(ARGRID);
+  cfg.blockDim = dim3(ARTHREADS);
+  cfg.stream = c10::cuda::getCurrentCUDAStream();
+  cudaLaunchAttribute attr{};
+  attr.id = cudaLaunchAttributeProgrammaticStreamSerialization;
+  attr.val.programmaticStreamSerializationAllowed = 1;
+  cfg.attrs = &attr;
+  cfg.numAttrs = 1;
+  const auto err = cudaLaunchKernelEx(&cfg, staged_copy, reinterpret_cast<const bf16*>(src.data_ptr()),
+                                       reinterpret_cast<bf16*>(dst.data_ptr()), int(src.numel()), (long long)cycles);
+  TORCH_CHECK(err == cudaSuccess, "staged copy launch: ", cudaGetErrorString(err));
+}
+
 __global__ void fold(const int64_t* addresses, bf16* out, int n) {
   auto ranks = reinterpret_cast<const bf16* const*>(addresses);
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += gridDim.x * blockDim.x) {
@@ -81,6 +113,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("reserve_packets", &py_reserve_packets);
   m.def("publish_packets", &py_publish_packets);
   m.def("oneshot_packets", &py_oneshot_packets);
+  m.def("oneshot_ar", &py_oneshot);
+  m.def("oneshot_ar_consumer", &py_oneshot_consumer);
+  m.def("staged_copy", &launch_staged_copy);
   m.def("moe_packets", &py_moe_packets);
   m.def("oneshot_max_int64", &py_oneshot_max_int64);
   m.def("oneshot_gather_int64", &py_oneshot_gather_int64);

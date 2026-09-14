@@ -296,7 +296,7 @@ class WrapperTests(unittest.TestCase):
     def test_oneshot_takes_its_row_width_from_the_shape(self):
         from engine.kernels import oneshot
         self.assertEqual((oneshot._cell().world, oneshot._cell().hidden), (4, 4096))
-        self.assertEqual((oneshot.MAX_ELEMENTS, oneshot.CONSUMER_MAX_ELEMENTS), (64 * 4096, 8 * 4096))
+        self.assertEqual((oneshot.MAX_ELEMENTS, oneshot.CONSUMER_MAX_ELEMENTS), (64 * 4096, 16 * 4096))
         ks.bind(qwen_shape())
         self.assertEqual(oneshot._cell().hidden, 2560)
         ks.reset()
