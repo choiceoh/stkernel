@@ -18,7 +18,7 @@ class DirectMhcCudaTests(unittest.TestCase):
             scale = torch.tensor([.2, .3, .4], device="cuda")
             base = torch.randn(24, device="cuda") * .1
             norm = torch.randn(4096, device="cuda", dtype=torch.bfloat16)
-            for rows in (1, 7, 28, 64):
+            for rows in (1, 7, 8, 16, 28, 64):                      # 8 and 16: the K=7 C=1 and C=2 verify widths
                 banks = [[torch.randn(rows, 4096, device="cuda", dtype=torch.bfloat16)
                           for _ in range(4)] for _ in range(2)]
                 # A local-first fold disagrees across ranks; omitting the BF16

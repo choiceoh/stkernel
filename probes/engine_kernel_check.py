@@ -44,6 +44,10 @@ def main():
         from probes.engine_forward_reduce import main as forward_reduce_check
         forward_reduce_check(args.ranks)
         return
+    if args.lanes == 'mhc_c2_packed':
+        from probes.engine_mhc_c2_packed import main as mhc_c2_packed_check
+        mhc_c2_packed_check(args.ranks, args.output)
+        return
     if args.lanes == 'dsa_inputs':
         from probes.engine_decode_dsa_inputs import check as dsa_inputs_check
         dsa_inputs_check(args.ranks)
