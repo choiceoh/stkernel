@@ -21,7 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULES = ("tests.test_engine_speculative_tree", "tests.test_engine_tree_decode",
            "tests.test_engine_tile_dataflow", "tests.test_engine_nvfp4_dataflow", "tests.test_engine_w4a8_dataflow",
            "tests.test_engine_drafter", "tests.test_engine_draft_agreement",
-           "tests.test_engine_moe_output", "tests.test_engine_execution_plans")
+           "tests.test_engine_moe_output", "tests.test_engine_execution_plans",
+           "tests.test_engine_ffn_packets", "tests.test_engine_tree_dataflow_gpu")
 SOURCES = ("engine/modules/speculative_tree.py", "engine/modules/tree_kda.py", "engine/kernels/kda/tree.py",
            "engine/modules/tile_dataflow.py", "engine/modules/nvfp4_dataflow.py", "engine/modules/w4a8_dataflow.py",
            "engine/kernels/tile_dataflow.py",
