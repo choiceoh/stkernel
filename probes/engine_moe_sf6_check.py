@@ -39,9 +39,10 @@ def main():
     # Match the real Storage header's alignment and FC1 packed-ring offsets.
     source_base, dest_base, extent = 240, 4096, 4096+slots*block+16
 
-    def compile_helper(separate, word_expand):
+    def compile_helper(separate, word_expand, fc2_word_expand):
         owner = MoEStaticKernelV4(16, 4, decode_reform=True, reform_sf_pack=True,
-                                  sf6_separate=separate, sf6_word_expand=word_expand)
+                                  sf6_separate=separate, sf6_word_expand=word_expand,
+                                  sf6_fc2_word_expand=fc2_word_expand)
         @cute.kernel
         def expand(src: cute.Tensor, dst: cute.Tensor):
             tid, _, _ = cute.arch.thread_idx()
@@ -67,7 +68,8 @@ def main():
                     owner._sf_expand_stage(addr+dest_base+slot*block, cutlass.Int32(tid), block,
                                            packed_addr=addr+input_offset)
                 else:
-                    owner._sf_expand_stage(addr+dest_base+slot*block, cutlass.Int32(tid), block)
+                    owner._sf_expand_stage(addr+dest_base+slot*block, cutlass.Int32(tid), block,
+                                           word_expand=owner.sf6_fc2_word_expand)
                 i = cutlass.Int32(tid)
                 while i < extent:
                     dst[generation, i] = raw[i]
@@ -86,7 +88,8 @@ def main():
             cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True),
             options='--opt-level 2 --enable-tvm-ffi')
 
-    cases = ((False, False), (True, False), (True, True))
+    cases = ((False, False, False), (False, False, True),
+             (True, False, False), (True, True, False))
     kernels = {case: compile_helper(*case) for case in cases}
     records = []
     if args.gpu:
@@ -95,7 +98,7 @@ def main():
         source = torch.empty((4, packed), dtype=torch.uint8, device='cuda')
         dest = torch.empty((4, extent), dtype=torch.uint8, device='cuda')
         source.zero_()
-        for (separate, word_expand), kernel in kernels.items():
+        for (separate, word_expand, fc2_word_expand), kernel in kernels.items():
             kernel(source, dest)
             torch.cuda.synchronize()
             graph = torch.cuda.CUDAGraph()
@@ -114,8 +117,10 @@ def main():
                     output_offset = dest_base+slot*block
                     expected[output_offset:output_offset+block] = raw_bytes
                     if bytes(observed[generation]) != expected:
-                        raise AssertionError(('SF6 bytes/canaries', separate, word_expand, replay, generation))
-            records.append(dict(separate=separate, word_expand=word_expand, graph_replays=64, exact=True))
+                        raise AssertionError(('SF6 bytes/canaries', separate, word_expand,
+                                              fc2_word_expand, replay, generation))
+            records.append(dict(separate=separate, word_expand=word_expand,
+                                fc2_word_expand=fc2_word_expand, graph_replays=64, exact=True))
     elif torch.cuda.is_initialized():
         raise RuntimeError('CPU compile initialized CUDA')
     report = dict(status='PASS', mode='gpu' if args.gpu else 'cpu',
