@@ -86,12 +86,18 @@ class OwnershipTests(unittest.TestCase):
         net = NS(decode_dsa_rows=ROWS, layers=(0, 1, 2), F=NS(is_dsa=lambda L: L != 0),
                  _query_pairs={L: NS(executed=set(ROWS)) for L in (1, 2)})
         expected = {(L, m) for L in (1, 2) for m in ROWS}
+        net.decode_pools_executed = expected
         for omitted in expected:
             net.decode_latents_executed = expected - {omitted}
             with self.assertRaisesRegex(RuntimeError, 'not executed'):
                 decode_dsa_report(net)
         net.decode_latents_executed = expected
         self.assertEqual(decode_dsa_report(net)['input_pack_bytes'], 50688)
+        for omitted in expected:
+            net.decode_pools_executed = expected - {omitted}
+            with self.assertRaisesRegex(RuntimeError, 'pools='):
+                decode_dsa_report(net)
+        net.decode_pools_executed = expected
         net._query_pairs[1].executed.remove(8)
         with self.assertRaisesRegex(RuntimeError, 'queries='):
             decode_dsa_report(net)

@@ -897,6 +897,72 @@ class ChatDoorTests(unittest.TestCase):
         finally:
             httpd.shutdown(); httpd.server_close()
 
+    def test_a_conversation_that_sends_its_tool_calls_back_renders_and_effort_uses_the_profiles_ladder(self):
+        s = chat_server()
+        rendered = []
+        plain = s.chat
+
+        def strict(messages, kwargs, **kw):                  # the templates iterate arguments as a mapping
+            for m in messages:
+                for call in m.get("tool_calls") or []:
+                    if not isinstance(call["function"]["arguments"], dict):
+                        raise TypeError("Can only get item pairs from a mapping.")
+            rendered.append((messages, dict(kwargs)))
+            return plain(messages, kwargs, **kw)
+        s.chat = strict
+        s.effort_rungs = {"low": "low", "medium": "medium", "high": "xhigh", "xhigh": "xhigh", "max": "xhigh"}
+        s.reasoning_effort_aliases = {"high": "xhigh", "max": "xhigh"}
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+
+        def post(path, body):
+            with urllib.request.urlopen(urllib.request.Request(base + path, data=json.dumps(body).encode()), timeout=5) as r:
+                return json.load(r)
+        history = [{"role": "user", "content": "ab"},
+                   {"role": "assistant", "content": None, "tool_calls": [
+                       {"id": "c0", "type": "function", "function": {"name": "lookup", "arguments": '{"q": "서울", "n": 2}'}},
+                       {"id": "c1", "type": "function", "function": {"name": "ping", "arguments": ""}}]},
+                   {"role": "tool", "tool_call_id": "c0", "content": "xy"}]
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                out = drive(s, pool.submit(post, "/v1/chat/completions", {"messages": history, "max_tokens": 2,
+                                                                          "reasoning_effort": "high"}))
+            self.assertEqual(out['choices'][0]['message']['content'], 'yy')
+            messages, kwargs = rendered[-1]
+            self.assertEqual([c["function"]["arguments"] for c in messages[1]["tool_calls"]], [{"q": "서울", "n": 2}, {}])
+            self.assertEqual(history[1]["tool_calls"][0]["function"]["arguments"], '{"q": "서울", "n": 2}')   # the request's own list
+            self.assertEqual(kwargs["reasoning_effort"], "xhigh")
+            self.assertEqual(post("/tokenize", {"messages": history})["count"], len("abxy"))
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:            # the same request under two names
+                drive(s, pool.submit(post, "/v1/chat/completions", {"messages": history, "max_tokens": 1, "reasoning_effort": "max",
+                                                                    "chat_template_kwargs": {"reasoning_effort": "xhigh"}}))
+            self.assertEqual(rendered[-1][1]["reasoning_effort"], "xhigh")
+            with self.assertRaises(urllib.error.HTTPError) as refused:
+                post("/v1/chat/completions", {"messages": history, "max_tokens": 1, "reasoning_effort": "ultra"})
+            self.assertEqual(refused.exception.code, 400)
+            self.assertIn("reasoning_effort must be low, medium, high, xhigh, or max", refused.exception.read().decode())
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_effort_rungs_are_text_and_every_alias_lands_on_one(self):
+        from engine.base.serve import EFFORT_RUNGS, effort_rungs_checked, effort_words
+        s = server()
+        self.assertEqual(s.effort_rungs, EFFORT_RUNGS)
+        self.assertEqual(effort_words(EFFORT_RUNGS), "low, medium, high, or max")         # GLM-5.3's refusal, word for word
+        for kw in ({"effort_rungs": {}}, {"effort_rungs": {"high": 3}},
+                   {"effort_rungs": {"low": "low"}, "reasoning_effort_aliases": {"max": "high"}}):
+            with self.subTest(kw=kw), self.assertRaisesRegex(ValueError, "effort_rungs"):
+                Server(s.engine, s.runner, Comm(), host="127.0.0.1", port=0, **kw)
+
+        def qwen(messages, kwargs, **_):
+            if kwargs.get("reasoning_effort", "xhigh") not in ("xhigh", "medium", "low"):
+                raise ValueError(f"Unexpected reasoning effort {kwargs['reasoning_effort']}.")
+            return "prompt"
+        table = {"low": "low", "medium": "medium", "high": "xhigh", "max": "xhigh"}
+        self.assertEqual(effort_rungs_checked(qwen, table), table)
+        with self.assertRaisesRegex(ValueError, "refuses reasoning_effort 'high'"):
+            effort_rungs_checked(qwen, EFFORT_RUNGS)
+
     def test_a_reasoning_tail_is_token_ids_after_an_end(self):
         s = server()
         for kw in ({"reasoning_tail": (5,)}, {"reasoning_end": 3, "reasoning_tail": ("\n",)},
@@ -928,6 +994,28 @@ class ChatDoorTests(unittest.TestCase):
             self.assertFalse(s._streams or s.pending)
         finally:
             httpd.shutdown(); httpd.server_close()
+
+
+class TemplateMessagesTests(unittest.TestCase):
+    """base/serve.template_messages: OpenAI's JSON-text tool arguments as the mapping a template iterates."""
+
+    def test_json_objects_become_objects_and_everything_else_stays(self):
+        from engine.base.serve import template_messages
+        calls = [{"id": "a", "function": {"name": "f", "arguments": '{"k": [1, "둘"]}'}},
+                 {"id": "b", "function": {"name": "g", "arguments": "  "}},
+                 {"id": "c", "function": {"name": "h", "arguments": "not json"}},
+                 {"id": "d", "function": {"name": "i", "arguments": "[1, 2]"}},
+                 {"id": "e", "function": {"name": "j", "arguments": {"already": True}}},
+                 {"id": "f"}, "junk"]
+        user = {"role": "user", "content": "hi"}
+        messages = [user, {"role": "assistant", "content": None, "tool_calls": calls}]
+        out = template_messages(messages)
+        self.assertIs(out[0], user)
+        self.assertEqual([c["function"]["arguments"] if isinstance(c, dict) and "function" in c else c
+                          for c in out[1]["tool_calls"]],
+                         [{"k": [1, "둘"]}, {}, "not json", "[1, 2]", {"already": True}, {"id": "f"}, "junk"])
+        self.assertEqual(calls[0]["function"]["arguments"], '{"k": [1, "둘"]}')          # the caller's messages are untouched
+        self.assertEqual(template_messages("not a list"), "not a list")
 
 
 class ReasoningMarksTests(unittest.TestCase):

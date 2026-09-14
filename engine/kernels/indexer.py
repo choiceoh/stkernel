@@ -237,7 +237,8 @@ def gather_candidates(keys, scales, block_table, per, block_stride, layer_offset
 
 @triton.jit
 def _pool_window(TAILS, K, GATE, CTX, OUT_K, OUT_G, T: tl.constexpr, KP: tl.constexpr, W: tl.constexpr, NPOS: tl.constexpr,
-                 tail_s0, tail_s1, tail_s2, k_s0, k_s1, gate_s0, gate_s1, D: tl.constexpr):
+                 tail_s0, tail_s1, tail_s2, k_s0, k_s1, gate_s0, gate_s1, D: tl.constexpr,
+                 SLOTS, MAPPED: tl.constexpr):
     seg = tl.program_id(0)
     i = tl.program_id(1)
     ctx = tl.load(CTX + seg)
@@ -246,7 +247,8 @@ def _pool_window(TAILS, K, GATE, CTX, OUT_K, OUT_G, T: tl.constexpr, KP: tl.cons
     prev = (ctx + rel) % W
     cur = tl.minimum(tl.maximum(rel, 0), T - 1)
     d = tl.arange(0, D)
-    ring = TAILS + seg * tail_s0 + prev * tail_s1
+    slot = tl.load(SLOTS + seg) if MAPPED else seg
+    ring = TAILS + slot * tail_s0 + prev * tail_s1
     k_ring = tl.load(ring + d, earlier & (d < D), other=0)
     g_ring = tl.load(ring + tail_s2 + d, earlier & (d < D), other=0)
     k_cur = tl.load(K + seg * k_s0 + cur * k_s1 + d)
@@ -256,21 +258,27 @@ def _pool_window(TAILS, K, GATE, CTX, OUT_K, OUT_G, T: tl.constexpr, KP: tl.cons
     tl.store(OUT_G + out, tl.where(earlier, g_ring, g_cur))
 
 
-def pool_window(tails, keys, gates, contexts, pool_size: int, max_pools: int):
+def pool_window(tails, keys, gates, contexts, pool_size: int, max_pools: int, *, slots=None):
     """The window each row pools this step -- the tail ring's earlier tokens of the half-built pool, then this
     step's -- as (keys, gates) [rows * max_pools, pool_size, d]: `complete_pools`' window in one launch."""
-    n, w, two, d = tails.shape
+    size, w, two, d = tails.shape
+    n = keys.shape[0]
     t = keys.shape[1]
     assert two == 2 and keys.shape == (n, t, d) == gates.shape and tails.stride(3) == 1
     assert keys.stride(2) == 1 and gates.stride(2) == 1 and contexts.shape == (n,) and contexts.stride(0) == 1
     assert d & (d - 1) == 0
+    if slots is None:
+        assert size == n
+    elif (slots.shape != (n,) or slots.dtype != torch.int64 or not slots.is_contiguous()
+          or slots.device != tails.device or any(x.device != tails.device for x in (keys, gates, contexts))):
+        raise ValueError('mapped pool windows require the step physical slots on the cache device')
     npos = max_pools * pool_size
     out_k = torch.empty((n * npos, d), dtype=keys.dtype, device=keys.device)
     out_g = torch.empty((n * npos, d), dtype=gates.dtype, device=keys.device)
     if n and npos:
         _pool_window[(n, npos)](tails, keys, gates, contexts, out_k, out_g, t, pool_size, w, npos,
                                 tails.stride(0), tails.stride(1), tails.stride(2), keys.stride(0), keys.stride(1),
-                                gates.stride(0), gates.stride(1), d)
+                                gates.stride(0), gates.stride(1), d, contexts if slots is None else slots, slots is not None)
     return out_k.view(n * max_pools, pool_size, d), out_g.view(n * max_pools, pool_size, d)
 
 
@@ -375,6 +383,70 @@ def write_tails(field, slots, contexts, keys, gates):
         _write_tails[(t, n)](keys, gates, field, slots, contexts, t, field.shape[1], d,
                              keys.stride(0), keys.stride(1), gates.stride(0), gates.stride(1),
                              field.stride(0), field.stride(1), field.stride(2))
+
+
+@triton.jit
+def _update_pool_cache(PK, PS, KEYS, SCALES, TAIL, SLOTS, CTX, TABLE, K, GATE,
+                       PER: tl.constexpr, STRIDE: tl.constexpr, OFFSET: tl.constexpr, CAP: tl.constexpr,
+                       KP: tl.constexpr, T: tl.constexpr, MAXP: tl.constexpr, W: tl.constexpr, D: tl.constexpr,
+                       table_s0, table_s1, key_s0, scale_s0, tail_s0, tail_s1, tail_s2,
+                       k_s0, k_s1, gate_s0, gate_s1):
+    item, seg = tl.program_id(0), tl.program_id(1)
+    ctx = tl.load(CTX + seg)
+    d = tl.arange(0, D)
+    if item < MAXP:
+        # Same integer addresses and padded-pool mask as _pool_addresses +
+        # _scatter_pools. No arithmetic on the key bytes or FP32 scale.
+        live = item < (ctx % KP + T) // KP
+        pid = tl.minimum(ctx // KP + item, CAP - 1)
+        page = tl.load(TABLE + seg * table_s0 + (pid // PER) * table_s1, live, other=0)
+        rec = page.to(tl.int64) * STRIDE + OFFSET + pid % PER
+        value = tl.load(PK + (seg * MAXP + item) * D + d, live, other=0)
+        scale = tl.load(PS + seg * MAXP + item, live, other=0.)
+        tl.store(KEYS + rec * key_s0 + d, value, live)
+        tl.store(SCALES + rec * scale_s0, scale, live)
+    else:
+        # The window/compression finished before this launch, so the tail
+        # reads cannot race these writes, even when replay rolls context back.
+        row = item - MAXP
+        slot = tl.load(SLOTS + seg)
+        cell = TAIL + slot * tail_s0 + ((ctx + row) % W) * tail_s1
+        tl.store(cell + d, tl.load(K + seg * k_s0 + row * k_s1 + d))
+        tl.store(cell + tail_s2 + d, tl.load(GATE + seg * gate_s0 + row * gate_s1 + d))
+
+
+def update_pool_cache(pooled_keys, pooled_scales, keys, scales, field, slots, contexts, raw_keys, gates,
+                      block_table, per, block_stride, layer_offset, pool_size, capacity):
+    """K=7: pool addresses, pool-record scatter and raw-tail writes in one launch.
+
+    Inputs are the existing arena views and replay ids. No address tensors,
+    cache copies, casts or floating-point reductions are introduced.
+    """
+    n, t, d = raw_keys.shape
+    max_pools = (pool_size - 1 + t) // pool_size
+    if (t != 8 or pool_size != 4 or d != 128 or not 1 <= n <= 4
+            or raw_keys.dtype != torch.bfloat16 or gates.dtype != raw_keys.dtype
+            or gates.shape != raw_keys.shape or raw_keys.stride(2) != 1 or gates.stride(2) != 1
+            or field.ndim != 4 or field.shape[1:] != (10, 2, d) or field.stride(3) != 1
+            or field.dtype != raw_keys.dtype or slots.shape != (n,) or contexts.shape != (n,)
+            or slots.dtype != torch.int64 or contexts.dtype != torch.int64
+            or not slots.is_contiguous() or not contexts.is_contiguous()
+            or pooled_keys.shape != (n * max_pools, d) or pooled_keys.element_size() != 1
+            or not pooled_keys.is_contiguous() or pooled_scales.shape != (n * max_pools,)
+            or pooled_scales.dtype != torch.float32 or not pooled_scales.is_contiguous()
+            or keys.ndim != 2 or keys.shape[1] != d or keys.element_size() != 1 or keys.stride(1) != 1
+            or scales.shape != (keys.shape[0],) or scales.dtype != torch.float32
+            or block_table.ndim != 2 or block_table.shape[0] != n or block_table.dtype != torch.int32
+            or min(per, block_stride, capacity) <= 0 or layer_offset < 0 or block_stride < layer_offset + per
+            or block_table.shape[1] * per < capacity
+            or any(x.device != keys.device for x in (pooled_keys, pooled_scales, scales, field, slots,
+                                                      contexts, raw_keys, gates, block_table))):
+        raise ValueError('pool cache update requires the bound K=7 BF16 tails and mapped pool records')
+    _update_pool_cache[(max_pools + t, n)](
+        pooled_keys.view(torch.uint8), pooled_scales, keys.view(torch.uint8), scales, field, slots,
+        contexts, block_table, raw_keys, gates, per, block_stride, layer_offset, capacity,
+        pool_size, t, max_pools, field.shape[1], d, *block_table.stride(), keys.stride(0), scales.stride(0),
+        *field.stride()[:3], *raw_keys.stride()[:2], *gates.stride()[:2], num_warps=4)
 
 
 @triton.jit

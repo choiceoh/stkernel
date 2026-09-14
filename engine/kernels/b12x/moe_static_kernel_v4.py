@@ -123,6 +123,7 @@ class MoEStaticKernelV4:
         sf6_word_expand: bool = True,
         sf6_fc2_word_expand: bool = True,
         packed_activation_store: bool = True,
+        fc1_reuse_a: bool = True,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -215,6 +216,10 @@ class MoEStaticKernelV4:
         self.sf6_word_expand = bool(sf6_word_expand and self.sf6_separate)
         self.sf6_fc2_word_expand = bool(sf6_fc2_word_expand and self.reform_sf_pack and self.decode_reform)
         self.packed_activation_store = bool(packed_activation_store and self.decode_reform)
+        # The full K256 A/SFA fragment already has one register slice per
+        # K64 block. Retain gate's slices through up; neither MMA writes them.
+        # Gate alone loads A/SFA; the original B/SFB stage ring is unchanged.
+        self.fc1_reuse_a = bool(fc1_reuse_a and self.decode_reform and self.reform_sf_pack)
         # Scatter only consumes rows in this M16 tile. Avoid initializing
         # 112 unused token/weight entries per item and reclaim their storage.
         self.scatter_cache_rows = self.tile_m if self.sf6_separate else _COMPACT_STATIC_TILE_M
@@ -514,6 +519,22 @@ class MoEStaticKernelV4:
             atom_layout,
             permutation_mnk=permutation_mnk,
         )
+
+    def _validate_fc1_reuse_fragment(self, fragment, name):
+        """Every K64 block must survive the next block's register loads."""
+        if cute.rank(fragment) != 3 or cute.size(fragment, mode=[2]) != self.fc1_tile_k // 64:
+            raise ValueError(f"FC1 reuse requires a full K tile in {name} registers")
+        identity = cute.make_identity_tensor(fragment.shape)
+        blocks = [set() for _ in range(self.fc1_tile_k // 64)]
+        for i in range(cute.size(fragment)):
+            point = tuple(identity[i])
+            blocks[int(point[2])].add(int(cute.crd2idx(point, fragment.layout)))
+        seen = set()
+        for block in blocks:
+            if not block or block & seen:
+                raise ValueError(f"FC1 reuse found aliased K blocks in {name} registers")
+            seen.update(block)
+        return tuple(len(block) for block in blocks)
 
     def _validate_direct_scatter_layout(self):
         """Bind register pairs to the actual copy layout before native compile."""
@@ -922,7 +943,7 @@ class MoEStaticKernelV4:
         a_tma_bytes = cute.size_in_bytes(self.a_dtype, a1_smem_one) + cute.size_in_bytes(
             self.sf_dtype, sfa1_smem_one
         )
-        if cutlass.const_expr(not self.skip_a and not self.a_ring):
+        if cutlass.const_expr(not self.skip_a and not self.a_ring and not self.fc1_reuse_a):
             fc1_tma_bytes += a_tma_bytes
         if cutlass.const_expr(not self.skip_sf):
             if cutlass.const_expr(self.reform_sf_pack):
@@ -1613,6 +1634,9 @@ class MoEStaticKernelV4:
                     self, sSFA1_tile[None, None, 0], thr_mma1, tidx  # type: ignore[arg-type]
                 )
                 fz_crSFA1_tile = cute.filter_zeros(thr_ld_SFA1.retile(tCrSFA1_tile))
+                if cutlass.const_expr(self.fc1_reuse_a):
+                    self._validate_fc1_reuse_fragment(tCrA1, "A")
+                    self._validate_fc1_reuse_fragment(tCrSFA1_tile, "SFA")
                 valid_tile_rows = valid_rows - tile_m_base
                 if valid_tile_rows > Int32(self.tile_m):
                     valid_tile_rows = Int32(self.tile_m)
@@ -1706,12 +1730,14 @@ class MoEStaticKernelV4:
                                 fz_csSFB_p = cute.filter_zeros(
                                     csSFB1[None, None, None, fc1_cons_state.index]
                                 )
-                                cute.copy(smem_copy_A1, csA_p[None, None, 0], crA1[None, None, 0])
+                                if cutlass.const_expr(not self.fc1_reuse_a or gu == 0):
+                                    cute.copy(smem_copy_A1, csA_p[None, None, 0], crA1[None, None, 0])
                                 cute.copy(smem_copy_B1, csB_p[None, None, 0], crB1[None, None, 0])
-                                cute.copy(
-                                    smem_copy_SFA1, fz_csSFA_p[None, None, 0],
-                                    fz_crSFA1_tile[None, None, 0],
-                                )
+                                if cutlass.const_expr(not self.fc1_reuse_a or gu == 0):
+                                    cute.copy(
+                                        smem_copy_SFA1, fz_csSFA_p[None, None, 0],
+                                        fz_crSFA1_tile[None, None, 0],
+                                    )
                                 cute.copy(
                                     smem_copy_SFB1, fz_csSFB_p[None, None, 0],
                                     fz_crSFB1[None, None, 0],
@@ -1722,18 +1748,20 @@ class MoEStaticKernelV4:
                                         else k_block_idx + 1
                                     )
                                     if k_next > 0:
-                                        cute.copy(
-                                            smem_copy_A1, csA_p[None, None, k_next],
-                                            crA1[None, None, k_next],
-                                        )
+                                        if cutlass.const_expr(not self.fc1_reuse_a or gu == 0):
+                                            cute.copy(
+                                                smem_copy_A1, csA_p[None, None, k_next],
+                                                crA1[None, None, k_next],
+                                            )
                                         cute.copy(
                                             smem_copy_B1, csB_p[None, None, k_next],
                                             crB1[None, None, k_next],
                                         )
-                                        cute.copy(
-                                            smem_copy_SFA1, fz_csSFA_p[None, None, k_next],
-                                            fz_crSFA1_tile[None, None, k_next],
-                                        )
+                                        if cutlass.const_expr(not self.fc1_reuse_a or gu == 0):
+                                            cute.copy(
+                                                smem_copy_SFA1, fz_csSFA_p[None, None, k_next],
+                                                fz_crSFA1_tile[None, None, k_next],
+                                            )
                                         cute.copy(
                                             smem_copy_SFB1, fz_csSFB_p[None, None, k_next],
                                             fz_crSFB1[None, None, k_next],
@@ -2203,7 +2231,14 @@ class MoEStaticKernelV4:
                             for gu in cutlass.range_constexpr(2):
                                 fc1_pipeline.producer_acquire(fc1_prod_state)
                                 bar = fc1_pipeline.producer_get_barrier(fc1_prod_state)
-                                if cutlass.const_expr(not self.skip_a and not self.a_ring):
+                                if cutlass.const_expr(self.fc1_reuse_a and not self.skip_a and gu == 0):
+                                    # The base arrival expects B/SFB (>0 bytes).
+                                    # Add A/SFA exactly once BEFORE any TMA issue;
+                                    # up then needs no input DMA or separate A ring.
+                                    if is_dma_lane0:
+                                        cute.arch.mbarrier_expect_tx(bar, a_tma_bytes)
+                                if cutlass.const_expr(not self.skip_a and not self.a_ring
+                                                      and (not self.fc1_reuse_a or gu == 0)):
                                     cute.copy(
                                         tma_a, tAgA_mk[(None, k_tile)],
                                         tAsA[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
@@ -2218,7 +2253,8 @@ class MoEStaticKernelV4:
                                         tma_b_w13, tBgB_up_nk[(None, k_tile)],
                                         tBsB1[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
                                     )
-                                if cutlass.const_expr(not self.skip_a and not self.a_ring):
+                                if cutlass.const_expr(not self.skip_a and not self.a_ring
+                                                      and (not self.fc1_reuse_a or gu == 0)):
                                     cute.copy(
                                         tma_sfa, tAgSFA_mk[(None, k_tile)],
                                         tAsSFA[(None, fc1_prod_state.index)], tma_bar_ptr=bar,

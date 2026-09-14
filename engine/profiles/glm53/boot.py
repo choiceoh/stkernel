@@ -251,7 +251,7 @@ def declared(a, comm_world: int) -> Config:
              "Operator-enabled K=7 FP32 head-gate partials with fused boundary reduction; paired GPU qualification pending",
              "STK_decode_indexer_gate=0", int),
         Knob("decode_dsa_inputs", gb10_defaults["decode_dsa_inputs"], _dt.date(2026, 9, 30),
-             "Operator-enabled K=7 shared query input pack and fused latent norm/write; paired GPU qualification pending",
+             "Operator-enabled K=7 shared queries, latent norm/write and direct pool-cache glue; paired GPU qualification pending",
              "STK_decode_dsa_inputs=0", int),
         Knob("decode_fastpaths", gb10_defaults["decode_fastpaths"], _dt.date(2026, 9, 30),
              "Operator-enabled K=7 input reuse, paired projections and direct TX outputs; GPU qualification pending",
@@ -799,9 +799,11 @@ def decode_dsa_report(net):
     expected = {(L, m) for L in net.layers if net.F.is_dsa(L) for m in rows}
     queries = {(L, m) for L, pair in net._query_pairs.items() for m in pair.executed if m in rows}
     latents = expected.intersection(net.decode_latents_executed)
-    if queries != expected or latents != expected:
-        raise RuntimeError(f'DSA inputs were not executed: queries={sorted(expected - queries)}, latents={sorted(expected - latents)}')
-    return dict(rows=list(rows), queries=sorted(queries), latents=sorted(latents), resident_bytes=0,
+    pools = expected.intersection(net.decode_pools_executed)
+    if queries != expected or latents != expected or pools != expected:
+        raise RuntimeError(f'DSA inputs were not executed: queries={sorted(expected - queries)}, '
+                           f'latents={sorted(expected - latents)}, pools={sorted(expected - pools)}')
+    return dict(rows=list(rows), queries=sorted(queries), latents=sorted(latents), pools=sorted(pools), resident_bytes=0,
                 input_pack_bytes=12 * 32 * (128 + 4))
 
 
