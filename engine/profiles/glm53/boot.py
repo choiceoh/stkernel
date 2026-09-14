@@ -62,27 +62,16 @@ TOKEN_BUDGET = 32768                # fourteen aligned blocks -> 32,256 prefill 
 # Boot must qualify the new largest shape at both ends of the actual KV pool;
 # throughput and answer quality still require the candidate consumer gate.
 MAX_WAIT_S = 0.0                    # admit into a free decode row at the next chunk boundary
-MAX_SEQS = 4
+MAX_SEQS = 2
 """Resident decode rows: state slots, captured decode widths and the context ceiling follow.
 
-8 was chosen for kernel coverage (48 target tokens at K=5, which mHC and one-shot reach) and
-nothing else, and no release has ever served it -- every production release pins 4. Measured
-side by side from two boot ledgers on the same commit (45차 §72, 2026-09-12):
+Operator decision (2026-09-14): focus serving on C=1 and C=2. With K=7,
+target verification captures 8 and 16 token rows. The third request waits
+for a resident row; TP remains four GB10 nodes.
 
-    width          graph pool   captured ceiling   target graphs   boot     state slots
-    1-4 (this)       0.60 GiB          1,035,264              36   161.9 s     1.21 GiB
-    1-8              2.50 GiB            364,032              64   208.7 s     2.17 GiB
-
-2.86 GiB of a box that reached 7.09 GiB free during capture, and 47 s of boot, to buy a
-concurrency nothing serves. And the rows are not free of each other: the state slots come out
-of the same `kv_gib`, so at 7.0 the pool is 1,314 blocks at four rows and 1,095 at eight
-(budget.budget, same argument). Fewer blocks is a shorter longest sequence, which is why the
-captured ladder tops out lower -- the width that was supposed to serve more requests serves
-each of them less context.
-
-Coverage still holds at 4: 24 target tokens is inside the same kernels. The repo default and
-what production serves are now one number -- they disagreed, and that is exactly how two
-onepass runs 27 minutes apart on one commit came out incomparable (45차 §72).
+Every boot mode, scheduler admission, state allocation, drafter preparation
+and graph capture uses this number. Fewer widths reduce preparation and
+resident state, but this change alone is not a measured decode-speed gain.
 """
 PREFIX_TIER_STAGE = 32 << 20        # the prefix tier's pinned staging + device scratch
 TIER_GIB = 64.0
@@ -330,7 +319,7 @@ def declared(a, comm_world: int) -> Config:
              "STK_mla_prefill=tile32"),
         Knob("context_ceiling", 0, _dt.date(2026, 9, 30),
              "the served context ceiling: the door refuses a longer horizon and the decode ladder captures no bucket above it. "
-             "0 = the checkpoint's trained positions (1,048,576), which is nine buckets and 36 target graphs; the boot's "
+             "0 = the checkpoint's trained positions (1,048,576); each context bucket captures the declared request widths. The boot's "
              "'target/<shape>/' memory rows carry each bucket's seconds, so a boot pair prices the cut before it is taken",
              "STK_context_ceiling=0", int),
     ]
@@ -1005,7 +994,7 @@ def local(a) -> int:
         if a.park:
             # D16 on the real caches: the finished conversation 0 still holds its blocks (keep_idle); park it, the arena
             # gets them back; resume into fresh blocks; wake and decode 4 more tokens -- they must equal a straight run's
-            seq, straight = 0, 2
+            seq = straight = 0
             with rec.phase("park"):
                 free_before = caches.pool.available
                 wrote = runner.park(seq)
@@ -1020,6 +1009,10 @@ def local(a) -> int:
                 torch.cuda.synchronize()
             continued = engine.generated(seq)[a.max_new:]
             with rec.phase("straight"):                                          # the same prompt, max_new + 4 in one go
+                # The continuation was copied above. Reuse its completed row
+                # for the reference run; C=2 has no third cache row to borrow.
+                runner.evict(straight)
+                engine.forget(straight)
                 engine.add(straight, prompts[seq], max_new=a.max_new + 4)
                 runner.submit(straight, len(prompts[seq]), now=0.0)
                 while straight not in runner.idle and runner.step(now=0.0) is not None:
@@ -1449,7 +1442,7 @@ def main(argv=None) -> int:
                     help="the runtime workspace ceiling outside the arena (default: budget.WORKSPACE_GIB); a shape that "
                          "spends more says so here, with its ledger")
     ap.add_argument("--prompt", type=int, default=300)
-    ap.add_argument("--seqs", type=int, default=2)
+    ap.add_argument("--seqs", type=int, choices=range(1, MAX_SEQS + 1), default=MAX_SEQS)
     ap.add_argument("--max-new", type=int, default=8)
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=0)
