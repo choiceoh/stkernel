@@ -1,0 +1,47 @@
+{
+  "source": "https://developer.download.nvidia.com/compute/cuda/redist/redistrib_13.2.0.json",
+  "components": {
+    "cuda_nvcc": {
+      "relative_path": "cuda_nvcc/linux-sbsa/cuda_nvcc-linux-sbsa-13.2.51-archive.tar.xz",
+      "sha256": "28d201ffc46627abd919d623d85e721f33c92cf02749e023cd66d6fa0f1206a7",
+      "md5": "2cb20a022ea2cb776cda5c5832d8a80c",
+      "size": "26694012"
+    },
+    "cuda_crt": {
+      "relative_path": "cuda_crt/linux-sbsa/cuda_crt-linux-sbsa-13.2.51-archive.tar.xz",
+      "sha256": "04f8fd03bc5a99507f5d531cc65452881c8949311bc5cc87bc1fe05a7607fd9e",
+      "md5": "5d478c87ac176bb90a88bc4c1290cde0",
+      "size": "80396"
+    },
+    "libnvvm": {
+      "relative_path": "libnvvm/linux-sbsa/libnvvm-linux-sbsa-13.2.51-archive.tar.xz",
+      "sha256": "366da4383992b8d13df63ffecd3a8315815955f50da0c0288ca5123212f67e02",
+      "md5": "e0fc6fdafecfb29278294d7085692856",
+      "size": "40287152"
+    },
+    "cuda_cudart": {
+      "relative_path": "cuda_cudart/linux-sbsa/cuda_cudart-linux-sbsa-13.2.51-archive.tar.xz",
+      "sha256": "379363621c59c8d6faeea2f7a527eae91fc7db8cb2121cb42fe7972a48462f67",
+      "md5": "0963599547114eb390eafe3669047699",
+      "size": "1548520"
+    },
+    "cuda_cccl": {
+      "relative_path": "cuda_cccl/linux-sbsa/cuda_cccl-linux-sbsa-13.2.27-archive.tar.xz",
+      "sha256": "1587f83b92aef54414cd118723ec1e4c118e14c70ac7779e13caa941f8030faf",
+      "md5": "dd29400603c88c1daee7fabc60dc328c",
+      "size": "1217632"
+    },
+    "cuda_nvdisasm": {
+      "relative_path": "cuda_nvdisasm/linux-sbsa/cuda_nvdisasm-linux-sbsa-13.2.51-archive.tar.xz",
+      "sha256": "7cd36ae5da16c23737b533de4e65d61cca39ca384d18859f5a49f181381dc269",
+      "md5": "3ecd006dccc3d990e14ce9cf5b9c6bc8",
+      "size": "4220684"
+    },
+    "cuda_cuobjdump": {
+      "relative_path": "cuda_cuobjdump/linux-sbsa/cuda_cuobjdump-linux-sbsa-13.2.51-archive.tar.xz",
+      "sha256": "ee308d1e61e7c753d3c2912e0c49fae7e5c2ef5e6be3c8a2ea705b5c673df923",
+      "md5": "6598e52ae2ef6d082a5f60c9c53c87b7",
+      "size": "261976"
+    }
+  }
+}

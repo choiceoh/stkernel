@@ -1,0 +1,240 @@
+{
+  "scope": "offline SM121 compilation audit; failures remain explicit, no GPU execution",
+  "gpu_used": false,
+  "torch": "2.13.0+cu130",
+  "triton": "3.7.1",
+  "variants": [
+    {
+      "name": "kda-prepare",
+      "constants": {
+        "H": 16,
+        "D": 128,
+        "LOWER": -5.0,
+        "BD": 128
+      },
+      "cubin_sha256": "890771724036b9ec3b9fd9bb8161b0a0ac4987660d6bbf337a1ec2ea87f5e2d1",
+      "shared_bytes": 16
+    },
+    {
+      "name": "kda-commit",
+      "constants": {
+        "COUNT": 8,
+        "H": 16,
+        "K": 128,
+        "V": 128,
+        "B": 1024
+      },
+      "cubin_sha256": "10b578c42fd50708c11ea41ae1c207cf7760969ea4867fdd132ee038d45960bf",
+      "shared_bytes": 0
+    },
+    {
+      "name": "kda-tree-n8-d128-v128",
+      "constants": {
+        "N": 8,
+        "H": 16,
+        "KDIM": 128,
+        "VDIM": 128,
+        "WIDTH": 8,
+        "BK": 128,
+        "BV": 16
+      },
+      "cubin_sha256": "e330a73915b9bb3d9735962877a47babb4ad80efe3abd89397a7575ca3de967f",
+      "shared_bytes": 512
+    },
+    {
+      "name": "kda-tree-n16-d128-v128",
+      "constants": {
+        "N": 16,
+        "H": 16,
+        "KDIM": 128,
+        "VDIM": 128,
+        "WIDTH": 5,
+        "BK": 128,
+        "BV": 16
+      },
+      "cubin_sha256": "b187b92a22a3d4ea87da3999f5e869117d2e65720e531d7fb3dc2c26d3736b62",
+      "shared_bytes": 512
+    },
+    {
+      "name": "kda-tree-n31-d128-v128",
+      "constants": {
+        "N": 31,
+        "H": 16,
+        "KDIM": 128,
+        "VDIM": 128,
+        "WIDTH": 5,
+        "BK": 128,
+        "BV": 16
+      },
+      "cubin_sha256": "a4646e8e94b5fde36d9561a913048ec9b868569c1a1342171899eddcddd979dc",
+      "shared_bytes": 512
+    },
+    {
+      "name": "kda-tree-n6-d7-v5",
+      "constants": {
+        "N": 6,
+        "H": 16,
+        "KDIM": 7,
+        "VDIM": 5,
+        "WIDTH": 4,
+        "BK": 8,
+        "BV": 16
+      },
+      "cubin_sha256": "451070a713eb290e498fdbc11fdbf6227cc7186ea17e832777d4760aead7d65a",
+      "shared_bytes": 256
+    },
+    {
+      "name": "mlp-m1-h4096-i1024",
+      "constants": {
+        "M": 1,
+        "H": 4096,
+        "I": 1024,
+        "P": 32,
+        "O": 128,
+        "BM": 16,
+        "B": 32,
+        "LIMIT": 10.0,
+        "SPINS": 1000000,
+        "S1": null,
+        "S2": null,
+        "US": null,
+        "A1": null,
+        "A2": null,
+        "ALPHA1": null,
+        "ALPHA2": null,
+        "NV4": false,
+        "TILE13": 0,
+        "TILE2": 0,
+        "SF6": false,
+        "W4A8": false
+      },
+      "cubin_sha256": "4c18d300205985f0415ba594d3a1a48f6e50c3f41925e3b3feb6f1543d0160d3",
+      "shared_bytes": 5120
+    },
+    {
+      "name": "mlp-m4-h4096-i1024",
+      "constants": {
+        "M": 4,
+        "H": 4096,
+        "I": 1024,
+        "P": 32,
+        "O": 128,
+        "BM": 16,
+        "B": 32,
+        "LIMIT": 10.0,
+        "SPINS": 1000000,
+        "S1": null,
+        "S2": null,
+        "US": null,
+        "A1": null,
+        "A2": null,
+        "ALPHA1": null,
+        "ALPHA2": null,
+        "NV4": false,
+        "TILE13": 0,
+        "TILE2": 0,
+        "SF6": false,
+        "W4A8": false
+      },
+      "cubin_sha256": "f6303c06cfa9ea0018b3b47fbcebf5a35a72de8f58fc7596a56cc4e5d3c28809",
+      "shared_bytes": 5120
+    },
+    {
+      "name": "mlp-m16-h4096-i1024",
+      "constants": {
+        "M": 16,
+        "H": 4096,
+        "I": 1024,
+        "P": 32,
+        "O": 128,
+        "BM": 16,
+        "B": 32,
+        "LIMIT": 10.0,
+        "SPINS": 1000000,
+        "S1": null,
+        "S2": null,
+        "US": null,
+        "A1": null,
+        "A2": null,
+        "ALPHA1": null,
+        "ALPHA2": null,
+        "NV4": false,
+        "TILE13": 0,
+        "TILE2": 0,
+        "SF6": false,
+        "W4A8": false
+      },
+      "cubin_sha256": "cd1c74f6956978223cd46aa2bd370e3a831e1b7d9c3e11bd341fa834438f99c0",
+      "shared_bytes": 5120
+    },
+    {
+      "name": "mlp-m17-h95-i33",
+      "constants": {
+        "M": 17,
+        "H": 95,
+        "I": 33,
+        "P": 2,
+        "O": 3,
+        "BM": 32,
+        "B": 32,
+        "LIMIT": 10.0,
+        "SPINS": 1000000,
+        "S1": null,
+        "S2": null,
+        "US": null,
+        "A1": null,
+        "A2": null,
+        "ALPHA1": null,
+        "ALPHA2": null,
+        "NV4": false,
+        "TILE13": 0,
+        "TILE2": 0,
+        "SF6": false,
+        "W4A8": false
+      },
+      "cubin_sha256": "a1f7d1af27c60cb589f24f7c94458a3cd405e050abaf67df8e3d340877c52fc1",
+      "shared_bytes": 6144
+    },
+    {
+      "name": "nvfp4-m1-tile0-sf60",
+      "status": "FAIL",
+      "error": "PassManager::run failed"
+    },
+    {
+      "name": "nvfp4-m4-tile1-sf60",
+      "status": "FAIL",
+      "error": "PassManager::run failed"
+    },
+    {
+      "name": "nvfp4-m16-tile1-sf61",
+      "status": "FAIL",
+      "error": "PassManager::run failed"
+    },
+    {
+      "name": "w4a8-m1",
+      "status": "FAIL",
+      "error": "W4A8 must retain FP8 MMA after on-chip W4 expansion"
+    },
+    {
+      "name": "w4a8-m4",
+      "status": "FAIL",
+      "error": "W4A8 must retain FP8 MMA after on-chip W4 expansion"
+    },
+    {
+      "name": "w4a8-m16",
+      "status": "FAIL",
+      "error": "W4A8 must retain FP8 MMA after on-chip W4 expansion"
+    },
+    {
+      "name": "w4a8-m32",
+      "status": "FAIL",
+      "error": "W4A8 must retain FP8 MMA after on-chip W4 expansion"
+    }
+  ],
+  "source_sha256": {
+    "engine/kernels/kda/tree.py": "af60b0f5f1855deec98ebdbc19f2d765458b3cb88d39f168e07fc4c72905945b",
+    "engine/kernels/tile_dataflow.py": "5e0b7ce896185fa86f9a3d9d06f4d6138f4e32d9ac08331c613dc8f9ad5078cf"
+  },
+  "cuda_initialized": false,
+  "status": "FAIL"
+}

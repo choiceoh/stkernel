@@ -1,0 +1,54 @@
+[
+  {
+    "host": "srv1",
+    "image": "sha256:4fc7b3fffca9b4903dc896279b12070e19f1600faedfefbbd22110cf446793e4",
+    "seed_image": "sha256:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c",
+    "source_directory": "/tmp/st-cuda132-final-0914.PhceRf",
+    "engine_source_sha256": "95472dc4ba420ff43114794ba5542ac8abf6f8afda24460d47b1c849d53129fe",
+    "runtime_verified": true,
+    "seconds": 8.479108949977672,
+    "services_restarted": false,
+    "gpu_used": false,
+    "previous_default_image": "sha256:643a5410ef45520d3faf6c88fa0d7fd8f5fa554d1a13743287829a1b3846cb77",
+    "default_tag": "st-engine:glm53"
+  },
+  {
+    "host": "srv2",
+    "image": "sha256:4f5f6e884e9a9e4ef4af532546a8b2c8a8e7dd710ce5d761bfe16d1377e4fb25",
+    "seed_image": "sha256:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c",
+    "source_directory": "/tmp/st-cuda132-final-0914.cguoNs",
+    "engine_source_sha256": "95472dc4ba420ff43114794ba5542ac8abf6f8afda24460d47b1c849d53129fe",
+    "runtime_verified": true,
+    "seconds": 7.9040719070180785,
+    "services_restarted": false,
+    "gpu_used": false,
+    "previous_default_image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+    "default_tag": "st-engine:glm53"
+  },
+  {
+    "host": "srv3",
+    "image": "sha256:b10cfaf044beac4c9a4a0442bfe5c7a554d28d2ab817a15d929e3127696aa68a",
+    "seed_image": "sha256:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c",
+    "source_directory": "/tmp/st-cuda132-final-0914.JZMSTo",
+    "engine_source_sha256": "95472dc4ba420ff43114794ba5542ac8abf6f8afda24460d47b1c849d53129fe",
+    "runtime_verified": true,
+    "seconds": 7.3624843650031835,
+    "services_restarted": false,
+    "gpu_used": false,
+    "previous_default_image": "sha256:d4912167464a3e819d4e561cf4b10ea7c6ee6fc4f5f5937e60d753727e61eb76",
+    "default_tag": "st-engine:glm53"
+  },
+  {
+    "host": "srv4",
+    "image": "sha256:a0709718a4b26894d5cac5f417a0f74fde4198531e97c9b3171b0bcf513a6a9f",
+    "seed_image": "sha256:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c",
+    "source_directory": "/tmp/st-cuda132-final-0914.lXC1YR",
+    "engine_source_sha256": "95472dc4ba420ff43114794ba5542ac8abf6f8afda24460d47b1c849d53129fe",
+    "runtime_verified": true,
+    "seconds": 9.219897814997239,
+    "services_restarted": false,
+    "gpu_used": false,
+    "previous_default_image": "sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed",
+    "default_tag": "st-engine:glm53"
+  }
+]

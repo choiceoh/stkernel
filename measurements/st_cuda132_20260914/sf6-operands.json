@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "compiled_helpers": 4,
+  "cpu_operand_words": 24576,
+  "gpu_checks": [],
+  "source_sha256": "f81ded5fbddd941985338b822472ffe5ff5e94f52f2003fc20214f14ec0e4f93",
+  "scope": "native helper compile and CPU operand oracle"
+}
