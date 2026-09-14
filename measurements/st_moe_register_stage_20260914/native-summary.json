@@ -1,0 +1,26 @@
+[
+  {
+    "register_scales": true,
+    "stamps": false,
+    "registers": 119,
+    "non_nop": 3619,
+    "barriers": 22,
+    "smem_bytes": 91136
+  },
+  {
+    "register_scales": false,
+    "stamps": false,
+    "registers": 121,
+    "non_nop": 3474,
+    "barriers": 28,
+    "smem_bytes": 99328
+  },
+  {
+    "register_scales": true,
+    "stamps": true,
+    "registers": 96,
+    "non_nop": 3714,
+    "barriers": 22,
+    "smem_bytes": 91136
+  }
+]

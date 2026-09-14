@@ -441,31 +441,38 @@ class MoEStaticKernelV4:
             _st_shared_i32(stage_addr + Int32(per_thread) * tidx + Int32(4 * j), word)
         self.sf_expand_barrier.arrive_and_wait()
 
-    def _sf6_load_fragment(self, dest, packed_base, tidx, kind, k_block):
-        """Reconstruct exact SFB operands cooperatively within each lane quad.
-
-        _verify_sf6_register_layout proves these offsets against the ordinary
-        shared-to-register copy before compiling. Pipeline wait/release owns
-        every packed read. No expanded shared buffer is read or written.
-        """
-        dst = cute.recast_tensor(dest, Int32)
-        offsets = self.sf6_register_offsets[kind][0][k_block]
-        assert cute.size(dst) == len(offsets) and len(offsets) % 4 == 0
+    def _sf6_prepare_stage(self, packed_base, tidx):
+        """Keep invariant scale metadata for all K64 fragments until release."""
         base = _ld_shared_i32_volatile(packed_base + Int32(1536)) & Int32(255)
         base7 = (base & Int32(127)) * Int32(0x01010101)
         base80 = (base & Int32(128)) * Int32(0x01010101)
         quad_lane = Int32(tidx) & Int32(3)
-        quad_base = Int32(tidx) & Int32(28)
         row = ((Int32(tidx) & Int32(31)) >> Int32(2)) * Int32(16)
         row += (Int32(tidx) & Int32(32)) * Int32(8) + (Int32(tidx) & Int32(64)) * Int32(2)
+        low = packed_base + (row >> Int32(1)) + (quad_lane >> Int32(1)) * Int32(4)
+        high = packed_base + Int32(1024) + (row >> Int32(2))
+        return (low, high, (quad_lane & Int32(1)) * Int32(16), quad_lane * Int32(8),
+                base7, base80, Int32(tidx) & Int32(28))
+
+    def _sf6_load_fragment(self, dest, stage, kind, k_block):
+        """Reconstruct exact SFB operands cooperatively within each lane quad.
+
+        _verify_sf6_register_layout proves these offsets against the ordinary
+        shared-to-register copy before compiling. Pipeline wait/release owns
+        the prepared metadata and packed reads; there are no shared writes.
+        """
+        dst = cute.recast_tensor(dest, Int32)
+        offsets = self.sf6_register_offsets[kind][0][k_block]
+        assert cute.size(dst) == len(offsets) and len(offsets) % 4 == 0
+        low_base, high_base, low_shift, high_shift, base7, base80, quad_base = stage
         for group in range(len(offsets) // 4):
-            decoded = row + Int32(offsets[group * 4]) + quad_lane * Int32(4)
-            low = _ld_shared_i32_volatile(packed_base + ((decoded >> Int32(3)) << Int32(2)))
-            high = _ld_shared_i32_volatile(packed_base + Int32(1024)
-                                         + ((decoded >> Int32(4)) << Int32(2)))
+            # Each group is 16-byte aligned in the verified ordinary view.
+            offset = offsets[group * 4]
+            low = _ld_shared_i32_volatile(low_base + Int32(offset // 2))
+            high = _ld_shared_i32_volatile(high_base + Int32(offset // 4))
             word = self._sf6_expand_word(
-                (low >> ((decoded & Int32(4)) * Int32(4))) & Int32(65535),
-                (high >> ((decoded & Int32(12)) * Int32(2))) & Int32(255), base7, base80)
+                (low >> low_shift) & Int32(65535),
+                (high >> high_shift) & Int32(255), base7, base80)
             for lane in range(4):
                 dst[group * 4 + lane] = cute.arch.shuffle_sync(word, quad_base + Int32(lane))
 
@@ -508,6 +515,7 @@ class MoEStaticKernelV4:
                     row = ((tid & 31) // 4)*16 + (tid & 32)*8 + (tid & 64)*2
                     assert words == [b + row for b in lanes[0][kb]], (kind, tid, kb, words)
                     for i in range(0, len(words), 4):
+                        assert words[i] % 16 == 0
                         assert words[i:i+4] == list(range(words[i], words[i]+16, 4))
             records[kind] = lanes
         self.sf6_register_offsets = records
@@ -570,9 +578,9 @@ class MoEStaticKernelV4:
             cute.size_in_bytes(self.a_dtype, self.a1_smem_layout_staged),
             cute.size_in_bytes(self.b_dtype, self.b1_smem_layout_staged),
             cute.size_in_bytes(self.sf_dtype, self.sfa1_smem_layout_staged),
-            cute.size_in_bytes(self.sf_dtype, self.sfb1_smem_layout_staged),
+            0 if self.sf6_registers else cute.size_in_bytes(self.sf_dtype, self.sfb1_smem_layout_staged),
             cute.size_in_bytes(self.b_dtype, self.b2_smem_layout_staged),
-            cute.size_in_bytes(self.sf_dtype, self.sfb2_smem_layout_staged),
+            0 if self.sf6_registers else cute.size_in_bytes(self.sf_dtype, self.sfb2_smem_layout_staged),
             cute.size_in_bytes(self.a_dtype, self.a2_smem_layout),
             cute.size_in_bytes(self.sf_dtype, self.sfa2_smem_layout),
             cute.size_in_bytes(cutlass.BFloat16, self.epi1_smem_layout_staged),
@@ -1096,7 +1104,7 @@ class MoEStaticKernelV4:
                 self.buffer_align_bytes,
             ]
             sSFB1: cute.struct.Align[
-                cute.struct.MemRange[self.sf_dtype, cute.cosize(sfb1_smem_staged)],
+                cute.struct.MemRange[self.sf_dtype, 0 if self.sf6_registers else cute.cosize(sfb1_smem_staged)],
                 self.buffer_align_bytes,
             ]
             sB2: cute.struct.Align[
@@ -1104,7 +1112,7 @@ class MoEStaticKernelV4:
                 self.buffer_align_bytes,
             ]
             sSFB2: cute.struct.Align[
-                cute.struct.MemRange[self.sf_dtype, cute.cosize(sfb2_smem_staged)],
+                cute.struct.MemRange[self.sf_dtype, 0 if self.sf6_registers else cute.cosize(sfb2_smem_staged)],
                 self.buffer_align_bytes,
             ]
             sA2: cute.struct.Align[
@@ -1124,6 +1132,10 @@ class MoEStaticKernelV4:
                 self.buffer_align_bytes,
             ]
 
+        if cutlass.const_expr(self.sf6_registers):
+            assert Storage.__sizeof__() == self.smem_bytes
+            assert cute.size_in_bytes(self.b_dtype, b1_smem_staged) >= cute.size_in_bytes(self.sf_dtype, sfb1_smem_staged)
+            assert cute.size_in_bytes(self.b_dtype, b2_smem_staged) >= cute.size_in_bytes(self.sf_dtype, sfb2_smem_staged)
         storage = smem.allocate(Storage)
         if cutlass.const_expr(self.sf6_separate):
             sf1_input_base_addr = shared_ptr_to_u32(storage.packed_fc1.data_ptr())
@@ -1176,8 +1188,15 @@ class MoEStaticKernelV4:
         cute.recast_tensor(sB2, cutlass.Uint8)
         cute.recast_tensor(sA2, cutlass.Uint8)
         sSFA1 = storage.sSFA1.get_tensor(sfa1_smem_staged)
-        sSFB1 = storage.sSFB1.get_tensor(sfb1_smem_staged)
-        sSFB2 = storage.sSFB2.get_tensor(sfb2_smem_staged)
+        if cutlass.const_expr(self.sf6_registers):
+            # Layout-only views create ordinary MMA register fragments. No
+            # pointer in either view is read or written on this route. Use
+            # existing B backing so the dead expanded-scale rings cost zero.
+            sSFB1 = cute.make_tensor(cute.recast_ptr(storage.sB1.data_ptr(), dtype=self.sf_dtype), sfb1_smem_staged)
+            sSFB2 = cute.make_tensor(cute.recast_ptr(storage.sB2.data_ptr(), dtype=self.sf_dtype), sfb2_smem_staged)
+        else:
+            sSFB1 = storage.sSFB1.get_tensor(sfb1_smem_staged)
+            sSFB2 = storage.sSFB2.get_tensor(sfb2_smem_staged)
         sSFA2 = storage.sSFA2.get_tensor(sfa2_smem_layout)
         cute.recast_tensor(sSFA1, cutlass.Uint8)
         cute.recast_tensor(sSFB1, cutlass.Uint8)
@@ -1843,9 +1862,9 @@ class MoEStaticKernelV4:
                                         fz_crSFA1_tile[None, None, 0],
                                     )
                                 if cutlass.const_expr(self.sf6_registers):
-                                    self._sf6_load_fragment(fz_crSFB1[None, None, 0],
-                                        sf1_input_base_addr + fc1_cons_state.index * Int32(self.sf1_stage_bytes),
-                                        tidx, "fc1", 0)
+                                    sf1_register_stage = self._sf6_prepare_stage(
+                                        sf1_input_base_addr + fc1_cons_state.index * Int32(self.sf1_stage_bytes), tidx)
+                                    self._sf6_load_fragment(fz_crSFB1[None, None, 0], sf1_register_stage, "fc1", 0)
                                 else:
                                     cute.copy(
                                         smem_copy_SFB1, fz_csSFB_p[None, None, 0],
@@ -1873,8 +1892,7 @@ class MoEStaticKernelV4:
                                             )
                                         if cutlass.const_expr(self.sf6_registers):
                                             self._sf6_load_fragment(fz_crSFB1[None, None, k_next],
-                                                sf1_input_base_addr + fc1_cons_state.index * Int32(self.sf1_stage_bytes),
-                                                tidx, "fc1", k_next)
+                                                sf1_register_stage, "fc1", k_next)
                                         else:
                                             cute.copy(
                                                 smem_copy_SFB1, fz_csSFB_p[None, None, k_next],
@@ -2061,9 +2079,9 @@ class MoEStaticKernelV4:
                     )
                     cute.copy(smem_copy_B, csB2_p[None, None, 0], crB2[None, None, 0])
                     if cutlass.const_expr(self.sf6_registers):
-                        self._sf6_load_fragment(fz_crSFB2[None, None, 0],
-                            sf2_input_base_addr + fc2_cons_state.index * Int32(self.sf2_stage_bytes),
-                            tidx, "fc2", 0)
+                        sf2_register_stage = self._sf6_prepare_stage(
+                            sf2_input_base_addr + fc2_cons_state.index * Int32(self.sf2_stage_bytes), tidx)
+                        self._sf6_load_fragment(fz_crSFB2[None, None, 0], sf2_register_stage, "fc2", 0)
                     else:
                         cute.copy(
                             smem_copy_SFB, fz_csSFB2_p[None, None, 0], fz_crSFB2[None, None, 0]
@@ -2083,8 +2101,7 @@ class MoEStaticKernelV4:
                             )
                             if cutlass.const_expr(self.sf6_registers):
                                 self._sf6_load_fragment(fz_crSFB2[None, None, k_next],
-                                    sf2_input_base_addr + fc2_cons_state.index * Int32(self.sf2_stage_bytes),
-                                    tidx, "fc2", k_next)
+                                    sf2_register_stage, "fc2", k_next)
                             else:
                                 cute.copy(
                                     smem_copy_SFB, fz_csSFB2_p[None, None, k_next],

@@ -79,9 +79,11 @@ def main():
                 if cutlass.const_expr(not direct):
                     owner._sf_expand_stage(address+dest_base+slot*raw_size, cutlass.Int32(tid), raw_size,
                                            packed_addr=address+input_offset)
+                if cutlass.const_expr(direct):
+                    stage = owner._sf6_prepare_stage(address+input_offset, tid)
                 for kb in cutlass.range_constexpr(blocks):
                     if cutlass.const_expr(direct):
-                        owner._sf6_load_fragment(dest[None, None, kb], address+input_offset, tid, kind, kb)
+                        owner._sf6_load_fragment(dest[None, None, kb], stage, kind, kb)
                     else:
                         original = cute.filter_zeros(source[None, None, None, slot])
                         cute.copy(copy, original[None, None, kb], dest[None, None, kb])

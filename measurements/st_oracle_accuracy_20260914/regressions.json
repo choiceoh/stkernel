@@ -1,0 +1,98 @@
+{
+  "scope": "exact CPU accounting counterexamples; no timing/serving accuracy claim",
+  "baseline_commit": "2ac7de6f7946356372ddfceb29d9af6b5032fe99",
+  "baseline_source_sha256": "a1469ee2a7749d1851246d8aadd348bca02d83c7e5b007b3f0005b816c881042",
+  "current_source_sha256": "a4448c27177640ea0a1b8fb01a38b515f2aa42631087733e452b997c6b83f58a",
+  "gpu_used": false,
+  "checks": {
+    "before": {
+      "zero_k": 5,
+      "zero_acceptance": 0.45,
+      "client_context_ms": [
+        1.0,
+        2.0
+      ],
+      "one_token_decode_steps": 1,
+      "tail_decode_tokens": 24.0,
+      "reported_phase_step_s": 500.0,
+      "expected_phase_step_s": 89.6551724137931
+    },
+    "after": {
+      "zero_k": 0,
+      "zero_acceptance": 0.0,
+      "client_context_ms": [
+        10.0,
+        20.0
+      ],
+      "one_token_decode_steps": 0,
+      "tail_decode_tokens": 10,
+      "reported_phase_step_s": 89.66,
+      "expected_phase_step_s": 89.6551724137931
+    }
+  },
+  "expected": {
+    "zero_k": 0,
+    "zero_acceptance": 0.0,
+    "client_context_ms": [
+      10.0,
+      20.0
+    ],
+    "one_token_decode_steps": 0,
+    "tail_decode_tokens": 10
+  },
+  "historical_c4": {
+    "path": "measurements/c4_scaling_20260913/c4-20260912T232937.json",
+    "source_sha256": "68ba372d2676b658208f45a3fa408efb665793f74db1a9b3dd6015ade5b295f2",
+    "before_replayable": null,
+    "after_waves": [
+      {
+        "arm": "c4-0",
+        "requests": 4,
+        "groups": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "prompt_tokens": [
+          2465,
+          2465,
+          2465,
+          2465
+        ]
+      },
+      {
+        "arm": "c4-1",
+        "requests": 4,
+        "groups": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "prompt_tokens": [
+          2493,
+          2493,
+          2493,
+          2493
+        ]
+      },
+      {
+        "arm": "c4-2",
+        "requests": 4,
+        "groups": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "prompt_tokens": [
+          2498,
+          2498,
+          2498,
+          2498
+        ]
+      }
+    ]
+  }
+}
