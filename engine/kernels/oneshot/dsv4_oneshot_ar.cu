@@ -637,6 +637,8 @@ static void *proxy_fn(void *) {
   }
   uint64_t sent = 0, acknowledged = 0, done[64] = {0}, beat = 0;
   unsigned outstanding[OSAR_RAILS] = {};
+  unsigned peers_per_rail[OSAR_RAILS] = {};
+  for (int p = 0; p < NPEER; ++p) ++peers_per_rail[g_peer_rail[p]];
   while (!g_ctrl->stop) {
     // The poll count stays in this thread. It used to be stored into
     // Ctrl::proxy_beat on every pass: millions of CPU writes a second into the
@@ -660,8 +662,11 @@ static void *proxy_fn(void *) {
           fprintf(stderr, "[oneshot] post_send failed; proxy exiting\n");
           return nullptr;
         }
-        ++outstanding[g_peer_rail[p]];
       }
+      // Placement is fixed for this proxy; account once per rail rather
+      // than reloading each peer's rail after every post_send call.
+      for (int rail = 0; rail < OSAR_RAILS; ++rail)
+        outstanding[rail] += peers_per_rail[rail];
 #if OSAR_PROXY_INLINE
       if (sent == 1) {
         fprintf(stderr, "[oneshot] inline proxy serving peers=%d inline_bytes=8 "
@@ -674,6 +679,7 @@ static void *proxy_fn(void *) {
     // nor an extra read of the GPU-visible ACK header. Pending sends still
     // poll every rail, even if no new GPU publication arrives.
     if (acknowledged != sent) {
+      const uint64_t previous_ack = acknowledged;
       for (int rail = 0; rail < OSAR_RAILS; ++rail) {
         // The other function can still be draining after this one retired
         // every flag. Do not poll an empty rail while waiting for its peer.
@@ -695,11 +701,14 @@ static void *proxy_fn(void *) {
             done[cs % 64] = 0;
             if (cs > acknowledged) {
               acknowledged = cs;
-              g_ctrl->ack_seq = cs;
             }
           }
         }
       }
+      // A drained CQ can retire several sequences. Publish their final
+      // all-peer watermark once, after this bounded polling pass, instead
+      // of repeatedly writing the header that the GPU is reading.
+      if (acknowledged != previous_ack) g_ctrl->ack_seq = acknowledged;
     }
     if (periodic) {
       // The stall word: the kernel is spinning past OSAR_STALL_S. Say who is

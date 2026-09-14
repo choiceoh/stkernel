@@ -1,0 +1,32 @@
+test_actual_proxy_reuses_ring_descriptors_and_retires_delayed_rails (tests.test_engine_oneshot_proxy.ProxyTests.test_actual_proxy_reuses_ring_descriptors_and_retires_delayed_rails) ... ok
+test_sampler_initializes_events_before_timing_and_waits_once_per_cell (tests.test_engine_oneshot_latency.LatencyTests.test_sampler_initializes_events_before_timing_and_waits_once_per_cell) ... ok
+test_every_queue_pair_resource_follows_its_peers_rail (tests.test_engine_oneshot_rails.RailPlacementTests.test_every_queue_pair_resource_follows_its_peers_rail) ... ok
+test_header_rule_matches_the_python_rule (tests.test_engine_oneshot_rails.RailPlacementTests.test_header_rule_matches_the_python_rule) ... /tmp/tmpra9j9czu/rails.cc:3:9: warning: #pragma once in main file
+    3 | #pragma once
+      |         ^~~~
+ok
+test_python_rule_puts_one_peer_of_every_rank_on_the_second_rail (tests.test_engine_oneshot_rails.RailPlacementTests.test_python_rule_puts_one_peer_of_every_rank_on_the_second_rail) ... ok
+test_the_proxy_keeps_its_poll_count_out_of_the_registered_header (tests.test_engine_oneshot_rails.RailPlacementTests.test_the_proxy_keeps_its_poll_count_out_of_the_registered_header) ... ok
+test_capture_bursts_real_stalls_thread_exit_and_restart (tests.test_engine_oneshot_health.ProxyHealthTests.test_capture_bursts_real_stalls_thread_exit_and_restart) ... ok
+test_signed_packets_odd_tails_and_publication_weight (tests.test_engine_oneshot_integer.IntegerTransportTests.test_signed_packets_odd_tails_and_publication_weight) ... ok
+test_cancellation_and_bf16_inputs_agree_on_all_ranks (tests.test_engine_oneshot_sum.RankOrderedSumTests.test_cancellation_and_bf16_inputs_agree_on_all_ranks) ... ok
+test_integer_packets_use_native_gather_after_layout_normalization (tests.test_engine_comm_layout.GatherTests.test_integer_packets_use_native_gather_after_layout_normalization) ... ok
+test_native_root_broadcast_preserves_int64_bits_and_inplace_strided_views (tests.test_engine_comm_layout.GatherTests.test_native_root_broadcast_preserves_int64_bits_and_inplace_strided_views) ... ok
+test_rank_major_collective_matches_cat_on_every_axis (tests.test_engine_comm_layout.GatherTests.test_rank_major_collective_matches_cat_on_every_axis) ... ok
+test_real_two_process_gloo_with_strided_inputs (tests.test_engine_comm_layout.GatherTests.test_real_two_process_gloo_with_strided_inputs) ... [W914 07:16:42.346545755 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+[W914 07:16:43.002250057 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+ok
+test_small_max_uses_the_exact_transport_and_other_types_keep_nccl (tests.test_engine_comm_layout.GatherTests.test_small_max_uses_the_exact_transport_and_other_types_keep_nccl) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 11.226s
+
+OK

@@ -36,6 +36,7 @@ class LatencyTests(unittest.TestCase):
 
         class Graph:
             def __init__(self):
+                assert all(graph.resets == 1 for graph in graphs)
                 self.captured, self.replays, self.resets = 0, 0, 0
                 graphs.append(self)
 

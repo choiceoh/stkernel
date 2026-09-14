@@ -204,6 +204,9 @@ class OneShot:
                                  for start, end in events[1:])
                 report[name] = round(statistics.median(samples), 1)
                 report[name + '_p90'] = round(samples[int(len(samples) * .9)], 1)
+                # This cell's final event has completed. Release its capture
+                # before allocating the next cell's graph and input.
+                graphs.pop().reset()
         finally:
             for graph in graphs:
                 graph.reset()

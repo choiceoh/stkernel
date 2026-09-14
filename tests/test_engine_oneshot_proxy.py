@@ -51,7 +51,8 @@ int ibv_poll_cq(ibv_cq*, int, ibv_wc*);
 #include "dsv4_oneshot_transport.h"
 
 static constexpr unsigned limit = 512;
-static unsigned ticks, polls, idle_ticks, pending_ticks, posts, mode, finished_tick;
+static unsigned ticks, polls, idle_ticks, pending_ticks, posts, mode, finished_tick, ack_writes;
+static unsigned burst_width, completion_width;
 static uint64_t published;
 static std::array<unsigned, limit + 1> delivered;
 struct Ack {
@@ -60,6 +61,7 @@ struct Ack {
   Ack& operator=(uint64_t seq) {
     assert(seq > value && seq <= published);
     for (uint64_t i = value + 1; i <= seq; ++i) assert(delivered[i] == 7);
+    ++ack_writes;
     value = seq;
     return *this;
   }
@@ -89,13 +91,13 @@ static const ibv_send_wr* stable[RING][NPEER];
 
 Publication::operator uint64_t() {
   ++ticks;
-  assert(ticks < 2000);
+  assert(ticks < 10000);
   if (ticks < 3) {
     assert(polls == 0 && posts == 0);
     ++idle_ticks;
     return 0;
   }
-  if (control.ack_seq.value == published && published < limit) published += RING;
+  if (control.ack_seq.value == published && published < limit) published += burst_width;
   else if (published < limit) ++pending_ticks;
   if (control.ack_seq.value == limit) {
     if (!finished_tick) finished_tick = ticks;
@@ -141,6 +143,7 @@ int ibv_poll_cq(ibv_cq* cq, int capacity, ibv_wc* output) {
   if (mode == 1) return -7;
   // One function lags for two passes, including passes with no new sends.
   if (cq->rail == OSAR_RAILS - 1 && ticks % 3 != 2) return 0;
+  if (capacity > int(completion_width)) capacity = int(completion_width);
   int n = 0;
   while (n < capacity && !completion[cq->rail].empty()) {
     auto wc = completion[cq->rail].front();
@@ -161,9 +164,11 @@ int main() {
   assert(!invalid.init(1, 2, 3, 4, 5, 0));
   OsarProxyInlineWrs unsupported;
   assert(!unsupported.init(1, 2, 3, 4, 5, 7));
+  for (unsigned width : {1u, 2u, 4u}) for (unsigned cq_width : {1u, 16u})
   for (int rank = 0; rank < 4; ++rank) for (unsigned failure = 0; failure < 4; ++failure) {
+    burst_width = width; completion_width = cq_width;
     mode = failure;
-    ticks = polls = idle_ticks = pending_ticks = posts = finished_tick = 0;
+    ticks = polls = idle_ticks = pending_ticks = posts = finished_tick = ack_writes = 0;
     published = 0;
     control = Ctrl{};
     delivered.fill(0);
@@ -189,6 +194,8 @@ int main() {
     assert(g_proxy_heartbeat_ns.load() != 0);
     if (!failure) {
       assert(control.ack_seq.value == limit && posts == limit * NPEER);
+      assert(ack_writes > 0 && ack_writes <= limit);
+      if (cq_width == 16) assert(ack_writes == limit / burst_width);
       assert(idle_ticks >= 6 && pending_ticks > 0);
     } else {
       assert(control.ack_seq.value == 0 && ticks < 10);

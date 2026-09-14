@@ -58,3 +58,31 @@ one/two-rail compile/load evidence is `compile-batched.json`; focused output is
 its own revision. First refinement CI `34815670903` passed 1,802 engine tests
 (360 skipped), 115 onepass tests and 77 oracle tests. The further refinement
 requires its own final CI and still has no GPU/RDMA or consumer timing result.
+
+## Coalesce completion publication and release completed captures
+
+- Count fixed peer placement once at proxy startup. Each successfully posted
+  sequence updates outstanding counts once per rail instead of looking up the
+  rail again after every peer post.
+- Retire completions locally through the bounded CQ polling pass, then publish
+  the final all-peer ACK once. In the CPU fixture's four-sequence completion
+  batch this is one GPU-visible header store instead of four. Single-sequence
+  completion still publishes at the end of that polling pass.
+  The change moves intermediate ACK publication to the end of the same pass;
+  its actual latency tradeoff still needs the fleet gate.
+- Reset each completed measurement graph before allocating the next cell's
+  graph/input, retaining at most one live capture instead of three. The existing
+  finally block still resets an unfinished capture on failure. Timing event
+  handles are reused across cells; 24 remain live during sampling, trading a
+  larger event working set for fewer creations and host synchronizations.
+
+The production proxy CPU oracle now covers burst widths 1/2/4 and one-CQE versus
+16-CQE poll budgets, in every rail/flag/rank combination: 49,152 normal sequences
+plus post/poll/WC failure cases. Every ACK is checked against delivered peer
+completions. Unfragmented bursts must make exactly one ACK store per burst;
+fragmented completion and single-request progress also pass. The sampler test
+requires the prior graph to be reset before the next is created.
+
+Current source-bound evidence is `compile-coalesced.json` and
+`cpu-coalesced.log`. Earlier files retain their historical source identities.
+This adds no GPU/queue/boot run and makes no step/s claim.
