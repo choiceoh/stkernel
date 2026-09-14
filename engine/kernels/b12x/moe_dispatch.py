@@ -2175,6 +2175,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("reform_sf_pack", False)),
         bool(config.get("sf6_separate", False)),
         bool(config.get("sf6_word_expand", False)),
+        bool(config.get("packed_activation_store", False)),
     )
     # Expanded output and register scatter never alias a served handle.
     if config.get("probe_route_scatter", False):
@@ -2195,7 +2196,9 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
     separate = (reform and bool(config.get("reform_sf_pack", False))
                 and bool(config.get("sf6_separate", True)))
     word_expand = separate and bool(config.get("sf6_word_expand", True))
-    return dict(config, decode_reform=reform, sf6_separate=separate, sf6_word_expand=word_expand)
+    packed_activation_store = reform and bool(config.get("packed_activation_store", True))
+    return dict(config, decode_reform=reform, sf6_separate=separate, sf6_word_expand=word_expand,
+                packed_activation_store=packed_activation_store)
 
 
 def _get_static_kernel_v2(
@@ -2295,6 +2298,7 @@ def _get_static_kernel_v2(
         reform_sf_pack=bool(config.get("reform_sf_pack", False)),
         sf6_separate=bool(config["sf6_separate"]),
         sf6_word_expand=bool(config["sf6_word_expand"]),
+        packed_activation_store=bool(config["packed_activation_store"]),
         sf_vec_size=sf_vec_size,
         output_tile_count_n=output_tile_count_n,
         fc1_stages=int(config["fc1"]),
@@ -2451,6 +2455,7 @@ def _get_static_kernel_v2(
         f"{'sf6v1' if config.get('reform_sf_pack') else ''}"
         f"{'fc1sep' if config.get('sf6_separate') else ''}"
         f"{'word' if config.get('sf6_word_expand') else ''}"
+        f"{'a2u64' if config.get('packed_activation_store') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(

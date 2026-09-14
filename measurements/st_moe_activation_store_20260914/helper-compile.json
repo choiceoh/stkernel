@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "mode": "cpu",
+  "compiled_helpers": 2,
+  "checks": [],
+  "source_sha256": {
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "3b3c2aae774a1eb5e276ca7b3bc740f2746051e7f8c03479287915a493fc926a",
+    "engine/kernels/b12x/moe_static_common.py": "8ac18a06cfd1a0d82e615888c77dfb26df4edec0731a68227dd284d7e1f56cff"
+  },
+  "scope": "helper compile"
+}
