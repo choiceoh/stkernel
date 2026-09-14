@@ -23,7 +23,15 @@ def _router_gemm(X, W, Out, M, BM: tl.constexpr, BN: tl.constexpr, BK: tl.conste
         if PACKETS:
             rank, local_row = rows // LOCAL_ROWS, rows % LOCAL_ROWS
             offset = local_row[:,None]*4096 + k[None,:]
-            v = tl.load(X + rank[:,None]*PACKET_BYTES + offset, rows[:,None] < M, other=0.).to(tl.float32)
+            # Read aligned byte pairs. An 8-bit source load makes Triton choose
+            # kWidth=4 for *both* BF16 dot operands, changing their accumulation
+            # order. A 16-bit load retains the ordinary router's kWidth=2 while
+            # extracting exactly the same FP8 bytes; no BF16 buffer is written.
+            words = tl.load(X.to(tl.pointer_type(tl.uint16))
+                            + rank[:,None]*(PACKET_BYTES//2) + offset//2,
+                            rows[:,None] < M, other=0)
+            bits = ((words >> ((offset & 1)*8)) & 255).to(tl.uint8)
+            v = bits.to(tl.float8e4nv, bitcast=True).to(tl.float32)
             scale = tl.load(Scales + rank[:,None]*(PACKET_BYTES//4) + LOCAL_ROWS*1024
                             + offset//2048, rows[:,None] < M, other=0.)
             a = (v*scale).to(tl.bfloat16)

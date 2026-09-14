@@ -96,26 +96,11 @@ class PrefillConsumerTests(unittest.TestCase):
             expected = router_logits(x[:rows], gate)
             actual = router_packet_logits(PacketBatch(received, g), gate)
             if not torch.equal(actual.view(torch.uint8), expected.view(torch.uint8)):
-                from engine.kernels.prefill_router import _router_gemm
-                import triton
-                def difference(value):
-                    unequal = value.view(torch.int32) != expected.view(torch.int32)
-                    positions = unequal.nonzero()
-                    return dict(changed=int(unequal.sum()),
-                        first_positions=positions[:8].tolist(),
-                        max_abs=float((value-expected).abs().max()),
-                        finite=bool(torch.isfinite(value).all()))
-                alternatives = {}
-                for stages in (1, 2):
-                    check = torch.empty_like(expected)
-                    _router_gemm[(triton.cdiv(rows,64)*triton.cdiv(288,64),)](
-                        received.view(torch.float8_e4m3fn), gate, check, rows,
-                        BM=64, BN=64, BK=64, Scales=received.view(torch.float32),
-                        LOCAL_ROWS=g.local_rows, PACKET_BYTES=g.stride, PACKETS=True,
-                        num_warps=4, num_stages=stages, enable_fp_fusion=False)
-                    alternatives[stages] = difference(check)
-                self.fail(f'packet router rows={rows}: default={difference(actual)}, '
-                          f'pipeline_diagnostics={alternatives}')
+                unequal = actual.view(torch.int32) != expected.view(torch.int32)
+                self.fail(f'packet router rows={rows}: changed={int(unequal.sum())}, '
+                          f'first_positions={unequal.nonzero()[:8].tolist()}, '
+                          f'max_abs={float((actual-expected).abs().max())}, '
+                          f'finite={bool(torch.isfinite(actual).all())}')
             self.exact((actual,), (expected,))
             self.exact(route_weights(actual, bias, 8, 2.5), route_weights(expected, bias, 8, 2.5))
 

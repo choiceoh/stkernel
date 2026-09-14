@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import time
 import traceback
 from unittest.mock import patch
@@ -58,10 +59,16 @@ def compile_consumers(output):
                 target=GPUTarget('cuda', 121, 32),
                 options=dict(num_warps=4, num_stages=3, enable_fp_fusion=False))
             name = 'router-packets' if packets else 'router-bf16'
+            dot_ir = '\n'.join(line for line in kernel.asm['ttgir'].splitlines() if 'tt.dot ' in line)
+            k_widths = [int(value) for value in re.findall(r'kWidth = (\d+)', dot_ir)]
+            if k_widths != [2, 2]:
+                raise RuntimeError(f'{name} changed ordinary BF16 dot operand packing: {k_widths}')
+            (output/(name+'.ttgir')).write_text(kernel.asm['ttgir'])
             (output/(name+'.ptx')).write_text(kernel.asm['ptx'])
             (output/(name+'.cubin')).write_bytes(kernel.asm['cubin'])
             records.append(dict(name=name, status='PASS', seconds=time.monotonic()-start,
                                 shared_bytes=kernel.metadata.shared,
+                                dot_k_widths=k_widths,
                                 cubin_sha256=hashlib.sha256(kernel.asm['cubin']).hexdigest()))
             print(json.dumps(records[-1]), flush=True)
         kernel = triton.compile(ASTSource(_quantize_gather,
