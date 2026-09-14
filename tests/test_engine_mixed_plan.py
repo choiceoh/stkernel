@@ -9,6 +9,8 @@ from engine.modules.mixed_experts import ExpertInvocation, plan_experts, plan_ex
 from engine.modules.mixed_completion import plan_cold
 from engine.modules.mixed_tickets import signature
 from engine.modules.route_table import RouteTable
+from engine.modules.mixed_route_plan import prepare_routes
+from engine.modules.mixed_metadata import MixedMetadata, metadata_tables
 
 IDENTITY = ExpertInvocation(3, 1, 2, 3)
 
@@ -18,7 +20,8 @@ class PackedPlanTests(unittest.TestCase):
         a = plan_experts(decode.tolist(), prefill.tolist(), identity=IDENTITY, hot_route_quota=hot)
         b = plan_experts_packed(decode, prefill, identity=IDENTITY, hot_route_quota=hot)
         ca, cb = plan_cold(a, task_quota=cold), plan_cold(b, task_quota=cold)
-        for old, new in ((a, b), (ca, cb)):
+        joint, rest = prepare_routes(decode, prefill, identity=IDENTITY, hot_route_quota=hot, cold_task_quota=cold)
+        for old, new in ((a, b), (ca, cb), (a, joint), (ca, rest)):
             for field in fields(old):
                 x, y = getattr(old, field.name), getattr(new, field.name)
                 if isinstance(y, RouteTable):
@@ -27,7 +30,36 @@ class PackedPlanTests(unittest.TestCase):
                     self.assertEqual(x, y, field.name)
         self.assertEqual(a.work(), b.work())
         self.assertEqual(signature(SimpleNamespace(plan=a, cold=ca)), signature(SimpleNamespace(plan=b, cold=cb)))
-        return b, cb
+        self.assertEqual(signature(SimpleNamespace(plan=a, cold=ca)), signature(SimpleNamespace(plan=joint, cold=rest)))
+        return joint, rest
+
+    def test_packet_views_copy_exact_tables_and_do_not_alias_other_invocations(self):
+        import torch
+        for p in (1, 140, 9240):
+            rows = np.tile(np.arange(8, dtype=np.int32), (p, 1))
+            plan, cold = self.pair(rows[:2], rows)
+            packet = MixedMetadata(plan, cold, 'cpu')
+            other = MixedMetadata(plan, cold, 'cpu')
+            before = signature(SimpleNamespace(plan=plan, cold=cold))
+            for name, array in metadata_tables(plan, cold).items():
+                torch.testing.assert_close(packet[name], torch.tensor(array, dtype=torch.int32), rtol=0, atol=0)
+            versions = {k: packet[k]._version for k in packet._spans}
+            packet['hot_sources'].fill_(999)
+            for name, version in versions.items():
+                self.assertNotEqual(packet[name]._version, version)
+            self.assertFalse(bool((other['hot_sources'] == 999).all()))
+            self.assertEqual(before, signature(SimpleNamespace(plan=plan, cold=cold)))
+
+    def test_hot_only_preparation_and_invalid_cold_quota(self):
+        rows = np.arange(8, dtype=np.int32).reshape(1, 8)
+        plan, cold = prepare_routes(rows, rows, identity=IDENTITY)
+        self.assertIsNone(cold)
+        self.assertEqual(plan, plan_experts_packed(rows, rows, identity=IDENTITY))
+        packet = MixedMetadata(plan, cold, 'cpu')
+        self.assertEqual(set(packet._spans), {'hot_sources', 'hot_counts', 'hot_experts'})
+        for quota in (-1, 0, 129, True, 1.5):
+            with self.assertRaises(ValueError):
+                prepare_routes(rows, rows, identity=IDENTITY, cold_task_quota=quota)
 
     def test_all_widths_tails_quotas_and_zero_cold_match_the_scalar_reference(self):
         for d in (1, 7, 8, 9, 16, 24, 32):
@@ -102,6 +134,8 @@ class PackedPlanTests(unittest.TestCase):
         for value in bad:
             with self.subTest(value=str(value)[:100]), self.assertRaises(ValueError):
                 plan_experts_packed(value, valid, identity=IDENTITY)
+            with self.assertRaises(ValueError):
+                prepare_routes(value, valid, identity=IDENTITY, cold_task_quota=48)
         for quota in (-1, 129, True, 1.5):
             with self.assertRaises(ValueError):
                 plan_experts_packed(valid, valid, identity=IDENTITY, hot_route_quota=quota)

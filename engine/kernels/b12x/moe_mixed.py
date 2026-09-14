@@ -9,7 +9,13 @@ from functools import lru_cache
 
 import torch
 
-from engine.modules.mixed_experts import plan_experts_packed
+from engine.modules.mixed_route_plan import prepare_routes
+from engine.modules.mixed_metadata import MixedMetadata
+
+
+def check_values(inputs, scales):
+    from engine.kernels.mixed_checks import check_values as check
+    check(inputs, scales)
 
 
 @lru_cache(maxsize=1)
@@ -23,7 +29,7 @@ class PreparedMixedExperts:
 
     def __init__(self, decode, prefill, decode_ids, prefill_ids,
                  decode_routes, prefill_routes, *, weights, input_scale, down_scale,
-                 identity, hot_route_quota=128):
+                 identity, hot_route_quota=128, cold_task_quota=None):
         if torch.cuda.is_current_stream_capturing():
             raise RuntimeError('mixed expert preparation is eager component work')
         device = decode.device
@@ -37,8 +43,6 @@ class PreparedMixedExperts:
                     or routes.shape != ids.shape or routes.dtype != torch.float32
                     or any(t.device != device or not t.is_contiguous() for t in (x, ids, routes))):
                 raise ValueError('mixed sources require contiguous BF16 H4096 and FP32 top-8 weights')
-            if not bool(torch.isfinite(x).all()) or not bool(torch.isfinite(routes).all()):
-                raise ValueError('mixed source values must be finite')
         if (not weights.tiled or weights.reform_scales is None or not weights.reform_scales.enabled
                 or tuple(weights.w1_storage.shape) != (288, 1024, 2048)
                 or tuple(weights.w2_storage.shape) != (288, 4096, 256)):
@@ -46,27 +50,28 @@ class PreparedMixedExperts:
         self.weights = weights
         for scale in (input_scale, down_scale, weights.w1_alpha, weights.w2_alpha):
             if (scale.shape != (288,) or scale.dtype != torch.float32 or scale.device != device
-                    or not scale.is_contiguous() or not bool(torch.isfinite(scale).all())
-                    or not bool((scale > 0).all())):
+                    or not scale.is_contiguous()):
                 raise ValueError('mixed experts require positive finite per-expert scales')
         weight_tensors = (weights.w1_storage, weights.w2_storage, weights.sfb1_packed, weights.sfb2_packed)
         if any(t is None or t.device != device or not t.is_contiguous() for t in weight_tensors):
             raise ValueError('mixed weight planes must share the source device')
-        self.plan = plan_experts_packed(decode_ids.cpu().numpy(), prefill_ids.cpu().numpy(),
-                                       identity=identity, hot_route_quota=hot_route_quota)
+        check_values((decode, prefill, decode_routes, prefill_routes),
+                     (input_scale, down_scale, weights.w1_alpha, weights.w2_alpha))
+        self.plan, self.cold = prepare_routes(decode_ids.cpu().numpy(), prefill_ids.cpu().numpy(),
+            identity=identity, hot_route_quota=hot_route_quota, cold_task_quota=cold_task_quota)
+        self.metadata = MixedMetadata(self.plan, self.cold, device)
         from . import moe_dispatch as md
         self.decode, self.prefill = decode, prefill
         self.ids, self.route_weights = decode_ids, decode_routes
         self.prefill_routes = prefill_routes
         self.input_scale, self.down_scale = input_scale, down_scale
-        self.sources = torch.tensor(self.plan.sources, dtype=torch.int32, device=device)
+        self.sources = self.metadata['hot_sources'].view(-1, 5)
         self.workspace = md.allocate_sm120_static_workspace(state_E=288, weight_E=288,
             max_rows=32, k=4096, n=512, num_topk=8, device=device)
         ws = self.workspace
-        counts = [self.plan.decode_counts[e] + self.plan.hot_counts[e] for e in self.plan.experts]
-        ws.row_counts.copy_(torch.tensor(counts + [0]*(288-len(counts)), dtype=torch.int32, device=device))
-        ws.weight_expert_ids[:len(counts)].copy_(torch.tensor(self.plan.experts, dtype=torch.int32, device=device))
-        ws.active_expert_count.fill_(len(counts))
+        ws.row_counts.copy_(self.metadata['hot_counts'])
+        ws.weight_expert_ids[:len(self.plan.experts)].copy_(self.metadata['hot_experts'])
+        ws.active_expert_count.fill_(len(self.plan.experts))
         # Padded rows are never scattered. Initialize them once so TMA/MMA do
         # not read uninitialized data; later runs overwrite every live route.
         ws.packed_input.zero_()

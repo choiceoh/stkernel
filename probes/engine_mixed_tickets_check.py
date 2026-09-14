@@ -20,6 +20,7 @@ def fingerprint():
         'engine/kernels/dense/kernels.cu', 'engine/kernels/dense/fp8.py',
         'probes/engine_mixed_tickets_check.py', 'probes/engine_mixed_completion_check.py',
         'probes/engine_mixed_plan_bench.py',
+        'probes/engine_mixed_prepare_bench.py',
         'tests/test_engine_mixed_tickets.py', 'tests/test_engine_mixed_shared.py')
     root = Path(__file__).resolve().parents[1]
     return dict(core(), **{p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in paths})
@@ -29,9 +30,10 @@ def fingerprint():
 def planning_arm(arm):
     """Probe-only A/B: identical readers/kernels, fresh host preparation per arm."""
     from unittest.mock import patch
-    from engine.kernels.b12x import moe_mixed, moe_mixed_completion
+    from engine.kernels.b12x import moe_mixed
     from engine.modules import mixed_tickets
     from probes.engine_mixed_plan_bench import legacy_plan, legacy_signature
+    from probes.engine_mixed_prepare_bench import previous_routes, torch_check_values, BlockingMetadata
     stages = {}
     def timed(name, fn):
         def call(*args, **kwargs):
@@ -41,11 +43,27 @@ def planning_arm(arm):
             finally:
                 stages[name] = (time.perf_counter()-start)*1000
         return call
+    def scalar_routes(decode, prefill, *, cold_task_quota=None, **options):
+        from engine.modules.mixed_completion import plan_cold
+        plan = legacy_plan(decode, prefill, **options)
+        return plan, None if cold_task_quota is None else plan_cold(plan, task_quota=cold_task_quota)
+    old = arm in ('legacy', 'packed_v1')
+    planner = scalar_routes if arm == 'legacy' else previous_routes if old else moe_mixed.prepare_routes
+    metadata_type = BlockingMetadata if old else moe_mixed.MixedMetadata
+    class MeasuredMetadata:
+        def __init__(self, *args, **kwargs):
+            self.owner = metadata_type(*args, **kwargs)
+        def __getitem__(self, name):
+            start = time.perf_counter()
+            try:
+                return self.owner[name]
+            finally:
+                stages['metadata_reads_ms'] = stages.get('metadata_reads_ms', 0.) + (time.perf_counter()-start)*1000
     with ExitStack() as stack:
         for module, name, field, fn in (
-                (moe_mixed, 'plan_experts_packed', 'hot_plan_ms',
-                 legacy_plan if arm == 'legacy' else moe_mixed.plan_experts_packed),
-                (moe_mixed_completion, 'plan_cold', 'cold_plan_ms', moe_mixed_completion.plan_cold),
+                (moe_mixed, 'prepare_routes', 'route_plan_ms', planner),
+                (moe_mixed, 'check_values', 'value_check_ms', torch_check_values if old else moe_mixed.check_values),
+                (moe_mixed, 'MixedMetadata', 'metadata_prepare_ms', MeasuredMetadata),
                 (mixed_tickets, 'signature', 'agreement_ms',
                  legacy_signature if arm == 'legacy' else mixed_tickets.signature)):
             stack.enter_context(patch.object(module, name, timed(field, fn)))
@@ -67,11 +85,13 @@ def measure(args, report):
     from probes.engine_graph_profile import rank_on_this_node
     from probes.engine_ffn_packets_check import sha_tensor
     from probes.engine_mixed_completion_check import output_error
+    from probes.engine_mixed_prepare_bench import value_check_gate
 
     if torch.cuda.get_device_capability() != (12, 1):
         raise RuntimeError('mixed ticket qualification requires GB10/SM121')
     budget = 8 << 30
     torch.cuda.set_per_process_memory_fraction(budget/torch.cuda.get_device_properties(0).total_memory)
+    report['value_check_gate'] = value_check_gate()
     root = Path(args.ranks)
     if not root.is_absolute():
         root = facts.RANKS.parent/root
@@ -134,7 +154,9 @@ def measure(args, report):
         # if dynamic arrivals reused a fixed input/route histogram.
         for sample in range(args.samples):
             for quota in (0, 128) if sample % 2 == 0 else (128, 0):
-                arms = (('legacy', 'packed') if sample % 2 == 0 else ('packed', 'legacy')) if args.compare_planning else ('packed',)
+                baseline = 'packed_v1' if args.compare_preparation else 'legacy'
+                arms = ((baseline, 'packed_v2') if sample % 2 == 0 else ('packed_v2', baseline)) \
+                    if args.compare_planning or args.compare_preparation else ('packed_v2',)
                 for arm in arms:
                     generation += 1
                     identity = ExpertInvocation(3, generation, generation, generation)
@@ -232,12 +254,17 @@ def main():
     parser.add_argument('--samples', type=int, default=4)
     parser.add_argument('--compare-planning', action='store_true',
         help='alternate pre-optimization scalar/JSON preparation and packed planning on the same build')
+    parser.add_argument('--compare-preparation', action='store_true',
+        help='compare previous packed components with joint planning, fused checks and one metadata upload')
     parser.add_argument('--output', type=Path, default=Path('/cache/mixed-tickets.json'))
     args = parser.parse_args()
     if args.samples < 2 or args.samples % 2:
         parser.error('--samples must be even and at least two')
+    if args.compare_planning and args.compare_preparation:
+        parser.error('choose one preparation baseline')
     report = dict(status='FAIL', source_sha256=fingerprint(), image=os.environ.get('ST_IMAGE'),
         compare_planning=args.compare_planning,
+        compare_preparation=args.compare_preparation,
         scope='M2 eager one-rank FFN component, real served shared readers, ticket retirement and foreign-stream '
               'consumers. Includes fresh route planning/allocation/admission in wall timings. '
               'No full model, TP4 NCCL, arrival trace, graph, TTFT, tok/s, quality or acceptance verdict.')

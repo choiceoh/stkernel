@@ -134,13 +134,7 @@ def plan_experts(decode, prefill, *, identity, hot_route_quota=128):
                            tuple(map(len, d)), tuple(hot), cold, hot_route_quota)
 
 
-def plan_experts_packed(decode, prefill, *, identity, hot_route_quota=128):
-    """Same admission/order as plan_experts, for owned CPU int32 route arrays.
-
-    Keep the scalar planner as a differential reference. Only the <=384 hot
-    routes become Python descriptors; large tables stay contiguous int32.
-    Nothing is cached by shape, histogram, pointer or previous generation.
-    """
+def validate_packed_routes(decode, prefill, identity, hot_route_quota):
     import numpy as np
     if not isinstance(identity, ExpertInvocation):
         raise ValueError('an explicit source/layer/generation identity is required')
@@ -152,6 +146,16 @@ def plan_experts_packed(decode, prefill, *, identity, hot_route_quota=128):
                 or np.any(rows < 0) or np.any(rows >= 288)
                 or np.any(np.diff(np.sort(rows, axis=1), axis=1) == 0)):
             raise ValueError('packed routes require int32 rows with eight distinct in-range experts')
+
+
+def plan_experts_packed(decode, prefill, *, identity, hot_route_quota=128):
+    """Same admission/order as plan_experts, for owned CPU int32 route arrays.
+
+    Keep this two-stage planner as the first packed preparation reference.
+    Nothing is cached by shape, histogram, pointer or previous generation.
+    """
+    import numpy as np
+    validate_packed_routes(decode, prefill, identity, hot_route_quota)
     decode = tuple(map(tuple, decode.tolist()))
     tile = 16 if len(decode) <= 8 else 32
     d, experts = [0] * 288, []

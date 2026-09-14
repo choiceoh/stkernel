@@ -9,9 +9,6 @@ from functools import lru_cache
 
 import torch
 
-from engine.modules.mixed_completion import plan_cold
-from engine.modules.route_table import RouteTable
-
 
 @lru_cache(maxsize=1)
 def _producer():
@@ -49,15 +46,16 @@ class PreparedMixedCompletion:
         from . import moe_dispatch as md
         self.hot = PreparedMixedExperts(decode, prefill, decode_ids, prefill_ids,
             decode_routes, prefill_routes, weights=weights, input_scale=input_scale,
-            down_scale=down_scale, identity=identity, hot_route_quota=hot_route_quota)
+            down_scale=down_scale, identity=identity, hot_route_quota=hot_route_quota,
+            cold_task_quota=cold_task_quota)
         self.plan = self.hot.plan
-        self.cold = plan_cold(self.plan, task_quota=cold_task_quota)
+        self.cold = self.hot.cold
         self.stream = self.hot.stream
         self._shared_execution = shared_execution
         self._shared_weights = (shared_up, shared_down) if shared_execution is None else ()
         device = decode.device
-        sources = self.cold.sources.array() if isinstance(self.cold.sources, RouteTable) else self.cold.sources
-        self.sources = torch.tensor(sources, dtype=torch.int32, device=device).reshape(-1, 4)
+        metadata = self.hot.metadata
+        self.sources = metadata['cold_sources'].view(-1, 4)
         self.workspace = md.allocate_sm120_dynamic_workspace(state_E=288, weight_E=288,
             routed_rows=len(self.cold.sources), k=4096, n=512, num_topk=8,
             device=device, activation='swigluoai_uninterleave', tile_m=128)
@@ -65,12 +63,10 @@ class PreparedMixedCompletion:
         if (self.cold.physical_rows > ws.max_rows
                 or len(self.cold.task_expert) > ws.task_capacity):
             raise RuntimeError('prepared cold layout exceeds allocated task storage')
-        def copy(target, values):
-            target[:len(values)].copy_(torch.tensor(values, dtype=torch.int32, device=device))
-        copy(ws.row_counts, self.cold.counts)
-        copy(ws.expert_tile_base, self.cold.tile_bases)
-        copy(ws.task_expert, self.cold.task_expert)
-        copy(ws.task_valid_rows, self.cold.task_valid_rows)
+        for target, name in ((ws.row_counts, 'cold_counts'), (ws.expert_tile_base, 'cold_bases'),
+                             (ws.task_expert, 'cold_tasks'), (ws.task_valid_rows, 'cold_valid')):
+            values = metadata[name]
+            target[:len(values)].copy_(values)
         # Initialize padding once. Every live cold row is overwritten at begin;
         # task valid_rows excludes padding and every moved hot route.
         ws.packed_input.zero_()
@@ -96,12 +92,9 @@ class PreparedMixedCompletion:
             ws.token_weights.data_ptr(), weights.sfb1_packed, weights.sfb2_packed,
             len(self.plan.prefill), ws.max_rows, ws.physical_tiles_capacity * 128, ws.task_capacity)
         # Sparse completion reduction visits only the <=128 moved routes.
-        tokens = [s[3] for s in self.plan.sources[self.plan.decode_routes:]]
-        rows = sorted(set(tokens))
-        local = {token: i for i, token in enumerate(rows)}
-        self._hot_rows = torch.tensor(rows, dtype=torch.int64, device=device)
-        self._hot_dest = torch.tensor([local[t] for t in tokens], dtype=torch.int64, device=device)
-        self._hot_sum = torch.empty((len(rows), 4096), dtype=torch.float32, device=device)
+        self._hot_rows = metadata['hot_rows'].long()
+        self._hot_dest = metadata['hot_dest'].long()
+        self._hot_sum = torch.empty((len(self._hot_rows), 4096), dtype=torch.float32, device=device)
         self._owned = (*self._shared_weights, self.sources, ws.row_counts, ws.expert_tile_base,
                        ws.task_expert, ws.task_valid_rows, self._hot_rows, self._hot_dest)
         self._versions = tuple(t._version for t in self._owned)

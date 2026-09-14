@@ -70,6 +70,18 @@ def compile_all(output):
                         raise RuntimeError('long-prefill runtime row extents recompiled the same body')
         if torch.cuda.is_initialized() or len(records) != 8:
             raise RuntimeError('compile must build all eight handles without initializing CUDA')
+        import triton
+        from triton.backends.compiler import GPUTarget
+        from triton.compiler import ASTSource
+        from engine.kernels.mixed_checks import _check
+        start = time.monotonic()
+        source = ASTSource(fn=_check, signature=dict(DX='*bf16', PX='*bf16', DR='*fp32', PR='*fp32',
+            S0='*fp32', S1='*fp32', S2='*fp32', S3='*fp32', Status='*i32', D='i32', P='i32'), constexprs=dict(B=16384))
+        kernel = triton.compile(source, target=GPUTarget('cuda', 121, 32), options=dict(num_warps=8))
+        report['value_check'] = dict(status='PASS', runtime_row_extents=True,
+            seconds=time.monotonic()-start, shared_bytes=kernel.metadata.shared, triton=triton.__version__)
+        if torch.cuda.is_initialized():
+            raise RuntimeError('value-check compile initialized CUDA')
         report.update(status='PASS', dynamic_runtime_shape_reuse=True)
     except BaseException:
         report['error'] = traceback.format_exc()
