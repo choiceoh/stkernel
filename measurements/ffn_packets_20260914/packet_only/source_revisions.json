@@ -1,4 +1,24 @@
 {
+  "compile-sender-v1": {
+    "revision": "36ba3dfa8c3a30ce9e5dba5ec27e920485e9d971",
+    "all_sources_match": true,
+    "source_count": 22
+  },
+  "compile-sender-full-v1": {
+    "revision": "36ba3dfa8c3a30ce9e5dba5ec27e920485e9d971",
+    "all_sources_match": true,
+    "source_count": 22
+  },
+  "cpu-sender-v1": {
+    "revision": "36ba3dfa8c3a30ce9e5dba5ec27e920485e9d971",
+    "all_sources_match": true,
+    "source_count": 40
+  },
+  "gpu-sender-v1-failure": {
+    "revision": "36ba3dfa8c3a30ce9e5dba5ec27e920485e9d971",
+    "all_sources_match": true,
+    "source_count": 24
+  },
   "gpu-router-v10": {
     "revision": "1cd0507b4e1dc7493b9372cc879585e21fd7946f",
     "all_sources_match": true,

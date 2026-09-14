@@ -303,7 +303,7 @@ def measure(args, report):
         # Warm both actual variants before comparing or timing them.
         report['active_case']['phase'] = 'warmup'
         for arm in (False, True):
-            ffn(arm)
+            ffn(arm, prepare=True)
         with patch.object(md, 'launch_sm120_dynamic_moe', capture_launch):
             base, base_parts = ffn(False)
         if not observed or observed.get('_packet_input') is not None:
@@ -321,8 +321,9 @@ def measure(args, report):
         names = ('route_ids', 'route_weights', 'shared_q', 'shared_scales', 'shared_output')
         changed_parts = [name for name, actual, expected in zip(names, candidate_parts, hashes)
                          if sha_tensor(actual) != expected]
-        changed_experts = [actual['expert'] for actual, expected in zip(candidate_frontend, baseline_frontend)
-                           if actual != expected]
+        changed_experts = [dict(expert=actual['expert'],
+            fields=[key for key in actual if actual[key] != expected[key]])
+            for actual, expected in zip(candidate_frontend, baseline_frontend) if actual != expected]
         if changed_parts or changed_experts:
             raise RuntimeError(f'packet bytes changed: parts={changed_parts}, experts={changed_experts}')
         del candidate_parts
@@ -364,7 +365,8 @@ def measure(args, report):
             raise RuntimeError('a consumer modified its packet owner')
         medians = [statistics.median(v) for v in times]
         wall_medians = [statistics.median(v) for v in wall_times]
-        cell = dict(rows=rows, real_weight_frontend_byte_exact=True, shared_byte_exact=True,
+        cell = dict(rows=rows, sender_logits_byte_exact=True, sender_router_rows=g.local_rows,
+            real_weight_frontend_byte_exact=True, shared_byte_exact=True,
             unequal_expert_scales_byte_exact=True, errors=errors, baseline_variance=variance,
             unequal_scales_error=unequal_error, output_part_sha256=hashes,
             packet_sha256=input_hash, workspace=g.workspace(), milliseconds=times,

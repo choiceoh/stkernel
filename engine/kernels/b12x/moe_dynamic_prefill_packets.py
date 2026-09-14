@@ -45,7 +45,10 @@ def stage_packet_input(a_input, batch_base, staged_tokens, tidx, threads, stage_
     rows, cols = Int32(a_input.shape[0]), Int32(a_input.shape[1])
     local_rows = (rows + Int32(3)) // Int32(4)
     local = local_rows * cols
-    stride = ((local + Int32(4)*(local//Int32(2048)) + Int32(127))//Int32(128))*Int32(128)
+    # The launcher carries the actual rank-packet byte stride in the packet
+    # input's first layout stride. Metadata may extend it beyond FP8 values
+    # and scales; recomputing the v1 size would read other ranks incorrectly.
+    stride = Int32(a_input.stride[0])
     packed = cute.make_tensor(cute.recast_ptr(a_input.iterator, dtype=cutlass.Uint32),
                               cute.make_layout((stride,), stride=(1,)))
     scales = cute.make_tensor(cute.recast_ptr(a_input.iterator, dtype=cutlass.Float32),

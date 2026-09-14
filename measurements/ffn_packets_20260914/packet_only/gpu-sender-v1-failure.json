@@ -1,0 +1,67 @@
+{
+  "status": "FAIL",
+  "scope": "one GB10, one sender pack and routes plus emulated all-gather through full L3 FFN output; synthetic activations, actual rank weights; other three senders prepared outside timing; torch.cat substitutes for communication; excludes NIC/reduce-scatter, TTFT, generation tok/s and model quality/acceptance",
+  "source_sha256": {
+    "engine/modules/prefill_packets.py": "aacff46e3e9ad341cb0de5cfc505068429a39b6bb86e8bc615c252a5fad490a3",
+    "engine/modules/token_shards.py": "e7bb2e77817ecf821fdf03305f36e8b1f914e174066b762a81e5084405cd9393",
+    "engine/kernels/prefill_collectives/__init__.py": "e9755f4b052dfb8385727a98e9ed87d69fd0523008c8974da8542f94512e35e5",
+    "engine/kernels/prefill_collectives/consumer.py": "a657ca03960b2b4d0c1764afbc6a2bb00995ee67dafbd867d18645858d8a1205",
+    "engine/kernels/prefill_collectives/kernels.py": "447cdfe6f53fcbaa4e8aed52bdba85437dfe03081508d754758e491dd6bdad98",
+    "engine/kernels/prefill_router.py": "63feadb50b644985d3fe9b631484cf4c42b7361fee4ce2be614ecba196c61351",
+    "engine/kernels/prefill_collectives/routes.py": "2bf113a268a3de0e7b85f41c905abfc6fb31ab60766c33d1236fb7caaefc0385",
+    "engine/kernels/dense/__init__.py": "e6970ca941a7a6a0e388f8cc951ea0ecd1a142c9d056262c2c95d3ec4b14bf7c",
+    "engine/kernels/dense/fp8.py": "fecc21c8b0f3088c765083cf7987db210de499313490559596dca7dee676c3ca",
+    "engine/kernels/b12x/moe_dispatch.py": "e91e36daff076fdf976abe57072f28aa3887cc790c096e85e8ee5d3401a0b7c9",
+    "engine/kernels/b12x/moe_packet_input.py": "edfb8563846ea6df2c86a42417a18d679e58bccb55a14164458e7d6ea89eef37",
+    "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "befafbf776e54b15a6272e2a167b83d60771414b4019af2cb2afb6b7bfc00613",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_w4a16_fp4_helpers.py": "3115cf3e73064cbf2c339d5fd2cec1c49206f34283c281faef2d1c2d290a6c73",
+    "engine/profiles/glm53/net.py": "7f52d5a153a97dd7dd9133a62a0968782905266a25934b5fe7ed133e08aab776",
+    "engine/profiles/glm53/lanes.py": "a51d1750bc1211d83f47de147f6c47a5796b5a9cf2ba1f53bdfc883471b429fb",
+    "engine/profiles/glm53/execution.py": "716111e7cc714a83a6b5af46a1641ee3efc6ce67aa3233dcabccc47c3ffa31b8",
+    "engine/profiles/glm53/boot.py": "6e8bc17d73602377e8356b81fedd3a34d4fde8f0d755f0701f7cd4a952ecb53f",
+    "probes/engine_ffn_packets_compile.py": "324a9f17a34cb285d78af93177d5f96f1c9d3dec1074b84ee1e90ae12f1f4faa",
+    "probes/engine_ffn_packets_check.py": "16eb6c615dccbb980b238f3265a37a3a562e69110d9a3b55f809fa79ea6f1a64",
+    "tests/test_engine_ffn_packets.py": "3a78d01476b008854fcc0e62feb75e86f3d89bd35e0b7a22af7957f51f4e04f7",
+    "tests/test_engine_prefill_fp8_consumer.py": "b5bfe7fe78c8aa0cb2ab30fd29fe53b2edc07306e3c57556d35b9315c85088b7",
+    "engine/kernels/glm_pointwise.py": "bd9713dd4f4fd2a40f62b53f2d92c651356b54f3bd07242714e772aa52c1df5b",
+    "engine/profiles/glm53/modelopt_scales.py": "5fb0fbbbc2011e0390248c696f5fb04e128e854d8544dbc113e932e8a28afbf3"
+  },
+  "image": "sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed",
+  "started": 1789373067.4608505,
+  "unit_tests": 20,
+  "device": "NVIDIA GB10",
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "memory_budget_bytes": 8589934592,
+  "model": {
+    "metadata": "/home/choiceoh/models/st-glm53-nvidia-tp4-9391",
+    "routed_scale": 2.5,
+    "config_sha256": "e23c5d98f53e861d49a51bd3c68591621c5482ce829e42c31724152322fba03d"
+  },
+  "weights": {
+    "rank": 3,
+    "rank_file": "/home/choiceoh/models/st-glm53-nvidia-tp4-9391/rank3of4.safetensors",
+    "scales": "ModelOpt",
+    "source_sha256": {
+      "L3.moe.gate": "d9b073de20e23bca95c0110f8d131a655e27b8dd1ec9370943b78734b189e86e",
+      "L3.moe.bias": "cad2f175acdabf61327e2c60bc609df9df81b21f7a8bc166d367b57ca13b78e7",
+      "L3.moe.sh_gate_up": "0b99c22a58b3c98afe1ac3c59a583e62f9db00c5c38039ba423152c3473f3b62",
+      "L3.moe.sh_down": "4f4357d6da8a9e1ebcba5b6605eb89f1bcc12c3fbfd8bc0a56223c31a5f39a91",
+      "L3.moe.w13": "478b368f40bc160de55eb6f9183b932d5c1b6ae7de6830ed6f6215f4abb962a9",
+      "L3.moe.w13_sf": "ae997725cc9d6d8b00741cef2e9de2fdc8eabb548bcf0ee38abcf342cff23e6f",
+      "L3.moe.w13_alpha": "ac67a63b66261a27f1d554f6ea56c54e99f4d7453c088d3f5d620ec61a76f945",
+      "L3.moe.a13_scale": "943fb533b85e78648717e60d599619ff59ec88b5beb1e0e0ccc8a22a75fe4972",
+      "L3.moe.w2": "a95eb1aa4a765ae6d6bb46f6b57f02ed7568eb866c8a3b686fd65aa7178b19a6",
+      "L3.moe.w2_sf": "c4cec568a6beb26956d29cd20d31747eb19f91eeba4b3a7ee0fd79854530f2b0",
+      "L3.moe.w2_alpha": "36a2911ff7f90108bc72e76e82e9f2c21878c170018359d1efb3d2fd31da523a",
+      "L3.moe.a2_scale": "cc81ef1524250ece78d606d9b2a656d86c729f26e69791801213fdc6d1ba97b7"
+    }
+  },
+  "cases": [],
+  "active_case": {
+    "rows": 8193,
+    "phase": "byte-comparison"
+  },
+  "error": "Traceback (most recent call last):\n  File \"/repo/probes/engine_ffn_packets_check.py\", line 413, in main\n    measure(args, report)\n  File \"/repo/probes/engine_ffn_packets_check.py\", line 327, in measure\n    raise RuntimeError(f'packet bytes changed: parts={changed_parts}, experts={changed_experts}')\nRuntimeError: packet bytes changed: parts=[], experts=[2, 3, 5, 6, 8, 9, 10, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 25, 26, 27, 28, 29, 31, 32, 33, 34, 35, 36, 37, 38, 43, 44, 45, 46, 47, 48, 50, 51, 53, 55, 56, 58, 59, 60, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 146, 147, 148, 151, 153, 154, 155, 156, 157, 158, 160, 161, 162, 163, 164, 166, 167, 169, 170, 172, 173, 174, 175, 176, 178, 179, 180, 181, 182, 184, 185, 186, 187, 190, 191, 192, 194, 195, 196, 197, 199, 200, 201, 203, 204, 205, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 219, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 235, 236, 238, 239, 240, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 254, 256, 257, 258, 259, 260, 261, 262, 264, 265, 266, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287]\n"
+}

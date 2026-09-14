@@ -43,7 +43,16 @@ in both arms' FFN timing. Other senders are prepared outside timing, and
 senders and real-token cropping. This is a local pipeline estimate; it cannot
 establish NIC behavior, four-rank makespan or serving latency. The old
 received-packet v8 timings below are not directly comparable with this scope.
-Fresh actual-weight qualification is pending for this source.
+The first sender run at `36ba3dfa` passed 20 GPU unit tests and exact
+sender logits, transported routes and shared outputs, then failed expert
+frontend byte equality at 8,193 rows before timing. The expert reader was
+still deriving the v1 activation-only stride. The follow-up carries the
+actual packet byte stride as a runtime layout field, retaining one compiled
+packet kernel for v1/v2 and ragged row counts. No numerical gate is relaxed.
+[Initial failure](packet_only/gpu-sender-v1-failure.json). Its CPU sweep also
+found a stale fleet test audit hash left by the bounded router-probe test;
+the reviewed fixture-only test addition is now repinned.
+Fresh actual-weight qualification is pending for the stride correction.
 
 The v9–v13 router tile/load experiments were numerically exact but slower
 than the established packet router at 32K. Contiguous/gathered pair loads,

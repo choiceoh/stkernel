@@ -3975,6 +3975,7 @@ class _DynamicMoELaunch:
         sf_vec_size: int = _NVFP4_BLOCK_SIZE,
         reform_sf_pack: bool = False,
         prefill_tile64: bool = False,
+        prefill_packets: bool = False,
     ):
         activation_precision = _normalize_activation_precision(activation_precision)
         if activation_precision == "bf16":
@@ -3988,6 +3989,7 @@ class _DynamicMoELaunch:
         self._cols_pad_k = _align_up(k // sf_vec_size, 4)
         self._reform_sf_pack = bool(reform_sf_pack)
         self._prefill_tile64 = bool(prefill_tile64)
+        self._prefill_packets = bool(prefill_packets)
 
     @cute.jit
     def __call__(
@@ -4026,12 +4028,18 @@ class _DynamicMoELaunch:
         max_rows: cutlass.Int32,
         rows_padded: cutlass.Int32,
         max_tasks: cutlass.Int32,
+        packet_stride: cutlass.Int32,
         max_active_clusters: cutlass.Constexpr,
         stream,
     ):
+        input_stride = self._k
+        if cutlass.const_expr(self._prefill_packets):
+            # The packet-only Q0 reader treats this layout field as the byte
+            # distance between source-rank packets, never as BF16 row storage.
+            # Carry it at runtime so v1/v2 and ragged chunks share one kernel.
+            input_stride = packet_stride
         a_input = cute.make_tensor(
-            a_ptr, layout=cute.make_layout((num_tokens, self._k), stride=(self._k, 1))
-        )
+            a_ptr, layout=cute.make_layout((num_tokens, self._k), stride=(input_stride, 1)))
         topk_ids = cute.make_tensor(
             topk_ids_ptr,
             layout=cute.make_layout((num_tokens * self._num_topk,), stride=(1,)),
@@ -4360,7 +4368,7 @@ def _get_dynamic_kernel(
         if (not prefill_word_unpack or prefill_reuse or _prefill_scale_expansion
                 or _prefill_tile64 or _prefill_n128 or _prefill_q0_batch8):
             raise ValueError('FFN packets require the ordinary long-prefill SF6 M128 body')
-        cache_key = (*cache_key, 'long_prefill_fp8_packets_v1')
+        cache_key = (*cache_key, 'long_prefill_fp8_packets_v2_stride')
     if prefill_word_unpack:
         cache_key = (*cache_key, 'long_prefill_sf6_route_words_v1')
     short_word_unpack = _short_prefill_q0_word_unpack(
@@ -4493,6 +4501,7 @@ def _get_dynamic_kernel(
         sf_vec_size=sf_vec_size,
         reform_sf_pack=reform_sf_pack,
         prefill_tile64=_prefill_tile64,
+        prefill_packets=_prefill_packets,
     )
 
     topk_ids_cutlass_dtype = (
@@ -4654,6 +4663,7 @@ def _get_dynamic_kernel(
             1,
             1,
             1,  # runtime Int32 placeholders
+            128,  # runtime packet byte stride; unused by ordinary BF16 input
             mac,
             stream_fake,
             options="--opt-level 2 --enable-tvm-ffi",
@@ -4950,6 +4960,7 @@ def launch_sm120_dynamic_moe(
         workspace.max_rows,
         workspace.physical_tiles_capacity * workspace.tile_m,
         workspace.task_capacity,
+        _packet_input.geometry.stride if _packet_input is not None else 0,
     )
     _check_dynamic_capacity(workspace, routed_rows=num_tokens * top_k, n=n,
                             where="launch_sm120_dynamic_moe")
