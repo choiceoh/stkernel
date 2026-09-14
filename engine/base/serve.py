@@ -53,9 +53,10 @@ MEDIA_MAX_BYTES = {"image": 64 << 20, "video": 512 << 20}        # a door-side c
 
 
 class RequestError(Exception):
-    def __init__(self, message: str, status: int = 400):
+    def __init__(self, message: str, status: int = 400, headers: "dict | None" = None):
         super().__init__(message)
         self.status = status
+        self.headers = dict(headers or {})       # sent with the refusal: Retry-After on a full queue
 
 
 _TOOL_CALL = re.compile(r"<tool_call>(.*?)</tool_call>", re.S)
@@ -332,6 +333,12 @@ def sampling_options(req: dict, defaults: "dict | None" = None) -> "tuple[float,
 # is priced in the unit a reader counts.
 DEFAULT_ANSWER_CHARS = 1500
 DEFAULT_ANSWER_TOKENS = (256, 2048)          # never below what the old token budget bought, never past this
+# ... and a thinking turn that did not say gets room to think ON TOP of that answer. Without it the default
+# limit was the answer's alone and the reasoning budget a share of it: an English question got 256 tokens,
+# 128 of them reasoning, and a thinking model's answer came back cut. The onepass harness gives a 2K request
+# 8,192 reasoning tokens (bench/onepass.py, harness 45), so the door does too; a request that fits less still
+# backs down to what fits, and one that names max_tokens is untouched.
+DEFAULT_REASONING_TOKENS = 8192
 
 
 def written_text(messages) -> str:
@@ -1555,6 +1562,8 @@ class Server:
         # argument (45차 §68).
         self.reuse_paths = {"continuation": 0, "prefix_or_cold": 0}
         self.reasoning_shapes = {}                  # (thinking, effort) -> chat requests: see note_reasoning
+        self.reasoning_budgeted_total = 0           # chat choices that thought under a budget ...
+        self.reasoning_budget_reached_total = 0     # ... and those whose reasoning reached it
         self._free_rows = list(range(min(runner.kv.max_seqs, runner.c.max_running, runner.slots.available)))
         if not self._free_rows:
             raise ValueError("the server needs at least one request row and state slot")
@@ -1665,7 +1674,10 @@ class Server:
             if not self.alive:
                 raise RequestError("engine is stopping", 503)
             if len(self.pending) + len(self.results) >= self.max_pending:
-                raise RequestError("request queue is full", 503)
+                # 503 and not 429: the gateway opens a model's circuit on the FIRST 429, and on a 5xx after two
+                # failed requests -- a full queue is a saturated engine, not a caller over its quota. Retry-After
+                # is read either way: wormhole lengthens the cooldown by it, an OpenAI SDK waits it out.
+                raise RequestError("request queue is full", 503, headers={"Retry-After": str(self.retry_after())})
             request = self.next_seq
             self.next_seq += 1
             event = threading.Event()
@@ -1722,7 +1734,14 @@ class Server:
         """(conversation, prefix length) of the retained conversation whose history is the longest proper prefix of
         `ids`: a resident idle row, or a parked one (its record carries the tokens). None if nothing matches.
         The pictures must match too: the same placeholder run with another picture is another prompt, and so does the
-        tenant salt: a conversation another tenant left behind is not this one's to continue."""
+        tenant salt: a conversation another tenant left behind is not this one's to continue.
+
+        A thinking turn continues only if the client sends its reasoning back (45차 §85): the template renders a turn
+        without `reasoning_content` as an empty block, and the history holds the reasoning the model wrote. The door
+        does not splice the held reasoning into the prompt to make it match, although it could: the model would then
+        see that reasoning only while the conversation happens to be retained, and a fresh prefill of the same request
+        would not -- a cache deciding the answer. The fix is the client's: echo the reasoning of the turns that had
+        it (the gateway's preserveThinking), which also keeps the prefix cache whole."""
         best = None
         n = len(ids)
         marks = sorted((m["positions"][0], m["digest"]) for m in media)
@@ -1776,6 +1795,18 @@ class Server:
                 return None
             out.append(dict(m, positions=[p - prefix for p in pos]))
         return out
+
+    def retry_after(self) -> int:
+        """Seconds a caller refused for a full queue should wait: the typical request's time here (the bucket bound
+        holding the e2e median) shared across the rows that serve at once, from 1 to 60. Five before anything has
+        finished. A rough number on purpose -- it is a hint to back off, not a promise of a slot."""
+        e2e = self.e2e
+        if not e2e.total:
+            return 5
+        half = e2e.total / 2
+        bound = next((b for b, c in zip(e2e.bounds, e2e.counts) if c >= half), e2e.bounds[-1])
+        rows = max(1, int(getattr(self.runner.c, "max_running", 1) or 1))
+        return int(min(60, max(1, round(bound / rows))))
 
     def abandon(self, requests) -> None:
         """Requests no reply will read: the siblings of a submission that failed partway (the second of n choices
@@ -2737,6 +2768,9 @@ class Server:
              self.generation_tokens_committed_total),
             ("counter", "st:generation_characters_total", "characters those tokens spelled, as the client read them",
              self.generation_characters_total),
+            ("counter", "st:reasoning_budgeted_total", "chat choices that reasoned under a budget", self.reasoning_budgeted_total),
+            ("counter", "st:reasoning_budget_reached_total", "of those, the ones whose reasoning reached the budget",
+             self.reasoning_budget_reached_total),
             ("counter", "vllm:spec_decode_num_accepted_tokens_total", "drafts the target confirmed",
              getattr(engine, "accepted_total", 0)),
             ("counter", "vllm:spec_decode_num_draft_tokens_total", "tokens the drafter proposed",
@@ -3107,7 +3141,7 @@ class Server:
             def log_message(self, *args):
                 pass
 
-            def reply(self, status, payload):
+            def reply(self, status, payload, headers=None):
                 # ensure_ascii=False: JSON is UTF-8 by definition (RFC 8259), and escaping puts a
                 # Korean character on the wire as six ASCII bytes instead of its three. A Korean
                 # answer's body was 1.83x the size it needed to be (45차 §40).
@@ -3115,6 +3149,8 @@ class Server:
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
+                for name, value in (headers or {}).items():
+                    self.send_header(name, str(value))
                 self.end_headers()
                 self.wfile.write(body)
 
@@ -3449,6 +3485,8 @@ class Server:
                     # whole answer would come back as reasoning_content with content empty. It waits instead.
                     options["grammar_after"] = server.reasoning_end
                 if defaulted:
+                    if reasoning:
+                        max_tokens += DEFAULT_REASONING_TOKENS  # the answer's own budget stays the answer's
                     # Only ever back down to what the old token budget was: a prompt the old
                     # default could not fit is still refused, in the same words, rather than
                     # quietly answered in one token.
@@ -3512,10 +3550,21 @@ class Server:
                             # on it, and would retry a 503 elsewhere instead), a timeout 504
                             self.reply(errors[0].error_status or 503, {"error": errors[0].error})
                         return
+                    budget = options.get("reasoning_budget")
+                    details = {"reasoning_tokens": sum(len(c.streams["reasoning_content"].ids) for c in choices)}
+                    if budget is not None:
+                        # The engine closes a block that reaches its budget, and the answer then ends with "stop"
+                        # like any other: the count of choices whose reasoning reached it is the only way a caller
+                        # (or the operator, from st:reasoning_budget_reached_total) can tell a cut thought from a
+                        # finished one.
+                        details["reasoning_budget_reached"] = sum(
+                            1 for c in choices if len(c.streams["reasoning_content"].ids) >= budget)
+                        server.reasoning_budgeted_total += len(choices)
+                        server.reasoning_budget_reached_total += details["reasoning_budget_reached"]
                     usage = {"prompt_tokens": len(ids), "completion_tokens": sum(c.total for c in choices),
                              "total_tokens": len(ids) + sum(c.total for c in choices),
                              "prompt_tokens_details": {"cached_tokens": server.cached_tokens(*(c.request for c in choices))},
-                             "completion_tokens_details": {"reasoning_tokens": sum(len(c.streams["reasoning_content"].ids) for c in choices)}}
+                             "completion_tokens_details": details}
                     if stream:
                         for c in choices:
                             chunk(c.index, None, finish=c.finish_reason(), logprobs=c.logprobs_payload())
@@ -3868,7 +3917,7 @@ class Server:
                     # quietly read it back).
                     handler(self.body(allow_empty=self.path in BODYLESS))
                 except RequestError as exc:
-                    self.reply(exc.status, {"error": str(exc)})
+                    self.reply(exc.status, {"error": str(exc)}, exc.headers)
                 except (ValueError, TypeError, UnicodeError) as exc:
                     self.reply(400, {"error": str(exc)})
 

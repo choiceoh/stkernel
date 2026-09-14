@@ -852,7 +852,9 @@ class ChatDoorTests(unittest.TestCase):
             self.assertEqual([c['choices'][0]['finish_reason'] for c in chunks if c['choices']][-1], 'length')
             self.assertEqual(chunks[-1]['usage'], {'prompt_tokens': 3, 'completion_tokens': 4, 'total_tokens': 7,
                                                    'prompt_tokens_details': {'cached_tokens': 0},
-                                                   'completion_tokens_details': {'reasoning_tokens': 4}})
+                                                   # a limit of 4 leaves a budget of 1, which the fake engine's 4 reasoning tokens reach
+                                                   'completion_tokens_details': {'reasoning_tokens': 4, 'reasoning_budget_reached': 1}})
+            self.assertIn('st:reasoning_budget_reached_total{engine="st"} 1\n', s.metrics())
             self.assertFalse(s._streams or s._sent or s.pending or s.results)
             # thinking off: the rendered prompt "xy" ENDS with 'y' = reasoning_end (the template closed the think block),
             # so the door starts in content mode and every generated 'y' is content (45차 §22: an answer used to land in
@@ -1033,6 +1035,60 @@ class TemplateMessagesTests(unittest.TestCase):
         for role in ("function", "observation", None):
             with self.subTest(role=role), self.assertRaisesRegex(RequestError, "is not served"):
                 template_messages([{"role": role, "content": "x"}])
+
+
+class DoorDecisionTests(unittest.TestCase):
+    """A full queue says when to come back; a thinking turn that named no limit gets room to think; a reasoning budget
+    that was reached is visible."""
+
+    def post(self, s, body, path="/v1/chat/completions"):
+        httpd = s._serve_http()
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{httpd.server_port}{path}", data=json.dumps(body).encode())
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, dict(r.headers), json.load(r)
+        except urllib.error.HTTPError as error:
+            return error.code, dict(error.headers), json.loads(error.read())
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_a_full_queue_answers_503_with_retry_after(self):
+        s = chat_server(max_pending=1)
+        s.submit([97, 98], 2, 0.0)                                    # the one slot, not yet served
+        status, headers, body = self.post(s, {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2})
+        self.assertEqual((status, body["error"], headers.get("Retry-After")), (503, "request queue is full", "5"))
+        for _ in range(3):
+            s.e2e.observe(30.0)                                       # typical requests take 30 s over two rows
+        self.assertEqual(s.retry_after(), 15)
+        s.e2e.observe(10_000.0); s.e2e.observe(10_000.0); s.e2e.observe(10_000.0); s.e2e.observe(10_000.0)
+        self.assertEqual(s.retry_after(), 60)                         # never more than a minute
+
+    def test_a_thinking_turn_without_a_limit_gets_room_to_think(self):
+        from engine.base.serve import DEFAULT_REASONING_TOKENS, RequestError, answer_budget
+        seen = []
+
+        def capture(ids, max_new, temperature, **kw):
+            seen.append((max_new, dict(kw.get("options") or {})))
+            raise RequestError("captured", 418)
+        for thinking in (True, False):
+            s = chat_server(blocks=8192)                              # room for the default to stand
+            s.reasoning_end = ord("y")                                # "xy" closes the block, "xy!" opens one
+            s.submit = capture
+            status, _, _ = self.post(s, {"messages": [{"role": "user", "content": "xy"}],
+                                         "chat_template_kwargs": {"thinking": thinking}})
+            self.assertEqual(status, 418)
+        answer = answer_budget(s.tok, "xy")
+        (thinking_limit, thinking_options), (plain_limit, plain_options) = seen
+        self.assertEqual(plain_limit, answer)                         # the answer's own default, as before
+        self.assertNotIn("reasoning_budget", plain_options)
+        self.assertEqual(thinking_limit, answer + DEFAULT_REASONING_TOKENS)
+        self.assertEqual(thinking_options["reasoning_budget"], thinking_limit - thinking_limit // 4)
+        self.assertGreaterEqual(thinking_limit - thinking_options["reasoning_budget"], answer)   # the answer keeps its room
+        s = chat_server()                                             # a pool that cannot hold it still backs down
+        s.reasoning_end = ord("y")
+        s.submit = capture
+        self.post(s, {"messages": [{"role": "user", "content": "xy"}], "chat_template_kwargs": {"thinking": True}})
+        self.assertLessEqual(seen[-1][0], 256)
 
 
 class AbandonTests(unittest.TestCase):
