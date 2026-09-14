@@ -168,7 +168,7 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary'):
         for rows, x, ids, routes, pair, functions, fixtures in cases:
             for name, values, selected, weights_for_rows, extra in fixtures:
                 x.copy_(values); ids.copy_(selected); routes.copy_(weights_for_rows)
-                timing(report, name, rows, *pair, functions, **extra)
+                timing(report, name, rows, *pair, functions, inside_events=True, **extra)
         artifact['passed'] = True
         report('moe_pair_complete', passed=True, max_allocated_bytes=torch.cuda.max_memory_allocated())
     except BaseException as exc:
