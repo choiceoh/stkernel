@@ -103,8 +103,8 @@ class W4A8DataflowTests(unittest.TestCase):
 
     def test_pipeline_admission_fits_without_the_queued_partial_plane(self):
         queued, staged = W4A8Plan(16, 4096, 3072), W4A8PipelinePlan(16, 4096, 3072)
-        self.assertEqual(staged.scratch_bytes, 181760)
-        self.assertEqual(queued.scratch_bytes-staged.scratch_bytes, 6291456+240)
+        self.assertEqual(staged.scratch_bytes, 249344)
+        self.assertEqual(queued.scratch_bytes-staged.scratch_bytes, 6291456+240-67584)
         W4A8PipelinePlan(16, 4096, 3072, max_scratch_bytes=256 << 10)
         with self.assertRaisesRegex(ValueError, "scratch"):
             W4A8Plan(16, 4096, 3072, max_scratch_bytes=256 << 10)

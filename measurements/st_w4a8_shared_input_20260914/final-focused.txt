@@ -1,0 +1,15 @@
+test_every_packed_byte_and_signed_scale_matches_the_deployed_byte_tables (tests.test_engine_w4a8_pipeline.InterpreterTests.test_every_packed_byte_and_signed_scale_matches_the_deployed_byte_tables) ... ok
+test_shared_quantizer_group_layout_tail_masks_and_repeated_inputs (tests.test_engine_w4a8_pipeline.InterpreterTests.test_shared_quantizer_group_layout_tail_masks_and_repeated_inputs) ... ok
+test_output_feedback_is_safe_but_quantizer_overlap_is_rejected_before_launch (tests.test_engine_w4a8_pipeline.WorkspaceTests.test_output_feedback_is_safe_but_quantizer_overlap_is_rejected_before_launch) ... ok
+test_shared_input_does_not_alias_live_activation_output_or_other_scales (tests.test_engine_w4a8_pipeline.WorkspaceTests.test_shared_input_does_not_alias_live_activation_output_or_other_scales) ... ok
+test_borrow_existing_packs_and_refuse_incompatible_lane_or_observer (tests.test_engine_w4a8_dataflow.W4A8DataflowTests.test_borrow_existing_packs_and_refuse_incompatible_lane_or_observer) ... ok
+test_full_target_tree_uses_packed_w4a8_with_retired_bf16_weights (tests.test_engine_w4a8_dataflow.W4A8DataflowTests.test_full_target_tree_uses_packed_w4a8_with_retired_bf16_weights) ... ok
+test_gptq_planes_fp8_activations_and_bf16_boundaries_match_existing_lane (tests.test_engine_w4a8_dataflow.W4A8DataflowTests.test_gptq_planes_fp8_activations_and_bf16_boundaries_match_existing_lane) ... ok
+test_owner_replacement_and_group_or_scratch_change_are_refused (tests.test_engine_w4a8_dataflow.W4A8DataflowTests.test_owner_replacement_and_group_or_scratch_change_are_refused) ... ok
+test_pipeline_admission_fits_without_the_queued_partial_plane (tests.test_engine_w4a8_dataflow.W4A8DataflowTests.test_pipeline_admission_fits_without_the_queued_partial_plane) ... ok
+test_routed_experts_stay_exact_and_observations_do_not_leak_into_recall (tests.test_engine_w4a8_dataflow.W4A8DataflowTests.test_routed_experts_stay_exact_and_observations_do_not_leak_into_recall) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 3.049s
+
+OK

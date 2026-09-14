@@ -68,7 +68,7 @@ class NativeTreeDataflowTests(unittest.TestCase):
         def move(p):
             return replace(p, data=p.data.cuda(), scale=p.scale.cuda(), rowscale=p.rowscale.cuda())
         weights = W4A8Weights(move(w.gate_up), move(w.down))
-        for rows in (1, 4, 16, 32):
+        for rows in (1, 4, 8, 16, 17, 32):
             plan = W4A8PipelinePlan(rows, w.hidden, w.intermediate)
             workspace = Workspace((plan,), torch.device("cuda:0"))
             x = torch.randn(rows, w.hidden, device="cuda").bfloat16()
@@ -89,6 +89,14 @@ class NativeTreeDataflowTests(unittest.TestCase):
                 graph.replay()
                 self.assertEqual(out.data_ptr(), address)
                 torch.testing.assert_close(out, expected, atol=0, rtol=0)
+            graph.reset()
+            # Reusing the borrowed output as the next input is safe: the
+            # input stage consumes it before FC2 writes the same output view.
+            expected, error = execute_w4a8(W4A8Plan(rows, w.hidden, w.intermediate), out.clone(), weights, 10.)
+            self.assertEqual(error, 0)
+            repeated = execute(plan, out, weights, 10., workspace)
+            self.assertEqual(repeated.data_ptr(), address)
+            torch.testing.assert_close(repeated, expected, atol=0, rtol=0)
 
     def test_native_tree_conv_and_carry_equal_reconstruction(self):
         from engine.kernels.kda.tree import verify as native, conv as native_conv
