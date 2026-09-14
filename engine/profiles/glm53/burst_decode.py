@@ -75,6 +75,11 @@ class BurstDecode(AsyncDecode):
         self.readback = dict(iterations=torch.empty(1, dtype=torch.int64, pin_memory=pin),
                              timings=torch.empty(4, 2, dtype=torch.int64, pin_memory=pin),
                              stages=torch.empty(4, 2*len(DeviceStages.NAMES), dtype=torch.int64, pin_memory=pin))
+        # One burst owns these bytes until retirement, just like its readback.
+        # Copy straight into the captured reservation buffer, with no temporary
+        # device allocation or second device-to-device copy per launch.
+        self.reserved_host = torch.empty(n, dtype=torch.int64, pin_memory=pin)
+        self.reserved_staged = self.reserved_host.numpy()
         if getattr(engine, 'draft_diagnostics', None) is not None:
             self.readback['rejection'] = torch.empty(4, n, 2, dtype=torch.int64, pin_memory=pin)
         if not pin:
@@ -259,7 +264,8 @@ class BurstDecode(AsyncDecode):
         # Separate the mapping from the captured mapping: shrink/merge may
         # replace the pipeline's tensor entries without changing graph owners.
         self.buf = dict(b)
-        controls["reserved"].copy_(self._upload(reserved, torch.int64))
+        self.reserved_staged[:n] = reserved
+        controls["reserved"].copy_(self.reserved_host[:n], non_blocking=True)
         controls["interrupt"].zero_()
         controls["stages"].fill_(-1)
         loop = self.loops[shape]
