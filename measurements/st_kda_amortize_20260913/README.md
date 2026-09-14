@@ -5,8 +5,31 @@ experiment and production recipes at operator request (`deferred_kda=1`; rollbac
 `STK_deferred_kda=0`, expiring with the other declared knobs on 2026-09-30). Default
 application and verification are recorded separately (CHARTER D11, 2026-09-14). Evidence
 on record: GPU exactness and the -35% C=1 / -46% C=4 component timing at K=6
-(`st-kda-batch0913v4`), and the first tiled commit's exactness at K=6. Pending: GPU
-exactness and paired timing of this hoisted K=7 commit, then the D17 fleet onepass.
+(`st-kda-batch0913v4`), and the first tiled commit's exactness at K=6.
+
+**GPU gate of the adopted commit: PASS** (`gpu-default-0914.json`). Ticket
+`ostcode-kda-deferred0914` ran on the single-GPU lane, GB10 on srv4 beside a live engine.
+It used frozen `5f949059` (deferred kernel digest `6fa3ba19…`, unchanged in #937),
+Torch 2.13.0+cu130 / CUDA 13.0, and took 246 s.
+- Exactness 8/8 with no skips: every accepted count and prefix boundary, padding, and
+  width-7 and width-8 materialization against the flat reference at large contexts. Also
+  the four-iteration conditional graph committing before factor reuse, and rebinding after
+  rollback and ring wrap.
+- Serving graphs 8/8 with no skips and zero graph-label errors: burst boot capture,
+  rebinding and the shared chain match ordinary serving, and cancel before a four-iteration
+  burst retires.
+
+The probe's timing fixture is still the fixed T=7 (K=6 width), so these are not K=7 numbers.
+The ordinary C=1 arm was bimodal because of the engine beside it. Medians of 12 cells
+(34 layers, verify plus commit):
+
+| Rows | Ordinary (range) | Deferred (range) |
+|---|---|---|
+| C=1 | 2.63 ms (1.61–4.05) | 1.04 ms (1.01–2.40) |
+| C=4 | 13.87 ms (13.79–13.89) | 7.01 ms (5.72–9.06) |
+
+Pending: the D17 fleet onepass, `ostcode-kda-deferred-pair0914b` (`st-pair` full, #937's
+tree `05b7c886` against parent `5297d346`).
 The text below is the original default-off record.
 
 The first tiled commit passed all five GPU state/graph tests but had mixed
