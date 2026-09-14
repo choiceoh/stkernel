@@ -29,6 +29,7 @@ back a partial multi-byte character until its next token completes it.
 from __future__ import annotations
 
 import base64
+import functools
 import heapq
 import json
 import math
@@ -157,6 +158,16 @@ tokens instead of naming a rung.
 """
 
 
+def context_overflow(limit: int, horizon: int, prompt: int, completion: int, what: str, pool: bool = False) -> str:
+    """A request that does not fit, in vLLM's and OpenAI's sentence -- the one agent gateways match to decide a
+    conversation needs compacting ("maximum context", "context length", "reduce the length") -- with this engine's
+    numbers: the ceiling, the horizon a request reserves (its drafts' slots included), and which half to cut. `pool`:
+    the ceiling is the KV pool's room for one request, below the model's."""
+    where = " on this deployment's KV pool" if pool else ""
+    return (f"This model's maximum context length is {limit} tokens{where}. However, you requested {horizon} tokens "
+            f"({prompt} in the {what}, {completion} in the completion). Please reduce the length of the {what} or completion.")
+
+
 def effort_words(rungs) -> str:
     """The rungs a door accepts, as its refusal names them: 'low, medium, high, or max'."""
     names = list(rungs)
@@ -186,7 +197,7 @@ def template_messages(messages):
 
     - A tool call's `arguments` arrive as JSON text on OpenAI's wire, and templates iterate them as a mapping: a
       conversation that sent its own tool calls back failed to render, which is every agent's second turn. Text that
-      is a JSON object becomes that object, and empty text an empty one -- what vLLM does before it renders.
+      is a JSON object becomes that object, and empty text or null an empty one -- what vLLM does before it renders.
     - `developer` is OpenAI's system role for reasoning models; a template that knows only `system` dropped those
       instructions without a word, so it arrives as `system`.
     - An assistant turn's reasoning arrives as `reasoning` from current OpenAI-compatible clients and as
@@ -218,9 +229,9 @@ def template_messages(messages):
         for call in calls:
             fn = call.get("function") if isinstance(call, dict) else None
             arguments = fn.get("arguments") if isinstance(fn, dict) else None
-            if isinstance(arguments, str):
+            if isinstance(arguments, str) or (isinstance(fn, dict) and "arguments" in fn and arguments is None):
                 try:
-                    parsed = json.loads(arguments) if arguments.strip() else {}
+                    parsed = json.loads(arguments) if arguments and arguments.strip() else {}
                 except ValueError:
                     parsed = None
                 if isinstance(parsed, dict):
@@ -1028,6 +1039,7 @@ class _Choice:
         self.finish = None
         self.done = False
         self.error = None
+        self.error_status = None                     # the failure's HTTP status, for a reply that has not started
         self.tool_calls = []
         self._tool_seen = 0
         self._tool_done = []                         # per call: has `</tool_call>` arrived
@@ -1585,13 +1597,14 @@ class Server:
         blocks = self.runner.kv.blocks_for(horizon)
         # The numbers, not just the verdict. A request reserves its whole horizon, so a caller
         # who is refused needs to know which half to cut -- and the caller who meets this first
-        # is writing in a language that costs more tokens a character (45차 §40).
+        # is writing in a language that costs more tokens a character (45차 §40). And the words
+        # clients classify: an agent gateway compacts a conversation only when the 400 reads as a
+        # context overflow, which it recognises by vLLM's and OpenAI's sentence (`context_overflow`).
         room = min(self.runner.kv.num_blocks, self.runner.kv.max_blocks_per_seq) * self.runner.kv.block_size
-        needs = f"needs {horizon} ({len(ids)} for the prompt, {max_new} to generate)"
         if horizon >= 2**31 or blocks > min(self.runner.kv.num_blocks, self.runner.kv.max_blocks_per_seq):
-            raise RequestError(f"the KV pool holds {room} tokens for one request; this one {needs}")
+            raise RequestError(context_overflow(room, horizon, len(ids), max_new, "messages", pool=True))
         if horizon > self.max_context:
-            raise RequestError(f"this model serves {self.max_context} tokens of context; this request {needs}")
+            raise RequestError(context_overflow(self.max_context, horizon, len(ids), max_new, "messages"))
         with self._lock:
             if not self.alive:
                 raise RequestError("engine is stopping", 503)
@@ -1888,7 +1901,8 @@ class Server:
                     event.set()
             stream = self._streams.get(request)
             if stream is not None:
-                stream.put(("error", str(result)) if isinstance(result, RequestError) else ("end", self.finish_reason(result, request)))
+                stream.put(("error", (str(result), result.status)) if isinstance(result, RequestError)
+                           else ("end", self.finish_reason(result, request)))
                 self._wake.set()
             self._stop_ids.pop(request, None)
 
@@ -2265,14 +2279,13 @@ class Server:
                 horizon = end + limit - 1 + (self.runner.c.draft_slots if limit > 1 else 0)
                 promised = self.runner.kv.blocks_for(horizon)
                 room = min(self.runner.kv.num_blocks, self.runner.kv.max_blocks_per_seq) * self.runner.kv.block_size
-                needs = f"needs {horizon} ({end} for the conversation so far, {limit} to generate)"
                 if horizon >= 2**31 or promised > min(self.runner.kv.num_blocks, self.runner.kv.max_blocks_per_seq):
                     self._waiting.popleft()
-                    self._answer(request, RequestError(f"the KV pool holds {room} tokens for one request; this turn {needs}"))
+                    self._answer(request, RequestError(context_overflow(room, horizon, end, limit, "conversation", pool=True)))
                     continue
                 if horizon > self.max_context:
                     self._waiting.popleft()
-                    self._answer(request, RequestError(f"this model serves {self.max_context} tokens of context; this turn {needs}"))
+                    self._answer(request, RequestError(context_overflow(self.max_context, horizon, end, limit, "conversation")))
                     continue
                 promised = max(promised, held)       # rejected-draft reservations may exceed the new turn
             if row is None and not self._free_rows:
@@ -3053,6 +3066,17 @@ class Server:
                 if self.path == "/v1/models":
                     catalog, code = server.catalog()
                     self.reply(code, catalog)
+                elif self.path.startswith("/v1/models/"):
+                    # OpenAI's retrieve-model route: the card, or the same 404 a request for another model gets. It
+                    # used to fall through to the status body, a 200 for any name.
+                    from urllib.parse import unquote
+                    catalog, code = server.catalog()
+                    wanted = unquote(self.path[len("/v1/models/"):])
+                    card = next((m for m in catalog.get("data", []) if m.get("id") == wanted), None)
+                    if card is not None:
+                        self.reply(200, card)
+                    else:
+                        self.reply(404 if code == 200 else code, {"error": f"The model `{wanted}` does not exist."})
                 elif self.path == "/metrics":
                     body = server.metrics().encode()
                     self.send_response(200)
@@ -3117,7 +3141,7 @@ class Server:
             # ---- the OpenAI dialect ------------------------------------------------------------------------------
             def choices_for(self, ids, count, max_new, temperature, options, stop, *, reasoning, tool_parser=None,
                             want_logprobs=None, min_new=0, continue_history=False, media=None, cache_salt=None,
-                            single_call=False):
+                            single_call=False, tool_stream=None):
                 """Submit `count` generations of one prompt; each is a _Choice fed by its own token queue.
                 With a seed, choice i draws from seed + i so the n answers differ but stay reproducible. All or none:
                 a submit that fails partway abandons the choices already in (`Server.abandon`) before it raises."""
@@ -3133,7 +3157,7 @@ class Server:
                         choices.append(_Choice(len(choices), request, event, server._streams[request], tok=server.tok, stop=stop,
                                                reasoning=reasoning, tool_parser=tool_parser, want_logprobs=want_logprobs,
                                                min_new=min_new, repairs=server.detok_repairs,
-                                               tool_stream=server.tool_stream if tool_parser is not None else None,
+                                               tool_stream=tool_stream if tool_parser is not None else None,
                                                tool_start=server.tool_call_start if tool_parser is not None else None,
                                                single_call=single_call))
                 except BaseException:
@@ -3183,7 +3207,8 @@ class Server:
                             c.done = True
                             retire(c)
                         else:
-                            c.error = payload
+                            # (text, status) from `_answer`; bare text from a stopping engine
+                            c.error, c.error_status = payload if isinstance(payload, tuple) else (payload, 503)
                             c.done = True
                             retire(c)
                     if not progressed:
@@ -3379,11 +3404,18 @@ class Server:
                         options["reasoning_budget"] = budget
                         options["reasoning_end"] = server.reasoning_end
                 # tool calls are read only where tools were offered: without them (or with tool_choice "none") the
-                # marker is text the model wrote, and a "now answer in prose" turn is not turned into calls
+                # marker is text the model wrote, and a "now answer in prose" turn is not turned into calls. A parser
+                # that reads a schema gets this request's tools, so an argument typed as a string stays one.
+                parser = server.tool_parser if tools else None
+                reader = server.tool_stream if tools else None
+                if parser is not None and getattr(parser, "reads_tools", False):
+                    parser = functools.partial(parser, tools=tools)
+                if reader is not None and getattr(reader, "reads_tools", False):
+                    reader = functools.partial(reader, tools=tools)
                 choices = self.choices_for(ids, n, max_tokens, temperature, options, stop, reasoning=reasoning,
-                                           tool_parser=server.tool_parser if tools else None, want_logprobs=want_logprobs,
-                                           min_new=min_tokens, continue_history=True, media=media, cache_salt=cache_key(req),
-                                           single_call=parallel is False)
+                                           tool_parser=parser, want_logprobs=want_logprobs, min_new=min_tokens,
+                                           continue_history=True, media=media, cache_salt=cache_key(req),
+                                           single_call=parallel is False, tool_stream=reader)
                 head = {"id": f"chatcmpl-{choices[0].request}", "created": int(time.time()), "model": model}
                 for c in choices:
                     server.latency.row(kind='request', operation='template', phase='http',
@@ -3416,12 +3448,14 @@ class Server:
 
                     if not self.run_choices(choices, on_delta):
                         return
-                    errors = [c.error for c in choices if c.error]
+                    errors = [c for c in choices if c.error]
                     if errors:
                         if stream:
-                            self.sse({"error": {"message": errors[0], "type": "engine"}})
+                            self.sse({"error": {"message": errors[0].error, "type": "engine"}})
                         else:
-                            self.reply(503, {"error": errors[0]})
+                            # its own status: an overflow found at admission is the caller's 400 (a gateway compacts
+                            # on it, and would retry a 503 elsewhere instead), a timeout 504
+                            self.reply(errors[0].error_status or 503, {"error": errors[0].error})
                         return
                     usage = {"prompt_tokens": len(ids), "completion_tokens": sum(c.total for c in choices),
                              "total_tokens": len(ids) + sum(c.total for c in choices),
@@ -3558,12 +3592,14 @@ class Server:
 
                     if not self.run_choices(choices, on_delta):
                         return
-                    errors = [c.error for c in choices if c.error]
+                    errors = [c for c in choices if c.error]
                     if errors:
                         if stream:
-                            self.sse({"error": {"message": errors[0], "type": "engine"}})
+                            self.sse({"error": {"message": errors[0].error, "type": "engine"}})
                         else:
-                            self.reply(503, {"error": errors[0]})
+                            # its own status: an overflow found at admission is the caller's 400 (a gateway compacts
+                            # on it, and would retry a 503 elsewhere instead), a timeout 504
+                            self.reply(errors[0].error_status or 503, {"error": errors[0].error})
                         return
                     kept = choices
                     if best_of and best_of > n:                           # the n best of best_of by mean token log-probability

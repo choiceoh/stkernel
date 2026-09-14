@@ -11,11 +11,13 @@ template writes, or `detect` reads it off the template.
     FUNCTION_XML   <tool_call>\\n<function={name}>\\n<parameter={k}>\\n{v}\\n</parameter>\\n...</function>\\n</tool_call>
                    (a call after the first opens with '\\n')
 
-Both layouts write a string value raw and any other value as JSON. The parsers read a value back as JSON when it is
-one (numbers, objects, lists, booleans, null) and as text otherwise; a string that happens to read as JSON comes back
-as that JSON, which the written text cannot tell apart either.
+Both layouts write a string value raw and any other value as JSON. Given the request's `tools`, a parser reads an
+argument the schema types as a string as the text written -- "123" stays "123" -- which is how vLLM's parsers for these
+layouts read them; any other value, or any value without a schema, is JSON when it reads as JSON and text otherwise.
+The door binds `tools` where a parser `reads_tools`.
 
-A grammar binds the declared names and argument keys in the layout, values free. Lazily (`lazy=True`, the default) it
+A grammar binds the declared names and argument keys in the layout, values free; a tool whose parameters declare no
+`properties` (and do not forbid additional ones) takes any key, and a tool with no parameters takes none. Lazily (`lazy=True`, the default) it
 begins after the marker, for a door that arms it at the marker's token and leaves the prose before a call free; eagerly
 it begins with the marker, for `tool_choice` required or a named function, where the answer must be calls. With
 `parallel=False` it takes one call.
@@ -62,14 +64,52 @@ def tool_call_token(tok, marker: str = _OPEN) -> "int | None":
 
 
 def _tools_named(tools):
-    """[(name, sorted argument keys)] for the declared tools, or None when one of them has no name to hold a call to."""
+    """[(name, sorted argument keys, whether any key is allowed)] for the declared tools, or None when one of them has
+    no name to hold a call to. Keys are the schema's `properties`; parameters that declare none and do not set
+    `additionalProperties: false` take any key (a free-form object), and a tool without parameters takes none."""
     out = []
     for tool in tools or []:
         fn = tool.get("function") if isinstance(tool, dict) else None
         name = (fn or {}).get("name")
         if not isinstance(name, str) or not name:
             return None
-        out.append((name, sorted(k for k in ((fn.get("parameters") or {}).get("properties") or {}) if isinstance(k, str))))
+        params = fn.get("parameters")
+        props = (params or {}).get("properties") if isinstance(params, dict) else None
+        free = isinstance(params, dict) and not isinstance(props, dict) and params.get("additionalProperties") is not False
+        out.append((name, sorted(k for k in (props or {}) if isinstance(k, str)), free))
+    return out
+
+
+def _is_text(prop) -> bool:
+    """Whether a property schema types its value as a string: `type` string (or string or null), an enum of strings,
+    or `anyOf`/`oneOf` branches that are all strings or null."""
+    if not isinstance(prop, dict):
+        return False
+    kind = prop.get("type")
+    kinds = set(kind) if isinstance(kind, list) else {kind}
+    if kind is not None and kinds - {"null"} == {"string"}:
+        return True
+    enum = prop.get("enum")
+    if kind is None and isinstance(enum, list) and enum and all(isinstance(v, str) for v in enum):
+        return True
+    for key in ("anyOf", "oneOf"):
+        branches = prop.get(key)
+        if isinstance(branches, list) and branches and all(isinstance(b, dict) for b in branches):
+            if {b.get("type") for b in branches} - {"null"} == {"string"}:
+                return True
+    return False
+
+
+def _text_keys(tools) -> dict:
+    """{tool name: the argument keys its schema types as strings}."""
+    out = {}
+    for tool in tools or []:
+        fn = tool.get("function") if isinstance(tool, dict) else None
+        name = (fn or {}).get("name")
+        params = (fn or {}).get("parameters")
+        props = params.get("properties") if isinstance(params, dict) else None
+        if isinstance(name, str) and isinstance(props, dict):
+            out[name] = {k for k, v in props.items() if isinstance(k, str) and _is_text(v)}
     return out
 
 
@@ -80,10 +120,11 @@ _ARRIVING = re.compile(r"<arg_key>(.*?)</arg_key>\s*<arg_value>((?:(?!</arg_valu
 _END_VALUE = "</arg_value>"
 
 
-def _value(raw: str):
-    """A JSON value when it is one (numbers, objects, lists, booleans), otherwise the text itself."""
+def _value(raw: str, text_typed: bool = False):
+    """A JSON value when it is one (numbers, objects, lists, booleans), otherwise the text itself; the text itself
+    whatever it looks like when the schema types the argument as a string."""
     text = raw.strip()
-    if text and text[0] in _JSONISH:
+    if not text_typed and text and text[0] in _JSONISH:
         try:
             return json.loads(text)
         except ValueError:
@@ -91,19 +132,21 @@ def _value(raw: str):
     return text
 
 
-def parse_arg_pairs(content: str):
+def parse_arg_pairs(content: str, tools=None):
+    typed = _text_keys(tools)
     calls = []
     for body in _CALL.findall(content):
         name_end = body.find("<arg_key>")
         name = (body if name_end < 0 else body[:name_end]).strip()
         if not name:
             continue
-        args = {k.strip(): _value(v) for k, v in _ARG.findall(body)}
+        strings = typed.get(name, ())
+        args = {k.strip(): _value(v, k.strip() in strings) for k, v in _ARG.findall(body)}
         calls.append((name, json.dumps(args, ensure_ascii=False)))
     return calls or None
 
 
-def partial_arg_pairs(content: str):
+def partial_arg_pairs(content: str, tools=None):
     """Every call the text has begun, with as much of its arguments as is already certain:
     (name, arguments so far, whether the call closed), in order.
 
@@ -118,8 +161,9 @@ def partial_arg_pairs(content: str):
     first character: anything that could still parse as JSON waits for `</arg_value>`, because
     until then its rendering is unknown. A plain string is streamed as it arrives, minus any
     trailing whitespace, because `_value` will strip it and a fragment may not have to be taken
-    back.
+    back. An argument the schema types as a string is decided from its first character on.
     """
+    typed = _text_keys(tools)
     calls, at = [], 0
     while True:
         start = content.find(_OPEN, at)
@@ -138,7 +182,8 @@ def partial_arg_pairs(content: str):
             if not closed:
                 return calls
             continue
-        done = [(k.strip(), _value(v)) for k, v in _ARG.findall(body)]
+        strings = typed.get(name, ())
+        done = [(k.strip(), _value(v, k.strip() in strings)) for k, v in _ARG.findall(body)]
         text = json.dumps(dict(done), ensure_ascii=False)
         if closed:
             calls.append((name, text, True))
@@ -151,7 +196,7 @@ def partial_arg_pairs(content: str):
             # negative lookahead above only rejects the whole one. The same holdback the door
             # does for `<tool_call>`, one level down.
             sofar = _without_partial(arriving.group(2), _END_VALUE).strip()
-            if sofar and sofar[0] not in _JSONISH:
+            if sofar and (key in strings or sofar[0] not in _JSONISH):
                 text += ((", " if done else "") + json.dumps(key, ensure_ascii=False) + ": "
                          + json.dumps(sofar, ensure_ascii=False)[:-1])
         calls.append((name, text, False))
@@ -181,12 +226,13 @@ def grammar_arg_pairs(tools, *, lazy: bool = True, parallel: bool = True) -> "st
     if not named:
         return None
     calls, rules = [], []
-    for i, (name, keys) in enumerate(named):
+    for i, (name, keys, free) in enumerate(named):
         rules.append(f'call{i} ::= {json.dumps(name)} pairs{i} "</tool_call>"')
-        rules.append(f'pairs{i} ::= ("<arg_key>" key{i} "</arg_key>" "<arg_value>" value "</arg_value>")*'
-                     if keys else f'pairs{i} ::= ""')
-        if keys:
-            rules.append(f"key{i} ::= " + " | ".join(json.dumps(k) for k in keys))
+        if keys or free:
+            rules.append(f'pairs{i} ::= ("<arg_key>" key{i} "</arg_key>" "<arg_value>" value "</arg_value>")*')
+            rules.append(f"key{i} ::= " + (" | ".join(json.dumps(k) for k in keys) if keys else "[^<]+"))
+        else:
+            rules.append(f'pairs{i} ::= ""')
         calls.append(f"call{i}")
     body = 'call ("<tool_call>" call)*' if parallel else "call"
     root = f"root ::= {body}" if lazy else f'root ::= [ \\n]* "<tool_call>" {body}'
@@ -202,15 +248,16 @@ _END_PARAMETER = "</parameter>"
 _END_FUNCTION = "</function>"
 
 
-def _xml_value(raw: str):
+def _xml_value(raw: str, text_typed: bool = False):
     """A value as the template wrote it: the newline after the opening tag and the one before the closing tag are the
-    layout, not the value, and nothing else is taken off -- code keeps its indentation. JSON when it reads as JSON."""
+    layout, not the value, and nothing else is taken off -- code keeps its indentation. JSON when it reads as JSON,
+    unless the schema types the argument as a string."""
     if raw.startswith("\n"):
         raw = raw[1:]
     if raw.endswith("\n"):
         raw = raw[:-1]
     text = raw.strip()
-    if text and text[0] in _JSONISH:
+    if not text_typed and text and text[0] in _JSONISH:
         try:
             return json.loads(text)
         except ValueError:
@@ -228,23 +275,27 @@ def _xml_body(body: str):
     return head.group(1).strip(), inner if stop < 0 else inner[:stop]
 
 
-def parse_function_xml(content: str):
+def parse_function_xml(content: str, tools=None):
+    typed = _text_keys(tools)
     calls = []
     for body in _CALL.findall(content):
         found = _xml_body(body)
         if found is None or not found[0]:
             continue
         name, inner = found
-        args = {k.strip(): _xml_value(v) for k, v in _PARAMETER.findall(inner)}
+        strings = typed.get(name, ())
+        args = {k.strip(): _xml_value(v, k.strip() in strings) for k, v in _PARAMETER.findall(inner)}
         calls.append((name, json.dumps(args, ensure_ascii=False)))
     return calls or None
 
 
-def partial_function_xml(content: str):
+def partial_function_xml(content: str, tools=None):
     """`partial_arg_pairs`'s contract on this layout: (name, arguments so far, closed) per call begun, the text only ever
     growing. A string value streams once its first non-blank character says it is not JSON; while it arrives, a
     trailing piece of `</parameter>` and one trailing newline are held back, because either may turn out to be the
-    closing tag and its layout newline rather than value text."""
+    closing tag and its layout newline rather than value text. An argument the schema types as a string streams from
+    its first character, whatever that character is."""
+    typed = _text_keys(tools)
     calls, at = [], 0
     while True:
         start = content.find(_OPEN, at)
@@ -261,7 +312,8 @@ def partial_function_xml(content: str):
                 return calls                    # the name is still arriving
             continue
         name, inner = found
-        done = [(k.strip(), _xml_value(v)) for k, v in _PARAMETER.findall(inner)]
+        strings = typed.get(name, ())
+        done = [(k.strip(), _xml_value(v, k.strip() in strings)) for k, v in _PARAMETER.findall(inner)]
         text = json.dumps(dict(done), ensure_ascii=False)
         if closed:
             calls.append((name, text, True))
@@ -276,7 +328,7 @@ def partial_function_xml(content: str):
             if sofar.endswith("\n"):
                 sofar = sofar[:-1]
             decided = sofar.strip()
-            if decided and decided[0] not in _JSONISH:
+            if (key in strings and sofar) or (decided and decided[0] not in _JSONISH):
                 text += ((", " if done else "") + json.dumps(key, ensure_ascii=False) + ": "
                          + json.dumps(sofar, ensure_ascii=False)[:-1])
         calls.append((name, text, False))
@@ -290,12 +342,13 @@ def grammar_function_xml(tools, *, lazy: bool = True, parallel: bool = True) -> 
     if not named:
         return None
     calls, rules = [], []
-    for i, (name, keys) in enumerate(named):
+    for i, (name, keys, free) in enumerate(named):
         rules.append(f'call{i} ::= "\\n<function=" {json.dumps(name)} ">\\n" params{i} "</function>\\n</tool_call>"')
-        rules.append(f'params{i} ::= ("<parameter=" key{i} ">\\n" value "\\n</parameter>\\n")*'
-                     if keys else f'params{i} ::= ""')
-        if keys:
-            rules.append(f"key{i} ::= " + " | ".join(json.dumps(k) for k in keys))
+        if keys or free:
+            rules.append(f'params{i} ::= ("<parameter=" key{i} ">\\n" value "\\n</parameter>\\n")*')
+            rules.append(f"key{i} ::= " + (" | ".join(json.dumps(k) for k in keys) if keys else "[^>\\n]+"))
+        else:
+            rules.append(f'params{i} ::= ""')
         calls.append(f"call{i}")
     body = 'call ("\\n<tool_call>" call)*' if parallel else "call"
     root = f"root ::= {body}" if lazy else f'root ::= [ \\n]* "<tool_call>" {body}'
@@ -314,6 +367,9 @@ class ToolFormat:
     def start_token(self, tok) -> "int | None":
         return tool_call_token(tok, self.marker)
 
+
+for _reader in (parse_arg_pairs, partial_arg_pairs, parse_function_xml, partial_function_xml):
+    _reader.reads_tools = True                   # base/serve binds the request's tools to these (schema-typed values)
 
 ARG_PAIRS = ToolFormat("arg_pairs", parse_arg_pairs, partial_arg_pairs, grammar_arg_pairs)
 FUNCTION_XML = ToolFormat("function_xml", parse_function_xml, partial_function_xml, grammar_function_xml)

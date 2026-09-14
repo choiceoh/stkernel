@@ -278,6 +278,44 @@ class GrammarShapeTests(unittest.TestCase):
                 self.assertEqual(grammar(self.TOOLS, lazy=False).split("\n")[1:], grammar(self.TOOLS).split("\n")[1:])
 
 
+class SchemaTests(unittest.TestCase):
+    """Given the request's tools, an argument the schema types as a string is the text written, whatever it looks like;
+    and a tool whose parameters declare no properties takes any key."""
+
+    TOOLS = [{"type": "function", "function": {"name": "run", "parameters": {"type": "object", "properties": {
+        "code": {"type": "string"}, "mode": {"enum": ["1", "2"]}, "note": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "n": {"type": "integer"}}}}},
+             {"type": "function", "function": {"name": "anything", "parameters": {"type": "object"}}},
+             {"type": "function", "function": {"name": "closed", "parameters": {"type": "object", "additionalProperties": False}}},
+             {"type": "function", "function": {"name": "none"}}]
+    ARGS = {"code": "123", "mode": "2", "note": "true", "n": 7}
+
+    def test_both_layouts_read_strings_as_written_and_numbers_as_numbers(self):
+        for parse, partial, write in ((parse_tool_calls, partial_tool_calls, glm_call),
+                                      (parse_function_xml, partial_function_xml, qwen_call)):
+            with self.subTest(layout=parse.__name__):
+                text = write("run", self.ARGS)
+                self.assertEqual(json.loads(parse(text, tools=self.TOOLS)[0][1]), self.ARGS)
+                self.assertEqual(json.loads(parse(text)[0][1]), {"code": 123, "mode": 2, "note": True, "n": 7})
+                seen = ""
+                for n in range(len(text) + 1):                        # typed strings stream from their first character
+                    calls = partial(text[:n], tools=self.TOOLS)
+                    if calls:
+                        self.assertTrue(calls[0][1].startswith(seen))
+                        seen = calls[0][1]
+                self.assertEqual(json.loads(seen), self.ARGS)
+                self.assertTrue(getattr(parse, "reads_tools", False) and getattr(partial, "reads_tools", False))
+
+    def test_a_free_form_tool_takes_any_key_and_a_closed_or_bare_one_none(self):
+        for grammar, anykey in ((grammar_arg_pairs, "key1 ::= [^<]+"), (grammar_function_xml, "key1 ::= [^>\\n]+")):
+            with self.subTest(grammar=grammar.__name__):
+                text = grammar(self.TOOLS)
+                self.assertIn(anykey, text)
+                self.assertIn("key0 ::= " + " | ".join(json.dumps(k) for k in sorted(self.ARGS)), text)
+                self.assertTrue('pairs2 ::= ""' in text or 'params2 ::= ""' in text)
+                self.assertTrue('pairs3 ::= ""' in text or 'params3 ::= ""' in text)
+
+
 class DetectTests(unittest.TestCase):
     """The format is read off the template: the one whose parser reads back the call the template wrote."""
 
