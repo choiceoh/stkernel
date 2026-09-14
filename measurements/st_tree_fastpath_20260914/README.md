@@ -20,22 +20,22 @@ match exactly; target head tokens match as well.
 
 | Nodes | Prefix | #947 verify ms | Revised verify ms | Time reduction |
 |---:|---:|---:|---:|---:|
-| 8, chain | 0 | 2.803 | 1.659 | 40.8% |
-| 8, chain | 129 | 3.046 | 1.713 | 43.8% |
-| 8, chain | 1024 | 3.175 | 1.712 | 46.1% |
-| 15, two branches | 0 | 4.423 | 2.094 | 52.7% |
-| 15, two branches | 129 | 4.865 | 2.164 | 55.5% |
-| 15, two branches | 1024 | 5.110 | 2.195 | 57.0% |
+| 8, chain | 0 | 2.774 | 1.646 | 40.7% |
+| 8, chain | 129 | 3.042 | 1.696 | 44.2% |
+| 8, chain | 1024 | 3.150 | 1.706 | 45.8% |
+| 15, two branches | 0 | 4.453 | 2.130 | 52.2% |
+| 15, two branches | 129 | 4.927 | 2.162 | 56.1% |
+| 15, two branches | 1024 | 5.106 | 2.190 | 57.1% |
 
 These timings include transaction preparation and target verification,
 excluding proposal and commit. The 7x64 candidate selector separately goes
-from 0.531 to 0.263 ms (flat scores) and 0.525 to 0.242 ms (peaked scores):
-50.6–54.0% less CPU time. The peaked case retains a depth-seven chain within
+from 0.517 to 0.268 ms (flat scores) and 0.522 to 0.242 ms (peaked scores):
+48.2–53.6% less CPU time. The peaked case retains a depth-seven chain within
 eight selected nodes, versus depth four before; proposal mass rises from
 2.7953 to 3.1581. **Proposal mass is not measured acceptance.**
 
-The recorder also includes an ordinary linear target reference: 2.075–2.134
-ms versus 1.655–1.728 ms for eight-node private tree verification (19.0–20.3%
+The recorder also includes an ordinary linear target reference: 2.054–2.125
+ms versus 1.654–1.724 ms for eight-node private tree verification (18.3–19.8%
 less time). This is only a diagnostic CPU comparison: the linear call writes
 its cache, while tree verification excludes accepted-path commit. Neither
 arm is production CUDA-graph serving, and the tiny dense weights are CPU
@@ -72,6 +72,10 @@ W4A8 graph replay with changed inputs; those device tests were not executed.
 `compile.json`: **31 offline SM121 variants**. Both carry modes and FP32/BF16
 convolution weights compile. W4A8 keeps native FP8 MMA; the two staged
 kernels contain no atomics, polling or local-memory spill loads/stores.
+The gate disassembles cubins as well as checking PTX: ptxas introduced spills
+in several initial four-warp variants despite spill-free PTX. Eight warps
+per CTA remove those spills at M=1/4/16/32: the final staged kernels use
+180–228 registers per thread, zero stack bytes and zero LDL/STL instructions.
 `interpreter.json`: **12 CPU interpreter checks**, including the actual tree
 convolution ancestry/FP32 sum and native packed readers. libdevice activation,
 device conversion, warp scheduling and graph replay remain untested on GPU.

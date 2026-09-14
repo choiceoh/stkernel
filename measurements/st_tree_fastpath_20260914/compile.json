@@ -12,7 +12,9 @@
         "B": 256
       },
       "cubin_sha256": "93f5729135b0b556594311850c10aadd4c6ac899261ba22c3cd04b83552c336c",
-      "shared_bytes": 0
+      "shared_bytes": 0,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "kda-conv-fp32-weights",
@@ -22,7 +24,9 @@
         "B": 256
       },
       "cubin_sha256": "a944f18614f2855a9428b1b32a094bcf422876edda38f144f47190348c36f22a",
-      "shared_bytes": 0
+      "shared_bytes": 0,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "kda-prepare",
@@ -33,7 +37,9 @@
         "BD": 128
       },
       "cubin_sha256": "8c95bc155cc5e11d4e62e51044c9e04423245307fc48954fb33d5b3828550e1e",
-      "shared_bytes": 16
+      "shared_bytes": 16,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "kda-commit",
@@ -45,7 +51,9 @@
         "B": 1024
       },
       "cubin_sha256": "a5d6c460037c9388efd9bf28fdb9e45fbe42b7d3c6760f53cee7e6a0a3c8e229",
-      "shared_bytes": 0
+      "shared_bytes": 0,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "kda-tree-n8-d128-v128-carry0",
@@ -60,7 +68,9 @@
         "CARRY": false
       },
       "cubin_sha256": "5bbc0c624b140ecd3ff7db62f46580176d1f984cf6d68bbbea75d2369e8d6359",
-      "shared_bytes": 512
+      "shared_bytes": 512,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "kda-tree-n8-d128-v128-carry1",
@@ -75,7 +85,9 @@
         "CARRY": true
       },
       "cubin_sha256": "e784b750d09aec41b5e2da2d2f6160a3442cb8acfe218f354756de52f9732ad0",
-      "shared_bytes": 512
+      "shared_bytes": 512,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "kda-tree-n16-d128-v128-carry0",
@@ -90,7 +102,9 @@
         "CARRY": false
       },
       "cubin_sha256": "3aef648979913dac975579d98052b9a25c550c57a1130da3ad35b549a1a25db1",
-      "shared_bytes": 512
+      "shared_bytes": 512,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "kda-tree-n16-d128-v128-carry1",
@@ -105,7 +119,9 @@
         "CARRY": true
       },
       "cubin_sha256": "00bfee5640f3498d8607f44b50aaf6c7dbe5bb213418d84031c9b6b87803a5c1",
-      "shared_bytes": 512
+      "shared_bytes": 512,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "kda-tree-n31-d128-v128-carry0",
@@ -120,7 +136,9 @@
         "CARRY": false
       },
       "cubin_sha256": "8fe591ddfdfe70c46339fd6ecc22baf9624455b651c44285da186464fe8dc3a3",
-      "shared_bytes": 512
+      "shared_bytes": 512,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "kda-tree-n31-d128-v128-carry1",
@@ -135,7 +153,9 @@
         "CARRY": true
       },
       "cubin_sha256": "a96554ba0bfe93628cf4994e18285581d6bb46e77d344fd56ff503a8c5283083",
-      "shared_bytes": 512
+      "shared_bytes": 512,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "kda-tree-n6-d7-v5-carry0",
@@ -150,7 +170,9 @@
         "CARRY": false
       },
       "cubin_sha256": "63542f61856424946ebcc78d1051c42d468dc7342d5e4215e9b87a6458ead340",
-      "shared_bytes": 256
+      "shared_bytes": 256,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "kda-tree-n6-d7-v5-carry1",
@@ -165,7 +187,9 @@
         "CARRY": true
       },
       "cubin_sha256": "980c9ab64866822d09c411992eaa5160a78460df1056009e7726c57dfe5e601e",
-      "shared_bytes": 256
+      "shared_bytes": 256,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "mlp-m1-h4096-i1024",
@@ -193,7 +217,9 @@
         "W4A8": false
       },
       "cubin_sha256": "ba3718fd07cad39807997da193ecda30651b3046091d95ad3aec9757ca187631",
-      "shared_bytes": 5120
+      "shared_bytes": 5120,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "mlp-m4-h4096-i1024",
@@ -221,7 +247,9 @@
         "W4A8": false
       },
       "cubin_sha256": "4a043c1b73b2a0f15fd5737b7fd1c426e9370e9a4a60b7742253e9a84973b8ba",
-      "shared_bytes": 5120
+      "shared_bytes": 5120,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "mlp-m16-h4096-i1024",
@@ -249,7 +277,9 @@
         "W4A8": false
       },
       "cubin_sha256": "5247822d9381ee7b84cd6a28e4bd5b390e2a1d55113e0f2de8ef95704a546c38",
-      "shared_bytes": 5120
+      "shared_bytes": 5120,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "mlp-m17-h95-i33",
@@ -277,7 +307,9 @@
         "W4A8": false
       },
       "cubin_sha256": "14cac488bddb0da4e1d0773676b0b0abf26be04b58dbd6f7c00d5dd1d0aadfbb",
-      "shared_bytes": 6144
+      "shared_bytes": 6144,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "nvfp4-m1-tile0-sf60",
@@ -298,7 +330,9 @@
         "W4A8": false
       },
       "cubin_sha256": "367eb3cb69b25896a4780222f8dfc023c19df35f714b1a67b6a0368b6d4885ea",
-      "shared_bytes": 4864
+      "shared_bytes": 4864,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "nvfp4-m4-tile1-sf60",
@@ -319,7 +353,9 @@
         "W4A8": false
       },
       "cubin_sha256": "4ddfacee8d7017e11a4ada5c5b1bb02ab7f5d91d8933486c50c290e98f048fb2",
-      "shared_bytes": 4864
+      "shared_bytes": 4864,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "nvfp4-m16-tile1-sf61",
@@ -340,7 +376,9 @@
         "W4A8": false
       },
       "cubin_sha256": "d9d4d04a6da89d8673bb73ded35660a1015095c38624a1a0c1c17c4e3ec93a5c",
-      "shared_bytes": 4608
+      "shared_bytes": 4608,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "w4a8-pipeline-gate-up-m1",
@@ -351,8 +389,14 @@
         "BM": 16,
         "LIMIT": 10.0
       },
-      "cubin_sha256": "22fb0bdc2db16feada8567bd1a1951475bebdff6b743ae912ebfff445b9a236d",
-      "shared_bytes": 34816
+      "cubin_sha256": "4ccce7f738904e21f0fbac6d1ee8e3cb3df0130e7e70d1f18ccc864117baf15e",
+      "shared_bytes": 34816,
+      "num_warps": 8,
+      "assembled_usage": {
+        "registers": 206,
+        "stack_bytes": 0,
+        "local_instructions": 0
+      }
     },
     {
       "name": "w4a8-pipeline-down-m1",
@@ -362,8 +406,14 @@
         "I": 3072,
         "BM": 16
       },
-      "cubin_sha256": "858b1abebfedd1873d947e62d628781fb100f440e4c5f9cf56f29773e9fccd1f",
-      "shared_bytes": 16384
+      "cubin_sha256": "65d7584a5dc0fb7a74bbc73d9f2effd525a61bb27047be29749747ef95ea367d",
+      "shared_bytes": 16384,
+      "num_warps": 8,
+      "assembled_usage": {
+        "registers": 180,
+        "stack_bytes": 0,
+        "local_instructions": 0
+      }
     },
     {
       "name": "w4a8-m1",
@@ -386,7 +436,9 @@
         "W4A8": true
       },
       "cubin_sha256": "57bdfa56cf988693f1733580a0ed090a92d2d5c7d917f820a84c7222c680fcba",
-      "shared_bytes": 34816
+      "shared_bytes": 34816,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "w4a8-pipeline-gate-up-m4",
@@ -397,8 +449,14 @@
         "BM": 16,
         "LIMIT": 10.0
       },
-      "cubin_sha256": "ecfaadbb3aa315f038900841dec6e56bfe391369aedcbfa124f2118b256d7d7c",
-      "shared_bytes": 34816
+      "cubin_sha256": "82878f9935f58961020817360d83a8eb5f75ce439694bac53d307e80f216a110",
+      "shared_bytes": 34816,
+      "num_warps": 8,
+      "assembled_usage": {
+        "registers": 206,
+        "stack_bytes": 0,
+        "local_instructions": 0
+      }
     },
     {
       "name": "w4a8-pipeline-down-m4",
@@ -408,8 +466,14 @@
         "I": 3072,
         "BM": 16
       },
-      "cubin_sha256": "20ebe39ca1dd211150c8435d57451b2a8366303c99b525f02ef258273c6e265b",
-      "shared_bytes": 16384
+      "cubin_sha256": "537e948a1790b7aab575e75aa4d337824387ef51496e8636f650355164594b1e",
+      "shared_bytes": 16384,
+      "num_warps": 8,
+      "assembled_usage": {
+        "registers": 180,
+        "stack_bytes": 0,
+        "local_instructions": 0
+      }
     },
     {
       "name": "w4a8-m4",
@@ -432,7 +496,9 @@
         "W4A8": true
       },
       "cubin_sha256": "0c1540080eefaee433894fbd9131191def23c58de9a53be13170fef52ce47f0f",
-      "shared_bytes": 34816
+      "shared_bytes": 34816,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "w4a8-pipeline-gate-up-m16",
@@ -443,8 +509,14 @@
         "BM": 16,
         "LIMIT": 10.0
       },
-      "cubin_sha256": "b84b22ef52320572862766c97eabb4c58bd1b5a457f3f76e2fd36faeae4fe95c",
-      "shared_bytes": 34816
+      "cubin_sha256": "e00f529a2ccf30fccb9f9aed684badc5f7d1ff9775a55782aef8bd5b0062c1d2",
+      "shared_bytes": 34816,
+      "num_warps": 8,
+      "assembled_usage": {
+        "registers": 208,
+        "stack_bytes": 0,
+        "local_instructions": 0
+      }
     },
     {
       "name": "w4a8-pipeline-down-m16",
@@ -454,8 +526,14 @@
         "I": 3072,
         "BM": 16
       },
-      "cubin_sha256": "ca05cc10d88b49a587bca9580a3d7dc2888f9788bcad1b0f99bc815910f8032f",
-      "shared_bytes": 16384
+      "cubin_sha256": "f645b321a5df6ff681d8b9e7dd7a54a863bf8f09e3c43cb9c76648535c3e81b3",
+      "shared_bytes": 16384,
+      "num_warps": 8,
+      "assembled_usage": {
+        "registers": 183,
+        "stack_bytes": 0,
+        "local_instructions": 0
+      }
     },
     {
       "name": "w4a8-m16",
@@ -478,7 +556,9 @@
         "W4A8": true
       },
       "cubin_sha256": "37e206ec4b065af22c36f826a02cb76487248f58472293740df4fd5ad8dfda5c",
-      "shared_bytes": 34816
+      "shared_bytes": 34816,
+      "num_warps": 4,
+      "assembled_usage": null
     },
     {
       "name": "w4a8-pipeline-gate-up-m32",
@@ -489,8 +569,14 @@
         "BM": 32,
         "LIMIT": 10.0
       },
-      "cubin_sha256": "149e420d942bdb47dd0962655e09e2d4883ae106f16020e8f13e958320913d2c",
-      "shared_bytes": 36864
+      "cubin_sha256": "a5d6de9c5c0fd638b279d498402887ef8757b5ccc7c2161230e64fe469307dbd",
+      "shared_bytes": 36864,
+      "num_warps": 8,
+      "assembled_usage": {
+        "registers": 212,
+        "stack_bytes": 0,
+        "local_instructions": 0
+      }
     },
     {
       "name": "w4a8-pipeline-down-m32",
@@ -500,8 +586,14 @@
         "I": 3072,
         "BM": 32
       },
-      "cubin_sha256": "ef54a58ce7a540ab160f9bf7767f929d0dc8b53224c42a5e83b00abfdf20d865",
-      "shared_bytes": 16384
+      "cubin_sha256": "8cd4c250439249bd29b9bc79fa5e2d97784926fee7d1523187a83f9241168ab2",
+      "shared_bytes": 16384,
+      "num_warps": 8,
+      "assembled_usage": {
+        "registers": 228,
+        "stack_bytes": 0,
+        "local_instructions": 0
+      }
     },
     {
       "name": "w4a8-m32",
@@ -524,13 +616,15 @@
         "W4A8": true
       },
       "cubin_sha256": "c87199949ef05fb79a11f39e34532967222ffc291e7a54f6c0eaad9f7bd0b980",
-      "shared_bytes": 36864
+      "shared_bytes": 36864,
+      "num_warps": 4,
+      "assembled_usage": null
     }
   ],
   "source_sha256": {
     "engine/kernels/kda/tree.py": "c5106120a5194536f2a93c6c89f887ebd775ba697ba5675eb433d4e51da0c994",
     "engine/kernels/tile_dataflow.py": "5e0b7ce896185fa86f9a3d9d06f4d6138f4e32d9ac08331c613dc8f9ad5078cf",
-    "engine/kernels/w4a8_pipeline.py": "1f8db022a54b787c2a7e02a3ab963a1191c025d51683b2d71fa50df2927fed9e"
+    "engine/kernels/w4a8_pipeline.py": "1d778f9384c46edcedc743eeefbb8db60c771a10c65daaf8b708ba7a4b7e9fa7"
   },
   "cuda_initialized": false
 }
