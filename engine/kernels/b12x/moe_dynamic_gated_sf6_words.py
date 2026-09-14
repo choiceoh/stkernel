@@ -15,6 +15,7 @@ from flashinfer.cute_dsl.fp4_common import get_ptr_as_int64, shared_ptr_to_u32
 from ._moe_dynamic.gated import _st_shared_i32
 from . import moe_dynamic_gated_sf6 as _sf6
 from .moe_dynamic_gated_sf6 import _sf6_ld_global_u32
+from .moe_w4a16_fp4_helpers import add_u8x4
 
 PARENT_SHA256 = '6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e'
 
@@ -25,12 +26,12 @@ def stock_contract_matches():
             and hashlib.sha256(Path(_sf6.__file__).read_bytes()).hexdigest() == PARENT_SHA256)
 
 
-def _sf6_unpack_word(low, high, base_lo, base_hi):
+def _sf6_unpack_word(low, high, base):
     """Four exact byte lanes from the validated SF6 packer's base/deltas.
 
     The word arithmetic is shared with the existing EP scale decoder; this
     producer still uses its own global reads and shared-stage publication.
-    Splitting the base avoids any carry between neighboring byte lanes.
+    PTX 9.2 adds each byte modulo 256 without cross-lane carries.
     """
     low = cutlass.Uint32(low) & cutlass.Uint32(0xFFFF)
     low = (low | (low << cutlass.Uint32(8))) & cutlass.Uint32(0x00FF00FF)
@@ -38,7 +39,7 @@ def _sf6_unpack_word(low, high, base_lo, base_hi):
     high = cutlass.Uint32(high) & cutlass.Uint32(0xFF)
     high = (high | (high << cutlass.Uint32(12))) & cutlass.Uint32(0x000F000F)
     high = (high | (high << cutlass.Uint32(6))) & cutlass.Uint32(0x03030303)
-    return ((low | (high << cutlass.Uint32(4))) + base_lo) ^ base_hi
+    return add_u8x4(low | (high << cutlass.Uint32(4)), base)
 
 
 @cute.jit
@@ -59,13 +60,12 @@ def _sf6_expand_dynamic_tile(stage_addr: Int64, destination: Int32,
         highs[word] = _sf6_ld_global_u32(stage_addr + Int64(1024) + Int64(decoded // Int32(4) + Int32(word * 4)))
     base = _sf6_ld_global_u32(stage_addr + Int64(1536)) & Int32(255)
     if cutlass.const_expr(word_unpack):
-        base_lo = cutlass.Uint32(base & Int32(127)) * cutlass.Uint32(0x01010101)
-        base_hi = cutlass.Uint32(base & Int32(128)) * cutlass.Uint32(0x01010101)
+        packed_base = cutlass.Uint32(base) * cutlass.Uint32(0x01010101)
     for word in cutlass.range_constexpr(8):
         if cutlass.const_expr(word_unpack):
             value = Int32(_sf6_unpack_word(
                 lows[word // 2] >> Int32((word % 2) * 16),
-                highs[word // 4] >> Int32((word % 4) * 8), base_lo, base_hi))
+                highs[word // 4] >> Int32((word % 4) * 8), packed_base))
         else:
             value = Int32(0)
             for byte in cutlass.range_constexpr(4):

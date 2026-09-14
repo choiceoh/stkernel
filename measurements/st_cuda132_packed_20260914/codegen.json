@@ -1,0 +1,50 @@
+{
+  "gpu_used": false,
+  "status": "PASS",
+  "native": [
+    {
+      "extension": "dense",
+      "binary_sha256": "530d3f0a6ec31920970012b659738e5e94ebb50ef51d917014ce83806ceb86f2",
+      "sass_sha256": "fddba5c15aa73ffec910b7c7156cb2654985345ab1a67e3751d8a80fe2b010dd",
+      "native_byte_add_sites": 440
+    },
+    {
+      "extension": "mla",
+      "binary_sha256": "8f163d07f96f36c2eeb10ccfd2df2e94c4f0ebdebaec57835d941b1eff97b54c",
+      "sass_sha256": "375f607132057245d3e48cffdec0661d6064bb23f6f41461b4c97610a8a81dbe",
+      "native_byte_add_sites": 144
+    }
+  ],
+  "source_sha256": {
+    "b12x/moe_dispatch.py": "72717baa208053be9040acebf73a393ef81d96e14f70f79dffe73986a07ea811",
+    "b12x/moe_w4a16_fp4_helpers.py": "dc6fc3c4f4b98f98812437e3189144418edee9ef822fb0c6c730305e8a7187ea",
+    "b12x/moe_static_kernel_v4.py": "25a03b3b1bbc021f269ff13cb650d95065094b1251da374d3dd6504dff1f54c5",
+    "b12x/moe_dynamic_gated_sf6_words.py": "d7f3d47d512d4cc3406a3752db1b81bc3403268e24ed57b5fb97ef6594b75e9b",
+    "dense/kernels.cu": "86fcebce67b389b6ca76576fd21e6b3f5513c2d2689fd4e6be4711661cd9761a",
+    "mla/glm53_megakernel.cu": "a0ce1541f95a0290bf293d849ce3bb748278ddf94450d9acb808d7b2b3b40746"
+  },
+  "deep_gemm": {
+    "header": "include/deep_gemm/impls/sm120_fp8_fp4_gemm_1d1d.cuh",
+    "sha256": "21b18f54b16fdc4903638471ffc7c6185b52d94de3006e984d70749a979d4aef",
+    "evidence": {
+      "kSplitKFactor = 1": {
+        "line": 47,
+        "text": "uint32_t kSplitKFactor = 1>"
+      },
+      "// SF-MAJOR PATH:": {
+        "line": 383,
+        "text": "// SF-MAJOR PATH: gran_k >= BLOCK_K"
+      },
+      "sm120_mma::fp8_mma_block_scaled": {
+        "line": 480,
+        "text": "sm120_mma::fp8_mma_block_scaled(d, a_frag[0][mt], b_nt[nt][0], b_nt[nt][1], sfa_hoisted[mt], sfb_hoisted[nt]);"
+      },
+      "// persistent loop": {
+        "line": 1340,
+        "text": "} // persistent loop"
+      }
+    },
+    "scope": "available implementation features; no dispatch or latency claim"
+  },
+  "scope": "native instruction emission only; no performance verdict"
+}

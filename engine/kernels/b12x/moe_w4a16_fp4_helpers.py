@@ -45,6 +45,15 @@ COPY_BITS = 128  # 128-bit vectorized loads
 _FP4_MAG_LUT = (0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0)
 
 
+@dsl_user_op
+def add_u8x4(a: Uint32, b: Uint32, *, loc=None, ip=None) -> Uint32:
+    """Four modulo-256 additions, with no carry across byte lanes (PTX 9.2)."""
+    return Uint32(llvm.inline_asm(
+        T.i32(), [Uint32(a).ir_value(loc=loc, ip=ip), Uint32(b).ir_value(loc=loc, ip=ip)],
+        "add.u8x4 $0, $1, $2;", "=r,r,r", has_side_effects=False,
+        is_align_stack=False, asm_dialect=llvm.AsmDialect.AD_ATT, loc=loc, ip=ip))
+
+
 def align_up(value: int, alignment: int) -> int:
     return ((value + alignment - 1) // alignment) * alignment
 

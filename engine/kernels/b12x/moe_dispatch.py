@@ -1672,6 +1672,7 @@ def _kernel_source_files() -> Tuple[str, ...]:
         __file__,
         os.path.join(os.path.dirname(__file__), "../../runtime/cuda132.lock.json"),
         os.path.join(os.path.dirname(__file__), "fp4_quant.py"),
+        os.path.join(os.path.dirname(__file__), "moe_w4a16_fp4_helpers.py"),
         moe_activation.__file__,
         moe_static_kernel.__file__,
         moe_static_common.__file__,

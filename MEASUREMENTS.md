@@ -2917,3 +2917,22 @@ FP32 누적 정책과 BF16 경계, GPTQ 가중치, 일반 서빙 dense·W4A4 MoE
 대가: 런치 2→3, 16행 작업공간 181,760→249,344B(+67,584B). **GPU 큐·부팅·실측은 하지 않았다.**
 컴파일 자원 감소는 serving tok/s 증명이 아니다. 추가 런치 비용·실가중치 품질·수용률·그래프 재생은 미판정이다.
 기록과 재현: `measurements/st_w4a8_shared_input_20260914/`.
+
+## 2026-09-14 — CUDA 13.2 SF6·W4A8 바이트 연산 및 cuBLAS 튜닝 검토
+
+SF6 word 복원의 split-base 덧셈과 dense/MLA W4A8 LUT의 `__vadd4`를 native `add.u8x4`로 바꿨다.
+바이트별 modulo-256 의미, 기존 FP8 값·스케일, 부동소수점 누적과 BF16 경계는 유지하며 기본 적용한다.
+MLA의 #956 half bridge도 유지한다. CuTe 캐시 지문에 공통 device helper를 포함했다.
+
+CUDA 13.2.1 이미지의 CPU-only 검증: 엔진 204개 파일, 1887 tests, 실패·실행불가 0, skip 318.
+dense/MLA 전체 native compile·dlopen 통과. SF6 static 7개와 short Q0/long prefill 2개가 컴파일됐다.
+실제 SASS의 `VIADD.U8x4`는 dense 440곳, MLA 144곳, static word 경로별 24곳, dynamic 경로별 160곳이다.
+기존 probe가 명령 이름의 소문자 `x`를 누락하던 것도 수정하고 동일 바이너리를 재집계했다.
+**이 수치는 명령 생성 증거이며 속도 개선율이 아니다. GPU·큐·부팅·원패스는 실행하지 않았다.**
+
+cuBLAS는 백엔드 추가 대신 튜닝 가능성을 검토했다. 큰 FP8 프리필과 이미 FP8인 draft FC/head가 우선 후보다.
+기존 group128 scale을 MX32 UE8M0 배치로 반복해 동일 입력값을 표현하는 CPU oracle을 만들었고 통과했다.
+양자화 생산자에 scale 배치를 합치면 별도 변환 발사를 피할 수 있다. W4를 FP8로 푸는 경우의 1.83배 payload와
+기존 융합 후처리 비용도 따졌다. 기존 DeepGEMM에도 native FP8·스케일 재사용·Split-K가 있으므로
+cuBLAS 우위는 실제 형상별 알고리즘·전체 입출력 비용에서 확인해야 한다. 개선율은 아직 미측정이다.
+기록·수치 계약·재현·상세 검토: [st_cuda132_packed_20260914](measurements/st_cuda132_packed_20260914/README.md).

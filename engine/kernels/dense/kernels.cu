@@ -343,6 +343,14 @@ __device__ __forceinline__ void mk_cp_wait_upto(int n) {
 // per k-block, which made the W4 expansion outweigh the DRAM time it was
 // meant to hide. The array and a uint8_t accessor around this immediate both
 // outlived that change with no callers; they are gone.
+// CUDA 13.2: __vadd4 still lowers to carry-isolation arithmetic on SM121.
+// This packed add preserves modulo-256 byte semantics and emits VIADD.U8x4.
+__device__ __forceinline__ uint32_t mk_add_u8x4(uint32_t a, uint32_t b) {
+  uint32_t out;
+  asm("add.u8x4 %0, %1, %2;" : "=r"(out) : "r"(a), "r"(b));
+  return out;
+}
+
 constexpr unsigned long long MK_E2M1_LUT64 = 0x4C484440'3C383000ULL;
 // same table with +1 on codes 3, 5, 7 (magnitude mantissa 1.5)
 constexpr unsigned long long MK_E2M1_LUT64_B = 0x4D484540'3D383000ULL;
@@ -837,10 +845,10 @@ mk_gemm2_kernel(MKGemm2Ctx c) {
           ((ea & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64;
       const unsigned long long lb =
           ((eb & 7u) - 1u) < 5u ? MK_E2M1_LUT64_B : MK_E2M1_LUT64;
-      l0a[j] = __vadd4((uint32_t)la, ea * 0x01010100u);
-      l1a[j] = __vadd4((uint32_t)(la >> 32), ea * 0x01010101u);
-      l0b[j] = __vadd4((uint32_t)lb, eb * 0x01010100u);
-      l1b[j] = __vadd4((uint32_t)(lb >> 32), eb * 0x01010101u);
+      l0a[j] = mk_add_u8x4((uint32_t)la, ea * 0x01010100u);
+      l1a[j] = mk_add_u8x4((uint32_t)(la >> 32), ea * 0x01010101u);
+      l0b[j] = mk_add_u8x4((uint32_t)lb, eb * 0x01010100u);
+      l1b[j] = mk_add_u8x4((uint32_t)(lb >> 32), eb * 0x01010101u);
       slot[j] = nrow * W4_RAW_PITCH + ((q ^ ((nrow >> 1) & 3)) << 4);
     }
 #pragma unroll
@@ -1256,10 +1264,10 @@ mk_gemm_input_kernel(MKGemm2Ctx c) {
       const uint32_t ea=ex&255u,eb=ex>>8;
       const unsigned long long la=((ea&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
       const unsigned long long lb=((eb&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
-      l0a[j]=__vadd4((uint32_t)la,ea*0x01010100u);
-      l1a[j]=__vadd4((uint32_t)(la>>32),ea*0x01010101u);
-      l0b[j]=__vadd4((uint32_t)lb,eb*0x01010100u);
-      l1b[j]=__vadd4((uint32_t)(lb>>32),eb*0x01010101u);
+      l0a[j]=mk_add_u8x4((uint32_t)la,ea*0x01010100u);
+      l1a[j]=mk_add_u8x4((uint32_t)(la>>32),ea*0x01010101u);
+      l0b[j]=mk_add_u8x4((uint32_t)lb,eb*0x01010100u);
+      l1b[j]=mk_add_u8x4((uint32_t)(lb>>32),eb*0x01010101u);
       slot[j]=r*W4_RAW_PITCH+((q^((r>>1)&3))<<4);
     }
     float ka[4]={};
@@ -1389,10 +1397,10 @@ mk_gemm_input_cta_kernel(MKGemm2Ctx c) {
       const uint32_t ea=ex&255u,eb=ex>>8;
       const unsigned long long la=((ea&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
       const unsigned long long lb=((eb&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
-      l0a[j]=__vadd4((uint32_t)la,ea*0x01010100u);
-      l1a[j]=__vadd4((uint32_t)(la>>32),ea*0x01010101u);
-      l0b[j]=__vadd4((uint32_t)lb,eb*0x01010100u);
-      l1b[j]=__vadd4((uint32_t)(lb>>32),eb*0x01010101u);
+      l0a[j]=mk_add_u8x4((uint32_t)la,ea*0x01010100u);
+      l1a[j]=mk_add_u8x4((uint32_t)(la>>32),ea*0x01010101u);
+      l0b[j]=mk_add_u8x4((uint32_t)lb,eb*0x01010100u);
+      l1b[j]=mk_add_u8x4((uint32_t)(lb>>32),eb*0x01010101u);
       slot[j]=r*W4_RAW_PITCH+((q^((r>>1)&3))<<4);
     }
     float ka[4]={};
@@ -1531,10 +1539,10 @@ __device__ __forceinline__ void mk_gemm_input_cta3_body(MKGemm2Ctx c,int block) 
       const uint32_t ea=ex&255u,eb=ex>>8;
       const unsigned long long la=((ea&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
       const unsigned long long lb=((eb&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
-      l0a[j]=__vadd4((uint32_t)la,ea*0x01010100u);
-      l1a[j]=__vadd4((uint32_t)(la>>32),ea*0x01010101u);
-      l0b[j]=__vadd4((uint32_t)lb,eb*0x01010100u);
-      l1b[j]=__vadd4((uint32_t)(lb>>32),eb*0x01010101u);
+      l0a[j]=mk_add_u8x4((uint32_t)la,ea*0x01010100u);
+      l1a[j]=mk_add_u8x4((uint32_t)(la>>32),ea*0x01010101u);
+      l0b[j]=mk_add_u8x4((uint32_t)lb,eb*0x01010100u);
+      l1b[j]=mk_add_u8x4((uint32_t)(lb>>32),eb*0x01010101u);
       slot[j]=r*W4_RAW_PITCH+((q^((r>>1)&3))<<4);
     }
     float ka[4]={};

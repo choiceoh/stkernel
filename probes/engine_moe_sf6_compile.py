@@ -13,6 +13,12 @@ import time
 from unittest.mock import patch
 
 
+def instruction_opcodes(sass):
+    # CUDA 13.2 spells the packed-byte opcode VIADD.U8x4 (lowercase x).
+    return re.findall(r'^\s*/\*[0-9a-f]+\*/\s+(?:@!?U?P\d+\s+)?'
+                      r'([A-Z][A-Za-z0-9_.]*)(?:\s|;)', sass, re.M)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
@@ -103,9 +109,7 @@ def main():
             if args.sass:
                 sass = subprocess.run(['cuobjdump', '--dump-sass', str(artifact)],
                                       check=True, capture_output=True, text=True).stdout
-                instructions = re.findall(
-                    r'^\s*/\*[0-9a-f]+\*/\s+(?:@!?U?P\d+\s+)?([A-Z][A-Z0-9_.]*)(?:\s|;)',
-                    sass, re.M)
+                instructions = instruction_opcodes(sass)
                 if not instructions:
                     raise RuntimeError('no native instructions were captured')
                 artifact.with_suffix('.sass').write_text(sass)
@@ -175,6 +179,7 @@ def main():
                   scope='native compile and layout checks; GPU numerics/replay/timing pending',
                   source_sha256={name: hashlib.sha256((root/name).read_bytes()).hexdigest()
                       for name in ('engine/kernels/b12x/moe_dispatch.py',
+                                   'engine/kernels/b12x/moe_w4a16_fp4_helpers.py',
                                    'engine/kernels/b12x/moe_static_kernel_v4.py',
                                    'engine/kernels/b12x/moe_static_common.py',
                                    'engine/kernels/b12x/moe_static_kernel_v5.py')})

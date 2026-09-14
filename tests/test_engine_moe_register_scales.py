@@ -6,7 +6,7 @@ import unittest
 
 from tests.test_engine_moe_fc1_reuse import execute
 from tests.test_engine_moe_scatter_config import namespace
-from tests.test_engine_moe_sf6_staging import CLASS, SOURCE, geometry, method, packed_codes
+from tests.test_engine_moe_sf6_staging import CLASS, SOURCE, geometry, method, packed_add, packed_codes
 
 
 def load_words(memory, packed_base, offsets, tidbase=0):
@@ -21,7 +21,7 @@ def load_words(memory, packed_base, offsets, tidbase=0):
     destinations = [[None]*len(offsets) for _ in range(4)]
     cute = SimpleNamespace(recast_tensor=lambda tensor, dtype: tensor,
                            size=lambda tensor: len(offsets))
-    word = method('_sf6_expand_word', dict(Int32=int))
+    word = method('_sf6_expand_word', dict(Int32=int, add_u8x4=packed_add))
     owner = SimpleNamespace(_sf6_expand_word=lambda *args: word(None, *args),
                             sf6_register_offsets={"test": [[[offset - ((0, 256, 128, 384)[tidbase//32]
                                 + (tidbase % 32)//4*16) for offset in offsets]]]})
