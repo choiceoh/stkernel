@@ -2187,26 +2187,28 @@ __device__ __forceinline__ float mla_warp_sum(float v) {
   for (int off = 16; off; off >>= 1) v += __shfl_xor_sync(0xffffffff, v, off);
   return v;
 }
-// Packed widening follows B12X intrinsics.py at 12b4eb257441 (Apache-2.0).
-// PTX 9.2 adds direct E4M3 -> BF16 on this SM121 target. The ST runtime pins
-// CUDA 13.2; reject an obsolete compiler instead of silently using a bridge.
-// No query quantization or change to the BF16 MMA / FP32 accumulation follows.
-#if __CUDACC_VER_MAJOR__ < 13 || (__CUDACC_VER_MAJOR__ == 13 && __CUDACC_VER_MINOR__ < 2)
-#error "ST MLA requires CUDA 13.2 or newer"
-#endif
-__device__ __forceinline__ uint32_t mla_e4m3x2_value(uint32_t packed) {
-  uint32_t result;
-  asm("cvt.rn.bf16x2.e4m3x2 %0, %1;" : "=r"(result) : "h"(static_cast<uint16_t>(packed)));
-  return result;
-}
+// E4M3 -> BF16 goes through the half bridge, in decode and in strided prefill. #952's direct PTX 9.2
+// `cvt.rn.bf16x2.e4m3x2` (B12X intrinsics.py at 12b4eb257441) kept the arithmetic, but on the fleet's CUDA 13.2.1
+// stack a 129,784-token prompt took 54.7 and 50.9 s to its first token with it and 38.5 and 37.3 s with this bridge
+// (2026-09-14); the fastest 2K and 32K runs did not move.
 // two adjacent e4m3 bytes -> one bf16x2 register (an mma fragment half)
 __device__ __forceinline__ uint32_t mla_e4m3x2(const uint8_t* p) {
-  return mla_e4m3x2_value(*(const __nv_fp8x2_storage_t*)p);
+  const __half2 h = __nv_cvt_fp8x2_to_halfraw2(*(const __nv_fp8x2_storage_t*)p, __NV_E4M3);
+  const __nv_bfloat162 b = __float22bfloat162_rn(__half22float2(h));
+  return *(const uint32_t*)&b;
 }
 // two e4m3 bytes at a stride (column of the ring) -> one bf16x2 register
 __device__ __forceinline__ uint32_t mla_e4m3x2_strided(const uint8_t* p, int stride) {
-  const uint32_t packed = static_cast<uint32_t>(p[0]) | (static_cast<uint32_t>(p[stride]) << 8);
-  return mla_e4m3x2_value(packed);
+  const __half2 h = __halves2half2(__nv_cvt_fp8_to_halfraw(p[0], __NV_E4M3),
+                                   __nv_cvt_fp8_to_halfraw(p[stride], __NV_E4M3));
+  const __nv_bfloat162 b = __float22bfloat162_rn(__half22float2(h));
+  return *(const uint32_t*)&b;
+}
+// Convert a packed pair without scalar strided shared loads.
+__device__ __forceinline__ uint32_t mla_e4m3x2_value(uint32_t packed) {
+  const __half2 h = __nv_cvt_fp8x2_to_halfraw2(static_cast<__nv_fp8x2_storage_t>(packed), __NV_E4M3);
+  const __nv_bfloat162 b = __float22bfloat162_rn(__half22float2(h));
+  return *(const uint32_t*)&b;
 }
 __device__ __forceinline__ void mla_mma_bf16(float& c0, float& c1, float& c2, float& c3,
                                              uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3,

@@ -345,7 +345,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
       "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
       "origin": "repository",
-      "local_sha256": "bbfc935f093dfd835c263c4006107dad8173f64803f97dbca01393cd930419b6",
+      "local_sha256": "c704d848e733ed690805ef04f352758929f971ac486a786edb42029129a42295",
       "local_modifications": [
         "SM121 integer warp max reduction",
         "Cluster-local MLA split reduction with reused shared memory",
@@ -356,7 +356,8 @@
         "2026-09-12 k6 (#732): the MAX_TOK comment counts SPEC_K 6, so T = 28 of 32. Comment only -- no code, no arithmetic. This record is the hash catching up: #732 left it behind and main's check has been red on it since.",
         "2026-09-13 wide prefill: extend the existing row-local path to 32768 rows for 32256-token chunks; preserve kernel arithmetic and small decode.",
         "2026-09-14 CUDA 13.2: packed native E4M3x2 to BF16x2 widening in decode and strided prefill; preserve query quantization and accumulation order.",
-        "2026-09-14 tree MLA: optional canonical/private FP8 banks with signed node addresses; same split/cluster math and unchanged ordinary machine instructions under CUDA 13.2.86. GPU execution remains unmeasured."
+        "2026-09-14 tree MLA: optional canonical/private FP8 banks with signed node addresses; same split/cluster math and unchanged ordinary machine instructions under CUDA 13.2.86. GPU execution remains unmeasured.",
+        "2026-09-14 fleet: the native E4M3x2 widening goes back to the half bridge. On CUDA 13.2.1 a 129,784-token prompt took 54.7/50.9 s to its first token with it and 38.5/37.3 s with the bridge (37.5-39.1 s before the migration); arithmetic unchanged."
       ]
     },
     "mla/__init__.py": {
