@@ -1,0 +1,32 @@
+{
+  "implementation_revision": "c33370f9008f13c880f488e50a55f83f05091b37",
+  "merged_main_revision": "bec3b6dd7fc258a65f1038e5bc1f5c38b1341052",
+  "cpu_compiler_image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+  "gpu_image": "sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed",
+  "gpu_ticket": "17893528621572580",
+  "gpu_source_tree": "/home/choiceoh/st-worktrees/codex-gb10-mixed-plan",
+  "reports": {
+    "cpu.json": {
+      "sha256": "af5d104668b6f391ee00c84e911fa8d5c84d15766ab36e45d46946fc6ba63b94",
+      "manifest_entries": 90,
+      "source_matches": true
+    },
+    "cpu_benchmark.json": {
+      "sha256": "bf5d5dbd66e13fe012fb11599be13d7cc901ba81d9ce866fb4a27cefafe04cfa",
+      "manifest_entries": 6,
+      "source_matches": true
+    },
+    "compile.json": {
+      "sha256": "b9786d8b128586a7c937f6bb3948ceb2a3785adb10ea3dfb1b4ba47f1b39fd93",
+      "manifest_entries": 22,
+      "source_matches": true
+    },
+    "gpu.json": {
+      "sha256": "fcdc4a3b0948ba974cb697e3e8c4022ca8b7f559ea16128f952e51e1ee4c6fbb",
+      "manifest_entries": 37,
+      "source_matches": true
+    }
+  },
+  "cpu_runner_sha256": "e715eb67c9235ccd0ce9adcbc91f0fbe4b94a3f541e088a4966a0c27b7059654",
+  "note": "Reports match the implementation; only evidence and documentation are added after the frozen GPU run. Historical M2 measurements remain in mixed_tickets_20260914."
+}

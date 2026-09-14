@@ -117,13 +117,13 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
            drafter_dir: "str | Path | None" = drafter_mod.DRAFTER, ledger: "str | Path | None" = None,
            snapshots: "int | None" = None, draft_tp: int = 1, draft_native: "bool | None" = None,
            router_bytes: int = 0, projection_bytes: int = 0, tier_enabled: bool = True, kda_state_dtype: "str | None" = None,
-           draft_policy=None, workspace_gib: "float | None" = None) -> Budget:
+           draft_policy=None, workspace_gib: "float | None" = None,
+           prefill_ffn_packets: bool = False) -> Budget:
     """The box, one rank of TP=4. `kv_gib`/`max_seqs` are boot.py's declared values; the table says what they leave.
     `workspace_gib`: the ceiling this boot enforces when it is not WORKSPACE_GIB (boot.py --workspace-gib)."""
     ceiling = WORKSPACE_GIB if workspace_gib is None else float(workspace_gib)
-    host_total, _ = host_box()
     if box_gib is None:
-        box_gib = host_total                                             # GB10: device total == MemTotal (facts.check_box)
+        box_gib = host_box()[0]                                          # GB10: device total == MemTotal (facts.check_box)
     F = facts.load(ckpt)
     if kda_state_dtype is not None:
         from dataclasses import replace
@@ -177,6 +177,18 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     ledger_name = Path(ledger).name if isinstance(ledger, (str, Path)) and ledger else "this boot"
     workspace_evidence = ("base/runtime_memory ceiling: activations, graph pools, kernel scratch; the allocator refuses "
                           "beyond it" + ("" if workspace_gib is None else f"; --workspace-gib {ceiling:g} (profile {WORKSPACE_GIB:g})"))
+    if prefill_ffn_packets:
+        from engine.modules.prefill_packets import PacketGeometry, ffn_packet_rows
+        if ffn_packet_rows(chunk):
+            packet = PacketGeometry(chunk, (chunk+3)//4, routed=True).workspace()
+            workspace_evidence += (
+                f"; packet FFN: {packet['received_bytes']/2**20:.3f} MiB received owner replaces "
+                f"{packet['replaced_bf16_bytes']/2**20:.3f} MiB BF16 input; "
+                f"{packet['sender_roundtrip_bytes']/2**20:.3f} MiB sender roundtrip ends before gather; "
+                f"{packet['shared_q_scale_bytes']/2**20:.3f} MiB shared Q/scales remain; "
+                "same eager MoE workspace and 32 KiB/CTA shared input stage; ceiling unchanged pending ledger")
+        else:
+            workspace_evidence += '; packet FFN is outside its real-row range for this chunk and falls back'
     if m and m.get("peak_workspace_bytes"):
         # The LINE stays the enforced ceiling, because that is what the box must be able to
         # absorb: the allocator will hand out every byte of it. What the ledger changes is that

@@ -1,0 +1,1798 @@
+{
+  "status": "PASS",
+  "source_sha256": {
+    "engine/modules/mixed_experts.py": "0ed6a554a3e5e0657be82018a5b6934c70eaef2cb98786d75a52c8c75ce294ed",
+    "engine/kernels/b12x/moe_mixed.py": "850086cf450bb65ca370c74e2bb6b577890e7b5ee1c815432c58e910bf941576",
+    "engine/modules/route_table.py": "60e3d47e8c605cf82963f64c0d2e750b4e57093eed4c5970215b22b3d5c5a4b4",
+    "tests/test_engine_mixed_plan.py": "4ea52e90e215c0e7e8a8861c2d71de11c7c87c5a035c70e64196655bdb0ffac1",
+    "engine/modules/mixed_route_plan.py": "75554b3450e369534bbc3ff5ec608b8ea2522b69cfb917eee1b8b580b6b1ef5d",
+    "engine/modules/mixed_metadata.py": "4531e2f82b07a5e59a8bb48eb56b05549119c9415c98d9182d896b8a9fa2a558",
+    "engine/kernels/mixed_checks.py": "8d2bbf92aa3b43d4b4c9729d63f6ac31591d775014dc5c9c9167480553926e00",
+    "engine/kernels/b12x/moe_mixed_frontend.py": "465b8aef59b69840eb7594c799f783522b753221808bf78c39c18006605442c7",
+    "engine/kernels/b12x/moe_dispatch.py": "e8b3677c0297ba3190a3ab766cef5bb697c843cda6c581c9989c1a852d934a3c",
+    "engine/kernels/b12x/moe_static_common.py": "8ac18a06cfd1a0d82e615888c77dfb26df4edec0731a68227dd284d7e1f56cff",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "f7aadf88fdcc93f837f5f2f4989ec6a107601041b47b6c1527d659c32fb3968b",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "engine/kernels/b12x/moe_micro_kernel.py": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914",
+    "probes/engine_mixed_experts_compile.py": "2c3b927a52f46e4ce64839de9bae6c764c5f9629360bcdd028e5f899d3e6ddbf",
+    "tests/test_engine_mixed_experts.py": "c029bfa89934cfd32098183f34ddd0e9f1a7a3e2cbf8cbfd401e049d88dc0097",
+    "engine/modules/mixed_completion.py": "c05367b3759f3da7cf7322924f8ecf3497bcc29e7f9f7f05d7ec035acf9dd837",
+    "engine/kernels/b12x/moe_mixed_completion.py": "03c70c60e6a72c5f16307a9d16c4728c47084e7d0f063eef943fc36767c9881b",
+    "engine/kernels/b12x/moe_cold_frontend.py": "1d3876c0675722533f7b6ac75cefac32c141125def6dd6964f614843ca4fc40b",
+    "engine/kernels/b12x/moe_prepared_prefill.py": "b077a033aaa79d7bf0cc6ba387d17bccb64546abb2431ce8aefb79bd33a69306",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_words.py": "368dee876092745be60e079a73cf73c4e2c91dd73f699c6f0a315da0ed05e3e9",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+    "engine/kernels/b12x/_moe_dynamic/gated.py": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+    "probes/engine_mixed_completion_compile.py": "fbde1201189267fd8274020ef210431ed37133ede4d91c0e761ad2b8ace09a5d",
+    "tests/test_engine_mixed_completion.py": "c3ca13d119ca94b3dcdc10062d52733b6a7ae6a309310d9a956a5f5257782d02",
+    "engine/base/comm.py": "d8d191a88647e101958b7217702627b6cb2c5209ab06ded864d2833ec036ed47",
+    "engine/modules/mixed_tickets.py": "905921307f52e4e926bf1b0688350e97439875d412dbd110381a6639189ffc21",
+    "engine/profiles/glm53/mixed_shared.py": "296ba5b51f0ae08b7fad101942e8098935e676a4537c867ad53905b4d37e1fbb",
+    "engine/profiles/glm53/net.py": "bfe3231cde4d4bbb2a7c536646291755786bca0fdd55cde6b7b4879ccf66965c",
+    "engine/profiles/glm53/lanes.py": "28b4f5b75d121ba870089e9cc6da3e14338a05fd6804f28292b68aa30c4f9489",
+    "engine/profiles/glm53/modelopt_scales.py": "5fb0fbbbc2011e0390248c696f5fb04e128e854d8544dbc113e932e8a28afbf3",
+    "engine/kernels/dense/__init__.py": "29be1221e81bcdc965b3131b33befe4a729dc544a20ded5551f046ba506be8b0",
+    "engine/kernels/dense/shared_mlp.py": "3fe4eaee2ba200365040dc33a833d9775e8307d469e132f08cc21bc629504415",
+    "engine/kernels/dense/kernels.cu": "4beb5789f2446fe88e7dd480b3fa1f3261094296e7469355702bac09e5f7a353",
+    "engine/kernels/dense/fp8.py": "fecc21c8b0f3088c765083cf7987db210de499313490559596dca7dee676c3ca",
+    "probes/engine_mixed_tickets_check.py": "425de4b4b28576e92c37dd3cafcce807be10f5134ddd30880ea3e20bf3a82a24",
+    "probes/engine_mixed_completion_check.py": "67a22ea9e446499221ae0df1f9db706dbc65f22ca6f4b65a21a03a22ec0bb8b3",
+    "probes/engine_mixed_plan_bench.py": "678dec3d83e5c9e5065be5810aa81d5d84efad3a5458520232a6da57b7c640c4",
+    "probes/engine_mixed_prepare_bench.py": "9207bd0a32cfb537f3e414243d5edb7269cd95ad7367ae10c2f08178e677b335",
+    "tests/test_engine_mixed_tickets.py": "dfd86b6c3b2e66ddb532f53b1e25a88985e21d123ea5fbf518c3e17a6246c578",
+    "tests/test_engine_mixed_shared.py": "a49811b648c2a7d4bccf43986f2db5f1e2af7b34f9ee2264b989bea35f1416a4"
+  },
+  "image": "sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed",
+  "compare_planning": false,
+  "compare_preparation": false,
+  "drain_cold": true,
+  "scope": "M2 eager one-rank FFN component, real served shared readers, ticket retirement and foreign-stream consumers. Includes fresh route planning/allocation/admission in wall timings. No full model, TP4 NCCL, arrival trace, graph, TTFT, tok/s, quality or acceptance verdict.",
+  "value_check_gate": {
+    "status": "PASS",
+    "cases": 260,
+    "source_and_scale_planes": 8,
+    "decode_longer_than_prefill": true
+  },
+  "device": "NVIDIA GB10",
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "rank_file": "/home/choiceoh/models/st-glm53-nvidia-tp4-9391/rank3of4.safetensors",
+  "memory_budget_bytes": 8589934592,
+  "weight_sha256": {
+    "L3.moe.gate": "d9b073de20e23bca95c0110f8d131a655e27b8dd1ec9370943b78734b189e86e",
+    "L3.moe.bias": "cad2f175acdabf61327e2c60bc609df9df81b21f7a8bc166d367b57ca13b78e7",
+    "L3.moe.sh_gate_up": "0b99c22a58b3c98afe1ac3c59a583e62f9db00c5c38039ba423152c3473f3b62",
+    "L3.moe.sh_down": "4f4357d6da8a9e1ebcba5b6605eb89f1bcc12c3fbfd8bc0a56223c31a5f39a91",
+    "L3.moe.w13": "478b368f40bc160de55eb6f9183b932d5c1b6ae7de6830ed6f6215f4abb962a9",
+    "L3.moe.w13_sf": "ae997725cc9d6d8b00741cef2e9de2fdc8eabb548bcf0ee38abcf342cff23e6f",
+    "L3.moe.w13_alpha": "ac67a63b66261a27f1d554f6ea56c54e99f4d7453c088d3f5d620ec61a76f945",
+    "L3.moe.a13_scale": "943fb533b85e78648717e60d599619ff59ec88b5beb1e0e0ccc8a22a75fe4972",
+    "L3.moe.w2": "a95eb1aa4a765ae6d6bb46f6b57f02ed7568eb866c8a3b686fd65aa7178b19a6",
+    "L3.moe.w2_sf": "c4cec568a6beb26956d29cd20d31747eb19f91eeba4b3a7ee0fd79854530f2b0",
+    "L3.moe.w2_alpha": "36a2911ff7f90108bc72e76e82e9f2c21878c170018359d1efb3d2fd31da523a",
+    "L3.moe.a2_scale": "cc81ef1524250ece78d606d9b2a656d86c729f26e69791801213fdc6d1ba97b7"
+  },
+  "model_config_sha256": "e23c5d98f53e861d49a51bd3c68591621c5482ce829e42c31724152322fba03d",
+  "shared_pack_sha256": [
+    "3bd817efc7f9a6c6a2b5510af013e7eecacea0d7c6e7aec45ce0cec00c998567",
+    "4ac7a885a4799ed2ca055763cea6111b6ee85ef2394fffc9d18ccb0228da38ab",
+    "cc88513514c6a050a83d02433e774deb2077b8db38176167b3f08223d130f98d",
+    "6bd3c57f55a9c135a946373dbcfcd943c010149d4c3eaeceb49b893a46f19659",
+    "a01e16045054517bbbea1711ff5bb8be4137b93b50de995d230ff35885a0f799",
+    "c0f4fe558b8df55617061b41e0458c490741821f885ce1fe780319ab45b98c63",
+    "9f99a3b70fd2c134e2c7e3d34d531addb4f2de8d2658b5cb4754ac5676e8faec",
+    "ff6c657207931b7516ef323a2777ac2efcdb51e6a074ce3623ac4c4f601e83ac",
+    "336274ff3449360d962c1f2eb6d7f7ee9b549e66c5ffabb33bdb97dda5ee9494",
+    "de59d41375e929f98b0700e117cc1999abcc2b2731219e61c0c0e36662f3cb4f"
+  ],
+  "shared_recipe": "same DenseLinear W4/FP8 packs in all arms; RTN from checkpoint BF16, no GPTQ store",
+  "communication": "world=1 identity, one real TP4 weight shard; no NCCL or four-GPU result",
+  "cases": [
+    {
+      "decode_rows": 8,
+      "prefill_rows": 9240,
+      "source_sha256": [
+        "0abb11684b017f2dd690ec1ff200a9ebd437658b3cfbfe73ea4fd2d1ccdb6a20",
+        "a327dc8b4e85ffbeb8860d50654733c55b2acdda2ff6ed413ac4b9bcf81a039b"
+      ],
+      "routing": "actual profile L3 router on synthetic activations",
+      "samples": [
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.28236699290573597,
+            "route_plan_ms": 3.8807480013929307,
+            "value_check_wait_ms": 0.04806398646906018,
+            "metadata_prepare_ms": 3.345436998642981,
+            "metadata_reads_ms": 0.25124798412434757,
+            "agreement_ms": 1.5053109964355826
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.0015623625030869196
+            }
+          },
+          "prepare_admit_wall_ms": 14541.389913007151,
+          "decode_ready_wall_ms": 14550.105934991734,
+          "prefill_complete_wall_ms": 14600.924841011874,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.2511040074750781,
+            "route_plan_ms": 3.619467985117808,
+            "value_check_wait_ms": 0.035760022001340985,
+            "metadata_prepare_ms": 0.5349910061340779,
+            "metadata_reads_ms": 0.12686298578046262,
+            "agreement_ms": 1.3091990258544683
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007022471910112359,
+              "relative_rms": 0.0019508457196631393
+            }
+          },
+          "prepare_admit_wall_ms": 11.41306001227349,
+          "decode_ready_wall_ms": 16.045038995798677,
+          "prefill_complete_wall_ms": 110.57263301336206,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.31230400782078505,
+            "route_plan_ms": 5.759898020187393,
+            "value_check_wait_ms": 0.026335997972637415,
+            "metadata_prepare_ms": 0.5382230156101286,
+            "metadata_reads_ms": 0.14819193165749311,
+            "agreement_ms": 1.2752629991155118
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007022471910112359,
+              "relative_rms": 0.0019754243466717576
+            }
+          },
+          "prepare_admit_wall_ms": 13.426802004687488,
+          "decode_ready_wall_ms": 18.066813005134463,
+          "prefill_complete_wall_ms": 62.30988499009982,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.30132700339891016,
+            "route_plan_ms": 3.6006519803777337,
+            "value_check_wait_ms": 0.06656002369709313,
+            "metadata_prepare_ms": 0.4886399838142097,
+            "metadata_reads_ms": 0.12315204367041588,
+            "agreement_ms": 1.282381999772042
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.0015538709193927147
+            }
+          },
+          "prepare_admit_wall_ms": 11.14493201021105,
+          "decode_ready_wall_ms": 15.999886993085966,
+          "prefill_complete_wall_ms": 60.446126997703686,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.22710399935021996,
+            "route_plan_ms": 3.655067994259298,
+            "value_check_wait_ms": 0.03281599492765963,
+            "metadata_prepare_ms": 0.5220319726504385,
+            "metadata_reads_ms": 0.09844801388680935,
+            "agreement_ms": 1.2537110014818609
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007022471910112359,
+              "relative_rms": 0.0015154940002347654
+            }
+          },
+          "prepare_admit_wall_ms": 10.91768400510773,
+          "decode_ready_wall_ms": 16.03666998562403,
+          "prefill_complete_wall_ms": 60.60391798382625,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.243471993599087,
+            "route_plan_ms": 2.711005014134571,
+            "value_check_wait_ms": 0.021391984773799777,
+            "metadata_prepare_ms": 0.33225599327124655,
+            "metadata_reads_ms": 0.10105603723786771,
+            "agreement_ms": 1.2244149984326214
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007022471910112359,
+              "relative_rms": 0.0019727958391383524
+            }
+          },
+          "prepare_admit_wall_ms": 9.368598024593666,
+          "decode_ready_wall_ms": 10.798019997309893,
+          "prefill_complete_wall_ms": 52.6720070047304,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.27756698545999825,
+            "route_plan_ms": 2.8460769972298294,
+            "value_check_wait_ms": 0.021504005417227745,
+            "metadata_prepare_ms": 0.33611198887228966,
+            "metadata_reads_ms": 0.1016640744637698,
+            "agreement_ms": 1.227342989295721
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007022471910112359,
+              "relative_rms": 0.00192924316887809
+            }
+          },
+          "prepare_admit_wall_ms": 8.701718994416296,
+          "decode_ready_wall_ms": 10.133668984053656,
+          "prefill_complete_wall_ms": 49.73452299600467,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.21201599156484008,
+            "route_plan_ms": 3.0780280067119747,
+            "value_check_wait_ms": 0.022752006771042943,
+            "metadata_prepare_ms": 0.373168004443869,
+            "metadata_reads_ms": 0.10967900743708014,
+            "agreement_ms": 1.1898230004590005
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.0015302913173163334
+            }
+          },
+          "prepare_admit_wall_ms": 10.210661013843492,
+          "decode_ready_wall_ms": 13.728817022638395,
+          "prefill_complete_wall_ms": 58.264289022190496,
+          "includes_first_use_compile": false
+        }
+      ],
+      "native_samples": [
+        {
+          "sample": 0,
+          "decode_ready_wall_ms": 3.4074049908667803,
+          "prefill_complete_wall_ms": 47.890525980619714,
+          "includes_first_use_compile": true,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007022471910112359,
+              "relative_rms": 0.0012871444185876693
+            }
+          }
+        },
+        {
+          "sample": 1,
+          "decode_ready_wall_ms": 3.3524280006531626,
+          "prefill_complete_wall_ms": 48.13234799075872,
+          "includes_first_use_compile": false,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007022471910112359,
+              "relative_rms": 0.001449427709702446
+            }
+          }
+        },
+        {
+          "sample": 2,
+          "decode_ready_wall_ms": 1.889261999167502,
+          "prefill_complete_wall_ms": 37.31173599953763,
+          "includes_first_use_compile": false,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007022471910112359,
+              "relative_rms": 0.0013761444724962346
+            }
+          }
+        },
+        {
+          "sample": 3,
+          "decode_ready_wall_ms": 3.3910519850905985,
+          "prefill_complete_wall_ms": 35.58220199192874,
+          "includes_first_use_compile": false,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008426966292134831,
+              "relative_rms": 0.0014065672960033126
+            }
+          }
+        }
+      ],
+      "native_repeat_error": {
+        "decode": {
+          "relative_max": 0.0,
+          "relative_rms": 0.0
+        },
+        "prefill": {
+          "relative_max": 0.008426966292134831,
+          "relative_rms": 0.001303623655808705
+        }
+      },
+      "cancellation_phases": [
+        "queued",
+        "decode",
+        "cold"
+      ]
+    },
+    {
+      "decode_rows": 32,
+      "prefill_rows": 9240,
+      "source_sha256": [
+        "9f9af37fbb19004304ab4b638bed41c875317fe0e0030069c320b16624d50fda",
+        "eefce1229c0191840b6c4bc3163c7bfcaeb2f7463cebe27dbcbdd8f009b0ea54"
+      ],
+      "routing": "actual profile L3 router on synthetic activations",
+      "samples": [
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.27619197499006987,
+            "route_plan_ms": 2.9887009877711535,
+            "value_check_wait_ms": 0.025120010832324624,
+            "metadata_prepare_ms": 0.4185589787084609,
+            "metadata_reads_ms": 0.12641598004847765,
+            "agreement_ms": 1.4128950133454055
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006097560975609756,
+              "relative_rms": 0.0014892621621655677
+            }
+          },
+          "prepare_admit_wall_ms": 5341.367852000985,
+          "decode_ready_wall_ms": 5344.448120013112,
+          "prefill_complete_wall_ms": 5385.484202997759,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.2619030128698796,
+            "route_plan_ms": 3.880123986164108,
+            "value_check_wait_ms": 0.030176015570759773,
+            "metadata_prepare_ms": 0.9108629892580211,
+            "metadata_reads_ms": 0.1270880165975541,
+            "agreement_ms": 1.4180619909893721
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007317073170731708,
+              "relative_rms": 0.0023318636154643067
+            }
+          },
+          "prepare_admit_wall_ms": 12.016961991321295,
+          "decode_ready_wall_ms": 20.875240996247157,
+          "prefill_complete_wall_ms": 65.45592800830491,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.25808002101257443,
+            "route_plan_ms": 3.9107149932533503,
+            "value_check_wait_ms": 0.04665597225539386,
+            "metadata_prepare_ms": 0.7333759858738631,
+            "metadata_reads_ms": 0.13072002911940217,
+            "agreement_ms": 1.364991010632366
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007317073170731708,
+              "relative_rms": 0.0023589048324081617
+            }
+          },
+          "prepare_admit_wall_ms": 11.869011010276154,
+          "decode_ready_wall_ms": 20.59252100298181,
+          "prefill_complete_wall_ms": 65.33541600219905,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.22038398310542107,
+            "route_plan_ms": 3.4576279867906123,
+            "value_check_wait_ms": 0.04903998342342675,
+            "metadata_prepare_ms": 0.5754549929406494,
+            "metadata_reads_ms": 0.1204480358865112,
+            "agreement_ms": 1.3167349970899522
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006097560975609756,
+              "relative_rms": 0.001503191843758878
+            }
+          },
+          "prepare_admit_wall_ms": 11.048147978726774,
+          "decode_ready_wall_ms": 20.253161987056956,
+          "prefill_complete_wall_ms": 52.50194200198166,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.20356799359433353,
+            "route_plan_ms": 3.7939320027362555,
+            "value_check_wait_ms": 0.035567994927987456,
+            "metadata_prepare_ms": 0.6276470085140318,
+            "metadata_reads_ms": 0.10400003520771861,
+            "agreement_ms": 1.3664140133187175
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.0017887143125207305
+            }
+          },
+          "prepare_admit_wall_ms": 11.5338749892544,
+          "decode_ready_wall_ms": 20.340457995189354,
+          "prefill_complete_wall_ms": 65.47885600593872,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.1772159885149449,
+            "route_plan_ms": 3.0577400175388902,
+            "value_check_wait_ms": 0.03272001049481332,
+            "metadata_prepare_ms": 0.6165599916130304,
+            "metadata_reads_ms": 0.11201604502275586,
+            "agreement_ms": 1.5991510008461773
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007317073170731708,
+              "relative_rms": 0.0023970802559586707
+            }
+          },
+          "prepare_admit_wall_ms": 9.258197998860851,
+          "decode_ready_wall_ms": 18.55173899093643,
+          "prefill_complete_wall_ms": 63.01487400196493,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.22812699899077415,
+            "route_plan_ms": 2.8664609999395907,
+            "value_check_wait_ms": 0.022799998987466097,
+            "metadata_prepare_ms": 0.46716799261048436,
+            "metadata_reads_ms": 0.09990297257900238,
+            "agreement_ms": 1.2968139781150967
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007317073170731708,
+              "relative_rms": 0.002320163069436156
+            }
+          },
+          "prepare_admit_wall_ms": 8.194583002477884,
+          "decode_ready_wall_ms": 11.126788012916222,
+          "prefill_complete_wall_ms": 53.83610099670477,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.1899199851322919,
+            "route_plan_ms": 3.3122040040325373,
+            "value_check_wait_ms": 0.028559996280819178,
+            "metadata_prepare_ms": 0.4471680149435997,
+            "metadata_reads_ms": 0.10417599696666002,
+            "agreement_ms": 1.4164299936965108
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006097560975609756,
+              "relative_rms": 0.00147407382391017
+            }
+          },
+          "prepare_admit_wall_ms": 10.792068002047017,
+          "decode_ready_wall_ms": 17.833852994954214,
+          "prefill_complete_wall_ms": 65.95363898668438,
+          "includes_first_use_compile": false
+        }
+      ],
+      "native_samples": [
+        {
+          "sample": 0,
+          "decode_ready_wall_ms": 3.158509003696963,
+          "prefill_complete_wall_ms": 43.78323201672174,
+          "includes_first_use_compile": true,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006097560975609756,
+              "relative_rms": 0.001378320983992343
+            }
+          }
+        },
+        {
+          "sample": 1,
+          "decode_ready_wall_ms": 7.338839990552515,
+          "prefill_complete_wall_ms": 52.18128699925728,
+          "includes_first_use_compile": false,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.007317073170731708,
+              "relative_rms": 0.0013692850336491304
+            }
+          }
+        },
+        {
+          "sample": 2,
+          "decode_ready_wall_ms": 7.36053500440903,
+          "prefill_complete_wall_ms": 52.10499800159596,
+          "includes_first_use_compile": false,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.0015223101467899298
+            }
+          }
+        },
+        {
+          "sample": 3,
+          "decode_ready_wall_ms": 3.4103479993063956,
+          "prefill_complete_wall_ms": 39.32830900885165,
+          "includes_first_use_compile": false,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00975609756097561,
+              "relative_rms": 0.0013128326506358133
+            }
+          }
+        }
+      ],
+      "native_repeat_error": {
+        "decode": {
+          "relative_max": 0.0,
+          "relative_rms": 0.0
+        },
+        "prefill": {
+          "relative_max": 0.00975609756097561,
+          "relative_rms": 0.0013396957887388528
+        }
+      }
+    },
+    {
+      "decode_rows": 8,
+      "prefill_rows": 32768,
+      "source_sha256": [
+        "3981a5a9a3602236332241b54b21daf47ecf21f13af65e8941ebcaeb2d37d0f7",
+        "9ea3d61ea2ee8c94e53193a8ea0d86fd72c1fac360ce02ae2fb45b4425199c01"
+      ],
+      "routing": "actual profile L3 router on synthetic activations",
+      "samples": [
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.29967998852953315,
+            "route_plan_ms": 14.683967019664124,
+            "value_check_wait_ms": 0.04691199865192175,
+            "metadata_prepare_ms": 6.8045360094401985,
+            "metadata_reads_ms": 0.15849500778131187,
+            "agreement_ms": 4.656809993321076
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.005506607929515419,
+              "relative_rms": 0.0009445477934019407
+            }
+          },
+          "prepare_admit_wall_ms": 61.30169099196792,
+          "decode_ready_wall_ms": 65.39181500556879,
+          "prefill_complete_wall_ms": 210.60550698894076,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.2715039881877601,
+            "route_plan_ms": 10.780307988170534,
+            "value_check_wait_ms": 0.08939197869040072,
+            "metadata_prepare_ms": 0.9842549916356802,
+            "metadata_reads_ms": 0.1357590372208506,
+            "agreement_ms": 4.112107999389991
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.0012790337862575564
+            }
+          },
+          "prepare_admit_wall_ms": 31.025022006360814,
+          "decode_ready_wall_ms": 37.720133987022564,
+          "prefill_complete_wall_ms": 157.4578070139978,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.24899200070649385,
+            "route_plan_ms": 8.29034301568754,
+            "value_check_wait_ms": 0.03779199323616922,
+            "metadata_prepare_ms": 0.584094988880679,
+            "metadata_reads_ms": 0.1123029796872288,
+            "agreement_ms": 3.85143599123694
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.0013825708463150723
+            }
+          },
+          "prepare_admit_wall_ms": 19.759065995458513,
+          "decode_ready_wall_ms": 21.119991986779496,
+          "prefill_complete_wall_ms": 81.77419597632252,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.31115199089981616,
+            "route_plan_ms": 8.273318002466112,
+            "value_check_wait_ms": 0.03950402606278658,
+            "metadata_prepare_ms": 0.5908629973419011,
+            "metadata_reads_ms": 0.15932699898257852,
+            "agreement_ms": 3.8405079976655543
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00881057268722467,
+              "relative_rms": 0.0011778549308325392
+            }
+          },
+          "prepare_admit_wall_ms": 20.161961001576856,
+          "decode_ready_wall_ms": 21.531927020987496,
+          "prefill_complete_wall_ms": 81.32832401315682,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.27827199664898217,
+            "route_plan_ms": 11.326530977385119,
+            "value_check_wait_ms": 0.07414401625283062,
+            "metadata_prepare_ms": 1.0767990024760365,
+            "metadata_reads_ms": 0.12497595162130892,
+            "agreement_ms": 4.0277230145875365
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.0010907964454986848
+            }
+          },
+          "prepare_admit_wall_ms": 31.8892759969458,
+          "decode_ready_wall_ms": 39.04173200135119,
+          "prefill_complete_wall_ms": 179.2977819859516,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.22212800104171038,
+            "route_plan_ms": 11.125618999358267,
+            "value_check_wait_ms": 0.09995201253332198,
+            "metadata_prepare_ms": 1.3878059980925173,
+            "metadata_reads_ms": 0.1296480477321893,
+            "agreement_ms": 4.11335498210974
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.0013100841623301528
+            }
+          },
+          "prepare_admit_wall_ms": 31.75389999523759,
+          "decode_ready_wall_ms": 39.12443600711413,
+          "prefill_complete_wall_ms": 179.28234100691043,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.2815200132317841,
+            "route_plan_ms": 10.184291983023286,
+            "value_check_wait_ms": 0.0575039885006845,
+            "metadata_prepare_ms": 0.9266060078516603,
+            "metadata_reads_ms": 0.1741279847919941,
+            "agreement_ms": 4.054235003422946
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.0012905144705083903
+            }
+          },
+          "prepare_admit_wall_ms": 30.17031800118275,
+          "decode_ready_wall_ms": 36.747911013662815,
+          "prefill_complete_wall_ms": 172.8320769907441,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.3340310067869723,
+            "route_plan_ms": 9.95554099790752,
+            "value_check_wait_ms": 0.0409760104957968,
+            "metadata_prepare_ms": 1.1306869855616242,
+            "metadata_reads_ms": 0.15019206330180168,
+            "agreement_ms": 4.017419996671379
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.0010896934986202522
+            }
+          },
+          "prepare_admit_wall_ms": 30.12591798324138,
+          "decode_ready_wall_ms": 36.77059800247662,
+          "prefill_complete_wall_ms": 158.70911598904058,
+          "includes_first_use_compile": false
+        }
+      ],
+      "native_samples": [
+        {
+          "sample": 0,
+          "decode_ready_wall_ms": 3.345548000652343,
+          "prefill_complete_wall_ms": 139.42355499602854,
+          "includes_first_use_compile": true,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.0010929297221309792
+            }
+          }
+        },
+        {
+          "sample": 1,
+          "decode_ready_wall_ms": 1.8300130032002926,
+          "prefill_complete_wall_ms": 60.27818800066598,
+          "includes_first_use_compile": false,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.0010479710042342772
+            }
+          }
+        },
+        {
+          "sample": 2,
+          "decode_ready_wall_ms": 3.282508027041331,
+          "prefill_complete_wall_ms": 139.9835380143486,
+          "includes_first_use_compile": false,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.001067595900699108
+            }
+          }
+        },
+        {
+          "sample": 3,
+          "decode_ready_wall_ms": 3.6923160078004003,
+          "prefill_complete_wall_ms": 138.86733099934645,
+          "includes_first_use_compile": false,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.006607929515418502,
+              "relative_rms": 0.001047654735088243
+            }
+          }
+        }
+      ],
+      "native_repeat_error": {
+        "decode": {
+          "relative_max": 0.0,
+          "relative_rms": 0.0
+        },
+        "prefill": {
+          "relative_max": 0.006607929515418502,
+          "relative_rms": 0.0010290002446114183
+        }
+      }
+    },
+    {
+      "decode_rows": 32,
+      "prefill_rows": 32768,
+      "source_sha256": [
+        "a2f4f06cf02f59731a76513da5d92fe537d1857ce3c28648ae7b2e5b10c91977",
+        "2c1ab0d4805a9e9aa783e7fb426aa1809b561b5f77512246d467defc0d499521"
+      ],
+      "routing": "actual profile L3 router on synthetic activations",
+      "samples": [
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.2229269884992391,
+            "route_plan_ms": 10.630403994582593,
+            "value_check_wait_ms": 0.059663987485691905,
+            "metadata_prepare_ms": 1.0425749933347106,
+            "metadata_reads_ms": 0.125104037579149,
+            "agreement_ms": 4.170140018686652
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.005341880341880342,
+              "relative_rms": 0.0010263336925041117
+            }
+          },
+          "prepare_admit_wall_ms": 64.01095099863596,
+          "decode_ready_wall_ms": 74.72826598677784,
+          "prefill_complete_wall_ms": 210.80508700106293,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.23073499323800206,
+            "route_plan_ms": 10.969588009174913,
+            "value_check_wait_ms": 0.0845600152388215,
+            "metadata_prepare_ms": 1.058941998053342,
+            "metadata_reads_ms": 0.11864001862704754,
+            "agreement_ms": 4.041099018650129
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.001451684203395395
+            }
+          },
+          "prepare_admit_wall_ms": 31.03698798804544,
+          "decode_ready_wall_ms": 42.24518398405053,
+          "prefill_complete_wall_ms": 164.82960298890248,
+          "includes_first_use_compile": true
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.2743199875112623,
+            "route_plan_ms": 11.445139010902494,
+            "value_check_wait_ms": 0.08190399967133999,
+            "metadata_prepare_ms": 1.079326990293339,
+            "metadata_reads_ms": 0.11088003520853817,
+            "agreement_ms": 4.115227027796209
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00641025641025641,
+              "relative_rms": 0.0015122161144780542
+            }
+          },
+          "prepare_admit_wall_ms": 31.100827996851876,
+          "decode_ready_wall_ms": 42.12182300398126,
+          "prefill_complete_wall_ms": 178.10939499759115,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.3457280108705163,
+            "route_plan_ms": 10.906674986472353,
+            "value_check_wait_ms": 0.09825598681345582,
+            "metadata_prepare_ms": 1.1246549838688225,
+            "metadata_reads_ms": 0.14654401456937194,
+            "agreement_ms": 4.1206190071534365
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.005341880341880342,
+              "relative_rms": 0.0010190631150666233
+            }
+          },
+          "prepare_admit_wall_ms": 31.34207599214278,
+          "decode_ready_wall_ms": 42.024767986731604,
+          "prefill_complete_wall_ms": 177.57145999348722,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.2793760213535279,
+            "route_plan_ms": 11.674929992295802,
+            "value_check_wait_ms": 0.052368006436154246,
+            "metadata_prepare_ms": 1.2596300221048295,
+            "metadata_reads_ms": 0.13705610763281584,
+            "agreement_ms": 4.075659002410248
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00641025641025641,
+              "relative_rms": 0.0009362184445067078
+            }
+          },
+          "prepare_admit_wall_ms": 34.41572000156157,
+          "decode_ready_wall_ms": 45.066411985317245,
+          "prefill_complete_wall_ms": 188.88418198912404,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.11980801355093718,
+            "route_plan_ms": 9.887508989777416,
+            "value_check_wait_ms": 0.03192000440321863,
+            "metadata_prepare_ms": 0.977182004135102,
+            "metadata_reads_ms": 0.03766402369365096,
+            "agreement_ms": 3.690732002723962
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.008547008547008548,
+              "relative_rms": 0.0014816435396566715
+            }
+          },
+          "prepare_admit_wall_ms": 28.647263010498136,
+          "decode_ready_wall_ms": 41.0187850065995,
+          "prefill_complete_wall_ms": 161.23493399936706,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 128,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.10708798072300851,
+            "route_plan_ms": 9.777844999916852,
+            "value_check_wait_ms": 0.11763197835534811,
+            "metadata_prepare_ms": 0.6931670068297535,
+            "metadata_reads_ms": 0.03284800914116204,
+            "agreement_ms": 3.5765719949267805
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00641025641025641,
+              "relative_rms": 0.0014796070870898752
+            }
+          },
+          "prepare_admit_wall_ms": 27.225696976529434,
+          "decode_ready_wall_ms": 39.59461097838357,
+          "prefill_complete_wall_ms": 175.26867799460888,
+          "includes_first_use_compile": false
+        },
+        {
+          "hot_quota": 0,
+          "planning_arm": "packed_v2",
+          "planning_stages_ms": {
+            "value_check_ms": 0.08259198511950672,
+            "route_plan_ms": 8.917253988329321,
+            "value_check_wait_ms": 0.08873498882167041,
+            "metadata_prepare_ms": 0.6141279882285744,
+            "metadata_reads_ms": 0.06224002572707832,
+            "agreement_ms": 3.58924301690422
+          },
+          "cold_windows": 1,
+          "cold_dispatch": "drain",
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.005341880341880342,
+              "relative_rms": 0.0010721257139930961
+            }
+          },
+          "prepare_admit_wall_ms": 26.09920100076124,
+          "decode_ready_wall_ms": 38.57976300059818,
+          "prefill_complete_wall_ms": 174.43248600466177,
+          "includes_first_use_compile": false
+        }
+      ],
+      "native_samples": [
+        {
+          "sample": 0,
+          "decode_ready_wall_ms": 7.455751998350024,
+          "prefill_complete_wall_ms": 142.374460992869,
+          "includes_first_use_compile": true,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.005341880341880342,
+              "relative_rms": 0.000946098140963396
+            }
+          }
+        },
+        {
+          "sample": 1,
+          "decode_ready_wall_ms": 7.394759013550356,
+          "prefill_complete_wall_ms": 117.3374330101069,
+          "includes_first_use_compile": false,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.005341880341880342,
+              "relative_rms": 0.0010241752395596594
+            }
+          }
+        },
+        {
+          "sample": 2,
+          "decode_ready_wall_ms": 7.371126994257793,
+          "prefill_complete_wall_ms": 141.90498797688633,
+          "includes_first_use_compile": false,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00641025641025641,
+              "relative_rms": 0.0010185924432490733
+            }
+          }
+        },
+        {
+          "sample": 3,
+          "decode_ready_wall_ms": 7.459510990884155,
+          "prefill_complete_wall_ms": 133.79179700859822,
+          "includes_first_use_compile": false,
+          "errors": {
+            "decode": {
+              "relative_max": 0.0,
+              "relative_rms": 0.0
+            },
+            "prefill": {
+              "relative_max": 0.00641025641025641,
+              "relative_rms": 0.001084021777174723
+            }
+          }
+        }
+      ],
+      "native_repeat_error": {
+        "decode": {
+          "relative_max": 0.0,
+          "relative_rms": 0.0
+        },
+        "prefill": {
+          "relative_max": 0.005341880341880342,
+          "relative_rms": 0.0010567450456571749
+        }
+      }
+    }
+  ],
+  "preparation_profile": [
+    {
+      "file": "/repo/engine/profiles/glm53/net.py",
+      "line": 1042,
+      "function": "submit_mixed_ffn",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.01184,
+      "cumulative_ms": 33.585274000000005
+    },
+    {
+      "file": "/repo/engine/profiles/glm53/net.py",
+      "line": 1017,
+      "function": "prepare_mixed_ffn",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.036144,
+      "cumulative_ms": 29.207935
+    },
+    {
+      "file": "/repo/engine/profiles/glm53/lanes.py",
+      "line": 472,
+      "function": "moe_mixed_prepare",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.027120000000000002,
+      "cumulative_ms": 28.016913000000002
+    },
+    {
+      "file": "/repo/engine/kernels/b12x/moe_mixed_completion.py",
+      "line": 28,
+      "function": "__init__",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.16504,
+      "cumulative_ms": 27.969569000000003
+    },
+    {
+      "file": "/repo/engine/kernels/b12x/moe_mixed.py",
+      "line": 45,
+      "function": "__init__",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.681968,
+      "cumulative_ms": 26.838818
+    },
+    {
+      "file": "/repo/engine/kernels/b12x/moe_mixed.py",
+      "line": 21,
+      "function": "checked_routes",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.058192,
+      "cumulative_ms": 23.875957000000003
+    },
+    {
+      "file": "/repo/engine/modules/mixed_route_plan.py",
+      "line": 11,
+      "function": "prepare_routes",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 6.2780890000000005,
+      "cumulative_ms": 12.876225000000002
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'cpu' of 'torch._C.TensorBase' objects>",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 10.472676,
+      "cumulative_ms": 10.472676
+    },
+    {
+      "file": "/repo/engine/modules/mixed_tickets.py",
+      "line": 92,
+      "function": "admit",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.05192000000000001,
+      "cumulative_ms": 4.365499
+    },
+    {
+      "file": "/repo/engine/modules/mixed_tickets.py",
+      "line": 41,
+      "function": "signature",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.073231,
+      "cumulative_ms": 4.081371000000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'update' of '_hashlib.HASH' objects>",
+      "primitive_calls": 26,
+      "total_calls": 26,
+      "self_ms": 3.6047160000000003,
+      "cumulative_ms": 3.6047160000000003
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/numpy/_core/fromnumeric.py",
+      "line": 51,
+      "function": "_wrapfunc",
+      "primitive_calls": 7,
+      "total_calls": 7,
+      "self_ms": 0.016848000000000002,
+      "cumulative_ms": 2.498412
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/numpy/_core/fromnumeric.py",
+      "line": 1130,
+      "function": "argsort",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.006896,
+      "cumulative_ms": 2.131741
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'argsort' of 'numpy.ndarray' objects>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 2.119101,
+      "cumulative_ms": 2.119101
+    },
+    {
+      "file": "/repo/engine/modules/mixed_experts.py",
+      "line": 137,
+      "function": "validate_packed_routes",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.326095,
+      "cumulative_ms": 1.63331
+    },
+    {
+      "file": "/repo/engine/modules/mixed_metadata.py",
+      "line": 21,
+      "function": "__init__",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.47108800000000006,
+      "cumulative_ms": 1.04651
+    },
+    {
+      "file": "/repo/engine/base/graph_labels.py",
+      "line": 209,
+      "function": "call",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.007424,
+      "cumulative_ms": 1.0047180000000002
+    },
+    {
+      "file": "/repo/engine/profiles/glm53/net.py",
+      "line": 917,
+      "function": "route",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.032944,
+      "cumulative_ms": 0.9899340000000001
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/numpy/_core/fromnumeric.py",
+      "line": 969,
+      "function": "sort",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.008448,
+      "cumulative_ms": 0.764
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'append' of 'list' objects>",
+      "primitive_calls": 4549,
+      "total_calls": 4549,
+      "self_ms": 0.7495360000000001,
+      "cumulative_ms": 0.7495360000000001
+    },
+    {
+      "file": "/repo/engine/profiles/glm53/net.py",
+      "line": 944,
+      "function": "_select_routes",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.019232000000000003,
+      "cumulative_ms": 0.671631
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method torch.zeros>",
+      "primitive_calls": 23,
+      "total_calls": 23,
+      "self_ms": 0.663967,
+      "cumulative_ms": 0.663967
+    },
+    {
+      "file": "/repo/engine/kernels/glm_pointwise.py",
+      "line": 73,
+      "function": "route_weights",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.058847000000000003,
+      "cumulative_ms": 0.6523990000000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'astype' of 'numpy.ndarray' objects>",
+      "primitive_calls": 7,
+      "total_calls": 7,
+      "self_ms": 0.5850879999999999,
+      "cumulative_ms": 0.5850879999999999
+    },
+    {
+      "file": "/repo/engine/kernels/b12x/moe_dispatch.py",
+      "line": 979,
+      "function": "allocate_sm120_static_workspace",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.08174400000000001,
+      "cumulative_ms": 0.5798400000000001
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'sort' of 'numpy.ndarray' objects>",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.579264,
+      "cumulative_ms": 0.579264
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/triton/runtime/jit.py",
+      "line": 370,
+      "function": "<lambda>",
+      "primitive_calls": 6,
+      "total_calls": 6,
+      "self_ms": 0.03032,
+      "cumulative_ms": 0.533232
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method numpy.asarray>",
+      "primitive_calls": 23,
+      "total_calls": 23,
+      "self_ms": 0.512352,
+      "cumulative_ms": 0.512352
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/triton/runtime/jit.py",
+      "line": 708,
+      "function": "run",
+      "primitive_calls": 6,
+      "total_calls": 6,
+      "self_ms": 0.134704,
+      "cumulative_ms": 0.502912
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method builtins.min>",
+      "primitive_calls": 2239,
+      "total_calls": 2239,
+      "self_ms": 0.45087900000000003,
+      "cumulative_ms": 0.45087900000000003
+    },
+    {
+      "file": "/repo/engine/kernels/b12x/moe_dispatch.py",
+      "line": 3876,
+      "function": "allocate_sm120_dynamic_workspace",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.054928000000000005,
+      "cumulative_ms": 0.44219100000000006
+    },
+    {
+      "file": "/repo/engine/modules/route_table.py",
+      "line": 20,
+      "function": "pack",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "self_ms": 0.030640000000000004,
+      "cumulative_ms": 0.426975
+    },
+    {
+      "file": "/repo/engine/modules/mixed_metadata.py",
+      "line": 5,
+      "function": "metadata_tables",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.088223,
+      "cumulative_ms": 0.38889500000000005
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/numpy/lib/_function_base_impl.py",
+      "line": 1369,
+      "function": "diff",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.380031,
+      "cumulative_ms": 0.382847
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'tobytes' of 'numpy.ndarray' objects>",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "self_ms": 0.366175,
+      "cumulative_ms": 0.366175
+    },
+    {
+      "file": "/repo/engine/kernels/b12x/moe_mixed.py",
+      "line": 16,
+      "function": "check_values",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.008112000000000001,
+      "cumulative_ms": 0.35555200000000003
+    },
+    {
+      "file": "/repo/engine/kernels/mixed_checks.py",
+      "line": 55,
+      "function": "begin_check_values",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.030672,
+      "cumulative_ms": 0.34744
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/numpy/_core/numeric.py",
+      "line": 646,
+      "function": "flatnonzero",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.010928,
+      "cumulative_ms": 0.27350300000000005
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/numpy/_core/fromnumeric.py",
+      "line": 2018,
+      "function": "nonzero",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.001216,
+      "cumulative_ms": 0.254703
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'nonzero' of 'numpy.ndarray' objects>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.249183,
+      "cumulative_ms": 0.249183
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method torch.empty>",
+      "primitive_calls": 19,
+      "total_calls": 19,
+      "self_ms": 0.23960000000000004,
+      "cumulative_ms": 0.23960000000000004
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'copy_' of 'torch._C.TensorBase' objects>",
+      "primitive_calls": 7,
+      "total_calls": 7,
+      "self_ms": 0.220831,
+      "cumulative_ms": 0.220831
+    },
+    {
+      "file": "/repo/engine/profiles/glm53/mixed_shared.py",
+      "line": 15,
+      "function": "_stamp",
+      "primitive_calls": 8,
+      "total_calls": 8,
+      "self_ms": 0.049728,
+      "cumulative_ms": 0.220048
+    },
+    {
+      "file": "/repo/engine/profiles/glm53/mixed_shared.py",
+      "line": 49,
+      "function": "validate",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "self_ms": 0.0352,
+      "cumulative_ms": 0.210432
+    },
+    {
+      "file": "/repo/engine/kernels/b12x/moe_mixed_completion.py",
+      "line": 106,
+      "function": "validate",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_ms": 0.010464,
+      "cumulative_ms": 0.18763200000000002
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'copy' of 'numpy.ndarray' objects>",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.17523200000000003,
+      "cumulative_ms": 0.17523200000000003
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/triton/backends/nvidia/driver.py",
+      "line": 313,
+      "function": "__call__",
+      "primitive_calls": 6,
+      "total_calls": 6,
+      "self_ms": 0.021712000000000002,
+      "cumulative_ms": 0.171504
+    },
+    {
+      "file": "/usr/local/lib/python3.12/dist-packages/numpy/_core/fromnumeric.py",
+      "line": 2477,
+      "function": "any",
+      "primitive_calls": 6,
+      "total_calls": 6,
+      "self_ms": 0.011776,
+      "cumulative_ms": 0.157456
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<method 'topk' of 'torch._C.TensorBase' objects>",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_ms": 0.149456,
+      "cumulative_ms": 0.149456
+    },
+    {
+      "file": "~",
+      "line": 0,
+      "function": "<built-in method cuda_utils.launch>",
+      "primitive_calls": 6,
+      "total_calls": 6,
+      "self_ms": 0.13587200000000002,
+      "cumulative_ms": 0.148256
+    }
+  ],
+  "gpu_used": true,
+  "scratch_peak_bytes": 4159950848,
+  "default_enabled": false,
+  "serving_speedup_proven": false
+}

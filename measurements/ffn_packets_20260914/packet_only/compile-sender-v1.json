@@ -1,0 +1,79 @@
+{
+  "scope": "SM121 router and sender packet compilation only; no GPU or FFN proof",
+  "gpu_used": false,
+  "torch": "2.13.0+cu130",
+  "triton": "3.7.1",
+  "source_sha256": {
+    "engine/modules/prefill_packets.py": "aacff46e3e9ad341cb0de5cfc505068429a39b6bb86e8bc615c252a5fad490a3",
+    "engine/modules/token_shards.py": "e7bb2e77817ecf821fdf03305f36e8b1f914e174066b762a81e5084405cd9393",
+    "engine/kernels/prefill_collectives/__init__.py": "e9755f4b052dfb8385727a98e9ed87d69fd0523008c8974da8542f94512e35e5",
+    "engine/kernels/prefill_collectives/consumer.py": "a657ca03960b2b4d0c1764afbc6a2bb00995ee67dafbd867d18645858d8a1205",
+    "engine/kernels/prefill_collectives/kernels.py": "447cdfe6f53fcbaa4e8aed52bdba85437dfe03081508d754758e491dd6bdad98",
+    "engine/kernels/prefill_router.py": "63feadb50b644985d3fe9b631484cf4c42b7361fee4ce2be614ecba196c61351",
+    "engine/kernels/prefill_collectives/routes.py": "2bf113a268a3de0e7b85f41c905abfc6fb31ab60766c33d1236fb7caaefc0385",
+    "engine/kernels/dense/__init__.py": "e6970ca941a7a6a0e388f8cc951ea0ecd1a142c9d056262c2c95d3ec4b14bf7c",
+    "engine/kernels/dense/fp8.py": "fecc21c8b0f3088c765083cf7987db210de499313490559596dca7dee676c3ca",
+    "engine/kernels/b12x/moe_dispatch.py": "e91e36daff076fdf976abe57072f28aa3887cc790c096e85e8ee5d3401a0b7c9",
+    "engine/kernels/b12x/moe_packet_input.py": "edfb8563846ea6df2c86a42417a18d679e58bccb55a14164458e7d6ea89eef37",
+    "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "befafbf776e54b15a6272e2a167b83d60771414b4019af2cb2afb6b7bfc00613",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_w4a16_fp4_helpers.py": "3115cf3e73064cbf2c339d5fd2cec1c49206f34283c281faef2d1c2d290a6c73",
+    "engine/profiles/glm53/net.py": "7f52d5a153a97dd7dd9133a62a0968782905266a25934b5fe7ed133e08aab776",
+    "engine/profiles/glm53/lanes.py": "a51d1750bc1211d83f47de147f6c47a5796b5a9cf2ba1f53bdfc883471b429fb",
+    "engine/profiles/glm53/execution.py": "716111e7cc714a83a6b5af46a1641ee3efc6ce67aa3233dcabccc47c3ffa31b8",
+    "engine/profiles/glm53/boot.py": "6e8bc17d73602377e8356b81fedd3a34d4fde8f0d755f0701f7cd4a952ecb53f",
+    "probes/engine_ffn_packets_compile.py": "324a9f17a34cb285d78af93177d5f96f1c9d3dec1074b84ee1e90ae12f1f4faa",
+    "probes/engine_ffn_packets_check.py": "16eb6c615dccbb980b238f3265a37a3a562e69110d9a3b55f809fa79ea6f1a64",
+    "tests/test_engine_ffn_packets.py": "3a78d01476b008854fcc0e62feb75e86f3d89bd35e0b7a22af7957f51f4e04f7",
+    "tests/test_engine_prefill_fp8_consumer.py": "b5bfe7fe78c8aa0cb2ab30fd29fe53b2edc07306e3c57556d35b9315c85088b7"
+  },
+  "kernels": [
+    {
+      "name": "router-bf16",
+      "status": "PASS",
+      "seconds": 0.9922393640154041,
+      "shared_bytes": 16384,
+      "dot_k_widths": [
+        2,
+        2
+      ],
+      "cubin_sha256": "340f7d64a035fdf907f86b14730614e34115ba98cfd298ad3fef56fc1d522445"
+    },
+    {
+      "name": "router-packets",
+      "status": "PASS",
+      "seconds": 0.5487230549915694,
+      "shared_bytes": 16384,
+      "dot_k_widths": [
+        2,
+        2
+      ],
+      "cubin_sha256": "7009ab20c5625fa98516cf20155c559f991d2a226c14470ee38a12bdcdac1c5f"
+    },
+    {
+      "name": "pack",
+      "status": "PASS",
+      "shared_bytes": 16,
+      "cubin_sha256": "f66902902661140c8384d2d013ced4c87b49f27d3b72bc677cfba3b052d52a4a"
+    },
+    {
+      "name": "pack-roundtrip",
+      "status": "PASS",
+      "shared_bytes": 16,
+      "cubin_sha256": "2fe70a8dcd22f5ed4ff553584d4cab1a78f24153397aed47f8a6a42b92d91a70"
+    },
+    {
+      "name": "write-routes",
+      "status": "PASS",
+      "shared_bytes": 0,
+      "cubin_sha256": "739fc364d99f7200726fc414e996d55073695b1287e658f99e58314c0d500c93"
+    },
+    {
+      "name": "read-routes",
+      "status": "PASS",
+      "shared_bytes": 0,
+      "cubin_sha256": "5347f3ba8df302cce658a43036e265882e2c0aca71ea4c042e84b293b7c005cf"
+    }
+  ],
+  "status": "PASS"
+}

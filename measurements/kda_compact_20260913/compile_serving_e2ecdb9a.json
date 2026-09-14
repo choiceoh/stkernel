@@ -1,0 +1,77 @@
+{
+  "scope": "SM121 compilation only",
+  "gpu_used": false,
+  "torch": "2.13.0+cu130",
+  "triton": "3.7.1",
+  "variants": [
+    {
+      "name": "compact-verify-t1-abi0",
+      "shared_bytes": 512,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:28 CONSTANT[4]:16\n Function fused_recurrent_gated_delta_rule_fwd_kernel:\n  REG:254 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1048 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "3914942af0ccc22f784f548f9b38fa4be4fa60fe019b974518b9bb5922d14c40"
+    },
+    {
+      "name": "compact-verify-t1-abi1",
+      "shared_bytes": 512,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:28 CONSTANT[4]:16\n Function fused_recurrent_gated_delta_rule_fwd_kernel:\n  REG:254 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1048 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "0c5eaf5236b7b3a7f14a4419464a53a9495ba8bb9bc2ee8947f9ec42c08e1bb8"
+    },
+    {
+      "name": "compact-verify-t8-abi0",
+      "shared_bytes": 512,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:28 CONSTANT[4]:16\n Function fused_recurrent_gated_delta_rule_fwd_kernel:\n  REG:130 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1048 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "2f70baaa8dfbc0172de70bf3989d093597395f8d234b1820c04641ed3b675c75"
+    },
+    {
+      "name": "compact-verify-t8-abi1",
+      "shared_bytes": 512,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:28 CONSTANT[4]:16\n Function fused_recurrent_gated_delta_rule_fwd_kernel:\n  REG:130 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1048 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "679115220e7451ad9844a928ab2c235c392079f43d6ff8ebc6f4eeea04854b90"
+    },
+    {
+      "name": "compact-commit-c1-abi0",
+      "shared_bytes": 512,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:48 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "a6cf74beb147961460480411669d42ac9bb0db0798ac5cf57a29608ca1f486c6"
+    },
+    {
+      "name": "compact-commit-c1-abi1",
+      "shared_bytes": 512,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:56 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:984 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "0bc834d0ed75889220bb2c0bae3429c8f84a01f295c3234c7f87beff3995a589"
+    },
+    {
+      "name": "compact-commit-c4-abi0",
+      "shared_bytes": 512,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:48 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "0f0934cd1135d276ec18dbddee2aa9c041a720bcead51aac87b27d820ecae28e"
+    },
+    {
+      "name": "compact-commit-c4-abi1",
+      "shared_bytes": 512,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _commit_layers:\n  REG:56 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:984 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "92ed633a86f4cd90b27ef0a32ddb0cb5bccbad23c84ad2215d15fde2ff31eb77"
+    },
+    {
+      "name": "compact-stage-abi0",
+      "shared_bytes": 0,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _stage_conv:\n  REG:36 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:968 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "501bffabc96e306f41172ac0dafd0f48fbbcfbac83a928307e774bb877f53d33"
+    },
+    {
+      "name": "compact-stage-abi1",
+      "shared_bytes": 0,
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function _stage_conv:\n  REG:36 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:976 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "cubin_sha256": "2ed387f7c8787a840bbd9b8876fb828d2aeac2112e6ddbf0e5b949007669e215"
+    }
+  ],
+  "source_sha256": {
+    "engine/kernels/kda/deferred.py": "7ecbc47ff4cd2cc0c93dc3a9705bdec002c92e56cc92cfec5bffba8642f12bae",
+    "engine/kernels/kda/ring.py": "0b6ed44df945d4dcb485861acbed170f784b686074e2b1f25765ce3ce30ba48b",
+    "engine/kernels/kda/fused_recurrent.py": "84c833a20ccf4e8c673802381987552aa035f582f3ffa65d3354ddf75d46be15",
+    "probes/engine_kda_deferred_compile.py": "9d96efb6c02a18de475ce716006ceb314adfa9532c1ecfd60dcfb6cffb345069",
+    "engine/kernels/state.py": "1e0e2a3be9129a2b2904a41c71e55685b5f857d050705fd342ce8357c49786d1",
+    "engine/profiles/glm53/caches.py": "b2db27bb849ca7d2e0b0c2bb4c26c9d58f1ffe800681900b9e32d0192da6c165"
+  },
+  "status": "PASS"
+}

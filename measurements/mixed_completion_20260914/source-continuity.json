@@ -1,0 +1,38 @@
+{
+  "code_revision": "43d5816bd582019720530d41630d08a5a3953a7b",
+  "compile_revision": "e2a5a9e9606a89e7de268c690757f067295e284e",
+  "compile_device_sources_unchanged": true,
+  "host_executable_ast_unchanged": true,
+  "compile_manifest_changes": {
+    "engine/kernels/b12x/moe_mixed_completion.py": {
+      "evidence_sha256": "997232ad03fa7660414138933899f0a6ec83f0426c23dd75e0551ae2be5f17ea",
+      "current_sha256": "146ccfb4aa6143f7a940605a71230837f29e16d9a47ecfe950d418ae7dfde593"
+    },
+    "tests/test_engine_mixed_completion.py": {
+      "evidence_sha256": "e16cf0dd39c07bf9d7c68861fd17e759f75bade28f2f9ebace5415b529198125",
+      "current_sha256": "89314ae550993f016c5334f508ad8f037fb35ddb81d424bbc7fec7a376e45cea"
+    }
+  },
+  "cpu_manifest_changes": {
+    "engine/kernels/b12x/moe_mixed_completion.py": {
+      "evidence_sha256": "997232ad03fa7660414138933899f0a6ec83f0426c23dd75e0551ae2be5f17ea",
+      "current_sha256": "146ccfb4aa6143f7a940605a71230837f29e16d9a47ecfe950d418ae7dfde593"
+    },
+    "tests/test_engine_mixed_completion.py": {
+      "evidence_sha256": "e16cf0dd39c07bf9d7c68861fd17e759f75bade28f2f9ebace5415b529198125",
+      "current_sha256": "89314ae550993f016c5334f508ad8f037fb35ddb81d424bbc7fec7a376e45cea"
+    },
+    "probes/engine_mixed_completion_check.py": {
+      "evidence_sha256": "049a6786497a220e50436cdea774b992057a050a36907ab426a487ee602caa82",
+      "current_sha256": "67a22ea9e446499221ae0df1f9db706dbc65f22ca6f4b65a21a03a22ec0bb8b3"
+    }
+  },
+  "followup_covers": "actual completion owner methods and the bounded GPU-probe output comparison",
+  "effective_cpu": {
+    "tests": 306,
+    "passed": 290,
+    "skipped": 16
+  },
+  "image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+  "gpu_result": "pending"
+}

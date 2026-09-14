@@ -7,7 +7,7 @@ SGEMM of 1.7 ms in a four-row decode step. The GPU test (tests/test_engine_decod
 pins the selection equal at 1..2,304 rows; this pins which path each width takes.
 """
 import unittest
-from types import SimpleNamespace as NS
+from types import MethodType, SimpleNamespace as NS
 from unittest import mock
 
 import torch
@@ -18,8 +18,10 @@ from engine.profiles.glm53.net import Glm53Net
 def fake_net(prepared: bool):
     torch.manual_seed(7)
     p = {"L3.moe.gate": (torch.randn(32, 128) * .05).bfloat16(), "L3.moe.bias": torch.randn(32) * .1}
-    return NS(F=NS(spec_k=6, topk_experts=8, routed_scale=2.5), p=p, lanes=NS(route_weights=None),
-              _router_weights={3: None} if prepared else {}, _router_tensorcore=set())
+    net = NS(F=NS(spec_k=6, topk_experts=8, routed_scale=2.5), p=p, lanes=NS(route_weights=None),
+             _router_weights={3: None} if prepared else {}, _router_tensorcore=set())
+    net._select_routes = MethodType(Glm53Net._select_routes, net)
+    return net
 
 
 class RouterWidthTests(unittest.TestCase):

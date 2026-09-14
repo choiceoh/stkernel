@@ -16,7 +16,7 @@ plain torch on views. One contract per lane, spelled in the docstrings.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import logging
 import os
 
@@ -103,6 +103,8 @@ class Lanes:
     layernorm: object = None  # (x [T,D], weight, bias, eps) -> input dtype
     mla_absorb: object = None  # (x [T,H,D] BF16, kv_b slice, *, transpose=False) -> fresh token-major BF16
     mla_dense_prefix: object = None  # q, latent, token_map scalars, context, scales; explicit covered-prefix prefill only
+    moe_packets: object = None  # packet owner and routes, same prepared weights/scales as moe; eager long prefill only
+    moe_packets_supported: object = None  # rows and bound weights -> local capability, before rank agreement/transport
     latent_norm_write: object = None  # BF16 KV, norm weight, FP8 latent, token maps, contexts, tokens, eps -> None
 
 
@@ -391,6 +393,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
         kda_recurrent = ref.kda_recurrent
         recurrent_kda_ring = recurrent_kda_ring_rows = None
     moe_prepare = None
+    moe_packets = moe_packets_supported = None
     graph_resources = None
     if expert_lane == "reference":
         moe = ref.moe
@@ -449,6 +452,25 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
             if guard_rows and top_k == 1 and scales is not None:
                 _prepare_dense_w4a16(w13, w13_sf, w2, w2_sf, scales)
             views_for(w13, w13_sf, w2, w2_sf, top_k, limit, in_place=True, scales=scales)
+
+        def packet_views(w13, w13_sf, w2, w2_sf, limit, scales):
+            views, _, _, a13, _, q13, q2 = views_for(
+                w13, w13_sf, w2, w2_sf, 8, limit, in_place=False, scales=scales)
+            return views, a13 if q13 is None else q13, q2
+
+        def moe_packets_supported(rows, w13, w13_sf, w2, w2_sf, limit, *, scales=None):
+            from engine.modules.prefill_packets import ffn_packet_rows
+            if (not ffn_packet_rows(rows) or float(limit) != 10.
+                    or tuple(w13.shape) != (288, 1024, 2048) or tuple(w2.shape) != (288, 4096, 256)):
+                return False
+            from engine.kernels.b12x.moe_packet_input import supported
+            return supported(*packet_views(w13, w13_sf, w2, w2_sf, limit, scales), rows)
+
+        def moe_packets(batch, sel, w, w13, w13_sf, w2, w2_sf, limit, *, scales=None):
+            from engine.kernels.b12x.moe_packet_input import launch
+            if float(limit) != 10.:
+                raise ValueError('packet MoE requires the ordinary GLM activation limit')
+            return launch(batch, sel, w, *packet_views(w13, w13_sf, w2, w2_sf, limit, scales))
 
         def moe(x, sel, w, w13, w13_sf, w2, w2_sf, limit, *, scales=None, finalize=None):
             """Packed b12x MoE with prepared ModelOpt scales.
@@ -563,6 +585,9 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                   route_weights=on_main(route_weights), layernorm=on_main(layernorm),
                   mla_dense_prefix=on_main(mla_dense_prefix), mla_absorb=on_main(mla_prefill_absorb),
                   latent_norm_write=on_main(latent_norm_write))
+    if moe_packets is not None:
+        table = replace(table, moe_packets=on_main(moe_packets),
+                        moe_packets_supported=on_main(moe_packets_supported))
     return _apply_reference_lanes(table, ref, reference_for)
 
 
@@ -577,8 +602,11 @@ def _apply_reference_lanes(table, ref, reference_for):
         raise ValueError(f"reference_for names no lane: {unknown}; lanes are {sorted(fields)} (plus 'expert')")
     swapped = {n: getattr(ref, n) for n in reference_for if n in fields and n != "kda_recurrent"}
     if swapped:
-        from dataclasses import replace
         table = replace(table, **swapped)
+        if "moe" in swapped:
+            # The packet reader must not bypass an explicitly selected
+            # reference expert. Capability agreement chooses ordinary FFNs.
+            table = replace(table, moe_packets=None, moe_packets_supported=None)
         if "kpool_compress" in swapped and table.decode_rows is not None:
             # Selecting the pooling reference must also replace its captured
             # direct reader; otherwise the bisect silently keeps native math.

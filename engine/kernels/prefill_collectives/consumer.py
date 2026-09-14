@@ -34,7 +34,7 @@ def _quantize_gather(Packed, Scales, Q, S, LOCAL_N, PAYLOAD_BYTES,
     tl.store(S + row*G + group, output_scale, group < G)
 
 
-def quantize_gather(received, local_rows):
+def quantize_gather(received, local_rows, *, real_rows=None, routed=False):
     """Convert four rank-ordered packets to contiguous FP8 rows and FP32 scales.
 
 `received` is the byte output of the existing FP8-v3 all-gather. Its owner
@@ -46,11 +46,19 @@ guarantees the packet values and scales obey that transport's contract.
     k, peers = 4096, 4
     local = local_rows*k
     stride = ((local + 4*(local//BLOCK) + 127)//128)*128
+    rows = local_rows*peers if real_rows is None else real_rows
+    if (type(rows) is not int or not (local_rows-1)*peers < rows <= local_rows*peers):
+        raise ValueError('real rows must match the exact equal transport padding')
+    if type(routed) is not bool:
+        raise ValueError('routed packet ABI selection must be a boolean')
+    if routed:
+        from engine.modules.prefill_packets import PacketGeometry
+        stride = PacketGeometry(rows, local_rows, routed=True).stride
     if received.numel() != peers*stride:
         raise ValueError("consumer packet length does not match four rank-ordered packets")
-    q = torch.empty((local_rows*peers, k), device=received.device, dtype=torch.float8_e4m3fn)
-    scales = torch.empty((local_rows*peers, k//128), device=received.device, dtype=torch.float32)
-    _quantize_gather[(local_rows*peers, triton.cdiv(k//128, 4))](
+    q = torch.empty((rows, k), device=received.device, dtype=torch.float8_e4m3fn)
+    scales = torch.empty((rows, k//128), device=received.device, dtype=torch.float32)
+    _quantize_gather[(rows, triton.cdiv(k//128, 4))](
         received.view(torch.float8_e4m3fn), received.view(torch.float32), q, scales,
         local, stride, k, k//128, BLOCK, num_warps=4)
     return q, scales

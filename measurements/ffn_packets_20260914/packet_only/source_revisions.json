@@ -1,0 +1,187 @@
+{
+  "cpu-sender-main": {
+    "revision": "adb6eb52e78d9cb0fc1dc075c49221e2d21bab65",
+    "all_sources_match": true,
+    "source_count": 40
+  },
+  "compile-sender-v2": {
+    "revision": "894a16f45d97f33ad434e75e28cff8c43a3d66f3",
+    "all_sources_match": true,
+    "source_count": 22
+  },
+  "cpu-sender-v2": {
+    "revision": "894a16f45d97f33ad434e75e28cff8c43a3d66f3",
+    "all_sources_match": true,
+    "source_count": 40
+  },
+  "gpu-sender-v2": {
+    "revision": "894a16f45d97f33ad434e75e28cff8c43a3d66f3",
+    "all_sources_match": true,
+    "source_count": 24
+  },
+  "compile-sender-v1": {
+    "revision": "36ba3dfa8c3a30ce9e5dba5ec27e920485e9d971",
+    "all_sources_match": true,
+    "source_count": 22
+  },
+  "compile-sender-full-v1": {
+    "revision": "36ba3dfa8c3a30ce9e5dba5ec27e920485e9d971",
+    "all_sources_match": true,
+    "source_count": 22
+  },
+  "cpu-sender-v1": {
+    "revision": "36ba3dfa8c3a30ce9e5dba5ec27e920485e9d971",
+    "all_sources_match": true,
+    "source_count": 40
+  },
+  "gpu-sender-v1-failure": {
+    "revision": "36ba3dfa8c3a30ce9e5dba5ec27e920485e9d971",
+    "all_sources_match": true,
+    "source_count": 24
+  },
+  "gpu-router-v10": {
+    "revision": "1cd0507b4e1dc7493b9372cc879585e21fd7946f",
+    "all_sources_match": true,
+    "source_count": 24
+  },
+  "compile-router-native": {
+    "revision": "1bdbecdd9a351292f842a25d572882222dfe1e46",
+    "all_sources_match": true,
+    "source_count": 22
+  },
+  "gpu-router-v11": {
+    "revision": "1bdbecdd9a351292f842a25d572882222dfe1e46",
+    "all_sources_match": true,
+    "source_count": 24
+  },
+  "compile-router-prefetch": {
+    "revision": "f8be63e60f25b9cacb69b0bbc4d8309e06b25c18",
+    "all_sources_match": true,
+    "source_count": 22
+  },
+  "gpu-router-v12": {
+    "revision": "f8be63e60f25b9cacb69b0bbc4d8309e06b25c18",
+    "all_sources_match": true,
+    "source_count": 24
+  },
+  "compile-router-wide": {
+    "revision": "6e6c7e27a19d54a892b3a6b7830c71703f557616",
+    "all_sources_match": true,
+    "source_count": 22
+  },
+  "gpu-router-v13": {
+    "revision": "6e6c7e27a19d54a892b3a6b7830c71703f557616",
+    "all_sources_match": true,
+    "source_count": 24
+  },
+  "compile-router-pairs-rejected": {
+    "revision": "2b9cb76a2096d3e9af570a6e62dff7b42f7ba2b3",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "compile-router-pairs-bf16-rejected": {
+    "revision": "601dbe384187f69e36b794d63dd5d45959fc1647",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "compile-router-gather": {
+    "revision": "edddd7b3ff27a4566a5d4f32f085ead6ed450478",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "gpu-router-v9": {
+    "revision": "edddd7b3ff27a4566a5d4f32f085ead6ed450478",
+    "all_sources_match": true,
+    "source_count": 23
+  },
+  "compile-router-explicit": {
+    "revision": "1cd0507b4e1dc7493b9372cc879585e21fd7946f",
+    "all_sources_match": true,
+    "source_count": 22
+  },
+  "cpu-reference-fallback": {
+    "revision": "22c993bcb149eb060e014c24a31ef11417d4a3e1",
+    "all_sources_match": true,
+    "source_count": 2
+  },
+  "cpu-final": {
+    "revision": "b29b4083d42c47808bfa601268b6bd886f47e8f1",
+    "all_sources_match": true,
+    "source_count": 39
+  },
+  "compile-final": {
+    "revision": "b29b4083d42c47808bfa601268b6bd886f47e8f1",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "gpu-v8": {
+    "revision": "b29b4083d42c47808bfa601268b6bd886f47e8f1",
+    "all_sources_match": true,
+    "source_count": 23
+  },
+  "cpu": {
+    "revision": "a61644a447fc80520a0d2daa56f1e2f977264e8f",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "cpu-postmerge": {
+    "revision": "ff877806fa8ec16cb43b6b122bb373ec9986808b",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "cpu-ci-unscoped": {
+    "revision": "98d9285c583b622380a28b36a06423a71de6f0e0",
+    "all_sources_match": true,
+    "source_count": 23
+  },
+  "cpu-ci-fix": {
+    "revision": "f218bbf7eff772aa306707f6698fa2571cc7ff09",
+    "all_sources_match": true,
+    "source_count": 23
+  },
+  "compile": {
+    "revision": "a61644a447fc80520a0d2daa56f1e2f977264e8f",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "compile-aligned": {
+    "revision": "0641070ebdf3099fdcaffae2007477fb27f40454",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "compile-vector": {
+    "revision": "fa2050ea85be171265d09773f7fcfc36fcccf3fd",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "compile-router-scale": {
+    "revision": "57e63935df12340a0d9a18ef846588e49786a420",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "gpu-v3-failure": {
+    "revision": "a61644a447fc80520a0d2daa56f1e2f977264e8f",
+    "all_sources_match": true,
+    "source_count": 23
+  },
+  "gpu-v4-failure": {
+    "revision": "ff877806fa8ec16cb43b6b122bb373ec9986808b",
+    "all_sources_match": true,
+    "source_count": 23
+  },
+  "gpu-v5": {
+    "revision": "0641070ebdf3099fdcaffae2007477fb27f40454",
+    "all_sources_match": true,
+    "source_count": 23
+  },
+  "gpu-v6": {
+    "revision": "fa2050ea85be171265d09773f7fcfc36fcccf3fd",
+    "all_sources_match": true,
+    "source_count": 23
+  },
+  "gpu-v7": {
+    "revision": "57e63935df12340a0d9a18ef846588e49786a420",
+    "all_sources_match": true,
+    "source_count": 23
+  }
+}

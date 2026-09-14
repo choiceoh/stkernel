@@ -1,0 +1,392 @@
+{
+  "status": "PASS",
+  "scope": "Matched NumPy/native host planning; no device and no FFN latency claim.",
+  "source_revision": "3ac2b17f",
+  "source_sha256": {
+    "engine/modules/mixed_experts.py": "0ed6a554a3e5e0657be82018a5b6934c70eaef2cb98786d75a52c8c75ce294ed",
+    "engine/kernels/b12x/moe_mixed.py": "850086cf450bb65ca370c74e2bb6b577890e7b5ee1c815432c58e910bf941576",
+    "engine/modules/route_table.py": "60e3d47e8c605cf82963f64c0d2e750b4e57093eed4c5970215b22b3d5c5a4b4",
+    "tests/test_engine_mixed_plan.py": "e2e960221ab8fc46a8a67c3a4c98fa5c9e478fd3259710a63e42162c458ca868",
+    "engine/modules/mixed_route_plan.py": "b74199e3be81dc140daba4edf32484bd056aa02188b34a62faf534985d804b02",
+    "engine/modules/mixed_metadata.py": "144098669e2803068b369f96e8f734af23a7394235b1126c8f46205ad599e473",
+    "engine/modules/mixed_route_native.py": "fe94eef5a69e35a6a23deb86eabfaa856bc60c9920d8e809e0803123f55186be",
+    "engine/modules/mixed_route_plan.cpp": "300d487dee00990271626f85382b0b9a7138abec6a95376dab1dda37bec1a8e5",
+    "engine/kernels/common/native_cache.py": "1e9e1e88a81f4b684b1cf13c16057a7d0a8fc20755ed07ac509c1722cf9abcf8",
+    "engine/kernels/mixed_checks.py": "8d2bbf92aa3b43d4b4c9729d63f6ac31591d775014dc5c9c9167480553926e00",
+    "engine/kernels/b12x/moe_mixed_frontend.py": "465b8aef59b69840eb7594c799f783522b753221808bf78c39c18006605442c7",
+    "engine/kernels/b12x/moe_dispatch.py": "e8b3677c0297ba3190a3ab766cef5bb697c843cda6c581c9989c1a852d934a3c",
+    "engine/kernels/b12x/moe_static_common.py": "8ac18a06cfd1a0d82e615888c77dfb26df4edec0731a68227dd284d7e1f56cff",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "f7aadf88fdcc93f837f5f2f4989ec6a107601041b47b6c1527d659c32fb3968b",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "engine/kernels/b12x/moe_micro_kernel.py": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914",
+    "probes/engine_mixed_experts_compile.py": "72f87150285d0a0c03d4aa55558ae511c109f316a0f79461cad67aab87bd27fa",
+    "tests/test_engine_mixed_experts.py": "c029bfa89934cfd32098183f34ddd0e9f1a7a3e2cbf8cbfd401e049d88dc0097",
+    "probes/engine_mixed_native_plan_bench.py": "07d6f6428a722d0ec1e4a77f9163119f34a5f71fd51f3bc17d77528bf58eb800"
+  },
+  "samples": 8,
+  "cases": [
+    {
+      "decode_rows": 8,
+      "prefill_rows": 9240,
+      "timings": [
+        {
+          "arm": "numpy",
+          "sample": 0,
+          "plan_ms": 3.827268985332921
+        },
+        {
+          "arm": "native",
+          "sample": 0,
+          "plan_ms": 1.6087390249595046
+        },
+        {
+          "arm": "native",
+          "sample": 1,
+          "plan_ms": 0.8523220021743327
+        },
+        {
+          "arm": "numpy",
+          "sample": 1,
+          "plan_ms": 2.6764519861899316
+        },
+        {
+          "arm": "numpy",
+          "sample": 2,
+          "plan_ms": 2.5017629959620535
+        },
+        {
+          "arm": "native",
+          "sample": 2,
+          "plan_ms": 0.7824810163583606
+        },
+        {
+          "arm": "native",
+          "sample": 3,
+          "plan_ms": 0.7385929930023849
+        },
+        {
+          "arm": "numpy",
+          "sample": 3,
+          "plan_ms": 2.858933003153652
+        },
+        {
+          "arm": "numpy",
+          "sample": 4,
+          "plan_ms": 2.7041489956900477
+        },
+        {
+          "arm": "native",
+          "sample": 4,
+          "plan_ms": 1.2077770079486072
+        },
+        {
+          "arm": "native",
+          "sample": 5,
+          "plan_ms": 0.8800819923635572
+        },
+        {
+          "arm": "numpy",
+          "sample": 5,
+          "plan_ms": 2.7815719950012863
+        },
+        {
+          "arm": "numpy",
+          "sample": 6,
+          "plan_ms": 2.793524006847292
+        },
+        {
+          "arm": "native",
+          "sample": 6,
+          "plan_ms": 0.6894890102557838
+        },
+        {
+          "arm": "native",
+          "sample": 7,
+          "plan_ms": 0.8161289733834565
+        },
+        {
+          "arm": "numpy",
+          "sample": 7,
+          "plan_ms": 2.7389799943193793
+        }
+      ],
+      "median_ms": {
+        "numpy": 2.760275994660333,
+        "native": 0.8342254877788946
+      }
+    },
+    {
+      "decode_rows": 32,
+      "prefill_rows": 9240,
+      "timings": [
+        {
+          "arm": "numpy",
+          "sample": 0,
+          "plan_ms": 3.083124989643693
+        },
+        {
+          "arm": "native",
+          "sample": 0,
+          "plan_ms": 1.2553300184663385
+        },
+        {
+          "arm": "native",
+          "sample": 1,
+          "plan_ms": 0.8196169801522046
+        },
+        {
+          "arm": "numpy",
+          "sample": 1,
+          "plan_ms": 2.9736199940089136
+        },
+        {
+          "arm": "numpy",
+          "sample": 2,
+          "plan_ms": 2.993572998093441
+        },
+        {
+          "arm": "native",
+          "sample": 2,
+          "plan_ms": 0.9678250062279403
+        },
+        {
+          "arm": "native",
+          "sample": 3,
+          "plan_ms": 0.8043530106078833
+        },
+        {
+          "arm": "numpy",
+          "sample": 3,
+          "plan_ms": 3.0346449930220842
+        },
+        {
+          "arm": "numpy",
+          "sample": 4,
+          "plan_ms": 3.1434610136784613
+        },
+        {
+          "arm": "native",
+          "sample": 4,
+          "plan_ms": 1.43176200799644
+        },
+        {
+          "arm": "native",
+          "sample": 5,
+          "plan_ms": 1.0540969960857183
+        },
+        {
+          "arm": "numpy",
+          "sample": 5,
+          "plan_ms": 3.149076976114884
+        },
+        {
+          "arm": "numpy",
+          "sample": 6,
+          "plan_ms": 2.9424999956972897
+        },
+        {
+          "arm": "native",
+          "sample": 6,
+          "plan_ms": 1.0844339849427342
+        },
+        {
+          "arm": "native",
+          "sample": 7,
+          "plan_ms": 0.9422089788131416
+        },
+        {
+          "arm": "numpy",
+          "sample": 7,
+          "plan_ms": 3.152340999804437
+        }
+      ],
+      "median_ms": {
+        "numpy": 3.0588849913328886,
+        "native": 1.0109610011568293
+      }
+    },
+    {
+      "decode_rows": 8,
+      "prefill_rows": 32768,
+      "timings": [
+        {
+          "arm": "numpy",
+          "sample": 0,
+          "plan_ms": 11.742338014300913
+        },
+        {
+          "arm": "native",
+          "sample": 0,
+          "plan_ms": 3.9041660202201456
+        },
+        {
+          "arm": "native",
+          "sample": 1,
+          "plan_ms": 2.255939005408436
+        },
+        {
+          "arm": "numpy",
+          "sample": 1,
+          "plan_ms": 7.779835985274985
+        },
+        {
+          "arm": "numpy",
+          "sample": 2,
+          "plan_ms": 7.44788401061669
+        },
+        {
+          "arm": "native",
+          "sample": 2,
+          "plan_ms": 1.885234989458695
+        },
+        {
+          "arm": "native",
+          "sample": 3,
+          "plan_ms": 2.591427997685969
+        },
+        {
+          "arm": "numpy",
+          "sample": 3,
+          "plan_ms": 10.259616014081985
+        },
+        {
+          "arm": "numpy",
+          "sample": 4,
+          "plan_ms": 10.283968003932387
+        },
+        {
+          "arm": "native",
+          "sample": 4,
+          "plan_ms": 2.4527719942852855
+        },
+        {
+          "arm": "native",
+          "sample": 5,
+          "plan_ms": 2.7641640044748783
+        },
+        {
+          "arm": "numpy",
+          "sample": 5,
+          "plan_ms": 9.955856017768383
+        },
+        {
+          "arm": "numpy",
+          "sample": 6,
+          "plan_ms": 10.452591988723725
+        },
+        {
+          "arm": "native",
+          "sample": 6,
+          "plan_ms": 2.7581799949984998
+        },
+        {
+          "arm": "native",
+          "sample": 7,
+          "plan_ms": 2.2805469925515354
+        },
+        {
+          "arm": "numpy",
+          "sample": 7,
+          "plan_ms": 9.697470988612622
+        }
+      ],
+      "median_ms": {
+        "numpy": 10.107736015925184,
+        "native": 2.522099995985627
+      }
+    },
+    {
+      "decode_rows": 32,
+      "prefill_rows": 32768,
+      "timings": [
+        {
+          "arm": "numpy",
+          "sample": 0,
+          "plan_ms": 9.50771098723635
+        },
+        {
+          "arm": "native",
+          "sample": 0,
+          "plan_ms": 3.7317810056265444
+        },
+        {
+          "arm": "native",
+          "sample": 1,
+          "plan_ms": 2.00384299387224
+        },
+        {
+          "arm": "numpy",
+          "sample": 1,
+          "plan_ms": 9.323421982116997
+        },
+        {
+          "arm": "numpy",
+          "sample": 2,
+          "plan_ms": 11.12275299965404
+        },
+        {
+          "arm": "native",
+          "sample": 2,
+          "plan_ms": 3.440996981225908
+        },
+        {
+          "arm": "native",
+          "sample": 3,
+          "plan_ms": 2.9159400146454573
+        },
+        {
+          "arm": "numpy",
+          "sample": 3,
+          "plan_ms": 10.100623010657728
+        },
+        {
+          "arm": "numpy",
+          "sample": 4,
+          "plan_ms": 10.089791001519188
+        },
+        {
+          "arm": "native",
+          "sample": 4,
+          "plan_ms": 2.725124009884894
+        },
+        {
+          "arm": "native",
+          "sample": 5,
+          "plan_ms": 2.3642760061193258
+        },
+        {
+          "arm": "numpy",
+          "sample": 5,
+          "plan_ms": 9.962910989997908
+        },
+        {
+          "arm": "numpy",
+          "sample": 6,
+          "plan_ms": 10.136160010006279
+        },
+        {
+          "arm": "native",
+          "sample": 6,
+          "plan_ms": 3.0390449974220246
+        },
+        {
+          "arm": "native",
+          "sample": 7,
+          "plan_ms": 2.745347999734804
+        },
+        {
+          "arm": "numpy",
+          "sample": 7,
+          "plan_ms": 10.12219101539813
+        }
+      ],
+      "median_ms": {
+        "numpy": 10.095207006088458,
+        "native": 2.8306440071901307
+      }
+    }
+  ],
+  "gpu_used": false,
+  "fresh_host_build_ms": 200.57360400096513,
+  "library_sha256": "bd6910888609b00a3418202046f6b855d99f479e833ea00abbe87e7db166d130"
+}

@@ -1,0 +1,43 @@
+{
+  "status": "PASS",
+  "measured_revision": "894a16f45d97f33ad434e75e28cff8c43a3d66f3",
+  "integrated_revision": "adb6eb52e78d9cb0fc1dc075c49221e2d21bab65",
+  "scope": "source continuity of the measured local component; not a new GPU or serving result",
+  "unchanged_source_files": [
+    "engine/modules/prefill_packets.py",
+    "engine/modules/token_shards.py",
+    "engine/kernels/prefill_collectives/__init__.py",
+    "engine/kernels/prefill_collectives/consumer.py",
+    "engine/kernels/prefill_collectives/kernels.py",
+    "engine/kernels/prefill_router.py",
+    "engine/kernels/prefill_collectives/routes.py",
+    "engine/kernels/dense/fp8.py",
+    "engine/kernels/b12x/moe_dispatch.py",
+    "engine/kernels/b12x/moe_packet_input.py",
+    "engine/kernels/b12x/moe_dynamic_prefill_packets.py",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py",
+    "engine/kernels/b12x/moe_w4a16_fp4_helpers.py",
+    "engine/profiles/glm53/net.py",
+    "engine/profiles/glm53/lanes.py",
+    "engine/profiles/glm53/execution.py",
+    "probes/engine_ffn_packets_compile.py",
+    "probes/engine_ffn_packets_check.py",
+    "tests/test_engine_ffn_packets.py",
+    "tests/test_engine_prefill_fp8_consumer.py",
+    "engine/kernels/glm_pointwise.py",
+    "engine/profiles/glm53/modelopt_scales.py"
+  ],
+  "changed_source_files": {
+    "engine/kernels/dense/__init__.py": {
+      "before_sha256": "e6970ca941a7a6a0e388f8cc951ea0ecd1a142c9d056262c2c95d3ec4b14bf7c",
+      "after_sha256": "3025fe569f515805270dc303bcb89b4c8aece9c533aa63e73c2e2e49a8e37267",
+      "change": "Only bound_input_cell at eight rows; all FP8Linear and packet reader code unchanged"
+    },
+    "engine/profiles/glm53/boot.py": {
+      "before_sha256": "6e8bc17d73602377e8356b81fedd3a34d4fde8f0d755f0701f7cd4a952ecb53f",
+      "after_sha256": "3404c5e122d86098594f1e67491591b3b8f0130bb801ce631f38404b83bd9909",
+      "change": "Main one-shot rail/inline boot configuration; fleet boot is outside this component probe"
+    }
+  },
+  "serving_qualification_pending": true
+}

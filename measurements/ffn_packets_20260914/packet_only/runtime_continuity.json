@@ -1,0 +1,6 @@
+{
+  "gpu_source_revision": "57e63935df12340a0d9a18ef846588e49786a420",
+  "checked_head": "f218bbf7eff772aa306707f6698fa2571cc7ff09",
+  "all_23_consumed_sources_unchanged": true,
+  "scope": "later changes are CPU test contracts and evidence; no performance extrapolation across changed kernel sources"
+}

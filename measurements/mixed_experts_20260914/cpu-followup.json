@@ -1,0 +1,23 @@
+{
+  "status": "PASS",
+  "tests": 9,
+  "passed": 9,
+  "skipped": 0,
+  "source_revision": "f8151e61a9ef22bf601922f93fd003f0b6ba5f96",
+  "source_sha256": {
+    "engine/modules/mixed_experts.py": "4cb1d9de5b348c49b135bb7f0c2290b203dba462d2a77cd8ffe1d6adbd880b62",
+    "engine/kernels/b12x/moe_mixed.py": "d77f0fbc4a1805c04b40b9c7d14b3bb5daacb0a4edfa569bbbdfd70023007e33",
+    "engine/kernels/b12x/moe_mixed_frontend.py": "465b8aef59b69840eb7594c799f783522b753221808bf78c39c18006605442c7",
+    "engine/kernels/b12x/moe_dispatch.py": "3c2957d505ffa651aa82554cf4e49b9abb7075840eee183d7d2d905c00488de1",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "87db391f8cacca3a6484797cc0562ad5b1346aba41294ebbafaadfe5794cf88c",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "engine/kernels/b12x/moe_micro_kernel.py": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914",
+    "probes/engine_mixed_experts_compile.py": "66e32700b9a9ba55de1bf021a1667015f68575a1862a2a6cece39bc9301fe47f",
+    "tests/test_engine_mixed_experts.py": "f0411d1d8ed12215c01dd8c74f139aa99387eb71b73ea9c17d243f9b30fe6ee6"
+  },
+  "torch": "2.13.0+cu130",
+  "gpu_available": false,
+  "cuda_initialized": false,
+  "scope": "final frozen-resource host wrapper and mixed admission/ordinary body AST; replaces this module in cpu.json",
+  "failures": []
+}

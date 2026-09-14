@@ -1,0 +1,23 @@
+{
+  "status": "PASS",
+  "gpu_source_revision": "153b6f8bdbb9ebf18af78c79bb9173f96a6769c2",
+  "integration_revision": "cc6ccf8bbbb82bdf5b8e432a887e8e08d0888f81",
+  "integrated_main": "6522564a",
+  "changed_gpu_manifest_files": [
+    "engine/profiles/glm53/net.py",
+    "engine/profiles/glm53/lanes.py"
+  ],
+  "byte_identical_gpu_manifest_files": 39,
+  "byte_identical_compiler_manifest_files": 25,
+  "network_changes_outside_ffn": [
+    "prepare_decode_dsa_inputs",
+    "_select_rows"
+  ],
+  "served_ffn_ast_unchanged_after_reviewed_decode_only_normalization": true,
+  "cpu_postmerge": {
+    "tests": 138,
+    "passed": 124,
+    "skipped": 14
+  },
+  "note": "No new GPU timing is claimed. Main adds a direct pool reader and extracts reference-lane selection; the FFN kernels, preparation, router, shared readers and served FFN binding statements are retained."
+}

@@ -1,0 +1,106 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "source_sha256": {
+    "engine/modules/mixed_experts.py": "0ed6a554a3e5e0657be82018a5b6934c70eaef2cb98786d75a52c8c75ce294ed",
+    "engine/kernels/b12x/moe_mixed.py": "a37b59e11eeb45a94bd6c97d7910d1724f545787d7973a3a0639ec27cb75133c",
+    "engine/modules/route_table.py": "60e3d47e8c605cf82963f64c0d2e750b4e57093eed4c5970215b22b3d5c5a4b4",
+    "tests/test_engine_mixed_plan.py": "4ea52e90e215c0e7e8a8861c2d71de11c7c87c5a035c70e64196655bdb0ffac1",
+    "engine/modules/mixed_route_plan.py": "75554b3450e369534bbc3ff5ec608b8ea2522b69cfb917eee1b8b580b6b1ef5d",
+    "engine/modules/mixed_metadata.py": "4531e2f82b07a5e59a8bb48eb56b05549119c9415c98d9182d896b8a9fa2a558",
+    "engine/kernels/mixed_checks.py": "24e09aa82ec91b276e43bfd589ad2b0c9bfa1b4ba46cd5a96e3a3ffdf86482e0",
+    "engine/kernels/b12x/moe_mixed_frontend.py": "465b8aef59b69840eb7594c799f783522b753221808bf78c39c18006605442c7",
+    "engine/kernels/b12x/moe_dispatch.py": "e8b3677c0297ba3190a3ab766cef5bb697c843cda6c581c9989c1a852d934a3c",
+    "engine/kernels/b12x/moe_static_common.py": "8ac18a06cfd1a0d82e615888c77dfb26df4edec0731a68227dd284d7e1f56cff",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "f7aadf88fdcc93f837f5f2f4989ec6a107601041b47b6c1527d659c32fb3968b",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "engine/kernels/b12x/moe_micro_kernel.py": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914",
+    "probes/engine_mixed_experts_compile.py": "2c3b927a52f46e4ce64839de9bae6c764c5f9629360bcdd028e5f899d3e6ddbf",
+    "tests/test_engine_mixed_experts.py": "f272d519106dd1fa67c0a0fa29259d92c6e85df990acd23609f22c7908160859",
+    "engine/modules/mixed_completion.py": "c05367b3759f3da7cf7322924f8ecf3497bcc29e7f9f7f05d7ec035acf9dd837",
+    "engine/kernels/b12x/moe_mixed_completion.py": "106edf4bcb8624764830413245d745e3e8215c64a323ae32710683b2e541f1bc",
+    "engine/kernels/b12x/moe_cold_frontend.py": "1d3876c0675722533f7b6ac75cefac32c141125def6dd6964f614843ca4fc40b",
+    "engine/kernels/b12x/moe_prepared_prefill.py": "b077a033aaa79d7bf0cc6ba387d17bccb64546abb2431ce8aefb79bd33a69306",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_words.py": "368dee876092745be60e079a73cf73c4e2c91dd73f699c6f0a315da0ed05e3e9",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+    "engine/kernels/b12x/_moe_dynamic/gated.py": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+    "probes/engine_mixed_completion_compile.py": "fbde1201189267fd8274020ef210431ed37133ede4d91c0e761ad2b8ace09a5d",
+    "tests/test_engine_mixed_completion.py": "43cf8051bde14fa0b86546c2533321dbe92927e15d3fdb44b3df6164ec8f5eec"
+  },
+  "scope": "actual CuTe, PTXAS and TVM-FFI compilation; no GPU execution",
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "kernels": [
+    {
+      "kind": "hot_producer",
+      "runtime_row_extents": true,
+      "name": "mixed_route_producer_v1",
+      "status": "PASS",
+      "seconds": 0.40643610898405313
+    },
+    {
+      "kind": "cold_producer",
+      "runtime_row_extents": true,
+      "name": "cold_route_producer_v1",
+      "status": "PASS",
+      "seconds": 0.26265032700030133
+    },
+    {
+      "kind": "static",
+      "rows": 8,
+      "prepared": false,
+      "name": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompact_9e274ebf230505bd",
+      "status": "PASS",
+      "seconds": 5.029010857018875
+    },
+    {
+      "kind": "static",
+      "rows": 8,
+      "prepared": true,
+      "name": "static2_m8_k4096_n512_t8_r32_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompact_a99d921053f0916a",
+      "status": "PASS",
+      "seconds": 4.621100187010597
+    },
+    {
+      "kind": "static",
+      "rows": 32,
+      "prepared": false,
+      "name": "static2_m32_k4096_n512_t8_r256_tm32f2g2a32wutsf6v1_c20f019bb25330d9",
+      "status": "PASS",
+      "seconds": 4.686308890988585
+    },
+    {
+      "kind": "static",
+      "rows": 32,
+      "prepared": true,
+      "name": "static2_m32_k4096_n512_t8_r32_tm32f2g2a32wutsf6v1_1c2a260b6139890f",
+      "status": "PASS",
+      "seconds": 4.588899371010484
+    },
+    {
+      "kind": "dynamic",
+      "tile_m": 128,
+      "prepared": false,
+      "name": "dynamic_e288_k4096_n512_t8_tiled_4e466f602bfca73d",
+      "status": "PASS",
+      "seconds": 8.101057635998586
+    },
+    {
+      "kind": "dynamic",
+      "tile_m": 128,
+      "prepared": true,
+      "name": "dynamic_e288_k4096_n512_t8_tiled_f11f03cc6dbee156",
+      "status": "PASS",
+      "seconds": 7.006915351987118
+    }
+  ],
+  "value_check": {
+    "status": "PASS",
+    "runtime_row_extents": true,
+    "seconds": 1.1829096479923464,
+    "shared_bytes": 32,
+    "triton": "3.7.1"
+  },
+  "dynamic_runtime_shape_reuse": true
+}

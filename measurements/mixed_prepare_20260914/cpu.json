@@ -1,0 +1,629 @@
+{
+  "scope": "Packed mixed planning, M2 actual four-process Gloo descriptor agreement, bound shared readers, M1/S/P and current decode integration, fleet admission; isolated modules, no GPU exposed",
+  "source_revision": "153b6f8b",
+  "torch": "2.13.0+cu130",
+  "gpu_available": false,
+  "cuda_initialized": false,
+  "tests": 385,
+  "passed": 357,
+  "skipped": 28,
+  "modules": [
+    {
+      "tests": 4,
+      "passed": 4,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_moe_compact_staging"
+    },
+    {
+      "tests": 4,
+      "passed": 2,
+      "skipped": [
+        [
+          "test_mapped_window_rejects_wrong_slot_layout (tests.test_engine_decode_pool_cache.CopyKernelTests.test_mapped_window_rejects_wrong_slot_layout)",
+          "requires Triton interpreter or the reserved GPU"
+        ],
+        [
+          "test_windows_and_updates_preserve_all_bytes_across_slots_pages_and_rollback (tests.test_engine_decode_pool_cache.CopyKernelTests.test_windows_and_updates_preserve_all_bytes_across_slots_pages_and_rollback)",
+          "requires Triton interpreter or the reserved GPU"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_decode_pool_cache"
+    },
+    {
+      "tests": 4,
+      "passed": 4,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_moe_fc1_reuse"
+    },
+    {
+      "tests": 9,
+      "passed": 9,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_mixed_plan"
+    },
+    {
+      "tests": 5,
+      "passed": 4,
+      "skipped": [
+        [
+          "test_both_contractions_changed_replay_and_consumer_layout (tests.test_engine_decode_absorb.CudaTests.test_both_contractions_changed_replay_and_consumer_layout)",
+          "requires the reserved GB10 GPU"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_decode_absorb"
+    },
+    {
+      "tests": 3,
+      "passed": 3,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_decode_bundle"
+    },
+    {
+      "tests": 7,
+      "passed": 5,
+      "skipped": [
+        [
+          "test_fused_latents_bytes_and_rebound_graph_slots (tests.test_engine_decode_dsa_inputs.CudaTests.test_fused_latents_bytes_and_rebound_graph_slots)",
+          "requires the reserved GB10 GPU"
+        ],
+        [
+          "test_shared_query_input_bytes_and_changed_graph_replay (tests.test_engine_decode_dsa_inputs.CudaTests.test_shared_query_input_bytes_and_changed_graph_replay)",
+          "requires the reserved GB10 GPU"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_decode_dsa_inputs"
+    },
+    {
+      "tests": 7,
+      "passed": 6,
+      "skipped": [
+        [
+          "test_fp32_gate_boundary_numerics_and_changed_graph_replay (tests.test_engine_decode_indexer_gate.CudaTests.test_fp32_gate_boundary_numerics_and_changed_graph_replay)",
+          "requires the reserved GB10 GPU"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_decode_indexer_gate"
+    },
+    {
+      "tests": 3,
+      "passed": 3,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_moe_activation_store"
+    },
+    {
+      "tests": 8,
+      "passed": 8,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_mixed_tickets"
+    },
+    {
+      "tests": 7,
+      "passed": 7,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_mixed_shared"
+    },
+    {
+      "tests": 6,
+      "passed": 5,
+      "skipped": [
+        [
+          "test_both_rounding_boundaries_are_exact_with_changed_replay (tests.test_engine_moe_output.MoeOutputCudaTests.test_both_rounding_boundaries_are_exact_with_changed_replay)",
+          "requires admitted GB10"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_moe_output"
+    },
+    {
+      "tests": 5,
+      "passed": 0,
+      "skipped": [
+        [
+          "test_observers_receive_inputs_and_actual_bf16_activation (tests.test_engine_shared_mlp.SharedMLPTests.test_observers_receive_inputs_and_actual_bf16_activation)",
+          "requires GB10 CUDA"
+        ],
+        [
+          "test_projection_parent_stride_and_graph_replay_are_exact (tests.test_engine_shared_mlp.SharedMLPTests.test_projection_parent_stride_and_graph_replay_are_exact)",
+          "requires GB10 CUDA"
+        ],
+        [
+          "test_replayed_changed_inputs_and_other_layer_between_calls (tests.test_engine_shared_mlp.SharedMLPTests.test_replayed_changed_inputs_and_other_layer_between_calls)",
+          "requires GB10 CUDA"
+        ],
+        [
+          "test_same_packs_clamping_and_declared_decode_widths (tests.test_engine_shared_mlp.SharedMLPTests.test_same_packs_clamping_and_declared_decode_widths)",
+          "requires GB10 CUDA"
+        ],
+        [
+          "test_shared_branch_rejoins_before_next_layer_and_on_error (tests.test_engine_shared_mlp.SharedMLPTests.test_shared_branch_rejoins_before_next_layer_and_on_error)",
+          "requires GB10 CUDA"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_shared_mlp"
+    },
+    {
+      "tests": 2,
+      "passed": 2,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_native_execution"
+    },
+    {
+      "tests": 11,
+      "passed": 11,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_mixed_completion"
+    },
+    {
+      "tests": 9,
+      "passed": 9,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_moe_sf6_staging"
+    },
+    {
+      "tests": 9,
+      "passed": 9,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_mixed_experts"
+    },
+    {
+      "tests": 2,
+      "passed": 2,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_moe_scatter_config"
+    },
+    {
+      "tests": 2,
+      "passed": 2,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_moe_scatter_owner"
+    },
+    {
+      "tests": 6,
+      "passed": 6,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_moe_static_sf6_direct"
+    },
+    {
+      "tests": 2,
+      "passed": 0,
+      "skipped": [
+        [
+          "test_kda_mixed_input_strides_and_declared_rows (tests.test_engine_decode_projection.ProjectionTests.test_kda_mixed_input_strides_and_declared_rows)",
+          "requires GB10 CUDA"
+        ],
+        [
+          "test_route_reduction_layout_and_replayed_zero_overwrite (tests.test_engine_decode_projection.ProjectionTests.test_route_reduction_layout_and_replayed_zero_overwrite)",
+          "requires GB10 CUDA"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_decode_projection"
+    },
+    {
+      "tests": 14,
+      "passed": 14,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_burst_decode"
+    },
+    {
+      "tests": 6,
+      "passed": 5,
+      "skipped": [
+        [
+          "test_bound_ordinary_and_direct_graphs_follow_changed_inputs_and_addresses (tests.test_engine_decode_fastpaths.BoundDecodeGpuTests.test_bound_ordinary_and_direct_graphs_follow_changed_inputs_and_addresses)",
+          "requires CUDA; not exercised by the CPU gate"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_decode_fastpaths"
+    },
+    {
+      "tests": 12,
+      "passed": 12,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_glm53_modelopt_serving"
+    },
+    {
+      "tests": 11,
+      "passed": 11,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_ffn_packets"
+    },
+    {
+      "tests": 4,
+      "passed": 0,
+      "skipped": [
+        [
+          "test_graph_replay_reads_new_packet_values_and_scales (tests.test_engine_prefill_fp8_consumer.PrefillConsumerTests.test_graph_replay_reads_new_packet_values_and_scales)",
+          "requires CUDA and Triton"
+        ],
+        [
+          "test_packet_router_preserves_logits_and_route_selection (tests.test_engine_prefill_fp8_consumer.PrefillConsumerTests.test_packet_router_preserves_logits_and_route_selection)",
+          "requires CUDA and Triton"
+        ],
+        [
+          "test_padded_packets_and_gemm_group_scales (tests.test_engine_prefill_fp8_consumer.PrefillConsumerTests.test_padded_packets_and_gemm_group_scales)",
+          "requires CUDA and Triton"
+        ],
+        [
+          "test_real_rows_are_cropped_before_shared_quantization_output (tests.test_engine_prefill_fp8_consumer.PrefillConsumerTests.test_real_rows_are_cropped_before_shared_quantization_output)",
+          "requires CUDA and Triton"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_prefill_fp8_consumer"
+    },
+    {
+      "tests": 7,
+      "passed": 7,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_compact_serving"
+    },
+    {
+      "tests": 6,
+      "passed": 6,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_execution_plans"
+    },
+    {
+      "tests": 13,
+      "passed": 11,
+      "skipped": [
+        [
+          "test_lane_tables_capture_their_executor_and_direct_table_stays_direct (tests.test_engine_execution.KernelBindingTests.test_lane_tables_capture_their_executor_and_direct_table_stays_direct)",
+          "requires CUDA PyTorch; "
+        ],
+        [
+          "test_tensor_collectives_remain_exact_across_runs_and_a_rank_failure (tests.test_engine_execution.KernelBindingTests.test_tensor_collectives_remain_exact_across_runs_and_a_rank_failure)",
+          "requires CUDA PyTorch; "
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_execution"
+    },
+    {
+      "tests": 2,
+      "passed": 2,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_prefill_route_cache"
+    },
+    {
+      "tests": 3,
+      "passed": 3,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_token_shards"
+    },
+    {
+      "tests": 8,
+      "passed": 8,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_prefill_outputs"
+    },
+    {
+      "tests": 17,
+      "passed": 17,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_knobs"
+    },
+    {
+      "tests": 36,
+      "passed": 33,
+      "skipped": [
+        [
+          "test_a_declared_count_per_shape_is_honoured_and_replays_what_eager_computes (tests.test_engine_graph_contracts.WarmupPolicyTests.test_a_declared_count_per_shape_is_honoured_and_replays_what_eager_computes)",
+          "requires CUDA"
+        ],
+        [
+          "test_a_policy_that_asks_for_no_warmup_is_refused (tests.test_engine_graph_contracts.WarmupPolicyTests.test_a_policy_that_asks_for_no_warmup_is_refused)",
+          "requires CUDA"
+        ],
+        [
+          "test_the_default_is_one_pass_per_shape (tests.test_engine_graph_contracts.WarmupPolicyTests.test_the_default_is_one_pass_per_shape)",
+          "requires CUDA"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_graph_contracts"
+    },
+    {
+      "tests": 2,
+      "passed": 2,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_warmup_draws"
+    },
+    {
+      "tests": 11,
+      "passed": 9,
+      "skipped": [
+        [
+          "test_cuda_controlled_walk_and_trace_match_cpu_and_replay_changed_packets (tests.test_engine_draft_tuning_integration.WalkTests.test_cuda_controlled_walk_and_trace_match_cpu_and_replay_changed_packets)",
+          "CUDA selector numerics; CPU CI never launches GPUs"
+        ],
+        [
+          "test_fc_bias_norm_cuda_graph_reads_the_owned_vector (tests.test_engine_draft_tuning_integration.WalkTests.test_fc_bias_norm_cuda_graph_reads_the_owned_vector)",
+          "CUDA fused norm numerics; CPU CI never launches GPUs"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_draft_tuning_integration"
+    },
+    {
+      "tests": 13,
+      "passed": 11,
+      "skipped": [
+        [
+          "test_the_compute_phase_does_not_depend_on_the_accepted_count (tests.test_engine_drafter.ObserveOverlapTests.test_the_compute_phase_does_not_depend_on_the_accepted_count)",
+          "observe's write phase is a device kernel"
+        ],
+        [
+          "test_the_split_is_byte_for_byte_the_single_pass (tests.test_engine_drafter.ObserveOverlapTests.test_the_split_is_byte_for_byte_the_single_pass)",
+          "observe's write phase is a device kernel"
+        ]
+      ],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_drafter"
+    },
+    {
+      "tests": 6,
+      "passed": 6,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_kernel_common"
+    },
+    {
+      "tests": 4,
+      "passed": 4,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_prefill_tiles"
+    },
+    {
+      "tests": 14,
+      "passed": 14,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_glm53_prefill_collectives"
+    },
+    {
+      "tests": 4,
+      "passed": 4,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_prefill_sum_pack"
+    },
+    {
+      "tests": 30,
+      "passed": 30,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_fleet_onepass"
+    },
+    {
+      "tests": 15,
+      "passed": 15,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_fleet_onepass_integration"
+    },
+    {
+      "tests": 2,
+      "passed": 2,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_early_observe"
+    },
+    {
+      "tests": 3,
+      "passed": 3,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_router_widths"
+    },
+    {
+      "tests": 6,
+      "passed": 6,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_graph_profile"
+    },
+    {
+      "tests": 5,
+      "passed": 5,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_prefill_covered_queries"
+    },
+    {
+      "tests": 8,
+      "passed": 8,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_engine_prefill_absorb_tiles"
+    },
+    {
+      "tests": 8,
+      "passed": 8,
+      "skipped": [],
+      "failures": [],
+      "status": "PASS",
+      "module": "test_prefill_dense_prefix"
+    }
+  ],
+  "source_sha256": {
+    "engine/modules/prefill_packets.py": "eeaa468b8715373c7711cb29d58c8993a824f80da91c9753693f714053cc6471",
+    "engine/modules/token_shards.py": "11d3bf3c2fe8e644a845fa49864800d5f0e021ccdc7c6eef03c9151b695aa77c",
+    "engine/kernels/prefill_collectives/__init__.py": "4fca676770574b77e9280a260c36cff406ebe0279a15fc3b5bdd0b11222e0f4c",
+    "engine/kernels/prefill_collectives/consumer.py": "d0f242b38b4d0e74afd205214067ecab57f046b5c81f8f2fa5032ce8fbcdfd7c",
+    "engine/kernels/prefill_collectives/kernels.py": "49d22265497ee41cc3ff03d455fa11a76519c450322aa993cbc5601cfc5a48a4",
+    "engine/kernels/prefill_router.py": "1be65d85e0e19899ecd163ab05ece1b92822277fd80adc1f804b80818fbc36a7",
+    "engine/kernels/dense/__init__.py": "29be1221e81bcdc965b3131b33befe4a729dc544a20ded5551f046ba506be8b0",
+    "engine/kernels/dense/fp8.py": "fecc21c8b0f3088c765083cf7987db210de499313490559596dca7dee676c3ca",
+    "engine/kernels/b12x/moe_dispatch.py": "e8b3677c0297ba3190a3ab766cef5bb697c843cda6c581c9989c1a852d934a3c",
+    "engine/kernels/b12x/moe_packet_input.py": "edfb8563846ea6df2c86a42417a18d679e58bccb55a14164458e7d6ea89eef37",
+    "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "2cb221c7ddc9891dad4f6d2a83ccf981c22e70b3a2171a6795792c0c5e2fae8e",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_w4a16_fp4_helpers.py": "3115cf3e73064cbf2c339d5fd2cec1c49206f34283c281faef2d1c2d290a6c73",
+    "engine/profiles/glm53/net.py": "e3de46313e4bd8c3cac63362b35fdea2c9d5ac2b36fb15cc28d2f5db87f39295",
+    "engine/profiles/glm53/lanes.py": "7cbbe38b7965e60a2368777aad7d1918dd5715b9373ccf3dd5cd3da709308150",
+    "engine/profiles/glm53/execution.py": "d3d21dbf339ae3a609f927e72517bc3117a45212cfa03c17768b6e96ed8f592b",
+    "engine/profiles/glm53/boot.py": "d57d20004744ddcb607d6befb54964251b5c5247031f219e987a35ea4d9f3cc0",
+    "probes/engine_ffn_packets_compile.py": "3cd11c814f05dbc5cdc1daeea9a08e3d06dfa80f3d915babaebe707347ad3128",
+    "engine/modules/mixed_experts.py": "0ed6a554a3e5e0657be82018a5b6934c70eaef2cb98786d75a52c8c75ce294ed",
+    "engine/kernels/b12x/moe_mixed.py": "a37b59e11eeb45a94bd6c97d7910d1724f545787d7973a3a0639ec27cb75133c",
+    "engine/modules/route_table.py": "60e3d47e8c605cf82963f64c0d2e750b4e57093eed4c5970215b22b3d5c5a4b4",
+    "tests/test_engine_mixed_plan.py": "4ea52e90e215c0e7e8a8861c2d71de11c7c87c5a035c70e64196655bdb0ffac1",
+    "engine/modules/mixed_route_plan.py": "75554b3450e369534bbc3ff5ec608b8ea2522b69cfb917eee1b8b580b6b1ef5d",
+    "engine/modules/mixed_metadata.py": "4531e2f82b07a5e59a8bb48eb56b05549119c9415c98d9182d896b8a9fa2a558",
+    "engine/kernels/mixed_checks.py": "24e09aa82ec91b276e43bfd589ad2b0c9bfa1b4ba46cd5a96e3a3ffdf86482e0",
+    "engine/kernels/b12x/moe_mixed_frontend.py": "465b8aef59b69840eb7594c799f783522b753221808bf78c39c18006605442c7",
+    "engine/kernels/b12x/moe_static_common.py": "8ac18a06cfd1a0d82e615888c77dfb26df4edec0731a68227dd284d7e1f56cff",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "f7aadf88fdcc93f837f5f2f4989ec6a107601041b47b6c1527d659c32fb3968b",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "engine/kernels/b12x/moe_micro_kernel.py": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914",
+    "probes/engine_mixed_experts_compile.py": "2c3b927a52f46e4ce64839de9bae6c764c5f9629360bcdd028e5f899d3e6ddbf",
+    "tests/test_engine_mixed_experts.py": "f272d519106dd1fa67c0a0fa29259d92c6e85df990acd23609f22c7908160859",
+    "engine/modules/mixed_completion.py": "c05367b3759f3da7cf7322924f8ecf3497bcc29e7f9f7f05d7ec035acf9dd837",
+    "engine/kernels/b12x/moe_mixed_completion.py": "106edf4bcb8624764830413245d745e3e8215c64a323ae32710683b2e541f1bc",
+    "engine/kernels/b12x/moe_cold_frontend.py": "1d3876c0675722533f7b6ac75cefac32c141125def6dd6964f614843ca4fc40b",
+    "engine/kernels/b12x/moe_prepared_prefill.py": "b077a033aaa79d7bf0cc6ba387d17bccb64546abb2431ce8aefb79bd33a69306",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_words.py": "368dee876092745be60e079a73cf73c4e2c91dd73f699c6f0a315da0ed05e3e9",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+    "engine/kernels/b12x/_moe_dynamic/gated.py": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+    "probes/engine_mixed_completion_compile.py": "fbde1201189267fd8274020ef210431ed37133ede4d91c0e761ad2b8ace09a5d",
+    "tests/test_engine_mixed_completion.py": "43cf8051bde14fa0b86546c2533321dbe92927e15d3fdb44b3df6164ec8f5eec",
+    "engine/base/comm.py": "d8d191a88647e101958b7217702627b6cb2c5209ab06ded864d2833ec036ed47",
+    "engine/modules/mixed_tickets.py": "046643fa3adce2a0a2cfe29ff02cb2a97bddb0366acec8ad43a097adb334a5fe",
+    "engine/profiles/glm53/mixed_shared.py": "296ba5b51f0ae08b7fad101942e8098935e676a4537c867ad53905b4d37e1fbb",
+    "engine/profiles/glm53/modelopt_scales.py": "5fb0fbbbc2011e0390248c696f5fb04e128e854d8544dbc113e932e8a28afbf3",
+    "engine/kernels/dense/shared_mlp.py": "3fe4eaee2ba200365040dc33a833d9775e8307d469e132f08cc21bc629504415",
+    "engine/kernels/dense/kernels.cu": "4beb5789f2446fe88e7dd480b3fa1f3261094296e7469355702bac09e5f7a353",
+    "probes/engine_mixed_tickets_check.py": "901eefab5084424db703ce0cc1fcefe9acf167546ffc5a0a4927760b22905ac3",
+    "probes/engine_mixed_completion_check.py": "67a22ea9e446499221ae0df1f9db706dbc65f22ca6f4b65a21a03a22ec0bb8b3",
+    "probes/engine_mixed_plan_bench.py": "678dec3d83e5c9e5065be5810aa81d5d84efad3a5458520232a6da57b7c640c4",
+    "probes/engine_mixed_prepare_bench.py": "9207bd0a32cfb537f3e414243d5edb7269cd95ad7367ae10c2f08178e677b335",
+    "tests/test_engine_mixed_tickets.py": "cec3ec010d70fbcead7f61c450f323ca20dfb693a3dc07efe2fbe49aee5fd704",
+    "tests/test_engine_mixed_shared.py": "a49811b648c2a7d4bccf43986f2db5f1e2af7b34f9ee2264b989bea35f1416a4",
+    "tests/test_engine_moe_compact_staging.py": "6ee7a30219d4dac215b88576489f367530ac6055e568facdacace641c227aa08",
+    "tests/test_engine_decode_pool_cache.py": "d9acb1be952bcee700608dc7e47f72478098bf4630007797e3a5f81afedb5fd6",
+    "tests/test_engine_moe_fc1_reuse.py": "4d6aca75f35275638c92e5c823a107e05153f6877dd24554f33d443cd09a133e",
+    "tests/test_engine_decode_absorb.py": "919d3b14288efcbc2c1830b3124e3961bc429723d5498d2ccd0ea3105cd48064",
+    "tests/test_engine_decode_bundle.py": "8f16815d485970f5c02119a00e42459983a6e1a3a2105a5c5914eaa2e271720e",
+    "tests/test_engine_decode_dsa_inputs.py": "37f2f4413039a1f04a80387f022cba879ff175ac2209cff667d31fed81d10c3d",
+    "tests/test_engine_decode_indexer_gate.py": "d880ba24aeb3aba977acc69ce4cac84db86562d95ed12830ef1b8389002e0d27",
+    "tests/test_engine_moe_activation_store.py": "576c90269c6ac65e0b1ac2ef886f47ecb73d67e9a3c519b154cccc3773815257",
+    "tests/test_engine_moe_output.py": "f7af279b3e764ef299158302160ab4189c479aa31384fd4ccce2bb8789551b6c",
+    "tests/test_engine_shared_mlp.py": "f626ea1ccd734d74fb56e07b86723a8836bc28862afa4daaa52c325f11a4e9b2",
+    "tests/test_engine_native_execution.py": "eb6cd8ed4f8279746d870fbd8ff8c3402fa4e386ebb544b787f061966e048920",
+    "tests/test_engine_moe_sf6_staging.py": "012b9e4fc23d04f88388e7902d3415d869160db391b4002ca1dba47bab02c0b9",
+    "tests/test_engine_moe_scatter_config.py": "8ebe675fcd09b6a7bbaa02bb51167f7591fe57a49d3a9388f07ff651c9e419b3",
+    "tests/test_engine_moe_scatter_owner.py": "18bd29fbc7d51e72014e2a9918919d25e910b5652bba29efea34f65c98d2459a",
+    "tests/test_moe_static_sf6_direct.py": "a6636beeff6880f62d096eb967cd44d6c6cc773d01877f567e62d464dc27c14e",
+    "tests/test_engine_decode_projection.py": "3a65b0af1739551b329de2de1f5ad18e89b7c9e801b8e9ab0df34660399b6e86",
+    "tests/test_engine_burst_decode.py": "93c936f1672254304e37e583d4294d7d2e310bc09d4276ce1647d2adbad5dcf0",
+    "tests/test_engine_decode_fastpaths.py": "2cd4c94cb1a9d980ef3a97e6305cd7f9d4e553dd62dd10ebbf78ce525eeeef28",
+    "tests/test_glm53_modelopt_serving.py": "5397c2c9f0721bda652d51182c5d5c7242e2fd2445c51ad4fc952ee038378116",
+    "tests/test_engine_ffn_packets.py": "b2193bec8208d5cb53c8d950451bd19bbd04405cb9726f5ddea491f6ce256c67",
+    "tests/test_engine_prefill_fp8_consumer.py": "244f7cd38080446304b6968181353b3d3378a5facfa494243cb2aa137755cde8",
+    "tests/test_engine_compact_serving.py": "60107f2efef33ba95bfce918323b520c3909fc4a0e2636865ccbae4730c111ed",
+    "tests/test_engine_execution_plans.py": "75987974e410f18e2267fcb61642b8d41570022fb794cf1d4659faea6664848e",
+    "tests/test_engine_execution.py": "8f440eab3345bc275d3b546ba3c90325839ebb5bf5b25c59b926a9682903912a",
+    "tests/test_engine_prefill_route_cache.py": "d66f5d7a6ea27751c72587aef35259149167daa4f8643f2fd6f038c78cad4b59",
+    "tests/test_engine_token_shards.py": "2024e4639983b6fadda64c2bdea9151f4463f8c7c4915d47b9144a5246cbb944",
+    "tests/test_engine_prefill_outputs.py": "76582ce2a3aaecc63b4543f23f645758e5fa64e589a1465d2cbb13194758491c",
+    "tests/test_engine_knobs.py": "3692749d7bddea6c39503838b6b8abfcf478082947631cdb4e572477ed20502d",
+    "tests/test_engine_graph_contracts.py": "d1d1c5978f6cb72f1686ebe54c85c38308f733a1e7d8b445f3739ceb4f9f6d05",
+    "tests/test_engine_warmup_draws.py": "cdda67fae25f67b106b27140f15fb29f4ba368e53067b33cea934585fdc08a3c",
+    "tests/test_engine_draft_tuning_integration.py": "22268c4cc8b5e610905995f32464bb0f3fcb5fd8257506868e3a5afd3499b9d4",
+    "tests/test_engine_drafter.py": "709fa35f773513f294b491b0f6d95d01b03a2840a5d97e237ca45d08b80149dc",
+    "tests/test_engine_kernel_common.py": "dfd05e170e9fee4d3defe53f9844a72b95e996b74961de11de14c093c2e2c657",
+    "tests/test_engine_prefill_tiles.py": "289d027c16323105d6d2b463cc42341e40144725a120f1b1bbc8f40c775fbfcc",
+    "tests/test_glm53_prefill_collectives.py": "7e270b3eaf2a1773eb057703249eabff1c7c21b5497eba290cb9400fa8534d40",
+    "tests/test_prefill_sum_pack.py": "1dba91662db06776b303a535c843966c0d905c552371e88fc54b0f57d1f6746e",
+    "tests/test_fleet_onepass.py": "5cf94ce03c87bb40da8a650b1441584ed8603aa0c0f57ccdb6a7517bf7c65824",
+    "tests/test_fleet_onepass_integration.py": "871e39ffc5766ed107e4a638a2de9703136128221854f22080b130b5988d4e06",
+    "tests/test_engine_early_observe.py": "0529b7e6c1d65bf23ec54f49423e7af38fb2f218d03813c003fef2210e7714e2",
+    "tests/test_engine_router_widths.py": "8cced0830fb16417d7c52031c7ad5ac86c71f4c2688f21f70702f1cfb416dd21",
+    "tests/test_engine_graph_profile.py": "284ff4354353d7544d291c13cb1673fb9f667ec375089c4a9b11bb44ef8c34c6",
+    "tests/test_engine_prefill_covered_queries.py": "e16a1eb85a561d319af6758e585a5926a50a7ac03aae89738f46b19be8ae799b",
+    "tests/test_engine_prefill_absorb_tiles.py": "a9ba612b05ba4f1e0332644e5e2a7f0ddc768244c944853c042b3c56532e588d",
+    "tests/test_prefill_dense_prefix.py": "b57031e1f39c510b8aa6ca95ef0bd86fa63f7e04e186f604aad0e17794937b50"
+  },
+  "status": "PASS"
+}

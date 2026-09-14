@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "tests": 3,
+  "passed": 3,
+  "skipped": 0,
+  "image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+  "source_revision": "6961ee6f",
+  "gpu_used": false,
+  "scope": "Existing process cleanup tests, using the changed test file with the frozen probe implementation; run on Linux in runc with no GPU. Also passed on macOS.",
+  "source_sha256": {
+    "tests/test_engine_decode_bundle.py": "8f16815d485970f5c02119a00e42459983a6e1a3a2105a5c5914eaa2e271720e",
+    "probes/engine_decode_bundle.py": "e4cb97d65b1cc36a993192c9ccce0430e39a18cb1c0cc130c13bf9f3375de1dd"
+  }
+}

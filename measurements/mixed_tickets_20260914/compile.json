@@ -1,0 +1,94 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "source_sha256": {
+    "engine/modules/mixed_experts.py": "4cb1d9de5b348c49b135bb7f0c2290b203dba462d2a77cd8ffe1d6adbd880b62",
+    "engine/kernels/b12x/moe_mixed.py": "23205ccfe0f93824d361870d4a07afed6abbb1f2b1ccee284c3c89c850edf570",
+    "engine/kernels/b12x/moe_mixed_frontend.py": "465b8aef59b69840eb7594c799f783522b753221808bf78c39c18006605442c7",
+    "engine/kernels/b12x/moe_dispatch.py": "d915240cb87cebd58869808600e9e5b42fc07c5133638f6f8ed6c83996d3f644",
+    "engine/kernels/b12x/moe_static_common.py": "8ac18a06cfd1a0d82e615888c77dfb26df4edec0731a68227dd284d7e1f56cff",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "d8044bf09b5928182e8c2337c0096b30c0d2bea2a13f78b02379acce527289c1",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "engine/kernels/b12x/moe_micro_kernel.py": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914",
+    "probes/engine_mixed_experts_compile.py": "8462bde90dd2c36a62758ea0b4daf8821ea2e17ea4de9521f3fcc7895cf21e62",
+    "tests/test_engine_mixed_experts.py": "ef0a7de60fc7988cad0d3eafba0073a9f03d523a347bcaae0993dcc1faecda8b",
+    "engine/modules/mixed_completion.py": "2ba673cb4d3a0c1033c9e8fc6893a85618c34f1b4b273003bac41e714cc0acd8",
+    "engine/kernels/b12x/moe_mixed_completion.py": "8a595c132b38e528685ff150290fdeaa5c807e3e0278cd4690b480965884acb7",
+    "engine/kernels/b12x/moe_cold_frontend.py": "1d3876c0675722533f7b6ac75cefac32c141125def6dd6964f614843ca4fc40b",
+    "engine/kernels/b12x/moe_prepared_prefill.py": "b077a033aaa79d7bf0cc6ba387d17bccb64546abb2431ce8aefb79bd33a69306",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_words.py": "368dee876092745be60e079a73cf73c4e2c91dd73f699c6f0a315da0ed05e3e9",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+    "engine/kernels/b12x/_moe_dynamic/gated.py": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+    "probes/engine_mixed_completion_compile.py": "ef70284f6d76abbe468095a9a5b418f578eaf29ce71f67d1209145e33cfa815e",
+    "tests/test_engine_mixed_completion.py": "43cf8051bde14fa0b86546c2533321dbe92927e15d3fdb44b3df6164ec8f5eec"
+  },
+  "scope": "actual CuTe, PTXAS and TVM-FFI compilation; no GPU execution",
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "kernels": [
+    {
+      "kind": "hot_producer",
+      "runtime_row_extents": true,
+      "name": "mixed_route_producer_v1",
+      "status": "PASS",
+      "seconds": 0.5736397259752266
+    },
+    {
+      "kind": "cold_producer",
+      "runtime_row_extents": true,
+      "name": "cold_route_producer_v1",
+      "status": "PASS",
+      "seconds": 0.13197066899738275
+    },
+    {
+      "kind": "static",
+      "rows": 8,
+      "prepared": false,
+      "name": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepworda2u64_028a4841f3b77675",
+      "status": "PASS",
+      "seconds": 2.521850369987078
+    },
+    {
+      "kind": "static",
+      "rows": 8,
+      "prepared": true,
+      "name": "static2_m8_k4096_n512_t8_r32_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepworda2u64_00750b696052062b",
+      "status": "PASS",
+      "seconds": 4.608845904003829
+    },
+    {
+      "kind": "static",
+      "rows": 32,
+      "prepared": false,
+      "name": "static2_m32_k4096_n512_t8_r256_tm32f2g2a32wutsf6v1_8babcb4f5002c469",
+      "status": "PASS",
+      "seconds": 4.86559117899742
+    },
+    {
+      "kind": "static",
+      "rows": 32,
+      "prepared": true,
+      "name": "static2_m32_k4096_n512_t8_r32_tm32f2g2a32wutsf6v1_9a396cde6beb83de",
+      "status": "PASS",
+      "seconds": 4.716549139004201
+    },
+    {
+      "kind": "dynamic",
+      "tile_m": 128,
+      "prepared": false,
+      "name": "dynamic_e288_k4096_n512_t8_tiled_4e466f602bfca73d",
+      "status": "PASS",
+      "seconds": 8.419039625005098
+    },
+    {
+      "kind": "dynamic",
+      "tile_m": 128,
+      "prepared": true,
+      "name": "dynamic_e288_k4096_n512_t8_tiled_f11f03cc6dbee156",
+      "status": "PASS",
+      "seconds": 2.8837630380003247
+    }
+  ],
+  "dynamic_runtime_shape_reuse": true
+}

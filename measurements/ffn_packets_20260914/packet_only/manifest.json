@@ -1,0 +1,96 @@
+{
+  "default_enabled": true,
+  "integrated_main": "8730478035707dc0aa613ed068149721a7dd16a3",
+  "cpu_image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+  "gpu_image": "sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed",
+  "gpu_host": "srv4",
+  "lane": "single GPU beside production, 8 GiB process allocation limit",
+  "reservations": [
+    {
+      "name": "st-ffn-packets0914v3",
+      "ticket": "17893667182597067",
+      "revision": "a61644a447fc80520a0d2daa56f1e2f977264e8f",
+      "report": "gpu-v3-failure.json"
+    },
+    {
+      "name": "st-ffn-packets0914v4",
+      "ticket": "17893674242727772",
+      "revision": "ff877806fa8ec16cb43b6b122bb373ec9986808b",
+      "report": "gpu-v4-failure.json"
+    },
+    {
+      "name": "st-ffn-packets0914v5",
+      "ticket": "17893677182791363",
+      "revision": "0641070ebdf3099fdcaffae2007477fb27f40454",
+      "report": "gpu-v5.json"
+    },
+    {
+      "name": "st-ffn-packets0914v6",
+      "ticket": "17893679352848889",
+      "revision": "fa2050ea85be171265d09773f7fcfc36fcccf3fd",
+      "report": "gpu-v6.json"
+    },
+    {
+      "name": "st-ffn-packets0914v7",
+      "ticket": "17893681522906634",
+      "revision": "57e63935df12340a0d9a18ef846588e49786a420",
+      "report": "gpu-v7.json"
+    },
+    {
+      "name": "st-ffn-packets0914v8",
+      "ticket": "17893689403134005",
+      "revision": "b29b4083d42c47808bfa601268b6bd886f47e8f1",
+      "report": "gpu-v8.json"
+    },
+    {
+      "name": "st-ffn-router0914v9",
+      "ticket": "17893705153616772",
+      "revision": "edddd7b3ff27a4566a5d4f32f085ead6ed450478",
+      "report": "gpu-router-v9.json",
+      "scope": "router tuning only; no FFN or serving result"
+    },
+    {
+      "name": "st-ffn-router0914v10",
+      "ticket": "17893708703727004",
+      "revision": "1cd0507b4e1dc7493b9372cc879585e21fd7946f",
+      "report": "gpu-router-v10.json",
+      "scope": "router tuning only; no FFN or serving result"
+    },
+    {
+      "name": "st-ffn-router0914v11",
+      "ticket": "17893710713791020",
+      "revision": "1bdbecdd9a351292f842a25d572882222dfe1e46",
+      "report": "gpu-router-v11.json",
+      "scope": "router tuning only; no FFN or serving result"
+    },
+    {
+      "name": "st-ffn-router0914v12",
+      "ticket": "17893713663883824",
+      "revision": "f8be63e60f25b9cacb69b0bbc4d8309e06b25c18",
+      "report": "gpu-router-v12.json",
+      "scope": "router tuning only; no FFN or serving result"
+    },
+    {
+      "name": "st-ffn-router0914v13",
+      "ticket": "17893717744014495",
+      "revision": "6e6c7e27a19d54a892b3a6b7830c71703f557616",
+      "report": "gpu-router-v13.json",
+      "scope": "router tuning only; no FFN or serving result"
+    },
+    {
+      "name": "st-ffn-sender0914v1",
+      "ticket": "1789373063207769",
+      "revision": "36ba3dfa8c3a30ce9e5dba5ec27e920485e9d971",
+      "report": "gpu-sender-v1-failure.json",
+      "scope": "one sender preparation plus emulated all-gather and full FFN; failed expert byte gate before timing"
+    },
+    {
+      "name": "st-ffn-sender0914v2",
+      "ticket": "1789373427303446",
+      "revision": "894a16f45d97f33ad434e75e28cff8c43a3d66f3",
+      "report": "gpu-sender-v2.json",
+      "scope": "one sender preparation plus emulated all-gather and full FFN; no NIC or serving proof"
+    }
+  ],
+  "adoption_status": "GB10 default enabled at operator request; single-GPU local FFN qualified, four-rank serving pending"
+}
