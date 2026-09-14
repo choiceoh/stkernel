@@ -2072,14 +2072,14 @@ class MoEStaticKernelV4:
                     ep_bases = cute.make_rmem_tensor((2,), Int32)
                     ep_weights = cute.make_rmem_tensor((2,), cutlass.Float32)
                     for row_slot in cutlass.range_constexpr(2):
-                        ep_row = Int32(ep_coords[2 * self.scatter_row_pairs[row_slot]][0])
+                        cached_ep_row = Int32(ep_coords[2 * self.scatter_row_pairs[row_slot]][0])
                         ep_bases[row_slot] = Int32(0)
                         ep_weights[row_slot] = cutlass.Float32(0.0)
-                        if ep_row < valid_tile_rows:
+                        if cached_ep_row < valid_tile_rows:
                             ep_bases[row_slot] = _ld_shared_i32_volatile(
-                                scatter_tok_base_addr + ep_row * Int32(4)) * scatter_N
+                                scatter_tok_base_addr + cached_ep_row * Int32(4)) * scatter_N
                             ep_weights[row_slot] = _ld_shared_i32_volatile(
-                                scatter_weight_base_addr + ep_row * Int32(4)).bitcast(cutlass.Float32)
+                                scatter_weight_base_addr + cached_ep_row * Int32(4)).bitcast(cutlass.Float32)
                 csA2_p = csA2[None, None, None, 0]
                 fz_csSFA2_p = cute.filter_zeros(csSFA2[None, None, None, 0])
                 for _kb in cutlass.range_constexpr(num_k_blocks):
