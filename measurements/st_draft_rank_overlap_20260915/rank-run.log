@@ -1,0 +1,11 @@
+2026-09-15 05:13:33 rank1: cc3ab619 debug: record the target's and the walk's candidate rank at the first rejection (never merg
+srv2: MemFree 99 -> 100 GiB
+srv2 asked the kernel to drop 68.7 GiB of clean cached pages
+10.10.10.1 asked the kernel to drop 68.7 GiB of clean cached pages
+10.10.10.3 asked the kernel to drop 68.7 GiB of clean cached pages
+10.10.10.4 asked the kernel to drop 209.3 GiB of clean cached pages
+MemFree: 105220080 kB MemAvailable: 101465940 kB 
+2026-09-15 05:22:52 rank1: door up
+2026-09-15 05:28:39 rank1: rank probe exit 0
+2026-09-15 05:28:54 rank1: hold ended
+2026-09-15 05:28:54 RANK-RUN rank1 done
