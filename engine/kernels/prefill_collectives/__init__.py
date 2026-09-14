@@ -112,19 +112,24 @@ class PrefillCollectives:
         self.executed.add('fp8_all_gather')
         return out
 
-    def all_gather_packets(self, x, *, rows):
+    def all_gather_packets(self, x, *, rows, route=None):
         """The ordinary full FP8 exchange with an invocation-owned packet result."""
         from engine.modules.prefill_packets import PacketBatch, PacketGeometry, ffn_packet_rows
         self.check(x)
-        geometry = PacketGeometry(rows, x.shape[0], self.hidden, self.world, BLOCK)
+        geometry = PacketGeometry(rows, x.shape[0], self.hidden, self.world, BLOCK, routed=route is not None)
         if not ffn_packet_rows(rows):
             raise ValueError('packet FFN requires 8192 < real rows <= 32768')
-        payload, stride = self.pack(x, x.numel())
+        if route is None:
+            payload, stride = self.pack(x, x.numel())
+        else:
+            from .routes import pack_routed
+            payload = pack_routed(x, geometry, route)
+            stride = geometry.stride
         if stride != geometry.stride:
             raise ValueError('FFN packet stride differs from its declared transport')
         received = torch.empty(geometry.nbytes, device=x.device, dtype=torch.uint8)
         dist.all_gather_into_tensor(received, payload, group=self.comm.group)
-        self.executed.update(('fp8_all_gather', 'ffn_packets_v1'))
+        self.executed.update(('fp8_all_gather', 'ffn_packets_v2_routed' if geometry.routed else 'ffn_packets_v1'))
         return PacketBatch(received, geometry)
 
     def reduce_scatter(self, x):

@@ -41,6 +41,41 @@
       "ticket": "17893689403134005",
       "revision": "b29b4083d42c47808bfa601268b6bd886f47e8f1",
       "report": "gpu-v8.json"
+    },
+    {
+      "name": "st-ffn-router0914v9",
+      "ticket": "17893705153616772",
+      "revision": "edddd7b3ff27a4566a5d4f32f085ead6ed450478",
+      "report": "gpu-router-v9.json",
+      "scope": "router tuning only; no FFN or serving result"
+    },
+    {
+      "name": "st-ffn-router0914v10",
+      "ticket": "17893708703727004",
+      "revision": "1cd0507b4e1dc7493b9372cc879585e21fd7946f",
+      "report": "gpu-router-v10.json",
+      "scope": "router tuning only; no FFN or serving result"
+    },
+    {
+      "name": "st-ffn-router0914v11",
+      "ticket": "17893710713791020",
+      "revision": "1bdbecdd9a351292f842a25d572882222dfe1e46",
+      "report": "gpu-router-v11.json",
+      "scope": "router tuning only; no FFN or serving result"
+    },
+    {
+      "name": "st-ffn-router0914v12",
+      "ticket": "17893713663883824",
+      "revision": "f8be63e60f25b9cacb69b0bbc4d8309e06b25c18",
+      "report": "gpu-router-v12.json",
+      "scope": "router tuning only; no FFN or serving result"
+    },
+    {
+      "name": "st-ffn-router0914v13",
+      "ticket": "17893717744014495",
+      "revision": "6e6c7e27a19d54a892b3a6b7830c71703f557616",
+      "report": "gpu-router-v13.json",
+      "scope": "router tuning only; no FFN or serving result"
     }
   ]
 }

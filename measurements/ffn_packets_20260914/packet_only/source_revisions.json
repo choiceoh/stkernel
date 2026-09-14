@@ -1,4 +1,39 @@
 {
+  "gpu-router-v10": {
+    "revision": "1cd0507b4e1dc7493b9372cc879585e21fd7946f",
+    "all_sources_match": true,
+    "source_count": 24
+  },
+  "compile-router-native": {
+    "revision": "1bdbecdd9a351292f842a25d572882222dfe1e46",
+    "all_sources_match": true,
+    "source_count": 22
+  },
+  "gpu-router-v11": {
+    "revision": "1bdbecdd9a351292f842a25d572882222dfe1e46",
+    "all_sources_match": true,
+    "source_count": 24
+  },
+  "compile-router-prefetch": {
+    "revision": "f8be63e60f25b9cacb69b0bbc4d8309e06b25c18",
+    "all_sources_match": true,
+    "source_count": 22
+  },
+  "gpu-router-v12": {
+    "revision": "f8be63e60f25b9cacb69b0bbc4d8309e06b25c18",
+    "all_sources_match": true,
+    "source_count": 24
+  },
+  "compile-router-wide": {
+    "revision": "6e6c7e27a19d54a892b3a6b7830c71703f557616",
+    "all_sources_match": true,
+    "source_count": 22
+  },
+  "gpu-router-v13": {
+    "revision": "6e6c7e27a19d54a892b3a6b7830c71703f557616",
+    "all_sources_match": true,
+    "source_count": 24
+  },
   "compile-router-pairs-rejected": {
     "revision": "2b9cb76a2096d3e9af570a6e62dff7b42f7ba2b3",
     "all_sources_match": true,

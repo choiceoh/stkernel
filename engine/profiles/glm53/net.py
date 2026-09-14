@@ -964,20 +964,23 @@ class Glm53Net:
 
     @operation('moe', layer_arg=1)
     def _moe_packets(self, L, batch, shards):
-        from engine.kernels.prefill_router import router_packet_logits
+        from engine.kernels.prefill_collectives.routes import packet_routes
         n = f'L{L}.moe.'
-        logits = router_packet_logits(batch, self.p[n+'gate'])
-        ids, weights = self._select_routes(L, logits)
+        ids, weights = packet_routes(batch)
         out = self._packet_experts[L](batch, ids, weights)
         project = self.dense[n+'sh_gate_up'].packet_projector()
         if project is None:
             raise RuntimeError('packet FFN reader changed after the agreed plan')
-        g, u = project(batch.received, batch.geometry.local_rows, real_rows=shards.rows).chunk(2, dim=-1)
+        g, u = project(batch.received, batch.geometry.local_rows, real_rows=shards.rows, routed=True).chunk(2, dim=-1)
         shared = self.linear(self._activation(g, u, self.F.swiglu_limit), n+'sh_down')
         self.prefill_packet_executed.add(L)
         self.prefill_packet_peak_bytes = max(self.prefill_packet_peak_bytes, batch.geometry.nbytes)
         return (shards.reduce_scatter_pair(out, shared) if shards.fuse_sum else
                 shards.reduce_scatter(out + shared))
+
+    def _sender_routes(self, L, roundtrip):
+        from engine.kernels.prefill_router import router_shard_logits
+        return self._select_routes(L, router_shard_logits(roundtrip, self.p[f'L{L}.moe.gate']))
 
 
     @operation("moe", layer_arg=1)
@@ -1058,7 +1061,7 @@ class Glm53Net:
                 self.probe("dsa" if F.is_dsa(L) else "kda", L, x)
             res, post, comb, x = self._hc_post_pre(L, x, res, post, comb, "ffn")
             if L in packet_layers:
-                packets = sp.all_gather_packets(x.contiguous())
+                packets = sp.all_gather_packets(x.contiguous(), route=lambda local: self._sender_routes(L, local))
                 x = self._moe_packets(L, packets, sp)
                 del packets  # all readers used this stream; the next FFN owns a new packet
             else:

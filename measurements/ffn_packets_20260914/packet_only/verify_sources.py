@@ -6,6 +6,13 @@ import subprocess
 
 folder = Path(__file__).resolve().parent
 revisions = {
+    'gpu-router-v10': '1cd0507b',
+    'compile-router-native': '1bdbecdd',
+    'gpu-router-v11': '1bdbecdd',
+    'compile-router-prefetch': 'f8be63e6',
+    'gpu-router-v12': 'f8be63e6',
+    'compile-router-wide': '6e6c7e27',
+    'gpu-router-v13': '6e6c7e27',
     'compile-router-pairs-rejected': '2b9cb76a',
     'compile-router-pairs-bf16-rejected': '601dbe38',
     'compile-router-gather': 'edddd7b3',

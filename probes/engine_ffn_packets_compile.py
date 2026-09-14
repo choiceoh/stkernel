@@ -14,7 +14,7 @@ SOURCES = (
     'engine/modules/prefill_packets.py', 'engine/modules/token_shards.py',
     'engine/kernels/prefill_collectives/__init__.py', 'engine/kernels/prefill_collectives/consumer.py',
     'engine/kernels/prefill_collectives/kernels.py', 'engine/kernels/prefill_router.py',
-    'engine/kernels/prefill_router_packets.py',
+    'engine/kernels/prefill_collectives/routes.py',
     'engine/kernels/dense/__init__.py', 'engine/kernels/dense/fp8.py',
     'engine/kernels/b12x/moe_dispatch.py', 'engine/kernels/b12x/moe_packet_input.py',
     'engine/kernels/b12x/moe_dynamic_prefill_packets.py',
@@ -24,18 +24,6 @@ SOURCES = (
     'probes/engine_ffn_packets_compile.py',
     'probes/engine_ffn_packets_check.py', 'tests/test_engine_ffn_packets.py',
     'tests/test_engine_prefill_fp8_consumer.py',
-)
-
-# A bounded diagnostic sweep, never an engine autotuner or a serving knob.
-ROUTER_VARIANTS = (
-    ('current', 64, 64, 64, False, False, False, False, 2),
-    ('aligned-64x64', 64, 64, 64, True, False, True, False, 2),
-    ('aligned-prefetch-64x64', 64, 64, 64, True, False, True, True, 2),
-    ('wide-16x256x64', 16, 256, 64, True, False, True, False, 1),
-    ('wide-16x512x64', 16, 512, 64, True, False, True, False, 1),
-    ('wide-16x512x32', 16, 512, 32, True, False, True, False, 1),
-    ('wide-32x256x64', 32, 256, 64, True, False, True, False, 2),
-    ('wide-32x512x32', 32, 512, 32, True, False, True, False, 2),
 )
 
 
@@ -52,9 +40,7 @@ def compile_consumers(output, router_only=False):
     import triton
     from triton.backends.compiler import GPUTarget
     from triton.compiler import ASTSource
-    from triton.experimental.gluon._runtime import GluonASTSource
     from engine.kernels.prefill_router import _router_gemm
-    from engine.kernels.prefill_router_packets import _router_packet_gemm
     from engine.kernels.prefill_collectives.consumer import _quantize_gather
     output.mkdir(parents=True, exist_ok=True)
     records = []
@@ -62,9 +48,8 @@ def compile_consumers(output, router_only=False):
                   gpu_used=False, torch=torch.__version__, triton=triton.__version__,
                   source_sha256=fingerprint(), kernels=records)
     try:
-        variants = [('bf16', 64, 64, 64, False, False, False, False, 2)] + (list(ROUTER_VARIANTS) if router_only
-                    else [('packets', 64, 64, 64, False, False, False, False, 2)])
-        for label, bm, bn, bk, explicit, native, packed, prefetch, warps_m in variants:
+        variants = [('bf16', 64, 64, 64, 3), ('packets', 64, 64, 64, 1)]
+        for label, bm, bn, bk, stages in variants:
             packets = label != 'bf16'
             signature = dict(X='*fp8e4nv' if packets else '*bf16', W='*bf16', Out='*fp32', M='i32')
             constants = dict(BM=bm, BN=bn, BK=bk, PACKETS=packets)
@@ -73,17 +58,9 @@ def compile_consumers(output, router_only=False):
             else:
                 constants.update(Scales=None, LOCAL_ROWS=0, PACKET_BYTES=0)
             start = time.monotonic()
-            function = _router_gemm
-            if explicit:
-                function = _router_packet_gemm
-                signature['Packed'] = signature.pop('X')
-                constants.pop('PACKETS')
-                constants['NATIVE'] = native
-                constants.update(PACKED_CONVERT=packed, PREFETCH=prefetch, WARPS_M=warps_m)
-            source = GluonASTSource if explicit else ASTSource
-            kernel = triton.compile(source(function, signature, constexprs=constants),
+            kernel = triton.compile(ASTSource(_router_gemm, signature, constexprs=constants),
                 target=GPUTarget('cuda', 121, 32),
-                options=dict(num_warps=4, num_stages=1 if packets else 3, enable_fp_fusion=False))
+                options=dict(num_warps=4, num_stages=stages, enable_fp_fusion=False))
             name = 'router-'+label
             dot_ir = '\n'.join(line for line in kernel.asm['ttgir'].splitlines() if 'tt.dot ' in line)
             k_widths = [int(value) for value in re.findall(r'kWidth = (\d+)', dot_ir)]
@@ -97,10 +74,28 @@ def compile_consumers(output, router_only=False):
                                 dot_k_widths=k_widths,
                                 cubin_sha256=hashlib.sha256(kernel.asm['cubin']).hexdigest()))
             print(json.dumps(records[-1]), flush=True)
+        from engine.kernels.prefill_collectives.kernels import _pack_rs_payload
+        from engine.kernels.prefill_collectives.routes import _write_routes, _read_routes
+        wire_variants = [
+            ('pack', _pack_rs_payload, dict(X='*bf16', Packed='*fp8e4nv', Scales='*fp32',
+                N='i32', LOCAL_N='i32', PAYLOAD_BYTES='i32'), dict(BLOCK=2048, Roundtrip=None)),
+            ('pack-roundtrip', _pack_rs_payload, dict(X='*bf16', Packed='*fp8e4nv', Scales='*fp32',
+                Roundtrip='*bf16', N='i32', LOCAL_N='i32', PAYLOAD_BYTES='i32'), dict(BLOCK=2048)),
+            ('write-routes', _write_routes, dict(Ids='*i32', Weights='*fp32', Packet='*u8',
+                LOCAL_ROWS='i32', ACTIVATION_BYTES='i32', PACKET_BYTES='i32'), dict(B=256)),
+            ('read-routes', _read_routes, dict(Packet='*u8', Ids='*i32', Weights='*fp32',
+                ROWS='i32', LOCAL_ROWS='i32', ACTIVATION_BYTES='i32', PACKET_BYTES='i32'), dict(B=256)),
+        ]
+        for name, function, signature, constants in wire_variants:
+            kernel = triton.compile(ASTSource(function, signature, constexprs=constants),
+                target=GPUTarget('cuda', 121, 32), options=dict(num_warps=4))
+            records.append(dict(name=name, status='PASS', shared_bytes=kernel.metadata.shared,
+                cubin_sha256=hashlib.sha256(kernel.asm['cubin']).hexdigest()))
+            print(json.dumps(records[-1]), flush=True)
         if router_only:
             if torch.cuda.is_initialized():
                 raise RuntimeError('router compilation initialized CUDA')
-            report.update(status='PASS', scope='bounded SM121 router compilation only; no GPU or FFN proof')
+            report.update(status='PASS', scope='SM121 router and sender packet compilation only; no GPU or FFN proof')
             return report
         kernel = triton.compile(ASTSource(_quantize_gather,
             dict(Packed='*fp8e4nv', Scales='*fp32', Q='*fp8e4nv', S='*fp32', LOCAL_N='i32', PAYLOAD_BYTES='i32'),
@@ -130,7 +125,7 @@ def compile_consumers(output, router_only=False):
                         tiled=True, reform_sf_pack=True, tile_m=128, _prefill_packets=packets)
         if torch.cuda.is_initialized():
             raise RuntimeError('compile initialized CUDA')
-        if len(records) != 5 or any(r['status'] != 'PASS' for r in records):
+        if len(records) != 9 or any(r['status'] != 'PASS' for r in records):
             raise RuntimeError('every requested consumer must actually compile')
         report['status'] = 'PASS'
     except BaseException:

@@ -8,9 +8,9 @@ what was retired and why. Historical S/M measurements remain at their original
 source revisions; they do not qualify this implementation.
 
 The existing `Glm53Net.forward()` FFN branch can pass its four rank-ordered
-FP8-v3 packets directly to router, routed expert and shared gate/up. It retains
+FP8-v3 packets directly to routed expert and shared gate/up, with sender-owned routes. It retains
 one all-gather and the existing reduce-scatter ordering. No mixed scheduler,
-route planner, ticket or whole BF16 FFN input is introduced.
+CPU route planner, ticket or whole BF16 FFN input is introduced.
 
 The experiment remains **OFF by default** (`STK_prefill_ffn_packets=1` opts in).
 It requires native eager TP4, chunk-ordered prefill, H4096/E288/I512/top-8,
@@ -18,6 +18,39 @@ SF6 M128 and `8192 < real rows <= 32768`. A control-group vote agrees all
 supported layers before transport. Short prefill, decode, unsupported packs and
 calibration observers retain ordinary execution. Production continues to
 reject experiment overrides.
+
+## Sender-owned routing follow-up
+
+The current candidate appends routes to the same all-gather packet. Each
+rank's replicated gate and bias process only its local token shard. FP8
+packing also emits a **local** BF16 roundtrip for the ordinary long-prefill
+router GEMM, preserving its exact dot operand packing and summation order.
+The receiver reads lossless top-8 uint16 IDs and FP32 weights instead of
+running another router. Expert/shared consumers still read the FP8 values
+in place, using the extended packet stride.
+
+At 32K, routing rows per rank fall from 32,768 to 8,192. The sender's
+roundtrip is 64 MiB and ends before all-gather; the receiver no longer needs
+the ordinary 256 MiB BF16 input. Metadata adds 48 bytes/token (1.171875% of
+the FP8 values), with at most 127 alignment bytes per rank. This is a work
+and buffer accounting statement, not a measured whole-engine speedup.
+The rank control vote names the v2 routed ABI. Decode/short prefill and
+unsupported/observed FFNs retain their existing fallbacks. Default stays OFF.
+
+The new probe includes **one sender's pack, route and metadata preparation**
+in both arms' FFN timing. Other senders are prepared outside timing, and
+`torch.cat` emulates their all-gather on one GB10. Exactness covers all four
+senders and real-token cropping. This is a local pipeline estimate; it cannot
+establish NIC behavior, four-rank makespan or serving latency. The old
+received-packet v8 timings below are not directly comparable with this scope.
+Fresh actual-weight qualification is pending for this source.
+
+The v9–v13 router tile/load experiments were numerically exact but slower
+than the established packet router at 32K. Contiguous/gathered pair loads,
+explicit Gluon layouts, native MMA loads, packed conversion, prefetch and
+wide expert tiles did not establish a win. Their unused Gluon execution code
+is removed; each frozen source and raw report remains reproducible through
+[the source map](packet_only/source_revisions.json).
 
 ## Numerical contract and router repair
 
@@ -110,7 +143,7 @@ CPU tests passed, 23 CUDA skips** in 20 isolated Linux modules, including the
 lease/retention and draft-agreement contracts. Five compiler variants passed.
 [Final CPU](packet_only/cpu-final.json), [final compiler](packet_only/compile-final.json).
 
-## Current same-run result
+## Previous receiver-router result (v8)
 
 **Numerical gates PASS; latency advantage remains inconclusive.** The final
 32K mean synchronized wall time is effectively equal. Median improvements

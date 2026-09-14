@@ -72,6 +72,22 @@ class PacketContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             PacketBatch(torch.empty(0, dtype=torch.uint8), PacketGeometry(8193, 2049))
 
+    def test_routed_geometry_keeps_activation_offsets_and_lossless_top8(self):
+        for rows in (8193, 8194, 8195, 9216, 32768):
+            old = PacketGeometry(rows, (rows+3)//4)
+            g = PacketGeometry(rows, old.local_rows, routed=True)
+            self.assertEqual(g.activation_bytes, old.stride)
+            self.assertEqual(g.route_weights_offset, old.stride+g.local_rows*16)
+            self.assertEqual(g.route_weights_offset % 4, 0)
+            end = g.route_weights_offset+g.local_rows*32
+            self.assertTrue(end <= g.stride < end+128)
+            self.assertEqual(g.stride % 128, 0)
+        g = PacketGeometry(32768, 8192, routed=True)
+        self.assertEqual(g.workspace()['sender_roundtrip_bytes'], 64 << 20)
+        self.assertEqual(g.workspace()['route_metadata_bytes'], 32768*48)
+        with self.assertRaises(ValueError):
+            PacketGeometry(8193, 2049, routed=1)
+
     def test_one_rank_missing_any_reader_falls_back_everywhere(self):
         def run(comm):
             supported = {3, 4, 5} if comm.rank != 2 else {3, 5}
@@ -119,7 +135,7 @@ class PacketContractTests(unittest.TestCase):
 
 
 class PacketForwardTests(unittest.TestCase):
-    def test_real_forward_uses_one_packet_for_three_readers_and_consistent_fallback(self):
+    def test_real_forward_routes_each_local_shard_once_and_keeps_one_exchange(self):
         from tests.test_engine_prefill_outputs import network, TokenShards as Transport
         from engine.profiles.glm53.net import Step
 
@@ -138,10 +154,16 @@ class PacketForwardTests(unittest.TestCase):
                             counts['gather'] += 1
                             return super().all_gather(x)
 
-                        def all_gather_packets(self, x, *, rows):
+                        def all_gather_packets(self, x, *, rows, route):
                             counts['packets'] += 1
-                            values = self.comm.all_gather(x, dim=0)[:rows]
-                            return NS(received=values, geometry=PacketGeometry(rows, len(x)))
+                            ids, _ = route(x)
+                            counts['router'].append(len(x))
+                            # The mocked data and routes share the same single
+                            # collective, as they do in the CUDA byte packet.
+                            joined = self.comm.all_gather(torch.cat((x, ids), dim=-1), dim=0)[:rows]
+                            values, ids = joined.chunk(2, dim=-1)
+                            return NS(received=values, ids=ids,
+                                      geometry=PacketGeometry(rows, len(x), routed=True))
 
                     net.prefill_transport = PacketTransport(comm)
                     net.prefill_ffn_packets = True
@@ -160,7 +182,8 @@ class PacketForwardTests(unittest.TestCase):
                     for L in net.layers:
                         net.p[f'L{L}.moe.gate'] = NS(is_cuda=True, is_contiguous=lambda: True,
                                                     dtype=torch.bfloat16, shape=(288, 4096))
-                        def project(received, local_rows, *, real_rows):
+                        def project(received, local_rows, *, real_rows, routed):
+                            self.assertIs(routed, True)
                             counts['shared'].append(received)
                             self.assertEqual((len(received), real_rows), (rows, rows))
                             return torch.cat((received/8, torch.zeros_like(received)), dim=-1)
@@ -174,14 +197,16 @@ class PacketForwardTests(unittest.TestCase):
                     self.assertEqual(net.prefill_packet_executed, layers)
                     self.assertEqual(net.prefill_packet_planned, layers)
                     self.assertEqual(counts['packets'], len(layers))
+                    self.assertEqual(counts['router'], [(rows+3)//4]*len(layers))
                     self.assertEqual(counts['gather'], 4-len(layers))  # two attention + ordinary FFNs
                     self.assertEqual(len(counts['expert']), len(layers))
                     for expert_input, shared_input in zip(counts['expert'], counts['shared']):
                         self.assertIs(expert_input, shared_input)
                     return actual
 
-                with patch.dict('sys.modules', {'engine.kernels.prefill_router': NS(
-                        router_packet_logits=lambda batch, weight: batch.received)}):
+                with patch.dict('sys.modules', {
+                        'engine.kernels.prefill_router': NS(router_shard_logits=lambda x, weight: x),
+                        'engine.kernels.prefill_collectives.routes': NS(packet_routes=lambda batch: (batch.ids, None))}):
                     results = LocalTP(4).run(run)
                 for got in results[1:]:
                     for value, expected in zip(got, results[0]):

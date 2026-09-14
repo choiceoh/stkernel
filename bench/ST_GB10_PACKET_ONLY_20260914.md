@@ -7,10 +7,13 @@ main의 deferred FP32 KDA 기본값, drafter QK 정규화 및 C1 MoE scale 개�
 
 ## 남는 실행 경로
 
-`TokenShards.all_gather_packets()`가 소유한 기존 FP8 패킷을 router, routed expert,
-shared gate/up이 직접 읽는다. 기존 `Glm53Net.forward()`의 FFN 분기에 들어가며
-별도 혼합 스케줄러, CPU route planner, ticket, decoder 대기열을 만들지 않는다.
-기존 FP8 all-gather와 최종 reduce-scatter의 순서를 유지한다.
+`TokenShards.all_gather_packets()`에서 토큰 소유 rank가 라우팅을 한 번 계산한 뒤
+FP8 입력과 top-8 ID/FP32 가중치를 같은 패킷으로 보낸다. 패킹할 때 자기 shard의
+FP8→BF16 복원 값을 함께 쓰며, 기존 긴 prefill GEMM으로 라우팅한다. 수신 측
+routed expert와 shared gate/up은 패킷을 직접 읽고 라우터를 다시 실행하지 않는다.
+기존 `Glm53Net.forward()`의 FFN 분기와 all-gather 한 번, 최종 reduce-scatter 순서를
+유지한다. 송신 라우팅을 포함한 새 측정이 필요하며, 과거 수신 이후 v8 시간과
+직접 비교하지 않는다.
 
 적용 범위는 native eager TP4, chunk-ordered prefill, H4096/E288/I512/top-8,
 SF6 M128 및 `8192 < rows <= 32768`이다. reader 지원 여부를 rank가 먼저 합의한다.
@@ -58,3 +61,12 @@ prefill kernel 시간이나 준비를 제외한 시간으로 바꾸지 않는다
 짧지만 평균 벽시계는 135.712 → 135.822 ms로 사실상 같고, B/A/A/B
 4개 묶음 중 1개만 빨랐다. 따라서 현재 판정은 **정확성 통과 / 속도 우위
 미확정**이다. 기본 OFF를 유지하며 중앙값만으로 채택 가치를 주장하지 않는다.
+
+## 송신 소유 라우팅의 검증 범위
+
+32K에서 rank당 router 행을 32K→8K로 줄인다. 송신 roundtrip은 64 MiB이며
+all-gather 전에 해제한다. 라우팅 메타데이터는 토큰당 48바이트다. 동일 점수의
+top-k, FP8 복원 반올림, ragged padding과 expert별 scale을 유지해야 한다.
+단일 GPU probe는 한 rank의 송신 준비부터 FFN 끝까지 측정한다. 나머지 세
+송신자는 사전 계산하며 `torch.cat`으로 수신을 모사하므로 NIC/4노드 성능이 아니다.
+구조 개선의 새 수치·성능 판정은 해당 동결 소스에서 별도로 기록한다.

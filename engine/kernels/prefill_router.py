@@ -61,6 +61,25 @@ def router_logits(x, weight):
     return out
 
 
+def router_shard_logits(x, weight):
+    """Sender-local rows, using precisely the ordinary long-prefill GEMM.
+
+    Do not dispatch through the short-prefill router: local shard width does
+    not change the arithmetic of the full request whose routes we carry.
+    """
+    if (x.ndim != 2 or not 2049 <= x.shape[0] <= 8192 or x.shape[1] != 4096
+            or tuple(weight.shape) != (288,4096) or not x.is_cuda or not weight.is_cuda
+            or x.device != weight.device or x.dtype != torch.bfloat16
+            or weight.dtype != torch.bfloat16 or not x.is_contiguous()
+            or not weight.is_contiguous() or torch.cuda.is_current_stream_capturing()):
+        raise ValueError('sender router requires one BF16 roundtrip shard of an eligible TP4 prefill')
+    out = torch.empty((x.shape[0],288), device=x.device, dtype=torch.float32)
+    _router_gemm[(triton.cdiv(x.shape[0],64)*triton.cdiv(288,64),)](
+        x, weight, out, x.shape[0], BM=64, BN=64, BK=64, num_warps=4, num_stages=3,
+        enable_fp_fusion=False)
+    return out
+
+
 def router_packet_logits(batch, weight):
     from engine.modules.prefill_packets import PacketBatch, ffn_packet_rows
     if (not isinstance(batch, PacketBatch) or not ffn_packet_rows(batch.geometry.rows)

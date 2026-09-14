@@ -104,6 +104,49 @@ class PrefillConsumerTests(unittest.TestCase):
             self.exact((actual,), (expected,))
             self.exact(route_weights(actual, bias, 8, 2.5), route_weights(expected, bias, 8, 2.5))
 
+    def test_sender_roundtrip_ties_and_routed_padding_are_lossless(self):
+        from engine.kernels.prefill_collectives import PrefillCollectives, BLOCK
+        from engine.kernels.prefill_collectives.kernels import _unpack_gather
+        from engine.kernels.prefill_collectives.routes import pack_routed, packet_routes
+        from engine.kernels.prefill_collectives.consumer import quantize_gather
+        from engine.kernels.prefill_router import router_logits, router_shard_logits
+        from engine.kernels.glm_pointwise import route_weights
+        from engine.modules.prefill_packets import PacketBatch, PacketGeometry
+        g = PacketGeometry(8193, 2049, routed=True)
+        gate = torch.zeros((288, 4096), device='cuda', dtype=torch.bfloat16)
+        bias = torch.zeros(288, device='cuda')
+        plain, routed, decoded = [], [], []
+        for rank in range(4):
+            torch.manual_seed(895+rank)
+            x = torch.randn((g.local_rows, 4096), device='cuda', dtype=torch.bfloat16)
+            x[0].zero_()
+            x[1] *= 2.**-120
+            payload, stride = PrefillCollectives.pack(x, x.numel())
+            unpacked = torch.empty_like(x)
+            _unpack_gather[(x.numel()//BLOCK,)](payload.view(torch.float8_e4m3fn),
+                payload.view(torch.float32), unpacked, x.numel(), stride, BLOCK=BLOCK)
+            def select(roundtrip):
+                self.exact((roundtrip,), (unpacked,))
+                ids, weights = route_weights(router_shard_logits(roundtrip, gate), bias, 8, 2.5)
+                if rank == 3:
+                    # Sentinel routes in transport padding must never reach
+                    # the real-token receiver, even when all real scores tie.
+                    ids[-3:] = 65535
+                    weights[-3:] = float('nan')
+                return ids, weights
+            packet = pack_routed(x, g, select)
+            self.exact((packet[:g.activation_bytes],), (payload,))
+            tail = g.route_weights_offset+g.local_rows*32
+            self.assertTrue(torch.equal(packet[tail:], torch.zeros_like(packet[tail:])))
+            plain.append(payload); routed.append(packet); decoded.append(unpacked)
+        batch = PacketBatch(torch.cat(routed), g)
+        expected = route_weights(router_logits(torch.cat(decoded)[:g.rows], gate), bias, 8, 2.5)
+        self.exact(packet_routes(batch), expected)
+        self.exact(quantize_gather(batch.received, g.local_rows, real_rows=g.rows, routed=True),
+                   quantize_gather(torch.cat(plain), g.local_rows, real_rows=g.rows))
+        with self.assertRaises(ValueError):
+            quantize_gather(batch.received, g.local_rows, real_rows=g.rows)
+
 
 if __name__ == "__main__":
     unittest.main()
