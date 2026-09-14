@@ -94,6 +94,6 @@ test_w4a8_pipeline_replays_with_new_inputs_and_matches_queued (tests.test_engine
 test_w4a8_workers_preserve_existing_dense_lane (tests.test_engine_tree_dataflow_gpu.NativeTreeDataflowTests.test_w4a8_workers_preserve_existing_dense_lane) ... skipped 'requires an explicitly available CUDA device'
 
 ----------------------------------------------------------------------
-Ran 87 tests in 3.570s
+Ran 87 tests in 2.936s
 
 OK (skipped=8)

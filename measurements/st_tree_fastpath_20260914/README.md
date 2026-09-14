@@ -20,22 +20,22 @@ match exactly; target head tokens match as well.
 
 | Nodes | Prefix | #947 verify ms | Revised verify ms | Time reduction |
 |---:|---:|---:|---:|---:|
-| 8, chain | 0 | 2.823 | 1.665 | 41.0% |
-| 8, chain | 129 | 3.015 | 1.688 | 44.0% |
-| 8, chain | 1024 | 3.169 | 1.726 | 45.5% |
-| 15, two branches | 0 | 4.405 | 2.116 | 52.0% |
-| 15, two branches | 129 | 4.807 | 2.138 | 55.5% |
-| 15, two branches | 1024 | 5.103 | 2.193 | 57.0% |
+| 8, chain | 0 | 2.803 | 1.659 | 40.8% |
+| 8, chain | 129 | 3.046 | 1.713 | 43.8% |
+| 8, chain | 1024 | 3.175 | 1.712 | 46.1% |
+| 15, two branches | 0 | 4.423 | 2.094 | 52.7% |
+| 15, two branches | 129 | 4.865 | 2.164 | 55.5% |
+| 15, two branches | 1024 | 5.110 | 2.195 | 57.0% |
 
 These timings include transaction preparation and target verification,
 excluding proposal and commit. The 7x64 candidate selector separately goes
-from 0.529 to 0.253 ms (flat scores) and 0.523 to 0.240 ms (peaked scores):
-52.2–54.2% less CPU time. The peaked case retains a depth-seven chain within
+from 0.531 to 0.263 ms (flat scores) and 0.525 to 0.242 ms (peaked scores):
+50.6–54.0% less CPU time. The peaked case retains a depth-seven chain within
 eight selected nodes, versus depth four before; proposal mass rises from
 2.7953 to 3.1581. **Proposal mass is not measured acceptance.**
 
-The recorder also includes an ordinary linear target reference: 2.064–2.109
-ms versus 1.686–1.715 ms for eight-node private tree verification (18.1–19.5%
+The recorder also includes an ordinary linear target reference: 2.075–2.134
+ms versus 1.655–1.728 ms for eight-node private tree verification (19.0–20.3%
 less time). This is only a diagnostic CPU comparison: the linear call writes
 its cache, while tree verification excludes accepted-path commit. Neither
 arm is production CUDA-graph serving, and the tiny dense weights are CPU
@@ -49,7 +49,8 @@ reference operands, not a timing measurement of the new W4A8 GPU pipeline.
   are shared across all layers.
 - One DSA indexer batch and one sparse-MLA batch replace per-node calls.
   Completed pools are compressed once and reused at commit. Logical top-k
-  columns and physical counts preserve tie sets; sibling pools remain invisible.
+  columns and physical counts preserve tie sets (including infinite scores);
+  sibling pools remain invisible.
 - At M=16, H=4096, I=3072, W4A8 workspace falls from 6,473,456 to 181,760
   bytes. Eliminating partial writes and reads removes 12,582,912 bytes of
   workspace traffic per MLP invocation. This is allocation/traffic arithmetic,
