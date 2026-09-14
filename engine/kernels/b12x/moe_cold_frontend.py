@@ -90,6 +90,43 @@ class ColdTokenProducer:
                     token_weights[row] = route_weights[token, slot]
 
 
+class ColdPaddingInitializer:
+    """Initialize only the padding the published M128 tasks can read."""
+    @cute.jit
+    def __call__(self, tasks: cute.Tensor, valid: cute.Tensor, packed: cute.Tensor,
+                 scales: cute.Tensor, stream: cuda.CUstream):
+        self.kernel(tasks, valid, packed, scales).launch(
+            grid=(tasks.shape[0], 1, 1), block=(256, 1, 1), stream=stream)
+
+    @cute.kernel
+    def kernel(self, tasks: cute.Tensor, valid: cute.Tensor,
+               packed: cute.Tensor, scales: cute.Tensor):
+        task, _, _ = cute.arch.block_idx()
+        tid, _, _ = cute.arch.thread_idx()
+        tile = (tasks[task] >> Int32(16)) & Int32(65535)
+        count = valid[task] & Int32(255)
+        for offset in range(count, 128):
+            row = tile * Int32(128) + offset
+            st_global_u64(get_ptr_as_int64(packed, row * Int32(2048) + tid * Int32(8)), Uint64(0))
+            sf = (tile * Int32(32768) + (tid // Int32(4)) * Int32(512)
+                  + (offset % Int32(32)) * Int32(16) + (offset // Int32(32)) * Int32(4) + tid % Int32(4))
+            scales[sf] = Uint8(0)
+
+
+def compile_cold_padding():
+    from pathlib import Path
+    from . import moe_dispatch as md
+    t, a, s = (cute.sym_int32() for _ in range(3))
+    def tensor(dtype, size):
+        return cute.runtime.make_fake_compact_tensor(dtype, (size,), assumed_align=16)
+    args = (tensor(cutlass.Int32, t), tensor(cutlass.Int32, t),
+            tensor(cutlass.Uint8, a), tensor(cutlass.Uint8, s),
+            cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True))
+    return md.build_and_load_cute_dsl_kernel(md._CUTE_DSL_MODULE, 'cold_padding_v1',
+        lambda: cute.compile(ColdPaddingInitializer(), *args, options='--opt-level 2 --enable-tvm-ffi'),
+        extra_key_files=(*md._kernel_source_files(), Path(__file__)))
+
+
 def compile_cold_producer(*, token_major=True):
     from pathlib import Path
     from . import moe_dispatch as md

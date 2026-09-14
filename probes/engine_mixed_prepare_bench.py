@@ -79,14 +79,17 @@ def cold_token_gate(device='cuda'):
     """Compare all bytes, including untouched hot destinations and padding."""
     import numpy as np
     import torch
-    from engine.kernels.b12x.moe_cold_frontend import compile_cold_producer
+    from engine.kernels.b12x.moe_cold_frontend import compile_cold_producer, compile_cold_padding
     from engine.modules.mixed_experts import ExpertInvocation
-    from engine.modules.mixed_route_plan import prepare_routes
+    # Keep the native host planner's first load/build inside the first fresh
+    # measured admission. This byte gate uses the independent NumPy plan.
+    from engine.modules.mixed_route_plan import prepare_routes_numpy as prepare_routes
     from engine.modules.mixed_metadata import metadata_tables
     old, new = compile_cold_producer(token_major=False), compile_cold_producer()
+    padding = compile_cold_padding()
     rng = np.random.default_rng(89552)
     checked = 0
-    for p in (19, 140):
+    for p in (19, 140, 256):
         ids = np.tile(np.arange(8, dtype=np.int32), (p, 1))
         if p == 140:
             ids = np.argsort(rng.random((p, 288)), axis=1)[:, :8].astype(np.int32)
@@ -112,10 +115,26 @@ def cold_token_gate(device='cuda'):
             for a, b in zip(*outputs):
                 if not torch.equal(a, b):
                     raise RuntimeError('token-major cold producer changed FP4/SFA, routing or untouched padding bytes')
+            if cold.task_expert:
+                packed, sf = outputs[1][:2]
+                expected_packed, expected_sf = packed.clone(), sf.clone()
+                pad_rows = torch.tensor([tile*128+r for task, v in zip(cold.task_expert, cold.task_valid_rows)
+                    for tile in [(task >> 16) & 65535] for r in range(v & 255, 128)], dtype=torch.int64, device=device)
+                groups = torch.arange(256, device=device)[None, :]
+                rr = pad_rows[:, None]
+                offsets = rr//128*32768 + groups//4*512 + rr%32*16 + (rr//32)%4*4 + groups%4
+                expected_packed.view(-1, 2048)[pad_rows] = 0
+                expected_sf[offsets] = 0
+                padding(torch.tensor(cold.task_expert, dtype=torch.int32, device=device),
+                        torch.tensor(cold.task_valid_rows, dtype=torch.int32, device=device), packed, sf)
+                if not torch.equal(packed, expected_packed) or not torch.equal(sf, expected_sf):
+                    raise RuntimeError('cold padding initializer touched live rows or missed a TMA/SFA padding byte')
+                del expected_packed, expected_sf, pad_rows, groups, rr, offsets
             checked += 1
             del outputs, packed, sf, tokens, route_weights
     return dict(status='PASS', cases=checked, distinct_expert_scales=True,
-                moved_hot_routes_excluded=True, untouched_padding=True, byte_exact=True)
+                moved_hot_routes_excluded=True, untouched_padding=True, padding_only_initializer=True,
+                complete_and_partial_tiles=True, byte_exact=True)
 
 
 def run(samples):

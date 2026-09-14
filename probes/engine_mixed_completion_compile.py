@@ -15,9 +15,6 @@ SOURCES = ('engine/modules/mixed_completion.py', 'engine/kernels/b12x/moe_mixed_
            'engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py',
            'engine/kernels/b12x/moe_dynamic_gated_sf6_words.py',
            'engine/kernels/b12x/moe_dynamic_gated_sf6.py', 'engine/kernels/b12x/_moe_dynamic/gated.py',
-           'engine/kernels/b12x/moe_dynamic_prefill.py', 'engine/kernels/b12x/moe_dynamic_prefill_n128.py',
-           'engine/kernels/b12x/moe_dynamic_prefill_n128_tiled.py',
-           'engine/kernels/b12x/moe_sf6_prefill_scales.py', 'engine/kernels/b12x/moe_sf6_prefill_scales_kernel.py',
            'probes/engine_mixed_completion_compile.py', 'tests/test_engine_mixed_completion.py')
 
 
@@ -40,7 +37,7 @@ def compile_all(output):
                 patch.object(torch.cuda, 'get_device_capability', return_value=(12, 1)):
             from engine.kernels.b12x import moe_dispatch as md
             from engine.kernels.b12x.moe_mixed_frontend import compile_producer
-            from engine.kernels.b12x.moe_cold_frontend import compile_cold_producer
+            from engine.kernels.b12x.moe_cold_frontend import compile_cold_producer, compile_cold_padding
             def builder(module, name, build, **kwargs):
                 start = time.monotonic()
                 result = build()
@@ -52,7 +49,7 @@ def compile_all(output):
                     patch.object(md, 'build_and_load_cute_dsl_kernel', builder):
                 for kind, build in (('hot_producer', compile_producer),
                         ('cold_route_reference', lambda: compile_cold_producer(token_major=False)),
-                        ('cold_token_producer', compile_cold_producer)):
+                        ('cold_token_producer', compile_cold_producer), ('cold_padding', compile_cold_padding)):
                     selected.update(kind=kind, runtime_row_extents=True); build()
                 selected.clear()
                 for rows in (8, 32):
@@ -73,15 +70,13 @@ def compile_all(output):
                         for rows in (9240, 32768)]
                     if handles[0] is not handles[1]:
                         raise RuntimeError('long-prefill runtime row extents recompiled the same body')
-                selected.update(kind='dynamic_n128', tile_m=128, prepared=True)
-                handles = [md._get_dynamic_kernel(288, rows, 4096, 512, 8, (rows*8//128+287)*128,
-                    activation='swigluoai_uninterleave', swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.,
-                    tile_m=128, tiled=True, reform_sf_pack=False, _prepared_prefill=True,
-                    _prefill_scale_expansion=True, _prefill_n128=True) for rows in (9240, 32768)]
-                if handles[0] is not handles[1]:
-                    raise RuntimeError('N128 runtime row extents recompiled the same body')
         if torch.cuda.is_initialized() or len(records) != 10:
             raise RuntimeError('compile must build all ten handles without initializing CUDA')
+        from engine.modules.mixed_route_native import planner
+        start = time.monotonic()
+        handle = planner()
+        report['host_planner'] = dict(status='PASS', seconds=time.monotonic()-start,
+            library_sha256=hashlib.sha256(Path(handle._library._name).read_bytes()).hexdigest())
         import triton
         from triton.backends.compiler import GPUTarget
         from triton.compiler import ASTSource
@@ -92,15 +87,6 @@ def compile_all(output):
         kernel = triton.compile(source, target=GPUTarget('cuda', 121, 32), options=dict(num_warps=8))
         report['value_check'] = dict(status='PASS', runtime_row_extents=True,
             seconds=time.monotonic()-start, shared_bytes=kernel.metadata.shared, triton=triton.__version__)
-        from engine.kernels.b12x.moe_sf6_prefill_scales_kernel import expand
-        report['scale_expansion'] = []
-        for fc2, k_tiles in ((False, 16), (True, 4)):
-            start = time.monotonic()
-            source = ASTSource(fn=expand, signature=dict(Packed='*u8', Out='*u8'),
-                               constexprs=dict(K_TILES=k_tiles, FC2=fc2))
-            kernel = triton.compile(source, target=GPUTarget('cuda', 121, 32), options=dict(num_warps=4))
-            report['scale_expansion'].append(dict(status='PASS', fc2=fc2,
-                seconds=time.monotonic()-start, shared_bytes=kernel.metadata.shared))
         if torch.cuda.is_initialized():
             raise RuntimeError('value-check compile initialized CUDA')
         report.update(status='PASS', dynamic_runtime_shape_reuse=True)

@@ -12,6 +12,8 @@ from unittest.mock import patch
 SOURCES = ('engine/modules/mixed_experts.py', 'engine/kernels/b12x/moe_mixed.py',
            'engine/modules/route_table.py', 'tests/test_engine_mixed_plan.py',
            'engine/modules/mixed_route_plan.py', 'engine/modules/mixed_metadata.py',
+           'engine/modules/mixed_route_native.py', 'engine/modules/mixed_route_plan.cpp',
+           'engine/kernels/common/native_cache.py',
            'engine/kernels/mixed_checks.py',
            'engine/kernels/b12x/moe_mixed_frontend.py', 'engine/kernels/b12x/moe_dispatch.py',
            'engine/kernels/b12x/moe_static_common.py',

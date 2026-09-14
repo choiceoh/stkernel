@@ -16,6 +16,12 @@ def _producer():
     return compile_cold_producer()
 
 
+@lru_cache(maxsize=1)
+def _padding():
+    from .moe_cold_frontend import compile_cold_padding
+    return compile_cold_padding()
+
+
 def shared_ffn(x, weights):
     """Same BF16 rounding/clamp boundary in both component arms."""
     from engine.kernels.glm_pointwise import swiglu_clamped
@@ -28,10 +34,7 @@ class PreparedMixedCompletion:
     def __init__(self, decode, prefill, decode_ids, prefill_ids,
                  decode_routes, prefill_routes, *, weights, input_scale, down_scale,
                  identity, shared_up=None, shared_down=None, shared_execution=None,
-                 hot_route_quota=128, cold_task_quota=48, cold_n128=False, overlap_shared=False):
-        if type(cold_n128) is not bool:
-            raise TypeError('cold N128 experiment selector must be bool')
-        self.cold_backend = 'n128' if cold_n128 else 'sf6'
+                 hot_route_quota=128, cold_task_quota=48, overlap_shared=False):
         if type(overlap_shared) is not bool:
             raise TypeError('shared overlap experiment selector must be bool')
         if overlap_shared and (shared_execution is None or shared_execution.overlap is None):
@@ -75,10 +78,11 @@ class PreparedMixedCompletion:
                              (ws.task_expert, 'cold_tasks'), (ws.task_valid_rows, 'cold_valid')):
             values = metadata[name]
             target[:len(values)].copy_(values)
-        # Initialize padding once. Every live cold row is overwritten at begin;
-        # task valid_rows excludes padding and every moved hot route.
-        ws.packed_input.zero_()
-        ws.packed_input_scale.zero_()
+        # All live rows are overwritten at begin. Clear only reachable tile
+        # padding, preserving deterministic TMA/MMA reads without clearing the
+        # entire ~600 MiB input plane at 32K.
+        _padding()(ws.task_expert[:len(self.cold.task_expert)],
+                   ws.task_valid_rows[:len(self.cold.task_expert)], ws.packed_a_flat, ws.scale_flat)
         self.cold_output = torch.empty_like(prefill)
         self._accumulator = self.cold_output
         self._window_args = (ws.task_head, ws.task_tail)
@@ -86,17 +90,8 @@ class PreparedMixedCompletion:
         self.producer = _producer()
         self.compiled, _ = md._get_dynamic_kernel(288, len(self.plan.prefill), 4096, 512, 8, ws.max_rows,
             activation='swigluoai_uninterleave', swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.,
-            tile_m=128, tiled=True, reform_sf_pack=not cold_n128, _prepared_prefill=True,
-            _prefill_scale_expansion=cold_n128, _prefill_n128=cold_n128)
-        self._expanded_scales = ()
-        if cold_n128:
-            from .moe_sf6_prefill_scales import expand_scales
-            self._expanded_scales = expand_scales(weights.reform_scales, experts=288, hidden=4096, intermediate=512)
-            sf1, sf2 = (v.data_ptr() for v in self._expanded_scales)
-            packed1 = packed2 = md._sf_pack_dummy(device)
-        else:
-            sf1, sf2 = md._scale_runtime_addresses(weights, direct_sf6=True)
-            packed1, packed2 = weights.sfb1_packed, weights.sfb2_packed
+            tile_m=128, tiled=True, reform_sf_pack=True, _prepared_prefill=True)
+        sf1, sf2 = md._scale_runtime_addresses(weights, direct_sf6=True)
         self._producer_args = (prefill, prefill_routes, self.sources, prefill_ids, input_scale,
             ws.packed_a_flat, ws.scale_flat, ws.token_map, ws.token_weights)
         self._compute_args = (prefill.data_ptr(), prefill_ids.data_ptr(), prefill_routes.data_ptr(),
@@ -106,13 +101,13 @@ class PreparedMixedCompletion:
             weights.w13_fp4, sf1, weights.down_fp4, sf2, ws.row_counts,
             ws.expert_write_rows, ws.expert_tile_base, input_scale, weights.w1_alpha,
             weights.w2_alpha, down_scale, self.cold_output.data_ptr(), ws.token_map.data_ptr(),
-            ws.token_weights.data_ptr(), packed1, packed2,
+            ws.token_weights.data_ptr(), weights.sfb1_packed, weights.sfb2_packed,
             len(self.plan.prefill), ws.max_rows, ws.physical_tiles_capacity * 128, ws.task_capacity)
         # Sparse completion reduction visits only the <=128 moved routes.
         self._hot_rows = metadata['hot_rows'].long()
         self._hot_dest = metadata['hot_dest'].long()
         self._hot_sum = torch.empty((len(self._hot_rows), 4096), dtype=torch.float32, device=device)
-        self._owned = (*self._shared_weights, *self._expanded_scales, self.sources, ws.row_counts, ws.expert_tile_base,
+        self._owned = (*self._shared_weights, self.sources, ws.row_counts, ws.expert_tile_base,
                        ws.task_expert, ws.task_valid_rows, self._hot_rows, self._hot_dest)
         self._versions = tuple(t._version for t in self._owned)
         self.decode_ready = torch.cuda.Event()

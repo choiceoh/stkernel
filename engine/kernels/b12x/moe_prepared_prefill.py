@@ -19,12 +19,3 @@ class PreparedPrefillKernel(MoEGatedDynamicKernelSF6Prefill):
         # Kernel launch order publishes global writes; this CTA barrier keeps
         # the inherited shared-memory initialization contract intact.
         cute.arch.sync_threads()
-
-
-# Explicit experiment: the same published cold queue can feed the existing
-# N128 input-reuse body. Raw scale planes are owned by this invocation.
-from .moe_dynamic_prefill_n128_tiled import MoEGatedPrefillN128TiledLong
-
-
-class PreparedPrefillN128Kernel(MoEGatedPrefillN128TiledLong):
-    initialize_route_q0_and_publish = PreparedPrefillKernel.initialize_route_q0_and_publish

@@ -4374,14 +4374,11 @@ def _get_dynamic_kernel(
     if type(_prepared_prefill) is not bool:
         raise TypeError('private prepared prefill selector must be bool')
     if _prepared_prefill:
-        prepared_n128 = (_prefill_n128 and _prefill_scale_expansion and not reform_sf_pack
-                         and 8192 < m <= 32768)
-        if (not (prefill_word_unpack or prepared_n128) or prefill_reuse or _prefill_packets
-                or (_prefill_scale_expansion != _prefill_n128) or _prefill_tile64
-                or (_prefill_n128 and not prepared_n128)
+        if (not prefill_word_unpack or prefill_reuse or _prefill_packets
+                or _prefill_scale_expansion or _prefill_tile64 or _prefill_n128
                 or _prefill_q0_batch8 or input_scales_are_reciprocal or not fast_math
                 or topk_ids_dtype != torch.int32):
-            raise ValueError('prepared cold tasks require long-prefill SF6 M128 or explicit expanded N128 arithmetic')
+            raise ValueError('prepared cold tasks require ordinary long-prefill SF6 M128 arithmetic')
         cache_key = (*cache_key, 'prepared_cold_window_v1')
     if _prefill_packets:
         if (not prefill_word_unpack or prefill_reuse or _prefill_scale_expansion
@@ -4450,9 +4447,6 @@ def _get_dynamic_kernel(
         if _prefill_n128:
             from .moe_dynamic_prefill_n128_tiled import MoEGatedPrefillN128TiledQ0, MoEGatedPrefillN128TiledLong
             tiled_cls = MoEGatedPrefillN128TiledQ0 if tp_sf6_q0 else MoEGatedPrefillN128TiledLong
-            if _prepared_prefill:
-                from .moe_prepared_prefill import PreparedPrefillN128Kernel
-                tiled_cls = PreparedPrefillN128Kernel
         tiled_kwargs = {}
         if reform_sf_pack:
             from .moe_dynamic_gated_sf6 import MoEGatedDynamicKernelSF6

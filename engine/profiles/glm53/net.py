@@ -1015,7 +1015,7 @@ class Glm53Net:
 
     # -- the step ---------------------------------------------------------------------------
     def prepare_mixed_ffn(self, L, decode, prefill, *, identity, hot_route_quota=128, cold_task_quota=48,
-                          cold_n128=False, overlap_shared=False):
+                          overlap_shared=False):
         """Explicit M2 layer boundary; ordinary forward/Step selection is unchanged.
 
         Inputs must already be the replicated, normalized FFN inputs for L.
@@ -1033,7 +1033,7 @@ class Glm53Net:
         return self._mixed_experts[L](decode, prefill, ids, pids, routes, proutes,
             identity=identity, shared_execution=shared,
             hot_route_quota=hot_route_quota, cold_task_quota=cold_task_quota,
-            cold_n128=cold_n128, overlap_shared=overlap_shared)
+            overlap_shared=overlap_shared)
 
     def mixed_layer_scheduler(self, L):
         from engine.modules.mixed_tickets import MixedLayerScheduler
@@ -1042,13 +1042,13 @@ class Glm53Net:
         return MixedLayerScheduler(L, self.comm)
 
     def submit_mixed_ffn(self, scheduler, decode, prefill, *, identity, request, slot,
-                         hot_route_quota=128, cold_task_quota=48, cold_n128=False, overlap_shared=False):
+                         hot_route_quota=128, cold_task_quota=48, overlap_shared=False):
         """Do not strand peers when local eager preparation fails."""
         owner, error = None, None
         try:
             owner = self.prepare_mixed_ffn(scheduler.layer, decode, prefill, identity=identity,
                 hot_route_quota=hot_route_quota, cold_task_quota=cold_task_quota,
-                cold_n128=cold_n128, overlap_shared=overlap_shared)
+                overlap_shared=overlap_shared)
         except Exception as exc:
             error = exc
         return scheduler.admit(owner, request=request, slot=slot, preparation_error=error)

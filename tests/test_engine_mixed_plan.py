@@ -9,7 +9,7 @@ from engine.modules.mixed_experts import ExpertInvocation, plan_experts, plan_ex
 from engine.modules.mixed_completion import plan_cold
 from engine.modules.mixed_tickets import signature
 from engine.modules.route_table import RouteTable
-from engine.modules.mixed_route_plan import prepare_routes
+from engine.modules.mixed_route_plan import prepare_routes, prepare_routes_numpy
 from engine.modules.mixed_metadata import MixedMetadata, metadata_tables
 
 IDENTITY = ExpertInvocation(3, 1, 2, 3)
@@ -31,8 +31,8 @@ class PackedPlanTests(unittest.TestCase):
         self.assertEqual(a.work(), b.work())
         self.assertEqual(signature(SimpleNamespace(plan=a, cold=ca)), signature(SimpleNamespace(plan=b, cold=cb)))
         self.assertEqual(signature(SimpleNamespace(plan=a, cold=ca)), signature(SimpleNamespace(plan=joint, cold=rest)))
-        self.assertNotEqual(signature(SimpleNamespace(plan=joint, cold=rest, cold_backend='sf6')),
-                            signature(SimpleNamespace(plan=joint, cold=rest, cold_backend='n128')))
+        self.assertNotEqual(signature(SimpleNamespace(plan=joint, cold=rest, overlap_shared=False)),
+                            signature(SimpleNamespace(plan=joint, cold=rest, overlap_shared=True)))
         return joint, rest
 
     def test_packet_views_copy_exact_tables_and_do_not_alias_other_invocations(self):
@@ -62,6 +62,18 @@ class PackedPlanTests(unittest.TestCase):
         for quota in (-1, 0, 129, True, 1.5):
             with self.assertRaises(ValueError):
                 prepare_routes(rows, rows, identity=IDENTITY, cold_task_quota=quota)
+
+    def test_native_invalid_values_and_metadata_match_numpy_refusal(self):
+        good = np.arange(8, dtype=np.int32).reshape(1, 8)
+        bad_values = []
+        for bad in (-1, 288, 0):
+            x = good.copy(); x[0, -1] = bad; bad_values.append(x)
+        bad_values += [good.astype(np.int64), good[:, :7], np.zeros((0, 8), dtype=np.int32),
+                       np.tile(good, (32769, 1)), good.astype(float), good.tolist()]
+        for bad in bad_values:
+            for fn in (prepare_routes, prepare_routes_numpy):
+                with self.subTest(fn=fn.__name__, kind=type(bad).__name__), self.assertRaises(ValueError):
+                    fn(good, bad, identity=IDENTITY, cold_task_quota=48)
 
     def test_token_destinations_cover_exactly_cold_routes_and_exclude_hot(self):
         rng = np.random.default_rng(89552)

@@ -99,14 +99,6 @@ class ColdLayoutTests(unittest.TestCase):
             exec(guard, dict(good, topk_ids_dtype='i64'))
         ordinary = dict(good, _prepared_prefill=False); exec(guard, ordinary)
         self.assertEqual(ordinary['cache_key'], ())
-        n128 = dict(good, prefill_word_unpack=False, _prefill_scale_expansion=True,
-                    _prefill_n128=True, reform_sf_pack=False)
-        output = dict(n128); exec(guard, output)
-        self.assertEqual(output['cache_key'], ('prepared_cold_window_v1',))
-        for overrides in ({'m': 8192}, {'m': 32769}, {'reform_sf_pack': True},
-                          {'_prefill_n128': False}, {'_prefill_scale_expansion': False}):
-            with self.assertRaises(ValueError):
-                exec(guard, dict(n128, **overrides))
 
 
 class CompletionOrderingTests(unittest.TestCase):

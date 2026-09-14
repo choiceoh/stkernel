@@ -11,6 +11,14 @@ from .route_table import RouteTable
 def prepare_routes(decode, prefill, *, identity, hot_route_quota=128, cold_task_quota=None):
     if cold_task_quota is None:
         return plan_experts_packed(decode, prefill, identity=identity, hot_route_quota=hot_route_quota), None
+    from .mixed_route_native import prepare_native
+    return prepare_native(decode, prefill, identity=identity,
+                          hot_route_quota=hot_route_quota, cold_task_quota=cold_task_quota)
+
+
+def prepare_routes_numpy(decode, prefill, *, identity, hot_route_quota=128, cold_task_quota=None):
+    if cold_task_quota is None:
+        return plan_experts_packed(decode, prefill, identity=identity, hot_route_quota=hot_route_quota), None
     if type(cold_task_quota) is not int or not 1 <= cold_task_quota <= 128:
         raise ValueError('cold task quota must be in 1..128')
     import numpy as np
