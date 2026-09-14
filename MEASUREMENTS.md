@@ -2692,3 +2692,16 @@ Mojo 1.0.0으로 bounded decode 결과의 호스트 반영을 컴파일하고 �
 부팅·서빙 연결은 없고 tok/s·TTFT·수용률·답변 품질은 미측정이다. SDK는 선택적인
 실험/CPU CI 환경에만 설치한다. [재현 방법과 판정](bench/mojo_host/README.md),
 [버전·소스/바이너리 해시·쌍별 표본](measurements/mojo_host_20260914/macos_arm64.json).
+
+### ST decode V·logits 복사 제거 — CPU/컴파일 검증 (2026-09-14)
+
+드래프터 어텐션이 QKV 안의 V를 원래 stride로 읽고, target FP8 head가 문맥 버킷들이
+공유하는 패딩 포함 출력 버퍼에 직접 쓴다. 논리 어휘 view의 주소·객체 공유를 유지하며
+패딩 64열은 토큰 선택에서 제외한다. 둘 다 기본 경로에 적용한다.
+C1 K7의 일반 greedy target+proposal step에서 랭크당 복사 6회·640,000 B를 제거하는
+소스 작업량이다. 확률/상세 샘플링은 통신을 위한 논리 어휘 packing이 여전히 필요하다.
+
+CPU 37개 중 24통과·GPU 전용 13skip, 실제 Triton CPU 인터프리터 비교 15개 exact,
+SM121 네이티브 컴파일 6개 통과다. GPU 큐·부팅·실행은 없으며 step/s·수용률·품질과
+그래프 풀의 실제 메모리 감소는 미측정이다.
+[소스 해시·정확한 범위·재현 기록](measurements/st_decode_buffers_20260914/README.md).
