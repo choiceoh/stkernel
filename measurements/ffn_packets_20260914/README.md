@@ -2,7 +2,7 @@
 
 PR #895 now retains **packet FFNs only**. Mixed decode/prefill and compact KDA
 execution code have been removed. Ordinary decode, KDA state, cache and graph
-behavior retain integrated main `4dbc0713`, including its deferred FP32 KDA
+behavior retain integrated main `77d80b6c`, including its deferred FP32 KDA
 default. The [scope decision](../../bench/ST_GB10_PACKET_ONLY_20260914.md) records
 what was retired and why. Historical S/M measurements remain at their original
 source revisions; they do not qualify this implementation.
@@ -102,35 +102,54 @@ server call by AST, asserting the same lease and retention arguments
 independently of keyword order. All **86 tests passed** in the two affected
 Linux modules ([record](packet_only/cpu-ci-fix.json)); the initial unscoped AST
 check failure is also [retained](packet_only/cpu-ci-unscoped.json).
-The [runtime continuity record](packet_only/runtime_continuity.json) verifies
-that all 23 GPU-consumed sources remain byte-identical after these test fixes.
+The [runtime continuity record](packet_only/runtime_continuity.json) applies
+to those test fixes before the final main merge. `b29b4083` subsequently
+integrates main `77d80b6c`, retaining main's matching AST checks, sampled-draft
+agreement, C1 MoE scale preparation and reasoning-opener changes. Its **238
+CPU tests passed, 23 CUDA skips** in 20 isolated Linux modules, including the
+lease/retention and draft-agreement contracts. Five compiler variants passed.
+[Final CPU](packet_only/cpu-final.json), [final compiler](packet_only/compile-final.json).
 
 ## Current same-run result
 
-Source `57e63935`, reservation `st-ffn-packets0914v7`, ticket
-`17893681522906634`: **16 GPU tests and all five real-weight numerical cells
-passed**. Both router operands retain `kWidth=2`; all five compiler variants
-passed. [Raw GPU record](packet_only/gpu-v7.json),
-[compiler record](packet_only/compile-router-scale.json).
+Source `b29b4083`, reservation `st-ffn-packets0914v8`, ticket
+`17893689403134005`: **16 GPU tests and all five real-weight numerical cells
+passed** after integrating main `77d80b6c`. Both router operands retain
+`kWidth=2`; all five compiler variants passed.
+[Raw GPU record](packet_only/gpu-v8.json),
+[compiler record](packet_only/compile-final.json).
 
 Each median uses eight samples per arm in a B/A/A/B bracket. Negative changes
 mean shorter latency:
 
 | Real rows | Ordinary device ms | Packet device ms | Device change | Ordinary wall ms | Packet wall ms | Wall change |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 8,193 | 38.135 | 38.003 | -0.35% | 40.418 | 40.324 | -0.23% |
-| 8,194 | 41.044 | 37.879 | -7.71% | 43.389 | 40.215 | -7.32% |
-| 8,195 | 38.272 | 37.724 | -1.43% | 40.591 | 40.050 | -1.33% |
-| 9,216 | 42.651 | 42.124 | -1.24% | 44.994 | 44.470 | -1.16% |
-| 32,768 | 136.745 | 132.120 | -3.38% | 139.084 | 134.485 | -3.31% |
+| 8,193 | 38.248 | 37.988 | -0.68% | 40.573 | 40.334 | -0.59% |
+| 8,194 | 41.005 | 38.034 | -7.24% | 43.337 | 40.370 | -6.85% |
+| 8,195 | 38.223 | 37.851 | -0.97% | 40.569 | 40.243 | -0.80% |
+| 9,216 | 42.357 | 42.179 | -0.42% | 44.702 | 44.497 | -0.46% |
+| 32,768 | 137.279 | 132.456 | -3.51% | 139.368 | 134.822 | -3.26% |
 
-At 32K, the recorded complete FFN decreased by **3.38% device / 3.31% wall**.
-All five medians favored packets in this run, but the 8193-row difference is
-only 0.35%; a single shared-GPU bracket does not establish a robust universal
-win. In the same run, warm router was 3.314/4.943 ms (ordinary/packet), expert
-99.869/99.779 ms, shared quantization 1.957/1.248 ms, and unpack 1.873 ms.
+At 32K, the recorded complete FFN decreased by **3.51% device / 3.26% wall**.
+All five medians favored packets in this run, but several differences are
+below 1%; this shared-GPU bracket does not establish a robust universal win.
+The earlier `57e63935` bracket recorded **3.38% device / 3.31% wall** at 32K
+([GPU v7](packet_only/gpu-v7.json)); these runs are not pooled or compared
+across different ordinary baselines.
+
+In the final run, warm router was 1.948/4.964 ms (ordinary/packet), expert
+100.196/100.034 ms, shared quantization 1.967/1.245 ms, and unpack 1.874 ms.
 Do not compare those absolute times against earlier runs under different
 production load or sum the warm diagnostics into a predicted FFN latency.
+
+Final review added a reference-only fallback at `22c993bc`: selecting the
+reference `moe` lane also disables its packet reader before rank agreement.
+Its [CPU regression test](packet_only/cpu-reference-fallback.json) passed.
+[Structural continuity](packet_only/runtime_continuity_final.json) verifies
+that the packet kernels, ordinary binding and all previously measured test
+bodies are unchanged; only that fallback and its CPU test were added.
+The whole [main-integrated CI run](https://github.com/choiceoh/stkernel/actions/runs/34815435486)
+also passed, including engine, onepass and oracle contracts.
 
 Default adoption is still pending full-model quality and serving measurements.
 
@@ -149,12 +168,12 @@ From the immutable candidate checkout, use the canonical **single-GPU** lane:
 
 ```sh
 ST_IMAGE=sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed \
-ST_PROBE_TREE=st-packet-router-scale-57e63935 \
-  bash bench/fleet.sh run --gpu --detach st-ffn-packets0914v7 20 \
+ST_PROBE_TREE=st-packet-final-b29b4083 \
+  bash bench/fleet.sh run --gpu --detach st-ffn-packets0914v8 20 \
     'Packet consumer full FFN qualification' -- \
     bash probes/run_engine_probe.sh probes/engine_ffn_packets_check.py \
       --ranks /path/to/exact/st-ranks --ckpt-meta /path/to/exact/st-ranks \
-      --samples 8 --output /cache/ffn-packets0914v7.json
+      --samples 8 --output /cache/ffn-packets0914v8.json
 ```
 
 Earlier [CPU](cpu.json) and [compiler](compile.json) records describe their

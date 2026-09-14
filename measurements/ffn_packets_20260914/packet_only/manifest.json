@@ -1,6 +1,6 @@
 {
   "default_enabled": false,
-  "integrated_main": "4dbc0713f159f8b2ab316776e1b34c7f1f6944df",
+  "integrated_main": "77d80b6cc4928839ec80b2a38bcd885a73f1efa3",
   "cpu_image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
   "gpu_image": "sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed",
   "gpu_host": "srv4",
@@ -35,6 +35,12 @@
       "ticket": "17893681522906634",
       "revision": "57e63935df12340a0d9a18ef846588e49786a420",
       "report": "gpu-v7.json"
+    },
+    {
+      "name": "st-ffn-packets0914v8",
+      "ticket": "17893689403134005",
+      "revision": "b29b4083d42c47808bfa601268b6bd886f47e8f1",
+      "report": "gpu-v8.json"
     }
   ]
 }

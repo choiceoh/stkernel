@@ -2,8 +2,8 @@
 
 2026-09-14 범위를 **P — packet FFN**으로 좁힌다. 혼합 decode/prefill 경로 M은
 종료하고, compact KDA S도 이번 PR의 실행 코드에서 제외한다. 일반 디코드,
-KDA 상태·cache·graph·prefix 수명은 통합 main `4dbc0713`의 구현을 사용한다.
-main의 deferred FP32 KDA 기본값과 drafter QK 정규화 개선도 유지한다.
+KDA 상태·cache·graph·prefix 수명은 통합 main `77d80b6c`의 구현을 사용한다.
+main의 deferred FP32 KDA 기본값, drafter QK 정규화 및 C1 MoE scale 개선도 유지한다.
 
 ## 남는 실행 경로
 

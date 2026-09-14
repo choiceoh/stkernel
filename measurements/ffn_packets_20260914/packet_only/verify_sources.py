@@ -6,6 +6,10 @@ import subprocess
 
 folder = Path(__file__).resolve().parent
 revisions = {
+    'cpu-reference-fallback': '22c993bc',
+    'cpu-final': 'b29b4083',
+    'compile-final': 'b29b4083',
+    'gpu-v8': 'b29b4083',
     'cpu': 'a61644a4',
     'cpu-postmerge': 'ff877806',
     'cpu-ci-unscoped': '98d9285c',

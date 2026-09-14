@@ -1,4 +1,24 @@
 {
+  "cpu-reference-fallback": {
+    "revision": "22c993bcb149eb060e014c24a31ef11417d4a3e1",
+    "all_sources_match": true,
+    "source_count": 2
+  },
+  "cpu-final": {
+    "revision": "b29b4083d42c47808bfa601268b6bd886f47e8f1",
+    "all_sources_match": true,
+    "source_count": 39
+  },
+  "compile-final": {
+    "revision": "b29b4083d42c47808bfa601268b6bd886f47e8f1",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "gpu-v8": {
+    "revision": "b29b4083d42c47808bfa601268b6bd886f47e8f1",
+    "all_sources_match": true,
+    "source_count": 23
+  },
   "cpu": {
     "revision": "a61644a447fc80520a0d2daa56f1e2f977264e8f",
     "all_sources_match": true,
