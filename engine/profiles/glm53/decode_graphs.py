@@ -297,12 +297,15 @@ class Glm53DecodeGraphs:
         self.deferred_states = {}
         if self.execution_plan.deferred_kda and (net.lanes.kda_recurrent_ring_rows is None or net.lanes.conv_ring_rows is None):
             raise ValueError("deferred KDA requires the captured row ring lanes")
-        # Replay writes four small arrays per step. Staged through ONE pinned block so
-        # each is an async copy on the caller's stream instead of a fresh CPU tensor and
-        # a pageable (implicitly synchronizing) transfer. Safe to overwrite between
-        # steps: the sampler's readback synchronizes the stream before the next fill.
-        self.staging = torch.empty(3, max_seqs, dtype=torch.int64, pin_memory=True)
-        self.staged = self.staging.numpy()          # write through numpy: no per-element torch dispatch
+        # Contexts, sequence ids and slots share one contiguous transfer. Pack
+        # each live width into the leading bytes: [:, :n] would leave gaps at
+        # n < max_seqs and force a temporary instead of a direct pinned copy.
+        # The synchronous sampler readback precedes the next host fill. The
+        # asynchronous pipeline uses run_inputs and never writes this staging.
+        staging = torch.empty(3 * max_seqs, dtype=torch.int64, pin_memory=True)
+        self.staging = {n: staging[:3*n].view(3, n) for n in range(1, max_seqs+1)}
+        self.staged = {n: held.numpy() for n, held in self.staging.items()}
+        self.metadata = {}
 
         def logits_for(n, t):
             key = (n, t)
@@ -315,9 +318,11 @@ class Glm53DecodeGraphs:
 
         def make_inputs(n, t, capacity):
             device = caches.device
-            seqs = torch.arange(n, device=device, dtype=torch.int64)
-            slots = seqs + 1
-            contexts = torch.zeros(n, device=device, dtype=torch.int64)
+            metadata = self.metadata[n, t, capacity] = torch.empty(3, n, device=device, dtype=torch.int64)
+            contexts, seqs, slots = metadata.unbind(0)
+            contexts.zero_()
+            torch.arange(n, out=seqs)
+            torch.add(seqs, 1, out=slots)
             step = DeviceStep(torch.zeros(n * t, device=device, dtype=torch.int64), contexts, t)
             state = None
             if self.execution_plan.deferred_kda:
@@ -409,17 +414,15 @@ class Glm53DecodeGraphs:
         shape = self.shape(step) if shape is None else shape
         self.caches.prepare(step)
         segments = step.segments
-        staged = self.staged
+        n = len(segments)
+        staged = self.staged[n]
         for i, s in enumerate(segments):
             staged[0, i], staged[1, i], staged[2, i] = s.ctx, s.seq, s.slot
 
         def fill(inputs):
-            target, seqs, slots, _, _ = inputs
+            target = inputs[0]
             target.ids.copy_(step.ids, non_blocking=True)
-            n = len(segments)
-            target.contexts.copy_(self.staging[0, :n], non_blocking=True)
-            seqs.copy_(self.staging[1, :n], non_blocking=True)
-            slots.copy_(self.staging[2, :n], non_blocking=True)
+            self.metadata[shape].copy_(self.staging[n], non_blocking=True)
 
         return self.graphs.run(shape, fill)
 
@@ -708,25 +711,32 @@ class SamplingGraphs:
             elif target.graphs.outputs[first[key]][2] is not logits:
                 raise ValueError(f"target shapes {first[key]} and {shape} must share one logits buffer")
         shapes = list(first)
-        # Same pinned staging as the target's replay path, for the four arrays this one writes.
+        # All four fields are 32-bit words. Keep top-k as int32 views of the
+        # same bytes (never a float conversion), then transfer the live packed
+        # block once. Width-specific views avoid gaps below the maximum batch.
         width = max(n * t for n, t in shapes)
         self.default_p = top_p
-        self.policy = (torch.empty(width, dtype=torch.float32, pin_memory=True),
-                       torch.empty(width, dtype=torch.int32, pin_memory=True),
-                       torch.empty(width, dtype=torch.float32, pin_memory=True),
-                       torch.empty(width, dtype=torch.float32, pin_memory=True))
-        self.staged = [x.numpy() for x in self.policy]
+        policy = torch.empty(4 * width, dtype=torch.float32, pin_memory=True)
+        self.policy = {rows: policy[:4*rows].view(4, rows) for rows in {n*t for n, t in shapes}}
+        self.staged = {rows: (held[0].numpy(), held[1].view(torch.int32).numpy(),
+                             held[2].numpy(), held[3].numpy()) for rows, held in self.policy.items()}
+        self.device_policy = {}
 
-        def make_inputs(*shape):
-            n, t = shape[:2]
+        def make_inputs(n, t, *, stochastic=True):
             logits = target.graphs.outputs[first[(n, t)]][2]
             # Capture records the target outputs but need not initialize them.
             # Sampling warmup must see finite logits before the first request.
             logits.zero_()
-            return (logits, torch.ones(n*t, device=logits.device),
-                    torch.zeros(n*t, dtype=torch.int32, device=logits.device),
-                    torch.full((n*t,), top_p, device=logits.device),
-                    torch.full((n*t,), 0.5, device=logits.device))
+            if not stochastic:
+                # Greedy capture reads logits alone; it needs no policy storage
+                # or four field-initialization kernels at boot.
+                return (logits,)
+            policy = torch.empty(4, n*t, dtype=torch.float32, device=logits.device)
+            temps, k, p, u = policy.unbind(0)
+            k = k.view(torch.int32)
+            temps.fill_(1.); k.zero_(); p.fill_(top_p); u.fill_(0.5)
+            self.device_policy[n, t] = policy
+            return logits, temps, k, p, u
 
         def greedy(inputs):
             return argmax(inputs[0], target.net.comm, target.net.rank * target.net.vp, decodable)
@@ -740,7 +750,8 @@ class SamplingGraphs:
 
         try:
             memory = getattr(target, "memory", None)
-            self.greedy = DecodeGraphs(greedy, make_inputs, shapes, memory=memory, label="sampling/greedy",
+            self.greedy = DecodeGraphs(greedy, lambda n, t: make_inputs(n, t, stochastic=False), shapes,
+                                        memory=memory, label="sampling/greedy",
                                         append_child=getattr(target, "append_child", None))
             self.stochastic = DecodeGraphs(stochastic, make_inputs, shapes,
                                           memory=memory, label="sampling/stochastic")
@@ -756,16 +767,18 @@ class SamplingGraphs:
         if all(t <= 0 for t in temperatures):
             return self.greedy.run(shape, lambda inputs: None)
         rows = len(temperatures)
+        if rows != shape[0] * shape[1]:
+            raise ValueError("sampling policy rows differ from the captured shape")
         if uniforms is None or len(uniforms) != rows:
             raise ValueError(f"a stochastic step needs one uniform a row: {rows} rows")
-        self.staged[0][:rows] = temperatures
-        self.staged[1][:rows] = 0 if top_k is None else top_k
-        self.staged[2][:rows] = self.default_p if top_p is None else top_p
-        self.staged[3][:rows] = uniforms
+        staged = self.staged[rows]
+        staged[0][:] = temperatures
+        staged[1][:] = 0 if top_k is None else top_k
+        staged[2][:] = self.default_p if top_p is None else top_p
+        staged[3][:] = uniforms
 
         def fill(inputs):
-            for held, static in zip(self.policy, inputs[1:]):
-                static.copy_(held[:rows], non_blocking=True)
+            self.device_policy[shape].copy_(self.policy[rows], non_blocking=True)
         return self.stochastic.run(shape, fill)
 
     def close(self):

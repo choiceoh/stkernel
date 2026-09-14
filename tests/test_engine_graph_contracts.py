@@ -141,11 +141,8 @@ class ReplayStagingTests(unittest.TestCase):
         self.assertIn("pin_memory=True", source)
         self.assertNotIn("torch.tensor([s.ctx for s in step.segments]", source)
         self.assertNotIn("inputs[1].copy_(torch.tensor(temperatures))", source)
-        for line in ("target.contexts.copy_(self.staging[0, :n], non_blocking=True)",
-                     "seqs.copy_(self.staging[1, :n], non_blocking=True)",
-                     "slots.copy_(self.staging[2, :n], non_blocking=True)",
-                     # the sampler stages three arrays now (temperature, top-k, top-p), one loop
-                     "static.copy_(held[:rows], non_blocking=True)"):
+        for line in ("self.metadata[shape].copy_(self.staging[n], non_blocking=True)",
+                     "self.device_policy[shape].copy_(self.policy[rows], non_blocking=True)"):
             self.assertIn(line, source)
 
     def test_pinned_staging_round_trips_through_its_numpy_view(self):
