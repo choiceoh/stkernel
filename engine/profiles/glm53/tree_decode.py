@@ -12,7 +12,6 @@ import torch
 import torch.nn.functional as Fn
 
 from engine.modules import tree_kda
-from engine.modules.sparse_indexer import topk_positions
 from engine.modules.speculative_tree import Tree, dflash_candidates, select
 from engine.profiles.glm53.net import K_NORM_EPS, O_NORM_EPS, Step
 
@@ -223,7 +222,10 @@ class Verification:
             # extra columns are -inf. Group equal lengths and slice exactly as
             # the linear decoder does (at most ceil(depth/kpool)+1 groups).
             for count, rows in self.pool_groups:
-                pools[rows] = topk_positions(logical[rows, :count], F.topk//F.kpool, inplace=True)
+                take = min(count, F.topk//F.kpool)
+                # Every sliced column is valid: retain even infinite logits,
+                # as the ordinary selector does with its explicit valid count.
+                pools[rows, :take] = logical[rows, :count].topk(take, dim=-1, sorted=False).indices.to(torch.int32)
         else:
             pools = torch.full((n, F.topk//F.kpool), -1, dtype=torch.int32, device=x.device)
         positions = torch.empty((n, width), dtype=torch.int32, device=x.device)

@@ -100,13 +100,13 @@ class TreeDecodeTests(unittest.TestCase):
             run.verify()
 
     def test_dsa_batches_queries_once_and_keeps_linear_topk_tie_sets(self):
-        for context in (0, 3, 63, 129):
+        for context, value in ((0, 0.), (3, 0.), (63, 0.), (129, 0.), (129, float("inf")), (129, float("-inf"))):
             net, cache, slot = self.prepare(context)
             calls, selected = [], []
             mla, compress, slots = (getattr(net.lanes, name) for name in ("mla_sparse", "kpool_compress", "pool_slots"))
             def score(q, keys, scales, w, ke):
                 calls.append(("indexer", len(q), len(keys)))
-                return torch.zeros((len(q), len(keys)), dtype=torch.float32)
+                return torch.full((len(q), len(keys)), value, dtype=torch.float32)
             def attention(*args):
                 calls.append(("mla", len(args[0])))
                 return mla(*args)
@@ -125,7 +125,7 @@ class TreeDecodeTests(unittest.TestCase):
             self.assertLessEqual(sum(c[0] == "compress" for c in calls), 1)
             for node, depth in enumerate(self.tree.depths):
                 count, k = (context+depth+1)//net.F.kpool, net.F.topk//net.F.kpool
-                expected = topk_positions(torch.zeros(1, count), k)
+                expected = topk_positions(torch.full((1, count), value), k, valid=torch.tensor([count]))
                 torch.testing.assert_close(selected[0][node], expected[0], rtol=0, atol=0)
 
     def test_scratch_sampling_and_reservation_fail_before_state_mutation(self):
