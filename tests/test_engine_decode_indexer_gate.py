@@ -125,7 +125,7 @@ class HeadGateTests(unittest.TestCase):
             self.assertIs(net._select_rows.call_args.args[1], q)
             self.assertIs(net._select_rows.call_args.args[2], effective)
 
-    def test_default_off_dependency_and_complete_boot_proof(self):
+    def test_operator_enabled_default_dependency_and_complete_boot_proof(self):
         from engine.base.config import ConfigError
         from engine.profiles.glm53.boot import decode_indexer_gate_report
         from engine.profiles.glm53.execution import ExecutionPlan
@@ -139,8 +139,9 @@ class HeadGateTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ExecutionPlan(**values)
         for production in (False, True):
-            self.assertEqual(declared({}, production=production)['decode_indexer_gate'], 0)
+            self.assertEqual(declared({}, production=production)['decode_indexer_gate'], 1)
         self.assertEqual(declared({'STK_decode_indexer_gate': '1'})['decode_indexer_gate'], 1)
+        self.assertEqual(declared({'STK_decode_indexer_gate': '0'})['decode_indexer_gate'], 0)
         with self.assertRaises(ConfigError):
             declared({'STK_decode_indexer_gate': '1'}, production=True)
         net = NS(layers=[3, 7], F=NS(is_dsa=lambda L: True), decode_indexer_gate_rows=ROWS)

@@ -25,9 +25,10 @@ class ExecutionPlan:
     decode_fastpaths: bool = False
     decode_dsa_inputs: bool = False
     decode_indexer_gate: bool = False
+    decode_absorb_tiles: bool = False
 
     def __post_init__(self):
-        if any(type(v) is not bool for v in (self.overlap, self.early_observe, self.direct_mhc, self.prefill_project_tiles, self.deferred_kda, self.terminal_mhc, self.prefill_indexer_shards, self.prefill_dense_prefix, self.prefill_absorb_tiles, self.decode_fastpaths, self.decode_dsa_inputs, self.decode_indexer_gate)):
+        if any(type(v) is not bool for v in (self.overlap, self.early_observe, self.direct_mhc, self.prefill_project_tiles, self.deferred_kda, self.terminal_mhc, self.prefill_indexer_shards, self.prefill_dense_prefix, self.prefill_absorb_tiles, self.decode_fastpaths, self.decode_dsa_inputs, self.decode_indexer_gate, self.decode_absorb_tiles)):
             raise ValueError("execution switches must be booleans")
         if self.decode_indexer_gate and not self.decode_fastpaths:
             raise ValueError('indexer head gate requires the decode fastpaths boundary')
@@ -48,7 +49,7 @@ class ExecutionPlan:
     def active(self):
         return (self.overlap or self.early_observe or self.prefill_tiles != 1 or self.direct_mhc
                 or self.prefill_project_tiles or self.decode_iterations != 1 or self.deferred_kda or self.terminal_mhc
-                or self.prefill_indexer_shards or self.prefill_dense_prefix or self.prefill_absorb_tiles or self.decode_fastpaths or self.decode_dsa_inputs or self.decode_indexer_gate)
+                or self.prefill_indexer_shards or self.prefill_dense_prefix or self.prefill_absorb_tiles or self.decode_fastpaths or self.decode_dsa_inputs or self.decode_indexer_gate or self.decode_absorb_tiles)
 
     def groups(self, sequences):
         if sequences <= 0:
@@ -67,7 +68,8 @@ class ExecutionPlan:
                 f"prefill_absorb_tiles={int(self.prefill_absorb_tiles)},"
                 f"decode_fastpaths={int(self.decode_fastpaths)},"
                 f"decode_dsa_inputs={int(self.decode_dsa_inputs)},"
-                f"decode_indexer_gate={int(self.decode_indexer_gate)}")
+                f"decode_indexer_gate={int(self.decode_indexer_gate)},"
+                f"decode_absorb_tiles={int(self.decode_absorb_tiles)}")
 
 
 @dataclass
