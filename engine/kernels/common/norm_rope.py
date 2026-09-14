@@ -85,8 +85,9 @@ def _norm_bias(X, W, BIAS, OUT, sX, sO, EPS, D: tl.constexpr, BD: tl.constexpr):
 
 
 @triton.jit
-def _norm_rope(X, W, POS, INV, OUT, sXr, sXh, sO, EPS, D: tl.constexpr, H: tl.constexpr, BH: tl.constexpr):
-    r, h = tl.program_id(0), tl.program_id(1)
+def _norm_rope(X, W, POS, INV, OUT, sXr, sXh, sO, EPS, D: tl.constexpr, H: tl.constexpr, BH: tl.constexpr,
+               HEAD_OFFSET: tl.constexpr = 0):
+    r, h = tl.program_id(0), tl.program_id(1) - HEAD_OFFSET
     base, out = X + r * sXr + h * sXh, OUT + r * sO + h * D
     head = tl.load(base + tl.arange(0, D)).to(tl.float32)
     scale = tl.rsqrt(tl.sum(head * head) / D + EPS)
@@ -104,6 +105,17 @@ def _norm_rope(X, W, POS, INV, OUT, sXr, sXh, sO, EPS, D: tl.constexpr, H: tl.co
     cos, sin = tl.cos(angle), tl.sin(angle)
     tl.store(out + i, (lo * cos - hi * sin).to(OUT.dtype.element_ty), mask=m)
     tl.store(out + H + i, (lo * sin + hi * cos).to(OUT.dtype.element_ty), mask=m)
+
+
+@triton.jit
+def _norm_rope_pair(Q, K, WQ, WK, POS, INV, OQ, OK, sQr, sQh, sKr, sKh, sOq, sOk, EPS,
+                    QH: tl.constexpr, D: tl.constexpr, H: tl.constexpr, BH: tl.constexpr):
+    # One program still owns one head and executes the established kernel's
+    # reduction, BF16 roundings and rotary arithmetic. Only the launch is shared.
+    if tl.program_id(1) < QH:
+        _norm_rope(Q, WQ, POS, INV, OQ, sQr, sQh, sOq, EPS, D, H, BH)
+    else:
+        _norm_rope(K, WK, POS, INV, OK, sKr, sKh, sOk, EPS, D, H, BH, HEAD_OFFSET=QH)
 
 
 def norm(x: torch.Tensor, w: torch.Tensor, eps: float, *, bias=None) -> torch.Tensor:
@@ -168,6 +180,36 @@ def norm_rope(x: torch.Tensor, w: torch.Tensor, eps: float, positions: torch.Ten
         _norm_rope[(rows, heads)](src, w, pos, inv, out, src.stride(0), src.stride(1), out.stride(0), eps,
                                   D=D, H=D // 2, BH=triton.next_power_of_2(D // 2), num_warps=4)
     return out
+
+
+def norm_rope_pair(q: torch.Tensor, k: torch.Tensor, qw: torch.Tensor, kw: torch.Tensor,
+                   eps: float, positions: torch.Tensor, theta: float):
+    """Two independent head norms/rotations in one launch, with separate owned outputs.
+
+    Q and K may be views into a packed projection with different row/head
+    strides. Their last dimension and the weight/position vectors are packed.
+    """
+    if (q.ndim != 3 or k.ndim != 3 or q.shape[0] != k.shape[0] or q.shape[-1] != k.shape[-1]
+            or q.shape[-1] < 2 or q.shape[-1] & (q.shape[-1] - 1)
+            or q.dtype not in (torch.bfloat16, torch.float16, torch.float32) or k.dtype != q.dtype
+            or q.stride(-1) != 1 or k.stride(-1) != 1
+            or any(w.shape != (q.shape[-1],) or w.dtype != q.dtype or not w.is_contiguous() for w in (qw, kw))
+            or positions.shape != (q.shape[0],) or positions.dtype != torch.int64 or not positions.is_contiguous()
+            or any(x.device != q.device for x in (k, qw, kw, positions))):
+        raise ValueError('paired norm_rope requires matching Q/K rows, packed heads, weights and int64 positions')
+    if not q.is_cuda:
+        return (_norm_rope_by_torch(q, qw, eps, positions, theta),
+                _norm_rope_by_torch(k, kw, eps, positions, theta))
+    rows, qh, d = q.shape
+    kh = k.shape[1]
+    oq = torch.empty(q.shape, device=q.device, dtype=q.dtype)
+    ok = torch.empty(k.shape, device=k.device, dtype=k.dtype)
+    inv = warm(q.device, d, theta)
+    if rows and qh + kh:
+        _norm_rope_pair[(rows, qh + kh)](q, k, qw, kw, positions, inv, oq, ok,
+                                        *q.stride()[:2], *k.stride()[:2], oq.stride(0), ok.stride(0), eps,
+                                        QH=qh, D=d, H=d // 2, BH=triton.next_power_of_2(d // 2), num_warps=4)
+    return oq, ok
 
 
 # -- the torch forms, kept for the CPU tests and as the reference the kernel is judged against ------------
