@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass
 import hashlib
 import json
 
+from engine.base.comm import Comm
+
 
 @dataclass(frozen=True)
 class LayerTicket:
@@ -46,7 +48,8 @@ class MixedLayerScheduler:
     def __init__(self, layer, comm, *, capacity=4):
         if type(layer) is not int or not 0 <= layer < 64:
             raise ValueError('mixed scheduler needs a valid layer')
-        if type(capacity) is not int or not 1 <= capacity <= 4 or comm.world_size not in (1, 4):
+        if (type(capacity) is not int or not 1 <= capacity <= 4
+                or not isinstance(comm, Comm) or comm.world_size not in (1, 4)):
             raise ValueError('mixed scheduler supports one-rank components or TP4 and at most four slots')
         self.layer, self.comm, self.capacity = layer, comm, capacity
         self._entries, self._latest = {}, {}
@@ -125,24 +128,33 @@ class MixedLayerScheduler:
     def _run(self, action, key, states, fn, state, *, reduce=False):
         entry = self._guard(action, key, states)
         entry.state = 'dispatching'
-        value, phase, next_state, error = None, None, None, None
+        value, phase, next_state, reduction, error = None, None, None, None, None
         try:
             value = fn(entry.owner)
             next_state = state(entry.owner) if callable(state) else state
             phase = (entry.owner.state, entry.owner.next_window)
             if phase[0] != next_state:
                 raise RuntimeError('mixed owner returned an unexpected completion phase')
+            if reduce:
+                # Do local refusal checks BEFORE peers enter a device
+                # collective. M2 uses one fixed process-group sum, not the
+                # ordinary per-tensor one-shot/NCCL reader selection.
+                self.comm._check_packets()
+                if not value.is_contiguous() or not value.numel():
+                    raise ValueError('mixed output collective requires a nonempty contiguous tensor')
+                reduction = (tuple(value.shape), str(value.dtype), value.device.type)
         except Exception as exc:
             error = exc
         try:
-            self._vote((action+'-submitted', key, phase), error=error)
+            self._vote((action+'-submitted', key, phase, reduction), error=error)
             # Every surviving rank enters the publication vote even if its
             # local fence recording fails. Device/process failure recovery is
             # the communicator owner's responsibility, not a ticket retry.
             error = None
             try:
-                if reduce:
-                    value = self.comm.all_reduce(value)
+                if reduce and self.comm.world_size != 1:
+                    import torch.distributed as dist
+                    dist.all_reduce(value, group=self.comm.group)
                 fence = entry.owner.reader_fence()
             except Exception as exc:
                 error = exc

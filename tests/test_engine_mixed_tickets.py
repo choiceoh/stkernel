@@ -3,6 +3,7 @@ from datetime import timedelta
 import gc
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 import weakref
 
@@ -186,8 +187,12 @@ def gloo_worker(rank, rendezvous):
             except RuntimeError:
                 return
             raise AssertionError('a rank proceeded after another rank refused work')
-        for failure in ('prepare', 'descriptor', 'order', 'cold', 'publication', 'none'):
+        for failure in ('prepare', 'descriptor', 'order', 'cold', 'publication', 'pending_packets', 'shape', 'none'):
             s, owner = MixedLayerScheduler(3, comm), Owner(rank=rank)
+            if failure == 'none':
+                # The fixed process-group sum never asks the optional native
+                # transport for tensor-dependent eligibility.
+                comm.transport = SimpleNamespace(pending=None, packet_failed=False)
             if failure == 'prepare':
                 refused(lambda: s.admit(None if rank == 2 else owner, request='a', slot=0,
                     preparation_error='rank 2 could not prepare' if rank == 2 else None))
@@ -201,6 +206,14 @@ def gloo_worker(rank, rendezvous):
             key = s.admit(owner, request='a', slot=0)
             if failure == 'order':
                 refused(lambda: s.begin(key) if rank != 2 else s.cancel(key))
+            elif failure in ('pending_packets', 'shape'):
+                if failure == 'pending_packets' and rank == 2:
+                    comm.transport = SimpleNamespace(pending=object(), packet_failed=False)
+                if failure == 'shape' and rank == 2:
+                    original = owner.begin
+                    owner.begin = lambda identity: original(identity).repeat(2)
+                refused(lambda: s.begin(key))
+                comm.transport = None
             elif failure == 'publication':
                 owner.fail_fence = rank == 2
                 refused(lambda: s.begin(key))
