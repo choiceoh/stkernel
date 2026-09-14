@@ -164,6 +164,8 @@ class Glm53Net:
         self._query_pairs = {}
         self.decode_dsa_rows = ()
         self.decode_latents_executed = set()
+        self._indexer_head_gates = {}
+        self.decode_indexer_gate_rows = ()
         self.prefill_transport = None
         self.prefill_indexer_shards = False
         self.prefill_indexer_executed = set()
@@ -289,6 +291,25 @@ class Glm53Net:
             raise ValueError('DSA inputs require at least one DSA layer')
         self._query_pairs = pairs
         self.decode_dsa_rows = tuple(rows)
+
+    def prepare_decode_indexer_gate(self, rows):
+        """Bind the FP32 owners after smoothing and the paired boundary preparation."""
+        rows = tuple(rows)
+        if (self._indexer_head_gates or self.F.spec_k != 7 or not rows
+                or rows != self.decode_fastpath_rows):
+            raise ValueError('head gates require one K=7 preparation with matching decode fastpaths')
+        from engine.kernels.indexer_gate import IndexerHeadGate
+        layers = [L for L in self.layers if self.F.is_dsa(L)]
+        if not layers or any(L not in self._decode_pairs for L in layers):
+            raise ValueError('head gates require every paired indexer boundary')
+        self._indexer_head_gates = {L: IndexerHeadGate(self.p[f'L{L}.idx.w_heads'], rows=rows) for L in layers}
+        self.decode_indexer_gate_rows = rows
+
+    def _indexer_head_gate(self, L, x, step):
+        if (getattr(step, 'captured', False) and not self.probe
+                and x.shape[0] in getattr(self, 'decode_indexer_gate_rows', ())):
+            return self._indexer_head_gates[L](x), 16
+        return x.float() @ self.p[f'L{L}.idx.w_heads'].T, 1
 
     @staticmethod
     def dense_weight_names(keys):
@@ -577,12 +598,14 @@ class Glm53Net:
             raise ValueError('a shared indexer query must cover the entire captured decode step')
         q = (query if query is not None else self.linear(query_qr, n + "wq_b")).view(-1, nh, d) if query_qr is not None else None
         pair = self._decode_pair(L, step, N)
-        w = query_x.float() @ p[n + "w_heads"].T if query_x is not None else None    # fp32 head gate, as served
+        w, head_splits = self._indexer_head_gate(L, query_x, step) if query_x is not None else (None, 1)
+        if head_splits != 1 and (pair is None or prefix or shard is not None):
+            raise RuntimeError('bound head-gate partials require the full captured paired boundary')
         if pair is not None:
             from engine.kernels.decode_projection import indexer_boundary
             k, gate = pair(x)
             q8, k, w_eff = indexer_boundary(q, k, w, p[n + "k_norm_w"], p[n + "k_norm_b"], F.idx_scale,
-                                            rows=getattr(pair, 'rows', None))
+                                            rows=getattr(pair, 'rows', None), head_splits=head_splits)
         else:
             k = self.linear(x, n + "wk")
             if self.lanes.layernorm is None:

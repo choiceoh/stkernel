@@ -1,4 +1,4 @@
-# K=7 DSA input work, 2026-09-14
+# K=7 DSA input and FP32 head-gate work, 2026-09-14
 
 Status: implemented, **default off**. The pinned Linux CPU checks and full native
 compile pass. GPU numerical/replay checks and timing are pending. No decode
@@ -35,6 +35,61 @@ Select the candidate in experimental boot with `STK_decode_dsa_inputs=1`.
 Its rollback is `STK_decode_dsa_inputs=0`, and the knob expires on 2026-09-30.
 Production stays off pending paired GPU evidence. This change is separate from
 PR895 compact KDA and the concurrent MoE/precision work.
+
+## Additional FP32 head gate
+
+`STK_decode_indexer_gate=1` independently selects a fixed K=7 owner for the
+replicated indexer projection. It requires `decode_fastpaths=1`; production
+defaults to zero, rollback is `STK_decode_indexer_gate=0`, expiry 2026-09-30.
+The owner retains the original FP32 `[32,4096]` weight after preparation.
+There is no weight transpose, resident allocation or recurrent-state change.
+
+One kernel splits K into 16 tiles, sharing each four-head weight tile across
+eight input rows. It loads BF16 inputs directly and performs FP32 products and
+reductions. The existing indexer boundary reduces those partials and applies
+the original query scale and softmax scale in their original order. This
+replaces the activation `.float()` allocation and the small cuBLAS projection;
+it saves **one launch per DSA layer**. Combined with the input changes above,
+source launch counts decrease by **22 per target forward at C=1, 44 at C=4**.
+These counts are not a measured timing or consumer-throughput benefit.
+
+Transient partial storage is 16/32/48/64 KiB per invocation at C=1/2/3/4.
+Graph-pool retention is still unmeasured. This reduction tree differs from
+cuBLAS, so preserved FP32 precision does **not** establish bitwise agreement
+or unchanged acceptance. The separate switch keeps that numerical axis
+independently selectable from the query-pack and latent-write changes.
+
+The historical overlay split-K result is motivation only. That implementation
+used transposed weights, a separate reduction launch and admitted M<=16; the
+new native path uses the original weight layout, fused reduction, and all four
+K=7 widths. Its performance cannot be inferred from the old overlay result.
+
+`head-gate-cpu.log` records 70 checks: 55 passed, 15 require a reserved GPU.
+This includes kernel-package CI, config dependencies, ownership, every capture
+width, and the actual model handoff through the boundary to pool selection.
+`head-gate-compile.json` records the cached full dense extension and four new
+SM121/PTXAS cells: contiguous/strided partial inputs and full/partial boundary
+reduction. CUDA remained hidden in the pinned runtime. The first CPU run
+caught the missing entry in the explicit knob test allowlist; it was corrected
+before this passing run.
+
+`head-gate-interpreter.json` runs the actual partial kernel in Triton's CPU
+interpreter: 24 cases across all four widths, contiguous/padded input strides,
+zero inputs and changed signed inputs. Every partial was written, surrounding
+guards were untouched, and the maximum row-relative FP64-reference error was
+`2.18e-7`. This is address/formula proof; compiled GPU rounding remains pending.
+Reproduce with the pinned image, GPUs hidden and `TRITON_INTERPRET=1`, running
+`python probes/engine_decode_head_gate_cpu.py`.
+
+The short GPU gate adds all 11 real FP32 head-gate weights, C=1–4, changed
+strided inputs, poisoned partial/output buffers, both replay orders, independent
+FP64 projection comparisons and 50 deterministic replays. It checks query/key
+bytes separately from gate error, then synthetic pool-set sensitivity at
+32K/128K. Sensitivity results do not substitute for live acceptance. Timings
+include the boundary in both arms and retain B/A/A/B warm/evicted brackets.
+Each component records its own failure so one failed gate does not waste the
+reservation by skipping the other independent components; the overall exit
+still fails if any gate fails.
 
 ## Completed evidence
 

@@ -237,7 +237,7 @@ def declared(a, comm_world: int) -> Config:
     # K=7 decode fastpaths were explicitly enabled on 2026-09-14.
     gb10_defaults = dict(direct_mhc=1, prefill_project_tiles=1,
                          nvme_mapped_staging=1, decode_iterations=4, prefill_indexer_shards=0, prefill_dense_prefix=1,
-                         prefill_absorb_tiles=1, decode_fastpaths=1, decode_dsa_inputs=0)
+                         prefill_absorb_tiles=1, decode_fastpaths=1, decode_dsa_inputs=0, decode_indexer_gate=0)
     if getattr(a, "production", False):
         # tile32 passed the full GPU numerical/graph and matched 2K/32K/128K
         # serving brackets. Keep it in the production contract so a stale
@@ -249,6 +249,9 @@ def declared(a, comm_world: int) -> Config:
                         draft_diagnostics=int(SERVING_POLICY.diagnostics), draft_tuning='', **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
+        Knob("decode_indexer_gate", gb10_defaults["decode_indexer_gate"], _dt.date(2026, 9, 30),
+             "K=7 FP32 head-gate partials with fused boundary reduction; paired GPU qualification pending",
+             "STK_decode_indexer_gate=0", int),
         Knob("decode_dsa_inputs", gb10_defaults["decode_dsa_inputs"], _dt.date(2026, 9, 30),
              "K=7 shared query input pack and fused latent norm/write; paired GPU qualification pending",
              "STK_decode_dsa_inputs=0", int),
@@ -547,6 +550,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 net.prepare_decode_projections(arena, capture_rows=capture_rows)
                 if execution_plan is not None and execution_plan.decode_dsa_inputs:
                     net.prepare_decode_dsa_inputs(tuple(8 * n for n in range(1, max_seqs + 1)))
+                if execution_plan is not None and execution_plan.decode_indexer_gate:
+                    net.prepare_decode_indexer_gate(tuple(8 * n for n in range(1, max_seqs + 1)))
                 recorder.gauge('decode_projection_resident_bytes', projection_bytes)
                 net.prefill_transport = PrefillCollectives(comm, project_tiles=bool(
                     execution_plan is not None and execution_plan.prefill_project_tiles))
@@ -784,6 +789,18 @@ def decode_dsa_report(net):
                 input_pack_bytes=12 * 32 * (128 + 4))
 
 
+def decode_indexer_gate_report(net):
+    rows = getattr(net, 'decode_indexer_gate_rows', ())
+    if not rows:
+        return {}
+    expected = {(L, m) for L in net.layers if net.F.is_dsa(L) for m in rows}
+    executed = {(L, m) for L, owner in net._indexer_head_gates.items() for m in owner.executed}
+    if executed != expected:
+        raise RuntimeError(f'indexer head gates were not executed at every layer/width: {sorted(expected - executed)}')
+    return dict(rows=list(rows), executed=sorted(executed), resident_bytes=0,
+                partial_bytes_per_call={m: m * 16 * 32 * 4 for m in rows}, accumulation='FP32 fixed tree')
+
+
 def native_execution_report(net, drafter):
     """Reject a prepared but unused lane before the full-model door opens."""
     target = [layer for name, layer in net.dense.items() if name != 'head']
@@ -795,6 +812,7 @@ def native_execution_report(net, drafter):
     if net.prefill_transport.project_tiles:
         required_prefill.update(('fp8_tiled_projection', 'fp8_packet_projection'))
     proof = dict(decode_fastpaths=decode_fastpath_report(net), decode_dsa_inputs=decode_dsa_report(net),
+                 decode_indexer_gate=decode_indexer_gate_report(net),
                  target_w4=sum(bool(p.executed & 1) for p in target),
                  target_fp8=sum(bool(p.executed & 2) for p in target),
                  head_fp8=net.dense['head'].executed,
@@ -1199,7 +1217,7 @@ def fleet(a) -> int:
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
                                        consume_scales=True)
         from engine.profiles.glm53.execution import ExecutionPlan
-        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "decode_dsa_inputs")):
+        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "decode_dsa_inputs", "decode_indexer_gate")):
             raise ValueError("execution switches must be 0 or 1")
         plan = ExecutionPlan(bool(cfg["execution_overlap"]), bool(cfg["early_observe"]), cfg["prefill_tiles"],
                              sched.chunk_for(facts.CHUNK_ALIGN, TOKEN_BUDGET, facts.SPEC_K),
@@ -1208,7 +1226,8 @@ def fleet(a) -> int:
                              terminal_mhc=bool(cfg["terminal_mhc"]), prefill_indexer_shards=bool(cfg["prefill_indexer_shards"]),
                              prefill_dense_prefix=bool(cfg["prefill_dense_prefix"]),
                              prefill_absorb_tiles=bool(cfg["prefill_absorb_tiles"]),
-                             decode_fastpaths=bool(cfg["decode_fastpaths"]), decode_dsa_inputs=bool(cfg["decode_dsa_inputs"]))
+                             decode_fastpaths=bool(cfg["decode_fastpaths"]), decode_dsa_inputs=bool(cfg["decode_dsa_inputs"]),
+                             decode_indexer_gate=bool(cfg["decode_indexer_gate"]))
         from engine.profiles.glm53.draft_policy import DraftPolicy
         if cfg["draft_diagnostics"] not in (0, 1):
             raise ValueError("draft diagnostics must be 0 or 1")
