@@ -89,16 +89,33 @@ class GraphCaches:
         self.F, self.layout = real.F, real.layout
         self.capacity = capacity
         self.candidate_capacity = capacity // real.F.kpool
+        self._decode_lengths = None
         self.deferred_state = deferred_state
         layers = [layer for layer in real.layers if not real.F.is_dsa(layer)] if deferred_state else []
         self.deferred_layers = {layer: i for i, layer in enumerate(layers)}
 
     def gather(self):
+        # Every warmup and capture must record its own length producer. Reuse
+        # is only between this forward's layers, never between forwards.
+        self._decode_lengths = None
         # Unreserved pages are masked out of attention by valid pool counts.
         # Translate them to a readable page so padded gathers stay in bounds.
         # index_select owns this copy; clamp it without allocating a second
         # table. The real arena map, including its -1 entries, stays untouched.
         self.block_table = self.real.block_table.index_select(0, self.sequence_ids).clamp_min_(0)
+
+    def row_lengths(self, contexts, tokens, pool_size, lane):
+        """Read-only lengths shared by the DSA layers of one gathered batch."""
+        if not hasattr(self, 'block_table'):
+            raise RuntimeError('decode lengths require gathered graph caches')
+        if self._decode_lengths is None:
+            values = lane(contexts, tokens, pool_size)
+            self._decode_lengths = (contexts, tokens, pool_size, lane, values)
+        else:
+            ctx, t, kp, producer, _ = self._decode_lengths
+            if contexts is not ctx or tokens != t or pool_size != kp or lane is not producer:
+                raise ValueError('decode length inputs changed within one gathered batch')
+        return self._decode_lengths[-1]
 
     def subset(self, start, end):
         if self.deferred_state is not None:
@@ -353,6 +370,7 @@ class Glm53DecodeGraphs:
             finally:
                 if self.observe_stream is not None:
                     torch.cuda.current_stream().wait_stream(self.observe_stream)
+                scratch._decode_lengths = None
                 del scratch.block_table
 
         try:

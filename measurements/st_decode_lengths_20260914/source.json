@@ -1,0 +1,29 @@
+{
+  "base": "793c3fc74c3d760d1cdcb365f14ca7f509eb30a9",
+  "changed_files_sha256": {
+    "engine/profiles/glm53/decode_graphs.py": "a8824df414b56fad40a52055aadcb1c848ac30522367aec9a7bc44ee26b647eb",
+    "engine/profiles/glm53/net.py": "25951e0bf48a275d1dd44aab1d5227f544fe26b7234773ff95acd92cf6ac5e82",
+    "probes/engine_decode_dsa_inputs.py": "ea4d8d6c21bc101287435299456b4447a6106ce9eac2c88170159de678f6d3ad",
+    "probes/engine_decode_lengths.py": "0e82a1db6a1e0d4cf1a7249c4362a757e36f0c6c996ccf275f48cc3960b99dd7",
+    "tests/test_engine_decode_lengths.py": "4ced247bad819fec7942b0e44671e00ff001c27c713efb86a244a0936050dfa8",
+    "tests/test_engine_decode_rows.py": "73fcc1e23a2f54a56eeb497157a5e34a626f7cc8ddcfd62214af7af111bde16b"
+  },
+  "unchanged_producer_sha256": "5a57b9ad11968f510dec9a6701af43f79f185256d62abc2ff78c662b36067421",
+  "runtime_image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+  "cpu": {
+    "tests": 101,
+    "passed": 90,
+    "gpu_skipped": 11,
+    "seconds": 9.598
+  },
+  "source_calls_per_forward": {
+    "unsplit_baseline": 11,
+    "unsplit_candidate": 1,
+    "split_c4_baseline": 22,
+    "split_c4_candidate": 2
+  },
+  "default": "unconditional",
+  "new_native_extension_build_required": false,
+  "gpu_replay_measured": false,
+  "consumer_metrics_measured": false
+}
