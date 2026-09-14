@@ -1,0 +1,584 @@
+{
+  "schema": 1,
+  "measured_at": "2026-09-14T03:15:40.476610+00:00",
+  "scope": "CPU host commit only; synthetic readback; not GB10 serving performance",
+  "compile_and_fixture_setup_timed": false,
+  "collective": "common no-op",
+  "gpu_used": false,
+  "import_time_compilation": false,
+  "warmup_pairs": 2,
+  "platform": "macOS-26.6-arm64-arm-64bit",
+  "runtime": {
+    "system": "Darwin",
+    "machine": "arm64",
+    "python": "3.12.13",
+    "implementation": "CPython",
+    "soabi": "cpython-312-darwin"
+  },
+  "artifact": {
+    "schema": 1,
+    "runtime": {
+      "system": "Darwin",
+      "machine": "arm64",
+      "python": "3.12.13",
+      "implementation": "CPython",
+      "soabi": "cpython-312-darwin"
+    },
+    "compiler": "Mojo 1.0.0 (ed45d567)",
+    "flags": [
+      "--emit",
+      "shared-lib"
+    ],
+    "source_sha256": "127c80cac15d7b09474b7e1179ab1a82c8d00bafaa2b065791ebdd3917087c4f",
+    "library_sha256": "0f7ecf829b9a3fad98a11d733bc3394ba9ac48bab9013c7d45a4afe8994bedac"
+  },
+  "oracle_file": "engine/profiles/glm53/burst_decode.py",
+  "oracle_sha256": "845a39d6dd61d9b57c30d3a48fc12ba75dd1531f6472af83cdc803db8bacb747",
+  "harness_sha256": "03004e12f5a0e878fe691e71c754dfba6e5ca60318aa3790b5db171f5bd97015",
+  "cases": [
+    {
+      "rows": 1,
+      "initial_context": 32760,
+      "steps_per_sample": 4096,
+      "host_state_sha256": "ce96fb3ce2d9ad3407faecfde2582c8ae277066e2fa45fcb3518b0c022869f85",
+      "all_samples_state_equal": true,
+      "samples": [
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 1.005666015625,
+            "mojo": 1.53338623046875
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 1.54993701171875,
+            "python": 1.040079833984375
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 1.030131103515625,
+            "mojo": 1.531341552734375
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 1.493845703125,
+            "python": 0.99080419921875
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 1.019317626953125,
+            "mojo": 1.51414990234375
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 1.541758056640625,
+            "python": 1.03413916015625
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 1.04252099609375,
+            "mojo": 1.51380419921875
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 1.509307861328125,
+            "python": 1.0313720703125
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 1.030792236328125,
+            "mojo": 1.50238037109375
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 2.262980224609375,
+            "python": 1.019673583984375
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 1.028564453125,
+            "mojo": 1.468353271484375
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 1.524129150390625,
+            "python": 1.042877197265625
+          }
+        }
+      ],
+      "median_us": {
+        "python": 1.0304616699218752,
+        "mojo": 1.5191395263671874
+      },
+      "delta_us": 0.48867785644531225,
+      "mojo_latency_change_pct": 47.423195904255365,
+      "paired_speedup_median": 0.6729465591814986
+    },
+    {
+      "rows": 4,
+      "initial_context": 32760,
+      "steps_per_sample": 4096,
+      "host_state_sha256": "6b7bbe47d0661dd8f51296fad7c7f3b90ec6add57596da27e4fba81e213238a4",
+      "all_samples_state_equal": true,
+      "samples": [
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 2.616241455078125,
+            "mojo": 5.375966552734375
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 3.74003076171875,
+            "python": 2.606069091796875
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 2.609487060546875,
+            "mojo": 3.67850732421875
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 3.732269287109375,
+            "python": 2.614481689453125
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 2.598236083984375,
+            "mojo": 3.74317431640625
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 3.609283447265625,
+            "python": 2.587738037109375
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 2.574177978515625,
+            "mojo": 6.149179931640625
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 3.6530048828125,
+            "python": 2.5867412109375
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 2.59361767578125,
+            "mojo": 3.793355224609375
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 3.603118896484375,
+            "python": 2.58033251953125
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 2.58790087890625,
+            "mojo": 3.86412548828125
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 6.80025244140625,
+            "python": 2.615997314453125
+          }
+        }
+      ],
+      "median_us": {
+        "python": 2.5959268798828123,
+        "mojo": 3.7416025390625
+      },
+      "delta_us": 1.1456756591796875,
+      "mojo_latency_change_pct": 44.13358743106841,
+      "paired_speedup_median": 0.6954652893170813
+    },
+    {
+      "rows": 1,
+      "initial_context": 131064,
+      "steps_per_sample": 4096,
+      "host_state_sha256": "6f72f8a56836f0a4185a3d1d1a1b64f8954bd0404968cfac77cec2bd3962b886",
+      "all_samples_state_equal": true,
+      "samples": [
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 1.00331640625,
+            "mojo": 1.6964111328125
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 1.457316162109375,
+            "python": 1.018269775390625
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 1.035054443359375,
+            "mojo": 1.7628173828125
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 1.52930712890625,
+            "python": 1.049224853515625
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 1.04515576171875,
+            "mojo": 1.724039794921875
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 1.454294921875,
+            "python": 1.039021728515625
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 1.023193359375,
+            "mojo": 1.665008544921875
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 1.45512890625,
+            "python": 1.00113916015625
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 0.992401123046875,
+            "mojo": 1.653106689453125
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 1.469879150390625,
+            "python": 1.031829833984375
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 0.995808837890625,
+            "mojo": 1.66304541015625
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 1.467681884765625,
+            "python": 1.001373291015625
+          }
+        }
+      ],
+      "median_us": {
+        "python": 1.0207315673828123,
+        "mojo": 1.5912069091796877
+      },
+      "delta_us": 0.5704753417968753,
+      "mojo_latency_change_pct": 55.88887029913181,
+      "paired_speedup_median": 0.6484048185907814
+    },
+    {
+      "rows": 4,
+      "initial_context": 131064,
+      "steps_per_sample": 4096,
+      "host_state_sha256": "642937b0ca70c2a9c3798ef78f7b8804f2699ddd8dc04092bdc66eacdc1d25a8",
+      "all_samples_state_equal": true,
+      "samples": [
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 2.5885009765625,
+            "mojo": 4.4139404296875
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 8.02130126953125,
+            "python": 2.626790283203125
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 2.601348876953125,
+            "mojo": 4.529378173828125
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 3.89729833984375,
+            "python": 2.5992431640625
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 2.614166259765625,
+            "mojo": 3.931294677734375
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 3.806843994140625,
+            "python": 2.629791259765625
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 2.6264140625,
+            "mojo": 4.3446552734375
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 3.9271748046875,
+            "python": 2.71021533203125
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 2.69427490234375,
+            "mojo": 9.6878662109375
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 4.233612060546875,
+            "python": 2.743143798828125
+          }
+        },
+        {
+          "order": [
+            "python",
+            "mojo"
+          ],
+          "us_per_outcome": {
+            "python": 2.641062255859375,
+            "mojo": 4.414215087890625
+          }
+        },
+        {
+          "order": [
+            "mojo",
+            "python"
+          ],
+          "us_per_outcome": {
+            "mojo": 3.9127197265625,
+            "python": 2.68358349609375
+          }
+        }
+      ],
+      "median_us": {
+        "python": 2.628290771484375,
+        "mojo": 4.289133666992187
+      },
+      "delta_us": 1.6608428955078125,
+      "mojo_latency_change_pct": 63.19098760027306,
+      "paired_speedup_median": 0.6262300814869329
+    }
+  ]
+}
