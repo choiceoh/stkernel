@@ -266,6 +266,12 @@ def update_pool_cache(pooled_keys, pooled_scales, keys, scales, field, slots, co
     write_tails(field, slots, contexts, raw_keys, gates)
 
 
+def compress_decode_pools(tails, keys, gates, ape, contexts, slots):
+    """Reference composition with materialized windows and unchanged pooling."""
+    kw, gw = pool_window(tails, keys, gates, contexts, 4, 2, slots=slots)
+    return kpool_compress(kw, gw, ape)
+
+
 def head_gate(w, qs, scale: float):
     """The indexer's fp32 head gate with the query scale and the softmax scale folded in, as two products."""
     return (w * qs * scale).contiguous()

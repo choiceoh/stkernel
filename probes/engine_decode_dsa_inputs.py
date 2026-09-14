@@ -155,7 +155,7 @@ def check(ranks=None):
     files = ('engine/kernels/dense/kernels.cu', 'engine/kernels/dense/query_pair.py',
              'engine/kernels/mla/decode_inputs.py', 'engine/kernels/indexer_gate.py',
              'engine/kernels/mla/decode_absorb.py', 'engine/kernels/mla/prefill_absorb.py',
-             'engine/kernels/decode_projection.py', 'engine/kernels/indexer.py', 'engine/profiles/glm53/net.py',
+             'engine/kernels/decode_projection.py', 'engine/kernels/indexer.py', 'engine/kernels/kpool.py', 'engine/profiles/glm53/net.py',
              'engine/profiles/glm53/decode_graphs.py', 'engine/profiles/glm53/lanes.py',
              'probes/engine_decode_pool_cache.py')
     def report(event, **values):
@@ -166,13 +166,14 @@ def check(ranks=None):
     torch.manual_seed(914875)
     from probes.engine_decode_indexer_gate import check as head_gate_check
     from probes.engine_decode_absorb import check as absorb_check
-    from probes.engine_decode_pool_cache import check as pool_cache_check
+    from probes.engine_decode_pool_cache import check as pool_cache_check, ids_check
     failures = []
     for name, fn in (('query_pair', lambda: query_check(report, ranks=ranks)),
                      ('latent_norm_write', lambda: latent_check(report)),
                      ('indexer_head_gate', lambda: head_gate_check(report, ranks)),
                      ('decode_absorb', lambda: absorb_check(report, ranks)),
-                     ('pool_cache_glue', lambda: pool_cache_check(report))):
+                     ('pool_cache_glue', lambda: pool_cache_check(report, ranks)),
+                     ('topk_ids_read', lambda: ids_check(report))):
         try:
             fn()
         except Exception as exc:

@@ -256,6 +256,26 @@ def build_pooled_page_table(
 
 
 @triton.jit
+def _pool_input(SRC, TAIL, SLOTS, CTX, row, slot, offs, mask, s0, s1, s2,
+                MAPPED: tl.constexpr, MAX_POOLS: tl.constexpr, POOL_SIZE: tl.constexpr,
+                TOKENS: tl.constexpr, TAIL_WIDTH: tl.constexpr,
+                TS0: tl.constexpr, TS1: tl.constexpr, CHANNEL: tl.constexpr):
+    if MAPPED:
+        seq, pool = row // MAX_POOLS, row % MAX_POOLS
+        ctx, physical = tl.load(CTX + seq), tl.load(SLOTS + seq)
+        rel = pool * POOL_SIZE + slot - ctx % POOL_SIZE
+        previous = (ctx + rel) % TAIL_WIDTH
+        current = tl.minimum(tl.maximum(rel, 0), TOKENS - 1)
+        # Both sources are BF16. Select the address before loading so earlier
+        # positions do not also fetch an unused current-step token.
+        ptr = tl.where(rel < 0, TAIL + physical * TS0 + previous * TS1 + CHANNEL + offs,
+                       SRC + seq * s0 + current * s1 + offs * s2)
+    else:
+        ptr = SRC + row * s0 + slot * s1 + offs * s2
+    return tl.load(ptr, mask=mask, other=0.0).to(tl.float32)
+
+
+@triton.jit
 def _kpool_softmax_rotate_write_cache_kernel(
     buf_fp8_ptr,
     buf_fp32_ptr,
@@ -285,6 +305,16 @@ def _kpool_softmax_rotate_write_cache_kernel(
     slot_score_stride_2: tl.constexpr = 1,
     ape_stride_1: tl.constexpr = 1,
     WARP_LOCAL_ROTATION: tl.constexpr = False,
+    tail_ptr=None,
+    physical_slots_ptr=None,
+    contexts_ptr=None,
+    MAPPED_INPUT: tl.constexpr = False,
+    MAX_POOLS: tl.constexpr = 1,
+    TOKENS: tl.constexpr = 0,
+    TAIL_WIDTH: tl.constexpr = 0,
+    TAIL_STRIDE_0: tl.constexpr = 0,
+    TAIL_STRIDE_1: tl.constexpr = 0,
+    TAIL_STRIDE_2: tl.constexpr = 0,
 ):
     """One program per pool. softmax(slot_score+ape)-weighted sum of slot_k ->
     Hadamard-128 -> per-vector fp8 absmax quant -> write to cache at ``loc``."""
@@ -299,14 +329,10 @@ def _kpool_softmax_rotate_write_cache_kernel(
     # --- Pass 1: per-dim max over the pool (softmax numerical stability) ---
     max_score = tl.full((BLOCK_D,), -float("inf"), tl.float32)
     for slot in tl.static_range(0, POOL_SIZE):
-        score = tl.load(
-            slot_score_ptr
-            + row * slot_score_stride_0
-            + slot * slot_score_stride_1
-            + offs * slot_score_stride_2,
-            mask=mask,
-            other=0.0,
-        ).to(tl.float32)
+        score = _pool_input(slot_score_ptr, tail_ptr, physical_slots_ptr, contexts_ptr, row, slot, offs, mask,
+                            slot_score_stride_0, slot_score_stride_1, slot_score_stride_2,
+                            MAPPED_INPUT, MAX_POOLS, POOL_SIZE, TOKENS, TAIL_WIDTH,
+                            TAIL_STRIDE_0, TAIL_STRIDE_1, TAIL_STRIDE_2)
         score += tl.load(ape_ptr + slot * ape_stride_0 + offs * ape_stride_1, mask=mask, other=0.0).to(
             tl.float32
         )
@@ -316,24 +342,19 @@ def _kpool_softmax_rotate_write_cache_kernel(
     acc = tl.full((BLOCK_D,), 0.0, tl.float32)
     denom = tl.full((BLOCK_D,), 0.0, tl.float32)
     for slot in tl.static_range(0, POOL_SIZE):
-        score = tl.load(
-            slot_score_ptr
-            + row * slot_score_stride_0
-            + slot * slot_score_stride_1
-            + offs * slot_score_stride_2,
-            mask=mask,
-            other=0.0,
-        ).to(tl.float32)
+        score = _pool_input(slot_score_ptr, tail_ptr, physical_slots_ptr, contexts_ptr, row, slot, offs, mask,
+                            slot_score_stride_0, slot_score_stride_1, slot_score_stride_2,
+                            MAPPED_INPUT, MAX_POOLS, POOL_SIZE, TOKENS, TAIL_WIDTH,
+                            TAIL_STRIDE_0, TAIL_STRIDE_1, TAIL_STRIDE_2)
         score += tl.load(ape_ptr + slot * ape_stride_0 + offs * ape_stride_1, mask=mask, other=0.0).to(
             tl.float32
         )
         prob = tl.exp(score - max_score)
         denom += prob
-        k = tl.load(
-            slot_k_ptr + row * slot_k_stride_0 + slot * slot_k_stride_1 + offs * slot_k_stride_2,
-            mask=mask,
-            other=0.0,
-        ).to(tl.float32)
+        k = _pool_input(slot_k_ptr, tail_ptr, physical_slots_ptr, contexts_ptr, row, slot, offs, mask,
+                        slot_k_stride_0, slot_k_stride_1, slot_k_stride_2,
+                        MAPPED_INPUT, MAX_POOLS, POOL_SIZE, TOKENS, TAIL_WIDTH,
+                        TAIL_STRIDE_0, TAIL_STRIDE_1, 0)
         acc += k * prob
 
     x = acc / denom
@@ -413,6 +434,38 @@ def compress_pool_keys(slot_k: torch.Tensor, slot_score: torch.Tensor, ape: torc
             slot_k_stride_2=slot_k.stride(2), slot_score_stride_2=slot_score.stride(2), ape_stride_1=ape.stride(1),
             WARP_LOCAL_ROTATION=True, num_warps=1)
     return keys, scales
+
+
+def compress_decode_pools(tails, keys, gates, ape, contexts, slots):
+    """K=7 pooling from the physical tail ring and current step, with no window tensors.
+
+    Reuse the return-only kernel, including its one-warp softmax/FWHT order
+    and both BF16 rounding points. Only the input addresses change.
+    """
+    if (keys.ndim != 3 or keys.shape[1:] != (8, _indexer_cell()) or not 1 <= keys.shape[0] <= 4
+            or keys.dtype != torch.bfloat16 or keys.stride(2) != 1
+            or gates.shape != keys.shape or gates.dtype != keys.dtype or gates.stride(2) != 1
+            or tails.ndim != 4 or tails.shape[1:] != (10, 2, 128) or tails.stride(3) != 1
+            or tails.dtype != keys.dtype or ape.shape != (4, 128) or ape.dtype != torch.float32
+            or contexts.shape != (keys.shape[0],) or slots.shape != contexts.shape
+            or contexts.dtype != torch.int64 or slots.dtype != torch.int64
+            or not contexts.is_contiguous() or not slots.is_contiguous()
+            or any(x.device != keys.device for x in (tails, gates, ape, contexts, slots))):
+        raise ValueError('decode pooling requires bound K=7 BF16 ring/current rows, FP32 bias and int64 replay ids')
+    pools = keys.shape[0] * 2
+    out = torch.empty((pools, 128), dtype=torch.float8_e4m3fn, device=keys.device)
+    scale = torch.empty((pools, 1), dtype=torch.float32, device=keys.device)
+    _kpool_softmax_rotate_write_cache_kernel[(pools,)](
+        out, scale, keys, gates, ape, out, out, out, scale,
+        keys.stride(0), keys.stride(1), gates.stride(0), gates.stride(1), ape.stride(0),
+        PAGE_SIZE=1, BUF_NUMEL_PER_PAGE=1, POOL_SIZE=4, HEAD_DIM=128,
+        S_OFFSET_NBYTES_IN_PAGE=0, ROUND_SCALE=True, HAS_WRITE_MASK=False,
+        RETURN_COMPRESSED=True, WRITE_CACHE=False, BLOCK_D=128,
+        slot_k_stride_2=1, slot_score_stride_2=1, ape_stride_1=ape.stride(1),
+        WARP_LOCAL_ROTATION=True, tail_ptr=tails, physical_slots_ptr=slots, contexts_ptr=contexts,
+        MAPPED_INPUT=True, MAX_POOLS=2, TOKENS=8, TAIL_WIDTH=10,
+        TAIL_STRIDE_0=tails.stride(0), TAIL_STRIDE_1=tails.stride(1), TAIL_STRIDE_2=tails.stride(2), num_warps=1)
+    return out, scale
 
 
 def kpool_compress_and_write_cache(

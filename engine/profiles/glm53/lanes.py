@@ -120,6 +120,7 @@ class DecodeRows:
                           #  each row's raw keys and gates into its ring at (context + j) % W
     horizon: object       # (logits [t, n] f32, ke [t] i32) -> the same logits with -inf at columns >= ke[r], in place
     update: object = None # K=7 pool addressing/scatter + raw-tail writes; window accepts physical slots= as well
+    compress: object = None # K=7 pooling directly from the tail ring and current rows, without window tensors
 
 
 def reference_decode_rows() -> DecodeRows:
@@ -127,7 +128,7 @@ def reference_decode_rows() -> DecodeRows:
     and what a CPU test hands a composition."""
     from engine.modules import sparse_indexer as si
     return DecodeRows(si.row_lengths, si.latent_write_rows, si.gather_candidates, si.pool_window, si.pool_addresses,
-                      si.scatter_pools, si.write_tails, si.mask_horizon, si.update_pool_cache)
+                      si.scatter_pools, si.write_tails, si.mask_horizon, si.update_pool_cache, si.compress_decode_pools)
 
 
 def swiglu_clamped(g: torch.Tensor, u: torch.Tensor, limit: float) -> torch.Tensor:
@@ -269,7 +270,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     from engine.kernels.causal_conv_ring import causal_conv1d_ring, causal_conv1d_ring_rows
     from engine.kernels.mhc import mhc_pre_tilelang, mhc_post_tilelang
     from engine.kernels.deep_gemm import fp8_fp4_mqa_logits
-    from engine.kernels.kpool import compress_pool_keys, fwht128_quant_fp8
+    from engine.kernels.kpool import compress_pool_keys, fwht128_quant_fp8, compress_decode_pools
     from engine.kernels import mla as mk
     from engine.kernels.indexer import (pool_slots, row_lengths, latent_write_rows, gather_candidates, pool_window, pool_addresses,
                                         scatter_pools, write_tails, mask_horizon, head_gate)
@@ -551,12 +552,17 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                   kda_recurrent_ring_rows=None if recurrent_kda_ring_rows is None else on_main(recurrent_kda_ring_rows),
                   conv_ring_rows=None if "conv_prefill" in reference_for else on_main(causal_conv1d_ring_rows),
                   decode_rows=DecodeRows(*(on_main(f) for f in (row_lengths, latent_write_rows, gather_candidates, pool_window,
-                                                                pool_addresses, scatter_pools, write_tails, mask_horizon, update_pool_cache))),
+                                                                pool_addresses, scatter_pools, write_tails, mask_horizon,
+                                                                update_pool_cache, compress_decode_pools))),
                   head_gate=on_main(head_gate),
                   rmsnorm=on_main(norm), swiglu=on_main(activation),
                   route_weights=on_main(route_weights), layernorm=on_main(layernorm),
                   mla_dense_prefix=on_main(mla_dense_prefix), mla_absorb=on_main(mla_prefill_absorb),
                   latent_norm_write=on_main(latent_norm_write))
+    return _apply_reference_lanes(table, ref, reference_for)
+
+
+def _apply_reference_lanes(table, ref, reference_for):
     # 45차 §21 bisect: any other lane named in `reference_for` runs on the torch reference in this table
     # (the served output is garbage while every self-consistency judge passes -- which lane, if any, is found by
     # swapping them one at a time; "expert" and "kda_recurrent" are the two the kernels already know how to declare).
@@ -569,6 +575,10 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     if swapped:
         from dataclasses import replace
         table = replace(table, **swapped)
+        if "kpool_compress" in swapped and table.decode_rows is not None:
+            # Selecting the pooling reference must also replace its captured
+            # direct reader; otherwise the bisect silently keeps native math.
+            table = replace(table, decode_rows=replace(table.decode_rows, compress=ref.decode_rows.compress))
     return table
 
 

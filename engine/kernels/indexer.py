@@ -28,7 +28,9 @@ def _pool_slots(ids, lengths, table, out, counts, groups: tl.constexpr,
     seq = tl.load(lengths + row * len_s0)
     tail = seq % POOL
     pool = tl.load(ids + row * id_s0 + g * id_s1, g < groups, other=-1)
-    pool = tl.sort(tl.where((pool >= 0) & (pool < seq // POOL), pool, -1), descending=True)
+    # topk returns int64. Reject invalid ids BEFORE narrowing (large ids must
+    # not wrap into a valid pool), then keep the existing int32 sort/scan.
+    pool = tl.sort(tl.where((pool >= 0) & (pool < seq // POOL), pool, -1).to(tl.int32), descending=True)
     # Sorting compressed pool IDs is 8x smaller than a padded 2051-token sort.
     # Runs also preserve the token-level order if a pool is selected twice.
     prev = tl.gather(pool, tl.maximum(g - 1, 0), 0)
@@ -68,7 +70,8 @@ def pool_slots(pool_ids, seq_lens, pool_size, block_table, block_size, block_str
 
     Integer-only, no scratch allocation or device-to-host reads. Invalid pools
     are masked before sorting or addressing. Duplicate pools retain multiplicity.
-    Inputs/outputs may be strided but must not overlap. Sequence lengths are
+    Int32 ids or topk's original int64 ids are accepted; invalid int64 ids
+    are masked before narrowing. Inputs/outputs may be strided but must not overlap. Sequence lengths are
     nonnegative int32; valid token positions must fit int32 and the block row.
     Mapped KV blocks must contain a whole number of pools.
 
@@ -76,7 +79,7 @@ def pool_slots(pool_ids, seq_lens, pool_size, block_table, block_size, block_str
     `tokens` to a sequence in order, and row r reads block row r // tokens -- one
     launch whose program r is what a one-sequence launch's program does for that row.
     """
-    assert pool_ids.ndim == 2 and pool_ids.dtype == torch.int32
+    assert pool_ids.ndim == 2 and pool_ids.dtype in (torch.int32, torch.int64)
     rows, groups = pool_ids.shape
     assert pool_size > 0 and pool_size & (pool_size - 1) == 0
     assert seq_lens.shape == (rows,) and seq_lens.dtype == torch.int32
