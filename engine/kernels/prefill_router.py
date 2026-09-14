@@ -32,9 +32,11 @@ def _router_gemm(X, W, Out, M, BM: tl.constexpr, BN: tl.constexpr, BK: tl.conste
                             rows[:,None] < M, other=0)
             bits = ((words >> ((offset & 1)*8)) & 255).to(tl.uint8)
             v = bits.to(tl.float8e4nv, bitcast=True).to(tl.float32)
-            scale = tl.load(Scales + rank[:,None]*(PACKET_BYTES//4) + LOCAL_ROWS*1024
-                            + offset//2048, rows[:,None] < M, other=0.)
-            a = (v*scale).to(tl.bfloat16)
+            # BK=64 stays inside a 2048-value transport block. Load one
+            # scale per row, rather than constructing a replicated MxK load.
+            scale = tl.load(Scales + rank*(PACKET_BYTES//4) + LOCAL_ROWS*1024
+                            + local_row*2 + block//(2048//BK), rows < M, other=0.)
+            a = (v*scale[:,None]).to(tl.bfloat16)
         else:
             a = tl.load(X + rows[:,None]*4096 + k[None,:], mask=rows[:,None] < M, other=0.)
         b = tl.load(W + cols[None,:]*4096 + k[:,None], mask=cols[None,:] < 288, other=0.)
@@ -71,5 +73,5 @@ def router_packet_logits(batch, weight):
     _router_gemm[(triton.cdiv(g.rows,64)*triton.cdiv(288,64),)](
         x.view(torch.float8_e4m3fn), weight, out, g.rows,
         BM=64, BN=64, BK=64, Scales=x.view(torch.float32), LOCAL_ROWS=g.local_rows,
-        PACKET_BYTES=g.stride, PACKETS=True, num_warps=4, num_stages=3, enable_fp_fusion=False)
+        PACKET_BYTES=g.stride, PACKETS=True, num_warps=4, num_stages=1, enable_fp_fusion=False)
     return out

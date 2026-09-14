@@ -57,7 +57,7 @@ def compile_consumers(output):
             start = time.monotonic()
             kernel = triton.compile(ASTSource(_router_gemm, signature, constexprs=constants),
                 target=GPUTarget('cuda', 121, 32),
-                options=dict(num_warps=4, num_stages=3, enable_fp_fusion=False))
+                options=dict(num_warps=4, num_stages=1 if packets else 3, enable_fp_fusion=False))
             name = 'router-packets' if packets else 'router-bf16'
             dot_ir = '\n'.join(line for line in kernel.asm['ttgir'].splitlines() if 'tt.dot ' in line)
             k_widths = [int(value) for value in re.findall(r'kWidth = (\d+)', dot_ir)]
