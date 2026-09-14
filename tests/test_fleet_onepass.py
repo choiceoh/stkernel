@@ -106,6 +106,16 @@ class OnepassPolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.validate(command, kind='single')
 
+    def test_router_only_is_scoped_to_the_pinned_packet_probe(self):
+        command = ['bash', 'probes/run_engine_probe.sh', 'probes/engine_ffn_packets_check.py',
+                   '--router-only', '--samples', '8', '--output', '/cache/router.json']
+        self.assertEqual(self.validate(command, kind='single')['gpus'], 1)
+        for other in ('probes/engine_kernel_check.py', 'probes/engine_full_check.py'):
+            with self.subTest(probe=other), self.assertRaises(ValueError):
+                self.validate(command[:2]+[other]+command[3:])
+        with self.assertRaises(ValueError):
+            self.validate(['bash', 'probes/run_engine_check.sh', '--router-only'])
+
     def test_retired_mixed_probes_are_not_admitted(self):
         for name in ('experts', 'completion', 'tickets'):
             probe = f'probes/engine_mixed_{name}_check.py'

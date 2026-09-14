@@ -25,13 +25,26 @@ SOURCES = (
     'tests/test_engine_prefill_fp8_consumer.py',
 )
 
+# A bounded diagnostic sweep, never an engine autotuner or a serving knob.
+ROUTER_VARIANTS = (
+    ('current', 64, 64, False, False),
+    ('pairs-64x64', 64, 64, True, False),
+    ('pairs-32x64', 32, 64, True, False),
+    ('pairs-32x128', 32, 128, True, False),
+    ('pairs-64x128', 64, 128, True, False),
+    ('pairs-16x128', 16, 128, True, False),
+    ('pairs-32x256', 32, 256, True, False),
+    ('pairs-hoist-64x64', 64, 64, True, True),
+    ('pairs-hoist-32x128', 32, 128, True, True),
+)
+
 
 def fingerprint():
     root = Path(__file__).resolve().parents[1]
     return {p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in SOURCES}
 
 
-def compile_consumers(output):
+def compile_consumers(output, router_only=False):
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '':
         raise RuntimeError('compile requires CUDA_VISIBLE_DEVICES= and a container without GPUs')
     os.environ['CUTE_DSL_ARCH'] = 'sm_121a'
@@ -47,9 +60,12 @@ def compile_consumers(output):
                   gpu_used=False, torch=torch.__version__, triton=triton.__version__,
                   source_sha256=fingerprint(), kernels=records)
     try:
-        for packets in (False, True):
+        variants = [('bf16', 64, 64, False, False)] + (list(ROUTER_VARIANTS) if router_only
+                    else [('packets', 64, 64, False, False)])
+        for label, bm, bn, pairs, hoist in variants:
+            packets = label != 'bf16'
             signature = dict(X='*fp8e4nv' if packets else '*bf16', W='*bf16', Out='*fp32', M='i32')
-            constants = dict(BM=64, BN=64, BK=64, PACKETS=packets)
+            constants = dict(BM=bm, BN=bn, BK=64, PACKETS=packets, PAIR_LOADS=pairs, HOIST_SCALES=hoist)
             if packets:
                 signature.update(Scales='*fp32', LOCAL_ROWS='i32', PACKET_BYTES='i32')
             else:
@@ -58,7 +74,7 @@ def compile_consumers(output):
             kernel = triton.compile(ASTSource(_router_gemm, signature, constexprs=constants),
                 target=GPUTarget('cuda', 121, 32),
                 options=dict(num_warps=4, num_stages=1 if packets else 3, enable_fp_fusion=False))
-            name = 'router-packets' if packets else 'router-bf16'
+            name = 'router-'+label
             dot_ir = '\n'.join(line for line in kernel.asm['ttgir'].splitlines() if 'tt.dot ' in line)
             k_widths = [int(value) for value in re.findall(r'kWidth = (\d+)', dot_ir)]
             if k_widths != [2, 2]:
@@ -71,6 +87,11 @@ def compile_consumers(output):
                                 dot_k_widths=k_widths,
                                 cubin_sha256=hashlib.sha256(kernel.asm['cubin']).hexdigest()))
             print(json.dumps(records[-1]), flush=True)
+        if router_only:
+            if torch.cuda.is_initialized():
+                raise RuntimeError('router compilation initialized CUDA')
+            report.update(status='PASS', scope='bounded SM121 router compilation only; no GPU or FFN proof')
+            return report
         kernel = triton.compile(ASTSource(_quantize_gather,
             dict(Packed='*fp8e4nv', Scales='*fp32', Q='*fp8e4nv', S='*fp32', LOCAL_N='i32', PAYLOAD_BYTES='i32'),
             constexprs=dict(K=4096, G=32, PACK_BLOCK=2048)),
@@ -113,5 +134,6 @@ def compile_consumers(output):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--router-only', action='store_true')
     args = parser.parse_args()
-    print(json.dumps(compile_consumers(args.output)), flush=True)
+    print(json.dumps(compile_consumers(args.output, args.router_only)), flush=True)

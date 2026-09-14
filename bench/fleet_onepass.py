@@ -103,6 +103,8 @@ def _st_args(relative, args, cwd, repo):
         _same(_path(probe, cwd), probe, repo)
         if probe == 'probes/engine_kda_deferred_check.py':
             switches.add('--commit-only')
+        if probe == 'probes/engine_ffn_packets_check.py':
+            switches.add('--router-only')
     while args:
         token = args[0]
         if token in switches:

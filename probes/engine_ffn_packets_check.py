@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import statistics
 import time
 import traceback
@@ -55,6 +56,100 @@ def output_error(actual, expected):
     if result['relative_max'] > .02 or result['relative_rms'] > .004:
         raise RuntimeError(f'cross-launch BF16 scatter exceeded the declared component tolerance: {result}')
     return result
+
+
+def paired_summary(samples):
+    """Keep every B/A/A/B cycle; a favorable median is not a latency verdict."""
+    if len(samples) != 2 or len(samples[0]) != len(samples[1]) or len(samples[0]) < 4 or len(samples[0]) % 2:
+        raise ValueError('paired timings require two equally sized arms and complete B/A/A/B cycles')
+    means = [statistics.mean(v) for v in samples]
+    cycles = [[statistics.mean(v[i:i+2]) for v in samples] for i in range(0, len(samples[0]), 2)]
+    return dict(mean_ms=means, mean_change_pct=100*(means[1]/means[0]-1),
+                cycle_mean_ms=cycles, cycle_change_pct=[100*(a/b-1) for b, a in cycles])
+
+
+def measure_router(args, report):
+    """Exact actual-weight router tuning, without loading or timing an expert FFN."""
+    import torch
+    import triton
+    from engine.kernels.glm_pointwise import route_weights
+    from engine.kernels.prefill_collectives import BLOCK
+    from engine.kernels.prefill_collectives.kernels import _unpack_gather
+    from engine.kernels.prefill_router import _router_gemm
+    from engine.modules.prefill_packets import PacketGeometry
+    from engine.profiles.glm53 import facts
+    from engine.profiles.glm53.weights import rank_loader
+    from probes.engine_graph_profile import rank_on_this_node
+    from probes.engine_ffn_packets_compile import ROUTER_VARIANTS
+    from tests.test_engine_prefill_fp8_consumer import PrefillConsumerTests
+
+    if torch.cuda.get_device_capability() != (12, 1):
+        raise RuntimeError('router tuning requires GB10/SM121')
+    budget = 8 << 30
+    torch.cuda.set_per_process_memory_fraction(budget/torch.cuda.get_device_properties(0).total_memory)
+    root = Path(args.ranks)
+    if not root.is_absolute():
+        root = facts.RANKS.parent/root
+    rank = rank_on_this_node(str(root))
+    path = root/f'rank{rank}of4.safetensors'
+    loaded = rank_loader(path).load(['L3.moe.gate', 'L3.moe.bias'], device='cuda')
+    gate, bias = loaded['L3.moe.gate'], loaded['L3.moe.bias']
+    model = facts.load(args.ckpt_meta)
+    report.update(device=torch.cuda.get_device_name(), torch=torch.__version__, triton=triton.__version__,
+        cuda=torch.version.cuda, memory_budget_bytes=budget,
+        weights=dict(rank=rank, rank_file=str(path), source_sha256={k: sha_tensor(v) for k,v in loaded.items()}),
+        routed_scale=model.routed_scale, cases=[])
+    for rows in (8193, 8194, 8195, 9216, 32768):
+        g = PacketGeometry(rows, (rows+3)//4)
+        received = PrefillConsumerTests.received(g.local_rows, seed=rows)
+        input_hash = sha_tensor(received)
+        x = torch.empty((g.padded_rows,4096), device='cuda', dtype=torch.bfloat16)
+        _unpack_gather[(x.numel()//BLOCK,)](received.view(torch.float8_e4m3fn),
+            received.view(torch.float32), x, g.local_elements, g.stride, BLOCK=BLOCK)
+        outputs = [torch.empty((rows,288), device='cuda', dtype=torch.float32) for _ in range(2)]
+        def ordinary():
+            return _router_gemm[(triton.cdiv(rows,64)*triton.cdiv(288,64),)](
+                x, gate, outputs[0], rows, BM=64, BN=64, BK=64, num_warps=4, num_stages=3,
+                enable_fp_fusion=False)
+        ordinary()
+        reference_hash = sha_tensor(outputs[0])
+        reference_routes = [sha_tensor(v) for v in route_weights(outputs[0], bias, 8, model.routed_scale)]
+        for name, bm, bn, pairs, hoist in ROUTER_VARIANTS:
+            report['active_case'] = dict(rows=rows, variant=name)
+            def candidate():
+                return _router_gemm[(triton.cdiv(rows,bm)*triton.cdiv(288,bn),)](
+                    received.view(torch.float8_e4m3fn), gate, outputs[1], rows, BM=bm, BN=bn, BK=64,
+                    Scales=received.view(torch.float32), LOCAL_ROWS=g.local_rows, PACKET_BYTES=g.stride,
+                    PACKETS=True, PAIR_LOADS=pairs, HOIST_SCALES=hoist, num_warps=4, num_stages=1,
+                    enable_fp_fusion=False)
+            kernel = candidate()
+            dot_ir = '\n'.join(line for line in kernel.asm['ttgir'].splitlines() if 'tt.dot ' in line)
+            k_widths = [int(v) for v in re.findall(r'kWidth = (\d+)', dot_ir)]
+            logits_exact = sha_tensor(outputs[1]) == reference_hash
+            routes_exact = [sha_tensor(v) for v in route_weights(outputs[1], bias, 8, model.routed_scale)] == reference_routes
+            cell = dict(rows=rows, variant=name, dot_k_widths=k_widths, shared_bytes=kernel.metadata.shared,
+                registers=kernel.n_regs, spills=kernel.n_spills, logits_byte_exact=logits_exact,
+                routes_byte_exact=routes_exact, cubin_sha256=hashlib.sha256(kernel.asm['cubin']).hexdigest())
+            if not logits_exact or not routes_exact or k_widths != [2, 2]:
+                cell.update(status='REJECTED', changed_logits=int((outputs[1].view(torch.int32)
+                    != outputs[0].view(torch.int32)).sum()), max_abs=float((outputs[1]-outputs[0]).abs().max()))
+            else:
+                times = [[], []]
+                for _ in range(args.samples//2):
+                    for arm in (0, 1, 1, 0):
+                        start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+                        start.record()
+                        (ordinary, candidate)[arm]()
+                        end.record(); end.synchronize()
+                        times[arm].append(start.elapsed_time(end))
+                cell.update(status='EXACT', milliseconds=times, paired=paired_summary(times))
+            report['cases'].append(cell)
+            print(json.dumps(cell), flush=True)
+        if sha_tensor(received) != input_hash:
+            raise RuntimeError('router modified the packet owner')
+    report.pop('active_case', None)
+    report.update(status='COMPLETE', gpu_used=True, default_enabled=False,
+        max_allocated_bytes=torch.cuda.max_memory_allocated())
 
 
 def measure(args, report):
@@ -220,7 +315,8 @@ def measure(args, report):
             packet_sha256=input_hash, workspace=g.workspace(), milliseconds=times,
             median_ms=medians, change_pct=100*(medians[1]/medians[0]-1),
             wall_milliseconds=wall_times, wall_median_ms=wall_medians,
-            wall_change_pct=100*(wall_medians[1]/wall_medians[0]-1))
+            wall_change_pct=100*(wall_medians[1]/wall_medians[0]-1),
+            paired_device=paired_summary(times), paired_wall=paired_summary(wall_times))
         # Diagnose the complete-FFN result only after its bracket. These are
         # warm independent consumers; their times must not replace or be
         # summed into a whole-FFN/serving performance claim.
@@ -263,6 +359,7 @@ def main():
     parser.add_argument('--ranks', default=str(facts.RANKS))
     parser.add_argument('--ckpt-meta', default=str(facts.CKPT))
     parser.add_argument('--samples', type=int, default=8)
+    parser.add_argument('--router-only', action='store_true', help='bounded exact router tuning; no full FFN qualification')
     parser.add_argument('--output', type=Path, default=Path('/cache/ffn-packets.json'))
     args = parser.parse_args()
     if args.samples < 4 or args.samples % 2:
@@ -279,7 +376,12 @@ def main():
                   'TTFT, generation tok/s and model quality/acceptance', source_sha256=sources,
                   image=os.environ.get('ST_IMAGE'), started=time.time())
     try:
-        measure(args, report)
+        if args.router_only:
+            report['scope'] = ('one GB10 actual L3 router weights, synthetic received packets, bounded tile/load sweep; '
+                'router kernel diagnostics only, excludes unpack, expert/shared FFN, NIC and serving performance')
+            measure_router(args, report)
+        else:
+            measure(args, report)
     except BaseException:
         report['error'] = traceback.format_exc()
         raise

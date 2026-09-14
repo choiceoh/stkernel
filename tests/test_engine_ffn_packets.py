@@ -260,5 +260,19 @@ class PacketProducerTests(unittest.TestCase):
                          {'_setup_attributes', 'initialize_route_q0_and_publish'})
 
 
+class PairedTimingTests(unittest.TestCase):
+    def test_median_improvement_does_not_hide_slower_mean_or_paired_cycle(self):
+        from probes.engine_ffn_packets_check import paired_summary
+        result = paired_summary([[100., 10., 100., 100.], [95., 95., 95., 95.]])
+        self.assertEqual(result['mean_ms'], [77.5, 95.])
+        self.assertGreater(result['mean_change_pct'], 0)
+        self.assertEqual(result['cycle_mean_ms'], [[55., 95.], [100., 95.]])
+        self.assertGreater(result['cycle_change_pct'][0], 0)
+        self.assertLess(result['cycle_change_pct'][1], 0)
+        for invalid in ([[1.]*4, [1.]*2], [[1.]*3, [1.]*3]):
+            with self.assertRaises(ValueError):
+                paired_summary(invalid)
+
+
 if __name__ == '__main__':
     unittest.main()
