@@ -33,6 +33,9 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 NODES = ("10.10.10.2", "10.10.10.1", "10.10.10.3", "10.10.10.4")   # rank 0 owns the rendezvous store
+# The same port's second PCIe function (roceP2p1s0f0, netdev enP2p1s0f0np0), in the same rank order.
+# One-shot's second rail: without it a collective's three 64 KiB peer writes queue behind one x4 link.
+RAIL_NODES = ("10.10.11.2", "10.10.11.1", "10.10.11.3", "10.10.11.4")
 HEAD = NODES[0]
 GLOO_IFNAME = "enP2p1s0f0np0"
 LANES = {"tp.allreduce.nccl": "NCCL sum/MAX over the TP process group"}
@@ -72,11 +75,13 @@ class Comm:
     transport: object = None
     preparation: object = None       # boot-only Gloo group, closed after weights are ready
 
-    def prepare_oneshot(self):
+    def prepare_oneshot(self, rails: int = 2):
         if self.transport is not None:
             raise RuntimeError("one-shot transport is already bound")
+        if rails not in (1, 2):
+            raise ValueError("one-shot serves one or two RoCE rails")
         from engine.kernels.oneshot import OneShot
-        self.transport = OneShot(self, NODES)
+        self.transport = OneShot(self, NODES, (RAIL_NODES,) if rails == 2 else ())
 
     @classmethod
     def init(cls, rank: "int | None" = None, world: "int | None" = None, *, timeout_s: float = 120.):

@@ -41,6 +41,18 @@ OSAR_HD constexpr bool osar_publication_last(uint64_t old, unsigned weight,
   return old + uint64_t(weight) == sequence * uint64_t(OSAR_PUBLICATION_TICKETS);
 }
 
+// Which RoCE rail carries the RC queue pair between two ranks. Each GB10 port
+// is exposed as two PCIe x4 functions, rocep1s0f0 and roceP2p1s0f0, and a
+// single function serialized a collective's three peer writes behind one x4
+// link. With two rails the pairs {0,1} and {2,3} move to the second function,
+// so every rank sends and receives two peers on rail 0 and one on rail 1.
+// Both endpoints evaluate the same symmetric rule before exchanging queue
+// pair information, so a pair can never be split across rails.
+OSAR_HD constexpr int osar_pair_rail(int a, int b, int rails) {
+  const int low = a < b ? a : b;
+  return rails == 2 && (a ^ b) == 1 && low % 2 == 0 ? 1 : 0;
+}
+
 #undef OSAR_HD
 
 // Host-only watchdog. The proxy publishes its own monotonic timestamp; callers

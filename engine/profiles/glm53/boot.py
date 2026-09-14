@@ -238,7 +238,7 @@ def declared(a, comm_world: int) -> Config:
     gb10_defaults = dict(direct_mhc=1, prefill_project_tiles=1,
                          nvme_mapped_staging=1, decode_iterations=4, prefill_indexer_shards=0, prefill_dense_prefix=1,
                          prefill_absorb_tiles=1, decode_fastpaths=1, decode_dsa_inputs=1,
-                         decode_indexer_gate=1, decode_absorb_tiles=1, deferred_kda=1)
+                         decode_indexer_gate=1, decode_absorb_tiles=1, deferred_kda=1, oneshot_rails=2)
     if getattr(a, "production", False):
         # tile32 passed the full GPU numerical/graph and matched 2K/32K/128K
         # serving brackets. Keep it in the production contract so a stale
@@ -295,6 +295,10 @@ def declared(a, comm_world: int) -> Config:
         Knob("nvme_mapped_staging", gb10_defaults["nvme_mapped_staging"], _dt.date(2026, 9, 30),
              "One mapped GB10 staging allocation for NVMe host I/O and GPU gather/scatter",
              "STK_nvme_mapped_staging=0", int),
+        Knob("oneshot_rails", gb10_defaults["oneshot_rails"], _dt.date(2026, 9, 30),
+             "Operator-directed one-shot RDMA over both RoCE PCIe functions, pairs {0,1},{2,3} on the second; "
+             "boot latency gauge and fleet onepass pending",
+             "STK_oneshot_rails=1", int),
         Knob("prefill_project_tiles", gb10_defaults["prefill_project_tiles"], _dt.date(2026, 9, 30),
              "Overlap TP4 prefill tile arrival with independent KDA input projection",
              "STK_prefill_project_tiles=0", int),
@@ -1235,7 +1239,13 @@ def fleet(a) -> int:
             print(cfg.table())
             print(f"  kernel shape ({shape_source}): {shape.describe()}")
         with rec.phase("prepare one-shot"):
-            comm.prepare_oneshot()
+            if cfg["oneshot_rails"] not in (1, 2):
+                raise ValueError("one-shot rails must be 1 or 2")
+            comm.prepare_oneshot(rails=cfg["oneshot_rails"])
+            # The transport's own cost on this rank, sampled after its self-tests (µs per collective).
+            for name, value in comm.transport.latency.items():
+                rec.gauge(f"oneshot_{name}_us", value)
+            print(f"  rank{comm.rank}: one-shot rails={comm.transport.rails} latency µs {comm.transport.latency}", flush=True)
         with rec.phase("lanes"):
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
                                        consume_scales=True)
@@ -1278,6 +1288,8 @@ def fleet(a) -> int:
                             "draft_fc_bias_status": getattr(engine.drafter, 'fc_bias_status', 'unavailable'),
                             "draft_selector_trace_every": str(getattr(getattr(engine.drafter, 'tuning', None), 'trace_every', 0)),
                             "nvme_mapped_staging": str(cfg["nvme_mapped_staging"]),
+                            "oneshot_rails": str(comm.transport.rails),
+                            "oneshot_latency_us": " ".join(f"{k}={v:g}" for k, v in comm.transport.latency.items()),
                             "kda_state_dtype": F.kda_state_dtype,
                             "mla_prefill": cfg["mla_prefill"], "spec_k": str(engine.drafter.k),
                             "context_ceiling": str(engine.max_context),

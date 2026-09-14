@@ -58,12 +58,20 @@ class RankPackets:
         return result
 
 
-def build():
+def pair_rail(a, b, rails):
+    """The RoCE rail of the queue pair between ranks a and b: dsv4_oneshot_transport.h's osar_pair_rail."""
+    return 1 if rails == 2 and (a ^ b) == 1 and min(a, b) % 2 == 0 else 0
+
+
+def build(rails=1):
     from torch.utils.cpp_extension import load
     from engine.kernels.common.native_cache import prepare_sources
+    if rails not in (1, 2):
+        raise ValueError(f'one-shot serves one or two RoCE rails, not {rails}')
     root = Path(__file__).parent
     sources = [root/'dsv4_oneshot_ar.cu', root/'dsv4_oneshot_transport.h']
-    flags = ['-O2', '-gencode', 'arch=compute_121a,code=sm_121a', f'-DMAXEL={MAX_ELEMENTS}']
+    flags = ['-O2', '-gencode', 'arch=compute_121a,code=sm_121a', f'-DMAXEL={MAX_ELEMENTS}',
+             f'-DOSAR_RAILS={rails}']
     root = Path(os.environ.get('ST_ONESHOT_BUILD_ROOT', str(Path.home()/'.cache/st/oneshot')))
     ldflags = ['-libverbs']
     key, directory, staged = prepare_sources(root, sources, (flags, ldflags, torch.__version__, torch.version.cuda))
@@ -72,26 +80,31 @@ def build():
 
 
 class OneShot:
-    def __init__(self, comm, addresses):
+    def __init__(self, comm, addresses, rail_addresses=()):
+        """`addresses`: rank-ordered IPv4 of the first RoCE function (rocep1s0f0). `rail_addresses`: the
+        same table for the second function (roceP2p1s0f0), which puts the pairs pair_rail() names there."""
         cell = _cell()
-        if comm.world_size != cell.world or len(addresses) != cell.world:
-            raise ValueError(f'one-shot requires the explicit {cell.world}-rank address table')
+        tables = (tuple(addresses),) + tuple(tuple(t) for t in rail_addresses)
+        if comm.world_size != cell.world or len(tables) > 2 or any(len(t) != cell.world for t in tables):
+            raise ValueError(f'one-shot requires one or two explicit {cell.world}-rank address tables')
         self.world, self.hidden = cell.world, cell.hidden
+        self.rails = len(tables)
         self.ext = None
         self.control = dist.new_group(backend='gloo')
         self.closed = False
         self.pending = None
         self.packet_failed = False
+        self.latency = {}
         try:
             error = None
             try:
-                self.ext = build()
-                self.ext.init(comm.rank, comm.world_size, addresses[comm.rank])
+                self.ext = build(self.rails)
+                self.ext.init(comm.rank, comm.world_size, [t[comm.rank] for t in tables])
             except Exception as exc:
                 error = repr(exc)
             self.agree(error, 'local preparation')
             signatures = [None]*self.world
-            signature = (self.ext.__name__, tuple(addresses), MAX_ELEMENTS, comm.world_size, self.hidden)
+            signature = (self.ext.__name__, tables, MAX_ELEMENTS, comm.world_size, self.hidden)
             dist.all_gather_object(signatures, signature, group=self.control)
             if any(other != signature for other in signatures):
                 raise RuntimeError(f'one-shot binary or rank table differs: {signatures}')
@@ -103,6 +116,10 @@ class OneShot:
             except Exception as exc:
                 error = repr(exc)
             self.agree(error,'connection')
+            expected = [self.rails] + [pair_rail(comm.rank, peer, self.rails)
+                                       for peer in range(self.world) if peer != comm.rank]
+            actual = list(self.ext.rails())
+            self.agree(None if actual == expected else f'rails {actual} != {expected}', 'rail placement')
             for rows in (1,6,24,32,48,64):
                 x = torch.full((rows,self.hidden),comm.rank+1,device='cuda',dtype=torch.bfloat16)
                 ref = x.clone()
@@ -133,9 +150,55 @@ class OneShot:
                 torch.cuda.synchronize()
                 self.agree(None if torch.equal(actual, expected) else 'gather differs from NCCL',
                            f'{keys}-key int64 gather self-test')
+            self.latency = self._sample_latency()
         except BaseException:
             self.close()
             raise
+
+    # What the boot samples: C=1's decode packet (8 rows), a full C=4 decode packet (32 rows) and the
+    # greedy sampler's int64 MAX. Each is a captured chain of CHAIN collectives replayed REPLAYS times.
+    LATENCY_CELLS = (('sum_8rows', 8), ('sum_32rows', 32), ('max_8keys', 0))
+    LATENCY_CHAIN, LATENCY_REPLAYS = 16, 12
+
+    def _sample_latency(self):
+        """Per-collective wall time on this rank, in µs: a captured chain amortizes the arrival skew of its
+        first collective and leaves the transport's own cost -- copy, publication, the proxy's posts, the
+        wire and the peer-flag wait. Every rank replays in lockstep behind one control barrier; each reads
+        only its own CUDA events, so no clock is compared across nodes. Zero inputs keep sums finite."""
+        import statistics
+        report, graphs = {}, []
+        try:
+            for name, rows in self.LATENCY_CELLS:
+                if rows:
+                    x = torch.zeros((rows, self.hidden), device='cuda', dtype=torch.bfloat16)
+                    op = self.ext.oneshot_ar_consumer if x.numel() <= CONSUMER_MAX_ELEMENTS else self.ext.oneshot_ar
+                else:
+                    x = torch.zeros(8, device='cuda', dtype=torch.int64)
+                    op = self.ext.oneshot_max_int64
+                for _ in range(3):
+                    op(x)
+                torch.cuda.synchronize()
+                graph = torch.cuda.CUDAGraph()
+                graphs.append(graph)
+                with torch.cuda.graph(graph):
+                    for _ in range(self.LATENCY_CHAIN):
+                        op(x)
+                dist.barrier(group=self.control)
+                samples = []
+                for _ in range(self.LATENCY_REPLAYS):
+                    start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+                    start.record()
+                    graph.replay()
+                    end.record()
+                    end.synchronize()
+                    samples.append(start.elapsed_time(end) * 1000. / self.LATENCY_CHAIN)
+                samples = sorted(samples[1:])
+                report[name] = round(statistics.median(samples), 1)
+                report[name + '_p90'] = round(samples[int(len(samples) * .9)], 1)
+        finally:
+            for graph in graphs:
+                graph.reset()
+        return report
 
     def _check_sum_order(self, rank):
         # Every input and expected result is exactly representable in BF16.

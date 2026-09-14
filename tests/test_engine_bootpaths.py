@@ -43,7 +43,8 @@ class BootPathTests(unittest.TestCase):
                                ranks="/alternate/ranks", layers="0-0", seed=0, prompt=1,
                                seqs=1, kv_gib=.25, park=False, drafter=True, max_new=1,
                                temperature=0., tier_dir="/unused", port=8000, lanes="reference")
-        comm = SimpleNamespace(rank=0, world_size=4, close=Mock(), prepare_oneshot=Mock())
+        comm = SimpleNamespace(rank=0, world_size=4, close=Mock(), prepare_oneshot=Mock(),
+                               transport=SimpleNamespace(rails=2, latency={}))
         tp = SimpleNamespace(run=lambda fn: fn(comm))
         for mode, production in (("local", False), ("http", False), ("fleet", False), ("fleet", True)):
             args.serve = mode == "http"

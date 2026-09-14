@@ -343,7 +343,7 @@ class WrapperTests(unittest.TestCase):
         source = (ROOT / "engine/profiles/glm53/boot.py").read_text()
         fleet = source.split("def fleet(a) -> int:", 1)[1]
         self.assertLess(fleet.index("kernel_shape.bind_recorded(a.ranks, Path(a.ckpt_meta) / \"config.json\""),
-                        fleet.index("comm.prepare_oneshot()"))
+                        fleet.index("comm.prepare_oneshot("))
         local = source.split("def local(a) -> int:", 1)[1].split("def ", 1)[0]
         self.assertLess(local.index("kernel_shape.bind_recorded(a.ranks, Path(a.ckpt_meta) / \"config.json\""),
                         local.index("lane_tables.served()"))
