@@ -22,6 +22,7 @@ def main():
     mode.add_argument('--fc2-words', action='store_true', help='compare in-place FC2 word restoration')
     mode.add_argument('--fc1-reuse', action='store_true', help='compare gate/up A/SFA register reuse')
     mode.add_argument('--compact-staging', action='store_true', help='compare compact FC1 inputs and disjoint FC2 scales')
+    mode.add_argument('--sync-cleanup', action='store_true', help='compare batched pipeline initialization and C1 publication')
     args = parser.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '':
         raise RuntimeError('compile requires CUDA_VISIBLE_DEVICES=')
@@ -61,6 +62,7 @@ def main():
                             fc2_word_expand=owner.sf6_fc2_word_expand,
                             fc1_reuse_a=owner.fc1_reuse_a,
                             compact_staging=owner.compact_staging,
+                            sync_cleanup=owner.sync_cleanup, a_barrier_count=owner.a_barrier_count,
                             fc1_input_stages=owner.fc1_input_stages,
                             fc1_input_bytes=sum(cute.size_in_bytes(dtype, layout) for dtype, layout in
                                 ((owner.a_dtype, owner.a1_smem_layout_staged),
@@ -110,11 +112,16 @@ def main():
         # earlier FC1-reuse probe must not silently include compact staging.
         defaults = dict(sf6_separate=True, sf6_word_expand=True,
                         packed_activation_store=True, sf6_fc2_word_expand=True,
-                        fc1_reuse_a=True, compact_staging=False)
-        if args.compact_staging:
+                        fc1_reuse_a=True, compact_staging=False, sync_cleanup=False)
+        if args.compact_staging or args.sync_cleanup:
             defaults['compact_staging'] = True
+        if args.sync_cleanup:
+            defaults['sync_cleanup'] = True
         cases = [(rows, {}) for rows in (1, 7, 8)]
-        if args.compact_staging:
+        if args.sync_cleanup:
+            cases += [(8, dict(sync_cleanup=False)), (8, dict(compact_staging=False)),
+                      (8, dict(fc1=1)), (8, dict(stamps=True))]
+        elif args.compact_staging:
             cases += [(8, dict(compact_staging=False)), (8, dict(fc1_reuse_a=False))]
         elif args.fc1_reuse:
             cases += [(8, dict(fc1_reuse_a=False))]
@@ -135,7 +142,7 @@ def main():
                 selected.clear()
                 requested = dict(defaults, **overrides)
                 selected.update(rows=rows, requested=requested)
-                config = dict(md._parse_glm53_static_v2('t,r,sf6'), **requested)
+                config = {**md._parse_glm53_static_v2('t,r,sf6'), **requested}
                 try:
                     config = md._static_v2_decode_config(config, rows)
                     md._get_static_kernel_v2(288, 288, rows, 4096, 512, 8, rows*8,
