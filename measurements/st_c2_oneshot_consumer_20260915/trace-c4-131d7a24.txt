@@ -1,0 +1,17 @@
+consumer      44.0/step/rank | span mean   70.4 med   52.7 | lead mean   12.0 med   11.5 | tail mean   58.3 med   39.8 | next_gap mean    0.6 med    0.6 | floor mean   34.8 med   34.4 | skew mean   48.2 med   11.2
+     40.0/step  after mk_gemm2_kernel                                  before _taps
+      4.0/step  after at::native::elementwise_kernel                   before _norm
+gather64       4.0/step/rank | span mean   55.7 med   50.9 | lead mean   -0.7 med   -0.6 | tail mean   55.7 med   50.9 | next_gap mean    0.6 med    0.6 | floor mean   17.4 med   15.0 | skew mean   59.1 med   45.0
+      4.0/step  after _select                                          before at::native::elementwise_kernel
+max64          4.0/step/rank | span mean   23.7 med   19.3 | lead mean   -0.6 med   -0.6 | tail mean   23.7 med   19.3 | next_gap mean  559.5 med  108.7 | floor mean   14.0 med   13.9 | skew mean   17.9 med   13.6
+      2.2/step  after at::native::vectorized_elementwise_kerne         before at::native::vectorized_elementwise_kerne
+      0.8/step  after _walk_scores                                     before at::native::vectorized_elementwise_kerne
+      0.8/step  after at::native::vectorized_elementwise_kerne         before at::native::indexSelectSmallIndex
+      0.2/step  after _walk_scores                                     before at::native::indexSelectSmallIndex
+ordinary       7.0/step/rank | span mean  148.7 med  110.0 | lead mean   -0.7 med   -0.6 | tail mean  148.7 med  110.0 | next_gap mean    1.3 med    1.4 | floor mean   87.5 med   85.3 | skew mean  158.1 med   39.1
+      6.0/step  after _finish                                          before mhc_post_tilelang_kernel
+      1.0/step  after at::native::elementwise_kernel                   before at::native::elementwise_kernel
+publish       48.0/step/rank | span mean  141.6 med  137.8 | lead mean   47.5 med   41.4 | tail mean   94.1 med   92.5 | next_gap mean  -91.9 med  -90.3 | floor mean   85.3 med   86.2 | skew mean   26.0 med   17.6
+     48.0/step  after mk_gemm2_kernel                                  before mk_mhc_packets_kernel
+moe_packets   36.0/step/rank | span mean  113.0 med  112.0 | lead mean   15.8 med   15.7 | tail mean   97.2 med   96.1 | next_gap mean  -91.2 med  -90.2 | floor mean   76.7 med   75.6 | skew mean   47.9 med   41.8
+     36.0/step  after mk_gemm2_kernel                                  before mk_mhc_packets_kernel

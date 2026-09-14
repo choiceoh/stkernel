@@ -3006,3 +3006,22 @@ Docker CPU 시간은 -15.63%~+16.10%로 흔들렸고, 맥 직접 비교는 -0.83
 - 같은 main 의 서빙 처리량(09-14 23:15 보류, srv2 `~/expert-capture/c1c2.log`)은 1024 토큰 고정 C=1 66.7/65.0 → C=2 79.3/88.0 tok/s, JSON C=1 85.7 → C=2 100.7 tok/s 다.
 
 원시 표·도구·재현·옛 기록 대조(onepass 행 수별 반복 비용, C=1 대 C=4 트레이스): `measurements/st_decode_profile_c2_20260915/README.md`.
+
+### C=2 의 16행 전체합을 one-shot PDL consumer 로 (2026-09-15, 판정 없음 — TP4 는 캠페인 리드 몫)
+
+C=2 스텝의 전체합(타깃·드래프터, 스텝당 14.6회)은 16 × 4096 = 65,536 원소라 consumer 상한 8행에 걸려 일반 `k_oneshot` 으로 갔다.
+- **그 상한은 이 빌드의 커널 한계가 아니었다.** 엔진 `build()` 는 `OSAR_COMPACT_CTA` 를 정의하지 않는다.
+  - 그래서 `k_oneshot_consumer` 는 일반 커널과 같은 48 CTA × 256 격자, CTA 당 티켓 1, MAXEL 을 덮는 `VECITER`=3 stash 다.
+  - "12 CTA·두 벡터 stash" 는 vLLM overlay 의 선택 옵션(`VLLM_GLM53_AR_COMPACT_CTA=1`, 기본 0)에만 있다.
+  - 8행은 vLLM 시절 C=1 A/B 범위가 옮겨 온 값이고, `cells.py` 주석이 그 출처를 잘못 적었다.
+- 변경: `ONESHOT_CONSUMER_MAX_ELEMENTS` 16행. 부팅 자체 시험(NCCL 대조·소거·캡처 재생)과 지연 게이지에 16행 셀을 더했다.
+  네이티브 소스는 main 과 바이트가 같다(캐시 키 동일).
+- CPU(이미지 `b45454b5`): 엔진 소스에서 뽑은 격자·stash·소유·혼합 티켓 g++ 오라클 PASS, 변이 4/4 잡음.
+  프로덕션 확장 4변형과 단일 GPU 오라클 컴파일·로드 PASS. 관련 17 모듈 106 시험 중 98 통과, 8 skip(GB10 필요), 실패 0.
+- C=2 후속 커널 감사: 16행 합 바로 뒤는 Triton/TileLang/torch 뿐이고, PDL 인 `mk_mhc_kernel` 은 대기 뒤에만 읽는다.
+- 크기 추정(09-13 4랭크 트레이스, 한 레일): 일반 합도 생산자 끝 0.6 µs 뒤 출발하고, 전체합의 후속은 조기 출발하지 않는다.
+  남는 기전은 대기 CTA 48 → 32 뿐이다. **기대 이득은 스텝당 0.1 ms 이하로 추정한다(미측정).**
+- 패킷 커널(코디네이터 추가 과제): `k_publish_packets`·`k_oneshot_moe_packets` 에서 정확성을 지키며 뺄 16행 고정비·직렬화 비용은 못 찾았다.
+  행에 비례해 느는 것은 페이로드 전송이다(floor 0.24~0.29 µs/KiB, 한 레일 상한). 버린 후보 넷과 이유는 README 에 있다.
+
+단일 GPU 결과·TP4 미검증 목록·재현: `measurements/st_c2_oneshot_consumer_20260915/README.md`.
