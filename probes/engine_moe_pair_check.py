@@ -150,10 +150,14 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_on
             # The actual L3 router on identical activations supplements the
             # explicit occupancy cases. This still is not a model trajectory.
             from engine.kernels.glm_pointwise import router_logits, route_weights
-            for correlated in (False, True):
+            # Also model two independent requests, each verifying eight
+            # related tokens. All-rows-correlated alone is not C2 coverage.
+            for request_groups in ((0, 1, 2) if rows == 16 else (0, 1)):
                 x.normal_().mul_(.5)
-                if correlated:
-                    x[1:].mul_(.05).add_(x[:1])
+                if request_groups:
+                    group_rows = rows // request_groups
+                    for start in range(0, rows, group_rows):
+                        x[start+1:start+group_rows].mul_(.05).add_(x[start:start+1])
                 picked, weight = route_weights(router_logits(x, loaded[prefix+'gate']),
                                                loaded[prefix+'bias'], 8, 2.5)
                 ids.copy_(picked); routes.copy_(weight)
@@ -163,8 +167,8 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_on
                 error = relative(snapshots[1], snapshots[0])
                 if not all(v.isfinite().all().item() for v in snapshots) or error > .001:
                     raise RuntimeError('real-router component exceeds the numerical gate')
-                extra = dict(unique_experts=int(ids.unique().numel()), correlated=correlated,
-                             router_in_timing=False)
+                extra = dict(unique_experts=int(ids.unique().numel()), correlated=bool(request_groups),
+                             request_groups=request_groups, router_in_timing=False)
                 report('moe_pair_real_router_numerics', rows=rows, relative_max=error, **extra)
                 fixtures.append(('moe_pair_real_router_ffn', x.clone(), ids.clone(), routes.clone(), extra))
             cases.append((rows, x, ids, routes, pair, functions, fixtures))
