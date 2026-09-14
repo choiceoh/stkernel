@@ -5,8 +5,9 @@ ModelOpt weight views and shared DenseLinear readers. Its layer scheduler owns
 rank agreement, bounded cold dispatch, output sums and cancellation retirement.
 Ordinary request scheduling and forward graphs still do not select mixed work.
 
-Implementation: `fe940088fe34ac60325e071b3abde5c3e1b15c87`, rebased onto main
-`96af4dbbbbe6cade001477ae9f877152fd26e1ae` (#916). C1 SF6 word expansion and
+Final implementation: `ccc253c15c127f42328152977ef945f9c347a291`, including
+main `b02bff42` (#914 DSA inputs) and `96af4dbb` (#916). Conflicts in lane,
+execution and knob registration retain both sets of features. C1 SF6 word expansion and
 intact eight-byte quantized activation stores remain in both ordinary and
 prepared kernels. The ordinary kernel AST is compared against that reviewed
 main body, with only the private frontend guard removed.
@@ -41,8 +42,11 @@ main body, with only the private frontend guard removed.
 
 ## CPU and native compilation
 
-- [cpu.json](cpu.json): **41 modules, 340 discovered, 318 passed, 22 CUDA skips**.
-  [cpu_runner.py](cpu_runner.py) isolates each module and caps CPU thread counts.
+- [cpu_postmerge.json](cpu_postmerge.json): **44 modules, 357 discovered, 332 passed,
+  25 CUDA skips**. [cpu_postmerge_runner.py](cpu_postmerge_runner.py) isolates each
+  module and caps CPU thread counts. This includes both new DSA components and
+  the cleanup repair. The earlier [cpu.json](cpu.json) remains the separate
+  pre-merge result; repeated tests are not added to the final count.
   No GPU was visible and CUDA was not initialized.
 - The real four-process Gloo test covers local preparation failure, descriptor
   and collective order mismatch, partial cold dispatch failure, event recording
@@ -56,7 +60,10 @@ main body, with only the private frontend guard removed.
 - CPU/compiler image:
   `sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc`;
   Torch `2.13.0+cu130`, CUDA `13.0`.
-  [source_continuity.json](source_continuity.json) verifies the source manifests.
+  [postmerge_source_continuity.json](postmerge_source_continuity.json) verifies
+  the final CPU/GPU manifests and unchanged expert-compiler inputs. The updated
+  dense extension is covered by the post-merge GPU run.
+- The exact implementation passed [CI](https://github.com/choiceoh/stkernel/actions/runs/34796519386/job/103830570625).
 
 ## GPU qualification
 
@@ -74,34 +81,39 @@ repeat error, exercises a foreign-stream consumer, checks queued/decode/cold
 cancellation and stale handles, and hashes unchanged sources/shared packs.
 Its budget is 8 GiB, enforced by the canonical single-GPU lane's room checks.
 
-Reservation `st-mixed-tickets0914v3`, ticket `17893489453659144`, admitted frozen
-`fe940088` on srv4 with image
+Reservation `st-mixed-tickets0914v4`, ticket `178934993625946`, admitted frozen
+`ccc253c1` on srv4 with image
 `sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed`.
 That image reports Torch `2.13.0+cu130`, CUDA `13.0`, Triton `3.7.1`; its ID is
 distinct from the CPU/compiler image and is recorded separately.
-[gpu_admission.json](gpu_admission.json) records **success**, 142.7 seconds in the
-payload. [gpu.json](gpu.json) retains all 32 complete samples, source/weight/pack
-hashes and output errors; [gpu_summary.json](gpu_summary.json) summarizes them.
+[gpu_postmerge_admission.json](gpu_postmerge_admission.json) records **success**,
+125.5 seconds in the payload. [gpu_postmerge.json](gpu_postmerge.json) retains
+all 32 complete samples, source/weight/pack hashes and output errors;
+[gpu_postmerge_summary.json](gpu_postmerge_summary.json) summarizes them.
 All decode outputs have zero measured maximum and RMS error. Mixed prefill's
-worst relative maximum error is 0.976%, RMS 0.243%, within the fixed 2%/0.4%
+worst relative maximum error is 0.881%, RMS 0.237%, within the fixed 2%/0.4%
 component gate. Native repeated prefill also has nonzero BF16 scatter error.
 These tolerances do not establish generation quality or acceptance.
 
 | Decode rows | Prefill rows | Cold windows | Mixed prefill max RMS error | Warm prepare/admit median | Warm full completion median |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 8 | 9240 | 15 | 0.210% | 130.8 ms | 182.3 ms |
-| 32 | 9240 | 15 | 0.243% | 187.4 ms | 243.0 ms |
-| 8 | 32768 | 46 | 0.138% | 511.8 ms | 654.3 ms |
-| 32 | 32768 | 46 | 0.158% | 478.5 ms | 625.3 ms |
+| 8 | 9240 | 15 | 0.215% | 164.0 ms | 212.6 ms |
+| 32 | 9240 | 15 | 0.237% | 118.8 ms | 142.8 ms |
+| 8 | 32768 | 46 | 0.153% | 452.7 ms | 516.9 ms |
+| 32 | 32768 | 46 | 0.146% | 282.2 ms | 360.7 ms |
 
 Warm medians use the three mixed samples after the conservatively marked first
-sample. Fresh preparation/admission still costs 131–512 ms in these fixtures;
+sample. Fresh preparation/admission still costs 119–453 ms in these fixtures;
 that cost cannot be put on the live decode critical path. Samples ran beside
 production, include measurement synchronizations, and have no matched native
 serving-timing baseline. Do not interpret the table as a speedup. Peak Torch
 allocation was 3.874 GiB, including weights and outputs, within the 8 GiB budget.
 Queued/decode/cold cancellation was exercised in the D=8/P=9240 case;
 foreign-stream consumers and final retirement were exercised in all four cases.
+
+The first successful pre-merge run remains in [gpu.json](gpu.json), with its
+own [admission](gpu_admission.json) and [summary](gpu_summary.json). The two
+beside-production runs do not measure the DSA merge's performance impact.
 
 The v2 reservation ended before GPU computation because its pinned image was
 absent on srv4; it supplies no numerical evidence. Earlier S/P/M1 reservations
