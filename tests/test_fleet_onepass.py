@@ -149,6 +149,9 @@ class OnepassPolicyTests(unittest.TestCase):
                    '--ranks', '/models/st-ranks', '--ckpt-meta', '/models/st-ranks',
                    '--samples', '4', '--output', '/cache/tickets.json']
         self.assertEqual(self.validate(command, kind='single')['gpus'], 1)
+        self.assertEqual(self.validate(command+['--compare-planning'], kind='single')['gpus'], 1)
+        with self.assertRaises(ValueError):
+            self.validate(command[:2]+['probes/engine_mixed_completion_check.py', '--compare-planning'], kind='single')
         self.assertEqual(policy.probe_budget_gib(command[2]), 8)
         with self.assertRaises(ValueError):
             self.validate(command+['--commit-only'], kind='single')

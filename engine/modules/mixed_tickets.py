@@ -7,8 +7,10 @@ This does not change the request scheduler's homogeneous Step contract.
 from dataclasses import asdict, dataclass
 import hashlib
 import json
+import struct
 
 from engine.base.comm import Comm
+from .route_table import RouteTable
 
 
 @dataclass(frozen=True)
@@ -37,11 +39,30 @@ class _Entry:
 
 
 def signature(owner):
+    """Canonical descriptor bytes; representation and host endianness independent.
+
+    Include the complete cold mapping as well as its launch windows. A packed
+    table is already immutable, so hashing it needs no route-object expansion.
+    Length/column framing prevents field-boundary aliases, including empty work.
+    """
+    import numpy as np
     plan, cold = owner.plan, owner.cold
-    data = (asdict(plan.identity), plan.decode, plan.prefill, plan.sources,
-            plan.experts, plan.tile_m, plan.quota, cold.task_quota,
-            cold.task_expert, cold.task_valid_rows, cold.windows)
-    return hashlib.sha256(json.dumps(data, separators=(',', ':')).encode()).hexdigest()
+    header = (asdict(plan.identity), plan.tile_m, plan.quota, cold.task_quota)
+    digest = hashlib.sha256(b'ST-mixed-descriptor-v2\0' + json.dumps(header, separators=(',', ':')).encode())
+    for rows, columns in ((plan.decode, 8), (plan.prefill, 8), (plan.sources, 5),
+            (plan.experts, 1), (plan.decode_counts, 1), (plan.hot_counts, 1), (plan.cold_routes, 2),
+            (cold.sources, 4), (cold.counts, 1), (cold.tile_bases, 1),
+            (cold.task_expert, 1), (cold.task_valid_rows, 1), (cold.windows, 2)):
+        if isinstance(rows, RouteTable):
+            if rows.columns != columns:
+                raise ValueError('mixed descriptor has an invalid row width')
+            data, count = rows.data, len(rows)
+        else:
+            array = np.asarray(rows, dtype='<i4').reshape(-1, columns)
+            data, count = memoryview(array), len(array)
+        digest.update(struct.pack('<II', count, columns))
+        digest.update(data)
+    return digest.hexdigest()
 
 
 class MixedLayerScheduler:

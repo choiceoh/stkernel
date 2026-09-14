@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 
 SOURCES = ('engine/modules/mixed_experts.py', 'engine/kernels/b12x/moe_mixed.py',
+           'engine/modules/route_table.py', 'tests/test_engine_mixed_plan.py',
            'engine/kernels/b12x/moe_mixed_frontend.py', 'engine/kernels/b12x/moe_dispatch.py',
            'engine/kernels/b12x/moe_static_common.py',
            'engine/kernels/b12x/moe_static_kernel_v4.py', 'engine/kernels/b12x/moe_static_kernel_v5.py',

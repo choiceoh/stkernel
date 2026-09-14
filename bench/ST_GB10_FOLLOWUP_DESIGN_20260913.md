@@ -163,6 +163,10 @@ M1b의 동결된 probe는 두 팔에 동일한 **BF16 linear → clamped SwiGLU 
 
 입력은 이미 같은 층에 도달한 복제·정규화 FFN 텐서여야 한다. 다음 단계 M3에는 실제 request scheduler의 층 경계 중단/재개, decode 후속 graph, prefix/cache/취소 전파와 TP4 NCCL ordering 연결이 남아 있다. 현재 일반 forward와 D9의 homogeneous Step 선택은 바꾸지 않았다. CPU planning·metadata allocation·초기 padding 비용은 별도 기록하며, M2 probe의 wall time에는 매번 새 준비와 admission 비용도 포함한다. 실행 knob나 기본 selector는 추가하지 않았다. [M1a evidence](../measurements/mixed_experts_20260914/README.md), [M1b evidence](../measurements/mixed_completion_20260914/README.md), [M2 evidence](../measurements/mixed_tickets_20260914/README.md)를 구분한다. 실제 시간 단축·TTFT·tok/s 판정은 아직 없다.
 
+M2 준비 비용 후속 구현은 수십만 route의 Python tuple 생성·재그룹·JSON 변환을 제거한다. `RouteTable`은 복사한 little-endian int32 bytes를 소유하고 읽기 전용 NumPy view를 제공한다. 실제 router의 CPU int32 배열에서 중복·범위 검사를 수행하고, 고정된 288 expert 범위를 이용한 uint16 stable grouping으로 hot 선택과 cold M128 배치를 만든다. GPU 업로드는 연속 배열을 복사하며 입력 alias를 남기지 않는다. 작은 hot descriptor, decode 순서, M128 padding/task ABI와 quota는 그대로 유지한다. 이전 scalar planner는 차등 검증과 probe의 비교 팔로 남긴다. 새 generation의 route는 매번 다시 계획하며 histogram/포인터 캐시를 추가하지 않는다.
+
+랭크 합의는 버전·행 수·열 수가 명시된 binary digest를 사용하며, cold source map/count/base까지 포함한다. 두 host 표현의 같은 계획은 같은 digest를 만들고, 같은 histogram에서 token/slot을 바꾸거나 cold mapping만 바꾸면 다른 digest가 된다. CPU 재현은 `probes/engine_mixed_plan_bench.py`, 실제 reader 비교는 기존 ticket probe의 `--compare-planning`으로 실행한다. 같은 빌드에서 scalar/JSON 준비와 packed 준비를 교차하고 매번 새 storage를 사용한다. 소스 복사, finite 검사, GPU 할당/padding, router와 admission 비용은 전체 wall 측정에 남는다. 이 단계는 serving scheduler에 혼합 실행을 활성화하지 않는다.
+
 ### M1. 빈 행과 실제 절감되는 타일을 구분
 
 현재 [static V5](../engine/kernels/b12x/moe_static_kernel_v5.py)는 [V4](../engine/kernels/b12x/moe_static_kernel_v4.py)의 계산을 사용한다. 현재 `t,r,sf6`는 전체 decode 1..8행에서 M16, 9..32행에서 M32이며, 대상 SF6 dynamic prefill은 M128 형상이다. 따라서 단순히 두 입력을 concat한 기존 launch 호출로는 원하는 스케줄이 되지 않는다. 동일한 층의 FFN 입력과 route가 이미 준비된 프리필만 후보가 된다.

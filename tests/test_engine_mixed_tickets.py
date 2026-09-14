@@ -187,8 +187,29 @@ def gloo_worker(rank, rendezvous):
             except RuntimeError:
                 return
             raise AssertionError('a rank proceeded after another rank refused work')
-        for failure in ('prepare', 'descriptor', 'order', 'cold', 'publication', 'pending_packets', 'shape', 'none'):
+        for failure in ('prepare', 'descriptor', 'cold_descriptor', 'order', 'cold', 'publication',
+                        'pending_packets', 'shape', 'packed_agreement', 'none'):
             s, owner = MixedLayerScheduler(3, comm), Owner(rank=rank)
+            if failure in ('cold_descriptor', 'packed_agreement'):
+                # Real ranks may build equivalent descriptors from different
+                # host representations. Agree actual bytes, never object type.
+                from dataclasses import replace
+                import numpy as np
+                from engine.modules.mixed_experts import plan_experts_packed
+                if rank % 2:
+                    owner.plan = plan_experts_packed(np.asarray(owner.plan.decode, dtype=np.int32),
+                        np.asarray(owner.plan.prefill, dtype=np.int32), identity=owner.plan.identity,
+                        hot_route_quota=owner.plan.quota)
+                    owner.cold = plan_cold(owner.plan, task_quota=owner.cold.task_quota)
+                if failure == 'cold_descriptor' and rank == 2:
+                    sources = list(owner.cold.sources)
+                    e, dest, row, slot = sources[0]
+                    sources[0] = (e, dest+1, row, slot)
+                    owner.cold = replace(owner.cold, sources=tuple(sources))
+                if failure == 'cold_descriptor':
+                    refused(lambda: s.admit(owner, request='a', slot=0))
+                    assert not s._entries
+                    continue
             if failure == 'none':
                 # The fixed process-group sum never asks the optional native
                 # transport for tensor-dependent eligibility.

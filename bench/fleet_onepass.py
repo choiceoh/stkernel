@@ -106,6 +106,8 @@ def _st_args(relative, args, cwd, repo):
         _same(_path(probe, cwd), probe, repo)
         if probe == 'probes/engine_kda_deferred_check.py':
             switches.update(('--commit-only', '--compact-only', '--serving-only'))
+        if probe == 'probes/engine_mixed_tickets_check.py':
+            switches.add('--compare-planning')
     while args:
         token = args[0]
         if token in switches:

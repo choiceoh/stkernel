@@ -9,7 +9,7 @@ from functools import lru_cache
 
 import torch
 
-from engine.modules.mixed_experts import plan_experts
+from engine.modules.mixed_experts import plan_experts_packed
 
 
 @lru_cache(maxsize=1)
@@ -52,8 +52,8 @@ class PreparedMixedExperts:
         weight_tensors = (weights.w1_storage, weights.w2_storage, weights.sfb1_packed, weights.sfb2_packed)
         if any(t is None or t.device != device or not t.is_contiguous() for t in weight_tensors):
             raise ValueError('mixed weight planes must share the source device')
-        self.plan = plan_experts(decode_ids.cpu().tolist(), prefill_ids.cpu().tolist(),
-                                 identity=identity, hot_route_quota=hot_route_quota)
+        self.plan = plan_experts_packed(decode_ids.cpu().numpy(), prefill_ids.cpu().numpy(),
+                                       identity=identity, hot_route_quota=hot_route_quota)
         from . import moe_dispatch as md
         self.decode, self.prefill = decode, prefill
         self.ids, self.route_weights = decode_ids, decode_routes

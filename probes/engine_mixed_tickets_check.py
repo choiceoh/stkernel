@@ -1,5 +1,6 @@
 """M2 one-GB10 served-reader and cancellation gate; TP4 host proof is separate."""
 import argparse
+from contextlib import contextmanager, ExitStack
 from functools import partial
 import hashlib
 import json
@@ -17,9 +18,37 @@ def fingerprint():
         'engine/kernels/dense/__init__.py', 'engine/kernels/dense/shared_mlp.py',
         'engine/kernels/dense/kernels.cu', 'engine/kernels/dense/fp8.py',
         'probes/engine_mixed_tickets_check.py', 'probes/engine_mixed_completion_check.py',
+        'probes/engine_mixed_plan_bench.py',
         'tests/test_engine_mixed_tickets.py', 'tests/test_engine_mixed_shared.py')
     root = Path(__file__).resolve().parents[1]
     return dict(core(), **{p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in paths})
+
+
+@contextmanager
+def planning_arm(arm):
+    """Probe-only A/B: identical readers/kernels, fresh host preparation per arm."""
+    from unittest.mock import patch
+    from engine.kernels.b12x import moe_mixed, moe_mixed_completion
+    from engine.modules import mixed_tickets
+    from probes.engine_mixed_plan_bench import legacy_plan, legacy_signature
+    stages = {}
+    def timed(name, fn):
+        def call(*args, **kwargs):
+            start = time.perf_counter()
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                stages[name] = (time.perf_counter()-start)*1000
+        return call
+    with ExitStack() as stack:
+        for module, name, field, fn in (
+                (moe_mixed, 'plan_experts_packed', 'hot_plan_ms',
+                 legacy_plan if arm == 'legacy' else moe_mixed.plan_experts_packed),
+                (moe_mixed_completion, 'plan_cold', 'cold_plan_ms', moe_mixed_completion.plan_cold),
+                (mixed_tickets, 'signature', 'agreement_ms',
+                 legacy_signature if arm == 'legacy' else mixed_tickets.signature)):
+            stack.enter_context(patch.object(module, name, timed(field, fn)))
+        yield stages
 
 
 def measure(args, report):
@@ -104,39 +133,43 @@ def measure(args, report):
         # if dynamic arrivals reused a fixed input/route histogram.
         for sample in range(args.samples):
             for quota in (0, 128) if sample % 2 == 0 else (128, 0):
-                generation += 1
-                identity = ExpertInvocation(3, generation, generation, generation)
-                torch.cuda.synchronize(); wall = time.perf_counter()
-                key = net.submit_mixed_ffn(scheduler, x, pref, identity=identity,
-                    request=f'cell-{d}-{p}-{generation}', slot=0, hot_route_quota=quota)
-                prepared = time.perf_counter()
-                scheduler.begin(key)
-                actual_d, decode_event = scheduler.result(key, prefill=False)
-                decode_event.synchronize(); decoded = time.perf_counter()
-                windows = 0
-                while True:
-                    windows += 1
-                    if scheduler.advance(key):
-                        break
-                scheduler.finish(key)
-                actual_p, prefill_event = scheduler.result(key, prefill=True)
-                prefill_event.synchronize(); completed = time.perf_counter()
-                # Exercise a real foreign-stream consumer and its last-reader
-                # fence. The scheduler retains both outputs until it finishes.
-                with torch.cuda.stream(consumer):
-                    consumer.wait_event(decode_event); consumer.wait_event(prefill_event)
-                    copy_d, copy_p = actual_d.clone(), actual_p.clone()
-                    used = torch.cuda.Event(); used.record(consumer)
-                scheduler.release(key, consumer_fence=used)
-                used.synchronize(); torch.cuda.synchronize()
-                if not scheduler.reap(key):
-                    raise RuntimeError('fully drained ticket did not retire')
-                errors = dict(decode=output_error(copy_d, ref_d), prefill=output_error(copy_p, ref_p))
-                cell['samples'].append(dict(hot_quota=quota, cold_windows=windows, errors=errors,
-                    prepare_admit_wall_ms=(prepared-wall)*1000,
-                    decode_ready_wall_ms=(decoded-wall)*1000, prefill_complete_wall_ms=(completed-wall)*1000,
-                    includes_first_use_compile=sample == 0))
-                del actual_d, actual_p, copy_d, copy_p
+                arms = (('legacy', 'packed') if sample % 2 == 0 else ('packed', 'legacy')) if args.compare_planning else ('packed',)
+                for arm in arms:
+                    generation += 1
+                    identity = ExpertInvocation(3, generation, generation, generation)
+                    with planning_arm(arm) as stages:
+                        torch.cuda.synchronize(); wall = time.perf_counter()
+                        key = net.submit_mixed_ffn(scheduler, x, pref, identity=identity,
+                            request=f'cell-{d}-{p}-{generation}', slot=0, hot_route_quota=quota)
+                        prepared = time.perf_counter()
+                    scheduler.begin(key)
+                    actual_d, decode_event = scheduler.result(key, prefill=False)
+                    decode_event.synchronize(); decoded = time.perf_counter()
+                    windows = 0
+                    while True:
+                        windows += 1
+                        if scheduler.advance(key):
+                            break
+                    scheduler.finish(key)
+                    actual_p, prefill_event = scheduler.result(key, prefill=True)
+                    prefill_event.synchronize(); completed = time.perf_counter()
+                    # Exercise a real foreign-stream consumer and its last-reader
+                    # fence. The scheduler retains both outputs until it finishes.
+                    with torch.cuda.stream(consumer):
+                        consumer.wait_event(decode_event); consumer.wait_event(prefill_event)
+                        copy_d, copy_p = actual_d.clone(), actual_p.clone()
+                        used = torch.cuda.Event(); used.record(consumer)
+                    scheduler.release(key, consumer_fence=used)
+                    used.synchronize(); torch.cuda.synchronize()
+                    if not scheduler.reap(key):
+                        raise RuntimeError('fully drained ticket did not retire')
+                    errors = dict(decode=output_error(copy_d, ref_d), prefill=output_error(copy_p, ref_p))
+                    cell['samples'].append(dict(hot_quota=quota, planning_arm=arm, planning_stages_ms=stages,
+                        cold_windows=windows, errors=errors,
+                        prepare_admit_wall_ms=(prepared-wall)*1000,
+                        decode_ready_wall_ms=(decoded-wall)*1000, prefill_complete_wall_ms=(completed-wall)*1000,
+                        includes_first_use_compile=sample == 0))
+                    del actual_d, actual_p, copy_d, copy_p
             again_d, again_p = native()
             cell['native_repeat_error'] = dict(decode=output_error(again_d, ref_d), prefill=output_error(again_p, ref_p))
             del again_d, again_p
@@ -175,11 +208,14 @@ def main():
     parser.add_argument('--ranks', default=str(facts.RANKS))
     parser.add_argument('--ckpt-meta', default=str(facts.CKPT))
     parser.add_argument('--samples', type=int, default=4)
+    parser.add_argument('--compare-planning', action='store_true',
+        help='alternate pre-optimization scalar/JSON preparation and packed planning on the same build')
     parser.add_argument('--output', type=Path, default=Path('/cache/mixed-tickets.json'))
     args = parser.parse_args()
     if args.samples < 2 or args.samples % 2:
         parser.error('--samples must be even and at least two')
     report = dict(status='FAIL', source_sha256=fingerprint(), image=os.environ.get('ST_IMAGE'),
+        compare_planning=args.compare_planning,
         scope='M2 eager one-rank FFN component, real served shared readers, ticket retirement and foreign-stream '
               'consumers. Includes fresh route planning/allocation/admission in wall timings. '
               'No full model, TP4 NCCL, arrival trace, graph, TTFT, tok/s, quality or acceptance verdict.')

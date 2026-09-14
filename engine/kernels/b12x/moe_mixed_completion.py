@@ -10,6 +10,7 @@ from functools import lru_cache
 import torch
 
 from engine.modules.mixed_completion import plan_cold
+from engine.modules.route_table import RouteTable
 
 
 @lru_cache(maxsize=1)
@@ -55,7 +56,8 @@ class PreparedMixedCompletion:
         self._shared_execution = shared_execution
         self._shared_weights = (shared_up, shared_down) if shared_execution is None else ()
         device = decode.device
-        self.sources = torch.tensor(self.cold.sources, dtype=torch.int32, device=device).reshape(-1, 4)
+        sources = self.cold.sources.array() if isinstance(self.cold.sources, RouteTable) else self.cold.sources
+        self.sources = torch.tensor(sources, dtype=torch.int32, device=device).reshape(-1, 4)
         self.workspace = md.allocate_sm120_dynamic_workspace(state_E=288, weight_E=288,
             routed_rows=len(self.cold.sources), k=4096, n=512, num_topk=8,
             device=device, activation='swigluoai_uninterleave', tile_m=128)
