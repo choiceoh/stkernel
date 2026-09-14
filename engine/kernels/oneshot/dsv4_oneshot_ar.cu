@@ -640,7 +640,10 @@ static void *proxy_fn(void *) {
       }
     }
   }
-  uint64_t sent = 0, acknowledged = 0, done[64] = {0}, beat = 0;
+  uint64_t sent = 0, acknowledged = 0, beat = 0;
+  // Unacknowledged sequences occupy distinct ring slots; a slot is reused
+  // only after every peer's flag CQE retires it. Counts never exceed NPEER.
+  unsigned done[RING] = {};
   unsigned outstanding[OSAR_RAILS] = {};
   unsigned peers_per_rail[OSAR_RAILS] = {};
   for (int p = 0; p < NPEER; ++p) ++peers_per_rail[g_peer_rail[p]];
@@ -702,8 +705,8 @@ static void *proxy_fn(void *) {
             return nullptr;
           }
           uint64_t cs = wc[i].wr_id >> 4;
-          if (++done[cs % 64] == NPEER) {
-            done[cs % 64] = 0;
+          if (++done[cs % RING] == NPEER) {
+            done[cs % RING] = 0;
             if (cs > acknowledged) {
               acknowledged = cs;
             }
@@ -823,6 +826,11 @@ static void init_ctx(int rank, int world, const std::vector<std::string> &myips)
     int np = 0;
     for (int r = 0; r < world; r++)
       if (r != rank) g_peers[np++] = r;
+    unsigned peers_per_rail[OSAR_RAILS] = {};
+    for (int s = 0; s < NPEER; ++s) {
+      g_peer_rail[s] = osar_pair_rail(rank, g_peers[s], OSAR_RAILS);
+      ++peers_per_rail[g_peer_rail[s]];
+    }
 
     int nd = 0;
     std::unique_ptr<ibv_device *, decltype(&ibv_free_device_list)> devices(
@@ -853,8 +861,14 @@ static void init_ctx(int rank, int world, const std::vector<std::string> &myips)
     for (int rail = 0; rail < OSAR_RAILS; ++rail) {
       g_pd[rail] = ibv_alloc_pd(g_ctx[rail]);
       CHK(g_pd[rail]);
-      g_cq[rail] = ibv_create_cq(g_ctx[rail], 4096, nullptr, nullptr, 0);
+      // At most RING sequences are unacknowledged. Every peer has two WRs
+      // per sequence. Reserve for BOTH WRs to produce CQEs during an error
+      // flush, even though normally only the flag is signaled. There are no
+      // receive WRs: plain RDMA writes do not consume a receive queue.
+      const int cq_entries = 2 * RING * peers_per_rail[rail];
+      g_cq[rail] = ibv_create_cq(g_ctx[rail], cq_entries, nullptr, nullptr, 0);
       CHK(g_cq[rail]);
+      CHK(g_cq[rail]->cqe >= cq_entries);
       // The same Ctrl pages, registered once per rail: each rail's queue pairs
       // address tx/rx/rxf through their own device's keys.
       g_mr[rail] = ibv_reg_mr(g_pd[rail], g_ctrl, sizeof(Ctrl),
@@ -864,19 +878,19 @@ static void init_ctx(int rank, int world, const std::vector<std::string> &myips)
 
     srand((unsigned)(time(nullptr) ^ (rank * 7919)));
     for (int s = 0; s < NPEER; s++) {
-      const int rail = osar_pair_rail(rank, g_peers[s], OSAR_RAILS);
-      g_peer_rail[s] = rail;
+      const int rail = g_peer_rail[s];
       struct ibv_qp_init_attr qia;
       memset(&qia, 0, sizeof(qia));
       qia.send_cq = g_cq[rail];
       qia.recv_cq = g_cq[rail];
-      qia.cap.max_send_wr = 1024;
-      qia.cap.max_recv_wr = 4;
+      qia.cap.max_send_wr = 2 * RING;
+      qia.cap.max_recv_wr = 0;
       qia.cap.max_send_sge = 1;
       qia.cap.max_inline_data = 16;
       qia.qp_type = IBV_QPT_RC;
       g_qp[s] = ibv_create_qp(g_pd[rail], &qia);
       CHK(g_qp[s]);
+      CHK(qia.cap.max_send_wr >= 2 * RING);
       // ibv_create_qp returns the actual capabilities in qia.cap. An enabled
       // mode must not silently claim inline service on an incapable QP: local
       // setup failure participates in the shim's all-rank pre-connect vote.

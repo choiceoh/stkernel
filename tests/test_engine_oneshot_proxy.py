@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DIRECTORY = ROOT / 'engine/kernels/oneshot'
 
 MOCKS = r'''
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cassert>
@@ -41,7 +42,7 @@ struct ibv_send_wr {
   struct { struct { uint64_t remote_addr; uint32_t rkey; } rdma; } wr{};
 };
 struct ibv_qp { int peer; };
-struct ibv_cq { int rail; };
+struct ibv_cq { int rail; unsigned capacity; };
 struct ibv_mr { uint32_t lkey; };
 struct ibv_wc { uint64_t wr_id; int status; };
 constexpr int IBV_WR_RDMA_WRITE = 1, IBV_WC_SUCCESS = 0;
@@ -52,7 +53,10 @@ int ibv_poll_cq(ibv_cq*, int, ibv_wc*);
 
 static constexpr unsigned limit = 512;
 static unsigned ticks, polls, idle_ticks, pending_ticks, posts, mode, finished_tick, ack_writes;
-static unsigned burst_width, completion_width;
+static unsigned burst_width, completion_width, completion_order;
+static unsigned queued_wrs[NPEER];
+static bool sliding_window;
+static unsigned overlapping_refills;
 static uint64_t published;
 static std::array<unsigned, limit + 1> delivered;
 struct Ack {
@@ -97,7 +101,16 @@ Publication::operator uint64_t() {
     ++idle_ticks;
     return 0;
   }
-  if (control.ack_seq.value == published && published < limit) published += burst_width;
+  if (sliding_window && published < limit) {
+    // Immediately reuse released slots while older sends to other peers are
+    // still live. This stresses modulo-RING tracking at overlapping wraps.
+    const uint64_t next = std::min<uint64_t>(limit,
+        std::min<uint64_t>(published + burst_width, control.ack_seq.value + RING));
+    if (next == published) ++pending_ticks;
+    if (next > published && control.ack_seq.value < published && published >= RING)
+      ++overlapping_refills;
+    published = next;
+  } else if (control.ack_seq.value == published && published < limit) published += burst_width;
   else if (published < limit) ++pending_ticks;
   if (control.ack_seq.value == limit) {
     if (!finished_tick) finished_tick = ticks;
@@ -131,7 +144,11 @@ int ibv_post_send(ibv_qp* qp, ibv_send_wr* first, ibv_send_wr** bad) {
   assert(a.wr.rdma.rkey == g_remote[p].rkey && b.wr.rdma.rkey == g_remote[p].rkey);
   assert(a.wr.rdma.remote_addr == g_remote[p].rx_base + slot * NPEER * MAXEL * 2);
   assert(b.wr.rdma.remote_addr == g_remote[p].rxf_base + slot * NPEER * 8);
-  completion[rail].push_back({b.wr_id, 0});
+  queued_wrs[p] += 2;
+  assert(queued_wrs[p] <= 2 * RING); // SQ capacity at the largest live window
+  if (mode == 2) completion[rail].push_back({a.wr_id, 7}); // unsignaled payload flush
+  completion[rail].push_back({b.wr_id, mode == 2 ? 7 : 0});
+  assert(completion[rail].size() <= cqs[rail].capacity);
   ++posts;
   return 0;
 }
@@ -146,10 +163,24 @@ int ibv_poll_cq(ibv_cq* cq, int capacity, ibv_wc* output) {
   if (capacity > int(completion_width)) capacity = int(completion_width);
   int n = 0;
   while (n < capacity && !completion[cq->rail].empty()) {
-    auto wc = completion[cq->rail].front();
-    completion[cq->rail].pop_front();
-    if (mode == 2) wc.status = 7;
-    else delivered[wc.wr_id >> 4] |= 1u << (wc.wr_id & 7);
+    auto& queue = completion[cq->rail];
+    auto next = queue.begin();
+    // The NIC may finish one QP's whole burst before an older WR on another
+    // QP. Preserve order within each QP, vary order across QPs sharing a CQ.
+    if (completion_order) {
+      for (auto it = queue.begin(); it != queue.end(); ++it) {
+        const unsigned a = it->wr_id & 7u, b = next->wr_id & 7u;
+        if (completion_order == 1 ? a < b : a > b) next = it;
+      }
+    }
+    auto wc = *next;
+    queue.erase(next);
+    const unsigned peer = wc.wr_id & 7u;
+    if (mode == 2) --queued_wrs[peer];
+    else {
+      queued_wrs[peer] -= 2;
+      delivered[wc.wr_id >> 4] |= 1u << peer;
+    }
     output[n++] = wc;
   }
   return n;
@@ -165,9 +196,11 @@ int main() {
   OsarProxyInlineWrs unsupported;
   assert(!unsupported.init(1, 2, 3, 4, 5, 7));
   for (unsigned width : {1u, 2u, 4u}) for (unsigned cq_width : {1u, 16u})
+  for (unsigned order : {0u, 1u, 2u}) for (bool sliding : {false, true})
   for (int rank = 0; rank < 4; ++rank) for (unsigned failure = 0; failure < 4; ++failure) {
     burst_width = width; completion_width = cq_width;
-    mode = failure;
+    mode = failure; completion_order = order; sliding_window = sliding;
+    std::memset(queued_wrs, 0, sizeof(queued_wrs));
     ticks = polls = idle_ticks = pending_ticks = posts = finished_tick = ack_writes = 0;
     published = 0;
     control = Ctrl{};
@@ -176,7 +209,10 @@ int main() {
     g_rank = rank;
     for (int rail = 0; rail < OSAR_RAILS; ++rail) {
       completion[rail].clear();
-      cqs[rail] = {rail}; g_cq[rail] = &cqs[rail];
+      unsigned peers = 0;
+      for (int peer = 0; peer < 4; ++peer)
+        if (peer != rank && osar_pair_rail(rank, peer, OSAR_RAILS) == rail) ++peers;
+      cqs[rail] = {rail, 2 * RING * peers}; g_cq[rail] = &cqs[rail];
       mrs[rail] = {uint32_t(17 + rail)}; g_mr[rail] = &mrs[rail];
     }
     for (int peer = 0, p = 0; peer < 4; ++peer) if (peer != rank) {
@@ -194,14 +230,17 @@ int main() {
     assert(g_proxy_heartbeat_ns.load() != 0);
     if (!failure) {
       assert(control.ack_seq.value == limit && posts == limit * NPEER);
+      for (unsigned queued : queued_wrs) assert(queued == 0);
       assert(ack_writes > 0 && ack_writes <= limit);
-      if (cq_width == 16) assert(ack_writes == limit / burst_width);
-      assert(idle_ticks >= 6 && pending_ticks > 0);
+      if (cq_width == 16 && !sliding) assert(ack_writes == limit / burst_width);
+      assert(idle_ticks >= 6);
+      if (!sliding || width == RING) assert(pending_ticks > 0);
     } else {
       assert(control.ack_seq.value == 0 && ticks < 10);
       if (failure == 3) assert(polls == 0 && posts == 0);
     }
   }
+  assert(overlapping_refills > 0);
 }
 '''
 
