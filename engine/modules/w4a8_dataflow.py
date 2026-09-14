@@ -30,10 +30,23 @@ class W4A8Plan(MLPPlan):
 
 
 class W4A8PipelinePlan(W4A8Plan):
-    """Same quantization geometry, without the queued executor's partials."""
+    """Shared input quantization, without the queued executor's partials."""
+    @property
+    def buffer_spans(self):
+        # U, U scales, output, shared XQ, X scales. Keep each base aligned
+        # even for one row / one group, so the same vector loads are valid.
+        sizes = (self.rows*self.intermediate, self.rows*self.producers*4,
+                 self.rows*self.hidden*2, self.rows*self.hidden, self.rows*(self.hidden//128)*4)
+        spans, end = [], 0
+        for size in sizes:
+            start = (end+15)//16*16
+            end = start+size
+            spans.append((start, end))
+        return tuple(spans)
+
     @property
     def scratch_bytes(self):
-        return self.rows*(self.intermediate + self.producers*4 + self.hidden*2)
+        return self.buffer_spans[-1][1]
 
 
 @dataclass(frozen=True)

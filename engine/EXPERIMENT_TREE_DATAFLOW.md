@@ -60,7 +60,8 @@ The W4A8 and W4A4 bindings explicitly refuse each other's layouts.
    kernel with token-major outputs, removing both consumer layout copies.
    Top-k groups retain each path's exact physical column count for tie
    compatibility. Commit reuses the verified pool bytes. KDA stays FP32.
-3. `w4a8_pipeline.py` replaces the W4A8 queue with two static stages. FC1
+3. `w4a8_pipeline.py` replaces the W4A8 queue with static stream-ordered
+   stages. An input stage quantizes each group once for all FC1 tiles. FC1
    publishes BF16-boundary SwiGLU output directly as group-128 FP8; FC2
    keeps ordered FP32 partials in registers. Stream ordering replaces device
    polling and the per-layer host completion vote. One prepared workspace
@@ -71,6 +72,42 @@ The W4A8 and W4A4 bindings explicitly refuse each other's layouts.
    prototypes still use the bounded acquire/release worker queue in
    `tile_dataflow.py`. Actual MoE route metadata uses one host transfer for
    all layers at commit instead of one synchronization per routed layer.
+
+### Shared W4A8 input and packed pairs
+
+The tree experiment's W4A8 executor now reads each native packed byte once
+and expands its two nibbles together, sharing the signed-scale/table lookup.
+It retains the deployed integer tables, sign of zero, FP8 MMA, BF16
+projection/activation boundaries and ordered FP32 accumulation. Loading the
+up tile after the gate dot also shortens overlapping weight lifetimes. No
+weight repacking or change to the ordinary production dense lane is involved.
+
+The pinned Triton 3.7.1 compiler also exposed a pre-existing problem:
+[`mmav2SupportsFp8Operands`](https://github.com/triton-lang/triton/blob/v3.7.1/lib/Dialect/TritonGPU/Transforms/AccelerateMatmul.cpp#L910-L915)
+admits capability 120 but omits 121, widening this experiment's FP8 dot to
+FP16 MMA. Both the pipeline and its queued W4A8 numerical oracle now select
+consumer Blackwell lowering explicitly for the GEMMs. The emitted PTX/cubin
+target remains **sm_121a**, FP8 MMA operands are checked in the offline gate,
+and the FP32 accumulation policy is unchanged. This is a local compiler
+selection, not a runtime-wide architecture override or package upgrade.
+
+At H=4096 and I=3072, the same input group used to be quantized by 24 FC1
+tiles. One input publication replaces that repeated work. This adds one
+stream-ordered launch (three stages total) and 67,584 bytes at 16 rows:
+workspace 181,760 -> 249,344 bytes, still below 256 KiB. The output and input
+publication planes remain disjoint, so a borrowed output can be used as the
+next invocation's input with the same geometry. Input overlap with either
+quantization publication plane is rejected before launch, including views
+borrowed from another geometry. Every plane starts at a 16-byte boundary,
+including small shapes. No buffer allocation or CPU completion check enters execution.
+
+Packed-byte/signed-scale combinations and the actual input publisher are
+checked with the CPU Triton interpreter. Offline SM121 compilation compares
+the previous merged implementation and rejects local-memory spills in every
+candidate stage. These checks do not measure the extra launch's cost or
+serving latency. Matched GPU timing, real-weight quality and acceptance remain
+unmeasured under the operator's no-queue instruction. Evidence is in
+`measurements/st_w4a8_shared_input_20260914/`.
 
 ## Explicit entry point
 
@@ -150,6 +187,8 @@ CUDA_VISIBLE_DEVICES= TRITON_INTERPRET=1 PYTHONPATH=. python probes/engine_tree_
 CUDA_VISIBLE_DEVICES= PYTHONPATH=. python probes/engine_tree_fastpath_bench.py --iterations 20 --output /tmp/tree-cpu-ab.json
 CUDA_VISIBLE_DEVICES= PYTHONPATH=. python probes/engine_tree_paged_bench.py --iterations 20 --output /tmp/tree-paged-cpu.json
 CUDA_VISIBLE_DEVICES= TRITON_INTERPRET=1 PYTHONPATH=. python -m unittest tests.test_engine_tree_attention
+CUDA_VISIBLE_DEVICES= TRITON_INTERPRET=1 PYTHONPATH=. python -m unittest tests.test_engine_w4a8_pipeline
+CUDA_VISIBLE_DEVICES= PYTHONPATH=. python probes/engine_w4a8_pipeline_compile.py --output /tmp/w4a8-compile
 PYTHONPATH=. python probes/engine_mla_stream_host_check.py --output /tmp/tree-copy-model
 # CUDA_ROOT contains an offline CUDA 13.2 compiler, not a device reservation.
 git show c58a8eb534ee5bf712f09f1ab68891ce02edcb85:engine/kernels/mla/glm53_megakernel.cu > /tmp/tree-mla-baseline.cu

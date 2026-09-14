@@ -2900,3 +2900,20 @@ C=1 은 onepass JSON 12문항 그리디다. "뒤" 는 같은 부팅에서 C=1 �
 
 **검증.** 위 표의 플릿 부팅. 이 브랜치의 세 함수는 `83140b14` 와 같고, 주석과 #954 가 더해졌다. 이 브랜치 자체로 GPU 부팅은 하지 않았다.
 맥 CPU `test_cuda_translation_unit_and_pinned_dynamic_helpers_match_provenance` 통과.
+
+## 2026-09-14 — 트리 W4A8: 입력 공유, packed pair, SM121 FP8 컴파일 선택
+
+명시적 트리 실험의 W4A8 실행기를 개선했다. H4096/I3072에서 입력 group128 양자화 24회 반복을
+1회 발행으로 바꾸고, packed 한 바이트의 두 가중치를 함께 읽어 스케일/LUT 결정을 공유한다.
+Triton 3.7.1은 native FP8 판정에서 SM121을 빠뜨려 이 실험의 dot을 FP16 MMA로 바꾸고 있었다.
+이 두 GEMM과 큐 수치 오라클만 consumer Blackwell lowering을 지정한다. 출력 PTX/cubin은 SM121a이며
+FP32 누적 정책과 BF16 경계, GPTQ 가중치, 일반 서빙 dense·W4A4 MoE·KDA FP32는 유지한다.
+
+8행 오프라인 컴파일: 배포 frontend인 Triton 3.7.1에서 FC1/FC2 공유메모리 각각 32,768→4,096B,
+레지스터 255→175 / 173→128. Triton 3.8.0 비교에서도 감소했다. 각 컴파일러의 후보 36개 형상 모두
+스필 0, FP8 MMA와 SM121a 타깃 확인. CPU 1,888 tests, 실패/실행불가 0, skip 374; 별도 interpreter
+10 tests 통과(65,536 packed-byte/scale 조합, 양자화 경계, 버퍼 소유권, 기존 target 수치 오라클).
+
+대가: 런치 2→3, 16행 작업공간 181,760→249,344B(+67,584B). **GPU 큐·부팅·실측은 하지 않았다.**
+컴파일 자원 감소는 serving tok/s 증명이 아니다. 추가 런치 비용·실가중치 품질·수용률·그래프 재생은 미판정이다.
+기록과 재현: `measurements/st_w4a8_shared_input_20260914/`.

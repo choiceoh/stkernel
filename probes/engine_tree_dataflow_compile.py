@@ -14,7 +14,7 @@ from triton.backends.nvidia import compiler as nvidia_compiler
 
 from engine.kernels.kda.tree import _prepare, _verify, _materialize, _conv
 from engine.kernels.tile_dataflow import _workers
-from engine.kernels.w4a8_pipeline import _gate_up, _down
+from engine.kernels.w4a8_pipeline import _input, _gate_up, _down, MMA_ARCH
 
 
 def cubin_usage(path):
@@ -63,9 +63,11 @@ def compile_variants(output):
             dict(M=rows, H=4096, I=3072, P=48, O=64, BM=16, B=64, LIMIT=10., SPINS=1000000,
                  NV4=True, TILE13=256 if tiled else 0, TILE2=64 if tiled else 0, SF6=sf6, W4A8=False)))
     for rows in (1, 4, 16, 32):
+        variants.append((f"w4a8-pipeline-input-m{rows}", _input,
+            dict(X="*bf16", XQ="*u8", XS="*fp32"), dict(M=rows, H=4096)))
         for name, fn in (("gate-up", _gate_up), ("down", _down)):
             signature = {**{p: "*u8" for p in ("U", "W")}, "S": "*i8", "RS": "*fp32", "US": "*fp32"}
-            signature["X" if fn is _gate_up else "OUT"] = "*bf16"
+            signature.update(dict(XQ="*u8", XS="*fp32") if fn is _gate_up else dict(OUT="*bf16"))
             constants = dict(M=rows, H=4096, I=3072, BM=max(16, rows))
             if fn is _gate_up:
                 constants["LIMIT"] = 10.
@@ -86,7 +88,8 @@ def compile_variants(output):
         kernel = triton.compile(ASTSource(fn, signature, constexprs=constants, attrs=attrs),
             target=GPUTarget("cuda", 121, 32),
             options=dict(num_warps=8 if fn in (_gate_up, _down) else 4, num_stages=1,
-                         enable_fp_fusion=not (constants.get("W4A8", False) or fn in (_conv, _gate_up, _down))))
+                         **(dict(arch=MMA_ARCH) if fn in (_gate_up, _down) or constants.get("W4A8") else {}),
+                         enable_fp_fusion=not (constants.get("W4A8", False) or fn in (_conv, _input, _gate_up, _down))))
         ptx, cubin = kernel.asm["ptx"], kernel.asm["cubin"]
         (output / (name + ".ptx")).write_text(ptx)
         (output / (name + ".cubin")).write_bytes(cubin)
@@ -96,9 +99,9 @@ def compile_variants(output):
             raise AssertionError("NVFP4 binding must compile to native block-scaled FP4 MMA")
         if (constants.get("W4A8") or fn in (_gate_up, _down)) and ("e4m3.e4m3" not in ptx or "e2m1.e2m1" in ptx):
             raise AssertionError("W4A8 must retain FP8 MMA after on-chip W4 expansion")
-        if fn in (_gate_up, _down) and any(op in ptx for op in ("atom.", "nanosleep", "ld.local", "st.local")):
+        if fn in (_input, _gate_up, _down) and any(op in ptx for op in ("atom.", "nanosleep", "ld.local", "st.local")):
             raise AssertionError("staged W4A8 must not introduce polling, atomics or register spills")
-        usage = cubin_usage(output / (name + ".cubin")) if fn in (_gate_up, _down) else None
+        usage = cubin_usage(output / (name + ".cubin")) if fn in (_input, _gate_up, _down) else None
         if usage and (usage["stack_bytes"] or usage["local_instructions"]):
             raise AssertionError(f"assembled W4A8 spills registers: {name}: {usage}")
         report["variants"].append({"name": name, "constants": constants,

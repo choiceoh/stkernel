@@ -14,6 +14,11 @@ import triton
 import triton.language as tl
 from triton.language.extra.cuda import libdevice
 
+# Triton 3.7.1's mmav2SupportsFp8Operands admits 120 but omits 121.
+# Use consumer Blackwell lowering for W4A8; the backend still emits the
+# actual device's sm_121a PTX/cubin. Do not relax accumulation precision.
+W4A8_MMA_ARCH = "sm120"
+
 
 @triton.jit
 def _quantize(x, global_scale, BM: tl.constexpr, B: tl.constexpr):
@@ -294,5 +299,5 @@ def execute_w4a8(plan, x, weights, limit, *, max_spins=1_000_000):
         gate.scale, down.scale, scales, None, None, gate.rowscale, down.rowscale,
         plan.rows, plan.hidden, plan.intermediate, plan.producers, plan.outputs,
         max(16, triton.next_power_of_2(plan.rows)), plan.tile, limit, max_spins,
-        False, 0, 0, False, True, num_warps=4, num_stages=1, enable_fp_fusion=False)
+        False, 0, 0, False, True, num_warps=4, num_stages=1, enable_fp_fusion=False, arch=W4A8_MMA_ARCH)
     return output, int(control[3].item())
