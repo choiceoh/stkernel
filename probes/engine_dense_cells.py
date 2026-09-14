@@ -10,7 +10,10 @@ strided inputs, poisoned outputs, both replay orders and rebound TX descriptors.
 
 Routes (ROUTES), each `(ext, owners, x, destination) -> outputs`:
   bound         serving: decode_input_rows=(8,16,24,32) -> run_gemm_bound_input(forward_pipeline=True);
-                C1 ordered/joined cells at 8 rows, the wide pack cells at 16 rows
+                C1 ordered/joined cells at 8 rows; at 16 rows sixteen-row CTAs for the KDA input and the
+                KDA/MLA TX outputs, the wide pack cells otherwise
+  wide_control  run_gemm_bound_input(forward_pipeline=False) at 16 rows: the wide pack cell the KDA input and
+                KDA/MLA outputs took before their sixteen-row CTAs (the same-build control)
   generic       decode_input_rows=() -> run_gemm (mk_gemm2_kernel<RQ>) or run_gemm_to_slot
   wide          run_gemm_wide_input: invocation-owned FP8 pack + mk_gemm2_kernel<RQ,PACKED> (9..32 rows)
   pair          QueryPair, the serving DSA query owner
@@ -18,13 +21,12 @@ Routes (ROUTES), each `(ext, owners, x, destination) -> outputs`:
   pair_wide     run_query_pair(local_c1=False): wide pack + two packed mk_gemm2_kernel launches
   pack          run_input_pack: the C1 cell's own input pack alone (8 rows), timed against the whole cell
                 to size a producer-side pack; it has no projection output, so the exactness gate skips it
-  rows16        C=2 candidate run_gemm_rows16: wide pack + eight-column sixteen-row CTAs
-  pair16        C=2 candidate run_query_pair16: the joined sixteen-row query grid
 
 To add an arm: put a route in ROUTES and a (control, candidate) pair in the cell's
-row plan below. CANDIDATES run after every CELLS comparison, so a candidate that
-faults cannot take the baseline evidence with it. Scope `single` is one layer; `chain` calls every listed layer in
-model order with its own weights, which no L2 holds at once.
+row plan below. Scope `single` is one layer; `chain` calls every listed layer in
+model order with its own weights, which no L2 holds at once. The rejected C=2
+prototypes (gate/up, MLP down, qkv_a, joined queries) are measured in
+measurements/st_c2_dense_cells_20260915 against their frozen source.
 
 Selection through the queue's literal flags: `--lanes dense_cells` runs every cell,
 `--lanes dense_cells:kda.o_proj:kda.in_proj=16` names cells (optionally one row
@@ -49,11 +51,11 @@ DENSE_LAYERS = (0, 1, 2)
 # name, weight keys per layer, layers, direct TX output, input width, {rows: ((control, candidate), ...)}
 CELLS = (
     ('kda.in_proj', ('kda.in_proj',), KDA_LAYERS, False, 4096,
-     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('generic', 'wide'),)}),
+     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'generic'), ('bound', 'wide_control'))}),
     ('kda.o_proj', ('kda.o_proj',), KDA_LAYERS, True, 2048,
-     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'generic'),)}),
+     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'wide_control'), ('bound', 'generic'))}),
     ('mla.o_proj', ('mla.o_proj',), DSA_LAYERS, True, 4096,
-     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'generic'),)}),
+     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'wide_control'), ('bound', 'generic'))}),
     ('mla.query', ('mla.q_b', 'idx.wq_b'), DSA_LAYERS, False, 1536,
      {8: (('pair', 'pair_generic'), ('pair', 'pair_wide'), ('pair', 'pack')), 16: (('pair', 'pair_generic'),)}),
     ('mla.qkv_a', ('mla.qkv_a',), DSA_LAYERS, False, 4096,
@@ -63,16 +65,6 @@ CELLS = (
     ('mlp.down', ('mlp.down',), DENSE_LAYERS, True, 3072,
      {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'generic'),)}),
 )
-# The C=2 prototypes against the serving route, per cell (same row plan format).
-CANDIDATES = {
-    'kda.in_proj': {16: (('generic', 'rows16'),)},
-    'kda.o_proj': {16: (('bound', 'rows16'),)},
-    'mla.o_proj': {16: (('bound', 'rows16'),)},
-    'mla.query': {16: (('pair', 'pair16'),)},
-    'mla.qkv_a': {16: (('bound', 'rows16'),)},
-    'mlp.gate_up': {16: (('bound', 'rows16'),)},
-    'mlp.down': {16: (('bound', 'rows16'),)},
-}
 SHAPES = {'kda.in_proj': (6416, 4096), 'kda.o_proj': (4096, 2048), 'mla.o_proj': (4096, 4096),
           'mla.q_b': (4096, 1536), 'idx.wq_b': (4096, 1536), 'mla.qkv_a': (2048, 4096),
           'mlp.gate_up': (6144, 4096), 'mlp.down': (4096, 3072)}
@@ -118,21 +110,15 @@ def _pack(ext, x):
 
 PACK_ARMS = ('pack',)
 
-def _rows16(ext, owner, x, destination):
+def _wide_control(ext, owner, x, destination):
     p = owner.packs[0]
     if destination is not None:
-        ext.run_gemm_rows16(x, p.data, p.scale, destination, owner.rows, p.rowscale.data_ptr(), destination)
+        ext.run_gemm_bound_input(x, p.data, p.scale, destination, owner.rows, p.rowscale.data_ptr(),
+                                 owner.workspace, destination, False)
         return None
     y = torch.empty(x.shape[0], owner.rows, device=x.device, dtype=x.dtype)
-    ext.run_gemm_rows16(x, p.data, p.scale, y, owner.rows, p.rowscale.data_ptr(), None)
+    ext.run_gemm_bound_input(x, p.data, p.scale, y, owner.rows, p.rowscale.data_ptr(), owner.workspace, None, False)
     return y
-
-
-def _pair16(ext, owners, x):
-    packs = [o.packs[0] for o in owners]
-    outputs = [torch.empty(x.shape[0], o.rows, device=x.device, dtype=x.dtype) for o in owners]
-    ext.run_query_pair16(x, [p.data for p in packs], [p.scale for p in packs], [p.rowscale for p in packs], outputs)
-    return tuple(outputs)
 
 
 ROUTES = {
@@ -143,8 +129,7 @@ ROUTES = {
     'pair_generic': lambda ext, owners, x, d: tuple(_dense(o, x, None, ()) for o in owners),
     'pair_wide': lambda ext, owners, x, d: _pair_wide(ext, owners, x),
     'pack': lambda ext, owners, x, d: _pack(ext, x),
-    'rows16': lambda ext, owners, x, d: _rows16(ext, owners[0], x, d),
-    'pair16': lambda ext, owners, x, d: _pair16(ext, owners, x),
+    'wide_control': lambda ext, owners, x, d: _wide_control(ext, owners[0], x, d),
 }
 
 
@@ -182,10 +167,8 @@ def _values(out):
     return out if isinstance(out, tuple) else (out,)
 
 
-def cell_check(report, ext, cell, owners, rows, *, brackets, timing=True, plan=None):
-    name, _, layers, direct, width, cells_plan = cell
-    phase = 'baseline' if plan is None else 'candidate'
-    plan = cells_plan if plan is None else plan
+def cell_check(report, ext, cell, owners, rows, *, brackets, timing=True):
+    name, _, layers, direct, width, plan = cell
     arms = list(dict.fromkeys(a for pair in plan[rows] for a in pair))
     n = owners[0][0].rows
     for scope, group in (('single', owners[:1]), ('chain', owners)):
@@ -234,14 +217,14 @@ def cell_check(report, ext, cell, owners, rows, *, brackets, timing=True, plan=N
                                     if not a.isfinite().all().item():
                                         raise RuntimeError(f'{name} {arm} left a non-finite output')
                                     torch.testing.assert_close(a, b, rtol=0, atol=0)
-            report('exact', cell=name, rows=rows, scope=scope, layers=list(layers[:len(group)]), arms=arms, phase=phase,
+            report('exact', cell=name, rows=rows, scope=scope, layers=list(layers[:len(group)]), arms=arms,
                    reference=arms[0], not_projections=[a for a in arms if a in PACK_ARMS], magnitudes=magnitudes, replay_orders='forward/reverse', direct_output=direct,
                    rebound_descriptor=direct, input_stride=x.stride(0),
                    plan=[ext.gemm2_plan(rows, o.rows, o.cols) for o in owners[0]])
             if timing:
                 for control, candidate in plan[rows]:
                     bracket(report, graphs, control, candidate, brackets=brackets, cell=name, rows=rows,
-                            scope=scope, layers=len(group), direct_output=direct, phase=phase)
+                            scope=scope, layers=len(group), direct_output=direct)
         finally:
             for graph in graphs.values():
                 graph.reset()
@@ -260,7 +243,7 @@ def selected_cells(names=(), rows=(8, 16)):
             if m in cell[5] and (not wanted or m in wanted.get(cell[0], ()))]
 
 
-def check(report, ranks=None, *, cells=(), rows=(8, 16), brackets=2, timing=True, candidates=True):
+def check(report, ranks=None, *, cells=(), rows=(8, 16), brackets=2, timing=True):
     from engine.kernels.dense import DenseLinear, extension
     plan = selected_cells(cells, rows)
     if not plan:
@@ -289,22 +272,12 @@ def check(report, ranks=None, *, cells=(), rows=(8, 16), brackets=2, timing=True
         except Exception as exc:  # the other cells' evidence is kept; the run still fails
             failures.append(f'{cell[0]}={m}')
             report('component_failed', cell=cell[0], rows=m, error=f'{type(exc).__name__}: {exc}')
-    staged = [(cell, m) for cell, m in plan if m in CANDIDATES.get(cell[0], {})] if candidates else []
-    if staged:
+    if any(m == 16 for _, m in plan):
         info = ext.rows16_info()
-        names = ('rows16<false,32,8> KDA input', 'rows16<false,32,2> gate/up', 'rows16<false,32,6> qkv_a',
-                 'rows16<true,16,3> KDA output', 'rows16<true,24,3> MLP down', 'rows16<true,32,3> MLA output',
-                 'query_pair16<12,3>')
+        names = ('rows16<false,32,8> KDA input', 'rows16<true,16,3> KDA output', 'rows16<true,32,3> MLA output')
         report('rows16_resources', kernels={n: dict(registers=info[4*i], local_bytes=info[4*i+1],
                                                      blocks_per_sm=info[4*i+2], smem=info[4*i+3])
                                             for i, n in enumerate(names)})
-    for cell, m in staged:
-        owners = [tuple(dense[f'L{L}.{key}'] for key in cell[1]) for L in cell[2]]
-        try:
-            cell_check(report, ext, cell, owners, m, brackets=brackets, timing=timing, plan=CANDIDATES[cell[0]])
-        except Exception as exc:
-            failures.append(f'{cell[0]}={m}:candidate')
-            report('component_failed', cell=cell[0], rows=m, phase='candidate', error=f'{type(exc).__name__}: {exc}')
     return failures
 
 
