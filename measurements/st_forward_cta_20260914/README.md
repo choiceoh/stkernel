@@ -43,6 +43,10 @@ Validation so far:
   after `park_min_tokens`; #942 adds `reasoning_opener`. These now inspect the
   fleet Server call's actual keyword bindings, independent of its final argument.
   Runtime code and the queued consumer revision are unchanged by this repair.
+- `ci-memory-tests.log`: 11 boot checks pass. A subsequent full CI run exposed
+  a live-MemAvailable race between the zero-KV and two-GiB-KV assertions. The
+  test now checks exact known values from one fixed meminfo snapshot, including
+  a KV budget exceeding available memory; no production guard or tolerance changes.
 - `compile.json`: complete production-flag CUDA/Torch extension compile and
   load, with CUDA hidden. Five new native specializations; ordinary variants
   use 76 registers, direct-output variants 78, all with zero stack/local spill.
