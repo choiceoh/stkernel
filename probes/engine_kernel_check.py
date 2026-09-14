@@ -35,7 +35,14 @@ def main():
                         help="8 for bounded smoke; 288 for GLM's full TP4 expert geometry")
     parser.add_argument("--moe-static", default="stock", help="served b12x static-lane spec (STK_moe_static): stock | t,r,sf6[,q0]")
     parser.add_argument("--mla-prefill", default="stock", help="served MLA prefill mode (STK_mla_prefill): stock | tile32 | pair | pair4")
+    parser.add_argument("--seqs", help="dense_cells: concurrencies to compare, 1 -> 8 rows, 2 -> 16 rows (default 1,2)")
+    parser.add_argument("--samples", help="dense_cells: B/A/A/B brackets per comparison (default 2)")
     args = parser.parse_args()
+    if args.lanes == 'dense_cells' or args.lanes.startswith('dense_cells:'):
+        from probes.engine_dense_cells import main as dense_cells_check
+        dense_cells_check(args.ranks, cells=args.lanes.split(':')[1:], seqs=args.seqs, samples=args.samples,
+                          output=args.output)
+        return
     if args.lanes == 'forward_pipeline':
         from probes.engine_forward_pipeline import main as forward_pipeline_check
         forward_pipeline_check(args.ranks)
