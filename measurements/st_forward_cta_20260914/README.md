@@ -95,6 +95,17 @@ prediction that the remaining gap to 24 step/s is closed. The older query-pack,
 latent-write, indexer gate, absorption, pool/ID, copy/length and draft-QK checks
 also passed in this run; their separate timings remain in the raw report.
 
+The table above measures ordinary outputs. A serving-path follow-up,
+`st-forward24-direct0914` on `7feacf58`, also passed in 13.5 s with the **same
+native kernel** (`gpu-direct.jsonl`, `gpu-direct-receipt.json`). It compares
+baseline and candidate `_write_slot` graphs with independent destinations,
+rebinding both addresses and checking both outputs against the ordinary
+reference. Warm direct-output KDA time is 18.709 → 16.657 us (−10.97%);
+dense MLP is 22.482 → 21.341 us (−5.07%). The additional pack launch and final
+system fences are included; NIC transport is not exercised. This run's evicted
+samples vary widely (for example, direct KDA A is 47.98/121.13 us), so its
+evicted speed delta is **inconclusive**, not the large mean-derived win.
+
 Two failed attempts are retained: the first named a srv2-only image ID; the
 second used a directory whose rank0 file is absent on srv4. The runner now
 accepts an explicit resident shard without copying the full rank file.
