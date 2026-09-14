@@ -112,6 +112,10 @@ lease/retention and draft-agreement contracts. Five compiler variants passed.
 
 ## Current same-run result
 
+**Numerical gates PASS; latency advantage remains inconclusive.** The final
+32K mean synchronized wall time is effectively equal. Median improvements
+below must not be presented as an established speedup.
+
 Source `b29b4083`, reservation `st-ffn-packets0914v8`, ticket
 `17893689403134005`: **16 GPU tests and all five real-weight numerical cells
 passed** after integrating main `77d80b6c`. Both router operands retain
@@ -130,9 +134,12 @@ mean shorter latency:
 | 9,216 | 42.357 | 42.179 | -0.42% | 44.702 | 44.497 | -0.46% |
 | 32,768 | 137.279 | 132.456 | -3.51% | 139.368 | 134.822 | -3.26% |
 
-At 32K, the recorded complete FFN decreased by **3.51% device / 3.26% wall**.
-All five medians favored packets in this run, but several differences are
-below 1%; this shared-GPU bracket does not establish a robust universal win.
+At 32K, the **medians** favor packets by **3.51% device / 3.26% wall**.
+The corresponding **means** are **133.949 → 133.462 ms device (-0.36%)** and
+**135.712 → 135.822 ms synchronized wall (+0.08%)**. Only **one of four**
+B/A/A/B cycles favors packets by its mean; the other three are slower.
+Several smaller-cell median differences are also below 1%. These results
+do **not** establish a latency win. [Mean and paired-cycle audit](packet_only/paired_summary.json).
 The earlier `57e63935` bracket recorded **3.38% device / 3.31% wall** at 32K
 ([GPU v7](packet_only/gpu-v7.json)); these runs are not pooled or compared
 across different ordinary baselines.

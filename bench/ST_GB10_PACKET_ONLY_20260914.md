@@ -53,3 +53,8 @@ B/A/A/B로 비교한다. router/routes, expert FP4/SFA와 shared 출력 바이�
 component 검증과 matched 32K/128K C1/C4 onepass 품질·수락률·TTFT·output tok/s가
 필요하다. 앞서 미달한 52 ms는 D8/D32 + 32K complete FFN 목표였으며, 단독
 prefill kernel 시간이나 준비를 제외한 시간으로 바꾸지 않는다.
+
+최종 `b29b4083`의 GPU 수치 검증은 통과했다. 32K 중앙값은 약 3.51%
+짧지만 평균 벽시계는 135.712 → 135.822 ms로 사실상 같고, B/A/A/B
+4개 묶음 중 1개만 빨랐다. 따라서 현재 판정은 **정확성 통과 / 속도 우위
+미확정**이다. 기본 OFF를 유지하며 중앙값만으로 채택 가치를 주장하지 않는다.
