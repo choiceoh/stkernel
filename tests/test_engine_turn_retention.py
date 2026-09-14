@@ -7,6 +7,7 @@ and a server can set `park_min_tokens` below which a finished turn is released. 
 replicated (the options ride the step's broadcast, the context is the row's), so every rank
 releases the same turn; a four-rank run pins that too.
 """
+import ast
 import importlib.util
 import sys
 import threading
@@ -144,7 +145,11 @@ class ContractTests(unittest.TestCase):
     def test_the_production_boot_sets_the_floor_and_the_supervisor_ping_asks(self):
         boot = (ROOT / "engine/profiles/glm53/boot.py").read_text()
         self.assertIn("PARK_MIN_TOKENS = 128", boot)
-        self.assertIn("lease=lease, park_min_tokens=PARK_MIN_TOKENS)", boot)
+        server = next(n for n in ast.walk(ast.parse(boot)) if isinstance(n, ast.Call)
+                      and isinstance(n.func, ast.Name) and n.func.id == 'Server')
+        keywords = {k.arg: ast.unparse(k.value) for k in server.keywords}
+        self.assertEqual(keywords['lease'], 'lease')
+        self.assertEqual(keywords['park_min_tokens'], 'PARK_MIN_TOKENS')
         supervisor = (ROOT / "launchers/st-glm53-supervisor.sh").read_text()
         body = supervisor[supervisor.index("chat_ok(){"):supervisor.index("}", supervisor.index("chat_ok(){") + 200)]
         self.assertIn('\\"retain\\":false', body)

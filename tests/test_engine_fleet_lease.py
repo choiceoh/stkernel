@@ -5,6 +5,7 @@ fleet. The campaign queue (aging, priority, pause/resume, handoff, evidence,
 runner pinning) stays in bench/fleet.sh: it is a solved problem, and a second
 copy here would repeat the mistake this module exists to end.
 """
+import ast
 import json
 import os
 import pathlib
@@ -607,7 +608,11 @@ class ProbeLeaseTests(unittest.TestCase):
         self.assertIn("def fleet_lease_of()", boot)
         # the reservation is now taken at the top of fleet() -- before the 67 GiB, not after -- and carried
         self.assertIn("lease = fleet_lease_of()", boot)
-        self.assertIn("lease=lease, park_min_tokens=PARK_MIN_TOKENS)", boot)
+        server = next(n for n in ast.walk(ast.parse(boot)) if isinstance(n, ast.Call)
+                      and isinstance(n.func, ast.Name) and n.func.id == 'Server')
+        keywords = {k.arg: ast.unparse(k.value) for k in server.keywords}
+        self.assertEqual(keywords['lease'], 'lease')
+        self.assertEqual(keywords['park_min_tokens'], 'PARK_MIN_TOKENS')
         self.assertIn("serving = True\n        server.loop()", boot, "and the loop runs once the door is built")
 
 
