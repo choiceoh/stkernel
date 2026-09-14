@@ -60,6 +60,9 @@ def main():
             selected.update(smem_bytes=owner.smem_bytes,
                             tile_m=owner.tile_m,
                             direct_scatter=owner.direct_scatter,
+                            scatter_reuse=owner.scatter_reuse,
+                            scatter_row_pairs=getattr(owner, 'scatter_row_pairs', None),
+                            scatter_pair_rows=getattr(owner, 'scatter_pair_rows', None),
                             smem_capacity=owner.smem_capacity,
                             sf6_registers=owner.sf6_registers,
                             sf6_register_offsets=getattr(owner, "sf6_register_offsets", None),
@@ -142,7 +145,8 @@ def main():
             defaults = {}
             cases = [(8, {}), (16, {}),
                      (16, dict(batch_reform=True, c2_direct_scatter=False)),
-                     (16, dict(batch_reform=True, c2_direct_scatter=True))]
+                     (16, dict(batch_reform=True, c2_direct_scatter=True, c2_scatter_reuse=False)),
+                     (16, dict(batch_reform=True, c2_direct_scatter=True, c2_scatter_reuse=True))]
         with patch.object(md, 'get_num_sm', return_value=48), \
                 patch.object(md, 'get_max_active_clusters', return_value=48), \
                 patch.object(md, 'build_and_load_cute_dsl_kernel', builder), \

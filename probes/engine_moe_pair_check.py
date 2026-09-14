@@ -12,7 +12,8 @@ from types import MethodType, SimpleNamespace as NS
 from unittest.mock import patch
 
 
-def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_only=False):
+def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_only=False,
+          scatter_reuse_only=False):
     import torch
     from engine.kernels.b12x import moe_dispatch as md
     from engine.kernels.dense import DenseLinear
@@ -29,6 +30,8 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_on
 
     if shared_mode not in ('ordinary', 'serial', 'overlap'):
         raise ValueError('unknown C2 shared-expert comparison')
+    if direct_scatter_only and scatter_reuse_only:
+        raise ValueError('choose one C2 output comparison')
     records, graphs, owners, cases = [], [], [], []
     artifact = dict(passed=False, records=records,
                     scope='same-runtime component gate; no NIC, full model, tok/s or acceptance')
@@ -63,6 +66,8 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_on
         configs = [md._parse_glm53_static_v2(recipe) for recipe in ('t,r,sf6', 't,r,sf6,batch')]
         if direct_scatter_only:
             configs[0] = dict(configs[1], c2_direct_scatter=False)
+        if scatter_reuse_only:
+            configs[0] = dict(configs[1], c2_scatter_reuse=False)
         root = Path(__file__).resolve().parents[1]
         sources = ('engine/kernels/b12x/moe_dispatch.py', 'engine/kernels/b12x/moe_static_kernel_v4.py',
                    'engine/kernels/b12x/moe_static_common.py', 'engine/kernels/b12x/moe_static_kernel_v5.py',
@@ -75,6 +80,7 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_on
                torch=torch.__version__, cuda=torch.version.cuda, gpu=torch.cuda.get_device_name(),
                scales='ModelOpt' if modelopt else 'folded', rows=[8, 16], seed=91416,
                direct_scatter_only=direct_scatter_only,
+               scatter_reuse_only=scatter_reuse_only,
                configs_m16=[md._static_v2_decode_config(c, 16) for c in configs],
                candidate_default_enabled=False, includes='routed+shared experts, output cast/add; C1 keeps its shared overlap policy')
         torch.manual_seed(91416)
@@ -145,7 +151,8 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_on
             fixtures = []
             for unique in (u for u in uniques if u >= 8):
                 fixtures.append(('moe_pair_ffn', x.clone(), order[linear % unique].int(), routes.clone(),
-                                 dict(unique_experts=unique, base_tile_m=16 if rows == 8 or direct_scatter_only else 32,
+                                 dict(unique_experts=unique,
+                                      base_tile_m=16 if rows == 8 or direct_scatter_only or scatter_reuse_only else 32,
                                       candidate_tile_m=16)))
             # The actual L3 router on identical activations supplements the
             # explicit occupancy cases. This still is not a model trajectory.

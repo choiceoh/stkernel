@@ -18,8 +18,12 @@ class BatchReformTests(unittest.TestCase):
             for feature in ('decode_reform', 'fc1_reuse_a', 'compact_staging', 'sf6_registers'):
                 self.assertEqual(new[feature], 1 <= rows <= 8 or changed)
             self.assertEqual(new['c2_direct_scatter'], changed)
+            self.assertEqual(new['c2_scatter_reuse'], changed)
             tile_only = choose(dict(candidate, c2_direct_scatter=False), rows)
             self.assertEqual(key(tile_only, m=rows) != key(new, m=rows), changed)
+            self.assertFalse(tile_only['c2_scatter_reuse'])
+            direct_only = choose(dict(candidate, c2_scatter_reuse=False), rows)
+            self.assertEqual(key(direct_only, m=rows) != key(new, m=rows), changed)
 
     def test_recipe_requires_the_existing_packed_reform_contract(self):
         parse = namespace()['_parse_glm53_static_v2']
@@ -36,6 +40,7 @@ class BatchReformTests(unittest.TestCase):
                 chosen = ns['_static_v2_decode_config'](dict(base, **{feature: False}), rows)
                 self.assertFalse(chosen[feature])
                 self.assertFalse(chosen['sf6_registers'])
+                self.assertFalse(chosen['c2_scatter_reuse'])
                 self.assertTrue(chosen['decode_reform'])
 
 

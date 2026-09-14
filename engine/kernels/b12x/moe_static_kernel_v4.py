@@ -109,6 +109,7 @@ class MoEStaticKernelV4:
         scatter_fp32: bool = False,
         route_scatter: bool = False,
         direct_scatter: bool = False,
+        scatter_reuse: bool = False,
         fc1_stages: int = 2,
         fc2_stages: int = 2,
         stamps: bool = False,
@@ -230,6 +231,10 @@ class MoEStaticKernelV4:
         # Load only the MMA lane's own scale words from the packed ring.
         # No expanded shared writes or cross-warp publication are needed.
         self.sf6_registers = bool(sf6_registers and self.compact_staging)
+        self.scatter_reuse = bool(scatter_reuse)
+        if self.scatter_reuse and not (self.direct_scatter and self.sf6_registers
+                                       and self.decode_reform and not self.route_scatter):
+            raise ValueError("scatter reuse requires the M16 register SF6 atomic output path")
         self.fc1_input_stages = self.fc1_stages // 2 if self.compact_staging else self.fc1_stages
         # Scatter only consumes rows in this M16 tile. Avoid initializing
         # 112 unused token/weight entries per item and reclaim their storage.
@@ -650,15 +655,28 @@ class MoEStaticKernelV4:
             registers = cute.make_layout(cute.shape(thread.partition_S(staged))[:3])
             if cute.size(coords) != cute.size(registers) or cute.size(coords) % 2:
                 raise ValueError("direct scatter register/coordinate size mismatch")
+            rows, row_pairs, pair_rows = [], [], []
             for pair in range(cute.size(coords) // 2):
                 a, b = tuple(coords[2 * pair]), tuple(coords[2 * pair + 1])
                 if not (a[0] == b[0] and a[1] % 2 == 0 and b[1] == a[1] + 1
                         and a[2] == b[2] == 0):
                     raise ValueError("direct scatter needs adjacent BF16 register pairs")
+                if a[0] not in rows:
+                    rows.append(a[0])
+                    row_pairs.append(pair)
+                pair_rows.append(rows.index(a[0]))
                 for point in (a, b):
                     if point in seen:
                         raise ValueError("direct scatter duplicate output coordinate")
                     seen.add(point)
+            if self.scatter_reuse:
+                if len(rows) != 2:
+                    raise ValueError("M16 scatter reuse requires two output rows per lane")
+                mapping = (tuple(row_pairs), tuple(pair_rows))
+                if tid == 0:
+                    self.scatter_row_pairs, self.scatter_pair_rows = mapping
+                elif mapping != (self.scatter_row_pairs, self.scatter_pair_rows):
+                    raise ValueError("scatter row ownership differs between MMA lanes")
         if seen != {(r, c, 0) for r in range(self.epi_tile[0]) for c in range(self.epi_tile[1])}:
             raise ValueError("direct scatter incomplete output coverage")
 
@@ -2046,6 +2064,22 @@ class MoEStaticKernelV4:
                 # ============================================================
                 # PHASE B: FC2 sweep (v2 verbatim)
                 # ============================================================
+                if cutlass.const_expr(self.scatter_reuse):
+                    # The completed FC1 publication barrier also publishes
+                    # route metadata. Each MMA lane owns only two output
+                    # rows; retain their destination/weight for the sweep.
+                    ep_bases = cute.make_rmem_tensor((2,), Int32)
+                    ep_weights = cute.make_rmem_tensor((2,), cutlass.Float32)
+                    ep_coords = ep_tRS_coords[None, None, None, 0]
+                    for row_slot in cutlass.range_constexpr(2):
+                        ep_row = Int32(ep_coords[2 * self.scatter_row_pairs[row_slot]][0])
+                        ep_bases[row_slot] = Int32(0)
+                        ep_weights[row_slot] = cutlass.Float32(0.0)
+                        if ep_row < valid_tile_rows:
+                            ep_bases[row_slot] = _ld_shared_i32_volatile(
+                                scatter_tok_base_addr + ep_row * Int32(4)) * scatter_N
+                            ep_weights[row_slot] = _ld_shared_i32_volatile(
+                                scatter_weight_base_addr + ep_row * Int32(4)).bitcast(cutlass.Float32)
                 csA2_p = csA2[None, None, None, 0]
                 fz_csSFA2_p = cute.filter_zeros(csSFA2[None, None, None, 0])
                 for _kb in cutlass.range_constexpr(num_k_blocks):
@@ -2147,14 +2181,19 @@ class MoEStaticKernelV4:
                             ep_coord = ep_coords[2 * ep_pair]
                             ep_row = Int32(ep_coord[0])
                             if ep_row < valid_tile_rows:
-                                ep_tok = ld_shared_i32_relaxed(scatter_tok_base_addr + ep_row * Int32(4))
-                                ep_weight = _ld_shared_f32(scatter_weight_base_addr + ep_row * Int32(4))
+                                if cutlass.const_expr(self.scatter_reuse):
+                                    ep_base = ep_bases[self.scatter_pair_rows[ep_pair]]
+                                    ep_weight = ep_weights[self.scatter_pair_rows[ep_pair]]
+                                else:
+                                    ep_tok = ld_shared_i32_relaxed(scatter_tok_base_addr + ep_row * Int32(4))
+                                    ep_weight = _ld_shared_f32(scatter_weight_base_addr + ep_row * Int32(4))
+                                    if cutlass.const_expr(self.route_scatter):
+                                        ep_tok = ep_tok * Int32(self.output_tile_count_n) + Int32(tile_coord[1])
+                                    ep_base = ep_tok * scatter_N
                                 ep_v0 = cutlass.Float32(tRS_rD_out[2 * ep_pair])
                                 ep_v1 = cutlass.Float32(tRS_rD_out[2 * ep_pair + 1])
-                                if cutlass.const_expr(self.route_scatter):
-                                    ep_tok = ep_tok * Int32(self.output_tile_count_n) + Int32(tile_coord[1])
                                 ep_ptr = get_ptr_as_int64(
-                                    scatter_output, ep_tok * scatter_N + tile_n_base_cur + Int32(ep_coord[1]))
+                                    scatter_output, ep_base + tile_n_base_cur + Int32(ep_coord[1]))
                                 if cutlass.const_expr(self.route_scatter):
                                     scatter_store_bf16x2_to_f32(ep_ptr, ep_weight * ep_v0, ep_weight * ep_v1)
                                 else:
@@ -2234,6 +2273,14 @@ class MoEStaticKernelV4:
                                     wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7,
                                 )
                             vec_idx += Int32(self.num_threads_per_warp)
+                    if cutlass.const_expr(not self.scatter_reuse):
+                        self.epilog_sync_barrier.arrive_and_wait()
+
+                if cutlass.const_expr(self.scatter_reuse):
+                    # B/SFB ring reuse is governed by the FC2 pipeline.
+                    # Direct output has no per-column shared epilogue. One
+                    # retirement barrier protects A2 and route metadata before
+                    # any MMA warp can begin the next work item.
                     self.epilog_sync_barrier.arrive_and_wait()
 
                 if cutlass.const_expr(self.stamps):
