@@ -67,6 +67,8 @@ def main():
                             tile_m=owner.tile_m,
                             direct_scatter=owner.direct_scatter,
                             scatter_reuse=owner.scatter_reuse,
+                            fc2_prefetch=owner.fc2_prefetch,
+                            fc2_stages=owner.fc2_stages,
                             scatter_row_pairs=getattr(owner, 'scatter_row_pairs', None),
                             scatter_pair_rows=getattr(owner, 'scatter_pair_rows', None),
                             smem_capacity=owner.smem_capacity,
@@ -150,7 +152,8 @@ def main():
             cases = [(8, {}), (16, {}),
                      (16, dict(batch_reform=True, c2_direct_scatter=False)),
                      (16, dict(batch_reform=True, c2_direct_scatter=True, c2_scatter_reuse=False)),
-                     (16, dict(batch_reform=True, c2_direct_scatter=True, c2_scatter_reuse=True))]
+                     (16, dict(batch_reform=True, c2_direct_scatter=True, c2_scatter_reuse=True, c2_fc2_prefetch=False)),
+                     (16, dict(batch_reform=True, c2_direct_scatter=True, c2_scatter_reuse=True, c2_fc2_prefetch=True))]
         with patch.object(md, 'get_num_sm', return_value=48), \
                 patch.object(md, 'get_max_active_clusters', return_value=48), \
                 patch.object(md, 'build_and_load_cute_dsl_kernel', builder), \
