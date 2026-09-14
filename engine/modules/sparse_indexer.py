@@ -229,8 +229,10 @@ def gather_candidates(keys, scales, block_table, per, block_stride, layer_offset
     return keys[cand], scales[cand]
 
 
-def pool_window(tails, keys, gates, contexts, pool_size: int, max_pools: int):
+def pool_window(tails, keys, gates, contexts, pool_size: int, max_pools: int, *, slots=None):
     """The window each row pools this step: the tail ring's earlier tokens of the half-built pool, then this step's."""
+    if slots is not None:
+        tails = tails.index_select(0, slots)
     n, tail_width = tails.shape[0], tails.shape[1]
     t, d = keys.shape[1], keys.shape[2]
     lead = contexts % pool_size
@@ -251,6 +253,17 @@ def pool_addresses(contexts, block_table, per, block_stride, layer_offset, pool_
     blocks = torch.gather(block_table, 1, (pids // per).long())
     slots = (blocks * block_stride + layer_offset + pids % per).to(blocks.dtype).long()
     return counts, slots
+
+
+def update_pool_cache(pooled_keys, pooled_scales, keys, scales, field, slots, contexts, raw_keys, gates,
+                      block_table, per, block_stride, layer_offset, pool_size, capacity):
+    """The three original operations, retained as the independent reference."""
+    tokens = raw_keys.shape[1]
+    max_pools = (pool_size - 1 + tokens) // pool_size
+    counts, addresses = pool_addresses(contexts, block_table, per, block_stride, layer_offset,
+                                       pool_size, tokens, max_pools, capacity)
+    scatter_pools(pooled_keys, pooled_scales, keys, scales, addresses, counts)
+    write_tails(field, slots, contexts, raw_keys, gates)
 
 
 def head_gate(w, qs, scale: float):
@@ -314,4 +327,3 @@ def qsa_select(q: torch.Tensor, raw_keys: torch.Tensor, position: int, ratio: in
     else:
         selected = visible[:0]
     return torch.cat([selected, visible[blocks * ratio:]])
-

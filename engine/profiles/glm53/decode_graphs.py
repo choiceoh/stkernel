@@ -5,8 +5,8 @@ bucket select a graph. Exact context lengths and physical cache ownership
 are replay inputs, including rollback.
 Paged and recurrent writes go directly to the arena using device slot ids.
 The served ring lanes directly address both convolution and recurrent state;
-only the small indexer tail needs a temporary buffer. Functional lanes also
-gather convolution history and initial recurrent state.
+the bound K=7 indexer also reads its tail through physical slots. Functional
+lanes gather tails, convolution history and initial recurrent state.
 No request may be live during capture.
 """
 from dataclasses import dataclass
@@ -18,7 +18,7 @@ from engine.base.graphs import DecodeGraphs
 from engine.profiles.glm53.net import Segment
 
 
-def complete_pools(net, layer, contexts, length, tails, k, gate, caches):
+def complete_pools(net, layer, contexts, length, tails, k, gate, caches, *, mapped=False):
     """Complete every segment's pools for this step, then return the fixed candidate capacity.
 
     A captured step's segments have the same length and differ only in device scalars,
@@ -35,11 +35,18 @@ def complete_pools(net, layer, contexts, length, tails, k, gate, caches):
     """
     F = net.F
     kp, d = F.kpool, F.idx_dim
-    n, tail_width = tails.shape[0], tails.shape[1]
     max_pools = (kp - 1 + length) // kp
     glue = net.lanes.decode_rows
-    kw, gw = glue.window(tails, k, gate, contexts, kp, max_pools)         # [n*pools, kpool, d] each
+    # The bound K=7 path reads the arena tail through physical slots, avoiding
+    # the gathered tail copy. Pooling still consumes exactly the same window.
+    window_args = dict(slots=caches.slots) if mapped else {}
+    kw, gw = glue.window(tails, k, gate, contexts, kp, max_pools, **window_args)
     pk, ps = net.lanes.kpool_compress(kw, gw, net.p[f"L{layer}.idx.ape"])
+    if mapped:
+        glue.update(pk, ps.view(-1), caches.pool_keys(layer), caches.pool_scales(layer),
+                    tails, caches.slots, contexts, k, gate, *caches.pool_maps(layer), kp, caches.candidate_capacity)
+        net.decode_pools_executed.add((layer, k.shape[0] * length))
+        return caches.candidate_capacity
     # Padded pids at the final context boundary are past every segment's count: never written.
     counts, slots = glue.addresses(contexts, *caches.pool_maps(layer), kp, length, max_pools, caches.candidate_capacity)
     glue.pools(pk, ps.view(-1), caches.pool_keys(layer), caches.pool_scales(layer), slots, counts)
