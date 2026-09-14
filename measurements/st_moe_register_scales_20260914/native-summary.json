@@ -1,0 +1,35 @@
+[
+  {
+    "register_scales": true,
+    "stamps": false,
+    "registers": 103,
+    "non_nop": 3724,
+    "barriers": 22,
+    "shared_stores": 77,
+    "shared_loads": 229,
+    "shuffle": 96,
+    "smem_bytes": 99328
+  },
+  {
+    "register_scales": false,
+    "stamps": false,
+    "registers": 121,
+    "non_nop": 3474,
+    "barriers": 28,
+    "shared_stores": 83,
+    "shared_loads": 213,
+    "shuffle": 0,
+    "smem_bytes": 99328
+  },
+  {
+    "register_scales": true,
+    "stamps": true,
+    "registers": 121,
+    "non_nop": 3810,
+    "barriers": 22,
+    "shared_stores": 77,
+    "shared_loads": 229,
+    "shuffle": 96,
+    "smem_bytes": 99328
+  }
+]
