@@ -63,6 +63,7 @@ from .moe_static_common import (
     STAMP_SLOTS,
     _atomic_cas_global_i32,
     _compact_static_get_work_tile,
+    _indexed_static_get_work_tile,
     _ld_global_acquire_i32,
     _ld_shared_f32,
     _ld_shared_i32,
@@ -127,6 +128,7 @@ class MoEStaticKernelV4:
         fc1_reuse_a: bool = True,
         compact_staging: bool = True,
         sf6_registers: bool = True,
+        c2_work_map: bool = False,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -182,6 +184,9 @@ class MoEStaticKernelV4:
         # scatter adds the two partial sums). The 16-item wave at U=40 then
         # streams from 32 CTAs instead of 16.
         self.split = bool(split)
+        self.c2_work_map = bool(c2_work_map)
+        if self.c2_work_map and (not self.decode_reform or self.even or self.split):
+            raise ValueError("C2 work map requires the unsplit M16 expert tile")
         if self.even and self.split:
             raise ValueError("e and k are exclusive (the split assumes gdim_z striding)")
         # probe-only timing variants (numerics are garbage): skip the FC1
@@ -797,6 +802,24 @@ class MoEStaticKernelV4:
         print(f"REFORM_SF6_LAYOUT_PASS FC1={self.sf1_block_bytes} FC2={self.sf2_block_bytes}", flush=True)
 
     @cute.jit
+    def _work_tile(self, row_counts, active_expert_count, *, single_m_tile,
+                   tile_m, num_tiles_n, cluster_shape_mn, current_work_linear_idx,
+                   current_local_expert_idx, accum_tile_m, cta_id_in_cluster):
+        if cutlass.const_expr(self.c2_work_map):
+            return _indexed_static_get_work_tile(
+                row_counts, active_expert_count, single_m_tile=single_m_tile,
+                tile_m=tile_m, num_tiles_n=num_tiles_n, cluster_shape_mn=cluster_shape_mn,
+                current_work_linear_idx=current_work_linear_idx,
+                current_local_expert_idx=current_local_expert_idx, accum_tile_m=accum_tile_m,
+                cta_id_in_cluster=cta_id_in_cluster)
+        else:
+            return _compact_static_get_work_tile(
+                row_counts, active_expert_count, tile_m=tile_m, num_tiles_n=num_tiles_n,
+                cluster_shape_mn=cluster_shape_mn, current_work_linear_idx=current_work_linear_idx,
+                current_local_expert_idx=current_local_expert_idx, accum_tile_m=accum_tile_m,
+                cta_id_in_cluster=cta_id_in_cluster)
+
+    @cute.jit
     def _resident_grid_barrier(
         self,
         barrier_count: cute.Tensor,
@@ -1248,7 +1271,7 @@ class MoEStaticKernelV4:
             i += flat_stride
         if flat_tid == Int32(0):
             active_expert_count[Int32(0)] = Int32(0)
-            if cutlass.const_expr(self.even or self.split):
+            if cutlass.const_expr(self.even or self.split or self.c2_work_map):
                 next_item[Int32(0)] = Int32(0)
         # Each route/128-wide intermediate part owns a complete output row.
         # All routes, including zero weights, are computed below. The private
@@ -1309,6 +1332,12 @@ class MoEStaticKernelV4:
                     get_ptr_as_int64(row_counts, local_expert_id),
                     Int32(1),
                 )
+                if cutlass.const_expr(self.c2_work_map):
+                    # Exactly the first row beyond M16 invalidates the direct
+                    # map. The existing grid barrier publishes this flag to
+                    # both DMA and MMA warps; no host read or extra barrier.
+                    if row == Int32(self.tile_m):
+                        atomic_add_global_i32(get_ptr_as_int64(next_item, Int32(0)), Int32(1))
                 if cutlass.const_expr(self.even or self.split):
                     if row % Int32(self.tile_m) == Int32(0):
                         atomic_add_global_i32(
@@ -1388,6 +1417,9 @@ class MoEStaticKernelV4:
                     get_ptr_as_int64(stamps, stamp_row + Int32(1)),
                     cute.arch.globaltimer(),
                 )
+        single_m_tile = Int32(0)
+        if cutlass.const_expr(self.c2_work_map):
+            single_m_tile = Int32(next_item[Int32(0)] == Int32(0))
         # Item striding: n_active CTAs, the rest exit after the frontend. With
         # `even`, the candidate leaving the fewest empty slots in its last
         # wave wins (ties: the largest); every candidate still saturates DRAM
@@ -1717,9 +1749,10 @@ class MoEStaticKernelV4:
                     role = Int32(1)
                     helper_idx = Int32(-1)
             tile_coord, is_valid_tile, current_local_expert_idx, accum_tile_m = (
-                _compact_static_get_work_tile(
+                self._work_tile(
                     row_counts,
                     active_expert_count,
+                    single_m_tile=single_m_tile,
                     tile_m=Int32(self.tile_m),
                     num_tiles_n=Int32(self.output_tile_count_n),
                     cluster_shape_mn=cluster_shape_mn,
@@ -2255,9 +2288,10 @@ class MoEStaticKernelV4:
                         role = Int32(1)
                         helper_idx = Int32(-1)
                 tile_coord, is_valid_tile, current_local_expert_idx, accum_tile_m = (
-                    _compact_static_get_work_tile(
+                    self._work_tile(
                         row_counts,
                         active_expert_count,
+                        single_m_tile=single_m_tile,
                         tile_m=Int32(self.tile_m),
                         num_tiles_n=Int32(self.output_tile_count_n),
                         cluster_shape_mn=cluster_shape_mn,
@@ -2318,9 +2352,10 @@ class MoEStaticKernelV4:
                     role = Int32(1)
                     helper_idx = Int32(-1)
             tile_coord, is_valid_tile, current_local_expert_idx, accum_tile_m = (
-                _compact_static_get_work_tile(
+                self._work_tile(
                     row_counts,
                     active_expert_count,
+                    single_m_tile=single_m_tile,
                     tile_m=Int32(self.tile_m),
                     num_tiles_n=Int32(self.output_tile_count_n),
                     cluster_shape_mn=cluster_shape_mn,
@@ -2534,9 +2569,10 @@ class MoEStaticKernelV4:
                         role = Int32(1)
                         helper_idx = Int32(-1)
                 tile_coord, is_valid_tile, current_local_expert_idx, accum_tile_m = (
-                    _compact_static_get_work_tile(
+                    self._work_tile(
                         row_counts,
                         active_expert_count,
+                        single_m_tile=single_m_tile,
                         tile_m=Int32(self.tile_m),
                         num_tiles_n=Int32(self.output_tile_count_n),
                         cluster_shape_mn=cluster_shape_mn,

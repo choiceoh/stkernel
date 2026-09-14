@@ -59,6 +59,7 @@ def main():
             weight_bytes = b_bytes + 1552*owner.sf1_packed_blocks
             selected.update(smem_bytes=owner.smem_bytes,
                             tile_m=owner.tile_m,
+                            c2_work_map=owner.c2_work_map,
                             smem_capacity=owner.smem_capacity,
                             sf6_registers=owner.sf6_registers,
                             sf6_register_offsets=getattr(owner, "sf6_register_offsets", None),
@@ -136,10 +137,12 @@ def main():
                       (8, dict(sf6_separate=False, sf6_word_expand=False))]
         cases += [(rows, {}) for rows in (16, 32)]
         if args.batch_reform:
-            # Keep every current CUDA 13.2 operand optimization. Only C2's
-            # tile selection changes; C1 keeps its identical compiled handle.
+            # Keep every current CUDA 13.2 operand optimization. Compare the
+            # C2 tile and work map separately; C1 keeps its existing handle.
             defaults = {}
-            cases = [(8, {}), (16, {}), (16, dict(batch_reform=True))]
+            cases = [(8, {}), (16, {}),
+                     (16, dict(batch_reform=True, c2_work_map=False)),
+                     (16, dict(batch_reform=True, c2_work_map=True))]
         with patch.object(md, 'get_num_sm', return_value=48), \
                 patch.object(md, 'get_max_active_clusters', return_value=48), \
                 patch.object(md, 'build_and_load_cute_dsl_kernel', builder), \

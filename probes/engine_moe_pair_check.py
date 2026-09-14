@@ -12,7 +12,7 @@ from types import MethodType, SimpleNamespace as NS
 from unittest.mock import patch
 
 
-def check(emit, ranks, *, output=None, shared_mode='ordinary'):
+def check(emit, ranks, *, output=None, shared_mode='ordinary', work_map_only=False):
     import torch
     from engine.kernels.b12x import moe_dispatch as md
     from engine.kernels.dense import DenseLinear
@@ -61,17 +61,21 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary'):
         expert = partial(lane.moe, w13=weights[0], w13_sf=weights[1], w2=weights[2],
                          w2_sf=weights[3], limit=10., scales=scales)
         configs = [md._parse_glm53_static_v2(recipe) for recipe in ('t,r,sf6', 't,r,sf6,batch')]
+        if work_map_only:
+            configs[0] = dict(configs[1], c2_work_map=False)
         root = Path(__file__).resolve().parents[1]
         sources = ('engine/kernels/b12x/moe_dispatch.py', 'engine/kernels/b12x/moe_static_kernel_v4.py',
                    'engine/kernels/b12x/moe_static_common.py', 'engine/kernels/b12x/moe_static_kernel_v5.py',
                    'engine/kernels/moe_output.py', 'engine/profiles/glm53/net.py',
                    'engine/profiles/glm53/lanes.py', 'engine/kernels/dense/shared_mlp.py',
-                   'engine/profiles/glm53/modelopt_scales.py', 'probes/engine_moe_pair_check.py')
+                   'engine/profiles/glm53/modelopt_scales.py', 'probes/engine_moe_pair_check.py',
+                   'probes/engine_decode_fusions.py', 'probes/engine_decode_batch.py')
         report('moe_pair_identity', rank_file=str(path), weights_sha256=hashes,
                sources_sha256={name: hashlib.sha256((root/name).read_bytes()).hexdigest() for name in sources},
                torch=torch.__version__, cuda=torch.version.cuda, gpu=torch.cuda.get_device_name(),
                scales='ModelOpt' if modelopt else 'folded', rows=[8, 16], seed=91416,
-               recipes=['t,r,sf6', 't,r,sf6,batch'],
+               work_map_only=work_map_only,
+               configs_m16=[md._static_v2_decode_config(c, 16) for c in configs],
                candidate_default_enabled=False, includes='routed+shared experts, output cast/add; C1 keeps its shared overlap policy')
         torch.manual_seed(91416)
         order = torch.randperm(288, device='cuda')
@@ -128,6 +132,16 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary'):
                 report('moe_pair_numerics', rows=rows, unique_experts=unique,
                        max_expert_rows=(rows*8+unique-1)//unique, relative_max=worst,
                        repeat_relative=spreads, changed_input_and_route=True, poisoned_output=True)
+                if rows == 16:
+                    # Read only after numerical replays, never in timing or
+                    # production dispatch. Candidate was the first arm of
+                    # the final reversed pair, so its counter is retained.
+                    overflow = int(md._static_v2_counter_tensor(x.device).item())
+                    expected = sum(int((rows*8+unique-1-i)//unique > 16) for i in range(unique))
+                    report('moe_pair_work_map_guard', rows=rows, unique_experts=unique,
+                           overflow_experts=overflow, expected=expected)
+                    if overflow != expected:
+                        raise RuntimeError('work map bound did not reset/match actual expert occupancy')
                 if max(worst, *spreads) > .001:
                     raise RuntimeError(f'M{rows}/U{unique}: {worst=}, {spreads=}; exceeds the existing 0.001 gate')
             # A zero-weight routed MoE must leave exactly the shared path in
@@ -141,7 +155,7 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary'):
             fixtures = []
             for unique in (u for u in uniques if u >= 8):
                 fixtures.append(('moe_pair_ffn', x.clone(), order[linear % unique].int(), routes.clone(),
-                                 dict(unique_experts=unique, base_tile_m=16 if rows == 8 else 32,
+                                 dict(unique_experts=unique, base_tile_m=16 if rows == 8 or work_map_only else 32,
                                       candidate_tile_m=16)))
             # The actual L3 router on identical activations supplements the
             # explicit occupancy cases. This still is not a model trajectory.
