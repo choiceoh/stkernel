@@ -113,10 +113,7 @@ def check(report, ranks=None, *, timing=True):
                 graph.reset()
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--ranks')
-    args = ap.parse_args()
+def main(ranks=None):
     def report(event, **values):
         print(json.dumps(dict(event=event, **values)), flush=True)
     root = Path(__file__).resolve().parents[1]
@@ -124,9 +121,11 @@ def main():
            source_sha256={f:hashlib.sha256((root/f).read_bytes()).hexdigest() for f in (
                'engine/kernels/dense/kernels.cu', 'probes/engine_forward_register.py')})
     torch.manual_seed(91425)
-    check(report, args.ranks)
+    check(report, ranks)
     report('complete', status='PASS', consumer_metrics_measured=False)
 
 
 if __name__ == '__main__':
-    main()
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--ranks')
+    main(ap.parse_args().ranks)
