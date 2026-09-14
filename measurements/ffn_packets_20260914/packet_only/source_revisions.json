@@ -1,4 +1,29 @@
 {
+  "compile-router-pairs-rejected": {
+    "revision": "2b9cb76a2096d3e9af570a6e62dff7b42f7ba2b3",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "compile-router-pairs-bf16-rejected": {
+    "revision": "601dbe384187f69e36b794d63dd5d45959fc1647",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "compile-router-gather": {
+    "revision": "edddd7b3ff27a4566a5d4f32f085ead6ed450478",
+    "all_sources_match": true,
+    "source_count": 21
+  },
+  "gpu-router-v9": {
+    "revision": "edddd7b3ff27a4566a5d4f32f085ead6ed450478",
+    "all_sources_match": true,
+    "source_count": 23
+  },
+  "compile-router-explicit": {
+    "revision": "1cd0507b4e1dc7493b9372cc879585e21fd7946f",
+    "all_sources_match": true,
+    "source_count": 22
+  },
   "cpu-reference-fallback": {
     "revision": "22c993bcb149eb060e014c24a31ef11417d4a3e1",
     "all_sources_match": true,

@@ -28,11 +28,14 @@ SOURCES = (
 
 # A bounded diagnostic sweep, never an engine autotuner or a serving knob.
 ROUTER_VARIANTS = (
-    ('current', 64, 64, False),
-    ('explicit-64x64', 64, 64, True),
-    ('explicit-32x64', 32, 64, True),
-    ('explicit-32x128', 32, 128, True),
-    ('explicit-64x128', 64, 128, True),
+    ('current', 64, 64, 64, False, False),
+    ('explicit-64x64x128', 64, 64, 128, True, False),
+    ('explicit-64x64x256', 64, 64, 256, True, False),
+    ('explicit-64x128x128', 64, 128, 128, True, False),
+    ('native-64x64x64', 64, 64, 64, True, True),
+    ('native-64x64x128', 64, 64, 128, True, True),
+    ('native-32x64x128', 32, 64, 128, True, True),
+    ('native-64x128x64', 64, 128, 64, True, True),
 )
 
 
@@ -59,12 +62,12 @@ def compile_consumers(output, router_only=False):
                   gpu_used=False, torch=torch.__version__, triton=triton.__version__,
                   source_sha256=fingerprint(), kernels=records)
     try:
-        variants = [('bf16', 64, 64, False)] + (list(ROUTER_VARIANTS) if router_only
-                    else [('packets', 64, 64, False)])
-        for label, bm, bn, explicit in variants:
+        variants = [('bf16', 64, 64, 64, False, False)] + (list(ROUTER_VARIANTS) if router_only
+                    else [('packets', 64, 64, 64, False, False)])
+        for label, bm, bn, bk, explicit, native in variants:
             packets = label != 'bf16'
             signature = dict(X='*fp8e4nv' if packets else '*bf16', W='*bf16', Out='*fp32', M='i32')
-            constants = dict(BM=bm, BN=bn, BK=64, PACKETS=packets)
+            constants = dict(BM=bm, BN=bn, BK=bk, PACKETS=packets)
             if packets:
                 signature.update(Scales='*fp32', LOCAL_ROWS='i32', PACKET_BYTES='i32')
             else:
@@ -75,6 +78,7 @@ def compile_consumers(output, router_only=False):
                 function = _router_packet_gemm
                 signature['Packed'] = signature.pop('X')
                 constants.pop('PACKETS')
+                constants['NATIVE'] = native
             source = GluonASTSource if explicit else ASTSource
             kernel = triton.compile(source(function, signature, constexprs=constants),
                 target=GPUTarget('cuda', 121, 32),

@@ -6,31 +6,37 @@ from triton.experimental.gluon.language.nvidia.ampere import mma_v2
 
 @gluon.jit(do_not_specialize=['M', 'LOCAL_ROWS', 'PACKET_BYTES'])
 def _router_packet_gemm(Packed, Scales, W, Out, M, LOCAL_ROWS, PACKET_BYTES,
-                        BM: gl.constexpr, BN: gl.constexpr, BK: gl.constexpr):
+                        BM: gl.constexpr, BN: gl.constexpr, BK: gl.constexpr, NATIVE: gl.constexpr=False):
     # Every lane reads adjacent K values. Transport-scale addressing must not
     # turn a coalesced activation tile into scalar loads along the row axis.
-    memory: gl.constexpr = gl.BlockedLayout([1, 4], [4, 8], [4, 1], [1, 0])
     mma: gl.constexpr = gl.NVMMADistributedLayout(version=[2, 0],
         warps_per_cta=[2, 2], instr_shape=[16, 8])
-    rows = (gl.program_id(0)//gl.cdiv(288, BN))*BM + gl.arange(0, BM, layout=gl.SliceLayout(1, memory))
-    cols = (gl.program_id(0)%gl.cdiv(288, BN))*BN + gl.arange(0, BN, layout=gl.SliceLayout(1, memory))
-    kk = gl.arange(0, BK, layout=gl.SliceLayout(0, memory))
+    if NATIVE:
+        memory_a: gl.constexpr = gl.DotOperandLayout(0, mma, 2)
+        memory_b: gl.constexpr = gl.DotOperandLayout(1, mma, 2)
+    else:
+        memory_a: gl.constexpr = gl.BlockedLayout([1, 4], [4, 8], [4, 1], [1, 0])
+        memory_b: gl.constexpr = gl.BlockedLayout([4, 1], [8, 4], [1, 4], [0, 1])
+    rows = (gl.program_id(0)//gl.cdiv(288, BN))*BM + gl.arange(0, BM, layout=gl.SliceLayout(1, memory_a))
+    cols = (gl.program_id(0)%gl.cdiv(288, BN))*BN + gl.arange(0, BN, layout=gl.SliceLayout(0, memory_b))
+    ka = gl.arange(0, BK, layout=gl.SliceLayout(0, memory_a))
+    kb = gl.arange(0, BK, layout=gl.SliceLayout(1, memory_b))
     rank, local_row = rows//LOCAL_ROWS, rows%LOCAL_ROWS
     scale_ptr = Scales + rank*(PACKET_BYTES//4) + LOCAL_ROWS*1024 + local_row*2
     scale0 = gl.load(scale_ptr, rows < M, other=0.)
     scale1 = gl.load(scale_ptr + 1, rows < M, other=0.)
-    input_ptr = Packed + rank[:,None]*PACKET_BYTES + local_row[:,None]*4096 + kk[None,:]
-    weight_ptr = W + cols[:,None]*4096 + kk[None,:]
+    input_ptr = Packed + rank[:,None]*PACKET_BYTES + local_row[:,None]*4096 + ka[None,:]
+    weight_ptr = W + cols[None,:]*4096 + kb[:,None]
     acc = gl.full((BM, BN), 0., gl.float32, mma)
     for block in range(4096//BK):
         v = gl.load(input_ptr + block*BK, rows[:,None] < M, other=0.).to(gl.float32)
         scale = gl.where(block < 2048//BK, scale0, scale1)
         a = (v*scale[:,None]).to(gl.bfloat16)
-        b = gl.load(weight_ptr + block*BK, cols[:,None] < 288, other=0.)
+        b = gl.load(weight_ptr + block*BK, cols[None,:] < 288, other=0.)
         # Pin both operands to the ordinary router's kWidth=2 and K order.
         # FP8 source width cannot select a different accumulation here.
         a = gl.convert_layout(a, gl.DotOperandLayout(0, mma, 2))
-        b = gl.convert_layout(b.T, gl.DotOperandLayout(1, mma, 2))
+        b = gl.convert_layout(b, gl.DotOperandLayout(1, mma, 2))
         acc = mma_v2(a, b, acc)
     output: gl.constexpr = gl.BlockedLayout([1, 4], [4, 8], [4, 1], [1, 0])
     rr = (gl.program_id(0)//gl.cdiv(288, BN))*BM + gl.arange(0, BM, layout=gl.SliceLayout(1, output))
