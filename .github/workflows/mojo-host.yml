@@ -1,0 +1,30 @@
+name: Mojo host CPU experiment
+
+on:
+  pull_request:
+    paths: ["bench/mojo_host.py", "bench/mojo_host/**", "engine/profiles/glm53/burst_decode.py", "tests/test_mojo_host.py", ".github/workflows/mojo-host.yml"]
+  workflow_dispatch:
+
+jobs:
+  differential:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: pinned optional compiler (no torch, MAX server or GPU)
+        run: python -m pip install mojo==1.0.0
+      - name: precompile and require the actual native module
+        run: |
+          python bench/mojo_host.py build
+          ST_MOJO_HOST_DIRECTORY=build/mojo-host python -m unittest tests.test_mojo_host -v
+      - name: paired CPU record (timing is not a shared-runner pass threshold)
+        run: python bench/mojo_host.py run --steps 512 --samples 4 --output build/mojo-host/cpu.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mojo-host-cpu
+          path: |
+            build/mojo-host/manifest.json
+            build/mojo-host/cpu.json
