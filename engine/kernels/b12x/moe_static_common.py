@@ -141,6 +141,8 @@ def _indexed_static_get_work_tile(
     # The frontend proves the bound on device on every replay. Normal C2
     # top-8 routes have at most 16 rows/expert, so work ownership is arithmetic
     # rather than a scan through every intervening expert's row count.
+    tile = (Int32(0), Int32(0), Int32(0))
+    valid = Int32(0) != Int32(0)
     if single_m_tile != Int32(0):
         local_expert = current_work_linear_idx // num_tiles_n
         valid = local_expert < active_expert_count[Int32(0)]
