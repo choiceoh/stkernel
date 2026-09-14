@@ -83,7 +83,7 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "moe_fc1_reuse", "moe_compact_staging", "moe_register_scales", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench", "decode_k7", "moe_output", "moe_pair", "moe_pair_serial", "moe_pair_overlap", "moe_pair_direct", "moe_pair_reuse", "moe_pair_prefetch"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "moe_fc1_reuse", "moe_compact_staging", "moe_register_scales", "moe_sync_cleanup", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench", "decode_k7", "moe_output", "moe_pair", "moe_pair_serial", "moe_pair_overlap", "moe_pair_direct", "moe_pair_reuse", "moe_pair_prefetch"}, selected
 
     if 'moe_pair_prefetch' in selected:
         from probes.engine_moe_pair_check import check as moe_pair_check
@@ -122,7 +122,7 @@ def main():
         from probes.engine_decode_k7 import check as k7_check
         k7_check(report, args.ranks)
 
-    if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'moe_fc1_reuse', 'moe_compact_staging', 'moe_register_scales', 'paired_projection', 'indexer_boundary', 'wide_input', 'direct_producer'}:
+    if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'moe_fc1_reuse', 'moe_compact_staging', 'moe_register_scales', 'moe_sync_cleanup', 'paired_projection', 'indexer_boundary', 'wide_input', 'direct_producer'}:
         from probes.engine_decode_bundle import require_current_probe
         require_current_probe()
     if 'direct_producer' in selected:
@@ -139,9 +139,9 @@ def main():
     if 'wide_input' in selected:
         from probes.engine_decode_batch import wide_check
         wide_check(report, args.ranks)
-    if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'moe_fc1_reuse', 'moe_compact_staging', 'moe_register_scales'}:
+    if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'moe_fc1_reuse', 'moe_compact_staging', 'moe_register_scales', 'moe_sync_cleanup'}:
         from probes.engine_decode_scatter_check import moe_check
-        for lane in ('moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'moe_fc1_reuse', 'moe_compact_staging', 'moe_register_scales'):
+        for lane in ('moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'moe_fc1_reuse', 'moe_compact_staging', 'moe_register_scales', 'moe_sync_cleanup'):
             if lane in selected:
                 moe_check(report, args.ranks, lane)
 
