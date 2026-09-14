@@ -77,10 +77,11 @@ class Recorder:
     lock on the hot path is exactly the kind of cost that gets instrumentation
     turned off."""
 
-    def __init__(self, name: str = "run"):
+    def __init__(self, name: str = "run", *, memory_sampling: bool = True):
         self.root = Span(name)
         self._stack = [self.root]
         self._aggregate_spans = {}
+        self.memory_sampling = memory_sampling
 
     @contextmanager
     def phase(self, name: str, *, aggregate: bool = False):
@@ -99,14 +100,14 @@ class Recorder:
             if aggregate:
                 self._aggregate_spans[key] = span
         self._stack.append(span)
-        free0 = _dev_free_bytes()
+        free0 = _dev_free_bytes() if self.memory_sampling else None
         t0 = time.perf_counter()
         try:
             yield span
         finally:
             span.seconds += time.perf_counter() - t0
             span.calls += 1
-            free1 = _dev_free_bytes()
+            free1 = _dev_free_bytes() if self.memory_sampling else None
             if free0 is not None and free1 is not None:
                 span.dev_bytes = (span.dev_bytes or 0) + free0 - free1
             self._stack.pop()
@@ -142,5 +143,5 @@ class Recorder:
             json.dump(self.as_dict(), fh, indent=1)
 
     def as_dict(self) -> dict:
-        return {"root": self.root.as_dict(), "memory_sampling": _MEM,
+        return {"root": self.root.as_dict(), "memory_sampling": _MEM and self.memory_sampling,
                 "when": time.strftime("%Y-%m-%dT%H:%M:%S")}
