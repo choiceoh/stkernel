@@ -1,0 +1,110 @@
+{
+  "status": "PASS",
+  "device": "NVIDIA GB10",
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "image": "sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed",
+  "rank_file": "/home/choiceoh/models/st-glm53-nvidia-tp4-9391/rank3of4.safetensors",
+  "scratch_peak_bytes": 4159928832,
+  "default_enabled": false,
+  "serving_speedup_proven": false,
+  "scratch_peak_gib": 3.8742356300354004,
+  "cases": [
+    {
+      "decode_rows": 8,
+      "prefill_rows": 9240,
+      "samples": 8,
+      "cold_windows": 15,
+      "max_decode_relative": 0.0,
+      "max_mixed_prefill_relative": 0.008426966292134831,
+      "max_mixed_prefill_rms": 0.0021022272099087166,
+      "native_repeat": {
+        "decode": {
+          "relative_max": 0.0,
+          "relative_rms": 0.0
+        },
+        "prefill": {
+          "relative_max": 0.007022471910112359,
+          "relative_rms": 0.001345886295432176
+        }
+      },
+      "warm_mixed_prepare_median_ms": 130.76280200039037,
+      "warm_mixed_decode_after_prepare_median_ms": 1.8652199942152947,
+      "warm_mixed_full_median_ms": 182.29424199671485,
+      "cancelled_phases": [
+        "queued",
+        "decode",
+        "cold"
+      ]
+    },
+    {
+      "decode_rows": 32,
+      "prefill_rows": 9240,
+      "samples": 8,
+      "cold_windows": 15,
+      "max_decode_relative": 0.0,
+      "max_mixed_prefill_relative": 0.00975609756097561,
+      "max_mixed_prefill_rms": 0.0024290256842306244,
+      "native_repeat": {
+        "decode": {
+          "relative_max": 0.0,
+          "relative_rms": 0.0
+        },
+        "prefill": {
+          "relative_max": 0.006097560975609756,
+          "relative_rms": 0.0012730724517386904
+        }
+      },
+      "warm_mixed_prepare_median_ms": 187.41839300491847,
+      "warm_mixed_decode_after_prepare_median_ms": 7.179426989750937,
+      "warm_mixed_full_median_ms": 243.00491300527938,
+      "cancelled_phases": []
+    },
+    {
+      "decode_rows": 8,
+      "prefill_rows": 32768,
+      "samples": 8,
+      "cold_windows": 46,
+      "max_decode_relative": 0.0,
+      "max_mixed_prefill_relative": 0.00881057268722467,
+      "max_mixed_prefill_rms": 0.0013804301698956637,
+      "native_repeat": {
+        "decode": {
+          "relative_max": 0.0,
+          "relative_rms": 0.0
+        },
+        "prefill": {
+          "relative_max": 0.00881057268722467,
+          "relative_rms": 0.0009175155701075091
+        }
+      },
+      "warm_mixed_prepare_median_ms": 511.82163899648003,
+      "warm_mixed_decode_after_prepare_median_ms": 2.710207976633683,
+      "warm_mixed_full_median_ms": 654.3005450221244,
+      "cancelled_phases": []
+    },
+    {
+      "decode_rows": 32,
+      "prefill_rows": 32768,
+      "samples": 8,
+      "cold_windows": 46,
+      "max_decode_relative": 0.0,
+      "max_mixed_prefill_relative": 0.008547008547008548,
+      "max_mixed_prefill_rms": 0.0015816348721363449,
+      "native_repeat": {
+        "decode": {
+          "relative_max": 0.0,
+          "relative_rms": 0.0
+        },
+        "prefill": {
+          "relative_max": 0.00641025641025641,
+          "relative_rms": 0.0010962929393534642
+        }
+      },
+      "warm_mixed_prepare_median_ms": 478.5433780052699,
+      "warm_mixed_decode_after_prepare_median_ms": 6.788790982682258,
+      "warm_mixed_full_median_ms": 625.3458530118223,
+      "cancelled_phases": []
+    }
+  ]
+}
