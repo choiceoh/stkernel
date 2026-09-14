@@ -1,4 +1,4 @@
-"""Same-build register/shared W4 pipeline comparison, without a model boot."""
+"""Same-build ordered-K/shared W4 pipeline comparison, without a model boot."""
 import argparse
 import hashlib
 import json
@@ -47,15 +47,15 @@ def check(report, ranks=None, *, timing=True):
             outputs = [torch.empty(8, n, device='cuda', dtype=torch.bfloat16) for _ in (0, 1)]
             graphs = []
             try:
-                for register in (False, True):
-                    y = outputs[int(register)]
+                for pipeline in (False, True):
+                    y = outputs[int(pipeline)]
                     graphs.append(_capture(lambda: ext.run_gemm_bound_input(
-                        x, p.data, p.scale, y, n, p.rowscale.data_ptr(), owner.workspace, None, register))[0])
+                        x, p.data, p.scale, y, n, p.rowscale.data_ptr(), owner.workspace, None, pipeline))[0])
                 if n == 4096:
-                    for register in (False, True):
-                        address = addresses[int(register)]
+                    for pipeline in (False, True):
+                        address = addresses[int(pipeline)]
                         graphs.append(_capture(lambda: ext.run_gemm_bound_input(
-                            x, p.data, p.scale, address, n, p.rowscale.data_ptr(), owner.workspace, address, register))[0])
+                            x, p.data, p.scale, address, n, p.rowscale.data_ptr(), owner.workspace, address, pipeline))[0])
                 for step, magnitude in enumerate((0., .001, .1, 1., 50., 0.)):
                     x.normal_().mul_(magnitude)
                     for order in (range(len(graphs)), reversed(range(len(graphs)))):
@@ -73,13 +73,13 @@ def check(report, ranks=None, *, timing=True):
                                 torch.testing.assert_close(guard[arm, step % 2, 1:-1], outputs[0], rtol=0, atol=0)
                                 assert guard[arm, step % 2, (0, -1)].eq(-123.).all().item()
                                 assert guard[arm, 1-step % 2].eq(-123.).all().item()
-                report('register_exact', key=key, rows=8, n=n, k=k, private_workspace=private,
+                report('pipeline_exact', key=key, rows=8, n=n, k=k, private_workspace=private,
                        plan=ext.gemm2_plan(8, n, k), direct_output=n == 4096,
                        input_stride=x.stride(0), replay_orders='BA/AB', rebound_descriptor=True)
                 if timing and not private:
-                    timings(report, 'register_w4', 8, graphs[:2], key=key, n=n, k=k)
+                    timings(report, 'pipeline_w4', 8, graphs[:2], key=key, n=n, k=k)
                     if n == 4096:
-                        timings(report, 'register_w4_direct', 8, graphs[2:], key=key, n=n, k=k)
+                        timings(report, 'pipeline_w4_direct', 8, graphs[2:], key=key, n=n, k=k)
             finally:
                 for graph in graphs:
                     graph.reset()
@@ -93,10 +93,10 @@ def check(report, ranks=None, *, timing=True):
         outputs = [[torch.empty(m, p.rows, device='cuda', dtype=torch.bfloat16) for p in packs] for _ in (0, 1)]
         graphs = []
         try:
-            for register in (False, True):
+            for pipeline in (False, True):
                 graphs.append(_capture(lambda: ext.run_query_pair(
                     x, [p.data for p in packs], [p.scale for p in packs],
-                    [p.rowscale for p in packs], outputs[int(register)], True, register))[0])
+                    [p.rowscale for p in packs], outputs[int(pipeline)], True, pipeline))[0])
             for magnitude in (0., .001, 1., 50., 0.):
                 x.normal_().mul_(magnitude)
                 for order in ((0, 1), (1, 0)):
@@ -108,10 +108,10 @@ def check(report, ranks=None, *, timing=True):
                     for a, b in zip(outputs[1], outputs[0]):
                         assert a.isfinite().all().item()
                         torch.testing.assert_close(a, b, rtol=0, atol=0)
-            report('register_queries_exact', rows=m, n=[p.rows for p in packs], k=1536, replay_orders='BA/AB',
+            report('pipeline_queries_exact', rows=m, n=[p.rows for p in packs], k=1536, replay_orders='BA/AB',
                    control='main CTA-local reduction, same build and packs')
             if timing and sizes == (1, 1):
-                timings(report, 'register_w4_queries', m, graphs, queries=2)
+                timings(report, 'pipeline_w4_queries', m, graphs, queries=2)
         finally:
             for graph in graphs:
                 graph.reset()
@@ -123,7 +123,7 @@ def main(ranks=None):
     root = Path(__file__).resolve().parents[1]
     report('identity', torch=torch.__version__, cuda=torch.version.cuda, gpu=torch.cuda.get_device_name(),
            source_sha256={f:hashlib.sha256((root/f).read_bytes()).hexdigest() for f in (
-               'engine/kernels/dense/kernels.cu', 'probes/engine_forward_register.py')})
+               'engine/kernels/dense/kernels.cu', 'probes/engine_forward_pipeline.py')})
     torch.manual_seed(91425)
     check(report, ranks)
     report('complete', status='PASS', consumer_metrics_measured=False)
