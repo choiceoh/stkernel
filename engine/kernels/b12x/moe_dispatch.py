@@ -2189,6 +2189,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("fc1_reuse_a", False)),
         bool(config.get("compact_staging", False)),
         bool(config.get("sf6_registers", False)),
+        bool(config.get("sync_cleanup", False)),
     )
     # Expanded output and register scatter never alias a served handle.
     if config.get("probe_route_scatter", False):
@@ -2232,6 +2233,10 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                           and config.get("c2_direct_scatter", True))
     sf6_registers = compact_staging and bool(config.get("sf6_registers", True))
     scatter_reuse = bool(direct_scatter and sf6_registers and config.get("c2_scatter_reuse", True))
+    # C1 only: the batch M16 tile shares this geometry, but its scatter and
+    # prefetch paths were never compiled or measured without the barriers.
+    sync_cleanup = (reform and 1 <= m <= 8 and bool(config.get("reform_sf_pack", False))
+                    and bool(config.get("sync_cleanup", True)))
     return dict(config, decode_reform=reform, sf6_separate=separate, sf6_word_expand=word_expand,
                 sf6_fc2_word_expand=fc2_word_expand,
                 packed_activation_store=packed_activation_store, fc1_reuse_a=fc1_reuse_a,
@@ -2240,7 +2245,7 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                 c2_scatter_reuse=scatter_reuse,
                 c2_fc2_prefetch=bool(scatter_reuse and int(config.get("fc2", 2)) == 2
                                      and config.get("c2_fc2_prefetch", True)),
-                sf6_registers=sf6_registers)
+                sf6_registers=sf6_registers, sync_cleanup=sync_cleanup)
 
 
 def _get_static_kernel_v2(
@@ -2348,6 +2353,7 @@ def _get_static_kernel_v2(
         fc1_reuse_a=bool(config["fc1_reuse_a"]),
         compact_staging=bool(config["compact_staging"]),
         sf6_registers=bool(config["sf6_registers"]),
+        sync_cleanup=bool(config["sync_cleanup"]),
         sf_vec_size=sf_vec_size,
         output_tile_count_n=output_tile_count_n,
         fc1_stages=int(config["fc1"]),
@@ -2512,6 +2518,7 @@ def _get_static_kernel_v2(
         f"{'c2scatter' if config.get('c2_direct_scatter') else ''}"
         f"{'reuse' if config.get('c2_scatter_reuse') else ''}"
         f"{'prefetch3' if config.get('c2_fc2_prefetch') else ''}"
+        f"{'sync' if config.get('sync_cleanup') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(

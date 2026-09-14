@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "base": "2574fc02065bd192475df66c91d489741f6d9e5541cf1cfce3054ab16c68d1bb",
+  "candidate": "16c292479785964b194a232262e685135eb96a49212c162b3074ae8823fc877a",
+  "inputs": {
+    "base": {
+      "ref": "0bde26db",
+      "commit": "0bde26db9011505112e4b1109da39f3cf71ee53a",
+      "sha256": "5c242083dd62b505061644c8ff95308af01e9e9296ddbe36b54b70e317a6937e",
+      "dirty": false,
+      "files": 261,
+      "scope": "engine source; external libraries belong to the profile runtime"
+    },
+    "candidate": {
+      "ref": "eae5c36d",
+      "commit": "eae5c36de37d959fe33bc50b357c250f1f63cd19",
+      "sha256": "603ccff98bbc12693bbaf48bdb79f85a289c8131576d7aac1b8330d23743c219",
+      "dirty": false,
+      "files": 261,
+      "scope": "engine source; external libraries belong to the profile runtime"
+    }
+  },
+  "runtime": "",
+  "evidence": "",
+  "rows": [
+    {
+      "phase": "decode",
+      "ctx": 2000,
+      "width": 1,
+      "components": {
+        "moe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    },
+    {
+      "phase": "prefill",
+      "ctx": 2000,
+      "width": 1,
+      "components": {
+        "prefill": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    },
+    {
+      "phase": "decode",
+      "ctx": 32000,
+      "width": 1,
+      "components": {
+        "moe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    },
+    {
+      "phase": "prefill",
+      "ctx": 32000,
+      "width": 1,
+      "components": {
+        "prefill": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    },
+    {
+      "phase": "decode",
+      "ctx": 128000,
+      "width": 1,
+      "components": {
+        "moe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    },
+    {
+      "phase": "prefill",
+      "ctx": 128000,
+      "width": 1,
+      "components": {
+        "prefill": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    }
+  ]
+}
