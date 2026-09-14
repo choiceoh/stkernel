@@ -86,7 +86,7 @@ class MixedExpertTests(unittest.TestCase):
 
     def test_normal_kernel_body_retains_every_statement(self):
         # Remove only the private frontend conditional and compare the whole
-        # ordinary @cute.kernel AST from main bec3b6dd (#918, FC2 word expansion).
+        # ordinary @cute.kernel AST from main 50ff3ed0 (#920, FC1 input reuse).
         # Future body changes still require review.
         path = Path(__file__).resolve().parents[1]/'engine/kernels/b12x/moe_static_kernel_v4.py'
         tree = ast.parse(path.read_text())
@@ -97,7 +97,7 @@ class MixedExpertTests(unittest.TestCase):
                     return n.body
                 return self.generic_visit(n)
         dump = json.dumps(canonical_ast(Ordinary().visit(node)), separators=(',', ':'))
-        self.assertEqual(hashlib.sha256(dump.encode()).hexdigest(), '3a2a1c6f16239a3b4ca54fe1d1356a2a40d0e3612d47a713f8a959eae7ee5175')
+        self.assertEqual(hashlib.sha256(dump.encode()).hexdigest(), '9d1ac8bb80484bbb8e08a5c3dba7a871ab59e9e426b3d2820c64b0c12860d144')
 
     def test_prepared_config_is_bounded_and_keeps_decode_geometry(self):
         path = Path(__file__).resolve().parents[1]/'engine/kernels/b12x/moe_dispatch.py'

@@ -1,5 +1,6 @@
 """M2 one-GB10 served-reader and cancellation gate; TP4 host proof is separate."""
 import argparse
+import cProfile
 from contextlib import contextmanager, ExitStack
 from functools import partial
 import hashlib
@@ -192,6 +193,27 @@ def measure(args, report):
                 else:
                     raise RuntimeError('retired ticket dispatched into a reused slot')
             cell['cancellation_phases'] = ['queued', 'decode', 'cold']
+        if d == 8 and p == 32768:
+            # A separate, warm preparation sample attributes Python/C++ host
+            # time (including waits). Never include profiling overhead in A/B.
+            generation += 1
+            profile = cProfile.Profile()
+            profile.enable()
+            try:
+                key = net.submit_mixed_ffn(scheduler, x, pref,
+                    identity=ExpertInvocation(3, generation, generation, generation),
+                    request='preparation-profile', slot=0)
+            finally:
+                profile.disable()
+            scheduler.cancel(key)
+            torch.cuda.synchronize()
+            if not scheduler.reap(key):
+                raise RuntimeError('profiled preparation did not retire')
+            import pstats
+            entries = pstats.Stats(profile).stats
+            report['preparation_profile'] = [dict(file=f, line=line, function=name,
+                primitive_calls=v[0], total_calls=v[1], self_ms=v[2]*1000, cumulative_ms=v[3]*1000)
+                for (f, line, name), v in sorted(entries.items(), key=lambda item: item[1][3], reverse=True)[:50]]
         if frozen != [sha_tensor(t) for t in (x, pref)]:
             raise RuntimeError('ticket changed its prepared source')
         cases.append(cell); print(json.dumps(cell), flush=True)
