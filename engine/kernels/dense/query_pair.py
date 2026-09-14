@@ -1,7 +1,7 @@
 """K=7 DSA query readers sharing one input pack; existing weight owners stay intact."""
 import torch
 
-from . import bound_input_cell, extension
+from engine.kernels.dense import bound_input_cell, extension
 
 
 class QueryPair:

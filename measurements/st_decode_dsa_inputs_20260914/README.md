@@ -38,6 +38,13 @@ PR895 compact KDA and the concurrent MoE/precision work.
 
 ## Completed evidence
 
+- CI follow-up: `test_relative_imports_resolve_inside_the_vendored_package`
+  interpreted `from . import bound_input_cell, extension` as submodule imports.
+  `query_pair.py` now names `engine.kernels.dense` explicitly, matching the other
+  dense helpers. `ci-import-proof.json` confirms identical imported callables,
+  unchanged `QueryPair` method code and unchanged compiled kernels. The GPU
+  reservation stays frozen at `0bba87ed`; this import-only fix needs no extra
+  GPU run. `ci-fix-tests.log` records the kernel-package and DSA CPU checks.
 - `cpu-tests.log`: 77 tests, 64 passed and 13 explicitly skipped CUDA checks.
   Eight focused modules, including new ownership/routing/proof gates and existing
   execution, indexer, K=7 and prefill integration tests. An initial test-copy
