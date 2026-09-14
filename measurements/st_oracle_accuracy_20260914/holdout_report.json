@@ -1,0 +1,292 @@
+{
+  "schema": 1,
+  "mode": "holdout",
+  "evaluations": [
+    {
+      "path": "measurements/st_oracle_accuracy_20260914/holdout_2k.json",
+      "arm": "requests",
+      "name": "ST-NATIVE-F4D7-20260912H-2K-subset",
+      "validation_scope": "cross_runtime_transfer",
+      "identity": {
+        "engine": "st",
+        "engine_source_sha256": "de14e0d8fc16cac0fff176cf743425baaf47e94cda29ca29f01c1a19be2e3245",
+        "git": null,
+        "image": "st-engine:perf-f4d7-h",
+        "knobs": {}
+      },
+      "calibration_identity_changes": {
+        "engine_source_sha256": {
+          "calibration": "cbf41bab9dec49a7dc8ca38e83d5f01abf0edc4ebef1c930eb43cb4a5fc8e1e1",
+          "validation": "de14e0d8fc16cac0fff176cf743425baaf47e94cda29ca29f01c1a19be2e3245"
+        },
+        "image": {
+          "calibration": "st-engine:perf-f4d7-a",
+          "validation": "st-engine:perf-f4d7-h"
+        },
+        "knobs": {
+          "calibration": {
+            "STK_moe_static": "t,r,sf6,q0",
+            "STK_execution": "parity"
+          },
+          "validation": {}
+        }
+      },
+      "observations_sha256": "be72f5e155e5eb7856b7a7c0b823534dfa47922a3bce9cdaea77c1faca32df45",
+      "workload": {
+        "arrive_ms": [
+          0.0,
+          9604.5,
+          16932.3
+        ],
+        "gens": [
+          400,
+          400,
+          400
+        ],
+        "prompts": [
+          2121,
+          2128,
+          2128
+        ],
+        "labels": [
+          2000,
+          2000,
+          2000
+        ],
+        "groups": [
+          0,
+          1,
+          2
+        ],
+        "cold_keys": [
+          2128,
+          2128,
+          2128
+        ],
+        "prompt_sources": [
+          "request",
+          "request",
+          "request"
+        ]
+      },
+      "simulation": {
+        "contract": {
+          "chunk_align": 16,
+          "token_budget": 4096,
+          "draft_slots": 3,
+          "max_wait_s": 0.0,
+          "max_running": 8,
+          "decode_token_budget": null,
+          "prefill_tail_multiple": 0
+        },
+        "cost": {
+          "name": "fit:ST-NATIVE-F4D7-20260912A",
+          "k": 5,
+          "acc": 0.054191176470588236,
+          "decode_ms": 41.78509745846289,
+          "decode_reference_width": 1,
+          "decode_ms_per_row": 0.0,
+          "decode_ms_per_row_basis": "manual or fitted",
+          "decode_ms_per_1k_ctx": 0.0,
+          "decode_ms_by_ctx": {
+            "2000": 55.71573169110803,
+            "32000": 41.77496808261022,
+            "128000": 41.792638125116355
+          },
+          "prefill_tok_s": {
+            "2128": 2076.1848903724276,
+            "32545": 2785.259185733819,
+            "128559": 2576.377011542768
+          },
+          "prefill_flat_ms": 0.0,
+          "front_ms": 957.1,
+          "cold_extra_s": {
+            "2128": 9.718
+          },
+          "acc_hist": [],
+          "prefill_ms_per_token": 0.0,
+          "prefill_fixed_ms_per_chunk": 0.0,
+          "confidence": 100.0
+        },
+        "steps": {
+          "prefill": 3,
+          "decode": 922
+        },
+        "wall_s": 71.576,
+        "step_s": 12.92,
+        "request_span_s": 71.51176624931395,
+        "decode_step_s_wall": 12.88,
+        "decode_step_s_phase": 18.0,
+        "modeled_decode_service_s": 51.230317147266085,
+        "committed_decode_tokens": 1197,
+        "active_decode_row_steps": 919,
+        "launched_decode_row_steps": 922,
+        "tokens_per_step": 1.303,
+        "tokens_per_wall_step": 1.298,
+        "by_kind": {
+          "prefill": {
+            "steps": 3,
+            "med_ms": 1990.521,
+            "p95_ms": 11710.869,
+            "max_ms": 11710.869,
+            "tokens_med": 2128
+          },
+          "decode": {
+            "steps": 922,
+            "med_ms": 121.028,
+            "p95_ms": 128.152,
+            "max_ms": 128.696,
+            "tokens_med": 4
+          }
+        },
+        "host_med_decode_ms": 121.028,
+        "headroom": null,
+        "async": 922,
+        "sync_drains": 0,
+        "decode_widths": {
+          "1": 922
+        },
+        "requests": [
+          {
+            "seq": 1,
+            "prompt": 2121,
+            "completion_tokens": 400,
+            "group": 0,
+            "arrival_s": 1.5003606677055359e-06,
+            "completed_s": 30.08243045769632,
+            "ctx": 2000,
+            "queue_wait_s": 0.0,
+            "prefill_s": 11.711,
+            "ttft_s": 11.711,
+            "e2e_s": 30.082,
+            "decode_s": 18.372,
+            "tok_s": 21.72
+          },
+          {
+            "seq": 2,
+            "prompt": 2128,
+            "completion_tokens": 400,
+            "group": 1,
+            "arrival_s": 30.14583562500775,
+            "completed_s": 51.197653790935874,
+            "ctx": 2000,
+            "queue_wait_s": 0.0,
+            "prefill_s": 1.99,
+            "ttft_s": 1.99,
+            "e2e_s": 21.052,
+            "decode_s": 19.061,
+            "tok_s": 20.93
+          },
+          {
+            "seq": 3,
+            "prompt": 2128,
+            "completion_tokens": 400,
+            "group": 2,
+            "arrival_s": 51.253207333385944,
+            "completed_s": 71.51176774967462,
+            "ctx": 2000,
+            "queue_wait_s": 0.0,
+            "prefill_s": 1.99,
+            "ttft_s": 1.991,
+            "e2e_s": 20.259,
+            "decode_s": 18.268,
+            "tok_s": 21.84
+          }
+        ],
+        "queue_wait": {
+          "med_s": 0.0,
+          "p95_s": 0.0,
+          "max_s": 0.0
+        },
+        "recorder": [
+          {
+            "name": "prefill",
+            "seconds": 15.691258,
+            "calls": 3
+          },
+          {
+            "name": "decode",
+            "seconds": 0.171508,
+            "calls": 922
+          }
+        ],
+        "meta_med_us": null
+      },
+      "comparison": [
+        [
+          "decode step/s",
+          "검증",
+          16.9367201331118,
+          18.0,
+          0.06277956171746958
+        ],
+        [
+          "tokens/step",
+          "검증",
+          3.4760845383759733,
+          1.303,
+          -0.62515296
+        ],
+        [
+          "TTFT(warm) ctx2K",
+          "검증",
+          0.6955662825021136,
+          1.9905,
+          1.8616970805998656
+        ],
+        [
+          "TTFT(cold) ctx2K",
+          "검증",
+          1.57914045999496,
+          11.711,
+          6.416059746855816
+        ],
+        [
+          "e2e med ctx2K",
+          "검증",
+          7.32784821200039,
+          21.052,
+          1.8728761009984303
+        ],
+        [
+          "클라이언트 tok/s",
+          "검증",
+          59.76711118697417,
+          21.72,
+          -0.6365894290582055
+        ],
+        [
+          "TPOT ms",
+          "검증",
+          16.731610080193118,
+          46.04,
+          1.751677799048291
+        ]
+      ]
+    }
+  ],
+  "skipped": [],
+  "gpu_used": false,
+  "confidence_basis": "legacy confidence describes missing coefficients, not empirical prediction accuracy",
+  "scope": "CPU simulation; observed prompt/output lengths; not answer quality or a serving speed verdict",
+  "calibration": {
+    "path": "measurements/st_native_20260912/onepass-a/result.jsonl",
+    "observations_sha256": "3ab504d6c803f02b55ae1303715cf202afdb48be5af109be4e44cb558260e7df",
+    "identity": {
+      "engine": "st",
+      "engine_source_sha256": "cbf41bab9dec49a7dc8ca38e83d5f01abf0edc4ebef1c930eb43cb4a5fc8e1e1",
+      "git": null,
+      "image": "st-engine:perf-f4d7-a",
+      "knobs": {
+        "STK_moe_static": "t,r,sf6,q0",
+        "STK_execution": "parity"
+      }
+    }
+  },
+  "residuals": {
+    "rows": 7,
+    "median_absolute_relative_error": 1.751677799048291,
+    "max_absolute_relative_error": 6.416059746855816,
+    "over_10pct": 6
+  }
+}

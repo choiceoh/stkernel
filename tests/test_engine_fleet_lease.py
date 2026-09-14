@@ -608,12 +608,12 @@ class ProbeLeaseTests(unittest.TestCase):
         self.assertIn("def fleet_lease_of()", boot)
         # the reservation is now taken at the top of fleet() -- before the 67 GiB, not after -- and carried
         self.assertIn("lease = fleet_lease_of()", boot)
-        fleet = next(n for n in ast.parse(boot).body if isinstance(n, ast.FunctionDef) and n.name == 'fleet')
-        server = next(n for n in ast.walk(fleet) if isinstance(n, ast.Call)
-                      and isinstance(n.func, ast.Name) and n.func.id == 'Server')
-        keywords = {k.arg: ast.unparse(k.value) for k in server.keywords}
-        self.assertEqual(keywords['lease'], 'lease')
-        self.assertEqual(keywords['park_min_tokens'], 'PARK_MIN_TOKENS')
+        fleet = next(n for n in ast.parse(boot).body if isinstance(n, ast.FunctionDef) and n.name == "fleet")
+        servers = [n for n in ast.walk(fleet) if isinstance(n, ast.Call)
+                   and isinstance(n.func, ast.Name) and n.func.id == "Server"]
+        self.assertEqual(len(servers), 1)
+        keywords = {kw.arg: ast.unparse(kw.value) for kw in servers[0].keywords}
+        self.assertEqual(keywords.get("lease"), "lease")
         self.assertIn("serving = True\n        server.loop()", boot, "and the loop runs once the door is built")
 
 

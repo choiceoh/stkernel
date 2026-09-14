@@ -43,6 +43,11 @@ tok/s.
     python3 bench/step_sim.py --arrive-ms 0,30000 --prompts 2000,2000   # 기아 밸브 실험
 
 `--device-ms`/`--prefill-device-ms` 는 모형을 무시하는 수동 상수(비교용)로 남는다.
+`--against`만 쓰면 같은 기록을 보정·재현한다. 별도 기록의 오차는
+`--fit-from calibration.jsonl --against validation.jsonl --validation-output report.json`으로
+비용을 고정한 뒤 잰다. C4 파동과 실제 요청 토큰 수를 재생하며, 폭 계수가 없으면
+C4를 C1로 바꾸지 않고 결측으로 보고한다. 상세: bench/ORACLE_ACCURACY.md.
+
 StepMeta(`--meta`)는 별도 보고다: 엔진이 아직 단계마다 build 를 부르는 곳이 없어서,
 루프 비용에 섞지 않고 "커널 호출자의 flat array 비용"으로 따로 잰다.
 """
@@ -50,6 +55,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import statistics
 import sys
@@ -66,6 +72,7 @@ from engine.base.instruments import Recorder
 from engine.base.kv import BlockPool, SlotPool
 from engine.base.record import DeathDump, Ring
 from engine.base.runner import KIND, STEP_RECORD, Runner
+from bench import oracle_records as evidence
 
 
 @dataclass
@@ -85,6 +92,7 @@ class CostModel:
     k: int = 5                        # 스펙 디코드 드래프트 토큰 수
     acc: float = 0.462                # raw 수용률 (1 + k×acc = tokens/step 기댓값)
     decode_ms: float = 91.2           # decode 스텝 장치 시간 (1000/10.963)
+    decode_reference_width: int = 1   # the measured width of decode_ms / the context ladder
     decode_ms_per_row: float = 0.0    # 미계수: 스텝당 행 수 의존 (C=4 기록이 채울 자리)
     decode_ms_per_row_basis: str = "manual or fitted"
     decode_ms_per_1k_ctx: float = 0.0 # 예비 계수 — by-ctx 계단이 있으면 보통 쓰이지 않는다
@@ -146,7 +154,9 @@ class CostModel:
         return table[-1][1]
 
     def decode_delay(self, width: int, max_ctx: int) -> float:
-        ms = (self.decode_ms_for_ctx(max_ctx) + self.decode_ms_per_row * max(0, width - 1))
+        ms = self.decode_ms_for_ctx(max_ctx) + self.decode_ms_per_row * (width - self.decode_reference_width)
+        if not math.isfinite(ms) or ms < 0:
+            raise ValueError("width model predicts negative/nonfinite decode time")
         return ms / 1e3
 
     def prefill_delay(self, prompt_len: int, chunk_tokens: int) -> float:
@@ -170,7 +180,7 @@ class CostModel:
         return chunk_tokens / tok_s
 
     def summary(self) -> str:
-        fitted = [f"decode {self.decode_ms:g} ms", f"k={self.k}", f"acc={self.acc:.1%}",
+        fitted = [f"decode {self.decode_ms:g} ms at C={self.decode_reference_width}", f"k={self.k}", f"acc={self.acc:.1%}",
                   "prefill " + " ".join(f"{c//1000}K:{v:.0f}" for c, v in sorted(self.prefill_tok_s.items()))]
         if self.decode_ms_by_ctx:
             fitted.append("decode/by-ctx " + " ".join(f"{c//1000}K:{v:.1f}" for c, v in sorted(self.decode_ms_by_ctx.items())))
@@ -220,6 +230,10 @@ class NullModel:
         self.prefill_done: dict = {}
         self.done: dict = {}
         self.gen_tokens = 0
+        self.active_row_steps = 0
+        self.decode_service_s = 0.0
+        self.decode_launches = 0
+        self.cold_key = {}
         self._warmed: set = set()                        # 이미 한 번 prefilled 된 프롬프트 길이(JIT 꼬리는 첫 요청만)
         self._decoders_live = None                       # run_once 가 건넨다: 이 프리필 동안 디코더가 살아있는가
         self._dev = threading.Lock()                     # 장치는 하나: 스텝은 백그라운드에서도 줄을 선다
@@ -246,9 +260,10 @@ class NullModel:
             # 스텝 밖의 문 일이지만 계기는 이 스텝 안에 흘린다: 큐 대기에서 빼고 TTFT 에 넣는다.
             _delay(self.cost.front_ms / 1e3)
             # 그 프롬프트 길이의 첫 요청만 JIT 꼬리(cold−warm)를 낸다 — 둘째부터는 warm 이다
-            if self.prompt[seq] not in self._warmed:
-                self._warmed.add(self.prompt[seq])
-                _delay(self.cost.cold_extra_s.get(self.prompt[seq], 0.0))
+            key = self.cold_key.get(seq, self.prompt[seq])
+            if key not in self._warmed:
+                self._warmed.add(key)
+                _delay(self.cost.cold_extra_s.get(key, 0.0))
         # 디코더 옆의 청크는 공존 벌을 낸다(#838 공존 팔 실측 1.27×) — 혼자 프리필할 때는 안 낸다.
         # 문 앞면·JIT 꼬리는 장치와 무관하므로 벌 밖에 둔다.
         live = bool(self._decoders_live()) if self._decoders_live else False
@@ -258,17 +273,26 @@ class NullModel:
             # 첫 토큰은 프리필 끝에서 뽑힌다 — TTFT 는 여기서 잰다(원장/onepass 규약)
             self.prefill_done[seq] = time.monotonic()
             self.ctx[seq] += 1
+            if self.ctx[seq] >= self.target[seq]:
+                self.done[seq] = self.prefill_done[seq]
+                return True
         return None
 
+    def _decode_delay(self, seqs):
+        delay = self.cost.decode_delay(len(seqs), max(self.ctx[s] for s in seqs))
+        self.decode_service_s += delay
+        self.decode_launches += 1
+        return delay
+
     def decode(self, seqs, blocks, slots):
-        _delay(self.cost.decode_delay(len(seqs), max(self.ctx[s] for s in seqs)))
+        _delay(self._decode_delay(seqs))
         return [self._advance(s) for s in seqs]
 
     def async_ready(self, seqs):
         return self.can_async
 
     def decode_async(self, seqs, blocks, slots):
-        delay = self.cost.decode_delay(len(seqs), max(self.ctx[s] for s in seqs))
+        delay = self._decode_delay(seqs)
 
         def serve():
             with self._dev:                              # 박스처럼: 장치 스텝은 한 줄로 실행된다
@@ -294,7 +318,8 @@ class NullModel:
     def _advance(self, seq):
         if seq not in self.ctx:                          # 고스트: 이전 readback 에서 끝난 행
             return True
-        made = 1 + self._accepted()
+        self.active_row_steps += 1
+        made = min(1 + self._accepted(), self.target[seq] - self.ctx[seq])
         self.ctx[seq] += made
         self.gen_tokens += made
         if self.ctx[seq] >= self.target[seq]:
@@ -330,7 +355,8 @@ def _pools(prompts, gens, block, k):
 
 def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
              with_meta=False, ring_capacity=8192, host_med_ms=None,
-             device_s=0.0, prefill_device_s=0.0, labels=None, closed_loop=False) -> dict:
+             device_s=0.0, prefill_device_s=0.0, labels=None, closed_loop=False,
+             groups=None, cold_keys=None) -> dict:
     """한 워크로드를 끝까지 돌리고 Ring 기록으로 스텝 통계와 요청별 결과를 낸다.
 
     순수한 계기 — 네트워크는 없다(장치 시간은 스레드 위의 지연이다). `cost` 가
@@ -340,18 +366,35 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
     onepass 하네스의 의미 그대로 **앞 요청이 끝나야 다음을 보낸다**(검증 모드) —
     기록 시각에서 도착을 누적 유도하면 시뮬이 살짝 느릴 때 다음 프리필이 겹쳐
     간섭이 증폭되니, 순차 실행은 시뮬 자기 시계로 닫는다. `labels`: 요청별 ctx
-    라벨. `host_med_ms`: 장치 0 캘리브레이션의 숙주 med(여유분 계산에만 쓴다)."""
+    라벨. `groups`: 같은 정수 ID의 요청은 동시 입장하고, 그 파동 전체가 종료된 후
+    다음 파동을 보낸다. `cold_keys`: 실제 프롬프트 길이가 다른 질문도 같은 준비
+    버킷으로 묶는다. `host_med_ms`: 장치 0 캘리브레이션의 숙주 med(여유분 계산에만 쓴다)."""
     if cost is None:
         cost = CostModel(decode_ms=device_s * 1e3, prefill_flat_ms=prefill_device_s * 1e3,
                          k=0, acc=0.0, prefill_tok_s={}, name="manual")
+    if groups is not None:
+        if len(groups) != len(prompts) or not all(isinstance(g, int) for g in groups):
+            raise ValueError("groups must name one integer wave per prompt")
+        if groups != sorted(groups):
+            raise ValueError("request waves must be in order")
+        closed_loop = True
+    elif closed_loop:
+        groups = list(range(len(prompts)))
     if arrive_ms is None or closed_loop:
         arrive_ms = [0.0] * len(prompts)                 # closed loop 의 도착은 엔진 시계가 정한다
     if len(arrive_ms) != len(prompts):
         raise ValueError("--arrive-ms 는 --prompts 와 길이가 같아야 한다")
     gens = list(gen) if isinstance(gen, (list, tuple)) else [gen] * len(prompts)
+    if not prompts or len(gens) != len(prompts) or any(type(g) is not int or g < 1 for g in gens):
+        raise ValueError("one positive generation budget is required per prompt")
+    for name, values in (("labels", labels), ("cold_keys", cold_keys)):
+        if values is not None and len(values) != len(prompts):
+            raise ValueError(f"{name} must match prompts")
     kv, slots = _pools(prompts, gens, contract.chunk_align, cost.k)
     model = NullModel(cost, can_async and cost.decode_ms > 0)
-    rec = Recorder("sim")
+    # A CPU simulation must not import torch or query an already-initialized GPU
+    # on its first timed step. That startup cost is not request queueing.
+    rec = Recorder("sim", memory_sampling=False)
     ring = Ring(ring_capacity, STEP_RECORD.size)
     r = Runner(model, contract, kv, slots, ring, recorder=rec)
     model._decoders_live = lambda: bool(r.state.running or r.inflight)   # 이 프리필이 디코더 옆인지
@@ -359,21 +402,24 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
     arrivals = sorted(zip((m / 1e3 for m in arrive_ms), range(1, len(prompts) + 1), prompts))
     pending = list(arrivals)
     t0 = time.monotonic()
+    active_group = None
 
-    def admit(force=False):
+    def admit():
+        nonlocal active_group
         now = time.monotonic()
         while pending and pending[0][0] <= now - t0 + 1e-9:
-            if closed_loop and not force and (r.state.running or r.state.in_prefill is not None
-                                              or r.inflight):
-                return                                      # 앞 요청이 끝나야 다음(하네스 의미)
+            group = groups[pending[0][1] - 1] if groups is not None else None
+            if closed_loop and group != active_group:
+                if r.state.prompt_len or r.inflight:
+                    return                              # the previous wave must fully retire
+                active_group = group
             _off, seq, p = pending.pop(0)
             model.prompt[seq] = p
             model.target[seq] = p + gens[seq - 1]
+            model.cold_key[seq] = cold_keys[seq - 1] if cold_keys is not None else p
             model.arrived[seq] = time.monotonic() if closed_loop else t0 + _off
             r.submit(seq, p, now=model.arrived[seq])
-            if closed_loop:
-                return                                      # 한 번에 하나: 하네스는 폭 1 이다
-    admit(force=True)
+    admit()
     kinds = {"prefill": 0, "decode": 0}
     while True:
         if with_meta:
@@ -422,6 +468,10 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
         ttft = model.prefill_done[seq] - model.arrived[seq]
         e2e = model.done[seq] - model.arrived[seq]
         requests.append({"seq": seq, "prompt": p,
+                         "completion_tokens": gen_i,
+                         "group": groups[seq - 1] if groups is not None else None,
+                         "arrival_s": model.arrived[seq] - t0,
+                         "completed_s": model.done[seq] - t0,
                          "ctx": labels[seq - 1] if labels else p,
                          "queue_wait_s": round(model.prefill_start[seq] - model.arrived[seq], 3),
                          "prefill_s": round(ttft - (model.prefill_start[seq] - model.arrived[seq]), 3),
@@ -438,14 +488,21 @@ def run_once(prompts, gen, contract, cost=None, arrive_ms=None, can_async=True,
     cadence = round(sum(kinds.values()) / wall, 2) if wall > 0 else None
     decode_rate = round(kinds["decode"] / wall, 2) if wall > 0 and kinds["decode"] else None
     out = {"contract": asdict(contract), "cost": {f: getattr(cost, f) for f in
-                     ("name", "k", "acc", "decode_ms", "decode_ms_per_row", "decode_ms_per_row_basis", "decode_ms_per_1k_ctx",
+                     ("name", "k", "acc", "decode_ms", "decode_reference_width", "decode_ms_per_row", "decode_ms_per_row_basis", "decode_ms_per_1k_ctx",
                      "decode_ms_by_ctx", "prefill_tok_s", "prefill_flat_ms", "front_ms",
                      "cold_extra_s", "acc_hist", "prefill_ms_per_token",
                      "prefill_fixed_ms_per_chunk", "confidence")},
            "steps": kinds, "wall_s": round(wall, 3), "step_s": cadence,
+           "request_span_s": (max(model.done.values()) - min(model.arrived.values()) if model.done else None),
            "decode_step_s_wall": decode_rate,
-           "decode_step_s_phase": round(1.0 / cost.decode_delay(1, 0), 2) if cost.decode_ms > 0 else None,
-           "tokens_per_step": round(model.gen_tokens / row_steps, 3) if row_steps else None,
+           "decode_step_s_phase": (round(model.decode_launches / model.decode_service_s, 2)
+                                   if model.decode_service_s > 0 else None),
+           "modeled_decode_service_s": model.decode_service_s,
+           "committed_decode_tokens": model.gen_tokens,
+           "active_decode_row_steps": model.active_row_steps,
+           "launched_decode_row_steps": row_steps,
+           "tokens_per_step": (round(model.gen_tokens / model.active_row_steps, 3)
+                               if model.active_row_steps else None),
            "tokens_per_wall_step": round(model.gen_tokens / kinds["decode"], 3) if kinds["decode"] else None,
            "by_kind": stats,
            "host_med_decode_ms": stats.get("decode", {}).get("med_ms"),
@@ -514,7 +571,7 @@ def _fmt(out: dict, meta: bool) -> str:
                          "장치 시간 0에서 잰 숙주 비용만의 역수")
     else:
         lines.append(f"decode 스텝: 벽 기준 {out['decode_step_s_wall']} step/s (prefill 포함), "
-                     f"모형 내재 {out['decode_step_s_phase']} step/s (1000/decode_ms)")
+                     f"모형 내재 {out['decode_step_s_phase']} step/s (실제 폭·문맥별 스텝 수/모형 시간 합)")
     if out.get("headroom") is not None:
         lines.append(f"숙주 여유 {out['headroom']:+.0%}")
     if meta and out.get("meta_med_us") is not None:
@@ -626,17 +683,38 @@ def fold_width_from_records(records: list) -> "dict | None":
     None 을 돌려주는 것이 지금의 정답이다 — 데이터가 쌓이는 즉시 이 함수가 못박는다."""
     arms = {}
     for r in records:
+        if r.get("valid") is False or r.get("evidence_issues"):
+            continue
         concs = {q.get("concurrency") or 1 for q in r.get("requests") or []}
         d = r.get("decode") or {}
-        rate = d.get("fixed_pooled_step_s") or d.get("windows_med")
-        if not rate or len(concs) != 1:
+        channel = "fixed_pooled_step_s" if evidence.positive(d.get("fixed_pooled_step_s")) else "windows_med"
+        rate = d.get(channel)
+        if not evidence.positive(rate) or len(concs) != 1:
             continue
-        arms[next(iter(concs))] = 1000.0 / rate
+        width = next(iter(concs))
+        if width not in (1,4) or len(r["requests"]) % width:
+            continue
+        if width in arms:
+            return None  # ambiguous duplicate arms must be selected by the caller
+        arms[width] = (r, channel, 1000.0 / rate)
     if 1 not in arms or 4 not in arms:
         return None
-    return {"decode_ms": round(arms[1], 3),
-            "decode_ms_per_row": round((arms[4] - arms[1]) / 3.0, 3),
-            "width4_ms": round(arms[4], 3)}
+    one, four = arms[1][0], arms[4][0]
+    identity = "engine_source_sha256" if one.get("engine_source_sha256") and four.get("engine_source_sha256") else "git"
+    if not one.get(identity) or one.get(identity) != four.get(identity) or arms[1][1] != arms[4][1]:
+        return None
+    for key in ("image", "knobs"):
+        if one.get(key) != four.get(key):
+            return None
+    k1, k4 = one["decode"].get("num_spec"), four["decode"].get("num_spec")
+    if type(k1) is not int or k1 != k4:
+        return None
+    shape = lambda r: {(q.get("ctx"), q.get("prompt_tokens")) for q in r["requests"]}
+    if shape(one) != shape(four):
+        return None
+    return {"decode_ms": round(arms[1][2], 3),
+            "decode_ms_per_row": round((arms[4][2] - arms[1][2]) / 3.0, 3),
+            "width4_ms": round(arms[4][2], 3), "source_identity": one[identity], "channel": arms[1][1]}
 
 
 def pick_last(records: list, n: int) -> list:
@@ -645,27 +723,15 @@ def pick_last(records: list, n: int) -> list:
 
 
 def arrivals_from_record(record: dict):
-    """onepass 기록에서 (요청별 도착 오프셋 ms, 요청별 생성 토큰, 요청별 프롬프트 토큰,
-    요청별 ctx 라벨) 을 유도한다.
+    """호환용 네 배열: 도착 ms, 생성 길이, 실제 프롬프트 길이, ctx 라벨.
 
-    onepass 하네스는 요청을 순차적으로 보낸다(한 컨텍스트의 세 질문도 한 줄씩) —
-    기록의 ttft/decode 는 각자 자기 도착에서 잰 것이므로, 시뮬레이션도 그 도착을
-    재현해야 같은 질문이 된다. 도착 오프셋 = 앞 요청들의 (ttft+decode) 합."""
-    reqs = record.get("requests") or []
-    offsets, gens, toks, ctxs, acc = [], [], [], [], 0.0
-    prefill = {row.get("ctx"): row for row in record.get("prefill", [])}
-    for q in reqs:
-        ctx = q.get("ctx")
-        if not isinstance(ctx, int):
-            continue
-        offsets.append(round(acc * 1e3, 1))
-        gens.append(q.get("completion_tokens") if isinstance(q.get("completion_tokens"), int) else 256)
-        toks.append(prefill.get(ctx, {}).get("tok") or ctx)
-        ctxs.append(ctx)
-        acc += (q.get("ttft_s") or 0.0) + (q.get("decode_s") or 0.0)
-    if not offsets:
+    동시 요청은 같은 파동에 놓으며, 그 파동의 최장 완료 시간 뒤에 다음 파동을
+    놓는다. 실행에는 evidence.workload의 groups를 써서 모델 시계로 파동을 닫는다.
+    """
+    plan = evidence.workload(record)
+    if plan is None:
         return None
-    return offsets, gens, toks, ctxs
+    return tuple(plan[k] for k in ("arrive_ms", "gens", "prompts", "labels"))
 
 
 def fit_cost(record: dict, channel: str = "windows") -> "CostModel | None":
@@ -679,29 +745,44 @@ def fit_cost(record: dict, channel: str = "windows") -> "CostModel | None":
     상수로 맞춘 값의 일치는 자명하고, **그 위에 얹힌 나머지 측정값**(클라이언트
     tok/s·TPOT·e2e·TTFT 의 큐잉)이 따라 오는 것이 검증의 주장이다."""
     dec = record.get("decode") or {}
+    if record.get("valid") is False or record.get("evidence_issues"):
+        return None
     tps = dec.get("tokens_per_step")
     rate = None
-    if channel == "client" and tps:
-        client = [q.get("decode_tok_s") for q in record.get("requests") or [] if q.get("decode_tok_s")]
+    if channel == "client" and evidence.positive(tps):
+        client = [q["decode_tok_s"] for q in record.get("requests") or [] if evidence.positive(q.get("decode_tok_s"))]
         if client:
             rate = statistics.median(client) / tps
-    if not rate:
+    if channel == "client" and not evidence.positive(rate):
+        return None
+    if not evidence.positive(rate):
         rate = dec.get("fixed_pooled_step_s") or dec.get("windows_med")
-    if not rate:
+    if not evidence.positive(rate):
         return None
     table = {}
     for row in record.get("prefill", []):
         tok, warm = row.get("tok"), row.get("warm_s")
         # warm_s 를 쓴다(cold 는 JIT 꼬리). 결합(1요청) 행은 그 컨텍스트의 유일한
         # 실측이라 warm==cold 여도 받는다 — 스킵하면 그 컨텍스트의 계단이 사라진다.
-        if isinstance(tok, (int, float)) and isinstance(warm, (int, float)) and warm > 0:
+        if evidence.positive(tok) and evidence.positive(warm):
             table[int(tok)] = tok / warm
     name = record.get("name") or "fitted"
     reqs = record.get("requests") or []
+    widths = {q.get("concurrency", 1) for q in reqs}
+    if len(widths) != 1 or any(type(w) is not int or w < 1 for w in widths):
+        return None
+    reference_width = next(iter(widths))
     # decode 컨텍스트 계단 — windows_by_ctx 의 컨텍스트별 중앙값. 값이 사실상 하나면
     # (대부분 부팅: 16.94/16.95/16.93) 계단을 만들지 않는다: 평탄은 계단이 아니라 실측이다.
     by_ctx = {}
-    for ctx, wins in (dec.get("windows_by_ctx") or {}).items():
+    windows = dec.get("windows_by_ctx") or {}
+    if channel == "client":
+        windows = {}
+        for q in reqs:
+            if evidence.positive(q.get("decode_tok_s")):
+                windows.setdefault(q.get("ctx"), []).append(q["decode_tok_s"] / tps)
+    for ctx, wins in windows.items():
+        wins = [v for v in wins or [] if evidence.positive(v)]
         if wins:
             try:
                 by_ctx[int(ctx)] = 1000.0 / statistics.median(wins)
@@ -719,7 +800,10 @@ def fit_cost(record: dict, channel: str = "windows") -> "CostModel | None":
         tok = next((r.get("tok") for r in record.get("prefill", []) if r.get("ctx") == ctx), None)
         if tok not in table or len(group) < 2:
             continue
-        warm = statistics.median([q["ttft_s"] for q in group[1:]])
+        samples = [q["ttft_s"] for q in group[1:] if evidence.positive(q.get("ttft_s"))]
+        if not samples:
+            continue
+        warm = statistics.median(samples)
         front_ms = max(0.0, (warm - tok / table[tok]) * 1e3)
         break
     # JIT 꼬리 — 그 컨텍스트 첫 요청의 cold−warm(warm 이 cold 보다 빠른 성분만)
@@ -728,55 +812,69 @@ def fit_cost(record: dict, channel: str = "windows") -> "CostModel | None":
         tok, warm_s, cold_s = row.get("tok"), row.get("warm_s"), row.get("cold_s")
         if all(isinstance(v, (int, float)) for v in (tok, warm_s, cold_s)) and cold_s - warm_s > 0.005:
             cold[int(tok)] = cold_s - warm_s
-    return CostModel(name=f"fit:{name}",
-                     k=int(dec.get("num_spec") or 5),
-                     acc=dec.get("acc_raw") or 0.45,
+    k = dec.get("num_spec")
+    k = 5 if k is None else k
+    acc = dec.get("acc_raw")
+    acc = 0.45 if acc is None else acc
+    if type(k) is not int or k < 0 or type(acc) not in (int, float) or not math.isfinite(acc) or not 0 <= acc <= 1:
+        return None
+    return CostModel(name=f"fit:{name}", k=k, acc=acc,
                      decode_ms=1000.0 / rate,
+                     decode_reference_width=reference_width,
                      decode_ms_by_ctx=by_ctx,
                      prefill_tok_s=table,
                      front_ms=round(front_ms, 1),
                      cold_extra_s={t: round(v, 3) for t, v in cold.items()})
 
 
-def validate_against(record: dict, sim: dict) -> list:
-    """onepass 기록 한 줄과 시뮬레이션 결과의 나란히 비교. 순수 함수.
+def validate_against(record: dict, sim: dict, *, mode="reconstruction", channel="windows") -> list:
+    """기록과 모형의 잔여. 같은 자료의 입력·파생값·재구성을 별도 기록 검증과 구분한다.
 
-    각 행이 어느 쪽인지 표시한다: [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,
-    [예측] 폼에 얹히지 않은 값 — 클라이언트 tok/s·TPOT·e2e·TTFT(cold, JIT 꼬리 포함)·
-    TTFT(warm, 큐잉 포함)이 따라 오는 것이 검증의 주장이다. cold 는 이제 비교에 들어간다:
-    문의 앞면과 컨텍스트별 첫 요청의 cold−warm 이 폴딩되어 있기 때문이다."""
+    cold/warm는 양쪽에서 같은 요청 집합을 비교한다. mode는 호출자가 비용의
+    출처를 확인한 뒤 건넨다. 이 함수 자체가 자료의 독립성을 증명하지는 않는다.
+    """
     dec = record.get("decode") or {}
     reqs = record.get("requests") or []
     simreq = sim["requests"]
     rows = []
 
     def add(label, kind, rec_v, sim_v):
-        delta = (sim_v - rec_v) / rec_v if isinstance(rec_v, (int, float)) and rec_v and isinstance(sim_v, (int, float)) else None
+        if mode != "reconstruction":
+            kind = "검증"
+        delta = ((sim_v - rec_v) / rec_v if evidence.positive(rec_v) and
+                 type(sim_v) in (int, float) and math.isfinite(sim_v) else None)
         rows.append((label, kind, rec_v, sim_v, delta))
 
-    add("decode step/s", "입력", dec.get("fixed_pooled_step_s") or dec.get("windows_med"),
+    add("decode step/s", "입력" if channel == "windows" else "재구성", dec.get("fixed_pooled_step_s") or dec.get("windows_med"),
         sim.get("decode_step_s_phase") or sim.get("decode_step_s_wall"))
-    add("tokens/step", "예측", dec.get("tokens_per_step"), sim.get("tokens_per_step"))
+    add("tokens/step", "입력파생", dec.get("tokens_per_step"), sim.get("tokens_per_step"))
     # 기록側 요청 단위 값들
     by_ctx = {}
     for q in reqs:
         by_ctx.setdefault(q.get("ctx"), []).append(q)
     for ctx, group in sorted(by_ctx.items()):
-        warm = [q["ttft_s"] for q in group[1:]] or [group[0]["ttft_s"]]
+        concurrent = any(q.get("concurrency", 1) > 1 for q in group)
+        warm = [q["ttft_s"] for q in (group if concurrent else group[1:] or group)
+                if evidence.positive(q.get("ttft_s"))]
         s_group = [q for q in simreq if q.get("ctx") == ctx]
-        s = _med([q["ttft_s"] for q in s_group])
+        s_warm = s_group if concurrent else s_group[1:] or s_group
+        s = _med([q["ttft_s"] for q in s_warm])
         add(f"TTFT(warm) ctx{ctx // 1000}K", "입력+큐", _med(warm), s)
-        cold_row = next((r for r in record.get("prefill", []) if r.get("ctx") == ctx), None)
+        cold_row = next((r for r in record.get("prefill", []) if r.get("ctx") == ctx), {})
         if s_group and isinstance(cold_row.get("cold_s"), (int, float)):
             # 그 컨텍스트의 첫 요청(순차 도착이라 시뮬의 첫 행)이 JIT 꼬리를 실은 채 재현된다
-            add(f"TTFT(cold) ctx{ctx // 1000}K", "예측", cold_row["cold_s"], s_group[0]["ttft_s"])
-        add(f"e2e med ctx{ctx // 1000}K", "예측",
+            add(f"TTFT(cold) ctx{ctx // 1000}K", "입력파생", cold_row["cold_s"], s_group[0]["ttft_s"])
+        add(f"e2e med ctx{ctx // 1000}K", "재구성",
             _med([q["ttft_s"] + q["decode_s"] for q in group]),
             _med([q["e2e_s"] for q in s_group]))
-    add("클라이언트 tok/s", "예측", _med([q.get("decode_tok_s") for q in reqs if q.get("decode_tok_s")]),
+    add("클라이언트 tok/s", "재구성" if channel == "windows" else "입력파생", _med([q.get("decode_tok_s") for q in reqs if q.get("decode_tok_s")]),
         _med([q.get("tok_s") for q in simreq if q.get("tok_s")]))
-    add("TPOT ms", "예측", _med([q.get("tpot_ms") for q in reqs if q.get("tpot_ms")]),
+    add("TPOT ms", "재구성", _med([q.get("tpot_ms") for q in reqs if q.get("tpot_ms")]),
         _med([round(1e3 / q["tok_s"], 2) for q in simreq if q.get("tok_s")]))
+    if record.get("aggregate_output_tok_s") is not None:
+        span = sim.get("request_span_s")
+        add("전체 출력 tok/s (프리필 포함)", "재구성", record["aggregate_output_tok_s"],
+            sum(q["completion_tokens"] for q in simreq) / span if evidence.positive(span) else None)
     return rows
 
 
@@ -798,6 +896,12 @@ def main() -> int:
     ap.add_argument("--cost-json", help="CostModel JSON (k/acc/decode_ms/prefill_tok_s/...)")
     ap.add_argument("--against", type=Path, nargs="+",
                     help="onepass result.jsonl 한 개 이상 — 각 기록에서 상수를 폴드하고 나머지 측정값과 나란히 델타")
+    ap.add_argument("--fit-from", type=Path,
+                    help="이 파일의 마지막 C1 기록으로 비용을 고정한 뒤 --against 기록을 따로 검증")
+    ap.add_argument("--validation-output", type=Path,
+                    help="입력 해시·재현/검증 구분·요청 형상·모든 잔여를 JSON에 저장 (--against)")
+    ap.add_argument("--decode-ms-per-row", type=float,
+                    help="C1 대비 추가 행의 스텝 ms; C4 재생에는 명시적인 폭 모형이 필요")
     ap.add_argument("--last", type=int, default=1,
                     help="--against 각 파일에서 끝의 N개 기록(기본 1; 대기 작업 재검증은 최근 기록이 맞다)")
     ap.add_argument("--fit-channel", choices=("windows", "client"), default="windows",
@@ -829,9 +933,14 @@ def main() -> int:
     ap.add_argument("--out-dir", help="steps-sim-*.ring 덤프를 이 디렉터리에 쓴다 (step_replay 가 읽는다)")
     ap.add_argument("--json", action="store_true", help="결과를 JSON 한 줄로")
     args = ap.parse_args()
+    if (args.fit_from or args.validation_output) and not args.against:
+        ap.error("--fit-from/--validation-output require --against")
+    if args.fit_from and (args.compose or args.cost_json):
+        ap.error("choose one cost source: --fit-from, --compose or --cost-json")
 
     def overrides(cost):
-        for flag, attr in ((args.k, "k"), (args.acc, "acc"), (args.decode_ms, "decode_ms")):
+        for flag, attr in ((args.k, "k"), (args.acc, "acc"), (args.decode_ms, "decode_ms"),
+                           (args.decode_ms_per_row, "decode_ms_per_row")):
             if flag is not None:
                 cost = replace(cost, **{attr: flag})
         if args.decode_ms is not None:
@@ -865,54 +974,106 @@ def main() -> int:
         # 측정값들(클라이언트 tok/s·TPOT·e2e)과 나란히 놓는다. 수동 --k/--acc/
         # --decode-ms 를 주면 폴딩을 덮어쓴다(한 기록의 상수로 다른 기록을 보는
         # 폴드아웃도 이렇게 한다).
+        frozen, training = None, None
+        mode = "reconstruction"
+        report = dict(schema=1, mode=mode, evaluations=[], skipped=[], gpu_used=False,
+                      confidence_basis="legacy confidence describes missing coefficients, not empirical prediction accuracy",
+                      scope="CPU simulation; observed prompt/output lengths; not answer quality or a serving speed verdict")
+        if args.fit_from:
+            training_records = evidence.load_records(args.fit_from)
+            if not training_records:
+                ap.error("--fit-from contains no calibration records")
+            training = training_records[-1]
+            source = next((v for v in evidence.views(training) if v["oracle_arm"] == "requests"), None)
+            frozen = fit_cost(source, channel=args.fit_channel) if source else None
+            if frozen is None or frozen.decode_reference_width != 1:
+                ap.error("--fit-from has no valid C1 calibration record")
+            mode = "holdout"
+            report["calibration"] = dict(path=str(args.fit_from), observations_sha256=evidence.fingerprint(training),
+                                         identity=evidence.identity(training))
+        elif args.compose:
+            frozen = composed_cost(routing=args.routing, model=args.model, partial=args.partial, k=args.k)
+            mode = "component_prediction"
+        elif args.cost_json:
+            frozen = CostModel(**json.loads(Path(args.cost_json).read_text()))
+            mode = "external_cost"
+        report["mode"] = mode
         worst = []
         for path in args.against:
-            with open(path, encoding="utf-8") as f:
-                records = [json.loads(line) for line in f if line.strip()]
+            records = evidence.load_records(path)
             if not records:
-                print(f"!! {path.name}: 기록이 없다 — 건너뛴다")
+                report["skipped"].append(dict(path=str(path), arm=None, reason="no records"))
+                if not args.json:
+                    print(f"!! {path.name}: 기록이 없다 — 건너뛴다")
                 continue
             for record in pick_last(records, args.last):
-                cost = fit_cost(record, channel=args.fit_channel)
-                if cost is None:
-                    print(f"!! {path.name}: 판정 채널(step/s)이 없어 폴딩 불가 — 건너뛴다")
-                    continue
-                cost = overrides(cost)
-                derived = arrivals_from_record(record)
-                if derived is None:
-                    print(f"!! {path.name}: 요청 기록이 없다 — 건너뛴다")
-                    continue
-                arrive, gen, toks, labels = derived
-                out = run_once(toks, gen, contract, cost=cost, arrive_ms=arrive,
-                               can_async=True, host_med_ms=(calib or {}).get("host_med_decode_ms"),
-                               labels=labels, closed_loop=True)
-                print(f"== {path.name} · {record.get('name')} · git {record.get('git')}"
-                      f" · 요청 {len(toks)}개")
-                print(cost.summary())
-                print(_fmt(out, False))
-                rows = validate_against(record, out)
-                print(f"-- 검증 ({path.name}): [입력] 폼 상수를 그 값에서 폈으니 일치는 자명,")
-                print("   [예측] 폼에 얹히지 않은 값이 따라 오는 것이 주장이다:")
-                for label, kind, rec_v, sim_v, delta in rows:
-                    def _f(v):
-                        return f"{v:.4g}" if isinstance(v, (int, float)) else "-"
-                    move = f" ({delta:+.1%})" if isinstance(delta, float) else ""
-                    print(f"   [{kind:<4}] {label:<24} 기록 {_f(rec_v):>10}  시뮬 {_f(sim_v):>10}{move}")
-                    if kind == "예측" and isinstance(delta, float):
-                        worst.append((abs(delta), path.name, label, delta))
-                print()
+                if training is not None and evidence.fingerprint(record) == evidence.fingerprint(training):
+                    ap.error("holdout contains the calibration observations (including renamed copies)")
+                for view in evidence.views(record):
+                    arm = view["oracle_arm"]
+                    try:
+                        if view.get("valid") is False or view.get("evidence_issues"):
+                            raise ValueError("measurement is marked invalid")
+                        cost = frozen if frozen is not None else fit_cost(view, channel=args.fit_channel)
+                        if cost is None:
+                            raise ValueError("no independent step-rate calibration; use --compose or an external cost")
+                        cost = overrides(cost)
+                        plan = evidence.workload(view)
+                        if plan is None:
+                            raise ValueError("no replayable requests")
+                        width = max(plan["groups"].count(g) for g in set(plan["groups"]))
+                        if width > 1 and not cost.decode_ms_per_row and args.decode_ms_per_row is None and not args.compose:
+                            raise ValueError("C4 width cost is uncalibrated; supply --decode-ms-per-row or --compose")
+                        out = run_once(plan["prompts"], plan["gens"], contract, cost=cost,
+                                       can_async=True, host_med_ms=(calib or {}).get("host_med_decode_ms"),
+                                       labels=plan["labels"], groups=plan["groups"], cold_keys=plan["cold_keys"])
+                    except ValueError as exc:
+                        report["skipped"].append(dict(path=str(path), arm=arm, reason=str(exc)))
+                        if not args.json:
+                            print(f"!! {path.name}/{arm}: {exc}")
+                        continue
+                    rows = validate_against(view, out, mode=mode, channel=args.fit_channel)
+                    changes = ({key:dict(calibration=value, validation=evidence.identity(record)[key])
+                                for key,value in evidence.identity(training).items()
+                                if value != evidence.identity(record)[key]} if training is not None else {})
+                    validation_scope = "cross_runtime_transfer" if training is not None and changes else mode
+                    report["evaluations"].append(dict(path=str(path), arm=arm, name=view.get("name"),
+                        validation_scope=validation_scope,
+                        identity=evidence.identity(record),
+                        calibration_identity_changes=changes,
+                        observations_sha256=evidence.fingerprint(record), workload=plan,
+                        simulation=_drop_ring(out), comparison=rows))
+                    if not args.json:
+                        print(f"== {path.name}/{arm} · {validation_scope} · 요청 {len(plan['prompts'])}개")
+                        print(cost.summary())
+                        print(_fmt(out, False))
+                        print("-- 재구성은 보정 자료의 검산이며, 별도 기록 예측 정확도가 아닙니다." if mode == "reconstruction"
+                              else "-- 비용은 검증 기록을 보기 전에 고정했습니다. 생성 길이는 관측된 작업 조건입니다.")
+                    for label, kind, rec_v, sim_v, delta in rows:
+                        if not args.json:
+                            def _f(v):
+                                return f"{v:.4g}" if isinstance(v, (int, float)) else "-"
+                            move = f" ({delta:+.1%})" if isinstance(delta, float) else ""
+                            print(f"   [{kind:<4}] {label:<24} 기록 {_f(rec_v):>10}  시뮬 {_f(sim_v):>10}{move}")
+                        if kind in ("검증", "재구성") and isinstance(delta, float) and math.isfinite(delta):
+                            worst.append((abs(delta), path.name, label, delta))
         if worst:
             worst.sort(reverse=True)
-            print(f"-- 예측 행 최대 잔여: {worst[0][2]} {worst[0][3]:+.1%} ({worst[0][1]}),"
-                  f" 예측 {len(worst)}행 중 |잔여|>10% 는 {sum(1 for w in worst if w[0] > 0.10)}행")
-        print("D17: 이 숫자는 시뮬레이션이다 — 속도 주장은 플릿 onepass 두 번으로 끝난다.")
-        return 0
+            report["residuals"] = dict(rows=len(worst), median_absolute_relative_error=statistics.median(w[0] for w in worst),
+                                       max_absolute_relative_error=worst[0][0], over_10pct=sum(w[0] > .10 for w in worst))
+            if not args.json:
+                print(f"-- {mode} 최대 잔여: {worst[0][2]} {worst[0][3]:+.1%} ({worst[0][1]})")
+        if args.validation_output:
+            args.validation_output.parent.mkdir(parents=True, exist_ok=True)
+            args.validation_output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False))
+        return 0 if report["evaluations"] else 2
 
     if args.fold_width:
         recs = []
         for f in args.fold_width:
-            with open(f, encoding="utf-8") as fh:
-                recs.append(json.loads(next(l for l in fh if l.strip())))
+            recs.append(evidence.load_records(f)[-1])
         folded = fold_width_from_records(recs)
         if folded:
             print(f"[폭 폴딩] {folded} — decode_ms(w) = {folded['decode_ms']} + "

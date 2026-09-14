@@ -156,6 +156,12 @@ def grammars(ckpt, vocab: int, device=None, stop_token_ids=None):
 CHAT_TEMPLATE = "chat_template_mm_v2.jinja"     # what production serves with (launchers/lib/glm53-chat.sh); honours the `thinking` kwarg
 REASONING_EFFORT_ALIASES = {"max": "high"}       # accept existing clients while capping this model at high
 REASONING_END = "</think>"                       # the model closes its reasoning with this token; the door splits content there
+# How every think block starts (base/serve.Server.opener_kwargs). Left to itself GLM-5.3 opens half of onepass's graded
+# JSON questions with "We need answer JSON only. Need parse problem." and goes on in that clipped register for thousands
+# of tokens -- the drafter's worst case. From these words it reasons in sentences instead: greedy on the Red Hat ranks,
+# twelve questions at C=1 (2026-09-14), 23,542 tokens against 52,211, acceptance 54.2% against 37.5%, 91.2 tok/s against
+# 70.1 at the same step rate. It costs some exhaustive checking: 7 of the 12 fully right against 10, and 18 of 30 at C=4.
+REASONING_OPENER = "Let me parse the problem."
 REQUEST_TIMEOUT_S = 3600.0                       # a request older than this is cancelled (the production probe's long-ingest bound x12)
 # A finished turn shorter than this is released, not parked. A GLM-5.3 slot's recurrent state is ~256 MiB a rank
 # whatever the length, so parking a 17-token health ping wrote that to NVMe every thirty seconds and pushed real
@@ -1083,7 +1089,8 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
                         model_name="glm-5.3-flash", reasoning_end=tok.token_to_id(REASONING_END), request_timeout_s=REQUEST_TIMEOUT_S,
                         tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_grammar=tool_grammar,
                         tool_call_start=tool_call_token(tok), generation=generation_defaults(a.ckpt_meta),
-                        vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 and engine.vision is not None else None)
+                        vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 and engine.vision is not None else None,
+                        reasoning_opener=REASONING_OPENER)
         httpd = None
         if comm.rank == 0:
             httpd = server._serve_http()                       # the door opens before the loop
@@ -1360,7 +1367,8 @@ def fleet(a) -> int:
                tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_grammar=tool_grammar,
                         tool_call_start=tool_call_token(tok), generation=generation_defaults(a.ckpt_meta),
                vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 else None,
-               latency_root=Path(a.dump_dir) / 'onepass-latency', lease=lease, park_min_tokens=PARK_MIN_TOKENS)
+               latency_root=Path(a.dump_dir) / 'onepass-latency', lease=lease, park_min_tokens=PARK_MIN_TOKENS,
+               reasoning_opener=REASONING_OPENER)
         serving = True
         server.loop()
     except BaseException as exc:

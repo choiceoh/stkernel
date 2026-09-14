@@ -17,7 +17,8 @@ def fc2_scale_code(producer):
                 and ast.unparse(n.target) == 'output_tile_idx'
                 and any(isinstance(c, ast.Call) and ast.unparse(c.func) == call for c in ast.walk(n)))
     block = next(n for n in loop.body if isinstance(n, ast.If)
-                 and ast.unparse(n.test) == 'cutlass.const_expr(self.reform_sf_pack)')
+                 and ast.unparse(n.test) in ('cutlass.const_expr(self.reform_sf_pack)',
+                    'cutlass.const_expr(self.reform_sf_pack and (not self.sf6_registers))'))
     return compile(ast.Module(body=[copy.deepcopy(block)], type_ignores=[]), str(SOURCE), 'exec')
 
 
