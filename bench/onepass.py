@@ -10,6 +10,10 @@ onepass-runs/<run-id> beside the append-only output ledger, including partial ru
 
 C=4 sends four independent requests simultaneously for each canonical question;
 its aggregate output rate includes prefill and remains separate from C=1 decode.
+Run 1 also measures bench-dec's multiplier (`concurrency_fixed`): four different
+2K prompts forced to exactly --fixed-concurrency-tokens (1024) output tokens, one
+at a time and then together, so neither answer-length spread nor the prefill
+ramp enters the ratio. It is an observation and never invalidates the record.
 The legacy cold_s/warm_s fields are aliases for first/median prepared fresh-prefix
 TTFT, not claims about compiler or cache warmth. Harness 41 is incompatible:
 42 uses seeded reasoning dossiers and visible-answer proof certificates, 43 and
@@ -512,6 +516,49 @@ def preparation_request(item, num_spec):
     return diagnostic_request(item, num_spec)
 
 
+FIXED_CONCURRENCY_CLIENTS = 4
+DEFAULT_FIXED_CONCURRENCY_TOKENS = 1024
+
+
+def fixed_concurrency_items(seed, cq, tokens):
+    """bench-dec's C=4 question on this harness (operator, 2026-09-14): four DIFFERENT 2K prompts, each
+    forced to exactly `tokens` output tokens. The canonical C=4 rate carries the answers' length spread
+    (the longest answer finishes alone) and the serialized prefill ramp; equal lengths remove both, so the
+    four together against the same four one at a time is the engine's concurrency multiplier."""
+    items = []
+    for client in range(FIXED_CONCURRENCY_CLIENTS):
+        case_seed = seed + 4000 + client
+        item = quality.request_item(2000, case_seed, quality.cases(case_seed), cq.filler,
+                                    tokens, tokens // 2, f'fixed-concurrency-{client}')
+        item['min_tokens'] = tokens
+        items.append(item)
+    return items
+
+
+def fixed_concurrency_summary(tokens, c1, c4):
+    """`c1`: the four requests sent one at a time; `c4`: `group`'s result for the same four released together.
+    bench-dec's rate is output tokens over wall time from first start to last completion (a 2K prefill is a
+    small share); the decode rate sums each request's own rate after its first token."""
+    issues = []
+    if len(c1) != FIXED_CONCURRENCY_CLIENTS or len(c4['requests']) != FIXED_CONCURRENCY_CLIENTS:
+        issues.append(f'fixed concurrency needs {FIXED_CONCURRENCY_CLIENTS} requests at each concurrency')
+    lengths = sorted({r.get('completion_tokens') for r in list(c1) + list(c4['requests'])}, key=str)
+    if lengths != [tokens]:
+        issues.append(f'fixed concurrency output lengths {lengths} != [{tokens}]')
+    seconds = sum(r.get('elapsed_s') or 0. for r in c1)
+    c1_rate = sum(r.get('completion_tokens') or 0 for r in c1) / seconds if seconds > 0 else None
+    c1_decode = [r['decode_tok_s'] for r in c1 if r.get('decode_tok_s')]
+    c1_decode = median(c1_decode) if c1_decode else None
+    c4_rate = c4.get('aggregate_output_tok_s')
+    c4_decode = sum(r.get('decode_tok_s') or 0. for r in c4['requests'])
+    return dict(tokens=tokens, clients=FIXED_CONCURRENCY_CLIENTS,
+                definition='bench-dec: four different 2K prompts with exactly `tokens` output tokens each; C=1 sends '
+                           'them one at a time, C=4 releases them together; rate = output tokens / first start to last completion',
+                c1_tok_s=c1_rate, c4_tok_s=c4_rate, multiplier=c4_rate / c1_rate if c1_rate and c4_rate else None,
+                c1_decode_tok_s=c1_decode, c4_decode_tok_s_sum=c4_decode,
+                decode_multiplier=c4_decode / c1_decode if c1_decode else None, issues=issues)
+
+
 def diagnostic_complete(report):
     def complete(rank):
         traces = rank.get('traces', [])
@@ -562,6 +609,10 @@ def _main() -> int:
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--fixed-decode-tokens", type=int, default=int(os.environ.get("ONEPASS_FIXED_DECODE_TOKENS", "0")))
     ap.add_argument("--fixed-decode-reps", type=int, default=int(os.environ.get("ONEPASS_FIXED_DECODE_REPS", "3")))
+    ap.add_argument("--fixed-concurrency-tokens", type=int,
+                    default=int(os.environ.get("ONEPASS_FIXED_CONCURRENCY_TOKENS", str(DEFAULT_FIXED_CONCURRENCY_TOKENS))),
+                    help="run 1: four different 2K prompts forced to exactly this many output tokens, one at a time "
+                         "and then together -- bench-dec's C=4/C=1 multiplier. 0 = skip")
     ap.add_argument("--require-exclusive", action="store_true", default=os.environ.get("ONEPASS_REQUIRE_EXCLUSIVE") == "1")
     args = ap.parse_args()
     if os.environ.get("FLEET_WORKLOAD"):
@@ -573,6 +624,8 @@ def _main() -> int:
             args.fixed_decode_reps = 3  # CLI validity; normalized identity records zero when disabled
     if args.fixed_decode_tokens < 0 or args.fixed_decode_reps < 1:
         ap.error("fixed decode needs nonnegative tokens and positive repetitions")
+    if args.fixed_concurrency_tokens < 0:
+        ap.error("fixed concurrency tokens must be nonnegative")
     min_combined = args.max_tokens * 3
     if args.combined_max_tokens < min_combined:
         ap.error(f"combined max tokens must be at least {min_combined}")
@@ -898,6 +951,43 @@ def _main() -> int:
         rec['concurrency_coverage']['c4_status'] = 'measured'
     rec['quality_c4'] = (quality.summarize([q for result in rec['c4'] for r in result['requests'] for q in r['quality']])
                          if c4_items else None)
+
+    # ---- bench-dec's multiplier: the same four fixed-length requests one at a time, then together. Run 1
+    # only (C=4 is paid once a boot). An observation beside the canonical C=4 rate: its issues stay in its
+    # own block and never invalidate the record's decode or quality evidence.
+    rec['concurrency_fixed'] = None
+    if args.fixed_concurrency_tokens and first_run:
+        tokens = args.fixed_concurrency_tokens
+        fixed_items = fixed_concurrency_items(args.seed, cq, tokens)
+        print(f'fixed concurrency: four 2K prompts, exactly {tokens} output tokens each; C=1 then C=4', flush=True)
+        run.begin('prepare-fixed-c4', 4)
+        group(run, ask_stream, bd.URL, cq.MODEL, [preparation_request(item, args.num_spec) for item in fixed_items], 4)
+        run.end()
+        run.begin('measure-fixed-c1')
+        before = traffic_state(_metrics_text(bd.METRICS))
+        # One client at a time through the same group path the C=4 release uses; these ungraded requests
+        # keep their channel traces out of the canonical C=1 quality/Korean scan.
+        fixed_c1 = [group(run, ask_stream, bd.URL, cq.MODEL, item, 1)['requests'][0] for item in fixed_items]
+        after = traffic_state(_metrics_text(bd.METRICS))
+        fixed_errors = [f'C=1: {e}' for e in steady_errors(run.end(), fixed_c1, 1)
+                        + exclusive_errors(before, after, [], FIXED_CONCURRENCY_CLIENTS)]
+        run.begin('measure-fixed-c4', 4)
+        before = traffic_state(_metrics_text(bd.METRICS))
+        fixed_c4 = group(run, ask_stream, bd.URL, cq.MODEL, fixed_items, 4)
+        after = traffic_state(_metrics_text(bd.METRICS))
+        fixed_errors += [f'C=4: {e}' for e in steady_errors(run.end(), fixed_c4['requests'], 4)
+                         + exclusive_errors(before, after, [], FIXED_CONCURRENCY_CLIENTS)]
+        summary = fixed_concurrency_summary(tokens, fixed_c1, fixed_c4)
+        summary['issues'] = fixed_errors + summary['issues']
+        summary.update(valid=not summary['issues'], c1_requests=fixed_c1, c4_requests=fixed_c4['requests'],
+                       latency_artifacts=['measure-fixed-c1', 'measure-fixed-c4'])
+        rec['concurrency_fixed'] = summary
+        rate = lambda v: 'n/a' if v is None else f'{v:.1f}'
+        ratio = lambda v: 'n/a' if v is None else f'{v:.2f}x'
+        print(f"fixed concurrency {tokens} tok: C=1 {rate(summary['c1_tok_s'])} -> C=4 {rate(summary['c4_tok_s'])} tok/s "
+              f"= {ratio(summary['multiplier'])} (decode {ratio(summary['decode_multiplier'])}); "
+              f"valid={summary['valid']}", flush=True)
+        run.checkpoint()
     rec['diagnostics'] = []
     diagnostic_items = [diagnostic_request(next(item for item in items if item['ctx'] == ctx), k_eff)
                         for ctx in map(int, args.ctx.split(','))]

@@ -197,14 +197,20 @@ class Run:
 
 
 def group(run, ask, url, model, item, concurrency, scan=None, *, grade=False):
+    """`concurrency` clients released together. `item` is one request every client sends, or a
+    list with each client's own request (the fixed-length multiplier sends four different prompts)."""
+    items = list(item) if isinstance(item, (list, tuple)) else [item] * concurrency
+    if len(items) != concurrency:
+        raise ValueError(f'{concurrency} clients need {concurrency} requests, got {len(items)}')
     barrier = threading.Barrier(concurrency)
     def request(index):
         CURRENT.set(run)
-        timing = dict(ctx=item['ctx'], question=item['question'], concurrency=concurrency, client=index)
+        own = items[index]
+        timing = dict(ctx=own['ctx'], question=own['question'], concurrency=concurrency, client=index)
         traces = []
         barrier.wait(timeout=30)
-        text, _, _, _, finish = ask(url, model, item['content'], item['max_tokens'], timing,
-            min_tokens=item.get('min_tokens', 0), seed=item.get('seed'), reasoning_budget=item.get('reasoning_budget'),
+        text, _, _, _, finish = ask(url, model, own['content'], own['max_tokens'], timing,
+            min_tokens=own.get('min_tokens', 0), seed=own.get('seed'), reasoning_budget=own.get('reasoning_budget'),
             channel_trace=traces)
         return timing, text, finish, traces
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
@@ -212,14 +218,14 @@ def group(run, ask, url, model, item, concurrency, scan=None, *, grade=False):
     # Keep scanning/grading off every request's measured critical path, even
     # when another client is still decoding.
     requests = []
-    for timing, text, finish, traces in responses:
+    for own, (timing, text, finish, traces) in zip(items, responses):
         if scan is not None:
             hits = scan.scan(text, truncated=finish == 'length')
             timing['corruption'] = {k: v for k, v in hits.items() if k not in scan.INFORMATIONAL and v}
         if grade:
-            run.grade(item, timing, traces[0], finish)
+            run.grade(own, timing, traces[0], finish)
         requests.append(timing)
     elapsed = max(r['ended_monotonic'] for r in requests) - min(r['started_monotonic'] for r in requests)
-    return dict(ctx=item['ctx'], concurrency=concurrency, requests=requests, elapsed_s=elapsed,
+    return dict(ctx=items[0]['ctx'], concurrency=concurrency, requests=requests, elapsed_s=elapsed,
                 aggregate_output_tok_s=sum(r['completion_tokens'] for r in requests) / elapsed,
                 rate_scope='total completion tokens / first request start to last completion; includes prefill')

@@ -327,7 +327,10 @@ class IntegrationTests(unittest.TestCase):
             nonlocal completed
             if isinstance(req, str): raise OSError('fixture has no GPU recording')
             payload = json.loads(req.data)
-            content = answers[payload['messages'][0]['content']]
+            prompt = payload['messages'][0]['content']
+            # The fixed-length multiplier's four prompts are ungraded. A graded prompt that fell through to '{}'
+            # would fail the 9/9 and 24/24 oracle assertions below.
+            content = answers.get(prompt, '{}')
             completed += 1
             frames = [dict(choices=[dict(delta=dict(content=content), finish_reason='stop')]),
                       dict(usage=dict(prompt_tokens=2000, completion_tokens=900,
@@ -390,14 +393,29 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual({(r['max_tokens'], r['min_tokens'], r['reasoning_budget']) for r in diagnostics},
                              {(64, 64, 32)})
             prepared = [r for r in requests if r['phase'].startswith('prepare-')]
-            self.assertEqual(len(prepared), 21 if include_c4 else 5)
+            self.assertEqual(len(prepared), 25 if include_c4 else 5)
             self.assertEqual({(r['max_tokens'], r['min_tokens'], r['reasoning_budget']) for r in prepared},
                              {(64, 64, 32)})
             self.assertEqual(record['preparation_budget']['max_tokens'], 64)
-            measured = [r for r in requests if r['phase'].startswith('measure-')]
+            fixed = [r for r in requests if r['phase'] in ('measure-fixed-c1', 'measure-fixed-c4')]
+            measured = [r for r in requests if r['phase'].startswith('measure-') and r not in fixed]
             self.assertEqual(len(measured), 21 if include_c4 else 5)
             self.assertEqual({(r['max_tokens'], r['reasoning_budget']) for r in measured},
                              {(16384, 8192), (49152, 24576)})
+            # bench-dec's multiplier rides run 1 only: four different prompts, one at a time, then together.
+            self.assertEqual(len(fixed), 8 if include_c4 else 0)
+            self.assertEqual({(r['phase'], r['concurrency']) for r in fixed},
+                             {('measure-fixed-c1', 1), ('measure-fixed-c4', 4)} if include_c4 else set())
+            self.assertEqual({(r['max_tokens'], r['min_tokens'], r['reasoning_budget']) for r in fixed},
+                             {(1024, 1024, 512)} if include_c4 else set())
+            if include_c4:
+                self.assertEqual(len({r['question'] for r in fixed}), 4)
+                block = record['concurrency_fixed']
+                self.assertFalse(block['valid'])                # the fixture answers 900 tokens, not 1024
+                self.assertIn('fixed concurrency output lengths [900] != [1024]', block['issues'])
+                self.assertEqual((block['tokens'], block['clients']), (1024, 4))
+            else:
+                self.assertIsNone(record['concurrency_fixed'])
         onepass._RUN = None
 
     def test_canonical_main_keeps_c1_128k_and_excludes_every_c4_128k_phase(self):
