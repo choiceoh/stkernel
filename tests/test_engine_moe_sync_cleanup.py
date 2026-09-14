@@ -159,6 +159,21 @@ class SyncCleanupTests(unittest.TestCase):
                     self.assertEqual(g.sync_cleanup, enabled)
                     self.assertEqual(g.a_barrier_count, 0 if enabled else 4)
 
+    def test_batch_tile_keeps_control_synchronization(self):
+        # `batch` widens decode_reform to the C2 M16 tile (#955). The cleanup
+        # stays on the C1 rows it was validated on; C2 keeps one handle.
+        ns = namespace()
+        normalize, key = ns['_static_v2_decode_config'], ns['_static_v2_cache_key']
+        raw = ns['_parse_glm53_static_v2']('t,r,sf6,batch')
+        for rows in (1, 6, 7, 8, 16):
+            a = normalize(raw, rows)
+            self.assertTrue(a['decode_reform'])
+            self.assertEqual(a['sync_cleanup'], rows <= 8)
+            self.assertEqual(normalize(a, rows), a)
+        c2 = normalize(raw, 16)
+        self.assertTrue(c2['c2_fc2_prefetch'])
+        self.assertEqual(key(c2, m=16), key(normalize(dict(raw, sync_cleanup=False), 16), m=16))
+
 
 if __name__ == '__main__':
     unittest.main()

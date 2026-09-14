@@ -130,7 +130,8 @@ def main():
                         fc1_reuse_a=True, compact_staging=False, sf6_registers=False, sync_cleanup=False)
         if args.compact_staging or args.register_scales or args.sync_cleanup:
             defaults['compact_staging'] = True
-        if args.register_scales:
+        if args.register_scales or args.sync_cleanup:
+            # The served C1 handle carries both; the cleanup compiles over registers.
             defaults['sf6_registers'] = True
         if args.sync_cleanup:
             defaults['sync_cleanup'] = True
@@ -138,8 +139,8 @@ def main():
         if args.register_scales:
             cases += [(8, dict(sf6_registers=False)), (8, dict(stamps=True))]
         elif args.sync_cleanup:
-            cases += [(8, dict(sync_cleanup=False)), (8, dict(compact_staging=False)),
-                      (8, dict(fc1=1)), (8, dict(stamps=True))]
+            cases += [(8, dict(sync_cleanup=False)), (8, dict(sf6_registers=False)),
+                      (8, dict(compact_staging=False)), (8, dict(fc1=1)), (8, dict(stamps=True))]
         elif args.compact_staging:
             cases += [(8, dict(compact_staging=False)), (8, dict(fc1_reuse_a=False))]
         elif args.fc1_reuse:
