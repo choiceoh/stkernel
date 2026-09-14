@@ -1066,8 +1066,9 @@ class _Choice:
 
     def __init__(self, index: int, request: int, event, q, *, tok, stop, reasoning: bool, tool_parser=None,
                  want_logprobs: "int | None" = None, min_new: int = 0, repairs=None, tool_stream=None,
-                 tool_start: "int | None" = None, single_call: bool = False):
+                 tool_start: "int | None" = None, single_call: bool = False, reasoning_prefix: str = ""):
         self.index, self.request, self.event, self.q = index, request, event, q
+        self.reasoning_prefix = reasoning_prefix if reasoning else ""   # the template's opener: this answer's first words
         self.tok, self.stop, self.reasoning, self.tool_parser = tok, list(stop), reasoning, tool_parser
         self.tool_stream = tool_stream               # text -> [(name, arguments so far, closed)] or None
         self.tool_start = tool_start                 # the call marker's token: a call opened inside the block ends it
@@ -1122,6 +1123,9 @@ class _Choice:
         deltas = []
         for channel, stream in self.streams.items():
             decoded = stream.decoded(final)
+            if channel == "reasoning_content" and self.reasoning_prefix and stream.ids:
+                decoded = self.reasoning_prefix + decoded        # the same text streamed and whole: a block with no
+                                                                 # reasoning of the model's own shows no opener either
             if channel == "content":
                 if self.stop:
                     if self.total <= self.min_new:
@@ -1400,7 +1404,8 @@ class Server:
                  generation: "dict | None" = None, max_choices: int = 4, vision=None, tool_stream=None,
                  tool_grammar=None, tool_call_start: "int | None" = None,
                  lease: "dict | None" = None, latency_root=None, reasoning_effort_aliases: "dict | None" = None,
-                 step_watch=None, park_min_tokens: int = 0, reasoning_tail=(), effort_rungs: "dict | None" = None):
+                 step_watch=None, park_min_tokens: int = 0, reasoning_tail=(), effort_rungs: "dict | None" = None,
+                 reasoning_opener: str = ""):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
         if type(request_timeout_s) not in (int, float) or not request_timeout_s > 0:
@@ -1439,6 +1444,9 @@ class Server:
         self.detok_repairs = new_repairs()         # this door's, so a scrape names who repaired
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
         self.reasoning_tail = tuple(reasoning_tail)  # what the template writes after reasoning_end when thinking is off
+        if not isinstance(reasoning_opener, str):
+            raise ValueError("reasoning_opener must be text")
+        self.reasoning_opener = reasoning_opener     # the words a new think block starts with (`opener_kwargs`)
         self.reasoning_effort_aliases = dict(reasoning_effort_aliases or {})
         # request rung -> what the template reads: EFFORT_RUNGS unless the profile brings its template's own
         self.effort_rungs = dict(EFFORT_RUNGS if effort_rungs is None else effort_rungs)
@@ -1950,6 +1958,17 @@ class Server:
         or at the limit."""
         ends = set(getattr(self.engine, "eos", ())) | self._stop_ids.get(request, set())
         return "stop" if out and out[-1] in ends else "length"
+
+    def opener_kwargs(self, kwargs: dict, opening: bool) -> dict:
+        """`kwargs` with this door's `reasoning_opener` where the request left it out.
+
+        A profile may start every think block with its own words: the template writes them right after the block
+        opens and the model goes on from there. GLM-5.3 does, because how its reasoning starts decides how it goes on
+        (engine/profiles/glm53/boot.REASONING_OPENER). Only a new assistant turn opens a block, so only one gets it,
+        and a request's own `reasoning_opener` stands -- an empty one turns it off."""
+        if not self.reasoning_opener or not opening or "reasoning_opener" in kwargs:
+            return kwargs
+        return {**kwargs, "reasoning_opener": self.reasoning_opener}
 
     def reasoning_closed(self, ids) -> bool:
         """Whether a rendered prompt already closed its think block, so everything generated is content: it ends with
@@ -3233,7 +3252,7 @@ class Server:
             # ---- the OpenAI dialect ------------------------------------------------------------------------------
             def choices_for(self, ids, count, max_new, temperature, options, stop, *, reasoning, tool_parser=None,
                             want_logprobs=None, min_new=0, continue_history=False, media=None, cache_salt=None,
-                            single_call=False, tool_stream=None):
+                            single_call=False, tool_stream=None, reasoning_prefix=""):
                 """Submit `count` generations of one prompt; each is a _Choice fed by its own token queue.
                 With a seed, choice i draws from seed + i so the n answers differ but stay reproducible. All or none:
                 a submit that fails partway abandons the choices already in (`Server.abandon`) before it raises."""
@@ -3251,7 +3270,7 @@ class Server:
                                                min_new=min_new, repairs=server.detok_repairs,
                                                tool_stream=tool_stream if tool_parser is not None else None,
                                                tool_start=server.tool_call_start if tool_parser is not None else None,
-                                               single_call=single_call))
+                                               single_call=single_call, reasoning_prefix=reasoning_prefix))
                 except BaseException:
                     server.abandon([c.request for c in choices])
                     raise
@@ -3340,6 +3359,8 @@ class Server:
                 # top-level reasoning_effort reaches the template (the GLM profile defaults to high)
                 if "thinking" in kwargs and "enable_thinking" in kwargs and kwargs["thinking"] != kwargs["enable_thinking"]:
                     raise RequestError("thinking and enable_thinking must agree")
+                if not isinstance(kwargs.get("reasoning_opener", ""), str):
+                    raise RequestError("reasoning_opener must be text")
                 if "enable_thinking" in kwargs and "thinking" not in kwargs:
                     kwargs["thinking"] = kwargs["enable_thinking"]
                 effort = req.get("reasoning_effort")
@@ -3461,6 +3482,7 @@ class Server:
                 try:
                     template_start = time.perf_counter()
                     opening, resuming = prompt_switches(req)
+                    kwargs = server.opener_kwargs(kwargs, opening)
                     prompt = server.chat(template_messages(messages), dict(kwargs, tools=tools) if tools else kwargs,
                                          generation_prompt=opening, continue_final=resuming)
                 except Exception as exc:                                  # noqa: BLE001 -- the template's verdict on these messages
@@ -3479,6 +3501,11 @@ class Server:
                 # token), so everything generated is content -- otherwise a whole answer lands in reasoning_content
                 # (45차 §22: the gateway's -low route asks thinkingMode off and reads content)
                 reasoning = server.reasoning_end is not None and not server.reasoning_closed(ids)
+                # The opener is the start of the reasoning the model goes on with: reasoning_content carries it too, so
+                # a client that sends the turn back renders the block the model actually wrote. Only where this prompt
+                # really ends with it -- a template that does not know the kwarg wrote nothing.
+                opener = kwargs.get("reasoning_opener") or ""
+                reasoning_prefix = opener if reasoning and opening and opener and nfc(prompt).endswith(nfc(opener)) else ""
                 if reasoning and "grammar" in options and "grammar_after" not in options:
                     # The answer starts inside a think block, and a grammar that started here would forbid the
                     # reasoning -- including the block's own end token, so the block would never close and the
@@ -3508,7 +3535,8 @@ class Server:
                 choices = self.choices_for(ids, n, max_tokens, temperature, options, stop, reasoning=reasoning,
                                            tool_parser=parser, want_logprobs=want_logprobs, min_new=min_tokens,
                                            continue_history=True, media=media, cache_salt=cache_key(req),
-                                           single_call=parallel is False, tool_stream=reader)
+                                           single_call=parallel is False, tool_stream=reader,
+                                           reasoning_prefix=reasoning_prefix)
                 head = {"id": f"chatcmpl-{choices[0].request}", "created": int(time.time()), "model": model}
                 for c in choices:
                     server.latency.row(kind='request', operation='template', phase='http',
@@ -3749,6 +3777,7 @@ class Server:
                     tools = req.get("tools")
                     try:
                         opening, resuming = prompt_switches(req)
+                        kwargs = server.opener_kwargs(dict(kwargs), opening)
                         prompt = server.chat(template_messages(req["messages"]), dict(kwargs, tools=tools) if tools else dict(kwargs),
                                              generation_prompt=opening, continue_final=resuming)
                     except Exception as exc:                              # noqa: BLE001
@@ -3813,7 +3842,7 @@ class Server:
                     if not isinstance(kwargs, dict):
                         raise RequestError("chat_template_kwargs must be an object")
                     try:
-                        prompt = server.chat(template_messages(req["messages"]), dict(kwargs))
+                        prompt = server.chat(template_messages(req["messages"]), server.opener_kwargs(dict(kwargs), True))
                     except Exception as exc:                          # noqa: BLE001
                         raise RequestError(f"chat template rejected the request: {exc}") from exc
                     ids = server.tok.encode(nfc(prompt), add_special_tokens=False).ids

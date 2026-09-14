@@ -428,6 +428,7 @@ class PickRichTests(unittest.TestCase):
         e.sampling_history, e.decodable, e._rich_stage = None, None, None
         e.drafter, e.eos = SimpleNamespace(k=k), set()
         e.top_p, e.caches = 1.0, SimpleNamespace(pool=SimpleNamespace(max_seqs=1))
+        e.net = SimpleNamespace(comm=SimpleNamespace(world_size=1))   # one rank: its verdict needs no agreement
         return e, g, m
 
     def logits(self, rank):
