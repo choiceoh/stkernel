@@ -45,7 +45,8 @@ from engine.profiles.glm53.facts import SPEC_K, TP
 # drafter's norms, norm+rope and gated MLP. The names stay module-level because the tests and probes take the
 # same functions the block runs from here.
 _COMMON_NAMES = dict(swiglu='swiglu', add_norm='add_rmsnorm', norm='rmsnorm',
-                     norm_rope='rmsnorm_rope', warm_rotary='rope_table')
+                     norm_rope='rmsnorm_rope', warm_rotary='rope_table',
+                     norm_rope_pair='rmsnorm_rope_pair')
 
 
 def _bind_common_lanes():
@@ -415,17 +416,19 @@ class Drafter:
         heads, kv_heads = self.local_heads, self.local_kv_heads
         if self.fast_attention:
             q0, k0, v0 = self.linear(x, q+"qkv").split((heads*F.head_dim, kv_heads*F.head_dim, kv_heads*F.head_dim), -1)
+            qh, kh = norm_rope_pair(q0.reshape(B, heads, F.head_dim), k0.reshape(B, kv_heads, F.head_dim),
+                                    p[q + "q_norm.weight"], p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
         else:
             q0, k0, v0 = (Fn.linear(x, p[q+s+"_proj.weight"]) for s in ("q", "k", "v"))
-        qh = norm_rope(q0.reshape(B, heads, F.head_dim), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
-        kh = norm_rope(k0.reshape(B, kv_heads, F.head_dim), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
+            qh = norm_rope(q0.reshape(B, heads, F.head_dim), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
+            kh = norm_rope(k0.reshape(B, kv_heads, F.head_dim), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
         vh = v0.reshape(B, kv_heads, F.head_dim)
         if self.fast_attention:
             from engine.kernels.draft_attention import draft_attention
             if isinstance(ring, tuple):
-                o = draft_attention(qh.contiguous(),kh.contiguous(),vh.contiguous(),ring[0],ctx_len,slot=ring[1],layer=L)
+                o = draft_attention(qh.contiguous(),kh.contiguous(),vh,ring[0],ctx_len,slot=ring[1],layer=L)
             else:
-                o = draft_attention(qh.contiguous(), kh.contiguous(), vh.contiguous(), ring[L], ctx_len)
+                o = draft_attention(qh.contiguous(), kh.contiguous(), vh, ring[L], ctx_len)
             return self.target.comm.all_reduce(self.linear(o.reshape(B, heads*F.head_dim), q+"o_proj.weight"))
         # the context window: the last min(ctx, window) verified positions, then the block itself (non-causal)
         # A fixed window keeps GEMM/reduction geometry identical in eager and
@@ -569,9 +572,10 @@ class Drafter:
             from engine.kernels.draft_attention import attend_rows
             heads, kv, D = self.local_heads, self.local_kv_heads, F.head_dim
             q0, k0, v0 = self.linear(x, q + "qkv", rows_ok).split((heads*D, kv*D, kv*D), -1)
-            qh = norm_rope(q0.reshape(n*t, heads, D), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
-            kh = norm_rope(k0.reshape(n*t, kv, D), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
-            vh = v0.reshape(n*t, kv, D).contiguous()
+            qh, kh = norm_rope_pair(q0.reshape(n*t, heads, D), k0.reshape(n*t, kv, D),
+                                    p[q + "q_norm.weight"], p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
+            # Read V in the packed QKV projection; its token stride spans Q and K too.
+            vh = v0.reshape(n*t, kv, D)
             # GEMMs cover all rows once, and so does the attention: each row reads its own device-selected slot
             # at its own context length, so the rows are a grid dimension and there is nothing to concatenate.
             out = attend_rows(qh.view(n, t, heads, D), kh.view(n, t, kv, D), vh.view(n, t, kv, D),
@@ -645,8 +649,8 @@ class Drafter:
         t = K + 1
         n = anchors.numel()
         dev = anchors.device
-        ids = torch.cat([anchors.view(n, 1), torch.full((n, K), F.mask_id, dtype=torch.int64, device=dev)], 1).reshape(-1)
-        pos = (positions.view(n, 1) + torch.arange(t, device=dev)).reshape(-1)
+        from engine.modules.draft_inputs import build
+        ids, pos = build(anchors, positions, K, F.mask_id)
         h = self.block_rows(ids, pos, slots, positions, field, n, t, alive).view(n, t, -1)[:, 1:].reshape(n * K, -1)
         from engine.modules.vocab import topk
         unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp,
@@ -674,7 +678,8 @@ class Drafter:
         # The walk puts mass on `sel_top_k` candidates a position and nothing else. Handing that back as
         # [n, K, vocab] meant allocating and zeroing 12.4 MiB every decode step (n=4, K=5, V=154,880) to carry
         # 320 numbers, and the verifier then read it twice. The candidates and their mass are the same fact.
-        qprob = torch.zeros(n, K, F.sel_top_k, dtype=torch.float32, device=dev)
+        # Every position below writes all rows/candidates before the result is returned.
+        qprob = torch.empty(n, K, F.sel_top_k, dtype=torch.float32, device=dev)
         qcand = cand.clone()                                                          # the candidates are the walk's, position by position
         # The sampled walk stays a loop: each position picks among the sixteen the last one opened. Its draw
         # is the cumulative walk over the caller's uniform for that position -- keyed, not drawn, so four ranks
@@ -712,8 +717,8 @@ class Drafter:
         F, p = self.F, self.p
         K = self.k
         dev = anchor.device
-        ids = torch.cat([anchor.reshape(1), torch.full((K,), F.mask_id, dtype=torch.int64, device=dev)])
-        positions = position + torch.arange(K + 1, device=dev)
+        from engine.modules.draft_inputs import build
+        ids, positions = build(anchor.reshape(1), position, K, F.mask_id)
         h = self.block(ids, positions, ring, position)[1:]                                   # the K mask positions
         from engine.modules.vocab import topk
         local = self.target.head_local(h)
@@ -764,8 +769,8 @@ class Drafter:
         F, p = self.F, self.p
         K = self.k
         dev = ring.device
-        ids = torch.cat([anchor.reshape(1), torch.full((K,), F.mask_id, dtype=torch.int64, device=dev)])
-        positions = position + torch.arange(K + 1, device=dev)
+        from engine.modules.draft_inputs import build
+        ids, positions = build(anchor.reshape(1), position, K, F.mask_id)
         h = self.block(ids, positions, ring, position)[1:]
         from engine.modules.vocab import topk
         local = self.target.head_local(h)

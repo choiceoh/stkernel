@@ -1,0 +1,22 @@
+{
+  "base_commit": "f8fface71d153ea889416297c1ed3d880e67a641",
+  "image": "sha256:f85de49afc0a41596cce3df2dab11af992a9aa5d21129c0f50ba719c30f68781",
+  "gpu_used": false,
+  "source_sha256": {
+    "engine/kernels/token_embedding.py": "a23dd2f2b04e1a7522dc96a72f61497e654c0fe313c74f1c1ee92268c113dfff",
+    "engine/modules/token_embedding.py": "fc1e074652880c7a2ca4f11f0218dc3f90a4756295432e685e4620976a162b72",
+    "engine/profiles/glm53/net.py": "99f95214c3740a10c5782803f9d29ca3e5f6b287808971558dee89e2a70389cf",
+    "tests/test_engine_token_embedding.py": "203fdcbfecf7f9842d0923a001d99edf27912f7d4027ffd914b7dfb4baf6a4ec",
+    "probes/engine_token_embedding_check.py": "f1fb599d6184ad67da508008a99ca70c6fb9dd0985026c1f973e47cc99cb7c28"
+  },
+  "cpu_tests": {
+    "run": 67,
+    "passed": 32,
+    "gpu_skips": 35
+  },
+  "interpreter_exact_cases": 28,
+  "native_compile_cases": 8,
+  "step_per_second": null,
+  "acceptance": null,
+  "quality": null
+}

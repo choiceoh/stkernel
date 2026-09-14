@@ -101,10 +101,10 @@ class PrefixGeometryTests(unittest.TestCase):
 
 
 class PrefixKernelTests(unittest.TestCase):
-    def test_actual_served_mla_skips_only_redundant_prefill_copy_and_writes_owned_output(self):
+    def test_actual_served_mla_reuses_single_output_for_decode_capture_and_prefill(self):
         source = ROOT/'engine/profiles/glm53/lanes.py'
-        node = copy.deepcopy(next(n for n in ast.walk(ast.parse(source.read_text()))
-                                  if isinstance(n, ast.FunctionDef) and n.name == 'mla'))
+        nodes = [copy.deepcopy(n) for n in ast.walk(ast.parse(source.read_text()))
+                 if isinstance(n, ast.FunctionDef) and n.name in ('mla', '_mla_output')]
         capturing = [False]
         parts = []
         def decode(q, *args, out=None):
@@ -118,17 +118,18 @@ class PrefixKernelTests(unittest.TestCase):
         scope = dict(torch=NS(uint8=torch.uint8, cat=concatenate,
                               cuda=NS(is_current_stream_capturing=lambda: capturing[0])),
                      mk=NS(MLA_H=16, _ARMED={'mla': True}, maybe_arm=lambda: None, mla_decode=decode))
-        exec(compile(ast.Module(body=[node], type_ignores=[]), str(source), 'exec'), scope)
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), str(source), 'exec'), scope)
         lane = scope['mla']
-        for rows, heads, captured in ((131, 16, False), (131, 64, False), (7, 16, False), (131, 16, True)):
+        for rows, heads, captured in ((r, h, c) for r in (1, 7, 8, 16, 24, 32, 131)
+                                     for h in (16, 64) for c in (False, True)):
             capturing[0] = captured
             q = torch.zeros(rows, heads, 32).bfloat16()
             parts.clear()
             concatenate.reset_mock()
             result = lane(q, torch.zeros(1, 32, dtype=torch.uint8), None, None, .1, 1.)
             self.assertTrue(bool((result == 1).all()))
-            self.assertEqual(concatenate.call_count, int(heads != 16 or rows < 128 or captured))
-            if heads == 16 and rows >= 128 and not captured:
+            self.assertEqual(concatenate.call_count, int(heads != 16))
+            if heads == 16:
                 self.assertIs(result, parts[0])
                 self.assertNotEqual(result.data_ptr(), q.data_ptr())
                 again = lane(q, torch.zeros(1, 32, dtype=torch.uint8), None, None, .1, 1.)

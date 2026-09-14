@@ -89,14 +89,33 @@ class GraphCaches:
         self.F, self.layout = real.F, real.layout
         self.capacity = capacity
         self.candidate_capacity = capacity // real.F.kpool
+        self._decode_lengths = None
         self.deferred_state = deferred_state
         layers = [layer for layer in real.layers if not real.F.is_dsa(layer)] if deferred_state else []
         self.deferred_layers = {layer: i for i, layer in enumerate(layers)}
 
     def gather(self):
+        # Every warmup and capture must record its own length producer. Reuse
+        # is only between this forward's layers, never between forwards.
+        self._decode_lengths = None
         # Unreserved pages are masked out of attention by valid pool counts.
         # Translate them to a readable page so padded gathers stay in bounds.
-        self.block_table = self.real.block_table.index_select(0, self.sequence_ids).clamp_min(0)
+        # index_select owns this copy; clamp it without allocating a second
+        # table. The real arena map, including its -1 entries, stays untouched.
+        self.block_table = self.real.block_table.index_select(0, self.sequence_ids).clamp_min_(0)
+
+    def row_lengths(self, contexts, tokens, pool_size, lane):
+        """Read-only lengths shared by the DSA layers of one gathered batch."""
+        if not hasattr(self, 'block_table'):
+            raise RuntimeError('decode lengths require gathered graph caches')
+        if self._decode_lengths is None:
+            values = lane(contexts, tokens, pool_size)
+            self._decode_lengths = (contexts, tokens, pool_size, lane, values)
+        else:
+            ctx, t, kp, producer, _ = self._decode_lengths
+            if contexts is not ctx or tokens != t or pool_size != kp or lane is not producer:
+                raise ValueError('decode length inputs changed within one gathered batch')
+        return self._decode_lengths[-1]
 
     def subset(self, start, end):
         if self.deferred_state is not None:
@@ -274,6 +293,7 @@ class Glm53DecodeGraphs:
         # alone, so sharing the buffer across a row's capacity buckets is what lets one sampler graph
         # serve all of them: 72 sampling graphs become 8 (boot-time study, 2026-09-11).
         self.logits = {}
+        self.head_outputs = {}
         self.deferred_states = {}
         if self.execution_plan.deferred_kda and (net.lanes.kda_recurrent_ring_rows is None or net.lanes.conv_ring_rows is None):
             raise ValueError("deferred KDA requires the captured row ring lanes")
@@ -287,8 +307,10 @@ class Glm53DecodeGraphs:
         def logits_for(n, t):
             key = (n, t)
             if key not in self.logits:
-                self.logits[key] = torch.empty(n * t, net.vp, device=caches.device,
-                                          dtype=torch.bfloat16)
+                self.head_outputs[key] = net.head_buffer(n * t, caches.device)
+                # The same logical view belongs to every capacity. Greedy selection
+                # reads its row stride and must never see the padded vocabulary tail.
+                self.logits[key] = self.head_outputs[key][:, :net.vp]
             return self.logits[key]
 
         def make_inputs(n, t, capacity):
@@ -341,13 +363,14 @@ class Glm53DecodeGraphs:
                 else:
                     result = net.forward(step, scratch, aux_layers=self.aux_layers, aux_ready=hook)
                 h, aux = result if self.aux_layers else (result, None)
-                logits.copy_(net.head_local(h))
+                net.head_local(h, out=self.head_outputs[(step.contexts.numel(), step.tokens)])
                 if prepared is not None:
                     self.observations[(step.contexts.numel(), tokens, scratch.capacity)] = prepared
                 return h, aux, logits
             finally:
                 if self.observe_stream is not None:
                     torch.cuda.current_stream().wait_stream(self.observe_stream)
+                scratch._decode_lengths = None
                 del scratch.block_table
 
         try:

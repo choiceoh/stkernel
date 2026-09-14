@@ -1,0 +1,123 @@
+{
+  "scope": "CPU reference dispatch inventory; no GPU launch count, timing or throughput measurement",
+  "cases": [
+    {
+      "rows": 1,
+      "k": 7,
+      "path": "draft_inputs",
+      "reference_materializing_tensor_ops": 4,
+      "materializing": {
+        "aten.add.Tensor": 1,
+        "aten.arange.default": 1,
+        "aten.cat.default": 1,
+        "aten.full.default": 1
+      },
+      "all_dispatches": {
+        "aten.add.Tensor": 1,
+        "aten.arange.default": 1,
+        "aten.cat.default": 1,
+        "aten.full.default": 1,
+        "aten.unsqueeze.default": 2,
+        "aten.view.default": 3
+      },
+      "candidate_kernel_launches": 1
+    },
+    {
+      "rows": 1,
+      "k": 7,
+      "path": "step_block",
+      "reference_materializing_tensor_ops": 53,
+      "materializing": {
+        "aten.__rshift__.Scalar": 10,
+        "aten._to_copy.default": 2,
+        "aten.add.Tensor": 5,
+        "aten.arange.default": 1,
+        "aten.bitwise_and.Scalar": 10,
+        "aten.bitwise_xor.Scalar": 1,
+        "aten.bitwise_xor.Tensor": 11,
+        "aten.full_like.default": 1,
+        "aten.lt.Scalar": 2,
+        "aten.mul.Tensor": 7,
+        "aten.sub.Tensor": 1,
+        "aten.where.self": 2
+      },
+      "all_dispatches": {
+        "aten.__rshift__.Scalar": 10,
+        "aten._to_copy.default": 2,
+        "aten.add.Tensor": 5,
+        "aten.arange.default": 1,
+        "aten.bitwise_and.Scalar": 10,
+        "aten.bitwise_xor.Scalar": 1,
+        "aten.bitwise_xor.Tensor": 11,
+        "aten.full_like.default": 1,
+        "aten.lt.Scalar": 2,
+        "aten.mul.Tensor": 7,
+        "aten.sub.Tensor": 1,
+        "aten.view.default": 2,
+        "aten.where.self": 2
+      },
+      "candidate_kernel_launches": 1
+    },
+    {
+      "rows": 4,
+      "k": 7,
+      "path": "draft_inputs",
+      "reference_materializing_tensor_ops": 4,
+      "materializing": {
+        "aten.add.Tensor": 1,
+        "aten.arange.default": 1,
+        "aten.cat.default": 1,
+        "aten.full.default": 1
+      },
+      "all_dispatches": {
+        "aten.add.Tensor": 1,
+        "aten.arange.default": 1,
+        "aten.cat.default": 1,
+        "aten.full.default": 1,
+        "aten.unsqueeze.default": 2,
+        "aten.view.default": 3
+      },
+      "candidate_kernel_launches": 1
+    },
+    {
+      "rows": 4,
+      "k": 7,
+      "path": "step_block",
+      "reference_materializing_tensor_ops": 53,
+      "materializing": {
+        "aten.__rshift__.Scalar": 10,
+        "aten._to_copy.default": 2,
+        "aten.add.Tensor": 5,
+        "aten.arange.default": 1,
+        "aten.bitwise_and.Scalar": 10,
+        "aten.bitwise_xor.Scalar": 1,
+        "aten.bitwise_xor.Tensor": 11,
+        "aten.full_like.default": 1,
+        "aten.lt.Scalar": 2,
+        "aten.mul.Tensor": 7,
+        "aten.sub.Tensor": 1,
+        "aten.where.self": 2
+      },
+      "all_dispatches": {
+        "aten.__rshift__.Scalar": 10,
+        "aten._to_copy.default": 2,
+        "aten.add.Tensor": 5,
+        "aten.arange.default": 1,
+        "aten.bitwise_and.Scalar": 10,
+        "aten.bitwise_xor.Scalar": 1,
+        "aten.bitwise_xor.Tensor": 11,
+        "aten.full_like.default": 1,
+        "aten.lt.Scalar": 2,
+        "aten.mul.Tensor": 7,
+        "aten.sub.Tensor": 1,
+        "aten.view.default": 2,
+        "aten.where.self": 2
+      },
+      "candidate_kernel_launches": 1
+    }
+  ],
+  "source_sha256": {
+    "engine/base/draws.py": "03740be5018fb6a670c47c7685c0fac45711af0df03b4fc8febd20d452492f69",
+    "engine/modules/draft_inputs.py": "eb54faa77d5dc5e2ebea6c34a232140c04f06b9e90620af7313d6d6fddeb6d77"
+  }
+}

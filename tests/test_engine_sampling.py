@@ -123,7 +123,9 @@ class SamplerSharingTests(unittest.TestCase):
 
     def test_capacity_buckets_of_one_row_capture_a_single_sampler(self):
         from engine.profiles.glm53.decode_graphs import SamplingGraphs
-        shared = {n: torch.empty(n * 6, 32, device="cuda") for n in (1, 2)}
+        # FP8 head outputs retain a padded row pitch; the tail must never become tokens.
+        storage = {n: torch.full((n * 6, 128), float('inf'), device="cuda") for n in (1, 2)}
+        shared = {n: value[:, :32] for n, value in storage.items()}
         outputs = {(n, 6, cap): (None, None, shared[n])
                    for n in (1, 2) for cap in (4096, 8192, 16384)}
         graphs = SamplingGraphs(self.target(outputs), None, 1.)
@@ -134,6 +136,8 @@ class SamplerSharingTests(unittest.TestCase):
                 shared[1].normal_()
                 picked = graphs.run((1, 6, cap), [0.] * 6)
                 self.assertTrue(torch.equal(picked, shared[1].float().argmax(-1)))
+                sampled = graphs.run((1, 6, cap), [1.] * 6, top_k=[1] * 6, uniforms=[.3] * 6)
+                self.assertTrue(torch.equal(sampled, shared[1].float().argmax(-1)))
         finally:
             graphs.close()
 

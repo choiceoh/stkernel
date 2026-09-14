@@ -16,7 +16,7 @@ are), and the value after EACH of its tokens goes to the slot's ring (`ring` cop
 `ComposedModel` answers the runner's Model protocol and the door's engine surface (base/serve) for any composition:
 tokens and limits per row, the prefill split at the prefix cache's marks, sampling through base/sampler with base/draws'
 uniforms keyed the way GLM-5.3's are, parking as a host record beside the slot's bytes. Every option the door admits is
-served the GLM adapter's way: a row with penalties, logit_bias, logprobs, a seed, a reasoning budget, a grammar
+served through the same base functions every engine uses: a row with penalties, logit_bias, logprobs, a seed, a reasoning budget, a grammar
 (base/grammar, when a compiler is bound) or min_tokens still ahead has its logits processed by base/sampler.process_logits
 over its own history and picked on its own; the other rows are drawn together. Without a drafter a decode
 step is one token a row (horizon = context + 1). With one (`Drafter` below) it is GLM-5.3's verification by position:
@@ -427,7 +427,7 @@ class ComposedModel:
             raise ValueError("temperature must be finite and nonnegative")
 
     def validate_options(self, options: dict) -> None:
-        validate_options(options)
+        validate_options(options, vocab=self.vocab)
         if options.get("grammar") is not None and self.grammars is None:
             raise ValueError("structured output (response_format) is not served: no grammar compiler is bound")
 
@@ -523,7 +523,7 @@ class ComposedModel:
 
     def logprobs(self, seq: int):
         """[(token, logprob, [(id, logprob), ...])] per generated token when the request asked for logprobs (the
-        processed row's, as the GLM adapter records them), else None."""
+        processed row's, the door's logprobs shape), else None."""
         return self.lps.get(seq)
 
     def media_marks(self, seq: int) -> list:
@@ -615,7 +615,7 @@ class ComposedModel:
         return picks
 
     def _pick_rich(self, seq: int, raw: torch.Tensor) -> int:
-        """The GLM adapter's rich pick for one position, over base/sampler and base/grammar: bias and penalties over
+        """The rich pick for one position, over base/sampler and base/grammar: bias and penalties over
         the row's tokens (base/sampler.History), the decodable cut, min_tokens' forbidden ends, the reasoning budget's
         forced end, the grammar's mask, then the row's own draw -- and the logprobs of the processed row. The row's
         tokens so far include every earlier pick, so a pick here is the same at a verify position as in a plain step."""
@@ -649,7 +649,7 @@ class ComposedModel:
 
     def _reasoning_over(self, seq: int, opts: dict) -> "int | None":
         """The reasoning-end token once the row's thinking budget is spent and it has not closed the block itself
-        (the GLM adapter's rule: min_tokens is a promise and a budget is not, so a forbidden end is not forced)."""
+        (base/sampler's rule: min_tokens is a promise and a budget is not, so a forbidden end is not forced)."""
         budget = opts.get("reasoning_budget")
         if budget is None or not self.thinking.get(seq, False):
             return None
@@ -657,6 +657,9 @@ class ComposedModel:
         if end in self.tokens[seq][self.prompt_len[seq]:]:
             self.thinking[seq] = False
             return None
+        matcher = self.matchers.get(seq)
+        if matcher is not None and matcher.armed:
+            return None          # a call began inside the block: its grammar holds the row, and forcing the end breaks it
         return end if self.generated_count(seq) >= budget else None
 
     def _commit(self, seq: int, token: int) -> bool:

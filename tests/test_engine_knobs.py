@@ -72,15 +72,17 @@ class KnobDeclarationTests(unittest.TestCase):
             cfg = self._declared({}, production=production)
             self.assertEqual([cfg[k] for k in ("execution_overlap", "early_observe", "prefill_tiles", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "decode_iterations")], [0, 0, 1, 1, 1, 1, 4])
             self.assertEqual(cfg["kda_state_dtype"], "fp32")
-            self.assertEqual(cfg["deferred_kda"], 0)
+            self.assertEqual(cfg["deferred_kda"], 1)
             self.assertEqual(cfg["terminal_mhc"], 0)
         rollback = {"direct_mhc": 0, "prefill_project_tiles": 0,
-                    "nvme_mapped_staging": 0, "decode_iterations": 1}
+                    "nvme_mapped_staging": 0, "decode_iterations": 1, "deferred_kda": 0}
         cfg = self._declared({"STK_"+key: str(value) for key, value in rollback.items()})
         self.assertEqual({key: cfg[key] for key in rollback}, rollback)
         for key in ("execution_overlap", "early_observe", "prefill_tiles", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "decode_iterations"):
             with self.subTest(key=key), self.assertRaises(ConfigError):
                 self._declared({"STK_"+key:"1"}, production=True)
+        with self.assertRaises(ConfigError):
+            self._declared({"STK_deferred_kda": "0"}, production=True)
 
     def test_acceptance_defaults_are_on_and_cannot_override_production(self):
         from engine.base.config import ConfigError

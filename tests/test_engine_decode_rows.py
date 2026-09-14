@@ -304,6 +304,22 @@ class SelectRowsTests(unittest.TestCase):
             Glm53Net._select_rows(self.net, 0, self.q8, self.w, self.keys, self.scales, self.TOPK // self.KP - 1, self.contexts,
                                   self.T, self.caches, torch.empty(0, dtype=torch.int32), torch.empty(0, dtype=torch.int32))
 
+    def test_eleven_layer_selections_share_lengths_and_refresh_after_rollback(self):
+        from dataclasses import replace
+        from unittest.mock import Mock
+        make = Mock(wraps=self.net.lanes.decode_rows.lengths)
+        self.net.lanes.decode_rows = replace(self.net.lanes.decode_rows, lengths=make)
+        for phase, values in enumerate(([0, 3, 100, 248], [2, 1, 92, 239], [0, 0, 0, 0])):
+            self.contexts.copy_(torch.tensor(values))
+            self.caches.gather()
+            want = self.loop()
+            slots, valid = torch.empty_like(want[0]), torch.empty_like(want[1])
+            for _ in range(11):
+                Glm53Net._select_rows(self.net, 0, self.q8, self.w, self.keys, self.scales, self.N_CAND,
+                                     self.contexts, self.T, self.caches, slots, valid)
+                self.assertTrue(torch.equal(slots, want[0]) and torch.equal(valid, want[1]))
+            self.assertEqual(make.call_count, phase+1)
+
 
 if __name__ == "__main__":
     unittest.main()

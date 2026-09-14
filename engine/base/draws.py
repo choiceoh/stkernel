@@ -124,6 +124,15 @@ def step_block(seed: int, nonces, generations, k: int):
     """[n, 2k+1] float32 in `step_layout(k)` order -- one mix over the block, and nothing here moves a
     tensor from the host, so a captured graph may compute it (the positions come from `arange`)."""
     import torch
+    if nonces.is_cuda:
+        if (type(k) is not int or k < 0 or nonces.ndim != 1 or generations.shape != nonces.shape
+                or nonces.dtype != torch.int64 or generations.dtype != torch.int64
+                or generations.device != nonces.device):
+            raise ValueError('step draws require matching int64 row keys and a nonnegative K')
+        if nonces.numel() == 0:
+            return torch.empty((0, 2 * k + 1), device=nonces.device, dtype=torch.float32)
+        from engine.kernels.decode_inputs import step_block as fused_step_block
+        return fused_step_block(seed, nonces, generations, k)
     keys = row_keys(seed, nonces, generations)
     at = torch.arange(2 * k + 1, device=keys.device, dtype=torch.int64)
     words = torch.where(at < k, at + (DRAFT << 32),

@@ -228,17 +228,18 @@ def declared(a, comm_world: int) -> Config:
     # GPU timing/quality gates remain pending independently of this choice.
     # 2026-09-14 operator: new improvements are enabled by default; keep
     # measurement status separate from the selected serving recipe.
+    # Deferred FP32 KDA state joined the recipe the same day at operator request.
     gb10_defaults = dict(direct_mhc=1, prefill_project_tiles=1,
                          nvme_mapped_staging=1, decode_iterations=4, prefill_indexer_shards=0, prefill_dense_prefix=1,
                          prefill_absorb_tiles=1, decode_fastpaths=1, decode_dsa_inputs=1,
-                         decode_indexer_gate=1, decode_absorb_tiles=1)
+                         decode_indexer_gate=1, decode_absorb_tiles=1, deferred_kda=1)
     if getattr(a, "production", False):
         # tile32 passed the full GPU numerical/graph and matched 2K/32K/128K
         # serving brackets. Keep it in the production contract so a stale
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
-                        execution_overlap=0, early_observe=0, prefill_tiles=1, deferred_kda=0, terminal_mhc=0,
+                        execution_overlap=0, early_observe=0, prefill_tiles=1, terminal_mhc=0,
                         prefill_ffn_packets=0,
                         draft_fc_precision=SERVING_POLICY.fc_precision, draft_fc_calibration=SERVING_POLICY.fc_calibration,
                         draft_diagnostics=int(SERVING_POLICY.diagnostics), draft_tuning='', **gb10_defaults)
@@ -282,8 +283,9 @@ def declared(a, comm_world: int) -> Config:
         Knob("terminal_mhc", 0, _dt.date(2026, 9, 30),
              "Decode and prefill: preserve BF16 channel rounding while writing terminal means into final feature columns",
              "STK_terminal_mhc=0", int),
-        Knob("deferred_kda", 0, _dt.date(2026, 9, 30),
-             "FP32 KDA: verify into update factors, commit accepted states across all layers in one launch",
+        Knob("deferred_kda", gb10_defaults["deferred_kda"], _dt.date(2026, 9, 30),
+             "Operator-enabled FP32 KDA: verify into update factors, commit accepted states across all layers in one launch; "
+             "K=7 GPU exactness and paired timing pending",
              "STK_deferred_kda=0", int),
         Knob("decode_iterations", gb10_defaults["decode_iterations"], _dt.date(2026, 9, 30),
              "Bounded greedy TP4 decode: reserve/read back 2 or 4 iterations with rank-agreed exits",

@@ -19,6 +19,7 @@ import triton.language as tl
 
 @triton.jit
 def _attend(Q, K, V, R, P, Slot, ACC, MAX, DEN, SLOT_STRIDE: tl.constexpr, LAYER_OFFSET: tl.constexpr,
+            V_ROW: tl.constexpr, V_TOKEN: tl.constexpr,
             B: tl.constexpr, H: tl.constexpr, HK: tl.constexpr, RHK: tl.constexpr, D: tl.constexpr,
             W: tl.constexpr, RS: tl.constexpr, SCALE: tl.constexpr, BN: tl.constexpr,
             SPAN: tl.constexpr, TILES: tl.constexpr, BQ: tl.constexpr):
@@ -38,7 +39,7 @@ def _attend(Q, K, V, R, P, Slot, ACC, MAX, DEN, SLOT_STRIDE: tl.constexpr, LAYER
         R += tl.load(Slot + row).to(tl.int64) * SLOT_STRIDE + LAYER_OFFSET
     Q += row * B * H * D
     K += row * B * HK * D
-    V += row * B * HK * D
+    V += row * V_ROW
     group = H // HK
     qi = tile * BQ + tl.arange(0, BQ)
     d = tl.arange(0, D)
@@ -66,7 +67,7 @@ def _attend(Q, K, V, R, P, Slot, ACC, MAX, DEN, SLOT_STRIDE: tl.constexpr, LAYER
         correction = tl.exp(maximum - safe_max)
         probability = tl.exp(score - safe_max[:, None])
         vr = tl.load(R + RS + (slot[:, None] * RHK + kh) * D + d[None, :], context[:, None] & valid[:, None], other=0)
-        vb = tl.load(V + ((n[:, None] - W) * HK + kh) * D + d[None, :], ~context[:, None] & valid[:, None], other=0)
+        vb = tl.load(V + (n[:, None] - W) * V_TOKEN + kh * D + d[None, :], ~context[:, None] & valid[:, None], other=0)
         value = tl.where(context[:, None], vr, vb).to(tl.float32)
         # the weights stay in fp32 through the value product, as they did when this was a per-query sum: the
         # drafter's acceptance is read off these, and bf16 weights cost a percent of the output vector
@@ -147,9 +148,11 @@ def attend_rows(q, k, v, ring, positions, *, slot=None, layer=0):
             or q.shape[2] % k.shape[2] or not 1 <= q.shape[1] <= 32
             or not all(t.is_cuda and t.device == q.device and t.dtype == torch.bfloat16
                        for t in (q, k, v, ring))
-            or not all(t.is_contiguous() for t in (q, k, v))
+            or not all(t.is_contiguous() for t in (q, k))
+            or v.stride(3) != 1 or v.stride(2) != head
+            or v.stride(1) < v.shape[2] * head or v.stride(0) < v.shape[1] * v.stride(1)
             or not (ring[0].is_contiguous() if slot is not None else ring.is_contiguous())):
-        raise ValueError("DFlash attention requires contiguous CUDA BF16 blocks and KV ring")
+        raise ValueError("DFlash attention requires CUDA BF16, contiguous Q/K and ring, and packed V heads")
     # the values are not read here: a context length is a device number and looking at it would synchronise,
     # which is not allowed while a graph is capturing
     if positions.device != q.device or positions.dtype != torch.int64 or positions.numel() != q.shape[0]:
@@ -170,7 +173,7 @@ def attend_rows(q, k, v, ring, positions, *, slot=None, layer=0):
     scale = torch.empty(2, held, device=q.device, dtype=torch.float32)
     _attend[(n, hk * tiles, parts)](q, k, v, ring, positions,
                                     slot if slot is not None else positions,
-                                    acc, scale[0], scale[1], stride, offset, b, h, hk, geometry[2], d,
+                                    acc, scale[0], scale[1], stride, offset, v.stride(0), v.stride(1), b, h, hk, geometry[2], d,
                                     cells, cells*geometry[2]*geometry[3], d**-.5, BN, span, tiles, BQ,
                                     num_warps=4, enable_fp_fusion=False)
     _combine[(n, b, h)](acc, scale[0], scale[1], out, b, h, hk, d,

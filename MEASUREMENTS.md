@@ -2692,3 +2692,40 @@ Mojo 1.0.0으로 bounded decode 결과의 호스트 반영을 컴파일하고 �
 부팅·서빙 연결은 없고 tok/s·TTFT·수용률·답변 품질은 미측정이다. SDK는 선택적인
 실험/CPU CI 환경에만 설치한다. [재현 방법과 판정](bench/mojo_host/README.md),
 [버전·소스/바이너리 해시·쌍별 표본](measurements/mojo_host_20260914/macos_arm64.json).
+
+### ST decode V·logits 복사 제거 — CPU/컴파일 검증 (2026-09-14)
+
+드래프터 어텐션이 QKV 안의 V를 원래 stride로 읽고, target FP8 head가 문맥 버킷들이
+공유하는 패딩 포함 출력 버퍼에 직접 쓴다. 논리 어휘 view의 주소·객체 공유를 유지하며
+패딩 64열은 토큰 선택에서 제외한다. 둘 다 기본 경로에 적용한다.
+C1 K7의 일반 greedy target+proposal step에서 랭크당 복사 6회·640,000 B를 제거하는
+소스 작업량이다. 확률/상세 샘플링은 통신을 위한 논리 어휘 packing이 여전히 필요하다.
+
+CPU 37개 중 24통과·GPU 전용 13skip, 실제 Triton CPU 인터프리터 비교 15개 exact,
+SM121 네이티브 컴파일 6개 통과다. GPU 큐·부팅·실행은 없으며 step/s·수용률·품질과
+그래프 풀의 실제 메모리 감소는 미측정이다.
+[소스 해시·정확한 범위·재현 기록](measurements/st_decode_buffers_20260914/README.md).
+
+### ST draft 입력·난수 준비 통합 — CPU/컴파일 검증 (2026-09-14)
+
+anchor/mask 토큰·위치를 한 커널로 만들고, keyed SplitMix64 step draws도 기존 키·목적·
+FP64→FP32 반올림을 유지한 한 커널로 통합했다. sampled walk가 모두 덮어쓰는 확률
+버퍼의 선행 zero-fill도 제거했다. 셋 모두 CUDA 기본 경로에 적용한다.
+
+C1/C4 K7의 CPU 레퍼런스에서 결과 저장소를 만드는 텐서 연산은 입력 준비 4개,
+난수 블록 53개였으며 후보는 각 1개 CUDA 커널이다. GPU 호출 수나 속도 실측은 아니다.
+CPU 48개 중 39통과·GPU 9skip, 실제 커널 인터프리터 43개 exact, SM121 컴파일
+11개가 통과했다. GPU 큐·부팅·실행은 없고 실제 step/s·수용률·품질은 미측정이다.
+[소스 해시·비트 일치·경로별 작업량·재현 기록](measurements/st_decode_inputs_20260914/README.md).
+
+### ST rank-local 임베딩 조회 통합 — CPU/컴파일 검증 (2026-09-14)
+
+target·drafter가 공유하는 임베딩 경로의 토큰 보정·소유 랭크 판정·조회·0 마스킹을
+한 CUDA 커널로 합쳤다. BF16 값을 uint16 비트로 옮기고, 기존 TP 합산은 유지한다.
+greedy와 target prefill에도 적용되며 CUDA 기본 경로에 켠다.
+
+기존 레퍼런스는 결과 저장소를 만드는 텐서 연산 7개, 후보는 커널 1개다. 이는 CPU
+dispatch 작업량이며 GPU 속도 실측이 아니다. CPU 67개 중 32통과·GPU 35skip,
+실제 커널 인터프리터 28개 비트 일치, SM121 컴파일 8개 통과(shared 0 B)다.
+GPU 큐·부팅·실행은 없고 실제 step/s·수용률·품질·그래프 풀 메모리는 미측정이다.
+[소스 해시·랭크 경계·비트 검증·재현 기록](measurements/st_token_embedding_20260914/README.md).

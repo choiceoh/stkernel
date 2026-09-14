@@ -82,6 +82,7 @@ class CommonKernelBoundaryTests(unittest.TestCase):
         names = set(imported(ROOT / "engine/base/lanes.py"))
         for expected in ("engine.kernels.common.decode_commit.advance", "engine.kernels.common.norm_rope.norm",
                          "engine.kernels.common.norm_rope.add_norm", "engine.kernels.common.norm_rope.norm_rope",
+                         "engine.kernels.common.norm_rope.norm_rope_pair",
                          "engine.kernels.common.norm_rope.warm", "engine.kernels.common.swiglu.swiglu"):
             with self.subTest(binds=expected):
                 self.assertIn(expected, names)
@@ -94,11 +95,13 @@ class CommonKernelBoundaryTests(unittest.TestCase):
         from engine.base import lanes
         from engine.kernels.common import decode_commit, norm_rope, swiglu
         table = lanes.served()
+        self.assertIs(table.rmsnorm_rope_pair, norm_rope.norm_rope_pair)
         self.assertIs(lanes.served(), table)
         self.assertEqual((table.rmsnorm, table.add_rmsnorm, table.rmsnorm_rope, table.rope_table, table.swiglu, table.commit),
                          (norm_rope.norm, norm_rope.add_norm, norm_rope.norm_rope, norm_rope.warm, swiglu.swiglu,
                           decode_commit.advance))
         from engine.profiles.glm53 import drafter
+        self.assertIs(drafter.norm_rope_pair, table.rmsnorm_rope_pair)
         self.assertEqual((drafter.norm, drafter.norm_rope, drafter.add_norm, drafter.swiglu, drafter.warm_rotary),
                          (norm_rope.norm, norm_rope.norm_rope, norm_rope.add_norm, swiglu.swiglu, norm_rope.warm))
 

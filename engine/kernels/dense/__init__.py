@@ -441,17 +441,17 @@ class FP8Linear:
         from engine.modules.packed_storage import consume
         self.weight=consume(storage,self.weight)
 
-    def __call__(self, x, rows_ok=None):
+    def __call__(self, x, rows_ok=None, *, out=None):
         if self.observer is not None:
             self.observer(x.reshape(-1, self.cols), rows_ok)
         from .fp8 import quantize
         shape = x.shape[:-1]
         flat = x.reshape(-1, self.cols).contiguous()
         q, scale = quantize(flat)
-        return self.project_quantized(q, scale).reshape(*shape, self.rows)
+        return self.project_quantized(q, scale, out=out).reshape(*shape, self.rows)
 
-    def project_quantized(self, q, scale):
-        """Consume the existing 128-column FP8 recipe, including padded weight rows."""
+    def project_quantized(self, q, scale, *, out=None):
+        """Consume the existing FP8 recipe; `out` owns the full padded GEMM output."""
         from deep_gemm import fp8_gemm_nt
         from engine.kernels.deep_gemm import _initialize
         if (q.ndim != 2 or q.shape[1] != self.cols or q.dtype != torch.float8_e4m3fn
@@ -459,8 +459,13 @@ class FP8Linear:
                 or not q.is_contiguous() or not scale.is_contiguous()
                 or q.device != self.weight[0].device or scale.device != q.device):
             raise ValueError("FP8 activation bytes/scales must match the bound weight")
+        shape = (q.shape[0], self.weight[0].shape[0])
+        if out is None:
+            out = torch.empty(shape, device=q.device, dtype=torch.bfloat16)
+        elif (tuple(out.shape) != shape or out.dtype != torch.bfloat16 or out.device != q.device
+              or not out.is_contiguous() or out.data_ptr() % 16):
+            raise ValueError("FP8 output must be aligned contiguous BF16 with the full padded weight width")
         _initialize()
-        out = torch.empty((q.shape[0], self.weight[0].shape[0]), device=q.device, dtype=torch.bfloat16)
         fp8_gemm_nt((q, scale), self.weight, out)
         self.executed = True
         return out[:, :self.rows]

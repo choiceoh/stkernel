@@ -1,0 +1,210 @@
+{
+  "status": "PASS",
+  "mode": "interpreter",
+  "gpu_used": false,
+  "cases": [
+    {
+      "rows": 1,
+      "hidden": 127,
+      "rank": 0,
+      "weight_stride": 135,
+      "exact": true
+    },
+    {
+      "rows": 1,
+      "hidden": 127,
+      "rank": 1,
+      "weight_stride": 135,
+      "exact": true
+    },
+    {
+      "rows": 1,
+      "hidden": 127,
+      "rank": 2,
+      "weight_stride": 135,
+      "exact": true
+    },
+    {
+      "rows": 1,
+      "hidden": 127,
+      "rank": 3,
+      "weight_stride": 135,
+      "exact": true
+    },
+    {
+      "rows": 8,
+      "hidden": 128,
+      "rank": 0,
+      "weight_stride": 136,
+      "exact": true
+    },
+    {
+      "rows": 8,
+      "hidden": 128,
+      "rank": 1,
+      "weight_stride": 136,
+      "exact": true
+    },
+    {
+      "rows": 8,
+      "hidden": 128,
+      "rank": 2,
+      "weight_stride": 136,
+      "exact": true
+    },
+    {
+      "rows": 8,
+      "hidden": 128,
+      "rank": 3,
+      "weight_stride": 136,
+      "exact": true
+    },
+    {
+      "rows": 16,
+      "hidden": 257,
+      "rank": 0,
+      "weight_stride": 265,
+      "exact": true
+    },
+    {
+      "rows": 16,
+      "hidden": 257,
+      "rank": 1,
+      "weight_stride": 265,
+      "exact": true
+    },
+    {
+      "rows": 16,
+      "hidden": 257,
+      "rank": 2,
+      "weight_stride": 265,
+      "exact": true
+    },
+    {
+      "rows": 16,
+      "hidden": 257,
+      "rank": 3,
+      "weight_stride": 265,
+      "exact": true
+    },
+    {
+      "rows": 24,
+      "hidden": 4096,
+      "rank": 0,
+      "weight_stride": 4104,
+      "exact": true
+    },
+    {
+      "rows": 24,
+      "hidden": 4096,
+      "rank": 1,
+      "weight_stride": 4104,
+      "exact": true
+    },
+    {
+      "rows": 24,
+      "hidden": 4096,
+      "rank": 2,
+      "weight_stride": 4104,
+      "exact": true
+    },
+    {
+      "rows": 24,
+      "hidden": 4096,
+      "rank": 3,
+      "weight_stride": 4104,
+      "exact": true
+    },
+    {
+      "rows": 32,
+      "hidden": 4096,
+      "rank": 0,
+      "weight_stride": 4104,
+      "exact": true
+    },
+    {
+      "rows": 32,
+      "hidden": 4096,
+      "rank": 1,
+      "weight_stride": 4104,
+      "exact": true
+    },
+    {
+      "rows": 32,
+      "hidden": 4096,
+      "rank": 2,
+      "weight_stride": 4104,
+      "exact": true
+    },
+    {
+      "rows": 32,
+      "hidden": 4096,
+      "rank": 3,
+      "weight_stride": 4104,
+      "exact": true
+    },
+    {
+      "rows": 65,
+      "hidden": 129,
+      "rank": 0,
+      "weight_stride": 137,
+      "exact": true
+    },
+    {
+      "rows": 65,
+      "hidden": 129,
+      "rank": 1,
+      "weight_stride": 137,
+      "exact": true
+    },
+    {
+      "rows": 65,
+      "hidden": 129,
+      "rank": 2,
+      "weight_stride": 137,
+      "exact": true
+    },
+    {
+      "rows": 65,
+      "hidden": 129,
+      "rank": 3,
+      "weight_stride": 137,
+      "exact": true
+    },
+    {
+      "rows": 257,
+      "hidden": 127,
+      "rank": 0,
+      "weight_stride": 135,
+      "exact": true
+    },
+    {
+      "rows": 257,
+      "hidden": 127,
+      "rank": 1,
+      "weight_stride": 135,
+      "exact": true
+    },
+    {
+      "rows": 257,
+      "hidden": 127,
+      "rank": 2,
+      "weight_stride": 135,
+      "exact": true
+    },
+    {
+      "rows": 257,
+      "hidden": 127,
+      "rank": 3,
+      "weight_stride": 135,
+      "exact": true
+    }
+  ],
+  "scope": "CPU byte identity, native compile or tensor-op inventory; GPU execution and speed pending",
+  "source_sha256": {
+    "engine/kernels/token_embedding.py": "a23dd2f2b04e1a7522dc96a72f61497e654c0fe313c74f1c1ee92268c113dfff",
+    "engine/modules/token_embedding.py": "fc1e074652880c7a2ca4f11f0218dc3f90a4756295432e685e4620976a162b72",
+    "engine/profiles/glm53/net.py": "99f95214c3740a10c5782803f9d29ca3e5f6b287808971558dee89e2a70389cf",
+    "probes/engine_token_embedding_check.py": "f1fb599d6184ad67da508008a99ca70c6fb9dd0985026c1f973e47cc99cb7c28"
+  }
+}
