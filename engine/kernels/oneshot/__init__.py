@@ -65,7 +65,7 @@ def pair_rail(a, b, rails):
 
 def build(rails=1, *, inline_flags=True):
     from torch.utils.cpp_extension import load
-    from engine.kernels.common.native_cache import prepare_sources
+    from engine.kernels.common.native_cache import prepare_cuda_sources
     if rails not in (1, 2):
         raise ValueError(f'one-shot serves one or two RoCE rails, not {rails}')
     if type(inline_flags) is not bool:
@@ -76,7 +76,7 @@ def build(rails=1, *, inline_flags=True):
              f'-DOSAR_RAILS={rails}', f'-DOSAR_PROXY_INLINE={int(inline_flags)}']
     root = Path(os.environ.get('ST_ONESHOT_BUILD_ROOT', str(Path.home()/'.cache/st/oneshot')))
     ldflags = ['-libverbs']
-    key, directory, staged = prepare_sources(root, sources, (flags, ldflags, torch.__version__, torch.version.cuda))
+    key, directory, staged = prepare_cuda_sources(root, sources, (flags, ldflags, torch.__version__, torch.version.cuda))
     return load(name='st_oneshot_'+key,sources=[staged[0]],extra_cuda_cflags=flags,
                 extra_ldflags=ldflags,build_directory=str(directory),verbose=False)
 

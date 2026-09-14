@@ -40,7 +40,7 @@ python3 tools/inventory.py --write             # 아래 생성 블록 갱신
 
 ```
 # st-engine:prod-abceb6a0
--- torch 2.13.0+cu130
+-- torch 2.13.0+cu132
 -- triton 3.7.1
 -- transformers 5.15.1
 -- tokenizers 0.22.2

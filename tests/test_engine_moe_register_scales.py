@@ -12,11 +12,12 @@ from tests.test_engine_moe_sf6_staging import CLASS, SOURCE, geometry, method, p
 def load_words(memory, packed_base, offsets, tidbase=0):
     """Execute the production helper with explicit physical copy-word offsets."""
     reads = []
-    def load(address):
-        assert address % 4 == 0
-        assert packed_base <= address <= packed_base + 1536
-        reads.append(address)
-        return int.from_bytes(memory[address:address+4], 'little', signed=True)
+    def load(address, byte_offset, width):
+        address += byte_offset
+        assert address % width == 0
+        assert packed_base <= address and address + width <= packed_base + 1537
+        reads.append((address, width))
+        return int.from_bytes(memory[address:address+width], 'little')
     destinations = [[None]*len(offsets) for _ in range(4)]
     cute = SimpleNamespace(recast_tensor=lambda tensor, dtype: tensor,
                            size=lambda tensor: len(offsets))
@@ -32,11 +33,13 @@ def load_words(memory, packed_base, offsets, tidbase=0):
     node = copy.deepcopy(next(n for n in CLASS.body
         if isinstance(n, ast.FunctionDef) and n.name == '_sf6_load_fragment'))
     node = Shuffle().visit(node)
-    env = dict(cute=cute, Int32=int, _ld_shared_i32_volatile=load,
+    loaders = dict(_ld_shared_u8_volatile=lambda addr, offset=0: load(addr, offset, 1),
+                   _ld_shared_u16_volatile=lambda addr, offset=0: load(addr, offset, 2))
+    env = dict(cute=cute, Int32=int, **loaders,
                shared_ptr_to_u32=lambda pointer: pointer)
     exec(compile(ast.fix_missing_locations(ast.Module(body=[node], type_ignores=[])), str(SOURCE), 'exec'), env)
     # Four actual helper instances, one per member of the first lane quad.
-    prepare = method('_sf6_prepare_stage', dict(Int32=int, _ld_shared_i32_volatile=load))
+    prepare = method('_sf6_prepare_stage', dict(Int32=int, **loaders))
     workers = [env['_sf6_load_fragment'](owner, dest, prepare(owner, packed_base, tidbase+lane), 'test', 0)
                for lane, dest in enumerate(destinations)]
     replies = [None]*4
@@ -71,6 +74,7 @@ class RegisterScalesTests(unittest.TestCase):
             self.assertEqual(actual, [int.from_bytes(expected[i:i+4], 'little') for i in offsets])
             self.assertEqual(bytes(memory), before, 'register load wrote shared storage')
             self.assertEqual(len(reads), 4+2*len(offsets))
+            self.assertEqual(sum(width for _, width in reads), 4+3*len(offsets))
 
     def test_every_warp_and_quad_maps_to_the_original_scale_rows(self):
         packed, expected = packed_codes(251, 2048, 193)

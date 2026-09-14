@@ -68,11 +68,11 @@ def _build():
         return _EXT
     import torch
     from torch.utils.cpp_extension import load
-    from engine.kernels.common.native_cache import prepare_sources
+    from engine.kernels.common.native_cache import prepare_cuda_sources
     src = Path(__file__).with_name("glm53_megakernel.cu")
     flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a"]
     root = Path(os.environ.get("ST_MLA_BUILD_ROOT", str(Path.home() / ".cache/st/mla")))
-    key, build, sources = prepare_sources(root, [src], (flags, torch.__version__, torch.version.cuda))
+    key, build, sources = prepare_cuda_sources(root, [src], (flags, torch.__version__, torch.version.cuda))
     _EXT = load(name="st_mla_" + key, sources=list(sources), extra_cuda_cflags=flags,
                 build_directory=str(build), verbose=False)
     return _EXT

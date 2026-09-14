@@ -8,7 +8,31 @@ import fcntl
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 import tempfile
+
+
+def cuda_toolchain_identity(cuda_home, nvcc=None):
+    """Identify the compiler independently of the CUDA version built into Torch.
+
+    A CUDA 13.0 Torch wheel can compile ST extensions with CUDA 13.2. Compiler
+    feature guards then change the device code even when every source, flag
+    and Torch version stays unchanged. Do not reuse the old native artifact.
+    These version queries do not initialize a CUDA context.
+    """
+    if not cuda_home:
+        raise RuntimeError("native CUDA build requires a CUDA toolkit")
+    root = Path(cuda_home)
+    paths = (Path(nvcc) if nvcc else root / "bin/nvcc", root / "bin/ptxas")
+    return [(str(path.resolve()), subprocess.check_output(
+        [str(path), "--version"], text=True, timeout=10).strip()) for path in paths]
+
+
+def prepare_cuda_sources(root, sources, identity):
+    """Key the canonical SDK; the runtime rejects redirected PYTORCH_NVCC."""
+    from torch.utils.cpp_extension import CUDA_HOME
+    compiler = cuda_toolchain_identity(CUDA_HOME)
+    return prepare_sources(root, sources, (*identity, compiler))
 
 
 def prepare_sources(root, sources, identity):

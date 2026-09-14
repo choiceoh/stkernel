@@ -281,9 +281,9 @@ NCCL_ENV="-e NCCL_P2P_LEVEL=SYS -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=${ST_NCCL_HE
 -e NCCL_NVLS_ENABLE=0 -e NCCL_IGNORE_CPU_AFFINITY=1 -e NCCL_DEBUG=WARN \
 -e NCCL_MIN_NCHANNELS=16 -e NCCL_MAX_NCHANNELS=16 -e NCCL_NCHANNELS_PER_NET_PEER=4 \
 -e TORCH_NCCL_ASYNC_ERROR_HANDLING=1 -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
--e TRITON_CACHE_DIR=/cache/triton -e TILELANG_CACHE_DIR=/cache/tilelang \
--e DG_JIT_CACHE_DIR=/cache/deep_gemm -e ST_MLA_BUILD_ROOT=/cache/mla -e FLASHINFER_WORKSPACE_BASE=/cache \
--e ST_DENSE_BUILD_ROOT=/cache/st-dense -e ST_ONESHOT_BUILD_ROOT=/cache/st-oneshot -e MAX_JOBS=2"
+-e TRITON_CACHE_DIR=/cache/cu132/triton -e TILELANG_CACHE_DIR=/cache/cu132/tilelang \
+-e DG_JIT_CACHE_DIR=/cache/cu132/deep_gemm -e ST_MLA_BUILD_ROOT=/cache/cu132/mla -e FLASHINFER_WORKSPACE_BASE=/cache/cu132 -e CUDA_CACHE_PATH=/cache/cu132/driver \
+-e ST_DENSE_BUILD_ROOT=/cache/cu132/st-dense -e ST_ONESHOT_BUILD_ROOT=/cache/cu132/st-oneshot -e MAX_JOBS=2"
 # the profile's declared D11 knobs (STK_*, boot.declared) travel from this shell into every rank; an undeclared one kills the boot
 for v in $(compgen -v STK_ || true); do NCCL_ENV="$NCCL_ENV -e $v=${!v}"; done
 

@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from engine.kernels.common.native_cache import prepare_sources
+from engine.kernels.common.native_cache import cuda_toolchain_identity, prepare_sources
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -75,6 +75,29 @@ class NativeCacheTests(unittest.TestCase):
         self.assertIn(b"answer()", Path(staged[0]).read_bytes())
         self.assertNotEqual(self.prepare()[0], key)
 
+    def test_toolkit_upgrade_with_the_same_torch_wheel_invalidates_native_code(self):
+        toolkit = self.root / "cuda"
+        (toolkit / "bin").mkdir(parents=True)
+        def set_version(tool, version):
+            path = toolkit / "bin" / tool
+            path.write_text("#!/bin/sh\nprintf '%s\\n' '" + version + "'\n")
+            path.chmod(0o755)
+        set_version("nvcc", "nvcc 13.0.88")
+        set_version("ptxas", "ptxas 13.0.88")
+        first = cuda_toolchain_identity(toolkit)
+        before = self.prepare(identity=(*self.identity, first))[0]
+        self.assertEqual(first, cuda_toolchain_identity(toolkit))
+        set_version("nvcc", "nvcc 13.2.51")
+        set_version("ptxas", "ptxas 13.2.51")
+        second = cuda_toolchain_identity(toolkit)
+        self.assertNotEqual(before, self.prepare(identity=(*self.identity, second))[0])
+        # Updating only the assembler also changes code generation.
+        set_version("ptxas", "ptxas 13.2.patch")
+        self.assertNotEqual(second, cuda_toolchain_identity(toolkit))
+        (toolkit / "bin/nvcc").unlink()
+        with self.assertRaises(FileNotFoundError):
+            cuda_toolchain_identity(toolkit)
+
     def test_corrupted_staged_input_is_repaired_without_removing_build_outputs(self):
         key, directory, staged = self.prepare()
         artifact = directory / "already-built.so"
@@ -118,8 +141,8 @@ print(json.dumps([key,[(Path(p).read_text(),Path(p).stat().st_ino,Path(p).stat()
     def test_runtime_defaults_and_launcher_use_the_same_persistent_roots(self):
         dockerfile = (ROOT / "engine/runtime/Dockerfile").read_text()
         launcher = (ROOT / "launchers/start-st-glm53.sh").read_text()
-        for assignment in ("ST_DENSE_BUILD_ROOT=/cache/st-dense", "ST_ONESHOT_BUILD_ROOT=/cache/st-oneshot",
-                           "ST_MLA_BUILD_ROOT=/cache/mla"):
+        for assignment in ("ST_DENSE_BUILD_ROOT=/cache/cu132/st-dense", "ST_ONESHOT_BUILD_ROOT=/cache/cu132/st-oneshot",
+                           "ST_MLA_BUILD_ROOT=/cache/cu132/mla"):
             self.assertIn(assignment, dockerfile)
             self.assertIn(assignment, launcher)
 
@@ -144,7 +167,9 @@ print(json.dumps([key,[(Path(p).read_text(),Path(p).stat().st_ino,Path(p).stat()
                                  _EXT=None, MAX_ELEMENTS=64*4096)
                 env_name = "ST_" + relative.split('/')[0].upper() + "_BUILD_ROOT"
                 with patch.dict(sys.modules, {"torch": fake_torch,
-                                              "torch.utils.cpp_extension": SimpleNamespace(load=load)}), \
+                                              "torch.utils.cpp_extension": SimpleNamespace(load=load, CUDA_HOME="/cuda")}), \
+                        patch("engine.kernels.common.native_cache.cuda_toolchain_identity",
+                              return_value=[("/cuda/bin/nvcc", "13.0"), ("/cuda/bin/ptxas", "13.0")]), \
                         patch.dict(os.environ, {env_name: str(self.root / relative.split('/')[0])}):
                     exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), "exec"), namespace)
                     self.assertIs(namespace[function](), ext)
