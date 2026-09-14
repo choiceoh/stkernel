@@ -1595,8 +1595,15 @@ __device__ __forceinline__ MKRegisterW4 mk_load_register_w4(const MKGemm2Ctx& c,
 #pragma unroll
   for(int j=0;j<2;++j) {
     const int row=j*8+g;
-    raw.words[j]=*(const uint4*)(w+row*64+q*16);
-    raw.scales[j]=*(const uint16_t*)(s+row*8+q*2);
+    // Match cp.async.cg's cache policy: streamed W must not evict the
+    // repeatedly consumed input fragments from L1. Volatile vector loads
+    // also retain the prefetch before this iteration's volatile MMA.
+    auto& v=raw.words[j];
+    asm volatile("ld.global.cg.v4.u32 {%0,%1,%2,%3}, [%4];"
+        : "=r"(v.x),"=r"(v.y),"=r"(v.z),"=r"(v.w) : "l"(w+row*64+q*16));
+    uint16_t scales;
+    asm volatile("ld.global.cg.u16 %0, [%1];" : "=h"(scales) : "l"(s+row*8+q*2));
+    raw.scales[j]=scales;
   }
   return raw;
 }
@@ -1656,11 +1663,20 @@ __device__ __forceinline__ void mk_gemm_register_body(MKGemm2Ctx c, int block) {
   asm volatile("griddepcontrol.wait;" ::: "memory");
   if constexpr (DIRECT) c.out=reinterpret_cast<__nv_bfloat16*>(*c.out_address);
   float acc[4]={};
+  if constexpr (KBLKS%SLICES==0) {
+#pragma unroll
+    for(int offset=0;offset<KBLKS/SLICES-1;++offset) {
+      const MKRegisterW4 next=mk_load_register_w4<KBLKS>(c,nt,first+offset+1);
+      mk_register_mma(c,current,first+offset,acc);
+      current=next;
+    }
+  } else {
 #pragma unroll 1
-  for(int kb=first;kb<end-1;++kb) {
-    const MKRegisterW4 next=mk_load_register_w4<KBLKS>(c,nt,kb+1);
-    mk_register_mma(c,current,kb,acc);
-    current=next;
+    for(int kb=first;kb<end-1;++kb) {
+      const MKRegisterW4 next=mk_load_register_w4<KBLKS>(c,nt,kb+1);
+      mk_register_mma(c,current,kb,acc);
+      current=next;
+    }
   }
   mk_register_mma(c,current,end-1,acc);
 #pragma unroll
