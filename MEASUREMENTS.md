@@ -2851,3 +2851,23 @@ GPU 부팅을 하지 않았다: 같은 값을 환경 변수로 준 위의 부팅
 
 **검증.** 위 측정은 모두 요청별 kwarg 로 같은 템플릿 경로를 탔다(부팅마다 `/tokenize` 로 렌더 끝을 확인). CPU 테스트 컨테이너에서
 `tests.test_glm53_chat` 21개, `tests.test_engine_serve` 199개(18개 건너뜀) 통과. 이 브랜치 자체로 GPU 부팅은 하지 않았다.
+
+### ST CUDA 13.2.1 전체 런타임 이전 및 B12X 세부 이식 (2026-09-14)
+
+운영자 “13.2 전체 마이그레이션해”, “전부 가져와”, **“큐 태우지마”**.
+Torch 2.13.0+cu132, CUDA SDK/런타임 13.2.1, NVCC/PTXAS/NVRTC/NVVM/nvJitLink 13.2.78을
+34개 wheel SHA256으로 고정했다. 네 노드에서 같은 seed ID와 engine source SHA256을 확인하고
+기본 `st-engine:glm53` 이미지 태그를 이전했다. 호스트 드라이버/툴킷, 실행 중인 서비스와 GPU 임대는 유지했다.
+
+SF6는 u16/u8 공유 메모리 직접 읽기와 immediate offset, MLA는 native E4M3x2 → BF16x2 변환을 적용했다.
+같은 NVCC 13.2.78의 정적 명령 위치는 MLA decode 1,360 → 1,264, prefill32 1,112 → 936이다.
+이 수치는 **step/s나 tok/s가 아니다**. 큐·onepass·GPU 수치/그래프 검사는 하지 않았다.
+
+Linux CPU 203 files / 1,872 tests: 203 ok, 0 failed, 0 cannot run, 314 skipped.
+실제 native 확장 7종 compile/dlopen, SF6 전체 커널 7종/helper 4종/CPU operand 24,576개,
+Triton KDA 55종, TileLang MHC 컴파일 통과. #947 실험용 트리 양자화 경로는 고정된 Triton 3.7.1에서
+컴파일 제약이 있어 실패를 따로 기록했다. 기존 cu130 이미지에서도 NVFP4 실패가 재현된다.
+CuTe가 요구하는 nvdisasm 13.3.73 진단 도구 및 기존 패키지 메타데이터 제약도 숨기지 않았다.
+
+버전·이미지·원시 결과는 [런타임 이전 기록](measurements/st_cuda132_20260914/README.md),
+기준 대비 명령/레지스터와 적용 범위는 [세부 이식 기록](measurements/st_upstream_microopts_20260914/README.md)에 있다.

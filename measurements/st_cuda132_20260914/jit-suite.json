@@ -1,0 +1,27 @@
+[
+  {
+    "name": "runtime",
+    "exit_code": 0,
+    "seconds": 4.273567459982587
+  },
+  {
+    "name": "sf6-operands",
+    "exit_code": 0,
+    "seconds": 49.83248795499094
+  },
+  {
+    "name": "sf6-native",
+    "exit_code": 0,
+    "seconds": 47.96771040500607
+  },
+  {
+    "name": "triton",
+    "exit_code": 0,
+    "seconds": 8.706204697024077
+  },
+  {
+    "name": "tilelang",
+    "exit_code": 0,
+    "seconds": 3.8178560140077025
+  }
+]

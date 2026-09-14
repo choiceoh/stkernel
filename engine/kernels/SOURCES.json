@@ -145,7 +145,7 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "4ef746ca32ea768ed27b9db9efc13b63377c3e30e70faaa34ae7f057b37334f0",
+      "local_sha256": "c3cf346f36e013112bc0f99235f5849350ecfbc9cc0920809fab08759810c22a",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
@@ -170,7 +170,8 @@
         "2026-09-13 M64 repair after L9 numerical rejection: declare the full per-tile physical SFA view for the private compact M64 workspace; ordinary M128/decode views are unchanged.",
         "2026-09-13 oracle candidate: explicit separately keyed tiled N128 prefill over per-call expanded scales; original decode and implicit selection unchanged.",
         "2026-09-13 explicit eager M128 Q0 batch8 prefill candidate with separate packed/raw/N128 readers.",
-        "Keep M64 and scale-expansion experiments explicit-only when merging the private prefill candidates."
+        "Keep M64 and scale-expansion experiments explicit-only when merging the private prefill candidates.",
+        "2026-09-14 CUDA 13.2 migration: compiler-aware native/cache identity; no launch arithmetic change."
       ]
     },
     "b12x/moe_dynamic_kernel.py": {
@@ -293,19 +294,24 @@
     "b12x/moe_static_common.py": {
       "source": "overlay/modules/glm53_moe/moe_static_common.py",
       "sha256": "bd8e2afcd93fec6f8ffd025faf218a6c14829df8de4749a62257e6cdc75820a9",
-      "origin": "repository"
+      "origin": "repository",
+      "local_sha256": "e2576dcf4fc1d442fcd882c772d1d6da65e92c4cc97d79db1b68e7961d99b2f7",
+      "local_modifications": [
+        "2026-09-14 B12X 12b4eb257441: narrow SF6 shared loads with immediate offsets; retain volatile semantics, ring ownership and exact SFB mapping."
+      ]
     },
     "b12x/moe_static_kernel_v4.py": {
       "source": "overlay/modules/glm53_moe/moe_static_kernel_v4.py",
       "sha256": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
       "origin": "repository",
-      "local_sha256": "a12ced6fe865237ac1ba5a409d8a53eb2b3235fa46f4348840b9a8c2d8249c74",
+      "local_sha256": "f81ded5fbddd941985338b822472ffe5ff5e94f52f2003fc20214f14ec0e4f93",
       "local_modifications": [
         "2026-09-12 ST native execution: tiled static v2 preserves BF16 contribution rounding with FP32 route scatter; owned SF6 scales may reuse retired arena storage before capture",
         "2026-09-13: opt-in epilogue lifetime alias saves 4 KiB for the three-stage FC1 probe; separate-storage offsets and named barriers are preserved.",
         "2026-09-13 private decode: independently keyed route-owned FP32 partials and direct register scatter; serving defaults unchanged.",
         "2026-09-13: retire measured resident-wave/batch/stage probe hooks and restore separate epilogue storage; retain only the new private output candidates.",
-        "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged."
+        "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged.",
+        "2026-09-14 B12X 12b4eb257441: narrow SF6 shared loads with immediate offsets; retain volatile semantics, ring ownership and exact SFB mapping."
       ]
     },
     "b12x/moe_static_kernel_v5.py": {
@@ -339,7 +345,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
       "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
       "origin": "repository",
-      "local_sha256": "ee0f9856c274f19f21d817961f3b2370af0cb8ba6867b06af63b05019910a86e",
+      "local_sha256": "c70fade02943a0b17b93107ef4b619e40b2ceca8e3c71c3d0a480676860cfd26",
       "local_modifications": [
         "SM121 integer warp max reduction",
         "Cluster-local MLA split reduction with reused shared memory",
@@ -348,14 +354,15 @@
         "2026-09-12 SM121: byte ldmatrix PV loads and BF16 ldmatrix Q/P loads in both ordinary and cluster MLA; split/MMA accumulation order unchanged; adopted before timing/GPU execution validation.",
         "2026-09-12 GB10: Q cp.async.ca joins the first KV group; empty splits skip Q; balanced cluster head ownership and coalesced global split reduction. Arithmetic order unchanged; GPU execution and timing pending.",
         "2026-09-12 k6 (#732): the MAX_TOK comment counts SPEC_K 6, so T = 28 of 32. Comment only -- no code, no arithmetic. This record is the hash catching up: #732 left it behind and main's check has been red on it since.",
-        "2026-09-13 wide prefill: extend the existing row-local path to 32768 rows for 32256-token chunks; preserve kernel arithmetic and small decode."
+        "2026-09-13 wide prefill: extend the existing row-local path to 32768 rows for 32256-token chunks; preserve kernel arithmetic and small decode.",
+        "2026-09-14 CUDA 13.2: packed native E4M3x2 to BF16x2 widening in decode and strided prefill; preserve query quantization and accumulation order."
       ]
     },
     "mla/__init__.py": {
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
       "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
       "origin": "repository",
-      "local_sha256": "489f3690e6eca9b893b640c0dcb3b560d4654fd889bb885df3cf9b1a8c7bbd73",
+      "local_sha256": "28cb3387bcc1de0655b5584a38e0506959f95c2832b0565402dcce4bb769f267",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; tile32 large-M MLA prefill is qualified and selected by the production boot default; configure_prefill (STK_mla_prefill), mla_decode(splits=, probe=), PAIR_STATS, ENABLE_MLA_CLUSTER baked on",
         "2026-09-13 native build cache: stage content-addressed source inputs so identical checkout paths and timestamps do not trigger NVCC; keep Torch/Ninja build validation.",
@@ -365,7 +372,8 @@
         "2026-09-13 common kernels: the native build cache moved to engine/kernels/common/native_cache.py; _build imports it from there. Build flags, sources and the cache key are unchanged.",
         "2026-09-13 operation variants: _check_cell also refuses a bound attention whose sink is not cells.MLA_SINK (the compiled softmax has no sink term).",
         "2026-09-13 phase 2: short-prefill tile32 admission; short MLA GPU gates passed on 3c7bcc0a. Retain current bound-shape and sink guards; later integration has no new consumer result.",
-        "2026-09-13 kernel glue: maybe_arm(check=None) takes the admission check -- _check_cell by default, engine/kernels/mla/glue.check for the cells the glue's exact adapters put on the compiled one; the build, the device check and the self-test at the compiled cell are unchanged."
+        "2026-09-13 kernel glue: maybe_arm(check=None) takes the admission check -- _check_cell by default, engine/kernels/mla/glue.check for the cells the glue's exact adapters put on the compiled one; the build, the device check and the self-test at the compiled cell are unchanged.",
+        "2026-09-14 CUDA 13.2 migration: compiler-aware native/cache identity; no launch arithmetic change."
       ]
     }
   }

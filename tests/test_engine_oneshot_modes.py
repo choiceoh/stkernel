@@ -13,6 +13,9 @@ class ModeTests(unittest.TestCase):
         from engine.kernels.oneshot import build
         with tempfile.TemporaryDirectory() as directory, \
              patch.dict(os.environ, {'ST_ONESHOT_BUILD_ROOT': directory}), \
+             patch('torch.utils.cpp_extension.CUDA_HOME', '/fixture/cuda'), \
+             patch('engine.kernels.common.native_cache.cuda_toolchain_identity', return_value=[
+                 ('/fixture/cuda/bin/nvcc', '13.2.78'), ('/fixture/cuda/bin/ptxas', '13.2.78')]), \
              patch('torch.utils.cpp_extension.load', side_effect=lambda **kwargs: kwargs):
             variants = [build(rails, inline_flags=inline) for rails in (1, 2) for inline in (False, True)]
             self.assertEqual(len({item['name'] for item in variants}), 4)

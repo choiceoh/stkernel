@@ -17,14 +17,14 @@ from engine.kernels.cells import DENSE_ALIGN, DENSE_KMAX, dense_glue_refusal
 @cache
 def extension():
     from torch.utils.cpp_extension import load
-    from engine.kernels.common.native_cache import prepare_sources
+    from engine.kernels.common.native_cache import prepare_cuda_sources
     source = Path(__file__).with_name("kernels.cu")
     flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a",
              "-DMK_GRID_DEF=96", "-DMK_MHC_GRID_DEF=144", "-DMK_NBUF2_DEF=3",
              "-DMK_FP8_PACK2_DEF=1", "-DMK_GEMM_TRANSPOSE_M8_DEF=1",
              "-DMK_GEMM_COMPACT_M8_DEF=1", "-DMK_M8_FASTPATH_DEF=1"]
     root = Path(os.environ.get("ST_DENSE_BUILD_ROOT", str(Path.home()/".cache/st/dense")))
-    key, directory, sources = prepare_sources(root, [source], (flags, torch.__version__, torch.version.cuda))
+    key, directory, sources = prepare_cuda_sources(root, [source], (flags, torch.__version__, torch.version.cuda))
     ext = load(name="st_dense_"+key, sources=list(sources), extra_cuda_cflags=flags,
                build_directory=str(directory), verbose=False)
     from engine.base.kernel_shape import bound

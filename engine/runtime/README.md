@@ -2,30 +2,72 @@
 
 > 살아 있는 참조 — **독립 ST 런타임 이미지를 어떻게 짓는지. 빌드가 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
 
-Build from the pinned local fleet image with `bash engine/runtime/build.sh`.
-The build performs no network downloads. `build.sh` checks the seed image ID
-against `dependencies.json`, then binds that ID to the Dockerfile build.
-`ST_IMAGE` selects the output tag; it does not select different dependencies.
+The default image uses CUDA **13.2.1**, PyTorch **2.13.0+cu132** and matching
+ARM64 torchvision/torchcodec wheels. `cuda132.lock.json` pins every upgraded
+wheel by URL, version and SHA256; the original fleet image remains the
+immutable bootstrap source for the patched FlashInfer/CuTe/DeepGEMM libraries.
 
-The result owns the `engine` source and imports DeepGEMM directly. vLLM is
-removed, including its overlay files. FlashInfer remains a library dependency
-for CuTe support and JIT utilities; ST's own b12x package supplies the MoE API
-and kernels.
-
-Each image contains `/opt/st/runtime-manifest.json`. The build-time verifier
-checks Python, CUDA and package versions, absence of vLLM, and all 879 hashes
-in the extracted DeepGEMM provenance. It records the engine source tree's
-SHA256 and individual file hashes. At deployment, run:
+Prepare the runtime seed on one ARM64 node, then distribute that **same image
+ID** to the other fleet nodes with `docker save` / `docker load`:
 
 ```bash
-docker run --rm --gpus all --entrypoint python3 st-engine:glm53 \
-  -m engine.runtime.verify --gpu
+bash engine/runtime/build-seed.sh
+# Downloads are verified before the GPU-free, --network none Docker build.
+# ST_RUNTIME_ARTIFACTS selects the reusable download/build context directory.
 ```
 
+`build-seed.sh` does not install anything on the host or start a GPU service.
+The seed removes the old toolkit, installs the CUDA 13.2.1 compute SDK and
+libraries, and exposes normal SDK linker names for NVIDIA's Python wheels.
+It explicitly installs NVIDIA's SHA256-locked ARM64 cuSPARSELt wheel.
+The unused cu130 torchaudio package is removed. DeepGEMM's extension and all
+879 JIT headers keep their recorded provenance; its JIT uses the new CUDA_HOME.
+
+CuTe DSL 4.6.2 requires **nvdisasm 13.3.73**, which is retained as a diagnostic
+tool. It does not compile or execute kernels. NVCC, PTXAS, NVRTC, NVVM and
+nvJitLink are **13.2.78**; CUDA's independently versioned libraries follow the
+13.2.1 toolkit manifest. Triton's regular and Blackwell assembler paths both
+select that PTXAS, and TileLang/DeepGEMM select the same CUDA_HOME. The existing
+FlashInfer metadata asks for CuTe 4.7.0 while the fleet's patched library and
+ST kernels pin 4.6.2. The official ARM64 cuSPARSELt wheel also declares the
+nonstandard `manylinux2014_sbsa` tag inside its WHEEL metadata. `pip check`
+reports both discrepancies; ST's actual compile/import checks are recorded
+separately. The installed cuSPARSELt shared library is an AArch64 ELF binary.
+
+Build the engine offline with `bash engine/runtime/build.sh`. It reads the
+accepted seed ID from `dependencies.json`, refuses a different image, and binds
+that immutable ID to the build. `ST_IMAGE` selects the output tag, not different
+dependencies. A newly rebuilt seed must be validated and its ID updated in the
+manifest before use; an arbitrary tag is not enough.
+
+The result owns the `engine` source and imports DeepGEMM directly. vLLM and its
+overlay files are absent. Each image contains `/opt/st/runtime-manifest.json`.
+The verifier checks Python, every locked package, actual compiler selection,
+loaded CUDA runtime/NVRTC versions and library paths, the package lock, all
+DeepGEMM hashes and the complete engine source identity. Production/served GLM
+boots repeat the check before allocating the model.
+
+```bash
+docker run --rm --runtime=runc -e CUDA_VISIBLE_DEVICES= \
+  --entrypoint python3 st-engine:glm53 -m engine.runtime.verify
+```
+
+For an authorized GPU check, omit `--runtime=runc` and `CUDA_VISIBLE_DEVICES=`,
+then add `--gpus all` and the verifier's `--gpu` argument. CUDA 13.x minor
+compatibility permits native cubins on R580+, but newer PTX requires a driver
+that understands that PTX version. This migration targets native SM121a cubins;
+GPU execution and the four-node consumer measurement remain separate evidence.
+The host driver/toolkit and running containers are not changed by either build.
+
+Native extension cache keys include the selected NVCC/PTXAS pair. CuTe's ST
+source identity includes the runtime lock. Image and launcher defaults use
+`/cache/cu132/` for CUDA, Triton, TileLang, DeepGEMM, FlashInfer and native build
+artifacts so the migration cannot reuse the previous mixed-toolchain cache.
+
 When mounting source at `/repo`, set both `-w /repo` and `-e PYTHONPATH=/repo`.
-The verifier then identifies the mounted source, which can differ from the
-manifest embedded in the image. Keep the returned manifest with the image ID
-and validation results. The image's default command prints boot usage.
+The verifier identifies the mounted source, which can differ from the embedded
+manifest. Retain the returned manifest with the image ID and validation results.
+The default image command prints boot usage.
 
 GLM requires rank files with metadata
 `weight_layout=st-glm53-b12x-up-gate-v1`. Old gate/up rank files are refused

@@ -2,8 +2,8 @@
 # Pin the local fleet image ID before using its tag as a Dockerfile base.
 set -euo pipefail
 repo=$(cd "$(dirname "$0")/../.." && pwd)
-seed=${ST_SEED_IMAGE:-glm53:v13-b12x-it}
-expected=sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211
+seed=${ST_SEED_IMAGE:-st-engine:cuda13.2.1-runtime}
+expected=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["seed_image_id"])' "$repo/engine/runtime/dependencies.json")
 actual=$(docker image inspect "$seed" --format '{{.Id}}')
 if [ "$actual" != "$expected" ]; then
   echo "ST seed image mismatch: $actual (expected $expected)" >&2

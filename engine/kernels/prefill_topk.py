@@ -5,7 +5,6 @@ This removes the dense boolean mask, masked write, Torch top-k workspace and
 int64-to-int32 padding chain. Ties choose lower pool IDs; downstream pool_slots
 owns position order. Decode/capture and other k values retain Torch selection.
 """
-import hashlib
 from pathlib import Path
 
 import torch
@@ -17,13 +16,12 @@ def _build():
     global _EXT
     if _EXT is None:
         from torch.utils.cpp_extension import load
+        from engine.kernels.common.native_cache import prepare_cuda_sources
         src = Path(__file__).with_suffix('.cu')
         flags = ['-O3', '-gencode', 'arch=compute_121a,code=sm_121a']
-        key = hashlib.sha256(src.read_bytes() + repr(
-            (flags, torch.__version__, torch.version.cuda)).encode()).hexdigest()[:16]
-        build = Path.home() / '.cache/st/prefill-topk' / key
-        build.mkdir(parents=True, exist_ok=True)
-        _EXT = load(name='st_prefill_topk_' + key, sources=[str(src)],
+        key, build, sources = prepare_cuda_sources(Path.home() / '.cache/st/prefill-topk', [src],
+                                                   (flags, torch.__version__, torch.version.cuda))
+        _EXT = load(name='st_prefill_topk_' + key, sources=list(sources),
                     extra_cuda_cflags=flags, build_directory=str(build), verbose=False)
     return _EXT
 

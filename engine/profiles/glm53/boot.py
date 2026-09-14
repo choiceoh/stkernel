@@ -1463,6 +1463,9 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     if a.test:
         a.local, a.lanes = True, "served"
+    if not a.local or a.lanes == 'served':
+        from engine.runtime.verify import verify
+        verify()  # Refuse old/mixed CUDA images before allocating the model.
     if a.local:
         if a.kv_gib == KV_GIB:
             a.kv_gib = 1.0                                      # a layer subset on one box

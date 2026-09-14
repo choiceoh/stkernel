@@ -67,6 +67,8 @@ from .moe_static_common import (
     _ld_shared_f32,
     _ld_shared_i32,
     _ld_shared_i32_volatile,
+    _ld_shared_u8_volatile,
+    _ld_shared_u16_volatile,
     _spin_wait_global_eq_i32,
     _st_global_i64,
     _st_global_release_i32,
@@ -443,16 +445,18 @@ class MoEStaticKernelV4:
 
     def _sf6_prepare_stage(self, packed_base, tidx):
         """Keep invariant scale metadata for all K64 fragments until release."""
-        base = _ld_shared_i32_volatile(packed_base + Int32(1536)) & Int32(255)
+        base = _ld_shared_u8_volatile(packed_base, 1536)
         base7 = (base & Int32(127)) * Int32(0x01010101)
         base80 = (base & Int32(128)) * Int32(0x01010101)
         quad_lane = Int32(tidx) & Int32(3)
         row = ((Int32(tidx) & Int32(31)) >> Int32(2)) * Int32(16)
         row += (Int32(tidx) & Int32(32)) * Int32(8) + (Int32(tidx) & Int32(64)) * Int32(2)
-        low = packed_base + (row >> Int32(1)) + (quad_lane >> Int32(1)) * Int32(4)
-        high = packed_base + Int32(1024) + (row >> Int32(2))
-        return (low, high, (quad_lane & Int32(1)) * Int32(16), quad_lane * Int32(8),
-                base7, base80, Int32(tidx) & Int32(28))
+        # Each quad member owns exactly two low-plane bytes and one high-plane
+        # byte. Select them once here instead of shifting a shared word at
+        # every K fragment. The copy-layout oracle also checks this lane map.
+        low = packed_base + (row >> Int32(1)) + quad_lane * Int32(2)
+        high = packed_base + Int32(1024) + (row >> Int32(2)) + quad_lane
+        return (low, high, base7, base80, Int32(tidx) & Int32(28))
 
     def _sf6_load_fragment(self, dest, stage, kind, k_block):
         """Reconstruct exact SFB operands cooperatively within each lane quad.
@@ -464,15 +468,13 @@ class MoEStaticKernelV4:
         dst = cute.recast_tensor(dest, Int32)
         offsets = self.sf6_register_offsets[kind][0][k_block]
         assert cute.size(dst) == len(offsets) and len(offsets) % 4 == 0
-        low_base, high_base, low_shift, high_shift, base7, base80, quad_base = stage
+        low_base, high_base, base7, base80, quad_base = stage
         for group in range(len(offsets) // 4):
             # Each group is 16-byte aligned in the verified ordinary view.
             offset = offsets[group * 4]
-            low = _ld_shared_i32_volatile(low_base + Int32(offset // 2))
-            high = _ld_shared_i32_volatile(high_base + Int32(offset // 4))
-            word = self._sf6_expand_word(
-                (low >> low_shift) & Int32(65535),
-                (high >> high_shift) & Int32(255), base7, base80)
+            low = _ld_shared_u16_volatile(low_base, offset // 2)
+            high = _ld_shared_u8_volatile(high_base, offset // 4)
+            word = self._sf6_expand_word(low, high, base7, base80)
             for lane in range(4):
                 dst[group * 4 + lane] = cute.arch.shuffle_sync(word, quad_base + Int32(lane))
 

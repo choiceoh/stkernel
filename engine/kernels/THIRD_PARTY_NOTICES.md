@@ -9,6 +9,13 @@ and FlashInfer. The per-file source paths and pre-port SHA256 hashes are in
 - FlashInfer contributors: b12x API, dispatch, and CuTe DSL kernels, under
   Apache License 2.0. ST maintains its modified copies in `b12x/` and uses
   the installed FlashInfer package for shared utilities and compilation.
+- B12X authors: Copyright (c) 2025 by the b12x authors, Apache License 2.0.
+  Immediate-offset shared subword loads and packed FP8 widening are adapted
+  from `local-inference-lab/b12x`, commit
+  `12b4eb2574416c524eef0da273e2c063d35347d3`, `b12x/_lib/intrinsics.py`
+  and `b12x/attention/_shared/mla/decode_math.py`. ST's versions in
+  `b12x/moe_static_common.py` and `mla/glm53_megakernel.cu` retain volatile
+  ring reads and qualify direct BF16 widening for the SM121 CUDA compiler.
 - Flash Linear Attention: Copyright (c) 2023-2025, Songlin Yang, Yu Zhang.
   The KDA files carry the vLLM integration's Apache headers and the original
   MIT attribution. The original MIT permission notice follows.

@@ -1,0 +1,153 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "extensions": [
+    {
+      "status": "PASS",
+      "gpu_used": false,
+      "extension": "mla",
+      "torch": "2.13.0+cu132",
+      "torch_git": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+      "cuda": "13.2",
+      "compiler": [
+        [
+          "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/nvcc",
+          "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+        ],
+        [
+          "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/ptxas",
+          "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+        ]
+      ],
+      "binary": "/out/cu132-native/mla-build/58c4f7bf2bfeaac7d619a24e/st_mla_58c4f7bf2bfeaac7d619a24e.so",
+      "binary_sha256": "ed1a0cf082dbd3a768a81ce584a443d1785a1b42431f5729b5c3de302eecba3f",
+      "seconds": 67.10175687298761
+    },
+    {
+      "status": "PASS",
+      "gpu_used": false,
+      "extension": "dense",
+      "torch": "2.13.0+cu132",
+      "torch_git": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+      "cuda": "13.2",
+      "compiler": [
+        [
+          "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/nvcc",
+          "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+        ],
+        [
+          "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/ptxas",
+          "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+        ]
+      ],
+      "binary": "/out/cu132-native/dense-build/9cf6add2926851aa7df77f53/st_dense_9cf6add2926851aa7df77f53.so",
+      "binary_sha256": "714f27642f7bcbeccda40ecb6660efec877f0067b0b1d59f220cce0cbdff9ef3",
+      "seconds": 56.72383926602197
+    },
+    {
+      "status": "PASS",
+      "gpu_used": false,
+      "extension": "oneshot",
+      "torch": "2.13.0+cu132",
+      "torch_git": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+      "cuda": "13.2",
+      "compiler": [
+        [
+          "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/nvcc",
+          "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+        ],
+        [
+          "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/ptxas",
+          "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+        ]
+      ],
+      "binary": "/out/cu132-native/oneshot-build/410183da915e3f1d948cd737/st_oneshot_410183da915e3f1d948cd737.so",
+      "binary_sha256": "16ba5da9c8435a8bdf33c827504242db4c56f8caf55cda30a7de4288d9044768",
+      "seconds": 14.540444603015203
+    },
+    {
+      "status": "PASS",
+      "gpu_used": false,
+      "extension": "mapped_staging",
+      "torch": "2.13.0+cu132",
+      "torch_git": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+      "cuda": "13.2",
+      "compiler": [
+        [
+          "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/nvcc",
+          "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+        ],
+        [
+          "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/ptxas",
+          "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+        ]
+      ],
+      "binary": "/root/.cache/st/mapped-staging/57cf26333c57b06407a5fe0f/st_mapped_staging_57cf26333c57b06407a5fe0f.so",
+      "binary_sha256": "ef6624b029c0747aea78b66e946c6d534f62a892c4e3778b107b7873a41262d9",
+      "seconds": 54.17637574899709
+    },
+    {
+      "status": "PASS",
+      "gpu_used": false,
+      "extension": "decode_queue",
+      "torch": "2.13.0+cu132",
+      "torch_git": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+      "cuda": "13.2",
+      "compiler": [
+        [
+          "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/nvcc",
+          "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+        ],
+        [
+          "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/ptxas",
+          "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+        ]
+      ],
+      "binary": "/root/.cache/st/decode-queue/fe97e13ae160125f8dc2e358/st_decode_queue_fe97e13ae160125f8dc2e358.so",
+      "binary_sha256": "db16973ebf9c89786fed073f8e962eb215ef312b3a626eadd80a6b32d8eeb6cd",
+      "seconds": 57.148448051011655
+    },
+    {
+      "status": "PASS",
+      "gpu_used": false,
+      "extension": "bounded_graph",
+      "torch": "2.13.0+cu132",
+      "torch_git": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+      "cuda": "13.2",
+      "compiler": [
+        [
+          "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/nvcc",
+          "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+        ],
+        [
+          "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/ptxas",
+          "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+        ]
+      ],
+      "binary": "/root/.cache/st/bounded-graph/28681e637d9e305f1b06f3fb/st_bounded_graph_28681e637d9e305f1b06f3fb.so",
+      "binary_sha256": "f84186876f0b1d4a3c285317ac93aa85609d4a0f99a7591df48761d480274b4b",
+      "seconds": 36.97382100301911
+    },
+    {
+      "status": "PASS",
+      "gpu_used": false,
+      "extension": "prefill_topk",
+      "torch": "2.13.0+cu132",
+      "torch_git": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+      "cuda": "13.2",
+      "compiler": [
+        [
+          "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/nvcc",
+          "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+        ],
+        [
+          "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/ptxas",
+          "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+        ]
+      ],
+      "binary": "/root/.cache/st/prefill-topk/6a747841b821b01e52e4b829/st_prefill_topk_6a747841b821b01e52e4b829.so",
+      "binary_sha256": "1138e468c8bb999e08d6b31b6b87f3d4383da75b443ad61d7f2c55b559549496",
+      "seconds": 59.30797973397421
+    }
+  ]
+}

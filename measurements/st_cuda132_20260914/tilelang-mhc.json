@@ -1,0 +1,9 @@
+{
+  "source_sha256": "c27219a453a7897f03ed9179ffd90311200f40766214e2bd0c2a09b5ce2eef1b",
+  "generated_cuda_sha256": "bb9d5b4507f0b271f3ce53dddc4508a38b2843106fbcff1eaa8e1eeaa9cf4b41",
+  "tilelang": "0.1.12",
+  "torch": "2.13.0+cu132",
+  "target": "sm_121a",
+  "gpu_used": false,
+  "device_compile_pass": true
+}
