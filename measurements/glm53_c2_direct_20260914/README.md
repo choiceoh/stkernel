@@ -1,5 +1,8 @@
 # C2 M16 with direct register scatter — 2026-09-14
 
+This records the first direct-output candidate. The current candidate also
+[retains scatter state across the FC2 sweep](../glm53_c2_scatter_reuse_20260914/README.md).
+
 **Retain this C2 candidate in PR955; production remains unchanged.** In the
 final actual-weight FFN comparison, two independent groups of eight related
 inputs are 5.45% faster with warm caches and 4.44% faster after eviction than
