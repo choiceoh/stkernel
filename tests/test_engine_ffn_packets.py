@@ -16,6 +16,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PacketContractTests(unittest.TestCase):
+    def test_reference_expert_selection_disables_its_packet_reader(self):
+        from engine.profiles.glm53.lanes import Lanes, _apply_reference_lanes
+        fields = {name: None for name in Lanes.__dataclass_fields__}
+        fields.update(moe=object(), moe_packets=object(), moe_packets_supported=object())
+        table, ref = Lanes(**fields), NS(moe=object())
+        self.assertIs(_apply_reference_lanes(table, ref, ()), table)
+        selected = _apply_reference_lanes(table, ref, ('moe',))
+        self.assertIs(selected.moe, ref.moe)
+        self.assertIsNone(selected.moe_packets)
+        self.assertIsNone(selected.moe_packets_supported)
+        self.assertIsNotNone(table.moe_packets)
+
     def test_packet_plan_activity_is_boolean_and_keeps_chunk_order(self):
         from engine.profiles.glm53.execution import ExecutionPlan
         self.assertIs(ExecutionPlan().active, False)

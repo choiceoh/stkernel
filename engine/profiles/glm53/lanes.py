@@ -603,6 +603,10 @@ def _apply_reference_lanes(table, ref, reference_for):
     swapped = {n: getattr(ref, n) for n in reference_for if n in fields and n != "kda_recurrent"}
     if swapped:
         table = replace(table, **swapped)
+        if "moe" in swapped:
+            # The packet reader must not bypass an explicitly selected
+            # reference expert. Capability agreement chooses ordinary FFNs.
+            table = replace(table, moe_packets=None, moe_packets_supported=None)
         if "kpool_compress" in swapped and table.decode_rows is not None:
             # Selecting the pooling reference must also replace its captured
             # direct reader; otherwise the bisect silently keeps native math.
