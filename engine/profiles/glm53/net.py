@@ -752,8 +752,9 @@ class Glm53Net:
 
         Per row the loop gathers the row's candidate keys and scales, scores them, masks past the row's horizon,
         takes the top-k, pads the misses with -1 and finalizes against the row's block row -- some twenty
-        launches a row a layer. Here the lengths are one launch, the candidate keys and scales one gather
-        (`lanes.decode_rows`), the horizon a mask written in place and the finalize one launch over the rows' block rows; only
+        launches a row a layer. Here the lengths are shared across this batch's layers, the candidate keys
+        and scales one gather (`lanes.decode_rows`), the horizon a mask written in place and the finalize
+        one launch over the rows' block rows; only
         the logits kernel and the top-k stay per row, on the same tensors (the row's own keys, the row's own
         queries, the row's own horizon), so every row's ids are the ones the loop computes. The loop's -1 for a
         winner past the horizon is left to the finalize, which masks `id >= length // pool` itself (kernel and
@@ -766,7 +767,7 @@ class Glm53Net:
         if n_cand < k:
             raise ValueError(f"a captured step's candidate capacity ({n_cand} pools) is below the selection width ({k})")
         glue = self.lanes.decode_rows
-        seq_lens, ke = glue.lengths(contexts, t, kp)                                   # [rows*t] i32: length at each query, pools before it
+        seq_lens, ke = caches.row_lengths(contexts, t, kp, glue.lengths)               # [rows*t] i32, read-only across this forward's DSA layers
         keys_all, scales_all = glue.candidates(keys, scales, *caches.pool_maps(L), n_cand)   # [rows, n_cand, d], [rows, n_cand]
         values = torch.empty((rows * t, k), dtype=torch.float32, device=dev)
         winners = torch.empty((rows * t, k), dtype=torch.int64, device=dev)
