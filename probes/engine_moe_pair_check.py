@@ -73,6 +73,7 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_on
         root = Path(__file__).resolve().parents[1]
         sources = ('engine/kernels/b12x/moe_dispatch.py', 'engine/kernels/b12x/moe_static_kernel_v4.py',
                    'engine/kernels/b12x/moe_static_common.py', 'engine/kernels/b12x/moe_static_kernel_v5.py',
+                   'engine/kernels/b12x/moe_w4a16_fp4_helpers.py', 'engine/kernels/b12x/moe_micro_kernel.py',
                    'engine/kernels/moe_output.py', 'engine/profiles/glm53/net.py',
                    'engine/profiles/glm53/lanes.py', 'engine/kernels/dense/shared_mlp.py',
                    'engine/profiles/glm53/modelopt_scales.py', 'probes/engine_moe_pair_check.py',
