@@ -124,42 +124,6 @@ def _compact_static_get_work_tile(
     return cur_tile_coord, is_valid, current_local_expert_idx, accum_tile_m
 
 
-@cute.jit
-def _indexed_static_get_work_tile(
-    row_counts: cute.Tensor,
-    active_expert_count: cute.Tensor,
-    *,
-    single_m_tile: Int32,
-    tile_m: Int32,
-    num_tiles_n: Int32,
-    cluster_shape_mn: Tuple[Int32, Int32],
-    current_work_linear_idx: Int32,
-    current_local_expert_idx: Int32,
-    accum_tile_m: Int32,
-    cta_id_in_cluster: cute.Coord,
-):
-    # The frontend proves the bound on device on every replay. Normal C2
-    # top-8 routes have at most 16 rows/expert, so work ownership is arithmetic
-    # rather than a scan through every intervening expert's row count.
-    tile = (Int32(0), Int32(0), Int32(0))
-    valid = Int32(0) != Int32(0)
-    if single_m_tile != Int32(0):
-        local_expert = current_work_linear_idx // num_tiles_n
-        valid = local_expert < active_expert_count[Int32(0)]
-        tile = (cta_id_in_cluster[0],
-                (current_work_linear_idx % num_tiles_n) * cluster_shape_mn[1] + cta_id_in_cluster[1],
-                local_expert)
-        current_local_expert_idx = local_expert
-        accum_tile_m = local_expert
-    else:
-        tile, valid, current_local_expert_idx, accum_tile_m = _compact_static_get_work_tile(
-            row_counts, active_expert_count, tile_m=tile_m, num_tiles_n=num_tiles_n,
-            cluster_shape_mn=cluster_shape_mn, current_work_linear_idx=current_work_linear_idx,
-            current_local_expert_idx=current_local_expert_idx, accum_tile_m=accum_tile_m,
-            cta_id_in_cluster=cta_id_in_cluster)
-    return tile, valid, current_local_expert_idx, accum_tile_m
-
-
 @dsl_user_op
 def _st_shared_i32(addr, val, *, loc=None, ip=None):
     llvm.inline_asm(

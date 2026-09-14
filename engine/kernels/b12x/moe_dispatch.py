@@ -2194,8 +2194,8 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         cfg += ("probe_route_scatter_v1",)
     if config.get("probe_direct_scatter", False):
         cfg += ("probe_direct_scatter_v1",)
-    if config.get("c2_work_map", False):
-        cfg += ("c2_work_map_v1",)
+    if config.get("c2_direct_scatter", False):
+        cfg += ("c2_direct_scatter_v1",)
     return cfg + _static_kernel_cache_key(**fields)
 
 
@@ -2227,8 +2227,8 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                 sf6_fc2_word_expand=fc2_word_expand,
                 packed_activation_store=packed_activation_store, fc1_reuse_a=fc1_reuse_a,
                 compact_staging=compact_staging,
-                c2_work_map=bool(reform and m == 16 and config.get("batch_reform")
-                                 and config.get("c2_work_map", True)),
+                c2_direct_scatter=bool(reform and m == 16 and config.get("batch_reform")
+                                       and config.get("c2_direct_scatter", True)),
                 sf6_registers=compact_staging and bool(config.get("sf6_registers", True)))
 
 
@@ -2302,7 +2302,8 @@ def _get_static_kernel_v2(
         state_E=state_E,weight_E=weight_E,k=k,n=n,num_topk=num_topk,
         quant_mode=quant_mode,activation=activation,swiglu_alpha=swiglu_alpha,
         swiglu_beta=swiglu_beta,swiglu_limit=swiglu_limit)
-    if (config.get("probe_route_scatter") or config.get("probe_direct_scatter")) and not (
+    if (config.get("probe_route_scatter") or config.get("probe_direct_scatter")
+            or config.get("c2_direct_scatter")) and not (
             scatter_fp32 and state_E == weight_E == 288 and k == 4096
             and n == 512 and num_topk == 8):
         raise ValueError("scatter probe requires the GLM TP4 FP32 output contract")
@@ -2322,7 +2323,7 @@ def _get_static_kernel_v2(
     kernel: Any = kernel_cls(
         scatter_fp32=scatter_fp32,
         route_scatter=bool(config.get("probe_route_scatter", False)),
-        direct_scatter=bool(config.get("probe_direct_scatter", False)),
+        direct_scatter=bool(config.get("probe_direct_scatter") or config.get("c2_direct_scatter")),
         a_ring=bool(config.get("a_ring", False)),
         sf_pack=bool(config.get("sf_pack", False)),
         decode_reform=reform,
@@ -2334,7 +2335,6 @@ def _get_static_kernel_v2(
         fc1_reuse_a=bool(config["fc1_reuse_a"]),
         compact_staging=bool(config["compact_staging"]),
         sf6_registers=bool(config["sf6_registers"]),
-        c2_work_map=bool(config["c2_work_map"]),
         sf_vec_size=sf_vec_size,
         output_tile_count_n=output_tile_count_n,
         fc1_stages=int(config["fc1"]),
@@ -2496,7 +2496,7 @@ def _get_static_kernel_v2(
         f"{'a1reuse' if config.get('fc1_reuse_a') else ''}"
         f"{'compact' if config.get('compact_staging') else ''}"
         f"{'sfregs' if config.get('sf6_registers') else ''}"
-        f"{'c2work' if config.get('c2_work_map') else ''}"
+        f"{'c2scatter' if config.get('c2_direct_scatter') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(

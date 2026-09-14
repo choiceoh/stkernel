@@ -17,9 +17,9 @@ class BatchReformTests(unittest.TestCase):
             self.assertEqual(choose(new, rows), new, 'capture/compile normalize twice')
             for feature in ('decode_reform', 'fc1_reuse_a', 'compact_staging', 'sf6_registers'):
                 self.assertEqual(new[feature], 1 <= rows <= 8 or changed)
-            self.assertEqual(new['c2_work_map'], changed)
-            prior = choose(dict(candidate, c2_work_map=False), rows)
-            self.assertEqual(key(prior, m=rows) != key(new, m=rows), changed)
+            self.assertEqual(new['c2_direct_scatter'], changed)
+            tile_only = choose(dict(candidate, c2_direct_scatter=False), rows)
+            self.assertEqual(key(tile_only, m=rows) != key(new, m=rows), changed)
 
     def test_recipe_requires_the_existing_packed_reform_contract(self):
         parse = namespace()['_parse_glm53_static_v2']
