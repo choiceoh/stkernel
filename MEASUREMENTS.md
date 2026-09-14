@@ -2764,3 +2764,22 @@ JSON에 남긴다. onepass-a→다른 빌드 onepass-h의 2K 기록은 비교 7�
 동일 자료 재구성과 별도 기록 검증을 구분하며 기존 confidence는 정확도 보장이 아니다.
 GPU·큐·부팅·배포·실시간 onepass 없이 수행했고 실측 속도·품질 개선 주장은 없다.
 [사용법](bench/ORACLE_ACCURACY.md), [재현·해시·비교 결과](measurements/st_oracle_accuracy_20260914/README.md).
+
+
+### ST C1 K-block 병렬 곱·DSA query grid 통합 — 기본 적용 (2026-09-14, PR #946)
+
+기존 async W4 reader로 독립 K-block MMA 곱을 8워프에 나누고, epilogue가 원래
+slice별 FMA·합산·BF16 반올림 순서를 재현한다. C1 DSA query 두 개도 기존 reader와
+3분할 합산을 유지한 한 grid로 묶었다. 최종 실행 소스는 `ec5c6718`이며 기본 경로에 켠다.
+
+srv4 GB10, 같은 빌드·실가중치 RTN W4 pack·captured B/A/A/B warm 비교에서
+MLP gate/up **76.73→30.27 µs(-60.5%)**, query pair **24.33→17.96 µs(-26.2%)**다.
+실제 출력 주소에 직접 쓰는 MLA/KDA/MLP 출력은 각각 **-7.6/-10.5/-10.1%**였다.
+수치·재생 16개 그룹이 zero-tolerance로 통과했고, production-flag compile과 engine CI도
+통과했다. Evicted 결과는 변동과 퇴행이 있어 판정 보류다. 위 수치는 구성요소 warm 시간이며
+전체 디코드·수용률 개선이나 24 step/s 달성을 뜻하지 않는다.
+
+K7·2K/32K/128K·C1 두 번/C4 한 번의 단일 후보 원패스 예약을 `ec5c6718`로 교체했다.
+기존 enqueue 시각을 보존한 `st-forward-pipeline-onepass0914`가 대기 중이다.
+운영자가 warm 개선판의 즉시 기본 머지를 지시했으며 소비자 tok/s·step/s·수용률은 미측정이다.
+[원본 표본·거부한 register 구현·컴파일·GPU·큐 기록](measurements/st_forward_register_20260914/README.md).

@@ -35,6 +35,10 @@ def main():
     parser.add_argument("--moe-static", default="stock", help="served b12x static-lane spec (STK_moe_static): stock | t,r,sf6[,q0]")
     parser.add_argument("--mla-prefill", default="stock", help="served MLA prefill mode (STK_mla_prefill): stock | tile32 | pair | pair4")
     args = parser.parse_args()
+    if args.lanes == 'forward_pipeline':
+        from probes.engine_forward_pipeline import main as forward_pipeline_check
+        forward_pipeline_check(args.ranks)
+        return
     if args.lanes == 'forward_reduce':
         from probes.engine_forward_reduce import main as forward_reduce_check
         forward_reduce_check(args.ranks)
