@@ -1,5 +1,10 @@
 # Batched accepted-only FP32 KDA state (2026-09-13)
 
+Update (2026-09-14): the operator adopted deferred state into the default serving recipe
+(`deferred_kda=1`, rollback `STK_deferred_kda=0`); see
+[the K=7 follow-up](../st_kda_amortize_20260913/README.md) for the pending evidence. The status
+line below is the original record.
+
 Status: candidate; production default remains ordinary FP32 rings. No new consumer speed verdict.
 
 The target occupies 45.05 ms of a prior 48.55 ms bounded decode iteration. This candidate extends the existing single-row deferred-state experiment to C=1/C=4 and commits every KDA layer in one coalesced launch after acceptance. It does not change KDA state precision, gate arithmetic, or sampling.
