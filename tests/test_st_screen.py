@@ -73,8 +73,10 @@ class ScreenTests(unittest.TestCase):
         run.request(timing, 'unfinished reasoning', events)
         return 'unfinished reasoning', 0.25, 2000, max_tokens, 'length'
 
-    def execute(self):
+    def execute(self, engine_shape=None):
         record = dict(engine='st', boot_id='fixture-boot', evidence_scope='screen')
+        if engine_shape is not None:
+            record['engine_shape'] = engine_shape
         with patch('urllib.request.urlopen', self.door), \
              patch.object(screen.op, '_metrics_text', self.metrics), \
              patch.object(screen.op, 'ask_stream', self.ask):
@@ -106,6 +108,21 @@ class ScreenTests(unittest.TestCase):
             self.assertTrue((path / f'measure-c{concurrency}' / 'latency.jsonl').is_file())
             self.assertTrue((path / f'measure-c{concurrency}' / 'latency-summary.json').is_file())
             self.assertTrue(json.loads((path / f'measure-c{concurrency}' / 'latency-summary.json').read_text())['operations'])
+
+    def test_a_two_row_door_screens_its_own_width(self):
+        # #950: GLM-5.3 admits two; four requests would leave two waiting and the arm could never pass.
+        record, path = self.execute(engine_shape=dict(max_concurrent_requests=2))
+        self.assertEqual([r['concurrency'] for r in record['screen']], [1, 2])
+        self.assertEqual(record['screen_status'], 'observed')
+        self.assertEqual(record['measurement_policy']['concurrency'], [1, 2])
+        self.assertEqual(record['measurement_policy']['version'], 2)
+        self.assertEqual(record['concurrency_coverage'], dict(included=[1, 2], c4_status='measured',
+                                                              policy='screen-v2', width=2))
+        self.assertEqual(self.calls.count(('prepare-c2', 64, 64)), 2)
+        self.assertEqual(self.calls.count(('measure-c2', 128, 512)), 2)
+        self.assertEqual(len(self.calls), 6)
+        self.assertTrue((path / 'measure-c2' / 'latency-summary.json').is_file())
+        self.assertEqual(screen.POLICY['concurrency'], [1, 4], 'the module policy stays the four-wide default')
 
     def test_compilation_observation_invalidates_timing_but_does_not_block_screening(self):
         self.changed = True
