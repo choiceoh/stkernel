@@ -2625,3 +2625,16 @@ stack/local 0, 공유 메모리는 추가되지 않았다. 이것은 실행 시�
 컴파일이 통과했다. GPU 큐 제출·엔진 부팅은 하지 않았으며, 품질·수용률·step/s는 미측정이다.
 업그레이드 오라클도 paired MoE 계수가 없어 총 개선율을 null로 남긴다.
 [소스 해시·명령어·자원·재현 기록](measurements/st_moe_activation_store_20260914/README.md).
+
+### 918차 — C1 FC2 SF6 스케일도 4바이트씩 복원 (2026-09-14, srv2 CPU, PR #918)
+
+FC2의 byte별 복원을 FC1과 같은 32-bit 정수 복원으로 합쳤다. 같은 공유 메모리를 덮어쓰므로
+volatile 읽기·복원 전 장벽·복원 후 게시 장벽·파이프라인 슬롯 수명은 모두 유지한다.
+M1–8 SF6 decode reform에 기본 ON이며, 더 큰 행 수와 기존 q 경로는 유지한다.
+
+같은 소스의 M8 scalar-FC2/word-FC2에서 NOP 제외 정적 명령어는 3708→3540(-168)이다.
+변한 opcode 수는 정수 복원 연산뿐이다. FP·MMA·shared load/store·장벽 명령 수, 레지스터
+126·stack/local 0·staged shared 100352 B는 동일하다. 14개 CPU 테스트, 전체 커널 7형상과
+그래프 helper 4개의 네이티브 컴파일이 통과했다. GPU 큐 제출·엔진 부팅은 하지 않았으며
+품질·수용률·step/s는 미측정이다. 오라클 총 개선율도 paired MoE 계수가 없어 null이다.
+[소스 해시·명령어·자원·재현 기록](measurements/st_moe_fc2_words_20260914/README.md).
