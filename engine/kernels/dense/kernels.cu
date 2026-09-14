@@ -3603,6 +3603,27 @@ void mk_run_gemm_to_slot(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                          partial, arrive, address.data_ptr<int64_t>());
 }
 
+// Probe-only: a C1 bound cell's input quantization alone, into caller storage laid
+// out exactly as that cell's own pack ([k/128 x 1024] FP8 words, then [k/128 x 8]
+// scales). It sizes what a producer-side pack could remove from the cell.
+void mk_run_input_pack(torch::Tensor x, torch::Tensor packed) {
+  TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2 && x.size(0) == 8
+                  && x.size(1) % KSTEP == 0 && x.size(1) <= KBLK_LIMIT * KSTEP && x.stride(1) == 1
+                  && x.stride(0) >= x.size(1) && x.stride(0) % 4 == 0 && ((uintptr_t)x.data_ptr() & 7) == 0,
+              "input pack requires aligned BF16 [8, k] rows");
+  const int k = (int)x.size(1), kblk = k / KSTEP;
+  TORCH_CHECK(packed.device() == x.device() && packed.scalar_type() == torch::kUInt8
+                  && packed.is_contiguous() && ((uintptr_t)packed.data_ptr() & 7) == 0
+                  && packed.numel() == (int64_t)kblk * 1024 + (int64_t)kblk * 8 * (int64_t)sizeof(float),
+              "input pack storage must hold the cell's FP8 words and row scales");
+  set_kernel_attrs();
+  auto stream = c10::cuda::getCurrentCUDAStream();
+  auto* q = packed.data_ptr<uint8_t>();
+  mk_launch(mk_input_pack_kernel, kblk, 0, stream,
+            MKInputPackCtx{(const __nv_bfloat16*)x.data_ptr(), q,
+                           reinterpret_cast<float*>(q + (size_t)kblk * 1024), 8, k, x.stride(0)});
+}
+
 // A model-owned declaration reaches this entry point directly; no process-wide
 // probe setter changes neighboring models, ordinary GEMMs or already captured graphs.
 void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
@@ -4492,6 +4513,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         pybind11::arg("n_orig"),pybind11::arg("rgs_ptr"),pybind11::arg("workspace"),
         pybind11::arg("address"),pybind11::arg("forward_pipeline")=true);
   m.def("run_gemm_wide_input", &mk_run_gemm_wide_input, "private wide-row input reuse qualification");
+  m.def("run_input_pack", &mk_run_input_pack, "probe: a C1 bound cell's input pack alone",
+        pybind11::arg("x"), pybind11::arg("packed"));
   m.def("probe_device", &mk_probe_device, "device geometry probe");
   m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");
   m.def("read_mhc_ts", &mk_read_mhc_ts, "mhc phase timestamps");
