@@ -36,7 +36,8 @@ def load_words(memory, packed_base, offsets, tidbase=0):
                shared_ptr_to_u32=lambda pointer: pointer)
     exec(compile(ast.fix_missing_locations(ast.Module(body=[node], type_ignores=[])), str(SOURCE), 'exec'), env)
     # Four actual helper instances, one per member of the first lane quad.
-    workers = [env['_sf6_load_fragment'](owner, dest, packed_base, tidbase+lane, 'test', 0)
+    prepare = method('_sf6_prepare_stage', dict(Int32=int, _ld_shared_i32_volatile=load))
+    workers = [env['_sf6_load_fragment'](owner, dest, prepare(owner, packed_base, tidbase+lane), 'test', 0)
                for lane, dest in enumerate(destinations)]
     replies = [None]*4
     while True:
