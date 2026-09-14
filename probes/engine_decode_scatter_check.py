@@ -46,8 +46,12 @@ def moe_check(report, ranks, lane_name):
                          probe_direct_scatter=lane_name != 'moe_route_scatter')
     elif lane_name == 'moe_fc1_reuse':
         row_cases = (1, 6, 7, 8)
-        base = dict(base, fc1_reuse_a=False)
+        base = dict(base, fc1_reuse_a=False, compact_staging=False)
         candidate = dict(base, fc1_reuse_a=True)
+    elif lane_name == 'moe_compact_staging':
+        row_cases = (1, 6, 7, 8)
+        base = dict(base, compact_staging=False)
+        candidate = dict(base, compact_staging=True)
     else:
         raise ValueError(lane_name)
     torch.manual_seed(91713)
@@ -71,7 +75,7 @@ def moe_check(report, ranks, lane_name):
                     graphs.append(graph)
                     resources.extend(lane.graph_resources())
             unique_counts = {8, 16, 32, 40, 56, 112, rows*8}
-            if lane_name == 'moe_fc1_reuse':
+            if lane_name in ('moe_fc1_reuse', 'moe_compact_staging'):
                 unique_counts.update((1, 2, 4))  # duplicate routes span multiple M16 tiles
             unique_cases = sorted({min(u, rows*8) for u in unique_counts})
             for unique in unique_cases + [8]:

@@ -19,7 +19,7 @@ def consumer_code():
     return compile(ast.Module(body=[copy.deepcopy(loop)], type_ignores=[]), str(SOURCE), 'exec')
 
 
-def execute(reuse, stages, tid, pairs=32):
+def execute(reuse, stages, tid, pairs=32, compact=False):
     """32 K256 pairs span two H4096 items; registers persist across both.
 
     A/SFA match between gate/up, B/SFB deliberately differ. Released shared
@@ -55,13 +55,17 @@ def execute(reuse, stages, tid, pairs=32):
     def wait(s, peek):
         events.append(('wait', s.cursor))
         for kind in ('A', 'B', 'SFA', 'SFB'):
+            if owner.compact_staging and s.cursor % 2 and kind in ('A', 'SFA'):
+                continue  # up owns no input storage
+            slot = owner._fc1_input_slot(s.index) if kind in ('A', 'SFA') else s.index
             for block in range(4):
-                shared[kind, s.index, block] = (None if reuse and s.cursor % 2
+                shared[kind, slot, block] = (None if reuse and s.cursor % 2
                     and kind in ('A', 'SFA') else payload(kind, s.cursor, block))
     def release(s):
         events.append(('release', s.cursor))
         for key in list(shared):
-            if key[1] == s.index:
+            slot = owner._fc1_input_slot(s.index) if key[0] in ('A', 'SFA') else s.index
+            if key[1] == slot:
                 shared[key] = None
     def advance():
         state.cursor += 1
@@ -77,7 +81,7 @@ def execute(reuse, stages, tid, pairs=32):
         assert values == expected, (state.cursor, values, expected)
         observed.append((state.cursor, output.kind, output.block, values))
 
-    owner = geometry()
+    owner = geometry(reuse=reuse, stages=stages, compact=compact)
     owner.fc1_reuse_a, owner.num_m_tiles, owner.num_n_tiles1 = reuse, 1, 4
     owner._sf_expand_stage = lambda *a, **kw: None  # unchanged, separately byte-tested
     env = dict(self=owner, Int32=int, tidx=tid, num_k_blocks1=4,
@@ -117,13 +121,20 @@ class Fc1ReuseTests(unittest.TestCase):
                             for c in ast.walk(n)))
         producer = compile(ast.Module(body=[copy.deepcopy(loop)], type_ignores=[]), str(SOURCE), 'exec')
         class Tensor:
+            def __init__(self, name):
+                self.name = name
             def __getitem__(self, key):
+                if self.name in ('tAsA', 'tAsSFA'):
+                    expected_slot = state.index // 2 if owner.compact_staging else state.index
+                    self_outer.assertEqual(key[-1], expected_slot)
+                    self_outer.assertLess(key[-1], owner.fc1_input_stages)
                 return self
+        self_outer = self
         for reuse in (False, True):
             for skip_a in (False, True):
                 totals, expects = Counter(), []
                 for lane in range(32):
-                    owner = geometry()
+                    owner = geometry(reuse=reuse)
                     owner.fc1_reuse_a, owner.skip_a = reuse, skip_a
                     owner.a_dtype = owner.b_dtype = owner.sf_dtype = None
                     state = SimpleNamespace(index=0, cursor=0)
@@ -165,7 +176,7 @@ class Fc1ReuseTests(unittest.TestCase):
                         k_tile_cnt1=16, shared_ptr_to_u32=lambda x: x,
                         _bulk_g2s=lambda dest, src, size, bar: transfer('SFB', size))
                     for name in ('tAgA_mk', 'tAsA', 'tBgB_gate_nk', 'tBgB_up_nk', 'tBsB1', 'tAgSFA_mk', 'tAsSFA'):
-                        env[name] = Tensor()
+                        env[name] = Tensor(name)
                     exec(budget, env)
                     for tile in range(16):
                         exec(producer, dict(env, k_tile=tile))
