@@ -870,6 +870,84 @@ class ChatDoorTests(unittest.TestCase):
         finally:
             httpd.shutdown(); httpd.server_close()
 
+    def test_a_profiles_reasoning_opener_starts_the_block_and_leads_reasoning_content(self):
+        """GLM-5.3 starts every think block with its profile's words (boot.REASONING_OPENER). The door writes them
+        through the template's `reasoning_opener` kwarg where the request left it out, and reasoning_content carries
+        them, streamed and whole alike; a request's own opener stands and an empty one turns it off."""
+        s = chat_server()
+        s.reasoning_end, s.reasoning_opener = ord('y'), "O"
+        plain = s.chat
+        rendered = []
+        def render(messages, kwargs, *, generation_prompt=True, continue_final=False):
+            text = plain(messages, kwargs, generation_prompt=generation_prompt, continue_final=continue_final)
+            if kwargs.get("thinking") and generation_prompt:
+                text += kwargs.get("reasoning_opener", "")      # the served template writes it after the block opens
+            rendered.append(text)
+            return text
+        s.chat = render
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        def post(path, body):
+            with urllib.request.urlopen(urllib.request.Request(base + path, data=json.dumps(body).encode()), timeout=5) as r:
+                return json.load(r)
+        def stream(body):
+            with urllib.request.urlopen(urllib.request.Request(base + '/v1/chat/completions', data=json.dumps(body).encode()), timeout=5) as r:
+                events = [raw.decode().strip()[5:].strip() for raw in r if raw.decode().startswith('data:')]
+            deltas = [json.loads(e)['choices'][0]['delta'] for e in events[:-1] if json.loads(e)['choices']]
+            return ''.join(d.get('reasoning_content', '') for d in deltas), ''.join(d.get('content', '') for d in deltas)
+        thinking = {"messages": [{"role": "user", "content": "xy"}], "max_tokens": 3, "chat_template_kwargs": {"thinking": True}}
+        try:
+            # the prompt ends with the opener, so the fake engine repeats 'O': reasoning is the opener, then the model's
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                message = drive(s, pool.submit(post, '/v1/chat/completions', thinking))['choices'][0]['message']
+            self.assertEqual(rendered[-1], "xy!O")
+            self.assertEqual((message.get('reasoning_content'), message.get('content')), ("OOOO", None))
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                self.assertEqual(drive(s, pool.submit(stream, dict(thinking, stream=True))), ("OOOO", ""))
+            own = dict(thinking, chat_template_kwargs={"thinking": True, "reasoning_opener": "P"})
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                message = drive(s, pool.submit(post, '/v1/chat/completions', own))['choices'][0]['message']
+            self.assertEqual((rendered[-1], message.get('reasoning_content')), ("xy!P", "PPPP"))
+            off = dict(thinking, chat_template_kwargs={"thinking": True, "reasoning_opener": ""})
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                message = drive(s, pool.submit(post, '/v1/chat/completions', off))['choices'][0]['message']
+            self.assertEqual((rendered[-1], message.get('reasoning_content')), ("xy!", "!!!"))
+            # thinking off: the template closed the block, nothing opens, nothing leads the answer
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                message = drive(s, pool.submit(post, '/v1/chat/completions', dict(thinking, chat_template_kwargs={})))['choices'][0]['message']
+            self.assertEqual((rendered[-1], message.get('reasoning_content'), message.get('content')), ("xy", None, "yyy"))
+            # a template that does not know the kwarg wrote nothing, and nothing is claimed
+            s.chat = lambda messages, kwargs, **kw: (rendered.append(plain(messages, kwargs, **kw)), rendered[-1])[1]
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                message = drive(s, pool.submit(post, '/v1/chat/completions', thinking))['choices'][0]['message']
+            self.assertEqual((rendered[-1], message.get('reasoning_content')), ("xy!", "!!!"))
+            s.chat = render
+            # /tokenize counts the prompt a request would send
+            self.assertEqual(post('/tokenize', {"messages": thinking["messages"], "chat_template_kwargs": {"thinking": True}})["count"],
+                             len("xy!O"))
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                post('/v1/chat/completions', dict(thinking, chat_template_kwargs={"thinking": True, "reasoning_opener": 3}))
+            self.assertEqual(error.exception.code, 400)
+            self.assertFalse(s.pending or s.results or s._streams)
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_the_opener_leads_only_reasoning_the_model_wrote(self):
+        from engine.base.serve import _Choice
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=Tokenizer(), stop=[], reasoning=True, reasoning_prefix="Let ")
+        c.feed([ord(ch) for ch in "me"] + [ord('#')] + [ord(ch) for ch in "ok"], None, ord('#'))
+        deltas = c.flush(final=True)
+        self.assertEqual(deltas[0]["reasoning_content"], "Let me")
+        self.assertEqual((c.text["reasoning_content"], c.text["content"]), ("Let me", "ok"))
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=Tokenizer(), stop=[], reasoning=True, reasoning_prefix="Let ")
+        c.feed([ord('#')] + [ord(ch) for ch in "ok"], None, ord('#'))      # the block closed before any reasoning
+        c.flush(final=True)
+        self.assertEqual((c.text["reasoning_content"], c.text["content"]), ("", "ok"))
+        c = _Choice(0, 1, threading.Event(), queue.Queue(), tok=Tokenizer(), stop=[], reasoning=False, reasoning_prefix="Let ")
+        c.feed([ord(ch) for ch in "ok"], None, None)
+        c.flush(final=True)
+        self.assertEqual((c.text["reasoning_content"], c.text["content"]), ("", "ok"))
+
     def test_a_template_tail_after_the_reasoning_end_still_closes_the_block(self):
         s = chat_server()
         s.reasoning_end, s.reasoning_tail = ord('y'), (ord('z'),)   # Qwen3.8's thinking-off prompt: '</think>', then a blank line

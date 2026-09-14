@@ -125,6 +125,13 @@ class TemplateTests(unittest.TestCase):
         for kwargs in ({"reasoning_effort": "max"}, {"reasoning_effort": "max", "thinking": False}):
             self.assertEqual(render([], **kwargs), render([], **dict(kwargs, reasoning_effort="high")))
 
+    def test_a_reasoning_opener_follows_only_an_opened_block(self):
+        opener = "Let me parse the problem."
+        self.assertTrue(render([], reasoning_opener=opener).endswith("<|assistant|><think>" + opener))
+        self.assertTrue(render([], reasoning_opener="").endswith("<|assistant|><think>"))
+        for key in ("thinking", "enable_thinking"):
+            self.assertTrue(render([], reasoning_opener=opener, **{key: False}).endswith("<|assistant|><think></think>"))
+
     def test_direct_template_users_get_option_validation(self):
         for kwargs in ({"thinking": "false"}, {"enable_thinking": None},
                        {"clear_thinking": 0}, {"legacy_reasoning_content": "true"},
