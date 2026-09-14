@@ -1,0 +1,12 @@
+{
+  "base": "2ed1f04799933f5c6be3bbe168b6df828ea89419",
+  "gpu_used": false,
+  "queue_submitted": false,
+  "source_sha256": {
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "0ed1f68865b9243686d3c3df7cc180304cd06a38de3cc8c6f4a237d9131b7e96",
+    "engine/kernels/b12x/moe_dispatch.py": "d89074a36829cad82f43fa9fbad23cafc7af424056ba85ac8841655ebb9425fb",
+    "probes/engine_moe_register_scales.py": "8d8614b157bff073e1321582c2b5b8c40d3f583d65ed589c10e11e7bfb0ad878",
+    "tests/test_engine_moe_register_scales.py": "56515974942956579ccb1ca60091ce8a6cbd6652bc719a341587a0f137a9c769",
+    "tests/test_engine_moe_fc1_reuse.py": "e7278688b5db88b5534c07bfc1f7eec817b0de8dce7667c77cd1df5b88e6c023"
+  }
+}
