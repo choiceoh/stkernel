@@ -221,6 +221,34 @@ def measure(args, report):
             median_ms=medians, change_pct=100*(medians[1]/medians[0]-1),
             wall_milliseconds=wall_times, wall_median_ms=wall_medians,
             wall_change_pct=100*(wall_medians[1]/wall_medians[0]-1))
+        # Diagnose the complete-FFN result only after its bracket. These are
+        # warm independent consumers; their times must not replace or be
+        # summed into a whole-FFN/serving performance claim.
+        if rows == 32768:
+            x = unpack()
+            ids, routes = route_weights(router_logits(x, gate), bias, 8, model.routed_scale)
+            consumers = dict(
+                router=(lambda: router_logits(x, gate), lambda: router_packet_logits(batch, gate)),
+                expert=(lambda: expert(x, ids, routes), lambda: packet_expert(batch, ids, routes)),
+                shared_quantize=(lambda: quantize(x),
+                    lambda: quantize_gather(batch.received, g.local_rows, real_rows=rows)),
+                unpack=(unpack,))
+            components = {}
+            for name, functions in consumers.items():
+                samples = [[] for _ in functions]
+                for function in functions:
+                    function()
+                for _ in range(2):
+                    for arm in ((0, 1, 1, 0) if len(functions) == 2 else (0, 0, 0, 0)):
+                        start, end = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+                        start.record()
+                        values = functions[arm]()
+                        end.record(); end.synchronize()
+                        samples[arm].append(start.elapsed_time(end))
+                        del values
+                components[name] = dict(milliseconds=samples, median_ms=[statistics.median(v) for v in samples])
+            cell['warm_component_diagnostics'] = components
+            del x, ids, routes, consumers
         cases.append(cell)
         print(json.dumps(cell), flush=True)
         observed.clear()

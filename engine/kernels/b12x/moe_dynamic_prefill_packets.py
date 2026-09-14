@@ -24,7 +24,7 @@ from ._moe_dynamic.gated import (
     DynamicLaunchParams, _TASK_SLICE_CHUNK, _ld_shared_i32, _st_shared_i32,
     _threadfence, atomic_add_shared_i32, load_shared_bf16x16_to_f32x16,
 )
-from .moe_w4a16_fp4_helpers import st_shared_bf16_from_f32
+from .moe_w4a16_fp4_helpers import cvt_e4m3x4_to_f32x4, st_shared_bf16_from_f32
 from .moe_dynamic_gated_sf6_prefill import MoEGatedDynamicKernelSF6Prefill
 
 PREFILL_SOURCE_SHA256 = 'bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a'
@@ -46,19 +46,27 @@ def stage_packet_input(a_input, batch_base, staged_tokens, tidx, threads, stage_
     local_rows = (rows + Int32(3)) // Int32(4)
     local = local_rows * cols
     stride = ((local + Int32(4)*(local//Int32(2048)) + Int32(127))//Int32(128))*Int32(128)
-    packed = cute.make_tensor(cute.recast_ptr(a_input.iterator, dtype=cutlass.Float8E4M3FN),
-                              cute.make_layout((stride*Int32(4),), stride=(1,)))
+    packed = cute.make_tensor(cute.recast_ptr(a_input.iterator, dtype=cutlass.Uint32),
+                              cute.make_layout((stride,), stride=(1,)))
     scales = cute.make_tensor(cute.recast_ptr(a_input.iterator, dtype=cutlass.Float32),
                               cute.make_layout((stride,), stride=(1,)))
-    i = tidx
+    # Four adjacent FP8 bytes share their transport scale and rank address.
+    # Native pair conversion is exact for finite E4M3, including subnormals;
+    # multiplication and the final BF16 rounding remain FP32 per element.
+    i = tidx * Int32(4)
     while i < staged_tokens * cols:
         row, col = batch_base + i//cols, i % cols
         rank, local_row = row//local_rows, row % local_rows
         offset = local_row*cols + col
-        value = packed[rank*stride + offset].to(cutlass.Float32)
+        values = packed[rank*(stride//Int32(4)) + offset//Int32(4)]
+        v0, v1, v2, v3 = cvt_e4m3x4_to_f32x4(values)
         scale = scales[rank*(stride//Int32(4)) + local//Int32(4) + offset//Int32(2048)]
-        st_shared_bf16_from_f32(stage_address + i*Int32(2), value*scale)
-        i += threads
+        address = stage_address + i*Int32(2)
+        st_shared_bf16_from_f32(address, v0*scale)
+        st_shared_bf16_from_f32(address + Int32(2), v1*scale)
+        st_shared_bf16_from_f32(address + Int32(4), v2*scale)
+        st_shared_bf16_from_f32(address + Int32(6), v3*scale)
+        i += threads * Int32(4)
     cute.arch.sync_threads()
 
 
