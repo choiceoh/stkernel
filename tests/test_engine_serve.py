@@ -868,6 +868,42 @@ class ChatDoorTests(unittest.TestCase):
         finally:
             httpd.shutdown(); httpd.server_close()
 
+    def test_a_template_tail_after_the_reasoning_end_still_closes_the_block(self):
+        s = chat_server()
+        s.reasoning_end, s.reasoning_tail = ord('y'), (ord('z'),)   # Qwen3.8's thinking-off prompt: '</think>', then a blank line
+        httpd = s._serve_http()
+        url = f'http://127.0.0.1:{httpd.server_port}/v1/chat/completions'
+        def post(body):
+            with urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(body).encode()), timeout=5) as r:
+                return json.load(r)['choices'][0]['message']
+        try:
+            # the fake engine repeats the prompt's last token: which channel it lands in is the door's judgement
+            for content, kwargs, want in (("xyz", {}, ("zzz", "")),             # the end and the tail: thinking off
+                                          ("xy", {}, ("yyy", "")),              # the end alone still closes it (GLM-5.3's form)
+                                          ("xz", {}, ("", "zzz")),              # the tail without the end: still thinking
+                                          ("xyz", {"thinking": True}, ("", "!!!"))):   # a block opened after it
+                with self.subTest(content=content, kwargs=kwargs):
+                    with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                        message = drive(s, pool.submit(post, {"messages": [{"role": "user", "content": content}],
+                                                              "max_tokens": 3, "chat_template_kwargs": kwargs}))
+                    self.assertEqual((message.get('content') or '', message.get('reasoning_content') or ''), want)
+            y, z = ord('y'), ord('z')
+            self.assertEqual([s.reasoning_closed(ids) for ids in ([1, y, z], [y, z, z], [z], [], [1, y])],
+                             [True, False, False, False, True])
+            s.reasoning_tail = ()
+            self.assertEqual([s.reasoning_closed(ids) for ids in ([1, y, z], [1, y])], [False, True])
+            s.reasoning_end = None
+            self.assertFalse(s.reasoning_closed([1, y]))
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
+    def test_a_reasoning_tail_is_token_ids_after_an_end(self):
+        s = server()
+        for kw in ({"reasoning_tail": (5,)}, {"reasoning_end": 3, "reasoning_tail": ("\n",)},
+                   {"reasoning_end": 3, "reasoning_tail": (-1,)}):
+            with self.subTest(kw=kw), self.assertRaisesRegex(ValueError, "reasoning_tail"):
+                Server(s.engine, s.runner, Comm(), host="127.0.0.1", port=0, **kw)
+
     def test_streaming_client_is_released_when_the_engine_dies(self):
         s = chat_server()
         httpd = s._serve_http()
@@ -892,6 +928,61 @@ class ChatDoorTests(unittest.TestCase):
             self.assertFalse(s._streams or s.pending)
         finally:
             httpd.shutdown(); httpd.server_close()
+
+
+class ReasoningMarksTests(unittest.TestCase):
+    """base/serve.reasoning_marks reads the think block off a chat template: Qwen3.8's form, GLM-5.3's, and the ones
+    that give the door nothing to split on."""
+
+    class Tok:
+        """'<think>' and '</think>' are tokens 1 and 2; any other character is its code point + 10."""
+        MARKS = {"<think>": 1, "</think>": 2}
+
+        def token_to_id(self, text):
+            return self.MARKS.get(text)
+
+        def encode(self, text, add_special_tokens=True):
+            import re
+            ids = []
+            for piece in re.split("(<think>|</think>)", text):
+                ids += [self.MARKS[piece]] if piece in self.MARKS else [ord(c) + 10 for c in piece]
+            return Encoded(ids)
+
+        def decode(self, ids, skip_special_tokens=True):
+            names = {v: k for k, v in self.MARKS.items()}
+            return "".join(names.get(i) or chr(i - 10) for i in ids)
+
+    def marks(self, render, tok=None):
+        from engine.base.serve import reasoning_marks
+        return reasoning_marks(self.Tok() if tok is None else tok, render)
+
+    @staticmethod
+    def template(on, off):
+        head = "<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n"
+        return lambda messages, kwargs: head + (off if kwargs.get("enable_thinking") is False else on)
+
+    def test_qwen38_writes_a_blank_line_after_the_end(self):
+        newline = ord("\n") + 10
+        self.assertEqual(self.marks(self.template("<think>\n", "<think>\n\n</think>\n\n")), (2, (newline, newline)))
+
+    def test_glm_ends_at_the_end(self):
+        self.assertEqual(self.marks(self.template("<think>", "</think>")), (2, ()))
+
+    def test_a_template_that_opens_no_block_splits_nothing(self):
+        self.assertEqual(self.marks(self.template("", "")), (None, ()))
+        self.assertEqual(self.marks(None), (None, ()))
+        from engine.base.serve import reasoning_marks
+        self.assertEqual(reasoning_marks(None, self.template("<think>", "</think>")), (None, ()))   # no tokenizer
+
+        class Plain(self.Tok):
+            MARKS = {}
+        self.assertEqual(self.marks(self.template("<think>", "</think>"), tok=Plain()), (None, ()))
+
+    def test_a_switch_that_does_not_close_the_block_leaves_every_prompt_thinking(self):
+        self.assertEqual(self.marks(self.template("<think>\n", "<think>\n")), (2, ()))
+
+    def test_a_tail_that_is_not_whitespace_is_not_trusted(self):
+        self.assertEqual(self.marks(self.template("<think>", "<think></think>Answer:")), (2, ()))
 
 
 class CancelTests(unittest.TestCase):

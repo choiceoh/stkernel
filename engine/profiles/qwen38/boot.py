@@ -30,6 +30,16 @@ def tokenizer(ckpt: Path):
     return tok
 
 
+def template_kwargs(kwargs) -> dict:
+    """The door's template switches in this template's words: the door speaks `thinking` (it copies a client's
+    `enable_thinking` there), and Qwen3.8's template reads only `enable_thinking` -- a client that sent `thinking: false`
+    alone would otherwise get a think block it asked not to."""
+    kwargs = dict(kwargs or {})
+    if "thinking" in kwargs and "enable_thinking" not in kwargs:
+        kwargs["enable_thinking"] = kwargs["thinking"]
+    return kwargs
+
+
 def chat_renderer(ckpt: Path):
     """messages -> prompt text through the checkpoint's chat template (transformers renders it)."""
     from transformers import AutoTokenizer
@@ -38,7 +48,7 @@ def chat_renderer(ckpt: Path):
     def render(messages, kwargs, *, generation_prompt: bool = True, continue_final: bool = False):
         extra = {"continue_final_message": True} if continue_final else {}
         return t.apply_chat_template(messages, tokenize=False, add_generation_prompt=generation_prompt and not continue_final,
-                                     **dict(kwargs or {}), **extra)
+                                     **template_kwargs(kwargs), **extra)
     return render
 
 
@@ -54,13 +64,14 @@ def eos_ids(ckpt: Path, cfg: dict) -> "list[int]":
 def generation_defaults(ckpt: Path) -> dict:
     path = ckpt / "generation_config.json"
     g = json.loads(path.read_text()) if path.exists() else {}
-    return {k: g[k] for k in ("temperature", "top_p", "top_k") if k in g}
+    return {k: g[k] for k in ("temperature", "top_p", "top_k", "repetition_penalty") if k in g}   # the door fills what a request omits
 
 
 def build(composition, cfg: dict, ends, *, kv_gib: float, max_seqs: int, block_tokens: int, chunk: int, token_budget: int,
-          snapshots: int, max_new: int, temperature: float, device="cpu", heads=(), k: int = 0):
+          snapshots: int, max_new: int, temperature: float, device="cpu", heads=(), k: int = 0, grammars=None):
     """The engine's pieces around a composition: store, pools, model, contract, prefix cache, runner. With MTP `heads`
-    and `k`, the model drafts k tokens a step through them (engine/modules/mtp) and verifies them by position."""
+    and `k`, the model drafts k tokens a step through them (engine/modules/mtp) and verifies them by position; with
+    `grammars` (base/grammar), it serves structured output."""
     from engine.base.composed import ComposedModel, store_for
     from engine.base.prefix import PrefixCache
     from engine.base.record import Ring
@@ -74,7 +85,7 @@ def build(composition, cfg: dict, ends, *, kv_gib: float, max_seqs: int, block_t
         from engine.modules.mtp import MTPDrafter
         drafter = MTPDrafter(heads, store, k=k, vocab=cfg["vocab_size"])
     model = ComposedModel(composition, store, vocab=cfg["vocab_size"], eos_ids=ends, max_new=max_new, temperature=temperature,
-                          max_context=cfg.get("max_position_embeddings", 2 ** 31 - 1), drafter=drafter)
+                          max_context=cfg.get("max_position_embeddings", 2 ** 31 - 1), drafter=drafter, grammars=grammars)
     contract = Contract(chunk_align=chunk, token_budget=token_budget, draft_slots=k, max_wait_s=0.0, max_running=max_seqs)
     prefix = PrefixCache(block_tokens, chunk, snapshots) if snapshots else None
     runner = Runner(model, contract, pool, slots, Ring(4096, STEP_RECORD.size), keep_idle=True, prefix=prefix)
@@ -131,7 +142,7 @@ def main(argv=None) -> int:
     if a.threads:
         torch.set_num_threads(a.threads)
     t0 = time.perf_counter()
-    tok = chat = None
+    tok = chat = grammars = None
     heads = []
     if a.tiny:
         composition, cfg, heads = tiny(mtp=a.mtp > 0)
@@ -152,16 +163,23 @@ def main(argv=None) -> int:
         tok = tokenizer(ckpt)
         if a.chat:
             chat = chat_renderer(ckpt)
+        from engine.base import grammar
+        grammars = grammar.for_checkpoint(ckpt, cfg["vocab_size"], "cpu", stop_token_ids=ends)   # response_format
     model, runner, plan = build(composition, cfg, ends, kv_gib=a.kv_gib, max_seqs=a.max_seqs, block_tokens=a.block_tokens,
                                 chunk=a.chunk, token_budget=a.token_budget, snapshots=a.snapshots, max_new=a.max_new,
-                                temperature=a.temperature, heads=heads, k=a.mtp)
+                                temperature=a.temperature, heads=heads, k=a.mtp, grammars=grammars)
     print(f"  {'tiny' if a.tiny else a.ckpt}: {len(cfg['layer_types'])} layers, vocab {cfg['vocab_size']}, {'float32' if a.tiny else a.dtype}; "
           f"kv {plan.num_blocks} blocks x {plan.block_tokens} tokens ({plan.paged_gib:.3f} GiB), {plan.num_slots - 1} slots "
           f"of {plan.slot_bytes / 2**20:.1f} MiB; built in {time.perf_counter() - t0:.1f} s", flush=True)
     from engine.base.comm import Comm
-    from engine.base.serve import Server
+    from engine.base.serve import Server, reasoning_marks
+    reasoning_end, reasoning_tail = reasoning_marks(tok, chat)             # the think block, read off the template
+    print(f"  door: structured output {'on' if grammars else 'off (no xgrammar)'}; reasoning "
+          + (f"split at {reasoning_end} (thinking-off tail {list(reasoning_tail)})" if reasoning_end is not None else "not split"),
+          flush=True)
     server = Server(model, runner, Comm(), port=a.port, tokenizer=tok, chat=chat, model_name="qwen3.8-flash-next",
-                    generation=generation_defaults(Path(a.ckpt)) if a.ckpt else None)
+                    generation=generation_defaults(Path(a.ckpt)) if a.ckpt else None, reasoning_end=reasoning_end,
+                    reasoning_tail=reasoning_tail)
     if a.serve:
         print(f"  door open on port {a.port}", flush=True)
         server.loop()

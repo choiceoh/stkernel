@@ -146,19 +146,11 @@ def generation_defaults(ckpt=facts.CKPT) -> dict:
 
 
 def grammars(ckpt, vocab: int, device=None, stop_token_ids=None):
-    """base/grammar.Grammars over the checkpoint's tokenizer, on every rank (each row's matcher runs everywhere), or None
-    where xgrammar is not installed -- then response_format is refused at the door (D3), never silently unenforced.
-
-    `device`: prove the mask kernel here and pay its Triton JIT here (45차 §23 B2, the same rule as every other
-    first-use cost -- and the same shape as `vision.qualify`: what cannot be served does not boot, D3)."""
+    """base/grammar.for_checkpoint: structured output over the checkpoint's tokenizer on every rank, or None where
+    xgrammar is not installed (the door then refuses response_format, D3); `device` proves the mask kernel at boot
+    (the same shape as `vision.qualify`)."""
     from engine.base import grammar
-    if not grammar.available():
-        return None
-    from transformers import AutoTokenizer
-    g = grammar.Grammars(AutoTokenizer.from_pretrained(str(ckpt)), vocab, stop_token_ids=stop_token_ids)
-    if device is not None:
-        g.qualify(device)
-    return g
+    return grammar.for_checkpoint(ckpt, vocab, device, stop_token_ids)
 
 
 CHAT_TEMPLATE = "chat_template_mm_v2.jinja"     # what production serves with (launchers/lib/glm53-chat.sh); honours the `thinking` kwarg

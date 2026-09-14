@@ -542,6 +542,32 @@ def reasoning_budget(req: dict, max_tokens: int) -> "int | None":
     return max(1, max_tokens - max(ANSWER_FLOOR, max_tokens // ANSWER_SHARE))
 
 
+def reasoning_marks(tok, render, *, start: str = "<think>", end: str = "</think>",
+                    switch: str = "enable_thinking") -> "tuple[int | None, tuple[int, ...]]":
+    """(reasoning_end, reasoning_tail) for a `Server`, read off the checkpoint's chat template instead of written down
+    per model.
+
+    `reasoning_end` is `end`'s token id when the template's generation prompt opens a think block (ends with `start`)
+    with the thinking `switch` on. `reasoning_tail` is what its thinking-off prompt writes after `end`, as the door will
+    tokenize it: GLM-5.3's ends at '</think>' (no tail), Qwen3.8's writes '</think>' and a blank line. A tail that is
+    not whitespace is not trusted as a closed block and none is given. A template that opens no block with thinking on
+    gets (None, ()): nothing is reasoning and nothing is split.
+    """
+    end_id = tok.token_to_id(end) if tok is not None and render is not None else None
+    if end_id is None:
+        return None, ()
+    probe = [{"role": "user", "content": "hi"}]
+    if not render(probe, {switch: True}).rstrip().endswith(start):
+        return None, ()
+    ids = list(tok.encode(nfc(render(probe, {switch: False})), add_special_tokens=False).ids)
+    if end_id not in ids:
+        return end_id, ()                        # the switch does not close the block: every prompt opens one
+    tail = ids[len(ids) - ids[::-1].index(end_id):]
+    if tail and tok.decode(tail, skip_special_tokens=False).strip():
+        return end_id, ()
+    return end_id, tuple(tail)
+
+
 def response_format_grammar(req: dict) -> "dict | None":
     """OpenAI response_format -> the engine's grammar spec (enforced by the engine's grammar sampler)."""
     fmt = req.get("response_format")
@@ -1210,7 +1236,7 @@ class Server:
                  generation: "dict | None" = None, max_choices: int = 4, vision=None, tool_stream=None,
                  tool_grammar=None, tool_call_start: "int | None" = None,
                  lease: "dict | None" = None, latency_root=None, reasoning_effort_aliases: "dict | None" = None,
-                 step_watch=None, park_min_tokens: int = 0):
+                 step_watch=None, park_min_tokens: int = 0, reasoning_tail=()):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
         if type(request_timeout_s) not in (int, float) or not request_timeout_s > 0:
@@ -1219,6 +1245,8 @@ class Server:
             raise ValueError("the server requires an idle runner")
         if reasoning_end is not None and (type(reasoning_end) is not int or reasoning_end < 0):
             raise ValueError("reasoning_end must be a token id")
+        if any(type(t) is not int or t < 0 for t in reasoning_tail) or (reasoning_tail and reasoning_end is None):
+            raise ValueError("reasoning_tail is the token ids a template writes after reasoning_end")
         self.engine, self.runner, self.comm = engine, runner, comm
         from engine.base.latency import Recorder
         from pathlib import Path
@@ -1246,6 +1274,7 @@ class Server:
         self._prompt_tokens = None                 # built from `tok` on first use (see the property)
         self.detok_repairs = new_repairs()         # this door's, so a scrape names who repaired
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
+        self.reasoning_tail = tuple(reasoning_tail)  # what the template writes after reasoning_end when thinking is off
         self.reasoning_effort_aliases = dict(reasoning_effort_aliases or {})
         self.tool_parser = tool_parser             # text -> [(name, arguments json)] or None (the profile knows the model's format)
         self.tool_stream = tool_stream             # the same format, read while it is still arriving (streamed deltas)
@@ -1709,6 +1738,16 @@ class Server:
         or at the limit."""
         ends = set(getattr(self.engine, "eos", ())) | self._stop_ids.get(request, set())
         return "stop" if out and out[-1] in ends else "length"
+
+    def reasoning_closed(self, ids) -> bool:
+        """Whether a rendered prompt already closed its think block, so everything generated is content: it ends with
+        `reasoning_end` (GLM-5.3's template with thinking off), or with it and then `reasoning_tail` (Qwen3.8's writes
+        a blank line after it; base/serve.reasoning_marks reads the tail off the template)."""
+        end, tail = self.reasoning_end, self.reasoning_tail
+        if end is None or not ids:
+            return False
+        n = len(tail)
+        return ids[-1] == end or (n > 0 and len(ids) > n and ids[-n - 1] == end and tuple(ids[-n:]) == tail)
 
     def split(self, out):
         """(reasoning ids, content ids): what came before `reasoning_end` and after it (the token itself
@@ -3171,7 +3210,7 @@ class Server:
                 # thinking off: the template already closed the think block (the rendered prompt ends with the reasoning-end
                 # token), so everything generated is content -- otherwise a whole answer lands in reasoning_content
                 # (45차 §22: the gateway's -low route asks thinkingMode off and reads content)
-                reasoning = server.reasoning_end is not None and not (ids and ids[-1] == server.reasoning_end)
+                reasoning = server.reasoning_end is not None and not server.reasoning_closed(ids)
                 if reasoning and "grammar" in options and "grammar_after" not in options:
                     # The answer starts inside a think block, and a grammar that started here would forbid the
                     # reasoning -- including the block's own end token, so the block would never close and the

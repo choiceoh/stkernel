@@ -48,6 +48,22 @@ def available() -> bool:
         return False
 
 
+def for_checkpoint(ckpt, vocab: int, device=None, stop_token_ids=None) -> "Grammars | None":
+    """`Grammars` over the checkpoint's tokenizer, or None where xgrammar is not installed -- then response_format is
+    refused at the door (D3), never silently unenforced. Every rank builds one (each row's matcher runs everywhere); every
+    profile's boot binds structured output this way (engine/profiles/glm53/boot, engine/profiles/qwen38/boot).
+
+    `device`: prove the mask kernel there and pay its JIT at boot (`Grammars.qualify`; 45차 §23 B2, the same rule as
+    every other first-use cost: what cannot be served does not boot, D3)."""
+    if not available():
+        return None
+    from transformers import AutoTokenizer
+    g = Grammars(AutoTokenizer.from_pretrained(str(ckpt)), vocab, stop_token_ids=stop_token_ids)
+    if device is not None:
+        g.qualify(device)
+    return g
+
+
 class Grammars:
     """Compiled grammars keyed by spec, over one tokenizer (the checkpoint's, as a transformers tokenizer),
     and the one bitmask every row of a step is filled into."""
