@@ -69,6 +69,14 @@ and diagnostic requests are omitted. `concurrency_coverage` records that omissio
 implements the operator's 2026-09-13 policy: C=1 twice, C=4 once. Optional
 fixed-decode repetitions add three cases each to C=1.
 
+The "C=4" arm is the door's admission limit capped at four
+(`onepass.serving_concurrency`, from `engine_shape.max_concurrent_requests`):
+two for GLM-5.3 since #950, where four requests decode two rows beside two
+waiting ones and `steady_errors` refuses the arm. The key names (`c4`,
+`quality_c4`, `c4_status`) stay; `concurrency_coverage.width`, each group's
+`concurrency` and the phase names (`measure-c2-…`) carry the measured width,
+and a two-wide run grades half the C=N cases (12 instead of 24).
+
 Regular answers require `finish_reason=stop`. A length-truncated answer fails the
 completion check even if some facts are correct. Explicit fixed-length requests
 may end with `length`, but still need a complete, correct JSON certificate. Small
