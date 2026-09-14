@@ -126,7 +126,7 @@ class TemplateTests(unittest.TestCase):
             self.assertEqual(render([], **kwargs), render([], **dict(kwargs, reasoning_effort="high")))
 
     def test_a_reasoning_opener_follows_only_an_opened_block(self):
-        opener = "Let me parse the problem."
+        opener = "We need to parse the problem. We have"
         self.assertTrue(render([], reasoning_opener=opener).endswith("<|assistant|><think>" + opener))
         self.assertTrue(render([], reasoning_opener="").endswith("<|assistant|><think>"))
         for key in ("thinking", "enable_thinking"):

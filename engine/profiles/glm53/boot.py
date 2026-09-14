@@ -158,10 +158,16 @@ REASONING_EFFORT_ALIASES = {"max": "high"}       # accept existing clients while
 REASONING_END = "</think>"                       # the model closes its reasoning with this token; the door splits content there
 # How every think block starts (base/serve.Server.opener_kwargs). Left to itself GLM-5.3 opens half of onepass's graded
 # JSON questions with "We need answer JSON only. Need parse problem." and goes on in that clipped register for thousands
-# of tokens -- the drafter's worst case. From these words it reasons in sentences instead: greedy on the Red Hat ranks,
-# twelve questions at C=1 (2026-09-14), 23,542 tokens against 52,211, acceptance 54.2% against 37.5%, 91.2 tok/s against
-# 70.1 at the same step rate. It costs some exhaustive checking: 7 of the 12 fully right against 10, and 18 of 30 at C=4.
-REASONING_OPENER = "Let me parse the problem."
+# of tokens -- the drafter's worst case. The first words set the register. The thirty onepass JSON questions at C=4,
+# greedy on the Red Hat ranks (2026-09-14), score / final answers right / fully right / tokens an answer:
+#   no opener                                  175/190  29  21  4,390   acceptance 38.0%
+#   "Let me parse the problem." (#942)         164      25  18  1,954   54.2%
+#   "We need to parse the problem."            170      27  18  2,601   51.8%
+#   these words                                175      28  19  2,442   52.0%; on main 87304780 172 27 21 2,621 51.0%
+# These words matched no opener's score at 56% of its tokens; "Let me" is shorter still and checks less. The two runs
+# of these words agreed on 14 of 30 texts and ended 3 points apart, so one run is that noisy. On 62 questions of new
+# forms (dates, paths, knapsack, tables, seating, units, Korean puzzles) 61 were right.
+REASONING_OPENER = "We need to parse the problem. We have"
 REQUEST_TIMEOUT_S = 3600.0                       # a request older than this is cancelled (the production probe's long-ingest bound x12)
 # A finished turn shorter than this is released, not parked. A GLM-5.3 slot's recurrent state is ~256 MiB a rank
 # whatever the length, so parking a 17-token health ping wrote that to NVMe every thirty seconds and pushed real
