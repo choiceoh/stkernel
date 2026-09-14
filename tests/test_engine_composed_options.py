@@ -168,7 +168,7 @@ class RichOptionTests(unittest.TestCase):
     def test_drafts_change_nothing_with_every_option_on(self):
         from tests.test_engine_speculative import Scripted
         options = {"presence_penalty": 0.9, "repetition_penalty": 1.3, "logit_bias": {9: 2.0}, "logprobs": 2,
-                   "grammar": {"type": "json_object"}, "reasoning_budget": 4, "reasoning_end": 21}
+                   "grammar": {"type": "json_object"}, "grammar_after": 21, "reasoning_budget": 4, "reasoning_end": 21}
         allow = tuple(range(0, VOCAB, 3)) + (21,)
         for temperature, min_new in ((0.0, 0), (0.8, 3)):
             requests = [(0, prompt(7, 11), 10, temperature, min_new, dict(options, seed=3)),
@@ -177,7 +177,7 @@ class RichOptionTests(unittest.TestCase):
             self.serve(plain, runner, requests)
             truth = {seq: list(plain.tokens[seq]) for seq, *_ in requests}
             for seq, *_ in requests:
-                self.assertEqual(plain.generated(seq)[4], 21)             # the budget's end, forced inside the grammar
+                self.assertEqual(plain.generated(seq)[4], 21)             # the budget's end, forced before the grammar arms
             for right in (None, 1):
                 with self.subTest(temperature=temperature, right=right):
                     comp, drafted, runner = self.build(grammars=grammar_stub(allow), temperature=temperature,
@@ -192,6 +192,23 @@ class RichOptionTests(unittest.TestCase):
                             self.assertAlmostEqual(a, b, places=4)
                     self.assertGreater(drafted.accepted_total, 0)
                     self.assertLess(drafted.steps, plain.steps)
+
+    def test_a_call_that_opens_inside_the_think_block_is_not_forced_shut(self):
+        """The tool grammar arms at its marker, reasoning or not. With the budget spent, forcing the reasoning end left
+        no token the grammar allows, and committing one outside it raised -- the engine's death on a real grammar."""
+        from tests.test_engine_grammar import fake
+        g, _ = fake(allow=(5, 9), vocab=VOCAB, refuse=set(range(VOCAB)) - {5, 9})
+        g.compile = lambda spec: None
+        g.resolve = lambda handle: handle
+        g.ready = lambda spec: None
+        options = {"grammar": {"type": "ebnf", "grammar": "root ::= call"}, "grammar_after": 7, "logit_bias": {7: 50.0},
+                   "reasoning_budget": 1, "reasoning_end": 42}
+        _, model = self.served(prompt(3, 10), 5, options, grammars=g)
+        out = model.generated(0)
+        self.assertEqual((out[0], len(out)), (7, 5))
+        self.assertTrue(set(out[1:]) <= {5, 9}, out)
+        with self.assertRaisesRegex(ValueError, "outside the model vocabulary"):
+            model.validate_options({"logit_bias": {VOCAB: 1.0}})
 
     def test_a_parked_record_travels_as_json_and_the_next_turn_keeps_its_options(self):
         comp, model, runner = self.build(rows=2, keep_idle=True, grammars=grammar_stub(tuple(range(VOCAB))))

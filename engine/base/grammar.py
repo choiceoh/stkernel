@@ -51,7 +51,7 @@ def available() -> bool:
 def for_checkpoint(ckpt, vocab: int, device=None, stop_token_ids=None) -> "Grammars | None":
     """`Grammars` over the checkpoint's tokenizer, or None where xgrammar is not installed -- then response_format is
     refused at the door (D3), never silently unenforced. Every rank builds one (each row's matcher runs everywhere); every
-    profile's boot binds structured output this way (engine/profiles/glm53/boot, engine/profiles/qwen38/boot).
+    profile's boot binds structured output this way.
 
     `device`: prove the mask kernel there and pay its JIT at boot (`Grammars.qualify`; 45차 §23 B2, the same rule as
     every other first-use cost: what cannot be served does not boot, D3)."""
