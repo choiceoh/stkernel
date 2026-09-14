@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "mode": "cpu",
+  "compiled_helpers": 3,
+  "checks": [],
+  "source_sha256": "47847647e5e61e9ba60225e9e0507b9b90a55bea58d5f1bcba3b20d2aecb31be",
+  "scope": "helper compile"
+}

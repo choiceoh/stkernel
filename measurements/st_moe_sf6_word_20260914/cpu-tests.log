@@ -1,0 +1,14 @@
+test_actual_scatter_initialization_bounds_and_changed_routes (tests.test_engine_moe_sf6_staging.Sf6StagingTests.test_actual_scatter_initialization_bounds_and_changed_routes) ... ok
+test_dispatch_default_rollback_cache_and_repeated_normalization (tests.test_engine_moe_sf6_staging.Sf6StagingTests.test_dispatch_default_rollback_cache_and_repeated_normalization) ... ok
+test_fc1_ring_reuse_and_neighbor_slots (tests.test_engine_moe_sf6_staging.Sf6StagingTests.test_fc1_ring_reuse_and_neighbor_slots) ... ok
+test_legacy_inplace_keeps_both_barriers_and_exact_bytes (tests.test_engine_moe_sf6_staging.Sf6StagingTests.test_legacy_inplace_keeps_both_barriers_and_exact_bytes) ... ok
+test_only_c1_sf6_geometry_uses_separate_storage (tests.test_engine_moe_sf6_staging.Sf6StagingTests.test_only_c1_sf6_geometry_uses_separate_storage) ... ok
+test_separate_all_bases_codes_and_cross_warp_orders (tests.test_engine_moe_sf6_staging.Sf6StagingTests.test_separate_all_bases_codes_and_cross_warp_orders) ... ok
+test_word_arithmetic_all_byte_values_without_cross_lane_carries (tests.test_engine_moe_sf6_staging.Sf6StagingTests.test_word_arithmetic_all_byte_values_without_cross_lane_carries) ... ok
+test_cache_abi_and_parser_isolation (tests.test_engine_moe_scatter_config.ScatterConfigTests.test_cache_abi_and_parser_isolation) ... ok
+test_padded_batch_geometry_is_retained_without_explicit_reform (tests.test_engine_moe_scatter_config.ScatterConfigTests.test_padded_batch_geometry_is_retained_without_explicit_reform) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 4.786s
+
+OK
