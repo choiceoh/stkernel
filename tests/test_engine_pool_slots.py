@@ -87,6 +87,16 @@ class PoolSlotTests(unittest.TestCase):
         self.compare(ids, lengths, 4)
         self.compare(ids, lengths, 4, torch.arange(1024, device=DEVICE, dtype=torch.int32).flip(0), 2**20, 2**21, 73)
 
+    def test_int64_topk_ids_mask_before_narrowing_and_keep_duplicate_order(self):
+        ids = torch.tensor([[2**32 + 1, 3, -2**40, 0, 2**40, 3, 1, -1],
+                            [32766, 32766, 2**32, 1, 32767, -1, 2**31, -2**32]], device=DEVICE)
+        backing = torch.empty(2, 16, device=DEVICE, dtype=torch.int64)
+        backing[:, ::2] = ids
+        ids = backing[:, ::2]
+        lengths = torch.tensor([15, 131071], device=DEVICE, dtype=torch.int32)
+        self.compare(ids, lengths, 4)
+        self.compare(ids, lengths, 4, torch.arange(176, device=DEVICE, dtype=torch.int32).flip(0), 768, 8448, 7680)
+
     @unittest.skipIf(INTERPRET, "graph replay needs a real GPU")
     def test_graph_replay_reads_pools_lengths_and_recycled_blocks(self):
         ids = torch.tensor([[2, 0, -1, 2], [0, 1, 2, -1]], device=DEVICE, dtype=torch.int32)

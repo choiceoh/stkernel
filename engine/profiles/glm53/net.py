@@ -304,7 +304,8 @@ class Glm53Net:
     def prepare_decode_dsa_inputs(self, rows):
         """Bind existing smoothed W4 readers; no weight copy or new arena region."""
         if (self._query_pairs or self.F.spec_k != 7 or self.lanes.latent_norm_write is None
-                or self.lanes.decode_rows is None or self.lanes.decode_rows.update is None):
+                or self.lanes.decode_rows is None or self.lanes.decode_rows.update is None
+                or self.lanes.decode_rows.compress is None):
             raise ValueError('DSA inputs require one K=7 native preparation with fused latent and pool-cache lanes')
         from engine.kernels.dense.query_pair import QueryPair
         pairs = {L: QueryPair(self.dense[f'L{L}.mla.q_b'], self.dense[f'L{L}.idx.wq_b'], rows=rows)
@@ -792,7 +793,7 @@ class Glm53Net:
             logits = self.lanes.indexer_logits(q8[sl], keys_all[r], scales_all[r], w_eff[sl], ke[sl], ks=ks)[:, :n_cand].float()
             glue.horizon(logits, ke[sl])                                                  # -inf past each query's pools, in place
             torch.topk(logits, k, dim=-1, sorted=False, out=(values[sl], winners[sl]))
-        self.lanes.pool_slots(winners.to(torch.int32), seq_lens, kp, *caches.token_maps(L), slots_out, valid_out, tokens=t)
+        self.lanes.pool_slots(winners, seq_lens, kp, *caches.token_maps(L), slots_out, valid_out, tokens=t)
 
     def _select_pools(self, q8, w_eff, keys, scales, ke, n_cand: int, k: int, *, out=None) -> torch.Tensor:
         """Top-k complete pools per query, in passes of SELECT_ROWS rows: every row's

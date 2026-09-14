@@ -34,19 +34,17 @@ def complete_pools(net, layer, contexts, length, tails, k, gate, caches, *, mapp
     agree byte for byte.
     """
     F = net.F
-    kp, d = F.kpool, F.idx_dim
+    kp = F.kpool
     max_pools = (kp - 1 + length) // kp
     glue = net.lanes.decode_rows
-    # The bound K=7 path reads the arena tail through physical slots, avoiding
-    # the gathered tail copy. Pooling still consumes exactly the same window.
-    window_args = dict(slots=caches.slots) if mapped else {}
-    kw, gw = glue.window(tails, k, gate, contexts, kp, max_pools, **window_args)
-    pk, ps = net.lanes.kpool_compress(kw, gw, net.p[f"L{layer}.idx.ape"])
     if mapped:
+        pk, ps = glue.compress(tails, k, gate, net.p[f"L{layer}.idx.ape"], contexts, caches.slots)
         glue.update(pk, ps.view(-1), caches.pool_keys(layer), caches.pool_scales(layer),
                     tails, caches.slots, contexts, k, gate, *caches.pool_maps(layer), kp, caches.candidate_capacity)
         net.decode_pools_executed.add((layer, k.shape[0] * length))
         return caches.candidate_capacity
+    kw, gw = glue.window(tails, k, gate, contexts, kp, max_pools)
+    pk, ps = net.lanes.kpool_compress(kw, gw, net.p[f"L{layer}.idx.ape"])
     # Padded pids at the final context boundary are past every segment's count: never written.
     counts, slots = glue.addresses(contexts, *caches.pool_maps(layer), kp, length, max_pools, caches.candidate_capacity)
     glue.pools(pk, ps.view(-1), caches.pool_keys(layer), caches.pool_scales(layer), slots, counts)

@@ -1,0 +1,179 @@
+{
+  "schema": 1,
+  "base": "b9d1519670f908955ce4b3c29712cf0b5bff7612b0270a82b7ca1ae801bce434",
+  "candidate": "d141cebbd5804295388daf9cde6a43bb11422aa6fe7a1807cbccc7bd9cfa80b9",
+  "inputs": {
+    "base": {
+      "ref": "119f881d90554fbe16eca707e69ce9bc41ef03e4",
+      "commit": "119f881d90554fbe16eca707e69ce9bc41ef03e4",
+      "sha256": "c295065fbda8229eab85e800feffeca8f249fe9f237560443c9c735349d8df69",
+      "dirty": false,
+      "files": 260,
+      "scope": "engine source; external libraries belong to the profile runtime"
+    },
+    "candidate": {
+      "ref": "working-tree",
+      "commit": "119f881d90554fbe16eca707e69ce9bc41ef03e4",
+      "sha256": "fd584c3d999a5d11ac99d2109ea861c1fb94f03f6c38da38575523d964386250",
+      "dirty": true,
+      "files": 260,
+      "scope": "engine source; external libraries belong to the profile runtime"
+    }
+  },
+  "runtime": "",
+  "evidence": "",
+  "rows": [
+    {
+      "phase": "decode",
+      "ctx": 32000,
+      "width": 1,
+      "components": {
+        "attention": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "communication": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "drafter": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "moe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "nonmoe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    },
+    {
+      "phase": "prefill",
+      "ctx": 32000,
+      "width": 1,
+      "components": {
+        "prefill": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    },
+    {
+      "phase": "decode",
+      "ctx": 32000,
+      "width": 4,
+      "components": {
+        "attention": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "communication": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "drafter": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "moe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "nonmoe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    },
+    {
+      "phase": "decode",
+      "ctx": 128000,
+      "width": 1,
+      "components": {
+        "attention": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "communication": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "drafter": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "moe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "nonmoe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    },
+    {
+      "phase": "prefill",
+      "ctx": 128000,
+      "width": 1,
+      "components": {
+        "prefill": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    },
+    {
+      "phase": "decode",
+      "ctx": 128000,
+      "width": 4,
+      "components": {
+        "attention": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "communication": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "drafter": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "moe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        },
+        "nonmoe": {
+          "base_ms": null,
+          "candidate_ms": null,
+          "samples": 0
+        }
+      }
+    }
+  ]
+}
