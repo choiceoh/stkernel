@@ -1575,6 +1575,113 @@ mk_gemm_input_cta3_kernel(MKGemm2Ctx c) {
   if constexpr (DIRECT) __threadfence_system();
 }
 
+// C1 register pipeline. A lane owns two complete 16-byte W4 vectors and
+// their four scales. The warp's vector loads cover exactly the same 16 rows
+// as the shared-memory staging path, without its copies, waits or bank
+// addressing. Keep the next immutable weight block live while consuming the
+// current one. Only the original split partials need shared memory.
+struct MKRegisterW4 {
+  uint4 words[2];
+  uint32_t scales[2];
+};
+
+template <int KBLKS>
+__device__ __forceinline__ MKRegisterW4 mk_load_register_w4(const MKGemm2Ctx& c, int nt, int kb) {
+  const int lane=threadIdx.x&31, g=lane>>2, q=lane&3;
+  const size_t tile=(size_t)(nt/8)*KBLKS+kb;
+  const uint8_t* w=c.wq4+tile*8192+(nt%8)*1024;
+  const uint8_t* s=(const uint8_t*)c.ws4+tile*1024+(nt%8)*128;
+  MKRegisterW4 raw;
+#pragma unroll
+  for(int j=0;j<2;++j) {
+    const int row=j*8+g;
+    raw.words[j]=*(const uint4*)(w+row*64+q*16);
+    raw.scales[j]=*(const uint16_t*)(s+row*8+q*2);
+  }
+  return raw;
+}
+
+__device__ __forceinline__ uint32_t mk_register_word(uint4 x, int i) {
+  return i==0?x.x:i==1?x.y:i==2?x.z:x.w;
+}
+
+__device__ __forceinline__ void mk_register_mma(
+    const MKGemm2Ctx& c, const MKRegisterW4& raw, int kb, float (&acc)[4]) {
+  const int lane=threadIdx.x&31, q=lane&3;
+  uint32_t l0a[2],l1a[2],l0b[2],l1b[2];
+#pragma unroll
+  for(int j=0;j<2;++j) {
+    const uint32_t ea=raw.scales[j]&255u,eb=raw.scales[j]>>8;
+    const unsigned long long la=((ea&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
+    const unsigned long long lb=((eb&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
+    l0a[j]=__vadd4((uint32_t)la,ea*0x01010100u);
+    l1a[j]=__vadd4((uint32_t)(la>>32),ea*0x01010101u);
+    l0b[j]=__vadd4((uint32_t)lb,eb*0x01010100u);
+    l1b[j]=__vadd4((uint32_t)(lb>>32),eb*0x01010101u);
+  }
+  float ka[4]={};
+#pragma unroll
+  for(int ks=0;ks<4;++ks) {
+    const int wsel=(ks+q)&3;
+    uint32_t wb[2][2];
+#pragma unroll
+    for(int j=0;j<2;++j) {
+      const uint32_t w=mk_register_word(raw.words[j],wsel);
+      const uint32_t l0=wsel<2?l0a[j]:l0b[j],l1=wsel<2?l1a[j]:l1b[j];
+      wb[j][0]=__byte_perm(l0,l1,w&0x7777u)|__byte_perm(0x8000u,0u,(w>>3)&0x1111u);
+      wb[j][1]=__byte_perm(l0,l1,(w>>16)&0x7777u)|__byte_perm(0x8000u,0u,(w>>19)&0x1111u);
+    }
+    const uint2 x=*(const uint2*)(c.input_q+(size_t)kb*1024+ks*256+lane*8);
+    asm volatile("mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 "
+        "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+        : "+f"(ka[0]),"+f"(ka[1]),"+f"(ka[2]),"+f"(ka[3])
+        : "r"(wb[0][0]),"r"(wb[1][0]),"r"(wb[0][1]),"r"(wb[1][1]),"r"(x.x),"r"(x.y));
+  }
+  const float s0=c.input_s[kb*8+2*q]*c.wgs;
+  const float s1=c.input_s[kb*8+2*q+1]*c.wgs;
+  acc[0]+=ka[0]*s0;acc[1]+=ka[1]*s1;acc[2]+=ka[2]*s0;acc[3]+=ka[3]*s1;
+}
+
+template <int TILES, int SLICES, int KBLKS, bool DIRECT=false>
+__global__ void __launch_bounds__(TILES*SLICES*32,3)
+mk_gemm_register_kernel(MKGemm2Ctx c) {
+  static_assert((SLICES==3 && (KBLKS==12 || KBLKS==16 || KBLKS==24 || KBLKS==32)) ||
+                (SLICES==2 && KBLKS==32) || (TILES==1 && SLICES==8 && KBLKS==32));
+  asm volatile("griddepcontrol.launch_dependents;");
+  __shared__ float partial[TILES*SLICES*8*16];
+  const int lane=threadIdx.x&31,warp=threadIdx.x>>5,g=lane>>2,q=lane&3;
+  const int nt=blockIdx.x*TILES+warp/SLICES,slice=warp%SLICES;
+  const int first=KBLKS*slice/SLICES,end=KBLKS*(slice+1)/SLICES;
+  // Weights are immutable; activations and the TX descriptor are not.
+  MKRegisterW4 current=mk_load_register_w4<KBLKS>(c,nt,first);
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  if constexpr (DIRECT) c.out=reinterpret_cast<__nv_bfloat16*>(*c.out_address);
+  float acc[4]={};
+#pragma unroll 1
+  for(int kb=first;kb<end-1;++kb) {
+    const MKRegisterW4 next=mk_load_register_w4<KBLKS>(c,nt,kb+1);
+    mk_register_mma(c,current,kb,acc);
+    current=next;
+  }
+  mk_register_mma(c,current,end-1,acc);
+#pragma unroll
+  for(int i=0;i<4;++i) {
+    const int row=2*q+(i&1),col=g+(i>=2?8:0);
+    partial[(warp*8+row)*16+col]=acc[i];
+  }
+  __syncthreads();
+  for(int t=threadIdx.x;t<TILES*8*16;t+=TILES*SLICES*32) {
+    const int tile=t/128,local=t%128,row=local/16;
+    const int col=(blockIdx.x*TILES+tile)*16+local%16;
+    float value=0.f;
+#pragma unroll
+    for(int s=0;s<SLICES;++s)value+=partial[(tile*SLICES+s)*128+local];
+    value*=c.rgs?c.rgs[col]:1.f;
+    c.out[(size_t)row*c.n_orig+col]=__float2bfloat16(value);
+  }
+  if constexpr (DIRECT) __threadfence_system();
+}
+
 // ===========================================================================
 // MK_SEG_MHC -- fused hc_post + hc_pre (+ RMSNorm), T <= MHC_MAX_TOK.
 // Port of mhc_fused_tilelang + mhc_pre_big_fuse_with_norm_tilelang
@@ -3281,7 +3388,7 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                  int64_t lr_r, float* private_partial = nullptr, unsigned int* private_arrive = nullptr,
                  const int64_t* out_address = nullptr, bool wide_input = false, bool bound_input = false,
                  const uint8_t* packed_q = nullptr, const float* packed_s = nullptr,
-                 bool local_query = false) {
+                 bool local_query = false, bool register_weights = false) {
   set_kernel_attrs();
   if constexpr (DIRECT) set_direct_kernel_attrs();
   MKGemm2Ctx c2{};
@@ -3353,8 +3460,11 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                   "local query requires the declared three-slice C1 geometry");
       // Both readers keep their own K slices. All three partials live in
       // this CTA: no global partials, arrival atomics or rearm dependency.
-      mk_launch<192>(mk_gemm_input_cta3_kernel<2,2,3,false,12>,
-                     c2.n_orig/32,INPUT_CTA3_SMEM,stream,c2);
+      if (register_weights)
+        mk_launch<192>(mk_gemm_register_kernel<2,3,12>,c2.n_orig/32,0,stream,c2);
+      else
+        mk_launch<192>(mk_gemm_input_cta3_kernel<2,2,3,false,12>,
+                       c2.n_orig/32,INPUT_CTA3_SMEM,stream,c2);
       return;
     }
     // Keep each weight's original N, ksr, MMA and reduction order. Joining
@@ -3393,7 +3503,19 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
     mk_launch(mk_input_pack_kernel, c2.k / KSTEP, 0, stream,
               MKInputPackCtx{c2.x, q, scales, c2.m, c2.k, c2.x_stride});
     const int cta=bound_c1 ? 4 : mk_gemm_input_cta_mode();
-    if (bound_c1 && c2.k == 2048) {
+    if (bound_c1 && register_weights) {
+      if (c2.k==2048)
+        mk_launch<192>(mk_gemm_register_kernel<2,3,16,DIRECT>,c2.n_orig/32,0,stream,c2);
+      else if (c2.k==3072)
+        mk_launch<192>(mk_gemm_register_kernel<2,3,24,DIRECT>,c2.n_orig/32,0,stream,c2);
+      else if (c2.n_orig==6416) {
+        TORCH_CHECK(c2.ksr==8,"register KDA input requires the original eight slices");
+        mk_launch<256>(mk_gemm_register_kernel<1,8,32,DIRECT>,c2.n_orig/16,0,stream,c2);
+      } else if (c2.ksr==2)
+        mk_launch<128>(mk_gemm_register_kernel<2,2,32,DIRECT>,c2.n_orig/32,0,stream,c2);
+      else
+        mk_launch<192>(mk_gemm_register_kernel<2,3,32,DIRECT>,c2.n_orig/32,0,stream,c2);
+    } else if (bound_c1 && c2.k == 2048) {
       mk_launch<192>(mk_gemm_input_cta3_kernel<2,2,3,DIRECT,16>,c2.n_orig/32,INPUT_CTA3_SMEM,stream,c2);
     } else if (bound_c1 && c2.k == 3072) {
       mk_launch<192>(mk_gemm_input_cta3_kernel<2,2,3,DIRECT,24>,c2.n_orig/32,INPUT_CTA3_SMEM,stream,c2);
@@ -3418,7 +3540,8 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
 
 void mk_run_query_pair(torch::Tensor x, std::vector<torch::Tensor> weights,
                        std::vector<torch::Tensor> scales, std::vector<torch::Tensor> rowscales,
-                       std::vector<torch::Tensor> outputs, bool local_c1 = true) {
+                       std::vector<torch::Tensor> outputs, bool local_c1 = true,
+                       bool register_weights = true) {
   TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2
               && (x.size(0) == 8 || x.size(0) == 16 || x.size(0) == 24 || x.size(0) == 32)
               && x.size(1) == 1536 && x.stride(1) == 1 && x.stride(0) >= 1536
@@ -3462,7 +3585,7 @@ void mk_run_query_pair(torch::Tensor x, std::vector<torch::Tensor> weights,
   for (int i = 0; i < 2; ++i)
     mk_run_gemm_impl(x, weights[i], scales[i], outputs[i], outputs[i].size(1), 1., 0,
                     reinterpret_cast<int64_t>(rowscales[i].data_ptr()), 0, 0, 0,
-                    nullptr, nullptr, nullptr, false, false, q, s, local_query);
+                    nullptr, nullptr, nullptr, false, false, q, s, local_query, register_weights);
 }
 
 void mk_run_gemm(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
@@ -3525,7 +3648,7 @@ void mk_run_gemm_to_slot(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
 void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                             torch::Tensor out, int64_t n_orig, int64_t rgs_ptr,
                             c10::optional<torch::Tensor> workspace,
-                            c10::optional<torch::Tensor> address) {
+                            c10::optional<torch::Tensor> address, bool register_weights = true) {
   TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2,
               "bound input requires CUDA BF16 matrix rows");
   const int64_t m = x.size(0), k = x.size(1), n = n_orig;
@@ -3555,13 +3678,14 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
     TORCH_CHECK(n == 4096 && a.device() == x.device() && a.scalar_type() == torch::kInt64 &&
                 a.is_contiguous() && a.numel() >= 1, "bound input requires its reserved TX descriptor");
     mk_run_gemm_impl<true>(x, wq4, ws4, a, n, 1., 0, rgs_ptr, 0, 0, 0,
-                           partial, arrive, a.data_ptr<int64_t>(), wide, true);
+                           partial, arrive, a.data_ptr<int64_t>(), wide, true,
+                           nullptr, nullptr, false, register_weights);
   } else {
     TORCH_CHECK(out.device() == x.device() && out.scalar_type() == torch::kBFloat16 &&
                 out.dim() == 2 && out.size(0) == m && out.size(1) == n && out.is_contiguous(),
                 "bound input output must match its BF16 matrix");
     mk_run_gemm_impl(x, wq4, ws4, out, n, 1., 0, rgs_ptr, 0, 0, 0,
-                     partial, arrive, nullptr, wide, true);
+                     partial, arrive, nullptr, wide, true, nullptr, nullptr, false, register_weights);
   }
 }
 
@@ -4401,8 +4525,12 @@ void mk_run_prep(std::vector<int64_t> ptrs, std::vector<int64_t> ints) {
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_query_pair", &mk_run_query_pair, "two DSA W4 queries sharing invocation-owned input quantization",
         pybind11::arg("x"), pybind11::arg("weights"), pybind11::arg("scales"),
-        pybind11::arg("rowscales"), pybind11::arg("outputs"), pybind11::arg("local_c1")=true);
-  m.def("run_gemm_bound_input", &mk_run_gemm_bound_input, "bound K=7 input reuse with owned scratch and optional TX output");
+        pybind11::arg("rowscales"), pybind11::arg("outputs"), pybind11::arg("local_c1")=true,
+        pybind11::arg("register_weights")=true);
+  m.def("run_gemm_bound_input", &mk_run_gemm_bound_input, "bound K=7 input reuse with owned scratch and optional TX output",
+        pybind11::arg("x"),pybind11::arg("wq4"),pybind11::arg("ws4"),pybind11::arg("out"),
+        pybind11::arg("n_orig"),pybind11::arg("rgs_ptr"),pybind11::arg("workspace"),
+        pybind11::arg("address"),pybind11::arg("register_weights")=true);
   m.def("run_gemm_wide_input", &mk_run_gemm_wide_input, "private wide-row input reuse qualification");
   m.def("probe_device", &mk_probe_device, "device geometry probe");
   m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");
