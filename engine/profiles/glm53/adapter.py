@@ -142,6 +142,10 @@ class Glm53Engine:
             raise ValueError("capture must finish before requests are admitted")
         if self.decode_graphs is not None:
             raise ValueError("decode graphs are already prepared")
+        # debug (never merge): the route probe's static buffer exists before any graph is captured
+        self.net.route_buf = torch.full((self.F.layers, max_seqs * (self.drafter.k + 1), self.F.topk_experts), -1,
+                                        dtype=torch.int32, device=self.caches.device)
+        self._route_prev = {}
         try:
             if self.memory is not None:
                 self._warmup_prefill_memory()
@@ -791,6 +795,8 @@ class Glm53Engine:
     def _plain_ahead(self, seq: int) -> bool:
         """Greedy, or a truncation the sampler takes as numbers: the device can commit, observe and
         propose without the host. top-k joins top_p here -- the pipeline carries both per row now."""
+        if getattr(self.net, 'route_buf', None) is not None:
+            return False              # debug (never merge): the route probe keeps every step synchronous
         if getattr(getattr(self.drafter, 'tuning', None), 'trace_every', 0):
             return False
         opts = self.options.get(seq, {})
@@ -835,8 +841,34 @@ class Glm53Engine:
         self.chain_exits[reason] = self.chain_exits.get(reason, 0) + 1
         return False
 
+    def _route_probe_row(self, sink, s, routes, accepted, drafted, committed) -> None:
+        """debug (never merge): MoE expert overlap of one synchronous verify step.
+
+        `routes` [layers, rows, top-k]: row 0 is the anchor -- the previous step's correction (or bonus) token at the
+        position its rejected draft held, over the same accepted prefix: the routes a tree's right sibling would take.
+        """
+        moe = [L for L in self.net.layers if self.F.is_moe(L)]
+        rows = int(routes.shape[1])
+        sets = [[set(routes[L, r].tolist()) for r in range(rows)] for L in moe]
+        union = [set().union(*per) for per in sets]
+        loo = [sum(len(per[r] - set().union(*(per[q] for q in range(rows) if q != r))) for per in sets)
+               for r in range(rows)]
+        row = dict(kind='route_overlap', operation='sibling_experts', phase='decode', seq=int(s.seq), context=int(s.ctx),
+                   rows=rows, layers=len(moe), accepted=int(accepted), drafted=int(drafted),
+                   union_total=sum(len(u) for u in union), stale=sum(1 for per in sets for x in per if -1 in x),
+                   loo_anchor=loo[0], loo_draft_mean=sum(loo[1:]) / max(1, rows - 1))
+        prev = self._route_prev.get(s.seq)
+        if prev is not None and prev['ctx_next'] == int(s.ctx):
+            row.update(prev_accepted=prev['accepted'], prev_drafted=prev['drafted'], prev_union_total=prev['union_total'],
+                       anchor_new=sum(len(sets[i][0] - prev['union'][i]) for i in range(len(moe))))
+        sink(**row)
+        self._route_prev[s.seq] = dict(union=union, union_total=row['union_total'], accepted=int(accepted),
+                                       drafted=int(drafted), ctx_next=int(s.ctx) + int(committed))
+
     def _blocked_by(self, seq: int) -> "str | None":
         """The first reason this row may not run ahead. `_plain_ahead` asks the same question as a yes or no."""
+        if getattr(self.net, 'route_buf', None) is not None:
+            return 'route_probe'      # debug (never merge): every step synchronous so its routes are read before the next
         if getattr(getattr(self.drafter, 'tuning', None), 'trace_every', 0):
             return 'draft_trace'      # calibration trace is synchronous and excluded from timing
         opts = self.options.get(seq, {})
@@ -1369,6 +1401,11 @@ class Glm53Engine:
             self.decode_shape_counts[key] = self.decode_shape_counts.get(key, 0) + 1
             h, aux, local = self.decode_graphs.run(step, shape)
             sampled = self.sampling_graphs.run(shape, temps, topk, topp, self._pick_uniforms(step.segments)).tolist() if not all(rich.values()) else None
+        # debug (never merge): this step's routes, read before the next step overwrites the buffer
+        probe = getattr(self.net, "route_buf", None)
+        sink = self.draft_diagnostics.sink if self.draft_diagnostics is not None else None
+        routes_host = (probe[:, :len(flat)].cpu() if probe is not None and sink is not None
+                       and self.net.comm.rank == 0 else None)
         picked = {}
         if any(rich.values()):
             # One collective for the step -- gathering a rich row at a time made the number of all-gathers a
@@ -1410,6 +1447,9 @@ class Glm53Engine:
             new, done = self._commit(s.seq, accepted, new, lps, len(drafts[s.seq]))
             committed = len(new)                                           # clipped tokens must not enter the next turn's context
             committed_counts.append(committed)
+            if routes_host is not None:
+                self._route_probe_row(sink, s, routes_host[:, s.start: s.start + s.length], accepted,
+                                      len(drafts[s.seq]), committed)
             if aux is not None:
                 prepared = getattr(self.decode_graphs, "observations", {}).get(shape) if self.decode_graphs is not None else None
                 if prepared is not None:

@@ -933,7 +933,12 @@ class Glm53Net:
             else:
                 gate = self._router_weights.get(L, p[n + "gate"])
                 logits = x.float() @ gate.float().T
-        return self._select_routes(L, logits)
+        sel, w = self._select_routes(L, logits)
+        # debug (never merge): a decode-width route lands in a static buffer the captured graphs replay into
+        buf = getattr(self, "route_buf", None)
+        if buf is not None and x.shape[0] <= buf.shape[1]:
+            buf[L, :x.shape[0]].copy_(sel)
+        return sel, w
 
     def _select_routes(self, L, logits):
         F, p, n = self.F, self.p, f"L{L}.moe."
