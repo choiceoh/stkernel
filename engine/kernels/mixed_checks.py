@@ -23,10 +23,11 @@ def _check(DX, PX, DR, PR, S0, S1, S2, S3, Status, D, P, B: tl.constexpr):
     if tl.sum(bad.to(tl.int32), 0) != 0:
         tl.atomic_or(Status, 1, sem='relaxed')
     if block == 0:
-        s0 = tl.load(S0 + offsets, offsets < 288, other=1)
-        s1 = tl.load(S1 + offsets, offsets < 288, other=1)
-        s2 = tl.load(S2 + offsets, offsets < 288, other=1)
-        s3 = tl.load(S3 + offsets, offsets < 288, other=1)
+        scale_offsets = tl.arange(0, 512)
+        s0 = tl.load(S0 + scale_offsets, scale_offsets < 288, other=1)
+        s1 = tl.load(S1 + scale_offsets, scale_offsets < 288, other=1)
+        s2 = tl.load(S2 + scale_offsets, scale_offsets < 288, other=1)
+        s3 = tl.load(S3 + scale_offsets, scale_offsets < 288, other=1)
         valid = ((s0 > 0) & (s0 < float('inf')) & (s1 > 0) & (s1 < float('inf'))
                  & (s2 > 0) & (s2 < float('inf')) & (s3 > 0) & (s3 < float('inf')))
         if tl.sum((~valid).to(tl.int32), 0) != 0:
