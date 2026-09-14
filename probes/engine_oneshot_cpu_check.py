@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import sys
 
 
 def main():
@@ -11,19 +12,29 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(root))
     directory = root/'engine/kernels/oneshot'
     import torch
     assert not torch.cuda.is_initialized()
     spec = importlib.util.spec_from_file_location('st_oneshot_cpu_check', directory/'__init__.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    extension = module.build()
-    assert hasattr(extension, 'oneshot_max_int64')
-    assert hasattr(extension, 'oneshot_gather_int64')
+    extensions = {}
+    for rails in (1, 2):
+        for inline in (False, True):
+            extension = module.build(rails, inline_flags=inline)
+            assert hasattr(extension, 'oneshot_max_int64')
+            assert hasattr(extension, 'oneshot_gather_int64')
+            assert extension.rails()[0] == rails
+            assert extension.transport_modes()[1] == int(inline)
+            extensions[f'rails{rails}_inline{int(inline)}'] = extension
+    assert len({ext.__name__ for ext in extensions.values()}) == 4
     assert not torch.cuda.is_initialized()
-    report = dict(status='PASS', evidence='full Torch extension compile/load only', gpu_used=False,
+    report = dict(status='PASS', evidence='full Torch extension compile/load only, rails 1/2 x inline 0/1', gpu_used=False,
                   torch=torch.__version__, cuda=torch.version.cuda, max_elements=module.MAX_ELEMENTS,
-                  extension_sha256=hashlib.sha256(Path(extension.__file__).read_bytes()).hexdigest(),
+                  extension_names={key: ext.__name__ for key, ext in extensions.items()},
+                  extension_sha256={rails: hashlib.sha256(Path(ext.__file__).read_bytes()).hexdigest()
+                                    for rails, ext in extensions.items()},
                   source_sha256={str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
                                  for p in sorted(directory.iterdir()) if p.is_file()})
     args.output.parent.mkdir(parents=True, exist_ok=True)

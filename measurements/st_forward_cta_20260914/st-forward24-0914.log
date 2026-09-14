@@ -1,0 +1,7 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-st-forward24-0914-20260914-151923.txt
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-st-forward24-0914-20260914-151923.txt
+GO st-forward24-0914 2026-09-14_15:19:24
+  single GPU: probes/engine_kernel_check.py on srv4 (tree ~/st-forward24-0914-srv4, image sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc, budget 4 GiB beside production, no fleet lease)
+docker: Error response from daemon: No such image: sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc
+
+Run 'docker run --help' for more information

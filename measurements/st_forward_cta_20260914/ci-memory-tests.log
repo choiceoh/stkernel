@@ -1,0 +1,23 @@
+test_it_says_what_is_production_s_and_what_is_not (tests.test_engine_test_boot.FlagTests.test_it_says_what_is_production_s_and_what_is_not)
+It holds no lease, and four ranks share one GPU -- somebody reading the log has to be told both, ... ok
+test_test_implies_local_and_the_served_lanes (tests.test_engine_test_boot.FlagTests.test_test_implies_local_and_the_served_lanes) ... ok
+test_the_served_lane_is_guarded_and_the_reference_one_is_not (tests.test_engine_test_boot.FlagTests.test_the_served_lane_is_guarded_and_the_reference_one_is_not)
+The reference lanes hold no weights worth guarding; the served ones bring the model. ... ok
+test_a_boot_without_a_drafter_times_nothing_rather_than_crashing (tests.test_engine_test_boot.MeasurementTests.test_a_boot_without_a_drafter_times_nothing_rather_than_crashing)
+The stages belong to the async decode pipeline, and no drafter means no pipeline. ... ok
+test_it_captures_what_production_captures (tests.test_engine_test_boot.MeasurementTests.test_it_captures_what_production_captures)
+An eager decode is a different engine. The graphs are the path being tested. ... ok
+test_it_times_every_step (tests.test_engine_test_boot.MeasurementTests.test_it_times_every_step) ... ok
+test_the_table_says_whose_time_it_is (tests.test_engine_test_boot.MeasurementTests.test_the_table_says_whose_time_it_is)
+Four ranks on one GPU: the path is production's and the milliseconds are not. ... ok
+test_a_boot_with_room_is_allowed (tests.test_engine_test_boot.MemoryGuardTests.test_a_boot_with_room_is_allowed) ... ok
+test_it_refuses_rather_than_guesses_and_says_by_how_much (tests.test_engine_test_boot.MemoryGuardTests.test_it_refuses_rather_than_guesses_and_says_by_how_much) ... ok
+test_it_reports_what_is_left_after_the_kv_this_boot_declares (tests.test_engine_test_boot.MemoryGuardTests.test_it_reports_what_is_left_after_the_kv_this_boot_declares) ... ok
+test_the_floor_is_not_zero (tests.test_engine_test_boot.MemoryGuardTests.test_the_floor_is_not_zero)
+A floor of zero is not a floor: earlyoom kills before MemAvailable reaches it. ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 2.057s
+
+OK
+  memory: 27.6 GiB left after 0.0 GiB of KV, floor 0.0 -- room for the weights

@@ -23,6 +23,7 @@ worker rather than itself.
 """
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -38,9 +39,12 @@ def boot():
 class MemoryGuardTests(unittest.TestCase):
     def test_it_reports_what_is_left_after_the_kv_this_boot_declares(self):
         module = boot()
-        whole = module.memory_left(0.0)
-        self.assertGreater(whole, 0.0)
-        self.assertAlmostEqual(module.memory_left(2.0), whole - 2.0, places=3)
+        # Compare one memory snapshot: live MemAvailable can move between calls.
+        snapshot = "MemTotal: 33554432 kB\nMemFree: 2097152 kB\nMemAvailable: 13107200 kB\n"
+        with patch.object(module.Path, 'read_text', return_value=snapshot):
+            self.assertEqual(module.memory_left(0.0), 12.5)
+            self.assertEqual(module.memory_left(2.0), 10.5)
+            self.assertEqual(module.memory_left(13.0), -0.5)
 
     def test_it_refuses_rather_than_guesses_and_says_by_how_much(self):
         module = boot()

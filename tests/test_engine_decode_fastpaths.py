@@ -104,7 +104,9 @@ class BoundDecodeTests(unittest.TestCase):
         self.assertEqual(layer.bound_input_executed, set(ROWS))
         self.assertFalse(dense.bound_input_cell(16, 6416, 4096))
         self.assertTrue(dense.bound_input_cell(24, 6416, 4096))
-        self.assertFalse(dense.bound_input_cell(8, 4096, 2048))
+        self.assertTrue(dense.bound_input_cell(8, 4096, 2048))
+        self.assertTrue(dense.bound_input_cell(8, 4096, 3072))
+        self.assertFalse(dense.bound_input_cell(8, 4096, 1536))  # the query-pair owner selects its layout
         self.assertTrue(dense.bound_input_cell(16, 4096, 2048))
         self.assertFalse(dense.bound_input_cell(32, 4096, 20480))
 

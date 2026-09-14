@@ -1,0 +1,380 @@
+{
+  "source": "ec5c6718",
+  "scope": "same-build components only; no consumer speed or acceptance verdict",
+  "timings": [
+    {
+      "candidate": "pipeline_w4",
+      "key": "L0.kda.in_proj",
+      "rows": 8,
+      "cache": "warm",
+      "base_us": 28.792249970138073,
+      "candidate_us": 27.460750192403793,
+      "time_change_pct": -4.6245075640675815,
+      "base_sample_us": [
+        30.244000256061554,
+        27.340499684214592
+      ],
+      "candidate_sample_us": [
+        27.3669995367527,
+        27.554500848054886
+      ]
+    },
+    {
+      "candidate": "pipeline_w4",
+      "key": "L0.kda.in_proj",
+      "rows": 8,
+      "cache": "evicted",
+      "base_us": 358.1664990633726,
+      "candidate_us": 281.579501228407,
+      "time_change_pct": -21.38307129093461,
+      "base_sample_us": [
+        355.8599981479347,
+        360.47299997881055
+      ],
+      "candidate_sample_us": [
+        360.11300422251225,
+        203.0459982343018
+      ]
+    },
+    {
+      "candidate": "pipeline_w4",
+      "key": "L0.mlp.gate_up",
+      "rows": 8,
+      "cache": "warm",
+      "base_us": 76.73400267958641,
+      "candidate_us": 30.274749733507633,
+      "time_change_pct": -60.54584841621765,
+      "base_sample_us": [
+        76.93800330162048,
+        76.53000205755234
+      ],
+      "candidate_sample_us": [
+        30.277999117970467,
+        30.2715003490448
+      ]
+    },
+    {
+      "candidate": "pipeline_w4",
+      "key": "L0.mlp.gate_up",
+      "rows": 8,
+      "cache": "evicted",
+      "base_us": 124.50450158212334,
+      "candidate_us": 235.91750010382384,
+      "time_change_pct": 89.48511668729691,
+      "base_sample_us": [
+        125.51800161600113,
+        123.49100154824555
+      ],
+      "candidate_sample_us": [
+        198.70499754324555,
+        273.1300026644021
+      ]
+    },
+    {
+      "candidate": "pipeline_w4",
+      "key": "L3.mla.o_proj",
+      "rows": 8,
+      "cache": "warm",
+      "base_us": 27.446500025689602,
+      "candidate_us": 22.982750087976456,
+      "time_change_pct": -16.26345775794775,
+      "base_sample_us": [
+        29.22849915921688,
+        25.664500892162323
+      ],
+      "candidate_sample_us": [
+        23.0065006762743,
+        22.95899949967861
+      ]
+    },
+    {
+      "candidate": "pipeline_w4",
+      "key": "L3.mla.o_proj",
+      "rows": 8,
+      "cache": "evicted",
+      "base_us": 240.46050175093114,
+      "candidate_us": 84.35049944091588,
+      "time_change_pct": -64.9212661427921,
+      "base_sample_us": [
+        393.4590029530227,
+        87.46200054883957
+      ],
+      "candidate_sample_us": [
+        83.99299927987158,
+        84.70799960196018
+      ]
+    },
+    {
+      "candidate": "pipeline_w4_direct",
+      "key": "L3.mla.o_proj",
+      "rows": 8,
+      "cache": "warm",
+      "base_us": 27.029999531805515,
+      "candidate_us": 24.967250414192677,
+      "time_change_pct": -7.631332420800286,
+      "base_sample_us": [
+        27.093999087810516,
+        26.965999975800514
+      ],
+      "candidate_sample_us": [
+        25.00700019299984,
+        24.927500635385513
+      ]
+    },
+    {
+      "candidate": "pipeline_w4_direct",
+      "key": "L3.mla.o_proj",
+      "rows": 8,
+      "cache": "evicted",
+      "base_us": 202.3835022118874,
+      "candidate_us": 240.10799929965287,
+      "time_change_pct": 18.64010488773411,
+      "base_sample_us": [
+        241.2220014957711,
+        163.54500292800367
+      ],
+      "candidate_sample_us": [
+        245.23899797350168,
+        234.97700062580407
+      ]
+    },
+    {
+      "candidate": "pipeline_w4",
+      "key": "L0.kda.o_proj",
+      "rows": 8,
+      "cache": "warm",
+      "base_us": 17.929249443113804,
+      "candidate_us": 14.450499787926674,
+      "time_change_pct": -19.402650770321195,
+      "base_sample_us": [
+        19.7759997099638,
+        16.08249917626381
+      ],
+      "candidate_sample_us": [
+        14.449999667704105,
+        14.450999908149242
+      ]
+    },
+    {
+      "candidate": "pipeline_w4",
+      "key": "L0.kda.o_proj",
+      "rows": 8,
+      "cache": "evicted",
+      "base_us": 126.61800032947212,
+      "candidate_us": 160.71049799211323,
+      "time_change_pct": 26.925474714439623,
+      "base_sample_us": [
+        126.44199992064387,
+        126.79400073830038
+      ],
+      "candidate_sample_us": [
+        125.88199670426548,
+        195.538999279961
+      ]
+    },
+    {
+      "candidate": "pipeline_w4_direct",
+      "key": "L0.kda.o_proj",
+      "rows": 8,
+      "cache": "warm",
+      "base_us": 16.63325075060129,
+      "candidate_us": 14.88975016400218,
+      "time_change_pct": -10.482019496616346,
+      "base_sample_us": [
+        16.658000648021698,
+        16.608500853180885
+      ],
+      "candidate_sample_us": [
+        14.822999946773052,
+        14.956500381231308
+      ]
+    },
+    {
+      "candidate": "pipeline_w4_direct",
+      "key": "L0.kda.o_proj",
+      "rows": 8,
+      "cache": "evicted",
+      "base_us": 160.80100092221983,
+      "candidate_us": 204.31999501306564,
+      "time_change_pct": 27.06388258857677,
+      "base_sample_us": [
+        197.40200031083077,
+        124.20000153360888
+      ],
+      "candidate_sample_us": [
+        204.8599935369566,
+        203.77999648917466
+      ]
+    },
+    {
+      "candidate": "pipeline_w4",
+      "key": "L0.mlp.down",
+      "rows": 8,
+      "cache": "warm",
+      "base_us": 22.239000536501408,
+      "candidate_us": 17.614499665796757,
+      "time_change_pct": -20.794553528223293,
+      "base_sample_us": [
+        23.71950075030327,
+        20.758500322699547
+      ],
+      "candidate_sample_us": [
+        17.609000205993652,
+        17.61999912559986
+      ]
+    },
+    {
+      "candidate": "pipeline_w4",
+      "key": "L0.mlp.down",
+      "rows": 8,
+      "cache": "evicted",
+      "base_us": 143.12650077044964,
+      "candidate_us": 141.35399664519355,
+      "time_change_pct": -1.2384178441551374,
+      "base_sample_us": [
+        143.47200037445873,
+        142.78100116644055
+      ],
+      "candidate_sample_us": [
+        136.70299598015845,
+        146.00499731022865
+      ]
+    },
+    {
+      "candidate": "pipeline_w4_direct",
+      "key": "L0.mlp.down",
+      "rows": 8,
+      "cache": "warm",
+      "base_us": 20.905500277876854,
+      "candidate_us": 18.7975000590086,
+      "time_change_pct": -10.083471769862584,
+      "base_sample_us": [
+        20.93850076198578,
+        20.87249979376793
+      ],
+      "candidate_sample_us": [
+        18.82999949157238,
+        18.765000626444817
+      ]
+    },
+    {
+      "candidate": "pipeline_w4_direct",
+      "key": "L0.mlp.down",
+      "rows": 8,
+      "cache": "evicted",
+      "base_us": 143.14300153637305,
+      "candidate_us": 65.21050026640296,
+      "time_change_pct": -54.44380824316249,
+      "base_sample_us": [
+        143.14100332558155,
+        143.14499974716455
+      ],
+      "candidate_sample_us": [
+        64.5620001014322,
+        65.85900043137372
+      ]
+    },
+    {
+      "candidate": "pipeline_w4_queries",
+      "key": null,
+      "rows": 8,
+      "cache": "warm",
+      "base_us": 24.329250678420067,
+      "candidate_us": 17.964249476790428,
+      "time_change_pct": -26.161928642033207,
+      "base_sample_us": [
+        25.84500052034855,
+        22.813500836491585
+      ],
+      "candidate_sample_us": [
+        17.969999462366104,
+        17.958499491214752
+      ]
+    },
+    {
+      "candidate": "pipeline_w4_queries",
+      "key": null,
+      "rows": 8,
+      "cache": "evicted",
+      "base_us": 104.15049886796623,
+      "candidate_us": 140.2815023320727,
+      "time_change_pct": 34.691147768682804,
+      "base_sample_us": [
+        64.9059999268502,
+        143.39499780908227
+      ],
+      "candidate_sample_us": [
+        140.71000344119966,
+        139.85300122294575
+      ]
+    },
+    {
+      "candidate": "pipeline_w4_queries",
+      "key": null,
+      "rows": 32,
+      "cache": "warm",
+      "base_us": 81.51999861001968,
+      "candidate_us": 81.4175009727478,
+      "time_change_pct": -0.1257331195038569,
+      "base_sample_us": [
+        82.36850053071976,
+        80.67149668931961
+      ],
+      "candidate_sample_us": [
+        81.57850056886673,
+        81.25650137662888
+      ]
+    },
+    {
+      "candidate": "pipeline_w4_queries",
+      "key": null,
+      "rows": 32,
+      "cache": "evicted",
+      "base_us": 165.52450170274824,
+      "candidate_us": 205.94050118234009,
+      "time_change_pct": 24.416928650340598,
+      "base_sample_us": [
+        165.1520028244704,
+        165.89700058102608
+      ],
+      "candidate_sample_us": [
+        246.22300220653415,
+        165.65800015814602
+      ]
+    },
+    {
+      "candidate": "pipeline_w4_queries",
+      "key": null,
+      "rows": 8,
+      "cache": "warm",
+      "base_us": 24.617999792099,
+      "candidate_us": 18.016000278294086,
+      "time_change_pct": -26.81777386286186,
+      "base_sample_us": [
+        26.38150006532669,
+        22.854499518871307
+      ],
+      "candidate_sample_us": [
+        18.04549992084503,
+        17.98650063574314
+      ]
+    },
+    {
+      "candidate": "pipeline_w4_queries",
+      "key": null,
+      "rows": 8,
+      "cache": "evicted",
+      "base_us": 182.97000124584883,
+      "candidate_us": 137.77500129071996,
+      "time_change_pct": -24.700770425421993,
+      "base_sample_us": [
+        221.0420003393665,
+        144.89800215233117
+      ],
+      "candidate_sample_us": [
+        138.97900038864464,
+        136.57100219279528
+      ]
+    }
+  ]
+}
