@@ -38,8 +38,9 @@ def check(report, ranks=None, *, timing=True):
                 owner.isolate_workspace()
             parent = torch.randn(8, k+8, device='cuda', dtype=torch.bfloat16)
             x = parent[:, 4:k+4]
-            guard = torch.full((2, 10, 4096), -123., device='cuda', dtype=torch.bfloat16)
-            address = torch.tensor([guard[0, 1].data_ptr()], device='cuda', dtype=torch.int64)
+            guard = torch.full((2, 2, 10, 4096), -123., device='cuda', dtype=torch.bfloat16)
+            addresses = [torch.tensor([guard[arm, 0, 1].data_ptr()], device='cuda', dtype=torch.int64)
+                         for arm in (0, 1)]
             graphs, outputs = [], []
             try:
                 # Baseline is the unchanged ordinary GEMM from this extension.
@@ -47,26 +48,31 @@ def check(report, ranks=None, *, timing=True):
                     owner.decode_input_rows = rows
                     graph, out = _capture(lambda: owner(x))
                     graphs.append(graph); outputs.append(out)
-                direct = _capture(lambda: owner._write_slot(x, address))[0]
-                graphs.append(direct)
+                for arm, rows in enumerate(((), (8, 16, 24, 32))):
+                    owner.decode_input_rows = rows
+                    graphs.append(_capture(lambda: owner._write_slot(x, addresses[arm]))[0])
                 for step, magnitude in enumerate((0., .001, .1, 1., 50., 0.)):
                     parent.normal_().mul_(magnitude)
-                    for order in ((0, 1, 2), (2, 1, 0)):
+                    for order in ((0, 1, 2, 3), (3, 2, 1, 0)):
                         guard.fill_(-123.)
-                        address.fill_(guard[step % 2, 1].data_ptr())
+                        for arm, address in enumerate(addresses):
+                            address.fill_(guard[arm, step % 2, 1].data_ptr())
                         for out in outputs:
                             out.fill_(float('nan'))
                         for i in order:
                             graphs[i].replay()
                         assert outputs[1].isfinite().all().item()
                         torch.testing.assert_close(outputs[1], outputs[0], rtol=0, atol=0)
-                        torch.testing.assert_close(guard[step % 2, 1:-1], outputs[0], rtol=0, atol=0)
-                        assert guard[step % 2, (0, -1)].eq(-123.).all().item()
-                        assert guard[1-step % 2].eq(-123.).all().item()
+                        for arm in (0, 1):
+                            torch.testing.assert_close(guard[arm, step % 2, 1:-1], outputs[0], rtol=0, atol=0)
+                            assert guard[arm, step % 2, (0, -1)].eq(-123.).all().item()
+                            assert guard[arm, 1-step % 2].eq(-123.).all().item()
                 report('forward_reduction_exact', rows=8, n=4096, k=k, private_workspace=private,
-                       changed_input=True, rebound_direct_address=True, split=3, replay_orders='BAD/DAB')
+                       changed_input=True, rebound_direct_address=True, direct_same_build_control=True,
+                       split=3, replay_orders='B,A,Bdirect,Adirect/reverse')
                 if timing and not private:
                     timings(report, 'forward_cta_reduction', 8, graphs[:2], n=4096, k=k, split=3)
+                    timings(report, 'forward_cta_reduction_direct', 8, graphs[2:], n=4096, k=k, split=3)
             finally:
                 for graph in graphs:
                     graph.reset()
