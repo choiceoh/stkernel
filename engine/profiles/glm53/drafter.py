@@ -408,9 +408,9 @@ class Drafter:
         if self.fast_attention:
             from engine.kernels.draft_attention import draft_attention
             if isinstance(ring, tuple):
-                o = draft_attention(qh.contiguous(),kh.contiguous(),vh.contiguous(),ring[0],ctx_len,slot=ring[1],layer=L)
+                o = draft_attention(qh.contiguous(),kh.contiguous(),vh,ring[0],ctx_len,slot=ring[1],layer=L)
             else:
-                o = draft_attention(qh.contiguous(), kh.contiguous(), vh.contiguous(), ring[L], ctx_len)
+                o = draft_attention(qh.contiguous(), kh.contiguous(), vh, ring[L], ctx_len)
             return self.target.comm.all_reduce(self.linear(o.reshape(B, heads*F.head_dim), q+"o_proj.weight"))
         # the context window: the last min(ctx, window) verified positions, then the block itself (non-causal)
         # A fixed window keeps GEMM/reduction geometry identical in eager and
@@ -555,7 +555,8 @@ class Drafter:
             q0, k0, v0 = self.linear(x, q + "qkv", rows_ok).split((heads*D, kv*D, kv*D), -1)
             qh = norm_rope(q0.reshape(n*t, heads, D), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
             kh = norm_rope(k0.reshape(n*t, kv, D), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
-            vh = v0.reshape(n*t, kv, D).contiguous()
+            # Read V in the packed QKV projection; its token stride spans Q and K too.
+            vh = v0.reshape(n*t, kv, D)
             # GEMMs cover all rows once, and so does the attention: each row reads its own device-selected slot
             # at its own context length, so the rows are a grid dimension and there is nothing to concatenate.
             out = attend_rows(qh.view(n, t, heads, D), kh.view(n, t, kv, D), vh.view(n, t, kv, D),

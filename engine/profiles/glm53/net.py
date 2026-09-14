@@ -418,8 +418,10 @@ class Glm53Net:
             self.shared_overlap = SharedOverlap(self.p["norm"].device)
 
     @operation("linear", name_arg=2)
-    def linear(self, x, name):
+    def linear(self, x, name, *, out=None):
         layer = self.dense.get(name)
+        if out is not None:
+            return layer(x, out=out) if layer is not None else torch.mm(x, self.p[name].T, out=out)
         return layer(x) if layer is not None else Fn.linear(x, self.p[name])
 
     def prefill_project(self, transport, x, name):
@@ -442,9 +444,17 @@ class Glm53Net:
     def head(self, h: torch.Tensor) -> torch.Tensor:
         return self.comm.all_gather(self.head_local(h), dim=-1)
 
+    def head_buffer(self, rows: int, device) -> torch.Tensor:
+        """Stable GEMM destination, including the FP8 head's padded columns."""
+        head = self.dense.get("head")
+        width = head.weight[0].shape[0] if head is not None else self.vp
+        return torch.empty(rows, width, device=device, dtype=torch.bfloat16)
+
     @operation("head_local")
-    def head_local(self, h: torch.Tensor) -> torch.Tensor:
-        return self.linear(h, "head")
+    def head_local(self, h: torch.Tensor, *, out=None) -> torch.Tensor:
+        if out is None:
+            return self.linear(h, "head")
+        return self.linear(h, "head", out=out)
 
     @operation("head_tokens")
     def head_tokens(self, h: torch.Tensor, decodable=None) -> torch.Tensor:

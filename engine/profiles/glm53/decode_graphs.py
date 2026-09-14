@@ -276,6 +276,7 @@ class Glm53DecodeGraphs:
         # alone, so sharing the buffer across a row's capacity buckets is what lets one sampler graph
         # serve all of them: 72 sampling graphs become 8 (boot-time study, 2026-09-11).
         self.logits = {}
+        self.head_outputs = {}
         self.deferred_states = {}
         if self.execution_plan.deferred_kda and (net.lanes.kda_recurrent_ring_rows is None or net.lanes.conv_ring_rows is None):
             raise ValueError("deferred KDA requires the captured row ring lanes")
@@ -289,8 +290,10 @@ class Glm53DecodeGraphs:
         def logits_for(n, t):
             key = (n, t)
             if key not in self.logits:
-                self.logits[key] = torch.empty(n * t, net.vp, device=caches.device,
-                                          dtype=torch.bfloat16)
+                self.head_outputs[key] = net.head_buffer(n * t, caches.device)
+                # The same logical view belongs to every capacity. Greedy selection
+                # reads its row stride and must never see the padded vocabulary tail.
+                self.logits[key] = self.head_outputs[key][:, :net.vp]
             return self.logits[key]
 
         def make_inputs(n, t, capacity):
@@ -343,7 +346,7 @@ class Glm53DecodeGraphs:
                 else:
                     result = net.forward(step, scratch, aux_layers=self.aux_layers, aux_ready=hook)
                 h, aux = result if self.aux_layers else (result, None)
-                logits.copy_(net.head_local(h))
+                net.head_local(h, out=self.head_outputs[(step.contexts.numel(), step.tokens)])
                 if prepared is not None:
                     self.observations[(step.contexts.numel(), tokens, scratch.capacity)] = prepared
                 return h, aux, logits

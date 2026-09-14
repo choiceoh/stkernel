@@ -1,0 +1,54 @@
+{
+  "status": "PASS",
+  "mode": "compile",
+  "gpu_used": false,
+  "cases": [
+    {
+      "tokens": 1,
+      "value_token_stride": 256,
+      "status": "PASS",
+      "shared_bytes": 28800,
+      "cubin_sha256": "a423985c1b11996c89f273b8ea6ba48c5f42a3be2a03b6bf33e5343727ba6db6"
+    },
+    {
+      "tokens": 1,
+      "value_token_stride": 1536,
+      "status": "PASS",
+      "shared_bytes": 28800,
+      "cubin_sha256": "f212ac247bd30e403b361b2666312b24d5c8453c1e9d0eaf46e78a5d1b61c78b"
+    },
+    {
+      "tokens": 8,
+      "value_token_stride": 256,
+      "status": "PASS",
+      "shared_bytes": 28800,
+      "cubin_sha256": "42ecc4e9eed1b5c70f3f126b3f672073a58eb91b66317e7f71c94f0e90941b76"
+    },
+    {
+      "tokens": 8,
+      "value_token_stride": 1536,
+      "status": "PASS",
+      "shared_bytes": 28800,
+      "cubin_sha256": "eabba092e4892835bb02dfae6ed2c4cd92027f7838e99e530352f8764b17b4dd"
+    },
+    {
+      "tokens": 32,
+      "value_token_stride": 256,
+      "status": "PASS",
+      "shared_bytes": 28800,
+      "cubin_sha256": "23802948303b9fdd382b5629f26e542335048728befe529a36f471f2e5f25aca"
+    },
+    {
+      "tokens": 32,
+      "value_token_stride": 1536,
+      "status": "PASS",
+      "shared_bytes": 28800,
+      "cubin_sha256": "247c74e5eaaa592c447b3baf3a9227396b569abb5a9aa9c3e1ceff29d46cf5e8"
+    }
+  ],
+  "scope": "CPU address/equality or native compile only; GPU numerics, replay and serving speed pending",
+  "source_sha256": {
+    "engine/kernels/draft_attention.py": "709973966e8ccc11da31fc35f8d67ad6eb76b93f298ef42918ecbd1b27b0f391",
+    "probes/engine_decode_buffers_check.py": "5debd24ff857c02bf36c32f801e86a99d3ac79707a21bd7137fedea40600669b"
+  }
+}

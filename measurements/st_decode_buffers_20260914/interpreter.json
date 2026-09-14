@@ -1,0 +1,192 @@
+{
+  "status": "PASS",
+  "mode": "interpreter",
+  "gpu_used": false,
+  "cases": [
+    {
+      "rows": 1,
+      "tokens": 1,
+      "context": 0,
+      "value_strides": [
+        256,
+        256,
+        128,
+        1
+      ],
+      "exact": true
+    },
+    {
+      "rows": 1,
+      "tokens": 1,
+      "context": 32,
+      "value_strides": [
+        256,
+        256,
+        128,
+        1
+      ],
+      "exact": true
+    },
+    {
+      "rows": 1,
+      "tokens": 1,
+      "context": 10000,
+      "value_strides": [
+        256,
+        256,
+        128,
+        1
+      ],
+      "exact": true
+    },
+    {
+      "rows": 1,
+      "tokens": 8,
+      "context": 0,
+      "value_strides": [
+        12288,
+        1536,
+        128,
+        1
+      ],
+      "exact": true
+    },
+    {
+      "rows": 1,
+      "tokens": 8,
+      "context": 32,
+      "value_strides": [
+        12288,
+        1536,
+        128,
+        1
+      ],
+      "exact": true
+    },
+    {
+      "rows": 1,
+      "tokens": 8,
+      "context": 10000,
+      "value_strides": [
+        12288,
+        1536,
+        128,
+        1
+      ],
+      "exact": true
+    },
+    {
+      "rows": 2,
+      "tokens": 8,
+      "context": 0,
+      "value_strides": [
+        15360,
+        1536,
+        128,
+        1
+      ],
+      "exact": true
+    },
+    {
+      "rows": 2,
+      "tokens": 8,
+      "context": 32,
+      "value_strides": [
+        15360,
+        1536,
+        128,
+        1
+      ],
+      "exact": true
+    },
+    {
+      "rows": 2,
+      "tokens": 8,
+      "context": 10000,
+      "value_strides": [
+        15360,
+        1536,
+        128,
+        1
+      ],
+      "exact": true
+    },
+    {
+      "rows": 3,
+      "tokens": 8,
+      "context": 0,
+      "value_strides": [
+        15360,
+        1536,
+        128,
+        1
+      ],
+      "exact": true
+    },
+    {
+      "rows": 3,
+      "tokens": 8,
+      "context": 32,
+      "value_strides": [
+        15360,
+        1536,
+        128,
+        1
+      ],
+      "exact": true
+    },
+    {
+      "rows": 3,
+      "tokens": 8,
+      "context": 10000,
+      "value_strides": [
+        15360,
+        1536,
+        128,
+        1
+      ],
+      "exact": true
+    },
+    {
+      "rows": 4,
+      "tokens": 8,
+      "context": 0,
+      "value_strides": [
+        15360,
+        1536,
+        128,
+        1
+      ],
+      "exact": true
+    },
+    {
+      "rows": 4,
+      "tokens": 8,
+      "context": 32,
+      "value_strides": [
+        15360,
+        1536,
+        128,
+        1
+      ],
+      "exact": true
+    },
+    {
+      "rows": 4,
+      "tokens": 8,
+      "context": 10000,
+      "value_strides": [
+        15360,
+        1536,
+        128,
+        1
+      ],
+      "exact": true
+    }
+  ],
+  "scope": "CPU address/equality or native compile only; GPU numerics, replay and serving speed pending",
+  "source_sha256": {
+    "engine/kernels/draft_attention.py": "709973966e8ccc11da31fc35f8d67ad6eb76b93f298ef42918ecbd1b27b0f391",
+    "probes/engine_decode_buffers_check.py": "5debd24ff857c02bf36c32f801e86a99d3ac79707a21bd7137fedea40600669b"
+  }
+}

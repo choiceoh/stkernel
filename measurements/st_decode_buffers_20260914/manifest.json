@@ -1,0 +1,32 @@
+{
+  "base_commit": "6522564a",
+  "image": "sha256:f85de49afc0a41596cce3df2dab11af992a9aa5d21129c0f50ba719c30f68781",
+  "gpu_used": false,
+  "source_sha256": {
+    "engine/kernels/dense/__init__.py": "0cab3a553c5664cf7778aa1735312857b3c840cc4e4a9c161d4fcec10943af04",
+    "engine/kernels/draft_attention.py": "709973966e8ccc11da31fc35f8d67ad6eb76b93f298ef42918ecbd1b27b0f391",
+    "engine/profiles/glm53/decode_graphs.py": "f0911b0264cff2fda74b697c96cb94be5e33e66f72c8ca74232daa887d38f7b0",
+    "engine/profiles/glm53/drafter.py": "8205c3ec76247f27472fd5066d24638334758d8f3e197ccf066aaae8e13bb533",
+    "engine/profiles/glm53/net.py": "a564642f638bbc2fca036b00f216b2e39262ea268cb9fbe6e71b699440b954f9",
+    "tests/test_engine_decode_buffers.py": "a15a36aa05c62f33d3e132b5667e00d7d276dddf225a820021d2d2c9f6e6f070",
+    "tests/test_engine_draft_attention.py": "1b02dc2042619ce8faa1ce7c7c7ac8c1c410f71dc5b2f719b3557c4c2d5d585a",
+    "tests/test_engine_sampling.py": "c959d948fad8352af31c0daaed1d3cd03c5697a16e09ce046e5230bc0345e481",
+    "probes/engine_decode_buffers_check.py": "5debd24ff857c02bf36c32f801e86a99d3ac79707a21bd7137fedea40600669b"
+  },
+  "cpu_tests": {
+    "run": 37,
+    "passed": 24,
+    "skipped_gpu": 13
+  },
+  "interpreter_cases": 15,
+  "native_compile_cases": 6,
+  "work_removed_per_rank_c1_k7": {
+    "v_copy_launches": 5,
+    "v_copy_tensor_bytes": 20480,
+    "greedy_target_logits_copy_launches": 1,
+    "greedy_target_logits_copy_tensor_bytes": 619520,
+    "shared_head_padding_bytes": 1024
+  },
+  "serving_speedup": null,
+  "quality_acceptance": null
+}
