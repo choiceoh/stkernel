@@ -54,6 +54,7 @@ from flashinfer.gemm.kernels.dense_blockscaled_gemm_sm120_b12x import (
     Sm120B12xBlockScaledDenseGemmKernel as DenseGemmKernel,
 )
 from .moe_activation import gated_activation_f32, is_gated_activation
+from .moe_w4a16_fp4_helpers import add_u8x4
 from .moe_static_common import (
     _bulk_g2s,
     STAMP_BARRIER1,
@@ -368,19 +369,13 @@ class MoEStaticKernelV4:
         )
         return b_smem_staged, sfa_smem_staged, sfb_smem_staged, epi_smem_staged
 
-    def _sf6_expand_word(self, low, high, base7, base80):
-        """Spread four 6-bit codes to byte lanes and add the base without carries.
-
-        low holds four nibbles, high four 2-bit groups. Each code is <=63;
-        adding only the base's low seven bits gives at most 190 per byte,
-        so the 32-bit addition cannot carry into a neighboring byte. XOR
-        then applies the base's high bit with exact modulo-256 semantics.
-        """
+    def _sf6_expand_word(self, low, high, base):
+        """Spread four 6-bit codes, then add the broadcast base modulo 256."""
         low = (low | (low << Int32(8))) & Int32(0x00FF00FF)
         low = (low | (low << Int32(4))) & Int32(0x0F0F0F0F)
         high = (high | (high << Int32(12))) & Int32(0x000F000F)
         high = (high | (high << Int32(6))) & Int32(0x03030303)
-        return ((low | (high << Int32(4))) + base7) ^ base80
+        return Int32(add_u8x4(low | (high << Int32(4)), base))
 
     def _sf_expand_stage(self, stage_addr, tidx, block_bytes=4096, *, packed_addr=None,
                          word_expand=None):
@@ -425,13 +420,12 @@ class MoEStaticKernelV4:
         if word_expand is None:
             word_expand = self.sf6_word_expand and packed_addr is not None
         if word_expand:
-            base7 = (base & Int32(0x7F)) * Int32(0x01010101)
-            base80 = (base & Int32(0x80)) * Int32(0x01010101)
+            packed_base = base * Int32(0x01010101)
         for j in range(per_thread // 4):
             if word_expand:
                 word = self._sf6_expand_word(
                     (a[j // 2] >> Int32(16 * (j % 2))) & Int32(0xFFFF),
-                    (b[j // 4] >> Int32(8 * (j % 4))) & Int32(0xFF), base7, base80)
+                    (b[j // 4] >> Int32(8 * (j % 4))) & Int32(0xFF), packed_base)
             else:
                 word = Int32(0)
                 for m in range(4):
@@ -446,8 +440,7 @@ class MoEStaticKernelV4:
     def _sf6_prepare_stage(self, packed_base, tidx):
         """Keep invariant scale metadata for all K64 fragments until release."""
         base = _ld_shared_u8_volatile(packed_base, 1536)
-        base7 = (base & Int32(127)) * Int32(0x01010101)
-        base80 = (base & Int32(128)) * Int32(0x01010101)
+        base = base * Int32(0x01010101)
         quad_lane = Int32(tidx) & Int32(3)
         row = ((Int32(tidx) & Int32(31)) >> Int32(2)) * Int32(16)
         row += (Int32(tidx) & Int32(32)) * Int32(8) + (Int32(tidx) & Int32(64)) * Int32(2)
@@ -456,7 +449,7 @@ class MoEStaticKernelV4:
         # every K fragment. The copy-layout oracle also checks this lane map.
         low = packed_base + (row >> Int32(1)) + quad_lane * Int32(2)
         high = packed_base + Int32(1024) + (row >> Int32(2)) + quad_lane
-        return (low, high, base7, base80, Int32(tidx) & Int32(28))
+        return (low, high, base, Int32(tidx) & Int32(28))
 
     def _sf6_load_fragment(self, dest, stage, kind, k_block):
         """Reconstruct exact SFB operands cooperatively within each lane quad.
@@ -468,13 +461,13 @@ class MoEStaticKernelV4:
         dst = cute.recast_tensor(dest, Int32)
         offsets = self.sf6_register_offsets[kind][0][k_block]
         assert cute.size(dst) == len(offsets) and len(offsets) % 4 == 0
-        low_base, high_base, base7, base80, quad_base = stage
+        low_base, high_base, base, quad_base = stage
         for group in range(len(offsets) // 4):
             # Each group is 16-byte aligned in the verified ordinary view.
             offset = offsets[group * 4]
             low = _ld_shared_u16_volatile(low_base, offset // 2)
             high = _ld_shared_u8_volatile(high_base, offset // 4)
-            word = self._sf6_expand_word(low, high, base7, base80)
+            word = self._sf6_expand_word(low, high, base)
             for lane in range(4):
                 dst[group * 4 + lane] = cute.arch.shuffle_sync(word, quad_base + Int32(lane))
 

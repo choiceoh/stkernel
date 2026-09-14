@@ -28,6 +28,12 @@ MLA CUDA의 `sha256`은 이식 원본을 보존하고, `local_sha256`과 `local_
 ST의 하드웨어 최적화가 반영된 파일과 변경 내용을 검증한다.
 라이선스와 출처는 `THIRD_PARTY_NOTICES.md`에 있다.
 
+CUDA 13.2에서는 SF6 word 복원과 native W4A8 LUT 확장의 바이트 덧셈을 `add.u8x4`로 실행한다.
+각 바이트의 modulo-256 의미와 기존 부동소수점 반올림을 유지하며 기본 경로에 적용한다.
+MLA FP8→BF16의 half bridge는 유지한다. CPU 수치 계약과 native compile/SASS는 확인했고,
+GPU 성능은 미측정이다. [도입 기록과 cuBLAS 검토](../../measurements/st_cuda132_packed_20260914/README.md)에
+실행 경로·바이너리 지문·남은 검증을 기록했다. cuBLAS 검토는 현재 GEMM 실행 경로를 바꾸지 않는다.
+
 mHC는 GLM 레인이 호출하는 pre/post를 직접 제공한다. vLLM의 CustomOp 등록, 모델 후크,
 플랫폼 디스패치와 DeepGEMM 미설치 대체 경로는 포함하지 않는다. KDA의 보조 RMSNorm은
 일반 `torch.nn.Module`이다. MLA의 Python 드라이버는 sparse MLA에 필요한 빌드·작업공간·

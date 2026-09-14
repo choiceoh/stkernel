@@ -1,0 +1,25 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "kernels": [
+    {
+      "status": "PASS",
+      "kernel": "dynamic_e288_k4096_n512_t8_tiled_fb88d8562a179eab",
+      "seconds": 3.8949638369958848,
+      "binary_sha256": "bebeda42e8c069fea0f19f233e2ee0c10aa6aa6957cb4e47a76ca4cb176506a1",
+      "sass_sha256": "ceb75640d645f96a041249b3c1e4e3102144fad76965088aa6ad71f4a509f6a1",
+      "native_byte_add_sites": 160,
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_dynamic_gated_sf6_q0_wordsMoEGatedDynamicKernelSF6Q0Words_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmemo1_te_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:1976 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "status": "PASS",
+      "kernel": "dynamic_e288_k4096_n512_t8_tiled_4e466f602bfca73d",
+      "seconds": 4.261839601967949,
+      "binary_sha256": "bdf72fba9cdb31d3d04072a95aa6bcdd9c65277103b4aae58f9b0fd0c61aafce",
+      "sass_sha256": "144b56dc5076d2db092b038de4d359d12a4fb023a256b5267616f933b6f3ab91",
+      "native_byte_add_sites": 160,
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_dynamic_gated_sf6_prefillMoEGatedDynamicKernelSF6Prefill_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmemo1_ten_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:1976 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    }
+  ],
+  "scope": "CPU lowering, native instructions and resources only"
+}

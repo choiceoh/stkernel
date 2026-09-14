@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "extension": "mla",
+  "torch": "2.13.0+cu132",
+  "torch_git": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+  "cuda": "13.2",
+  "compiler": [
+    [
+      "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/nvcc",
+      "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+    ],
+    [
+      "/usr/local/lib/python3.12/dist-packages/nvidia/cu13/bin/ptxas",
+      "ptxas: NVIDIA (R) Ptx optimizing assembler\nCopyright (c) 2005-2026 NVIDIA Corporation\nBuilt on Thu_Mar_19_11:11:41_PM_PDT_2026\nCuda compilation tools, release 13.2, V13.2.78\nBuild cuda_13.2.r13.2/compiler.37668154_0"
+    ]
+  ],
+  "binary": "/out/mla-cache/410a882014817b4638266018/st_mla_410a882014817b4638266018.so",
+  "binary_sha256": "8f163d07f96f36c2eeb10ccfd2df2e94c4f0ebdebaec57835d941b1eff97b54c",
+  "seconds": 56.466592312033754
+}

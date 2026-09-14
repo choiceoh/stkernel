@@ -72,9 +72,15 @@ def packed_codes(base, size, seed):
     return bytes(packed), bytes((base+code) % 256 for code in codes)
 
 
+def packed_add(a, b):
+    # Interpret only the PTX instruction's independent byte-lane contract.
+    return sum((((a >> shift) & 255) + ((b >> shift) & 255)) % 256 << shift
+               for shift in (0, 8, 16, 24))
+
+
 def expand(mem, dest, size, source=None, seed=0, word_expand=True, word_override=None):
     helper = method('_sf_expand_stage', dict(Int32=int), suspend=True)
-    word = method('_sf6_expand_word', dict(Int32=int))
+    word = method('_sf6_expand_word', dict(Int32=int, add_u8x4=packed_add))
     owner = SimpleNamespace(sf6_word_expand=word_expand,
         _sf6_expand_word=lambda *args: word(None, *args))
     workers = [helper(owner, dest, t, size, packed_addr=source, word_expand=word_override)
@@ -158,7 +164,7 @@ class Sf6StagingTests(unittest.TestCase):
                 self.assertEqual(mem[dest+size:], before[dest+size:])
 
     def test_word_arithmetic_all_byte_values_without_cross_lane_carries(self):
-        word = method('_sf6_expand_word', dict(Int32=int))
+        word = method('_sf6_expand_word', dict(Int32=int, add_u8x4=packed_add))
         for base in range(256):
             for lane in range(4):
                 for code in range(64):
@@ -166,9 +172,16 @@ class Sf6StagingTests(unittest.TestCase):
                     codes[lane] = code
                     low = sum((v & 15) << (4*i) for i, v in enumerate(codes))
                     high = sum((v >> 4) << (2*i) for i, v in enumerate(codes))
-                    actual = word(None, low, high, (base & 127)*0x01010101, (base & 128)*0x01010101)
+                    actual = word(None, low, high, base*0x01010101)
                     expected = sum(((base+v) % 256) << (8*i) for i, v in enumerate(codes))
                     self.assertEqual(actual & 0xFFFFFFFF, expected, (base, lane, code))
+
+    def test_sass_count_keeps_native_packed_byte_instructions(self):
+        from probes.engine_moe_sf6_compile import instruction_opcodes
+        sass = '''/*0170*/ VIADD.U8x4 R9, R9, R0;
+                  /*0180*/ @!P0 VIADD.U8x4 R8, R7, R6;
+                  /*0190*/ EXIT;'''
+        self.assertEqual(instruction_opcodes(sass), ['VIADD.U8x4', 'VIADD.U8x4', 'EXIT'])
 
     def test_fc1_ring_reuse_and_neighbor_slots(self):
         for stages in (1, 2, 3):
