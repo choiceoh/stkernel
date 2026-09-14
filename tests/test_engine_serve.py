@@ -1008,6 +1008,7 @@ class TemplateMessagesTests(unittest.TestCase):
         from engine.base.serve import template_messages
         calls = [{"id": "a", "function": {"name": "f", "arguments": '{"k": [1, "둘"]}'}},
                  {"id": "b", "function": {"name": "g", "arguments": "  "}},
+                 {"id": "n", "function": {"name": "k", "arguments": None}},
                  {"id": "c", "function": {"name": "h", "arguments": "not json"}},
                  {"id": "d", "function": {"name": "i", "arguments": "[1, 2]"}},
                  {"id": "e", "function": {"name": "j", "arguments": {"already": True}}},
@@ -1018,7 +1019,7 @@ class TemplateMessagesTests(unittest.TestCase):
         self.assertIs(out[0], user)
         self.assertEqual([c["function"]["arguments"] if isinstance(c, dict) and "function" in c else c
                           for c in out[1]["tool_calls"]],
-                         [{"k": [1, "둘"]}, {}, "not json", "[1, 2]", {"already": True}, {"id": "f"}, "junk"])
+                         [{"k": [1, "둘"]}, {}, {}, "not json", "[1, 2]", {"already": True}, {"id": "f"}, "junk"])
         self.assertEqual(calls[0]["function"]["arguments"], '{"k": [1, "둘"]}')          # the caller's messages are untouched
         self.assertEqual(template_messages("not a list"), "not a list")
 
@@ -1761,8 +1762,11 @@ class KoreanWireTests(unittest.TestCase):
                      {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 10 ** 6})
         message = json.loads(err.exception.read())["error"]
         self.assertRegex(message, r"\d+ tokens")
-        self.assertIn("to generate", message)
-        self.assertIn("for the prompt", message)
+        self.assertIn("in the completion", message)
+        self.assertIn("in the messages", message)
+        # the sentence agent gateways classify as a context overflow, so they compact instead of failing the turn
+        self.assertIn("maximum context length", message)
+        self.assertIn("reduce the length", message)
 
     def test_tokenize_says_when_it_composed_what_it_was_handed(self):
         import unicodedata
@@ -2594,6 +2598,47 @@ class OpenAIDialectTests(unittest.TestCase):
         plain.feed([ord(ch) for ch in "look it up "] + [300] + call, None, 999)
         plain.flush(final=True)
         self.assertEqual(plain.tool_calls_done(), [])                           # no marker token known: as before
+
+    def test_a_string_argument_stays_text_whatever_it_looks_like(self):
+        """The request's tools reach the parser: `code` is typed as a string, so "123" is not a number -- the way vLLM's
+        parser for this layout reads the schema. Without the schema the old reading stands."""
+        from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls
+        call = "<tool_call>run<arg_key>code</arg_key><arg_value>123</arg_value><arg_key>n</arg_key><arg_value>2</arg_value></tool_call>"
+        tools = [{"type": "function", "function": {"name": "run", "parameters": {"type": "object", "properties": {
+            "code": {"type": "string"}, "n": {"type": "integer"}}}}}]
+        s = chat_server()
+        s.tool_parser, s.tool_stream = parse_tool_calls, partial_tool_calls
+        s.tok.decode = lambda ids, skip_special_tokens=True: call
+        out = self._serve(s, lambda base: self._post(base, "/v1/chat/completions", {
+            "messages": [{"role": "user", "content": "ab"}], "max_tokens": 2, "tools": tools}))
+        self.assertEqual(json.loads(out["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]),
+                         {"code": "123", "n": 2})
+        self.assertEqual(json.loads(parse_tool_calls(call)[0][1]), {"code": 123, "n": 2})
+
+    def test_a_request_timed_out_after_submit_answers_its_own_status(self):
+        """A failure found after submit was always a 503, which a gateway retries elsewhere; it keeps its own status now
+        (an overflow found at admission is the caller's 400, a timeout 504)."""
+        s = chat_server()
+        s.request_timeout_s = 1e-6
+        with self.assertRaises(urllib.error.HTTPError) as refused:
+            self._serve(s, lambda base: self._post(base, "/v1/chat/completions", {
+                "messages": [{"role": "user", "content": "ab"}], "max_tokens": 50}))
+        self.assertEqual(refused.exception.code, 504)
+        self.assertIn("request cancelled: timeout", refused.exception.read().decode())
+
+    def test_a_model_is_retrieved_by_its_id(self):
+        s = chat_server()
+        httpd = s._serve_http()
+        base = f'http://127.0.0.1:{httpd.server_port}'
+        try:
+            self.assertEqual(self._get(base, f"/v1/models/{s.model_name}")["id"], s.model_name)
+            for path in ("/v1/models/other", "/v1/models/"):
+                with self.subTest(path=path), self.assertRaises(urllib.error.HTTPError) as missing:
+                    self._get(base, path)
+                self.assertEqual(missing.exception.code, 404)
+                self.assertIn("does not exist", missing.exception.read().decode())
+        finally:
+            httpd.shutdown(); httpd.server_close()
 
     def test_a_json_schema_keeps_the_order_its_properties_were_written_in(self):
         """The compiled grammar writes properties in schema order; a sorted schema answered before it reasoned."""
