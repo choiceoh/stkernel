@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 
 def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_only=False,
-          scatter_reuse_only=False):
+          scatter_reuse_only=False, fc2_prefetch_only=False):
     import torch
     from engine.kernels.b12x import moe_dispatch as md
     from engine.kernels.dense import DenseLinear
@@ -30,7 +30,7 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_on
 
     if shared_mode not in ('ordinary', 'serial', 'overlap'):
         raise ValueError('unknown C2 shared-expert comparison')
-    if direct_scatter_only and scatter_reuse_only:
+    if sum((direct_scatter_only, scatter_reuse_only, fc2_prefetch_only)) > 1:
         raise ValueError('choose one C2 output comparison')
     records, graphs, owners, cases = [], [], [], []
     artifact = dict(passed=False, records=records,
@@ -68,9 +68,12 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_on
             configs[0] = dict(configs[1], c2_direct_scatter=False)
         if scatter_reuse_only:
             configs[0] = dict(configs[1], c2_scatter_reuse=False)
+        if fc2_prefetch_only:
+            configs[0] = dict(configs[1], c2_fc2_prefetch=False)
         root = Path(__file__).resolve().parents[1]
         sources = ('engine/kernels/b12x/moe_dispatch.py', 'engine/kernels/b12x/moe_static_kernel_v4.py',
                    'engine/kernels/b12x/moe_static_common.py', 'engine/kernels/b12x/moe_static_kernel_v5.py',
+                   'engine/kernels/b12x/moe_w4a16_fp4_helpers.py', 'engine/kernels/b12x/moe_micro_kernel.py',
                    'engine/kernels/moe_output.py', 'engine/profiles/glm53/net.py',
                    'engine/profiles/glm53/lanes.py', 'engine/kernels/dense/shared_mlp.py',
                    'engine/profiles/glm53/modelopt_scales.py', 'probes/engine_moe_pair_check.py',
@@ -81,6 +84,7 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_on
                scales='ModelOpt' if modelopt else 'folded', rows=[8, 16], seed=91416,
                direct_scatter_only=direct_scatter_only,
                scatter_reuse_only=scatter_reuse_only,
+               fc2_prefetch_only=fc2_prefetch_only,
                configs_m16=[md._static_v2_decode_config(c, 16) for c in configs],
                candidate_default_enabled=False, includes='routed+shared experts, output cast/add; C1 keeps its shared overlap policy')
         torch.manual_seed(91416)
@@ -152,7 +156,7 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_on
             for unique in (u for u in uniques if u >= 8):
                 fixtures.append(('moe_pair_ffn', x.clone(), order[linear % unique].int(), routes.clone(),
                                  dict(unique_experts=unique,
-                                      base_tile_m=16 if rows == 8 or direct_scatter_only or scatter_reuse_only else 32,
+                                      base_tile_m=16 if rows == 8 or direct_scatter_only or scatter_reuse_only or fc2_prefetch_only else 32,
                                       candidate_tile_m=16)))
             # The actual L3 router on identical activations supplements the
             # explicit occupancy cases. This still is not a model trajectory.

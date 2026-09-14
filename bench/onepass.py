@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Canonical Korean consumer test, harness 45: C=1 2K/32K/128K; C=4 2K/32K.
+"""Canonical Korean consumer test, harness 45: C=1 2K/32K/128K; C=N 2K/32K (N = the door's admission limit, at most 4).
 
 Every invocation prepares full prompts with bounded output, measures with the
 profiler off and a unique prefix salt, then runs separate bounded GPU diagnostic
@@ -8,11 +8,15 @@ invalidate steady-state comparisons. First reasoning/content, SSE gaps, per-requ
 rates, actual batch widths, host/device stages and raw traces are retained under
 onepass-runs/<run-id> beside the append-only output ledger, including partial runs.
 
-C=4 sends four independent requests simultaneously for each canonical question;
+C=N sends N independent requests simultaneously for each canonical question;
 its aggregate output rate includes prefill and remains separate from C=1 decode.
+N is the door's `max_concurrent_requests`, capped at the historical 4: GLM-5.3
+admits two since #950, and four requests there decode two rows beside two
+waiting ones. The record keys (`c4`, `quality_c4`) predate that; every group
+and `concurrency_coverage.width` carry the width actually measured.
 Run 1 also measures bench-dec's multiplier (`concurrency_fixed`): four different
 2K prompts forced to exactly --fixed-concurrency-tokens (1024) output tokens, one
-at a time and then together, so neither answer-length spread nor the prefill
+at a time and then N at a time, so neither answer-length spread nor the prefill
 ramp enters the ratio. It is an observation and never invalidates the record.
 The legacy cold_s/warm_s fields are aliases for first/median prepared fresh-prefix
 TTFT, not claims about compiler or cache warmth. Harness 41 is incompatible:
@@ -518,13 +522,26 @@ def preparation_request(item, num_spec):
 
 FIXED_CONCURRENCY_CLIENTS = 4
 DEFAULT_FIXED_CONCURRENCY_TOKENS = 1024
+MAX_CONCURRENCY = 4
+
+
+def serving_concurrency(shape):
+    """The C>1 arm's width: the door's own admission limit, capped at the historical four.
+
+    #950 made GLM-5.3 admit two resident requests. Four requests then decode two rows beside two waiting
+    ones: the arm measures the queue, and steady_errors refuses every such block ("actual decode width 2
+    != 4"). A door that reports no limit keeps four, the width every record before it measured."""
+    width = (shape or {}).get('max_concurrent_requests')
+    if type(width) is not int or width < 2:
+        return MAX_CONCURRENCY
+    return min(MAX_CONCURRENCY, width)
 
 
 def fixed_concurrency_items(seed, cq, tokens):
-    """bench-dec's C=4 question on this harness (operator, 2026-09-14): four DIFFERENT 2K prompts, each
-    forced to exactly `tokens` output tokens. The canonical C=4 rate carries the answers' length spread
+    """bench-dec's C=N question on this harness (operator, 2026-09-14): four DIFFERENT 2K prompts, each
+    forced to exactly `tokens` output tokens. The canonical C=N rate carries the answers' length spread
     (the longest answer finishes alone) and the serialized prefill ramp; equal lengths remove both, so the
-    four together against the same four one at a time is the engine's concurrency multiplier."""
+    four N at a time against the same four one at a time is the engine's concurrency multiplier."""
     items = []
     for client in range(FIXED_CONCURRENCY_CLIENTS):
         case_seed = seed + 4000 + client
@@ -535,28 +552,45 @@ def fixed_concurrency_items(seed, cq, tokens):
     return items
 
 
-def fixed_concurrency_summary(tokens, c1, c4):
-    """`c1`: the four requests sent one at a time; `c4`: `group`'s result for the same four released together.
-    bench-dec's rate is output tokens over wall time from first start to last completion (a 2K prefill is a
-    small share); the decode rate sums each request's own rate after its first token."""
+def fixed_concurrency_groups(items, width):
+    """The four prompts in releases of `width`: one release of four at C=4, two of two at C=2."""
+    if width < 2 or len(items) % width:
+        raise ValueError(f'{len(items)} fixed prompts do not split into releases of {width}')
+    return [items[i:i + width] for i in range(0, len(items), width)]
+
+
+def fixed_concurrency_summary(tokens, c1, releases, width):
+    """`c1`: the four requests sent one at a time; `releases`: `group`'s results for the same four, `width`
+    at a time. bench-dec's rate is output tokens over wall time from first start to last completion (a 2K
+    prefill is a small share), summed over the releases; the decode rate sums each request's own rate after
+    its first token, per release."""
     issues = []
-    if len(c1) != FIXED_CONCURRENCY_CLIENTS or len(c4['requests']) != FIXED_CONCURRENCY_CLIENTS:
-        issues.append(f'fixed concurrency needs {FIXED_CONCURRENCY_CLIENTS} requests at each concurrency')
-    lengths = sorted({r.get('completion_tokens') for r in list(c1) + list(c4['requests'])}, key=str)
+    requests = [r for release in releases for r in release['requests']]
+    if (len(c1) != FIXED_CONCURRENCY_CLIENTS or len(requests) != FIXED_CONCURRENCY_CLIENTS
+            or any(len(release['requests']) != width for release in releases)):
+        issues.append(f'fixed concurrency needs {FIXED_CONCURRENCY_CLIENTS} requests at C=1 and in releases of {width}')
+    lengths = sorted({r.get('completion_tokens') for r in list(c1) + requests}, key=str)
     if lengths != [tokens]:
         issues.append(f'fixed concurrency output lengths {lengths} != [{tokens}]')
     seconds = sum(r.get('elapsed_s') or 0. for r in c1)
     c1_rate = sum(r.get('completion_tokens') or 0 for r in c1) / seconds if seconds > 0 else None
     c1_decode = [r['decode_tok_s'] for r in c1 if r.get('decode_tok_s')]
     c1_decode = median(c1_decode) if c1_decode else None
-    c4_rate = c4.get('aggregate_output_tok_s')
-    c4_decode = sum(r.get('decode_tok_s') or 0. for r in c4['requests'])
-    return dict(tokens=tokens, clients=FIXED_CONCURRENCY_CLIENTS,
-                definition='bench-dec: four different 2K prompts with exactly `tokens` output tokens each; C=1 sends '
-                           'them one at a time, C=4 releases them together; rate = output tokens / first start to last completion',
-                c1_tok_s=c1_rate, c4_tok_s=c4_rate, multiplier=c4_rate / c1_rate if c1_rate and c4_rate else None,
-                c1_decode_tok_s=c1_decode, c4_decode_tok_s_sum=c4_decode,
-                decode_multiplier=c4_decode / c1_decode if c1_decode else None, issues=issues)
+    rates = [release.get('aggregate_output_tok_s') for release in releases]
+    walls = [sum(r.get('completion_tokens') or 0 for r in release['requests']) / rate
+             for release, rate in zip(releases, rates) if rate]
+    many_rate = (sum(r.get('completion_tokens') or 0 for r in requests) / sum(walls)
+                 if releases and len(walls) == len(releases) else None)
+    many_decode = (sum(sum(r.get('decode_tok_s') or 0. for r in release['requests']) for release in releases)
+                   / len(releases) if releases else None)
+    return dict(tokens=tokens, clients=FIXED_CONCURRENCY_CLIENTS, concurrency=width,
+                definition=f'bench-dec: four different 2K prompts with exactly `tokens` output tokens each; C=1 sends '
+                           f'them one at a time, C={width} releases them {width} at a time; rate = output tokens / '
+                           'first start to last completion of each release, summed',
+                c1_tok_s=c1_rate, many_tok_s=many_rate,
+                multiplier=many_rate / c1_rate if c1_rate and many_rate else None,
+                c1_decode_tok_s=c1_decode, many_decode_tok_s_sum=many_decode,
+                decode_multiplier=many_decode / c1_decode if c1_decode and many_decode else None, issues=issues)
 
 
 def diagnostic_complete(report):
@@ -612,7 +646,7 @@ def _main() -> int:
     ap.add_argument("--fixed-concurrency-tokens", type=int,
                     default=int(os.environ.get("ONEPASS_FIXED_CONCURRENCY_TOKENS", str(DEFAULT_FIXED_CONCURRENCY_TOKENS))),
                     help="run 1: four different 2K prompts forced to exactly this many output tokens, one at a time "
-                         "and then together -- bench-dec's C=4/C=1 multiplier. 0 = skip")
+                         "and then N at a time -- bench-dec's C=N/C=1 multiplier. 0 = skip")
     ap.add_argument("--require-exclusive", action="store_true", default=os.environ.get("ONEPASS_REQUIRE_EXCLUSIVE") == "1")
     args = ap.parse_args()
     if os.environ.get("FLEET_WORKLOAD"):
@@ -653,17 +687,21 @@ def _main() -> int:
         # D17 (45차 §93): two runs on one boot. Run 1 carries the cold column (TTFT, the compile
         # tail); run 2 the warm one. bench/st_judge.py judges warm against warm.
         rec["run_index"] = int(os.environ["ONEPASS_RUN_INDEX"])
-    # Operator policy (2026-09-13): retain C=1 repeats, pay for C=4 once.
-    # The user removed C=4 128K, including preparation and diagnostic replays.
+    # Operator policy (2026-09-13): retain C=1 repeats, pay for C=N once.
+    # The user removed C=N 128K, including preparation and diagnostic replays.
     # Accept both decimal and binary spellings; C=1 retains every requested context.
+    # N follows the door's admission limit (`serving_concurrency`); the c4_* key names predate it.
+    many = serving_concurrency(rec['engine_shape'])
     contexts = list(map(int, args.ctx.split(',')))
     c4_contexts = [ctx for ctx in contexts if ctx not in (128000, 131072)]
     first_run = rec.get('run_index', 1) == 1
-    concurrencies = (1, 4) if first_run and c4_contexts else (1,)
-    rec['concurrency_coverage'] = dict(policy='c1-twice-c4-once-no-128k-v2',
-        included=list(concurrencies), contexts={'1': contexts, '4': c4_contexts if first_run else []},
+    concurrencies = (1, many) if first_run and c4_contexts else (1,)
+    rec['concurrency_coverage'] = dict(
+        policy='c1-twice-c4-once-no-128k-v2' if many == MAX_CONCURRENCY else f'c1-twice-c{many}-once-no-128k-v3',
+        width=many, included=list(concurrencies),
+        contexts={'1': contexts, str(many): c4_contexts if first_run else []},
         c4_excluded_contexts=[ctx for ctx in contexts if ctx not in c4_contexts],
-        c4_status=('scheduled' if 4 in concurrencies else
+        c4_status=('scheduled' if many in concurrencies else
                    'omitted_after_run_1' if not first_run else 'omitted_context_scope'))
     if os.environ.get("ST_BRACKET_SHA"):
         rec["arm_sha"] = os.environ["ST_BRACKET_SHA"]              # the commit the bracket named for this arm
@@ -923,68 +961,71 @@ def _main() -> int:
     except Exception:
         pass
 
-    # C=4 and profiler replays have their own counters, requests and artifacts.
-    c4_items = [item for item in items if item['ctx'] in c4_contexts] if 4 in concurrencies else []
+    # C=N and profiler replays have their own counters, requests and artifacts.
+    c4_items = [item for item in items if item['ctx'] in c4_contexts] if many in concurrencies else []
     rec['c4'] = []
     for item in c4_items:
         ctx = item['ctx']
         suffix = f"{ctx}-q{item['question']}"
-        print(f'prepare C=4 ctx={ctx}', flush=True)
-        run.begin(f'prepare-c4-{suffix}', 4)
-        group(run, ask_stream, bd.URL, cq.MODEL, preparation_request(item, args.num_spec), 4)
+        print(f'prepare C={many} ctx={ctx}', flush=True)
+        run.begin(f'prepare-c{many}-{suffix}', many)
+        group(run, ask_stream, bd.URL, cq.MODEL, preparation_request(item, args.num_spec), many)
         run.end()
-        run.begin(f'measure-c4-{suffix}', 4)
+        run.begin(f'measure-c{many}-{suffix}', many)
         before = traffic_state(_metrics_text(bd.METRICS))
-        result = group(run, ask_stream, bd.URL, cq.MODEL, item, 4, kq, grade=True)
+        result = group(run, ask_stream, bd.URL, cq.MODEL, item, many, kq, grade=True)
         after = traffic_state(_metrics_text(bd.METRICS))
         report = run.end()
-        errors = steady_errors(report, result['requests'], 4) + exclusive_errors(before, after, [], 4)
+        errors = steady_errors(report, result['requests'], many) + exclusive_errors(before, after, [], many)
         if any(r.get('corruption') or not all(q['passed'] for q in r['quality']) for r in result['requests']):
-            errors.append('C=4 quality or Korean corruption gate failed')
+            errors.append(f'C={many} quality or Korean corruption gate failed')
         result.update(valid=not errors, issues=errors, traffic=dict(before=before, after=after),
-                      latency_artifacts=f'measure-c4-{suffix}')
+                      latency_artifacts=f'measure-c{many}-{suffix}')
         rec['c4'].append(result)
-        issues.extend(f'C=4 ctx={ctx}: {e}' for e in errors)
-        print(f"C=4 ctx={ctx}: {result['aggregate_output_tok_s']:.2f} total tok/s; valid={not errors}", flush=True)
+        issues.extend(f'C={many} ctx={ctx}: {e}' for e in errors)
+        print(f"C={many} ctx={ctx}: {result['aggregate_output_tok_s']:.2f} total tok/s; valid={not errors}", flush=True)
         run.checkpoint()
     if c4_items:
         rec['concurrency_coverage']['c4_status'] = 'measured'
     rec['quality_c4'] = (quality.summarize([q for result in rec['c4'] for r in result['requests'] for q in r['quality']])
                          if c4_items else None)
 
-    # ---- bench-dec's multiplier: the same four fixed-length requests one at a time, then together. Run 1
-    # only (C=4 is paid once a boot). An observation beside the canonical C=4 rate: its issues stay in its
+    # ---- bench-dec's multiplier: the same four fixed-length requests one at a time, then N at a time. Run 1
+    # only (C=N is paid once a boot). An observation beside the canonical C=N rate: its issues stay in its
     # own block and never invalidate the record's decode or quality evidence.
     rec['concurrency_fixed'] = None
     if args.fixed_concurrency_tokens and first_run:
         tokens = args.fixed_concurrency_tokens
         fixed_items = fixed_concurrency_items(args.seed, cq, tokens)
-        print(f'fixed concurrency: four 2K prompts, exactly {tokens} output tokens each; C=1 then C=4', flush=True)
-        run.begin('prepare-fixed-c4', 4)
-        group(run, ask_stream, bd.URL, cq.MODEL, [preparation_request(item, args.num_spec) for item in fixed_items], 4)
+        releases = fixed_concurrency_groups(fixed_items, many)
+        print(f'fixed concurrency: four 2K prompts, exactly {tokens} output tokens each; C=1 then C={many}', flush=True)
+        run.begin(f'prepare-fixed-c{many}', many)
+        for release in releases:
+            group(run, ask_stream, bd.URL, cq.MODEL, [preparation_request(item, args.num_spec) for item in release], many)
         run.end()
         run.begin('measure-fixed-c1')
         before = traffic_state(_metrics_text(bd.METRICS))
-        # One client at a time through the same group path the C=4 release uses; these ungraded requests
+        # One client at a time through the same group path the C=N releases use; these ungraded requests
         # keep their channel traces out of the canonical C=1 quality/Korean scan.
         fixed_c1 = [group(run, ask_stream, bd.URL, cq.MODEL, item, 1)['requests'][0] for item in fixed_items]
         after = traffic_state(_metrics_text(bd.METRICS))
         fixed_errors = [f'C=1: {e}' for e in steady_errors(run.end(), fixed_c1, 1)
                         + exclusive_errors(before, after, [], FIXED_CONCURRENCY_CLIENTS)]
-        run.begin('measure-fixed-c4', 4)
+        run.begin(f'measure-fixed-c{many}', many)
         before = traffic_state(_metrics_text(bd.METRICS))
-        fixed_c4 = group(run, ask_stream, bd.URL, cq.MODEL, fixed_items, 4)
+        fixed_many = [group(run, ask_stream, bd.URL, cq.MODEL, release, many) for release in releases]
         after = traffic_state(_metrics_text(bd.METRICS))
-        fixed_errors += [f'C=4: {e}' for e in steady_errors(run.end(), fixed_c4['requests'], 4)
+        many_requests = [r for release in fixed_many for r in release['requests']]
+        fixed_errors += [f'C={many}: {e}' for e in steady_errors(run.end(), many_requests, many)
                          + exclusive_errors(before, after, [], FIXED_CONCURRENCY_CLIENTS)]
-        summary = fixed_concurrency_summary(tokens, fixed_c1, fixed_c4)
+        summary = fixed_concurrency_summary(tokens, fixed_c1, fixed_many, many)
         summary['issues'] = fixed_errors + summary['issues']
-        summary.update(valid=not summary['issues'], c1_requests=fixed_c1, c4_requests=fixed_c4['requests'],
-                       latency_artifacts=['measure-fixed-c1', 'measure-fixed-c4'])
+        summary.update(valid=not summary['issues'], c1_requests=fixed_c1, many_requests=many_requests,
+                       latency_artifacts=['measure-fixed-c1', f'measure-fixed-c{many}'])
         rec['concurrency_fixed'] = summary
         rate = lambda v: 'n/a' if v is None else f'{v:.1f}'
         ratio = lambda v: 'n/a' if v is None else f'{v:.2f}x'
-        print(f"fixed concurrency {tokens} tok: C=1 {rate(summary['c1_tok_s'])} -> C=4 {rate(summary['c4_tok_s'])} tok/s "
+        print(f"fixed concurrency {tokens} tok: C=1 {rate(summary['c1_tok_s'])} -> C={many} {rate(summary['many_tok_s'])} tok/s "
               f"= {ratio(summary['multiplier'])} (decode {ratio(summary['decode_multiplier'])}); "
               f"valid={summary['valid']}", flush=True)
         run.checkpoint()
@@ -996,7 +1037,7 @@ def _main() -> int:
         scope='diagnostic replay only; consumer generation_budget and quality workloads unchanged')
     for concurrency in concurrencies:
         for item in diagnostic_items:
-            if concurrency == 4 and item['ctx'] not in c4_contexts:
+            if concurrency == many and item['ctx'] not in c4_contexts:
                 continue
             phase = f"diagnostic-c{concurrency}-{item['ctx']}"
             print(phase, flush=True)

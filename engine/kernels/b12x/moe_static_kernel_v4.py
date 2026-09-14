@@ -111,6 +111,7 @@ class MoEStaticKernelV4:
         route_scatter: bool = False,
         direct_scatter: bool = False,
         scatter_reuse: bool = False,
+        fc2_prefetch: bool = False,
         fc1_stages: int = 2,
         fc2_stages: int = 2,
         stamps: bool = False,
@@ -236,6 +237,14 @@ class MoEStaticKernelV4:
         if self.scatter_reuse and not (self.direct_scatter and self.sf6_registers
                                        and self.decode_reform and not self.route_scatter):
             raise ValueError("scatter reuse requires the M16 register SF6 atomic output path")
+        self.fc2_prefetch = bool(fc2_prefetch)
+        if self.fc2_prefetch:
+            if not self.scatter_reuse or self.fc2_stages != 2:
+                raise ValueError("FC2 prefetch requires the two-stage retained scatter path")
+            # Direct scatter never reads or writes sC. Spend its 8 KiB and
+            # the remaining CTA budget on a third B/SFB pipeline slot.
+            # The existing TMA consumer release owns every slot's lifetime.
+            self.fc2_stages = 3
         self.fc1_input_stages = self.fc1_stages // 2 if self.compact_staging else self.fc1_stages
         # Scatter only consumes rows in this M16 tile. Avoid initializing
         # 112 unused token/weight entries per item and reclaim their storage.
@@ -584,7 +593,7 @@ class MoEStaticKernelV4:
             cute.size_in_bytes(self.a_dtype, self.a2_smem_layout),
             cute.size_in_bytes(self.sf_dtype, self.sfa2_smem_layout),
             cute.size_in_bytes(cutlass.BFloat16, self.epi1_smem_layout_staged),
-            cute.size_in_bytes(cutlass.BFloat16, self.epi_smem_layout_staged),
+            0 if self.fc2_prefetch else cute.size_in_bytes(cutlass.BFloat16, self.epi_smem_layout_staged),
         ]
         for size in buffers:
             offset = _align_up(offset, self.buffer_align_bytes) + size
@@ -1141,7 +1150,7 @@ class MoEStaticKernelV4:
                 self.buffer_align_bytes,
             ]
             sC: cute.struct.Align[
-                cute.struct.MemRange[cutlass.BFloat16, cute.cosize(epi_smem_staged)],
+                cute.struct.MemRange[cutlass.BFloat16, 0 if self.fc2_prefetch else cute.cosize(epi_smem_staged)],
                 self.buffer_align_bytes,
             ]
 
@@ -1218,9 +1227,15 @@ class MoEStaticKernelV4:
         sC1 = storage.sC1.get_tensor(
             epi1_smem_staged.outer, swizzle=epi1_smem_staged.inner
         )
-        sC = storage.sC.get_tensor(
-            epi_smem_staged.outer, swizzle=epi_smem_staged.inner
-        )
+        if cutlass.const_expr(self.fc2_prefetch):
+            # Layout-only view: direct scatter uses this solely to construct
+            # accumulator/copy fragments. No sC load/store is reachable.
+            sC = cute.make_tensor(cute.recast_ptr(storage.sB2.data_ptr(), dtype=cutlass.BFloat16),
+                                 epi_smem_staged)
+        else:
+            sC = storage.sC.get_tensor(
+                epi_smem_staged.outer, swizzle=epi_smem_staged.inner
+            )
         sfa2_base_addr = shared_ptr_to_u32(storage.sSFA2.data_ptr())
         a2_base_addr = shared_ptr_to_u32(storage.sA2.data_ptr())
         sfb1_base_addr = shared_ptr_to_u32(storage.sSFB1.data_ptr())
