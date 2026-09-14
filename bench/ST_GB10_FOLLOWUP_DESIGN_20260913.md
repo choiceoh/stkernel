@@ -171,6 +171,8 @@ M2 준비 비용 후속 구현은 수십만 route의 Python tuple 생성·재그
 
 main `2ac7de6f`의 C1 compact staging을 포함한 [추가 동일 빌드 비교](../measurements/mixed_prepare_20260914/README.md)는 이전 packed 준비 요소와 새 요소를 공통 owner lifecycle에서 교차한다. 이전 constructor 전체의 역사적 시간과 섞지 않는다. hot quota 128에서 9K 준비는 23–41→9–11 ms, 32K는 33–50→16–19 ms이며, 준비 시작부터 decode ready까지 50–62%, 전체 FFN 완료까지 16–27% 줄었다. 별도 cProfile 표본은 성능 표에 포함하지 않는다. 64회 GPU 비교, 값 경계 260개, CPU 357 pass/28 CUDA skip, CuTe 8종 및 Triton 검사 커널 컴파일이 통과했다. 초안의 metadata 주소 정렬 실패와 수정 후 새 동결 실행을 각각 기록했다. 비동기 복사/padding은 decode ready 측정에 포함하며, 실제 serving TTFT·tok/s·수락률·품질 판정은 계속 M3에 남아 있다.
 
+측정 이후 main `6522564a`의 direct decode pool reader를 통합하며 lane 충돌을 해결했다. packet/mixed reader를 바인딩한 다음 새 reference-lane helper를 적용한다. GPU manifest 41개 중 39개 파일과 compiler manifest 25개 파일은 동일하며, 변경된 net/lanes의 FFN 메서드·연결 AST는 명시적인 decode 전용 변경을 제외하고 같다. 추가 CPU 통합 124 pass/14 skip을 기록했다. 이는 기존 동결 GPU 측정과의 소스 연결 검증이며 새 GPU 실측은 아니다.
+
 ### M1. 빈 행과 실제 절감되는 타일을 구분
 
 현재 [static V5](../engine/kernels/b12x/moe_static_kernel_v5.py)는 [V4](../engine/kernels/b12x/moe_static_kernel_v4.py)의 계산을 사용한다. 현재 `t,r,sf6`는 전체 decode 1..8행에서 M16, 9..32행에서 M32이며, 대상 SF6 dynamic prefill은 M128 형상이다. 따라서 단순히 두 입력을 concat한 기존 launch 호출로는 원하는 스케줄이 되지 않는다. 동일한 층의 FFN 입력과 route가 이미 준비된 프리필만 후보가 된다.

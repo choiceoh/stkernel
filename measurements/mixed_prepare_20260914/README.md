@@ -136,6 +136,19 @@ for SM121 with runtime D/P extents. The ordinary kernel AST pin was independentl
 derived from reviewed main `2ac7de6f`, preserving #923's compact A/SFA staging,
 gate-slot release and separate FC2 packed scales in both ordinary/prepared C1.
 
+After the measurement, main `6522564a` (#926 direct decode pool reader and
+top-k IDs) was merged in `cc6ccf8b`. The lane-table conflict preserves packet
+and mixed-reader binding before main's extracted reference-lane selection.
+The focused integration gate passes **124 tests / 14 skips across 138 tests
+in 13 isolated modules**, recorded in `cpu_postmerge.json`.
+`postmerge_continuity.py` verifies all 25 compiler-source files and 39 of 41
+GPU-source files remain byte-identical. The two changed profile files retain
+all FFN network methods; the served FFN binding AST is identical after only
+the explicitly reviewed pool-reader addition and reference-helper extraction
+are normalized. This is source continuity plus CPU integration, not a new GPU
+measurement or a live decode-pool performance claim. The timing source remains
+the frozen `153b6f8b` build.
+
 ## Reproduction
 
 CPU/compiler runs use image
@@ -162,6 +175,7 @@ bash bench/fleet.sh run --gpu --detach st-mixed-prepare0914v2 20 \
 # Rebuild and verify retained reports without a GPU:
 python3 measurements/mixed_prepare_20260914/summarize.py
 python3 measurements/mixed_prepare_20260914/verify_sources.py
+python3 measurements/mixed_prepare_20260914/postmerge_continuity.py
 ```
 
 Use a new reservation name and probe tree for a new run. Recorded checkouts and

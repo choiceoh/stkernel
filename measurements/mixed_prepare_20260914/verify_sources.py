@@ -32,6 +32,7 @@ for name, source in reports.items():
 result['cpu_runner_sha256'] = hashlib.sha256((root / 'cpu_runner.py').read_bytes()).hexdigest()
 result['note'] = ('Final CPU/compiler/GPU evidence shares the implementation commit. '
     'The earlier profile is attribution only; the alignment failure is retained and excluded from performance tables. '
-    'Only evidence and documentation are added after the final frozen run.')
+    'The later main decode-pool integration is checked separately in postmerge_continuity.json; '
+    'whole-head file identity is not claimed after that merge.')
 (root / 'source_identity.json').write_text(json.dumps(result, indent=2) + '\n')
 print('All report source manifests match their frozen commits.')
