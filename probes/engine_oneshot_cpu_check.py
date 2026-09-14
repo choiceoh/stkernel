@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import sys
 
 
 def main():
@@ -11,6 +12,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(root))
     directory = root/'engine/kernels/oneshot'
     import torch
     assert not torch.cuda.is_initialized()

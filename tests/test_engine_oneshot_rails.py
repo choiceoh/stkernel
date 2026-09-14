@@ -63,7 +63,8 @@ int main() {
         source = SOURCE.read_text()
         proxy = source[source.index('static void *proxy_fn(void *)'):source.index('// ---------------- setup')]
         self.assertNotIn('g_ctrl->proxy_beat', proxy)
-        self.assertEqual(len(re.findall(r'g_ctrl->\w+(?:\[[^\]]*\])*\s*=[^=]', proxy)), 2, proxy)   # flag_src, ack_seq
+        self.assertEqual(len(re.findall(r'g_ctrl->\w+(?:\[[^\]]*\])*\s*=[^=]', proxy)), 1, proxy)   # ack_seq
+        self.assertIn('(uintptr_t)&g_ctrl->flag_src[p]', proxy)  # original flag source passed to reusable WRs
         self.assertIn('if (periodic) {', proxy)
 
 

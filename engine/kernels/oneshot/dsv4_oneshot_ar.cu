@@ -619,24 +619,23 @@ static void *proxy_fn(void *) {
   CPU_ZERO(&set);
   CPU_SET(PROXY_CORE, &set);
   sched_setaffinity(0, sizeof(set), &set);
-#if OSAR_PROXY_INLINE
-  // Stable descriptor addresses for the life of the proxy. post_send copies
-  // the inline flag before returning; payloads remain protected by ring ACKs.
-  OsarProxyInlineWrs prepared[RING][NPEER];
+  // Build each ring/peer descriptor once. Both modes keep their flag source,
+  // payload-before-flag ordering and peer-rail keys; posts change only the
+  // sequence and payload size. Payloads remain protected by ring ACKs.
+  OsarProxyWrs<OSAR_PROXY_INLINE != 0> prepared[RING][NPEER];
   for (int slot = 0; slot < RING; ++slot) {
     for (int p = 0; p < NPEER; ++p) {
       if (!prepared[slot][p].init(
               (uintptr_t)g_ctrl->tx[slot], g_mr[g_peer_rail[p]]->lkey,
               g_remote[p].rx_base + (uint64_t)slot * NPEER * MAXEL * 2,
               g_remote[p].rxf_base + (uint64_t)slot * NPEER * 8,
-              g_remote[p].rkey, g_inline_cap[p])) {
-        fprintf(stderr, "[oneshot] insufficient inline capability; proxy exiting\n");
+              g_remote[p].rkey, g_inline_cap[p], (uintptr_t)&g_ctrl->flag_src[p])) {
+        fprintf(stderr, "[oneshot] invalid proxy descriptor; proxy exiting\n");
         return nullptr;
       }
     }
   }
-#endif
-  uint64_t sent = 0, done[64] = {0}, beat = 0;
+  uint64_t sent = 0, acknowledged = 0, done[64] = {0}, beat = 0;
   while (!g_ctrl->stop) {
     // The poll count stays in this thread. It used to be stored into
     // Ctrl::proxy_beat on every pass: millions of CPU writes a second into the
@@ -656,45 +655,10 @@ static void *proxy_fn(void *) {
       int slot = (int)(sent % RING);
       uint32_t nb = (uint32_t)g_ctrl->nbytes[slot];
       for (int p = 0; p < NPEER; p++) {
-#if OSAR_PROXY_INLINE
         if (prepared[slot][p].post(g_qp[p], sent, (unsigned)p, nb)) {
-          fprintf(stderr, "[oneshot] inline post_send failed; proxy exiting\n");
-          return nullptr;
-        }
-#else
-        g_ctrl->flag_src[p] = sent;
-        const uint32_t lkey = g_mr[g_peer_rail[p]]->lkey;
-        struct ibv_sge sge[2];
-        struct ibv_send_wr wr[2], *bad;
-        memset(wr, 0, sizeof(wr));
-        sge[0].addr = (uintptr_t)g_ctrl->tx[slot];
-        sge[0].length = nb;
-        sge[0].lkey = lkey;
-        wr[0].wr_id = (sent << 4) | (unsigned)p;
-        wr[0].sg_list = &sge[0];
-        wr[0].num_sge = 1;
-        wr[0].opcode = IBV_WR_RDMA_WRITE;
-        wr[0].send_flags = 0;
-        wr[0].wr.rdma.remote_addr =
-            g_remote[p].rx_base + (uint64_t)slot * NPEER * MAXEL * 2;
-        wr[0].wr.rdma.rkey = g_remote[p].rkey;
-        wr[0].next = &wr[1];
-        sge[1].addr = (uintptr_t)&g_ctrl->flag_src[p];
-        sge[1].length = 8;
-        sge[1].lkey = lkey;
-        wr[1].wr_id = (sent << 4) | 0x8 | (unsigned)p;
-        wr[1].sg_list = &sge[1];
-        wr[1].num_sge = 1;
-        wr[1].opcode = IBV_WR_RDMA_WRITE;
-        wr[1].send_flags = IBV_SEND_SIGNALED;
-        wr[1].wr.rdma.remote_addr =
-            g_remote[p].rxf_base + (uint64_t)slot * NPEER * 8;
-        wr[1].wr.rdma.rkey = g_remote[p].rkey;
-        if (ibv_post_send(g_qp[p], wr, &bad)) {
           fprintf(stderr, "[oneshot] post_send failed; proxy exiting\n");
           return nullptr;
         }
-#endif
       }
 #if OSAR_PROXY_INLINE
       if (sent == 1) {
@@ -703,20 +667,31 @@ static void *proxy_fn(void *) {
       }
 #endif
     }
-    // A sequence retires once all NPEER signaled flag writes completed, on
-    // whichever rail each peer's queue pair lives; one thread counts both CQs.
-    for (int rail = 0; rail < OSAR_RAILS; ++rail) {
-      struct ibv_wc wc[16];
-      int n = ibv_poll_cq(g_cq[rail], 16, wc);
-      for (int i = 0; i < n; i++) {
-        if (wc[i].status != IBV_WC_SUCCESS) {
-          fprintf(stderr, "[oneshot] WC error %d on rail %d; proxy exiting\n", wc[i].status, rail);
+    // No completions can exist when every posted sequence is acknowledged.
+    // Keep that watermark in the proxy: idle passes need neither CQ polling
+    // nor an extra read of the GPU-visible ACK header. Pending sends still
+    // poll every rail, even if no new GPU publication arrives.
+    if (acknowledged != sent) {
+      for (int rail = 0; rail < OSAR_RAILS; ++rail) {
+        struct ibv_wc wc[16];
+        int n = ibv_poll_cq(g_cq[rail], 16, wc);
+        if (n < 0) {
+          fprintf(stderr, "[oneshot] poll_cq failed on rail %d; proxy exiting\n", rail);
           return nullptr;
         }
-        uint64_t cs = wc[i].wr_id >> 4;
-        if (++done[cs % 64] == NPEER) {
-          done[cs % 64] = 0;
-          if (cs > g_ctrl->ack_seq) g_ctrl->ack_seq = cs;
+        for (int i = 0; i < n; i++) {
+          if (wc[i].status != IBV_WC_SUCCESS) {
+            fprintf(stderr, "[oneshot] WC error %d on rail %d; proxy exiting\n", wc[i].status, rail);
+            return nullptr;
+          }
+          uint64_t cs = wc[i].wr_id >> 4;
+          if (++done[cs % 64] == NPEER) {
+            done[cs % 64] = 0;
+            if (cs > acknowledged) {
+              acknowledged = cs;
+              g_ctrl->ack_seq = cs;
+            }
+          }
         }
       }
     }
