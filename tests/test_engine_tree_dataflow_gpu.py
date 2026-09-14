@@ -9,6 +9,44 @@ from engine.modules.tree_kda import verify
 
 @unittest.skipUnless(torch.cuda.is_available(), "requires an explicitly available CUDA device")
 class NativeTreeDataflowTests(unittest.TestCase):
+    def test_paged_key_bank_copies_exact_bits_and_replays_changed_records(self):
+        from engine.modules.tree_attention import key_bank
+        from tests.test_engine_tree_bank import bank_cases
+        def bits(t):
+            return t.view(torch.uint8 if t.element_size() == 1 else torch.int32)
+        for args, expected, expected_scales in bank_cases():
+            device = []
+            for t in args[:5]:
+                moved = torch.empty_strided(t.shape, t.stride(), dtype=t.dtype, device='cuda')
+                bits(moved).copy_(bits(t))
+                device.append(moved)
+            if not expected.numel():
+                actual, scales = key_bank(*device, *args[5:])
+                self.assertEqual((actual.numel(), scales.numel()), (0, 0))
+                continue
+            stream = torch.cuda.Stream()
+            stream.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(stream):
+                for _ in range(3):
+                    key_bank(*device, *args[5:])
+            torch.cuda.current_stream().wait_stream(stream)
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph, stream=stream):
+                actual, scales = key_bank(*device, *args[5:])
+            for repeat in range(3):
+                if repeat:
+                    for t in device[:4]:
+                        bits(t).bitwise_xor_(1)
+                    prefix, per = args[8], args[5]
+                    pages = (prefix+per-1)//per
+                    device[4][:pages].copy_(device[4][:pages].flip(0))
+                    reference = key_bank(*(t.cpu() for t in device), *args[5:])
+                    expected, expected_scales = bits(reference[0]), bits(reference[1])
+                graph.replay()
+                self.assertTrue(torch.equal(bits(actual).cpu(), expected))
+                self.assertTrue(torch.equal(bits(scales).cpu(), expected_scales))
+            graph.reset()
+
     def test_private_mla_banks_match_copied_cache_and_replay_changed_values(self):
         from engine.kernels import mla
         from engine.kernels.mla.decode_absorb import tree_absorb
@@ -109,6 +147,17 @@ class NativeTreeDataflowTests(unittest.TestCase):
             weight, history = torch.randn(193, 4).to(dtype), torch.randn(193, 3).bfloat16()
             actual = native_conv(raw.cuda(), weight.cuda(), history.cuda(), topology)
             torch.testing.assert_close(actual.cpu(), conv(tree, raw, weight, history), atol=.015, rtol=.008)
+            for context in (0, 1, 2, 3, 9, 10, 11, 131069):
+                ring = torch.full((193, 10), float('nan'), dtype=raw.dtype, device='cuda')
+                positions = torch.arange(context-3, context, device='cuda')
+                for j in range(3):
+                    if context-3+j >= 0:
+                        ring[:, (context-3+j) % 10] = history[:, j].cuda()
+                prefix = ring[:, positions.clamp_min(0) % 10].masked_fill((positions < 0)[None, :], 0)
+                expected = native_conv(raw.cuda(), weight.cuda(), prefix, topology)
+                actual = native_conv(raw.cuda(), weight.cuda(), ring, topology, context=context)
+                torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+                self.assertTrue(torch.isfinite(actual).all())
         args = [torch.randn(8, 2, 128, device="cuda").bfloat16() for _ in range(4)]
         args += [torch.randn(8, 2, device="cuda"), torch.randn(2, device="cuda"),
                  torch.randn(256, device="cuda"), torch.randn(2, 128, 128, device="cuda")]

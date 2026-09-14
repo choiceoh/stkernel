@@ -34,9 +34,9 @@ def compile_variants(output):
         raise RuntimeError("offline probe must not inherit an initialized CUDA context")
     variants = [
         ("kda-conv", _conv, {**{p: "*bf16" for p in ("X", "W", "OUT", "HISTORY")}, "PATH": "*i32"},
-            dict(C=6144, TAPS=4, B=256)),
+            dict(C=6144, TAPS=4, B=256, context=0, RING=0)),
         ("kda-conv-fp32-weights", _conv, {**{p: "*bf16" for p in ("X", "OUT", "HISTORY")}, "W": "*fp32", "PATH": "*i32"},
-            dict(C=6144, TAPS=4, B=256)),
+            dict(C=6144, TAPS=4, B=256, context=0, RING=0)),
         ("kda-prepare", _prepare, {**{p: "*bf16" for p in ("Q", "K", "G", "B")},
             **{p: "*fp32" for p in ("A", "BIAS", "QF", "KF", "DEC", "BET")}},
             dict(H=16, D=128, LOWER=-5., BD=128)),

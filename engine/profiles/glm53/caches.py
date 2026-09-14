@@ -421,3 +421,9 @@ class Glm53Caches:
         blocks = self.block_table[seq][(pool_ids // per).long()]
         return (blocks * (p.block_bytes // record)
                 + p.pool_offsets[layer] // record + pool_ids % per).to(blocks.dtype)
+
+    def pool_map(self, layer, seq):
+        """Block row and scalar strides, measured in key/scale records."""
+        F, p = self.F, self.layout
+        record = F.idx_dim+4
+        return self.block_table[seq], F.block//F.kpool, p.block_bytes//record, p.pool_offsets[layer]//record

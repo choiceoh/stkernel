@@ -138,6 +138,9 @@ class Verification:
         counts = [(context+len(p))//F.kpool for p in paths]
         self.pool_groups = tuple((count, torch.tensor([i for i, c in enumerate(counts) if c == count], device=caches.device))
                                  for count in sorted(set(counts)) if count)
+        self.branch_columns = self.branch_pools+context//F.kpool
+        self.indexer_starts = torch.zeros(n, dtype=torch.int32, device=caches.device)
+        self.indexer_ends = torch.full((n,), context//F.kpool+len(complete), dtype=torch.int32, device=caches.device)
         self.hidden = self.features = None
         self.closed = False
         caches._tree_pending = self
@@ -167,9 +170,7 @@ class Verification:
         g = net.linear(fa, name + "f_b").view(n, h, d)
         gate = net.linear(ga, name + "g_b").view(n, h, d)
         conv_ring, rec = c.kda(L, self.slot)
-        positions = self.context + torch.arange(1-F.conv, 0, device=x.device)
-        history = conv_ring[:, positions.clamp_min(0) % net.conv_ring].masked_fill((positions < 0)[None, :], 0)
-        y = tree_kda.conv(self.tree, raw, p[name + "conv"], history, topology=self.topology)
+        y = tree_kda.conv(self.tree, raw, p[name + "conv"], conv_ring, topology=self.topology, context=self.context)
         q, k, v = (value.view(n, h, d) for value in y.split(h*d, -1))
         initial = rec[(self.context-1) % net.rec_ring] if self.context else torch.zeros_like(rec[0])
         core, factors = tree_kda.verify(self.tree, q, k, v, g, beta, p[name + "A_log"],
@@ -194,12 +195,9 @@ class Verification:
         iq8, qs = net.lanes.indexer_quant(iq.reshape(-1, F.idx_dim))
         iq8 = iq8.view(n, F.idx_heads, F.idx_dim)
         we = net.lanes.head_gate(w, qs.view(n, F.idx_heads), F.idx_scale)
-        base_ids = c.pool_slots(L, self.seq, torch.arange(ctx // F.kpool, device=x.device)).long()
-        base_keys, base_scales = c.pool_keys(L)[base_ids], c.pool_scales(L)[base_ids]
         wb = p[name + "kv_b"].view(net.Hl, F.qk_nope + F.v_dim, F.kv_lora)
         qabs = tree_attention.absorb(q, wb[:, :F.qk_nope])
         width = F.topk + F.kpool - 1
-        keys, scales = base_keys, base_scales
         pk = torch.empty((0, F.idx_dim), dtype=torch.float8_e4m3fn, device=x.device)
         ps = torch.empty(0, dtype=torch.float32, device=x.device)
         if len(self.pool_sources):
@@ -210,16 +208,16 @@ class Verification:
             gw = torch.where((source >= 0)[..., None], gate[source.clamp_min(0)], prefix[:, :, 1])
             pk, ps = net.lanes.kpool_compress(kw, gw, p[idx + "ape"])
             ps = ps.reshape(-1)
-            keys, scales = torch.cat([base_keys, pk]), torch.cat([base_scales, ps])
+        keys, scales = tree_attention.key_bank(c.pool_keys(L), c.pool_scales(L), pk, ps,
+                                               *c.pool_map(L, self.seq), ctx//F.kpool)
         if len(keys):
             # Score the shared prefix once as a query batch. The extra bank
             # contains each completed branch pool once, never whole prefixes.
-            ke = torch.full((n,), len(keys), dtype=torch.int32, device=x.device)
-            logits = net.lanes.indexer_logits(iq8, keys, scales, we, ke).float()
+            logits = net.lanes.indexer_logits(iq8, keys, scales, we, self.indexer_ends, ks=self.indexer_starts).float()
             # Restore chronological columns before topk so siblings are absent
             # and ties have the same column order as the ordinary linear path.
-            logical = torch.cat([logits[:, :len(base_keys)],
-                logits.gather(1, self.branch_pools+len(base_keys))], 1) if self.pool_width else logits[:, :len(base_keys)]
+            logical = torch.cat([logits[:, :ctx//F.kpool],
+                logits.gather(1, self.branch_columns)], 1) if self.pool_width else logits[:, :ctx//F.kpool]
             pools = torch.full((n, F.topk//F.kpool), -1, dtype=torch.int32, device=x.device)
             # Topk ties can depend on the physical column count even when all
             # extra columns are -inf. Group equal lengths and slice exactly as
