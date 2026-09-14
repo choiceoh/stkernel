@@ -404,6 +404,11 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         if token == "r":
             cfg["decode_reform"] = True
             continue
+        if token == "batch":
+            # K=7 with C=2..4: reuse the M16 expert tile and its packed
+            # operand pipeline. The request limit and draft width stay fixed.
+            cfg["batch_reform"] = True
+            continue
         if token == "sf6":
             cfg["reform_sf_pack"] = True
             continue
@@ -448,6 +453,8 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: r requires t with f2,g2")
     if cfg.get("reform_sf_pack") and not cfg["decode_reform"]:
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: sf6 requires t,r")
+    if cfg.get("batch_reform") and not (cfg["decode_reform"] and cfg["reform_sf_pack"]):
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: batch requires t,r,sf6")
     return cfg
 
 
@@ -2191,13 +2198,19 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
 
 
 def _static_v2_decode_config(config: dict, m: int) -> dict:
-    """Specialize the integrated tile geometry only for C=1 decode rows."""
+    """Select the declared expert tile before capture, with a stable cache ABI.
+
+    `batch` extends the C1 operand pipeline to the served K7/C2..4 shapes.
+    Expert occupancy, including counts beyond M16, remains device input to
+    the kernel's existing tile loop. No route-dependent host dispatch.
+    """
     if config.get("probe_route_scatter") or config.get("probe_direct_scatter"):
         if not (m in (7, 14, 21, 28) and config.get("tiled")
                 and config.get("reform_sf_pack") and (m != 7 or config.get("decode_reform"))
                 and not any(config.get(k) for k in ("split", "skip_a", "skip_sf", "even"))):
             raise ValueError("scatter probe requires packed t,r,sf6 at 7/14/21/28 tokens")
-    reform = bool(config.get("decode_reform", False)) and 1 <= m <= 8
+    reform = bool(config.get("decode_reform", False)) and (
+        1 <= m <= 8 or (config.get("batch_reform", False) and m in (16, 24, 32)))
     separate = (reform and bool(config.get("reform_sf_pack", False))
                 and bool(config.get("sf6_separate", True)))
     word_expand = separate and bool(config.get("sf6_word_expand", True))
@@ -2255,8 +2268,8 @@ def _get_static_kernel_v2(
         if mac_override is not None
         else min(get_max_active_clusters(1), sm_count)
     )
-    # Only C=1 changes tile geometry. All SF6 launches read packed scales,
-    # including larger batches using the original t tile geometry.
+    # The explicit batch recipe extends the same tile to K7/C2..4. All SF6
+    # launches read the same packed scales; other shapes keep the t tile.
     config = _static_v2_decode_config(config, m)
     reform = config["decode_reform"]
     mma_tiler_mn = (16 if reform else int(config["tile_m"]), 128)
