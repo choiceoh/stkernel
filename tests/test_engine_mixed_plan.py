@@ -61,6 +61,24 @@ class PackedPlanTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 prepare_routes(rows, rows, identity=IDENTITY, cold_task_quota=quota)
 
+    def test_packet_keeps_cute_alignment_after_odd_expert_and_task_counts(self):
+        # Nine hot experts used to leave the following cold source map at a
+        # four-byte offset inside the single packet, which CuTe refuses.
+        decode = np.stack((np.arange(8), np.arange(1, 9))).astype(np.int32)
+        for p in (1, 140, 9240):
+            prefill = np.tile(np.arange(8, dtype=np.int32), (p, 1))
+            plan, cold = prepare_routes(decode, prefill, identity=IDENTITY, cold_task_quota=48)
+            packet = MixedMetadata(plan, cold, 'cpu')
+            self.assertEqual(len(plan.experts), 9)
+            previous_stop = 0
+            for name, (start, stop) in packet._spans.items():
+                self.assertEqual(start % 4, 0, name)
+                self.assertGreaterEqual(start, previous_stop)
+                self.assertLess(start - previous_stop, 4)
+                self.assertEqual(packet[name].data_ptr() % 16, 0, name)
+                np.testing.assert_array_equal(packet[name].numpy(), metadata_tables(plan, cold)[name])
+                previous_stop = stop
+
     def test_all_widths_tails_quotas_and_zero_cold_match_the_scalar_reference(self):
         for d in (1, 7, 8, 9, 16, 24, 32):
             decode = np.tile(np.arange(8, dtype=np.int32), (d, 1))

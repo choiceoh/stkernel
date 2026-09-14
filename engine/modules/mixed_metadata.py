@@ -22,14 +22,16 @@ class MixedMetadata:
         import torch
         tables = metadata_tables(plan, cold)
         device = torch.device(device)
-        self._host = torch.empty(sum(v.size for v in tables.values()), dtype=torch.int32,
+        # CuTe source tensors require 16-byte alignment even when the previous
+        # descriptor has an odd expert/task count. Pad spans, not route rows.
+        self._host = torch.empty(sum((v.size + 3) & ~3 for v in tables.values()), dtype=torch.int32,
                                  pin_memory=device.type == 'cuda')
         host, spans, offset = self._host.numpy(), {}, 0
         for name, values in tables.items():
             stop = offset + values.size
             host[offset:stop] = values
             spans[name] = (offset, stop)
-            offset = stop
+            offset = (stop + 3) & ~3
         # Keep the pinned source alive with the invocation, including all
         # failure/cancellation paths. No shared staging buffer can be reused
         # while this owner's readers or consumers are outstanding.
