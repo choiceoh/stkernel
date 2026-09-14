@@ -688,11 +688,51 @@ def partial_suffix(text: str, needles) -> int:
     return keep
 
 
+def json_closers(text: str) -> str:
+    """What an answer that is one JSON object or array still owes when it ended: its closing brackets, innermost
+    first -- or "" when there is nothing to close or closing alone would not make it JSON.
+
+    The served GLM-5.3 often closes its nesting one level short. Greedy on onepass's graded questions (seeds 100-103,
+    2026-09-14) it ended 4 of 12 answers with `"]` + `}}` where the object needed `}}}` -- one token where the
+    other was due -- or with `"}}` and then its end token: every field right, the answer unparseable. Only brackets
+    are added, after whatever the model wrote, and only when the whole then parses, so prose, code, a fenced answer
+    whose fence has already gone out and an answer cut off mid-field are left as written: a field that is missing
+    stays missing for the client's checker to see.
+    """
+    lead = len(text) - len(text.lstrip())
+    if lead == len(text) or text[lead] not in "{[":
+        return ""
+    owed, quoted, escaped = [], False, False
+    for ch in text[lead:]:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                quoted = False
+        elif ch == '"':
+            quoted = True
+        elif ch in "{[":
+            owed.append("}" if ch == "{" else "]")
+        elif ch in "}]" and (not owed or owed.pop() != ch):
+            return ""
+    if quoted or not owed:
+        return ""
+    closers = "".join(reversed(owed))
+    try:
+        json.loads(text + closers)
+    except ValueError:
+        return ""
+    return closers
+
+
 # Streamed text the door had to repair, by what went wrong: `/metrics` reports it, because a
 # repair is the one thing here that changes what a client reads and leaves no other trace.
 # Each Server keeps its own (`Server.detok_repairs`) so a scrape names the door that did it;
 # this one belongs to whatever has no door -- `token_spans`, and the tests' bare streams.
-DETOK_REPAIRS = {"invalid_token_id": 0, "invalid_prefix": 0, "stalled": 0}
+# `unclosed_json` is not the detokenizer's: it counts the brackets `json_closers` added to an answer the model ended.
+DETOK_REPAIRS = {"invalid_token_id": 0, "invalid_prefix": 0, "stalled": 0, "unclosed_json": 0}
 
 
 def new_repairs() -> dict:
@@ -1020,6 +1060,7 @@ class _Choice:
                                      # that many, and a stop the model happens to write early cannot undo it
         self._scanned = 0            # how much of the content channel the stop scan has already read
         self._stop_span = max((len(s) for s in self.stop), default=1) - 1   # how far back a new one can reach
+        self._repairs = DETOK_REPAIRS if repairs is None else repairs
         self.streams = {"reasoning_content": _Stream(tok, repairs), "content": _Stream(tok, repairs)}
         self.shown = {"reasoning_content": 0, "content": 0}
         self.text = {"reasoning_content": "", "content": ""}
@@ -1095,6 +1136,21 @@ class _Choice:
                 deltas.append({channel: delta, "reasoning": delta} if channel == "reasoning_content" else {channel: delta})
                 self.shown[channel] = len(decoded)
             self.text[channel] = decoded[:self.shown[channel]]
+        return deltas
+
+    def end(self, finish: str) -> "list[dict]":
+        """The engine ended this generation, for `finish`: the last flush, and then whatever brackets an answer that is
+        JSON still owes (`json_closers`) -- only where the model itself stopped. An answer cut at the limit, at one of
+        the request's stop strings or into tool calls ended somewhere the model did not choose, and stays as it is."""
+        deltas = self.flush(final=True)
+        chose = self.finish is None and finish == "stop" and not self.tool_calls
+        self.finish = self.finish or finish
+        closers = json_closers(self.text["content"]) if chose else ""
+        if closers:
+            self.text["content"] += closers
+            self.shown["content"] += len(closers)
+            self._repairs["unclosed_json"] += 1
+            deltas.append({"content": closers})
         return deltas
 
     def tool_calls_done(self) -> "list[dict]":
@@ -3176,10 +3232,9 @@ class Server:
                                 c.done = True
                                 retire(c)
                         elif kind == "end":
-                            deltas = c.flush(final=True)
+                            deltas = c.end(payload)
                             if deltas:
                                 on_delta(c, deltas)
-                            c.finish = c.finish or payload
                             c.done = True
                             retire(c)
                         else:
