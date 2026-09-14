@@ -1,5 +1,14 @@
 # KDA tile follow-up and operator-selected K=7
 
+Update (2026-09-14): deferred FP32 KDA state is now **enabled by default** in both the
+experiment and production recipes at operator request (`deferred_kda=1`; rollback
+`STK_deferred_kda=0`, expiring with the other declared knobs on 2026-09-30). Default
+application and verification are recorded separately (CHARTER D11, 2026-09-14). Evidence
+on record: GPU exactness and the -35% C=1 / -46% C=4 component timing at K=6
+(`st-kda-batch0913v4`), and the first tiled commit's exactness at K=6. Pending: GPU
+exactness and paired timing of this hoisted K=7 commit, then the D17 fleet onepass.
+The text below is the original default-off record.
+
 The first tiled commit passed all five GPU state/graph tests but had mixed
 latency at K=6: roughly +2% for one accepted token or three accepted tokens
 crossing a prefix boundary, versus -7% for three without a boundary and up
