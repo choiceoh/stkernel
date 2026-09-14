@@ -19,6 +19,11 @@ import time
 from pathlib import Path
 
 GIB = 1 << 30
+EFFORT_RUNGS = {"low": "low", "medium": "medium", "high": "xhigh", "xhigh": "xhigh", "max": "xhigh"}
+"""The door's reasoning_effort rungs onto this template's three. chat_template.jinja accepts xhigh (its default), medium
+and low and raises for anything else, so GLM-5.3's ladder (high, max) turned an ordinary `high` into a 400. OpenAI's
+top rungs land on xhigh -- the deepest this template has -- and `xhigh` itself is accepted for callers that speak it."""
+EFFORT_ALIASES = {"high": "xhigh", "max": "xhigh"}   # a top-level `high` and a template `xhigh` are the same request
 
 
 def tokenizer(ckpt: Path):
@@ -171,15 +176,21 @@ def main(argv=None) -> int:
     print(f"  {'tiny' if a.tiny else a.ckpt}: {len(cfg['layer_types'])} layers, vocab {cfg['vocab_size']}, {'float32' if a.tiny else a.dtype}; "
           f"kv {plan.num_blocks} blocks x {plan.block_tokens} tokens ({plan.paged_gib:.3f} GiB), {plan.num_slots - 1} slots "
           f"of {plan.slot_bytes / 2**20:.1f} MiB; built in {time.perf_counter() - t0:.1f} s", flush=True)
+    from engine.base import tool_formats
     from engine.base.comm import Comm
-    from engine.base.serve import Server, reasoning_marks
+    from engine.base.serve import Server, effort_rungs_checked, reasoning_marks
     reasoning_end, reasoning_tail = reasoning_marks(tok, chat)             # the think block, read off the template
+    tools = tool_formats.detect(chat)                                      # the call layout, read off the template
+    efforts = effort_rungs_checked(chat, EFFORT_RUNGS) if chat is not None else None
     print(f"  door: structured output {'on' if grammars else 'off (no xgrammar)'}; reasoning "
-          + (f"split at {reasoning_end} (thinking-off tail {list(reasoning_tail)})" if reasoning_end is not None else "not split"),
-          flush=True)
+          + (f"split at {reasoning_end} (thinking-off tail {list(reasoning_tail)})" if reasoning_end is not None else "not split")
+          + f"; tools {tools.name + ' (grammar at ' + str(tools.start_token(tok)) + ')' if tools else 'off'}", flush=True)
     server = Server(model, runner, Comm(), port=a.port, tokenizer=tok, chat=chat, model_name="qwen3.8-flash-next",
                     generation=generation_defaults(Path(a.ckpt)) if a.ckpt else None, reasoning_end=reasoning_end,
-                    reasoning_tail=reasoning_tail)
+                    reasoning_tail=reasoning_tail, effort_rungs=efforts,
+                    reasoning_effort_aliases=EFFORT_ALIASES if efforts is not None else None,
+                    tool_parser=tools.parse if tools else None, tool_stream=tools.partial if tools else None,
+                    tool_grammar=tools.grammar if tools else None, tool_call_start=tools.start_token(tok) if tools else None)
     if a.serve:
         print(f"  door open on port {a.port}", flush=True)
         server.loop()

@@ -157,6 +157,60 @@ tokens instead of naming a rung.
 """
 
 
+def effort_words(rungs) -> str:
+    """The rungs a door accepts, as its refusal names them: 'low, medium, high, or max'."""
+    names = list(rungs)
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + ", or " + names[-1]
+
+
+def effort_rungs_checked(render, rungs: dict) -> dict:
+    """`rungs` (the door's request rung -> the template's `reasoning_effort` value) when the template renders every
+    value in it, raising at boot otherwise: a rung the template refuses would otherwise surface as a 400 on the first
+    request that names it (Qwen3.8's template raises for anything but xhigh, medium and low; D3)."""
+    if not rungs or any(not isinstance(k, str) or not isinstance(v, str) for k, v in rungs.items()):
+        raise ValueError("effort rungs map request rungs to template values (text to text)")
+    probe = [{"role": "user", "content": "hi"}]
+    for value in sorted(set(rungs.values())):
+        try:
+            render(probe, {"reasoning_effort": value})
+        except Exception as exc:                              # noqa: BLE001 -- the template's verdict, named at boot
+            raise ValueError(f"the chat template refuses reasoning_effort {value!r}: {exc}") from exc
+    return dict(rungs)
+
+
+def template_messages(messages):
+    """The messages as a chat template reads them.
+
+    OpenAI's wire carries a tool call's `arguments` as JSON text, and the templates here iterate them as a mapping
+    (GLM-5.3's `.items()`, Qwen3.8's `|items`): a conversation that sends its own tool calls back failed to render
+    ("'str object' has no attribute 'items'"), which is every agent's second turn. Text that is a JSON object becomes
+    that object, and empty text an empty one -- what vLLM does before it renders. Anything else is left as it came, for
+    the template to judge. The caller's list is not modified.
+    """
+    if not isinstance(messages, list):
+        return messages
+    out = []
+    for message in messages:
+        calls = message.get("tool_calls") if isinstance(message, dict) else None
+        if not isinstance(calls, list):
+            out.append(message)
+            continue
+        fixed = []
+        for call in calls:
+            fn = call.get("function") if isinstance(call, dict) else None
+            arguments = fn.get("arguments") if isinstance(fn, dict) else None
+            if isinstance(arguments, str):
+                try:
+                    parsed = json.loads(arguments) if arguments.strip() else {}
+                except ValueError:
+                    parsed = None
+                if isinstance(parsed, dict):
+                    call = dict(call, function=dict(fn, arguments=parsed))
+            fixed.append(call)
+        out.append(dict(message, tool_calls=fixed))
+    return out
+
+
 def cache_key(req: dict) -> "str | None":
     """The caller's own string for the cache, under either name. `cache_salt` is vLLM's; `prompt_cache_key` is the
     OpenAI field an agent's SDK already sends, so accepting it is the difference between an agent getting tenant
@@ -1236,7 +1290,7 @@ class Server:
                  generation: "dict | None" = None, max_choices: int = 4, vision=None, tool_stream=None,
                  tool_grammar=None, tool_call_start: "int | None" = None,
                  lease: "dict | None" = None, latency_root=None, reasoning_effort_aliases: "dict | None" = None,
-                 step_watch=None, park_min_tokens: int = 0, reasoning_tail=()):
+                 step_watch=None, park_min_tokens: int = 0, reasoning_tail=(), effort_rungs: "dict | None" = None):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
         if type(request_timeout_s) not in (int, float) or not request_timeout_s > 0:
@@ -1276,6 +1330,11 @@ class Server:
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
         self.reasoning_tail = tuple(reasoning_tail)  # what the template writes after reasoning_end when thinking is off
         self.reasoning_effort_aliases = dict(reasoning_effort_aliases or {})
+        # request rung -> what the template reads: GLM-5.3's ladder unless the profile brings its template's own
+        self.effort_rungs = dict(EFFORT_RUNGS if effort_rungs is None else effort_rungs)
+        if (not self.effort_rungs or any(not isinstance(k, str) or not isinstance(v, str) for k, v in self.effort_rungs.items())
+                or any(target not in self.effort_rungs for target in self.reasoning_effort_aliases.values())):
+            raise ValueError("effort_rungs maps request rungs to template values, and every alias lands on a rung")
         self.tool_parser = tool_parser             # text -> [(name, arguments json)] or None (the profile knows the model's format)
         self.tool_stream = tool_stream             # the same format, read while it is still arriving (streamed deltas)
         self.tool_grammar = tool_grammar           # tools -> an EBNF grammar for calls of them, or None
@@ -3106,8 +3165,8 @@ class Server:
                 effort = req.get("reasoning_effort")
                 template_effort = kwargs.get("reasoning_effort")
                 for value in (effort, template_effort):
-                    if value is not None and value not in EFFORT_RUNGS:
-                        raise RequestError("reasoning_effort must be low, medium, high, or max")
+                    if value is not None and value not in server.effort_rungs:
+                        raise RequestError(f"reasoning_effort must be {effort_words(server.effort_rungs)}")
                 # Compare the profile's effective values: GLM's max and high are the same request.
                 effort = server.reasoning_effort_aliases.get(effort, effort)
                 template_effort = server.reasoning_effort_aliases.get(template_effort, template_effort)
@@ -3116,7 +3175,7 @@ class Server:
                 if effort is None:
                     effort = template_effort
                 if effort is not None:
-                    kwargs["reasoning_effort"] = EFFORT_RUNGS[effort]
+                    kwargs["reasoning_effort"] = server.effort_rungs[effort]
                 server.note_reasoning(kwargs)             # the shape the template will render (45차 §81)
                 options_stream = req.get("stream_options")
                 if options_stream is not None and not isinstance(options_stream, dict):
@@ -3193,7 +3252,7 @@ class Server:
                 try:
                     template_start = time.perf_counter()
                     opening, resuming = prompt_switches(req)
-                    prompt = server.chat(messages, dict(kwargs, tools=tools) if tools else kwargs,
+                    prompt = server.chat(template_messages(messages), dict(kwargs, tools=tools) if tools else kwargs,
                                          generation_prompt=opening, continue_final=resuming)
                 except Exception as exc:                                  # noqa: BLE001 -- the template's verdict on these messages
                     raise RequestError(f"chat template rejected the request: {exc}") from exc
@@ -3450,7 +3509,7 @@ class Server:
                     tools = req.get("tools")
                     try:
                         opening, resuming = prompt_switches(req)
-                        prompt = server.chat(req["messages"], dict(kwargs, tools=tools) if tools else dict(kwargs),
+                        prompt = server.chat(template_messages(req["messages"]), dict(kwargs, tools=tools) if tools else dict(kwargs),
                                              generation_prompt=opening, continue_final=resuming)
                     except Exception as exc:                              # noqa: BLE001
                         raise RequestError(f"chat template rejected the request: {exc}") from exc
@@ -3514,7 +3573,7 @@ class Server:
                     if not isinstance(kwargs, dict):
                         raise RequestError("chat_template_kwargs must be an object")
                     try:
-                        prompt = server.chat(req["messages"], dict(kwargs))
+                        prompt = server.chat(template_messages(req["messages"]), dict(kwargs))
                     except Exception as exc:                          # noqa: BLE001
                         raise RequestError(f"chat template rejected the request: {exc}") from exc
                     ids = server.tok.encode(nfc(prompt), add_special_tokens=False).ids

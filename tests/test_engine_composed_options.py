@@ -258,6 +258,10 @@ class DoorTests(unittest.TestCase):
         self.assertEqual(boot.template_kwargs({"thinking": True, "enable_thinking": True}),
                          {"thinking": True, "enable_thinking": True})
         self.assertEqual(boot.template_kwargs(None), {})
+        # the template takes xhigh, medium and low (srv2, 2026-09-14); OpenAI's rungs all land there, aliases on a rung
+        self.assertTrue(set(boot.EFFORT_RUNGS.values()) <= {"xhigh", "medium", "low"})
+        self.assertTrue({"low", "medium", "high", "max"} <= set(boot.EFFORT_RUNGS))
+        self.assertTrue(all(boot.EFFORT_RUNGS[k] == boot.EFFORT_RUNGS[v] for k, v in boot.EFFORT_ALIASES.items()))
 
 
 if __name__ == "__main__":
