@@ -197,6 +197,15 @@ class MixedLayerScheduler:
             lambda o: o.advance(o.plan.identity), lambda o: 'routed' if o.state == 'routed' else 'cold')
         return entry.state == 'routed'
 
+    def drain(self, key):
+        """Agree an explicit full cold drain when no decode interleave is due.
+
+        Unlike advance, this may submit all remaining tiles. The operation
+        name is voted before dispatch so ranks cannot mix the two policies.
+        """
+        self._run('drain', key, ('decode', 'cold'),
+            lambda o: o.drain(o.plan.identity), 'routed')
+
     def finish(self, key):
         # Never call the owner's draining finish while cold windows remain:
         # each scheduler advance must remain one bounded work quantum.

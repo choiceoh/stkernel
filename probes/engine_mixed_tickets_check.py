@@ -39,7 +39,11 @@ def planning_arm(arm):
         def call(*args, **kwargs):
             start = time.perf_counter()
             try:
-                return fn(*args, **kwargs)
+                result = fn(*args, **kwargs)
+                if name == 'value_check_ms' and result is not None:
+                    from types import SimpleNamespace
+                    return SimpleNamespace(wait=timed('value_check_wait_ms', result.wait))
+                return result
             finally:
                 stages[name] = (time.perf_counter()-start)*1000
         return call
@@ -184,10 +188,14 @@ def measure(args, report):
                     actual_d, decode_event = scheduler.result(key, prefill=False)
                     decode_event.synchronize(); decoded = time.perf_counter()
                     windows = 0
-                    while True:
-                        windows += 1
-                        if scheduler.advance(key):
-                            break
+                    if args.drain_cold:
+                        scheduler.drain(key)
+                        windows = 1
+                    else:
+                        while True:
+                            windows += 1
+                            if scheduler.advance(key):
+                                break
                     scheduler.finish(key)
                     actual_p, prefill_event = scheduler.result(key, prefill=True)
                     prefill_event.synchronize(); completed = time.perf_counter()
@@ -203,7 +211,7 @@ def measure(args, report):
                         raise RuntimeError('fully drained ticket did not retire')
                     errors = dict(decode=output_error(copy_d, ref_d), prefill=output_error(copy_p, ref_p))
                     cell['samples'].append(dict(hot_quota=quota, planning_arm=arm, planning_stages_ms=stages,
-                        cold_windows=windows, errors=errors,
+                        cold_windows=windows, cold_dispatch='drain' if args.drain_cold else 'bounded', errors=errors,
                         prepare_admit_wall_ms=(prepared-wall)*1000,
                         decode_ready_wall_ms=(decoded-wall)*1000, prefill_complete_wall_ms=(completed-wall)*1000,
                         includes_first_use_compile=sample == 0))
@@ -273,6 +281,8 @@ def main():
         help='alternate pre-optimization scalar/JSON preparation and packed planning on the same build')
     parser.add_argument('--compare-preparation', action='store_true',
         help='compare previous packed components with joint planning, fused checks and one metadata upload')
+    parser.add_argument('--drain-cold', action='store_true',
+        help='explicitly drain cold work in one launch after decode; no interleaved decode arrival is promised')
     parser.add_argument('--output', type=Path, default=Path('/cache/mixed-tickets.json'))
     args = parser.parse_args()
     if args.samples < 2 or args.samples % 2:
@@ -282,6 +292,7 @@ def main():
     report = dict(status='FAIL', source_sha256=fingerprint(), image=os.environ.get('ST_IMAGE'),
         compare_planning=args.compare_planning,
         compare_preparation=args.compare_preparation,
+        drain_cold=args.drain_cold,
         scope='M2 eager one-rank FFN component, real served shared readers, ticket retirement and foreign-stream '
               'consumers. Includes fresh route planning/allocation/admission in wall timings. '
               'No full model, TP4 NCCL, arrival trace, graph, TTFT, tok/s, quality or acceptance verdict.')

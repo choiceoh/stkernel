@@ -196,6 +196,26 @@ class CompletionOrderingTests(unittest.TestCase):
         self.assertTrue(bool((o.finish(IDENTITY) == 5.).all()))
         self.assertFalse(any(c[0] in ('body', 'pack') for c in self.calls))
 
+    def test_explicit_drain_coalesces_only_unfinished_windows_and_preserves_pack_once(self):
+        for partial in (False, True):
+            self.calls.clear()
+            o = self.owner()
+            with self.assertRaises(RuntimeError):
+                o.drain(IDENTITY)
+            o.begin(IDENTITY)
+            if partial:
+                o.advance(IDENTITY)
+            self.assertTrue(o.drain(IDENTITY))
+            self.assertEqual(o.next_window, len(o.cold.windows))
+            self.assertEqual([c for c in self.calls if c[0] == 'body'],
+                             [('body', 0, 2), ('body', 2, 3)] if partial else [('body', 0, 3)])
+            self.assertEqual(sum(c[0] == 'pack' for c in self.calls), 1)
+            self.assertFalse(any(c[0] == 'prefill_ready' for c in self.calls))
+            o.finish(IDENTITY)
+            self.assertEqual(sum(c[0] == 'shared' and c[1] == 3 for c in self.calls), 1)
+            with self.assertRaises(RuntimeError):
+                o.drain(IDENTITY)
+
     def test_failed_partial_dispatch_cannot_be_retried_or_published(self):
         o = self.owner(); o.begin(IDENTITY)
         def broken(*args):
@@ -204,7 +224,7 @@ class CompletionOrderingTests(unittest.TestCase):
         o.compiled = broken
         with self.assertRaisesRegex(RuntimeError, 'device launch'):
             o.advance(IDENTITY)
-        for method in (o.begin, o.advance, o.finish, o.prefill_result):
+        for method in (o.begin, o.advance, o.drain, o.finish, o.prefill_result):
             with self.assertRaises(RuntimeError):
                 method(IDENTITY)
         self.assertFalse(any(c[0]=='prefill_ready' for c in self.calls))
@@ -212,7 +232,7 @@ class CompletionOrderingTests(unittest.TestCase):
     def test_changed_shared_owner_blocks_every_phase(self):
         o = self.owner(); o.begin(IDENTITY)
         o._shared_weights[0].add_(0.)
-        for method in (o.advance, o.finish, o.prefill_result):
+        for method in (o.advance, o.drain, o.finish, o.prefill_result):
             with self.assertRaisesRegex(RuntimeError, 'ownership changed'):
                 method(IDENTITY)
         self.assertFalse(any(c[0]=='body' for c in self.calls))

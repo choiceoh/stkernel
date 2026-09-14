@@ -50,6 +50,14 @@ class Owner:
         self.state = 'routed' if self.next_window == len(self.cold.windows) else 'cold'
         return self.state == 'routed'
 
+    def drain(self, identity):
+        if self.fail_advance:
+            raise RuntimeError('injected cold drain failure')
+        self.next_window = len(self.cold.windows)
+        self.calls.append('drain')
+        self.state = 'routed'
+        return True
+
     def finish(self, identity):
         import torch
         self.state = 'complete'
@@ -118,10 +126,27 @@ class TicketTests(unittest.TestCase):
             s.admit(Owner(), request='new', slot=0)
         new = s.admit(Owner(2), request='new', slot=0)
         self.assertNotEqual(new.serial, old.serial)
-        for method in (s.begin, s.advance, s.finish, s.cancel, s.reap):
+        for method in (s.begin, s.advance, s.drain, s.finish, s.cancel, s.reap):
             with self.assertRaisesRegex(RuntimeError, 'stale'):
                 method(old)
         s.cancel(new); self.assertTrue(s.reap(new))
+
+    def test_explicit_drain_requires_decode_and_waits_for_consumers_before_reuse(self):
+        s, owner = MixedLayerScheduler(3, Comm()), Owner()
+        key = s.admit(owner, request='drain', slot=0)
+        with self.assertRaises(RuntimeError):
+            s.drain(key)
+        s.begin(key); s.advance(key); s.drain(key)
+        self.assertEqual(owner.calls, ['begin', 'advance', 'drain'])
+        self.assertEqual(owner.next_window, len(owner.cold.windows))
+        with self.assertRaises(RuntimeError):
+            s.result(key, prefill=True)
+        s.finish(key); s.result(key, prefill=True)
+        consumer = Fence(False)
+        s.release(key, consumer_fence=consumer)
+        self.assertFalse(s.reap(key))
+        consumer.ready = True
+        self.assertTrue(s.reap(key))
 
     def test_complete_cancel_and_owner_alias_cannot_overwrite_borrowed_output(self):
         s, owner = MixedLayerScheduler(3, Comm()), Owner()
@@ -188,7 +213,7 @@ def gloo_worker(rank, rendezvous):
                 return
             raise AssertionError('a rank proceeded after another rank refused work')
         for failure in ('prepare', 'descriptor', 'cold_descriptor', 'order', 'cold', 'publication',
-                        'pending_packets', 'shape', 'packed_agreement', 'none'):
+                        'pending_packets', 'shape', 'packed_agreement', 'drain_order', 'drain_failure', 'drain', 'none'):
             s, owner = MixedLayerScheduler(3, comm), Owner(rank=rank)
             if failure in ('cold_descriptor', 'packed_agreement'):
                 # Real ranks may build equivalent descriptors from different
@@ -247,9 +272,19 @@ def gloo_worker(rank, rendezvous):
                     refused(lambda: s.advance(key))
                     # Different local cursors must not block cancellation.
                     assert owner.next_window == (0 if rank == 2 else 1)
+                elif failure == 'drain_order':
+                    refused(lambda: s.drain(key) if rank != 2 else s.advance(key))
+                    assert owner.next_window == 0
+                elif failure == 'drain_failure':
+                    owner.fail_advance = rank == 2
+                    refused(lambda: s.drain(key))
+                    assert owner.next_window == (0 if rank == 2 else len(owner.cold.windows))
                 else:
-                    while not s.advance(key):
-                        pass
+                    if failure == 'drain':
+                        s.drain(key)
+                    else:
+                        while not s.advance(key):
+                            pass
                     s.finish(key)
                     assert s.result(key, prefill=True)[0].item() == 100.
             owner.fence.ready = rank != 3

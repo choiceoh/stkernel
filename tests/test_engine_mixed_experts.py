@@ -181,6 +181,31 @@ class MixedExpertTests(unittest.TestCase):
         self.assertTrue(bool((result == 3.).all()))
         self.assertTrue(bool(owner.partials[8:].isnan().all()))
 
+    def test_value_readback_overlaps_planning_and_is_drained_on_plan_failure(self):
+        import runpy
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        path = Path(__file__).resolve().parents[1]/'engine/kernels/b12x/moe_mixed.py'
+        fn = runpy.run_path(str(path))['checked_routes']
+        for broken in (False, True):
+            calls = []
+            ids = SimpleNamespace(cpu=lambda: (calls.append('ids') or SimpleNamespace(numpy=lambda: 'snapshot')))
+            def plan(*args, **kwargs):
+                self.assertEqual(args, ('snapshot', 'snapshot'))
+                calls.append('plan')
+                if broken:
+                    raise ValueError('bad routes')
+                return 'planned'
+            pending = SimpleNamespace(wait=lambda: calls.append('wait'))
+            with patch.dict(fn.__globals__, prepare_routes=plan,
+                            check_values=lambda *args: (calls.append('check') or pending)):
+                if broken:
+                    with self.assertRaisesRegex(ValueError, 'bad routes'):
+                        fn(ids, ids, (), ())
+                else:
+                    self.assertEqual(fn(ids, ids, (), ()), 'planned')
+            self.assertEqual(calls, ['ids', 'ids', 'check', 'plan', 'wait'])
+
 
 if __name__ == '__main__':
     unittest.main()

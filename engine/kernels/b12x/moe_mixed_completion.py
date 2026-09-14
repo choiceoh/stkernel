@@ -131,6 +131,17 @@ class PreparedMixedCompletion:
         The first call also packs all cold routes. This is a work-count bound,
         not a bound on launch latency or a preemptible serving quantum.
         """
+        return self._dispatch_cold(identity, min(self.next_window + 1, len(self.cold.windows)))
+
+    def drain(self, identity):
+        """Explicitly finish remaining cold work with one launch.
+
+        Use when no intervening decode dispatch is required. This may consume
+        the entire invocation; it does not promise the advance() work quota.
+        """
+        return self._dispatch_cold(identity, len(self.cold.windows))
+
+    def _dispatch_cold(self, identity, stop_window):
         self.validate(identity)
         if self.state not in ('decode', 'cold'):
             raise RuntimeError('cold work requires a decode result and unfinished routes')
@@ -141,13 +152,14 @@ class PreparedMixedCompletion:
             if self.cold.sources:
                 self.producer(*self._producer_args)
         if self.next_window < len(self.cold.windows):
-            start, stop = self.cold.windows[self.next_window]
+            start = self.cold.windows[self.next_window][0]
+            stop = self.cold.windows[stop_window - 1][1]
             # The private inherited body claims [head, tail); it never resets
             # these counters or output. Stores and launches share one stream.
             self._window_args[0].fill_(start)
             self._window_args[1].fill_(stop)
             self.compiled(*self._compute_args)
-            self.next_window += 1
+            self.next_window = stop_window
         self.state = 'routed' if self.next_window == len(self.cold.windows) else 'cold'
         return self.state == 'routed'
 

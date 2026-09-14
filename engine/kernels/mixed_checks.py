@@ -34,19 +34,34 @@ def _check(DX, PX, DR, PR, S0, S1, S2, S3, Status, D, P, B: tl.constexpr):
             tl.atomic_or(Status, 2, sem='relaxed')
 
 
-def check_values(inputs, scales):
-    """Metadata/GB10/eager checks belong to the caller, before any launch.
+class PendingValueCheck:
+    """Owned readback whose event can overlap independent CPU route planning."""
+    def __init__(self, status):
+        self.status = status
+        self.host = torch.empty(1, dtype=torch.int32, pin_memory=True)
+        self.host.copy_(status, non_blocking=True)
+        self.ready = torch.cuda.Event()
+        self.ready.record(torch.cuda.current_stream(status.device))
 
-    Read all BF16 source values, FP32 route weights and positive FP32 scales.
-    Keep dimensions runtime-valued so different arrivals share one kernel.
-    """
+    def wait(self):
+        self.ready.synchronize()
+        result = int(self.host.item())
+        if result & 1:
+            raise ValueError('mixed source values must be finite')
+        if result & 2:
+            raise ValueError('mixed experts require positive finite per-expert scales')
+
+
+def begin_check_values(inputs, scales):
+    """Caller checks metadata/eager/device before launch and waits before use."""
     decode, prefill, decode_routes, prefill_routes = inputs
     status = torch.zeros(1, dtype=torch.int32, device=decode.device)
     block = 16384
     _check[(triton.cdiv(max(decode.numel(), prefill.numel()), block),)](decode, prefill, decode_routes, prefill_routes,
         *scales, status, decode.numel(), prefill.numel(), block, num_warps=8)
-    result = int(status.item())
-    if result & 1:
-        raise ValueError('mixed source values must be finite')
-    if result & 2:
-        raise ValueError('mixed experts require positive finite per-expert scales')
+    return PendingValueCheck(status)
+
+
+def check_values(inputs, scales):
+    """Synchronous entry for differential validation and standalone callers."""
+    begin_check_values(inputs, scales).wait()

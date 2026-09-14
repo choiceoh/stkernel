@@ -14,8 +14,23 @@ from engine.modules.mixed_metadata import MixedMetadata
 
 
 def check_values(inputs, scales):
-    from engine.kernels.mixed_checks import check_values as check
-    check(inputs, scales)
+    from engine.kernels.mixed_checks import begin_check_values
+    return begin_check_values(inputs, scales)
+
+
+def checked_routes(decode_ids, prefill_ids, inputs, scales, **options):
+    # Copy IDs before starting the value scan; a D2H copy queued after that
+    # scan would serialize the CPU planner behind it again.
+    decode_cpu, prefill_cpu = decode_ids.cpu().numpy(), prefill_ids.cpu().numpy()
+    pending = check_values(inputs, scales)
+    try:
+        return prepare_routes(decode_cpu, prefill_cpu, **options)
+    finally:
+        # Refuse bad values before allocating/dispatching the prepared work,
+        # including when route validation itself fails. The probe's legacy
+        # synchronous checker returns None and has already enforced this.
+        if pending is not None:
+            pending.wait()
 
 
 @lru_cache(maxsize=1)
@@ -55,9 +70,9 @@ class PreparedMixedExperts:
         weight_tensors = (weights.w1_storage, weights.w2_storage, weights.sfb1_packed, weights.sfb2_packed)
         if any(t is None or t.device != device or not t.is_contiguous() for t in weight_tensors):
             raise ValueError('mixed weight planes must share the source device')
-        check_values((decode, prefill, decode_routes, prefill_routes),
-                     (input_scale, down_scale, weights.w1_alpha, weights.w2_alpha))
-        self.plan, self.cold = prepare_routes(decode_ids.cpu().numpy(), prefill_ids.cpu().numpy(),
+        self.plan, self.cold = checked_routes(decode_ids, prefill_ids,
+            (decode, prefill, decode_routes, prefill_routes),
+            (input_scale, down_scale, weights.w1_alpha, weights.w2_alpha),
             identity=identity, hot_route_quota=hot_route_quota, cold_task_quota=cold_task_quota)
         self.metadata = MixedMetadata(self.plan, self.cold, device)
         from . import moe_dispatch as md
