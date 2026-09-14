@@ -93,7 +93,7 @@ def execute(plan, x, weights, limit, workspace):
     bm = max(16, triton.next_power_of_2(plan.rows))
     _gate_up[(min(plan.workers, plan.producers),)](x, g.data, g.scale, g.rowscale, u, us,
         plan.rows, plan.hidden, plan.intermediate, bm, limit,
-        num_warps=4, num_stages=1, enable_fp_fusion=False)
+        num_warps=8, num_stages=1, enable_fp_fusion=False)
     _down[(min(plan.workers, plan.outputs),)](u, us, d.data, d.scale, d.rowscale, out,
-        plan.rows, plan.hidden, plan.intermediate, bm, num_warps=4, num_stages=1, enable_fp_fusion=False)
+        plan.rows, plan.hidden, plan.intermediate, bm, num_warps=8, num_stages=1, enable_fp_fusion=False)
     return out

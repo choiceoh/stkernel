@@ -123,6 +123,10 @@ independent byte references. Its W4A8 activation check executes native
 scaling arithmetic and uses torch's FP8 RTNE conversion: Triton 3.8's CPU
 interpreter rounds halfway FP8 values upward, unlike the generated `cvt.rn`.
 It is not a device-conversion numerical result.
+The compiler also disassembles the cubin: ptxas can introduce spills after
+PTX emission. Staged W4A8 uses eight warps per CTA to avoid the stack/local
+traffic seen in several four-warp variants; assembled register/stack counts
+are recorded and any local-memory instructions fail the offline gate.
 The convolution interpreter checks the actual ancestry gather and FP32 sum;
 libdevice activation and native rounding remain device checks. The matched
 CPU probe uses #947 and the current implementation with common target

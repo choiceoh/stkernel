@@ -2,16 +2,29 @@
 import argparse
 import hashlib
 import json
+import re
+import subprocess
 from pathlib import Path
 
 import torch
 import triton
 from triton.backends.compiler import GPUTarget
 from triton.compiler import ASTSource
+from triton.backends.nvidia import compiler as nvidia_compiler
 
 from engine.kernels.kda.tree import _prepare, _verify, _materialize, _conv
 from engine.kernels.tile_dataflow import _workers
 from engine.kernels.w4a8_pipeline import _gate_up, _down
+
+
+def cubin_usage(path):
+    """Inspect assembled code: ptxas can spill even when PTX has no ld.local."""
+    dump = Path(nvidia_compiler.__file__).parent / "bin" / "cuobjdump"
+    resource = subprocess.check_output([str(dump), "--dump-resource-usage", str(path)], text=True)
+    sass = subprocess.check_output([str(dump), "--dump-sass", str(path)], text=True)
+    return dict(registers=int(re.search(r"\bREG:(\d+)", resource)[1]),
+                stack_bytes=int(re.search(r"\bSTACK:(\d+)", resource)[1]),
+                local_instructions=len(re.findall(r"\b(?:LDL|STL)\b", sass)))
 
 
 def compile_variants(output):
@@ -72,7 +85,7 @@ def compile_variants(output):
         attrs = {(fn.arg_names.index(p),): [("tt.divisibility", 16)] for p in signature}
         kernel = triton.compile(ASTSource(fn, signature, constexprs=constants, attrs=attrs),
             target=GPUTarget("cuda", 121, 32),
-            options=dict(num_warps=4, num_stages=1,
+            options=dict(num_warps=8 if fn in (_gate_up, _down) else 4, num_stages=1,
                          enable_fp_fusion=not (constants.get("W4A8", False) or fn in (_conv, _gate_up, _down))))
         ptx, cubin = kernel.asm["ptx"], kernel.asm["cubin"]
         (output / (name + ".ptx")).write_text(ptx)
@@ -85,8 +98,12 @@ def compile_variants(output):
             raise AssertionError("W4A8 must retain FP8 MMA after on-chip W4 expansion")
         if fn in (_gate_up, _down) and any(op in ptx for op in ("atom.", "nanosleep", "ld.local", "st.local")):
             raise AssertionError("staged W4A8 must not introduce polling, atomics or register spills")
+        usage = cubin_usage(output / (name + ".cubin")) if fn in (_gate_up, _down) else None
+        if usage and (usage["stack_bytes"] or usage["local_instructions"]):
+            raise AssertionError(f"assembled W4A8 spills registers: {name}: {usage}")
         report["variants"].append({"name": name, "constants": constants,
-            "cubin_sha256": hashlib.sha256(cubin).hexdigest(), "shared_bytes": kernel.metadata.shared})
+            "cubin_sha256": hashlib.sha256(cubin).hexdigest(), "shared_bytes": kernel.metadata.shared,
+            "num_warps": kernel.metadata.num_warps, "assembled_usage": usage})
     report["cuda_initialized"] = torch.cuda.is_initialized()
     if report["cuda_initialized"]:
         raise AssertionError("compilation initialized CUDA")
