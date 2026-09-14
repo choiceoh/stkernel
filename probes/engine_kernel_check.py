@@ -76,11 +76,18 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "moe_fc1_reuse", "moe_compact_staging", "moe_register_scales", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench", "decode_k7", "moe_output", "moe_pair"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "moe_fc1_reuse", "moe_compact_staging", "moe_register_scales", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench", "decode_k7", "moe_output", "moe_pair", "moe_pair_serial", "moe_pair_overlap"}, selected
 
     if 'moe_pair' in selected:
         from probes.engine_moe_pair_check import check as moe_pair_check
         moe_pair_check(report, args.ranks, output=args.output)
+
+    for mode in ('serial', 'overlap'):
+        if 'moe_pair_'+mode in selected:
+            from probes.engine_moe_pair_check import check as moe_pair_check
+            path = args.output or Path('/cache/c2-moe.json')
+            moe_pair_check(report, args.ranks, shared_mode=mode,
+                           output=path.with_stem(path.stem+'-'+mode))
 
     if 'moe_output' in selected:
         from probes.engine_moe_output_check import check as moe_output_check

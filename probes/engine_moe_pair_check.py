@@ -12,7 +12,7 @@ from types import MethodType, SimpleNamespace as NS
 from unittest.mock import patch
 
 
-def check(emit, ranks, *, output=None):
+def check(emit, ranks, *, output=None, shared_mode='ordinary'):
     import torch
     from engine.kernels.b12x import moe_dispatch as md
     from engine.kernels.dense import DenseLinear
@@ -27,14 +27,16 @@ def check(emit, ranks, *, output=None):
     from probes.engine_decode_fusions import _capture
     from probes.engine_decode_scatter_check import rank_path, relative
 
+    if shared_mode not in ('ordinary', 'serial', 'overlap'):
+        raise ValueError('unknown C2 shared-expert comparison')
     records, graphs, owners, cases = [], [], [], []
     artifact = dict(passed=False, records=records,
                     scope='same-runtime component gate; no NIC, full model, tok/s or acceptance')
     output = Path(output or '/cache/c2-moe.json')
 
     def report(name, **values):
-        records.append(dict(lane=name, **values))
-        emit(name, **values)
+        records.append(dict(lane=name, shared_mode=shared_mode, **values))
+        emit(name, shared_mode=shared_mode, **values)
 
     try:
         path, prefix = rank_path(ranks), 'L3.moe.'
@@ -70,7 +72,7 @@ def check(emit, ranks, *, output=None):
                torch=torch.__version__, cuda=torch.version.cuda, gpu=torch.cuda.get_device_name(),
                scales='ModelOpt' if modelopt else 'folded', rows=[8, 16], seed=91416,
                recipes=['t,r,sf6', 't,r,sf6,batch'],
-               candidate_default_enabled=False, includes='routed+shared experts, output cast/add; unchanged shared overlap policy')
+               candidate_default_enabled=False, includes='routed+shared experts, output cast/add; C1 keeps its shared overlap policy')
         torch.manual_seed(91416)
         order = torch.randperm(288, device='cuda')
         for rows in (8, 16):
@@ -84,9 +86,15 @@ def check(emit, ranks, *, output=None):
                      _activation=swiglu_clamped, comm=NS(all_reduce=lambda value: value))
             run = MethodType(Glm53Net._moe, net)
             functions, pair, outputs = [], [], []
-            for config in configs:
-                def fn(config=config, run=run, x=x):
+            for arm, config in enumerate(configs):
+                def fn(config=config, run=run, x=x, arm=arm, ids=ids, routes=routes):
                     with patch.object(md, '_STATIC_V2_OVERRIDE', config):
+                        if arm and x.shape[0] == 16 and shared_mode != 'ordinary':
+                            def routed(consume):
+                                return expert(x, ids, routes, finalize=consume)
+                            if shared_mode == 'overlap':
+                                return overlap(shared, x, routed, finish=combine)
+                            return routed(lambda acc: combine(acc, shared(x)))
                         return run(3, x, finalize=combine)
                 graph, result = _capture(fn)
                 functions.append(fn); pair.append(graph); outputs.append(result)
