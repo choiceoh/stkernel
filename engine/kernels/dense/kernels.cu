@@ -1627,6 +1627,126 @@ mk_query_pair_kernel(MKQueryPairCtx pair) {
     mk_gemm_input_cta3_body<2,2,3,false,12>(pair.readers[1],block-first_blocks);
 }
 
+// C=2 candidate: sixteen activation rows. A CTA owns eight output columns and
+// runs the ordinary 16-row lane's MMA, X[16] @ W[8], with mk_gemm2_kernel<2>'s
+// operands in its order, reading the invocation-owned wide input pack. Eight
+// warps take independent K blocks; the epilogue replays every column's original
+// per-slice FMA chain and slice sum (#946). With eight slices each warp owns one
+// slice and accumulates it, as the C1 MODE kernels do. Eight W rows per CTA keep
+// the ring and partials at 26.6 KB or less: three CTAs per SM.
+constexpr int ROWS16_RAW_NIB=64*W4_RAW_PITCH, ROWS16_RAW_BYTES=ROWS16_RAW_NIB+64*8;
+template <bool DIRECT=false, int KBLKS=32, int SLICES=3>
+__device__ __forceinline__ void mk_gemm_rows16_body(MKGemm2Ctx c,int block) {
+  static_assert(KBLKS==12 || KBLKS==16 || KBLKS==24 || KBLKS==32);
+  static_assert(SLICES==2 || SLICES==3 || SLICES==6 || (SLICES==8 && KBLKS==32));
+  constexpr bool SLICED=SLICES==8;
+  constexpr int NB=2,DIST=NB-1;
+  asm volatile("griddepcontrol.launch_dependents;");
+  extern __shared__ uint8_t smem[];
+  uint8_t* sraw=smem;
+  const uint32_t sm=(uint32_t)__cvta_generic_to_shared(sraw);
+  sraw+=(MK_SMEM_ALIGN-(sm&(MK_SMEM_ALIGN-1)))&(MK_SMEM_ALIGN-1);
+  float* partial=reinterpret_cast<float*>(sraw+NB*ROWS16_RAW_BYTES);
+  const int lane=threadIdx.x&31, warp=threadIdx.x>>5, g=lane>>2, q=lane&3;
+  const int nt=block, r=warp*8+g;
+  const int kb0=KBLKS*warp/8, kbn=KBLKS*(warp+1)/8;
+  // Tile nt/16, W rows (nt%16)*8..+7: lane (g,q) copies row g's chunk q.
+  auto stage_raw=[&](int kb,int buf) {
+    const uint8_t* w=c.wq4+((size_t)(nt/16)*KBLKS+kb)*8192+(nt%16)*512;
+    const uint8_t* s=(const uint8_t*)c.ws4+((size_t)(nt/16)*KBLKS+kb)*1024+(nt%16)*64;
+    uint8_t* d=sraw+buf*ROWS16_RAW_BYTES;
+    mk_cp_async16(d+r*W4_RAW_PITCH+((q^((r>>1)&3))<<4),w+(size_t)lane*16);
+    if(lane<4) mk_cp_async16(d+ROWS16_RAW_NIB+(warp*4+lane)*16,s+(size_t)lane*16);
+    mk_cp_commit();
+  };
+  float acc[4]={};
+  auto mma_fold=[&](int kb) {
+    const uint8_t* raw=sraw+(kb%NB)*ROWS16_RAW_BYTES;
+    const uint32_t ex=*(const uint16_t*)(raw+ROWS16_RAW_NIB+r*8+2*q);
+    const uint32_t ea=ex&255u,eb=ex>>8;
+    const unsigned long long la=((ea&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
+    const unsigned long long lb=((eb&7u)-1u)<5u?MK_E2M1_LUT64_B:MK_E2M1_LUT64;
+    const uint32_t l0a=mk_add_u8x4((uint32_t)la,ea*0x01010100u),l1a=mk_add_u8x4((uint32_t)(la>>32),ea*0x01010101u);
+    const uint32_t l0b=mk_add_u8x4((uint32_t)lb,eb*0x01010100u),l1b=mk_add_u8x4((uint32_t)(lb>>32),eb*0x01010101u);
+    const int slot=r*W4_RAW_PITCH+((q^((r>>1)&3))<<4);
+    // Activation rows g and g+8 in the pack's natural order (kb, row, element).
+    const size_t xr0=((size_t)kb*32+g)*KSTEP,xr1=xr0+8*KSTEP;
+    float ka[4]={};
+#pragma unroll
+    for(int ks=0;ks<4;++ks) {
+      const int wsel=(ks+q)&3,koff=32*q+8*wsel;
+      const uint32_t w=*(const uint32_t*)(raw+slot+4*wsel);
+      const uint32_t l0=wsel<2?l0a:l0b,l1=wsel<2?l1a:l1b;
+      const uint32_t b0=__byte_perm(l0,l1,w&0x7777u)|__byte_perm(0x8000u,0u,(w>>3)&0x1111u);
+      const uint32_t b1=__byte_perm(l0,l1,(w>>16)&0x7777u)|__byte_perm(0x8000u,0u,(w>>19)&0x1111u);
+      const uint2 x0=*(const uint2*)(c.input_q+xr0+koff),x1=*(const uint2*)(c.input_q+xr1+koff);
+      asm volatile("mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 "
+          "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+          : "+f"(ka[0]),"+f"(ka[1]),"+f"(ka[2]),"+f"(ka[3])
+          : "r"(x0.x),"r"(x1.x),"r"(x0.y),"r"(x1.y),"r"(b0),"r"(b1));
+    }
+    if constexpr (SLICED) {
+      const float s0=c.input_s[kb*32+g]*c.wgs,s1=c.input_s[kb*32+g+8]*c.wgs;
+      acc[0]+=ka[0]*s0;acc[1]+=ka[1]*s0;acc[2]+=ka[2]*s1;acc[3]+=ka[3]*s1;
+    } else {
+#pragma unroll
+      for(int i=0;i<4;++i) partial[kb*128+(g+8*(i>>1))*8+2*q+(i&1)]=ka[i];
+    }
+  };
+#pragma unroll
+  for(int d=0;d<DIST;++d)if(kb0+d<kbn)stage_raw(kb0+d,(kb0+d)%NB);
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  if constexpr (DIRECT) c.out = reinterpret_cast<__nv_bfloat16*>(*c.out_address);
+  mk_cp_wait_upto(min(DIST-1,kbn-kb0-1));__syncwarp();
+  for(int kb=kb0;;++kb) {
+    if(kb+DIST<kbn)stage_raw(kb+DIST,(kb+DIST)%NB);
+    mma_fold(kb);
+    if(kb+1>=kbn)break;
+    mk_cp_wait_upto(min(DIST-1,kbn-kb-2));__syncwarp();
+  }
+  if constexpr (SLICED) {
+#pragma unroll
+    for(int i=0;i<4;++i) partial[(warp*16+g+8*(i>>1))*8+2*q+(i&1)]=acc[i];
+  }
+  __syncthreads();
+  if(threadIdx.x<128) {
+    const int t=threadIdx.x,row=t>>3,col=nt*8+(t&7);
+    float value=0.f;
+    if constexpr (SLICED) {
+#pragma unroll
+      for(int s=0;s<8;++s)value+=partial[s*128+t];
+    } else {
+#pragma unroll
+      for(int slice=0;slice<SLICES;++slice) {
+        float ordered=0.f;
+        for(int kb=KBLKS*slice/SLICES;kb<KBLKS*(slice+1)/SLICES;++kb)
+          ordered=__fmaf_rn(partial[kb*128+t],c.input_s[kb*32+row]*c.wgs,ordered);
+        value+=ordered;
+      }
+    }
+    value*=c.rgs?c.rgs[col]:1.f;
+    c.out[(size_t)row*c.n_orig+col]=__float2bfloat16(value);
+  }
+  if constexpr (DIRECT) __threadfence_system();
+}
+
+template <bool DIRECT=false, int KBLKS=32, int SLICES=3>
+__global__ void __launch_bounds__(MK_THREADS,3)
+mk_gemm_rows16_kernel(MKGemm2Ctx c) {
+  mk_gemm_rows16_body<DIRECT,KBLKS,SLICES>(c,blockIdx.x);
+}
+
+// C=2 DSA queries: both readers' eight-column CTAs in one grid, one wide pack.
+__global__ void __launch_bounds__(MK_THREADS,3)
+mk_query_pair16_kernel(MKQueryPairCtx pair) {
+  const int first_blocks=pair.readers[0].n_orig/8;
+  const int block=blockIdx.x;
+  if(block<first_blocks)
+    mk_gemm_rows16_body<false,12,3>(pair.readers[0],block);
+  else
+    mk_gemm_rows16_body<false,12,3>(pair.readers[1],block-first_blocks);
+}
+
 // ===========================================================================
 // MK_SEG_MHC -- fused hc_post + hc_pre (+ RMSNorm), T <= MHC_MAX_TOK.
 // Port of mhc_fused_tilelang + mhc_pre_big_fuse_with_norm_tilelang
@@ -3649,6 +3769,171 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
   }
 }
 
+// C=2 candidate entries: the wide input pack, then mk_gemm_rows16_kernel or the
+// joined query grid. Each shape keeps the ordinary lane's K slices at sixteen
+// rows (KDA input 8, gate/up 2, MLA qkv_a 6, outputs and queries 3); a changed
+// plan is refused, not re-sliced. Nothing global: pack and partials are owned.
+constexpr int ROWS16_SMEM_BASE=MK_SMEM_ALIGN+2*ROWS16_RAW_BYTES;
+constexpr int rows16_smem(int kblks,int slices) {
+  return ROWS16_SMEM_BASE+(slices==8?8:kblks)*128*(int)sizeof(float);
+}
+static void mk_rows16_attrs() {
+  static bool ready=false;
+  if(ready) return;
+  auto set=[](auto kernel,int bytes) {
+    MK_CHECK_CUDA(cudaFuncSetAttribute(kernel,cudaFuncAttributeMaxDynamicSharedMemorySize,bytes));
+  };
+  set(mk_gemm_rows16_kernel<false,32,8>,rows16_smem(32,8));
+  set(mk_gemm_rows16_kernel<false,32,2>,rows16_smem(32,2));
+  set(mk_gemm_rows16_kernel<false,32,6>,rows16_smem(32,6));
+  set(mk_gemm_rows16_kernel<true,16,3>,rows16_smem(16,3));
+  set(mk_gemm_rows16_kernel<true,24,3>,rows16_smem(24,3));
+  set(mk_gemm_rows16_kernel<true,32,3>,rows16_smem(32,3));
+  set(mk_query_pair16_kernel,rows16_smem(12,3));
+  ready=true;
+}
+
+static torch::Tensor mk_rows16_pack(torch::Tensor x, int k, const uint8_t*& q, const float*& s) {
+  const int kblk=k/KSTEP, qbytes=kblk*32*KSTEP;
+  auto packed=torch::empty({qbytes+kblk*32*(int)sizeof(float)}, x.options().dtype(torch::kUInt8));
+  q=packed.data_ptr<uint8_t>();
+  s=reinterpret_cast<const float*>(packed.data_ptr<uint8_t>()+qbytes);
+  mk_launch(mk_wide_input_pack_kernel, kblk*2, 0, c10::cuda::getCurrentCUDAStream(),
+            MKInputPackCtx{(const __nv_bfloat16*)x.data_ptr(), packed.data_ptr<uint8_t>(),
+                           reinterpret_cast<float*>(packed.data_ptr<uint8_t>()+qbytes), 16, k, x.stride(0)});
+  return packed;
+}
+
+void mk_run_gemm_rows16(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4, torch::Tensor out,
+                        int64_t n_orig, int64_t rgs_ptr, c10::optional<torch::Tensor> address) {
+  TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2 && x.size(0) == 16
+              && x.stride(1) == 1 && x.stride(0) >= x.size(1) && x.stride(0) % 4 == 0
+              && ((uintptr_t)x.data_ptr() & 7) == 0, "sixteen-row cells take aligned BF16 [16, K] rows");
+  const int64_t k = x.size(1), n = n_orig;
+  const bool direct = address.has_value();
+  TORCH_CHECK((!direct && k == 4096 && (n == 6416 || n == 6144 || n == 2048)) ||
+              (direct && n == 4096 && (k == 2048 || k == 3072 || k == 4096)),
+              "sixteen-row cells: KDA input, gate/up and qkv_a to a matrix; outputs to a TX slot");
+  TORCH_CHECK(rgs_ptr && wq4.device() == x.device() && ws4.device() == x.device()
+              && wq4.scalar_type() == torch::kUInt8 && ws4.scalar_type() == torch::kInt8
+              && wq4.dim() == 4 && wq4.size(0) == (n + 127) / 128 && wq4.size(1) == k / KSTEP
+              && wq4.size(2) == SMEM_W_ROWS && wq4.size(3) == 64 && wq4.is_contiguous()
+              && ws4.dim() == 4 && ws4.size(0) == wq4.size(0) && ws4.size(1) == wq4.size(1)
+              && ws4.size(2) == SMEM_W_ROWS && ws4.size(3) == 8 && ws4.is_contiguous(),
+              "sixteen-row cells need the bound tile-major W4 pack and its row scales");
+  set_kernel_attrs();
+  mk_rows16_attrs();
+  MKGemm2Ctx c{};
+  c.x = (const __nv_bfloat16*)x.data_ptr();
+  c.x_stride = x.stride(0);
+  c.wq4 = wq4.data_ptr<uint8_t>();
+  c.ws4 = (const int8_t*)ws4.data_ptr();
+  c.wgs = 1.f;
+  c.rgs = (const float*)rgs_ptr;
+  c.m = 16; c.k = (int)k; c.n = (int)wq4.size(0) * SMEM_W_ROWS; c.n_orig = (int)n;
+  c.ksr = mk_choose_ksr2(16, c.n, c.k);
+  const int slices = n == 6416 ? 8 : n == 6144 ? 2 : n == 2048 ? 6 : 3;
+  TORCH_CHECK(c.ksr == slices, "sixteen-row cells require the ordinary lane's K slices");
+  if (direct) {
+    auto a = *address;
+    TORCH_CHECK(a.device() == x.device() && a.scalar_type() == torch::kInt64 && a.is_contiguous()
+                && a.numel() >= 1, "sixteen-row outputs need their reserved TX descriptor");
+    c.out = (__nv_bfloat16*)a.data_ptr();
+    c.out_address = a.data_ptr<int64_t>();
+  } else {
+    TORCH_CHECK(out.device() == x.device() && out.scalar_type() == torch::kBFloat16 && out.dim() == 2
+                && out.size(0) == 16 && out.size(1) == n && out.is_contiguous(),
+                "sixteen-row output must match its BF16 matrix");
+    c.out = (__nv_bfloat16*)out.data_ptr();
+  }
+  auto packed = mk_rows16_pack(x, c.k, c.input_q, c.input_s);
+  auto stream = c10::cuda::getCurrentCUDAStream();
+  const int grid = (int)n / 8;
+  if (n == 6416)
+    mk_launch(mk_gemm_rows16_kernel<false,32,8>, grid, rows16_smem(32,8), stream, c);
+  else if (n == 6144)
+    mk_launch(mk_gemm_rows16_kernel<false,32,2>, grid, rows16_smem(32,2), stream, c);
+  else if (n == 2048)
+    mk_launch(mk_gemm_rows16_kernel<false,32,6>, grid, rows16_smem(32,6), stream, c);
+  else if (k == 2048)
+    mk_launch(mk_gemm_rows16_kernel<true,16,3>, grid, rows16_smem(16,3), stream, c);
+  else if (k == 3072)
+    mk_launch(mk_gemm_rows16_kernel<true,24,3>, grid, rows16_smem(24,3), stream, c);
+  else
+    mk_launch(mk_gemm_rows16_kernel<true,32,3>, grid, rows16_smem(32,3), stream, c);
+}
+
+void mk_run_query_pair16(torch::Tensor x, std::vector<torch::Tensor> weights,
+                         std::vector<torch::Tensor> scales, std::vector<torch::Tensor> rowscales,
+                         std::vector<torch::Tensor> outputs) {
+  TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2 && x.size(0) == 16
+              && x.size(1) == 1536 && x.stride(1) == 1 && x.stride(0) >= 1536 && x.stride(0) % 4 == 0
+              && ((uintptr_t)x.data_ptr() & 7) == 0, "sixteen-row queries take aligned BF16 [16,1536]");
+  TORCH_CHECK(weights.size() == 2 && scales.size() == 2 && rowscales.size() == 2 && outputs.size() == 2,
+              "sixteen-row queries require two complete W4 owners");
+  for (int i = 0; i < 2; ++i) {
+    auto w = weights[i], s = scales[i], r = rowscales[i], y = outputs[i];
+    TORCH_CHECK(w.device() == x.device() && s.device() == x.device()
+                && r.device() == x.device() && y.device() == x.device()
+                && w.scalar_type() == torch::kUInt8 && w.dim() == 4
+                && (w.size(0) == 32 || w.size(0) == 64) && w.size(1) == 12
+                && w.size(2) == 128 && w.size(3) == 64 && w.is_contiguous()
+                && s.element_size() == 1 && s.dim() == 4 && s.size(0) == w.size(0)
+                && s.size(1) == 12 && s.size(2) == 128 && s.size(3) == 8 && s.is_contiguous()
+                && r.scalar_type() == torch::kFloat32 && r.dim() == 1
+                && r.numel() == w.size(0) * 128 && r.is_contiguous()
+                && y.scalar_type() == torch::kBFloat16 && y.dim() == 2
+                && y.size(0) == 16 && y.size(1) == r.numel() && y.is_contiguous(),
+                "sixteen-row queries require same-device tile-major packs and contiguous BF16 outputs");
+  }
+  TORCH_CHECK(!outputs[0].is_alias_of(outputs[1]) && !outputs[0].is_alias_of(x)
+              && !outputs[1].is_alias_of(x), "sixteen-row query outputs must not alias");
+  set_kernel_attrs();
+  mk_rows16_attrs();
+  MKQueryPairCtx pair{};
+  const uint8_t* q = nullptr;
+  const float* s = nullptr;
+  auto packed = mk_rows16_pack(x, 1536, q, s);
+  for (int i = 0; i < 2; ++i) {
+    auto& c = pair.readers[i];
+    c.x = (const __nv_bfloat16*)x.data_ptr();
+    c.x_stride = x.stride(0);
+    c.wq4 = weights[i].data_ptr<uint8_t>();
+    c.ws4 = (const int8_t*)scales[i].data_ptr();
+    c.rgs = rowscales[i].data_ptr<float>();
+    c.out = (__nv_bfloat16*)outputs[i].data_ptr();
+    c.input_q = q; c.input_s = s; c.wgs = 1.f;
+    c.m = 16; c.k = 1536; c.n = c.n_orig = (int)outputs[i].size(1); c.ksr = 3;
+    TORCH_CHECK(mk_choose_ksr2(16, c.n, 1536, false) == 3,
+                "joined sixteen-row queries require each owner's original three K slices");
+  }
+  mk_launch(mk_query_pair16_kernel, (pair.readers[0].n + pair.readers[1].n) / 8, rows16_smem(12,3),
+            c10::cuda::getCurrentCUDAStream(), pair);
+}
+
+// {registers, local bytes, resident blocks per SM, dynamic shared bytes} of each
+// sixteen-row instantiation, from the device.
+std::vector<int64_t> mk_rows16_info() {
+  set_kernel_attrs();
+  mk_rows16_attrs();
+  std::vector<int64_t> out;
+  auto note = [&](auto kernel, int smem) {
+    cudaFuncAttributes a{};
+    int bps = 0;
+    MK_CHECK_CUDA(cudaFuncGetAttributes(&a, kernel));
+    MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&bps, kernel, MK_THREADS, smem));
+    out.insert(out.end(), {a.numRegs, (int64_t)a.localSizeBytes, bps, smem});
+  };
+  note(mk_gemm_rows16_kernel<false,32,8>, rows16_smem(32,8));
+  note(mk_gemm_rows16_kernel<false,32,2>, rows16_smem(32,2));
+  note(mk_gemm_rows16_kernel<false,32,6>, rows16_smem(32,6));
+  note(mk_gemm_rows16_kernel<true,16,3>, rows16_smem(16,3));
+  note(mk_gemm_rows16_kernel<true,24,3>, rows16_smem(24,3));
+  note(mk_gemm_rows16_kernel<true,32,3>, rows16_smem(32,3));
+  note(mk_query_pair16_kernel, rows16_smem(12,3));
+  return out;
+}
+
 // ptrs: x, res_in, pm_in, cm_in, fn, hc_scale, hc_base, norm_w, res_out,
 //       pm_out, cm_out, layer_in, yp, rp, sq, pmix, ol_stash, barrier
 // ints: num_tokens, sinkhorn_repeat
@@ -4492,6 +4777,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         pybind11::arg("n_orig"),pybind11::arg("rgs_ptr"),pybind11::arg("workspace"),
         pybind11::arg("address"),pybind11::arg("forward_pipeline")=true);
   m.def("run_gemm_wide_input", &mk_run_gemm_wide_input, "private wide-row input reuse qualification");
+  m.def("run_gemm_rows16", &mk_run_gemm_rows16, "C=2 candidate: wide pack into eight-column sixteen-row CTAs",
+        pybind11::arg("x"),pybind11::arg("wq4"),pybind11::arg("ws4"),pybind11::arg("out"),
+        pybind11::arg("n_orig"),pybind11::arg("rgs_ptr"),pybind11::arg("address"));
+  m.def("run_query_pair16", &mk_run_query_pair16, "C=2 candidate: joined sixteen-row DSA query grid");
+  m.def("rows16_info", &mk_rows16_info, "{registers, local bytes, blocks/SM, smem} of the sixteen-row kernels");
   m.def("probe_device", &mk_probe_device, "device geometry probe");
   m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");
   m.def("read_mhc_ts", &mk_read_mhc_ts, "mhc phase timestamps");

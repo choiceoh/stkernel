@@ -15,6 +15,7 @@ def main():
     ap.add_argument('--build-dir', type=Path, required=True)
     ap.add_argument('--output', type=Path, required=True)
     ap.add_argument('--forward-pipeline', action='store_true', help='also report the ordered-K and joined-query cubins')
+    ap.add_argument('--rows16', action='store_true', help='also report the sixteen-row candidate cubins')
     args = ap.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '' or os.environ.get('NVIDIA_VISIBLE_DEVICES') != 'void':
         raise RuntimeError('this compile requires CUDA hidden')
@@ -32,6 +33,8 @@ def main():
     native = load(name='st_dense_'+key, sources=list(sources), extra_cuda_cflags=flags,
                   build_directory=str(directory), verbose=True)
     assert callable(native.run_query_pair) and callable(native.run_gemm_bound_input)
+    if args.rows16:
+        assert callable(native.run_gemm_rows16) and callable(native.run_query_pair16) and callable(native.rows16_info)
     usage = subprocess.check_output(['/usr/local/cuda/bin/cuobjdump', '--dump-resource-usage', native.__file__], text=True)
     entries = []
     for block in re.split(r'(?m)^\s*Function(?:\s+|:)', usage)[1:]:
@@ -47,11 +50,15 @@ def main():
                if 'mk_query_pair_kernel' in b.splitlines()[0]] if args.forward_pipeline else []
     if args.forward_pipeline and len(queries) != 1:
         raise RuntimeError(f'expected one joined-query specialization; got {len(queries)}')
+    rows16 = [b.strip() for b in re.split(r'(?m)^\s*Function(?:\s+|:)', usage)[1:]
+              if re.search(r'mk_gemm_rows16_kernel|mk_query_pair16_kernel', b.splitlines()[0])] if args.rows16 else []
+    if args.rows16 and len(rows16) != 7:
+        raise RuntimeError(f'expected six sixteen-row and one joined-query specializations; got {len(rows16)}')
     assert not torch.cuda.is_initialized()
     result = dict(status='PASS', gpu_used=False, torch=torch.__version__, cuda=torch.version.cuda,
                   cache_key=key, source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
                   flags=flags, new_native_specializations=entries, ordered_specializations=registers,
-                  query_specializations=queries,
+                  query_specializations=queries, rows16_specializations=rows16,
                   scope='production native compile/load and resource usage; not GPU execution or timing')
     args.output.write_text(json.dumps(result, indent=2)+'\n')
     print(json.dumps(result), flush=True)
