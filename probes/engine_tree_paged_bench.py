@@ -19,11 +19,11 @@ def digest(t):
     return hashlib.sha256(t.contiguous().view(torch.uint8).numpy().tobytes()).hexdigest()
 
 
-def run(output, iterations):
+def compare(iterations, baseline=BASELINE):
     if torch.cuda.is_initialized() or torch.cuda.is_available():
         raise RuntimeError('CPU comparison requires hidden CUDA devices')
     torch.set_num_threads(1)
-    old, baseline_hashes = load_baseline(BASELINE)
+    old, baseline_hashes = load_baseline(baseline)
     records = []
     for parents in ((-1, 0, 1, 2, 3, 4, 5, 6), (-1, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)):
         tree = Tree(tuple(range(1, len(parents)+1)), parents)
@@ -58,22 +58,31 @@ def run(output, iterations):
              'engine/kernels/mla/prefill_absorb.py', 'engine/kernels/mla/glm53_megakernel.cu',
              'engine/modules/tree_kda.py', 'engine/profiles/glm53/net.py', 'probes/engine_tree_paged_bench.py']
     report = dict(scope='tiny CPU full verify+commit; no proposal or GPU kernels; not production throughput',
-        baseline=BASELINE, gpu_used=False, torch=torch.__version__, machine=platform.machine(),
+        baseline=baseline, gpu_used=False, torch=torch.__version__, machine=platform.machine(),
         iterations_per_block=iterations, bracket='B/A/A/B repeated twice, 3 warmups each, restore excluded',
         cases=records, baseline_source_sha256=baseline_hashes,
         source_sha256={p: hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in paths},
-        structural=[dict(nodes=n, selected_width=2051, latent=512,
+        unmeasured=['real-weight GPU numerics and graph replay', 'same-build production tok/s and TTFT',
+                    'reasoning length and acceptance', 'full tree production graph integration'])
+    return report
+
+
+def run(output, iterations):
+    report = compare(iterations)
+    report['structural'] = [dict(nodes=n, selected_width=2051, latent=512,
             removed_final_latent_staging_bytes=n*2051*512,
             removed_minimum_staging_read_write_bytes=2*n*2051*512,
             new_latent_staging_bytes=0, direct_slot_bytes=n*2051*4,
             removed_query_output_layout_copy_bytes=n*16*(512+256)*2,
-            address_launches=1) for n in (8, 15, 32)],
-        unmeasured=['real-weight GPU numerics and graph replay', 'same-build production tok/s and TTFT',
-                    'reasoning length and acceptance', 'full tree production graph integration'])
+            address_launches=1) for n in (8, 15, 32)]
+    write_report(output, report)
+
+
+def write_report(output, report):
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2)+'\n')
     print(json.dumps([{k: v for k, v in row.items() if k in ('nodes', 'context', 'median_ms', 'reduction_percent')}
-                      for row in records], indent=2))
+                      for row in report['cases']], indent=2))
 
 
 if __name__ == '__main__':

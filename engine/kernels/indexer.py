@@ -277,6 +277,39 @@ def gather_candidates(keys, scales, block_table, per, block_stride, layer_offset
 
 
 @triton.jit
+def _tree_key_bank(KEYS, SCALES, PRIVATE, PRIVATE_S, TABLE, OUT, OUT_S, prefix, total,
+                   key_s0, scale_s0, private_s0, private_scale_s0, table_s0,
+                   PER: tl.constexpr, stride, offset, D: tl.constexpr, B: tl.constexpr):
+    p = tl.program_id(0)*B+tl.arange(0, B)
+    canonical = p < prefix
+    page = tl.load(TABLE+(p//PER)*table_s0, canonical, other=0)
+    rec = page.to(tl.int64)*stride+offset+p % PER
+    d = tl.arange(0, D)
+    # Select the record address before loading: no second key tile is live.
+    key_ptr = tl.where(canonical, KEYS+rec*key_s0, PRIVATE+(p-prefix)*private_s0)
+    scale_ptr = tl.where(canonical, SCALES+rec*scale_s0, PRIVATE_S+(p-prefix)*private_scale_s0)
+    key = tl.load(key_ptr[:, None]+d[None, :], (p < total)[:, None], other=0)
+    scale = tl.load(scale_ptr, p < total, other=0)
+    tl.store(OUT+p[:, None]*D+d[None, :], key, (p < total)[:, None])
+    tl.store(OUT_S+p, scale, p < total)
+
+
+def tree_key_bank(keys, scales, private, private_scales, table, per, stride, offset, prefix):
+    """One byte-copy launch: paged canonical keys followed by private keys."""
+    from engine.modules.tree_attention import check_key_bank
+    check_key_bank(keys, scales, private, private_scales, table, per, stride, offset, prefix)
+    total, width = prefix+len(private), keys.shape[1]
+    out = torch.empty((total, width), dtype=keys.dtype, device=keys.device)
+    scale = torch.empty(total, dtype=scales.dtype, device=keys.device)
+    if total:
+        _tree_key_bank[(triton.cdiv(total, 64),)](keys.view(torch.uint8), scales.view(torch.int32),
+            private.view(torch.uint8), private_scales.view(torch.int32), table, out.view(torch.uint8), scale.view(torch.int32),
+            prefix, total, keys.stride(0), scales.stride(0), private.stride(0), private_scales.stride(0),
+            table.stride(0), per, stride, offset, width, 64, num_warps=4)
+    return out, scale
+
+
+@triton.jit
 def _pool_window(TAILS, K, GATE, CTX, OUT_K, OUT_G, T: tl.constexpr, KP: tl.constexpr, W: tl.constexpr, NPOS: tl.constexpr,
                  tail_s0, tail_s1, tail_s2, k_s0, k_s1, gate_s0, gate_s1, D: tl.constexpr,
                  SLOTS, MAPPED: tl.constexpr):

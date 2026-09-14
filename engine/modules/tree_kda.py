@@ -47,16 +47,23 @@ class Factors:
         return state
 
 
-def conv(tree, raw, weight, history, *, topology=None):
+def conv(tree, raw, weight, history, *, topology=None, context=None):
     """Depthwise conv reads only ancestors, including the actual prefix taps."""
-    if raw.ndim != 2 or raw.shape[0] != len(tree.tokens) or history.shape != (raw.shape[1], weight.shape[1] - 1):
+    ring = context is not None
+    if (raw.ndim != 2 or weight.ndim != 2 or weight.shape[0] != raw.shape[1] or raw.shape[0] != len(tree.tokens)
+            or history.ndim != 2 or history.shape[0] != raw.shape[1]
+            or (ring and (type(context) is not int or context < 0 or history.shape[1] < max(1, weight.shape[1]-1)))
+            or (not ring and history.shape[1] != weight.shape[1]-1)):
         raise ValueError("tree conv needs one raw row per node and a prefix history")
     topology = topology or Topology(tree, raw.device, taps=weight.shape[1])
     if topology.tree != tree or topology.device != raw.device or topology.taps != weight.shape[1]:
         raise ValueError("tree conv topology must match the tree, device and taps")
     if raw.is_cuda:
         from engine.kernels.kda.tree import conv as native
-        return native(raw, weight, history, topology)
+        return native(raw, weight, history, topology, context=context)
+    if ring:
+        positions = context+torch.arange(1-weight.shape[1], 0, device=raw.device)
+        history = history[:, positions.clamp_min(0) % history.shape[1]].masked_fill((positions < 0)[None, :], 0)
     padded = torch.cat((history.float().T, raw.float()))
     taps = padded[(weight.shape[1]-1+topology.conv).long()]
     output = torch.zeros_like(raw, dtype=torch.float32)

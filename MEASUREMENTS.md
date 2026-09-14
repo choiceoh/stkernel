@@ -2936,3 +2936,20 @@ cuBLAS는 백엔드 추가 대신 튜닝 가능성을 검토했다. 큰 FP8 프�
 기존 융합 후처리 비용도 따졌다. 기존 DeepGEMM에도 native FP8·스케일 재사용·Split-K가 있으므로
 cuBLAS 우위는 실제 형상별 알고리즘·전체 입출력 비용에서 확인해야 한다. 개선율은 아직 미측정이다.
 기록·수치 계약·재현·상세 검토: [st_cuda132_packed_20260914](measurements/st_cuda132_packed_20260914/README.md).
+
+## 2026-09-14 — 트리 인덱서 접두사 중복 복사와 KDA 이력 준비 제거
+
+#958 이후 명시적 eager 트리 실험을 더 줄였다. paged 인덱서 접두사와 private pool을 최종 버퍼에
+한 번에 모아, 기존 gather 결과를 다시 concat하던 복사를 없앴다. private pool이 완성되는 트리에서
+DSA층당 32K/128K 접두사 임시 버퍼 1.03125/4.125MiB, 추가 concat 읽기·쓰기 2.0625/8.25MiB가
+사라진다. 형상으로 계산한 바이트 수이며 실측 대역폭이나 엔진 상주 메모리 절감량은 아니다.
+KDA 합성곱은 canonical 링에서 바로 읽어 6,144채널의 최종 이력 버퍼 36,864B와 gather/mask 준비를
+없앴다. indexer starts/ends/branch columns도 트랜잭션당 한 번만 만든다. KDA 상태는 FP32 유지.
+
+Triton 3.7.1의 SM121a 오프라인 컴파일 13종 모두 스필 0. 바이트 복사 커널은 78 registers/0 shared,
+링 합성곱은 이력 버퍼 모드보다 레지스터 1개가 늘어나는 대가가 있다. CPU interpreter 16 tests와
+#958 동일 입력·연산자 비교에서 출력, feature, canonical state, paged bytes, 토큰·커밋 경로가 전부 같다.
+Docker CPU 시간은 -15.63%~+16.10%로 흔들렸고, 맥 직접 비교는 -0.83%~+0.50%로 사실상 동일했다.
+
+**GPU 큐·부팅·실측은 하지 않았다.** 일반 서빙 기본값이나 HTTP/전체 트리 그래프 연결을 바꾸는 PR이
+아니다. 실제 GPU 수치·품질·수용률·tok/s는 미판정. 기록과 재현: `measurements/st_tree_bank_20260914/`.

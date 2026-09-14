@@ -105,8 +105,10 @@ class TreeDecodeTests(unittest.TestCase):
             net, cache, slot = self.prepare(context)
             calls, selected = [], []
             mla, compress, slots = net.lanes.mla_sparse, net.lanes.kpool_compress, tree_attention.pool_slots
-            def score(q, keys, scales, w, ke):
+            def score(q, keys, scales, w, ke, ks=None):
                 calls.append(("indexer", len(q), len(keys)))
+                self.assertTrue((ke == len(keys)).all())
+                self.assertTrue((ks == 0).all())
                 return torch.full((len(q), len(keys)), value, dtype=torch.float32)
             def attention(*args, **kwargs):
                 calls.append(("mla", len(args[0])))
