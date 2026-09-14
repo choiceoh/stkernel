@@ -1,0 +1,27 @@
+begin 200 {"schema": 1, "ranks": [{"rank": 0, "token": "rank-f9ea15b55788", "status": "recording", "preparation": {"specializations": 0, "graph_captures": 56, "observers": ["triton.runtime.jit._do_compile", "cutlass.cute.compile", "torch.utils.cpp_extension._jit_compile"], "scope": "Triton/CuTe/C++ JIT entry 
+json-s100-ledger: 2414 tokens in 29.0 s
+json-s100-portfolio: 1927 tokens in 20.0 s
+json-s100-logic: 2508 tokens in 30.0 s
+json-s101-ledger: 2244 tokens in 27.0 s
+json-s101-portfolio: 2385 tokens in 23.5 s
+json-s101-logic: 2772 tokens in 33.9 s
+json-s102-ledger: 2955 tokens in 33.2 s
+json-s102-portfolio: 1757 tokens in 18.9 s
+json-s102-logic: 1953 tokens in 24.9 s
+json-s103-ledger: 3557 tokens in 40.8 s
+json-s103-portfolio: 1734 tokens in 18.6 s
+json-s103-logic: 3122 tokens in 40.3 s
+end 200 [{'schema': 1, 'token': 'rank-f9ea15b55788', 'rank': 0, 'diagnostic': False, 'preparation_before': {'specializations': 0, 'graph_captures': 56, 'observers': ['triton.runtime.jit._do_compile', 'cutlass.cute.compile', 'torch.utils.cpp_extension._jit_compile'], 'scope': 'Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers'}, 'preparation_after': {'specializations': 24, 'graph_captures': 56, 'observers': ['triton.runtime.jit._do_compile', 'cutlass.cute.compile', 'torch.utils.cpp_extension._jit_compile'], 'scope': 'Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers'}, 'preparation_changed': True, 'row_count': 15853, 'steps': {'prefill': 12, 'decode': 1593}, 'concurrency': 1, 'instrumentation': {}, 'graph_attribution_errors': [], 'errors': [], 'server_directory': '/home/choiceoh/glm53-logs/st-bracket-dumps/expert-rank-0915-rank1-hold-cc3ab6193921/onepass-latency/rank-f9ea15b55788/rank-0', 'complete': True}]
+6291 draft_rejection rows on rank 0 (all ranks' row counts: [15853, 15817, 15817, 15817])
+steps 6291: selector_miss 3851 (61.2%), all_accepted 1738 (27.6%), candidate_miss 696 (11.1%), output_boundary 6 (0.1%)
+first rejections 4547: target among the candidates 3851 (84.7%)
+target's candidate rank, share of ALL first rejections: <= rank 0: 7.8%, <= rank 1: 39.8%, <= rank 2: 53.8%, <= rank 3: 62.2%, <= rank 7: 76.3%, <= rank 15: 84.7%
+target rank histogram (selector misses): 0:356, 1:1455, 2:637, 3:382, 4:245, 5:186, 6:102, 7:106, 8:80, 9:60, 10:57, 11:52, 12:48, 13:24, 14:26, 15:35
+walk's own pick rank at the rejected position: 0:3173, 1:706, 2:237, 3:112, 4:58, 5:57, 6:59, 7:25, 8:20, 9:18, 10:17, 11:21, 12:10, 13:12, 14:11, 15:11
+selector misses: target top-1 & walk not top-1 356, target not top-1 & walk top-1 2789, both not top-1 706
+  1 sibling(s) by drafter rank would catch 1733 of 4547 first rejections (38.1%)
+  2 sibling(s) by drafter rank would catch 2418 of 4547 first rejections (53.2%)
+  3 sibling(s) by drafter rank would catch 2807 of 4547 first rejections (61.7%)
+  7 sibling(s) by drafter rank would catch 3462 of 4547 first rejections (76.1%)
+by position (accepted prefix): 0: sel 793 cand 59; 1: sel 825 cand 88; 2: sel 671 cand 143; 3: sel 562 cand 111; 4: sel 402 cand 111; 5: sel 345 cand 106; 6: sel 253 cand 78
+RANK done
