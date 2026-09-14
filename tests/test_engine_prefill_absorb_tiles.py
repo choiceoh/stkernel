@@ -176,6 +176,8 @@ class AbsorbKernelTests(unittest.TestCase):
         run = scope['_absorb']
         gen = torch.Generator().manual_seed(8931)
         for rows, heads, narrow, wide in ((1, 2, 33, 65), (7, 2, 33, 65),
+                                          (8, 16, 256, 512), (16, 16, 256, 512),
+                                          (24, 16, 256, 512), (32, 16, 256, 512),
                                           (131, 16, 256, 512), (132, 16, 256, 512)):
             owner = torch.randn(heads, 2*narrow, wide, generator=gen).bfloat16()
             before = owner.clone()
@@ -186,7 +188,7 @@ class AbsorbKernelTests(unittest.TestCase):
                 x = torch.randn(rows, heads, inner, generator=gen).bfloat16()
                 x_before = x.clone()
                 expected = torch.einsum('thc,hvc->thv' if transpose else 'thd,hdc->thc', x, weight)
-                for bm, bn, bk in ((64, 64, 32), (32, 64, 64)):
+                for bm, bn, bk in ((64, 64, 32), (32, 64, 64), (16, 64, 64)):
                     destination = torch.full((rows+2, heads, outer), -19., dtype=torch.bfloat16)
                     for h in range(heads):
                         for m in range((rows+bm-1)//bm):

@@ -168,6 +168,8 @@ class Glm53Net:
         self.decode_latents_executed = set()
         self._indexer_head_gates = {}
         self.decode_indexer_gate_rows = ()
+        self._decode_absorb = {}
+        self.decode_absorb_rows = ()
         self.prefill_transport = None
         self.prefill_ffn_packets = False
         self.prefill_packet_executed = set()
@@ -322,6 +324,22 @@ class Glm53Net:
             raise ValueError('head gates require every paired indexer boundary')
         self._indexer_head_gates = {L: IndexerHeadGate(self.p[f'L{L}.idx.w_heads'], rows=rows) for L in layers}
         self.decode_indexer_gate_rows = rows
+
+    def prepare_decode_absorb(self, rows):
+        """Retain kv_b views for both captured contractions; no weight allocation."""
+        if (self._decode_absorb or self.F.spec_k != 7
+                or (self.Hl, self.F.qk_nope, self.F.v_dim, self.F.kv_lora) != (16, 256, 256, 512)):
+            raise ValueError('decode absorb requires one K=7 preparation of the GLM MLA geometry')
+        from engine.kernels.mla.decode_absorb import DecodeAbsorb
+        rows = tuple(rows)
+        owners = {}
+        for L in self.layers:
+            if self.F.is_dsa(L):
+                w = self.p[f'L{L}.mla.kv_b'].view(16, 512, 512)
+                owners[L] = DecodeAbsorb(w[:, :256], w[:, 256:], rows=rows)
+        if not owners:
+            raise ValueError('decode absorb needs at least one DSA layer')
+        self._decode_absorb, self.decode_absorb_rows = owners, rows
 
     def _indexer_head_gate(self, L, x, step):
         if (getattr(step, 'captured', False) and not self.probe
@@ -842,6 +860,9 @@ class Glm53Net:
         return (reduce or self.comm.all_reduce)((project or self.linear)(o.reshape(N, Hl * F.v_dim), n + "o_proj"))
 
     def _mla_absorb(self, L, x, weight, step, *, transpose=False):
+        if (getattr(step, 'captured', False) and not self.probe
+                and len(x) in getattr(self, 'decode_absorb_rows', ())):
+            return self._decode_absorb[L](x, transpose=transpose)
         if (self.prefill_absorb_tiles and self.lanes.mla_absorb is not None
                 and not self.probe and not getattr(step, "captured", False)
                 and len(step.segments) == 1 and 128 <= len(x) <= 32768):

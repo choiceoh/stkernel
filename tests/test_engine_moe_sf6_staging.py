@@ -38,7 +38,8 @@ def method(name, env, *, suspend=False):
     return env[name]
 
 
-def geometry(reform=True, packed=True, separate=True, stages=2, word_expand=True):
+def geometry(reform=True, packed=True, separate=True, stages=2, word_expand=True,
+             fc2_word_expand=True):
     env = dict(cutlass=SimpleNamespace(Float32=object()), DenseGemmKernel=object(),
         utils=SimpleNamespace(get_smem_capacity_in_bytes=lambda _: 101376),
         pipeline=SimpleNamespace(NamedBarrier=lambda **kw: SimpleNamespace(**kw)),
@@ -52,7 +53,7 @@ def geometry(reform=True, packed=True, separate=True, stages=2, word_expand=True
     owner = SimpleNamespace()
     method('__init__', env)(owner, 16, 4, decode_reform=reform,
         reform_sf_pack=packed, sf6_separate=separate, fc1_stages=stages, fc2_stages=stages,
-        sf6_word_expand=word_expand)
+        sf6_word_expand=word_expand, sf6_fc2_word_expand=fc2_word_expand)
     return owner
 
 
@@ -67,12 +68,13 @@ def packed_codes(base, size, seed):
     return bytes(packed), bytes((base+code) % 256 for code in codes)
 
 
-def expand(mem, dest, size, source=None, seed=0, word_expand=True):
+def expand(mem, dest, size, source=None, seed=0, word_expand=True, word_override=None):
     helper = method('_sf_expand_stage', dict(Int32=int), suspend=True)
     word = method('_sf6_expand_word', dict(Int32=int))
     owner = SimpleNamespace(sf6_word_expand=word_expand,
         _sf6_expand_word=lambda *args: word(None, *args))
-    workers = [helper(owner, dest, t, size, packed_addr=source) for t in range(128)]
+    workers = [helper(owner, dest, t, size, packed_addr=source, word_expand=word_override)
+               for t in range(128)]
     ready, blocked = list(range(128)), []
     replies = [None]*128
     rng = random.Random(seed)
@@ -108,6 +110,35 @@ def expand(mem, dest, size, source=None, seed=0, word_expand=True):
 
 
 class Sf6StagingTests(unittest.TestCase):
+    def test_fc2_inplace_word_all_bases_codes_and_cross_warp_orders(self):
+        size, dest = 2048, 256
+        for base in range(256):
+            packed, expected = packed_codes(base, size, base*17)
+            reference = bytearray([0xA5])*8192
+            reference[dest:dest+len(packed)] = packed
+            for word in (False, True):
+                mem = bytearray(reference)
+                expand(mem, dest, size, seed=base, word_override=word)
+                self.assertEqual(mem[dest:dest+size], expected)
+                self.assertEqual(mem[:dest], reference[:dest])
+                self.assertEqual(mem[dest+size:], reference[dest+size:])
+
+    def test_fc2_inplace_word_ring_reuse_and_neighbor_slots(self):
+        # Simulate the producer refilling a consumed slot while other slots
+        # retain their prior packed or expanded bytes. Every expansion must
+        # finish its packed reads before the first in-place overwrite.
+        for stages in (1, 2, 3):
+            mem = bytearray([0xA5])*16384
+            for generation in range(stages*8):
+                dest = 256+(generation % stages)*2048
+                packed, expected = packed_codes(generation*37 % 256, 2048, generation*13)
+                mem[dest:dest+len(packed)] = packed
+                before = bytes(mem)
+                expand(mem, dest, 2048, seed=generation, word_override=True)
+                self.assertEqual(mem[dest:dest+2048], expected)
+                self.assertEqual(mem[:dest], before[:dest])
+                self.assertEqual(mem[dest+2048:], before[dest+2048:])
+
     def test_separate_all_bases_codes_and_cross_warp_orders(self):
         size, dest, source = 2048, 256, 4096
         for word_expand in (False, True):
@@ -175,7 +206,9 @@ class Sf6StagingTests(unittest.TestCase):
                     self.assertEqual(g.sf6_separate, reform and packed and separate)
                     self.assertEqual(g.scatter_cache_rows, 16 if g.sf6_separate else 128)
                     self.assertEqual(g.sf6_word_expand, g.sf6_separate)
+                    self.assertEqual(g.sf6_fc2_word_expand, reform and packed)
         self.assertFalse(geometry(word_expand=False).sf6_word_expand)
+        self.assertFalse(geometry(fc2_word_expand=False).sf6_fc2_word_expand)
 
     def test_actual_scatter_initialization_bounds_and_changed_routes(self):
         kernel = next(n for n in CLASS.body if isinstance(n, ast.FunctionDef) and n.name == 'kernel')
@@ -236,8 +269,13 @@ class Sf6StagingTests(unittest.TestCase):
             selected = normalize(base, rows)
             rollback = normalize(dict(base, sf6_separate=False), rows)
             scalar = normalize(dict(base, sf6_word_expand=False), rows)
+            fc2_scalar = normalize(dict(base, sf6_fc2_word_expand=False), rows)
             self.assertEqual(selected['sf6_separate'], rows <= 8)
             self.assertEqual(selected['sf6_word_expand'], rows <= 8)
+            self.assertEqual(selected['sf6_fc2_word_expand'], rows <= 8)
+            self.assertEqual(rollback['sf6_fc2_word_expand'], rows <= 8)
+            self.assertEqual(scalar['sf6_fc2_word_expand'], rows <= 8)
+            self.assertFalse(fc2_scalar['sf6_fc2_word_expand'])
             self.assertFalse(scalar['sf6_word_expand'])
             self.assertFalse(rollback['sf6_word_expand'])
             self.assertEqual(normalize(selected, rows), selected)
@@ -245,7 +283,10 @@ class Sf6StagingTests(unittest.TestCase):
             self.assertEqual(key(selected, m=rows) == key(rollback, m=rows), rows > 8)
             self.assertEqual(key(selected, m=rows) == key(scalar, m=rows), rows > 8)
             self.assertEqual(normalize(scalar, rows), scalar)
+            self.assertEqual(normalize(fc2_scalar, rows), fc2_scalar)
+            self.assertEqual(key(selected, m=rows) == key(fc2_scalar, m=rows), rows > 8)
         self.assertFalse(normalize(dict(base, reform_sf_pack=False), 8)['sf6_separate'])
+        self.assertFalse(normalize(dict(base, reform_sf_pack=False), 8)['sf6_fc2_word_expand'])
 
 
 if __name__ == '__main__':

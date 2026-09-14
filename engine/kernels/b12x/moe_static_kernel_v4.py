@@ -121,6 +121,7 @@ class MoEStaticKernelV4:
         reform_sf_pack: bool = False,
         sf6_separate: bool = True,
         sf6_word_expand: bool = True,
+        sf6_fc2_word_expand: bool = True,
         packed_activation_store: bool = True,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
@@ -212,6 +213,7 @@ class MoEStaticKernelV4:
         # consumer_release; expansion then needs only its publication barrier.
         self.sf6_separate = bool(sf6_separate and self.reform_sf_pack and self.decode_reform)
         self.sf6_word_expand = bool(sf6_word_expand and self.sf6_separate)
+        self.sf6_fc2_word_expand = bool(sf6_fc2_word_expand and self.reform_sf_pack and self.decode_reform)
         self.packed_activation_store = bool(packed_activation_store and self.decode_reform)
         # Scatter only consumes rows in this M16 tile. Avoid initializing
         # 112 unused token/weight entries per item and reclaim their storage.
@@ -363,7 +365,8 @@ class MoEStaticKernelV4:
         high = (high | (high << Int32(6))) & Int32(0x03030303)
         return ((low | (high << Int32(4))) + base7) ^ base80
 
-    def _sf_expand_stage(self, stage_addr, tidx, block_bytes=4096, *, packed_addr=None):
+    def _sf_expand_stage(self, stage_addr, tidx, block_bytes=4096, *, packed_addr=None,
+                         word_expand=None):
         """Exact MMA-stage expansion shared by q, sf6 and the device gate.
 
         The 1024-byte form expands the selected FC2 row half gathered as
@@ -374,6 +377,8 @@ class MoEStaticKernelV4:
         Volatile reads cannot sink across the in-place read-before-write barrier.
         The post-write barrier publishes every owner's bytes before peers
         load MMA fragments (39-sf-pack-kernel correctness fixes).
+        word_expand overrides only the integer reconstruction. In-place FC2
+        retains both barriers and all volatile packed reads in either form.
         """
         if block_bytes not in (1024, 2048, 4096):
             raise ValueError("unsupported scale expansion stage")
@@ -400,7 +405,8 @@ class MoEStaticKernelV4:
         base = _ld_shared_i32_volatile(source_addr + Int32(base_offset)) & Int32(0xFF)
         if packed_addr is None:
             self.sf_expand_barrier.arrive_and_wait()
-        word_expand = self.sf6_word_expand and packed_addr is not None
+        if word_expand is None:
+            word_expand = self.sf6_word_expand and packed_addr is not None
         if word_expand:
             base7 = (base & Int32(0x7F)) * Int32(0x01010101)
             base80 = (base & Int32(0x80)) * Int32(0x01010101)
@@ -1895,6 +1901,7 @@ class MoEStaticKernelV4:
                             self._sf_expand_stage(
                                 sfb2_base_addr + fc2_cons_state.index * Int32(2048),
                                 Int32(tidx), 2048,
+                                word_expand=self.sf6_fc2_word_expand,
                             )
                         else:
                             self._sf_expand_stage(

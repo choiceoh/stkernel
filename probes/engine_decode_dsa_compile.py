@@ -25,6 +25,7 @@ def main():
     from engine.kernels.mla.decode_inputs import _latent_norm_write
     from engine.kernels.indexer_gate import _gate_partials
     from engine.kernels.decode_projection import _indexer_boundary
+    from engine.kernels.mla.prefill_absorb import _absorb
     from engine.kernels.common.native_cache import prepare_sources
     python_source = root / 'engine/kernels/dense/__init__.py'
     body = next(n for n in ast.parse(python_source.read_text()).body if isinstance(n, ast.FunctionDef) and n.name == 'extension')
@@ -62,10 +63,25 @@ def main():
                                  status='PASS'))
     if torch.cuda.is_initialized():
         raise RuntimeError('compile initialized CUDA')
+    absorb_records = []
+    for bm in (16, 32):
+        for transpose in (False, True):
+            inner, outer = (512, 256) if transpose else (256, 512)
+            src = ASTSource(fn=_absorb, signature=dict(X='*bf16', W='*bf16', Y='*bf16', ROWS='i32'),
+                            constexprs=dict(HEADS=16, INPUT=inner, OUTPUT=outer, WH=512*512, WR=512,
+                                            TRANSPOSE=transpose, BM=bm, BN=64, BK=64))
+            kernel = triton.compile(src, target=GPUTarget('cuda', 121, 32),
+                                   options=dict(num_warps=4, num_stages=2))
+            absorb_records.append(dict(tile_m=bm, transpose=transpose, shared_bytes=kernel.metadata.shared,
+                                       status='PASS'))
+    if torch.cuda.is_initialized():
+        raise RuntimeError('absorb compile initialized CUDA')
     files = ('engine/kernels/dense/kernels.cu', 'engine/kernels/dense/query_pair.py', 'engine/kernels/mla/decode_inputs.py',
-             'engine/kernels/indexer_gate.py', 'engine/kernels/decode_projection.py')
+             'engine/kernels/indexer_gate.py', 'engine/kernels/decode_projection.py',
+             'engine/kernels/mla/decode_absorb.py', 'engine/kernels/mla/prefill_absorb.py')
     result = dict(status='PASS', gpu_used=False, torch=torch.__version__, triton=triton.__version__,
                   cuda=torch.version.cuda, flags=flags, native_cache_key=key, latent_kernels=records, head_gate_kernels=head_records,
+                  decode_absorb_kernels=absorb_records,
                   source_sha256={f: hashlib.sha256((root / f).read_bytes()).hexdigest() for f in files},
                   scope='full native build and PTXAS only; GPU bytes/replay/timing pending')
     args.output.write_text(json.dumps(result, indent=2) + '\n')

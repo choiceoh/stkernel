@@ -146,19 +146,11 @@ def generation_defaults(ckpt=facts.CKPT) -> dict:
 
 
 def grammars(ckpt, vocab: int, device=None, stop_token_ids=None):
-    """base/grammar.Grammars over the checkpoint's tokenizer, on every rank (each row's matcher runs everywhere), or None
-    where xgrammar is not installed -- then response_format is refused at the door (D3), never silently unenforced.
-
-    `device`: prove the mask kernel here and pay its Triton JIT here (45차 §23 B2, the same rule as every other
-    first-use cost -- and the same shape as `vision.qualify`: what cannot be served does not boot, D3)."""
+    """base/grammar.for_checkpoint: structured output over the checkpoint's tokenizer on every rank, or None where
+    xgrammar is not installed (the door then refuses response_format, D3); `device` proves the mask kernel at boot
+    (the same shape as `vision.qualify`)."""
     from engine.base import grammar
-    if not grammar.available():
-        return None
-    from transformers import AutoTokenizer
-    g = grammar.Grammars(AutoTokenizer.from_pretrained(str(ckpt)), vocab, stop_token_ids=stop_token_ids)
-    if device is not None:
-        g.qualify(device)
-    return g
+    return grammar.for_checkpoint(ckpt, vocab, device, stop_token_ids)
 
 
 CHAT_TEMPLATE = "chat_template_mm_v2.jinja"     # what production serves with (launchers/lib/glm53-chat.sh); honours the `thinking` kwarg
@@ -234,10 +226,12 @@ def declared(a, comm_world: int) -> Config:
     # One serving recipe in both modes, selected by operator request. Dense
     # prefix and token-major absorption were enabled on 2026-09-13; their
     # GPU timing/quality gates remain pending independently of this choice.
-    # K=7 decode fastpaths were explicitly enabled on 2026-09-14.
+    # 2026-09-14 operator: new improvements are enabled by default; keep
+    # measurement status separate from the selected serving recipe.
     gb10_defaults = dict(direct_mhc=1, prefill_project_tiles=1,
                          nvme_mapped_staging=1, decode_iterations=4, prefill_indexer_shards=0, prefill_dense_prefix=1,
-                         prefill_absorb_tiles=1, decode_fastpaths=1, decode_dsa_inputs=0, decode_indexer_gate=0)
+                         prefill_absorb_tiles=1, decode_fastpaths=1, decode_dsa_inputs=1,
+                         decode_indexer_gate=1, decode_absorb_tiles=1)
     if getattr(a, "production", False):
         # tile32 passed the full GPU numerical/graph and matched 2K/32K/128K
         # serving brackets. Keep it in the production contract so a stale
@@ -250,11 +244,14 @@ def declared(a, comm_world: int) -> Config:
                         draft_diagnostics=int(SERVING_POLICY.diagnostics), draft_tuning='', **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
+        Knob("decode_absorb_tiles", gb10_defaults["decode_absorb_tiles"], _dt.date(2026, 9, 30),
+             "Operator-enabled K=7 token-major MLA contractions; paired GPU qualification pending",
+             "STK_decode_absorb_tiles=0", int),
         Knob("decode_indexer_gate", gb10_defaults["decode_indexer_gate"], _dt.date(2026, 9, 30),
-             "K=7 FP32 head-gate partials with fused boundary reduction; paired GPU qualification pending",
+             "Operator-enabled K=7 FP32 head-gate partials with fused boundary reduction; paired GPU qualification pending",
              "STK_decode_indexer_gate=0", int),
         Knob("decode_dsa_inputs", gb10_defaults["decode_dsa_inputs"], _dt.date(2026, 9, 30),
-             "K=7 shared query input pack and fused latent norm/write; paired GPU qualification pending",
+             "Operator-enabled K=7 shared query input pack and fused latent norm/write; paired GPU qualification pending",
              "STK_decode_dsa_inputs=0", int),
         Knob("decode_fastpaths", gb10_defaults["decode_fastpaths"], _dt.date(2026, 9, 30),
              "Operator-enabled K=7 input reuse, paired projections and direct TX outputs; GPU qualification pending",
@@ -568,6 +565,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                     net.prepare_decode_dsa_inputs(tuple(8 * n for n in range(1, max_seqs + 1)))
                 if execution_plan is not None and execution_plan.decode_indexer_gate:
                     net.prepare_decode_indexer_gate(tuple(8 * n for n in range(1, max_seqs + 1)))
+                if execution_plan is not None and execution_plan.decode_absorb_tiles:
+                    net.prepare_decode_absorb(tuple(8 * n for n in range(1, max_seqs + 1)))
                 recorder.gauge('decode_projection_resident_bytes', projection_bytes)
                 net.prefill_transport = PrefillCollectives(comm, project_tiles=bool(
                     execution_plan is not None and execution_plan.prefill_project_tiles))
@@ -818,6 +817,18 @@ def decode_indexer_gate_report(net):
                 partial_bytes_per_call={m: m * 16 * 32 * 4 for m in rows}, accumulation='FP32 fixed tree')
 
 
+def decode_absorb_report(net):
+    rows = getattr(net, 'decode_absorb_rows', ())
+    if not rows:
+        return {}
+    expected = {(L, m, side) for L in net.layers if net.F.is_dsa(L)
+                for m in rows for side in ('query', 'output')}
+    executed = {(L, m, side) for L, owner in net._decode_absorb.items() for m, side in owner.executed}
+    if executed != expected:
+        raise RuntimeError(f'decode absorb did not execute both contractions at every layer/width: {sorted(expected - executed)}')
+    return dict(rows=list(rows), executed=sorted(executed), resident_bytes=0, output_layout='token-major')
+
+
 def native_execution_report(net, drafter):
     """Reject a prepared but unused lane before the full-model door opens."""
     target = [layer for name, layer in net.dense.items() if name != 'head']
@@ -830,6 +841,7 @@ def native_execution_report(net, drafter):
         required_prefill.update(('fp8_tiled_projection', 'fp8_packet_projection'))
     proof = dict(decode_fastpaths=decode_fastpath_report(net), decode_dsa_inputs=decode_dsa_report(net),
                  decode_indexer_gate=decode_indexer_gate_report(net),
+                 decode_absorb_tiles=decode_absorb_report(net),
                  target_w4=sum(bool(p.executed & 1) for p in target),
                  target_fp8=sum(bool(p.executed & 2) for p in target),
                  head_fp8=net.dense['head'].executed,
@@ -1239,7 +1251,7 @@ def fleet(a) -> int:
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
                                        consume_scales=True)
         from engine.profiles.glm53.execution import ExecutionPlan
-        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "compact_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "prefill_ffn_packets", "decode_dsa_inputs", "decode_indexer_gate")):
+        if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "compact_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "prefill_ffn_packets", "decode_dsa_inputs", "decode_indexer_gate", "decode_absorb_tiles")):
             raise ValueError("execution switches must be 0 or 1")
         plan = ExecutionPlan(bool(cfg["execution_overlap"]), bool(cfg["early_observe"]), cfg["prefill_tiles"],
                              sched.chunk_for(facts.CHUNK_ALIGN, TOKEN_BUDGET, facts.SPEC_K),
@@ -1251,7 +1263,8 @@ def fleet(a) -> int:
                              prefill_absorb_tiles=bool(cfg["prefill_absorb_tiles"]),
                              prefill_ffn_packets=bool(cfg["prefill_ffn_packets"]),
                              decode_fastpaths=bool(cfg["decode_fastpaths"]), decode_dsa_inputs=bool(cfg["decode_dsa_inputs"]),
-                             decode_indexer_gate=bool(cfg["decode_indexer_gate"]))
+                             decode_indexer_gate=bool(cfg["decode_indexer_gate"]),
+                             decode_absorb_tiles=bool(cfg["decode_absorb_tiles"]))
         from engine.profiles.glm53.draft_policy import DraftPolicy
         if cfg["draft_diagnostics"] not in (0, 1):
             raise ValueError("draft diagnostics must be 0 or 1")

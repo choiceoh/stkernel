@@ -17,7 +17,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--sass', action='store_true', help='also disassemble and count native instructions')
-    parser.add_argument('--activation-store', action='store_true', help='compare packed activation stores')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--activation-store', action='store_true', help='compare packed activation stores')
+    mode.add_argument('--fc2-words', action='store_true', help='compare in-place FC2 word restoration')
     args = parser.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '':
         raise RuntimeError('compile requires CUDA_VISIBLE_DEVICES=')
@@ -41,6 +43,7 @@ def main():
             selected.update(smem_bytes=owner.smem_bytes,
                             smem_capacity=owner.smem_capacity,
                             separate=owner.sf6_separate, word_expand=owner.sf6_word_expand,
+                            fc2_word_expand=owner.sf6_fc2_word_expand,
                             packed_activation_store=owner.packed_activation_store)
 
         def builder(module, name, build, **kwargs):
@@ -84,16 +87,24 @@ def main():
                  [(1, True, True, True), (7, True, True, True), (8, True, True, True),
                   (8, True, False, True), (8, False, False, True),
                   (16, True, True, True), (32, True, True, True)])
+        cases = [(*case, True) for case in cases]
+        if args.fc2_words:
+            cases = [(1, True, True, True, True), (7, True, True, True, True),
+                     (8, True, True, True, True), (8, True, True, True, False),
+                     (8, False, True, True, True), (16, True, True, True, True),
+                     (32, True, True, True, True)]
         with patch.object(md, 'get_num_sm', return_value=48), \
                 patch.object(md, 'get_max_active_clusters', return_value=48), \
                 patch.object(md, 'build_and_load_cute_dsl_kernel', builder), \
                 patch.object(MoEStaticKernelV4, '_setup_attributes', checked_setup):
-            for rows, separate, word_expand, activation_store in cases:
+            for rows, separate, word_expand, activation_store, fc2_word_expand in cases:
                 selected.clear()
                 selected.update(rows=rows, requested_separate=separate, requested_word_expand=word_expand,
-                                requested_activation_store=activation_store)
+                                requested_activation_store=activation_store,
+                                requested_fc2_word_expand=fc2_word_expand)
                 config = dict(md._parse_glm53_static_v2('t,r,sf6'),
                               sf6_separate=separate, sf6_word_expand=word_expand,
+                              sf6_fc2_word_expand=fc2_word_expand,
                               packed_activation_store=activation_store)
                 try:
                     config = md._static_v2_decode_config(config, rows)

@@ -15,7 +15,10 @@ are), and the value after EACH of its tokens goes to the slot's ring (`ring` cop
 
 `ComposedModel` answers the runner's Model protocol and the door's engine surface (base/serve) for any composition:
 tokens and limits per row, the prefill split at the prefix cache's marks, sampling through base/sampler with base/draws'
-uniforms keyed the way GLM-5.3's are, parking as a host record beside the slot's bytes. Without a drafter a decode
+uniforms keyed the way GLM-5.3's are, parking as a host record beside the slot's bytes. Every option the door admits is
+served the GLM adapter's way: a row with penalties, logit_bias, logprobs, a seed, a reasoning budget, a grammar
+(base/grammar, when a compiler is bound) or min_tokens still ahead has its logits processed by base/sampler.process_logits
+over its own history and picked on its own; the other rows are drawn together. Without a drafter a decode
 step is one token a row (horizon = context + 1). With one (`Drafter` below) it is GLM-5.3's verification by position:
 the step feeds [last token] + the row's drafts as a verify segment, samples every position with the uniform the
 same generation count would draw without drafts, accepts drafts while the sample agrees, appends accepted + 1 tokens
@@ -379,8 +382,7 @@ class Drafter:
         pass
 
 
-REFUSED_OPTIONS = ("presence_penalty", "frequency_penalty", "repetition_penalty", "logit_bias", "logprobs", "grammar",
-                   "grammar_after", "reasoning_budget", "reasoning_end")
+REFUSED_OPTIONS = ()             # every base/sampler option is served (a grammar needs a bound compiler)
 
 
 class ComposedModel:
@@ -390,7 +392,7 @@ class ComposedModel:
 
     def __init__(self, composition: Composition, store: PositionStore, *, vocab: int, eos_ids, max_new: int = 256,
                  temperature: float = 1.0, top_p: float = 1.0, seed: int = 0, max_context: int = 2 ** 31 - 1,
-                 drafter: "Drafter | None" = None):
+                 drafter: "Drafter | None" = None, grammars=None):
         if type(vocab) is not int or vocab <= 0 or type(max_new) is not int or max_new <= 0:
             raise ValueError("a composed model needs a positive vocabulary and generation limit")
         if drafter is not None and drafter.k and store.ring < drafter.k + 1:
@@ -405,7 +407,9 @@ class ComposedModel:
         self.drafter = drafter
         if drafter is not None:
             self.k = drafter.k
-        self.grammars = None
+        self.grammars = grammars                         # base/grammar.Grammars (or its protocol): structured output
+        self.history = None                              # base/sampler.History, built at the first row with penalties
+        self.matchers, self.lps, self.thinking = {}, {}, {}
         self.drafts_total = self.accepted_total = self.drafted_total = 0
         self.covered_mass = self.reachable_mass = 0.0
 
@@ -424,12 +428,13 @@ class ComposedModel:
 
     def validate_options(self, options: dict) -> None:
         validate_options(options)
-        refused = [k for k in REFUSED_OPTIONS if options.get(k) is not None]
-        if refused:
-            raise ValueError(f"sampling options {refused} are not served by the composed engine")
+        if options.get("grammar") is not None and self.grammars is None:
+            raise ValueError("structured output (response_format) is not served: no grammar compiler is bound")
 
     def prepare_options(self, options: dict) -> None:
-        pass
+        """Compile a request's grammar before it is admitted: a schema the compiler refuses is the door's 400."""
+        if options.get("grammar") is not None and self.grammars is not None:
+            self.grammars.ready(options["grammar"])
 
     def _bind(self, seq: int, ids, max_new, temperature, min_new, options) -> None:
         max_new = self.max_new if max_new is None else max_new
@@ -450,6 +455,17 @@ class ComposedModel:
             self.seeds.pop(seq, None)
         self.nonces[seq] = self.admissions                # the same count on every rank, in the same order
         self.admissions += 1
+        self.thinking[seq] = options.get("reasoning_budget") is not None
+        if options.get("logprobs") is not None:
+            self.lps[seq] = []
+        else:
+            self.lps.pop(seq, None)
+        if options.get("grammar") is not None:
+            self.matchers[seq] = self.grammars.matcher(options["grammar"], self.k + 2, after=options.get("grammar_after"))
+        else:
+            self.matchers.pop(seq, None)
+        if self.history is not None:
+            self.history.forget(seq)                     # the row's tokens were just replaced or extended by a new turn
 
     def add(self, seq: int, ids, max_new=None, temperature=None, min_new: int = 0, options=None, media=None) -> None:
         if media:
@@ -461,8 +477,11 @@ class ComposedModel:
         self.prompt_len[seq] = len(ids)
 
     def forget(self, seq: int) -> None:
-        for d in (self.tokens, self.prompt_len, self.limits, self.min_new, self.options, self.ends, self.seeds, self.nonces):
+        for d in (self.tokens, self.prompt_len, self.limits, self.min_new, self.options, self.ends, self.seeds, self.nonces,
+                  self.matchers, self.lps, self.thinking):
             d.pop(seq, None)
+        if self.history is not None:
+            self.history.forget(seq)
         if self.drafter is not None:
             self.drafter.forget(seq)
 
@@ -503,7 +522,9 @@ class ComposedModel:
         return self.tokens[seq][self.prompt_len[seq] + sent:]
 
     def logprobs(self, seq: int):
-        return None
+        """[(token, logprob, [(id, logprob), ...])] per generated token when the request asked for logprobs (the
+        processed row's, as the GLM adapter records them), else None."""
+        return self.lps.get(seq)
 
     def media_marks(self, seq: int) -> list:
         return []
@@ -539,7 +560,7 @@ class ComposedModel:
         record = {"context": self.context(seq), "pending": len(self.tokens[seq]) - self.context(seq),
                   "tokens": list(self.tokens[seq]), "prompt_len": self.prompt_len[seq],
                   "limits": [self.limits[seq][0], self.limits[seq][1]], "min_new": self.min_new.get(seq, 0),
-                  "options": dict(self.options.get(seq, {}))}
+                  "options": {k: v for k, v in self.options.get(seq, {}).items() if k != "grammar"}}
         self.close(seq)
         self.forget(seq)
         return record
@@ -549,8 +570,11 @@ class ComposedModel:
             raise ValueError(f"seq {seq} is live or has an uncollected result")
         self.tokens[seq] = list(record["tokens"])
         self.prompt_len[seq] = int(record["prompt_len"])
+        options = dict(record.get("options") or {})
+        if options.get("logit_bias"):                    # base/kv_tier keeps the record as JSON: its keys come back as text
+            options["logit_bias"] = {int(k): float(v) for k, v in options["logit_bias"].items()}
         self._bind(seq, self.tokens[seq], int(record["limits"][0]), float(record["limits"][1]),
-                   int(record.get("min_new", 0)), record.get("options") or {})
+                   int(record.get("min_new", 0)), options)
         self.store.resume(seq, slot, int(record["context"]))
 
     # -- sampling: one uniform a row from base/draws, the row's key as GLM-5.3 keys it ----------------------------------
@@ -558,29 +582,88 @@ class ComposedModel:
         key = draws.row_key(self.seeds.get(seq, self.seed), self.nonces[seq], self.generated_count(seq))
         return draws.uniform(key, draws.PICK, 0)
 
+    def _rich(self, seq: int) -> bool:
+        """Whether a row's pick needs its logits processed first: a base/sampler option the plain draw cannot take
+        (penalties, bias, a grammar, logprobs, a reasoning budget), or min_tokens still holding the end back."""
+        opts = self.options.get(seq, {})
+        return (needs_rich_sampler(opts, 0.0, False) or seq in self.matchers or seq in self.lps
+                or self.generated_count(seq) < self.min_new.get(seq, 0))
+
     def _pick(self, seqs, logits: torch.Tensor) -> "list[int]":
-        temps = [self.limits[s][1] for s in seqs]
-        if needs_rich_sampler({}, 0.0, False):
-            raise AssertionError("unreachable")
-        if all(t <= 0 for t in temps):
-            picks = logits[:, :self.vocab].argmax(dim=-1).tolist()
-        else:
-            dev = logits.device
-            opts = [self.options.get(s, {}) for s in seqs]
-            picks = sample(logits, torch.tensor(temps, dtype=torch.float32, device=dev),
-                           torch.tensor([float(o.get("top_p", self.top_p)) for o in opts], dtype=torch.float32, device=dev),
-                           torch.tensor([self._uniform(s) for s in seqs], dtype=torch.float32, device=dev),
-                           top_k=torch.tensor([int(o.get("top_k") or 0) for o in opts], dtype=torch.int32, device=dev),
-                           valid=self.vocab).tolist()
-        for i, seq in enumerate(seqs):                                   # OpenAI min_tokens: no end before min_new
-            if picks[i] in self.ends[seq] and self.generated_count(seq) < self.min_new.get(seq, 0):
-                row = logits[i, :self.vocab].clone()
-                row[list(self.ends[seq])] = float("-inf")
-                picks[i] = int(row.argmax().item())
+        """One pick a row from its logits row, the plain rows drawn together, a rich row through `_pick_rich`."""
+        picks = [None] * len(seqs)
+        plain = [i for i, seq in enumerate(seqs) if not self._rich(seq)]
+        for i, seq in enumerate(seqs):
+            if i not in plain:
+                picks[i] = self._pick_rich(seq, logits[i])
+        if plain:
+            rows = logits[plain]
+            chosen = [seqs[i] for i in plain]
+            temps = [self.limits[s][1] for s in chosen]
+            if all(t <= 0 for t in temps):
+                drawn = rows[:, :self.vocab].argmax(dim=-1).tolist()
+            else:
+                dev = rows.device
+                opts = [self.options.get(s, {}) for s in chosen]
+                drawn = sample(rows, torch.tensor(temps, dtype=torch.float32, device=dev),
+                               torch.tensor([float(o.get("top_p", self.top_p)) for o in opts], dtype=torch.float32, device=dev),
+                               torch.tensor([self._uniform(s) for s in chosen], dtype=torch.float32, device=dev),
+                               top_k=torch.tensor([int(o.get("top_k") or 0) for o in opts], dtype=torch.int32, device=dev),
+                               valid=self.vocab).tolist()
+            for i, token in zip(plain, drawn):
+                picks[i] = int(token)
         return picks
+
+    def _pick_rich(self, seq: int, raw: torch.Tensor) -> int:
+        """The GLM adapter's rich pick for one position, over base/sampler and base/grammar: bias and penalties over
+        the row's tokens (base/sampler.History), the decodable cut, min_tokens' forbidden ends, the reasoning budget's
+        forced end, the grammar's mask, then the row's own draw -- and the logprobs of the processed row. The row's
+        tokens so far include every earlier pick, so a pick here is the same at a verify position as in a plain step."""
+        from engine.base.sampler import History, process_logits, top_logprobs
+        opts = self.options.get(seq, {})
+        if self.history is None:
+            self.history = History(int(raw.shape[-1]), raw.device)
+        seen, counts = self.history.of(seq, self.tokens[seq], self.prompt_len[seq])
+        ends = self.ends.get(seq, self.eos)
+        forbid = (torch.tensor(sorted(ends), dtype=torch.int64, device=raw.device)
+                  if ends and self.generated_count(seq) < self.min_new.get(seq, 0) else None)
+        row = process_logits(raw, opts, seen, counts, (), self.vocab, forbid=forbid, force=self._reasoning_over(seq, opts))
+        matcher = self.matchers.get(seq)
+        if matcher is not None:
+            masks = self.grammars.prepare([(seq, matcher, [])], row.device)
+            if masks.has(seq):
+                masks.apply(seq, row[None])
+        temperature = self.limits[seq][1]
+        if temperature <= 0:
+            pick = int(row[:self.vocab].argmax())
+        else:
+            dev = row.device
+            pick = int(sample(row[None], torch.tensor([temperature], dtype=torch.float32, device=dev),
+                              torch.tensor([float(opts.get("top_p", self.top_p))], dtype=torch.float32, device=dev),
+                              torch.tensor([self._uniform(seq)], dtype=torch.float32, device=dev),
+                              top_k=torch.tensor([int(opts.get("top_k") or 0)], dtype=torch.int32, device=dev),
+                              valid=self.vocab)[0])
+        if seq in self.lps:
+            self.lps[seq].append((pick, *top_logprobs(row[:self.vocab], pick, int(opts["logprobs"]))))
+        return pick
+
+    def _reasoning_over(self, seq: int, opts: dict) -> "int | None":
+        """The reasoning-end token once the row's thinking budget is spent and it has not closed the block itself
+        (the GLM adapter's rule: min_tokens is a promise and a budget is not, so a forbidden end is not forced)."""
+        budget = opts.get("reasoning_budget")
+        if budget is None or not self.thinking.get(seq, False):
+            return None
+        end = opts["reasoning_end"]
+        if end in self.tokens[seq][self.prompt_len[seq]:]:
+            self.thinking[seq] = False
+            return None
+        return end if self.generated_count(seq) >= budget else None
 
     def _commit(self, seq: int, token: int) -> bool:
         self.tokens[seq].append(int(token))
+        matcher = self.matchers.get(seq)
+        if matcher is not None:
+            matcher.advance([int(token)])
         return token in self.ends[seq] or self.generated_count(seq) >= self.limits[seq][0]
 
     # -- steps -----------------------------------------------------------------------------------------------------------

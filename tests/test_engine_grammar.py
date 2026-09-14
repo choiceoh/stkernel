@@ -194,6 +194,27 @@ def fake(allow=(1, 5, 70), vocab=128, refuse=(), needed=True):
     return g, Matcher(g, None, 5)
 
 
+class CheckpointTests(unittest.TestCase):
+    """base/grammar.for_checkpoint, the one way a profile's boot binds structured output."""
+
+    def test_without_xgrammar_there_is_nothing_to_bind(self):
+        from engine.base import grammar
+        if grammar.available():
+            self.skipTest("xgrammar is installed here")
+        self.assertIsNone(grammar.for_checkpoint("/nonexistent", 128, "cpu"))
+
+    def test_the_glm_boot_binds_through_it(self):
+        from unittest.mock import patch
+        from engine.base import grammar
+        try:
+            from engine.profiles.glm53 import boot
+        except Exception as exc:                                  # noqa: BLE001 -- the boot needs the GPU stack's imports
+            self.skipTest(f"the GLM-5.3 boot does not import here: {exc}")
+        with patch.object(grammar, "for_checkpoint", return_value="bound") as bound:
+            self.assertEqual(boot.grammars("ckpt", 7, "cuda:0", [1]), "bound")
+        bound.assert_called_once_with("ckpt", 7, "cuda:0", [1])
+
+
 class StepBufferTests(unittest.TestCase):
     """One bitmask for the step: every row fills at its own offset, and the whole thing crosses once."""
 

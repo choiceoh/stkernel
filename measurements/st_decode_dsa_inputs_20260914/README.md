@@ -1,5 +1,10 @@
 # K=7 DSA input and FP32 head-gate work, 2026-09-14
 
+Update: the operator subsequently requested default application of new
+improvements. Both switches are now enabled by default alongside decode MLA
+absorption; see [the follow-up](../st_decode_absorb_20260914/README.md). The
+default-off status below is the original PR914 implementation record.
+
 Status: implemented, **default off**. The pinned Linux CPU checks and full native
 compile pass. GPU numerical/replay checks and timing are pending. No decode
 step/s, tokens/s, acceptance or answer-quality improvement is claimed.
