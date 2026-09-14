@@ -1,4 +1,4 @@
-"""C2 expert tiles change neither capacity nor the C1/prefill kernel identity."""
+"""C2 expert tiles preserve capacity and every other row-count's kernel identity."""
 import unittest
 
 from tests.test_engine_moe_scatter_config import namespace

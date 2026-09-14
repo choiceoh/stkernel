@@ -8,6 +8,8 @@ TP4 consumer throughput and acceptance have not been measured for this change.
 The candidate extends the existing C1 packed SF6 operand pipeline to exactly
 16 target rows (C=2, K=7), selected by `t,r,sf6,batch`. Other row counts retain
 their original compiled handles. The production recipe remains `t,r,sf6,q0`.
+Selection is by row count: an explicitly enabled 16-row short-prefill call
+would also use the candidate. It is not a decode-only phase switch.
 
 With unique top-8 routes, each expert receives at most 16 rows at C=2. An M32
 expert tile therefore spends half its rows on padding even when every request
