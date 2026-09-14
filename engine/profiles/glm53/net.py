@@ -435,10 +435,8 @@ class Glm53Net:
     # -- embed / head -------------------------------------------------------------
     @operation("embed")
     def embed(self, ids: torch.Tensor) -> torch.Tensor:
-        start = self.rank * self.vp
-        local = ids - start
-        mask = (local < 0) | (local >= self.vp)
-        h = Fn.embedding(local.masked_fill(mask, 0), self.p["embed"]).masked_fill(mask[:, None], 0)
+        from engine.modules.token_embedding import lookup
+        h = lookup(ids, self.p["embed"], self.rank * self.vp)
         return self.comm.all_reduce(h)
 
     def head(self, h: torch.Tensor) -> torch.Tensor:

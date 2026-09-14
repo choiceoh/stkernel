@@ -2717,3 +2717,15 @@ C1/C4 K7의 CPU 레퍼런스에서 결과 저장소를 만드는 텐서 연산�
 CPU 48개 중 39통과·GPU 9skip, 실제 커널 인터프리터 43개 exact, SM121 컴파일
 11개가 통과했다. GPU 큐·부팅·실행은 없고 실제 step/s·수용률·품질은 미측정이다.
 [소스 해시·비트 일치·경로별 작업량·재현 기록](measurements/st_decode_inputs_20260914/README.md).
+
+### ST rank-local 임베딩 조회 통합 — CPU/컴파일 검증 (2026-09-14)
+
+target·drafter가 공유하는 임베딩 경로의 토큰 보정·소유 랭크 판정·조회·0 마스킹을
+한 CUDA 커널로 합쳤다. BF16 값을 uint16 비트로 옮기고, 기존 TP 합산은 유지한다.
+greedy와 target prefill에도 적용되며 CUDA 기본 경로에 켠다.
+
+기존 레퍼런스는 결과 저장소를 만드는 텐서 연산 7개, 후보는 커널 1개다. 이는 CPU
+dispatch 작업량이며 GPU 속도 실측이 아니다. CPU 67개 중 32통과·GPU 35skip,
+실제 커널 인터프리터 28개 비트 일치, SM121 컴파일 8개 통과(shared 0 B)다.
+GPU 큐·부팅·실행은 없고 실제 step/s·수용률·품질·그래프 풀 메모리는 미측정이다.
+[소스 해시·랭크 경계·비트 검증·재현 기록](measurements/st_token_embedding_20260914/README.md).

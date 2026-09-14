@@ -22,6 +22,7 @@ class CommonLanes:
     rmsnorm: object       # (x [..., D], w [D], eps) -> RMS norm over the last dimension, w in the input's dtype
     add_rmsnorm: object   # (a, b, w, eps) -> (a + b, rmsnorm(a + b)) in one launch
     rmsnorm_rope: object  # (x [N, heads, D], w [D], eps, positions [N], theta) -> rope(rmsnorm(x)) in one launch
+    rmsnorm_rope_pair: object  # (q, k, qw, kw, eps, positions, theta) -> independent Q/K norms and rotary in one launch
     rope_table: object    # (device, dim, theta) -> the inverse frequencies, built once; call before capture
     swiglu: object        # (fused [rows, 2 * inter]) -> [rows, inter]: silu(gate) * up, bit-identical to the torch pair
     commit: object        # (picks [n, t], state, accepted=None) -> (count, done, accepted, tokens, ctx_before)
@@ -32,7 +33,8 @@ def served() -> CommonLanes:
     """The common kernels, bound once. Importing them imports Triton. The norms and SwiGLU take their torch
     forms on CPU tensors, as their modules do; `commit` is CUDA only (a profile's CPU path commits in torch)."""
     from engine.kernels.common.decode_commit import advance
-    from engine.kernels.common.norm_rope import add_norm, norm, norm_rope, warm
+    from engine.kernels.common.norm_rope import add_norm, norm, norm_rope, norm_rope_pair, warm
     from engine.kernels.common.swiglu import swiglu
-    return CommonLanes(rmsnorm=norm, add_rmsnorm=add_norm, rmsnorm_rope=norm_rope, rope_table=warm,
+    return CommonLanes(rmsnorm=norm, add_rmsnorm=add_norm, rmsnorm_rope=norm_rope,
+                       rmsnorm_rope_pair=norm_rope_pair, rope_table=warm,
                        swiglu=swiglu, commit=advance)

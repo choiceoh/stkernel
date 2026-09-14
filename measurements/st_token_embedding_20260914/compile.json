@@ -1,0 +1,78 @@
+{
+  "status": "PASS",
+  "mode": "compile",
+  "gpu_used": false,
+  "cases": [
+    {
+      "hidden": 127,
+      "weight_stride": 135,
+      "vocab": 17,
+      "rank": 0,
+      "shared_bytes": 0,
+      "cubin_sha256": "e29da11b38954f37a6ecf9efc8dd35656b2fcbd03855be3cdd74458f4a09ed78"
+    },
+    {
+      "hidden": 127,
+      "weight_stride": 135,
+      "vocab": 17,
+      "rank": 3,
+      "shared_bytes": 0,
+      "cubin_sha256": "8011f670bdd75466e64dbfdf2974fc91fff620931ef7f908d7f620baeafd76e5"
+    },
+    {
+      "hidden": 257,
+      "weight_stride": 265,
+      "vocab": 17,
+      "rank": 0,
+      "shared_bytes": 0,
+      "cubin_sha256": "2e8bde6944bfab88ca52e73350e6849de5e3902f4189300de960bcb1ceb44628"
+    },
+    {
+      "hidden": 257,
+      "weight_stride": 265,
+      "vocab": 17,
+      "rank": 3,
+      "shared_bytes": 0,
+      "cubin_sha256": "40d5baac57d422740fa942b5388894f73c7f100727516b24fb328b25a5858bb1"
+    },
+    {
+      "hidden": 4096,
+      "weight_stride": 4096,
+      "vocab": 38720,
+      "rank": 0,
+      "shared_bytes": 0,
+      "cubin_sha256": "ec4f52f5f7383bd610ce61f21877a76c6e2a7203b7b06f25fcc82598255be0b9"
+    },
+    {
+      "hidden": 4096,
+      "weight_stride": 4096,
+      "vocab": 38720,
+      "rank": 3,
+      "shared_bytes": 0,
+      "cubin_sha256": "0a0a8cef900dffa6d4e951008ee429bd02e5fc1d267e5cf2391d7a2e52ddf0e2"
+    },
+    {
+      "hidden": 4096,
+      "weight_stride": 4104,
+      "vocab": 38720,
+      "rank": 0,
+      "shared_bytes": 0,
+      "cubin_sha256": "69bd45ea651a0ec8d18c9b772c86a8dc6f56e6ba82e5ea194ddaa72059a70ba8"
+    },
+    {
+      "hidden": 4096,
+      "weight_stride": 4104,
+      "vocab": 38720,
+      "rank": 3,
+      "shared_bytes": 0,
+      "cubin_sha256": "2edbb1a1d7bdbf11c2ca646afb911d4648d83e7bb065509fa1b482fa77f1fc41"
+    }
+  ],
+  "scope": "CPU byte identity, native compile or tensor-op inventory; GPU execution and speed pending",
+  "source_sha256": {
+    "engine/kernels/token_embedding.py": "a23dd2f2b04e1a7522dc96a72f61497e654c0fe313c74f1c1ee92268c113dfff",
+    "engine/modules/token_embedding.py": "fc1e074652880c7a2ca4f11f0218dc3f90a4756295432e685e4620976a162b72",
+    "engine/profiles/glm53/net.py": "99f95214c3740a10c5782803f9d29ca3e5f6b287808971558dee89e2a70389cf",
+    "probes/engine_token_embedding_check.py": "f1fb599d6184ad67da508008a99ca70c6fb9dd0985026c1f973e47cc99cb7c28"
+  }
+}

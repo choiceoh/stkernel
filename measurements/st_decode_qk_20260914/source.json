@@ -1,0 +1,43 @@
+{
+  "base": "f8fface71d153ea889416297c1ed3d880e67a641",
+  "unchanged_norm_rope_math_body": true,
+  "math_body_sha256": "023b159530871ec7faae94ab43c6eadd9af45935d4ba727bade3154e13d61b10",
+  "changed_files_sha256": {
+    "engine/base/lanes.py": "98a1dcbdc6693d231389f9da7f87cee990f34bf8c500cafdab73ff89bd90f13c",
+    "engine/kernels/common/norm_rope.py": "ea9147e911bc74a464d588333de70c3323ce5fba32d5c83f8219cceb33637869",
+    "engine/profiles/glm53/drafter.py": "b01f627c19047cc90a4c07b8b6c71047c3154a29cea37947f80e59924090288c",
+    "probes/engine_draft_qk.py": "fbabc58e0da378d6cc6b8aef11ff4bcb041682751459c2b7b3c65b8539b034c2",
+    "probes/engine_decode_dsa_inputs.py": "72ae61f6bf865c2f134246c89b935f26c0f3e282c6a6966faf83a3d9167e72b6",
+    "tests/test_engine_draft_qk.py": "f740219fb48aa398e26ecd70b943389ffb7a97d82b56fd41f5a64dc7ef12b5e1",
+    "tests/test_engine_kernel_common.py": "21432815540cef6083025661be47fe1562cd438c89f8ca6a697efc76a540a12a"
+  },
+  "runtime_image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+  "cpu": {
+    "tests": 48,
+    "passed": 29,
+    "gpu_skipped": 19,
+    "seconds": 7.626
+  },
+  "interpreter": {
+    "cases": 4,
+    "dtype": "float32",
+    "exact": true,
+    "gpu_used": false
+  },
+  "compile": {
+    "cases": 2,
+    "target": "SM121",
+    "dtype": "bfloat16",
+    "gpu_used": false
+  },
+  "source_calls_per_proposal": {
+    "baseline": 10,
+    "candidate": 5,
+    "layers": 5
+  },
+  "native_kernel_changed": true,
+  "precision_changed": false,
+  "new_persistent_buffer": false,
+  "gpu_results_available": false,
+  "consumer_metrics_measured": false
+}
