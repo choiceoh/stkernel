@@ -1,4 +1,4 @@
-"""C4 expert tiles change neither capacity nor the C1/prefill kernel identity."""
+"""C2 expert tiles change neither capacity nor the C1/prefill kernel identity."""
 import unittest
 
 from tests.test_engine_moe_scatter_config import namespace
@@ -12,7 +12,7 @@ class BatchReformTests(unittest.TestCase):
         base, candidate = parse('t,r,sf6'), parse('t,r,sf6,batch')
         for rows in range(129):
             old, new = choose(base, rows), choose(candidate, rows)
-            changed = rows in (16, 24, 32)
+            changed = rows == 16
             self.assertEqual(key(old, m=rows) != key(new, m=rows), changed)
             self.assertEqual(choose(new, rows), new, 'capture/compile normalize twice')
             for feature in ('decode_reform', 'fc1_reuse_a', 'compact_staging', 'sf6_registers'):
@@ -28,7 +28,7 @@ class BatchReformTests(unittest.TestCase):
     def test_runtime_control_preserves_independent_operand_comparisons(self):
         ns = namespace()
         base = ns['_parse_glm53_static_v2']('t,r,sf6,batch')
-        for rows in (16, 24, 32):
+        for rows in (16,):
             for feature in ('sf6_registers', 'compact_staging', 'fc1_reuse_a'):
                 chosen = ns['_static_v2_decode_config'](dict(base, **{feature: False}), rows)
                 self.assertFalse(chosen[feature])

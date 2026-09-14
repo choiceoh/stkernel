@@ -30,6 +30,7 @@ def main():
     parser.add_argument("--imports-only", action="store_true")
     parser.add_argument("--lanes", default="conv,kda,mhc,indexer,kpool,mla,moe")
     parser.add_argument("--ranks", help="exact consumer rank directory for real router validation")
+    parser.add_argument("--output", type=Path, help="artifact path for the moe_pair comparison")
     parser.add_argument("--moe-experts", type=int, choices=(8, 288), default=8,
                         help="8 for bounded smoke; 288 for GLM's full TP4 expert geometry")
     parser.add_argument("--moe-static", default="stock", help="served b12x static-lane spec (STK_moe_static): stock | t,r,sf6[,q0]")
@@ -75,7 +76,11 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "moe_fc1_reuse", "moe_compact_staging", "moe_register_scales", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench", "decode_k7", "moe_output"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "moe_fc1_reuse", "moe_compact_staging", "moe_register_scales", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench", "decode_k7", "moe_output", "moe_pair"}, selected
+
+    if 'moe_pair' in selected:
+        from probes.engine_moe_pair_check import check as moe_pair_check
+        moe_pair_check(report, args.ranks, output=args.output)
 
     if 'moe_output' in selected:
         from probes.engine_moe_output_check import check as moe_output_check

@@ -1,4 +1,4 @@
-"""Compile C1 SF6/activation storage and controls in an existing CPU-only ST image."""
+"""Compile C1/C2 SF6 tiles and operand controls in an existing CPU-only ST image."""
 import argparse
 from collections import Counter
 import hashlib
@@ -23,6 +23,7 @@ def main():
     mode.add_argument('--fc1-reuse', action='store_true', help='compare gate/up A/SFA register reuse')
     mode.add_argument('--compact-staging', action='store_true', help='compare compact FC1 inputs and disjoint FC2 scales')
     mode.add_argument('--register-scales', action='store_true', help='compare direct MMA scale registers')
+    mode.add_argument('--batch-reform', action='store_true', help='compare the C2 M16 tile against the served M32 tile')
     args = parser.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '':
         raise RuntimeError('compile requires CUDA_VISIBLE_DEVICES=')
@@ -57,6 +58,7 @@ def main():
                                         cute.slice_(owner.b1_smem_layout_staged, (None, None, 0)))
             weight_bytes = b_bytes + 1552*owner.sf1_packed_blocks
             selected.update(smem_bytes=owner.smem_bytes,
+                            tile_m=owner.tile_m,
                             smem_capacity=owner.smem_capacity,
                             sf6_registers=owner.sf6_registers,
                             sf6_register_offsets=getattr(owner, "sf6_register_offsets", None),
@@ -133,6 +135,11 @@ def main():
             cases += [(8, dict(sf6_word_expand=False)),
                       (8, dict(sf6_separate=False, sf6_word_expand=False))]
         cases += [(rows, {}) for rows in (16, 32)]
+        if args.batch_reform:
+            # Keep every current CUDA 13.2 operand optimization. Only C2's
+            # tile selection changes; C1 keeps its identical compiled handle.
+            defaults = {}
+            cases = [(8, {}), (16, {}), (16, dict(batch_reform=True))]
         with patch.object(md, 'get_num_sm', return_value=48), \
                 patch.object(md, 'get_max_active_clusters', return_value=48), \
                 patch.object(md, 'build_and_load_cute_dsl_kernel', builder), \

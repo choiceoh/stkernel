@@ -405,7 +405,7 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
             cfg["decode_reform"] = True
             continue
         if token == "batch":
-            # K=7 with C=2..4: reuse the M16 expert tile and its packed
+            # K=7 with C=2: reuse the M16 expert tile and its packed
             # operand pipeline. The request limit and draft width stay fixed.
             cfg["batch_reform"] = True
             continue
@@ -2200,7 +2200,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
 def _static_v2_decode_config(config: dict, m: int) -> dict:
     """Select the declared expert tile before capture, with a stable cache ABI.
 
-    `batch` extends the C1 operand pipeline to the served K7/C2..4 shapes.
+    `batch` extends the C1 operand pipeline to the served K7/C2 shape.
     Expert occupancy, including counts beyond M16, remains device input to
     the kernel's existing tile loop. No route-dependent host dispatch.
     """
@@ -2210,7 +2210,7 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                 and not any(config.get(k) for k in ("split", "skip_a", "skip_sf", "even"))):
             raise ValueError("scatter probe requires packed t,r,sf6 at 7/14/21/28 tokens")
     reform = bool(config.get("decode_reform", False)) and (
-        1 <= m <= 8 or (config.get("batch_reform", False) and m in (16, 24, 32)))
+        1 <= m <= 8 or (config.get("batch_reform", False) and m == 16))
     separate = (reform and bool(config.get("reform_sf_pack", False))
                 and bool(config.get("sf6_separate", True)))
     word_expand = separate and bool(config.get("sf6_word_expand", True))
@@ -2268,7 +2268,7 @@ def _get_static_kernel_v2(
         if mac_override is not None
         else min(get_max_active_clusters(1), sm_count)
     )
-    # The explicit batch recipe extends the same tile to K7/C2..4. All SF6
+    # The explicit batch recipe extends the same tile to K7/C2. All SF6
     # launches read the same packed scales; other shapes keep the t tile.
     config = _static_v2_decode_config(config, m)
     reform = config["decode_reform"]
