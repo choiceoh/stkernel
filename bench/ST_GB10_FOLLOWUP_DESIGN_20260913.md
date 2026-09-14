@@ -167,6 +167,10 @@ M2 준비 비용 후속 구현은 수십만 route의 Python tuple 생성·재그
 
 랭크 합의는 버전·행 수·열 수가 명시된 binary digest를 사용하며, cold source map/count/base까지 포함한다. 두 host 표현의 같은 계획은 같은 digest를 만들고, 같은 histogram에서 token/slot을 바꾸거나 cold mapping만 바꾸면 다른 digest가 된다. CPU 재현은 `probes/engine_mixed_plan_bench.py`, 실제 reader 비교는 기존 ticket probe의 `--compare-planning`으로 실행한다. 같은 빌드에서 scalar/JSON 준비와 packed 준비를 교차하고 매번 새 storage를 사용한다. 소스 복사, finite 검사, GPU 할당/padding, router와 admission 비용은 전체 wall 측정에 남는다. 이 단계는 serving scheduler에 혼합 실행을 활성화하지 않는다. [동일 빌드 GPU 비교](../measurements/mixed_plan_20260914/README.md)에서 hot quota 128의 준비/admission 중앙값은 9K에서 125–129→16–17 ms, 32K에서 377–407→37–40 ms로 줄었다. 64회 component 측정에서 decode 수치 오차는 0이고 prefill 오차는 기존 gate를 통과했다. CPU 344 pass/26 CUDA skip, 실제 SM121 컴파일 8종이 통과했다.
 
+추가 준비 비용 개선은 `prepare_routes`에서 stable grouping 한 번으로 hot/cold 계획을 함께 만들고 cold source를 직접 int32로 구성한다. 유한 값·양수 scale 검사는 runtime 행 수를 받는 Triton reduction 한 번과 scalar readback 한 번으로 합친다. 모든 metadata는 구간별 16-byte 정렬을 지킨 pinned packet 하나로 업로드하며, 기존 reader/consumer fence까지 host/device 소유권을 유지한다. descriptor 전체 합의와 매 invocation의 새 route·storage 준비는 유지한다. NumPy/Triton 경로를 사용하고 mixed 경로에 Mojo runtime 의존성을 추가하지 않는다.
+
+main `2ac7de6f`의 C1 compact staging을 포함한 [추가 동일 빌드 비교](../measurements/mixed_prepare_20260914/README.md)는 이전 packed 준비 요소와 새 요소를 공통 owner lifecycle에서 교차한다. 이전 constructor 전체의 역사적 시간과 섞지 않는다. hot quota 128에서 9K 준비는 23–41→9–11 ms, 32K는 33–50→16–19 ms이며, 준비 시작부터 decode ready까지 50–62%, 전체 FFN 완료까지 16–27% 줄었다. 별도 cProfile 표본은 성능 표에 포함하지 않는다. 64회 GPU 비교, 값 경계 260개, CPU 357 pass/28 CUDA skip, CuTe 8종 및 Triton 검사 커널 컴파일이 통과했다. 초안의 metadata 주소 정렬 실패와 수정 후 새 동결 실행을 각각 기록했다. 비동기 복사/padding은 decode ready 측정에 포함하며, 실제 serving TTFT·tok/s·수락률·품질 판정은 계속 M3에 남아 있다.
+
 ### M1. 빈 행과 실제 절감되는 타일을 구분
 
 현재 [static V5](../engine/kernels/b12x/moe_static_kernel_v5.py)는 [V4](../engine/kernels/b12x/moe_static_kernel_v4.py)의 계산을 사용한다. 현재 `t,r,sf6`는 전체 decode 1..8행에서 M16, 9..32행에서 M32이며, 대상 SF6 dynamic prefill은 M128 형상이다. 따라서 단순히 두 입력을 concat한 기존 launch 호출로는 원하는 스케줄이 되지 않는다. 동일한 층의 FFN 입력과 route가 이미 준비된 프리필만 후보가 된다.

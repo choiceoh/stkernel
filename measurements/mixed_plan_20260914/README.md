@@ -6,6 +6,11 @@ same-build, one-GB10 comparison reduces warm mixed-FFN preparation/admission
 medians by **86.8–90.8%** at hot quota 128. This is a component result; the mixed
 path still has no serving selector and the PR remains draft.
 
+The [next preparation follow-up](../mixed_prepare_20260914/README.md) measures
+joined hot/cold planning, a fused value check and one aligned metadata upload
+against this packed preparation's components in a newer single build. Its
+sources and timings are separate from the historical comparison below.
+
 ## Implementation and exact comparison
 
 - Source: `c33370f9008f13c880f488e50a55f83f05091b37`, including main

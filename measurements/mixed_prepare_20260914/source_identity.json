@@ -1,0 +1,54 @@
+{
+  "implementation_revision": "153b6f8bdbb9ebf18af78c79bb9173f96a6769c2",
+  "merged_main_revision": "2ac7de6f7946356372ddfceb29d9af6b5032fe99",
+  "cpu_compiler_image": "sha256:09d9ba96a4c7e1113f91100b892a94c1ab859dae8e46db3e7b02dfa2564f93bc",
+  "gpu_image": "sha256:8190d08e822e1f9d18dda5a127a5d9a9e8c53ef4b5136d1154f9ea4b7727f1ed",
+  "gpu_ticket": "17893566183296004",
+  "gpu_source_tree": "/home/choiceoh/st-worktrees/codex-gb10-mixed-prepare3",
+  "reports": {
+    "cpu.json": {
+      "source_revision": "153b6f8bdbb9ebf18af78c79bb9173f96a6769c2",
+      "status": "PASS",
+      "sha256": "fc3577e045933d44c5bda3690e6e9068b1a8b356212188023323ed6fd3484cc7",
+      "manifest_entries": 97,
+      "source_matches": true
+    },
+    "cpu_benchmark.json": {
+      "source_revision": "153b6f8bdbb9ebf18af78c79bb9173f96a6769c2",
+      "status": "PASS",
+      "sha256": "db89152c8add1f8da1fb2a325de96fa281be056152daea07013baa86c60c07ba",
+      "manifest_entries": 6,
+      "source_matches": true
+    },
+    "compile.json": {
+      "source_revision": "153b6f8bdbb9ebf18af78c79bb9173f96a6769c2",
+      "status": "PASS",
+      "sha256": "3c978e521a3f8dd2b00e855fd215f69eef45c912e7973d1e74acb770f58eaf7c",
+      "manifest_entries": 25,
+      "source_matches": true
+    },
+    "gpu.json": {
+      "source_revision": "153b6f8bdbb9ebf18af78c79bb9173f96a6769c2",
+      "status": "PASS",
+      "sha256": "8692e6c8e1036955b9beff024e32fa1867848ec4006de810c42799ddd21fe313",
+      "manifest_entries": 41,
+      "source_matches": true
+    },
+    "profile_before.json": {
+      "source_revision": "3275c7837d847982b2a6a9ad7dc67f45dab8bb5d",
+      "status": "PASS",
+      "sha256": "62643e5935a7db75830aeb1e9691d4447f72222ad83b0cd28d14cdc09c0c1c97",
+      "manifest_entries": 37,
+      "source_matches": true
+    },
+    "gpu_alignment_failure.json": {
+      "source_revision": "77472b7dba304868821c125e20d6c634b186de44",
+      "status": "FAIL",
+      "sha256": "95e75c3280f3d49824bf0789e512b65a61ee90d09bf7708d375e15b909189b5b",
+      "manifest_entries": 41,
+      "source_matches": true
+    }
+  },
+  "cpu_runner_sha256": "5cf7d3187a14994e6a3926de412319f303bcae735e9081d2df9426e6f6fa9069",
+  "note": "Final CPU/compiler/GPU evidence shares the implementation commit. The earlier profile is attribution only; the alignment failure is retained and excluded from performance tables. Only evidence and documentation are added after the final frozen run."
+}

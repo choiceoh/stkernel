@@ -1,0 +1,377 @@
+{
+  "source_revision": "153b6f8bdbb9ebf18af78c79bb9173f96a6769c2",
+  "status": "PASS",
+  "total_samples": 64,
+  "peak_torch_allocation_gib": 3.874256134033203,
+  "value_check_cases": 260,
+  "cells": [
+    {
+      "decode_rows": 8,
+      "prefill_rows": 9240,
+      "hot_quota": 0,
+      "arms": {
+        "packed_v1": {
+          "warm_samples": 3,
+          "median_prepare_admit_ms": 62.33361197519116,
+          "median_decode_ready_ms": 67.87340599112213,
+          "median_complete_ms": 113.02471198723651,
+          "median_decode_after_prepare_ms": 5.57414599461481,
+          "max_decode_relative_max": 0.0,
+          "max_decode_relative_rms": 0.0,
+          "max_prefill_relative_max": 0.007022471910112359,
+          "max_prefill_relative_rms": 0.0015866017860778447,
+          "median_stages_ms": {
+            "agreement_ms": 1.3724729942623526,
+            "metadata_prepare_ms": 0.2095829986501485,
+            "metadata_reads_ms": 17.114464979385957,
+            "route_plan_ms": 6.564044015249237,
+            "value_check_ms": 33.586137025849894
+          }
+        },
+        "packed_v2": {
+          "warm_samples": 3,
+          "median_prepare_admit_ms": 10.985027998685837,
+          "median_decode_ready_ms": 15.838377992622554,
+          "median_complete_ms": 61.29020999651402,
+          "median_decode_after_prepare_ms": 4.909396986477077,
+          "max_decode_relative_max": 0.0,
+          "max_decode_relative_rms": 0.0,
+          "max_prefill_relative_max": 0.007022471910112359,
+          "max_prefill_relative_rms": 0.0016061055765897805,
+          "median_stages_ms": {
+            "agreement_ms": 1.2734650226775557,
+            "metadata_prepare_ms": 0.5064299912191927,
+            "metadata_reads_ms": 0.1060469658114016,
+            "route_plan_ms": 3.6202999763190746,
+            "value_check_ms": 2.6123379939235747
+          }
+        }
+      },
+      "prepare_admit_reduction_percent": 82.37703920790297,
+      "decode_ready_reduction_percent": 76.66482510882948,
+      "complete_reduction_percent": 45.77273507811698
+    },
+    {
+      "decode_rows": 8,
+      "prefill_rows": 9240,
+      "hot_quota": 128,
+      "arms": {
+        "packed_v1": {
+          "warm_samples": 3,
+          "median_prepare_admit_ms": 40.56717100320384,
+          "median_decode_ready_ms": 41.98628300218843,
+          "median_complete_ms": 72.52306101145223,
+          "median_decode_after_prepare_ms": 1.4254800044000149,
+          "max_decode_relative_max": 0.0,
+          "max_decode_relative_rms": 0.0,
+          "max_prefill_relative_max": 0.007022471910112359,
+          "max_prefill_relative_rms": 0.002071266895377837,
+          "median_stages_ms": {
+            "agreement_ms": 1.2071770033799112,
+            "metadata_prepare_ms": 0.19574299221858382,
+            "metadata_reads_ms": 4.79640404228121,
+            "route_plan_ms": 6.548876001033932,
+            "value_check_ms": 25.88907501194626
+          }
+        },
+        "packed_v2": {
+          "warm_samples": 3,
+          "median_prepare_admit_ms": 10.761061013909057,
+          "median_decode_ready_ms": 15.883642015978694,
+          "median_complete_ms": 61.16422702325508,
+          "median_decode_after_prepare_ms": 4.836709995288402,
+          "max_decode_relative_max": 0.0,
+          "max_decode_relative_rms": 0.0,
+          "max_prefill_relative_max": 0.008426966292134831,
+          "max_prefill_relative_rms": 0.002081202111446984,
+          "median_stages_ms": {
+            "agreement_ms": 1.3233210192993283,
+            "metadata_prepare_ms": 0.43458901927806437,
+            "metadata_reads_ms": 0.1066079712472856,
+            "route_plan_ms": 3.2061430101748556,
+            "value_check_ms": 2.456306974636391
+          }
+        }
+      },
+      "prepare_admit_reduction_percent": 73.47347436906757,
+      "decode_ready_reduction_percent": 62.16944944816668,
+      "complete_reduction_percent": 15.662375291086317
+    },
+    {
+      "decode_rows": 32,
+      "prefill_rows": 9240,
+      "hot_quota": 0,
+      "arms": {
+        "packed_v1": {
+          "warm_samples": 3,
+          "median_prepare_admit_ms": 44.601789995795116,
+          "median_decode_ready_ms": 49.77432201849297,
+          "median_complete_ms": 83.83589700679295,
+          "median_decode_after_prepare_ms": 6.895099009852856,
+          "max_decode_relative_max": 0.0,
+          "max_decode_relative_rms": 0.0,
+          "max_prefill_relative_max": 0.00975609756097561,
+          "max_prefill_relative_rms": 0.0014646422764646736,
+          "median_stages_ms": {
+            "agreement_ms": 1.4974959776736796,
+            "metadata_prepare_ms": 0.2962549915537238,
+            "metadata_reads_ms": 9.894857939798385,
+            "route_plan_ms": 6.536092987516895,
+            "value_check_ms": 16.187065019039437
+          }
+        },
+        "packed_v2": {
+          "warm_samples": 3,
+          "median_prepare_admit_ms": 10.186567989876494,
+          "median_decode_ready_ms": 15.395708993310109,
+          "median_complete_ms": 39.20642798766494,
+          "median_decode_after_prepare_ms": 3.7003479956183583,
+          "max_decode_relative_max": 0.0,
+          "max_decode_relative_rms": 0.0,
+          "max_prefill_relative_max": 0.00975609756097561,
+          "max_prefill_relative_rms": 0.0014385700825042134,
+          "median_stages_ms": {
+            "agreement_ms": 1.2787769956048578,
+            "metadata_prepare_ms": 0.615597004070878,
+            "metadata_reads_ms": 0.11287693632766604,
+            "route_plan_ms": 3.0526869813911617,
+            "value_check_ms": 2.6572979986667633
+          }
+        }
+      },
+      "prepare_admit_reduction_percent": 77.16107808490008,
+      "decode_ready_reduction_percent": 69.06897297849673,
+      "complete_reduction_percent": 53.23431920280144
+    },
+    {
+      "decode_rows": 32,
+      "prefill_rows": 9240,
+      "hot_quota": 128,
+      "arms": {
+        "packed_v1": {
+          "warm_samples": 3,
+          "median_prepare_admit_ms": 23.367696994682774,
+          "median_decode_ready_ms": 26.360304007539526,
+          "median_complete_ms": 52.78216098668054,
+          "median_decode_after_prepare_ms": 2.9926070128567517,
+          "max_decode_relative_max": 0.0,
+          "max_decode_relative_rms": 0.0,
+          "max_prefill_relative_max": 0.00975609756097561,
+          "max_prefill_relative_rms": 0.002404862479297402,
+          "median_stages_ms": {
+            "agreement_ms": 1.4249040104914457,
+            "metadata_prepare_ms": 0.3568459942471236,
+            "metadata_reads_ms": 1.977076957700774,
+            "route_plan_ms": 6.238878006115556,
+            "value_check_ms": 10.759189986856654
+          }
+        },
+        "packed_v2": {
+          "warm_samples": 3,
+          "median_prepare_admit_ms": 9.279773017624393,
+          "median_decode_ready_ms": 13.036568998359144,
+          "median_complete_ms": 38.32921598223038,
+          "median_decode_after_prepare_ms": 3.226621978683397,
+          "max_decode_relative_max": 0.0,
+          "max_decode_relative_rms": 0.0,
+          "max_prefill_relative_max": 0.00975609756097561,
+          "max_prefill_relative_rms": 0.002405619944664176,
+          "median_stages_ms": {
+            "agreement_ms": 1.4075119979679585,
+            "metadata_prepare_ms": 0.5475170037243515,
+            "metadata_reads_ms": 0.10598293738439679,
+            "route_plan_ms": 3.103807015577331,
+            "value_check_ms": 1.443657005438581
+          }
+        }
+      },
+      "prepare_admit_reduction_percent": 60.288029155222404,
+      "decode_ready_reduction_percent": 50.54469404210798,
+      "complete_reduction_percent": 27.382253273217305
+    },
+    {
+      "decode_rows": 8,
+      "prefill_rows": 32768,
+      "hot_quota": 0,
+      "arms": {
+        "packed_v1": {
+          "warm_samples": 3,
+          "median_prepare_admit_ms": 29.466832987964153,
+          "median_decode_ready_ms": 30.67322599235922,
+          "median_complete_ms": 92.49852399807423,
+          "median_decode_after_prepare_ms": 1.181577012175694,
+          "max_decode_relative_max": 0.0,
+          "max_decode_relative_rms": 0.0,
+          "max_prefill_relative_max": 0.006607929515418502,
+          "max_prefill_relative_rms": 0.0012429314959747394,
+          "median_stages_ms": {
+            "agreement_ms": 3.9003949787002057,
+            "metadata_prepare_ms": 0.13011100236326456,
+            "metadata_reads_ms": 0.3087509539909661,
+            "route_plan_ms": 11.26838699565269,
+            "value_check_ms": 12.370604992611334
+          }
+        },
+        "packed_v2": {
+          "warm_samples": 3,
+          "median_prepare_admit_ms": 16.0873860004358,
+          "median_decode_ready_ms": 17.303427011938766,
+          "median_complete_ms": 81.20400999905542,
+          "median_decode_after_prepare_ms": 1.2028250203002244,
+          "max_decode_relative_max": 0.0,
+          "max_decode_relative_rms": 0.0,
+          "max_prefill_relative_max": 0.006607929515418502,
+          "max_prefill_relative_rms": 0.0012412547426363318,
+          "median_stages_ms": {
+            "agreement_ms": 3.5870530118700117,
+            "metadata_prepare_ms": 0.38766200304962695,
+            "metadata_reads_ms": 0.03158298204652965,
+            "route_plan_ms": 5.328115017618984,
+            "value_check_ms": 5.265315994620323
+          }
+        }
+      },
+      "prepare_admit_reduction_percent": 45.40510679581088,
+      "decode_ready_reduction_percent": 43.5878475376242,
+      "complete_reduction_percent": 12.210480244262023
+    },
+    {
+      "decode_rows": 8,
+      "prefill_rows": 32768,
+      "hot_quota": 128,
+      "arms": {
+        "packed_v1": {
+          "warm_samples": 3,
+          "median_prepare_admit_ms": 33.23159701540135,
+          "median_decode_ready_ms": 34.424629993736744,
+          "median_complete_ms": 97.84916799981147,
+          "median_decode_after_prepare_ms": 1.2071779929101467,
+          "max_decode_relative_max": 0.0,
+          "max_decode_relative_rms": 0.0,
+          "max_prefill_relative_max": 0.006607929515418502,
+          "max_prefill_relative_rms": 0.0013827051323402415,
+          "median_stages_ms": {
+            "agreement_ms": 3.147295006783679,
+            "metadata_prepare_ms": 0.1475360186304897,
+            "metadata_reads_ms": 4.106473963474855,
+            "route_plan_ms": 12.176638003438711,
+            "value_check_ms": 12.346093019004911
+          }
+        },
+        "packed_v2": {
+          "warm_samples": 3,
+          "median_prepare_admit_ms": 15.709098981460556,
+          "median_decode_ready_ms": 16.9143250095658,
+          "median_complete_ms": 78.72314300038852,
+          "median_decode_after_prepare_ms": 1.205226028105244,
+          "max_decode_relative_max": 0.0,
+          "max_decode_relative_rms": 0.0,
+          "max_prefill_relative_max": 0.006607929515418502,
+          "max_prefill_relative_rms": 0.0013852601843561893,
+          "median_stages_ms": {
+            "agreement_ms": 3.471548989182338,
+            "metadata_prepare_ms": 0.41535799391567707,
+            "metadata_reads_ms": 0.03182401997037232,
+            "route_plan_ms": 5.341234995285049,
+            "value_check_ms": 5.2399720007088035
+          }
+        }
+      },
+      "prepare_admit_reduction_percent": 52.72842597910628,
+      "decode_ready_reduction_percent": 50.86563018210156,
+      "complete_reduction_percent": 19.54643599980309
+    },
+    {
+      "decode_rows": 32,
+      "prefill_rows": 32768,
+      "hot_quota": 0,
+      "arms": {
+        "packed_v1": {
+          "warm_samples": 3,
+          "median_prepare_admit_ms": 29.29952202248387,
+          "median_decode_ready_ms": 32.285649998812005,
+          "median_complete_ms": 93.9705980126746,
+          "median_decode_after_prepare_ms": 2.9861279763281345,
+          "max_decode_relative_max": 0.0,
+          "max_decode_relative_rms": 0.0,
+          "max_prefill_relative_max": 0.008547008547008548,
+          "max_prefill_relative_rms": 0.0011564153727280553,
+          "median_stages_ms": {
+            "agreement_ms": 3.8526669959537685,
+            "metadata_prepare_ms": 0.169710983755067,
+            "metadata_reads_ms": 0.32356701558455825,
+            "route_plan_ms": 11.057923984481022,
+            "value_check_ms": 12.293006002437323
+          }
+        },
+        "packed_v2": {
+          "warm_samples": 3,
+          "median_prepare_admit_ms": 17.044115986209363,
+          "median_decode_ready_ms": 19.953604991314933,
+          "median_complete_ms": 86.08246501535177,
+          "median_decode_after_prepare_ms": 2.90948900510557,
+          "max_decode_relative_max": 0.0,
+          "max_decode_relative_rms": 0.0,
+          "max_prefill_relative_max": 0.008547008547008548,
+          "max_prefill_relative_rms": 0.0011695222520451119,
+          "median_stages_ms": {
+            "agreement_ms": 3.720252017956227,
+            "metadata_prepare_ms": 0.4413900023791939,
+            "metadata_reads_ms": 0.034527998650446534,
+            "route_plan_ms": 5.670466023730114,
+            "value_check_ms": 5.518434016266838
+          }
+        }
+      },
+      "prepare_admit_reduction_percent": 41.82800670560412,
+      "decode_ready_reduction_percent": 38.19667563747624,
+      "complete_reduction_percent": 8.39425646334494
+    },
+    {
+      "decode_rows": 32,
+      "prefill_rows": 32768,
+      "hot_quota": 128,
+      "arms": {
+        "packed_v1": {
+          "warm_samples": 3,
+          "median_prepare_admit_ms": 50.102866982342675,
+          "median_decode_ready_ms": 55.98449899116531,
+          "median_complete_ms": 178.49406399182044,
+          "median_decode_after_prepare_ms": 5.620081996312365,
+          "max_decode_relative_max": 0.0,
+          "max_decode_relative_rms": 0.0,
+          "max_prefill_relative_max": 0.008547008547008548,
+          "max_prefill_relative_rms": 0.0015524647193029086,
+          "median_stages_ms": {
+            "agreement_ms": 3.7810520152561367,
+            "metadata_prepare_ms": 0.22771101794205606,
+            "metadata_reads_ms": 7.973190047778189,
+            "route_plan_ms": 12.45830100378953,
+            "value_check_ms": 24.17446201434359
+          }
+        },
+        "packed_v2": {
+          "warm_samples": 3,
+          "median_prepare_admit_ms": 19.28520799265243,
+          "median_decode_ready_ms": 27.00527900015004,
+          "median_complete_ms": 146.3744289940223,
+          "median_decode_after_prepare_ms": 5.012548994272947,
+          "max_decode_relative_max": 0.0,
+          "max_decode_relative_rms": 0.0,
+          "max_prefill_relative_max": 0.008547008547008548,
+          "max_prefill_relative_rms": 0.00156564967985762,
+          "median_stages_ms": {
+            "agreement_ms": 3.524813015246764,
+            "metadata_prepare_ms": 0.4706530016846955,
+            "metadata_reads_ms": 0.03078399458900094,
+            "route_plan_ms": 5.619345989543945,
+            "value_check_ms": 8.123220002744347
+          }
+        }
+      },
+      "prepare_admit_reduction_percent": 61.50877354094537,
+      "decode_ready_reduction_percent": 51.76293530033797,
+      "complete_reduction_percent": 17.994791691935497
+    }
+  ]
+}
