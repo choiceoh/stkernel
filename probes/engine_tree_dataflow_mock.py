@@ -14,7 +14,7 @@ import unittest
 import torch
 
 from engine.modules.nvfp4_dataflow import NVFP4Plan
-from engine.modules.w4a8_dataflow import W4A8Plan
+from engine.modules.w4a8_dataflow import W4A8Plan, W4A8PipelinePlan
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,7 +25,7 @@ MODULES = ("tests.test_engine_speculative_tree", "tests.test_engine_tree_decode"
            "tests.test_engine_ffn_packets", "tests.test_engine_tree_dataflow_gpu")
 SOURCES = ("engine/modules/speculative_tree.py", "engine/modules/tree_kda.py", "engine/kernels/kda/tree.py",
            "engine/modules/tile_dataflow.py", "engine/modules/nvfp4_dataflow.py", "engine/modules/w4a8_dataflow.py",
-           "engine/kernels/tile_dataflow.py",
+           "engine/kernels/tile_dataflow.py", "engine/kernels/w4a8_pipeline.py",
            "engine/profiles/glm53/tree_decode.py", "engine/profiles/glm53/net.py",
            "engine/profiles/glm53/drafter.py", "engine/profiles/glm53/lanes.py")
 
@@ -53,6 +53,7 @@ def main(output):
     result = unittest.TextTestRunner(stream=log, verbosity=2, resultclass=TimedResult).run(suite)
     plan = NVFP4Plan(16, 4096, 3072)
     w4a8 = W4A8Plan(16, 4096, 3072)
+    staged = W4A8PipelinePlan(16, 4096, 3072)
     nodes, heads, dim = 16, 16, 128
     report = dict(scope="CPU correctness and storage arithmetic; no serving performance verdict",
         gpu_used=False, cuda_initialized=torch.cuda.is_initialized(), torch=torch.__version__,
@@ -65,6 +66,7 @@ def main(output):
             nvfp4_mlp_rows=plan.rows, nvfp4_hidden=plan.hidden, nvfp4_intermediate=plan.intermediate,
             nvfp4_mlp_scratch_bytes=plan.scratch_bytes, dataflow_tasks=len(plan.tasks),
             w4a8_mlp_scratch_bytes=w4a8.scratch_bytes, w4a8_dataflow_tasks=len(w4a8.tasks),
+            w4a8_pipeline_scratch_bytes=staged.scratch_bytes,
             additional_resident_weight_bytes=0),
         unmeasured=["real-weight GPU numerics", "worker liveness on GB10", "route predictor recall",
                     "C1/C4 serving tok/s", "TTFT", "acceptance", "reasoning quality", "peak process memory"])

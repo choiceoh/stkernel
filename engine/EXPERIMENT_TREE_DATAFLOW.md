@@ -28,7 +28,11 @@ The W4A8 and W4A4 bindings explicitly refuse each other's layouts.
 ## Three implemented pieces
 
 1. `speculative_tree.py` expands DFlash's existing selector lattice using
-   parent-conditioned codebook scores. Selection is ancestor-closed and
+   parent-conditioned codebook scores and a best-first path-mass frontier.
+   A peaked seven-step proposal can reach depth seven within eight nodes;
+   breadth-first expansion previously exhausted the budget on shallow
+   siblings. An exact integer tie key allows top-k instead of full sorting,
+   and only retained edges cross to the CPU. Selection is ancestor-closed and
    ranks proposal mass against additional predicted layer/expert bytes.
    Unknown routes receive a conservative charge. Proposals never prune the
    target router or alter greedy verification. `RouteTable` is a bounded
@@ -37,19 +41,29 @@ The W4A8 and W4A4 bindings explicitly refuse each other's layouts.
    expert usage and pre-update prediction recall/precision are recorded.
 2. `tree_kda.py` and `kernels/kda/tree.py` store FP32 key, channelwise decay
    and update factors. Each native CTA owns its head/value slice through
-   the whole tree. Only ancestors influence a node. The final accepted
+   the whole tree. DFS traversal carries the current FP32 state along chains
+   and reconstructs only after backtracking to another branch (8 rather
+   than 36 full-state updates for an eight-node chain). One prepared topology
+   serves all layers and a fused convolution gathers only the last four
+   ancestors/prefix taps. Only ancestors influence a node. The final accepted
    state and any crossed prefix-block checkpoint are materialized before
    canonical writes. Convolution history and DSA pools/tails are private
-   to each branch; DSA gathers a bounded top-k latent bank, not a full
-   prefix copy for every node. KDA storage remains FP32.
-3. `tile_dataflow.py` executes gate/up producer tiles, dependent down
-   partials and output reductions in one persistent kernel. This is an
-   actual task queue, not repeated CUDA graph replay. All producer tickets
-   are assigned before any producer wait, and all down tickets before any
-   reduction wait. Dependencies therefore belong to workers already in
-   flight; no extra scheduler SM or unscheduled producer CTA is required.
-   GPU acquire/release atomics publish data, each output has one writer,
-   and bounded polling reports failure before the output collective.
+   to each branch. DSA compresses each newly completed pool once, scores all
+   queries against a shared prefix/branch key bank in one indexer call, and
+   runs one sparse-MLA query batch over bounded branch-private latent rows.
+   Top-k groups retain each path's exact physical column count for tie
+   compatibility. Commit reuses the verified pool bytes. KDA stays FP32.
+3. `w4a8_pipeline.py` replaces the W4A8 queue with two static stages. FC1
+   publishes BF16-boundary SwiGLU output directly as group-128 FP8; FC2
+   keeps ordered FP32 partials in registers. Stream ordering replaces device
+   polling and the per-layer host completion vote. One prepared workspace
+   is reused across layers/steps of matching geometry. The low-level MLP
+   executor supports graph capture and returns a borrowed output view;
+   concurrent calls sharing that workspace are forbidden. The old queued
+   W4A8 executor remains an explicit comparison oracle. W4A4 and BF16
+   prototypes still use the bounded acquire/release worker queue in
+   `tile_dataflow.py`. Actual MoE route metadata uses one host transfer for
+   all layers at commit instead of one synchronization per routed layer.
 
 ## Explicit entry point
 
@@ -84,7 +98,9 @@ Limits are explicit: up to 32 tree rows (to preserve W4A8 decode dispatch), dept
 observers, SM121, and caller-bounded scratch. Sampled rejection, C=4 batching,
 production graph capture, prefix snapshot publication and HTTP scheduling
 are not implemented by this API. The caller retains those responsibilities.
-Worker completion and proposal metadata currently synchronize with the host.
+Proposal/commit metadata still synchronizes with the host; the W4A8 MLP
+has no host completion read. Capturing that component does not capture the
+full tree step or integrate it with serving.
 
 ## Reproducible checks without a GPU queue
 
@@ -95,26 +111,36 @@ Run from the repository root with torch CPU, numpy, safetensors and Triton
 CUDA_VISIBLE_DEVICES= PYTHONPATH=. python probes/engine_tree_dataflow_mock.py --output /tmp/tree-mock
 CUDA_VISIBLE_DEVICES= PYTHONPATH=. python probes/engine_tree_dataflow_compile.py --output /tmp/tree-compile
 CUDA_VISIBLE_DEVICES= TRITON_INTERPRET=1 PYTHONPATH=. python probes/engine_tree_dataflow_interpreter.py --output /tmp/tree-addresses.json
+CUDA_VISIBLE_DEVICES= PYTHONPATH=. python probes/engine_tree_fastpath_bench.py --iterations 20 --output /tmp/tree-cpu-ab.json
 ```
 
 The mock records per-test CPU latency, source hashes and storage arithmetic.
 The offline compiler emits SM121 cubins/PTX and checks FP8 MMA for W4A8,
-block-scaled FP4 MMA for W4A4, and acquire/release publication. No CUDA context
+block-scaled FP4 MMA for W4A4, and acquire/release publication. Staged W4A8
+also rejects device code containing atomics, polling or local-memory spills. No CUDA context
 is initialized. The interpreter checks actual native packed readers against
 independent byte references. Its W4A8 activation check executes native
 scaling arithmetic and uses torch's FP8 RTNE conversion: Triton 3.8's CPU
 interpreter rounds halfway FP8 values upward, unlike the generated `cvt.rn`.
 It is not a device-conversion numerical result.
+The convolution interpreter checks the actual ancestry gather and FP32 sum;
+libdevice activation and native rounding remain device checks. The matched
+CPU probe uses #947 and the current implementation with common target
+operators, plus ordinary linear target reference calls. It records output
+hashes, head-token agreement and per-bracket samples. These small CPU models
+are not production default performance, real-weight quality or acceptance.
 
 `tests.test_engine_tree_dataflow_gpu` provides opt-in native numerical and
-repeated-invocation checks for a separately authorized GB10 window. They are
+repeated-invocation checks, exact carry/reconstruction comparisons and W4A8
+graph replays with changed inputs for a separately authorized GB10 window. They are
 skipped on CPU; neither these commands nor the implementation reserve fleet
 resources or launch a server.
 
 For 16 nodes, 16 heads and 128x128 KDA state, per-node state snapshots would
 use 16 MiB per layer. Factors use 384 KiB plus one owned 1 MiB initial state,
 with accepted-state materialization and other scratch additional. A 16-row,
-4096x3072 W4A8 MLP plan declares about 6.2 MiB of scratch and no additional
+4096x3072 W4A8 MLP plan now declares 181,760 bytes of scratch versus
+6,473,456 bytes for its queued predecessor, with no additional
 resident weight bytes. These are allocation formulas, not observed process
 memory savings or a speedup forecast.
 

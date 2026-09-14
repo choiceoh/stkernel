@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as Fn
 
 from engine.modules import tree_kda
+from engine.modules.sparse_indexer import topk_positions
 from engine.modules.speculative_tree import Tree, dflash_candidates, select
 from engine.profiles.glm53.net import K_NORM_EPS, O_NORM_EPS, Step
 
@@ -94,9 +95,10 @@ class Verification:
         nk = sum(not F.is_dsa(L) for L in net.layers)
         nd = len(net.layers) - nk
         self.scratch_bound = (nk * (3*h*d*d*4 + n*h*d*(12 + 6))
-            + nd*n*(F.kv_lora + 4*F.idx_dim) + 16*n*F.hidden*F.hc
-            + (context // F.kpool + n) * (F.idx_dim + 16) * 4
-            + (F.topk + F.kpool) * F.kv_lora * 4)
+            + nd*n*(F.kv_lora + 5*F.idx_dim + 4) + 16*n*F.hidden*F.hc
+            + sum(F.is_moe(L) for L in net.layers)*n*F.topk_experts*8
+            + (context // F.kpool + n) * (F.idx_dim + 2*n + 16) * 4
+            + n * (F.topk + F.kpool) * (F.kv_lora * 4 + 32))
         if type(max_scratch_bytes) is not int or self.scratch_bound > max_scratch_bytes:
             raise ValueError(f"tree scratch needs at most {self.scratch_bound} bytes; budget is {max_scratch_bytes}")
         if persistent_mlp is not None:
@@ -116,6 +118,24 @@ class Verification:
         self.epoch = caches.pool.epochs[seq]
         self.versions = caches.state._version, caches.paged._version
         self.kda, self.dsa, self.routes = {}, {}, {}
+        self.topology = tree_kda.Topology(tree, caches.device, taps=F.conv)
+        # Branch pool and latent lookup geometry is shared by every DSA layer.
+        paths = [tree.path(i) for i in range(n)]
+        self.path_nodes = torch.tensor([p+(p[-1],)*(max(tree.depths)+1-len(p)) for p in paths],
+                                       device=caches.device)
+        self.lengths = torch.tensor([context+len(p) for p in paths], dtype=torch.int32, device=caches.device)
+        complete = [i for i, p in enumerate(paths) if (context+len(p)) % F.kpool == 0]
+        pool_index = {node: j for j, node in enumerate(complete)}
+        sources = [tuple(paths[i][j] if j >= 0 else j for j in range(len(paths[i])-F.kpool, len(paths[i])))
+                   for i in complete]
+        self.pool_sources = torch.tensor(sources, device=caches.device, dtype=torch.int64).reshape(-1, F.kpool)
+        self.pool_width = (context+max(tree.depths)+1)//F.kpool-context//F.kpool
+        branch_ids = [tuple(pool_index[i] for i in p if i in pool_index) for p in paths]
+        self.branch_pools = torch.tensor([p+(0,)*(self.pool_width-len(p)) for p in branch_ids],
+                                         device=caches.device, dtype=torch.int64).reshape(n, self.pool_width)
+        counts = [(context+len(p))//F.kpool for p in paths]
+        self.pool_groups = tuple((count, torch.tensor([i for i, c in enumerate(counts) if c == count], device=caches.device))
+                                 for count in sorted(set(counts)) if count)
         self.hidden = self.features = None
         self.closed = False
         caches._tree_pending = self
@@ -147,29 +167,14 @@ class Verification:
         conv_ring, rec = c.kda(L, self.slot)
         positions = self.context + torch.arange(1-F.conv, 0, device=x.device)
         history = conv_ring[:, positions.clamp_min(0) % net.conv_ring].masked_fill((positions < 0)[None, :], 0)
-        y = tree_kda.conv(self.tree, raw, p[name + "conv"], history)
+        y = tree_kda.conv(self.tree, raw, p[name + "conv"], history, topology=self.topology)
         q, k, v = (value.view(n, h, d) for value in y.split(h*d, -1))
         initial = rec[(self.context-1) % net.rec_ring] if self.context else torch.zeros_like(rec[0])
         core, factors = tree_kda.verify(self.tree, q, k, v, g, beta, p[name + "A_log"],
-                                       p[name + "dt_bias"], initial, F.lower_bound)
+                                       p[name + "dt_bias"], initial, F.lower_bound, topology=self.topology)
         self.kda[L] = raw, factors
         output = net.lanes.kda_output_norm(core, gate, p[name + "o_norm"], O_NORM_EPS)
         return net.comm.all_reduce(net.linear(output.reshape(n, h*d), name + "o_proj"))
-
-    def _pool_window(self, L, path, key, gate):
-        F, c, ctx = self.net.F, self.caches, self.context
-        tail = c.tail(L, self.slot)
-        pool0 = ctx // F.kpool * F.kpool
-        prefix = torch.arange(pool0, ctx, device=key.device) % len(tail)
-        kw = torch.cat([tail[prefix, 0], key[list(path)]])
-        gw = torch.cat([tail[prefix, 1], gate[list(path)]])
-        count = len(kw) // F.kpool
-        if not count:
-            return (torch.empty((0, F.idx_dim), dtype=torch.float8_e4m3fn, device=key.device),
-                    torch.empty(0, dtype=torch.float32, device=key.device))
-        pk, ps = self.net.lanes.kpool_compress(kw[:count*F.kpool].view(count, F.kpool, F.idx_dim),
-            gw[:count*F.kpool].view(count, F.kpool, F.idx_dim), self.net.p[f"L{L}.idx.ape"])
-        return pk, ps.reshape(-1)
 
     def _dsa(self, L, x):
         net, F, c, ctx = self.net, self.net.F, self.caches, self.context
@@ -192,31 +197,51 @@ class Verification:
         wb = p[name + "kv_b"].view(net.Hl, F.qk_nope + F.v_dim, F.kv_lora)
         qabs = torch.einsum("nhd,hdc->nhc", q, wb[:, :F.qk_nope])
         width = F.topk + F.kpool - 1
-        outputs = []
-        for node in range(n):
-            path = self.tree.path(node)
-            pk, ps = self._pool_window(L, path, key, gate)
+        keys, scales = base_keys, base_scales
+        pk = torch.empty((0, F.idx_dim), dtype=torch.float8_e4m3fn, device=x.device)
+        ps = torch.empty(0, dtype=torch.float32, device=x.device)
+        if len(self.pool_sources):
+            source = self.pool_sources
+            tail = c.tail(L, self.slot)
+            prefix = tail[(ctx+source) % len(tail)]
+            kw = torch.where((source >= 0)[..., None], key[source.clamp_min(0)], prefix[:, :, 0])
+            gw = torch.where((source >= 0)[..., None], gate[source.clamp_min(0)], prefix[:, :, 1])
+            pk, ps = net.lanes.kpool_compress(kw, gw, p[idx + "ape"])
+            ps = ps.reshape(-1)
             keys, scales = torch.cat([base_keys, pk]), torch.cat([base_scales, ps])
-            length = torch.tensor([ctx + len(path)], dtype=torch.int32, device=x.device)
-            pools = (net._select_pools(iq8[node:node+1], we[node:node+1], keys, scales,
-                                      length // F.kpool, len(keys), F.topk // F.kpool) if len(keys) else
-                     torch.full((1, F.topk // F.kpool), -1, dtype=torch.int32, device=x.device))
-            positions = torch.empty((1, width), dtype=torch.int32, device=x.device)
-            valid = torch.empty(1, dtype=torch.int32, device=x.device)
-            net.lanes.pool_slots(pools, length, F.kpool, None, F.block, F.block, 0, positions, valid)
-            pos = positions[0].long()
-            # A bounded bank, ordered exactly as the ordinary sparse-MLA slots.
-            bank = torch.zeros((width, F.kv_lora), dtype=torch.uint8, device=x.device)
-            if ctx:
-                canonical = c.token_slots(L, self.seq, pos.clamp(0, ctx-1)).long()
-                prefix = c.latent(L).view(torch.uint8)[canonical]
-                bank = torch.where(((pos >= 0) & (pos < ctx))[:, None], prefix, bank)
-            branch = latent.view(torch.uint8)[torch.tensor(path, device=x.device)[(pos-ctx).clamp(0, len(path)-1)]]
-            bank = torch.where((pos >= ctx)[:, None], branch, bank).view(torch.float8_e4m3fn)
-            slots = torch.arange(width, dtype=torch.int32, device=x.device)[None]
-            outputs.append(net.lanes.mla_sparse(qabs[node:node+1].contiguous(), bank, slots, valid, F.mla_scale, 1.))
-        self.dsa[L] = latent, key, gate
-        out = torch.einsum("nhc,hvc->nhv", torch.cat(outputs), wb[:, F.qk_nope:])
+        if len(keys):
+            # Score the shared prefix once as a query batch. The extra bank
+            # contains each completed branch pool once, never whole prefixes.
+            ke = torch.full((n,), len(keys), dtype=torch.int32, device=x.device)
+            logits = net.lanes.indexer_logits(iq8, keys, scales, we, ke).float()
+            # Restore chronological columns before topk so siblings are absent
+            # and ties have the same column order as the ordinary linear path.
+            logical = torch.cat([logits[:, :len(base_keys)],
+                logits.gather(1, self.branch_pools+len(base_keys))], 1) if self.pool_width else logits[:, :len(base_keys)]
+            pools = torch.full((n, F.topk//F.kpool), -1, dtype=torch.int32, device=x.device)
+            # Topk ties can depend on the physical column count even when all
+            # extra columns are -inf. Group equal lengths and slice exactly as
+            # the linear decoder does (at most ceil(depth/kpool)+1 groups).
+            for count, rows in self.pool_groups:
+                pools[rows] = topk_positions(logical[rows, :count], F.topk//F.kpool, inplace=True)
+        else:
+            pools = torch.full((n, F.topk//F.kpool), -1, dtype=torch.int32, device=x.device)
+        positions = torch.empty((n, width), dtype=torch.int32, device=x.device)
+        valid = torch.empty(n, dtype=torch.int32, device=x.device)
+        net.lanes.pool_slots(pools, self.lengths, F.kpool, None, F.block, F.block, 0, positions, valid)
+        pos = positions.long()
+        bank = torch.zeros((n, width, F.kv_lora), dtype=torch.uint8, device=x.device)
+        if ctx:
+            canonical = c.token_slots(L, self.seq, pos.clamp(0, ctx-1)).long()
+            prefix = c.latent(L).view(torch.uint8)[canonical]
+            bank = torch.where(((pos >= 0) & (pos < ctx))[..., None], prefix, bank)
+        branch_ids = self.path_nodes.gather(1, (pos-ctx).clamp(0, self.path_nodes.shape[1]-1))
+        branch = latent.view(torch.uint8)[branch_ids]
+        bank = torch.where((pos >= ctx)[..., None], branch, bank).view(torch.float8_e4m3fn)
+        slots = torch.arange(n*width, dtype=torch.int32, device=x.device).view(n, width)
+        output = net.lanes.mla_sparse(qabs.contiguous(), bank.view(-1, F.kv_lora), slots, valid, F.mla_scale, 1.)
+        self.dsa[L] = latent, key, gate, pk, ps
+        out = torch.einsum("nhc,hvc->nhv", output, wb[:, F.qk_nope:])
         return net.comm.all_reduce(net.linear(out.reshape(n, net.Hl*F.v_dim), name + "o_proj"))
 
     @torch.inference_mode()
@@ -279,12 +304,17 @@ class Verification:
             states = [(self.context+i, factors.state(node)) for i, node in enumerate(path)
                       if i == len(path)-1 or (self.context+i+1) % F.block == 0]
             writes.append(("kda", L, raw[list(path)], states))
-        for L, (latent, key, gate) in self.dsa.items():
-            pk, ps = self._pool_window(L, path, key, gate)
+        new_pools = (self.context+len(path))//F.kpool-self.context//F.kpool
+        pool_rows = self.branch_pools[path[-1], :new_pools]
+        for L, (latent, key, gate, branch_keys, branch_scales) in self.dsa.items():
+            pk, ps = branch_keys[pool_rows], branch_scales[pool_rows]
             pids = c.pool_slots(L, self.seq, self.context // F.kpool + torch.arange(len(pk), device=c.device)).long()
             writes.append(("dsa", L, latent[list(path)], key[list(path)], gate[list(path)], pk, ps, pids))
         features = self.features[list(path)] if self.features is not None else None
-        observed = {L: r.cpu().tolist() for L, r in self.routes.items()}
+        # One host transfer for all layers; per-layer .cpu() introduced a
+        # stream synchronization at every routed layer in the eager path.
+        observed = (dict(zip(self.routes, torch.stack(tuple(self.routes.values())).cpu().tolist()))
+                    if self.routes else {})
         route_uses = sum(len(row) for rows in observed.values() for row in rows)
         unique = len({(L, e) for L, rows in observed.items() for row in rows for e in row})
         predicted_nodes = predicted_uses = actual_known = hits = 0

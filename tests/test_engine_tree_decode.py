@@ -1,11 +1,13 @@
 """Whole tiny GLM tree vs ordinary linear paths, including DSA and cache continuation."""
 import unittest
+from dataclasses import replace
 from unittest.mock import patch
 
 import torch
 
 from engine.base.comm import LocalTP
 from engine.modules.speculative_tree import Tree
+from engine.modules.sparse_indexer import topk_positions
 from engine.profiles.glm53.net import Step
 from engine.profiles.glm53.tree_decode import Verification
 from tests.test_engine_execution_plans import model
@@ -96,6 +98,35 @@ class TreeDecodeTests(unittest.TestCase):
         run.abort()
         with self.assertRaises(RuntimeError):
             run.verify()
+
+    def test_dsa_batches_queries_once_and_keeps_linear_topk_tie_sets(self):
+        for context in (0, 3, 63, 129):
+            net, cache, slot = self.prepare(context)
+            calls, selected = [], []
+            mla, compress, slots = (getattr(net.lanes, name) for name in ("mla_sparse", "kpool_compress", "pool_slots"))
+            def score(q, keys, scales, w, ke):
+                calls.append(("indexer", len(q), len(keys)))
+                return torch.zeros((len(q), len(keys)), dtype=torch.float32)
+            def attention(*args):
+                calls.append(("mla", len(args[0])))
+                return mla(*args)
+            def pools(*args):
+                calls.append(("compress", len(args[0])))
+                return compress(*args)
+            def positions(*args):
+                selected.append(args[0].clone())
+                return slots(*args)
+            with patch.object(net, "lanes", replace(net.lanes, indexer_logits=score, mla_sparse=attention,
+                                                   kpool_compress=pools, pool_slots=positions)):
+                with Verification(net, cache, self.tree, seq=0, slot=slot, context=context) as run:
+                    run.verify()
+            self.assertEqual(sum(c[0] == "mla" for c in calls), 1)
+            self.assertTrue(all(c[1] == len(self.tree.tokens) for c in calls if c[0] in ("mla", "indexer")))
+            self.assertLessEqual(sum(c[0] == "compress" for c in calls), 1)
+            for node, depth in enumerate(self.tree.depths):
+                count, k = (context+depth+1)//net.F.kpool, net.F.topk//net.F.kpool
+                expected = topk_positions(torch.zeros(1, count), k)
+                torch.testing.assert_close(selected[0][node], expected[0], rtol=0, atol=0)
 
     def test_scratch_sampling_and_reservation_fail_before_state_mutation(self):
         net, cache, slot = self.prepare(0)
