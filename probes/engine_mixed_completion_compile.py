@@ -15,6 +15,9 @@ SOURCES = ('engine/modules/mixed_completion.py', 'engine/kernels/b12x/moe_mixed_
            'engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py',
            'engine/kernels/b12x/moe_dynamic_gated_sf6_words.py',
            'engine/kernels/b12x/moe_dynamic_gated_sf6.py', 'engine/kernels/b12x/_moe_dynamic/gated.py',
+           'engine/kernels/b12x/moe_dynamic_prefill.py', 'engine/kernels/b12x/moe_dynamic_prefill_n128.py',
+           'engine/kernels/b12x/moe_dynamic_prefill_n128_tiled.py',
+           'engine/kernels/b12x/moe_sf6_prefill_scales.py', 'engine/kernels/b12x/moe_sf6_prefill_scales_kernel.py',
            'probes/engine_mixed_completion_compile.py', 'tests/test_engine_mixed_completion.py')
 
 
@@ -70,8 +73,15 @@ def compile_all(output):
                         for rows in (9240, 32768)]
                     if handles[0] is not handles[1]:
                         raise RuntimeError('long-prefill runtime row extents recompiled the same body')
-        if torch.cuda.is_initialized() or len(records) != 9:
-            raise RuntimeError('compile must build all nine handles without initializing CUDA')
+                selected.update(kind='dynamic_n128', tile_m=128, prepared=True)
+                handles = [md._get_dynamic_kernel(288, rows, 4096, 512, 8, (rows*8//128+287)*128,
+                    activation='swigluoai_uninterleave', swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.,
+                    tile_m=128, tiled=True, reform_sf_pack=False, _prepared_prefill=True,
+                    _prefill_scale_expansion=True, _prefill_n128=True) for rows in (9240, 32768)]
+                if handles[0] is not handles[1]:
+                    raise RuntimeError('N128 runtime row extents recompiled the same body')
+        if torch.cuda.is_initialized() or len(records) != 10:
+            raise RuntimeError('compile must build all ten handles without initializing CUDA')
         import triton
         from triton.backends.compiler import GPUTarget
         from triton.compiler import ASTSource
@@ -82,6 +92,15 @@ def compile_all(output):
         kernel = triton.compile(source, target=GPUTarget('cuda', 121, 32), options=dict(num_warps=8))
         report['value_check'] = dict(status='PASS', runtime_row_extents=True,
             seconds=time.monotonic()-start, shared_bytes=kernel.metadata.shared, triton=triton.__version__)
+        from engine.kernels.b12x.moe_sf6_prefill_scales_kernel import expand
+        report['scale_expansion'] = []
+        for fc2, k_tiles in ((False, 16), (True, 4)):
+            start = time.monotonic()
+            source = ASTSource(fn=expand, signature=dict(Packed='*u8', Out='*u8'),
+                               constexprs=dict(K_TILES=k_tiles, FC2=fc2))
+            kernel = triton.compile(source, target=GPUTarget('cuda', 121, 32), options=dict(num_warps=4))
+            report['scale_expansion'].append(dict(status='PASS', fc2=fc2,
+                seconds=time.monotonic()-start, shared_bytes=kernel.metadata.shared))
         if torch.cuda.is_initialized():
             raise RuntimeError('value-check compile initialized CUDA')
         report.update(status='PASS', dynamic_runtime_shape_reuse=True)

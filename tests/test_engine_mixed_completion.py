@@ -85,7 +85,8 @@ class ColdLayoutTests(unittest.TestCase):
         good = dict(_prepared_prefill=True, prefill_word_unpack=True, prefill_reuse=False,
             _prefill_packets=False, _prefill_scale_expansion=False, _prefill_tile64=False,
             _prefill_n128=False, _prefill_q0_batch8=False, input_scales_are_reciprocal=False,
-            fast_math=True, topk_ids_dtype='i32', torch=SimpleNamespace(int32='i32'), cache_key=())
+            fast_math=True, topk_ids_dtype='i32', torch=SimpleNamespace(int32='i32'), cache_key=(),
+            m=9240, reform_sf_pack=True)
         output = dict(good); exec(guard, output)
         self.assertEqual(output['cache_key'], ('prepared_cold_window_v1',))
         for name in ('prefill_word_unpack', 'prefill_reuse', '_prefill_packets', '_prefill_scale_expansion',
@@ -98,6 +99,14 @@ class ColdLayoutTests(unittest.TestCase):
             exec(guard, dict(good, topk_ids_dtype='i64'))
         ordinary = dict(good, _prepared_prefill=False); exec(guard, ordinary)
         self.assertEqual(ordinary['cache_key'], ())
+        n128 = dict(good, prefill_word_unpack=False, _prefill_scale_expansion=True,
+                    _prefill_n128=True, reform_sf_pack=False)
+        output = dict(n128); exec(guard, output)
+        self.assertEqual(output['cache_key'], ('prepared_cold_window_v1',))
+        for overrides in ({'m': 8192}, {'m': 32769}, {'reform_sf_pack': True},
+                          {'_prefill_n128': False}, {'_prefill_scale_expansion': False}):
+            with self.assertRaises(ValueError):
+                exec(guard, dict(n128, **overrides))
 
 
 class CompletionOrderingTests(unittest.TestCase):

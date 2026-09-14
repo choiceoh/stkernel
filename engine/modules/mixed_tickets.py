@@ -47,8 +47,9 @@ def signature(owner):
     """
     import numpy as np
     plan, cold = owner.plan, owner.cold
-    header = (asdict(plan.identity), plan.tile_m, plan.quota, cold.task_quota)
-    digest = hashlib.sha256(b'ST-mixed-descriptor-v2\0' + json.dumps(header, separators=(',', ':')).encode())
+    header = (asdict(plan.identity), plan.tile_m, plan.quota, cold.task_quota,
+              getattr(owner, 'cold_backend', 'sf6'))
+    digest = hashlib.sha256(b'ST-mixed-descriptor-v3\0' + json.dumps(header, separators=(',', ':')).encode())
     for rows, columns in ((plan.decode, 8), (plan.prefill, 8), (plan.sources, 5),
             (plan.experts, 1), (plan.decode_counts, 1), (plan.hot_counts, 1), (plan.cold_routes, 2),
             (cold.sources, 4), (cold.counts, 1), (cold.tile_bases, 1),

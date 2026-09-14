@@ -152,12 +152,15 @@ class OnepassPolicyTests(unittest.TestCase):
         self.assertEqual(self.validate(command+['--compare-planning'], kind='single')['gpus'], 1)
         self.assertEqual(self.validate(command+['--compare-preparation'], kind='single')['gpus'], 1)
         self.assertEqual(self.validate(command+['--drain-cold'], kind='single')['gpus'], 1)
+        self.assertEqual(self.validate(command+['--compare-cold-n128'], kind='single')['gpus'], 1)
         with self.assertRaises(ValueError):
             self.validate(command[:2]+['probes/engine_mixed_completion_check.py', '--compare-planning'], kind='single')
         with self.assertRaises(ValueError):
             self.validate(command[:2]+['probes/engine_mixed_completion_check.py', '--compare-preparation'], kind='single')
         with self.assertRaises(ValueError):
             self.validate(command[:2]+['probes/engine_mixed_completion_check.py', '--drain-cold'], kind='single')
+        with self.assertRaises(ValueError):
+            self.validate(command[:2]+['probes/engine_mixed_completion_check.py', '--compare-cold-n128'], kind='single')
         self.assertEqual(policy.probe_budget_gib(command[2]), 8)
         with self.assertRaises(ValueError):
             self.validate(command+['--commit-only'], kind='single')

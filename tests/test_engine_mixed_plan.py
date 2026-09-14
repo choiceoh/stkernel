@@ -31,6 +31,8 @@ class PackedPlanTests(unittest.TestCase):
         self.assertEqual(a.work(), b.work())
         self.assertEqual(signature(SimpleNamespace(plan=a, cold=ca)), signature(SimpleNamespace(plan=b, cold=cb)))
         self.assertEqual(signature(SimpleNamespace(plan=a, cold=ca)), signature(SimpleNamespace(plan=joint, cold=rest)))
+        self.assertNotEqual(signature(SimpleNamespace(plan=joint, cold=rest, cold_backend='sf6')),
+                            signature(SimpleNamespace(plan=joint, cold=rest, cold_backend='n128')))
         return joint, rest
 
     def test_packet_views_copy_exact_tables_and_do_not_alias_other_invocations(self):

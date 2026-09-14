@@ -177,13 +177,16 @@ def measure(args, report):
                 baseline = 'packed_v1' if args.compare_preparation else 'legacy'
                 arms = ((baseline, 'packed_v2') if sample % 2 == 0 else ('packed_v2', baseline)) \
                     if args.compare_planning or args.compare_preparation else ('packed_v2',)
+                if args.compare_cold_n128:
+                    arms = ('packed_v2', 'cold_n128') if sample % 2 == 0 else ('cold_n128', 'packed_v2')
                 for arm in arms:
                     generation += 1
                     identity = ExpertInvocation(3, generation, generation, generation)
                     with planning_arm(arm) as stages:
                         torch.cuda.synchronize(); wall = time.perf_counter()
                         key = net.submit_mixed_ffn(scheduler, x, pref, identity=identity,
-                            request=f'cell-{d}-{p}-{generation}', slot=0, hot_route_quota=quota)
+                            request=f'cell-{d}-{p}-{generation}', slot=0, hot_route_quota=quota,
+                            cold_n128=arm == 'cold_n128')
                         prepared = time.perf_counter()
                     scheduler.begin(key)
                     actual_d, decode_event = scheduler.result(key, prefill=False)
@@ -212,6 +215,7 @@ def measure(args, report):
                         raise RuntimeError('fully drained ticket did not retire')
                     errors = dict(decode=output_error(copy_d, ref_d), prefill=output_error(copy_p, ref_p))
                     cell['samples'].append(dict(hot_quota=quota, planning_arm=arm, planning_stages_ms=stages,
+                        cold_backend='n128' if arm == 'cold_n128' else 'sf6',
                         cold_windows=windows, cold_dispatch='drain' if args.drain_cold else 'bounded', errors=errors,
                         prepare_admit_wall_ms=(prepared-wall)*1000,
                         decode_ready_wall_ms=(decoded-wall)*1000, prefill_complete_wall_ms=(completed-wall)*1000,
@@ -227,7 +231,7 @@ def measure(args, report):
                 generation += 1
                 key = net.submit_mixed_ffn(scheduler, x, pref,
                     identity=ExpertInvocation(3, generation, generation, generation),
-                    request='cancel-'+phase, slot=0)
+                    request='cancel-'+phase, slot=0, cold_n128=args.compare_cold_n128)
                 if phase != 'queued': scheduler.begin(key)
                 if phase == 'cold': scheduler.advance(key)
                 scheduler.cancel(key)
@@ -250,7 +254,7 @@ def measure(args, report):
             try:
                 key = net.submit_mixed_ffn(scheduler, x, pref,
                     identity=ExpertInvocation(3, generation, generation, generation),
-                    request='preparation-profile', slot=0)
+                    request='preparation-profile', slot=0, cold_n128=args.compare_cold_n128)
             finally:
                 profile.disable()
             # Separate attribution invocation: event overhead is not part of
@@ -302,16 +306,19 @@ def main():
         help='compare previous packed components with joint planning, fused checks and one metadata upload')
     parser.add_argument('--drain-cold', action='store_true',
         help='explicitly drain cold work in one launch after decode; no interleaved decode arrival is promised')
+    parser.add_argument('--compare-cold-n128', action='store_true',
+        help='alternate token-major SF6 and explicit N128 cold compute with fresh expanded scale owners')
     parser.add_argument('--output', type=Path, default=Path('/cache/mixed-tickets.json'))
     args = parser.parse_args()
     if args.samples < 2 or args.samples % 2:
         parser.error('--samples must be even and at least two')
-    if args.compare_planning and args.compare_preparation:
+    if sum((args.compare_planning, args.compare_preparation, args.compare_cold_n128)) > 1:
         parser.error('choose one preparation baseline')
     report = dict(status='FAIL', source_sha256=fingerprint(), image=os.environ.get('ST_IMAGE'),
         compare_planning=args.compare_planning,
         compare_preparation=args.compare_preparation,
         drain_cold=args.drain_cold,
+        compare_cold_n128=args.compare_cold_n128,
         scope='M2 eager one-rank FFN component, real served shared readers, ticket retirement and foreign-stream '
               'consumers. Includes fresh route planning/allocation/admission in wall timings. '
               'No full model, TP4 NCCL, arrival trace, graph, TTFT, tok/s, quality or acceptance verdict.')
