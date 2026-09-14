@@ -561,6 +561,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
             return fn
         def run(*a, **k):
             return tp.on_main(fn, *a, **k)
+        run.producer_pack = getattr(fn, "producer_pack", False)
         return run
 
     name = "served" + (f" (reference: {', '.join(reference_for)})" if reference_for else "")

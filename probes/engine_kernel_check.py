@@ -38,6 +38,10 @@ def main():
     parser.add_argument("--seqs", help="dense_cells: concurrencies to compare, 1 -> 8 rows, 2 -> 16 rows (default 1,2)")
     parser.add_argument("--samples", help="dense_cells: B/A/A/B brackets per comparison (default 2)")
     args = parser.parse_args()
+    if args.lanes == 'producer_pack':
+        from probes.engine_producer_pack import main as producer_pack_check
+        producer_pack_check(args.ranks, samples=args.samples, output=args.output)
+        return
     if args.lanes == 'dense_cells' or args.lanes.startswith('dense_cells:'):
         from probes.engine_dense_cells import main as dense_cells_check
         dense_cells_check(args.ranks, cells=args.lanes.split(':')[1:], seqs=args.seqs, samples=args.samples,
