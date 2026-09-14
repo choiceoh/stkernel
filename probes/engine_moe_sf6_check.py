@@ -35,12 +35,13 @@ def main():
         from engine.kernels.b12x.moe_static_kernel_v4 import MoEStaticKernelV4
         from flashinfer.cute_dsl.fp4_common import shared_ptr_to_u32
 
-    owner = MoEStaticKernelV4(16, 4, decode_reform=True, reform_sf_pack=True)
     block, packed, slots = 2048, 1552, 2
     # Match the real Storage header's alignment and FC1 packed-ring offsets.
     source_base, dest_base, extent = 240, 4096, 4096+slots*block+16
 
-    def compile_helper(separate):
+    def compile_helper(separate, word_expand):
+        owner = MoEStaticKernelV4(16, 4, decode_reform=True, reform_sf_pack=True,
+                                  sf6_separate=separate, sf6_word_expand=word_expand)
         @cute.kernel
         def expand(src: cute.Tensor, dst: cute.Tensor):
             tid, _, _ = cute.arch.thread_idx()
@@ -85,7 +86,8 @@ def main():
             cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True),
             options='--opt-level 2 --enable-tvm-ffi')
 
-    kernels = {separate: compile_helper(separate) for separate in (False, True)}
+    cases = ((False, False), (True, False), (True, True))
+    kernels = {case: compile_helper(*case) for case in cases}
     records = []
     if args.gpu:
         # Independent CPU encoding includes every base/code, modulo byte addition.
@@ -93,7 +95,7 @@ def main():
         source = torch.empty((4, packed), dtype=torch.uint8, device='cuda')
         dest = torch.empty((4, extent), dtype=torch.uint8, device='cuda')
         source.zero_()
-        for separate, kernel in kernels.items():
+        for (separate, word_expand), kernel in kernels.items():
             kernel(source, dest)
             torch.cuda.synchronize()
             graph = torch.cuda.CUDAGraph()
@@ -112,12 +114,12 @@ def main():
                     output_offset = dest_base+slot*block
                     expected[output_offset:output_offset+block] = raw_bytes
                     if bytes(observed[generation]) != expected:
-                        raise AssertionError(('SF6 bytes/canaries', separate, replay, generation))
-            records.append(dict(separate=separate, graph_replays=64, exact=True))
+                        raise AssertionError(('SF6 bytes/canaries', separate, word_expand, replay, generation))
+            records.append(dict(separate=separate, word_expand=word_expand, graph_replays=64, exact=True))
     elif torch.cuda.is_initialized():
         raise RuntimeError('CPU compile initialized CUDA')
     report = dict(status='PASS', mode='gpu' if args.gpu else 'cpu',
-        compiled_helpers=2, checks=records,
+        compiled_helpers=len(kernels), checks=records,
         source_sha256=hashlib.sha256((root/'engine/kernels/b12x/moe_static_kernel_v4.py').read_bytes()).hexdigest(),
         scope='helper compile' if args.cpu else 'exact helper bytes, canaries and graph replay')
     args.output.parent.mkdir(parents=True, exist_ok=True)
