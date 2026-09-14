@@ -68,8 +68,8 @@ compile/interpreter job ran during the final timing.
 | 15 | 1024 | 2.425584 | 2.447563 |
 
 Output, auxiliary features, canonical state, paged-cache bytes, emitted tokens
-and committed paths match exactly in all six cases. CPU time is approximately
-unchanged (-0.22% faster to 1.47% slower); this does **not** demonstrate a speedup.
+and committed paths match exactly in all six cases. CPU time is 0.22% to 1.47%
+slower; this does **not** demonstrate a speedup.
 The CPU oracle still gathers rows for its tensor attention and does not execute
 the GPU copy-free reader or native absorb kernels.
 
