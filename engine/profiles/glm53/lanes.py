@@ -451,7 +451,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
             # tile-major storage.  Routed MoE remains NVFP4-only.
             if guard_rows and top_k == 1 and scales is not None:
                 _prepare_dense_w4a16(w13, w13_sf, w2, w2_sf, scales)
-            views_for(w13, w13_sf, w2, w2_sf, top_k, limit, in_place=True, scales=scales)
+            return views_for(w13, w13_sf, w2, w2_sf, top_k, limit, in_place=True, scales=scales)[0]
 
         def packet_views(w13, w13_sf, w2, w2_sf, limit, scales):
             views, _, _, a13, _, q13, q2 = views_for(
