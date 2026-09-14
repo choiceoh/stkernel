@@ -115,13 +115,14 @@ def measure_router(args, report):
         ordinary()
         reference_hash = sha_tensor(outputs[0])
         reference_routes = [sha_tensor(v) for v in route_weights(outputs[0], bias, 8, model.routed_scale)]
-        for name, bm, bn, bk, explicit, native in ROUTER_VARIANTS:
+        for name, bm, bn, bk, explicit, native, packed, prefetch in ROUTER_VARIANTS:
             report['active_case'] = dict(rows=rows, variant=name)
             def candidate():
                 if explicit:
                     return _router_packet_gemm[(triton.cdiv(rows,bm)*triton.cdiv(288,bn),)](
                         received.view(torch.float8_e4m3fn), received.view(torch.float32), gate, outputs[1],
                         rows, g.local_rows, g.stride, BM=bm, BN=bn, BK=bk, NATIVE=native,
+                        PACKED_CONVERT=packed, PREFETCH=prefetch,
                         num_warps=4, num_stages=1, enable_fp_fusion=False)
                 return _router_gemm[(triton.cdiv(rows,bm)*triton.cdiv(288,bn),)](
                     received.view(torch.float8_e4m3fn), gate, outputs[1], rows, BM=bm, BN=bn, BK=64,
