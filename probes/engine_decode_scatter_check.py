@@ -44,6 +44,10 @@ def moe_check(report, ranks, lane_name):
         candidate = dict(base,
                          probe_route_scatter=lane_name != 'moe_direct_scatter',
                          probe_direct_scatter=lane_name != 'moe_route_scatter')
+    elif lane_name == 'moe_fc1_reuse':
+        row_cases = (1, 6, 7, 8)
+        base = dict(base, fc1_reuse_a=False)
+        candidate = dict(base, fc1_reuse_a=True)
     else:
         raise ValueError(lane_name)
     torch.manual_seed(91713)
@@ -66,8 +70,10 @@ def moe_check(report, ranks, lane_name):
                     pair.append(graph); outputs.append(output)
                     graphs.append(graph)
                     resources.extend(lane.graph_resources())
-            unique_cases = sorted({8, 16, min(32, rows * 8), min(40, rows * 8),
-                                   min(56, rows * 8), min(112, rows * 8), rows * 8})
+            unique_counts = {8, 16, 32, 40, 56, 112, rows*8}
+            if lane_name == 'moe_fc1_reuse':
+                unique_counts.update((1, 2, 4))  # duplicate routes span multiple M16 tiles
+            unique_cases = sorted({min(u, rows*8) for u in unique_counts})
             for unique in unique_cases + [8]:
                 sel.copy_(expert_order[linear % unique].int())
                 x.normal_().mul_(.5)
@@ -95,7 +101,7 @@ def moe_check(report, ranks, lane_name):
                 report('decode_scatter_numerics', candidate=lane_name, rows=rows,
                        unique_experts=unique, max_expert_rows=(rows*8+unique-1)//unique,
                        relative_max=max(errors), repeat_relative=spreads,
-                       changed_routing_replay=True, tile_m=16 if rows == 7 else 32,
+                       changed_routing_replay=True, tile_m=16 if 1 <= rows <= 8 else 32,
                        fc1_stages=candidate['fc1'], fc2_stages=candidate['fc2'])
             route.zero_()
             for owner in scatter_owners:
