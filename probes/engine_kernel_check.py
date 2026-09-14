@@ -64,6 +64,17 @@ def main():
             args.output.write_text(json.dumps(row) + '\n')
         print(json.dumps(row), flush=True)
         return
+    if args.lanes == 'oneshot_consumer_timing':
+        # GPU-side only: peers are landed before each chain publishes, so no RDMA time is in these numbers.
+        from probes.engine_oneshot_consumer_timing import check as consumer_timing
+        rows = []
+        def report(name, **values):
+            rows.append(dict(lane=name, **values))
+            print(json.dumps(rows[-1]), flush=True)
+        consumer_timing(report)
+        if args.output:
+            args.output.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+        return
     if args.lanes in ('scatter_bundle', 'batch_fusions', 'batch_boundaries', 'batch_integration', 'k7_commit_bundle', 'k7_output_bundle'):
         from probes.engine_decode_bundle import check as decode_bundle
         decode_bundle(args.ranks, bundle=args.lanes)

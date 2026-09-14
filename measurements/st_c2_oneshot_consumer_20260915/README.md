@@ -30,7 +30,7 @@
   - 부팅 자체 시험(합 == NCCL)에 16행을 더했다. 두 커널 모두 돈다. consumer 자격은 `rows <= 8` 대신 서빙 배정과 같은 `numel <= CONSUMER_MAX_ELEMENTS` 로 판단한다.
   - rank 순서 소거 시험에 16행을 더하고, 캡처 재생(배율 0, 2⁻⁸, 2⁸)을 7행과 16행에서 한다.
   - 지연 게이지에 `sum_16rows` 셀을 더했다. 부팅 게이지 `oneshot_sum_16rows_us` 와 `st:lane_info` 에 실린다.
-  - 부팅 비용 증가: 자체 시험 집합통신 10회, 게이지 211회(3 워밍업 + 16 캡처 + 12 × 16 재생).
+  - 부팅 비용 증가: one-shot 집합통신이 자체 시험에서 12회(NCCL 대조 합 16행 2회, 소거·캡처·재생 두 커널 × 5회), 게이지에서 211회(3 워밍업 + 16 캡처 + 12 × 16 재생) 늘고, NCCL all-reduce 가 1회 는다.
 - `dsv4_oneshot_ar.cu`·`dsv4_oneshot_transport.h`·`SOURCE.json` 은 main 과 바이트가 같다. 네이티브 캐시 키가 같으니 후보 부팅이 재컴파일하지 않고, 확장은 프로덕션과 같은 바이너리다.
 - 검증 도구:
   - `tests/test_engine_oneshot_consumer.py` (CPU): 엔진 소스에서 격자·stash·소유·티켓을 뽑아 g++ 로 대조한다. `reduce()` 배정도 고정한다.

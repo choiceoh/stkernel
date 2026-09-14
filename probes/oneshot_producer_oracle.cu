@@ -57,6 +57,24 @@ static void land_peers(at::Tensor host, uint64_t sequence, at::Tensor peers) {
   __atomic_store_n(&c->ack_seq, sequence, __ATOMIC_RELEASE);
 }
 
+// Peers that already answered: packets, flags and the all-peer ACK for `count` future sequences, so a timed
+// chain measures only the GPU side of each collective. Later sequences overwrite a reused slot's flag upward.
+static void land_ahead(at::Tensor host, uint64_t first, int64_t count, at::Tensor peers) {
+  auto* c = host_control(host);
+  TORCH_CHECK(peers.device().is_cpu() && peers.scalar_type() == at::kByte && peers.is_contiguous() &&
+              peers.dim() == 2 && peers.size(0) == NPEER && peers.size(1) <= MAXEL * 2 && count > 0 &&
+              count <= 64 && first > __atomic_load_n(&c->tx_seq, __ATOMIC_ACQUIRE),
+              "landing ahead needs future sequences and three rank-ordered packets");
+  for (uint64_t sequence = first; sequence < first + (uint64_t)count; ++sequence) {
+    const auto slot = sequence % RING;
+    for (int p = 0; p < NPEER; ++p) {
+      memcpy(c->rx[slot][p], peers[p].data_ptr(), peers.size(1));
+      __atomic_store_n(&c->rxf[slot][p], sequence, __ATOMIC_RELEASE);
+    }
+  }
+  __atomic_store_n(&c->ack_seq, first + (uint64_t)count - 1, __ATOMIC_RELEASE);
+}
+
 // A PDL neighbour on the collective's stream. As its producer it releases the next launch before a late
 // write, so a sum that read before its own dependency wait would see the previous input; as its successor it
 // launches at the sum's release, before the peers land, and copies only after its wait.
@@ -106,6 +124,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("payload", &payload);
   m.def("land", &land);
   m.def("land_peers", &land_peers);
+  m.def("land_ahead", &land_ahead);
   m.def("ack", [](at::Tensor host, uint64_t sequence) {
     __atomic_store_n(&host_control(host)->ack_seq, sequence, __ATOMIC_RELEASE);
   });
