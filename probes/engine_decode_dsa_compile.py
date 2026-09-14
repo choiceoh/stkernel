@@ -26,6 +26,7 @@ def main():
     from engine.kernels.indexer_gate import _gate_partials
     from engine.kernels.decode_projection import _indexer_boundary
     from engine.kernels.mla.prefill_absorb import _absorb
+    from engine.kernels.indexer import _pool_window, _update_pool_cache
     from engine.kernels.common.native_cache import prepare_sources
     python_source = root / 'engine/kernels/dense/__init__.py'
     body = next(n for n in ast.parse(python_source.read_text()).body if isinstance(n, ast.FunctionDef) and n.name == 'extension')
@@ -74,14 +75,32 @@ def main():
                                    options=dict(num_warps=4, num_stages=2))
             absorb_records.append(dict(tile_m=bm, transpose=transpose, shared_bytes=kernel.metadata.shared,
                                        status='PASS'))
+    pool_records = []
+    for mapped in (False, True):
+        src = ASTSource(fn=_pool_window,
+                        signature=dict(TAILS='*bf16', K='*bf16', GATE='*bf16', CTX='*i64', OUT_K='*bf16', OUT_G='*bf16',
+                                       SLOTS='*i64', **{k: 'i32' for k in
+                                       ('tail_s0', 'tail_s1', 'tail_s2', 'k_s0', 'k_s1', 'gate_s0', 'gate_s1')}),
+                        constexprs=dict(T=8, KP=4, W=10, NPOS=8, D=128, MAPPED=mapped))
+        kernel = triton.compile(src, target=GPUTarget('cuda', 121, 32), options=dict(num_warps=4))
+        pool_records.append(dict(kernel='pool_window', mapped=mapped, shared_bytes=kernel.metadata.shared, status='PASS'))
+    src = ASTSource(fn=_update_pool_cache,
+                    signature=dict(PK='*u8', PS='*fp32', KEYS='*u8', SCALES='*fp32', TAIL='*bf16', SLOTS='*i64',
+                                   CTX='*i64', TABLE='*i32', K='*bf16', GATE='*bf16', **{k: 'i32' for k in
+                                   ('table_s0', 'table_s1', 'key_s0', 'scale_s0', 'tail_s0', 'tail_s1', 'tail_s2',
+                                    'k_s0', 'k_s1', 'gate_s0', 'gate_s1')}),
+                    constexprs=dict(PER=192, STRIDE=2112, OFFSET=1920, CAP=32768, KP=4, T=8, MAXP=2, W=10, D=128))
+    kernel = triton.compile(src, target=GPUTarget('cuda', 121, 32), options=dict(num_warps=4))
+    pool_records.append(dict(kernel='update_pool_cache', shared_bytes=kernel.metadata.shared, status='PASS'))
     if torch.cuda.is_initialized():
-        raise RuntimeError('absorb compile initialized CUDA')
+        raise RuntimeError('compile initialized CUDA')
     files = ('engine/kernels/dense/kernels.cu', 'engine/kernels/dense/query_pair.py', 'engine/kernels/mla/decode_inputs.py',
              'engine/kernels/indexer_gate.py', 'engine/kernels/decode_projection.py',
-             'engine/kernels/mla/decode_absorb.py', 'engine/kernels/mla/prefill_absorb.py')
+             'engine/kernels/mla/decode_absorb.py', 'engine/kernels/mla/prefill_absorb.py', 'engine/kernels/indexer.py')
     result = dict(status='PASS', gpu_used=False, torch=torch.__version__, triton=triton.__version__,
                   cuda=torch.version.cuda, flags=flags, native_cache_key=key, latent_kernels=records, head_gate_kernels=head_records,
                   decode_absorb_kernels=absorb_records,
+                  pool_cache_kernels=pool_records,
                   source_sha256={f: hashlib.sha256((root / f).read_bytes()).hexdigest() for f in files},
                   scope='full native build and PTXAS only; GPU bytes/replay/timing pending')
     args.output.write_text(json.dumps(result, indent=2) + '\n')

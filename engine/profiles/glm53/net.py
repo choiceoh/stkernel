@@ -164,6 +164,7 @@ class Glm53Net:
         self._query_pairs = {}
         self.decode_dsa_rows = ()
         self.decode_latents_executed = set()
+        self.decode_pools_executed = set()
         self._indexer_head_gates = {}
         self.decode_indexer_gate_rows = ()
         self._decode_absorb = {}
@@ -284,8 +285,9 @@ class Glm53Net:
 
     def prepare_decode_dsa_inputs(self, rows):
         """Bind existing smoothed W4 readers; no weight copy or new arena region."""
-        if self._query_pairs or self.F.spec_k != 7 or self.lanes.latent_norm_write is None:
-            raise ValueError('DSA inputs require one K=7 native preparation with the fused latent lane')
+        if (self._query_pairs or self.F.spec_k != 7 or self.lanes.latent_norm_write is None
+                or self.lanes.decode_rows is None or self.lanes.decode_rows.update is None):
+            raise ValueError('DSA inputs require one K=7 native preparation with fused latent and pool-cache lanes')
         from engine.kernels.dense.query_pair import QueryPair
         pairs = {L: QueryPair(self.dense[f'L{L}.mla.q_b'], self.dense[f'L{L}.idx.wq_b'], rows=rows)
                  for L in self.layers if self.F.is_dsa(L)}
@@ -648,7 +650,9 @@ class Glm53Net:
         tail_width = kp - 1 + F.spec_k
         if captured:
             from engine.profiles.glm53.decode_graphs import complete_pools   # the profile's captured writer
-            tails = caches.tails(L)
+            mapped = (self._indexer_rows(step, caches) and step.tokens == 8
+                      and N in getattr(self, 'decode_dsa_rows', ()) and not self.probe)
+            tails = caches.tail_field(L) if mapped else caches.tails(L)
             if tails.shape[1] != tail_width:
                 raise ValueError(f"indexer tail needs {tail_width} positions to support draft rollback")
             # Every segment's pools are completed before any selection runs. A segment
@@ -657,7 +661,7 @@ class Glm53Net:
             rows = len(step.segments)
             width = step.tokens
             pooled = complete_pools(self, L, step.contexts, width, tails,
-                                    k.view(rows, width, d), gate.view(rows, width, d), caches)
+                                    k.view(rows, width, d), gate.view(rows, width, d), caches, mapped=bool(mapped))
             if self._indexer_rows(step, caches):
                 # every row's selection with the per-row launches folded (45차, the C=4 question)
                 self._select_rows(L, q8, w_eff, keys, scales, pooled, step.contexts, width, caches, slots_out, valid_out)

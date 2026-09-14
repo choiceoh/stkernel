@@ -111,6 +111,7 @@ class DecodeRows:
                           #  n_cand) -> (keys [rows, n_cand, d] contiguous, scales [rows, n_cand])
     window: object        # (tails [rows, W, 2, d] bf16, k [rows, t, d], gate [rows, t, d], contexts, pool, max_pools)
                           #  -> (kw, gw) [rows*max_pools, pool, d]: each row's window (ring's earlier tokens, then this step's)
+                          #  slots= reads the full arena tail through physical ids instead of a gathered tensor
     addresses: object     # (contexts, block rows, per, block stride, layer offset, pool, tokens, max_pools, capacity)
                           #  -> (counts [rows] i64: pools completed this step, slots [rows, max_pools] i64: their records)
     pools: object         # (pooled keys [rows*max_pools, d] 1-byte, pooled scales [rows*max_pools] f32, pool keys [P, d] (record-
@@ -118,6 +119,7 @@ class DecodeRows:
     tails: object         # (tail field [slots, W, 2, d] bf16, slots [rows], contexts, k [rows, t, d], gate [rows, t, d]) -> None:
                           #  each row's raw keys and gates into its ring at (context + j) % W
     horizon: object       # (logits [t, n] f32, ke [t] i32) -> the same logits with -inf at columns >= ke[r], in place
+    update: object = None # K=7 pool addressing/scatter + raw-tail writes; window accepts physical slots= as well
 
 
 def reference_decode_rows() -> DecodeRows:
@@ -125,7 +127,7 @@ def reference_decode_rows() -> DecodeRows:
     and what a CPU test hands a composition."""
     from engine.modules import sparse_indexer as si
     return DecodeRows(si.row_lengths, si.latent_write_rows, si.gather_candidates, si.pool_window, si.pool_addresses,
-                      si.scatter_pools, si.write_tails, si.mask_horizon)
+                      si.scatter_pools, si.write_tails, si.mask_horizon, si.update_pool_cache)
 
 
 def swiglu_clamped(g: torch.Tensor, u: torch.Tensor, limit: float) -> torch.Tensor:
@@ -538,6 +540,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     from engine.kernels.mla.prefill_dense import mla_dense_prefix
     from engine.kernels.mla.prefill_absorb import mla_prefill_absorb
     from engine.kernels.mla.decode_inputs import latent_norm_write
+    from engine.kernels.indexer import update_pool_cache
     norm = common_lanes().rmsnorm          # the engine's default RMS norm; the clamped activation is GLM's own
     table = Lanes(name, *(on_main(f) for f in (conv_prefill, kda_chunk, kda_recurrent, pre, post, logits, compress_pool_keys, mla, moe,
                                             fwht128_quant_fp8, pool_slots, kda_output_norm)),
@@ -548,7 +551,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
                   kda_recurrent_ring_rows=None if recurrent_kda_ring_rows is None else on_main(recurrent_kda_ring_rows),
                   conv_ring_rows=None if "conv_prefill" in reference_for else on_main(causal_conv1d_ring_rows),
                   decode_rows=DecodeRows(*(on_main(f) for f in (row_lengths, latent_write_rows, gather_candidates, pool_window,
-                                                                pool_addresses, scatter_pools, write_tails, mask_horizon))),
+                                                                pool_addresses, scatter_pools, write_tails, mask_horizon, update_pool_cache))),
                   head_gate=on_main(head_gate),
                   rmsnorm=on_main(norm), swiglu=on_main(activation),
                   route_weights=on_main(route_weights), layernorm=on_main(layernorm),
