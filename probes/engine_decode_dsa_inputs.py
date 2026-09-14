@@ -154,6 +154,7 @@ def check(ranks=None):
     root = Path(__file__).resolve().parents[1]
     files = ('engine/kernels/dense/kernels.cu', 'engine/kernels/dense/query_pair.py',
              'engine/kernels/mla/decode_inputs.py', 'engine/kernels/indexer_gate.py',
+             'engine/kernels/mla/decode_absorb.py', 'engine/kernels/mla/prefill_absorb.py',
              'engine/kernels/decode_projection.py', 'engine/profiles/glm53/net.py')
     def report(event, **values):
         print(json.dumps(dict(event=event, **values)), flush=True)
@@ -162,10 +163,12 @@ def check(ranks=None):
            scope='captured same-build component checks; no answer, acceptance or consumer-speed verdict')
     torch.manual_seed(914875)
     from probes.engine_decode_indexer_gate import check as head_gate_check
+    from probes.engine_decode_absorb import check as absorb_check
     failures = []
     for name, fn in (('query_pair', lambda: query_check(report, ranks=ranks)),
                      ('latent_norm_write', lambda: latent_check(report)),
-                     ('indexer_head_gate', lambda: head_gate_check(report, ranks))):
+                     ('indexer_head_gate', lambda: head_gate_check(report, ranks)),
+                     ('decode_absorb', lambda: absorb_check(report, ranks))):
         try:
             fn()
         except Exception as exc:

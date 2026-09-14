@@ -64,7 +64,7 @@ class OwnershipTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             QueryPair(bad, bad, rows=ROWS)
 
-    def test_default_off_and_explicit_config_only(self):
+    def test_operator_enabled_default_and_experimental_rollback(self):
         from engine.profiles.glm53.execution import ExecutionPlan
         from engine.base.config import ConfigError
         from tests.test_engine_knobs import KnobDeclarationTests
@@ -75,8 +75,9 @@ class OwnershipTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ExecutionPlan(decode_dsa_inputs=1)
         for production in (False, True):
-            self.assertEqual(declared({}, production=production)['decode_dsa_inputs'], 0)
+            self.assertEqual(declared({}, production=production)['decode_dsa_inputs'], 1)
         self.assertEqual(declared({'STK_decode_dsa_inputs': '1'})['decode_dsa_inputs'], 1)
+        self.assertEqual(declared({'STK_decode_dsa_inputs': '0'})['decode_dsa_inputs'], 0)
         with self.assertRaises(ConfigError):
             declared({'STK_decode_dsa_inputs': '1'}, production=True)
 
