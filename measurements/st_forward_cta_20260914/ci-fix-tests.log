@@ -1,0 +1,128 @@
+test_a_draining_door_refuses_new_work_with_503 (tests.test_engine_fleet_lease.EngineHandoverTests.test_a_draining_door_refuses_new_work_with_503) ... ok
+test_a_draining_engine_refuses_admission_and_ends_its_loop (tests.test_engine_fleet_lease.EngineHandoverTests.test_a_draining_engine_refuses_admission_and_ends_its_loop) ... ok
+test_an_engine_without_a_lease_serves_exactly_as_before (tests.test_engine_fleet_lease.EngineHandoverTests.test_an_engine_without_a_lease_serves_exactly_as_before) ... ok
+test_the_handover_parks_under_the_conversation_key (tests.test_engine_fleet_lease.EngineHandoverTests.test_the_handover_parks_under_the_conversation_key)
+That key is what the next holder resumes by, so a turn survives the change. ... ok
+test_the_step_loop_asks_parks_and_lets_go (tests.test_engine_fleet_lease.EngineHandoverTests.test_the_step_loop_asks_parks_and_lets_go) ... ok
+test_the_launcher_takes_the_engine_lease (tests.test_engine_fleet_lease.LauncherAndQueueTests.test_the_launcher_takes_the_engine_lease) ... ok
+test_the_queue_refuses_to_answer_off_the_controller (tests.test_engine_fleet_lease.LauncherAndQueueTests.test_the_queue_refuses_to_answer_off_the_controller)
+Homes are not shared: elsewhere it would create a second, empty queue. ... ok
+test_the_runner_snapshot_pins_what_it_admits (tests.test_engine_fleet_lease.LauncherAndQueueTests.test_the_runner_snapshot_pins_what_it_admits)
+An entry admitted at queue time but absent from the pinned runner passes ... ok
+test_a_container_is_attached_as_evidence_later (tests.test_engine_fleet_lease.LeaseTests.test_a_container_is_attached_as_evidence_later) ... ok
+test_a_fresh_heartbeat_holds_a_boot_that_has_no_container_yet (tests.test_engine_fleet_lease.LeaseTests.test_a_fresh_heartbeat_holds_a_boot_that_has_no_container_yet) ... ok
+test_a_handover_is_a_transfer (tests.test_engine_fleet_lease.LeaseTests.test_a_handover_is_a_transfer)
+Released, the fleet reads as free for a moment and the production supervisor relaunches ... ok
+test_a_lease_owner_is_one_line (tests.test_engine_fleet_lease.LeaseTests.test_a_lease_owner_is_one_line) ... ok
+test_a_stale_lease_is_reclaimed_once_and_recorded_to_the_new_owner (tests.test_engine_fleet_lease.LeaseTests.test_a_stale_lease_is_reclaimed_once_and_recorded_to_the_new_owner) ... ok
+test_an_older_plain_text_lock_is_a_lease_we_honour (tests.test_engine_fleet_lease.LeaseTests.test_an_older_plain_text_lock_is_a_lease_we_honour)
+The launcher wrote `echo user@host ... > lock` until 2026-09-12. That record ... ok
+test_every_lease_has_a_kind_and_a_dead_queue_holder_is_free (tests.test_engine_fleet_lease.LeaseTests.test_every_lease_has_a_kind_and_a_dead_queue_holder_is_free)
+The queue's supervisor on the head IS the holder of a `queue` lease: gone means free, ... ok
+test_evidence_comes_before_the_heartbeat (tests.test_engine_fleet_lease.LeaseTests.test_evidence_comes_before_the_heartbeat) ... ok
+test_one_owner_at_a_time (tests.test_engine_fleet_lease.LeaseTests.test_one_owner_at_a_time) ... ok
+test_only_the_owner_releases_or_renews (tests.test_engine_fleet_lease.LeaseTests.test_only_the_owner_releases_or_renews) ... ok
+test_taken_is_judged_by_kind_and_liveness (tests.test_engine_fleet_lease.LeaseTests.test_taken_is_judged_by_kind_and_liveness) ... ok
+test_the_asker_can_take_its_request_back (tests.test_engine_fleet_lease.LeaseTests.test_the_asker_can_take_its_request_back)
+A cancelled ticket must not leave production draining for nobody. ... ok
+test_the_quiet_gate_reads_the_door_like_deploy_watch (tests.test_engine_fleet_lease.LeaseTests.test_the_quiet_gate_reads_the_door_like_deploy_watch)
+One definition of quiet: the queue asks production to hand over by the rule ... ok
+test_a_boot_holder_lives_by_the_lease (tests.test_engine_fleet_lease.OneRecordTests.test_a_boot_holder_lives_by_the_lease) ... ok
+test_a_lease_from_before_kinds_is_judged_by_its_container (tests.test_engine_fleet_lease.OneRecordTests.test_a_lease_from_before_kinds_is_judged_by_its_container)
+The production lease running on 2026-09-12 names no kind. The supervisor of that era ... ok
+test_deploy_watch_defers_to_a_granted_window_without_recording_a_rejection (tests.test_engine_fleet_lease.OneRecordTests.test_deploy_watch_defers_to_a_granted_window_without_recording_a_rejection) ... ok
+test_only_the_holder_stops_its_boot (tests.test_engine_fleet_lease.OneRecordTests.test_only_the_holder_stops_its_boot)
+Every boot is named st-glm53: a stop resolved by container name alone let the production ... ok
+test_production_is_asked_only_through_the_quiet_gate_and_a_session_never (tests.test_engine_fleet_lease.OneRecordTests.test_production_is_asked_only_through_the_quiet_gate_and_a_session_never) ... ok
+test_the_launcher_verifies_a_ticket_s_lease_and_refuses_a_bare_boot (tests.test_engine_fleet_lease.OneRecordTests.test_the_launcher_verifies_a_ticket_s_lease_and_refuses_a_bare_boot) ... ok
+test_the_lease_goes_ticket_to_ticket_and_back_to_production_when_nobody_waits (tests.test_engine_fleet_lease.OneRecordTests.test_the_lease_goes_ticket_to_ticket_and_back_to_production_when_nobody_waits) ... ok
+test_the_queue_takes_the_lease_at_go_from_its_pinned_module (tests.test_engine_fleet_lease.OneRecordTests.test_the_queue_takes_the_lease_at_go_from_its_pinned_module) ... ok
+test_the_supervisor_hands_the_ticket_s_owner_to_the_payload (tests.test_engine_fleet_lease.OneRecordTests.test_the_supervisor_hands_the_ticket_s_owner_to_the_payload) ... ok
+test_the_supervisor_reads_the_one_lease_file_by_kind (tests.test_engine_fleet_lease.OneRecordTests.test_the_supervisor_reads_the_one_lease_file_by_kind) ... ok
+test_the_boot_hands_the_lease_to_the_engine (tests.test_engine_fleet_lease.ProbeLeaseTests.test_the_boot_hands_the_lease_to_the_engine) ... ok
+test_the_launcher_can_ask_and_can_report (tests.test_engine_fleet_lease.ProbeLeaseTests.test_the_launcher_can_ask_and_can_report) ... ok
+test_the_probe_runner_verifies_the_ticket_s_lease (tests.test_engine_fleet_lease.ProbeLeaseTests.test_the_probe_runner_verifies_the_ticket_s_lease)
+A probe takes the same GPUs as a boot, so it runs under the queue's lease: the ticket hands ... ok
+test_a_remote_holder_is_judged_by_evidence (tests.test_engine_fleet_lease.QueueMaintenanceTests.test_a_remote_holder_is_judged_by_evidence)
+Blind trust for 3x the estimate meant a crashed holder blocked the fleet for two ... ok
+test_a_stale_pin_is_reported_where_people_look (tests.test_engine_fleet_lease.QueueMaintenanceTests.test_a_stale_pin_is_reported_where_people_look) ... ok
+test_the_audit_pins_are_current (tests.test_engine_fleet_lease.QueueMaintenanceTests.test_the_audit_pins_are_current)
+One stale hash turns off CPU reuse and contract narrowing for everyone, and the ... ok
+test_the_queue_can_prune_its_own_debris (tests.test_engine_fleet_lease.QueueMaintenanceTests.test_the_queue_can_prune_its_own_debris) ... ok
+test_a_rank_that_can_read_the_lock_must_still_agree_with_it (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_a_rank_that_can_read_the_lock_must_still_agree_with_it) ... ok
+test_an_empty_lock_is_not_a_reservation (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_an_empty_lock_is_not_a_reservation) ... ok
+test_another_owner_s_reservation_is_not_this_boot_s (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_another_owner_s_reservation_is_not_this_boot_s) ... ok
+test_no_environment_means_no_boot (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_no_environment_means_no_boot) ... ok
+test_the_boot_that_holds_it_proceeds (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_the_boot_that_holds_it_proceeds) ... ok
+test_the_ranks_that_have_no_copy_of_the_lock_still_boot (tests.test_engine_fleet_lease.ReservationIsRequiredTests.test_the_ranks_that_have_no_copy_of_the_lock_still_boot)
+The lock is ONE file on the head node -- homes are not shared between the Sparks, which is ... ok
+test_a_copy_answering_by_older_rules_says_so (tests.test_engine_fleet_lease.SmoothnessTests.test_a_copy_answering_by_older_rules_says_so)
+2026-09-12: `cd ~/stkernel && bash bench/fleet.sh status` on the controller said ... ok
+test_a_cpu_only_probe_reserves_nothing (tests.test_engine_fleet_lease.SmoothnessTests.test_a_cpu_only_probe_reserves_nothing)
+Taking four Sparks for an import check is the opposite of smooth. ... ok
+test_a_handover_counts_what_it_saved_and_what_it_lost (tests.test_engine_fleet_lease.SmoothnessTests.test_a_handover_counts_what_it_saved_and_what_it_lost) ... ok
+test_a_heartbeat_cannot_resurrect_a_released_lease (tests.test_engine_fleet_lease.SmoothnessTests.test_a_heartbeat_cannot_resurrect_a_released_lease) ... ok
+test_a_killed_probe_leaks_nothing (tests.test_engine_fleet_lease.SmoothnessTests.test_a_killed_probe_leaks_nothing)
+SIGKILL runs no trap. The lease is the queue's, so there is nothing here to leak: the ... ok
+test_a_session_on_the_older_lock_path_still_blocks_us (tests.test_engine_fleet_lease.SmoothnessTests.test_a_session_on_the_older_lock_path_still_blocks_us)
+Moving the path must not split the lock: an older launcher writes the old one. ... ok
+test_a_sourced_helper_keeps_its_defaults (tests.test_engine_fleet_lease.SmoothnessTests.test_a_sourced_helper_keeps_its_defaults)
+Assignment prefixes on `.` are temporary in bash: the helper's own defaults are ... ok
+test_a_ticket_s_probe_needs_no_heartbeat (tests.test_engine_fleet_lease.SmoothnessTests.test_a_ticket_s_probe_needs_no_heartbeat)
+The head node's docker cannot see a probe container on another node. A probe used to beat ... ok
+test_an_ask_that_could_not_be_made_is_said (tests.test_engine_fleet_lease.SmoothnessTests.test_an_ask_that_could_not_be_made_is_said)
+A runner runs out of a snapshot of bench/, engine/ and probes/. The ask used to go through ... ok
+test_an_opaque_lock_naming_a_dead_pid_is_not_a_dead_hand (tests.test_engine_fleet_lease.SmoothnessTests.test_an_opaque_lock_naming_a_dead_pid_is_not_a_dead_hand)
+Treating every unparseable record as permanently held made a departed session ... ok
+test_every_caller_uses_one_lease_file_on_the_head_node (tests.test_engine_fleet_lease.SmoothnessTests.test_every_caller_uses_one_lease_file_on_the_head_node)
+The probe took $HOME/st-fleet.lock on whatever node it ran on while a boot took ... ok
+test_free_is_never_an_answer_from_ignorance (tests.test_engine_fleet_lease.SmoothnessTests.test_free_is_never_an_answer_from_ignorance)
+A missing lease helper and an unreadable lease both used to fall through to ... ok
+test_heartbeat_pid_capture_returns_while_renewal_is_running (tests.test_engine_fleet_lease.SmoothnessTests.test_heartbeat_pid_capture_returns_while_renewal_is_running) ... ok
+test_occupancy_is_a_fleet_fact_not_this_node_s_fact (tests.test_engine_fleet_lease.SmoothnessTests.test_occupancy_is_a_fleet_fact_not_this_node_s_fact)
+`docker ps` here answers for one of four nodes. A fleet whose rank 0 had gone ... ok
+test_preflight_cannot_move_the_shared_entry_backwards (tests.test_engine_fleet_lease.SmoothnessTests.test_preflight_cannot_move_the_shared_entry_backwards)
+That sync copies whatever $REPO the caller ran from over $LOGD/fleet.sh, so the ... ok
+test_release_takes_the_same_lock_as_publish (tests.test_engine_fleet_lease.SmoothnessTests.test_release_takes_the_same_lock_as_publish)
+Without it a holder's next heartbeat, landing between the read and the unlink, ... ok
+test_the_handover_reports_through_the_lease_before_letting_go (tests.test_engine_fleet_lease.SmoothnessTests.test_the_handover_reports_through_the_lease_before_letting_go) ... ok
+test_the_handover_transfers_the_lease_to_the_requester (tests.test_engine_fleet_lease.SmoothnessTests.test_the_handover_transfers_the_lease_to_the_requester)
+Released, the fleet read as free for a moment and the production supervisor could relaunch ... ok
+test_the_head_node_runs_the_lease_locally (tests.test_engine_fleet_lease.SmoothnessTests.test_the_head_node_runs_the_lease_locally)
+A node cannot ssh to itself here, and the head is where the queue's controller ... ok
+test_the_launcher_defines_what_its_subcommands_use (tests.test_engine_fleet_lease.SmoothnessTests.test_the_launcher_defines_what_its_subcommands_use) ... ok
+test_the_lease_lives_where_a_container_can_read_it (tests.test_engine_fleet_lease.SmoothnessTests.test_the_lease_lives_where_a_container_can_read_it)
+The engine must READ its lease to notice a yield request. ~/st-fleet.lock is not ... ok
+test_the_probe_waits_for_the_fleet_instead_of_losing_its_turn (tests.test_engine_fleet_lease.SmoothnessTests.test_the_probe_waits_for_the_fleet_instead_of_losing_its_turn)
+The previous holder's handover lands as a transfer to this ticket; a probe the queue ... ok
+test_the_queue_asks_instead_of_only_refusing (tests.test_engine_fleet_lease.SmoothnessTests.test_the_queue_asks_instead_of_only_refusing)
+Otherwise a queued session waits for a human to go and ask -- and whom it may ask is ... ok
+test_the_queue_reads_the_lease_not_only_containers (tests.test_engine_fleet_lease.SmoothnessTests.test_the_queue_reads_the_lease_not_only_containers)
+They disagreed once and the queue granted while the lease was still held. ... ok
+test_the_taken_line_always_names_its_evidence (tests.test_engine_fleet_lease.SmoothnessTests.test_the_taken_line_always_names_its_evidence)
+With the containers already gone and the lease still held, the status line read ... ok
+test_yield_waits_for_the_handover (tests.test_engine_fleet_lease.SmoothnessTests.test_yield_waits_for_the_handover)
+Asking and leaving the caller to poll is not a handover. ... ok
+test_a_free_fleet_has_nobody_to_ask (tests.test_engine_fleet_lease.YieldProtocolTests.test_a_free_fleet_has_nobody_to_ask) ... ok
+test_a_holder_that_predates_the_protocol_cannot_be_asked (tests.test_engine_fleet_lease.YieldProtocolTests.test_a_holder_that_predates_the_protocol_cannot_be_asked) ... ok
+test_asking_and_publishing_do_not_drop_each_other (tests.test_engine_fleet_lease.YieldProtocolTests.test_asking_and_publishing_do_not_drop_each_other)
+Both sides write the same record: the holder must not erase the request, and ... ok
+test_asking_is_not_taking (tests.test_engine_fleet_lease.YieldProtocolTests.test_asking_is_not_taking) ... ok
+test_the_holder_clears_the_request_when_it_has_let_go (tests.test_engine_fleet_lease.YieldProtocolTests.test_the_holder_clears_the_request_when_it_has_let_go) ... ok
+test_the_holder_publishes_what_it_is_doing (tests.test_engine_fleet_lease.YieldProtocolTests.test_the_holder_publishes_what_it_is_doing) ... ok
+test_both_retire_sites_pass_the_request (tests.test_engine_turn_retention.ContractTests.test_both_retire_sites_pass_the_request) ... ok
+test_the_production_boot_sets_the_floor_and_the_supervisor_ping_asks (tests.test_engine_turn_retention.ContractTests.test_the_production_boot_sets_the_floor_and_the_supervisor_ping_asks) ... ok
+test_retain_false_becomes_the_internal_marker_and_anything_else_is_refused_or_ignored (tests.test_engine_turn_retention.DoorTests.test_retain_false_becomes_the_internal_marker_and_anything_else_is_refused_or_ignored) ... ok
+test_the_engine_accepts_the_marker_only_as_a_boolean (tests.test_engine_turn_retention.DoorTests.test_the_engine_accepts_the_marker_only_as_a_boolean) ... ok
+test_every_rank_releases_the_same_turns (tests.test_engine_turn_retention.FourRankTests.test_every_rank_releases_the_same_turns) ... ok
+test_a_released_conversation_cannot_be_continued_by_id (tests.test_engine_turn_retention.RetentionTests.test_a_released_conversation_cannot_be_continued_by_id) ... ok
+test_a_turn_shorter_than_the_floor_is_released_and_one_at_the_floor_is_parked (tests.test_engine_turn_retention.RetentionTests.test_a_turn_shorter_than_the_floor_is_released_and_one_at_the_floor_is_parked) ... ok
+test_a_turn_that_asks_not_to_be_retained_is_released_and_the_next_one_is_parked (tests.test_engine_turn_retention.RetentionTests.test_a_turn_that_asks_not_to_be_retained_is_released_and_the_next_one_is_parked) ... ok
+test_no_floor_and_no_request_keeps_every_turn_as_before (tests.test_engine_turn_retention.RetentionTests.test_no_floor_and_no_request_keeps_every_turn_as_before) ... ok
+test_without_a_tier_the_released_turn_does_not_stay_resident_either (tests.test_engine_turn_retention.RetentionTests.test_without_a_tier_the_released_turn_does_not_stay_resident_either) ... ok
+
+----------------------------------------------------------------------
+Ran 86 tests in 1.088s
+
+OK
+  fleet_prune: keeps the holder, the queue, the paused and every runner they name; removes only what is both unreferenced and old; dry by default OK

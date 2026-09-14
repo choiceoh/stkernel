@@ -38,6 +38,11 @@ Validation so far:
 - `integration-cpu-tests.log`: after including main #940–942, 256 checks ran:
   246 passed and ten required GPUs. This includes the changed verifier, boot
   ownership, serving adapter and chat-template integration.
+- `ci-fix-tests.log`: 86 fleet-lease/retention checks pass. The full CI found
+  two old source-string assertions requiring the Server call to end immediately
+  after `park_min_tokens`; #942 adds `reasoning_opener`. These now inspect the
+  fleet Server call's actual keyword bindings, independent of its final argument.
+  Runtime code and the queued consumer revision are unchanged by this repair.
 - `compile.json`: complete production-flag CUDA/Torch extension compile and
   load, with CUDA hidden. Five new native specializations; ordinary variants
   use 76 registers, direct-output variants 78, all with zero stack/local spill.
