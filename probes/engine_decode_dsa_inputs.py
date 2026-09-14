@@ -157,7 +157,7 @@ def check(ranks=None):
              'engine/kernels/mla/decode_absorb.py', 'engine/kernels/mla/prefill_absorb.py',
              'engine/kernels/decode_projection.py', 'engine/kernels/indexer.py', 'engine/kernels/kpool.py', 'engine/profiles/glm53/net.py',
              'engine/profiles/glm53/decode_graphs.py', 'engine/profiles/glm53/lanes.py',
-             'probes/engine_decode_pool_cache.py')
+             'probes/engine_decode_pool_cache.py', 'probes/engine_decode_no_copy.py')
     def report(event, **values):
         print(json.dumps(dict(event=event, **values)), flush=True)
     report('identity', torch=torch.__version__, cuda=torch.version.cuda, gpu=torch.cuda.get_device_name(),
@@ -167,13 +167,15 @@ def check(ranks=None):
     from probes.engine_decode_indexer_gate import check as head_gate_check
     from probes.engine_decode_absorb import check as absorb_check
     from probes.engine_decode_pool_cache import check as pool_cache_check, ids_check
+    from probes.engine_decode_no_copy import check as no_copy_check
     failures = []
     for name, fn in (('query_pair', lambda: query_check(report, ranks=ranks)),
                      ('latent_norm_write', lambda: latent_check(report)),
                      ('indexer_head_gate', lambda: head_gate_check(report, ranks)),
                      ('decode_absorb', lambda: absorb_check(report, ranks)),
                      ('pool_cache_glue', lambda: pool_cache_check(report, ranks)),
-                     ('topk_ids_read', lambda: ids_check(report))):
+                     ('topk_ids_read', lambda: ids_check(report)),
+                     ('output_copy_glue', lambda: no_copy_check(report))):
         try:
             fn()
         except Exception as exc:
