@@ -1,0 +1,18 @@
+{
+  "status": "PASS",
+  "evidence": "full Torch extension compile/load only, one and two RoCE rails",
+  "gpu_used": false,
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "max_elements": 262144,
+  "extension_sha256": {
+    "1": "4fd069943bc23517186912050d1bd9402cba8bae7a41b0dc37e0b85f9d1a8f95",
+    "2": "0d76606e2751cf48d4b824a9f74a1fda63db80a7e30fa5d4351d461808f49dfe"
+  },
+  "source_sha256": {
+    "engine/kernels/oneshot/SOURCE.json": "b9c7f40d9576b068d805d65fdd2f91013beab52173d636ce4817744e0d173159",
+    "engine/kernels/oneshot/__init__.py": "18b00771a5f4806895921a7542e232041964717b0a2e685c2a21fb683e13cc45",
+    "engine/kernels/oneshot/dsv4_oneshot_ar.cu": "48e97a2fbc6f8d3d48e2a894ad9e11966463f8a2ec594da5f40e066b6980dbc3",
+    "engine/kernels/oneshot/dsv4_oneshot_transport.h": "bf8b8359ed76ce31ad1eae8c80b56bd47384e1f2e02b993af1f040718450793a"
+  }
+}

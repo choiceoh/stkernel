@@ -41,6 +41,18 @@ OSAR_HD constexpr bool osar_publication_last(uint64_t old, unsigned weight,
   return old + uint64_t(weight) == sequence * uint64_t(OSAR_PUBLICATION_TICKETS);
 }
 
+// Which RoCE rail carries the RC queue pair between two ranks. Each GB10 port
+// is exposed as two PCIe x4 functions, rocep1s0f0 and roceP2p1s0f0, and a
+// single function serialized a collective's three peer writes behind one x4
+// link. With two rails the pairs {0,1} and {2,3} move to the second function,
+// so every rank sends and receives two peers on rail 0 and one on rail 1.
+// Both endpoints evaluate the same symmetric rule before exchanging queue
+// pair information, so a pair can never be split across rails.
+OSAR_HD constexpr int osar_pair_rail(int a, int b, int rails) {
+  const int low = a < b ? a : b;
+  return rails == 2 && (a ^ b) == 1 && low % 2 == 0 ? 1 : 0;
+}
+
 #undef OSAR_HD
 
 // Host-only watchdog. The proxy publishes its own monotonic timestamp; callers
@@ -54,29 +66,35 @@ struct OsarProxyHealth {
 };
 
 // Include verbs.h before this header (the CPU oracle supplies mock verbs).
-// Only flag is inline. Payload and flag remain two writes on the same RC QP,
-// in that order, with only the flag signaled. Thus a flag CQE still retires
-// the associated payload and the existing all-peer ACK/ring reuse rule.
-struct OsarProxyInlineWrs {
-  OsarProxyInlineWrs() = default;
-  OsarProxyInlineWrs(const OsarProxyInlineWrs&) = delete;
-  OsarProxyInlineWrs& operator=(const OsarProxyInlineWrs&) = delete;
-  OsarProxyInlineWrs(OsarProxyInlineWrs&&) = delete;
-  OsarProxyInlineWrs& operator=(OsarProxyInlineWrs&&) = delete;
+// Reuse descriptors in both flag modes. Payload and flag remain two writes
+// on the same RC QP, in that order, with only the flag signaled. Thus a flag
+// CQE still retires the payload under the existing all-peer ACK/ring rule.
+template <bool InlineFlag>
+struct OsarProxyWrs {
+  OsarProxyWrs() = default;
+  OsarProxyWrs(const OsarProxyWrs&) = delete;
+  OsarProxyWrs& operator=(const OsarProxyWrs&) = delete;
+  OsarProxyWrs(OsarProxyWrs&&) = delete;
+  OsarProxyWrs& operator=(OsarProxyWrs&&) = delete;
   ibv_sge sge[2]{};
   ibv_send_wr wr[2]{};
   uint64_t flag = 0;
 
   bool init(uintptr_t tx, uint32_t lkey, uint64_t remote_tx,
-            uint64_t remote_flag, uint32_t rkey, unsigned inline_cap) {
-    if (inline_cap < sizeof(flag)) return false;
+            uint64_t remote_flag, uint32_t rkey, unsigned inline_cap,
+            uintptr_t registered_flag = 0) {
+    if constexpr (InlineFlag) {
+      if (inline_cap < sizeof(flag)) return false;
+    } else {
+      if (!registered_flag) return false;
+    }
     sge[0].addr = tx;
     sge[0].lkey = lkey;
-    sge[1].addr = reinterpret_cast<uintptr_t>(&flag);
+    sge[1].addr = InlineFlag ? reinterpret_cast<uintptr_t>(&flag) : registered_flag;
     sge[1].length = sizeof(flag);
-    // Inline bytes are copied by post_send, so this host-only source neither
-    // needs registration nor remains in flight after post_send returns.
-    sge[1].lkey = 0;
+    // Inline bytes are copied by post_send. The ordinary mode keeps its
+    // original registered flag source and this peer's rail-specific key.
+    sge[1].lkey = InlineFlag ? 0 : lkey;
     for (unsigned i = 0; i != 2; ++i) {
       wr[i].sg_list = &sge[i];
       wr[i].num_sge = 1;
@@ -86,12 +104,13 @@ struct OsarProxyInlineWrs {
     wr[0].wr.rdma.remote_addr = remote_tx;
     wr[0].next = &wr[1];
     wr[1].wr.rdma.remote_addr = remote_flag;
-    wr[1].send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
+    wr[1].send_flags = IBV_SEND_SIGNALED | (InlineFlag ? IBV_SEND_INLINE : 0);
     return true;
   }
 
   int post(ibv_qp* qp, uint64_t sequence, unsigned peer, uint32_t bytes) {
-    flag = sequence;
+    if constexpr (InlineFlag) flag = sequence;
+    else *reinterpret_cast<volatile uint64_t*>(sge[1].addr) = sequence;
     sge[0].length = bytes;
     wr[0].wr_id = (sequence << 4) | peer;
     wr[1].wr_id = (sequence << 4) | 0x8u | peer;
@@ -99,3 +118,5 @@ struct OsarProxyInlineWrs {
     return ibv_post_send(qp, wr, &bad);
   }
 };
+
+using OsarProxyInlineWrs = OsarProxyWrs<true>;
