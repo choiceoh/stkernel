@@ -76,6 +76,7 @@ def measure_router(args, report):
     from engine.kernels.prefill_collectives import BLOCK
     from engine.kernels.prefill_collectives.kernels import _unpack_gather
     from engine.kernels.prefill_router import _router_gemm
+    from engine.kernels.prefill_router_packets import _router_packet_gemm
     from engine.modules.prefill_packets import PacketGeometry
     from engine.profiles.glm53 import facts
     from engine.profiles.glm53.weights import rank_loader
@@ -114,13 +115,18 @@ def measure_router(args, report):
         ordinary()
         reference_hash = sha_tensor(outputs[0])
         reference_routes = [sha_tensor(v) for v in route_weights(outputs[0], bias, 8, model.routed_scale)]
-        for name, bm, bn, pairs, hoist in ROUTER_VARIANTS:
+        for name, bm, bn, explicit in ROUTER_VARIANTS:
             report['active_case'] = dict(rows=rows, variant=name)
             def candidate():
+                if explicit:
+                    return _router_packet_gemm[(triton.cdiv(rows,bm)*triton.cdiv(288,bn),)](
+                        received.view(torch.float8_e4m3fn), received.view(torch.float32), gate, outputs[1],
+                        rows, g.local_rows, g.stride, BM=bm, BN=bn, BK=64,
+                        num_warps=4, num_stages=1, enable_fp_fusion=False)
                 return _router_gemm[(triton.cdiv(rows,bm)*triton.cdiv(288,bn),)](
                     received.view(torch.float8_e4m3fn), gate, outputs[1], rows, BM=bm, BN=bn, BK=64,
                     Scales=received.view(torch.float32), LOCAL_ROWS=g.local_rows, PACKET_BYTES=g.stride,
-                    PACKETS=True, PAIR_LOADS=pairs, HOIST_SCALES=hoist, num_warps=4, num_stages=1,
+                    PACKETS=True, num_warps=4, num_stages=1,
                     enable_fp_fusion=False)
             kernel = candidate()
             dot_ir = '\n'.join(line for line in kernel.asm['ttgir'].splitlines() if 'tt.dot ' in line)

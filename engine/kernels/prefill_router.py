@@ -11,53 +11,32 @@ import triton.language as tl
 
 @triton.jit(do_not_specialize=['M', 'LOCAL_ROWS', 'PACKET_BYTES'])
 def _router_gemm(X, W, Out, M, BM: tl.constexpr, BN: tl.constexpr, BK: tl.constexpr,
-                 Scales=None, LOCAL_ROWS=0, PACKET_BYTES=0, PACKETS: tl.constexpr=False,
-                 PAIR_LOADS: tl.constexpr=False, HOIST_SCALES: tl.constexpr=False):
+                 Scales=None, LOCAL_ROWS=0, PACKET_BYTES=0, PACKETS: tl.constexpr=False):
     # Adjacent CTAs cover the five expert tiles of one input tile. Keep the
     # reused activation tile hot instead of walking the full input five times.
     rows = (tl.program_id(0)//tl.cdiv(288,BN))*BM + tl.arange(0,BM)
     cols = (tl.program_id(0)%tl.cdiv(288,BN))*BN + tl.arange(0,BN)
     kk = tl.arange(0,BK)
     acc = tl.zeros((BM,BN),tl.float32)
-    if PACKETS:
-        rank, local_row = rows // LOCAL_ROWS, rows % LOCAL_ROWS
-        if HOIST_SCALES:
-            scale_ptr = Scales + rank*(PACKET_BYTES//4) + LOCAL_ROWS*1024 + local_row*2
-            scale0 = tl.load(scale_ptr, rows < M, other=0.)
-            scale1 = tl.load(scale_ptr + 1, rows < M, other=0.)
     for block in range(4096//BK):
         k = block*BK + kk
         if PACKETS:
-            if HOIST_SCALES:
-                scale = tl.where(block < 2048//BK, scale0, scale1)
-            else:
-                scale = tl.load(Scales + rank*(PACKET_BYTES//4) + LOCAL_ROWS*1024
-                                + local_row*2 + block//(2048//BK), rows < M, other=0.)
+            rank, local_row = rows // LOCAL_ROWS, rows % LOCAL_ROWS
+            offset = local_row[:,None]*4096 + k[None,:]
             # Read aligned byte pairs. An 8-bit source load makes Triton choose
             # kWidth=4 for *both* BF16 dot operands, changing their accumulation
             # order. A 16-bit load retains the ordinary router's kWidth=2 while
             # extracting exactly the same FP8 bytes; no BF16 buffer is written.
-            if PAIR_LOADS:
-                # One contiguous half-width load, then expand each word into
-                # adjacent bytes. Repeated offset//2 addresses hide this
-                # contiguity from Triton's memory-layout inference.
-                word_k = block*(BK//2) + tl.arange(0, BK//2)
-                words = tl.load(X.to(tl.pointer_type(tl.uint16))
-                    + rank[:,None]*(PACKET_BYTES//2) + local_row[:,None]*2048 + word_k[None,:],
-                    rows[:,None] < M, other=0)
-                # Gather in registers instead of JoinOp: the runtime compiler
-                # widens dot kWidth for joined pairs even after a BF16 cast.
-                expanded = tl.gather(words, tl.broadcast_to((kk//2)[None,:], (BM,BK)), 1)
-                bits = ((expanded >> ((kk[None,:] & 1)*8)) & 255).to(tl.uint8)
-                a = (bits.to(tl.float8e4nv, bitcast=True).to(tl.float32)*scale[:,None]).to(tl.bfloat16)
-            else:
-                offset = local_row[:,None]*4096 + k[None,:]
-                words = tl.load(X.to(tl.pointer_type(tl.uint16))
-                                + rank[:,None]*(PACKET_BYTES//2) + offset//2,
-                                rows[:,None] < M, other=0)
-                bits = ((words >> ((offset & 1)*8)) & 255).to(tl.uint8)
-                v = bits.to(tl.float8e4nv, bitcast=True).to(tl.float32)
-                a = (v*scale[:,None]).to(tl.bfloat16)
+            words = tl.load(X.to(tl.pointer_type(tl.uint16))
+                            + rank[:,None]*(PACKET_BYTES//2) + offset//2,
+                            rows[:,None] < M, other=0)
+            bits = ((words >> ((offset & 1)*8)) & 255).to(tl.uint8)
+            v = bits.to(tl.float8e4nv, bitcast=True).to(tl.float32)
+            # BK=64 stays inside a 2048-value transport block. Load one
+            # scale per row, rather than constructing a replicated MxK load.
+            scale = tl.load(Scales + rank*(PACKET_BYTES//4) + LOCAL_ROWS*1024
+                            + local_row*2 + block//(2048//BK), rows < M, other=0.)
+            a = (v*scale[:,None]).to(tl.bfloat16)
         else:
             a = tl.load(X + rows[:,None]*4096 + k[None,:], mask=rows[:,None] < M, other=0.)
         b = tl.load(W + cols[None,:]*4096 + k[:,None], mask=cols[None,:] < 288, other=0.)

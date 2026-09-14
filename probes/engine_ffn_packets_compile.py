@@ -14,6 +14,7 @@ SOURCES = (
     'engine/modules/prefill_packets.py', 'engine/modules/token_shards.py',
     'engine/kernels/prefill_collectives/__init__.py', 'engine/kernels/prefill_collectives/consumer.py',
     'engine/kernels/prefill_collectives/kernels.py', 'engine/kernels/prefill_router.py',
+    'engine/kernels/prefill_router_packets.py',
     'engine/kernels/dense/__init__.py', 'engine/kernels/dense/fp8.py',
     'engine/kernels/b12x/moe_dispatch.py', 'engine/kernels/b12x/moe_packet_input.py',
     'engine/kernels/b12x/moe_dynamic_prefill_packets.py',
@@ -27,15 +28,11 @@ SOURCES = (
 
 # A bounded diagnostic sweep, never an engine autotuner or a serving knob.
 ROUTER_VARIANTS = (
-    ('current', 64, 64, False, False),
-    ('pairs-64x64', 64, 64, True, False),
-    ('pairs-32x64', 32, 64, True, False),
-    ('pairs-32x128', 32, 128, True, False),
-    ('pairs-64x128', 64, 128, True, False),
-    ('pairs-16x128', 16, 128, True, False),
-    ('pairs-32x256', 32, 256, True, False),
-    ('pairs-hoist-64x64', 64, 64, True, True),
-    ('pairs-hoist-32x128', 32, 128, True, True),
+    ('current', 64, 64, False),
+    ('explicit-64x64', 64, 64, True),
+    ('explicit-32x64', 32, 64, True),
+    ('explicit-32x128', 32, 128, True),
+    ('explicit-64x128', 64, 128, True),
 )
 
 
@@ -52,7 +49,9 @@ def compile_consumers(output, router_only=False):
     import triton
     from triton.backends.compiler import GPUTarget
     from triton.compiler import ASTSource
+    from triton.experimental.gluon._runtime import GluonASTSource
     from engine.kernels.prefill_router import _router_gemm
+    from engine.kernels.prefill_router_packets import _router_packet_gemm
     from engine.kernels.prefill_collectives.consumer import _quantize_gather
     output.mkdir(parents=True, exist_ok=True)
     records = []
@@ -60,18 +59,24 @@ def compile_consumers(output, router_only=False):
                   gpu_used=False, torch=torch.__version__, triton=triton.__version__,
                   source_sha256=fingerprint(), kernels=records)
     try:
-        variants = [('bf16', 64, 64, False, False)] + (list(ROUTER_VARIANTS) if router_only
-                    else [('packets', 64, 64, False, False)])
-        for label, bm, bn, pairs, hoist in variants:
+        variants = [('bf16', 64, 64, False)] + (list(ROUTER_VARIANTS) if router_only
+                    else [('packets', 64, 64, False)])
+        for label, bm, bn, explicit in variants:
             packets = label != 'bf16'
             signature = dict(X='*fp8e4nv' if packets else '*bf16', W='*bf16', Out='*fp32', M='i32')
-            constants = dict(BM=bm, BN=bn, BK=64, PACKETS=packets, PAIR_LOADS=pairs, HOIST_SCALES=hoist)
+            constants = dict(BM=bm, BN=bn, BK=64, PACKETS=packets)
             if packets:
                 signature.update(Scales='*fp32', LOCAL_ROWS='i32', PACKET_BYTES='i32')
             else:
                 constants.update(Scales=None, LOCAL_ROWS=0, PACKET_BYTES=0)
             start = time.monotonic()
-            kernel = triton.compile(ASTSource(_router_gemm, signature, constexprs=constants),
+            function = _router_gemm
+            if explicit:
+                function = _router_packet_gemm
+                signature['Packed'] = signature.pop('X')
+                constants.pop('PACKETS')
+            source = GluonASTSource if explicit else ASTSource
+            kernel = triton.compile(source(function, signature, constexprs=constants),
                 target=GPUTarget('cuda', 121, 32),
                 options=dict(num_warps=4, num_stages=1 if packets else 3, enable_fp_fusion=False))
             name = 'router-'+label
