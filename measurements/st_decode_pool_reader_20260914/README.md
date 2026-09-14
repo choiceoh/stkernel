@@ -1,6 +1,10 @@
 # Decode reader follow-up to #914, #919 and #921
 
-Base: `119f881d90554fbe16eca707e69ce9bc41ef03e4` (includes #920 and #921).
+Implementation base: `119f881d90554fbe16eca707e69ce9bc41ef03e4` (includes #920 and #921).
+Before queue admission, integrated main `2ac7de6f7946356372ddfceb29d9af6b5032fe99`
+(#922, #923, #924). All 13 implementation/probe/test hashes in
+`source-sha256.json` are unchanged, so the compiler and interpreter evidence
+below remains applicable. The affected CPU suites also passed after integration.
 
 Review followed the shared query packs, smoothed readers, MLA weight views,
 pool-cache completion and indexer finalization. Two remaining materializations
@@ -48,6 +52,7 @@ Torch 2.13.0+cu130 / Triton 3.7.1 / CUDA 13.0; no GPU was accessed.
 | cpu-tests.log | 104 tests: 92 pass, 12 GPU/interpreter skips |
 | cpu-ids-tests.log | 34 tests: 28 pass, 6 GPU skips |
 | cpu-final-tests.log | 17 tests: 14 pass, 3 GPU/interpreter skips |
+| cpu-integration-tests.log | 40 tests: 29 pass, 11 GPU/interpreter skips, after main integration |
 | interpreter-tests.log | 17 tests: 16 pass, 1 GPU-only skip |
 | interpreter-ids-tests.log | 6 tests: 5 pass, 1 GPU-only skip |
 
