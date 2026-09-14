@@ -1,0 +1,96 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "source_sha256": {
+    "engine/modules/mixed_experts.py": "da2f2561839005530c7d7db111a69be2bb5f520843e3662ad34da299bf91ddc3",
+    "engine/kernels/b12x/moe_mixed.py": "fb3e659033546344bff7fa5de961b0c9fc94094370f83edbc85a889452cb6d5b",
+    "engine/modules/route_table.py": "60e3d47e8c605cf82963f64c0d2e750b4e57093eed4c5970215b22b3d5c5a4b4",
+    "tests/test_engine_mixed_plan.py": "0b799be93ce42cb84ea5cc8d2e2cde86afbbd691932da4309f0b7cac44c1099b",
+    "engine/kernels/b12x/moe_mixed_frontend.py": "465b8aef59b69840eb7594c799f783522b753221808bf78c39c18006605442c7",
+    "engine/kernels/b12x/moe_dispatch.py": "4ceb187bea32eea2fa279b8c336ce4e9d2a9941f94f295e7853252da9e409e73",
+    "engine/kernels/b12x/moe_static_common.py": "8ac18a06cfd1a0d82e615888c77dfb26df4edec0731a68227dd284d7e1f56cff",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "961e2262b83bb77374b6e391645690f95624958c2e357d217174ac0ae519c10b",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+    "engine/kernels/b12x/moe_micro_kernel.py": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914",
+    "probes/engine_mixed_experts_compile.py": "d520ff76d83698f3367a7336f83d255009bd6c6c4e10c12cb9754f060c5ce005",
+    "tests/test_engine_mixed_experts.py": "653f80e812f155f17639c5137c126f5990506829085c2a60336376631c9045f3",
+    "engine/modules/mixed_completion.py": "c05367b3759f3da7cf7322924f8ecf3497bcc29e7f9f7f05d7ec035acf9dd837",
+    "engine/kernels/b12x/moe_mixed_completion.py": "8365eff00dd3f76100a17b3de046654ff4f0bb77998cea535b5c531bdf865f40",
+    "engine/kernels/b12x/moe_cold_frontend.py": "1d3876c0675722533f7b6ac75cefac32c141125def6dd6964f614843ca4fc40b",
+    "engine/kernels/b12x/moe_prepared_prefill.py": "b077a033aaa79d7bf0cc6ba387d17bccb64546abb2431ce8aefb79bd33a69306",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_words.py": "368dee876092745be60e079a73cf73c4e2c91dd73f699c6f0a315da0ed05e3e9",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+    "engine/kernels/b12x/_moe_dynamic/gated.py": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
+    "probes/engine_mixed_completion_compile.py": "ef70284f6d76abbe468095a9a5b418f578eaf29ce71f67d1209145e33cfa815e",
+    "tests/test_engine_mixed_completion.py": "43cf8051bde14fa0b86546c2533321dbe92927e15d3fdb44b3df6164ec8f5eec"
+  },
+  "scope": "actual CuTe, PTXAS and TVM-FFI compilation; no GPU execution",
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "kernels": [
+    {
+      "kind": "hot_producer",
+      "runtime_row_extents": true,
+      "name": "mixed_route_producer_v1",
+      "status": "PASS",
+      "seconds": 0.4142751239996869
+    },
+    {
+      "kind": "cold_producer",
+      "runtime_row_extents": true,
+      "name": "cold_route_producer_v1",
+      "status": "PASS",
+      "seconds": 0.2666676900116727
+    },
+    {
+      "kind": "static",
+      "rows": 8,
+      "prepared": false,
+      "name": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64_b9f6090e1e1aceeb",
+      "status": "PASS",
+      "seconds": 5.00151006699889
+    },
+    {
+      "kind": "static",
+      "rows": 8,
+      "prepared": true,
+      "name": "static2_m8_k4096_n512_t8_r32_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64_7ce59deefd5a7366",
+      "status": "PASS",
+      "seconds": 4.565825007011881
+    },
+    {
+      "kind": "static",
+      "rows": 32,
+      "prepared": false,
+      "name": "static2_m32_k4096_n512_t8_r256_tm32f2g2a32wutsf6v1_5bc811a15f9cee18",
+      "status": "PASS",
+      "seconds": 4.774896788003389
+    },
+    {
+      "kind": "static",
+      "rows": 32,
+      "prepared": true,
+      "name": "static2_m32_k4096_n512_t8_r32_tm32f2g2a32wutsf6v1_55b75152f863b9db",
+      "status": "PASS",
+      "seconds": 4.581920933997026
+    },
+    {
+      "kind": "dynamic",
+      "tile_m": 128,
+      "prepared": false,
+      "name": "dynamic_e288_k4096_n512_t8_tiled_4e466f602bfca73d",
+      "status": "PASS",
+      "seconds": 7.997467888984829
+    },
+    {
+      "kind": "dynamic",
+      "tile_m": 128,
+      "prepared": true,
+      "name": "dynamic_e288_k4096_n512_t8_tiled_f11f03cc6dbee156",
+      "status": "PASS",
+      "seconds": 6.576537451997865
+    }
+  ],
+  "dynamic_runtime_shape_reuse": true
+}

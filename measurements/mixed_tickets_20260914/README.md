@@ -1,5 +1,10 @@
 # M2: served shared readers and fence-owned layer tickets
 
+This directory retains the original M2 qualification and its source identities.
+The subsequent [packed-planning comparison](../mixed_plan_20260914/README.md)
+records the fresh preparation improvement on `c33370f9`; its same-build GPU
+arms supersede the preparation-cost observation here, with their own evidence.
+
 The mixed FFN component now binds the GLM profile's actual router, prepared
 ModelOpt weight views and shared DenseLinear readers. Its layer scheduler owns
 rank agreement, bounded cold dispatch, output sums and cancellation retirement.
