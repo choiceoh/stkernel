@@ -35,11 +35,15 @@ def _packet_bf16x4(values, scales):
 @gluon.jit(do_not_specialize=['M', 'LOCAL_ROWS', 'PACKET_BYTES'])
 def _router_packet_gemm(Packed, Scales, W, Out, M, LOCAL_ROWS, PACKET_BYTES,
                         BM: gl.constexpr, BN: gl.constexpr, BK: gl.constexpr, NATIVE: gl.constexpr=False,
-                        PACKED_CONVERT: gl.constexpr=False, PREFETCH: gl.constexpr=False):
+                        PACKED_CONVERT: gl.constexpr=False, PREFETCH: gl.constexpr=False,
+                        WARPS_M: gl.constexpr=2):
+    # PacketGeometry rounds every rank stride to 128 bytes. It stays a runtime
+    # scalar (no row-count recompiles), but its alignment is part of the ABI.
+    PACKET_BYTES = gl.multiple_of(PACKET_BYTES, 128)
     # Every lane reads adjacent K values. Transport-scale addressing must not
     # turn a coalesced activation tile into scalar loads along the row axis.
     mma: gl.constexpr = gl.NVMMADistributedLayout(version=[2, 0],
-        warps_per_cta=[2, 2], instr_shape=[16, 8])
+        warps_per_cta=[WARPS_M, 4//WARPS_M], instr_shape=[16, 8])
     if NATIVE:
         memory_a: gl.constexpr = gl.DotOperandLayout(0, mma, 2)
         memory_b: gl.constexpr = gl.DotOperandLayout(1, mma, 2)

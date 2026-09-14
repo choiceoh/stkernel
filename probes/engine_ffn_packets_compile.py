@@ -28,12 +28,14 @@ SOURCES = (
 
 # A bounded diagnostic sweep, never an engine autotuner or a serving knob.
 ROUTER_VARIANTS = (
-    ('current', 64, 64, 64, False, False, False, False),
-    ('packed-64x64', 64, 64, 64, True, False, True, False),
-    ('prefetch-64x64', 64, 64, 64, True, False, False, True),
-    ('packed-prefetch-64x64', 64, 64, 64, True, False, True, True),
-    ('packed-prefetch-64x128', 64, 128, 64, True, False, True, True),
-    ('packed-prefetch-32x128', 32, 128, 64, True, False, True, True),
+    ('current', 64, 64, 64, False, False, False, False, 2),
+    ('aligned-64x64', 64, 64, 64, True, False, True, False, 2),
+    ('aligned-prefetch-64x64', 64, 64, 64, True, False, True, True, 2),
+    ('wide-16x256x64', 16, 256, 64, True, False, True, False, 1),
+    ('wide-16x512x64', 16, 512, 64, True, False, True, False, 1),
+    ('wide-16x512x32', 16, 512, 32, True, False, True, False, 1),
+    ('wide-32x256x64', 32, 256, 64, True, False, True, False, 2),
+    ('wide-32x512x32', 32, 512, 32, True, False, True, False, 2),
 )
 
 
@@ -60,9 +62,9 @@ def compile_consumers(output, router_only=False):
                   gpu_used=False, torch=torch.__version__, triton=triton.__version__,
                   source_sha256=fingerprint(), kernels=records)
     try:
-        variants = [('bf16', 64, 64, 64, False, False, False, False)] + (list(ROUTER_VARIANTS) if router_only
-                    else [('packets', 64, 64, 64, False, False, False, False)])
-        for label, bm, bn, bk, explicit, native, packed, prefetch in variants:
+        variants = [('bf16', 64, 64, 64, False, False, False, False, 2)] + (list(ROUTER_VARIANTS) if router_only
+                    else [('packets', 64, 64, 64, False, False, False, False, 2)])
+        for label, bm, bn, bk, explicit, native, packed, prefetch, warps_m in variants:
             packets = label != 'bf16'
             signature = dict(X='*fp8e4nv' if packets else '*bf16', W='*bf16', Out='*fp32', M='i32')
             constants = dict(BM=bm, BN=bn, BK=bk, PACKETS=packets)
@@ -77,7 +79,7 @@ def compile_consumers(output, router_only=False):
                 signature['Packed'] = signature.pop('X')
                 constants.pop('PACKETS')
                 constants['NATIVE'] = native
-                constants.update(PACKED_CONVERT=packed, PREFETCH=prefetch)
+                constants.update(PACKED_CONVERT=packed, PREFETCH=prefetch, WARPS_M=warps_m)
             source = GluonASTSource if explicit else ASTSource
             kernel = triton.compile(source(function, signature, constexprs=constants),
                 target=GPUTarget('cuda', 121, 32),
