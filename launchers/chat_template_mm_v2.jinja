@@ -272,4 +272,6 @@ For each function call, output the function name and arguments within the follow
 {%- endfor -%}
 {%- if add_generation_prompt -%}
     <|assistant|>{{- '<think>' if thinking_enabled else '<think></think>' -}}
+    {#- the door's reasoning_opener (base/serve.Server.opener_kwargs): the words the new think block starts with -#}
+    {%- if thinking_enabled and reasoning_opener is defined and reasoning_opener -%}{{- reasoning_opener -}}{%- endif -%}
 {%- endif -%}
