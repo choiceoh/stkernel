@@ -61,6 +61,23 @@ class PackedPlanTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 prepare_routes(rows, rows, identity=IDENTITY, cold_task_quota=quota)
 
+    def test_token_destinations_cover_exactly_cold_routes_and_exclude_hot(self):
+        rng = np.random.default_rng(89552)
+        for p in (1, 140, 9240, 32768):
+            rows = np.argsort(rng.random((p, 288)), axis=1)[:, :8].astype(np.int32)
+            for hot in (0, 128):
+                plan, cold = prepare_routes(rows[:min(p, 8)], rows, identity=IDENTITY,
+                                             hot_route_quota=hot, cold_task_quota=48)
+                dest = metadata_tables(plan, cold)['cold_rows'].reshape(-1, 8)
+                expected = np.full((p, 8), -1, dtype=np.int32)
+                for expert, physical, token, slot in cold.sources:
+                    self.assertEqual(int(rows[token, slot]), expert)
+                    expected[token, slot] = physical
+                np.testing.assert_array_equal(dest, expected)
+                self.assertEqual(int((dest < 0).sum()), plan.hot_routes)
+                live = dest[dest >= 0]
+                self.assertEqual(len(np.unique(live)), len(cold.sources))
+
     def test_packet_keeps_cute_alignment_after_odd_expert_and_task_counts(self):
         # Nine hot experts used to leave the following cold source map at a
         # four-byte offset inside the single packet, which CuTe refuses.

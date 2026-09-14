@@ -47,7 +47,9 @@ def compile_all(output):
             with patch.object(md, 'get_num_sm', return_value=48), \
                     patch.object(md, 'get_max_active_clusters', return_value=48), \
                     patch.object(md, 'build_and_load_cute_dsl_kernel', builder):
-                for kind, build in (('hot_producer', compile_producer), ('cold_producer', compile_cold_producer)):
+                for kind, build in (('hot_producer', compile_producer),
+                        ('cold_route_reference', lambda: compile_cold_producer(token_major=False)),
+                        ('cold_token_producer', compile_cold_producer)):
                     selected.update(kind=kind, runtime_row_extents=True); build()
                 selected.clear()
                 for rows in (8, 32):
@@ -68,8 +70,8 @@ def compile_all(output):
                         for rows in (9240, 32768)]
                     if handles[0] is not handles[1]:
                         raise RuntimeError('long-prefill runtime row extents recompiled the same body')
-        if torch.cuda.is_initialized() or len(records) != 8:
-            raise RuntimeError('compile must build all eight handles without initializing CUDA')
+        if torch.cuda.is_initialized() or len(records) != 9:
+            raise RuntimeError('compile must build all nine handles without initializing CUDA')
         import triton
         from triton.backends.compiler import GPUTarget
         from triton.compiler import ASTSource

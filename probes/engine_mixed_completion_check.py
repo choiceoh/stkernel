@@ -49,7 +49,7 @@ def compare_cold_frontend(ordinary, owner):
     for expert, count in enumerate(plan.counts):
         if not count:
             continue
-        source = owner.sources[cursor:cursor+count]
+        source = torch.tensor(plan.sources.array()[cursor:cursor+count], device=new.token_map.device)
         cursor += count
         old_start = bases[expert]*128
         tokens, order = ordinary.token_map[old_start:old_start+counts[expert]].sort()

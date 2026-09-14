@@ -10,7 +10,13 @@ def metadata_tables(plan, cold):
         tokens = [s[3] for s in plan.sources[plan.decode_routes:]]
         rows = sorted(set(tokens))
         local = {token: i for i, token in enumerate(rows)}
-        tables.update(cold_sources=cold.sources, cold_counts=cold.counts, cold_bases=cold.tile_bases,
+        # Invert the immutable expert-major plan once. A token CTA loads the
+        # activation once and writes its live routes; -1 excludes moved hot
+        # routes without inventing a duplicate expert contribution.
+        sources = cold.sources.array() if isinstance(cold.sources, RouteTable) else np.asarray(cold.sources, dtype=np.int32).reshape(-1, 4)
+        destinations = np.full((len(plan.prefill), 8), -1, dtype=np.int32)
+        destinations[sources[:, 2], sources[:, 3]] = sources[:, 1]
+        tables.update(cold_rows=destinations, cold_counts=cold.counts, cold_bases=cold.tile_bases,
             cold_tasks=cold.task_expert, cold_valid=cold.task_valid_rows,
             hot_rows=rows, hot_dest=[local[t] for t in tokens])
     return {k: (v.array() if isinstance(v, RouteTable) else np.asarray(v, dtype=np.int32)).reshape(-1)

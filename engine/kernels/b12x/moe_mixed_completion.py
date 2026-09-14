@@ -55,7 +55,7 @@ class PreparedMixedCompletion:
         self._shared_weights = (shared_up, shared_down) if shared_execution is None else ()
         device = decode.device
         metadata = self.hot.metadata
-        self.sources = metadata['cold_sources'].view(-1, 4)
+        self.sources = metadata['cold_rows'].view(-1, 8)
         self.workspace = md.allocate_sm120_dynamic_workspace(state_E=288, weight_E=288,
             routed_rows=len(self.cold.sources), k=4096, n=512, num_topk=8,
             device=device, activation='swigluoai_uninterleave', tile_m=128)
@@ -80,7 +80,7 @@ class PreparedMixedCompletion:
             activation='swigluoai_uninterleave', swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.,
             tile_m=128, tiled=True, reform_sf_pack=True, _prepared_prefill=True)
         sf1, sf2 = md._scale_runtime_addresses(weights, direct_sf6=True)
-        self._producer_args = (prefill, prefill_routes, self.sources, input_scale,
+        self._producer_args = (prefill, prefill_routes, self.sources, prefill_ids, input_scale,
             ws.packed_a_flat, ws.scale_flat, ws.token_map, ws.token_weights)
         self._compute_args = (prefill.data_ptr(), prefill_ids.data_ptr(), prefill_routes.data_ptr(),
             ws.packed_a_view.data_ptr(), ws.packed_input_scale.data_ptr(), ws.packed_a_flat.data_ptr(),

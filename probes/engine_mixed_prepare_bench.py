@@ -75,6 +75,49 @@ def value_check_gate(device='cuda'):
                 decode_longer_than_prefill=True)
 
 
+def cold_token_gate(device='cuda'):
+    """Compare all bytes, including untouched hot destinations and padding."""
+    import numpy as np
+    import torch
+    from engine.kernels.b12x.moe_cold_frontend import compile_cold_producer
+    from engine.modules.mixed_experts import ExpertInvocation
+    from engine.modules.mixed_route_plan import prepare_routes
+    from engine.modules.mixed_metadata import metadata_tables
+    old, new = compile_cold_producer(token_major=False), compile_cold_producer()
+    rng = np.random.default_rng(89552)
+    checked = 0
+    for p in (19, 140):
+        ids = np.tile(np.arange(8, dtype=np.int32), (p, 1))
+        if p == 140:
+            ids = np.argsort(rng.random((p, 288)), axis=1)[:, :8].astype(np.int32)
+        plan, cold = prepare_routes(ids[:8], ids, identity=ExpertInvocation(3, 1, 2, 3), cold_task_quota=48)
+        x = torch.tensor(rng.normal(size=(p, 4096)), dtype=torch.bfloat16, device=device)
+        weights = torch.tensor(rng.normal(size=(p, 8)), dtype=torch.float32, device=device)
+        weights[0, 0] = 0.
+        rows = torch.tensor(metadata_tables(plan, cold)['cold_rows'].reshape(-1, 8), device=device)
+        experts = torch.tensor(ids, device=device)
+        sources = torch.tensor(cold.sources.array(), device=device)
+        m = max(128, cold.physical_rows)
+        for distinct in (False, True):
+            scale = torch.linspace(.2, 1.7, 288, device=device) if distinct else torch.ones(288, device=device)
+            outputs = []
+            for fn, descriptors in ((old, (sources,)), (new, (rows, experts))):
+                packed = torch.full((m*2048,), 123, dtype=torch.uint8, device=device)
+                sf = torch.full((m*256,), 125, dtype=torch.uint8, device=device)
+                tokens = torch.full((m,), -99, dtype=torch.int32, device=device)
+                route_weights = torch.full((m,), -999., device=device)
+                if cold.sources:
+                    fn(x, weights, *descriptors, scale, packed, sf, tokens, route_weights)
+                outputs.append((packed, sf, tokens, route_weights))
+            for a, b in zip(*outputs):
+                if not torch.equal(a, b):
+                    raise RuntimeError('token-major cold producer changed FP4/SFA, routing or untouched padding bytes')
+            checked += 1
+            del outputs, packed, sf, tokens, route_weights
+    return dict(status='PASS', cases=checked, distinct_expert_scales=True,
+                moved_hot_routes_excluded=True, untouched_padding=True, byte_exact=True)
+
+
 def run(samples):
     import numpy as np
     import torch

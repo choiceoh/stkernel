@@ -89,13 +89,14 @@ def measure(args, report):
     from probes.engine_graph_profile import rank_on_this_node
     from probes.engine_ffn_packets_check import sha_tensor
     from probes.engine_mixed_completion_check import output_error
-    from probes.engine_mixed_prepare_bench import value_check_gate
+    from probes.engine_mixed_prepare_bench import value_check_gate, cold_token_gate
 
     if torch.cuda.get_device_capability() != (12, 1):
         raise RuntimeError('mixed ticket qualification requires GB10/SM121')
     budget = 8 << 30
     torch.cuda.set_per_process_memory_fraction(budget/torch.cuda.get_device_properties(0).total_memory)
     report['value_check_gate'] = value_check_gate()
+    report['cold_token_gate'] = cold_token_gate()
     root = Path(args.ranks)
     if not root.is_absolute():
         root = facts.RANKS.parent/root
@@ -252,10 +253,28 @@ def measure(args, report):
                     request='preparation-profile', slot=0)
             finally:
                 profile.disable()
-            scheduler.cancel(key)
+            # Separate attribution invocation: event overhead is not part of
+            # the native/mixed wall-time samples above.
+            owner = scheduler._entries[key.slot].owner
+            timed_events = {}
+            def event_call(name, fn):
+                def call(*args):
+                    start, end = (torch.cuda.Event(enable_timing=True) for _ in range(2))
+                    start.record(); result = fn(*args); end.record()
+                    timed_events[name] = (start, end)
+                    return result
+                return call
+            owner.producer = event_call('cold_pack_ms', owner.producer)
+            owner.compiled = event_call('cold_compute_ms', owner.compiled)
+            event_call('decode_ms', scheduler.begin)(key)
+            event_call('cold_drain_ms', scheduler.drain)(key)
+            event_call('prefill_finish_ms', scheduler.finish)(key)
+            scheduler.release(key)
             torch.cuda.synchronize()
             if not scheduler.reap(key):
                 raise RuntimeError('profiled preparation did not retire')
+            report['gpu_phase_profile'] = {name: start.elapsed_time(end)
+                for name, (start, end) in timed_events.items()}
             import pstats
             entries = pstats.Stats(profile).stats
             report['preparation_profile'] = [dict(file=f, line=line, function=name,
