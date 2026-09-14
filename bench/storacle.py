@@ -98,7 +98,7 @@ def cmd_predict(model: str, partial: bool, ctx: int = 32000, generic: "list[str]
     tps = 1 + b.spec_k * 0.45
     print(f"\n[예상 속도] ctx {ctx//1000}K C=1: 스텝 {rng['lo_ms']:.1f}~{rng['hi_ms']:.1f} ms"
           f" ({step_s:.1f} step/s) · 클라이언트 ~{step_s*tps:.0f} tok/s (k={b.spec_k}, acc 45% 가정)"
-          f" · 신뢰도 {rng['confidence']:.0f}%")
+          f" · 신뢰도 {rng['confidence']:.0f}% (결측 계수 기반; 실측 예측 정확도가 아님)")
     if rng["generic"]:
         print(f"  범용 서빙 성분: {', '.join(rng['generic'])} ×{kern.GENERIC_FACTOR[0]:g}~{kern.GENERIC_FACTOR[1]:g}"
               " (전용 실측 대비 — 범용 격차 실측이 다음 프로브)")

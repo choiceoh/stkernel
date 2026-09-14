@@ -7,7 +7,7 @@ name: engine check
 
 on:
   pull_request:
-    paths: ["engine/**", "tests/**", "tools/**", ".github/workflows/engine-check.yml"]
+    paths: ["engine/**", "tests/**", "tools/**", "bench/step_sim.py", "bench/storacle.py", "bench/oracle_records.py", ".github/workflows/engine-check.yml"]
   workflow_dispatch:
 
 jobs:
@@ -41,3 +41,5 @@ jobs:
         run: python3 tools/check.py --list
       - name: onepass recording and consumer measurement contracts
         run: python3 -m unittest discover -s tests -p 'test_onepass*.py'
+      - name: CPU oracle replay and held-out validation contracts
+        run: python3 -m unittest tests.test_step_tools tests.test_oracle_accuracy
