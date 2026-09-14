@@ -2199,6 +2199,8 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         cfg += ("c2_direct_scatter_v1",)
     if config.get("c2_scatter_reuse", False):
         cfg += ("c2_scatter_reuse_v1",)
+    if config.get("c2_fc2_prefetch", False):
+        cfg += ("c2_fc2_prefetch_v1",)
     return cfg + _static_kernel_cache_key(**fields)
 
 
@@ -2229,13 +2231,15 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
     direct_scatter = bool(reform and m == 16 and config.get("batch_reform")
                           and config.get("c2_direct_scatter", True))
     sf6_registers = compact_staging and bool(config.get("sf6_registers", True))
+    scatter_reuse = bool(direct_scatter and sf6_registers and config.get("c2_scatter_reuse", True))
     return dict(config, decode_reform=reform, sf6_separate=separate, sf6_word_expand=word_expand,
                 sf6_fc2_word_expand=fc2_word_expand,
                 packed_activation_store=packed_activation_store, fc1_reuse_a=fc1_reuse_a,
                 compact_staging=compact_staging,
                 c2_direct_scatter=direct_scatter,
-                c2_scatter_reuse=bool(direct_scatter and sf6_registers
-                                      and config.get("c2_scatter_reuse", True)),
+                c2_scatter_reuse=scatter_reuse,
+                c2_fc2_prefetch=bool(scatter_reuse and int(config.get("fc2", 2)) == 2
+                                     and config.get("c2_fc2_prefetch", True)),
                 sf6_registers=sf6_registers)
 
 
@@ -2332,6 +2336,7 @@ def _get_static_kernel_v2(
         route_scatter=bool(config.get("probe_route_scatter", False)),
         direct_scatter=bool(config.get("probe_direct_scatter") or config.get("c2_direct_scatter")),
         scatter_reuse=bool(config["c2_scatter_reuse"]),
+        fc2_prefetch=bool(config["c2_fc2_prefetch"]),
         a_ring=bool(config.get("a_ring", False)),
         sf_pack=bool(config.get("sf_pack", False)),
         decode_reform=reform,
@@ -2506,6 +2511,7 @@ def _get_static_kernel_v2(
         f"{'sfregs' if config.get('sf6_registers') else ''}"
         f"{'c2scatter' if config.get('c2_direct_scatter') else ''}"
         f"{'reuse' if config.get('c2_scatter_reuse') else ''}"
+        f"{'prefetch3' if config.get('c2_fc2_prefetch') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
     )
     compiled = build_and_load_cute_dsl_kernel(
