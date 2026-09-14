@@ -76,7 +76,13 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "moe_fc1_reuse", "moe_compact_staging", "moe_register_scales", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench", "decode_k7", "moe_output", "moe_pair", "moe_pair_serial", "moe_pair_overlap", "moe_pair_direct", "moe_pair_reuse"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "moe_fc1_reuse", "moe_compact_staging", "moe_register_scales", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench", "decode_k7", "moe_output", "moe_pair", "moe_pair_serial", "moe_pair_overlap", "moe_pair_direct", "moe_pair_reuse", "moe_pair_prefetch"}, selected
+
+    if 'moe_pair_prefetch' in selected:
+        from probes.engine_moe_pair_check import check as moe_pair_check
+        path = args.output or Path('/cache/c2-moe.json')
+        moe_pair_check(report, args.ranks, fc2_prefetch_only=True,
+                       output=path.with_stem(path.stem+'-prefetch'))
 
     if 'moe_pair_reuse' in selected:
         from probes.engine_moe_pair_check import check as moe_pair_check
