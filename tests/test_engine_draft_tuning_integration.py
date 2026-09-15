@@ -217,9 +217,10 @@ class WiringTests(unittest.TestCase):
 
     def test_trace_collection_cannot_run_ahead_and_overwrite_its_proposal(self):
         from engine.profiles.glm53.adapter import Glm53Engine
-        e = SimpleNamespace(drafter=SimpleNamespace(tuning=DraftTuning(trace_every=2)))
-        self.assertFalse(Glm53Engine._plain_ahead(e, 1))
-        self.assertEqual(Glm53Engine._blocked_by(e, 1), 'draft_trace')
+        e = Glm53Engine.__new__(Glm53Engine)
+        e.drafter = SimpleNamespace(tuning=DraftTuning(trace_every=2))
+        self.assertFalse(e._plain_ahead(1))
+        self.assertEqual(e._blocked_by(1), 'draft_trace')
 
     def test_preparation_requires_real_statistics_and_binds_only_draft_names(self):
         reader, norm = 'layers.0.self_attn.qkv', 'layers.0.input_layernorm.weight'

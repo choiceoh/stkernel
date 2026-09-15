@@ -12,15 +12,15 @@ and only the OUTCOME crosses to the host, into a pinned buffer behind a CUDA eve
 inert -- its state-slot input is redirected to the null slot so nothing it writes reaches its rings (the runner
 sees it finish one step late and drops that ghost's result).
 
-Which rows may run ahead: greedy rows and rows with only a temperature / top_p (the batch's device rejection
-sampling, base/sampler.block_verify_batch); rows with penalties, logit_bias, seeds, logprobs, grammars or a
-pending min_tokens keep the synchronous path, and the runner drains this one before them (adapter.async_ready).
+Request seeds, penalties, logit bias, logprobs and min_tokens travel with device rows too. Grammar matchers
+and a reasoning-budget boundary still require a host decision; adapter.async_ready drains before those.
 Every device-side draw is a keyed uniform (base/draws): the same on every rank whatever came before. The same
 uniforms over the same distributions still do not make the same bits, so a sampled verdict is rank 0's
 (modules/draft_agreement.agree_verdict), as a greedy one is the MAX collective's.
 """
 from __future__ import annotations
 
+import math
 import torch
 
 from engine.base.sampler import block_verify_batch, commit_batch, rows as sampler_rows
@@ -80,6 +80,7 @@ class AsyncDecode:
         self._zeros = {}                                 # n -> the host step's placeholder ids (prepare reads segments, never these)
         self._staged = []                                # pinned index tensors of recent shrinks, alive until their copies land
         self._probs = None                               # the step's target distributions, kept: 15 MB the step stops reallocating
+        self._processed = {}                             # logits width -> FP32 block, only for active device options
         self.dirty = set()                               # only rows moved by synchronous host work
         self.slots = {}                                  # host identities; never read device slots to compare batches
         self.merges = 0
@@ -116,10 +117,34 @@ class AsyncDecode:
             self._probs = torch.empty(room, vocab, dtype=torch.float32, device=self.e.caches.device)
         return self._probs[:rows]
 
+    def _sampling_state(self, seqs, *, required=False):
+        from engine.base.sampling_options import SamplingState, needs_device_policy
+        e = self.e
+        options = [dict(e.options.get(s, {})) for s in seqs]
+        minimum = [getattr(e, "min_new", {}).get(s, 0) for s in seqs]
+        for s, opts in zip(seqs, options):
+            if s in getattr(e, "lps", {}) and opts.get("logprobs") is None:
+                opts["logprobs"] = 0
+        if not required and not any(needs_device_policy(o, m, e._generated_count(s))
+                                    for s, o, m in zip(seqs, options, minimum)):
+            return None
+        prompts = [getattr(e, "prompt_len", {}).get(s, len(e.tokens[s]) - e._generated_count(s)) for s in seqs]
+        return SamplingState.from_histories(options, [e.tokens[s] for s in seqs], prompts, minimum,
+                                             e.F.vocab, e.caches.device)
+
+    def _process_logits(self, logits, b, start=0):
+        width = logits.shape[1]
+        if width not in self._processed:
+            self._processed[width] = torch.empty(self.e.caches.pool.max_seqs * self.t, width,
+                                                 dtype=torch.float32, device=logits.device)
+        return b["sampling"].process(logits, b["drafts"], b["generated"], b["ends"], start=start,
+                                      decodable=self.e.decodable, out=self._processed[width][:logits.shape[0]])
+
     # -- building the device view of a batch --------------------------------------------------------
     def _new_rows(self, seqs, slots):
         """From the host's view, which is exact when nothing is in flight: every row's last token, context, limit,
         end tokens and sampling temperature, plus the first proposals (the synchronous step's first half)."""
+        from engine.base import draws
         e, K, t = self.e, self.e.drafter.k, self.t
         dev = e.caches.device
         n = len(seqs)
@@ -134,7 +159,8 @@ class AsyncDecode:
             generated=self._upload([e._generated_count(s) for s in seqs], torch.int64),
             limit=self._upload([e.limits[s][0] for s in seqs], torch.int64),
             ends=self._upload([x + [-1] * (width - len(x)) for x in ends], torch.int64),
-            nonce=self._upload([e.nonces[s] for s in seqs], torch.int64),      # the draws' key, with `generated` (base/draws)
+            nonce=self._upload([draws.request_nonce(e.seed, e.nonces[s], getattr(e, "seeds", {}).get(s))
+                                for s in seqs], torch.int64),
             temps=self._upload(temps, torch.float32),
             top_k=self._upload([int(e.options.get(s, {}).get("top_k") or 0) for s in seqs], torch.int32),
             top_p=self._upload(top_p, torch.float32),
@@ -143,6 +169,7 @@ class AsyncDecode:
             ids=torch.zeros(n * t, dtype=torch.int64, device=dev),
             drafts=torch.zeros(n, K, dtype=torch.int64, device=dev),
             stochastic=any(x > 0 for x in temps),
+            sampling=self._sampling_state(seqs),
         )
         b["slot"] = b["real_slot"].clone()
         # the draft distribution is its candidates and their mass, not a vocabulary-wide row (base/sampler)
@@ -171,6 +198,10 @@ class AsyncDecode:
         if added:
             fresh = self._new_rows(added, [slots[seqs.index(s)] for s in added])
             b = self.buf
+            if b.get("sampling") is not None or fresh["sampling"] is not None:
+                previous = b.get("sampling") or self._sampling_state(keep, required=True)
+                joining = fresh["sampling"] or self._sampling_state(added, required=True)
+                b["sampling"] = previous.join(joining)
             width = max(b["ends"].shape[1], fresh["ends"].shape[1])
             for rows in (b, fresh):
                 if rows["ends"].shape[1] < width:
@@ -195,7 +226,7 @@ class AsyncDecode:
                         rows["draws"] = draws.step_block(self.e.seed, rows["nonce"], rows["generated"],
                                                          self.e.drafter.k)[:, self.e.drafter.k:].contiguous()
             for name in b:
-                if name == "stochastic":
+                if name in ("stochastic", "sampling"):
                     continue
                 if b[name] is not None:
                     b[name] = torch.cat((b[name], fresh[name]), 0)
@@ -219,6 +250,8 @@ class AsyncDecode:
         else:
             idx = torch.tensor(keep, dtype=torch.int64, device=dev)
         b = self.buf
+        if b.get("sampling") is not None:
+            b["sampling"] = b["sampling"].select(idx, keep)
         for name in ("seqs", "real_slot", "slot", "ctx", "generated", "limit", "ends", "nonce", "temps", "top_k", "top_p",
                      "alive", "anchor", "drafts"):
             b[name] = b[name].index_select(0, idx)
@@ -281,11 +314,19 @@ class AsyncDecode:
                 h, aux, local = e.decode_graphs.run_inputs(shape, b["ids"], b["ctx"], b["seqs"], b["slot"])
             else:
                 h, aux, local = e.decode_graphs.run_device(shape, host_step, b["ids"], b["ctx"], b["seqs"], b["slot"])
-        if b["stochastic"]:
+        policy = b.get("sampling")
+        detailed = policy is not None and any(k is not None for k in policy.logprobs)
+        processed = None
+        if b["stochastic"] or detailed:
             # the model's dtype, not fp32: the sampler converts as it reads, and the undecodable tail
             # is a width it stops at rather than a copy of the block with minus infinity in its end
             with mark("all_gather"):
                 full = e.net.comm.all_gather(local, dim=-1)
+            if policy is not None:
+                with mark("sample"):
+                    processed = self._process_logits(full, b)
+                full = processed
+        if b["stochastic"]:
             with mark("sample"):
                 probs = distribution_batch(full, b["temps"].repeat_interleave(t), b["top_k"].repeat_interleave(t),
                                            b["top_p"].repeat_interleave(t), e.decodable,
@@ -296,14 +337,24 @@ class AsyncDecode:
             with mark("agree"):
                 # every rank verified the same block, but not to the same bits: commit rank 0's verdict
                 accepted, picks = agree_verdict(e.net.comm, accepted, picks)
+        elif policy is not None:
+            from engine.modules.vocab import argmax
+            with mark("sample"):
+                start = 0 if detailed else e.net.rank * e.net.vp
+                if processed is None:
+                    processed = self._process_logits(local, b, start)
+                picks = argmax(processed, e.net.comm, start, e.decodable).view(n, t)
+            accepted = None
         else:
             with mark("sample"):
                 picks = e.sampling_graphs.greedy.run(shape[:2], lambda inputs: None).view(n, t)
             accepted = None
         diagnostics = getattr(e, 'draft_diagnostics', None)
-        rejection = diagnostics.classify(picks, b) if diagnostics is not None and not b['stochastic'] else None
+        rejection = (diagnostics.classify(picks, b)
+                     if diagnostics is not None and not b['stochastic'] and policy is None else None)
         if diagnostics is not None and rejection is None:
             rejection = torch.full((n, 2), -1, device=picks.device, dtype=torch.int64)
+        details = policy.logprob_packet(processed, picks) if detailed else {}
         if picks.is_cuda:
             from engine.base.lanes import served as common_lanes
             with mark("commit"):
@@ -317,6 +368,9 @@ class AsyncDecode:
             b["anchor"] = torch.where(count > 0, last, b["anchor"])
             b["alive"] = b["alive"] & ~done
             b["slot"] = torch.where(b["alive"], b["real_slot"], torch.zeros_like(b["real_slot"]))
+        if policy is not None:
+            with mark("commit"):
+                policy.commit(tokens, count)
         with mark("boundaries"):
             materialize = getattr(e.decode_graphs, "materialize", None)
             if materialize is not None:
@@ -336,6 +390,7 @@ class AsyncDecode:
         with mark("propose"):
             self._propose_rows(b)
         result = dict(tokens=tokens, count=count, done=done, accepted=accepted, before=ctx_before)
+        result.update(details)
         if rejection is not None:
             result['rejection'] = rejection
         return result
@@ -355,6 +410,14 @@ class AsyncDecode:
             self._merge(seqs, slots)
         b = self.buf
         n = len(seqs)
+        if b.get("sampling") is not None:
+            from engine.base.sampling_options import needs_device_policy
+            if not any(needs_device_policy(o, getattr(e, "min_new", {}).get(s, 0), e._generated_count(s))
+                       for s, o in zip(seqs, b["sampling"].options)):
+                # The host count is a safe lower bound on device progress.
+                # Drop neutral survivors' state after a rich row leaves, or
+                # after the host has observed min_tokens being satisfied.
+                b["sampling"] = None
         # the host's step: its contexts may lag the device's by the steps in flight; the reservation covers that lag
         ahead = max(e.inflight.get(s, 0) for s in seqs) + 1
         zeros = self._zeros.get(n)
@@ -373,6 +436,15 @@ class AsyncDecode:
         host["count"][:n].copy_(count, non_blocking=True)
         host["done"][:n].copy_(done, non_blocking=True)
         host["accepted"][:n].copy_(accepted, non_blocking=True)
+        detail_shapes = {}
+        for name in ("logprob", "top_logprobs", "top_ids"):
+            if name in result:
+                value = result[name]
+                capacity = e.caches.pool.max_seqs * t * (1 if name == "logprob" else 20)
+                if name not in host:
+                    host[name] = torch.empty(capacity, dtype=value.dtype, pin_memory=tokens.is_cuda)
+                host[name][:value.numel()].view(value.shape).copy_(value, non_blocking=True)
+                detail_shapes[name] = tuple(value.shape)
         if 'rejection' in result:
             host['rejection'][:n].copy_(result['rejection'], non_blocking=True)
             host['context'][:n].copy_(result['before'], non_blocking=True)
@@ -382,6 +454,8 @@ class AsyncDecode:
         for s in seqs:
             e.inflight[s] = e.inflight.get(s, 0) + 1
         pending = Pending(self, lane, seqs, event)
+        pending.detail_shapes = detail_shapes
+        pending.logprobs = list(b["sampling"].logprobs) if detail_shapes else None
         pending.staged, self._staged = self._staged, []
         self.pending.append(pending)
         return pending
@@ -420,6 +494,8 @@ class AsyncDecode:
         n = len(pending.seqs)
         counts, dones, accepted = host["count"][:n].tolist(), host["done"][:n].tolist(), host["accepted"][:n].tolist()
         tokens = host["tokens"][:n].tolist()
+        details = {name: host[name][:math.prod(shape)].view(shape).tolist()
+                   for name, shape in getattr(pending, "detail_shapes", {}).items()}
         self._agree_outcome(pending.seqs, dict(count=counts, done=dones, accepted=accepted, tokens=tokens))
         if 'rejection' in host:
             e.draft_diagnostics.note(pending.seqs, host['context'][:n].tolist(), host['rejection'][:n].tolist())
@@ -429,6 +505,11 @@ class AsyncDecode:
                 continue
             c = counts[i]
             if c > 0:
+                if details and seq in getattr(e, "lps", {}) and pending.logprobs[i] is not None:
+                    want = pending.logprobs[i]
+                    e.lps[seq] += [(tokens[i][j], details["logprob"][i][j],
+                                    list(zip(details["top_ids"][i][j][:want], details["top_logprobs"][i][j][:want])))
+                                   for j in range(c)]
                 before = e.ctx[seq]
                 e.tokens[seq] += tokens[i][:c]
                 e.ctx[seq] += c

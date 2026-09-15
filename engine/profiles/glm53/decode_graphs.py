@@ -756,7 +756,16 @@ class SamplingGraphs:
                                         append_child=getattr(target, "append_child", None))
             self.stochastic = DecodeGraphs(stochastic, make_inputs, shapes,
                                           memory=memory, label="sampling/stochastic")
+            from engine.base.sampling_options import warm_sampling_options
+            for n, t in shapes:
+                logits = target.graphs.outputs[first[(n, t)]][2]
+                for offset, processed in warm_sampling_options(
+                        logits, target.net.vp * target.net.comm.world_size, t,
+                        target.net.rank * target.net.vp, decodable):
+                    argmax(processed, target.net.comm, offset, decodable)
         except BaseException:
+            if hasattr(self, "stochastic"):
+                self.stochastic.close()
             if hasattr(self, "greedy"):
                 self.greedy.close()
             raise

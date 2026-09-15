@@ -1,0 +1,166 @@
+{
+  "evidence_scope": "component",
+  "device": "NVIDIA GeForce RTX 5050",
+  "torch": "2.13.0+cu132",
+  "triton": "3.7.1",
+  "cuda": "13.2",
+  "engine_shape": {
+    "profile": "glm53",
+    "vocab": 154880,
+    "spec_k": 7,
+    "tp": 1,
+    "model_loaded": false,
+    "dtype": "bfloat16"
+  },
+  "iterations": 10,
+  "shapes": [
+    {
+      "requests": 1,
+      "positions": 8,
+      "max_abs_error": 2.384185791015625e-07,
+      "argmax_equal": true,
+      "samples": {
+        "reference": [
+          {
+            "stream_us": 4880.729675292969,
+            "wall_us": 4511.257680132985
+          },
+          {
+            "stream_us": 4212.854385375977,
+            "wall_us": 3867.2578055411577
+          },
+          {
+            "stream_us": 3751.145553588867,
+            "wall_us": 3441.516193561256
+          },
+          {
+            "stream_us": 5687.465667724609,
+            "wall_us": 5219.357088208199
+          }
+        ],
+        "fused": [
+          {
+            "stream_us": 46.33280038833618,
+            "wall_us": 49.11648575216532
+          },
+          {
+            "stream_us": 44.78079974651337,
+            "wall_us": 46.800216659903526
+          },
+          {
+            "stream_us": 49.70560073852539,
+            "wall_us": 49.70149602741003
+          },
+          {
+            "stream_us": 47.26400077342987,
+            "wall_us": 47.02801816165447
+          }
+        ],
+        "logprobs_before": [
+          {
+            "stream_us": 7485.997009277344,
+            "wall_us": 6868.197000585496
+          },
+          {
+            "stream_us": 6744.764709472656,
+            "wall_us": 6187.521503306925
+          }
+        ],
+        "logprobs_after": [
+          {
+            "stream_us": 566.7007923126221,
+            "wall_us": 524.1428036242723
+          },
+          {
+            "stream_us": 957.8720092773438,
+            "wall_us": 883.7593020871282
+          }
+        ]
+      },
+      "median_wall_us": {
+        "reference": 4189.257742837071,
+        "fused": 48.072251956909895,
+        "logprobs_before": 6527.859251946211,
+        "logprobs_after": 703.9510528557003
+      }
+    },
+    {
+      "requests": 2,
+      "positions": 16,
+      "max_abs_error": 2.384185791015625e-07,
+      "argmax_equal": true,
+      "samples": {
+        "reference": [
+          {
+            "stream_us": 7351.007843017578,
+            "wall_us": 6745.5756943672895
+          },
+          {
+            "stream_us": 8383.916473388672,
+            "wall_us": 7690.826081670821
+          },
+          {
+            "stream_us": 6327.10075378418,
+            "wall_us": 5805.6931011378765
+          },
+          {
+            "stream_us": 5492.784118652344,
+            "wall_us": 5038.30739762634
+          }
+        ],
+        "fused": [
+          {
+            "stream_us": 81.71520233154297,
+            "wall_us": 78.44038773328066
+          },
+          {
+            "stream_us": 77.55839824676514,
+            "wall_us": 75.62630344182253
+          },
+          {
+            "stream_us": 78.73600125312805,
+            "wall_us": 76.94149389863014
+          },
+          {
+            "stream_us": 83.0784022808075,
+            "wall_us": 80.18158841878176
+          }
+        ],
+        "logprobs_before": [
+          {
+            "stream_us": 11346.377563476562,
+            "wall_us": 10405.159299261868
+          },
+          {
+            "stream_us": 8635.769653320312,
+            "wall_us": 7919.638208113611
+          }
+        ],
+        "logprobs_after": [
+          {
+            "stream_us": 487.2799873352051,
+            "wall_us": 450.7355159148574
+          },
+          {
+            "stream_us": 623.1423854827881,
+            "wall_us": 576.0528147220612
+          }
+        ]
+      },
+      "median_wall_us": {
+        "reference": 6275.634397752583,
+        "fused": 77.6909408159554,
+        "logprobs_before": 9162.39875368774,
+        "logprobs_after": 513.3941653184593
+      }
+    }
+  ],
+  "source_sha256": {
+    "engine/base/sampling_options.py": "576574d0eb620dea902f6e1b3d4787aeb1b62133352d8ded3ccd7c2e11833dde",
+    "engine/kernels/common/sampling_options.py": "98c48f289210cdccdb7324aac894df02eb41c6ffe9800b75c03ac879ad2edcca",
+    "engine/profiles/glm53/pipeline.py": "b99be21fb3fb25be9d53f74f594edd20827b3aa7dff1e6e9ae1279198fdc8ce8",
+    "engine/profiles/glm53/adapter.py": "8c72e723875cda2450a550bf66d01a4b77deb9da7d45cc1785dacf2b039eccc7",
+    "engine/base/draws.py": "5396047cceb0171e2554156e783956889231b8f7e859dbc9cbe1e1477341feae",
+    "engine/base/sampler.py": "10896acafa97fb7eded892da283c990e62037f249783de55265a14525d5e8b21"
+  }
+}
