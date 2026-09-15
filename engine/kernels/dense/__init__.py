@@ -20,8 +20,11 @@ def build():
     builds it before its first collective (profiles/glm53/natives); `extension` probes the device at first use."""
     from torch.utils.cpp_extension import load
     from engine.kernels.common.native_cache import prepare_cuda_sources
+    from engine.base.kernel_shape import bound
+    from engine.kernels.arch import gencode
     source = Path(__file__).with_name("kernels.cu")
-    flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a",
+    # bound() reads the declared shape and touches no device, which this build must not do.
+    flags = ["-O2", *gencode(bound().device.capability),
              "-DMK_GRID_DEF=96", "-DMK_MHC_GRID_DEF=144", "-DMK_NBUF2_DEF=3",
              "-DMK_FP8_PACK2_DEF=1", "-DMK_GEMM_TRANSPOSE_M8_DEF=1",
              "-DMK_GEMM_COMPACT_M8_DEF=1", "-DMK_M8_FASTPATH_DEF=1"]

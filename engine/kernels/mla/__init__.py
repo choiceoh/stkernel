@@ -71,8 +71,12 @@ def _build():
     import torch
     from torch.utils.cpp_extension import load
     from engine.kernels.common.native_cache import prepare_cuda_sources
+    from engine.base.kernel_shape import bound
+    from engine.kernels.arch import gencode
     src = Path(__file__).with_name("glm53_megakernel.cu")
-    flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a"]
+    # The bound shape declares the card (D11: a fact, not a knob); the flags carry it into
+    # the cache key, so a check build on another target never shares this one's module.
+    flags = ["-O2", *gencode(bound().device.capability)]
     root = Path(os.environ.get("ST_MLA_BUILD_ROOT", str(Path.home() / ".cache/st/mla")))
     key, build, sources = prepare_cuda_sources(root, [src], (flags, torch.__version__, torch.version.cuda))
     _EXT = load(name="st_mla_" + key, sources=list(sources), extra_cuda_cflags=flags,
