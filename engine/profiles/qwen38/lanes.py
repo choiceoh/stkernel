@@ -316,10 +316,14 @@ def served(*, tp=None) -> Lanes:
 
 def qualify(device, F) -> dict:
     """The served lanes that own arithmetic the wizard's glue does not cover, held to their oracles on `device` before
-    a boot serves (D3): the gated residual at the model's widths and GDN's gates and output norm."""
-    from engine.kernels import gated_residual, gdn
+    a boot serves (D3): the gated residual at the model's widths, GDN's gates and output norm, and QSA's head norm with
+    its partial rotation (the query heads and the indexer's)."""
+    from engine.kernels import gated_residual, gdn, qsa
     return {"gated_residual": gated_residual.qualify(device, hc=F.hc, hidden=F.hidden, rank=F.hc_rank, eps=F.rms_eps),
-            "gdn": gdn.qualify(device, heads=F.v_heads_local, dim=F.v_dim, eps=F.rms_eps)}
+            "gdn": gdn.qualify(device, heads=F.v_heads_local, dim=F.v_dim, eps=F.rms_eps),
+            "qsa_norm_rope": qsa.qualify(device, heads=((F.heads_local, F.head_dim), (F.idx_heads, F.idx_dim)),
+                                         rotary_dim=F.rotary_dim, theta=F.rope_theta, eps=F.rms_eps,
+                                         max_position=F.max_position)}
 
 
 __all__ = ["Lanes", "reference", "served", "qualify", "route_softmax_topk", "local_routes"]

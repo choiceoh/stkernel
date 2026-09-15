@@ -12,13 +12,15 @@ per-head decay. What those kernels do not compute is the model's own arithmetic 
                  (engine/modules/norm.rmsnorm_gated, "rounded"; GLM's KDA output norm rounds only at the end,
                  engine/kernels/kda/output.py, so it cannot serve this one)
 
-softplus follows torch's: x above its threshold 20 passes through. `qualify` holds both to the modules on the device.
+softplus follows torch's: log1p(exp(x)), and x above its threshold 20 passes through. `qualify` holds both to the
+modules on the device.
 """
 from __future__ import annotations
 
 import torch
 import triton
 import triton.language as tl
+from triton.language.extra.cuda import libdevice
 
 
 @triton.jit
@@ -28,7 +30,8 @@ def _gates(A, B, A_LOG, DT, DECAY, BETA, sA, sB, sD, sE, HV: tl.constexpr, BH: t
     h = tl.arange(0, BH)
     m = h < HV
     g = tl.load(A + r * sA + h, mask=m, other=0.0).to(tl.float32) + tl.load(DT + h, mask=m, other=0.0).to(tl.float32)
-    softplus = tl.where(g > 20.0, g, tl.log(1.0 + tl.exp(tl.minimum(g, 20.0))))
+    # log1p, not log(1 + .): a strongly negative gate's decay is exp(g), which 1 + exp(g) rounds away in fp32
+    softplus = tl.where(g > 20.0, g, libdevice.log1p(tl.exp(tl.minimum(g, 20.0))))
     decay = -tl.exp(tl.load(A_LOG + h, mask=m, other=0.0).to(tl.float32)) * softplus
     tl.store(DECAY + r * sD + h, decay, mask=m)
     b = tl.load(B + r * sB + h, mask=m, other=0.0)
@@ -90,9 +93,11 @@ def gated_norm(core: torch.Tensor, z: torch.Tensor, weight: torch.Tensor, eps: f
     return out.view(rows, hv * dim)
 
 
-def qualify(device, *, heads: int, dim: int, eps: float, dtype=torch.bfloat16, rows=(1, 7, 300), band: float = 2e-3,
-            seed: int = 0) -> dict:
-    """Hold `gates` and `gated_norm` to engine/modules (gdn_decay, rmsnorm_gated) on `device` with random inputs."""
+def qualify(device, *, heads: int, dim: int, eps: float, dtype=torch.bfloat16, rows=(1, 7, 300),
+            band_max: float = 5e-2, band_rms: float = 2e-2, seed: int = 0) -> dict:
+    """Hold `gates` and `gated_norm` to engine/modules (gdn_decay, rmsnorm_gated) on `device` with random inputs, within
+    a few BF16 steps (engine/kernels/gated_residual.drift); returns the worst (max, rms) per output."""
+    from engine.kernels.gated_residual import drift
     from engine.modules.linear_attention import gdn_decay
     from engine.modules.norm import rmsnorm_gated
     gen = torch.Generator(device="cpu").manual_seed(seed)
@@ -100,23 +105,26 @@ def qualify(device, *, heads: int, dim: int, eps: float, dtype=torch.bfloat16, r
     def rand(*shape, scale=1.0, dt=dtype):
         return (torch.randn(*shape, generator=gen) * scale).to(device=device, dtype=dt)
 
-    def rel(x, y):
-        return float(((x.float() - y.float()).abs().max() / y.float().abs().max().clamp_min(1e-12)).item())
+    worst = {k: (0.0, 0.0) for k in ("decay", "beta", "raw_beta", "norm")}
 
-    worst = {"decay": 0.0, "beta": 0.0, "norm": 0.0}
+    def note(key, ours, ref):
+        m, r = drift(ours, ref)
+        worst[key] = (max(worst[key][0], m), max(worst[key][1], r))
+
     A_log, dt_bias = rand(heads, dt=torch.float32), rand(heads, dt=torch.float32)
     weight = rand(dim, scale=0.1)
     for n in rows:
         a, b = rand(n, heads, scale=4.0), rand(n, heads, scale=4.0)
         decay, beta = gates(a, b, A_log, dt_bias, sigmoid_beta=True)
-        worst["decay"] = max(worst["decay"], rel(decay, gdn_decay(a, A_log, dt_bias)))
-        worst["beta"] = max(worst["beta"], rel(beta, torch.sigmoid(b)))
+        note("decay", decay, gdn_decay(a, A_log, dt_bias))
+        note("beta", beta, torch.sigmoid(b))
+        _, raw = gates(a, b, A_log, dt_bias, sigmoid_beta=False)
+        note("raw_beta", raw, b)
         core, z = rand(n, heads, dim), rand(n, heads, dim)
-        ref = rmsnorm_gated(core, z, weight, eps, "sigmoid").reshape(n, heads * dim)
-        worst["norm"] = max(worst["norm"], rel(gated_norm(core, z, weight, eps), ref))
-    bad = {k: v for k, v in worst.items() if v > band}
+        note("norm", gated_norm(core, z, weight, eps), rmsnorm_gated(core, z, weight, eps, "sigmoid").reshape(n, heads * dim))
+    bad = {k: v for k, v in worst.items() if v[0] > band_max or v[1] > band_rms}
     if bad:
-        raise RuntimeError(f"GDN lane arithmetic drifts from engine/modules beyond {band:g}: {bad}")
+        raise RuntimeError(f"GDN lane arithmetic drifts from engine/modules beyond max {band_max:g} / rms {band_rms:g}: {bad}")
     return worst
 
 
