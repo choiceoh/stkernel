@@ -1,17 +1,28 @@
-# C=2 (16-row) dense W4 cells: sixteen-row CTAs for the KDA input and attention outputs — 2026-09-15
+# C=2 (16-row) dense W4 cells: sixteen-row CTAs for the bound cells — 2026-09-15
 
 Operator order "st커널 c=2 최적화 개선", then "c=2 저거도 도입". Since #950 production decode runs C=1
 (8 verification rows) and C=2 (16 rows). The C1 cells of #939/#946 had no 16-row counterpart. This
 directory measures, on real rank weights against same-build controls, what each dense W4 family should
-run at 16 rows, and records the three adopted and four rejected sixteen-row CTAs.
+run at 16 rows. Six sixteen-row CTAs are default; one is rejected.
 
-**Adopted (default at 16 rows):** KDA input (6416×4096), KDA output (4096×2048, TX slot) and MLA output
+**Adopted first (#969):** KDA input (6416×4096), KDA output (4096×2048, TX slot) and MLA output
 (4096×4096, TX slot) run `mk_gemm_rows16_kernel`. `forward_pipeline=False` keeps the wide pack route as
-the same-build control. **Rejected and removed:** the same form for MLP gate/up, MLP down, MLA qkv_a and a
-joined 16-row DSA query grid. The existing 16-row wide cells and the QueryPair shared pack are kept.
+the same-build control.
 
-The claim is component time only: about −0.3 ms (warm) / −0.4 ms (evicted) of dense GEMM time per C=2
-forward, under 1% of a 55 ms step. No consumer step/s, onepass, acceptance or quality result is claimed;
+**Adopted second, same day (criterion change):** MLP gate/up (6144×4096), MLA qkv_a (2048×4096) and MLP
+down (4096×3072, TX slot). #969 rejected them because they regress in the L2-warm replays. The operator
+then ruled that the warm regime is not the target ("캐시따뜻한건 어차피 충분히 빠르니 느려져도 되지않아?",
+"그냥 너가 도입해서 기본값 pr 머지해"). The deciding scope is now a chain of distinct layers with L2 evicted,
+which is how a decode step reads them. All three win there (−1.7%, −8.2%, −4.4%), and their measured warm
+regressions are accepted. They were restored from the measured source and were not re-measured before
+the merge.
+
+**Rejected and removed:** the joined 16-row DSA query grid, which is neutral when evicted (−0.4%). The
+1536-wide query keeps the QueryPair shared pack.
+
+The claim is component time only. The first three save about −0.3 ms (warm) / −0.4 ms (evicted) of dense
+GEMM time per C=2 forward. The second three add +0.011 ms warm and save −0.039 ms evicted (sum of the
+chain per-forward columns below). Together that is under 1% of a 55 ms step. No consumer step/s, onepass, acceptance or quality result is claimed;
 that verdict comes from onepass with #964's C=2 arm.
 
 ## Method
@@ -58,9 +69,9 @@ Resources:
 | `rows16<false,32,8>` KDA input | 80 | 0 / 0 | 14,336 | 3 |
 | `rows16<true,16,3>` KDA output | 74 | 0 / 0 | 18,432 | 3 |
 | `rows16<true,32,3>` MLA output | 74 | 0 / 0 | 26,624 | 3 |
-| rejected `rows16<false,32,2>` gate/up | 72 | 0 / 0 | 26,624 | 3 |
-| rejected `rows16<false,32,6>` qkv_a | 72 | 0 / 0 | 26,624 | 3 |
-| rejected `rows16<true,24,3>` MLP down | 70 | 0 / 0 | 22,528 | 3 |
+| `rows16<false,32,2>` gate/up (second) | 72 | 0 / 0 | 26,624 | 3 |
+| `rows16<false,32,6>` qkv_a (second) | 72 | 0 / 0 | 26,624 | 3 |
+| `rows16<true,24,3>` MLP down (second) | 70 | 0 / 0 | 22,528 | 3 |
 | rejected `query_pair16<12,3>` | 72 | 0 / 0 | 16,384 | 3 |
 
 The 14 existing C1 cta3/ordered/joined specializations keep identical resources in all three compile
@@ -101,7 +112,7 @@ MLA output is slower only in the L2-warm single-layer replay. A decode step read
 between KDA and expert traffic, so its weights are not L2-resident. Both chain modes and the evicted
 single layer favour the CTA, and it is adopted on that basis. The warm single-layer regression is recorded.
 
-### Rejected: measured in the same run and removed from the source
+### Adopted second (gate/up, MLP down, qkv_a) and rejected (pair16): measured in the same run
 
 | Cell | Control | Scope | Warm mean / min µs (control → candidate) | Warm Δ | Evicted mean / min µs | Evicted Δ | ms/forward warm / evicted |
 |---|---|---|---:|---:|---:|---:|---:|
@@ -114,8 +125,14 @@ single layer favour the CTA, and it is adopted on that basis. The warm single-la
 | DSA query pair (pair16) | QueryPair | chain ×4 | 131.03 / 127.26 → 139.94 / 139.52 | **+6.8%** | 203.88 / 201.70 → 203.03 / 202.17 | −0.4% | +0.025 / −0.002 |
 | DSA query pair (pair16) | QueryPair | single | 29.12 / 28.79 → 30.66 / 28.84 | +5.3% | 78.61 / 78.00 → 67.81 / 67.36 | −13.7% | |
 
-Each rejected cell regresses in at least one chain mode or badly in a single mode, and its best per-forward
-effect is at most 0.02 ms. The frozen source of all four is commit `46dafe93` / tree `3c128c9b`.
+#969 rejected all four because each regresses in at least one chain mode or badly in a single mode, and
+because the best per-forward effect of each is at most 0.02 ms. Under the evicted-chain criterion,
+gate/up, MLP down and qkv_a win and are default. pair16 stays rejected: −0.4% evicted is within noise,
+against +6.8% warm. The frozen source of all four is commit `46dafe93` / tree `3c128c9b`. The adopted
+kernels.cu restores the three instantiations and `mk_run_gemm_rows16`'s checks and launch branches from
+that source. `run_gemm_bound_input` widens #969's 16-row condition to the three shapes; the measurement
+called the probe entry `run_gemm_rows16` directly. The six-kernel compile
+record is `compile-rows16-six.json`.
 
 ### Kept: the existing 16-row routes against generic `mk_gemm2_kernel<2>`
 
@@ -140,6 +157,12 @@ both generic and wide here.
 - **Native compile/load.** Production flags, CUDA hidden, pinned image: `compile-main-9c45086a.json` (control
   source), `compile-prototypes-01f5420c.json` (measured prototypes) and `compile-final.json` (adopted tree,
   kernels.cu `d2cd19b7d4061b7899bfd730901871e7178b72555fc10d58f8d42dae47ac1575`). All PASS.
+  `compile-rows16-six.json` is the tree that adds gate/up, MLP down and qkv_a (kernels.cu
+  `c612d4453cb131956cf4798ef0eb70f6fd736f9a2a2e5263983b274fda542d6e`). It has six rows16 specializations.
+  The new three have 72 / 72 / 70 registers and 0 stack/local, the same as the measured prototypes. The
+  first three rows16 kernels and the 14 C1 cta3/ordered/joined specializations report resources
+  identical to `compile-final.json`. Its focused CPU run added `tests.test_engine_decode_seven`,
+  `drafter_decode_cells`, `dense` and `linear_family`: 74 tests, 46 passed, 28 GPU/Triton-only skipped.
 - **Emulation.** `emulate_rows16.py` follows every address the kernel computes: tile-major W pack, swizzled
   ring rows, halfword exponents, natural X pack, partial layout and epilogue. Integer stand-ins are compared
   with the ordinary lane's arithmetic: 0 mismatches at eight shapes, including tile boundaries and the last
@@ -154,7 +177,8 @@ both generic and wide here.
 - NIC transport of the TX outputs.
 - GPTQ consumer packs (RTN here).
 - The adopted default through `run_gemm_bound_input`: the GPU run called the prototype entry directly.
-  The post-merge confirmation ticket below covers it at 8 and 16 rows.
+  The post-merge confirmation ticket covers it at 8 and 16 rows. For gate/up, MLP down and qkv_a, it
+  must be re-queued on the tree that adopts them.
 
 ## Commands
 

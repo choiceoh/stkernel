@@ -25,8 +25,8 @@ Routes (ROUTES), each `(ext, owners, x, destination) -> outputs`:
 To add an arm: put a route in ROUTES and a (control, candidate) pair in the cell's
 row plan below. Scope `single` is one layer; `chain` calls every listed layer in
 model order with its own weights, which no L2 holds at once. The rejected C=2
-prototypes (gate/up, MLP down, qkv_a, joined queries) are measured in
-measurements/st_c2_dense_cells_20260915 against their frozen source.
+joined-query prototype is measured in measurements/st_c2_dense_cells_20260915
+against its frozen source.
 
 Selection through the queue's literal flags: `--lanes dense_cells` runs every cell,
 `--lanes dense_cells:kda.o_proj:kda.in_proj=16` names cells (optionally one row
@@ -59,11 +59,11 @@ CELLS = (
     ('mla.query', ('mla.q_b', 'idx.wq_b'), DSA_LAYERS, False, 1536,
      {8: (('pair', 'pair_generic'), ('pair', 'pair_wide'), ('pair', 'pack')), 16: (('pair', 'pair_generic'),)}),
     ('mla.qkv_a', ('mla.qkv_a',), DSA_LAYERS, False, 4096,
-     {16: (('bound', 'generic'),)}),
+     {16: (('bound', 'wide_control'), ('bound', 'generic'))}),
     ('mlp.gate_up', ('mlp.gate_up',), DENSE_LAYERS, False, 4096,
-     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'generic'),)}),
+     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'wide_control'), ('bound', 'generic'))}),
     ('mlp.down', ('mlp.down',), DENSE_LAYERS, True, 3072,
-     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'generic'),)}),
+     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'wide_control'), ('bound', 'generic'))}),
 )
 SHAPES = {'kda.in_proj': (6416, 4096), 'kda.o_proj': (4096, 2048), 'mla.o_proj': (4096, 4096),
           'mla.q_b': (4096, 1536), 'idx.wq_b': (4096, 1536), 'mla.qkv_a': (2048, 4096),
@@ -274,7 +274,8 @@ def check(report, ranks=None, *, cells=(), rows=(8, 16), brackets=2, timing=True
             report('component_failed', cell=cell[0], rows=m, error=f'{type(exc).__name__}: {exc}')
     if any(m == 16 for _, m in plan):
         info = ext.rows16_info()
-        names = ('rows16<false,32,8> KDA input', 'rows16<true,16,3> KDA output', 'rows16<true,32,3> MLA output')
+        names = ('rows16<false,32,8> KDA input', 'rows16<false,32,2> gate/up', 'rows16<false,32,6> qkv_a',
+                 'rows16<true,16,3> KDA output', 'rows16<true,24,3> MLP down', 'rows16<true,32,3> MLA output')
         report('rows16_resources', kernels={n: dict(registers=info[4*i], local_bytes=info[4*i+1],
                                                      blocks_per_sm=info[4*i+2], smem=info[4*i+3])
                                             for i, n in enumerate(names)})
