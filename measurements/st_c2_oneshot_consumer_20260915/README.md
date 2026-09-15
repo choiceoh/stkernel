@@ -72,10 +72,12 @@ consumer 는 발행 뒤 `griddepcontrol.launch_dependents` 를 부른다. 그래
 |---|---|---|---|---|
 | 드래프터 o_proj·down ×10 (`drafter.py` `_attn_rows`·`block_rows`) | W4 GEMM | `_taps` (Triton `tap_mix`) | 아니다(일반 launch) | 안전 |
 | 드래프터·타깃 embed | `token_embedding.lookup` | Triton `_norm` / torch `expand().contiguous()` | 아니다 | 안전 |
-| 보조층(`direct_mhc.decode_direct`) | Triton `moe_output._finish` | Triton `mhc_contract._contract` 또는 TileLang `mhc_post`. 그다음 층의 `_hc_post_pre` → `mk_mhc_kernel` | 바로 뒤는 아니다. `mk_mhc_kernel` 은 PDL 이지만 `launch_dependents; griddepcontrol.wait` 뒤에만 읽는다 | 안전 |
+| 보조층(`direct_mhc.decode_direct`) | Triton `moe_output._finish` | Triton `mhc_contract._contract` 또는 TileLang `mhc_post`. 그다음 층의 `_hc_post_pre` → `mk_mhc_ar_kernel`(#972 뒤 16행도) | 바로 뒤는 아니다. `mk_mhc_ar_kernel` 은 PDL 이지만 대기 전에는 불변 가중치만 읽고 입력은 `griddepcontrol.wait` 뒤에 읽는다 | 안전 |
 | 마지막 층 | Triton `moe_output._finish` | `finish` → contract 또는 TileLang `mhc_post` | 아니다 | 안전 |
 
-- C=1 은 같은 자리들을 이미 consumer 로 서빙한다. 행 수에 따라 달라지는 후속은 MHC 하나다. n ≤ 8 이면 `mk_mhc_ar_kernel`(가중치만 읽고 대기), 16행이면 `mk_mhc_kernel`(대기 먼저)이다.
+- C=1 은 같은 자리들을 이미 consumer 로 서빙한다. 행 수에 따라 달라질 수 있는 후속은 MHC 하나다.
+  - main `9c45086a` 에서는 n ≤ 8 이 `mk_mhc_ar_kernel`(가중치만 읽고 대기), 16행이 `mk_mhc_kernel`(대기 먼저)이었다.
+  - 병합한 #972 뒤로는 16행도 C=1 과 같은 `mk_mhc_ar_kernel` 이다. 둘 다 입력은 대기 뒤에 읽는다.
 - 09-13 트레이스에서도 consumer 의 `next_gap` 은 +0.6 µs 다. 후속이 조기 출발하지 않았다는 뜻이다(아래 표).
 
 ### 3. 단일 GPU 바이트 대조 (loopback 프록시, 프로덕션 옆 레인) — **PASS**

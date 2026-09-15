@@ -55,6 +55,10 @@ def main():
         from probes.engine_forward_reduce import main as forward_reduce_check
         forward_reduce_check(args.ranks)
         return
+    if args.lanes == 'mhc_c2_packed':
+        from probes.engine_mhc_c2_packed import main as mhc_c2_packed_check
+        mhc_c2_packed_check(args.ranks, args.output)
+        return
     if args.lanes == 'dsa_inputs':
         from probes.engine_decode_dsa_inputs import check as dsa_inputs_check
         dsa_inputs_check(args.ranks)
@@ -85,6 +89,11 @@ def main():
         consumer_timing(report)
         if args.output:
             args.output.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+        return
+    if args.lanes == 'select_rows':
+        # a captured step's joined C=2 indexer selection against its per-row control, then bounded timings
+        from probes.engine_decode_select_rows import run as select_rows_check
+        select_rows_check(args.output)
         return
     if args.lanes in ('scatter_bundle', 'batch_fusions', 'batch_boundaries', 'batch_integration', 'k7_commit_bundle', 'k7_output_bundle'):
         from probes.engine_decode_bundle import check as decode_bundle

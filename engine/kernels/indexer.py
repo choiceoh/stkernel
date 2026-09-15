@@ -204,16 +204,37 @@ def _row_lengths(CTX, SEQ, KE, T: tl.constexpr, KP: tl.constexpr, BLOCK: tl.cons
     tl.store(KE + seg * T + j, seq // KP, j < T)
 
 
-def row_lengths(contexts, tokens: int, pool_size: int):
+@triton.jit
+def _row_windows(CTX, SEQ, KE, START, END, width, T: tl.constexpr, KP: tl.constexpr, BLOCK: tl.constexpr):
+    seg = tl.program_id(0)
+    j = tl.arange(0, BLOCK)
+    seq = (tl.load(CTX + seg) + j + 1).to(tl.int32)
+    start = (seg * width + 0 * j).to(tl.int32)
+    tl.store(SEQ + seg * T + j, seq, j < T)
+    tl.store(KE + seg * T + j, seq // KP, j < T)
+    tl.store(START + seg * T + j, start, j < T)
+    tl.store(END + seg * T + j, start + seq // KP, j < T)
+
+
+def row_lengths(contexts, tokens: int, pool_size: int, width: int = 0):
     """For every row's tokens: the sequence length at each query (position + 1) and the complete pools before
-    it (length // pool_size), int32 [rows * tokens] each -- the segment loop's `seq_lens` and `ke`."""
+    it (length // pool_size), int32 [rows * tokens] each -- the segment loop's `seq_lens` and `ke`.
+
+    With a candidate `width`, also every query's window over the rows' candidates laid end to end (row i's
+    from i * width): its first key and its end, i * width and i * width + ke -- one launch, four vectors."""
     rows = contexts.shape[0]
-    assert contexts.ndim == 1 and contexts.stride(0) == 1 and tokens > 0
+    assert contexts.ndim == 1 and contexts.stride(0) == 1 and tokens > 0 and width >= 0
     seq = torch.empty(rows * tokens, dtype=torch.int32, device=contexts.device)
     ke = torch.empty_like(seq)
+    if not width:
+        if rows:
+            _row_lengths[(rows,)](contexts, seq, ke, tokens, pool_size, triton.next_power_of_2(tokens))
+        return seq, ke
+    assert rows * width < 2 ** 31, "a joined window is an int32 key offset"
+    start, end = torch.empty_like(seq), torch.empty_like(seq)
     if rows:
-        _row_lengths[(rows,)](contexts, seq, ke, tokens, pool_size, triton.next_power_of_2(tokens))
-    return seq, ke
+        _row_windows[(rows,)](contexts, seq, ke, start, end, width, tokens, pool_size, triton.next_power_of_2(tokens))
+    return seq, ke, start, end
 
 
 @triton.jit

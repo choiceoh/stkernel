@@ -44,10 +44,18 @@ def workspace_sizes(hidden: int, hc: int, nout: int, nchunk: int) -> "list[tuple
 
 
 class MHC:
-    def __init__(self, weights, *, prefill=False):
+    # Rows whose consumer kernels read the lossless BF16 pack: K=7 verify steps at C=1 (8 rows) and C=2 (16 rows).
+    # `packed_rows=8` is the same-build control, the C=1-only gate, for the probe that qualifies 16 rows
+    # (measurements/st_c2_mhc_packed_20260915). Serving never passes it.
+    PACKED_ROWS = 16
+
+    def __init__(self, weights, *, prefill=False, packed_rows=PACKED_ROWS):
         if type(prefill) is not bool:
             raise ValueError("private MHC prefill selection must be a boolean")
+        if type(packed_rows) is not int or packed_rows not in (8, self.PACKED_ROWS):
+            raise ValueError(f"private MHC packed rows are 8 (the control) or {self.PACKED_ROWS}")
         self.prefill_enabled = prefill
+        self.packed_rows = packed_rows
         self.ext = extension()
         self.hidden, self.hc, self.nout, nchunk = geometry()
         device = next(iter(weights.values())).device
@@ -78,7 +86,8 @@ class MHC:
         n = x.shape[0]
         if not 1 <= n <= 64 or res.shape != (n, self.hc, self.hidden):
             raise ValueError("MK MHC decode geometry mismatch")
-        small = n <= 8
+        # Only the consumer kernels read the pack's [output, hidden, stream] layout; the persistent grid reads FP32.
+        small = n <= self.packed_rows
         fp32, packed = self.weights[key]
         weight = packed if small and packed is not None else fp32
         rc = torch.empty_like(res)

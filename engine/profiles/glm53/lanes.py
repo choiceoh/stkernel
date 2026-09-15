@@ -72,7 +72,9 @@ class Lanes:
     mhc_post: object          # (x [T,H] bf16, res [T,hc,H], post, comb) -> res' [T,hc,H] bf16
     indexer_logits: object    # (q8 [T,h,128] e4m3 (rotated), k8 [N,128] e4m3, k_scale [N] f32, w [T,h] f32 (q scale folded),
                               #  ke [T] int32: keys [0, ke[m]) count for query m, ks=None: a kept int32 zeros [T] a captured
-                              #  step hands in for the keys' start) -> [T,N] f32, garbage past ke
+                              #  step hands in for the keys' start) -> [T,N] f32, garbage past ke. width=W: keys [ks[m], ke[m])
+                              #  and [T,W] f32 with column c of row m key ks[m] + c (garbage from ke[m] - ks[m]) -- a captured
+                              #  step's rows scored in one launch over their candidates laid end to end
     kpool_compress: object    # (k [P,kp,128] bf16, score [P,kp,128] bf16, ape [kp,128] f32) -> (fp8 [P,128], scale [P,1] f32)
     mla_sparse: object        # (q_abs [T,H,512] bf16, latent [S,512] e4m3, slots [T,W] int32 (valid prefix), valid [T] int32,
                               #  scale, ckv_scale, *, out=None, branch=None) -> [T,H,512] bf16; optional contiguous destination.
@@ -114,7 +116,8 @@ class DecodeRows:
     """The captured decode step's DSA-layer glue, every piece one launch over all rows (45차, the C=4 question,
     third fold). Each is a byte copy or integer addressing, so the served kernels and the torch references produce
     the same bytes; the composition (net._dsa, net._select_rows, decode_graphs.complete_pools) does not know which."""
-    lengths: object       # (contexts [rows] i64, tokens, pool) -> (seq_lens [rows*tokens] i32, ke [rows*tokens] i32)
+    lengths: object       # (contexts [rows] i64, tokens, pool) -> (seq_lens [rows*tokens] i32, ke [rows*tokens] i32);
+                          #  width=W: also (starts, ends) [rows*tokens] i32 = (i * W, i * W + ke): the windows over joined candidates
     latent_write: object  # (values [rows*tokens, D] cache dtype, latent [S, D], block rows [rows, blocks] i32, block, block stride,
                           #  layer offset, contexts, tokens) -> None: values scattered to each row's token slots
     candidates: object    # (pool keys [P, d] e4m3 (record-strided), scales [P] f32, block rows, per, block stride, layer offset,
@@ -192,8 +195,13 @@ def reference() -> Lanes:
             outs.append(o); states.append(state[0])
         return torch.cat(outs, dim=1), torch.stack(states)
 
-    def logits(q8, k8, k_scale, w, ke, ks=None):
-        return indexer_logits(q8.float(), k8.float() * k_scale[:, None], w)     # relu(c x) = c relu(x): scales fold
+    def logits(q8, k8, k_scale, w, ke, ks=None, width=0):
+        if not width:
+            return indexer_logits(q8.float(), k8.float() * k_scale[:, None], w)     # relu(c x) = c relu(x): scales fold
+        # each query's own window of `width` keys from ks[m] (the served op's compressed layout); past the keys is garbage
+        window = (ks[:, None].long() + torch.arange(width, device=q8.device)).clamp_max(k8.shape[0] - 1)
+        keys = k8.float()[window] * k_scale[window][..., None]
+        return torch.einsum("mhn,mh->mn", torch.einsum("mhd,mnd->mhn", q8.float(), keys).relu_(), w.float())
 
     def pre(res, fn, scale, base, rms_eps, hc_eps, post_mult, sinkhorn, norm_w, norm_eps):
         post, comb, x = mhc_pre(res, fn, scale, base, rms_eps, hc_eps, hc_eps, post_mult, sinkhorn)
@@ -365,13 +373,14 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     def post(x, res, p, comb):
         return mhc_post_tilelang(x, res, p, comb)
 
-    def logits(q8, k8, k_scale, w, ke, ks=None):
+    def logits(q8, k8, k_scale, w, ke, ks=None, width=0):
         t = q8.shape[0]
         # every query's keys start at 0; a captured step hands the kept zeros in (`ks`) instead of filling
-        # a fresh vector per row per layer
+        # a fresh vector per row per layer. `width`: DeepGEMM's compressed logits (max_seqlen_k), each query's
+        # columns from its own first key -- the rows of a captured step in one launch over their joined candidates
         return fp8_fp4_mqa_logits((q8, None), (k8, k_scale.contiguous()), w.contiguous(),
                                   torch.zeros(t, device=q8.device, dtype=torch.int32) if ks is None else ks,
-                                  ke.contiguous(), clean_logits=False)
+                                  ke.contiguous(), clean_logits=False, max_seqlen_k=width)
 
     def mla(q_abs, latent, slots, valid, scale, ckv_scale, *, out=None, branch=None):
         if out is not None and (out.shape != q_abs.shape or out.dtype != q_abs.dtype
