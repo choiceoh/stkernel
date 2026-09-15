@@ -1889,8 +1889,7 @@ __device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
 }
 
 template <bool BF16_FN, bool AR_CONSUMER = false, int HID = HIDDEN,
-          bool V41 = false, typename Args = MKMhcArgs, bool PACKETS = false,
-          bool EXPAND_ONCE = false>
+          bool V41 = false, typename Args = MKMhcArgs, bool PACKETS = false>
 __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
   // Shadows the file-scope NCHUNK; every chunk loop below reads unchanged.
   constexpr int NCHUNK = HID / HCHUNK;
@@ -1969,22 +1968,6 @@ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
         // __ldg is a read-only intrinsic that nvcc can sink past that wait.
         fnv[m] = ((const uint2*)a.fn)[(size_t)m * HID + h];
       }
-      if constexpr (EXPAND_ONCE) {
-        // A 16-row launch runs twice the tokens per block against the same
-        // coefficients. Expand them once, here, into the 96 FP32 registers
-        // the FP32 kernel holds: the loads stay packed, and every multiply
-        // below is the FP32 kernel's own. Volatile, so nvcc cannot sink the
-        // expansion back into the token loop.
-#pragma unroll
-        for (int m = 0; m < NOUT; ++m) {
-          const float2 lo = mk_mhc_unpack_bf16_late(fnv[m].x);
-          const float2 hi = mk_mhc_unpack_bf16_late(fnv[m].y);
-          fnr[m][0] = lo.x;
-          fnr[m][1] = lo.y;
-          fnr[m][2] = hi.x;
-          fnr[m][3] = hi.y;
-        }
-      }
     } else {
 #pragma unroll
       for (int m = 0; m < NOUT; ++m)
@@ -2035,7 +2018,7 @@ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
 #pragma unroll
       for (int m = 0; m < NOUT; ++m) {
         float v = 0.0f;
-        if constexpr (BF16_FN && AR_CONSUMER && !EXPAND_ONCE) {
+        if constexpr (BF16_FN && AR_CONSUMER) {
           const float2 lo = mk_mhc_unpack_bf16_late(fnv[m].x);
           const float2 hi = mk_mhc_unpack_bf16_late(fnv[m].y);
           v += lo.x * r[0];
@@ -2199,11 +2182,10 @@ __global__ void mk_mhc_ar_kernel(const MKMhcArgs a) {
   MK_MHC_TS(7);
 }
 
-template <bool BF16_FN, bool EXPAND_ONCE = false>
+template <bool BF16_FN>
 __global__ void mk_mhc_packets_kernel(const MKMhcPacketsArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
-  mk_mhc_p1_impl<BF16_FN, true, HIDDEN, false, MKMhcPacketsArgs, true,
-                 EXPAND_ONCE>(a, blockIdx.x);
+  mk_mhc_p1_impl<BF16_FN, true, HIDDEN, false, MKMhcPacketsArgs, true>(a, blockIdx.x);
 }
 
 // Actual V4.1 currently uses FP32 coefficients and no AR-consumer pack.
@@ -3682,7 +3664,9 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer) {
   auto stream = c10::cuda::getCurrentCUDAStream();
   // Separate occupancy for both new instantiations. Only immutable fn may
   // be prepared early, and only when the caller opted into the PDL chain.
-  // A serialized launch remains correct: overlap is opportunistic.
+  // A serialized launch remains correct: overlap is opportunistic. That is
+  // what lets 16 rows (C=2 at K=7) take this path: a sum too wide for the
+  // one-shot consumer releases nothing early, and this launch follows it.
   if (ar_consumer && mk_pdl_enabled() && a.num_tokens <= 16) {
     auto kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID> : mk_mhc_ar_kernel<false, HID>;
     static int ar_grids[2] = {0, 0};
@@ -3740,8 +3724,7 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer) {
 
 static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scalars,
                 std::vector<int64_t> ints, bool bf16_fn = false,
-                bool ar_consumer = false, const at::Tensor& packets = {},
-                bool expand_once = false) {
+                bool ar_consumer = false, const at::Tensor& packets = {}) {
   set_kernel_attrs();
   // Ahead of the unpack, not after it: this used to sit below 19 ptrs[]
   // reads, so a short vector was already out of bounds before it fired.
@@ -3762,9 +3745,6 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
                 packets.is_contiguous() && packets.dim() == 1 && packets.numel() == 4,
                 "MHC packets require PDL, 1..64 hidden-4096 rows and a CUDA int64[4] descriptor");
   }
-  // Once-per-block expansion reads the same vector packs; there is no FP32 form of it.
-  TORCH_CHECK(!expand_once || (direct && bf16_fn),
-              "MHC coefficient expansion requires packed packet coefficients");
   // A BF16 consumer pointer has the vector layout. Never silently send it
   // to the scalar-layout fallback when an internal caller breaks the gate.
   TORCH_CHECK(!ar_consumer || (mk_pdl_enabled() && ints[0] > 0 && ints[0] <= 16),
@@ -3802,11 +3782,9 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
     MKMhcPacketsArgs packet_args{};
     static_cast<MKMhcArgs&>(packet_args) = a;
     packet_args.rank_inputs = reinterpret_cast<const __nv_bfloat16* const*>(packets.data_ptr());
-    auto kernel = !bf16_fn ? mk_mhc_packets_kernel<false>
-        : expand_once ? mk_mhc_packets_kernel<true, true> : mk_mhc_packets_kernel<true>;
-    // Each instantiation allocates its own registers: its own occupancy.
-    static int grids[3] = {0, 0, 0};
-    int& grid = grids[bf16_fn ? 1 + expand_once : 0];
+    auto kernel = bf16_fn ? mk_mhc_packets_kernel<true> : mk_mhc_packets_kernel<false>;
+    static int grids[2] = {0, 0};
+    int& grid = grids[bf16_fn ? 1 : 0];
     if (!grid) {
       int per_sm = 0, sms = 0;
       MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&per_sm, kernel, MK_THREADS, 0));
@@ -3826,9 +3804,8 @@ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
 }
 
 void mk_run_mhc_packets(std::vector<int64_t> ptrs, std::vector<double> scalars,
-                        std::vector<int64_t> ints, at::Tensor packets, bool bf16_fn,
-                        bool expand_once = false) {
-  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, false, packets, expand_once);
+                        std::vector<int64_t> ints, at::Tensor packets, bool bf16_fn) {
+  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, false, packets);
 }
 
 // V4.1 has a separate occupancy cache from every legacy PR518 kernel.
@@ -4563,10 +4540,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         pybind11::arg("scalars"), pybind11::arg("ints"),
         pybind11::arg("bf16_fn") = false,
         pybind11::arg("ar_consumer") = false);
-  m.def("run_mhc_packets", &mk_run_mhc_packets, "TP4 packet input to native MHC",
-        pybind11::arg("ptrs"), pybind11::arg("scalars"), pybind11::arg("ints"),
-        pybind11::arg("packets"), pybind11::arg("bf16_fn"),
-        pybind11::arg("expand_once") = false);
+  m.def("run_mhc_packets", &mk_run_mhc_packets, "TP4 packet input to native MHC");
   m.def("run_mhc_v41", &mk_run_mhc_v41, "Experimental HF V4.1 MHC seam",
         pybind11::arg("ptrs"), pybind11::arg("scalars"), pybind11::arg("ints"),
         pybind11::arg("hidden") = HIDDEN_V41);

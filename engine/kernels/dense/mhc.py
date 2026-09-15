@@ -44,17 +44,18 @@ def workspace_sizes(hidden: int, hc: int, nout: int, nchunk: int) -> "list[tuple
 
 
 class MHC:
-    # Rows whose packet consumer reads the lossless BF16 pack: C=1 and C=2 verify steps at K=7. `packet_rows=8` is the
-    # same-build control (the C=1-only gate) for the probe that qualifies the 16-row form; serving never passes it.
-    PACKET_ROWS = 16
+    # Rows whose consumer kernels read the lossless BF16 pack: K=7 verify steps at C=1 (8 rows) and C=2 (16 rows).
+    # `packed_rows=8` is the same-build control, the C=1-only gate, for the probe that qualifies 16 rows
+    # (measurements/st_c2_mhc_packed_20260915). Serving never passes it.
+    PACKED_ROWS = 16
 
-    def __init__(self, weights, *, prefill=False, packet_rows=PACKET_ROWS):
+    def __init__(self, weights, *, prefill=False, packed_rows=PACKED_ROWS):
         if type(prefill) is not bool:
             raise ValueError("private MHC prefill selection must be a boolean")
-        if type(packet_rows) is not int or packet_rows not in (8, self.PACKET_ROWS):
-            raise ValueError(f"private MHC packet rows are 8 (the control) or {self.PACKET_ROWS}")
+        if type(packed_rows) is not int or packed_rows not in (8, self.PACKED_ROWS):
+            raise ValueError(f"private MHC packed rows are 8 (the control) or {self.PACKED_ROWS}")
         self.prefill_enabled = prefill
-        self.packet_rows = packet_rows
+        self.packed_rows = packed_rows
         self.ext = extension()
         self.hidden, self.hc, self.nout, nchunk = geometry()
         device = next(iter(weights.values())).device
@@ -85,13 +86,10 @@ class MHC:
         n = x.shape[0]
         if not 1 <= n <= 64 or res.shape != (n, self.hc, self.hidden):
             raise ValueError("MK MHC decode geometry mismatch")
-        # The BF16 pack is the consumer kernels' [output, hidden, stream] layout; the ordinary persistent grid reads
-        # FP32 only. An all-reduce consumer takes up to 8 rows; a packet consumer takes the pack up to packet_rows and,
-        # above 8 rows, expands each block's coefficients once instead of at every multiply.
-        small = n <= 8
+        # Only the consumer kernels read the pack's [output, hidden, stream] layout; the persistent grid reads FP32.
+        small = n <= self.packed_rows
         fp32, packed = self.weights[key]
-        rows = 8 if packets is None else self.packet_rows
-        weight = packed if n <= rows and packed is not None else fp32
+        weight = packed if small and packed is not None else fp32
         rc = torch.empty_like(res)
         pm = torch.empty((n, self.hc, 1), device=x.device, dtype=torch.float32)
         cm = torch.empty((n, self.hc, self.hc), device=x.device, dtype=torch.float32)
@@ -104,7 +102,7 @@ class MHC:
             if (packets.device != x.device or packets.dtype != torch.int64 or
                     packets.shape != (4,) or not packets.is_contiguous()):
                 raise ValueError("MHC needs a same-device contiguous int64[4] rank descriptor")
-            self.ext.run_mhc_packets(*args,packets,weight is packed,weight is packed and not small)
+            self.ext.run_mhc_packets(*args,packets,weight is packed)
         self.executed.add(key)
         return rc,pm,cm,li
 

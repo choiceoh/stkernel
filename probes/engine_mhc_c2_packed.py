@@ -25,8 +25,8 @@ class Arm:
     """One native form under the owner's own argument construction (tensors, workspace, scalars): swaps the weight
     pointer between the owner's FP32 tensor and its BF16 pack and fixes the launch flags."""
 
-    def __init__(self, owner, *, packed, consumer=None, expand=False):
-        self.ext, self.packed, self.consumer, self.expand = owner.ext, packed, consumer, expand
+    def __init__(self, owner, *, packed, consumer=None):
+        self.ext, self.packed, self.consumer = owner.ext, packed, consumer
         self.pointers = {}
         for fp32, pack in owner.weights.values():
             pair = (fp32.data_ptr(), None if pack is None else pack.data_ptr())
@@ -46,32 +46,30 @@ class Arm:
         consumer = ar_consumer if self.consumer is None else self.consumer
         return self.ext.run_mhc(self._weight(ptrs), scalars, ints, self.packed, consumer)
 
-    def run_mhc_packets(self, ptrs, scalars, ints, packets, bf16_fn, expand_once=False):
-        return self.ext.run_mhc_packets(self._weight(ptrs), scalars, ints, packets, self.packed, self.expand)
+    def run_mhc_packets(self, ptrs, scalars, ints, packets, bf16_fn):
+        return self.ext.run_mhc_packets(self._weight(ptrs), scalars, ints, packets, self.packed)
 
 
 class Record:
-    """The owner's own dispatch, recorded: (rows, packed pointer?, bf16_fn, ar_consumer, expand_once)."""
+    """The owner's own dispatch, recorded: (rows, packed pointer?, bf16_fn, ar_consumer)."""
 
     def __init__(self, owner):
         self.ext, self.calls = owner.ext, []
         self.packs = {pack.data_ptr() for _, pack in owner.weights.values() if pack is not None}
 
     def run_mhc(self, ptrs, scalars, ints, bf16_fn, ar_consumer):
-        self.calls.append((int(ints[0]), ptrs[4] in self.packs, bool(bf16_fn), bool(ar_consumer), False))
+        self.calls.append((int(ints[0]), ptrs[4] in self.packs, bool(bf16_fn), bool(ar_consumer)))
         return self.ext.run_mhc(ptrs, scalars, ints, bf16_fn, ar_consumer)
 
-    def run_mhc_packets(self, ptrs, scalars, ints, packets, bf16_fn, expand_once=False):
-        self.calls.append((int(ints[0]), ptrs[4] in self.packs, bool(bf16_fn), False, bool(expand_once)))
-        return self.ext.run_mhc_packets(ptrs, scalars, ints, packets, bf16_fn, expand_once)
+    def run_mhc_packets(self, ptrs, scalars, ints, packets, bf16_fn):
+        self.calls.append((int(ints[0]), ptrs[4] in self.packs, bool(bf16_fn), False))
+        return self.ext.run_mhc_packets(ptrs, scalars, ints, packets, bf16_fn)
 
 
-def served_dispatch(rows, *, packets, packet_rows):
+def served_dispatch(rows, *, packets, packed_rows):
     """What engine/kernels/dense/mhc.MHC launches for lossless coefficients, stated independently of it."""
-    if packets:
-        packed = rows <= packet_rows
-        return (rows, packed, packed, False, packed and rows > 8)
-    return (rows, rows <= 8, rows <= 8, rows <= 8, False)
+    packed = rows <= packed_rows
+    return (rows, packed, packed, packed and not packets)
 
 
 class Rows:
@@ -127,30 +125,22 @@ def call(owner, ext, keys, coefficients, inputs, packets):
 
 
 def difference(actual, expected):
-    """Mismatch summary in torch.testing's terms (float64 promotion, mismatched elements only)."""
-    a, b = actual.double().flatten(), expected.double().flatten()
-    differ = a.view(-1) != b.view(-1)
-    if actual.dtype in BITS:
-        differ = actual.reshape(-1).view(BITS[actual.dtype]) != expected.reshape(-1).view(BITS[expected.dtype])
+    """Bitwise mismatches, sized in torch.testing's terms (float64 promotion, mismatched elements only)."""
+    differ = actual.reshape(-1).view(BITS[actual.dtype]) != expected.reshape(-1).view(BITS[expected.dtype])
     count = int(differ.sum().item())
     if not count:
-        return dict(mismatched=0, total=a.numel())
+        return dict(mismatched=0, total=actual.numel())
+    a, b = actual.double().flatten(), expected.double().flatten()
     delta = (a - b).abs()[differ]
     relative = delta / b.abs()[differ]
-    return dict(mismatched=count, total=a.numel(), max_absolute=float(delta.max().item()),
-                max_relative=float(relative.max().item()),
-                first_index=int(differ.nonzero()[0].item()))
+    return dict(mismatched=count, total=actual.numel(), max_absolute=float(delta.max().item()),
+                max_relative=float(relative.max().item()), first_index=int(differ.nonzero()[0].item()))
 
 
-def compare(expected, actual, *, bitwise, label):
+def compare(expected, actual, label):
     for key_index, (want, got) in enumerate(zip(expected, actual)):
         for field, a, b in zip(FIELDS, got, want):
-            if bitwise:
-                same = a.dtype == b.dtype and torch.equal(a.reshape(-1).view(BITS[a.dtype]),
-                                                          b.reshape(-1).view(BITS[b.dtype]))
-            else:
-                same = torch.equal(a, b)
-            if not same:
+            if a.dtype != b.dtype or not torch.equal(a.reshape(-1).view(BITS[a.dtype]), b.reshape(-1).view(BITS[b.dtype])):
                 raise AssertionError(f'{label}: call {key_index} {field} differs: {difference(a, b)}')
 
 
@@ -196,7 +186,7 @@ def m14_diagnosis(report):
             owner.ext = previous
 
     # The lane's two replays before the failure: scale 0 (every coefficient multiplies zero) and scale 0.001.
-    for step, magnitude in enumerate((0., .001)):
+    for magnitude in (0., .001):
         for value in (x, res, post, comb):
             value.normal_().mul_(magnitude)
         reference = run(fp32, False)
@@ -207,7 +197,7 @@ def m14_diagnosis(report):
                    fields={f: difference(a, b) for f, a, b in zip(FIELDS, got, reference)},
                    recorded_failure=dict(field='post', mismatched=56, total=56, max_absolute=0.000341951847076416,
                                          max_relative=0.0003536288859322667) if magnitude else None)
-    # The same persistent kernel with the layout it reads, at the wider verify widths.
+    # The same persistent kernel with the layout it reads, at wider verify widths.
     for rows in (14, 16, 28):
         x, res = (torch.randn(rows, 4096, device='cuda', dtype=torch.bfloat16),
                   torch.randn(rows, 4, 4096, device='cuda', dtype=torch.bfloat16))
@@ -244,32 +234,33 @@ def load(ranks):
 
 def arms(candidate, control, rows, *, packets):
     """(name, owner, adapter, expected dispatch): the FP32 control first, then every candidate of that family."""
+    served = [('control', control, Record(control), served_dispatch(rows, packets=packets, packed_rows=8)),
+              ('serving', candidate, Record(candidate),
+               served_dispatch(rows, packets=packets, packed_rows=candidate.PACKED_ROWS))]
     if packets:
         return [('fp32', candidate, Arm(candidate, packed=False), None),
-                ('late', candidate, Arm(candidate, packed=True), None),
-                ('expand', candidate, Arm(candidate, packed=True, expand=True), None),
-                ('control', control, Record(control), served_dispatch(rows, packets=True, packet_rows=8)),
-                ('serving', candidate, Record(candidate),
-                 served_dispatch(rows, packets=True, packet_rows=candidate.PACKET_ROWS))]
+                ('packed', candidate, Arm(candidate, packed=True), None)] + served
     family = [('grid_fp32', candidate, Arm(candidate, packed=False, consumer=False), None)]
     if rows <= 16:
         family += [('consumer_fp32', candidate, Arm(candidate, packed=False, consumer=True), None),
                    ('consumer', candidate, Arm(candidate, packed=True, consumer=True), None)]
-    return family + [('control', control, Record(control), served_dispatch(rows, packets=False, packet_rows=8)),
-                     ('serving', candidate, Record(candidate), served_dispatch(rows, packets=False, packet_rows=16))]
+    return family + served
 
 
 def capture(owners, keys, coefficients, inputs, *, packets):
     candidate, control = owners
     family = arms(candidate, control, inputs.rows, packets=packets)
     graphs, outputs = {}, {}
-    for name, owner, adapter, expected in family:
-        graph, output = _capture(lambda: call(owner, adapter, keys, coefficients, inputs, packets))
-        graphs[name], outputs[name] = graph, output
-        if expected is not None:
-            seen = set(adapter.calls)
-            if seen != {expected}:
-                raise AssertionError(f'{name} dispatch at {inputs.rows} rows: {sorted(seen)} != {expected}')
+    try:
+        for name, owner, adapter, expected in family:
+            graph, output = _capture(lambda: call(owner, adapter, keys, coefficients, inputs, packets))
+            graphs[name], outputs[name] = graph, output
+            if expected is not None and set(adapter.calls) != {expected}:
+                raise AssertionError(f'{name} dispatch at {inputs.rows} rows: {sorted(set(adapter.calls))} != {expected}')
+    except BaseException:
+        for graph in graphs.values():
+            graph.reset()
+        raise
     return [name for name, *_ in family], graphs, outputs
 
 
@@ -291,7 +282,7 @@ def exact(report, owners, keys, coefficients, inputs, *, packets, scales, label)
                     if not all(t.isfinite().all().item() for t in values):
                         raise AssertionError(f'{label}: non-finite FP32 reference at scale {magnitude}')
                 for name in names[1:]:
-                    compare(reference, outputs[name], bitwise=True, label=f'{label} {name} vs {names[0]} x{magnitude}')
+                    compare(reference, outputs[name], f'{label} {name} vs {names[0]} x{magnitude}')
         report('mhc_packed_exact', family='packets' if packets else 'ordinary', rows=inputs.rows, calls=len(keys),
                arms=names, scales=list(scales), replay_orders='forward/reverse', descriptor_rebound=packets,
                poisoned_outputs=True, bitwise=True, reference=names[0], label=label)
@@ -300,6 +291,23 @@ def exact(report, owners, keys, coefficients, inputs, *, packets, scales, label)
         for graph in graphs.values():
             graph.reset()
         raise
+
+
+def refusals(report, owner, coefficients, key):
+    """The native entry refuses what it has no kernel for before any launch, and admits the widest served width."""
+    cases = []
+    for rows, message in ((17, 'AR consumer requires'), (16, None)):
+        inputs = Rows(rows)
+        try:
+            call(owner, Arm(owner, packed=True, consumer=True), [key], coefficients, inputs, False)
+            torch.cuda.synchronize()
+            refused = None
+        except RuntimeError as error:
+            refused = str(error).splitlines()[0]
+        if (refused is None) != (message is None) or (message is not None and message not in refused):
+            raise AssertionError(f'AR consumer at {rows} rows: expected refusal {message!r}, got {refused!r}')
+        cases.append(dict(rows=rows, family='ordinary', consumer=True, refused=refused))
+    report('mhc_packed_refusals', cases=cases)
 
 
 def check(report, ranks=None, *, timing=True):
@@ -313,19 +321,19 @@ def check(report, ranks=None, *, timing=True):
         raise RuntimeError('direct MHC dispatch gate failed or skipped')
     report('direct_mhc_dispatch', tests=run.testsRun, skipped=0, rows=[1, 7, 8, 16, 28, 64])
     origin, keys, weights, coefficients, digest = load(ranks)
-    candidate, control = MHC(weights), MHC(weights, packet_rows=8)
+    candidate, control = MHC(weights), MHC(weights, packed_rows=8)
     lossy = [key for key, (_, pack) in candidate.weights.items() if pack is None]
     report('mhc_packed_weights', source=origin, keys=len(keys), fn_sha256=digest, lossless_bf16=len(keys) - len(lossy),
            lossy=lossy)
     if lossy:
         raise RuntimeError('real mHC coefficients are expected to be BF16-origin; the packed path would not serve')
     owners = (candidate, control)
+    refusals(report, candidate, coefficients, keys[1])
     # Breadth: every row count a verify step can take through each consumer, six real packs per launch graph.
     sample = keys[1::15][:6]
-    for packets, widths in ((True, (1, 2, 7, 8, 9, 12, 15, 16, 17, 32)), (False, (1, 8, 9, 16, 17))):
+    for packets, widths in ((True, (1, 2, 7, 8, 9, 12, 15, 16, 17, 32)), (False, (1, 2, 7, 8, 9, 12, 15, 16, 17))):
         for rows in widths:
-            inputs = Rows(rows)
-            _, graphs, _ = exact(report, owners, sample, coefficients, inputs, packets=packets,
+            _, graphs, _ = exact(report, owners, sample, coefficients, Rows(rows), packets=packets,
                                  scales=(0., .001, 1., 32., .5), label=f'breadth {rows}')
             for graph in graphs.values():
                 graph.reset()
@@ -333,7 +341,7 @@ def check(report, ranks=None, *, timing=True):
     chain, ordinary = keys[1:85], keys[85:90]
     for rows in (8, 16):
         for packets, calls, pairs in (
-                (True, chain, (('fp32', 'late'), ('fp32', 'expand'), ('late', 'expand'), ('control', 'serving'))),
+                (True, chain, (('fp32', 'packed'), ('control', 'serving'))),
                 (False, ordinary, (('grid_fp32', 'consumer'), ('grid_fp32', 'consumer_fp32'),
                                    ('consumer_fp32', 'consumer'), ('control', 'serving')))):
             inputs = Rows(rows)
