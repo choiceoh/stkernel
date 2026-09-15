@@ -71,10 +71,14 @@ describes the ARM64 runtime and does not apply to it. `engine/kernels/b12x`
 every native lane is `-gencode arch=compute_121a` and `engine/kernels/cells.py` refuses a
 device that is not a GB10. See `bench/OST_97X_LANE.md`.
 
-**Not yet validated.** The lock is verified wheel by wheel and the chain has run end to end
-once, but the one image built so far carried a torch-only closure and could not import
-flashinfer. No image has been built from the corrected closure and none has been checked on
-a GPU. The build moves ~3 GB and writes ~16 GB; run it when the box can spare that.
+**Validated once, on an RTX 5050 (2026-09-15).** The image builds, `torch 2.13.0+cu132`
+survives installation with `cuda True` and capability 12.0, flashinfer imports and a bf16
+matmul runs on the device -- `tools/ost-97x-selftest.sh` walks that whole chain from a
+controller. Two things had to be fixed to get there and both are in the scripts above: a
+closure resolved from torch's requirements alone yields an image that cannot import
+flashinfer (`tvm_ffi`), and resolving it with pip's resolver ON lets pip replace the pinned
+`torch-2.13.0+cu132` with a PyPI cu12 build. The build moves ~3 GB and writes ~18 GB; run it
+when the box can spare that.
 
 ## The runtime manifest
 

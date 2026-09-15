@@ -12,7 +12,12 @@
 # GB10 with the measured SM count, so those stay the fleet's and are absent here.
 #
 # Build context is the directory fetch_x86_64.py prepared; the build itself takes no network.
-ARG ST_X86_BASE=python:3.12-slim-bookworm
+#
+# The full Python image, not -slim, because nvcc needs a host compiler: every native lane
+# JIT-compiles through torch.utils.cpp_extension.load, and on slim that dies at
+# `gcc: No such file or directory` before it has read a line of CUDA. A check image that
+# cannot attempt a compile cannot report what a compile would say.
+ARG ST_X86_BASE=python:3.12-bookworm
 FROM ${ST_X86_BASE}
 COPY wheels /tmp/st-x86/wheels
 COPY cuda132.x86_64.lock.json install_x86_64.py closure.json /tmp/st-x86/

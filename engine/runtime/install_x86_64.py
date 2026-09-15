@@ -47,16 +47,22 @@ def main() -> None:
     subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '--no-index',
                     '--no-deps', '--require-hashes', '--find-links', str(wheels),
                     '-r', str(requirements)], check=True)
-    # torch's pure-Python closure, fetched beside the lock; pip picks them out of the same
-    # directory and may not reach the network (the build runs --network none).
+    # The closure, fetched beside the lock. --no-deps here too, and for the same reason it is
+    # used to fetch them: with resolution on, pip reads some transitive `torch` requirement,
+    # decides a PyPI cu12 torch satisfies it, and UNINSTALLS torch-2.13.0+cu132 to install it
+    # (2026-09-15). The closure is already transitively complete; it needs no resolver.
     closure = json.loads((ROOT / 'closure.json').read_text())['files']
     if closure:
         subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '--no-index',
-                        '--find-links', str(wheels), *[f'{wheels}/{name}' for name in closure]],
-                       check=True)
+                        '--no-deps', '--find-links', str(wheels),
+                        *[f'{wheels}/{name}' for name in closure]], check=True)
+    # After the closure, not before: this is the check that catches a resolver that reached
+    # past the lock, and it only means anything once everything has been installed.
     for entry in lock['wheels']:
-        if importlib.metadata.version(entry['name']) != entry['version']:
-            raise RuntimeError(f"install did not apply {entry['name']}")
+        found = importlib.metadata.version(entry['name'])
+        if found != entry['version']:
+            raise RuntimeError(f"the lock did not survive installation: {entry['name']} is "
+                               f"{found}, the lock pins {entry['version']}")
 
     packages = Path(sysconfig.get_path('purelib'))
     toolkit = packages / 'nvidia/cu13'
