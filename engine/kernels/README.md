@@ -172,10 +172,11 @@ one-shot world 4·MAXEL, prefill 블록 2048, 융합 게이트의 per-channel de
 레인 자신의 커널(specialized), 그 컴파일된 커널에 텐서를 패딩·묶음·패킹·확장·분할해 넣는 정확한 어댑터(glue, 아래 절),
 같은 수식을 계산하는 형상 범용 고속 커널(generic), 빠른 것이 없음(none) — 각각 판정 여부와 함께.
 `engine/modules` 오라클은 둘 다를 판정할 뿐 서빙 후보가 아니다(`Serve` 가 거부한다). 범용 후보는 저장소와 이미지에 실제로 있는
-것만 이름을 대고, 엔진 밖에 있으면 옮겨 올 위치를 적는다 — 예: Qwen3.8 어텐션·인덱서는 vLLM 스택에서 이 모델을 돌리던 Triton QSA 연산
-(`overlay/modules/qwen38_qsa/ops_qsa.py`), DeepSeek-V4.1 어텐션은 sink 를 받는 flashinfer `trtllm_batch_decode_sparse_mla_dsv4`,
+것만 이름을 대고, 엔진 밖에 있으면 옮겨 올 위치를 적는다 — 예: Qwen3.8 어텐션·인덱서는 vLLM 스택에서 이 모델을 돌리던 Triton QSA 연산을
+옮겨 온 `qsa.py`(2026-09-15, 출처 `overlay/modules/qwen38_qsa/ops_qsa.py`), DeepSeek-V4.1 어텐션은 sink 를 받는 flashinfer `trtllm_batch_decode_sparse_mla_dsv4`,
 mHC 는 메가커널의 V4.1 계약 `run_mhc_v41`, 전문가는 가중치 배치가 같은 b12x MXFP4 커널(활성값 정밀도는 다름).
-빠른 커널이 없는 곳(none)이 채울 빈칸이다 — DeepSeek-V4.1 의 CED 압축기(torch 뿐), Qwen3.8 의 하이퍼커넥션(형식 미확정).
+빠른 커널이 없는 곳(none)이 채울 빈칸이다 — DeepSeek-V4.1 의 CED 압축기(torch 뿐). Qwen3.8 의 게이트 잔차 하이퍼커넥션은
+`gated_residual.py` 가 사이트당 다섯 런치로 계산한다(2026-09-15, GPU 판정 전).
 표 끝의 `serving:` 줄과 `--json` 의 `serving` 이 층별 계층 수를 센다.
 
 모델을 들이는 단계(`preshard.py`, `preshard_modelopt.py`)가 마법사를 돌려 rank 파일 옆에 `kernel_shape.json`
@@ -190,8 +191,9 @@ config 해시가 맞으면 그것을 바인딩하며(낡은 기록은 사망: "�
 스케일로 둔 MXFP4 가중치 배치에 FP8 활성값이라 거부, dense 층이 없어 공유 전문가(2304 → rank 576)가 dense MLP 인데 576 이 128 정렬이
 아니라 거부(서빙은 `PaddedDenseLinear` 글루); one-shot·prefill 은 폭 미측정, KDA 레인 없음. 작업표: dense·mHC 디코드·프리필 글루 연결과
 측정 둘(hours), 인덱서·MLA sink·MoE(days). Qwen3.8 은 HF 모델 파일에서 sink 없음(출력 게이트)과 게이트 잔차 하이퍼커넥션을
-확정했다: 어텐션은 `glue.gqa`, 하이퍼커넥션은 이미 빠른 조각(공통 rmsnorm·BF16 GEMM)으로 조립하는 generic, 작업표는 연결 여섯·측정 넷·QSA 인덱서
-커널 하나).
+확정했다. 2026-09-15 부터 어텐션은 옮겨 온 BF16-KV `qsa.qsa_sparse_paged_attention`(generic; `glue.gqa` 는 e4m3 잠재 대안),
+인덱서는 `qsa.py`, 하이퍼커넥션은 `gated_residual.py`(둘 다 specialized, GPU 판정 전)가 서빙하고 `profiles/qwen38/lanes.py` 가 묶는다;
+작업표의 종류·순서는 그대로다: 연결 여섯·측정 넷·QSA 인덱서 커널 하나 — 남은 것은 GPU 판정과 서빙 net).
 
 ## 글루 (2026-09-13)
 

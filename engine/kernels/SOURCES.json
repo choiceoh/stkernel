@@ -385,6 +385,18 @@
         "2026-09-14 CUDA 13.2 migration: compiler-aware native/cache identity; no launch arithmetic change.",
         "2026-09-14 tree MLA: optional canonical/private FP8 banks with signed node addresses; same split/cluster math and unchanged ordinary machine instructions under CUDA 13.2.86. GPU execution remains unmeasured."
       ]
+    },
+    "qsa.py": {
+      "source": "overlay/modules/qwen38_qsa/ops_qsa.py",
+      "sha256": "8c99d362ec6c168f83a1f7f55a2834b495fb417a9fea983dee1e5d8d4c241dd0",
+      "origin": "repository",
+      "local_sha256": "17cb8d22541aa3d4c267858e3082d00ad71ae3d5162155da6e5b848fdab2b19c",
+      "local_modifications": [
+        "2026-09-15 engine port: Triton kernel bodies unchanged; imports are triton's own (no vllm.triton_utils, no vllm.platforms)",
+        "2026-09-15 block selection: engine/kernels/prefill_topk where it admits the shape, torch.topk over masked logits otherwise, instead of vLLM's persistent_topk/cooperative_topk C++ ops",
+        "2026-09-15 D11: the DENEB_QSA_MAX_SPLITS environment cap is removed; the split-K profile is upstream's",
+        "2026-09-15 norm_rope_partial: new kernel for Qwen3.8's unit-offset head norm with neox rotation over the first rotary_dim channels"
+      ]
     }
   }
 }
