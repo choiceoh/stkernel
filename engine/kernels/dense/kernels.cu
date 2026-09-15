@@ -3795,12 +3795,12 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
     producer_s = reinterpret_cast<float*>(pk.data_ptr<uint8_t>() + words);
   }
   // K=7 C=2: the KDA input, gate/up and qkv_a matrices and the KDA/MLA output and
-  // MLP down TX slots run sixteen-row CTAs (measurements/st_c2_dense_cells_20260915);
-  // forward_pipeline=false keeps the wide pack + mk_gemm2_kernel<2> route as their
-  // same-build control.
+  // MLP down TX slots run sixteen-row CTAs (measurements/st_c2_dense_cells_20260915),
+  // and so does an MLP down to a matrix (the drafter's block MLP). forward_pipeline=false
+  // keeps the wide pack + mk_gemm2_kernel<2> route as their same-build control.
   if (m == 16 && forward_pipeline &&
       (address.has_value() ? n == 4096 && (k == 2048 || k == 3072 || k == 4096)
-                           : k == 4096 && (n == 6416 || n == 6144 || n == 2048))) {
+                           : (k == 4096 && (n == 6416 || n == 6144 || n == 2048)) || (n == 4096 && k == 3072))) {
     mk_run_gemm_rows16(x, wq4, ws4, out, n, rgs_ptr, address, producer_q, producer_s);
     return;
   }
@@ -3852,6 +3852,7 @@ static void mk_rows16_attrs() {
   set(mk_gemm_rows16_kernel<true,16,3>,rows16_smem(16,3));
   set(mk_gemm_rows16_kernel<true,24,3>,rows16_smem(24,3));
   set(mk_gemm_rows16_kernel<true,32,3>,rows16_smem(32,3));
+  set(mk_gemm_rows16_kernel<false,24,3>,rows16_smem(24,3));
   ready=true;
 }
 
@@ -3874,9 +3875,9 @@ void mk_run_gemm_rows16(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4, t
               && ((uintptr_t)x.data_ptr() & 7) == 0, "sixteen-row cells take aligned BF16 [16, K] rows");
   const int64_t k = x.size(1), n = n_orig;
   const bool direct = address.has_value();
-  TORCH_CHECK((!direct && k == 4096 && (n == 6416 || n == 6144 || n == 2048)) ||
+  TORCH_CHECK((!direct && ((k == 4096 && (n == 6416 || n == 6144 || n == 2048)) || (n == 4096 && k == 3072))) ||
               (direct && n == 4096 && (k == 2048 || k == 3072 || k == 4096)),
-              "sixteen-row cells: KDA input, gate/up and qkv_a to a matrix; KDA/MLA outputs and MLP down to a TX slot");
+              "sixteen-row cells: KDA input, gate/up, qkv_a and MLP down to a matrix; KDA/MLA outputs and MLP down to a TX slot");
   TORCH_CHECK(rgs_ptr && wq4.device() == x.device() && ws4.device() == x.device()
               && wq4.scalar_type() == torch::kUInt8 && ws4.scalar_type() == torch::kInt8
               && wq4.dim() == 4 && wq4.size(0) == (n + 127) / 128 && wq4.size(1) == k / KSTEP
@@ -3928,8 +3929,10 @@ void mk_run_gemm_rows16(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4, t
     mk_launch(mk_gemm_rows16_kernel<false,32,6>, grid, rows16_smem(32,6), stream, c);
   else if (k == 2048)
     mk_launch(mk_gemm_rows16_kernel<true,16,3>, grid, rows16_smem(16,3), stream, c);
-  else if (k == 3072)
+  else if (k == 3072 && direct)
     mk_launch(mk_gemm_rows16_kernel<true,24,3>, grid, rows16_smem(24,3), stream, c);
+  else if (k == 3072)
+    mk_launch(mk_gemm_rows16_kernel<false,24,3>, grid, rows16_smem(24,3), stream, c);
   else
     mk_launch(mk_gemm_rows16_kernel<true,32,3>, grid, rows16_smem(32,3), stream, c);
 }
@@ -3953,6 +3956,7 @@ std::vector<int64_t> mk_rows16_info() {
   note(mk_gemm_rows16_kernel<true,16,3>, rows16_smem(16,3));
   note(mk_gemm_rows16_kernel<true,24,3>, rows16_smem(24,3));
   note(mk_gemm_rows16_kernel<true,32,3>, rows16_smem(32,3));
+  note(mk_gemm_rows16_kernel<false,24,3>, rows16_smem(24,3));
   return out;
 }
 
