@@ -4,7 +4,9 @@ Both arms run Glm53Net._moe in one process on one real rank weight pack (L3), th
 batch tile) and the production output cast/add (moe_output.combine). They differ only in the same-build control
 `c2_overlap=False`, under which sixteen rows keep the shared chain after the routed kernel. Eight rows (C=1) are the
 same code in both arms: the noise floor. A diagnostic third arm at sixteen rows runs the fused shared MLP after the
-routed kernel on the same stream ("fused serial" in measurements/glm53_c2_moe_20260914).
+routed kernel on the same stream ("fused serial" in measurements/glm53_c2_moe_20260914); at eight rows the third arm
+is the serial chain (no SharedOverlap owner), C=1's positive control. Component timings then price the routed kernel
+with its cast/add (R), the fused shared MLP (H) and the serial chain (C) alone, at every fixture.
 
 Numerics come first and compare bytes. The fused shared MLP (C=1's form) is checked against the served serial chain
 -- its output and its BF16 activation -- over a scale sweep; then the consumer at changed inputs and routes, poisoned
@@ -211,6 +213,16 @@ def consumer(report, parts, overlap, rows, order):
            'A': lambda: run(LAYER, x, finalize=combine)}
     if rows == 16:
         fns['F'] = lambda: parts.expert(x, ids, routes, finalize=lambda acc: combine(acc, parts.shared(x)))
+    else:
+        # C=1's positive control: the same consumer with no SharedOverlap owner takes the serial chain.
+        serial = MethodType(Glm53Net._moe, NS(**dict(vars(net), shared_overlap=None)))
+        fns['S'] = lambda: serial(LAYER, x, finalize=combine)
+    # Components, timing only: the routed kernel with its cast/add over a zero shared row, and each shared form alone.
+    zero = torch.zeros(rows, 4096, device='cuda', dtype=torch.bfloat16)
+    gu, down = parts.linears[PREFIX+'sh_gate_up'], parts.linears[PREFIX+'sh_down']
+    parts_fns = {'R': lambda: parts.expert(x, ids, routes, finalize=lambda acc: combine(acc, zero)),
+                 'H': lambda: parts.shared(x),
+                 'C': lambda: down(swiglu_clamped(*gu(x).chunk(2, -1), 10.))}
     graphs, outputs, dispatch, owners = {}, {}, {}, []
     for arm, fn in fns.items():
         before = len(recorded.calls), len(linear_calls)
@@ -220,13 +232,14 @@ def consumer(report, parts, overlap, rows, order):
     # Warm pass plus capture: two FFN invocations an arm.
     expected = ({'B': dict(overlap=0, serial_linears=4), 'A': dict(overlap=2, serial_linears=0),
                  'F': dict(overlap=0, serial_linears=0)} if rows == 16 else
-                {'B': dict(overlap=2, serial_linears=0), 'A': dict(overlap=2, serial_linears=0)})
+                {'B': dict(overlap=2, serial_linears=0), 'A': dict(overlap=2, serial_linears=0),
+                 'S': dict(overlap=0, serial_linears=4)})
     report('consumer_dispatch', rows=rows, dispatch=dispatch, expected=expected)
     if dispatch != expected:
         raise RuntimeError(f'M{rows}: arms did not dispatch as declared: {dispatch}')
     labels = list(fns)
     tally = dict(cells=0, mismatched_cells=0, mismatched_elements=0, value_mismatched_elements=0, relative_max=0.,
-                 repeat_mismatched_cells=0)
+                 repeat_mismatched_cells=0, **{f'{arm}_mismatched_cells': 0 for arm in labels[2:]})
 
     def replay(order_labels):
         snapshots = {}
@@ -254,6 +267,8 @@ def consumer(report, parts, overlap, rows, order):
                 tally['mismatched_elements'] += count
                 tally['value_mismatched_elements'] += values
                 tally['relative_max'] = max(tally['relative_max'], relative)
+            else:
+                tally[f'{arm}_mismatched_cells'] += bool(count)
         if repeat is not None:
             spread = {arm: differ(snapshots[arm], repeat[arm])[0] for arm in labels}
             row['repeat_mismatched'] = spread
@@ -299,21 +314,30 @@ def consumer(report, parts, overlap, rows, order):
     exact = tally['mismatched_cells'] == 0
     report('consumer_numerics', rows=rows, exact=exact, **tally)
     return NS(rows=rows, x=x, ids=ids, routes=routes, fns=fns, labels=labels, graphs=graphs, owners=owners,
-              lane=parts.lane, fixtures=fixtures, exact=exact)
+              lane=parts.lane, fixtures=fixtures, exact=exact, parts_fns=parts_fns,
+              control_exact={arm: tally[f'{arm}_mismatched_cells'] == 0 for arm in labels[2:]})
 
 
-def timing(report, case, samples):
-    """B/A/A/B (B/A/F/F/A/B at sixteen rows) brackets per fixture; an entry is the median of REPLAYS replays."""
+def order_for(labels, bracket):
+    """A palindrome of the labels rotated by the bracket: over len(labels) brackets every arm takes every position."""
+    shift = bracket % len(labels)
+    rotated = list(labels[shift:]) + list(labels[:shift])
+    return rotated + rotated[::-1]
+
+
+def timing(report, case, samples, *, fns, lane, includes):
+    """Rotated palindromic brackets (B/A/A/B, then A/B/B/A, ...) per fixture; an entry is the median of REPLAYS replays."""
     cold = torch.empty(128 << 20, dtype=torch.uint8, device='cuda')
-    order = ('B', 'A', 'F', 'F', 'A', 'B') if 'F' in case.labels else ('B', 'A', 'A', 'B')
-    for meta, values, selected, weights in case.fixtures:
+    labels = list(fns)
+    for index, (meta, values, selected, weights) in enumerate(case.fixtures):
         case.x.copy_(values); case.ids.copy_(selected); case.routes.copy_(weights)
         captured = {}
         try:
-            for arm in case.labels:
+            # Alternate the capture order by fixture as well: graph placement is fixed at capture.
+            for arm in (labels if index % 2 == 0 else labels[::-1]):
                 for cache in ('warm', 'evicted'):
                     start, end = (torch.cuda.Event(enable_timing=True, external=True) for _ in range(2))
-                    def run(fn=case.fns[arm], start=start, end=end, evict=cache == 'evicted'):
+                    def run(fn=fns[arm], start=start, end=end, evict=cache == 'evicted'):
                         if evict:
                             cold.fill_(19)                  # inside the graph, outside the events
                         start.record()
@@ -325,7 +349,7 @@ def timing(report, case, samples):
             for cache in ('warm', 'evicted'):
                 entries = []
                 for bracket in range(samples):
-                    for arm in order:
+                    for arm in order_for(labels, bracket):
                         graph, start, end = captured[arm, cache]
                         values_ms = []
                         for _ in range(REPLAYS):
@@ -335,17 +359,18 @@ def timing(report, case, samples):
                         entries.append(dict(bracket=bracket, arm=arm, median_ms=median(values_ms),
                                             min_ms=min(values_ms), mean_ms=mean(values_ms)))
                 summary = {}
-                for arm in case.labels:
+                for arm in labels:
                     medians = [e['median_ms'] for e in entries if e['arm'] == arm]
                     summary[arm] = dict(mean_ms=mean(medians), min_ms=min(medians), entries=len(medians),
                                         fastest_replay_ms=min(e['min_ms'] for e in entries if e['arm'] == arm))
-                change = {arm: dict(mean=summary[arm]['mean_ms'] / summary['B']['mean_ms'] - 1.,
-                                    min=summary[arm]['min_ms'] / summary['B']['min_ms'] - 1.)
-                          for arm in case.labels if arm != 'B'}
-                report('timing', rows=case.rows, cache=cache, samples=samples, replays=REPLAYS, order=list(order),
-                       entries=entries, summary=summary, change=change, eviction_bytes=cold.numel() if cache == 'evicted' else 0,
-                       includes='routed and shared experts, overlap/join, output cast/add',
-                       excludes='router selection, packet exchange/NIC, other layers', **meta)
+                base = labels[0]
+                change = {arm: dict(mean=summary[arm]['mean_ms'] / summary[base]['mean_ms'] - 1.,
+                                    min=summary[arm]['min_ms'] / summary[base]['min_ms'] - 1.)
+                          for arm in labels[1:]}
+                report(lane, rows=case.rows, cache=cache, samples=samples, replays=REPLAYS, labels=labels,
+                       capture_order=labels if index % 2 == 0 else labels[::-1], entries=entries, summary=summary,
+                       change=change, eviction_bytes=cold.numel() if cache == 'evicted' else 0,
+                       includes=includes, excludes='router selection, packet exchange/NIC, other layers', **meta)
         finally:
             for graph, _, _ in captured.values():
                 graph.reset()
@@ -388,10 +413,14 @@ def main(ranks, *, samples=None, output=None):
         exact = all(audits.values()) and all(case.exact for case in cases)
         artifact['exact'] = exact
         report('numerics_complete', exact=exact, shared_audit=audits, consumer={c.rows: c.exact for c in cases},
-               overlap_rows=sorted(overlap.rows))
+               controls={c.rows: c.control_exact for c in cases}, overlap_rows=sorted(overlap.rows))
         # All numerical cells precede every timing, whatever they found: a rejection needs its numbers too.
         for case in cases:
-            timing(report, case, samples)
+            timing(report, case, samples, fns=case.fns, lane='timing',
+                   includes='routed and shared experts, overlap/join, output cast/add')
+        for case in cases:
+            timing(report, case, samples, fns=case.parts_fns, lane='component_timing',
+                   includes='R: routed kernel and cast/add over a zero shared row; H: fused shared MLP; C: serial chain')
         artifact['passed'] = exact
         report('complete', passed=exact, max_allocated_bytes=torch.cuda.max_memory_allocated())
     except BaseException as exc:
