@@ -319,9 +319,11 @@ class AdapterReuseTests(RecordTestCase):
     class Memory:
         def __init__(self, peers):
             self.peers, self.rows, self.votes, self.reused_rows = peers, [], [], []
+            self.stamps = []
             self.baseline_reserved, self.arena_bytes, self.allocator_limit_bytes = BASELINE, ARENA, LIMIT
             self.os_reserve_bytes, self.sigterm_bytes = 7 * GIB, 6 * GIB
-        def checkpoint(self, phase, release_cache=False):
+        def checkpoint(self, phase, release_cache=False, stamps=None):
+            self.stamps.append((phase, stamps))
             template = FAR if phase.startswith("prefill/256/768/") else NEAR
             row = dict(template, phase=phase)
             self.rows.append(row)

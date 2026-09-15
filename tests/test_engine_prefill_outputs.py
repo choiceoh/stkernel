@@ -93,7 +93,7 @@ class PrefillOutputTests(unittest.TestCase):
         caches.reset.assert_called_once()
 
     def test_warmup_uses_the_served_ceiling_and_releases_cache_at_each_boundary(self):
-        from unittest.mock import MagicMock, call
+        from unittest.mock import ANY, MagicMock, call
         for ceiling in (128, 384, 1024):
             with self.subTest(ceiling=ceiling):
                 caches = MagicMock(device='cpu', snapshots=0)
@@ -115,7 +115,7 @@ class PrefillOutputTests(unittest.TestCase):
                 self.assertEqual(engine.memory.checkpoint.call_args_list,
                                  [c for start in starts for c in
                                   (call(f'prefill/{width}/{start}/before'),
-                                   call(f'prefill/{width}/{start}/prepared', release_cache=True))])
+                                   call(f'prefill/{width}/{start}/prepared', release_cache=True, stamps=ANY))])
 
     def test_kernel_warmup_respects_the_ceiling_and_releases_before_the_guard(self):
         from unittest.mock import MagicMock

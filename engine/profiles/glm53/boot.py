@@ -16,6 +16,7 @@ import argparse
 import os
 import pathlib
 import sys
+import threading
 import time
 from functools import partial
 from pathlib import Path
@@ -194,6 +195,75 @@ def grammars(ckpt, vocab: int, device=None, stop_token_ids=None, tokenizer=None)
     if tokenizer is None:
         return grammar.for_checkpoint(ckpt, vocab, device, stop_token_ids)
     return grammar.for_checkpoint(ckpt, vocab, device, stop_token_ids, tokenizer=tokenizer)
+
+
+class Prelude:
+    """The door's HOST half, built on a thread while the device loads and packs the weights.
+
+    `qualify grammar` was 6.75 and 10.18 s of rank 0 on the two warm boots of main `3acae017`, and the
+    `door` row (never printed: the table goes out a line above it) is a second transformers tokenizer for
+    the chat template. What is in both is host work in someone else's C++ -- the checkpoint's tokenizer,
+    xgrammar's `TokenizerInfo` over 154,880 tokens, the `GrammarCompiler`, transformers' renderer -- and
+    none of it reads anything the engine produces. It needs config.json, tokenizer.json and
+    generation_config.json, all of which are on disk before `Comm.init` returns. So it runs beside `load`
+    and `prepare native execution`, which are the device's.
+
+    Two boundaries make this safe rather than merely parallel.
+
+    **No CUDA on the thread.** `Grammars.qualify(device)` allocates the bitmask pair, launches the mask
+    kernel and pays its Triton JIT; that stays on the main thread, inside its own phase, where the memory
+    ledger's rows see every byte (D1). The thread builds the compiler and nothing else. The one host
+    buffer it does touch is xgrammar's own: `Grammars.__init__` sizes a single-row token bitmask
+    (ceil(vocab/32) int32 words, about 19 KiB here) and keeps only its width. If that allocation is
+    pinned it is a host allocation beside the loader's, once, and small; nothing device-side is asked for.
+
+    **Joined before `capture decode`, not after.** Capture is bound by Python dispatch, not by the GPU
+    (boot-time study 5-h): a host thread still running there would take the GIL from the thing the whole
+    phase is made of. The join is its own row, so a prelude that ever outlives the load says so in seconds
+    instead of hiding inside the capture.
+    """
+
+    def __init__(self, ckpt_meta, *, renderer: bool):
+        self.ckpt_meta, self.want_renderer = ckpt_meta, renderer
+        self.result = self.error = None
+        self.seconds = 0.0
+        self._thread = threading.Thread(target=self._run, name="boot-prelude", daemon=True)
+
+    def start(self) -> "Prelude":
+        self._thread.start()
+        return self
+
+    def _run(self) -> None:
+        start = time.perf_counter()
+        try:
+            tok = tokenizer(self.ckpt_meta)
+            stop = set(eos_ids(self.ckpt_meta))
+            vocab = facts.load(self.ckpt_meta).vocab
+            # device=None: the compiler, not the mask. `qualify` is the caller's, on the main thread.
+            built = grammars(self.ckpt_meta, vocab, None, stop, tokenizer=tok)
+            self.result = (tok, vocab, stop, built,
+                           chat_renderer(self.ckpt_meta) if self.want_renderer else None)
+        except BaseException as exc:                  # noqa: BLE001 -- re-raised on the main thread, in its phase
+            self.error = exc
+        finally:
+            self.seconds = time.perf_counter() - start
+
+    def take(self, vocab: int, stop_token_ids):
+        """Join, then check the thread built for the engine this boot actually assembled.
+
+        The thread read the checkpoint a second time rather than waiting for `build` to hand it the facts.
+        That is only sound while both reads say the same thing, so the two that the grammar is keyed on --
+        the vocabulary it sized its bitmask for and the stop ids it will not mask away -- are compared here
+        and a boot whose halves disagree dies before the door instead of masking against the wrong table.
+        """
+        self._thread.join()
+        if self.error is not None:
+            raise self.error
+        tok, built_vocab, stop, built, renderer = self.result
+        if built_vocab != vocab or set(stop) != set(stop_token_ids):
+            raise RuntimeError(f"the boot prelude built for vocab {built_vocab} and stops {sorted(stop)}; "
+                               f"this engine has {vocab} and {sorted(stop_token_ids)}")
+        return tok, built, renderer
 
 
 CHAT_TEMPLATE = "chat_template_mm_v2.jinja"     # what production serves with (launchers/lib/glm53-chat.sh); honours the `thinking` kwarg
@@ -978,8 +1048,10 @@ def native_execution_report(net, drafter):
 #   same      served lanes; decode replays captured graphs, as production's does.
 #   off       the qualification a fleet boot owes its door before opening it -- the vision tower, the
 #             grammars, the parked-conversation tier, the calibration sums.
-#   fast      one captured decode width instead of max_seqs of them. Capture is three quarters of a fleet
-#             boot's 87 seconds ([[stkernel-st-boot-time]]), and it is paid per width.
+#   fast      one captured decode width instead of max_seqs of them, and it is paid per width. (What that
+#             saves has shrunk: `capture decode` was 75% of an 87 s boot when the study was written, but
+#             the phase now holds the prefill memory gate too, and on main 3acae017's production boot the
+#             graphs themselves were 8.5 s of its 96.2 -- the gate was 84.8.)
 #   open      every step timed instead of one in sixty-four, and /v1/engine/profile for the kernels.
 #
 # What it is NOT is a speed measurement. Four ranks are four threads on ONE GPU here, so the device does four
@@ -1384,6 +1456,8 @@ def fleet(a) -> int:
         if cfg["draft_diagnostics"] not in (0, 1):
             raise ValueError("draft diagnostics must be 0 or 1")
         draft_policy = DraftPolicy(cfg["draft_fc_precision"], cfg["draft_fc_calibration"], bool(cfg["draft_diagnostics"]))
+        # The door's host half starts now and runs under the load and the pack building below (Prelude).
+        prelude = Prelude(a.ckpt_meta, renderer=comm.rank == 0).start()
         F, net, caches, engine, runner = build(comm, None, lanes, a.ranks, a.kv_gib, MAX_SEQS, True, rec,
                                                workspace_gib=getattr(a, "workspace_gib", None),
                                                max_new=a.max_new, temperature=a.temperature, seed=a.seed, tier_dir=a.tier_dir,
@@ -1435,6 +1509,10 @@ def fleet(a) -> int:
                 partial(prefill_record_components, a, cfg, engine, caches, lanes, comm),
                 force_full=bool(getattr(a, "full_memory_gate", False)))
             print(f"  memory gate: rank {comm.rank} {engine.prefill_record.reason}", flush=True)
+        # Before the capture, never after it: capture is Python dispatch, and the GIL is what it spends.
+        with rec.phase("wait for the prelude"):
+            tok, prebuilt_grammars, renderer = prelude.take(F.vocab, engine.eos)
+            rec.gauge("prelude_s", round(prelude.seconds, 3))
         with rec.phase("capture decode"):
             engine.capture_decode(MAX_SEQS)
         with rec.phase("warmup shapes"):
@@ -1452,8 +1530,9 @@ def fleet(a) -> int:
         with rec.phase("qualify vision"):
             paid.update(engine.vision.qualify())            # the largest image, before the door opens (D3)
         with rec.phase("qualify grammar"):
-            tok = tokenizer(a.ckpt_meta)                    # the door's tokenizer, loaded here once: the grammar reads its vocabulary
-            engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device, engine.eos, tokenizer=tok)   # response_format, every rank
+            engine.grammars = prebuilt_grammars              # response_format, every rank: the compiler came off the prelude
+            if engine.grammars is not None:
+                engine.grammars.qualify(caches.device)       # the mask kernel and its Triton JIT, on this thread (D1)
         if engine.memory is None or not engine.memory.ready:
             raise RuntimeError("full-model serving requires runtime memory qualification")
         # Keep this final release as well as the earlier prefill/kernel warmups.
@@ -1490,8 +1569,7 @@ def fleet(a) -> int:
                 print(tier_line(runner.tiered.tier, TIER_GIB, "conversations"))
                 if runner.prefix_tier is not None:
                     print(tier_line(runner.prefix_tier.tier, PREFIX_TIER_GIB, "prefix boundaries"))
-        with rec.phase("door"):
-            renderer = chat_renderer(a.ckpt_meta) if comm.rank == 0 else None
+        # The `door` phase that stood here built rank 0's chat renderer; the prelude has it (`renderer`).
         from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls, tool_call_token, tool_grammar
         if comm.rank == 0:
             print("  warmup: " + ", ".join(f"{k} {v}s" for k, v in paid.items()) + (f"; structured output: {'on' if engine.grammars else 'off (no xgrammar)'}"))
