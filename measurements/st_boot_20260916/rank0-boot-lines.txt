@@ -1,0 +1,33 @@
+2026-09-15T21:49:45.928379228Z
+2026-09-15T21:51:35.040908978Z phase                                      seconds   dev GiB  counters
+2026-09-15T21:51:35.040928354Z comm                                         2.116     +0.04  
+2026-09-15T21:51:35.040930882Z native builds                                0.078     +0.01  native_dense_s=0.185 native_mla_s=0.192 native_prefill-topk_s=0.19 native_router-fp32_s=0.046 native_decode-topk_s=0.186 native_mapped-staging_s=0.184 native_bounded-graph_s=0.187 native_decode-queue_s=0.192 native_one-shot_s=0.129
+2026-09-15T21:51:35.040934178Z prepare one-shot                             1.852     +1.42  oneshot_sum_8rows_us=33.2 oneshot_sum_8rows_p90_us=33.7 oneshot_sum_16rows_us=45.5 oneshot_sum_16rows_p90_us=47 oneshot_sum_32rows_us=75.2 oneshot_sum_32rows_p90_us=76.3 oneshot_max_8keys_us=14.5 oneshot_max_8keys_p90_us=17.1
+2026-09-15T21:51:35.040936546Z lanes                                        3.224     +0.23  
+2026-09-15T21:51:35.040938290Z arena                                        2.600    +58.82  
+2026-09-15T21:51:35.040940146Z load                                        13.205     +3.44  blocks=54 bytes=4.77863e+10
+2026-09-15T21:51:35.040952754Z prepare native execution                    23.501    +19.28  router_resident_bytes=1.98181e+08 decode_projection_resident_bytes=2.30687e+07 drafter_decode_cells=10 draft_fc_bias_applied=0 draft_fc_bias_status=missing drafter_block_fp8_packs=0
+2026-09-15T21:51:35.040954994Z   load drafter                               0.200     +0.00  blocks=3 bytes=2.34216e+09
+2026-09-15T21:51:35.040956914Z load vision                                  0.149     +0.00  blocks=2 bytes=1.12726e+09
+2026-09-15T21:51:35.040958562Z caches                                       0.004     +0.00  
+2026-09-15T21:51:35.040960146Z engine                                       0.002     +0.00  
+2026-09-15T21:51:35.040961730Z wait for weight preparation                  3.468     -0.11  
+2026-09-15T21:51:35.040963282Z runner                                       0.000     +0.00  
+2026-09-15T21:51:35.040964818Z prefill record                               0.062     +0.00  
+2026-09-15T21:51:35.040966386Z wait for the prelude                         0.000     +0.00  prelude_s=13.141
+2026-09-15T21:51:35.040967970Z capture decode                              45.184     +5.55  
+2026-09-15T21:51:35.040969490Z warmup shapes                                0.564     +0.00  
+2026-09-15T21:51:35.040971042Z qualify vision                               3.751     +3.55  
+2026-09-15T21:51:35.040972562Z qualify grammar                              0.044     +0.00  
+2026-09-15T21:51:35.040974850Z release warmup cache                         0.060     -3.40  production_warmup_cache_returned_bytes=3.59032e+09
+2026-09-15T21:51:35.040976562Z   ST engine: GLM-5.3, TP=4, lanes=served, KV 7.0 GiB, serving on :8000
+2026-09-15T21:50:45.416962413Z   memory gate: rank 0 the record matches
+2026-09-15T21:51:14.549331148Z   memory gate: rank 0 reused /cache/st-gate/prefill-rank0-1611a27a7c158226fa797688.json for prefill/32256/1016320 -- the record matches: far peak 9.90 GiB projected, 24.73 GiB available at it; ran prefill/1024/32256 in its place
+2026-09-15T21:51:16.821712270Z   kernel warmup returned 0.44 GiB of inactive allocator cache
+2026-09-15T21:51:30.600883885Z   jit writes: rank 0 none -- 0 artifacts newer than the first window over 37451 files in 2.00 s, stopped at the 2 s cap
+2026-09-15T21:51:35.020734640Z   memory gate: rank 0 reused /cache/st-gate/prefill-rank0-1611a27a7c158226fa797688.json for prefill/32256/1016320
+2026-09-15T21:50:45.420935135Z   memory gate: rank 3 the record matches
+2026-09-15T21:51:14.561013095Z   memory gate: rank 3 reused /cache/st-gate/prefill-rank3-5c941b49ebcb4687295f0304.json for prefill/32256/1016320 -- the record matches: far peak 9.69 GiB projected, 27.05 GiB available at it; ran prefill/1024/32256 in its place
+2026-09-15T21:51:16.833429596Z   kernel warmup returned 0.44 GiB of inactive allocator cache
+2026-09-15T21:51:29.439117176Z   jit writes: rank 3 none -- 0 artifacts newer than the first window over 44785 files in 0.83 s
+2026-09-15T21:51:35.032796437Z   memory gate: rank 3 reused /cache/st-gate/prefill-rank3-5c941b49ebcb4687295f0304.json for prefill/32256/1016320
