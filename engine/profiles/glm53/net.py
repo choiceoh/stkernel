@@ -159,7 +159,7 @@ class Glm53Net:
         self.dense = {}
         self.shared_mlp = {}
         self.shared_overlap = None
-        self._router_weights = {}
+        self._router_layers = None                         # None until native BF16 router bindings are validated
         self._router_tensorcore = set()
         self._decode_pairs = {}
         self.decode_fastpath_rows = ()
@@ -240,24 +240,20 @@ class Glm53Net:
                 self._packet_experts[L] = partial(self.lanes.moe_packets, **args)
                 self._packet_capabilities[L] = partial(self.lanes.moe_packets_supported, **args)
 
-    def router_nbytes(self):
-        """FP32 routing matrices, explicitly reserved apart from BF16 rank weights."""
-        return sum(self.F.experts * self.F.hidden * 4 for layer in self.layers if self.F.is_moe(layer))
+    def prepare_routers(self):
+        """Validate native bindings; tensor cores read BF16 rank weights with FP32 output.
 
-    def prepare_routers(self, arena):
-        """Convert immutable BF16 router weights once, into budgeted arena rows.
-
-        Rank files and their binding contract stay BF16. Every projection sees
-        exactly the same FP32 values as the former per-step conversion.
+        Widening these checkpoint values adds no weight information. Native
+        routing needs no resident FP32 copy or auxiliary arena reservation.
         """
-        if self._router_weights:
-            raise RuntimeError('router weights were already prepared')
-        for layer in self.layers:
-            if self.F.is_moe(layer):
-                weight = self.p[f'L{layer}.moe.gate']
-                resident = arena.carve(weight.numel() * 4, f'router/{layer}').view(F32).view_as(weight)
-                resident.copy_(weight)
-                self._router_weights[layer] = resident
+        if self._router_layers is not None:
+            raise RuntimeError('router bindings were already prepared')
+        layers = {layer for layer in self.layers if self.F.is_moe(layer)}
+        for layer in layers:
+            weight = self.p[f'L{layer}.moe.gate']
+            if weight.dtype != torch.bfloat16 or weight.shape != (self.F.experts, self.F.hidden):
+                raise ValueError('native router requires BF16 checkpoint weights [experts, hidden]')
+        self._router_layers = layers
 
     def decode_projection_nbytes(self):
         """Joined indexer matrices; KDA pairs retain their original weight views."""
@@ -967,12 +963,12 @@ class Glm53Net:
             from engine.kernels.prefill_router import router_logits
             logits = router_logits(x, p[n + "gate"])
         if logits is None:
-            if self._router_weights:
+            if self._router_layers is not None:
                 from engine.kernels.glm_pointwise import router_logits
                 logits = router_logits(x, p[n + "gate"])
                 self._router_tensorcore.add(L)
             else:
-                gate = self._router_weights.get(L, p[n + "gate"])
+                gate = p[n + "gate"]
                 logits = x.float() @ gate.float().T
         return self._select_routes(L, logits)
 

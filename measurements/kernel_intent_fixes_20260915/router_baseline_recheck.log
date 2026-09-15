@@ -1,0 +1,20 @@
+test_fp32_logits_and_selection_on_random_repeated_and_tied_experts (tests.test_engine_decode_seven.RouterTensorCoreTests.test_fp32_logits_and_selection_on_random_repeated_and_tied_experts) ... FAIL
+
+======================================================================
+FAIL: test_fp32_logits_and_selection_on_random_repeated_and_tied_experts (tests.test_engine_decode_seven.RouterTensorCoreTests.test_fp32_logits_and_selection_on_random_repeated_and_tied_experts)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/.codex/worktrees/e0f9/stkernel/tests/test_engine_decode_seven.py", line 172, in test_fp32_logits_and_selection_on_random_repeated_and_tied_experts
+    torch.testing.assert_close(actual, expected, rtol=3e-5, atol=5e-6)
+  File "/tmp/st-draft-topk-venv/lib/python3.12/site-packages/torch/testing/_comparison.py", line 1631, in assert_close
+    raise error_metas[0].to_error(msg)
+AssertionError: Tensor-likes are not close!
+
+Mismatched elements: 1105 / 663552 (0.2%)
+Greatest absolute difference: 1.6942620277404785e-05 at index (1997, 128) (up to 5e-06 allowed)
+Greatest relative difference: 0.18944457173347473 at index (589, 286) (up to 3e-05 allowed)
+
+----------------------------------------------------------------------
+Ran 1 test in 1.766s
+
+FAILED (failures=1)

@@ -1,0 +1,6 @@
+test_rotary_weight_view_tracks_its_values_on_replay (tests.test_engine_kernel_contracts.KernelViewTests.test_rotary_weight_view_tracks_its_values_on_replay) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 1.176s
+
+OK

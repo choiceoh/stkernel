@@ -1,0 +1,76 @@
+{
+  "recorded_at_utc": "2026-09-15T05:44:38.076119+00:00",
+  "base_commit": "24240e36944f869c3d6f96a0c6863817d4a4589c",
+  "branch": "codex/kernel-intent-fixes",
+  "environment": {
+    "python": "3.12.3",
+    "torch": "2.13.0+cu130",
+    "triton": "3.7.1",
+    "gpu": "NVIDIA GeForce RTX 5050",
+    "sm": 120
+  },
+  "validation": {
+    "new_regressions": {
+      "passed": 10,
+      "logs": [
+        "regression_tests.log",
+        "router_regression.log",
+        "rotary_weight_recheck.log"
+      ]
+    },
+    "surrounding_tests_after_fixture_recheck": {
+      "passed": 142,
+      "skipped": 14,
+      "existing_router_numeric_failure": 1
+    },
+    "cpu_engine_check": {
+      "files": 221,
+      "tests": 2000,
+      "failures": 0,
+      "cannot_run": 0,
+      "skipped": 391
+    },
+    "onepass": {
+      "passed": 122
+    },
+    "oracle": {
+      "passed": 77
+    },
+    "remaining_failure": "Unmodified RouterTensorCoreTests and router kernels reproduce the same 2304-row numeric tolerance failure on SM120.",
+    "hardware_limit": "No GLM model weights, native GB10/SM121 or distributed TP4 GPU serving was run."
+  },
+  "source_sha256": {
+    "engine/base/sampler.py": "c53ced191bf79f2a3e23cfd37c835e30c969151f838757db72acf2af47bb70c2",
+    "engine/kernels/common/block_verify.py": "9c940bd0e399eb406a1c7906a62636111716885969a9ac5ad6bf505feb8430d1",
+    "engine/kernels/common/norm_rope.py": "4dc8f14581be4e6f30e0bfc69a3e3e86746d192965a0791f2ebfbfa2bc30e583",
+    "engine/kernels/common/sampler.py": "44333b6ab57873d1a80af3cc387a55374c5934b633582c192bdf38ee5c733554",
+    "engine/kernels/common/swiglu.py": "5cdae64217bd2995592f00dbe77c5a05e389d8bb7f7ddddb1a7acd7a7df1eb6a",
+    "engine/kernels/draft_attention.py": "b5a3506e669e055a4024353da0aef514ad86a8a16ce800cbd6ba160fa7ced656",
+    "engine/profiles/glm53/boot.py": "e1b44aaf0264b4cd6f5fa5fecd7a361642ab28af1a44b48959ae322f650d3e00",
+    "engine/profiles/glm53/budget.py": "41c3304dc6ae42d67c74d1747de9b758c1d2a9a0b2d32352e8a0ca1ac98d4346",
+    "engine/profiles/glm53/net.py": "c36dabdd848fd84fd331b5d90d57cf38b699e1104e3a76dadb66d925ecf055a5",
+    "tests/test_engine_decode_residency.py": "be33d53e1321ce4c25d4e299b1acc22bc924e0ae3575f259ef29ea9b43f9d745",
+    "tests/test_engine_native_execution.py": "2d0064818b20f8d4b32d0b4b84ca6d63983b7f183052ca3dd724ccf04d075f05",
+    "tests/test_engine_prefill_absorb_tiles.py": "9db9e4f68d8ccd525f18b894e5a627293bb62eda90507309058c3d2707faab27",
+    "tests/test_engine_router_widths.py": "236b83ee091b84349706ae8268483e3bd4ac8087289dccc6012c472c36fe9918",
+    "tests/test_engine_sampling_options.py": "fd044d9124be5690554f66d7ca3dc487f5c4b231e6ea019f3bf76fe29c3a3444",
+    "tests/test_prefill_dense_prefix.py": "878ea31f8e371c8cab74b774e41b0c57d3711e15f27723d3be824994b6710b5a",
+    "tests/test_engine_kernel_contracts.py": "d6342f3dbe5aa662eb0ea1cc7981cafa84b8e5a8a0a3fe6ecb14e9bf537e01f4"
+  },
+  "artifact_sha256": {
+    "README.md": "023340f1596a6d512756d5f90ba2ae96a168e5dfa9f20852cf8489a2c1fa5c8b",
+    "cpu_engine_check.log": "8a53d51a58160ce29b0bd56e70aa3ed7a2dd2584c9a4068baed55ed99d66ed2d",
+    "mla_fixture_recheck.log": "47013d50d7eafc9cfc555c197c5e83f7dbe64e09b5576bad43e4931b8beb2caa",
+    "onepass_checks.log": "fa82026037449ceed5c921cdb9e52c868adb26d3b5f418965b47327e2d780c94",
+    "oracle_checks.log": "33ee1b7518cff51f2b3bf403abbade0cea9671fa43025e1f98c5fe6bca5365b9",
+    "regression_tests.log": "c3334f938a44c617525eb7ea63dd0b34698740fee6a473657461e34580659bdd",
+    "rotary_weight_recheck.log": "2ab3c871dcccac23753a60ec9c39ebc4ec453c4bf550935c91cd96c5dddaf8db",
+    "router_baseline_recheck.log": "75e592b704d6464ce8900805036563c783ca8adcb79a52492dbdb26b0dc2f030",
+    "router_baseline_sources.json": "4894331bc7dbb07c72bca26fc88b28b8022eafcd4398bb12b39c9000b57afba3",
+    "router_precision.json": "fe6d9ba572d5c156a854a9d9a766dee0f115753a60c921eb57f4ecd7c1db0986",
+    "router_precision.log": "20577a3d6235faeffd335b67ada61031f69281985ecfeaa1643b2ce931f963a4",
+    "router_precision.py": "22894d5870387f70c2a2169bb9ccc53332322b44f67b817d2ea1b8018941e622",
+    "router_regression.log": "d6079b2a20c54da1105d8293e656499ad6a7b1c35ff68a8cd275f75ce298eb7b",
+    "targeted_tests.log": "a2143f0621a862802efb1c413d590a35d88de9e9b2d7c9c67be97fd1462ebb71"
+  }
+}

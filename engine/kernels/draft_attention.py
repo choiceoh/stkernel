@@ -19,7 +19,7 @@ import triton.language as tl
 
 @triton.jit
 def _attend(Q, K, V, R, P, Slot, ACC, MAX, DEN, SLOT_STRIDE: tl.constexpr, LAYER_OFFSET: tl.constexpr,
-            V_ROW: tl.constexpr, V_TOKEN: tl.constexpr,
+            V_ROW: tl.constexpr, V_TOKEN: tl.constexpr, P_ROW: tl.constexpr, SLOT_ROW: tl.constexpr,
             B: tl.constexpr, H: tl.constexpr, HK: tl.constexpr, RHK: tl.constexpr, D: tl.constexpr,
             W: tl.constexpr, RS: tl.constexpr, SCALE: tl.constexpr, BN: tl.constexpr,
             SPAN: tl.constexpr, TILES: tl.constexpr, BQ: tl.constexpr):
@@ -36,7 +36,7 @@ def _attend(Q, K, V, R, P, Slot, ACC, MAX, DEN, SLOT_STRIDE: tl.constexpr, LAYER
     tile = tl.program_id(1) % TILES
     part = tl.program_id(2)
     if SLOT_STRIDE:
-        R += tl.load(Slot + row).to(tl.int64) * SLOT_STRIDE + LAYER_OFFSET
+        R += tl.load(Slot + row * SLOT_ROW).to(tl.int64) * SLOT_STRIDE + LAYER_OFFSET
     Q += row * B * H * D
     K += row * B * HK * D
     V += row * V_ROW
@@ -46,7 +46,7 @@ def _attend(Q, K, V, R, P, Slot, ACC, MAX, DEN, SLOT_STRIDE: tl.constexpr, LAYER
     live = qi < B * group
     q = tl.load(Q + ((qi // group) * H + kh * group + qi % group)[:, None] * D + d[None, :],
                 live[:, None], other=0.0)                                        # [BQ, D]
-    position = tl.load(P + row)
+    position = tl.load(P + row * P_ROW)
     maximum = tl.full((BQ,), -float("inf"), tl.float32)
     denominator = tl.zeros((BQ,), tl.float32)
     accumulator = tl.zeros((BQ, D), tl.float32)
@@ -155,7 +155,7 @@ def attend_rows(q, k, v, ring, positions, *, slot=None, layer=0):
         raise ValueError("DFlash attention requires CUDA BF16, contiguous Q/K and ring, and packed V heads")
     # the values are not read here: a context length is a device number and looking at it would synchronise,
     # which is not allowed while a graph is capturing
-    if positions.device != q.device or positions.dtype != torch.int64 or positions.numel() != q.shape[0]:
+    if positions.device != q.device or positions.dtype != torch.int64 or positions.shape != (q.shape[0],):
         raise ValueError("DFlash positions must be one CUDA int64 context length per row")
     out = torch.empty_like(q)
     n, b, h, d = q.shape
@@ -173,7 +173,9 @@ def attend_rows(q, k, v, ring, positions, *, slot=None, layer=0):
     scale = torch.empty(2, held, device=q.device, dtype=torch.float32)
     _attend[(n, hk * tiles, parts)](q, k, v, ring, positions,
                                     slot if slot is not None else positions,
-                                    acc, scale[0], scale[1], stride, offset, v.stride(0), v.stride(1), b, h, hk, geometry[2], d,
+                                    acc, scale[0], scale[1], stride, offset, v.stride(0), v.stride(1),
+                                    positions.stride(0), slot.stride(0) if slot is not None else positions.stride(0),
+                                    b, h, hk, geometry[2], d,
                                     cells, cells*geometry[2]*geometry[3], d**-.5, BN, span, tiles, BQ,
                                     num_warps=4, enable_fp_fusion=False)
     _combine[(n, b, h)](acc, scale[0], scale[1], out, b, h, hk, d,

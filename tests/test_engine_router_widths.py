@@ -19,7 +19,7 @@ def fake_net(prepared: bool):
     torch.manual_seed(7)
     p = {"L3.moe.gate": (torch.randn(32, 128) * .05).bfloat16(), "L3.moe.bias": torch.randn(32) * .1}
     net = NS(F=NS(spec_k=6, topk_experts=8, routed_scale=2.5), p=p, lanes=NS(route_weights=None),
-             _router_weights={3: None} if prepared else {}, _router_tensorcore=set())
+             _router_layers={3} if prepared else None, _router_tensorcore=set())
     net._select_routes = MethodType(Glm53Net._select_routes, net)
     return net
 
@@ -55,7 +55,7 @@ class RouterWidthTests(unittest.TestCase):
         net = fake_net(prepared=False)
         x = torch.randn(64, 128).bfloat16()
         ref, _ = Glm53Net.route(net, 3, x)
-        net._router_weights = {3: None}
+        net._router_layers = {3}
         with mock.patch.object(__import__("engine.kernels.glm_pointwise", fromlist=["router_logits"]),
                                "router_logits", lambda x, g: torch.mm(x.float(), g.float().T)):
             got, _ = Glm53Net.route(net, 3, x)

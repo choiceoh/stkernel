@@ -1,0 +1,6 @@
+test_actual_served_mla_reuses_single_output_for_decode_capture_and_prefill (tests.test_prefill_dense_prefix.PrefixKernelTests.test_actual_served_mla_reuses_single_output_for_decode_capture_and_prefill) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.012s
+
+OK

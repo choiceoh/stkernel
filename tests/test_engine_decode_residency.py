@@ -6,9 +6,9 @@ import torch
 
 
 class RouterResidencyTests(unittest.TestCase):
-    def test_fp32_arena_spec_preserves_bf16_checkpoint_and_projection(self):
+    def test_native_router_binds_the_checkpoint_without_a_resident_conversion(self):
         from types import SimpleNamespace
-        from engine.base.arena import Arena
+        from unittest import mock
         from engine.profiles.glm53.net import Glm53Net
         from engine.profiles.glm53.specs import layer_specs, CK
         from tests.test_engine_glm53 import tiny_facts
@@ -20,16 +20,14 @@ class RouterResidencyTests(unittest.TestCase):
         for rank in range(4):
             net = Glm53Net(f, SimpleNamespace(rank=rank, world_size=4), SimpleNamespace(rmsnorm=None, swiglu=None), [2])
             net.p = {spec.name: spec.build(source, rank, 4)}
-            arena = Arena(net.router_nbytes(), device='cpu', expandable=False)
-            net.prepare_routers(arena)
-            resident = net._router_weights[2]
-            self.assertEqual(resident.dtype, torch.float32)
-            torch.testing.assert_close(resident, weight.float(), rtol=0, atol=0)
-            x = torch.randn(7, 128).bfloat16()
-            torch.testing.assert_close(x.float() @ resident.T, x.float() @ weight.float().T, rtol=0, atol=0)
-            self.assertEqual(net.router_nbytes(), weight.numel() * 4)
+            original = net.p[spec.name]
+            with mock.patch.object(torch.Tensor, 'copy_', side_effect=AssertionError('no router copy')):
+                net.prepare_routers()
+            self.assertEqual(net._router_layers, {2})
+            self.assertIs(net.p[spec.name], original)
+            torch.testing.assert_close(original, weight, rtol=0, atol=0)
             with self.assertRaises(RuntimeError):
-                net.prepare_routers(arena)
+                net.prepare_routers()
 
 
 @unittest.skipUnless(torch.cuda.is_available(), 'native fused draft write requires CUDA')

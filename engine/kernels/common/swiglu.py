@@ -27,13 +27,15 @@ def _swiglu(X, OUT, sX, sO, width, BLOCK: tl.constexpr):
 
 
 def swiglu(fused: torch.Tensor) -> torch.Tensor:
-    """[rows, 2 * inter] gate-then-up -> [rows, inter], `silu(gate) * up`."""
+    """[rows, 2 * inter] gate-then-up -> [rows, inter], `silu(gate) * up`; CUDA columns must be contiguous."""
     if fused.ndim != 2 or fused.shape[1] % 2:
         raise ValueError("the gated activation takes one [rows, 2 * inter] projection")
     rows, width = fused.shape[0], fused.shape[1] // 2
     if not fused.is_cuda:
         gate, up = fused.chunk(2, -1)
         return torch.nn.functional.silu(gate) * up
+    if fused.stride(1) != 1:
+        raise ValueError("CUDA SwiGLU needs contiguous projection columns")
     out = torch.empty(rows, width, device=fused.device, dtype=fused.dtype)
     block = 1024 if width >= 1024 else triton.next_power_of_2(width)
     if rows:

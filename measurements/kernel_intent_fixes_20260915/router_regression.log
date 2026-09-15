@@ -1,0 +1,6 @@
+test_native_router_preparation_allocates_nothing_and_preserves_routes (tests.test_engine_kernel_contracts.KernelViewTests.test_native_router_preparation_allocates_nothing_and_preserves_routes) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 3.790s
+
+OK
