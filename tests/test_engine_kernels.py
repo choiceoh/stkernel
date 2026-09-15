@@ -109,7 +109,7 @@ class KernelPackageTests(unittest.TestCase):
         allowed = {("mla/__init__.py", "ST_MLA_BUILD_ROOT"),
                    ("dense/__init__.py", "ST_DENSE_BUILD_ROOT"),
                    ("oneshot/__init__.py", "ST_ONESHOT_BUILD_ROOT"),
-                   ("common/native_cache.py", "ST_NATIVE_BUILD_ROOT")}
+                   ("native_root.py", "ST_NATIVE_BUILD_ROOT")}
         found = set()
         for path in KERNELS.rglob("*.py"):
             rel = str(path.relative_to(KERNELS))
