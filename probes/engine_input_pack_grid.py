@@ -59,13 +59,16 @@ def exact_packs(report, ext):
                 graph.reset()
 
 
-def timings(report, calls, *, brackets, **meta):
+def timings(report, calls, *, brackets, captures=1, **meta):
     """B/A/A/B of device event intervals, excluding host enqueue and eviction."""
     flush = torch.empty(128 << 20, device='cuda', dtype=torch.uint8)
-    for cache, repeats in (('warm', 32), ('evicted', 1)):
+    for cache, repeats, capture in ((cache, repeats, capture) for cache, repeats in
+                                   (('warm', 32), ('evicted', 1)) for capture in range(captures)):
         graphs, events = {}, {}
         try:
-            for w, fn in calls.items():
+            order = list(calls) if capture % 2 == 0 else list(calls)[::-1]
+            for w in order:
+                fn = calls[w]
                 start, end = (torch.cuda.Event(enable_timing=True, external=True) for _ in range(2))
                 def timed(fn=fn, start=start, end=end):
                     start.record()
@@ -91,7 +94,8 @@ def timings(report, calls, *, brackets, **meta):
                 changed = [s['us'] for s in samples if s['warps'] == candidate]
                 report('timing', cache=cache, candidate=candidate, samples=samples,
                        control_us=sum(control)/len(control), candidate_us=sum(changed)/len(changed),
-                       change_pct=100*(sum(changed)/sum(control)-1), **meta)
+                       change_pct=100*(sum(changed)/sum(control)-1),
+                       capture=capture, capture_order=order, **meta)
         finally:
             for graph in graphs.values():
                 graph.reset()
@@ -106,7 +110,7 @@ def pack_timings(report, ext, brackets):
                 brackets=brackets, component='pack', width=width)
 
 
-def projection_checks(report, ranks, brackets, timing=True):
+def projection_checks(report, ranks, brackets, timing=True, *, names=(), warps=WARPS, captures=1):
     """Use the existing real-weight, poisoned/rebound W4 consumer gate."""
     from probes import engine_dense_cells as cells
     def project(ext, owners, x, destination, warps):
@@ -125,15 +129,16 @@ def projection_checks(report, ranks, brackets, timing=True):
     original_cells, original_routes, original_bracket = cells.CELLS, cells.ROUTES, cells.bracket
     try:
         # Probe-only route controls; production has no runtime geometry knob.
-        cells.ROUTES = {f'pack{w}': lambda ext, owners, x, d, w=w: project(ext, owners, x, d, w) for w in WARPS}
-        cells.CELLS = tuple((*c[:-1], {8: tuple(('pack8', f'pack{w}') for w in WARPS if w != 8)})
-                            for c in original_cells if 8 in c[-1] and not c[0].startswith('drafter.'))
+        cells.ROUTES = {f'pack{w}': lambda ext, owners, x, d, w=w: project(ext, owners, x, d, w) for w in warps}
+        cells.CELLS = tuple((*c[:-1], {8: tuple(('pack8', f'pack{w}') for w in warps if w != 8)})
+                            for c in original_cells if 8 in c[-1] and not c[0].startswith('drafter.')
+                            and (not names or c[0] in names))
         def bracket_rows(report, graphs, control, candidate, *, brackets, calls, **meta):
             # Capture the native calls and timing events together, retaining
             # the exact inputs and rebound destinations from the output gate.
             w = int(candidate[4:])
             timings(report, {8: calls[control], w: calls[candidate]},
-                    brackets=brackets, component='projection', **meta)
+                    brackets=brackets, captures=captures, component='projection', **meta)
         cells.bracket = bracket_rows
         failures = cells.check(report, ranks, rows=(8,), brackets=brackets, timing=timing)
         if failures:
@@ -142,7 +147,7 @@ def projection_checks(report, ranks, brackets, timing=True):
         cells.CELLS, cells.ROUTES, cells.bracket = original_cells, original_routes, original_bracket
 
 
-def main(ranks=None, *, samples=None, output=None):
+def main(ranks=None, *, samples=None, output=None, focus=None):
     from engine.kernels.dense import extension
     brackets = int(samples) if samples else 2
     if brackets < 1:
@@ -161,12 +166,15 @@ def main(ranks=None, *, samples=None, output=None):
                               ('engine/kernels/dense/kernels.cu', 'engine/kernels/dense/__init__.py',
                                'probes/engine_input_pack_grid.py', 'probes/engine_dense_cells.py',
                                'probes/engine_decode_fusions.py')},
-               scope='same-build C1 GPU components; not TP4 serving performance')
+               focus=focus, scope='same-build C1 GPU components; not TP4 serving performance')
         ext = extension()
-        exact_packs(report, ext)
-        pack_timings(report, ext, brackets)
-        if ranks:
-            projection_checks(report, ranks, brackets)
+        if focus == 'query':
+            projection_checks(report, ranks, brackets, names=('mla.query',), warps=(8, 1), captures=4)
+        else:
+            exact_packs(report, ext)
+            pack_timings(report, ext, brackets)
+            if ranks:
+                projection_checks(report, ranks, brackets)
         report('complete', status='PASS', consumer_metrics_measured=False,
                peak_allocated_bytes=torch.cuda.max_memory_allocated())
     finally:
