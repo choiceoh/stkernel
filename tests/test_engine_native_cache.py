@@ -188,7 +188,8 @@ print(json.dumps([key,[(Path(p).read_text(),Path(p).stat().st_ino,Path(p).stat()
         for relative, function, name in (("bounded_graph/__init__.py", "build", "bounded-graph"),
                                          ("decode_queue/__init__.py", "build", "decode-queue"),
                                          ("mapped_staging/__init__.py", "build", "mapped-staging"),
-                                         ("prefill_topk.py", "_build", "prefill-topk")):
+                                         ("prefill_topk.py", "_build", "prefill-topk"),
+                                         ("decode_topk.py", "_build", "decode-topk")):
             with self.subTest(builder=relative):
                 path = ROOT / "engine/kernels" / relative
                 tree = ast.parse(path.read_text())
