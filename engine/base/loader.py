@@ -44,6 +44,7 @@ import json
 import mmap
 import os
 import struct
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -206,8 +207,14 @@ class RankLoader:
             return {}
         # two buffers so a read overlaps the upload before it; one run has nothing to overlap
         # with, and the second buffer would be half a gigabyte of pinned memory held for nothing.
-        owners, buffers = staging(self.staging_bytes(runs), 1 if len(runs) == 1 else 2, device)
+        width = self.staging_bytes(runs)
+        owners, buffers = staging(width, 1 if len(runs) == 1 else 2, device)
         out, blocks, staged = {}, [], None
+        # What the ledger could not say, and so what a load lever could not be built on: whether this
+        # rank read the disk or the page cache, and which half of the phase it spent. A boot's `load`
+        # row was 44.5 GiB in 5.245 s = 8.49 GiB/s, and this drive's O_DIRECT ceiling is 6.2 -- the row
+        # was above the hardware and nothing recorded which path it took (boot-time study 5-i).
+        waited_s = copied_s = 0.0
 
         def read(index):
             return self._read_run(runs[index], buffers[index % len(buffers)])
@@ -216,17 +223,23 @@ class RankLoader:
             with ThreadPoolExecutor(max_workers=1) as pool:
                 pending = pool.submit(read, 0)
                 for i, run in enumerate(runs):
+                    blocked = time.perf_counter()
                     host = pending.result()
+                    # The wait, not the read: a read that finished under the previous upload costs
+                    # nothing here, which is the number that says whether the overlap is working.
+                    waited_s += time.perf_counter() - blocked
                     if i + 1 < len(runs):
                         # the next read cannot reuse this buffer, hence two.
                         pending = pool.submit(read, i + 1)
                     staged = torch.frombuffer(host, dtype=torch.uint8)
+                    began = time.perf_counter()
                     if arena is not None:
                         block = arena.carve(run.nbytes, f"weights/{run.start}")
                         block.copy_(staged, non_blocking=False)
                     else:
                         # always a copy: the next run overwrites this staging buffer
                         block = staged.to(device, non_blocking=False, copy=True)
+                    copied_s += time.perf_counter() - began
                     if not self.direct:
                         # A buffered read left clean pages behind and a blocking
                         # upload has consumed this run. They must not compete
@@ -243,6 +256,11 @@ class RankLoader:
                     if recorder is not None:
                         recorder.count("blocks")
                         recorder.count("bytes", run.nbytes)
+            if recorder is not None:
+                recorder.gauge("direct", int(self.direct))
+                recorder.gauge("wait_s", round(waited_s, 3))
+                recorder.gauge("copy_s", round(copied_s, 3))
+                recorder.gauge("read_bytes", int(width))     # the widest run + its sectors: one read's size
         finally:
             staged = None                     # the staging buffers are no one else's
             buffers.clear()

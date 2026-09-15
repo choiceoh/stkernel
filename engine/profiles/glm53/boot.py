@@ -26,6 +26,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 # box serves vLLM in. Set before torch reads it, so every segment of this process maps that way.
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
+# Everything below is an import, and imports are boot time: torch 1.22 s, tilelang 1.70, flashinfer
+# 1.06, deep_gemm 0.15, triton 0.09 on the one box that ever measured them, by hand, in a container
+# with no GPU (boot-time study 5-b). The `front` row carries this so the next reader does not have
+# to: what it leaves outside is the lease, the box check, the config and the kernel shape.
+_IMPORTS_BEGAN = time.perf_counter()
+
 import torch                                                     # noqa: E402
 
 from engine.base import scheduler as sched                       # noqa: E402
@@ -35,6 +41,7 @@ from engine.base import tenancy                                   # noqa: E402
 from engine.base import kernel_shape                              # noqa: E402
 from engine.base.comm import Comm, LocalTP                       # noqa: E402
 from engine.base.config import Config, Fact, Knob                # noqa: E402
+from engine.base import instruments                              # noqa: E402
 from engine.base.instruments import Recorder                     # noqa: E402
 from engine.base.loader import RankLoader                        # noqa: E402
 from engine.base.params import total_bytes                       # noqa: E402
@@ -54,6 +61,8 @@ from engine.profiles.glm53.net import Glm53Net                   # noqa: E402
 from engine.profiles.glm53.weights import rank_loader            # noqa: E402
 from engine.profiles.glm53 import vision as vision_mod           # noqa: E402
 from engine.profiles.glm53 import natives                        # noqa: E402
+
+_IMPORT_SECONDS = time.perf_counter() - _IMPORTS_BEGAN
 
 GIB = 1 << 30
 KV_GIB = 24.0                       # production parity (vLLM's 24.02 GiB/rank, 28차 §8); the ST budget table leaves 41.6 GiB, 45차 §23
@@ -1391,6 +1400,12 @@ def fleet(a) -> int:
     # The rendezvous and the kernel imports are boot time too: 15.6 s of a measured 90.2 s boot sat
     # outside this table (boot-time study, 2026-09-11), so the recorder opens before them.
     rec = Recorder("boot")
+    # And what is above even this line -- python's startup, torch, the kernel modules, the lease, the
+    # facts, the shape -- is the rest of that 15.6 (9.17 on the 3acae017 boots, both read off container
+    # timestamps by hand). The process knows when it started; the table says so as its first row.
+    front = instruments.process_seconds()
+    if front is not None:
+        rec.mark("front", front, import_s=round(_IMPORT_SECONDS, 3))
     # Every native extension this boot loads starts building now, one thread each, while the comm initialises; the
     # ranks meet below, before the one-shot transport's first sum. A native built at its first use left a rank's
     # peers waiting in a collective for its compile, and main's first cold boot died of it (profiles/glm53/natives).
@@ -1547,6 +1562,10 @@ def fleet(a) -> int:
         proof = native_execution_report(net, engine.drafter)
         print('ST_NATIVE_EXECUTION '+json.dumps(dict(rank=comm.rank, **proof)), flush=True)
         engine.memory.write(Path(a.dump_dir) / f"memory-rank{comm.rank}.json")
+        # Every rank, not just the one that prints. The phase table is where rank skew lives -- `wait for
+        # weight preparation` is rank 0 waiting for the slowest of the other three and says nothing about
+        # WHICH -- and until now it existed only as rank 0's stdout, so two boots could not be subtracted.
+        rec.dump(Path(a.dump_dir) / f"boot-rank{comm.rank}.json")
         if comm.rank == 0 and engine.budget is not None:
             # D1 a second time, with this boot's own numbers. The table above was printed
             # before a byte was allocated, so its two hardest lines were guesses -- a runtime
