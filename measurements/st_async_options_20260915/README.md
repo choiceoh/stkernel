@@ -80,6 +80,15 @@ logprobs는 상위 후보 5개를 요청하고 같은 GPU에서 기존 함수와
 
 ## 재실행
 
+### PR 통합 검증
+
+`main@24240e36`의 난수 상한·샘플링 끝점·문법 draft 검증 수정을 반영했다.
+난수 검사 파일의 충돌은 양쪽 회귀 검사를 모두 보존해 해결했다.
+통합 후 [CPU 검사](merge-cpu-tests.log)는 264개 실행 중 237개 통과·27개 건너뜀,
+[CUDA·문법 검사](merge-cuda-tests.log)는 33개 모두 통과했다.
+CPU 명령에는 아래 목록에 `tests.test_engine_deferred_state_contracts`를 추가했다.
+기존 구성 요소 측정 JSON과 소스 해시는 처음 측정한 소스의 기록으로 보존한다.
+
 저장소 루트에서 위 버전의 Python 환경으로 실행한다.
 
 ```bash
