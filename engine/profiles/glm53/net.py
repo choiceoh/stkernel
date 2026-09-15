@@ -983,7 +983,7 @@ class Glm53Net:
         s = torch.sigmoid(logits)
         sel = (s + p[n + "bias"]).topk(F.topk_experts, dim=-1).indices
         w = s.gather(-1, sel)
-        return sel.to(torch.int32), w / w.sum(-1, keepdim=True) * F.routed_scale
+        return sel.to(torch.int32), w / (w.sum(-1, keepdim=True) + 1e-20) * F.routed_scale
 
 
     def _packet_ffn_layers(self, rows):

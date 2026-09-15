@@ -16,12 +16,18 @@ sys.path.insert(0, str(ROOT))
 
 from engine.base import draws                                          # noqa: E402
 
+ENDPOINT_SEED = 4465410241719536755  # FRESH/0 at nonce=0,generation=0 rounded to 1.0 before the clamp
+
 torch = None
 if importlib.util.find_spec("torch") is not None:
     import torch
 
 
 class KeyTests(unittest.TestCase):
+    def test_rounding_does_not_close_the_upper_endpoint(self):
+        key = draws.row_key(ENDPOINT_SEED, 0, 0)
+        self.assertEqual(draws.uniform(key, draws.FRESH, 0), 1.0 - 2.0 ** -24)
+
     def test_uniforms_lie_in_the_unit_interval_and_are_float32_values(self):
         k = draws.row_key(0, 1, 0)
         us = draws.uniforms(k, draws.PICK, 1000)
@@ -70,6 +76,39 @@ class KeyTests(unittest.TestCase):
 
 @unittest.skipUnless(torch is not None, "requires PyTorch")
 class TensorAgreementTests(unittest.TestCase):
+    def test_upper_endpoint_matches_on_host_tensor_and_fused_graph(self):
+        expected = torch.tensor([[draws.uniform(draws.row_key(ENDPOINT_SEED, 0, 0), p, i)
+                                  for p, i in draws.step_layout(7)]])
+        self.assertLess(float(expected.max()), 1.)
+        for device in (['cpu', 'cuda'] if torch.cuda.is_available() else ['cpu']):
+            zeros = torch.zeros(1, dtype=torch.int64, device=device)
+            key = draws.row_keys(ENDPOINT_SEED, zeros, zeros)
+            self.assertEqual(draws.uniform_tensor(key, draws.FRESH, 1).item(), expected[0, -1].item())
+            block = draws.step_block(ENDPOINT_SEED, zeros, zeros, 7)
+            torch.testing.assert_close(block.cpu(), expected, rtol=0, atol=0)
+            if device == 'cuda':
+                graph = torch.cuda.CUDAGraph()
+                with torch.cuda.graph(graph):
+                    block = draws.step_block(ENDPOINT_SEED, zeros, zeros, 7)
+                try:
+                    graph.replay()
+                    torch.testing.assert_close(block.cpu(), expected, rtol=0, atol=0)
+                finally:
+                    graph.reset()
+
+    def test_bonus_token_cannot_land_in_a_zero_probability_tail(self):
+        from engine.base.sampler import block_verify_batch
+        for device in (['cpu', 'cuda'] if torch.cuda.is_available() else ['cpu']):
+            p = torch.tensor([[1., 0., 0.]], device=device)
+            zeros = torch.zeros(1, dtype=torch.int64, device=device)
+            block = draws.step_block(ENDPOINT_SEED, zeros, zeros, 7)
+            draft = torch.zeros((1, 7), dtype=torch.int64, device=device)
+            accepted, tokens, counts = block_verify_batch(p[:, None].expand(-1, 8, -1).contiguous(), draft,
+                draft[:, :, None].contiguous(), torch.ones((1, 7, 1), device=device), block[:, 7:].contiguous())
+            self.assertEqual(accepted.tolist(), [7])
+            self.assertEqual(counts.tolist(), [8])
+            self.assertEqual(tokens.tolist(), [[0] * 8])
+
     def test_the_tensor_hash_matches_the_host_hash_bit_for_bit(self):
         import random
         rng = random.Random(7)

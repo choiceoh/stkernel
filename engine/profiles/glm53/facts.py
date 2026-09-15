@@ -192,6 +192,27 @@ def architecture(c: dict) -> Facts:
     assert t["topk_method"] == "noaux_tc" and t["scoring_func"] == "sigmoid" and t["norm_topk_prob"]
     assert t["n_group"] == 1 and t["topk_group"] == 1 and t["moe_router_dtype"] == "float32"
     assert t["n_shared_experts"] == 1 and t["hidden_act"] == "silu"
+    assert t.get("attention_bias", False) is False, "attention_bias is unsupported: attention projections have no bias"
+    # Newer configs spell out the per-layer architecture as well as the legacy
+    # geometry above. Do not silently run a different network when they disagree.
+    layer_types = t.get("layer_types")
+    if layer_types is not None:
+        canonical = tuple("deepseek_sparse_attention" if kind == "full_attention" else kind for kind in layer_types)
+        expected = tuple("deepseek_sparse_attention" if kind == "dsa" else "linear_attention" for kind in f.kinds)
+        assert canonical == expected, "layer_types must agree with linear_attn_config"
+    mlp_types = t.get("mlp_layer_types")
+    if mlp_types is not None:
+        expected = tuple("dense" if i in f.dense else "sparse" for i in range(n))
+        assert tuple(mlp_types) == expected, "mlp_layer_types must agree with first_k_dense_replace"
+    indexer_types = t.get("indexer_types")
+    if indexer_types is None:
+        pattern = t.get("index_topk_pattern")
+        if pattern is not None:
+            indexer_types = ["full" if c == "F" else "shared" for c in pattern] if isinstance(pattern, str) else pattern
+        else:
+            freq, offset = max(t.get("index_topk_freq", 1), 1), t.get("index_skip_topk_offset", 2)
+            indexer_types = ["full" if max(i - offset + 1, 0) % freq == 0 else "shared" for i in range(n)]
+    assert tuple(indexer_types) == ("full",) * n, "indexer_types must be full on every layer; shared indexers are unsupported"
     assert t["index_kpool_compress"] and t["index_kpool_always_select_tail"] and t["indexer_rope_interleave"]
     assert f.topk % f.kpool == 0 and f.block % f.kpool == 0 and f.idx_dim == 128, "kpool pools of 4 tile the block; FWHT is 128-wide"
     assert f.chunk_align % f.block == 0 and f.block % 64 == 0, "the prefill chunk is whole blocks and a block is whole KDA kernel chunks"

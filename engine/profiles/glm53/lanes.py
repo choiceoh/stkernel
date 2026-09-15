@@ -34,7 +34,7 @@ def _mla_output(parts, out=None):
     return torch.cat(parts, dim=1, out=out)
 
 
-def dense_w4a16_guard_rows(raw: str | None = None) -> int:
+def dense_w4a16_guard_rows(raw: str | int | None = None) -> int:
     """Rows at which ModelOpt dense prefill leaves W4A4 for W4A16.
 
     The NVIDIA ModelOpt checkpoint has no higher precision copy of the first
@@ -265,7 +265,7 @@ def parse_moe_static(value: str) -> "tuple[str | None, bool]":
 
 
 def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = MOE_STATIC_PRODUCTION, consume_scales: bool = False,
-           mla_prefill: str = "tile32") -> Lanes:
+           mla_prefill: str = "tile32", dense_guard_rows: int | None = None) -> Lanes:
     """Bind the ST kernel package without an overlay or vLLM installation.
 
     `reference_for` names lanes DECLARED to run on the torch reference in
@@ -301,7 +301,7 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     # before the serving lane is allowed to tile the source tensors in place.
     # The fallback is deliberately opt-out (4096 rows by default); setting
     # the threshold to zero restores the all-NVFP4 experiment for profiling.
-    guard_rows = dense_w4a16_guard_rows()
+    guard_rows = dense_w4a16_guard_rows(dense_guard_rows)
     w4a16_prepared = {}
     w4a16_announced = set()
 
