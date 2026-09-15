@@ -1,0 +1,22 @@
+begin 200 {"schema": 1, "ranks": [{"rank": 0, "token": "overlap-4329d9fc11f2", "status": "recording", "preparation": {"specializations": 0, "graph_captures": 56, "observers": ["triton.runtime.jit._do_compile", 
+json-s100-ledger: 2911 tokens in 50.6 s
+json-s100-portfolio: 1927 tokens in 28.0 s
+json-s100-logic: 2792 tokens in 47.2 s
+json-s101-ledger: 1327 tokens in 20.4 s
+json-s101-portfolio: 1942 tokens in 28.2 s
+json-s101-logic: 2563 tokens in 45.9 s
+json-s102-ledger: 2674 tokens in 44.1 s
+json-s102-portfolio: 2108 tokens in 28.1 s
+json-s102-logic: 2861 tokens in 50.1 s
+json-s103-ledger: 2950 tokens in 47.9 s
+json-s103-portfolio: 2054 tokens in 28.3 s
+json-s103-logic: 2834 tokens in 49.1 s
+end 200
+6167 route_overlap rows on rank 0; errors []
+steps 6167 (8 rows, 42 MoE layers, top-8); stale route sets 0
+distinct experts per layer read by the 8 verify rows: mean 41.9 (uniform random top-8 of 288 would be 58.1; one row alone reads 8)
+a chain draft row's own experts no other row reads: 44.1% of its routes, = +8.4% of the step's expert reads
+after a rejection (anchor = the right sibling): 4452 steps; new routes 37.7% of the row's 336 (median 37.5%), adding the row = +7.3% expert reads
+after all 7 accepted (anchor = the continuation): 1703 steps; new routes 46.9% of the row's 336 (median 47.0%), adding the row = +8.7% expert reads
+sibling at rejected position j: +expert reads j=1: 7.2% (n=824), j=2: 7.2% (n=863), j=3: 7.1% (n=788), j=4: 7.3% (n=667), j=5: 7.5% (n=512), j=6: 7.4% (n=451), j=7: 7.8% (n=347)
+OVERLAP done
