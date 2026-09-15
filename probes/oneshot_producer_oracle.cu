@@ -2,6 +2,8 @@
 // against owned mapped memory. The test CPU stands in for the NIC/proxy.
 #define ST_ONESHOT_LOCAL_TEST
 #include "dsv4_oneshot_ar.cu"
+#include <optional>
+#include <pybind11/stl.h>
 
 static Ctrl* host_control(const at::Tensor& host) {
   TORCH_CHECK(host.device().is_cpu() && host.scalar_type() == at::kByte &&
@@ -78,8 +80,12 @@ static void land_ahead(at::Tensor host, uint64_t first, int64_t count, at::Tenso
 // A PDL neighbour on the collective's stream. As its producer it releases the next launch before a late
 // write, so a sum that read before its own dependency wait would see the previous input; as its successor it
 // launches at the sum's release, before the peers land, and copies only after its wait.
-__global__ void staged_copy(const bf16* src, bf16* dst, int n, long long cycles) {
+// `stamps`, when given, receives block 0 thread 0's SM clock at entry and after the dependency wait: a
+// successor that launched at its predecessor's release shows the predecessor's remaining time between them.
+__global__ void staged_copy(const bf16* src, bf16* dst, int n, long long cycles, long long* stamps) {
+  if (stamps != nullptr && blockIdx.x == 0 && threadIdx.x == 0) stamps[0] = clock64();
   asm volatile("griddepcontrol.wait;" ::: "memory");
+  if (stamps != nullptr && blockIdx.x == 0 && threadIdx.x == 0) stamps[1] = clock64();
   asm volatile("griddepcontrol.launch_dependents;");
   const long long start = clock64();
   if (threadIdx.x == 0)
@@ -88,11 +94,13 @@ __global__ void staged_copy(const bf16* src, bf16* dst, int n, long long cycles)
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += gridDim.x * blockDim.x) dst[i] = src[i];
 }
 
-static void launch_staged_copy(at::Tensor src, at::Tensor dst, int64_t cycles) {
+static void launch_staged_copy(at::Tensor src, at::Tensor dst, int64_t cycles, std::optional<at::Tensor> stamps) {
   TORCH_CHECK(src.is_cuda() && dst.is_cuda() && src.scalar_type() == at::kBFloat16 &&
               dst.scalar_type() == at::kBFloat16 && src.is_contiguous() && dst.is_contiguous() &&
               src.numel() == dst.numel() && src.numel() <= MAXEL && cycles >= 0,
               "staged copy needs matching contiguous BF16 tensors within MAXEL");
+  TORCH_CHECK(!stamps || (stamps->is_cuda() && stamps->scalar_type() == at::kLong && stamps->is_contiguous() &&
+                          stamps->numel() == 2), "staged copy stamps are a contiguous CUDA int64[2]");
   cudaLaunchConfig_t cfg{};
   cfg.gridDim = dim3(ARGRID);
   cfg.blockDim = dim3(ARTHREADS);
@@ -103,7 +111,8 @@ static void launch_staged_copy(at::Tensor src, at::Tensor dst, int64_t cycles) {
   cfg.attrs = &attr;
   cfg.numAttrs = 1;
   const auto err = cudaLaunchKernelEx(&cfg, staged_copy, reinterpret_cast<const bf16*>(src.data_ptr()),
-                                       reinterpret_cast<bf16*>(dst.data_ptr()), int(src.numel()), (long long)cycles);
+                                       reinterpret_cast<bf16*>(dst.data_ptr()), int(src.numel()), (long long)cycles,
+                                       stamps ? reinterpret_cast<long long*>(stamps->data_ptr()) : nullptr);
   TORCH_CHECK(err == cudaSuccess, "staged copy launch: ", cudaGetErrorString(err));
 }
 
@@ -134,7 +143,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("oneshot_packets", &py_oneshot_packets);
   m.def("oneshot_ar", &py_oneshot);
   m.def("oneshot_ar_consumer", &py_oneshot_consumer);
-  m.def("staged_copy", &launch_staged_copy);
+  m.def("staged_copy", &launch_staged_copy, pybind11::arg("src"), pybind11::arg("dst"), pybind11::arg("cycles"),
+        pybind11::arg("stamps") = pybind11::none());
   m.def("moe_packets", &py_moe_packets);
   m.def("oneshot_max_int64", &py_oneshot_max_int64);
   m.def("oneshot_gather_int64", &py_oneshot_gather_int64);

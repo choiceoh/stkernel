@@ -23,6 +23,7 @@ SHAPES = ((1, HIDDEN), (7, HIDDEN), (8, HIDDEN), (16, HIDDEN), (17, HIDDEN), (32
           (5,), (65533,), (98311,))
 LAND_DELAY_S = .003       # the proxy lands the peers late: an early-released successor must still wait
 PRODUCER_CYCLES = 3 << 20  # ~2 ms of SM clock: the producer releases the sum before it writes the input
+SM_HZ = 1592e6            # clock64() counts SM cycles at the fleet's pinned 1592 MHz (dsv4_oneshot_ar.cu OSAR_SM_HZ)
 KERNELS = ('oneshot_ar', 'oneshot_ar_consumer')
 
 
@@ -133,6 +134,7 @@ class ConsumerSumCudaTests(unittest.TestCase):
                 for shape in SHAPES:
                     n = math.prod(shape)
                     staged, x, out = (torch.empty(shape, device='cuda', dtype=torch.bfloat16) for _ in range(3))
+                    stamps = torch.zeros(2, device='cuda', dtype=torch.int64)
                     for name in KERNELS:
                         reduce = getattr(ext, name)
                         values = fixture(n, 1, generator)
@@ -148,7 +150,8 @@ class ConsumerSumCudaTests(unittest.TestCase):
                         with torch.cuda.graph(graph):
                             ext.staged_copy(staged, x, PRODUCER_CYCLES)
                             summed = reduce(x)
-                            ext.staged_copy(summed, out, 0)
+                            ext.staged_copy(summed, out, 0, stamps)
+                        waits = []
                         try:
                             torch.cuda.synchronize()
                             for trial in range(3):
@@ -163,8 +166,17 @@ class ConsumerSumCudaTests(unittest.TestCase):
                                 expected = fold(values).view(shape)
                                 self.assertTrue(same_bytes(summed, expected), (rank, shape, name, trial))
                                 self.assertTrue(same_bytes(out, expected), (rank, shape, name, trial, 'successor'))
+                                entry, released = stamps.tolist()
+                                waits.append((released - entry) / SM_HZ)
                         finally:
                             graph.reset()
+                        # The successor copied the final sum above. Only the consumer releases it early: it must
+                        # have launched before the late peers landed and waited them out, so the copy proves the
+                        # wait covers the peer wait and the reduce. Behind the ordinary kernel it never waits.
+                        if name == 'oneshot_ar_consumer':
+                            self.assertGreater(max(waits), LAND_DELAY_S / 2, (rank, shape, waits))
+                        else:
+                            self.assertLess(max(waits), LAND_DELAY_S / 2, (rank, shape, waits))
                 # One captured step's order of sums: C=2's consumer, a larger ordinary sum, C=1's consumer.
                 shapes = ((16, HIDDEN), (17, HIDDEN), (8, HIDDEN))
                 inputs = [torch.empty(shape, device='cuda', dtype=torch.bfloat16) for shape in shapes]
