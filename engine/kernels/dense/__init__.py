@@ -15,16 +15,19 @@ from engine.kernels.cells import DENSE_ALIGN, DENSE_KMAX, dense_glue_refusal
 
 
 @cache
-def build():
+def build(target=None):
     """Compile the dense lane's module when its key is new, and load it. No device is touched, so the fleet boot
-    builds it before its first collective (profiles/glm53/natives); `extension` probes the device at first use."""
+    builds it before its first collective (profiles/glm53/natives); `extension` probes the device at first use.
+
+    `target` is the (major, minor) capability to compile for, the fleet's when unset. It is an ARGUMENT and not
+    something read here on purpose: this function's contract, pinned by
+    tests/test_engine_glm53_natives.py, is that it consults neither the device nor the bound shape. `extension`
+    already reads the shape to judge what it probed, so the decision belongs there."""
     from torch.utils.cpp_extension import load
     from engine.kernels.common.native_cache import prepare_cuda_sources
-    from engine.base.kernel_shape import bound
-    from engine.kernels.arch import gencode
+    from engine.kernels import arch
     source = Path(__file__).with_name("kernels.cu")
-    # bound() reads the declared shape and touches no device, which this build must not do.
-    flags = ["-O2", *gencode(bound().device.capability),
+    flags = ["-O2", *arch.gencode(target or arch.FLEET),
              "-DMK_GRID_DEF=96", "-DMK_MHC_GRID_DEF=144", "-DMK_NBUF2_DEF=3",
              "-DMK_FP8_PACK2_DEF=1", "-DMK_GEMM_TRANSPOSE_M8_DEF=1",
              "-DMK_GEMM_COMPACT_M8_DEF=1", "-DMK_M8_FASTPATH_DEF=1"]
@@ -36,9 +39,9 @@ def build():
 
 @cache
 def extension():
-    ext = build()
     from engine.base.kernel_shape import bound
     device = bound().device
+    ext = build(tuple(device.capability))
     if tuple(ext.probe_device())[:3] != (*device.capability, device.sms):
         raise RuntimeError(f"native dense lane requires GB10 SM{device.capability[0]}{device.capability[1]} "
                            f"with {device.sms} SMs")
