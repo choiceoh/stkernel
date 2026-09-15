@@ -17,11 +17,56 @@ from tests.test_engine_glm53 import tiny_facts  # noqa: E402
 
 
 class BoundaryStageTests(unittest.TestCase):
-    def caches(self, F, max_seqs=2, snapshots=2, device="cpu"):
-        p = layout(F, range(F.layers))
-        arena = Arena(4096 + p.nbytes(2, max_seqs) + snapshots * snapshot_layout(F, range(F.layers))[0] + stage_bytes(F, range(F.layers), max_seqs),
-                      device=device)
-        return Glm53Caches(arena, F, range(F.layers), 2, max_seqs, draft=None, snapshots=snapshots, stage=True)
+    def caches(self, F, max_seqs=2, snapshots=2, device="cpu", draft=None):
+        p = layout(F, range(F.layers), draft)
+        arena = Arena(4096 + p.nbytes(2, max_seqs) + snapshots * snapshot_layout(F, range(F.layers), draft)[0]
+                      + stage_bytes(F, range(F.layers), max_seqs, draft), device=device)
+        return Glm53Caches(arena, F, range(F.layers), 2, max_seqs, draft=draft, snapshots=snapshots, stage=True)
+
+    @staticmethod
+    def write_draft(c, slot, positions):
+        """What an observe leaves in the ring: position p's key and value in cell p mod window, tagged by p."""
+        ring = c.draft_ring(slot)
+        for p in positions:
+            ring[:, 0, p % ring.shape[2]] = float(p + 1)
+            ring[:, 1, p % ring.shape[2]] = -float(p + 1)
+
+    def test_a_snapshot_past_its_boundary_puts_back_the_drafter_cells_written_after_it(self):
+        """The drafter ring files position p in the cell of p - window. A boundary crossed while generating is
+        snapshotted after positions past it were written over cells the snapshot still needs -- read back, they are
+        another request's keys, rotated past the boundary, sitting where the oldest context should be. The stage
+        keeps those cells from before the crossing step's observe and the snapshot puts them back: it is the ring as
+        it stood when the context was exactly the boundary, for the async chain two steps ahead and for a
+        synchronous step alike."""
+        from engine.profiles.glm53.caches import draft_stash_cells
+        F = tiny_facts()                                                      # block 16, spec_k 5: steps of up to 6
+        draft = (2, 40, 1, 4)                                                 # a 40-cell window: positions past 48 wrap
+        dev = "cpu"
+        for synchronous in (False, True):
+            with self.subTest(synchronous=synchronous):
+                c = self.caches(F, draft=draft)
+                self.assertEqual(c._stage["draft", -1].shape[1:], (2, 2, draft_stash_cells(F), 1, 4))
+                self.write_draft(c, 1, range(48))
+                c.checkpoint(1, 48, 1)                                        # the reference: the context is the boundary
+                c.reset_slot(1)
+                self.write_draft(c, 1, range(45))
+                if synchronous:
+                    c.stash_draft(1, 48)                                      # adapter.decode, before its observe
+                    self.write_draft(c, 1, range(45, 51))                     # 45 -> 51 crosses 48
+                    c.checkpoint(1, 48, 0, past=3)
+                else:
+                    c.stage_boundaries(torch.tensor([1], device=dev), torch.tensor([45], device=dev), torch.tensor([6], device=dev))
+                    self.write_draft(c, 1, range(45, 63))                     # the crossing step, and two more ahead of the host
+                    c.checkpoint_from_stage(1, 0, 48)
+                self.assertTrue(torch.equal(c._snap["draft", -1][0], c._snap["draft", -1][1]))
+                live = c.draft_ring(1)
+                self.assertFalse(torch.equal(live, c._snap["draft", -1][1]), "the live ring did move past the boundary")
+        with self.assertRaises(ValueError):
+            c.checkpoint(1, 48, 0, past=draft_stash_cells(F) + 1)
+        with self.assertRaises(ValueError):
+            c.checkpoint_from_stage(1, 0)                                     # a drafter ring is put back at its boundary
+        with self.assertRaises(ValueError):
+            self.caches(F, draft=(2, draft_stash_cells(F), 1, 4))             # a window no wider than the stash
 
     def test_a_crossing_step_parks_the_boundary_and_a_non_crossing_one_leaves_the_stage_alone(self):
         F = tiny_facts()                                                      # block 16, conv 4, spec_k 5
@@ -64,8 +109,8 @@ class CudaBoundaryStageTests(unittest.TestCase):
         for dtype in ("fp32", "fp16"):
             F = replace(tiny_facts(), kda_state_dtype=dtype, kinds=("kda", "dsa", "kda"),
                         kda_heads=8, kda_dim=33, spec_k=6, block=768)
-            host = BoundaryStageTests().caches(F, max_seqs=4)
-            dev = BoundaryStageTests().caches(F, max_seqs=4, device="cuda")
+            host = BoundaryStageTests().caches(F, max_seqs=4, draft=(2, 64, 2, 8))
+            dev = BoundaryStageTests().caches(F, max_seqs=4, device="cuda", draft=(2, 64, 2, 8))
             # Include arbitrary floating bit patterns and padding, so this
             # copy contract also detects NaN canonicalization and byte overrun.
             rng = torch.Generator().manual_seed(492)
@@ -95,7 +140,7 @@ class CudaBoundaryStageTests(unittest.TestCase):
                         boundary = ((ctx + count) // F.block) * F.block
                         if count and boundary > ctx:
                             for cache in (host, dev):
-                                cache.checkpoint_from_stage(slot, 0)
+                                cache.checkpoint_from_stage(slot, 0, boundary)
                                 cache.restore(1, boundary, 0)
                             self.assertTrue(torch.equal(dev.snapshot_store.cpu(), host.snapshot_store), dtype)
                             self.assertTrue(torch.equal(dev.state.cpu(), host.state), dtype)

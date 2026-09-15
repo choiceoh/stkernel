@@ -137,9 +137,38 @@ def _stage_conv(RING, STAGE, ROFF, SOFF, SLOT, BEFORE, COUNT, BLOCK_TOKENS: tl.c
         tl.store(STAGE + slot * SS + tl.load(SOFF + L) + ch * TAPS + j, value, mask)
 
 
+@triton.jit
+def _stage_draft(RING, STAGE, ROFF, SOFF, SLOT, BEFORE, COUNT, BLOCK_TOKENS: tl.constexpr, WINDOW: tl.constexpr,
+                 CELLS: tl.constexpr, CELL: tl.constexpr, RS: tl.constexpr, SS: tl.constexpr, BLOCK: tl.constexpr):
+    """A crossing row's drafter ring cells for positions boundary .. boundary + CELLS - 1, into its stage before the
+    step's observe writes past the boundary: one program a (row, layer and half, cell)."""
+    i, q = tl.program_id(0), tl.program_id(1)
+    slot, before, count = tl.load(SLOT + i), tl.load(BEFORE + i), tl.load(COUNT + i)
+    after = before + count
+    boundary = (after // BLOCK_TOKENS) * BLOCK_TOKENS
+    crossed = (count > 0) & (boundary > before)
+    plane, j = q // CELLS, q % CELLS                               # plane: layer * 2 + half
+    cell = (boundary + j) % WINDOW
+    col = tl.arange(0, BLOCK)
+    mask = (col < CELL) & crossed
+    value = tl.load(RING + slot * RS + ROFF + (plane * WINDOW + cell) * CELL + col, mask, other=0.0)
+    tl.store(STAGE + slot * SS + SOFF + (plane * CELLS + j) * CELL + col, value, mask)
+
+
 def stage_boundaries(caches, slots, ctx_before, counts):
-    """caches.stage_boundaries on the device: one launch for every KDA layer's recurrent cell, one for the conv taps."""
+    """caches.stage_boundaries on the device: one launch for every KDA layer's recurrent cell, one for the conv taps,
+    one for the drafter ring cells past the boundary."""
     F = caches.F
+    draft = caches._stage.get(("draft", -1))
+    if draft is not None and slots.numel():
+        ring = caches._fields["draft", -1]
+        state_bf16, stage_bf16 = caches.state.view(torch.bfloat16), caches.stage_store.view(torch.bfloat16)
+        layers, _, window, heads, dim = ring.shape[1:]
+        cells = draft.shape[3]
+        _stage_draft[(int(slots.numel()), layers * 2 * cells)](
+            state_bf16, stage_bf16, ring.storage_offset() - state_bf16.storage_offset(),
+            draft.storage_offset() - stage_bf16.storage_offset(), slots, ctx_before, counts, F.block, window, cells,
+            heads * dim, caches.layout.slot_bytes // 2, caches.stage_bytes // 2, triton.next_power_of_2(heads * dim))
     kda = [L for L in caches.layers if not F.is_dsa(L)]
     if not kda:
         return
