@@ -185,19 +185,25 @@ class MoeStaticSpecTests(unittest.TestCase):
             md = importlib.import_module("engine.kernels.b12x.moe_dispatch")
         except ImportError as exc:
             self.skipTest(f"b12x dispatcher unavailable here: {exc}")
-        from engine.modules.expert_layout import W13_K_IN_BYTES, W2_K_IN_BYTES, row_major_expert
+        from engine.modules.expert_layout import W2_K_IN_BYTES, row_major_expert, w13_chunk_bytes
         torch.manual_seed(1)
-        w13 = torch.randint(0, 256, (2, 1024, 2048), dtype=torch.uint8)   # GLM TP4: [E, 2I, H/2]
-        w2 = torch.randint(0, 256, (2, 4096, 256), dtype=torch.uint8)     # [E, H, I/2]
-        keep13, keep2 = w13.clone(), w2.clone()
-        md.tile_expert_weights_inplace(w13, w2)
-        self.assertEqual(getattr(w13, md._TILE_MAJOR_ATTR), "plain")
-        self.assertFalse(torch.equal(w13, keep13))                          # the bytes moved ...
-        for e in range(2):                                                 # ... and the reference view undoes it exactly
-            self.assertTrue(torch.equal(row_major_expert(w13, e, W13_K_IN_BYTES), keep13[e]))
-            self.assertTrue(torch.equal(row_major_expert(w2, e, W2_K_IN_BYTES), keep2[e]))
-        md.tile_expert_weights_inplace(w13, w2)                            # idempotent: a second call is a no-op
-        self.assertTrue(torch.equal(row_major_expert(w13, 1, W13_K_IN_BYTES), keep13[1]))
+        for chunk in (None, 512, 256):                                     # the served chunk, then every named one
+            w13 = torch.randint(0, 256, (2, 1024, 2048), dtype=torch.uint8)   # GLM TP4: [E, 2I, H/2]
+            w2 = torch.randint(0, 256, (2, 4096, 256), dtype=torch.uint8)     # [E, H, I/2]
+            keep13, keep2 = w13.clone(), w2.clone()
+            md.tile_expert_weights_inplace(w13, w2, w13_chunk=chunk)
+            served = md._w13_tile_chunk(chunk)
+            self.assertEqual(getattr(w13, md._TILE_MAJOR_ATTR), "plain" if served == 512 else f"plain{served}")
+            self.assertEqual(w13_chunk_bytes(w13), served // 2)
+            self.assertFalse(torch.equal(w13, keep13))                      # the bytes moved ...
+            for e in range(2):                                             # ... and the reference view undoes it exactly
+                self.assertTrue(torch.equal(row_major_expert(w13, e, w13_chunk_bytes(w13)), keep13[e]))
+                self.assertTrue(torch.equal(row_major_expert(w2, e, W2_K_IN_BYTES), keep2[e]))
+            md.tile_expert_weights_inplace(w13, w2, w13_chunk=chunk)       # idempotent: a second call is a no-op
+            self.assertTrue(torch.equal(row_major_expert(w13, 1, w13_chunk_bytes(w13)), keep13[1]))
+            other = 256 if served != 256 else 512
+            with self.assertRaisesRegex(ValueError, "already tile-major"):  # another chunk never re-lays tiled bytes
+                md.tile_expert_weights_inplace(w13, w2, w13_chunk=other)
 
 
 class MlaPrefillModeTests(unittest.TestCase):
