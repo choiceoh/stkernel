@@ -138,7 +138,8 @@ def attend_rows(q, k, v, ring, positions, *, slot=None, layer=0, window=None):
     back together afterwards.
 
     `window` is the drafter's sliding window (DFlash2: 2048): block row j sees the context positions within
-    window - 1 - j of the anchor. It defaults to the ring's cells, which serving sizes to the window."""
+    window - 1 - j of the anchor. It defaults to the ring's cells, which every boot sizes to the window
+    (drafter.ring_cells)."""
     if slot is not None:
         if (ring.ndim != 6 or not 0 <= layer < ring.shape[1] or slot.ndim != 1 or slot.numel() != q.shape[0]
                 or slot.dtype != torch.int64 or slot.device != q.device):

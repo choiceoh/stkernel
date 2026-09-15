@@ -169,9 +169,9 @@ class BudgetTests(unittest.TestCase):
         native = budget.budget(16, 4, snapshots=96, draft_tp=4)
         def snapshots(b):
             return next(l.gib for l in b.lines if l.name.startswith('prefix snapshots'))
-        # Stock batched SDPA stores block keys in an eight-cell scratch tail;
-        # native attention reads those keys directly and needs no ring tail.
-        saved_per_ring = 5 * 2 * ((2048 + 8) * 8 - 2048 * 2) * 128 * 2
+        # Both rings are the window's cells (the stock one used to carry an
+        # eight-cell scratch tail); only the replicated KV heads differ.
+        saved_per_ring = 5 * 2 * 2048 * (8 - 2) * 128 * 2
         self.assertEqual(snapshots(replicated) - snapshots(native), 96 * saved_per_ring / (1 << 30))
         self.assertEqual(replicated.slot_bytes - native.slot_bytes, saved_per_ring)
         self.assertGreater(native.paged_gib, replicated.paged_gib)
