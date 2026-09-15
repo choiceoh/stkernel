@@ -82,6 +82,15 @@ def debug_arm_b(temperature):
 def debug_table(values, k):
     """debug (never merge): a per-position table at the drafter's width (the last value repeats past seven)."""
     return tuple(values[:k]) + (values[-1],) * max(0, k - len(values))
+
+
+def debug_device_table(values, k, device, dtype):
+    """debug (never merge): the table filled on the device. Inside CUDA graph capture a tensor built from a host
+    list is a pageable host-to-device copy, which capture refuses (10:54 boot: every rank died in capture_decode)."""
+    out = torch.empty(k, device=device, dtype=dtype)
+    for i, v in enumerate(debug_table(values, k)):
+        out[i] = v
+    return out
 BF16, F32 = torch.bfloat16, torch.float32
 
 
@@ -720,9 +729,8 @@ class Drafter:
             edge *= torch.tensor(self.selector_alpha, device=dev).view(1, K, 1, 1)
         arm_b = debug_arm_b(temps).view(n, 1)                                           # debug (never merge)
         edge = torch.where(arm_b.view(n, 1, 1, 1),
-                           edge * torch.tensor(debug_table(DEBUG_ALPHA_B, K), device=dev, dtype=edge.dtype).view(1, K, 1, 1),
-                           edge)
-        tau_b = torch.tensor(debug_table(DEBUG_TAU_B, K), device=dev, dtype=torch.float32)
+                           edge * debug_device_table(DEBUG_ALPHA_B, K, dev, edge.dtype).view(1, K, 1, 1), edge)
+        tau_b = debug_device_table(DEBUG_TAU_B, K, dev, torch.float32)
         scores = unary[:, :, None, :] + edge   # [n, K, prev, cur]
         rows = torch.arange(n, device=dev)
         prev = torch.zeros(n, dtype=torch.int64, device=dev)
@@ -850,7 +858,7 @@ class Drafter:
             edge *= torch.tensor(self.selector_alpha, device=dev).view(K, 1, 1)
         arm_b = bool(debug_arm_b(float(temperature)))                                  # debug (never merge)
         if arm_b:
-            edge = edge * torch.tensor(debug_table(DEBUG_ALPHA_B, K), device=dev, dtype=edge.dtype).view(K, 1, 1)
+            edge = edge * debug_device_table(DEBUG_ALPHA_B, K, dev, edge.dtype).view(K, 1, 1)
         scores = unary[:, None, :] + edge
         # Each step picks from the sixteen candidates the last one opened, so the walk cannot be batched --
         # but its uniforms arrive together (keyed, base/draws), and over sixteen candidates the cumulative walk
