@@ -42,6 +42,11 @@ def main():
         from probes.engine_producer_pack import main as producer_pack_check
         producer_pack_check(args.ranks, seqs=args.seqs, samples=args.samples, output=args.output)
         return
+    if args.lanes == 'moe_c2_cells' or args.lanes.startswith('moe_c2_cells:'):
+        # the routed experts' same-build cells: tile-major w13 chunk, stamped timeline, prefill (real rank weights)
+        from probes.engine_moe_c2_cells import main as moe_c2_cells
+        moe_c2_cells(args.ranks, sections=args.lanes.split(':')[1:], samples=args.samples, output=args.output)
+        return
     if args.lanes == 'dense_cells' or args.lanes.startswith('dense_cells:'):
         from probes.engine_dense_cells import main as dense_cells_check
         dense_cells_check(args.ranks, cells=args.lanes.split(':')[1:], seqs=args.seqs, samples=args.samples,

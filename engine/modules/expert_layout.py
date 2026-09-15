@@ -9,13 +9,23 @@ the judge read the same arena tensors, so they must see row-major bytes again.
 """
 import torch
 
-TILE_MAJOR_ATTR = "_b12x_tile_major"   # moe_dispatch._TILE_MAJOR_ATTR: False / "plain"
+TILE_MAJOR_ATTR = "_b12x_tile_major"   # moe_dispatch._TILE_MAJOR_ATTR: False / "plain" / "plain<chunk>"
 W13_K_IN_BYTES = 256                    # moe_static_kernel_v5.TILED_W13_K_IN // 2 (512 fp4 per k tile)
 W2_K_IN_BYTES = 64                      # moe_static_kernel_v5.TILED_W2_K_IN // 2 (128 fp4 per k tile)
 
 
 def is_tile_major(w: torch.Tensor) -> bool:
     return bool(getattr(w, TILE_MAJOR_ATTR, False))
+
+
+def w13_chunk_bytes(w: torch.Tensor) -> int:
+    """The w13 chunk in bytes of a tile-major tensor, from its relayout marker (0 if row-major).
+
+    moe_dispatch._tile_major_kind: "plain" is the original 512 fp4 chunk, "plain<c>" the chunk c."""
+    kind = getattr(w, TILE_MAJOR_ATTR, False)
+    if not kind:
+        return 0
+    return W13_K_IN_BYTES if kind == "plain" else int(kind[len("plain"):]) // 2
 
 
 def row_major_expert(w: torch.Tensor, e: int, k_in_bytes: int) -> torch.Tensor:
@@ -43,6 +53,12 @@ def _selfcheck() -> None:
     for e in range(E):
         assert torch.equal(row_major_expert(tiled, e, W13_K_IN_BYTES), w[e])
         assert row_major_expert(w, e, W13_K_IN_BYTES).data_ptr() == w[e].data_ptr()
+    for chunk_bytes in (64, 128):
+        tiled = w.reshape(E, rows, kb // chunk_bytes, chunk_bytes).permute(0, 2, 1, 3).contiguous().view(E, rows, kb)
+        setattr(tiled, TILE_MAJOR_ATTR, f"plain{chunk_bytes * 2}")
+        assert w13_chunk_bytes(tiled) == chunk_bytes
+        for e in range(E):
+            assert torch.equal(row_major_expert(tiled, e, w13_chunk_bytes(tiled)), w[e])
     print("  expert_layout: tile-major bytes read back row-major per expert OK")
 
 

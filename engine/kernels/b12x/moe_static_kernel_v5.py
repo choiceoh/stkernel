@@ -72,6 +72,14 @@ from .moe_static_kernel_v4 import (
 # would silently read the wrong bytes, so the kernel pins them here.
 TILED_W13_K_IN = _FC1_TILE_K   # 512 fp4 = 256 B per row per k tile
 TILED_W2_K_IN = _FC2_TILE_K    # 128 fp4 = 64 B per row per k tile
+# The w13 chunks a weight view may carry (moe_dispatch._WeightViews.w13_chunk).
+# group_modes makes the chunk the inner extent of one hierarchical K mode, the
+# k-tile count its outer extent. A kernel K tile of several chunks is a box of
+# that many contiguous runs; a K tile smaller than the chunk -- the M16
+# reform's K256, the gated prefill kernels' K128, over a 512 chunk -- reads
+# part of every row's chunk, runs of K/2 B with the rest of the chunk between
+# rows.
+TILED_W13_CHUNKS = (128, 256, 512)
 
 
 class MoEStaticKernelV5(MoEStaticKernelV4):
@@ -242,4 +250,4 @@ class MoEStaticKernelV5(MoEStaticKernelV4):
         )
 
 
-__all__ = ["MoEStaticKernelV5", "TILED_W13_K_IN", "TILED_W2_K_IN"]
+__all__ = ["MoEStaticKernelV5", "TILED_W13_K_IN", "TILED_W2_K_IN", "TILED_W13_CHUNKS"]
