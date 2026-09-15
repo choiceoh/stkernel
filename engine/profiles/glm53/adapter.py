@@ -108,7 +108,7 @@ class Glm53Engine:
         self.ceiling_last_error = ""
         self.ceilings_off = False                            # disarmed after CEILING_FAILURES_KEPT of them
         self.steps_verified = 0                              # verifications since the counters were last cleared
-        self._ceiling_every = 64                             # two vocabulary passes, so sampled, not every step
+        self._ceiling_every = 1                              # debug (never merge): every verification (main: 64)
         # A gauge that keeps failing is not news after the third time, and the engine should stop
         # paying for it. The counter and the last message stay in /metrics either way.
         self.lane_info = {}                        # what is actually bound: set by the boot that built the lanes
@@ -1016,6 +1016,13 @@ class Glm53Engine:
 
     # -- picking tokens: the captured samplers for plain rows; rows with options (base/sampler.OPTION_KEYS) or a
     # -- stochastic row with drafts take the base sampler over their gathered logits, identically on every rank ------
+    def _debug_policy_modified(self, seq: int) -> bool:
+        """debug (never merge): of the rich-sampler reasons, only these change a greedy label. logprobs and a reasoning
+        budget (forced at its boundary only) leave the pick alone, so their rows still train the selector."""
+        opts = self.options.get(seq, {})
+        return any(opts.get(k) is not None for k in ("seed", "presence_penalty", "frequency_penalty",
+                                                     "repetition_penalty", "logit_bias", "grammar"))
+
     def _rich(self, seq: int) -> bool:
         from engine.base.sampler import needs_rich_sampler
         return needs_rich_sampler(self.options.get(seq, {}), self.limits[seq][1], bool(self.drafter.k))
@@ -1389,6 +1396,22 @@ class Glm53Engine:
                                                  for s, live in zip(wanted, spans)])
             jobs = [(s.seq, full[o: o + live], drafts[s.seq], draft_probs[s.seq])
                     for s, o, live in zip(wanted, starts, spans)]
+            feats = getattr(self.draft_diagnostics, 'selector_features', None)
+            if feats is not None and len(feats) > 3:
+                # debug (never merge): the target's T=1 probabilities of each position's 16 candidates and its 0.95
+                # nucleus (smallest kept probability, kept mass), before the rich picker touches the logits
+                for s, o, live in zip(wanted, starts, spans):
+                    k = min(live, self.drafter.k)
+                    if k <= 0:
+                        continue
+                    probs = torch.softmax(full[o: o + k].float(), -1)
+                    feats[3][s.slot, :k] = probs.gather(1, self.draft_diagnostics.support[s.slot, :k])
+                    top = probs.sort(-1, descending=True)[0]
+                    mass = top.cumsum(-1)
+                    cut = (mass < 0.95).sum(-1, keepdim=True).clamp_max(top.shape[1] - 1)
+                    feats[4][s.slot, :k, 0] = top.gather(1, cut).squeeze(1)
+                    feats[4][s.slot, :k, 1] = mass.gather(1, cut).squeeze(1)
+                    feats[5][s.slot] = k
             picked = {s.seq: answer for s, answer in zip(wanted, self._pick_rich(jobs, masks))}
         finished, committed_counts = [], []
         for s in step.segments:
@@ -1406,7 +1429,7 @@ class Glm53Engine:
             if self.draft_diagnostics is not None and self.limits[s.seq][1] <= 0:
                 self.draft_diagnostics.note_sync(s.seq, s.ctx, s.slot, accepted, new,
                     self.limits[s.seq][0] - self._generated_count(s.seq), self.ends.get(s.seq, self.eos),
-                    policy_modified=rich[s.seq],
+                    policy_modified=rich[s.seq] and self._debug_policy_modified(s.seq),   # debug (never merge)
                     trace_eligible=self.min_new.get(s.seq, 0) <= self._generated_count(s.seq))
             new, done = self._commit(s.seq, accepted, new, lps, len(drafts[s.seq]))
             committed = len(new)                                           # clipped tokens must not enter the next turn's context

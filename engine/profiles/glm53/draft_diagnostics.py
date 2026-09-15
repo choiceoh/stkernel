@@ -55,10 +55,15 @@ class DraftDiagnostics:
             # debug (never merge): the drafter's hidden and selector projection at every proposed position, and the
             # anchor, copied inside the proposal graph; a traced row appends its labelled positions to a binary file
             hidden, rank_dim = features
-            slots, k = self.support.shape[:2]
+            slots, k, candidates = self.support.shape
             dev = self.support.device
             self.selector_features = (torch.zeros(slots, k, hidden, device=dev, dtype=torch.bfloat16),
                                       torch.zeros(slots, k, rank_dim, device=dev, dtype=torch.float32),
+                                      torch.zeros(slots, device=dev, dtype=torch.int64),
+                                      # the target's T=1 probability of each candidate, the 0.95 nucleus (smallest kept
+                                      # probability, kept mass), and how many positions of this step carry them
+                                      torch.zeros(slots, k, candidates, device=dev, dtype=torch.float32),
+                                      torch.zeros(slots, k, 2, device=dev, dtype=torch.float32),
                                       torch.zeros(slots, device=dev, dtype=torch.int64))
 
     def _feature_file(self):
@@ -108,13 +113,22 @@ class DraftDiagnostics:
                 if self.selector_features is not None:
                     # debug (never merge): positions [0, count) of the hidden (raw bf16) then the projection (raw
                     # fp32), appended; the row says where. `bonus` fills the all-accepted gap in the output.
-                    hidden, projection, anchors = self.selector_features
+                    hidden, projection, anchors, target_probs, nucleus, valid = self.selector_features
+                    have = min(count, int(valid[slot]))
+                    valid[slot] = 0
                     extra = dict(anchor=int(anchors[slot]), bonus=int(new[self.k]) if accepted == self.k and len(new) > self.k else None,
-                                 feature_hidden=int(hidden.shape[2]), feature_rank=int(projection.shape[2]))
+                                 feature_hidden=int(hidden.shape[2]), feature_rank=int(projection.shape[2]),
+                                 target_prob_positions=have)
                     path = self._feature_file()
                     if path is not None:
-                        blob =(hidden[slot, :count].contiguous().cpu().view(torch.uint8).numpy().tobytes()
-                                + projection[slot, :count].contiguous().cpu().view(torch.uint8).numpy().tobytes())
+                        probs = target_probs[slot, :count].clone()
+                        kept = nucleus[slot, :count].clone()
+                        probs[have:] = float('nan')                  # positions this step's rich pass did not cover
+                        kept[have:] = float('nan')
+                        blob = (hidden[slot, :count].contiguous().cpu().view(torch.uint8).numpy().tobytes()
+                                + projection[slot, :count].contiguous().cpu().view(torch.uint8).numpy().tobytes()
+                                + probs.contiguous().cpu().view(torch.uint8).numpy().tobytes()
+                                + kept.contiguous().cpu().view(torch.uint8).numpy().tobytes())
                         with open(path, 'ab') as f:
                             extra['feature_offset'] = f.tell()
                             f.write(blob)

@@ -222,23 +222,43 @@ class TraceTests(unittest.TestCase):
         d.selector_features[0][2].copy_(hidden)
         d.selector_features[1][2].copy_(projection)
         d.selector_features[2][2] = 777
+        probs = torch.tensor([[.5, .25], [.125, .0625], [.75, .125]])
+        nucleus = torch.tensor([[.25, .96], [.0625, .95], [.125, .97]])
+        d.selector_features[3][2].copy_(probs)
+        d.selector_features[4][2].copy_(nucleus)
         records = []
         d.sink = lambda **row: records.append(row)
+        per = 5 * 2 + 4 * 4 + 2 * 4 + 2 * 4
         with tempfile.TemporaryDirectory() as tmp:
             d.feature_dir = tmp
+            d.selector_features[5][2] = 3
             d.note_sync(1, 100, 2, 1, [10, 13, 99], 50, set())          # accepted 1: labels 2 positions, no bonus
+            d.selector_features[5][2] = 2                               # this step's rich pass covered two positions
             d.note_sync(1, 102, 2, 3, [10, 12, 14, 42], 50, set())      # all 3 accepted: 3 positions, bonus 42
             rows = [r for r in records if r['kind'] == 'draft_selector']
             with open(f'{tmp}/selector-features.bin', 'rb') as f:
                 blob = f.read()
         self.assertEqual([r['anchor'] for r in rows], [777, 777])
         self.assertEqual([r['bonus'] for r in rows], [None, 42])
-        self.assertEqual([r['feature_offset'] for r in rows], [0, 2 * (5 * 2 + 4 * 4)])
+        self.assertEqual([r['target_prob_positions'] for r in rows], [2, 2])
+        self.assertEqual([r['feature_offset'] for r in rows], [0, 2 * per])
+        self.assertEqual(rows[1]['feature_bytes'], 3 * per)
         second = blob[rows[1]['feature_offset']: rows[1]['feature_offset'] + rows[1]['feature_bytes']]
-        h = torch.frombuffer(bytearray(second[:3 * 5 * 2]), dtype=torch.bfloat16).view(3, 5)
-        p = torch.frombuffer(bytearray(second[3 * 5 * 2:]), dtype=torch.float32).view(3, 4)
+        at = 0
+        def take(n, dtype, shape):
+            nonlocal at
+            chunk = torch.frombuffer(bytearray(second[at: at + n]), dtype=dtype).view(*shape)
+            at += n
+            return chunk
+        h = take(3 * 5 * 2, torch.bfloat16, (3, 5))
+        p = take(3 * 4 * 4, torch.float32, (3, 4))
+        tp = take(3 * 2 * 4, torch.float32, (3, 2))
+        nk = take(3 * 2 * 4, torch.float32, (3, 2))
         self.assertTrue(torch.equal(h, hidden))
         self.assertTrue(torch.equal(p, projection))
+        self.assertTrue(torch.equal(tp[:2], probs[:2]) and bool(tp[2].isnan().all()))
+        self.assertTrue(torch.equal(nk[:2], nucleus[:2]) and bool(nk[2].isnan().all()))
+        self.assertEqual(int(d.selector_features[5][2]), 0)
         d.close()
         self.assertIsNone(d.selector_features)
 
