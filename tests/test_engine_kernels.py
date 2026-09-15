@@ -154,13 +154,14 @@ class KernelPackageTests(unittest.TestCase):
 
     def test_the_prefill_kda_autotuners_keep_their_choice_on_disk_and_no_other_does(self):
         """cache_results only where probes/kda_autotune_exact.py judged every launchable config bit exact on the GLM-5.3
-        prefill lane's boot shapes (2026-09-15); an autotuner the lane does not reach keeps re-benchmarking."""
+        prefill lane's boot shapes, 128 to 32,256 tokens (2026-09-15). The lane's seventh, the 64x64 inverse merge, is
+        not: at 32,256 tokens its num_warps 2 and 4/8 give different bytes, so its choice is not a boot's to keep. An
+        autotuner the lane does not reach keeps re-benchmarking too."""
         reached = {("kda.py", "chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter"),
                    ("kda.py", "chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_intra"),
                    ("kda.py", "recompute_w_u_fwd_kernel"), ("kda.py", "chunk_gla_fwd_kernel_o"),
                    ("kda.py", "kda_gate_cumsum_fwd_kernel"),
-                   ("chunk_delta_h.py", "chunk_gated_delta_rule_fwd_kernel_h_blockdim64"),
-                   ("solve_tril.py", "merge_16x16_to_64x64_inverse_kernel")}
+                   ("chunk_delta_h.py", "chunk_gated_delta_rule_fwd_kernel_h_blockdim64")}
         kept, tuned = set(), set()
         for path in (KERNELS / "kda").glob("*.py"):
             for node in ast.parse(path.read_text()).body:
@@ -173,6 +174,7 @@ class KernelPackageTests(unittest.TestCase):
                         if "cache_results" in options and ast.literal_eval(options["cache_results"]) is True:
                             kept.add((path.name, node.name))
         self.assertTrue(reached <= tuned, sorted(reached - tuned))
+        self.assertIn(("solve_tril.py", "merge_16x16_to_64x64_inverse_kernel"), tuned)
         self.assertEqual(kept, reached)
 
     def test_strided_kda_guard_tracks_the_ported_norm_source(self):

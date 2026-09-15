@@ -19,6 +19,7 @@ Per-rank shapes: 16 heads, head dim 128. A_log, dt_bias and the lower bound are 
 usage: kda_autotune_exact.py --output /cache/kda-autotune.json   (the queue admits --output only)
 """
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -139,10 +140,17 @@ def exact(cases):
                                            b.view(torch.uint8) if b.dtype.is_floating_point else b)
                                for a, b in zip(got, ref))
                     diff = max(float((a.float() - b.float()).abs().max()) for a, b in zip(got, ref))
-                    verdicts.append(dict(config=str(config), launchable=True, bit_exact=same, max_abs_diff=diff))
+                    digest = hashlib.sha256(b"".join(t.contiguous().view(torch.uint8).cpu().numpy().tobytes()
+                                                     for t in got)).hexdigest()[:16]
+                    verdicts.append(dict(config=str(config), launchable=True, bit_exact=same, max_abs_diff=diff,
+                                         outputs_sha256=digest))
                 tuners[name].configs, tuners[name].cache = [chosen[name]], {}
                 launchable = [v for v in verdicts if v["launchable"]]
+                groups = {}
+                for v in launchable:
+                    groups.setdefault(v["outputs_sha256"], []).append(v["config"])
                 rows[name] = dict(configs=len(stock[name]), launchable=len(launchable), chosen=str(chosen[name]),
+                                  output_groups=groups,
                                   picks=picks[name], bit_exact_all_launchable=all(v["bit_exact"] for v in launchable),
                                   differing=[v for v in launchable if not v["bit_exact"]],
                                   unlaunchable=[v["config"] for v in verdicts if not v["launchable"]])

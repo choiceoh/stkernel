@@ -233,8 +233,6 @@ def merge_16x16_to_32x32_inverse_kernel(
         for num_stages in [2, 3, 4, 5]
     ],
     key=["H", "BT", "IS_VARLEN"],
-    # kept on disk (TRITON_CACHE_DIR): every launchable config gives the same bytes (probes/kda_autotune_exact.py)
-    cache_results=True,
 )
 @triton.jit(do_not_specialize=["T"])
 def merge_16x16_to_64x64_inverse_kernel(

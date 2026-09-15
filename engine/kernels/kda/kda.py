@@ -863,8 +863,9 @@ class FusedRMSNormGated(nn.Module):
     ],
     key=["BC", "AUTOTUNE_REGIME"],
     # The choice is kept on disk (TRITON_CACHE_DIR, keyed by Triton, target, source, configs and tuning key): every
-    # launchable config of the GLM-5.3 prefill lane's autotuners gives the same bytes (probes/kda_autotune_exact.py),
-    # and re-benchmarking them cost every boot ~11 s at its first 128-token prefill.
+    # launchable config gives the same bytes from 128 to 32,256 tokens (probes/kda_autotune_exact.py), and
+    # re-benchmarking this lane's tuners cost every boot ~11 s at its first 128-token prefill. Not solve_tril's
+    # 64x64 merge: its num_warps change bytes at 32,256 tokens.
     cache_results=True,
 )
 @triton.jit(do_not_specialize=["T", "AUTOTUNE_REGIME"])

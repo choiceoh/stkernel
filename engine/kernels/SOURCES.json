@@ -6,7 +6,7 @@
       "source": "overlay/modules/glm53_kernels/kda.py",
       "sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
       "origin": "repository",
-      "local_sha256": "326853920801cf456f92c7758ba84c62fc2308434fdbe564b22663f8400c3a66",
+      "local_sha256": "1ac8909c494dfab483cbb9803a914d958bad96fb6134c3be9188bcb180ea33fe",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults (strided Q/K norm on: production VLLM_GLM53_KDA_PREFILL_QK_NORM=1)",
         "2026-09-11 GB10 recurrent: explicit dense kv state layout, optional zero initial state, BV16/one-warp TP4 decode geometry",
@@ -15,7 +15,7 @@
         "2026-09-13 KDA state storage: allow FP16 canonical initial states, retaining FP32 recurrence and functional output states.",
         "2026-09-13 prefill: extend the existing strided Q/K norm eligibility from 8192 to 16384 rows; arithmetic unchanged.",
         "2026-09-13 wide prefill: extend the existing row-local path to 32768 rows for 32256-token chunks; preserve kernel arithmetic and small decode.",
-        "2026-09-15 boot: the GLM-5.3 prefill lane's autotuners keep their choice on disk (cache_results=True); every launchable config gives the same bytes on the boot's shapes (probes/kda_autotune_exact.py), and re-benchmarking them cost ~11 s at every boot's first prefill"
+        "2026-09-15 boot: six of the GLM-5.3 prefill lane's autotuners keep their choice on disk (cache_results=True); every launchable config of each gives the same bytes at 128, 1,024 and 32,256 tokens (probes/kda_autotune_exact.py), and re-benchmarking them cost ~11 s at every boot's first prefill"
       ]
     },
     "kda/chunk_delta_h.py": {
@@ -26,7 +26,7 @@
       "local_modifications": [
         "2026-09-12 prefix marks: optional fp32 side output of the per-chunk state before requested 64-token chunks (states_at / N_AT); the main computation is untouched and bit-identical with or without it",
         "2026-09-13 prefill: replace mark-count specialization and unrolled mark scans with a runtime ordered cursor; preserve state arithmetic and snapshots bit exactly.",
-        "2026-09-15 boot: the GLM-5.3 prefill lane's autotuners keep their choice on disk (cache_results=True); every launchable config gives the same bytes on the boot's shapes (probes/kda_autotune_exact.py), and re-benchmarking them cost ~11 s at every boot's first prefill"
+        "2026-09-15 boot: six of the GLM-5.3 prefill lane's autotuners keep their choice on disk (cache_results=True); every launchable config of each gives the same bytes at 128, 1,024 and 32,256 tokens (probes/kda_autotune_exact.py), and re-benchmarking them cost ~11 s at every boot's first prefill"
       ]
     },
     "kda/cumsum.py": {
@@ -79,10 +79,9 @@
       "source": "vllm/third_party/flash_linear_attention/ops/solve_tril.py",
       "sha256": "d1a4ff27623a938825052500afa7e2aa24fadd2fa4c9be6376c9128824f86f82",
       "origin": "image",
-      "local_sha256": "4764fe5cee4d256a5a782a941ce31ba7337c19f7050eeddff3086ba84aa59ed6",
+      "local_sha256": "f4bc2b9ab7cf811b931b95a3304b4abe922e0c78752f9c9c3f9be218c3c6d9dd",
       "local_modifications": [
-        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults",
-        "2026-09-15 boot: the GLM-5.3 prefill lane's autotuners keep their choice on disk (cache_results=True); every launchable config gives the same bytes on the boot's shapes (probes/kda_autotune_exact.py), and re-benchmarking them cost ~11 s at every boot's first prefill"
+        "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults"
       ]
     },
     "kda/utils.py": {
