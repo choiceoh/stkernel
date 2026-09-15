@@ -1405,7 +1405,7 @@ class Server:
                  tool_grammar=None, tool_call_start: "int | None" = None,
                  lease: "dict | None" = None, latency_root=None, reasoning_effort_aliases: "dict | None" = None,
                  step_watch=None, park_min_tokens: int = 0, reasoning_tail=(), effort_rungs: "dict | None" = None,
-                 reasoning_opener: str = ""):
+                 reasoning_opener: str = "", tool_reasoning_opener: "str | None" = None):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
         if type(request_timeout_s) not in (int, float) or not request_timeout_s > 0:
@@ -1446,7 +1446,10 @@ class Server:
         self.reasoning_tail = tuple(reasoning_tail)  # what the template writes after reasoning_end when thinking is off
         if not isinstance(reasoning_opener, str):
             raise ValueError("reasoning_opener must be text")
+        if tool_reasoning_opener is not None and not isinstance(tool_reasoning_opener, str):
+            raise ValueError("tool_reasoning_opener must be text or None")
         self.reasoning_opener = reasoning_opener     # the words a new think block starts with (`opener_kwargs`)
+        self.tool_reasoning_opener = tool_reasoning_opener
         self.reasoning_effort_aliases = dict(reasoning_effort_aliases or {})
         # request rung -> what the template reads: EFFORT_RUNGS unless the profile brings its template's own
         self.effort_rungs = dict(EFFORT_RUNGS if effort_rungs is None else effort_rungs)
@@ -1959,16 +1962,19 @@ class Server:
         ends = set(getattr(self.engine, "eos", ())) | self._stop_ids.get(request, set())
         return "stop" if out and out[-1] in ends else "length"
 
-    def opener_kwargs(self, kwargs: dict, opening: bool) -> dict:
+    def opener_kwargs(self, kwargs: dict, opening: bool, tools=None) -> dict:
         """`kwargs` with this door's `reasoning_opener` where the request left it out.
 
         A profile may start every think block with its own words: the template writes them right after the block
         opens and the model goes on from there. GLM-5.3 does, because how its reasoning starts decides how it goes on
         (engine/profiles/glm53/boot.REASONING_OPENER). Only a new assistant turn opens a block, so only one gets it,
-        and a request's own `reasoning_opener` stands -- an empty one turns it off."""
-        if not self.reasoning_opener or not opening or "reasoning_opener" in kwargs:
+        and a request's own `reasoning_opener` stands -- an empty one turns it off.
+        A profile can choose a separate default when tools are offered: None inherits
+        the ordinary opener, while an empty string lets the model start that turn."""
+        if not opening or "reasoning_opener" in kwargs:
             return kwargs
-        return {**kwargs, "reasoning_opener": self.reasoning_opener}
+        opener = self.tool_reasoning_opener if tools and self.tool_reasoning_opener is not None else self.reasoning_opener
+        return {**kwargs, "reasoning_opener": opener} if opener else kwargs
 
     def reasoning_closed(self, ids) -> bool:
         """Whether a rendered prompt already closed its think block, so everything generated is content: it ends with
@@ -3482,7 +3488,7 @@ class Server:
                 try:
                     template_start = time.perf_counter()
                     opening, resuming = prompt_switches(req)
-                    kwargs = server.opener_kwargs(kwargs, opening)
+                    kwargs = server.opener_kwargs(kwargs, opening, tools)
                     prompt = server.chat(template_messages(messages), dict(kwargs, tools=tools) if tools else kwargs,
                                          generation_prompt=opening, continue_final=resuming)
                 except Exception as exc:                                  # noqa: BLE001 -- the template's verdict on these messages
@@ -3775,9 +3781,11 @@ class Server:
                         raise RequestError("this server has no chat template", 404)
                     kwargs = req.get("chat_template_kwargs") or {}
                     tools = req.get("tools")
+                    if req.get("tool_choice") == "none":
+                        tools = None
                     try:
                         opening, resuming = prompt_switches(req)
-                        kwargs = server.opener_kwargs(dict(kwargs), opening)
+                        kwargs = server.opener_kwargs(dict(kwargs), opening, tools)
                         prompt = server.chat(template_messages(req["messages"]), dict(kwargs, tools=tools) if tools else dict(kwargs),
                                              generation_prompt=opening, continue_final=resuming)
                     except Exception as exc:                              # noqa: BLE001

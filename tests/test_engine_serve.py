@@ -912,6 +912,26 @@ class ChatDoorTests(unittest.TestCase):
             with concurrent.futures.ThreadPoolExecutor(1) as pool:
                 message = drive(s, pool.submit(post, '/v1/chat/completions', off))['choices'][0]['message']
             self.assertEqual((rendered[-1], message.get('reasoning_content')), ("xy!", "!!!"))
+            # Tool conversations can use their own profile default. Both response
+            # modes and /tokenize must agree, while an explicit request still wins.
+            s.tool_reasoning_opener = ""
+            tools = [{"type": "function", "function": {"name": "lookup", "parameters": {
+                "type": "object", "properties": {"query": {"type": "string"}}}}}]
+            with_tools = dict(thinking, tools=tools)
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                message = drive(s, pool.submit(post, '/v1/chat/completions', with_tools))['choices'][0]['message']
+            self.assertEqual((rendered[-1], message.get('reasoning_content')), ("xy!", "!!!"))
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                self.assertEqual(drive(s, pool.submit(stream, dict(with_tools, stream=True))), ("!!!", ""))
+            self.assertEqual(post('/tokenize', with_tools)['count'], len("xy!"))
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                message = drive(s, pool.submit(post, '/v1/chat/completions', dict(own, tools=tools)))['choices'][0]['message']
+            self.assertEqual((rendered[-1], message.get('reasoning_content')), ("xy!P", "PPPP"))
+            disabled = dict(with_tools, tool_choice="none")
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                message = drive(s, pool.submit(post, '/v1/chat/completions', disabled))['choices'][0]['message']
+            self.assertEqual((rendered[-1], message.get('reasoning_content')), ("xy!O", "OOOO"))
+            self.assertEqual(post('/tokenize', disabled)['count'], len("xy!O"))
             # thinking off: the template closed the block, nothing opens, nothing leads the answer
             with concurrent.futures.ThreadPoolExecutor(1) as pool:
                 message = drive(s, pool.submit(post, '/v1/chat/completions', dict(thinking, chat_template_kwargs={})))['choices'][0]['message']
