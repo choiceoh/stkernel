@@ -228,10 +228,15 @@ class TowerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             tower.patches(np.zeros((2, 3, 28, 28), np.uint8), (1, 2, 4))
 
-    def test_qualification_runs_the_largest_shapes(self):
+    def test_qualification_runs_the_largest_image_only(self):
         V = facts(image_max_tokens=8, video_max_tokens=64)
-        paid = Vision(V, toy_views(V)).qualify()
-        self.assertEqual(sorted(paid), ["vision/image", "vision/video"])
+        tower = Vision(V, toy_views(V))
+        grids = []
+        encode = tower.encode
+        tower.encode = lambda canvas, grid: grids.append(tuple(grid)) or encode(canvas, grid)
+        paid = tower.qualify()
+        self.assertEqual(sorted(paid), ["vision/image"])
+        self.assertEqual([g[0] for g in grids], [1])                                 # one frame: no video at boot
 
 
 class StepPatchTests(unittest.TestCase):

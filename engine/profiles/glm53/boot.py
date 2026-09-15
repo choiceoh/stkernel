@@ -1357,7 +1357,7 @@ def fleet(a) -> int:
             raise RuntimeError(f"{vision_mod.FILE} is missing from {a.ranks}: write it once per node with "
                                f"`python3 engine/profiles/glm53/preshard.py --vision --out {a.ranks}` (45차 §23 A7)")
         with rec.phase("qualify vision"):
-            paid.update(engine.vision.qualify())            # the largest image and video, before the door opens (D3)
+            paid.update(engine.vision.qualify())            # the largest image, before the door opens (D3)
         with rec.phase("qualify grammar"):
             engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device, engine.eos)   # response_format (json_object / json_schema), every rank
         if engine.memory is None or not engine.memory.ready:

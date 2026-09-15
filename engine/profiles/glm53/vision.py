@@ -599,8 +599,13 @@ class Vision:
 
     # -- boot ------------------------------------------------------------------------------------------------------------
     def qualify(self) -> dict:
-        """The largest image and the largest video production accepts, once, before the door opens (D3): the attention
-        backend, the workspace and the slice walk are proven here, not on the first user. Returns the seconds paid."""
+        """The largest image production accepts, once, before the door opens (D3): the attention backend, the workspace
+        and the patch walk are proven here, not on the first user. Returns the seconds paid.
+
+        Video is not qualified at boot (operator, 2026-09-15: "비전검사는 이미지만 해"). `encode` walks a video in slices
+        of whole frame groups within SLICE_PATCHES: at production's limits (an 8,000-token image is one 32,000-patch
+        group; a 30,000-token video is 16 groups of ~7,500 patches, four to a slice) no slice outgrows the largest
+        image. The first video pays its own first use."""
         V = self.V
         paid = {}
         n = V.image_max_tokens * V.merge * V.merge                                    # patches of the largest image
@@ -614,18 +619,6 @@ class Vision:
         if self.device.type == "cuda":
             torch.cuda.synchronize()
         paid["vision/image"] = round(time.perf_counter() - t0, 3)
-        groups = VIDEO_FRAMES_LOADED // V.temporal                                    # the largest video: 16 pairs under the token cap
-        per = V.video_max_tokens * V.merge * V.merge // groups
-        gh = int(math.sqrt(per)) // V.merge * V.merge
-        gw = per // gh // V.merge * V.merge
-        t0 = time.perf_counter()
-        out = self.encode(self._pattern((groups * V.temporal, V.channels, gh * V.patch, gw * V.patch)), (groups, gh, gw))
-        if out.shape != (groups * gh * gw // (V.merge * V.merge), V.out_hidden) or not torch.isfinite(out.float()).all():
-            raise RuntimeError("the vision tower's largest video did not encode")
-        del out
-        if self.device.type == "cuda":
-            torch.cuda.synchronize()
-        paid["vision/video"] = round(time.perf_counter() - t0, 3)
         return paid
 
     @staticmethod
