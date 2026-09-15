@@ -194,6 +194,32 @@ class DrafterTests(unittest.TestCase):
         self.assertTrue(torch.equal(cand[1].gather(1, (q[1] > 0).to(torch.int64).argmax(-1, keepdim=True)).squeeze(1),
                                     greedy[1]), "and it is the greedy pick")
 
+    def test_debug_arm_b_sharpens_the_distribution_it_hands_back(self):
+        # debug (never merge): temperature 0.999999 is the calibrated arm; 1.0 is today's walk
+        from unittest.mock import patch
+        import engine.profiles.glm53.drafter as drafter_mod
+        d, field, dev = self.make_full_drafter(seed=5)
+        F = d.F
+        slots = torch.tensor([1, 1], device=dev)
+        ctx = torch.tensor([9, 9], device=dev)
+        anchors = torch.tensor([2, 2], device=dev)
+        uniforms = torch.rand(2, F.k, generator=torch.Generator(device=dev).manual_seed(9), device=dev)
+        temps = torch.tensor([1.0, 0.999999], device=dev)
+        with patch.object(drafter_mod, 'DEBUG_ALPHA_B', (1.0,) * 7), patch.object(drafter_mod, 'DEBUG_TAU_B', (0.5,) * 7):
+            drafts, cand, q = d.propose_rows(field, slots, anchors, ctx, temps=temps, uniforms=uniforms, vocab=21)
+        a, b = q[0, 0], q[1, 0]                      # position 0 opens from the anchor in both rows
+        self.assertTrue(torch.allclose(b, a.pow(2) / a.pow(2).sum(), atol=1e-4), 'tau 0.5 squares the distribution')
+        _, host = d.propose_sampled_tensor(anchors[:1], 9, field[1].clone(), 0.999999, uniforms[1], 21)
+        with patch.object(drafter_mod, 'DEBUG_ALPHA_B', (1.0,) * 7), patch.object(drafter_mod, 'DEBUG_TAU_B', (0.5,) * 7):
+            _, host_b = d.propose_sampled_tensor(anchors[:1], 9, field[1].clone(), 0.999999, uniforms[1], 21)
+            _, host_a = d.propose_sampled_tensor(anchors[:1], 9, field[1].clone(), 1.0, uniforms[1], 21)
+        row_a = host_a[0][cand[0, 0]]
+        self.assertTrue(torch.allclose(host_b[0][cand[0, 0]], row_a.pow(2) / row_a.pow(2).sum(), atol=1e-4),
+                        'the host walk applies the same factor')
+        self.assertTrue(torch.isfinite(host).all())
+        self.assertFalse(bool(drafter_mod.debug_arm_b(1.0)) or bool(drafter_mod.debug_arm_b(0.0)))
+        self.assertEqual(drafter_mod.debug_table((1., 2.), 4), (1., 2., 2., 2.))
+
     def test_native_rows_do_not_read_retired_weights_or_use_a_scratch_ring_tail(self):
         """Exercise the merged batched interface with packed readers and no BF16 sources.
 
