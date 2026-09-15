@@ -82,7 +82,11 @@ class GateStampTests(unittest.TestCase):
         sync.assert_not_called()                          # this engine's caches are on the CPU
         engine.caches.device = "cuda:0"
         engine._prefill_forward = MagicMock(return_value=(torch.ones(1, 8), None))
-        with patch.object(torch.cuda, "synchronize") as sync:
+        # Exercise the CUDA synchronization branch with CPU tensors: this test
+        # mocks the forward and must also mock its input allocation on CPU-only CI.
+        ids = torch.zeros(engine.prefill_chunk, dtype=torch.int64)
+        with patch.object(torch, "zeros", return_value=ids), \
+                patch.object(torch.cuda, "synchronize") as sync:
             engine._warmup_prefill_memory()
         self.assertEqual(sync.call_count, 2)              # one per pass, before its vote
 
