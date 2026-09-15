@@ -130,6 +130,7 @@ class MoEStaticKernelV4:
         fc1_reuse_a: bool = True,
         compact_staging: bool = True,
         sf6_registers: bool = True,
+        sync_cleanup: bool = True,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -246,6 +247,10 @@ class MoEStaticKernelV4:
             # The existing TMA consumer release owns every slot's lifetime.
             self.fc2_stages = 3
         self.fc1_input_stages = self.fc1_stages // 2 if self.compact_staging else self.fc1_stages
+        # SF6 cannot use the legacy A ring. Initialize only the two used
+        # pipelines and publish their barriers together before Phase 0.
+        self.sync_cleanup = bool(sync_cleanup and self.decode_reform and self.reform_sf_pack)
+        self.a_barrier_count = 0 if self.sync_cleanup else self.fc1_stages * 2
         # Scatter only consumes rows in this M16 tile. Avoid initializing
         # 112 unused token/weight entries per item and reclaim their storage.
         self.scatter_cache_rows = self.tile_m if self.sf6_separate else _COMPACT_STATIC_TILE_M
@@ -288,6 +293,8 @@ class MoEStaticKernelV4:
         self.output_tile_count_n = output_tile_count_n
         self.cluster_shape_mnk = (1, 1, 1)
         self.cluster_shape_mn = (1, 1)
+        if self.sync_cleanup and (self.fc1_halves != 1 or self.cluster_shape_mnk != (1, 1, 1)):
+            raise ValueError("sync cleanup requires one FC1 half and a single-CTA cluster")
         self.epi1_tile = (self.tile_m, self.fc1_tile_n)
         self.epi_tile = (self.tile_m, self.fc2_tile_n)
         self.occupancy = 1
@@ -574,7 +581,7 @@ class MoEStaticKernelV4:
         offset = (
             2 * 4
             + (self.fc1_stages + self.fc2_stages) * 2 * 8
-            + self.fc1_stages * 2 * 8          # a_bars (always allocated)
+            + self.a_barrier_count * 8
             + self.scatter_cache_rows * 4
             + self.scatter_cache_rows * 4
         )
@@ -1097,7 +1104,7 @@ class MoEStaticKernelV4:
             ctrl: cute.struct.MemRange[cutlass.Int32, 2]
             fc1_bars: cute.struct.MemRange[cutlass.Int64, self.fc1_stages * 2]
             fc2_bars: cute.struct.MemRange[cutlass.Int64, self.fc2_stages * 2]
-            a_bars: cute.struct.MemRange[cutlass.Int64, self.fc1_stages * 2]
+            a_bars: cute.struct.MemRange[cutlass.Int64, self.a_barrier_count]
             scatter_tok_cache: cute.struct.MemRange[
                 cutlass.Int32, self.scatter_cache_rows
             ]
@@ -1180,6 +1187,7 @@ class MoEStaticKernelV4:
             tx_count=fc1_tma_bytes,
             barrier_storage=storage.fc1_bars.data_ptr(),
             cta_layout_vmnk=cta_layout_vmnk,
+            defer_sync=self.sync_cleanup,
         )
         fc2_pipeline = pipeline.PipelineTmaAsync.create(
             num_stages=self.fc2_stages,
@@ -1188,16 +1196,22 @@ class MoEStaticKernelV4:
             tx_count=fc2_tma_bytes,
             barrier_storage=storage.fc2_bars.data_ptr(),
             cta_layout_vmnk=cta_layout_vmnk,
+            defer_sync=self.sync_cleanup,
         )
-        # A ring (a_ring only; the init is harmless otherwise)
-        a_pipeline = pipeline.PipelineTmaAsync.create(
-            num_stages=self.fc1_stages,
-            producer_group=prod_group,
-            consumer_group=cons_group,
-            tx_count=a_tma_bytes,
-            barrier_storage=storage.a_bars.data_ptr(),
-            cta_layout_vmnk=cta_layout_vmnk,
-        )
+        if cutlass.const_expr(not self.sync_cleanup):
+            a_pipeline = pipeline.PipelineTmaAsync.create(
+                num_stages=self.fc1_stages,
+                producer_group=prod_group,
+                consumer_group=cons_group,
+                tx_count=a_tma_bytes,
+                barrier_storage=storage.a_bars.data_ptr(),
+                cta_layout_vmnk=cta_layout_vmnk,
+            )
+        else:
+            # create(defer_sync=True) performs every mbarrier.init but skips
+            # its fence/sync. One fence + the existing CTA sync publishes
+            # BOTH rings. This kernel's cluster is exactly one CTA.
+            cute.arch.mbarrier_init_fence()
 
         cute.arch.sync_threads()
 
@@ -1568,12 +1582,13 @@ class MoEStaticKernelV4:
         fc1_cons_state = pipeline.make_pipeline_state(
             pipeline.PipelineUserType.Consumer, self.fc1_stages
         )
-        a_prod_state = pipeline.make_pipeline_state(
-            pipeline.PipelineUserType.Producer, self.fc1_stages
-        )
-        a_cons_state = pipeline.make_pipeline_state(
-            pipeline.PipelineUserType.Consumer, self.fc1_stages
-        )
+        if cutlass.const_expr(not self.sync_cleanup):
+            a_prod_state = pipeline.make_pipeline_state(
+                pipeline.PipelineUserType.Producer, self.fc1_stages
+            )
+            a_cons_state = pipeline.make_pipeline_state(
+                pipeline.PipelineUserType.Consumer, self.fc1_stages
+            )
         fc2_prod_state = pipeline.make_pipeline_state(
             pipeline.PipelineUserType.Producer, self.fc2_stages
         )
@@ -2051,7 +2066,15 @@ class MoEStaticKernelV4:
                                 self.num_mma_warps * self.num_threads_per_warp
                             )
                         # sC1 is reused by the next half / next item after this
-                        self.epilog_sync_barrier.arrive_and_wait()
+                        # The M16 reform tile (C1 rows, C2 batch) has only one
+                        # half. Its final fence + publication barrier below
+                        # already protects A2/SFA2 reads, C2's retained route
+                        # metadata and completion of sC1 reads before the next
+                        # work item.
+                        # Stamped runs retain the earlier completion point:
+                        # stamp +1 must not precede another warp's last write.
+                        if cutlass.const_expr(not self.sync_cleanup or self.stamps):
+                            self.epilog_sync_barrier.arrive_and_wait()
 
                 if cutlass.const_expr(self.stamps):
                     if Int32(tidx) == Int32(0):

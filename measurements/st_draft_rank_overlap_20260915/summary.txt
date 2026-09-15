@@ -1,0 +1,45 @@
+
+## overlap probe: 6167 steps, 42 MoE layers, top-8; stale route sets 0; tokens/step 4.693
+distinct experts per layer read by the 8 verify rows: mean 41.9 (uniform random top-8 of 288 per row: 58.1; one row: 8)
+a chain draft row's routes no other row reads: 44.1% of its 336, = +8.4% of the step's reads
+after a rejection (anchor = the right sibling): 4452 steps; new routes 37.7% of the row's 336 (median 37.5%), adding the row = +7.3% reads
+after all 7 accepted (anchor = the continuation): 1703 steps; new routes 46.9% of the row's 336 (median 47.0%), adding the row = +8.7% reads
+sibling at p (accepted prefix before the rejection): p0 +7.2% (n=824), p1 +7.2% (n=863), p2 +7.1% (n=788), p3 +7.3% (n=667), p4 +7.5% (n=512), p5 +7.4% (n=451), p6 +7.8% (n=347)
+
+## rank probe: 6291 steps (6 at the output boundary, left out below)
+all accepted 1738 (27.7%), selector_miss 3851 (61.3%), candidate_miss 696 (11.1%)
+tokens/step 4.663
+first rejections 4547: the target is among the 16 candidates in 3851 (84.7%)
+target's candidate rank (1 = drafter top-1), cumulative share of all first rejections: <=1 7.8%, <=2 39.8%, <=3 53.8%, <=4 62.2%, <=8 76.3%, <=16 84.7%
+target rank histogram (1-based): 1:356, 2:1455, 3:637, 4:382, 5:245, 6:186, 7:102, 8:106, 9:80, 10:60, 11:57, 12:52, 13:48, 14:24, 15:26, 16:35
+the walk's own pick at the rejected position (1-based): 1:3173, 2:706, 3:237, 4:112, 5:58, 6:57, 7:59, 8:25, 9:20, 10:18, 11:17, 12:21, 13:10, 14:12, 15:11, 16:11
+selector misses: walk took the drafter top-1, target ranked lower 2789 (61.3%); target was the drafter top-1, walk took another 356 (7.8%); neither top-1 706 (15.5%)
+  1 sibling(s) by drafter rank would hold the target at 1733 of 4547 first rejections (38.1%)
+  2 sibling(s) by drafter rank would hold the target at 2418 of 4547 first rejections (53.2%)
+  3 sibling(s) by drafter rank would hold the target at 2807 of 4547 first rejections (61.7%)
+  7 sibling(s) by drafter rank would hold the target at 3462 of 4547 first rejections (76.1%)
+
+by position (p = accepted prefix; the rejected draft is p+1):
+| p | reached | rejected | cond. accept | target in candidates | 1 sibling right | target is drafter top-1 |
+|---|---|---|---|---|---|---|
+| 0 | 6285 | 852 | 0.864 | 93.1% | 50.4% | 7.0% |
+| 1 | 5433 | 913 | 0.832 | 90.4% | 40.9% | 9.3% |
+| 2 | 4520 | 814 | 0.820 | 82.4% | 36.0% | 7.6% |
+| 3 | 3706 | 673 | 0.818 | 83.5% | 33.3% | 7.6% |
+| 4 | 3033 | 513 | 0.831 | 78.4% | 33.3% | 7.8% |
+| 5 | 2520 | 451 | 0.821 | 76.5% | 32.6% | 8.4% |
+| 6 | 2069 | 331 | 0.840 | 76.4% | 29.0% | 6.0% |
+tokens/step from the conditional acceptances 4.663 (identity check against 4.663)
+
+## estimates (arithmetic on the counts above)
+the deepest chain node (draft 7) adds a token only when all 7 accept: +0.277 tokens/step (5.9%)
+draft rows whose input is the rejected token or follows it: 3.34 of 7 per step
+a right sibling leaf adds exactly one token (it is the correction, and its row yields the bonus):
+  1 sibling(s) at p: p0 +0.068, p1 +0.059, p2 +0.047, p3 +0.036, p4 +0.027, p5 +0.023, p6 +0.015; best p0 +0.068 tokens/step (1.5%), at every position +0.276
+  2 sibling(s) at p: p0 +0.092, p1 +0.084, p2 +0.067, p3 +0.051, p4 +0.038, p5 +0.031, p6 +0.022; best p0 +0.092 tokens/step (2.0%), at every position +0.385
+  3 sibling(s) at p: p0 +0.104, p1 +0.099, p2 +0.076, p3 +0.061, p4 +0.043, p5 +0.037, p6 +0.027; best p0 +0.104 tokens/step (2.2%), at every position +0.447
+one sibling as a 9th row: +1.5% tokens/step against +7.2% expert reads x MoE share 0.456 = +3.3% step time from MoE alone; break-even needs <= 3.2% new reads
+in a fixed 8-node budget the sibling replaces the deepest chain node: +0.068 against +0.277 tokens/step
+  if 25% of the 2nd-choice misses were drafted right: mean cond. accept 0.832 -> 0.845, tokens/step 4.66 -> 4.86 (4.3%)
+  if 50% of the 2nd-choice misses were drafted right: mean cond. accept 0.832 -> 0.858, tokens/step 4.66 -> 5.07 (8.8%)
+  if 100% of the 2nd-choice misses were drafted right: mean cond. accept 0.832 -> 0.883, tokens/step 4.66 -> 5.53 (18.6%)
