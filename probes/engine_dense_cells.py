@@ -48,6 +48,10 @@ BOUND = (8, 16, 24, 32)
 KDA_LAYERS = (0, 1, 2, 4, 5, 6, 8, 9)
 DSA_LAYERS = (3, 7, 11, 15)
 DENSE_LAYERS = (0, 1, 2)
+# The DFlash2 drafter's five blocks, sharded for rank 3 of 4 as Drafter.prepare_fast does (keys D<L>.*).
+DRAFTER = '/home/choiceoh/models/GLM-5.3-Flash-DFlash2/model.safetensors'
+DRAFTER_LAYERS = (0, 1, 2, 3, 4)
+DRAFTER_RANK, DRAFTER_WORLD = 3, 4
 # name, weight keys per layer, layers, direct TX output, input width, {rows: ((control, candidate), ...)}
 CELLS = (
     ('kda.in_proj', ('kda.in_proj',), KDA_LAYERS, False, 4096,
@@ -64,6 +68,11 @@ CELLS = (
      {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'wide_control'), ('bound', 'generic'))}),
     ('mlp.down', ('mlp.down',), DENSE_LAYERS, True, 3072,
      {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'wide_control'), ('bound', 'generic'))}),
+    # The drafter's block MLP calls both projections to a matrix; at 16 rows it serves the generic route.
+    ('drafter.gate_up', ('mlp.gate_up',), DRAFTER_LAYERS, False, 4096,
+     {8: (('bound', 'generic'),), 16: (('generic', 'bound'), ('generic', 'wide_control'))}),
+    ('drafter.down', ('mlp.down',), DRAFTER_LAYERS, False, 3072,
+     {8: (('bound', 'generic'),), 16: (('generic', 'bound'), ('generic', 'wide_control'))}),
 )
 SHAPES = {'kda.in_proj': (6416, 4096), 'kda.o_proj': (4096, 2048), 'mla.o_proj': (4096, 4096),
           'mla.q_b': (4096, 1536), 'idx.wq_b': (4096, 1536), 'mla.qkv_a': (2048, 4096),
@@ -243,18 +252,35 @@ def selected_cells(names=(), rows=(8, 16)):
             if m in cell[5] and (not wanted or m in wanted.get(cell[0], ()))]
 
 
+def _key(cell, L, key):
+    return f"{'D' if cell[0].startswith('drafter.') else 'L'}{L}.{key}"
+
+
+def _drafter_weights(keys):
+    """D<L>.mlp.gate_up / D<L>.mlp.down from the drafter checkpoint, sharded as Drafter.prepare_fast does."""
+    from engine.base.loader import RankLoader
+    names = {k: [f'layers.{k[1:].split(".", 1)[0]}.mlp.{s}_proj.weight' for s in
+                 (('gate', 'up') if k.endswith('gate_up') else ('down',))] for k in keys}
+    loaded = RankLoader(DRAFTER).load(sorted({n for group in names.values() for n in group}), device='cuda')
+    shard = lambda w, dim: w.chunk(DRAFTER_WORLD, dim=dim)[DRAFTER_RANK].contiguous()
+    return {k: (torch.cat([shard(loaded[n], 0) for n in group]) if k.endswith('gate_up') else shard(loaded[group[0]], 1))
+            for k, group in names.items()}
+
+
 def check(report, ranks=None, *, cells=(), rows=(8, 16), brackets=2, timing=True):
     from engine.kernels.dense import DenseLinear, extension
     plan = selected_cells(cells, rows)
     if not plan:
         raise ValueError('no dense cell selected')
-    keys = sorted({f'L{L}.{key}' for cell, _ in plan for key in cell[1] for L in cell[2]})
+    keys = sorted({_key(cell, L, key) for cell, _ in plan for key in cell[1] for L in cell[2]})
+    target, drafter = [k for k in keys if k.startswith('L')], [k for k in keys if k.startswith('D')]
     if ranks:
         from probes.engine_decode_scatter_check import rank_path
         from engine.profiles.glm53.weights import rank_loader
         path = rank_path(ranks)
-        loaded = rank_loader(path).load(keys, device='cuda')
-        origin = str(path)
+        loaded = rank_loader(path).load(target, device='cuda') if target else {}
+        loaded.update(_drafter_weights(drafter) if drafter else {})
+        origin = str(path) + (f' and {DRAFTER} (rank {DRAFTER_RANK} of {DRAFTER_WORLD})' if drafter else '')
     else:
         loaded = {k: (torch.randn(*SHAPES[k.split('.', 1)[1]], device='cuda') * .02).bfloat16() for k in keys}
         origin = 'synthetic BF16 weights'
@@ -266,7 +292,7 @@ def check(report, ranks=None, *, cells=(), rows=(8, 16), brackets=2, timing=True
     ext = extension()
     failures = []
     for cell, m in plan:
-        owners = [tuple(dense[f'L{L}.{key}'] for key in cell[1]) for L in cell[2]]
+        owners = [tuple(dense[_key(cell, L, key)] for key in cell[1]) for L in cell[2]]
         try:
             cell_check(report, ext, cell, owners, m, brackets=brackets, timing=timing)
         except Exception as exc:  # the other cells' evidence is kept; the run still fails
@@ -275,7 +301,8 @@ def check(report, ranks=None, *, cells=(), rows=(8, 16), brackets=2, timing=True
     if any(m == 16 for _, m in plan):
         info = ext.rows16_info()
         names = ('rows16<false,32,8> KDA input', 'rows16<false,32,2> gate/up', 'rows16<false,32,6> qkv_a',
-                 'rows16<true,16,3> KDA output', 'rows16<true,24,3> MLP down', 'rows16<true,32,3> MLA output')
+                 'rows16<true,16,3> KDA output', 'rows16<true,24,3> MLP down', 'rows16<true,32,3> MLA output',
+                 'rows16<false,24,3> MLP down to a matrix')
         report('rows16_resources', kernels={n: dict(registers=info[4*i], local_bytes=info[4*i+1],
                                                      blocks_per_sm=info[4*i+2], smem=info[4*i+3])
                                             for i, n in enumerate(names)})

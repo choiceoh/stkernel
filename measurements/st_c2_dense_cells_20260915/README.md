@@ -197,6 +197,63 @@ ST_DENSE_BUILD_ROOT=/cache/st-dense bash bench/fleet.sh run --gpu --detach c2den
 python3 summarize.py gpu-c2dense-cells0915d.jsonl
 ```
 
-## Post-merge confirmation
+## Post-merge confirmations
 
-Pending: the same lane with `--seqs 1,2` against the merged main SHA.
+Both ran the lane above with `--seqs 1,2` from frozen checkouts of merged main, beside production, no model boot.
+Both PASS: 26 exact groups each, every arm bit-identical.
+
+**`c2dense-postmerge0915` (main `28e8bd02`, #969, 10:20:07–10:21:36; `gpu-c2dense-postmerge0915.jsonl`).**
+- **8 rows.** The C1 routes are unchanged. Every cell still beats generic.
+- **16 rows, rows16 default through `run_gemm_bound_input`.** Chain warm / evicted; each figure is the control's extra time relative to the default.
+
+  | Cell | `wide_control` (`forward_pipeline=False`) | generic |
+  |---|---:|---:|
+  | KDA input | +9.8% / +8.2% | +13.1% / +9.6% |
+  | KDA output | +9.0% / +7.3% | +8.5% / +7.8% |
+  | MLA output | +11.1% / +8.3% | +9.3% / +1.6% (min +7.3%) |
+
+**`c2dense-six0915` (main `1dd3e606`, #975, 10:25:43–10:27:24; `gpu-c2dense-six0915.jsonl`).** All six defaults run at
+3 CTAs/SM. Chain evicted, extra time of each control relative to the default:
+
+| Cell | `wide_control` | generic | Chain warm vs `wide_control` |
+|---|---:|---:|---:|
+| KDA input | +5.9% | +7.1% | +7.9% |
+| KDA output | +5.4% | +9.0% | +9.7% |
+| MLA output | +7.7% | +8.2% | +6.0% |
+| MLP down | +5.1% | +9.1% | +0.9% |
+| MLA qkv_a | +3.5% | +3.2% | **−8.3%** (warm regression, accepted by the criterion) |
+| MLP gate/up | +1.1% | −1.0% | +2.2% |
+
+The query pair keeps its shared wide pack: +1.9% for two generic readers.
+
+## Drafter block MLP at 16 rows — `c2drafter16-0915`
+
+The DFlash2 drafter's block MLP projections have the target's cell shapes: gate/up 6144×4096 and down 4096×3072,
+both to a matrix. A propose block at C=2 is 16 rows. #973 bound them at 8 rows only, so at 16 rows they ran the
+generic route. The candidate binds 16 rows too:
+- gate/up takes `rows16<false,32,2>`;
+- down takes a new `rows16<false,24,3>` (68 registers, zero stack/local, 22,528 B, 3 CTAs/SM).
+
+GPU run: session `c2drafter16-0915` from frozen `563e2c18`, 10:31:43–10:32:51, beside production, no model boot.
+- Weights: the five blocks of `/home/choiceoh/models/GLM-5.3-Flash-DFlash2/model.safetensors`, sharded for rank 3
+  of 4 as `Drafter.prepare_fast` does, packed RTN and unsmoothed.
+- Raw events: `gpu-c2drafter16-0915.jsonl`.
+- Numerical gate: PASS, all arms bit-identical at 8 and 16 rows.
+
+| Cell | Rows | Control → candidate | Chain ×5 warm | Chain ×5 evicted | Evicted samples (control / candidate, µs) |
+|---|---:|---|---:|---:|---|
+| gate/up | 16 | generic → rows16 | −1.2% | −1.7% (min −0.8%) | 394.5, 393.7, 408.2, 393.9 / 390.9, 390.5, 390.9, 391.6 |
+| down | 16 | generic → rows16 | +3.1% | −0.3% (min −0.3%) | 231.3, 231.1, 231.4, 231.5 / 230.5, 230.7, 230.7, 230.8 |
+| gate/up | 16 | generic → wide_control | +1.1% | +0.7% | |
+| down | 16 | generic → wide_control | +1.3% | +0.1% | |
+| gate/up | 8 | C1 cell → generic | +2.8% | +1.1% | |
+| down | 8 | C1 cell → generic | +3.1% | −0.3% | |
+
+Under the chain-evicted criterion both cells win at 16 rows:
+- every rows16 sample is below every generic sample;
+- the margins are small: about −7 µs over the five blocks of one propose step, component time;
+- down's warm chain is slower (+3.1%), which the criterion accepts.
+
+`Drafter.bind_decode_cells` now binds 8 and 16 rows. The boot proof `drafter_decode_cell_report` requires both widths
+to execute during capture. CPU gates: production-flag compile/load with CUDA hidden (`compile-drafter-rows16.json`,
+seven rows16 specializations), and 55 focused tests with 12 GPU skips (`cpu-tests-drafter.log`).
