@@ -232,10 +232,11 @@ The **lock** is: all 42 wheels resolve and every digest is checked, and `torch`'
 confirmed against an independent `curl | sha256sum` (530,327,928 bytes). The **chain runs**:
 a build completed and reported `installed 42 locked wheels + 9 closure wheels`.
 
-The **image is not**. That first build was the torch-only closure, and its image could not
-`import flashinfer`; the fetcher now reads every locked wheel's requirements (31 packages,
-59 wheels) but **no image has been built from the corrected closure and no GPU check has
-run against one**. Treat `build-x86_64.sh` as written-and-argued, not as validated. The
+The **image now is, for compiling** (2026-09-15). `st-engine:glm53-sm120-x86` was built
+(18.4 GB) and it imports `flashinfer`. What it cannot do out of the box is import ST's
+**b12x** path -- see the next section; bridged, it compiles ST's CuTe kernels for sm_121a
+with no device. No GPU check has run against this image, and none can give a number: the
+card is sm_120. The
 build is also not free: it moves ~3 GB of wheels and writes a ~16 GB image, and running it
 unconstrained on this box left Windows with 0.6 GiB of free RAM. Give it a quiet moment, or
 a `--cpu-quota`.
@@ -322,6 +323,38 @@ why a number from this card is this card's.
 The image carries a host compiler (the full Python base, not `-slim`) because without one a
 JIT extension dies at `gcc: No such file or directory` before ptxas can say anything about
 the kernel at all.
+
+## Compiling ST's CuTe kernels here — and the one thing that blocks it
+
+The image's flashinfer is pip-resolved **0.6.18.post1**. The Sparks run the vendored
+**0.6.18.dev20260819**. Same version line, different build, and only the dev one carries
+`Sm120B12xBlockScaledDenseGemmKernel._collapse_to_vmk` --
+
+    flashinfer.gemm.kernels.dense_blockscaled_gemm_sm120_b12x
+
+-- which `engine/kernels/b12x/_moe_dynamic/generic.py` borrows onto `MoEDynamicKernel` **at
+import time**. So on the stock image the whole b12x path dies before any kernel is named:
+
+    AttributeError: type object 'DenseGemmKernel' has no attribute '_collapse_to_vmk'
+
+The package is **pure Python** (0 `.so` in 137 MB), so the Sparks' copy carries to x86_64.
+`bench/compile_sm121a.sh` bind-mounts it over the image's site-packages and runs a script
+with `CUDA_VISIBLE_DEVICES=` and `CUTE_DSL_ARCH=sm_121a`. Its header holds the one-time export.
+
+**The trap**: this image installs into `site-packages`, which SHADOWS `dist-packages`.
+Mounting over `dist-packages` changes nothing and the import silently keeps resolving to
+post1 -- the dist-info reads `dev20260819` while `flashinfer.__version__` reads `post1`.
+
+Measured on 2026-09-15, `probes/engine_moe_m64_compile.py` through that script:
+
+| arm | compile | resources (sm_121a cubin) |
+|---|---|---|
+| pinned M128 (`sf6_q0_words`) | ~5 s | `REG:168 STACK:112 SHARED:1024` |
+| private M64 (`prefill_m64`) | ~3 s | `REG:128 STACK:80 SHARED:1024` |
+
+`cuda_initialized: false` on both. This is what the section above hoped for: the lane widens
+to **kernel edits**, which used to cost a twenty-minute GPU round trip each. It does not
+widen to numbers -- those stay on a Spark.
 
 ## Verify
 
