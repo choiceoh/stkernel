@@ -184,12 +184,16 @@ def generation_defaults(ckpt=facts.CKPT) -> dict:
     return {k: g[k] for k in ("temperature", "top_p", "top_k", "repetition_penalty") if k in g}
 
 
-def grammars(ckpt, vocab: int, device=None, stop_token_ids=None):
+def grammars(ckpt, vocab: int, device=None, stop_token_ids=None, tokenizer=None):
     """base/grammar.for_checkpoint: structured output over the checkpoint's tokenizer on every rank, or None where
     xgrammar is not installed (the door then refuses response_format, D3); `device` proves the mask kernel at boot
-    (the same shape as `vision.qualify`)."""
+    (the same shape as `vision.qualify`). `tokenizer`: the door's own (`tokenizer(ckpt)`) -- GLM-5.3's tokenizer.json
+    holds every token transformers would give it, so xgrammar reads its vocabulary there instead of from a second
+    parse through transformers (base/grammar.tokenizer_info)."""
     from engine.base import grammar
-    return grammar.for_checkpoint(ckpt, vocab, device, stop_token_ids)
+    if tokenizer is None:
+        return grammar.for_checkpoint(ckpt, vocab, device, stop_token_ids)
+    return grammar.for_checkpoint(ckpt, vocab, device, stop_token_ids, tokenizer=tokenizer)
 
 
 CHAT_TEMPLATE = "chat_template_mm_v2.jinja"     # what production serves with (launchers/lib/glm53-chat.sh); honours the `thinking` kwarg
@@ -1439,7 +1443,8 @@ def fleet(a) -> int:
         with rec.phase("qualify vision"):
             paid.update(engine.vision.qualify())            # the largest image, before the door opens (D3)
         with rec.phase("qualify grammar"):
-            engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device, engine.eos)   # response_format (json_object / json_schema), every rank
+            tok = tokenizer(a.ckpt_meta)                    # the door's tokenizer, loaded here once: the grammar reads its vocabulary
+            engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device, engine.eos, tokenizer=tok)   # response_format, every rank
         if engine.memory is None or not engine.memory.ready:
             raise RuntimeError("full-model serving requires runtime memory qualification")
         # Keep this final release as well as the earlier prefill/kernel warmups.
@@ -1477,7 +1482,6 @@ def fleet(a) -> int:
                 if runner.prefix_tier is not None:
                     print(tier_line(runner.prefix_tier.tier, PREFIX_TIER_GIB, "prefix boundaries"))
         with rec.phase("door"):
-            tok = tokenizer(a.ckpt_meta)
             renderer = chat_renderer(a.ckpt_meta) if comm.rank == 0 else None
         from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls, tool_call_token, tool_grammar
         if comm.rank == 0:

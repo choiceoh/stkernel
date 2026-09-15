@@ -1,0 +1,45 @@
+image sha256:b45454b5fdc138bfaafa6470cf9cb49bbcd74783ceffb343b0a7b1d0cf87fcd5; host srv4; 2026-09-15T04:08:17Z
+[transformers] You are using a model of type `glm5_next` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+{
+ "import torch": 1.585,
+ "import xgrammar": 2.589,
+ "import transformers": 0.0,
+ "AutoTokenizer.from_pretrained": 2.246,
+ "TokenizerInfo.from_huggingface": 1.132,
+ "GrammarCompiler": 0.0,
+ "compile_builtin_json_grammar": 0.031,
+ "xgrammar": "?",
+ "serialize_json": true,
+ "deserialize_json": true,
+ "TokenizerInfo.serialize_json": 0.233,
+ "serialized_bytes": 5258354,
+ "TokenizerInfo.deserialize_json": 0.192,
+ "GrammarCompiler (deserialized)": 0.0,
+ "same vocab_size": true,
+ "same stop ids": true,
+ "same special ids": true,
+ "same decoded vocab": false,
+ "same first json mask": true
+}
+[transformers] You are using a model of type `glm5_next` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+{
+ "import torch": 1.044,
+ "import xgrammar": 2.549,
+ "import transformers": 0.0,
+ "AutoTokenizer.from_pretrained": 2.3,
+ "TokenizerInfo.from_huggingface": 1.133,
+ "GrammarCompiler": 0.0,
+ "compile_builtin_json_grammar": 0.031,
+ "xgrammar": "?",
+ "serialize_json": true,
+ "deserialize_json": true,
+ "TokenizerInfo.serialize_json": 0.242,
+ "serialized_bytes": 5258354,
+ "TokenizerInfo.deserialize_json": 0.211,
+ "GrammarCompiler (deserialized)": 0.0,
+ "same vocab_size": true,
+ "same stop ids": true,
+ "same special ids": true,
+ "same decoded vocab": false,
+ "same first json mask": true
+}
