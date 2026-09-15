@@ -31,8 +31,8 @@ device kernel bodies, inputs, flags and shapes are the ones tested here.
 ## Evidence
 
 - CPU native compile/load: **PASS**, `compile.json`. CUDA was hidden; both new
-  native specializations were found, with 128 registers, 16 stack bytes,
-  28,720 shared bytes and zero local spill allocation reported by cuobjdump.
+  native specializations were found, with cuobjdump reporting 128 registers,
+  16 stack bytes, 28,720 shared bytes and `LOCAL:0`.
 - CPU tests: **37 passed, 8 GPU-only skipped** (`cpu-tests.log`, 45 total).
   The read-only task checkout was mounted at `/repo`, with `--workdir /repo`
   and `PYTHONPATH=/repo`; CUDA was hidden.
@@ -43,7 +43,8 @@ device kernel bodies, inputs, flags and shapes are the ones tested here.
 - GB10 exactness and component timing: **PASS**, `c1mhc-tails-a55c`, ticket
   `17894505191390768`, revision 4. Payload 12.4 seconds after 459.7 seconds
   waiting in the canonical queue. Peak allocated memory: 378,778,624 bytes.
-- TP4 transport and consumer performance: not measured yet.
+- First TP4 attempt: C=1 completed at 2K/32K/128K, but the full run is
+  **incomplete and invalid as speed evidence**; details below.
 
 `source-reuse.json` verifies that the final native source differs from the
 GPU-qualified source only at three C++ and two pybind host defaults (0 to -1).
@@ -67,6 +68,37 @@ runs **C=1 twice and C=2 once** per boot, with C=1 at 2K/32K/128K and C=2 at
 not establish a four-request serving measurement. The 32-row C4 native
 transition check is separate. The historical ticket name also does not select
 the rejected input-pack prototype.
+
+### First TP4 attempt: preserve the failure
+
+`onepass-incomplete.json` and `onepass-incomplete.log` retain run
+`20260915T055558-6151c6353435` on candidate `b2e59673`. All four ranks booted;
+the measured C=1 requests had fresh prefixes, no observed JIT/capture and no
+external traffic. Nevertheless, the quality gate passed only **5/9** cases
+(50/57 rubric points): final results were 9/9, while derivation, counterfactual
+and witness checks were incomplete. Korean corruption was 0/5.
+
+The record correctly clears `decode.windows_med` and retains the raw value
+only as invalid evidence. Then C=2 preparation received HTTP 409 and the
+remaining run was not executed. The existing latency recorder accepted only
+concurrencies 1 and 4, although the current canonical harness follows this
+server's admission width of 2. That unconditional refusal explains the 409.
+
+The recording fix accepts integer widths 1 through 4 and still refuses bools,
+non-integers and out-of-range values. CPU server tests drive real scheduler
+rows at every accepted width, verify token ownership, and check that refused
+widths create no recording. **19 tests pass**, `cpu-tests-recording.log`.
+
+Both repeat arms contain exactly this fix:
+
+| Arm | Commit | Fleet session | Ticket |
+| --- | --- | --- | --- |
+| Dynamic baseline, main plus recording fix | `78c3f5ed32d607be6c8e600aabd4e1471dcbf84f` | `c1mhc-control-a55c` | `17894525171732173` |
+| Static C1 candidate plus same recording fix | `fcd32f1358cbd34799c23bdf2fca367d542b1181` | `c1mhc-final-a55c` | `17894525771743125` |
+
+The engine differences between these arms are only `kernels.cu` and its
+`SOURCE.json` provenance. No quality check or workload budget was weakened.
+The candidate's native CUDA source is still the one in `compile-final.json`.
 
 ## GPU gate
 
