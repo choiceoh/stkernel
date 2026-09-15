@@ -137,8 +137,9 @@ class ConsumerSumCudaTests(unittest.TestCase):
                         reduce = getattr(ext, name)
                         values = fixture(n, 1, generator)
                         staged.copy_(values[rank].view(shape))
-                        for _ in range(2):  # one eager chain, then the capture itself runs one
-                            requests.put(packets(values, rank))
+                        # The eager chain publishes once. Capture records the launches without running them, so it
+                        # takes no proxy request, as in the other oracle tests; every replay then takes exactly one.
+                        requests.put(packets(values, rank))
                         ext.staged_copy(staged, x, 0)
                         ext.staged_copy(reduce(x), out, 0)
                         torch.cuda.synchronize()
@@ -169,9 +170,6 @@ class ConsumerSumCudaTests(unittest.TestCase):
                 inputs = [torch.empty(shape, device='cuda', dtype=torch.bfloat16) for shape in shapes]
                 kernels = (ext.oneshot_ar_consumer, ext.oneshot_ar, ext.oneshot_ar_consumer)
                 rounds = [[fixture(math.prod(shape), trial, generator) for shape in shapes] for trial in range(3)]
-                for values, x in zip(rounds[1], inputs):
-                    x.copy_(values[rank].view(x.shape))
-                    requests.put(packets(values, rank))
                 graph = torch.cuda.CUDAGraph()
                 with torch.cuda.graph(graph):
                     outputs = [kernel(x) for kernel, x in zip(kernels, inputs)]

@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from engine.kernels.cells import ONESHOT_CONSUMER_MAX_ELEMENTS, ONESHOT_MAX_ELEMENTS
 
@@ -161,11 +161,56 @@ class ConsumerDispatchTests(unittest.TestCase):
         transport.closed, transport.pending, transport.packet_failed = False, None, False
         transport.ext = SimpleNamespace(healthy=lambda: True, oneshot_ar=Mock(return_value='ordinary'),
                                         oneshot_ar_consumer=Mock(return_value='consumer'))
-        for elements, expected in ((8, 'consumer'), (8 * 4096, 'consumer'), (16 * 4096, 'consumer'),
-                                   (16 * 4096 + 8, 'ordinary'), (17 * 4096, 'ordinary'), (64 * 4096, 'ordinary')):
-            value = SimpleNamespace(is_cuda=True, dtype=torch.bfloat16, is_contiguous=lambda: True,
-                                    numel=lambda n=elements: n, data_ptr=lambda: 1 << 20)
-            self.assertEqual(transport.reduce(value), expected, elements)
+        sizes = (8, 8 * 4096, 16 * 4096, 16 * 4096 + 8, 17 * 4096, 64 * 4096)
+        # Serving takes the cell's bound; 0 is the same-build control that keeps every sum on the ordinary kernel.
+        for bound, served in ((oneshot.CONSUMER_MAX_ELEMENTS, ('consumer',) * 3 + ('ordinary',) * 3),
+                              (0, ('ordinary',) * 6), (8 * 4096, ('consumer',) * 2 + ('ordinary',) * 4)):
+            transport.consumer_max_elements = bound
+            for elements, expected in zip(sizes, served):
+                value = SimpleNamespace(is_cuda=True, dtype=torch.bfloat16, is_contiguous=lambda: True,
+                                        numel=lambda n=elements: n, data_ptr=lambda: 1 << 20)
+                self.assertEqual(transport.reduce(value), expected, (bound, elements))
+
+    def test_the_control_bound_is_validated_before_any_group_or_build(self):
+        from engine.kernels import oneshot
+        comm = SimpleNamespace(rank=0, world_size=4)
+        with patch.object(oneshot, '_cell', return_value=SimpleNamespace(world=4, hidden=4096)), \
+             patch.object(oneshot.dist, 'new_group') as new_group, patch.object(oneshot, 'build') as build:
+            for invalid in (-8, 12, oneshot.MAX_ELEMENTS + 8, 8.0, None, True):
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    oneshot.OneShot(comm, ('a', 'b', 'c', 'd'), consumer_max_elements=invalid)
+            new_group.assert_not_called()
+            build.assert_not_called()
+
+    def test_the_16_row_consumer_first_runs_under_the_stall_watchdog(self):
+        # The kernels skip their stall verdict for sequences below 16 (bootstrap). Count, in boot order, the
+        # collectives each self-test launches before the first 16-row consumer: it must not be inside that grace.
+        from engine.kernels import oneshot
+        source = (ROOT/'engine/kernels/oneshot/dsv4_oneshot_ar.cu').read_text()
+        self.assertIn('if (seq < 16) return;', source)
+        tree = ast.parse((ROOT/'engine/kernels/oneshot/__init__.py').read_text())
+        cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'OneShot')
+        init = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == '__init__')
+        order = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == '_check_sum_order')
+        rows_of = lambda fn: next(ast.literal_eval(n.iter) for n in ast.walk(fn)
+                                  if isinstance(n, ast.For) and ast.unparse(n.target) == 'rows')
+        replayed = next(ast.literal_eval(n.comparators[0]) for n in ast.walk(order)
+                        if isinstance(n, ast.Compare) and isinstance(n.ops[0], ast.NotIn))
+        bound, state = oneshot.CONSUMER_MAX_ELEMENTS, dict(sequence=0, first=None)
+
+        def launch(rows, replays):
+            # the ordinary kernel, then the consumer when the sum is within the bound; a capture launches nothing
+            for consumer in (False, True)[:1 + (rows * 4096 <= bound)]:
+                state['sequence'] += 1
+                if consumer and rows * 4096 == bound and state['first'] is None:
+                    state['first'] = state['sequence']
+                state['sequence'] += replays
+        for rows in rows_of(init):
+            launch(rows, 0)
+        for rows in rows_of(order):
+            launch(rows, 3 if rows in replayed else 0)
+        self.assertIsNotNone(state['first'], 'no self-test runs the consumer at its bound')
+        self.assertGreaterEqual(state['first'], 16)
 
 
 if __name__ == '__main__':

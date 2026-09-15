@@ -82,18 +82,25 @@ def build(rails=1, *, inline_flags=True):
 
 
 class OneShot:
-    def __init__(self, comm, addresses, rail_addresses=(), *, inline_flags=True):
+    def __init__(self, comm, addresses, rail_addresses=(), *, inline_flags=True,
+                 consumer_max_elements=CONSUMER_MAX_ELEMENTS):
         """`addresses`: rank-ordered IPv4 of the first RoCE function (rocep1s0f0). `rail_addresses`: the
-        same table for the second function (roceP2p1s0f0), which puts the pairs pair_rail() names there."""
+        same table for the second function (roceP2p1s0f0), which puts the pairs pair_rail() names there.
+        `consumer_max_elements`: the largest sum sent to the PDL consumer kernel, larger ones take the ordinary
+        kernel. Serving takes the cell's bound; 0 sends every sum to the ordinary kernel, the same-build control."""
         cell = _cell()
         tables = (tuple(addresses),) + tuple(tuple(t) for t in rail_addresses)
         if comm.world_size != cell.world or len(tables) > 2 or any(len(t) != cell.world for t in tables):
             raise ValueError(f'one-shot requires one or two explicit {cell.world}-rank address tables')
         if type(inline_flags) is not bool:
             raise ValueError('one-shot inline_flags must be a bool')
+        if (type(consumer_max_elements) is not int or not 0 <= consumer_max_elements <= MAX_ELEMENTS
+                or consumer_max_elements % 8):
+            raise ValueError(f'one-shot consumer_max_elements must be a multiple of 8 within {MAX_ELEMENTS}')
         self.world, self.hidden = cell.world, cell.hidden
         self.rails = len(tables)
         self.inline_flags = inline_flags
+        self.consumer_max_elements = consumer_max_elements
         self.ext = None
         self.control = dist.new_group(backend='gloo')
         self.closed = False
@@ -111,7 +118,8 @@ class OneShot:
                 error = repr(exc)
             self.agree(error, 'local preparation')
             signatures = [None]*self.world
-            signature = (self.ext.__name__, tables, MAX_ELEMENTS, comm.world_size, self.hidden, self.inline_flags)
+            signature = (self.ext.__name__, tables, MAX_ELEMENTS, comm.world_size, self.hidden, self.inline_flags,
+                         self.consumer_max_elements)
             dist.all_gather_object(signatures, signature, group=self.control)
             if any(other != signature for other in signatures):
                 raise RuntimeError(f'one-shot binary or rank table differs: {signatures}')
@@ -127,12 +135,12 @@ class OneShot:
                                        for peer in range(self.world) if peer != comm.rank]
             actual = list(self.ext.rails())
             self.agree(None if actual == expected else f'rails {actual} != {expected}', 'rail placement')
-            for rows in (1,6,16,24,32,48,64):
+            for rows in (1,6,24,32,48,64):
                 x = torch.full((rows,self.hidden),comm.rank+1,device='cuda',dtype=torch.bfloat16)
                 ref = x.clone()
                 dist.all_reduce(ref,group=comm.group)
                 reducers = [self.ext.oneshot_ar]
-                if x.numel() <= CONSUMER_MAX_ELEMENTS:
+                if x.numel() <= self.consumer_max_elements:
                     reducers.append(self.ext.oneshot_ar_consumer)
                 for reduce in reducers:
                     actual = reduce(x)
@@ -186,7 +194,7 @@ class OneShot:
             for name, rows in self.LATENCY_CELLS:
                 if rows:
                     x = torch.zeros((rows, self.hidden), device='cuda', dtype=torch.bfloat16)
-                    op = self.ext.oneshot_ar_consumer if x.numel() <= CONSUMER_MAX_ELEMENTS else self.ext.oneshot_ar
+                    op = self.ext.oneshot_ar_consumer if x.numel() <= self.consumer_max_elements else self.ext.oneshot_ar
                 else:
                     x = torch.zeros(8, device='cuda', dtype=torch.int64)
                     op = self.ext.oneshot_max_int64
@@ -227,11 +235,13 @@ class OneShot:
                   (1., 2.**-16, 3., 2.**-24), (1., 2.**-16, 4., -2.**-24))
         row = torch.tensor(values[rank], device='cuda', dtype=torch.bfloat16).repeat(1024)
         expected_row = torch.tensor((2., 2.**-15, 10., 0.), device='cuda', dtype=torch.bfloat16).repeat(1024)
-        # 7 and 16 rows also replay captured; 16 is C=2's full sum, the largest the consumer serves.
+        # 7 and 16 rows also replay captured. 16 rows is C=2's full sum on the consumer; it first runs here, more
+        # than sixteen collectives after connect. The kernels' stall watchdog grants the first sixteen sequences
+        # bootstrap grace, so a 16-row launch that spins prints its STALL word and traps instead of hanging boot.
         for rows in (1, 7, 16, 24, 64):
             x, expected = row.repeat(rows, 1), expected_row.repeat(rows, 1)
             reducers = [self.ext.oneshot_ar]
-            if x.numel() <= CONSUMER_MAX_ELEMENTS:
+            if x.numel() <= self.consumer_max_elements:
                 reducers.append(self.ext.oneshot_ar_consumer)
             for reduce in reducers:
                 actual = reduce(x)
@@ -271,7 +281,7 @@ class OneShot:
             raise ValueError('unavailable one-shot transport or unsupported tensor')
         if not self.ext.healthy():
             raise RuntimeError('one-shot proxy stopped progressing')
-        return (self.ext.oneshot_ar_consumer if t.numel() <= CONSUMER_MAX_ELEMENTS else self.ext.oneshot_ar)(t)
+        return (self.ext.oneshot_ar_consumer if t.numel() <= self.consumer_max_elements else self.ext.oneshot_ar)(t)
 
     def assert_consumed(self):
         if self.pending is not None or self.packet_failed:

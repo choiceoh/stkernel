@@ -85,11 +85,10 @@ class LatencyTests(unittest.TestCase):
         cls.body = [n for n in cls.body if isinstance(n, ast.Assign)
                     or isinstance(n, ast.FunctionDef) and n.name == '_sample_latency']
         from engine.kernels.cells import ONESHOT_CONSUMER_MAX_ELEMENTS
-        namespace = dict(torch=torch, dist=SimpleNamespace(barrier=barrier),
-                         CONSUMER_MAX_ELEMENTS=ONESHOT_CONSUMER_MAX_ELEMENTS)
+        namespace = dict(torch=torch, dist=SimpleNamespace(barrier=barrier))
         exec(compile(ast.Module(body=[cls], type_ignores=[]), '<production latency sampler>', 'exec'), namespace)
         sampler = namespace['OneShot']()
-        sampler.hidden, sampler.control = 4096, control
+        sampler.hidden, sampler.control, sampler.consumer_max_elements = 4096, control, ONESHOT_CONSUMER_MAX_ELEMENTS
         sampler.ext = SimpleNamespace(oneshot_ar_consumer=op('consumer'), oneshot_ar=op('ordinary'),
                                       oneshot_max_int64=op('max'))
         result = sampler._sample_latency()

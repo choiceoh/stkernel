@@ -75,7 +75,9 @@ class Comm:
     transport: object = None
     preparation: object = None       # boot-only Gloo group, closed after weights are ready
 
-    def prepare_oneshot(self, rails: int = 2, *, inline_flags: bool = True):
+    def prepare_oneshot(self, rails: int = 2, *, inline_flags: bool = True, consumer_max_elements=None):
+        """`consumer_max_elements` is a probe's same-build control (0: every sum on the ordinary kernel); serving
+        passes none and takes the compiled cell's bound."""
         if self.transport is not None:
             raise RuntimeError("one-shot transport is already bound")
         if rails not in (1, 2):
@@ -83,7 +85,8 @@ class Comm:
         if type(inline_flags) is not bool:
             raise ValueError("one-shot inline_flags must be a bool")
         from engine.kernels.oneshot import OneShot
-        self.transport = OneShot(self, NODES, (RAIL_NODES,) if rails == 2 else (), inline_flags=inline_flags)
+        control = {} if consumer_max_elements is None else dict(consumer_max_elements=consumer_max_elements)
+        self.transport = OneShot(self, NODES, (RAIL_NODES,) if rails == 2 else (), inline_flags=inline_flags, **control)
 
     @classmethod
     def init(cls, rank: "int | None" = None, world: "int | None" = None, *, timeout_s: float = 120.):
