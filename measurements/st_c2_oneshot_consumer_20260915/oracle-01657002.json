@@ -1,0 +1,35 @@
+{
+  "status": "PASS",
+  "evidence": "oracle Torch extension compile/load only",
+  "gpu_used": false,
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "extension": "st_producer_oracle_3660d089941a44b4baba4d5b",
+  "extension_sha256": "b25d4d1ef31f721e6fab01a6beba5ca9d3cbe84b65342afb2bbfa0a7dab8f059",
+  "bindings": [
+    "ack",
+    "bytes",
+    "consume",
+    "land",
+    "land_ahead",
+    "land_peers",
+    "moe_packets",
+    "oneshot_ar",
+    "oneshot_ar_consumer",
+    "oneshot_gather_int64",
+    "oneshot_max_int64",
+    "oneshot_packets",
+    "payload",
+    "prepare",
+    "publish_packets",
+    "published",
+    "reserve_packets",
+    "staged_copy",
+    "tickets"
+  ],
+  "source_sha256": {
+    "probes/oneshot_producer_oracle.cu": "014b24d4d11be15db8380ae09dc60a226f6f9b6f89fa2c362048056fbce65850",
+    "engine/kernels/oneshot/dsv4_oneshot_ar.cu": "756e728b7ec6213d632a77e03b20fd42da5af8854a5c2b30b0f08ec24155cd3b",
+    "engine/kernels/oneshot/dsv4_oneshot_transport.h": "bf8b8359ed76ce31ad1eae8c80b56bd47384e1f2e02b993af1f040718450793a"
+  }
+}

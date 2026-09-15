@@ -84,24 +84,27 @@ class LatencyTests(unittest.TestCase):
         cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'OneShot')
         cls.body = [n for n in cls.body if isinstance(n, ast.Assign)
                     or isinstance(n, ast.FunctionDef) and n.name == '_sample_latency']
-        namespace = dict(torch=torch, dist=SimpleNamespace(barrier=barrier), CONSUMER_MAX_ELEMENTS=32768)
+        from engine.kernels.cells import ONESHOT_CONSUMER_MAX_ELEMENTS
+        namespace = dict(torch=torch, dist=SimpleNamespace(barrier=barrier))
         exec(compile(ast.Module(body=[cls], type_ignores=[]), '<production latency sampler>', 'exec'), namespace)
         sampler = namespace['OneShot']()
-        sampler.hidden, sampler.control = 4096, control
+        sampler.hidden, sampler.control, sampler.consumer_max_elements = 4096, control, ONESHOT_CONSUMER_MAX_ELEMENTS
         sampler.ext = SimpleNamespace(oneshot_ar_consumer=op('consumer'), oneshot_ar=op('ordinary'),
                                       oneshot_max_int64=op('max'))
         result = sampler._sample_latency()
         self.assertEqual(result, {name + suffix: value for name, _ in sampler.LATENCY_CELLS
                                   for suffix, value in (('', 375.), ('_p90', 625.))})
-        self.assertEqual(operations, ['consumer'] * 19 + ['ordinary'] * 19 + ['max'] * 19)
-        self.assertEqual(len(graphs), 3)
+        # C=1's and C=2's sums take the consumer the serving dispatch takes; C=4's takes the ordinary kernel.
+        self.assertEqual([name for name, _ in sampler.LATENCY_CELLS], ['sum_8rows', 'sum_16rows', 'sum_32rows', 'max_8keys'])
+        self.assertEqual(operations, ['consumer'] * 38 + ['ordinary'] * 19 + ['max'] * 19)
+        self.assertEqual(len(graphs), 4)
         for graph in graphs:
             self.assertEqual((graph.captured, graph.replays, graph.resets), (16, 12, 1))
         # Reuse 24 event handles across all cells. Their twelve replays run
         # without a host wait or allocation between individual samples.
         initialization = ['event-create'] * 24 + ['event-init'] * 24
         expected_cell = ['warmup-wait', 'barrier'] + ['replay'] * 12 + ['event-wait']
-        self.assertEqual(trace, initialization + expected_cell * 3)
+        self.assertEqual(trace, initialization + expected_cell * 4)
 
 
 if __name__ == '__main__':

@@ -1,0 +1,11 @@
+GO c2cons-gpu2-a4b9787e 2026-09-15_09:13:01
+  single GPU: probes/engine_kernel_check.py on srv4 (tree ~/c2cons-a4b9787e, image sha256:b45454b5fdc138bfaafa6470cf9cb49bbcd74783ceffb343b0a7b1d0cf87fcd5, budget 8 GiB beside production, no fleet lease)
+test_captured_sums_wait_for_a_late_producer_and_an_early_successor_waits_for_them (tests.test_engine_oneshot_consumer_cuda.ConsumerSumCudaTests.test_captured_sums_wait_for_a_late_producer_and_an_early_successor_waits_for_them) ... ok
+test_consumer_and_ordinary_sums_are_the_same_bytes_at_every_rank_and_size (tests.test_engine_oneshot_consumer_cuda.ConsumerSumCudaTests.test_consumer_and_ordinary_sums_are_the_same_bytes_at_every_rank_and_size) ... ok
+test_rank_packets_ring_wrap_changed_inputs_and_mixed_collectives (tests.test_engine_moe_output_transport.MoeOutputTransportTests.test_rank_packets_ring_wrap_changed_inputs_and_mixed_collectives) ... {"lane": "oneshot_consumer", "passed": true, "tests": 3, "device": "NVIDIA GB10", "torch": "2.13.0+cu132", "cuda": "13.2"}
+ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 64.938s
+
+OK

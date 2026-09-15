@@ -63,6 +63,33 @@ def main():
         from probes.engine_decode_dsa_inputs import check as dsa_inputs_check
         dsa_inputs_check(args.ranks)
         return
+    if args.lanes == 'oneshot_consumer':
+        # The PDL consumer sum against the ordinary kernel at C=1/C=2 rows, and the MoE packet ring at the same
+        # rows, on the production transport source behind a CPU proxy: bytes and tickets, not NIC latency.
+        import unittest
+        suite = unittest.defaultTestLoader.loadTestsFromNames(('tests.test_engine_oneshot_consumer_cuda',
+                                                               'tests.test_engine_moe_output_transport'))
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        if not result.wasSuccessful() or result.skipped:
+            raise RuntimeError('one-shot consumer transport gates failed or skipped')
+        import torch
+        row = dict(lane='oneshot_consumer', passed=True, tests=result.testsRun, device=torch.cuda.get_device_name(),
+                   torch=torch.__version__, cuda=torch.version.cuda)
+        if args.output:
+            args.output.write_text(json.dumps(row) + '\n')
+        print(json.dumps(row), flush=True)
+        return
+    if args.lanes == 'oneshot_consumer_timing':
+        # GPU-side only: peers are landed before each chain publishes, so no RDMA time is in these numbers.
+        from probes.engine_oneshot_consumer_timing import check as consumer_timing
+        rows = []
+        def report(name, **values):
+            rows.append(dict(lane=name, **values))
+            print(json.dumps(rows[-1]), flush=True)
+        consumer_timing(report)
+        if args.output:
+            args.output.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+        return
     if args.lanes == 'select_rows':
         # a captured step's joined C=2 indexer selection against its per-row control, then bounded timings
         from probes.engine_decode_select_rows import run as select_rows_check

@@ -1,0 +1,1 @@
+{"lane": "oneshot_consumer", "passed": true, "tests": 3, "device": "NVIDIA GB10", "torch": "2.13.0+cu132", "cuda": "13.2"}

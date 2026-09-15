@@ -50,10 +50,12 @@ MHC_VARIANT = "mhc"           # the MK segment and the TileLang mixes compute GL
 MHC_V41_VARIANT = "split_sinkhorn"   # run_mhc_v41, the megakernel's V4.1 seam, computes DeepSeek-V4.1's form
 MHC_MAX_TOK = 128
 MHC_HCHUNK = 256
-# oneshot/dsv4_oneshot_ar.cu: NPEER 3 (four ranks), MAXEL elements, the 12-CTA PDL consumer's element bound
+# oneshot/dsv4_oneshot_ar.cu: NPEER 3 (four ranks), MAXEL elements, and the largest sum the PDL consumer serves --
+# C=2's 16 verify rows. The engine build compiles no compact 12-CTA form: the consumer launches the ordinary kernel's
+# 48-CTA grid, one ticket per CTA, with a stash that covers MAXEL, so this bound is a dispatch choice, not a compiled one.
 ONESHOT_WORLD = 4
 ONESHOT_MAX_ELEMENTS = 64 * 4096
-ONESHOT_CONSUMER_MAX_ELEMENTS = 8 * 4096
+ONESHOT_CONSUMER_MAX_ELEMENTS = 16 * 4096
 # prefill_collectives/kernels.py: packets are whole blocks of this many elements
 PREFILL_BLOCK = 2048
 # kda/ring.py and the chunk lane in kda/kda.py: the fused KDA gate is one value per key channel
