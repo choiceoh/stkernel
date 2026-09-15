@@ -1,6 +1,33 @@
 # C=1 input-pack launch geometry (2026-09-15)
 
-## Change under measurement
+## Decision: rejected
+
+The launch-grid change passed bitwise numerical checks but did not give a
+repeatable improvement in complete projection intervals. All input-pack
+dispatch, kernel and probe API changes were removed. Production keeps its
+original eight-warp layout. No TP4 boot was spent on this rejected candidate.
+
+The complete sweep is in `gpu.jsonl`, with its queue log in `queue.log` and
+the generated table in `components.md`. The focused query repeat is in
+`query-repeat.jsonl` and `query-repeat.log`.
+
+| Two warps vs eight: projection chain | Warm time change | Evicted time change |
+| --- | ---: | ---: |
+| KDA input | -0.69% | -0.02% |
+| KDA output | +0.11% | -0.12% |
+| MLA output | +0.19% | -0.41% |
+| Query pair | -2.59% | +3.08% |
+| MLP gate/up | -1.15% | -0.10% |
+| MLP down | +4.40% | -1.75% |
+
+Negative means less time. The isolated pack's changes were small (often tens
+of nanoseconds), and gains did not consistently survive the consumer chain.
+An apparent one-warp query win was retested across four independent graph
+captures with alternating capture/allocation order and four B/A/A/B brackets.
+Its aggregate chain time was **+2.61% warm / +0.08% evicted**; the single-layer
+time was **+0.01% / +0.50%**. This confirmation also rejects a query-only default.
+
+## Experiment
 
 The C=1 dense input pack has eight independent warp rows per 128-column K block.
 Its previous 256-thread CTA kept all eight rows together: K=1536/2048/3072/4096
@@ -11,12 +38,12 @@ Each warp retains the original load, amax reduction, FP32 scale and reciprocal,
 FP8 conversion and output offsets. No inter-warp reduction, pack-layout change,
 scratch growth or extra kernel launch is introduced. The PDL dependency remains.
 Seven-row packing, wide-row packing and existing producer-owned packs retain
-their paths. The provisional default selects two rows per CTA only for eight-row
-inputs of at most 4096 columns; the other sizes are measurement controls.
+their paths. The prototype selected two rows per CTA only for eight-row inputs
+of at most 4096 columns; the other sizes were measurement controls.
 
 ## Reproduction and gate
 
-The named canonical GPU probe is:
+The historical canonical GPU probe was:
 
 ```sh
 bash probes/run_engine_probe.sh probes/engine_kernel_check.py \
@@ -43,6 +70,12 @@ bash probes/run_engine_probe.sh probes/engine_kernel_check.py \
   CUDA events are captured around the native calls. Warm intervals repeat the
   calls 32 times; evicted intervals follow a 128 MiB flush outside the interval.
   Each bracket arm averages 16 replays. Inputs are nonzero during timing.
+- Confirmation: `c1pack-query-a55c`, ticket `17894489101043755`, source `b5064362`.
+  Four independent captures reverse the arms' capture/allocation order; each
+  capture has four B/A/A/B brackets. Both query numerical groups passed.
+- `prototype.tar.gz` contains the final experiment's source overlay, frozen
+  from `b5064362`. Overlay it on `5871c559` in an isolated checkout to reproduce
+  either sweep. The active engine no longer contains this prototype.
 
 Use `python3 measurements/st_c1_input_pack_grid_20260915/summarize.py FILE.jsonl`
 to regenerate the component table. A partial or failed run is refused.
@@ -58,15 +91,12 @@ to regenerate the component table. A partial or failed run is refused.
   are not qualification of this change. This suite covers dense callers,
   seven-row routing, KDA norms, forward paths, kernel boundaries, native cache
   and the new native prebuild integration.
-- GPU numerical and component timing results: **queued, not yet measured**.
+- GPU numerical checks: **18 groups passed** in the sweep; both confirmation
+  groups passed. The largest allocated GPU footprint was 1,369,101,312 bytes.
+- Component timing: **measured; no reliable projection-chain improvement**.
 - TP4 onepass, consumer throughput, acceptance and quality: **not measured**.
-  Reservation `c1pack-full-v4-a55c` (ticket `1789447070414497`) is paused until the
-  component gate passes; it compares this candidate with `5871c559` using full
-  validation (C=1 twice and C=4 once per boot). Two earlier preparation attempts
-  were refused before taking GPUs because relevant main changes were missing;
-  the candidate was rebased before the accepted reservation.
+  The paused full-validation reservation must not resume this rejected source.
 
-The block counts above are source facts. They do not establish a speedup.
-Adoption must use the complete projection intervals as well as the pack interval;
-a microbenchmark is not evidence of faster serving. Consumer claims require the
-canonical TP4 onepass under D17.
+These component measurements establish no serving speedup. The candidate was
+retired before consumer validation, as required by the short numerical/timing
+gate in D17.
