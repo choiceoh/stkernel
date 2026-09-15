@@ -1969,8 +1969,9 @@ class Server:
         opens and the model goes on from there. GLM-5.3 does, because how its reasoning starts decides how it goes on
         (engine/profiles/glm53/boot.REASONING_OPENER). Only a new assistant turn opens a block, so only one gets it,
         and a request's own `reasoning_opener` stands -- an empty one turns it off.
-        A profile can choose a separate default when tools are offered: None inherits
-        the ordinary opener, while an empty string lets the model start that turn."""
+        A profile can choose a separate default when a request declares tools, including
+        a turn with tool_choice=none: disabling calls does not change how its reasoning
+        starts. None inherits the ordinary opener; an empty string lets the model start."""
         if not opening or "reasoning_opener" in kwargs:
             return kwargs
         opener = self.tool_reasoning_opener if tools and self.tool_reasoning_opener is not None else self.reasoning_opener
@@ -3488,7 +3489,7 @@ class Server:
                 try:
                     template_start = time.perf_counter()
                     opening, resuming = prompt_switches(req)
-                    kwargs = server.opener_kwargs(kwargs, opening, tools)
+                    kwargs = server.opener_kwargs(kwargs, opening, req.get("tools"))
                     prompt = server.chat(template_messages(messages), dict(kwargs, tools=tools) if tools else kwargs,
                                          generation_prompt=opening, continue_final=resuming)
                 except Exception as exc:                                  # noqa: BLE001 -- the template's verdict on these messages
@@ -3785,7 +3786,7 @@ class Server:
                         tools = None
                     try:
                         opening, resuming = prompt_switches(req)
-                        kwargs = server.opener_kwargs(dict(kwargs), opening, tools)
+                        kwargs = server.opener_kwargs(dict(kwargs), opening, req.get("tools"))
                         prompt = server.chat(template_messages(req["messages"]), dict(kwargs, tools=tools) if tools else dict(kwargs),
                                              generation_prompt=opening, continue_final=resuming)
                     except Exception as exc:                              # noqa: BLE001
@@ -3850,7 +3851,11 @@ class Server:
                     if not isinstance(kwargs, dict):
                         raise RequestError("chat_template_kwargs must be an object")
                     try:
-                        prompt = server.chat(template_messages(req["messages"]), server.opener_kwargs(dict(kwargs), True))
+                        tools = None if req.get("tool_choice") == "none" else req.get("tools")
+                        opening, resuming = prompt_switches(req)
+                        kwargs = server.opener_kwargs(dict(kwargs), opening, req.get("tools"))
+                        prompt = server.chat(template_messages(req["messages"]), dict(kwargs, tools=tools) if tools else kwargs,
+                                             generation_prompt=opening, continue_final=resuming)
                     except Exception as exc:                          # noqa: BLE001
                         raise RequestError(f"chat template rejected the request: {exc}") from exc
                     ids = server.tok.encode(nfc(prompt), add_special_tokens=False).ids

@@ -930,8 +930,10 @@ class ChatDoorTests(unittest.TestCase):
             disabled = dict(with_tools, tool_choice="none")
             with concurrent.futures.ThreadPoolExecutor(1) as pool:
                 message = drive(s, pool.submit(post, '/v1/chat/completions', disabled))['choices'][0]['message']
-            self.assertEqual((rendered[-1], message.get('reasoning_content')), ("xy!O", "OOOO"))
-            self.assertEqual(post('/tokenize', disabled)['count'], len("xy!O"))
+            self.assertEqual((rendered[-1], message.get('reasoning_content')), ("xy!", "!!!"))
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                self.assertEqual(drive(s, pool.submit(stream, dict(disabled, stream=True))), ("!!!", ""))
+            self.assertEqual(post('/tokenize', disabled)['count'], len("xy!"))
             # thinking off: the template closed the block, nothing opens, nothing leads the answer
             with concurrent.futures.ThreadPoolExecutor(1) as pool:
                 message = drive(s, pool.submit(post, '/v1/chat/completions', dict(thinking, chat_template_kwargs={})))['choices'][0]['message']

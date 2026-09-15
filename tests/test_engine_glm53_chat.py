@@ -56,6 +56,68 @@ class Glm53ChatTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "reasoning_effort must be"):
                         render(messages, {"reasoning_effort": effort})
 
+    def test_tool_defaults_preserve_caller_instructions_and_history(self):
+        from engine.profiles.glm53.boot import TOOL_INSTRUCTIONS
+
+        messages = [
+            {"role": "system", "content": "Caller-specific response instructions."},
+            {"role": "user", "content": "Read the pressure."},
+            {"role": "assistant", "content": None, "reasoning_content": "Read the actual measurement.",
+             "tool_calls": [{"id": "r", "function": {"name": "read_sensor", "arguments": {}}}]},
+            {"role": "tool", "tool_call_id": "r", "content": "{\"pressure\":17.25}"},
+        ]
+        tools = [{"type": "function", "function": {"name": "read_sensor", "parameters": {"type": "object"}}}]
+        for old_checkpoint in (False, True):
+            render = self.renderer(old_checkpoint)
+            kwargs = {"tools": tools, "thinking": True}
+            original = copy.deepcopy((messages, kwargs))
+            output = render(messages, kwargs)
+            self.assertEqual(output.count(TOOL_INSTRUCTIONS), 1)
+            self.assertLess(output.index(TOOL_INSTRUCTIONS), output.index(messages[0]["content"]))
+            self.assertIn("<think>Read the actual measurement.</think>", output)
+            self.assertIn('<tool_response>{"pressure":17.25}</tool_response>', output)
+            self.assertEqual(render(messages, kwargs), output)
+            self.assertEqual((messages, kwargs), original)
+            self.assertNotIn(TOOL_INSTRUCTIONS, render(messages[:2], {"thinking": True}))
+
+    def test_tool_prompt_is_identical_for_chat_tokenization_and_prefix_warming(self):
+        from engine.profiles.glm53.boot import REASONING_OPENER, TOOL_REASONING_OPENER, TOOL_INSTRUCTIONS
+        from tests.test_engine_serve import chat_server, drive
+
+        server = chat_server(blocks=2048, prefix=4)
+        server.reasoning_opener, server.tool_reasoning_opener = REASONING_OPENER, TOOL_REASONING_OPENER
+        render, prompts = self.renderer(False), []
+        def chat(*args, **kwargs):
+            prompt = render(*args, **kwargs)
+            prompts.append(prompt)
+            return prompt
+        server.chat = chat
+        httpd = server._serve_http()
+        try:
+            with concurrent.futures.ThreadPoolExecutor(1) as pool:
+                for choice in ("auto", "none"):
+                    body = {"messages": [{"role": "user", "content": "Read the sensor."}],
+                            "tools": [{"type": "function", "function": {"name": "read_sensor",
+                                       "parameters": {"type": "object"}}}], "tool_choice": choice,
+                            "max_tokens": 1, "retain": False, "chat_template_kwargs": {"thinking": True}}
+                    seen = []
+                    for route in ("/v1/chat/completions", "/tokenize", "/v1/prefix/warm"):
+                        request = urllib.request.Request(
+                            f"http://127.0.0.1:{httpd.server_port}{route}", data=json.dumps(body).encode(),
+                            headers={"Content-Type": "application/json"})
+                        def post():
+                            with urllib.request.urlopen(request, timeout=5) as response:
+                                return response.status, response.read()
+                        status, response = drive(server, pool.submit(post))
+                        self.assertEqual(status, 200, response)
+                        seen.append(prompts[-1])
+                    self.assertEqual(seen, [seen[0]] * 3)
+                    self.assertTrue(seen[0].endswith("<|assistant|><think>"))
+                    self.assertEqual(TOOL_INSTRUCTIONS in seen[0], choice == "auto")
+                    self.assertEqual("<tools>" in seen[0], choice == "auto")
+        finally:
+            httpd.shutdown(); httpd.server_close()
+
     def test_max_http_requests_succeed_with_high_reasoning(self):
         from engine.profiles.glm53.boot import REASONING_EFFORT_ALIASES
         from tests.test_engine_serve import chat_server, drive
