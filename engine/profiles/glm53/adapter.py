@@ -379,8 +379,11 @@ class Glm53Engine:
         record = getattr(self, "prefill_record", None)
 
         def settle():
-            """This rank's own device work, done -- so the stamp taken next is its own and not a peer's."""
-            if str(caches.device).startswith("cuda"):
+            """This rank's own device work, done -- so the stamp taken next is its own and not a peer's.
+
+            `is_initialized`, not the device string: base/instruments asks the same way, and a CPU harness
+            that drives this path must not be made to own a context to be allowed to time itself."""
+            if torch.cuda.is_initialized():
                 torch.cuda.synchronize()
 
         def run(length, context):
