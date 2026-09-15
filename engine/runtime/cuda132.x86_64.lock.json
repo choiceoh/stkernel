@@ -1,0 +1,329 @@
+{
+  "schema": 1,
+  "platform": "linux-x86_64-cp312",
+  "cuda": "13.2.1",
+  "bootstrap_seed_image_id": null,
+  "note": "The x86_64 set for an sm_120 CHECK image, not the production runtime. It inherits nothing from glm53:v13-b12x-it -- that image is ARM64, locally built and unreproducible -- so it names every package from an index and carries no DeepGEMM. See make_x86_64_lock.py and bench/OST_97X_LANE.md.",
+  "deviations": [
+    {
+      "name": "nvidia-cudla",
+      "fleet": "13.2.75",
+      "here": null,
+      "why": "Tegra-only accelerator: no x86_64 wheel exists and no x86_64 host has the hardware"
+    },
+    {
+      "name": "flashinfer-python",
+      "fleet": "0.6.18.dev20260819",
+      "here": "0.6.18.post1",
+      "why": "the fleet pins an unpublished dev build; this is the nearest published release, and the wheel is py3-none-any (kernels are JIT) so nothing about it is arch-specific"
+    },
+    {
+      "name": "tilelang",
+      "fleet": "0.1.12",
+      "here": "0.1.14",
+      "why": "0.1.12 publishes no x86_64 wheel; 0.1.14 is the nearest version that does"
+    },
+    {
+      "name": "deep_gemm",
+      "fleet": "2.6.1 (extracted from the bootstrap image)",
+      "here": null,
+      "why": "a compiled extension lifted byte-for-byte out of an ARM64 image; not reproducible on x86_64 at any version. engine/kernels/b12x does not import it"
+    }
+  ],
+  "wheels": [
+    {
+      "name": "cuda-bindings",
+      "version": "13.2.0",
+      "filename": "cuda_bindings-13.2.0-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/1f/92/f899f7bbb5617bb65ec52a6eac1e9a1447a86b916c4194f8a5001b8cde0c/cuda_bindings-13.2.0-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "46d8776a55d6d5da9dd6e9858fba2efcda2abe6743871dee47dd06eb8cb6d955"
+    },
+    {
+      "name": "cuda-python",
+      "version": "13.2.0",
+      "filename": "cuda_python-13.2.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/4a/da/b4dbe129f941afe1c24a09ba53521b78875626763d96414798a74763282f/cuda_python-13.2.0-py3-none-any.whl",
+      "sha256": "2f092b0ec13a860115fa595411889ee939ad203450ea4f91e9461b174ea7b084"
+    },
+    {
+      "name": "cuda-toolkit",
+      "version": "13.2.1",
+      "filename": "cuda_toolkit-13.2.1-py2.py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/bd/6a/f79c134fa8e6d5fe028584933be063ce7961b1a85ce217f261cdda176e48/cuda_toolkit-13.2.1-py2.py3-none-any.whl",
+      "sha256": "646d0e3668ce6f78f2312bb9cc0f668b9cbfcbef187eaa6a39eb2ea6dbec2a31"
+    },
+    {
+      "name": "flashinfer-python",
+      "version": "0.6.18.post1",
+      "filename": "flashinfer_python-0.6.18.post1-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/64/3f/bd0a74bfbb4f3813bfe61267ff696fb229ab70c0f1f44848287221928c95/flashinfer_python-0.6.18.post1-py3-none-any.whl",
+      "sha256": "adb6d2952b47131138e108bd2999b1fe18b71f1a4c0b2684f168753db9563991"
+    },
+    {
+      "name": "nvidia-cublas",
+      "version": "13.4.0.1",
+      "filename": "nvidia_cublas-13.4.0.1-py3-none-manylinux_2_27_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/3d/ec/c9b2998aebe3149dee2769e501257e048c8701de51263925f4dff76ddedc/nvidia_cublas-13.4.0.1-py3-none-manylinux_2_27_x86_64.whl",
+      "sha256": "53bf22e2ccbf644db74b6cc21cea7f5efb1a52aa64515438b430abbd05af4106"
+    },
+    {
+      "name": "nvidia-cuda-cccl",
+      "version": "13.2.75",
+      "filename": "nvidia_cuda_cccl-13.2.75-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/92/87/d23db8276b76b4a7e4a702eebdc0a70e3b56c17b4dcd980ecb0f68b022e1/nvidia_cuda_cccl-13.2.75-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "11a2b1948e8709805a0ccf04441baf5279a9219c13eb11dc13d57bb023151768"
+    },
+    {
+      "name": "nvidia-cuda-crt",
+      "version": "13.2.78",
+      "filename": "nvidia_cuda_crt-13.2.78-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/ea/78/501eee5cce9202fba2f3476529e296a7f6d003261d80b52ab0abfa09ddd6/nvidia_cuda_crt-13.2.78-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "2c8615ee30ed466cb6298ecb8ffe9e6ea8b252ca833206152d155750bf831608"
+    },
+    {
+      "name": "nvidia-cuda-culibos",
+      "version": "13.2.75",
+      "filename": "nvidia_cuda_culibos-13.2.75-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/bf/c3/a8c2beaa15e2213e33f3a105c67c4f382097176fc4259831410bbea637b2/nvidia_cuda_culibos-13.2.75-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "8776414b1b55908db35fec2b2e0085b94f49879d904a382ccd43df0010150e6e"
+    },
+    {
+      "name": "nvidia-cuda-cuobjdump",
+      "version": "13.2.78",
+      "filename": "nvidia_cuda_cuobjdump-13.2.78-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/64/46/cfeb5d8aa044ff448484f6cdf5c0b829a764071f01114717e787b7298a24/nvidia_cuda_cuobjdump-13.2.78-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "394087411405b846bf43aa52ca2ff603bbe18b3b8a1257cda0903e23c17bdbf3"
+    },
+    {
+      "name": "nvidia-cuda-cupti",
+      "version": "13.2.75",
+      "filename": "nvidia_cuda_cupti-13.2.75-py3-none-manylinux_2_25_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/b7/2d/cbf8f6288259c502165282fdaa2b733daae98434e3f2aee2b7952ba87c6f/nvidia_cuda_cupti-13.2.75-py3-none-manylinux_2_25_x86_64.whl",
+      "sha256": "f75aca6bef89c625a4076a820302bb06764daa1d21595286f6bee5e237d3a187"
+    },
+    {
+      "name": "nvidia-cuda-cuxxfilt",
+      "version": "13.2.78",
+      "filename": "nvidia_cuda_cuxxfilt-13.2.78-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/56/25/a007e77b603fd789fd5d0ace4f30ce0dc3dd874591d33d0c15da41d55788/nvidia_cuda_cuxxfilt-13.2.78-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "1fc5afc3ad6f219fefbcd8d2d61bcea500121d1398ffd31fb6e017b6a35b789d"
+    },
+    {
+      "name": "nvidia-cuda-nvcc",
+      "version": "13.2.78",
+      "filename": "nvidia_cuda_nvcc-13.2.78-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/65/0f/c7c7d538c61794130e759ad74710ab5aa8cab1f700ee1754381f8c665605/nvidia_cuda_nvcc-13.2.78-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "c3bd144dd9b6b25e062589acb7bbd43d93d3120c72fad71da808f9817aba1239"
+    },
+    {
+      "name": "nvidia-cuda-nvdisasm",
+      "version": "13.3.73",
+      "filename": "nvidia_cuda_nvdisasm-13.3.73-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/86/3e/88460ebd737e559e8e9843db7a63f8ced9ec7be1882344438819dd13aebc/nvidia_cuda_nvdisasm-13.3.73-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "fa17084b07c0dca68a42892f771b4b1b40fbe9b91660209623e61cea611cae8c"
+    },
+    {
+      "name": "nvidia-cuda-nvrtc",
+      "version": "13.2.78",
+      "filename": "nvidia_cuda_nvrtc-13.2.78-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/5f/96/237b40b171e06eb65905375c4ad5c96f78c2f861ac6e8ae7f650d95e1dfd/nvidia_cuda_nvrtc-13.2.78-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl",
+      "sha256": "a9049031da08cbedd0c20e3470e5a978dc330af0e0326b3b05774718c665dc3e"
+    },
+    {
+      "name": "nvidia-cuda-profiler-api",
+      "version": "13.2.75",
+      "filename": "nvidia_cuda_profiler_api-13.2.75-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/15/63/a4dd3d523dbffd0fa4196a14c2ea99ee584408332dee7deffc08333a9ba8/nvidia_cuda_profiler_api-13.2.75-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "994a8384aa67b4eb8b9491acc6cb7931711f714734004d7f215a300375b3217e"
+    },
+    {
+      "name": "nvidia-cuda-runtime",
+      "version": "13.2.75",
+      "filename": "nvidia_cuda_runtime-13.2.75-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/dc/74/f1493b0774c6eaf0234512bb650e1ab90ce8f61fecf0b4aaf1fb416f571e/nvidia_cuda_runtime-13.2.75-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "72bf454902da594e0b833cadeddc8b7100ce1c7cf7ed9023943931be1aa913b7"
+    },
+    {
+      "name": "nvidia-cuda-sanitizer-api",
+      "version": "13.2.76",
+      "filename": "nvidia_cuda_sanitizer_api-13.2.76-py3-none-manylinux_2_25_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/df/6c/3e41b955b450d42c9798a3870467e172b28c7f09b3e7ec04cfd6e2e4c89e/nvidia_cuda_sanitizer_api-13.2.76-py3-none-manylinux_2_25_x86_64.whl",
+      "sha256": "8b969f9fd76a5d76ed510b5dc73ad408c216106bb7018dbc6cd2cf5f760fd09d"
+    },
+    {
+      "name": "nvidia-cuda-tileiras",
+      "version": "13.2.78",
+      "filename": "nvidia_cuda_tileiras-13.2.78-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/7f/b8/c8a96862268943c7cf30a014fe2d8f70c651d30fbfa790d54c3e347b6fa1/nvidia_cuda_tileiras-13.2.78-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "5ce7c140a518aa8dfe033e7176f593617ed2fece0e50331e2a14dafd236723fd"
+    },
+    {
+      "name": "nvidia-cudnn-cu13",
+      "version": "9.20.0.48",
+      "filename": "nvidia_cudnn_cu13-9.20.0.48-py3-none-manylinux_2_27_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/6e/5e/edb9c0ae051602c3ccaffe424256463636d639e27d7f302dde9975ef9e7a/nvidia_cudnn_cu13-9.20.0.48-py3-none-manylinux_2_27_x86_64.whl",
+      "sha256": "0c45dd8eeb50b603f07995b1b300c62ffe6a1980482b82b3bcf94a4ca9d49304"
+    },
+    {
+      "name": "nvidia-cufft",
+      "version": "12.2.0.46",
+      "filename": "nvidia_cufft-12.2.0.46-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/36/3e/8d717a6e1f6e27b85b64650b1104dbcf6108c9dc7e27e9e26a0d8e936cc5/nvidia_cufft-12.2.0.46-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "a9667ae4d81b9e54ddbbad24a9e72334f89d4fc184566d05ef028e2760c820eb"
+    },
+    {
+      "name": "nvidia-cufile",
+      "version": "1.17.1.22",
+      "filename": "nvidia_cufile-1.17.1.22-py3-none-manylinux_2_27_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/23/c5/661a73a9042fc5f81cdd5fe6e89f4170b3b33f7962e709987e2b5e5f1381/nvidia_cufile-1.17.1.22-py3-none-manylinux_2_27_x86_64.whl",
+      "sha256": "87feaf8c3ad20d3d03a01933181801ff6892bace5c8f0b1e4b48f319d3e62d36"
+    },
+    {
+      "name": "nvidia-curand",
+      "version": "10.4.2.55",
+      "filename": "nvidia_curand-10.4.2.55-py3-none-manylinux_2_27_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/f4/bc/f02a1d180d288e49b1a4548698b59755e9c485ee39c041fdeaf4d2cc2117/nvidia_curand-10.4.2.55-py3-none-manylinux_2_27_x86_64.whl",
+      "sha256": "b4080cab49d4939f8e46b2c195c76c698d2289835c36ede558836daa40000e70"
+    },
+    {
+      "name": "nvidia-cusolver",
+      "version": "12.2.0.1",
+      "filename": "nvidia_cusolver-12.2.0.1-py3-none-manylinux_2_27_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/6b/97/a3c41eac54c89f6aac788d2b3ccd6642b32aa6b79650af3dedb8ee7c2bfa/nvidia_cusolver-12.2.0.1-py3-none-manylinux_2_27_x86_64.whl",
+      "sha256": "4693ea3c2a5d20369da7b5a4970a41df9b40f1b6f2ef9909c95f7c8c8c5ffb4d"
+    },
+    {
+      "name": "nvidia-cusparse",
+      "version": "12.7.10.1",
+      "filename": "nvidia_cusparse-12.7.10.1-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/b7/bd/bad43b37bcf13167637bef26399693d517b95092d742e8749eda5f4a85f3/nvidia_cusparse-12.7.10.1-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "f0d110640aa63e7182fa787cc245afa07c5fb84ac30f1c4029e4fa3012353172"
+    },
+    {
+      "name": "nvidia-cusparselt-cu13",
+      "version": "0.8.1",
+      "filename": "nvidia_cusparselt_cu13-0.8.1-py3-none-manylinux2014_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/34/7d/2661f2fb3ac4302f3a246f5fc030213ac60c1fe0bce84f9783dbd831dbb7/nvidia_cusparselt_cu13-0.8.1-py3-none-manylinux2014_x86_64.whl",
+      "sha256": "786ce87568c303fadb5afcc7102d454cd3040d75f6f8626f5db460d1871f4dd0"
+    },
+    {
+      "name": "nvidia-cutlass-dsl",
+      "version": "4.6.2",
+      "filename": "nvidia_cutlass_dsl-4.6.2-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/b2/ec/14e6ecbfed31ec35bbd1bb6965ae61f879370906a8f9c2e851e292704ba4/nvidia_cutlass_dsl-4.6.2-py3-none-any.whl",
+      "sha256": "06ac62deb182a852dfb053032cf945bf02b9aa1bf502a18b129d280d7babb26c"
+    },
+    {
+      "name": "nvidia-cutlass-dsl-libs-cu13",
+      "version": "4.6.2",
+      "filename": "nvidia_cutlass_dsl_libs_cu13-4.6.2-cp312-cp312-manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/ca/05/7874c37d50e112177a64a96dd6c7eaeacb1661ebb864e0fe5cfd9f706767/nvidia_cutlass_dsl_libs_cu13-4.6.2-cp312-cp312-manylinux_2_28_x86_64.whl",
+      "sha256": "a299a623fad75eb752c1a4e447b924e9049ed396b037509c41a48da82d1f340a"
+    },
+    {
+      "name": "nvidia-nccl-cu13",
+      "version": "2.29.7",
+      "filename": "nvidia_nccl_cu13-2.29.7-py3-none-manylinux_2_18_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/67/f4/58e4e91b6919367c7aafb8e36fce9aad1a3047e536bf7e2fd560927d3a4c/nvidia_nccl_cu13-2.29.7-py3-none-manylinux_2_18_x86_64.whl",
+      "sha256": "edd81538446786ec3b73972543e53bb43bcaf0bfc8ef76cb679fcc390ffe136d"
+    },
+    {
+      "name": "nvidia-npp",
+      "version": "13.1.0.48",
+      "filename": "nvidia_npp-13.1.0.48-py3-none-manylinux_2_27_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/b3/75/c1ba0510d5a27d0127440e4ece9d776a33d17583dacc8af3418017819153/nvidia_npp-13.1.0.48-py3-none-manylinux_2_27_x86_64.whl",
+      "sha256": "deef8d16ab3ee241050c9341a33596f20bae13cb2a8cd5b16f72e4a8743168ab"
+    },
+    {
+      "name": "nvidia-nvfatbin",
+      "version": "13.2.78",
+      "filename": "nvidia_nvfatbin-13.2.78-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/95/2f/28b348a29473083cae5fa9015da4a89119c3900bea39831bf6befb9574ba/nvidia_nvfatbin-13.2.78-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl",
+      "sha256": "48f8c54a114b38dc6f0daa81011eb62993b523fef62f73e33e120f2d41a1cd9d"
+    },
+    {
+      "name": "nvidia-nvjitlink",
+      "version": "13.2.78",
+      "filename": "nvidia_nvjitlink-13.2.78-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/1e/b5/dae67f0c45516cfaff2d7fba873c7425c2866d4c9ede5c14a269d89ed79b/nvidia_nvjitlink-13.2.78-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl",
+      "sha256": "27964b6702aeceee05fc0ab47b4c97e3f8966bd47d05d9827e913c49a025656b"
+    },
+    {
+      "name": "nvidia-nvjpeg",
+      "version": "13.1.0.48",
+      "filename": "nvidia_nvjpeg-13.1.0.48-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/06/27/9d43851c8193d6d6deca2dda11a78cb8e157fba72028d3955ab677990d14/nvidia_nvjpeg-13.1.0.48-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "605ad70cd040104d58535a7b42d1f6423845c43548b7ac841ec0bdbb8ac282b8"
+    },
+    {
+      "name": "nvidia-nvml-dev",
+      "version": "13.2.82",
+      "filename": "nvidia_nvml_dev-13.2.82-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/79/8d/02ec74385ae4bc230e5945a10098d881004e0a0ba78c599f5bca9a20fa14/nvidia_nvml_dev-13.2.82-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "3b48c4e0c2f85d923874a621d71120b1e9ac988c448bf82cd8fa39877d4b16e5"
+    },
+    {
+      "name": "nvidia-nvptxcompiler",
+      "version": "13.2.78",
+      "filename": "nvidia_nvptxcompiler-13.2.78-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/a1/b7/3e4fe316fdefbfa3afb303ad89cf1ee5ea7dfbf078ccc8de8f3387ecde72/nvidia_nvptxcompiler-13.2.78-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "251aea6b33fdb8f8c4ce04d2ffaed772e67c7c85f11bca7040d8315aac4ca124"
+    },
+    {
+      "name": "nvidia-nvshmem-cu13",
+      "version": "3.4.5",
+      "filename": "nvidia_nvshmem_cu13-3.4.5-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/3c/35/a9bf80a609e74e3b000fef598933235c908fcefcef9026042b8e6dfde2a9/nvidia_nvshmem_cu13-3.4.5-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "sha256": "290f0a2ee94c9f3687a02502f3b9299a9f9fe826e6d0287ee18482e78d495b80"
+    },
+    {
+      "name": "nvidia-nvtx",
+      "version": "13.2.75",
+      "filename": "nvidia_nvtx-13.2.75-py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/b0/cc/314eac684677dced22b913b5d1b3d03adcbe59d6c7332c5d04f864cdb079/nvidia_nvtx-13.2.75-py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl",
+      "sha256": "2d7c24fc582d841493c6dc2cf017c25e4428cf583a3bd9e9325a65f0ecc65f73"
+    },
+    {
+      "name": "nvidia-nvvm",
+      "version": "13.2.78",
+      "filename": "nvidia_nvvm-13.2.78-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/e8/1f/930d63ccc8adcdf27bfc051a24e3e4da2cf6ef987848d6d1d642e29d704b/nvidia_nvvm-13.2.78-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl",
+      "sha256": "f5aa433631109bbdec81802c5b5f319bf10bc891fe2f212e4e445845211d6f77"
+    },
+    {
+      "name": "tilelang",
+      "version": "0.1.14",
+      "filename": "tilelang-0.1.14-cp39-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/40/69/e69a18eaf239efaa1718922a26d0a4605a0525a2263d3224f506354c02ae/tilelang-0.1.14-cp39-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "fcc5d47ac1baeb7a8555ff5384af9ce9f3efef46dd926bc23d2c1cd425f68600"
+    },
+    {
+      "name": "torch",
+      "version": "2.13.0+cu132",
+      "filename": "torch-2.13.0+cu132-cp312-cp312-manylinux_2_28_x86_64.whl",
+      "url": "https://download-r2.pytorch.org/whl/cu132/torch-2.13.0%2Bcu132-cp312-cp312-manylinux_2_28_x86_64.whl",
+      "sha256": "4c1800e216b46bae03483bc94dd73a23ea43c265ab51f865e28070ca045d10a8"
+    },
+    {
+      "name": "torchcodec",
+      "version": "0.16.0+cu132",
+      "filename": "torchcodec-0.16.0+cu132-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://download.pytorch.org/whl/cu132/torchcodec-0.16.0%2Bcu132-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "39919f91e411c273776c1fbfcd5fb2e3b39dcdd1702e979fe7d2f12de52fdffb"
+    },
+    {
+      "name": "torchvision",
+      "version": "0.28.0+cu132",
+      "filename": "torchvision-0.28.0+cu132-cp312-cp312-manylinux_2_28_x86_64.whl",
+      "url": "https://download-r2.pytorch.org/whl/cu132/torchvision-0.28.0%2Bcu132-cp312-cp312-manylinux_2_28_x86_64.whl",
+      "sha256": "4865f491c69cbb6e0a4ad54d849004974c0a7957b1e183427119c53f09ae5125"
+    },
+    {
+      "name": "triton",
+      "version": "3.7.1",
+      "filename": "triton-3.7.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "url": "https://files.pythonhosted.org/packages/c4/6f/fb96d15db6f36d6eae4cafb998c2e0353bf59d7c4ea1662d7497f269134a/triton-3.7.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "sha256": "7e40869937a68206ec70d7f25bb7ec6433cb083f9135e1f36dbd318dc449a728"
+    }
+  ]
+}

@@ -60,6 +60,32 @@ class EvidenceTests(unittest.TestCase):
         with patch.dict(os.environ, {'ST_PROBE_GIB': 'lots'}):
             self.assertEqual(single.budget_gib(), single.DEFAULT_BUDGET_GIB)
 
+    def test_the_floor_is_a_sparks_until_a_box_of_its_own_says_otherwise(self):
+        """A discrete-card box does not owe production a GB10's 16 GiB of one shared pool."""
+        # ost-97x on 2026-09-15: 13.6 GiB available, so the Spark's floor refuses even a zero budget
+        OST = 'MemAvailable:   14305396 kB\n---\n'
+        self.assertIn('no room', single.evidence('ost-97x', 0, run=answering(OST))[0])
+        self.assertEqual(single.floor_gib(), single.FLOOR_GIB)
+        with patch.dict(os.environ, {single.FLOOR_ENV: '4'}):
+            self.assertEqual(single.floor_gib(), 4.0)
+            self.assertEqual(single.evidence('ost-97x', 4, run=answering(OST)), [])
+            # the floor is what is left over, not a licence: a budget that eats past it still refuses
+            self.assertIn('floor 4.0', single.evidence('ost-97x', 12, run=answering(OST))[0])
+        # an explicit floor beats the environment, and nonsense falls back to the Spark's
+        self.assertEqual(single.evidence('ost-97x', 4, run=answering(OST), floor=4.0), [])
+        for bad in ('', 'lots', '-1'):
+            with patch.dict(os.environ, {single.FLOOR_ENV: bad}):
+                self.assertEqual(single.floor_gib(), single.FLOOR_GIB)
+
+    def test_a_changed_floor_does_not_read_the_old_answer_back(self):
+        """The cache key carries the floor: the same host and budget can flip on the floor alone."""
+        with tempfile.TemporaryDirectory() as directory:
+            OST = 'MemAvailable:   14305396 kB\n---\n'
+            with patch.dict(os.environ, {single.FLOOR_ENV: '16'}):
+                self.assertIn('no room', single.cached_evidence('ost-97x', directory, 4, run=answering(OST))[0])
+            with patch.dict(os.environ, {single.FLOOR_ENV: '4'}):
+                self.assertEqual(single.cached_evidence('ost-97x', directory, 4, run=answering(OST)), [])
+
     def test_unreachable_or_unreadable_is_not_room(self):
         def unreachable(*args, **kwargs):
             raise subprocess.TimeoutExpired('ssh', 8)
