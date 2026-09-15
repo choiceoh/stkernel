@@ -55,9 +55,18 @@ def main():
         from probes.engine_forward_reduce import main as forward_reduce_check
         forward_reduce_check(args.ranks)
         return
+    if args.lanes == 'mhc_c2_packed':
+        from probes.engine_mhc_c2_packed import main as mhc_c2_packed_check
+        mhc_c2_packed_check(args.ranks, args.output)
+        return
     if args.lanes == 'dsa_inputs':
         from probes.engine_decode_dsa_inputs import check as dsa_inputs_check
         dsa_inputs_check(args.ranks)
+        return
+    if args.lanes == 'select_rows':
+        # a captured step's joined C=2 indexer selection against its per-row control, then bounded timings
+        from probes.engine_decode_select_rows import run as select_rows_check
+        select_rows_check(args.output)
         return
     if args.lanes in ('scatter_bundle', 'batch_fusions', 'batch_boundaries', 'batch_integration', 'k7_commit_bundle', 'k7_output_bundle'):
         from probes.engine_decode_bundle import check as decode_bundle
@@ -87,7 +96,13 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "moe_fc1_reuse", "moe_compact_staging", "moe_register_scales", "moe_sync_cleanup", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench", "decode_k7", "moe_output", "moe_pair", "moe_pair_serial", "moe_pair_overlap", "moe_pair_direct", "moe_pair_reuse", "moe_pair_prefetch"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "moe_fc1_reuse", "moe_compact_staging", "moe_register_scales", "moe_sync_cleanup", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench", "decode_k7", "moe_output", "moe_pair", "moe_pair_serial", "moe_pair_overlap", "moe_pair_direct", "moe_pair_reuse", "moe_pair_prefetch", "moe_pair_sync"}, selected
+
+    if 'moe_pair_sync' in selected:
+        from probes.engine_moe_pair_check import check as moe_pair_check
+        path = args.output or Path('/cache/c2-moe.json')
+        moe_pair_check(report, args.ranks, sync_cleanup_only=True,
+                       output=path.with_stem(path.stem+'-sync'))
 
     if 'moe_pair_prefetch' in selected:
         from probes.engine_moe_pair_check import check as moe_pair_check

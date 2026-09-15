@@ -2233,9 +2233,9 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                           and config.get("c2_direct_scatter", True))
     sf6_registers = compact_staging and bool(config.get("sf6_registers", True))
     scatter_reuse = bool(direct_scatter and sf6_registers and config.get("c2_scatter_reuse", True))
-    # C1 only: the batch M16 tile shares this geometry, but its scatter and
-    # prefetch paths were never compiled or measured without the barriers.
-    sync_cleanup = (reform and 1 <= m <= 8 and bool(config.get("reform_sf_pack", False))
+    # Both reform tiles, C1 rows and the C2 batch M16 tile, have one FC1 half
+    # and one CTA; their FC2 and scatter reads all follow the FC1 publication.
+    sync_cleanup = (reform and bool(config.get("reform_sf_pack", False))
                     and bool(config.get("sync_cleanup", True)))
     return dict(config, decode_reform=reform, sf6_separate=separate, sf6_word_expand=word_expand,
                 sf6_fc2_word_expand=fc2_word_expand,

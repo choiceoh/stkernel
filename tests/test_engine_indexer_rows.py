@@ -29,13 +29,16 @@ class IndexerRowsKernelTests(unittest.TestCase):
 
     def test_row_lengths(self):
         contexts = torch.tensor([0, 3, 4095, 130000, 7], device=DEVICE)
-        for t, kp in ((1, 4), (7, 4), (7, 8), (6, 4)):
-            with self.subTest(tokens=t, pool=kp):
-                got = self.kernels.row_lengths(contexts, t, kp)
-                want = self.reference.row_lengths(contexts, t, kp)
-                for a, b in zip(got, want):
-                    self.assertEqual(a.dtype, torch.int32)
-                    self.assertTrue(torch.equal(a, b))
+        for t, kp in ((1, 4), (7, 4), (7, 8), (6, 4), (8, 4)):
+            for width in (0, 1, 1024, 32768, 50688):
+                with self.subTest(tokens=t, pool=kp, width=width):
+                    got = self.kernels.row_lengths(contexts, t, kp, width=width)
+                    want = self.reference.row_lengths(contexts, t, kp, width=width)
+                    self.assertEqual(len(got), 4 if width else 2)
+                    self.assertEqual(len(got), len(want))
+                    for a, b in zip(got, want):
+                        self.assertEqual(a.dtype, torch.int32)
+                        self.assertTrue(torch.equal(a, b))
 
     def test_latent_write_rows(self):
         rows, block, stride, offset = 3, 16, 37, 5

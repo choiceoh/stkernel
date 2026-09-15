@@ -205,11 +205,15 @@ if __name__ == "__main__":
 
 # -- the captured decode step's DSA-layer glue, as torch (the reference lane; engine/kernels/indexer.py fuses each) ----
 
-def row_lengths(contexts, tokens: int, pool_size: int):
-    """(position + 1) and its complete-pool count for every row's tokens, int32 [rows * tokens] each."""
+def row_lengths(contexts, tokens: int, pool_size: int, width: int = 0):
+    """(position + 1) and its complete-pool count for every row's tokens, int32 [rows * tokens] each; with a
+    candidate `width`, also every query's window over the rows' candidates laid end to end: i * width, i * width + ke."""
     positions = contexts[:, None] + torch.arange(tokens, device=contexts.device)
     seq = (positions.reshape(-1) + 1).to(torch.int32)
-    return seq, seq // pool_size
+    if not width:
+        return seq, seq // pool_size
+    start = (torch.arange(contexts.shape[0], device=contexts.device) * width).repeat_interleave(tokens).to(torch.int32)
+    return seq, seq // pool_size, start, start + seq // pool_size
 
 
 def latent_write_rows(values, latent, block_table, block_size, block_stride, layer_offset, contexts, tokens: int):
