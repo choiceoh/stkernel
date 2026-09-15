@@ -119,21 +119,36 @@ class RecordingTests(unittest.TestCase):
             self.assertEqual(json.loads((Path(root) / 'selector/rank-0/manifest.json').read_text())['instrumentation'],
                              report['instrumentation'])
 
-    def test_server_control_and_four_real_scheduler_rows(self):
+    def test_recording_rejects_invalid_concurrency_before_creating_a_session(self):
+        with TemporaryDirectory() as root:
+            rec = Recorder(0, root)
+            for width in (True, False, 0, -1, 5, 2.0, '2'):
+                with self.subTest(width=width):
+                    with self.assertRaisesRegex(ValueError, 'between 1 and 4'):
+                        rec.begin('invalid', concurrency=width)
+                    self.assertIsNone(rec.active)
+            self.assertEqual(list(Path(root).iterdir()), [])
+
+    def test_server_control_and_actual_scheduler_widths(self):
+        for width in (1, 2, 3, 4):
+            with self.subTest(width=width):
+                self._server_control_width(width)
+
+    def _server_control_width(self, width):
         from tests.test_engine_serve import server
         with TemporaryDirectory() as root:
-            s = server(rows=4)
+            s = server(rows=width)
             s.latency = s.runner.latency = Recorder(0, root)
             def control(op, token='mine'):
                 waiting = {'event': threading.Event()}
                 s.latency_replies['control'] = waiting
-                s._control(('latency', dict(op=op, token=token, concurrency=4, _control_id='control')))
+                s._control(('latency', dict(op=op, token=token, concurrency=width, _control_id='control')))
                 self.assertTrue(waiting['event'].is_set())
                 return waiting['reply']['ranks'][0]
             self.assertEqual(control('begin')['status'], 'recording')
             self.assertIn('error', control('begin'))
             self.assertIsNotNone(s.latency.active)  # duplicate begin must not abort the existing owner
-            for i in range(4): s.submit([10 + i] * 4, 6, 0.0)
+            for i in range(width): s.submit([10 + i] * 4, 6, 0.0)
             for _ in range(100):
                 s.once()
                 if not s._active and not s._waiting: break
@@ -150,8 +165,8 @@ class RecordingTests(unittest.TestCase):
             self.assertTrue(resolved)
             self.assertTrue(report['complete'])
             widths = [len(r['rows']) for r in report['rows'] if r['kind'] == 'host_step' and r['phase'] == 'decode']
-            self.assertIn(4, widths)
-            self.assertEqual(len([r for r in report['rows'] if r.get('operation') == 'admit']), 4)
+            self.assertIn(width, widths)
+            self.assertEqual(len([r for r in report['rows'] if r.get('operation') == 'admit']), width)
             self.assertIsNone(s.latency.active)
 
 

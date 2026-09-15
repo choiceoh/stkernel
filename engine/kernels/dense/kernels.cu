@@ -2000,8 +2000,9 @@ __device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
 }
 
 template <bool BF16_FN, bool AR_CONSUMER = false, int HID = HIDDEN,
-          bool V41 = false, typename Args = MKMhcArgs, bool PACKETS = false>
+          bool V41 = false, typename Args = MKMhcArgs, bool PACKETS = false, bool STATIC_TAILS = false>
 __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
+  static_assert(!STATIC_TAILS || (BF16_FN && AR_CONSUMER && HID == HIDDEN && !V41));
   // Shadows the file-scope NCHUNK; every chunk loop below reads unchanged.
   constexpr int NCHUNK = HID / HCHUNK;
   // Block = (chunk, token group). The chunk's fn slice -- 24 outputs x 4
@@ -2211,10 +2212,19 @@ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
   // blocks, so the wait is bounded), rearm its counter, run p2 / p3 / p4.
   MK_MHC_TS(5);
   for (;;) {
-    if (threadIdx.x == 0) s_tok = (int)atomicAdd(&g_mk_mhc_tail_next, 1u);
-    __syncthreads();
-    const int t = s_tok;
-    if (t >= a.num_tokens) break;
+    int t;
+    if constexpr (STATIC_TAILS) {
+      // C1: 48 resident CTAs = three groups of 16 chunks. Group two
+      // finishes after tokens 2/5 while the other groups process three.
+      // Its first eight CTAs own one tail each. The host checks this shape.
+      t = bid - 2 * NCHUNK;
+      if (t < 0 || t >= 8) break;
+    } else {
+      if (threadIdx.x == 0) s_tok = (int)atomicAdd(&g_mk_mhc_tail_next, 1u);
+      __syncthreads();
+      t = s_tok;
+      if (t >= a.num_tokens) break;
+    }
     if (threadIdx.x == 0) {
       volatile unsigned int* v = &g_mk_mhc_tok_arrive[t];
       MK_SPIN_WAIT(*v < (unsigned int)NCHUNK, 128, "mhc token arrive");
@@ -2236,8 +2246,13 @@ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
     MK_MHC_TS(3);  // (probe) p2 end / p34 start
     mk_mhc_p34_compute<HID, V41>(a, t, s_pmix, tr);  // ends in a __syncthreads
     MK_MHC_TS(4);  // (probe) p34 end
+    if constexpr (STATIC_TAILS) break;
   }
   MK_MHC_TS(6);
+  // Every token's chunk counter was rearmed by its sole tail owner. A
+  // static launch has no shared tail/exit tickets to reset. The next PDL
+  // consumer still waits for completion of this whole grid, including tails.
+  if constexpr (STATIC_TAILS) return;
   // exit ticket: the last block out rearms the tail counter for the next
   // launch (every block has made its final, failing take by then)
   __syncthreads();
@@ -2285,18 +2300,18 @@ __global__ void mk_mhc_bf16_kernel(const MKMhcArgs a) {
   MK_MHC_TS(7);
 }
 
-template <bool BF16_FN, int HID = HIDDEN>
+template <bool BF16_FN, int HID = HIDDEN, bool STATIC_TAILS = false>
 __global__ void mk_mhc_ar_kernel(const MKMhcArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
   MK_MHC_TS(0);
-  mk_mhc_p1_impl<BF16_FN, true, HID>(a, blockIdx.x);
+  mk_mhc_p1_impl<BF16_FN, true, HID, false, MKMhcArgs, false, STATIC_TAILS>(a, blockIdx.x);
   MK_MHC_TS(7);
 }
 
-template <bool BF16_FN>
+template <bool BF16_FN, bool STATIC_TAILS = false>
 __global__ void mk_mhc_packets_kernel(const MKMhcPacketsArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
-  mk_mhc_p1_impl<BF16_FN, true, HIDDEN, false, MKMhcPacketsArgs, true>(a, blockIdx.x);
+  mk_mhc_p1_impl<BF16_FN, true, HIDDEN, false, MKMhcPacketsArgs, true, STATIC_TAILS>(a, blockIdx.x);
 }
 
 // Actual V4.1 currently uses FP32 coefficients and no AR-consumer pack.
@@ -3971,7 +3986,7 @@ std::vector<int64_t> mk_rows16_info() {
 // occupancy. Sharing one cached grid across instantiations would launch the
 // 5120 kernel on a residency measured for 4096 and deadlock its barrier.
 template <int HID>
-static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer) {
+static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer, bool static_c1) {
   auto stream = c10::cuda::getCurrentCUDAStream();
   // Separate occupancy for both new instantiations. Only immutable fn may
   // be prepared early, and only when the caller opted into the PDL chain.
@@ -3980,8 +3995,11 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer) {
   // one-shot consumer releases nothing early, and this launch follows it.
   if (ar_consumer && mk_pdl_enabled() && a.num_tokens <= 16) {
     auto kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID> : mk_mhc_ar_kernel<false, HID>;
-    static int ar_grids[2] = {0, 0};
-    int& grid = ar_grids[bf16_fn ? 1 : 0];
+    if constexpr (HID == HIDDEN) {
+      if (static_c1) kernel = mk_mhc_ar_kernel<true, HID, true>;
+    }
+    static int ar_grids[3] = {0, 0, 0};
+    int& grid = ar_grids[static_c1 ? 2 : bf16_fn ? 1 : 0];
     if (!grid) {
       int per_sm = 0, sms = 0;
       MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
@@ -3994,6 +4012,7 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer) {
       grid = std::min(std::min(per_sm, 1) * sms, MK_MHC_GRID_CAP);
       TORCH_CHECK(grid > 0, "AR consumer MHC has no resident blocks");
     }
+    TORCH_CHECK(!static_c1 || grid == 48, "C1 static MHC tails require 48 resident CTAs");
     a.grid = grid;
     mk_launch(kernel, grid, 0, stream, a);
     return;
@@ -4035,7 +4054,7 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer) {
 
 static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scalars,
                 std::vector<int64_t> ints, bool bf16_fn = false,
-                bool ar_consumer = false, const at::Tensor& packets = {}) {
+                bool ar_consumer = false, const at::Tensor& packets = {}, int tail_mode = -1) {
   set_kernel_attrs();
   // Ahead of the unpack, not after it: this used to sit below 19 ptrs[]
   // reads, so a short vector was already out of bounds before it fired.
@@ -4060,6 +4079,10 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
   // to the scalar-layout fallback when an internal caller breaks the gate.
   TORCH_CHECK(!ar_consumer || (mk_pdl_enabled() && ints[0] > 0 && ints[0] <= 16),
               "AR consumer requires PDL and 1..16 tokens");
+  TORCH_CHECK(tail_mode >= -1 && tail_mode <= 1, "MHC tail mode must be -1 (auto), 0 or 1");
+  const bool static_shape = hidden == HIDDEN && ints[0] == 8 && bf16_fn && (direct || ar_consumer);
+  TORCH_CHECK(tail_mode != 1 || static_shape, "static MHC tails require a packed C1 consumer");
+  const bool static_c1 = tail_mode != 0 && static_shape;
   MKMhcArgs a{};
   a.x_in = (const __nv_bfloat16*)ptrs[0];
   a.residual_in = (const __nv_bfloat16*)ptrs[1];
@@ -4094,8 +4117,9 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
     static_cast<MKMhcArgs&>(packet_args) = a;
     packet_args.rank_inputs = reinterpret_cast<const __nv_bfloat16* const*>(packets.data_ptr());
     auto kernel = bf16_fn ? mk_mhc_packets_kernel<true> : mk_mhc_packets_kernel<false>;
-    static int grids[2] = {0, 0};
-    int& grid = grids[bf16_fn ? 1 : 0];
+    if (static_c1) kernel = mk_mhc_packets_kernel<true, true>;
+    static int grids[3] = {0, 0, 0};
+    int& grid = grids[static_c1 ? 2 : bf16_fn ? 1 : 0];
     if (!grid) {
       int per_sm = 0, sms = 0;
       MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&per_sm, kernel, MK_THREADS, 0));
@@ -4103,20 +4127,21 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
       grid = std::min(std::min(per_sm, 1) * sms, MK_MHC_GRID_CAP);
       TORCH_CHECK(grid > 0, "MHC packet consumer has no resident blocks");
     }
+    TORCH_CHECK(!static_c1 || grid == 48, "C1 static MHC tails require 48 resident CTAs");
     packet_args.grid = grid;
     mk_launch(kernel, grid, 0, stream, packet_args);
-  } else if (hidden == HIDDEN_V41) mk_mhc_launch<HIDDEN_V41>(a, bf16_fn, ar_consumer);
-  else mk_mhc_launch<HIDDEN>(a, bf16_fn, ar_consumer);
+  } else if (hidden == HIDDEN_V41) mk_mhc_launch<HIDDEN_V41>(a, bf16_fn, ar_consumer, static_c1);
+  else mk_mhc_launch<HIDDEN>(a, bf16_fn, ar_consumer, static_c1);
 }
 
 void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
-                std::vector<int64_t> ints, bool bf16_fn = false, bool ar_consumer = false) {
-  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, ar_consumer);
+                std::vector<int64_t> ints, bool bf16_fn = false, bool ar_consumer = false, int tail_mode = -1) {
+  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, ar_consumer, {}, tail_mode);
 }
 
 void mk_run_mhc_packets(std::vector<int64_t> ptrs, std::vector<double> scalars,
-                        std::vector<int64_t> ints, at::Tensor packets, bool bf16_fn) {
-  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, false, packets);
+                        std::vector<int64_t> ints, at::Tensor packets, bool bf16_fn, int tail_mode = -1) {
+  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, false, packets, tail_mode);
 }
 
 // V4.1 has a separate occupancy cache from every legacy PR518 kernel.
@@ -4854,8 +4879,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC", pybind11::arg("ptrs"),
         pybind11::arg("scalars"), pybind11::arg("ints"),
         pybind11::arg("bf16_fn") = false,
-        pybind11::arg("ar_consumer") = false);
-  m.def("run_mhc_packets", &mk_run_mhc_packets, "TP4 packet input to native MHC");
+        pybind11::arg("ar_consumer") = false, pybind11::arg("tail_mode") = -1);
+  m.def("run_mhc_packets", &mk_run_mhc_packets, "TP4 packet input to native MHC",
+        pybind11::arg("ptrs"), pybind11::arg("scalars"), pybind11::arg("ints"),
+        pybind11::arg("packets"), pybind11::arg("bf16_fn"), pybind11::arg("tail_mode") = -1);
   m.def("run_mhc_v41", &mk_run_mhc_v41, "Experimental HF V4.1 MHC seam",
         pybind11::arg("ptrs"), pybind11::arg("scalars"), pybind11::arg("ints"),
         pybind11::arg("hidden") = HIDDEN_V41);
