@@ -326,6 +326,28 @@ class Drafter:
                     p[f"layers.{L}."+suffix]=None
         self.fast_attention = True
 
+    # The block MLP has the target's C1 input-cell shapes (gate_up 6144x4096, down 4096x3072), and a propose
+    # block at C=1 is one K=7 block of 8 rows: those two projections take the same cells the target binds.
+    DECODE_CELL_WEIGHTS = ("mlp.gate_up", "mlp.down_proj.weight")
+
+    def bind_decode_cells(self, capture_rows):
+        """Before capture, once the target has bound its decode fastpath rows: the 8-row width of those rows,
+        on every block MLP projection whose single W4 pack is a declared C1 cell. Returns the bound names."""
+        from engine.kernels.dense import bound_input_cell
+        rows = tuple(m for m in (capture_rows or ()) if m == 8)
+        bound = []
+        for L in range(self.F.layers):
+            for weight in self.DECODE_CELL_WEIGHTS:
+                name = f"layers.{L}.{weight}"
+                layer = self.dense.get(name)
+                packs = getattr(layer, "packs", ())
+                if (rows and len(packs) == 1 and getattr(layer, "decode_precision", "w4") == "w4"
+                        and all(bound_input_cell(m, packs[0].rows, packs[0].cols) for m in rows)):
+                    layer.decode_input_rows = rows
+                    bound.append(name)
+        self.decode_cell_rows = rows if bound else ()
+        return bound
+
     def linear(self, x, name, mask=None):
         """x through the named weight: the prepared dense pack when there is one, else the bf16 source. `mask` [rows]
         tells a calibrating pack which rows are real (kernels/dense/calibration); the product covers every row."""
