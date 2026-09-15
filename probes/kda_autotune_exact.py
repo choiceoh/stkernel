@@ -89,13 +89,16 @@ def autotuners():
 
 
 def exact(cases):
+    """Per case: the stock autotuners pick (recorded), every tuner is pinned to its pick for the reference run, then
+    each reached tuner walks its whole config list with the others pinned. A config the device cannot launch
+    (OutOfResources: the SMs' shared memory) is one the stock benchmark scores infinite and never picks."""
     import torch
+    from triton.runtime.errors import OutOfResources
     device = torch.device("cuda")
     A_log, dt_bias, bound = layer0_params(device)
     tuners = autotuners()
     stock = {name: list(t.configs) for name, t in tuners.items()}
     calls = {name: 0 for name in tuners}
-    runs = {}
     for name, t in tuners.items():
         original = t.run
 
@@ -108,25 +111,37 @@ def exact(cases):
         for case in cases:
             x = inputs(case, device)
             for name, t in tuners.items():
-                t.configs, t.cache = [stock[name][0]], {}
+                t.configs, t.cache = stock[name], {}
             for n in calls:
                 calls[n] = 0
-            ref = lane(x, A_log, dt_bias, bound)
+            lane(x, A_log, dt_bias, bound)                          # the stock autotuners pick, as a boot does
             reached = sorted(n for n, c in calls.items() if c)
+            picks = {name: {str(key): str(config) for key, config in tuners[name].cache.items()} for name in reached}
+            chosen = {name: next(iter(tuners[name].cache.values()), stock[name][0]) for name in reached}
+            for name, t in tuners.items():
+                t.configs, t.cache = [chosen.get(name, stock[name][0])], {}
+            ref = lane(x, A_log, dt_bias, bound)
             rows = {}
             for name in reached:
                 verdicts = []
-                for i, config in enumerate(stock[name]):
+                for config in stock[name]:
                     tuners[name].configs, tuners[name].cache = [config], {}
-                    got = lane(x, A_log, dt_bias, bound)
+                    try:
+                        got = lane(x, A_log, dt_bias, bound)
+                    except OutOfResources as exc:
+                        verdicts.append(dict(config=str(config), launchable=False, reason=str(exc)[:160]))
+                        continue
                     same = all(torch.equal(a.view(torch.uint8) if a.dtype.is_floating_point else a,
                                            b.view(torch.uint8) if b.dtype.is_floating_point else b)
                                for a, b in zip(got, ref))
                     diff = max(float((a.float() - b.float()).abs().max()) for a, b in zip(got, ref))
-                    verdicts.append(dict(config=str(config), bit_exact=same, max_abs_diff=diff))
-                tuners[name].configs, tuners[name].cache = [stock[name][0]], {}
-                rows[name] = dict(configs=len(stock[name]), bit_exact_all=all(v["bit_exact"] for v in verdicts),
-                                  differing=[v for v in verdicts if not v["bit_exact"]])
+                    verdicts.append(dict(config=str(config), launchable=True, bit_exact=same, max_abs_diff=diff))
+                tuners[name].configs, tuners[name].cache = [chosen[name]], {}
+                launchable = [v for v in verdicts if v["launchable"]]
+                rows[name] = dict(configs=len(stock[name]), launchable=len(launchable), chosen=str(chosen[name]),
+                                  picks=picks[name], bit_exact_all_launchable=all(v["bit_exact"] for v in launchable),
+                                  differing=[v for v in launchable if not v["bit_exact"]],
+                                  unlaunchable=[v["config"] for v in verdicts if not v["launchable"]])
             report[case] = dict(reached=reached, outputs=[list(t.shape) for t in ref], kernels=rows)
     finally:
         for name, t in tuners.items():
@@ -181,13 +196,22 @@ def main():
     import triton
     result = dict(torch=torch.__version__, triton=triton.__version__, device=torch.cuda.get_device_name(),
                   triton_cache=os.environ.get("TRITON_CACHE_DIR"))
+    def publish():
+        text = json.dumps(result, indent=1)
+        if a.output:
+            with open(a.output, "w") as f:
+                f.write(text)
+        return text
     result["cost"] = cost(cases)                      # fresh processes first: this one's tuners are then untouched
-    result["exact"] = exact(cases)
-    text = json.dumps(result, indent=1)
-    print(text)
-    if a.output:
-        with open(a.output, "w") as f:
-            f.write(text)
+    publish()
+    try:
+        result["exact"] = exact(cases)
+    except Exception as exc:                          # noqa: BLE001 -- keep the cost rows, name the failure
+        import traceback
+        result["exact_error"] = traceback.format_exc()[-2000:]
+        print(publish())
+        raise
+    print(publish())
     return 0
 
 
