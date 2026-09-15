@@ -109,35 +109,45 @@ ost-97x: no room beside production -- MemAvailable 13.5 GiB, this check's budget
 floor 16.0: 9.5 GiB would be left
 ```
 
-`FLEET_SINGLE_GPU_FLOOR_GIB=4` is the answer to that (below), not a bigger VM, and with it
-the same command returns silent at rc 0 and `reclaim` faults and releases its 4 GiB on the
-box. Raising the ceiling is optional and worth doing on its own merits --
-`%USERPROFILE%\.wslconfig` is written with:
+`FLEET_SINGLE_GPU_FLOOR_GIB=4` is the answer to that, not a bigger VM. With it the same
+command returns silent at rc 0 and `reclaim` faults and releases its 4 GiB on the box.
+
+So `%USERPROFILE%\.wslconfig` exists for the opposite reason -- to keep the box **small**,
+because it is also somebody's desktop:
 
 ```ini
 [wsl2]
-memory=24GB
-processors=12
+memory=12GB
+processors=6
 autoMemoryReclaim=gradual
 ```
 
-which takes MemAvailable to about 22.4 GiB. `memory=` is a ceiling, not a reservation, and
-`autoMemoryReclaim=gradual` hands freed pages back. **It applies only after
-`wsl.exe --shutdown`, which kills everything in the distro** -- on 2026-09-15 that was a
-Codex `app-server` a day into its run and a postgres cluster living in `/tmp` -- so it
-waits for a quiet moment. Nothing about the lane needs it.
+12 of 31 GiB and 6 of 16 CPUs leaves Windows 19 GiB and 10 cores at the worst moment, and
+`autoMemoryReclaim` hands page cache back instead of sitting on it. That is not a
+theoretical tidiness: an unconstrained image build here on 2026-09-15 left Windows with
+**0.6 GiB free** and the desktop crawling, because WSL2 holds cache by default and a 16 GB
+image build generates a lot of it. Under the cap the same build holds at its 12 GiB ceiling
+and stops there. `memory=` is a ceiling, not a reservation. It applies only after
+`wsl.exe --shutdown`, **which kills everything in the distro**, so change it deliberately.
 
-**Staying up.** WSL2 does not start with Windows. After a reboot the node is gone until
-someone opens the distro. A logon task, from the operator's own account (no elevation):
+**Staying up.** WSL2 does not start with Windows, so after a reboot the node is simply gone
+until someone opens the distro -- which for a box other people run checks against is not a
+state to leave to chance. `schtasks /create` is the obvious answer and it is **denied
+without elevation** on this account (`ERROR: Access is denied`), so the logon hook is a
+script in the operator's own Startup folder instead, which needs no elevation:
 
 ```
-schtasks /create /tn "WSL-Ubuntu-ost-97x" /sc onlogon /f ^
-  /tr "C:\Windows\System32\wsl.exe -d Ubuntu -u root -e /bin/true"
+%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\wsl-ost-97x.vbs
+
+  CreateObject("WScript.Shell").Run "wsl.exe -d Ubuntu -u root -e /bin/true", 0, False
 ```
 
-systemd is PID 1 in the distro, so the command exits and `ssh` and `tailscaled` keep
-running. If the box should answer before anyone logs in, the same task at `/sc onstart`
-needs `/ru SYSTEM` and an elevated prompt to create.
+Hidden window, no wait, so the logon is not held up. systemd is PID 1 in the distro, so the
+command exits while `ssh.socket` and `tailscaled` keep running -- all three of those units
+are `enabled`, which is why the distro comes back complete. Verified by doing it: after a
+`wsl.exe --shutdown` the node returned at the same address with ssh, docker and the GPU
+answering from srv4. If the box must answer *before* anyone logs in, that needs a
+`/sc onstart /ru SYSTEM` task and an elevated prompt.
 
 ## The two numbers that do not carry over
 
@@ -230,23 +240,117 @@ build is also not free: it moves ~3 GB of wheels and writes a ~16 GB image, and 
 unconstrained on this box left Windows with 0.6 GiB of free RAM. Give it a quiet moment, or
 a `--cpu-quota`.
 
-One thing worth testing when that image exists, which would widen this lane considerably:
-**the native lanes may not actually need a GB10.** They are not baked into any image --
-`mla/__init__.py` JIT-compiles `glm53_megakernel.cu` through `torch.utils.cpp_extension.load`
-at runtime -- and the sources state their own contract as *"Ampere lineage + FP4 extension.
-NO WGMMA / tcgen05 / TMEM / clusters"*, using `cp.async` of the sm_80 lineage. That is
-inside sm_120's range. What stops them is configuration: seven hardcoded
-`arch=compute_121a,code=sm_121a` flags and four device gates. The real difference is
-48 SMs against this card's 20, on a persistent megakernel written for 48 at TP=4 -- it
-would compile; whether its work partitioning means anything at 20 is the open question, and
-the numbers would be another card's either way. `oneshot` is out regardless: it needs
-`<infiniband/verbs.h>` for the fleet's RoCE rails.
+### The native lanes: three instructions, not an architecture
+
+Changing only the arch flag does not build them. `ptxas`, on this box:
+
+| source | features `sm_120` does not have |
+|---|---|
+| `mla/glm53_megakernel.cu` | `add.u8x4` ×288, `ldmatrix.b8` ×16, `.m16n16` ×16 |
+| `dense/kernels.cu` | `add.u8x4` ×936 |
+
+Those counts are PTX occurrences, and they are the reason this looked like a wall. In the
+**sources** it is three sites:
+
+- `mk_add_u8x4` -- one helper in each file, and the comment above it names its own
+  replacement: *"CUDA 13.2: `__vadd4` still lowers to carry-isolation arithmetic on SM121."*
+  The fleet rejects `__vadd4` for **speed**; the byte semantics are the same modulo-256 add.
+  A check build has no speed to protect.
+- `ldmatrix.sync.aligned.m16n16.x1.trans.shared.b8` -- one site, in the `O += P C` inner
+  loop. It also needs nothing written for it: the same B fragment is what
+  `mla_e4m3x2_strided` already builds for the `ROWS` path further down the same file, which
+  is production code the fleet runs today.
+
+So both files now carry an `#else` for `__CUDA_ARCH__ < 1210`, and both compile for sm_120.
+
+**A fallback that merely compiles would be worse than none** -- wrong fragment layout
+returns plausible, wrong numbers, and a check lane that lies is not a check lane. So the
+layout claim is measured rather than asserted, on the card, against a CPU reference:
+`probes/sm120_b_fragment_check.cu`.
+
+```
+$ nvcc -O2 -gencode arch=compute_120,code=sm_120 -std=c++17 probes/sm120_b_fragment_check.cu -o /tmp/c && /tmp/c
+check 1: mma m16n8k16 fragment layouts
+  LAYOUT CONFIRMED: all 128 elements match CPU matmul (worst 0.0)
+check 2: the strided B form the sm_120 fallback reuses
+  STRIDED FORM CONFIRMED: all 256 elements match the CPU reference
+```
+
+And the other half of the claim -- that none of this reaches the fleet -- is checked the
+only way worth checking it, by compiling the *same source* for the Sparks' target and
+comparing the output to a baseline taken before the edit:
+
+| source | sm_121a PTX vs pre-edit | sm_120 |
+|---|---|---|
+| `mla/glm53_megakernel.cu` | **identical** | compiles, 2,317,000 bytes |
+| `dense/kernels.cu` | **identical** | compiles, 3,775,944 bytes |
+
+Compiling was not running, and running was an operator decision, taken 2026-09-15 and
+recorded under D5 in `engine/CHARTER.md`: a card that is not a GB10 may **check**, never
+measure. Three things carry that, and the shape of them matters more than the size:
+
+- `engine/kernels/arch.py` maps a capability to its build target. `mla` and `dense` take
+  their `-gencode` from `bound().device.capability` instead of a literal -- the bound shape
+  already declares the card, so there is **no knob** (D11: inputs are facts, and a knob
+  would be a second source of truth for one). Only those two lanes are listed, because only
+  those two have been compiled and checked anywhere else; the other five stay pinned, and
+  `oneshot` cannot leave the fleet at all.
+- `cells.py` gains a middle verdict for the device lane. A GB10 is `admitted`, a card no
+  lane was ever built for is `refused` exactly as before, and a **built but unmeasured**
+  card is `unmeasured` with a `measure` recipe -- the repository's own word for "the
+  wrapper serves it, but it runs by declaration".
+- The runtime gates in `mla` and `dense` needed **no change at all**: they compare the
+  probed device against the bound one, which is already the right question on either card.
+
+```
+GB10       SM121/48   -> admitted    recipe=None
+RTX 5050   SM120/20   -> unmeasured  recipe=measure
+H100       SM90/132   -> refused     recipe=rewrite
+```
+
+The fleet reads exactly as before, and that is checked rather than asserted:
+`gencode(MEASURED.device.capability)` returns `['-gencode', 'arch=compute_121a,code=sm_121a']`
+-- the literal that used to be there -- and the sm_121a PTX of both kernels is byte-identical
+to its pre-edit baseline.
+
+What is still a real difference, and no verdict can talk it away: **20 SMs against 48**, on a
+persistent megakernel built around 48 at TP=4. That is why the verdict is `unmeasured` and
+why a number from this card is this card's.
+
+`oneshot` is out regardless: it needs `<infiniband/verbs.h>` for the fleet's RoCE rails.
+
+The image carries a host compiler (the full Python base, not `-slim`) because without one a
+JIT extension dies at `gcc: No such file or directory` before ptxas can say anything about
+the kernel at all.
 
 ## Verify
 
+From a controller, one command for the whole chain:
+
 ```bash
-ssh ost-97x 'hostname; nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader'
-ssh ost-97x 'grep MemAvailable /proc/meminfo'
+bash tools/ost-97x-selftest.sh ost-97x
+```
+
+The lane fails in layers -- ssh, docker, the NVIDIA runtime, the image, what imports inside
+it, the queue's admission, staging -- and a failure in one reads like a failure in another:
+`fleet.sh run` says `ABORT: no ST image` whether the image is missing, the daemon is down,
+or the box never answered at all. The self-test walks them in order and names the first
+link that does not hold. Fix that one; the rest usually follow from it.
+
+The pieces, if you want them by hand:
+
+```bash
+ssh ost-97x 'hostname; nvidia-smi --query-gpu=name,compute_cap,memory.free --format=csv,noheader'
 python3 bench/fleet_single.py evidence --host ost-97x --gib 4   # silent, rc 0 = it has room
 python3 bench/fleet_single.py reclaim  --host ost-97x --gib 4
 ```
+
+## What this box can hold
+
+Measured 2026-09-15, desktop running: **6407 MiB of 8151 MiB VRAM free** (the card also
+drives the display, so this moves -- it was 5199 MiB *used* earlier the same day with more
+windows open), 6 CPUs and ~10 GiB to the distro under the cap above, 869 GB of disk. A
+check that needs more VRAM than the desktop happens to be leaving free will OOM on the
+card, and the lane's `MemAvailable` evidence cannot see that: it guards host memory, and
+this card's memory is its own. For anything close to the line, read `memory.free` first --
+the self-test prints it.

@@ -41,7 +41,10 @@ class NativeListTests(unittest.TestCase):
         self.assertNotIn("probe_device", build)
         self.assertNotIn("kernel_shape", build)
         extension = ast.unparse(functions["extension"])
-        self.assertIn("build()", extension)
+        # `build(` and not `build()`: build takes the target capability as an argument, because
+        # reading it inside build would be the very coupling the two assertions above forbid.
+        # What this pins is unchanged -- extension calls build, and probes after it.
+        self.assertIn("build(", extension)
         self.assertIn("probe_device", extension)
 
 

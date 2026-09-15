@@ -43,3 +43,5 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_onepass*.py'
       - name: CPU oracle replay and held-out validation contracts
         run: python3 -m unittest tests.test_step_tools tests.test_oracle_accuracy
+      - name: the single-GPU lane's admission and its floor
+        run: python3 -m unittest tests.test_fleet_single

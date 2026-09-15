@@ -35,6 +35,8 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
 
+from engine.kernels import arch
+
 # ---- the compiled cells: a wrapper refuses a shape outside them -------------------------------------------------------
 # mla/glm53_megakernel.cu: MLA_H query heads per rank over an MLA_D latent (kv_lora_rank)
 MLA_HEADS = 16
@@ -207,6 +209,18 @@ def _recipe_device(d):
                   f"the lanes are built for GB10 sm_121a with {d.sms} SMs and D5 forbids 'other GPUs': another card is its "
                   "own build, its own measurements and its own cells",
                   "every lane's self-test on that card", "not on this fleet", "days")
+
+
+def _recipe_check_device(d):
+    from engine.base.kernel_shape import MEASURED
+    MEASURED_SMS = MEASURED.device.sms
+    return Recipe("measure", "measurements/ for that card, and its own cells if it ever needs them",
+                  f"the lanes build for {arch.name(d.capability)} and their self-tests judge them there; what is "
+                  f"missing is a measurement record on this card, not a kernel. Its dispatch choices (split points, "
+                  f"tiles, the BF16/FP8 switch) were all taken at GB10 sm_121a with {MEASURED_SMS} SMs, and this card "
+                  f"has {d.sms}",
+                  "each lane's own numerical self-test on that card, then a measurement record per D17",
+                  "a record this repository cites, or the lane stays a check", "days")
 
 
 def _recipe_mla(a):
@@ -625,6 +639,13 @@ def admission(shape) -> "list[Verdict]":
 
     if (tuple(d.capability), d.sms) == (MEASURED.device.capability, MEASURED.device.sms):
         admit("device", f"GB10 SM{d.capability[0]}{d.capability[1]}, {d.sms} SMs", None)
+    elif arch.target(d.capability) is not None:
+        # A card the lanes can be BUILT for, which is not the card they were measured on.
+        # It runs by declaration -- the definition of `unmeasured` -- and it can never be
+        # `admitted`, because no measurement here was taken anywhere but a GB10 (D5).
+        unmeasured("device", f"{arch.name(d.capability)}, {d.sms} SMs: the lanes compile and run here, and every "
+                             f"number they give is this card's. GB10 sm_121a with {MEASURED.device.sms} SMs is what "
+                             f"they were measured on", _recipe_check_device(d), None)
     else:
         refuse("device", f"every lane is built for GB10 sm_121a with {MEASURED.device.sms} SMs; asked "
                          f"SM{d.capability[0]}{d.capability[1]}/{d.sms}", _recipe_device(d), None)
