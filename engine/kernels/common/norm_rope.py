@@ -123,6 +123,7 @@ def norm(x: torch.Tensor, w: torch.Tensor, eps: float, *, bias=None) -> torch.Te
 
     The bias sum stays FP32 until normalization; normalized values and the
     weight multiplication retain the original input-dtype rounding boundaries.
+    CUDA inputs and weights must have contiguous last dimensions.
     """
     if w.ndim != 1 or x.shape[-1] != w.shape[0]:
         raise ValueError("rms norm weight must be one row matching the input's last dimension")
@@ -131,6 +132,8 @@ def norm(x: torch.Tensor, w: torch.Tensor, eps: float, *, bias=None) -> torch.Te
         raise ValueError('rms norm bias must be a contiguous FP32 vector on the input device')
     if not x.is_cuda:
         return _norm_by_torch(x, w, eps, bias=bias)
+    if x.stride(-1) != 1 or w.stride(0) != 1:
+        raise ValueError("CUDA rms norm needs contiguous input columns and weights")
     flat = x.reshape(-1, x.shape[-1])
     out = torch.empty_like(flat)
     D = flat.shape[1]
@@ -151,6 +154,8 @@ def add_norm(a: torch.Tensor, b: torch.Tensor, w: torch.Tensor, eps: float):
     if not a.is_cuda:
         total = a + b
         return total, _norm_by_torch(total, w, eps)
+    if a.stride(-1) != 1 or b.stride(-1) != 1 or w.stride(0) != 1:
+        raise ValueError("CUDA residual norm needs contiguous input columns and weights")
     flat_a, flat_b = a.reshape(-1, a.shape[-1]), b.reshape(-1, b.shape[-1])
     total, out = torch.empty_like(flat_a), torch.empty_like(flat_a)
     D = flat_a.shape[1]
@@ -173,6 +178,7 @@ def norm_rope(x: torch.Tensor, w: torch.Tensor, eps: float, positions: torch.Ten
     # The heads arrive as a slice of a fused projection (`qkv.split(...)` reshaped), whose rows are wider than
     # the heads read here. The kernel takes both strides, so the step does not copy them into place first.
     src = x if x.stride(2) == 1 else x.contiguous()
+    w = w.contiguous()
     out = torch.empty(rows, heads, D, device=x.device, dtype=x.dtype)
     inv = warm(x.device, D, theta)
     pos = positions.contiguous()

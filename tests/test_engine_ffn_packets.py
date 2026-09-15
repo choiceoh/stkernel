@@ -84,6 +84,7 @@ class PacketContractTests(unittest.TestCase):
             self.assertEqual(g.stride % 128, 0)
         g = PacketGeometry(32768, 8192, routed=True)
         self.assertEqual(g.workspace()['sender_roundtrip_bytes'], 64 << 20)
+        self.assertEqual(g.workspace()['sender_router_fp32_bytes'], 128 << 20)
         self.assertEqual(g.workspace()['route_metadata_bytes'], 32768*48)
         with self.assertRaises(ValueError):
             PacketGeometry(8193, 2049, routed=1)
@@ -176,6 +177,9 @@ class PacketForwardTests(unittest.TestCase):
                         return ids/8
                     net._packet_experts = {L: expert for L in net.layers}
                     net.dense = {}
+                    net._router_layers = set(net.layers)
+                    net._router_weights = {L: object() for L in net.layers}
+                    net._router_fp32 = set()
                     net._select_routes = lambda L, logits: (logits, None)
                     net._activation = lambda g, u, limit: g
                     net.linear = lambda x, name: x

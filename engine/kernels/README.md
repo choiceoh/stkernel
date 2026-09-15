@@ -13,12 +13,23 @@ vLLM의 임포트, `torch.ops.vllm` 등록, FlashInfer 패키지 내부로의 �
 | causal conv | `causal_conv_single.py`의 단일 시퀀스 conv·상태 반환 커널; 범용 prefill / update는 `causal_conv.py` | PyTorch, Triton (범용 커널은 NumPy 추가) |
 | 상태 링 | `state.py`에서 물리 슬롯·위치로 필요한 이력을 읽고 변경된 위치만 쓰기 | PyTorch, Triton |
 | mHC pre / post | `mhc/`의 TileLang 혼합, hidden 512 단위 TMA post, 작은 M의 prenorm 패딩 | PyTorch, TileLang, Triton, DeepGEMM |
+| MoE 라우터 | `router_fp32.py/.cpp`에서 FP32 입력·가중치·누산·로짓; `glm_pointwise.py`의 FP32 sigmoid·bias·top-k·정규화 | PyTorch, cuBLAS, C++ 컴파일러 |
 | 인덱서 로짓 | `deep_gemm.py`에서 `deep_gemm.fp8_fp4_mqa_logits` 직접 호출 | DeepGEMM |
 | 인덱서 query 양자화 | `kpool.py`의 Hadamard-128·FP8 커널, GB10 행 수별 1/8/32행 tile | PyTorch, Triton |
 | kpool | `kpool.py`의 1워프 반환 전용 압축·회전·FP8 변환, 별도 캐시 쓰기 진입점 | PyTorch, Triton |
 | 인덱서 슬롯 | `indexer.py`의 풀 ID 정렬·토큰 확장·페이지 주소 변환·유효 개수·출력 쓰기를 한 커널에서 처리 | PyTorch, Triton |
 | MLA | `mla/`의 전용 Python 드라이버, FP8/BF16 `ldmatrix`, warp max reduction과 DSMEM split 병합 | PyTorch, CUDA 13 nvcc |
 | b12x MoE | `b12x/`의 API·디스패치·CuTe 커널·내부 보조 모듈 | PyTorch, CUTLASS DSL, CUDA bindings, FlashInfer 유틸/JIT |
+
+GLM 라우터는 decode와 모든 prefill에서 **IEEE FP32**를 기본으로 사용한다.
+BF16 체크포인트 gate를 부팅 때 한 번 FP32 arena 영역에 복사하고 실제 projection이 그 영역을 읽는다.
+42개 MoE 층 기준 추가 상주 메모리는 rank당 189 MiB, TP4 합계 756 MiB이며 부팅 예산에 포함한다.
+BF16 활성값의 FP32 변환은 workspace에서 처리한다. 32,768행 전체 prefill은 최대 512 MiB,
+TP4 sender는 최대 128 MiB의 FP32 입력을 사용한다. 라우터 호출에만 thread-local TF32·autocast
+차단을 적용하며 다른 연산의 전역 설정은 바꾸지 않는다. 분산 prefill도 같은 FP32 연산을 쓰고,
+FP8 packet 복원 시에는 원래의 BF16 반올림 경계를 보존한 다음 FP32로 올린다.
+소형 C++ 확장은 첫 collective 전에 다른 native 모듈과 함께 빌드한다.
+검증과 실행 범위는 [FP32 라우터 적용 기록](../../measurements/router_fp32_default_20260915/README.md)에 있다.
 
 `SOURCES.json`은 이식 전 파일의 경로와 SHA256을 기록한다. 저장소의 기존 overlay가
 소유하는 구현을 우선했고, 없는 FLA/b12x 보조 파일과 conv/kpool은 같은 플릿 이미지에서

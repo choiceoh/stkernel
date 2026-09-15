@@ -138,8 +138,11 @@ def _greedy(lp, N, BLOCK: tl.constexpr):
         idx = off + cols
         m = idx < N
         v = tl.load(lp + idx, mask=m, other=NEG_INF).to(tl.float32)
+        # Match vocabulary argmax: signed zeros tie; NaNs win regardless of payload.
+        v = tl.where(v == 0, 0.0, v)
         bits = v.to(tl.int32, bitcast=True).to(tl.int64)
         ordered = tl.where(bits < 0, bits ^ 0x7fffffff, bits)
+        ordered = tl.where(v != v, 0x7fc00000, ordered)
         key = tl.maximum(key, tl.max(tl.where(m, (ordered << 32) | (0xffffffff - idx.to(tl.int64)), MIN_KEY)))
     return 0xffffffff - (key & 0xffffffff)
 
@@ -147,10 +150,10 @@ def _greedy(lp, N, BLOCK: tl.constexpr):
 @triton.jit
 def _sampler(LOGITS, TEMP, TOPK, TOPP, UNIFORM, OUT, PROBS, TAU, KEPT,
              sl, sp, N, WIDTH, BLOCK: tl.constexpr, WRITE: tl.constexpr, DRAW: tl.constexpr,
-             REPORT: tl.constexpr):
+             REPORT: tl.constexpr, ST: tl.constexpr, SK: tl.constexpr, SP: tl.constexpr, SU: tl.constexpr):
     row = tl.program_id(0)
     lp = LOGITS + row.to(tl.int64) * sl
-    temp = tl.load(TEMP + row)
+    temp = tl.load(TEMP + row * ST)
     cols = tl.arange(0, BLOCK)
     pout = PROBS + row.to(tl.int64) * sp
 
@@ -186,8 +189,8 @@ def _sampler(LOGITS, TEMP, TOPK, TOPP, UNIFORM, OUT, PROBS, TAU, KEPT,
         # -- the two truncations, each a threshold search over the same bit range ----------------
         # A caller that wants the distributions has a row-wide buffer, so the weights go there once
         # and the search rounds read them instead of calling exp on the row again (45차 §71).
-        k = tl.load(TOPK + row)
-        p = tl.load(TOPP + row)
+        k = tl.load(TOPK + row * SK)
+        p = tl.load(TOPP + row * SP)
         if WRITE:
             for off in range(0, N, BLOCK):
                 idx = off + cols
@@ -205,7 +208,7 @@ def _sampler(LOGITS, TEMP, TOPK, TOPP, UNIFORM, OUT, PROBS, TAU, KEPT,
         pick = N + 0
         last = 0
         if DRAW:
-            aim = tl.load(UNIFORM + row) * kept
+            aim = tl.load(UNIFORM + row * SU) * kept
         else:
             aim = 0.0
         # nothing past `valid` is written unless the distributions are wanted, and nothing past it
@@ -266,6 +269,8 @@ def sample_rows(logits: torch.Tensor, temperature: torch.Tensor, top_k: torch.Te
         raise ValueError("no decodable token")
     if uniform is None and probs is None:
         raise ValueError("the sampler was asked for neither a pick nor a distribution")
+    if probs is not None and (probs.shape != logits.shape or probs.stride(1) != 1):
+        raise ValueError("sampler probabilities must match logits with contiguous columns")
     for name, t in (("temperature", temperature), ("top_k", top_k), ("top_p", top_p),
                     ("uniform", temperature if uniform is None else uniform)):
         if t.shape != (M,):
@@ -278,6 +283,8 @@ def sample_rows(logits: torch.Tensor, temperature: torch.Tensor, top_k: torch.Te
                    probs if probs is not None else logits, tau, kept,
                    logits.stride(0), probs.stride(0) if probs is not None else 0, N, V,
                    BLOCK=block, WRITE=probs is not None, DRAW=uniform is not None, REPORT=report,
+                   ST=temperature.stride(0), SK=top_k.stride(0), SP=top_p.stride(0),
+                   SU=temperature.stride(0) if uniform is None else uniform.stride(0),
                    num_warps=max(4, block // 256))
     picked = out if uniform is not None else None
     return (picked, tau, kept) if report else picked

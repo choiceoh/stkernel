@@ -153,14 +153,19 @@ class SevenRowDenseTests(unittest.TestCase):
             ext.restore_probe_state(state)
 
 
-@unittest.skipUnless(torch.cuda.is_available(), 'tensor-core router requires CUDA')
-class RouterTensorCoreTests(unittest.TestCase):
+@unittest.skipUnless(torch.cuda.is_available(), 'FP32 router requires CUDA')
+class RouterFp32Tests(unittest.TestCase):
+    def setUp(self):
+        before = torch.get_float32_matmul_precision()
+        self.addCleanup(torch.set_float32_matmul_precision, before)
+        torch.set_float32_matmul_precision('highest')
+
     def test_fp32_logits_and_selection_on_random_repeated_and_tied_experts(self):
         from engine.kernels.glm_pointwise import router_logits, route_weights
         torch.manual_seed(91507)
-        for rows in (1, 7, 28, 2304):                    # a decode row, the seven-row step, four rows, a prefill chunk
+        for rows in (1, 7, 8, 16, 28, 2304, 9216):
             x = torch.randn(rows, 4096, device='cuda', dtype=torch.bfloat16)
-            gate = (torch.randn(288, 4096, device='cuda') * .02).bfloat16()
+            gate = (torch.randn(288, 4096, device='cuda') * .02).bfloat16().float()
             bias = torch.randn(288, device='cuda') * .1
             for tied in (False, True):
                 if tied:
@@ -169,11 +174,11 @@ class RouterTensorCoreTests(unittest.TestCase):
                 expected = x.float() @ gate.float().T
                 actual = router_logits(x, gate)
                 self.assertEqual(actual.dtype, torch.float32)
-                torch.testing.assert_close(actual, expected, rtol=3e-5, atol=5e-6)
+                torch.testing.assert_close(actual, expected, rtol=0, atol=0)
                 ids, weights = route_weights(actual, bias, 8, 2.5)
                 ref_ids, ref_weights = route_weights(expected, bias, 8, 2.5)
                 torch.testing.assert_close(ids, ref_ids, rtol=0, atol=0)
-                torch.testing.assert_close(weights, ref_weights, rtol=3e-5, atol=3e-6)
+                torch.testing.assert_close(weights, ref_weights, rtol=0, atol=0)
             graph = torch.cuda.CUDAGraph()
             with torch.cuda.graph(graph):
                 out = router_logits(x, gate)
@@ -185,6 +190,46 @@ class RouterTensorCoreTests(unittest.TestCase):
                     torch.testing.assert_close(out, expected, rtol=0, atol=0)
             finally:
                 graph.reset()
+
+    def test_tf32_and_autocast_cannot_reduce_router_precision_in_eager_or_graph(self):
+        from engine.kernels.glm_pointwise import router_logits
+        torch.manual_seed(91524)
+        # Use FP32 low bits as well as the checkpoint's BF16 values, so a
+        # hidden cast back to BF16/TF32 cannot accidentally satisfy this test.
+        for rows in (8, 16, 2304):
+            x = torch.randn(rows, 4096, device='cuda')
+            gate = torch.randn(288, 4096, device='cuda') * .02
+            expected = x @ gate.T
+            router_logits(x, gate)
+            for policy in ('high', 'medium'):
+                torch.set_float32_matmul_precision(policy)
+                with torch.autocast('cuda', dtype=torch.bfloat16):
+                    actual = router_logits(x, gate)
+                    self.assertEqual((x @ gate.T).dtype, torch.bfloat16, 'autocast must remain enabled for other ops')
+                self.assertEqual(torch.get_float32_matmul_precision(), policy)
+                torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+                graph = torch.cuda.CUDAGraph()
+                with torch.autocast('cuda', dtype=torch.bfloat16), torch.cuda.graph(graph):
+                    out = router_logits(x, gate)
+                try:
+                    x.normal_()
+                    gate.normal_(std=.02)
+                    torch.set_float32_matmul_precision('highest')
+                    expected = x @ gate.T
+                    torch.set_float32_matmul_precision(policy)
+                    graph.replay()
+                    self.assertEqual(out.dtype, torch.float32)
+                    torch.testing.assert_close(out, expected, rtol=0, atol=0)
+                    self.assertEqual(torch.get_float32_matmul_precision(), policy)
+                finally:
+                    graph.reset()
+            torch.set_float32_matmul_precision('highest')
+
+    def test_rejects_bf16_weight_so_an_unused_fp32_copy_cannot_hide_a_bf16_path(self):
+        from engine.kernels.glm_pointwise import router_logits
+        x = torch.randn(8, 4096, device='cuda', dtype=torch.bfloat16)
+        with self.assertRaisesRegex(ValueError, 'FP32 weights'):
+            router_logits(x, torch.zeros(288, 4096, device='cuda', dtype=torch.bfloat16))
 
 
 if __name__ == '__main__':

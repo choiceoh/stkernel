@@ -1,0 +1,13 @@
+test_draft_slots_and_contexts_keep_their_strides_on_replay (tests.test_engine_kernel_contracts.KernelViewTests.test_draft_slots_and_contexts_keep_their_strides_on_replay) ... ok
+test_each_sampler_policy_view_is_independent_of_padding_on_replay (tests.test_engine_kernel_contracts.KernelViewTests.test_each_sampler_policy_view_is_independent_of_padding_on_replay) ... ok
+test_mixed_greedy_matches_vocabulary_argmax_for_zeros_and_nans (tests.test_engine_kernel_contracts.KernelViewTests.test_mixed_greedy_matches_vocabulary_argmax_for_zeros_and_nans) ... ok
+test_norm_and_swiglu_refuse_noncontiguous_columns (tests.test_engine_kernel_contracts.KernelViewTests.test_norm_and_swiglu_refuse_noncontiguous_columns) ... ok
+test_sampler_refuses_strided_distribution_output (tests.test_engine_kernel_contracts.KernelViewTests.test_sampler_refuses_strided_distribution_output) ... ok
+test_verifier_uses_each_tensors_own_strides (tests.test_engine_kernel_contracts.KernelViewTests.test_verifier_uses_each_tensors_own_strides) ... ok
+test_hash_generated_zero_cannot_accept_impossible_drafts (tests.test_engine_kernel_contracts.VerificationBoundaryTests.test_hash_generated_zero_cannot_accept_impossible_drafts) ... ok
+test_single_draft_acceptance_uses_a_half_open_interval (tests.test_engine_kernel_contracts.VerificationBoundaryTests.test_single_draft_acceptance_uses_a_half_open_interval) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 6.010s
+
+OK

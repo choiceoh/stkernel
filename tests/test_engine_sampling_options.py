@@ -439,7 +439,7 @@ def _verify_densely(target_probs, drafts, draft_probs, uniforms):
                                              torch.ones_like(mass))
     u = uniforms[:, :K]
     reach = iota(K, device).add(1).expand(n, K)
-    accepted = torch.where(u <= thresholds, reach, torch.zeros_like(reach)).max(1).values
+    accepted = torch.where(u < thresholds, reach, torch.zeros_like(reach)).max(1).values
     at = accepted.clamp_max(K)
     before = torch.where(accepted > 0, carried.gather(1, (accepted - 1).clamp_min(0).unsqueeze(1)).squeeze(1),
                          torch.ones(n, device=device, dtype=carried.dtype))

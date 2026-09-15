@@ -154,7 +154,7 @@ def measure_router(args, report):
     rank = rank_on_this_node(str(root))
     path = root/f'rank{rank}of4.safetensors'
     loaded = rank_loader(path).load(['L3.moe.gate', 'L3.moe.bias'], device='cuda')
-    gate, bias = loaded['L3.moe.gate'], loaded['L3.moe.bias']
+    gate, bias = loaded['L3.moe.gate'].float(), loaded['L3.moe.bias']
     model = facts.load(args.ckpt_meta)
     report.update(device=torch.cuda.get_device_name(), torch=torch.__version__, triton=triton.__version__,
         cuda=torch.version.cuda, memory_budget_bytes=budget,
@@ -260,6 +260,7 @@ def measure(args, report):
     expert = partial(lane.moe, **bound)
     packet_expert = partial(lane.moe_packets, **bound)
     gate, bias = (loaded[prefix+s] for s in ('gate', 'bias'))
+    gate = gate.float()  # the engine's resident FP32 router representation
     shared_up, shared_down = (FP8Linear(loaded[prefix+s]) for s in ('sh_gate_up', 'sh_down'))
     cases = report.setdefault('cases', [])
 

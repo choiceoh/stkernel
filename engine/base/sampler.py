@@ -487,7 +487,7 @@ def block_verify(target_probs, draft_ids, draft_probs, uniforms) -> "tuple[int, 
     uniform = us[:k]
     accepted = 0
     for i in range(k):
-        if uniform[i] <= thresholds[i]:
+        if uniform[i] < thresholds[i]:
             accepted = i + 1
     if accepted == k:
         return accepted, list(draft_ids) + [draw(target_probs[k], us[k])]
@@ -604,7 +604,7 @@ def _block_verify_by_torch(target_probs, drafts, draft_cand, draft_probs, unifor
                                              torch.ones_like(mass))
     u = uniforms[:, :K]
     reach = iota(K, device).add(1).expand(n, K)
-    accepted = torch.where(u <= thresholds, reach, torch.zeros_like(reach)).max(1).values
+    accepted = torch.where(u < thresholds, reach, torch.zeros_like(reach)).max(1).values
     at = accepted.clamp_max(K)
     before = torch.where(accepted > 0, carried.gather(1, (accepted - 1).clamp_min(0).unsqueeze(1)).squeeze(1),
                          torch.ones(n, device=device, dtype=carried.dtype))

@@ -1,0 +1,222 @@
+test_a_greedy_row_is_one_hot_at_its_argmax_and_draws_nothing (tests.test_engine_sampler_kernel.KernelAgreesWithTheSortTests.test_a_greedy_row_is_one_hot_at_its_argmax_and_draws_nothing) ... ok
+test_a_mixed_batch_is_one_launch (tests.test_engine_sampler_kernel.KernelAgreesWithTheSortTests.test_a_mixed_batch_is_one_launch) ... ok
+test_a_row_that_is_not_contiguous_is_refused_rather_than_misread (tests.test_engine_sampler_kernel.KernelAgreesWithTheSortTests.test_a_row_that_is_not_contiguous_is_refused_rather_than_misread)
+The kernel addresses a row as `base + i`. A strided view would be read at the wrong ... ok
+test_a_row_that_only_wants_the_distribution_does_not_draw (tests.test_engine_sampler_kernel.KernelAgreesWithTheSortTests.test_a_row_that_only_wants_the_distribution_does_not_draw) ... ok
+test_a_rows_pick_does_not_depend_on_who_shares_its_batch (tests.test_engine_sampler_kernel.KernelAgreesWithTheSortTests.test_a_rows_pick_does_not_depend_on_who_shares_its_batch)
+Rank agreement is per row: the same logits and the same uniform, in any company. ... ok
+test_a_temperature_too_small_to_invert_still_behaves_like_one (tests.test_engine_sampler_kernel.KernelAgreesWithTheSortTests.test_a_temperature_too_small_to_invert_still_behaves_like_one)
+`sampling_options` takes any finite nonnegative temperature, so 1e-45 is a request the ... ok
+test_flat_peaked_narrow_and_bfloat16_rows (tests.test_engine_sampler_kernel.KernelAgreesWithTheSortTests.test_flat_peaked_narrow_and_bfloat16_rows) ... ok
+test_the_caller_s_logits_are_never_written (tests.test_engine_sampler_kernel.KernelAgreesWithTheSortTests.test_the_caller_s_logits_are_never_written) ... ok
+test_the_draw_reproduces_the_truncated_law (tests.test_engine_sampler_kernel.KernelAgreesWithTheSortTests.test_the_draw_reproduces_the_truncated_law) ... ok
+test_the_same_uniform_gives_the_same_token_on_every_rank (tests.test_engine_sampler_kernel.KernelAgreesWithTheSortTests.test_the_same_uniform_gives_the_same_token_on_every_rank) ... ok
+test_the_truncations_over_a_serving_shaped_block (tests.test_engine_sampler_kernel.KernelAgreesWithTheSortTests.test_the_truncations_over_a_serving_shaped_block) ... ok
+test_the_undecodable_tail_is_never_picked_or_given_mass (tests.test_engine_sampler_kernel.KernelAgreesWithTheSortTests.test_the_undecodable_tail_is_never_picked_or_given_mass) ... ok
+test_it_captures_into_a_cuda_graph (tests.test_engine_sampler_kernel.NoHostCrossingTests.test_it_captures_into_a_cuda_graph) ... ok
+test_the_sampler_never_waits_for_the_device (tests.test_engine_sampler_kernel.NoHostCrossingTests.test_the_sampler_never_waits_for_the_device)
+What `torch.multinomial` cost and vLLM works around with V exponentials a row: the whole ... /tmp/st-draft-topk-venv/lib/python3.12/site-packages/torch/cuda/__init__.py:1333: UserWarning: Synchronization debug mode is a prototype feature and does not yet detect all synchronizing operations (Triggered internally at /__w/pytorch/pytorch/torch/csrc/cuda/Module.cpp:1028.)
+  torch._C._cuda_set_sync_debug_mode(debug_mode)
+ok
+test_cdf_boundary_guard_replays_with_changed_distributions (tests.test_engine_sampler_kernel.SamplingBoundaryTests.test_cdf_boundary_guard_replays_with_changed_distributions) ... ok
+test_cdf_rounding_and_tiny_mass_cannot_select_a_zero_tail (tests.test_engine_sampler_kernel.SamplingBoundaryTests.test_cdf_rounding_and_tiny_mass_cannot_select_a_zero_tail) ... ok
+test_zero_probability_tokens_are_never_selected_at_the_upper_endpoint (tests.test_engine_sampler_kernel.SamplingBoundaryTests.test_zero_probability_tokens_are_never_selected_at_the_upper_endpoint) ... ok
+test_a_row_with_one_live_token_keeps_it (tests.test_engine_sampler_kernel.ThresholdTests.test_a_row_with_one_live_token_keeps_it) ... ok
+test_top_k_keeps_the_kth_largest_and_everything_tied_with_it (tests.test_engine_sampler_kernel.ThresholdTests.test_top_k_keeps_the_kth_largest_and_everything_tied_with_it) ... ok
+test_top_p_keeps_the_smallest_prefix_that_reaches_the_mass (tests.test_engine_sampler_kernel.ThresholdTests.test_top_p_keeps_the_smallest_prefix_that_reaches_the_mass) ... ok
+test_top_p_sits_on_top_of_top_k (tests.test_engine_sampler_kernel.ThresholdTests.test_top_p_sits_on_top_of_top_k) ... ok
+test_it_accepts_more_than_the_token_level_rule (tests.test_engine_sampling_options.BlockVerificationTests.test_it_accepts_more_than_the_token_level_rule) ... ok
+test_one_draft_is_the_token_level_threshold (tests.test_engine_sampling_options.BlockVerificationTests.test_one_draft_is_the_token_level_threshold) ... ok
+test_the_batch_accepts_what_the_row_by_row_rule_accepts (tests.test_engine_sampling_options.BlockVerificationTests.test_the_batch_accepts_what_the_row_by_row_rule_accepts) ... ok
+test_the_first_emitted_token_is_the_target_s_own (tests.test_engine_sampling_options.BlockVerificationTests.test_the_first_emitted_token_is_the_target_s_own) ... ok
+test_the_kernel_accepts_and_picks_what_the_reference_does (tests.test_engine_sampling_options.BlockVerifyKernelTests.test_the_kernel_accepts_and_picks_what_the_reference_does) ... ok
+test_the_reference_is_reachable_on_any_device (tests.test_engine_sampling_options.BlockVerifyKernelTests.test_the_reference_is_reachable_on_any_device)
+It is the thing the kernel is judged against, so it must not be behind the `is_cuda` branch that ... ok
+test_a_plain_row_runs_ahead_and_is_counted (tests.test_engine_sampling_options.DecodeChainGateTests.test_a_plain_row_runs_ahead_and_is_counted) ... ok
+test_every_blocker_names_itself (tests.test_engine_sampling_options.DecodeChainGateTests.test_every_blocker_names_itself) ... ok
+test_min_tokens_is_named_apart_from_the_rest_because_it_passes (tests.test_engine_sampling_options.DecodeChainGateTests.test_min_tokens_is_named_apart_from_the_rest_because_it_passes)
+min_tokens blocks only until the row has produced enough; the others never stop blocking. An operator ... ok
+test_no_drafter_is_not_a_row_s_fault (tests.test_engine_sampling_options.DecodeChainGateTests.test_no_drafter_is_not_a_row_s_fault) ... ok
+test_one_row_takes_the_whole_batch_off_the_chain (tests.test_engine_sampling_options.DecodeChainGateTests.test_one_row_takes_the_whole_batch_off_the_chain)
+The batch runs ahead together or not at all. At max_seqs 4 that is the cost of a single logprobs request, ... ok
+test_rows_churning_mid_flight_is_its_own_reason (tests.test_engine_sampling_options.DecodeChainGateTests.test_rows_churning_mid_flight_is_its_own_reason)
+PR #671 made most of these go away (independent new rows may now join without draining survivors), so ... ok
+test_state_the_options_do_not_carry_names_itself_too (tests.test_engine_sampling_options.DecodeChainGateTests.test_state_the_options_do_not_carry_names_itself_too)
+A grammar, a request's seed and a logprob request live in their own maps by then, not in `options`. ... ok
+test_the_counters_exist_from_the_boot_and_not_from_this_fixture (tests.test_engine_sampling_options.DecodeChainGateTests.test_the_counters_exist_from_the_boot_and_not_from_this_fixture)
+`gate()` sets them, so dropping the real initialiser kills no test above -- and a real boot would then ... ok
+test_a_draft_that_covers_nothing_reaches_nothing (tests.test_engine_sampling_options.DraftCeilingTests.test_a_draft_that_covers_nothing_reaches_nothing) ... ok
+test_ceilings_clip_a_draft_block_when_the_target_has_fewer_rows (tests.test_engine_sampling_options.DraftCeilingTests.test_ceilings_clip_a_draft_block_when_the_target_has_fewer_rows)
+An end token or generation limit can leave no target row for tail drafts. ... ok
+test_the_ceilings_bound_the_acceptance_they_explain (tests.test_engine_sampling_options.DraftCeilingTests.test_the_ceilings_bound_the_acceptance_they_explain) ... ok
+test_the_reachable_mass_is_the_overlap_and_the_covered_mass_is_the_support (tests.test_engine_sampling_options.DraftCeilingTests.test_the_reachable_mass_is_the_overlap_and_the_covered_mass_is_the_support) ... ok
+test_a_row_reused_with_the_same_shape_does_not_inherit_the_old_counts (tests.test_engine_sampling_options.HistoryLifetimeTests.test_a_row_reused_with_the_same_shape_does_not_inherit_the_old_counts) ... ok
+test_forgetting_reaches_the_history_and_tolerates_one_that_was_never_built (tests.test_engine_sampling_options.HistoryLifetimeTests.test_forgetting_reaches_the_history_and_tolerates_one_that_was_never_built)
+What a source pin cannot see. A helper that is only a name passes the test above; and the history ... ok
+test_the_adapter_drops_it_wherever_a_row_stops_owning_its_tokens (tests.test_engine_sampling_options.HistoryLifetimeTests.test_the_adapter_drops_it_wherever_a_row_stops_owning_its_tokens)
+The property, not a list of lines: every place a row is handed a different conversation, and the ... ok
+test_a_buffer_receives_the_row_instead_of_a_fresh_vocabulary (tests.test_engine_sampling_options.OptionTests.test_a_buffer_receives_the_row_instead_of_a_fresh_vocabulary)
+The grammar mask crosses a whole row in one launch, which needs the row's positions in consecutive ... ok
+test_a_draft_repeats_for_the_repetition_penalty_too (tests.test_engine_sampling_options.OptionTests.test_a_draft_repeats_for_the_repetition_penalty_too) ... ok
+test_a_draw_that_aims_past_the_walk_lands_on_the_last_id_with_mass (tests.test_engine_sampling_options.OptionTests.test_a_draw_that_aims_past_the_walk_lands_on_the_last_id_with_mass)
+A uniform at the top of the interval, against a total summed in another order than the walk, aims past the ... ok
+test_a_handful_of_forbidden_ids_needs_no_vocabulary_of_true (tests.test_engine_sampling_options.OptionTests.test_a_handful_of_forbidden_ids_needs_no_vocabulary_of_true) ... ok
+test_a_prompt_that_moved_or_a_list_that_shrank_is_rebuilt (tests.test_engine_sampling_options.OptionTests.test_a_prompt_that_moved_or_a_list_that_shrank_is_rebuilt) ... ok
+test_a_zero_temperature_row_set_picks_every_argmax (tests.test_engine_sampling_options.OptionTests.test_a_zero_temperature_row_set_picks_every_argmax) ... ok
+test_distribution_top_k_top_p_and_greedy (tests.test_engine_sampling_options.OptionTests.test_distribution_top_k_top_p_and_greedy) ... ok
+test_forgetting_a_row_drops_its_history (tests.test_engine_sampling_options.OptionTests.test_forgetting_a_row_drops_its_history) ... ok
+test_penalties_and_bias_act_on_the_named_tokens_only (tests.test_engine_sampling_options.OptionTests.test_penalties_and_bias_act_on_the_named_tokens_only) ... ok
+test_penalty_history_preserves_the_engines_prefix_history_protocol (tests.test_engine_sampling_options.OptionTests.test_penalty_history_preserves_the_engines_prefix_history_protocol) ... ok
+test_picking_every_row_at_once_draws_what_picking_them_one_by_one_would (tests.test_engine_sampling_options.OptionTests.test_picking_every_row_at_once_draws_what_picking_them_one_by_one_would) ... ok
+test_raw_logprobs_and_top_candidates (tests.test_engine_sampling_options.OptionTests.test_raw_logprobs_and_top_candidates) ... ok
+test_rejection_sampling_reproduces_the_target_law (tests.test_engine_sampling_options.OptionTests.test_rejection_sampling_reproduces_the_target_law) ... ok
+test_rich_rows_are_exactly_the_ones_the_captured_sampler_cannot_serve (tests.test_engine_sampling_options.OptionTests.test_rich_rows_are_exactly_the_ones_the_captured_sampler_cannot_serve) ... ok
+test_the_gather_does_not_upcast_what_every_row_copies_anyway (tests.test_engine_sampling_options.OptionTests.test_the_gather_does_not_upcast_what_every_row_copies_anyway) ... ok
+test_the_history_is_grown_not_rebuilt_when_a_token_is_appended (tests.test_engine_sampling_options.OptionTests.test_the_history_is_grown_not_rebuilt_when_a_token_is_appended) ... ok
+test_the_model_dtype_goes_in_and_float32_comes_out_unchanged (tests.test_engine_sampling_options.OptionTests.test_the_model_dtype_goes_in_and_float32_comes_out_unchanged) ... ok
+test_this_step_drafts_count_without_being_written_into_the_history (tests.test_engine_sampling_options.OptionTests.test_this_step_drafts_count_without_being_written_into_the_history) ... ok
+test_validate_refuses_unknown_and_out_of_range (tests.test_engine_sampling_options.OptionTests.test_validate_refuses_unknown_and_out_of_range) ... ok
+test_a_block_that_closed_itself_is_never_asked_again (tests.test_engine_sampling_options.ReasoningBudgetTests.test_a_block_that_closed_itself_is_never_asked_again) ... ok
+test_a_call_open_under_its_grammar_is_not_forced_shut (tests.test_engine_sampling_options.ReasoningBudgetTests.test_a_call_open_under_its_grammar_is_not_forced_shut)
+A tool call that began inside the block holds the row to its grammar. Forcing the end there left no token ... ok
+test_ahead_gate_drains_only_at_the_budget_and_resumes_after_the_end (tests.test_engine_sampling_options.ReasoningBudgetTests.test_ahead_gate_drains_only_at_the_budget_and_resumes_after_the_end) ... ok
+test_min_tokens_outranks_the_budget (tests.test_engine_sampling_options.ReasoningBudgetTests.test_min_tokens_outranks_the_budget)
+`forbid` is a promise the caller made; a budget is the engine keeping room. If the two ... ok
+test_no_budget_is_no_bound (tests.test_engine_sampling_options.ReasoningBudgetTests.test_no_budget_is_no_bound) ... ok
+test_the_budget_spent_leaves_only_the_way_out (tests.test_engine_sampling_options.ReasoningBudgetTests.test_the_budget_spent_leaves_only_the_way_out) ... ok
+test_the_default_leaves_the_answer_a_share_of_the_limit (tests.test_engine_sampling_options.ReasoningBudgetTests.test_the_default_leaves_the_answer_a_share_of_the_limit) ... ok
+test_the_option_pair_travels_together (tests.test_engine_sampling_options.ReasoningBudgetTests.test_the_option_pair_travels_together) ... ok
+test_this_step_s_drafts_count_towards_it (tests.test_engine_sampling_options.ReasoningBudgetTests.test_this_step_s_drafts_count_towards_it) ... ok
+test_unaccepted_reasoning_end_does_not_disable_the_committed_budget (tests.test_engine_sampling_options.ReasoningBudgetTests.test_unaccepted_reasoning_end_does_not_disable_the_committed_budget) ... ok
+test_under_the_budget_nothing_is_forced (tests.test_engine_sampling_options.ReasoningBudgetTests.test_under_the_budget_nothing_is_forced) ... ok
+test_variable_accepted_blocks_never_run_past_the_thinking_cap (tests.test_engine_sampling_options.ReasoningBudgetTests.test_variable_accepted_blocks_never_run_past_the_thinking_cap) ... ok
+test_both_ceilings_are_the_same_two_numbers (tests.test_engine_sampling_options.SparseDraftDistributionTests.test_both_ceilings_are_the_same_two_numbers) ... ok
+test_it_holds_when_the_draft_is_a_point_mass (tests.test_engine_sampling_options.SparseDraftDistributionTests.test_it_holds_when_the_draft_is_a_point_mass)
+A greedy row joining a sampled batch is one candidate carrying everything (pipeline._merge). ... ok
+test_the_candidates_verify_exactly_as_the_vocabulary_wide_row_did (tests.test_engine_sampling_options.SparseDraftDistributionTests.test_the_candidates_verify_exactly_as_the_vocabulary_wide_row_did) ... ok
+test_validate_rejects_what_it_must_and_accepts_the_rest_without_a_python_loop (tests.test_engine_sampling_options.ValidateTests.test_validate_rejects_what_it_must_and_accepts_the_rest_without_a_python_loop) ... ok
+test_the_row_path_and_the_batch_path_accept_the_same_prefix (tests.test_engine_sampling_options.VerificationPathTests.test_the_row_path_and_the_batch_path_accept_the_same_prefix) ... ok
+test_every_option_that_names_a_token_is_bounded (tests.test_engine_sampling_options.VocabularyBoundTests.test_every_option_that_names_a_token_is_bounded) ... ok
+test_the_glm_engine_bounds_them_by_its_logits (tests.test_engine_sampling_options.VocabularyBoundTests.test_the_glm_engine_bounds_them_by_its_logits) ... ok
+test_no_serving_module_holds_a_generator (tests.test_engine_draws.ContractTests.test_no_serving_module_holds_a_generator) ... ok
+test_the_engine_keys_every_draw_it_makes (tests.test_engine_draws.ContractTests.test_the_engine_keys_every_draw_it_makes) ... ok
+test_a_word_names_one_purpose_and_position_and_refuses_what_it_cannot_hold (tests.test_engine_draws.KeyTests.test_a_word_names_one_purpose_and_position_and_refuses_what_it_cannot_hold) ... ok
+test_every_component_separates_the_draws (tests.test_engine_draws.KeyTests.test_every_component_separates_the_draws) ... ok
+test_rounding_does_not_close_the_upper_endpoint (tests.test_engine_draws.KeyTests.test_rounding_does_not_close_the_upper_endpoint) ... ok
+test_the_distribution_is_close_to_uniform (tests.test_engine_draws.KeyTests.test_the_distribution_is_close_to_uniform) ... ok
+test_the_hash_is_a_pure_function_with_no_stream_behind_it (tests.test_engine_draws.KeyTests.test_the_hash_is_a_pure_function_with_no_stream_behind_it) ... ok
+test_the_step_layout_is_the_walk_then_the_verification_then_the_correction (tests.test_engine_draws.KeyTests.test_the_step_layout_is_the_walk_then_the_verification_then_the_correction) ... ok
+test_uniforms_lie_in_the_unit_interval_and_are_float32_values (tests.test_engine_draws.KeyTests.test_uniforms_lie_in_the_unit_interval_and_are_float32_values) ... ok
+test_a_draw_that_rounds_up_to_one_is_kept_below_it_on_every_path (tests.test_engine_draws.TensorAgreementTests.test_a_draw_that_rounds_up_to_one_is_kept_below_it_on_every_path) ... ok
+test_bonus_token_cannot_land_in_a_zero_probability_tail (tests.test_engine_draws.TensorAgreementTests.test_bonus_token_cannot_land_in_a_zero_probability_tail) ... ok
+test_the_device_agrees_with_the_host_on_cuda_too (tests.test_engine_draws.TensorAgreementTests.test_the_device_agrees_with_the_host_on_cuda_too) ... ok
+test_the_sampler_and_the_verifier_take_them_as_inputs (tests.test_engine_draws.TensorAgreementTests.test_the_sampler_and_the_verifier_take_them_as_inputs) ... ok
+test_the_step_block_is_what_the_host_path_asks_for_row_by_row (tests.test_engine_draws.TensorAgreementTests.test_the_step_block_is_what_the_host_path_asks_for_row_by_row) ... ok
+test_the_tensor_hash_matches_the_host_hash_bit_for_bit (tests.test_engine_draws.TensorAgreementTests.test_the_tensor_hash_matches_the_host_hash_bit_for_bit) ... ok
+test_upper_endpoint_matches_on_host_tensor_and_fused_graph (tests.test_engine_draws.TensorAgreementTests.test_upper_endpoint_matches_on_host_tensor_and_fused_graph) ... ok
+test_the_shapes_must_be_the_ones_the_drafter_passes (tests.test_engine_norm_rope.ContractTests.test_the_shapes_must_be_the_ones_the_drafter_passes) ... ok
+test_the_table_is_built_once_per_device_dimension_and_theta (tests.test_engine_norm_rope.ContractTests.test_the_table_is_built_once_per_device_dimension_and_theta) ... ok
+test_a_missing_table_during_capture_is_an_error_not_an_allocation (tests.test_engine_norm_rope.KernelTests.test_a_missing_table_during_capture_is_an_error_not_an_allocation) ... /tmp/st-draft-topk-venv/lib/python3.12/site-packages/torch/cuda/graphs.py:169: UserWarning: The CUDA Graph is empty. This usually means that the graph was attempted to be captured on wrong device or stream. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/cuda/CUDAGraph.cpp:210.)
+  super().capture_end()
+ok
+test_almost_every_element_is_exactly_the_torch_value (tests.test_engine_norm_rope.KernelTests.test_almost_every_element_is_exactly_the_torch_value)
+The tolerance above is a bound, not the behaviour: the two differ on a handful of elements in a ... ok
+test_the_heads_are_read_where_the_projection_left_them (tests.test_engine_norm_rope.KernelTests.test_the_heads_are_read_where_the_projection_left_them)
+The block hands over one third of a fused qkv, reshaped: rows wider than the heads read here, so ... ok
+test_the_norm_is_within_one_bf16_step_of_the_torch_form (tests.test_engine_norm_rope.KernelTests.test_the_norm_is_within_one_bf16_step_of_the_torch_form) ... ok
+test_the_residual_join_is_the_add_and_the_norm_that_read_it (tests.test_engine_norm_rope.KernelTests.test_the_residual_join_is_the_add_and_the_norm_that_read_it)
+A block writes `res = res + x` and then normalises `res`, twice a layer. Fused it is one launch, ... ok
+test_the_rotary_is_within_one_bf16_step_of_the_torch_form (tests.test_engine_norm_rope.KernelTests.test_the_rotary_is_within_one_bf16_step_of_the_torch_form) ... ok
+test_it_takes_one_fused_projection (tests.test_engine_swiglu.ContractTests.test_it_takes_one_fused_projection) ... ok
+test_it_is_bit_identical_to_the_pair (tests.test_engine_swiglu.KernelTests.test_it_is_bit_identical_to_the_pair) ... ok
+test_it_reads_a_projection_where_it_lies (tests.test_engine_swiglu.KernelTests.test_it_reads_a_projection_where_it_lies)
+What the block hands over is a W4 pack's output; a view of one is not contiguous. ... ok
+test_it_refuses_a_shape_it_cannot_write (tests.test_engine_draft_attention.BatchedRingWriteTests.test_it_refuses_a_shape_it_cannot_write) ... ok
+test_it_writes_what_the_per_row_form_wrote (tests.test_engine_draft_attention.BatchedRingWriteTests.test_it_writes_what_the_per_row_form_wrote) ... ok
+test_a_step_s_rows_are_a_grid_dimension_not_a_loop (tests.test_engine_draft_attention.DraftAttentionTests.test_a_step_s_rows_are_a_grid_dimension_not_a_loop)
+Every row reads its own slot at its own context length, so the batched form has to be the per-row ... ok
+test_a_whole_kv_head_of_queries_does_not_outgrow_a_cta (tests.test_engine_draft_attention.DraftAttentionTests.test_a_whole_kv_head_of_queries_does_not_outgrow_a_cta)
+One KV head can serve every query head: b * (h // hk) is 24 at TP=4 but 128 here, and an ... ok
+test_captured_device_count_writes_only_the_accepted_prefix (tests.test_engine_draft_attention.DraftAttentionTests.test_captured_device_count_writes_only_the_accepted_prefix) ... ok
+test_direct_arena_slot_changes_and_tp_head_writes (tests.test_engine_draft_attention.DraftAttentionTests.test_direct_arena_slot_changes_and_tp_head_writes) ... ok
+test_it_refuses_rows_it_cannot_place (tests.test_engine_draft_attention.DraftAttentionTests.test_it_refuses_rows_it_cannot_place) ... ok
+test_packed_qkv_values_match_contiguous_on_changed_input_replay (tests.test_engine_draft_attention.DraftAttentionTests.test_packed_qkv_values_match_contiguous_on_changed_input_replay) ... ok
+test_startup_wrap_graph_and_poisoned_unused_slots (tests.test_engine_draft_attention.DraftAttentionTests.test_startup_wrap_graph_and_poisoned_unused_slots) ... ok
+test_the_slices_combine_into_the_attention_they_were_cut_from (tests.test_engine_draft_attention.DraftAttentionTests.test_the_slices_combine_into_the_attention_they_were_cut_from) ... ok
+test_every_width_takes_the_tensor_core_projection_when_routers_are_prepared (tests.test_engine_router_widths.RouterWidthTests.test_every_width_takes_the_tensor_core_projection_when_routers_are_prepared) ... ok
+test_stock_execution_keeps_the_fp32_projection_of_the_checkpoint_weight (tests.test_engine_router_widths.RouterWidthTests.test_stock_execution_keeps_the_fp32_projection_of_the_checkpoint_weight) ... ok
+test_the_two_projections_select_the_same_experts_on_this_input (tests.test_engine_router_widths.RouterWidthTests.test_the_two_projections_select_the_same_experts_on_this_input)
+Exact products either way (BF16 operands in FP32); only the summation order can differ. ... ok
+test_fp32_logits_and_selection_on_random_repeated_and_tied_experts (tests.test_engine_decode_seven.RouterTensorCoreTests.test_fp32_logits_and_selection_on_random_repeated_and_tied_experts) ... FAIL
+test_eight_row_direct_output_resolves_changed_addresses_and_private_workspace (tests.test_engine_decode_seven.SevenRowDenseTests.test_eight_row_direct_output_resolves_changed_addresses_and_private_workspace) ... skipped "requires CUDA; requires the ST image's kernel packages (flashinfer, tilelang, cutlass, deep_gemm, ninja missing)"
+test_input_reuse_matches_same_packs_every_row_and_changed_graph_inputs (tests.test_engine_decode_seven.SevenRowDenseTests.test_input_reuse_matches_same_packs_every_row_and_changed_graph_inputs) ... skipped "requires CUDA; requires the ST image's kernel packages (flashinfer, tilelang, cutlass, deep_gemm, ninja missing)"
+test_input_reuse_reads_strided_tiles_and_preserves_wide_pack_folding (tests.test_engine_decode_seven.SevenRowDenseTests.test_input_reuse_reads_strided_tiles_and_preserves_wide_pack_folding) ... skipped "requires CUDA; requires the ST image's kernel packages (flashinfer, tilelang, cutlass, deep_gemm, ninja missing)"
+test_all_layers_match_separate_native_kernels_with_wrap_ghosts_and_graph_replay (tests.test_engine_decode_residency.DraftWriteTests.test_all_layers_match_separate_native_kernels_with_wrap_ghosts_and_graph_replay) ... ok
+test_native_router_binds_the_checkpoint_without_a_resident_conversion (tests.test_engine_decode_residency.RouterResidencyTests.test_native_router_binds_the_checkpoint_without_a_resident_conversion) ... ok
+test_missing_native_implementation_cannot_pass_coverage (tests.test_engine_native_execution.NativeQualificationTests.test_missing_native_implementation_cannot_pass_coverage) ... ok
+test_nonfinite_prefill_releases_slots_and_refuses_readiness (tests.test_engine_native_execution.NativeQualificationTests.test_nonfinite_prefill_releases_slots_and_refuses_readiness) ... ok
+test_actual_kernel_body_strides_offsets_tails_and_independent_einsums (tests.test_engine_prefill_absorb_tiles.AbsorbKernelTests.test_actual_kernel_body_strides_offsets_tails_and_independent_einsums) ... ok
+test_actual_wrapper_launch_geometry_and_fresh_output_without_a_device (tests.test_engine_prefill_absorb_tiles.AbsorbKernelTests.test_actual_wrapper_launch_geometry_and_fresh_output_without_a_device) ... ok
+test_existing_einsums_copy_and_reference_outputs_own_token_major_storage (tests.test_engine_prefill_absorb_tiles.AbsorbKernelTests.test_existing_einsums_copy_and_reference_outputs_own_token_major_storage) ... ok
+test_native_wrapper_rejects_unsupported_inputs_before_launch (tests.test_engine_prefill_absorb_tiles.AbsorbKernelTests.test_native_wrapper_rejects_unsupported_inputs_before_launch) ... ok
+test_tp4_reference_handoff_preserves_aux_cache_and_following_seven_token_decode (tests.test_engine_prefill_absorb_tiles.AbsorbModelTests.test_tp4_reference_handoff_preserves_aux_cache_and_following_seven_token_decode) ... ok
+test_only_bounded_single_segment_eager_prefill_uses_lane (tests.test_engine_prefill_absorb_tiles.AbsorbRoutingTests.test_only_bounded_single_segment_eager_prefill_uses_lane) ... ok
+test_runtime_marker_requires_both_contractions_on_every_dsa_layer (tests.test_engine_prefill_absorb_tiles.AbsorbRoutingTests.test_runtime_marker_requires_both_contractions_on_every_dsa_layer) ... ok
+test_serving_default_on_with_experimental_rollback_and_neutral_bare_plan (tests.test_engine_prefill_absorb_tiles.AbsorbRoutingTests.test_serving_default_on_with_experimental_rollback_and_neutral_bare_plan) ... ok
+test_actual_model_dispatch_splits_at_coverage_and_falls_back_outside_contract (tests.test_prefill_dense_prefix.PrefixGeometryTests.test_actual_model_dispatch_splits_at_coverage_and_falls_back_outside_contract) ... ok
+test_coverage_matches_complete_pool_selection_including_partial_pool (tests.test_prefill_dense_prefix.PrefixGeometryTests.test_coverage_matches_complete_pool_selection_including_partial_pool) ... ok
+test_runtime_marker_requires_every_dsa_layer (tests.test_prefill_dense_prefix.PrefixGeometryTests.test_runtime_marker_requires_every_dsa_layer) ... ok
+test_serving_defaults_on_with_experimental_rollback_and_fixed_production (tests.test_prefill_dense_prefix.PrefixGeometryTests.test_serving_defaults_on_with_experimental_rollback_and_fixed_production) ... ok
+test_actual_kernel_body_masks_pages_and_matches_independent_attention (tests.test_prefill_dense_prefix.PrefixKernelTests.test_actual_kernel_body_masks_pages_and_matches_independent_attention) ... ok
+test_actual_served_mla_reuses_single_output_for_decode_capture_and_prefill (tests.test_prefill_dense_prefix.PrefixKernelTests.test_actual_served_mla_reuses_single_output_for_decode_capture_and_prefill) ... ERROR
+test_native_wrapper_rejects_wrong_dtype_geometry_page_table_and_cpu (tests.test_prefill_dense_prefix.PrefixKernelTests.test_native_wrapper_rejects_wrong_dtype_geometry_page_table_and_cpu) ... ok
+test_four_rank_model_preserves_state_auxiliary_and_following_decode (tests.test_prefill_dense_prefix.PrefixModelTests.test_four_rank_model_preserves_state_auxiliary_and_following_decode) ... ok
+test_a_boot_ledger_replaces_vllms_activation_slope_with_this_stacks_own_split (tests.test_engine_budget.BudgetTests.test_a_boot_ledger_replaces_vllms_activation_slope_with_this_stacks_own_split) ... skipped 'needs the GLM-5.3 config and torch'
+test_a_boot_that_raises_the_ceiling_is_declared_with_the_ceiling_it_enforces (tests.test_engine_budget.BudgetTests.test_a_boot_that_raises_the_ceiling_is_declared_with_the_ceiling_it_enforces)
+--workspace-gib is a declared line like the profile's own: the table carries what the allocator will ... skipped 'needs the GLM-5.3 config and torch'
+test_a_floor_measured_before_any_phase_still_reaches_the_table (tests.test_engine_budget.BudgetTests.test_a_floor_measured_before_any_phase_still_reaches_the_table)
+RuntimeMemory takes the floor in __init__, and boot prints the table right after -- ... skipped 'needs the GLM-5.3 config and torch'
+test_a_ledger_without_the_two_lines_leaves_them_exactly_where_they_were (tests.test_engine_budget.BudgetTests.test_a_ledger_without_the_two_lines_leaves_them_exactly_where_they_were) ... skipped 'needs the GLM-5.3 config and torch'
+test_a_snapshot_budget_always_leaves_a_chunk_worth_of_boundaries (tests.test_engine_budget.BudgetTests.test_a_snapshot_budget_always_leaves_a_chunk_worth_of_boundaries)
+Nine blocks is one prefill chunk: below that a chunk cannot checkpoint itself at all. ... skipped 'needs the GLM-5.3 config and torch'
+test_compressed_cache_reduces_total_budget_without_spending_it_on_kv (tests.test_engine_budget.BudgetTests.test_compressed_cache_reduces_total_budget_without_spending_it_on_kv) ... skipped 'needs the GLM-5.3 config and torch'
+test_lines_are_all_provenanced_and_the_declared_kv_leaves_room (tests.test_engine_budget.BudgetTests.test_lines_are_all_provenanced_and_the_declared_kv_leaves_room) ... skipped 'needs the GLM-5.3 config and torch'
+test_native_kv_shards_remove_replicated_heads_from_every_snapshot (tests.test_engine_budget.BudgetTests.test_native_kv_shards_remove_replicated_heads_from_every_snapshot) ... skipped 'needs the GLM-5.3 config and torch'
+test_the_floor_separates_our_start_up_from_what_was_already_on_the_box (tests.test_engine_budget.BudgetTests.test_the_floor_separates_our_start_up_from_what_was_already_on_the_box)
+Operator: "모델은 그렇게 크지 않은데 왜 이렇게 죽나". Because the floor is one number ... skipped 'needs the GLM-5.3 config and torch'
+test_the_report_dict_itself_is_a_ledger_so_boot_need_not_reread_what_it_just_wrote (tests.test_engine_budget.BudgetTests.test_the_report_dict_itself_is_a_ledger_so_boot_need_not_reread_what_it_just_wrote) ... skipped 'needs the GLM-5.3 config and torch'
+test_the_snapshot_pool_is_a_byte_budget_so_the_shape_cannot_change_its_cost (tests.test_engine_budget.BudgetTests.test_the_snapshot_pool_is_a_byte_budget_so_the_shape_cannot_change_its_cost)
+The count is not the cost. One snapshot is 34 layers of KDA state (35.2 MiB) plus the ... skipped 'needs the GLM-5.3 config and torch'
+test_the_boot_enforces_the_ceiling_it_was_given_everywhere_it_builds (tests.test_engine_budget.WorkspaceCeilingSourceTests.test_the_boot_enforces_the_ceiling_it_was_given_everywhere_it_builds) ... ok
+test_the_profile_ceiling_is_the_measured_peak_plus_a_margin_and_says_so (tests.test_engine_budget.WorkspaceCeilingSourceTests.test_the_profile_ceiling_is_the_measured_peak_plus_a_margin_and_says_so) ... ok
+
+======================================================================
+ERROR: test_actual_served_mla_reuses_single_output_for_decode_capture_and_prefill (tests.test_prefill_dense_prefix.PrefixKernelTests.test_actual_served_mla_reuses_single_output_for_decode_capture_and_prefill)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/.codex/worktrees/e0f9/stkernel/tests/test_prefill_dense_prefix.py", line 142, in test_actual_served_mla_reuses_single_output_for_decode_capture_and_prefill
+    result = lane(q, torch.zeros(1, 32, dtype=torch.uint8), None, None, .1, 1., out=destination)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/choiceoh/.codex/worktrees/e0f9/stkernel/engine/profiles/glm53/lanes.py", line 395, in mla
+    return mk.mla_decode(q_abs, cache, slots, valid, scale, ckv_scale, out=out, branch=branch)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: PrefixKernelTests.test_actual_served_mla_reuses_single_output_for_decode_capture_and_prefill.<locals>.decode() got an unexpected keyword argument 'branch'
+
+======================================================================
+FAIL: test_fp32_logits_and_selection_on_random_repeated_and_tied_experts (tests.test_engine_decode_seven.RouterTensorCoreTests.test_fp32_logits_and_selection_on_random_repeated_and_tied_experts)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/choiceoh/.codex/worktrees/e0f9/stkernel/tests/test_engine_decode_seven.py", line 172, in test_fp32_logits_and_selection_on_random_repeated_and_tied_experts
+    torch.testing.assert_close(actual, expected, rtol=3e-5, atol=5e-6)
+  File "/tmp/st-draft-topk-venv/lib/python3.12/site-packages/torch/testing/_comparison.py", line 1631, in assert_close
+    raise error_metas[0].to_error(msg)
+AssertionError: Tensor-likes are not close!
+
+Mismatched elements: 1105 / 663552 (0.2%)
+Greatest absolute difference: 1.6942620277404785e-05 at index (1997, 128) (up to 5e-06 allowed)
+Greatest relative difference: 0.18944457173347473 at index (589, 286) (up to 3e-05 allowed)
+
+----------------------------------------------------------------------
+Ran 157 tests in 74.442s
+
+FAILED (failures=1, errors=1, skipped=14)

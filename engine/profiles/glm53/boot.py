@@ -514,7 +514,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         recorder.gauge("drafter_source_bytes", total_bytes(dspecs))
         recorder.gauge("drafter_resident_bytes", draft_bytes)
         recorder.gauge("drafter_arena_saved_bytes", total_bytes(dspecs) - draft_bytes)
-    arena_bytes = (total_bytes(specs) + draft_bytes + total_bytes(vspecs) + router_bytes + projection_bytes + 256 * (len(specs) + len(dspecs) + len(vspecs) + 64)
+    arena_bytes = (total_bytes(specs) + draft_bytes + total_bytes(vspecs) + router_bytes + projection_bytes
+                   + 256 * (len(specs) + len(dspecs) + len(vspecs) + len(net.layers) + 64)
                    + cache_layout.nbytes(nb, max_seqs) + snapshots * snapshot_bytes + stage_bytes(F, net.layers, max_seqs, draft_shape) + calib_bytes)
     memory = None
     redeclare = None                    # the same table, re-runnable once a ledger exists (45차 §51)
@@ -933,7 +934,7 @@ def native_execution_report(net, drafter):
                  mhc=len(net.mhc.executed),
                  shared_mlp=sum(p.executed for p in net.shared_mlp.values()),
                  shared_overlap=bool(net.shared_overlap and net.shared_overlap.executed),
-                 router_tensorcore=len(net._router_tensorcore),
+                 router_fp32=len(net._router_fp32),
                  prefill_collectives=sorted(net.prefill_transport.executed),
                  prefill_indexer_shards=sorted(getattr(net, 'prefill_indexer_executed', ())),
                  prefill_dense_prefix=sorted(getattr(net, 'prefill_dense_prefix_executed', ())),
@@ -963,7 +964,8 @@ def native_execution_report(net, drafter):
             or (decode_fp8 is not None and not proof['drafter_decode_fp8'])
             or proof['shared_mlp'] != len(net.shared_mlp)
             or (net.shared_mlp and not proof['shared_overlap'])
-            or net._router_tensorcore != set(net._router_weights)
+            or net._router_layers is None or set(net._router_weights) != net._router_layers
+            or net._router_fp32 != net._router_layers
             or not required_prefill.issubset(net.prefill_transport.executed)):
         raise RuntimeError(f'native execution proof is incomplete: {proof}')
     return proof

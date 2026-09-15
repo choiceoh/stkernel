@@ -65,6 +65,7 @@ class PacketGeometry:
                     expert_shared_stage_bytes=4*self.hidden*2)
         if self.routed:
             result.update(sender_roundtrip_bytes=self.local_elements*2,
+                          sender_router_fp32_bytes=self.local_elements*4,
                           route_metadata_bytes=self.world*(self.stride-self.activation_bytes))
         return result
 

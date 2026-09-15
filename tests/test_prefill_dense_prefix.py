@@ -84,7 +84,7 @@ class PrefixGeometryTests(unittest.TestCase):
         from engine.profiles.glm53.boot import native_execution_report
         net = NS(layers=[0, 1], dense={'a': NS(executed=3), 'head': NS(executed=True)},
                  mhc=NS(executed={'a', 'b', 'c'}), shared_mlp={1: NS(executed=True)},
-                 shared_overlap=NS(executed=True), _router_weights={1: None}, _router_tensorcore={1},
+                 shared_overlap=NS(executed=True), _router_layers={1}, _router_weights={1: object()}, _router_fp32={1},
                  F=NS(is_dsa=lambda L: L == 1),
                  prefill_transport=NS(executed={'fp8_all_gather', 'fp8_reduce_scatter'}, project_tiles=False))
         drafter = NS(dense={'fc.weight': NS(executed=3), 'q': NS(executed=1)})
@@ -107,7 +107,7 @@ class PrefixKernelTests(unittest.TestCase):
                  if isinstance(n, ast.FunctionDef) and n.name in ('mla', '_mla_output')]
         capturing = [False]
         parts = []
-        def decode(q, *args, out=None):
+        def decode(q, *args, out=None, branch=None):
             result = (q.float()+1).bfloat16()
             if out is not None:
                 out.copy_(result)
