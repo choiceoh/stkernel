@@ -1,0 +1,521 @@
+{
+  "scope": "Prefix-boundary staging: exact copies and same-input component timings.\n\nThe control is the two staging kernels and grids in main da1c326d. The probe\nuses GLM's 34 KDA layers, 16 local heads, 128x128 recurrent cells, K=7 and\n6144 conv channels. It does not load a model or use network communication.\n",
+  "baseline": "da1c326d",
+  "device": "NVIDIA GeForce RTX 5050",
+  "capability": [
+    12,
+    0
+  ],
+  "host": "OST-97X",
+  "torch": "2.13.0+cu132",
+  "torch_git": "cf30153c4c131c8164ee7798e5022d810682e2cb",
+  "cuda": "13.2",
+  "triton": "3.7.1",
+  "cases": [
+    {
+      "rows": 1,
+      "mode": "no_crossing",
+      "slots": [
+        0
+      ],
+      "before": [
+        766
+      ],
+      "counts": [
+        1
+      ],
+      "layers": 34,
+      "heads": 16,
+      "key_dim": 128,
+      "value_dim": 128,
+      "draft_k": 7,
+      "prefix_block": 768,
+      "graph_copies": 8,
+      "exact": true,
+      "ctas": {
+        "control": 9520,
+        "candidate": 272
+      },
+      "timing": {
+        "control": {
+          "median_us": 33.733874559402466,
+          "samples_us": [
+            33.74449908733368,
+            34.48550030589104,
+            31.734999269247055,
+            33.72325003147125,
+            34.35099869966507,
+            31.73850104212761,
+            31.71125054359436,
+            34.40700098872185
+          ]
+        },
+        "candidate": {
+          "median_us": 1.560750009957701,
+          "samples_us": [
+            1.2354999780654907,
+            1.2614999432116747,
+            1.4850000152364373,
+            1.2550000101327896,
+            1.6365000046789646,
+            1.7064999556168914,
+            1.8744999542832375,
+            3.4280000254511833
+          ]
+        }
+      }
+    },
+    {
+      "rows": 1,
+      "mode": "one_crossing",
+      "slots": [
+        0
+      ],
+      "before": [
+        767
+      ],
+      "counts": [
+        1
+      ],
+      "layers": 34,
+      "heads": 16,
+      "key_dim": 128,
+      "value_dim": 128,
+      "draft_k": 7,
+      "prefix_block": 768,
+      "graph_copies": 8,
+      "exact": true,
+      "ctas": {
+        "control": 9520,
+        "candidate": 272
+      },
+      "timing": {
+        "control": {
+          "median_us": 274.88987147808075,
+          "samples_us": [
+            274.3290066719055,
+            277.149498462677,
+            274.58399534225464,
+            275.19574761390686,
+            273.8960087299347,
+            276.0227620601654,
+            273.8962471485138,
+            286.44800186157227
+          ]
+        },
+        "candidate": {
+          "median_us": 279.35774624347687,
+          "samples_us": [
+            279.14124727249146,
+            280.1024913787842,
+            278.73000502586365,
+            279.7519862651825,
+            279.5742452144623,
+            278.49599719047546,
+            281.8019986152649,
+            278.5032391548157
+          ]
+        }
+      }
+    },
+    {
+      "rows": 1,
+      "mode": "both_crossing",
+      "slots": [
+        0
+      ],
+      "before": [
+        767
+      ],
+      "counts": [
+        2
+      ],
+      "layers": 34,
+      "heads": 16,
+      "key_dim": 128,
+      "value_dim": 128,
+      "draft_k": 7,
+      "prefix_block": 768,
+      "graph_copies": 8,
+      "exact": true,
+      "ctas": {
+        "control": 9520,
+        "candidate": 272
+      },
+      "timing": {
+        "control": {
+          "median_us": 284.82261300086975,
+          "samples_us": [
+            276.16798877716064,
+            282.3444902896881,
+            287.3007357120514,
+            308.5395097732544,
+            281.46401047706604,
+            300.7279932498932,
+            294.8092520236969,
+            276.2852609157562
+          ]
+        },
+        "candidate": {
+          "median_us": 288.3230000734329,
+          "samples_us": [
+            284.0445041656494,
+            287.06398606300354,
+            296.55176401138306,
+            289.85923528671265,
+            289.5820140838623,
+            297.8757619857788,
+            285.7842445373535,
+            281.576007604599
+          ]
+        }
+      }
+    },
+    {
+      "rows": 1,
+      "mode": "reordered_wrap",
+      "slots": [
+        1
+      ],
+      "before": [
+        2302
+      ],
+      "counts": [
+        7
+      ],
+      "layers": 34,
+      "heads": 16,
+      "key_dim": 128,
+      "value_dim": 128,
+      "draft_k": 7,
+      "prefix_block": 768,
+      "graph_copies": 8,
+      "exact": true,
+      "ctas": {
+        "control": 9520,
+        "candidate": 272
+      }
+    },
+    {
+      "rows": 1,
+      "mode": "large_context",
+      "slots": [
+        0
+      ],
+      "before": [
+        1099511627519
+      ],
+      "counts": [
+        1
+      ],
+      "layers": 34,
+      "heads": 16,
+      "key_dim": 128,
+      "value_dim": 128,
+      "draft_k": 7,
+      "prefix_block": 768,
+      "graph_copies": 8,
+      "exact": true,
+      "ctas": {
+        "control": 9520,
+        "candidate": 272
+      }
+    },
+    {
+      "rows": 1,
+      "mode": "zero_counts",
+      "slots": [
+        0
+      ],
+      "before": [
+        767
+      ],
+      "counts": [
+        0
+      ],
+      "layers": 34,
+      "heads": 16,
+      "key_dim": 128,
+      "value_dim": 128,
+      "draft_k": 7,
+      "prefix_block": 768,
+      "graph_copies": 8,
+      "exact": true,
+      "ctas": {
+        "control": 9520,
+        "candidate": 272
+      }
+    },
+    {
+      "rows": 2,
+      "mode": "no_crossing",
+      "slots": [
+        0,
+        1
+      ],
+      "before": [
+        766,
+        768
+      ],
+      "counts": [
+        1,
+        7
+      ],
+      "layers": 34,
+      "heads": 16,
+      "key_dim": 128,
+      "value_dim": 128,
+      "draft_k": 7,
+      "prefix_block": 768,
+      "graph_copies": 8,
+      "exact": true,
+      "ctas": {
+        "control": 19040,
+        "candidate": 544
+      },
+      "timing": {
+        "control": {
+          "median_us": 66.54775142669678,
+          "samples_us": [
+            66.47074967622757,
+            61.62475049495697,
+            66.91525131464005,
+            63.33699822425842,
+            68.37649643421173,
+            66.62475317716599,
+            61.781249940395355,
+            71.41075283288956
+          ]
+        },
+        "candidate": {
+          "median_us": 1.6502499929629266,
+          "samples_us": [
+            1.3515000464394689,
+            1.3215000508353114,
+            2.1844999864697456,
+            1.7819999484345317,
+            1.750500057823956,
+            1.7079999670386314,
+            1.5925000188872218,
+            1.5632499707862735
+          ]
+        }
+      }
+    },
+    {
+      "rows": 2,
+      "mode": "one_crossing",
+      "slots": [
+        0,
+        1
+      ],
+      "before": [
+        767,
+        766
+      ],
+      "counts": [
+        1,
+        1
+      ],
+      "layers": 34,
+      "heads": 16,
+      "key_dim": 128,
+      "value_dim": 128,
+      "draft_k": 7,
+      "prefix_block": 768,
+      "graph_copies": 8,
+      "exact": true,
+      "ctas": {
+        "control": 19040,
+        "candidate": 544
+      },
+      "timing": {
+        "control": {
+          "median_us": 277.8342515230179,
+          "samples_us": [
+            281.32450580596924,
+            278.69799733161926,
+            277.4767577648163,
+            273.72226119041443,
+            276.2399911880493,
+            278.1917452812195,
+            274.42875504493713,
+            281.0159921646118
+          ]
+        },
+        "candidate": {
+          "median_us": 281.90337121486664,
+          "samples_us": [
+            293.61599683761597,
+            286.06900572776794,
+            281.724750995636,
+            282.943993806839,
+            282.0819914340973,
+            281.19200468063354,
+            281.4284861087799,
+            281.43200278282166
+          ]
+        }
+      }
+    },
+    {
+      "rows": 2,
+      "mode": "both_crossing",
+      "slots": [
+        0,
+        1
+      ],
+      "before": [
+        767,
+        1534
+      ],
+      "counts": [
+        2,
+        7
+      ],
+      "layers": 34,
+      "heads": 16,
+      "key_dim": 128,
+      "value_dim": 128,
+      "draft_k": 7,
+      "prefix_block": 768,
+      "graph_copies": 8,
+      "exact": true,
+      "ctas": {
+        "control": 19040,
+        "candidate": 544
+      },
+      "timing": {
+        "control": {
+          "median_us": 552.4200201034546,
+          "samples_us": [
+            547.2407341003418,
+            564.2719864845276,
+            569.383978843689,
+            552.5680184364319,
+            554.4400215148926,
+            552.2720217704773,
+            550.8480072021484,
+            548.9360094070435
+          ]
+        },
+        "candidate": {
+          "median_us": 562.5253915786743,
+          "samples_us": [
+            565.7257437705994,
+            569.4640278816223,
+            560.8959794044495,
+            562.5600218772888,
+            562.4907612800598,
+            565.8082365989685,
+            560.7039928436279,
+            560.7439875602722
+          ]
+        }
+      }
+    },
+    {
+      "rows": 2,
+      "mode": "reordered_wrap",
+      "slots": [
+        1,
+        0
+      ],
+      "before": [
+        2302,
+        3071
+      ],
+      "counts": [
+        7,
+        1
+      ],
+      "layers": 34,
+      "heads": 16,
+      "key_dim": 128,
+      "value_dim": 128,
+      "draft_k": 7,
+      "prefix_block": 768,
+      "graph_copies": 8,
+      "exact": true,
+      "ctas": {
+        "control": 19040,
+        "candidate": 544
+      }
+    },
+    {
+      "rows": 2,
+      "mode": "large_context",
+      "slots": [
+        0,
+        1
+      ],
+      "before": [
+        1099511627519,
+        1099511628287
+      ],
+      "counts": [
+        1,
+        7
+      ],
+      "layers": 34,
+      "heads": 16,
+      "key_dim": 128,
+      "value_dim": 128,
+      "draft_k": 7,
+      "prefix_block": 768,
+      "graph_copies": 8,
+      "exact": true,
+      "ctas": {
+        "control": 19040,
+        "candidate": 544
+      }
+    },
+    {
+      "rows": 2,
+      "mode": "zero_counts",
+      "slots": [
+        0,
+        1
+      ],
+      "before": [
+        767,
+        1099511627519
+      ],
+      "counts": [
+        0,
+        0
+      ],
+      "layers": 34,
+      "heads": 16,
+      "key_dim": 128,
+      "value_dim": 128,
+      "draft_k": 7,
+      "prefix_block": 768,
+      "graph_copies": 8,
+      "exact": true,
+      "ctas": {
+        "control": 19040,
+        "candidate": 544
+      }
+    }
+  ],
+  "source_sha256": {
+    "engine/kernels/state.py": "fa9bfd06a0eb2365ff5110c6a5b15fb9ec870e1506790b91c65c61a5e07b63c7",
+    "tests/test_engine_boundary_stage.py": "68232f66e8d8f0e2c70fe1b8a119c06d3674614109192e6ed2d61f9ad8a4ae7f",
+    "probes/engine_boundary_stage.py": "44e1e458e0c1e63712b5903b8fca6d95e3f9da02e971369adfb25022c8f4003f",
+    "probes/engine_kernel_check.py": "8917b37f52ec9d3733e9c42689c335f4609062ef5887963229cef047bc89b766"
+  },
+  "tests": {
+    "run": 4,
+    "skipped": 0,
+    "passed": true
+  },
+  "resources": {
+    "registers": 34,
+    "spills": 0,
+    "shared_bytes": 0
+  },
+  "passed": true,
+  "source_unchanged": true,
+  "peak_reserved_bytes": 757071872
+}
