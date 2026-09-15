@@ -136,10 +136,42 @@ def resolve(entry: tuple[str, str]) -> dict:
     return from_torch_index(name, version) if '+cu' in version else from_pypi(name, version)
 
 
+def closure_entries(directory: Path, lock_wheels: list) -> list:
+    """Pin an already-resolved closure: every wheel in `directory` the lock does not name.
+
+    The closure used to be resolved fresh on every fetch and recorded with whatever digest it
+    happened to get, which made two builds of the same lock two different images -- a hole in
+    a repository that pins its overlay sources byte for byte. Each wheel here is looked up on
+    PyPI by the name and version in its own filename, and the digest PyPI reports is checked
+    against the bytes on disk before it is written down. A mismatch means the local copy is
+    not what the index serves, and nothing is recorded.
+    """
+    named = {entry['filename'] for entry in lock_wheels}
+    strays = sorted(p for p in directory.glob('*.whl') if p.name not in named)
+    out = []
+    for path in strays:
+        name, version = path.name.split('-')[0], path.name.split('-')[1]
+        with open_url(PYPI.format(name=name, version=version), 60) as response:
+            data = json.load(response)
+        entry = next((u for u in data.get('urls', []) if u['filename'] == path.name), None)
+        if entry is None:
+            raise RuntimeError(f'{path.name}: PyPI does not serve this file for {name} {version}')
+        with path.open('rb') as stream:
+            local = sha256_of(stream)
+        if local != entry['digests']['sha256']:
+            raise RuntimeError(f'{path.name}: on disk {local[:16]} but PyPI serves {entry["digests"]["sha256"][:16]}')
+        out.append({'name': name.replace('_', '-'), 'version': version, 'filename': path.name,
+                    'url': entry['url'], 'sha256': local})
+    return out
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('output', type=Path)
+    parser.add_argument('--closure-from', type=Path, default=None,
+                        help='a wheels/ directory whose already-resolved closure should be pinned into the '
+                             'lock as well (fetch_x86_64.py writes one); without it the closure stays unpinned')
     args = parser.parse_args(argv)
 
     arm = json.loads(ARM_LOCK.read_text())
@@ -163,6 +195,9 @@ def main(argv=None) -> int:
         'deviations': DEVIATIONS,
         'wheels': wheels,
     }
+    if args.closure_from is not None:
+        lock['closure'] = closure_entries(args.closure_from, wheels)
+        print(f'closure: {len(lock["closure"])} wheels pinned by sha256', file=sys.stderr)
     args.output.write_text(json.dumps(lock, indent=2) + '\n')
     print(f'{args.output}: {len(wheels)} wheels for {PLATFORM}')
     return 0

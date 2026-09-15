@@ -21,8 +21,11 @@ repo=$(cd "$(dirname "$0")/.." && pwd)
 SSH=(ssh -n -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new)
 failed=0
 
-ok()   { printf '  \033[32mPASS\033[0m  %-26s %s\n' "$1" "${2-}"; }
-bad()  { printf '  \033[31mFAIL\033[0m  %-26s %s\n' "$1" "${2-}"; failed=$((failed + 1)); }
+# The queue logs what it runs, and an escape sequence in a log is noise nobody asked for:
+# colour only when a terminal is actually watching.
+if [ -t 1 ]; then GREEN=$'\033[32m'; RED=$'\033[31m'; OFF=$'\033[0m'; else GREEN=''; RED=''; OFF=''; fi
+ok()   { printf '  %sPASS%s  %-26s %s\n' "$GREEN" "$OFF" "$1" "${2-}"; }
+bad()  { printf '  %sFAIL%s  %-26s %s\n' "$RED" "$OFF" "$1" "${2-}"; failed=$((failed + 1)); }
 skip() { printf '  ----  %-26s %s\n' "$1" "${2-}"; }
 
 echo "ost-97x self-test: $host (image ${image}, budget ${budget} GiB)"

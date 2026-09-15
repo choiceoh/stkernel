@@ -144,6 +144,10 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('directory', type=Path)
+    parser.add_argument('--resolve-closure', action='store_true',
+                        help='re-resolve the closure from the index instead of taking the one the '
+                             'lock pins; then re-run make_x86_64_lock.py --closure-from to write '
+                             'the new one down')
     parser.add_argument('--prune', action='store_true',
                         help='delete wheels that are neither locked nor in the resolved closure '
                              '(use after a resolver has polluted the directory)')
@@ -162,12 +166,24 @@ def main(argv=None) -> int:
                 path.unlink()
         print('pruned: only the locked wheels remain; the closure is resolved from scratch', flush=True)
 
-    closure = resolve_closure(wheels, lock)
+    pinned = lock.get('closure') or []
+    if pinned and not args.resolve_closure:
+        # The lock names the closure, so this is verification, not resolution: one lock fetches
+        # the same bytes today and next month. An unpinned closure made two builds of one lock
+        # two different images, which is not a thing this repository tolerates anywhere else.
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(lambda entry: fetch(entry, wheels), pinned))
+        closure = sorted(entry['filename'] for entry in pinned)
+        note = 'pinned by the lock and verified by sha256 on the way in'
+    else:
+        closure = resolve_closure(wheels, lock)
+        note = ('resolved at fetch time with --no-deps per round and NOT pinned; run '
+                'make_x86_64_lock.py --closure-from to write it into the lock')
     (args.directory / 'closure.json').write_text(json.dumps(
-        {'note': 'resolved at fetch time with --no-deps per round; digests recorded as fetched, '
-                 'not pinned upstream. Installed with --no-deps: nothing here may replace a locked wheel.',
+        {'note': note + '. Installed with --no-deps: nothing here may replace a locked wheel.',
          'files': {name: sha256(wheels / name) for name in closure}}, indent=2) + '\n')
-    print(f'closure: {len(closure)} wheels -> closure.json', flush=True)
+    print(f'closure: {len(closure)} wheels, '
+          f'{"pinned by the lock" if pinned and not args.resolve_closure else "resolved fresh"}', flush=True)
 
     for name in ('cuda132.x86_64.lock.json', 'install_x86_64.py'):
         (args.directory / name).write_bytes((Path(__file__).with_name(name)).read_bytes())
