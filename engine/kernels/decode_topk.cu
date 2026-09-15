@@ -468,7 +468,9 @@ void run(torch::Tensor scores, torch::Tensor ke, torch::Tensor out, int64_t stas
               "block width must be a power of two in [32, 1024]");
   const c10::cuda::CUDAGuard guard(scores.device());
   const auto stream = c10::cuda::getCurrentCUDAStream(scores.get_device());
-  const size_t smem = (size_t)bin_bytes + 2 * (size_t)stash_slots * sizeof(int);
+  // Two ping-pong rings, each with a score-key array and an id array.
+  // The final id ring begins at ring + 3 * stash_slots in st_dsa_select.
+  const size_t smem = (size_t)bin_bytes + 4 * (size_t)stash_slots * sizeof(int);
   static int configured = 0;
   if (configured < (int)smem) {
     C10_CUDA_CHECK(cudaFuncSetAttribute(st_dsa_select,

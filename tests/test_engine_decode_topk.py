@@ -58,6 +58,21 @@ class SourceContractTests(unittest.TestCase):
         static += 64                              # counter, threshold, num_input, last_remain, prefix
         self.assertLessEqual(static, m.STATIC_SMEM)
 
+    def test_launch_bytes_cover_both_key_id_rings_and_fit_the_planned_budget(self):
+        # Exercise the actual C++ launch expression, independently of the Python
+        # planner. The regression budgeted 16 bytes/slot but launched with 8,
+        # leaving the second key/id ring outside dynamic shared memory.
+        source, m = SOURCE.read_text(encoding="utf-8"), module()
+        expression = re.search(r"const size_t smem = (.*?);", source).group(1)
+        expression = expression.replace("sizeof(int)", "4").replace("(size_t)", "")
+        for budget in (48 * 1024, 88 * 1024, 92 * 1024, 200 * 1024):
+            for columns in (1024, 4096, 50688, 1 << 20):
+                bins, stash = m.plan(columns, budget)
+                allocated = eval(expression, {"__builtins__": {}}, dict(bin_bytes=bins, stash_slots=stash))
+                last_id_end = bins + (3 * stash + stash) * 4
+                self.assertGreaterEqual(allocated, last_id_end, (budget, columns))
+                self.assertLessEqual(allocated, budget, (budget, columns))
+
 
 class ControlArmTests(unittest.TestCase):
     """`_select_rows(native=False)` must really be the Torch path.
@@ -167,6 +182,31 @@ class GateTests(unittest.TestCase):
                         key=lambda i: (-ordered(float(row[i])), i))
         self.assertEqual(by_key[:4], [4, 0, 3, 6], "NaN is the largest key; then ties by id")
         self.assertEqual(ordered(0.0), ordered(-0.0), "signed zeros are one value")
+
+    @unittest.skipUnless(importlib.util.find_spec("torch") is not None
+                         and __import__("torch").cuda.is_available(), "requires CUDA")
+    def test_native_selection_refines_more_than_512_visible_pools_on_replay(self):
+        # Boot's zero-context warmup only exercises the all-visible-pools-win
+        # shortcut. A 2681-token request exposes 670 pools and enters refinement.
+        import torch
+        m = module()
+        torch.manual_seed(1014)
+        logits = torch.randn(8, 1024, device="cuda")
+        ke = torch.full((8,), 670, dtype=torch.int32, device="cuda")
+        m.select(logits, ke, 512)
+        torch.cuda.synchronize()
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):
+            winners = m.select(logits, ke, 512)
+        for horizon in (513, 670, 1024):
+            for tied in (False, True):
+                logits.copy_(torch.randn_like(logits) if not tied else torch.ones_like(logits))
+                ke.fill_(horizon)
+                graph.replay()
+                torch.cuda.synchronize()
+                expected = (torch.arange(512, device="cuda").expand(8, -1) if tied else
+                            torch.topk(logits[:, :horizon], 512, dim=-1).indices)
+                self.assertTrue(torch.equal(winners.sort(-1).values.long(), expected.sort(-1).values))
 
     @unittest.skipUnless(importlib.util.find_spec("torch") is not None
                          and __import__("torch").cuda.is_available(), "requires CUDA")
