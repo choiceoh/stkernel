@@ -354,3 +354,19 @@ check that needs more VRAM than the desktop happens to be leaving free will OOM 
 card, and the lane's `MemAvailable` evidence cannot see that: it guards host memory, and
 this card's memory is its own. For anything close to the line, read `memory.free` first --
 the self-test prints it.
+
+**Leave `MAX_JOBS` alone.** The images set it to 2 (`engine/runtime/Dockerfile`,
+`Dockerfile.x86_64`) and `probes/run_engine_probe.sh` defaults it to 2, and on a box this
+size that is not conservatism, it is arithmetic: one nvcc on
+`mla/glm53_megakernel.cu` peaks at **3,340 MiB** resident, measured here. Two fit in the
+12 GiB the distro is capped to with room to spare; four need about 13 GiB and do not.
+
+Raising it to 4 on 2026-09-15 is what wedged the VM. Not a crash -- there is no error in the
+Windows event log, because nothing crashed: the VM sat at 11.26 GiB against its 12 GiB
+ceiling, stopped answering, and `wsl.exe` timed out against it with
+`Wsl/Service/0x8007274c`. `wsl.exe --shutdown` and a restart recovered it with every service
+and the tailnet address intact, which is the one good thing to come out of it.
+
+The general shape of that mistake is worth more than the number: the memory cap above and a
+build's parallelism are one budget, not two. Tightening the first while raising the second
+reads as two sensible changes and is one way to hang the box.
