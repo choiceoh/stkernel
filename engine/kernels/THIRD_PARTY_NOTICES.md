@@ -5,7 +5,9 @@ and FlashInfer. The per-file source paths and pre-port SHA256 hashes are in
 `SOURCES.json`. Original copyright and SPDX headers are retained where present.
 
 - vLLM contributors: KDA integration, causal convolution, kpool, and mHC
-  sources, under Apache License 2.0 (see this package's `LICENSE`).
+  sources, under Apache License 2.0 (see this package's `LICENSE`). The
+  Qwen3.8 QSA kernels in `qsa.py` are ported from vLLM's
+  `models/qwen3_8_flash_next/nvidia/ops/qsa.py` under the same license.
 - FlashInfer contributors: b12x API, dispatch, and CuTe DSL kernels, under
   Apache License 2.0. ST maintains its modified copies in `b12x/` and uses
   the installed FlashInfer package for shared utilities and compilation.

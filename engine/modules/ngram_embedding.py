@@ -213,6 +213,36 @@ class NGramHash:
             out.append(torch.remainder(rolling[:, None], sizes[lo:hi][None]) + offsets[lo:hi][None])
         return torch.cat(out, dim=-1)
 
+    def rows_batched(self, history: torch.Tensor, count: int) -> torch.Tensor:
+        """int64 [B, count, (ngram_size-1) * heads]: `rows(history[b], count)` for every row b of `history` [B, L] at
+        once -- the same window rule, keys and arithmetic, in one set of launches with no host read (a captured decode
+        step's rows, each carrying its own context). No `dead` mask and no token map: Qwen3.8's hash."""
+        if history.ndim != 2 or not 0 < count <= history.shape[1] or self.token_map is not None:
+            raise ValueError("batched rows take ids [B, L], 0 < count <= L, and a hash keyed by token id")
+        length = history.shape[1]
+        positions = torch.arange(length - count, length, device=history.device)
+        blocked = torch.zeros(history.shape[0], count, dtype=torch.bool, device=history.device)
+        tokens, blocks = [], []
+        for shift in range(self.ngram_size):
+            at = positions - shift
+            source = history[:, at.clamp_min(0)]
+            stop = (at < 0)[None, :] | (source == DEAD)
+            if self.eos is not None and shift > 0:
+                stop = stop | (source == self.eos)
+            blocked = blocked | stop
+            tokens.append(source)
+            blocks.append(blocked)
+        keys = torch.where(torch.stack(blocks, dim=-1), torch.full_like(history[:1, :1, None], self.pad),
+                           torch.stack(tokens, dim=-1))
+        products = keys * self.multipliers.to(keys.device)
+        sizes, offsets = self.sizes.to(keys.device), self.offsets.to(keys.device)
+        rolling, out = products[..., 0], []
+        for i in range(1, self.ngram_size):
+            rolling = torch.bitwise_xor(rolling, products[..., i])
+            lo, hi = (i - 1) * self.heads, i * self.heads
+            out.append(torch.remainder(rolling[..., None], sizes[lo:hi]) + offsets[lo:hi])
+        return torch.cat(out, dim=-1)
+
 
 def normalized_token_map(tokenizer) -> "tuple[list[int], int]":
     """(id -> key, number of keys): tokens that normalise alike -- NFKC, NFD, accents stripped, lowercased, runs of

@@ -1,0 +1,600 @@
+"""Qwen3.8-Flash-Next as the engine serves it at TP=4 (profile): the served composition.
+
+48 layers under the gated residual streams (four copies of hidden 2560), each a GatedDeltaNet (36) or a gated GQA with
+QSA selection (12, every fourth), then the MoE (512 NVFP4 experts top-10, EP: 128 a rank, plus a sigmoid-gated shared
+expert, TP); PLE's hashed n-gram table injected before layer 1; a closing mixer and a vocab-parallel head. The math is
+engine/modules' (engine/profiles/qwen38/composition.py assembles the reference from them); this file is its served form:
+plain functions over the rank file's views (specs.py) and the caches (caches.py), kernels from a lane table (lanes.py).
+
+The launches a layer issues are the point of the file (the "cuts" of the Qwen3.8 estimate, 2026-09-15):
+
+    hyper-connection site     5 launches: the previous leave joined to the stream norm, down+inject in one GEMM,
+                              the gates, up, the stream mean (engine/kernels/gated_residual)
+    GatedDeltaNet             one GEMM for q|k|v|z|b|a (merged at preshard), one launch for decay and beta, the conv
+                              and the delta rule on their ring kernels, the output norm in one launch, out_proj
+    attention                 one GEMM for query+gate|k|v|index (merged at preshard), one norm+partial-rope launch for
+                              the query heads, one for the key head, one for the index queries; the QSA ops
+    MoE                       the router GEMM and top-k, the rank's experts in one dispatcher launch, the shared expert's
+                              two GEMMs and activation, ONE all-reduce for routed and shared together
+
+TP=4 is the shape of the code (comm must be one rank of four). Collectives: the embedding and the PLE table lookup
+(vocab-parallel rows summed), each mixer's output projection, each MoE's sum; the head gathers or takes a vocab argmax.
+
+A step is segments -- (seq, slot, ctx, start, length) -- over a flat token array. Every per-sequence value is addressed
+by position (caches.py), so a rejected draft is overwritten, not rolled back, and prefill and decode share this code:
+the lanes differ (chunk vs ring kernels), the composition does not.
+
+A captured decode step (`DeviceStep`, decode_graphs.py) is the same forward with its per-row values on the device: the
+rows' contexts, slots and sequences are the graph's static inputs, the page table is gathered at the context bucket's
+width, and the three places a host step loops over its segments -- the GDN rings, the PLE rings and the PLE table --
+run over every row at once (the row ring kernels, `NGramHash.rows_batched`, the table gathered through its byte
+addresses). Nothing in it reads a device value on the host.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+from functools import partial
+
+import torch
+
+from engine.base.constants import iota
+from engine.profiles.qwen38 import specs
+from engine.profiles.qwen38.facts import TP, Facts
+from engine.profiles.qwen38.lanes import Lanes
+
+BF16, F32 = torch.bfloat16, torch.float32
+HEAD_NAME = "Qwen4ExpForCausalLM/lm_head"          # the pack store's calibration name of the head's FP8 GPTQ
+PLE_GATHER_ROWS = 2048                             # token rows a PLE table gather addresses at once: [2048, 16, 160] int64
+
+
+@dataclass(frozen=True)
+class Segment:
+    seq: int
+    slot: int
+    ctx: int                    # tokens already computed for this sequence: this segment's positions are ctx..
+    start: int                  # first token of the segment in the step's flat arrays
+    length: int
+
+
+@dataclass(frozen=True)
+class Step:
+    ids: torch.Tensor           # [N] int64
+    segments: "tuple[Segment, ...]"
+    marks: tuple = ()           # ((position into ids, snapshot) ...): block boundaries inside a prefill segment
+
+    def __post_init__(self):
+        if self.ids.ndim != 1 or self.ids.dtype != torch.int64 or not self.segments:
+            raise ValueError("a step needs a flat int64 token vector and nonempty segments")
+        if self.marks:
+            positions = [p for p, _ in self.marks]
+            if (len(self.segments) != 1 or positions != sorted(set(positions)) or positions[0] <= 0
+                    or positions[-1] >= self.ids.numel()):
+                raise ValueError("marks are increasing positions strictly inside a single prefill segment")
+        end, seqs, slots = 0, set(), set()
+        for s in self.segments:
+            if s.start != end or s.length <= 0 or s.ctx < 0 or s.seq < 0 or s.slot <= 0:
+                raise ValueError("segments must cover tokens contiguously with valid contexts and state slots")
+            if s.seq in seqs or s.slot in slots:
+                raise ValueError("a sequence and its state slot may appear only once per step")
+            seqs.add(s.seq)
+            slots.add(s.slot)
+            end += s.length
+        if end != self.ids.numel():
+            raise ValueError("segment lengths must cover every token exactly once")
+
+    @property
+    def positions(self) -> torch.Tensor:
+        return torch.cat([torch.arange(s.ctx, s.ctx + s.length, device=self.ids.device) for s in self.segments])
+
+    @staticmethod
+    def prefill(ids: torch.Tensor, ctx: int, seq: int, slot: int, marks: tuple = ()) -> "Step":
+        return Step(ids, (Segment(seq, slot, ctx, 0, ids.shape[0]),), marks)
+
+    @staticmethod
+    def decode(chunks) -> "Step":
+        """chunks: (ids, ctx, seq, slot) per sequence, 1 + K draft tokens each."""
+        segs, start = [], 0
+        for ids, ctx, seq, slot in chunks:
+            segs.append(Segment(seq, slot, ctx, start, ids.shape[0]))
+            start += ids.shape[0]
+        return Step(torch.cat([c[0] for c in chunks]), tuple(segs))
+
+
+@dataclass
+class DeviceStep:
+    """A captured decode step: `rows` rows of `tokens` ids each, back to back, with each row's context, state slot and
+    sequence on the device -- the graph's static inputs, rewritten in place before a replay (decode_graphs.py).
+    `blocks` is the context bucket's page-table width: every row's positions lie below blocks * F.block."""
+    ids: torch.Tensor           # [rows * tokens] int64
+    contexts: torch.Tensor      # [rows] int64
+    slots: torch.Tensor         # [rows] int64
+    seqs: torch.Tensor          # [rows] int64: block-table rows
+    tokens: int
+    blocks: int
+    captured = True
+    marks = ()
+
+    @property
+    def rows(self) -> int:
+        return self.contexts.numel()
+
+
+@dataclass
+class StepMeta:
+    """The step's addressing, built once on the device and read by every QSA layer and the PLE injection."""
+    positions: torch.Tensor     # [N] int64
+    positions32: torch.Tensor   # [N] int32
+    rows_req: torch.Tensor      # [N] int32: the segment index of each row
+    page_table: torch.Tensor    # [n, blocks] int32: each segment's physical blocks
+    lengths: torch.Tensor       # [n] int32: ctx + length
+    starts: torch.Tensor        # [n + 1] int32: row offsets of the segments
+    slot_table: torch.Tensor    # [n, 1] int32: each segment's state slot (the key ring's "page")
+    kv_slots: torch.Tensor      # [N] int32: page * block + pos % block
+    key_slots: torch.Tensor     # [N] int32: page * (block/4) + (pos/4) % (block/4) where pos closes a group, else -1
+    ring_slots: torch.Tensor    # [N] int32: slot * ring + pos % ring
+
+
+class Qwen38Net:
+    def __init__(self, F: Facts, comm, lanes: Lanes, layers=None, *, mtp: bool = True):
+        if comm.world_size != TP:
+            raise ValueError(f"qwen38 is written for TP={TP}; comm has world {comm.world_size}")
+        self.F, self.comm, self.lanes, self.mtp = F, comm, lanes, mtp
+        self.rank = comm.rank
+        self.layers = list(range(F.layers)) if layers is None else list(layers)
+        if not self.layers or len(set(self.layers)) != len(self.layers) or any(not 0 <= L < F.layers for L in self.layers):
+            raise ValueError("model layers must be nonempty, unique and inside the profile")
+        self.first_expert = F.expert_range(self.rank)[0]
+        self.vp = F.vocab_local
+        self.conv_ring = F.conv - 1 + F.spec_k         # GDN conv inputs kept per slot: the window plus K drafts
+        self.rec_ring = F.spec_k + 1                   # GDN states kept per slot: one per verify position
+        self.p = None
+        self.dense = {}
+        self._experts = {}
+        self._ple = self._ple_hash = self._ple_table = None
+
+    # -- binding ---------------------------------------------------------------------------------------------------
+    def specs(self):
+        return specs.all_specs(self.F, self.layers, mtp=self.mtp)
+
+    def bind(self, views: dict) -> None:
+        from engine.base.params import bind
+        from engine.modules.modelopt_scales import ModelOptScales
+        self.p = bind(self.specs(), views)
+        F, p = self.F, self.p
+        for prefix in [f"L{L}." for L in self.layers] + (["mtp.L0."] if self.mtp else []):
+            n = prefix + "moe."
+            scales = ModelOptScales.bind(*(p[n + s] for s in ("w13_alpha", "a13_scale", "w2_alpha", "a2_scale")),
+                                         experts=p[n + "w13"].shape[0], device=p[n + "w13"].device)
+            if self.lanes.moe_prepare is not None:
+                self.lanes.moe_prepare(p[n + "w13"], p[n + "w13_sf"], p[n + "w2"], p[n + "w2_sf"], F.topk_experts,
+                                       scales=scales)
+            self._experts[prefix] = partial(self.lanes.moe, w13=p[n + "w13"], w13_sf=p[n + "w13_sf"], w2=p[n + "w2"],
+                                            w2_sf=p[n + "w2_sf"], scales=scales, first_expert=self.first_expert)
+        ple = [L for L in self.layers if L in F.ple_layers]
+        if ple:
+            L = ple[0]
+            self._ple = self._ple_feature(L)
+            # the hash over the checkpoint's own buffers, on the device (equal to the derived ones, checked above): a
+            # captured step must not copy host tensors in
+            self._ple_hash = replace(self._ple.hashes(L), multipliers=p[f"L{L}.ple.layer_multipliers"],
+                                     sizes=p[f"L{L}.ple.heads_vocab"], offsets=p[f"L{L}.ple.heads_offsets"])
+            self._ple_table = self._ple_table_bytes(L)
+
+    @staticmethod
+    def dense_names(keys):
+        """The dense projections the W4A8/FP8 lanes serve, with the calibration name of each (the pack store's). PLE's
+        two projections are not among them: the injection's gate is engine/modules' form over BF16 weights, once a step."""
+        names = {"gdn.in_proj": "linear_attn.in_proj_qkvzba", "gdn.out_proj": "linear_attn.out_proj",
+                 "attn.in_proj": "self_attn.in_proj_qgkvi", "attn.o_proj": "self_attn.o_proj",
+                 "moe.sh_gate_up": "mlp.shared_expert.gate_up_proj", "moe.sh_down": "mlp.shared_expert.down_proj"}
+        out = {}
+        for key in keys:
+            head, _, suffix = key.partition(".")
+            if head == "mtp":
+                layer, _, rest = suffix.partition(".")
+                if rest in names:
+                    out[key] = f"Qwen4ExpForCausalLM/mtp.layers.0.{names[rest]}"
+            elif head.startswith("L") and suffix in names:
+                out[key] = f"Qwen4ExpForCausalLM/model.language_model.layers.{head[1:]}.{names[suffix]}"
+        return out
+
+    def prepare_dense(self, store=None, *, consume_weights=False):
+        """The dense lanes (engine/kernels/dense): W4A8 at decode rows, FP8 above; the shared expert's 160-column down
+        projection through PaddedDenseLinear. No channel smoothing: its fold divides a plain norm weight, and every
+        norm this model has is unit-offset. The hyper-connection mixers stay BF16 matmuls inside their lane (10,240
+        wide, W4 packs do not tile) and the router stays a BF16 GEMM."""
+        from engine.kernels.dense import DenseLinear, FP8Linear, PaddedDenseLinear
+        self.dense = {}
+        for key, name in self.dense_names(self.p).items():
+            weight = self.p[key]
+            aligned = weight.shape[1] % 128 == 0
+            lane = DenseLinear(weight, store=store, name=name) if aligned else \
+                PaddedDenseLinear(weight, prefill=True, store=store, name=name, smooth=None)
+            self.dense[key] = lane
+            if consume_weights and hasattr(lane, "consume_weight"):
+                lane.consume_weight(weight)
+                self.p[key] = None
+        head_fp8 = store.pack_fp8(self.p["head"], HEAD_NAME) if (store is not None and store.calibrated(HEAD_NAME)) else None
+        self.dense["head"] = FP8Linear(self.p["head"], quantized=head_fp8, name=HEAD_NAME)
+
+    def linear(self, x, name):
+        lane = self.dense.get(name)
+        return lane(x) if lane is not None else torch.nn.functional.linear(x, self.p[name])
+
+    # -- embed / head -----------------------------------------------------------------------------------------------
+    def embed(self, ids: torch.Tensor) -> torch.Tensor:
+        from engine.modules.token_embedding import lookup
+        return self.comm.all_reduce(lookup(ids, self.p["embed"], self.rank * self.vp))
+
+    def head_local(self, h: torch.Tensor) -> torch.Tensor:
+        return self.linear(h, "head")
+
+    def head(self, h: torch.Tensor) -> torch.Tensor:
+        return self.comm.all_gather(self.head_local(h)[:, :self.vp], dim=-1)
+
+    def head_tokens(self, h: torch.Tensor, decodable=None) -> torch.Tensor:
+        from engine.modules.vocab import argmax
+        return argmax(self.head_local(h)[:, :self.vp], self.comm, self.rank * self.vp, decodable)
+
+    # -- the step's addressing -----------------------------------------------------------------------------------------
+    def step_meta(self, step, caches) -> StepMeta:
+        """The step's addressing. A host step's page table is cut to the blocks its longest segment reaches (the QSA
+        scores are as wide as the table); a captured step's is its bucket's width, gathered on the device, with the
+        unreserved entries (-1) read as page 0 -- they lie past every row's length, so no kernel reads them."""
+        F = self.F
+        dev = step.ids.device
+        if getattr(step, "captured", False):
+            n, t = step.rows, step.tokens
+            positions = (step.contexts[:, None] + iota(t, dev)).reshape(-1)
+            rows_req = iota(n, dev, torch.int32)[:, None].expand(n, t).reshape(-1)
+            page_table = caches.block_table[:, :step.blocks].index_select(0, step.seqs).clamp_min_(0)
+            starts = iota(n + 1, dev, torch.int32) * t
+            slot_table = step.slots.to(torch.int32)[:, None]
+            lengths = (step.contexts + t).to(torch.int32)
+        else:
+            n = len(step.segments)
+            positions = step.positions
+            counts = [s.length for s in step.segments]
+            rows_req = torch.repeat_interleave(torch.arange(n, device=dev, dtype=torch.int32),
+                                               torch.tensor(counts, device=dev))
+            seqs = torch.tensor([s.seq for s in step.segments], device=dev, dtype=torch.long)
+            blocks = -(-max(s.ctx + s.length for s in step.segments) // F.block)
+            page_table = caches.block_table[:, :blocks].index_select(0, seqs)
+            starts = torch.tensor([0] + list(torch.tensor(counts).cumsum(0).tolist()), device=dev, dtype=torch.int32)
+            slot_table = torch.tensor([[s.slot] for s in step.segments], device=dev, dtype=torch.int32)
+            lengths = torch.tensor([s.ctx + s.length for s in step.segments], device=dev, dtype=torch.int32)
+        per_group = F.block // F.idx_ratio
+        rr = rows_req.long()
+        pages = page_table[rr, positions // F.block]
+        kv_slots = (pages.long() * F.block + positions % F.block).to(torch.int32)
+        closes = (positions + 1) % F.idx_ratio == 0
+        group = positions // F.idx_ratio
+        key_pages = page_table[rr, group // per_group]
+        key_slots = torch.where(closes, key_pages.long() * per_group + group % per_group,
+                                torch.full_like(positions, -1)).to(torch.int32)
+        from engine.profiles.qwen38.caches import QSA_KEY_RING
+        ring_slots = (slot_table[rr, 0].long() * QSA_KEY_RING + positions % QSA_KEY_RING).to(torch.int32)
+        return StepMeta(positions, positions.to(torch.int32), rows_req, page_table, lengths, starts, slot_table,
+                        kv_slots, key_slots, ring_slots)
+
+    # -- the forward ---------------------------------------------------------------------------------------------------
+    def forward(self, step: Step, caches, *, last_hidden_only: bool = False, streams: bool = False):
+        """One step -> the closing mixer's hidden [N, H] (or the segments' last rows with `last_hidden_only`), and with
+        `streams` also the residual streams before the close for every row (what the MTP head fuses)."""
+        F, p, lanes = self.F, self.p, self.lanes
+        meta = self.step_meta(step, caches)
+        rows = getattr(step, "captured", False)
+        h = self.embed(step.ids).repeat(1, F.hc)
+        out = inject = None
+        for L in self.layers:
+            n = f"L{L}."
+            if L in F.ple_layers:
+                if out is not None:
+                    h = lanes.hc_leave(h, out, inject, F.hc)
+                    out = None
+                h = h + (self._ple_inject_rows(L, h, step, caches) if rows else self._ple_inject(L, h, step, meta, caches))
+            x, inject, h = self._site(n + "hc.attn.", h, out, inject)
+            if F.is_qsa(L):
+                out = self._qsa(L, x, step, meta, caches)
+            else:
+                out = self._gdn_rows(L, x, step, caches) if rows else self._gdn(L, x, step, caches)
+            x, inject, h = self._site(n + "hc.mlp.", h, out, inject)
+            out = self._moe(n, x)
+        h, normed = lanes.hc_leave_norm(h, out, inject, p["close.norm"], F.rms_eps, F.hc)
+        hidden, _ = lanes.hc_mix(normed, p["close.down"], p["close.up"], F.hc, inject=False)
+        if last_hidden_only:
+            if rows:
+                raise ValueError("a captured step keeps every row; its caller selects them")
+            last = torch.tensor([s.start + s.length - 1 for s in step.segments], device=hidden.device)
+            hidden = hidden.index_select(0, last)
+        return (hidden, h) if streams else hidden
+
+    def _site(self, prefix, h, out, inject):
+        """Enter a sublayer: the previous one's output leaves into the streams and they are normalised in one pass."""
+        F, p, lanes = self.F, self.p, self.lanes
+        if out is None:
+            normed = lanes.hc_norm(h, p[prefix + "norm"], F.rms_eps, F.hc)
+        else:
+            h, normed = lanes.hc_leave_norm(h, out, inject, p[prefix + "norm"], F.rms_eps, F.hc)
+        x, injection = lanes.hc_mix(normed, p[prefix + "down_inject"], p[prefix + "up"], F.hc, inject=True)
+        return x, injection, h
+
+    # -- GatedDeltaNet -------------------------------------------------------------------------------------------------
+    def _gdn(self, L: int, x: torch.Tensor, step: Step, caches) -> torch.Tensor:
+        F, p, lanes, n = self.F, self.p, self.lanes, f"L{L}.gdn."
+        N = x.shape[0]
+        Hk, Hv, D = F.k_heads_local, F.v_heads_local, F.k_dim
+        proj = self.linear(x, n + "in_proj")
+        qkv, z, b, a = proj.split([F.qkv_local, Hv * D, Hv, Hv], dim=-1)
+        wc, wr = self.conv_ring, self.rec_ring
+        decode = all(s.length <= wr for s in step.segments)
+        decay, beta = lanes.gdn_gates(a, b, p[n + "A_log"], p[n + "dt_bias"], sigmoid_beta=not decode)
+        core = torch.empty(N, Hv, D, dtype=x.dtype, device=x.device)
+        for s in step.segments:
+            sl = slice(s.start, s.start + s.length)
+            conv, rec = caches.gdn(L, s.slot)
+            if s.length <= wr:
+                y = lanes.conv_ring(qkv[sl], p[n + "conv"], conv[None], 0, s.ctx)
+                q, k, v = self._heads(y, s.length)
+                o = lanes.gdn_ring(q, k, v, decay[sl][None], beta[sl][None], rec[None], 0, s.ctx)
+            else:
+                hist_pos = s.ctx + torch.arange(-(F.conv - 1), 0, device=x.device)
+                hist = conv[:, hist_pos.clamp_min(0) % wc].masked_fill((hist_pos < 0)[None, :], 0) if s.ctx else None
+                y, _ = lanes.conv_prefill(qkv[sl], p[n + "conv"], hist)
+                keep = min(s.length, wc)
+                pos = s.ctx + torch.arange(s.length - keep, s.length, device=x.device)
+                conv[:, pos % wc] = qkv[sl][-keep:].T
+                q, k, v = self._heads(y, s.length)
+                state0 = rec[(s.ctx - 1) % wr][None] if s.ctx > 0 else None
+                marks = [(m, snap) for m, snap in step.marks if 0 < m < s.length] if step.marks else []
+                if marks:
+                    if any(m % 64 for m, _ in marks):
+                        raise ValueError("a mark inside a prefill chunk sits on a 64-token kernel chunk")
+                    o, state, states = lanes.gdn_chunk(q, k, v, decay[sl][None], beta[sl][None], state0,
+                                                       states_at=[m // 64 for m, _ in marks])
+                    for (m, snap), st in zip(marks, states.unbind(0)):
+                        caches.mark_gdn(L, snap, st, qkv[sl][m - (F.conv - 1):m])
+                else:
+                    o, state = lanes.gdn_chunk(q, k, v, decay[sl][None], beta[sl][None], state0)
+                rec[(s.ctx + s.length - 1) % wr] = state[0]
+            core[sl] = o[0]
+        out = lanes.gdn_norm(core, z.view(N, Hv, D), p[n + "norm"], F.rms_eps)
+        return self.comm.all_reduce(self.linear(out, n + "out_proj"))
+
+    def _gdn_rows(self, L: int, x: torch.Tensor, step: DeviceStep, caches) -> torch.Tensor:
+        """`_gdn` for a captured decode step: the conv and the recurrence over every row in one launch each, each row's
+        program reading its own slot and context from the step's device vectors (the ring writes are those of the
+        per-row launches; engine/kernels/causal_conv_ring, engine/kernels/kda/ring)."""
+        F, p, lanes, n = self.F, self.p, self.lanes, f"L{L}.gdn."
+        N = x.shape[0]
+        Hv, D = F.v_heads_local, F.k_dim
+        if step.tokens > min(self.rec_ring, self.conv_ring, 8):
+            raise ValueError(f"a captured GDN step holds at most {min(self.rec_ring, self.conv_ring, 8)} tokens a row")
+        proj = self.linear(x, n + "in_proj")
+        qkv, z, b, a = proj.split([F.qkv_local, Hv * D, Hv, Hv], dim=-1)
+        decay, beta = lanes.gdn_gates(a, b, p[n + "A_log"], p[n + "dt_bias"], sigmoid_beta=False)
+        conv, rec = caches.gdn_fields(L)
+        y = lanes.conv_ring_rows(qkv, p[n + "conv"], conv, step.slots, step.contexts)
+        q, k, v = self._heads(y, N)
+        o = lanes.gdn_ring_rows(q, k, v, decay[None], beta[None], rec, step.slots, step.contexts)
+        out = lanes.gdn_norm(o[0], z.view(N, Hv, D), p[n + "norm"], F.rms_eps)
+        return self.comm.all_reduce(self.linear(out, n + "out_proj"))
+
+    def _heads(self, y, t):
+        F = self.F
+        qk = F.k_heads_local * F.k_dim
+        q, k, v = y.split([qk, qk, F.v_heads_local * F.v_dim], dim=-1)
+        return (q.reshape(1, t, F.k_heads_local, F.k_dim), k.reshape(1, t, F.k_heads_local, F.k_dim),
+                v.reshape(1, t, F.v_heads_local, F.v_dim))
+
+    # -- gated GQA with QSA selection ----------------------------------------------------------------------------------
+    def _qsa(self, L: int, x: torch.Tensor, step: Step, meta: StepMeta, caches, *, prefix=None, cache_layer=None):
+        F, p, lanes = self.F, self.p, self.lanes
+        n = prefix or f"L{L}.attn."
+        cache_layer = L if cache_layer is None else cache_layer
+        N = x.shape[0]
+        Hq, D, Hkv = F.heads_local, F.head_dim, F.kv_heads_local
+        idx_q = F.idx_heads * F.idx_dim
+        proj = self.linear(x, n + "in_proj")
+        qg, k, v, idx = proj.split([Hq * 2 * D, Hkv * D, Hkv * D, idx_q + F.idx_dim], dim=-1)
+        qg = qg.view(N, Hq, 2 * D)
+        q = lanes.norm_rope(qg[..., :D], p[n + "q_norm"], F.rms_eps, meta.positions, F.rope_theta, F.rotary_dim)
+        gate = qg[..., D:]
+        k = lanes.norm_rope(k.view(N, Hkv, D), p[n + "k_norm"], F.rms_eps, meta.positions, F.rope_theta, F.rotary_dim)
+        v = v.reshape(N, Hkv, D)
+        if Hkv != 1:
+            raise ValueError("the QSA stores write one KV head a rank (2 KV heads replicated over TP=4)")
+        K, V = caches.kv(cache_layer)
+        lanes.qsa_store(K, meta.kv_slots, k.reshape(N, D))
+        lanes.qsa_store(V, meta.kv_slots, v.reshape(N, D))
+        # the indexer: the index queries normalised and rotated at their positions; the raw key pooled into every group
+        # this step closes (ring members before the step, this step's rows after), normalised and rotated at the
+        # group's first position, stored; then the raw keys into the ring by position
+        iq = lanes.norm_rope(idx[:, :idx_q].reshape(N, F.idx_heads, F.idx_dim), p[n + "idx_q_norm"], F.rms_eps,
+                             meta.positions, F.rope_theta, F.rotary_dim)
+        ik = idx[:, idx_q:].contiguous()
+        ring = caches.key_ring(cache_layer)
+        pooled, first = lanes.qsa_compress(ik[:, None, :], meta.positions[:, None, None].expand(N, 1, 3).contiguous(),
+                                           ring, meta.slot_table, meta.rows_req, meta.starts, meta.positions,
+                                           meta.key_slots, F.idx_ratio)
+        keys = lanes.norm_rope(pooled, p[n + "idx_k_norm"], F.rms_eps, first[:, 0].contiguous(), F.rope_theta,
+                               F.rotary_dim)
+        lanes.qsa_store(caches.index_keys(cache_layer), meta.key_slots, keys[:, 0])
+        lanes.qsa_store(ring, meta.ring_slots, ik)
+        selected = lanes.qsa_select(iq, caches.index_keys(cache_layer), meta.page_table, meta.rows_req,
+                                    meta.positions32, meta.lengths, F.idx_budget, F.idx_ratio)
+        attended = lanes.qsa_attend(q.contiguous(), K, V, selected, meta.page_table, meta.rows_req)
+        out = (attended.float() * torch.sigmoid(gate.float())).to(x.dtype).reshape(N, Hq * D)
+        return self.comm.all_reduce(self.linear(out, n + "o_proj"))
+
+    # -- MoE ----------------------------------------------------------------------------------------------------------
+    def _moe(self, prefix: str, x: torch.Tensor) -> torch.Tensor:
+        F, p, lanes = self.F, self.p, self.lanes
+        n = prefix + "moe."
+        logits = torch.mm(x, p[n + "gate"].t())
+        ids, weights = lanes.route(logits, F.topk_experts)
+        routed = self._experts[prefix](x, ids, weights)
+        shared = self.linear(lanes.swiglu(self.linear(x, n + "sh_gate_up")), n + "sh_down")
+        gate = torch.sigmoid(torch.mm(x, p[n + "shared_gate"].t()).float())
+        return self.comm.all_reduce((routed.float() + shared.float() * gate).to(x.dtype))
+
+    # -- PLE -----------------------------------------------------------------------------------------------------------
+    def _ple_feature(self, L: int):
+        """engine/modules/ngram_embedding.NGramInjection over the served weights: its hash, gate and conv are the
+        reference's torch forms (integer and elementwise work on a handful of rows); the table gather is served."""
+        from engine.modules.ngram_embedding import VARIANTS, NGramHash, NGramInjection
+        F, p = self.F, self.p
+        names = {"key": f"L{L}.ple.key_proj", "value": f"L{L}.ple.value_proj", "k_norm": f"L{L}.ple.norm_key",
+                 "q_norm": f"L{L}.ple.norm_query", "conv_norm": f"L{L}.ple.norm_conv", "conv": f"L{L}.ple.conv"}
+
+        def weights(layer, name):
+            return p[names[name]]
+
+        def hashed(layer):
+            return NGramHash.splitmix(ngram_size=F.ngram_size, heads=F.heads_per_ngram, unigram_vocab=F.vocab,
+                                      base=F.ngram_base, table_index=F.ple_layers.index(layer), seed=F.seed, eos=F.eos)
+
+        feature = NGramInjection(hidden=F.hidden, hc=F.hc, ngram_size=F.ngram_size, conv=F.ple_conv, eps=F.rms_eps,
+                                 **VARIANTS["ple"], hash=hashed, weights=weights, table=None, dtype="bfloat16")
+        made = feature.hashes(L)
+        if not (torch.equal(made.multipliers.cpu(), p[f"L{L}.ple.layer_multipliers"].cpu())
+                and torch.equal(made.offsets.cpu(), p[f"L{L}.ple.heads_offsets"].cpu())
+                and torch.equal(made.sizes.cpu(), p[f"L{L}.ple.heads_vocab"].cpu())):
+            raise ValueError("the PLE hash the engine derives differs from the checkpoint's buffers (D3)")
+        return feature
+
+    def _ple_table_bytes(self, L: int):
+        """The rank's table parts as one byte range: (a uint8 view from the first part's first byte to the last part's
+        last, each part's byte offset in it [parts] int64 on the device, the scalar scale). The parts are views of the
+        arena the loader carved (256-byte aligned, so parts are not one strided view); a row's bytes are then an address
+        gather, with no host read of which parts a step touches."""
+        F, p = self.F, self.p
+        parts = [p[f"L{L}.ple.table.{j}"] for j in range(F.ngram_parts // TP)]
+        storage = parts[0].untyped_storage().data_ptr()
+        if any(t.untyped_storage().data_ptr() != storage or t.dtype != torch.float8_e4m3fn or not t.is_contiguous()
+               for t in parts):
+            raise ValueError("the PLE table parts must be contiguous e4m3 views of one storage (the arena's)")
+        lo = min(t.storage_offset() for t in parts)
+        hi = max(t.storage_offset() + t.numel() for t in parts)
+        flat = parts[0].view(torch.uint8).as_strided((hi - lo,), (1,), lo)
+        offsets = torch.tensor([t.storage_offset() - lo for t in parts], dtype=torch.int64, device=flat.device)
+        return flat, offsets, p[f"L{L}.ple.scale"].float()
+
+    def _ple_rows(self, L: int, rows: torch.Tensor) -> torch.Tensor:
+        """Vocabulary-parallel table rows [N, heads] int64 -> embeddings [N, heads * width] BF16: this rank's rows
+        gathered by byte address and dequantised by the scalar scale (fp32, rounded once), other ranks' rows zero --
+        the caller's all-reduce sums the one rank that holds each row. No host read: the captured step's gather is the
+        eager step's, in pieces of PLE_GATHER_ROWS token rows."""
+        F = self.F
+        flat, offsets, scale = self._ple_table
+        per_rank = (F.ngram_parts // TP) * specs.PLE_SHARD_ROWS
+        width = F.ple_head_dim
+        columns = iota(width, rows.device)
+        out = torch.empty(rows.shape[0], rows.shape[1] * width, dtype=BF16, device=rows.device)
+        for lo in range(0, rows.shape[0], PLE_GATHER_ROWS):
+            local = rows[lo:lo + PLE_GATHER_ROWS] - self.rank * per_rank
+            mine = (local >= 0) & (local < per_rank)
+            local = torch.where(mine, local, torch.zeros_like(local))
+            at = offsets[local // specs.PLE_SHARD_ROWS] + (local % specs.PLE_SHARD_ROWS) * width
+            raw = flat[at[..., None] + columns].view(torch.float8_e4m3fn)
+            values = torch.where(mine[..., None], raw.float() * scale, torch.zeros((), dtype=F32, device=rows.device))
+            out[lo:lo + PLE_GATHER_ROWS] = values.to(BF16).flatten(-2)
+        return out
+
+    def _ple_inject(self, L: int, h: torch.Tensor, step: Step, meta: StepMeta, caches) -> torch.Tensor:
+        from engine.modules.causal_conv import causal_conv1d
+        from engine.modules.ngram_embedding import DEAD
+        F, p, feature = self.F, self.p, self._ple
+        made = self._ple_hash
+        context = F.ngram_size - 1
+        span = (F.ple_conv - 1) * F.ngram_size
+        out = torch.empty_like(h)
+        w = lambda name: feature.weights(L, name)
+        for s in step.segments:
+            sl = slice(s.start, s.start + s.length)
+            ids_ring, conv_ring = caches.ple(s.slot)
+            r_ids, r_conv = ids_ring.shape[0], conv_ring.shape[1]
+            ids = step.ids[sl]
+            prev = torch.arange(s.ctx - context, s.ctx, device=ids.device)
+            carried = torch.where(prev < 0, torch.full_like(prev, DEAD), ids_ring[prev.clamp_min(0) % r_ids])
+            history = torch.cat([carried, ids])
+            rows = made.rows(history, ids.numel())
+            embeddings = self.comm.all_reduce(self._ple_rows(L, rows))
+            gated = feature._gated(h[sl], embeddings, w).flatten(-2)
+            normed = feature._norm(gated, w("conv_norm"))
+            taps = torch.arange(s.ctx - span, s.ctx, device=ids.device)
+            held = torch.where((taps < 0)[None, :], torch.zeros((), dtype=conv_ring.dtype, device=ids.device),
+                               conv_ring[:, taps.clamp_min(0) % r_conv])
+            local, _ = causal_conv1d(normed, w("conv"), None, held if s.ctx else None, "silu", dilation=F.ngram_size)
+            out[sl] = gated + local
+            keep = min(s.length, r_conv)
+            written = s.ctx + torch.arange(s.length - keep, s.length, device=ids.device)
+            conv_ring[:, written % r_conv] = normed[-keep:].T.to(conv_ring.dtype)
+            keep_ids = min(s.length, r_ids)
+            written_ids = s.ctx + torch.arange(s.length - keep_ids, s.length, device=ids.device)
+            ids_ring[written_ids % r_ids] = ids[-keep_ids:]
+            for m, snap in step.marks:
+                if 0 < m < s.length:
+                    if m < span:
+                        raise ValueError("a PLE mark sits at a block boundary, past the conv's span")
+                    caches.mark_ple(snap, history[m:m + context], normed[m - span:m])
+        return out
+
+    def _ple_inject_rows(self, L: int, h: torch.Tensor, step: DeviceStep, caches) -> torch.Tensor:
+        """`_ple_inject` for a captured decode step, every row at once: each row's carried ids and conv taps gathered
+        from its slot's rings at its own positions (DEAD and zero before the sequence), the n-gram rows hashed
+        together, the table gathered by address, the gate and norm over all rows, the dilated conv over each row's
+        taps and new inputs (engine/modules/causal_conv.causal_conv1d_rows), and the rings written by position."""
+        from engine.modules.causal_conv import causal_conv1d_rows
+        from engine.modules.ngram_embedding import DEAD
+        F, feature = self.F, self._ple
+        n, t, dev = step.rows, step.tokens, h.device
+        ids_ring, conv_ring = caches.ple_fields()                       # [slots, R_ids] i64, [slots, C, R_conv] bf16
+        r_ids, r_conv = ids_ring.shape[1], conv_ring.shape[2]
+        context, span, width = F.ngram_size - 1, (F.ple_conv - 1) * F.ngram_size, F.hc * F.hidden
+        if context + t > r_ids or span + t > r_conv:
+            raise ValueError("a captured PLE step writes more tokens than its rings keep beside their history")
+        slot = step.slots[:, None]
+        ctx = step.contexts[:, None]
+        prev = ctx - context + iota(context, dev)                        # [n, context]
+        carried = torch.where(prev < 0, torch.full_like(prev, DEAD), ids_ring[slot, prev.clamp_min(0) % r_ids])
+        ids = step.ids.view(n, t)
+        rows = self._ple_hash.rows_batched(torch.cat([carried, ids], dim=1), t).reshape(n * t, -1)
+        embeddings = self.comm.all_reduce(self._ple_rows(L, rows))
+        w = lambda name: feature.weights(L, name)
+        gated = feature._gated(h, embeddings, w).flatten(-2)             # [n*t, hc*H]
+        normed = feature._norm(gated, w("conv_norm"))
+        taps = ctx - span + iota(span, dev)                              # [n, span]
+        held = conv_ring[slot, :, taps.clamp_min(0) % r_conv]            # [n, span, C]
+        held = torch.where((taps < 0)[:, :, None], torch.zeros((), dtype=held.dtype, device=dev), held)
+        local = causal_conv1d_rows(normed.view(n, t, width), w("conv"), held.transpose(1, 2), "silu",
+                                   dilation=F.ngram_size)
+        cells = ctx + iota(t, dev)
+        conv_ring[slot, :, cells % r_conv] = normed.view(n, t, width).to(conv_ring.dtype)
+        ids_ring[slot, cells % r_ids] = ids
+        return gated + local.reshape(n * t, width)
+
+    # -- the MTP head --------------------------------------------------------------------------------------------------
+    def mtp_forward(self, step: Step, given: torch.Tensor, caches, *, last_hidden_only: bool = True):
+        """The MTP head over a step whose tokens are the target's next tokens and `given` the target's streams at the
+        positions before them [N, hc*H]: fuse, one QSA + MoE layer (model layer F.layers, its rows in the target's
+        blocks), the head's closing mixer -> (hidden [N or segments, H], its streams for chaining)."""
+        F, p, lanes = self.F, self.p, self.lanes
+        meta = self.step_meta(step, caches)
+        e = lanes.hc_norm(self.embed(step.ids), p["mtp.pre_fc_norm_embedding"], F.rms_eps, 1)
+        e = torch.nn.functional.linear(e, p["mtp.fc_embedding"])
+        g = lanes.hc_norm(given, p["mtp.pre_fc_norm_hidden"], F.rms_eps, 1).view(-1, F.hc, F.hidden)
+        h = (torch.nn.functional.linear(g, p["mtp.fc_hidden"]) + e[:, None, :]).reshape(-1, F.hc * F.hidden)
+        x, inject, h = self._site("mtp.L0.hc.attn.", h, None, None)
+        out = self._qsa(F.layers, x, step, meta, caches, prefix="mtp.L0.attn.", cache_layer=F.layers)
+        x, inject, h = self._site("mtp.L0.hc.mlp.", h, out, inject)
+        out = self._moe("mtp.L0.", x)
+        streams, normed = lanes.hc_leave_norm(h, out, inject, p["mtp.close.norm"], F.rms_eps, F.hc)
+        hidden, _ = lanes.hc_mix(normed, p["mtp.close.down"], p["mtp.close.up"], F.hc, inject=False)
+        if last_hidden_only:
+            last = torch.tensor([s.start + s.length - 1 for s in step.segments], device=hidden.device)
+            return hidden.index_select(0, last), streams.index_select(0, last)
+        return hidden, streams
+
+
+__all__ = ["Segment", "Step", "StepMeta", "Qwen38Net", "HEAD_NAME"]

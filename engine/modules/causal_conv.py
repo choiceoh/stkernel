@@ -36,6 +36,24 @@ def causal_conv1d(x: torch.Tensor, weight: torch.Tensor, bias: "torch.Tensor | N
     return y.T.to(x.dtype), padded[:, t:].contiguous()                 # last K-1 inputs
 
 
+def causal_conv1d_rows(x: torch.Tensor, weight: torch.Tensor, initial_state: torch.Tensor,
+                       activation: "str | None" = "silu", dilation: int = 1) -> torch.Tensor:
+    """`causal_conv1d(x[b], weight, None, initial_state[b], activation, dilation)[0]` for every row b at once:
+    x [B, T, C], weight [C, K], initial_state [B, C, (K-1)*dilation] (zeros where a row has no history) -> y [B, T, C].
+    The same fp32 taps accumulated in the same order; no final state (a ring caller writes its own inputs)."""
+    b, t, c = x.shape; k = weight.shape[1]
+    span = (k - 1) * dilation
+    if initial_state.shape != (b, c, span):
+        raise ValueError(f"rows history is [B, C, {span}], got {tuple(initial_state.shape)}")
+    padded = torch.cat([initial_state.float(), x.float().transpose(1, 2)], dim=2)      # [B, C, span+T]
+    y = torch.zeros(b, c, t, device=x.device, dtype=torch.float32)
+    for i in range(k):
+        y += weight[:, i:i + 1].float() * padded[:, :, i * dilation:i * dilation + t]
+    if activation == "silu":
+        y = torch.nn.functional.silu(y)
+    return y.transpose(1, 2).to(x.dtype)
+
+
 def conv_states(x: torch.Tensor, initial_state: "torch.Tensor | None", span: int) -> torch.Tensor:
     """[T, C, span] float32: the conv's state after each token of x [T, C] -- the last `span` inputs up to it, the
     slices `causal_conv1d` would return had the tokens come one step each (a verify step keeps all of them)."""
