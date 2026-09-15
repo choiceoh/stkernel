@@ -326,15 +326,16 @@ class Drafter:
                     p[f"layers.{L}."+suffix]=None
         self.fast_attention = True
 
-    # The block MLP has the target's C1 input-cell shapes (gate_up 6144x4096, down 4096x3072), and a propose
-    # block at C=1 is one K=7 block of 8 rows: those two projections take the same cells the target binds.
+    # The block MLP has the target's input-cell shapes (gate_up 6144x4096, down 4096x3072), and a propose block is
+    # one K=7 block of 8 rows per sequence: at C=1 those two projections take the C1 cells, at C=2 (16 rows) the
+    # sixteen-row CTAs (measurements/st_c2_dense_cells_20260915, chains of the five blocks with evicted caches).
     DECODE_CELL_WEIGHTS = ("mlp.gate_up", "mlp.down_proj.weight")
 
     def bind_decode_cells(self, capture_rows):
-        """Before capture, once the target has bound its decode fastpath rows: the 8-row width of those rows,
-        on every block MLP projection whose single W4 pack is a declared C1 cell. Returns the bound names."""
+        """Before capture, once the target has bound its decode fastpath rows: the 8- and 16-row widths of those
+        rows, on every block MLP projection whose single W4 pack is a declared cell. Returns the bound names."""
         from engine.kernels.dense import bound_input_cell
-        rows = tuple(m for m in (capture_rows or ()) if m == 8)
+        rows = tuple(m for m in (capture_rows or ()) if m in (8, 16))
         bound = []
         for L in range(self.F.layers):
             for weight in self.DECODE_CELL_WEIGHTS:

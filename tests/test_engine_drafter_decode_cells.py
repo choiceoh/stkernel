@@ -1,4 +1,4 @@
-"""The drafter's block MLP takes the target's C1 input cells at 8 rows, and the boot proof requires them to run."""
+"""The drafter's block MLP takes the target's input cells at 8 and 16 rows, and the boot proof requires them to run."""
 import unittest
 from types import SimpleNamespace as NS
 
@@ -21,14 +21,17 @@ def drafter(layers=2):
 
 
 class DrafterDecodeCellTests(unittest.TestCase):
-    def test_only_the_mlp_projections_bind_and_only_at_eight_rows(self):
+    def test_only_the_mlp_projections_bind_and_only_at_eight_and_sixteen_rows(self):
         d = drafter()
-        bound = Drafter.bind_decode_cells(d, (8, 16))
+        bound = Drafter.bind_decode_cells(d, (8, 16, 24, 32))
         self.assertEqual(bound, ['layers.0.mlp.gate_up', 'layers.0.mlp.down_proj.weight',
                                  'layers.1.mlp.gate_up', 'layers.1.mlp.down_proj.weight'])
-        self.assertEqual(d.decode_cell_rows, (8,))
+        self.assertEqual(d.decode_cell_rows, (8, 16))
         for name, owner in d.dense.items():
-            self.assertEqual(owner.decode_input_rows, (8,) if name in bound else ())
+            self.assertEqual(owner.decode_input_rows, (8, 16) if name in bound else ())
+        d = drafter()
+        self.assertEqual(len(Drafter.bind_decode_cells(d, (8,))), 4)
+        self.assertEqual(d.decode_cell_rows, (8,))
 
     def test_nothing_binds_without_fastpath_rows_or_a_w4_decode_pack(self):
         d = drafter()
@@ -48,8 +51,12 @@ class DrafterDecodeCellTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'down_proj'):
             drafter_decode_cell_report(d)
         d.dense['layers.0.mlp.down_proj.weight'].bound_input_executed.add(8)
+        with self.assertRaisesRegex(RuntimeError, 'not executed'):
+            drafter_decode_cell_report(d)            # the 16-row width is declared too
+        for name in ('layers.0.mlp.gate_up', 'layers.0.mlp.down_proj.weight'):
+            d.dense[name].bound_input_executed.add(16)
         self.assertEqual(drafter_decode_cell_report(d)['dense'],
-                         {'layers.0.mlp.gate_up': [8], 'layers.0.mlp.down_proj.weight': [8]})
+                         {'layers.0.mlp.gate_up': [8, 16], 'layers.0.mlp.down_proj.weight': [8, 16]})
 
 
 if __name__ == '__main__':
