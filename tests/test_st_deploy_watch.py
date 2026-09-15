@@ -116,6 +116,79 @@ class GateTests(unittest.TestCase):
         self.assertEqual(watch.regressed({}, {"test_engine_glm53": "NO VERDICT"}), ["test_engine_glm53"])
 
 
+class GateContainerTests(unittest.TestCase):
+    """The suite runs in the seed image the tree pins, not under the head's python (no torch there: 2026-09-15)."""
+
+    def tree(self, root, names=("test_engine_a", "test_engine_b"), seed="sha256:" + "5" * 64):
+        import json
+        tree = Path(root)
+        (tree / "engine/runtime").mkdir(parents=True)
+        if seed is not None:
+            (tree / "engine/runtime/dependencies.json").write_text(json.dumps({"seed_image_id": seed}))
+        (tree / "tests").mkdir()
+        for name in names:
+            (tree / "tests" / f"{name}.py").write_text("")
+        return tree
+
+    def test_the_files_run_in_the_tree_s_seed_image_with_cuda_hidden_and_no_network(self):
+        import json
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as root:
+            tree = self.tree(root)
+            said = "noise\n" + watch.GATE_MARK + json.dumps({"test_engine_a": "OK", "test_engine_b": "FAILED (errors=1, id='42')"})
+            with patch.object(watch, "run", return_value=(0, said + "\n", "")) as run:
+                self.assertEqual(watch.failures(tree, 900), {"test_engine_b": "FAILED (errors=1, id=..)"})
+            cmd = run.call_args.args[0]
+            self.assertEqual(cmd[:2], ["docker", "run"])
+            for flag in (["--pull", "never"], ["--network", "none"], ["-e", "CUDA_VISIBLE_DEVICES="],
+                         ["-e", "NVIDIA_VISIBLE_DEVICES=void"], ["-v", f"{tree}:/repo:ro"]):
+                self.assertTrue(any(cmd[i:i + 2] == flag for i in range(len(cmd) - 1)), flag)
+            self.assertIn("sha256:" + "5" * 64, cmd)
+            self.assertNotIn(sys.executable, cmd[:cmd.index("--entrypoint")])
+
+    def test_a_container_that_says_nothing_leaves_every_file_without_a_verdict(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as root:
+            tree = self.tree(root)
+            with patch.object(watch, "run", return_value=(125, "", "Unable to find image 'sha256:555' locally")):
+                after = watch.failures(tree, 900)
+        self.assertEqual(sorted(after), ["test_engine_a", "test_engine_b"])
+        self.assertTrue(all(v.startswith("NO VERDICT (gate container rc=125") for v in after.values()))
+        self.assertEqual(watch.regressed({}, after), ["test_engine_a", "test_engine_b"])   # refused, not waved through
+
+    def test_a_tree_that_pins_no_seed_is_not_judged_on_some_other_image(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as root:
+            tree = self.tree(root, seed=None)
+            with patch.object(watch, "run") as run:
+                after = watch.failures(tree, 900)
+            run.assert_not_called()
+        self.assertTrue(all(v.startswith("NO VERDICT (no seed image pinned") for v in after.values()))
+
+    def test_the_driver_reads_unittest_s_own_verdict_per_file(self):
+        """The in-container driver, run here on stdlib unittest: pass, fail, error, and a file that prints OK lines."""
+        import json
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as root:
+            tests = Path(root) / "tests"
+            tests.mkdir()
+            (tests / "__init__.py").write_text("")
+            body = "import unittest\nclass T(unittest.TestCase):\n    def test(self):\n        {}\n"
+            (tests / "test_engine_pass.py").write_text(body.format("print('  a check OK')"))
+            (tests / "test_engine_fail.py").write_text(body.format("self.fail('no')"))
+            (tests / "test_engine_error.py").write_text(body.format("raise RuntimeError('boom')"))
+            done = subprocess.run([sys.executable, "-c", watch.GATE_DRIVER, "60", "2"], cwd=root,
+                                  capture_output=True, text=True, timeout=120)
+        line = next(l for l in done.stdout.splitlines() if l.startswith(watch.GATE_MARK))
+        self.assertEqual(json.loads(line[len(watch.GATE_MARK):]),
+                         {"test_engine_error": "FAILED (errors=1)", "test_engine_fail": "FAILED (failures=1)",
+                          "test_engine_pass": "OK"})
+
+
 class GateIsNotOptionalTests(unittest.TestCase):
     def test_a_first_deploy_with_nothing_to_compare_against_is_refused_not_waved_through(self):
         """Skipping here would make the only ungated deploy the first one, which nobody is watching."""
