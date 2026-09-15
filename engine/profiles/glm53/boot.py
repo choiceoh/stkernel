@@ -1428,7 +1428,14 @@ def fleet(a) -> int:
         with rec.phase("capture decode"):
             engine.capture_decode(MAX_SEQS)
         with rec.phase("warmup shapes"):
-            paid = engine.warmup_shapes()                   # first-use JIT paid at boot, not on the first user (45차 §23 B2)
+            # The decode widths only: their host path (pinned id staging, the burst queue and readback) runs nowhere
+            # else before the door. The six prefill lengths (64..4,096) this used to add run no lane the memory warmup
+            # (128, 1,024, 32,256 tokens) and the kernel warmup (1, 8, 64, 512, 4,095) had not: the 32-row dense W4
+            # lane, 64-row mHC, 128-token sharding, 640 routed pairs and the 8,192-row router all sit inside those. Two
+            # warm boots of 3acae017 wrote no file to /cache from the kernel warmup to the door; these cost 4.66 and 4.56 s,
+            # every boot (measurements/st_boot_warmup_decode_only_20260915). A length-specialised Triton kernel (the
+            # conv's T) still compiles at a request's first new length, as it did for every length but these six.
+            paid = engine.warmup_shapes(lengths=())
         if engine.vision is None:                           # production serves images and video (PR #431): so does this boot, or it does not boot
             raise RuntimeError(f"{vision_mod.FILE} is missing from {a.ranks}: write it once per node with "
                                f"`python3 engine/profiles/glm53/preshard.py --vision --out {a.ranks}` (45차 §23 A7)")
