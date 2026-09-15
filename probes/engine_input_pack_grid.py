@@ -158,7 +158,9 @@ def main(ranks=None, *, samples=None, output=None):
         torch.manual_seed(915)
         report('identity', torch=torch.__version__, cuda=torch.version.cuda, device=torch.cuda.get_device_name(),
                source_sha256={f: hashlib.sha256((root/f).read_bytes()).hexdigest() for f in
-                              ('engine/kernels/dense/kernels.cu', 'probes/engine_input_pack_grid.py')},
+                              ('engine/kernels/dense/kernels.cu', 'engine/kernels/dense/__init__.py',
+                               'probes/engine_input_pack_grid.py', 'probes/engine_dense_cells.py',
+                               'probes/engine_decode_fusions.py')},
                scope='same-build C1 GPU components; not TP4 serving performance')
         ext = extension()
         exact_packs(report, ext)

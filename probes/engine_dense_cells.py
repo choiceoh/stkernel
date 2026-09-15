@@ -217,7 +217,8 @@ def cell_check(report, ext, cell, owners, rows, *, brackets, timing=True):
                                 inner = g[step % 2, 1:-1]
                                 if not inner.isfinite().all().item():
                                     raise RuntimeError(f'{name} {arm} left a non-finite direct output')
-                                torch.testing.assert_close(inner, want[step % 2, 1:-1], rtol=0, atol=0)
+                                torch.testing.assert_close(inner.view(torch.int16),
+                                                           want[step % 2, 1:-1].view(torch.int16), rtol=0, atol=0)
                                 if not (g[step % 2, (0, -1)].eq(-123.).all().item()
                                         and g[1 - step % 2].eq(-123.).all().item()):
                                     raise RuntimeError(f'{name} {arm} wrote outside its rebound destination')
@@ -226,12 +227,14 @@ def cell_check(report, ext, cell, owners, rows, *, brackets, timing=True):
                                 for a, b in zip(_values(got), _values(want)):
                                     if not a.isfinite().all().item():
                                         raise RuntimeError(f'{name} {arm} left a non-finite output')
-                                    torch.testing.assert_close(a, b, rtol=0, atol=0)
+                                    torch.testing.assert_close(a.view(torch.int16), b.view(torch.int16), rtol=0, atol=0)
             report('exact', cell=name, rows=rows, scope=scope, layers=list(layers[:len(group)]), arms=arms,
                    reference=arms[0], not_projections=[a for a in arms if a in PACK_ARMS], magnitudes=magnitudes, replay_orders='forward/reverse', direct_output=direct,
                    rebound_descriptor=direct, input_stride=x.stride(0),
                    plan=[ext.gemm2_plan(rows, o.rows, o.cols) for o in owners[0]])
             if timing:
+                # The last poison/replay case is zero; measure ordinary activations.
+                parent.normal_()
                 for control, candidate in plan[rows]:
                     bracket(report, graphs, control, candidate, brackets=brackets, calls=calls, cell=name, rows=rows,
                             scope=scope, layers=len(group), direct_output=direct)
