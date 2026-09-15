@@ -1,0 +1,88 @@
+{
+  "scope": "order of synchronization-class native instructions (SYNC|BAR|FENCE|VOTE|YIELD|HALT|TMA) in the retained SASS",
+  "pairs": {
+    "C1_M8_registers_control_to_cleanup": {
+      "control": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregs_de0baeb54a6576cb",
+      "candidate": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssync_583fa82cecaa89d9",
+      "control_sync_ops": 262,
+      "candidate_sync_ops": 253,
+      "unified_diff": [
+        "@@ -10,15 +10,7 @@",
+        " SYNCS.EXCH.64",
+        "-BAR.SYNC.DEFER_BLOCKING",
+        "-FENCE.VIEW.ASYNC.S",
+        "-SYNCS.EXCH.64",
+        "-SYNCS.EXCH.64",
+        "-SYNCS.EXCH.64",
+        "-SYNCS.EXCH.64",
+        "-BAR.SYNC.DEFER_BLOCKING",
+        "-FENCE.VIEW.ASYNC.S",
+        "-SYNCS.EXCH.64",
+        "-SYNCS.EXCH.64",
+        "-SYNCS.EXCH.64",
+        "-SYNCS.EXCH.64",
+        "-BAR.SYNC.DEFER_BLOCKING",
+        "+FENCE.VIEW.ASYNC.S",
+        "+SYNCS.EXCH.64",
+        "+SYNCS.EXCH.64",
+        "+SYNCS.EXCH.64",
+        "+SYNCS.EXCH.64",
+        " BAR.SYNC.DEFER_BLOCKING",
+        "@@ -78,3 +70,2 @@",
+        " BSYNC.RECONVERGENT",
+        "-BAR.SYNC.DEFER_BLOCKING",
+        " MEMBAR.ALL.CTA"
+      ]
+    },
+    "C2_M16_batch_control_to_cleanup": {
+      "control": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3_03700ce81bdf3798",
+      "candidate": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3sync_46a439c51a9ac540",
+      "control_sync_ops": 319,
+      "candidate_sync_ops": 311,
+      "unified_diff": [
+        "@@ -10,17 +10,10 @@",
+        " SYNCS.EXCH.64",
+        "-BAR.SYNC.DEFER_BLOCKING",
+        "-FENCE.VIEW.ASYNC.S",
+        "-SYNCS.EXCH.64",
+        "-SYNCS.EXCH.64",
+        "-SYNCS.EXCH.64",
+        "-SYNCS.EXCH.64",
+        "-SYNCS.EXCH.64",
+        "-SYNCS.EXCH.64",
+        "-BAR.SYNC.DEFER_BLOCKING",
+        "-FENCE.VIEW.ASYNC.S",
+        "-SYNCS.EXCH.64",
+        "-SYNCS.EXCH.64",
+        "-SYNCS.EXCH.64",
+        "-SYNCS.EXCH.64",
+        "-BAR.SYNC.DEFER_BLOCKING",
+        "+FENCE.VIEW.ASYNC.S",
+        "+SYNCS.EXCH.64",
+        "+SYNCS.EXCH.64",
+        "+SYNCS.EXCH.64",
+        "+FENCE.VIEW.ASYNC.S",
+        "+SYNCS.EXCH.64",
+        "+SYNCS.EXCH.64",
+        "+SYNCS.EXCH.64",
+        " BAR.SYNC.DEFER_BLOCKING",
+        "@@ -80,3 +73,2 @@",
+        " BSYNC.RECONVERGENT",
+        "-BAR.SYNC.DEFER_BLOCKING",
+        " MEMBAR.ALL.CTA"
+      ]
+    },
+    "C2_M16_batch_cleanup_to_cleanup_stamped": {
+      "control": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3sync_46a439c51a9ac540",
+      "candidate": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32swutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3sync_abea0b6cdba4dbcf",
+      "control_sync_ops": 311,
+      "candidate_sync_ops": 312,
+      "unified_diff": [
+        "@@ -73,2 +73,3 @@",
+        " BSYNC.RECONVERGENT",
+        "+BAR.SYNC.DEFER_BLOCKING",
+        " MEMBAR.ALL.CTA"
+      ]
+    }
+  }
+}

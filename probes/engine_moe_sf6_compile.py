@@ -30,7 +30,7 @@ def main():
     mode.add_argument('--compact-staging', action='store_true', help='compare compact FC1 inputs and disjoint FC2 scales')
     mode.add_argument('--register-scales', action='store_true', help='compare direct MMA scale registers')
     mode.add_argument('--batch-reform', action='store_true', help='compare the C2 M16 tile against the served M32 tile')
-    mode.add_argument('--sync-cleanup', action='store_true', help='compare batched pipeline initialization and C1 publication')
+    mode.add_argument('--sync-cleanup', action='store_true', help='compare batched pipeline initialization and C1/C2 publication')
     args = parser.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '':
         raise RuntimeError('compile requires CUDA_VISIBLE_DEVICES=')
@@ -153,6 +153,12 @@ def main():
             cases += [(8, dict(sf6_word_expand=False)),
                       (8, dict(sf6_separate=False, sf6_word_expand=False))]
         cases += [(rows, {}) for rows in (16, 32)]
+        if args.sync_cleanup:
+            # The C2 batch tile with retained scatter and FC2 prefetch, its
+            # control, the tile-only C2 sweep and stamped C2.
+            cases += [(16, dict(batch_reform=True)), (16, dict(batch_reform=True, sync_cleanup=False)),
+                      (16, dict(batch_reform=True, c2_direct_scatter=False)),
+                      (16, dict(batch_reform=True, stamps=True))]
         if args.batch_reform:
             # Isolate C2 tile/operand reuse from direct register scatter.
             # C1 retains its existing compiled handle.

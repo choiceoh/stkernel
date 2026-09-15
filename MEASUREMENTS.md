@@ -3069,6 +3069,26 @@ main `7306b4a6`(#952 CUDA 13.2.1, #955 C2 M16 reform, #960 SF6 레지스터, #96
 GPU 레인은 아직 돌리지 않았다.
 [소스 해시·초기화·게시·프로파일 시각·컴파일 근거](measurements/st_moe_sync_cleanup_20260914/README.md).
 
+### 970차 — C2 batch M16 타일에도 MoE 미사용 초기화·중복 동기화 제거 (2026-09-15, srv2 CPU, PR #970)
+
+PR #925의 정리(미사용 A 링 생략, 사용하는 두 파이프라인의 지연 fence+sync 한 번, 양자화 뒤 중복 장벽 제거)를
+`batch`의 C2 M16 타일로 넓혔다. #925를 병합할 때는 C2에서 한 번도 돌려 보지 않아 C1으로 막아 두었다. C2 타일도
+M16·FC1 half 하나·CTA 하나로 형상이 같다. C2에만 있는 읽기(Phase B 시작의 retained route 행, A2/SFA2 복사,
+direct scatter)는 모두 정리가 남기는 FC1 fence+게시 장벽 뒤에서 일어난다. prefetch의 FC2 3슬롯 링도 같은
+지연 fence+sync로 게시된다. stamps 모드는 이전 장벽을 유지하고, `sync_cleanup=False`는 별도 control 핸들이다.
+서빙 레시피 `t,r,sf6,q0`에는 `batch`가 없으므로 서빙 핸들은 바뀌지 않는다.
+
+CPU 56개가 통과했다. 실제 초기화 블록(3슬롯 prefetch 포함)과 실제 게시 꼬리를 128 레인에서
+C1/C2·정리 ON/OFF·stamps ON/OFF로 각 20개 스케줄씩 실행했다. C2에서는 다른 레인이 쓴 route 행을
+읽는 경우까지 포함한다. 남기는 장벽을 빼면 게시 전 읽기가 잡히는 음성 대조가 있고, 결함 넣기 4종도 모두 잡혔다.
+srv2 CUDA 13.2.1 시드(CuTe DSL 4.6.2, 장치 숨김)의 네이티브 컴파일은 14개 핸들이 모두 통과했다.
+정리 전후 정적 명령어는 C1 M8(레지스터) 3563→3547, C2 M16(scatter reuse+prefetch) 4029→4013으로
+양쪽 모두 16개 줄었다. SASS에서 초기화 CTA sync 3개, A 링 장벽 교환 4개, 작업 항목당 전 레인 rendezvous 1개가
+사라졌고, stamped C2는 그 rendezvous를 유지했다. 공유 할당(91136/100352 B)과 레지스터는 같다.
+작업 수이며 속도로 환산하지 않는다. GPU 수치·replay·step/s·수용률·품질은 미측정이다.
+`moe_pair_sync` GPU 레인은 준비만 했고, 플릿 티켓·GPU 컨텍스트·부팅은 없었다.
+[CPU 시뮬레이션·네이티브 컴파일·동기화 명령 순서 근거](measurements/st_moe_sync_cleanup_c2_20260915/README.md).
+
 ### ST C=2 mHC 소비 커널이 BF16 계수 팩을 읽는다 — 기본 적용 (2026-09-15, srv4 단일 GPU)
 
 K=7 C=2 검증 16행의 mHC 소비 커널이 C=1 처럼 무손실 BF16 계수 팩을 읽는다. 스텝당 84회인 패킷 소비와

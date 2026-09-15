@@ -39,7 +39,8 @@ def method(name, env, *, suspend=False):
 
 
 def geometry(reform=True, packed=True, separate=True, stages=2, word_expand=True,
-             fc2_word_expand=True, reuse=True, compact=True, fc2_stages=None, registers=False, sync_cleanup=True):
+             fc2_word_expand=True, reuse=True, compact=True, fc2_stages=None, registers=False, sync_cleanup=True,
+             **flags):
     env = dict(cutlass=SimpleNamespace(Float32=object()), DenseGemmKernel=object(),
         utils=SimpleNamespace(get_smem_capacity_in_bytes=lambda _: 101376),
         pipeline=SimpleNamespace(NamedBarrier=lambda **kw: SimpleNamespace(**kw)),
@@ -55,7 +56,8 @@ def geometry(reform=True, packed=True, separate=True, stages=2, word_expand=True
         reform_sf_pack=packed, sf6_separate=separate, fc1_stages=stages,
         fc2_stages=stages if fc2_stages is None else fc2_stages,
         sf6_word_expand=word_expand, sf6_fc2_word_expand=fc2_word_expand,
-        fc1_reuse_a=reuse, compact_staging=compact, sf6_registers=registers, sync_cleanup=sync_cleanup)
+        fc1_reuse_a=reuse, compact_staging=compact, sf6_registers=registers, sync_cleanup=sync_cleanup,
+        **flags)
     slot = method('_fc1_input_slot', dict(Int32=int))
     owner._fc1_input_slot = lambda stage: slot(owner, stage)
     return owner

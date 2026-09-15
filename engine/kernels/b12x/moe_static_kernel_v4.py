@@ -294,7 +294,7 @@ class MoEStaticKernelV4:
         self.cluster_shape_mnk = (1, 1, 1)
         self.cluster_shape_mn = (1, 1)
         if self.sync_cleanup and (self.fc1_halves != 1 or self.cluster_shape_mnk != (1, 1, 1)):
-            raise ValueError("C1 sync cleanup requires one FC1 half and a single-CTA cluster")
+            raise ValueError("sync cleanup requires one FC1 half and a single-CTA cluster")
         self.epi1_tile = (self.tile_m, self.fc1_tile_n)
         self.epi_tile = (self.tile_m, self.fc2_tile_n)
         self.occupancy = 1
@@ -2066,9 +2066,11 @@ class MoEStaticKernelV4:
                                 self.num_mma_warps * self.num_threads_per_warp
                             )
                         # sC1 is reused by the next half / next item after this
-                        # C1 has only one half. Its final fence + publication
-                        # barrier below already protects A2/SFA2 reads and
-                        # completion of sC1 reads before the next work item.
+                        # The M16 reform tile (C1 rows, C2 batch) has only one
+                        # half. Its final fence + publication barrier below
+                        # already protects A2/SFA2 reads, C2's retained route
+                        # metadata and completion of sC1 reads before the next
+                        # work item.
                         # Stamped runs retain the earlier completion point:
                         # stamp +1 must not precede another warp's last write.
                         if cutlass.const_expr(not self.sync_cleanup or self.stamps):
