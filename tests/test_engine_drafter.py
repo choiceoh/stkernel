@@ -231,14 +231,23 @@ class DrafterTests(unittest.TestCase):
         anchors = torch.tensor([2, 7], device=dev)
         temps = torch.tensor([1.0, 0.999999], device=dev)
         uniforms = torch.rand(2, F.k, generator=torch.Generator(device=dev).manual_seed(9), device=dev)
+        import engine.profiles.glm53.drafter as drafter_mod
+        alpha_b, tau_b = d.debug_device_tables(dev)                 # what capture_decode prepares before capturing
+        self.assertTrue(torch.allclose(tau_b, torch.tensor([.7, .7, .6, .6, .5, .4, .4])[:F.k].to(tau_b.device)))
         def refuse(*args, **kwargs):
             raise AssertionError('a tensor from host values inside the captured walk')
-        with patch('torch.tensor', refuse), patch('torch.as_tensor', refuse):
+        setitem = torch.Tensor.__setitem__
+        def setitem_from_tensors_only(self, key, value):
+            # 11:05 boot: tensor[i] = float copies a host scalar into the device tensor, which capture refuses
+            if not isinstance(value, torch.Tensor):
+                raise AssertionError('a host scalar written into a tensor inside the captured walk')
+            return setitem(self, key, value)
+        with patch('torch.tensor', refuse), patch('torch.as_tensor', refuse), \
+                patch.object(drafter_mod, 'debug_table', refuse), \
+                patch.object(torch.Tensor, '__setitem__', setitem_from_tensors_only):
             drafts, cand, q = d.propose_rows(field, slots, anchors, ctx, temps=temps, uniforms=uniforms, vocab=21)
         self.assertTrue(torch.isfinite(q).all())
-        import engine.profiles.glm53.drafter as drafter_mod
-        table = drafter_mod.debug_device_table(drafter_mod.DEBUG_TAU_B, 7, 'cpu', torch.float32)
-        self.assertTrue(torch.allclose(table, torch.tensor([.7, .7, .6, .6, .5, .4, .4])))
+        self.assertIs(d.debug_tables[1], tau_b, 'the walk reads the prepared tables and builds none')
 
     def test_native_rows_do_not_read_retired_weights_or_use_a_scratch_ring_tail(self):
         """Exercise the merged batched interface with packed readers and no BF16 sources.
