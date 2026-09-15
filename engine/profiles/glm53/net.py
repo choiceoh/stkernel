@@ -604,21 +604,23 @@ class Glm53Net:
         pack = self._o_proj_pack(n + "o_proj", core, project)
         if pack is not None:
             # The norm's program per (token, head) is one 128-column block of o_proj's input: it writes the
-            # bound C1 cell's pack beside its output, and the cell reads it instead of launching its own.
+            # bound cell's pack beside its output (C1's layout at 8 rows, the sixteen-row CTA's wide pack at 16),
+            # and the cell reads it instead of launching its own.
             out = self.lanes.kda_output_norm(core, g_out, p[n + "o_norm"], O_NORM_EPS, pack=pack)
             return (reduce or self.comm.all_reduce)(project(out.reshape(N, Hl * D), n + "o_proj", pack=pack))
         out = self.lanes.kda_output_norm(core, g_out, p[n + "o_norm"], O_NORM_EPS)
         return (reduce or self.comm.all_reduce)((project or self.linear)(out.reshape(N, Hl * D), n + "o_proj"))
 
     def _o_proj_pack(self, name, core, project):
-        """Storage for o_proj's input pack when its producer can write it: a direct projector whose bound C1
-        writer reads producer packs, an [8, heads, 128] step, and a served norm that writes the pack."""
-        if (not self.producer_packs or project is None or core.ndim != 3 or core.shape[0] != 8
+        """Storage for o_proj's input pack when its producer can write it: a direct projector whose bound writer
+        reads producer packs at this step's rows, an [8 or 16, heads, 128] step, and a served norm that writes it."""
+        rows = core.shape[0] if core.ndim == 3 else 0
+        if (not self.producer_packs or project is None or rows not in (8, 16)
                 or core.shape[2] != 128 or not getattr(self.lanes.kda_output_norm, "producer_pack", False)
-                or not getattr(project, "pack_rows", lambda name, rows: False)(name, 8)):
+                or not getattr(project, "pack_rows", lambda name, rows: False)(name, rows)):
             return None
-        heads = core.shape[1]
-        return torch.empty(heads * 1024 + heads * 8 * 4, dtype=torch.uint8, device=core.device)
+        from engine.kernels.dense import producer_pack_nbytes
+        return torch.empty(producer_pack_nbytes(rows, core.shape[1] * 128), dtype=torch.uint8, device=core.device)
 
     def _ring_rows(self, step, wc: int, wr: int) -> int:
         """How many rows a captured step folds into one ring launch per kernel: all of them when both row lanes
