@@ -1,5 +1,7 @@
 # GLM tree verification and persistent MLP experiment
 
+> 그날의 조사 — **2026-09-14 의 조사다.** 그날 참이었던 것이고 유지되지 않는다 — 이후 무엇이 바뀌었는지는 `MEASUREMENTS.md` 가 안다.
+
 This is an explicit **eager, greedy, one-sequence experiment**. It connects
 one DFlash candidate pass, expert-cost tree selection, FP32 KDA branch
 verification, the existing target projections/MoE, and accepted-cache commit.

@@ -1,5 +1,7 @@
 # Low-cost draft controls
 
+> 그날의 조사 — **2026-09-13 의 조사다.** 그날 참이었던 것이고 유지되지 않는다 — 이후 무엇이 바뀌었는지는 `MEASUREMENTS.md` 가 안다.
+
 The three follow-ups to the [low-cost review](GLM53_DRAFT_LOW_COST_REVIEW.md)
 are connected to native ST serving. Selector FP32 output and automatic fitted
 FC-bias discovery are enabled by default. Other fitted coefficients remain
