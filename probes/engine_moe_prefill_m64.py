@@ -123,6 +123,20 @@ def _relative(actual, expected):
             / expected.float().abs().max().clamp_min(1e-8)).item()
 
 
+def _row_disagreement(a, b):
+    """Where two results differ, by row. A race that corrupts everything and one that runs
+    off the end of a capacity look identical in a scalar norm and nothing alike here."""
+    import torch
+    differ = (a.float() != b.float()).any(dim=1)
+    index = differ.nonzero().flatten()
+    if index.numel() == 0:
+        return dict(differing_rows=0)
+    return dict(differing_rows=int(index.numel()), rows=int(a.shape[0]),
+                first=int(index[0]), last=int(index[-1]),
+                contiguous_tail=bool(int(index[-1]) == a.shape[0] - 1
+                                     and int(index.numel()) == a.shape[0] - int(index[0])))
+
+
 def _spread(runs):
     """The widest pairwise distance among an arm's repeats: its own noise floor.
 
@@ -267,6 +281,12 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
         values = dict(m=m, m128_spread=control_spread, m64_spread=candidate_spread,
                       across_arms=across, floor=floor, reproducible=reproducible,
                       within_reorder_noise=within)
+
+        # Where, not just how much: a race over the whole tensor and a capacity the kernel
+        # runs past are the same number in `_spread` and different pictures here.
+        if candidate_spread > 0:
+            values['m64_repeat_disagreement'] = _row_disagreement(m64_runs[0], m64_runs[1])
+        values['arms_disagreement'] = _row_disagreement(m64_runs[0], m128_runs[0])
 
         if m <= ORACLE_ROWS:
             oracle = reference(x, sel, w, *weights, cell.swiglu_limit, scales=scales)
