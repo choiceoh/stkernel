@@ -102,7 +102,9 @@ class BoundDecodeTests(unittest.TestCase):
                         ext.run_gemm_bound_input.assert_not_called()
                         ext.run_gemm_to_slot.assert_called_once()
         self.assertEqual(layer.bound_input_executed, set(ROWS))
-        self.assertFalse(dense.bound_input_cell(16, 6416, 4096))
+        self.assertTrue(dense.bound_input_cell(16, 6416, 4096))  # sixteen-row CTAs (st_c2_dense_cells_20260915)
+        self.assertFalse(dense.bound_input_cell(16, 4096, 1536))  # QueryPair shares the pack; M14 kept it out
+        self.assertFalse(dense.bound_input_cell(14, 6416, 4096))
         self.assertTrue(dense.bound_input_cell(24, 6416, 4096))
         self.assertTrue(dense.bound_input_cell(8, 4096, 2048))
         self.assertTrue(dense.bound_input_cell(8, 4096, 3072))
@@ -117,15 +119,15 @@ class BoundDecodeTests(unittest.TestCase):
         net.decode_fastpath_rows = ROWS
         pairs = {(L, m) for L in net.layers for m in ROWS}
         layer = net.dense['L0.kda.in_proj']
-        layer.bound_input_executed = {8, 24, 32}
+        layer.bound_input_executed = {8, 16, 24, 32}
         for missing in pairs:
             net.decode_pairs_executed = pairs - {missing}
             with self.assertRaisesRegex(RuntimeError, 'not executed'):
                 decode_fastpath_report(net)
         net.decode_pairs_executed = pairs
-        self.assertEqual(decode_fastpath_report(net)['dense'], {'L0.kda.in_proj': [8, 24, 32]})
-        for missing in (8, 24, 32):
-            layer.bound_input_executed = {8, 24, 32} - {missing}
+        self.assertEqual(decode_fastpath_report(net)['dense'], {'L0.kda.in_proj': [8, 16, 24, 32]})
+        for missing in (8, 16, 24, 32):
+            layer.bound_input_executed = {8, 16, 24, 32} - {missing}
             with self.assertRaisesRegex(RuntimeError, 'not executed'):
                 decode_fastpath_report(net)
 

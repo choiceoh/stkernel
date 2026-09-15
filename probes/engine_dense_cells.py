@@ -10,7 +10,10 @@ strided inputs, poisoned outputs, both replay orders and rebound TX descriptors.
 
 Routes (ROUTES), each `(ext, owners, x, destination) -> outputs`:
   bound         serving: decode_input_rows=(8,16,24,32) -> run_gemm_bound_input(forward_pipeline=True);
-                C1 ordered/joined cells at 8 rows, the wide pack cells at 16 rows
+                C1 ordered/joined cells at 8 rows; at 16 rows sixteen-row CTAs for the KDA input and the
+                KDA/MLA TX outputs, the wide pack cells otherwise
+  wide_control  run_gemm_bound_input(forward_pipeline=False) at 16 rows: the wide pack cell the KDA input and
+                KDA/MLA outputs took before their sixteen-row CTAs (the same-build control)
   generic       decode_input_rows=() -> run_gemm (mk_gemm2_kernel<RQ>) or run_gemm_to_slot
   wide          run_gemm_wide_input: invocation-owned FP8 pack + mk_gemm2_kernel<RQ,PACKED> (9..32 rows)
   pair          QueryPair, the serving DSA query owner
@@ -21,7 +24,9 @@ Routes (ROUTES), each `(ext, owners, x, destination) -> outputs`:
 
 To add an arm: put a route in ROUTES and a (control, candidate) pair in the cell's
 row plan below. Scope `single` is one layer; `chain` calls every listed layer in
-model order with its own weights, which no L2 holds at once.
+model order with its own weights, which no L2 holds at once. The rejected C=2
+prototypes (gate/up, MLP down, qkv_a, joined queries) are measured in
+measurements/st_c2_dense_cells_20260915 against their frozen source.
 
 Selection through the queue's literal flags: `--lanes dense_cells` runs every cell,
 `--lanes dense_cells:kda.o_proj:kda.in_proj=16` names cells (optionally one row
@@ -46,11 +51,11 @@ DENSE_LAYERS = (0, 1, 2)
 # name, weight keys per layer, layers, direct TX output, input width, {rows: ((control, candidate), ...)}
 CELLS = (
     ('kda.in_proj', ('kda.in_proj',), KDA_LAYERS, False, 4096,
-     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('generic', 'wide'),)}),
+     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'generic'), ('bound', 'wide_control'))}),
     ('kda.o_proj', ('kda.o_proj',), KDA_LAYERS, True, 2048,
-     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'generic'),)}),
+     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'wide_control'), ('bound', 'generic'))}),
     ('mla.o_proj', ('mla.o_proj',), DSA_LAYERS, True, 4096,
-     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'generic'),)}),
+     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'wide_control'), ('bound', 'generic'))}),
     ('mla.query', ('mla.q_b', 'idx.wq_b'), DSA_LAYERS, False, 1536,
      {8: (('pair', 'pair_generic'), ('pair', 'pair_wide'), ('pair', 'pack')), 16: (('pair', 'pair_generic'),)}),
     ('mla.qkv_a', ('mla.qkv_a',), DSA_LAYERS, False, 4096,
@@ -105,6 +110,17 @@ def _pack(ext, x):
 
 PACK_ARMS = ('pack',)
 
+def _wide_control(ext, owner, x, destination):
+    p = owner.packs[0]
+    if destination is not None:
+        ext.run_gemm_bound_input(x, p.data, p.scale, destination, owner.rows, p.rowscale.data_ptr(),
+                                 owner.workspace, destination, False)
+        return None
+    y = torch.empty(x.shape[0], owner.rows, device=x.device, dtype=x.dtype)
+    ext.run_gemm_bound_input(x, p.data, p.scale, y, owner.rows, p.rowscale.data_ptr(), owner.workspace, None, False)
+    return y
+
+
 ROUTES = {
     'bound': lambda ext, owners, x, d: _dense(owners[0], x, d, BOUND),
     'generic': lambda ext, owners, x, d: _dense(owners[0], x, d, ()),
@@ -113,6 +129,7 @@ ROUTES = {
     'pair_generic': lambda ext, owners, x, d: tuple(_dense(o, x, None, ()) for o in owners),
     'pair_wide': lambda ext, owners, x, d: _pair_wide(ext, owners, x),
     'pack': lambda ext, owners, x, d: _pack(ext, x),
+    'wide_control': lambda ext, owners, x, d: _wide_control(ext, owners[0], x, d),
 }
 
 
@@ -255,6 +272,12 @@ def check(report, ranks=None, *, cells=(), rows=(8, 16), brackets=2, timing=True
         except Exception as exc:  # the other cells' evidence is kept; the run still fails
             failures.append(f'{cell[0]}={m}')
             report('component_failed', cell=cell[0], rows=m, error=f'{type(exc).__name__}: {exc}')
+    if any(m == 16 for _, m in plan):
+        info = ext.rows16_info()
+        names = ('rows16<false,32,8> KDA input', 'rows16<true,16,3> KDA output', 'rows16<true,32,3> MLA output')
+        report('rows16_resources', kernels={n: dict(registers=info[4*i], local_bytes=info[4*i+1],
+                                                     blocks_per_sm=info[4*i+2], smem=info[4*i+3])
+                                            for i, n in enumerate(names)})
     return failures
 
 

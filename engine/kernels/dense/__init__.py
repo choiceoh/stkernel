@@ -179,13 +179,18 @@ def wide_input_cell(rows, n, k):
 
 
 def bound_input_cell(rows, n, k):
-    """Candidate K=7 input reuse, explicitly bound before graph capture."""
+    """Candidate K=7 input reuse, explicitly bound before graph capture.
+
+    At 16 rows the KDA input and the KDA/MLA TX outputs run sixteen-row CTAs, the
+    other cells the wide pack (measurements/st_c2_dense_cells_20260915). K1536
+    queries share their pack through QueryPair; M14's rejected cells stay out.
+    """
     if rows == 8:
         return ((k == 4096 and n in (4096, 6144, 6416))
                 or (n == 4096 and k in (2048, 3072)))
     return rows in (16, 24, 32) and (
-        (n, k) in ((4096, 2048), (2048, 4096), (4096, 4096), (6144, 4096), (4096, 3072))
-        or (rows in (24, 32) and (n, k) in ((6416, 4096), (4096, 1536))))
+        (n, k) in ((4096, 2048), (2048, 4096), (4096, 4096), (6144, 4096), (4096, 3072), (6416, 4096))
+        or (rows in (24, 32) and (n, k) == (4096, 1536)))
 
 
 def w4_gemm(x, pack, workspace=None, *, bound_input=False):
