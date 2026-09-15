@@ -107,34 +107,37 @@ def write_ring_rows(src, dst, slots, contexts):
 
 # -- boundaries crossed by a decode step ahead of the host (45차 §23; profiles/glm53/caches.stage_boundaries) --------------
 @triton.jit
-def _stage_rec(RING, STAGE, ROFF, SOFF, SLOT, BEFORE, COUNT, BLOCK_TOKENS: tl.constexpr, CELLS: tl.constexpr,
-               CELL: tl.constexpr, RS: tl.constexpr, SS: tl.constexpr, BLOCK: tl.constexpr):
+def _stage_kda(REC, CONV, REC_STAGE, CONV_STAGE, ROFF, RSOFF, COFF, CSOFF, SLOT, BEFORE, COUNT,
+               BLOCK_TOKENS: tl.constexpr, CELLS: tl.constexpr, CELL: tl.constexpr,
+               WIDTH: tl.constexpr, TAPS: tl.constexpr, CHANNELS: tl.constexpr,
+               RS: tl.constexpr, RSS: tl.constexpr, CS: tl.constexpr, CSS: tl.constexpr,
+               RB: tl.constexpr, CB: tl.constexpr):
+    """A bounded grid parks both KDA histories only when a row crosses a prefix boundary."""
     i, L, c = tl.program_id(0), tl.program_id(1), tl.program_id(2)
-    slot, before, count = tl.load(SLOT + i), tl.load(BEFORE + i), tl.load(COUNT + i)
+    before, count = tl.load(BEFORE + i), tl.load(COUNT + i)
     after = before + count
     boundary = (after // BLOCK_TOKENS) * BLOCK_TOKENS
     crossed = (count > 0) & (boundary > before)
+    if not crossed:
+        return
+    slot = tl.load(SLOT + i)
     cell = (boundary - 1) % CELLS
-    col = c * BLOCK + tl.arange(0, BLOCK)
-    mask = (col < CELL) & crossed
-    value = tl.load(RING + slot * RS + tl.load(ROFF + L) + cell * CELL + col, mask, other=0.0)
-    tl.store(STAGE + slot * SS + tl.load(SOFF + L) + col, value, mask)
-
-
-@triton.jit
-def _stage_conv(RING, STAGE, ROFF, SOFF, SLOT, BEFORE, COUNT, BLOCK_TOKENS: tl.constexpr, WIDTH: tl.constexpr,
-                TAPS: tl.constexpr, CHANNELS: tl.constexpr, RS: tl.constexpr, SS: tl.constexpr, BLOCK: tl.constexpr):
-    i, L, c = tl.program_id(0), tl.program_id(1), tl.program_id(2)
-    slot, before, count = tl.load(SLOT + i), tl.load(BEFORE + i), tl.load(COUNT + i)
-    after = before + count
-    boundary = (after // BLOCK_TOKENS) * BLOCK_TOKENS
-    crossed = (count > 0) & (boundary > before)
-    ch = c * BLOCK + tl.arange(0, BLOCK)
-    mask = (ch < CHANNELS) & crossed
-    for j in tl.static_range(TAPS):
-        cell = (boundary - TAPS + j) % WIDTH
-        value = tl.load(RING + slot * RS + tl.load(ROFF + L) + ch * WIDTH + cell, mask, other=0.0)
-        tl.store(STAGE + slot * SS + tl.load(SOFF + L) + ch * TAPS + j, value, mask)
+    src = REC + slot * RS + tl.load(ROFF + L) + cell * CELL
+    dst = REC_STAGE + slot * RSS + tl.load(RSOFF + L)
+    # A small fixed grid checks the boundary. Only crossing rows walk the
+    # full state, instead of launching a CTA for every dormant 1024-cell tile.
+    for tile in range(c, triton.cdiv(CELL, RB), tl.num_programs(2)):
+        col = tile * RB + tl.arange(0, RB)
+        value = tl.load(src + col, col < CELL, other=0.0)
+        tl.store(dst + col, value, col < CELL)
+    src = CONV + slot * CS + tl.load(COFF + L)
+    dst = CONV_STAGE + slot * CSS + tl.load(CSOFF + L)
+    for tile in range(c, triton.cdiv(CHANNELS, CB), tl.num_programs(2)):
+        ch = tile * CB + tl.arange(0, CB)
+        for j in tl.static_range(TAPS):
+            cell = (boundary - TAPS + j) % WIDTH
+            value = tl.load(src + ch * WIDTH + cell, ch < CHANNELS, other=0.0)
+            tl.store(dst + ch * TAPS + j, value, ch < CHANNELS)
 
 
 @triton.jit
@@ -156,8 +159,8 @@ def _stage_draft(RING, STAGE, ROFF, SOFF, SLOT, BEFORE, COUNT, BLOCK_TOKENS: tl.
 
 
 def stage_boundaries(caches, slots, ctx_before, counts):
-    """caches.stage_boundaries on the device: one launch for every KDA layer's recurrent cell, one for the conv taps,
-    one for the drafter ring cells past the boundary."""
+    """Park every KDA layer's recurrent cell and conv taps in one bounded launch,
+    plus one for the drafter ring cells past the boundary."""
     F = caches.F
     draft = caches._stage.get(("draft", -1))
     if draft is not None and slots.numel():
@@ -188,10 +191,10 @@ def stage_boundaries(caches, slots, ctx_before, counts):
     rec_off, rec_stage_off, conv_off, conv_stage_off = tables
     n, cells = int(slots.numel()), F.spec_k + 1
     cell = F.kda_heads_local * F.kda_dim * F.kda_dim
-    _stage_rec[(n, len(kda), triton.cdiv(cell, 1024))](
-        state_rec, stage_rec, rec_off, rec_stage_off, slots, ctx_before, counts, F.block, cells, cell,
-        caches.layout.slot_bytes // rec_size, caches.stage_bytes // rec_size, 1024)
     channels, width, taps = 3 * F.kda_heads_local * F.kda_dim, F.conv - 1 + F.spec_k, F.conv - 1
-    _stage_conv[(n, len(kda), triton.cdiv(channels, 256))](
-        state_bf16, stage_bf16, conv_off, conv_stage_off, slots, ctx_before, counts, F.block, width, taps, channels,
-        caches.layout.slot_bytes // 2, caches.stage_bytes // 2, 256)
+    tiles = min(8, max(triton.cdiv(cell, 1024), triton.cdiv(channels, 256)))
+    _stage_kda[(n, len(kda), tiles)](
+        state_rec, state_bf16, stage_rec, stage_bf16, rec_off, rec_stage_off, conv_off, conv_stage_off,
+        slots, ctx_before, counts, F.block, cells, cell, width, taps, channels,
+        caches.layout.slot_bytes // rec_size, caches.stage_bytes // rec_size,
+        caches.layout.slot_bytes // 2, caches.stage_bytes // 2, 1024, 256)
