@@ -175,6 +175,21 @@ class OptionTests(unittest.TestCase):
         self.assertEqual(pick_each(rows, 1.0, uniforms), [draw(r, u) for r, u in zip(rows, uniforms)])
         self.assertEqual(pick_each(rows, 1.0, uniforms.tolist()), pick_each(rows, 1.0, uniforms))
 
+    def test_a_draw_that_aims_past_the_walk_lands_on_the_last_id_with_mass(self):
+        """A uniform at the top of the interval, against a total summed in another order than the walk, aims past the
+        walk's end. The clamp to V - 1 handed out the vocabulary's last id whatever its mass; the draw was headed for
+        the last id that has any."""
+        from engine.base.sampler import _inverse_cdf, rows
+        probs = torch.zeros(2, 10)
+        probs[0, 5] = 1.0
+        probs[1, 2], probs[1, 7] = 0.25, 0.75
+        self.assertEqual(_inverse_cdf(probs, torch.tensor([1.0, 1.0])).tolist(), [5, 7])
+        self.assertEqual(_inverse_cdf(probs, torch.tensor([0.0, 0.2])).tolist(), [5, 2], "and nothing else moves")
+        logits = torch.tensor([[0.0, 0.0, float("-inf"), float("-inf")]])
+        picked = rows(logits, torch.tensor([1.0]), torch.tensor([0], dtype=torch.int32), torch.tensor([1.0]),
+                      torch.tensor([1.0]))
+        self.assertEqual(picked.tolist(), [1], "the reference sampler's walk as well")
+
     def test_a_zero_temperature_row_set_picks_every_argmax(self):
         from engine.base.sampler import pick_each
         rows = [torch.tensor([0.1, 0.7, 0.2]), torch.tensor([0.6, 0.1, 0.3])]

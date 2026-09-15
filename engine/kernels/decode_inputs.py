@@ -49,9 +49,11 @@ def _step_block(NONCE, GEN, OUT, NS: tl.constexpr, GS: tl.constexpr, SEED_KEY: t
     key = _mix(key ^ tl.load(GEN + row * GS).to(tl.uint64))
     word = tl.where(i < K, (1 << 32) + i, tl.where(i < 2 * K, (3 << 32) + i - K, 4 << 32))
     z = _mix(key ^ word)
-    # The reference converts the top 53 bits to FP64, scales by 2^-53, then rounds once to FP32.
+    # The reference converts the top 53 bits to FP64, scales by 2^-53, rounds once to FP32 and keeps it below one
+    # (base/draws.BELOW_ONE: the top 2^-54 rounds up to 1.0).
     uniform = (z >> 11).to(tl.float64) * tl.full((), 2.0 ** -53, tl.float64)
-    tl.store(OUT + row * (2 * K + 1) + i, uniform.to(tl.float32), i < 2 * K + 1)
+    uniform = tl.minimum(uniform.to(tl.float32), tl.full((), 1.0 - 2.0 ** -24, tl.float32))
+    tl.store(OUT + row * (2 * K + 1) + i, uniform, i < 2 * K + 1)
 
 
 def step_block(seed, nonces, generations, k):

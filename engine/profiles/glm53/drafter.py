@@ -839,7 +839,7 @@ class Drafter:
             probs = torch.softmax(scores[s].index_select(0, prev)[0].float() / max(temperature, 1e-5), dim=-1)   # over the 16 candidates
             walk = probs.cumsum(0)
             pick = torch.searchsorted(walk.contiguous(), (u[s] * walk[-1]).reshape(1), right=True) \
-                .clamp_max(probs.numel() - 1)
+                .clamp_max(walk.argmax())                   # past the walk's end: its last candidate with mass
             probabilities.append(probs)
             drafts.append(cand[s].index_select(0, pick))
             prev = pick
