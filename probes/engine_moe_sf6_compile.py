@@ -31,6 +31,7 @@ def main():
     mode.add_argument('--register-scales', action='store_true', help='compare direct MMA scale registers')
     mode.add_argument('--batch-reform', action='store_true', help='compare the C2 M16 tile against the served M32 tile')
     mode.add_argument('--sync-cleanup', action='store_true', help='compare batched pipeline initialization and C1/C2 publication')
+    mode.add_argument('--scatter-vec4', action='store_true', help='compare aligned four-column FP32 scatter reductions')
     args = parser.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '':
         raise RuntimeError('compile requires CUDA_VISIBLE_DEVICES=')
@@ -67,6 +68,7 @@ def main():
             selected.update(smem_bytes=owner.smem_bytes,
                             tile_m=owner.tile_m,
                             direct_scatter=owner.direct_scatter,
+                            scatter_vec4=owner.scatter_vec4,
                             scatter_reuse=owner.scatter_reuse,
                             fc2_prefetch=owner.fc2_prefetch,
                             fc2_stages=owner.fc2_stages,
@@ -168,6 +170,10 @@ def main():
                      (16, dict(batch_reform=True, c2_direct_scatter=True, c2_scatter_reuse=False)),
                      (16, dict(batch_reform=True, c2_direct_scatter=True, c2_scatter_reuse=True, c2_fc2_prefetch=False)),
                      (16, dict(batch_reform=True, c2_direct_scatter=True, c2_scatter_reuse=True, c2_fc2_prefetch=True))]
+        if args.scatter_vec4:
+            defaults = dict(batch_reform=True)
+            cases = [(8, {}), (8, dict(scatter_vec4=False)), (7, {}),
+                     (16, {}), (16, dict(c2_direct_scatter=False))]
         with patch.object(md, 'get_num_sm', return_value=48), \
                 patch.object(md, 'get_max_active_clusters', return_value=48), \
                 patch.object(md, 'build_and_load_cute_dsl_kernel', builder), \
@@ -196,6 +202,7 @@ def main():
                   scope='native compile and layout checks; GPU numerics/replay/timing pending',
                   source_sha256={name: hashlib.sha256((root/name).read_bytes()).hexdigest()
                       for name in ('engine/kernels/b12x/moe_dispatch.py',
+                                   'engine/kernels/b12x/moe_micro_kernel.py',
                                    'engine/kernels/b12x/moe_w4a16_fp4_helpers.py',
                                    'engine/kernels/b12x/moe_static_kernel_v4.py',
                                    'engine/kernels/b12x/moe_static_common.py',
