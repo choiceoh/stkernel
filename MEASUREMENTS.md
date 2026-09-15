@@ -3603,3 +3603,19 @@ onepass·수용률·step/s·품질은 재지 않았다. D17 대로 속도 주장
 - **미측정.** 앞부분 9.2 s 의 구성(#1029 의 `front`·`import_s`), `load` 의 경로, `prepare native execution` 23.5 s 의 분해.
 
 [표·두 랭크 원장·로그 줄](measurements/st_boot_20260916/README.md).
+
+### 남은 두 통짜 행을 쪼개고, 커널 임포트를 랑데부 밑으로 (2026-09-16)
+
+- **근거.** 09-16 부팅(99.86 s 표) 에서 아직 크고 안 갈라진 행이 둘이다.
+  - `prepare native execution` **23.50 s** — `3acae017` 에서 32.16 이었고 팩 digest 가 −8.7 을 냈는데, **두 번 다 분해가 없다.** 이 안에는 라우터 준비, dense 팩 빌드·읽기, 디코드 투영, 드래프터 팩이 한 숫자로 들어 있다.
+  - `lanes` **3.22 s** — 커널 패키지 임포트와 테이블 구성이 한 숫자다.
+  - 같은 자리에 있던 게이트의 15.6 s 는 행이 셋으로 갈린 그 주에 답이 나왔다(2026-09-16: forward 다). 남은 둘도 같은 이유로 가른다.
+- **바꾼 것 — 행.** `prepare native execution` 이 `routers`·`dense packs`·`decode projections`·`drafter packs` 를 중첩 행으로 갖는다(디코드 fastpath 셋은 한 결정이고 한 비용이라 투영 행 안에 둔다). `lanes` 는 `kernel imports` 를 갖는다(`served(recorder=)`, 없으면 `nullcontext`).
+- **바꾼 것 — 당김.** `lanes.import_kernels()` 와 `boot.Background`.
+  - 커널 패키지 임포트는 남의 모듈 스코프(triton·tilelang·deep_gemm)이고 CUDA 를 잡지 않으며 엔진이 만든 것을 읽지 않는다 — 문의 호스트 절반(`Prelude`)과 같은 모양이다.
+  - 그래서 **네이티브 빌드 랑데부 밑에서** 돈다. 그 랑데부는 빠른 랭크가 가장 느린 랭크를 기다리는 순수한 대기이고, 그 뒤의 `prepare one-shot`(1.85 s)도 전송로의 것이지 파이썬의 것이 아니다.
+  - **빌드 뒤**에 시작한다: 그 스레드들이 이 모듈들이 나중에 로드할 확장을 쓰고 있고, 같은 키를 둘이 빌드하는 경쟁은 할 이유가 없다.
+  - 조인은 `lanes` 안의 제 행(`wait for the imports`)이고, 프리루드와 같이 `kernel_imports_s` 게이지를 단다 — 숨지 못하면 초로 말한다.
+- **목록이 기억이 아니라 검사다.** `KERNEL_MODULES` 와 `served` 의 `from` 줄이 **양방향으로** 대조된다: `served` 에 추가하고 목록에서 빠뜨리면 그 패키지는 프리페치를 잃고, 목록에만 남으면 부팅이 공짜로 모듈 하나를 더 읽는다.
+- **검증.** CPU 10 테스트. `import_kernels` 의 본문이 AST 로 "임포트 둘뿐" 인지까지 본다 — 그 스레드에 다른 것이 붙으면 그건 메인 스레드 밖의 작업이다.
+- **미측정.** GPU 부팅. 다음 부팅의 `lanes`·`wait for the imports`·`kernel_imports_s`, 그리고 `prepare native execution` 의 네 행. 임포트가 랑데부 밑에 다 숨으면 `lanes` 는 테이블 구성만 남는다 — 상한은 3.22 s 이고 겹칠 수 있는 시간은 랑데부 대기 + 1.85 s 다.
