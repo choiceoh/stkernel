@@ -1,0 +1,15 @@
+# rank-0 ledger rows of the same boot (srv2:~/glm53-logs/st-bracket-dumps/tempab5-0915-hold-7166a2702b69/memory-rank0.json),
+# UTC = 02:25:27.9 (arena admission, 'boot rendezvous arena-admission' on rank 3) + at_seconds; rows >= 0.9 s
+phase	at_seconds	seconds	utc
+loaded	123.1674	123.1674	02:27:31
+prefill/128/0/before	169.3944	46.227	02:28:17
+prefill/128/0/prepared	192.3568	22.9624	02:28:40
+prefill/1024/0/prepared	193.9374	1.5772	02:28:41
+prefill/32256/0/prepared	259.476	65.5352	02:29:47
+prefill/32256/1016320/prepared	289.0347	29.5419	02:30:16
+warm kernels [1, 8, 64, 512, 4095]	312.8422	23.8075	02:30:40
+target/(2, 8, 1048576)	381.2414	68.3992	02:31:49
+target/(1, 8, 1048576)	392.1471	8.3805	02:32:00
+bounded-decode/(2, 8, 1048576)/4	444.1011	47.7876	02:32:52
+ready	445.3424	0.0513	02:32:53
+production/ready	473.2773	27.9349	02:33:21

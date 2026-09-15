@@ -8,9 +8,10 @@ def build():
     import torch
     from torch.utils.cpp_extension import load
     from engine.kernels.common.native_cache import prepare_cuda_sources
+    from engine.kernels.native_root import build_root
     source = Path(__file__).with_name("buffer.cu")
     flags = ["-O2", "-gencode", "arch=compute_121a,code=sm_121a"]
-    key, directory, staged = prepare_cuda_sources(Path.home()/".cache/st/mapped-staging", [source],
+    key, directory, staged = prepare_cuda_sources(build_root("mapped-staging"), [source],
                                               (flags, torch.__version__, torch.version.cuda))
     return load(name="st_mapped_staging_"+key, sources=list(staged), extra_cuda_cflags=flags,
                 build_directory=str(directory), verbose=False)

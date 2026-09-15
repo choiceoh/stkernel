@@ -1,0 +1,53 @@
+# docker exec st-glm53 (srv4 = rank 3 of the tempab5-0915 hold boot, image st-engine:bracket-7166a2702b69), 2026-09-15 ~02:41 UTC
+# ls -la --time-style=full-iso /root/.cache/st/ ; ls -la --time-style=full-iso /root/.cache/st/*/*/
+total 24
+drwxr-xr-x 6 root root 4096 2026-09-15 02:32:04.416201694 +0000 .
+drwxr-xr-x 1 root root 4096 2026-09-15 02:27:31.290810707 +0000 ..
+drwxr-xr-x 3 root root 4096 2026-09-15 02:30:40.931625520 +0000 bounded-graph
+drwxr-xr-x 3 root root 4096 2026-09-15 02:32:04.416201694 +0000 decode-queue
+drwxr-xr-x 3 root root 4096 2026-09-15 02:27:31.290810707 +0000 mapped-staging
+drwxr-xr-x 3 root root 4096 2026-09-15 02:28:43.223319841 +0000 prefill-topk
+== /root/.cache/st/bounded-graph/28681e637d9e305f1b06f3fb/
+total 1872
+drwxr-xr-x 3 root root   4096 2026-09-15 02:31:37.054335015 +0000 .
+drwxr-xr-x 3 root root   4096 2026-09-15 02:30:40.931625520 +0000 ..
+-rw-r--r-- 1 root root 550372 2026-09-15 02:31:36.914335711 +0000 .ninja_deps
+-rw-r--r-- 1 root root    166 2026-09-15 02:31:37.054335015 +0000 .ninja_log
+-rw-r--r-- 1 root root      0 2026-09-15 02:30:40.931625520 +0000 .sources.lock
+-rw-r--r-- 1 root root   1769 2026-09-15 02:30:40.937676224 +0000 build.ninja
+-rw-r--r-- 1 root root 882904 2026-09-15 02:31:36.880335880 +0000 loop.cuda.o
+drwxr-xr-x 2 root root   4096 2026-09-15 02:30:40.933769797 +0000 src
+-rwxr-xr-x 1 root root 500464 2026-09-15 02:31:37.046331183 +0000 st_bounded_graph_28681e637d9e305f1b06f3fb.so
+== /root/.cache/st/decode-queue/fe97e13ae160125f8dc2e358/
+total 1560
+drwxr-xr-x 3 root root   4096 2026-09-15 02:32:51.798982649 +0000 .
+drwxr-xr-x 3 root root   4096 2026-09-15 02:32:04.416201694 +0000 ..
+-rw-r--r-- 1 root root 552528 2026-09-15 02:32:51.604983517 +0000 .ninja_deps
+-rw-r--r-- 1 root root    166 2026-09-15 02:32:51.797982653 +0000 .ninja_log
+-rw-r--r-- 1 root root      0 2026-09-15 02:32:04.416201694 +0000 .sources.lock
+-rw-r--r-- 1 root root   1767 2026-09-15 02:32:04.419850573 +0000 build.ninja
+-rw-r--r-- 1 root root 674096 2026-09-15 02:32:51.568983678 +0000 queue.cuda.o
+drwxr-xr-x 2 root root   4096 2026-09-15 02:32:04.416952314 +0000 src
+-rwxr-xr-x 1 root root 408960 2026-09-15 02:32:51.791982680 +0000 st_decode_queue_fe97e13ae160125f8dc2e358.so
+== /root/.cache/st/mapped-staging/57cf26333c57b06407a5fe0f/
+total 1420
+drwxr-xr-x 3 root root   4096 2026-09-15 02:28:17.356489987 +0000 .
+drwxr-xr-x 3 root root   4096 2026-09-15 02:27:31.290810707 +0000 ..
+-rw-r--r-- 1 root root 549540 2026-09-15 02:28:17.213490947 +0000 .ninja_deps
+-rw-r--r-- 1 root root    169 2026-09-15 02:28:17.356489987 +0000 .ninja_log
+-rw-r--r-- 1 root root      0 2026-09-15 02:27:31.291810700 +0000 .sources.lock
+-rw-r--r-- 1 root root 576240 2026-09-15 02:28:17.181491162 +0000 buffer.cuda.o
+-rw-r--r-- 1 root root   1780 2026-09-15 02:27:31.296334428 +0000 build.ninja
+drwxr-xr-x 2 root root   4096 2026-09-15 02:27:31.292838597 +0000 src
+-rwxr-xr-x 1 root root 329880 2026-09-15 02:28:17.348986902 +0000 st_mapped_staging_57cf26333c57b06407a5fe0f.so
+== /root/.cache/st/prefill-topk/6a747841b821b01e52e4b829/
+total 1900
+drwxr-xr-x 3 root root   4096 2026-09-15 02:29:28.750036469 +0000 .
+drwxr-xr-x 3 root root   4096 2026-09-15 02:28:43.223319841 +0000 ..
+-rw-r--r-- 1 root root 550388 2026-09-15 02:29:28.551037665 +0000 .ninja_deps
+-rw-r--r-- 1 root root    173 2026-09-15 02:29:28.749036475 +0000 .ninja_log
+-rw-r--r-- 1 root root      0 2026-09-15 02:28:43.223319841 +0000 .sources.lock
+-rw-r--r-- 1 root root   1788 2026-09-15 02:28:43.227163304 +0000 build.ninja
+-rw-r--r-- 1 root root 848088 2026-09-15 02:29:28.520037851 +0000 prefill_topk.cuda.o
+drwxr-xr-x 2 root root   4096 2026-09-15 02:28:43.224206123 +0000 src
+-rwxr-xr-x 1 root root 543408 2026-09-15 02:29:28.742036517 +0000 st_prefill_topk_6a747841b821b01e52e4b829.so

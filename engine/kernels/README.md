@@ -89,7 +89,10 @@ dispatch도 다른 레인과 같이 적용한다. 실제 가중치·반올림·�
 ## 노브 (D11, 2026-09-12 정리)
 
 이 패키지는 환경 변수를 읽지 않는다(예외는 `ST_MLA_BUILD_ROOT`, `ST_DENSE_BUILD_ROOT`,
-`ST_ONESHOT_BUILD_ROOT` 캐시 경로, `TRITON_CACHE_DIR` 와 같은 부류).
+`ST_ONESHOT_BUILD_ROOT`, `ST_NATIVE_BUILD_ROOT` 캐시 경로, `TRITON_CACHE_DIR` 와 같은 부류).
+나머지 네이티브 확장(bounded graph, decode queue, mapped staging, prefill top-k)은
+`native_root.build_root` 로 `ST_NATIVE_BUILD_ROOT` 아래에 빌드한다 — `$HOME` 은 컨테이너 안이라
+부팅마다 사라진다.
 `tests/test_engine_kernels.py` 가 AST 로 강제한다. 이식 때 남았던 43개 환경 노브는 셋으로 갈랐다.
 
 - **코드에 박은 프로덕션 채택값**: 메가커널 PDL on, GEMM 입력 모드(`MK_INPUT_CTA=4`, `MK_INPUT_REUSE=1`),

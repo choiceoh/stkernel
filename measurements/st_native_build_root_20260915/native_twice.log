@@ -1,0 +1,15 @@
+== cold 02:52:36 MemAvailable 33036200 kB
+W0915 02:52:38.135000 1 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda-13.2'
+{"run": "cold", "module": "mapped-staging", "seconds": 56.93, "root": "/cache/cu132/st-native/mapped-staging", "loaded": "/cache/cu132/st-native/mapped-staging/57cf26333c57b06407a5fe0f/st_mapped_staging_57cf26333c57b06407a5fe0f.so", "kept_before": 0, "kept_after": 1, "object_mtime_ns": [1789440814736873090]}
+{"run": "cold", "module": "prefill-topk", "seconds": 51.17, "root": "/cache/cu132/st-native/prefill-topk", "loaded": "/cache/cu132/st-native/prefill-topk/6a747841b821b01e52e4b829/st_prefill_topk_6a747841b821b01e52e4b829.so", "kept_before": 0, "kept_after": 1, "object_mtime_ns": [1789440865968792026]}
+{"run": "cold", "module": "bounded-graph", "seconds": 50.13, "root": "/cache/cu132/st-native/bounded-graph", "loaded": "/cache/cu132/st-native/bounded-graph/28681e637d9e305f1b06f3fb/st_bounded_graph_28681e637d9e305f1b06f3fb.so", "kept_before": 0, "kept_after": 1, "object_mtime_ns": [1789440916035551777]}
+{"run": "cold", "module": "decode-queue", "seconds": 58.87, "root": "/cache/cu132/st-native/decode-queue", "loaded": "/cache/cu132/st-native/decode-queue/fe97e13ae160125f8dc2e358/st_decode_queue_fe97e13ae160125f8dc2e358.so", "kept_before": 0, "kept_after": 1, "object_mtime_ns": [1789440974837465295]}
+{"run": "cold", "ST_NATIVE_BUILD_ROOT": "/cache/cu132/st-native", "total_seconds": 217.1}
+== warm 02:56:15 MemAvailable 32434244 kB
+W0915 02:56:17.260000 1 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda-13.2'
+{"run": "warm", "module": "mapped-staging", "seconds": 0.1, "root": "/cache/cu132/st-native/mapped-staging", "loaded": "/cache/cu132/st-native/mapped-staging/57cf26333c57b06407a5fe0f/st_mapped_staging_57cf26333c57b06407a5fe0f.so", "kept_before": 1, "kept_after": 1, "object_mtime_ns": [1789440814736873090]}
+{"run": "warm", "module": "prefill-topk", "seconds": 0.03, "root": "/cache/cu132/st-native/prefill-topk", "loaded": "/cache/cu132/st-native/prefill-topk/6a747841b821b01e52e4b829/st_prefill_topk_6a747841b821b01e52e4b829.so", "kept_before": 1, "kept_after": 1, "object_mtime_ns": [1789440865968792026]}
+{"run": "warm", "module": "bounded-graph", "seconds": 0.03, "root": "/cache/cu132/st-native/bounded-graph", "loaded": "/cache/cu132/st-native/bounded-graph/28681e637d9e305f1b06f3fb/st_bounded_graph_28681e637d9e305f1b06f3fb.so", "kept_before": 1, "kept_after": 1, "object_mtime_ns": [1789440916035551777]}
+{"run": "warm", "module": "decode-queue", "seconds": 0.04, "root": "/cache/cu132/st-native/decode-queue", "loaded": "/cache/cu132/st-native/decode-queue/fe97e13ae160125f8dc2e358/st_decode_queue_fe97e13ae160125f8dc2e358.so", "kept_before": 1, "kept_after": 1, "object_mtime_ns": [1789440974837465295]}
+{"run": "warm", "ST_NATIVE_BUILD_ROOT": "/cache/cu132/st-native", "total_seconds": 0.2}
+== done 02:56:18
