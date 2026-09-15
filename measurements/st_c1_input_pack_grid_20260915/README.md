@@ -25,8 +25,10 @@ bash probes/run_engine_probe.sh probes/engine_kernel_check.py \
   --output /cache/c1-pack-a55c.jsonl
 ```
 
-- Queue: `c1pack-grid-a55c`, ticket `178944615793684`, revision 2.
-- Frozen source: `caff1db0`; native source SHA-256 is in `compile.json`.
+- Queue: `c1pack-grid-a55c`, ticket `178944615793684`, revision 4.
+- Frozen source: `090beab7`, on current base `5871c559`; native source SHA-256
+  is in `compile.json`. The CUDA source, flags and compiler cache identity match
+  the original candidate; current native prebuild integration is included.
 - Runtime: `sha256:848e493f37af252865deea2fe6169916f6bac727343b5ab592cd74fcf3639544`,
   Torch 2.13.0+cu132, CUDA 13.2. The probe reserves one GB10 through the fleet queue.
 - Geometry controls are native probe arguments, with the prior eight-warp layout
@@ -49,11 +51,20 @@ to regenerate the component table. A partial or failed run is refused.
 
 - Production native compile and load with CUDA hidden: **PASS**, `compile.json`.
   The build uses the same compiler-aware cache identity as the serving extension.
-- Related CPU suite: **25 passed, 10 GPU-only skipped**, `cpu-tests.log`.
-- Dense, linear-family, kernel-glue and seven-row caller suite: **16 passed,
-  23 GPU-only skipped**, `callers-tests.log`.
+- Current CPU suite: **47 passed, 33 GPU-only skipped**, `cpu-tests.log` (80 total).
+  The container uses `--workdir /repo`, with this checkout mounted read-only at
+  `/repo` and `PYTHONPATH=/repo`. Earlier CPU invocations omitted `--workdir` and
+  could import the image's `/opt/st/engine`; their results are superseded and
+  are not qualification of this change. This suite covers dense callers,
+  seven-row routing, KDA norms, forward paths, kernel boundaries, native cache
+  and the new native prebuild integration.
 - GPU numerical and component timing results: **queued, not yet measured**.
 - TP4 onepass, consumer throughput, acceptance and quality: **not measured**.
+  Reservation `c1pack-full-v4-a55c` (ticket `1789447070414497`) is paused until the
+  component gate passes; it compares this candidate with `5871c559` using full
+  validation (C=1 twice and C=4 once per boot). Two earlier preparation attempts
+  were refused before taking GPUs because relevant main changes were missing;
+  the candidate was rebased before the accepted reservation.
 
 The block counts above are source facts. They do not establish a speedup.
 Adoption must use the complete projection intervals as well as the pack interval;
