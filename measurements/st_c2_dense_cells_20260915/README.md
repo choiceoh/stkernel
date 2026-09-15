@@ -257,3 +257,46 @@ Under the chain-evicted criterion both cells win at 16 rows:
 `Drafter.bind_decode_cells` now binds 8 and 16 rows. The boot proof `drafter_decode_cell_report` requires both widths
 to execute during capture. CPU gates: production-flag compile/load with CUDA hidden (`compile-drafter-rows16.json`,
 seven rows16 specializations), and 55 focused tests with 12 GPU skips (`cpu-tests-drafter.log`).
+
+## KDA output producer pack at 16 rows — `c2oprojpack16-0915`
+
+#968 lets the KDA output norm write its bound C1 o_proj cell's input pack, so the cell skips its pack launch.
+At 16 rows the KDA output (4096×2048) runs the sixteen-row CTA on the wide pack, so the port has four parts:
+- **Triton.** `_output_norm_pack` takes a `WIDE` layout constexpr and writes mk_wide_input_pack_kernel's layout
+  from Y's own BF16 bytes: `[heads x 32 x 128]` bytes and `[heads x 32]` row scales.
+- **Native.** `run_gemm_bound_input` accepts that pack only for the `forward_pipeline` KDA-output route, at its
+  exact size. The CTA reads it in place.
+- **Python.** `producer_pack_nbytes` names both layouts. `DenseLinear.producer_pack_rows` and `net._o_proj_pack`
+  allocate by the step's rows.
+- **Control and rollback.** `Net.producer_packs=False` is the same-build control and the rollback.
+
+**GPU.** Session `c2oprojpack16-0915`, frozen `563e2c18`, 10:34:53–10:35:04, beside production. Its kernels.cu,
+dense and kda Python, net, direct MHC and probe files are byte-identical to the merged tree. Raw events:
+`gpu-c2oprojpack16-0915.jsonl`. PASS at 8 and 16 rows. Norm output, TX slot bytes and the pack's used bytes all
+matched at zero tolerance; the pack was compared against the cell's own pack kernel run on the control's output.
+Cases covered subnormal gates, zero and 50× inputs, poisoned slots and both replay orders.
+
+| Rows | Scope | Cache | Control → producer mean / min µs | Mean Δ | Min Δ | Samples (control / producer) |
+|---:|---|---|---:|---:|---:|---|
+| 16 | chain ×8 | evicted | 305.18 / 304.67 → 303.95 / 303.60 | −0.40% | −0.35% | 305.1, 304.7, 305.8, 305.2 / 303.6, 304.0, 304.3, 303.8 |
+| 16 | chain ×8 | warm | 258.35 / 249.48 → 247.94 / 247.64 | −4.03% | −0.74% | |
+| 16 | single | evicted | 64.45 / 56.44 → 57.27 / 55.67 | −11.15% | −1.38% | control has an 87.8 µs outlier |
+| 16 | single | warm | 26.86 / 26.77 → 26.80 / 26.77 | −0.23% | 0.00% | |
+| 8 | chain ×8 | evicted | 300.02 / 284.13 → 281.86 / 280.77 | −6.05% | −1.18% | control has a 347.1 µs outlier |
+| 8 | chain ×8 | warm | 222.80 / 218.92 → 218.48 / 217.84 | −1.94% | −0.49% | |
+
+**Verdict.** It wins by chain evicted at 16 rows: every producer sample is below every control sample. The effect
+is small, about −1.2 µs per KDA layer. The 8-row rows recheck #968 on this build.
+
+**CPU evidence.**
+- `emulate_producer_pack16.py` follows both writers' offsets, per-(block,row) amax and scale, and e4m3 lane byte
+  order from random BF16 norm outputs. It found 0 mismatched bytes or scales at 1, 3, 16 and 32 heads × 16 rows
+  and four magnitudes, including all-zero programs and saturating lanes. Three offset mutations are detected
+  (`emulate-producer-pack16.txt`).
+- `probes/engine_kda_norm_pack_compile.py` compiles the pack writer offline for SM121 (`norm-pack-compile.json`):
+  - C1 layout: 38 / 35 registers (BF16 / FP32 weight), and it lowers to the same instruction section as main's
+    kernel for both weight dtypes;
+  - wide layout: 36 / 35 registers;
+  - all 1,024 B shared, zero stack/local.
+- Production-flag native compile/load with CUDA hidden: `compile-producer-pack16.json`.
+- 63 tests, 40 passed and 23 GPU skips (`cpu-tests-producer-pack16.log`).

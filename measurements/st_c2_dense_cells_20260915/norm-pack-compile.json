@@ -1,0 +1,180 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "torch": "2.13.0+cu132",
+  "triton": "3.7.1",
+  "kernels": [
+    {
+      "weight": "bf16",
+      "layout": "C1",
+      "shared_bytes": 512,
+      "resources": {
+        "registers": 38,
+        "stack": 0,
+        "shared": 1024,
+        "local": 0
+      },
+      "metadata": {
+        "arch": "sm121",
+        "backend_name": "cuda",
+        "debug": false,
+        "default_dot_input_precision": "tf32",
+        "enable_fp_fusion": false,
+        "enable_reflect_ftz": true,
+        "global_scratch_align": 1,
+        "global_scratch_size": 0,
+        "instrumentation_mode": "",
+        "launch_cooperative_grid": false,
+        "launch_pdl": false,
+        "max_num_imprecise_acc_default": 0,
+        "name": "_output_norm_pack",
+        "num_ctas": 1,
+        "num_stages": 3,
+        "num_warps": 1,
+        "profile_scratch_align": 1,
+        "profile_scratch_size": 0,
+        "sanitize_overflow": true,
+        "shared": 512,
+        "tmem_size": 0,
+        "triton_version": "3.7.1",
+        "warp_size": 32
+      },
+      "ptx_sha256": "9e1ce78b1e5ea52fb3fa1291d33abd0631e298ee37f3068a9c02415b8850a8e4",
+      "body_sha256": "e9fc8a3464f690073ea64296b4f3e2f0259302b264939abe75cd745d60f5b1d5",
+      "ptx_lines": 677
+    },
+    {
+      "weight": "bf16",
+      "layout": "sixteen-row wide",
+      "shared_bytes": 512,
+      "resources": {
+        "registers": 36,
+        "stack": 0,
+        "shared": 1024,
+        "local": 0
+      },
+      "metadata": {
+        "arch": "sm121",
+        "backend_name": "cuda",
+        "debug": false,
+        "default_dot_input_precision": "tf32",
+        "enable_fp_fusion": false,
+        "enable_reflect_ftz": true,
+        "global_scratch_align": 1,
+        "global_scratch_size": 0,
+        "instrumentation_mode": "",
+        "launch_cooperative_grid": false,
+        "launch_pdl": false,
+        "max_num_imprecise_acc_default": 0,
+        "name": "_output_norm_pack",
+        "num_ctas": 1,
+        "num_stages": 3,
+        "num_warps": 1,
+        "profile_scratch_align": 1,
+        "profile_scratch_size": 0,
+        "sanitize_overflow": true,
+        "shared": 512,
+        "tmem_size": 0,
+        "triton_version": "3.7.1",
+        "warp_size": 32
+      },
+      "ptx_sha256": "cad82e01c5ad45c340a9ecc8d0e9a208660e79ea9ca6f434f006fc20b10a9a88",
+      "body_sha256": "9723f548a63eb0fa6bb52a19eb5644b103e74ff25ea71af310254c385265978b",
+      "ptx_lines": 655
+    },
+    {
+      "weight": "fp32",
+      "layout": "C1",
+      "shared_bytes": 512,
+      "resources": {
+        "registers": 35,
+        "stack": 0,
+        "shared": 1024,
+        "local": 0
+      },
+      "metadata": {
+        "arch": "sm121",
+        "backend_name": "cuda",
+        "debug": false,
+        "default_dot_input_precision": "tf32",
+        "enable_fp_fusion": false,
+        "enable_reflect_ftz": true,
+        "global_scratch_align": 1,
+        "global_scratch_size": 0,
+        "instrumentation_mode": "",
+        "launch_cooperative_grid": false,
+        "launch_pdl": false,
+        "max_num_imprecise_acc_default": 0,
+        "name": "_output_norm_pack",
+        "num_ctas": 1,
+        "num_stages": 3,
+        "num_warps": 1,
+        "profile_scratch_align": 1,
+        "profile_scratch_size": 0,
+        "sanitize_overflow": true,
+        "shared": 512,
+        "tmem_size": 0,
+        "triton_version": "3.7.1",
+        "warp_size": 32
+      },
+      "ptx_sha256": "fca44ae721d34bc47737419635de939679f8c6490b86f165357c73f635b3c5a7",
+      "body_sha256": "eb4afbf8d596d44959f786b7d025040edca190243fbc29be490d373421fd4016",
+      "ptx_lines": 673
+    },
+    {
+      "weight": "fp32",
+      "layout": "sixteen-row wide",
+      "shared_bytes": 512,
+      "resources": {
+        "registers": 35,
+        "stack": 0,
+        "shared": 1024,
+        "local": 0
+      },
+      "metadata": {
+        "arch": "sm121",
+        "backend_name": "cuda",
+        "debug": false,
+        "default_dot_input_precision": "tf32",
+        "enable_fp_fusion": false,
+        "enable_reflect_ftz": true,
+        "global_scratch_align": 1,
+        "global_scratch_size": 0,
+        "instrumentation_mode": "",
+        "launch_cooperative_grid": false,
+        "launch_pdl": false,
+        "max_num_imprecise_acc_default": 0,
+        "name": "_output_norm_pack",
+        "num_ctas": 1,
+        "num_stages": 3,
+        "num_warps": 1,
+        "profile_scratch_align": 1,
+        "profile_scratch_size": 0,
+        "sanitize_overflow": true,
+        "shared": 512,
+        "tmem_size": 0,
+        "triton_version": "3.7.1",
+        "warp_size": 32
+      },
+      "ptx_sha256": "ad4f70c7b21ad4144b3fa2051e1ef52a4b6b89eb2d919e4edbfdd4b28d1e2269",
+      "body_sha256": "1d189e2fe1de796ead3b060a404af735cf95caf59488fad5ee7abd1aff71bcdc",
+      "ptx_lines": 652
+    }
+  ],
+  "baseline": [
+    {
+      "weight": "bf16",
+      "body_sha256": "e9fc8a3464f690073ea64296b4f3e2f0259302b264939abe75cd745d60f5b1d5",
+      "same_c1_program": true
+    },
+    {
+      "weight": "fp32",
+      "body_sha256": "eb4afbf8d596d44959f786b7d025040edca190243fbc29be490d373421fd4016",
+      "same_c1_program": true
+    }
+  ],
+  "scope": "SM121 PTX compilation only; GPU numerics and timing are probes/engine_producer_pack.py",
+  "source_sha256": {
+    "engine/kernels/kda/output.py": "146054029824b28f7285b5fbfa72a919a6216f3c911dec749416a321114d5aff"
+  }
+}
