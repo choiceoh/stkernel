@@ -256,7 +256,7 @@ one-shot은 Tensor 본체·기존 factory·pybind 헤더와 `AT_PER_OPERATOR_HEA
 
 b12x 는 flashinfer 래퍼(`build_and_load_cute_dsl_kernel`)가
 `/cache/.cache/flashinfer/<버전>/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/*.o` 로 내보내고 적중 시 DSL 컴파일 없이 로드한다
-(키 = DSL 스택 버전 + `_kernel_source_files()` 해시, `moe_dispatch.py` 포함). CuTe DSL 자체 파일 캐시(`CUTE_DSL_CACHE_DIR`)는
+(키 = DSL 스택 버전 + `_kernel_source_files()` 해시, `moe_dispatch.py` 포함). 키 파일이 다른 커널은 다른 모듈에 둔다(`_cute_dsl_module`): flashinfer 는 키가 다른 커널을 빌드할 때 모듈 디렉터리를 통째로 지우므로, 변형 파일을 더하는 동적 커널이 정적 커널과 한 모듈을 쓰던 동안에는 부팅마다 서로의 `.o` 를 지우고 다시 컴파일했다(2026-09-15). CuTe DSL 자체 파일 캐시(`CUTE_DSL_CACHE_DIR`)는
 `cute.compile` 에서 꺼지므로(`compile_only` → `no_cache`) ST 에는 무효다. direct micro 커널도 같은 래퍼를 탄다(모듈
 `st_b12x_direct_micro_sm121a_cute_dsl`, TVM-FFI 형태: 포인터는 정수 주소, 스트림은 env 스트림). 디스크에서 다시 읽은 `.o` 로는
 block-dim 프로브(레지스터 압력이 512 스레드 CTA 를 막는지)를 못 돌리므로, 빌드 때 판정을 `<커널>.blockdim.json` 사이드카로 `.o` 옆에
