@@ -1199,10 +1199,15 @@ __global__ void mk_wide_input_pack_kernel(MKInputPackCtx c) {
     if (lane == 0) c.scales[kb * 32 + row] = scale;
   }
 }
+template <int ROWS = 8>
 __global__ void mk_input_pack_kernel(MKInputPackCtx c) {
+  static_assert(ROWS == 1 || ROWS == 2 || ROWS == 4 || ROWS == 8);
   asm volatile("griddepcontrol.launch_dependents;");
   asm volatile("griddepcontrol.wait;" ::: "memory");
-  const int row=threadIdx.x>>5, lane=threadIdx.x&31, kb=blockIdx.x;
+  // Each warp owns one complete 128-column row. Splitting the eight rows
+  // across CTAs changes neither its reduction nor the consumer's byte layout.
+  const int groups=8/ROWS, kb=blockIdx.x/groups;
+  const int row=(blockIdx.x%groups)*ROWS+(threadIdx.x>>5), lane=threadIdx.x&31;
   float v[4]={}, mx=0;
   if (row<c.m) {
     const uint2 raw=*(const uint2*)(c.x+(size_t)row*c.x_stride+kb*KSTEP+lane*4);
@@ -3282,6 +3287,19 @@ void mk_launch(K kernel, int grid, int smem, cudaStream_t stream,
   MK_CHECK_CUDA(cudaLaunchKernelEx(&cfg, kernel, args));
 }
 
+void mk_launch_input_pack(const MKInputPackCtx& c, cudaStream_t stream, int rows_per_cta = 0) {
+  TORCH_CHECK(rows_per_cta == 0 || rows_per_cta == 1 || rows_per_cta == 2 || rows_per_cta == 4 || rows_per_cta == 8,
+              "input pack rows per CTA must be 0, 1, 2, 4 or 8");
+  TORCH_CHECK(!rows_per_cta || c.m == 8, "input pack geometry controls require eight rows");
+  // Same-build probe controls; only the C=1 verification shape changes by default.
+  const int rows = rows_per_cta ? rows_per_cta : (c.m == 8 && c.k <= 4096 ? 2 : 8);
+  const int blocks = c.k / KSTEP;
+  if (rows == 1) mk_launch<32>(mk_input_pack_kernel<1>, blocks*8, 0, stream, c);
+  else if (rows == 2) mk_launch<64>(mk_input_pack_kernel<2>, blocks*4, 0, stream, c);
+  else if (rows == 4) mk_launch<128>(mk_input_pack_kernel<4>, blocks*2, 0, stream, c);
+  else mk_launch(mk_input_pack_kernel<8>, blocks, 0, stream, c);
+}
+
 int g_input_cta_mode = -1;
 int mk_gemm_input_cta_mode() {
   if (g_input_cta_mode < 0) {
@@ -3449,7 +3467,8 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                  const int64_t* out_address = nullptr, bool wide_input = false, bool bound_input = false,
                  const uint8_t* packed_q = nullptr, const float* packed_s = nullptr,
                  bool local_query = false, bool forward_pipeline = false,
-                 const uint8_t* producer_q = nullptr, const float* producer_s = nullptr) {
+                 const uint8_t* producer_q = nullptr, const float* producer_s = nullptr,
+                 int input_pack_rows = 0) {
   set_kernel_attrs();
   if constexpr (DIRECT) set_direct_kernel_attrs();
   MKGemm2Ctx c2{};
@@ -3565,8 +3584,7 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
       auto* q = packed.data_ptr<uint8_t>();
       auto* scales = reinterpret_cast<float*>(q + qbytes);
       c2.input_q = q; c2.input_s = scales;
-      mk_launch(mk_input_pack_kernel, c2.k / KSTEP, 0, stream,
-                MKInputPackCtx{c2.x, q, scales, c2.m, c2.k, c2.x_stride});
+      mk_launch_input_pack(MKInputPackCtx{c2.x, q, scales, c2.m, c2.k, c2.x_stride}, stream, input_pack_rows);
     }
     const int cta=bound_c1 ? 4 : mk_gemm_input_cta_mode();
     if (bound_c1 && forward_pipeline && c2.n_orig!=6416) {
@@ -3604,7 +3622,7 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
 void mk_run_query_pair(torch::Tensor x, std::vector<torch::Tensor> weights,
                        std::vector<torch::Tensor> scales, std::vector<torch::Tensor> rowscales,
                        std::vector<torch::Tensor> outputs, bool local_c1 = true,
-                       bool forward_pipeline = true) {
+                       bool forward_pipeline = true, int input_pack_rows = 0) {
   TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2
               && (x.size(0) == 8 || x.size(0) == 16 || x.size(0) == 24 || x.size(0) == 32)
               && x.size(1) == 1536 && x.stride(1) == 1 && x.stride(0) >= 1536
@@ -3631,6 +3649,7 @@ void mk_run_query_pair(torch::Tensor x, std::vector<torch::Tensor> weights,
   TORCH_CHECK(!outputs[0].is_alias_of(outputs[1]) && !outputs[0].is_alias_of(x)
               && !outputs[1].is_alias_of(x), "query pair outputs must not alias");
   const bool local_query = local_c1 && x.size(0) == 8;
+  TORCH_CHECK(!input_pack_rows || local_query, "input pack geometry controls require the C1 query layout");
   const int packed_rows = local_query ? 8 : 32;
   const int QBYTES = 12 * packed_rows * KSTEP;
   const int SBYTES = 12 * packed_rows * sizeof(float);
@@ -3640,7 +3659,7 @@ void mk_run_query_pair(torch::Tensor x, std::vector<torch::Tensor> weights,
   auto stream = c10::cuda::getCurrentCUDAStream();
   MKInputPackCtx input{(const __nv_bfloat16*)x.data_ptr(), q, s, (int)x.size(0), 1536, x.stride(0)};
   if (local_query)
-    mk_launch(mk_input_pack_kernel, 12, 0, stream, input);
+    mk_launch_input_pack(input, stream, input_pack_rows);
   else
     mk_launch(mk_wide_input_pack_kernel, 12 * ((x.size(0) + 7) / 8), 0, stream, input);
   if (local_query && forward_pipeline) {
@@ -3728,13 +3747,14 @@ void mk_run_gemm_to_slot(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
 // then [k/128 x 8] scales). Sixteen rows: the wide pack the sixteen-row CTA reads
 // ([k/128 x 32 x 128] bytes, then [k/128 x 32] scales). It sizes and checks what a
 // producer-side pack removes from the cell.
-void mk_run_input_pack(torch::Tensor x, torch::Tensor packed) {
+void mk_run_input_pack(torch::Tensor x, torch::Tensor packed, int rows_per_cta = 0) {
   TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2
                   && (x.size(0) == 8 || x.size(0) == 16)
                   && x.size(1) % KSTEP == 0 && x.size(1) <= KBLK_LIMIT * KSTEP && x.stride(1) == 1
                   && x.stride(0) >= x.size(1) && x.stride(0) % 4 == 0 && ((uintptr_t)x.data_ptr() & 7) == 0,
               "input pack requires aligned BF16 [8 or 16, k] rows");
   const int m = (int)x.size(0), k = (int)x.size(1), kblk = k / KSTEP;
+  TORCH_CHECK(!rows_per_cta || m == 8, "input pack geometry controls require eight rows");
   const int64_t words = m == 8 ? (int64_t)kblk * 1024 : (int64_t)kblk * 32 * KSTEP;
   TORCH_CHECK(packed.device() == x.device() && packed.scalar_type() == torch::kUInt8
                   && packed.is_contiguous() && ((uintptr_t)packed.data_ptr() & 7) == 0
@@ -3746,7 +3766,7 @@ void mk_run_input_pack(torch::Tensor x, torch::Tensor packed) {
   const MKInputPackCtx input{(const __nv_bfloat16*)x.data_ptr(), q,
                              reinterpret_cast<float*>(q + (size_t)words), m, k, x.stride(0)};
   if (m == 8)
-    mk_launch(mk_input_pack_kernel, kblk, 0, stream, input);
+    mk_launch_input_pack(input, stream, rows_per_cta);
   else
     mk_launch(mk_wide_input_pack_kernel, kblk * 2, 0, stream, input);
 }
@@ -3761,12 +3781,14 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
                             torch::Tensor out, int64_t n_orig, int64_t rgs_ptr,
                             c10::optional<torch::Tensor> workspace,
                             c10::optional<torch::Tensor> address, bool forward_pipeline = true,
-                            c10::optional<torch::Tensor> producer_pack = c10::nullopt) {
+                            c10::optional<torch::Tensor> producer_pack = c10::nullopt, int input_pack_rows = 0) {
   TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2,
               "bound input requires CUDA BF16 matrix rows");
   const int64_t m = x.size(0), k = x.size(1), n = n_orig;
   const bool c1 = m == 8 && ((k == 4096 && (n == 4096 || n == 6144 || n == 6416)) ||
                             (n == 4096 && (k == 2048 || k == 3072)));
+  TORCH_CHECK(!input_pack_rows || (c1 && !producer_pack.has_value()),
+              "input pack geometry controls require a C1 cell with its own pack launch");
   const bool wide = (m == 16 || m == 24 || m == 32) &&
       ((n == 4096 && (k == 2048 || k == 4096 || k == 3072)) ||
        ((n == 2048 || n == 6144 || n == 6416) && k == 4096) ||
@@ -3820,14 +3842,14 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
                 a.is_contiguous() && a.numel() >= 1, "bound input requires its reserved TX descriptor");
     mk_run_gemm_impl<true>(x, wq4, ws4, a, n, 1., 0, rgs_ptr, 0, 0, 0,
                            partial, arrive, a.data_ptr<int64_t>(), wide, true,
-                           nullptr, nullptr, false, forward_pipeline, producer_q, producer_s);
+                           nullptr, nullptr, false, forward_pipeline, producer_q, producer_s, input_pack_rows);
   } else {
     TORCH_CHECK(out.device() == x.device() && out.scalar_type() == torch::kBFloat16 &&
                 out.dim() == 2 && out.size(0) == m && out.size(1) == n && out.is_contiguous(),
                 "bound input output must match its BF16 matrix");
     mk_run_gemm_impl(x, wq4, ws4, out, n, 1., 0, rgs_ptr, 0, 0, 0,
                      partial, arrive, nullptr, wide, true, nullptr, nullptr, false, forward_pipeline,
-                     producer_q, producer_s);
+                     producer_q, producer_s, input_pack_rows);
   }
 }
 
@@ -4799,16 +4821,16 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_query_pair", &mk_run_query_pair, "two DSA W4 queries sharing invocation-owned input quantization",
         pybind11::arg("x"), pybind11::arg("weights"), pybind11::arg("scales"),
         pybind11::arg("rowscales"), pybind11::arg("outputs"), pybind11::arg("local_c1")=true,
-        pybind11::arg("forward_pipeline")=true);
+        pybind11::arg("forward_pipeline")=true, pybind11::arg("input_pack_rows")=0);
   m.def("run_gemm_bound_input", &mk_run_gemm_bound_input, "bound K=7 input reuse with owned scratch and optional TX output",
         pybind11::arg("x"),pybind11::arg("wq4"),pybind11::arg("ws4"),pybind11::arg("out"),
         pybind11::arg("n_orig"),pybind11::arg("rgs_ptr"),pybind11::arg("workspace"),
         pybind11::arg("address"),pybind11::arg("forward_pipeline")=true,
-        pybind11::arg("producer_pack")=pybind11::none());
+        pybind11::arg("producer_pack")=pybind11::none(), pybind11::arg("input_pack_rows")=0);
   m.def("run_gemm_wide_input", &mk_run_gemm_wide_input, "private wide-row input reuse qualification");
   m.def("rows16_info", &mk_rows16_info, "{registers, local bytes, blocks/SM, smem} of the sixteen-row kernels");
   m.def("run_input_pack", &mk_run_input_pack, "probe: a C1 bound cell's input pack alone",
-        pybind11::arg("x"), pybind11::arg("packed"));
+        pybind11::arg("x"), pybind11::arg("packed"), pybind11::arg("rows_per_cta")=0);
   m.def("probe_device", &mk_probe_device, "device geometry probe");
   m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");
   m.def("read_mhc_ts", &mk_read_mhc_ts, "mhc phase timestamps");

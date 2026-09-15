@@ -146,7 +146,7 @@ def _stats(values):
     return dict(mean=sum(values) / len(values), min=min(values))
 
 
-def bracket(report, graphs, control, candidate, *, brackets, **meta):
+def bracket(report, graphs, control, candidate, *, brackets, calls=None, **meta):
     flush = torch.empty(128 << 20, device='cuda', dtype=torch.uint8)
     for cache in ('warm', 'evicted'):
         samples = []
@@ -187,12 +187,13 @@ def cell_check(report, ext, cell, owners, rows, *, brackets, timing=True):
                   for a in arms} if direct else {}
         addresses = {a: [torch.tensor([g[0, 1].data_ptr()], device='cuda', dtype=torch.int64) for g in guards[a]]
                      for a in arms} if direct else {}
-        graphs, outputs = {}, {}
+        graphs, outputs, calls = {}, {}, {}
         try:
             for arm in arms:
                 def run(arm=arm):
                     return [ROUTES[arm](ext, layer, x, addresses[arm][i] if direct else None)
                             for i, layer in enumerate(group)]
+                calls[arm] = run
                 graphs[arm], outputs[arm] = _capture(run)
             magnitudes = (0., .001, .1, 1., 50., 0.) if scope == 'single' else (1., 0.)
             for step, magnitude in enumerate(magnitudes):
@@ -232,7 +233,7 @@ def cell_check(report, ext, cell, owners, rows, *, brackets, timing=True):
                    plan=[ext.gemm2_plan(rows, o.rows, o.cols) for o in owners[0]])
             if timing:
                 for control, candidate in plan[rows]:
-                    bracket(report, graphs, control, candidate, brackets=brackets, cell=name, rows=rows,
+                    bracket(report, graphs, control, candidate, brackets=brackets, calls=calls, cell=name, rows=rows,
                             scope=scope, layers=len(group), direct_output=direct)
         finally:
             for graph in graphs.values():

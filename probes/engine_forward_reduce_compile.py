@@ -23,13 +23,13 @@ def main():
     sys.path.insert(0, str(root))
     import torch
     from torch.utils.cpp_extension import load
-    from engine.kernels.common.native_cache import prepare_sources
+    from engine.kernels.common.native_cache import prepare_cuda_sources
     tree = ast.parse((root/'engine/kernels/dense/__init__.py').read_text())
     extension = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'extension')
     flags = next(ast.literal_eval(n.value) for n in extension.body if isinstance(n, ast.Assign)
                  and any(isinstance(t, ast.Name) and t.id == 'flags' for t in n.targets))
     source = root/'engine/kernels/dense/kernels.cu'
-    key, directory, sources = prepare_sources(args.build_dir, [source], (flags, torch.__version__, torch.version.cuda))
+    key, directory, sources = prepare_cuda_sources(args.build_dir, [source], (flags, torch.__version__, torch.version.cuda))
     native = load(name='st_dense_'+key, sources=list(sources), extra_cuda_cflags=flags,
                   build_directory=str(directory), verbose=True)
     assert callable(native.run_query_pair) and callable(native.run_gemm_bound_input)
