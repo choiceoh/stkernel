@@ -59,7 +59,11 @@ class PairTests(unittest.TestCase):
             packed = torch.randn(rows, 12*128, dtype=torch.bfloat16)
             pos = torch.arange(rows)+31997
             net = module.Drafter.__new__(module.Drafter)
-            net.F = NS(head_dim=128, rms_eps=1e-6, rope_theta=10000.)
+            # window is the drafter's sliding window (glm53 config sliding_window = 2048): the
+            # attention path reads F.window now, and a double that omits it fails where the real
+            # geometry would not. The patched attention below ignores the value; the field's
+            # absence was the failure.
+            net.F = NS(head_dim=128, rms_eps=1e-6, rope_theta=10000., window=2048)
             net.local_heads, net.local_kv_heads, net.fast_attention = 8, 2, True
             net.p = {f'layers.0.self_attn.{side}_norm.weight': torch.randn(128, dtype=torch.bfloat16)
                      for side in ('q', 'k')}
