@@ -176,12 +176,17 @@ class PrefillRecord:
             return cls(root, rank, None, force_full=force_full, error=f"{type(exc).__name__}: {exc}")
 
     def _kept(self) -> "list[Path]":
-        """This rank's records, newest first."""
+        """This rank's records, most recently used first; one removed meanwhile is simply not listed."""
+        stamped = []
         try:
-            paths = list(self.root.glob(f"prefill-rank{self.rank}-*.json"))
+            for path in self.root.glob(f"prefill-rank{self.rank}-*.json"):
+                try:
+                    stamped.append((path.stat().st_mtime_ns, path))
+                except OSError:
+                    continue
         except OSError:
             return []
-        return sorted(paths, key=lambda path: path.stat().st_mtime_ns, reverse=True)
+        return [path for _, path in sorted(stamped, key=lambda item: item[0], reverse=True)]
 
     def _load(self):
         if self.error is not None:
