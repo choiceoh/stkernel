@@ -189,6 +189,47 @@ class GateContainerTests(unittest.TestCase):
                           "test_engine_pass": "OK"})
 
 
+class GateTreeTests(unittest.TestCase):
+    """The gate judges commits whole: the tests read bench/, tools/ and measurements/, which a release does not carry."""
+
+    def test_the_gate_block_judges_extracted_commits_not_the_release(self):
+        source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
+        body = source[source.index("    if a.gate and deployed_tree is not None:"):source.index("    elif a.gate:")]
+        self.assertIn("failures(judged", body)
+        self.assertIn("failures(baseline", body)
+        self.assertNotIn("failures(release", body)
+        self.assertNotIn("failures(deployed_tree", body)
+        self.assertIn("return 1", body[:body.index("after = failures")])   # an extraction that failed refuses
+
+    @unittest.skipUnless(__import__("shutil").which("git"), "requires git")
+    def test_a_commit_is_extracted_whole_and_once(self):
+        import subprocess
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as root:
+            repo, releases = Path(root) / "repo", Path(root) / "releases"
+            (repo / "tests").mkdir(parents=True)
+            (repo / "bench").mkdir()
+            (repo / "tests/test_engine_x.py").write_text("")
+            (repo / "bench/fleet.sh").write_text("#!/bin/sh\n")
+            git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t"]
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            subprocess.run(git + ["add", "-A"], check=True)
+            subprocess.run(git + ["commit", "-qm", "c"], check=True)
+            sha = subprocess.run(git + ["rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+            logs = []
+            with patch.object(watch, "SOURCE", repo), patch.object(watch, "GATE_TREES", releases / "gate"):
+                tree = watch.gate_tree(sha, logs.append)
+                self.assertTrue((tree / "bench/fleet.sh").is_file() and (tree / "tests/test_engine_x.py").is_file())
+                self.assertEqual(watch.gate_tree(sha, logs.append), tree)
+                self.assertIsNone(watch.gate_tree("0" * 40, logs.append))
+                self.assertFalse((releases / "gate" / ("0" * 12)).exists())
+                watch.prune_gate_trees((sha,))
+                self.assertTrue(tree.is_dir())
+                watch.prune_gate_trees(("f" * 40,))
+                self.assertFalse(tree.exists())
+
+
 class GateIsNotOptionalTests(unittest.TestCase):
     def test_a_first_deploy_with_nothing_to_compare_against_is_refused_not_waved_through(self):
         """Skipping here would make the only ungated deploy the first one, which nobody is watching."""

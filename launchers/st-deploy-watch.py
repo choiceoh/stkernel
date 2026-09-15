@@ -254,6 +254,39 @@ def regressed(deployed: "dict[str, str]", candidate: "dict[str, str]") -> "list[
 
 
 # -- the actions ----------------------------------------------------------------------------------
+GATE_TREES = RELEASES / "gate"
+
+
+def gate_tree(sha: str, log) -> "Path | None":
+    """The whole commit `sha`, for the gate to judge: extracted once, next to the releases.
+
+    A release carries only what boots (CARRY), and the engine tests also read bench/, tools/ and
+    measurements/ beside it. Judged over release trees, seven files that pass on their commit failed
+    for a missing file, and the gate refused main for it (2026-09-15)."""
+    target = GATE_TREES / sha[:12]
+    if target.is_dir():
+        return target
+    staging = target.with_suffix(".partial")
+    run(["rm", "-rf", str(staging)])
+    staging.mkdir(parents=True)
+    code, _, err = run(["bash", "-c", f"set -o pipefail; git -C {SOURCE} archive {sha} | tar -x -C {staging}"])
+    if code:
+        log(f"  gate: cannot extract {sha[:12]} ({err.strip()[:80]})")
+        run(["rm", "-rf", str(staging)])
+        return None
+    staging.rename(target)
+    return target
+
+
+def prune_gate_trees(keep) -> None:
+    """Only the trees a next cycle can compare stay: the candidate's and the deployed commit's."""
+    names = {sha[:12] for sha in keep if sha}
+    if GATE_TREES.is_dir():
+        for path in GATE_TREES.iterdir():
+            if path.name not in names:
+                run(["rm", "-rf", str(path)])
+
+
 def cut(sha: str, log) -> "Path | None":
     """A release directory for `sha`: a checkout, not a copy of a working tree that may be mid-edit.
 
@@ -367,9 +400,14 @@ def cycle(a, log) -> int:
         return 1
     deployed_tree = Path(held["release"]) if held.get("release") and Path(held["release"]).exists() else None
     if a.gate and deployed_tree is not None:
-        log("  gate: the engine suite over the candidate and over what is deployed")
-        after = failures(release, a.test_timeout)
-        before = failures(deployed_tree, a.test_timeout)
+        log("  gate: the engine suite over the candidate and over what is deployed, each commit whole")
+        judged, baseline = gate_tree(head, log), gate_tree(held["deployed"], log) if held.get("deployed") else None
+        if judged is None or baseline is None:
+            log("  REFUSED: the gate could not extract both commits; nothing recorded, the next cycle tries again")
+            return 1
+        after = failures(judged, a.test_timeout)
+        before = failures(baseline, a.test_timeout)
+        prune_gate_trees((head, held.get("deployed")))
         worse = regressed(before, after)
         if worse:
             log(f"  REFUSED: {len(worse)} file(s) regressed against {deployed_tree.name}: {', '.join(worse)}")
