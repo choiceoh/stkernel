@@ -97,14 +97,19 @@ class DraftAttentionTests(unittest.TestCase):
                 self.assertLess(((out.float()-ref.float()).norm()/ref.float().norm()).item(),.004)
         finally:graph.reset()
 
-    def reference(self, q, k, v, ring, position):
+    def reference(self, q, k, v, ring, position, window=None):
+        """DFlash's mask (z-lab/dflash _attention_mask): non-causal inside the block, and a context key is visible
+        to the query at position + j while their distance is under the sliding window."""
         w = ring.shape[1]
+        window = w if window is None else window
         positions = torch.arange(position - w, position, device=q.device)
         keys = torch.cat((ring[0, positions % w], k)).repeat_interleave(q.shape[1] // k.shape[1], 1)
         values = torch.cat((ring[1, positions % w], v)).repeat_interleave(q.shape[1] // k.shape[1], 1)
-        valid = torch.cat((positions >= 0, torch.ones(q.shape[0], device=q.device, dtype=torch.bool)))
+        rows = torch.arange(q.shape[0], device=q.device)[:, None]
+        context = (positions[None, :] >= 0) & (position + rows - positions[None, :] < window)
+        valid = torch.cat((context, torch.ones(q.shape[0], q.shape[0], device=q.device, dtype=torch.bool)), 1)
         scores = torch.einsum("bhd,nhd->bhn", q.float(), keys.float()) * q.shape[2]**-.5
-        scores.masked_fill_(~valid[None, None, :], -float("inf"))
+        scores.masked_fill_(~valid[:, None, :], -float("inf"))
         return torch.einsum("bhn,nhd->bhd", scores.softmax(-1), values.float()).bfloat16()
 
     def test_startup_wrap_graph_and_poisoned_unused_slots(self):
@@ -137,16 +142,17 @@ class DraftAttentionTests(unittest.TestCase):
                 graph.reset()
 
 
-    def oracle(self, q, k, v, ring, ctx, layer, slot):
-        """fp32 softmax attention over exactly the cells the kernel calls live."""
+    def oracle(self, q, k, v, ring, ctx, layer, slot, window=None):
+        """fp32 softmax attention over exactly the cells the kernel calls live for each query: the block's own keys,
+        and the context positions within the sliding window of that query's block row."""
         b, h, dim = q.shape
         hk = k.shape[1]
         cells = ring.shape[3]
+        window = cells if window is None else window
         band = ring[slot, layer]
         out = torch.zeros(b, h, dim, device=q.device, dtype=torch.float32)
         n = torch.arange(cells + b, device=q.device)
         absolute = ctx - cells + n
-        live = (n >= cells) | (absolute >= 0)
         for head in range(h):
             kh = head // (h // hk)
             keys = torch.where((n < cells)[:, None],
@@ -155,9 +161,32 @@ class DraftAttentionTests(unittest.TestCase):
             values = torch.where((n < cells)[:, None],
                                  band[1, (absolute + cells) % cells, kh].float(),
                                  torch.cat([torch.zeros(cells, dim, device=q.device), v[:, kh].float()]))
-            scores = (keys[live] @ q[:, head].float().T) * dim ** -0.5           # [live, b]
-            out[:, head] = (torch.softmax(scores, 0).T @ values[live])
+            for row in range(b):
+                live = (n >= cells) | ((absolute >= 0) & (ctx + row - absolute < window))
+                scores = (keys[live] @ q[row, head].float()) * dim ** -0.5          # [live]
+                out[row, head] = torch.softmax(scores, 0) @ values[live]
         return out
+
+    def test_each_block_row_sees_the_context_through_its_own_sliding_window(self):
+        """DFlash trained with a per-query window: the anchor sees window - 1 context positions, row j that many
+        less j. Serving sizes the ring to the window, so a shared window over the whole ring gave every row the
+        oldest j + 1 extra keys."""
+        from engine.kernels.draft_attention import draft_attention
+        gen = torch.Generator(device="cuda").manual_seed(19)
+        kind = dict(device="cuda", generator=gen, dtype=torch.float32)
+        for b, h, hk, cells, window, ctx in ((8, 8, 2, 2048, 2048, 5000), (8, 8, 2, 64, 64, 70), (8, 8, 2, 64, 64, 60),
+                                             (8, 8, 2, 72, 64, 300), (1, 8, 2, 64, 64, 64)):
+            with self.subTest(b=b, cells=cells, window=window, ctx=ctx):
+                q = torch.randn(b, h, 128, **kind).bfloat16()
+                k = torch.randn(b, hk, 128, **kind).bfloat16()
+                v = torch.randn(b, hk, 128, **kind).bfloat16()
+                ring = torch.randn(2, 2, 2, cells, hk, 128, **kind).bfloat16()
+                position = torch.tensor(ctx, device="cuda", dtype=torch.int64)
+                got = draft_attention(q, k, v, ring, position, slot=torch.tensor([1], device="cuda"), layer=0,
+                                      window=window)
+                want = self.oracle(q, k, v, ring, ctx, 0, 1, window=window)
+                gap = (want - got.float()).norm(dim=-1) / want.norm(dim=-1).clamp_min(1e-6)
+                self.assertLess(gap.max().item(), 2 ** -8)
 
     def test_the_slices_combine_into_the_attention_they_were_cut_from(self):
         from engine.kernels.draft_attention import draft_attention

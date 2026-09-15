@@ -3,7 +3,7 @@
 GLM-5.3 is served with SPEC_K=7 drafts a step from GLM-5.3-Flash-DFlash2:
 a 5-layer Qwen3-shaped block drafter (hidden 4096, 32 q / 8 kv heads of
 128, q/k norms, rope theta 1e4, sliding window 2048, NON-causal inside the
-block) that reads the target's hidden states at layers 5,14,24,33,42
+block) that reads the target's hidden states after layers 5,14,24,33,42 (0-based)
 (concatenated, `fc` -> 4096, `hidden_norm`) as its attention CONTEXT --
 projected once per verified token to K/V for all five layers, rope'd, kept
 -- and, per step, runs one block of [anchor token, K mask tokens] against
@@ -85,14 +85,19 @@ class DrafterFacts:
     conv_group: int
     sel_rank: int
     sel_top_k: int
-    target_layers: tuple            # target layer ids whose hidden states feed fc (1-based as the config counts them)
+    target_layers: tuple            # target layer ids whose OUTPUTS feed fc (0-based layer indices, as DFlash counts them)
     k: int                          # drafts per step: SPEC_K
 
     @property
     def aux_layers(self) -> "list[int]":
-        """The target's layer indices whose OUTPUT is taken: the served model
-        keeps `hidden after layer idx` when idx + 1 is in target_layer_ids."""
-        return [t - 1 for t in self.target_layers]
+        """The target's layer indices whose OUTPUT is taken: `target_layer_ids` as they are, 0-based.
+
+        DFlash names the layer whose completed output it reads. The reference implementation reads
+        `hidden_states[id + 1]` (index 0 is the embeddings), SGLang captures before layer id + 1 ("the
+        completed output of layer k"), and vLLM adds 1 to convert the ids to its before-layer capture. This
+        profile used to take id - 1 -- the output one layer early -- from a before-layer capture read as
+        after-layer."""
+        return list(self.target_layers)
 
 
 def load(path: "str | Path" = DRAFTER) -> DrafterFacts:
@@ -151,13 +156,19 @@ def rope(x: torch.Tensor, positions: torch.Tensor, theta: float):
     return torch.cat([x1 * cos - x2 * sin, x1 * sin + x2 * cos], dim=-1).to(x.dtype)
 
 
-STORE_PREFIX = "DFlash2Qwen3ForCausalLM/model."      # the pack store's namespace for the drafter (kernels/dense/store)
+STORE_PREFIX = "DFlash2Qwen3ForCausalLM/"      # the pack store's namespace for the drafter (kernels/dense/store packs it per tile)
 
 
-def store_name(name: str) -> str:
-    """The pack store's name of a prepared dense weight: what its packs and calibration blobs are filed under."""
+def store_name(name: str, F: DrafterFacts) -> str:
+    """The pack store's name of a prepared dense weight: what its packs and calibration blobs are filed under.
+
+    The namespace names the target layers `fc` reads. A calibration blob is a sum over a reader's inputs, and every
+    drafter input follows from those layers' outputs -- fc's directly, each block reader's through the context it
+    attends to. Blobs summed from other layers pass every check the store makes (shapes, rows, finite peaks) and
+    would pack the readers for inputs they never see. The ones taken while this profile read the outputs one layer
+    early stay under `DFlash2Qwen3ForCausalLM/model.*`, where nothing reads them any more."""
     module = name.removesuffix(".weight").replace("self_attn.qkv", "self_attn.qkv_proj").replace("mlp.gate_up", "mlp.gate_up_proj")
-    return STORE_PREFIX + module
+    return f"{STORE_PREFIX}outputs-{'-'.join(str(layer) for layer in F.aux_layers)}/model.{module}"
 
 
 def dense_shapes(F: DrafterFacts, world: int) -> "dict[str, tuple[int, int]]":
@@ -244,7 +255,7 @@ class Drafter:
                                                [n + "attention_conv.kernel_projection.weight"] + [n + f"self_attn.{s}_proj.weight" for s in ("q", "k", "v")]),
                                               (n + "post_attention_layernorm.weight", n + "mlp.gate_up",
                                                [n + "mlp_conv.kernel_projection.weight"] + [n + f"mlp.{s}_proj.weight" for s in ("gate", "up")])):
-                amax = amax_of(store_name(dense_name))
+                amax = amax_of(store_name(dense_name, F))
                 if amax is None or any(p.get(k) is None for k in readers + [norm]):
                     continue
                 alpha = self.tuning.smoothing_alpha.get(norm, 0.5)
@@ -304,8 +315,8 @@ class Drafter:
             if name == "fc.weight":
                 options['decode_precision'] = policy.fc_precision
                 if policy.fc_calibration == 'decode':
-                    options['decode_name'] = require_decode_calibration(store, store_name(name), w.shape[1])
-            self.dense[name] = DenseLinear(w,store=store,name=store_name(name),smooth=smooth.get(name),
+                    options['decode_name'] = require_decode_calibration(store, store_name(name, F), w.shape[1])
+            self.dense[name] = DenseLinear(w,store=store,name=store_name(name, F),smooth=smooth.get(name),
                                           prefill=needs_fp8(F, max_seqs, name), **options)
         self.context_kv = torch.cat(context)
         self.context_norm = torch.stack([p[f"layers.{L}.self_attn.k_norm.weight"] for L in range(F.layers)])
@@ -449,9 +460,10 @@ class Drafter:
         if self.fast_attention:
             from engine.kernels.draft_attention import draft_attention
             if isinstance(ring, tuple):
-                o = draft_attention(qh.contiguous(),kh.contiguous(),vh,ring[0],ctx_len,slot=ring[1],layer=L)
+                o = draft_attention(qh.contiguous(),kh.contiguous(),vh,ring[0],ctx_len,slot=ring[1],layer=L,
+                                    window=F.window)
             else:
-                o = draft_attention(qh.contiguous(), kh.contiguous(), vh, ring[L], ctx_len)
+                o = draft_attention(qh.contiguous(), kh.contiguous(), vh, ring[L], ctx_len, window=F.window)
             return self.target.comm.all_reduce(self.linear(o.reshape(B, heads*F.head_dim), q+"o_proj.weight"))
         # the context window: the last min(ctx, window) verified positions, then the block itself (non-causal)
         # A fixed window keeps GEMM/reduction geometry identical in eager and
@@ -464,8 +476,11 @@ class Drafter:
         rep = F.heads // F.kv_heads
         k_all, v_all = k_all.repeat_interleave(rep, dim=1), v_all.repeat_interleave(rep, dim=1)
         scores = torch.einsum("bhd,nhd->bhn", qh.float(), k_all.float()) * F.head_dim ** -0.5
-        valid = torch.cat([cpos >= 0, torch.ones(B, device=x.device, dtype=torch.bool)])
-        scores = scores.masked_fill(~valid[None, None, :], float("-inf"))
+        # DFlash's sliding window is per query: block row j (at ctx_len + j) sees a context position while their
+        # distance is under the window, so the anchor keeps window - 1 context positions and row j that many less j
+        near = cpos[None, :] > ctx_len + torch.arange(B, device=x.device)[:, None] - F.window        # [B, n_ctx]
+        valid = torch.cat([(cpos >= 0)[None, :] & near, torch.ones(B, B, device=x.device, dtype=torch.bool)], 1)
+        scores = scores.masked_fill(~valid[:, None, :], float("-inf"))
         o = torch.einsum("bhn,nhd->bhd", torch.softmax(scores, dim=-1), v_all.float()).to(x.dtype)
         return self.linear(o.reshape(B, F.heads * F.head_dim), q + "o_proj.weight")
 
@@ -584,11 +599,11 @@ class Drafter:
 
     def _attn_rows(self, L: int, x: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor, ctx: torch.Tensor,
                    field: torch.Tensor, n: int, t: int, rows_ok=None) -> torch.Tensor:
-        """Each block against its own slot's ring, as one fused attention over the whole field. The rows' queries and
-        block keys go to their slots (the block's keys into the ring's scratch tail, cells window..window+t); the ring
-        is read in storage order -- its keys are rope'd at their positions, so the order of keys is immaterial -- and
-        the cells a slot has not written yet (context shorter than the window) are masked. The heads sharing a kv
-        head are laid out as more queries against it, so no head is repeated in memory."""
+        """Each block against its own slot's ring, as one fused attention over the step's rows. A row reads its slot's
+        ring and then its block's own keys; the ring is read in storage order -- its keys are rope'd at their
+        positions, so the order of keys is immaterial -- and the cells outside the row's sliding window (not written
+        yet, or too far from the query) are masked. The heads sharing a kv head are laid out as more queries against
+        it, so no head is repeated in memory."""
         F, p = self.F, self.p
         q = f"layers.{L}.self_attn."
         if self.fast_attention:
@@ -602,24 +617,27 @@ class Drafter:
             # GEMMs cover all rows once, and so does the attention: each row reads its own device-selected slot
             # at its own context length, so the rows are a grid dimension and there is nothing to concatenate.
             out = attend_rows(qh.view(n, t, heads, D), kh.view(n, t, kv, D), vh.view(n, t, kv, D),
-                              field, ctx, slot=slots, layer=L)
+                              field, ctx, slot=slots, layer=L, window=F.window)
             return self.target.comm.all_reduce(self.linear(out.reshape(n*t, heads*D), q + "o_proj.weight", rows_ok))
-        S, W, kv, D, rep = field.shape[0], F.window, F.kv_heads, F.head_dim, F.heads // F.kv_heads
+        W, kv, D, rep = F.window, F.kv_heads, F.head_dim, F.heads // F.kv_heads
         qh = norm_rope(Fn.linear(x, p[q + "q_proj.weight"]).view(n * t, F.heads, D), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
         kh = norm_rope(Fn.linear(x, p[q + "k_proj.weight"]).view(n * t, kv, D), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
         vh = Fn.linear(x, p[q + "v_proj.weight"]).view(n * t, kv, D)
-        field[slots, L, 0, W:W + t] = kh.view(n, t, kv, D)
-        field[slots, L, 1, W:W + t] = vh.view(n, t, kv, D)
         q_rows = qh.view(n, t, kv, rep, D).permute(0, 2, 3, 1, 4).reshape(n, kv, rep * t, D)
-        q_all = torch.zeros(S, kv, rep * t, D, dtype=qh.dtype, device=qh.device).index_copy_(0, slots, q_rows)
-        length = torch.zeros(S, dtype=ctx.dtype, device=ctx.device).index_copy_(0, slots, ctx)
-        cells = torch.arange(W + t, device=ctx.device)
-        mask = ((cells < length.clamp_max(W).view(S, 1)) | (cells >= W)).view(S, 1, 1, W + t)
-        keys, values = field[:, L, 0, :W + t].transpose(1, 2), field[:, L, 1, :W + t].transpose(1, 2)   # [S, kv, W+t, D], views
+        keys = torch.cat([field[slots, L, 0, :W], kh.view(n, t, kv, D)], 1).transpose(1, 2)            # [n, kv, W+t, D]
+        values = torch.cat([field[slots, L, 1, :W], vh.view(n, t, kv, D)], 1).transpose(1, 2)
+        # A ring cell c holds the newest context position congruent to c (negative: not written yet). DFlash's
+        # window is per query: row j of the block (at ctx + j) sees positions within window - 1 - j of the
+        # anchor. The queries are laid out rep x t, so query i is block row i % t.
+        last = ctx.view(n, 1) - 1
+        held = last - (last - torch.arange(W, device=ctx.device)).remainder(W)                      # [n, W]
+        row = (torch.arange(rep * t, device=ctx.device) % t).view(1, rep * t, 1)
+        near = (held[:, None, :] >= 0) & (held[:, None, :] > ctx.view(n, 1, 1) + row - W)            # [n, q, W]
+        mask = torch.cat([near, torch.ones(n, rep * t, t, dtype=torch.bool, device=ctx.device)], 2).view(n, 1, rep * t, W + t)
         fused = sdpa_kernel([SDPBackend.CUDNN_ATTENTION, SDPBackend.EFFICIENT_ATTENTION]) if x.is_cuda else nullcontext()
         with fused:                                                                            # D3: no math fallback on CUDA
-            o = Fn.scaled_dot_product_attention(q_all, keys, values, attn_mask=mask, scale=D ** -0.5)
-        o = o.index_select(0, slots).view(n, kv, rep, t, D).permute(0, 3, 1, 2, 4).reshape(n * t, F.heads * D)
+            o = Fn.scaled_dot_product_attention(q_rows, keys, values, attn_mask=mask, scale=D ** -0.5)
+        o = o.view(n, kv, rep, t, D).permute(0, 3, 1, 2, 4).reshape(n * t, F.heads * D)
         return Fn.linear(o, p[q + "o_proj.weight"])
 
     def block_rows(self, ids: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor, ctx: torch.Tensor,
@@ -852,10 +870,14 @@ class Drafter:
 
 
 def ring_cells(F: DrafterFacts) -> int:
-    """A slot's ring per layer and half: the window's cells, then a scratch tail of block-width cells where the batched
-    attention parks a block's own keys so the fused kernel reads context and block as one contiguous run (45차 §23).
-    The training block bounds a proposal's width (k + 1 <= block, asserted in `load`)."""
-    return F.window + F.block
+    """A slot's ring per layer and half: the window's cells, in native and stock boots alike. Cell c holds the newest
+    context position congruent to c -- the eager paths index it modulo the window, the fused kernels modulo the
+    field's cells, and those agree only while the two are one number. A block's own keys are not filed: the fused
+    kernel reads them from the block's projection and the eager attention appends them to the gathered ring.
+
+    Stock boots used to add a scratch tail of block-width cells where the batched eager attention parked the block's
+    keys (45차 §23); the fused kernels, handed such a field, wrapped at window + block."""
+    return F.window
 
 
 def ring_bytes(F: DrafterFacts) -> int:
@@ -866,7 +888,7 @@ def _selfcheck() -> None:
     F = load()
     assert (F.layers, F.heads, F.kv_heads, F.head_dim, F.window, F.block) == (5, 32, 8, 128, 2048, 8)
     assert F.k == SPEC_K and F.k <= F.block - 1, "the draft width is the profile's, and a block holds it"
-    assert F.aux_layers == [4, 13, 23, 32, 41] and F.sel_top_k == 16 and F.mask_id == 154856
+    assert F.aux_layers == [5, 14, 24, 33, 42] and F.sel_top_k == 16 and F.mask_id == 154856
     sp = specs(F)
     from engine.base.params import total_bytes
     import struct

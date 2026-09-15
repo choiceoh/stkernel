@@ -36,6 +36,31 @@ class DraftAcceptanceTests(unittest.TestCase):
             self.assertTrue(second.separate_decode_fp8)
             self.assertEqual(path.read_bytes(), original)
 
+    def test_the_prefill_fc_blob_is_summed_by_the_boot_after_the_decode_rows_are_filed(self):
+        """FC's decode pack wants committed decode rows and its prefill pack the shared blob. A reader carries one
+        calibration observer, so a collecting boot sums the decode rows and the boot after it the shared blob: a
+        namespace that starts empty no longer leaves the prefill lane on round-to-nearest for good."""
+        from engine.profiles.glm53.draft_policy import calibration_plan
+        from engine.profiles.glm53.drafter import DrafterFacts, dense_shapes, store_name
+        F = DrafterFacts(layers=1, hidden=16, heads=2, kv_heads=1, head_dim=4, inter=32, rms_eps=1e-6, rope_theta=1e4,
+                         window=8, block=4, mask_id=0, conv_taps=2, conv_group=4, sel_rank=4, sel_top_k=3,
+                         target_layers=(5, 14), k=3)
+        have = set()
+        store = SimpleNamespace(missing_calibration=lambda name, cols: [] if name in have else [(name, 0, cols)])
+        fc, readers = store_name('fc.weight', F), [key for key in dense_shapes(F, 1) if key != 'fc.weight']
+        first = calibration_plan(DraftPolicy('fp8', 'collect', True), store, F, 1)
+        self.assertEqual([(key, missing[0][0], decode_only) for key, missing, decode_only in first],
+                         [('fc.weight', decode_name(fc), True)] + [(key, store_name(key, F), False) for key in readers])
+        have.update({decode_name(fc)} | {store_name(key, F) for key in readers})
+        second = calibration_plan(DraftPolicy('fp8', 'decode', True), store, F, 1)
+        self.assertEqual([(key, missing[0][0], decode_only) for key, missing, decode_only in second],
+                         [('fc.weight', fc, False)], "the prefill lane's blob, every row fc reads")
+        have.add(fc)
+        self.assertEqual(calibration_plan(DraftPolicy('fp8', 'decode', True), store, F, 1), [])
+        have.clear()
+        shared = calibration_plan(DraftPolicy(), store, F, 1)
+        self.assertEqual((shared[0][0], shared[0][1][0][0], shared[0][2]), ('fc.weight', fc, False))
+
     def test_one_missing_rank_keeps_every_rank_on_collection_without_overwriting_ready_files(self):
         with tempfile.TemporaryDirectory() as root:
             store, name, cols = PackStore(root, 0), 'draft/model.fc', 16

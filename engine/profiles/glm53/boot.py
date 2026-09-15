@@ -474,7 +474,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
           nvme_mapped_staging=False, draft_policy=None, draft_tuning_path='', workspace_gib: "float | None" = None):
     """`ckpt_meta`: where config.json / tokenizer.json / generation_config.json are -- the HF checkpoint dir, or a
     copy of just those files: a node needs its rank file, the drafter and this, not the 185 GB checkpoint."""
-    from engine.profiles.glm53.draft_policy import DraftPolicy, decode_name, resolve_calibration
+    from engine.profiles.glm53.draft_policy import DraftPolicy, calibration_plan, decode_name, resolve_calibration
     draft_policy = draft_policy or DraftPolicy()
     if draft_tuning_path and (execution != 'native' or not use_drafter):
         raise ValueError('draft tuning requires the native drafter')
@@ -502,7 +502,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     # reads that shard; reserving the replicated ring would also waste three
     # quarters of every persistent prefix snapshot's drafter state.
     draft_heads = (D.kv_heads // comm.world_size if execution == "native" else D.kv_heads) if D else 0
-    draft_cells = (D.window if execution == "native" else drafter_mod.ring_cells(D)) if D else 0
+    draft_cells = drafter_mod.ring_cells(D) if D else 0
     draft_shape = (D.layers, draft_cells, draft_heads, D.head_dim) if D else None
     cache_layout = layout(F, net.layers, draft_shape)
     bb, sb = cache_layout.block_bytes, cache_layout.slot_bytes
@@ -536,10 +536,10 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         from engine.kernels.dense.calibration import BUDGET_BYTES, Calibration
         from engine.kernels.dense.store import PackStore
         store = PackStore("/cache", comm.rank)
-        calib_plan = []                                                   # (module, weight key, store name, missing tiles, small rows)
+        calib_plan = []                                   # (module, weight key, missing tiles, small rows, committed decode rows only)
         if D:
             recorder.gauge('draft_policy_requested', draft_policy.label())
-            draft_policy = resolve_calibration(draft_policy, store, drafter_mod.store_name('fc.weight'),
+            draft_policy = resolve_calibration(draft_policy, store, drafter_mod.store_name('fc.weight', D),
                                                D.hidden * len(D.target_layers), comm)
             from engine.profiles.glm53.draft_tuning import load_agreed, prepare_store
             from engine.profiles.glm53.draft_fc_bias import AUTO_BIAS_FILE
@@ -551,24 +551,19 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             recorder.gauge('draft_fc_bias_ranks', len(tuning.fc_bias))
             recorder.gauge('draft_fc_bias_auto', tuning.fc_bias_auto)
             recorder.gauge('draft_policy', draft_policy.label())
-            for key, (_rows, cols) in drafter_mod.dense_shapes(D, comm.world_size).items():
-                name = drafter_mod.store_name(key)
-                if key == "fc.weight" and draft_policy.fc_calibration != "shared":
-                    name = decode_name(name)
-                missing = store.missing_calibration(name, cols)
-                if missing:
-                    calib_plan.append(("drafter", key, missing, True))
+            for key, missing, decode_only in calibration_plan(draft_policy, store, D, comm.world_size):
+                calib_plan.append(("drafter", key, missing, True, decode_only))
         shapes = {sp.name: sp.shape for sp in specs}
         for key, name in net.dense_weight_names(shapes).items():
             missing = store.missing_calibration(name, shapes[key][1])
             if missing:
-                calib_plan.append(("target", key, missing, False))
+                calib_plan.append(("target", key, missing, False, False))
         from engine.profiles.glm53.net import HEAD_NAME
         missing = store.missing_calibration(HEAD_NAME, shapes["head"][1])
         if missing:
-            calib_plan.append(("target", "head", missing, True))      # its rows are the batch's own, prefill and decode alike
+            calib_plan.append(("target", "head", missing, True, False))   # its rows are the batch's own, prefill and decode alike
         budget = BUDGET_BYTES
-        for _module, _key, missing, _small in calib_plan:
+        for _module, _key, missing, _small, _decode_only in calib_plan:
             from engine.kernels.dense import DenseLinear
             need = Calibration.nbytes(missing, max_decode_rows=max_seqs * (D.k + 1 if D else 1) if _small else 0,
                                       input_dtype=DenseLinear.input_dtype if _module == "drafter" else torch.float32)
@@ -717,9 +712,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             if calib_plan:                                            # this boot sums what the store lacked, within the budget
                 calibration = Calibration(torch.device("cuda"), BUDGET_BYTES, arena=arena,
                                           max_decode_rows=max_seqs * (1 + drafter.k))
-                for module, key, missing, small in calib_plan:
+                for module, key, missing, small, decode_only in calib_plan:
                     layer = (drafter if module == "drafter" else net).dense[key]
-                    decode_only = module == "drafter" and key == "fc.weight" and draft_policy.fc_calibration != "shared"
                     name = decode_name(layer.name) if decode_only else layer.name
                     calibration.attach(name, layer, missing, small, unsmooth=getattr(layer, "smooth", None),
                                        decode_only=decode_only)

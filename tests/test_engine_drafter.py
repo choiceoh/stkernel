@@ -194,6 +194,63 @@ class DrafterTests(unittest.TestCase):
         self.assertTrue(torch.equal(cand[1].gather(1, (q[1] > 0).to(torch.int64).argmax(-1, keepdim=True)).squeeze(1),
                                     greedy[1]), "and it is the greedy pick")
 
+    def _uniform_attention_drafter(self):
+        """q = 0 makes every visible key weigh the same, so the output is the mean of the visible values: context
+        values hold their position, block values are 0."""
+        d = self.make_drafter()
+        F = d.F
+        dev = "cpu"                      # fp32 end to end, so a mean is exact enough to name the positions in it
+        zeros = lambda *shape: torch.zeros(*shape, device=dev, dtype=torch.float32)
+        q = "layers.0.self_attn."
+        o_proj = zeros(F.hidden, F.heads * F.head_dim)
+        o_proj[:F.heads * F.head_dim] = torch.eye(F.heads * F.head_dim, device=dev)
+        d.p = {q + "q_proj.weight": zeros(F.heads * F.head_dim, F.hidden),
+               q + "k_proj.weight": torch.ones(F.kv_heads * F.head_dim, F.hidden, device=dev),
+               q + "v_proj.weight": zeros(F.kv_heads * F.head_dim, F.hidden),
+               q + "q_norm.weight": torch.ones(F.head_dim, device=dev),
+               q + "k_norm.weight": torch.ones(F.head_dim, device=dev),
+               q + "o_proj.weight": o_proj}
+        return d, F, dev
+
+    def test_each_block_row_sees_the_context_through_its_own_sliding_window(self):
+        """DFlash's mask (z-lab/dflash _attention_mask): the query at ctx + j sees context position p while
+        (ctx + j) - p < window -- the anchor window - 1 positions, row j that many less j."""
+        d, F, dev = self._uniform_attention_drafter()
+        B = F.k + 1
+        for ctx in (3, F.window - 1, F.window, F.window + 5, 5 * F.window + 3):
+            with self.subTest(ctx=ctx):
+                ring = torch.zeros(F.layers, 2, F.window, F.kv_heads, F.head_dim, device=dev)
+                for p in range(max(0, ctx - F.window), ctx):
+                    ring[0, 1, p % F.window] = float(p)
+                x = torch.randn(B, F.hidden, device=dev)
+                positions = ctx + torch.arange(B, device=dev)
+                out = d._attn(0, x, positions, ring, ctx).float()[:, :F.heads * F.head_dim]
+                for j in range(B):
+                    seen = [p for p in range(max(0, ctx - F.window), ctx) if (ctx + j) - p < F.window]
+                    want = sum(seen) / (len(seen) + B)
+                    self.assertTrue(torch.allclose(out[j], torch.full_like(out[j], want), atol=1e-4),
+                                    f"row {j}: {out[j, 0].item()} != {want}")
+
+    def test_rows_attention_uses_the_same_per_query_window(self):
+        """`_attn_rows` reads the ring in storage order; each cell's position is the newest one congruent to it."""
+        d, F, dev = self._uniform_attention_drafter()
+        t = F.k + 1
+        slots = torch.tensor([1, 2], device=dev)
+        ctx = torch.tensor([F.window + 5, 4], device=dev)
+        field = torch.zeros(4, F.layers, 2, F.window, F.kv_heads, F.head_dim, device=dev)
+        for slot, c in zip(slots.tolist(), ctx.tolist()):
+            for p in range(max(0, c - F.window), c):
+                field[slot, 0, 1, p % F.window] = float(p)
+        x = torch.randn(2 * t, F.hidden, device=dev)
+        positions = (ctx[:, None] + torch.arange(t, device=dev)).reshape(-1)
+        out = d._attn_rows(0, x, positions, slots, ctx, field, 2, t).float().view(2, t, -1)[:, :, :F.heads * F.head_dim]
+        for r, c in enumerate(ctx.tolist()):
+            for j in range(t):
+                seen = [p for p in range(max(0, c - F.window), c) if (c + j) - p < F.window]
+                want = sum(seen) / (len(seen) + t)
+                self.assertTrue(torch.allclose(out[r, j], torch.full_like(out[r, j], want), atol=1e-4),
+                                f"row {r} block row {j}: {out[r, j, 0].item()} != {want}")
+
     def test_native_rows_do_not_read_retired_weights_or_use_a_scratch_ring_tail(self):
         """Exercise the merged batched interface with packed readers and no BF16 sources.
 
@@ -223,7 +280,6 @@ class DrafterTests(unittest.TestCase):
             if name in packed or name.endswith(("_proj.weight", "kernel_projection.weight")):
                 d.p[name] = None
         d.fast_attention = True
-        field = field[:, :, :, :F.window].contiguous()  # native ring has no SDPA scratch tail
         slots = torch.tensor([2, 1], device=dev)
         ctx = torch.tensor([13, 3], device=dev)
         anchors = torch.tensor([7, 9], device=dev)
@@ -233,14 +289,17 @@ class DrafterTests(unittest.TestCase):
         expected = torch.cat([reference.block(ids[r*t:(r+1)*t], pos[r*t:(r+1)*t], field[int(slots[r])], int(ctx[r]))
                               for r in range(2)])
         kernels = ModuleType("engine.kernels.draft_attention")
-        def attention(q, k, v, rings, position, *, slot, layer):
+        def attention(q, k, v, rings, position, *, slot, layer, window=None):
+            window = F.window if window is None else window
             ring = rings[int(slot[0]), layer]
             absolute = position + torch.arange(-F.window, 0, device=dev)
             keys = torch.cat([ring[0, absolute % F.window], k]).repeat_interleave(F.heads//F.kv_heads, 1)
             vals = torch.cat([ring[1, absolute % F.window], v]).repeat_interleave(F.heads//F.kv_heads, 1)
             scores = torch.einsum("bhd,nhd->bhn", q.float(), keys.float()) * F.head_dim**-.5
-            valid = torch.cat([absolute >= 0, torch.ones(len(q), device=dev, dtype=torch.bool)])
-            scores.masked_fill_(~valid[None, None], -float("inf"))
+            rows = torch.arange(len(q), device=dev)[:, None]
+            context = (absolute[None, :] >= 0) & (position + rows - absolute[None, :] < window)
+            valid = torch.cat([context, torch.ones(len(q), len(q), device=dev, dtype=torch.bool)], 1)
+            scores.masked_fill_(~valid[:, None], -float("inf"))
             return torch.einsum("bhn,nhd->bhd", scores.softmax(-1), vals.float()).to(q.dtype)
         def write(rings, slot, layer, positions, k, v, *, valid):
             count = int(valid)
@@ -252,11 +311,11 @@ class DrafterTests(unittest.TestCase):
             per-row one beside it so the two are still being asked to agree."""
             for r in range(len(slots)):
                 write(rings, slots[r:r + 1], layer, positions[r], k[r], v[r], valid=valid[r])
-        def attend(q, k, v, rings, positions, *, slot, layer):
+        def attend(q, k, v, rings, positions, *, slot, layer, window=None):
             """The batched form the fast path uses now: the rows are a grid dimension, and the stub keeps the
             per-row one beside it so the two are still being asked to agree."""
-            return torch.stack([attention(q[r], k[r], v[r], rings, positions[r], slot=slot[r:r+1], layer=layer)
-                                for r in range(len(slot))])
+            return torch.stack([attention(q[r], k[r], v[r], rings, positions[r], slot=slot[r:r+1], layer=layer,
+                                          window=window) for r in range(len(slot))])
         kernels.draft_attention, kernels.write_draft_kv = attention, write
         kernels.write_draft_kv_rows, kernels.attend_rows = write_rows, attend
         observe_kernel = ModuleType("engine.kernels.draft_observe")
@@ -345,8 +404,12 @@ class DrafterTests(unittest.TestCase):
         self.assertEqual(len(shapes), 1 + 6 * F.layers)
         self.assertEqual(shapes["fc.weight"], (F.hidden, F.hidden * len(F.target_layers)))
         self.assertEqual(shapes["layers.0.self_attn.qkv"], ((F.heads + 2 * F.kv_heads) * F.head_dim, F.hidden))
-        self.assertEqual(store_name("layers.0.self_attn.qkv"), "DFlash2Qwen3ForCausalLM/model.layers.0.self_attn.qkv_proj")
-        self.assertEqual(store_name("fc.weight"), "DFlash2Qwen3ForCausalLM/model.fc")
+        self.assertEqual(store_name("layers.0.self_attn.qkv", F),
+                         "DFlash2Qwen3ForCausalLM/outputs-1/model.layers.0.self_attn.qkv_proj")
+        self.assertEqual(store_name("fc.weight", F), "DFlash2Qwen3ForCausalLM/outputs-1/model.fc",
+                         "the drafter's packs and calibration are filed under the target layers its fc reads")
+        from dataclasses import replace
+        self.assertNotEqual(store_name("fc.weight", replace(F, target_layers=(1, 3))), store_name("fc.weight", F))
         half = dense_shapes(F, 2)
         self.assertEqual(half["layers.0.self_attn.o_proj.weight"], (F.hidden, F.heads // 2 * F.head_dim))
 
@@ -460,6 +523,19 @@ class ObserveOverlapTests(unittest.TestCase):
         full = d.observe_kv(positions, aux, torch.tensor([d.F.k + 1], device="cuda"))
         part = d.observe_kv(positions, aux, torch.tensor([2], device="cuda"))
         self.assertTrue(all(torch.equal(a[0], b[0]) and torch.equal(a[1], b[1]) for a, b in zip(full, part)))
+
+
+@unittest.skipUnless(torch is not None, "requires PyTorch")
+class AuxLayerConventionTests(unittest.TestCase):
+    def test_target_layer_ids_name_the_layers_whose_outputs_the_drafter_reads(self):
+        """DFlash's ids are 0-based layers whose completed OUTPUT feeds fc: the reference implementation reads
+        hidden_states[id + 1], SGLang captures before layer id + 1, and vLLM adds 1 for its before-layer capture.
+        GLM-5.3's config says 5, 14, 24, 33, 42; the profile read 4, 13, 23, 32, 41 until 2026-09-15."""
+        from engine.profiles.glm53.drafter import DrafterFacts
+        F = DrafterFacts(layers=5, hidden=4096, heads=32, kv_heads=8, head_dim=128, inter=12288, rms_eps=1e-5,
+                         rope_theta=1e4, window=2048, block=8, mask_id=154856, conv_taps=2, conv_group=16,
+                         sel_rank=256, sel_top_k=16, target_layers=(5, 14, 24, 33, 42), k=7)
+        self.assertEqual(F.aux_layers, [5, 14, 24, 33, 42])
 
 
 if __name__ == "__main__":

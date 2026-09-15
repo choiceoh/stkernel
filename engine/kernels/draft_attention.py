@@ -22,12 +22,15 @@ def _attend(Q, K, V, R, P, Slot, ACC, MAX, DEN, SLOT_STRIDE: tl.constexpr, LAYER
             V_ROW: tl.constexpr, V_TOKEN: tl.constexpr, P_ROW: tl.constexpr, SLOT_ROW: tl.constexpr,
             B: tl.constexpr, H: tl.constexpr, HK: tl.constexpr, RHK: tl.constexpr, D: tl.constexpr,
             W: tl.constexpr, RS: tl.constexpr, SCALE: tl.constexpr, BN: tl.constexpr,
-            SPAN: tl.constexpr, TILES: tl.constexpr, BQ: tl.constexpr):
+            SPAN: tl.constexpr, TILES: tl.constexpr, BQ: tl.constexpr, WINDOW: tl.constexpr):
     """One row's KV head, one slice of the window, every query of that head at once.
 
-    The mask is the same for every query -- the block attends over its own keys without a causal step -- so a
-    slice's keys are read once and hit a whole tile of dot products. The tile is bounded: B * (H // HK) is 28
-    at TP=4 but 1024 where one KV head serves them all, and an accumulator that wide does not fit in a CTA.
+    The block attends over its own keys without a causal step, and over the context through its sliding window
+    as DFlash trained it: a query at block row j sits at position + j and sees a context key only while their
+    distance is under WINDOW -- the anchor the newest WINDOW - 1 context positions, row j that many less j. A
+    slice's keys are still read once and hit a whole tile of dot products; only the score mask depends on the
+    query's row. The tile is bounded: B * (H // HK) is 28 at TP=4 but 1024 where one KV head serves them all,
+    and an accumulator that wide does not fit in a CTA.
 
     The step's rows ride the grid. They used to be a python loop -- one launch a (layer, row) and a `cat` to
     put the answers back together -- which is the same disease `write_draft_kv_rows` cured for the ring."""
@@ -44,6 +47,7 @@ def _attend(Q, K, V, R, P, Slot, ACC, MAX, DEN, SLOT_STRIDE: tl.constexpr, LAYER
     qi = tile * BQ + tl.arange(0, BQ)
     d = tl.arange(0, D)
     live = qi < B * group
+    block_row = qi // group                                                      # each query's row in the block
     q = tl.load(Q + ((qi // group) * H + kh * group + qi % group)[:, None] * D + d[None, :],
                 live[:, None], other=0.0)                                        # [BQ, D]
     position = tl.load(P + row * P_ROW)
@@ -60,7 +64,9 @@ def _attend(Q, K, V, R, P, Slot, ACC, MAX, DEN, SLOT_STRIDE: tl.constexpr, LAYER
         kb = tl.load(K + ((n[:, None] - W) * HK + kh) * D + d[None, :], ~context[:, None] & valid[:, None], other=0)
         key = tl.where(context[:, None], kr, kb)
         score = tl.dot(q, tl.trans(key), out_dtype=tl.float32) * SCALE           # [BQ, BN]
-        score = tl.where(valid[None, :], score, -float("inf"))
+        # a context key is visible to row j while (position + j) - absolute < WINDOW; block keys always are
+        near = absolute[None, :] > position + block_row[:, None] - WINDOW
+        score = tl.where(valid[None, :] & (~context[None, :] | near), score, -float("inf"))
         new_max = tl.maximum(maximum, tl.max(score, 1))
         # A slice that is entirely past the end must not turn -inf - -inf into NaN.
         safe_max = tl.where(new_max == -float("inf"), 0.0, new_max)
@@ -112,7 +118,7 @@ def _sms() -> int:
     return bound().device.sms
 
 
-def draft_attention(q, k, v, ring, position, *, slot=None, layer=0):
+def draft_attention(q, k, v, ring, position, *, slot=None, layer=0, window=None):
     """One block: BF16 [B,H,D], [B,HK,D], ring [2,W,HK,D] or the arena field with a slot -> [B,H,D]."""
     if isinstance(position, int):
         if position < 0:
@@ -121,15 +127,19 @@ def draft_attention(q, k, v, ring, position, *, slot=None, layer=0):
     if q.ndim != 3:
         raise ValueError("one block is [B, H, 128]; a step's rows go through attend_rows")
     return attend_rows(q[None], k[None], v[None], ring, position.reshape(1),
-                       slot=slot, layer=layer)[0]
+                       slot=slot, layer=layer, window=window)[0]
 
 
-def attend_rows(q, k, v, ring, positions, *, slot=None, layer=0):
+def attend_rows(q, k, v, ring, positions, *, slot=None, layer=0, window=None):
     """Every row of a step at once: q [n, B, H, 128], k/v [n, B, HK, 128], positions [n], slots [n].
 
     One launch a layer, not one a (layer, row). The rows are independent -- each reads its own slot's ring at
     its own context length -- so they are a grid dimension, and the answers do not have to be concatenated
-    back together afterwards."""
+    back together afterwards.
+
+    `window` is the drafter's sliding window (DFlash2: 2048): block row j sees the context positions within
+    window - 1 - j of the anchor. It defaults to the ring's cells, which every boot sizes to the window
+    (drafter.ring_cells)."""
     if slot is not None:
         if (ring.ndim != 6 or not 0 <= layer < ring.shape[1] or slot.ndim != 1 or slot.numel() != q.shape[0]
                 or slot.dtype != torch.int64 or slot.device != q.device):
@@ -160,6 +170,9 @@ def attend_rows(q, k, v, ring, positions, *, slot=None, layer=0):
     out = torch.empty_like(q)
     n, b, h, d = q.shape
     hk, cells = k.shape[2], geometry[1]
+    window = cells if window is None else window
+    if type(window) is not int or window < 1:
+        raise ValueError("the DFlash sliding window is a positive number of positions")
     BN, SMS = 32, _sms()
     # Cut the window so that (rows x KV heads x slices) fills the machine: below that the slices are wider,
     # above it they are one block each and the combine grows for nothing.
@@ -176,7 +189,7 @@ def attend_rows(q, k, v, ring, positions, *, slot=None, layer=0):
                                     acc, scale[0], scale[1], stride, offset, v.stride(0), v.stride(1),
                                     positions.stride(0), slot.stride(0) if slot is not None else positions.stride(0),
                                     b, h, hk, geometry[2], d,
-                                    cells, cells*geometry[2]*geometry[3], d**-.5, BN, span, tiles, BQ,
+                                    cells, cells*geometry[2]*geometry[3], d**-.5, BN, span, tiles, BQ, window,
                                     num_warps=4, enable_fp_fusion=False)
     _combine[(n, b, h)](acc, scale[0], scale[1], out, b, h, hk, d,
                         parts, triton.next_power_of_2(parts), tiles, BQ, num_warps=4, enable_fp_fusion=False)

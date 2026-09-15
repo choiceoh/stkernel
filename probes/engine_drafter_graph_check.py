@@ -1,7 +1,7 @@
 """Real DFlash2 weights: proposal and accepted-prefix graph equivalence.
 
-Target embedding/head use rank 0 arithmetic in isolation. This checks the
-drafter implementation and cache ownership, not full-model acceptance.
+Target embedding/head use this node's rank arithmetic in isolation. This checks
+the drafter implementation and cache ownership, not full-model acceptance.
 """
 import argparse
 import json
@@ -12,7 +12,7 @@ from engine.base.instruments import Recorder
 from engine.profiles.glm53 import drafter as drafter_mod, facts
 from engine.profiles.glm53.boot import build
 from engine.profiles.glm53.lanes import served
-from probes.engine_decode_graph_check import IsolatedRank
+from probes.engine_decode_graph_check import IsolatedRank, rank_on_this_node
 
 
 def unpadded_attention(drafter, layer, x, positions, ring, context):
@@ -29,11 +29,17 @@ def unpadded_attention(drafter, layer, x, positions, ring, context):
     q = project("q", F.heads, True)
     k = project("k", F.kv_heads, True)
     v = project("v", F.kv_heads, False)
-    live = torch.arange(max(0, context-F.window), context, device=x.device) % F.window
+    held = torch.arange(max(0, context-F.window), context, device=x.device)
+    live = held % F.window
     k = torch.cat((ring[layer, 0, live], k)).repeat_interleave(F.heads//F.kv_heads, 1)
     v = torch.cat((ring[layer, 1, live], v)).repeat_interleave(F.heads//F.kv_heads, 1)
+    # DFlash's sliding window is per query (z-lab/dflash _attention_mask): block row j, at context + j, sees a
+    # context position while their distance is under the window; the block's own keys are always visible
+    rows = torch.arange(x.shape[0], device=x.device)[:, None]
+    mask = torch.cat((context + rows - held[None, :] < F.window,
+                      torch.ones(x.shape[0], x.shape[0], dtype=torch.bool, device=x.device)), 1)
     out = fn.scaled_dot_product_attention(q.transpose(0, 1).double(),
-                                          k.transpose(0, 1).double(), v.transpose(0, 1).double())
+                                          k.transpose(0, 1).double(), v.transpose(0, 1).double(), attn_mask=mask)
     return fn.linear(out.transpose(0, 1).reshape(x.shape[0], -1).to(x.dtype), p[prefix+"o_proj.weight"])
 
 
@@ -47,6 +53,7 @@ def main():
     ap.add_argument("--drafter-dir", default=str(drafter_mod.DRAFTER))
     args = ap.parse_args()
     torch.manual_seed(19)
+    IsolatedRank.rank = rank_on_this_node(args.ranks)   # a node holds its own rank file only (srv4: rank3of4)
     _, _, caches, engine, _ = build(IsolatedRank(), [0, 3], served(), args.ranks, .25, 2,
                                     True, Recorder("draft-graph"), ckpt_meta=args.ckpt_meta,
                                     drafter_dir=args.drafter_dir)
@@ -70,9 +77,10 @@ def main():
             error = ((oracle.float()-padded.float()).abs().max()/oracle.float().abs().max()).item()
             assert torch.isfinite(padded).all() and error <= .01, (position, layer, error)
             attention_error = max(attention_error, error)
-        anchor = torch.full((1,), 1234, device="cuda", dtype=torch.int64)
+        token = drafter.target.rank * drafter.target.vp + 1234             # inside this rank's vocabulary shard
+        anchor = torch.full((1,), token, device="cuda", dtype=torch.int64)
         expected = drafter.propose_tensor(anchor, position, ring).clone()
-        actual = drafter.decode_graphs.propose(1234, position, ring).clone()
+        actual = drafter.decode_graphs.propose(token, position, ring).clone()
         same = torch.equal(expected, actual)
         row = dict(context=position, slot=slot, proposal_equal=same,
                    unpadded_fp64_attention_relative=attention_error,

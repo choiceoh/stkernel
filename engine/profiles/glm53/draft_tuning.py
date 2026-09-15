@@ -120,12 +120,12 @@ def prepare_store(tuning, store, policy, facts, comm):
         for norm in tuning.smoothing_alpha:
             prefix = norm.rsplit('.', 2)[0] + '.'
             reader = prefix + ('self_attn.qkv' if norm.endswith('.input_layernorm.weight') else 'mlp.gate_up')
-            peaks = store.amax(store_name(reader))
+            peaks = store.amax(store_name(reader, facts))
             if (peaks is None or peaks.shape != (facts.hidden,) or not bool(torch.isfinite(peaks).all())
                     or bool((peaks < 0).any()) or not bool((peaks > 0).any())):
                 raise ValueError(f'smoothing tuning requires valid channel peaks for {reader}')
         for reader in tuning.gptq_damping:
-            name = store_name(reader)
+            name = store_name(reader, facts)
             required = decode_name(name) if reader == 'fc.weight' and policy.fc_calibration == 'decode' else name
             if not store.calibrated(required):
                 raise ValueError(f'GPTQ damping tuning requires calibration for {required}')
@@ -136,7 +136,7 @@ def prepare_store(tuning, store, policy, facts, comm):
     if any(errors):
         raise ValueError('draft tuning calibration failed: ' + '; '.join(f'rank {i}: {e}' for i, e in enumerate(errors) if e))
     for reader, damping in tuning.gptq_damping.items():
-        name = store_name(reader)
+        name = store_name(reader, facts)
         store.gptq_damping[name] = damping
         if reader == 'fc.weight':
             store.gptq_damping[decode_name(name)] = damping
