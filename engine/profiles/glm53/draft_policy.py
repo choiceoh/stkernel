@@ -68,6 +68,28 @@ def decode_name(name):
     return name + '.committed-decode-v1'
 
 
+def calibration_plan(policy, store, facts, world):
+    """[(reader, missing tiles, committed decode rows only)]: what the drafter's readers lack in `store`, in pack order.
+
+    Under a decode calibration FC has two FP8 lanes: the decode pack from committed decode rows (`decode_name`) and
+    the prefill pack from the shared blob, every row fc reads. A reader carries one calibration observer, so the
+    shared blob is summed by the boot after the decode rows were filed -- before, a namespace that started empty
+    kept the prefill lane on round-to-nearest for good, because nothing ever asked for its blob."""
+    from .drafter import dense_shapes, store_name
+    plan = []
+    for key, (_rows, cols) in dense_shapes(facts, world).items():
+        name = store_name(key, facts)
+        if key == 'fc.weight' and policy.fc_calibration != 'shared':
+            missing = store.missing_calibration(decode_name(name), cols)
+            if missing:
+                plan.append((key, missing, True))
+                continue
+        missing = store.missing_calibration(name, cols)
+        if missing:
+            plan.append((key, missing, False))
+    return plan
+
+
 def require_decode_calibration(store, name, cols):
     """A missing or foreign collection must never silently become an RTN arm."""
     import torch

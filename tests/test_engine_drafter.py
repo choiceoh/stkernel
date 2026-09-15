@@ -404,8 +404,12 @@ class DrafterTests(unittest.TestCase):
         self.assertEqual(len(shapes), 1 + 6 * F.layers)
         self.assertEqual(shapes["fc.weight"], (F.hidden, F.hidden * len(F.target_layers)))
         self.assertEqual(shapes["layers.0.self_attn.qkv"], ((F.heads + 2 * F.kv_heads) * F.head_dim, F.hidden))
-        self.assertEqual(store_name("layers.0.self_attn.qkv"), "DFlash2Qwen3ForCausalLM/model.layers.0.self_attn.qkv_proj")
-        self.assertEqual(store_name("fc.weight"), "DFlash2Qwen3ForCausalLM/model.fc")
+        self.assertEqual(store_name("layers.0.self_attn.qkv", F),
+                         "DFlash2Qwen3ForCausalLM/outputs-1/model.layers.0.self_attn.qkv_proj")
+        self.assertEqual(store_name("fc.weight", F), "DFlash2Qwen3ForCausalLM/outputs-1/model.fc",
+                         "the drafter's packs and calibration are filed under the target layers its fc reads")
+        from dataclasses import replace
+        self.assertNotEqual(store_name("fc.weight", replace(F, target_layers=(1, 3))), store_name("fc.weight", F))
         half = dense_shapes(F, 2)
         self.assertEqual(half["layers.0.self_attn.o_proj.weight"], (F.hidden, F.heads // 2 * F.head_dim))
 
