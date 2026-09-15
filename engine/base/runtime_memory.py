@@ -256,6 +256,38 @@ class RuntimeMemory:
             raise MemoryError(f"{phase}: {error}")
         return row
 
+    def agree(self, flag: int) -> int:
+        """The largest of every rank's flag: a decision all ranks take together, in one collective.
+
+        Every rank must call it at the same point, whatever its own flag. Without a comm it is the flag."""
+        if self.comm is None:
+            return int(flag)
+        self.status.fill_(int(flag))
+        return int(self.comm.all_reduce_max(self.status).item())
+
+    def reused(self, phase, verdict, source):
+        """The row of a pass every rank agreed not to run (base/prefill_record): its peak is the projection.
+
+        `peak_workspace_bytes` and the free, available and margin columns are the far peak projected from
+        the near pass on THIS box, so `measured()`, the budget table and the OOM margin keep describing the
+        worst the boot qualified. The row is marked `reused` and names its record; the vote that allowed it
+        was `agree`, so it casts none of its own."""
+        cuda, now = self.cuda, self.clock()
+        row = dict(phase=phase, release_cache=False, reused=True, source=str(source), note=verdict.reason,
+                   at_seconds=round(now - self.started, 4), seconds=round(now - self.last, 4),
+                   allocated_bytes=cuda.memory_allocated(), reserved_bytes=cuda.memory_reserved(),
+                   peak_allocated_bytes=cuda.max_memory_allocated(),
+                   peak_reserved_bytes=max(cuda.max_memory_reserved(),
+                                           self.baseline_reserved + self.arena_bytes + verdict.peak_workspace_bytes),
+                   device_free_bytes=verdict.immediately_free_bytes, host_free_bytes=verdict.immediately_free_bytes,
+                   immediately_free_bytes=verdict.immediately_free_bytes, reclaimed_bytes=0, allocator_reclaimed_bytes=0,
+                   peak_workspace_bytes=verdict.peak_workspace_bytes, available_bytes=verdict.available_bytes,
+                   oom_margin_bytes=verdict.available_bytes - self.sigterm_bytes,
+                   oom_close=verdict.available_bytes < self.sigterm_bytes, passed=True, failure_reason=None)
+        self.phases.append(row)
+        self.last = now
+        return row
+
     def spend(self, top: int = 8) -> "list[tuple[str, float]]":
         """Where a boot's checkpointed time went: the phase prefixes, most expensive first.
         `target/(4, 6, 4096)` counts under `target`, so the ladder, the samplers and
@@ -319,6 +351,7 @@ class RuntimeMemory:
             oom_sigterm_bytes=self.sigterm_bytes,
             oom_sigkill_bytes=self.sigkill_bytes,
             oom_close_phases=[row["phase"] for row in self.phases if row.get("oom_close")],
+            reused_phases=[row["phase"] for row in self.phases if row.get("reused")],
         )
 
     def report(self):

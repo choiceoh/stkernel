@@ -774,18 +774,20 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(cells.serving(list(d.values())), {"specialized": 2, "glue": 3, "generic": 3, "none": 1,
                                                             "glue_judged": 0, "generic_judged": 1})
         qwen = {lane: (v.serve.tier, v.serve.judged) for lane, v in self.verdicts(qwen_shape()).items() if v.serve}
-        self.assertEqual(qwen, {"mla": (L, False), "indexer": (G, False), "mhc_decode": (G, False), "mhc_prefill": (G, False),
+        self.assertEqual(qwen, {"mla": (G, False), "indexer": (S, False), "mhc_decode": (S, False), "mhc_prefill": (S, False),
                                 "oneshot": (S, True), "prefill_collectives": (S, False), "dense": (L, False),
                                 "kda_recurrent": (L, False), "kda_ring": (L, False), "kda_chunk": (L, False),
                                 "moe": (S, False), "universal": (G, True)})
         q = self.verdicts(qwen_shape())
-        self.assertIn("glue.gqa", q["mla"].serve.kernel)                                 # 256 + 256 fill the 512 latent
-        self.assertIn("qsa_sparse_paged_attention", q["mla"].serve.note)                 # the BF16-KV alternative, named
-        self.assertIn("gated_residual", q["mhc_decode"].serve.note)                       # composed from fast pieces
+        self.assertIn("qsa_sparse_paged_attention in engine/kernels/qsa.py", q["mla"].serve.kernel)   # the ported BF16-KV kernel
+        self.assertIn("glue.gqa", q["mla"].serve.note)                                    # 256 + 256 fill the latent: the e4m3 alternative
+        self.assertIn("engine/kernels/qsa", q["indexer"].serve.kernel)
+        self.assertIn("engine/kernels/gated_residual", q["mhc_decode"].serve.kernel)       # five launches a site
+        self.assertIn("gated_residual", q["mhc_decode"].serve.note)
         self.assertIn("PaddedDenseLinear", q["dense"].serve.kernel)                       # the shared expert's 160 columns
         self.assertIn("recurrent_decay_ring", q["kda_ring"].serve.kernel)
         self.assertIn("chunk_kda_with_decay", q["kda_chunk"].serve.kernel)
-        self.assertEqual(cells.serving(list(q.values())), {"specialized": 3, "glue": 5, "generic": 4, "none": 0,
+        self.assertEqual(cells.serving(list(q.values())), {"specialized": 6, "glue": 4, "generic": 2, "none": 0,
                                                             "glue_judged": 0, "generic_judged": 1})
         unread = self.verdicts(replace(qwen_shape(), attention=replace(qwen_shape().attention, sink=None)))
         self.assertEqual(unread["mla"].serve.tier, N)                                     # an unread sink serves nothing

@@ -276,8 +276,9 @@ def _recipe_mla_sink():
 
 def _recipe_indexer_compress(i):
     if i.compress == "qsa":
-        how = ("the engine has no QSA module yet (engine/profiles/qwen38/budget.py): write its compression reference "
-               "first, then a key-compression lane against it; the MQA logits formula is the shared part")
+        how = ("engine/kernels/qsa ports vLLM's Triton QSA ops -- compression from the raw-key ring, paged scoring and "
+               "selection with the engine's top-k -- and engine/profiles/qwen38/lanes.py binds them; the reference is "
+               "engine/modules/sparse_indexer.qsa_select (held to transformers qwen4_exp); judge the ported lane against it")
     else:
         how = (f"{i.compress} compresses keys its own way (engine/profiles/dsv41/shapes.py: Compressor.kv_state, the packed "
                "E2M1 score path): write that compression and score path as a lane; the MQA logits formula is the shared part")
@@ -293,11 +294,11 @@ GATED_RESIDUAL_VARIANT = "gated_residual"   # Qwen3.8's form: its reference is e
 def _recipe_gated_residual(lane):
     """The work for the gated residual form: no compiled segment computes it, and every piece already has a fast kernel."""
     return Recipe("wire", "engine/profiles/<profile>/lanes.py (the residual form's enter/leave/close)",
-                  "compose the gated residual from pieces that are already fast: the grouped unit-offset RMS norm as "
-                  "engine/kernels/common rmsnorm over [N*hc, H] rows, the low-rank mixer and the injection as BF16 GEMMs "
-                  "(the checkpoint keeps hyper_connection weights unquantised), silu and sigmoid elementwise, the weighted "
-                  "mean and the injection add in one pass; a fused " + ("decode" if lane == "mhc_decode" else "prefill")
-                  + " kernel over the whole enter (days) is the option when its launches matter",
+                  "engine/kernels/gated_residual computes the form in five launches a site -- the previous leave joined to "
+                  "the grouped unit-offset stream norm, the low-rank down and the injection in one BF16 GEMM (the "
+                  "checkpoint keeps hyper_connection weights unquantised; 10,240-wide W4 packs do not tile), the gates, up, "
+                  "the stream mean -- and engine/profiles/qwen38/lanes.py binds it for the "
+                  + ("decode" if lane == "mhc_decode" else "prefill") + " step; the served net calls it",
                   f"{_COMPOSITION_TEST} (engine/modules/hyper_connection.gated_residual against transformers qwen4_exp on the "
                   f"CPU), then the lane against that reference on {_GPU}",
                   "the profile's lanes bind the composed form and it matches the reference", "hours")
@@ -523,8 +524,8 @@ def _serve_attention(a, i):
     nothing fast: the adapters refuse it (mla_glue_refusal), so the note names the candidate and the establish recipe
     is the work."""
     qsa = i is not None and i.compress == "qsa"
-    qsa_op = ("qsa_sparse_paged_attention in overlay/modules/qwen38_qsa/ops_qsa.py (vLLM's Triton QSA sparse paged GQA "
-              "attention, the kernel that served Qwen3.8 in the vLLM stack; to port)")
+    qsa_op = ("qsa_sparse_paged_attention in engine/kernels/qsa.py (vLLM's Triton QSA sparse paged GQA attention, the "
+              "kernel that served Qwen3.8 in the vLLM stack, ported: BF16 KV)")
     if a.kind != "mla":
         packed = 2 * a.head_dim <= MLA_LATENT
         if a.sink is None:
@@ -534,6 +535,10 @@ def _serve_attention(a, i):
                             f"{candidate} serves it")
         if a.sink:
             return _nothing("no GQA kernel that takes sinks is named in the repo or in engine/INVENTORY.md")
+        if qsa:
+            return _serve(GENERIC, qsa_op, False,
+                          "judge it against modules/sparse_attention.gqa_sparse over the indexer's selected positions"
+                          + ("; engine/kernels/mla/glue.gqa is the one-scale e4m3 latent alternative" if packed else ""))
         if packed:
             return _serve(GLUE, "engine/kernels/mla/glue.gqa (the megakernel's sparse MLA with each KV head's key and "
                           "value packed side by side into its latent)", False,
@@ -570,10 +575,10 @@ def _serve_attention(a, i):
 def _serve_mhc_variant(shape, lane):
     """The fastest kernel for a hyper-connection form the MK segment and the TileLang mixes do not compute."""
     if shape.hc_variant == GATED_RESIDUAL_VARIANT:
-        return _serve(GENERIC, "engine/kernels/common rmsnorm over [N*hc, H] rows with BF16 GEMMs and elementwise silu/sigmoid "
-                      "(the gated residual composed from fast pieces)", False,
-                      "the reference is engine/modules/hyper_connection.gated_residual, held to transformers on the CPU; the "
-                      "composed lane is unjudged on a GPU")
+        return _serve(SPECIALIZED, "engine/kernels/gated_residual (the gated residual in five launches a site: the previous "
+                      "leave joined to the stream norm, down and inject in one BF16 GEMM, the gates, up, the stream mean)",
+                      False, "gated_residual.qualify holds it to engine/modules/hyper_connection.gated_residual at the "
+                      "model's widths before a boot serves; unjudged on a GPU")
     why = mhc_v41_refusal(shape)
     if why is not None:
         return _nothing(why)
@@ -589,10 +594,10 @@ def _serve_mhc_variant(shape, lane):
 def _serve_indexer(i):
     """The fastest kernels for an indexer the kpool lane refuses."""
     if i.compress == "qsa":
-        return _serve(GENERIC, "qsa_compress_groups_with_ratio, qsa_mqa_paged and qsa_select_paged_tokens in "
-                      "overlay/modules/qwen38_qsa/ops_qsa.py (vLLM's Triton QSA ops, to port)", False,
-                      "judge the compression against the model's reference and the scoring against "
-                      "modules/sparse_indexer.indexer_logits")
+        return _serve(SPECIALIZED, "engine/kernels/qsa (qsa_compress_groups_with_ratio, qsa_mqa_paged and "
+                      "qsa_select_paged_tokens: vLLM's Triton QSA ops, ported, with the engine's top-k)", False,
+                      "judge the compression against modules/sparse_indexer.qsa_select and the scoring against its relu "
+                      "sum over the index heads; unjudged on a GPU")
     if i.compress == "ced":
         return _nothing("the CED compressor exists only in torch (overlay/modules/dsv41_model/dsv41_compressor.py); its "
                         "scoring and packed keys have Triton kernels beside it (dsv41_indexer_triton.py, "
