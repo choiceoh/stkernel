@@ -150,7 +150,7 @@ print(json.dumps([key,[(Path(p).read_text(),Path(p).stat().st_ino,Path(p).stat()
         # Execute each real build function with a loader that records its inputs;
         # no Torch import or CUDA context is required to check the build boundary.
         from types import SimpleNamespace
-        for relative, function in (("dense/__init__.py", "extension"), ("mla/__init__.py", "_build"),
+        for relative, function in (("dense/__init__.py", "build"), ("mla/__init__.py", "_build"),
                                    ("oneshot/__init__.py", "build")):
             with self.subTest(builder=relative):
                 path = ROOT / "engine/kernels" / relative
@@ -177,7 +177,7 @@ print(json.dumps([key,[(Path(p).read_text(),Path(p).stat().st_ino,Path(p).stat()
                 for source in call['sources']:
                     self.assertEqual(Path(source).parent, Path(call['build_directory']) / 'src')
                     self.assertEqual(Path(source).read_bytes(), path.with_name(Path(source).name).read_bytes())
-                if function == 'build':
+                if relative.startswith('oneshot/'):
                     self.assertEqual(call['extra_ldflags'], ['-libverbs'])
                     self.assertTrue((Path(call['sources'][0]).parent / 'dsv4_oneshot_transport.h').is_file())
 

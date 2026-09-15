@@ -3377,3 +3377,21 @@ C=1(8행)만 쓰는 공유 전문가 겹침을 C=2 16행에 여는 후보를 같
 - **미측정.** GPU 부팅. 다음 부팅의 rank 0 `prepare native execution`(기준 32.16 s)과 `loaded`(기준 53.5 s)로 확인한다. 약 −10 s 는 추정이다.
 
 [표·명령·원시 출력](measurements/st_boot_pack_digests_20260915/README.md).
+
+### 네이티브 확장 — 모든 랭크가 첫 집합통신 전에 한꺼번에 빌드하고 랑데부한다 (2026-09-15)
+
+- **근거.**
+  - main `3acae017` 의 첫 콜드 부팅(03:25 UTC)은 네이티브 확장을 첫 사용 자리에서 하나씩 빌드했다: 32K 프리필 안, 타깃 캡처 안, 버스트 파이프라인 안.
+  - 노드별 빌드 끝 시각이 17.6–33.9 s 벌어졌다. decode queue 를 먼저 끝낸 rank 1 이 one-shot 합에서 약 31 s 를 기다리다 `unspecified launch failure` 로 죽었고, 나머지 랭크는 `WC error 12` 뒤 따라 죽었다.
+  - 노드마다 네 빌드에 158.6–182.4 s 가 들었다.
+- **바꾼 것.**
+  - `profiles/glm53/natives.py` 가 fleet 부팅이 싣는 확장 일곱 개를 확장당 스레드 하나로 한꺼번에 빌드한다.
+  - `boot.fleet` 은 `Comm.init()` 전에 빌드를 시작하고, one-shot 준비 전에 `native-builds` 랑데부에서 만난다. 실패한 랭크는 실패 단계로 피어를 즉시 멈춘다.
+  - `dense.extension()` 을 `build()` 와 장치 확인으로 나눴다. 키·플래그·경로·수치·노브는 그대로다.
+- **CPU 측정(`st-engine:glm53`, CUDA 숨김).**
+  - 키가 있을 때: 하나씩 0.27 s, 한꺼번에 0.09 s. 오늘 흩어져 치르는 로드와 같은 크기다.
+  - 키가 없을 때: 하나씩 372.9 s, 한꺼번에 65.7 s(가장 긴 dense). cgroup 최고 15.57 GiB(16 GiB 상한, 페이지 캐시 포함)였다. 두 표본은 배경 부하가 달랐다.
+- **검증.** CPU 66 테스트 OK(7 스킵). 목록 누락 검사는 `engine/kernels` 의 모든 `cpp_extension.load` 모듈을 대조한다.
+- **미측정.** GPU 부팅. 다음 부팅 로그의 `rankN: native builds in X s` 줄과 rank 0 표의 `native builds` 행, 그리고 콜드 부팅의 `STALL` 로 확인한다. CuTe-DSL·Triton JIT 은 여전히 첫 사용 때 랭크마다 컴파일한다.
+
+[표·로그·명령](measurements/st_boot_native_prebuild_20260915/README.md).

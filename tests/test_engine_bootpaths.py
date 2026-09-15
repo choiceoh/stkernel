@@ -46,8 +46,13 @@ class BootPathTests(unittest.TestCase):
                                ranks="/alternate/ranks", layers="0-0", seed=0, prompt=1,
                                seqs=1, kv_gib=.25, park=False, drafter=True, max_new=1,
                                temperature=0., tier_dir="/unused", port=8000, lanes="reference")
-        comm = SimpleNamespace(rank=0, world_size=4, close=Mock(), prepare_oneshot=Mock(),
+        order = []
+        comm = SimpleNamespace(rank=0, world_size=4, close=Mock(),
+                               prepare_oneshot=Mock(side_effect=lambda **kw: order.append("one-shot")),
+                               wait_prepared=Mock(side_effect=lambda phase, **kw: order.append(phase)),
                                transport=SimpleNamespace(rails=2, latency={}))
+        built = []
+        native_builds = [("dense", lambda: built.append("dense")), ("one-shot", lambda: built.append("one-shot"))]
         tp = SimpleNamespace(run=lambda fn: fn(comm))
         for mode, production in (("local", False), ("http", False), ("fleet", False), ("fleet", True)):
             args.serve = mode == "http"
@@ -63,9 +68,18 @@ class BootPathTests(unittest.TestCase):
                  patch.object(boot.Comm, "init", return_value=comm), \
                  patch.object(boot.lane_tables, "reference"), \
                  patch.object(boot.lane_tables, "served"), \
+                 patch.object(boot.natives, "builds", return_value=native_builds) as natives, \
                  patch.object(boot, "build", side_effect=StopAtBuild) as build:
+                order.clear(), built.clear()
                 with self.assertRaises(StopAtBuild):
                     (boot.fleet if mode == "fleet" else boot.local)(args)
+                if mode == "fleet":
+                    # every native is built, and the ranks meet, before the one-shot transport's first sum
+                    natives.assert_called_once_with(2, True)
+                    self.assertEqual(sorted(built), ["dense", "one-shot"])
+                    self.assertEqual(order[:2], ["native-builds", "one-shot"])
+                else:
+                    natives.assert_not_called()
                 self.assertEqual(build.call_args.kwargs["ckpt_meta"], args.ckpt_meta)
                 self.assertEqual(build.call_args.kwargs["drafter_dir"], args.drafter_dir)
                 self.assertEqual(build.call_args.args[5], 2)
@@ -98,6 +112,7 @@ class BootPathTests(unittest.TestCase):
                  patch.object(boot.Comm, "init", return_value=comm), \
                  patch.object(boot.lane_tables, "reference"), \
                  patch.object(boot.lane_tables, "served"), \
+                 patch.object(boot.natives, "builds", return_value=native_builds), \
                  patch.object(boot, "build", side_effect=StopAtBuild) as build:
                 with self.assertRaises(StopAtBuild):
                     (boot.fleet if mode == "fleet" else boot.local)(args)
