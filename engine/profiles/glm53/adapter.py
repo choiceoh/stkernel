@@ -107,7 +107,7 @@ class Glm53Engine:
         self.ceiling_last_error = ""
         self.ceilings_off = False                            # disarmed after CEILING_FAILURES_KEPT of them
         self.steps_verified = 0                              # verifications since the counters were last cleared
-        self._ceiling_every = 64                             # two vocabulary passes, so sampled, not every step
+        self._ceiling_every = 1                              # debug (never merge): every verification (main: 64)
         # A gauge that keeps failing is not news after the third time, and the engine should stop
         # paying for it. The counter and the last message stay in /metrics either way.
         self.lane_info = {}                        # what is actually bound: set by the boot that built the lanes
