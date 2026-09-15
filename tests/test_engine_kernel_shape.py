@@ -677,15 +677,15 @@ class RecipeTests(unittest.TestCase):
             expected = [v.lane for v in cells.plan(cells.admission(qwen_shape()))]
             self.assertEqual(doc["plan"], expected)
             self.assertEqual(doc["counts"], {"admitted": 2, "unmeasured": 4, "refused": 7})
-            self.assertEqual(doc["serving"], {"specialized": 3, "glue": 5, "generic": 4, "none": 0, "glue_judged": 0,
-                                              "generic_judged": 1})
+            self.assertEqual(doc["serving"], {"specialized": 6, "glue": 4, "generic": 2, "none": 0, "glue_judged": 0,
+                                              "generic_judged": 1})         # #986: qsa and gated_residual serve three lanes
             self.assertEqual(ks.from_dict(doc["shape"]), qwen_shape())
             self.assertEqual(doc["record"], str(ranks / ks.RECORD))
             by_lane = {entry["lane"]: entry for entry in doc["admission"]}
             self.assertEqual(set(by_lane["mhc_decode"]["recipe"]), {"kind", "where", "how", "judge", "done", "cost"})
             self.assertIsNone(by_lane["device"]["recipe"])
             self.assertIsNone(by_lane["device"]["serve"])
-            self.assertEqual((by_lane["mla"]["serve"]["tier"], by_lane["mla"]["serve"]["judged"]), ("glue", False))
+            self.assertEqual((by_lane["mla"]["serve"]["tier"], by_lane["mla"]["serve"]["judged"]), ("generic", False))   # #986: the ported qsa op
             record = ks.read_record(ranks)
             self.assertEqual(record["plan"], expected)
             self.assertEqual([cells.from_dict(v) for v in record["admission"]], cells.admission(qwen_shape()))
@@ -716,7 +716,7 @@ class RecipeTests(unittest.TestCase):
             with contextlib.redirect_stdout(out):
                 self.assertEqual(ks.main(["show", "--ranks", str(ranks)]), 0)
             self.assertIn("older cells", out.getvalue())
-            self.assertIn("serving: 3 specialized, 5 glue", out.getvalue())
+            self.assertIn("serving: 6 specialized, 4 glue", out.getvalue())
 
 
 class ServeTests(unittest.TestCase):
@@ -740,7 +740,12 @@ class ServeTests(unittest.TestCase):
                     if lane == "universal":
                         self.assertEqual(tier, cells.GENERIC)
                     elif v.status == cells.REFUSED:
-                        self.assertIn(tier, (cells.GLUE, cells.GENERIC, cells.NONE))
+                        self.assertIn(tier, (cells.SPECIALIZED, cells.GLUE, cells.GENERIC, cells.NONE))
+                        if tier == cells.SPECIALIZED:
+                            # a kernel written for the shape serves a lane the compiled cell refuses (Qwen3.8's qsa
+                            # indexer and gated residual, #986): it lives in engine/kernels and no GPU has judged it yet
+                            self.assertTrue(v.serve.kernel.startswith("engine/kernels/"), v.serve.kernel)
+                            self.assertFalse(v.serve.judged)
                     else:
                         self.assertIn(tier, (cells.SPECIALIZED, cells.GLUE))
                     if tier == cells.GLUE:
