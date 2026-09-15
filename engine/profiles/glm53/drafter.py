@@ -84,13 +84,8 @@ def debug_table(values, k):
     return tuple(values[:k]) + (values[-1],) * max(0, k - len(values))
 
 
-def debug_device_table(values, k, device, dtype):
-    """debug (never merge): the table filled on the device. Inside CUDA graph capture a tensor built from a host
-    list is a pageable host-to-device copy, which capture refuses (10:54 boot: every rank died in capture_decode)."""
-    out = torch.empty(k, device=device, dtype=dtype)
-    for i, v in enumerate(debug_table(values, k)):
-        out[i] = v
-    return out
+
+
 BF16, F32 = torch.bfloat16, torch.float32
 
 
@@ -236,8 +231,23 @@ class Drafter:
         # The rotary table is a constant of the model; built here it belongs to the arena, not to whichever graph
         # happened to run first and would free it on close (kernels/norm_rope.warm).
         warm_rotary(caches.device, self.F.head_dim, self.F.rope_theta)
+        # debug (never merge): arm B's tables reach the device here, before any graph is captured. Built inside a
+        # captured walk they were host-to-device copies -- torch.tensor(list) at 10:54 and tensor[i] = float at
+        # 11:05 -- and capture refused both on every rank.
+        self.debug_tables = (torch.tensor(debug_table(DEBUG_ALPHA_B, self.k), device=caches.device, dtype=torch.float32),
+                             torch.tensor(debug_table(DEBUG_TAU_B, self.k), device=caches.device, dtype=torch.float32))
         self.decode_graphs = DrafterDecodeGraphs(self, caches, memory=memory, draws_seed=draws_seed, vocab=vocab,
                                                  prepared_context=prepared_context, append_child=append_child)
+
+    def debug_device_tables(self, device):
+        """debug (never merge): (alpha [K], tau [K]) on the device. capture_decode makes them before any capture; an
+        uncaptured caller (tests, the eager host walk) that runs first builds them here, outside any graph."""
+        tables = getattr(self, 'debug_tables', None)
+        if tables is None:
+            tables = (torch.tensor(debug_table(DEBUG_ALPHA_B, self.k), device=device, dtype=torch.float32),
+                      torch.tensor(debug_table(DEBUG_TAU_B, self.k), device=device, dtype=torch.float32))
+            self.debug_tables = tables
+        return tables
 
     def observe_decode(self, ring, positions, aux):
         if self.decode_graphs is None:
@@ -728,9 +738,8 @@ class Drafter:
         if any(a != 1. for a in self.selector_alpha):
             edge *= torch.tensor(self.selector_alpha, device=dev).view(1, K, 1, 1)
         arm_b = debug_arm_b(temps).view(n, 1)                                           # debug (never merge)
-        edge = torch.where(arm_b.view(n, 1, 1, 1),
-                           edge * debug_device_table(DEBUG_ALPHA_B, K, dev, edge.dtype).view(1, K, 1, 1), edge)
-        tau_b = debug_device_table(DEBUG_TAU_B, K, dev, torch.float32)
+        alpha_b, tau_b = self.debug_device_tables(dev)                                 # prepared before capture
+        edge = torch.where(arm_b.view(n, 1, 1, 1), edge * alpha_b.view(1, K, 1, 1), edge)
         scores = unary[:, :, None, :] + edge   # [n, K, prev, cur]
         rows = torch.arange(n, device=dev)
         prev = torch.zeros(n, dtype=torch.int64, device=dev)
@@ -858,7 +867,7 @@ class Drafter:
             edge *= torch.tensor(self.selector_alpha, device=dev).view(K, 1, 1)
         arm_b = bool(debug_arm_b(float(temperature)))                                  # debug (never merge)
         if arm_b:
-            edge = edge * debug_device_table(DEBUG_ALPHA_B, K, dev, edge.dtype).view(K, 1, 1)
+            edge = edge * self.debug_device_tables(dev)[0].view(K, 1, 1)
         scores = unary[:, None, :] + edge
         # Each step picks from the sixteen candidates the last one opened, so the walk cannot be batched --
         # but its uniforms arrive together (keyed, base/draws), and over sixteen candidates the cumulative walk
