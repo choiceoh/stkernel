@@ -3468,3 +3468,38 @@ onepass·수용률·step/s·품질은 재지 않았다. D17 대로 속도 주장
   `bash bench/fleet.sh run --gpu st-decode-topk 15 ... probes/engine_kernel_check.py --lanes select_rows`.
 
 [동점 실험·25,920 행 게이트·단계 분해·블록 폭·진 후보들·재현](measurements/st_decode_topk_20260915/README.md).
+
+### M64 프리필 MoE 는 네 타일까지 정확하고 다섯 번째에서 깨진다 — 자격 미달 (2026-09-15, srv4 단일 GPU 레인 6판, 운영자 "ssh로 들어가면 되잖아")
+
+**판정.** #876 의 M64 프리필 후보는 **자격을 얻지 못했다.** 257 행부터 같은 입력에 대해 자기 출력과
+어긋난다. M128 대조군은 모든 폭에서 퍼짐 0.0 이다.
+
+- **경계는 256 → 257, 즉 M64 타일 넉 장이다.** 129·193·201·209·217·225·233·241·249·**256** 은 퍼짐 0.0
+  이고 129·256 은 M128 과 **비트 동일**(팔 사이 차이 0.0). **257**·385·513·1024·2304 는 M64 자기 퍼짐
+  1.10~1.34 다. 1.1 은 반올림이 아니라 경쟁이다. `_prefill_m64_bodies` 의 "16-row-per-warp scatter
+  strips"(타일당 넉 줄)와 #876 의 "independent activation-scale atoms" 가 같은 자리를 가리킨다.
+- **속도는 주장하지 않는다.** 프로덕션 옆 eager B/A/A/B 라 대조군 브래킷 드리프트가 0.04~0.73 이다.
+  2304 행의 `ratio 0.81` 은 그 잡음 안이고, 그 폭의 M64 출력은 애초에 틀렸다. 원장의 **−20% 는 이
+  기록으로 확인되지도 반박되지도 않았다** — 경쟁을 고쳐야 물어볼 수 있는 질문이다.
+- **환경.** srv4 GB10 sm_121a, 프로덕션 옆 단일 GPU 레인(holder-single, 8 GiB, 플릿 리스 없음),
+  이미지 `bracket-b39f2bda8014`, 랭크 `st-glm53-9391-up-gate-full/rank3of4` 의 `L3.moe.*`(folded).
+
+**게이트가 자기 자신에 대해 잡은 것.** 첫 판정은 `passed: true` 였다. 규칙이 `across <= floor × factor`
+였고 floor 가 후보 자신의 퍼짐이라 **망가진 팔이 자기가 재어질 기준을 올렸다.** 자기 일치를 먼저 본다:
+`candidate_spread <= max(control_spread × factor, 1e-3)`.
+
+**실행이 잡은 배선 결함 셋** (전부 첫 실행 전에는 보이지 않았다): 큐의 `ST_PROBES` 허용 목록에 프로브가
+없어 접수 거부; `eligibility()` 가 셀 객체 대신 리포트용 dict 를 돌려줘 `cell.topk` 가 죽음;
+`b12x_fused_moe` 가 `_prefill_tile64=None` 을 명시적으로 넘겨 **호출 시점 키워드가 `functools.partial`
+을 덮는 바람에 두 팔이 모두 M128 로 돌았다**(게이트가 `reached (128, 128)` 로 잡음).
+
+**부수 발견.** 자격 창은 `64 < m` 이지만 디스패처는 routed-pair 컷오버를 넘어야 dynamic 백엔드에 닿는다
+— m=65 는 static 계열이 서빙한다. 프로브가 이제 행마다 백엔드를 물어 건너뛴 것으로 적는다.
+
+**바뀐 것.** `launch_sm120_moe(_prefill_tile64=)` 가 M64 워크스페이스를 스스로 파생하고 `b12x_fused_moe`
+가 그것을 넘긴다(기본 `None`, 엔진의 어떤 코드도 넘기지 않음 — 테스트가 박는다). 그래서 게이트가 재는
+것이 **출하될 경로**가 됐다. 프로브는 `bench/fleet_onepass.ST_PROBES` 에 등재됐다.
+
+**미측정.** tok/s·수용률·품질·TP4. 경쟁을 고친 뒤 같은 사다리로 다시 판정한다.
+
+[여섯 판의 행별 원시 JSON·경계 이분·배선 결함 셋·재현](measurements/st_m64_prefill_qual_20260915/README.md).

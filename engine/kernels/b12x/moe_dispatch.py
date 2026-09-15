@@ -5958,6 +5958,7 @@ def launch_sm120_moe(
     _prepared_weights=None,
     _ep_short_output: torch.Tensor | None = None,
     _output_finalize=None,
+    _prefill_tile64: bool | None = None,
 ) -> torch.Tensor:
     """Unified SM120 MoE dispatch — selects static or dynamic by token count.
 
@@ -6195,8 +6196,23 @@ def launch_sm120_moe(
         )
     if _output_finalize is not None and backend != 'static':
         raise ValueError('MoE finalizer requires the static FP32 scatter backend')
+    if _prefill_tile64 is not None:
+        # The private M64 prefill lane, reachable from the served route so a gate can
+        # measure what would ship instead of a probe-shaped approximation of it. Explicit
+        # only: the parameter defaults to None, nothing in the engine passes it, and the
+        # launcher below still refuses capture and re-checks exact eligibility. Making it
+        # a DEFAULT needs the GPU verdict first (probes/engine_moe_prefill_m64.py).
+        if type(_prefill_tile64) is not bool:
+            raise TypeError("private prefill tile64 override must be bool or None")
+        if _prefill_tile64 and backend != "dynamic":
+            raise ValueError(f"private M64 prefill is a dynamic-backend lane, not {backend}")
     if backend == "dynamic":
+        if _prefill_tile64:
+            # Its own eager workspace, derived from the one this call resolved: the M128
+            # owner and every captured decode owner keep their storage.
+            workspace = _prefill_m64_workspace(workspace, num_tokens)
         return launch_sm120_dynamic_moe(
+            _prefill_tile64=_prefill_tile64,
             workspace=workspace,
             weights=weights,
             a=a,

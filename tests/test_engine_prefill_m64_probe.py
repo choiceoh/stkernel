@@ -81,6 +81,34 @@ class NoiseArithmeticTests(unittest.TestCase):
         self.assertEqual(self.m._spread([]), 0.0)
 
 
+class GateRuleTests(unittest.TestCase):
+    """The rule must fail a candidate that cannot reproduce itself.
+
+    The first srv4 run passed a candidate whose own repeats differed by 107%: the rule was
+    `across <= floor x factor`, and the floor was the candidate's own spread, so a broken
+    arm raised the bar it was measured against. A self-agreement rule comes first.
+    """
+
+    def test_a_candidate_that_disagrees_with_itself_cannot_be_rescued_by_the_cross_arm_rule(self):
+        m = probe()
+        control, candidate, across = 0.0, 1.0674, 1.8522      # the measured m=1024 row
+        self.assertFalse(candidate <= max(control * m.TOLERANCE_FACTOR, m.REPRODUCIBLE_CEILING),
+                         'a 107% self-spread must fail the reproducibility rule')
+        self.assertTrue(across <= max(max(control, candidate) * m.TOLERANCE_FACTOR, 1e-6),
+                        'and the cross-arm rule alone would have passed it')
+
+    def test_an_ordinary_reorder_still_passes(self):
+        m = probe()
+        control, candidate = 1.5e-4, 3.0e-4
+        self.assertTrue(candidate <= max(control * m.TOLERANCE_FACTOR, m.REPRODUCIBLE_CEILING))
+
+    def test_the_probe_checks_reproducibility_before_the_cross_arm_difference(self):
+        text = PROBE.read_text(encoding='utf-8')
+        self.assertIn('REPRODUCIBLE_CEILING', text)
+        self.assertLess(text.index('if not reproducible:'), text.index('elif not within:'),
+                        'self-agreement is the first gate')
+
+
 class ContractTests(unittest.TestCase):
     def test_every_named_source_exists(self):
         for name in probe().SOURCES:
@@ -96,12 +124,33 @@ class ContractTests(unittest.TestCase):
         names = {n.name for n in tree.body if isinstance(n, ast.FunctionDef)}
         self.assertTrue({'cpu_check', 'gpu_check', 'eligibility', 'main'} <= names)
 
-    def test_the_gpu_arm_asks_for_the_private_lane_by_name(self):
+    def test_the_gpu_arm_asks_for_the_private_lane_through_the_served_entry(self):
         text = PROBE.read_text(encoding='utf-8')
-        self.assertIn('_prefill_tile64=True', text)
-        self.assertIn('_prefill_m64_workspace', text, 'M64 needs its own eager workspace')
+        # It must OVERWRITE the keyword, not supply it as a default: b12x_fused_moe
+        # forwards `_prefill_tile64=None` explicitly, and a call-time keyword beats
+        # functools.partial -- a partial here lost the flag and both arms ran M128.
+        self.assertIn("kw['_prefill_tile64'] = True", text, 'the candidate asks by name')
+        self.assertNotIn('partial(real_moe', text, 'a partial is overridden by the callee')
+        self.assertIn('launch_sm120_moe', text,
+                      'the arms must differ at the served entry, not below it')
+        self.assertNotIn('_prefill_m64_workspace', text,
+                         'the dispatcher owns the workspace derivation; a probe that '
+                         'rebuilds it measures a copy of the route, not the route')
         self.assertIn("get_device_capability() != (12, 1)", text,
                       'an sm_120 card must not be allowed to render an sm_121a verdict')
+
+    def test_the_dispatcher_owns_the_m64_workspace_and_keeps_it_opt_in(self):
+        dispatch = (ROOT / 'engine/kernels/b12x/moe_dispatch.py').read_text(encoding='utf-8')
+        entry = dispatch.split('def launch_sm120_moe(')[1].split('\ndef ')[0]
+        self.assertIn('_prefill_tile64: bool | None = None', entry,
+                      'the served entry carries the switch, defaulting to off')
+        self.assertIn('_prefill_m64_workspace(workspace, num_tokens)', entry,
+                      'and derives the M64 workspace itself')
+        lane = (ROOT / 'engine/kernels/b12x/b12x_moe.py').read_text(encoding='utf-8')
+        self.assertIn('_prefill_tile64', lane, 'the lane-facing entry forwards it')
+        # Nothing in the engine may pass it: a default flip needs the GPU verdict first.
+        for name in ('engine/profiles/glm53/net.py', 'engine/profiles/glm53/lanes.py'):
+            self.assertNotIn('_prefill_tile64', (ROOT / name).read_text(encoding='utf-8'), name)
 
     def test_the_gpu_mode_refuses_to_run_without_the_consumer_ranks(self):
         import subprocess

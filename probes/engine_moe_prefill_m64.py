@@ -19,12 +19,15 @@ away. Timing is eager (capture is refused until qualification) in B/A/A/B with a
 L2-evicted pass. Nothing here changes a serving default, and no GPU is reserved -- run it
 under the queue's single-GPU lane.
 
+The two arms differ by ONE argument to the served entry, `launch_sm120_moe(_prefill_tile64=)`.
+The dispatcher owns the M64 workspace derivation, so what this gate measures is the route
+that would ship, not a probe-shaped copy of it. The device is the default; `--cpu` runs the
+parts that need none (eligibility, the ladder, source identity) so the wiring can be smoked
+in a CPU container before a GPU slot is spent.
+
     bash bench/fleet.sh run --gpu st-m64 20 'M64 prefill MoE' -- \
       bash probes/run_engine_probe.sh probes/engine_moe_prefill_m64.py \
-        --gpu --ranks <rank dir> --output /cache/st-m64.json
-
-`--cpu` runs the parts that need no device (eligibility, the row ladder, source identity) so
-the wiring can be smoked in a CPU container before a GPU slot is spent.
+        --ranks <rank file> --output /cache/st-m64.json
 """
 import argparse
 import hashlib
@@ -42,6 +45,10 @@ ROWS = (65, 129, 1024, 2304, 2305, 4608, 6912, 8192)
 ORACLE_ROWS = 129          # the reference lane loops over experts in Python
 REPEATS = 3
 TOLERANCE_FACTOR = 4.0
+# A candidate that cannot reproduce its own output is not a reorder, it is a defect, and no
+# cross-arm rule can rescue it: `across <= floor x factor` is vacuous once the floor is large.
+# An FP32-atomic reorder on a BF16 result lands far under this.
+REPRODUCIBLE_CEILING = 1e-3
 
 SOURCES = (
     'engine/kernels/b12x/moe_dynamic_prefill_m64.py',
@@ -75,10 +82,14 @@ def eligibility(md):
         'row-major weights are not the tiled recipe':
             md._prefill_m64_eligible(m=2304, tile_m=64, **{**common, 'tiled': False}),
     }
-    return admitted, refused, dict(experts_local=cell.experts_local, hidden=cell.hidden,
-                                   inter_local=cell.inter_local, topk=cell.topk,
-                                   quant=cell.quant, activation=cell.activation,
-                                   swiglu_limit=cell.swiglu_limit)
+    return admitted, refused, cell
+
+
+def cell_fields(cell):
+    """The admitted cell as JSON, so a record says which shape the gate was evaluated for."""
+    return dict(experts_local=cell.experts_local, hidden=cell.hidden,
+                inter_local=cell.inter_local, topk=cell.topk, quant=cell.quant,
+                activation=cell.activation, swiglu_limit=cell.swiglu_limit)
 
 
 def identity():
@@ -88,7 +99,7 @@ def identity():
 def cpu_check(report):
     from engine.kernels.b12x import moe_dispatch as md
     admitted, refused, cell = eligibility(md)
-    report('cell', **cell)
+    report('cell', **cell_fields(cell))
     failures = [f'{m} rows must be admitted' for m, ok in admitted.items() if not ok]
     failures += [reason for reason, ok in refused.items() if ok]
     report('eligibility', admitted=admitted, refused_as_expected=not failures,
@@ -123,8 +134,9 @@ def _spread(runs):
 
 
 def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
-    import torch
     from unittest.mock import patch
+
+    import torch
 
     from engine.kernels.b12x import moe_dispatch as md
     from engine.profiles.glm53.lanes import served
@@ -136,7 +148,7 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
         raise RuntimeError('the M64 candidate is pinned to sm_121a; a verdict from another '
                            f'card is that card\'s (this one is {torch.cuda.get_device_capability()})')
     admitted, refused, cell = eligibility(md)
-    report('cell', **cell)
+    report('cell', **cell_fields(cell))
     if not all(admitted.values()) or any(refused.values()):
         raise RuntimeError('eligibility moved; run --cpu for the detail')
 
@@ -164,22 +176,41 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
     lane.moe_prepare(*weights, cell.topk, cell.swiglu_limit, scales=scales)
     reference = served(reference_for=('expert',)).moe
 
-    real_launch = md.launch_sm120_dynamic_moe
+    # The arms differ by ONE argument to the served entry. `launch_sm120_moe` owns the M64
+    # workspace derivation, so this gate measures the route that would ship rather than a
+    # probe-shaped copy of it. The inner watch changes no behaviour: it only records which
+    # tile the call actually reached, so an arm cannot pass without having run.
+    real_moe, real_dynamic = md.launch_sm120_moe, md.launch_sm120_dynamic_moe
     seen = {}
 
-    def m128_launch(*, workspace, num_tokens, **kw):
-        seen['tile_m'] = workspace.tile_m
-        return real_launch(workspace=workspace, num_tokens=num_tokens, **kw)
+    def watch(**kw):
+        seen['tile_m'] = kw['workspace'].tile_m
+        seen['reached_with'] = kw.get('_prefill_tile64')
+        return real_dynamic(**kw)
 
-    def m64_launch(*, workspace, num_tokens, **kw):
-        # The candidate owns its own eager workspace; the M128 owner is untouched.
-        m64 = md._prefill_m64_workspace(workspace, num_tokens)
-        seen['tile_m'] = m64.tile_m
-        return real_launch(workspace=m64, num_tokens=num_tokens, _prefill_tile64=True, **kw)
+    def entry(tile64):
+        # Overwrite, do not default. `b12x_fused_moe` forwards `_prefill_tile64=None`
+        # explicitly, and a call-time keyword beats functools.partial -- a partial here
+        # silently lost the flag and BOTH arms ran M128 (first srv4 run, 2026-09-15).
+        def call(**kw):
+            if tile64:
+                kw['_prefill_tile64'] = True
+            seen['asked'] = kw.get('_prefill_tile64')
+            return real_moe(**kw)
+        return call
 
-    def run(x, sel, w, launch):
-        with patch.object(md, 'launch_sm120_dynamic_moe', launch):
+    def run(x, sel, w, tile64):
+        with patch.object(md, 'launch_sm120_moe', entry(tile64)), \
+                patch.object(md, 'launch_sm120_dynamic_moe', watch):
             return lane.moe(x, sel, w, *weights, cell.swiglu_limit, scales=scales)
+
+    def backend_for(m):
+        return md.select_sm120_moe_backend(
+            num_tokens=m, num_topk=cell.topk, activation_precision='fp4',
+            quant_mode=cell.quant, num_experts=cell.experts_local,
+            num_local_experts=cell.experts_local, hidden_size=cell.hidden,
+            intermediate_size=cell.inter_local, activation=cell.activation,
+            swiglu_limit=cell.swiglu_limit)
 
     def timed(fn, evict):
         cold = torch.empty(128 << 20, dtype=torch.uint8, device='cuda') if evict else None
@@ -195,9 +226,17 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
         torch.cuda.synchronize()
         return out, start.elapsed_time(end)
 
-    failures = []
+    failures, skipped = [], []
     generator = torch.Generator(device='cuda').manual_seed(640_876)
     for m in rows:
+        # The M64 window opens at 65 rows, but the dispatcher reaches the dynamic backend
+        # only past its routed-pair cutover; below it the static family serves and there is
+        # no M64 lane to compare. Report the skip -- do not let it read as a pass.
+        chosen = backend_for(m)
+        if chosen != 'dynamic':
+            skipped.append(m)
+            report('rows', m=m, backend=chosen, skipped='the static backend serves this width')
+            continue
         x = (torch.randn(m, cell.hidden, device='cuda', generator=generator,
                          dtype=torch.float32) * 0.3).to(torch.bfloat16)
         sel = (torch.randint(0, cell.experts_local, (m, cell.topk), device='cuda',
@@ -206,21 +245,28 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
         w = w / w.sum(-1, keepdim=True)
 
         arms = {}
-        for name, launch in (('m128', m128_launch), ('m64', m64_launch)):
+        for name, tile64 in (('m128', False), ('m64', True)):
             seen.clear()
-            runs = [run(x, sel, w, launch) for _ in range(repeats)]
+            runs = [run(x, sel, w, tile64) for _ in range(repeats)]
             arms[name] = (runs, seen.get('tile_m'))
         (m128_runs, m128_tile), (m64_runs, m64_tile) = arms['m128'], arms['m64']
         if (m128_tile, m64_tile) != (128, 64):
             failures.append(f'{m} rows did not reach both lanes ({m128_tile}, {m64_tile})')
-            report('rows', m=m, reached=(m128_tile, m64_tile), passed=False)
+            report('rows', m=m, reached=(m128_tile, m64_tile), asked=seen.get('asked'),
+                   reached_with=seen.get('reached_with'), passed=False)
             continue
 
-        floor = max(_spread(m128_runs), _spread(m64_runs))
+        control_spread, candidate_spread = _spread(m128_runs), _spread(m64_runs)
+        floor = max(control_spread, candidate_spread)
         across = _relative(m64_runs[0], m128_runs[0])
+        # Two rules, and the first is the one that matters: the candidate must agree with
+        # ITSELF. Only then does comparing the arms against that floor mean anything.
+        reproducible = candidate_spread <= max(control_spread * tolerance_factor,
+                                               REPRODUCIBLE_CEILING)
         within = across <= max(floor * tolerance_factor, 1e-6)
-        values = dict(m=m, m128_spread=_spread(m128_runs), m64_spread=_spread(m64_runs),
-                      across_arms=across, floor=floor, within_reorder_noise=within)
+        values = dict(m=m, m128_spread=control_spread, m64_spread=candidate_spread,
+                      across_arms=across, floor=floor, reproducible=reproducible,
+                      within_reorder_noise=within)
 
         if m <= ORACLE_ROWS:
             oracle = reference(x, sel, w, *weights, cell.swiglu_limit, scales=scales)
@@ -230,10 +276,10 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
         # B/A/A/B: the control brackets the candidate so drift is visible as an A/B gap.
         for evict in (False, True):
             label = 'evicted' if evict else 'warm'
-            b1, t_b1 = timed(lambda: run(x, sel, w, m128_launch), evict)
-            a1, t_a1 = timed(lambda: run(x, sel, w, m64_launch), evict)
-            a2, t_a2 = timed(lambda: run(x, sel, w, m64_launch), evict)
-            b2, t_b2 = timed(lambda: run(x, sel, w, m128_launch), evict)
+            b1, t_b1 = timed(lambda: run(x, sel, w, False), evict)
+            a1, t_a1 = timed(lambda: run(x, sel, w, True), evict)
+            a2, t_a2 = timed(lambda: run(x, sel, w, True), evict)
+            b2, t_b2 = timed(lambda: run(x, sel, w, False), evict)
             base, cand = (t_b1 + t_b2) / 2, (t_a1 + t_a2) / 2
             values[f'{label}_m128_ms'] = base
             values[f'{label}_m64_ms'] = cand
@@ -241,25 +287,32 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
             values[f'{label}_bracket_drift'] = abs(t_b1 - t_b2) / base if base else None
             del b1, a1, a2, b2
 
-        if not within:
+        if not reproducible:
+            failures.append(f'{m} rows: the candidate disagrees with itself by '
+                            f'{candidate_spread:.3e} (the control: {control_spread:.3e})')
+        elif not within:
             failures.append(f'{m} rows: arms differ by {across:.3e}, floor {floor:.3e}')
-        report('rows', passed=within, **values)
+        report('rows', passed=reproducible and within, **values)
 
-    report('verdict', passed=not failures, failures=failures)
+    report('verdict', passed=not failures, failures=failures, skipped_static_rows=skipped)
     if output:
-        Path(output).write_text(json.dumps(dict(passed=not failures, failures=failures), indent=1))
+        Path(output).write_text(json.dumps(
+            dict(passed=not failures, failures=failures, skipped_static_rows=skipped), indent=1))
     if failures:
         raise RuntimeError('; '.join(failures))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    mode = parser.add_mutually_exclusive_group(required=True)
+    # The queue's runner is `docker run --gpus all <probe>`, so the device is the default
+    # and every flag it may pass is one literal token (bench/fleet_onepass.ST_FLAGS).
+    mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--cpu', action='store_true', help='no device: eligibility and identity')
-    mode.add_argument('--gpu', action='store_true')
+    mode.add_argument('--gpu', action='store_true', help='the default; accepted for symmetry')
     parser.add_argument('--ranks')
     parser.add_argument('--output', type=Path)
-    parser.add_argument('--rows', type=int, nargs='*', default=list(ROWS))
+    parser.add_argument('--rows', default=','.join(str(m) for m in ROWS),
+                        help='comma-separated row counts')
     parser.add_argument('--repeats', type=int, default=REPEATS)
     parser.add_argument('--tolerance-factor', type=float, default=TOLERANCE_FACTOR)
     args = parser.parse_args()
@@ -280,7 +333,10 @@ def main():
         return
     if not args.ranks:
         raise ValueError('the GPU gate needs the exact consumer --ranks')
-    gpu_check(report, args.ranks, args.output, tuple(args.rows), args.repeats,
+    rows_asked = tuple(int(v) for v in str(args.rows).split(',') if v.strip())
+    if not rows_asked:
+        raise ValueError('--rows takes at least one row count')
+    gpu_check(report, args.ranks, args.output, rows_asked, args.repeats,
               args.tolerance_factor)
 
 
