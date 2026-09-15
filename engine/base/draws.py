@@ -55,6 +55,16 @@ def row_key(seed: int, nonce: int, generation: int) -> int:
     return mix(h ^ (int(generation) & MASK))
 
 
+def request_nonce(engine_seed: int, nonce: int, request_seed: int | None = None) -> int:
+    """Encode a request seed in the existing device nonce, without changing the graph's hash.
+
+    mix(engine_seed) XOR this word equals mix(request_seed). Thus every generation
+    and purpose agrees with row_key(request_seed, 0, generation), including seeds
+    wider than int64. Unseeded rows retain their admission nonce exactly.
+    """
+    return _signed(nonce if request_seed is None else mix(engine_seed) ^ mix(request_seed))
+
+
 def word(purpose: int, position: int) -> int:
     """Purpose in the high half, position in the low half: distinct for every (purpose, position)."""
     if not 0 <= int(position) < (1 << 32) or not 0 < int(purpose) < (1 << 16):

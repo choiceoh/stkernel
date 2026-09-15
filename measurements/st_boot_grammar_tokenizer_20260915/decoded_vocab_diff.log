@@ -1,0 +1,62 @@
+image sha256:848e493f37af252865deea2fe6169916f6bac727343b5ab592cd74fcf3639544; host srv4; 2026-09-15T04:18:54Z
+[transformers] You are using a model of type `glm5_next` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+{
+ "len": [
+  154880,
+  154880
+ ],
+ "types": [
+  "bytes",
+  "bytes"
+ ],
+ "differing": 5,
+ "first": [
+  [
+   188,
+   "b'\\x00'",
+   "b''"
+  ],
+  [
+   102858,
+   "b'\\x00\\x00'",
+   "b''"
+  ],
+  [
+   105749,
+   "b'\\x00\\x00\\x00\\x00'",
+   "b''"
+  ],
+  [
+   110532,
+   "b'\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00'",
+   "b''"
+  ],
+  [
+   119174,
+   "b'\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x",
+   "b''"
+  ]
+ ],
+ "vocab_type": [
+  "VocabType.BYTE_LEVEL",
+  "VocabType.BYTE_LEVEL"
+ ],
+ "add_prefix_space": [
+  false,
+  false
+ ],
+ "masks": {
+  "json": {
+   "steps": 22,
+   "same_masks": true
+  },
+  "schema": {
+   "steps": 26,
+   "same_masks": true
+  },
+  "ebnf": {
+   "steps": 4,
+   "same_masks": true
+  }
+ }
+}

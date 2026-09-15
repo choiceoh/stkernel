@@ -767,35 +767,34 @@ class DecodeChainGateTests(unittest.TestCase):
         self.assertEqual(e.chain_exits, {})
 
     def test_every_blocker_names_itself(self):
-        for option in ("seed", "logprobs", "logit_bias", "min_p", "presence_penalty",
-                       "frequency_penalty", "repetition_penalty", "grammar"):
+        for option in ("min_p", "grammar"):
             e = self.gate(options={0: {option: 1}})
             self.assertFalse(e.async_ready([0]), option)
             self.assertEqual(e.chain_exits, {option: 1}, option)
 
-    def test_state_the_options_do_not_carry_names_itself_too(self):
-        """A grammar, a request's seed and a logprob request live in their own maps by then, not in `options`."""
-        for state, reason in (({"matchers": {0: 1}}, "grammar"), ({"seeds": {0: 1}}, "seed"), ({"lps": {0: 1}}, "logprobs")):
-            e = self.gate(**state)
-            self.assertFalse(e.async_ready([0]))
-            self.assertEqual(e.chain_exits, {reason: 1})
-
-    def test_min_tokens_is_named_apart_from_the_rest_because_it_passes(self):
-        """min_tokens blocks only until the row has produced enough; the others never stop blocking. An operator
-        reading one number cannot act on it, and reading the two apart tells them which."""
-        e = self.gate(min_new={0: 9})
+    def test_device_options_and_their_bound_state_run_ahead(self):
+        for opts in ({"seed": 0}, {"logprobs": 0}, {"logit_bias": {3: 2.0}}, {"presence_penalty": .2},
+                     {"frequency_penalty": -.2}, {"repetition_penalty": 1.1}):
+            e = self.gate(options={0: opts}, seeds={0: 0}, lps={0: []})
+            self.assertTrue(e.async_ready([0]), opts)
+            self.assertTrue(e._plain_ahead(0))
+            self.assertEqual(e.chain_exits, {})
+        e = self.gate(matchers={0: 1})
         self.assertFalse(e.async_ready([0]))
-        self.assertEqual(e.chain_exits, {"min_tokens": 1})
+        self.assertEqual(e.chain_exits, {"grammar": 1})
+
+    def test_min_tokens_no_longer_drains_the_chain(self):
+        e = self.gate(min_new={0: 9})
+        self.assertTrue(e.async_ready([0]))
+        self.assertEqual(e.chain_exits, {})
         e.min_new[0] = 1                                     # one generated token is already enough
         self.assertTrue(e.async_ready([0]))
 
-    def test_one_row_takes_the_whole_batch_off_the_chain(self):
-        """The batch runs ahead together or not at all. At max_seqs 4 that is the cost of a single logprobs request,
-        and the counter has to show it as such rather than as one row's business."""
-        e = self.gate(options={0: {}, 1: {}, 2: {}, 3: {"logprobs": True}},
+    def test_a_logprobs_row_keeps_its_neighbours_on_the_chain(self):
+        e = self.gate(options={0: {}, 1: {}, 2: {}, 3: {"logprobs": 5}},
                       tokens={s: [1, 2, 3] for s in range(4)}, prompt_len={s: 2 for s in range(4)})
-        self.assertFalse(e.async_ready([0, 1, 2, 3]))
-        self.assertEqual(e.chain_exits, {"logprobs": 1})
+        self.assertTrue(e.async_ready([0, 1, 2, 3]))
+        self.assertEqual(e.chain_exits, {})
 
     def test_rows_churning_mid_flight_is_its_own_reason(self):
         """PR #671 made most of these go away (independent new rows may now join without draining survivors), so

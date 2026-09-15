@@ -1,0 +1,10 @@
+test_a_crossing_step_parks_the_boundary_and_a_non_crossing_one_leaves_the_stage_alone (tests.test_engine_boundary_stage.BoundaryStageTests.test_a_crossing_step_parks_the_boundary_and_a_non_crossing_one_leaves_the_stage_alone) ... ok
+test_a_snapshot_past_its_boundary_puts_back_the_drafter_cells_written_after_it (tests.test_engine_boundary_stage.BoundaryStageTests.test_a_snapshot_past_its_boundary_puts_back_the_drafter_cells_written_after_it)
+The drafter ring files position p in the cell of p - window. A boundary crossed while generating is ... ok
+test_the_stage_is_declared_with_the_arena (tests.test_engine_boundary_stage.BoundaryStageTests.test_the_stage_is_declared_with_the_arena) ... ok
+test_fp32_and_fp16_graph_staging_restore_match_cpu_bytes (tests.test_engine_boundary_stage.CudaBoundaryStageTests.test_fp32_and_fp16_graph_staging_restore_match_cpu_bytes) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.991s
+
+OK

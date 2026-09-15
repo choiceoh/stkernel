@@ -190,8 +190,17 @@ tier_spills_total,tier_restores_total,dedup_waits_total}`. 이어가기(B1)는 �
 **호스트보다 앞서 돈다**(`profiles/glm53/pipeline.py`, vLLM 의 비동기 스케줄링): 타깃
 그래프 → 샘플러 → 커밋(`base/sampler.commit_batch`) → 마스크 관측 → 제안 → 다음 스텝 ids 가 장치에 남고, 결과만 핀 버퍼로 건너와
 다음 스텝이 이미 도는 동안 읽힌다(`runner.inflight`, 깊이 2). 장치에서 끝난 행은 상태 슬롯을 null 슬롯으로 돌려 유령 스텝이 링에 아무
-것도 못 쓰고, 러너는 한 스텝 늦게 끝을 알아 그 유령의 결과를 버린다. 온도/top_p 만 있는 행은 장치의 기각 샘플링
-(`speculative_pick_batch`)으로 앞서 돌고, 페널티·logit_bias·seed·logprobs·문법·min_tokens 미충족 행은 동기 경로(러너가 먼저 비운다).
+것도 못 쓰고, 러너는 한 스텝 늦게 끝을 알아 그 유령의 결과를 버린다. 온도/top_k/top_p·요청별 seed·페널티·logit_bias·logprobs·min_tokens
+미충족 행도 이 비동기 경로를 사용한다. 요청별 seed는 기존 난수 키와 같은 값을 만드는 nonce로 넘기며, 페널티 이력은 장치에서 실제로 커밋된
+토큰만 센다. 검증 블록의 각 위치에 draft 접두사를 반영하고, min_tokens에 도달하기 전 위치에서는 EOS와 stop_token_ids를 금지한다.
+greedy 옵션 행은 로컬 어휘 조각을 FP32로 처리한 뒤 기존 MAX 집단통신으로 고르고, 확률 샘플링·logprobs 행은 전체 어휘를 모은다.
+logprobs는 선택 토큰과 상위 후보만 연속 핀 버퍼로 옮겨 기존 결과 이벤트 뒤에서 공개하며, 거절된 draft·생성 한도 뒤 토큰·유령 스텝은 기록하지 않는다.
+
+페널티·logit_bias·logprobs·미충족 min_tokens는 깊이 2의 일반 비동기 체인을 사용한다. 기존 4회 greedy 버스트는 기본 채팅과 중립 옵션
+(예: penalty=0, repetition_penalty=1, greedy seed)에 유지된다. 문법 matcher와 reasoning_budget 경계는 호스트 판정이 필요해 여전히
+먼저 체인을 비운다. 문법 행도 위치별 로짓 변환을 한 GPU 블록으로 처리하고 logprobs를 일괄 읽으며, matcher의 draft 롤백·커밋 규칙은 유지한다.
+새 옵션 커널과 FP32 샘플러 변형은 부팅 때 준비한다. 로컬 CUDA 수치·그래프·상태 전이 검증과 처리 단계 측정은
+[요청 옵션 비동기화 기록](../measurements/st_async_options_20260915/README.md)에 있다. 엔진 전체 TP4 속도는 별도 측정 대상이다.
 루프의 도착 브로드캐스트와 투표는 gloo 제어 그룹(`Comm.control`)으로 간다 — NCCL 그룹의 객체 브로드캐스트는 스텝의 커널 뒤에
 줄 서고 읽기 위해 장치를 기다린다.
 

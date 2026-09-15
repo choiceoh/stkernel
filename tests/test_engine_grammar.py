@@ -214,6 +214,96 @@ class CheckpointTests(unittest.TestCase):
         with patch.object(grammar, "for_checkpoint", return_value="bound") as bound:
             self.assertEqual(boot.grammars("ckpt", 7, "cuda:0", [1]), "bound")
         bound.assert_called_once_with("ckpt", 7, "cuda:0", [1])
+        with patch.object(grammar, "for_checkpoint", return_value="bound") as bound:
+            self.assertEqual(boot.grammars("ckpt", 7, "cuda:0", [1], tokenizer="tok"), "bound")
+        bound.assert_called_once_with("ckpt", 7, "cuda:0", [1], tokenizer="tok")
+
+
+class TokenizerInfoTests(unittest.TestCase):
+    """base/grammar.tokenizer_info reads xgrammar's inputs off the `tokenizers` backend; they must be the ones
+    TokenizerInfo.from_huggingface takes from the transformers fast tokenizer wrapping that same backend."""
+
+    def setUp(self):
+        try:
+            import torch  # noqa: F401
+            import xgrammar  # noqa: F401
+            from tokenizers import Tokenizer  # noqa: F401
+            from transformers import PreTrainedTokenizerFast  # noqa: F401
+        except ImportError as exc:
+            self.skipTest(f"grammar stack unavailable here: {exc}")
+
+    @staticmethod
+    def trained(kind):
+        from tokenizers import Tokenizer, decoders, models, pre_tokenizers, trainers
+        tok = Tokenizer(models.BPE())
+        if kind == "byte-level":
+            tok.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
+            tok.decoder = decoders.ByteLevel()
+            alphabet = pre_tokenizers.ByteLevel.alphabet()
+        else:
+            tok.pre_tokenizer = pre_tokenizers.Metaspace(replacement="\u2581", prepend_scheme="always")
+            tok.decoder = decoders.Metaspace(replacement="\u2581", prepend_scheme="always")
+            alphabet = []
+        trainer = trainers.BpeTrainer(vocab_size=320, special_tokens=["<eos>", "<think>", "</think>", "<tool_call>"],
+                                      initial_alphabet=alphabet, show_progress=False)
+        text = ['{"name": "\ud64d\uae38\ub3d9", "n": [1, 2.5, true, null]}', "hello world, again and again",
+                "\t\ttabs and\nnewlines \u00e9\u00e8 \u4e2d\u6587", "<tool_call>get_weather</tool_call>"] * 8
+        tok.train_from_iterator(text, trainer)
+        tok.no_truncation()
+        tok.no_padding()
+        return tok
+
+    def test_the_backend_gives_from_huggingface_its_own_inputs(self):
+        import xgrammar as xgr
+        from transformers import PreTrainedTokenizerFast
+        from engine.base.grammar import tokenizer_info
+        for kind in ("byte-level", "metaspace"):
+            tok = self.trained(kind)
+            size = tok.get_vocab_size(with_added_tokens=True)
+            stops = [tok.token_to_id("<eos>"), tok.token_to_id("</think>")]
+            hf = PreTrainedTokenizerFast(tokenizer_object=tok, eos_token="<eos>")
+            for vocab in (size, size + 29):                             # the head may be wider than the tokenizer
+                with self.subTest(kind=kind, vocab=vocab):
+                    want = xgr.TokenizerInfo.from_huggingface(hf, vocab_size=vocab, stop_token_ids=sorted(stops))
+                    got = tokenizer_info(tok, vocab, stops)
+                    self.assertEqual(list(got.decoded_vocab), list(want.decoded_vocab))
+                    self.assertEqual((got.vocab_type, got.add_prefix_space, got.vocab_size),
+                                     (want.vocab_type, want.add_prefix_space, want.vocab_size))
+                    self.assertEqual(list(got.stop_token_ids), list(want.stop_token_ids))
+                    self.assertEqual(list(got.special_token_ids), list(want.special_token_ids))
+                    self.assertEqual(got.dump_metadata(), want.dump_metadata())
+
+    def test_grammars_over_the_backend_mask_what_the_transformers_path_masks(self):
+        import torch
+        from transformers import PreTrainedTokenizerFast
+        from engine.base import grammar
+        tok = self.trained("byte-level")
+        size = tok.get_vocab_size(with_added_tokens=True)
+        stops = [tok.token_to_id("<eos>")]
+        via_hf = grammar.Grammars(PreTrainedTokenizerFast(tokenizer_object=tok, eos_token="<eos>"), size,
+                                  stop_token_ids=stops)
+        via_backend = grammar.for_checkpoint("/unused", size, None, stops, tokenizer=tok)
+        ids = tok.encode('{"name": "x", "n": [1, true]}').ids
+        schema = '{"type": "object", "properties": {"name": {"type": "string"}, "n": {"type": "array"}}}'
+        for spec in ({"type": "json_object"}, {"type": "json_schema", "schema": schema}):
+            with self.subTest(spec=spec["type"]):
+                matchers = [g.matcher(spec, max_rollback=len(ids) + 1) for g in (via_hf, via_backend)]
+                for step in range(len(ids)):
+                    masks = []
+                    for g, m in zip((via_hf, via_backend), matchers):
+                        drafts = ids[step:step + 3]
+                        filled = g.prepare([("row", m, drafts)], "cpu")
+                        logits = torch.zeros(filled.live("row", len(drafts) + 1), size)
+                        filled.apply("row", logits)
+                        masks.append(torch.isinf(logits))
+                    self.assertTrue(torch.equal(masks[0], masks[1]), f"step {step}")
+                    for m in matchers:
+                        m.advance([ids[step]])
+
+    def test_the_backend_path_needs_the_engines_stop_ids(self):
+        from engine.base.grammar import tokenizer_info
+        with self.assertRaisesRegex(ValueError, "stop token ids"):
+            tokenizer_info(self.trained("byte-level"), 400, [])
 
 
 class StepBufferTests(unittest.TestCase):

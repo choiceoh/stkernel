@@ -1,0 +1,21 @@
+# rank 0 'warmup:' lines of the two warm boots of main 3acae017 (docker logs -t st-glm53 on srv2, followed live)
+2026-09-15T03:53:51.247921335Z   warmup: prefill/64 0.22s, prefill/256 0.358s, prefill/1024 0.6s, prefill/2048 0.938s, prefill/2304 0.963s, prefill/4096 1.479s, decode/1 0.093s, decode-async/1 0.188s, decode/2 0.098s, decode-async/2 0.208s, vision/image 3.695s; structured output: on
+2026-09-15T03:41:02.001582246Z   warmup: prefill/64 0.213s, prefill/256 0.344s, prefill/1024 0.586s, prefill/2048 1.012s, prefill/2304 0.963s, prefill/4096 1.538s, decode/1 0.095s, decode-async/1 0.187s, decode/2 0.1s, decode-async/2 0.208s, vision/image 3.685s; structured output: on
+
+# rank 0 recorder rows of the same boots
+2026-09-15T03:53:49.333328767Z capture decode                              68.257     +4.64  
+2026-09-15T03:53:49.333330239Z warmup shapes                                5.148     +0.50  
+2026-09-15T03:53:49.333331135Z qualify vision                               3.695     +3.07  
+2026-09-15T03:53:49.333332095Z qualify grammar                              6.750     +0.53  
+2026-09-15T03:53:49.333332991Z release warmup cache                         2.129     -3.47  production_warmup_cache_returned_bytes=3.66792e+09
+2026-09-15T03:41:00.090367670Z capture decode                              96.170     +5.66  
+2026-09-15T03:41:00.090369446Z warmup shapes                                5.249     +0.63  
+2026-09-15T03:41:00.090371190Z qualify vision                               3.685     +2.98  
+2026-09-15T03:41:00.090372966Z qualify grammar                             10.180     +0.91  
+2026-09-15T03:41:00.090374886Z release warmup cache                         0.196     -3.39  production_warmup_cache_returned_bytes=3.56306e+09
+
+# kernel warmup end and door per boot
+2026-09-15T03:53:22.464055229Z   kernel warmup returned 4.76 GiB of inactive allocator cache
+2026-09-15T03:53:49.333334031Z   ST engine: GLM-5.3, TP=4, lanes=served, KV 7.0 GiB, serving on :8001
+2026-09-15T03:40:31.599698924Z   kernel warmup returned 4.79 GiB of inactive allocator cache
+2026-09-15T03:41:00.090376726Z   ST engine: GLM-5.3, TP=4, lanes=served, KV 7.0 GiB, serving on :8000

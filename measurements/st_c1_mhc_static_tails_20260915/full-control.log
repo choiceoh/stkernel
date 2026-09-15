@@ -1,0 +1,80 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-c1mhc-control-a55c-20260915-150837.txt
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "60b170929110406f866a20dad940c427", "phase": "waiting", "reason": "dequeue", "since": 326658.505751188, "updated_at": 1789452518.6135626, "version": 1}
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-c1mhc-control-a55c-20260915-150837.txt
+GO c1mhc-control-a55c 2026-09-15_15:08:38
+  node 10.10.10.1: gpu=ok stray=3 ram=96G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=99G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=102G path=ok 
+== 15:08:40 chain: CONTROL (base = CONTROL = 78c3f5ed32d6, session c1mhc-control-a55c, rehearse=0, reuse=0)
+  cut /home/choiceoh/st-releases/78c3f5ed32d6
+== 15:08:40 arm CONTROL = 78c3f5ed32d607be6c8e600aabd4e1471dcbf84f -> /home/choiceoh/st-releases/78c3f5ed32d6 (port 8001)
+== 15:11:15 door up: http://127.0.0.1:8001
+== 15:11:15 full run 1/2 on CONTROL (cold column)
+prepare C=1: full context ladder, 64 output tokens per request; retained separately
+    ctx     tok first tok/s median tok/s first TTFT median TTFT  reuse quality   (* = the cache carried it: not a prefill, CHARTER D17)
+   2000    2627        2345        2412      1.12s      1.09s     0%  quality deferred
+  32000   33826        3563     (1 req)      9.49s          -     0%  quality deferred
+ 128000  129784        3474     (1 req)     37.36s          -     0%  quality deferred
+  준비 후 처리량: 2412 -> 3474 tok/s (over 2627 -> 129784 tokens)
+    QUALITY ctx=2000: portfolio:derivation,counterfactual
+    QUALITY ctx=2000: logic:derivation,counterfactual,witnesses
+    QUALITY ctx=32000: portfolio:derivation; logic:derivation,witnesses
+    QUALITY ctx=128000: logic:derivation,witnesses
+=> 4/9 reasoning cases passed; rubric 47/57
+decode: windows n=238 med 19.9 [15.9, 21.9] step/s (inside the answers only; per context: 2K: n=62 med 19.9  32K: n=98 med 19.9  128K: n=78 med 19.9), raw acc 51.1%, tokens/step 4.064 (k=6.0), generated 21773 tokens over 299s
+응답 5개 · 문자 48,030
+  깨진 응답: 0/5 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+INVALID measurement: C=1 quality or Korean corruption gate failed
+prepare C=2 ctx=2000
+C=2 ctx=2000: 113.67 total tok/s; valid=False
+prepare C=2 ctx=2000
+C=2 ctx=2000: 129.78 total tok/s; valid=True
+prepare C=2 ctx=2000
+C=2 ctx=2000: 97.92 total tok/s; valid=False
+prepare C=2 ctx=32000
+C=2 ctx=32000: 99.42 total tok/s; valid=False
+fixed concurrency: four 2K prompts, exactly 1024 output tokens each; C=1 then C=2
+fixed concurrency 1024 tok: C=1 85.6 -> C=2 121.2 tok/s = 1.42x (decode 1.49x); valid=False
+diagnostic-c1-2000
+diagnostic-c1-32000
+diagnostic-c1-128000
+diagnostic-c2-2000
+diagnostic-c2-32000
+== onepass CONTROL: 1098s total; artifacts /home/choiceoh/glm53-logs/onepass-runs/20260915T061115-e904f00ebe5d
+== 15:29:35 forensics: /home/choiceoh/glm53-logs/st-bracket-dumps/c1mhc-control-a55c-CONTROL/run-1
+== 15:29:35 onepass run 1 on CONTROL recorded issues (rc=2); retaining this boot for the remaining runs
+== 15:29:35 full run 2/2 on CONTROL (warm column)
+prepare C=1: full context ladder, 64 output tokens per request; retained separately
+    ctx     tok first tok/s median tok/s first TTFT median TTFT  reuse quality   (* = the cache carried it: not a prefill, CHARTER D17)
+   2000    2627        2386        2407      1.10s      1.09s     0%  quality deferred
+  32000   33826        3540     (1 req)      9.56s          -     0%  quality deferred
+ 128000  129784        3507     (1 req)     37.01s          -     0%  quality deferred
+  준비 후 처리량: 2407 -> 3507 tok/s (over 2627 -> 129784 tokens)
+    QUALITY ctx=2000: logic:derivation,counterfactual,witnesses
+    QUALITY ctx=32000: portfolio:derivation,counterfactual; logic:derivation,witnesses
+    QUALITY ctx=128000: logic:derivation,witnesses
+=> 5/9 reasoning cases passed; rubric 48/57
+decode: windows n=300 med 19.9 [10.7, 21.9] step/s (inside the answers only; per context: 2K: n=69 med 19.9  32K: n=105 med 19.9  128K: n=126 med 19.9), raw acc 50.7%, tokens/step 4.041 (k=6.0), generated 26739 tokens over 361s
+응답 5개 · 문자 62,197
+  깨진 응답: 0/5 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+INVALID measurement: C=1 quality or Korean corruption gate failed
+diagnostic-c1-2000
+diagnostic-c1-32000
+diagnostic-c1-128000
+== onepass CONTROL: 592s total; artifacts /home/choiceoh/glm53-logs/onepass-runs/20260915T062935-8c9e091447e2
+== 15:39:30 forensics: /home/choiceoh/glm53-logs/st-bracket-dumps/c1mhc-control-a55c-CONTROL/run-2
+== 15:39:30 onepass run 2 on CONTROL recorded issues (rc=2); retaining this boot for the remaining runs
+== 15:39:38 tier c1mhc-control-a55c-CONTROL on 10.10.10.2: dropped
+== 15:39:38 tier c1mhc-control-a55c-CONTROL on 10.10.10.1: dropped
+== 15:39:39 tier c1mhc-control-a55c-CONTROL on 10.10.10.3: dropped
+== 15:39:39 tier c1mhc-control-a55c-CONTROL on 10.10.10.4: dropped
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "d9d5f574965a452f9c83ef182a428e75", "phase": "waiting", "reason": "release", "since": 328520.228813721, "updated_at": 1789454380.3366208, "version": 1}

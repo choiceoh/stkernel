@@ -26,7 +26,8 @@ BF16 partial sums; this accumulates in fp32 and rounds once). The GEMMs are torc
 the mixer's matmul changes the matrix cuBLAS tiles, not the arithmetic of a row.
 
 `qualify` holds the lane to the oracle on the device before it serves (D3): a boot calls it once and dies on a
-mismatch rather than serving a residual stream that drifts.
+mismatch rather than serving a residual stream that drifts. Its bounds are a few BF16 steps (a step is 2^-7 of a value)
+because rounding order moves elements by a step; a wrong formula moves them by tenths.
 """
 from __future__ import annotations
 
@@ -176,9 +177,11 @@ def _leave(h, out, inject, w, eps, hc, *, norm):
 
 
 def mix(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: int, *,
-        inject: bool = True) -> "tuple[torch.Tensor, torch.Tensor | None]":
+        inject: bool = True, project_down=None, project_up=None) -> "tuple[torch.Tensor, torch.Tensor | None]":
     """The site's mixer over the normalised streams: (mixed [N, H], injection [N, hc] or None for the closing mixer).
-    `down_inject` is pack_down_inject's weight; `up` [hc*H, r]."""
+    `down_inject` is pack_down_inject's weight; `up` [hc*H, r]. `project_down` / `project_up`, when given, compute the
+    two matmuls instead of BF16 torch.mm over those weights -- (normed [N, hc*H]) -> [N, r(+hc)] and (gates [N, r]) ->
+    [N, hc*H] BF16, rows packed along their columns (a quantised dense lane); the weights still name the shapes."""
     hid = _check_streams(normed, hc)
     rank = up.shape[1]
     if up.shape != (normed.shape[1], rank) or down_inject.shape != (rank + (hc if inject else 0), normed.shape[1]):
@@ -187,13 +190,16 @@ def mix(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: i
     if down_inject.dtype != normed.dtype or up.dtype != normed.dtype:
         raise ValueError("the hyper-connection weights are held in the activations' dtype (BF16 in the checkpoint)")
     if not normed.is_cuda:
-        di = torch.nn.functional.linear(normed, down_inject)
+        di = torch.nn.functional.linear(normed, down_inject) if project_down is None else project_down(normed)
         gates = torch.nn.functional.silu(di[:, :rank] / hc)
-        weights = torch.sigmoid(torch.nn.functional.linear(gates, up)).unflatten(-1, (hc, hid))
+        up_rows = torch.nn.functional.linear(gates, up) if project_up is None else project_up(gates)
+        weights = torch.sigmoid(up_rows).unflatten(-1, (hc, hid))
         mixed = (weights * normed.unflatten(-1, (hc, hid))).mean(dim=-2)
         return mixed, (2 * torch.sigmoid(di[:, rank:] / hc) if inject else None)
     rows = normed.shape[0]
-    di = torch.mm(normed, down_inject.t())
+    di = torch.mm(normed, down_inject.t()) if project_down is None else project_down(normed)
+    if di.shape != (rows, down_inject.shape[0]) or di.dtype != normed.dtype or di.stride(1) != 1:
+        raise ValueError("the down projection returns packed [N, r(+hc)] rows in the streams' dtype")
     gates = torch.empty(rows, rank, device=normed.device, dtype=normed.dtype)
     injection = torch.empty(rows, hc, device=normed.device, dtype=normed.dtype) if inject else None
     mixed = torch.empty(rows, hid, device=normed.device, dtype=normed.dtype)
@@ -202,18 +208,31 @@ def mix(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: i
                         (gates if injection is None else injection).stride(0), float(hc), R=rank,
                         BR=triton.next_power_of_2(rank), HC=hc, BH=triton.next_power_of_2(hc), WITH_INJECT=inject,
                         num_warps=4)
-    weights = torch.mm(gates, up.t())
+    weights = torch.mm(gates, up.t()) if project_up is None else project_up(gates)
+    if weights.shape != (rows, normed.shape[1]) or weights.dtype != normed.dtype or weights.stride(1) != 1:
+        raise ValueError("the up projection returns packed [N, hc*H] rows in the streams' dtype")
     if rows:
         _mix_mean[(rows,)](weights, normed, mixed, weights.stride(0), normed.stride(0), mixed.stride(0), float(hc),
                            HID=hid, BD=triton.next_power_of_2(hid), HC=hc, num_warps=_warps(hid))
     return mixed, injection
 
 
+def drift(ours: torch.Tensor, ref: torch.Tensor) -> "tuple[float, float]":
+    """(largest error over the largest reference magnitude, error RMS over reference RMS), in fp32. A BF16 step is 2^-7
+    of a value (7 mantissa bits): an operation that rounds where the torch form does not -- a reduction's partial
+    sums -- moves an element by a step or two, far under the tenths that a wrong formula, stream or channel gives."""
+    a, b = ours.float(), ref.float()
+    err = (a - b).abs()
+    return (float((err.max() / b.abs().max().clamp_min(1e-30)).item()),
+            float((err.square().mean().sqrt() / b.square().mean().sqrt().clamp_min(1e-30)).item()))
+
+
 def qualify(device, *, hc: int, hidden: int, rank: int, eps: float, dtype=torch.bfloat16, rows=(1, 5, 64),
-            band: float = 4e-3, seed: int = 0) -> dict:
+            band_max: float = 5e-2, band_rms: float = 2e-2, seed: int = 0) -> dict:
     """Hold the lane to engine/modules/hyper_connection.gated_residual on `device`, with random weights at the model's
-    widths: two sites joined by a leave and a closing mixer. Raises on a relative error above `band` (the two
-    reductions the kernel owns plus BF16 rounding sit well under it); returns the worst errors seen."""
+    widths: two sites joined by a leave with its norm, a leave without one, and a closing mixer. Raises when an output
+    drifts past `band_max` (largest error / largest magnitude) or `band_rms` (`drift`): bounds a few BF16 steps wide,
+    so rounding order passes and arithmetic does not; returns the worst (max, rms) seen per output."""
     from engine.modules.hyper_connection import gated_residual
     gen = torch.Generator(device="cpu").manual_seed(seed)
     width = hc * hidden
@@ -221,33 +240,34 @@ def qualify(device, *, hc: int, hidden: int, rank: int, eps: float, dtype=torch.
     def rand(*shape, scale=1.0):
         return (torch.randn(*shape, generator=gen) * scale).to(device=device, dtype=dtype)
 
-    worst = {"enter": 0.0, "inject": 0.0, "leave": 0.0, "close": 0.0}
+    worst = {k: (0.0, 0.0) for k in ("enter", "inject", "leave_norm", "leave", "close")}
     norm_w, down, up, inj = rand(width, scale=0.1), rand(rank, width, scale=0.02), rand(width, rank, scale=0.02), \
         rand(hc, width, scale=0.02)
     norm_c, down_c, up_c = rand(width, scale=0.1), rand(rank, width, scale=0.02), rand(width, rank, scale=0.02)
     di, dc = pack_down_inject(down, inj), pack_down_inject(down_c, None)
 
-    def rel(a, b):
-        return float(((a.float() - b.float()).abs().max() / b.float().abs().max().clamp_min(1e-12)).item())
+    def note(key, ours, ref):
+        m, r = drift(ours, ref)
+        worst[key] = (max(worst[key][0], m), max(worst[key][1], r))
 
     for n in rows:
         h = rand(n, width)
         ref_mixed, ref_inj = gated_residual(h, norm_w, down, up, inj, hc, eps)
         mixed, injection = mix(norm_streams(h, norm_w, eps, hc), di, up, hc)
-        worst["enter"] = max(worst["enter"], rel(mixed, ref_mixed))
-        worst["inject"] = max(worst["inject"], rel(injection, ref_inj))
+        note("enter", mixed, ref_mixed)
+        note("inject", injection, ref_inj)
         out = rand(n, hidden)
         ref_h = h + (out.unsqueeze(-2) * ref_inj.unsqueeze(-1)).flatten(-2)
-        ours = h.clone()
-        ours, normed = leave_norm(ours, out, injection, norm_c, eps, hc)
-        worst["leave"] = max(worst["leave"], rel(ours, ref_h))
+        ours, normed = leave_norm(h.clone(), out, ref_inj, norm_c, eps, hc)
+        note("leave_norm", ours, ref_h)
+        note("leave", leave(h.clone(), out, ref_inj, hc), ref_h)
         closed, _ = mix(normed, dc, up_c, hc, inject=False)
-        worst["close"] = max(worst["close"], rel(closed, gated_residual(ref_h, norm_c, down_c, up_c, None, hc, eps)))
-    bad = {k: v for k, v in worst.items() if v > band}
+        note("close", closed, gated_residual(ref_h, norm_c, down_c, up_c, None, hc, eps))
+    bad = {k: v for k, v in worst.items() if v[0] > band_max or v[1] > band_rms}
     if bad:
         raise RuntimeError(f"gated residual lane drifts from engine/modules/hyper_connection.gated_residual beyond "
-                           f"{band:g}: {bad}")
+                           f"max {band_max:g} / rms {band_rms:g}: {bad}")
     return worst
 
 
-__all__ = ["pack_down_inject", "norm_streams", "leave", "leave_norm", "mix", "qualify"]
+__all__ = ["pack_down_inject", "norm_streams", "leave", "leave_norm", "mix", "drift", "qualify"]

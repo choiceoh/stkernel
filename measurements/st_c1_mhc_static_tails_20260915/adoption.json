@@ -1,0 +1,97 @@
+{
+  "decision": "accepted by explicit user instruction",
+  "user_instruction": "저정도면 그냥 후보 수용해",
+  "quality_criterion": "final-answer correctness",
+  "accepted_runtime_commit": "fcd32f1358cbd34799c23bdf2fca367d542b1181",
+  "native_source_sha256": "b2f7a0ae9ba4e7621117db3de48f0d6a7be190eabf5e4fe3f6c832357b93eda1",
+  "final_answers": {
+    "control": {
+      "ok": 9,
+      "total": 9
+    },
+    "candidate": {
+      "ok": 9,
+      "total": 9
+    }
+  },
+  "comparison_scope": "first C=1 observations at 2K/32K/128K; candidate full run incomplete at later C=2 preparation",
+  "complete_paired_tp4_comparison": false,
+  "canonical_proof_rubric_modified": false,
+  "whole_serving_speedup_established": false,
+  "control": {
+    "run_id": "20260915T061115-e904f00ebe5d",
+    "commit": "78c3f5ed32d607be6c8e600aabd4e1471dcbf84f",
+    "artifact": "onepass-control-cold.json"
+  },
+  "candidate": {
+    "run_id": "20260915T055558-6151c6353435",
+    "commit": "b2e596739566f0d0ce288c05fc35eff95b1c9a54",
+    "artifact": "onepass-incomplete.json"
+  },
+  "observations": [
+    {
+      "metric": "decode_steps_s",
+      "control": 19.89618946391201,
+      "candidate": 19.89742525038815,
+      "change_pct": 0.006211171633552226
+    },
+    {
+      "metric": "tokens_per_step",
+      "control": 4.064312736443884,
+      "candidate": 4.221983115378249,
+      "change_pct": 3.8793859911558037
+    },
+    {
+      "metric": "draft_acceptance_pct",
+      "control": 51.071878940731395,
+      "candidate": 53.69971858963748,
+      "change_percentage_points": 2.6278396489060825
+    },
+    {
+      "metric": "ttft_2000_s",
+      "prompt_tokens": 2627,
+      "control": 1.0892255619983189,
+      "candidate": 1.0796003709547222,
+      "change_pct": -0.8836728937886895
+    },
+    {
+      "metric": "ttft_32000_s",
+      "prompt_tokens": 33826,
+      "control": 9.492664702003822,
+      "candidate": 9.672825038025621,
+      "change_pct": 1.8978900201096272
+    },
+    {
+      "metric": "ttft_128000_s",
+      "prompt_tokens": 129784,
+      "control": 37.36345825903118,
+      "candidate": 36.94216751499334,
+      "change_pct": -1.12754751210965
+    }
+  ],
+  "queued_candidate_repeat": {
+    "session": "c1mhc-final-a55c",
+    "ticket": "17894525771743125",
+    "revision": 2,
+    "status": "cancelled before admission after user acceptance"
+  },
+  "supplemental_control_repeat": {
+    "artifact": "onepass-control-warm.json",
+    "run_id": "20260915T062935-8c9e091447e2",
+    "recording_status": "complete",
+    "final_answers": {
+      "ok": 9,
+      "total": 9
+    },
+    "decode_steps_s": 19.89790592423686,
+    "draft_acceptance_pct": 50.67674288630234,
+    "candidate_repeat_measured": false
+  },
+  "cleanup": {
+    "control_session": "c1mhc-control-a55c",
+    "control_status": "finished; both records complete; original rubric returned 2",
+    "fleet_released": true,
+    "log": "full-control.log",
+    "candidate_cancel_log": "full-candidate-cancelled.log"
+  }
+}

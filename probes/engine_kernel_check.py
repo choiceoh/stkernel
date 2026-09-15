@@ -38,9 +38,26 @@ def main():
     parser.add_argument("--seqs", help="dense_cells: concurrencies to compare, 1 -> 8 rows, 2 -> 16 rows (default 1,2)")
     parser.add_argument("--samples", help="dense_cells: B/A/A/B brackets per comparison (default 2)")
     args = parser.parse_args()
+    if args.lanes == 'boundary_stage':
+        from probes.engine_boundary_stage import run as boundary_stage_check
+        boundary_stage_check(args.output)
+        return
+    if args.lanes == 'vocab_selection':
+        from probes.engine_vocab_selection import run as vocab_selection_check
+        vocab_selection_check(args.output)
+        return
+    if args.lanes == 'mhc_c1_tails':
+        from probes.engine_mhc_c1_tails import main as mhc_c1_tails_check
+        mhc_c1_tails_check(args.ranks, samples=args.samples, output=args.output)
+        return
     if args.lanes == 'producer_pack':
         from probes.engine_producer_pack import main as producer_pack_check
         producer_pack_check(args.ranks, seqs=args.seqs, samples=args.samples, output=args.output)
+        return
+    if args.lanes == 'moe_c2_cells' or args.lanes.startswith('moe_c2_cells:'):
+        # the routed experts' same-build cells: tile-major w13 chunk, stamped timeline, prefill (real rank weights)
+        from probes.engine_moe_c2_cells import main as moe_c2_cells
+        moe_c2_cells(args.ranks, sections=args.lanes.split(':')[1:], samples=args.samples, output=args.output)
         return
     if args.lanes == 'dense_cells' or args.lanes.startswith('dense_cells:'):
         from probes.engine_dense_cells import main as dense_cells_check
@@ -123,7 +140,17 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "moe_fc1_reuse", "moe_compact_staging", "moe_register_scales", "moe_sync_cleanup", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench", "decode_k7", "moe_output", "moe_pair", "moe_pair_serial", "moe_pair_overlap", "moe_pair_direct", "moe_pair_reuse", "moe_pair_prefetch", "moe_pair_sync"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "moe_fc1_reuse", "moe_compact_staging", "moe_register_scales", "moe_sync_cleanup", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench", "decode_k7", "moe_output", "moe_pair", "moe_pair_serial", "moe_pair_overlap", "moe_pair_direct", "moe_pair_reuse", "moe_pair_prefetch", "moe_pair_sync", "moe_pair_vec4", "moe_pair_packed_load"}, selected
+
+    if 'moe_pair_packed_load' in selected:
+        from probes.engine_moe_pair_check import check as moe_pair_check
+        target = args.output.with_stem(args.output.stem+'-packed-load') if args.output else None
+        moe_pair_check(report, args.ranks, scatter_packed_load_only=True, output=target)
+
+    if 'moe_pair_vec4' in selected:
+        from probes.engine_moe_pair_check import check as moe_pair_check
+        target = args.output.with_stem(args.output.stem+'-vec4') if args.output else None
+        moe_pair_check(report, args.ranks, scatter_vec4_only=True, output=target)
 
     if 'moe_pair_sync' in selected:
         from probes.engine_moe_pair_check import check as moe_pair_check

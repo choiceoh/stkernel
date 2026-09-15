@@ -14,8 +14,9 @@ The launches a layer issues are the point of the file (the "cuts" of the Qwen3.8
                               and the delta rule on their ring kernels, the output norm in one launch, out_proj
     attention                 one GEMM for query+gate|k|v|index (merged at preshard), one norm+partial-rope launch for
                               the query heads, one for the key head, one for the index queries; the QSA ops
-    MoE                       the router GEMM and top-k, the rank's experts in one dispatcher launch, the shared expert's
-                              two GEMMs and activation, ONE all-reduce for routed and shared together
+    MoE                       the router and the shared gate in one GEMM (merged at preshard), top-k, the rank's experts
+                              in one dispatcher launch (another rank's routes skip in the micro kernel on a captured
+                              step), the shared expert's two GEMMs and activation, ONE all-reduce for routed and shared
 
 TP=4 is the shape of the code (comm must be one rank of four). Collectives: the embedding and the PLE table lookup
 (vocab-parallel rows summed), each mixer's output projection, each MoE's sum; the head gathers or takes a vocab argmax.
@@ -44,6 +45,7 @@ from engine.profiles.qwen38.lanes import Lanes
 
 BF16, F32 = torch.bfloat16, torch.float32
 HEAD_NAME = "Qwen4ExpForCausalLM/lm_head"          # the pack store's calibration name of the head's FP8 GPTQ
+HC_NAME = "Qwen4ExpForCausalLM/hyper_connection"    # the FP8 mixer lanes' names (hc_fp8; no calibration yet)
 PLE_GATHER_ROWS = 2048                             # token rows a PLE table gather addresses at once: [2048, 16, 160] int64
 FIRST_BUCKET = 4096                                # tokens of the smallest context bucket; each next one doubles
 
@@ -150,10 +152,15 @@ class StepMeta:
 
 
 class Qwen38Net:
-    def __init__(self, F: Facts, comm, lanes: Lanes, layers=None, *, mtp: bool = True):
+    def __init__(self, F: Facts, comm, lanes: Lanes, layers=None, *, mtp: bool = True, hc_fp8: bool = False):
+        """`hc_fp8`: the hyper-connection mixers' two matmuls a site on block-scaled FP8 (engine/kernels/dense
+        FP8Linear) instead of BF16 -- half the bytes every step reads from the largest weights it reads. The mixer's
+        numbers change (round-to-nearest FP8 weights and activations), so it is a declared choice a boot makes and a
+        quality bracket judges, not a default."""
         if comm.world_size != TP:
             raise ValueError(f"qwen38 is written for TP={TP}; comm has world {comm.world_size}")
-        self.F, self.comm, self.lanes, self.mtp = F, comm, lanes, mtp
+        self.F, self.comm, self.lanes, self.mtp, self.hc_fp8 = F, comm, lanes, mtp, hc_fp8
+        self._hc_projections = {}
         self.rank = comm.rank
         self.layers = list(range(F.layers)) if layers is None else list(layers)
         if not self.layers or len(set(self.layers)) != len(self.layers) or any(not 0 <= L < F.layers for L in self.layers):
@@ -216,8 +223,8 @@ class Qwen38Net:
     def prepare_dense(self, store=None, *, consume_weights=False):
         """The dense lanes (engine/kernels/dense): W4A8 at decode rows, FP8 above; the shared expert's 160-column down
         projection through PaddedDenseLinear. No channel smoothing: its fold divides a plain norm weight, and every
-        norm this model has is unit-offset. The hyper-connection mixers stay BF16 matmuls inside their lane (10,240
-        wide, W4 packs do not tile) and the router stays a BF16 GEMM."""
+        norm this model has is unit-offset. The hyper-connection mixers are BF16 matmuls inside their lane (10,240
+        wide, W4 packs do not tile) unless `hc_fp8` put them on FP8 (`_prepare_hc_fp8`); the router stays a BF16 GEMM."""
         from engine.kernels.dense import DenseLinear, FP8Linear, PaddedDenseLinear
         self.dense = {}
         for key, name in self.dense_names(self.p).items():
@@ -231,6 +238,41 @@ class Qwen38Net:
                 self.p[key] = None
         head_fp8 = store.pack_fp8(self.p["head"], HEAD_NAME) if (store is not None and store.calibrated(HEAD_NAME)) else None
         self.dense["head"] = FP8Linear(self.p["head"], quantized=head_fp8, name=HEAD_NAME)
+        self._hc_projections = self._prepare_hc_fp8() if self.hc_fp8 else {}
+
+    def _hc_sites(self):
+        """Every mixer the served step runs, as its weight-name prefix and down name: two a layer, the closing mixer,
+        and the MTP head's two and its close."""
+        sites = [(f"L{L}.hc.{side}.", "down_inject") for L in self.layers for side in ("attn", "mlp")]
+        sites.append(("close.", "down"))
+        if self.mtp:
+            sites += [("mtp.L0.hc.attn.", "down_inject"), ("mtp.L0.hc.mlp.", "down_inject"), ("mtp.close.", "down")]
+        return sites
+
+    def _prepare_hc_fp8(self) -> dict:
+        """prefix -> (down projection, up projection) on FP8Linear. The down projection reads the 10,240-wide streams
+        (128-aligned); the up projection's input is the mixer rank (320), so its weight gains zero columns to 384 and
+        the gates are padded with zeros to match -- a zero column adds nothing to a row."""
+        from engine.kernels.dense import FP8Linear
+        out = {}
+        for prefix, down_name in self._hc_sites():
+            down, up = self.p[prefix + down_name], self.p[prefix + "up"]
+            pad = (-up.shape[1]) % 128
+            up_lane = FP8Linear(torch.nn.functional.pad(up, (0, pad)), name=f"{HC_NAME}/{prefix}up")
+
+            def project_up(gates, lane=up_lane, pad=pad):
+                return lane(torch.nn.functional.pad(gates, (0, pad)) if pad else gates.contiguous())
+
+            out[prefix] = (FP8Linear(down, name=f"{HC_NAME}/{prefix}{down_name}"), project_up)
+        return out
+
+    def _mix(self, prefix: str, normed, down_name: str, *, inject: bool):
+        lanes, F, p = self.lanes, self.F, self.p
+        proj = self._hc_projections.get(prefix)
+        if proj is None:
+            return lanes.hc_mix(normed, p[prefix + down_name], p[prefix + "up"], F.hc, inject=inject)
+        return lanes.hc_mix(normed, p[prefix + down_name], p[prefix + "up"], F.hc, inject=inject,
+                            project_down=proj[0], project_up=proj[1])
 
     def linear(self, x, name):
         lane = self.dense.get(name)
@@ -321,7 +363,7 @@ class Qwen38Net:
             x, inject, h = self._site(n + "hc.mlp.", h, out, inject)
             out = self._moe(n, x, compact=not rows)
         h, normed = lanes.hc_leave_norm(h, out, inject, p["close.norm"], F.rms_eps, F.hc)
-        hidden, _ = lanes.hc_mix(normed, p["close.down"], p["close.up"], F.hc, inject=False)
+        hidden, _ = self._mix("close.", normed, "down", inject=False)
         if last_hidden_only:
             if rows:
                 raise ValueError("a captured step keeps every row; its caller selects them")
@@ -336,7 +378,7 @@ class Qwen38Net:
             normed = lanes.hc_norm(h, p[prefix + "norm"], F.rms_eps, F.hc)
         else:
             h, normed = lanes.hc_leave_norm(h, out, inject, p[prefix + "norm"], F.rms_eps, F.hc)
-        x, injection = lanes.hc_mix(normed, p[prefix + "down_inject"], p[prefix + "up"], F.hc, inject=True)
+        x, injection = self._mix(prefix, normed, "down_inject", inject=True)
         return x, injection, h
 
     # -- GatedDeltaNet -------------------------------------------------------------------------------------------------
@@ -453,11 +495,11 @@ class Qwen38Net:
         host); a captured step keeps every route, another rank's on local expert 0 at weight 0 (lanes.local_routes)."""
         F, p, lanes = self.F, self.p, self.lanes
         n = prefix + "moe."
-        logits = torch.mm(x, p[n + "gate"].t())
-        ids, weights = lanes.route(logits, F.topk_experts)
+        scores = torch.mm(x, p[n + "gates"].t())                     # [N, experts + 1]: the router, then the shared gate
+        ids, weights = lanes.route(scores[:, :F.experts], F.topk_experts)
         routed = self._experts[prefix](x, ids, weights, compact=compact)
         shared = self.linear(lanes.swiglu(self.linear(x, n + "sh_gate_up")), n + "sh_down")
-        gate = torch.sigmoid(torch.mm(x, p[n + "shared_gate"].t()).float())
+        gate = torch.sigmoid(scores[:, F.experts:].float())
         return self.comm.all_reduce((routed.float() + shared.float() * gate).to(x.dtype))
 
     # -- PLE -----------------------------------------------------------------------------------------------------------
@@ -466,7 +508,7 @@ class Qwen38Net:
         reference's torch forms (integer and elementwise work on a handful of rows); the table gather is served."""
         from engine.modules.ngram_embedding import VARIANTS, NGramHash, NGramInjection
         F, p = self.F, self.p
-        names = {"key": f"L{L}.ple.key_proj", "value": f"L{L}.ple.value_proj", "k_norm": f"L{L}.ple.norm_key",
+        names = {"kv": f"L{L}.ple.kv_proj", "k_norm": f"L{L}.ple.norm_key",
                  "q_norm": f"L{L}.ple.norm_query", "conv_norm": f"L{L}.ple.norm_conv", "conv": f"L{L}.ple.conv"}
 
         def weights(layer, name):
@@ -612,7 +654,7 @@ class Qwen38Net:
         x, inject, h = self._site("mtp.L0.hc.mlp.", h, out, inject)
         out = self._moe("mtp.L0.", x, compact=not getattr(step, "captured", False))
         streams, normed = lanes.hc_leave_norm(h, out, inject, p["mtp.close.norm"], F.rms_eps, F.hc)
-        hidden, _ = lanes.hc_mix(normed, p["mtp.close.down"], p["mtp.close.up"], F.hc, inject=False)
+        hidden, _ = self._mix("mtp.close.", normed, "down", inject=False)
         if last_hidden_only:
             last = torch.tensor([s.start + s.length - 1 for s in step.segments], device=hidden.device)
             return hidden.index_select(0, last), streams.index_select(0, last)

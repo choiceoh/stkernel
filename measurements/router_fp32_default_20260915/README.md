@@ -51,7 +51,9 @@ BF16 체크포인트 값을 FP32로 승격해도 저장 전에 사라진 가중�
   비트 단위로 일치한다. 8,193/9,216/32,768행에서는 sender shard와 full projection도 일치한다.
 - `targeted_cpu_tests.log`: **48개 실행, 47개 통과, CUDA 전용 1개 skip**.
   모든 행 수의 FP32 resident 선택, 메모리 예산, native 부팅 증거, packet forward, native 선행 빌드를 포함한다.
-- 최종 전체 회귀 결과와 소스 해시는 `manifest.json` 및 각 로그에 기록한다.
+- `merge_tests.log`: 최신 main 병합 후 **73개 실행, 72개 통과, CUDA 전용 1개 skip**.
+  새 decode-topk와 router-fp32를 모두 선행 빌드하도록 목록 충돌을 해결했다.
+- 전체 CPU 회귀 검사는 실행 중이다. 최종 결과와 소스 해시는 `manifest.json` 및 각 로그에 기록한다.
 
 GPU 테스트 중 allocator가 20 MiB 요청의 OOM을 한 번 기록하고 캐시 회수 후 재시도해 통과했다.
 공유 로컬 GPU의 allocator 기록이며, GB10의 전체 모델 메모리 여유를 증명하는 결과는 아니다.

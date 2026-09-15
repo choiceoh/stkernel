@@ -214,7 +214,7 @@ def reference() -> Lanes:
         Red Hat's folded encoding uses unit weight/activation global scales;
         NVIDIA uses its calibrated per-expert FP32 dequantization scales."""
         from engine.modules.nvfp4_sf import unswizzle_sf
-        from engine.modules.expert_layout import W13_K_IN_BYTES, W2_K_IN_BYTES, row_major_expert
+        from engine.modules.expert_layout import W2_K_IN_BYTES, row_major_expert, w13_chunk_bytes
         if any(getattr(t,"_st_sf6_consumed",False) for t in (w13_sf,w2_sf)):
             raise ValueError("raw scale storage was retired; reload rank weights for the reference lane")
         E, two_i, half_h = w13.shape
@@ -228,7 +228,7 @@ def reference() -> Lanes:
             # CuTe keeps FC1 accumulators in FP32 through the activation,
             # then rounds the activation to BF16 before its FP4 quantization.
             xe = x[rows].float()
-            w13e, w2e = row_major_expert(w13, e, W13_K_IN_BYTES), row_major_expert(w2, e, W2_K_IN_BYTES)   # served bind may have tiled the arena
+            w13e, w2e = row_major_expert(w13, e, w13_chunk_bytes(w13)), row_major_expert(w2, e, W2_K_IN_BYTES)   # served bind may have tiled the arena
             w1, a1, w2g, a2 = ((one, one, one, one) if scales is None else
                                (scales.weight13[e], scales.input13[e], scales.weight2[e], scales.input2[e]))
             u = expert_gemm(xe, w13e[:i_local], s13[:i_local], w1, a1, quantize_act=True)

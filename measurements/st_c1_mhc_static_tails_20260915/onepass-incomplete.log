@@ -1,0 +1,66 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-c1pack-full-v4-a55c-20260915-133750.txt
+waiting: pos 7/7, held by auxab2-fix-0915 [boot] (pid 3194387@srv2, since 13:24, est 45m, drafterab measurement fix2 (draft selector study, debug commit)), legacy busy (1 procs, 0 reqs), lease: queue queue/auxab2-fix-0915 on srv2 since 2026-09-15 13:24:04 (handed from auxab2-main-0915): phase=handed over, running 2026-09-15_13:37:51
+paused: c1pack-full-v4-a55c; edit and resume to retain this ticket
+waiting: pos 1/1, held by calib2r-0915 [boot] (pid 1530631@srv2, since 14:48, est 30m, calib measurement c2 (draft selector study, debug commit)), legacy busy (0 procs, 0 reqs, booting), lease: queue queue/calib2r-0915 on srv2 since 2026-09-15 14:48:12 (calib measurement c2 (draft selector study, debug commit)) 2026-09-15_14:50:26
+waiting: pos 1/1, held by calib2r-0915 [boot] (pid 1530631@srv2, since 14:48, est 30m, calib measurement c2 (draft selector study, debug commit)), lease: queue queue/calib2r-0915 on srv2 since 2026-09-15 14:48:12 (calib measurement c2 (draft selector study, debug commit)) 2026-09-15_14:50:54
+waiting: pos 1/1, held by calib2r-0915 [boot] (pid 1530631@srv2, since 14:48, est 30m, calib measurement c2 (draft selector study, debug commit)), lease: queue queue/calib2r-0915 on srv2 since 2026-09-15 14:48:12 (calib measurement c2 (draft selector study, debug commit)):  2026-09-15_14:51:03
+waiting: pos 1/1, lease: queue queue/c1pack-full-v4-a55c on srv2 since 2026-09-15 14:51:03 (handed from calib2r-0915): phase=handed over 2026-09-15_14:51:04
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "fac07966470340f89b92bdbb037835ab", "phase": "waiting", "reason": "dequeue", "since": 325609.67803624, "updated_at": 1789451469.7858503, "version": 1}
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-c1pack-full-v4-a55c-20260915-133750.txt
+GO c1pack-full-v4-a55c 2026-09-15_14:51:09
+  node 10.10.10.1: gpu=ok stray=3 ram=94G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=99G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=101G path=ok 
+== 14:51:11 pair: candidate b2e596739566 against base 8b593fae2883 (session c1pack-full-v4-a55c, rehearse=0)
+  cut /home/choiceoh/st-releases/b2e596739566
+== 14:51:11 arm ST-b2e596739566 = b2e596739566f0d0ce288c05fc35eff95b1c9a54 -> /home/choiceoh/st-releases/b2e596739566 (port 8001)
+== 14:55:57 door up: http://127.0.0.1:8001
+== 14:55:57 full run 1/2 on ST-b2e596739566 (cold column)
+응답 5개 · 문자 55,424
+  깨진 응답: 0/5 (0%)
+  replacement      0     0.0/백만자
+  lone_jamo        0     0.0/백만자
+  cjk_mixed        0     0.0/백만자
+  control          0     0.0/백만자
+INVALID measurement: C=1 quality or Korean corruption gate failed
+prepare C=2 ctx=2000
+Traceback (most recent call last):
+  File "/home/choiceoh/st-c1-pack-a55c-v4/bench/onepass.py", line 1061, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/choiceoh/st-c1-pack-a55c-v4/bench/onepass.py", line 609, in main
+    return _main()
+           ^^^^^^^
+  File "/home/choiceoh/st-c1-pack-a55c-v4/bench/onepass.py", line 971, in _main
+    run.begin(f'prepare-c{many}-{suffix}', many)
+  File "/home/choiceoh/st-c1-pack-a55c-v4/bench/onepass_recording.py", line 122, in begin
+    self.control(op='begin', token=self.token, diagnostic=diagnostic, concurrency=concurrency)
+  File "/home/choiceoh/st-c1-pack-a55c-v4/bench/onepass_recording.py", line 110, in control
+    with urllib.request.urlopen(req, timeout=75) as r:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 409: Conflict
+== 15:02:20 forensics: /home/choiceoh/glm53-logs/st-bracket-dumps/c1pack-full-v4-a55c-ST-b2e596739566/run-1
+== 15:02:20 onepass run 1 on ST-b2e596739566 failed (rc=1)
+== 15:02:27 tier c1pack-full-v4-a55c-ST-b2e596739566 on 10.10.10.2: dropped
+== 15:02:28 tier c1pack-full-v4-a55c-ST-b2e596739566 on 10.10.10.1: dropped
+== 15:02:28 tier c1pack-full-v4-a55c-ST-b2e596739566 on 10.10.10.3: dropped
+== 15:02:29 tier c1pack-full-v4-a55c-ST-b2e596739566 on 10.10.10.4: dropped
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "ef017735d3fa4e91a47dd81da1193665", "phase": "waiting", "reason": "release", "since": 326289.44230453, "updated_at": 1789452149.5501113, "version": 1}

@@ -1,0 +1,12 @@
+{
+  "validated_commit": "f772d3199e77c1e1bbf3f5b3feb39c9774b07a6f",
+  "serving_candidate": "b2e596739566f0d0ce288c05fc35eff95b1c9a54",
+  "serving_base": "8b593fae2883eda0c819d5a4b9e11d436a45ad06",
+  "validated_cuda_sha256": "b3cd1b099ecf5e984cddcf712dbc751962c755dafea391f5623a6deebf85fdb4",
+  "candidate_cuda_sha256": "b2f7a0ae9ba4e7621117db3de48f0d6a7be190eabf5e4fe3f6c832357b93eda1",
+  "only_host_defaults_changed": true,
+  "base_dense_source_unchanged": true,
+  "cpp_default_edits": 3,
+  "pybind_default_edits": 2,
+  "qualified_automatic_mode": -1
+}

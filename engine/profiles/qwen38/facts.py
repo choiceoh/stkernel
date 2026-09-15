@@ -27,7 +27,7 @@ SPEC_K = 1                                                         # the checkpo
 KV_DTYPE = "bf16"                                                  # QSA K/V rows as the checkpoint computes them (no latent fp8)
 GDN_STATE_DTYPE = "fp32"                                           # the delta rule's state, as the reference keeps it
 EXPERTS = "ep"                                                     # 128 whole experts a rank (profiles/qwen38.env)
-WEIGHT_LAYOUT = "st-qwen38-tep4-modelopt-v1"                       # rank files this profile reads (preshard writes it)
+WEIGHT_LAYOUT = "st-qwen38-tep4-modelopt-v2"                       # rank files this profile reads (preshard writes it)
 
 
 @dataclass(frozen=True)

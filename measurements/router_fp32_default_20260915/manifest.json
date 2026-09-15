@@ -27,6 +27,11 @@
     },
     "full_cpu": {
       "status": "running"
+    },
+    "after_main_merge": {
+      "tests": 73,
+      "failed": 0,
+      "skipped": 1
     }
   },
   "limitations": [
@@ -39,15 +44,15 @@
     "engine/kernels/router_fp32.cpp": "af016eec91724a0b2af1cab07d7733e8e6152098eab5b1349737ce44c4e80139",
     "engine/kernels/router_fp32.py": "2d8958486cace9341386aaa063c37e87a1fc8f55c2a15103c39b6a75967cbe1f",
     "engine/modules/prefill_packets.py": "d166cd6f0ccef9a163790b92947fdfb70a09ee46591b4184f83a9f8b5558009e",
-    "engine/profiles/glm53/boot.py": "bd6d8ce1a24e7d225911872849554ee9da10c82a5c3249c5e6a6074d7dca4874",
+    "engine/profiles/glm53/boot.py": "9f38f2c0657655dc62f92bfabad9aee3e9e97977cc08119e451cadc5c5121435",
     "engine/profiles/glm53/budget.py": "cf56ef0e9f5456f07251eb3df93dbbed538a5f1da3a839132e76cbe1d329f288",
-    "engine/profiles/glm53/natives.py": "9c4e3b2de56fea5badf6fbb10fe769288784edf6b7a96247d1d09f77277052c8",
-    "engine/profiles/glm53/net.py": "92b7c03e2dc6521537c3888b1127505ccf8814c0edb4314108497e8cee0a1ca4",
+    "engine/profiles/glm53/natives.py": "4feb38200ccace31e25fbd9b80c8d83946208e6f471cd1fd9bc9a4d30b83734e",
+    "engine/profiles/glm53/net.py": "c89e93f850d54d6716fba6aa763671f5791a681b3c2b6710133d63ed3c0bc1c4",
     "probes/engine_ffn_packets_check.py": "2d0798f414121d2c9360d318e373f16f2d3c5b6f1c26f8f8fd3bb6eff1ca6d7d",
     "tests/test_engine_decode_residency.py": "eecfa87364bc1212fbe7fbbca777030747f120434cad430d8fda5287107ed917",
     "tests/test_engine_decode_seven.py": "457b691006691d0cdcc71495dda131f0d5774de601aa39afc16521642095a67d",
     "tests/test_engine_ffn_packets.py": "76591134b33e1b92b113f58208e060966be2a7865836010304b2acb4ab9c81e3",
-    "tests/test_engine_glm53_natives.py": "b7759bb723470fbd62ae3315e4260e9f70ecce60f949e15f368801d85d0a52f4",
+    "tests/test_engine_glm53_natives.py": "cdc86fb78c2fa0f9dfd75018c0fb42126d0be05f5d498f612396784e7b1e2229",
     "tests/test_engine_kernel_contracts.py": "02ce0e54ca9764b95b200c332292c7d0ebfc23f13b464c748fb90ff518041418",
     "tests/test_engine_native_execution.py": "db476d1deacdba0926cd6ae5459b66ecf2fcd5274cba69dc33a0a6f7885b15a5",
     "tests/test_engine_prefill_absorb_tiles.py": "6702803813463f08de7d86392e1d8a4a7ff4f6e9932ccbb818f8614f97da13c9",
@@ -55,5 +60,6 @@
     "tests/test_engine_prefill_router.py": "c01d6cfc08a2276430368d750f8ad95d8980e966b07df48848803da1fcfa72e4",
     "tests/test_engine_router_widths.py": "c8da10c7ef99196a1d752db631d23c3a31cf71cc82f4646a23d5e04e5364d6be",
     "tests/test_prefill_dense_prefix.py": "2afcaf0f75b30f7cfca6247d468e5eb9b7879a2fca4c740dd148bdf84cb48bba"
-  }
+  },
+  "merged_main": "ef235c3d167e086110a84fad593b7ec33b30fb1a"
 }

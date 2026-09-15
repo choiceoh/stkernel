@@ -73,6 +73,16 @@ class KeyTests(unittest.TestCase):
         self.assertEqual(draws.step_layout(2), [(draws.DRAFT, 0), (draws.DRAFT, 1), (draws.VERIFY, 0), (draws.VERIFY, 1),
                                                 (draws.FRESH, 0)])
 
+    def test_request_nonce_preserves_the_seeded_hash_for_every_generation(self):
+        for engine_seed in (0, 1, (1 << 64) - 1):
+            for seed in (0, 7, -19, 1 << 63, (1 << 100) + 3):
+                nonce = draws.request_nonce(engine_seed, 4321, seed)
+                self.assertTrue(-(1 << 63) <= nonce < (1 << 63))
+                for generated in (0, 1, 31, 128000):
+                    self.assertEqual(draws.row_key(engine_seed, nonce, generated), draws.row_key(seed, 0, generated))
+                self.assertEqual(nonce, draws.request_nonce(engine_seed, 9876, seed))
+            self.assertEqual(draws.request_nonce(engine_seed, 4321), 4321)
+
 
 @unittest.skipUnless(torch is not None, "requires PyTorch")
 class TensorAgreementTests(unittest.TestCase):
@@ -149,6 +159,18 @@ class TensorAgreementTests(unittest.TestCase):
         self.assertEqual(draws.uniform_tensor(keys, draws.DRAFT, 1)[0, 0].item(), draws.BELOW_ONE)
         self.assertEqual(draws.step_block(seed, torch.tensor([nonce]), torch.tensor([gen]), 3)[0, 0].item(), draws.BELOW_ONE)
 
+    def test_mixed_request_seeds_survive_row_reordering_on_cpu_and_cuda(self):
+        devices = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
+        for device in devices:
+            seeds, admissions, gens = [0, None, 1 << 80, 31], [4, 5, 6, 7], [10, 11, 12, 13]
+            nonce = torch.tensor([draws.request_nonce(19, n, s) for n, s in zip(admissions, seeds)], device=device)
+            generated = torch.tensor(gens, device=device)
+            order = torch.tensor([3, 0, 2, 1], device=device)
+            got = draws.step_block(19, nonce[order], generated[order], 7).tolist()
+            for i, row in enumerate([3, 0, 2, 1]):
+                key = draws.row_key(19, admissions[row], gens[row]) if seeds[row] is None else draws.row_key(seeds[row], 0, gens[row])
+                self.assertEqual(got[i], [draws.uniform(key, p, j) for p, j in draws.step_layout(7)])
+
     @unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA")
     def test_the_device_agrees_with_the_host_on_cuda_too(self):
         nonces = torch.tensor([1, 2, 3, 1 << 38], device="cuda")
@@ -211,7 +233,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn('b["alive"], b["nonce"], b["generated"])', pipeline)
         self.assertIn('block = draws.step_block(e.seed, b["nonce"], b["generated"], K)', pipeline)
         self.assertIn('block_verify_batch(probs, b["drafts"], b["qcand"], b["qprob"], b["draws"])', pipeline)
-        self.assertIn('nonce=self._upload([e.nonces[s] for s in seqs], torch.int64)', pipeline)
+        self.assertIn('draws.request_nonce(e.seed, e.nonces[s], getattr(e, "seeds", {}).get(s))', pipeline)
         graphs = (ROOT / "engine/profiles/glm53/decode_graphs.py").read_text()
         self.assertIn('block = draws.step_block(draws_seed, inputs["nonce"], inputs["generated"], drafter.k)', graphs)
         self.assertIn("def run(self, shape, temperatures, top_k=None, top_p=None, uniforms=None):", graphs)

@@ -106,9 +106,12 @@ class BoundaryStageTests(unittest.TestCase):
 @unittest.skipUnless(torch.cuda.is_available(), "requires CUDA")
 class CudaBoundaryStageTests(unittest.TestCase):
     def test_fp32_and_fp16_graph_staging_restore_match_cpu_bytes(self):
-        for dtype in ("fp32", "fp16"):
+        # The larger odd dimensions require several iterations per CTA for
+        # both recurrent cells and conv channels, with a masked final tile.
+        for dtype, heads, dim in (("fp32", 8, 33), ("fp16", 8, 33),
+                                  ("fp32", 32, 65), ("fp16", 32, 65)):
             F = replace(tiny_facts(), kda_state_dtype=dtype, kinds=("kda", "dsa", "kda"),
-                        kda_heads=8, kda_dim=33, spec_k=6, block=768)
+                        kda_heads=heads, kda_dim=dim, spec_k=6, block=768)
             host = BoundaryStageTests().caches(F, max_seqs=4, draft=(2, 64, 2, 8))
             dev = BoundaryStageTests().caches(F, max_seqs=4, device="cuda", draft=(2, 64, 2, 8))
             # Include arbitrary floating bit patterns and padding, so this
@@ -128,7 +131,8 @@ class CudaBoundaryStageTests(unittest.TestCase):
             try:
                 dev.stage_store.copy_(host.stage_store)
                 for ss, bb, nn in (([1, 2, 3, 4], [766, 767, 1534, 766], [3, 0, 6, 1]),
-                                   ([4, 3, 2, 1], [1535, 768, 767, 2301], [1, 6, 1, 6])):
+                                   ([4, 3, 2, 1], [1535, 768, 767, 2301], [1, 6, 1, 6]),
+                                   ([2, 4, 1, 3], [0, 767, 768, 1535], [0, 0, 7, 0])):
                     cpu_inputs = [torch.tensor(x) for x in (ss, bb, nn)]
                     for target, value in zip((slots, before, counts), cpu_inputs):
                         target.copy_(value)

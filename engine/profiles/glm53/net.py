@@ -40,6 +40,7 @@ import torch.nn.functional as Fn
 
 from engine.base.constants import fresh, iota
 from engine.base.graph_labels import operation
+from engine.kernels.decode_topk import select as select_native
 from engine.modules.sparse_indexer import topk_positions
 from engine.profiles.glm53 import specs
 from engine.profiles.glm53.facts import TP, Facts
@@ -51,6 +52,11 @@ O_NORM_EPS = 1e-5           # FusedRMSNormGated(head_dim, activation="sigmoid") 
                             # 45차 §23: the core's outputs are ~2e-4 rms (mean(x^2) ~ 7e-10), so the norm is eps-dominated -- 1e-6 scaled every KDA
                             # block by sqrt(10) (layer 0 measured 2.9x against vLLM's own model); with 1e-5 the block matches to rel 0.008
 K_NORM_EPS = 1e-6           # indexer LayerNorm(head_dim, eps=1e-6)
+def _torch_topk(logits, k):
+    """The selection `engine.kernels.decode_topk` replaces, on logits whose horizon is already masked."""
+    return torch.topk(logits, k, dim=-1, sorted=False).indices
+
+
 SELECT_ROWS = 1024          # query rows per indexer selection pass: the [rows, candidates] fp32 logits are the prefill's
                             # largest transient (6,912 x 32,768 x 4 B = 0.84 GiB per DSA layer at 128K, x2 with a masked copy)
 JOINED_SLICES = 20          # query rows a captured step's decode selection joins into one top-k: torch picks single- or
@@ -784,7 +790,7 @@ class Glm53Net:
         return len(step.segments)
 
     def _select_rows(self, L: int, q8, w_eff, keys, scales, n_cand: int, contexts, t: int, caches, slots_out, valid_out,
-                     *, joined: bool = True) -> None:
+                     *, joined: bool = True, native: bool = True) -> None:
         """The segment loop's selection for every row of a captured step, with the per-row launches folded.
 
         Per row the loop gathers the row's candidate keys and scales, scores them, masks past the row's horizon,
@@ -799,7 +805,9 @@ class Glm53Net:
         block holds one row and starts where that row's window starts -- where the row's launch starts, at 0.
         The mask and the top-k then take the [rows*t, n_cand] block whole: its slices keep their size, and up to
         JOINED_SLICES slices torch selects the way it does for a row's t. `joined=False` is the probe's same-build
-        control. The loop's -1 for a winner past the horizon is left to the finalize, which masks
+        control, and so is `native=False`, which keeps the horizon mask and torch.topk where
+        `engine.kernels.decode_topk` now selects -- the same set either way, so the finalize writes the same
+        slots and counts. The loop's -1 for a winner past the horizon is left to the finalize, which masks
         `id >= length // pool` itself (kernel and oracle alike) -- the slots and counts it writes are the same.
         `contexts` [rows], `t` tokens a row."""
         from engine.base.constants import zeros
@@ -815,22 +823,33 @@ class Glm53Net:
         lengths = caches.row_lengths(contexts, t, kp, glue.lengths, width=n_cand if joined else 0)
         seq_lens, ke = lengths[:2]
         keys_all, scales_all = glue.candidates(keys, scales, *caches.pool_maps(L), n_cand)   # [rows, n_cand, d], [rows, n_cand]
-        values = torch.empty((rows * t, k), dtype=torch.float32, device=dev)
-        winners = torch.empty((rows * t, k), dtype=torch.int64, device=dev)
+        # `select_native` returns None whenever it does not admit the shape -- a reference lane's
+        # CPU logits included -- and the horizon mask plus torch.topk stay as they were.
+        # `native=False` is the probe's same-build control: the Torch path on the same graph.
+        pick = select_native if native else (lambda *a: None)
+        winners = None
         if joined:
             starts, ends = lengths[2:]
             logits = self.lanes.indexer_logits(q8, keys_all.view(rows * n_cand, -1), scales_all.view(-1), w_eff, ends,
                                                ks=starts, width=n_cand)
-            glue.horizon(logits, ke)                                                      # -inf past each query's pools, in place
-            torch.topk(logits, k, dim=-1, sorted=False, out=(values, winners))
+            winners = pick(logits, ke, k)                     # horizon + top-k, one launch, logits untouched
+            if winners is None:
+                glue.horizon(logits, ke)                                                  # -inf past each query's pools, in place
+                winners = _torch_topk(logits, k)
         else:
             ks = zeros(t, dev)
             for r in range(rows):
                 sl = slice(r * t, (r + 1) * t)
                 logits = self.lanes.indexer_logits(q8[sl], keys_all[r], scales_all[r], w_eff[sl], ke[sl], ks=ks)[:, :n_cand].float()
-                glue.horizon(logits, ke[sl])                                              # -inf past each query's pools, in place
-                torch.topk(logits, k, dim=-1, sorted=False, out=(values[sl], winners[sl]))
+                got = pick(logits, ke[sl], k)
+                if got is None:
+                    glue.horizon(logits, ke[sl])                                          # -inf past each query's pools, in place
+                    got = _torch_topk(logits, k)
+                if winners is None:
+                    winners = torch.empty((rows * t, k), dtype=got.dtype, device=dev)
+                winners[sl] = got
         self.lanes.pool_slots(winners, seq_lens, kp, *caches.token_maps(L), slots_out, valid_out, tokens=t)
+
 
     def _select_pools(self, q8, w_eff, keys, scales, ke, n_cand: int, k: int, *, out=None) -> torch.Tensor:
         """Top-k complete pools per query, in passes of SELECT_ROWS rows: every row's
@@ -841,9 +860,15 @@ class Glm53Net:
             raise ValueError('pool selection destination must match contiguous int32 query rows')
         def select(logits, lengths):
             values = logits[:, :n_cand].float()
-            if rows > 64 and values.is_cuda:
-                from engine.kernels.prefill_topk import select as native_select
-                selected = native_select(values, lengths, k)
+            if values.is_cuda:
+                # Wide passes keep the prefill selector (one block a row, 1024 threads, the row
+                # read twice); a decode-width pass takes the fused one, which is the same answer
+                # with the horizon in registers and one pass over the row.
+                if rows > 64:
+                    from engine.kernels.prefill_topk import select as prefill_select
+                    selected = prefill_select(values, lengths, k)
+                else:
+                    selected = select_native(values, lengths, k)
                 if selected is not None:
                     return selected
             return topk_positions(values, k, valid=lengths, inplace=True)
