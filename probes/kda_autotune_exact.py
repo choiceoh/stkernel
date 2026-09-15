@@ -12,7 +12,8 @@ reaches Triton Autotuners that re-benchmark in every process: nothing keeps thei
           third process with TRITON_CACHE_AUTOTUNING=1 twice, the second of which reads the first's choices.
 
 Cases are the boot's (adapter._warmup_prefill_memory and the gate's continuation pass): 128 tokens, no state, no
-marks; 1,024 tokens with a mark at 768 (one prefix snapshot); 1,024 tokens from an fp32 state with the mark.
+marks; 1,024 tokens with a mark at 768 (one prefix snapshot); 1,024 tokens from an fp32 state with the mark; and the
+gate's 32,256-token passes, from no state and from an fp32 state with a mark every 768 tokens.
 Per-rank shapes: 16 heads, head dim 128. A_log, dt_bias and the lower bound are layer 0's from rank 3's file.
 
 usage: kda_autotune_exact.py --output /cache/kda-autotune.json   (the queue admits --output only)
@@ -27,7 +28,10 @@ import time
 H, D = 16, 128
 RANK_FILE = "/home/choiceoh/models/st-glm53-9391-up-gate-full/rank3of4.safetensors"
 CONFIG = "/home/choiceoh/models/st-glm53-nvidia-tp4-9391/config.json"
-CASES = {"128": (128, False, ()), "1024m": (1024, False, (12,)), "1024sm": (1024, True, (12,))}
+CASES = {"128": (128, False, ()), "1024m": (1024, False, (12,)), "1024sm": (1024, True, (12,)),
+         # the gate's widths: 32,256 tokens from no state (the first pass's key, tuned at 128) and from an fp32 state
+         # with a snapshot mark every 768 tokens (the far pass's key)
+         "32256": (32256, False, ()), "32256sm": (32256, True, tuple(range(12, 504, 12)))}
 
 
 def layer0_params(device):
