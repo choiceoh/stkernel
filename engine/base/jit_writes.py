@@ -24,7 +24,11 @@ rather than named here -- a cache this file does not know about is one it cannot
 sit under one directory in production, so nested roots fold into their parent and the walk happens once.
 
 The walk is bounded in files and in seconds, and says which bound it hit. An unbounded walk of somebody
-else's cache is exactly the kind of instrument that gets turned off the first time a boot is slow.
+else's cache is exactly the kind of instrument that gets turned off the first time a boot is slow. The
+bound is 10 s because 2 was not enough: on 2026-09-16 rank 3 walked 44,785 files in 0.83 s and rank 0 --
+the node that also answers the door -- reached 37,451 in 2.00 and was cut off. Both said "none", but only
+one of them had looked everywhere, and a partial "none" reads exactly like a whole one unless the line
+says otherwise. It does now.
 """
 from __future__ import annotations
 
@@ -37,7 +41,7 @@ ROOT_ENV = ("FLASHINFER_WORKSPACE_BASE", "TRITON_CACHE_DIR", "TILELANG_CACHE_DIR
             "ST_NATIVE_BUILD_ROOT")
 
 FILE_CAP = 200_000
-SECONDS_CAP = 2.0
+SECONDS_CAP = 10.0
 
 
 def roots(env=None) -> "list[Path]":
@@ -124,7 +128,11 @@ class Windows:
         if not self.roots:
             return f"  jit writes: rank {rank} has no declared cache root to walk"
         wrote = {name: n for name, n in counts.items() if n}
-        body = ", ".join(f"{name} {n}" for name, n in wrote.items()) if wrote else "none"
+        if wrote:
+            body = ", ".join(f"{name} {n}" for name, n in wrote.items())
+        else:
+            # "none" is the answer that gets quoted, so it only gets to be said whole when the walk was.
+            body = "none anywhere" if not self.stopped else "none so far"
         tail = f", stopped at the {self.stopped}" if self.stopped else ""
         return (f"  jit writes: rank {rank} {body} -- {self.seen} artifacts newer than the first window "
                 f"over {self.scanned} files in {self.scan_seconds:.2f} s{tail}")
@@ -158,7 +166,10 @@ def _selfcheck() -> None:
         empty = Windows([base / "outer"])
         empty.mark("only", t0 + 10, t0 + 11)
         assert empty.scan() == {"only": 0, "between": 0}
-        assert "none" in empty.line(3, {"only": 0, "between": 0})
+        assert "none anywhere" in empty.line(3, {"only": 0, "between": 0})
+        cut = Windows([base / "outer"], seconds_cap=-1.0)
+        cut.mark("only", t0, t0 + 1)
+        assert "none so far" in cut.line(3, cut.scan()) and cut.stopped
 
         capped = Windows([base / "outer"], file_cap=0)
         capped.mark("only", t0, t0 + 1)
