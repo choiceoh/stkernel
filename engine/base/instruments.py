@@ -26,13 +26,40 @@ measured. That cost 40차 a wrong reading before it was understood.
 from __future__ import annotations
 
 import json
+import os
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 
 # D11: no undeclared STK_* read here (base/config would kill a boot that set it);
 # sampling already waits for torch.cuda.is_initialized(), so it is simply on.
 _MEM = True
+
+
+def process_seconds():
+    """Seconds since THIS PROCESS started, or None where /proc does not say.
+
+    A recorder can only measure from the moment it exists, and a boot's recorder is opened after
+    torch and the kernel modules are imported -- 9.17 s of a measured 87 s boot sat before its first
+    row and had to be recovered from container timestamps by hand (boot-time study 5-f). A module
+    level `perf_counter()` would not close that either: python's own startup and every import above
+    the stamp are still outside it.
+
+    /proc/self/stat's 22nd field is when this process started, in clock ticks since the machine did,
+    and /proc/stat's `btime` is when that was. The two give the one number nobody could read off the
+    ledger: how long the boot had been running when its first phase opened.
+    """
+    try:
+        stat = Path("/proc/self/stat").read_text()
+        started = float(stat[stat.rindex(")") + 1:].split()[19])          # field 22, past the comm
+        hz = os.sysconf("SC_CLK_TCK")
+        for line in Path("/proc/stat").read_text().splitlines():
+            if line.startswith("btime "):
+                return max(0.0, time.time() - (int(line.split()[1]) + started / hz))
+    except (OSError, ValueError, AttributeError, IndexError, ZeroDivisionError):
+        return None
+    return None
 
 
 def _dev_free_bytes():
@@ -112,6 +139,15 @@ class Recorder:
                 span.dev_bytes = (span.dev_bytes or 0) + free0 - free1
             self._stack.pop()
 
+    def mark(self, name: str, seconds: float, **counters) -> Span:
+        """A phase that was timed somewhere this recorder could not reach -- the boot's `front`.
+
+        It lands as a row like any other, in call order, so a table that opens with it reads as the
+        whole of the thing instead of the part that happened to be instrumented."""
+        span = Span(name, seconds=float(seconds), counters=dict(counters), calls=1)
+        self._stack[-1].children.append(span)
+        return span
+
     def count(self, name: str, n: int = 1) -> None:
         c = self._stack[-1].counters
         c[name] = c.get(name, 0) + n
@@ -136,6 +172,10 @@ class Recorder:
 
         for child in self.root.children:
             walk(child, 0)
+        # The sum of the top level, said out loud. Every reader of a boot table has wanted it and every
+        # one of them has had to get it from container timestamps instead (the study, twice).
+        total = sum(child.seconds for child in self.root.children)
+        lines.append(f"{'total':<40} {total:>9.3f}")
         return "\n".join(lines)
 
     def dump(self, path: str) -> None:
