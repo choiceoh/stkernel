@@ -68,7 +68,6 @@ class BootPathTests(unittest.TestCase):
                  patch.object(boot.Comm, "init", return_value=comm), \
                  patch.object(boot.lane_tables, "reference"), \
                  patch.object(boot.lane_tables, "served"), \
-                 patch.object(boot.lane_tables, "import_kernels"), \
                  patch.object(boot.natives, "builds", return_value=native_builds) as natives, \
                  patch.object(boot, "build", side_effect=StopAtBuild) as build:
                 order.clear(), built.clear()
@@ -113,7 +112,6 @@ class BootPathTests(unittest.TestCase):
                  patch.object(boot.Comm, "init", return_value=comm), \
                  patch.object(boot.lane_tables, "reference"), \
                  patch.object(boot.lane_tables, "served"), \
-                 patch.object(boot.lane_tables, "import_kernels"), \
                  patch.object(boot.natives, "builds", return_value=native_builds), \
                  patch.object(boot, "build", side_effect=StopAtBuild) as build:
                 with self.assertRaises(StopAtBuild):

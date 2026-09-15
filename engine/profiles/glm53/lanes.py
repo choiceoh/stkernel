@@ -264,30 +264,8 @@ def parse_moe_static(value: str) -> "tuple[str | None, bool]":
     return (spec or None), q0
 
 
-KERNEL_MODULES = ("engine.kernels.kda", "engine.kernels.kda.output", "engine.kernels.kda.ring",
-                  "engine.kernels.causal_conv_single", "engine.kernels.causal_conv_ring",
-                  "engine.kernels.mhc", "engine.kernels.deep_gemm", "engine.kernels.kpool",
-                  "engine.kernels.mla", "engine.kernels.indexer")
-"""What `served` binds over. `import_kernels` below exists so a boot can pay for these somewhere it is
-already waiting; the list and the `from` lines in `served` are checked against each other by a test."""
-
-
-def import_kernels() -> None:
-    """Import the kernel packages, nothing else.
-
-    A boot's `lanes` row was 3.22 s of 99.86 (2026-09-16) and most of a kernel package's import is
-    somebody else's module scope -- triton, tilelang, deep_gemm. It holds no CUDA and reads nothing the
-    engine has produced, which is the same shape as the door's host half (`boot.Prelude`), and the same
-    answer applies: run it where the boot is already waiting. `served` still does its own `from` imports;
-    after this they are dictionary lookups.
-    """
-    import importlib
-    for name in KERNEL_MODULES:
-        importlib.import_module(name)
-
-
 def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = MOE_STATIC_PRODUCTION, consume_scales: bool = False,
-           mla_prefill: str = "tile32", dense_guard_rows: int | None = None, recorder=None) -> Lanes:
+           mla_prefill: str = "tile32", dense_guard_rows: int | None = None) -> Lanes:
     """Bind the ST kernel package without an overlay or vLLM installation.
 
     `reference_for` names lanes DECLARED to run on the torch reference in
@@ -304,22 +282,17 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
     package here, once, before anything binds or arms.
     """
     expert_lane = "reference" if "expert" in reference_for else "b12x"
-    # A boot's `lanes` row was 3.22 s of 99.86 (2026-09-16) and it is two different things in one
-    # number: importing the kernel packages, and building the table over them. Only the first is the
-    # kind of work that could ever run beside something else, so the row says which it was.
-    from contextlib import nullcontext
-    with (recorder.phase("kernel imports") if recorder is not None else nullcontext()):
-        from engine.kernels.kda import chunk_kda_with_fused_gate, fused_recurrent_kda
-        from engine.kernels.kda.output import kda_output_norm
-        from engine.kernels.kda.ring import recurrent_kda_ring, recurrent_kda_ring_rows
-        from engine.kernels.causal_conv_single import causal_conv1d_single as conv_prefill
-        from engine.kernels.causal_conv_ring import causal_conv1d_ring, causal_conv1d_ring_rows
-        from engine.kernels.mhc import mhc_pre_tilelang, mhc_post_tilelang
-        from engine.kernels.deep_gemm import fp8_fp4_mqa_logits
-        from engine.kernels.kpool import compress_pool_keys, fwht128_quant_fp8, compress_decode_pools
-        from engine.kernels import mla as mk
-        from engine.kernels.indexer import (pool_slots, row_lengths, latent_write_rows, gather_candidates, pool_window, pool_addresses,
-                                            scatter_pools, write_tails, mask_horizon, head_gate)
+    from engine.kernels.kda import chunk_kda_with_fused_gate, fused_recurrent_kda
+    from engine.kernels.kda.output import kda_output_norm
+    from engine.kernels.kda.ring import recurrent_kda_ring, recurrent_kda_ring_rows
+    from engine.kernels.causal_conv_single import causal_conv1d_single as conv_prefill
+    from engine.kernels.causal_conv_ring import causal_conv1d_ring, causal_conv1d_ring_rows
+    from engine.kernels.mhc import mhc_pre_tilelang, mhc_post_tilelang
+    from engine.kernels.deep_gemm import fp8_fp4_mqa_logits
+    from engine.kernels.kpool import compress_pool_keys, fwht128_quant_fp8, compress_decode_pools
+    from engine.kernels import mla as mk
+    from engine.kernels.indexer import (pool_slots, row_lengths, latent_write_rows, gather_candidates, pool_window, pool_addresses,
+                                        scatter_pools, write_tails, mask_horizon, head_gate)
     mk.configure_prefill(mla_prefill)
     ref = reference()
     # ModelOpt keeps the first three dense MLPs in packed NVFP4.  Above the

@@ -206,39 +206,6 @@ def grammars(ckpt, vocab: int, device=None, stop_token_ids=None, tokenizer=None)
     return grammar.for_checkpoint(ckpt, vocab, device, stop_token_ids, tokenizer=tokenizer)
 
 
-class Background:
-    """Host work started where the boot is already waiting, and joined where its result is needed.
-
-    The boot has two kinds of dead time -- a rendezvous where the fast ranks wait for the slow one, and
-    a device phase where python holds nothing. Both are free seconds for work that touches no CUDA and
-    reads nothing the engine has built. The join is always its own recorder row, so a job that fails to
-    hide says so in seconds instead of disappearing into the phase it was supposed to hide under.
-    """
-
-    def __init__(self, work, name: str):
-        self.work, self.result, self.error, self.seconds = work, None, None, 0.0
-        self._thread = threading.Thread(target=self._run, name=name, daemon=True)
-
-    def start(self) -> "Background":
-        self._thread.start()
-        return self
-
-    def _run(self) -> None:
-        start = time.perf_counter()
-        try:
-            self.result = self.work()
-        except BaseException as exc:            # noqa: BLE001 -- re-raised on the main thread, in its phase
-            self.error = exc
-        finally:
-            self.seconds = time.perf_counter() - start
-
-    def take(self):
-        self._thread.join()
-        if self.error is not None:
-            raise self.error
-        return self.result
-
-
 class Prelude:
     """The door's HOST half, built on a thread while the device loads and packs the weights.
 
@@ -725,27 +692,19 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         calibration = None
         if execution == "native":
             from engine.kernels.prefill_collectives import PrefillCollectives
-            # The row under the capture: 32.16 s on main 3acae017, 23.50 after the pack store stopped
-            # hashing each weight twice (2026-09-15), and no breakdown either time. It is the only
-            # phase left that is large and undivided, and the gate's 15.6 s went from a mystery to an
-            # answer the week its row was cut into three -- so this one is cut too. The rows are the
-            # calls, and the one that costs is whichever builds packs on a cache that lacks them.
             with recorder.phase("prepare native execution"):
-                with recorder.phase("routers"):
-                    net.prepare_routers(arena)
+                net.prepare_routers(arena)
                 recorder.gauge('router_resident_bytes', router_bytes)
-                with recorder.phase("dense packs"):
-                    net.prepare_dense(store, consume_weights=True)
+                net.prepare_dense(store, consume_weights=True)
                 capture_rows = (tuple(8 * n for n in range(1, max_seqs + 1))
                                 if execution_plan is not None and execution_plan.decode_fastpaths else None)
-                with recorder.phase("decode projections"):
-                    net.prepare_decode_projections(arena, capture_rows=capture_rows)
-                    if execution_plan is not None and execution_plan.decode_dsa_inputs:
-                        net.prepare_decode_dsa_inputs(tuple(8 * n for n in range(1, max_seqs + 1)))
-                    if execution_plan is not None and execution_plan.decode_indexer_gate:
-                        net.prepare_decode_indexer_gate(tuple(8 * n for n in range(1, max_seqs + 1)))
-                    if execution_plan is not None and execution_plan.decode_absorb_tiles:
-                        net.prepare_decode_absorb(tuple(8 * n for n in range(1, max_seqs + 1)))
+                net.prepare_decode_projections(arena, capture_rows=capture_rows)
+                if execution_plan is not None and execution_plan.decode_dsa_inputs:
+                    net.prepare_decode_dsa_inputs(tuple(8 * n for n in range(1, max_seqs + 1)))
+                if execution_plan is not None and execution_plan.decode_indexer_gate:
+                    net.prepare_decode_indexer_gate(tuple(8 * n for n in range(1, max_seqs + 1)))
+                if execution_plan is not None and execution_plan.decode_absorb_tiles:
+                    net.prepare_decode_absorb(tuple(8 * n for n in range(1, max_seqs + 1)))
                 recorder.gauge('decode_projection_resident_bytes', projection_bytes)
                 net.prefill_transport = PrefillCollectives(comm, project_tiles=bool(
                     execution_plan is not None and execution_plan.prefill_project_tiles))
@@ -756,9 +715,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 if D:
                     # Do not overlap the temporary checkpoint with target packing.
                     drafter = load_drafter()
-                    with recorder.phase("drafter packs"):
-                        drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena,
-                                             policy=draft_policy, tuning=tuning)
+                    drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena, policy=draft_policy, tuning=tuning)
                     if capture_rows is not None:
                         recorder.gauge('drafter_decode_cells', len(drafter.bind_decode_cells(capture_rows)))
                     recorder.gauge('draft_fc_bias_applied', drafter.fc_bias is not None)
@@ -1477,11 +1434,6 @@ def fleet(a) -> int:
                 except BaseException:                 # noqa: BLE001 -- it raises by design; `exc` is the cause
                     pass
                 raise
-            # The rendezvous below is the fast ranks waiting for the slowest, and the one-shot preparation
-            # after it is the transport's. Neither is python's, so the kernel packages import under them.
-            # After the builds, not before: those threads are the ones that write the extensions these
-            # modules will later load, and two of them building the same key is not a race worth having.
-            imports = Background(lane_tables.import_kernels, "kernel-imports").start()
             comm.wait_prepared("native-builds")
             for name, value in seconds.items():
                 rec.gauge(f"native_{name}_s", value)
@@ -1497,12 +1449,8 @@ def fleet(a) -> int:
                 rec.gauge(f"oneshot_{name}_us", value)
             print(f"  rank{comm.rank}: one-shot rails={comm.transport.rails} latency µs {comm.transport.latency}", flush=True)
         with rec.phase("lanes"):
-            with rec.phase("wait for the imports"):
-                imports.take()
-            rec.gauge("kernel_imports_s", round(imports.seconds, 3))
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
-                                       consume_scales=True, dense_guard_rows=cfg["GLM53_DENSE_W4A16_GUARD_ROWS"],
-                                       recorder=rec)
+                                       consume_scales=True, dense_guard_rows=cfg["GLM53_DENSE_W4A16_GUARD_ROWS"])
         from engine.profiles.glm53.execution import ExecutionPlan
         if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "prefill_ffn_packets", "decode_dsa_inputs", "decode_indexer_gate", "decode_absorb_tiles")):
             raise ValueError("execution switches must be 0 or 1")
