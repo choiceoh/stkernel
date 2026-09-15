@@ -740,6 +740,12 @@ class Drafter:
                 support_slot = ring[1] if isinstance(ring, tuple) else self.diagnostics.slot(ring)
             self.diagnostics.support.index_copy_(0, support_slot.reshape(1), cand.unsqueeze(0))
         proj = self.selector_projection(h)        # [K, 256]
+        features = getattr(self.diagnostics, 'selector_features', None)
+        if features is not None:
+            # debug (never merge): static copies the captured proposal graph replays; note_sync reads them per slot
+            features[0].index_copy_(0, support_slot.reshape(1), h.to(features[0].dtype).unsqueeze(0))
+            features[1].index_copy_(0, support_slot.reshape(1), proj.to(features[1].dtype).unsqueeze(0))
+            features[2].index_copy_(0, support_slot.reshape(1), anchor.reshape(1).to(features[2].dtype))
         from engine.modules.draft_agreement import agree_walk
         from engine.kernels.draft_select import walk_scores
         drafts = walk_scores(unary.unsqueeze(0), cand.unsqueeze(0), anchor.reshape(1), proj.unsqueeze(0),

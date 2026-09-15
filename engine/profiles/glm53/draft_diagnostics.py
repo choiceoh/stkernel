@@ -43,12 +43,30 @@ class DraftDiagnostics:
         self.trace_digest = None
         self.trace_rank = 0
         self.trace_projection_fp32 = False
+        self.selector_features = None  # debug (never merge): (hidden bf16 [slots,K,H], projection fp32 [slots,K,R], anchor [slots])
+        self.feature_dir = None        # debug: where selector-features.bin goes when the sink is not a latency recorder
 
-    def enable_selector_trace(self, every, digest, rank=0, *, projection_fp32=False):
+    def enable_selector_trace(self, every, digest, rank=0, *, projection_fp32=False, features=None):
         self.trace_every, self.trace_digest = every, digest
         self.trace_rank = rank
         self.trace_projection_fp32 = projection_fp32
         self.selector_trace = tuple(torch.empty_like(self.support, dtype=torch.float32) for _ in range(2))
+        if features is not None:
+            # debug (never merge): the drafter's hidden and selector projection at every proposed position, and the
+            # anchor, copied inside the proposal graph; a traced row appends its labelled positions to a binary file
+            hidden, rank_dim = features
+            slots, k = self.support.shape[:2]
+            dev = self.support.device
+            self.selector_features = (torch.zeros(slots, k, hidden, device=dev, dtype=torch.bfloat16),
+                                      torch.zeros(slots, k, rank_dim, device=dev, dtype=torch.float32),
+                                      torch.zeros(slots, device=dev, dtype=torch.int64))
+
+    def _feature_file(self):
+        """debug (never merge): the active latency recording's rank directory, else `feature_dir`."""
+        recorder = getattr(self.sink, '__self__', None)
+        active = getattr(recorder, 'active', None)
+        directory = active.get('directory') if isinstance(active, dict) else self.feature_dir
+        return None if directory is None else f'{directory}/selector-features.bin'
 
     def slot(self, ring):
         stride = self.field[0].numel() * self.field.element_size()
@@ -86,12 +104,27 @@ class DraftDiagnostics:
             if count > 0 and step % self.trace_every == 0:
                 # Synchronous only: each slot still holds THIS proposal. Rows
                 # after the first mismatch are never treated as teacher labels.
+                extra = {}
+                if self.selector_features is not None:
+                    # debug (never merge): positions [0, count) of the hidden (raw bf16) then the projection (raw
+                    # fp32), appended; the row says where. `bonus` fills the all-accepted gap in the output.
+                    hidden, projection, anchors = self.selector_features
+                    extra = dict(anchor=int(anchors[slot]), bonus=int(new[self.k]) if accepted == self.k and len(new) > self.k else None,
+                                 feature_hidden=int(hidden.shape[2]), feature_rank=int(projection.shape[2]))
+                    path = self._feature_file()
+                    if path is not None:
+                        blob =(hidden[slot, :count].contiguous().cpu().view(torch.uint8).numpy().tobytes()
+                                + projection[slot, :count].contiguous().cpu().view(torch.uint8).numpy().tobytes())
+                        with open(path, 'ab') as f:
+                            extra['feature_offset'] = f.tell()
+                            f.write(blob)
+                        extra['feature_bytes'] = len(blob)
                 self.sink(kind='draft_selector', operation='selector_calibration', phase='decode',
                     seq=int(seq), context=int(context), tuning=self.trace_digest, policy_modified=bool(policy_modified),
                     selector_projection_fp32=self.trace_projection_fp32,
                     target=list(map(int, new[:count])), candidates=self.support[slot, :count].tolist(),
                     unary=self.selector_trace[0][slot, :count].tolist(),
-                    edge=self.selector_trace[1][slot, :count].tolist(), draft_width=self.k)
+                    edge=self.selector_trace[1][slot, :count].tolist(), draft_width=self.k, **extra)
         if policy_modified:
             code, prefix = 4, -1
         else:
@@ -112,5 +145,5 @@ class DraftDiagnostics:
 
     def close(self):
         # The support is outside the arena; stop holding it after graph teardown.
-        self.support = self.field = self.sink = self.selector_trace = None
+        self.support = self.field = self.sink = self.selector_trace = self.selector_features = None
         self.trace_steps.clear()

@@ -62,7 +62,8 @@ class Glm53Engine:
             tuning = getattr(self.drafter, 'tuning', None)
             if tuning is not None and tuning.trace_every:
                 self.draft_diagnostics.enable_selector_trace(tuning.trace_every, tuning.digest, net.comm.rank,
-                    projection_fp32=tuning.selector_projection_fp32)
+                    projection_fp32=tuning.selector_projection_fp32,
+                    features=(self.drafter.F.hidden, self.drafter.F.sel_rank))   # debug (never merge)
         if self.execution_plan.decode_iterations > 1 and not self.drafter.k:
             raise ValueError("bounded decode requires a speculative drafter")
         if self.drafter.k > F.spec_k:

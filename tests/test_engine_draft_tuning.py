@@ -209,6 +209,39 @@ class TraceTests(unittest.TestCase):
         d.close()
         self.assertIsNone(d.selector_trace)
 
+    def test_debug_selector_features_append_hidden_projection_anchor_and_bonus(self):
+        # debug (never merge): the feature file holds positions [0, count) as raw bf16 hidden then raw fp32 projection
+        import tempfile
+        d = DraftDiagnostics(torch.zeros(3, 2), 3, 2)
+        d.enable_selector_trace(1, 'profile', rank=0, features=(5, 4))
+        d.support[2] = torch.tensor([[10, 11], [12, 13], [14, 15]])
+        d.selector_trace[0][2].fill_(1.)
+        d.selector_trace[1][2].fill_(.5)
+        hidden = torch.arange(15, dtype=torch.float32).view(3, 5).bfloat16()
+        projection = torch.arange(12, dtype=torch.float32).view(3, 4) / 7
+        d.selector_features[0][2].copy_(hidden)
+        d.selector_features[1][2].copy_(projection)
+        d.selector_features[2][2] = 777
+        records = []
+        d.sink = lambda **row: records.append(row)
+        with tempfile.TemporaryDirectory() as tmp:
+            d.feature_dir = tmp
+            d.note_sync(1, 100, 2, 1, [10, 13, 99], 50, set())          # accepted 1: labels 2 positions, no bonus
+            d.note_sync(1, 102, 2, 3, [10, 12, 14, 42], 50, set())      # all 3 accepted: 3 positions, bonus 42
+            rows = [r for r in records if r['kind'] == 'draft_selector']
+            with open(f'{tmp}/selector-features.bin', 'rb') as f:
+                blob = f.read()
+        self.assertEqual([r['anchor'] for r in rows], [777, 777])
+        self.assertEqual([r['bonus'] for r in rows], [None, 42])
+        self.assertEqual([r['feature_offset'] for r in rows], [0, 2 * (5 * 2 + 4 * 4)])
+        second = blob[rows[1]['feature_offset']: rows[1]['feature_offset'] + rows[1]['feature_bytes']]
+        h = torch.frombuffer(bytearray(second[:3 * 5 * 2]), dtype=torch.bfloat16).view(3, 5)
+        p = torch.frombuffer(bytearray(second[3 * 5 * 2:]), dtype=torch.float32).view(3, 4)
+        self.assertTrue(torch.equal(h, hidden))
+        self.assertTrue(torch.equal(p, projection))
+        d.close()
+        self.assertIsNone(d.selector_features)
+
 
 class PackingFitTests(unittest.TestCase):
     def bundle(self):
