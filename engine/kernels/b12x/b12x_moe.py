@@ -82,6 +82,7 @@ def b12x_fused_moe(
     source_format: str = "modelopt",
     _weight_views=None,
     _output_finalize=None,
+    _prefill_tile64: Optional[bool] = None,
 ) -> torch.Tensor:
     r"""Run fused MoE on SM120/SM121 using b12x CuTe-DSL kernels.
 
@@ -241,6 +242,7 @@ def b12x_fused_moe(
         source_format=source_format,
         _weight_views=_weight_views,
         _output_finalize=_output_finalize,
+        _prefill_tile64=_prefill_tile64,
     )
 
 

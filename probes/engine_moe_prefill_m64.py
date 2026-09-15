@@ -19,12 +19,15 @@ away. Timing is eager (capture is refused until qualification) in B/A/A/B with a
 L2-evicted pass. Nothing here changes a serving default, and no GPU is reserved -- run it
 under the queue's single-GPU lane.
 
+The two arms differ by ONE argument to the served entry, `launch_sm120_moe(_prefill_tile64=)`.
+The dispatcher owns the M64 workspace derivation, so what this gate measures is the route
+that would ship, not a probe-shaped copy of it. The device is the default; `--cpu` runs the
+parts that need none (eligibility, the ladder, source identity) so the wiring can be smoked
+in a CPU container before a GPU slot is spent.
+
     bash bench/fleet.sh run --gpu st-m64 20 'M64 prefill MoE' -- \
       bash probes/run_engine_probe.sh probes/engine_moe_prefill_m64.py \
-        --gpu --ranks <rank dir> --output /cache/st-m64.json
-
-`--cpu` runs the parts that need no device (eligibility, the row ladder, source identity) so
-the wiring can be smoked in a CPU container before a GPU slot is spent.
+        --ranks <rank file> --output /cache/st-m64.json
 """
 import argparse
 import hashlib
@@ -123,8 +126,10 @@ def _spread(runs):
 
 
 def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
-    import torch
+    from functools import partial
     from unittest.mock import patch
+
+    import torch
 
     from engine.kernels.b12x import moe_dispatch as md
     from engine.profiles.glm53.lanes import served
@@ -164,21 +169,22 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
     lane.moe_prepare(*weights, cell.topk, cell.swiglu_limit, scales=scales)
     reference = served(reference_for=('expert',)).moe
 
-    real_launch = md.launch_sm120_dynamic_moe
+    # The arms differ by ONE argument to the served entry. `launch_sm120_moe` owns the M64
+    # workspace derivation, so this gate measures the route that would ship rather than a
+    # probe-shaped copy of it. The inner watch changes no behaviour: it only records which
+    # tile the call actually reached, so an arm cannot pass without having run.
+    real_moe, real_dynamic = md.launch_sm120_moe, md.launch_sm120_dynamic_moe
     seen = {}
 
-    def m128_launch(*, workspace, num_tokens, **kw):
-        seen['tile_m'] = workspace.tile_m
-        return real_launch(workspace=workspace, num_tokens=num_tokens, **kw)
+    def watch(**kw):
+        seen['tile_m'] = kw['workspace'].tile_m
+        seen['asked'] = kw.get('_prefill_tile64')
+        return real_dynamic(**kw)
 
-    def m64_launch(*, workspace, num_tokens, **kw):
-        # The candidate owns its own eager workspace; the M128 owner is untouched.
-        m64 = md._prefill_m64_workspace(workspace, num_tokens)
-        seen['tile_m'] = m64.tile_m
-        return real_launch(workspace=m64, num_tokens=num_tokens, _prefill_tile64=True, **kw)
-
-    def run(x, sel, w, launch):
-        with patch.object(md, 'launch_sm120_dynamic_moe', launch):
+    def run(x, sel, w, tile64):
+        entry = partial(real_moe, _prefill_tile64=True) if tile64 else real_moe
+        with patch.object(md, 'launch_sm120_moe', entry), \
+                patch.object(md, 'launch_sm120_dynamic_moe', watch):
             return lane.moe(x, sel, w, *weights, cell.swiglu_limit, scales=scales)
 
     def timed(fn, evict):
@@ -206,9 +212,9 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
         w = w / w.sum(-1, keepdim=True)
 
         arms = {}
-        for name, launch in (('m128', m128_launch), ('m64', m64_launch)):
+        for name, tile64 in (('m128', False), ('m64', True)):
             seen.clear()
-            runs = [run(x, sel, w, launch) for _ in range(repeats)]
+            runs = [run(x, sel, w, tile64) for _ in range(repeats)]
             arms[name] = (runs, seen.get('tile_m'))
         (m128_runs, m128_tile), (m64_runs, m64_tile) = arms['m128'], arms['m64']
         if (m128_tile, m64_tile) != (128, 64):
@@ -230,10 +236,10 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
         # B/A/A/B: the control brackets the candidate so drift is visible as an A/B gap.
         for evict in (False, True):
             label = 'evicted' if evict else 'warm'
-            b1, t_b1 = timed(lambda: run(x, sel, w, m128_launch), evict)
-            a1, t_a1 = timed(lambda: run(x, sel, w, m64_launch), evict)
-            a2, t_a2 = timed(lambda: run(x, sel, w, m64_launch), evict)
-            b2, t_b2 = timed(lambda: run(x, sel, w, m128_launch), evict)
+            b1, t_b1 = timed(lambda: run(x, sel, w, False), evict)
+            a1, t_a1 = timed(lambda: run(x, sel, w, True), evict)
+            a2, t_a2 = timed(lambda: run(x, sel, w, True), evict)
+            b2, t_b2 = timed(lambda: run(x, sel, w, False), evict)
             base, cand = (t_b1 + t_b2) / 2, (t_a1 + t_a2) / 2
             values[f'{label}_m128_ms'] = base
             values[f'{label}_m64_ms'] = cand
@@ -254,12 +260,15 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    mode = parser.add_mutually_exclusive_group(required=True)
+    # The queue's runner is `docker run --gpus all <probe>`, so the device is the default
+    # and every flag it may pass is one literal token (bench/fleet_onepass.ST_FLAGS).
+    mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--cpu', action='store_true', help='no device: eligibility and identity')
-    mode.add_argument('--gpu', action='store_true')
+    mode.add_argument('--gpu', action='store_true', help='the default; accepted for symmetry')
     parser.add_argument('--ranks')
     parser.add_argument('--output', type=Path)
-    parser.add_argument('--rows', type=int, nargs='*', default=list(ROWS))
+    parser.add_argument('--rows', default=','.join(str(m) for m in ROWS),
+                        help='comma-separated row counts')
     parser.add_argument('--repeats', type=int, default=REPEATS)
     parser.add_argument('--tolerance-factor', type=float, default=TOLERANCE_FACTOR)
     args = parser.parse_args()
@@ -280,7 +289,10 @@ def main():
         return
     if not args.ranks:
         raise ValueError('the GPU gate needs the exact consumer --ranks')
-    gpu_check(report, args.ranks, args.output, tuple(args.rows), args.repeats,
+    rows_asked = tuple(int(v) for v in str(args.rows).split(',') if v.strip())
+    if not rows_asked:
+        raise ValueError('--rows takes at least one row count')
+    gpu_check(report, args.ranks, args.output, rows_asked, args.repeats,
               args.tolerance_factor)
 
 

@@ -59,10 +59,11 @@ ST_PROBES = ('probes/engine_kernel_check.py', 'probes/engine_decode_graph_check.
              'probes/engine_mapped_tier_check.py',
              'probes/engine_bounded_loop_check.py',
              'probes/engine_prefill_chunk_profile.py',
+             'probes/engine_moe_prefill_m64.py',
              'engine/profiles/glm53/check.py')
 ST_FLAGS = {'--layers', '--tokens', '--chunk', '--seed', '--moe-static', '--mla-prefill',
             '--lanes', '--moe-experts', '--samples', '--contexts', '--output', '--ranks',
-            '--ckpt-meta', '--seqs', '--steps'}
+            '--ckpt-meta', '--seqs', '--steps', '--rows', '--repeats'}
 ST_SWITCHES = {'--imports-only', '--distributed'}
 # What a check may take beside production on the single-GPU lane, in GiB, by probe: the full-model probes
 # load a 44 GB rank file plus caches, a kernel check a few GiB. The queue exports this as ST_PROBE_GIB when
