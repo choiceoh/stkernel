@@ -105,6 +105,55 @@ bounded chunks through existing tier staging, plus its declared workspace.
 """
 
 
+PREFILL_RECORD_ROOT = Path("/cache/st-gate")
+"""Where each node keeps its passed prefill memory gates (base/prefill_record): the launcher's per-node /cache,
+one file per rank and key, the newest few kept.
+
+A same-build restart whose record matches on every rank skips the far prefill pass. To run the whole
+gate anyway, remove this directory on the nodes (`~/glm53-cache/st-gate`) or boot with
+`--full-memory-gate` (launcher: ST_FULL_MEMORY_GATE=1); a full gate that passes rewrites its record.
+"""
+LANE_INFO_PER_BOOT = ("oneshot_latency_us",)
+"""`lane_info` entries sampled afresh by every boot: they describe the moment, not the bytes, so no key holds them."""
+
+
+def prefill_record_components(a, cfg, engine, caches, lanes, comm) -> dict:
+    """What the far prefill pass's bytes and kernels depend on: the key of this rank's prefill record.
+
+    The engine tree (every source the boot runs), the runtime packages and the image manifest, this
+    rank's weights and the drafter's and vision's (safetensors headers), the checkpoint metadata, the
+    declared configuration with the served STK_*/allocator environment, the byte budget this boot
+    armed, the served shape (context ceiling, prefill chunk, rows, blocks, snapshots, decode width),
+    what the lanes bound (`lane_info`) and the node. Any of it different is a full gate.
+    """
+    import importlib.util
+    from engine.base import prefill_record as record
+    from engine.runtime.verify import PACKAGES
+    memory, ranks, meta = engine.memory, Path(a.ranks), Path(a.ckpt_meta)
+    return dict(
+        engine=record.digest_tree(Path(__file__).resolve().parents[2]),
+        runtime=dict(packages=record.package_versions(PACKAGES), torch_cuda=torch.version.cuda,
+                     torch_git=getattr(torch.version, "git_version", None),
+                     manifest=record.optional_identity("/opt/st/runtime-manifest.json")),
+        weights=dict(rank=record.file_identity(ranks / f"rank{comm.rank}of{facts.TP}.safetensors"),
+                     drafter=record.optional_identity(Path(a.drafter_dir) / "model.safetensors"),
+                     vision=record.optional_identity(ranks / vision_mod.FILE)),
+        meta={path.name: record.file_identity(path) for path in sorted(meta.iterdir()) if path.is_file()},
+        config=dict(values={name: repr(value) for name, value in cfg.values.items() if name != "port"},
+                    environment={name: value for name, value in sorted(os.environ.items())
+                                 if name.startswith(("STK_", "PYTORCH_"))},
+                    rank=comm.rank, world=comm.world_size, kv_gib=float(a.kv_gib), tier=bool(a.tier_dir),
+                    arena_bytes=memory.arena_bytes, workspace_bytes=memory.workspace_bytes,
+                    os_reserve_bytes=memory.os_reserve_bytes, host_budget_bytes=memory.host_budget_bytes,
+                    max_context=engine.max_context, prefill_chunk=engine.prefill_chunk,
+                    max_seqs=caches.pool.max_seqs, blocks=caches.pool.num_blocks, snapshots=caches.snapshots,
+                    decode_tokens=engine.drafter.k + 1, lanes=lanes.name,
+                    lane_info={name: value for name, value in engine.lane_info.items() if name not in LANE_INFO_PER_BOOT},
+                    vision=engine.vision is not None, grammar=importlib.util.find_spec("xgrammar") is not None),
+        node=record.node_identity(),
+    )
+
+
 def prefix_host_bytes(tier_enabled: bool = True) -> int:
     from engine.base.compressed_snapshots import WORKSPACE_BYTES
     return PREFIX_COMPRESSED_BYTES + WORKSPACE_BYTES if tier_enabled else 0
@@ -1349,6 +1398,13 @@ def fleet(a) -> int:
         # hand with another one would have sampled its own tokens for as long as the fleet stood
         from engine.base.tripwire import Tripwire
         Tripwire.of(comm).agree("boot:seed", [int(a.seed)])
+        # Every rank binds a record, found or not, so every rank reaches the far pass's one vote (base/prefill_record).
+        with rec.phase("prefill record"):
+            from engine.base.prefill_record import PrefillRecord
+            engine.prefill_record = PrefillRecord.build(PREFILL_RECORD_ROOT, comm.rank,
+                partial(prefill_record_components, a, cfg, engine, caches, lanes, comm),
+                force_full=bool(getattr(a, "full_memory_gate", False)))
+            print(f"  memory gate: rank {comm.rank} {engine.prefill_record.reason}", flush=True)
         with rec.phase("capture decode"):
             engine.capture_decode(MAX_SEQS)
         with rec.phase("warmup shapes"):
@@ -1367,6 +1423,15 @@ def fleet(a) -> int:
         with rec.phase("release warmup cache"):
             row = engine.memory.checkpoint("production/ready", release_cache=True)
             rec.gauge("production_warmup_cache_returned_bytes", row["allocator_reclaimed_bytes"])
+        # Only now, with every row of the ledger passed, does a boot that ran the far pass keep its gate.
+        if engine.prefill_record.full is not None:
+            try:
+                kept = engine.prefill_record.write(engine.memory.phases, release=os.environ.get("ST_RELEASE"))
+                print(f"  memory gate: rank {comm.rank} kept its full gate at {kept}", flush=True)
+            except (OSError, RuntimeError) as exc:
+                print(f"  memory gate: rank {comm.rank} kept no record: {type(exc).__name__}: {exc}", flush=True)
+        else:
+            print(f"  memory gate: rank {comm.rank} {engine.prefill_record.outcome()}", flush=True)
         import json
         proof = native_execution_report(net, engine.drafter)
         print('ST_NATIVE_EXECUTION '+json.dumps(dict(rank=comm.rank, **proof)), flush=True)
@@ -1481,6 +1546,9 @@ def main(argv=None) -> int:
     ap.add_argument("--drafter-dir", default=str(drafter_mod.DRAFTER), help="DFlash2 config and model.safetensors directory")
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--dump-dir", default="/home/choiceoh/glm53-logs/st-dumps")
+    ap.add_argument("--full-memory-gate", action="store_true",
+                    help="run the far prefill memory pass even when this node's record matches (base/prefill_record); "
+                         "the record is rewritten when the boot passes")
     a = ap.parse_args(argv)
     if a.test:
         a.local, a.lanes = True, "served"

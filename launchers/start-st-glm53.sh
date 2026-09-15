@@ -55,6 +55,14 @@ if [ -n "${ST_WORKSPACE_GIB:-}" ]; then
   WORKSPACE_ARG="--workspace-gib $ST_WORKSPACE_GIB"
 fi
 PRODUCTION_ARG=""
+# A same-build restart reuses each node's passed far prefill memory pass (~/glm53-cache/st-gate, base/prefill_record).
+# ST_FULL_MEMORY_GATE=1 runs it anyway and rewrites the record; so does removing that directory.
+GATE_ARG=""
+case "${ST_FULL_MEMORY_GATE:-0}" in
+  0) ;;
+  1) GATE_ARG="--full-memory-gate" ;;
+  *) echo "ST_FULL_MEMORY_GATE must be 0 or 1" >&2; exit 2 ;;
+esac
 RECLAIM_FILE_CACHE=${ST_RECLAIM_FILE_CACHE:-1}
 RECLAIM_ROOT=/home/choiceoh/glm53-logs/st-reclaim           # one broker directory per rank, on that rank's node
 case "$RECLAIM_FILE_CACHE" in
@@ -353,7 +361,7 @@ start_rank() {
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
     -e ST_LEASE_OWNER="$LEASE_OWNER" -e ST_LEASE_PATH="$LOCK" -e ST_RELEASE="$(basename "$ENGINE_DIR")" $reclaim_env \
-    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py $PRODUCTION_ARG $KV_ARG $WORKSPACE_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER $TIER_ARG --dump-dir $DUMP_DIR' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py $PRODUCTION_ARG $KV_ARG $WORKSPACE_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER $TIER_ARG --dump-dir $DUMP_DIR $GATE_ARG' >/dev/null && echo '$ip: started'"
 }
 
 pids=()

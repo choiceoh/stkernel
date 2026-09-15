@@ -122,6 +122,7 @@ class Glm53Engine:
         self.inflight = {}                                  # seq -> decode steps launched ahead whose tokens the host has not read
         self.staged = {}                                    # seq -> the block boundary a step ahead parked in the caches' stage
         self.memory = None
+        self.prefill_record = None                          # base/prefill_record.PrefillRecord: the fleet boot binds one on every rank
         self.budget = None                                  # boot's declared table, re-runnable against this boot's own ledger
         self.arena = None                                   # the one allocation every device tensor here is a view of; `release` frees it
         self.prefill_chunk = None
@@ -324,11 +325,27 @@ class Glm53Engine:
             self.steps = 0
         return paid
 
+    PREFILL_CONTINUATION_TOKENS = 1024
+    """What a boot prefills where its record let every rank skip the far pass (base/prefill_record).
+
+    The far pass is the only boot prefill at a nonzero context. Without it the first continuation a
+    user sends -- a prompt's second chunk, a turn resumed at a prefix boundary -- would be the first
+    call of that path in the process: recurrent and convolution state read back, selection over more
+    pools than the top-k holds, sparse attention with no covered prefix. This many tokens straight
+    after the position-0 pass run that path, check its output is finite and vote their own memory row,
+    in about a second where the far pass took thirty.
+    """
+
     def _warmup_prefill_memory(self):
         """Exercise the largest legal prefill at both ends of the served context.
 
         Inputs are synthetic; this qualifies memory preparation, not quality.
         Unseen tail shapes remain subject to the same allocator byte ceiling.
+
+        With `prefill_record` bound -- the fleet boot binds one on every rank -- the far end is voted
+        on first (`_reuse_far_prefill`): when every rank's record matches this boot, vouches for the
+        position-0 pass just run and fits this box, the far pass is skipped for a short continuation.
+        A boot that does run the far pass tells its record, which the boot writes after its last row.
         """
         if self.prefill_chunk is None:
             raise ValueError("full-model memory preparation requires the scheduler's prefill chunk")
@@ -344,34 +361,74 @@ class Glm53Engine:
             # NVFP4 + Q0 and never executes either of these legal families.
             shapes = [(length, 0) for length in (128, 1024) if length < largest] + shapes
         slot = caches.slots.take(0)
+        record = getattr(self, "prefill_record", None)
+
+        def run(length, context):
+            caches.reset_slot(slot)
+            self.memory.checkpoint(f"prefill/{length}/{context}/before")
+            ids = torch.zeros(length, device=caches.device, dtype=torch.int64)
+            # Prefix-enabled serving requests save interior block boundaries.
+            # Qualify those kernels and their side-output memory before opening
+            # the door, using only the already reserved snapshot slots.
+            cuts = tuple((p, i) for i, p in enumerate(range(self.F.block, length, self.F.block))
+                         if i < caches.snapshots)
+            step = Step.prefill(ids, context, 0, slot, marks=cuts)
+            h, aux = self._prefill_forward(step)
+            logits = self.net.head(h[-1:])
+            valid = torch.isfinite(h).all() & torch.isfinite(logits).all()
+            if aux is not None:
+                valid &= torch.isfinite(aux).all()
+            bad = (~valid).to(torch.int32).reshape(1)
+            if self.net.comm.all_reduce_max(bad).item():
+                raise FloatingPointError(f"prefill/{length}/{context}: non-finite model output during qualification")
+            if aux is not None:
+                self._observe_prefill(slot, context, aux, cuts)
+            del h, aux, logits, valid, bad, step, ids
+            return self.memory.checkpoint(f"prefill/{length}/{context}/prepared", release_cache=True)
+
         try:
             caches.pool.reserve(0, capacity)
+            near = None
             for length, context in shapes:
-                caches.reset_slot(slot)
-                self.memory.checkpoint(f"prefill/{length}/{context}/before")
-                ids = torch.zeros(length, device=caches.device, dtype=torch.int64)
-                # Prefix-enabled serving requests save interior block boundaries.
-                # Qualify those kernels and their side-output memory before opening
-                # the door, using only the already reserved snapshot slots.
-                cuts = tuple((p, i) for i, p in enumerate(range(self.F.block, length, self.F.block))
-                             if i < caches.snapshots)
-                step = Step.prefill(ids, context, 0, slot, marks=cuts)
-                h, aux = self._prefill_forward(step)
-                logits = self.net.head(h[-1:])
-                valid = torch.isfinite(h).all() & torch.isfinite(logits).all()
-                if aux is not None:
-                    valid &= torch.isfinite(aux).all()
-                bad = (~valid).to(torch.int32).reshape(1)
-                if self.net.comm.all_reduce_max(bad).item():
-                    raise FloatingPointError(f"prefill/{length}/{context}: non-finite model output during qualification")
-                if aux is not None:
-                    self._observe_prefill(slot, context, aux, cuts)
-                del h, aux, logits, valid, bad, step, ids
-                self.memory.checkpoint(f"prefill/{length}/{context}/prepared", release_cache=True)
+                if context and record is not None and near is not None:
+                    if not self._reuse_far_prefill(record, near, length, context, run):
+                        record.ran_full(near["phase"], run(length, context)["phase"])
+                    continue
+                row = run(length, context)
+                if length == largest and not context:
+                    near = row
         finally:
             caches.pool.release(0)
             caches.slots.give(slot)
             caches.reset()
+
+    def _reuse_far_prefill(self, record, near, length, context, run) -> bool:
+        """Every rank votes on skipping the far pass; True when all of them did, after the continuation ran.
+
+        The vote is one collective every rank reaches whatever its own verdict, so a rank whose record is
+        missing, stale or short of room sends every rank through the far pass together.
+        """
+        from engine.base.prefill_record import Limits, Verdict
+        rank, phase = self.net.comm.rank, f"prefill/{length}/{context}"
+        try:
+            verdict = record.verdict(near, Limits.of(self.memory))
+        except Exception as exc:                                  # noqa: BLE001 -- judged as a full gate, still voted
+            verdict = Verdict(False, f"the limits are unreadable ({type(exc).__name__}: {exc})")
+        # 2 asks for the pass; 1 is what a peer's failed ledger row casts, and it stops every rank here.
+        agreed = self.memory.agree(0 if verdict.reuse else 2)
+        if agreed == 1:
+            raise MemoryError(f"{phase}: a TP peer failed runtime memory qualification")
+        if agreed:
+            print(f"  memory gate: rank {rank} runs {phase} -- "
+                  f"{verdict.reason if not verdict.reuse else 'a peer cannot reuse its record'}", flush=True)
+            return False
+        self.memory.reused(f"{phase}/reused", verdict, record.path)
+        record.used(phase)
+        tokens, start = min(self.PREFILL_CONTINUATION_TOKENS, length), min(length, context)
+        run(tokens, start)
+        print(f"  memory gate: rank {rank} reused {record.path} for {phase} -- {verdict.reason}; "
+              f"ran prefill/{tokens}/{start} in its place", flush=True)
+        return True
 
     WARM_PREFILL_TOKENS = (1, 8, 64, 512, 4095)
     """Prompt widths run once before the door opens, so no request compiles a kernel.
