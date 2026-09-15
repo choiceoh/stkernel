@@ -13,9 +13,11 @@ from tests import test_engine_pipeline as pipeline_fixtures
 class DeferredStateContracts(unittest.TestCase):
     def test_host_sampling_materializes_only_clipped_counts_before_return(self):
         from engine.profiles.glm53.adapter import Glm53Engine
-        caches = NS(device=torch.device("cpu"), draft_ring=lambda slot: None)
+        stashed = []
+        caches = NS(device=torch.device("cpu"), draft_ring=lambda slot: None,
+                    stash_draft=lambda slot, position: stashed.append((slot, position)))
         drafter = NS(k=6, aux_layers=(), propose=lambda anchor, context, ring: list(range(6)))
-        e = Glm53Engine(None, caches, NS(spec_k=6), drafter, eos_ids=(32,),
+        e = Glm53Engine(None, caches, NS(spec_k=6, block=768), drafter, eos_ids=(32,),
                        execution_plan=ExecutionPlan(deferred_kda=True))
         e.tokens, e.prompt_len, e.ctx = {1: [10], 2: [11]}, {1: 1, 2: 1}, {1: 100, 2: 767}
         e.limits = {1: (1, 0.), 2: (4, 0.)}
@@ -32,6 +34,7 @@ class DeferredStateContracts(unittest.TestCase):
         self.assertEqual(e.decode([1, 2], None, [3, 2]), [True, True])
         self.assertEqual(calls, [([3, 2], [100, 767], [1, 2])])
         self.assertEqual(e.ctx, {1: 101, 2: 769})
+        self.assertEqual(stashed, [(2, 768)], "the row that crossed 768 put its drafter cells aside before observing")
 
     def test_commit_uses_before_context_and_real_slots_after_eos_clipping(self):
         e = pipeline_fixtures.BatchTransitionTests().engine()
