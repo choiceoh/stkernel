@@ -10,7 +10,7 @@ def main(path):
     rows = [json.loads(line) for line in Path(path).read_text().splitlines() if line.strip()]
     if not rows or rows[-1].get('event') != 'complete' or rows[-1].get('status') != 'PASS':
         raise ValueError('a complete passing probe is required')
-    for event in ('exact', 'transitions'):
+    for event in ('exact', 'transitions', 'fp32_fallback'):
         checks = [r for r in rows if r.get('event') == event]
         if len(checks) != 2 or {r['packets'] for r in checks} != {False, True} or not all(r['bitwise'] for r in checks):
             raise ValueError(f'missing bitwise {event} checks for both input families')

@@ -37,8 +37,10 @@ the 89 carried boundaries. It tests ordinary AR inputs and local four-rank
 packet descriptors. Four magnitudes, forward/reverse replay and poisoned
 outputs compare all four output fields bitwise against the original dynamic
 kernel. Rank-fold and rounding canaries and descriptor rebinding exercise the
-packet path. A mixed 1/7/8/16-row schedule checks 32 iterations of counter
-rearming and automatic fallback; forced static tails reject unsupported rows.
+packet path. A mixed 1/7/8/16/32/64-row schedule checks 32 iterations of counter
+rearming, including C=4 and the wide FP32 consumers. Eight-row coefficients
+that cannot be packed losslessly also retain bitwise FP32 behavior. Forced
+static tails reject unsupported row counts and coefficient precision.
 
 Timings use external CUDA events captured around native calls, two independent
 captures in opposite allocation order, four B/A/A/B brackets, and 16 replays

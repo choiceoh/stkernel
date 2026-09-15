@@ -11,19 +11,20 @@ from pathlib import Path
 import torch
 
 from probes.engine_decode_fusions import _capture
-from probes.engine_mhc_c2_packed import Arm, Rows, call, compare, load
+from probes.engine_mhc_c2_packed import Rows, call, compare, load
 
 
-class TailArm(Arm):
-    def __init__(self, owner, mode, *, packed=True):
-        super().__init__(owner, packed=packed, consumer=True)
-        self.mode = mode
+class TailArm:
+    """Change tail ownership while retaining the owner's shape and weight dispatch."""
+
+    def __init__(self, owner, mode):
+        self.ext, self.mode = owner.ext, mode
 
     def run_mhc(self, ptrs, scalars, ints, bf16_fn, ar_consumer):
-        return self.ext.run_mhc(self._weight(ptrs), scalars, ints, self.packed, True, self.mode)
+        return self.ext.run_mhc(ptrs, scalars, ints, bf16_fn, ar_consumer, self.mode)
 
     def run_mhc_packets(self, ptrs, scalars, ints, packets, bf16_fn):
-        return self.ext.run_mhc_packets(self._weight(ptrs), scalars, ints, packets, self.packed, self.mode)
+        return self.ext.run_mhc_packets(ptrs, scalars, ints, packets, bf16_fn, self.mode)
 
 
 def captured_times(report, calls, *, layers, brackets, captures=2, **meta):
@@ -96,14 +97,15 @@ def exact(report, owner, keys, coefficients, inputs, packets):
 
 def transitions(report, owner, key, coefficients, packets):
     graphs, outputs = {}, {}
-    inputs = {m: Rows(m) for m in (1, 7, 8, 16)}
+    inputs = {m: Rows(m) for m in (1, 7, 8, 16, 32, 64)}
     try:
         for m, values in inputs.items():
             for mode in (0, -1):
                 adapter = TailArm(owner, mode)
                 graphs[m, mode], outputs[m, mode] = _capture(
                     lambda adapter=adapter, values=values: call(owner, adapter, [key], coefficients, values, packets))
-        schedule = ((8, -1), (16, -1), (8, 0), (1, -1), (8, -1), (7, -1), (16, 0), (8, -1))
+        schedule = ((8, -1), (16, -1), (8, 0), (1, -1), (8, -1), (32, -1),
+                    (7, -1), (16, 0), (8, -1), (64, -1), (8, -1))
         for step in range(32):
             for values in inputs.values():
                 values.fill(step, .001 if step % 2 else 1.)
@@ -117,7 +119,7 @@ def transitions(report, owner, key, coefficients, packets):
             torch.cuda.synchronize()
             for m in inputs:
                 compare(outputs[m, 0], outputs[m, -1], f'mixed replay rows={m}')
-        for m in (1, 7, 16):
+        for m in (1, 7, 16, 32, 64):
             try:
                 call(owner, TailArm(owner, 1), [key], coefficients, inputs[m], packets)
             except RuntimeError as exc:
@@ -130,6 +132,45 @@ def transitions(report, owner, key, coefficients, packets):
     finally:
         for graph in graphs.values():
             graph.reset()
+
+
+def full_precision(report, coefficients, key, inputs):
+    """Eight rows without a lossless BF16 pack must retain their FP32 consumer."""
+    from engine.kernels.dense.mhc import MHC
+    fn = torch.randn(24, 16384, device='cuda') * .006
+    owner = MHC({key: fn})
+    if owner.weights[key][1] is not None:
+        raise AssertionError('the FP32 fallback test needs coefficients that cannot be packed losslessly')
+    for packets in (False, True):
+        graphs, outputs = {}, {}
+        try:
+            for mode in (0, -1):
+                adapter = TailArm(owner, mode)
+                graphs[mode], outputs[mode] = _capture(
+                    lambda adapter=adapter: call(owner, adapter, [key], coefficients, inputs, packets))
+            for step in range(4):
+                inputs.fill(step, 1.)
+                for output in outputs.values():
+                    for values in output:
+                        for tensor in values:
+                            tensor.fill_(float('nan'))
+                for mode in (0, -1):
+                    graphs[mode].replay()
+                torch.cuda.synchronize()
+                if not all(t.isfinite().all().item() for values in outputs[0] for t in values):
+                    raise AssertionError('nonfinite FP32 fallback reference')
+                compare(outputs[0], outputs[-1], 'FP32 coefficient fallback')
+            try:
+                call(owner, TailArm(owner, 1), [key], coefficients, inputs, packets)
+            except RuntimeError as exc:
+                if 'packed C1 consumer' not in str(exc):
+                    raise
+            else:
+                raise AssertionError('forced static tails accepted unpackable coefficients')
+            report('fp32_fallback', rows=8, packets=packets, bitwise=True, forced_precision_refusal=True)
+        finally:
+            for graph in graphs.values():
+                graph.reset()
 
 
 def check(report, ranks=None, *, samples=4, timing=True):
@@ -152,6 +193,7 @@ def check(report, ranks=None, *, samples=4, timing=True):
     for packets in (False, True):
         exact(report, owner, keys, coefficients, inputs, packets)
         transitions(report, owner, keys[0], coefficients, packets)
+    full_precision(report, coefficients, keys[0], inputs)
     if timing:
         inputs.fill(0, 1.)
         for packets in (False, True):
