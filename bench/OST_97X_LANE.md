@@ -109,35 +109,45 @@ ost-97x: no room beside production -- MemAvailable 13.5 GiB, this check's budget
 floor 16.0: 9.5 GiB would be left
 ```
 
-`FLEET_SINGLE_GPU_FLOOR_GIB=4` is the answer to that (below), not a bigger VM, and with it
-the same command returns silent at rc 0 and `reclaim` faults and releases its 4 GiB on the
-box. Raising the ceiling is optional and worth doing on its own merits --
-`%USERPROFILE%\.wslconfig` is written with:
+`FLEET_SINGLE_GPU_FLOOR_GIB=4` is the answer to that, not a bigger VM. With it the same
+command returns silent at rc 0 and `reclaim` faults and releases its 4 GiB on the box.
+
+So `%USERPROFILE%\.wslconfig` exists for the opposite reason -- to keep the box **small**,
+because it is also somebody's desktop:
 
 ```ini
 [wsl2]
-memory=24GB
-processors=12
+memory=12GB
+processors=6
 autoMemoryReclaim=gradual
 ```
 
-which takes MemAvailable to about 22.4 GiB. `memory=` is a ceiling, not a reservation, and
-`autoMemoryReclaim=gradual` hands freed pages back. **It applies only after
-`wsl.exe --shutdown`, which kills everything in the distro** -- on 2026-09-15 that was a
-Codex `app-server` a day into its run and a postgres cluster living in `/tmp` -- so it
-waits for a quiet moment. Nothing about the lane needs it.
+12 of 31 GiB and 6 of 16 CPUs leaves Windows 19 GiB and 10 cores at the worst moment, and
+`autoMemoryReclaim` hands page cache back instead of sitting on it. That is not a
+theoretical tidiness: an unconstrained image build here on 2026-09-15 left Windows with
+**0.6 GiB free** and the desktop crawling, because WSL2 holds cache by default and a 16 GB
+image build generates a lot of it. Under the cap the same build holds at its 12 GiB ceiling
+and stops there. `memory=` is a ceiling, not a reservation. It applies only after
+`wsl.exe --shutdown`, **which kills everything in the distro**, so change it deliberately.
 
-**Staying up.** WSL2 does not start with Windows. After a reboot the node is gone until
-someone opens the distro. A logon task, from the operator's own account (no elevation):
+**Staying up.** WSL2 does not start with Windows, so after a reboot the node is simply gone
+until someone opens the distro -- which for a box other people run checks against is not a
+state to leave to chance. `schtasks /create` is the obvious answer and it is **denied
+without elevation** on this account (`ERROR: Access is denied`), so the logon hook is a
+script in the operator's own Startup folder instead, which needs no elevation:
 
 ```
-schtasks /create /tn "WSL-Ubuntu-ost-97x" /sc onlogon /f ^
-  /tr "C:\Windows\System32\wsl.exe -d Ubuntu -u root -e /bin/true"
+%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\wsl-ost-97x.vbs
+
+  CreateObject("WScript.Shell").Run "wsl.exe -d Ubuntu -u root -e /bin/true", 0, False
 ```
 
-systemd is PID 1 in the distro, so the command exits and `ssh` and `tailscaled` keep
-running. If the box should answer before anyone logs in, the same task at `/sc onstart`
-needs `/ru SYSTEM` and an elevated prompt to create.
+Hidden window, no wait, so the logon is not held up. systemd is PID 1 in the distro, so the
+command exits while `ssh.socket` and `tailscaled` keep running -- all three of those units
+are `enabled`, which is why the distro comes back complete. Verified by doing it: after a
+`wsl.exe --shutdown` the node returned at the same address with ssh, docker and the GPU
+answering from srv4. If the box must answer *before* anyone logs in, that needs a
+`/sc onstart /ru SYSTEM` task and an elevated prompt.
 
 ## The two numbers that do not carry over
 
@@ -230,23 +240,43 @@ build is also not free: it moves ~3 GB of wheels and writes a ~16 GB image, and 
 unconstrained on this box left Windows with 0.6 GiB of free RAM. Give it a quiet moment, or
 a `--cpu-quota`.
 
-One thing worth testing when that image exists, which would widen this lane considerably:
-**the native lanes may not actually need a GB10.** They are not baked into any image --
-`mla/__init__.py` JIT-compiles `glm53_megakernel.cu` through `torch.utils.cpp_extension.load`
-at runtime -- and the sources state their own contract as *"Ampere lineage + FP4 extension.
-NO WGMMA / tcgen05 / TMEM / clusters"*, using `cp.async` of the sm_80 lineage. That is
-inside sm_120's range. What stops them is configuration: seven hardcoded
-`arch=compute_121a,code=sm_121a` flags and four device gates. The real difference is
-48 SMs against this card's 20, on a persistent megakernel written for 48 at TP=4 -- it
-would compile; whether its work partitioning means anything at 20 is the open question, and
-the numbers would be another card's either way. `oneshot` is out regardless: it needs
-`<infiniband/verbs.h>` for the fleet's RoCE rails.
+### The native lanes
+
+They are not built here. Every native lane is `-gencode arch=compute_121a` and
+`engine/kernels/cells.py` refuses a device that is not a GB10, so what this box runs is
+`engine/kernels/b12x` -- `@supported_compute_capability([120, 121])`, torch and
+flashinfer, no DeepGEMM. The image carries a host compiler anyway (the full Python
+base, not `-slim`): without one a JIT extension dies at `gcc: No such file or
+directory` before ptxas can say anything about the kernel at all.
 
 ## Verify
 
+From a controller, one command for the whole chain:
+
 ```bash
-ssh ost-97x 'hostname; nvidia-smi --query-gpu=name,compute_cap --format=csv,noheader'
-ssh ost-97x 'grep MemAvailable /proc/meminfo'
+bash tools/ost-97x-selftest.sh ost-97x
+```
+
+The lane fails in layers -- ssh, docker, the NVIDIA runtime, the image, what imports inside
+it, the queue's admission, staging -- and a failure in one reads like a failure in another:
+`fleet.sh run` says `ABORT: no ST image` whether the image is missing, the daemon is down,
+or the box never answered at all. The self-test walks them in order and names the first
+link that does not hold. Fix that one; the rest usually follow from it.
+
+The pieces, if you want them by hand:
+
+```bash
+ssh ost-97x 'hostname; nvidia-smi --query-gpu=name,compute_cap,memory.free --format=csv,noheader'
 python3 bench/fleet_single.py evidence --host ost-97x --gib 4   # silent, rc 0 = it has room
 python3 bench/fleet_single.py reclaim  --host ost-97x --gib 4
 ```
+
+## What this box can hold
+
+Measured 2026-09-15, desktop running: **6407 MiB of 8151 MiB VRAM free** (the card also
+drives the display, so this moves -- it was 5199 MiB *used* earlier the same day with more
+windows open), 6 CPUs and ~10 GiB to the distro under the cap above, 869 GB of disk. A
+check that needs more VRAM than the desktop happens to be leaving free will OOM on the
+card, and the lane's `MemAvailable` evidence cannot see that: it guards host memory, and
+this card's memory is its own. For anything close to the line, read `memory.free` first --
+the self-test prints it.
