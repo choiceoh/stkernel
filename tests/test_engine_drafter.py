@@ -220,6 +220,26 @@ class DrafterTests(unittest.TestCase):
         self.assertFalse(bool(drafter_mod.debug_arm_b(1.0)) or bool(drafter_mod.debug_arm_b(0.0)))
         self.assertEqual(drafter_mod.debug_table((1., 2.), 4), (1., 2., 2., 2.))
 
+    def test_debug_captured_sampled_walk_builds_no_tensor_from_host_values(self):
+        # debug (never merge): CUDA graph capture refuses pageable host-to-device copies (10:54 boot died in
+        # capture_decode on torch.tensor(list, device=cuda)); the batched sampled walk is captured
+        from unittest.mock import patch
+        d, field, dev = self.make_full_drafter(seed=5)
+        F = d.F
+        slots = torch.tensor([1, 2], device=dev)
+        ctx = torch.tensor([9, 4], device=dev)
+        anchors = torch.tensor([2, 7], device=dev)
+        temps = torch.tensor([1.0, 0.999999], device=dev)
+        uniforms = torch.rand(2, F.k, generator=torch.Generator(device=dev).manual_seed(9), device=dev)
+        def refuse(*args, **kwargs):
+            raise AssertionError('a tensor from host values inside the captured walk')
+        with patch('torch.tensor', refuse), patch('torch.as_tensor', refuse):
+            drafts, cand, q = d.propose_rows(field, slots, anchors, ctx, temps=temps, uniforms=uniforms, vocab=21)
+        self.assertTrue(torch.isfinite(q).all())
+        import engine.profiles.glm53.drafter as drafter_mod
+        table = drafter_mod.debug_device_table(drafter_mod.DEBUG_TAU_B, 7, 'cpu', torch.float32)
+        self.assertTrue(torch.allclose(table, torch.tensor([.7, .7, .6, .6, .5, .4, .4])))
+
     def test_native_rows_do_not_read_retired_weights_or_use_a_scratch_ring_tail(self):
         """Exercise the merged batched interface with packed readers and no BF16 sources.
 
