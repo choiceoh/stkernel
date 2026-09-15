@@ -1,0 +1,7 @@
+CAUGHT  vector-exact ownership counts 16B lanes as 32B
+CAUGHT  block zero no longer owns the tail
+CAUGHT  stash one trip short
+CAUGHT  ordinary ownership as vector-exact minus one
+PASS  unmutated source
+exit=0
+20917 sizes through MAXEL 262144; stash 3 trips of VECITER 3 (worst 2 at <= 163840 elements); 32 owning CTAs at the consumer bound; 20000 mixed publications PASS

@@ -1,0 +1,5 @@
+# test_the_16_row_consumer_first_runs_under_the_stall_watchdog against mutated __init__.py sources
+# (PASS = the test passes on that source; the NCCL-loop mutant must FAIL, the unmutated source must PASS)
+PASS  unmutated
+FAIL  16 rows in the NCCL loop
+PASS  no captured 16-row replay

@@ -1,0 +1,2 @@
+GO c2cons-time-39a5dc3c 2026-09-15_08:58:27
+  single GPU: probes/engine_kernel_check.py on srv4 (tree ~/c2cons-39a5dc3c, image sha256:b45454b5fdc138bfaafa6470cf9cb49bbcd74783ceffb343b0a7b1d0cf87fcd5, budget 8 GiB beside production, no fleet lease)

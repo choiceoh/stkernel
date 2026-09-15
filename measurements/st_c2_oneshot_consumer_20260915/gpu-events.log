@@ -1,0 +1,8 @@
+2026-09-15_08:55:40 GO c2cons-gpu-4d50fd37 C2 one-shot consumer: PDL consumer vs ordinary bytes at 16 rows with late producer and early successor (single GPU, no boot)
+2026-09-15_08:57:03 release c2cons-gpu-4d50fd37 
+2026-09-15_08:58:27 GO c2cons-time-39a5dc3c C2 one-shot consumer timing: GPU-side B/A/A/B consumer vs ordinary at 8/16 rows, peers landed ahead (single GPU, no boot, no RDMA)
+2026-09-15_08:59:36 release c2cons-time-39a5dc3c 
+2026-09-15_09:13:01 GO c2cons-gpu2-a4b9787e C2 one-shot consumer rerun: consumer vs ordinary bytes, capture takes no proxy request (single GPU, no boot)
+2026-09-15_09:14:11 release c2cons-gpu2-a4b9787e 
+2026-09-15_10:21:45 GO c2cons-gpu3-01657002 C2 one-shot consumer: stamped PDL successor proves early launch and wait-to-completion at 16 rows (single GPU, no boot)
+2026-09-15_10:23:03 release c2cons-gpu3-01657002 
