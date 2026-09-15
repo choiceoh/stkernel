@@ -1,7 +1,9 @@
 """Alternate model/drafter paths must reach every boot mode before allocation."""
 import datetime
 import importlib.util
+import os
 from pathlib import Path
+import subprocess
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -24,6 +26,14 @@ class BootPathTests(unittest.TestCase):
                     facts, knobs, env={}, today=datetime.date(2026, 9, 14))):
                 cfg = boot.declared(args, 4)
             self.assertEqual(cfg["max_seqs"], boot.MAX_SEQS)
+
+    def test_an_empty_tier_directory_reaches_the_fleet_boot_as_no_tier(self):
+        """The launcher's `--tier-dir=` (tier off) parses to "", which every tier guard reads as none."""
+        from engine.profiles.glm53 import boot
+        with patch("engine.runtime.verify.verify"), patch.object(boot, "fleet", return_value=0) as fleet:
+            boot.main(["--tier-dir="])
+            boot.main(["--tier-dir", "/x/tier"])
+        self.assertEqual([c.args[0].tier_dir for c in fleet.call_args_list], ["", "/x/tier"])
 
     def test_local_http_and_fleet_forward_both_model_directories(self):
         from engine.base import kernel_shape
@@ -127,6 +137,16 @@ class LauncherTests(unittest.TestCase):
         self.assertIn('wait "${pids[$r]}"', self.text)
         # the buffered output is printed in the loop that waits, so rank order survives
         self.assertLess(self.text.index('pids[$r]=$!'), self.text.index('cat "$stage/rank$r.log"'))
+
+    def test_the_nvme_tier_is_off_unless_a_directory_is_named(self):
+        start = self.text.index("TIER_DIR=${ST_TIER_DIR:-off}")
+        block = self.text[start:self.text.index("esac", start) + len("esac")]
+        self.assertIn("--drafter-dir $DRAFTER $TIER_ARG --dump-dir $DUMP_DIR", self.text)
+        for env, want in (({}, "--tier-dir="), ({"ST_TIER_DIR": "off"}, "--tier-dir="),
+                          ({"ST_TIER_DIR": "/x/tier"}, "--tier-dir /x/tier")):
+            out = subprocess.run(["bash", "-c", block + '\nprintf %s "$TIER_ARG"'], env={"PATH": os.environ["PATH"], **env},
+                                 capture_output=True, text=True, check=True).stdout
+            self.assertEqual(out, want)
 
     def test_a_node_that_fails_stops_the_rest(self):
         self.assertIn('failed="$failed $r"', self.text)

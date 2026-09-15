@@ -71,7 +71,13 @@ CKPT=${CKPT:-/home/choiceoh/models/st-glm53-nvidia-tp4-9391}
 DRAFTER=${DRAFTER:-/home/choiceoh/models/GLM-5.3-Flash-DFlash2}
 ENGINE_DIR=${ST_ENGINE_DIR:-/home/choiceoh/st-engine}    # production can pin a release directory on every node
 CACHE_DIR=${CACHE_DIR:-/home/choiceoh/glm53-cache}
-TIER_DIR=${ST_TIER_DIR:-/home/choiceoh/glm53-logs/st-tier}
+# The NVMe tier (parked conversations and prefix boundaries) is off by default since 2026-09-15: the
+# ranks' tiers diverged and production could not boot. ST_TIER_DIR=<dir> turns it on for a boot.
+TIER_DIR=${ST_TIER_DIR:-off}
+case $TIER_DIR in
+  off) TIER_ARG="--tier-dir=" ;;              # boot.py builds no tier from an empty directory
+  *) TIER_ARG="--tier-dir $TIER_DIR" ;;
+esac
 DUMP_DIR=${ST_DUMP_DIR:-/home/choiceoh/glm53-logs/st-dumps}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"
 NAME=st-glm53
@@ -346,7 +352,7 @@ start_rank() {
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $DRAFTER:$DRAFTER:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
     -e ST_LEASE_OWNER="$LEASE_OWNER" -e ST_LEASE_PATH="$LOCK" -e ST_RELEASE="$(basename "$ENGINE_DIR")" $reclaim_env \
-    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py $PRODUCTION_ARG $KV_ARG $WORKSPACE_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER --tier-dir $TIER_DIR --dump-dir $DUMP_DIR' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py $PRODUCTION_ARG $KV_ARG $WORKSPACE_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta /repo/st-glm53-meta --drafter-dir $DRAFTER $TIER_ARG --dump-dir $DUMP_DIR' >/dev/null && echo '$ip: started'"
 }
 
 pids=()
