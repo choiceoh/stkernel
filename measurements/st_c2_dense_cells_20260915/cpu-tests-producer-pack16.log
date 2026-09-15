@@ -1,0 +1,72 @@
+test_layout_sizes_are_the_cells_own_packs (tests.test_engine_producer_pack_rows.ProducerPackRowsTests.test_layout_sizes_are_the_cells_own_packs) ... ok
+test_net_allocates_the_layout_of_the_step_rows_only_when_the_writer_reads_it (tests.test_engine_producer_pack_rows.ProducerPackRowsTests.test_net_allocates_the_layout_of_the_step_rows_only_when_the_writer_reads_it) ... ok
+test_only_bound_kda_output_writers_read_sixteen_row_packs (tests.test_engine_producer_pack_rows.ProducerPackRowsTests.test_only_bound_kda_output_writers_read_sixteen_row_packs) ... ok
+test_the_writer_hands_the_pack_to_its_bound_cell_and_refuses_it_elsewhere (tests.test_engine_producer_pack_rows.ProducerPackRowsTests.test_the_writer_hands_the_pack_to_its_bound_cell_and_refuses_it_elsewhere) ... ok
+test_default_and_unsupported_split (tests.test_engine_direct_mhc.DirectMhcTests.test_default_and_unsupported_split) ... ok
+test_descriptor_construction_failure_keeps_the_enqueued_ring_poisoned (tests.test_engine_direct_mhc.DirectMhcTests.test_descriptor_construction_failure_keeps_the_enqueued_ring_poisoned) ... ok
+test_direct_output_preserves_multi_pack_and_observer_boundaries (tests.test_engine_direct_mhc.DirectMhcTests.test_direct_output_preserves_multi_pack_and_observer_boundaries) ... ok
+test_exchange_failure_poisons_every_packet_publisher (tests.test_engine_direct_mhc.DirectMhcTests.test_exchange_failure_poisons_every_packet_publisher)
+A native call may enqueue a collective before reporting an error. ... ok
+test_four_rank_c1_c4_outputs_aux_and_state (tests.test_engine_direct_mhc.DirectMhcTests.test_four_rank_c1_c4_outputs_aux_and_state) ... ok
+test_packet_consumer_cannot_reenter_or_change_the_exchange_stream (tests.test_engine_direct_mhc.DirectMhcTests.test_packet_consumer_cannot_reenter_or_change_the_exchange_stream) ... ok
+test_packet_ownership_stream_failure_and_collective_guards (tests.test_engine_direct_mhc.DirectMhcTests.test_packet_ownership_stream_failure_and_collective_guards) ... ok
+test_producer_reserves_before_writing_and_poison_prevents_fallback (tests.test_engine_direct_mhc.DirectMhcTests.test_producer_reserves_before_writing_and_poison_prevents_fallback) ... ok
+test_terminal_columns_keep_c1_c4_state_feature_order_and_callback (tests.test_engine_direct_mhc.DirectMhcTests.test_terminal_columns_keep_c1_c4_state_feature_order_and_callback) ... ok
+test_bound_ordinary_and_direct_graphs_follow_changed_inputs_and_addresses (tests.test_engine_decode_fastpaths.BoundDecodeGpuTests.test_bound_ordinary_and_direct_graphs_follow_changed_inputs_and_addresses) ... skipped 'requires CUDA; not exercised by the CPU gate'
+test_binding_preserves_old_rows_and_cannot_affect_another_model (tests.test_engine_decode_fastpaths.BoundDecodeTests.test_binding_preserves_old_rows_and_cannot_affect_another_model) ... ok
+test_indexer_owner_freezes_rows_and_preserves_both_projections (tests.test_engine_decode_fastpaths.BoundDecodeTests.test_indexer_owner_freezes_rows_and_preserves_both_projections) ... ok
+test_proof_requires_every_candidate_layer_and_capture_width (tests.test_engine_decode_fastpaths.BoundDecodeTests.test_proof_requires_every_candidate_layer_and_capture_width) ... ok
+test_same_bound_pack_routes_ordinary_private_and_direct_outputs (tests.test_engine_decode_fastpaths.BoundDecodeTests.test_same_bound_pack_routes_ordinary_private_and_direct_outputs) ... ok
+test_serving_default_on_with_experimental_rollback_and_neutral_bare_plan (tests.test_engine_decode_fastpaths.BoundDecodeTests.test_serving_default_on_with_experimental_rollback_and_neutral_bare_plan) ... ok
+test_composition_matches_default_glm_gated_norm_at_small_core_magnitudes (tests.test_engine_kda_norm.KdaOutputNormContractTests.test_composition_matches_default_glm_gated_norm_at_small_core_magnitudes) ... ok
+test_finite_bf16_patterns_and_saturated_gates (tests.test_engine_kda_norm.KdaOutputNormTests.test_finite_bf16_patterns_and_saturated_gates) ... skipped 'requires CUDA; '
+test_glm128_rows_magnitudes_and_final_rounding (tests.test_engine_kda_norm.KdaOutputNormTests.test_glm128_rows_magnitudes_and_final_rounding) ... skipped 'requires CUDA; '
+test_graph_reads_changed_values_and_does_not_mutate_inputs (tests.test_engine_kda_norm.KdaOutputNormTests.test_graph_reads_changed_values_and_does_not_mutate_inputs) ... skipped 'requires CUDA; '
+test_independent_streams_and_invalid_layout (tests.test_engine_kda_norm.KdaOutputNormTests.test_independent_streams_and_invalid_layout) ... skipped 'requires CUDA; '
+test_other_dimensions_and_fp32_weight (tests.test_engine_kda_norm.KdaOutputNormTests.test_other_dimensions_and_fp32_weight) ... skipped 'requires CUDA; '
+test_padded_columns_are_the_same_product (tests.test_engine_kernel_glue.DenseGlueTests.test_padded_columns_are_the_same_product) ... ok
+test_mhc_v41_on_the_megakernel (tests.test_engine_kernel_glue.GlueOnTheGpuTests.test_mhc_v41_on_the_megakernel) ... skipped 'requires CUDA; '
+test_mla_glue_on_the_megakernel (tests.test_engine_kernel_glue.GlueOnTheGpuTests.test_mla_glue_on_the_megakernel) ... skipped 'requires CUDA; '
+test_padded_dense_is_the_lane_over_padded_bytes (tests.test_engine_kernel_glue.GlueOnTheGpuTests.test_padded_dense_is_the_lane_over_padded_bytes) ... skipped 'requires CUDA; '
+test_the_adaptation_is_the_recurrence_the_kernels_read (tests.test_engine_kernel_glue.KdaDecayGlueTests.test_the_adaptation_is_the_recurrence_the_kernels_read)
+Summing a per-head decay then widening it is the sum of the widened decay, and repeating the key heads is the ... ok
+test_the_chunk_entry_refuses_before_any_launch (tests.test_engine_kernel_glue.KdaDecayGlueTests.test_the_chunk_entry_refuses_before_any_launch) ... ok
+test_the_decay_entries_take_the_decay_and_nothing_else (tests.test_engine_kernel_glue.KdaDecayGlueTests.test_the_decay_entries_take_the_decay_and_nothing_else) ... ok
+test_the_ring_forms_are_checked_by_the_bound_decay (tests.test_engine_kernel_glue.KdaDecayGlueTests.test_the_ring_forms_are_checked_by_the_bound_decay) ... ok
+test_the_chunk_decay_entry_is_the_recurrence (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_chunk_decay_entry_is_the_recurrence) ... skipped 'requires CUDA and the ST image, or TRITON_INTERPRET=1 with Triton'
+test_the_decay_entry_with_kda_s_gate_is_the_fused_entry (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_decay_entry_with_kda_s_gate_is_the_fused_entry)
+Hand the decay entry the per-channel decay KDA's fused gate computes and it is the fused ring entry. ... skipped 'requires CUDA and the ST image, or TRITON_INTERPRET=1 with Triton'
+test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane) ... skipped 'requires CUDA and the ST image, or TRITON_INTERPRET=1 with Triton'
+test_the_rows_fold_is_the_one_row_launches (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_rows_fold_is_the_one_row_launches) ... skipped 'requires CUDA and the ST image, or TRITON_INTERPRET=1 with Triton'
+test_prefill_in_pieces_is_the_seam_token_by_token (tests.test_engine_kernel_glue.MhcV41GlueTests.test_prefill_in_pieces_is_the_seam_token_by_token) ... ok
+test_the_launch_passes_the_twenty_pointer_contract (tests.test_engine_kernel_glue.MhcV41GlueTests.test_the_launch_passes_the_twenty_pointer_contract) ... ok
+test_the_wrapper_holds_its_weights_and_the_kernel_scratch (tests.test_engine_kernel_glue.MhcV41GlueTests.test_the_wrapper_holds_its_weights_and_the_kernel_scratch) ... ok
+test_a_packed_key_and_value_are_grouped_query_attention (tests.test_engine_kernel_glue.MlaGlueTests.test_a_packed_key_and_value_are_grouped_query_attention) ... ok
+test_arm_admits_the_bound_attention_by_the_glue_rule (tests.test_engine_kernel_glue.MlaGlueTests.test_arm_admits_the_bound_attention_by_the_glue_rule) ... ok
+test_grouped_heads_over_a_padded_latent_are_the_attention (tests.test_engine_kernel_glue.MlaGlueTests.test_grouped_heads_over_a_padded_latent_are_the_attention) ... ok
+test_the_adapters_refuse_what_they_cannot_carry (tests.test_engine_kernel_glue.MlaGlueTests.test_the_adapters_refuse_what_they_cannot_carry) ... ok
+test_the_latent_precision_is_the_only_change (tests.test_engine_kernel_glue.MlaGlueTests.test_the_latent_precision_is_the_only_change)
+With the rows in the latent's e4m3, the adapter computes GQA over exactly the K and V those bytes hold. ... ok
+test_the_decays_are_the_named_ones (tests.test_engine_linear_family.AxesTests.test_the_decays_are_the_named_ones) ... ok
+test_the_output_norms_differ_only_in_rounding (tests.test_engine_linear_family.AxesTests.test_the_output_norms_differ_only_in_rounding) ... ok
+test_the_variants_and_the_axes_are_checked (tests.test_engine_linear_family.AxesTests.test_the_variants_and_the_axes_are_checked) ... ok
+test_a_full_rank_gate_or_decay_is_the_low_rank_pair (tests.test_engine_linear_family.KDAOracleTests.test_a_full_rank_gate_or_decay_is_the_low_rank_pair) ... skipped 'requires transformers with glm5_next (5.16.1) on the path'
+test_pieces_are_the_whole (tests.test_engine_linear_family.KDAOracleTests.test_pieces_are_the_whole) ... skipped 'requires transformers with glm5_next (5.16.1) on the path'
+test_separate_weights_are_the_fused_ones (tests.test_engine_linear_family.KDAOracleTests.test_separate_weights_are_the_fused_ones) ... skipped 'requires transformers with glm5_next (5.16.1) on the path'
+test_the_safe_gate_form_is_the_model (tests.test_engine_linear_family.KDAOracleTests.test_the_safe_gate_form_is_the_model) ... skipped 'requires transformers with glm5_next (5.16.1) on the path'
+test_the_softplus_form_is_the_model (tests.test_engine_linear_family.KDAOracleTests.test_the_softplus_form_is_the_model) ... skipped 'requires transformers with glm5_next (5.16.1) on the path'
+test_fp32_logits_and_selection_on_random_repeated_and_tied_experts (tests.test_engine_decode_seven.RouterTensorCoreTests.test_fp32_logits_and_selection_on_random_repeated_and_tied_experts) ... skipped 'tensor-core router requires CUDA'
+test_eight_row_direct_output_resolves_changed_addresses_and_private_workspace (tests.test_engine_decode_seven.SevenRowDenseTests.test_eight_row_direct_output_resolves_changed_addresses_and_private_workspace) ... skipped 'requires CUDA; '
+test_input_reuse_matches_same_packs_every_row_and_changed_graph_inputs (tests.test_engine_decode_seven.SevenRowDenseTests.test_input_reuse_matches_same_packs_every_row_and_changed_graph_inputs) ... skipped 'requires CUDA; '
+test_input_reuse_reads_strided_tiles_and_preserves_wide_pack_folding (tests.test_engine_decode_seven.SevenRowDenseTests.test_input_reuse_reads_strided_tiles_and_preserves_wide_pack_folding) ... skipped 'requires CUDA; '
+test_same_build_bytes_private_scratch_and_rebound_direct_output (tests.test_engine_forward_reduce.ForwardReductionGpuTests.test_same_build_bytes_private_scratch_and_rebound_direct_output) ... skipped 'requires a reserved GB10 GPU'
+test_boot_rejects_an_output_owner_missing_c1_execution (tests.test_engine_forward_reduce.ForwardReductionTests.test_boot_rejects_an_output_owner_missing_c1_execution) ... ok
+test_new_output_cells_use_owned_packs_and_replay_time_direct_descriptors (tests.test_engine_forward_reduce.ForwardReductionTests.test_new_output_cells_use_owned_packs_and_replay_time_direct_descriptors) ... ok
+test_nothing_binds_without_fastpath_rows_or_a_w4_decode_pack (tests.test_engine_drafter_decode_cells.DrafterDecodeCellTests.test_nothing_binds_without_fastpath_rows_or_a_w4_decode_pack) ... ok
+test_only_the_mlp_projections_bind_and_only_at_eight_and_sixteen_rows (tests.test_engine_drafter_decode_cells.DrafterDecodeCellTests.test_only_the_mlp_projections_bind_and_only_at_eight_and_sixteen_rows) ... ok
+test_the_proof_fails_until_every_bound_cell_ran (tests.test_engine_drafter_decode_cells.DrafterDecodeCellTests.test_the_proof_fails_until_every_bound_cell_ran) ... ok
+
+----------------------------------------------------------------------
+Ran 63 tests in 4.362s
+
+OK (skipped=23)

@@ -40,7 +40,7 @@ def _output_norm(X, G, W, Y, ROWS: tl.constexpr, D: tl.constexpr,
 
 @triton.jit
 def _output_norm_pack(X, G, W, Y, WORDS, SCALES, ROWS: tl.constexpr, HEADS: tl.constexpr, D: tl.constexpr,
-                      EPS: tl.constexpr, BD: tl.constexpr, BR: tl.constexpr):
+                      EPS: tl.constexpr, BD: tl.constexpr, BR: tl.constexpr, WIDE: tl.constexpr = False):
     # The normalization is _output_norm's, statement for statement (same shapes, masks and reductions),
     # so Y keeps its bytes. One program is one (token, head): at D=128 a head is exactly one 128-column
     # K block of the o_proj input [tokens, heads*128], so the block's amax is this program's own row.
@@ -78,20 +78,27 @@ def _output_norm_pack(X, G, W, Y, WORDS, SCALES, ROWS: tl.constexpr, HEADS: tl.c
     token = tl.program_id(0)//HEADS
     block = tl.program_id(0)%HEADS
     lane = tl.arange(0,32)
-    q = lane>>3
-    word = lane&7
-    ks = ((word>>1)-q)&3
-    offset = block*1024+ks*256+(token*4+q)*8+(word&1)*4
-    tl.store(WORDS+offset//4, lo|hi)
-    tl.store(SCALES+block*8+token, sc)
+    if WIDE:
+        # Sixteen rows: mk_wide_input_pack_kernel's layout, the sixteen-row CTA's input -- each K block
+        # reserves 32 rows of 128 bytes in natural order, then a row scale at [block*32+token].
+        tl.store(WORDS+(block*32+token)*32+lane, lo|hi)
+        tl.store(SCALES+block*32+token, sc)
+    else:
+        q = lane>>3
+        word = lane&7
+        ks = ((word>>1)-q)&3
+        offset = block*1024+ks*256+(token*4+q)*8+(word&1)*4
+        tl.store(WORDS+offset//4, lo|hi)
+        tl.store(SCALES+block*8+token, sc)
 
 
 def kda_output_norm(x, gate, weight, eps=1e-6, *, pack=None):
     """Contiguous BF16 [...,D] inputs and [D] weight -> BF16 [...,D].
 
-    `pack`: storage for the o_proj cell's input pack, [heads x 1024] FP8 words then [heads x 8] row scales,
-    for an [8, heads, 128] step. The output is unchanged; the pack is the one the bound C1 cell would
-    otherwise launch for itself, so the cell reads it in place (kernels.cu run_gemm_bound_input)."""
+    `pack`: storage for the o_proj cell's input pack of an [8 or 16, heads, 128] step, laid out as
+    engine.kernels.dense.producer_pack_nbytes says: the C1 cell's own pack at 8 rows, the wide pack of the
+    sixteen-row CTA at 16. The output is unchanged; the pack is the one the bound cell would otherwise
+    launch for itself, so the cell reads it in place (kernels.cu run_gemm_bound_input)."""
     if (x.dtype != torch.bfloat16 or gate.dtype != x.dtype or x.shape != gate.shape
             or not x.is_cuda or gate.device != x.device or weight.device != x.device
             or x.ndim < 2 or weight.shape != (x.shape[-1],)
@@ -104,15 +111,18 @@ def kda_output_norm(x, gate, weight, eps=1e-6, *, pack=None):
     rows = x.numel()//d
     output = torch.empty_like(x)
     if pack is not None:
+        from engine.kernels.dense import producer_pack_nbytes
         heads = x.shape[1] if x.ndim == 3 else 0
-        if (x.ndim != 3 or x.shape[0] != 8 or d != 128 or not 1 <= heads <= 32 or pack.dtype != torch.uint8
+        steps = x.shape[0] if x.ndim == 3 else 0
+        if (x.ndim != 3 or steps not in (8, 16) or d != 128 or not 1 <= heads <= 32 or pack.dtype != torch.uint8
                 or pack.device != x.device or not pack.is_contiguous() or pack.data_ptr() % 8
-                or pack.numel() != heads*1024 + heads*8*4):
-            raise ValueError("an o_proj input pack needs an [8, heads, 128] step and aligned [heads x 1056] storage")
-        words = pack[:heads*1024].view(torch.int32)
-        scales = pack[heads*1024:].view(torch.float32)
+                or pack.numel() != producer_pack_nbytes(steps, heads * d)):
+            raise ValueError("an o_proj input pack needs an [8 or 16, heads, 128] step and its aligned cell layout")
+        words_bytes = heads * (1024 if steps == 8 else 32 * 128)
+        words = pack[:words_bytes].view(torch.int32)
+        scales = pack[words_bytes:].view(torch.float32)
         _output_norm_pack[(rows,)](x,gate,weight,output,words,scales,rows,heads,d,eps,128,1,
-                                  num_warps=1,enable_fp_fusion=False)
+                                  WIDE=steps == 16,num_warps=1,enable_fp_fusion=False)
         return output
     if rows:
         # One warp per row keeps the 128-wide reduction order aligned with
