@@ -752,9 +752,9 @@ class Glm53Engine:
         """The runner's prefix cache keeps this sequence's state at a block boundary (base/prefix.py): out of the rings
         right after the step that reached it, or out of the caches' stage when a step ahead of the host parked it there."""
         if self.staged.get(seq) == position:
-            self.caches.checkpoint_from_stage(self.slot[seq], snap)
+            self.caches.checkpoint_from_stage(self.slot[seq], snap, position)
         else:
-            self.caches.checkpoint(self.slot[seq], position, snap)
+            self.caches.checkpoint(self.slot[seq], position, snap, past=self.ctx[seq] - position)
 
     def restore(self, seq: int, position: int, snap: int) -> None:
         """A new sequence adopts a cached prefix: its rings take the boundary's state, its context starts there."""
@@ -1467,6 +1467,9 @@ class Glm53Engine:
             new, done = self._commit(s.seq, accepted, new, lps, len(drafts[s.seq]))
             committed = len(new)                                           # clipped tokens must not enter the next turn's context
             committed_counts.append(committed)
+            boundary = (s.ctx + committed) // self.F.block * self.F.block
+            if committed and boundary > s.ctx:
+                self.caches.stash_draft(s.slot, boundary)                  # the cells a snapshot at the boundary needs, before observe
             if aux is not None:
                 prepared = getattr(self.decode_graphs, "observations", {}).get(shape) if self.decode_graphs is not None else None
                 if prepared is not None:
