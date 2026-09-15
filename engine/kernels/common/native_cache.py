@@ -7,9 +7,27 @@ changing Ninja's inputs. This module neither loads a binary nor touches CUDA.
 import fcntl
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
+
+
+def build_root(name):
+    """Where the native module `name` keeps its builds: ``$ST_NATIVE_BUILD_ROOT/<name>``.
+
+    A cache path, the same class as TRITON_CACHE_DIR. The served image and the
+    launcher point it into /cache, which outlives the container. The fallback
+    under $HOME is the container's own writable layer, and every launcher stop
+    is a `docker rm`: a build kept there is a build the next boot repeats.
+    Four modules kept theirs there, so every boot recompiled all four on every
+    rank before the door opened -- mapped staging 46.1 s, prefill top-k 45.5 s,
+    the bounded graph 56.1 s and the decode queue 47.4 s on rank 3 of the
+    2026-09-15 tempab5 boot. The key under this root already names the sources,
+    flags, Torch and toolkit, so a kept build is reused exactly when nothing it
+    was compiled from has changed.
+    """
+    return Path(os.environ.get("ST_NATIVE_BUILD_ROOT", str(Path.home() / ".cache/st"))) / name
 
 
 def cuda_toolchain_identity(cuda_home, nvcc=None):

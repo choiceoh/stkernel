@@ -26,7 +26,9 @@ shift
 image=${ST_IMAGE:-st-engine:glm53}
 cache=${ST_CACHE:-$HOME/.cache/st}
 models=${MODELS:-/home/choiceoh/models}
-envs=(-e PYTHONPATH=/repo -e "MAX_JOBS=${MAX_JOBS:-2}")
+# /cache is the probe host's ~/.cache/st (both paths below): the natives kept under it survive the container,
+# an image built before ST_NATIVE_BUILD_ROOT joined its ENV included (the pinned bracket images are).
+envs=(-e PYTHONPATH=/repo -e "MAX_JOBS=${MAX_JOBS:-2}" -e "ST_NATIVE_BUILD_ROOT=${ST_NATIVE_BUILD_ROOT:-/cache/cu132/st-native}")
 # ST_* (cache paths, probe switches) and STK_* (the profile's declared D11 knobs) reach the container
 for name in $(compgen -v ST_ || true) $(compgen -v STK_ || true); do envs+=(-e "$name=${!name}"); done
 gpu=(--gpus all)

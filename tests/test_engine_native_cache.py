@@ -142,7 +142,7 @@ print(json.dumps([key,[(Path(p).read_text(),Path(p).stat().st_ino,Path(p).stat()
         dockerfile = (ROOT / "engine/runtime/Dockerfile").read_text()
         launcher = (ROOT / "launchers/start-st-glm53.sh").read_text()
         for assignment in ("ST_DENSE_BUILD_ROOT=/cache/cu132/st-dense", "ST_ONESHOT_BUILD_ROOT=/cache/cu132/st-oneshot",
-                           "ST_MLA_BUILD_ROOT=/cache/cu132/mla"):
+                           "ST_MLA_BUILD_ROOT=/cache/cu132/mla", "ST_NATIVE_BUILD_ROOT=/cache/cu132/st-native"):
             self.assertIn(assignment, dockerfile)
             self.assertIn(assignment, launcher)
 
@@ -180,6 +180,53 @@ print(json.dumps([key,[(Path(p).read_text(),Path(p).stat().st_ino,Path(p).stat()
                 if function == 'build':
                     self.assertEqual(call['extra_ldflags'], ['-libverbs'])
                     self.assertTrue((Path(call['sources'][0]).parent / 'dsv4_oneshot_transport.h').is_file())
+
+    def test_shared_root_builders_build_under_the_declared_persistent_root(self):
+        # $HOME is the container's writable layer, removed with the container: a build kept
+        # there was compiled again by every boot (2026-09-15: four of them, 45-56 s each).
+        from types import SimpleNamespace
+        for relative, function, name in (("bounded_graph/__init__.py", "build", "bounded-graph"),
+                                         ("decode_queue/__init__.py", "build", "decode-queue"),
+                                         ("mapped_staging/__init__.py", "build", "mapped-staging"),
+                                         ("prefill_topk.py", "_build", "prefill-topk")):
+            with self.subTest(builder=relative):
+                path = ROOT / "engine/kernels" / relative
+                tree = ast.parse(path.read_text())
+                node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == function)
+                node.decorator_list = []
+                calls = []
+                ext = SimpleNamespace()
+                def load(**kwargs):
+                    calls.append(kwargs)
+                    return ext
+                fake_torch = SimpleNamespace(__version__="torch-test", version=SimpleNamespace(cuda="cuda-test"))
+                namespace = dict(__file__=str(path), Path=Path, torch=fake_torch, _EXT=None)
+                shared = self.root / "shared root"
+                with patch.dict(sys.modules, {"torch": fake_torch,
+                                              "torch.utils.cpp_extension": SimpleNamespace(load=load, CUDA_HOME="/cuda")}), \
+                        patch("engine.kernels.common.native_cache.cuda_toolchain_identity",
+                              return_value=[("/cuda/bin/nvcc", "13.0"), ("/cuda/bin/ptxas", "13.0")]), \
+                        patch.dict(os.environ, {"ST_NATIVE_BUILD_ROOT": str(shared)}):
+                    exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), "exec"), namespace)
+                    self.assertIs(namespace[function](), ext)
+                directory = Path(calls[0]["build_directory"])
+                self.assertEqual(directory.parent, shared / name)
+                for source in calls[0]["sources"]:
+                    self.assertEqual(Path(source).parent, directory / "src")
+                    self.assertEqual(Path(source).read_bytes(), path.with_name(Path(source).name).read_bytes())
+
+    def test_no_native_builder_keeps_its_build_under_home(self):
+        # Every torch extension under engine/kernels names a root the launcher persists: its own
+        # ST_*_BUILD_ROOT, or build_root(). A literal Path.home() root survives only as their fallback.
+        kernels = ROOT / "engine/kernels"
+        for path in kernels.rglob("*.py"):
+            text = path.read_text()
+            if "cpp_extension import load" not in text:
+                continue
+            with self.subTest(module=str(path.relative_to(kernels))):
+                for node in ast.walk(ast.parse(text)):
+                    if isinstance(node, ast.Call) and ast.unparse(node.func) == "prepare_cuda_sources":
+                        self.assertNotIn("Path.home()", ast.unparse(node.args[0]))
 
 
 if __name__ == "__main__":
