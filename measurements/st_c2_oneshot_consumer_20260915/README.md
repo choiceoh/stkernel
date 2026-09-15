@@ -91,10 +91,23 @@ consumer 는 발행 뒤 `griddepcontrol.launch_dependents` 를 부른다. 그래
   - 합이 생산자 전에 읽었다면 게시된 페이로드가 틀려 프록시가 잡는다. 후속이 합 전에 읽었다면 출력이 틀린다.
 - 한 그래프 안에서 C=2 consumer 합 → 17행 일반 합 → C=1 consumer 합을 섞어 재생한다. 링 티켓은 int64 MAX 와 이어지고, 끝에 `tickets == published × 48` 를 확인한다.
 - 기존 `test_engine_moe_output_transport`(8/16/24/32행 MoE 패킷)도 같은 레인에서 다시 돌았다.
+- **조기 출발 증명**(`c2cons-gpu3-01657002`): 후속 `staged_copy` 가 블록 0 의 SM 시각을 진입 때와 대기 뒤에 찍는다.
+  - consumer 뒤에서는 네 rank × 10 크기 모두 착지 지연 3 ms 의 절반보다 오래 기다렸다. 후속이 합의 발행 시점에 출발했다는 뜻이다.
+  - 그러고도 최종 합을 바이트 그대로 복사했다. `griddepcontrol.wait` 는 앞 launch 의 해제가 아니라 완료(피어 대기와 reduce 포함)까지 막는다.
+  - 일반 커널 뒤에서는 기다리지 않았다(절반 미만). 일반 launch 는 조기 출발시키지 않는다.
 
 ### 4. 부팅 자체 시험
 
 16행 소거 시험(두 커널, 즉시 + 캡처 재생 3)과 16행 게이지 셀은 TP4 부팅에서만 돈다. **아직 실행하지 않았다.** 틀리면 `agree` 가 모든 랭크에서 `one-shot 16-row cancellation ...` 로 부팅을 멈춘다. 돌기만 하면 멈춤 감시가 STALL 줄과 trap 으로 끝낸다(위 배치).
+
+## 리뷰 대응 — Cursor Bugbot(#967)
+
+주장: consumer 가 reduce 전에 `launch_dependents` 를 부르고 dependency wait 는 그 해제에서 끝난다. 그러면 16행에서 `_hc_post_pre` 의 `mk_mhc_kernel` 이 끝나지 않은 합을 읽는다(High).
+- 대기 의미: 위 조기 출발 증명이 반박한다. 조기 출발한 후속이 3 ms 늦은 착지를 기다렸고, 최종 합을 읽었다.
+  이 저장소의 기존 설계도 같은 전제다. C=1 consumer 와 AR 소비자 MHC 는 가중치만 대기 전에 읽는다. 09-12 NVFP4 사고는 대기 *전* 읽기가 원인이었다.
+- 짝: 서빙 경로(`direct_mhc=1`)에서는 16행 전체합 바로 뒤가 Triton·TileLang·torch launch 뿐이다(위 표). MHC 는 그 뒤에 온다.
+- `STK_direct_mhc=0` 롤백 경로(`net.forward`)에서는 합 뒤에 MHC 가 바로 온다. 병합한 #972 뒤로 16행 MHC 는 C=1 과 같은 `mk_mhc_ar_kernel` 이다(`a.num_tokens <= 16`). 리뷰가 안전하다고 본 짝과 같다.
+- 시험이 대기를 시험하지 못한다는 지적(Medium)은 맞았다. 그래서 위 SM 시각 도장을 더했다.
 
 ## 이득 — 단일 GPU 의 GPU 쪽 B/A/A/B (TP4 아님)
 
@@ -181,7 +194,8 @@ GPU 쪽에서 행 수에 비례하는 일(소스 기준):
 
 | 항목 | 소스 | 결과 | 파일 |
 |---|---|---|---|
-| 프로덕션 확장 4변형 컴파일·로드와 관련 20 모듈 시험 | `9d42a4e3`(#969 병합 뒤, 머지한 트리) | 컴파일·오라클 PASS, 123 개 중 115 통과, 8 skip(GB10), 실패 0. one-shot 소스는 `a4b9787e` 와 같다 | `compile-9d42a4e3.json`·`cpu-9d42a4e3.log` |
+| 프로덕션 확장 4변형 컴파일·로드와 관련 20 모듈 시험 | `01657002`(도장 오라클, 머지한 트리) | 컴파일·오라클 PASS, 123 개 중 115 통과, 8 skip(GB10), 실패 0 | `oracle-01657002.json`·`cpu-01657002.log` |
+| 같은 게이트 | `9d42a4e3`(#969 병합 뒤) | 컴파일·오라클 PASS, 123 개 중 115 통과, 8 skip(GB10), 실패 0. one-shot 소스는 `a4b9787e` 와 같다 | `compile-9d42a4e3.json`·`cpu-9d42a4e3.log` |
 | 같은 게이트 | `ebbfa814`(#971·#972 병합 뒤) | 같은 결과 | `compile-ebbfa814.json`·`cpu-ebbfa814.log` |
 | 프로덕션 확장 4변형(rails 1/2 × inline 0/1) 컴파일·로드 | `a4b9787e`(main 병합 뒤) | PASS. torch 2.13.0+cu132, nvcc 13.2.78. 확장 이름이 #957 기록과 같다(소스가 같다) | `compile-a4b9787e.json` |
 | 단일 GPU 오라클 컴파일·로드 | `a4b9787e` | PASS. `oneshot_ar`·`oneshot_ar_consumer`·`staged_copy`·`land_ahead` 바인딩 | `oracle-a4b9787e.json` |
@@ -198,6 +212,7 @@ GPU 쪽에서 행 수에 비례하는 일(소스 기준):
 | `c2cons-gpu-4d50fd37` | `4d50fd37` | `oneshot_consumer` | **실패(시험 결함)**: 즉시 바이트 대조와 MoE 패킷 시험은 통과했다. 캡처 사슬 시험은 첫 재생에서 실패했다. | `gpu-consumer-4d50fd37-failed.log` |
 | `c2cons-time-39a5dc3c` | `39a5dc3c` | `oneshot_consumer_timing` | 통과. 위 표. 매 팔 출력 바이트가 fold 와 같다 | `timing-39a5dc3c.jsonl` |
 | `c2cons-gpu2-a4b9787e` | `a4b9787e` | `oneshot_consumer` | **통과, 3/3** (64.9 초) | `gpu-consumer-a4b9787e.log`·`.json` |
+| `c2cons-gpu3-01657002` | `01657002` | `oneshot_consumer`(도장 추가) | **통과, 3/3** (73.9 초). consumer 뒤 후속은 매 경우 착지를 기다렸고 최종 합을 복사했다. 일반 커널 뒤에서는 기다리지 않았다 | `gpu-consumer-stamped-01657002.log` |
 
 - 첫 티켓의 실패 원인은 시험 자체였다. 시험이 `torch.cuda.graph` 캡처 몫으로 프록시 요청을 하나 더 넣었다.
 - 이 오라클에서 캡처는 launch 를 기록만 하고 실행하지 않는다. 기존 gather·MoE 패킷·직접 생산자 시험도 이 전제로 캡처에 요청을 넣지 않는다.
@@ -209,7 +224,7 @@ GPU 쪽에서 행 수에 비례하는 일(소스 기준):
 - TP4 부팅: 실제 RDMA 위의 16행 consumer 소거 시험·캡처 재생, `oneshot_sum_16rows_us` 게이지 값, 두 레일에서의 16행 consumer.
 - C=1/C=2 onepass(step/s·품질·수락률)와 C=2 4랭크 트레이스 분해. 스텝 이득은 재지 않았다.
   - 권하는 확인: 부팅 게이지의 `oneshot_sum_16rows_us`, C=2 diagnostic 트레이스의 `overlap_trace.py` 분해(16행 `consumer` tail·floor 를 이전 부팅의 `ordinary` 와 비교).
-- 16행 합 뒤 후속 커널의 조기 출발 안전성은 소스 감사(위 표)와 단일 GPU PDL 이웃 시험으로만 봤다. 실제 모델 그래프의 16행 합을 바이트로 대조하지 않았다.
+- 16행 합 뒤 후속 커널의 조기 출발 안전성은 소스 감사(위 표)와 단일 GPU PDL 이웃 시험(도장 포함)으로만 봤다. 실제 모델 그래프의 16행 합을 바이트로 대조하지 않았다.
 - 단일 GPU 시험은 CPU 스레드가 NIC 를 대신한다. 레일·실제 피어 지연·프록시와의 상호작용은 없다. 타이밍은 프로덕션 옆 공유 GPU 의 GPU 쪽 비율뿐이다.
 
 ## 재현
@@ -253,6 +268,7 @@ python3 overlap_trace.py <run>/diagnostic-c4-2000 13 14 15 16
 - `compile-a4b9787e.json`·`oracle-a4b9787e.json`·`cpu-a4b9787e.log`: 단일 GPU 로 판정한 소스의 CPU 게이트.
 - `compile.json`·`compile.log`·`toolchain.log`·`oracle.json`·`oracle.log`·`oracle-land-ahead.json`·`cpu.log`: 첫 판(`4d50fd37`, `39a5dc3c`)의 CPU 게이트.
 - `mutation.log`: g++ 오라클 요약 줄과 변이 4종. `mutation-watchdog.log`: 감시 배치 변이.
+- `gpu-consumer-stamped-01657002.log`: 조기 출발 도장까지 통과한 판. `oracle-01657002.json`·`cpu-01657002.log`: 그 소스의 CPU 게이트.
 - `gpu-consumer-a4b9787e.log`·`gpu-consumer-a4b9787e.json`: 통과한 단일 GPU 바이트 대조. `gpu-consumer-4d50fd37-failed.log`: 시험 결함으로 실패한 첫 판. `gpu-events.log`: 세 티켓의 GO/release.
 - `timing-39a5dc3c.jsonl`·`timing-39a5dc3c.log`: GPU 쪽 B/A/A/B 원자료.
 - `overlap_trace.py`·`trace-c1-131d7a24.txt`·`trace-c4-131d7a24.txt`·`traces.sha256`: 트레이스 분해.
