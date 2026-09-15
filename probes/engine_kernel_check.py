@@ -127,7 +127,12 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "moe_fc1_reuse", "moe_compact_staging", "moe_register_scales", "moe_sync_cleanup", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench", "decode_k7", "moe_output", "moe_pair", "moe_pair_serial", "moe_pair_overlap", "moe_pair_direct", "moe_pair_reuse", "moe_pair_prefetch", "moe_pair_sync", "moe_pair_vec4"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "moe_fc1_reuse", "moe_compact_staging", "moe_register_scales", "moe_sync_cleanup", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench", "decode_k7", "moe_output", "moe_pair", "moe_pair_serial", "moe_pair_overlap", "moe_pair_direct", "moe_pair_reuse", "moe_pair_prefetch", "moe_pair_sync", "moe_pair_vec4", "moe_pair_packed_load"}, selected
+
+    if 'moe_pair_packed_load' in selected:
+        from probes.engine_moe_pair_check import check as moe_pair_check
+        target = args.output.with_stem(args.output.stem+'-packed-load') if args.output else None
+        moe_pair_check(report, args.ranks, scatter_packed_load_only=True, output=target)
 
     if 'moe_pair_vec4' in selected:
         from probes.engine_moe_pair_check import check as moe_pair_check

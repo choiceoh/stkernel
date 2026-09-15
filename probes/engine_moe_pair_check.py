@@ -1,4 +1,4 @@
-"""C2 MoE tile comparison with real ModelOpt scales and the served FFN consumer.
+"""C1/C2 MoE comparison with real ModelOpt scales and the served FFN consumer.
 
 The same process, weight pack, inputs and captured output finalizer are used
 by both arms. Timing follows all numerical checks. Identity collectives and
@@ -12,16 +12,43 @@ from types import MethodType, SimpleNamespace as NS
 from unittest.mock import patch
 
 
+def _pair_configs(md, *, direct_scatter_only=False, scatter_reuse_only=False,
+                  fc2_prefetch_only=False, sync_cleanup_only=False, scatter_vec4_only=False,
+                  scatter_packed_load_only=False):
+    controls = (('c2_direct_scatter', direct_scatter_only),
+                ('c2_scatter_reuse', scatter_reuse_only),
+                ('c2_fc2_prefetch', fc2_prefetch_only),
+                ('sync_cleanup', sync_cleanup_only),
+                ('scatter_vec4', scatter_vec4_only),
+                ('scatter_packed_load', scatter_packed_load_only))
+    if sum(bool(enabled) for _, enabled in controls) > 1:
+        raise ValueError('choose one MoE output comparison')
+    candidate = md._parse_glm53_static_v2('t,r,sf6,batch')
+    if scatter_vec4_only or scatter_packed_load_only:
+        # M16 normally selects direct-register output. Staged-output probes
+        # must exercise the changed kernel at BOTH row counts, not time two
+        # identical M16 direct kernels. Identity records distinguish this
+        # comparison tile from the production C2 default.
+        candidate = dict(candidate, c2_direct_scatter=False)
+    if scatter_vec4_only:
+        candidate = dict(candidate, scatter_packed_load=False)
+    control = md._parse_glm53_static_v2('t,r,sf6')
+    for field, enabled in controls:
+        if enabled:
+            control = dict(candidate, **{field: False})
+    return [control, candidate]
+
+
 def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_only=False,
           scatter_reuse_only=False, fc2_prefetch_only=False, sync_cleanup_only=False,
-          scatter_vec4_only=False):
+          scatter_vec4_only=False, scatter_packed_load_only=False):
     import torch
     from engine.kernels.b12x import moe_dispatch as md
     from engine.kernels.dense import DenseLinear
     from engine.kernels.dense.shared_mlp import SharedMLP, SharedOverlap
     from engine.kernels.glm_pointwise import swiglu_clamped
     from engine.kernels.moe_output import combine
-    from engine.profiles.glm53.lanes import served
+    from engine.profiles.glm53.lanes import MOE_STATIC_PRODUCTION, parse_moe_static, served
     from engine.profiles.glm53.modelopt_scales import ModelOptScales
     from engine.profiles.glm53.net import Glm53Net
     from engine.profiles.glm53.weights import rank_loader
@@ -31,9 +58,10 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_on
 
     if shared_mode not in ('ordinary', 'serial', 'overlap'):
         raise ValueError('unknown C2 shared-expert comparison')
-    if sum((direct_scatter_only, scatter_reuse_only, fc2_prefetch_only, sync_cleanup_only,
-            scatter_vec4_only)) > 1:
-        raise ValueError('choose one C2 output comparison')
+    configs = _pair_configs(md, direct_scatter_only=direct_scatter_only,
+                           scatter_reuse_only=scatter_reuse_only, fc2_prefetch_only=fc2_prefetch_only,
+                           sync_cleanup_only=sync_cleanup_only, scatter_vec4_only=scatter_vec4_only,
+                           scatter_packed_load_only=scatter_packed_load_only)
     records, graphs, owners, cases = [], [], [], []
     artifact = dict(passed=False, records=records,
                     scope='same-runtime component gate; no NIC, full model, tok/s or acceptance')
@@ -65,18 +93,11 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_on
         overlap = SharedOverlap(weights[0].device)
         expert = partial(lane.moe, w13=weights[0], w13_sf=weights[1], w2=weights[2],
                          w2_sf=weights[3], limit=10., scales=scales)
-        configs = [md._parse_glm53_static_v2(recipe) for recipe in ('t,r,sf6', 't,r,sf6,batch')]
-        if direct_scatter_only:
-            configs[0] = dict(configs[1], c2_direct_scatter=False)
-        if scatter_reuse_only:
-            configs[0] = dict(configs[1], c2_scatter_reuse=False)
-        if fc2_prefetch_only:
-            configs[0] = dict(configs[1], c2_fc2_prefetch=False)
-        if sync_cleanup_only:
-            # Same C2 tile and C1 rows; only pipeline setup and FC1 publication differ.
-            configs[0] = dict(configs[1], sync_cleanup=False)
-        if scatter_vec4_only:
-            configs[0] = dict(configs[1], scatter_vec4=False)
+        production_recipe, _ = parse_moe_static(MOE_STATIC_PRODUCTION)
+        production = md._parse_glm53_static_v2(production_recipe)
+        default_rows = {rows: shared_mode == 'ordinary' and
+                        md._static_v2_decode_config(configs[1], rows) ==
+                        md._static_v2_decode_config(production, rows) for rows in (8, 16)}
         root = Path(__file__).resolve().parents[1]
         sources = ('engine/kernels/b12x/moe_dispatch.py', 'engine/kernels/b12x/moe_static_kernel_v4.py',
                    'engine/kernels/b12x/moe_static_common.py', 'engine/kernels/b12x/moe_static_kernel_v5.py',
@@ -94,9 +115,11 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_on
                fc2_prefetch_only=fc2_prefetch_only,
                sync_cleanup_only=sync_cleanup_only,
                scatter_vec4_only=scatter_vec4_only,
+               scatter_packed_load_only=scatter_packed_load_only,
                configs_m8=[md._static_v2_decode_config(c, 8) for c in configs],
                configs_m16=[md._static_v2_decode_config(c, 16) for c in configs],
-               candidate_default_enabled=shared_mode == 'ordinary',
+               production_recipe=MOE_STATIC_PRODUCTION, candidate_default_by_rows=default_rows,
+               candidate_default_enabled=all(default_rows.values()),
                includes='routed+shared experts, output cast/add; C1 keeps its shared overlap policy')
         torch.manual_seed(91416)
         order = torch.randperm(288, device='cuda')
@@ -169,7 +192,7 @@ def check(emit, ranks, *, output=None, shared_mode='ordinary', direct_scatter_on
                                  dict(unique_experts=unique,
                                       base_tile_m=16 if rows == 8 or any((direct_scatter_only, scatter_reuse_only,
                                                                       fc2_prefetch_only, sync_cleanup_only,
-                                                                      scatter_vec4_only)) else 32,
+                                                                      scatter_vec4_only, scatter_packed_load_only)) else 32,
                                       candidate_tile_m=16)))
             # The actual L3 router on identical activations supplements the
             # explicit occupancy cases. This still is not a model trajectory.
