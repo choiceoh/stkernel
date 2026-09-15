@@ -56,18 +56,13 @@ not engine tok/s or step/s. Rows 1 and 28 are additional non-production checks.
 
 ## GB10 and engine validation
 
-GB10 component timing and the four-node full onepass have not completed.
-The optimization is enabled by default under D11; these local results do not
-establish a production engine throughput improvement. The bounded component
-probe is available through the canonical queue entry below.
+GB10 component timing and the four-node full onepass were not run. The operator
+requested direct default-on PR/merge without another fleet reservation; no
+ticket was registered. The optimization is enabled by default under D11; these
+local results do not establish a production engine throughput improvement.
+The bounded component probe can be reproduced as follows.
 
 ```sh
 OMP_NUM_THREADS=2 python probes/engine_kernel_check.py \
   --lanes vocab_selection --output /tmp/vocab-selection.json
-
-# From a frozen checkout on the srv2 controller:
-ST_PROBE_GIB=1 bash bench/fleet.sh run --gpu --detach vocab-warp-950f 5 \
-  'Candidate packet keys and graph replay; four vs one warp, C1/C2; no model boot' -- \
-  bash probes/run_engine_probe.sh probes/engine_kernel_check.py \
-    --lanes vocab_selection --output /cache/vocab-warp-950f.json
 ```
