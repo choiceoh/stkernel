@@ -28,7 +28,9 @@ import cutlass.utils.blockscaled_layout as blockscaled_utils
 
 from cutlass.cutlass_dsl import Int32, Int64, Uint8, Uint64
 from cutlass.cute.nvgpu import cpasync
-from .moe_micro_kernel import scatter_add_bf16x2_to_f32, scatter_store_bf16x2_to_f32
+from .moe_micro_kernel import (
+    scatter_add_bf16x2_to_f32, scatter_add_bf16x4_to_f32, scatter_store_bf16x2_to_f32,
+)
 
 from flashinfer.cute_dsl.utils import (
     sm120_make_smem_layout_sfa,
@@ -131,6 +133,7 @@ class MoEStaticKernelV4:
         compact_staging: bool = True,
         sf6_registers: bool = True,
         sync_cleanup: bool = True,
+        scatter_vec4: bool = True,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -250,6 +253,11 @@ class MoEStaticKernelV4:
         # SF6 cannot use the legacy A ring. Initialize only the two used
         # pipelines and publish their barriers together before Phase 0.
         self.sync_cleanup = bool(sync_cleanup and self.decode_reform and self.reform_sf_pack)
+        # Each staged scatter lane owns eight contiguous columns. Combine
+        # its four pairwise reductions into two 16-byte vector reductions.
+        self.scatter_vec4 = bool(scatter_vec4 and self.scatter_fp32 and self.decode_reform
+                                 and self.reform_sf_pack and not self.direct_scatter
+                                 and not self.route_scatter)
         self.a_barrier_count = 0 if self.sync_cleanup else self.fc1_stages * 2
         # Scatter only consumes rows in this M16 tile. Avoid initializing
         # 112 unused token/weight entries per item and reclaim their storage.
@@ -691,6 +699,8 @@ class MoEStaticKernelV4:
 
     def _setup_attributes(self, hidden_size: int):
         self._hidden_size = hidden_size
+        if self.scatter_vec4 and hidden_size % 4:
+            raise ValueError("vector scatter requires 16-byte-aligned FP32 output rows")
         mma_op, self.tiled_mma1 = self._make_tiled_mma(self.fc1_tile_shape_mnk)
         _, self.tiled_mma = self._make_tiled_mma(self.tile_shape_mnk)
         self.mma_atom = cute.make_mma_atom(mma_op)
@@ -2282,18 +2292,26 @@ class MoEStaticKernelV4:
                                 scatter_store_bf16x2_to_f32(out_ptr + Int64(16), wv * sc_v4, wv * sc_v5)
                                 scatter_store_bf16x2_to_f32(out_ptr + Int64(24), wv * sc_v6, wv * sc_v7)
                             elif cutlass.const_expr(self.scatter_fp32):
-                                scatter_add_bf16x2_to_f32(
-                                    get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(0)),
-                                    wv * sc_v0, wv * sc_v1)
-                                scatter_add_bf16x2_to_f32(
-                                    get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(2)),
-                                    wv * sc_v2, wv * sc_v3)
-                                scatter_add_bf16x2_to_f32(
-                                    get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(4)),
-                                    wv * sc_v4, wv * sc_v5)
-                                scatter_add_bf16x2_to_f32(
-                                    get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(6)),
-                                    wv * sc_v6, wv * sc_v7)
+                                if cutlass.const_expr(self.scatter_vec4):
+                                    scatter_add_bf16x4_to_f32(
+                                        get_ptr_as_int64(scatter_output, tok * scatter_N + global_col),
+                                        wv * sc_v0, wv * sc_v1, wv * sc_v2, wv * sc_v3)
+                                    scatter_add_bf16x4_to_f32(
+                                        get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(4)),
+                                        wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7)
+                                else:
+                                    scatter_add_bf16x2_to_f32(
+                                        get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(0)),
+                                        wv * sc_v0, wv * sc_v1)
+                                    scatter_add_bf16x2_to_f32(
+                                        get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(2)),
+                                        wv * sc_v2, wv * sc_v3)
+                                    scatter_add_bf16x2_to_f32(
+                                        get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(4)),
+                                        wv * sc_v4, wv * sc_v5)
+                                    scatter_add_bf16x2_to_f32(
+                                        get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(6)),
+                                        wv * sc_v6, wv * sc_v7)
                             else:
                                 scatter_add_v4_bf16x2(
                                     get_ptr_as_int64(

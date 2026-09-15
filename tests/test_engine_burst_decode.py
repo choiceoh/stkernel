@@ -290,6 +290,22 @@ class ServedBurstTests(unittest.TestCase):
         self.assertEqual(e.ctx[1], 3)
         p.close()
 
+    def test_device_options_reserve_one_step_but_neutral_options_keep_bursts(self):
+        e = engine(1)
+        p = CpuBurst(e, 4)
+        for opts in ({"logprobs": 0}, {"frequency_penalty": .5}, {"presence_penalty": -.2},
+                     {"repetition_penalty": 1.1}, {"logit_bias": {7: 1}}):
+            e.options[1] = opts
+            self.assertEqual(p.reserve_steps(1), 1, opts)
+        e.options[1] = {"seed": 0, "frequency_penalty": 0, "presence_penalty": 0,
+                        "repetition_penalty": 1, "logit_bias": {}}
+        self.assertEqual(p.reserve_steps(1), 4)
+        e.min_new = {1: 3}
+        self.assertEqual(p.reserve_steps(1), 1)
+        e.tokens[1] += [7, 7, 7]
+        self.assertEqual(p.reserve_steps(1), 4)
+        p.close()
+
     def test_survivor_returns_to_bursts_after_a_large_stop_set_leaves(self):
         e, ref = engine(2), engine(2)
         e.ends[2] = ref.ends[2] = set(range(100, 120))

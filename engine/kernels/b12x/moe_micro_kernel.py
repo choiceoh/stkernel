@@ -388,6 +388,40 @@ def scatter_add_bf16x2_to_f32(addr: Int64, val0_f32, val1_f32, *, loc=None, ip=N
 
 
 @dsl_user_op
+def scatter_add_bf16x4_to_f32(addr: Int64, val0_f32, val1_f32, val2_f32, val3_f32,
+                            *, loc=None, ip=None):
+    """Four existing BF16 contributions in one aligned FP32 vector RED.
+
+    The caller owns four adjacent columns at a 16-byte-aligned address.
+    Rounding, saturation and per-element FTZ accumulation match two calls
+    to scatter_add_bf16x2_to_f32; vector RED has per-element atomicity.
+    """
+    llvm.inline_asm(
+        None,
+        [
+            Int64(addr).ir_value(loc=loc, ip=ip),
+            val0_f32.ir_value(loc=loc, ip=ip),
+            val1_f32.ir_value(loc=loc, ip=ip),
+            val2_f32.ir_value(loc=loc, ip=ip),
+            val3_f32.ir_value(loc=loc, ip=ip),
+        ],
+        "{ .reg .b32 p0,p1; .reg .b16 h0,h1,h2,h3; .reg .f32 v0,v1,v2,v3;"
+        " cvt.rn.satfinite.bf16x2.f32 p0, $2, $1;"
+        " cvt.rn.satfinite.bf16x2.f32 p1, $4, $3;"
+        " mov.b32 {h0,h1}, p0; mov.b32 {h2,h3}, p1;"
+        " cvt.f32.bf16 v0, h0; cvt.f32.bf16 v1, h1;"
+        " cvt.f32.bf16 v2, h2; cvt.f32.bf16 v3, h3;"
+        " red.relaxed.gpu.global.add.v4.f32 [$0], {v0,v1,v2,v3}; }",
+        "l,f,f,f,f",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+        loc=loc,
+        ip=ip,
+    )
+
+
+@dsl_user_op
 def scatter_store_bf16x2_to_f32(addr: Int64, val0_f32, val1_f32, *, loc=None, ip=None):
     """Private route output: identical saturated BF16 contribution, no atomic.
 

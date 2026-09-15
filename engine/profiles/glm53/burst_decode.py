@@ -110,8 +110,15 @@ class BurstDecode(AsyncDecode):
         return buffer.view(-1)[:math.prod(shape)].view(shape)
 
     def reserve_steps(self, seq):
+        from engine.base.sampling_options import needs_device_policy
         e = self.e
         ends = e.ends.get(seq, e.eos)
+        opts = e.options.get(seq, {})
+        if (needs_device_policy(opts, getattr(e, "min_new", {}).get(seq, 0), e._generated_count(seq))
+                or seq in getattr(e, "lps", {})):
+            # Stateful sampling uses the ordinary ahead-of-host chain. The
+            # existing four-iteration capture owns only the plain greedy policy.
+            return 1
         return (self.iterations if e.limits[seq][1] <= 0 and len(ends) <= self.END_IDS
                 and not e.options.get(seq, {}).get("_host_stop") else 1)
 
@@ -131,7 +138,7 @@ class BurstDecode(AsyncDecode):
                  top_p=torch.ones(n, device=dev), alive=torch.ones(n, dtype=torch.bool, device=dev),
                  ids=torch.zeros(n*t, dtype=torch.int64, device=dev),
                  drafts=torch.zeros(n, t-1, dtype=torch.int64, device=dev),
-                 stochastic=False, qcand=None, qprob=None, draws=None)
+                 stochastic=False, qcand=None, qprob=None, draws=None, sampling=None)
         b["seqs"].copy_(torch.arange(n, device=dev))
         b["real_slot"].copy_(b["seqs"] + 1)
         b["slot"].copy_(b["real_slot"])
