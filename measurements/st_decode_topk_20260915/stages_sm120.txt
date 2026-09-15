@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "C:\Users\user\AppData\Local\Temp\claude\C--Users-user-Downloads-github-stkernel--claude-worktrees-heuristic-pare-a5e502\d9ca3501-28f4-4b19-ae8c-bf326977af24\scratchpad\stages.py", line 98, in <module>
+    main()
+  File "C:\Users\user\AppData\Local\Temp\claude\C--Users-user-Downloads-github-stkernel--claude-worktrees-heuristic-pare-a5e502\d9ca3501-28f4-4b19-ae8c-bf326977af24\scratchpad\stages.py", line 71, in main
+    built = [build(s) for s in stages]
+             ^^^^^^^^
+  File "C:\Users\user\AppData\Local\Temp\claude\C--Users-user-Downloads-github-stkernel--claude-worktrees-heuristic-pare-a5e502\d9ca3501-28f4-4b19-ae8c-bf326977af24\scratchpad\stages.py", line 43, in build
+    assert old in body, stage
+           ^^^^^^^^^^^
+AssertionError: sweep

@@ -21,6 +21,7 @@ import time
 MODULES = (("dense", "engine.kernels.dense", "build"),
            ("mla", "engine.kernels.mla", "_build"),
            ("prefill-topk", "engine.kernels.prefill_topk", "_build"),
+           ("decode-topk", "engine.kernels.decode_topk", "_build"),
            ("mapped-staging", "engine.kernels.mapped_staging", "build"),
            ("bounded-graph", "engine.kernels.bounded_graph", "build"),
            ("decode-queue", "engine.kernels.decode_queue", "build"))

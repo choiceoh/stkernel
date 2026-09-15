@@ -119,8 +119,12 @@ class Fixture:
 
 def arms(joined_only=False):
     from engine.profiles.glm53.net import Glm53Net
-    table = {'control': lambda *a: Glm53Net._select_rows(*a, joined=False),
-             'joined': lambda *a: Glm53Net._select_rows(*a)}
+    table = {'control': lambda *a: Glm53Net._select_rows(*a, joined=False, native=False),
+             'joined': lambda *a: Glm53Net._select_rows(*a, native=False),
+             # the shipped path: joined rows, and the horizon mask + top-k as one CUDA launch
+             # (engine/kernels/decode_topk). `native=False` above is its same-build control.
+             'fused': lambda *a: Glm53Net._select_rows(*a),
+             'fused_rows': lambda *a: Glm53Net._select_rows(*a, joined=False)}
     if not joined_only:
         table.update(rows_cat=rows_cat, wide=wide)
     return table

@@ -1,0 +1,4 @@
+NVIDIA GeForce RTX 5050 SMs=20 smem/block optin=101376
+
+== set equality vs masked torch.topk ==
+  mismatched rows: 0 of 25920
