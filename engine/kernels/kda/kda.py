@@ -862,6 +862,10 @@ class FusedRMSNormGated(nn.Module):
         for num_stages in [2, 3, 4]
     ],
     key=["BC", "AUTOTUNE_REGIME"],
+    # The choice is kept on disk (TRITON_CACHE_DIR, keyed by Triton, target, source, configs and tuning key): every
+    # launchable config of the GLM-5.3 prefill lane's autotuners gives the same bytes (probes/kda_autotune_exact.py),
+    # and re-benchmarking them cost every boot ~11 s at its first 128-token prefill.
+    cache_results=True,
 )
 @triton.jit(do_not_specialize=["T", "AUTOTUNE_REGIME"])
 def chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter(
@@ -969,6 +973,7 @@ def chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter(
 @triton.autotune(
     configs=[triton.Config({}, num_warps=num_warps) for num_warps in [1, 2, 4, 8]],
     key=["BK", "BT", "AUTOTUNE_REGIME"],
+    cache_results=True,                     # kept on disk, like chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter's
 )
 @triton.jit(do_not_specialize=["T", "AUTOTUNE_REGIME"])
 def chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_intra(
@@ -1172,6 +1177,7 @@ def chunk_kda_scaled_dot_kkt_fwd(
         "IS_VARLEN",
         "AUTOTUNE_REGIME",
     ],
+    cache_results=True,                     # kept on disk, like chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter's
 )
 @triton.jit(do_not_specialize=["T", "AUTOTUNE_REGIME"])
 def recompute_w_u_fwd_kernel(
@@ -1377,6 +1383,7 @@ def recompute_w_u_fwd(
         for num_stages in [2, 3, 4]
     ],
     key=["BT", "AUTOTUNE_REGIME"],
+    cache_results=True,                     # kept on disk, like chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter's
 )
 @triton.jit(do_not_specialize=["T", "AUTOTUNE_REGIME"])
 def chunk_gla_fwd_kernel_o(
@@ -1543,6 +1550,7 @@ def chunk_gla_fwd_o_gk(
         for num_warps in [2, 4, 8]
     ],
     key=["H", "D", "BT", "IS_VARLEN", "AUTOTUNE_REGIME"],
+    cache_results=True,                     # kept on disk, like chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter's
 )
 @triton.jit(do_not_specialize=["T", "AUTOTUNE_REGIME"])
 def kda_gate_cumsum_fwd_kernel(

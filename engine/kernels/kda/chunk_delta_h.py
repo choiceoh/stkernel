@@ -41,6 +41,9 @@ _CHUNK_DELTA_H_NUM_STAGES = [2, 3] if torch.version.hip else [2, 3, 4]
     ],
     key=["H", "K", "V", "BT", "AUTOTUNE_REGIME", "HAS_MARKS"],
     use_cuda_graph=use_cuda_graph,
+    # kept on disk (TRITON_CACHE_DIR): every launchable config gives the same bytes (probes/kda_autotune_exact.py);
+    # four never launch on GB10 (shared memory) and the benchmark never picks them
+    cache_results=True,
 )
 @triton.jit(do_not_specialize=["T", "AUTOTUNE_REGIME", "N_AT"])
 def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(

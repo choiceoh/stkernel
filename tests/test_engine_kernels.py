@@ -152,6 +152,29 @@ class KernelPackageTests(unittest.TestCase):
                 self.assertTrue(record["local_modifications"])
                 self.assertNotEqual(record["local_sha256"], record["sha256"])
 
+    def test_the_prefill_kda_autotuners_keep_their_choice_on_disk_and_no_other_does(self):
+        """cache_results only where probes/kda_autotune_exact.py judged every launchable config bit exact on the GLM-5.3
+        prefill lane's boot shapes (2026-09-15); an autotuner the lane does not reach keeps re-benchmarking."""
+        reached = {("kda.py", "chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter"),
+                   ("kda.py", "chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_intra"),
+                   ("kda.py", "recompute_w_u_fwd_kernel"), ("kda.py", "chunk_gla_fwd_kernel_o"),
+                   ("kda.py", "kda_gate_cumsum_fwd_kernel"),
+                   ("chunk_delta_h.py", "chunk_gated_delta_rule_fwd_kernel_h_blockdim64"),
+                   ("solve_tril.py", "merge_16x16_to_64x64_inverse_kernel")}
+        kept, tuned = set(), set()
+        for path in (KERNELS / "kda").glob("*.py"):
+            for node in ast.parse(path.read_text()).body:
+                if not isinstance(node, ast.FunctionDef):
+                    continue
+                for decorator in node.decorator_list:
+                    if isinstance(decorator, ast.Call) and ast.unparse(decorator.func) == "triton.autotune":
+                        tuned.add((path.name, node.name))
+                        options = {k.arg: k.value for k in decorator.keywords}
+                        if "cache_results" in options and ast.literal_eval(options["cache_results"]) is True:
+                            kept.add((path.name, node.name))
+        self.assertTrue(reached <= tuned, sorted(reached - tuned))
+        self.assertEqual(kept, reached)
+
     def test_strided_kda_guard_tracks_the_ported_norm_source(self):
         tree = ast.parse((KERNELS / "kda/kda.py").read_text())
         assignment = next(n for n in tree.body if isinstance(n, ast.Assign)
