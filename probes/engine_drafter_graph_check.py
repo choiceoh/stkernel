@@ -1,7 +1,7 @@
 """Real DFlash2 weights: proposal and accepted-prefix graph equivalence.
 
-Target embedding/head use rank 0 arithmetic in isolation. This checks the
-drafter implementation and cache ownership, not full-model acceptance.
+Target embedding/head use this node's rank arithmetic in isolation. This checks
+the drafter implementation and cache ownership, not full-model acceptance.
 """
 import argparse
 import json
@@ -12,7 +12,7 @@ from engine.base.instruments import Recorder
 from engine.profiles.glm53 import drafter as drafter_mod, facts
 from engine.profiles.glm53.boot import build
 from engine.profiles.glm53.lanes import served
-from probes.engine_decode_graph_check import IsolatedRank
+from probes.engine_decode_graph_check import IsolatedRank, rank_on_this_node
 
 
 def unpadded_attention(drafter, layer, x, positions, ring, context):
@@ -53,6 +53,7 @@ def main():
     ap.add_argument("--drafter-dir", default=str(drafter_mod.DRAFTER))
     args = ap.parse_args()
     torch.manual_seed(19)
+    IsolatedRank.rank = rank_on_this_node(args.ranks)   # a node holds its own rank file only (srv4: rank3of4)
     _, _, caches, engine, _ = build(IsolatedRank(), [0, 3], served(), args.ranks, .25, 2,
                                     True, Recorder("draft-graph"), ckpt_meta=args.ckpt_meta,
                                     drafter_dir=args.drafter_dir)
@@ -76,9 +77,10 @@ def main():
             error = ((oracle.float()-padded.float()).abs().max()/oracle.float().abs().max()).item()
             assert torch.isfinite(padded).all() and error <= .01, (position, layer, error)
             attention_error = max(attention_error, error)
-        anchor = torch.full((1,), 1234, device="cuda", dtype=torch.int64)
+        token = drafter.target.rank * drafter.target.vp + 1234             # inside this rank's vocabulary shard
+        anchor = torch.full((1,), token, device="cuda", dtype=torch.int64)
         expected = drafter.propose_tensor(anchor, position, ring).clone()
-        actual = drafter.decode_graphs.propose(1234, position, ring).clone()
+        actual = drafter.decode_graphs.propose(token, position, ring).clone()
         same = torch.equal(expected, actual)
         row = dict(context=position, slot=slot, proposal_equal=same,
                    unpadded_fp64_attention_relative=attention_error,
