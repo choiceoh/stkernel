@@ -1,0 +1,23 @@
+fleet: held by DEAD auxab2-fix-0915 [boot] (pid 3194387@srv2, since 13:24, est 45m, drafterab measurement fix2 (draft selector study, debug commit))
+lease: unreadable
+single (GB10 on srv4 beside production): python3: can't open file '/home/choiceoh/bench/fleet_single.py': [Errno 2] No such file or directory -- but the fleet boot auxab2-fix-0915 holds this box too
+legacy: 0 bench/boot procs, 0 requests in flight
+  audit: unreadable (ModuleNotFoundError)
+queue (6):
+  1. c2moe-cells3-0915 [single] (since 12:57, est 25m, expect ~3m, ETA ~14:09) C=2 MoE experts on a13b361a (main 34751523): w13 chunk 512 vs 256 noise-controlled exactness + B/A/A/B x4 warm/evicted single/3-layer chain at C=2 two-requests/independent and C=1; short-prefill static rows 12/32: t over 256, M16 reform for every static row count over 512/256 (single GPU, no boot)
+  2. c1pack-grid-a55c [single] (since 13:22, est 5m, expect ~5m, ETA ~14:12) C1 input-pack exact bytes and same-build consumer B/A/A/B; CPU compiled
+  3. dgraph-rank-0915 [single] (since 12:53, est 20m, expect ~20m, ETA ~14:17) drafter graph check on 309a85b6, rank 3 isolated: per-query sliding window vs FP64 oracle at contexts 2047/2048/2057, eager vs graph proposals, stock ring = window
+  4. megagate-m2e-0915 [single] (since 12:59, est 25m, expect ~25m, ETA ~14:37) Mega Gate M2e: one-launch native router variants (K slices 1/2/4/8, K rotation, K-major swizzled gate pack) vs served tensor-core router: ids, weights, tied rows, poisoned replay, B/A/A/B at 8/16 rows; single GPU beside production
+  5. moe-maturity-sync-a2bc [single] (since 13:26, est 5m, expect ~5m, ETA ~15:02) ST kernel maturity: current C1/C2 SF6 synchronization, same-pack numerics/replay and B/A/A/B; single GB10, no model boot
+  6. kda-autotune-0915 [single] (since 13:27, est 30m, expect ~30m, ETA ~15:07) boot accel: KDA prefill autotune cost and config bit-exactness (single GB10, no boot)
+  marker 13:24 FLEET-held-by-auxab2-fix-0915.done
+  marker 11:08 FLEET-held-by-alignprod.done
+python3: can't open file '/home/choiceoh/bench/fleet_pause.py': [Errno 2] No such file or directory
+log:
+  2026-09-15_13:27:26 request kda-autotune-0915 est=30m boot accel: KDA prefill autotune cost and config bit-exactness (single GB10, no boot) [single]
+  2026-09-15_13:27:27 hold refused (single): the fleet boot auxab2-fix-0915 holds this box too; kda-autotune-0915 waits
+  2026-09-15_13:37:50 request c1pack-full-v4-a55c est=75m C1 pack full TP4 adoption vs 5871c559; component gate first [boot]
+  2026-09-15_13:37:51 hold refused: srv2: st-kernel-maturity-vec4-compile-a2bc Up 16 seconds; lease: queue queue/auxab2-fix-0915 on srv2 since 2026-09-15 13:24:04 (handed from auxab2-main-0915): phase=handed over, running=1, served=21, steps=11651, waiting=0; 10.10.10.1: st-g; c1pack-full-v4-a55c waits (a queue holder is not asked)
+python3: can't open file '/home/choiceoh/bench/fleet_idle.py': [Errno 2] No such file or directory
+production: unknown (ModuleNotFoundError) (health 000)
+deployed: 8d58020ab5a9
