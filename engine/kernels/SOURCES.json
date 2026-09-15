@@ -351,7 +351,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
       "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
       "origin": "repository",
-      "local_sha256": "a0ce1541f95a0290bf293d849ce3bb748278ddf94450d9acb808d7b2b3b40746",
+      "local_sha256": "ec40f2d554f6e82023e2274b6376b2e6326b1a0c076ef8e98bcb85ddf0dc5479",
       "local_modifications": [
         "SM121 integer warp max reduction",
         "Cluster-local MLA split reduction with reused shared memory",
@@ -364,7 +364,8 @@
         "2026-09-14 CUDA 13.2: packed native E4M3x2 to BF16x2 widening in decode and strided prefill; preserve query quantization and accumulation order.",
         "2026-09-14 tree MLA: optional canonical/private FP8 banks with signed node addresses; same split/cluster math and unchanged ordinary machine instructions under CUDA 13.2.86. GPU execution remains unmeasured.",
         "2026-09-14 fleet: the native E4M3x2 widening goes back to the half bridge. On CUDA 13.2.1 a 129,784-token prompt took 54.7/50.9 s to its first token with it and 38.5/37.3 s with the bridge (37.5-39.1 s before the migration); arithmetic unchanged.",
-        "2026-09-14 CUDA 13.2: native add.u8x4 replaces __vadd4 in W4A8 LUT expansion; preserve FP8/BF16 rounding and the restored MLA half bridge."
+        "2026-09-14 CUDA 13.2: native add.u8x4 replaces __vadd4 in W4A8 LUT expansion; preserve FP8/BF16 rounding and the restored MLA half bridge.",
+        "2026-09-15 sm_120 check build: mk_add_u8x4 and the ldmatrix.trans.b8 site each gain an #else for __CUDA_ARCH__ < 1210 -- __vadd4 for the first, the file's own mla_e4m3x2_strided form for the second. The sm_121a branch is untouched and its PTX is byte-identical to before; the layouts are measured against a CPU reference in probes/sm120_b_fragment_check.cu."
       ]
     },
     "mla/__init__.py": {
