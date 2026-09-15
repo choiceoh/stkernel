@@ -6,9 +6,9 @@ import torch
 
 
 class RouterResidencyTests(unittest.TestCase):
-    def test_native_router_binds_the_checkpoint_without_a_resident_conversion(self):
+    def test_native_router_reads_one_budgeted_fp32_copy_on_each_rank(self):
         from types import SimpleNamespace
-        from unittest import mock
+        from engine.base.arena import Arena
         from engine.profiles.glm53.net import Glm53Net
         from engine.profiles.glm53.specs import layer_specs, CK
         from tests.test_engine_glm53 import tiny_facts
@@ -21,13 +21,38 @@ class RouterResidencyTests(unittest.TestCase):
             net = Glm53Net(f, SimpleNamespace(rank=rank, world_size=4), SimpleNamespace(rmsnorm=None, swiglu=None), [2])
             net.p = {spec.name: spec.build(source, rank, 4)}
             original = net.p[spec.name]
-            with mock.patch.object(torch.Tensor, 'copy_', side_effect=AssertionError('no router copy')):
-                net.prepare_routers()
+            self.assertEqual(net.router_nbytes(), weight.numel() * 4)
+            arena = Arena(net.router_nbytes(), device='cpu')
+            net.prepare_routers(arena)
+            self.assertEqual(arena.remaining, 0)
+            resident = net._router_weights[2]
+            self.assertEqual(resident.dtype, torch.float32)
+            self.assertEqual(resident.untyped_storage().data_ptr(), arena.buf.data_ptr())
+            self.assertEqual(arena.regions[0].name, 'router/2')
+            torch.testing.assert_close(resident, weight.float(), rtol=0, atol=0)
             self.assertEqual(net._router_layers, {2})
             self.assertIs(net.p[spec.name], original)
             torch.testing.assert_close(original, weight, rtol=0, atol=0)
             with self.assertRaises(RuntimeError):
-                net.prepare_routers()
+                net.prepare_routers(arena)
+
+    def test_router_memory_is_replicated_and_subtracted_from_each_ranks_budget(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from engine.profiles.glm53 import budget, facts
+        from engine.profiles.glm53.net import Glm53Net
+        from tests.test_engine_kernel_shape import GLM53_TEXT_CONFIG
+        f = facts.architecture(GLM53_TEXT_CONFIG)
+        net = SimpleNamespace(F=f, layers=range(f.layers))
+        nbytes = Glm53Net.router_nbytes(net)
+        self.assertEqual(nbytes, 189 * 2**20)
+        with patch.object(budget.facts, 'load', return_value=f):
+            args = dict(kv_gib=8.73, max_seqs=4, box_gib=121.6, drafter_dir=None)
+            plain = budget.budget(**args)
+            resident = budget.budget(**args, router_bytes=nbytes)
+        line = next(line for line in resident.lines if line.name == 'resident FP32 routers')
+        self.assertEqual(line.gib, nbytes / 2**30)
+        self.assertAlmostEqual(plain.kv_gib - resident.kv_gib, nbytes / 2**30)
 
 
 @unittest.skipUnless(torch.cuda.is_available(), 'native fused draft write requires CUDA')

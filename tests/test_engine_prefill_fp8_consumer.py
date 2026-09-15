@@ -84,7 +84,7 @@ class PrefillConsumerTests(unittest.TestCase):
         from engine.kernels.glm_pointwise import route_weights
         from engine.modules.prefill_packets import PacketBatch, PacketGeometry
         torch.manual_seed(895)
-        gate = (torch.randn(288, 4096, device='cuda') / 64).bfloat16()
+        gate = (torch.randn(288, 4096, device='cuda') / 64).bfloat16().float()
         bias = torch.linspace(-.1, .1, 288, device='cuda')
         for rows in (8193, 8194, 8195, 9216, 32768):
             g = PacketGeometry(rows, (rows+3)//4)
@@ -113,7 +113,7 @@ class PrefillConsumerTests(unittest.TestCase):
         from engine.kernels.glm_pointwise import route_weights
         from engine.modules.prefill_packets import PacketBatch, PacketGeometry
         g = PacketGeometry(8193, 2049, routed=True)
-        gate = torch.zeros((288, 4096), device='cuda', dtype=torch.bfloat16)
+        gate = torch.zeros((288, 4096), device='cuda', dtype=torch.float32)
         bias = torch.zeros(288, device='cuda')
         plain, routed, decoded = [], [], []
         for rank in range(4):
@@ -146,6 +146,20 @@ class PrefillConsumerTests(unittest.TestCase):
                    quantize_gather(torch.cat(plain), g.local_rows, real_rows=g.rows))
         with self.assertRaises(ValueError):
             quantize_gather(batch.received, g.local_rows, real_rows=g.rows)
+
+    def test_sender_fp32_projection_preserves_full_prefill_routes(self):
+        from engine.kernels.prefill_router import router_logits, router_shard_logits
+        from engine.kernels.glm_pointwise import route_weights
+        torch.manual_seed(895)
+        gate = (torch.randn(288, 4096, device='cuda') / 64).bfloat16().float()
+        bias = torch.linspace(-.1, .1, 288, device='cuda')
+        for rows in (8193, 9216, 32768):
+            local = (rows + 3) // 4
+            x = torch.randn(4 * local, 4096, device='cuda', dtype=torch.bfloat16)
+            full = router_logits(x[:rows], gate)
+            shards = torch.cat([router_shard_logits(part, gate) for part in x.split(local)])[:rows]
+            self.exact((shards,), (full,))
+            self.exact(route_weights(shards, bias, 8, 2.5), route_weights(full, bias, 8, 2.5))
 
 
 if __name__ == "__main__":

@@ -159,8 +159,9 @@ class Glm53Net:
         self.dense = {}
         self.shared_mlp = {}
         self.shared_overlap = None
-        self._router_layers = None                         # None until native BF16 router bindings are validated
-        self._router_tensorcore = set()
+        self._router_layers = None                         # None until every native FP32 router is resident
+        self._router_weights = {}
+        self._router_fp32 = set()
         self._decode_pairs = {}
         self.decode_fastpath_rows = ()
         self.decode_pairs_executed = set()
@@ -240,12 +241,12 @@ class Glm53Net:
                 self._packet_experts[L] = partial(self.lanes.moe_packets, **args)
                 self._packet_capabilities[L] = partial(self.lanes.moe_packets_supported, **args)
 
-    def prepare_routers(self):
-        """Validate native bindings; tensor cores read BF16 rank weights with FP32 output.
+    def router_nbytes(self):
+        """Replicated FP32 gates, read by every native decode and prefill router."""
+        return sum(self.F.experts * self.F.hidden * 4 for L in self.layers if self.F.is_moe(L))
 
-        Widening these checkpoint values adds no weight information. Native
-        routing needs no resident FP32 copy or auxiliary arena reservation.
-        """
+    def prepare_routers(self, arena):
+        """Convert checkpoint gates once into the declared FP32 arena region."""
         if self._router_layers is not None:
             raise RuntimeError('router bindings were already prepared')
         layers = {layer for layer in self.layers if self.F.is_moe(layer)}
@@ -253,6 +254,11 @@ class Glm53Net:
             weight = self.p[f'L{layer}.moe.gate']
             if weight.dtype != torch.bfloat16 or weight.shape != (self.F.experts, self.F.hidden):
                 raise ValueError('native router requires BF16 checkpoint weights [experts, hidden]')
+        for layer in sorted(layers):
+            weight = self.p[f'L{layer}.moe.gate']
+            resident = arena.carve(weight.numel() * 4, f'router/{layer}').view(F32).view_as(weight)
+            resident.copy_(weight)
+            self._router_weights[layer] = resident
         self._router_layers = layers
 
     def decode_projection_nbytes(self):
@@ -950,26 +956,20 @@ class Glm53Net:
         """noaux_tc: sigmoid scores fp32, select by score + bias, weight by the
         raw scores renormalised, times routed_scaling_factor.
 
-        Native execution projects every width on the tensor cores (BF16 checkpoint operands, FP32
-        accumulation and output -- the products are exact either way, only the summation order differs
-        from the FP32 SGEMM, and tests/test_engine_decode_seven pins the selection equal on tied experts
-        at 1..2,304 rows). PR #789 opened this path for the seven-row decode step alone; the 09-13 chunk
-        profile (measurements/c4_scaling_20260913) found the FP32 path it left behind costing 13 µs a
-        token in prefill (`magma_sgemmEx` 121 ms + the `x.float()` copy per 9,216-token chunk) and 1.7 ms
-        of a four-row decode step (cuBLAS SIMT SGEMM at M=28)."""
-        F, p, n = self.F, self.p, f"L{L}.moe."
-        logits = None
-        if 8192 < x.shape[0] <= 32768:
-            from engine.kernels.prefill_router import router_logits
-            logits = router_logits(x, p[n + "gate"])
-        if logits is None:
-            if self._router_layers is not None:
-                from engine.kernels.glm_pointwise import router_logits
-                logits = router_logits(x, p[n + "gate"])
-                self._router_tensorcore.add(L)
+        Decode and every prefill width use IEEE FP32 operands, accumulation
+        and logits. Native execution reads the resident gate directly; the
+        unprepared reference converts its checkpoint gate at the call site."""
+        if self._router_layers is not None:
+            from engine.kernels.glm_pointwise import router_logits
+            logits = router_logits(x, self._router_weights[L])
+            self._router_fp32.add(L)
+        else:
+            gate = self.p[f'L{L}.moe.gate'].float()
+            if x.is_cuda:
+                from engine.kernels.router_fp32 import router_logits
+                logits = router_logits(x, gate)
             else:
-                gate = p[n + "gate"]
-                logits = x.float() @ gate.float().T
+                logits = x.float() @ gate.T
         return self._select_routes(L, logits)
 
     def _select_routes(self, L, logits):
@@ -1018,7 +1018,12 @@ class Glm53Net:
 
     def _sender_routes(self, L, roundtrip):
         from engine.kernels.prefill_router import router_shard_logits
-        return self._select_routes(L, router_shard_logits(roundtrip, self.p[f'L{L}.moe.gate']))
+        gate = (self._router_weights[L] if self._router_layers is not None
+                else self.p[f'L{L}.moe.gate'].float())
+        logits = router_shard_logits(roundtrip, gate)
+        if self._router_layers is not None:
+            self._router_fp32.add(L)
+        return self._select_routes(L, logits)
 
 
     @operation("moe", layer_arg=1)

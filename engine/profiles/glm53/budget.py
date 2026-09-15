@@ -122,7 +122,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
            ckpt: "str | Path" = facts.CKPT, ranks_dir: "str | Path | None" = None, rank: int = 0,
            drafter_dir: "str | Path | None" = drafter_mod.DRAFTER, ledger: "str | Path | None" = None,
            snapshots: "int | None" = None, draft_tp: int = 1, draft_native: "bool | None" = None,
-           projection_bytes: int = 0, tier_enabled: bool = True, kda_state_dtype: "str | None" = None,
+           router_bytes: int = 0, projection_bytes: int = 0, tier_enabled: bool = True, kda_state_dtype: "str | None" = None,
            draft_policy=None, workspace_gib: "float | None" = None,
            prefill_ffn_packets: bool = False) -> Budget:
     """The box, one rank of TP=4. `kv_gib`/`max_seqs` are boot.py's declared values; the table says what they leave.
@@ -182,7 +182,8 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
     m = ledger_measured(ledger)
     ledger_name = Path(ledger).name if isinstance(ledger, (str, Path)) and ledger else "this boot"
     workspace_evidence = ("base/runtime_memory ceiling: activations, graph pools, kernel scratch; the allocator refuses "
-                          "beyond it" + ("" if workspace_gib is None else f"; --workspace-gib {ceiling:g} (profile {WORKSPACE_GIB:g})"))
+                          "beyond it" + ("" if workspace_gib is None else f"; --workspace-gib {ceiling:g} (profile {WORKSPACE_GIB:g})")
+                          + f"; FP32 router promotion up to {chunk*F.hidden*4/2**20:.3f} MiB per full chunk")
     if prefill_ffn_packets:
         from engine.modules.prefill_packets import PacketGeometry, ffn_packet_rows
         if ffn_packet_rows(chunk):
@@ -191,6 +192,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
                 f"; packet FFN: {packet['received_bytes']/2**20:.3f} MiB received owner replaces "
                 f"{packet['replaced_bf16_bytes']/2**20:.3f} MiB BF16 input; "
                 f"{packet['sender_roundtrip_bytes']/2**20:.3f} MiB sender roundtrip ends before gather; "
+                f"{packet['sender_router_fp32_bytes']/2**20:.3f} MiB sender FP32 router input also ends before gather; "
                 f"{packet['shared_q_scale_bytes']/2**20:.3f} MiB shared Q/scales remain; "
                 "same eager MoE workspace and 32 KiB/CTA shared input stage; ceiling unchanged pending ledger")
         else:
@@ -233,6 +235,8 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
         Line("runtime floor (CUDA ctx + NCCL 16ch)", floor_gib, floor_source, floor_evidence),
         *( (tenants_line,) if tenants_line is not None else () ),
         Line("weights (this rank, TP=4)", weights_gib, READ, weights_evidence),
+        Line("resident FP32 routers", router_bytes / GIB, READ,
+             "net.router_nbytes: BF16 checkpoint gates converted once into the arena; all native routers read FP32"),
         Line("resident decode projection pairs", projection_bytes / GIB, READ, "net.decode_projection_nbytes: indexer pairs copied into the arena after smoothing"),
         Line("drafter weight reservation", drafter_gib, READ, draft_evidence),
         Line("vision tower (BF16, replicated)", vision_gib, READ, vision_evidence),

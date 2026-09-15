@@ -50,26 +50,32 @@ class VerificationBoundaryTests(unittest.TestCase):
 
 @unittest.skipUnless(torch.cuda.is_available(), 'requires CUDA')
 class KernelViewTests(unittest.TestCase):
-    def test_native_router_preparation_allocates_nothing_and_preserves_routes(self):
+    def test_native_router_reads_the_resident_fp32_weight_and_preserves_routes(self):
         from types import SimpleNamespace as NS
         from engine.kernels.glm_pointwise import router_logits, route_weights
         from engine.profiles.glm53.net import Glm53Net
+        from engine.base.arena import Arena
         net = object.__new__(Glm53Net)
         net.F = NS(experts=288, hidden=4096, is_moe=lambda layer: True, topk_experts=8, routed_scale=2.5)
         net.layers = [3]
         net.lanes = NS(route_weights=route_weights)
-        net._router_layers, net._router_tensorcore = None, set()
+        net._router_layers, net._router_weights, net._router_fp32 = None, {}, set()
         generator = torch.Generator(device='cuda').manual_seed(91523)
         net.p = {'L3.moe.gate': (torch.randn(288, 4096, device='cuda', generator=generator)*.02).bfloat16(),
                  'L3.moe.bias': torch.zeros(288, device='cuda')}
         x = torch.randn(8, 4096, device='cuda', generator=generator).bfloat16()
-        expected = route_weights(router_logits(x, net.p['L3.moe.gate']), net.p['L3.moe.bias'], 8, 2.5)
+        expected = route_weights(router_logits(x, net.p['L3.moe.gate'].float()), net.p['L3.moe.bias'], 8, 2.5)
+        arena = Arena(net.router_nbytes(), expandable=False)
         before = torch.cuda.memory_allocated()
-        net.prepare_routers()
+        net.prepare_routers(arena)
+        self.assertEqual(arena.remaining, 0)
         self.assertEqual(torch.cuda.memory_allocated(), before)
+        # Poison the original binding: projection must actually read the FP32
+        # resident, not allocate an unused copy and keep taking a BF16 path.
+        net.p['L3.moe.gate'].zero_()
         for got, want in zip(net.route(3, x), expected):
             torch.testing.assert_close(got, want, rtol=0, atol=0)
-        self.assertEqual(net._router_tensorcore, net._router_layers)
+        self.assertEqual(net._router_fp32, net._router_layers)
 
     def test_mixed_greedy_matches_vocabulary_argmax_for_zeros_and_nans(self):
         from engine.modules.vocab import argmax

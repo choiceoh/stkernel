@@ -501,6 +501,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             if need <= budget:
                 budget -= need
                 calib_bytes += need
+    router_bytes = net.router_nbytes() if execution == "native" else 0
     projection_bytes = net.decode_projection_nbytes() if execution == "native" else 0
     draft_bytes = total_bytes(dspecs)
     if D and execution == "native":
@@ -509,7 +510,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         recorder.gauge("drafter_source_bytes", total_bytes(dspecs))
         recorder.gauge("drafter_resident_bytes", draft_bytes)
         recorder.gauge("drafter_arena_saved_bytes", total_bytes(dspecs) - draft_bytes)
-    arena_bytes = (total_bytes(specs) + draft_bytes + total_bytes(vspecs) + projection_bytes + 256 * (len(specs) + len(dspecs) + len(vspecs) + 64)
+    arena_bytes = (total_bytes(specs) + draft_bytes + total_bytes(vspecs) + router_bytes + projection_bytes
+                   + 256 * (len(specs) + len(dspecs) + len(vspecs) + len(net.layers) + 64)
                    + cache_layout.nbytes(nb, max_seqs) + snapshots * snapshot_bytes + stage_bytes(F, net.layers, max_seqs, draft_shape) + calib_bytes)
     memory = None
     redeclare = None                    # the same table, re-runnable once a ledger exists (45차 §51)
@@ -572,7 +574,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                             snapshots=snapshots, tier_enabled=bool(tier_dir), kda_state_dtype=F.kda_state_dtype,
                             prefill_ffn_packets=bool(execution_plan is not None and execution_plan.prefill_ffn_packets),
                             draft_tp=comm.world_size if execution == "native" else 1,
-                            draft_native=execution == "native", projection_bytes=projection_bytes,
+                            draft_native=execution == "native", router_bytes=router_bytes, projection_bytes=projection_bytes,
                             draft_policy=draft_policy, workspace_gib=workspace_gib)
         # With THIS boot's floor, not vLLM's 40th-boot constant. RuntimeMemory measured it
         # seconds ago in __init__, and this print is the moment anyone decides how much KV to
@@ -609,8 +611,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         if execution == "native":
             from engine.kernels.prefill_collectives import PrefillCollectives
             with recorder.phase("prepare native execution"):
-                net.prepare_routers()
-                recorder.gauge('router_resident_bytes', 0)    # native projection reads the already-budgeted rank weights
+                net.prepare_routers(arena)
+                recorder.gauge('router_resident_bytes', router_bytes)
                 net.prepare_dense(store, consume_weights=True)
                 capture_rows = (tuple(8 * n for n in range(1, max_seqs + 1))
                                 if execution_plan is not None and execution_plan.decode_fastpaths else None)
@@ -928,7 +930,7 @@ def native_execution_report(net, drafter):
                  mhc=len(net.mhc.executed),
                  shared_mlp=sum(p.executed for p in net.shared_mlp.values()),
                  shared_overlap=bool(net.shared_overlap and net.shared_overlap.executed),
-                 router_tensorcore=len(net._router_tensorcore),
+                 router_fp32=len(net._router_fp32),
                  prefill_collectives=sorted(net.prefill_transport.executed),
                  prefill_indexer_shards=sorted(getattr(net, 'prefill_indexer_executed', ())),
                  prefill_dense_prefix=sorted(getattr(net, 'prefill_dense_prefix_executed', ())),
@@ -958,7 +960,8 @@ def native_execution_report(net, drafter):
             or (decode_fp8 is not None and not proof['drafter_decode_fp8'])
             or proof['shared_mlp'] != len(net.shared_mlp)
             or (net.shared_mlp and not proof['shared_overlap'])
-            or net._router_layers is None or net._router_tensorcore != net._router_layers
+            or net._router_layers is None or set(net._router_weights) != net._router_layers
+            or net._router_fp32 != net._router_layers
             or not required_prefill.issubset(net.prefill_transport.executed)):
         raise RuntimeError(f'native execution proof is incomplete: {proof}')
     return proof
