@@ -219,7 +219,7 @@ class DrafterTests(unittest.TestCase):
         B = F.k + 1
         for ctx in (3, F.window - 1, F.window, F.window + 5, 5 * F.window + 3):
             with self.subTest(ctx=ctx):
-                ring = torch.zeros(F.layers, 2, F.window + F.block, F.kv_heads, F.head_dim, device=dev)
+                ring = torch.zeros(F.layers, 2, F.window, F.kv_heads, F.head_dim, device=dev)
                 for p in range(max(0, ctx - F.window), ctx):
                     ring[0, 1, p % F.window] = float(p)
                 x = torch.randn(B, F.hidden, device=dev)
@@ -237,7 +237,7 @@ class DrafterTests(unittest.TestCase):
         t = F.k + 1
         slots = torch.tensor([1, 2], device=dev)
         ctx = torch.tensor([F.window + 5, 4], device=dev)
-        field = torch.zeros(4, F.layers, 2, F.window + F.block, F.kv_heads, F.head_dim, device=dev)
+        field = torch.zeros(4, F.layers, 2, F.window, F.kv_heads, F.head_dim, device=dev)
         for slot, c in zip(slots.tolist(), ctx.tolist()):
             for p in range(max(0, c - F.window), c):
                 field[slot, 0, 1, p % F.window] = float(p)
@@ -280,7 +280,6 @@ class DrafterTests(unittest.TestCase):
             if name in packed or name.endswith(("_proj.weight", "kernel_projection.weight")):
                 d.p[name] = None
         d.fast_attention = True
-        field = field[:, :, :, :F.window].contiguous()  # native ring has no SDPA scratch tail
         slots = torch.tensor([2, 1], device=dev)
         ctx = torch.tensor([13, 3], device=dev)
         anchors = torch.tensor([7, 9], device=dev)

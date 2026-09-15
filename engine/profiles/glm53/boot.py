@@ -428,7 +428,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     # reads that shard; reserving the replicated ring would also waste three
     # quarters of every persistent prefix snapshot's drafter state.
     draft_heads = (D.kv_heads // comm.world_size if execution == "native" else D.kv_heads) if D else 0
-    draft_cells = (D.window if execution == "native" else drafter_mod.ring_cells(D)) if D else 0
+    draft_cells = drafter_mod.ring_cells(D) if D else 0
     draft_shape = (D.layers, draft_cells, draft_heads, D.head_dim) if D else None
     cache_layout = layout(F, net.layers, draft_shape)
     bb, sb = cache_layout.block_bytes, cache_layout.slot_bytes

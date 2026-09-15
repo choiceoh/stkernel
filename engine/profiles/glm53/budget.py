@@ -161,8 +161,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
         if draft_tp <= 0 or D.kv_heads % draft_tp:
             raise ValueError("drafter KV heads must split over the declared TP group")
         native = draft_tp > 1 if draft_native is None else draft_native
-        cells = D.window if native else drafter_mod.ring_cells(D)
-        draft_shape = (D.layers, cells, D.kv_heads // draft_tp, D.head_dim)
+        draft_shape = (D.layers, drafter_mod.ring_cells(D), D.kv_heads // draft_tp, D.head_dim)
         if native:
             from engine.profiles.glm53.drafter_storage import nbytes as draft_resident_bytes
             drafter_gib = draft_resident_bytes(D, draft_tp, max_seqs, policy=draft_policy) / GIB

@@ -593,11 +593,11 @@ class Drafter:
 
     def _attn_rows(self, L: int, x: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor, ctx: torch.Tensor,
                    field: torch.Tensor, n: int, t: int, rows_ok=None) -> torch.Tensor:
-        """Each block against its own slot's ring, as one fused attention over the whole field. The rows' queries and
-        block keys go to their slots (the block's keys into the ring's scratch tail, cells window..window+t); the ring
-        is read in storage order -- its keys are rope'd at their positions, so the order of keys is immaterial -- and
-        the cells a slot has not written yet (context shorter than the window) are masked. The heads sharing a kv
-        head are laid out as more queries against it, so no head is repeated in memory."""
+        """Each block against its own slot's ring, as one fused attention over the step's rows. A row reads its slot's
+        ring and then its block's own keys; the ring is read in storage order -- its keys are rope'd at their
+        positions, so the order of keys is immaterial -- and the cells outside the row's sliding window (not written
+        yet, or too far from the query) are masked. The heads sharing a kv head are laid out as more queries against
+        it, so no head is repeated in memory."""
         F, p = self.F, self.p
         q = f"layers.{L}.self_attn."
         if self.fast_attention:
@@ -613,29 +613,25 @@ class Drafter:
             out = attend_rows(qh.view(n, t, heads, D), kh.view(n, t, kv, D), vh.view(n, t, kv, D),
                               field, ctx, slot=slots, layer=L, window=F.window)
             return self.target.comm.all_reduce(self.linear(out.reshape(n*t, heads*D), q + "o_proj.weight", rows_ok))
-        S, W, kv, D, rep = field.shape[0], F.window, F.kv_heads, F.head_dim, F.heads // F.kv_heads
+        W, kv, D, rep = F.window, F.kv_heads, F.head_dim, F.heads // F.kv_heads
         qh = norm_rope(Fn.linear(x, p[q + "q_proj.weight"]).view(n * t, F.heads, D), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
         kh = norm_rope(Fn.linear(x, p[q + "k_proj.weight"]).view(n * t, kv, D), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
         vh = Fn.linear(x, p[q + "v_proj.weight"]).view(n * t, kv, D)
-        field[slots, L, 0, W:W + t] = kh.view(n, t, kv, D)
-        field[slots, L, 1, W:W + t] = vh.view(n, t, kv, D)
         q_rows = qh.view(n, t, kv, rep, D).permute(0, 2, 3, 1, 4).reshape(n, kv, rep * t, D)
-        q_all = torch.zeros(S, kv, rep * t, D, dtype=qh.dtype, device=qh.device).index_copy_(0, slots, q_rows)
-        length = torch.zeros(S, dtype=ctx.dtype, device=ctx.device).index_copy_(0, slots, ctx)
-        cells = torch.arange(W + t, device=ctx.device)
+        keys = torch.cat([field[slots, L, 0, :W], kh.view(n, t, kv, D)], 1).transpose(1, 2)            # [n, kv, W+t, D]
+        values = torch.cat([field[slots, L, 1, :W], vh.view(n, t, kv, D)], 1).transpose(1, 2)
         # A ring cell c holds the newest context position congruent to c (negative: not written yet). DFlash's
-        # window is per query: row j of the block (at length + j) sees positions within window - 1 - j of the
+        # window is per query: row j of the block (at ctx + j) sees positions within window - 1 - j of the
         # anchor. The queries are laid out rep x t, so query i is block row i % t.
-        last = length.view(S, 1) - 1
-        held = last - (last - cells[None, :W]).remainder(W)                                         # [S, W]
+        last = ctx.view(n, 1) - 1
+        held = last - (last - torch.arange(W, device=ctx.device)).remainder(W)                      # [n, W]
         row = (torch.arange(rep * t, device=ctx.device) % t).view(1, rep * t, 1)
-        near = (held[:, None, :] >= 0) & (held[:, None, :] > length.view(S, 1, 1) + row - W)         # [S, q, W]
-        mask = torch.cat([near, torch.ones(S, rep * t, t, dtype=torch.bool, device=ctx.device)], 2).view(S, 1, rep * t, W + t)
-        keys, values = field[:, L, 0, :W + t].transpose(1, 2), field[:, L, 1, :W + t].transpose(1, 2)   # [S, kv, W+t, D], views
+        near = (held[:, None, :] >= 0) & (held[:, None, :] > ctx.view(n, 1, 1) + row - W)            # [n, q, W]
+        mask = torch.cat([near, torch.ones(n, rep * t, t, dtype=torch.bool, device=ctx.device)], 2).view(n, 1, rep * t, W + t)
         fused = sdpa_kernel([SDPBackend.CUDNN_ATTENTION, SDPBackend.EFFICIENT_ATTENTION]) if x.is_cuda else nullcontext()
         with fused:                                                                            # D3: no math fallback on CUDA
-            o = Fn.scaled_dot_product_attention(q_all, keys, values, attn_mask=mask, scale=D ** -0.5)
-        o = o.index_select(0, slots).view(n, kv, rep, t, D).permute(0, 3, 1, 2, 4).reshape(n * t, F.heads * D)
+            o = Fn.scaled_dot_product_attention(q_rows, keys, values, attn_mask=mask, scale=D ** -0.5)
+        o = o.view(n, kv, rep, t, D).permute(0, 3, 1, 2, 4).reshape(n * t, F.heads * D)
         return Fn.linear(o, p[q + "o_proj.weight"])
 
     def block_rows(self, ids: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor, ctx: torch.Tensor,
@@ -868,10 +864,14 @@ class Drafter:
 
 
 def ring_cells(F: DrafterFacts) -> int:
-    """A slot's ring per layer and half: the window's cells, then a scratch tail of block-width cells where the batched
-    attention parks a block's own keys so the fused kernel reads context and block as one contiguous run (45차 §23).
-    The training block bounds a proposal's width (k + 1 <= block, asserted in `load`)."""
-    return F.window + F.block
+    """A slot's ring per layer and half: the window's cells, in native and stock boots alike. Cell c holds the newest
+    context position congruent to c -- the eager paths index it modulo the window, the fused kernels modulo the
+    field's cells, and those agree only while the two are one number. A block's own keys are not filed: the fused
+    kernel reads them from the block's projection and the eager attention appends them to the gathered ring.
+
+    Stock boots used to add a scratch tail of block-width cells where the batched eager attention parked the block's
+    keys (45차 §23); the fused kernels, handed such a field, wrapped at window + block."""
+    return F.window
 
 
 def ring_bytes(F: DrafterFacts) -> int:
