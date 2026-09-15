@@ -16,6 +16,7 @@ def main():
     ap.add_argument('--output', type=Path, required=True)
     ap.add_argument('--forward-pipeline', action='store_true', help='also report the ordered-K and joined-query cubins')
     ap.add_argument('--rows16', action='store_true', help='also report the sixteen-row C=2 cubins')
+    ap.add_argument('--mhc-static', action='store_true', help='also report the two C1 static-tail cubins')
     args = ap.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '' or os.environ.get('NVIDIA_VISIBLE_DEVICES') != 'void':
         raise RuntimeError('this compile requires CUDA hidden')
@@ -54,11 +55,17 @@ def main():
               if re.search(r'mk_gemm_rows16_kernel', b.splitlines()[0])] if args.rows16 else []
     if args.rows16 and len(rows16) != 7:
         raise RuntimeError(f'expected four matrix and three TX output sixteen-row specializations; got {len(rows16)}')
+    static_mhc = [b.strip() for b in re.split(r'(?m)^\s*Function(?:\s+|:)', usage)[1:]
+                  if re.search(r'mk_mhc_(?:ar_kernelILb1ELi4096ELb1E|packets_kernelILb1ELb1E)',
+                               b.splitlines()[0])] if args.mhc_static else []
+    if args.mhc_static and len(static_mhc) != 2:
+        raise RuntimeError(f'expected two packed C1 static-tail specializations; got {len(static_mhc)}')
     assert not torch.cuda.is_initialized()
     result = dict(status='PASS', gpu_used=False, torch=torch.__version__, cuda=torch.version.cuda,
                   cache_key=key, source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
                   flags=flags, new_native_specializations=entries, ordered_specializations=registers,
                   query_specializations=queries, rows16_specializations=rows16,
+                  static_mhc_specializations=static_mhc,
                   scope='production native compile/load and resource usage; not GPU execution or timing')
     args.output.write_text(json.dumps(result, indent=2)+'\n')
     print(json.dumps(result), flush=True)

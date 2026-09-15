@@ -1199,15 +1199,10 @@ __global__ void mk_wide_input_pack_kernel(MKInputPackCtx c) {
     if (lane == 0) c.scales[kb * 32 + row] = scale;
   }
 }
-template <int ROWS = 8>
 __global__ void mk_input_pack_kernel(MKInputPackCtx c) {
-  static_assert(ROWS == 1 || ROWS == 2 || ROWS == 4 || ROWS == 8);
   asm volatile("griddepcontrol.launch_dependents;");
   asm volatile("griddepcontrol.wait;" ::: "memory");
-  // Each warp owns one complete 128-column row. Splitting the eight rows
-  // across CTAs changes neither its reduction nor the consumer's byte layout.
-  const int groups=8/ROWS, kb=blockIdx.x/groups;
-  const int row=(blockIdx.x%groups)*ROWS+(threadIdx.x>>5), lane=threadIdx.x&31;
+  const int row=threadIdx.x>>5, lane=threadIdx.x&31, kb=blockIdx.x;
   float v[4]={}, mx=0;
   if (row<c.m) {
     const uint2 raw=*(const uint2*)(c.x+(size_t)row*c.x_stride+kb*KSTEP+lane*4);
@@ -2005,8 +2000,9 @@ __device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
 }
 
 template <bool BF16_FN, bool AR_CONSUMER = false, int HID = HIDDEN,
-          bool V41 = false, typename Args = MKMhcArgs, bool PACKETS = false>
+          bool V41 = false, typename Args = MKMhcArgs, bool PACKETS = false, bool STATIC_TAILS = false>
 __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
+  static_assert(!STATIC_TAILS || (BF16_FN && AR_CONSUMER && HID == HIDDEN && !V41));
   // Shadows the file-scope NCHUNK; every chunk loop below reads unchanged.
   constexpr int NCHUNK = HID / HCHUNK;
   // Block = (chunk, token group). The chunk's fn slice -- 24 outputs x 4
@@ -2216,10 +2212,19 @@ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
   // blocks, so the wait is bounded), rearm its counter, run p2 / p3 / p4.
   MK_MHC_TS(5);
   for (;;) {
-    if (threadIdx.x == 0) s_tok = (int)atomicAdd(&g_mk_mhc_tail_next, 1u);
-    __syncthreads();
-    const int t = s_tok;
-    if (t >= a.num_tokens) break;
+    int t;
+    if constexpr (STATIC_TAILS) {
+      // C1: 48 resident CTAs = three groups of 16 chunks. Group two
+      // finishes after tokens 2/5 while the other groups process three.
+      // Its first eight CTAs own one tail each. The host checks this shape.
+      t = bid - 2 * NCHUNK;
+      if (t < 0 || t >= 8) break;
+    } else {
+      if (threadIdx.x == 0) s_tok = (int)atomicAdd(&g_mk_mhc_tail_next, 1u);
+      __syncthreads();
+      t = s_tok;
+      if (t >= a.num_tokens) break;
+    }
     if (threadIdx.x == 0) {
       volatile unsigned int* v = &g_mk_mhc_tok_arrive[t];
       MK_SPIN_WAIT(*v < (unsigned int)NCHUNK, 128, "mhc token arrive");
@@ -2241,8 +2246,13 @@ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
     MK_MHC_TS(3);  // (probe) p2 end / p34 start
     mk_mhc_p34_compute<HID, V41>(a, t, s_pmix, tr);  // ends in a __syncthreads
     MK_MHC_TS(4);  // (probe) p34 end
+    if constexpr (STATIC_TAILS) break;
   }
   MK_MHC_TS(6);
+  // Every token's chunk counter was rearmed by its sole tail owner. A
+  // static launch has no shared tail/exit tickets to reset. The next PDL
+  // consumer still waits for completion of this whole grid, including tails.
+  if constexpr (STATIC_TAILS) return;
   // exit ticket: the last block out rearms the tail counter for the next
   // launch (every block has made its final, failing take by then)
   __syncthreads();
@@ -2290,18 +2300,18 @@ __global__ void mk_mhc_bf16_kernel(const MKMhcArgs a) {
   MK_MHC_TS(7);
 }
 
-template <bool BF16_FN, int HID = HIDDEN>
+template <bool BF16_FN, int HID = HIDDEN, bool STATIC_TAILS = false>
 __global__ void mk_mhc_ar_kernel(const MKMhcArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
   MK_MHC_TS(0);
-  mk_mhc_p1_impl<BF16_FN, true, HID>(a, blockIdx.x);
+  mk_mhc_p1_impl<BF16_FN, true, HID, false, MKMhcArgs, false, STATIC_TAILS>(a, blockIdx.x);
   MK_MHC_TS(7);
 }
 
-template <bool BF16_FN>
+template <bool BF16_FN, bool STATIC_TAILS = false>
 __global__ void mk_mhc_packets_kernel(const MKMhcPacketsArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
-  mk_mhc_p1_impl<BF16_FN, true, HIDDEN, false, MKMhcPacketsArgs, true>(a, blockIdx.x);
+  mk_mhc_p1_impl<BF16_FN, true, HIDDEN, false, MKMhcPacketsArgs, true, STATIC_TAILS>(a, blockIdx.x);
 }
 
 // Actual V4.1 currently uses FP32 coefficients and no AR-consumer pack.
@@ -3287,19 +3297,6 @@ void mk_launch(K kernel, int grid, int smem, cudaStream_t stream,
   MK_CHECK_CUDA(cudaLaunchKernelEx(&cfg, kernel, args));
 }
 
-void mk_launch_input_pack(const MKInputPackCtx& c, cudaStream_t stream, int rows_per_cta = 0) {
-  TORCH_CHECK(rows_per_cta == 0 || rows_per_cta == 1 || rows_per_cta == 2 || rows_per_cta == 4 || rows_per_cta == 8,
-              "input pack rows per CTA must be 0, 1, 2, 4 or 8");
-  TORCH_CHECK(!rows_per_cta || c.m == 8, "input pack geometry controls require eight rows");
-  // Same-build probe controls; only the C=1 verification shape changes by default.
-  const int rows = rows_per_cta ? rows_per_cta : (c.m == 8 && c.k <= 4096 ? 2 : 8);
-  const int blocks = c.k / KSTEP;
-  if (rows == 1) mk_launch<32>(mk_input_pack_kernel<1>, blocks*8, 0, stream, c);
-  else if (rows == 2) mk_launch<64>(mk_input_pack_kernel<2>, blocks*4, 0, stream, c);
-  else if (rows == 4) mk_launch<128>(mk_input_pack_kernel<4>, blocks*2, 0, stream, c);
-  else mk_launch(mk_input_pack_kernel<8>, blocks, 0, stream, c);
-}
-
 int g_input_cta_mode = -1;
 int mk_gemm_input_cta_mode() {
   if (g_input_cta_mode < 0) {
@@ -3467,8 +3464,7 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                  const int64_t* out_address = nullptr, bool wide_input = false, bool bound_input = false,
                  const uint8_t* packed_q = nullptr, const float* packed_s = nullptr,
                  bool local_query = false, bool forward_pipeline = false,
-                 const uint8_t* producer_q = nullptr, const float* producer_s = nullptr,
-                 int input_pack_rows = 0) {
+                 const uint8_t* producer_q = nullptr, const float* producer_s = nullptr) {
   set_kernel_attrs();
   if constexpr (DIRECT) set_direct_kernel_attrs();
   MKGemm2Ctx c2{};
@@ -3584,7 +3580,8 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
       auto* q = packed.data_ptr<uint8_t>();
       auto* scales = reinterpret_cast<float*>(q + qbytes);
       c2.input_q = q; c2.input_s = scales;
-      mk_launch_input_pack(MKInputPackCtx{c2.x, q, scales, c2.m, c2.k, c2.x_stride}, stream, input_pack_rows);
+      mk_launch(mk_input_pack_kernel, c2.k / KSTEP, 0, stream,
+                MKInputPackCtx{c2.x, q, scales, c2.m, c2.k, c2.x_stride});
     }
     const int cta=bound_c1 ? 4 : mk_gemm_input_cta_mode();
     if (bound_c1 && forward_pipeline && c2.n_orig!=6416) {
@@ -3622,7 +3619,7 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
 void mk_run_query_pair(torch::Tensor x, std::vector<torch::Tensor> weights,
                        std::vector<torch::Tensor> scales, std::vector<torch::Tensor> rowscales,
                        std::vector<torch::Tensor> outputs, bool local_c1 = true,
-                       bool forward_pipeline = true, int input_pack_rows = 0) {
+                       bool forward_pipeline = true) {
   TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2
               && (x.size(0) == 8 || x.size(0) == 16 || x.size(0) == 24 || x.size(0) == 32)
               && x.size(1) == 1536 && x.stride(1) == 1 && x.stride(0) >= 1536
@@ -3649,7 +3646,6 @@ void mk_run_query_pair(torch::Tensor x, std::vector<torch::Tensor> weights,
   TORCH_CHECK(!outputs[0].is_alias_of(outputs[1]) && !outputs[0].is_alias_of(x)
               && !outputs[1].is_alias_of(x), "query pair outputs must not alias");
   const bool local_query = local_c1 && x.size(0) == 8;
-  TORCH_CHECK(!input_pack_rows || local_query, "input pack geometry controls require the C1 query layout");
   const int packed_rows = local_query ? 8 : 32;
   const int QBYTES = 12 * packed_rows * KSTEP;
   const int SBYTES = 12 * packed_rows * sizeof(float);
@@ -3659,7 +3655,7 @@ void mk_run_query_pair(torch::Tensor x, std::vector<torch::Tensor> weights,
   auto stream = c10::cuda::getCurrentCUDAStream();
   MKInputPackCtx input{(const __nv_bfloat16*)x.data_ptr(), q, s, (int)x.size(0), 1536, x.stride(0)};
   if (local_query)
-    mk_launch_input_pack(input, stream, input_pack_rows);
+    mk_launch(mk_input_pack_kernel, 12, 0, stream, input);
   else
     mk_launch(mk_wide_input_pack_kernel, 12 * ((x.size(0) + 7) / 8), 0, stream, input);
   if (local_query && forward_pipeline) {
@@ -3747,14 +3743,13 @@ void mk_run_gemm_to_slot(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
 // then [k/128 x 8] scales). Sixteen rows: the wide pack the sixteen-row CTA reads
 // ([k/128 x 32 x 128] bytes, then [k/128 x 32] scales). It sizes and checks what a
 // producer-side pack removes from the cell.
-void mk_run_input_pack(torch::Tensor x, torch::Tensor packed, int rows_per_cta = 0) {
+void mk_run_input_pack(torch::Tensor x, torch::Tensor packed) {
   TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2
                   && (x.size(0) == 8 || x.size(0) == 16)
                   && x.size(1) % KSTEP == 0 && x.size(1) <= KBLK_LIMIT * KSTEP && x.stride(1) == 1
                   && x.stride(0) >= x.size(1) && x.stride(0) % 4 == 0 && ((uintptr_t)x.data_ptr() & 7) == 0,
               "input pack requires aligned BF16 [8 or 16, k] rows");
   const int m = (int)x.size(0), k = (int)x.size(1), kblk = k / KSTEP;
-  TORCH_CHECK(!rows_per_cta || m == 8, "input pack geometry controls require eight rows");
   const int64_t words = m == 8 ? (int64_t)kblk * 1024 : (int64_t)kblk * 32 * KSTEP;
   TORCH_CHECK(packed.device() == x.device() && packed.scalar_type() == torch::kUInt8
                   && packed.is_contiguous() && ((uintptr_t)packed.data_ptr() & 7) == 0
@@ -3766,7 +3761,7 @@ void mk_run_input_pack(torch::Tensor x, torch::Tensor packed, int rows_per_cta =
   const MKInputPackCtx input{(const __nv_bfloat16*)x.data_ptr(), q,
                              reinterpret_cast<float*>(q + (size_t)words), m, k, x.stride(0)};
   if (m == 8)
-    mk_launch_input_pack(input, stream, rows_per_cta);
+    mk_launch(mk_input_pack_kernel, kblk, 0, stream, input);
   else
     mk_launch(mk_wide_input_pack_kernel, kblk * 2, 0, stream, input);
 }
@@ -3781,14 +3776,12 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
                             torch::Tensor out, int64_t n_orig, int64_t rgs_ptr,
                             c10::optional<torch::Tensor> workspace,
                             c10::optional<torch::Tensor> address, bool forward_pipeline = true,
-                            c10::optional<torch::Tensor> producer_pack = c10::nullopt, int input_pack_rows = 0) {
+                            c10::optional<torch::Tensor> producer_pack = c10::nullopt) {
   TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2,
               "bound input requires CUDA BF16 matrix rows");
   const int64_t m = x.size(0), k = x.size(1), n = n_orig;
   const bool c1 = m == 8 && ((k == 4096 && (n == 4096 || n == 6144 || n == 6416)) ||
                             (n == 4096 && (k == 2048 || k == 3072)));
-  TORCH_CHECK(!input_pack_rows || (c1 && !producer_pack.has_value()),
-              "input pack geometry controls require a C1 cell with its own pack launch");
   const bool wide = (m == 16 || m == 24 || m == 32) &&
       ((n == 4096 && (k == 2048 || k == 4096 || k == 3072)) ||
        ((n == 2048 || n == 6144 || n == 6416) && k == 4096) ||
@@ -3842,14 +3835,14 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
                 a.is_contiguous() && a.numel() >= 1, "bound input requires its reserved TX descriptor");
     mk_run_gemm_impl<true>(x, wq4, ws4, a, n, 1., 0, rgs_ptr, 0, 0, 0,
                            partial, arrive, a.data_ptr<int64_t>(), wide, true,
-                           nullptr, nullptr, false, forward_pipeline, producer_q, producer_s, input_pack_rows);
+                           nullptr, nullptr, false, forward_pipeline, producer_q, producer_s);
   } else {
     TORCH_CHECK(out.device() == x.device() && out.scalar_type() == torch::kBFloat16 &&
                 out.dim() == 2 && out.size(0) == m && out.size(1) == n && out.is_contiguous(),
                 "bound input output must match its BF16 matrix");
     mk_run_gemm_impl(x, wq4, ws4, out, n, 1., 0, rgs_ptr, 0, 0, 0,
                      partial, arrive, nullptr, wide, true, nullptr, nullptr, false, forward_pipeline,
-                     producer_q, producer_s, input_pack_rows);
+                     producer_q, producer_s);
   }
 }
 
@@ -3993,7 +3986,7 @@ std::vector<int64_t> mk_rows16_info() {
 // occupancy. Sharing one cached grid across instantiations would launch the
 // 5120 kernel on a residency measured for 4096 and deadlock its barrier.
 template <int HID>
-static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer) {
+static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer, bool static_c1) {
   auto stream = c10::cuda::getCurrentCUDAStream();
   // Separate occupancy for both new instantiations. Only immutable fn may
   // be prepared early, and only when the caller opted into the PDL chain.
@@ -4002,8 +3995,11 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer) {
   // one-shot consumer releases nothing early, and this launch follows it.
   if (ar_consumer && mk_pdl_enabled() && a.num_tokens <= 16) {
     auto kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID> : mk_mhc_ar_kernel<false, HID>;
-    static int ar_grids[2] = {0, 0};
-    int& grid = ar_grids[bf16_fn ? 1 : 0];
+    if constexpr (HID == HIDDEN) {
+      if (static_c1) kernel = mk_mhc_ar_kernel<true, HID, true>;
+    }
+    static int ar_grids[3] = {0, 0, 0};
+    int& grid = ar_grids[static_c1 ? 2 : bf16_fn ? 1 : 0];
     if (!grid) {
       int per_sm = 0, sms = 0;
       MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
@@ -4016,6 +4012,7 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer) {
       grid = std::min(std::min(per_sm, 1) * sms, MK_MHC_GRID_CAP);
       TORCH_CHECK(grid > 0, "AR consumer MHC has no resident blocks");
     }
+    TORCH_CHECK(!static_c1 || grid == 48, "C1 static MHC tails require 48 resident CTAs");
     a.grid = grid;
     mk_launch(kernel, grid, 0, stream, a);
     return;
@@ -4057,7 +4054,7 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer) {
 
 static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scalars,
                 std::vector<int64_t> ints, bool bf16_fn = false,
-                bool ar_consumer = false, const at::Tensor& packets = {}) {
+                bool ar_consumer = false, const at::Tensor& packets = {}, int tail_mode = 0) {
   set_kernel_attrs();
   // Ahead of the unpack, not after it: this used to sit below 19 ptrs[]
   // reads, so a short vector was already out of bounds before it fired.
@@ -4082,6 +4079,10 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
   // to the scalar-layout fallback when an internal caller breaks the gate.
   TORCH_CHECK(!ar_consumer || (mk_pdl_enabled() && ints[0] > 0 && ints[0] <= 16),
               "AR consumer requires PDL and 1..16 tokens");
+  TORCH_CHECK(tail_mode >= -1 && tail_mode <= 1, "MHC tail mode must be -1 (auto), 0 or 1");
+  const bool static_shape = hidden == HIDDEN && ints[0] == 8 && bf16_fn && (direct || ar_consumer);
+  TORCH_CHECK(tail_mode != 1 || static_shape, "static MHC tails require a packed C1 consumer");
+  const bool static_c1 = tail_mode != 0 && static_shape;
   MKMhcArgs a{};
   a.x_in = (const __nv_bfloat16*)ptrs[0];
   a.residual_in = (const __nv_bfloat16*)ptrs[1];
@@ -4116,8 +4117,9 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
     static_cast<MKMhcArgs&>(packet_args) = a;
     packet_args.rank_inputs = reinterpret_cast<const __nv_bfloat16* const*>(packets.data_ptr());
     auto kernel = bf16_fn ? mk_mhc_packets_kernel<true> : mk_mhc_packets_kernel<false>;
-    static int grids[2] = {0, 0};
-    int& grid = grids[bf16_fn ? 1 : 0];
+    if (static_c1) kernel = mk_mhc_packets_kernel<true, true>;
+    static int grids[3] = {0, 0, 0};
+    int& grid = grids[static_c1 ? 2 : bf16_fn ? 1 : 0];
     if (!grid) {
       int per_sm = 0, sms = 0;
       MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&per_sm, kernel, MK_THREADS, 0));
@@ -4125,20 +4127,21 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
       grid = std::min(std::min(per_sm, 1) * sms, MK_MHC_GRID_CAP);
       TORCH_CHECK(grid > 0, "MHC packet consumer has no resident blocks");
     }
+    TORCH_CHECK(!static_c1 || grid == 48, "C1 static MHC tails require 48 resident CTAs");
     packet_args.grid = grid;
     mk_launch(kernel, grid, 0, stream, packet_args);
-  } else if (hidden == HIDDEN_V41) mk_mhc_launch<HIDDEN_V41>(a, bf16_fn, ar_consumer);
-  else mk_mhc_launch<HIDDEN>(a, bf16_fn, ar_consumer);
+  } else if (hidden == HIDDEN_V41) mk_mhc_launch<HIDDEN_V41>(a, bf16_fn, ar_consumer, static_c1);
+  else mk_mhc_launch<HIDDEN>(a, bf16_fn, ar_consumer, static_c1);
 }
 
 void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
-                std::vector<int64_t> ints, bool bf16_fn = false, bool ar_consumer = false) {
-  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, ar_consumer);
+                std::vector<int64_t> ints, bool bf16_fn = false, bool ar_consumer = false, int tail_mode = 0) {
+  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, ar_consumer, {}, tail_mode);
 }
 
 void mk_run_mhc_packets(std::vector<int64_t> ptrs, std::vector<double> scalars,
-                        std::vector<int64_t> ints, at::Tensor packets, bool bf16_fn) {
-  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, false, packets);
+                        std::vector<int64_t> ints, at::Tensor packets, bool bf16_fn, int tail_mode = 0) {
+  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, false, packets, tail_mode);
 }
 
 // V4.1 has a separate occupancy cache from every legacy PR518 kernel.
@@ -4821,16 +4824,16 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_query_pair", &mk_run_query_pair, "two DSA W4 queries sharing invocation-owned input quantization",
         pybind11::arg("x"), pybind11::arg("weights"), pybind11::arg("scales"),
         pybind11::arg("rowscales"), pybind11::arg("outputs"), pybind11::arg("local_c1")=true,
-        pybind11::arg("forward_pipeline")=true, pybind11::arg("input_pack_rows")=0);
+        pybind11::arg("forward_pipeline")=true);
   m.def("run_gemm_bound_input", &mk_run_gemm_bound_input, "bound K=7 input reuse with owned scratch and optional TX output",
         pybind11::arg("x"),pybind11::arg("wq4"),pybind11::arg("ws4"),pybind11::arg("out"),
         pybind11::arg("n_orig"),pybind11::arg("rgs_ptr"),pybind11::arg("workspace"),
         pybind11::arg("address"),pybind11::arg("forward_pipeline")=true,
-        pybind11::arg("producer_pack")=pybind11::none(), pybind11::arg("input_pack_rows")=0);
+        pybind11::arg("producer_pack")=pybind11::none());
   m.def("run_gemm_wide_input", &mk_run_gemm_wide_input, "private wide-row input reuse qualification");
   m.def("rows16_info", &mk_rows16_info, "{registers, local bytes, blocks/SM, smem} of the sixteen-row kernels");
   m.def("run_input_pack", &mk_run_input_pack, "probe: a C1 bound cell's input pack alone",
-        pybind11::arg("x"), pybind11::arg("packed"), pybind11::arg("rows_per_cta")=0);
+        pybind11::arg("x"), pybind11::arg("packed"));
   m.def("probe_device", &mk_probe_device, "device geometry probe");
   m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");
   m.def("read_mhc_ts", &mk_read_mhc_ts, "mhc phase timestamps");
@@ -4876,8 +4879,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC", pybind11::arg("ptrs"),
         pybind11::arg("scalars"), pybind11::arg("ints"),
         pybind11::arg("bf16_fn") = false,
-        pybind11::arg("ar_consumer") = false);
-  m.def("run_mhc_packets", &mk_run_mhc_packets, "TP4 packet input to native MHC");
+        pybind11::arg("ar_consumer") = false, pybind11::arg("tail_mode") = 0);
+  m.def("run_mhc_packets", &mk_run_mhc_packets, "TP4 packet input to native MHC",
+        pybind11::arg("ptrs"), pybind11::arg("scalars"), pybind11::arg("ints"),
+        pybind11::arg("packets"), pybind11::arg("bf16_fn"), pybind11::arg("tail_mode") = 0);
   m.def("run_mhc_v41", &mk_run_mhc_v41, "Experimental HF V4.1 MHC seam",
         pybind11::arg("ptrs"), pybind11::arg("scalars"), pybind11::arg("ints"),
         pybind11::arg("hidden") = HIDDEN_V41);

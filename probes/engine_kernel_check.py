@@ -46,10 +46,9 @@ def main():
         from probes.engine_vocab_selection import run as vocab_selection_check
         vocab_selection_check(args.output)
         return
-    if args.lanes in ('input_pack', 'input_pack:query'):
-        from probes.engine_input_pack_grid import main as input_pack_check
-        input_pack_check(args.ranks, samples=args.samples, output=args.output,
-                         focus='query' if args.lanes.endswith(':query') else None)
+    if args.lanes == 'mhc_c1_tails':
+        from probes.engine_mhc_c1_tails import main as mhc_c1_tails_check
+        mhc_c1_tails_check(args.ranks, samples=args.samples, output=args.output)
         return
     if args.lanes == 'producer_pack':
         from probes.engine_producer_pack import main as producer_pack_check
