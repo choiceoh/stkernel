@@ -159,7 +159,7 @@ class DraftAcceptanceTests(unittest.TestCase):
     def test_only_w4_pack_uses_decode_calibration_fp8_keeps_shared_identity(self):
         weight = SimpleNamespace(ndim=2, is_cuda=True, dtype=torch.bfloat16, shape=(128, 8192))
         w4_names, fp8_names = [], []
-        store = SimpleNamespace(calibrated=lambda name: True,
+        store = SimpleNamespace(calibrated=lambda name: True, weight_digest=lambda w: None,
             pack_wide=lambda w, name, **kw: w4_names.append(name) or [SimpleNamespace(calibrated=True)],
             pack_fp8=lambda w, name, **kw: fp8_names.append(name) or ('q', 'scale'))
         with patch('engine.kernels.dense.extension'), patch('engine.kernels.dense._fold', side_effect=lambda x: x), \
@@ -171,7 +171,7 @@ class DraftAcceptanceTests(unittest.TestCase):
     def test_combined_mode_calibrates_executed_fp8_and_preserves_shared_packs(self):
         weight = SimpleNamespace(ndim=2, is_cuda=True, dtype=torch.bfloat16, shape=(128, 8192))
         w4_names, fp8_names = [], []
-        store = SimpleNamespace(calibrated=lambda name: True,
+        store = SimpleNamespace(calibrated=lambda name: True, weight_digest=lambda w: None,
             pack_wide=lambda w, name, **kw: w4_names.append(name) or [SimpleNamespace(calibrated=True)],
             pack_fp8=lambda w, name, **kw: fp8_names.append(name) or ('q', 'scale'))
         with patch('engine.kernels.dense.extension'), patch('engine.kernels.dense._fold', side_effect=lambda x: x), \
