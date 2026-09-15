@@ -36,7 +36,9 @@ class Lanes:
     hc_norm: object         # (h [N, hc*H], w [hc*H], eps, hc) -> normed [N, hc*H]; hc 1: one unit-offset norm over the row
     hc_leave: object        # (h, out [N, H], inject [N, hc], hc) -> h, in place
     hc_leave_norm: object   # (h, out, inject, w, eps, hc) -> (h in place, normed)
-    hc_mix: object          # (normed, down_inject [r(+hc), hc*H], up [hc*H, r], hc, *, inject) -> (mixed [N, H], inject [N, hc] | None)
+    hc_mix: object          # (normed, down_inject [r(+hc), hc*H], up [hc*H, r], hc, *, inject, project_down=None,
+                            #  project_up=None) -> (mixed [N, H], inject [N, hc] | None); the projections replace the
+                            #  BF16 matmuls when a quantised lane serves the mixer (net.Qwen38Net hc_fp8)
     # GatedDeltaNet (engine/kernels/gdn, engine/kernels/kda, the causal conv kernels)
     gdn_gates: object       # (a [N, HV], b [N, HV], A_log f32, dt_bias f32, *, sigmoid_beta) -> (decay f32 [N, HV], beta [N, HV])
     gdn_chunk: object       # (q, k [1, T, Hk, D], v [1, T, HV, D], decay f32 [1, T, HV], beta [1, T, HV] sigmoided,
@@ -72,12 +74,16 @@ def route_softmax_topk(logits: torch.Tensor, k: int) -> "tuple[torch.Tensor, tor
     return ids.to(torch.int32), w.float()
 
 
-def local_routes(ids: torch.Tensor, weights: torch.Tensor, first: int, local: int) -> "tuple[torch.Tensor, torch.Tensor]":
-    """Global expert ids to this rank's [0, local): a route to another rank's expert keeps its row on local expert 0
-    with weight 0 -- the product is an exact zero, and b12x needs every route to name one of its experts."""
+def local_routes(ids: torch.Tensor, weights: torch.Tensor, first: int, local: int,
+                 sentinel: "int | None" = None) -> "tuple[torch.Tensor, torch.Tensor]":
+    """Global expert ids to this rank's [0, local): a route to another rank's expert gets weight 0 and names local
+    expert 0 -- the product is an exact zero, and a kernel that indexes with every route needs one of its experts -- or
+    `sentinel` (E) where the launch admits the micro kernel's zero-weight skip (moe_dispatch.ep_zero_weight_sentinel),
+    which drops the pair before it claims a row."""
     shifted = ids.to(torch.int32) - first
     foreign = (shifted < 0) | (shifted >= local)
-    return torch.where(foreign, torch.zeros_like(shifted), shifted), torch.where(foreign, torch.zeros_like(weights), weights)
+    other = torch.zeros_like(shifted) if sentinel is None else torch.full_like(shifted, sentinel)
+    return torch.where(foreign, other, shifted), torch.where(foreign, torch.zeros_like(weights), weights)
 
 
 def reference() -> Lanes:
@@ -96,12 +102,13 @@ def reference() -> Lanes:
         hc_leave(h, out, inject, hc)
         return h, hc_norm(h, w, eps, hc)
 
-    def hc_mix(normed, down_inject, up, hc, *, inject=True):
+    def hc_mix(normed, down_inject, up, hc, *, inject=True, project_down=None, project_up=None):
         # the oracle normalises inside gated_residual; here the input is already normalised, so its mixer is replayed
         rank, hid = up.shape[1], normed.shape[1] // hc
-        di = torch.nn.functional.linear(normed, down_inject)
+        di = torch.nn.functional.linear(normed, down_inject) if project_down is None else project_down(normed)
         gates = torch.nn.functional.silu(di[:, :rank] / hc)
-        weights = torch.sigmoid(torch.nn.functional.linear(gates, up)).unflatten(-1, (hc, hid))
+        up_rows = torch.nn.functional.linear(gates, up) if project_up is None else project_up(gates)
+        weights = torch.sigmoid(up_rows).unflatten(-1, (hc, hid))
         mixed = (weights * normed.unflatten(-1, (hc, hid))).mean(dim=-2)
         return mixed, (2 * torch.sigmoid(di[:, rank:] / hc) if inject else None)
 
@@ -282,10 +289,16 @@ def served(*, tp=None) -> Lanes:
     def moe(x, ids, weights, w13, w13_sf, w2, w2_sf, *, scales, first_expert, compact=False):
         E = w13.shape[0]
         views, sf13, sf2 = moe_prepare(w13, w13_sf, w2, w2_sf, ids.shape[1], scales=scales)
-        local, w = local_routes(ids, weights, first_expert, E)
         if not compact:
-            # a captured step's shapes are fixed: every route stays, another rank's on local expert 0 at weight 0
+            # A captured step's shapes are fixed, so every route stays in the launch. Another rank's routes carry
+            # sentinel E where the shape admits the micro kernel's zero-weight skip (its pairs claim no rows and read no
+            # expert), else local expert 0 at weight 0. The decision is the dispatcher's, per launch shape.
+            sentinel = md.ep_zero_weight_sentinel(num_tokens=x.shape[0], num_topk=ids.shape[1], experts=E,
+                                                  hidden_size=x.shape[1], intermediate_size=w13.shape[1] // 2,
+                                                  activation="silu", swiglu_limit=None)
+            local, w = local_routes(ids, weights, first_expert, E, sentinel)
             return dispatch(x, local, w, w13, sf13, w2, sf2, views, scales, E)
+        local, w = local_routes(ids, weights, first_expert, E)
         # An eager step runs only this rank's (token, route) pairs, one route a row: at EP=4 the other ranks' routes are
         # ~3/4 of a prefill chunk's pairs, and on expert 0 they are rows of compute for a product of zero. Each pair's
         # weighted output (bf16) is summed per token in fp32 and rounded once.
@@ -305,6 +318,8 @@ def served(*, tp=None) -> Lanes:
             return tp.on_main(fn, *a, **k)
         return run
 
+    # the bound EP cell's decode routes to other ranks skip in the micro kernel (engine/base/kernel_shape bound first)
+    md.configure_ep_zero_weight_micro(True)
     common = common_lanes()
     bound = [hcr.norm_streams, hcr.leave, hcr.leave_norm, hcr.mix, gdn.gates, gdn_chunk, recurrent_decay_ring,
              recurrent_decay_ring_rows, gdn.gated_norm, causal_conv1d_single, causal_conv1d_ring, causal_conv1d_ring_rows,
