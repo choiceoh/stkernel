@@ -1,0 +1,14 @@
+W row offset in tile: n=4096: detected as ValueError
+W row offset in tile: n=6416 k=4096 slices=8: 256 mismatches of 384
+scale chunk destination: n=4096: detected as ValueError
+scale chunk destination: n=6416: detected as ValueError
+swizzle key: n=4096 k=2048 slices=3: 288 mismatches of 384
+swizzle key: n=6416 k=4096 slices=8: 288 mismatches of 384
+second activation row: n=4096: detected as ValueError
+second activation row: n=6416: detected as ValueError
+partial row/col layout: n=4096 k=2048 slices=3: 378 mismatches of 384
+partial row/col layout: n=6416 k=4096 slices=8: 0 mismatches of 384
+slice boundary: n=4096 k=2048 slices=3: 384 mismatches of 384
+slice boundary: n=6416 k=4096 slices=8: 0 mismatches of 384
+exponent halfword: n=4096 k=2048 slices=3: 384 mismatches of 384
+exponent halfword: n=6416 k=4096 slices=8: 384 mismatches of 384
